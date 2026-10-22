@@ -217,7 +217,7 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
   # the consumer chain (tier step: RECEIPT_OK -> rok -> --receipt-ok -> ci_test_tier.sh) is hash-pinned whole; edit it -> update this sha256 (gate content, quorum)
   step=$(awk '/- name: Decide the test tier/{on=1;print;next} on&&/^      - name:/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
-  [ "$(printf '%s\n' "$step" | sha256sum | cut -d' ' -f1)" = "a6c4a1aa70c61821a7118c191b810093cf31021b686e2cc6e9eb138b602729a2" ] || return 1
+  [ "$(printf '%s\n' "$step" | sha256sum | cut -d' ' -f1)" = "0335490bab33adde6bd276b21c44041d1baa29418e28d568553b3cfc8c76f35b" ] || return 1
   # nothing outside the pinned lines may set the verdict, the shell or the environment
   ciall=$(grep -v -E '^[[:space:]]*#' "$1"); secall=$(grep -v -E '^[[:space:]]*#' "$2")
   n=$(grep -c -E 'RECEIPT_OK|receipt-ok|BASH_ENV|GITHUB_ENV|^defaults:|^env:' <<< "$ciall" || true); [ "$n" = 1 ] || return 1
@@ -229,7 +229,7 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   local pr=${PIN_ROOT:-$HERE/..} blk
   [ "$(printf '%s\n' "$shard" | sha256sum | cut -d' ' -f1)" = "6c7c538c950899c60f7436868ee80a003f904e3ed3a4286877976964f4ddc216" ] || return 1
   blk=$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
-  [ "$(printf '%s\n' "$blk" | sha256sum | cut -d' ' -f1)" = "b27698ea49d1149e98cb8fca78d45c48a0f58322b89f9b99a87b6224d415d460" ] || return 1
+  [ "$(printf '%s\n' "$blk" | sha256sum | cut -d' ' -f1)" = "c8047f526588a7e7af8ab15a17118a5a69e8cbf4a4edae5181473f251f5a5c55" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "81662d808e4672b41b481f44361c10aaae308661f492b1aaaff47f87ffb27cfc" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci_test_tier.sh" | cut -d' ' -f1)" = "1680bab97243fb7b5ce6907daf3c8a00db4968a2e892095260152a09cc127866" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/receipt_ok_arg.sh" | cut -d' ' -f1)" = "1795d4df36fa1c3f223dd054d93392aff7584bb5063bed1d7a11bd3f18144820" ] || return 1
@@ -465,5 +465,21 @@ want="scripts/ci/fetch_p6.sh scripts/ci/pr_touched_paths.sh scripts/ci_mg_worksp
 wrow "W45a the tier step runs exactly the classified files" "$want" "$(tier_exec "$SEC")"
 mutate "$SEC" 'bash scripts/ci_test_tier.sh' 'bash scripts/ci_test_tier.sh; bash scripts/new_helper.sh' "$td/exec.yml" && { [ "$(tier_exec "$td/exec.yml")" = "$want" ] && r=missed || r=caught; wrow "W45b MUTANT: an unclassified helper in the tier step turns the list RED" caught "$r"; } || { fail=$((fail + 1)); echo "FAIL W45b: mutant did not apply"; }
 if mutate "$CI" '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1' "$td/b7.yml"; then wrow "W23g MUTANT (E2): a dead guard passes the garbage verifier answer, behaviourally" 2 "$(judge_run "$td/b7.yml" vgarbage | sed 's/^1$/2/')"; else fail=$((fail + 1)); echo "FAIL W21g: mutant did not apply"; fi
+# W46: a PR rust-toolchain.toml `path=` must not run PR code in the tier step (gate_touched_crates.sh runs `cargo metadata` in the PR tree)
+tc_plant() { # <RUSTUP_TOOLCHAIN or empty> -> 1 when the planted cargo ran
+  local d; d=$(mktemp -d); mkdir -p "$d/tc/bin" "$d/p/src"
+  printf '#!/bin/sh\ntouch %s/RAN\nexit 1\n' "$d" > "$d/tc/bin/cargo"; chmod +x "$d/tc/bin/cargo"
+  printf '[toolchain]\npath="%s/tc"\n' "$d" > "$d/p/rust-toolchain.toml"
+  printf '[package]\nname="x"\nversion="0.1.0"\nedition="2021"\n' > "$d/p/Cargo.toml"; : > "$d/p/src/lib.rs"
+  (cd "$d/p" && env ${1:+RUSTUP_TOOLCHAIN="$1"} cargo metadata --no-deps --format-version 1 > /dev/null 2>&1 < /dev/null)
+  [ -e "$d/RAN" ] && echo 1 || echo 0
+  rm -rf -- "${d:?}"
+}
+tier_tc() { awk '/- name: Decide the test tier/{on=1;print;next} on&&/^      - name:/{exit} on{print}' "$1" | grep -v -E '^[[:space:]]*#' | grep -oE 'RUSTUP_TOOLCHAIN=[0-9.]+' | head -1 | cut -d= -f2; }
+tcv=$(tier_tc "$SEC")
+wrow "W46a the tier step pins RUSTUP_TOOLCHAIN to the base toolchain channel" "$(sed -n 's/^channel = "\(.*\)"/\1/p' "$HERE/../rust-toolchain.toml")" "$tcv"
+wrow "W46b MUTANT: with no RUSTUP_TOOLCHAIN a PR toolchain path= runs PR code (the plant works)" 1 "$(tc_plant "")"
+wrow "W46c with the pinned RUSTUP_TOOLCHAIN the planted cargo does not run" 0 "$(tc_plant "$tcv")"
+wmut "W46d MUTANT: the RUSTUP_TOOLCHAIN pin removed from the tier step is caught" sec 'RUSTUP_TOOLCHAIN=1.93.0; export RUSTUP_TOOLCHAIN' ':'
 echo "receipt gate rows: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

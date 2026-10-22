@@ -386,6 +386,8 @@ jobs:
           # the real file, so no helper can plant tier=/cite= lines or a heredoc in front of ours.
           real_out="$GITHUB_OUTPUT"
           GITHUB_OUTPUT="$(mktemp)"; GITHUB_ENV="$(mktemp)"; export GITHUB_OUTPUT GITHUB_ENV
+          # #5850: a PR rust-toolchain.toml `path=` would make `cargo metadata` (gate_touched_crates.sh) run PR code before the final write; the env var outranks the file.
+          RUSTUP_TOOLCHAIN=1.93.0; export RUSTUP_TOOLCHAIN
           args=(--event "${GITHUB_EVENT_NAME}")
           # #5797: a signed batch receipt in the PR body (signature, tree hash == this
           # merge tree, toolchain hash) lets the PR run check/fmt/clippy instead of the
