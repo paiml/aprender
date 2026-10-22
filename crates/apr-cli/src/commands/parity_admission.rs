@@ -530,3 +530,38 @@ mod sentinel_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod on_cuda_load_error_tests {
+    use super::*;
+
+    const GATE_MSG: &str = "PARITY-GATE FAILED: GPU computes a DIFFERENT function than CPU.\n\
+        Cosine similarity: 0.950800 (required: \u{2265}0.98)";
+
+    #[test]
+    fn unrelated_cuda_error_is_not_ours_whether_forced_or_not() {
+        assert_eq!(on_cuda_load_error("OOM: out of VRAM", true), Ok(false));
+        assert_eq!(on_cuda_load_error("OOM: out of VRAM", false), Ok(false));
+    }
+
+    #[test]
+    fn forced_gate_failure_is_refused_with_the_measured_cosine() {
+        let err = on_cuda_load_error(GATE_MSG, true).expect_err("forced + gate fail must refuse");
+        assert!(err.starts_with("parity gate refused the GPU: "), "{err}");
+        assert!(err.contains("cosine=0.9508"), "{err}");
+        assert!(err.contains("threshold=0.98"), "{err}");
+    }
+
+    #[test]
+    fn unforced_gate_failure_is_admitted_for_cpu_fallback() {
+        assert_eq!(on_cuda_load_error(GATE_MSG, false), Ok(true));
+    }
+
+    #[test]
+    fn unparseable_gate_message_still_refuses_when_forced() {
+        // Marker present but no cosine line: NaN verdict must not read as a pass.
+        let err = on_cuda_load_error("PARITY-GATE FAILED: details lost", true)
+            .expect_err("a gate failure with no numbers is still a failure");
+        assert!(err.contains("parity FAILED"), "{err}");
+    }
+}
