@@ -1,0 +1,6 @@
+# job<TAB>step<TAB>budget_seconds. A step over 1.5x its budget is flagged by scripts/ci/step_budget_check.sh.
+# Seeded 2026-10-19 from MG run 39205769238 (shard norm ~24 min) and the guard-cargo green time after #5712 (~45 min x86-main). The owner tunes them from data.
+x86-main	Sections (wait for every one to finish)	2700
+workspace-test-shard (1)	Sections	1440
+workspace-test-shard (2)	Sections	1440
+workspace-test-shard (3)	Sections	1440
