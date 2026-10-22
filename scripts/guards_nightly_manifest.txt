@@ -52,3 +52,5 @@
 # #5873: the harness fixture-server cleanup check, quarantined from ci/explicit-test-commands.d/817 (its apr-stub row races); LAB, never on a PR path (C324).
 60	Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
 1	affected_set.sh case table and mutants (FLOW-010 E5, LAB)
+# #5803: tuner test-move guard (cargo -- --list), LAB from the first night, moved off ci/explicit-test-commands.d 296/297 (never on a PR path, C324). Seconds are a local sample.
+60	Tuner test-move guard (#5803)
