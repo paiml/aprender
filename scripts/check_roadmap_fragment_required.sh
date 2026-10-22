@@ -186,14 +186,18 @@ judge_generated() {
     # (sov.roadmap-fragment-parity demands it once the aggregate is untracked; fail here with the remedy, not there).
     # Judged exactly as sov does: git's own trailer parser (LAST paragraph only), same command. A merge_group
     # commit is the queue's squash of the PR, whose message the queue composes, so G5 is a PR-time check only.
-    local trailers
-    trailers=$(git -C "$repo" log --format='%(trailers:key=Pmat-Ticket,valueonly)' "$base..$head" 2>/dev/null | tr -d ' ' | grep -v '^$' | sort -u || true)
+    local trailers tgit=(-C "$repo") bsha hsha
+    # A shallow checkout hides history by a .git/shallow file, not by deleting objects (fat_driver.py emulates depth 1
+    # that way). Read the PR range through a scratch gitdir that borrows the objects and has no shallow file: nothing
+    # in the section clone changes, and if the objects really are absent the log is empty and G5 FAILs.
+    if [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = true ] && git init -q --bare "$td/tg" 2>/dev/null \
+        && git -C "$repo" rev-parse --path-format=absolute --git-path objects >"$td/tg/objects/info/alternates"; then
+        tgit=(--git-dir "$td/tg")
+    fi
+    bsha=$(git -C "$repo" rev-parse "$base^{commit}") && hsha=$(git -C "$repo" rev-parse "$head^{commit}") || { rm -rf -- "${td:?}"; return 2; }
+    trailers=$(git "${tgit[@]}" log --format='%(trailers:key=Pmat-Ticket,valueonly)' "$bsha..$hsha" 2>/dev/null | tr -d ' ' | grep -v '^$' | sort -u || true)
     while IFS= read -r name; do
         [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && break
-        if [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = true ]; then
-            printf 'SKIP  G5  shallow checkout: the PR commits are not all here to read trailers from; sov.roadmap-fragment-parity judges it on full history\n'
-            break
-        fi
         [[ "$name" =~ ^$ENTRIES_DIR/([^/]+)\.yaml$ ]] || continue
         if ! grep -qFx -- "${BASH_REMATCH[1]}" <<<"$trailers"; then
             violations=$((violations + 1))
@@ -559,6 +563,7 @@ PY
     g_nested_fragment() { mkdir -p "$1/$ENTRIES_DIR/sub"; printf -- '- id: PMAT-600\n  title: hidden\n  status: planned\n' >"$1/$ENTRIES_DIR/sub/PMAT-600.yaml"; commit_all "$1"; }
     g_symlink_fragment() { ln -s ../../README.md "$1/$ENTRIES_DIR/PMAT-700.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-700"; }
     g_shallow_no_trailer() { printf -- "- id: PMAT-200\n  title: new\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" && git -C "$1" rev-parse HEAD~1 >"$1/.git/shallow"; }
+    g_shallow_with_trailer() { printf -- "- id: PMAT-200\n  title: new\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-200" && git -C "$1" rev-parse HEAD~1 >"$1/.git/shallow"; }
     g_gitlink_fragment() { git -C "$1" update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,"$ENTRIES_DIR/PMAT-701.yaml"; git -C "$1" commit -qm head -m "Pmat-Ticket: PMAT-701"; }
     g_exec_fragment() { printf -- "- id: PMAT-702\n  title: x\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-702.yaml"; chmod +x "$1/$ENTRIES_DIR/PMAT-702.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-702"; }
     g_delete_base() { git -C "$1" rm -q "$BASE_FILE"; commit_all "$1"; }
@@ -580,7 +585,8 @@ PY
     grow 'generated: a fragment renamed with its id edited -> REFUSE G4' 1 'FAIL  G4' g_rename_fragment
     grow 'generated: a nested fragment the generator never reads -> REFUSE G4' 1 'FAIL  G4' g_nested_fragment
     grow 'generated: a symlink fragment (target can change unseen) -> REFUSE G4' 1 'FAIL  G4' g_symlink_fragment
-    grow "generated: shallow checkout, fragment-less -> SKIP G5 (sov judges it on full history)" 0 "SKIP  G5" g_shallow_no_trailer
+    grow "generated: shallow checkout, fragment-less -> REFUSE G5 (the range is read past .git/shallow, never skipped)" 1 "FAIL  G5" g_shallow_no_trailer
+    grow "generated: shallow checkout, trailer in the PR commit -> PASS (the trailer is read past .git/shallow)" 0 "ok    G3" g_shallow_with_trailer
     grow "generated: a gitlink fragment -> REFUSE G4" 1 "FAIL  G4" g_gitlink_fragment
     grow "generated: an executable-mode fragment (allowlist is 100644 only) -> REFUSE G4" 1 "FAIL  G4" g_exec_fragment
     grow 'generated: the frozen base deleted -> REFUSE G2 (not the legacy judge)' 1 'FAIL  G2' g_delete_base
