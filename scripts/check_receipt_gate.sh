@@ -200,6 +200,10 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   shard=$(awk '/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1")
   case "$shard" in *'needs: [receipt-judge]'*) ;; *) return 1 ;; esac
   case "$shard" in *'RECEIPT_OK: ${{ needs.receipt-judge.outputs.ok'*) ;; *) return 1 ;; esac
+  case "$shard" in *"outputs.ok || '0' }}"*) ;; *) return 1 ;; esac
+  case "$code" in *'"$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE" "${GITHUB_SHA}"'*) ;; *) return 1 ;; esac
+  case "$code" in *'[ "$ok" = 1 ] || ok=0'*) ;; *) return 1 ;; esac
+  case "$code" in *'[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ]'*) ;; *) return 1 ;; esac
   tier=$(awk '/id: tier$/{on=1} on{print} /--receipt-ok/{if(on)exit}' "$2" | grep -v -E '^[[:space:]]*#')
   case "$tier" in *'"${RECEIPT_OK:-0}" = 1'*) ;; *) return 1 ;; esac
   printf '%s\n' "$tier" | grep -E 'scripts/|git (fetch|clone)' | grep -q . && return 1
@@ -228,6 +232,10 @@ wmut "W28 MUTANT: a judge that leaves the git token env set is caught" ci 'unset
 wmut "W33 MUTANT: a judge not gated on the runner-readiness variable (it would queue forever with no runner) is caught" ci " && vars.RECEIPT_JUDGE_RUNNER_READY == 'true'" ''
 wmut "W34 MUTANT: the judge back on a GitHub-hosted image is caught" ci 'runs-on: [self-hosted, Linux, X64, receipt-judge]' 'runs-on: ubuntu-latest'
 wmut "W20 MUTANT: a shard job that does not wait for the judge is caught" ci 'needs: [receipt-judge]' 'needs: []'
+wmut "W20c MUTANT (MA): the shard RECEIPT_OK fallback flipped to 1 is caught" ci "outputs.ok || '0' }}" "outputs.ok || '1' }}"
+wmut "W20d MUTANT (MB): the verifier trusting \$GITHUB_WORKSPACE no longer, but the PR tree, is caught" ci '"$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE"' '"$RUNNER_TEMP/pr-body.md" "$RUNNER_TEMP/prtree"'
+wmut "W20e MUTANT (MC): the ok=0 guard turned into ok=1 is caught" ci '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1'
+wmut "W20f MUTANT (MD): the FETCH_HEAD == GITHUB_SHA compare dropped is caught" ci '[ "$(git rev-parse FETCH_HEAD)" = "${GITHUB_SHA}" ] &&' 'true &&'
 wmut "W20b MUTANT: a tier step that runs PR-tree code is caught" sec 'rok=0
           if [ "${GITHUB_EVENT_NAME}" = pull_request ]' 'rok=0
           bash scripts/ci/pre.sh
