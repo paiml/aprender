@@ -1,0 +1,18 @@
+- id: PMAT-5743
+  github_issue: 5743
+  item_type: task
+  title: 'ci: skip drafts and docs-only PRs inside ci.yml scope job; verdict jobs report success'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T10:29:43Z
+  updated: 2026-10-19T10:29:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

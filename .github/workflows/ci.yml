@@ -19,7 +19,9 @@ on:
     tags: ['v*']
   pull_request:
     branches: [main, master]
-    # Drafts skip the heavy jobs (x86-main, workspace-test-shard); ready_for_review fires the full run.
+    # ready_for_review: a draft's run is skipped by the `scope` job below, so marking it
+    # ready must start the real one. NO `paths`/`paths-ignore` here: a filtered workflow
+    # never reports and the required checks would stay "expected" (scripts/ci_scope.sh).
     types: [opened, synchronize, reopened, ready_for_review]
   # Merge queue: GitHub dispatches a `merge_group` event for each batch it forms.
   # Both required checks (`ci / gate` via the reusable sovereign-ci call, and the
@@ -55,6 +57,37 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}
 
 jobs:
+  # CI demand: a draft PR and a docs-only PR skip the fat jobs. pull_request ONLY; the
+  # verdict jobs (ci / gate, gate, workspace-test) still run and report success, so no
+  # required check is left "expected". merge_group and push skip this job and run in
+  # full. Rule and case table: scripts/ci_scope.sh.
+  scope:
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      skip: ${{ steps.scope.outputs.skip }}
+      reason: ${{ steps.scope.outputs.reason }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Classify the PR (draft / docs-only / full)
+        id: scope
+        env:
+          DRAFT: ${{ github.event.pull_request.draft }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -uo pipefail
+          # Any failure to read the diff is `full`: a skip needs a positive read.
+          if ! paths=$(git diff --no-renames --name-only "$BASE...$HEAD"); then paths=""; fi
+          out=$(printf '%s\n' "$paths" | bash scripts/ci_scope.sh classify false) || out="skip=0 reason=full"
+          echo "$out"
+          printf '%s\n' "$out" | sed 's/ /\n/' >> "$GITHUB_OUTPUT"
+
   # ==========================================================================
   # #4433 — FIVE FAT JOBS (operator ruling 2026-09-25, items 1+4):
   #   "CI = 5 fat jobs (x86 main, gx10, yoga, mac-refusal, determinism). Each
@@ -154,10 +187,12 @@ jobs:
         run: |
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
+      - name: The skip scope (draft / docs-only) and its wiring in ci.yml
+        run: setsid --wait bash scripts/ci_scope.sh --self-test
 
   x86-main:
-    needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}
+    needs: [mg-reuse, scope]
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && needs.scope.outputs.skip != '1' }}
     # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 240
@@ -475,7 +510,8 @@ jobs:
   # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   workspace-test-shard:
-    if: ${{ github.event.pull_request.draft != true }}
+    needs: [scope]
+    if: ${{ !cancelled() && github.event.pull_request.draft != true && needs.scope.outputs.skip != '1' }}
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 180
@@ -527,8 +563,10 @@ jobs:
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [workspace-test-shard]
-    if: always()
+    needs: [workspace-test-shard, scope]
+    # docs-only PR: scope skipped the shards, so there is nothing to fan in. A skipped job satisfies
+    # the required check; draft, full, merge_group and push run exactly as before.
+    if: ${{ always() && needs.scope.outputs.skip != '1' }}
     steps:
       - name: Every shard passed
         env:
@@ -586,7 +624,7 @@ jobs:
     name: ci / gate
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [x86-main, mg-reuse, x86-main-advisories]
+    needs: [x86-main, mg-reuse, x86-main-advisories, scope]
     if: always()
     steps:
       - name: The sovereign-ci gate section's result
@@ -599,9 +637,12 @@ jobs:
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
+          SCOPE_SKIP: ${{ needs.scope.outputs.skip }}
+          SCOPE_WHY: ${{ needs.scope.outputs.reason }}
         run: |
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
+          [ "${SCOPE_SKIP:-}" = 1 ] && { echo "ci / gate: scope skip (${SCOPE_WHY:-}), fat jobs not owed on this pull_request"; exit 0; }
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
@@ -624,7 +665,7 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     timeout-minutes: 22
-    needs: [x86-main, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test]
+    needs: [x86-main, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, scope]
     if: always()
     steps:
       - name: Check required sections
@@ -640,9 +681,12 @@ jobs:
           ADV: ${{ needs.x86-main-advisories.result }}
           MST: ${{ needs.mg-reuse-self-test.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
+          SCOPE_SKIP: ${{ needs.scope.outputs.skip }}
+          SCOPE_WHY: ${{ needs.scope.outputs.reason }}
         run: |
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
+          [ "${SCOPE_SKIP:-}" = 1 ] && { echo "gate: scope skip (${SCOPE_WHY:-}), fat jobs not owed on this pull_request"; exit 0; }
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
