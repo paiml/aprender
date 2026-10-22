@@ -52,35 +52,7 @@ impl CsvLoader {
             })?
             .clone();
 
-        // Find the target column
-        let column_name = if let Some(col) = column {
-            if !headers.iter().any(|h| h == col) {
-                return Err(MonteCarloError::MissingField {
-                    field: col.to_string(),
-                    hint: format!(
-                        "Available columns: {:?}",
-                        headers.iter().collect::<Vec<_>>()
-                    ),
-                });
-            }
-            col.to_string()
-        } else {
-            // Find first column that looks numeric (not a date)
-            headers
-                .iter()
-                .find(|h| {
-                    let h_lower = h.to_lowercase();
-                    h_lower.contains("return")
-                        || h_lower.contains("pct")
-                        || h_lower.contains("change")
-                })
-                .or_else(|| headers.get(1)) // Second column as fallback
-                .ok_or_else(|| MonteCarloError::MissingField {
-                    field: "return column".to_string(),
-                    hint: "CSV should have a column containing 'return', 'pct', or 'change' in name".to_string(),
-                })?
-                .to_string()
-        };
+        let column_name = Self::resolve_column(&headers, column)?;
 
         let col_idx = headers
             .iter()
@@ -91,31 +63,17 @@ impl CsvLoader {
             })?;
 
         let mut returns = Vec::new();
-        let mut line_num = 2; // Start after header
-
-        for result in reader.records() {
+        // Line numbers start after the header
+        for (line_num, result) in (2..).zip(reader.records()) {
             let record = result.map_err(|e| MonteCarloError::CsvParse {
                 line: line_num,
                 column: column_name.clone(),
                 message: format!("Failed to read row: {e}"),
             })?;
 
-            if let Some(value) = record.get(col_idx) {
-                // Try to parse as number, skip if not valid
-                if let Ok(val) = value.trim().replace('%', "").parse::<f64>() {
-                    // Handle percentage values
-                    let return_val = if val.abs() > 1.0 && value.contains('%') {
-                        val / 100.0
-                    } else if val.abs() > 1.0 {
-                        // Assume percentage if value is large
-                        val / 100.0
-                    } else {
-                        val
-                    };
-                    returns.push(return_val);
-                }
+            if let Some(return_val) = record.get(col_idx).and_then(Self::parse_return) {
+                returns.push(return_val);
             }
-            line_num += 1;
         }
 
         let n_rows = returns.len();
@@ -131,6 +89,44 @@ impl CsvLoader {
             column_name,
             n_rows,
         })
+    }
+
+    /// Resolve the target column name: the requested one, or the first
+    /// return-like column (falling back to the second column).
+    fn resolve_column(headers: &csv::StringRecord, column: Option<&str>) -> Result<String> {
+        if let Some(col) = column {
+            if !headers.iter().any(|h| h == col) {
+                return Err(MonteCarloError::MissingField {
+                    field: col.to_string(),
+                    hint: format!(
+                        "Available columns: {:?}",
+                        headers.iter().collect::<Vec<_>>()
+                    ),
+                });
+            }
+            return Ok(col.to_string());
+        }
+        // Find first column that looks numeric (not a date)
+        headers
+            .iter()
+            .find(|h| {
+                let h_lower = h.to_lowercase();
+                h_lower.contains("return") || h_lower.contains("pct") || h_lower.contains("change")
+            })
+            .or_else(|| headers.get(1)) // Second column as fallback
+            .map(str::to_string)
+            .ok_or_else(|| MonteCarloError::MissingField {
+                field: "return column".to_string(),
+                hint: "CSV should have a column containing 'return', 'pct', or 'change' in name"
+                    .to_string(),
+            })
+    }
+
+    /// Parse a cell as a return; values with magnitude above 1 are percentages.
+    /// Non-numeric cells are skipped.
+    fn parse_return(value: &str) -> Option<f64> {
+        let val = value.trim().replace('%', "").parse::<f64>().ok()?;
+        Some(if val.abs() > 1.0 { val / 100.0 } else { val })
     }
 
     /// Get summary statistics
