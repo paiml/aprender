@@ -743,6 +743,7 @@ fn committed() -> Vec<(serde_json::Value, serde_json::Value)> {
 #[test]
 fn committed_parity_receipts_hold_on_this_host() {
     let r = registry().expect("registry");
+    let mut no_arch_receipt = Vec::new();
     for (entry, rc) in committed() {
         let id = rc["kernel_id"].as_str().expect("kernel_id");
         let path = entry["receipt"].as_str().expect("receipt path");
@@ -789,8 +790,22 @@ fn committed_parity_receipts_hold_on_this_host() {
             seed: wl["seed"].as_u64().expect("seed"),
             trials: dim("trials"),
         };
-        let bound = rc["tolerance_rel"].as_f64().expect("tolerance_rel");
         let now = measure(kernel(id), w, false);
+        // A receipt's `tolerance_rel` is the bound measured on its own `host_arch`; libm and FMA
+        // contraction move the last ulps between architectures. Any other arch must carry its own
+        // measured bound under `per_arch.<arch>.tolerance_rel` -- never a borrowed one, never a skip.
+        let bound = if rc["host_arch"] == host_arch() {
+            rc["tolerance_rel"].as_f64().expect("tolerance_rel")
+        } else if let Some(b) = rc["per_arch"][host_arch()]["tolerance_rel"].as_f64() {
+            b
+        } else {
+            no_arch_receipt.push(format!(
+                "{path}: no {} receipt (host measured max_rel_err {})",
+                host_arch(),
+                now.max_rel_err
+            ));
+            continue;
+        };
         assert_eq!(
             rc["margin"]["verdict"], "pass",
             "{path}: KTEST-02 margin verdict (max ≤ 1 under EM-DOT)"
@@ -842,6 +857,11 @@ fn committed_parity_receipts_hold_on_this_host() {
             p => panic!("{id}: no precision check for {p}"),
         }
     }
+    assert!(
+        no_arch_receipt.is_empty(),
+        "committed receipts lack a bound for this arch:\n{}",
+        no_arch_receipt.join("\n")
+    );
 }
 
 /// `KREG_INPUT_SETS_OUT`: the input-set hashes recomputed from the tree at `KREG_GIT_SHA`, one

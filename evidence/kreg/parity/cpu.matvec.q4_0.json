@@ -35,6 +35,15 @@
   },
   "oracle": "in_tree_dequant_f64",
   "oracle_independent": false,
+  "per_arch": {
+    "aarch64": {
+      "host": "gx10-pool1",
+      "max_rel_err": 0.003859434297246209,
+      "source": "CI job 119289824035 (PR #5871 shard 1), same seed and workload",
+      "tolerance_rel": 0.008,
+      "ts": "2026-10-21T14:51:19Z"
+    }
+  },
   "quantized_activation_oracle": {
     "max_rel_err": 1.69613194525447e-7
   },

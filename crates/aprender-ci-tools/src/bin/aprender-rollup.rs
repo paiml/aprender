@@ -153,9 +153,23 @@ fn git_ok(args: &[String]) -> bool {
         .is_ok_and(|s| s.success())
 }
 
+/// `<name> <version> (<sha>)`, the line every aprender bin prints (#4219). The nightly manifest
+/// probes each shipped bin with `--version` and needs rc 0 plus this sha.
+fn version_line() -> String {
+    format!(
+        "aprender-rollup {} ({})",
+        env!("CARGO_PKG_VERSION"),
+        env!("APR_GIT_SHA")
+    )
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("");
+    if matches!(cmd, "--version" | "-V") {
+        println!("{}", version_line());
+        return ExitCode::SUCCESS;
+    }
     let res = match cmd {
         "plan" | "build" => run(cmd, args.get(2).map(String::as_str)),
         "verify" => verify(&args[2..]),
@@ -170,5 +184,19 @@ fn main() -> ExitCode {
             eprintln!("not_measured: {e}");
             ExitCode::FAILURE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::version_line;
+
+    #[test]
+    fn version_line_names_bin_version_and_build_sha() {
+        let l = version_line();
+        let want = format!("aprender-rollup {} (", env!("CARGO_PKG_VERSION"));
+        assert!(l.starts_with(&want) && l.ends_with(')'), "{l}");
+        let sha = &l[want.len()..l.len() - 1];
+        assert!(!sha.is_empty() && sha == env!("APR_GIT_SHA"), "{l}");
     }
 }
