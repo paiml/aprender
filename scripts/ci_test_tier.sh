@@ -25,8 +25,9 @@
 #     diff is none. Renames: diff_into uses --no-renames (#3664), both sides touched.
 #   docs-only: every touched path under docs/roadmaps/ or docs/audits/ and present
 #     at HEAD -> tier=none; workspace-test has nothing to measure (#3658).
-#   push to main: the same, over the push's own diff (HEAD^1..HEAD for a queue
-#     merge; origin/main@{1}..HEAD for a non-merge tip; neither -> full).
+#   push to main: the same, over the push's own range github.event.before..after
+#     (env PUSH_BEFORE..HEAD; the queue rebase-merges, so a push carries N commits).
+#     PUSH_BEFORE missing, all-zero or not a commit here -> full (fail closed).
 #   rule (ii): a diff touching a ROOT Cargo.toml / Cargo.lock /
 #     rust-toolchain.toml keeps `full` at the PR, in the queue and on push —
 #     dependency bumps are where compile-level integration breaks. The rule is
@@ -330,20 +331,18 @@ decide() {
                     return 0
                 fi
             fi
-            if git -C "$ROOT" rev-parse -q --verify 'HEAD^2' >/dev/null 2>&1; then
-                base='HEAD^1'; how="the merge commit's own diff, HEAD^1..HEAD"
-            elif git -C "$ROOT" rev-parse -q --verify 'origin/main@{1}' >/dev/null 2>&1; then
-                base='origin/main@{1}'; how='a non-merge tip diffed against the previous main, origin/main@{1}..HEAD'
-            elif git -C "$ROOT" rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
-                # #3658: main is protected and the queue is SQUASH with
-                # maximumEntriesToMerge=1, so every push to main is ONE squash
-                # commit: its first parent is the previous main and HEAD^1..HEAD
-                # is the landed PR's diff. A shallow CI checkout has no reflog,
-                # which is why the branch above never answered in CI.
-                base='HEAD^1'; how="a squash landing (one parent), HEAD^1..HEAD"
-            else
-                printf 'tier=full\nreason=push: no parent at all (a root commit) and no previous origin/main in the reflog -- the pushed diff cannot be derived, so this falls closed to full\n'; return 0
+            # The queue REBASE-merges, so one push to main carries N commits and
+            # HEAD^1..HEAD sees only the last (operator ruling 2026-10-22 14:57Z). The
+            # push's own range is github.event.before..github.event.after (PUSH_BEFORE..HEAD).
+            # A missing, all-zero (new ref, force-push) or non-commit before cannot name
+            # that range, and a one-commit guess would under-test a multi-commit landing:
+            # it FAILS CLOSED to full (never a HEAD^1 fallback).
+            local pb; pb=$(printenv PUSH_BEFORE || true)
+            if ! { [[ $pb =~ ^[0-9a-f]{40}$ ]] && [ "$pb" != 0000000000000000000000000000000000000000 ] \
+                && git -C "$ROOT" cat-file -e "$pb^{commit}" 2>/dev/null; }; then
+                printf 'tier=full\nreason=push: github.event.before "%s" is missing, all-zero or not a commit here -- the pushed range cannot be derived, so this falls closed to full (never HEAD^1..HEAD)\n' "${pb:-unset}"; return 0 # R-PUSHBEFORE
             fi
+            base="$pb"; how="the push's own range, github.event.before..after (${pb:0:9}..HEAD)"
             [ -z "$why" ] || how="$how; merge_group not reused: $why"
             df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
             if ! diff_into "$df" "$base"; then rm -f "$df"; printf 'tier=full\nreason=push: git diff %s..HEAD failed -- the pushed diff cannot be derived, so this falls closed to full\n' "$base"; return 0; fi
@@ -547,6 +546,19 @@ self_test() {
     sed 's|diff_into "\$df" "\$mgb"; then rm -f "\${df:?}"|diff_into "$df" HEAD^1; then rm -f "${df:?}"|' "$T" > "$td/mutant-head1.sh"
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-head1.sh'; then echo SAME; else echo DIFFERS; fi"
     row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last commit -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "o=\$(MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    # Rebase-merge: one push carries N commits; the range is github.event.before..after, not HEAD^1..HEAD.
+    pbrun() { local b=$1; shift; env PUSH_BEFORE="$b" bash "$T" --event push --repo-root "$td/g-stack" "$@"; }
+    row 0 "push of a 2-commit rebase landing, before = the old tip, the FIRST commit touches a root Cargo.toml -> tier=full (before..HEAD, not HEAD^1)" '^tier=full$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(rootc "$td/g-stack")' | head -n1"
+    row 0 "  ...the reason names before..after" 'github.event.before' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(rootc "$td/g-stack")'"
+    row 0 "push with an all-zero before (new ref / force-push) -> tier=full, fail closed (never HEAD^1..HEAD)" '^OK-FULL-ONLY$' full_only "$(declare -f pbrun); T='$T'; td='$td'; pbrun 0000000000000000000000000000000000000000"
+    row 0 "push with a before that is not a commit here -> tier=full, fail closed" '^OK-FULL-ONLY$' full_only "$(declare -f pbrun); T='$T'; td='$td'; pbrun 0123456789abcdef0123456789abcdef01234567"
+    row 0 "push with PUSH_BEFORE unset -> tier=full, fail closed" '^tier=full$' bash -c "env -u PUSH_BEFORE bash '$T' --event push --repo-root '$td/g-stack' | head -n1"
+    row 0 "push whose before..HEAD range is leaf-only (before = HEAD^1) -> tier=quick (the range is honoured, not blanket full)" '^tier=quick$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(git -C "$td/g-stack" rev-parse HEAD^1)' | head -n1"
+    sed 's|pb=\$(printenv PUSH_BEFORE \|\| true)|pb=$(printenv PUSH_BEFORE \|\| true); case "$pb" in ""\|0*) pb=$(git -C "$ROOT" rev-parse HEAD^1) ;; esac|' "$T" > "$td/mutant-nopb.sh"
+    row 0 "  (push mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-nopb.sh'; then echo SAME; else echo DIFFERS; fi"
+    row 0 "MUTANT: a push arm that falls open to HEAD^1 on a missing/zero before -> quick, the fail-closed rows go RED" '^MUTANT-QUICK$' bash -c "o=\$(PUSH_BEFORE=0000000000000000000000000000000000000000 bash '$td/mutant-nopb.sh' --event push --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    sed 's|pb=\$(printenv PUSH_BEFORE \|\| true)|pb=$(git -C "$ROOT" rev-parse HEAD^1)|' "$T" > "$td/mutant-ignorepb.sh"
+    row 0 "MUTANT: a push arm that ignores PUSH_BEFORE for HEAD^1 sees one commit -> quick over the 2-commit landing, the before..HEAD full row goes RED" '^MUTANT-QUICK$' bash -c "o=\$(PUSH_BEFORE='$(rootc "$td/g-stack")' bash '$td/mutant-ignorepb.sh' --event push --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     cap mg-root mgrun "$(rootc "$td/q-root")" --repo-root "$td/q-root"
     row 0 "merge_group, the group touched a ROOT manifest -> tier=full (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
     row 0 "  ...exactly tier=full and no quick line leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-root)"
@@ -571,12 +583,12 @@ self_test() {
     row 0 "MUTANT: a nonzero replay rc cannot pass full_only (BAD-RC-3)" '^BAD-RC-3$' full_only "echo tier=full; exit 3"
     row 0 "MUTANT: an empty capture is BAD-EMPTY, never a pass" '^BAD-EMPTY$' full_only "true"
     row 0 "MUTANT: a quick tier is BAD-NOT-FULL under full_only" '^BAD-NOT-FULL$' full_only "echo tier=quick; echo crates=aprender-core"
-    cap push-leaf bash "$T" --event push --repo-root "$td/q-leaf"
+    cap push-leaf env PUSH_BEFORE="$(git -C "$td/q-leaf" rev-parse HEAD^1)" bash "$T" --event push --repo-root "$td/q-leaf"
     row 0 "push (a queue merge of one PR) -> quick with the PUSH own diff, not the whole workspace" "^crates=.*$leaf" bash -c "$(replay push-leaf)"
-    row 0 "  ...and the reason names HEAD^1..HEAD, so the diff is auditable" 'HEAD\^1' bash -c "$(replay push-leaf)"
-    cap push-root bash "$T" --event push --repo-root "$td/q-root"
+    row 0 "  ...and the reason names github.event.before..after, so the diff is auditable" 'github.event.before' bash -c "$(replay push-leaf)"
+    cap push-root env PUSH_BEFORE="$(git -C "$td/q-root" rev-parse HEAD^1)" bash "$T" --event push --repo-root "$td/q-root"
     row 0 "push touching a ROOT manifest -> full on main too (rule (ii))" '^tier=full' bash -c "$(replay push-root)"
-    cap push-cap bash "$T" --event push --repo-root "$td/q-cap"
+    cap push-cap env PUSH_BEFORE="$(git -C "$td/q-cap" rev-parse HEAD^1)" bash "$T" --event push --repo-root "$td/q-cap"
     row 0 "push over the cap -> quick + check_workspace=1 (rule (i))" '^check_workspace=1$' bash -c "$(replay push-cap)"
     row 0 "push whose diff cannot be derived (root commit, no reflog) -> full (fail closed)" '^tier=full' bash -c "d=$td/p-root; git init -q -b main \"\$d\"; git -C \"\$d\" -c user.name=t -c user.email=t@t commit -q --allow-empty -m only; bash '$T' --event push --repo-root \"\$d\""
     # #3658 SQUASH QUEUE: the shape this repo's merge queue actually produces --
@@ -601,7 +613,7 @@ self_test() {
     cap sq-docs mgrun "$(git -C "$td/s-docs" rev-parse HEAD~1)" --repo-root "$td/s-docs"
     row 0 "merge_group, docs-only group (roadmap entry only) -> tier=none" '^tier=none$' bash -c "$(replay sq-docs)"
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
-    row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
+    row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" env PUSH_BEFORE="$(git -C "$td/s-leaf" rev-parse HEAD^1)" bash "$T" --event push --repo-root "$td/s-leaf"
     row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
     MGARGS="--mg-run 123456 --mg-sha \$(git -C '$td/s-leaf' rev-parse HEAD) --mg-conclusion success"
     row 0 "push of a plain sha WITH a successful merge_group result for HEAD -> reuse (T36 control)" '^tier=reuse$' bash -c "bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
@@ -638,9 +650,9 @@ self_test() {
     row 0 "merge_group, a crate source RENAMED into docs/audits/ -> NOT none (the removed source is a touched path): the crate it left IS selected" "^crates=.*$leaf" bash -c "$(replay sq-rename)"
     row 0 "  ...and it is quick, not none" '^tier=quick$' bash -c "$(replay sq-rename)"
     sed 's| diff --no-renames --name-only | diff --name-only |' "$T" > "$td/mutant-renames.sh"
-    cap push-rename bash "$T" --event push --repo-root "$td/s-rename"
+    cap push-rename env PUSH_BEFORE="$(git -C "$td/s-rename" rev-parse HEAD^1)" bash "$T" --event push --repo-root "$td/s-rename"
     row 0 "push, a crate source RENAMED into docs/audits/ -> the crate it left IS selected (--no-renames; the push arm carries this guard independently of the merge_group arm)" "^crates=.*$leaf" bash -c "$(replay push-rename)"
-    row 0 "mutant without --no-renames on the push arm drops the left crate -- the rename rows go RED" 'MUTANT-DROPPED' bash -c "o=\$(bash '$td/mutant-renames.sh' --event push --repo-root '$td/s-rename' 2>&1); case \"\$o\" in *\"crates=\"*$leaf*) echo MUTANT-KEPT ;; *) echo MUTANT-DROPPED ;; esac"
+    row 0 "mutant without --no-renames on the push arm drops the left crate -- the rename rows go RED" 'MUTANT-DROPPED' bash -c "o=\$(PUSH_BEFORE=\$(git -C '$td/s-rename' rev-parse HEAD^1) bash '$td/mutant-renames.sh' --event push --repo-root '$td/s-rename' 2>&1); case \"\$o\" in *\"crates=\"*$leaf*) echo MUTANT-KEPT ;; *) echo MUTANT-DROPPED ;; esac"
     row 0 "ci/sections.yml (#4433) lists the pull_request touched paths through pr_touched_paths.sh, which keeps --no-renames" '^ALL-PRESENT$' contains_all "$TREE/ci/sections.yml" 'bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"'
     row 0 "  ...and the helper diffs with --no-renames" '^ALL-PRESENT$' contains_all "$TREE/scripts/ci/pr_touched_paths.sh" 'git diff --no-renames --name-only "$mb" "$head"'
     # #5391: main moves AFTER the PR branched. The PR touches crates/<leaf>; main's later commit
