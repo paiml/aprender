@@ -1354,4 +1354,113 @@ mod tests {
         let card = ModelCard::new("test").parameters(1_000_000_000);
         assert_eq!(card.formatted_parameters(), Some("1.0B".to_string()));
     }
+
+    // ===== Paint Tests (Refs #5539) =====
+
+    use presentar_core::draw::DrawCommand;
+    use presentar_core::RecordingCanvas;
+
+    fn painted(card: &mut ModelCard) -> RecordingCanvas {
+        card.layout(Rect::new(10.0, 20.0, 400.0, 200.0));
+        let mut canvas = RecordingCanvas::new();
+        card.paint(&mut canvas);
+        canvas
+    }
+
+    fn texts(canvas: &RecordingCanvas) -> Vec<String> {
+        canvas
+            .commands()
+            .iter()
+            .filter_map(|c| match c {
+                DrawCommand::Text { content, .. } => Some(content.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn rect_count(canvas: &RecordingCanvas) -> usize {
+        canvas
+            .commands()
+            .iter()
+            .filter(|c| matches!(c, DrawCommand::Rect { .. }))
+            .count()
+    }
+
+    #[test]
+    fn test_paint_minimal_card_draws_chrome_badge_title_version() {
+        let mut card = ModelCard::new("bert")
+            .version("2.1")
+            .status(ModelStatus::Published);
+        let canvas = painted(&mut card);
+        // background + border + badge
+        assert_eq!(rect_count(&canvas), 3);
+        assert_eq!(texts(&canvas), vec!["Published", "bert", "v2.1"]);
+        match &canvas.commands()[2] {
+            DrawCommand::Rect { bounds, style, .. } => {
+                assert_eq!(style.fill, Some(ModelStatus::Published.color()));
+                // badge is anchored to the top-right corner of the card
+                assert_eq!(bounds.x, 10.0 + 400.0 - 80.0);
+                assert_eq!(bounds.y, 20.0 + 16.0);
+            }
+            other => panic!("expected badge rect, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_paint_description_framework_task_and_parameters() {
+        let mut card = ModelCard::new("m")
+            .description("A model")
+            .framework("PyTorch")
+            .task("classification")
+            .parameters(7_000_000_000);
+        let t = texts(&painted(&mut card));
+        assert!(t.contains(&"A model".to_string()), "{t:?}");
+        assert!(
+            t.contains(&"PyTorch \u{2022} classification".to_string()),
+            "{t:?}"
+        );
+        assert!(t.contains(&"Parameters: 7.0B".to_string()), "{t:?}");
+    }
+
+    #[test]
+    fn test_paint_framework_only_and_task_only() {
+        let t = texts(&painted(&mut ModelCard::new("m").framework("JAX")));
+        assert!(t.contains(&"JAX".to_string()), "{t:?}");
+        let t = texts(&painted(&mut ModelCard::new("m").task("ner")));
+        assert!(t.contains(&"ner".to_string()), "{t:?}");
+        // neither set: no info line, only badge + title + version
+        assert_eq!(texts(&painted(&mut ModelCard::new("m"))).len(), 3);
+    }
+
+    #[test]
+    fn test_paint_metrics_capped_at_four_and_respect_chart_flag() {
+        let metrics: Vec<ModelMetric> = (0..6)
+            .map(|i| ModelMetric::new(format!("m{i}"), 0.5))
+            .collect();
+        let mut card = ModelCard::new("m").metrics(metrics.clone());
+        let t = texts(&painted(&mut card));
+        assert!(
+            t.contains(&"m3".to_string()) && !t.contains(&"m4".to_string()),
+            "{t:?}"
+        );
+        assert_eq!(t.iter().filter(|s| *s == "50.00%").count(), 4);
+
+        let mut hidden = ModelCard::new("m")
+            .metrics(metrics)
+            .show_metrics_chart(false);
+        assert!(!texts(&painted(&mut hidden)).contains(&"m0".to_string()));
+    }
+
+    #[test]
+    fn test_paint_tags_capped_at_five_with_background_chips() {
+        let mut card = ModelCard::new("m").tags(["a", "b", "c", "d", "e", "f"]);
+        let canvas = painted(&mut card);
+        let t = texts(&canvas);
+        assert!(
+            t.contains(&"e".to_string()) && !t.contains(&"f".to_string()),
+            "{t:?}"
+        );
+        // background + border + badge + 5 tag chips
+        assert_eq!(rect_count(&canvas), 8);
+    }
 }

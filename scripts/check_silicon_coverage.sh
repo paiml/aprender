@@ -471,6 +471,26 @@ build_jobs() {
                         _bj_state=inconsistent
                     fi
                 fi
+                # THIRD READ (PMAT-5974). The 2026-10-22 queue run read 0 of 0 on the
+                # filtered listing AND on the event probe while 31 in-window runs
+                # existed: two empty reads agree, so neither is evidence. Read the
+                # workflow's newest run with no event filter; when it is this event
+                # and inside the lookback, both empties lied: inconsistent (NO-GO).
+                if [ "$_bj_state" = ok ] && [ "${_bj_read:-0}" = 0 ] && [ -z "$_bj_pnewest" ]; then
+                    api_calls=$((api_calls + 1)); probe_calls=$((probe_calls + 1))
+                    _bj_tef="$(mktemp)" || { rm -f "${_bj_one:?}" "${_bj_runs:?}"; return 1; }
+                    _bj_tof="$(mktemp)" || { rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_tef:?}"; return 1; }
+                    if ! gh_read "$_bj_tef" api "repos/$REPO/actions/workflows/${_bj_wf}/runs?per_page=1" \
+                        --jq '"\(.workflow_runs[0].created_at // "")\t\(.workflow_runs[0].event // "")"' > "$_bj_tof"; then
+                        printf 'listing FAILED: %s %s event-less cross-check: %s\n' "$_bj_wf" "$_bj_ev" "$(gh_err "$_bj_tef")"
+                        rm -f "${_bj_one:?}" "${_bj_runs:?}" "${_bj_tef:?}" "${_bj_tof:?}"
+                        return 1
+                    fi
+                    _bj_third="$(cat "$_bj_tof")"; rm -f "${_bj_tef:?}" "${_bj_tof:?}"
+                    if [ "${_bj_third#*"$TAB"}" = "$_bj_ev" ] && listing_is_short "$_bj_one" "${_bj_third%%"$TAB"*}" "$_bj_cut"; then
+                        _bj_state=inconsistent; _bj_pnewest="${_bj_third%%"$TAB"*}"
+                    fi
+                fi
                 [ -n "$_bj_pnewest" ] || _bj_pnewest="none"
             fi
             cat "$_bj_one" >> "$_bj_runs"; rm -f "${_bj_one:?}"
@@ -630,7 +650,7 @@ st_reset() {
     rm -rf "${ST:?}/u"
     mkdir -p "$ST/u/pages" "$ST/u/workflows" || return 1
     : > "$ST/u/routes.tsv"; : > "$ST/u/runs.tsv"; : > "$ST/u/calls.log"
-    ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0; ST_HIDE_FILTERED=""
+    ST_PAGE_SIZE=100; ST_PAGE_CAP=10; ST_RUN_CAP=60; ST_ERROR=0; ST_HIDE_FILTERED=""; ST_HIDE_PROBE=""; ST_HIDE_THIRD=""
     ST_SHORT_WF=""; ST_SHORT_N=0; ST_SHORT_READS=0
     printf '%s\n' \
         '# self-test policy' \
@@ -710,6 +730,13 @@ st_finish() {
         st_route "$_sf_key" "pages/global-$_sf_ev.json"
     done
     for _sf_wf in sil.yml gpu.yml noise.yml silicon-nightly.yml; do
+        # The event-less newest run (the third read): any event, newest first.
+        awk -F'\t' -v wf="$_sf_wf" '$2 == wf' "$ST/u/runs.tsv" | sort -t"$TAB" -k5,5nr > "$ST/u/any.tsv"
+        [ "$_sf_wf" = "$ST_HIDE_THIRD" ] && : > "$ST/u/any.tsv"
+        head -n 1 "$ST/u/any.tsv" > "$ST/u/p.tsv"
+        st_page "$ST/u/p.tsv" "$(grep -c . "$ST/u/any.tsv")" "$ST/u/pages/wfany-$_sf_wf.json"
+        _sf_tkey="repos/$ST_REPO/actions/workflows/${_sf_wf}/runs?per_page=1"
+        if [ "$ST_ERROR" = 1 ]; then st_route "$_sf_tkey" @ERROR; else st_route "$_sf_tkey" "pages/wfany-$_sf_wf.json"; fi
         for _sf_ev in schedule workflow_dispatch; do
             awk -F'\t' -v wf="$_sf_wf" -v ev="$_sf_ev" -v s="$_sf_since_e" \
                 '$2 == wf && $3 == ev && $5 >= s' "$ST/u/runs.tsv" \
@@ -717,6 +744,8 @@ st_finish() {
             # The unfiltered newest run: what the empty-listing cross-check reads.
             awk -F'\t' -v wf="$_sf_wf" -v ev="$_sf_ev" '$2 == wf && $3 == ev' "$ST/u/runs.tsv" \
                 | sort -t"$TAB" -k5,5nr > "$ST/u/all.tsv"
+            # A bad EMPTY probe (the 2026-10-22 shape): the event probe lies too.
+            [ "$_sf_wf" = "$ST_HIDE_PROBE" ] && : > "$ST/u/all.tsv"
             head -n 1 "$ST/u/all.tsv" > "$ST/u/p.tsv"
             st_page "$ST/u/p.tsv" "$(grep -c . "$ST/u/all.tsv")" "$ST/u/pages/wfall-$_sf_wf-$_sf_ev.json"
             _sf_pkey="repos/$ST_REPO/actions/workflows/${_sf_wf}/runs?event=${_sf_ev}&per_page=1"
@@ -892,6 +921,24 @@ selftest_rows() {
     _rows=$((_rows + 1))
     st_check f-inconsistent 2 '^  NO-GO +gpu-axis +REQUIRED: inconsistent listing .*listed 0 of 0.*total 1' \
         || _rows_bad=$((_rows_bad + 1))
+
+    # (f2) PMAT-5974: the filtered listing AND the event probe both come back
+    # EMPTY (0 of 0, the 2026-10-22 queue shape) while runs exist: the event-less
+    # third read exposes it. NO-GO (rc 2), never MISSING.
+    st_reset; ST_HIDE_FILTERED=gpu.yml; ST_HIDE_PROBE=gpu.yml
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check f2-double-empty 2 '^  NO-GO +gpu-axis +REQUIRED: inconsistent listing .*listed 0 of 0' \
+        || _rows_bad=$((_rows_bad + 1))
+
+    # (f3) other polarity: every read agrees there is nothing (the third read is
+    # empty too): that is a real hole, UNCOVERED (rc 1), not NO-GO.
+    st_reset; ST_HIDE_FILTERED=gpu.yml; ST_HIDE_PROBE=gpu.yml; ST_HIDE_THIRD=gpu.yml
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish
+    _rows=$((_rows + 1))
+    st_check f3-agreeing-empty 1 '^  UNCOVERED +gpu-axis' || _rows_bad=$((_rows_bad + 1))
 
     # (g) run 36364433328's real jobs, fresh: both silicon-nightly axes GREEN.
     st_reset; st_real || return 2; st_real_nightlies 10 13; st_finish
