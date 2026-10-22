@@ -29,13 +29,13 @@ nonmember_in_workspace() { # a NONMEMBER dir that cargo metadata lists is a memb
   m="$({ if [ -n "${AFFECTED_META_JSON:-}" ]; then cat "$AFFECTED_META_JSON"; else cargo metadata --no-deps --format-version 1 --offline 2>/dev/null; fi; } || true)"
   [ -n "$m" ] || return 0
   for d in $NONMEMBER; do
-    if printf '%s' "$m" | grep -qF "/crates/$d/"; then echo "RED: NONMEMBER dir crates/$d is a workspace member (cargo metadata lists it): drop it from NONMEMBER"; return 1; fi
+    if grep -qF "/crates/$d/" <<<"$m"; then echo "RED: NONMEMBER dir crates/$d is a workspace member (cargo metadata lists it): drop it from NONMEMBER"; return 1; fi
   done
 }
 check() {
   nonmember_in_workspace || return 1
   local bad="" l c; l="$(listed)"
-  for c in $(hits "$1"); do printf '%s\n' "$l" | grep -qx "$c" || bad="$bad $c"; done
+  for c in $(hits "$1"); do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
   if [ -n "$bad" ]; then echo "RED: crates can reach other crates' files but are not in READERS (scripts/affected_set.sh):$bad"; return 1; fi
   echo "ok: every crate with a path-escape form is in READERS"
 }
