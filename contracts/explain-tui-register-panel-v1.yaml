@@ -1,0 +1,47 @@
+metadata:
+  id: C-EXPLAIN-TUI-REGISTER-PANEL
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the register panel drawn by the aprender-explain TUI sidebar (#5594):
+    one line per register class with its limit, a total/occupancy line, and a
+    status colour that is green below 64 registers, yellow from 64 to 127 and
+    red from 128.
+  references:
+    - 'crates/aprender-explain/src/tui/widgets.rs (render_register_panel)'
+
+equations:
+  register_panel_status_colour:
+    formula: |
+      colour(total) = green if total < 64, yellow if total < 128, else red
+    domain: RegisterUsage totals passed through render_sidebar
+    invariants:
+    - 'the thresholds are 64 and 128, lower bound inclusive'
+
+proof_obligations:
+- id: ERP-INV-001
+  type: invariant
+  property: register panel text and status colour follow the total register count
+  formal: 'colour ≡ threshold'
+  applies_to: register_panel_status_colour
+
+falsification_tests:
+- id: FALSIFY-EXPLAIN-TUI-REGISTER-PANEL-001
+  rule: render_register_panel draws exact lines and the threshold colour
+  prediction: 'totals 63, 64, 127 and 128 give green, yellow, yellow and red borders; the lines show the .f32/.b32/.b64/.pred counts and the Total/occ text'
+  test: cargo test -p aprender-explain --lib register_panel
+  if_fails: the TUI misreports register pressure on a kernel
+  ship_blocking: false
+  mutation: 'change either < to <=, or print the wrong register field; each must turn RED'
+
+qa_gate:
+  id: QA-EXPLAIN-TUI-REGISTER-PANEL-001
+  name: Explain TUI register panel gate
+  description: register panel text and colour thresholds are exact
+  checks:
+  - register_panel_status_colour
+  pass_criteria: FALSIFY-EXPLAIN-TUI-REGISTER-PANEL-001 passes
+  falsification: Any failure fails the gate
