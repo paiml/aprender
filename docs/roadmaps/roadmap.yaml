@@ -25570,6 +25570,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-5955
+  github_issue: 5955
+  item_type: task
+  title: 'ci: heavy X64 jobs run only in merge_group/push; PR runs stay light (Noah 15:09Z)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:20:00Z
+  updated: 2026-10-22T16:20:00Z
+  spec: null
+  acceptance_criteria:
+  - on pull_request x86-main, x86-main-advisories and workspace-test-shard do not run; pr-light does; ci / gate, gate and workspace-test pass when pr-light passes
+  - on merge_group, push, an empty or an unknown event the same aggregators fail when a heavy job is skipped; ci_mg_reuse.sh --self-test runs both directions plus mutants that delete the event check
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-5971
   github_issue: 5971
   item_type: task
