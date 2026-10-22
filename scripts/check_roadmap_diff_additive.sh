@@ -713,7 +713,7 @@ if git -C "$REPO_ROOT" cat-file -e "$HEAD_REF:$BASE_FILE" 2>/dev/null \
             git -C "$REPO_ROOT" show "$ref:$BASE_FILE" >"$out.d/base.yaml" || return 2
             while IFS= read -r name; do
                 case "$name" in
-                    "$ENTRIES_DIR"/*.yaml) git -C "$REPO_ROOT" show "$ref:$name" >"$out.d/entries/${name##*/}" || return 2 ;;
+                    "$ENTRIES_DIR"/*.yaml) fname="${name##*/}"; git -C "$REPO_ROOT" show "$ref:$name" >"$out.d/entries/$fname" || return 2 ;;
                 esac
             done < <(git -C "$REPO_ROOT" ls-tree --name-only "$ref" -- "$ENTRIES_DIR/")
             python3 "$PY_AGG" aggregate --base-file "$out.d/base.yaml" --entries "$out.d/entries" --roadmap "$out" --write >/dev/null || return 2
