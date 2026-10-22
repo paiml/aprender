@@ -33,6 +33,7 @@ while [ $# -gt 0 ]; do
     *) echo "pre_push_local: unknown arg $1" >&2; exit 3 ;;
   esac
 done
+TMPD="$(mktemp -d)" || exit 3; trap 'rm -rf "${TMPD:?}"' EXIT   # every scratch file lives here, removed on exit
 NVME="${PREPUSH_NVME:-/mnt/nvme-raid0}"   # the one fast-disk root (cache, tool pins, target dirs)
 PINNED_TOOLS_DIR="${PINNED_TOOLS_DIR:-$HOME/.local/pinned-tools}"
 export CARGO_TARGET_DIR="${TARGET_DIR:-$NVME/targets/pre-push-$(basename "$ROOT")}"
@@ -47,6 +48,14 @@ run_step() { # name fn
   echo "=== $1 rc=$rc"
 }
 
+# make_clone SRC DEST: a private shallow clone of SRC with this tree's HEAD checked out; never touches ROOT's gitdir.
+make_clone() {
+  rm -rf "${2:?}"
+  git clone -q --depth=50 --no-checkout "$1" "$2" || return 1
+  git -C "$2" fetch -q --depth=50 "$ROOT" HEAD || return 1
+  git -C "$2" checkout -q --detach FETCH_HEAD || return 1
+}
+
 # --prove: the harness must turn a red step into FAIL and a failed selection into rc 1 (a pass case and a fail case each).
 run_selftest() {
   local bad=0 meta sel
@@ -55,11 +64,20 @@ run_selftest() {
   run_step st-pass true > /dev/null; run_step st-fail false > /dev/null
   ok "run_step records a passing step as 0" "${results[0]}" 0
   ok "run_step records a failing step as 1" "${results[1]}" 1
-  meta="$(mktemp)"; sel="$(mktemp)"
+  meta="$TMPD/pv-meta"; sel="$TMPD/pv-sel"
   cargo metadata --no-deps --format-version 1 > "$meta" || { echo "self-test FAIL: cargo metadata"; return 1; }
   select_crates "$meta" HEAD "$sel" > /dev/null 2>&1; ok "select_crates passes on an empty diff" "$?" 0
   ok "an empty diff selects nothing" "$(wc -c < "$sel" | tr -d ' ')" 0
   select_crates "$meta" "no-such-ref-$$" "$sel" > /dev/null 2>&1; ok "select_crates fails on an unresolvable base" "$?" 1
+  # clone isolation: building the private clone and deepening it must leave the shared gitdir byte-identical
+  local gd before after cl="$TMPD/iso-clone"
+  gd="$(git rev-parse --git-common-dir)"
+  before="$({ cat "$gd/shallow" 2> /dev/null; git for-each-ref; } | sha256sum)"
+  make_clone "file://$ROOT" "$cl" > /dev/null 2>&1; ok "make_clone builds a private clone" "$?" 0
+  git -C "$cl" fetch -q --deepen=5 "file://$ROOT" > /dev/null 2>&1
+  after="$({ cat "$gd/shallow" 2> /dev/null; git for-each-ref; } | sha256sum)"
+  ok "clone + deepen leave the shared gitdir (shallow, refs) unchanged" "$after" "$before"
+  [ "$(git -C "$cl" rev-parse --absolute-git-dir)" != "$(git rev-parse --absolute-git-dir)" ]; ok "the clone has its own gitdir" "$?" 0
   return "$bad"
 }
 
@@ -110,10 +128,7 @@ step_guard_tree() {
   # guard-tree judges the COMMITTED HEAD in a private clone: pin_build_base moves origin/main and a shallow checkout needs
   # a deepen, and neither may write into the shared gitdir (.git/shallow / refs of every worktree).
   local gt="$CARGO_TARGET_DIR/gt-clone"
-  rm -rf "${gt:?}"
-  git clone -q --depth=50 --no-checkout "$(git remote get-url origin)" "$gt" || return 1
-  git -C "$gt" fetch -q --depth=50 "$ROOT" HEAD || return 1
-  git -C "$gt" checkout -q --detach FETCH_HEAD || return 1
+  make_clone "$(git remote get-url origin)" "$gt" || return 1
   cd "$gt" || return 1
   echo "guard-tree: private clone $gt at $(git rev-parse --short HEAD) (committed state; uncommitted edits are not judged)"
   bash scripts/ci/pin_build_base.sh || return 1
@@ -158,7 +173,7 @@ step_vendored() { bash scripts/check_vendored_schemas.sh; }
 select_crates() {
   local meta="$1" b="$2" out="$3" mb files f
   mb="$(git merge-base "$b" HEAD 2> /dev/null)" || { mb="$b"; echo "quick tier: no merge-base with $b (shallow history); diffing against $b itself"; }
-  files="$(mktemp)"
+  files="$TMPD/files"
   git diff --name-only "$mb" HEAD > "$files" || { echo "quick tier: git diff $mb HEAD failed"; return 1; }
   : > "$out"
   while IFS= read -r f; do
@@ -172,10 +187,10 @@ select_crates() {
 step_quick() {
   [ "$quick" = 1 ] || { echo "quick tier: disabled by --no-quick"; return 0; }
   local meta calls sel
-  meta="$(mktemp)"; calls="$(mktemp)"; sel="$(mktemp)"
+  meta="$TMPD/meta"; calls="$TMPD/calls"; sel="$TMPD/sel"
   cargo metadata --no-deps --format-version 1 > "$meta" || { echo "quick tier: cargo metadata failed"; return 1; }
   if [ -n "${CRATES:-}" ]; then
-    tr ' ' '\n' <<< "$CRATES" | sed '/^$/d' > "$sel"
+    tr ' ' '\n' <<< "$CRATES" | sed '/^$/d' > "$sel"; [ "${PIPESTATUS[0]}${PIPESTATUS[1]}" = 00 ] || { echo "quick tier: CRATES selection failed"; return 1; }
   else
     select_crates "$meta" "$base" "$sel" || return 1
   fi
@@ -208,7 +223,7 @@ if [ "${results[0]:-0}" != 0 ] && want preflight; then
 else
   # guard-tree (no cargo) runs beside guard-cargo (container + cargo build): independent, so wall time is the max, not the sum (#5983)
   rm -rf "${ROOT:?}/target/ci-guards-local"; mkdir -p "$ROOT/target"
-  gt_log="$(mktemp)"; gt_t0=$SECONDS
+  gt_log="$TMPD/gt.log"; gt_t0=$SECONDS
   if want guard-tree; then ( step_guard_tree > "$gt_log" 2>&1; echo $? > "$gt_log.rc" ) & gt_pid=$!; fi
   run_step guard-cargo step_guard_cargo
   if [ -n "${gt_pid:-}" ]; then
