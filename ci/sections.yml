@@ -330,6 +330,9 @@ jobs:
           fi
           heal_path /mnt/nvme-raid0/targets/aprender-ci "${parent}/run-${GITHUB_RUN_ID}"
           heal_path /mnt/nvme-raid0/cargo-ci/registry "$reg"
+          # aprender#5751: a cold per-PR registry is seeded from the host-local seed, so a crates.io
+          # brownout cannot fail the job before it compiles. Never fails: no seed = cold start.
+          bash scripts/ci/seed_registry.sh seed "$reg" /mnt/nvme-raid0/cargo-ci/registry/_seed
           ls -ld "$parent" "${parent}/run-${GITHUB_RUN_ID}" "$reg"
       - name: Pre-build chown — fix per-RUN root ownership
         # Root cause (five-whys):
@@ -1168,6 +1171,10 @@ jobs:
             -w /workspace \
             "$IMAGE" \
             setsid --wait bash scripts/check_format_sovereignty.sh
+      - name: Publish this shard's warmed registry as the host-local seed (aprender#5751)
+        # Best effort and never red: the seed only ever makes the NEXT cold registry warm.
+        if: success()
+        run: bash scripts/ci/seed_registry.sh publish "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}" /mnt/nvme-raid0/cargo-ci/registry/_seed || echo "::warning::seed publish skipped (the seed is a cache, not a check)"
       - name: Fix file ownership (container runs as root, runner as noah:1000)
         if: always()
         run: |
@@ -1279,7 +1286,7 @@ jobs:
           fi
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          fetch-depth: 2
       # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT.
       #
       # Every shrink-only baseline in scripts/ is now compared against a ref a
@@ -1834,7 +1841,7 @@ jobs:
           fi
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 1
+          fetch-depth: 2
       # THE COMPARAND, FETCHED ONCE, BEFORE ANY GUARD THAT NEEDS IT.
       #
       # Every shrink-only baseline in scripts/ is now compared against a ref a

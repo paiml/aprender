@@ -31,7 +31,7 @@ ZERO=0000000000000000000000000000000000000000
 # #4936 (P6, operator C343 #9): every fetch below goes through fetch_p6.sh, as the sections' fetches
 # do. A read that did not answer (curl 92, curl 56, a stall) is read again, up to 3 reads in all; a
 # read that answered, an object origin does not have among them, is never read again.
-P6="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fetch_p6.sh"
+P6="${P6_OVERRIDE:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/fetch_p6.sh}"
 
 fetch() { # fetch <repo dir> <git fetch args...>: git fetch in <repo dir>, read under P6
     local dir="$1"; shift
@@ -71,7 +71,15 @@ pin() { # pin <repo dir>: pins origin/main there for $GITHUB_EVENT_NAME
             return 0
             ;;
     esac
-    fetch "$dir" -q --no-tags --depth=1 origin "$base" || refuse "cannot fetch the build base $base" || return 1
+    # aprender#5751: the build base is already in the checkout when it holds the merge commit's
+    # parents (fetch-depth >= 2, or a warm clone). Reading it from github.com again put a WAN
+    # brownout on the merge path (run 38363869044: "cannot fetch the build base"). Fetch only
+    # an object this checkout does not have.
+    if git -C "$dir" cat-file -e "${base}^{commit}" 2>/dev/null; then
+        printf 'pin_build_base: build base %s already in the checkout; no fetch\n' "$base"
+    else
+        fetch "$dir" -q --no-tags --depth=1 origin "$base" || refuse "cannot fetch the build base $base" || return 1
+    fi
     git -C "$dir" update-ref refs/remotes/origin/main "$base"
     [ "$(git -C "$dir" rev-parse 'origin/main^{commit}')" = "$base" ] || refuse "origin/main does not read back as $base" || return 1
     printf 'comparand: %s pinned as origin/main (%s; event %s)\n' "$base" "$how" "$ev"
