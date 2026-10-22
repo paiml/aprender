@@ -221,6 +221,15 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   n=$(grep -c -E 'RECEIPT_OK|receipt-ok' <<< "$secall" || true); [ "$n" = 2 ] || return 1
   n=$(grep -c -E 'BASH_ENV|^defaults:|^env:' <<< "$secall" || true); [ "$n" = 0 ] || return 1
   n=$(grep -c 'GITHUB_ENV' <<< "$secall" || true); [ "$n" = 3 ] || return 1
+  # hash pins (E7, escaped keys and every other spelling): the shard job in ci.yml, its block in sections.yml and the three scripts the verdict flows through.
+  # Any byte change is RED unless the pin moves in the same diff (gate content, quorum). PIN_ROOT lets the case table pin a mutated copy.
+  local pr=${PIN_ROOT:-$HERE/..} blk
+  [ "$(printf '%s\n' "$shard" | sha256sum | cut -d' ' -f1)" = "6c7c538c950899c60f7436868ee80a003f904e3ed3a4286877976964f4ddc216" ] || return 1
+  blk=$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
+  [ "$(printf '%s\n' "$blk" | sha256sum | cut -d' ' -f1)" = "e44b8057e38d6d7eaf6b45e1d3e184e4396d329582e7cb3cd5f6790bb29e552c" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "cc268073ff250d9bfb0048a480126b7e45051413f6505fe46e814a4ecb3ef282" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci_test_tier.sh" | cut -d' ' -f1)" = "1680bab97243fb7b5ce6907daf3c8a00db4968a2e892095260152a09cc127866" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci/receipt_ok_arg.sh" | cut -d' ' -f1)" = "1795d4df36fa1c3f223dd054d93392aff7584bb5063bed1d7a11bd3f18144820" ] || return 1
   return 0
 }
 if judge_ok "$CI" "$SEC"; then wrow "W16 receipt judge is its own job: base checkout only, no PR-tree code, shard waits for it" ok ok
@@ -381,6 +390,20 @@ wrow "W23c judge run: forced verifier failure (exit 1) -> ok=0" 0 "$(judge_run "
 wrow "W23d judge run: verifier prints 1 then exits 1 -> ok=0" 0 "$(judge_run "$CI" vfail1)"
 wrow "W23e judge run: verifier prints 2 -> ok=0" 0 "$(judge_run "$CI" vgarbage)"
 if mutate "$CI" '          ok=0' '          ok=1' "$td/b6.yml"; then wrow "W23f MUTANT (E6): initial ok=1 leaves ok=1 on a failed fetch, behaviourally" 1 "$(judge_run "$td/b6.yml" nofetch)"; else fail=$((fail + 1)); echo "FAIL W21f: mutant did not apply"; fi
+
+# W41: hash pins on the shard job (ci.yml + sections.yml block) and the three scripts the verdict flows through
+rl="      RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '0' }}"
+wmut "W41a MUTANT (M1): an escaped RECEIPT\x5FOK env key in the ci.yml shard env is caught" ci "$rl" "$rl"$'\n''      "RECEIPT\x5FOK": "1"'
+sc='      SCCACHE_HOST_DIR: /home/noah/data/sccache'
+wmut "W41b MUTANT (M2): an escaped RECEIPT\x5FOK env key in the sections.yml shard env is caught" sec "$sc" "$sc"$'\n''      "RECEIPT\x5FOK": "1"'
+# a byte change in any verdict script is RED unless its pin moves (PIN_ROOT = a copy of the tree with one file mutated)
+for rel in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh; do
+  pr="$td/pin-$(basename "$rel")"; mkdir -p "$pr/scripts/ci"
+  for g in scripts/ci/fat_driver.py scripts/ci_test_tier.sh scripts/ci/receipt_ok_arg.sh; do cp "$HERE/../$g" "$pr/$g"; done
+  printf '\n# touched\n' >> "$pr/$rel"
+  if PIN_ROOT="$pr" judge_ok "$CI" "$SEC"; then r=missed; else r=caught; fi
+  wrow "W41c MUTANT: a byte appended to $rel is caught by the hash pin" caught "$r"
+done
 if mutate "$CI" '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1' "$td/b7.yml"; then wrow "W23g MUTANT (E2): a dead guard passes the garbage verifier answer, behaviourally" 2 "$(judge_run "$td/b7.yml" vgarbage | sed 's/^1$/2/')"; else fail=$((fail + 1)); echo "FAIL W21g: mutant did not apply"; fi
 echo "receipt gate rows: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
