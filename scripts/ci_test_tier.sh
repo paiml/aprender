@@ -112,7 +112,7 @@ set -euo pipefail
 # `unset` also drops the export attribute, so no child can inherit them.
 unset SELF_TEST FILTERSET FS_TARGETS
 SELF_TEST=0; FILTERSET=0
-EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; MG_RUN=""; MG_SHA=""; MG_CONCLUSION=""; MG_GIVEN=0; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
+AFF_BASE=""; EVENT=""; COMPARAND=""; DIFF_FROM=""; PR_HEAD=""; PR_CONCLUSION=""; MG_RUN=""; MG_SHA=""; MG_CONCLUSION=""; MG_GIVEN=0; REGISTRY="scripts/tree_reader_tests.txt"; ROOT="."
 # The sibling scripts and the registry always come from the checkout this script
 # runs in (cwd = repo root, in ci.yml and in the case table alike); --repo-root
 # re-points only the GIT queries — HEAD, its parents, their trees — which is how
@@ -124,6 +124,7 @@ while [ $# -gt 0 ]; do
         --event) EVENT=$2; shift 2 ;;
         --comparand) COMPARAND=$2; shift 2 ;;
         --diff-from) DIFF_FROM=$2; shift 2 ;;
+        --affected-base) AFF_BASE=$2; shift 2 ;;
         --pr-head) PR_HEAD=$2; shift 2 ;;
         --pr-head-conclusion) PR_CONCLUSION=$2; shift 2 ;;
         --mg-run) MG_RUN=$2; MG_GIVEN=1; shift 2 ;;
@@ -225,7 +226,7 @@ docs_only() { # $1 = diff file -> 0 iff every non-empty path is docs/roadmaps/**
 }
 
 selection() { # $1 = reason prefix (names the event and how the diff was derived), $2 = diff file ("" -> gate_touched_crates' own git diff)
-    local prefix=$1 diff=$2 chk sel crates rule touched nreg
+    local prefix=$1 diff=$2 chk sel crates rule touched nreg aff
     # #3658 EMPTY DIFF: the change lands no path at all (its tree equals its
     # base's), so there is nothing to measure. Callers check that the diff
     # COMMAND succeeded before handing over the file, so empty here means empty,
@@ -271,6 +272,21 @@ selection() { # $1 = reason prefix (names the event and how the diff was derived
                     if [ "$touched" = "(none)" ]; then touched=""; fi
                     printf 'tier=quick\ncrates=%s\ntargets=%s\ncheck_workspace=1\nreason=%s: %s -- rule (i): the touched crate(s) run their tests and ONE cargo check --workspace --all-targets covers every reverse dependent at compile level; plus %s tree-reader target(s) from %s\n' \
                         "$touched" "$(targets_from_registry "$TREE/$REGISTRY")" "$prefix" "$rule" "$nreg" "$REGISTRY" ;;
+                *"root Cargo.toml"*)
+                    # FLOW-010 P3 (E5 test-set recompute): a ROOT-manifest touch is no longer a flat full. When the
+                    # diff reaches the workspace ONLY through Cargo.lock, scripts/affected_set.sh names the packages
+                    # whose [[package]] block changed plus their reverse closure; those run quick, with one
+                    # cargo check --workspace for compile-level integration. ALL, an empty or unreadable answer, no
+                    # base to diff against, or a set over AFFECTED_CAP -> full (fail closed). Cargo.toml and
+                    # rust-toolchain.toml come back ALL from the tool, so they stay full.
+                    aff=$(affected_lock_set) || aff=""
+                    if [ -n "$aff" ] && [ "$aff" != ALL ] && [ "$(printf '%s\n' "$aff" | wc -l | tr -d ' ')" -le "${AFFECTED_CAP:-12}" ]; then
+                        aff=$(printf '%s' "$aff" | tr '\n' ' ' | sed 's/ $//')
+                        printf 'tier=quick\ncrates=%s\ntargets=%s\ncheck_workspace=1\nreason=%s: %s -- FLOW-010 P3: the change reaches the workspace only through Cargo.lock; affected_set.sh places it in %s package(s) (changed lock blocks + reverse closure), which run their tests, with ONE cargo check --workspace; plus %s tree-reader target(s) from %s\n' \
+                            "$aff" "$(targets_from_registry "$TREE/$REGISTRY")" "$prefix" "$rule" "$(printf '%s' "$aff" | wc -w | tr -d ' ')" "$nreg" "$REGISTRY"
+                    else
+                        printf 'tier=full\nreason=%s: %s -- FLOW-010 P3: affected set [%s] is ALL, empty, unknown or over the cap (%s); fail closed to full\n' "$prefix" "$rule" "$(printf '%s' "${aff:-none}" | tr '\n' ' ')" "${AFFECTED_CAP:-12}"
+                    fi ;;
                 # Rule (ii): a ROOT manifest stays full at the PR, in the queue and
                 # on push alike — a dependency bump is exactly where compile-level
                 # integration breaks, and its blast radius is the whole workspace.
@@ -279,6 +295,18 @@ selection() { # $1 = reason prefix (names the event and how the diff was derived
         selection=quick*|selection=none*) printf 'tier=quick\ncrates=%s\ntargets=%s\nreason=%s: %s; plus %s tree-reader target(s) from %s\n' "$crates" "$(targets_from_registry "$TREE/$REGISTRY")" "$prefix" "$rule" "$nreg" "$REGISTRY" ;;
         *) printf 'ENV: gate_touched_crates --print-selection gave "%s"\n' "$sel" >&2; return 2 ;;
     esac
+}
+
+# FLOW-010 P3: scripts/affected_set.sh over AFF_BASE..HEAD (git mode, so a Cargo.lock change is narrowed by
+# its [[package]] blocks). Prints the package list, or ALL; returns 1 (prints nothing) when there is no base,
+# the tool fails, or it answers nothing -- the caller falls closed to full.
+affected_lock_set() {
+    local out tool
+    [ -n "$AFF_BASE" ] || return 1
+    tool="$(cd "$TREE" && pwd)/scripts/affected_set.sh"
+    out=$(cd "$ROOT" && bash "$tool" "$AFF_BASE" HEAD 2>/dev/null) || return 1
+    [ -n "$out" ] || return 1
+    printf '%s\n' "$out"
 }
 
 # The diff between a base revision and HEAD, as paths, into a file. Two-dot on
@@ -347,6 +375,7 @@ decide() {
             [ -z "$why" ] || how="$how; merge_group not reused: $why"
             df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
             if ! diff_into "$df" "$base"; then rm -f "$df"; printf 'tier=full\nreason=push: git diff %s..HEAD failed -- the pushed diff cannot be derived, so this falls closed to full\n' "$base"; return 0; fi
+            AFF_BASE=$base
             selection "push: $how" "$df" || rc=$?
             rm -f "$df"; return $rc ;;
         merge_group)
@@ -366,6 +395,7 @@ decide() {
             # The queue never answers none for an EMPTY diff (an empty group lands no path to prove
             # it is docs-only; sign-off r1 of #5468): only a non-empty docs-only diff is none.
             if [ ! -s "$df" ]; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: group diff %s..HEAD is empty -- fail closed to full, never none\n' "$mgb"; return; fi
+            AFF_BASE=$mgb
             selection "merge_group: group diff $mgb..HEAD (quick tier; full only on tag/release)" "$df" || rc=$?
             rm -f "${df:?}"; return ${rc:-0} ;;
         pull_request)
@@ -488,6 +518,40 @@ self_test() {
     row 0 "  ...including the lib module whose unit test reads a baseline (aprender-contracts)" 'aprender-contracts:--lib:' bash -c "$(replay pr-scripts)"
     printf 'Cargo.toml\n' > "$td/d-root.txt"
     row 0 "pull_request, root Cargo.toml touched -> full (fail closed)" '^tier=full' bash "$T" --event pull_request --diff-from "$td/d-root.txt"
+    # FLOW-010 P3 (#5799): a root-manifest diff is narrowed to the AFFECTED set U(t,M) by
+    # scripts/test_affected.sh when the base rev is known; a set it cannot name falls back to full.
+    # Fixture workspace: a <- b (b depends on a), c alone. A Cargo.lock edit of `a` affects {a,b}.
+    mkaff() { # $1 dir -> HEAD~3 = base; c1 rust-toolchain.toml; c2 non-member Cargo.toml line; c3 (HEAD) lock edit of a, so HEAD~1 isolates it
+        local d=$1 n
+        git init -q -b main "$d"
+        for n in a b c; do mkdir -p "$d/crates/$n/src"; printf '' > "$d/crates/$n/src/lib.rs"; done
+        printf '[workspace]\nresolver = "2"\nmembers = ["crates/a", "crates/b", "crates/c"]\n' > "$d/Cargo.toml"
+        printf '[package]\nname = "a"\nversion = "0.1.0"\nedition = "2021"\n' > "$d/crates/a/Cargo.toml"
+        printf '[package]\nname = "b"\nversion = "0.1.0"\nedition = "2021"\n[dependencies]\na = { path = "../a" }\n' > "$d/crates/b/Cargo.toml"
+        printf '[package]\nname = "c"\nversion = "0.1.0"\nedition = "2021"\n' > "$d/crates/c/Cargo.toml"
+        printf 'version = 3\n\n[[package]]\nname = "a"\nversion = "0.1.0"\n\n[[package]]\nname = "b"\nversion = "0.1.0"\ndependencies = [\n "a",\n]\n\n[[package]]\nname = "c"\nversion = "0.1.0"\n' > "$d/Cargo.lock"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && git add -A && git commit -q -m base \
+          && printf '[toolchain]\nchannel = "stable"\n' > rust-toolchain.toml && git add -A && git commit -q -m "toolchain" \
+          && printf '[workspace.metadata]\nx = 1\n' >> Cargo.toml && git commit -q -am "workspace setting" \
+          && sed -i '0,/version = "0.1.0"/s//version = "0.1.1"/' Cargo.lock && git commit -q -am "lock: a bumped" )
+    }
+    mkaff "$td/aff"
+    affbase() { git -C "$td/aff" rev-parse "HEAD~$1"; } # HEAD~3 = base ... HEAD~0 = every change
+    printf 'Cargo.lock\n' > "$td/d-lock.txt"
+    cap aff-lock bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/aff" --affected-base "$(affbase 1)"
+    row 0 "FLOW-010 P3: a Cargo.lock diff naming only package a -> quick, not full" '^tier=quick$' bash -c "$(replay aff-lock)"
+    row 0 "  ...the affected set runs: a (changed) and b (depends on a)" '^crates=a b$' bash -c "$(replay aff-lock)"
+    row 0 "  ...the crate outside the set (c) is skipped" '^NOT-SELECTED$' bash -c "if grep '^crates=' '$td/aff-lock.out' | grep -qwE 'c'; then echo SELECTED; else echo NOT-SELECTED; fi"
+    row 0 "  ...with check_workspace=1 so every other crate is still compiled" '^check_workspace=1$' bash -c "$(replay aff-lock)"
+    printf 'rust-toolchain.toml\n' > "$td/d-tc.txt"
+    row 0 "FLOW-010 P3: a rust-toolchain.toml diff has an unknown fan-out -> full" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-tc.txt" --repo-root "$td/aff" --affected-base "$(affbase 3)"
+    printf 'Cargo.toml\n' > "$td/d-cm.txt"
+    row 0 "FLOW-010 P3: a Cargo.toml line that is not a member/path entry -> full" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-cm.txt" --repo-root "$td/aff" --affected-base "$(affbase 3)"
+    row 0 "FLOW-010 P3: no --affected-base (the base cannot be named) -> full, as before" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/aff"
+    row 0 "FLOW-010 P3: a base rev that is not a commit -> full" '^tier=full$' bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/aff" --affected-base 0123456789abcdef0123456789abcdef01234567
     printf 'crates/aprender-core/src/lib.rs\n' > "$td/d-core.txt"
     cap pr-cap bash "$T" --event pull_request --diff-from "$td/d-core.txt"
     row 0 "pull_request over the cap (aprender-core) -> quick, NOT an hour of full workspace tests" '^tier=quick' bash -c "$(replay pr-cap)"
@@ -603,6 +667,33 @@ self_test() {
     row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over HEAD^1..HEAD, not full" "^crates=.*$leaf" bash "$T" --event push --repo-root "$td/s-leaf"
     row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
+    # --- FLOW-010 P3 (E5): a Cargo.lock-only change is narrowed by affected_set.sh instead of falling to full.
+    # Throwaway workspace: a (dep ext), b (dep a), c (dep other). ext bump -> {a b}; every row below is a
+    # decision this script makes over that repo, so the tool, the cap and the fail-closed paths all engage.
+    mklockrepo() { # $1 dir; commits base, then a lock-only ext bump; $2 = "toml" adds a Cargo.toml edit to the bump
+        local d=$1 x
+        mkdir -p "$d"; git init -q -b main "$d"
+        ( cd "$d" || exit 1
+          export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
+          export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null
+          printf '[workspace]\nmembers=["crates/a","crates/b","crates/c"]\nresolver="2"\n' > Cargo.toml
+          for x in a b c; do mkdir -p "crates/$x/src"; printf '[package]\nname="%s"\nversion="0.1.0"\nedition="2021"\n' "$x" > "crates/$x/Cargo.toml"; : > "crates/$x/src/lib.rs"; done
+          printf '[dependencies]\na={path="../a"}\n' >> crates/b/Cargo.toml
+          lk() { printf 'version = 4\n\n[[package]]\nname = "a"\nversion = "0.1.0"\ndependencies = [\n "ext 1.0.0",\n]\n\n[[package]]\nname = "b"\nversion = "0.1.0"\ndependencies = [\n "a",\n]\n\n[[package]]\nname = "c"\nversion = "0.1.0"\ndependencies = [\n "other",\n]\n\n[[package]]\nname = "ext"\nversion = "%s"\n\n[[package]]\nname = "other"\nversion = "1.0.0"\n' "$1" > Cargo.lock; }
+          lk 1.0.0; git add -A; git commit -q -m base
+          lk 1.0.1; [ "${2:-}" = toml ] && printf '# bump\n' >> Cargo.toml
+          git add -A; git commit -q -m "lock bump" )
+    }
+    mklockrepo "$td/l-lock"; mklockrepo "$td/l-toml" toml
+    printf 'Cargo.lock\n' > "$td/d-lock.txt"; printf 'Cargo.lock\nCargo.toml\n' > "$td/d-lock-toml.txt"
+    row 0 "P3: pull_request, lock-only ext bump -> quick over the affected packages" '^crates=a b$' bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/l-lock" --affected-base HEAD~1
+    row 0 "  ...tier=quick with ONE cargo check --workspace (compile-level integration of the bump)" '^check_workspace=1$' bash "$T" --event pull_request --diff-from "$td/d-lock.txt" --repo-root "$td/l-lock" --affected-base HEAD~1
+    row 0 "P3: ...no --affected-base -> no way to place the lock change -> full (fail closed)" '^OK-FULL-ONLY$' full_only "bash '$T' --event pull_request --diff-from '$td/d-lock.txt' --repo-root '$td/l-lock'"
+    row 0 "P3: ...a base that is not a revision -> the tool cannot read the lock -> full" '^OK-FULL-ONLY$' full_only "bash '$T' --event pull_request --diff-from '$td/d-lock.txt' --repo-root '$td/l-lock' --affected-base no-such-rev"
+    row 0 "P3: ...Cargo.toml in the same diff -> the tool answers ALL -> full" '^OK-FULL-ONLY$' full_only "bash '$T' --event pull_request --diff-from '$td/d-lock-toml.txt' --repo-root '$td/l-toml' --affected-base HEAD~1"
+    row 0 "P3: ...an affected set over AFFECTED_CAP -> full, never a silent large quick tier" '^OK-FULL-ONLY$' full_only "AFFECTED_CAP=1 bash '$T' --event pull_request --diff-from '$td/d-lock.txt' --repo-root '$td/l-lock' --affected-base HEAD~1"
+    row 0 "P3: merge_group derives its own base (MG_BASE_SHA) -> the same narrowing" '^crates=a b$' bash -c "MG_BASE_SHA=\$(git -C '$td/l-lock' rev-parse HEAD~1) bash '$T' --event merge_group --repo-root '$td/l-lock'"
+    row 0 "P3: ...a root Cargo.toml edit in the queue still -> full" '^OK-FULL-ONLY$' full_only "MG_BASE_SHA=\$(git -C '$td/l-toml' rev-parse HEAD~1) bash '$T' --event merge_group --repo-root '$td/l-toml'"
     MGARGS="--mg-run 123456 --mg-sha \$(git -C '$td/s-leaf' rev-parse HEAD) --mg-conclusion success"
     row 0 "push of a plain sha WITH a successful merge_group result for HEAD -> reuse (T36 control)" '^tier=reuse$' bash -c "bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
     row 0 "TAG push of a sha the queue already tested (quick) green -> tier=full, NEVER reuse (sign-off r2 #5468)" '^tier=full$' bash -c "GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf' $MGARGS | head -n1"
