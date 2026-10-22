@@ -33,7 +33,7 @@ classify() { # classify <draft> ; paths on stdin
         [ -n "$p" ] || continue
         n=$((n + 1))
         case "$p" in *..*) echo "skip=0 reason=full"; return 0 ;; esac
-        printf '%s\n' "$p" | grep -Eq "$DOCS_ONLY_RE" || { echo "skip=0 reason=full"; return 0; }
+        [[ $p =~ $DOCS_ONLY_RE ]] || { echo "skip=0 reason=full"; return 0; }
     done
     [ "$n" -gt 0 ] && echo "skip=1 reason=docs-only" || echo "skip=0 reason=full"
 }
@@ -100,7 +100,7 @@ self_test() {
             [[ "$body" == *'SCOPE_SKIP: ${{ needs.scope.outputs.skip }}'* && "$body" == *'"${SCOPE_SKIP:-}" = 1'* ]] || bad="$bad; $n does not read scope"
         done
         [ "$(top concurrency | awk '/^  cancel-in-progress:/ {print; exit}')" = "  cancel-in-progress: \${{ github.event_name == 'pull_request' || github.event_name == 'merge_group' }}" ] || bad="$bad; concurrency no longer cancels superseded PR runs (exact expression pinned)"
-        grep -qF 'git diff --no-renames --name-only' "$wf" || bad="$bad; scope diff may report renames by new path only (fails open)"
+        [[ "$(nc)" == *"git diff --no-renames --name-only"* ]] || bad="$bad; scope diff may report renames by new path only (fails open)"
     fi
     [ -z "$bad" ] || { printf 'FAIL wiring: %s\n' "${bad#; }"; fail=1; }
     # MUTANTS: each slip-through of a weaker reader must turn the wiring RED on a mutated copy of ci.yml.
@@ -121,6 +121,7 @@ self_test() {
         mutant cancel-false-trailing-comment 's/^  cancel-in-progress: .*/  cancel-in-progress: false # pull_request/'
         mutant cancel-true 's/^  cancel-in-progress: .*/  cancel-in-progress: true/'
         mutant no-renames 's/git diff --no-renames --name-only/git diff --name-only/'
+        mutant no-renames-comment-only 's/^( *)(.*)git diff --no-renames --name-only(.*)$/\1# git diff --no-renames --name-only/'
         mutant x86-main-no-scope-clause "/^  x86-main:\$/,/^  [a-z]/s/ && needs.scope.outputs.skip != '1'//"
         mutant shard-needs-comment 's/^(  workspace-test-shard:)$/\1/;/^  workspace-test-shard:$/,/^  [a-z]/s/^    needs: \[scope\]/    needs: [mg-reuse] # [scope]/'
         mutant gate-needs-scope-dropped '/^  gate:$/,/^  [a-z]/s/, scope\]/]/'
