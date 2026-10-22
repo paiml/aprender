@@ -255,9 +255,11 @@ mkrepo() { # mkrepo <dir> -> a two-commit repo whose push diff is docs-only (tod
   git -C "$1" add docs; git -C "$1" -c user.name=t -c user.email=t@t commit -q -m docs
 }
 mkrepo "$T/r"; H="$(git -C "$T/r" rev-parse HEAD)"
-tier() { (cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF ${GSHA:+GITHUB_SHA=$GSHA} ${GREF:+GITHUB_REF=$GREF} bash "$TIER" --event push --repo-root "$T/r" "$@" 2>&1); }
+tier() { (cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$(git -C "$T/r" rev-parse HEAD^1)" ${GSHA:+GITHUB_SHA=$GSHA} ${GREF:+GITHUB_REF=$GREF} bash "$TIER" --event push --repo-root "$T/r" "$@" 2>&1); }
 BASE="$(tier)"
 want "D0 push with no merge_group result -> today's tier (docs-only: none)" "tier=none" "$(grep '^tier=' <<<"$BASE")"
+OUT="$(cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$H" bash "$TIER" --event push --repo-root "$T/r" 2>&1)"
+want "D0e push whose before == HEAD (empty diff) -> full, never none" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 hasnt "D0 and no note about a merge_group (no --mg-* given: as before)" "merge_group" "$BASE"
 
 OUT="$(tier --mg-run 7001 --mg-sha "$H" --mg-conclusion success)"
@@ -299,7 +301,7 @@ want "T3 a branch push (refs/heads/main) still reuses" "tier=reuse" "$(grep '^ti
 
 # a root commit: today's tier is full (no diff can be derived); a refused result keeps it full
 git init -q -b main "$T/root"; git -C "$T/root" -c user.name=t -c user.email=t@t commit -q --allow-empty -m only
-OUT="$(cd "$ROOT" && env -u GITHUB_SHA bash "$TIER" --event push --repo-root "$T/root" --mg-run 7001 --mg-sha "$H" --mg-conclusion success 2>&1)"
+OUT="$(cd "$ROOT" && env -u GITHUB_SHA PUSH_BEFORE=0000000000000000000000000000000000000000 bash "$TIER" --event push --repo-root "$T/root" --mg-run 7001 --mg-sha "$H" --mg-conclusion success 2>&1)"
 want "D8 a refused result on a root commit keeps today's full" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 
 # merge_group and pull_request never read --mg-*; merge_group's own reuse is unchanged
