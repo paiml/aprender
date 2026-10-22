@@ -262,7 +262,8 @@ fn the_tracked_repo_graph_is_fresh() {
 /// R-8: the gate is computed in every `pv lint` run.
 #[test]
 fn the_full_run_computes_the_shapes_gate() {
-    let r = pv(&["lint", &s(&repo_contracts()), "--format", "json"]);
+    // A small fixture corpus: the gate list does not depend on the corpus, and the repo tree costs ~27 s in a debug pv (#5446).
+    let r = pv(&["lint", &s(&fixture("relations-ok")), "--format", "json"]);
     let v = json_of(&r);
     let names: Vec<String> = v["gates"]
         .as_array()
