@@ -201,7 +201,7 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   case "$code" in *'core.hooksPath=/dev/null'*) ;; *) return 1 ;; esac
   case "$code" in *'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0'*) ;; *) return 1 ;; esac
   shard=$(awk '/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$1" | grep -v -E '^[[:space:]]*#')
-  case "$shard" in *'needs: [receipt-judge]'*) ;; *) return 1 ;; esac
+  case "$shard" in *'needs: [receipt-judge, mg-reuse-wt]'*) ;; *) return 1 ;; esac
   # whole-line pins: a substring pin lets "; ok=1", a flipped "&&" or another cd target ride along
   hasl() { local t; t=$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' <<< "$1"); grep -qxF -- "$2" <<< "$t"; }
   hasl "$shard" "RECEIPT_OK: \${{ needs.receipt-judge.outputs.ok || '0' }}" || return 1
@@ -227,7 +227,7 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   # hash pins (E7, escaped keys and every other spelling): the shard job in ci.yml, its block in sections.yml and the three scripts the verdict flows through.
   # Any byte change is RED unless the pin moves in the same diff (gate content, quorum). PIN_ROOT lets the case table pin a mutated copy.
   local pr=${PIN_ROOT:-$HERE/..} blk
-  [ "$(printf '%s\n' "$shard" | sha256sum | cut -d' ' -f1)" = "6c7c538c950899c60f7436868ee80a003f904e3ed3a4286877976964f4ddc216" ] || return 1
+  [ "$(printf '%s\n' "$shard" | sha256sum | cut -d' ' -f1)" = "93eb48c4c6c0775012afd1c7d60e752c72cb4107a7782cac2da9d096cef2b75a" ] || return 1
   blk=$(awk '/^jobs:/{j=1} j&&/^  workspace-test-shard:$/{on=1;print;next} on&&/^  [a-z]/{exit} on{print}' "$2" | grep -v -E '^[[:space:]]*#')
   [ "$(printf '%s\n' "$blk" | sha256sum | cut -d' ' -f1)" = "c8047f526588a7e7af8ab15a17118a5a69e8cbf4a4edae5181473f251f5a5c55" ] || return 1
   [ "$(sha256sum < "$pr/scripts/ci/fat_driver.py" | cut -d' ' -f1)" = "81662d808e4672b41b481f44361c10aaae308661f492b1aaaff47f87ffb27cfc" ] || return 1
@@ -239,15 +239,15 @@ judge_ok() { # CI_FILE SECTIONS_FILE -> 0 when the wiring is trustworthy
   [ "$(sha256sum < "$pr/scripts/ci/pr_touched_paths.sh" | cut -d' ' -f1)" = "eed39751351685073888dd9e1ae9e993a30cdc933f97eb8e92aa8f01b36e42a4" ] || return 1
   # helpers the tier step (and ci_test_tier.sh) run: byte-pinned, because a same-uid helper can reach the real GITHUB_OUTPUT via /proc/$PPID/environ (#5850)
   [ "$(sha256sum < "$pr/scripts/ci/fetch_p6.sh" | cut -d' ' -f1)" = "5addde69a85a4d6996f89a1af85a04abaebed3a4c27b447e254171d97205580b" ] || return 1
-  [ "$(sha256sum < "$pr/scripts/ci_mg_workspace_result.sh" | cut -d' ' -f1)" = "560bb59288305511978fc8a674bda2d7b62dfb6dcb887fcbf189a3ae8b7d5296" ] || return 1
-  [ "$(sha256sum < "$pr/scripts/check_ci_push_reuse.sh" | cut -d' ' -f1)" = "3cf51081840c4dcc03743ca165af58f654b1cb61020d41bf081eb2370b5a948a" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci_mg_workspace_result.sh" | cut -d' ' -f1)" = "d09d4f6d515630940a727b1152e391177873296d2ddee0d7c4d3728bdffa2886" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/check_ci_push_reuse.sh" | cut -d' ' -f1)" = "0b09758f2c9773f992849cd391e9f3a1325630364d5afa58844c7d9c6848e4c8" ] || return 1
   [ "$(sha256sum < "$pr/scripts/check_tree_reader_tests.sh" | cut -d' ' -f1)" = "4f4f0e892b1b4c65e1dd9dcc46f0edc0e5deac2f1b5dc7883fc124f6b4c6f0aa" ] || return 1
   [ "$(sha256sum < "$pr/scripts/gate_touched_crates.sh" | cut -d' ' -f1)" = "00f73732cbe0c39c9ff0867d1cb416ef0e7e0d00dc5b01f300cee645fe444bfe" ] || return 1
   [ "$(sha256sum < "$pr/scripts/lib/test_tier.py" | cut -d' ' -f1)" = "63e4b091c7a6c56b45c8da5ceb241ba2a6f991cef55bb3802ffa6458b786dd52" ] || return 1
-  [ "$(sha256sum < "$pr/scripts/ci_mg_reuse.sh" | cut -d' ' -f1)" = "03b3bdf6ebe3bcbab2d67af559d3e33224a19fc5e938d0d4f5b9862508362fa4" ] || return 1
+  [ "$(sha256sum < "$pr/scripts/ci_mg_reuse.sh" | cut -d' ' -f1)" = "6f3d6c216884038ed831ee4a889f074976fa1dd622edd0c77d7ed64aa9600ba8" ] || return 1
   # structure pins: the top-level keys and the job keys of both files, in any spelling (quoted, ? keys, duplicates). A new top-level key or job, or a second shard block, moves the hash.
   [ "$(tl "$1" | h)" = "7b45344e526135d0ab4f5c04ca82ba2d1112f6286b1ba2024a18017536446ce5" ] || return 1
-  [ "$(jl "$1" | h)" = "1d370235776861592b57ff7c935a327fbf70d28427ac084baa4392f5b70d8250" ] || return 1
+  [ "$(jl "$1" | h)" = "4b456c7f21889b2de69f7226faa2ac94962aca13912721cc47be159531bf4ede" ] || return 1
   [ "$(tl "$2" | h)" = "e90e5a61fd66429fec4eab76974c56bcdd3f253610a6fe9c1f63b7fd8959b18f" ] || return 1
   [ "$(jl "$2" | h)" = "c988f167ca3654fa20a9df52cea6196fb7032606c2a7a32425ad2740f14c5925" ] || return 1
   return 0
@@ -274,7 +274,7 @@ wmut "W27 MUTANT: a judge whose PR worktree is a full checkout is caught" ci 'wo
 wmut "W28 MUTANT: a judge that leaves the git token env set is caught" ci 'unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0 GH_TOKEN' 'true'
 wmut "W33 MUTANT: a judge not gated on the runner-readiness variable (it would queue forever with no runner) is caught" ci " && vars.RECEIPT_JUDGE_RUNNER_READY == 'true'" ''
 wmut "W34 MUTANT: the judge back on a GitHub-hosted image is caught" ci 'runs-on: [self-hosted, Linux, X64, receipt-judge]' 'runs-on: ubuntu-latest'
-wmut "W20 MUTANT: a shard job that does not wait for the judge is caught" ci 'needs: [receipt-judge]' 'needs: []'
+wmut "W20 MUTANT: a shard job that does not wait for the judge is caught" ci 'needs: [receipt-judge, mg-reuse-wt]' 'needs: []'
 wmut "W20c MUTANT (MA): the shard RECEIPT_OK fallback flipped to 1 is caught" ci "outputs.ok || '0' }}" "outputs.ok || '1' }}"
 wmut "W20d MUTANT (MB): the verifier trusting \$GITHUB_WORKSPACE no longer, but the PR tree, is caught" ci '"$RUNNER_TEMP/pr-body.md" "$GITHUB_WORKSPACE"' '"$RUNNER_TEMP/pr-body.md" "$RUNNER_TEMP/prtree"'
 wmut "W20e MUTANT (MC): the ok=0 guard turned into ok=1 is caught" ci '[ "$ok" = 1 ] || ok=0' '[ "$ok" = 1 ] || ok=1'
