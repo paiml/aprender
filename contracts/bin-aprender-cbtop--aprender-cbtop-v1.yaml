@@ -118,3 +118,21 @@ falsification_tests:
     test: 'cargo test -p aprender-cbtop --test bottleneck_analysis_5548'
     if_fails: 'a slow or noisy kernel is reported healthy, or a healthy one is flagged, in the optimize report (#5548)'
     mutation: 'change `efficiency < 0.50` to `efficiency <= 0.50` in analyze_bottlenecks; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-007
+    rule: 'render_hardware_box draws five rows, truncates names to the inner width and advances y by 7 (#5564)'
+    prediction: 'with a GPU the GPU row names it; without one it reads "Not detected" and the closing bar sits at box_width; a 100-char name is cut to inner_width - 10'
+    test: 'cargo test -p aprender-cbtop --lib hardware_box_tests'
+    if_fails: 'the hardware panel shows the wrong row, overflows its box, or the next panel overlaps it'
+    mutation: 'ignore hardware.gpu_name (always take the else branch); must turn RED'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-008
+    rule: 'CbtopApp::handle_key maps each key to its state change: quit, space toggle, intensity clamp, backend/workload cycles, problem-size halve/double with 1024 floor, reset, panel digits (#5565)'
+    prediction: 'q/Esc set should_quit; space flips is_running and the generator; +/- clamp intensity to [0,1]; b cycles 4 backends and w 7 workloads and both wrap; [ floors at 1024; r clears histories; 1-9 pick panels while 0 and unknown keys change nothing'
+    test: 'cargo test -p aprender-cbtop --lib handle_key_tests'
+    if_fails: 'a TUI hotkey does the wrong thing or silently stops working'
+    mutation: 'make the space branch assign is_running = self.is_running; must turn RED'
+  - id: FALSIFY-BIN-APRENDER-CBTOP-009
+    rule: 'analyze_bottlenecks bands efficiency at 25/50/75% and flags CV > 15% (#5548)'
+    prediction: 'efficiency 0.24 is critical, 0.25 severe, 0.50 moderate, 0.75 clean; CV 15.1 is unstable and 15.0 is not'
+    test: 'cargo test -p aprender-cbtop --lib optimize::bottleneck'
+    if_fails: 'a bottleneck lands in the wrong severity band or an unstable run goes unreported'
+    mutation: 'change a threshold (< 0.50 to <= 0.50) or CV > 15.0 to >= 15.0; must turn RED'
