@@ -1,0 +1,16 @@
+--- model capability ladder receipts for 0.71.3 (evidence/dogfood/models/0.71.3) ---------------------
+POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers 0.71.3: CRUX smoke is the release gate, the larger ladder rows are nightly
+SCOPED: crux-smoke -- the emergency scope recorded for release 0.71.3 in contracts/model-capability-ladder-v1.yaml applies; this verdict is the SCOPE, not the model ladder (--scope none judges the full ladder)
+OPERATOR EMERGENCY SCOPE: CRUX smoke only -- release 0.71.3, 2026-10-07, operator: "from 0.71 on, a release ships on CRUX smoke on lambda and gx10 GPU. Everything bigger is nightly; it cannot stop a release, and each red row is a ticket. This replaces the per-release emergency scope. Known failures stay listed in the release notes."
+smoke matrix (certified model -> admitted thinking modes): 00fe7986ff5f -> off,on; aaf42c8b7c3c -> off; b252c5610a42 -> off,on
+FAIL  lambda certified model 00fe7986ff5f thinking=off: 4 of 36 cell(s) not GREEN
+FAIL  lambda certified model 00fe7986ff5f thinking=on: 2 of 21 cell(s) not GREEN
+FAIL  lambda certified model aaf42c8b7c3c thinking=off: 4 of 36 cell(s) not GREEN
+FAIL  lambda certified model b252c5610a42 thinking=off: 4 of 36 cell(s) not GREEN
+FAIL  lambda certified model b252c5610a42 thinking=on: 2 of 21 cell(s) not GREEN
+FAIL  gx10 certified model 00fe7986ff5f thinking=off: 4 of 36 cell(s) not GREEN
+FAIL  gx10 certified model 00fe7986ff5f thinking=on: 2 of 21 cell(s) not GREEN
+FAIL  gx10 certified model aaf42c8b7c3c thinking=off: 4 of 36 cell(s) not GREEN
+FAIL  gx10 certified model b252c5610a42 thinking=off: 4 of 36 cell(s) not GREEN
+FAIL  gx10 certified model b252c5610a42 thinking=on: 2 of 21 cell(s) not GREEN
+RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)
