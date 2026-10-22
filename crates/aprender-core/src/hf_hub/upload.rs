@@ -34,15 +34,19 @@ impl HfHubClient {
             sha256.get(..16).unwrap_or(sha256)
         );
 
-        let preupload_resp = match ureq::post(&preupload_url)
-            .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/json")
+        let mut preupload_resp = match ureq::post(&preupload_url)
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .header("Authorization", &format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
             .send_json(&preupload_body)
         {
-            Ok(resp) => resp,
-            Err(ureq::Error::Status(code, resp)) => {
+            Ok(mut resp) if resp.status().as_u16() >= 400 => {
+                let code = resp.status().as_u16();
                 let body = resp
-                    .into_string()
+                    .body_mut()
+                    .read_to_string()
                     .unwrap_or_else(|_| "unable to read body".to_string());
                 eprintln!(
                     "[LFS] ERROR: Preupload failed with status {}: {}",
@@ -53,6 +57,7 @@ impl HfHubClient {
                     code, body
                 )));
             }
+            Ok(resp) => resp,
             Err(e) => {
                 eprintln!("[LFS] ERROR: Preupload request failed: {}", e);
                 return Err(HfHubError::NetworkError(format!("Preupload failed: {e}")));
@@ -61,12 +66,13 @@ impl HfHubClient {
 
         eprintln!(
             "[LFS] Preupload response status: {}",
-            preupload_resp.status()
+            preupload_resp.status().as_u16()
         );
-        let preupload_data: serde_json::Value = preupload_resp.into_json().map_err(|e| {
-            eprintln!("[LFS] ERROR: Failed to parse preupload response: {}", e);
-            HfHubError::NetworkError(format!("Preupload parse failed: {e}"))
-        })?;
+        let preupload_data: serde_json::Value =
+            preupload_resp.body_mut().read_json().map_err(|e| {
+                eprintln!("[LFS] ERROR: Failed to parse preupload response: {}", e);
+                HfHubError::NetworkError(format!("Preupload parse failed: {e}"))
+            })?;
         eprintln!(
             "[LFS] Preupload response: {}",
             serde_json::to_string_pretty(&preupload_data).unwrap_or_default()
@@ -120,16 +126,16 @@ impl HfHubClient {
             );
 
             let t = Instant::now();
-            let resp = ureq::put(chunk_url)
-                .set("Content-Type", "application/octet-stream")
-                .timeout(std::time::Duration::from_hours(2))
-                .send_bytes(chunk_data)
-                .map_err(|e| {
-                    eprintln!("[LFS] ERROR: Chunk {} upload failed: {}", i + 1, e);
-                    HfHubError::NetworkError(format!("Chunk upload failed: {e}"))
-                })?;
+            let (status, err_body) = put_object(
+                chunk_url,
+                &[("Content-Type", "application/octet-stream")],
+                chunk_data,
+            )
+            .map_err(|e| {
+                eprintln!("[LFS] ERROR: Chunk {} upload failed: {}", i + 1, e);
+                HfHubError::NetworkError(format!("Chunk upload failed: {e}"))
+            })?;
 
-            let status = resp.status();
             eprintln!(
                 "[LFS] Chunk {}/{} uploaded: status={}, elapsed={:.1}s",
                 i + 1,
@@ -139,8 +145,8 @@ impl HfHubClient {
             );
             if !(200..300).contains(&status) {
                 return Err(HfHubError::NetworkError(format!(
-                    "Chunk upload failed with status {}",
-                    status
+                    "Chunk upload failed with status {}: {}",
+                    status, err_body
                 )));
             }
         }
@@ -148,8 +154,8 @@ impl HfHubClient {
         if let Some(completion_url) = file_info.get("completionUrl").and_then(|v| v.as_str()) {
             eprintln!("[LFS] Calling completion URL: {}", completion_url);
             let _ = ureq::post(completion_url)
-                .set("Authorization", &format!("Bearer {token}"))
-                .set("Content-Type", "application/json")
+                .header("Authorization", &format!("Bearer {token}"))
+                .header("Content-Type", "application/json")
                 .send_json(serde_json::json!({}));
         }
         Ok(())
@@ -167,25 +173,21 @@ impl HfHubClient {
         let upload_start = Instant::now();
         let headers = file_info.get("uploadHeader").and_then(|v| v.as_object());
 
-        let mut request = ureq::put(url)
-            .set("Content-Type", "application/octet-stream")
-            .timeout(std::time::Duration::from_hours(2));
-
+        let mut put_headers = vec![("Content-Type", "application/octet-stream")];
         if let Some(hdrs) = headers {
             for (key, value) in hdrs {
                 if let Some(v) = value.as_str() {
                     eprintln!("[LFS] Adding header: {}: {}...", key, &v[..v.len().min(20)]);
-                    request = request.set(key, v);
+                    put_headers.push((key.as_str(), v));
                 }
             }
         }
 
-        let resp = request.send_bytes(data).map_err(|e| {
+        let (status, body) = put_object(url, &put_headers, data).map_err(|e| {
             eprintln!("[LFS] ERROR: Upload failed: {}", e);
             HfHubError::NetworkError(format!("Upload failed: {e}"))
         })?;
 
-        let status = resp.status();
         eprintln!(
             "[LFS] Upload complete: status={}, elapsed={:.1}s, speed={:.1} MB/s",
             status,
@@ -194,7 +196,6 @@ impl HfHubClient {
         );
 
         if !(200..300).contains(&status) {
-            let body = resp.into_string().unwrap_or_default();
             return Err(HfHubError::NetworkError(format!(
                 "Upload failed (HTTP {}): {}",
                 status, body
@@ -251,16 +252,20 @@ impl HfHubClient {
             }]
         });
 
-        let batch_resp = match ureq::post(&batch_url)
-            .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/vnd.git-lfs+json")
-            .set("Accept", "application/vnd.git-lfs+json")
+        let mut batch_resp = match ureq::post(&batch_url)
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .header("Authorization", &format!("Bearer {token}"))
+            .header("Content-Type", "application/vnd.git-lfs+json")
+            .header("Accept", "application/vnd.git-lfs+json")
             .send_json(&batch_body)
         {
-            Ok(resp) => resp,
-            Err(ureq::Error::Status(code, resp)) => {
+            Ok(mut resp) if resp.status().as_u16() >= 400 => {
+                let code = resp.status().as_u16();
                 let body = resp
-                    .into_string()
+                    .body_mut()
+                    .read_to_string()
                     .unwrap_or_else(|_| "unable to read body".to_string());
                 eprintln!(
                     "[LFS-BATCH] ERROR: batch API failed with status {}: {}",
@@ -271,13 +276,14 @@ impl HfHubClient {
                     code, body
                 )));
             }
+            Ok(resp) => resp,
             Err(e) => {
                 eprintln!("[LFS-BATCH] ERROR: batch request failed: {}", e);
                 return Err(HfHubError::NetworkError(format!("LFS batch failed: {e}")));
             }
         };
 
-        let batch_json: serde_json::Value = batch_resp.into_json().map_err(|e| {
+        let batch_json: serde_json::Value = batch_resp.body_mut().read_json().map_err(|e| {
             HfHubError::NetworkError(format!("LFS batch response parse failed: {e}"))
         })?;
 
@@ -315,27 +321,23 @@ impl HfHubClient {
             data.len() as f64 / 1_000_000.0
         );
 
-        let mut request = ureq::put(upload_url)
-            .set("Content-Type", "application/octet-stream")
-            .timeout(std::time::Duration::from_hours(2));
-
+        let mut put_headers = vec![("Content-Type", "application/octet-stream")];
         if let Some(header_obj) = upload_action
             .and_then(|a| a.get("header"))
             .and_then(|h| h.as_object())
         {
             for (key, value) in header_obj {
                 if let Some(v) = value.as_str() {
-                    request = request.set(key, v);
+                    put_headers.push((key.as_str(), v));
                 }
             }
         }
 
         let put_start = Instant::now();
-        let put_resp = request.send_bytes(data).map_err(|e| {
+        let (put_status, body) = put_object(upload_url, &put_headers, data).map_err(|e| {
             eprintln!("[LFS-BATCH] ERROR: PUT failed: {}", e);
             HfHubError::NetworkError(format!("LFS PUT failed: {e}"))
         })?;
-        let put_status = put_resp.status();
         let mbps = (data.len() as f64 / 1_000_000.0) / put_start.elapsed().as_secs_f64();
         eprintln!(
             "[LFS-BATCH] PUT complete: status={}, elapsed={:.1}s, speed={:.1} MB/s",
@@ -345,7 +347,6 @@ impl HfHubClient {
         );
 
         if !(200..300).contains(&put_status) {
-            let body = put_resp.into_string().unwrap_or_default();
             return Err(HfHubError::NetworkError(format!(
                 "LFS PUT failed (HTTP {}): {}",
                 put_status, body
@@ -362,8 +363,8 @@ impl HfHubClient {
                     "size": data.len()
                 });
                 let _ = ureq::post(verify_url)
-                    .set("Authorization", &format!("Bearer {token}"))
-                    .set("Content-Type", "application/vnd.git-lfs+json")
+                    .header("Authorization", &format!("Bearer {token}"))
+                    .header("Content-Type", "application/vnd.git-lfs+json")
                     .send_json(&verify_body);
             }
         }
@@ -423,19 +424,22 @@ impl HfHubClient {
         let _ = base64_encode; // function still imported for non-LFS small-file path
 
         let commit_resp = ureq::post(&commit_url)
-            .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/x-ndjson")
-            .send_string(&ndjson_body);
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .header("Authorization", &format!("Bearer {token}"))
+            .header("Content-Type", "application/x-ndjson")
+            .send(ndjson_body.as_str());
 
         match commit_resp {
-            Ok(resp) if (200..300).contains(&resp.status()) => {
-                let body = resp.into_string().unwrap_or_default();
+            Ok(mut resp) if (200..300).contains(&resp.status().as_u16()) => {
+                let body = resp.body_mut().read_to_string().unwrap_or_default();
                 eprintln!("[LFS] Commit successful: {}", &body[..body.len().min(200)]);
                 Ok(())
             }
-            Ok(resp) => {
-                let status = resp.status();
-                let body = resp.into_string().unwrap_or_default();
+            Ok(mut resp) => {
+                let status = resp.status().as_u16();
+                let body = resp.body_mut().read_to_string().unwrap_or_default();
                 eprintln!(
                     "[LFS] ERROR: Commit failed with status {}: {}",
                     status,
@@ -444,17 +448,6 @@ impl HfHubClient {
                 Err(HfHubError::NetworkError(format!(
                     "Commit failed (HTTP {}): {}",
                     status, body
-                )))
-            }
-            Err(ureq::Error::Status(code, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                eprintln!(
-                    "[LFS] ERROR: Commit failed with status {}: {}",
-                    code,
-                    &body[..body.len().min(500)]
-                );
-                Err(HfHubError::NetworkError(format!(
-                    "Commit failed (HTTP {code}): {body}"
                 )))
             }
             Err(e) => {
@@ -703,5 +696,91 @@ impl HfHubClient {
             .with_name(repo_id.split('/').next_back().unwrap_or(repo_id))
             .with_architecture(model_type)
             .with_description(format!("{model_type} model trained with aprender"))
+    }
+}
+
+/// PUT `data` with `headers`; returns `(status, body)`. Error statuses are returned, not raised
+/// (`http_status_as_error(false)`), so a storage backend's error body reaches the caller; `body`
+/// is empty on 2xx.
+#[cfg(feature = "hf-hub-integration")]
+fn put_object(
+    url: &str,
+    headers: &[(&str, &str)],
+    data: &[u8],
+) -> std::result::Result<(u16, String), ureq::Error> {
+    let mut request = ureq::put(url)
+        .config()
+        .timeout_global(Some(std::time::Duration::from_hours(2)))
+        .http_status_as_error(false)
+        .build();
+    for (key, value) in headers {
+        request = request.header(*key, *value);
+    }
+    let mut resp = request.send(data)?;
+    let status = resp.status().as_u16();
+    let body = if (200..300).contains(&status) {
+        String::new()
+    } else {
+        resp.body_mut().read_to_string().unwrap_or_default()
+    };
+    Ok((status, body))
+}
+
+#[cfg(all(test, feature = "hf-hub-integration"))]
+mod put_tests {
+    use super::*;
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    /// One-shot loopback server: answers the first request with `status` and `body`.
+    fn serve_once(status: &str, body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind loopback");
+        let addr = listener.local_addr().expect("local addr");
+        let status = status.to_string();
+        std::thread::spawn(move || {
+            if let Ok((mut sock, _)) = listener.accept() {
+                let mut buf = [0u8; 65536];
+                let _ = sock.read(&mut buf);
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        format!("http://{addr}/obj")
+    }
+
+    #[test]
+    fn put_object_returns_error_body_on_5xx() {
+        let url = serve_once("500 Internal Server Error", "<Error>SlowDown</Error>");
+        let (status, body) = put_object(&url, &[], b"x").expect("transport ok");
+        assert_eq!(status, 500);
+        assert_eq!(body, "<Error>SlowDown</Error>");
+    }
+
+    #[test]
+    fn put_object_ok_on_2xx_has_empty_body() {
+        let url = serve_once("200 OK", "fine");
+        let (status, body) = put_object(&url, &[], b"x").expect("transport ok");
+        assert_eq!(status, 200);
+        assert!(body.is_empty());
+    }
+
+    #[test]
+    fn upload_single_error_carries_storage_body() {
+        let url = serve_once("403 Forbidden", "<Error>SignatureDoesNotMatch</Error>");
+        let err = HfHubClient::upload_single(b"abc", &url, &serde_json::json!({}))
+            .expect_err("403 must fail");
+        assert!(format!("{err}").contains("SignatureDoesNotMatch"), "{err}");
+    }
+
+    #[test]
+    fn upload_chunks_error_carries_storage_body() {
+        let url = serve_once("503 Service Unavailable", "<Error>Busy</Error>");
+        let urls = vec![serde_json::Value::String(url)];
+        let err = HfHubClient::upload_chunks(b"abc", &urls, &serde_json::json!({}), "tok")
+            .expect_err("503 must fail");
+        assert!(format!("{err}").contains("Busy"), "{err}");
     }
 }

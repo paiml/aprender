@@ -2,6 +2,8 @@ use super::super::{
     base64_encode, HfHubClient, HfHubError, ModelCard, PushOptions, Result, UploadProgress,
     UploadResult,
 };
+#[cfg(feature = "hf-hub-integration")]
+use super::body_text;
 use std::path::PathBuf;
 
 impl HfHubClient {
@@ -249,23 +251,21 @@ impl HfHubClient {
         });
 
         let response = ureq::post(&url)
-            .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/json")
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .header("Authorization", &format!("Bearer {token}"))
+            .header("Content-Type", "application/json")
             .send_json(&body);
 
         match response {
-            Ok(_) => Ok(()),
-            Err(ureq::Error::Status(409, _)) => {
-                // 409 Conflict means repo already exists - that's fine
-                Ok(())
-            }
-            Err(ureq::Error::Status(400, _)) => {
-                // 400 Bad Request often means repo exists under different settings
-                // Continue with upload attempt
-                Ok(())
-            }
-            Err(ureq::Error::Status(code, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
+            // 409 Conflict means repo already exists - that's fine.
+            // 400 Bad Request often means repo exists under different settings;
+            // continue with the upload attempt.
+            Ok(resp) if repo_create_status_ok(resp.status().as_u16()) => Ok(()),
+            Ok(mut resp) => {
+                let code = resp.status().as_u16();
+                let body = body_text(&mut resp);
                 Err(HfHubError::NetworkError(format!(
                     "Failed to create repo (HTTP {code}): {body}"
                 )))
@@ -389,24 +389,52 @@ impl HfHubClient {
         let ndjson_body = format!("{}\n{}", header_line, file_line);
 
         let response = ureq::post(&url)
-            .set("Authorization", &format!("Bearer {token}"))
-            .set("Content-Type", "application/x-ndjson")
-            .timeout(std::time::Duration::from_mins(2))
-            .send_string(&ndjson_body);
+            .config()
+            .timeout_global(Some(std::time::Duration::from_mins(2)))
+            .http_status_as_error(false)
+            .build()
+            .header("Authorization", &format!("Bearer {token}"))
+            .header("Content-Type", "application/x-ndjson")
+            .send(ndjson_body.as_str());
 
         match response {
-            Ok(resp) if resp.status() >= 200 && resp.status() < 300 => Ok(()),
-            Ok(resp) => {
-                let body = resp.into_string().unwrap_or_default();
-                Err(HfHubError::NetworkError(format!("Upload failed: {body}")))
-            }
-            Err(ureq::Error::Status(code, resp)) => {
-                let body = resp.into_string().unwrap_or_default();
-                Err(HfHubError::NetworkError(format!(
-                    "Upload failed (HTTP {code}): {body}"
-                )))
+            Ok(resp) if (200..300).contains(&resp.status().as_u16()) => Ok(()),
+            Ok(mut resp) => {
+                let code = resp.status().as_u16();
+                let body = body_text(&mut resp);
+                if code >= 400 {
+                    Err(HfHubError::NetworkError(format!(
+                        "Upload failed (HTTP {code}): {body}"
+                    )))
+                } else {
+                    Err(HfHubError::NetworkError(format!("Upload failed: {body}")))
+                }
             }
             Err(e) => Err(HfHubError::NetworkError(format!("Network error: {e}"))),
+        }
+    }
+}
+
+/// `POST /api/repos/create` outcomes that let the upload proceed: success, 400 (exists with other
+/// settings) and 409 (exists). Every other status — including 1xx/3xx — is an error.
+#[cfg(feature = "hf-hub-integration")]
+fn repo_create_status_ok(code: u16) -> bool {
+    matches!(code, 200..=299 | 400 | 409)
+}
+
+#[cfg(all(test, feature = "hf-hub-integration"))]
+mod repo_create_status_tests {
+    use super::repo_create_status_ok;
+
+    #[test]
+    fn accepts_only_2xx_400_409() {
+        for code in [200, 201, 204, 299, 400, 409] {
+            assert!(repo_create_status_ok(code), "{code} must be accepted");
+        }
+        for code in [
+            100, 101, 301, 302, 304, 399, 401, 403, 404, 408, 410, 429, 500, 503,
+        ] {
+            assert!(!repo_create_status_ok(code), "{code} must be rejected");
         }
     }
 }

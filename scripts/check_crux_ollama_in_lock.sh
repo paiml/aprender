@@ -50,12 +50,26 @@ SRV_PIDS=()
 _cleanup() {
   local p
   for p in "${SRV_PIDS[@]}"; do kill "$p" 2>/dev/null; done
+  # the apr stub servers run inside the dogfood children, so they are not in SRV_PIDS: kill each recorded pid
+  # that is still one of our stub servers (never a recycled pid)
+  for f in "${TMP:-/nonexistent}"/*.lock.srv; do
+    [ -f "$f" ] && p=$(cat "$f") && grep -aq stub_server.py "/proc/$p/cmdline" 2>/dev/null && kill "$p" 2>/dev/null
+  done
   case "${TMP:-}" in
     /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
   esac
 }
 trap _cleanup EXIT
+# guard_server <pid>: kill that server when this harness dies by ANY signal, SIGKILL included (a runner
+# cancelling a job kills the tree with KILL, which no trap sees; the servers then lived 2-3 days at ppid 1).
+# The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.
+guard_server() {
+  local srv="$1" par=$$
+  # the id is read after the fork has exec'd, so a recycled pid (another cmdline) is left alone
+  ( trap - EXIT INT TERM; sleep 1; id=$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null); while kill -0 "$par" 2> /dev/null && [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ]; do sleep 2; done
+    [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ] && kill "$srv" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
+}
 
 PASS=0
 FAIL=0
@@ -172,6 +186,12 @@ case "${1:-}" in
     printf 'You: \nGoodbye!\n' ;;
   serve)
     port=""; while [ $# -gt 0 ]; do [ "$1" = --port ] && port="$2"; shift; done
+    # record this pid (exec keeps it) so the harness can kill the server if it dies mid-row
+    stub=$$; printf "%s\n" "$stub" > "${STUB_LOCK}.srv"
+    # a harness killed with SIGKILL runs no trap: this watcher ends the server when the harness is gone
+    ( sleep 1; id=$(tr "\0" " " < "/proc/$stub/cmdline" 2> /dev/null)
+      while kill -0 "$HARNESS_PID" 2> /dev/null && [ "$(tr "\0" " " < "/proc/$stub/cmdline" 2> /dev/null)" = "$id" ]; do sleep 2; done
+      [ "$(tr "\0" " " < "/proc/$stub/cmdline" 2> /dev/null)" = "$id" ] && kill "$stub" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
     exec python3 "$(dirname "$0")/stub_server.py" apr "$port" "$STUB_LOCK" "$STUB_LOG" ;;
   *) echo "stub apr: unhandled '$*'" >&2; exit 1 ;;
 esac
@@ -191,10 +211,10 @@ run_row() {
   while [ "${#ROW_Q[@]}" -ge "$ROW_JOBS" ]; do wait "${ROW_Q[0]}" 2>/dev/null || true; ROW_Q=("${ROW_Q[@]:1}"); done
   lock="$TMP/$name.lock"; log="$TMP/$name.log"; : > "$lock"; : > "$log"
   port=$(free_port)
-  python3 "$BIN/stub_server.py" ollama "$port" "$lock" "$log" & SRV_PIDS+=("$!")
+  python3 "$BIN/stub_server.py" ollama "$port" "$lock" "$log" & SRV_PIDS+=("$!"); guard_server "$!"
   for i in $(seq 1 50); do curl -sf "http://127.0.0.1:$port/api/version" >/dev/null 2>&1 && break; sleep 0.1; done
   (
-    ( cd "$tree" && STUB_LOCK="$lock" STUB_LOG="$log" CRUX_GPU_LOCK="$lock" GPUQ_BIN="$gpuq" \
+    ( cd "$tree" && HARNESS_PID="$$" STUB_LOCK="$lock" STUB_LOG="$log" CRUX_GPU_LOCK="$lock" GPUQ_BIN="$gpuq" \
         GPUQ_DIR="$TMP/$name.q" OLLAMA_BIN="$BIN/ollama" OLLAMA_HOST="127.0.0.1:$port" \
         DOGFOOD_ALLOW_UNPINNED=1 APR="$BIN/apr" \
         timeout 600 bash scripts/crux_inference_dogfood.sh 0.0.0 --model "$MODEL" --engines apr,ollama \

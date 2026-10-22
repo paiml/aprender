@@ -12,6 +12,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::OnceLock;
 
 struct Run {
     code: i32,
@@ -189,6 +190,14 @@ fn lint_root(root: &Path) -> Run {
     }
 }
 
+/// ONE `pv lint contracts --gate shapes` over this repository, shared by every test that needs the real tree
+/// (the probe test and each `current_receipt`). The gate is not cached by pv and costs ~18s in a debug build, and
+/// the checkout is never written, so one snapshot serves them all.
+fn real_tree() -> &'static Run {
+    static REAL: OnceLock<Run> = OnceLock::new();
+    REAL.get_or_init(|| lint_root(&repo_root()))
+}
+
 /// The row's probe predicate over one run: `Ok(())` green, `Err(why)` red.
 fn probe(r: &Run) -> Result<(), String> {
     let v: serde_json::Value =
@@ -227,7 +236,7 @@ fn probe(r: &Run) -> Result<(), String> {
 /// pinned version, so the mutations follow the tree to whichever release it has receipts for (the branch was
 /// parked for a week because these paths named 0.69.1 and its base had only 0.68.2).
 fn current_receipt(host: &str) -> String {
-    let v = json(&lint_root(&repo_root()));
+    let v = json(real_tree());
     let v_star = v["capability_cells"]["v_star"]
         .as_str()
         .unwrap_or_else(|| panic!("no v_star on this repository: {v}"));
@@ -281,8 +290,8 @@ fn rung_row<'a>(v: &'a mut serde_json::Value, id: &str) -> &'a mut serde_json::V
 
 #[test]
 fn the_rows_probe_is_green_on_this_repository() {
-    let r = lint_root(&repo_root());
-    probe(&r).unwrap_or_else(|why| panic!("ONT-4c5 probe RED on the tree: {why}\n{}", show(&r)));
+    let r = real_tree();
+    probe(r).unwrap_or_else(|why| panic!("ONT-4c5 probe RED on the tree: {why}\n{}", show(r)));
 }
 
 #[test]
@@ -329,20 +338,27 @@ fn flipping_a_required_rung_to_optional_leaves_b_outside_the_domain() {
 
 #[test]
 fn a_not_run_label_on_a_current_release_row_rejects_naming_the_cell() {
-    for label in ["DEFER", "MANUAL", "NO-VERDICT"] {
-        let (dir, f) = scratch_with(&current_receipt("lambda"));
-        edit_json(&f, |v| {
-            rung_row(v, "qwen35-4b-q4km")["verdict"] = label.into()
-        });
-        let r = lint_root(dir.path());
-        assert_eq!(r.code, 1, "{label}\n{}", show(&r));
-        assert!(probe(&r).is_err(), "{label}");
-        assert!(
-            r.stdout.contains("qwen35-4b-q4km@lambda"),
-            "{label}\n{}",
-            show(&r)
-        );
-    }
+    // the three labels are independent scratch trees: lint them concurrently (each is one ~18s gate run)
+    let receipt = current_receipt("lambda");
+    std::thread::scope(|s| {
+        for label in ["DEFER", "MANUAL", "NO-VERDICT"] {
+            let receipt = &receipt;
+            s.spawn(move || {
+                let (dir, f) = scratch_with(receipt);
+                edit_json(&f, |v| {
+                    rung_row(v, "qwen35-4b-q4km")["verdict"] = label.into()
+                });
+                let r = lint_root(dir.path());
+                assert_eq!(r.code, 1, "{label}\n{}", show(&r));
+                assert!(probe(&r).is_err(), "{label}");
+                assert!(
+                    r.stdout.contains("qwen35-4b-q4km@lambda"),
+                    "{label}\n{}",
+                    show(&r)
+                );
+            });
+        }
+    });
 }
 
 #[test]

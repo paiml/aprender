@@ -33,6 +33,7 @@ members = [
     "crates/aprender-compute-xtask",
     # --- PY-PORT (C301): CI helpers ported from scripts/**/*.py, publish = false ---
     "crates/aprender-ci-tools",
+    "crates/aprender-rollup",
     # --- APR-MONO Phase 2b: was provable-contracts ---
     "crates/aprender-contracts",
     "crates/aprender-contracts-macros",
@@ -197,7 +198,7 @@ tower = "0.5"
 
 # HTTP
 reqwest = { version = "0.12", default-features = false }
-ureq = { version = "2.12", features = ["json"] }
+ureq = { version = "3.4", features = ["json"] }
 
 # Random / testing
 rand = { version = "0.9", features = ["small_rng"] }
@@ -274,7 +275,7 @@ serde_yaml = "0.9"
 serde-saphyr = "1.3"
 
 # HF Hub
-hf-hub = { version = "0.4", default-features = false, features = ["ureq"] }
+hf-hub = { version = "0.5", default-features = false, features = ["ureq"] }
 # HF Xet protocol: content-addressable LFS for files > 5 GiB
 # (F-PUB-LFS-001, contracts/apr-publish-hf-large-file-v1.yaml)
 hf-xet = "1.5.1"
@@ -321,6 +322,7 @@ aprender-train-distill = { path = "crates/aprender-train-distill", version = "0.
 aprender-orchestrate = { path = "crates/aprender-orchestrate", version = "0.71.3" }
 aprender-contracts = { path = "crates/aprender-contracts", version = "0.71.3" }
 aprender-build-sha = { path = "crates/aprender-build-sha", version = "0.71.3" }
+aprender-rollup = { path = "crates/aprender-rollup", version = "0.71.3" }
 aprender-profile = { path = "crates/aprender-profile", version = "0.71.3" }
 aprender-profile-core = { path = "crates/aprender-profile-core", version = "0.71.3" }
 aprender-zram-core = { path = "crates/aprender-zram-core", version = "0.71.3" }

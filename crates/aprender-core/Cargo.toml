@@ -172,9 +172,9 @@ alimentar = { workspace = true, optional = true }
 trueno-zram-core = { workspace = true, optional = true }
 
 # Hugging Face Hub integration (optional, spec §11.8, hf-hub-upload-spec.md)
-hf-hub = { version = "0.4", optional = true, default-features = false, features = ["ureq"] }
+hf-hub = { version = "0.5", optional = true, default-features = false, features = ["ureq"] }
 dirs = { version = "6.0", optional = true }
-ureq = { version = "2.12", optional = true, features = ["json"] }  # Direct HTTP for HF Hub upload (APR-PUB-001)
+ureq = { version = "3.4", optional = true, features = ["json"] }  # Direct HTTP for HF Hub upload (APR-PUB-001)
 
 # HF Xet protocol for files > 5 GiB (F-PUB-LFS-001,
 # contracts/apr-publish-hf-large-file-v1.yaml, spec §12.8)

@@ -285,10 +285,13 @@ hasnt "D11 pull_request ignores --mg-*: never reuse" "tier=reuse" "$OUT"
 
 # -- W: the CI wiring ------------------------------------------------------------------------------
 SEC="$ROOT/ci/sections.yml"
+DT="$ROOT/scripts/ci/decide_tier.sh" # the tier step body lives in one script (#5882): the section step and workspace-test-arch both run it
+want "W0 the section step runs the shared decide_tier.sh" 1 \
+     "$(grep -cF "bash scripts/ci/decide_tier.sh" "$SEC")"
 want "W1 the tier step's push arm calls the lookup for GITHUB_SHA" 1 \
-     "$(grep -cF 'bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}"' "$SEC")"
+     "$(grep -cF 'bash scripts/ci_mg_workspace_result.sh "${GITHUB_REPOSITORY}" "${GITHUB_SHA}"' "$DT")"
 want "W2 a failed lookup is not fatal to the step (it falls to today's tier)" 1 \
-     "$(grep -cF '"${GITHUB_SHA}") || mg=""' "$SEC")"
+     "$(grep -cF '"${GITHUB_SHA}") || mg=""' "$DT")"
 W3PAT="push) printf 'cited merge_group run: %s"
 if grep -qF "$W3PAT" "$SEC"; then w3=1; else w3=0; fi
 want "W3 the reuse step labels a push citation as a merge_group run, not a PR head" 1 "$w3"
@@ -299,10 +302,11 @@ agg="$(awk '/set -- \$tiers/{p=1} p{print} /is not owed/{exit}' "$CI" | sed 's/^
 has "A0 the aggregator's tier rule was found in ci.yml" 'the shards disagree' "$agg"
 # run the extract as its own script (no eval): its `exit` ends that script, and $tiers is its env
 printf '%s\n' "$agg" >"$T/agg.sh"
-agg_run() { OUT="$(tiers=" $*" bash "$T/agg.sh" 2>&1)"; RC=$?; }
+agg_run() { OUT="$(SHARDS=$# tiers=" $*" bash "$T/agg.sh" 2>&1)"; RC=$?; }  # SHARDS = the tiers given, so a row tests the DISAGREEMENT rule, not the shard count
 agg_run reuse reuse quick; want "A1 a split tier (reuse reuse quick) -> RED" 1 "$RC"
 agg_run reuse full reuse;  want "A2 a split tier (reuse full reuse) -> RED" 1 "$RC"
 agg_run reuse reuse reuse; want "A3 all three shards reuse -> green, Σ not owed" 0 "$RC"
+SHARDS=3 tiers=" reuse reuse" bash "$T/agg.sh" >/dev/null 2>&1; want "A4 fewer tier files than shards -> RED (a shard that never reported)" 1 "$?"
 
 # -- P: x86-main + determinism on push (#4748), scripts/ci_mg_reuse.sh decide-push ----------------
 # A repo with base A, parent B, pushed commit S, a side commit X and a merge M of B and X.
