@@ -78,7 +78,8 @@ main() {
     local f
     for f in "$GATE_SRC" "${EXEMPT_SRC:-scripts/check_deny_exemptions_live.sh}"; do
         [ -f "$f" ] || { echo "SELF-TEST FAIL: ADG-003: $f does not exist, so its scan sites cannot be judged" >&2; bad=1; continue; }
-        if grep -v printf "$f" | grep -E '^[^#]*cargo deny .*check .*advisories' | grep -qv -- '--all-features'; then
+        scans=$(grep -v 'printf' "$f" | grep -E '^[^#]*cargo deny .*check .*advisories' || true)
+        if [ -n "$scans" ] && grep -qv -- '--all-features' <<<"$scans"; then
             echo "SELF-TEST FAIL: ADG-003: $f scans advisories without --all-features" >&2; bad=1
         fi
     done
