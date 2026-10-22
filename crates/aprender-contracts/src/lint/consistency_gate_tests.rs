@@ -17,6 +17,10 @@ fn corpus(consistent: bool) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
     for entry in std::fs::read_dir(fixture()).expect("fixture dir") {
         let entry = entry.expect("entry");
+        // The ont4/ont4b/ont5 gate tests lint this fixture in place (#5446) and pv leaves a `.pv/` directory in it.
+        if !entry.file_type().expect("file type").is_file() {
+            continue;
+        }
         let mut text = std::fs::read_to_string(entry.path()).expect("fixture file");
         if consistent && entry.file_name() == "a.yaml" {
             assert!(
