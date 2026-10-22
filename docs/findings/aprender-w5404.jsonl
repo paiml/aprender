@@ -1,2 +1,3 @@
 {"session":"aprender-w5404","ref":"cov-run-output","note":"pmat ticket not minted (needs GH issue); tests for run print_run_output/effective_tok_per_sec, FALSIFY-OPS-013"}
 {"session":"aprender-w5404","ref":"cov-ptx-map","note":"pmat ticket not minted: pmat work add requires a GitHub issue and new issues are barred; tests for ptx_map print_json/print_reverse_lookup, FALSIFY-OPS-011"}
+{"session":"aprender-w5404","ref":"#5651","note":"stat_summary already had 4 tests; added exact t-interval + bucket-edge test, FALSIFY-OPS-015; no pmat ticket (needs GH issue)"}

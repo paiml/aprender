@@ -173,3 +173,110 @@ fn extract_frames_ffmpeg(video: &Path, threshold: f64, min_interval: f64) -> Res
 
     Ok(frame_count)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ffmpeg_present() -> bool {
+        std::process::Command::new("ffmpeg")
+            .arg("-version")
+            .output()
+            .is_ok_and(|o| o.status.success())
+    }
+
+    /// Run with the common arguments; returns None (after asserting the ffmpeg
+    /// error) when the host has no ffmpeg, so the test stays honest on any runner.
+    fn run(
+        path: &Path,
+        skip_existing: bool,
+        dry_run: bool,
+        exclude: &[String],
+    ) -> Option<Result<()>> {
+        let r = run_extract_frames(
+            &path.to_string_lossy(),
+            true,
+            0.3,
+            1.0,
+            1,
+            skip_existing,
+            dry_run,
+            exclude,
+        );
+        if ffmpeg_present() {
+            return Some(r);
+        }
+        let err = r.expect_err("no ffmpeg must fail first");
+        assert!(err.to_string().contains("ffmpeg not found"), "{err}");
+        None
+    }
+
+    #[test]
+    fn missing_path_and_videoless_dir_fail_with_distinct_errors() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        if let Some(r) = run(&dir.path().join("nope"), false, true, &[]) {
+            assert!(r
+                .expect_err("missing")
+                .to_string()
+                .contains("Path not found"));
+        }
+        if let Some(r) = run(dir.path(), false, true, &[]) {
+            assert!(r
+                .expect_err("empty")
+                .to_string()
+                .contains("No video files found"));
+        }
+    }
+
+    #[test]
+    fn dry_run_lists_videos_without_creating_frame_dirs() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let video = dir.path().join("lecture.mp4");
+        fs::write(&video, b"not a real video").expect("write");
+        if let Some(r) = run(dir.path(), false, true, &[]) {
+            r.expect("dry run succeeds");
+            assert!(
+                !video.with_extension("frames").exists(),
+                "dry run wrote frames"
+            );
+        }
+    }
+
+    #[test]
+    fn skip_existing_treats_a_populated_frames_dir_as_done_but_an_empty_one_as_pending() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let video = dir.path().join("lecture.mp4");
+        fs::write(&video, b"x").expect("write");
+        let frames = video.with_extension("frames");
+        fs::create_dir(&frames).expect("mkdir");
+        // empty frames dir: pending, so a dry run still succeeds (and lists it)
+        if let Some(r) = run(dir.path(), true, true, &[]) {
+            r.expect("pending video, dry run");
+        }
+        fs::write(frames.join("0001.jpg"), b"j").expect("frame");
+        // populated: nothing to do, returns Ok before any ffmpeg work even without dry-run
+        if let Some(r) = run(dir.path(), true, false, &[]) {
+            r.expect("all already extracted");
+            assert_eq!(
+                fs::read_dir(&frames).expect("ls").count(),
+                1,
+                "frames were touched"
+            );
+        }
+    }
+
+    #[test]
+    fn exclude_patterns_can_remove_every_video() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        fs::write(dir.path().join("skip.mp4"), b"x").expect("write");
+        if let Some(r) = run(dir.path(), false, true, &["*.mp4".to_string()]) {
+            assert!(r
+                .expect_err("all excluded")
+                .to_string()
+                .contains("No video files found"));
+        }
+        if let Some(r) = run(dir.path(), false, true, &["[".to_string()]) {
+            assert!(r.is_err(), "a malformed glob must be rejected");
+        }
+    }
+}
