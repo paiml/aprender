@@ -82,72 +82,15 @@ for (kernel, conf) in recommendation.alternatives.iter().take(3) {
 | M=2-3      | VectorizedQ4K     | Low batch, vectorized still efficient |
 | M>=4       | BatchedQ4K        | High batch, batched attention wins |
 
-## RandomForest Models (Optional)
+## RandomForest Models (Relocated)
 
-With the `ml-tuner` feature, you can use aprender's RandomForest models for learned optimization:
-
-```toml
-# Cargo.toml
-[dependencies]
-trueno = { version = "0.13", features = ["ml-tuner"] }
-```
-
-### Training a Custom Regressor
-
-```rust
-use trueno::tuner::{ThroughputRegressor, TunerFeatures, QuantType};
-
-// Create RF-backed regressor with 100 trees
-let mut regressor = ThroughputRegressor::with_random_forest(100);
-
-// Generate training data from benchmarks
-let training_data: Vec<(TunerFeatures, f32)> = (0..100)
-    .map(|i| {
-        let batch = 1 + (i % 8) as u32;
-        let features = TunerFeatures::builder()
-            .model_params_b(1.5)
-            .batch_size(batch)
-            .quant_type(QuantType::Q4K)
-            .gpu_mem_bw_gbs(1000.0)
-            .cuda_graphs(batch == 1)
-            .build();
-        // Measured throughput from benchmark
-        let throughput = 200.0 + (batch as f32) * 80.0;
-        (features, throughput)
-    })
-    .collect();
-
-// Train the model
-regressor.train_random_forest(&training_data)?;
-
-// Predictions now use learned model
-let pred = regressor.predict(&features);
-println!("RF prediction: {:.1} tok/s", pred.predicted_tps);
-```
-
-### Training a Custom Classifier
-
-```rust
-use trueno::tuner::{KernelClassifier, TunerFeatures, QuantType};
-
-let mut classifier = KernelClassifier::with_random_forest(50);
-
-// Label encoding: VectorizedQ4K=2, BatchedQ4K=3
-let training_data: Vec<(TunerFeatures, u32)> = (0..100)
-    .map(|i| {
-        let batch = 1 + (i % 8) as u32;
-        let features = TunerFeatures::builder()
-            .model_params_b(1.5)
-            .batch_size(batch)
-            .quant_type(QuantType::Q4K)
-            .build();
-        let label = if batch >= 4 { 3 } else { 2 };
-        (features, label)
-    })
-    .collect();
-
-classifier.train(&training_data)?;
-```
+The `ml-tuner` feature is now a deprecated no-op (`ml-tuner = []`, kept so removing it
+is not a semver break), and the `with_random_forest` / `train_random_forest` /
+`KernelClassifier::train` wrappers were removed (FLOW-010, #5803): the SIMD compute
+crate must not depend on the ML layer. The aprender RandomForest showcase now lives in
+`crates/aprender-core/tests/tuner_training_data_quality.rs`, which feeds `TunerFeatures`
+into `aprender::RandomForestRegressor` / `RandomForestClassifier`. This crate keeps the
+heuristic `ThroughputRegressor` and `KernelClassifier`.
 
 ## Full Tuner Recommendations
 
@@ -178,11 +121,8 @@ for exp in &rec.suggested_experiments {
 ## Running the Demo
 
 ```bash
-# Default (heuristic models)
+# Heuristic models
 cargo run --example ml_tuner_demo
-
-# With RandomForest models
-cargo run --example ml_tuner_demo --features ml-tuner
 ```
 
 ## Integration with ComputeBrick
