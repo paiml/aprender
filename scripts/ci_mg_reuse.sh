@@ -129,6 +129,9 @@ decide() {
   wcite="run $rid attempt $att on ${h:0:10}"
   # ...and EVERY shard of the matrix is present: (N, M) names must agree on M and number M (a partial list is not a run).
   [ "$(concl "$jobs" workspace-test)" = success ] && [ "${msh:-0}" -ge 1 ] 2> /dev/null && [ "${nsh:-0}" = "${msh:-0}" ] && [ "${nbad:-1}" = 0 ] && wt=1 # R:k6-wt-all-shards
+  # ...and the run owed and ran a test suite: a receipt-reuse PR run (#5850 tier=reuse) skips the test step, so its 12/12 shards are green over ZERO tests;
+  # `workspace-test-ran` runs only when the tier is not reuse, so only a run that tested the tree may be cited.
+  [ "$(concl "$jobs" workspace-test-ran)" = success ] || wt=0 # R:k6-wt-ran
   # a reuse with nothing to cite is not a reuse
   [[ "$wcite" =~ ^run\ [0-9]+\ attempt\ [0-9]+\ on\ [0-9a-f]{10}$ ]] || wt=0 # R:k6-wt-cite
   mc=1
@@ -413,8 +416,11 @@ self_test() {
   sed '/^workspace-test	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-wt"
   # shard job names are the real matrix names, "workspace-test-shard (N, M)" (MG run 39666213701); sh4 N... = those N of 4, success
   sh4() { local n; for n in "$@"; do printf 'workspace-test-shard (%s, 4)\tsuccess\n' "$n"; done; }
-  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
-  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; sh4 1 2 3 4; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
+  ran() { printf 'workspace-test-ran\t%s\n' "$1"; }
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran skipped; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-receipt"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-noran"
+  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
   { cat <<< "$GREEN_JOBS"; sh4 1 3 4; printf 'workspace-test-shard (2, 4)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-partial"
   { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; printf 'workspace-test-shard (5, 12)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-mixed-m"
@@ -431,6 +437,8 @@ self_test() {
     wrow "$n" "$want" --event merge_group --queue-head "$m" --base "$b" --pr-head "$h" --runs "$F/$r" --jobs "$F/$j"; }
   wd identical-tree-skips       1 "$M" "$B" "$H" runs.ok jobs.wt-ok
   wd draft-run-no-shards-runs   0 "$M" "$B" "$H" runs.ok jobs.wt-draft
+  wd receipt-reuse-12of12-green-runs 0 "$M" "$B" "$H" runs.ok jobs.wt-receipt
+  wd ran-job-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.wt-noran
   wd greenverdict-zero-shards   0 "$M" "$B" "$H" runs.ok jobs.ok
   wd one-shard-failed-runs      0 "$M" "$B" "$H" runs.ok jobs.wt-shard-failed
   wd partial-shards-runs        0 "$M" "$B" "$H" runs.ok jobs.wt-partial

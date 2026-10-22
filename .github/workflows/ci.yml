@@ -497,6 +497,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: bash scripts/ci/decide_tier.sh
+  # mg-reuse-wt may cite a PR run only if that run really tested the tree. A receipt-reuse run (#5850, tier=reuse)
+  # runs no test step, so its shards are green over zero tests: this marker is skipped there, and ci_mg_reuse.sh
+  # refuses wt=1 unless it succeeded (R:k6-wt-ran).
+  workspace-test-ran:
+    needs: [workspace-test-arch]
+    if: ${{ github.event_name == 'pull_request' && needs.workspace-test-arch.result == 'success' && needs.workspace-test-arch.outputs.tier != 'reuse' && github.event.pull_request.draft != true }}
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 5
+    steps:
+      - run: echo "this run owes and runs the test suite (tier=${{ needs.workspace-test-arch.outputs.tier }})"
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
     needs: [workspace-test-arch, mg-reuse-wt]
