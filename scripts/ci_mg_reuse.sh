@@ -71,8 +71,8 @@ concl() {
 # name agrees on (0 if they disagree). A draft PR run (or a reused one) has green `workspace-test` and NO such jobs (#5885 lane-b).
 shards() {
   jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+, [0-9]+\\)$"))] as $s
-    | ([$s[].name | capture(", (?<m>[0-9]+)\\)$").m | tonumber] | unique) as $m
-    | "\($s | map(.name) | unique | length) \([$s[] | select(.conclusion != "success")] | length) \(if ($m | length) == 1 then $m[0] else 0 end)"' "$1" 2> /dev/null || echo "0 1 0"
+    | ($s | map(.name | capture(", (?<m>[0-9]+)\\)$").m | tonumber) | unique) as $m
+    | "\($s | map(.name) | unique | length) \($s | map(select(.conclusion != "success")) | length) \(if ($m | length) == 1 then ($m | first) else 0 end)"' "$1" 2> /dev/null || echo "0 1 0"
 }
 
 decide() {
