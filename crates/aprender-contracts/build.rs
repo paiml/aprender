@@ -3,8 +3,8 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-// The one key builder, shared with `build_helper::env_key` (#4369).
-include!("src/env_key.rs");
+// The one key builder lives in aprender-contracts-key (#4369, #5909).
+use aprender_contracts_key::env_key;
 
 #[derive(Deserialize)]
 struct BindingFile {

@@ -36,7 +36,7 @@ struct Binding {
 
 /// Convert a contract filename + equation into a canonical env var name.
 fn env_var_name(contract: &str, equation: &str) -> String {
-    provable_contracts::build_helper::env_key(
+    aprender_contracts_key::env_key(
         contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
         equation,
     )
