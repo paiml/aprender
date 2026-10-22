@@ -73,6 +73,7 @@ jobs:
   build:
     name: Build Book
     runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
@@ -206,6 +207,7 @@ jobs:
   deploy:
     name: Deploy to GitHub Pages
     runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 60
     needs: build
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     # GitHub Pages deploys never overlap and are never cancelled (was workflow-level).
