@@ -1732,6 +1732,7 @@ jobs:
         run: |
           setsid --wait bash scripts/check_guard_steps_run_all.sh --self-test
           setsid --wait bash scripts/check_guard_steps_run_all.sh
+          setsid --wait bash scripts/check_guard_lane.sh
 
   # ── THE CARGO-USING GUARDS, PARALLEL TO workspace-test ────────────────────
   #
