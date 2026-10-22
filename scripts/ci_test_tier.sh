@@ -314,10 +314,10 @@ decide() {
         schedule|workflow_dispatch)
             printf 'tier=full\nreason=%s event: the whole workspace, every feature-gated suite -- FULL lives here (coverage-nightly, full-nightly, the pre-publish dogfood; 67-E2 decision D-1)\n' "$EVENT" ;;
         push)
-            # A push to main is the merge queue landing ONE PR, so the push's own
-            # diff is HEAD^1..HEAD. It used to be a flat `full`, which is how every
-            # landing paid an hour for work the PR and the queue had both already
-            # measured.
+            # A push to main is the merge queue landing one or more commits (it
+            # rebase-merges), so the push's own diff is PUSH_BEFORE..HEAD, below. It
+            # used to be a flat `full`, which is how every landing paid an hour for
+            # work the PR and the queue had both already measured.
             local base how why=""
             # #5172: a TAG push (the release tag) runs the whole workspace. The queue result on
             # the tagged commit is never cited and no diff is refined: v0.71.0's tag push reused
@@ -548,17 +548,33 @@ self_test() {
     row 0 "MUTANT: a merge_group arm that diffs HEAD^1 instead of MG_BASE_SHA sees only the last commit -> quick, row above goes RED" '^MUTANT-QUICK$' bash -c "o=\$(MG_BASE_SHA='$(rootc "$td/g-stack")' bash '$td/mutant-head1.sh' --event merge_group --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     # Rebase-merge: one push carries N commits; the range is github.event.before..after, not HEAD^1..HEAD.
     pbrun() { local b=$1; shift; env PUSH_BEFORE="$b" bash "$T" --event push --repo-root "$td/g-stack" "$@"; }
-    row 0 "push of a 2-commit rebase landing, before = the old tip, the FIRST commit touches a root Cargo.toml -> tier=full (before..HEAD, not HEAD^1)" '^tier=full$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(rootc "$td/g-stack")' | head -n1"
+    row 0 "push of a 2-commit rebase landing, before = the old tip, the FIRST commit touches a root Cargo.toml -> tier=full (before..HEAD, not HEAD^1)" '^tier=full$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; o=\$(pbrun '$(rootc "$td/g-stack")') || exit \$?; printf '%s\\n' \"\$o\" | head -n1"
     row 0 "  ...the reason names before..after" 'github.event.before' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(rootc "$td/g-stack")'"
     row 0 "push with an all-zero before (new ref / force-push) -> tier=full, fail closed (never HEAD^1..HEAD)" '^OK-FULL-ONLY$' full_only "$(declare -f pbrun); T='$T'; td='$td'; pbrun 0000000000000000000000000000000000000000"
     row 0 "push with a before that is not a commit here -> tier=full, fail closed" '^OK-FULL-ONLY$' full_only "$(declare -f pbrun); T='$T'; td='$td'; pbrun 0123456789abcdef0123456789abcdef01234567"
-    row 0 "push with PUSH_BEFORE unset -> tier=full, fail closed" '^tier=full$' bash -c "env -u PUSH_BEFORE bash '$T' --event push --repo-root '$td/g-stack' | head -n1"
-    row 0 "push whose before..HEAD range is leaf-only (before = HEAD^1) -> tier=quick (the range is honoured, not blanket full)" '^tier=quick$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; pbrun '$(git -C "$td/g-stack" rev-parse HEAD^1)' | head -n1"
+    row 0 "push with PUSH_BEFORE unset -> tier=full, fail closed" '^tier=full$' bash -c "o=\$(env -u PUSH_BEFORE bash '$T' --event push --repo-root '$td/g-stack') || exit \$?; printf '%s\\n' \"\$o\" | head -n1"
+    row 0 "push whose before..HEAD range is leaf-only (before = HEAD^1) -> tier=quick (the range is honoured, not blanket full)" '^tier=quick$' bash -c "$(declare -f pbrun); T='$T'; td='$td'; o=\$(pbrun '$(git -C "$td/g-stack" rev-parse HEAD^1)') || exit \$?; printf '%s\\n' \"\$o\" | head -n1"
     sed 's|pb=\$(printenv PUSH_BEFORE \|\| true)|pb=$(printenv PUSH_BEFORE \|\| true); case "$pb" in ""\|0*) pb=$(git -C "$ROOT" rev-parse HEAD^1) ;; esac|' "$T" > "$td/mutant-nopb.sh"
     row 0 "  (push mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-nopb.sh'; then echo SAME; else echo DIFFERS; fi"
     row 0 "MUTANT: a push arm that falls open to HEAD^1 on a missing/zero before -> quick, the fail-closed rows go RED" '^MUTANT-QUICK$' bash -c "o=\$(PUSH_BEFORE=0000000000000000000000000000000000000000 bash '$td/mutant-nopb.sh' --event push --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     sed 's|pb=\$(printenv PUSH_BEFORE \|\| true)|pb=$(git -C "$ROOT" rev-parse HEAD^1)|' "$T" > "$td/mutant-ignorepb.sh"
     row 0 "MUTANT: a push arm that ignores PUSH_BEFORE for HEAD^1 sees one commit -> quick over the 2-commit landing, the before..HEAD full row goes RED" '^MUTANT-QUICK$' bash -c "o=\$(PUSH_BEFORE='$(rootc "$td/g-stack")' bash '$td/mutant-ignorepb.sh' --event push --repo-root '$td/g-stack'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
+    # A 3-commit landing whose MIDDLE commit is the bad one: neither the first nor the last commit sees it.
+    mkmid() { # $1 dir; c1 leaf, c2 root Cargo.toml (the bad middle), c3 leaf
+        local d=$1
+        git init -q -b main "$d"
+        ( cd "$d" \
+          && export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t \
+          && export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null \
+          && git commit -q --allow-empty -m base \
+          && mkdir -p "crates/${leaf:?}/src" \
+          && printf '1\n' > "crates/${leaf:?}/src/lib.rs" && git add -A && git commit -q -m "landing 1: leaf" \
+          && printf 'x\n' > Cargo.toml && git add -A && git commit -q -m "landing 2: root manifest (the bad middle)" \
+          && printf '2\n' > "crates/${leaf:?}/src/lib.rs" && git add -A && git commit -q -m "landing 3: leaf" )
+    }
+    mkmid "$td/g-mid"
+    row 0 "push of a 3-commit landing whose MIDDLE commit touches a root Cargo.toml -> tier=full (a bad middle is not hidden by good ends)" '^tier=full$' bash -c "o=\$(env PUSH_BEFORE='$(rootc "$td/g-mid")' bash '$T' --event push --repo-root '$td/g-mid') || exit \$?; printf '%s\\n' \"\$o\" | head -n1"
+    row 0 "MUTANT: HEAD^1 instead of before sees only the last commit of the same landing -> quick, the middle-bad row goes RED" '^MUTANT-QUICK$' bash -c "o=\$(PUSH_BEFORE='$(rootc "$td/g-mid")' bash '$td/mutant-ignorepb.sh' --event push --repo-root '$td/g-mid'); if grep -q '^tier=quick$' <<< \"\$o\"; then echo MUTANT-QUICK; else echo MUTANT-FULL; fi"
     cap mg-root mgrun "$(rootc "$td/q-root")" --repo-root "$td/q-root"
     row 0 "merge_group, the group touched a ROOT manifest -> tier=full (rule (ii))" '^tier=full$' bash -c "$(replay mg-root)"
     row 0 "  ...exactly tier=full and no quick line leaks" '^OK-FULL-ONLY$' full_only "$(replay mg-root)"
