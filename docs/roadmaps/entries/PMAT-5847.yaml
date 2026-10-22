@@ -1,0 +1,20 @@
+- id: PMAT-5847
+  github_issue: 5847
+  item_type: task
+  title: 'LAB nightlies: timeout-minutes on every job and end by 05:00Z (falsifier scripts/lab/lab_timeouts_audit.sh)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T11:30:00Z
+  updated: 2026-10-21T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/lab/lab_timeouts_audit.sh is RED on the pre-fix tree (22 findings on the merge-base) and GREEN after; --self-test 8 rows'
+  - 'reaper catching queued + schedule runs is a separate change to the deployed pr-run-reaper.sh'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
