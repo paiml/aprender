@@ -190,8 +190,12 @@ judge_generated() {
     trailers=$(git -C "$repo" log --format='%(trailers:key=Pmat-Ticket,valueonly)' "$base..$head" 2>/dev/null | tr -d ' ' | grep -v '^$' | sort -u || true)
     while IFS= read -r name; do
         [ "${GITHUB_EVENT_NAME:-}" = merge_group ] && break
+        if [ "$(git -C "$repo" rev-parse --is-shallow-repository)" = true ]; then
+            printf 'SKIP  G5  shallow checkout: the PR commits are not all here to read trailers from; sov.roadmap-fragment-parity judges it on full history\n'
+            break
+        fi
         [[ "$name" =~ ^$ENTRIES_DIR/([^/]+)\.yaml$ ]] || continue
-        if ! printf '%s\n' "$trailers" | grep -qFx -- "${BASH_REMATCH[1]}"; then
+        if ! grep -qFx -- "${BASH_REMATCH[1]}" <<<"$trailers"; then
             violations=$((violations + 1))
             printf 'FAIL  G5  %s changes with no `Pmat-Ticket: %s` trailer in the LAST paragraph of a commit in the range (git trailers, as sov reads them) — e.g. git commit --allow-empty -m "chore: ticket trailer" -m "Pmat-Ticket: %s"\n' "$name" "${BASH_REMATCH[1]}" "${BASH_REMATCH[1]}"
         fi
@@ -554,6 +558,7 @@ PY
     g_rename_fragment() { git -C "$1" mv "$ENTRIES_DIR/PMAT-100.yaml" "$ENTRIES_DIR/PMAT-199.yaml"; sed -i 's/PMAT-100/PMAT-199/' "$1/$ENTRIES_DIR/PMAT-199.yaml"; commit_all "$1"; }
     g_nested_fragment() { mkdir -p "$1/$ENTRIES_DIR/sub"; printf -- '- id: PMAT-600\n  title: hidden\n  status: planned\n' >"$1/$ENTRIES_DIR/sub/PMAT-600.yaml"; commit_all "$1"; }
     g_symlink_fragment() { ln -s ../../README.md "$1/$ENTRIES_DIR/PMAT-700.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-700"; }
+    g_shallow_no_trailer() { printf -- "- id: PMAT-200\n  title: new\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1" && git -C "$1" rev-parse HEAD~1 >"$1/.git/shallow"; }
     g_gitlink_fragment() { git -C "$1" update-index --add --cacheinfo 160000,1111111111111111111111111111111111111111,"$ENTRIES_DIR/PMAT-701.yaml"; git -C "$1" commit -qm head -m "Pmat-Ticket: PMAT-701"; }
     g_exec_fragment() { printf -- "- id: PMAT-702\n  title: x\n  status: planned\n" >"$1/$ENTRIES_DIR/PMAT-702.yaml"; chmod +x "$1/$ENTRIES_DIR/PMAT-702.yaml"; commit_all "$1" "Pmat-Ticket: PMAT-702"; }
     g_delete_base() { git -C "$1" rm -q "$BASE_FILE"; commit_all "$1"; }
@@ -575,6 +580,7 @@ PY
     grow 'generated: a fragment renamed with its id edited -> REFUSE G4' 1 'FAIL  G4' g_rename_fragment
     grow 'generated: a nested fragment the generator never reads -> REFUSE G4' 1 'FAIL  G4' g_nested_fragment
     grow 'generated: a symlink fragment (target can change unseen) -> REFUSE G4' 1 'FAIL  G4' g_symlink_fragment
+    grow "generated: shallow checkout, fragment-less -> SKIP G5 (sov judges it on full history)" 0 "SKIP  G5" g_shallow_no_trailer
     grow "generated: a gitlink fragment -> REFUSE G4" 1 "FAIL  G4" g_gitlink_fragment
     grow "generated: an executable-mode fragment (allowlist is 100644 only) -> REFUSE G4" 1 "FAIL  G4" g_exec_fragment
     grow 'generated: the frozen base deleted -> REFUSE G2 (not the legacy judge)' 1 'FAIL  G2' g_delete_base
