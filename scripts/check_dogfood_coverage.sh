@@ -176,12 +176,19 @@ material_cited_changes() {
       p = $(NF - 1); gsub(/"/, "", p)
       if (!match(p, /^[^ :]+\.(rs|toml|yml|yaml|md|sh|py)/)) next
       f = substr(p, RSTART, RLENGTH); rest = substr(p, RLENGTH + 1); hi = 0
-      if (match(rest, /^:[0-9]+(-[0-9]+)?/)) {
-        rest = substr(rest, 2, RLENGTH - 1); n = split(rest, a, "-"); hi = a[n] + 0
+      # the cite must be exactly "", ":N" or ":N-M" (N <= M); anything else is a
+      # malformed cite and the whole check fails closed rather than guess a line
+      # (a trailing " (note ...)" annotation, as the real ledger has, is not part of the cite)
+      sub(/ .*$/, "", rest)
+      if (rest != "") {
+        if (rest !~ /^:[0-9]+(-[0-9]+)?$/) { print "!\t" p; next }
+        rest = substr(rest, 2); n = split(rest, a, "-"); hi = a[n] + 0
+        if (n == 2 && a[1] + 0 > hi) { print "!\t" p; next }
       }
       if (hi == 0) hi = 999999999
       if (hi > best[f]) best[f] = hi
     } END { for (f in best) print f "\t" best[f] }' "$root/$LEDGER")" || return 2
+  case "$caps" in "!"$'\t'* | *$'\n!'$'\t'*) return 2 ;; esac
   while IFS= read -r f; do
     [ -n "$f" ] || continue
     cap="$(awk -F'\t' -v f="$f" '$1 == f { print $2 }' <<<"$caps")"
@@ -232,7 +239,7 @@ material_cited_changes() {
 # function against silent drift, not a proof of accuracy.
 #
 check_freshness() {
-  local root="$1" base="$2" evfile changed n_ev n_changed unresolved total measured provenance
+  local root="$1" base="$2" grc evfile changed n_ev n_changed unresolved total measured provenance
   evfile="$(mktemp)"; changed="$(mktemp)"
 
   evidence_files "$root" > "$evfile" 2>/dev/null
@@ -326,8 +333,9 @@ check_freshness() {
   rm -f "${changed:?}.raw"
 
   # grep rc 1 = no cited file changed (fine); rc >= 2 = grep itself failed.
-  grep -Fx -f "$evfile" "$changed" > "${changed:?}.c" 2>/dev/null
-  if [ "$?" -ge 2 ]; then
+  grc=0
+  grep -Fx -f "$evfile" "$changed" > "${changed:?}.c" 2>/dev/null || grc=$?
+  if [ "$grc" -ge 2 ]; then
     printf '  G2.1 freshness       FAIL  could not intersect the changed files with the cited evidence\n'
     rm -f "${evfile:?}" "${changed:?}" "${changed:?}.c"; return 1
   fi
@@ -546,7 +554,7 @@ selftest_run() {
   out="$(DOGFOOD_GATE_ROOT="$td" DOGFOOD_BASE_REF=main \
          DOGFOOD_RECEIPT="$td/docs/audits/receipt.md" \
          DOGFOOD_RELEASE="${SELFTEST_RELEASE:-}" \
-         bash "$td/scripts/check_dogfood_coverage.sh" 2>&1)"; rc=$?
+         bash ${SELFTEST_BASH_FLAGS:-} "$td/scripts/check_dogfood_coverage.sh" 2>&1)"; rc=$?
   local verdict="GREEN"; [ "$rc" -ne 0 ] && verdict="RED"
   if [ "$verdict" != "$expect" ]; then
     printf '  %-46s %-5s (expected %s)  MISMATCH\n' "$label" "$verdict" "$expect"
@@ -672,6 +680,16 @@ if [ "${1:-}" = "--self-test" ]; then
   selftest_run "$TD" "mode-only change of a cited file (no hunk)" "RED" || FAILED=1
   git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
   chmod -x "$m3"
+  # a malformed cite must fail closed, not be read as a line (lane C, #6094)
+  for bad in '1-2x' '2-1' '1-' 'abc'; do
+    sed -i "s|^\\(demo,demo gamma,.*crates/demo/src/m3.rs\\):1-2,|\\1:$bad,|" "$TD/$LEDGER"
+    grep -q "m3.rs:$bad," "$TD/$LEDGER" || { printf '  MUTATION DID NOT ENGAGE: cite m3.rs:%s\n' "$bad"; FAILED=1; }
+    sed -i '$a fn helper_below() {}' "$m3"
+    selftest_run "$TD" "malformed cite m3.rs:$bad" "RED" "could not judge" || FAILED=1
+    git -C "$TD" checkout -q -- "$LEDGER" "crates/demo/src/m3.rs"
+  done
+  # the script must not abort under a caller that runs it with -e (the no-cited-change grep exits 1)
+  SELFTEST_BASH_FLAGS=-e selftest_run "$TD" "run under bash -e, no cited file changed" "GREEN" || FAILED=1
   # fail closed: a git that cannot diff must not read as "nothing material"
   selftest_mutate "$m3" "append a helper, then break the git diff" \
     sed -i '$a fn helper_below() {}' "$m3" || FAILED=1
