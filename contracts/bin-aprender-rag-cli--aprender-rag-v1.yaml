@@ -131,3 +131,9 @@ falsification_tests:
     test: 'pv lint contracts/ --gate shapes on the snapshot (ONT-4g extract:binary)'
     if_fails: 'LIVE RED 2026-09-27 on a default-feature snapshot: 7 `eval *` rows are bin:ledgerOrphan. They are NOT a ledger defect: all 7 are enumerated in scripts/dogfood_reconcile.py FEATURE_GATED (proven by rebuilding with --features eval), so the RED clears when extract:binary reads that enumerated set as an allowance (same fix clears the S9 apr and S10 alimentar feature-gated rows) — never by a count tolerance, and never by deleting the rows'
     mutation: 'delete `query` from the snapshot; must turn RED on bin:command (5) and bin:ledgerOrphan naming `aprender-rag query`'
+  - id: FALSIFY-BIN-TRUENO-RAG-006
+    rule: 'index builds exactly what it was asked to and fails closed before writing'
+    prediction: '`run_index` errors with "Path not found" / "Invalid exclude glob" / "No supported files" without creating the output dir, honours --exclude, --dedup and --manifest, and writes a tfidf index.json whose embeddings count equals its chunks count'
+    test: 'cargo test -p aprender-rag-cli --lib ingest::tests (8 tests, tempdir inputs)'
+    if_fails: 'index silently writes a partial or wrong index, or leaves a half-made output dir on a bad argument'
+    mutation: 'invert the path-exists check, the manifest flag and the dedup argument; 4 of 8 turn RED'

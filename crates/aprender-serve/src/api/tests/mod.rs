@@ -83,3 +83,4 @@ mod logprobs_4971; // aprender#4971: chat logprobs/top_logprobs honoured on the 
 #[cfg(feature = "cuda")]
 mod logprobs_cuda_4971; // aprender#4971: chat logprobs on the dense CUDA backend, direct, through the batch scheduler and on the iteration scheduler (needs a device + tinyllama; SKIP = not_measured)
 mod embed_kind_eg3_4902; // APR-EMBED-001 EG-3 (#4902): embedding routes serve the CLI vector, generative routes name the kind, media refused (I-7)
+mod apr_predict_5698; // #5698: apr_predict_handler branches, called directly

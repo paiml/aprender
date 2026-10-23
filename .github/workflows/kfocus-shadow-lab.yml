@@ -32,13 +32,30 @@ concurrency:
 
 jobs:
   x86-main-shadow:
-    runs-on: [self-hosted, Linux, X64, kfocus]
+    runs-on: [self-hosted, Linux, X64, clean-room, kfocus]
     timeout-minutes: 240
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
       FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
+      # inputs.sha is attacker-shaped text and this job holds secrets in env, so no step may
+      # check it out (or run anything from it) until it is proven to be a commit already on main.
+      # compare main...sha is "behind" (sha is an ancestor of main) or "identical"; any other
+      # answer, a non-40-hex value, or an API error stops the job before the checkout.
+      - name: Guard inputs.sha (40-hex and an ancestor of main)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHADOW_SHA: ${{ inputs.sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          [[ $SHADOW_SHA =~ ^[0-9a-f]{40}$ ]] || { echo "::error::inputs.sha is not a full 40-char lowercase sha"; exit 1; }
+          st=$(gh api "repos/${REPO}/compare/main...${SHADOW_SHA}" --jq .status) || { echo "::error::compare main...${SHADOW_SHA} failed; not checking out an unverified sha"; exit 1; }
+          case "$st" in
+            behind|identical) echo "inputs.sha is an ancestor of main (compare status: $st)" ;;
+            *) echo "::error::inputs.sha is not an ancestor of main (compare status: $st)"; exit 1 ;;
+          esac
       # The fleet pins jq 1.8.2. Runners in this clean-room pool whose image ships jq 1.6
       # print a number literal such as 90.00 as 90, so the guard-tree section turns RED
       # (scripts/release/tag_coverage_gate.sh --self-test, run by check_tag_coverage_gated.sh).
@@ -168,7 +185,9 @@ jobs:
       # cancelled run frees it too.
       - name: Free this job's own cargo target dir
         if: always()
-        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}" "$GITHUB_RUN_ID"; fi
+        env:
+          PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${PR_OR_REF}" "$GITHUB_RUN_ID"; fi
       - name: Shadow verdict
         if: always()
         env:
@@ -176,4 +195,4 @@ jobs:
           JOB_STATUS: ${{ job.status }}
         run: |
           result=failure; [ "$JOB_STATUS" = success ] && result=success
-          echo "SHADOW-VERDICT sha=${SHADOW_SHA} runner=${RUNNER_NAME} result=${result}"
+          echo "SHADOW-VERDICT sha=${SHADOW_SHA//[^0-9a-f]/} runner=${RUNNER_NAME} result=${result}"

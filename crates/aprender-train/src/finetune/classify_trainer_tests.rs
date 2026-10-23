@@ -1,6 +1,7 @@
 use super::*;
 use crate::finetune::classify_eval_report::{
-    restore_class_weights_from_metadata, ClassifyEvalReport, SSC_LABELS,
+    evaluate_checkpoint, restore_checkpoint_weights, restore_class_weights_from_metadata,
+    ClassifyEvalReport, SSC_LABELS,
 };
 use crate::finetune::{ClassifyConfig, ClassifyPipeline};
 use crate::transformer::TransformerConfig;
@@ -5098,4 +5099,593 @@ fn test_coverage_card_confusion_raw_formatting() {
     assert!(out.contains("### Raw Counts"));
     assert!(out.contains("```"));
     assert!(out.contains("Predicted"));
+}
+
+// =========================================================================
+// FALSIFY-OPS-017: resume restores the saved epoch and refuses a foreign dataset
+// =========================================================================
+
+#[test]
+fn test_resume_rejects_data_hash_mismatch() {
+    let num_classes = 3;
+    let config = TrainingConfig { epochs: 1, val_split: 0.2, ..TrainingConfig::default() };
+    let metrics = EpochMetrics {
+        epoch: 4,
+        train_loss: 0.5,
+        train_accuracy: 0.5,
+        val_loss: 0.6,
+        val_accuracy: 0.5,
+        learning_rate: 1e-2,
+        epoch_time_ms: 1,
+        samples_per_sec: 1.0,
+    };
+    let dir =
+        std::env::temp_dir().join(format!("aprender_test_resume_hash_{}", std::process::id()));
+
+    let mut saver = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    // Seed 42 gives every trainer the same initial weights, so perturb the saver's
+    // before the save: only then can a restore be told apart from an untouched head.
+    for w in saver.pipeline.classifier.weight.data_mut().as_slice_mut().expect("contiguous weight")
+    {
+        *w += 0.5;
+    }
+    let saved_weights = saver.pipeline.classifier.weight.data().to_vec();
+    saver.save_checkpoint(&dir, 4, &metrics).expect("checkpoint should save");
+    let apr = dir.join("model.apr");
+
+    // Same corpus: the saved epoch comes back.
+    let mut same = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    let fresh = same.pipeline.classifier.weight.data().to_vec();
+    assert_ne!(fresh, saved_weights, "the perturbation must be visible to a restore");
+    assert_eq!(same.resume_from_apr_checkpoint(&apr).expect("matching corpus resumes"), 4);
+    assert_eq!(same.pipeline.classifier.weight.data().to_vec(), saved_weights);
+
+    // Different corpus: refused with F-CKPT-006 before any weight is touched.
+    let mut foreign =
+        ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(21, num_classes), config)
+            .expect("config should be valid");
+    let before = foreign.pipeline.classifier.weight.data().to_vec();
+    let err = foreign.resume_from_apr_checkpoint(&apr).expect_err("foreign corpus must be refused");
+    assert!(err.to_string().contains("F-CKPT-006"), "unexpected error: {err}");
+    assert_eq!(foreign.pipeline.classifier.weight.data().to_vec(), before);
+    assert_ne!(before, saved_weights, "a restore would have changed the foreign head");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// =========================================================================
+// save_apr_checkpoint (Refs #5536)
+// =========================================================================
+
+fn ckpt_trainer(num_classes: usize) -> ClassifyTrainer {
+    let config = TrainingConfig {
+        epochs: 1,
+        val_split: 0.2,
+        checkpoint_dir: PathBuf::from("/tmp/unused_ckpt_5536"),
+        ..TrainingConfig::default()
+    };
+    ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(20, num_classes), config)
+        .expect("valid trainer")
+}
+
+fn ckpt_metrics() -> EpochMetrics {
+    EpochMetrics {
+        epoch: 3,
+        train_loss: 0.5,
+        train_accuracy: 0.75,
+        val_loss: 0.6,
+        val_accuracy: 0.7,
+        learning_rate: 2.5e-3,
+        epoch_time_ms: 10,
+        samples_per_sec: 1.0,
+    }
+}
+
+#[test]
+fn test_save_apr_checkpoint_roundtrips_metadata_and_tensors() {
+    use aprender::serialization::apr::AprReader;
+    let trainer = ckpt_trainer(3);
+    let dir = tempfile::tempdir().expect("tempdir");
+    trainer.save_apr_checkpoint(dir.path(), 3, &ckpt_metrics()).expect("save");
+
+    let reader = AprReader::open(dir.path().join("model.apr")).expect("open model.apr");
+    let meta = |k: &str| reader.get_metadata(k).unwrap_or_else(|| panic!("missing {k}")).clone();
+    assert_eq!(meta("__checkpoint__.schema_version"), serde_json::json!("1.2.0"));
+    assert_eq!(meta("epoch"), serde_json::json!(3));
+    assert_eq!(meta("num_classes"), serde_json::json!(3));
+    assert_eq!(meta("lora_rank"), serde_json::json!(4));
+    assert_eq!(meta("architecture"), serde_json::json!("qwen2_classify"));
+
+    let weight = reader.read_tensor_f32("classifier.weight").expect("weight");
+    let expected = trainer.pipeline.classifier.weight.data().to_vec();
+    assert_eq!(weight, expected, "classifier weights must round-trip exactly");
+    assert_eq!(reader.read_tensor_f32("classifier.bias").expect("bias").len(), 3);
+    assert_eq!(reader.read_tensor_f32("__training__.epoch").expect("epoch"), vec![3.0]);
+    let lr = reader.read_tensor_f32("__training__.learning_rate").expect("lr");
+    assert!((lr[0] - 2.5e-3).abs() < 1e-9);
+    assert_eq!(reader.read_tensor_f32("__training__.optimizer.step").expect("step").len(), 1);
+    // F-CKPT-001: every LoRA pair is present
+    assert!(reader.read_tensor_f32("lora.0.q_proj.lora_a").is_ok());
+    assert!(reader.read_tensor_f32("lora.0.v_proj.lora_b").is_ok());
+}
+
+#[test]
+fn test_save_apr_checkpoint_rejects_nan_classifier_weight() {
+    let mut trainer = ckpt_trainer(3);
+    trainer.pipeline.classifier.weight.data_mut()[0] = f32::NAN;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let err = trainer.save_apr_checkpoint(dir.path(), 0, &ckpt_metrics()).unwrap_err();
+    assert!(err.to_string().contains("F-CKPT-007"), "{err}");
+    assert!(err.to_string().contains("classifier.weight"), "{err}");
+    assert!(!dir.path().join("model.apr").exists(), "no file may be written on NaN");
+}
+
+#[test]
+fn test_save_apr_checkpoint_rejects_inf_classifier_bias() {
+    let mut trainer = ckpt_trainer(3);
+    trainer.pipeline.classifier.bias.data_mut()[0] = f32::INFINITY;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let err = trainer.save_apr_checkpoint(dir.path(), 0, &ckpt_metrics()).unwrap_err();
+    assert!(err.to_string().contains("classifier.bias"), "{err}");
+    assert!(!dir.path().join("model.apr").exists());
+}
+
+// =========================================================================
+// ClassifyTrainer::save_checkpoint (C-CKPT-001) — the files it writes
+// =========================================================================
+
+fn ckpt_metrics_s() -> EpochMetrics {
+    EpochMetrics {
+        epoch: 2,
+        train_loss: 0.5,
+        train_accuracy: 0.75,
+        val_loss: 0.25,
+        val_accuracy: 0.5,
+        learning_rate: 0.01,
+        epoch_time_ms: 1234,
+        samples_per_sec: 42.0,
+    }
+}
+
+fn ckpt_trainer_s() -> ClassifyTrainer {
+    let cfg = TrainingConfig { epochs: 1, val_split: 0.2, ..TrainingConfig::default() };
+    ClassifyTrainer::new(tiny_pipeline(3), make_corpus(20, 3), cfg).expect("valid")
+}
+
+#[test]
+fn test_save_checkpoint_writes_metadata_json_with_the_epoch_metrics() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 2, &ckpt_metrics_s()).expect("save");
+    let meta: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("metadata.json")).expect("metadata.json"),
+    )
+    .expect("valid json");
+    assert_eq!(meta["epoch"], 2);
+    assert_eq!(meta["epoch_time_ms"], 1234);
+    assert_eq!(meta["train_loss"].as_f64(), Some(0.5));
+    assert_eq!(meta["val_loss"].as_f64(), Some(0.25));
+    assert_eq!(meta["val_accuracy"].as_f64(), Some(0.5));
+    assert!(meta.get("class_weights").is_some(), "class_weights key is always written");
+}
+
+#[test]
+fn test_save_checkpoint_safetensors_carries_head_and_lora_tensors() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 2, &ckpt_metrics_s()).expect("save");
+    let bytes = std::fs::read(dir.path().join("model.safetensors")).expect("model.safetensors");
+    let (_, st_meta) = safetensors::SafeTensors::read_metadata(&bytes).expect("valid safetensors");
+    let meta = st_meta.metadata().as_ref().expect("header metadata");
+    assert_eq!(meta.get("epoch").map(String::as_str), Some("2"));
+    assert_eq!(meta.get("val_loss").map(String::as_str), Some("0.250000"));
+    let st = safetensors::SafeTensors::deserialize(&bytes).expect("deserialize");
+    let names: Vec<String> = st.names().iter().map(|n| n.to_string()).collect();
+    // F-CLASS-008: Q (even) and V (odd) adapters per layer, A and B each.
+    for name in [
+        "lora.0.q_proj.lora_a",
+        "lora.0.q_proj.lora_b",
+        "lora.0.v_proj.lora_a",
+        "lora.0.v_proj.lora_b",
+    ] {
+        assert!(names.iter().any(|n| n == name), "{name} missing from {names:?}");
+    }
+    let a = st.tensor("lora.0.q_proj.lora_a").expect("lora_a");
+    assert_eq!(a.shape()[0], 4, "lora_a is [rank, d_in] with rank 4");
+    assert_eq!(a.dtype(), safetensors::tensor::Dtype::F32);
+}
+
+#[test]
+fn test_save_checkpoint_writes_hf_config_and_peft_adapter_config() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 0, &ckpt_metrics_s()).expect("save");
+    let cfg: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("config.json")).expect("config.json"),
+    )
+    .expect("valid json");
+    assert_eq!(cfg["architectures"][0], "Qwen2ForSequenceClassification");
+    assert_eq!(cfg["model_type"], "qwen2");
+    assert_eq!(cfg["num_labels"], 3);
+    assert_eq!(cfg["problem_type"], "single_label_classification");
+    assert_eq!(cfg["hidden_size"], TransformerConfig::tiny().hidden_size);
+    let adapter: serde_json::Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.path().join("adapter_config.json"))
+            .expect("adapter_config.json"),
+    )
+    .expect("valid json");
+    assert_eq!(adapter["task_type"], "SEQ_CLS");
+    assert_eq!(adapter["r"], 4);
+}
+
+#[test]
+fn test_save_checkpoint_without_a_model_dir_writes_no_tokenizer_json() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(dir.path(), 0, &ckpt_metrics_s()).expect("save");
+    assert!(!dir.path().join("tokenizer.json").exists());
+}
+
+#[test]
+fn test_save_checkpoint_creates_missing_parent_directories() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let nested = dir.path().join("a").join("b").join("epoch-0");
+    let mut t = ckpt_trainer_s();
+    t.save_checkpoint(&nested, 0, &ckpt_metrics_s()).expect("save");
+    assert!(nested.join("metadata.json").is_file());
+    assert!(nested.join("model.safetensors").is_file());
+}
+
+#[test]
+fn test_save_checkpoint_under_a_regular_file_is_an_io_error() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let blocker = dir.path().join("not_a_dir");
+    std::fs::write(&blocker, b"x").expect("write blocker");
+    let mut t = ckpt_trainer_s();
+    let err = t.save_checkpoint(&blocker.join("ckpt"), 0, &ckpt_metrics_s()).unwrap_err();
+    assert!(err.to_string().contains("Failed to create checkpoint dir"), "unexpected error: {err}");
+}
+
+// =========================================================================
+// restore_checkpoint_weights / evaluate_checkpoint (#5537)
+// =========================================================================
+
+/// Write a classifier-only safetensors checkpoint whose bias strongly favours `class`.
+fn write_biased_checkpoint(dir: &std::path::Path, pipe: &ClassifyPipeline, class: usize) {
+    std::fs::create_dir_all(dir).unwrap();
+    let w = pipe.classifier.weight.data().len();
+    let nc = pipe.config.num_classes;
+    let weight = vec![0.0f32; w];
+    let mut bias = vec![0.0f32; nc];
+    bias[class] = 50.0;
+    let wb: &[u8] = bytemuck::cast_slice(&weight);
+    let bb: &[u8] = bytemuck::cast_slice(&bias);
+    let views = vec![
+        (
+            "classifier.weight",
+            safetensors::tensor::TensorView::new(safetensors::tensor::Dtype::F32, vec![w], wb)
+                .unwrap(),
+        ),
+        (
+            "classifier.bias",
+            safetensors::tensor::TensorView::new(safetensors::tensor::Dtype::F32, vec![nc], bb)
+                .unwrap(),
+        ),
+    ];
+    std::fs::write(dir.join("model.safetensors"), safetensors::serialize(views, None).unwrap())
+        .unwrap();
+}
+
+#[test]
+fn test_restore_checkpoint_weights_overwrites_classifier() {
+    let dir = std::env::temp_dir().join("entrenar_test_rcw_ok");
+    let mut pipe = tiny_pipeline(2);
+    write_biased_checkpoint(&dir, &pipe, 1);
+    restore_checkpoint_weights(&mut pipe, &dir).unwrap();
+    let bias = pipe.classifier.bias.data();
+    assert_eq!(bias.as_slice().unwrap(), &[0.0, 50.0]);
+    assert!(pipe.classifier.weight.data().iter().all(|&v| v == 0.0));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_restore_checkpoint_weights_missing_file_is_io_error() {
+    let dir = std::env::temp_dir().join("entrenar_test_rcw_missing");
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut pipe = tiny_pipeline(2);
+    let err = restore_checkpoint_weights(&mut pipe, &dir).unwrap_err();
+    assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_restore_checkpoint_weights_corrupt_file_is_serialization_error() {
+    let dir = std::env::temp_dir().join("entrenar_test_rcw_corrupt");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("model.safetensors"), b"not safetensors").unwrap();
+    let mut pipe = tiny_pipeline(2);
+    let err = restore_checkpoint_weights(&mut pipe, &dir).unwrap_err();
+    assert!(matches!(err, crate::Error::Serialization(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+fn eval_fixture(name: &str, class: usize) -> (std::path::PathBuf, std::path::PathBuf) {
+    let dir = std::env::temp_dir().join(format!("entrenar_test_evalckpt_{name}"));
+    std::fs::remove_dir_all(&dir).ok();
+    let pipe = tiny_pipeline(2);
+    write_biased_checkpoint(&dir, &pipe, class);
+    std::fs::write(
+        dir.join("adapter_config.json"),
+        r#"{"peft_type":"LORA","r":4,"lora_alpha":4.0,"target_modules":["q_proj","v_proj"],"lora_dropout":0.0,"bias":"none"}"#,
+    )
+    .unwrap();
+    let data = dir.join("test.jsonl");
+    std::fs::write(
+        &data,
+        "{\"input\":\"alpha\",\"label\":0}\n{\"input\":\"beta\",\"label\":1}\n{\"input\":\"gamma\",\"label\":1}\n",
+    )
+    .unwrap();
+    (dir, data)
+}
+
+fn eval_config() -> ClassifyConfig {
+    ClassifyConfig { num_classes: 2, lora_rank: 4, lora_alpha: 4.0, ..ClassifyConfig::default() }
+}
+
+#[test]
+fn test_evaluate_checkpoint_uses_restored_weights() {
+    let (dir, data) = eval_fixture("ok", 1);
+    let labels = vec!["a".to_string(), "b".to_string()];
+    let report =
+        evaluate_checkpoint(&dir, &data, &TransformerConfig::tiny(), eval_config(), &labels)
+            .unwrap();
+    assert_eq!(report.total_samples, 3);
+    // bias +50 on class 1 forces every prediction to class 1: column 0 is empty.
+    assert_eq!(report.confusion_matrix, vec![vec![0, 1], vec![0, 2]]);
+    assert!((report.accuracy - 2.0 / 3.0).abs() < 1e-9);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_evaluate_checkpoint_follows_checkpoint_not_defaults() {
+    let (dir, data) = eval_fixture("flip", 0);
+    let labels = vec!["a".to_string(), "b".to_string()];
+    let report =
+        evaluate_checkpoint(&dir, &data, &TransformerConfig::tiny(), eval_config(), &labels)
+            .unwrap();
+    assert_eq!(report.confusion_matrix, vec![vec![1, 0], vec![2, 0]]);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_evaluate_checkpoint_invalid_adapter_config_is_serialization_error() {
+    let (dir, data) = eval_fixture("badcfg", 1);
+    std::fs::write(dir.join("adapter_config.json"), "{ nope").unwrap();
+    let err = evaluate_checkpoint(&dir, &data, &TransformerConfig::tiny(), eval_config(), &[])
+        .unwrap_err();
+    assert!(matches!(err, crate::Error::Serialization(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn test_evaluate_checkpoint_missing_test_data_errors() {
+    let (dir, _) = eval_fixture("nodata", 1);
+    let err = evaluate_checkpoint(
+        &dir,
+        &dir.join("absent.jsonl"),
+        &TransformerConfig::tiny(),
+        eval_config(),
+        &[],
+    )
+    .unwrap_err();
+    assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+// run_worker: distributed worker loop (#5636)
+// =========================================================================
+
+mod run_worker_tests {
+    use super::*;
+    use crate::finetune::distributed::{DistributedConfig, WireMessage};
+    use crate::finetune::gradient_server::{read_wire_message, send_wire_message};
+    use std::net::TcpListener;
+
+    fn worker_trainer(addr: Option<std::net::SocketAddr>) -> ClassifyTrainer {
+        let config = TrainingConfig {
+            distributed: addr.map(DistributedConfig::worker),
+            ..TrainingConfig::default()
+        };
+        ClassifyTrainer::new(tiny_pipeline(3), make_corpus(8, 3), config)
+            .expect("config should be valid")
+    }
+
+    fn expect_config_error(result: crate::Result<TrainResult>, needle: &str) {
+        match result {
+            Err(crate::Error::ConfigError(msg)) => {
+                assert!(msg.contains(needle), "expected {needle:?} in {msg:?}");
+            }
+            other => panic!("expected ConfigError containing {needle:?}, got {other:?}"),
+        }
+    }
+
+    /// Accept one worker, answer its join, then play `script` against the stream.
+    fn fake_coordinator<T: Send + 'static>(
+        script: impl FnOnce(&std::net::TcpStream) -> T + Send + 'static,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<T>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let join = read_wire_message(&stream).expect("join request");
+            assert!(matches!(join, WireMessage::JoinRequest { gpu_count: 1, .. }));
+            let accepted = WireMessage::JoinAccepted { worker_id: 7, total_workers: 2 };
+            send_wire_message(&stream, &accepted).expect("join accepted");
+            script(&stream)
+        });
+        (addr, handle)
+    }
+
+    #[test]
+    fn missing_distributed_config_is_a_config_error() {
+        let mut trainer = worker_trainer(None);
+        expect_config_error(trainer.run_worker(), "distributed config required");
+    }
+
+    #[test]
+    fn unreachable_coordinator_is_a_connect_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        drop(listener);
+        let mut trainer = worker_trainer(Some(addr));
+        expect_config_error(trainer.run_worker(), "worker connect failed");
+    }
+
+    #[test]
+    fn immediate_shutdown_returns_an_empty_result() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+        });
+        let result = worker_trainer(Some(addr)).run_worker().expect("clean shutdown");
+        coordinator.join().expect("coordinator thread");
+        assert!(result.epoch_metrics.is_empty());
+        assert_eq!(result.best_epoch, 0);
+        assert!(result.best_val_loss.is_infinite());
+        assert!(!result.stopped_early);
+    }
+
+    #[test]
+    fn one_step_round_trips_shard_gradients_and_averaged_update() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            // Shard end past the training split must be clamped to its length.
+            let shard = WireMessage::ShardAssignment { step: 3, shard_start: 2, shard_end: 99 };
+            send_wire_message(s, &shard).expect("shard");
+            let payload = read_wire_message(s).expect("gradient payload");
+            let WireMessage::GradientPayload { step, worker_id, gradients, total, .. } = payload
+            else {
+                panic!("expected GradientPayload, got {payload:?}");
+            };
+            let averaged = WireMessage::AveragedGradient {
+                step,
+                gradients: gradients.clone(),
+                global_loss: 0.5,
+            };
+            send_wire_message(s, &averaged).expect("averaged");
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+            (step, worker_id, gradients.len(), total)
+        });
+        let mut trainer = worker_trainer(Some(addr));
+        let expected_total = trainer.train_data.len() - 2;
+        let result = trainer.run_worker().expect("one step then shutdown");
+        let (step, worker_id, grad_len, total) = coordinator.join().expect("coordinator thread");
+        assert_eq!((step, worker_id, total), (3, 7, expected_total), "shard 2..len");
+        assert!(grad_len > 0, "worker must send its LoRA gradients");
+        assert!(result.epoch_metrics.is_empty());
+    }
+
+    #[test]
+    fn shutdown_during_allreduce_is_an_averaged_receive_error() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            let shard = WireMessage::ShardAssignment { step: 0, shard_start: 0, shard_end: 2 };
+            send_wire_message(s, &shard).expect("shard");
+            read_wire_message(s).expect("gradient payload");
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+        });
+        expect_config_error(worker_trainer(Some(addr)).run_worker(), "averaged receive failed");
+        coordinator.join().expect("coordinator thread");
+    }
+
+    #[test]
+    fn unexpected_message_instead_of_shard_is_a_shard_receive_error() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            let hb = WireMessage::Heartbeat { node_id: "x".into(), timestamp_ms: 1 };
+            send_wire_message(s, &hb).expect("heartbeat");
+        });
+        expect_config_error(worker_trainer(Some(addr)).run_worker(), "shard receive failed");
+        coordinator.join().expect("coordinator thread");
+    }
+}
+
+// #5686: ClassifyTrainer::train, single-process path.
+fn train_5686(epochs: usize, patience: usize, tag: &str) -> (TrainResult, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("aprender_5686_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config = TrainingConfig {
+        epochs,
+        val_split: 0.3,
+        early_stopping_patience: patience,
+        checkpoint_dir: dir.clone(),
+        warmup_fraction: 0.0,
+        ..TrainingConfig::default()
+    };
+    let mut trainer =
+        ClassifyTrainer::new(tiny_pipeline(2), make_corpus(20, 2), config).expect("valid");
+    (trainer.train(), dir)
+}
+
+#[test]
+fn train_zero_patience_stops_after_first_epoch_5686() {
+    let (result, dir) = train_5686(4, 0, "patience0");
+    assert!(result.stopped_early, "patience 0 must stop at once");
+    assert_eq!(result.epoch_metrics.len(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_runs_every_epoch_when_patience_is_not_reached_5686() {
+    let (result, dir) = train_5686(2, 100, "full");
+    assert!(!result.stopped_early);
+    assert_eq!(result.epoch_metrics.len(), 2);
+    let want = result
+        .epoch_metrics
+        .iter()
+        .filter(|m| m.val_loss.is_finite())
+        .min_by(|a, b| a.val_loss.total_cmp(&b.val_loss))
+        .expect("a finite epoch");
+    assert_eq!(result.best_epoch, want.epoch, "best_epoch is the lowest val_loss");
+    assert_eq!(result.best_val_loss, want.val_loss);
+    for (i, m) in result.epoch_metrics.iter().enumerate() {
+        assert_eq!(m.epoch, i, "metrics are recorded in epoch order");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_saves_best_and_periodic_checkpoints_5686() {
+    // epochs (2) <= save_every (5) => a checkpoint every epoch, plus `best`.
+    let (_result, dir) = train_5686(2, 100, "ckpt");
+    assert!(dir.join("best").join("metadata.json").exists(), "best checkpoint");
+    assert!(dir.join("epoch-0").join("metadata.json").exists(), "epoch-0 checkpoint");
+    assert!(dir.join("epoch-1").join("metadata.json").exists(), "epoch-1 checkpoint");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_with_monitor_writer_completes_the_state_file_5686() {
+    let dir = std::env::temp_dir().join(format!("aprender_5686_mon_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config =
+        TrainingConfig { epochs: 1, checkpoint_dir: dir.join("ckpt"), ..TrainingConfig::default() };
+    let mut trainer =
+        ClassifyTrainer::new(tiny_pipeline(2), make_corpus(20, 2), config).expect("valid");
+    let writer = crate::monitor::tui::TrainingStateWriter::new(&dir, "exp-5686", "tiny");
+    trainer.set_monitor_writer(writer);
+    let result = trainer.train();
+    assert_eq!(result.epoch_metrics.len(), 1);
+    let state: Vec<_> = std::fs::read_dir(&dir)
+        .expect("monitor dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+        .collect();
+    assert!(!state.is_empty(), "the monitor wrote a state file");
+    let _ = std::fs::remove_dir_all(dir);
 }

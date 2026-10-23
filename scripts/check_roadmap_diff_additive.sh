@@ -85,6 +85,7 @@ run_check() {
 SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"   # absolute: the case table cds into a scratch repo before sourcing it
 if [ "${1:-}" = "--lib-only" ]; then return 0 2>/dev/null || exit 0; fi
 if [ "${1:-}" = "--self-test" ]; then
+    unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH   # hermetic: rows set the event inline where they test it
     TD=$(mktemp -d) || { printf 'FAIL mktemp -d\n'; exit 2; }
     trap 'rm -rf -- "${TD:?}"' EXIT
     row=0
@@ -92,7 +93,7 @@ if [ "${1:-}" = "--self-test" ]; then
     not_measured=0
     # The case table has exactly this many rows; a run that reaches fewer, or more, is RED, never "n/n"
     # (#5047). Raise it with every row added. The two summary rows at the end are not counted.
-    SELFTEST_MIN_ROWS=30
+    SELFTEST_MIN_ROWS=32
 
     # selftest_verdict ROWS FAILS NOT_MEASURED MIN -> prints the summary; rc 0 all rows ran and
     # passed, 1 a row failed or other than MIN ran, 2 every row that ran passed but one was not measured.
@@ -473,6 +474,19 @@ EOF
     gotr=$( GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$TD/pr-event.json" bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$QR.clone" "$QR.clone" 2>/dev/null ) || true
     case "$gotr" in "$wantr|pull_request.base.sha"*) printf 'ok    row %-2s pull_request fallback on a real nested payload -> base = base.sha, not head.sha\n' "$row" ;;
         *) printf 'FAIL  row %-2s pull_request fallback: wanted %s|pull_request.base.sha..., got %s\n' "$row" "$wantr" "$gotr"; fails=1 ;; esac
+    # The event NAMES a base that cannot be fetched: resolve_base refuses (rc 1, "cannot be fetched") instead of
+    # falling to a weaker rule -- for a merge_group payload and for a pull_request payload alike.
+    ghost=$(printf 'c%.0s' $(seq 1 40))
+    printf '{"merge_group":{"base_sha":"%s"}}\n' "$ghost" > "$TD/ghost-event.json"
+    printf '{"pull_request":{"head":{"sha":"%s"},"base":{"ref":"main","sha":"%s"}}}\n' "$(git -C "$QR.clone" rev-parse HEAD)" "$ghost" > "$TD/ghost-pr-event.json"
+    for gev in merge_group:ghost-event.json pull_request:ghost-pr-event.json; do
+        row=$((row + 1)); gname=${gev%%:*}
+        rcg=0; errg=$( GITHUB_EVENT_NAME="$gname" GITHUB_EVENT_PATH="$TD/${gev#*:}" bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$QR.clone" "$QR.clone" 2>&1 >/dev/null ) || rcg=$?
+        case "$rcg:$errg" in
+            1:*"cannot be fetched"*) printf 'ok    row %-2s %s event names an unfetchable base -> resolve_base refuses (rc 1, "cannot be fetched")\n' "$row" "$gname" ;;
+            *) printf 'FAIL  row %-2s %s event names an unfetchable base: wanted rc 1 + "cannot be fetched", got rc %s: %s\n' "$row" "$gname" "$rcg" "$errg"; fails=1 ;;
+        esac
+    done
     # deepen again and the base still resolves. A planted git logs every fetch read; both must be the
     # deepen, so a deepen that is one bare read (it dies, and the by-sha fetch after it answers) is RED.
     # It runs from a cwd outside REPO_ROOT (the shim's own dir), as check_ont_ratchet.sh may (it never cds),

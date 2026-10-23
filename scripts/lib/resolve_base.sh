@@ -25,7 +25,7 @@
 _RESOLVE_BASE_P6="$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/../ci/fetch_p6.sh" || _RESOLVE_BASE_P6=""
 
 # _resolve_event_base: the base sha the CI event itself names (merge_group.base_sha, else
-# pull_request.base.sha), or nothing. Under a REBASE merge queue a multi-commit pull request is
+# pull_request.base.sha), or nothing (rc 1 when it names one that cannot be fetched). Under a REBASE merge queue a multi-commit pull request is
 # replayed as N commits, so the head's parent is the previous replayed commit, not the base:
 # the parent-based rules below would judge only the LAST commit (#5855). Parsed with sed, no jq.
 # ROADMAP_DIFF_NO_EVENT_BASE=1 is the case table's mutation.
@@ -38,8 +38,10 @@ _resolve_event_base() {
     esac
     [ -n "$sha" ] || return 0
     git -C "$REPO_ROOT" cat-file -e "$sha^{commit}" 2>/dev/null \
-        || git -C "$REPO_ROOT" fetch -q --depth 1 origin "$sha" >/dev/null 2>&1 || true
-    git -C "$REPO_ROOT" cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"
+        || bash "$_RESOLVE_BASE_P6" -C "$REPO_ROOT" -q --depth 1 origin "$sha" >/dev/null 2>&1 || true
+    # The event NAMED a base: if it cannot be had, fail closed (rc 1) rather than fall to a weaker rule.
+    git -C "$REPO_ROOT" cat-file -e "$sha^{commit}" 2>/dev/null || return 1
+    printf '%s\n' "$sha"
     return 0
 }
 
@@ -69,7 +71,11 @@ resolve_base() {
         printf '%s: %s is the origin/main tip and its first parent is not fetched, so the only base would be %s itself; refused (never the tree against itself). Deepen the checkout: git fetch --deepen=1 origin +refs/heads/main:refs/remotes/origin/main\n' "$PROG" "$head" "$head" >&2
         return 1
     fi
-    local evb; evb=$(_resolve_event_base)
+    local evb
+    evb=$(_resolve_event_base) || {
+        printf '%s: the CI event names a base commit that cannot be fetched; refused (never a weaker base for a named one).\n' "$PROG" >&2
+        return 1
+    }
     if [ -n "$evb" ] && [ "${GITHUB_EVENT_NAME:-}" = merge_group ]; then
         BASE_REF="$evb"; BASE_HOW="merge_group.base_sha (event base; a REBASE-replayed head has no parent that names it)"; return 0
     fi

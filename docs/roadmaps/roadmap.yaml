@@ -25419,15 +25419,16 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
 - id: PMAT-5847
   github_issue: 5847
   item_type: task
-  title: 'LAB nightlies: timeout-minutes on every job and end by 05:00Z (falsifier check_lab_timeouts.sh)'
+  title: 'LAB nightlies: timeout-minutes on every job and end by 05:00Z (falsifier scripts/lab/lab_timeouts_audit.sh)'
   status: in_progress
   priority: high
   assigned_to: null
   created: 2026-10-21T11:30:00Z
-  updated: 2026-10-21T11:30:00Z
+  updated: 2026-10-22T18:30:00Z
   spec: null
   acceptance_criteria:
-  - 'scripts/check_lab_timeouts.sh is RED on the pre-fix tree (22 findings on the merge-base) and GREEN after; --self-test 6 rows'
+  - 'scripts/lab/lab_timeouts_audit.sh is RED on the pre-fix tree (22 findings on the merge-base) and GREEN after; --self-test 11 rows'
+  - 'release-rehearsal-nightly.yml (cron 20 5, 455 min lower bound) is RED in the audit with no exemption by default; one owner, this ticket. Exempting it is pending quorum.'
   - 'reaper catching queued + schedule runs is a separate change to the deployed pr-run-reaper.sh'
   phases: []
   subtasks: []
@@ -25456,6 +25457,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5879
+  github_issue: 5879
+  item_type: task
+  title: 'intake: coverage scan updates the #5875 report, never one ticket per function'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-21T16:00:00Z
+  updated: 2026-10-21T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'LAB check goes RED on an open "test: cover" issue not named in epic #5875, GREEN today'
+  - 'it runs in guards-nightly, never in a PR or merge-queue job'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: coverage-nightly.yml already edits one tracking issue by title; the per-function filer is outside the repo, this guard catches it.
+  epic: 5875
 - id: PMAT-5884
   github_issue: 5884
   item_type: task
@@ -25532,6 +25553,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5920
+  github_issue: 5920
+  item_type: task
+  title: 'guard-cargo: parallel cargo-free lane in ci_guards.sh (merge-queue x86-main 29.3 min)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:40:00Z
+  updated: 2026-10-22T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - See ci/guard-lane-steps.txt; the lane is off by default (CI_GUARDS_LANE=1 opts in; C324)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5924
   github_issue: 5924
   item_type: task
@@ -25544,6 +25584,254 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   spec: null
   acceptance_criteria:
   - handoff/emg-001/EMG-001.md C1+C2; EMG-9 proof in PR body
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5952
+  github_issue: 5952
+  item_type: task
+  title: 'ci: push-to-main tier runs only HEAD^1..HEAD; use the PUSH_BEFORE range'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T15:15:00Z
+  updated: 2026-10-22T15:15:00Z
+  spec: null
+  acceptance_criteria:
+  - ci_test_tier.sh push arm diffs github.event.before..HEAD with an all-zero-before guard; self-test rows plus a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-5955
+  github_issue: 5955
+  item_type: task
+  title: 'ci: heavy X64 jobs run only in merge_group/push; PR runs stay light (Noah 15:09Z)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:20:00Z
+  updated: 2026-10-22T16:20:00Z
+  spec: null
+  acceptance_criteria:
+  - on pull_request x86-main, x86-main-advisories and workspace-test-shard do not run; pr-light does; ci / gate, gate and workspace-test pass when pr-light passes
+  - on merge_group, push, an empty or an unknown event the same aggregators fail when a heavy job is skipped; ci_mg_reuse.sh --self-test runs both directions plus mutants that delete the event check
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-5971
+  github_issue: 5971
+  item_type: task
+  title: 'ci: move guard-cargo, guard-tree, vendored-schemas out of x86-main into an MQ "guards" job on the existing mq lane'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T16:30:00Z
+  updated: 2026-10-22T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'merge_group runs a required "guards" job on the existing [self-hosted, Linux, X64, mq] label (no new runner label) holding guard-tree, guard-cargo, vendored-schemas; x86-main drops them on merge_group'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5974
+  github_issue: 5974
+  item_type: task
+  title: 'ci: silicon-coverage scores a consistently empty workflow listing MISSING instead of NOT_MEASURED'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:49:18Z
+  updated: 2026-10-22T16:49:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5978
+  github_issue: 5978
+  item_type: task
+  title: 'check_silicon_coverage: re-read an all-empty listing once, print request ids'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T17:32:38Z
+  updated: 2026-10-22T17:32:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-6041
+  github_issue: 6041
+  item_type: task
+  title: 'ci: guard-cargo#m5 mounts a toolchain that lives outside RUSTUP_HOME and fails loud when the container does not run the pinned rustc'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T00:55:00Z
+  updated: 2026-10-23T00:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'm5 resolves the pinned toolchain with readlink -f, mounts it when outside RUSTUP_HOME, and the container step fails with FAIL(ENV) naming the resolved rustc if it is not the pinned one'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6042
+  github_issue: 6042
+  item_type: task
+  title: 'gate: affected_set.sh narrows docs/contracts/*.md to READERS-only (split out of #6035)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:00:00Z
+  updated: 2026-10-23T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - docs, contracts, root *.md and .claude/ paths select READERS only, not ALL
+  - nothing on a PR, merge-queue or release path calls affected_set.sh (dormant)
+  - the readers case table and self-test run as a nightly LAB step with one owner
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6068
+  github_issue: 6068
+  item_type: task
+  title: repo_flow binding_station is the argmin of the station bounds (flow model eq 2/3/5/6)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T03:15:38Z
+  updated: 2026-10-23T03:15:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6102
+  github_issue: 6102
+  item_type: task
+  title: 'ci: one PR per ticket, enforced (check refuses a duplicate PR per PMAT ticket)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T07:18:45Z
+  updated: 2026-10-23T07:18:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6123
+  github_issue: 6123
+  item_type: task
+  title: 'guard_lane_stop.sh: no date(1), clock injected (DET002; child of PMAT-5920)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T09:30:00Z
+  updated: 2026-10-23T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/guard_lane_stop.sh has no date invocation and no bashrs disable-line; bashrs lint --no-ignore reports no DET002
+  - the self-test fails when ACTIVE_SINCE_EPOCH and ACTIVE_SINCE disagree
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6131
+  github_issue: 6131
+  item_type: task
+  title: 'pmat_bin.sh reads its pin from tools.toml, one source (m36 FAIL ENV; child of PMAT-1059)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:20:00Z
+  updated: 2026-10-23T10:20:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/pmat_bin.sh holds no version literal; PMAT_PIN is tools.toml [pmat] version
+  - an unreadable pin returns 1, never a default
+  - check_hardcoded_paths.sh --self-test reads the pin from tools.toml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6134
+  github_issue: 6134
+  item_type: task
+  title: 'EMF G3: receipts keyed by patch-id; a push re-reviews only changed patch-ids'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:45:00Z
+  updated: 2026-10-23T10:45:00Z
+  spec: docs/specifications/EMF-G3-patch-id-receipts.md
+  acceptance_criteria:
+  - scripts/pr_patch_ids.sh is the one producer of per-commit patch-ids; an unreadable range or an empty set is a refusal
+  - mq_feeder.sh needs_seats arms a gate PR only when every head patch-id has 2 distinct seats and a 3/3 receipt, with no request-changes naming a head id
+  - a no-op rebase and a merge of main void 0 receipts; an amended commit voids only its own id
+  - the head-sha rules stay accepted; arm_pr_automerge.sh keeps its head_sha rule
+  - case table F1-F9 in mq_feeder.sh --self-test, each with a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6135
+  github_issue: 6135
+  item_type: task
+  title: 'mq-feeder: gate auto-arm with non-author seats + fresh_derived byte-compare (split from #6112)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T10:35:00Z
+  updated: 2026-10-23T10:35:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The mq-feeder arms a gate PR only when every head patch-id has 2 distinct non-author seats and a 3/3 fresh_derived byte-compare receipt (as #6134 needs_seats); a no-op rebase or merge of main voids 0 receipts and an amended commit voids only its own id; a falsifier test shows an author-only seat or a stale byte-compare does not arm'
   phases: []
   subtasks: []
   estimated_effort: null

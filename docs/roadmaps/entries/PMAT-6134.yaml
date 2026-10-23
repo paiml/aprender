@@ -1,0 +1,23 @@
+- id: PMAT-6134
+  github_issue: 6134
+  item_type: task
+  title: 'EMF G3: receipts keyed by patch-id; a push re-reviews only changed patch-ids'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:45:00Z
+  updated: 2026-10-23T10:45:00Z
+  spec: docs/specifications/EMF-G3-patch-id-receipts.md
+  acceptance_criteria:
+  - scripts/pr_patch_ids.sh is the one producer of per-commit patch-ids; an unreadable range or an empty set is a refusal
+  - mq_feeder.sh needs_seats arms a gate PR only when every head patch-id has 2 distinct seats and a 3/3 receipt, with no request-changes naming a head id
+  - a no-op rebase and a merge of main void 0 receipts; an amended commit voids only its own id
+  - the head-sha rules stay accepted; arm_pr_automerge.sh keeps its head_sha rule
+  - case table F1-F9 in mq_feeder.sh --self-test, each with a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

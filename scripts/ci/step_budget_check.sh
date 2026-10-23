@@ -2,7 +2,7 @@
 # step_budget_check.sh -- flag any CI step that ran longer than 1.5x its budget (ci/step-budgets.tsv).
 # Operator 2026-10-19: "per-step budgets, with CI flagging any step >1.5x its budget". Reads the run's jobs
 # API (GraphQL-free REST, one call). Prints one line per breach; exit 0 always on a measured run, 2 when the
-# run cannot be read (not_measured, never a pass). A LAB signal: run on demand or by the nightly LAB lane, never in a PR or merge job (C324 rule 5/6).
+# run cannot be read (not_measured, never a pass). A LAB signal: run on demand, never in a PR or merge job (C324 rule 5/6).
 #   bash scripts/ci/step_budget_check.sh <run_id>      bash scripts/ci/step_budget_check.sh --self-test
 set -uo pipefail
 BUD=${STEP_BUDGETS:-ci/step-budgets.tsv}

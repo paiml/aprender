@@ -14,7 +14,7 @@
 # ignored; `- name:`, `- run:` and `- if:` layouts and `run: |` blocks all parse).
 #   - EXACTLY 2 steps run `fat_driver.py wait` (x86-main, determinism) and each `if:` is
 #     exactly `${{ !cancelled() }}`;
-#   - EXACTLY 3 steps run `fat_teardown.sh` (x86-main, determinism, ARM64 determinism)
+#   - EXACTLY 4 steps run `fat_teardown.sh` (x86-main, guards, determinism, ARM64 determinism)
 #     and each `if:` is exactly `always()`;
 #   - a kind with no step at all is exit 2 (the file cannot be modelled).
 # Override the counts with CI_WAIT_STEPS / CI_TEARDOWN_STEPS when a job is added.
@@ -69,16 +69,24 @@ gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the
     gate_script "$1" > "$s"
     if [ ! -s "$s" ]; then echo "ENV: no gate 'Check required sections' script in $1" >&2; rm -f "${s:?}"; return 2; fi
     g() { # <label> <want-rc> <X86> <DET>
-        r=0; EVT="${EVT:-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
+        r=0; EVT="${ROWEVT-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" GRD="${GRD-$G}" GRDR="${GRDR-success}" PRL="${PRL:-success}" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
         if [ "$r" = "$2" ]; then echo "ok   gate $1 -> exit $r"; else echo "FAIL gate $1: exit $r, wanted $2"; rc=1; fi
     }
     g "all fat needs green (control)" 0 "$G" "$D"
     g "x86-main CANCELLED (no results output) is RED" 1 "" "$D"
     g "determinism CANCELLED (no results output) is RED" 1 "$G" ""
     g "both fat needs cancelled is RED" 1 "" ""
+    GRD="" g "guards CANCELLED (no results output) is RED on merge_group" 1 "$G" "$D"
+    GRDR=failure g "guards job red (result failure) with guard-tree and guard-cargo green (vendored-schemas red) is RED on merge_group" 1 "$G" "$D"
+    GRDR=skipped g "guards job SKIPPED is RED on merge_group" 1 "$G" "$D"
+    # leak: the step env carries EVT=pull_request (x86-main, run 39888226186); a merge_group row must still be RED (#6061)
+    EVT=pull_request GRD="" g "guards CANCELLED stays RED when the step env leaks EVT=pull_request" 1 "$G" "$D"
+    ROWEVT=pull_request GRDR="" g "pull_request: guards not run is not RED" 0 "$G" "$D"
+    # #5955: a PR head runs pr-light, not the heavy jobs; their missing results are not owed there, a failed pr-light is RED
     # determinism does not run on a PR head: its missing compare is a skip there, never a RED (and x86-main still is)
-    EVT=pull_request g "pull_request: determinism skipped (no results output) is not RED" 0 "$G" ""
-    EVT=pull_request g "pull_request: x86-main CANCELLED is still RED" 1 "" ""
+    ROWEVT=pull_request g "pull_request: determinism skipped (no results output) is not RED" 0 "$G" ""
+    ROWEVT=pull_request g "pull_request: heavy jobs skipped (no results output) pass when pr-light passed" 0 "" ""
+    ROWEVT=pull_request PRL=failure g "pull_request: pr-light failed is RED" 1 "$G" "$D"
     rm -f "${s:?}"
     return "$rc"
 }
@@ -101,7 +109,7 @@ gate_wiring() { # <file>
     blk=$(awk '$0 == "  gate:" {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1")
     if grep -qE '^    if: always\(\)[[:space:]]*$' <<< "$blk"; then echo "ok   gate job runs under if: always()"; else echo "FAIL gate job has no 'if: always()'"; rc=1; fi
     needs=$(grep -E '^    needs: \[' <<< "$blk" || true)
-    for n in x86-main determinism; do
+    for n in x86-main guards determinism; do
         if grep -qE "[\[ ,]${n}[],]" <<< "$needs"; then echo "ok   gate job needs $n"; else echo "FAIL gate job does not need $n"; rc=1; fi
     done
     return "$rc"
@@ -150,7 +158,7 @@ check() { # <file>
     local f=$1 rc=0 spec pat want label want_n k row ln cond flg
     for spec in 'fat_driver.py wait|!cancelled()|wait|WAITS' 'fat_teardown.sh|always()|teardown|TEARDOWNS'; do
         IFS='|' read -r pat want label want_n <<< "$spec"
-        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS-2} ;; *) want_n=${CI_TEARDOWN_STEPS-3} ;; esac
+        case "$want_n" in WAITS) want_n=${CI_WAIT_STEPS-3} ;; *) want_n=${CI_TEARDOWN_STEPS-5} ;; esac
         case "$want_n" in ''|*[!0-9]*|0|???*) echo "ENV: the expected $label step count '$want_n' is not a positive integer (CI_WAIT_STEPS/CI_TEARDOWN_STEPS): refusing to run the check without one" >&2; return 2 ;; esac
         k=0
         while IFS= read -r row; do
@@ -216,14 +224,17 @@ self_test() {
         { printf '    steps:\n'
           printf '      - name: W1\n        if: %s\n        run: %s\n%s' "$C" "$W" "$3"
           printf '      - name: W2\n        if: %s\n        run: %s\n' "$C" "$W"
+          printf '      - name: W3\n        if: %s\n        run: %s\n' "$C" "$W"
           printf '      - name: T1\n        if: %s\n        run: %s\n%s' "$A" "$T" "$4"
           printf '      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T"
-          [ "$5" = NONE-STEP ] || printf '      - name: T3\n        if: %s\n        run: %s\n' "$5" "$T"; } > "$td/f.yml"
+          [ "$5" = NONE-STEP ] || printf '      - name: T3\n        if: %s\n        run: %s\n' "$5" "$T"
+          printf '      - name: T4\n        if: %s\n        run: %s\n' "$A" "$T"
+          printf '      - name: T5\n        if: %s\n        run: %s\n' "$A" "$T"; } > "$td/f.yml"
         r=0; out=$( (unset CI_TEARDOWN_STEPS CI_WAIT_STEPS; check "$td/f.yml") 2>&1) || r=$?
         if [ "$r" = "$1" ]; then echo "ok   self-test: $2"; else echo "FAIL self-test: $2 (rc $r, wanted $1): $out"; rc=1; fi
     }
-    fx 0 "the real shape: 2 waits + 3 teardowns under the DEFAULT counts passes" "" "" "$A"
-    fx 1 "MUTANT: only 2 teardowns under the default count of 3 is caught" "" "" NONE-STEP
+    fx 0 "the real shape: 3 waits + 5 teardowns under the DEFAULT counts passes" "" "" "$A"
+    fx 1 "MUTANT: only 4 teardowns under the default count of 5 is caught" "" "" NONE-STEP
     fx 1 "MUTANT: the THIRD teardown (ARM64 determinism) loses always() is caught" "" "" "$C"
     fx 1 "MUTANT: continue-on-error: true on a wait is caught" "        continue-on-error: true
 " "" "$A"
@@ -241,7 +252,8 @@ self_test() {
     { printf '    steps:\n      - name: W1\n        run: %s\n  other:\n    env:\n        if: %s\n' "$W" "$C"
       printf '      - name: W2\n        if: %s\n        run: %s\n' "$C" "$W"
       printf '      - name: T1\n        if: %s\n        run: %s\n      - name: T2\n        if: %s\n        run: %s\n' "$A" "$T" "$A" "$T"
-      printf '      - name: T3\n        if: %s\n        run: %s\n' "$A" "$T"; } > "$td/f.yml"
+      printf '      - name: T3\n        if: %s\n        run: %s\n      - name: T4\n        if: %s\n        run: %s\n' "$A" "$T" "$A" "$T"
+      printf '      - name: T5\n        if: %s\n        run: %s\n' "$A" "$T"; } > "$td/f.yml"
     r=0; out=$( (unset CI_TEARDOWN_STEPS CI_WAIT_STEPS; check "$td/f.yml") 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT: a step record ends at the job boundary (next job's if: is not its own)"; else echo "FAIL self-test: job boundary (rc $r, wanted 1): $out"; rc=1; fi
     # r3 item 1: an invalid expected count fails closed (exit 2), never silently skips the count check
@@ -268,7 +280,7 @@ self_test() {
     sed 's/^    if: always()[[:space:]]*$/    if: success()/' "$ROOT/.github/workflows/ci.yml" > "$td/mut-gw.yml"
     r=0; out=$(gate_wiring "$td/mut-gw.yml" 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT gate without if: always() is caught"; else echo "FAIL self-test: mutant gate wiring not caught (rc $r)"; rc=1; fi
-    sed 's/^    needs: \[x86-main, workspace-test, determinism,/    needs: [workspace-test,/' "$ROOT/.github/workflows/ci.yml" > "$td/mut-gw.yml"
+    sed 's/^    needs: \[x86-main, guards, workspace-test, determinism,/    needs: [workspace-test,/' "$ROOT/.github/workflows/ci.yml" > "$td/mut-gw.yml"
     r=0; out=$(gate_wiring "$td/mut-gw.yml" 2>&1) || r=$?
     if [ "$r" = 1 ]; then echo "ok   self-test: MUTANT gate that no longer needs the fat jobs is caught"; else echo "FAIL self-test: mutant gate needs not caught (rc $r)"; rc=1; fi
     rm -f "${td:?}/mut-gw.yml"
