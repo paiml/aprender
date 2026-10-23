@@ -94,3 +94,43 @@ fn text_surface_exits_8_on_an_empty_completion() {
     assert_eq!(err.exit_code_value(), 8);
     assert!(print_run_output(&contract_result("4"), "m.gguf", "text", 8, false, false, false).is_ok());
 }
+
+#[test]
+fn document_exit_codes_come_from_cli_error_and_accelerator_wins_when_both_refuse() {
+    use crate::error::CliError;
+    let refusal = crate::error::ConstraintRefusal {
+        kind: "Truncated",
+        message: "Truncated: cut off".to_string(),
+        removed_by: None,
+        finish_reason: None,
+    };
+    // constraint refusal alone
+    let mut r = contract_result("{");
+    r.constraint_refusal = Some(refusal.clone());
+    let v = run_error_json(&r, false);
+    assert_eq!(v["kind"], "constraint_refused");
+    assert_eq!(
+        v["exit_code"],
+        CliError::ConstraintRefused(refusal.clone()).exit_code_value()
+    );
+    // a forced accelerator that did not run, alone
+    let v = run_error_json(&contract_result("4"), true);
+    assert_eq!(
+        v["exit_code"],
+        CliError::BackendUnavailable(String::new()).exit_code_value()
+    );
+    // both fire: reconcile_accelerator runs first, so the process exits with the accelerator's
+    // code and the document must say the same
+    let v = run_error_json(&r, true);
+    assert_eq!(v["kind"], "backend_unavailable");
+    assert_eq!(
+        v["exit_code"],
+        CliError::BackendUnavailable(String::new()).exit_code_value()
+    );
+    // empty completion
+    let v = run_error_json(&contract_result(""), false);
+    assert_eq!(
+        v["exit_code"],
+        CliError::InferenceFailed(String::new()).exit_code_value()
+    );
+}

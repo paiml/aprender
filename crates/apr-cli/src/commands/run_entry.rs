@@ -1025,23 +1025,33 @@ fn run_status(result: &RunResult, accel_forced: bool) -> RunStatus {
 /// `{kind, message, exit_code}` when the run is not `ok`, `null` otherwise. The exit code is the
 /// one the process exits with, so a consumer can read it without waiting for the process.
 fn run_error_json(result: &RunResult, accel_forced: bool) -> serde_json::Value {
+    use crate::error::CliError;
+    // The accelerator refusal is checked first because `reconcile_accelerator` runs before the
+    // constraint refusal in `reconcile_and_emit`: when both fire, the process exits with the
+    // accelerator's code, so the document must name that one. Codes come from `CliError`, never
+    // from literals, so a remap in error.rs reaches the document.
+    let accel_refused = accel_forced && result.used_gpu == Some(false);
     let (kind, message, exit_code) = match run_status(result, accel_forced) {
         RunStatus::Ok => return serde_json::Value::Null,
-        RunStatus::Refused if result.constraint_refusal.is_some() => (
-            "constraint_refused",
-            "the constrained output was refused after it was produced".to_string(),
-            15,
-        ),
-        RunStatus::Refused => (
-            "backend_unavailable",
-            "an accelerator was forced and the run did not use it".to_string(),
-            14,
-        ),
-        RunStatus::Failed => (
-            "empty_completion",
-            "the model produced no text".to_string(),
-            8,
-        ),
+        RunStatus::Refused if accel_refused => {
+            let message = "an accelerator was forced and the run did not use it".to_string();
+            let code = CliError::BackendUnavailable(message.clone()).exit_code_value();
+            ("backend_unavailable", message, code)
+        }
+        RunStatus::Refused => {
+            let message = "the constrained output was refused after it was produced".to_string();
+            // `run_status` is Refused only for an accelerator or a constraint refusal, so a
+            // missing refusal here cannot happen; fall back to the constraint code anyway.
+            let code = result.constraint_refusal.clone().map_or(15, |r| {
+                CliError::ConstraintRefused(r).exit_code_value()
+            });
+            ("constraint_refused", message, code)
+        }
+        RunStatus::Failed => {
+            let message = "the model produced no text".to_string();
+            let code = CliError::InferenceFailed(message.clone()).exit_code_value();
+            ("empty_completion", message, code)
+        }
     };
     serde_json::json!({"kind": kind, "message": message, "exit_code": exit_code})
 }
@@ -1079,7 +1089,9 @@ fn sha256_file_hex(path: &std::path::Path) -> std::io::Result<String> {
 }
 
 /// #3720: `model_digest` is the SHA-256 of the weights file named by `source`; `null` when the
-/// source is not a local file (a hub id is not a file we hold), never a guess.
+/// source is not a local file, never a guess. Known limit: a hub id or registry name resolves to
+/// a cached file only later in `run`, so it reads `null` here; threading the resolved path
+/// through is follow-up work, together with the `serve` surface of the same ticket.
 fn with_model_digest(mut json: serde_json::Value, source: &str) -> serde_json::Value {
     let path = std::path::Path::new(source);
     let digest = if path.is_file() {

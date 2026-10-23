@@ -1,0 +1,16 @@
+- id: PMAT-3720
+  github_issue: 3720
+  item_type: task
+  title: 'apr response contract for consumers: weights digest, empty completion = error, refused vs did-not-run (run --json, serve)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T12:30:00Z
+  updated: 2026-10-23T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - apr run --json carries status, error, model_digest
+  - an empty completion exits non-zero with kind empty_completion
+  labels:
+  - kind:code
+  notes: null
