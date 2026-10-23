@@ -19,7 +19,7 @@
 #   RED while all nine inputs were individually sorted and green.
 #
 # PROOF LADDER, STATED HONESTLY
-#   * L1 — the generator and its case table exist (roadmap_fragments.py).
+#   * L1 — the generator and its case table exist (roadmap/fragments.rs).
 #   * L2 — falsification MEASURED: `--selftest` 12/12 (2026-09-15), including
 #          a registered mutation (forcing append-only placement must turn the
 #          sorted-slot row RED, and does) and idempotence/determinism rows.
@@ -32,7 +32,7 @@
 name: apr-roadmap-fragments
 version: "1.0.0"
 scope: >
-  scripts/lib/roadmap_fragments.py aggregate, over docs/roadmaps/entries/ and
+  crates/aprender-contracts-cli/src/roadmap/fragments.rs (pv-roadmap) aggregate, over docs/roadmaps/entries/ and
   docs/roadmaps/roadmap.yaml. Out of scope: id minting, parsed-tree
   uniqueness, and the additive-diff rule, each of which has its own contract.
 status: active
@@ -46,10 +46,10 @@ metadata:
   last_modified: '2026-09-15'
   author: PAIML Engineering
   references:
-    - 'scripts/lib/roadmap_fragments.py — the generator: aggregate [--write|--check] · --selftest (12 rows)'
+    - 'crates/aprender-contracts-cli/src/roadmap/fragments.rs (pv-roadmap) — the generator: aggregate [--write|--check] · --selftest (12 rows)'
     - 'Makefile — roadmap-aggregate, roadmap-aggregate-check'
     - 'scripts/check_roadmap_sorted.sh — the ordering rule the aggregator targets'
-    - 'scripts/lib/roadmap_merge.py — parse_id is IMPORTED from here, so guard and generator cannot drift'
+    - 'crates/aprender-contracts-cli/src/roadmap/merge.rs (pv-roadmap) — parse_id lives in roadmap/mod.rs and merge.rs imports it, so guard and generator cannot drift'
     - 'paiml/aprender#3296 — the change; #3294 — the five-whys; #3295 — the measured ejection'
   description: >
     A ticket writes docs/roadmaps/entries/<ID>.yaml. Unique filename by
@@ -84,8 +84,8 @@ equations:
     domain: 'an id with a PREFIX-NUMBER shape, else the legacy case'
     codomain: 'an insertion index'
     invariants:
-    - 'THE GUARD AND THE GENERATOR SHARE ONE PARSER: parse_id is imported from roadmap_merge.py, never restated, so check_roadmap_sorted.sh and this cannot disagree about which ids are sortable.'
-    - 'LEGACY IDS ARE EXEMPT and append; the same rule roadmap_merge.py enforces.'
+    - 'THE GUARD AND THE GENERATOR SHARE ONE PARSER: parse_id is defined once in roadmap/mod.rs and imported by merge.rs and fragments.rs, never restated, so check_roadmap_sorted.sh and this cannot disagree about which ids are sortable.'
+    - 'LEGACY IDS ARE EXEMPT and append; the same rule roadmap/merge.rs enforces.'
     preconditions:
     - 'the base already satisfies check_roadmap_sorted.sh'
     postconditions:
@@ -98,7 +98,7 @@ equations:
     domain: 'a fragment file read in isolation'
     codomain: 'bool'
     invariants:
-    - 'ANCHORS DO NOT SURVIVE A SPLIT: roadmap.yaml carries `created: &id001 …` on one entry aliased by 17 LATER ones (roadmap_diff.py names this as real data its block parser cannot resolve). A fragment carrying `*id001` is unparseable YAML, so split() inlines the literal and proves the mapping is unchanged, per entry, before writing anything.'
+    - 'ANCHORS DO NOT SURVIVE A SPLIT: roadmap.yaml carries `created: &id001 …` on one entry aliased by 17 LATER ones (roadmap/diff.rs names this as real data its block parser cannot resolve). A fragment carrying `*id001` is unparseable YAML, so split() inlines the literal and proves the mapping is unchanged, per entry, before writing anything.'
     - 'THIS IS WHY THE BASE IS NOT REWRITTEN: inlining that anchor in place is a pure re-serialisation and check_roadmap_diff_additive.sh correctly refuses it (measured: reserialised=18, "bytes differ, no field actually changed").'
     preconditions: []
     postconditions:
@@ -143,7 +143,7 @@ falsification_tests:
       fragment list does not change the bytes (row 6d); a fragment supersedes
       a base entry of the same id in place (row 6); two fragments claiming one
       id are refused (row 6b).
-    test: 'python3 scripts/lib/roadmap_fragments.py --selftest'
+    test: "bash -c '. scripts/lib/roadmap_bin.sh && roadmap_bin_resolve && \"$ROADMAP_BIN\" fragments --selftest'"
     if_fails: >-
       the post-merge `make roadmap-aggregate` on main churns a commit on every
       merge, or silently drops an entry
@@ -159,7 +159,7 @@ falsification_tests:
       PMAT-200 lands between PMAT-100 and PMAT-300 (row 2); PMAT-90 lands
       BEFORE PMAT-100, since numerals compare numerically and not as strings
       (row 5); an unseen prefix and a legacy id append (rows 4, 5).
-    test: 'python3 scripts/lib/roadmap_fragments.py --selftest && bash scripts/check_roadmap_sorted.sh'
+    test: "bash -c '. scripts/lib/roadmap_bin.sh && roadmap_bin_resolve && \"$ROADMAP_BIN\" fragments --selftest' && bash scripts/check_roadmap_sorted.sh"
     if_fails: >-
       the aggregate is unsorted and check_roadmap_sorted.sh turns RED on main
       — the #3295 shape, now produced by the generator instead of by a merge
@@ -174,7 +174,7 @@ falsification_tests:
       split() over the real roadmap yields 879 fragments, each parsing alone
       and each carrying the same mapping the monolith did; the round trip is
       SEMANTICALLY equal, and byte-different only on the 18 anchor lines.
-    test: 'python3 -c "import sys;sys.path.insert(0,\".\");from scripts.lib import roadmap_fragments as rf;rf.split(open(\"docs/roadmaps/roadmap.yaml\").read())"'
+    test: "bash -c '. scripts/lib/roadmap_bin.sh && roadmap_bin_resolve && \"$ROADMAP_BIN\" fragments split'"
     if_fails: >-
       17 fragments ship as unparseable YAML and the aggregate cannot be rebuilt
     mutation: >-
@@ -188,7 +188,7 @@ falsification_tests:
       47 are filename-safe legacy ids, 44 are prose, 8 are PREFIX-N carrying a
       prose suffix. 780+47+44+8 = 879, no remainder. The 52 that are not
       filename-safe have no fragment path and no PR write path.
-    test: 'python3 scripts/lib/roadmap_fragments.py --selftest'
+    test: "bash -c '. scripts/lib/roadmap_bin.sh && roadmap_bin_resolve && \"$ROADMAP_BIN\" fragments --selftest'"
     if_fails: >-
       the gate assumes an id shape the data does not have, and a PR that should
       be refused is admitted — or one that should pass is blocked

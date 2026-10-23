@@ -3,7 +3,7 @@
 # the roadmap.yaml 3-way-by-id merge driver (PMAT-3118; spec §6.4).
 #
 # A squash-merge from the queue rewrites all of docs/roadmaps/roadmap.yaml, so
-# every stacked branch goes DIRTY on that one file. `scripts/lib/roadmap_merge.py`
+# every stacked branch goes DIRTY on that one file. `pv-roadmap merge`
 # merges it by ENTRY ID instead of by line, which resolves the whole class. This
 # script finds the DIRTY PRs and drives that merge.
 #
@@ -15,7 +15,7 @@
 #   bash scripts/ci_resolve_dirty.sh --selftest      # hermetic case table, no gh
 #
 # THE DRIVER IS REGISTERED PER INVOCATION, never in the shared config:
-# `git -c merge.roadmap.driver="python3 scripts/lib/roadmap_merge.py %O %A %B"`.
+# `git -c merge.roadmap.driver="pv-roadmap merge %O %A %B"`.
 # A `git config` write would leak into every other worktree sharing the .git.
 #
 # Exit: 0 clean · 1 a selftest row failed · 2 usage/env.
@@ -29,7 +29,15 @@ set -euo pipefail
 
 PROG="${0##*/}"
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-DRIVER_SCRIPT="$REPO_ROOT/scripts/lib/roadmap_merge.py"
+# shellcheck source=scripts/lib/roadmap_bin.sh
+. "$REPO_ROOT/scripts/lib/roadmap_bin.sh" || exit 1
+# Resolved on first use (ensure_driver), never at source time: --list-only and the plan path need no binary.
+DRIVER_SCRIPT=""
+ensure_driver() {
+    [ -n "$DRIVER_SCRIPT" ] && return 0
+    roadmap_bin_resolve || { printf '%s: pv-roadmap is unavailable\n' "$PROG" >&2; exit 2; }
+    DRIVER_SCRIPT="$ROADMAP_BIN"
+}
 DRIVER_CONFIG_KEY="merge.roadmap.driver"
 # A .gitattributes merge-driver declaration is RETROACTIVELY INERT. Git reads
 # attributes from the side being merged INTO, so a branch cut before the rule
@@ -128,8 +136,9 @@ write_attrs_override() {
 
 git_merge_ctx() { # git_merge_ctx WORKTREE ARGS... -- git with both drivers bound
     local wt="$1"; shift
+    ensure_driver
     git -C "$wt" \
-        -c "$DRIVER_CONFIG_KEY=python3 $DRIVER_SCRIPT %O %A %B" \
+        -c "$DRIVER_CONFIG_KEY=$DRIVER_SCRIPT merge %O %A %B" \
         -c "core.attributesFile=$ATTRS_OVERRIDE" \
         "$@"
 }
@@ -179,7 +188,7 @@ fixture_merge() {
     fi
     git -C "$repo" merge --abort >/dev/null 2>&1 || true
 
-    if git -C "$repo" -c "$DRIVER_CONFIG_KEY=python3 $DRIVER_SCRIPT %O %A %B" \
+    if git -C "$repo" -c "$DRIVER_CONFIG_KEY=$DRIVER_SCRIPT merge %O %A %B" \
             merge --no-commit --no-ff main >/dev/null 2>&1; then
         l2=$(grep -n 'PMAT-2' "$rm_yaml" | head -1 | cut -d: -f1)
         l3=$(grep -n 'PMAT-3' "$rm_yaml" | head -1 | cut -d: -f1)
@@ -203,7 +212,7 @@ fixture_merge() {
     printf 'roadmap:\n- id: PMAT-1\n  title: one\n- id: PMAT-2\n  title: two_there\n' > "$rm_yaml"
     git -C "$repo" commit -q -am main-edit
     git -C "$repo" checkout -q branch2
-    if git -C "$repo" -c "$DRIVER_CONFIG_KEY=python3 $DRIVER_SCRIPT %O %A %B" \
+    if git -C "$repo" -c "$DRIVER_CONFIG_KEY=$DRIVER_SCRIPT merge %O %A %B" \
             merge --no-commit --no-ff main >/dev/null 2>&1; then
         printf 'same-id different-edit merged silently (must conflict)\n'
         bad=1
@@ -259,6 +268,7 @@ fixture_apply_setup() { # fixture_apply_setup ID
 
 selftest() {
     local out detail
+    ensure_driver
     td=$(mktemp -d "${TMPDIR:-/tmp}/ci_resolve_selftest.XXXXXX") || return 2
     cleanup() {
         local victim="${td:-}"

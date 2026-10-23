@@ -1477,15 +1477,13 @@ jobs:
       # steward, the packing/history ledgers, the tier ledger and the roadmap resolve-dirty
       # runner each ship a hermetic --selftest; check_guards_are_wired.sh refuses a script
       # that carries one and is named by no workflow. Each runs in under five seconds.
-      - name: Fleet hygiene case tables (steward, history, utilization, tier ledger, resolve-dirty, nightly manifest)
+      - name: Fleet hygiene case tables (steward, history, utilization, tier ledger, nightly manifest)
         run: |
           set -euo pipefail
           bash scripts/ci_queue_steward.sh --selftest
           bash scripts/fleet_history.sh --selftest
           bash scripts/fleet_utilization.sh --selftest
           bash scripts/test_tier_ledger.sh --selftest
-          bash scripts/ci_resolve_dirty.sh --selftest
-          python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
           bash scripts/nightly_prune_release.sh --self-test   # nightly publish overflowed page one (422)
           bash scripts/nightly_gate_retry.sh --self-test   # #5053 ci-pending retries, then RED never green
@@ -2759,6 +2757,27 @@ jobs:
         run: |
           setsid --wait bash scripts/check_cascade_converges.sh --self-test
           setsid --wait bash scripts/check_cascade_converges.sh
+      # PMAT-5902: the roadmap tools are Rust now (pv-roadmap, built from this tree or read from
+      # the content-keyed cache scripts/lib/roadmap_bin.sh fills), so everything that resolves it
+      # is a cargo-using step and lives here, not in guard-tree (BSE-02: no cargo there). Moved
+      # with them: the two selftests that used to run in guard-tree's fleet-hygiene step and now
+      # need the binary (ci_resolve_dirty.sh, the merge driver), and the YAML 1.1 case table.
+      # The binary is resolved once; every later step in this job hits the cache.
+      - name: "pv-roadmap selftests: fragments, merge driver, resolve-dirty (PMAT-5902)"
+        run: |
+          set -euo pipefail
+          setsid --wait bash -c '. scripts/lib/roadmap_bin.sh && roadmap_bin_resolve && "$ROADMAP_BIN" fragments --selftest && "$ROADMAP_BIN" merge --selftest'
+          setsid --wait bash scripts/ci_resolve_dirty.sh --selftest
+      - name: "roadmap diff is additive: guard + its case table (PMAT-5902)"
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_roadmap_diff_additive.sh --self-test
+          setsid --wait bash scripts/check_roadmap_diff_additive.sh
+      - name: "roadmap change carries its fragment: guard + its case table (PMAT-5902)"
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_roadmap_fragment_required.sh --self-test
+          setsid --wait bash scripts/check_roadmap_fragment_required.sh
       - name: "GHSA guard must still turn RED (case table)"
         run: setsid --wait bash scripts/check_no_ghsa_banned_crates.sh --self-test
       # MOVED from guard-tree to guard-cargo (BSE-02, PMAT-1064): the guard

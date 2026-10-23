@@ -539,6 +539,7 @@ dependencies = [
  "aprender-contracts",
  "aprender-update",
  "clap",
+ "regex",
  "serde",
  "serde-saphyr",
  "serde_json",

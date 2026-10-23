@@ -25534,6 +25534,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:measurement
   notes: null
   epic: 5510
+- id: PMAT-5902
+  github_issue: 5902
+  item_type: task
+  title: Port roadmap_fragments/diff/merge .py to Rust, retire the .py (#5902)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T07:35:50Z
+  updated: 2026-10-23T07:35:50Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
 - id: PMAT-5914
   github_issue: 5914
   item_type: task
