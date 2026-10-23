@@ -39,6 +39,13 @@ TOOLS="pmat bashrs"
 # line. Prints nothing if the section or key is absent.
 pinned_version() { # pinned_version TOOL TOMLFILE
     local tool=$1 f=$2
+    # pmat has ONE strict reader (scripts/pmat_pin.sh), shared with pmat_bin.sh.
+    if [ "$tool" = "pmat" ]; then
+        # shellcheck source=scripts/pmat_pin.sh
+        . "${REPO_ROOT}/scripts/pmat_pin.sh" || return 1
+        pmat_pin_read "$f"
+        return 0
+    fi
     awk -v want="[$tool]" '
         $0 == want { insec = 1; next }
         /^\[/      { insec = 0 }
