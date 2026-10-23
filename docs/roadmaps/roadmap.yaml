@@ -25701,3 +25701,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5923
+- id: PMAT-6069
+  github_issue: 6069
+  item_type: task
+  title: 'gate: check_affected_readers.sh fails closed on a grep error or a missing crates dir (the || true read both as no readers)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T03:30:00Z
+  updated: 2026-10-23T03:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a grep error (rc>=2) and a missing crates dir make check_affected_readers.sh RED; no match (rc 1) stays green; must-fail self-test rows for both'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

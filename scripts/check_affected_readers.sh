@@ -12,6 +12,8 @@ SET="${AFFECTED_SET_SH:-scripts/affected_set.sh}"
 # the exact file:line exemptions (a crate-wide exemption hides a later reader in the same crate)
 ALLOW="${AFFECTED_READERS_ALLOW:-crates/aprender-bench-tokenizer/src/lib.rs:50}"   # joins ../.. only for <root>/tokenizer.json and <root>/models/
 PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent\(\)|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
+# grep that is empty on rc 1 (no match) and FAILS on rc>=2 (unreadable dir, bad option): the old `|| true` read an error as "no readers"
+g() { local r=0; grep "$@" || r=$?; [ "$r" -le 1 ]; }
 listed() { sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
 excluded() { # the root Cargo.toml exclude = [...] entries: separate workspaces, not members; a diff there is unplaceable, so affected_set.sh answers ALL
   sed -n '/^exclude *= *\[/,/^\]/p' "${AFFECTED_ROOT_MANIFEST:-Cargo.toml}" 2>/dev/null | grep -v '^[[:space:]]*#' | grep -oE "[\"'][^\"']+[\"']" | tr -d "\"'" || true
@@ -28,8 +30,8 @@ pkg_of() { # $1 = a directory holding a flagged file, $2 = crates dir; prints th
   local top="${1#"$2"/}"; echo "${top%%/*}"   # no manifest on the way up: the top directory under the crates dir
 }
 hits() { # $1 = crates dir; prints package names
-  { grep -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null || true; } \
-    | grep -vE '^[^:]*/target/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
+  g -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null \
+    | g -vE '^[^:]*/target/' | g -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
     | awk -F: -v allow=" $ALLOW " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; d = $1; sub("/[^/]*$", "", d); print d }' | sort -u \
     | while IFS= read -r d; do pkg_of "$d" "$1"; done | sort -u
 }
@@ -42,17 +44,20 @@ build_listed() { # full repo-relative paths: contracts/<BUILD_CONTRACTS entry>, 
 build_inputs() { # $1 = crates dir
   local p='(contracts|docs)/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+' f
   {
-    grep -rzohE --include='*.rs' 'include(_str|_bytes)?!.{0,300}' "$1" 2>/dev/null | tr '\0' '\n' | grep -oE "$p" || true   # -z: one record per file, so a macro split over lines still matches
-    { grep -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null || true; } | while IFS= read -r f; do
+    g -rzohE --include='*.rs' 'include(_str|_bytes)?!.{0,300}' "$1" 2>/dev/null | tr '\0' '\n' | g -oE "$p"   # -z: one record per file, so a macro split over lines still matches
+    g -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null | while IFS= read -r f; do
       grep -vE '^\s*//' "$f" | grep -oE "$p" || true
       grep -vE '^\s*//' "$f" | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' | sed 's#^#contracts/#' || true; done
-  } | sort -u | while read -r f; do [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ] && echo "$f"; done | grep -vE '(^|/)binding\.yaml$|/model-families/' || true
+  } | sort -u | while read -r f; do if [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ]; then echo "$f"; fi; done | g -vE '(^|/)binding\.yaml$|/model-families/'
 }
 check() {
-  local bad="" l c; l="$(listed)"
-  for c in $(hits "$1"); do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
+  local bad="" l c h b; l="$(listed)"
+  [ -d "$1" ] || { echo "RED: crates dir '$1' is not a directory (nothing was scanned)"; return 1; }
+  h="$(hits "$1")" || { echo "RED: the READERS scan of '$1' failed (grep error); not reading that as no readers"; return 1; }
+  b="$(build_inputs "$1")" || { echo "RED: the BUILD_CONTRACTS scan of '$1' failed (grep error); not reading that as no inputs"; return 1; }
+  for c in $h; do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
   local bl; bl="$(build_listed)"
-  for c in $(build_inputs "$1"); do grep -qx "$c" <<<"$bl" || bad="$bad $c(BUILD_CONTRACTS/BUILD_DOCS)"; done
+  for c in $b; do grep -qx "$c" <<<"$bl" || bad="$bad $c(BUILD_CONTRACTS/BUILD_DOCS)"; done
   if [ -n "$bad" ]; then echo "RED: crates can reach other crates' files but are not in READERS (scripts/affected_set.sh):$bad"; return 1; fi
   echo "ok: every crate with a path-escape form is in READERS"
 }
@@ -109,6 +114,12 @@ if [ "${1:-}" = "--self-test" ]; then
   fresh zz-r
   printf 'const A: &str = include_str!("docs/d/m.md");\n' >"$t/crates/zz-r/src/x.rs"
   (SET="$t/set-listed.sh" check crates >/dev/null 2>&1) || { echo "FAIL self-test: a listed docs build input was flagged"; fail=1; }
+  # fail closed (#6069): a missing crates dir and a grep error (rc 2) are RED, never "no readers"; no match (rc 1) stays green
+  fresh zz-s; echo 'fn f() {}' >"$t/crates/zz-s/src/y.rs"
+  (check crates >/dev/null 2>&1) || { echo "FAIL self-test: a tree with no reader forms was flagged"; fail=1; }
+  if (check "$t/no-such-crates" >/dev/null 2>&1); then echo "FAIL self-test: a missing crates dir read as no readers"; fail=1; fi
+  mkdir -p "$t/shim"; printf '#!/bin/sh\nexit 2\n' >"$t/shim/grep"; chmod +x "$t/shim/grep"
+  if (PATH="$t/shim:$PATH" check crates >/dev/null 2>&1); then echo "FAIL self-test: a grep error (rc 2) read as no readers"; fail=1; fi
   [ "$fail" -eq 0 ] && echo "ok: self-test"
   exit "$fail"
 fi
