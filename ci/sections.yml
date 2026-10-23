@@ -283,6 +283,7 @@ jobs:
       - name: Create this run's target dir and registry on the host (before any bind mount)
         run: |
           set -euo pipefail
+          echo "thread cap: ${RUNNER_THREAD_CAP:-4}"
           # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
           # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
           # and an ancestor may already be root-owned from a build whose bind
@@ -544,7 +545,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e SHARD -e SHARDS \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
@@ -578,7 +579,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
@@ -612,7 +613,7 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" \
             -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
             -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
             "$IMAGE" \
@@ -636,7 +637,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             "$IMAGE" \
             bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -Eq "test result: ok\. [1-9][0-9]* passed" /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
@@ -708,7 +709,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
@@ -742,7 +743,7 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
@@ -807,7 +808,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             cargo build --examples --workspace --keep-going
@@ -876,7 +877,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -974,7 +975,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -1047,7 +1048,7 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e TREE="$tree" -e EXPR="$EXPR" \
@@ -1087,7 +1088,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
@@ -2542,7 +2543,7 @@ jobs:
               -e SCCACHE_DIR=/sccache \
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
-              -e CARGO_BUILD_JOBS=4 -e RAYON_NUM_THREADS=4 -e NEXTEST_TEST_THREADS=4 -e RUST_TEST_THREADS=4 \
+              -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
               -e CARGO_TERM_COLOR=never \
               "${DR_ENV[@]}" \
               "$IMAGE" "$@"
