@@ -45,7 +45,8 @@ fn lifecycle_change_is_allowed() {
 fn reserialisation_without_a_field_change_is_flagged_not_silent() {
     let reflowed = "- id: A-1\n  status: planned\n  title: one\n";
     let (rc, out) = run(E1, reflowed);
-    assert!(out.contains("A-1") || rc == 0, "{out}");
+    assert_eq!(rc, 1, "a re-serialisation must be a violation: {out}");
+    assert!(out.contains("A-1"), "{out}");
 }
 
 #[test]

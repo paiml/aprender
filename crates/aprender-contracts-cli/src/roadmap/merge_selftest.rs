@@ -252,19 +252,24 @@ pub fn check_row(r: &Row, checker: &Path) -> Vec<String> {
     if r.expect_conflict {
         return fails;
     }
-    let Ok(td) = tempfile::tempdir() else {
+    // std scratch dir, not the tempfile crate: this runs inside the shipped bin, and tempfile
+    // is a dev-dependency of the published pv crate.
+    let td = std::env::temp_dir().join(format!("pv-roadmap-selftest-{}", std::process::id()));
+    if std::fs::create_dir_all(&td).is_err() {
         return vec!["no scratch directory".to_string()];
-    };
-    let out_path = td.path().join("roadmap.yaml");
+    }
+    let out_path = td.join("roadmap.yaml");
     if std::fs::write(&out_path, &merged).is_err() {
+        let _ = std::fs::remove_dir_all(&td);
         return vec!["the driver wrote no output file".to_string()];
     }
     fails.extend(checker_verdict(
-        td.path(),
+        &td,
         &out_path,
         checker,
         r.expect_checker_fail,
     ));
+    let _ = std::fs::remove_dir_all(&td);
     fails
 }
 

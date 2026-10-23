@@ -50,6 +50,8 @@ set -uo pipefail
 
 PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+# cargo build of pv-roadmap happens in roadmap_bin.sh; this textual token classifies the guard as
+# cargo-using for guard_tree.sh --no-cargo (it runs in the guard-cargo job, where a toolchain exists).
 # shellcheck source=scripts/lib/roadmap_bin.sh
 . "${REPO_ROOT}/scripts/lib/roadmap_bin.sh" || { printf 'FAIL pv-roadmap is unavailable -- this box cannot judge\n' >&2; exit 2; }
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
