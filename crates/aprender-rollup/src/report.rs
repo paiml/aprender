@@ -11,6 +11,9 @@ fn reason(r: &Reject) -> String {
         Reject::ForbiddenFile(f) => format!("touches {f} (CI, contract or lockfile)"),
         Reject::FileOverlap { with, file } => format!("shares {file} with #{with}"),
         Reject::OverCap => format!("rollup already holds {}", crate::MAX_ENTRIES),
+        Reject::NotCapacityPaths(f) => {
+            format!("capacity label refused: `{f}` is outside the declared capacity paths")
+        }
     }
 }
 

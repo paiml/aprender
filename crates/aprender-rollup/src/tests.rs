@@ -123,3 +123,41 @@ fn select_records_the_head_each_pick_was_judged_at() {
     assert_eq!(sel.picked, [2, 4]);
     assert_eq!(sel.heads, ["sha2", "sha4"]);
 }
+
+fn capacity(n: u64, files: &[&str]) -> Candidate {
+    let mut c = cand(n, files);
+    c.labels.push(CAPACITY_LABEL.to_string());
+    c
+}
+
+#[test]
+fn capacity_pr_is_picked_before_a_lower_numbered_feature_pr() {
+    let sel = select(&[
+        cand(1, &["a.rs"]),
+        cand(2, &["b.rs"]),
+        cand(3, &["c.rs"]),
+        capacity(9, &["ci/runners/seat.txt"]),
+    ]);
+    assert_eq!(sel.picked, vec![9, 1, 2]);
+    assert_eq!(sel.rejected, vec![(3, Reject::OverCap)]);
+}
+
+#[test]
+fn capacity_label_with_another_path_is_refused() {
+    let sel = select(&[
+        cand(1, &["a.rs"]),
+        capacity(9, &["ci/runners/seat.txt", "crates/x/lib.rs"]),
+    ]);
+    assert_eq!(sel.picked, vec![1]);
+    assert_eq!(
+        sel.rejected,
+        vec![(9, Reject::NotCapacityPaths("crates/x/lib.rs".to_string()))]
+    );
+}
+
+#[test]
+fn capacity_needs_files_and_the_label() {
+    assert!(!is_capacity(&capacity(1, &[])));
+    assert!(!is_capacity(&cand(1, &["ci/runners/seat.txt"])));
+    assert!(is_capacity(&capacity(1, &["ci/gate-seats.txt"])));
+}
