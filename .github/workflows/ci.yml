@@ -197,7 +197,9 @@ jobs:
   # before "install the toolchain") and the fat_driver self-test; no X64 label, no section, no cargo build.
   pr-light:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
-    runs-on: [self-hosted, Linux, clean-room]
+    # Noah 12:36Z: PR quick-tier jobs take the pr-x64 pool; never merge_group, never release. The job runs on pull_request only, so the
+    # clean-room arm is never taken; it names the pool for the label guards (same shape as mg-reuse-wt).
+    runs-on: ${{ github.event_name == 'pull_request' && fromJSON('["self-hosted","Linux","X64","pr-x64"]') || fromJSON('["self-hosted","Linux","clean-room"]') }}
     timeout-minutes: 60
     # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
     permissions: write-all

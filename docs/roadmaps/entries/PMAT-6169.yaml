@@ -1,0 +1,19 @@
+- id: PMAT-6169
+  github_issue: 6169
+  item_type: task
+  title: 'ci: pr-light takes the pr-x64 runner pool on pull_request (never merge_group, never release)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T14:05:00Z
+  updated: 2026-10-23T14:05:00Z
+  spec: null
+  acceptance_criteria:
+  - pr-light runs-on selects [self-hosted, Linux, X64, pr-x64] on pull_request
+  - no merge_group, release or clean-room-only job changes its runs-on
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
