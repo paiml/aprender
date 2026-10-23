@@ -2,7 +2,7 @@
 # mg-reuse-lab-nightly.yml -- LAB twin of the retired gate job mg-reuse-self-test (infra#2327, #6193).
 # LAB (C324 items 4-5): it never runs in a PR, merge-queue or release job and cannot block a merge. A red
 # opens or updates ONE ticket (owner aprender-w5382, via scripts/lab_ticket.sh) and stays silent; red or
-# unmeasured for 7 days, it stops until its owner brings it back.
+# unmeasured for 7 days, it stops until its owner brings it back (not yet implemented, #6198).
 name: mg-reuse LAB nightly
 
 on:
