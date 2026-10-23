@@ -8,7 +8,8 @@
   created: 2026-10-23T10:35:00Z
   updated: 2026-10-23T10:35:00Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'The mq-feeder arms a PR only when non-author seats are posted at the head sha and fresh_derived byte-compares equal; a falsifier test shows an author-only seat or a stale byte-compare does not arm'
   phases: []
   subtasks: []
   estimated_effort: null
