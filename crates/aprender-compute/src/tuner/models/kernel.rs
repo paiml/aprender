@@ -9,10 +9,10 @@ use super::KernelRecommendation;
 
 /// Kernel classifier using simple rule-based logic.
 ///
-/// The `ml-tuner` showcase (SHOWCASE-BRICK-001) trains an
+/// The RandomForest showcase (SHOWCASE-BRICK-001) trains an
 /// `aprender::RandomForestClassifier` on these features in
-/// `examples/ml_tuner_demo.rs` — aprender is a dev-dependency so the SIMD foundation
-/// stays free of the ML layer (no compute→core layer inversion).
+/// `crates/aprender-core/tests/tuner_training_data_quality.rs` — compute has no
+/// dependency on aprender-core, so the SIMD foundation stays free of the ML layer.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KernelClassifier {
     /// Kernel accuracy on validation (for confidence)

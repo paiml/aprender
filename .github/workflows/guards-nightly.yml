@@ -181,6 +181,13 @@ jobs:
         run: setsid --wait bash scripts/tests/compute_row_zero_tests_test.sh --mutants
       - name: shared-checkout shallow lock case table and mutants (#5025, LAB)
         run: setsid --wait bash scripts/shared_checkout_no_shallow.sh --mutants
+      - name: Parity-receipt count equals EXPECTED_RECEIPTS (verify mode, #5502, LAB)
+        id: lab_parity_receipts
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/parity-receipts.log") 2>&1
+          setsid --wait bash scripts/parity_receipt_denominator.sh
       - name: nextest list-wrapper case table (#5298, LAB)
         run: setsid --wait bash scripts/ci/nextest_list_wrapper.sh --self-test
       - name: affected_set.sh case table and mutants (FLOW-010 E5, LAB)
@@ -408,6 +415,36 @@ jobs:
           exec > >(tee -a "$RUNNER_TEMP/census.log") 2>&1
           setsid --wait bash scripts/census_ratchet.sh --self-test
           CENSUS_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/census_ratchet.sh
+      # #5803/#5804: the moved tuner tests must still be listed by cargo exactly once, none ignored. LAB, never on a PR path (C324):
+      # it invokes cargo, so it runs only in this night job; the moved tests themselves run from ci/explicit-test-commands.d 295 and 298.
+      - name: Tuner test-move guard (#5803)
+        id: lab_tuner_test_move
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/tuner-move.log") 2>&1
+          setsid --wait bash scripts/check_tuner_test_move.sh --self-test
+          setsid --wait bash scripts/check_tuner_test_move.sh
+      - name: A red tuner-test-move night opens or updates its one LAB ticket (#5803)
+        if: failure() && steps.lab_tuner_test_move.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-tuner-test-move --title "LAB: nightly tuner test-move guard red (#5803)" \
+            --owner aprender-w5018 --log "$RUNNER_TEMP/tuner-move.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red parity-receipt night opens or updates its one LAB ticket (#5502)
+        if: failure() && steps.lab_parity_receipts.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-parity-receipts --title "LAB: parity-receipt count differs from EXPECTED_RECEIPTS (#5502)" \
+            --owner aprender-w5018 --log "$RUNNER_TEMP/parity-receipts.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red census night opens or updates the one LAB ticket (#4709)
         if: failure() && steps.ratchet_census.outcome == 'failure'
         env:
