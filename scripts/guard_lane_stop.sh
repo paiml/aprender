@@ -27,10 +27,12 @@
 #   guard_lane_stop.sh --run         in the workflow: GH_TOKEN, GITHUB_REPOSITORY, GITHUB_EVENT_NAME, GITHUB_OUTPUT
 #   guard_lane_stop.sh --self-test   the decision case table
 set -uo pipefail
+export TZ=UTC   # printf %()T below formats in UTC; no date(1) in this script (DET002)
 WINDOW_DAYS=7
 # The first night the check ran in guards-nightly (UTC date). Bump it if the landing slips: a date before the landing
 # would stop a check that has never run.
 ACTIVE_SINCE="2026-10-24"
+ACTIVE_SINCE_EPOCH=1792800000   # = ACTIVE_SINCE 00:00:00Z; the selftest below proves the pair agree
 STEP_NAME="ci_guards cargo-free lane self-test (#5920, LAB)"
 JOB_NAME="guards-nightly"
 
@@ -62,6 +64,11 @@ if [ "${1:-}" = "--self-test" ]; then
 30|-1|stop
 x|0|run
 CASES
+
+    # the epoch constant and the date it stands for are one fact written twice: they must agree
+    printf -v since_day '%(%Y-%m-%dT%H:%M:%SZ)T' "$ACTIVE_SINCE_EPOCH"
+    if [ "$since_day" = "${ACTIVE_SINCE}T00:00:00Z" ]; then echo "ok    ACTIVE_SINCE_EPOCH = $ACTIVE_SINCE"
+    else printf 'FAIL  ACTIVE_SINCE_EPOCH is %s, ACTIVE_SINCE is %s\n' "$since_day" "$ACTIVE_SINCE" >&2; bad=1; fi
 
     # --run on a mock curl: Link paging, 304 from the cache, the window cut, an unreadable page
     T=$(mktemp -d "${TMPDIR:-/tmp}/gls-XXXXXX") || exit 2
@@ -117,10 +124,12 @@ fi
 : "${GH_TOKEN:?}" "${GITHUB_REPOSITORY:?}" "${GITHUB_OUTPUT:?}"
 emit() { printf 'decision=%s\n' "$1" >> "$GITHUB_OUTPUT"; echo "guard-lane stop: decision $1 ($2)"; }
 if [ "${GITHUB_EVENT_NAME:-}" != schedule ]; then emit run "event ${GITHUB_EVENT_NAME:-unset}: a dispatch always runs the check"; exit 0; fi
-NOW=${GUARD_LANE_STOP_NOW:-$(date -u +%s)}  # bashrs disable-line=DET002
-live=$(( (NOW - $(date -u -d "${ACTIVE_SINCE}T00:00:00Z" +%s)) / 86400 )) || live=
+# the clock is an input: GUARD_LANE_STOP_NOW (epoch seconds) when set, else bash's own clock (printf %()T, no date fork)
+NOW=${GUARD_LANE_STOP_NOW:-}
+[ -n "$NOW" ] || printf -v NOW '%(%s)T' -1
+live=$(( (NOW - ACTIVE_SINCE_EPOCH) / 86400 )) || live=
 # midnight UTC, so the listing URL below is the same all day and a re-run the same night is a 304
-SINCE=$(date -u -d "@$((NOW - WINDOW_DAYS * 86400))" +%Y-%m-%dT00:00:00Z)
+printf -v SINCE '%(%Y-%m-%dT00:00:00Z)T' "$((NOW - WINDOW_DAYS * 86400))"
 API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions"
 auth=(-H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json")
 CACHE="${GUARD_LANE_STOP_CACHE:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/guard-lane-stop-cache}"
