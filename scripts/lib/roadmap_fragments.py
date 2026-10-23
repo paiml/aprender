@@ -88,7 +88,26 @@ def insertion_index(base_entries, eid):
     return len(base_entries)
 
 
-def aggregate(base_text, fragments):
+def _created(block):
+    m = re.search(r"^  created: *(.*)$", block, re.M)
+    return m.group(1).strip() if m else None
+
+
+def _refuse_unmarked_override(entries, fragments):
+    """With a frozen base, a fragment may supersede a base id only as an UPDATE of
+    that entry: same `created:`. A new ticket whose id collides with a legacy one
+    carries a new `created:` and would otherwise replace the old entry silently
+    (#6185, quorum roadmap-split)."""
+    base_created = {e: _created(b) for e, b in entries}
+    for eid, block in fragments:
+        if eid in base_created and base_created[eid] != _created(block):
+            raise ValueError(
+                "fragment %s overrides the base entry of the same id with a different "
+                "`created:` (%s vs %s): an update keeps `created:`, a new ticket needs a new id"
+                % (eid, _created(block), base_created[eid]))
+
+
+def aggregate(base_text, fragments, frozen_base=False):
     """base + fragments, each at its sorted slot.
 
     IDEMPOTENT BY CONSTRUCTION, and that is not a nicety: `make
@@ -110,6 +129,8 @@ def aggregate(base_text, fragments):
         if eid in seen:
             raise ValueError("duplicate id among fragments: %s" % eid)
         seen.add(eid)
+    if frozen_base:
+        _refuse_unmarked_override(entries, fragments)
     entries = [(e, b) for e, b in entries if e not in seen]
     for eid, block in fragments:
         entries.insert(insertion_index(entries, eid), (eid, block))
@@ -395,6 +416,31 @@ def _base_rows():
         "" if diverges else "mutant survived -- row 9 proves nothing")
 
 
+def _override_rows():
+    """A fragment may supersede a frozen-base id only as an update (same created:)."""
+    old = "- id: PMAT-7\n  created: 2026-01-01\n  title: old\n"
+    upd = ("PMAT-7", "- id: PMAT-7\n  created: 2026-01-01\n  title: new\n")
+    clash = ("PMAT-7", "- id: PMAT-7\n  created: 2026-10-23\n  title: a different ticket\n")
+
+    def refused(frag, frozen=True):
+        try:
+            aggregate(old, [frag], frozen_base=frozen)
+            return False
+        except ValueError:
+            return True
+    row("frozen base: an update (same created:) may supersede", not refused(upd))
+    row("frozen base: a colliding NEW ticket (other created:) is refused", refused(clash))
+    row("no frozen base: the fixed point is unchanged", not refused(clash, frozen=False))
+    saved = globals()["_refuse_unmarked_override"]
+    globals()["_refuse_unmarked_override"] = lambda entries, fragments: None
+    try:
+        silent = not refused(clash)
+    finally:
+        globals()["_refuse_unmarked_override"] = saved
+    row("mutation: dropping the override check is CAUGHT", silent,
+        "" if silent else "mutant survived -- the clash row proves nothing")
+
+
 def selftest():
     # 1. THE LOSSLESS ROW: no fragments must reproduce the base byte for byte.
     out = aggregate(BASE, [])
@@ -468,6 +514,7 @@ def selftest():
         "" if caught else "mutant survived -- row 2 proves nothing")
 
     _base_rows()
+    _override_rows()
     _census_rows()
 
     bad = sum(1 for _, ok, _ in ROWS if not ok)
@@ -548,7 +595,7 @@ def _cmd_aggregate(a, roadmap, entries_dir):
             return 2
     frags = read_fragments(entries_dir)
     try:
-        out = aggregate(base, frags)
+        out = aggregate(base, frags, frozen_base=base is not current)
     except ValueError as e:
         sys.stderr.write("FAIL %s\n" % e)
         return 1
