@@ -1033,8 +1033,10 @@ jobs:
             bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
           fi
           read -ra targets <<< "$TARGETS"
-          tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
-                  | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
+          # #5922: list with the SAME build flags the run step built with. `-p … --lib --tests` is a different set of
+          # units than `--lib --bins --test NAME…`, so the list recompiled 21 workspace crates (1.7-4.8 min per shard).
+          # The -E filterset still selects the same ids; only the units cargo builds to list them change.
+          BUILD_FLAGS="$(printf '%s\n' "${targets[@]}" | grep -vE '^aprender-(gpu|cuda-edge|compute):' | tr '\n' ' ' | bash scripts/ci_test_tier.sh --build-flags)"
           EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
@@ -1050,14 +1052,14 @@ jobs:
             -e CARGO_BUILD_JOBS=16 -e RAYON_NUM_THREADS=16 -e NEXTEST_TEST_THREADS=16 -e RUST_TEST_THREADS=16 \
             -e CARGO_PROFILE_TEST_DEBUG=0 \
             -e CARGO_PROFILE_DEV_DEBUG=0 \
-            -e TREE="$tree" -e EXPR="$EXPR" \
+            -e BUILD_FLAGS="$BUILD_FLAGS" -e EXPR="$EXPR" \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash -c 'set -euo pipefail
               i=0; while read -r g; do p=""; for c in $g; do p="$p -p $c"; done
                 cargo nextest list --profile ci --lib --tests $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
               done < /sigma/quick-sel.calls
-              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}" --message-format json > /sigma/quick-tree.list.json'
+              cargo nextest list --profile ci $BUILD_FLAGS -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}" --message-format json > /sigma/quick-tree.list.json'
           rc=0
           if [ -n "$CRATES" ]; then
             n="$(wc -l < "$sig/quick-sel.calls")"

@@ -1,0 +1,19 @@
+- id: PMAT-5922
+  github_issue: 5922
+  item_type: task
+  title: 'ci: quick-tier Σ-executed step lists the tree-reader targets with the run step''s build flags (no second compile)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T01:40:00Z
+  updated: 2026-10-23T01:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the Σ-executed quick-tree nextest list uses the same --build-flags as the run step, so it builds the same units; same -E filterset and partition, so the same test ids are listed and executed'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
