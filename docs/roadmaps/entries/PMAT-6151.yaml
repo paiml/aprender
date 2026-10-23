@@ -1,0 +1,18 @@
+- id: PMAT-6151
+  github_issue: 6151
+  item_type: task
+  title: 'ci: thread caps come from RUNNER_THREAD_CAP, no literal thread count in workflows (supersedes EMG-001 C1(d))'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:45:00Z
+  updated: 2026-10-23T11:45:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null

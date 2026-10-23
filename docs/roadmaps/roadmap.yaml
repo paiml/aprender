@@ -25780,3 +25780,21 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6151
+  github_issue: 6151
+  item_type: task
+  title: 'ci: thread caps come from RUNNER_THREAD_CAP, no literal thread count in workflows (supersedes EMG-001 C1(d))'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:45:00Z
+  updated: 2026-10-23T11:45:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
