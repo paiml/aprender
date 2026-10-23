@@ -3,15 +3,15 @@
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update
 # Owner: scripts/check_complexity_ratchet.sh (PMAT-746).
 # tool_version=pmat 3.42.0
-# Instrument split (#6133). main's baseline had 663 rows (657 under crates/); this file has 602
-# (596 under crates/), none added. 61 rows left: 1 is a tree repair, 60 are instrument loss.
-#   * Tree repair: crates/aprender-core/src/metrics/mod.rs::davies_bouldin_score was split under the
-#     limits by a33de0cc08 (#5111) and its row was stale; it would leave under any pmat.
-#   * Instrument loss: the other 60 include cfg-gated functions (iteration_scheduler.rs
-#     process_iteration_batch, distill.rs run_cuda_backend). pmat 3.42.0 does not see code behind a
-#     cfg that is off, so those functions are NOT ratcheted under this pin. This is a loss of
-#     coverage, not an improvement of the tree. Restoring it: #6150 (owner aprender-w5032).
-# Re-stamped for the instrument change; no row was added or raised.
+# Instrument comparison (#6133). Measured on one tree (b4bbf8c781 + this PR): `bash
+# scripts/check_complexity_ratchet.sh --update` under pmat 3.41.1 and under pmat 3.42.0 writes the
+# SAME 602 rows (diff of the two row sets is empty). The instrument change loses no function.
+# Why main's baseline had 663 rows: it was stale (shrink-only, never refreshed as the tree
+# improved). Of the 61 rows that left, neither pmat lists them on this tree: 6 name files absent
+# on main (gguf/inference/fails.rs x4, generate_with.rs x2), 3 name functions that moved into
+# submodules (simulate two_opt, check_triangle_inequality, validate_schema), 52 name functions
+# present but now under the thresholds (e.g. davies_bouldin_score, split by a33de0cc08, #5111).
+# Re-stamped; no row was added or raised.
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
