@@ -25777,6 +25777,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-6131
+  github_issue: 6131
+  item_type: task
+  title: 'pmat_bin.sh reads its pin from tools.toml, one source (m36 FAIL ENV; child of PMAT-1059)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:20:00Z
+  updated: 2026-10-23T10:20:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/pmat_bin.sh holds no version literal; PMAT_PIN is tools.toml [pmat] version
+  - an unreadable pin returns 1, never a default
+  - check_hardcoded_paths.sh --self-test reads the pin from tools.toml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-6134
   github_issue: 6134
   item_type: task
