@@ -18,7 +18,7 @@
 #   any other path outside a crate            ALL
 #   docs/, contracts/, root *.md              READERS only (#6042): their run-time readers are all in READERS. Exceptions, ALL:
 #                           contracts binding.yaml, contracts model-families, the BUILD_CONTRACTS and BUILD_DOCS files (nested too; compiled into a crate)
-#   .claude/, ci/shard-step-costs.tsv
+#   .claude/
 #                           NO-READER list (#5809): the only run-time readers of these paths (grep of crates/**/*.rs: contracts-cli,
 #                           orchestrate, core, mcp, apr-cli) are all in READERS, so the set is READERS alone. Alone or
 #                           beside crate .rs files; any other path in the diff still decides ALL.
@@ -95,7 +95,7 @@ dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($
 # check_affected_readers.sh derives this list from the tree and is RED on a file it omits.
 BUILD_CONTRACTS="${AFFECTED_BUILD_CONTRACTS:-apr-mcp-tool-schemas-v1.yaml apr-model-capability-v1.yaml arch-constraints-v1.yaml architecture-requirements-v1.yaml kernel-fusion-v1.yaml kernel-registry-v1.yaml layer-parity-v1.yaml softmax-kernel-v1.yaml tensor-names-v1.yaml thinking-budgets-v1.yaml}"
 # docs/ files embedded the same way (include_str!/include_bytes!, also nested ones): a change reaches the compiling crate's dependents, so ALL. Same RED guard.
-BUILD_DOCS="${AFFECTED_BUILD_DOCS:-audits/prm-001/analysis-plan.md audits/prm-001/prereg.lock audits/review-corpus/prompts/v1.txt audits/review-corpus/test-manifest-v1.txt audits/rex-001/analysis-plan.md kernel-registry/upstream-reference-v1.json specifications/PRM-001-prometheus.md specifications/review-experiment-protocol.md}"
+BUILD_DOCS="${AFFECTED_BUILD_DOCS:-audits/prm-001/analysis-plan.md audits/prm-001/prereg.lock audits/rex-001/prereg.lock audits/review-corpus/prompts/v1.txt audits/review-corpus/test-manifest-v1.txt audits/rex-001/analysis-plan.md kernel-registry/upstream-reference-v1.json specifications/PRM-001-prometheus.md specifications/review-experiment-protocol.md}"
 touched="" skipped=0
 while IFS= read -r f; do
   case "$f" in */*) ;; *.md) skipped=1; continue ;; esac   # root *.md: its run-time readers are in READERS
@@ -105,7 +105,7 @@ while IFS= read -r f; do
     '') continue ;;
     contracts/binding.yaml | contracts/*/binding.yaml | contracts/model-families/* | contracts/*/model-families/*) emit ALL; exit 0 ;;   # build inputs of core/compute/contracts/simulate/train: their generated code reaches dependents
     contracts/* | docs/*) skipped=1; continue ;;   # #6042: run-time readers are in READERS
-    .claude/* | ci/shard-step-costs.tsv) skipped=1; continue ;;
+    .claude/*) skipped=1; continue ;;
     crates/*/build.rs) emit ALL; exit 0 ;;
     crates/*.rs) ;;
     crates/*) emit ALL; exit 0 ;;
