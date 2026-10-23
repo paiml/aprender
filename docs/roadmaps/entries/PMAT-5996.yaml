@@ -1,0 +1,19 @@
+- id: PMAT-5996
+  github_issue: 5996
+  item_type: task
+  title: 'ci: pr-review-shadow leaves the PR and merge-queue path (C324 third state); LAB owns it'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T20:18:00Z
+  updated: 2026-10-23T01:30:00Z
+  spec: null
+  acceptance_criteria:
+  - no x86-main section list on the PR or merge_group path names pr-review-shadow; scripts/check_ci_no_pr_shadow.sh --self-test turns RED when the name is put back
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
