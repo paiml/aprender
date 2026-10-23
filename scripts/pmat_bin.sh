@@ -29,7 +29,9 @@
 # The pin is `version` under [pmat] in tools.toml (PMAT_TOOLS_TOML overrides the path, for tests).
 # An unreadable or missing pin is a failure, never a default.
 _pmat_toml="${PMAT_TOOLS_TOML:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." 2>/dev/null && pwd)/tools.toml}"
-PMAT_PIN=$(sed -nE '/^\[pmat\]/,/^\[/{s/^version[[:space:]]*=[[:space:]]*"([0-9]+\.[0-9]+\.[0-9]+)".*$/\1/p;}' "$_pmat_toml" 2>/dev/null | head -n1)
+# shellcheck source=scripts/pmat_pin.sh
+. "$(dirname "${BASH_SOURCE[0]:-$0}")/pmat_pin.sh" || return 1
+PMAT_PIN=$(pmat_pin_read "$_pmat_toml")
 unset _pmat_toml
 
 pmat_bin_resolve() {
