@@ -25831,11 +25831,11 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-23T10:35:00Z
   spec: null
   acceptance_criteria:
-  - 'The mq-feeder arms a PR only when non-author seats are posted at the head sha and fresh_derived byte-compares equal; a falsifier test shows an author-only seat or a stale byte-compare does not arm'
+  - 'The mq-feeder arms a gate PR only when every head patch-id has 2 distinct non-author seats and a 3/3 fresh_derived byte-compare receipt (as #6134 needs_seats); a no-op rebase or merge of main voids 0 receipts and an amended commit voids only its own id; a falsifier test shows an author-only seat or a stale byte-compare does not arm'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
   notes: null
-  epic: null
+  epic: 5510
