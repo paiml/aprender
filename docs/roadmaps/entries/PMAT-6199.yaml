@@ -11,11 +11,11 @@
   acceptance_criteria:
   - 'mg-reuse-lab-nightly.yml triggers only on schedule and workflow_dispatch, has one job, and is in no PR, merge-queue or release path'
   - 'its header names owner aprender-w5382 and the ticket; a red opens or updates the one ticket via scripts/lab_ticket.sh'
-  - 'one workflow_dispatch on main runs ci_mg_reuse.sh --self-test and check_ci_wait_cancel.sh (self-test and bare) green, with the run URL recorded in #6194'
+  - 'ci_mg_reuse.sh --self-test and check_ci_wait_cancel.sh (self-test and bare) pass locally at the head, and the workflow steps run exactly those commands'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'Post-merge obligation, not an AC of this PR: one workflow_dispatch on main, green, run URL recorded in #6194. It is a merge condition of #6194 (the retirement), not of this twin.'
   epic: null
