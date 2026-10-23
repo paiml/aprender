@@ -16,6 +16,43 @@ pub const MAX_LINES: u32 = 200;
 pub const MAX_ENTRIES: usize = 3;
 /// Label a PR owner sets to opt in.
 pub const OPT_IN_LABEL: &str = "rollup-ok";
+/// Label a capacity PR (runner seats, host readiness) carries to take the next free slot (infra#2247).
+pub const CAPACITY_LABEL: &str = "capacity";
+/// Declared capacity paths (infra-66, mirrors infra `fleet/capacity-paths.txt`): a PR is capacity only if
+/// EVERY changed path matches one of these globs (`**` crosses `/`, `*` stays inside one segment).
+pub const CAPACITY_PATHS: &[&str] = &[
+    "machines/clean-room/runner/**",
+    "machines/intel/forjar-ci.yaml",
+    "machines/framework16/forjar.yaml",
+    "machines/framework16/Makefile",
+    "machines/gx10/forjar-*.yaml",
+    "machines/t2*/forjar.yaml",
+    "machines/fleet-hosts/**",
+];
+
+/// Glob match for [`CAPACITY_PATHS`]: `**` matches any run of characters, `*` any run without `/`.
+#[must_use]
+pub fn glob_match(pat: &str, path: &str) -> bool {
+    fn go(p: &[u8], s: &[u8]) -> bool {
+        match p.split_first() {
+            None => s.is_empty(),
+            Some((b'*', rest)) if rest.first() == Some(&b'*') => {
+                let rest = &rest[1..];
+                (0..=s.len()).any(|i| go(rest, &s[i..]))
+            }
+            Some((b'*', rest)) => {
+                let n = s.iter().position(|&b| b == b'/').unwrap_or(s.len());
+                (0..=n).any(|i| go(rest, &s[i..]))
+            }
+            Some((c, rest)) => s.first() == Some(c) && go(rest, &s[1..]),
+        }
+    }
+    go(pat.as_bytes(), path.as_bytes())
+}
+
+fn in_capacity_paths(path: &str) -> bool {
+    CAPACITY_PATHS.iter().any(|p| glob_match(p, path))
+}
 
 /// One open PR as read from GitHub.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,6 +82,8 @@ pub enum Reject {
     },
     /// Eligible, but the rollup already holds [`MAX_ENTRIES`].
     OverCap,
+    /// Carries [`CAPACITY_LABEL`] but changes a path outside [`CAPACITY_PATHS`] (the label is refused).
+    NotCapacityPaths(String),
 }
 
 /// Files a rollup never carries: CI workflows, contracts, the lockfile.
@@ -75,6 +114,14 @@ pub fn check(c: &Candidate) -> Option<Reject> {
         .map(|f| Reject::ForbiddenFile(f.clone()))
 }
 
+/// A capacity PR: the label AND every changed path in [`CAPACITY_PATHS`] (no files = not capacity).
+#[must_use]
+pub fn is_capacity(c: &Candidate) -> bool {
+    c.labels.iter().any(|l| l == CAPACITY_LABEL)
+        && !c.files.is_empty()
+        && c.files.iter().all(|f| in_capacity_paths(f))
+}
+
 /// A chosen rollup plus every PR left out and why.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub struct Selection {
@@ -84,14 +131,25 @@ pub struct Selection {
     pub rejected: Vec<(u64, Reject)>,
 }
 
-/// Pick up to [`MAX_ENTRIES`] eligible PRs, lowest number first, no shared file.
+/// Pick up to [`MAX_ENTRIES`] eligible PRs, capacity PRs first then lowest number, no shared file.
 #[must_use]
 pub fn select(cands: &[Candidate]) -> Selection {
     let mut sorted: Vec<&Candidate> = cands.iter().collect();
-    sorted.sort_by_key(|c| c.number);
+    sorted.sort_by_key(|c| (!is_capacity(c), c.number));
     let mut sel = Selection::default();
     let mut taken: Vec<(&Candidate, u64)> = Vec::new();
     for c in sorted {
+        if c.labels.iter().any(|l| l == CAPACITY_LABEL) && !is_capacity(c) {
+            let other = c
+                .files
+                .iter()
+                .find(|f| !in_capacity_paths(f))
+                .cloned()
+                .unwrap_or_default();
+            sel.rejected
+                .push((c.number, Reject::NotCapacityPaths(other)));
+            continue;
+        }
         if let Some(r) = check(c) {
             sel.rejected.push((c.number, r));
             continue;

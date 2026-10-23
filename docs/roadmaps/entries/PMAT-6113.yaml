@@ -1,0 +1,19 @@
+- id: PMAT-6113
+  github_issue: 6113
+  item_type: task
+  title: 'rollup select(): capacity PRs first, sorted by (!is_capacity, number) (infra#2247 WIP 1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T08:00:00Z
+  updated: 2026-10-23T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - a PR with the capacity label whose every changed path is in CAPACITY_PATHS is picked ahead of a lower-numbered feature PR
+  - a PR with the capacity label and any other changed path is rejected with NotCapacityPaths; check() and the other rejects are unchanged
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
