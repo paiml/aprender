@@ -2,14 +2,21 @@
 # (cyclomatic > 30 or cognitive > 25), as "<path>::<function> <cyclomatic> <cognitive>".
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update
 # Owner: scripts/check_complexity_ratchet.sh (PMAT-746).
-# tool_version=pmat 3.41.1
+# tool_version=pmat 3.42.0
+# Instrument comparison (#6133). Measured on one tree (b4bbf8c781 + this PR): `bash
+# scripts/check_complexity_ratchet.sh --update` under pmat 3.41.1 and under pmat 3.42.0 writes the
+# SAME 602 rows (diff of the two row sets is empty). The instrument change loses no function.
+# Why main's baseline had 663 rows: it was stale (shrink-only, never refreshed as the tree
+# improved). Of the 61 rows that left, neither pmat lists them on this tree: 6 name files absent
+# on main (gguf/inference/fails.rs x4, generate_with.rs x2), 3 name functions that moved into
+# submodules (simulate two_opt, check_triangle_inequality, validate_schema), 52 name functions
+# present but now under the thresholds (e.g. davies_bouldin_score, split by a33de0cc08, #5111).
+# Re-stamped; no row was added or raised.
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
 crates/apr-cli/src/commands/attn_viz_lint.rs::run 13 34
 crates/apr-cli/src/commands/check_finite_lint.rs::run 11 28
-crates/apr-cli/src/commands/distill.rs::run_cuda_backend 13 26
-crates/apr-cli/src/commands/distill.rs::run_text_generate 16 40
 crates/apr-cli/src/commands/dry_sampling_classifier.rs::classify_dry_match_len 10 47
 crates/apr-cli/src/commands/embed_viz_classifier.rs::classify_schema 14 42
 crates/apr-cli/src/commands/experiment.rs::run_tui_browser 19 63
@@ -20,7 +27,6 @@ crates/apr-cli/src/commands/hang_trace_lint.rs::run 14 31
 crates/apr-cli/src/commands/inspect_output_json.rs::compute_quality_score 14 33
 crates/apr-cli/src/commands/kernel_explain/config.rs::check_attention_mismatch 19 55
 crates/apr-cli/src/commands/kernel_explain/config.rs::check_dimension_validity 17 46
-crates/apr-cli/src/commands/kernel_explain/family.rs::derive_kernel_class 23 36
 crates/apr-cli/src/commands/kernel_explain/resolve.rs::resolve_family 28 82
 crates/apr-cli/src/commands/modelfile/parser.rs::parse_modelfile_str 10 29
 crates/apr-cli/src/commands/ollama_chat_classifier.rs::classify_ndjson_stream 9 31
@@ -34,28 +40,17 @@ crates/apr-cli/src/commands/pretrain.rs::drive_real 10 32
 crates/apr-cli/src/commands/pretrain.rs::run 15 29
 crates/apr-cli/src/commands/prometheus_classifier.rs::classify_text_format 10 50
 crates/apr-cli/src/commands/ps_schema.rs::is_rfc3339 28 29
-crates/apr-cli/src/commands/publish.rs::execute 19 42
-crates/apr-cli/src/commands/pull_dataset.rs::list_dataset_repo_files 8 30
 crates/apr-cli/src/commands/pull_scheme.rs::classify_pull_source 13 36
-crates/apr-cli/src/commands/quant_preservation.rs::classify_preservation 23 55
 crates/apr-cli/src/commands/react_trace_classifier.rs::classify_scratchpad_grammar 11 34
-crates/apr-cli/src/commands/rerank.rs::run 10 26
 crates/apr-cli/src/commands/rosetta_diff_tensor.rs::diff_tensor_pair 8 28
-crates/apr-cli/src/commands/run.rs::resolve_model 10 29
 crates/apr-cli/src/commands/shard/unsharder.rs::parse_index_json 12 32
 crates/apr-cli/src/commands/shard/unsharder.rs::unshard_safetensors_dir 14 29
 crates/apr-cli/src/commands/tool_use_classifier.rs::classify_arguments_against_schema 14 57
 crates/apr-cli/src/commands/tp_pp_classifier.rs::classify_distributed_metadata 11 26
-crates/apr-cli/src/commands/train.rs::run_halving_round 16 29
 crates/apr-cli/src/commands/tui.rs::draw_overview 11 26
 crates/apr-cli/src/commands/tui.rs::draw_tensors 13 35
 crates/apr-cli/src/commands/validate.rs::run_rosetta_validation 16 33
-crates/apr-cli/src/commands/validate_manifest.rs::check_gguf_file_type 12 33
-crates/apr-cli/src/commands/validate_manifest.rs::read_gguf_signature 13 35
-crates/apr-cli/src/dispatch.rs::dispatch_diagnostic_commands 10 30
-crates/apr-cli/src/dispatch.rs::dispatch_runtime_commands 15 41
 crates/apr-cli/src/federation/gateway.rs::execute_with_retries 9 26
-crates/apr-cli/src/help_producer_truth.rs::resolve 19 73
 crates/apr-format/src/v2/writer.rs::add_q4_tensor 12 27
 crates/aprender-cbtop/src/adversarial/validators.rs::validate_floats 9 26
 crates/aprender-cbtop/src/app/metrics.rs::read_cpu_usage 10 41
@@ -116,7 +111,6 @@ crates/aprender-contracts/src/mirai_gen.rs::generate_mirai_annotations 13 27
 crates/aprender-contracts/src/reverse_coverage.rs::scan_file 19 54
 crates/aprender-contracts/src/scaffold/mod.rs::domain_to_params 19 43
 crates/aprender-contrastive-data/src/split.rs::validate_ingest_ladder 12 30
-crates/aprender-core/build.rs::emit_provable_contract_bindings 24 80
 crates/aprender-core/src/autograd/grad_fn.rs::backward 11 31
 crates/aprender-core/src/autograd/ops/embedding.rs::embedding_gather 13 30
 crates/aprender-core/src/autograd/ops/pooling.rs::masked_mean_pool 17 44
@@ -137,11 +131,8 @@ crates/aprender-core/src/data/pii.rs::scan_ssns 17 39
 crates/aprender-core/src/embed/arguments.rs::validate 18 72
 crates/aprender-core/src/format/converter/advanced_merge.rs::passthrough_merge 13 39
 crates/aprender-core/src/format/converter/fusion.rs::build_fused_tensors_f32 11 36
-crates/aprender-core/src/format/converter/import.rs::streaming_sharded_import 20 59
-crates/aprender-core/src/format/converter/tokenizer_loader.rs::infer_architecture_from_names 16 31
 crates/aprender-core/src/format/gguf/dequantize.rs::dequantize_q3_k 10 29
 crates/aprender-core/src/format/gguf/merge.rs::merge_gguf_shards 21 56
-crates/aprender-core/src/format/gguf/reader_parsing.rs::from_bytes_keep 19 41
 crates/aprender-core/src/format/metadata_bounds_contract_falsify.rs::falsify_mb_006_family_float_ranges 11 37
 crates/aprender-core/src/format/metadata_bounds_contract_falsify.rs::parse_range_bounds 22 60
 crates/aprender-core/src/format/metadata_bounds_contract_falsify.rs::parse_upper_bounds 13 39
@@ -149,11 +140,7 @@ crates/aprender-core/src/format/rosetta/arch_inference.rs::infer_architecture_fr
 crates/aprender-core/src/format/rosetta/validate_inspect.rs::validate_apr 16 40
 crates/aprender-core/src/format/rosetta_ml/mod.rs::from_data 20 38
 crates/aprender-core/src/format/sharded/mod.rs::from_json 9 30
-crates/aprender-core/src/format/sharded_index.rs::parse 11 28
 crates/aprender-core/src/format/special_tokens_contract_falsify.rs::parse_families 13 30
-crates/aprender-core/src/format/tensor_expectation.rs::split_gpt2_fused_qkv 9 36
-crates/aprender-core/src/format/tensor_expectation.rs::split_gpt2_fused_qkv_raw 10 34
-crates/aprender-core/src/format/tensor_expectation.rs::split_neox_fused_qkv_raw 10 34
 crates/aprender-core/src/format/tokenizer_vocab_contract_falsify.rs::parse_tv_families 13 38
 crates/aprender-core/src/format/validation.rs::compute 15 29
 crates/aprender-core/src/gnn/gin_conv.rs::forward_gnn 22 57
@@ -168,7 +155,6 @@ crates/aprender-core/src/linear_model/input.rs::fit 22 58
 crates/aprender-core/src/linear_model/lasso_impl.rs::fit 22 58
 crates/aprender-core/src/metaheuristics/constructive.rs::optimize 13 26
 crates/aprender-core/src/metaheuristics/tabu_search_impl.rs::optimize 14 28
-crates/aprender-core/src/metrics/mod.rs::davies_bouldin_score 17 38
 crates/aprender-core/src/monte_carlo/engine/variance.rs::generate_uniforms 11 26
 crates/aprender-core/src/native/mod.rs::validate 9 26
 crates/aprender-core/src/nn/conv/mod.rs::forward_naive 9 31
@@ -230,7 +216,6 @@ crates/aprender-core/tests/setfit_conformance.rs::assert_encoder_updates 24 57
 crates/aprender-cuda-edge/src/ptx_poison/mutator.rs::apply 14 26
 crates/aprender-data/src/doctest/parser.rs::extract_from_docstring_with_sig 19 89
 crates/aprender-data/src/doctest/parser.rs::get_function_context 7 31
-crates/aprender-data/src/hf_hub/validation.rs::validate_readme 11 30
 crates/aprender-data/src/imbalance.rs::count_classes 12 34
 crates/aprender-data/src/quality/checks.rs::collect_data 15 56
 crates/aprender-data/src/serve/raw_source.rs::detect_format 13 27
@@ -243,7 +228,6 @@ crates/aprender-distribute/src/executor/simd.rs::validate 8 33
 crates/aprender-explain/src/ptx/bugs/analyzer/detectors/control_flow.rs::detect_dead_code 10 29
 crates/aprender-explain/src/ptx/bugs/analyzer/detectors/control_flow.rs::detect_loop_branch_to_end 12 27
 crates/aprender-explain/src/ptx/bugs/coverage.rs::analyze 13 32
-crates/aprender-gpu/src/driver/cublas_tests.rs::cta64_vs_cta32_vs_cublas_fp16 39 70
 crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta64_wmma.rs::build_cta64_wmma_fp16_impl 19 33
 crates/aprender-gpu/src/kernels/gemm/basic/tensor_core/cta_wmma.rs::build_cta_wmma_fp16_impl 23 41
 crates/aprender-gpu/src/ptx/builder/emit/mod.rs::write_sources 16 33
@@ -252,11 +236,8 @@ crates/aprender-image/src/morphology.rs::neighborhood_min 10 27
 crates/aprender-mcp/src/tools/serve.rs::await_readiness 7 28
 crates/aprender-mcp/src/tools/subprocess.rs::spawn_cancellable 12 48
 crates/aprender-monte-carlo/src/data/mod.rs::load 12 31
-crates/aprender-orchestrate/build.rs::main 17 67
-crates/aprender-orchestrate/src/agent/code.rs::cmd_code 20 26
 crates/aprender-orchestrate/src/agent/code_prompts.rs::estimate_model_params_from_name 10 27
 crates/aprender-orchestrate/src/agent/custom_agents.rs::parse_agent_md 10 28
-crates/aprender-orchestrate/src/agent/driver/realizar.rs::parse_tool_calls_envelope 10 32
 crates/aprender-orchestrate/src/agent/driver/remote.rs::stream 8 33
 crates/aprender-orchestrate/src/agent/manifest.rs::discover_model 8 27
 crates/aprender-orchestrate/src/agent/repl.rs::read_input 12 27
@@ -309,7 +290,6 @@ crates/aprender-present-lib/src/browser/notebook.rs::topological_order 12 27
 crates/aprender-present-lib/src/browser/shell_autocomplete.rs::suggest 19 41
 crates/aprender-present-lib/src/browser/websocket.rs::setup_close_handler 19 47
 crates/aprender-present-terminal/src/app.rs::run_loop 13 40
-crates/aprender-present-terminal/src/bin/score.rs::get_coverage 10 52
 crates/aprender-present-terminal/src/direct/direct_canvas.rs::draw_line 15 41
 crates/aprender-present-terminal/src/direct/direct_canvas.rs::fill_polygon 13 37
 crates/aprender-present-terminal/src/ptop/analyzers/battery.rs::collect 13 26
@@ -370,7 +350,6 @@ crates/aprender-profile/src/cluster/registry.rs::matches_filter 7 26
 crates/aprender-profile/src/dwarf.rs::lookup 11 45
 crates/aprender-profile/src/function_profiler.rs::print_summary 13 29
 crates/aprender-profile/src/ml_anomaly.rs::calculate_silhouette_from_features 16 42
-crates/aprender-profile/src/process_tracer.rs::next 11 66
 crates/aprender-profile/src/ring_buffer.rs::sidecar_worker 9 27
 crates/aprender-profile/src/unified_trace.rs::happens_before 9 31
 crates/aprender-ptx-debug/src/analyzer/control_flow.rs::analyze_barriers 11 37
@@ -405,7 +384,6 @@ crates/aprender-serve/examples/par_001_test_math.rs::main 17 26
 crates/aprender-serve/examples/par_001_trace_hidden.rs::main 24 55
 crates/aprender-serve/examples/par_001_verify_lm_head.rs::main 11 26
 crates/aprender-serve/examples/parity_040_fp16_attention.rs::main 18 33
-crates/aprender-serve/examples/performance_parity.rs::print_summary 19 26
 crates/aprender-serve/examples/pmat_benchmark_matrix.rs::main 15 31
 crates/aprender-serve/examples/profile_all_layers.rs::main 24 64
 crates/aprender-serve/examples/profile_forward_breakdown.rs::main 22 37
@@ -414,12 +392,6 @@ crates/aprender-serve/examples/profile_non_matmul.rs::main 23 43
 crates/aprender-serve/examples/test_q6k_single_row.rs::run_q6k_row_test 13 27
 crates/aprender-serve/examples/trace_attn_weights.rs::main 16 28
 crates/aprender-serve/examples/trace_hidden_flow.rs::main 22 42
-crates/aprender-serve/src/api/cuda_batch_scheduler.rs::cuda_batch_scheduler_loop 18 85
-crates/aprender-serve/src/api/cuda_batch_scheduler.rs::process_cuda_batch 25 72
-crates/aprender-serve/src/api/cuda_chat_backend.rs::try_cuda_backend 14 43
-crates/aprender-serve/src/api/gpu_completions_handler.rs::completions_inner 10 28
-crates/aprender-serve/src/api/iteration_scheduler.rs::process_iteration_batch 30 101
-crates/aprender-serve/src/api/tests/openai_compat_2375.rs::no_shipped_string_leaks_an_internal_rust_constructor 9 31
 crates/aprender-serve/src/apr/cuda_streaming_weights.rs::ensure_layer_weights_loaded 20 43
 crates/aprender-serve/src/apr/cuda_streaming_weights.rs::pre_cache_weights_streaming 12 31
 crates/aprender-serve/src/apr/forward.rs::load_tokenizer_from_sibling 9 26
@@ -445,7 +417,6 @@ crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs::warm
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/attention.rs::warmup_hgemm_cache 18 45
 crates/aprender-serve/src/cuda/executor/layers/cublas_prefill/gemm.rs::cublas_prefill_gemm 15 30
 crates/aprender-serve/src/cuda/executor/layers/gemv_dispatch.rs::transformer_layer_workspace_inner 11 30
-crates/aprender-serve/src/cuda/executor/layers/graphed_capture.rs::forward_all_layers_gpu_to_logits_graphed 16 36
 crates/aprender-serve/src/cuda/executor/layers/indexed_transformer.rs::transformer_layer_indexed 11 30
 crates/aprender-serve/src/cuda/executor/layers/logits.rs::debug_q6k_lm_head 10 41
 crates/aprender-serve/src/cuda/executor/layers/prefill.rs::prefill_all_layers_gpu 10 29
@@ -461,10 +432,6 @@ crates/aprender-serve/src/gguf/cuda/speculative.rs::generate_speculative_cuda 20
 crates/aprender-serve/src/gguf/cuda/speculative.rs::generate_speculative_with_draft 21 63
 crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized.rs::forward_batch_with_gpu_ffn 35 41
 crates/aprender-serve/src/gguf/inference/cached/sync_owned_quantized_02.rs::batch_generate_gpu 31 39
-crates/aprender-serve/src/gguf/inference/fails.rs::generate 9 26
-crates/aprender-serve/src/gguf/inference/fails.rs::generate_with_cache 17 39
-crates/aprender-serve/src/gguf/inference/fails.rs::generate_with_cache_streaming 14 36
-crates/aprender-serve/src/gguf/inference/fails.rs::sample_advanced 13 29
 crates/aprender-serve/src/gguf/inference/flash_attention_dispatch.rs::flash_attention_tiled 12 35
 crates/aprender-serve/src/gguf/inference/flash_attention_tiled.rs::flash_attention_tiled 12 35
 crates/aprender-serve/src/gguf/inference/forward/attention.rs::tiled_single_head_attention 11 29
@@ -486,22 +453,12 @@ crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe.rs::forward_s
 crates/aprender-serve/src/gguf/inference/forward/forward_qwen3_moe_traced.rs::forward_qwen3_moe_traced_with_plan 33 73
 crates/aprender-serve/src/gguf/inference/forward/forward_single_profiled.rs::forward_single_with_cache_profiled 20 41
 crates/aprender-serve/src/gguf/inference/forward/traced.rs::forward_traced 17 32
-crates/aprender-serve/src/gguf/inference/generate_quantized.rs::generate_with_cache 23 47
-crates/aprender-serve/src/gguf/inference/generate_quantized.rs::generate_with_cache_streaming 20 44
 crates/aprender-serve/src/gguf/inference/generate_scratch.rs::generate_with_cache_adaptive 12 28
 crates/aprender-serve/src/gguf/inference/generate_scratch.rs::generate_with_scratch 13 31
-crates/aprender-serve/src/gguf/inference/generate_with.rs::generate_with_cache_adaptive 12 28
-crates/aprender-serve/src/gguf/inference/generate_with.rs::generate_with_scratch 13 31
-crates/aprender-serve/src/gguf/metadata.rs::get_tensor_f32 15 66
-crates/aprender-serve/src/gguf/token.rs::decode 11 35
-crates/aprender-serve/src/gguf/token.rs::encode 22 60
 crates/aprender-serve/src/gpu/adapters/apr_q4k.rs::forward_token_apr_q4k 16 36
 crates/aprender-serve/src/gpu/adapters/apr_q4k.rs::upload_apr_q4k_weights 14 35
 crates/aprender-serve/src/gpu/scheduler/from_gguf_config.rs::from_apr_weights 12 27
 crates/aprender-serve/src/grammar/mod.rs::validate 8 27
-crates/aprender-serve/src/infer/batch.rs::init_batch_model 15 51
-crates/aprender-serve/src/infer/qwen3_moe_generate.rs::run_qwen3_moe_generate_streaming 10 27
-crates/aprender-serve/src/infer/qwen3_moe_generate.rs::sample_from_logits 20 46
 crates/aprender-serve/src/inference_trace/execution_failure.rs::format_text 34 100
 crates/aprender-serve/src/inference_trace/tracer_contracts.rs::validate_observability_contracts 12 26
 crates/aprender-serve/src/layers/errors.rs::flash_forward 25 60
@@ -516,17 +473,13 @@ crates/aprender-serve/src/quantize/q5k_q6k_matvec.rs::fused_q4k_q8k_parallel_mat
 crates/aprender-serve/src/quantize/tests/imp_148a.rs::test_imp_148c_simd_scaling 15 27
 crates/aprender-serve/src/safetensors/inner.rs::validate 18 28
 crates/aprender-serve/src/scheduler/mod_max_scheduler.rs::handle_preemption 9 28
-crates/aprender-serve/src/tokenizer.rs::decode 15 41
 crates/aprender-serve/tests/ffn_gguf_real_teacher_28_layer_chain.rs::falsify_ffn_gguf_017_real_teacher_28_layer_chain_residual 16 31
 crates/aprender-shell/src/history.rs::has_corrupted_tokens 8 26
 crates/aprender-shell/src/history.rs::strip_inline_comment 15 38
 crates/aprender-shell/src/model_train_markov.rs::suggest 18 43
 crates/aprender-shell/src/size.rs::validate 10 29
-crates/aprender-simulate/src/demos/tsp_engine.rs::two_opt 8 27
 crates/aprender-simulate/src/demos/tsp_grasp/mod.rs::compute_mst_excluding 10 26
-crates/aprender-simulate/src/demos/tsp_instance.rs::check_triangle_inequality 8 29
 crates/aprender-simulate/src/domains/monte_carlo.rs::execute 11 56
-crates/aprender-simulate/src/edd/loader.rs::validate_schema 21 36
 crates/aprender-simulate/src/engine/jidoka.rs::check_finite 9 32
 crates/aprender-simulate/src/engine/mod.rs::new 4 35
 crates/aprender-simulate/src/orbit/jidoka.rs::check_close_encounters 6 26
@@ -548,8 +501,6 @@ crates/aprender-test-lib/src/file_ops.rs::is_accepted 9 32
 crates/aprender-test-lib/src/gpu_pixels/ptx_analysis.rs::analyze 22 43
 crates/aprender-test-lib/src/lint/ast_visitor.rs::is_rc_constructor_call 14 51
 crates/aprender-test-lib/src/lint/ast_visitor.rs::visit_local 15 57
-crates/aprender-test-lib/src/llm/client.rs::chat_completion_stream 16 69
-crates/aprender-test-lib/src/llm/client.rs::serve_scripted_sse 9 26
 crates/aprender-test-lib/src/llm/score.rs::compute_concurrency_scaling_scorecard 11 29
 crates/aprender-test-lib/src/llm/score.rs::compute_profile_scorecard 13 29
 crates/aprender-test-lib/src/llm/score.rs::compute_scorecard 19 56
@@ -582,7 +533,6 @@ crates/aprender-train/src/config/train/loader/mod.rs::train_loop_cuda 24 89
 crates/aprender-train/src/config/train/loader/mod.rs::train_loop_cuda_distributed 16 44
 crates/aprender-train/src/config/train/loader/mod.rs::train_transformer_from_spec 12 37
 crates/aprender-train/src/eval/retrain/retrainer.rs::process_batch 13 36
-crates/aprender-train/src/finetune/classify_eval_report.rs::evaluate_checkpoint 17 32
 crates/aprender-train/src/finetune/classify_pipeline/gpu.rs::try_init_cuda 13 33
 crates/aprender-train/src/finetune/classify_trainer.rs::save_apr_checkpoint 14 32
 crates/aprender-train/src/finetune/classify_trainer.rs::train 16 35
@@ -590,7 +540,7 @@ crates/aprender-train/src/finetune/classify_trainer.rs::train_as_coordinator 13 
 crates/aprender-train/src/finetune/gradient_server.rs::collect_and_reduce_block 7 30
 crates/aprender-train/src/finetune/gradient_server.rs::collect_and_reduce_non_block 6 27
 crates/aprender-train/src/finetune/instruct_pipeline/backward.rs::backward_nf4_gpu_blocks_loop 17 37
-crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs::forward_cuda_training 26 54
+crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs::forward_cuda_training 25 53
 crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs::forward_inference_saving_inputs 13 32
 crates/aprender-train/src/finetune/instruct_pipeline/cuda_forward.rs::forward_logits_gpu_resident 10 37
 crates/aprender-train/src/finetune/instruct_pipeline/cuda_init.rs::try_init_cuda 17 41
@@ -616,18 +566,16 @@ crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::save_apr_wi
 crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::save_cuda_lora_adapter 20 58
 crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::train_batch 15 32
 crates/aprender-train/src/train/transformer_trainer/cuda_trainer.rs::with_model 22 26
-crates/aprender-train/src/train/transformer_trainer/step_profiler.rs::print_report 16 31
 crates/aprender-train/src/train/transformer_trainer/wgpu_attention.rs::attention_forward 35 102
 crates/aprender-train/src/train/transformer_trainer/wgpu_backward.rs::backward_through_layers 33 119
 crates/aprender-train/src/train/transformer_trainer/wgpu_runner.rs::run_wgpu_training 12 34
 crates/aprender-train/src/train/transformer_trainer/wgpu_trainer.rs::full_train_step 19 30
 crates/aprender-train/src/train/transformer_trainer/wgpu_trainer.rs::load_qwen3_4b 14 38
-crates/aprender-train/src/transformer/cuda_block.rs::forward 41 44
+crates/aprender-train/src/transformer/cuda_block.rs::forward 36 39
 crates/aprender-train/src/transformer/cuda_block.rs::new 4 26
-crates/aprender-train/src/transformer/norm.rs::forward_batched 15 42
 crates/aprender-tsp/src/instance/tsplib.rs::extract_optimal_from_comment 11 35
 crates/aprender-tsp/src/instance/tsplib.rs::parse 9 28
-crates/aprender-verify-ml/src/bin/verificar.rs::main 55 127
+crates/aprender-verify-ml/src/bin/verificar.rs::main 53 123
 crates/aprender-verify-ml/src/generator/bash_enum.rs::enumerate_programs 124 285
 crates/aprender-verify-ml/src/generator/c_enum.rs::enumerate_expressions 14 31
 crates/aprender-verify-ml/src/generator/python_enum.rs::enumerate_expressions 16 34

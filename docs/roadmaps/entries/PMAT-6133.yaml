@@ -1,0 +1,20 @@
+- id: PMAT-6133
+  github_issue: 6133
+  item_type: task
+  title: 'move the pmat pin to 3.42.0; re-stamp CB-200 and complexity baselines (child of PMAT-6131)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:40:00Z
+  updated: 2026-10-23T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - tools.toml [pmat] version is 3.42.0 and check_tool_versions.sh reports no pmat header mismatch
+  - instrument vs tree separated by measuring 3.41.1 and 3.42.0 on the same tree
+  - complexity_baseline.txt and cb200_baseline.txt carry tool_version=pmat 3.42.0; no count rises for tree debt
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
