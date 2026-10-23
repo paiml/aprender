@@ -13,6 +13,13 @@ name = "pv"
 path = "src/main.rs"
 
 # ONT-5: the reasoner. Private to this target (F-7); the library holds only the graph and the checker.
+# #5902: the roadmap tooling (fragments aggregate, additive-diff check/trim, id-keyed merge driver),
+# ported from scripts/lib/roadmap_{fragments,diff,merge}.py. A bin, not a `pv` subcommand, so the
+# pv surface gate is untouched; scripts resolve it beside pv (scripts/lib/roadmap_bin.sh).
+[[bin]]
+name = "pv-roadmap"
+path = "src/bin/pv-roadmap/main.rs"
+
 [[bin]]
 name = "pv-sat"
 path = "src/bin/pv-sat/main.rs"
@@ -23,6 +30,7 @@ aprender-contracts = { path = "../aprender-contracts", version = "0.71.3" }
 # `apr surface` reads `apr pv verify-structure --model` as a model argument.
 batuta-common = { workspace = true, features = ["cli-roles"] }
 clap = { workspace = true }
+regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde-saphyr = { workspace = true }
@@ -39,8 +47,8 @@ aprender-build-sha = { workspace = true, optional = true }  # #4219: APR_GIT_SHA
 update-check = ["dep:aprender-update"]
 build-sha = ["dep:aprender-build-sha"]
 
-[dev-dependencies]
-tempfile = "3"
-
 [lints]
 workspace = true
+
+[dev-dependencies]
+tempfile = "3"
