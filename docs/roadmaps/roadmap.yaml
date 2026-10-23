@@ -25571,6 +25571,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5920
+  github_issue: 5920
+  item_type: task
+  title: 'guard-cargo: parallel cargo-free lane in ci_guards.sh (merge-queue x86-main 29.3 min)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:40:00Z
+  updated: 2026-10-22T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - See ci/guard-lane-steps.txt; the lane is off by default (CI_GUARDS_LANE=1 opts in; C324)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5924
   github_issue: 5924
   item_type: task
@@ -25719,3 +25738,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5923
+- id: PMAT-6123
+  github_issue: 6123
+  item_type: task
+  title: 'guard_lane_stop.sh: no date(1), clock injected (DET002; child of PMAT-5920)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T09:30:00Z
+  updated: 2026-10-23T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/guard_lane_stop.sh has no date invocation and no bashrs disable-line; bashrs lint --no-ignore reports no DET002
+  - the self-test fails when ACTIVE_SINCE_EPOCH and ACTIVE_SINCE disagree
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
