@@ -94,7 +94,8 @@ required_is_mq_only() { local jobs; jobs="$(ci_jobs mq "$2")"; grep -qxF -e "$1"
 check_required() {
   local wf="$1"
   [ -f "$wf" ] || { echo "check-required: workflow $wf not found"; return 2; }
-  ci_jobs all "$wf" | grep -qxF -e "$GUARD_CHECK_NAME" || { echo "check-required: FAIL the required check ${GUARD_CHECK_NAME} is not a job under jobs: in $wf"; return 1; }
+  local all_jobs; all_jobs="$(ci_jobs all "$wf")"
+  grep -qxF -e "$GUARD_CHECK_NAME" <<< "$all_jobs" || { echo "check-required: FAIL the required check ${GUARD_CHECK_NAME} is not a job under jobs: in $wf"; return 1; }
   required_is_mq_only "$GUARD_CHECK_NAME" "$wf" > /dev/null && { echo "check-required: FAIL the required check ${GUARD_CHECK_NAME} runs only in merge_group/push (a PR head never has it)"; return 1; }
   echo "check-required: ok ${GUARD_CHECK_NAME} runs on a PR head"; return 0
 }
