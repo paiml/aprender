@@ -1,0 +1,18 @@
+- id: PMAT-6122
+  github_issue: 6122
+  item_type: task
+  title: 'fix(shell-lint): check_affected_readers.sh one-line if/while trips SC2135 (child of #6069)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T09:05:00Z
+  updated: 2026-10-23T09:05:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923

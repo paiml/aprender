@@ -48,7 +48,9 @@ build_inputs() { # $1 = crates dir
     g -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null | while IFS= read -r f; do
       grep -vE '^\s*//' "$f" | grep -oE "$p" || true
       grep -vE '^\s*//' "$f" | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' | sed 's#^#contracts/#' || true; done
-  } | sort -u | while read -r f; do if [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ]; then echo "$f"; fi; done | g -vE '(^|/)binding\.yaml$|/model-families/'
+  } | sort -u | while read -r f; do
+    [ ! -f "${AFFECTED_ROOT_DIR:-.}/$f" ] || echo "$f"
+  done | g -vE '(^|/)binding\.yaml$|/model-families/'
 }
 check() {
   local bad="" l c h b; l="$(listed)"
