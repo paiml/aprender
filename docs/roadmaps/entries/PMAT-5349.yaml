@@ -1,0 +1,18 @@
+- id: PMAT-5349
+  github_issue: 5349
+  item_type: task
+  title: 'R-6: agent conformance suite: runner, OpenAI + Anthropic cases, receipt per case x model x backend'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T08:00:00Z
+  updated: 2026-10-23T08:00:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4000

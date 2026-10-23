@@ -1,0 +1,88 @@
+contract: apr-serve-anthropic-messages
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  description: >
+    Anthropic Messages surface of `apr serve` (POST /v1/messages), as the client-observable cases of the
+    agent conformance suite (#5349, EPIC 0.73 "Agent Ready" row R-6). Until R-1 adds the route, every
+    case here is recorded `fail` (HTTP 404) by scripts/serve_conformance.sh, never skipped: a missing
+    route is a measured absence, not an unknown. The OpenAI cases of the same suite come from
+    contracts/apr-serve-openai-compat-v1.yaml; this file holds only the Anthropic shape. Each obligation
+    name is `ASAM-CASE-<case id>` and the runner's --self-test fails when a registered Anthropic case has
+    no obligation here.
+  references:
+  - "scripts/serve_conformance.sh (the runner; `--list` prints the case registry)"
+  - "contracts/apr-serve-openai-compat-v1.yaml (the OpenAI cases)"
+  - "docs/specifications/EPIC-0.72-agent-ready-plan.md (rows R-1..R-6)"
+version: 1
+status: draft
+date: 2026-10-23
+
+proof_obligations:
+  - id: ASAM-INV-001
+    type: invariant
+    property: >
+      MESSAGES-SURFACE (R-1, NOT YET BUILT): POST /v1/messages answers an Anthropic message (non-streaming
+      and SSE) with text and tool_use/tool_result blocks and a stop_reason. Until the route exists the suite
+      records HTTP 404 as a fail.
+  - id: ASAM-INV-002
+    type: invariant
+    property: >
+      HONEST-TERMINATION (R-5): a reply ends with a stop_reason that says why (end_turn, max_tokens,
+      tool_use); an SSE stream ends with message_delta then message_stop.
+  - id: ASAM-INV-003
+    type: invariant
+    property: >
+      HONEST-USAGE (R-4): usage.input_tokens and usage.output_tokens are exact counts, not estimates.
+  - id: ASAM-INV-004
+    type: invariant
+    property: >
+      REPRODUCIBLE (R-3): temperature 0 gives the same text twice; the Messages API has no seed field.
+  - id: ASAM-INV-005
+    type: invariant
+    property: >
+      TOOL-LOOP (R-2): a forced tool returns a tool_use block, and a following tool_result turn is answered.
+
+falsification_tests:
+  - id: FALSIFY-ASAM-001
+    name: ASAM-CASE-an-messages-nonstream
+    prediction: 'R-1. POST /v1/messages {model,max_tokens,messages} returns HTTP 200 with type "message", role "assistant", a content array holding a text block, and a stop_reason in end_turn|max_tokens|stop_sequence|tool_use.'
+    test_harness: 'bash scripts/serve_conformance.sh --base URL --model NAME --backend LABEL --shape anthropic  # cell an-messages-nonstream'
+    expected_output: "pass"
+    if_fails: 'No /v1/messages route (HTTP 404) or a body that is not an Anthropic message; Anthropic SDK clients and Claude Code cannot talk to the gateway.'
+  - id: FALSIFY-ASAM-002
+    name: ASAM-CASE-an-stop-reason-max
+    prediction: 'R-5. With max_tokens 1 the response carries stop_reason "max_tokens".'
+    test_harness: 'bash scripts/serve_conformance.sh --base URL --model NAME --backend LABEL --shape anthropic  # cell an-stop-reason-max'
+    expected_output: "pass"
+    if_fails: 'The budget ran out and the reply says end_turn (or nothing), so a client cannot tell a truncated answer from a finished one.'
+  - id: FALSIFY-ASAM-003
+    name: ASAM-CASE-an-messages-sse
+    prediction: 'R-5. With stream true the body is SSE whose data payloads are JSON: first message_start, then content_block_start, content_block_delta and content_block_stop, a message_delta carrying delta.stop_reason, and last message_stop.'
+    test_harness: 'bash scripts/serve_conformance.sh --base URL --model NAME --backend LABEL --shape anthropic  # cell an-messages-sse'
+    expected_output: "pass"
+    if_fails: 'A stream a spec-compliant Anthropic client cannot reassemble (missing terminal event, non-JSON data line).'
+  - id: FALSIFY-ASAM-004
+    name: ASAM-CASE-an-usage-exact
+    prediction: 'R-4. With max_tokens 1, usage.output_tokens equals 1 and usage.input_tokens is positive.'
+    test_harness: 'bash scripts/serve_conformance.sh --base URL --model NAME --backend LABEL --shape anthropic  # cell an-usage-exact'
+    expected_output: "pass"
+    if_fails: 'usage is estimated, zero or absent, so billing and context accounting in an agent harness is wrong.'
+  - id: FALSIFY-ASAM-005
+    name: ASAM-CASE-an-greedy-repro
+    prediction: 'R-3. The same request at temperature 0 sent twice returns the same text.'
+    test_harness: 'bash scripts/serve_conformance.sh --base URL --model NAME --backend LABEL --shape anthropic  # cell an-greedy-repro'
+    expected_output: "pass"
+    if_fails: 'Greedy decoding is not reproducible, so an agent transcript cannot be replayed. The Messages API has no seed field; temperature 0 is its reproducibility knob.'
+  - id: FALSIFY-ASAM-006
+    name: ASAM-CASE-an-tool-use
+    prediction: 'R-2. A request with tools and tool_choice {type:tool,name:get_weather} returns a tool_use content block (string id, name get_weather, object input) and stop_reason "tool_use".'
+    test_harness: 'bash scripts/serve_conformance.sh --base URL --model NAME --backend LABEL --shape anthropic  # cell an-tool-use'
+    expected_output: "pass"
+    if_fails: 'Tool calling is unavailable on the Anthropic shape; Claude Code cannot run a tool loop through the gateway.'
+  - id: FALSIFY-ASAM-007
+    name: ASAM-CASE-an-tool-result
+    prediction: 'R-1. A conversation that ends with a user turn holding a tool_result block (tool_use_id matching an earlier assistant tool_use) is accepted and answered with a text block.'
+    test_harness: 'bash scripts/serve_conformance.sh --base URL --model NAME --backend LABEL --shape anthropic  # cell an-tool-result'
+    expected_output: "pass"
+    if_fails: 'The second half of a tool loop is refused, so a tool_use can never be answered.'
