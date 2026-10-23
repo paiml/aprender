@@ -162,6 +162,45 @@ for f in sorted(files):
 PY
 }
 
+# A changed cited file only makes the ledger stale if a hunk lands AT OR BEFORE
+# the last line the ledger cites in it: that edits the cited code or shifts it.
+# Lines appended after the last cited line (a new helper test below the tests
+# that back rows) leave every cited line where it was (#5984). A row citing a
+# file with no line, a new file, or a deleted file is whole-file evidence.
+# Reads the files to judge from the list file $3; prints the ones that are material.
+material_cited_changes() {
+  local root="$1" base="$2" list="$3" caps f cap out
+  # evidence_path is the second-to-last CSV field (confidence is last); it is a
+  # repo path and never holds a comma. Last cited line per file; no line = whole file.
+  caps="$(awk -F, 'NR > 1 {
+      p = $(NF - 1); gsub(/"/, "", p)
+      if (!match(p, /^[^ :]+\.(rs|toml|yml|yaml|md|sh|py)/)) next
+      f = substr(p, RSTART, RLENGTH); rest = substr(p, RLENGTH + 1); hi = 0
+      if (match(rest, /^:[0-9]+(-[0-9]+)?/)) {
+        rest = substr(rest, 2, RLENGTH - 1); n = split(rest, a, "-"); hi = a[n] + 0
+      }
+      if (hi == 0) hi = 999999999
+      if (hi > best[f]) best[f] = hi
+    } END { for (f in best) print f "\t" best[f] }' "$root/$LEDGER")" || return 2
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    cap="$(awk -F'\t' -v f="$f" '$1 == f { print $2 }' <<<"$caps")"
+    cap="${cap:-999999999}"
+    # fail closed: an unreadable diff is not "no change"
+    out="$(git -C "$root" diff -U0 --no-renames "$base" HEAD -- "$f"; echo "rc=$?")" || return 2
+    out="$out"$'\n'"$(git -C "$root" diff -U0 --no-renames HEAD -- "$f"; echo "rc=$?")"
+    case "$out" in *"rc=0"*"rc=0"*) ;; *) return 2 ;; esac
+    if awk -v cap="$cap" '
+        /^--- \/dev\/null/ || /^\+\+\+ \/dev\/null/ { found = 1 }
+        /^@@ -/ { s = $2; sub(/^-/, "", s); n = split(s, a, ","); st = a[1] + 0
+                  if (n > 1 && a[2] + 0 == 0) st++
+                  if (st <= cap + 0) found = 1 }
+        END { exit(found ? 0 : 1) }' <<<"$out"; then
+      printf '%s\n' "$f"
+    fi
+  done < "$list"
+}
+
 #
 # The rule is PR-SCOPED and fully DERIVED from git:
 #
@@ -199,12 +238,12 @@ check_freshness() {
   if [ "${unresolved:-1}" -ne 0 ]; then
     printf '  G2.1 freshness       FAIL  %s of %s rows cite an evidence path that resolves to no file\n' \
       "$unresolved" "$total"
-    rm -f "$evfile" "$changed"; return 1
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 1
   fi
   # Vacuity guard: an empty universe would make every ledger eternally fresh.
   if [ "$n_ev" -lt 1 ]; then
     printf '  G2.1 freshness       FAIL  the evidence universe is empty; nothing was checked\n'
-    rm -f "$evfile" "$changed"; return 1
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 1
   fi
 
   # -------------------------------------------------------------------------
@@ -245,12 +284,12 @@ check_freshness() {
     printf '  G2.1 freshness       FAIL  %s carries no measured_commit: value. The\n' "$CONTRACT"
     printf '                             ledger must say which commit it was measured at; deleting\n'
     printf '                             the line is not a way to stop being asked.\n'
-    rm -f "$evfile" "$changed"; return 1
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 1
   fi
   if ! [[ "$measured" =~ ^[0-9a-f]{7,40}$ ]]; then
     printf '  G2.1 freshness       FAIL  measured_commit %s is not an object name\n' "$measured"
     printf '                             (expected 7-40 lowercase hex digits)\n'
-    rm -f "$evfile" "$changed"; return 1
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 1
   fi
   # PRESENCE is conclusive anywhere; only ABSENCE needs the depth caveat, so ask
   # in that order. Asking `--is-shallow-repository` FIRST throws away a verdict
@@ -262,29 +301,48 @@ check_freshness() {
   elif [ "$(git -C "$root" rev-parse --is-shallow-repository 2>/dev/null)" != "true" ]; then
     printf '  G2.1 freshness       FAIL  measured_commit %s is not a commit in this repo\n' "$measured"
     printf '                             (complete clone, so this is the ledger and not the depth)\n'
-    rm -f "$evfile" "$changed"; return 1
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 1
   else
     provenance="shape ok; absence NOT conclusive (shallow clone, object may be beyond it)"
   fi
 
   # Everything this branch changed, committed or not, against its merge base.
-  { git -C "$root" diff --name-only "$base" HEAD 2>/dev/null
-    git -C "$root" diff --name-only HEAD 2>/dev/null; } | sort -u > "$changed"
+  # Fail closed: a diff that errors is not an empty diff.
+  if ! { git -C "$root" diff --name-only --no-renames "$base" HEAD 2>/dev/null \
+         && git -C "$root" diff --name-only --no-renames HEAD 2>/dev/null; } > "${changed:?}.raw"; then
+    printf '  G2.1 freshness       FAIL  git diff --name-only failed; cannot list this branch'"'"'s changes\n'
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.raw"; return 1
+  fi
+  if ! sort -u "${changed:?}.raw" > "$changed"; then
+    printf '  G2.1 freshness       FAIL  could not sort the changed-file list\n'
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.raw"; return 1
+  fi
+  rm -f "${changed:?}.raw"
 
-  n_changed="$(grep -Fxc -f "$evfile" "$changed" 2>/dev/null || true)"
-  n_changed="${n_changed:-0}"
+  # grep rc 1 = no cited file changed (fine); rc >= 2 = grep itself failed.
+  grep -Fx -f "$evfile" "$changed" > "${changed:?}.c" 2>/dev/null
+  if [ "$?" -ge 2 ]; then
+    printf '  G2.1 freshness       FAIL  could not intersect the changed files with the cited evidence\n'
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.c"; return 1
+  fi
+  if ! material_cited_changes "$root" "$base" "${changed:?}.c" > "${changed:?}.m"; then
+    printf '  G2.1 freshness       FAIL  could not judge which cited changes are material\n'
+    printf '                             (the diff helper exited nonzero); failing closed\n'
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 1
+  fi
+  n_changed="$(wc -l < "${changed:?}.m")"
   if [ "$n_changed" -gt 0 ] && ! grep -Fxq "$LEDGER" "$changed"; then
     printf '  G2.1 freshness       FAIL  this branch changes %s cited evidence file(s) and does\n' "$n_changed"
     printf '                             NOT touch %s:\n' "$LEDGER"
-    grep -Fx -f "$evfile" "$changed" | head -10 | sed 's/^/        - /'
+    head -10 "${changed:?}.m" | sed 's/^/        - /'
     printf '                             Audited code moved; re-run the audit for those rows. A ledger\n'
     printf '                             left behind describes a surface that is no longer shipping.\n'
-    rm -f "$evfile" "$changed"; return 1
+    rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 1
   fi
   printf '  G2.1 freshness       PASS  %s cited evidence files, %s changed by this branch\n' \
     "$n_ev" "$n_changed"
   printf '                             measured_commit %s: %s\n' "$measured" "$provenance"
-  rm -f "$evfile" "$changed"; return 0
+  rm -f "${evfile:?}" "${changed:?}" "${changed:?}.m" "${changed:?}.c"; return 0
 }
 
 # ---------------------------------------------------------------------------
@@ -389,6 +447,7 @@ selftest_build_repo() {
   chmod u+w "$td/scripts/check_dogfood_coverage.sh" "$td/$GATE_PY" "$td/$IDGUARD"
 
   for i in 1 2 3; do printf 'fn f%s() {}\n' "$i" > "$td/crates/demo/src/m$i.rs"; done
+  printf 'fn f3b() {}\n' >> "$td/crates/demo/src/m3.rs"
 
   # Three clusters, shaped for the per-cluster mutations:
   #   solo-cluster    2 features, exactly ONE gate -> M5 removes its only gate
@@ -402,7 +461,7 @@ selftest_build_repo() {
     printf 'binary,feature,quality_1_10,verified_hardware,top_competitor,in_dogfood_skill,cluster_id,cluster_label,evidence_path,confidence\n'
     printf 'demo,demo alpha,2,x86_64-linux,none,no,0,solo-cluster,crates/demo/src/m1.rs:1,high\n'
     printf 'demo,demo beta,6,UNKNOWN,none,yes,0,solo-cluster,crates/demo/src/m2.rs:1,high\n'
-    printf 'demo,demo gamma,6,UNKNOWN,none,yes,1,pair-cluster,crates/demo/src/m3.rs:1,high\n'
+    printf 'demo,demo gamma,6,UNKNOWN,none,yes,1,pair-cluster,crates/demo/src/m3.rs:1-2,high\n'
     for i in $(seq 1 200); do
       printf 'demo,demo pad%s,6,UNKNOWN,none,no,2,pad-cluster,crates/demo/src/m1.rs:1,medium\n' "$i"
     done
@@ -567,6 +626,46 @@ if [ "${1:-}" = "--self-test" ]; then
   printf 'demo,demo delta,6,x86_64-linux,none,no,1,pair-cluster,crates/demo/src/m2.rs:1,high\n' >> "$TD/$LEDGER"
   selftest_run "$TD" "evidence moved, ledger re-audited" "GREEN" || FAILED=1
   git -C "$TD" checkout -q -- "$LEDGER" "crates/demo/src/m2.rs"
+  selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
+  printf '\n'
+
+  # --- M1b (G2.1, #5984): m3.rs is cited as m3.rs:1-2. A hunk after line 2
+  #     leaves the evidence where the ledger says it is; a hunk AT the last
+  #     cited line (edit or delete), or above it, moves or removes it.
+  printf 'M1b G2.1 freshness — hunks after, at and above the last cited line\n'
+  m3="$TD/crates/demo/src/m3.rs"
+  selftest_mutate "$m3" "append a helper after cited m3.rs:1-2" \
+    sed -i '$a fn helper_below() {}' "$m3" \
+    && selftest_run "$TD" "hunk at M+1 of a range cite" "GREEN" || FAILED=1
+  git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
+  selftest_mutate "$m3" "modify the last cited line m3.rs:2" \
+    sed -i '2s/.*/fn f3b() { let moved = 1; }/' "$m3" \
+    && selftest_run "$TD" "modify AT the last cited line" "RED" || FAILED=1
+  git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
+  selftest_mutate "$m3" "delete the last cited line m3.rs:2" \
+    sed -i '2d' "$m3" \
+    && selftest_run "$TD" "delete AT the last cited line" "RED" || FAILED=1
+  git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
+  selftest_mutate "$m3" "insert a helper above cited m3.rs:1-2" \
+    sed -i '1i fn helper_above() {}' "$m3" \
+    && selftest_run "$TD" "helper inserted above cited lines" "RED" || FAILED=1
+  git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
+  # a cited file renamed away is a deletion of the cited path, not "fresh"
+  git -C "$TD" mv crates/demo/src/m3.rs crates/demo/src/m3_renamed.rs
+  selftest_run "$TD" "cited file renamed away (git mv)" "RED" || FAILED=1
+  git -C "$TD" mv crates/demo/src/m3_renamed.rs crates/demo/src/m3.rs
+  git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
+  # fail closed: a git that cannot diff must not read as "nothing material"
+  selftest_mutate "$m3" "append a helper, then break the git diff" \
+    sed -i '$a fn helper_below() {}' "$m3" || FAILED=1
+  mkdir -p "$TD/.shim"
+  printf '#!/bin/sh\ncase " $* " in *" diff "*"-U0"*) exit 3;; esac\nexec /usr/bin/git "$@"\n' > "$TD/.shim/git"
+  chmod +x "$TD/.shim/git"
+  PATH="$TD/.shim:$PATH" selftest_run "$TD" "diff helper crashes (fail closed)" "RED" || FAILED=1
+  printf '#!/bin/sh\ncase " $* " in *" diff "*"--name-only"*) exit 3;; esac\nexec /usr/bin/git "$@"\n' > "$TD/.shim/git"
+  PATH="$TD/.shim:$PATH" selftest_run "$TD" "name-only diff fails (fail closed)" "RED" || FAILED=1
+  rm -rf "${TD:?}/.shim"
+  git -C "$TD" checkout -q -- "crates/demo/src/m3.rs"
   selftest_run "$TD" "restored (discrimination check)" "GREEN" || FAILED=1
   printf '\n'
 
