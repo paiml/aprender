@@ -101,6 +101,9 @@ exclude = [
 # (registry/wgpu_probe.rs entry, 603) and merged, because no required job runs
 # `pmat comply`; it was split into four graded tables in the pin-bump PR, back to 602.
 baseline = 599
+# 3.42.0 (the pin since #6133) reads 602 on this tree, the same as 3.41.1: the instrument
+# moved, the count did not, so the 599 floor and the file header stay as banked. Do not read
+# the 3.42.0 complexity_baseline.txt as a better tree: see its header for the cfg-gated split.
 # 599 re-measured 2026-09-18 under pmat 3.41.1 (the fleet pin, infra#692) from a cold index at
 # 3409b29d2. Instrument vs tree, separated: 3.41.1 reads 602 on 5d95ed54e, the tree that banked
 # 601 under 3.40.2 (+1 from the instrument on that tree, definition not identified), and 599
