@@ -34,16 +34,16 @@ mk_repo() {
     git -C "$1" add -A
     git -C "$1" -c user.email=lane@example.invalid -c user.name=lane commit -q -m fixture > /dev/null 2>&1
 }
-# case_run <name> <run line> <lane value> <list content or NONE> <want rc class> <want pattern>
+# case_run <name> <run line> <lane value> <list content or NONE> <want rc class> <want pattern> [lane width]
 case_run() {
-    local name=$1 run=$2 lane=$3 list=$4 want_rc=$5 want=$6 d out rc
+    local name=$1 run=$2 lane=$3 list=$4 want_rc=$5 want=$6 width=${7:-} d out rc
     d="$work/$name"
     mk_repo "$d" "$run"
     if [ "$list" != NONE ]; then printf '%b' "$list" > "$d/ci/guard-lane-steps.txt"; fi
     if [ "$lane" = CI-UNSET ]; then # a CI run that sets nothing: the lane must be off (C324)
         out="$(cd "$d" && env -u CI_GUARDS_LANE GITHUB_ACTIONS=true CI_GUARDS_SCRATCH="$d/scratch" "${LIB_SHELL[@]}" "$LIB" run fx 2>&1)"
     else
-        out="$(cd "$d" && CI_GUARDS_LANE="$lane" CI_GUARDS_SCRATCH="$d/scratch" "${LIB_SHELL[@]}" "$LIB" run fx 2>&1)"
+        out="$(cd "$d" && CI_GUARDS_LANE="$lane" CI_GUARDS_LANE_WIDTH="$width" CI_GUARDS_SCRATCH="$d/scratch" "${LIB_SHELL[@]}" "$LIB" run fx 2>&1)"
     fi
     rc=$?
     n=$((n + 1))
@@ -64,6 +64,8 @@ case_run() {
 LIST='fx\tlane step\n'
 case_run lane-ok 'echo hello' 1 "$LIST" zero '^PASS +fx#.*lane step'
 case_run lane-off 'echo hello' 0 "$LIST" zero 'lane off: every step serial'
+case_run lane-off-bad-width 'echo hello' 0 "$LIST" zero 'lane off: every step serial' abc
+case_run lane-on-bad-width 'echo hello' 1 "$LIST" nonzero 'CI_GUARDS_LANE_WIDTH wants a positive integer' abc
 case_run ci-default-off 'echo hello' CI-UNSET "$LIST" zero 'lane off: every step serial'
 case_run cargo-step 'cargo --version' 1 "$LIST" nonzero 'lane step  \[rc=97'
 case_run env-write 'echo X=1 >> "$GITHUB_ENV"' 1 "$LIST" nonzero 'lane step  \[rc=96'

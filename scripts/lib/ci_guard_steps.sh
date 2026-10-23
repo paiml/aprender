@@ -354,8 +354,8 @@ cmd_run() {
     local -a lane_rec=() lane_pids=()
     local lane_serial=0 lane_shim="$scratch/lane-shim" lk lv
     [ -n "$lane_on" ] || lane_on=0   # OFF by default, in CI too: C324 -- a new merge-path behavior needs 3 green nights; CI_GUARDS_LANE=1 opts in
-    [[ $lane_w =~ ^[1-9][0-9]*$ ]] || die "CI_GUARDS_LANE_WIDTH wants a positive integer, got '$lane_w'"
     if [ "$lane_on" = 1 ]; then
+        [[ $lane_w =~ ^[1-9][0-9]*$ ]] || die "CI_GUARDS_LANE_WIDTH wants a positive integer, got '$lane_w'"
         [ -r "$lane_file" ] || die "lane list $lane_file is unreadable (set CI_GUARDS_LANE=0 for the all-serial run)"
         while IFS=$'\t' read -r lk lv; do
             case "$lk" in ''|'#'*) continue ;; esac
