@@ -14,7 +14,7 @@
 # noise. Commit 6d9ba274a is the measured instance: 2,531 changed lines for
 # one real 17-line ticket addition.
 #
-# THE RULE (the PP-066 driver's), enforced by scripts/lib/roadmap_diff.py:
+# THE RULE (the PP-066 driver's), enforced by `pv-roadmap diff check` (crates/aprender-contracts-cli/src/roadmap/diff.rs):
 #
 #   a roadmap.yaml diff may only ADD new top-level entries (the id set
 #   grows), or edit a ticket's own LIFECYCLE fields (status, updated, notes,
@@ -22,7 +22,7 @@
 #   entry, an edited title/spec/acceptance_criteria, or a wholesale
 #   re-render that changes no field at all — is a violation.
 #
-# THE REMEDY is scripts/roadmap_trim.py (or `roadmap_diff.py trim`): it
+# THE REMEDY is scripts/roadmap_trim.sh (or `pv-roadmap diff trim`): it
 # rebuilds the working file as base's bytes for every entry that is
 # unchanged or only re-serialised, keeping head's rendering for entries that
 # are new or genuinely edited.
@@ -34,7 +34,7 @@
 # --staged is the pre-commit entry point (.githooks/pre-commit, B4, #3047): the
 # same rule set, run against `git write-tree` — the bytes that would be
 # committed — so the remedy is named at `git commit` instead of eleven minutes
-# later in CI. Before it, scripts/roadmap_trim.py had ZERO call sites: every
+# later in CI. Before it, scripts/roadmap_trim.sh had ZERO call sites: every
 # reference to the repo's own remedy was prose.
 #
 # DEFAULTS: base = `git merge-base origin/main HEAD`, head = `HEAD` — the
@@ -50,16 +50,16 @@ set -uo pipefail
 
 PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PY_LIB="${REPO_ROOT}/scripts/lib/roadmap_diff.py"
-PY_TRIM="${REPO_ROOT}/scripts/roadmap_trim.py"
+# shellcheck source=scripts/lib/roadmap_bin.sh
+. "${REPO_ROOT}/scripts/lib/roadmap_bin.sh" || { printf 'FAIL pv-roadmap is unavailable -- this box cannot judge\n' >&2; exit 2; }
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
 
 # ---------------------------------------------------------------------------
-# run_check <base> <head> [<file>] -> roadmap_diff.py's stdout+exit code.
+# run_check <base> <head> [<file>] -> pv-roadmap diff check's stdout+exit code.
 # ---------------------------------------------------------------------------
 run_check() {
     local base="$1" head="$2" file="${3:-$ROADMAP_FILE}"
-    python3 "$PY_LIB" check --base "$base" --head "$head" --file "$file"
+    "$ROADMAP_BIN" diff check --base "$base" --head "$head" --file "$file"
 }
 
 # ---------------------------------------------------------------------------
@@ -276,7 +276,7 @@ EOF
 
     # Row 8: the remedy — trim() of the re-serialised head, re-checked -> PASS.
     cp "$TD/reserial.yaml" "$TD/reserial_trimmed.yaml"
-    if ! python3 "$PY_LIB" trim --base "$TD/base.yaml" --file "$TD/reserial_trimmed.yaml" --write \
+    if ! "$ROADMAP_BIN" diff trim --base "$TD/base.yaml" --file "$TD/reserial_trimmed.yaml" --write \
         >"$TD/trim.out" 2>&1
     then
         row=$((row + 1))
@@ -310,9 +310,9 @@ EOF
             hist_wt="$TD/hist-wt"
             if git -C "$REPO_ROOT" worktree add --detach "$hist_wt" "$HIST" -q \
                     >"$TD/hist.err" 2>&1 \
-                && (cd "$hist_wt" && python3 "$PY_LIB" trim --base "$HIST~1" --write) \
+                && (cd "$hist_wt" && "$ROADMAP_BIN" diff trim --base "$HIST~1" --write) \
                     >"$TD/hist_trim.out" 2>&1 \
-                && (cd "$hist_wt" && python3 "$PY_LIB" check --base "$HIST~1" --head "$ROADMAP_FILE") \
+                && (cd "$hist_wt" && "$ROADMAP_BIN" diff check --base "$HIST~1" --head "$ROADMAP_FILE") \
                     >"$TD/hist_check.out" 2>&1
             then
                 printf 'ok    row %-2s the real %s re-serialisation (reserialised=%s), trimmed -> PASS\n' \
@@ -538,8 +538,8 @@ EOF
     # running somewhere it was not born, not a seam that only exists for tests.
     SR="$TD/staged"; mkdir -p "$SR/scripts/lib" "$SR/docs/roadmaps"
     cp "$REPO_ROOT/scripts/check_roadmap_diff_additive.sh" "$SR/scripts/"
-    cp "$REPO_ROOT/scripts/roadmap_trim.py" "$SR/scripts/"
-    cp "$REPO_ROOT/scripts/lib/roadmap_diff.py" "$REPO_ROOT/scripts/lib/resolve_base.sh" "$SR/scripts/lib/"
+    cp "$REPO_ROOT/scripts/roadmap_trim.sh" "$SR/scripts/"
+    cp "$REPO_ROOT/scripts/lib/roadmap_bin.sh" "$REPO_ROOT/scripts/lib/resolve_base.sh" "$SR/scripts/lib/"
     RM=docs/roadmaps/roadmap.yaml
     ( cd "$SR" && git init -q -b main . && git config user.email t@t && git config user.name t \
         && git config core.hooksPath /dev/null \
@@ -561,7 +561,7 @@ EOF
     cp "$TD/reserial.yaml" "$SR/$RM"; ( cd "$SR" && git add "$RM" )
     out=$(staged_run); rc=$?
     case "$rc:$out" in
-        1:*reserialised=3*roadmap_trim.py*) printf 'ok    row %-2s --staged: a re-serialisation in the index FAILs and names roadmap_trim.py\n' "$row" ;;
+        1:*reserialised=3*roadmap_trim.sh*) printf 'ok    row %-2s --staged: a re-serialisation in the index FAILs and names roadmap_trim.sh\n' "$row" ;;
         *) printf 'FAIL  row %-2s --staged: wanted rc=1 naming the remedy, got rc=%s\n%s\n' "$row" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
     esac
 
@@ -627,7 +627,7 @@ fi
 # ---------------------------------------------------------------------------
 #
 # THE HEAD IS THE INDEX. `git write-tree` writes the staged content as a real
-# tree object, and roadmap_diff.py resolves any ref via `git show <ref>:<file>`
+# tree object, and pv-roadmap resolves any ref via `git show <ref>:<file>`
 # (a tree-ish is a ref like any other). So this judges EXACTLY the bytes that
 # would be committed, under the IDENTICAL rule set `guard-tree` applies in CI —
 # one implementation, two entry points. A second copy of the rule list here is
@@ -681,7 +681,7 @@ if [ "${1:-}" = "--staged" ]; then
     printf '\nPMAT-980 (#2874): a roadmap.yaml diff may only ADD entries or edit a\n'
     printf 'ticket''s own lifecycle fields. `pmat work add` / `work complete` re-serialise\n'
     printf 'the WHOLE file on every call; collapse that back to base bytes and re-stage:\n\n'
-    printf '    python3 scripts/roadmap_trim.py && git add %s\n\n' "$ROADMAP_FILE"
+    printf '    bash scripts/roadmap_trim.sh && git add %s\n\n' "$ROADMAP_FILE"
     exit 1
 fi
 
@@ -719,6 +719,6 @@ if [ "$rc" -eq 2 ]; then
     exit 2
 fi
 printf '\nPMAT-980 (#2874): a roadmap.yaml diff may only ADD entries or edit a\n'
-printf 'ticket''s own lifecycle fields. Run scripts/roadmap_trim.py to collapse a\n'
+printf 'ticket''s own lifecycle fields. Run scripts/roadmap_trim.sh to collapse a\n'
 printf 're-serialisation back to base bytes.\n'
 exit 1

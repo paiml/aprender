@@ -16,7 +16,7 @@
 #
 # PROOF LADDER, STATED HONESTLY (PP-066 §5 contract discipline, F-26)
 #   * L1 — the resolver exists: scripts/check_roadmap_diff_additive.sh over
-#          scripts/lib/roadmap_diff.py, wired in ci.yml job guard-runner-labels
+#          crates/aprender-contracts-cli/src/roadmap/diff.rs (pv-roadmap), wired in ci.yml job guard-runner-labels
 #          (self-test step, then the live check of the PR's diff).
 #   * L2 — falsification tests cover obligations, MEASURED: `--self-test`
 #          passes 15/15 (2026-09-06), including the real 6d9ba274a history row, the base-side duplicate rows (10–12) and the shallow-checkout base resolution (13–15: PR merge commit → first parent; branch head → refused; merge_group squash head on the origin/main tip → that tip)
@@ -31,7 +31,7 @@ scope: >
   The diff of docs/roadmaps/roadmap.yaml between a pull request's merge base
   and its head, split into top-level entries at `- id:`. In scope: which
   entries may change and how. Out of scope: the content of any entry, the
-  serialisation pmat chooses (the remedy `python3 scripts/roadmap_trim.py`
+  serialisation pmat chooses (the remedy `bash scripts/roadmap_trim.sh`
   restores the base's bytes, it does not reformat pmat), and every other
   roadmap file under docs/roadmaps/ (they are not gated today; widening the
   universe is a new falsification row, not a silent default).
@@ -48,8 +48,8 @@ metadata:
   references:
     - 'scripts/check_roadmap_diff_additive.sh resolve_base — merge-base(origin/main, HEAD), else (shallow CI checkout) the PR merge commit''s first parent or the origin/main tip; a merge_group squash head (single parent == origin/main tip) resolves to that parent (run 34002682350 refused it before row 15); any other single-parent head is exit 2, never HEAD-vs-HEAD (rows 13–15; the first CI run compared 807=807, added=0)'
     - 'scripts/check_roadmap_diff_additive.sh — the guard (defaults: base = merge-base with origin/main, head = HEAD; 9-row --self-test)'
-    - 'scripts/lib/roadmap_diff.py — the library: `check` (R1..R4) and `trim` (the remedy)'
-    - 'scripts/roadmap_trim.py — one-command remedy: rebuild the working file as base bytes + real changes'
+    - 'crates/aprender-contracts-cli/src/roadmap/diff.rs (pv-roadmap) — the library: `check` (R1..R4) and `trim` (the remedy)'
+    - 'scripts/roadmap_trim.sh — one-command remedy: rebuild the working file as base bytes + real changes'
     - '.github/workflows/ci.yml — job guard-runner-labels (self-test step, then the live check)'
     - 'docs/audits/pp-066-driver-prompt.md STEP 1b / STEP 5 — the rule as the driver states it'
     - 'paiml/aprender#2874 — the defect; #2630 — the README-count serialization point of the same class; #2895 — this row'
@@ -62,7 +62,7 @@ metadata:
     or in materialised empty keys — is a RE-SERIALISATION, the churn pmat
     produces, and it is refused with the count of such entries. Deleting an
     entry is refused (this repository never deletes roadmap entries). The
-    remedy is `python3 scripts/roadmap_trim.py`, which restores the base's
+    remedy is `bash scripts/roadmap_trim.sh`, which restores the base's
     bytes for every entry that did not really change and keeps head's
     rendering for the entries that did; the guard's own self-test proves that
     trimming the real 6d9ba274a re-serialisation makes it pass.
@@ -235,7 +235,7 @@ falsification_tests:
     if_fails: >-
       a spec change could be smuggled into the roadmap under a lifecycle edit
     mutation: >-
-      add `title` to LIFECYCLE_KEYS in roadmap_diff.py; row 4 must turn RED.
+      add `title` to LIFECYCLE_KEYS in roadmap/diff.rs; row 4 must turn RED.
 
   - id: RD-F-004
     rule: an unparseable or duplicated head is refused (R4, duplicate-id)
@@ -284,8 +284,8 @@ non_goals:
 
 binding_registry:
   guard: scripts/check_roadmap_diff_additive.sh
-  library: scripts/lib/roadmap_diff.py
-  remedy: scripts/roadmap_trim.py
+  library: crates/aprender-contracts-cli/src/roadmap/diff.rs (pv-roadmap)
+  remedy: scripts/roadmap_trim.sh
   ci_job: guard-runner-labels          # inside gate.needs (.github/workflows/ci.yml)
   make_target: tier3
   issue: "https://github.com/paiml/aprender/issues/2895"
