@@ -42,7 +42,7 @@ build_listed() { # full repo-relative paths: contracts/<BUILD_CONTRACTS entry>, 
 build_inputs() { # $1 = crates dir
   local p='(contracts|docs)/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+' f
   {
-    grep -rzohE --include='*.rs' 'include(_str|_bytes)?!.{0,300}' "$1" 2>/dev/null | tr '\0' '\n' | grep -oE "$p" || true   # -z: one record per file, so a macro split over lines still matches
+    grep -rzohE --include='*.rs' 'include(_str|_bytes)?![^;]{0,300}' "$1" 2>/dev/null | tr '\0' '\n' | grep -oE "$p" || true   # -z: one record per file, so a macro split over lines still matches
     { grep -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null || true; } | while IFS= read -r f; do
       grep -vE '^\s*//' "$f" | grep -oE "$p" || true
       grep -vE '^\s*//' "$f" | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' | sed 's#^#contracts/#' || true; done
@@ -109,6 +109,10 @@ if [ "${1:-}" = "--self-test" ]; then
   fresh zz-r
   printf 'const A: &str = include_str!("docs/d/m.md");\n' >"$t/crates/zz-r/src/x.rs"
   (SET="$t/set-listed.sh" check crates >/dev/null 2>&1) || { echo "FAIL self-test: a listed docs build input was flagged"; fail=1; }
+  # a second include_str! whose path straddles the first one's 300-char window must still be read whole
+  mkdir -p "$t/docs/d"; : >"$t/docs/d/second.lock"
+  fresh zz-s; { printf 'const A: &str = include_str!("docs/d/m.md");\n//%*s\n' 246 ''; printf 'const B: &str = include_str!("docs/d/second.lock");\n'; } >"$t/crates/zz-s/src/x.rs"
+  out=$(SET="$t/set-listed.sh" check crates 2>&1 || true); grep -q 'second.lock' <<<"$out" || { echo "FAIL self-test: an include_str! path cut by the previous match's window was not read"; fail=1; }
   [ "$fail" -eq 0 ] && echo "ok: self-test"
   exit "$fail"
 fi
