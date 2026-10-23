@@ -25321,6 +25321,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-5557
+  github_issue: 5557
+  item_type: task
+  title: 'feat(simulate): course_flow fan-out, rework loop, GPU priority (flow model B5)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:50:00Z
+  updated: 2026-10-23T10:50:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
 - id: PMAT-5737
   github_issue: 5737
   item_type: task
