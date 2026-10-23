@@ -25570,6 +25570,44 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-5955
+  github_issue: 5955
+  item_type: task
+  title: 'ci: heavy X64 jobs run only in merge_group/push; PR runs stay light (Noah 15:09Z)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:20:00Z
+  updated: 2026-10-22T16:20:00Z
+  spec: null
+  acceptance_criteria:
+  - on pull_request x86-main, x86-main-advisories and workspace-test-shard do not run; pr-light does; ci / gate, gate and workspace-test pass when pr-light passes
+  - on merge_group, push, an empty or an unknown event the same aggregators fail when a heavy job is skipped; ci_mg_reuse.sh --self-test runs both directions plus mutants that delete the event check
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-5971
+  github_issue: 5971
+  item_type: task
+  title: 'ci: move guard-cargo, guard-tree, vendored-schemas out of x86-main into an MQ "guards" job on the existing mq lane'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T16:30:00Z
+  updated: 2026-10-22T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'merge_group runs a required "guards" job on the existing [self-hosted, Linux, X64, mq] label (no new runner label) holding guard-tree, guard-cargo, vendored-schemas; x86-main drops them on merge_group'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5974
   github_issue: 5974
   item_type: task
@@ -25606,3 +25644,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-6041
+  github_issue: 6041
+  item_type: task
+  title: 'ci: guard-cargo#m5 mounts a toolchain that lives outside RUSTUP_HOME and fails loud when the container does not run the pinned rustc'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T00:55:00Z
+  updated: 2026-10-23T00:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'm5 resolves the pinned toolchain with readlink -f, mounts it when outside RUSTUP_HOME, and the container step fails with FAIL(ENV) naming the resolved rustc if it is not the pinned one'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
