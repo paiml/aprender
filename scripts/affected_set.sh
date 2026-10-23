@@ -6,6 +6,11 @@
 # Prints one package per line, or the single word ALL. With --filter it prints the
 # nextest filterset instead (`package(a) | package(b)`, or `all()` for ALL).
 # Fail-safe: anything this tool cannot place in a package is ALL.
+#
+# NOT CONSUMED BY ANY GATE YET (#6042): no PR, merge-queue or release job calls this tool, so the
+# READERS-only rows change its output and no PR run. READERS is hand-maintained and fails open, so
+# the PR that first consumes this tool must also run scripts/check_affected_readers.sh (check and
+# self-test) on that same PR path; until then that guard is the nightly LAB step only.
 #   crates/<pkg>/...        the package + its reverse-dependency closure (cargo metadata)
 #   a CORE crate            ALL (its closure is the workspace; naming it would only hide that)
 #   Cargo.toml of a crate   ALL (a manifest edit changes features/deps, which no path can bound)
