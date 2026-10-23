@@ -14,6 +14,8 @@ esac
 case "/$dest/" in
   */../*) echo "mq_feeder_install: DEST must not contain '..': $dest" >&2; exit 2 ;;
 esac
+# Refuse to install a feeder whose required check main's ci.yml cannot satisfy (#6175); unreadable ci.yml is not measured.
+bash "$src/mq_feeder.sh" --check-required || { echo "mq_feeder_install: required-check guard failed; not installing" >&2; exit 2; }
 mkdir -p "$dest"
 for s in mq_feeder.sh arm_pr_automerge.sh; do
   install -m 0755 "$src/$s" "$dest/$s"
