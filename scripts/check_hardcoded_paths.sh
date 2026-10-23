@@ -195,7 +195,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fi
 
     # ---- the pinned-instrument ratchet: a fixture analyser + a fixture repo (PMAT-1059) ----
-    pin=$(sed -nE 's/^PMAT_PIN="([0-9.]+)"$/\1/p' "${SELF_ROOT}/scripts/pmat_bin.sh" | head -n1)
+    pin=$(sed -nE '/^\[pmat\]/,/^\[/{s/^version[[:space:]]*=[[:space:]]*"([0-9.]+)".*$/\1/p;}' "${SELF_ROOT}/tools.toml" | head -n1)
     FAKE="$TD/fake-analyser"
     printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s %s"; exit 0;; esac\nd=.; while [ $# -gt 0 ]; do case "$1" in -p) d=$2; shift;; --help) echo ok; exit 0;; esac; shift; done\ncat "$d/.fake-scan.json"\n' "pmat" "$pin" > "$FAKE"
     printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s 3.0.0"; exit 0;; esac\necho ok\n' "pmat" > "$TD/off-pin"
