@@ -5,7 +5,7 @@
 //! dirty with `p_dirty` and waits `t_rebase_min` for a rebase and a rerun. One parameter file per
 //! repo; inputs come from the KPI report, never typed.
 
-use super::pr_flow::{run_pr_flow, PrFlowConfig, PrFlowResult, ReviewMode};
+use super::pr_flow::{bounds, run_pr_flow, PrFlowConfig, PrFlowResult, ReviewMode};
 
 /// A named repo case: `(name, supply N, t_author, cap, R_pr, runner-min, jobs, setup, p_red, p_dirty, t_rebase)`.
 type Case = (
@@ -147,16 +147,23 @@ pub fn apply_inputs(c: &mut PrFlowConfig, v: &serde_json::Value) -> Result<(), S
     Ok(())
 }
 
+/// The binding station: argmin of the flow model eq 2, 3, 5, 6 bounds, with no utilisation thresholds.
+///
+/// A repo without a merge queue (`builds == 0`) merges on arm, so the `merge_queue` station is
+/// left out of the argmin there.
+#[must_use]
+pub fn binding_station(c: &PrFlowConfig, r: &PrFlowResult) -> &'static str {
+    bounds(c, r)
+        .into_iter()
+        .filter(|b| c.builds > 0 || b.0 != "merge_queue")
+        .min_by(|a, b| a.1.total_cmp(&b.1))
+        .map_or("none", |b| b.0)
+}
+
 /// The `sim` block fields this scenario owns: scenario, seeds, hours, inputs, predicted, binding.
 #[must_use]
 pub fn sim_block(case: &str, c: &PrFlowConfig, r: &PrFlowResult) -> serde_json::Value {
-    let binding = if r.pr_util > 0.85 {
-        "ci_pool"
-    } else if r.l >= c.cap as f64 * 0.95 {
-        "cap"
-    } else {
-        "supply"
-    };
+    let binding = binding_station(c, r);
     serde_json::json!({
         "scenario": format!("repo-flow:{case}"),
         "seeds": 5, "hours": 400, "warmup_h": 20,
@@ -217,6 +224,55 @@ mod tests {
                 r.l
             );
         }
+    }
+
+    fn synth(w_min: f64) -> (PrFlowConfig, PrFlowResult) {
+        let mut c = repo_preset("small-10").expect("case");
+        c.cap = 10;
+        c.n = 100.0;
+        c.t_author_min = 60.0;
+        c.r_pr = 100;
+        c.pr_runner_min = 1.0;
+        let r = PrFlowResult {
+            w_mean_min: w_min,
+            runs_per_pr: 1.0,
+            prs_per_pass: 1.0,
+            l: 10.0,
+            pr_util: 0.9,
+            ..PrFlowResult::default()
+        };
+        (c, r)
+    }
+
+    fn binding_of(c: &PrFlowConfig, r: &PrFlowResult) -> String {
+        sim_block("t", c, r)["binding_station"]
+            .as_str()
+            .expect("label")
+            .to_string()
+    }
+
+    #[test]
+    fn l_equal_cap_reports_cap_even_when_the_pool_is_busy() {
+        let (c, r) = synth(60.0);
+        assert_eq!(binding_of(&c, &r), "cap");
+    }
+
+    #[test]
+    fn n_starved_case_reports_supply() {
+        let (mut c, r) = synth(60.0);
+        c.n = 1.0;
+        assert_eq!(binding_of(&c, &r), "supply");
+    }
+
+    #[test]
+    fn no_merge_queue_never_reports_merge_queue() {
+        let (mut c, r) = synth(60.0);
+        c.builds = 0;
+        c.r_mq = 1;
+        c.mq_runner_min = 1000.0;
+        assert_ne!(binding_of(&c, &r), "merge_queue");
+        c.builds = 1;
+        assert_eq!(binding_of(&c, &r), "merge_queue");
     }
 
     #[test]
