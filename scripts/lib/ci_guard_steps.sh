@@ -338,6 +338,36 @@ cmd_run() {
         fi
     }
 
+    # FLOW-010 / stop-the-line (#5920): the CARGO-FREE LANE. guard-cargo's steps are strictly serial
+    # (step sum 2076 s vs section wall 2100 s on a merge-queue run), so ~2/3 of x86-main's 29 min was
+    # one section. A step named in ci/guard-lane-steps.txt (job<TAB>exact step name) runs beside the
+    # serial steps instead of after them, under four rules that keep "the same guards ran" true:
+    #  1. its own `git worktree` (HEAD): a self-test that plants a mutant never touches the tree the
+    #     serial steps or another lane step read;
+    #  2. a `cargo`/`rustc`/`rustup` shim first on PATH that FAILS the step (rc 97): a misfiled step
+    #     is a red row, never a silent compile racing the serial cargo steps for the target-dir lock;
+    #  3. it may not hand state to later steps: a non-empty GITHUB_ENV/PATH/OUTPUT file is a FAIL;
+    #  4. the same row (PASS/FAIL/TIMEOUT), the same SUMMARY counts, emitted in manifest order after
+    #     the serial rows. CI_GUARDS_LANE=0 is the all-serial run the counts are compared against.
+    local lane_on="${CI_GUARDS_LANE:-}" lane_w="${CI_GUARDS_LANE_WIDTH:-4}" lane_file="${CI_GUARDS_LANE_FILE:-$root/ci/guard-lane-steps.txt}"
+    local -A LANE=()
+    local -a lane_rec=() lane_pids=()
+    local lane_serial=0 lane_shim="$scratch/lane-shim" lk lv
+    [ -n "$lane_on" ] || lane_on=0   # OFF by default, in CI too: C324 -- a new merge-path behavior needs 3 green nights; CI_GUARDS_LANE=1 opts in
+    if [ "$lane_on" = 1 ]; then
+        [[ $lane_w =~ ^[1-9][0-9]*$ ]] || die "CI_GUARDS_LANE_WIDTH wants a positive integer, got '$lane_w'"
+        [ -r "$lane_file" ] || die "lane list $lane_file is unreadable (set CI_GUARDS_LANE=0 for the all-serial run)"
+        while IFS=$'\t' read -r lk lv; do
+            case "$lk" in ''|'#'*) continue ;; esac
+            [ -n "$lv" ] || die "$lane_file: a row needs job<TAB>step name, got '$lk'"
+            LANE["$lk"$'\t'"$lv"]=1
+        done < "$lane_file"
+        mkdir -p "$lane_shim" || die "cannot create $lane_shim"
+        for lk in cargo rustc rustup; do
+            printf '#!/bin/sh\necho "ci_guards lane: %s was invoked by a step listed in ci/guard-lane-steps.txt -- a cargo step belongs in the serial lane; remove the row" >&2\nexit 97\n' "$lk" > "$lane_shim/$lk"
+            chmod +x "$lane_shim/$lk"
+        done
+    fi
     local idx name run cond has_uses has_run n i reason k v r tag log t0 t1 rc status detail p ci=false
     local -a ek=() ev=() senv=() paths=()
     in_ci && ci=true
@@ -404,6 +434,34 @@ cmd_run() {
             done
             [ -n "$(getenv GITHUB_STEP_SUMMARY)" ] || senv+=("GITHUB_STEP_SUMMARY=$scratch/step_summary")
             log="$scratch/$tag.log"
+            if [ "$lane_on" = 1 ] && [ -n "${LANE[$job$'\t'$name]+x}" ]; then
+                [ "$timeout" -gt 0 ] && tcmd=(timeout -s TERM -k 60 "$timeout") || tcmd=()
+                local lbase="${PATH}"; local -a lenv=()
+                for p in "${senv[@]}"; do case "$p" in PATH=*) lbase="${p#PATH=}" ;; esac; done
+                for p in "${senv[@]}"; do case "$p" in GITHUB_WORKSPACE=*) ;; *) lenv+=("$p") ;; esac; done
+                while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$lane_w" ]; do wait -n || true; done
+                (
+                    set +e   # a caller's set -e must not end this subshell before the .res row is written and the tree removed
+                    ltree="$scratch/lane-tree.$tag"
+                    lt0="$(now)"
+                    # the PATH shim cannot catch an absolute path or a PATH re-prepend, so a step that names the word cargo/rustc/rustup, bare or in a path, is the same red row
+                    if [[ $run =~ (CARGO_HOME|RUSTUP_HOME|(^|[^[:alnum:]_-])(cargo|rustc|rustup)($|[^[:alnum:]_-])) ]]; then
+                        echo "ci_guards lane: a cargo/rustc/rustup path was named by a step listed in ci/guard-lane-steps.txt -- a cargo step belongs in the serial lane; remove the row" > "$log"
+                        printf '97 %s %s\n' "$lt0" "$(now)" > "$scratch/lane.$tag.res"; exit 0
+                    fi
+                    if ! { flock 9; git -C "$root" worktree add --detach -q "$ltree" HEAD; } > "$log" 2>&1 9> "$scratch/lane-wt.lock"; then
+                        echo "ci_guards lane: cannot create the step's worktree" >> "$log"
+                        printf '98 %s %s\n' "$lt0" "$(now)" > "$scratch/lane.$tag.res"; exit 0
+                    fi
+                    ( env -C "$ltree" env "${lenv[@]}" "GITHUB_WORKSPACE=$ltree" "PATH=$lane_shim:$lbase" "CARGO_HOME=$lane_shim/no-cargo-home" "RUSTUP_HOME=$lane_shim/no-rustup-home" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null >> "$log" 2>&1 3<&-)
+                    printf '%s %s %s\n' "$?" "$lt0" "$(now)" > "$scratch/lane.$tag.res"
+                    { flock 9; git -C "$root" worktree remove --force "$ltree"; } > /dev/null 2>&1 9> "$scratch/lane-wt.lock"   # the same lock as the add: both rewrite .git/worktrees
+                ) &
+                lane_pids+=("$!")
+                lane_rec+=("$job"$'\x1f'"$idx"$'\x1f'"$tag"$'\x1f'"$name")
+                continue
+            fi
+            lane_serial=$((lane_serial + 1))
             [ "$stream" = 1 ] && echo "::group::$job#$idx $name"
             t0="$(now)"
             # timeout puts the step in its own process group and SIGKILLs the
@@ -463,6 +521,28 @@ cmd_run() {
         done 3< "$scratch/steps.$job"
     done
 
+    # join the lane: one row per lane step, in manifest order, same statuses as a serial step
+    if [ "${#lane_rec[@]}" -gt 0 ]; then wait "${lane_pids[@]}" 2> /dev/null || true; fi
+    local lrec ljob lidx ltag lname lrc lt0 lt1 lst lbad lf
+    for lrec in "${lane_rec[@]}"; do
+        IFS=$'\x1f' read -r ljob lidx ltag lname <<< "$lrec"
+        lst=PASS; lrc=1; lt0=0; lt1=0
+        if [ -s "$scratch/lane.$ltag.res" ]; then read -r lrc lt0 lt1 < "$scratch/lane.$ltag.res"; else lrc=99; echo "ci_guards lane: no result recorded (step vanished)" >> "$scratch/$ltag.log"; fi
+        lbad=""
+        for lf in github_path github_env github_output; do [ -s "$scratch/$lf.$ltag" ] && lbad="$lbad $lf"; done
+        if [ -n "$lbad" ]; then lrc=96; echo "ci_guards lane: step wrote${lbad} -- a lane step may not hand state to later steps" >> "$scratch/$ltag.log"; fi
+        if [ "$lrc" -ne 0 ]; then
+            lst=FAIL
+            if [ "$timeout" -gt 0 ] && { [ "$lrc" -eq 124 ] || [ "$lrc" -eq 137 ]; } && awk -v a="$lt0" -v b="$lt1" -v t="$timeout" 'BEGIN { exit !(b - a >= t) }'; then lst=TIMEOUT; lrc=124; fi
+        fi
+        if [ "$stream" = 1 ]; then echo "::group::$ljob#$lidx $lname"; awk 1 "$scratch/$ltag.log"; echo "::endgroup::"; fi
+        if [ "$lrc" -ne 0 ]; then
+            if [ "$stream" = 1 ]; then lname="$lname  [rc=$lrc]"; else lname="$lname  [rc=$lrc, log $scratch/$ltag.log]"; fi
+        fi
+        emit "$ljob" "$lidx" "$lst" "$(awk -v a="$lt0" -v b="$lt1" 'BEGIN { printf "%.3f", b - a }')" "$lname"
+    done
+    if [ "$lane_on" = 1 ]; then echo "ci_guards: lane on, width $lane_w: ${#lane_rec[@]} step(s) parallel + $lane_serial serial"
+    else echo "ci_guards: lane off: every step serial"; fi
     local failed=0 ran=0 skipped=0 row
     local -a fl=()
     for row in "${rows[@]}"; do
