@@ -25,8 +25,8 @@ This directory contains examples demonstrating Trueno's high-performance compute
 | `vocab_bench.rs` | Vocabulary processing benchmark | `cargo run --release --example vocab_bench` |
 | `profile_vocab.rs` | Vocabulary profiling | `cargo run --release --example profile_vocab` |
 | `execution_graph.rs` | Execution path graph demo | `cargo run --release --features execution-graph --example execution_graph` |
-| `ml_tuner_demo.rs` | ML-based kernel selection | `cargo run --release --features ml-tuner --example ml_tuner_demo` |
-| `ml_tuner_evolution.rs` | ML tuner evolution demo | `cargo run --release --features ml-tuner --example ml_tuner_evolution` |
+| `ml_tuner_demo.rs` | Heuristic kernel selection and throughput prediction | `cargo run --release --example ml_tuner_demo` |
+| `ml_tuner_evolution.rs` | ML tuner evolution demo | `cargo run --release --features hardware-detect --example ml_tuner_evolution` |
 | `model_tracing.rs` | Model-level inference tracing | `cargo run --release --example model_tracing` |
 | `tiling_demo.rs` | Tiling compute blocks | `cargo run --release --example tiling_demo` |
 | `tile_profiler_demo.rs` | Tile profiler demo | `cargo run --release --example tile_profiler_demo` |
