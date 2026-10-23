@@ -323,12 +323,7 @@ fn run_model_answering_refusals(
     match run_model(source, options) {
         Err(crate::error::CliError::ConstraintRefused(refusal)) => {
             if emits_machine_output(options.stream, &options.output_format, options.benchmark) {
-                let doc = serde_json::json!({
-                    "model": source,
-                    "text": serde_json::Value::Null,
-                    "finish_reason": refusal.finish_reason,
-                    "refusal": refusal.to_json(),
-                });
+                let doc = refusal_doc(source, &refusal);
                 println!(
                     "{}",
                     if options.stream {
@@ -342,6 +337,28 @@ fn run_model_answering_refusals(
         }
         other => other,
     }
+}
+
+/// #3720: the document for a run refused before it produced output carries the same consumer
+/// envelope as a completed one (`status`, `error`, `model_digest`), so a consumer reads one shape.
+fn refusal_doc(source: &str, refusal: &crate::error::ConstraintRefusal) -> serde_json::Value {
+    with_model_digest(
+        serde_json::json!({
+            "model": source,
+            "text": serde_json::Value::Null,
+            "finish_reason": refusal.finish_reason,
+            "refusal": refusal.to_json(),
+            "status": RunStatus::Refused.as_str(),
+            "error": {
+                "kind": "constraint_refused",
+                "message": refusal.message,
+                "exit_code": crate::error::CliError::ConstraintRefused(refusal.clone()).exit_code_value(),
+            },
+            "apr_version": env!("CARGO_PKG_VERSION"),
+            "apr_commit": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
+        }),
+        source,
+    )
 }
 
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
@@ -640,17 +657,18 @@ fn print_run_output(
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
     if stream && !benchmark {
-        return print_stream_output(result, source, max_tokens, accel_forced);
+        print_stream_output(result, source, max_tokens, accel_forced)?;
+        return empty_completion_exit(result, accel_forced);
     }
 
     // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
-        let json = build_final_json(result, source, max_tokens, accel_forced);
+        let json = with_model_digest(build_final_json(result, source, max_tokens, accel_forced), source);
         println!(
             "{}",
             serde_json::to_string_pretty(&json).unwrap_or_default()
         );
-        return Ok(());
+        return empty_completion_exit(result, accel_forced);
     }
 
     if benchmark {
@@ -672,6 +690,8 @@ fn print_run_output(
                 "(downloaded)".dimmed()
             }
         );
+        // #3720: an empty completion exits 8 on the text surface too, as it does on --json.
+        return empty_completion_exit(result, accel_forced);
     }
     Ok(())
 }
@@ -784,6 +804,11 @@ fn build_final_json(
         // #3793: a constrained output refused after it was produced (Truncated,
         // SchemaViolation); null otherwise
         "refusal": result.constraint_refusal.as_ref().map(crate::error::ConstraintRefusal::to_json),
+        // #3720: the consumer envelope. `status` is ok|refused|failed, `error` is null on ok.
+        "status": run_status(result, accel_forced).as_str(),
+        "error": run_error_json(result, accel_forced),
+        "apr_version": env!("CARGO_PKG_VERSION"),
+        "apr_commit": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
     })
 }
 
@@ -838,7 +863,10 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
         }
     }
 
-    let mut final_blob = build_final_json(result, source, max_tokens, accel_forced);
+    let mut final_blob = with_model_digest(
+        build_final_json(result, source, max_tokens, accel_forced),
+        source,
+    );
     if let Some(obj) = final_blob.as_object_mut() {
         obj.insert(
             "event".to_string(),
@@ -957,4 +985,122 @@ fn print_benchmark_results(
             result.duration_secs * 1000.0
         );
     }
+}
+
+/// #3720: the three outcomes a consumer must tell apart. `Refused` means the run was declined on
+/// purpose (a forced accelerator that did not run, a constraint that rejected the output);
+/// `Failed` means it ran and produced nothing usable. Both are `is_error`; neither is `Ok`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RunStatus {
+    Ok,
+    Refused,
+    Failed,
+}
+
+impl RunStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// An empty completion is a failure, not an answer: trimmed text with nothing in it.
+fn is_empty_completion(result: &RunResult) -> bool {
+    result.text.trim().is_empty()
+}
+
+fn run_status(result: &RunResult, accel_forced: bool) -> RunStatus {
+    if result.constraint_refusal.is_some() || (accel_forced && result.used_gpu == Some(false)) {
+        RunStatus::Refused
+    } else if is_empty_completion(result) {
+        RunStatus::Failed
+    } else {
+        RunStatus::Ok
+    }
+}
+
+/// `{kind, message, exit_code}` when the run is not `ok`, `null` otherwise. The exit code is the
+/// one the process exits with, so a consumer can read it without waiting for the process.
+fn run_error_json(result: &RunResult, accel_forced: bool) -> serde_json::Value {
+    use crate::error::CliError;
+    // The accelerator refusal is checked first because `reconcile_accelerator` runs before the
+    // constraint refusal in `reconcile_and_emit`: when both fire, the process exits with the
+    // accelerator's code, so the document must name that one. Codes come from `CliError`, so a
+    // remap in error.rs reaches the document; the one literal is the unreachable no-refusal fallback below.
+    let accel_refused = accel_forced && result.used_gpu == Some(false);
+    let (kind, message, exit_code) = match run_status(result, accel_forced) {
+        RunStatus::Ok => return serde_json::Value::Null,
+        RunStatus::Refused if accel_refused => {
+            let message = "an accelerator was forced and the run did not use it".to_string();
+            let code = CliError::BackendUnavailable(message.clone()).exit_code_value();
+            ("backend_unavailable", message, code)
+        }
+        RunStatus::Refused => {
+            let message = "the constrained output was refused after it was produced".to_string();
+            // `run_status` is Refused only for an accelerator or a constraint refusal, so a
+            // missing refusal here cannot happen; fall back to 15, ConstraintRefused's code in error.rs.
+            let code = result.constraint_refusal.clone().map_or(15, |r| {
+                CliError::ConstraintRefused(r).exit_code_value()
+            });
+            ("constraint_refused", message, code)
+        }
+        RunStatus::Failed => {
+            let message = "the model produced no text".to_string();
+            let code = CliError::InferenceFailed(message.clone()).exit_code_value();
+            ("empty_completion", message, code)
+        }
+    };
+    serde_json::json!({"kind": kind, "message": message, "exit_code": exit_code})
+}
+
+/// A machine surface that printed an empty completion exits with the inference-failure code, so
+/// the exit status and the document agree. Other non-ok states are already errors upstream.
+fn empty_completion_exit(result: &RunResult, accel_forced: bool) -> Result<()> {
+    if run_status(result, accel_forced) == RunStatus::Failed {
+        return Err(crate::error::CliError::InferenceFailed(
+            "empty completion: the model produced no text (#3720)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// #3720: lowercase hex SHA-256 of a file, streamed so a multi-GB model is never held in memory.
+fn sha256_file_hex(path: &std::path::Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
+}
+
+/// #3720: `model_digest` is the SHA-256 of the weights file named by `source`; `null` when the
+/// source is not a local file, never a guess. Known limit: a hub id or registry name resolves to
+/// a cached file only later in `run`, so it reads `null` here; threading the resolved path
+/// through is follow-up work, together with the `serve` surface of the same ticket.
+fn with_model_digest(mut json: serde_json::Value, source: &str) -> serde_json::Value {
+    let path = std::path::Path::new(source);
+    let digest = if path.is_file() {
+        sha256_file_hex(path).ok()
+    } else {
+        None
+    };
+    if let Some(obj) = json.as_object_mut() {
+        obj.insert("model_digest".to_string(), serde_json::json!(digest));
+    }
+    json
 }
