@@ -70,8 +70,6 @@ display	scripts/lib/dogfood_coverage_gate.py|7437edb6|0	+ "\n".join(f" - {w}" fo
 display	scripts/lib/dogfood_coverage_gate.py|b2cca5e8|0	+ "\n".join(f" - {b}" for b in blank[:10]))
 display	scripts/lib/dogfood_coverage_gate.py|b471bf1d|0	+ "\n".join(f" | {ln.rstrip()}" for ln in offenders[:10]))
 display	scripts/lib/dogfood_coverage_gate.py|fd8533f8|0	return "\n".join(f" - {f}" for f in features[:20])
-display	scripts/lib/roadmap_diff.py|109308dd|0	lines.append(f"reserialised={len(reserialised)} first_ids=" + ", ".join(reserialised[:3]))
-display	scripts/lib/roadmap_fragments.py|e70fba51|0	"duplicate id among fragments" in str(e), str(e)[:44])
 display	scripts/pp066_state.sh|5dd416a1|0	hits = [f"{r['id']}/{r.get('pmat_id')}" for r in d["rows"] if any(k and k.lower() in line for k in [str(r.get("contract") or "")[:40]] + [a[:40] for a in (r.get("A") or []) if isinstance(a, str)])]
 display	scripts/reference_embedding.py|02c5464a|0	print("Transform first 10:", [f"{v:.8f}" for v in emb[:10]])
 display	scripts/reference_embedding.py|3beae368|0	print("[" + ", ".join(f"{v:.8f}" for v in emb[:10]) + "]")

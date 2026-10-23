@@ -9,6 +9,7 @@ pub mod commands;
 pub mod contract_walk;
 pub mod json_obj;
 pub mod query_args;
+pub mod roadmap;
 pub mod yaml;
 
 // `PathBuf` is imported rather than fully qualified because the `#[cfg(test)]`

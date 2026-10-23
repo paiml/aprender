@@ -21,7 +21,7 @@ ROOT="$(git rev-parse --show-toplevel)"
 # FIRST, because it is the cheapest check here and the one that costs the most
 # when it is missed: `pmat work add`/`work complete` re-serialise the whole file,
 # and the only thing that noticed was `guard-tree` in CI — 11 minutes after the
-# push, with the remedy (scripts/roadmap_trim.py) named in a footer nobody was
+# push, with the remedy (scripts/roadmap_trim.sh) named in a footer nobody was
 # obliged to read. It had ZERO call sites before this hook.
 #
 # `--staged` judges `git write-tree` — the exact bytes about to be committed —

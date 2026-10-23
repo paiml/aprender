@@ -595,10 +595,10 @@ readme-sync-check: ## Fail if README.md is not what the generator produces
 .PHONY: oracle-owl oracle-owl-check
 .PHONY: roadmap-aggregate roadmap-aggregate-check
 roadmap-aggregate: ## Regenerate docs/roadmaps/roadmap.yaml from docs/roadmaps/entries/ (#3296)
-	@python3 scripts/lib/roadmap_fragments.py aggregate --write
+	@bash -c '. scripts/lib/roadmap_bin.sh || exit 1; exec "$$ROADMAP_BIN" fragments aggregate --write'
 
 roadmap-aggregate-check: ## Fail if roadmap.yaml is not what the aggregator produces, or if it is not idempotent
-	@python3 scripts/lib/roadmap_fragments.py aggregate --check
+	@bash -c '. scripts/lib/roadmap_bin.sh || exit 1; exec "$$ROADMAP_BIN" fragments aggregate --check'
 
 .PHONY: ratchet-semantics-test
 ratchet-semantics-test: ## BSE-03: D2 ratchet polarity rows (--class readme)

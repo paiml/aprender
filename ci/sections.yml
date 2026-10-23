@@ -1485,7 +1485,7 @@ jobs:
           bash scripts/fleet_utilization.sh --selftest
           bash scripts/test_tier_ledger.sh --selftest
           bash scripts/ci_resolve_dirty.sh --selftest
-          python3 scripts/lib/roadmap_merge.py --selftest
+          bash -c '. scripts/lib/roadmap_bin.sh && "$ROADMAP_BIN" merge --selftest'
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
           bash scripts/nightly_prune_release.sh --self-test   # nightly publish overflowed page one (422)
           bash scripts/nightly_gate_retry.sh --self-test   # #5053 ci-pending retries, then RED never green
