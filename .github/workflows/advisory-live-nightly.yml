@@ -1,0 +1,42 @@
+# advisory-live-nightly.yml -- P9 option 4 (PMAT-6110), the LAB half of the pinned-DB merge gate.
+#
+# Operator, verbatim (2026-10-19 14:10 Madrid): "Daily scheduled audit vs live DB; a new
+# advisory files a ticket + pages. Clean-room publish gate keeps the full audit.
+# Falsifier: an advisory >24 h old reaches a release -> restore to merge path."
+#
+# The merge path reads a PINNED snapshot (ci/advisory-db.pin, scripts/advisory_pin.sh). The live
+# DB is audited by advisory-andon.yml (main, every 2 h, opens the P0 issue), so this workflow does
+# not repeat that scan. It runs the one thing the merge path cannot: the real cargo-deny binary
+# against the pinned snapshot over the network, so a cargo-deny change that breaks the pinned
+# invocation is caught here, not on a PR. Red never blocks a merge: LAB.
+# The pin bump (F7) is scripts/advisory_pin_bump.sh from a fleet timer under an existing gh
+# identity (a PR opened with GITHUB_TOKEN never triggers CI); if it stops landing, F5 goes red
+# on the merge path within 7 days.
+name: advisory-live-nightly
+
+on:
+  schedule:
+    - cron: '17 21 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: advisory-live-nightly
+  cancel-in-progress: false
+
+jobs:
+  pinned-invocation:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: Pinned cargo-deny invocation still works (needs network; never on the merge path)
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
+          GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
+          export GIT_CONFIG_VALUE_0
+          ADVISORY_PIN_LIVE_CASE=1 bash scripts/advisory_pin.sh --self-test

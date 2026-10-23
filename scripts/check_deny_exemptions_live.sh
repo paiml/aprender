@@ -35,7 +35,12 @@ trap 'rm -f "${LOG:?}"' EXIT
 
 # Redirect, never pipe: reading this through a pipe would report the exit status
 # of the last stage instead of cargo-deny's.
-cargo deny --all-features check advisories > "$LOG" 2>&1
+if [ -n "${ADVISORY_PIN_CONFIG:-}" ]; then
+  # P9 option 4: the pinned snapshot placed by advisory_pin.sh place (PMAT-6110), never a live fetch
+  bash "$REPO_ROOT/scripts/advisory_pin.sh" deny "$ADVISORY_PIN_CONFIG" > "$LOG" 2>&1
+else
+  cargo deny --all-features check advisories > "$LOG" 2>&1
+fi
 rc=$?
 
 declared="$(grep -c 'id = "RUSTSEC' deny.toml || true)"

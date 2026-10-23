@@ -40,11 +40,31 @@ deny_help=$(cargo deny check --help 2>&1 || true)
 if grep -qF -- '--config' <<<"$deny_help"; then DENY_OLD=1; else DENY_OLD=0; fi
 
 # One DB for both scans: fetched with the BASE config (the db-path both scans read), HEAD logged.
-if [ "$DENY_OLD" = 1 ]; then cargo deny fetch --config "$W/deny.toml" db; else cargo deny --config "$W/deny.toml" fetch db; fi \
-    || { echo "COULD-NOT-CHECK: advisory-db fetch failed" >&2; exit 75; }
-for d in "$HOME"/.cargo/advisory-dbs/*; do
-    [ -d "$d/.git" ] && echo "advisory-db $(basename "$d") HEAD $(git -C "$d" rev-parse --short HEAD 2>/dev/null) $(git -C "$d" log -1 --format=%cI 2>/dev/null)"
-done
+CFG="$W/deny.toml"
+# P9 option 4 (PMAT-6110): when the BASE carries ci/advisory-db.pin, both scans read that pinned snapshot, not the live
+# DB. The pin and its script come from the BASE worktree, so a PR cannot move its own pin. A pin not verified for
+# 7 days is RED (F5, rc 1); a missing/garbled pin or a failed fetch is 75. Only a cargo-deny whose db directory name
+# was not derived (rc 3) keeps the live fetch below; the bootstrap merge (base has no pin) does too.
+PINNED=0
+if [ -f "$W/ci/advisory-db.pin" ] && [ -f "$W/scripts/advisory_pin.sh" ]; then
+    pin_rc=0
+    PD="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advisory-db-pinned-$$"
+    CFG=$(cd "$W" && bash scripts/advisory_pin.sh place "$W/deny.toml" "$PD") || pin_rc=$?
+    case "$pin_rc" in
+        0) PINNED=1; trap 'rm -rf -- "${PD:?}"; rm -f "${W:?}.pr.ndjson" "${W:?}.base.ndjson"; git worktree remove --force "${W:?}" >/dev/null 2>&1 || true' EXIT ;;
+        3) CFG="$W/deny.toml"; echo "advisory-db: pinned snapshot unsupported on this cargo-deny; live fetch" ;;
+        *) exit "$pin_rc" ;;
+    esac
+fi
+if [ "$PINNED" = 1 ]; then
+    echo "advisory-db pinned $(sed -n 's/^sha=//p' "$W/ci/advisory-db.pin") verified $(sed -n 's/^verified=//p' "$W/ci/advisory-db.pin")"
+else
+    if [ "$DENY_OLD" = 1 ]; then cargo deny fetch --config "$W/deny.toml" db; else cargo deny --config "$W/deny.toml" fetch db; fi \
+        || { echo "COULD-NOT-CHECK: advisory-db fetch failed" >&2; exit 75; }
+    for d in "$HOME"/.cargo/advisory-dbs/*; do
+        [ -d "$d/.git" ] && echo "advisory-db $(basename "$d") HEAD $(git -C "$d" rev-parse --short HEAD 2>/dev/null) $(git -C "$d" log -1 --format=%cI 2>/dev/null)"
+    done
+fi
 
 # The BASE script when it has one; the PR's copy only to bootstrap the merge that introduces the script.
 GATE="$W/scripts/ci/advisory_diff.sh"
@@ -55,10 +75,10 @@ bash "$GATE" ignores-added "$W/deny.toml" deny.toml || exit 1
 scan() { # TREE OUT.ndjson -> prints the cargo-deny rc
     local rc=0
     if [ "$DENY_OLD" = 1 ]; then
-        (cd "$1" && cargo deny --locked --all-features --format json check --config "$W/deny.toml" --disable-fetch advisories) \
+        (cd "$1" && cargo deny --locked --all-features --format json check --config "$CFG" --disable-fetch advisories) \
             >/dev/null 2>"$2" || rc=$?
     else
-        (cd "$1" && cargo deny --config "$W/deny.toml" --locked --offline --all-features --format json check advisories) \
+        (cd "$1" && cargo deny --config "$CFG" --locked --offline --all-features --format json check advisories) \
             >/dev/null 2>"$2" || rc=$?
     fi
     echo "$rc"

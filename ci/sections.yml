@@ -2726,7 +2726,19 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          setsid --wait bash scripts/check_deny_exemptions_live.sh
+          # P9 option 4 (PMAT-6110): read the pinned snapshot; rc 3 (cargo-deny version not derived) keeps the live fetch.
+          PD="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advisory-db-pinned-exempt-$$"
+          pin_rc=0
+          ADVISORY_PIN_CONFIG=$(bash scripts/advisory_pin.sh place deny.toml "$PD") || pin_rc=$?
+          if [ "$pin_rc" -ne 0 ] && [ "$pin_rc" -ne 3 ]; then exit "$pin_rc"; fi
+          if [ "$pin_rc" -eq 3 ]; then ADVISORY_PIN_CONFIG=""; fi
+          export ADVISORY_PIN_CONFIG
+          rc=0
+          setsid --wait bash scripts/check_deny_exemptions_live.sh || rc=$?
+          rm -rf -- "${PD:?}"
+          exit "$rc"
+      - name: Advisory pin case table (F5/F6, PMAT-6110)
+        run: setsid --wait bash scripts/advisory_pin.sh --self-test
       # cargo-deny and cargo-audit read ONE database: RustSec. GHSA (what
       # Dependabot reads) is a superset, and when an advisory lives only there
       # every gate above is green while the crate sits in Cargo.lock. #2531:
