@@ -18,8 +18,41 @@ pub const MAX_ENTRIES: usize = 3;
 pub const OPT_IN_LABEL: &str = "rollup-ok";
 /// Label a capacity PR (runner seats, host readiness) carries to take the next free slot (infra#2247).
 pub const CAPACITY_LABEL: &str = "capacity";
-/// Declared capacity paths: a PR is capacity only if EVERY changed path starts with one of these.
-pub const CAPACITY_PATHS: &[&str] = &["ci/runners/", "ci/gate-seats.txt"];
+/// Declared capacity paths (infra-66, mirrors infra `fleet/capacity-paths.txt`): a PR is capacity only if
+/// EVERY changed path matches one of these globs (`**` crosses `/`, `*` stays inside one segment).
+pub const CAPACITY_PATHS: &[&str] = &[
+    "machines/clean-room/runner/**",
+    "machines/intel/forjar-ci.yaml",
+    "machines/framework16/forjar.yaml",
+    "machines/framework16/Makefile",
+    "machines/gx10/forjar-*.yaml",
+    "machines/t2*/forjar.yaml",
+    "machines/fleet-hosts/**",
+];
+
+/// Glob match for [`CAPACITY_PATHS`]: `**` matches any run of characters, `*` any run without `/`.
+#[must_use]
+pub fn glob_match(pat: &str, path: &str) -> bool {
+    fn go(p: &[u8], s: &[u8]) -> bool {
+        match p.split_first() {
+            None => s.is_empty(),
+            Some((b'*', rest)) if rest.first() == Some(&b'*') => {
+                let rest = &rest[1..];
+                (0..=s.len()).any(|i| go(rest, &s[i..]))
+            }
+            Some((b'*', rest)) => {
+                let n = s.iter().position(|&b| b == b'/').unwrap_or(s.len());
+                (0..=n).any(|i| go(rest, &s[i..]))
+            }
+            Some((c, rest)) => s.first() == Some(c) && go(rest, &s[1..]),
+        }
+    }
+    go(pat.as_bytes(), path.as_bytes())
+}
+
+fn in_capacity_paths(path: &str) -> bool {
+    CAPACITY_PATHS.iter().any(|p| glob_match(p, path))
+}
 
 /// One open PR as read from GitHub.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -86,9 +119,7 @@ pub fn check(c: &Candidate) -> Option<Reject> {
 pub fn is_capacity(c: &Candidate) -> bool {
     c.labels.iter().any(|l| l == CAPACITY_LABEL)
         && !c.files.is_empty()
-        && c.files
-            .iter()
-            .all(|f| CAPACITY_PATHS.iter().any(|p| f.starts_with(p)))
+        && c.files.iter().all(|f| in_capacity_paths(f))
 }
 
 /// A chosen rollup plus every PR left out and why.
@@ -112,7 +143,7 @@ pub fn select(cands: &[Candidate]) -> Selection {
             let other = c
                 .files
                 .iter()
-                .find(|f| !CAPACITY_PATHS.iter().any(|p| f.starts_with(p)))
+                .find(|f| !in_capacity_paths(f))
                 .cloned()
                 .unwrap_or_default();
             sel.rejected

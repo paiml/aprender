@@ -136,7 +136,7 @@ fn capacity_pr_is_picked_before_a_lower_numbered_feature_pr() {
         cand(1, &["a.rs"]),
         cand(2, &["b.rs"]),
         cand(3, &["c.rs"]),
-        capacity(9, &["ci/runners/seat.txt"]),
+        capacity(9, &["machines/fleet-hosts/seat.yaml"]),
     ]);
     assert_eq!(sel.picked, vec![9, 1, 2]);
     assert_eq!(sel.rejected, vec![(3, Reject::OverCap)]);
@@ -146,7 +146,7 @@ fn capacity_pr_is_picked_before_a_lower_numbered_feature_pr() {
 fn capacity_label_with_another_path_is_refused() {
     let sel = select(&[
         cand(1, &["a.rs"]),
-        capacity(9, &["ci/runners/seat.txt", "crates/x/lib.rs"]),
+        capacity(9, &["machines/fleet-hosts/seat.yaml", "crates/x/lib.rs"]),
     ]);
     assert_eq!(sel.picked, vec![1]);
     assert_eq!(
@@ -158,6 +158,30 @@ fn capacity_label_with_another_path_is_refused() {
 #[test]
 fn capacity_needs_files_and_the_label() {
     assert!(!is_capacity(&capacity(1, &[])));
-    assert!(!is_capacity(&cand(1, &["ci/runners/seat.txt"])));
-    assert!(is_capacity(&capacity(1, &["ci/gate-seats.txt"])));
+    assert!(!is_capacity(&cand(1, &["machines/fleet-hosts/seat.yaml"])));
+    assert!(is_capacity(&capacity(1, &["machines/gx10/forjar-ci.yaml"])));
+}
+
+#[test]
+fn capacity_globs_match_the_declared_set_and_nothing_near_it() {
+    for ok in [
+        "machines/clean-room/runner/a/b.sh",
+        "machines/intel/forjar-ci.yaml",
+        "machines/framework16/Makefile",
+        "machines/gx10/forjar-ci.yaml",
+        "machines/t2yoga/forjar.yaml",
+        "machines/fleet-hosts/x.yaml",
+    ] {
+        assert!(CAPACITY_PATHS.iter().any(|p| glob_match(p, ok)), "{ok}");
+    }
+    for no in [
+        "machines/intel/forjar.yaml",
+        "machines/gx10/sub/forjar-ci.yaml",
+        "machines/t2/x/forjar.yaml",
+        "machines/clean-room/other.sh",
+        "xmachines/fleet-hosts/x.yaml",
+        "ci/runners/seat.txt",
+    ] {
+        assert!(!CAPACITY_PATHS.iter().any(|p| glob_match(p, no)), "{no}");
+    }
 }

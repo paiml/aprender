@@ -25720,3 +25720,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-6121
+  github_issue: 6121
+  item_type: task
+  title: 'rollup CAPACITY_PATHS: the real machines/ globs from infra-66 (child of PMAT-6113)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T09:00:00Z
+  updated: 2026-10-23T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - CAPACITY_PATHS is the seven globs infra-66 gave, matched by glob_match (** crosses /, * stays in one segment)
+  - a path next to the set (machines/intel/forjar.yaml, machines/gx10/sub/forjar-ci.yaml, ci/runners/seat.txt) is not capacity
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
