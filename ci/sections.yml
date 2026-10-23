@@ -365,17 +365,19 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
           # PMAT-1098 67-E2: the queue and a push to main re-derive their own
-          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
-          # new base). actions/checkout is shallow, so that parent is not in the
-          # object store until we deepen -- and without it ci_test_tier.sh falls
-          # closed to `full` every single time, which would make the whole
-          # optimisation inert while looking like it worked. Best effort by
-          # design: if the deepen fails the decision still falls closed, and the
-          # warning below says so instead of the run silently paying the hour.
+          # diff. actions/checkout is shallow, so the base commit of that diff is
+          # not in the object store until we fetch it -- and without it
+          # ci_test_tier.sh falls closed to `full` every single time, which would
+          # make the whole optimisation inert while looking like it worked. Best
+          # effort by design: if the fetch fails the decision still falls closed,
+          # and the warning below says so instead of the run silently paying the hour.
+          # merge_group: MG_BASE_SHA..HEAD. push: PUSH_BEFORE..HEAD (the queue
+          # rebase-merges, so one push carries N commits).
           case "${GITHUB_EVENT_NAME}" in
             merge_group)
               # Operator 2026-10-17: the queue runs the quick tier over the entry's diff (base_sha = prior entry's head),
@@ -390,10 +392,17 @@ jobs:
               bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
                 || bash scripts/ci/fetch_p6.sh --no-tags --deepen=1 origin 2>/dev/null \
                 || true
-              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
-                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              # The queue rebase-merges: a push carries N commits, so the diff is
+              # github.event.before..after. Fetch `before` (best effort); a missing,
+              # all-zero or non-commit before leaves the tier falling closed to full.
+              case "${PUSH_BEFORE:-}" in
+                ''|0000000000000000000000000000000000000000) ;;
+                *) bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${PUSH_BEFORE}" 2>/dev/null || true ;;
+              esac
+              if [ -n "${PUSH_BEFORE:-}" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+                printf 'push range base available: %s\n' "${PUSH_BEFORE}"
               else
-                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+                printf '::warning::github.event.before unavailable -- the tier falls closed to full\n'
               fi
               ;;
           esac
@@ -1961,7 +1970,7 @@ jobs:
         run: |
           set -euo pipefail
           root=$(git rev-parse --show-toplevel)
-          ru=${RUSTUP_HOME:-$HOME/.rustup}; ca=$HOME/.cargo; tc=$(dirname "$(dirname "$(rustup which rustc --toolchain 1.93.0)")")
+          ru=${RUSTUP_HOME:-$HOME/.rustup}; ca=$HOME/.cargo; tc=$(readlink -f "$(dirname "$(dirname "$(rustup which rustc --toolchain 1.93.0)")")")
           ch=${CARGO_HOME:-$HOME/.cargo}
           sc=${SCCACHE_HOST_DIR:-$HOME/.cache/sccache}
           # pinned by digest, never :stable (pace condition 7); bump with the image
@@ -1975,18 +1984,20 @@ jobs:
           mkdir -p "$ch" "$sc"
           # one mount when CARGO_HOME is ~/.cargo (a second -v of the same target is a docker error)
           if [ "$ch" = "$ca" ]; then mounts=(-v "$ca:$ca"); else mounts=(-v "$ca:$ca:ro" -v "$ch:$ch"); fi
+          # a toolchain outside RUSTUP_HOME (linked, or a symlink target) is invisible in the container unless mounted: rustc then falls through to the rustup proxy
+          case "$tc" in "$ru"/*) tcm=() ;; *) tcm=(-v "$tc:$tc:ro") ;; esac
           snap=$(mktemp)
           cp "$root/Cargo.lock" "$snap"
           printf 'host rustc: %s\n' "$("$tc/bin/rustc" -vV | sed -n 1p)"
           # toolchain bin first in PATH: the rustup proxy writes settings.toml, and RUSTUP_HOME is mounted read-only
           docker run --rm --user "$(id -u):$(id -g)" \
-            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" "${mounts[@]}" -v "$sc:/sccache" \
+            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" ${tcm[@]+"${tcm[@]}"} "${mounts[@]}" -v "$sc:/sccache" -e TC="$tc" \
             -e HOME="$HOME" -e CARGO_HOME="$ch" -e RUSTUP_HOME="$ru" -e RUSTUP_TOOLCHAIN=1.93.0 -e RUSTFLAGS= -e CARGO_INCREMENTAL= \
             -e PATH="$tc/bin:$ca/bin:/usr/local/cargo/bin:/usr/bin:/bin" \
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="$root" \
-            "$img" bash -c 'set -e; printf "container build env: RUSTFLAGS=[%s] CARGO_INCREMENTAL=[%s]\n" "${RUSTFLAGS:-}" "${CARGO_INCREMENTAL:-}"; printf "container rustc: %s\n" "$(rustc -vV | sed -n 1p)"; t0=$(date +%s); cargo build -q -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha; printf "container pv build: %s s\n" "$(( $(date +%s) - t0 ))"; sccache --show-stats'
+            "$img" bash -c 'set -e; printf "container build env: RUSTFLAGS=[%s] CARGO_INCREMENTAL=[%s]\n" "${RUSTFLAGS:-}" "${CARGO_INCREMENTAL:-}"; [ "$(command -v rustc)" = "$TC/bin/rustc" ] || { echo "FAIL(ENV) the container resolves rustc to $(command -v rustc), not the pinned $TC/bin/rustc: the toolchain is not visible in the container"; exit 1; }; printf "container rustc: %s\n" "$(rustc -vV | sed -n 1p)"; t0=$(date +%s); cargo build -q -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha; printf "container pv build: %s s\n" "$(( $(date +%s) - t0 ))"; sccache --show-stats'
           if ! cmp -s "$snap" "$root/Cargo.lock"; then
             cp "$snap" "$root/Cargo.lock"
             echo "FAIL  the container build moved Cargo.lock (restored); run scripts/check_lockfile_current.sh"

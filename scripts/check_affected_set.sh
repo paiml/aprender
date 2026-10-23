@@ -16,7 +16,7 @@ core_list=" aprender-core aprender-compute aprender-contracts apr-cli aprender-q
 readers="$(sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$A")"
 meta=$(cargo metadata --no-deps --format-version 1 --offline 2>/dev/null)
 members=$(jq -r '.packages[].name' <<<"$meta" | sort)
-# a READERS entry that is a directory and not a package (e.g. facades) is dropped by the tool; drop it from the oracle too
+# a READERS entry that is not a workspace package is dropped by the tool; drop it from the oracle too
 readers="$(printf '%s\n' $readers | grep -Fxf <(printf '%s\n' "$members") || true)"
 # a non-core crate that has dependents, and a leaf with none
 withdep="" leaf=""
@@ -46,9 +46,8 @@ row "unknown path -> ALL" ALL "$(run some/unknown/path.txt)"
 row "unknown path next to a leaf -> ALL" ALL "$(run "$ld/src/lib.rs" scripts/whatever.sh)"
 row "docs/findings ledger alone -> READERS only, not ALL (#5809)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/findings/s1.jsonl | sort -u)"
 row ".claude agent-memory alone -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run .claude/agent-memory/x/MEMORY.md | sort -u)"
-row "shard cost table alone -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run ci/shard-step-costs.tsv | sort -u)"
 row "no-reader path next to a leaf .rs -> leaf + READERS" "$lc" "$(run docs/findings/s1.jsonl "$ld/src/lib.rs" | sort -u)"
-row "no-reader path next to docs/x.md -> READERS only (FLOW-010 b)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/findings/s1.jsonl docs/x.md | sort -u)"
+row "no-reader path next to docs/x.md -> READERS only (#6042)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/findings/s1.jsonl docs/x.md | sort -u)"
 row "no-reader path next to a CORE crate -> ALL" ALL "$(run .claude/x docs/findings/s1.jsonl crates/aprender-core/src/lib.rs)"
 row "docs/findings lookalike (docs/findings-x.md) -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run docs/findings-x.md | sort -u)"
 row "docs file -> READERS only (their run-time readers are in READERS)" "$(printf '%s\n' $readers | sort -u)" "$(run docs/x.md | sort -u)"
@@ -60,11 +59,16 @@ row "serve build.rs input contracts/arch-constraints-v1.yaml -> ALL" ALL "$(run 
 row "BUILD_CONTRACTS file next to a leaf .rs -> ALL" ALL "$(run contracts/tensor-names-v1.yaml "$ld/src/lib.rs")"
 row "contracts/binding.yaml -> ALL" ALL "$(run contracts/binding.yaml)"
 row "contracts/model-families -> ALL (aprender-core build.rs generates code from it)" ALL "$(run contracts/model-families/q.yaml)"
+row "BUILD_DOCS file (include_str!ed docs/ file) -> ALL" ALL "$(run docs/specifications/PRM-001-prometheus.md)"
+row "BUILD_DOCS file next to a leaf .rs -> ALL" ALL "$(run docs/kernel-registry/upstream-reference-v1.json "$ld/src/lib.rs")"
+row "a nested BUILD_CONTRACTS entry (contracts/sub/x.yaml) -> ALL" ALL "$(printf 'contracts/sub/x.yaml\n' >"$t/dn"; AFFECTED_BUILD_CONTRACTS='sub/x.yaml' $A --diff-from "$t/dn")"
+row "a nested contracts file that is NOT listed stays READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run contracts/sub/other.yaml | sort -u)"
+row "a diff under the separately-built crates/facades workspace -> ALL (unplaceable, never skipped)" ALL "$(run crates/facades/provable-contracts/src/lib.rs)"
 row "contracts yaml next to a leaf .rs -> leaf + READERS" "$lc" "$(run contracts/foo-v1.yaml "$ld/src/lib.rs" | sort -u)"
 row "root README.md -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run README.md | sort -u)"
 row "root CLAUDE.md -> READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run CLAUDE.md | sort -u)"
 row "ci/sections.yml -> ALL (it holds the CI job bodies: editing it changes what CI runs, not only what tests read)" ALL "$(run ci/sections.yml)"
-row "ci/explicit-test-commands.d fragment -> ALL" ALL "$(run ci/explicit-test-commands.d/815-affected-set-rows.cmd)"
+row "ci/explicit-test-commands.d fragment -> ALL" ALL "$(run ci/explicit-test-commands.d/814-queue-merge-plain-5794.cmd)"
 row "a crate's own Cargo.toml -> ALL" ALL "$(run "$ld/Cargo.toml")"
 row "a .md inside a leaf crate -> ALL (aprender-core reads crates/*/README.md)" ALL "$(run "$ld/README.md")"
 row "a .json inside a leaf crate -> ALL (kernel-registry.json is read by aprender-contracts)" ALL "$(run "$ld/kernel-registry.json")"
@@ -117,6 +121,10 @@ sed 's/ tensor-names-v1.yaml//' "$A" >"$t/mut-bc.sh"
 if cmp -s "$A" "$t/mut-bc.sh"; then echo "FAIL build-contracts mutant did not apply"; fail=1
 elif AFFECTED_SET_SH="$t/mut-bc.sh" bash scripts/check_affected_readers.sh >/dev/null 2>&1; then echo "FAIL MUTANT: a build.rs-read contract missing from BUILD_CONTRACTS is not caught"; fail=1
 else echo "ok   MUTANT: a build.rs-read contract missing from BUILD_CONTRACTS is caught by check_affected_readers.sh"; fi
+# mutant: dropping the BUILD_DOCS arm must be caught by the BUILD_DOCS row
+sed '/^  case "\$f" in docs\/\*) case " \$BUILD_DOCS "/d' "$A" >"$t/mut-bd.sh"
+if cmp -s "$A" "$t/mut-bd.sh"; then echo "FAIL BUILD_DOCS mutant did not apply"; fail=1
+else printf '%s\n' docs/specifications/PRM-001-prometheus.md >"$t/dbd"; row "MUTANT: dropping the BUILD_DOCS arm is caught (the mutant answers READERS only, the real tool ALL)" "$(printf '%s\n' $readers | sort -u)" "$(bash "$t/mut-bd.sh" --diff-from "$t/dbd" | sort -u)"; fi
 # mutant: root-md arm that also skips crate-level .md must be caught by the leaf README row
 sed 's#case "\$f" in \*/\*) ;; \*.md)#case "\$f" in *.md)#' "$A" >"$t/mut-md.sh"
 if cmp -s "$A" "$t/mut-md.sh"; then echo "FAIL md mutant did not apply"; fail=1

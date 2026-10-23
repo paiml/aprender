@@ -69,6 +69,7 @@ jobs:
     permissions:
       contents: read
       issues: write   # #5182: a red ratchet night opens or updates the one LAB ticket
+      actions: read   # #5920: guard_lane_stop.sh reads this workflow's finished runs and their steps
     # 60: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over the measured
     # cost of the steps this job carries -- 26.8 min of guard-cargo's own
     # 43.8-min run 34449608126, plus checkout and the cargo-home heal. With
@@ -189,6 +190,42 @@ jobs:
           setsid --wait bash scripts/parity_receipt_denominator.sh
       - name: nextest list-wrapper case table (#5298, LAB)
         run: setsid --wait bash scripts/ci/nextest_list_wrapper.sh --self-test
+      - name: affected_set.sh case table and mutants (FLOW-010 E5, LAB)
+        id: lab_affected_set
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/affected-set.log") 2>&1
+          setsid --wait bash scripts/affected_set.sh --self-test
+      # C324 item 5: red or unmeasured for 7 days, this check stops running until its owner dispatches the workflow
+      # (scripts/guard_lane_stop.sh: per STEP, because this job carries many guards; its case table runs first).
+      # The stop reads Actions history with conditional GETs (GH-1); the 304s need last night's ETags, so the cache
+      # dir persists across nights. A cache miss only costs the full reads; nothing depends on it.
+      - name: Guard-lane stop history cache (#5920, GH-1)
+        if: ${{ !cancelled() }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/guard-lane-stop-cache
+          key: guard-lane-stop-${{ github.run_id }}
+          restore-keys: guard-lane-stop-
+      - name: Guard-lane stop decision (#5920, C324 item 5)
+        id: lab_guard_lane_stop
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUARD_LANE_STOP_CACHE: ${{ runner.temp }}/guard-lane-stop-cache
+        run: |
+          # the log is the LAB ticket's evidence: a stop step that dies (unmeasured) opens the same ticket as a red lane
+          exec > >(tee -a "$RUNNER_TEMP/guard-lane.log") 2>&1
+          bash scripts/guard_lane_stop.sh --self-test
+          bash scripts/guard_lane_stop.sh --run
+      - name: ci_guards cargo-free lane self-test (#5920, LAB)
+        id: lab_guard_lane
+        if: ${{ !cancelled() && steps.lab_guard_lane_stop.outputs.decision == 'run' }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/guard-lane.log") 2>&1
+          setsid --wait bash scripts/check_guard_lane.sh
       - name: aprender-core builds for wasm32
         run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited
@@ -201,9 +238,19 @@ jobs:
         run: setsid --wait bash scripts/check_book_examples_compile.sh
       - name: Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
         run: setsid --wait bash scripts/check_harness_server_cleanup.sh
+      - name: Coverage scan files no per-function ticket (LAB, #5879)
+        id: lab_cov_scan
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          { setsid --wait bash scripts/check_coverage_single_report.sh --self-test && setsid --wait bash scripts/check_coverage_single_report.sh; } 2>&1 | tee "$RUNNER_TEMP/cov-scan.log"
       - name: aprender-profile lib tests (was gated by nothing)
+        if: ${{ !cancelled() }}
         run: cargo test -p aprender-profile --lib
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           # The warm sccache lives under the runner user's data dir on the persistent intel
@@ -303,6 +350,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-ladder-gap --title "LAB: the model ladder owes cells to model-cell commands (ladder-gap, #3745)" \
             --owner aprender-a7 --log "$RUNNER_TEMP/ladder-gap.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red coverage-scan night opens or updates its one LAB ticket (#5879)
+        if: failure() && steps.lab_cov_scan.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-cov-scan --title "LAB: an open per-function coverage ticket is not rolled into epic #5875 (#5879)" \
+            --owner aprender-flow --log "$RUNNER_TEMP/cov-scan.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       # #5182 (GATE/LAB). The two ratchets that left the PR path. On a schedule
       # run HEAD *is* origin/main, so merge-base(HEAD, origin/main) is HEAD and a
       # shrink-only comparison against it can never fail. The comparand is
@@ -367,8 +424,8 @@ jobs:
           set -euo pipefail
           exec > >(tee -a "$RUNNER_TEMP/affected.log") 2>&1
           setsid --wait bash scripts/check_affected_set.sh
-          setsid --wait bash scripts/check_affected_readers.sh
           setsid --wait bash scripts/check_affected_readers.sh --self-test
+          setsid --wait bash scripts/check_affected_readers.sh
       - name: A red affected-set night opens or updates the one LAB ticket (#5809)
         if: failure() && steps.affected_set.outcome == 'failure'
         env:
@@ -377,7 +434,7 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: nightly affected-set guards red (#5809)" \
+          bash scripts/lab_ticket.sh --label lab-affected-readers --title "LAB: nightly affected-set guards red (#5809)" \
             --owner aprender-w5018 --log "$RUNNER_TEMP/affected.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red parity-receipt night opens or updates its one LAB ticket (#5502)
         if: failure() && steps.lab_parity_receipts.outcome == 'failure'
@@ -414,6 +471,26 @@ jobs:
           bash scripts/lab_ticket.sh --self-test
           bash scripts/lab_ticket.sh --label lab-nightly-ratchets --title "LAB: nightly shrink-only ratchets red (#5182)" \
             --owner aprender-cd --log "$RUNNER_TEMP/ratchets.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red affected_set night opens or updates its one LAB ticket (FLOW-010 E5)
+        if: failure() && steps.lab_affected_set.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: affected_set.sh case table red (FLOW-010 E5)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/affected-set.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red guard-lane night opens or updates its one LAB ticket (#5920)
+        if: failure() && (steps.lab_guard_lane.outcome == 'failure' || steps.lab_guard_lane_stop.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-guard-lane --title "LAB: ci_guards cargo-free lane self-test red (#5920)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/guard-lane.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: Summary
         if: always()
         run: |

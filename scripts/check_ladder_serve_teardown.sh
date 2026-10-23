@@ -222,15 +222,20 @@ extract_wait() {
   printf '%s\n' "$body"
 }
 
-wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-seconds>
-  local name="$1" mode="$2" secs="$3" stall="$4" ceil="$5" want="$6" maxs="$7" port pid out verdict took
+# <took> is the health wait's own tick count (one tick per loop turn), not wall time. For `hung` it is NOT
+# a fixed number: the quiet counter restarts on any CPU-jiffy the tree burns, and a loaded host burns a few
+# (python start-up, scheduler wake-ups), so 3 quiet ticks took 3..7 turns (9 of 40 runs read 4 under load, #5798).
+# The contract is the EVENT: verdict `stalled` (not ceiling, not ready, not died) after at least <stall> quiet
+# ticks (never early) and before the ceiling. The bound for `hung` is therefore the ceiling, not stall+3.
+wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-ticks> [<min-ticks>]
+  local name="$1" mode="$2" secs="$3" stall="$4" ceil="$5" want="$6" maxs="$7" mins="${8:-0}" port pid out verdict took
   port=$(( 20000 + (RANDOM % 20000) ))
   flock -w 5 "$LOCK" python3 "$TMP/fake_loader.py" "$port" "$mode" "$secs" "$TMP/$name.loader.pid" > "$TMP/$name.log" 2>&1 & pid=$!
   out=$(ladder_serve_wait_health "$pid" "$port" "$TMP/$name.log" "$stall" "$ceil") || true
   verdict=${out%% *}; took=${out##* }
   reap_pidfile "$TMP/$name.loader.pid"; kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
-  if [ "$verdict" != "$want" ] || [ "$took" -gt "$maxs" ]; then
-    echo "  FAIL $name: '$out' — want '$want' within ${maxs}s"; return 1
+  if [ "$verdict" != "$want" ] || [ "$took" -gt "$maxs" ] || [ "$took" -lt "$mins" ]; then
+    echo "  FAIL $name: '$out' — want '$want' in ${mins}..${maxs} ticks"; return 1
   fi
   echo "  ok   $name: '$out'"
 }
@@ -242,7 +247,7 @@ run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
   eval "$body"
   wait_case slow-log slow-log 6 3 30 ready 10    || fails=1
   wait_case slow-cpu slow-cpu 6 3 30 ready 10    || fails=1
-  wait_case hung     hung     60 3 30 stalled 6  || fails=1
+  wait_case hung     hung     60 3 30 stalled 29 3 || fails=1
   wait_case dies     dies     2 5 30 died 4      || fails=1
   wait_case forever  forever  0 3 6 ceiling 9    || fails=1
   return "$fails"

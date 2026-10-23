@@ -13,23 +13,46 @@ SET="${AFFECTED_SET_SH:-scripts/affected_set.sh}"
 ALLOW="${AFFECTED_READERS_ALLOW:-crates/aprender-bench-tokenizer/src/lib.rs:50}"   # joins ../.. only for <root>/tokenizer.json and <root>/models/
 PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent\(\)|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
 listed() { sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
-hits() { # $1 = crates dir; prints crate names
+excluded() { # the root Cargo.toml exclude = [...] entries: separate workspaces, not members; a diff there is unplaceable, so affected_set.sh answers ALL
+  sed -n '/^exclude *= *\[/,/^\]/p' "${AFFECTED_ROOT_MANIFEST:-Cargo.toml}" 2>/dev/null | grep -v '^[[:space:]]*#' | grep -oE "[\"'][^\"']+[\"']" | tr -d "\"'" || true
+}
+pkg_of() { # $1 = a directory holding a flagged file, $2 = crates dir; prints the cargo PACKAGE name of the nearest Cargo.toml (affected_set.sh READERS holds package names, not directory names)
+  local d="$1" e
+  while [ "$d" != "$2" ] && [ "$d" != . ] && [ "$d" != / ]; do
+    if [ -f "$d/Cargo.toml" ]; then
+      while IFS= read -r e; do case "$d/" in "$e"/*) return 0 ;; esac; done < <(excluded)
+      awk '/^\[package\]/{p=1;next} /^\[/{p=0} p && /^name *=/{gsub(/^name *= *"|".*$/,""); print; exit}' "$d/Cargo.toml"; return 0
+    fi
+    d="${d%/*}"
+  done
+  local top="${1#"$2"/}"; echo "${top%%/*}"   # no manifest on the way up: the top directory under the crates dir
+}
+hits() { # $1 = crates dir; prints package names
   { grep -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null || true; } \
     | grep -vE '^[^:]*/target/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
-    | awk -F: -v allow=" $ALLOW " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; n = split($1, a, "/"); print a[2] }' | sort -u
+    | awk -F: -v allow=" $ALLOW " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; d = $1; sub("/[^/]*$", "", d); print d }' | sort -u \
+    | while IFS= read -r d; do pkg_of "$d" "$1"; done | sort -u
 }
-build_listed() { sed -n 's/^BUILD_CONTRACTS="\${AFFECTED_BUILD_CONTRACTS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
-# Root contracts/<file> that a build.rs names (any quoted *-vN.yaml) or an include*! macro embeds: compiled into a crate, so ALL.
-build_inputs() { # $1 = crates dir; root contracts dir = ${CONTRACTS_DIR:-contracts}
-  { grep -rhE --include=build.rs '[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null | grep -vE '^\s*//' | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"'
-    grep -rhE --include='*.rs' 'include(_str|_bytes)?!' "$1" 2>/dev/null | grep -vE '^\s*//' | grep -oE 'contracts/[A-Za-z0-9_-]+\.yaml' | sed 's#contracts/##'
-  } | sort -u | while read -r f; do [ -f "${CONTRACTS_DIR:-contracts}/$f" ] && echo "$f"; done | grep -v 'binding\.yaml$' || true
+build_listed() { # full repo-relative paths: contracts/<BUILD_CONTRACTS entry>, docs/<BUILD_DOCS entry>
+  sed -n 's/^BUILD_CONTRACTS="\${AFFECTED_BUILD_CONTRACTS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sed 's#^#contracts/#' || true
+  sed -n 's/^BUILD_DOCS="\${AFFECTED_BUILD_DOCS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sed 's#^#docs/#' || true
+}
+# Any contracts/** or docs/** file (nested too) that a build.rs names or an include*! macro embeds (the macro may span lines): compiled into a crate, so ALL.
+# Over-approximates on purpose (a path anywhere in the 300 chars after the macro name); a file that does not exist is dropped. Paths relative to the repo root = ${AFFECTED_ROOT_DIR:-.}.
+build_inputs() { # $1 = crates dir
+  local p='(contracts|docs)/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+' f
+  {
+    grep -rzohE --include='*.rs' 'include(_str|_bytes)?![^;]{0,300}' "$1" 2>/dev/null | tr '\0' '\n' | grep -oE "$p" || true   # -z: one record per file, so a macro split over lines still matches
+    { grep -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null || true; } | while IFS= read -r f; do
+      grep -vE '^\s*//' "$f" | grep -oE "$p" || true
+      grep -vE '^\s*//' "$f" | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' | sed 's#^#contracts/#' || true; done
+  } | sort -u | while read -r f; do [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ] && echo "$f"; done | grep -vE '(^|/)binding\.yaml$|/model-families/' || true
 }
 check() {
   local bad="" l c; l="$(listed)"
   for c in $(hits "$1"); do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
   local bl; bl="$(build_listed)"
-  for c in $(build_inputs "$1"); do grep -qx "$c" <<<"$bl" || bad="$bad contracts/$c(BUILD_CONTRACTS)"; done
+  for c in $(build_inputs "$1"); do grep -qx "$c" <<<"$bl" || bad="$bad $c(BUILD_CONTRACTS/BUILD_DOCS)"; done
   if [ -n "$bad" ]; then echo "RED: crates can reach other crates' files but are not in READERS (scripts/affected_set.sh):$bad"; return 1; fi
   echo "ok: every crate with a path-escape form is in READERS"
 }
@@ -66,6 +89,30 @@ if [ "${1:-}" = "--self-test" ]; then
   (check crates >/dev/null 2>&1) || { echo "FAIL self-test: a listed reader was flagged"; fail=1; }
   fresh zz-o; echo '// root.join("crates")' >"$t/crates/zz-o/src/y.rs"
   (check crates >/dev/null 2>&1) || { echo "FAIL self-test: a comment-only line was flagged"; fail=1; }
+  # the package name, not the directory, is what READERS holds: crates/zz-dir/inner has package zz-pkg
+  fresh zz-dir; mkdir -p "$t/crates/zz-dir/inner/src"; printf '[package]\nname = "zz-pkg"\n' >"$t/crates/zz-dir/inner/Cargo.toml"
+  echo 'fn f() { let _ = root.join("crates"); }' >"$t/crates/zz-dir/inner/src/x.rs"
+  (check crates >/dev/null 2>&1) && { echo "FAIL self-test: a reader whose directory is listed but whose package is not was passed"; fail=1; }
+  out=$(check crates 2>&1 || true); grep -q 'zz-pkg' <<<"$out" || { echo "FAIL self-test: the RED did not name the package"; fail=1; }
+  # ...but a root-manifest exclude entry (a separate workspace) is not a member and is skipped
+  printf 'exclude = [\n    # a comment "with quotes"\n    "crates/zz-dir",\n]\n' >"$t/Cargo.toml"
+  (check crates >/dev/null 2>&1) || { echo "FAIL self-test: an excluded workspace was flagged"; fail=1; }
+  rm -f -- "${t:?}/Cargo.toml"
+  # a nested contracts/ or docs/ file that a macro embeds (split over lines too) must be listed
+  mkdir -p "$t/contracts/sub" "$t/docs/d"; : >"$t/contracts/sub/n.yaml"; : >"$t/docs/d/m.md"
+  fresh zz-p; printf 'const A: &str = include_str!(\n    "contracts/sub/n.yaml");\n' >"$t/crates/zz-p/src/x.rs"
+  (check crates >/dev/null 2>&1) && { echo "FAIL self-test: a nested contracts/ include_str! (multi-line) was passed unlisted"; fail=1; }
+  sed 's#^BUILD_CONTRACTS="${AFFECTED_BUILD_CONTRACTS:-#&sub/n.yaml #; s#^BUILD_DOCS="${AFFECTED_BUILD_DOCS:-#&d/m.md #' "$SET" >"$t/set-listed.sh"
+  (SET="$t/set-listed.sh" check crates >/dev/null 2>&1) || { echo "FAIL self-test: a listed nested build input was flagged"; fail=1; }
+  fresh zz-q; printf 'const A: &str = include_str!("docs/d/m.md");\n' >"$t/crates/zz-q/src/x.rs"
+  (check crates >/dev/null 2>&1) && { echo "FAIL self-test: an include_str!ed docs/ file was passed unlisted"; fail=1; }
+  fresh zz-r
+  printf 'const A: &str = include_str!("docs/d/m.md");\n' >"$t/crates/zz-r/src/x.rs"
+  (SET="$t/set-listed.sh" check crates >/dev/null 2>&1) || { echo "FAIL self-test: a listed docs build input was flagged"; fail=1; }
+  # a second include_str! whose path straddles the first one's 300-char window must still be read whole
+  mkdir -p "$t/docs/d"; : >"$t/docs/d/second.lock"
+  fresh zz-s; { printf 'const A: &str = include_str!("docs/d/m.md");\n//%*s\n' 246 ''; printf 'const B: &str = include_str!("docs/d/second.lock");\n'; } >"$t/crates/zz-s/src/x.rs"
+  out=$(SET="$t/set-listed.sh" check crates 2>&1 || true); grep -q 'second.lock' <<<"$out" || { echo "FAIL self-test: an include_str! path cut by the previous match's window was not read"; fail=1; }
   [ "$fail" -eq 0 ] && echo "ok: self-test"
   exit "$fail"
 fi

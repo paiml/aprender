@@ -5102,6 +5102,68 @@ fn test_coverage_card_confusion_raw_formatting() {
 }
 
 // =========================================================================
+// FALSIFY-OPS-017: resume restores the saved epoch and refuses a foreign dataset
+// =========================================================================
+
+#[test]
+fn test_resume_rejects_data_hash_mismatch() {
+    let num_classes = 3;
+    let config = TrainingConfig { epochs: 1, val_split: 0.2, ..TrainingConfig::default() };
+    let metrics = EpochMetrics {
+        epoch: 4,
+        train_loss: 0.5,
+        train_accuracy: 0.5,
+        val_loss: 0.6,
+        val_accuracy: 0.5,
+        learning_rate: 1e-2,
+        epoch_time_ms: 1,
+        samples_per_sec: 1.0,
+    };
+    let dir =
+        std::env::temp_dir().join(format!("aprender_test_resume_hash_{}", std::process::id()));
+
+    let mut saver = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    // Seed 42 gives every trainer the same initial weights, so perturb the saver's
+    // before the save: only then can a restore be told apart from an untouched head.
+    for w in saver.pipeline.classifier.weight.data_mut().as_slice_mut().expect("contiguous weight")
+    {
+        *w += 0.5;
+    }
+    let saved_weights = saver.pipeline.classifier.weight.data().to_vec();
+    saver.save_checkpoint(&dir, 4, &metrics).expect("checkpoint should save");
+    let apr = dir.join("model.apr");
+
+    // Same corpus: the saved epoch comes back.
+    let mut same = ClassifyTrainer::new(
+        tiny_pipeline(num_classes),
+        make_corpus(20, num_classes),
+        config.clone(),
+    )
+    .expect("config should be valid");
+    let fresh = same.pipeline.classifier.weight.data().to_vec();
+    assert_ne!(fresh, saved_weights, "the perturbation must be visible to a restore");
+    assert_eq!(same.resume_from_apr_checkpoint(&apr).expect("matching corpus resumes"), 4);
+    assert_eq!(same.pipeline.classifier.weight.data().to_vec(), saved_weights);
+
+    // Different corpus: refused with F-CKPT-006 before any weight is touched.
+    let mut foreign =
+        ClassifyTrainer::new(tiny_pipeline(num_classes), make_corpus(21, num_classes), config)
+            .expect("config should be valid");
+    let before = foreign.pipeline.classifier.weight.data().to_vec();
+    let err = foreign.resume_from_apr_checkpoint(&apr).expect_err("foreign corpus must be refused");
+    assert!(err.to_string().contains("F-CKPT-006"), "unexpected error: {err}");
+    assert_eq!(foreign.pipeline.classifier.weight.data().to_vec(), before);
+    assert_ne!(before, saved_weights, "a restore would have changed the foreign head");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// =========================================================================
 // save_apr_checkpoint (Refs #5536)
 // =========================================================================
 
@@ -5428,4 +5490,202 @@ fn test_evaluate_checkpoint_missing_test_data_errors() {
     .unwrap_err();
     assert!(matches!(err, crate::Error::Io(_)), "{err:?}");
     std::fs::remove_dir_all(&dir).ok();
+}
+// run_worker: distributed worker loop (#5636)
+// =========================================================================
+
+mod run_worker_tests {
+    use super::*;
+    use crate::finetune::distributed::{DistributedConfig, WireMessage};
+    use crate::finetune::gradient_server::{read_wire_message, send_wire_message};
+    use std::net::TcpListener;
+
+    fn worker_trainer(addr: Option<std::net::SocketAddr>) -> ClassifyTrainer {
+        let config = TrainingConfig {
+            distributed: addr.map(DistributedConfig::worker),
+            ..TrainingConfig::default()
+        };
+        ClassifyTrainer::new(tiny_pipeline(3), make_corpus(8, 3), config)
+            .expect("config should be valid")
+    }
+
+    fn expect_config_error(result: crate::Result<TrainResult>, needle: &str) {
+        match result {
+            Err(crate::Error::ConfigError(msg)) => {
+                assert!(msg.contains(needle), "expected {needle:?} in {msg:?}");
+            }
+            other => panic!("expected ConfigError containing {needle:?}, got {other:?}"),
+        }
+    }
+
+    /// Accept one worker, answer its join, then play `script` against the stream.
+    fn fake_coordinator<T: Send + 'static>(
+        script: impl FnOnce(&std::net::TcpStream) -> T + Send + 'static,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<T>) {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        let handle = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().expect("accept");
+            let join = read_wire_message(&stream).expect("join request");
+            assert!(matches!(join, WireMessage::JoinRequest { gpu_count: 1, .. }));
+            let accepted = WireMessage::JoinAccepted { worker_id: 7, total_workers: 2 };
+            send_wire_message(&stream, &accepted).expect("join accepted");
+            script(&stream)
+        });
+        (addr, handle)
+    }
+
+    #[test]
+    fn missing_distributed_config_is_a_config_error() {
+        let mut trainer = worker_trainer(None);
+        expect_config_error(trainer.run_worker(), "distributed config required");
+    }
+
+    #[test]
+    fn unreachable_coordinator_is_a_connect_error() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("addr");
+        drop(listener);
+        let mut trainer = worker_trainer(Some(addr));
+        expect_config_error(trainer.run_worker(), "worker connect failed");
+    }
+
+    #[test]
+    fn immediate_shutdown_returns_an_empty_result() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+        });
+        let result = worker_trainer(Some(addr)).run_worker().expect("clean shutdown");
+        coordinator.join().expect("coordinator thread");
+        assert!(result.epoch_metrics.is_empty());
+        assert_eq!(result.best_epoch, 0);
+        assert!(result.best_val_loss.is_infinite());
+        assert!(!result.stopped_early);
+    }
+
+    #[test]
+    fn one_step_round_trips_shard_gradients_and_averaged_update() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            // Shard end past the training split must be clamped to its length.
+            let shard = WireMessage::ShardAssignment { step: 3, shard_start: 2, shard_end: 99 };
+            send_wire_message(s, &shard).expect("shard");
+            let payload = read_wire_message(s).expect("gradient payload");
+            let WireMessage::GradientPayload { step, worker_id, gradients, total, .. } = payload
+            else {
+                panic!("expected GradientPayload, got {payload:?}");
+            };
+            let averaged = WireMessage::AveragedGradient {
+                step,
+                gradients: gradients.clone(),
+                global_loss: 0.5,
+            };
+            send_wire_message(s, &averaged).expect("averaged");
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+            (step, worker_id, gradients.len(), total)
+        });
+        let mut trainer = worker_trainer(Some(addr));
+        let expected_total = trainer.train_data.len() - 2;
+        let result = trainer.run_worker().expect("one step then shutdown");
+        let (step, worker_id, grad_len, total) = coordinator.join().expect("coordinator thread");
+        assert_eq!((step, worker_id, total), (3, 7, expected_total), "shard 2..len");
+        assert!(grad_len > 0, "worker must send its LoRA gradients");
+        assert!(result.epoch_metrics.is_empty());
+    }
+
+    #[test]
+    fn shutdown_during_allreduce_is_an_averaged_receive_error() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            let shard = WireMessage::ShardAssignment { step: 0, shard_start: 0, shard_end: 2 };
+            send_wire_message(s, &shard).expect("shard");
+            read_wire_message(s).expect("gradient payload");
+            send_wire_message(s, &WireMessage::Shutdown).expect("shutdown");
+        });
+        expect_config_error(worker_trainer(Some(addr)).run_worker(), "averaged receive failed");
+        coordinator.join().expect("coordinator thread");
+    }
+
+    #[test]
+    fn unexpected_message_instead_of_shard_is_a_shard_receive_error() {
+        let (addr, coordinator) = fake_coordinator(|s| {
+            let hb = WireMessage::Heartbeat { node_id: "x".into(), timestamp_ms: 1 };
+            send_wire_message(s, &hb).expect("heartbeat");
+        });
+        expect_config_error(worker_trainer(Some(addr)).run_worker(), "shard receive failed");
+        coordinator.join().expect("coordinator thread");
+    }
+}
+
+// #5686: ClassifyTrainer::train, single-process path.
+fn train_5686(epochs: usize, patience: usize, tag: &str) -> (TrainResult, PathBuf) {
+    let dir = std::env::temp_dir().join(format!("aprender_5686_{tag}_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config = TrainingConfig {
+        epochs,
+        val_split: 0.3,
+        early_stopping_patience: patience,
+        checkpoint_dir: dir.clone(),
+        warmup_fraction: 0.0,
+        ..TrainingConfig::default()
+    };
+    let mut trainer =
+        ClassifyTrainer::new(tiny_pipeline(2), make_corpus(20, 2), config).expect("valid");
+    (trainer.train(), dir)
+}
+
+#[test]
+fn train_zero_patience_stops_after_first_epoch_5686() {
+    let (result, dir) = train_5686(4, 0, "patience0");
+    assert!(result.stopped_early, "patience 0 must stop at once");
+    assert_eq!(result.epoch_metrics.len(), 1);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_runs_every_epoch_when_patience_is_not_reached_5686() {
+    let (result, dir) = train_5686(2, 100, "full");
+    assert!(!result.stopped_early);
+    assert_eq!(result.epoch_metrics.len(), 2);
+    let want = result
+        .epoch_metrics
+        .iter()
+        .filter(|m| m.val_loss.is_finite())
+        .min_by(|a, b| a.val_loss.total_cmp(&b.val_loss))
+        .expect("a finite epoch");
+    assert_eq!(result.best_epoch, want.epoch, "best_epoch is the lowest val_loss");
+    assert_eq!(result.best_val_loss, want.val_loss);
+    for (i, m) in result.epoch_metrics.iter().enumerate() {
+        assert_eq!(m.epoch, i, "metrics are recorded in epoch order");
+    }
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_saves_best_and_periodic_checkpoints_5686() {
+    // epochs (2) <= save_every (5) => a checkpoint every epoch, plus `best`.
+    let (_result, dir) = train_5686(2, 100, "ckpt");
+    assert!(dir.join("best").join("metadata.json").exists(), "best checkpoint");
+    assert!(dir.join("epoch-0").join("metadata.json").exists(), "epoch-0 checkpoint");
+    assert!(dir.join("epoch-1").join("metadata.json").exists(), "epoch-1 checkpoint");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn train_with_monitor_writer_completes_the_state_file_5686() {
+    let dir = std::env::temp_dir().join(format!("aprender_5686_mon_{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let config =
+        TrainingConfig { epochs: 1, checkpoint_dir: dir.join("ckpt"), ..TrainingConfig::default() };
+    let mut trainer =
+        ClassifyTrainer::new(tiny_pipeline(2), make_corpus(20, 2), config).expect("valid");
+    let writer = crate::monitor::tui::TrainingStateWriter::new(&dir, "exp-5686", "tiny");
+    trainer.set_monitor_writer(writer);
+    let result = trainer.train();
+    assert_eq!(result.epoch_metrics.len(), 1);
+    let state: Vec<_> = std::fs::read_dir(&dir)
+        .expect("monitor dir")
+        .filter_map(Result::ok)
+        .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+        .collect();
+    assert!(!state.is_empty(), "the monitor wrote a state file");
+    let _ = std::fs::remove_dir_all(dir);
 }
