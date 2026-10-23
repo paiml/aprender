@@ -1,0 +1,18 @@
+- id: PMAT-6135
+  github_issue: 6135
+  item_type: task
+  title: 'mq-feeder: gate auto-arm with non-author seats + fresh_derived byte-compare (split from #6112)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T10:35:00Z
+  updated: 2026-10-23T10:35:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
