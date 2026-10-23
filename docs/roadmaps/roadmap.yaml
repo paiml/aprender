@@ -25718,6 +25718,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6042
+  github_issue: 6042
+  item_type: task
+  title: 'gate: affected_set.sh narrows docs/contracts/*.md to READERS-only (split out of #6035)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:00:00Z
+  updated: 2026-10-23T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - docs, contracts, root *.md and .claude/ paths select READERS only, not ALL
+  - nothing on a PR, merge-queue or release path calls affected_set.sh (dormant)
+  - the readers case table and self-test run as a nightly LAB step with one owner
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-6068
   github_issue: 6068
   item_type: task
@@ -25727,6 +25747,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: null
   created: 2026-10-23T03:15:38Z
   updated: 2026-10-23T03:15:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6102
+  github_issue: 6102
+  item_type: task
+  title: 'ci: one PR per ticket, enforced (check refuses a duplicate PR per PMAT ticket)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T07:18:45Z
+  updated: 2026-10-23T07:18:45Z
   spec: null
   acceptance_criteria: []
   phases: []
@@ -25755,3 +25793,46 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-6131
+  github_issue: 6131
+  item_type: task
+  title: 'pmat_bin.sh reads its pin from tools.toml, one source (m36 FAIL ENV; child of PMAT-1059)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:20:00Z
+  updated: 2026-10-23T10:20:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/pmat_bin.sh holds no version literal; PMAT_PIN is tools.toml [pmat] version
+  - an unreadable pin returns 1, never a default
+  - check_hardcoded_paths.sh --self-test reads the pin from tools.toml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6134
+  github_issue: 6134
+  item_type: task
+  title: 'EMF G3: receipts keyed by patch-id; a push re-reviews only changed patch-ids'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:45:00Z
+  updated: 2026-10-23T10:45:00Z
+  spec: docs/specifications/EMF-G3-patch-id-receipts.md
+  acceptance_criteria:
+  - scripts/pr_patch_ids.sh is the one producer of per-commit patch-ids; an unreadable range or an empty set is a refusal
+  - mq_feeder.sh needs_seats arms a gate PR only when every head patch-id has 2 distinct seats and a 3/3 receipt, with no request-changes naming a head id
+  - a no-op rebase and a merge of main void 0 receipts; an amended commit voids only its own id
+  - the head-sha rules stay accepted; arm_pr_automerge.sh keeps its head_sha rule
+  - case table F1-F9 in mq_feeder.sh --self-test, each with a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
