@@ -13,7 +13,7 @@
 #
 #     $ pmat work add "..." --github-issue 3294
 #     M docs/roadmaps/roadmap.yaml        <- the MONOLITH, 16 lines, no fragment
-#     $ python3 scripts/lib/roadmap_fragments.py aggregate --check
+#     $ pv-roadmap fragments aggregate --check
 #     ok  roadmap.yaml == aggregate(1 fragment(s)), idempotent   # rc=0
 #
 # The aggregate check PASSES that edit, and cannot do otherwise: `aggregate`
@@ -36,7 +36,7 @@
 #   2. THE AGGREGATE MUST BE REGENERATED. Whenever either side of the pair
 #      changes, head's roadmap.yaml must equal aggregate(head's entries/).
 #      That placement rule is NOT restated here: it is
-#      `roadmap_fragments.py aggregate --check`, the same function `make
+#      `pv-roadmap fragments aggregate --check`, the same function `make
 #      roadmap-aggregate` writes with, so the guard and the generator cannot
 #      drift. A fragment landed without `make roadmap-aggregate` is drift and is
 #      named as such.
@@ -58,7 +58,7 @@
 # than left for the next person to rediscover:
 #
 #     pmat work add "<title>" --github-issue <N>          # writes the monolith
-#     python3 scripts/lib/roadmap_fragments.py adopt <ID> # -> entries/<ID>.yaml
+#     pv-roadmap fragments adopt <ID> # -> entries/<ID>.yaml
 #                                                         #    + regenerates
 #     git add docs/roadmaps/entries/<ID>.yaml docs/roadmaps/roadmap.yaml
 #
@@ -86,11 +86,20 @@
 # Refs: PMAT-3296, #3296, #3294, #3297 (the fragment mechanism),
 #       contracts/apr-roadmap-fragments-v1.yaml, scripts/check_roadmap_sorted.sh.
 
+# CARGO: resolving pv-roadmap (scripts/lib/roadmap_bin.sh) can run `cargo build`, so guard_tree.sh files
+# this guard as cargo-using and it is wired as an explicit step of guard-cargo, never of the cargo-free
+# guard-tree dispatcher (PMAT-5902, BSE-02). Do not edit this note away to change the classification.
+#
 set -uo pipefail
 
 PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-PY_LIB="$REPO_ROOT/scripts/lib/roadmap_fragments.py"
+# shellcheck source=scripts/lib/roadmap_bin.sh
+. "$REPO_ROOT/scripts/lib/roadmap_bin.sh" || { printf 'FAIL roadmap_bin.sh is unreadable\n' >&2; exit 2; }
+# LAZY: resolved by judge() once a roadmap or fragment actually changed, and by --self-test.
+need_bin() {
+    roadmap_bin_resolve || { printf 'FAIL pv-roadmap is unavailable\n' >&2; exit 2; }
+}
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
 ENTRIES_DIR="docs/roadmaps/entries"
 
@@ -104,7 +113,7 @@ usage() {
     exit 2
 }
 
-# filename_safe ID -- the same shape roadmap_fragments.py's census uses: an id
+# filename_safe ID -- the same shape pv-roadmap's census uses: an id
 # that cannot be a filename cannot be a fragment, so it has no write path.
 filename_safe() {
     case "$1" in
@@ -118,7 +127,7 @@ remedy() {
     printf '  * a NEW ticket — `pmat work add` writes the monolith and knows nothing about\n'
     printf '    fragments (measured 2026-09-16), so take the two-step:\n'
     printf '        pmat work add "<title>" --github-issue <N>\n'
-    printf '        python3 scripts/lib/roadmap_fragments.py adopt <ID>\n'
+    printf '        pv-roadmap fragments adopt <ID>\n'
     printf '  * an EXISTING entry — adopt it once, then edit %s/<ID>.yaml\n' "$ENTRIES_DIR"
     printf '    (a fragment SUPERSEDES the base entry of the same id).\n'
     printf '  * then regenerate and stage BOTH sides:\n'
@@ -185,10 +194,15 @@ judge() {
         fi
     done < <(printf '%s\n' "$names")
 
+    if ! roadmap_bin_resolve; then
+        rm -rf -- "${td:?}"
+        printf 'ENV   %s: pv-roadmap is unavailable — refusing to judge (never a pass)\n' "$PROG" >&2
+        return 2
+    fi
     printf '=== %s: base=%s head=%s ===\n' "$PROG" "$base" "$head"
 
     # --- RULE 1: every changed entry carries its fragment in the same diff ----
-    if ! out=$(python3 "$PY_LIB" changed --base "$td/base.yaml" --head "$td/head.yaml" 2>&1); then
+    if ! out=$("$ROADMAP_BIN" fragments changed --base "$td/base.yaml" --head "$td/head.yaml" 2>&1); then
         rm -rf -- "${td:?}"
         printf 'ENV   %s: the entry reader could not compare the two roadmaps:\n%s\n' "$PROG" "$out" >&2
         return 2
@@ -215,7 +229,7 @@ judge() {
     done < <(printf '%s\n' "$out")
 
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
-    out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
+    out=$("$ROADMAP_BIN" fragments aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
     rc=$?
     rm -rf -- "${td:?}"
     if [ "$rc" = 0 ]; then
@@ -272,6 +286,8 @@ mkrepo() {
 }
 
 self_test() {
+    need_bin
+    export ROADMAP_BIN_OVERRIDE="$ROADMAP_BIN"   # fixture repos carry no cargo workspace
     local td n=0 red=0 TEMPLATE
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
@@ -321,7 +337,7 @@ self_test() {
     # The correct shape: the fragment, and the aggregate regenerated from it.
     b_fragment_and_aggregate() {
         printf -- '- id: PMAT-200\n  title: added the fragment way\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
-        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        "$ROADMAP_BIN" fragments aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
     # A fragment with no `make roadmap-aggregate`.
@@ -397,7 +413,7 @@ PY
     # Supersession: edit an ADOPTED entry through its fragment, regenerate.
     b_supersede() {
         printf -- '- id: PMAT-100\n  title: first\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
-        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        "$ROADMAP_BIN" fragments aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
 
@@ -460,7 +476,7 @@ PY
             red=$((red + 1))
             return
         fi
-        for f in resolve_base.sh roadmap_fragments.py roadmap_diff.py roadmap_merge.py; do
+        for f in resolve_base.sh roadmap_bin.sh; do
             if ! cp "$REPO_ROOT/scripts/lib/$f" "$d/scripts/lib/$f"; then
                 printf 'FAIL  row %-2s %s: scripts/lib/%s could not be copied into the fixture\n' "$n" "$label" "$f"
                 red=$((red + 1))

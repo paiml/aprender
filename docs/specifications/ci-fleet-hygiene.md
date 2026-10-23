@@ -176,7 +176,7 @@ the self-test.
 A squash-merge from the queue re-serialises all of `docs/roadmaps/roadmap.yaml`, so every stacked branch goes DIRTY
 on that one file even when the two sides touched unrelated tickets (measured 3× in one hour, 2026-09-11).
 
-- **Driver**: `scripts/lib/roadmap_merge.py BASE OURS THEIRS [--out F]` merges by ENTRY ID over the byte-exact
+- **Driver**: `pv-roadmap merge BASE OURS THEIRS [--out F]` merges by ENTRY ID over the byte-exact
   `- id:` blocks `roadmap_diff.split_entries` already produces. Ours-only / theirs-only / identical changes resolve;
   both-changed-differently and deleted-vs-edited CONFLICT, naming the id on stderr. Output order is
   `check_roadmap_sorted.sh`'s order (ascending within each id-prefix, prefixes in first-appearance order), so a side
@@ -188,7 +188,7 @@ on that one file even when the two sides touched unrelated tickets (measured 3×
   `CI_RESOLVE_DIRTY_PRS_JSON=<file>` substitutes a canned `gh pr list --json …` payload, which is how `--selftest`
   stays hermetic (a `gh` shim on PATH proves gh is never reached).
 - **Registration is per invocation**: the steward/orchestrator passes
-  `git -c merge.roadmap.driver="python3 scripts/lib/roadmap_merge.py %O %A %B" merge …`. Never `git config` in the
+  `git -c merge.roadmap.driver="pv-roadmap merge %O %A %B" merge …`. Never `git config` in the
   shared `.git` — a worktree fleet shares that file, and a driver written there leaks into every other lane.
 
 ### §6.5 Tree-reader rows at MODULE granularity (PMAT-3120, 2026-09-11)
