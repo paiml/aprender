@@ -52,10 +52,10 @@ fresh_derived() {
   cmp -s "$2/$g" "${MQ_FEEDER_ROOT:-$SELF_ROOT}/$g" || return 1
   (cd "$2" && timeout 300 bash "$g" > /dev/null 2>&1)
 }
-# seat_count REVIEWS HEAD -> distinct "Seat N ... APPROVE ... @<sha of HEAD>" review bodies bound to HEAD (rv lines are STATE<TAB>body)
+# seat_count REVIEWS HEAD [PID] -> distinct "Seat N ... APPROVE ... @<HEAD sha>" or "... patch-id <PID>" review bodies (rv lines are STATE<TAB>body); a PID binding survives a rebase
 seat_count() {
   local r
-  r=$(grep -iE "^(COMMENTED|APPROVED)"$'\t'"seat[ ]+[0-9]+.*APPROVE" <<< "$1" | grep -E "@ ?${2:0:10}" | grep -viE "$NEG|HOLD|REQUEST[-_ ]?CHANGES" || true)
+  r=$(grep -iE "^(COMMENTED|APPROVED)"$'\t'"seat[ ]+[0-9]+.*APPROVE" <<< "$1" | grep -E "@ ?${2:0:10}${3:+|patch-id[ =:]*${3:0:12}}" | grep -viE "$NEG|HOLD|REQUEST[-_ ]?CHANGES" || true)
   grep -oiE '^[A-Z]+'$'\t''seat[ ]+[0-9]+' <<< "$r" | sed -E 's/.*seat[ ]+//I' | sort -u | wc -l
 }
 # needs_seats PR HEAD -> prints the skip reason and returns 0 (skip) unless the PR is NON-gate content AND holds a
@@ -83,8 +83,13 @@ needs_seats() {
   rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST[-_ ]?CHANGES|\bFAIL|\bREJECT|\bBLOCKING\b|\bBLOCKER|\bBLOCKS\b|NO[-_ ]?GO|DO[-_ ]?N(OT|.?T)[-_ ]MERGE|CHANGES[-_ ]REQUESTED' <<<"$rv")
   q=$(quorum_receipts "$rv")
   if [ "$gate" -eq 1 ]; then # a real gate change: auto-arm only on a 3/3 receipt AND 2 distinct seats bound to HEAD (NOAH 07:40Z)
-    { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ] && [ "$(seat_count "$rv" "$2")" -ge 2 ]; } && return 1
-    echo "skip (gate content: needs quorum 3/3 PASS and 2 seats bound to ${2:0:10}; have receipts $q, seats $(seat_count "$rv" "$2"))"; return 0
+    # seats bind to the HEAD sha or to the PR's patch-id (a rebase keeps the patch-id); both are read from reviews on any commit
+    local pid="${MQ_FEEDER_PID:-}" ra ns
+    [ -n "$pid" ] || pid=$(git -C "$SELF_ROOT" diff "$(git -C "$SELF_ROOT" merge-base origin/main "$2" 2> /dev/null)" "$2" 2> /dev/null | git patch-id --stable 2> /dev/null | cut -c1-12 || true)
+    ra=${MQ_FEEDER_ALLREV-$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq '.[]|select(.state=="COMMENTED" or .state=="APPROVED")|[.state,(.body|gsub("[\n\r]+";" "))]|@tsv' 2> /dev/null || true)}
+    ns=$(seat_count "$rv"$'\n'"$ra" "$2" "$pid")
+    { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ] && [ "${ns:-0}" -ge 2 ]; } && return 1
+    echo "skip (gate content: needs quorum 3/3 PASS and 2 seats bound to ${2:0:10} or patch-id ${pid:-?}; have receipts $q, seats $ns)"; return 0
   fi
   { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ]; } && return 1
   echo "skip (no quorum receipt at ${2:0:10}: quorum 3/3 PASS receipts $q/1, $rc request-changes)"
@@ -153,6 +158,10 @@ if [ "${1:-}" = --self-test ]; then
   eq 'gate change + receipt + same seat twice -> skip' "$(FILES=scripts/x.sh REVIEWS="${Q3}COMMENTED\tSeat 1 (a): APPROVE @H\nCOMMENTED\tSeat 1 (b): APPROVE @H\n" ns)" 0
   eq 'gate change + 2 seats but no receipt -> skip' "$(FILES=scripts/x.sh REVIEWS="$S2" ns)" 0
   eq 'gate change + 2 seats bound to another sha -> skip' "$(FILES=scripts/x.sh REVIEWS="${Q3}COMMENTED\tSeat 1 (a): APPROVE @Z\nCOMMENTED\tSeat 2 (b): APPROVE @Z\n" ns)" 0
+  P2='COMMENTED\tSeat 1 (a): APPROVE patch-id abcdef123456\nCOMMENTED\tSeat 2 (b): APPROVE patch-id abcdef123456\n'
+  eq 'gate change + receipt + 2 seats on another commit, same patch-id -> armable' "$(MQ_FEEDER_PID=abcdef123456 MQ_FEEDER_ALLREV="$(printf %b "$P2")" FILES=scripts/x.sh REVIEWS="$Q3" ns)" 1
+  eq 'gate change + 2 seats on another commit, other patch-id -> skip' "$(MQ_FEEDER_PID=999999999999 MQ_FEEDER_ALLREV="$(printf %b "$P2")" FILES=scripts/x.sh REVIEWS="$Q3" ns)" 0
+  eq 'gate change + 1 seat at head + 1 seat by patch-id -> armable' "$(MQ_FEEDER_PID=abcdef123456 MQ_FEEDER_ALLREV="$(printf %b "COMMENTED\tSeat 2 (b): APPROVE patch-id abcdef123456\n")" FILES=scripts/x.sh REVIEWS="${Q3}COMMENTED\tSeat 1 (a): APPROVE @H\n" ns)" 1
   eq 'gate change + receipt + 2 seats + a RC -> skip' "$(FILES=scripts/x.sh REVIEWS="$Q3${S2}CHANGES_REQUESTED\tx\n" ns)" 0
   eq 'files unreadable -> skip (fail closed)' "$(CASE=filefail REVIEWS="$Q3" ns)" 0
   eq 'receipt + request-changes at head -> skip' "$(REVIEWS="${Q3}CHANGES_REQUESTED\tseat w3 RC\n" ns)" 0
