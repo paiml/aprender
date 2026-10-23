@@ -31,6 +31,7 @@
 #   slow-log   binds after longer than the stall window, log advancing   -> ready
 #   slow-cpu   same, but SILENT: only its CPU time advances              -> ready
 #              (the 27B log is three lines; a log-only rule would kill a healthy load)
+#   cold-cpu   slow-cpu after a 4 s cold python start-up (disk-blocked, no CPU) -> ready (#6059)
 #   hung       alive, no log, no CPU                                      -> stalled
 #   dies       exits mid-load                  -> died, BEFORE the stall window
 #   forever    advancing but never binds                                  -> ceiling
@@ -108,8 +109,9 @@ with socketserver.TCPServer(("127.0.0.1", port), H) as s:
 PY
 
 cat > "$TMP/fake_loader.py" <<'PY'
-import http.server, os, socketserver, sys, time
+import os, sys, time
 port, mode, secs, pidfile = int(sys.argv[1]), sys.argv[2], float(sys.argv[3]), sys.argv[4]
+time.sleep(float(sys.argv[5]) if len(sys.argv) > 5 else 0)  # cold start: python start-up blocked on disk, no CPU burned (#6059)
 open(pidfile, "w").write(str(os.getpid()))
 t0 = time.time()
 while time.time() - t0 < secs or mode == "forever":
@@ -121,6 +123,7 @@ while time.time() - t0 < secs or mode == "forever":
         time.sleep(1)                              # alive, silent, idle
     elif mode == "dies":
         time.sleep(secs); sys.exit(3)
+import http.server, socketserver
 class H(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers(); self.wfile.write(b"ok")
@@ -227,10 +230,14 @@ extract_wait() {
 # (python start-up, scheduler wake-ups), so 3 quiet ticks took 3..7 turns (9 of 40 runs read 4 under load, #5798).
 # The contract is the EVENT: verdict `stalled` (not ceiling, not ready, not died) after at least <stall> quiet
 # ticks (never early) and before the ceiling. The bound for `hung` is therefore the ceiling, not stall+3.
-wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-ticks> [<min-ticks>]
-  local name="$1" mode="$2" secs="$3" stall="$4" ceil="$5" want="$6" maxs="$7" mins="${8:-0}" port pid out verdict took
+# The clock starts when the loader is UP (its pidfile exists), not when it is forked: a cold python start-up is blocked on disk, burns
+# no CPU and writes no log, so a wait that starts at the fork reads it as quiet and calls a healthy load `stalled 3` (#6059, MG 39884883505).
+# LOADER_UP_WAIT=0 is the self-test plant that restores the old behaviour.
+wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-ticks> [<min-ticks> [<cold-start-s>]]
+  local name="$1" mode="$2" secs="$3" stall="$4" ceil="$5" want="$6" maxs="$7" mins="${8:-0}" cold="${9:-0}" port pid out verdict took i
   port=$(( 20000 + (RANDOM % 20000) ))
-  flock -w 5 "$LOCK" python3 "$TMP/fake_loader.py" "$port" "$mode" "$secs" "$TMP/$name.loader.pid" > "$TMP/$name.log" 2>&1 & pid=$!
+  flock -w 5 "$LOCK" python3 "$TMP/fake_loader.py" "$port" "$mode" "$secs" "$TMP/$name.loader.pid" "$cold" > "$TMP/$name.log" 2>&1 & pid=$!
+  if [ "${LOADER_UP_WAIT:-1}" = 1 ]; then for i in $(seq 1 300); do [ -s "$TMP/$name.loader.pid" ] && break; sleep 0.1; done; fi
   out=$(ladder_serve_wait_health "$pid" "$port" "$TMP/$name.log" "$stall" "$ceil") || true
   verdict=${out%% *}; took=${out##* }
   reap_pidfile "$TMP/$name.loader.pid"; kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
@@ -247,6 +254,7 @@ run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
   eval "$body"
   wait_case slow-log slow-log 6 3 30 ready 10    || fails=1
   wait_case slow-cpu slow-cpu 6 3 30 ready 10    || fails=1
+  wait_case cold-cpu slow-cpu 6 3 30 ready 10 0 4 || fails=1
   wait_case hung     hung     60 3 30 stalled 29 3 || fails=1
   wait_case dies     dies     2 5 30 died 4      || fails=1
   wait_case forever  forever  0 3 6 ceiling 9    || fails=1
@@ -285,10 +293,16 @@ if [ "$SELF_TEST" -eq 1 ]; then
   bash -n <(printf '%s\n' "$wplanted") || { echo "  self-test: the planted regression does not parse — a syntax error is not a regression" >&2; exit 2; }
   wout=$(run_wait_cases "$wplanted" 2>&1) || true
   printf '%s\n' "$wout"
-  if ! grep -q "FAIL slow-cpu" <<< "$wout" || [ "$(grep -c '^  FAIL' <<< "$wout")" -ne 1 ]; then
-    echo "SELF-TEST FAIL: the log-only plant must turn EXACTLY slow-cpu red — anything else means the check is not measuring the CPU leg"; exit 1
+  if ! grep -q "FAIL slow-cpu" <<< "$wout" || ! grep -q "FAIL cold-cpu" <<< "$wout" || [ "$(grep -c '^  FAIL' <<< "$wout")" -ne 2 ]; then
+    echo "SELF-TEST FAIL: the log-only plant must turn EXACTLY slow-cpu and cold-cpu red (the two CPU-leg cases) — anything else means the check is not measuring the CPU leg"; exit 1
   fi
-  echo "SELF-TEST OK: all four planted regressions turned this RED"; exit 0
+  # Third plant: the wait starts at the fork, not when the loader is up (#6059). A cold start must then read `stalled`.
+  wout=$(LOADER_UP_WAIT=0 run_wait_cases "$wbody" 2>&1) || true
+  printf '%s\n' "$wout"
+  if ! grep -q "FAIL cold-cpu" <<< "$wout"; then  # other cases may go red too: every case is start-up sensitive without the wait
+    echo "SELF-TEST FAIL: starting the clock at the fork must turn cold-cpu red — if not, the cold-start case is not measuring the start-up leg"; exit 1
+  fi
+  echo "SELF-TEST OK: all five planted regressions turned this RED"; exit 0
 fi
 
 rc=0
