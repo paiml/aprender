@@ -25839,3 +25839,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6202
+  github_issue: 6202
+  item_type: task
+  title: 'ci: pass CARGO_BUILD_JOBS and the thread vars through from the runner instead of literal 16'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T20:00:00Z
+  updated: 2026-10-23T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ci/sections.yml carries no literal =16 for CARGO_BUILD_JOBS, RAYON_NUM_THREADS, NEXTEST_TEST_THREADS or RUST_TEST_THREADS; each is passed through with a bare docker -e NAME so the runner pre-job cap (8) applies. The deliberate lower literals (4, 8) are unchanged'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
