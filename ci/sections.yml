@@ -2274,7 +2274,7 @@ jobs:
       # `cargo run` pv WITHOUT pv_bin.sh's features, a second compile on every run
       # that this comment said did not happen.)
       - name: pv_bin.sh must resolve the HEAD-built pv and refuse a stale one
-        run: setsid --wait bash scripts/check_pv_bin_resolution.sh
+        run: setsid --wait bash scripts/rerun_on_75.sh setsid --wait bash scripts/check_pv_bin_resolution.sh
       # #4475: the contract gate, blocking. `make contracts` stopped after its first step (an
       # unconditional `exit` under .ONESHELL) and nothing on a PR ran `extract --check`, so a contract
       # could land without its census / contracts.nt / shapes.ttl regenerated. The shapes step fails

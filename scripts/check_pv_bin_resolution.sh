@@ -84,9 +84,15 @@ fi
 resolve_rc=0
 (
     set -euo pipefail
-    . scripts/pv_bin.sh || exit 1
+    . scripts/pv_bin.sh || exit "$?"
     test -x "$PV"
 ) >"$TMP/resolve.log" 2>&1 || resolve_rc=$?
+if [ "$resolve_rc" -eq 75 ]; then
+    # #5755: the probe could not answer. Exit 75 so scripts/rerun_on_75.sh reruns the step once.
+    sed 's/^/      /' "$TMP/resolve.log" >&2
+    echo "COULD NOT CHECK: pv_bin.sh exited 75" >&2
+    exit 75
+fi
 if [ "$resolve_rc" -ne 0 ]; then
     bad "pv_bin.sh did not resolve an executable pv under 'set -euo pipefail'"
     sed 's/^/      /' "$TMP/resolve.log" >&2
@@ -439,6 +445,18 @@ stage_pv() {
     # bashrs reads the parens of "(aprender ...)" as an unescaped test
     # expression (SC1028) when a string holding them shares a line with a test.
     printf '#!/usr/bin/env bash\n' > "$sp_path"
+    if [ "$sp_want" = "flaky" ]; then
+        # Dies on the first probe, answers from the second (a transient kill).
+        printf 'c="$0.n"; n=$(cat "$c" 2>/dev/null || echo 0); echo $((n+1)) > "$c"\n' >> "$sp_path"
+        printf '[ "$n" -ge 1 ] || exit 137\n' >> "$sp_path"
+    fi
+    if [ "$sp_want" = "dead" ]; then
+        # A probe that dies without answering (SIGKILL under load): no output, rc 137.
+        printf 'exit 137\n' >> "$sp_path"
+        chmod +x "$sp_path"
+        printf '%s: %s/crates/aprender-contracts-cli/src/main.rs\n' "$sp_path" "$sp_dir" > "$sp_path.d"
+        return 0
+    fi
     printf 'printf "pv %s %s\\n"\n' "$sp_ver" "$PV_IDENTITY" >> "$sp_path"
     chmod +x "$sp_path"
 
@@ -601,6 +619,30 @@ row '4h foreign good release + own good debug'  good self good other debug
 # A foreign candidate is skipped even when the only own one is old, and the
 # report is about the own one.
 row '4i foreign good release + own stale debug' stale self good other FAIL 'STALE'
+# #5755: a probe that did not ANSWER is not a stale binary. It must read could-not-check
+# (rc 2, "COULD NOT CHECK"), never STALE -- a runner fault named as a code cause.
+row_probe_rc() {
+    rp_name="$1"; rp_want="$2"; rp_rc_expect="$3"; rp_msg="$4"
+    rp_dir=$(safe_tmpdir) || { bad "mktemp -d gave an unusable path"; return 0; }
+    make_fixture "$rp_dir" "$rp_want" none none none
+    rp_rc=0
+    rp_got=$(resolve_in "$rp_dir" "$rp_dir/stderr.log") || rp_rc=$?
+    if [ "$rp_rc" -ne "$rp_rc_expect" ]; then bad "$rp_name -> rc $rp_rc, expected $rp_rc_expect"; sed 's/^/      /' "$rp_dir/stderr.log" >&2
+    elif [ -n "$rp_msg" ] && ! grep -qF -- "$rp_msg" "$rp_dir/stderr.log"; then bad "$rp_name -> never said '$rp_msg'"
+    elif [ "$rp_rc_expect" -ne 0 ] && grep -q 'STALE' "$rp_dir/stderr.log"; then bad "$rp_name -> a failed probe was called STALE"
+    else note "$rp_name"; fi
+    rm -rf "${rp_dir:?refusing to rm an empty path}"
+}
+row_probe_rc '4o pv dies on every probe -> COULD NOT CHECK, rc 75' dead 75 'COULD NOT CHECK'
+row_probe_rc '4p pv dies once, answers on the retry -> accepted' flaky 0 ''
+row '4q pv answers a stale version -> still STALE (red only on a confirmed stale binary)' stale self none none FAIL 'STALE'
+
+# #5755: the rerun-once-on-75 wrapper rides in this check, not as its own CI step (C324 rule 7: no new gate).
+if rerun_out=$(bash scripts/rerun_on_75.sh --self-test 2>&1); then
+    note "$rerun_out"
+else
+    bad "rerun_on_75.sh self-test: $rerun_out"
+fi
 
 # --- the tree's own target dir ---------------------------------------------
 # `cargo metadata` answers for the shell asking. The dev shell's `cargo`
@@ -861,13 +903,14 @@ row_sat_relinked
 
 
 
-# 4v. An empty --version must say why (#5894). A pv that dies silently (here exit 139) reads
-#     as an empty version; the diagnostics must carry its exit status, and the verdict stays STALE (rc=1).
+# 4v. An empty --version must say why (#5894). A pv that ANSWERS with nothing (exit 0, no text) reads
+#     as an empty version: STALE (rc=1), the diagnostics carry its exit status. A pv that DIES (exit 139) on
+#     every probe is no answer at all (#5755): COULD NOT CHECK, rc 75, naming the status, never STALE.
 row_empty_version_names_status() {
     ev_name='4v empty --version names its exit status'
     ev_dir="$TMP/emptyver"
     mkdir -p "$ev_dir"
-    printf '#!/bin/sh\nexit 139\n' > "$ev_dir/pv"
+    printf '#!/bin/sh\nexit 0\n' > "$ev_dir/pv"
     chmod +x "$ev_dir/pv"
     ev_rc=0
     ev_out=$(bash -c '. "$1" || exit 9; pv_bin_assert_fresh "$2"' _ "$PV_BIN_SH" "$ev_dir/pv" 2>&1) || ev_rc=$?
@@ -875,13 +918,35 @@ row_empty_version_names_status() {
         bad "$ev_name -> verdict changed (rc=$ev_rc, want 1)"
     elif ! printf '%s\n' "$ev_out" | grep -q 'STALE pv BINARY'; then
         bad "$ev_name -> no STALE report"
-    elif ! printf '%s\n' "$ev_out" | grep -q -- '--version: exit status 139'; then
+    elif ! printf '%s\n' "$ev_out" | grep -q -- '--version: exit status 0'; then
         bad "$ev_name -> the exit status is not in the diagnostics"
     else
         note "$ev_name"
     fi
 }
 row_empty_version_names_status
+
+row_dying_version_is_not_stale() {
+    dv_name='4v2 dying --version -> COULD NOT CHECK rc 75 naming the status, not STALE'
+    dv_dir="$TMP/dyingver"
+    mkdir -p "$dv_dir"
+    printf '#!/bin/sh\nexit 139\n' > "$dv_dir/pv"
+    chmod +x "$dv_dir/pv"
+    dv_rc=0
+    dv_out=$(bash -c '. "$1" || exit 9; pv_bin_assert_fresh "$2"' _ "$PV_BIN_SH" "$dv_dir/pv" 2>&1) || dv_rc=$?
+    if [ "$dv_rc" -ne 75 ]; then
+        bad "$dv_name -> rc=$dv_rc, want 75"
+    elif printf '%s\n' "$dv_out" | grep -q 'STALE'; then
+        bad "$dv_name -> a failed probe was called STALE"
+    elif ! printf '%s\n' "$dv_out" | grep -q 'COULD NOT CHECK pv VERSION'; then
+        bad "$dv_name -> no COULD NOT CHECK report"
+    elif ! printf '%s\n' "$dv_out" | grep -q 'exited 139'; then
+        bad "$dv_name -> the exit status is not in the diagnostics"
+    else
+        note "$dv_name"
+    fi
+}
+row_dying_version_is_not_stale
 
 printf '\n'
 if [ "$fails" -gt 0 ]; then

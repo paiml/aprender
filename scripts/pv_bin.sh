@@ -795,8 +795,27 @@ pv_bin_assert_fresh() {
     # and the identity must describe the same binary and the same run.
     # Keep the exit status and raw text of a failed run (#5894): a blank "reports"
     # must say WHY. The verdict is unchanged: a failed run is still an empty version.
-    pv_bin_vrc=0
-    pv_bin_raw=$("$pv_bin_b" --version 2>&1) || pv_bin_vrc=$?
+    # Up to 3 probes (#5755): a transient kill under load must not decide the gate.
+    pv_bin_try=1
+    while :; do
+        pv_bin_vrc=0
+        pv_bin_raw=$("$pv_bin_b" --version 2>&1) || pv_bin_vrc=$?
+        [ "$pv_bin_vrc" -eq 0 ] && break
+        [ "$pv_bin_try" -ge 3 ] && break
+        pv_bin_try=$((pv_bin_try + 1))
+    done
+    # A probe that never ANSWERED (killed under load, ETXTBSY) is a failed measurement,
+    # not a stale binary. Still failing after 3 probes = rc 75 (EX_TEMPFAIL), the distinct
+    # infra code scripts/rerun_on_75.sh reruns once; it never passes.
+    if [ "$pv_bin_vrc" -ne 0 ]; then
+        {
+            printf 'COULD NOT CHECK pv VERSION\n'
+            printf '  resolved : %s\n' "$pv_bin_b"
+            printf '  "pv --version" exited %s on 3 probes, raw output: [%s]\n' "$pv_bin_vrc" "$pv_bin_raw"
+            printf '  a failed probe (runner load, kill or exec race), not evidence the binary is stale. Re-run; no verdict.\n'
+        } >&2
+        return 75
+    fi
     pv_bin_vers="$pv_bin_raw"
     [ "$pv_bin_vrc" -eq 0 ] || pv_bin_vers=""
     pv_bin_actual=$(printf '%s\n' "$pv_bin_vers" | awk 'NR==1{print $2; exit}') || pv_bin_actual=""
@@ -918,7 +937,11 @@ fi
 if [ "$PV_BIN_RC" -ne 0 ]; then
     return 1 2>/dev/null || exit 1
 fi
-pv_bin_assert_fresh "$PV" || return 1 2>/dev/null || exit 1
+PV_BIN_AF_RC=0
+pv_bin_assert_fresh "$PV" || PV_BIN_AF_RC=$?
+if [ "$PV_BIN_AF_RC" -ne 0 ]; then
+    return "$PV_BIN_AF_RC" 2>/dev/null || exit "$PV_BIN_AF_RC"
+fi
 export PV
 
 # ONT-5: pv-sat, the untrusted reasoner, is a second bin of the same package, built by the same

@@ -25701,3 +25701,21 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5923
+- id: PMAT-6120
+  github_issue: 6120
+  item_type: task
+  title: 'ci(pv-pin): probe retry 3x, rc 75 COULD NOT CHECK, rerun once'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T08:12:18Z
+  updated: 2026-10-23T08:12:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
