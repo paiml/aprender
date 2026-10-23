@@ -25860,3 +25860,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: null
+- id: PMAT-6200
+  github_issue: 6200
+  item_type: task
+  title: 'CI: pin ci/gate, gate, mg-reuse-self-test to X64 runners'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-23T19:02:47Z
+  updated: 2026-10-23T19:02:47Z
+  spec: null
+  acceptance_criteria:
+  - 'ci.yml jobs mg-reuse-self-test, ci-gate (ci / gate) and gate carry the X64 label in runs-on, so no gx10 aarch64 runner can take them; a guard fails if any of the three loses it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
