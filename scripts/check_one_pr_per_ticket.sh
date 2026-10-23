@@ -6,7 +6,7 @@
 #
 #   bash scripts/check_one_pr_per_ticket.sh --pr <N> [--repo owner/name]   # live, GraphQL read
 #   bash scripts/check_one_pr_per_ticket.sh --json <file>                   # judge a snapshot
-#   bash scripts/check_one_pr_per_ticket.sh --self-test
+#   bash scripts/check_one_pr_per_ticket.sh --self-test   # also what a bare run does
 #
 # RULES (a PR's tickets are its `PMAT-Ticket: PMAT-<n>` commit trailers):
 #   R1  another OPEN PR (draft included) carries the same ticket -> RED, unless this PR's body says
@@ -122,6 +122,7 @@ main() {
     esac
     shift
   done
+  [ -z "$mode" ] && [ $# -eq 0 ] && mode=self # bare run (guard-tree "[run]") = self-test, no network
   case "$mode" in
     self) self_test ;;
     json) judge "$json" ;;
