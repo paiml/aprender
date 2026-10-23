@@ -25321,6 +25321,78 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-5569
+  github_issue: 5569
+  item_type: task
+  title: 'test: cover run_phase_rate (loadtest)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-18T15:18:34Z
+  updated: 2026-10-18T15:18:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2582
+- id: PMAT-5571
+  github_issue: 5571
+  item_type: task
+  title: 'test: cover run_index (rag-cli ingest)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-18T15:39:49Z
+  updated: 2026-10-18T15:39:49Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2582
+- id: PMAT-5576
+  github_issue: 5576
+  item_type: task
+  title: 'test: cover Language::from_str (orchestrate types)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-18T16:21:17Z
+  updated: 2026-10-18T16:21:17Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3997
+- id: PMAT-5579
+  github_issue: 5579
+  item_type: task
+  title: 'test: cover top gap fn in aprender-registry'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-18T17:13:15Z
+  updated: 2026-10-18T17:13:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3997
 - id: PMAT-5737
   github_issue: 5737
   item_type: task
@@ -25839,3 +25911,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6200
+  github_issue: 6200
+  item_type: task
+  title: 'CI: pin ci/gate, gate, mg-reuse-self-test to X64 runners'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-23T19:02:47Z
+  updated: 2026-10-23T19:02:47Z
+  spec: null
+  acceptance_criteria:
+  - 'ci.yml jobs mg-reuse-self-test, ci-gate (ci / gate) and gate carry the X64 label in runs-on, so no gx10 aarch64 runner can take them; a guard fails if any of the three loses it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
