@@ -474,6 +474,26 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-guard-lane --title "LAB: ci_guards cargo-free lane self-test red (#5920)" \
             --owner aprender-cd --log "$RUNNER_TEMP/guard-lane.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      # infra#2327 / #6193: mg-reuse-self-test left gate.needs; these are its two steps, now LAB (C324 item 5).
+      - name: The reuse key's case table and the fat-wait cancel check (LAB, left gate in #6193)
+        id: lab_mg_reuse
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/mg-reuse.log") 2>&1
+          bash scripts/ci_mg_reuse.sh --self-test
+          setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
+          setsid --wait bash scripts/check_ci_wait_cancel.sh
+      - name: A red mg-reuse night opens or updates the one LAB ticket (#6193)
+        if: failure() && steps.lab_mg_reuse.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-mg-reuse --title "LAB: ci_mg_reuse / ci_wait_cancel self-tests red (#6193)" \
+            --owner aprender-w5382 --log "$RUNNER_TEMP/mg-reuse.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: Summary
         if: always()
         run: |

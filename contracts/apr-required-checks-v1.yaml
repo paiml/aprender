@@ -710,7 +710,7 @@ falsification_tests:
       the script could be correct and never consulted, or consulted by a
       job whose skip no aggregator checks
     mutation: >-
-      remove `mg-reuse-self-test` from gate's needs in a copy of ci.yml and
+      remove `mg-reuse` from gate's needs in a copy of ci.yml and
       run the self-test with --workflow on the copy; it must turn RED.
 
   - id: RC-F-013
