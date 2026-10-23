@@ -12,24 +12,29 @@ SET="${AFFECTED_SET_SH:-scripts/affected_set.sh}"
 # the exact file:line exemptions (a crate-wide exemption hides a later reader in the same crate)
 ALLOW="${AFFECTED_READERS_ALLOW:-crates/aprender-bench-tokenizer/src/lib.rs:50}"   # joins ../.. only for <root>/tokenizer.json and <root>/models/
 PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent\(\)|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
+# grep that is empty on rc 1 (no match) and FAILS on rc>=2 (unreadable dir, bad option): the old `|| true` read an error as "no readers"
+g() { local r=0; grep "$@" || r=$?; [ "$r" -le 1 ]; }
 listed() { sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
-hits() { # $1 = crates dir; prints crate names
-  { grep -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null || true; } \
-    | grep -vE '^[^:]*/target/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
+hits() { # $1 = crates dir; prints crate names; a grep error (rc>=2) fails the pipeline, only rc 1 (no match) is empty
+  g -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null \
+    | g -vE '^[^:]*/target/' | g -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
     | awk -F: -v allow=" $ALLOW " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; n = split($1, a, "/"); print a[2] }' | sort -u
 }
 build_listed() { sed -n 's/^BUILD_CONTRACTS="\${AFFECTED_BUILD_CONTRACTS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
 # Root contracts/<file> that a build.rs names (any quoted *-vN.yaml) or an include*! macro embeds: compiled into a crate, so ALL.
 build_inputs() { # $1 = crates dir; root contracts dir = ${CONTRACTS_DIR:-contracts}
-  { grep -rhE --include=build.rs '[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null | grep -vE '^\s*//' | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"'
-    grep -rhE --include='*.rs' 'include(_str|_bytes)?!' "$1" 2>/dev/null | grep -vE '^\s*//' | grep -oE 'contracts/[A-Za-z0-9_-]+\.yaml' | sed 's#contracts/##'
-  } | sort -u | while read -r f; do [ -f "${CONTRACTS_DIR:-contracts}/$f" ] && echo "$f"; done | grep -v 'binding\.yaml$' || true
+  { g -rhE --include=build.rs '[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null | g -vE '^\s*//' | g -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' &&
+    g -rhE --include='*.rs' 'include(_str|_bytes)?!' "$1" 2>/dev/null | g -vE '^\s*//' | g -oE 'contracts/[A-Za-z0-9_-]+\.yaml' | sed 's#contracts/##'
+  } | sort -u | while read -r f; do if [ -f "${CONTRACTS_DIR:-contracts}/$f" ]; then echo "$f"; fi; done | g -v 'binding\.yaml$'
 }
 check() {
-  local bad="" l c; l="$(listed)"
-  for c in $(hits "$1"); do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
+  local bad="" l c h b; l="$(listed)"
+  [ -d "$1" ] || { echo "RED: crates dir '$1' is not a directory (nothing was scanned)"; return 1; }
+  h="$(hits "$1")" || { echo "RED: the READERS scan of '$1' failed (grep error); not reading that as no readers"; return 1; }
+  b="$(build_inputs "$1")" || { echo "RED: the BUILD_CONTRACTS scan of '$1' failed (grep error); not reading that as no inputs"; return 1; }
+  for c in $h; do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
   local bl; bl="$(build_listed)"
-  for c in $(build_inputs "$1"); do grep -qx "$c" <<<"$bl" || bad="$bad contracts/$c(BUILD_CONTRACTS)"; done
+  for c in $b; do grep -qx "$c" <<<"$bl" || bad="$bad contracts/$c(BUILD_CONTRACTS)"; done
   if [ -n "$bad" ]; then echo "RED: crates can reach other crates' files but are not in READERS (scripts/affected_set.sh):$bad"; return 1; fi
   echo "ok: every crate with a path-escape form is in READERS"
 }
@@ -66,6 +71,12 @@ if [ "${1:-}" = "--self-test" ]; then
   (check crates >/dev/null 2>&1) || { echo "FAIL self-test: a listed reader was flagged"; fail=1; }
   fresh zz-o; echo '// root.join("crates")' >"$t/crates/zz-o/src/y.rs"
   (check crates >/dev/null 2>&1) || { echo "FAIL self-test: a comment-only line was flagged"; fail=1; }
+  # fail closed (#6069): a missing crates dir and a grep error (rc 2) are RED, never "no readers"; no match (rc 1) stays green
+  fresh zz-p; echo 'fn f() {}' >"$t/crates/zz-p/src/y.rs"
+  (check crates >/dev/null 2>&1) || { echo "FAIL self-test: a tree with no reader forms was flagged"; fail=1; }
+  if (check "$t/no-such-crates" >/dev/null 2>&1); then echo "FAIL self-test: a missing crates dir read as no readers"; fail=1; fi
+  mkdir -p "$t/shim"; printf '#!/bin/sh\nexit 2\n' >"$t/shim/grep"; chmod +x "$t/shim/grep"
+  if (PATH="$t/shim:$PATH" check crates >/dev/null 2>&1); then echo "FAIL self-test: a grep error (rc 2) read as no readers"; fail=1; fi
   [ "$fail" -eq 0 ] && echo "ok: self-test"
   exit "$fail"
 fi
