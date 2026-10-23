@@ -1,0 +1,21 @@
+- id: PMAT-6175
+  github_issue: 6175
+  item_type: task
+  title: "mq_feeder: the check it requires must be a job a PR head runs (checked at runtime)"
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T15:10:00Z
+  updated: 2026-10-23T15:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The feeder refuses to act (exit 2, one inbox line an hour) when main''s ci.yml is unreadable, or when the required check is absent under jobs:, or is a job a pull_request event cannot run (no pull_request trigger, every || branch merge-queue-only, or a needs: chain reaching such a job)'
+  - 'main''s ci.yml is read only when the feeder is about to act (after the rate-limit and QUEUE_BUSY checks), with If-None-Match, from one cached copy in the state dir and no temp file per tick'
+  - 'scripts/check_mq_feeder_required_set.sh, wired as ci/explicit-test-commands.d/843, runs the feeder --self-test (real ci.yml: x86-main is merge-queue-only, pr-light is not) and nine planted mutants each turn it red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
