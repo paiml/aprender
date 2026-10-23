@@ -1,0 +1,18 @@
+- id: PMAT-6159
+  github_issue: 6159
+  item_type: task
+  title: "pr-light body guard: retry PR-vs-issue resolution on API error + re-run on PR body edit"
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T12:50:00Z
+  updated: 2026-10-23T12:50:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null

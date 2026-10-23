@@ -20,7 +20,8 @@ on:
   pull_request:
     branches: [main, master]
     # Drafts skip the heavy jobs (x86-main, workspace-test-shard); ready_for_review fires the full run.
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` (#6159): a PR-body fix re-runs pr-light without a draft toggle; the body guard reads the body live from the API.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   # Merge queue: GitHub dispatches a `merge_group` event for each batch it forms.
   # Both required checks (`ci / gate` via the reusable sovereign-ci call, and the
   # top-level `workspace-test` job) live in THIS workflow, so triggering here makes
