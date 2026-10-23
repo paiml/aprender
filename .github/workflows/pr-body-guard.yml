@@ -1,0 +1,46 @@
+# PR-body edit re-check (#6159). A body fix re-grades ONLY the body guard
+# (scripts/check_pr_closes_issue.sh), not the full ci.yml: `edited` is NOT a ci.yml
+# trigger, because that re-ran every job and cancel-in-progress restarted in-flight
+# runs. This workflow never cancels anything; it reads the body live from the API
+# (#3298) and, when the body now passes, re-runs only the FAILED jobs of the head's
+# latest ci run so the required pr-light turns green without a draft toggle.
+name: pr-body-guard
+
+on:
+  pull_request:
+    types: [edited]
+
+concurrency:
+  group: pr-body-guard-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  pull-requests: read
+  actions: write
+
+jobs:
+  body:
+    # A title-only edit changes no body; `changes.body` is present only when the body was edited.
+    if: ${{ github.event.changes.body != null && github.event.pull_request.draft != true }}
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Re-grade the PR body (live from the API)
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/check_pr_closes_issue.sh --self-test
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" --jq '.body // ""' > "$RUNNER_TEMP/pr-body.txt"
+          setsid --wait bash scripts/check_pr_closes_issue.sh --body "$RUNNER_TEMP/pr-body.txt"
+      - name: Re-run only the failed jobs of the head's latest ci run
+        run: |
+          set -euo pipefail
+          run_id="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${HEAD_SHA}&event=pull_request&per_page=1" --jq '.workflow_runs[0] | select(.conclusion == "failure") | .id // empty')"
+          if [ -z "$run_id" ]; then echo "no failed ci run for ${HEAD_SHA}; nothing to re-run"; exit 0; fi
+          echo "re-running failed jobs of ci run ${run_id}"
+          gh run rerun "$run_id" --failed

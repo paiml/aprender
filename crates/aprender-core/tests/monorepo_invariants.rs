@@ -1143,13 +1143,7 @@ const DF: &str = "github.event.pull_request.draft != true";
 const NOT_PR: &str = "github.event_name != 'pull_request'";
 const G_ALL: &str =
     "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
-const CI_TYPES: [&str; 5] = [
-    "opened",
-    "synchronize",
-    "reopened",
-    "ready_for_review",
-    "edited",
-];
+const CI_TYPES: [&str; 4] = ["opened", "synchronize", "reopened", "ready_for_review"];
 
 /// (job, canonical `if:` scalar)
 fn draft_gate_canon() -> Vec<(&'static str, String)> {
@@ -1270,14 +1264,14 @@ fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
         ("m7 DF guard padded with || true", mutate(src, "draft != true }}", "draft != true || true }}")),
         ("m7b G_ALL padded with || true", mutate(src, "!github.event.pull_request.draft }}", "!github.event.pull_request.draft || true }}")),
         ("m8 shard if = push || true", rewrite_if(src, "workspace-test-shard", Some("    if: ${{ github.event_name == 'push' || true }}"))),
-        ("m9 ready_for_review_x", mutate(src, "ready_for_review,", "ready_for_review_x,")),
+        ("m9 ready_for_review_x", mutate(src, "ready_for_review]", "ready_for_review_x]")),
         ("m11 && true == DF", mutate(src, &format!(" && {DF}"), &format!(" && true == {DF}"))),
         ("m12 && !DF", mutate(src, &format!(" && {DF}"), &format!(" && !{DF}"))),
         ("m13 comment-suffixed header, no if", mutate(&rewrite_if(src, "workspace-test-shard", None), "  workspace-test-shard:\n", "  workspace-test-shard: # no guard\n")),
         ("m14 new job outside CANON", mutate(src, "\njobs:\n", "\njobs:\n  extra-job: # unguarded\n    runs-on: [self-hosted, Linux, clean-room]\n    steps: []\n")),
         ("m15 || true then a comment", mutate(src, "draft != true }}\n", "draft != true || true }} # fine\n")),
         ("m16 more-indented || true line folds into the scalar", mutate(src, &format!("{x86_if}\n"), &format!("{x86_if}\n      || true\n"))),
-        ("m17 decoy types line, real list lacks ready_for_review", mutate(src, "types: [opened, synchronize, reopened, ready_for_review, edited]", "types: [opened, synchronize, reopened, edited]") + "# types: [ready_for_review]\n"),
+        ("m17 decoy types line, real list lacks ready_for_review", mutate(src, "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened]") + "# types: [ready_for_review]\n"),
         ("m18 G_ALL polarity flipped", mutate(src, "|| !github.event.pull_request.draft", "|| github.event.pull_request.draft")),
     ]
 }
