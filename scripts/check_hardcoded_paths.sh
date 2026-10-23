@@ -205,6 +205,15 @@ if [ "${1:-}" = "--self-test" ]; then
     done
     printf '[pmat]\nversion = "3.42.0"  # fleet\n' > "$TD/good-tools.toml"
     if [ "$(pmat_pin_read "$TD/good-tools.toml")" = "3.42.0" ]; then printf 'ok    pin reader reads 3.42.0\n'; else printf 'FAIL  pin reader missed 3.42.0\n'; fails=1; fi
+    # Fail-closed: an unreadable pin makes pmat_bin.sh return 1 (never fall back to a literal).
+    printf '[pmat]\nversion = "3.42"\n' > "$TD/short-tools.toml"
+    for t in "$TD/short-tools.toml" "$TD/no-such-tools.toml"; do
+        if (PMAT_TOOLS_TOML="$t" . "${SELF_ROOT}/scripts/pmat_bin.sh") >/dev/null 2>&1; then
+            printf 'FAIL  pmat_bin.sh resolved with an unreadable pin (%s)\n' "${t##*/}"; fails=1
+        else
+            printf 'ok    pmat_bin.sh fails closed on %s\n' "${t##*/}"
+        fi
+    done
     FAKE="$TD/fake-analyser"
     printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s %s"; exit 0;; esac\nd=.; while [ $# -gt 0 ]; do case "$1" in -p) d=$2; shift;; --help) echo ok; exit 0;; esac; shift; done\ncat "$d/.fake-scan.json"\n' "pmat" "$pin" > "$FAKE"
     printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s 3.0.0"; exit 0;; esac\necho ok\n' "pmat" > "$TD/off-pin"

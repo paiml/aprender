@@ -6,13 +6,13 @@
 #
 # WHY (PMAT-1059, G-10, #2999). A ratchet's number is a property of the tree AND
 # the instrument. scripts/hardcoded_path_shipped_baseline.txt held 277 under an
-# unnamed version; 3.37.0 and 3.38.0 both count 317 on the same tree. The day
-# paiml/infra pinned the fleet at 3.37.0 (machines/intel/forjar.yaml, PMAT-231)
-# every PR went red. So the version is pinned in ONE place, tools.toml `[pmat]
+# unnamed version; two adjacent releases both counted 317 on the same tree. The
+# day paiml/infra moved the fleet's analyser (machines/intel/forjar.yaml,
+# PMAT-231) every PR went red. So the version is pinned in ONE place, tools.toml `[pmat]
 # version`, and bumped only by its own PR after forjar moves the fleet (the R4
 # sequence in PP-066). The pin used to be a second literal in this file; it sat
-# at 3.37.0 while the fleet ran 3.41.1 and 3.42.0, and the pinned ratchet read
-# FAIL (ENV) on every runner past it. One source cannot drift from itself.
+# several minors behind the fleet, and the pinned ratchet read FAIL (ENV) on
+# every runner past it. One source cannot drift from itself.
 #
 # OPTION-NEUTRAL BY CONSTRUCTION: no `set` in this file; failure is the return
 # status (scripts/check_sourced_libs_option_neutral.sh). Same shape as
