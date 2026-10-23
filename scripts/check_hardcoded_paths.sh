@@ -195,7 +195,16 @@ if [ "${1:-}" = "--self-test" ]; then
     fi
 
     # ---- the pinned-instrument ratchet: a fixture analyser + a fixture repo (PMAT-1059) ----
-    pin=$(sed -nE 's/^PMAT_PIN="([0-9.]+)"$/\1/p' "${SELF_ROOT}/scripts/pmat_bin.sh" | head -n1)
+    # shellcheck source=scripts/pmat_pin.sh
+    . "${SELF_ROOT}/scripts/pmat_pin.sh" || exit 1
+    pin=$(pmat_pin_read "${SELF_ROOT}/tools.toml")
+    # the pin reader is strict: X.Y.Z only. These must read as no pin; the production reader and this table share one definition.
+    for bad in "3.." "." "1.2" "3.42" "3.42.0.1" "v3.42.0" ""; do
+        printf '[pmat]\nversion = "%s"\n' "$bad" > "$TD/bad-tools.toml"
+        if [ -n "$(pmat_pin_read "$TD/bad-tools.toml")" ]; then printf 'FAIL  pin reader accepted %s\n' "\"$bad\""; fails=1; else printf 'ok    pin reader refuses %s\n' "\"$bad\""; fi
+    done
+    printf '[pmat]\nversion = "3.42.0"  # fleet\n' > "$TD/good-tools.toml"
+    if [ "$(pmat_pin_read "$TD/good-tools.toml")" = "3.42.0" ]; then printf 'ok    pin reader reads 3.42.0\n'; else printf 'FAIL  pin reader missed 3.42.0\n'; fails=1; fi
     FAKE="$TD/fake-analyser"
     printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s %s"; exit 0;; esac\nd=.; while [ $# -gt 0 ]; do case "$1" in -p) d=$2; shift;; --help) echo ok; exit 0;; esac; shift; done\ncat "$d/.fake-scan.json"\n' "pmat" "$pin" > "$FAKE"
     printf '#!/usr/bin/env bash\ncase "$1" in --version) echo "%s 3.0.0"; exit 0;; esac\necho ok\n' "pmat" > "$TD/off-pin"
