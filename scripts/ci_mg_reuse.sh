@@ -596,7 +596,7 @@ STUB
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF"'
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"'
   wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
-  # infra#2327 / #6193: mg-reuse-self-test left gate (it is a LAB step in guards-nightly.yml now). ci.yml must neither run
+  # infra#2327 / #6193: mg-reuse-self-test left gate (it is a LAB job in mg-reuse-lab-nightly.yml now). ci.yml must neither run
   # the job nor have gate read it: a retired check that still blocks is a third state (C324 item 6).
   if [ -z "$(job mg-reuse-self-test)" ]; then pass=$((pass + 1)); else
     fail=$((fail + 1)); echo "FAIL wiring: ci.yml still runs mg-reuse-self-test, a LAB check (#6193)"; fi
