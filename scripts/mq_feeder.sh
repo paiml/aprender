@@ -81,7 +81,8 @@ ci_jobs() {
     END {
       for (i = 1; i <= nj; i++) { j = order[i]; mq[j] = (!haspr) || condmq(cond[j]) }
       for (pass = 0; pass < nj; pass++) for (i = 1; i <= nj; i++) { j = order[i]; if (mq[j]) continue
-        n = split(needs[j], dep, /[][, -]+/); for (k = 1; k <= n; k++) if (dep[k] != "" && (dep[k] in mq) && mq[dep[k]]) { mq[j] = 1; break } }
+        if (cond[j] ~ /always\(\)|cancelled\(\)|failure\(\)/) continue
+        n = split(needs[j], dep, /[][, ]+/); for (k = 1; k <= n; k++) if (dep[k] != "" && (dep[k] in mq) && mq[dep[k]]) { mq[j] = 1; break } }
       for (i = 1; i <= nj; i++) { j = order[i]; if (mode == "all" || mq[j]) { print j; if (nm[j] != "") print nm[j] } }
     }
   ' "$2"
@@ -246,6 +247,9 @@ GH2EOF
   eq 'static: an if whose every || branch is merge-queue-only is caught' "$(required_is_mq_only allmq "$fx")" allmq
   eq 'static: a job that needs a merge-queue-only job is caught' "$(required_is_mq_only child "$fx")" child
   eq 'static: needs reaches through a chain (block list)' "$(required_is_mq_only grand "$fx")" grand
+  printf '  x-main:\n    if: ${{ github.event_name != %spull_request%s }}\n  y-child:\n    needs: [x-main, pr-light]\n  z-always:\n    needs: [x-main]\n    if: always()\n' "$Q" "$Q" >> "$fx"
+  eq 'static: needs reaches a hyphenated job id (the real ci.yml shape)' "$(required_is_mq_only y-child "$fx")" y-child
+  eq 'static: an if: always() job runs when its need is skipped, so it is not merge-queue-only' "$(required_is_mq_only z-always "$fx")" ''
   eq 'static: a job that needs a PR-runnable job is not merge-queue-only' "$(required_is_mq_only ok "$fx")" ''
   printf 'on:\n  push:\n  merge_group:\njobs:\n  pr-light:\n    runs-on: x\n' > "$fx"
   eq 'static: a workflow with no pull_request trigger is merge-queue-only' "$(required_is_mq_only pr-light "$fx")" pr-light
