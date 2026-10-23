@@ -134,6 +134,9 @@ hardware-detect = ["dep:dirs"]
 tui-monitor = ["presentar-core", "presentar-terminal", "crossterm", "trueno-gpu", "dep:tracing", "tracing-subscriber", "tracing-appender", "dep:dirs"]
 # CUDA support for TUI (real hardware monitoring)
 cuda = ["trueno-gpu/cuda"]
+# DEPRECATED no-op, kept so removing it is not a semver break for 0.71.x users (activates nothing;
+# the aprender RandomForest tests moved to aprender-core, #5803).
+ml-tuner = []
 # NOTE: `execution-graph` feature removed (APR-MONO self-containment) — its only purpose
 # was the trueno-graph CsrGraph exporters (see above). The exec-graph profiler itself
 # (to_dot/to_ascii_tree, slowest-path) is always available, no graph crate needed.
