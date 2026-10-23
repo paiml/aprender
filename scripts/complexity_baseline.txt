@@ -8,7 +8,7 @@
 # process_iteration_batch, distill.rs run_cuda_backend): 3.42.0 does not see code behind a
 # cfg that is off, so those functions are NOT ratcheted under this pin. That is a loss of
 # coverage by the instrument, not an improvement of the tree. Re-stamped for the instrument
-# change only; no count was raised. Restoring coverage of cfg-gated functions is open work.
+# change only; no count was raised. Restoring that coverage: #6150 (owner aprender-w5032).
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
