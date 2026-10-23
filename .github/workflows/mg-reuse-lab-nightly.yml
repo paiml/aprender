@@ -1,5 +1,5 @@
-# Owner: aprender-w5382. Ticket: #6193 (PMAT-6193). Not in gate.needs, apr-required-checks-v1 or release-ready-v1 (LAB).
-# mg-reuse-lab-nightly.yml -- LAB twin of the retired gate job mg-reuse-self-test (infra#2327, #6193).
+# Owner: aprender-w5382. Ticket: #6199 (PMAT-6199). It is LAB: no PR, merge-queue or release job depends on it.
+# mg-reuse-lab-nightly.yml -- LAB twin of the gate job mg-reuse-self-test, which #6194 (PMAT-6193) will retire (infra#2327).
 # LAB (C324 items 4-5): it never runs in a PR, merge-queue or release job and cannot block a merge. A red
 # opens or updates ONE ticket (owner aprender-w5382, via scripts/lab_ticket.sh) and stays silent; red or
 # unmeasured for 7 days, it stops until its owner brings it back (not yet implemented, #6198).
@@ -34,7 +34,7 @@ jobs:
           bash scripts/ci_mg_reuse.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
-      - name: A red night opens or updates the one LAB ticket (#6193)
+      - name: A red night opens or updates the one LAB ticket (#6199)
         if: failure() && steps.lab.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -42,5 +42,5 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          bash scripts/lab_ticket.sh --label lab-mg-reuse --title "LAB: ci_mg_reuse / ci_wait_cancel self-tests red (#6193)" \
+          bash scripts/lab_ticket.sh --label lab-mg-reuse --title "LAB: ci_mg_reuse / ci_wait_cancel self-tests red (#6199)" \
             --owner aprender-w5382 --log "$RUNNER_TEMP/mg-reuse.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
