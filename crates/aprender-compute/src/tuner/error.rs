@@ -15,7 +15,7 @@ pub enum TunerError {
     ModelNotFound,
     /// Prediction failed
     PredictionFailed(String),
-    /// Training failed (ml-tuner feature)
+    /// Training failed
     TrainingFailed(String),
     /// I/O error (file operations)
     Io(String),
