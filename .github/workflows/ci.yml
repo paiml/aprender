@@ -245,6 +245,9 @@ jobs:
           setsid --wait bash scripts/ci/fixture_quiet.sh --self-test
           setsid --wait bash scripts/ci/fetch_p6.sh --self-test
           setsid --wait bash scripts/ci/fetch_p6.sh --check-wiring
+          setsid --wait bash scripts/check_one_pr_per_ticket.sh --self-test
+      - name: one PR per ticket (PMAT-6102; undo = delete this step)
+        run: setsid --wait bash scripts/check_one_pr_per_ticket.sh --pr "${{ github.event.pull_request.number }}"
       - name: fat_driver case table must still turn RED
         run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
       - name: FAT_SECRET plumbing guard case table
