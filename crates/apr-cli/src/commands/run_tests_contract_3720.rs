@@ -66,3 +66,31 @@ fn model_digest_is_the_sha256_of_the_file_and_null_for_a_hub_id() {
     assert!(hub["model_digest"].is_null());
     std::fs::remove_dir_all(&dir).expect("cleanup");
 }
+
+#[test]
+fn pre_output_refusal_doc_carries_the_envelope() {
+    let refusal = crate::error::ConstraintRefusal {
+        kind: "SchemaInvalid",
+        message: "SchemaInvalid: bad schema".to_string(),
+        removed_by: None,
+        finish_reason: None,
+    };
+    let v = refusal_doc("hf://org/model", &refusal);
+    assert_eq!(v["status"], "refused");
+    assert_eq!(v["error"]["kind"], "constraint_refused");
+    assert_eq!(v["error"]["exit_code"], 15);
+    assert_eq!(v["error"]["message"], "SchemaInvalid: bad schema");
+    assert!(v["model_digest"].is_null(), "hub id has no local digest");
+    assert!(v.as_object().expect("object").contains_key("model_digest"));
+    assert!(v["text"].is_null());
+    assert_eq!(v["apr_version"], env!("CARGO_PKG_VERSION"));
+}
+
+#[test]
+fn text_surface_exits_8_on_an_empty_completion() {
+    let empty = contract_result("  ");
+    let err = print_run_output(&empty, "m.gguf", "text", 8, false, false, false)
+        .expect_err("empty text completion must fail");
+    assert_eq!(err.exit_code_value(), 8);
+    assert!(print_run_output(&contract_result("4"), "m.gguf", "text", 8, false, false, false).is_ok());
+}

@@ -323,12 +323,7 @@ fn run_model_answering_refusals(
     match run_model(source, options) {
         Err(crate::error::CliError::ConstraintRefused(refusal)) => {
             if emits_machine_output(options.stream, &options.output_format, options.benchmark) {
-                let doc = serde_json::json!({
-                    "model": source,
-                    "text": serde_json::Value::Null,
-                    "finish_reason": refusal.finish_reason,
-                    "refusal": refusal.to_json(),
-                });
+                let doc = refusal_doc(source, &refusal);
                 println!(
                     "{}",
                     if options.stream {
@@ -342,6 +337,28 @@ fn run_model_answering_refusals(
         }
         other => other,
     }
+}
+
+/// #3720: the document for a run refused before it produced output carries the same consumer
+/// envelope as a completed one (`status`, `error`, `model_digest`), so a consumer reads one shape.
+fn refusal_doc(source: &str, refusal: &crate::error::ConstraintRefusal) -> serde_json::Value {
+    with_model_digest(
+        serde_json::json!({
+            "model": source,
+            "text": serde_json::Value::Null,
+            "finish_reason": refusal.finish_reason,
+            "refusal": refusal.to_json(),
+            "status": RunStatus::Refused.as_str(),
+            "error": {
+                "kind": "constraint_refused",
+                "message": refusal.message,
+                "exit_code": crate::error::CliError::ConstraintRefused(refusal.clone()).exit_code_value(),
+            },
+            "apr_version": env!("CARGO_PKG_VERSION"),
+            "apr_commit": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
+        }),
+        source,
+    )
 }
 
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
@@ -673,6 +690,8 @@ fn print_run_output(
                 "(downloaded)".dimmed()
             }
         );
+        // #3720: an empty completion exits 8 on the text surface too, as it does on --json.
+        return empty_completion_exit(result, accel_forced);
     }
     Ok(())
 }
