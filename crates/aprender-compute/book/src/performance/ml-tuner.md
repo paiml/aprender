@@ -84,7 +84,8 @@ for (kernel, conf) in recommendation.alternatives.iter().take(3) {
 
 ## RandomForest Models (Relocated)
 
-The `ml-tuner` feature and the `with_random_forest` / `train_random_forest` /
+The `ml-tuner` feature is now a deprecated no-op (`ml-tuner = []`, kept so removing it
+is not a semver break), and the `with_random_forest` / `train_random_forest` /
 `KernelClassifier::train` wrappers were removed (FLOW-010, #5803): the SIMD compute
 crate must not depend on the ML layer. The aprender RandomForest showcase now lives in
 `crates/aprender-core/tests/tuner_training_data_quality.rs`, which feeds `TunerFeatures`
