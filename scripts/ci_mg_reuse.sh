@@ -527,6 +527,17 @@ STUB
   rrow gh-runs-fails     "0 0 0" "head_sha=" "$H" "$QREF"
   rrow gh-jobs-fails     "0 0 0" "/jobs"   "$H" "$QREF"
   rrow head-unfetchable  "0 0 0" ""        0123456789abcdef0123456789abcdef01234567 "$QREF"
+  # F4/F5 (#6193): a refusal answers "0 0 0" whichever guard fired, so these rows pin WHICH guard did, by its reason.
+  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "refs/heads/main" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
+  case "$(kv reason "$out")" in
+    *"no PR number in the queue ref"*) pass=$((pass + 1)) ;;
+    *) fail=$((fail + 1)); echo "FAIL resolve-no-pr-number: the guard no longer refuses a ref with no PR number: $(kv reason "$out")" ;;
+  esac
+  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve_push --event push --ref refs/heads/main --sha "not-a-sha" --before "$B" --repo o/r --repo-root "$R")
+  case "$(kv reason "$out")" in
+    *"is not a 40-hex sha"*) pass=$((pass + 1)) ;;
+    *) fail=$((fail + 1)); echo "FAIL resolve-push-sha-form: the guard no longer refuses a non-40-hex sha: $(kv reason "$out")" ;;
+  esac
 
   # The verdict block, run exactly as ci.yml carries it in ci-gate and gate.
   local blocks nb
