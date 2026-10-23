@@ -1,0 +1,30 @@
+name: Workflow Security Lint (LAB)
+
+# LAB check (C324): runs at night only, never in a PR, merge-queue or release job,
+# and is not a required check. A red opens or updates one ticket.
+on:
+  schedule:
+    - cron: '30 3 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zizmor-nightly
+  cancel-in-progress: false
+
+jobs:
+  zizmor:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec  # stable
+      - name: Lint every workflow (unpinned-uses is the finding this check exists for)
+        env:
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/zizmor
+        run: |
+          cargo install --locked zizmor
+          export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+          zizmor --config .github/zizmor.yml --format plain .github/workflows

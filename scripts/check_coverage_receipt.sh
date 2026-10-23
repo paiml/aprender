@@ -109,7 +109,7 @@ UPLOAD=$(cat <<'EOF'
       - name: Publish the coverage receipt
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: coverage-receipt
           path: ${{ runner.temp }}/cov-receipt/coverage-receipt-*.json

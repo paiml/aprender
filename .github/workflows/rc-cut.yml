@@ -57,7 +57,7 @@ jobs:
     # Cheap pre-filter only; rc_cut.sh re-judges every condition itself.
     if: github.event.workflow_run.conclusion != 'cancelled'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # the default branch's script, never the release branch's
           ref: ${{ github.event.repository.default_branch }}

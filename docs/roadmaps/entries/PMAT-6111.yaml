@@ -1,0 +1,18 @@
+- id: PMAT-6111
+  github_issue: 6111
+  item_type: task
+  title: 'ci: pin every workflow action to a full commit sha; nightly zizmor lint (LAB)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T08:04:59Z
+  updated: 2026-10-23T08:04:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923

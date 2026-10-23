@@ -52,7 +52,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # pmat/bashrs are pinned-fleet tools, never installed per-job (BSE-10a,
       # PMAT-1066) — see ci.yml's identical step for why.

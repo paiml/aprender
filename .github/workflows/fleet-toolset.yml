@@ -77,7 +77,7 @@ jobs:
             cuda: true
             labels: '["self-hosted", "Linux", "X64", "cuda", "yoga", "ephemeral", "docker"]'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Preflight — this box has the tools this job assumes
         env:
@@ -94,7 +94,7 @@ jobs:
       # the days worth recording.
       - name: Upload this box's toolset record
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: toolset-${{ matrix.name }}
           path: ${{ runner.temp }}/preflight.json
@@ -108,13 +108,13 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Preflight — this box has the tools this job assumes
         run: bash scripts/ci_self_hosted_preflight.sh
 
       - name: Download every box's record
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: toolset-*
           path: fleet
@@ -173,7 +173,7 @@ jobs:
 
       - name: Upload the merged fleet record
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: fleet-toolset
           path: fleet

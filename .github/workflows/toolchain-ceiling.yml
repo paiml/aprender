@@ -63,7 +63,7 @@ jobs:
     runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Workspace builds on its DECLARED MSRV
         run: setsid --wait bash scripts/check_msrv.sh
 
@@ -75,7 +75,7 @@ jobs:
     steps:
       # clean: false — matches coverage-nightly; the default git-clean chokes on
       # root-owned leftovers from prior jobs (contracts/.pv/cache → EACCES).
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           clean: false
 
@@ -99,7 +99,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           clean: false
       - name: Self-test — an unreached feature is refused, and a planted cuda-only finding reddens only the cuda-reaching axes

@@ -46,7 +46,7 @@ jobs:
       ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
       LEAN_NUM_THREADS: '8'
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 1
       - name: Verdict case table (the classifier this job trusts)

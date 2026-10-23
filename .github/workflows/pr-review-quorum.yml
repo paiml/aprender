@@ -100,7 +100,7 @@ jobs:
       LAB_TICKET_TITLE: 'LAB: pr-review-quorum present - nightly receipt check of merged PRs'
     steps:
       - name: Checkout main
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # Arm 4 diffs each squash against its parent and resolves ancestry with
           # `git merge-base`, which a shallow clone cannot answer.

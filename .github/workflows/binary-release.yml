@@ -98,7 +98,7 @@ jobs:
     outputs:
       present: ${{ steps.check.outputs.present }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - id: check
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -158,7 +158,7 @@ jobs:
           echo "Building pv for $TAG -> ${{ matrix.target }} on ${{ matrix.host }}"
 
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
@@ -325,7 +325,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
@@ -486,7 +486,7 @@ jobs:
           echo "Building apr --features cuda for $TAG → ${{ matrix.target }}"
 
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
@@ -657,7 +657,7 @@ jobs:
           echo "Building apr (default features, no cuda) for $TAG -> ${{ matrix.target }}"
 
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
@@ -827,7 +827,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ steps.tag.outputs.tag }}
 
@@ -920,7 +920,7 @@ jobs:
       # This job had no checkout: it curled the API and parsed with python3. The
       # preflight needs the tree, and so does the checker — and the tree is one
       # second on the clean-room pool.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Preflight - this box has the tools this job assumes
         run: bash scripts/ci_self_hosted_preflight.sh
@@ -960,7 +960,7 @@ jobs:
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10", "ephemeral", "docker"]'
     runs-on: ${{ fromJSON(matrix.labels) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The smoke step below needs curl, python3, sha256sum, tar and a visible
       # device. Each of those is a separate way for this job to fail late and
@@ -1044,7 +1044,7 @@ jobs:
             preflight: '--need docker objdump'
     runs-on: ${{ fromJSON(matrix.labels) }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # No `--cuda` on any row, including the GPU ones: this job proves a CPU
       # asset, and a device assertion here would make a green depend on hardware
@@ -1105,7 +1105,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Preflight — this box has the tools this job assumes
         run: bash scripts/ci_self_hosted_preflight.sh

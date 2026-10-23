@@ -123,7 +123,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building pv for $TAG -> ${{ matrix.target }} on ${{ matrix.host }}"
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
       - name: Stamp the rc version into the tag tree (#4110)
@@ -278,7 +278,7 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
       - name: Stamp the rc version into the tag tree (#4110)
@@ -442,7 +442,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building apr --features cuda for $TAG → ${{ matrix.target }}"
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
       - name: Stamp the rc version into the tag tree (#4110)
@@ -595,7 +595,7 @@ jobs:
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "Building apr (default features, no cuda) for $TAG -> ${{ matrix.target }}"
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
       - name: Stamp the rc version into the tag tree (#4110)
@@ -749,7 +749,7 @@ jobs:
           [ -n "$TAG" ] || { echo "::error::No tag resolved"; exit 1; }
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
       - name: Checkout at tag
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.sha }}
       - name: Stamp the rc version into the tag tree (#4110)

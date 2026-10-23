@@ -62,7 +62,7 @@ jobs:
     runs-on: ${{ github.event.schedule == '*/10 0-5,20-23 * * *' && fromJSON('["self-hosted", "X64", "Linux", "clean-room"]') || fromJSON('["self-hosted", "Linux", "clean-room", "ARM64"]') }}
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # The instrument proves itself before it is allowed to cancel anything.
       # Fifteen rows over committed fixtures, no network: three wedged shapes,

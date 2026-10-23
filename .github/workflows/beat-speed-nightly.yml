@@ -78,7 +78,7 @@ jobs:
       # fix for it (#2326). `github` IS a valid context at job level.
       BEAT_LOG: ${{ github.workspace }}/beat-speed-measurements.log
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # PERF-031 measurement-environment receipt.
       #

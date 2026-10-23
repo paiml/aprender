@@ -56,7 +56,7 @@ jobs:
           rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
           [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
           echo "$d" >> "$GITHUB_PATH"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: Build apr (cuda)
         run: |
           export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"

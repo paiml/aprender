@@ -78,7 +78,7 @@ jobs:
       # 2026-09-28). gate resolves main's head ONCE; build and publish check out that
       # exact sha, so a push to main mid-run cannot split one nightly across two heads.
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: main
 
@@ -129,7 +129,7 @@ jobs:
       NIGHTLY_SHA: ${{ needs.gate.outputs.sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
 
@@ -238,7 +238,7 @@ jobs:
 
       - name: Upload artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: nightly-${{ matrix.target }}
           path: dist/*
@@ -267,7 +267,7 @@ jobs:
       T: aarch64-apple-darwin
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Build apr (host-native, pinned toolchain)
         run: |
@@ -296,7 +296,7 @@ jobs:
           echo "Packaged: ${ARCHIVE}.tar.gz ($(du -h "${ARCHIVE}.tar.gz" | cut -f1))"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: apr-aarch64-apple-darwin
           path: |
@@ -322,7 +322,7 @@ jobs:
       CARGO_INCREMENTAL: 0
       CARGO_TERM_COLOR: never
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
       - name: Toolchain is the pinned one
@@ -345,7 +345,7 @@ jobs:
       NIGHTLY_SHA: ${{ needs.gate.outputs.sha }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ needs.gate.outputs.sha }}
 
@@ -354,7 +354,7 @@ jobs:
       - name: Download build artifacts
         if: needs.gate.outputs.decision == 'build'
         continue-on-error: true
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           path: dist
           merge-multiple: true
@@ -406,13 +406,13 @@ jobs:
     timeout-minutes: 120
     steps:
       - name: Download darwin artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: apr-aarch64-apple-darwin
           path: dist-darwin
 
       - name: Upload to the nightly release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3
         with:
           tag_name: nightly
           name: Nightly Build

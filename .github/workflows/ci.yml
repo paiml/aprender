@@ -115,7 +115,7 @@ jobs:
     steps:
       # Full history: the key reads the queue head's parent, the base's parent and
       # whether the base is an ancestor of the PR head.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: The reuse key's case table (hermetic)
@@ -158,7 +158,7 @@ jobs:
       wt: ${{ steps.key.outputs.wt }}
       wt_cite: ${{ steps.key.outputs.wt_cite }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           # full history: K3 (merge-base --is-ancestor) walks the PR head back to the base; the mq runner keeps a warm clone
           fetch-depth: 0
@@ -185,7 +185,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - name: The reuse key's case table (hermetic)
         run: bash scripts/ci_mg_reuse.sh --self-test
       - name: The fat wait is cancel-aware and the teardown still runs on cancel
@@ -226,7 +226,7 @@ jobs:
           chmod +x "$d/jq"
           [ "$("$d/jq" --version)" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$("$d/jq" --version)'"; exit 1; }
           echo "$d" >> "$GITHUB_PATH"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Cheap checks (fmt, falsification-ID order, guard case tables)
@@ -268,7 +268,7 @@ jobs:
       - name: Remove this job's section containers (runs on cancel too)
         if: always()
         run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: pr-review-shadow-sample
@@ -329,7 +329,7 @@ jobs:
           [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before
@@ -392,7 +392,7 @@ jobs:
               --background-until 'determinism[X64]'
           fi
       # Published mid-run: the determinism job's compare section is waiting for it.
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: determinism-X64
           path: ${{ runner.temp }}/fat/artifacts/determinism-X64/
@@ -419,14 +419,14 @@ jobs:
       - name: Remove this job's section containers (runs on cancel too)
         if: always()
         run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: pr-review-shadow-sample
           path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
           retention-days: 90
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: bench-${{ github.event.repository.name }}
@@ -489,7 +489,7 @@ jobs:
           v=$("$d/jq" --version)
           [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
           echo "$d" >> "$GITHUB_PATH"
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: install the toolchain rust-toolchain.toml pins
@@ -522,7 +522,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Pin origin/main to this run's build base (PMAT-5792)
@@ -616,7 +616,7 @@ jobs:
       FAT_EXPECT_ARTIFACTS: determinism-X64,determinism-ARM64
       FAT_ARTIFACT_WAIT_S: "0"
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       - name: Sections (the ARM64 raster returns first; the compare keeps running)
@@ -625,7 +625,7 @@ jobs:
           --sections 'determinism[ARM64],determinism-compare'
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'determinism[ARM64]'
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: determinism-ARM64
           path: ${{ runner.temp }}/fat/artifacts/determinism-ARM64/
@@ -643,13 +643,13 @@ jobs:
       - name: Remove this job's section containers (runs on cancel too)
         if: always()
         run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: determinism-receipt
           path: ${{ runner.temp }}/fat/artifacts/determinism-receipt/
           if-no-files-found: ignore
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: raster-receipt
@@ -712,7 +712,7 @@ jobs:
       # merge_group: unscaled section timeouts (default x2 would make the 110-min nextest step 220 > the 120-min job wall)
       FAT_TIMEOUT_SCALE: ${{ github.event_name == 'merge_group' && '1' || '' }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
       # #4596: see the x86-main step of the same name.
@@ -741,7 +741,7 @@ jobs:
       - name: Remove this job's section containers (runs on cancel too)
         if: always()
         run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:
           name: sigma-shard-${{ matrix.shard }}
@@ -788,9 +788,9 @@ jobs:
             exit 0
           fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         if: ${{ github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
         with:
           pattern: sigma-shard-*
