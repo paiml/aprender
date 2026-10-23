@@ -192,6 +192,10 @@ jobs:
         # row 2a requires a genuinely orphaned dir to still be reclaimed. A
         # blanket skip passes row 1 and fails row 2.
         run: bash scripts/ci_reclaim_target_dirs.sh --self-test
+      - name: Agent conformance runner must still turn RED (fixture case table, no server)
+        # #5349: the runner's own planted mutants (finish_reason dropped, usage wrong, [DONE] gone, ...)
+        # must each flip a cell to fail. The live suite is LAB (scripts/serve_conformance_nightly.sh).
+        run: bash scripts/serve_conformance.sh --self-test
       - name: Reclaim orphaned per-RUN target dirs (never a live sibling)
         # WHAT THIS REPLACED, and why (#2825).
         #
