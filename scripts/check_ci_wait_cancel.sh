@@ -69,7 +69,7 @@ gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the
     gate_script "$1" > "$s"
     if [ ! -s "$s" ]; then echo "ENV: no gate 'Check required sections' script in $1" >&2; rm -f "${s:?}"; return 2; fi
     g() { # <label> <want-rc> <X86> <DET>
-        r=0; EVT="${EVT:-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" GRD="${GRD-$G}" GRDR="${GRDR-success}" PRL="${PRL:-success}" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
+        r=0; EVT="${ROWEVT-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" GRD="${GRD-$G}" GRDR="${GRDR-success}" PRL="${PRL:-success}" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
         if [ "$r" = "$2" ]; then echo "ok   gate $1 -> exit $r"; else echo "FAIL gate $1: exit $r, wanted $2"; rc=1; fi
     }
     g "all fat needs green (control)" 0 "$G" "$D"
@@ -79,12 +79,14 @@ gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the
     GRD="" g "guards CANCELLED (no results output) is RED on merge_group" 1 "$G" "$D"
     GRDR=failure g "guards job red (result failure) with guard-tree and guard-cargo green (vendored-schemas red) is RED on merge_group" 1 "$G" "$D"
     GRDR=skipped g "guards job SKIPPED is RED on merge_group" 1 "$G" "$D"
-    EVT=pull_request GRDR="" g "pull_request: guards not run is not RED" 0 "$G" "$D"
+    # leak: the step env carries EVT=pull_request (x86-main, run 39888226186); a merge_group row must still be RED (#6061)
+    EVT=pull_request GRD="" g "guards CANCELLED stays RED when the step env leaks EVT=pull_request" 1 "$G" "$D"
+    ROWEVT=pull_request GRDR="" g "pull_request: guards not run is not RED" 0 "$G" "$D"
     # #5955: a PR head runs pr-light, not the heavy jobs; their missing results are not owed there, a failed pr-light is RED
     # determinism does not run on a PR head: its missing compare is a skip there, never a RED (and x86-main still is)
-    EVT=pull_request g "pull_request: determinism skipped (no results output) is not RED" 0 "$G" ""
-    EVT=pull_request g "pull_request: heavy jobs skipped (no results output) pass when pr-light passed" 0 "" ""
-    EVT=pull_request PRL=failure g "pull_request: pr-light failed is RED" 1 "$G" "$D"
+    ROWEVT=pull_request g "pull_request: determinism skipped (no results output) is not RED" 0 "$G" ""
+    ROWEVT=pull_request g "pull_request: heavy jobs skipped (no results output) pass when pr-light passed" 0 "" ""
+    ROWEVT=pull_request PRL=failure g "pull_request: pr-light failed is RED" 1 "$G" "$D"
     rm -f "${s:?}"
     return "$rc"
 }
