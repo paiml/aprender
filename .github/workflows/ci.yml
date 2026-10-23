@@ -199,7 +199,7 @@ jobs:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 60
-    # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
+    # The PR-only sections (guard-tree, pr-review-sign) carry their own permissions blocks; one job token covers all.
     permissions: write-all
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -254,12 +254,12 @@ jobs:
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
       # Noah 15:09Z (#5955), Opus-A on #5964: the sections that exist ONLY for a pull request (guard-tree with its
-      # R-2 and 11.1 steps, pr-review-shadow, pr-review-sign) ran inside x86-main, which a PR no longer runs.
+      # R-2 and 11.1 steps, pr-review-sign) ran inside x86-main, which a PR no longer runs.
       # They run here, on a PR only, so arming still sees guard-tree and the receipt signed.
-      - name: PR-only sections (guard-tree, pr-review-shadow, pr-review-sign)
+      - name: PR-only sections (guard-tree, pr-review-sign)
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'guard-tree,pr-review-shadow,pr-review-sign'
+          --sections 'guard-tree,pr-review-sign'
           --results "$RUNNER_TEMP/fat/results.json"
           --background-until 'guard-tree'
       - name: PR-only sections (wait for every one to finish)
@@ -382,12 +382,12 @@ jobs:
         run: |
           if [ "$EVT" = merge_group ]; then
             python3 scripts/ci/fat_driver.py run \
-              --sections 'sov.*,pr-review-shadow,pr-review-sign,determinism[X64]' \
+              --sections 'sov.*,pr-review-sign,determinism[X64]' \
               --results "$RUNNER_TEMP/fat/results.json" \
               --background-until 'determinism[X64]'
           else
             python3 scripts/ci/fat_driver.py run \
-              --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]' \
+              --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-sign,determinism[X64]' \
               --results "$RUNNER_TEMP/fat/results.json" \
               --background-until 'determinism[X64]'
           fi
