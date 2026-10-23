@@ -38,6 +38,26 @@ END='[.;:,!]?([[:space:]]+@[0-9a-f]{7,40})?[.;:,!]?[[:space:]]*$'
 quorum_receipts() {
   grep -iE "^(COMMENTED|APPROVED)"$'\t'"quorum[: ]+3/3[ :,;-]+(AGREED[ :,;-]+)?(PASS|APPROVED?)${END}" <<<"$1" | grep -viE "$NEG" | wc -l
 }
+# NOAH 07:40Z: a changed gate-path file is NON-gate only if regenerating it from the PR tree reproduces it byte-for-byte.
+# No path list: the file declares its own generator in its first 8 lines ("derived by scripts/<x>.sh"), and that
+# generator (check mode: exit 0 = registry equals derivation) must (a) be untouched by the PR and byte-identical to the
+# feeder's own trusted copy, so no PR code runs here, and (b) exit 0 in the PR tree. A hand-edited line fails (b).
+SELF_ROOT="${MQ_FEEDER_ROOT:-$(cd "$(dirname "$0")/.." && pwd)}"
+# fresh_derived FILE TREE CHANGED_FILES -> 0 when FILE is a derived registry that its generator reproduces
+fresh_derived() {
+  local g
+  g=$(head -n 8 "$2/$1" 2> /dev/null | sed -nE 's/^#.*derived by (scripts\/[A-Za-z0-9_.\/-]+\.sh).*/\1/p' | head -n 1)
+  [ -n "$g" ] || return 1
+  grep -qxF -e "$g" <<< "$3" && return 1
+  cmp -s "$2/$g" "${MQ_FEEDER_ROOT:-$SELF_ROOT}/$g" || return 1
+  (cd "$2" && timeout 300 bash "$g" > /dev/null 2>&1)
+}
+# seat_count REVIEWS HEAD -> distinct "Seat N ... APPROVE ... @<sha of HEAD>" review bodies bound to HEAD (rv lines are STATE<TAB>body)
+seat_count() {
+  local r
+  r=$(grep -iE "^(COMMENTED|APPROVED)"$'\t'"seat[ ]+[0-9]+.*APPROVE" <<< "$1" | grep -E "@ ?${2:0:10}" | grep -viE "$NEG|HOLD|REQUEST[-_ ]?CHANGES" || true)
+  grep -oiE '^[A-Z]+'$'\t''seat[ ]+[0-9]+' <<< "$r" | sed -E 's/.*seat[ ]+//I' | sort -u | wc -l
+}
 # needs_seats PR HEAD -> prints the skip reason and returns 0 (skip) unless the PR is NON-gate content AND holds a
 # "quorum 3/3 [AGREED] PASS" receipt review bound to HEAD with no request-changes/FAIL/BLOCKING bound to HEAD.
 # Gate-content PRs are never enqueued by the feeder (operator/arbiter arms them; 16:18Z #5849 was enqueued
@@ -47,15 +67,43 @@ needs_seats() {
   [ -n "$2" ] || { echo "skip (head unreadable)"; return 0; }
   f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[]|.filename, (.previous_filename // empty)' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
   [ -n "$f" ] || { echo "skip (file list empty)"; return 0; }
-  gate_paths "$f" && { echo "skip (gate content: the feeder never enqueues a gate change)"; return 0; }
+  local gate=0 tree="${MQ_FEEDER_TREE:-}" mk="" fl
+  if gate_paths "$f"; then
+    if [ -z "$tree" ]; then # the PR tree, only now that a gate path is in play
+      tree="$(mktemp -d)" && mk=1 && { git -C "$SELF_ROOT" fetch -q origin "pull/$1/head" && git -C "$SELF_ROOT" worktree add -q --detach "$tree" "$2"; } > /dev/null 2>&1 || { [ -n "$mk" ] && rm -rf "${tree:?}"; echo "skip (gate content, PR tree unreadable)"; return 0; }
+    fi
+    while IFS= read -r fl; do
+      [ -n "$fl" ] || continue
+      gate_paths "$fl" && ! fresh_derived "$fl" "$tree" "$f" && { gate=1; break; }
+    done <<< "$f"
+    [ -z "$mk" ] || { git -C "$SELF_ROOT" worktree remove --force "$tree" > /dev/null 2>&1; rm -rf "${tree:?}"; }
+  fi
   # reviews bound to HEAD (commit_id); one body per line, newlines folded
   rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
   rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST[-_ ]?CHANGES|\bFAIL|\bREJECT|\bBLOCKING\b|\bBLOCKER|\bBLOCKS\b|NO[-_ ]?GO|DO[-_ ]?N(OT|.?T)[-_ ]MERGE|CHANGES[-_ ]REQUESTED' <<<"$rv")
   q=$(quorum_receipts "$rv")
+  if [ "$gate" -eq 1 ]; then # a real gate change: auto-arm only on a 3/3 receipt AND 2 distinct seats bound to HEAD (NOAH 07:40Z)
+    { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ] && [ "$(seat_count "$rv" "$2")" -ge 2 ]; } && return 1
+    echo "skip (gate content: needs quorum 3/3 PASS and 2 seats bound to ${2:0:10}; have receipts $q, seats $(seat_count "$rv" "$2"))"; return 0
+  fi
   { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ]; } && return 1
   echo "skip (no quorum receipt at ${2:0:10}: quorum 3/3 PASS receipts $q/1, $rc request-changes)"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
+# mq_only_jobs WORKFLOW -> the id and display name of every job whose `if:` cannot hold on a pull_request event
+# (`!= 'pull_request'`, `== 'merge_group'` or `== 'push'`, with no `||` and no `== 'pull_request'`). A PR head never
+# carries such a job, so the feeder must never require one (PMAT-5843: it required x86-main and refused every CLEAN PR).
+mq_only_jobs() {
+  awk '
+    function flush() { if (id != "" && cond ~ /(!= .pull_request.|== .merge_group.|== .push.)/ && cond !~ /\|\|/ && cond !~ /== .pull_request./) { print id; if (nm != "") print nm } }
+    /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); id = $1; sub(/:$/, "", id); cond = ""; nm = ""; next }
+    /^    name:/ { nm = $0; sub(/^    name:[[:space:]]*/, "", nm); gsub(/["\047]/, "", nm); next }
+    /^    if:/ { cond = $0 }
+    END { flush() }
+  ' "$1"
+}
+# required_is_mq_only NAME WORKFLOW -> 0 (and the name) when the feeder's required check is a merge-queue-only job
+required_is_mq_only() { local jobs; jobs="$(mq_only_jobs "$2")"; grep -qxF -e "$1" <<< "$jobs" && echo "$1"; }
 if [ "${1:-}" = --self-test ]; then
   fail=0
   mk() { printf '{"data":{"repository":{"mergeQueue":{"entries":{"totalCount":%s}},"pullRequests":{"nodes":[%s]}}}}' "$1" "$2"; }
@@ -78,13 +126,34 @@ if [ "${1:-}" = --self-test ]; then
   gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1; local flt=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && flt=$2; shift; done
       printf '%s\n' "${FILES:-docs/x.md}" | jq -Rn '[inputs|split("\t")|{filename:.[0]}+(if length>1 then {previous_filename:.[1]} else {} end)]' | jq -r "$flt";;
     */reviews) printf '%b' "${REVIEWS:-}";; esac; }
-  ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
+  fxd="$(mktemp -d)"; mkdir -p "$fxd/empty" "$fxd/fresh/scripts" "$fxd/stale/scripts" "$fxd/root/scripts"
+  printf '#!/usr/bin/env bash\n[ "$(tail -n 1 scripts/reg.txt)" = ok ]\n' > "$fxd/root/scripts/gen.sh"
+  for t in fresh stale; do cp "$fxd/root/scripts/gen.sh" "$fxd/$t/scripts/gen.sh"; done
+  printf '# derived by scripts/gen.sh, never edit\nok\n' > "$fxd/fresh/scripts/reg.txt"
+  mkdir -p "$fxd/tamper/scripts"; printf '#!/usr/bin/env bash\ntrue\n' > "$fxd/tamper/scripts/gen.sh"; cp "$fxd/fresh/scripts/reg.txt" "$fxd/tamper/scripts/reg.txt"
+  printf '# derived by scripts/gen.sh, never edit\nhand-edited\n' > "$fxd/stale/scripts/reg.txt"
+  printf '# no generator named here\nok\n' > "$fxd/fresh/scripts/plain.sh"
+  ns() { REPO=r MQ_FEEDER_ROOT="$fxd/root" MQ_FEEDER_TREE="$fxd/${TREE:-empty}" needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tquorum 3/3 AGREED PASS\n'
   eq 'receipt on a non-gate PR -> armable' "$(REVIEWS="$Q3" ns)" 1
   eq 'no receipt (non-gate PR) -> skip' "$(REVIEWS='' ns)" 0
   eq 'two seats but no receipt -> skip' "$(REVIEWS='COMMENTED\tseat w1 APPROVE\nCOMMENTED\tseat w2 APPROVE\n' ns)" 0
   eq 'gate content + receipt -> skip (never enqueued by the feeder)' "$(FILES=scripts/x.sh REVIEWS="$Q3" ns)" 0
   eq 'gate content among docs + receipt -> skip' "$(FILES=$'docs/x.md\n.github/workflows/ci.yml' REVIEWS="$Q3" ns)" 0
+  # NOAH 07:40Z: a gate-path file is non-gate only if its generator reproduces it; a real gate change needs 3/3 + 2 seats at HEAD
+  eq 'derived+fresh registry + receipt -> armable' "$(TREE=fresh FILES=scripts/reg.txt REVIEWS="$Q3" ns)" 1
+  eq 'hand-edited registry stays gate -> skip' "$(TREE=stale FILES=scripts/reg.txt REVIEWS="$Q3" ns)" 0
+  eq 'regenerated registry + its generator changed -> gate' "$(TREE=fresh FILES=$'scripts/reg.txt\nscripts/gen.sh' REVIEWS="$Q3" ns)" 0
+  eq 'a gate file with no generator header -> gate' "$(TREE=fresh FILES=$'scripts/reg.txt\nscripts/plain.sh' REVIEWS="$Q3" ns)" 0
+  eq 'a generator that differs from the feeder copy never runs -> gate' "$(TREE=tamper FILES=scripts/reg.txt REVIEWS="$Q3" ns)" 0
+  eq 'registry fresh but no receipt -> skip' "$(TREE=fresh FILES=scripts/reg.txt REVIEWS='' ns)" 0
+  S2='COMMENTED\tSeat 1 (a, non-author): APPROVE @H\nCOMMENTED\tSeat 2 (b, non-author): APPROVE @H\n'
+  eq 'gate change + receipt + 2 seats at head -> armable' "$(FILES=scripts/x.sh REVIEWS="$Q3$S2" ns)" 1
+  eq 'gate change + receipt + 1 seat -> skip' "$(FILES=scripts/x.sh REVIEWS="${Q3}COMMENTED\tSeat 1 (a): APPROVE @H\n" ns)" 0
+  eq 'gate change + receipt + same seat twice -> skip' "$(FILES=scripts/x.sh REVIEWS="${Q3}COMMENTED\tSeat 1 (a): APPROVE @H\nCOMMENTED\tSeat 1 (b): APPROVE @H\n" ns)" 0
+  eq 'gate change + 2 seats but no receipt -> skip' "$(FILES=scripts/x.sh REVIEWS="$S2" ns)" 0
+  eq 'gate change + 2 seats bound to another sha -> skip' "$(FILES=scripts/x.sh REVIEWS="${Q3}COMMENTED\tSeat 1 (a): APPROVE @Z\nCOMMENTED\tSeat 2 (b): APPROVE @Z\n" ns)" 0
+  eq 'gate change + receipt + 2 seats + a RC -> skip' "$(FILES=scripts/x.sh REVIEWS="$Q3${S2}CHANGES_REQUESTED\tx\n" ns)" 0
   eq 'files unreadable -> skip (fail closed)' "$(CASE=filefail REVIEWS="$Q3" ns)" 0
   eq 'receipt + request-changes at head -> skip' "$(REVIEWS="${Q3}CHANGES_REQUESTED\tseat w3 RC\n" ns)" 0
   eq 'receipt + FAIL review at head -> skip' "$(REVIEWS="${Q3}COMMENTED\tseat w3 FAIL\n" ns)" 0
@@ -138,6 +207,16 @@ GHEOF
   eq 'feeder: gate content with a receipt never calls ARM' "$(run_feeder scripts/x.sh "$Q3" 0)" 'armed=no enq=0'
   eq 'feeder: request-changes at head never calls ARM' "$(run_feeder docs/x.md "${Q3}CHANGES_REQUESTED\tx\n" 0)" 'armed=no enq=0'
   eq 'feeder control: receipt + ARM rc 0 enqueues' "$(run_feeder docs/x.md "$Q3" 0)" 'armed=yes enq=1'
+  # PMAT-5843: the required check must exist on a PR head. required set ∩ merge_group-only jobs = ∅, read from the real ci.yml.
+  wf="$(dirname "$0")/../.github/workflows/ci.yml"
+  eq 'static: the parser finds the known merge-queue-only job x86-main' "$(mq_only_jobs "$wf" | grep -cxF x86-main)" 1
+  eq 'static: the parser does not call pr-light merge-queue-only' "$(mq_only_jobs "$wf" | grep -cxF pr-light)" 0
+  eq 'static: the feeder requires a job that exists in ci.yml' "$(grep -cE "^  ${GUARD_CHECK_NAME}:" "$wf")" 1
+  eq 'static: the feeder required set is disjoint from the merge-queue-only jobs' "$(required_is_mq_only "$GUARD_CHECK_NAME" "$wf")" ''
+  fx="$(mktemp)"; printf 'jobs:\n  planted:\n    if: ${{ github.event_name != '"'pull_request'"' }}\n  both:\n    if: ${{ github.event_name != '"'pull_request'"' || x }}\n' > "$fx"
+  eq 'static: a planted merge-queue-only required check is caught' "$(required_is_mq_only planted "$fx")" planted
+  eq 'static: an if with || can run on a PR and is not merge-queue-only' "$(required_is_mq_only both "$fx")" ''
+  rm -f "${fx:?}"; rm -rf "${fxd:?}"
   rm -rf "${d:?}"
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
