@@ -974,6 +974,8 @@ def hash_files(ws: Path, pats) -> str:
     return h.hexdigest() if files else ""
 
 
+# tags only: a bare `fetch --tags` also updates refs/remotes/origin/*, which the depth-1 checkout must leave as cloned
+TAGS_REFSPEC = "+refs/tags/*:refs/tags/*"
 CHECKOUT_FETCH_TIMEOUT = 600  # seconds; the same bound uses_checkout gives the ref fetch
 
 
@@ -994,7 +996,7 @@ def _checkout_depth1(sec, g):
     # Fetch the tags first so the objects exist, and say what git said when one still fails.
     # Bounded like the ref fetch beside it (600s): a hung remote must not hold the section for ever.
     try:
-        fp = subprocess.run(g + ["fetch", "-q", "--tags", "--force", "origin"], capture_output=True, text=True,
+        fp = subprocess.run(g + ["fetch", "-q", "--force", "origin", TAGS_REFSPEC], capture_output=True, text=True,
                             timeout=CHECKOUT_FETCH_TIMEOUT)
         if fp.returncode != 0:
             sec.log.write(f"::warning::checkout: git fetch --tags failed rc={fp.returncode}: {fp.stderr.strip()}\n")
@@ -1660,6 +1662,20 @@ def _st_artifact(row):
     srv.shutdown()
 
 
+def _st_checkout_remote_refs(row, clone, tg):
+    """The tag fetch must not move refs/remotes/origin/*: a commit lands on the remote after the clone."""
+    import io
+    sec = clone("d8")
+    refs = lambda: subprocess.run(["git", "-C", str(sec.workspace), "for-each-ref", "refs/remotes"],
+                                  capture_output=True, text=True).stdout
+    before = refs()
+    subprocess.run(tg + ["commit", "-q", "--allow-empty", "-m", "after-clone"], check=True)
+    sec.log = io.StringIO()
+    ok, _ = uses_checkout(sec, {}, None)
+    row("checkout depth 1: the tag fetch leaves refs/remotes/origin/* as cloned",
+        (ok, bool(before), refs() == before), (True, True, True))
+
+
 def _st_checkout_fetch_timeout(row, clone):
     import io
     # a hung `git fetch --tags` is bounded by a timeout and the checkout goes on (the fetch only repairs)
@@ -1737,6 +1753,7 @@ def _st_checkout_tags(row, src, g, clone):
         row("checkout depth 1: a tag moved on the remote does not fail the fetch",
             (ok, "::warning::" in sec.log.getvalue()), (True, False))
         _st_checkout_fetch_timeout(row, clone)
+        _st_checkout_remote_refs(row, clone, tg)
         row("checkout depth 1: the undeletable-tag row is not run as root (euid 0)",
             _st_checkout_undeletable(row, clone, 0), False)
         _st_checkout_undeletable(row, clone, os.geteuid())
