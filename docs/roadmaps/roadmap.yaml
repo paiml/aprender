@@ -25859,6 +25859,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6185
+  github_issue: 6185
+  item_type: task
+  title: 'roadmap: frozen roadmap-base.yaml, generator reads it (S1 of removing the tracked aggregate)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T17:20:00Z
+  updated: 2026-10-23T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'S1a (this change, scripts only): roadmap_fragments.py aggregate reads roadmap-base.yaml when it sits beside roadmap.yaml, check_roadmap_fragment_required.sh freezes it and judges roadmap.yaml against aggregate(roadmap-base.yaml, entries/); a scratch dir without roadmap-base.yaml behaves as before. S1b (the data-only follow-up PR, stacked on this one) adds docs/roadmaps/roadmap-base.yaml, a snapshot that equals roadmap.yaml, and rule 3 verifies it on introduction. This change deliberately contains no roadmap-base.yaml'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
 - id: PMAT-6200
   github_issue: 6200
   item_type: task
