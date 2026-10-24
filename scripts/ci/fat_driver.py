@@ -978,7 +978,7 @@ def _checkout_git(sec, g, args):
     """stdout of a git call, or None after logging what git said (a dropped stderr hid rc128)."""
     p = subprocess.run(g + args, capture_output=True, text=True)
     if p.returncode != 0:
-        sec.log.write(f"::error::checkout: git {' '.join(args[:2])} failed rc={p.returncode}: {p.stderr.strip()}\n")
+        sec.log.write(f"::error::checkout: git {' '.join(args)} failed rc={p.returncode}: {p.stderr.strip()}\n")
         return None
     return p.stdout
 
@@ -1666,7 +1666,8 @@ def _st_checkout_tags(row, src, g, clone):
     try:
         sec = clone("d3")
         (sec.workspace / ".git" / "refs" / "tags" / "v9").write_text(late + "\n")
-        subprocess.run(["rm", "-rf", "--", str(sec.workspace / ".git" / "objects" / late[:2] / late[2:])])
+        d2, rest = re.fullmatch(r"(..)(.{38})", late).groups()  # loose-object dir and file, split without slicing
+        (sec.workspace / ".git" / "objects" / d2 / rest).unlink(missing_ok=True)
         sec.log = io.StringIO()
         ok, _ = uses_checkout(sec, {}, None)
         tags = subprocess.run(["git", "-C", str(sec.workspace), "tag", "-l"], capture_output=True,
@@ -1698,7 +1699,7 @@ def _st_checkout_tags(row, src, g, clone):
         finally:
             rt.chmod(0o755)
         row("checkout depth 1: a tag that cannot be deleted fails the checkout and logs why",
-            (ok, "tag -d failed" in sec.log.getvalue()) if os.geteuid() else (False, True), (False, True))
+            (ok, "git tag -d " in sec.log.getvalue()) if os.geteuid() else (False, True), (False, True))
     finally:
         for k, v in old_env.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
