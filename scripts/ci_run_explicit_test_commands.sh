@@ -123,7 +123,7 @@ run() {
     if [ "$total" -eq 0 ] || [ -z "${cmds[0]}" ]; then
         printf 'REFUSE %s parsed to zero commands -- nothing to run is not a pass\n' "$dir" >&2; return 2
     fi
-    if [ "$m" -gt 1 ]; then
+    if [ "$m" -gt 1 ] || [ "${EXPLICIT_LIST_SHARD:-0}" = 1 ]; then
         local -a mine=()
         for cmd in "${cmds[@]}"; do
             k=$((k + 1)); sel=$(( (k - 1) % m + 1 ))

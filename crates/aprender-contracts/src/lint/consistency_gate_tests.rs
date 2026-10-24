@@ -14,11 +14,16 @@ fn fixture() -> PathBuf {
 
 /// A copy of the fixture; `consistent` drops `a contradicts d`.
 fn corpus(consistent: bool) -> tempfile::TempDir {
+    corpus_from(&fixture(), consistent)
+}
+
+fn corpus_from(src: &Path, consistent: bool) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    for entry in std::fs::read_dir(fixture()).expect("fixture dir") {
+    for entry in std::fs::read_dir(src).expect("fixture dir") {
         let entry = entry.expect("entry");
-        // The ont4/ont4b/ont5 gate tests lint this fixture in place (#5446) and pv leaves a `.pv/` directory in it.
-        if !entry.file_type().expect("file type").is_file() {
+        // The ont4/ont4b/ont5 gate tests lint this fixture in place (#5446) and pv leaves a `.pv/` directory in it;
+        // skip that directory and nothing else, so any other non-file entry still fails loudly.
+        if entry.file_name() == ".pv" {
             continue;
         }
         let mut text = std::fs::read_to_string(entry.path()).expect("fixture file");
@@ -86,6 +91,25 @@ fn ran(dir: &Path) -> (Box<GateResult>, Vec<LintFinding>) {
 
 fn rules(findings: &[LintFinding]) -> Vec<&str> {
     findings.iter().map(|f| f.rule_id.as_str()).collect()
+}
+
+/// pv leaves a `.pv/` directory in a fixture it linted in place (#5446): the copy must skip it, and ONLY it.
+#[test]
+fn the_corpus_copy_skips_a_planted_pv_directory_and_keeps_every_file() {
+    let src = corpus_from(&fixture(), false);
+    std::fs::create_dir_all(src.path().join(".pv")).expect("plant .pv");
+    std::fs::write(src.path().join(".pv/cache.json"), "{}").expect("plant file");
+    let copy = corpus_from(src.path(), false);
+    assert!(!copy.path().join(".pv").exists(), ".pv must not be copied");
+    let names = |d: &Path| -> BTreeSet<_> {
+        std::fs::read_dir(d)
+            .expect("dir")
+            .map(|e| e.expect("entry").file_name())
+            .filter(|n| n != ".pv")
+            .collect()
+    };
+    assert_eq!(names(copy.path()), names(src.path()), "every file is kept");
+    assert!(!names(copy.path()).is_empty(), "the fixture is not empty");
 }
 
 #[test]

@@ -21103,6 +21103,22 @@ roadmap:
   labels:
   - kind:code
   notes: 'SCOPE. The three done_when rows quoted above. `prefill_ms` is deliberately NOT emitted by this row. The cop''s lane message asked for it, but it is not in #3718''s done_when, and it is owned elsewhere: aprender-a8 and aprender-3e agreed one definition (wall-clock over the forward passes on the post-template prompt, up to the first token''s logits; load, h2d, the F2 validate and tokenization excluded; null, never 0, where a path does not split prefill). It rides #3606''s StageTimings and 3e''s #3596 timer (`run_qwen35_generate_dispatch_timed`, not on main). Wiring it into this JSON is a follow-up once those land. RUN (done_when 1, 3). New `realizar::infer::run_inference_report(config) -> (InferenceResult, RunReport)`; `run_inference` is a thin wrapper over it. It is a separate entry point so that none of the ~75 `InferenceResult` literals change. `RunReport { finish_reason, context_length }` is None on a path that does not report it (APR, SafeTensors), never a default. The GGUF path computes it where the stop set and the budget are known. `FinishReason::from_decode(generated, stop, budget)`: a last token in the stop set is Stop; otherwise a run that filled its budget is Length; a shorter run ended on a stop token its loop consumed. This rule holds for both loop shapes, traced: the qwen35 CPU/GPU, MoE and wgpu loops PUSH the stop token, the dense CPU (`generate_with_cache`) and CUDA (`decode_blocking`) loops break BEFORE pushing, and every loop''s only other non-error exit is its budget. `decode_budget` clamps to `context_length - prompt` only on the dense CPU loop, the one loop that does (`effective_max_tokens`). `FinishReason` is declared once, in `infer::run_report` (not behind the `server` feature); `api::types::FinishReason` is now a re-export. apr-cli: `RunUsage { prompt_tokens, completion_tokens, finish_reason, context_length }` on `RunResult`, emitted by `build_final_json`, so it appears in both `--json` and the `--stream` final event. `prompt_tokens` = `input_token_count`, the post-chat-template count including BOS that `prepare_tokens` fed the model. `completion_tokens` is the engine count, never the word-count stand-in `tokens_generated` falls back to. No path truncates a prompt (traced: `prepare_tokens` has no truncation). An over-long prompt is REFUSED (ContextLimitExceeded -> error exit), which is done_when 3''s "or an error"; the completion-side cut is now `finish_reason: length`, where before it was silent. SERVE (done_when 2, 3). `/v1/chat/completions` `usage` was already OpenAI-shaped with the post-template count on the realizar backends (`tokenize_chat_prompt`: template, encode, `len`). Three silent cuts are fixed. (a) The dense CPU backend (`try_quantized_backend`) judged finish against the REQUESTED max_tokens after `effective_max_tokens` had clamped the loop to the context room, so a context-clamped cut said "stop"; it is now judged against the budget the loop ran with, both streaming and not. (b) A prompt that cannot fit was a 500 (non-stream) or a 200 SSE carrying an error event that still ended "stop". It is now a 400 before generation on both, via the existing `generation_error_status`, whose doc already said callers map it to 400. (c) The APR CPU fallback (apr-cli handler_apr_cpu_completion.rs) hardcoded "stop" while capping max_tokens at 4096. It now uses `from_decode` against that cap with the loop''s real stop set (token 0, pushed; `is_eos_token`). Its `run_apr_cpu_inference` also returned the PROMPT as the completion when nothing was generated (`else { &output_tokens[..] }`); that now yields empty. MEASURED on lambda, CPU, Qwen3.5-0.8B-Q4_K_M, pinned `apr 0.69.0 (3fadee114)` via scripts/apr_bin.sh. `apr run -i <"What is 2+2? Answer with one number."> --chat --json`: prompt_tokens 24, context_length 262144. The same templated string through llama.cpp 41fc758 `llama-tokenize --ids` gives 24 ids, identical id-for-id to apr''s `--verbose` encode (with and without llama.cpp''s BOS policy). That is done_when 1''s case row against an independent tokenizer. max-tokens 4 and 1024: completion 2, finish stop (the model ends on EOS). A 20-line-poem prompt at max-tokens 6: completion 6, finish length. DONE_WHEN 1 CASE ROW, automated (added after the round-2 quorum FAIL, which correctly said a manual measurement is not a case row): infer::run_report::a_fixed_text_prompt_counts_the_tokens_the_tokenizer_feeds builds the pygmy GGUF with a SentencePiece vocabulary (`<unk> <s> </s> ▁Hello ▁world !` + filler; bos 1, eos 2) through the new `test_factory::build_executable_pygmy_gguf_with` metadata hook, runs the TEXT prompt "Hello world!" through `run_inference_report` (the `apr run --prompt` path: prepare_tokens_gguf, the GGUF tokenizer, BOS policy) and asserts the fed ids are [1, 3, 4, 5] and input_token_count (which becomes prompt_tokens) is 4. The expectation is derived by hand from the vocabulary, not from apr''s encoder. Mutant: prepare_tokens_gguf reports tokens.len()-1 -> the row goes RED. The post-template count on a real model is the llama.cpp row above (24 == 24, id for id). TESTS. infer::run_report: a case table over both loop shapes, the clamped-cut pin, budget arithmetic, and four rows through `run_inference_report` on the pygmy GGUF (context 32): a context-clamped cut is Length with 28 = 32 - 4 tokens, a max_tokens cut is Length, a stop token under budget is Stop (0 tokens, dense loop consumed it), and an over-long prompt is refused naming both lengths. api::tests::usage_finish_3718 runs through the real router on a quantized AppState: clamped cut -> length with usage prompt+completion == context, clamped stream -> terminal chunk length, prompt > context -> 400 on stream and non-stream, stop under budget -> stop (both), unclamped -> cut at the request budget. apr-cli run_tests_usage_3718: JSON carries the four fields, null (not 0 or "stop") when unreported, stream final event carries them. MUTANTS, each run and each RED: serve clamp reverted (2 red), 400 reverted to the old path (1), run-report clamp off (1), from_generation always Length (4), never Length (7). SUITES at 3fadee114 + rustfmt: `cargo test -p aprender-serve --lib` 15913 passed; `cargo test -p apr-cli --lib` 7301 passed; `cargo test -p aprender-contracts --lib` 1684 passed; clippy -D warnings on aprender-serve and apr-cli clean; fmt clean. KNOWN, NOT CHANGED. completion_tokens counts the pushed stop token on the qwen35/MoE/wgpu loops and not on the dense loops, because that is what each loop returns (measured: qwen35 `tokens: [17, 248046]`, completion 2). The CUDA backends were not exercised on hardware in this row: the report logic is backend-agnostic and clamps only on the dense CPU loop. Streaming chat does not apply stop STRINGS on the true-streaming path; that is pre-existing and not a length cut. Found while measuring and routed separately: `--prompt P --chat` double-templates (24 -> 56 prompt_tokens), which is #3743 = #3672 in batch-1.'
+- id: PMAT-3720
+  github_issue: 3720
+  item_type: task
+  title: 'apr response contract for consumers: weights digest, empty completion = error, refused vs did-not-run (run --json, serve)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T12:30:00Z
+  updated: 2026-10-23T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - apr run --json carries status, error, model_digest
+  - an empty completion exits non-zero with kind empty_completion
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3724
   github_issue: 3724
   item_type: task
@@ -25416,6 +25432,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5847
+  github_issue: 5847
+  item_type: task
+  title: 'LAB nightlies: timeout-minutes on every job and end by 05:00Z (falsifier scripts/lab/lab_timeouts_audit.sh)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T11:30:00Z
+  updated: 2026-10-22T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/lab/lab_timeouts_audit.sh is RED on the pre-fix tree (22 findings on the merge-base) and GREEN after; --self-test 11 rows'
+  - 'release-rehearsal-nightly.yml (cron 20 5, 455 min lower bound) is RED in the audit with no exemption by default; one owner, this ticket. Exempting it is pending quorum.'
+  - 'reaper catching queued + schedule runs is a separate change to the deployed pr-run-reaper.sh'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5873
   github_issue: 5873
   item_type: task
@@ -25429,6 +25466,46 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   acceptance_criteria:
   - 'the check runs in guards-nightly (LAB), not in ci/explicit-test-commands.d'
   - 'the apr-stub row no longer races (second PR)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5879
+  github_issue: 5879
+  item_type: task
+  title: 'intake: coverage scan updates the #5875 report, never one ticket per function'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-21T16:00:00Z
+  updated: 2026-10-21T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'LAB check goes RED on an open "test: cover" issue not named in epic #5875, GREEN today'
+  - 'it runs in guards-nightly, never in a PR or merge-queue job'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: coverage-nightly.yml already edits one tracking issue by title; the per-function filer is outside the repo, this guard catches it.
+  epic: 5875
+- id: PMAT-5884
+  github_issue: 5884
+  item_type: task
+  title: 'mg-reuse: merge_group skips workspace-test-shard when its tree == a green PR run''s tree (Noah 16:28Z #3)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T17:05:00Z
+  updated: 2026-10-21T17:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'merge_group skips workspace-test-shard only when K1-K5 hold and the PR head run workspace-test succeeded; any difference runs the full shards'
+  - 'ci_mg_reuse.sh --self-test falsifier: changed main/tree -> wt=0, identical tree -> wt=1, override carries wt only when exactly 1'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -25454,3 +25531,597 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5889
+  github_issue: 5889
+  item_type: task
+  title: 'LAB kfocus-shadow-lab.yml: dispatch-only x86-main shadow on kfocus (OP 17:15Z parity)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T17:44:17Z
+  updated: 2026-10-21T17:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Dispatch-only LAB workflow (C324) running x86-main at a given sha on kfocus, to compare verdicts with intel. PR #5887.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:measurement
+  notes: null
+  epic: 5510
+- id: PMAT-5914
+  github_issue: 5914
+  item_type: task
+  title: 'pv debug-build CPU: tests lint whole contracts tree with debug pv'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T07:04:44Z
+  updated: 2026-10-22T07:04:44Z
+  spec: null
+  acceptance_criteria:
+  - See handoff/pv-debug-cpu-20261022.md; PV_BIN override + shared release pv
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5920
+  github_issue: 5920
+  item_type: task
+  title: 'guard-cargo: parallel cargo-free lane in ci_guards.sh (merge-queue x86-main 29.3 min)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:40:00Z
+  updated: 2026-10-22T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - See ci/guard-lane-steps.txt; the lane is off by default (CI_GUARDS_LANE=1 opts in; C324)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5924
+  github_issue: 5924
+  item_type: task
+  title: 'EMG-001 C1: workspace-test-shard single shard, threads 4 to 16'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:55:00Z
+  updated: 2026-10-22T10:55:00Z
+  spec: null
+  acceptance_criteria:
+  - handoff/emg-001/EMG-001.md C1+C2; EMG-9 proof in PR body
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5952
+  github_issue: 5952
+  item_type: task
+  title: 'ci: push-to-main tier runs only HEAD^1..HEAD; use the PUSH_BEFORE range'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T15:15:00Z
+  updated: 2026-10-22T15:15:00Z
+  spec: null
+  acceptance_criteria:
+  - ci_test_tier.sh push arm diffs github.event.before..HEAD with an all-zero-before guard; self-test rows plus a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-5955
+  github_issue: 5955
+  item_type: task
+  title: 'ci: heavy X64 jobs run only in merge_group/push; PR runs stay light (Noah 15:09Z)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:20:00Z
+  updated: 2026-10-22T16:20:00Z
+  spec: null
+  acceptance_criteria:
+  - on pull_request x86-main, x86-main-advisories and workspace-test-shard do not run; pr-light does; ci / gate, gate and workspace-test pass when pr-light passes
+  - on merge_group, push, an empty or an unknown event the same aggregators fail when a heavy job is skipped; ci_mg_reuse.sh --self-test runs both directions plus mutants that delete the event check
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-5971
+  github_issue: 5971
+  item_type: task
+  title: 'ci: move guard-cargo, guard-tree, vendored-schemas out of x86-main into an MQ "guards" job on the existing mq lane'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T16:30:00Z
+  updated: 2026-10-22T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'merge_group runs a required "guards" job on the existing [self-hosted, Linux, X64, mq] label (no new runner label) holding guard-tree, guard-cargo, vendored-schemas; x86-main drops them on merge_group'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5974
+  github_issue: 5974
+  item_type: task
+  title: 'ci: silicon-coverage scores a consistently empty workflow listing MISSING instead of NOT_MEASURED'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:49:18Z
+  updated: 2026-10-22T16:49:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5978
+  github_issue: 5978
+  item_type: task
+  title: 'check_silicon_coverage: re-read an all-empty listing once, print request ids'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T17:32:38Z
+  updated: 2026-10-22T17:32:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-6041
+  github_issue: 6041
+  item_type: task
+  title: 'ci: guard-cargo#m5 mounts a toolchain that lives outside RUSTUP_HOME and fails loud when the container does not run the pinned rustc'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T00:55:00Z
+  updated: 2026-10-23T00:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'm5 resolves the pinned toolchain with readlink -f, mounts it when outside RUSTUP_HOME, and the container step fails with FAIL(ENV) naming the resolved rustc if it is not the pinned one'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6042
+  github_issue: 6042
+  item_type: task
+  title: 'gate: affected_set.sh narrows docs/contracts/*.md to READERS-only (split out of #6035)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:00:00Z
+  updated: 2026-10-23T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - docs, contracts, root *.md and .claude/ paths select READERS only, not ALL
+  - nothing on a PR, merge-queue or release path calls affected_set.sh (dormant)
+  - the readers case table and self-test run as a nightly LAB step with one owner
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6068
+  github_issue: 6068
+  item_type: task
+  title: repo_flow binding_station is the argmin of the station bounds (flow model eq 2/3/5/6)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T03:15:38Z
+  updated: 2026-10-23T03:15:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6102
+  github_issue: 6102
+  item_type: task
+  title: 'ci: one PR per ticket, enforced (check refuses a duplicate PR per PMAT ticket)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T07:18:45Z
+  updated: 2026-10-23T07:18:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6123
+  github_issue: 6123
+  item_type: task
+  title: 'guard_lane_stop.sh: no date(1), clock injected (DET002; child of PMAT-5920)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T09:30:00Z
+  updated: 2026-10-23T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/guard_lane_stop.sh has no date invocation and no bashrs disable-line; bashrs lint --no-ignore reports no DET002
+  - the self-test fails when ACTIVE_SINCE_EPOCH and ACTIVE_SINCE disagree
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6131
+  github_issue: 6131
+  item_type: task
+  title: 'pmat_bin.sh reads its pin from tools.toml, one source (m36 FAIL ENV; child of PMAT-1059)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:20:00Z
+  updated: 2026-10-23T10:20:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/pmat_bin.sh holds no version literal; PMAT_PIN is tools.toml [pmat] version
+  - an unreadable pin returns 1, never a default
+  - check_hardcoded_paths.sh --self-test reads the pin from tools.toml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6133
+  github_issue: 6133
+  item_type: task
+  title: 'move the pmat pin to 3.42.0; re-stamp CB-200 and complexity baselines (child of PMAT-6131)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:40:00Z
+  updated: 2026-10-23T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - tools.toml [pmat] version is 3.42.0 and check_tool_versions.sh reports no pmat header mismatch
+  - instrument vs tree separated by measuring 3.41.1 and 3.42.0 on the same tree
+  - complexity_baseline.txt and cb200_baseline.txt carry tool_version=pmat 3.42.0; no count rises for tree debt
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6134
+  github_issue: 6134
+  item_type: task
+  title: 'EMF G3: receipts keyed by patch-id; a push re-reviews only changed patch-ids'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:45:00Z
+  updated: 2026-10-23T10:45:00Z
+  spec: docs/specifications/EMF-G3-patch-id-receipts.md
+  acceptance_criteria:
+  - scripts/pr_patch_ids.sh is the one producer of per-commit patch-ids; an unreadable range or an empty set is a refusal
+  - mq_feeder.sh needs_seats arms a gate PR only when every head patch-id has 2 distinct seats and a 3/3 receipt, with no request-changes naming a head id
+  - a no-op rebase and a merge of main void 0 receipts; an amended commit voids only its own id
+  - the head-sha rules stay accepted; arm_pr_automerge.sh keeps its head_sha rule
+  - case table F1-F9 in mq_feeder.sh --self-test, each with a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6135
+  github_issue: 6135
+  item_type: task
+  title: 'mq-feeder: gate auto-arm with non-author seats + fresh_derived byte-compare (split from #6112)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T10:35:00Z
+  updated: 2026-10-23T10:35:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The mq-feeder arms a gate PR only when every head patch-id has 2 distinct non-author seats and a 3/3 fresh_derived byte-compare receipt (as #6134 needs_seats); a no-op rebase or merge of main voids 0 receipts and an amended commit voids only its own id; a falsifier test shows an author-only seat or a stale byte-compare does not arm'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6151
+  github_issue: 6151
+  item_type: task
+  title: 'ci: thread caps come from RUNNER_THREAD_CAP, no literal thread count in workflows (supersedes EMG-001 C1(d))'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:45:00Z
+  updated: 2026-10-23T11:45:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6185
+  github_issue: 6185
+  item_type: task
+  title: 'roadmap: frozen roadmap-base.yaml, generator reads it (S1 of removing the tracked aggregate)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T17:20:00Z
+  updated: 2026-10-23T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'S1a (this change, scripts only): roadmap_fragments.py aggregate reads roadmap-base.yaml when it sits beside roadmap.yaml, check_roadmap_fragment_required.sh freezes it and judges roadmap.yaml against aggregate(roadmap-base.yaml, entries/); a scratch dir without roadmap-base.yaml behaves as before. S1b (the data-only follow-up PR, stacked on this one) adds docs/roadmaps/roadmap-base.yaml, a snapshot that equals roadmap.yaml, and rule 3 verifies it on introduction. This change deliberately contains no roadmap-base.yaml'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'GATE CHANGE (S1b, PR carrying docs/roadmaps/roadmap-base.yaml): S1b is NOT data-only and OVERRIDES the S1a/S1b wording in acceptance_criteria, which cannot be edited in place. It adds rule R7 to scripts/check_comparator_pin_citations.sh, loosening R1 for the one pair roadmap.yaml -> roadmap-base.yaml: the base passes unledgered only if its citing lines carry EXACTLY the pin of the historical roadmap.yaml ledger row and every line is a byte-copy of one of them. Self-test C20-C25; mutants drop-copy-rule, any-copy-line, drop-class-filter, widen-scope, membership-only. Scope and A/B ruling: docs/audits/quorum-PMAT-6185-R1-pin-cites.md. SECOND GATE CHANGE in the same PR: scripts/check_roadmap_completion_is_cited.sh does not count the completed entries of roadmap-base.yaml while docs/roadmaps/roadmap.yaml is in scope and holds EVERY id the base holds (content-bound, not a path waiver); if roadmap.yaml is removed or the base holds an id it lacks, the base is judged like any roadmap file. Self-test rows: ids all present (no records), extra id (judged), roadmap.yaml removed (judged); mutants path-waiver and drop-subset-test are killed. Follow-ups for the step removing the tracked roadmap.yaml: move the ledger row onto roadmap-base.yaml (C24) and let the completion-citation guard judge the base (it does so automatically).'
+  epic: null
+- id: PMAT-6190
+  github_issue: 6190
+  item_type: task
+  title: 'kfocus-shadow-lab: run the workspace-test-shard sections and upload sigma-shard junit (G7 comparator input)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T17:50:00Z
+  updated: 2026-10-23T17:50:00Z
+  spec: null
+  acceptance_criteria:
+  - kfocus-shadow-lab.yml runs the workspace-test-shard sections and uploads sigma-shard-*/lib.junit.xml with if-no-files-found error
+  - the workflow stays workflow_dispatch only (LAB), no pull_request, push, merge_group or schedule trigger
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6200
+  github_issue: 6200
+  item_type: task
+  title: 'CI: pin ci/gate, gate, mg-reuse-self-test to X64 runners'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-23T19:02:47Z
+  updated: 2026-10-23T19:02:47Z
+  spec: null
+  acceptance_criteria:
+  - 'ci.yml jobs mg-reuse-self-test, ci-gate (ci / gate) and gate carry the X64 label in runs-on, so no gx10 aarch64 runner can take them; a guard fails if any of the three loses it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6206
+  github_issue: 6206
+  item_type: task
+  title: 'CI: fat_driver depth-1 checkout fetches tags first and surfaces git stderr'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-24T00:17:40Z
+  updated: 2026-10-24T00:17:40Z
+  spec: null
+  acceptance_criteria:
+  - 'fat_driver.py uses_checkout (fetch-depth 1) runs git fetch -q origin +refs/tags/*:refs/tags/* (tags only, the + forces a moved tag; no --force flag, no bare --tags) under a 600s timeout before git tag -l, and a failing git tag -l or git tag -d fails the checkout with git stderr and rc in the section log; the self-test rows (missing tag object fetched, unfetchable tag fails with stderr, moved tag does not fail the fetch, undeletable tag fails with why) each turn red under the mutants that drop the fetch, the + of the refspec, the tags-only refspec (bare --tags or a wide refspec), the failure check, the stderr, the rc, the timeout or its 600'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6208
+  github_issue: 6208
+  item_type: bug
+  title: 'PP-29 D6: PP-LLAMA-001 §12 rows 16, 17, 20 expired 2026-10-23, main RED'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-24T00:45:00Z
+  updated: 2026-10-24T00:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/spec_conformance.sh passes on the branch; rows 16, 17, 20 carry 2026-11-06 (the 0.73.0 milestone date rows 13, 15, 19, 21 already use) with the was-date shown; a changelog row names the quorum round, says none of the three has evidence, and carries the NO SPEED DELIVERED consequence for the 0.72 notes; with SPEC_CONFORMANCE_TODAY=2026-11-07 the andon is RED again for exactly these rows; derived_expiries.json is regenerated by --write'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-date is renewal, not discharge; it ships only on a quorum AGREED at the final head. Real discharge needs lambda/CUDA hardware cells.'
+  epic: 5510
+- id: PMAT-6211
+  github_issue: 6211
+  item_type: task
+  title: 'model-ladder: per-cell memory admission so large cells do not swap the host'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T01:00:00Z
+  updated: 2026-10-24T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'with --admit (LADDER_ADMIT=1 in model_ladder.sh), each cell is checked against free memory, swap in use and live runner jobs; a cell the host cannot take is recorded not_measured with the reason and never run; an unreadable host admits nothing'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6212
+  github_issue: 6212
+  item_type: task
+  title: 'corpus-ingest: civil_from_days and now_utc_iso8601 tests + FALSIFY-006 (the #5590 delta not on main)'
+  status: in_progress
+  priority: low
+  assigned_to: aprender-w5382
+  created: 2026-10-24T01:20:00Z
+  updated: 2026-10-24T01:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --bin aprender-corpus-ingest -- civil_from_days now_utc format_utc passes (3 tests); changing the 719_468 epoch offset by one turns civil_from_days_epoch_and_leap_boundaries RED; contracts/bin-apr-cli--aprender-corpus-ingest-v1.yaml carries FALSIFY-BIN-APR_CORPUS_INGEST-006 and pv validate passes'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-cut from the EMG-001 return of #5590; its step-profiler half already landed (a743e8c23d).'
+  epic: 5510
+- id: PMAT-6235
+  github_issue: 6235
+  item_type: task
+  title: 'ci/sections.yml: pre-checkout ownership restore chowns to the runner uid, not 1000:1000'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T04:30:00Z
+  updated: 2026-10-24T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the three Pre-checkout ownership restore steps chown /workspace to the invoking runner uid:gid passed into the container, never a hardcoded 1000:1000'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6239
+  github_issue: 6239
+  item_type: task
+  title: 'ci: pr-light runs on an X64 clean-room runner, not gx10-build'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T05:05:00Z
+  updated: 2026-10-24T05:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'pr-light runs-on is [self-hosted, Linux, X64, clean-room] and the mg-reuse wiring check pins that exact line'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6255
+  github_issue: 6255
+  item_type: task
+  title: 'guard-cargo: split the 77 serial guard items into 3 parallel shards (merge-queue guards critical path)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T09:24:00Z
+  updated: 2026-10-24T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'guard-cargo runs as guard-cargo-shard (1..3 of 3), step m<N> in shard (N mod 3)+1, except a step that appends to GITHUB_PATH/GITHUB_ENV, which runs in every shard so later steps keep its state; the union of the three shards lists exactly the items `ci_guards.sh --list guard-cargo` lists on main, each once (state writers once per shard), with the same per-item condition; the check `guard-cargo` the gate reads is a fan-in verdict job that is red unless every shard is green'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6256
+  github_issue: 6256
+  item_type: task
+  title: 'ci: ownership restores chown to the runner uid and report failure (follow-up to #6235)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T10:05:00Z
+  updated: 2026-10-24T10:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'no chown in ci/sections.yml names 1000:1000, discards stderr or swallows its exit status'
+  - 'scripts/check_chown_loud.sh is red on the old file and its three planted mutants turn it red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6281
+  github_issue: 6281
+  item_type: task
+  title: 'ci(mq): merge_group hang caps -- no-output watchdog on the shard, 2x p95 walls on x86-main and guards'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-24T17:30:00Z
+  updated: 2026-10-24T17:30:00Z
+  spec: null
+  acceptance_criteria:
+  - on merge_group the workspace-test-shard job keeps its 180-minute wall and sets FAT_IDLE_LIMIT_S=1200 so fat_driver kills a step whose section log is silent for 20 minutes
+  - on merge_group x86-main is capped at 40 minutes and guards at 65 (2 x p95 of 30 green queue runs plus the 20-minute cold image pull); pull_request and push timeouts are unchanged
+  - fat_driver self-test has rows for the idle watchdog and a watchdog-off mutant turns one RED
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null

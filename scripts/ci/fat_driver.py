@@ -930,9 +930,13 @@ class Section:
         with PROCS_LOCK:
             PROCS.add(p)
         try:
-            return p.wait(timeout=timeout)
+            return wait_or_idle(p, self.log, timeout, idle_limit_seconds())
         except subprocess.TimeoutExpired:
             self.log.write(f"::error::step exceeded its timeout ({timeout:.0f}s); killing group {p.pid}\n")
+            kill_group(p)
+            return 124
+        except StepIdle as e:
+            self.log.write(f"::error::step printed nothing for {e.idle:.0f}s (FAT_IDLE_LIMIT_S): a hang, not a slow run; killing group {p.pid}\n")
             kill_group(p)
             return 124
         finally:
@@ -948,6 +952,66 @@ class Section:
         if h is None:
             raise ExprError(f"unsupported action {uses}")
         return h(self, w, ev)
+
+
+class StepIdle(Exception):
+    def __init__(self, idle):
+        super().__init__(idle)
+        self.idle = idle
+
+
+def idle_limit_seconds() -> float:
+    """FAT_IDLE_LIMIT_S: seconds a step may write NOTHING to the section log before it counts as hung.
+    Unset or 0 = off (a PR/push run keeps its wall-clock timeouts only). Set on the merge-queue shard,
+    where a tier=full run is legitimately long but never silent."""
+    try:
+        return max(0.0, float(os.environ.get("FAT_IDLE_LIMIT_S") or 0))
+    except ValueError:
+        return 0.0
+
+
+def _log_size(log, default):
+    try:
+        return os.fstat(log.fileno()).st_size
+    except (OSError, ValueError):
+        return default
+
+
+class _IdleWatch:
+    """Raises StepIdle from check() once the log has not grown for `idle` seconds."""
+
+    def __init__(self, log, idle):
+        self.log, self.idle = log, idle
+        self.size, self.since = -1, time.monotonic()
+
+    def check(self):
+        now = time.monotonic()
+        size = _log_size(self.log, self.size)
+        if size != self.size:
+            self.size, self.since = size, now
+        elif now - self.since >= self.idle:
+            raise StepIdle(now - self.since)
+
+
+def _poll(p, tick):
+    try:
+        return p.wait(timeout=tick)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def wait_or_idle(p, log, timeout, idle, tick=5.0):
+    """p.wait(timeout), plus: raise StepIdle if the log file did not grow for `idle` seconds."""
+    if not idle:
+        return p.wait(timeout=timeout)
+    t0, watch = time.monotonic(), _IdleWatch(log, idle)
+    rc = _poll(p, tick)
+    while rc is None:
+        if timeout and time.monotonic() - t0 >= timeout:
+            raise subprocess.TimeoutExpired(p.args, timeout)
+        watch.check()
+        rc = _poll(p, tick)
+    return rc
 
 
 def kill_group(p):
@@ -974,7 +1038,46 @@ def hash_files(ws: Path, pats) -> str:
     return h.hexdigest() if files else ""
 
 
+# tags only: a bare `fetch --tags` also updates refs/remotes/origin/*, which the depth-1 checkout must leave as cloned
+TAGS_REFSPEC = "+refs/tags/*:refs/tags/*"
+CHECKOUT_FETCH_TIMEOUT = 600  # seconds; the same bound uses_checkout gives the ref fetch
+
+
+def _checkout_git(sec, g, args):
+    """stdout of a git call, or None after logging what git said (a dropped stderr hid rc128)."""
+    p = subprocess.run(g + args, capture_output=True, text=True)
+    if p.returncode != 0:
+        sec.log.write(f"::error::checkout: git {' '.join(args)} failed rc={p.returncode}: {p.stderr.strip()}\n")
+        return None
+    return p.stdout
+
+
 # uses: handlers --------------------------------------------------------------
+def _checkout_depth1(sec, g):
+    """Cut the section clone to depth 1: tags dropped, `.git/shallow` naming HEAD. False on a git failure."""
+    # A fresh runner clone can hold a tag ref whose object it never received; with
+    # tag.sort set, `git tag -l` then dies rc128 ("refs/tags/v1.11.0 is not a commit!").
+    # Fetch the tags first so the objects exist, and say what git said when one still fails.
+    # Bounded like the ref fetch beside it (600s): a hung remote must not hold the section for ever.
+    try:
+        fp = subprocess.run(g + ["fetch", "-q", "origin", TAGS_REFSPEC], capture_output=True, text=True,
+                            timeout=CHECKOUT_FETCH_TIMEOUT)
+        if fp.returncode != 0:
+            sec.log.write(f"::warning::checkout: git fetch --tags failed rc={fp.returncode}: {fp.stderr.strip()}\n")
+    except subprocess.TimeoutExpired:
+        sec.log.write(f"::warning::checkout: git fetch --tags timed out after {CHECKOUT_FETCH_TIMEOUT}s\n")
+    tags = _checkout_git(sec, g, ["tag", "-l"])
+    if tags is None:
+        return False
+    tags = tags.split()
+    if tags and _checkout_git(sec, g, ["tag", "-d", *tags]) is None:
+        return False
+    gitdir = subprocess.run(g + ["rev-parse", "--absolute-git-dir"], capture_output=True,
+                            text=True, check=True).stdout.strip()
+    Path(gitdir, "shallow").write_text(sec.ctx.head + "\n")
+    return True
+
+
 def uses_checkout(sec: Section, w, ev):
     ref = w.get("ref")
     if ref:
@@ -993,12 +1096,8 @@ def uses_checkout(sec: Section, w, ev):
     depth = int(to_str(w.get("fetch-depth", 1)) or 1)
     g = ["git", "-C", str(sec.workspace)]
     if depth == 1:
-        tags = subprocess.run(g + ["tag", "-l"], capture_output=True, text=True, check=True).stdout.split()
-        if tags:
-            subprocess.run(g + ["tag", "-d", *tags], capture_output=True, check=True)
-        gitdir = subprocess.run(g + ["rev-parse", "--absolute-git-dir"], capture_output=True,
-                                text=True, check=True).stdout.strip()
-        Path(gitdir, "shallow").write_text(sec.ctx.head + "\n")
+        if not _checkout_depth1(sec, g):
+            return False, {}
     elif depth != 0:
         sec.log.write(f"::error::checkout: fetch-depth {depth} is not emulated (only 0 and 1)\n")
         return False, {}
@@ -1592,6 +1691,31 @@ def _st_timeouts(row):
             os.environ["FAT_TIMEOUT_SCALE"] = saved
 
 
+def _idle_run(argv, idle=1.0):
+    import tempfile
+    with tempfile.TemporaryFile() as lg:
+        p = subprocess.Popen(argv, stdout=lg, stderr=lg, start_new_session=True)
+        try:
+            return wait_or_idle(p, lg, 60, idle, tick=0.2)
+        except StepIdle:
+            return "idle"
+        finally:
+            kill_group(p)
+
+
+def _st_idle(row):
+    row("idle: a step that prints nothing past FAT_IDLE_LIMIT_S is declared hung", _idle_run(["sleep", "30"]), "idle")
+    row("idle: a step that keeps printing is never declared hung",
+        _idle_run(["sh", "-c", "for i in 1 2 3 4 5 6; do echo tick; sleep 0.4; done"]), 0)
+    saved = os.environ.pop("FAT_IDLE_LIMIT_S", None)
+    row("idle: unset means off", idle_limit_seconds(), 0.0)
+    os.environ["FAT_IDLE_LIMIT_S"] = "1500"
+    row("idle: FAT_IDLE_LIMIT_S=1500 is 25 min", idle_limit_seconds(), 1500.0)
+    os.environ.pop("FAT_IDLE_LIMIT_S", None)
+    if saved is not None:
+        os.environ["FAT_IDLE_LIMIT_S"] = saved
+
+
 def _st_artifact(row):
     import tempfile
     import http.server
@@ -1625,6 +1749,106 @@ def _st_artifact(row):
             got = repr(e)
         row("artifact download drops Authorization on the blob redirect", got, b"zipbytes")
     srv.shutdown()
+
+
+def _st_checkout_remote_refs(row, clone, tg):
+    """The tag fetch must not move refs/remotes/origin/*: a commit lands on the remote after the clone."""
+    import io
+    sec = clone("d8")
+    refs = lambda: subprocess.run(["git", "-C", str(sec.workspace), "for-each-ref", "refs/remotes"],
+                                  capture_output=True, text=True).stdout
+    before = refs()
+    subprocess.run(tg + ["commit", "-q", "--allow-empty", "-m", "after-clone"], check=True)
+    sec.log = io.StringIO()
+    ok, _ = uses_checkout(sec, {}, None)
+    row("checkout depth 1: the tag fetch leaves refs/remotes/origin/* as cloned",
+        (ok, bool(before), refs() == before), (True, True, True))
+
+
+def _st_checkout_fetch_timeout(row, clone):
+    import io
+    # a hung `git fetch --tags` is bounded by a timeout and the checkout goes on (the fetch only repairs)
+    seen, real_run = [], subprocess.run
+
+    def fake_run(argv, *a, **kw):
+        if "fetch" in argv:
+            seen.append(kw.get("timeout"))
+            raise subprocess.TimeoutExpired(argv, kw.get("timeout") or 0)
+        return real_run(argv, *a, **kw)
+    sec = clone("d7")
+    sec.log = io.StringIO()
+    subprocess.run = fake_run
+    try:
+        ok, _ = uses_checkout(sec, {}, None)
+    finally:
+        subprocess.run = real_run
+    row("checkout depth 1: the tag fetch runs under a timeout and a timeout is a warning, not a failure",
+        (ok, seen, "timed out" in sec.log.getvalue()), (True, [600], True))  # literal: the bound is the ref fetch's 600s, not whatever the constant says
+
+
+def _st_checkout_undeletable(row, clone, euid):
+    """The tag cannot be deleted (read-only refs/tags). Root ignores modes, so no row runs there; True if one did."""
+    import io
+    if euid == 0:
+        return False
+    sec = clone("d6")
+    rt = sec.workspace / ".git" / "refs" / "tags"
+    rt.chmod(0o555)
+    sec.log = io.StringIO()
+    try:
+        ok, _ = uses_checkout(sec, {}, None)
+    finally:
+        rt.chmod(0o755)
+    row("checkout depth 1: a tag that cannot be deleted fails the checkout and logs why",
+        (ok, "git tag -d " in sec.log.getvalue()), (False, True))
+    return True
+
+
+def _st_checkout_tags(row, src, g, clone):
+    # A tag ref whose object the clone never received (the runner sets tag.sort, which makes
+    # `git tag -l` read every tag object and die rc128). The fetch repairs it; a tag no remote
+    # has fails the checkout and the log carries git's own words.
+    import io
+    tg = ["git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run(tg + ["commit", "-q", "--allow-empty", "-m", "late"], check=True)
+    late = subprocess.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    subprocess.run(g + ["tag", "v9"], check=True)
+    old_env = {k: os.environ.get(k) for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0")}
+    os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="tag.sort", GIT_CONFIG_VALUE_0="creatordate")
+    try:
+        sec = clone("d3")
+        (sec.workspace / ".git" / "refs" / "tags" / "v9").write_text(late + "\n")
+        d2, rest = re.fullmatch(r"(..)(.{38})", late).groups()  # loose-object dir and file, split without slicing
+        (sec.workspace / ".git" / "objects" / d2 / rest).unlink(missing_ok=True)
+        sec.log = io.StringIO()
+        ok, _ = uses_checkout(sec, {}, None)
+        tags = subprocess.run(["git", "-C", str(sec.workspace), "tag", "-l"], capture_output=True,
+                              text=True).stdout.split()
+        row("checkout depth 1: a tag whose object is missing is fetched, then dropped", (ok, tags), (True, []))
+        sec = clone("d4")
+        (sec.workspace / ".git" / "refs" / "tags" / "vX").write_text("1" * 40 + "\n")
+        sec.log = io.StringIO()
+        ok, _ = uses_checkout(sec, {}, None)
+        logged = sec.log.getvalue()
+        row("checkout depth 1: an unfetchable tag fails the checkout and logs git's stderr",
+            (ok, "missing object" in logged and "rc=128" in logged), (False, True))
+        # a tag moved on the remote since the clone: only the `+` of the refspec lets the fetch take it
+        subprocess.run(g + ["tag", "vm"], check=True)
+        sec = clone("d5")
+        subprocess.run(tg + ["commit", "-q", "--allow-empty", "-m", "moved"], check=True)
+        subprocess.run(g + ["tag", "-f", "vm"], capture_output=True, check=True)
+        sec.log = io.StringIO()
+        ok, _ = uses_checkout(sec, {}, None)
+        row("checkout depth 1: a tag moved on the remote does not fail the fetch",
+            (ok, "::warning::" in sec.log.getvalue()), (True, False))
+        _st_checkout_fetch_timeout(row, clone)
+        _st_checkout_remote_refs(row, clone, tg)
+        row("checkout depth 1: the undeletable-tag row is not run as root (euid 0)",
+            _st_checkout_undeletable(row, clone, 0), False)
+        _st_checkout_undeletable(row, clone, os.geteuid())
+    finally:
+        for k, v in old_env.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
 
 
 def _st_checkout(row):
@@ -1666,6 +1890,8 @@ def _st_checkout(row):
         row("checkout fetch-depth 0: full history", (ok, cnt), (True, "3"))
         ok, _ = uses_checkout(clone("d2"), {"fetch-depth": 2}, None)
         row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
+
+        _st_checkout_tags(row, src, g, clone)
 
 
 # #4507: a leftover section tree the runner user cannot delete (root-owned files
@@ -1823,7 +2049,7 @@ def cmd_self_test(a):
     def row(label, got, want):
         rows.append((label, got == want, got, want))
 
-    for section in (_st_vendored, _st_expressions, _st_timeouts, _st_artifact, _st_checkout, _st_aside,
+    for section in (_st_vendored, _st_expressions, _st_timeouts, _st_idle, _st_artifact, _st_checkout, _st_aside,
                     _st_external, _st_results_output):
         section(row)
     bad = 0

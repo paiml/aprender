@@ -92,7 +92,7 @@ fn corpus() -> tempfile::TempDir {
         let entry = entry.expect("entry");
         // The ont4/ont4b gates lint this fixture in place (#5446), and pv leaves a `.pv/` directory in it; copy
         // the corpus files only, never that directory.
-        if !entry.file_type().expect("file type").is_file() {
+        if entry.file_name() == ".pv" {
             continue;
         }
         std::fs::copy(entry.path(), dir.path().join(entry.file_name())).expect("copy");
