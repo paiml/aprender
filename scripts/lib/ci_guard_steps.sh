@@ -408,7 +408,7 @@ cmd_run() {
             # --shard I/K (#6255): step idx n runs in shard (n mod K)+1, so the K shards partition the manifest exactly once
             # A step that appends to GITHUB_PATH/GITHUB_ENV hands state to the steps after it, so it runs in EVERY shard:
             # the serial run carried that state forward, and a shard without it would lose it (m69 -> m70/m71 cargo-deny).
-            if [ -n "$shard_k" ] && ! [[ $run == *GITHUB_PATH* || $run == *GITHUB_ENV* ]]; then [[ $idx =~ ^m([0-9]+)$ ]] || die "--shard: step id <$idx> is not m<N>"; [ $((BASH_REMATCH[1] % shard_k)) -eq $((shard_i - 1)) ] || continue; fi
+            if [ -n "$shard_k" ] && ! [[ $run =~ (\>\>|tee\ -a)[[:space:]]*\"?\$\{?GITHUB_(PATH|ENV) ]]; then [[ $idx =~ ^m([0-9]+)$ ]] || die "--shard: step id <$idx> is not m<N>"; [ $((BASH_REMATCH[1] % shard_k)) -eq $((shard_i - 1)) ] || continue; fi
             reason=""
             if ! in_ci; then
                 if [[ $cond == *event_name* ]]; then reason="if: needs a CI event"
@@ -588,7 +588,7 @@ cmd_list() {
     for job in "${names[@]}"; do
         echo "== $job"
         [ "$ci" = true ] && [ "$(jqj --arg m "$job$MANIFEST_SUFFIX" 'has($m)')" = true ] || job_steps_ok "$job"
-        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)\(if (.step.run // "" | tostring | test("GITHUB_(PATH|ENV)")) then "\u0001" else "" end)"'  | { if [ -n "$shard_k" ]; then awk -v i="$shard_i" -v k="$shard_k" '/^==/{print;next} {n=$1; sub(/^m/,"",n); if (/\001/ || n % k == i - 1) {sub(/\001/,""); print}}'; else tr -d '\001'; fi; }
+        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)\(if (.step.run // "" | tostring | test("(>>|tee -a)\\s*\"?\\$\\{?GITHUB_(PATH|ENV)")) then "\u0001" else "" end)"'  | { if [ -n "$shard_k" ]; then awk -v i="$shard_i" -v k="$shard_k" '/^==/{print;next} {n=$1; sub(/^m/,"",n); if (/\001/ || n % k == i - 1) {sub(/\001/,""); print}}'; else tr -d '\001'; fi; }
     done
 }
 
