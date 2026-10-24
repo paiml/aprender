@@ -50,7 +50,7 @@ strip_comments() {
     rs) grep -Ev '^[[:space:]]*(//([^/!].*)?)?$' || true ;;
     c|h|cu|js|ts|go|java) grep -Ev '^[[:space:]]*(//.*)?$' || true ;;
     # Line 1 `#!` is the interpreter, not a comment: changing it changes what runs.
-    sh|py|yaml|yml|toml|cmd|mk|rb|txt) awk 'NR == 1 && /^#!/ { print; next } !/^[ \t]*(#.*)?$/' ;;
+    sh|py|yaml|yml|toml|cmd|mk|rb) awk 'NR == 1 && /^#!/ { print; next } !/^[ \t]*(#.*)?$/' ;;
     *) cat ;;
   esac
 }
@@ -69,16 +69,29 @@ comment_only() { # BASE HEAD PATH -> 0 when the change to PATH touches only blan
   [[ $before == "$after" ]]
 }
 
+read_by_code() { # BASE HEAD PATH -> 0 when some file other than PATH names PATH
+  local t
+  for t in "$1" "$2"; do
+    git grep -qF -e "$3" "$t" -- crates src tests scripts ci .github Makefile build.rs ':!'"$3" 2>/dev/null && return 0
+  done
+  return 1
+}
+
 rank() { case $1 in light) echo 0 ;; standard) echo 1 ;; *) echo 2 ;; esac; }
 
 tier_of() { # BASE HEAD PATH
   if matches_any "$3" <<< "$SENS"; then echo sensitive
-  elif matches_any "$3" <<< "$LIGHT"; then echo light
+  elif matches_any "$3" <<< "$STD"; then echo standard   # carve-outs of a light glob (e.g. include_str! docs)
+  elif matches_any "$3" <<< "$LIGHT"; then
+    # Light is an allowlist that fails closed: a file is light only if no code names it. A path that any
+    # source, script, workflow or Makefile at BASE or HEAD mentions (include_str!, include!, a gate reading it) is standard.
+    if read_by_code "$1" "$2" "$3"; then echo standard; else echo light; fi
   elif comment_only "$1" "$2" "$3"; then echo light
   else echo standard
   fi
 }
 
+SENS=; LIGHT=; STD=
 derive() { # BASE HEAD
   local f t best=light n=0 missing=0
   local tbl; tbl=$(mktemp); trap 'rm -f "${tbl:?}"' RETURN
@@ -88,6 +101,7 @@ derive() { # BASE HEAD
   elif ! git show "$1:$TABLE" > "$tbl" 2>/dev/null; then missing=1; fi
   if [[ $missing -eq 0 ]]; then
     SENS=$(list_of sensitive "$tbl") || die "table $TABLE is malformed"; LIGHT=$(list_of light "$tbl") || die "table $TABLE is malformed"
+    STD=$(list_of standard "$tbl") || die "table $TABLE is malformed"
     [[ -n $SENS && -n $LIGHT ]] || die "table $TABLE lists no sensitive or no light paths"
   fi
   while IFS= read -r f; do
@@ -111,6 +125,7 @@ self_test() {
   printf 'name: ci\n' > "$d/.github/workflows/ci.yml"
   printf '# doc\n' > "$d/docs/a.md"
   printf '' > "$d/scripts/.keep"; printf 'echo hi\n' > "$d/bin/run.sh"
+  printf 'doc\n' > "$d/docs/read.md"; printf 'const D: &str = include_str!("../../../docs/read.md");\n' > "$d/crates/x/src/inc.rs"
   git -C "$d" add -A; git -C "$d" commit -qm base; base=$(git -C "$d" rev-parse HEAD)
   expect() { # NAME WANT -- mutation commands run in $d
     local name=$1 want=$2 got
@@ -167,6 +182,10 @@ self_test() {
   printf 'x\n' > "$d/GNUmakefile";                                              expect gnumakefile sensitive
   mkdir -p "$d/sub"; printf 'x\n' > "$d/sub/rules.mk";                                             expect mk-file sensitive
   printf 'x\n' > "$d/crates/x/Cargo.lock";                                      expect nested-cargo-lock sensitive
+  printf 'more\n' >> "$d/docs/read.md";                                       expect doc-read-by-code-standard standard
+  printf 'doc\n' > "$d/docs/unread.md"; expect unread-doc-light light
+  mkdir -p "$d/docs/specifications"; printf 'x\n' > "$d/docs/specifications/s.md";   expect spec-md-not-light standard
+  printf '#!/bin/sh\nx\n' > "$d/crates/x/data.txt"; printf '# data\n' >> "$d/crates/x/data.txt"; expect txt-hash-line-is-data standard
   printf 'x\n' > "$d/key.pem";                                                   expect key-file sensitive
   # an author-set tier is not read: the commit message and a trailer say light, the path says sensitive
   printf 'on: push\n' >> "$d/.github/workflows/ci.yml"
