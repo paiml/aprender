@@ -32,7 +32,7 @@ fail() { reasons+=("$1"); }
 exec_rs() {
   local f
   git diff --name-only --no-renames --diff-filter=AMR "$1" "$2" -- '*.rs' | while IFS= read -r f; do
-    case $f in */tests/*|*_tests.rs|*/tests.rs|*/benches/*) continue ;; esac
+    case $f in */tests/*|tests/*|*_tests.rs|*/tests.rs|*/benches/*|benches/*) continue ;; esac
     [[ $(git diff -U0 "$1" "$2" -- "$f" | grep -E '^[+-]' | grep -Ev '^(\+\+\+|---)' | grep -Ev '^[+-][[:space:]]*(//.*)?$' | head -1) ]] && echo "$f"
   done
 }
@@ -143,6 +143,7 @@ $TRAILER}" --allow-empty
   printf 'fn b() {}\n' >> "$d/crates/x/src/lib.rs"; LIST=true;                              expect zero-mutants-is-fail "fail:0 mutants listed"; unset LIST
   printf 'fn b() {}\n' >> "$d/crates/x/src/lib.rs"; LIST=false;                             expect list-failure-is-fail "fail:listing failed"; unset LIST
   printf 'fn b() {}\n' >> "$d/crates/x/src/lib.rs"; RUN=false;                              expect survivor-is-fail "fail:in-diff run failed"; unset RUN
+  mkdir -p "$d/tests" "$d/benches"; printf 'fn t() { let x = 1; }\n' > "$d/tests/t.rs"; printf 'fn b() { let y = 2; }\n' > "$d/benches/b.rs"; LIST=true; expect top-level-tests-and-benches-need-no-mutants pass; unset LIST
   printf '// only a comment\n' >> "$d/crates/x/src/lib.rs"; LIST=true;                      expect comment-only-needs-no-mutants pass; unset LIST
   printf 'fn b() {}\n' >> "$d/crates/x/src/lib.rs"; RV=review-open.txt;                      expect open-findings-fail "fail:open: 0"; unset RV
   printf 'fn b() {}\n' >> "$d/crates/x/src/lib.rs"; RV=missing.txt;                          expect no-self-review-fails "fail:--self-review"; unset RV
