@@ -99,7 +99,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-10-23",
+      "expires": "2026-11-06",
       "root": false
     },
     "17": {
@@ -108,7 +108,7 @@
       ],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-10-23",
+      "expires": "2026-11-06",
       "root": false
     },
     "18": {
@@ -143,7 +143,7 @@
       "blocked_by": [],
       "derived_from": [],
       "discharged": false,
-      "expires": "2026-10-23",
+      "expires": "2026-11-06",
       "root": true
     },
     "21": {
