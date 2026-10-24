@@ -315,22 +315,7 @@ judge() {
             [ -n "$name" ] || continue
             case "$name" in *.yaml) ;; *) continue ;; esac
             [ -f "$td/entries/${name##*/}" ] || continue
-            fr="$td/entries/${name##*/}"; stem=${name##*/}; stem=${stem%.yaml}; fout=""
-            # A clean one-entry block: first line `- id: <file stem>`, exactly one top-level entry,
-            # exactly one `id:` key, and a title and a status.
-            [ "$(head -n 1 "$fr")" = "- id: $stem" ] || fout="${fout}first line is not '- id: $stem'; "
-            [ "$(grep -c '^- ' "$fr")" = 1 ] || fout="${fout}not exactly one entry; "
-            [ "$(grep -cE '^(- |  )id:' "$fr")" = 1 ] || fout="${fout}id: key missing or duplicated; "
-            grep -qE '^  title: *[^ ]' "$fr" || fout="${fout}no title; "
-            grep -qE '^  status: *[^ ]' "$fr" || fout="${fout}no status; "
-            # and the real aggregator must accept it: aggregate --write, then --check, on a scratch copy.
-            mkdir -p "$td/fc/entries" && cp "$td/roadmap-base.yaml" "$td/fc/roadmap-base.yaml" 2>/dev/null || cp "$td/head.yaml" "$td/fc/roadmap-base.yaml"
-            cp "$td/head.yaml" "$td/fc/roadmap.yaml"; cp "$fr" "$td/fc/entries/"
-            if ! python3 "$PY_LIB" aggregate --write --roadmap "$td/fc/roadmap.yaml" --entries "$td/fc/entries" >/dev/null 2>&1 \
-                || ! python3 "$PY_LIB" aggregate --check --roadmap "$td/fc/roadmap.yaml" --entries "$td/fc/entries" >/dev/null 2>&1; then
-                fout="${fout}the aggregator refuses it; "
-            fi
-            rm -rf -- "${td:?}/fc"
+            fr="$td/entries/${name##*/}"; fout=$(fragment_problems "$fr" "$td" "${PY_LIB%/*}") || true
             if [ -n "$fout" ]; then
                 rc=1
                 out="${out:+$out$'\n'}${name}: ${fout}"
@@ -365,7 +350,11 @@ judge() {
         remedy
         return 1
     fi
-    printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated\n' "$PROG" "$checked"
+    if [ "$entries_only" = 1 ]; then
+        printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate check is deferred (entries-only)\n' "$PROG" "$checked"
+    else
+        printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated\n' "$PROG" "$checked"
+    fi
     return 0
 }
 
@@ -402,7 +391,38 @@ mkrepo() {
     git -C "$d" commit -qm base
 }
 
+# Why a changed fragment is not one clean entry, or nothing. The existing tools do the parsing: the fragment is
+# aggregated ALONE into the preamble of the head roadmap (aggregate --write, then --check), and roadmap_diff.py check
+# parses the result as YAML and must report exactly one entry, added. Three shapes those tools cannot see are
+# byte-checked (none occurs in a real fragment): no final newline, a bare `-` line, an `id` key besides the first.
+fragment_problems() {
+    local fr=$1 td=$2 lib=$3 sc="$2/fc" out
+    rm -rf -- "${sc:?}"; mkdir -p "$sc/entries"
+    sed '/^- id:/,$d' "$td/head.yaml" >"$sc/pre.yaml"
+    cp "$sc/pre.yaml" "$sc/roadmap.yaml"; cp "$fr" "$sc/entries/"
+    [ -z "$(tail -c1 "$fr")" ] || printf 'no final newline; '
+    grep -qE '^-[[:space:]]*$' "$fr" && printf 'a bare - line; '
+    [ "$(grep -cE '^(- |  )["'"'"']?id["'"'"']?:' "$fr")" = 1 ] || printf 'id: key missing or repeated; '
+    grep -qE '^  status: *["'"'"']?(planned|in_progress|inprogress|completed|blocked|cancelled)["'"'"']? *$' "$fr" \
+        || printf 'status missing or not one of planned/in_progress/inprogress/completed/blocked/cancelled; '
+    # check_roadmap_completion_is_cited.sh only scans files with a `roadmap:` key, so a fragment's `completed` is
+    # invisible to it until the aggregate is regenerated: an entries-only diff must carry the citation token itself.
+    if grep -qiE '^  status: *["'"'"']?(completed|done|finished|closed)["'"'"']? *$' "$fr" && ! grep -qiE 'proof:[^[:space:],;]+' "$fr"; then
+        printf 'status completed cites nothing (no proof:<ref>); '
+    fi
+    python3 "$lib/roadmap_fragments.py" aggregate --write --roadmap "$sc/roadmap.yaml" --entries "$sc/entries" >/dev/null 2>&1 \
+        || printf 'the aggregator refuses it; '
+    python3 "$lib/roadmap_fragments.py" aggregate --check --roadmap "$sc/roadmap.yaml" --entries "$sc/entries" >/dev/null 2>&1 \
+        || printf 'it is not idempotent under the aggregator (id != file name, or not one entry); '
+    out=$(python3 "$lib/roadmap_diff.py" check --base "$sc/pre.yaml" --head "$sc/roadmap.yaml" 2>&1) \
+        || printf 'roadmap_diff: %s; ' "$(printf '%s' "$out" | grep -m1 VIOLATION)"
+    printf '%s' "$out" | grep -q 'head=1 added=1 ' || printf 'not exactly one new entry; '
+    rm -rf -- "${sc:?}"
+    return 0
+}
+
 self_test() {
+    unset FULL_REGEN
     local td n=0 red=0 TEMPLATE
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
@@ -528,10 +548,9 @@ self_test() {
         commit_all "$1"
     }
     # A malformed fragment (no `status`, id != file name) beside an entries-only diff.
-    b_fragment_bad() {
-        printf -- '- id: PMAT-200\n  title: no status\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
-        commit_all "$1"
-    }
+    b_fragment_bogus_status() { printf -- '- id: PMAT-200\n  title: t\n  status: bogus\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fragment_done_uncited() { printf -- '- id: PMAT-200\n  title: t\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fragment_done_cited() { printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:scripts/check_roadmap_fragment_required.sh\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
     b_fragment_dupid() {
         printf -- '- id: PMAT-200\n  id: PMAT-200\n  title: t\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
@@ -544,8 +563,13 @@ self_test() {
         printf -- '- id: PMAT-200\n  title: t\n  status: planned\n- id: PMAT-201\n  title: u\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
     }
-    b_fragment_notitle() {
-        printf -- '- id: PMAT-200\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+    b_fragment_col0() { printf -- '- id: PMAT-200\n  title: t\n  status: planned\nstray: key\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fragment_nonl() { printf -- '- id: PMAT-200\n  title: t\n  status: planned' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fragment_quotedid() { printf -- '- id: PMAT-200\n  "id": PMAT-201\n  title: t\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fragment_bare() { printf -- '- id: PMAT-200\n  title: t\n  status: planned\n-\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    # A real fragment whose quoted text carries column-0 lines and a "- " line (PMAT-3731), prose edited.
+    b_fragment_real_3731() {
+        sed 's/ the train;/ the train (edited);/' "$REPO_ROOT/docs/roadmaps/entries/PMAT-3731.yaml" >"$1/$ENTRIES_DIR/PMAT-3731.yaml"
         commit_all "$1"
     }
     b_fragment_unparsable() {
@@ -669,12 +693,18 @@ PY
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
     row 'fragment added, aggregate NOT regenerated (entries-only diff) -> PASS, regen deferred out loud' \
         0 'entries-only diff: the regenerated-aggregate check' b_fragment_no_regen
-    row 'entries-only diff, fragment lacks `status` -> REFUSE (RULE 2 deferred, fragment check not)' \
-        1 'no status' b_fragment_bad
-    row 'entries-only diff, duplicate id: key -> REFUSE' 1 'id: key missing or duplicated' b_fragment_dupid
-    row 'entries-only diff, id != file name -> REFUSE' 1 "first line is not '- id: PMAT-200'" b_fragment_wrongid
-    row 'entries-only diff, two entries in one fragment -> REFUSE' 1 'not exactly one entry' b_fragment_two
-    row 'entries-only diff, fragment without a title -> REFUSE' 1 'no title' b_fragment_notitle
+    row 'entries-only diff, a real fragment with col-0 and "- " lines in quoted text (PMAT-3731), prose edited -> PASS' \
+        0 'entries-only diff: the regenerated-aggregate check' b_fragment_real_3731
+    row 'entries-only diff, `status: bogus` -> REFUSE' 1 'status missing or not one of' b_fragment_bogus_status
+    row 'entries-only diff, `status: completed` with no proof: token -> REFUSE' 1 'cites nothing' b_fragment_done_uncited
+    row 'entries-only diff, `status: completed` citing proof:<path> -> PASS' 0 'entries-only diff: the regenerated-aggregate check' b_fragment_done_cited
+    row 'entries-only diff, duplicate id: key -> REFUSE' 1 'id: key missing or repeated' b_fragment_dupid
+    row 'entries-only diff, quoted "id" key -> REFUSE' 1 'id: key missing or repeated' b_fragment_quotedid
+    row 'entries-only diff, id != file name -> REFUSE' 1 'FAIL  FRAGMENT' b_fragment_wrongid
+    row 'entries-only diff, two entries in one fragment -> REFUSE' 1 'not exactly one new entry' b_fragment_two
+    row 'entries-only diff, a col-0 line outside any scalar -> REFUSE' 1 'top-level-keys-changed' b_fragment_col0
+    row 'entries-only diff, no final newline -> REFUSE' 1 'no final newline' b_fragment_nonl
+    row 'entries-only diff, a bare - line -> REFUSE' 1 'a bare - line' b_fragment_bare
     row 'entries-only diff, fragment does not parse -> REFUSE' \
         1 'FAIL  FRAGMENT' b_fragment_unparsable
     FULL_REGEN=1 row 'entries-only diff under --full (main / bump check) -> REFUSE, naming the drift' \
@@ -730,7 +760,8 @@ PY
     n=$((n + 1))
     local fout frc
     mkrepo "$td/r$n" >/dev/null 2>&1 && b_fragment_no_regen "$td/r$n" >/dev/null 2>&1
-    judge_with_failing_cargo_diff() {
+    judge_with_failing_cargo_diff() (
+        # A subshell body: the git() override cannot outlive the call, whoever invokes it.
         git() {
             case " $* " in
                 *" -- Cargo.toml "*) return 1 ;;
@@ -738,7 +769,7 @@ PY
             command git "$@"
         }
         judge "$@"
-    }
+    )
     fout=$(judge_with_failing_cargo_diff "$td/r$n" HEAD~1 HEAD 2>&1)
     frc=$?
     if [ "$frc" = 1 ] && grep -qF 'FAIL  DRIFT' <<<"$fout"; then
