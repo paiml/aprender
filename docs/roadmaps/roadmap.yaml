@@ -25935,3 +25935,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'Re-date is renewal, not discharge; it ships only on a quorum AGREED at the final head. Real discharge needs lambda/CUDA hardware cells.'
   epic: 5510
+- id: PMAT-6212
+  github_issue: 6212
+  item_type: task
+  title: 'corpus-ingest: civil_from_days and now_utc_iso8601 tests + FALSIFY-006 (the #5590 delta not on main)'
+  status: in_progress
+  priority: low
+  assigned_to: aprender-w5382
+  created: 2026-10-24T01:20:00Z
+  updated: 2026-10-24T01:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --bin aprender-corpus-ingest -- civil_from_days now_utc passes (2 tests); changing the 719_468 epoch offset by one turns civil_from_days_epoch_and_leap_boundaries RED; contracts/bin-apr-cli--aprender-corpus-ingest-v1.yaml carries FALSIFY-BIN-APR_CORPUS_INGEST-006 and pv validate passes'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-cut from the EMG-001 return of #5590; its step-profiler half already landed (a743e8c23d).'
+  epic: 5510
