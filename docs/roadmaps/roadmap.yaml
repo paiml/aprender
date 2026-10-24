@@ -25889,7 +25889,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-24T00:17:40Z
   spec: null
   acceptance_criteria:
-  - 'fat_driver.py uses_checkout (fetch-depth 1) runs git fetch --tags --force origin before git tag -l, and a failing git tag -l or git tag -d fails the checkout with git stderr and rc in the section log; the self-test rows (missing tag object fetched, unfetchable tag fails with stderr, moved tag does not fail the fetch, undeletable tag fails with why) each turn red under the mutants that drop the fetch, --force, the failure check, the stderr or the rc'
+  - 'fat_driver.py uses_checkout (fetch-depth 1) runs git fetch -q origin +refs/tags/*:refs/tags/* (tags only, the + forces a moved tag; no --force flag, no bare --tags) under a 600s timeout before git tag -l, and a failing git tag -l or git tag -d fails the checkout with git stderr and rc in the section log; the self-test rows (missing tag object fetched, unfetchable tag fails with stderr, moved tag does not fail the fetch, undeletable tag fails with why) each turn red under the mutants that drop the fetch, the + of the refspec, the tags-only refspec (bare --tags or a wide refspec), the failure check, the stderr, the rc, the timeout or its 600'
   phases: []
   subtasks: []
   estimated_effort: null

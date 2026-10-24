@@ -996,7 +996,7 @@ def _checkout_depth1(sec, g):
     # Fetch the tags first so the objects exist, and say what git said when one still fails.
     # Bounded like the ref fetch beside it (600s): a hung remote must not hold the section for ever.
     try:
-        fp = subprocess.run(g + ["fetch", "-q", "--force", "origin", TAGS_REFSPEC], capture_output=True, text=True,
+        fp = subprocess.run(g + ["fetch", "-q", "origin", TAGS_REFSPEC], capture_output=True, text=True,
                             timeout=CHECKOUT_FETCH_TIMEOUT)
         if fp.returncode != 0:
             sec.log.write(f"::warning::checkout: git fetch --tags failed rc={fp.returncode}: {fp.stderr.strip()}\n")
@@ -1743,7 +1743,7 @@ def _st_checkout_tags(row, src, g, clone):
         logged = sec.log.getvalue()
         row("checkout depth 1: an unfetchable tag fails the checkout and logs git's stderr",
             (ok, "missing object" in logged and "rc=128" in logged), (False, True))
-        # a tag moved on the remote since the clone: only --force lets the fetch take it
+        # a tag moved on the remote since the clone: only the `+` of the refspec lets the fetch take it
         subprocess.run(g + ["tag", "vm"], check=True)
         sec = clone("d5")
         subprocess.run(tg + ["commit", "-q", "--allow-empty", "-m", "moved"], check=True)
