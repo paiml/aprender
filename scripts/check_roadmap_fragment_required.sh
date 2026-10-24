@@ -226,7 +226,11 @@ judge() {
         rm -f -- "${td:?}/roadmap-base.yaml"
     fi
     mkdir -p "$td/entries"
-    names=$(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null) || names=""
+    names=$(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null) || {
+        rm -rf -- "${td:?}"
+        printf 'ENV   %s: cannot list %s at %s\n' "$PROG" "$ENTRIES_DIR" "$head" >&2
+        return 2
+    }
     while IFS= read -r name; do
         [ -n "$name" ] || continue
         case "$name" in *.yaml) ;; *) continue ;; esac
@@ -249,7 +253,11 @@ judge() {
         cp "$td/base.yaml" "$td/rb/roadmap.yaml"
         while IFS= read -r name; do
             case "$name" in *.yaml) ;; *) continue ;; esac
-            git -C "$repo" show "$base:$name" >"$td/rb/entries/${name##*/}" 2>/dev/null || continue
+            git -C "$repo" show "$base:$name" >"$td/rb/entries/${name##*/}" 2>/dev/null || {
+                rm -rf -- "${td:?}"
+                printf 'ENV   %s: cannot read %s at %s\n' "$PROG" "$name" "$base" >&2
+                return 2
+            }
         done < <(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null)
         if python3 "$PY_LIB" aggregate --write --roadmap "$td/rb/roadmap.yaml" --entries "$td/rb/entries" >/dev/null 2>&1; then
             cp "$td/rb/roadmap.yaml" "$td/base.yaml"
@@ -321,6 +329,18 @@ judge() {
                 out="${out:+$out$'\n'}${name}: ${fout}"
             fi
         done < <(printf '%s\n' "$frag_paths")
+        fout=$(fullset_problems "$repo" "$base" "$head" "$td" "${PY_LIB%/*}"); fs_rc=$?
+        if [ "$fs_rc" = 2 ]; then
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: %s\n' "$PROG" "$fout" >&2
+            return 2
+        fi
+        case "$fout" in note:*) printf '%s\n' "$fout" | sed 's/; $//' ;; esac
+        case "$fout" in note:*) fout=${fout#note:*; } ;; esac
+        if [ -n "$fout" ]; then
+            rc=1
+            out="${out:+$out$'\n'}(whole set) ${fout}"
+        fi
     else
         out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
         rc=$?
@@ -391,32 +411,54 @@ mkrepo() {
     git -C "$d" commit -qm base
 }
 
-# Why a changed fragment is not one clean entry, or nothing. The existing tools do the parsing: the fragment is
-# aggregated ALONE into the preamble of the head roadmap (aggregate --write, then --check), and roadmap_diff.py check
-# parses the result as YAML and must report exactly one entry, added. Three shapes those tools cannot see are
-# byte-checked (none occurs in a real fragment): no final newline, a bare `-` line, an `id` key besides the first.
+# Judge a changed fragment ONLY by what the existing parsers emit (roadmap_fragments.py, roadmap_diff.py); no text
+# greps of the fragment (each one was bypassed in review). The fragment is aggregated ALONE into the head
+# roadmap's preamble, so an alias to another fragment's anchor does not resolve; roadmap_diff.py check parses the
+# result as YAML and must exit 0 and report exactly one entry, added.
 fragment_problems() {
     local fr=$1 td=$2 lib=$3 sc="$2/fc" out
-    rm -rf -- "${sc:?}"; mkdir -p "$sc/entries"
+    rm -rf -- "${sc:?}"; mkdir -p "$sc/entries" "$sc/docs/roadmaps"
     sed '/^- id:/,$d' "$td/head.yaml" >"$sc/pre.yaml"
-    cp "$sc/pre.yaml" "$sc/roadmap.yaml"; cp "$fr" "$sc/entries/"
-    [ -z "$(tail -c1 "$fr")" ] || printf 'no final newline; '
-    grep -qE '^-[[:space:]]*$' "$fr" && printf 'a bare - line; '
-    [ "$(grep -cE '^(- |  )["'"'"']?id["'"'"']?:' "$fr")" = 1 ] || printf 'id: key missing or repeated; '
-    grep -qE '^  status: *["'"'"']?(planned|in_progress|inprogress|completed|blocked|cancelled)["'"'"']? *$' "$fr" \
-        || printf 'status missing or not one of planned/in_progress/inprogress/completed/blocked/cancelled; '
-    # check_roadmap_completion_is_cited.sh only scans files with a `roadmap:` key, so a fragment's `completed` is
-    # invisible to it until the aggregate is regenerated: an entries-only diff must carry the citation token itself.
-    if grep -qiE '^  status: *["'"'"']?(completed|done|finished|closed)["'"'"']? *$' "$fr" && ! grep -qiE 'proof:[^[:space:],;]+' "$fr"; then
-        printf 'status completed cites nothing (no proof:<ref>); '
-    fi
-    python3 "$lib/roadmap_fragments.py" aggregate --write --roadmap "$sc/roadmap.yaml" --entries "$sc/entries" >/dev/null 2>&1 \
-        || printf 'the aggregator refuses it; '
-    python3 "$lib/roadmap_fragments.py" aggregate --check --roadmap "$sc/roadmap.yaml" --entries "$sc/entries" >/dev/null 2>&1 \
+    cp "$sc/pre.yaml" "$sc/docs/roadmaps/roadmap.yaml"; cp "$fr" "$sc/entries/"
+    python3 "$lib/roadmap_fragments.py" aggregate --write --roadmap "$sc/docs/roadmaps/roadmap.yaml" --entries "$sc/entries" >/dev/null 2>&1 \
+        || :   # a refused write is reported by the --check below
+    python3 "$lib/roadmap_fragments.py" aggregate --check --roadmap "$sc/docs/roadmaps/roadmap.yaml" --entries "$sc/entries" >/dev/null 2>&1 \
         || printf 'it is not idempotent under the aggregator (id != file name, or not one entry); '
-    out=$(python3 "$lib/roadmap_diff.py" check --base "$sc/pre.yaml" --head "$sc/roadmap.yaml" 2>&1) \
+    out=$(python3 "$lib/roadmap_diff.py" check --base "$sc/pre.yaml" --head "$sc/docs/roadmaps/roadmap.yaml" 2>&1) \
         || printf 'roadmap_diff: %s; ' "$(printf '%s' "$out" | grep -m1 VIOLATION)"
     printf '%s' "$out" | grep -q 'head=1 added=1 ' || printf 'not exactly one new entry; '
+    # pmat's own roadmap parser: status enum, duplicate ids, schema (exit 1 = invalid).
+    out=$(pmat work validate -p "$sc" 2>&1) || printf 'pmat work validate: %s; ' "$(printf '%s' "$out" | grep -m1 '^Error:')"
+    rm -rf -- "${sc:?}"
+    return 0
+}
+
+# The WHOLE fragment set, base ref against head: aggregate(frozen base + entries/) on each side, then
+# roadmap_diff.py check (the additive rule: an existing id may change lifecycle fields only; a deleted or renamed
+# fragment is a deleted entry). Prints problems; returns 0 clean, 1 problems, 2 a git read failed (never a pass).
+# Without the frozen base on both refs there is nothing to regenerate from, and it says so.
+fullset_problems() {
+    local repo=$1 base=$2 head=$3 td=$4 lib=$5 sc="$4/fs" side ref name names out
+    rm -rf -- "${sc:?}"; mkdir -p "$sc"
+    for side in a:"$base" b:"$head"; do
+        ref=${side#*:}; side=${side%%:*}
+        mkdir -p "$sc/$side/entries"
+        if ! git -C "$repo" cat-file -e "$ref:$BASE_FILE" 2>/dev/null; then
+            printf 'note: %s absent at %s so the whole-set check is skipped; ' "$BASE_FILE" "$ref"
+            rm -rf -- "${sc:?}"; return 0
+        fi
+        git -C "$repo" show "$ref:$BASE_FILE" >"$sc/$side/roadmap-base.yaml" 2>/dev/null || { printf 'git could not read %s at %s; ' "$BASE_FILE" "$ref"; return 2; }
+        cp "$sc/$side/roadmap-base.yaml" "$sc/$side/roadmap.yaml"
+        names=$(git -C "$repo" ls-tree -r --name-only "$ref" -- "$ENTRIES_DIR" 2>/dev/null) || { printf 'git could not list %s at %s; ' "$ENTRIES_DIR" "$ref"; return 2; }
+        while IFS= read -r name; do
+            case "$name" in *.yaml) ;; *) continue ;; esac
+            git -C "$repo" show "$ref:$name" >"$sc/$side/entries/${name##*/}" 2>/dev/null || { printf 'git could not read %s at %s; ' "$name" "$ref"; return 2; }
+        done < <(printf '%s\n' "$names")
+        python3 "$lib/roadmap_fragments.py" aggregate --write --roadmap "$sc/$side/roadmap.yaml" --entries "$sc/$side/entries" >/dev/null 2>&1 \
+            || printf 'the aggregator refuses the %s set; ' "$side"
+    done
+    out=$(python3 "$lib/roadmap_diff.py" check --base "$sc/a/roadmap.yaml" --head "$sc/b/roadmap.yaml" 2>&1) \
+        || printf 'roadmap_diff: %s; ' "$(printf '%s' "$out" | grep -m1 -E 'VIOLATION|deleted=[1-9]|USAGE')"
     rm -rf -- "${sc:?}"
     return 0
 }
@@ -500,6 +542,24 @@ self_test() {
         printf -- '- id: PMAT-201\n  title: next entries-only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
         commit_all "$1"
     }
+    # Whole-set builders: a frozen base and one landed fragment (PMAT-200) at the base ref, then an entries-only change.
+    fs_land() {
+        cp "$1/$ROADMAP_FILE" "$1/$BASE_FILE"
+        printf -- '- id: PMAT-200\n  title: landed\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        git -C "$1" add -A && git -C "$1" commit -qm landed
+        git -C "$1" tag fs-base
+    }
+    b_fs_edit_status() { fs_land "$1" || return 1; sed -i 's/status: planned/status: inprogress/' "$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fs_edit_title() { fs_land "$1" || return 1; sed -i 's/title: landed/title: rewritten/' "$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fs_delete() { fs_land "$1" || return 1; printf -- '- id: PMAT-201\n  title: other\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"; git -C "$1" rm -qf "$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
+    b_fs_rename() { fs_land "$1" || return 1; git -C "$1" mv "$ENTRIES_DIR/PMAT-200.yaml" "$ENTRIES_DIR/PMAT-299.yaml"; sed -i "s/PMAT-200/PMAT-299/" "$1/$ENTRIES_DIR/PMAT-299.yaml"; commit_all "$1"; }
+    b_fs_anchor_clash() {
+        fs_land "$1" || return 1
+        printf -- '- id: PMAT-201\n  title: &t one\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        printf -- '- id: PMAT-202\n  title: *t\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-202.yaml"
+        commit_all "$1"
+    }
+    b_fragment_empty() { printf '# nothing here\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"; commit_all "$1"; }
     b_bump_nospace_both() {
         printf '[workspace.package]\nversion="0.1.0"\n' >"$1/Cargo.toml"; git -C "$1" add -A && git -C "$1" commit -qm cargo || return 1
         printf '[workspace.package]\nversion="0.1.1"\n' >"$1/Cargo.toml"
@@ -695,16 +755,21 @@ PY
         0 'entries-only diff: the regenerated-aggregate check' b_fragment_no_regen
     row 'entries-only diff, a real fragment with col-0 and "- " lines in quoted text (PMAT-3731), prose edited -> PASS' \
         0 'entries-only diff: the regenerated-aggregate check' b_fragment_real_3731
-    row 'entries-only diff, `status: bogus` -> REFUSE' 1 'status missing or not one of' b_fragment_bogus_status
-    row 'entries-only diff, `status: completed` with no proof: token -> REFUSE' 1 'cites nothing' b_fragment_done_uncited
-    row 'entries-only diff, `status: completed` citing proof:<path> -> PASS' 0 'entries-only diff: the regenerated-aggregate check' b_fragment_done_cited
-    row 'entries-only diff, duplicate id: key -> REFUSE' 1 'id: key missing or repeated' b_fragment_dupid
-    row 'entries-only diff, quoted "id" key -> REFUSE' 1 'id: key missing or repeated' b_fragment_quotedid
+    row 'entries-only diff, `status: bogus` -> REFUSE' 1 'unknown status' b_fragment_bogus_status
+    row 'entries-only diff, `status: completed` -> PASS (citation is judged by check_roadmap_completion_is_cited on the aggregate at the bump)' 0 'entries-only diff: the regenerated-aggregate check' b_fragment_done_cited
+    row 'whole set: an existing id edited in lifecycle only (status) -> PASS' 0 'entries-only diff: the regenerated-aggregate check' b_fs_edit_status
+    row 'whole set: an existing id edited in a non-lifecycle field (title) -> REFUSE by the additive rule' 1 'reserialised' b_fs_edit_title
+    row 'whole set: a deleted fragment -> REFUSE' 1 'deleted' b_fs_delete
+    row 'whole set: a renamed fragment (old id gone) -> REFUSE' 1 'deleted' b_fs_rename
+    row 'whole set: an alias in one fragment to another fragment anchor -> REFUSE' 1 'undefined alias' b_fs_anchor_clash
+    row 'entries-only diff, a fragment with no entry in it -> REFUSE' 1 'not exactly one new entry' b_fragment_empty
+    row 'entries-only diff, duplicate id: key -> REFUSE' 1 'duplicate field' b_fragment_dupid
+    row 'entries-only diff, quoted "id" key -> REFUSE' 1 'duplicate field' b_fragment_quotedid
     row 'entries-only diff, id != file name -> REFUSE' 1 'FAIL  FRAGMENT' b_fragment_wrongid
     row 'entries-only diff, two entries in one fragment -> REFUSE' 1 'not exactly one new entry' b_fragment_two
     row 'entries-only diff, a col-0 line outside any scalar -> REFUSE' 1 'top-level-keys-changed' b_fragment_col0
-    row 'entries-only diff, no final newline -> REFUSE' 1 'no final newline' b_fragment_nonl
-    row 'entries-only diff, a bare - line -> REFUSE' 1 'a bare - line' b_fragment_bare
+    row 'entries-only diff, no final newline -> PASS (the aggregator, not a grep, judges it)' 0 'entries-only diff: the regenerated-aggregate check' b_fragment_nonl
+    row 'entries-only diff, a bare - line -> REFUSE' 1 'missing field' b_fragment_bare
     row 'entries-only diff, fragment does not parse -> REFUSE' \
         1 'FAIL  FRAGMENT' b_fragment_unparsable
     FULL_REGEN=1 row 'entries-only diff under --full (main / bump check) -> REFUSE, naming the drift' \
@@ -779,6 +844,33 @@ PY
         printf '%s\n' "$fout" | sed 's/^/        /'
         red=$((red + 1))
     fi
+
+    # A git failure listing or reading the fragment set is ENV (rc 2), never a pass: the entries-only path may not
+    # shrug it off (it used to read a failed ls-tree as "no fragments").
+    judge_with_failing_git() ( # judge_with_failing_git <pattern> <judge args...>
+        local pat=$1; shift
+        git() {
+            case " $* " in
+                *" $pat "*) return 1 ;;
+            esac
+            command git "$@"
+        }
+        judge "$@"
+    )
+    local gpat gwant
+    for gpat in ls-tree show '-r --name-only HEAD~1' 'show HEAD~1:docs/roadmaps/entries/PMAT-200.yaml'; do
+        n=$((n + 1))
+        mkrepo "$td/r$n" >/dev/null 2>&1 && b_fs_edit_status "$td/r$n" >/dev/null 2>&1
+        fout=$(judge_with_failing_git "$gpat" "$td/r$n" HEAD~1 HEAD 2>&1)
+        frc=$?
+        if [ "$frc" = 2 ]; then
+            printf 'ok    row %-2s rc=2  a failing git [%s] fails closed (ENV), never a pass\n' "$n" "$gpat"
+        else
+            printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] must fail closed\n' "$n" "$frc" "$gpat"
+            printf '%s\n' "$fout" | sed 's/^/        /'
+            red=$((red + 1))
+        fi
+    done
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
