@@ -10,7 +10,8 @@
 # checked here by stripping blank lines and whole-line comments from both sides and comparing (never by the
 # author's word). A table that cannot be read, or lists nothing, is an error (exit 2): an unreadable table must
 # not quietly make every change light. The table is read from BASE, not HEAD, so a PR cannot loosen the rules it
-# is judged by; a BASE without a table (bootstrap) falls back to the working-tree file.
+# is judged by; a BASE without a table (bootstrap) makes every path sensitive, never the
+# working tree's copy, which the PR could have loosened; --table FILE is the explicit override.
 set -euo pipefail
 
 TABLE=${REVIEW_TIER_TABLE:-.pmat/review-tiers.yaml}
@@ -97,6 +98,7 @@ self_test() {
   git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
   mkdir -p "$d/.pmat" "$d/.github/workflows" "$d/crates/x/src" "$d/docs" "$d/scripts"
   cp "$TABLE" "$d/.pmat/review-tiers.yaml"
+  unset REVIEW_TIER_TABLE   # the rows run children that must read the table from the scratch repo
   printf 'fn a() {}\n// note\n' > "$d/crates/x/src/lib.rs"
   printf 'name: ci\n' > "$d/.github/workflows/ci.yml"
   printf '# doc\n' > "$d/docs/a.md"

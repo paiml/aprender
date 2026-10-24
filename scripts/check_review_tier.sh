@@ -33,16 +33,19 @@ mutant quoted-paths-and-both-unread-ok "$Q" "$U"
 mutant shebang-stripped 's#awk .NR == 1 \&\& /^\#!/ { print; next } !/^\[ \\t\]\*(\#.\*)?$/.#grep -Ev "^[[:space:]]*(\#.*)?$"#'
 mutant missing-table-uses-worktree 's#then missing=1; fi#then cp "$TABLE" "$tbl"; fi#'
 # Table mutants: the same case table must go red when a protective row is dropped from the path table.
-tmutant() { # NAME PATTERN-to-delete
+tmutant() { # NAME PATTERN-to-delete ROW (the case row that must be the one to fail)
   local T="$W/t.yaml"; grep -Fv -- "$2" "$TBL" > "$T"
   if cmp -s "$TBL" "$T"; then echo "FAIL  table mutant $1 did not apply"; fail=1; return; fi
   if REVIEW_TIER_TABLE="$T" bash "$SRC" --self-test > "$W/m.log" 2>&1; then echo "FAIL  table mutant $1 survived"; fail=1; else echo "ok    table mutant $1 turns the table red"; fi
 }
-tmutant claude-dir-dropped '".claude/*"'
-tmutant agents-dir-dropped '".agents/*"'
-tmutant pmat-gates-dropped '".pmat-gates.toml"'
-tmutant clippy-dropped '".clippy.toml"'
-tmutant roadmap-base-dropped '"docs/roadmaps/roadmap-base.yaml"'
-tmutant broad-md-removed-readme '"README.md"'
+# Control: an UNMUTATED copy passed the same way must pass, or every table mutant below is red for the wrong reason.
+cp "$TBL" "$W/control.yaml"
+if REVIEW_TIER_TABLE="$W/control.yaml" bash "$SRC" --self-test > "$W/c.log" 2>&1; then echo "ok    control: an unmutated table copy passes"; else echo "FAIL  control: an unmutated table copy is red:"; tail -3 "$W/c.log"; fail=1; fi
+tmutant claude-dir-dropped '".claude/*"' gate-read-claude-md
+tmutant agents-dir-dropped '".agents/*"' agents-dir
+tmutant pmat-gates-dropped '".pmat-gates.toml"' pmat-gates-toml
+tmutant clippy-dropped '".clippy.toml"' clippy-toml
+tmutant roadmap-base-dropped '"docs/roadmaps/roadmap-base.yaml"' roadmap-base
+tmutant broad-md-removed-readme '"README.md"' readme-light
 mutant no-paths-ok    's/  \[\[ $n -gt 0 \]\] || die/  true || die/'
 exit "$fail"
