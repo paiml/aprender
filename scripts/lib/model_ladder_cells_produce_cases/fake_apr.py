@@ -94,6 +94,8 @@ VERBS = {"inspect": inspect, "run": run, "chat": chat, "code": code, "serve": se
 
 
 def main(a):
+    if os.environ.get("FAKE_APR_LOG"):  # one line per call: the admission case proves a deferred cell never reached apr
+        open(os.environ["FAKE_APR_LOG"], "a").write(" ".join(a[:1]) + "\n")
     if a[0] in VERBS:
         return VERBS[a[0]](a)
     sys.stderr.write(f"fake apr: unknown verb {a[0]}\n"); return 2
