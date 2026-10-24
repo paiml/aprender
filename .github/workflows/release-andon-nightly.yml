@@ -1,0 +1,39 @@
+# FLOW-008 A7/F7 andon printer, LAB nightly (#6275).
+#
+# LAB, by the GATE/LAB rule: it cannot block a merge or a release, so it never runs in a PR, merge-queue or release
+# job. No pull_request, merge_group or push trigger, on purpose. Red (andon or not_measured) comments ONE line on
+# #6275 and stays silent otherwise.
+name: release-andon-nightly
+
+on:
+  schedule:
+    - cron: '50 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  andon:
+    runs-on: [self-hosted, Linux, X64]
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          fetch-tags: true
+      - name: self-test
+        run: bash scripts/lab/release_andon.sh --self-test
+      - name: print
+        run: |
+          set +e
+          out=$(bash scripts/lab/release_andon.sh --ref origin/main 2>&1); rc=$?
+          printf '%s\n' "$out" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [ "$rc" -ne 0 ]; then
+            gh issue comment 6275 --body "$(date -u +%FT%TZ) run ${GITHUB_RUN_ID}: $(printf '%s\n' "$out" | grep -E '^(ANDON|NOT_MEASURED F7:)' | head -1)"
+          fi
+          exit "$rc"

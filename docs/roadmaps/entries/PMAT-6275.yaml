@@ -2,7 +2,7 @@
   github_issue: 6275
   item_type: task
   title: 'FLOW-008 F7 andon printer: fire after 72 h of unreleased publishable change'
-  status: planned
+  status: in_progress
   priority: high
   assigned_to: aprender-wsweep
   created: 2026-10-24T15:31:05Z
@@ -15,4 +15,4 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: 'Observed 2026-10-24: no release after v0.71.4 (2026-10-14) and no F7 line anywhere; no printer workflow exists.'
+  notes: 'Implemented as scripts/lab/release_andon.sh (+ release-andon-nightly.yml, LAB). Clause 2 (skipped slots) is printed not_measured until a slot ledger exists. Observed 2026-10-24: no release after v0.71.4 (2026-10-14) and no F7 line anywhere; no printer workflow exists.'
