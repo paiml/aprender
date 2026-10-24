@@ -23,7 +23,13 @@ die() { echo "review_tier: $*" >&2; exit 2; }
 list_of() {
   awk -v k="$1:" '
     $0 ~ /^[a-z]/ { on = ($1 == k); next }
-    on && $1 == "-" { s = $0; sub(/^[ \t]*-[ \t]*"/, "", s); sub(/"[ \t]*$/, "", s); print s }
+    # Anything in a list that is not exactly `  - "glob"` (unquoted, trailing comment, wrong indent) would be
+    # dropped silently and make its paths fall to standard: refuse the table instead.
+    on && $0 !~ /^[ \t]*(#.*)?$/ {
+      if ($0 !~ /^  - "[^"]+"$/) { print "review_tier: malformed table line: " $0 > "/dev/stderr"; bad = 1; exit 2 }
+      s = $0; sub(/^  - "/, "", s); sub(/"$/, "", s); print s
+    }
+    END { exit bad }
   ' "$2"
 }
 
@@ -54,6 +60,8 @@ comment_only() { # BASE HEAD PATH -> 0 when the change to PATH touches only blan
   [[ $3 == Makefile ]] && ext=mk
   b_raw=$(git show "$1:$3" 2>/dev/null; echo x) && b_raw=${b_raw%x} || b_raw=
   a_raw=$(git show "$2:$3" 2>/dev/null; echo x) && a_raw=${a_raw%x} || a_raw=
+  # A mode change (chmod +x) or an added/removed file changes what runs without changing a line.
+  [[ $(git ls-tree "$1" -- "$3" | cut -d' ' -f1) == "$(git ls-tree "$2" -- "$3" | cut -d' ' -f1)" ]] || return 1
   # Neither side readable (a path git could not name): nothing was compared, so it is not comment-only.
   git cat-file -e "$1:$3" 2>/dev/null || git cat-file -e "$2:$3" 2>/dev/null || return 1
   before=$(printf '%s' "$b_raw" | strip_comments "$ext")
@@ -79,7 +87,7 @@ derive() { # BASE HEAD
   if [[ -n $TABLE_FILE ]]; then cp "$TABLE_FILE" "$tbl" 2>/dev/null || die "table $TABLE_FILE is unreadable"
   elif ! git show "$1:$TABLE" > "$tbl" 2>/dev/null; then missing=1; fi
   if [[ $missing -eq 0 ]]; then
-    SENS=$(list_of sensitive "$tbl"); LIGHT=$(list_of light "$tbl")
+    SENS=$(list_of sensitive "$tbl") || die "table $TABLE is malformed"; LIGHT=$(list_of light "$tbl") || die "table $TABLE is malformed"
     [[ -n $SENS && -n $LIGHT ]] || die "table $TABLE lists no sensitive or no light paths"
   fi
   while IFS= read -r f; do
@@ -146,6 +154,19 @@ self_test() {
   mkdir -p "$d/docs/roadmaps"; printf 'x\n' > "$d/docs/roadmaps/roadmap-base.yaml"; expect roadmap-base sensitive
   printf 'x\n' > "$d/README.md";                                               expect readme-light light
   printf 'x\n' > "$d/notes/n.md";                                              expect stray-md-standard standard
+  chmod +x "$d/bin/run.sh";                                                 expect mode-only-change standard
+  mkdir -p "$d/docs/audits" "$d/docs/roadmaps" "$d/docs/tools" "$d/crates/x/src/lib" "$d/sub"
+  printf 'x\n' > "$d/docs/audits/quorum-1.json";                                expect docs-audit-receipt sensitive
+  printf 'x\n' > "$d/docs/CODEOWNERS";                                          expect docs-codeowners sensitive
+  printf 'x\n' > "$d/docs/roadmaps/roadmap.yaml";                               expect roadmap-yaml-sensitive sensitive
+  printf 'x\n' > "$d/docs/tools/run.sh";                                        expect script-under-docs-not-light standard
+  printf 'x\n' > "$d/crates/x/clippy.toml";                                     expect crate-clippy-toml sensitive
+  printf 'x\n' > "$d/rust-toolchain";                                           expect rust-toolchain-file sensitive
+  printf 'x\n' > "$d/.gitmodules";                                              expect gitmodules sensitive
+  mkdir -p "$d/sub"; printf 'x\n' > "$d/sub/.gitignore";                                           expect nested-gitignore sensitive
+  printf 'x\n' > "$d/GNUmakefile";                                              expect gnumakefile sensitive
+  mkdir -p "$d/sub"; printf 'x\n' > "$d/sub/rules.mk";                                             expect mk-file sensitive
+  printf 'x\n' > "$d/crates/x/Cargo.lock";                                      expect nested-cargo-lock sensitive
   printf 'x\n' > "$d/key.pem";                                                   expect key-file sensitive
   # an author-set tier is not read: the commit message and a trailer say light, the path says sensitive
   printf 'on: push\n' >> "$d/.github/workflows/ci.yml"
@@ -164,6 +185,13 @@ PMAT-Tier: light"
   got=$(cd "$d" && bash "$SELF" "$nb" HEAD 2>&1) || true
   if [[ $got == sensitive ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL missing-base-table: want sensitive, got $got"; fi
   git -C "$d" checkout -q -f master 2>/dev/null || git -C "$d" checkout -q -f main; git -C "$d" reset -q --hard "$base"
+  # a malformed table line (unquoted, trailing comment) is an error, never a silently dropped glob
+  printf '# t\n' >> "$d/docs/a.md"; git -C "$d" add -A; git -C "$d" commit -qm tbl   # a real diff, so only the table can fail
+  for bad in '  - .github/*' '  - ".github/*"  # gate'; do
+    printf 'version: 1\nsensitive:\n  - "ci/*"\n%s\nlight:\n  - "docs/*"\n' "$bad" > "$d/bad.yaml"
+    if (cd "$d" && bash "$SELF" "$base" HEAD --table bad.yaml >/dev/null 2>&1); then fail=$((fail + 1)); echo "FAIL malformed-table-accepted: $bad"; else pass=$((pass + 1)); fi
+  done
+  git -C "$d" reset -q --hard "$base"
   # an unreadable or empty table is an error, never a quiet light
   printf 'version: 1\n' > "$d/.pmat/review-tiers.yaml"; git -C "$d" add -A; git -C "$d" commit -qm emptytable; base=$(git -C "$d" rev-parse HEAD)
   printf '# x\n' >> "$d/docs/a.md"; git -C "$d" add -A; git -C "$d" commit -qm e
@@ -178,7 +206,7 @@ PMAT-Tier: light"
 [[ ${1:-} == --self-test ]] && { self_test; exit $?; }
 # --classify PATH: is PATH sensitive in the working-tree table (used by check_review_tier.sh to scan CI surfaces).
 if [[ ${1:-} == --classify ]]; then
-  SENS=$(list_of sensitive "${REVIEW_TIER_TABLE:-.pmat/review-tiers.yaml}"); [[ -n $SENS ]] || die "table lists no sensitive paths"
+  SENS=$(list_of sensitive "${REVIEW_TIER_TABLE:-.pmat/review-tiers.yaml}") || die "table is malformed"; [[ -n $SENS ]] || die "table lists no sensitive paths"
   if matches_any "${2:?usage: review_tier.sh --classify PATH}" <<< "$SENS"; then echo sensitive; else echo other; fi
   exit 0
 fi

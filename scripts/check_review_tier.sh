@@ -49,6 +49,9 @@ tmutant pmat-gates-dropped '".pmat-*"' pmat-gates-toml
 tmutant clippy-dropped '".clippy.toml"' clippy-toml
 tmutant roadmap-base-dropped '"docs/roadmaps/roadmap-base.yaml"' roadmap-base
 tmutant broad-md-removed-readme '"README.md"' readme-light
+tmutant docs-md-dropped '"docs/*.md"' docs-only
+tmutant docs-audit-dropped '"docs/audits/*"' docs-audit-receipt
+tmutant codeowners-dropped '"*CODEOWNERS"' docs-codeowners
 tmutant scripts-dropped '"scripts/*"' guard-tree
 tmutant github-dropped '".github/*"' pr-review-key
 tmutant nextest-config-dropped '".config/*"' nextest-config
@@ -58,5 +61,7 @@ gaps=$(cat .github/workflows/*.yml ci/sections.yml ci/explicit-test-commands.d/*
   | grep -aoE '(scripts|ci|tools|schemas|\.pmat|\.github|\.config|\.cargo)/[A-Za-z0-9_./-]+' | sort -u \
   | while IFS= read -r f; do [[ -f $f ]] && [[ $(bash "$SRC" --classify "$f") != sensitive ]] && echo "$f"; done)
 if [[ -n $gaps ]]; then echo "FAIL  CI-named files outside the sensitive list:"; echo "$gaps" | head; fail=1; else echo "ok    every gate file a CI surface names is sensitive"; fi
+mutant mode-change-ignored 's#  \[\[ $(git ls-tree "$1" -- "$3" | cut -d. . -f1) == .*|| return 1#  true#'
+mutant malformed-line-dropped 's#{ print "review_tier: malformed table line: " $0 > "/dev/stderr"; bad = 1; exit 2 }#{ next }#'
 mutant no-paths-ok    's/  \[\[ $n -gt 0 \]\] || die/  true || die/'
 exit "$fail"
