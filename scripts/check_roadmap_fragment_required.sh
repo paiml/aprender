@@ -293,6 +293,14 @@ judge() {
             [ -f "$td/entries/${name##*/}" ] || continue
             stem=${name##*/}; stem=${stem%.yaml}
             first=$(head -n 1 -- "$td/entries/${name##*/}")
+            # one entry per fragment: a second top-level `- ` item would carry an id nobody checks
+            nitems=$(python3 -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); print(len(d) if isinstance(d,list) else -1)' "$td/entries/${name##*/}" 2>/dev/null || echo -1)
+            if [ "$nitems" != 1 ]; then
+                rc=1; out="${out:+$out
+}$name holds $nitems top-level entries (-1: not a list), want exactly 1"
+                what="MISFILED: a fragment must hold exactly one entry, with its filename as id"
+                continue
+            fi
             if ! grep -Eq -- "^- id: ['\"]?${stem//./\\.}['\"]?[[:space:]]*\$" <<<"$first"; then
                 rc=1; out="${out:+$out
 }$name does not start its mapping with '- id: $stem'"
@@ -328,7 +336,7 @@ judge() {
 # A mutant that survives means the case table cannot tell the guard from a broken one.
 mutants() {
     local m copy survived=0 killed=0 name
-    for m in lag-strict id-check-off first-line-off drift-off bump-license-off; do
+    for m in lag-strict id-check-off first-line-off drift-off bump-license-off one-entry-off; do
         copy=$(mktemp "$REPO_ROOT/scripts/zz-mut-${m}.XXXXXX.sh") || return 2   # fresh name: a stale copy is never scored
         python3 - "$REPO_ROOT/scripts/$PROG" "$copy" "$m" <<'PY'
 import sys
@@ -339,6 +347,7 @@ subs = {
     "id-check-off": ('if [ "$rc" = 0 ]; then\n        out=""', 'if false; then\n        out=""'),
     "first-line-off": ('first=$(head -n 1 -- "$td/entries/${name##*/}")', 'first=$(cat -- "$td/entries/${name##*/}")'),
     "bump-license-off": ('if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then', 'if false; then'),
+    "one-entry-off": ('if [ "$nitems" != 1 ]; then', 'if false; then'),
     "drift-off": ('rc=$?\n        what="DRIFT', 'rc=0\n        what="DRIFT'),
 }
 a, b = subs[m]
@@ -355,7 +364,7 @@ PY
         fi
         name="$copy"; rm -f -- "${name:?}"
     done
-    printf '%s/5 mutants killed\n' "$killed"
+    printf '%s/6 mutants killed\n' "$killed"
     [ "$survived" = 0 ]
 }
 
@@ -487,6 +496,10 @@ self_test() {
         python3 "$REPO_ROOT/scripts/lib/roadmap_fragments.py" aggregate --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1
         commit_all "$1"
     }
+    b_fragment_two_entries() {
+        printf -- '- id: PMAT-201\n  title: first\n  status: planned\n- id: PMAT-999\n  title: smuggled second entry\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        commit_all "$1"
+    }
     b_unrelated() {
         printf 'a docs-only change\n' >>"$1/docs/roadmaps/README.md"
         commit_all "$1"
@@ -616,6 +629,8 @@ PY
         1 'FAIL  MISFILED' b_fragment_misfiled
     row 'a fragment whose id is not its first line, aggregate regenerated in the diff -> REFUSE' \
         1 'FAIL  MISFILED' b_fragment_misfiled_regen
+    row 'a fragment holding a second entry, aggregate not in the diff -> REFUSE' \
+        1 'holds 2 top-level entries' b_fragment_two_entries
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
