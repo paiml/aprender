@@ -26164,3 +26164,28 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5923
+- id: PMAT-6304
+  github_issue: 6304
+  item_type: task
+  title: 'ci(mq): replace the fat_driver.py idle watchdog (landed Python, #6285) with scripts/ci/idle_watchdog.sh'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T23:30:00Z
+  updated: 2026-10-25T23:30:00Z
+  spec: null
+  acceptance_criteria:
+  - fat_driver.py is byte-identical to its content before #6285 (StepIdle, idle_limit_seconds, wait_or_idle, _st_idle gone; 0 net Python lines)
+  - scripts/ci/idle_watchdog.sh kills a command whose section logs stop growing for FAT_IDLE_LIMIT_S and exits 124
+  - parity rows in its --self-test: a stalled log fires, a growing log never does, a timeout still ends the run and leaves no orphan, the limit parses (unset, 1500, decimal, garbage, negative)
+  - the merge-queue shard runs fat_driver.py run under the watchdog; PR/push runs are unchanged (limit unset = exec passthrough)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Quorum verdict A on landed Python (handoff/triage-quorum-6285-landedpython-2307Z.lane1.md). Behaviour change to name for the sign-off:
+    the Python watchdog watched one step's log; this one watches the sum of all section logs of the driver run, so on a shard with several
+    live sections one busy section hides another's hang. The shard runs a single section (workspace-test-shard), so no loss there.
+    Added .py lines vs origin/main: 2, both pre-#6285 lines restored verbatim (p.wait(timeout=timeout) and the self-test section tuple); removed: 91.
