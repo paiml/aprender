@@ -240,15 +240,18 @@ def tokens(*texts):
 SCRATCH_PREFIX = ".claude/worktrees/"
 
 # docs/roadmaps/roadmap-base.yaml is a FROZEN byte copy of roadmap.yaml (check_roadmap_fragment_required.sh rule 3 holds it to the
-# base ref). Its 'completed' entries are the ones roadmap.yaml was already judged on; counting them again would charge 287 entries
-# to a data-only file and force a baseline GROWTH. That ONE path is out of the universe; roadmap.yaml still is not.
+# base ref). While docs/roadmaps/roadmap.yaml is in scope and holds EVERY id the base holds, roadmap.yaml judges those entries and
+# counting the base again would charge 287 entries to a data-only file and force a baseline GROWTH, so the base is not counted.
+# This is CONTENT-bound, not a path waiver: once roadmap.yaml is removed (the S4 follow-up), or the base holds an id it lacks, the
+# base is judged like any roadmap file and its completed entries are gated.
 FROZEN_BASE = "docs/roadmaps/roadmap-base.yaml"
+LIVE_AGGREGATE = "docs/roadmaps/roadmap.yaml"
 
 def is_scratch(rel):
     return rel.replace(os.sep, "/").startswith(SCRATCH_PREFIX)
 
 def is_candidate(rel):
-    if is_scratch(rel) or rel.replace(os.sep, "/") == FROZEN_BASE:
+    if is_scratch(rel):
         return False
     d, fn = os.path.split(rel)
     if not fn.lower().endswith(".yaml"):
@@ -309,6 +312,19 @@ for rel in sorted(cand):
         out_scope.append((rel, "'roadmap:' is not a list of work items"))
         continue
     in_scope.append((rel, doc))
+
+def item_ids(doc):
+    return {str(i.get("id")) for i in doc["roadmap"] if isinstance(i, dict)}
+
+_live = [d for r, d in in_scope if r == LIVE_AGGREGATE]
+if _live:
+    _keep = []
+    for rel, doc in in_scope:
+        if rel == FROZEN_BASE and item_ids(doc) <= item_ids(_live[0]):
+            out_scope.append((rel, "frozen byte copy; every id is judged in " + LIVE_AGGREGATE))
+        else:
+            _keep.append((rel, doc))
+    in_scope = _keep
 
 for rel, why in out_scope:
     sys.stderr.write(f"SCOPE out  {rel}  ({why})\n")
@@ -628,24 +644,32 @@ YAML
     n_lane=$(grep -c 'lane-deadbeef' "$TD/scan3.out" "$TD/scan3.err" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')
     row 'lane scratch contributes no records'  0 "$n_lane"
 
-    # THE FROZEN BASE. docs/roadmaps/roadmap-base.yaml is a byte copy of roadmap.yaml; it contributes no records, while a
-    # sibling file under docs/roadmaps/ with the same content still does (the exclusion is that one path, not the directory).
+    # THE FROZEN BASE is judged by roadmap.yaml while roadmap.yaml holds every id it holds, and by itself otherwise.
     mk docs/roadmaps/roadmap-base.yaml <<'YAML'
 roadmap:
-- id: R-FROZEN-BASE
-  status: completed
-  notes: null
-YAML
-    mk docs/roadmaps/roadmap-other.yaml <<'YAML'
-roadmap:
-- id: R-FROZEN-SIBLING
+- id: R-ALIAS-DONE
   status: completed
   notes: null
 YAML
     scan_roadmaps "$TD" >"$TD/scan4.out" 2>"$TD/scan4.err" || true
-    row 'frozen roadmap-base.yaml contributes no records' 0 "$(grep -c 'R-FROZEN-BASE' "$TD/scan4.out" || true)"
-    row 'a sibling under docs/roadmaps/ still does' 1 "$(grep -c 'R-FROZEN-SIBLING' "$TD/scan4.out" || true)"
-    rm -f "${TD:?}/docs/roadmaps/roadmap-base.yaml" "${TD:?}/docs/roadmaps/roadmap-other.yaml"
+    row 'frozen base, ids all in roadmap.yaml: no records' 0 "$(grep -c 'roadmap-base.yaml' "$TD/scan4.out" || true)"
+    mk docs/roadmaps/roadmap-base.yaml <<'YAML'
+roadmap:
+- id: R-ALIAS-DONE
+  status: completed
+  notes: null
+- id: R-ONLY-IN-BASE
+  status: completed
+  notes: null
+YAML
+    scan_roadmaps "$TD" >"$TD/scan4.out" 2>"$TD/scan4.err" || true
+    row 'frozen base holding an id roadmap.yaml lacks is judged' 2 "$(grep -c 'roadmap-base.yaml' "$TD/scan4.out" || true)"
+    mkdir -p "$TD/nolive/docs/roadmaps"
+    cp "$TD/docs/roadmaps/roadmap-base.yaml" "$TD/nolive/docs/roadmaps/roadmap-base.yaml"
+    scan_roadmaps "$TD/nolive" >"$TD/scan5.out" 2>"$TD/scan5.err" || true
+    row 'roadmap.yaml removed: the base is judged' 2 "$(grep -c 'roadmap-base.yaml' "$TD/scan5.out" || true)"
+    rm -rf "${TD:?}/nolive"
+    rm -f "${TD:?}/docs/roadmaps/roadmap-base.yaml"
 
     n_out=$(grep -c '^SCOPE out  crates/other/roadmap.yaml' "$TD/scan.err" || true)
     row 'foreign schema is reported out of scope, not skipped' 1 "$n_out"
