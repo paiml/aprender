@@ -212,12 +212,12 @@ if [ "${1:-}" = "--self-test" ]; then
     # Rows 11-13: the bump regenerates roadmap.yaml from entries/ (#6270).
     mkdir -p "$TD/rg-ok" "$TD/rg-bad"
     printf 'roadmap-aggregate:\n\t@echo regenerated > regen.marker\n' > "$TD/rg-ok/Makefile"
-    printf 'roadmap-aggregate:\n\t@exit 3\n' > "$TD/rg-bad/Makefile"
+    printf 'roadmap-aggregate:\n\t@echo ran > ran.marker\n\t@exit 3\n' > "$TD/rg-bad/Makefile"
     if regen_roadmap "$TD/rg-ok" >/dev/null 2>&1 && [ -f "$TD/rg-ok/regen.marker" ]; then
         printf 'ok    row 11 regen_roadmap runs the roadmap-aggregate target\n'
     else printf 'FAIL  row 11 regen_roadmap did not run the target\n'; fails=1; fi
-    if regen_roadmap "$TD/rg-bad" >/dev/null 2>&1; then
-        printf 'FAIL  row 12 a failing roadmap-aggregate was reported as success\n'; fails=1
+    if regen_roadmap "$TD/rg-bad" >/dev/null 2>&1 || [ ! -f "$TD/rg-bad/ran.marker" ]; then
+        printf 'FAIL  row 12 a failing roadmap-aggregate was reported as success (or never ran)\n'; fails=1
     else printf 'ok    row 12 a failing roadmap-aggregate fails the bump\n'; fi
     call_ln=$(grep -n '^regen_roadmap "\$REPO_ROOT" ||' "$0" | head -1 | cut -d: -f1)
     list_ln=$(grep -n "^printf -- .*MUST ride" "$0" | head -1 | cut -d: -f1)
@@ -235,8 +235,15 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    row 15 docs/roadmaps/roadmap.yaml is on the must-ride list\n'
     else printf 'FAIL  row 15 docs/roadmaps/roadmap.yaml is not on the must-ride list\n'; fails=1; fi
 
+    # Rows 16-17: a stray edit that unbalances the script, or drops the success line, is red.
+    if bash -n "$0" 2>/dev/null; then printf 'ok    row 16 the script parses (bash -n)\n'
+    else printf 'FAIL  row 16 the script does not parse\n'; fails=1; fi
+    if grep -q "^printf 'regenerated docs/roadmaps/roadmap.yaml from entries/" "$0"; then
+        printf 'ok    row 17 the bump reports the regeneration\n'
+    else printf 'FAIL  row 17 the bump no longer reports the regeneration\n'; fails=1; fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (15/15)\n'
+    printf '\nSELF-TEST PASSED (17/17)\n'
     exit 0
 fi
 
