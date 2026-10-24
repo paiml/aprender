@@ -64,7 +64,10 @@ def read_fragments(entries_dir=ENTRIES):
             continue
         eid = name[: -len(".yaml")]
         with open(os.path.join(entries_dir, name), encoding="utf-8") as fh:
-            out.append((eid, fh.read()))
+            text = fh.read()
+        if text and not text.endswith("\n"):
+            text += "\n"  # a last line without one (a comment) would swallow the next entry
+        out.append((eid, text))
     return out
 
 
@@ -347,6 +350,28 @@ def _census_rows():
         "filename-safety is load-bearing, not defensive")
 
 
+def _shape_rows():
+    # PMAT-6270: a fragment is one entry, and a last line without a newline cannot eat the next.
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:
+        ed = os.path.join(d, "entries")
+        os.makedirs(ed)
+        def put(name, text):
+            with open(os.path.join(ed, name), "w", encoding="utf-8") as fh:
+                fh.write(text)
+        put("PMAT-500.yaml", "- id: PMAT-500\n  title: a\n  # tail, no newline")
+        put("PMAT-501.yaml", "- id: PMAT-501\n  title: b\n")
+        ids = [e for e, _ in split_entries(aggregate(BASE, read_fragments(ed)))[1]]
+        row("shape: a fragment ending in a comment without a newline keeps the next entry",
+            "PMAT-500" in ids and "PMAT-501" in ids, "ids=%s" % ids)
+        put("PMAT-502.yaml", '- id: PMAT-502\n  title: "line one\n- id: PMAT-6270\n  line two"\n')
+        why = fragment_shape(os.path.join(ed, "PMAT-502.yaml"))
+        row("shape: a '- id:' line inside a quoted scalar is refused (the splitter would cut there)",
+            "lines opening" in why, why)
+        row("shape: a plain one-entry fragment passes",
+            fragment_shape(os.path.join(ed, "PMAT-501.yaml")) == "")
+
+
 def _base_rows():
     # 9. THE FROZEN BASE (#6185). roadmap-base.yaml beside roadmap.yaml is what the
     #    aggregate grows from; roadmap.yaml is only the thing being judged.
@@ -468,6 +493,7 @@ def selftest():
         "" if caught else "mutant survived -- row 2 proves nothing")
 
     _base_rows()
+    _shape_rows()
     _census_rows()
 
     bad = sum(1 for _, ok, _ in ROWS if not ok)
@@ -574,6 +600,70 @@ def _cmd_changed(a):
     return 0
 
 
+def _unique_loader():
+    """A SafeLoader that refuses a repeated key in one mapping (PyYAML keeps the last)."""
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    def mapping(loader, node, deep=False):
+        seen = set()
+        for knode, _ in node.value:
+            key = loader.construct_object(knode, deep=True)
+            if key in seen:
+                raise ValueError("repeated key %r" % (key,))
+            seen.add(key)
+        return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+    Loader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+    return Loader
+
+
+def _opening_lines(path):
+    with open(path, encoding="utf-8") as fh:
+        return sum(1 for line in fh if line.startswith("- id:"))
+
+
+def _load_unique(path):
+    """-> (doc, reason): the parsed fragment, or why it would not parse."""
+    import yaml
+    try:
+        with open(path, encoding="utf-8") as fh:
+            return yaml.load(fh, Loader=_unique_loader()), ""  # noqa: S506 - a SafeLoader subclass
+    except (OSError, ValueError, yaml.YAMLError) as e:
+        return None, "unparseable: %s" % str(e).splitlines()[0]
+
+
+def fragment_shape(path):
+    """'' when the file is ONE mapping whose id is its stem; else the reason (PMAT-6270)."""
+    stem = os.path.basename(path)[:-len(".yaml")]
+    doc, why = _load_unique(path)
+    if why:
+        return why
+    cuts = _opening_lines(path)  # split_entries cuts on every `- id:` line, even inside a quoted scalar
+    if cuts != 1:
+        return "has %d lines opening '- id:', want exactly 1" % cuts
+    items = doc if isinstance(doc, list) else []
+    if len(items) != 1:
+        return "holds %d top-level items, want exactly 1" % len(items)
+    if not isinstance(items[0], dict) or items[0].get("id") != stem:
+        return "its item is not a mapping with id %s" % stem
+    return ""
+
+
+def _cmd_shape(a):
+    """`shape --file F` -> rc 0 if F is one entry filed under its own id, else rc 1 and the reason."""
+    if not a.file:
+        sys.stderr.write("shape: --file is required\n")
+        return 2
+    why = fragment_shape(a.file)
+    if why:
+        sys.stdout.write(why + "\n")
+        return 1
+    return 0
+
+
 def _cmd_adopt(a, roadmap, entries_dir):
     if not a.ids:
         sys.stderr.write("adopt: name at least one entry id\n")
@@ -597,7 +687,7 @@ def _cmd_adopt(a, roadmap, entries_dir):
 
 def _parser():
     ap = argparse.ArgumentParser(prog="roadmap_fragments.py")
-    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt"])
+    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt", "shape"])
     ap.add_argument("ids", nargs="*", help="adopt: the entry id(s) to move into entries/")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--check", action="store_true",
@@ -606,6 +696,7 @@ def _parser():
     ap.add_argument("--entries", help="read fragments from here instead of docs/roadmaps/entries/")
     ap.add_argument("--base", help="changed: the roadmap.yaml to compare FROM")
     ap.add_argument("--head", help="changed: the roadmap.yaml to compare TO")
+    ap.add_argument("--file", help="shape: the one fragment to judge")
     ap.add_argument("--selftest", action="store_true")
     return ap
 
@@ -618,6 +709,8 @@ def main(argv=None):
     roadmap, entries_dir = _paths(a)
     if a.cmd == "changed":
         return _cmd_changed(a)
+    if a.cmd == "shape":
+        return _cmd_shape(a)
     if a.cmd == "adopt":
         return _cmd_adopt(a, roadmap, entries_dir)
     if a.cmd != "aggregate":
