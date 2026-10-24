@@ -340,8 +340,8 @@ jobs:
         #      the previous run's belated chown fixed the now-stale dir.
         # Fix (this step): docker run as root, chown the per-RUN target
         # dir + cargo registry to noah:1000 BEFORE the cargo step.
-        # Idempotent — `|| true` tolerates dirs that are already
-        # noah-owned (e.g. a rerun of the same run-id).
+        # Idempotent — a dir that is already noah-owned chowns cleanly (e.g. a
+        # rerun of the same run-id); a real failure is a ::warning::, not hidden.
         run: |
           docker run --rm -e OWNER="$(id -u):$(id -g)" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
@@ -1164,7 +1164,7 @@ jobs:
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             "${target_mount[@]}" \
             "$IMAGE" \
-            bash -c 'for d in /workspace /usr/local/cargo/registry /workspace/target; do chown -R "$OWNER" "$d" || echo "::warning::post-job chown of $d to $OWNER failed (rc=$?)"; done'
+            bash -c 'for d in /workspace /usr/local/cargo/registry /workspace/target; do [ -e "$d" ] || continue; chown -R "$OWNER" "$d" || echo "::warning::post-job chown of $d to $OWNER failed (rc=$?)"; done'
 
   # PACK-001: the check-run named `workspace-test`. Branch protection requires
   # this context, `gate` needs it, and the BSE-17 reuse lookup reads it by
