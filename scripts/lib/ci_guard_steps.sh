@@ -387,7 +387,7 @@ cmd_run() {
                     GUARD_TARGET_DIR|GUARD_CARGO_HOME) ENV[$k]="$scratch/${k,,}" ;;
                     *) ENV[$k]="$(printf '%s' "$v" | sed -E 's/\$\{\{[^}]*\}\}/local/g')" ;;
                 esac
-            done < <(jqj -j --arg j "$job" '(.[$j].env // {}) | to_entries[] | "\(.key)\u0000\(.value | tostring)\u0000"')
+            done < <(jqj -j --arg j "$job" '(.[$j + (if has($j + "-shard") then "-shard" else "" end)].env // {}) | to_entries[] | "\(.key)\u0000\(.value | tostring)\u0000"')
         fi
         [ "$ci" = true ] || job_steps_ok "$job"
         # jq writes the records to a file first: a jq that dies mid-stream behind <(...)
