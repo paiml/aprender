@@ -41,6 +41,11 @@
 #      drift. A fragment landed without `make roadmap-aggregate` is drift and is
 #      named as such.
 #
+#      EXCEPT an entries-only diff (fragments change; roadmap.yaml and roadmap-base.yaml do not;
+#      no root Cargo.toml version bump): there the regeneration is deferred to the bump PR and
+#      to `--full` / `make roadmap-aggregate-check`, so open PRs stop conflicting on the tail
+#      of roadmap.yaml (#6286 quorum: roadmap-aggregate verdict).
+#
 # WHAT IS STILL ALLOWED: the aggregate changing AS AN AGGREGATE — every entry
 # that moved has its fragment in the same diff and the file equals
 # aggregate(fragments). Also a preamble-only change (the header above the first
@@ -99,7 +104,7 @@ ENTRIES_DIR="docs/roadmaps/entries"
 . "$REPO_ROOT/scripts/lib/resolve_base.sh" || exit 1
 
 usage() {
-    printf 'usage: %s [<base-ref> [<head-ref>]]  or  %s --self-test\n' "$PROG" "$PROG" >&2
+    printf 'usage: %s [--full] [<base-ref> [<head-ref>]]  or  %s --self-test\n' "$PROG" "$PROG" >&2
     printf '  a roadmap.yaml change must arrive with its docs/roadmaps/entries/<ID>.yaml fragment\n' >&2
     printf "  an empty <base-ref> ('') resolves the base for <head-ref>; push shape SKIPs, never grades\n" >&2
     exit 2
@@ -174,6 +179,17 @@ judge() {
         printf 'PASS  %s: this diff touches neither %s nor %s/ — nothing to judge\n' \
             "$PROG" "$ROADMAP_FILE" "$ENTRIES_DIR"
         return 0
+    fi
+
+    # ENTRIES-ONLY (#6286 quorum, roadmap-aggregate verdict): a diff that adds or edits fragments and
+    # touches neither roadmap.yaml nor the frozen base leaves the regenerated aggregate to the bump PR.
+    # Every open PR regenerating the same tail of roadmap.yaml made any two queued PRs conflict
+    # (#6268 was removed twice). A version bump (root Cargo.toml `version =` line), or --full, is the
+    # full regen check; so is any diff that touches roadmap.yaml.
+    entries_only=0
+    if [ "$roadmap_changed" = 0 ] && [ -z "$base_changed" ] && [ -n "$frag_paths" ] && [ "${FULL_REGEN:-0}" != 1 ] \
+        && ! git -C "$repo" diff -U0 "$base" "$head" -- Cargo.toml 2>/dev/null | grep -Eq '^[+-]version = '; then
+        entries_only=1
     fi
 
     # The ids whose FRAGMENT this diff changes (added, edited or deleted).
@@ -259,10 +275,16 @@ judge() {
     [ "$have_base" = 1 ] || printf 'note  %s absent at head: the aggregate is judged against itself (pre-S1 shape)\n' "$BASE_FILE"
 
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
-    out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
-    rc=$?
+    if [ "$entries_only" = 1 ]; then
+        rc=0; out=""
+    else
+        out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
+        rc=$?
+    fi
     rm -rf -- "${td:?}"
-    if [ "$rc" = 0 ]; then
+    if [ "$entries_only" = 1 ]; then
+        printf 'note  entries-only diff: the regenerated-aggregate check (RULE 2) is deferred to the bump PR and to --full / make roadmap-aggregate-check\n'
+    elif [ "$rc" = 0 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
     else
         violations=$((violations + 1))
@@ -366,6 +388,18 @@ self_test() {
     b_fragment_and_aggregate() {
         printf -- '- id: PMAT-200\n  title: added the fragment way\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_bump_fragment_no_regen() {
+        printf '[workspace.package]\nversion = "0.1.0"\n' >"$1/Cargo.toml"; git -C "$1" add -A && git -C "$1" commit -qm cargo || return 1
+        printf '[workspace.package]\nversion = "0.1.1"\n' >"$1/Cargo.toml"
+        printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # roadmap.yaml touched (preamble edit only, so rule 1 is quiet) beside a fragment the aggregate lacks.
+    b_roadmap_touched_stale() {
+        printf '# touched\n' | cat - "$1/$ROADMAP_FILE" >"$1/r.tmp" && mv "$1/r.tmp" "$1/$ROADMAP_FILE"
+        printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
     }
     # A fragment with no `make roadmap-aggregate`.
@@ -488,8 +522,14 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
     row 'fragment + regenerated aggregate, in sync -> PASS' \
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
-    row 'fragment added, aggregate NOT regenerated -> REFUSE, naming the drift' \
+    row 'fragment added, aggregate NOT regenerated (entries-only diff) -> PASS, regen deferred out loud' \
+        0 'entries-only diff: the regenerated-aggregate check' b_fragment_no_regen
+    FULL_REGEN=1 row 'entries-only diff under --full (main / bump check) -> REFUSE, naming the drift' \
         1 'FAIL  DRIFT' b_fragment_no_regen
+    row 'a bump PR (root Cargo.toml version changes) with an unregenerated aggregate -> REFUSE' \
+        1 'FAIL  DRIFT' b_bump_fragment_no_regen
+    row 'a diff touching roadmap.yaml and a fragment, aggregate stale -> REFUSE (entries-only never applies)' \
+        1 'FAIL  DRIFT' b_roadmap_touched_stale
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
@@ -583,6 +623,7 @@ PY
 # ---------------------------------------------------------------------------
 case "${1:-}" in
     --self-test|--selftest) unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH; self_test; exit $? ;;
+    --full) FULL_REGEN=1; shift ;;
     --help|-h) usage ;;
     --*) usage ;;
 esac

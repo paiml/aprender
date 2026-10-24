@@ -1,0 +1,21 @@
+- id: PMAT-6289
+  github_issue: 6289
+  item_type: task
+  title: 'ci(roadmap): entries-only PRs stop requiring a regenerated roadmap.yaml aggregate (check_roadmap_fragment_required RULE 2)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-24T19:00:00Z
+  updated: 2026-10-24T19:00:00Z
+  spec: null
+  acceptance_criteria:
+  - an entries-only diff (fragments change; roadmap.yaml, roadmap-base.yaml and the root Cargo.toml version do not) skips the regenerated-aggregate check and says so
+  - a diff touching roadmap.yaml, a version bump, or --full still refuses a stale aggregate (make roadmap-aggregate-check is the full check)
+  - the self-test has case-table rows for each of these and a planted mutant turns a row RED
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
