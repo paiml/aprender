@@ -1,0 +1,19 @@
+- id: PMAT-6302
+  github_issue: 6302
+  item_type: task
+  title: 'roadmap: repair YAML of PMAT-3699/3731/3732/3740/3741 (strict-parser refusals)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T18:00:00Z
+  updated: 2026-10-24T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'PMAT-3699, 3731, 3732, 3740 and 3741 parse under a strict YAML 1.2 parser (saphyr) and under PyYAML to the same content, and the regenerated aggregate parses to the same document'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Quorum 6301-legacy tie-break C. Lands before #6301 so the shape check has no exception list.'
+  epic: null
