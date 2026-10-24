@@ -119,8 +119,19 @@ for rel in tracked:
 # citing line is R1 on the base until the base is re-cut or its row takes over: recorded in PMAT-6185 as a follow-up.
 COPY_SRC, COPY_DST = "docs/roadmaps/roadmap.yaml", "docs/roadmaps/roadmap-base.yaml"  # the one pair R7 knows
 ledlines = {t for r, v in led.items() if v[0] == "historical" and r == COPY_SRC and r in ctexts for t in ctexts[r]}  # NOT fixture rows: a fixture value is a sample, copying it is a claim
+# The pool is roadmap.yaml AS FROZEN at COPY_ANCHOR (the commit that introduced the base, 9e8f8ad8c7), not the live row: a data repair that
+# re-indents a citing line of the live aggregate must not turn the untouched, frozen base R1 (#6306; rule 3 forbids editing the base). The live row
+# must still exist and be HISTORICAL. No anchor object (a shallow clone) falls back to the live row. COPY_ANCHOR is overridden by the self-test only.
+COPY_ANCHOR = os.environ.get("COPY_ANCHOR") or "9e8f8ad8c7"
+src_pin, src_lines = (led[COPY_SRC][2], ledlines) if COPY_SRC in led else (None, set())
+if COPY_SRC in led and led[COPY_SRC][0] == "historical":
+    got = subprocess.run(["git", "-C", root, "show", f"{COPY_ANCHOR}:{COPY_SRC}"], capture_output=True)
+    atext = decode_citing(got.stdout, sup) if got.returncode == 0 else None
+    if atext is not None:
+        alines = [l for l in atext.splitlines() if any(pt.search(l) for pt in pats)]
+        src_pin, src_lines = pin_of(alines), set(alines)
 for rel, lines in sorted(citing.items()):
-    if rel == COPY_DST and rel not in led and COPY_SRC in led and pinned[rel] == led[COPY_SRC][2] and all(t in ledlines for t in ctexts[rel]): continue  # EXACTLY the source's pinned lines
+    if rel == COPY_DST and rel not in led and COPY_SRC in led and pinned[rel] == src_pin and all(t in src_lines for t in ctexts[rel]): continue  # EXACTLY the source's pinned lines
     if rel not in led:
         print(f"FAIL  R1 {rel}:{lines[0]} cites a superseded comparator pin and is not on {os.path.relpath(ledger, root)} "
               f"({len(lines)} line(s)). A live claim against a superseded comparator is the defect; dated history or a fixture value is listed by file, with why.")
@@ -269,6 +280,19 @@ if [ "${1:-}" = "--self-test" ]; then
     pair c24 historical docs/roadmaps/roadmap-base.yaml && git -C "$TMP/c24" rm -qf docs/roadmaps/roadmap.yaml && sed -i 's|^docs/roadmaps/roadmap.yaml\t|docs/roadmaps/roadmap-base.yaml\t|' "$TMP/c24/scripts/comparator_pin_citations.txt" && git -C "$TMP/c24" add -A
     expect 'C24 the aggregate removed and its ledger row moved onto roadmap-base.yaml -> green' "$TMP/c24" 0 'every one ledgered'
     fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
+    anchored() { # NAME: pair c, committed (the anchor), then roadmap.yaml re-indented and RE-PINNED while the base stays untouched
+        pair "$1" "${2:-historical}" docs/roadmaps/roadmap-base.yaml && git -C "$TMP/$1" commit -qam anchor && ANCHOR=$(git -C "$TMP/$1" rev-parse HEAD) || return 2
+        printf '  measured 2026-08-24 against llama.cpp %s: 0.59x\n' "$OLD" > "$TMP/$1/docs/roadmaps/roadmap.yaml"
+        sed -i "s|^\(docs/roadmaps/roadmap.yaml\t.*\t\).*\$|\1$(pin_line "$TMP/$1" docs/roadmaps/roadmap.yaml)|" "$TMP/$1/scripts/comparator_pin_citations.txt" && git -C "$TMP/$1" add -A
+    }
+    anchored c26 && export COPY_ANCHOR=$ANCHOR
+    expect 'C26 roadmap.yaml re-indented and re-pinned, base untouched -> green (R7 reads the pool at the anchor, #6306)' "$TMP/c26" 0 'every one ledgered'
+    anchored c27 && printf 'now CURRENT at %s\n' "$OLD" >> "$TMP/c27/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c27" add -A && export COPY_ANCHOR=$ANCHOR
+    expect 'C27 re-pinned live roadmap.yaml plus a NOVEL line in the base -> R1' "$TMP/c27" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    anchored c28 && cp "$TMP/c28/docs/roadmaps/roadmap.yaml" "$TMP/c28/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c28" add -A && export COPY_ANCHOR=$ANCHOR
+    expect 'C28 the base re-cut to the RE-INDENTED live line (not what the anchor froze) -> R1' "$TMP/c28" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    anchored c29 fixture && export COPY_ANCHOR=$ANCHOR
+    expect 'C29 the same re-pinned pair with the live row FIXTURE-class -> R1 (only a historical row opens the anchor pool)' "$TMP/c29" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
     expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
 
     # MUTANTS: each must turn its row RED. The judge is re-sourced from a mutated copy of this file.
@@ -305,10 +329,15 @@ PY
     mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
     mutant prefix-exempt 'pin_rel):' 'pin_rel) or rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
     mutant drop-copy-rule 'if rel == COPY_DST and rel not in led and COPY_SRC in led' 'if False and COPY_SRC in led' 0 'every one ledgered' "$TMP/c20"
-    mutant any-copy-line 'and pinned[rel] == led[COPY_SRC][2] and all(t in ledlines' 'and any(t in ledlines' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c21"
+    mutant any-copy-line 'and pinned[rel] == src_pin and all(t in src_lines' 'and any(t in src_lines' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c21"
     mutant drop-class-filter 'if v[0] == "historical" and r == COPY_SRC' 'if r == COPY_SRC' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c22"
     mutant widen-scope 'if rel == COPY_DST and rel not in led and COPY_SRC' 'if rel not in led and COPY_SRC' 1 'R1 evidence/parity/copy.md:1' "$TMP/c23"
-    mutant membership-only 'and pinned[rel] == led[COPY_SRC][2]' '' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c25"
+    mutant membership-only 'and pinned[rel] == src_pin' '' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c25"
+    export COPY_ANCHOR; COPY_ANCHOR=$(git -C "$TMP/c26" rev-parse HEAD)
+    mutant live-row-pool 'src_pin, src_lines = pin_of(alines), set(alines)' 'pass' 0 'every one ledgered' "$TMP/c26"
+    COPY_ANCHOR=$(git -C "$TMP/c29" rev-parse HEAD)
+    mutant anchor-any-class 'if COPY_SRC in led and led[COPY_SRC][0] == "historical":' 'if COPY_SRC in led:' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c29"
+    unset COPY_ANCHOR
     mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s of %s)\n' "$fails" "$rows"; exit 1; }

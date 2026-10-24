@@ -26164,3 +26164,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5923
+- id: PMAT-6306
+  github_issue: 6306
+  item_type: task
+  title: 'comparator-pin R7: anchor the frozen roadmap-base.yaml pool to the base-intro commit'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T23:20:00Z
+  updated: 2026-10-24T23:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'roadmap.yaml re-indented and re-pinned with an untouched roadmap-base.yaml stays green; a novel or re-cut base line is R1; the live-row pool and the class filter each have a killed mutant'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Quorum 6303-R7 2/2: neither re-freezing the base (a waiver of rule 3) nor main-pinned lines. Pool = roadmap.yaml at 9e8f8ad8c7; base 18 lines == anchor 18 == main 18 (38afc7a5fac9). Lands before #6303.'
+  epic: null
