@@ -25878,6 +25878,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: null
+- id: PMAT-6190
+  github_issue: 6190
+  item_type: task
+  title: 'kfocus-shadow-lab: run the workspace-test-shard sections and upload sigma-shard junit (G7 comparator input)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T17:50:00Z
+  updated: 2026-10-23T17:50:00Z
+  spec: null
+  acceptance_criteria:
+  - kfocus-shadow-lab.yml runs the workspace-test-shard sections and uploads sigma-shard-*/lib.junit.xml with if-no-files-found error
+  - the workflow stays workflow_dispatch only (LAB), no pull_request, push, merge_group or schedule trigger
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-6200
   github_issue: 6200
   item_type: task
