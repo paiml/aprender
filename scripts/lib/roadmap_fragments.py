@@ -359,6 +359,14 @@ def _shape_rc(path, roadmap=None):
         sys.stderr = err
 
 
+def _sep(ed, ch):
+    """A fragment whose second line starts with `ch` followed by a forged `- id:` line."""
+    path = os.path.join(ed, "PMAT-515.yaml")
+    with open(path, "w", encoding="utf-8", newline="") as fh:
+        fh.write("- id: PMAT-515\n  title: a%s- id: PMAT-6270\n" % ch)
+    return path
+
+
 def _shape_rows():
     # PMAT-6270: a fragment is one entry, and a last line without a newline cannot eat the next.
     import tempfile
@@ -416,6 +424,16 @@ def _shape_rows():
             fh.write(b"- id: PMAT-514\n  title: \xff\xfe\n")
         row("shape: bytes that are not UTF-8 are a refusal, not a traceback",
             "UTF-8" in fragment_shape(os.path.join(ed, "PMAT-514.yaml")) and _shape_rc(os.path.join(ed, "PMAT-514.yaml")) == 1)
+        row("shape: U+2028, U+2029, U+0085 and the other splitlines separators are refused",
+            all("line separator" in fragment_shape(_sep(ed, c)) for c in ("\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c")))
+        put("PMAT-516.yaml", "- id: PMAT-516\n  title: a\n  title: b\n")
+        put("PMAT-517.yaml", "- id: PMAT-517\n  title: a\n- title: second\n")
+        put("PMAT-518.yaml", "- id: PMAT-999\n  title: a\n")
+        row("shape: a repeated key, a second item and an id other than the stem are each refused",
+            _shape_rc(os.path.join(ed, "PMAT-516.yaml")) == 1 and _shape_rc(os.path.join(ed, "PMAT-517.yaml")) == 1
+            and _shape_rc(os.path.join(ed, "PMAT-518.yaml")) == 1)
+        row("shape: a named roadmap with no base to build on exits 2 (not measured)",
+            _shape_rc(os.path.join(ed, "PMAT-501.yaml"), os.path.join(d, "nope", "roadmap.yaml")) == 2)
         row("shape: a plain one-entry fragment passes",
             fragment_shape(os.path.join(ed, "PMAT-501.yaml")) == "")
 
@@ -669,6 +687,8 @@ def _unique_loader():
 
 
 _MARKER = re.compile(r"(---|\.\.\.)(\s|$)")
+# str.splitlines breaks on these as well as \n and \r; the splitter and the YAML parser disagree on them.
+_SEPARATORS = "\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029"
 
 
 def _text_problem(text, stem):
@@ -681,6 +701,7 @@ def _text_problem(text, stem):
     checks = [
         ("\ufeff" in text, "carries a byte order mark"),
         ("\r" in text, "carries a carriage return (the splitter and the parser read different lines)"),
+        (any(c in text for c in _SEPARATORS), "carries a Unicode line separator (the splitter and the parser read different lines)"),
         (any(_MARKER.match(line) for line in lines), "carries a '---' or '...' document marker line"),
         (cuts != 1, "has %d lines opening '- id:', want exactly 1" % cuts),
         (lines[:1] != ["- id: " + stem], "does not start with '- id: %s'" % stem),
@@ -711,12 +732,13 @@ def _load_unique(text):
 
 
 def _read_text(path):
-    """The fragment's text with its line endings intact (a lone CR must stay visible), or None."""
+    """The fragment's text with its line endings intact (a lone CR must stay visible), or a
+    (reason,) tuple when it is not UTF-8."""
     try:
         with open(path, encoding="utf-8", newline="") as fh:
             return fh.read()
-    except UnicodeDecodeError:
-        return None
+    except UnicodeDecodeError as e:
+        return (("is not valid UTF-8 (byte %d)" % e.start),)
 
 
 def _item_problem(text, stem):
@@ -737,19 +759,19 @@ def fragment_shape(path):
         return "is not named <id>.yaml"
     stem = base[:-len(".yaml")]
     text = _read_text(path)
-    if text is None:
-        return "is not valid UTF-8"
+    if isinstance(text, tuple):
+        return text[0]
     return _text_problem(text, stem) or _anchor_problem(text) or _item_problem(text, stem)
 
 
 def aggregate_problem(roadmap, stem, text):
     """'' when the aggregate built with this fragment still parses; else why not. The class the
     per-fragment checks cannot see: a fragment that replaces the entry owning an anchor leaves
-    its aliases dangling. Absent roadmap: nothing to build on, so nothing to judge."""
+    its aliases dangling. A named roadmap that is absent is not-measured (OSError, rc 2)."""
     import yaml
     base = base_path(roadmap) if os.path.exists(base_path(roadmap)) else roadmap
     if not os.path.exists(base):
-        return ""
+        raise FileNotFoundError(base)  # the roadmap was named but cannot be built on: not measured
     with open(base, encoding="utf-8") as fh:
         built = aggregate(fh.read(), [(stem, text)])
     try:
