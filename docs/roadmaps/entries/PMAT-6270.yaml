@@ -15,7 +15,10 @@
   - 'a fragment is never deleted or renamed away (the aggregator never drops an id); refused with or without the aggregate in the diff'
   - 'a fragment holds exactly one entry (a second top-level item is refused)'
   - 'a diff that changes roadmap.yaml must still equal aggregate(entries/); a fragment whose first line is not its own id is refused, with or without the aggregate in the diff'
-  - '`--mutants` plants seven defects (lag-strict, id-check-off, first-line-off, drift-off, bump-license-off, one-entry-off, delete-ok); each turns the self-test red'
+  - 'a changed path under entries/ that is not exactly entries/<id>.yaml (subfolder, .yml, any other name) is refused (BADPATH), never skipped; fragments are read flat, so a subfolder copy cannot shadow a real one'
+  - 'the PMAT-980 additive rule is applied to fragments: judged on aggregate(base roadmap, base entries) against aggregate(base roadmap, head entries), so an edit to an existing fragment, or a legacy monolith entry adopted and rewritten in the same PR, may change lifecycle fields only'
+  - 'a fragment first line is compared as data (fixed string), not as a pattern'
+  - '`--mutants` plants eleven defects (lag-strict, id-check-off, first-line-off, drift-off, bump-license-off, one-entry-off, delete-ok, additive-off, base-agg-head, badpath-off, flat-off) in copies under mktemp, removed on exit; each turns the self-test red'
   phases: []
   subtasks: []
   estimated_effort: null

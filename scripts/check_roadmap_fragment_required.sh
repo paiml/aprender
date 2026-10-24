@@ -93,6 +93,7 @@ set -uo pipefail
 PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="$REPO_ROOT/scripts/lib/roadmap_fragments.py"
+PY_DIFF="$REPO_ROOT/scripts/lib/roadmap_diff.py"
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
 BASE_FILE="docs/roadmaps/roadmap-base.yaml"
 ENTRIES_DIR="docs/roadmaps/entries"
@@ -169,6 +170,15 @@ judge() {
         roadmap_changed=1
     fi
     frag_paths=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ENTRIES_DIR")
+    # A fragment is exactly entries/<stem>.yaml: the aggregator reads that directory flat and
+    # only *.yaml. Every other changed path under entries/ (a subfolder, .yml, any other name) is
+    # refused below, never skipped: a skipped path would be a PASS on a file nobody judged.
+    badpaths=""
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        [[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\.yaml$ ]] || badpaths="${badpaths:+$badpaths
+}$name"
+    done < <(git -C "$repo" diff --name-only --no-renames --diff-filter=ACMT "$base" "$head" -- "$ENTRIES_DIR")
     base_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE")
 
     if [ "$roadmap_changed" = 0 ] && [ -z "$frag_paths" ] && [ -z "$base_changed" ]; then
@@ -182,7 +192,7 @@ judge() {
     : >"$td/frag_ids"
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        case "$name" in *.yaml) ;; *) continue ;; esac
+        [[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\.yaml$ ]] || continue
         name=${name##*/}
         printf '%s\n' "${name%.yaml}" >>"$td/frag_ids"
     done < <(printf '%s\n' "$frag_paths")
@@ -204,7 +214,7 @@ judge() {
     names=$(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null) || names=""
     while IFS= read -r name; do
         [ -n "$name" ] || continue
-        case "$name" in *.yaml) ;; *) continue ;; esac
+        [[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\.yaml$ ]] || continue   # never flatten a subfolder file onto a top-level name
         if ! git -C "$repo" show "$head:$name" >"$td/entries/${name##*/}"; then
             rm -rf -- "${td:?}"
             printf 'ENV   %s: cannot read %s at %s\n' "$PROG" "$name" "$head" >&2
@@ -254,7 +264,16 @@ judge() {
     # gone, so a deleted fragment leaves the entry in roadmap.yaml with nothing behind it, and the
     # bump PR then sees an id with no fragment. Retire an entry by superseding it (status), not by
     # deleting its file. --no-renames: a rename is a delete plus an add.
-    deleted=$(git -C "$repo" diff --name-only --no-renames --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")
+    if [ -n "$badpaths" ]; then
+        violations=$((violations + 1))
+        printf 'FAIL  BADPATH: a changed path under %s/ is not exactly %s/<id>.yaml (no subfolder, no other extension); the aggregator never reads it:\n' "$ENTRIES_DIR" "$ENTRIES_DIR"
+        printf '      %s\n' $badpaths
+    fi
+    deleted=""
+    while IFS= read -r name; do
+        [[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\.yaml$ ]] && deleted="${deleted:+$deleted
+}$name"
+    done < <(git -C "$repo" diff --name-only --no-renames --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")
     if [ -n "$deleted" ]; then
         violations=$((violations + 1))
         printf 'FAIL  DELETED: a fragment was deleted or renamed away; supersede the entry with a status change instead (the aggregator never drops an id):\n'
@@ -301,42 +320,47 @@ judge() {
     if [ "$rc" = 0 ]; then
         out=""
         while IFS= read -r name; do
-            case "$name" in *.yaml) ;; *) continue ;; esac
+            [[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\.yaml$ ]] || continue   # BADPATH is already a FAIL above
             [ -f "$td/entries/${name##*/}" ] || continue
             stem=${name##*/}; stem=${stem%.yaml}
             first=$(head -n 1 -- "$td/entries/${name##*/}")
             # one entry per fragment: a second top-level `- ` item would carry an id nobody checks
-            nitems=$(python3 -c 'import sys,yaml; d=yaml.safe_load(open(sys.argv[1])); print(len(d) if isinstance(d,list) else -1)' "$td/entries/${name##*/}" 2>/dev/null || echo -1)
+            nitems=$(grep -c '^- id:' -- "$td/entries/${name##*/}")   # how split_entries cuts a fragment into entries
             if [ "$nitems" != 1 ]; then
                 rc=1; out="${out:+$out
-}$name holds $nitems top-level entries (-1: not a list), want exactly 1"
+}$name holds $nitems top-level \"- id:\" entries, want exactly 1"
                 what="MISFILED: a fragment must hold exactly one entry, with its filename as id"
                 continue
             fi
-            if ! grep -Eq -- "^- id: ['\"]?${stem//./\\.}['\"]?[[:space:]]*\$" <<<"$first"; then
+            first=${first%"${first##*[![:space:]]}"}   # fixed-string compare: a stem is data, never a pattern
+            if [ "$first" != "- id: $stem" ] && [ "$first" != "- id: '$stem'" ] && [ "$first" != "- id: \"$stem\"" ]; then
                 rc=1; out="${out:+$out
 }$name does not start its mapping with '- id: $stem'"
                 what="MISFILED: a fragment at head carries another id than its filename"
             fi
-            # PMAT-980 additive rule, per fragment: roadmap_diff.py only reads roadmap.yaml, and an
-            # entries-only PR no longer touches it, so an edit to a fragment that already exists at the
-            # base may change lifecycle fields only; anything else is a supersede (a new fragment).
-            if git -C "$repo" cat-file -e "$base:$ENTRIES_DIR/${name##*/}" 2>/dev/null; then
-                git -C "$repo" show "$base:$ENTRIES_DIR/${name##*/}" > "$td/base-frag.yaml" 2>/dev/null
-                if ! nonlife=$(PYTHONPATH="$REPO_ROOT/scripts/lib" python3 -c '
-import sys, yaml
-import roadmap_diff as r
-b = yaml.safe_load(open(sys.argv[1]))[0]
-h = yaml.safe_load(open(sys.argv[2]))[0]
-cb = r.strip_lifecycle(r.normalize(b)); ch = r.strip_lifecycle(r.normalize(h))
-bad = sorted(k for k in set(cb) | set(ch) if cb.get(k) != ch.get(k))
-print(",".join(bad)); sys.exit(1 if bad else 0)' "$td/base-frag.yaml" "$td/entries/${name##*/}" 2>&1); then
-                    rc=1; out="${out:+$out
-}$name edits non-lifecycle field(s) of an entry that exists at the base: $nonlife"
-                    what="NOT ADDITIVE: a fragment edit may change lifecycle fields only (PMAT-980)"
-                fi
-            fi
         done < <(printf '%s\n' "$frag_paths")
+    fi
+    # PMAT-980 additive rule on fragments. roadmap_diff.py only ever read roadmap.yaml, and an
+    # entries-only PR no longer changes it, so the rule is applied to the two aggregates this diff
+    # separates: the base roadmap with the base's fragments, and with head's. A fragment edit then
+    # may change lifecycle fields only, whether the base has that fragment or the entry still lives
+    # in the monolith (adopting a legacy entry and rewriting it in one PR is judged against it).
+    if [ "$rc" = 0 ] && [ -n "$(git -C "$repo" diff --name-only --no-renames --diff-filter=ACMT "$base" "$head" -- "$ENTRIES_DIR")" ]; then
+        mkdir -p "$td/bentries"
+        while IFS= read -r name; do
+            [[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\.yaml$ ]] || continue
+            git -C "$repo" show "$base:$name" >"$td/bentries/${name##*/}" || rc=1
+        done < <(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null)
+        cp "$td/base.yaml" "$td/agg-base.yaml"; cp "$td/base.yaml" "$td/agg-head.yaml"
+        if [ "$rc" = 0 ] \
+            && out=$(python3 "$PY_LIB" aggregate --write --roadmap "$td/agg-base.yaml" --entries "$td/bentries" 2>&1) \
+            && out=$(python3 "$PY_LIB" aggregate --write --roadmap "$td/agg-head.yaml" --entries "$td/entries" 2>&1); then
+            out=$(python3 "$PY_DIFF" check --base "$td/agg-base.yaml" --head "$td/agg-head.yaml" 2>&1)
+            rc=$?
+            what="NOT ADDITIVE: a fragment edit may change lifecycle fields only (PMAT-980)"
+        else
+            rc=1; what="UNREADABLE: the additive rule could not build the two aggregates"
+        fi
     fi
     rm -rf -- "${td:?}"
     if [ "$rc" = 0 ] && [ "$roadmap_changed" = 1 ]; then
@@ -365,38 +389,42 @@ print(",".join(bad)); sys.exit(1 if bad else 0)' "$td/base-frag.yaml" "$td/entri
 # --mutants: plant each defect in a copy of this guard and require the self-test to go red.
 # A mutant that survives means the case table cannot tell the guard from a broken one.
 mutants() {
-    local m copy survived=0 killed=0 name
-    for m in lag-strict id-check-off first-line-off drift-off bump-license-off one-entry-off delete-ok additive-off; do
-        copy=$(mktemp "$REPO_ROOT/scripts/zz-mut-${m}.XXXXXX.sh") || return 2   # fresh name: a stale copy is never scored
-        python3 - "$REPO_ROOT/scripts/$PROG" "$copy" "$m" <<'PY'
-import sys
-src, dst, m = sys.argv[1:4]
-t = open(src, encoding="utf-8").read()
-subs = {
-    "lag-strict": ('if [ "$roadmap_changed" = 1 ]; then\n        out=$(python3', 'if true; then\n        out=$(python3'),
-    "id-check-off": ('if [ "$rc" = 0 ]; then\n        out=""', 'if false; then\n        out=""'),
-    "first-line-off": ('first=$(head -n 1 -- "$td/entries/${name##*/}")', 'first=$(cat -- "$td/entries/${name##*/}")'),
-    "bump-license-off": ('if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then', 'if false; then'),
-    "one-entry-off": ('if [ "$nitems" != 1 ]; then', 'if false; then'),
-    "delete-ok": ('if [ -n "$deleted" ]; then', 'if false; then'),
-    "additive-off": ('if ! nonlife=$(PYTHONPATH', 'if false && ! nonlife=$(PYTHONPATH'),
-    "drift-off": ('rc=$?\n        what="DRIFT', 'rc=0\n        what="DRIFT'),
-}
-a, b = subs[m]
-if a not in t:
-    sys.exit("mutant %s: site not found" % m)
-# the first site is the guard's own; this table, further down, quotes the same text
-open(dst, "w", encoding="utf-8").write(t.replace(a, b, 1))
-PY
-        [ -s "$copy" ] || { rm -f -- "${copy:?}"; printf 'FAIL  mutant %s could not be planted\n' "$m"; survived=$((survived + 1)); continue; }
+    local m copy survived=0 killed=0 a b a2 b2 s2 mdir src total=0
+    src=$(<"$REPO_ROOT/scripts/$PROG")
+    for m in lag-strict id-check-off first-line-off drift-off bump-license-off one-entry-off delete-ok additive-off base-agg-head badpath-off flat-off; do
+        total=$((total + 1)); a2=''; b2=''
+        case "$m" in
+            lag-strict) a=$'if [ "$roadmap_changed" = 1 ]; then\n        out=$(python3'; b=$'if true; then\n        out=$(python3' ;;
+            id-check-off) a=$'if [ "$rc" = 0 ]; then\n        out=""'; b=$'if false; then\n        out=""' ;;
+            first-line-off) a='first=$(head -n 1 -- "$td/entries/${name##*/}")'; b='first=$(cat -- "$td/entries/${name##*/}")' ;;
+            bump-license-off) a='if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then'; b='if false; then' ;;
+            one-entry-off) a='if [ "$nitems" != 1 ]; then'; b='if false; then' ;;
+            delete-ok) a='if [ -n "$deleted" ]; then'; b='if false; then' ;;
+            drift-off) a=$'rc=$?\n        what="DRIFT'; b=$'rc=0\n        what="DRIFT' ;;
+            additive-off) a='            what="NOT ADDITIVE'; b=$'            rc=0\n            what="NOT ADDITIVE' ;;
+            base-agg-head) a='--roadmap "$td/agg-base.yaml" --entries "$td/bentries"'; b='--roadmap "$td/agg-base.yaml" --entries "$td/entries"' ;;
+            badpath-off) a='if [ -n "$badpaths" ]; then'; b='if false; then' ;;
+            flat-off) a=$'[[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\\.yaml$ ]] || continue   # never flatten'; b='   # never flatten'; a2='if [ -n "$badpaths" ]; then'; b2='if false; then' ;;
+        esac
+        case "$src" in *"$a"*) ;; *) printf 'FAIL  mutant %s: site not found\n' "$m"; survived=$((survived + 1)); continue ;; esac
+        # a copy resolves REPO_ROOT as the parent of its own folder, so it gets a throwaway tree
+        # (scripts/<copy> + scripts/lib symlinked) outside the repo; the trap removes it on any exit
+        mdir=$(mktemp -d "${TMPDIR:-/tmp}/rmfr-mut-${m}.XXXXXX") || return 2
+        trap 'rm -rf -- "${mdir:?}"' RETURN
+        mkdir "$mdir/scripts" && ln -s "$REPO_ROOT/scripts/lib" "$mdir/scripts/lib"
+        copy="$mdir/scripts/$PROG"
+        s2=${src/"$a"/"$b"}
+        [ -z "$a2" ] || s2=${s2/"$a2"/"$b2"}
+        printf '%s\n' "$s2" >"$copy"
         if bash "$copy" --self-test >/dev/null 2>&1; then
             printf 'FAIL  mutant %s SURVIVED the self-test\n' "$m"; survived=$((survived + 1))
         else
             printf 'ok    mutant %s killed\n' "$m"; killed=$((killed + 1))
         fi
-        name="$copy"; rm -f -- "${name:?}"
+        rm -rf -- "${mdir:?}"
     done
-    printf '%s/8 mutants killed\n' "$killed"
+    trap - RETURN
+    printf '%s/%s mutants killed\n' "$killed" "$total"
     [ "$survived" = 0 ]
 }
 
@@ -538,6 +566,31 @@ self_test() {
     }
     b_fragment_status_edit() {
         printf -- '- id: PMAT-100\n  title: first\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
+        commit_all "$1"
+    }
+    b_adopt_rewritten() {
+        # a legacy entry (PMAT-300 lives only in the monolith) adopted AND rewritten in one PR
+        printf -- '- id: PMAT-300\n  title: third, rewritten\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-300.yaml"
+        commit_all "$1"
+    }
+    b_adopt_unchanged() {
+        printf -- '- id: PMAT-300\n  title: third\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-300.yaml"
+        commit_all "$1"
+    }
+    b_fragment_subfolder_shadow() {
+        # a same-named file in a subfolder sorts after the real one and used to overwrite its copy
+        mkdir -p "$1/$ENTRIES_DIR/zz"
+        printf -- '- id: PMAT-100\n  title: first\n  status: planned\n' >"$1/$ENTRIES_DIR/zz/PMAT-100.yaml"
+        printf -- '- id: PMAT-100\n  title: first, rewritten\n  status: planned\n- id: PMAT-999\n  title: smuggled\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
+        commit_all "$1"
+    }
+    b_fragment_stem_is_data() {
+        # a stem carrying a regex operator: as a pattern, "PMAT-9+" matches the id PMAT-99
+        printf -- '- id: PMAT-99\n  title: not my stem\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-9+.yaml"
+        commit_all "$1"
+    }
+    b_fragment_yml() {
+        printf -- '- id: PMAT-200\n  title: wrong extension\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yml"
         commit_all "$1"
     }
     b_fragment_deleted() {
@@ -687,7 +740,7 @@ PY
     row 'a fragment whose id is not its first line, aggregate regenerated in the diff -> REFUSE' \
         1 'FAIL  MISFILED' b_fragment_misfiled_regen
     row 'a fragment holding a second entry, aggregate not in the diff -> REFUSE' \
-        1 'holds 2 top-level entries' b_fragment_two_entries
+        1 'holds 2 top-level "- id:" entries' b_fragment_two_entries
     row 'a fragment DELETED, aggregate not in the diff -> REFUSE' \
         1 'FAIL  DELETED' b_fragment_deleted
     row 'a fragment RENAMED (git sees R, not D), aggregate not in the diff -> REFUSE' \
@@ -724,6 +777,16 @@ PY
         1 'NOT ADDITIVE' b_fragment_title_edit
     row 'an existing fragment has a LIFECYCLE field edited -> PASS' \
         0 'may lag' b_fragment_status_edit
+    row 'a legacy entry adopted AND rewritten in one PR -> REFUSE (judged against the monolith entry)' \
+        1 'NOT ADDITIVE' b_adopt_rewritten
+    row 'a legacy entry adopted unchanged -> PASS' \
+        0 'may lag' b_adopt_unchanged
+    row 'a subfolder copy shadowing a real fragment -> REFUSE' \
+        1 'BADPATH' b_fragment_subfolder_shadow
+    row 'a stem with a regex operator is compared as data -> REFUSE' \
+        1 'MISFILED' b_fragment_stem_is_data
+    row 'a fragment with the .yml extension -> REFUSE, never a skipped PASS' \
+        1 'BADPATH' b_fragment_yml
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
