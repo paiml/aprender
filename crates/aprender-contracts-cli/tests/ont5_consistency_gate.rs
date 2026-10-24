@@ -64,9 +64,12 @@ fn gate(dir: &Path) -> Run {
 
 /// A copy of `tests/fixtures/ont/relations-ok`.
 fn corpus() -> tempfile::TempDir {
+    corpus_from(&repo().join("tests/fixtures/ont/relations-ok"))
+}
+
+fn corpus_from(src: &Path) -> tempfile::TempDir {
     let dir = tempfile::tempdir().expect("tempdir");
-    for entry in std::fs::read_dir(repo().join("tests/fixtures/ont/relations-ok")).expect("fixture")
-    {
+    for entry in std::fs::read_dir(src).expect("fixture") {
         let entry = entry.expect("entry");
         // The ont4/ont4b gates lint this fixture in place (#5446), and pv leaves a `.pv/` directory in it; a parallel
         // test must skip that directory and nothing else.
@@ -76,6 +79,26 @@ fn corpus() -> tempfile::TempDir {
         std::fs::copy(entry.path(), dir.path().join(entry.file_name())).expect("copy");
     }
     dir
+}
+
+#[test]
+fn the_corpus_copy_skips_a_planted_pv_directory_and_keeps_every_file() {
+    let src = corpus();
+    std::fs::create_dir_all(src.path().join(".pv")).expect("plant .pv");
+    std::fs::write(src.path().join(".pv/cache.json"), "{}").expect("plant file");
+    let copy = corpus_from(src.path());
+    assert!(!copy.path().join(".pv").exists(), ".pv must not be copied");
+    let names = |d: &Path| -> Vec<_> {
+        let mut v: Vec<_> = std::fs::read_dir(d)
+            .expect("dir")
+            .map(|e| e.expect("entry").file_name())
+            .filter(|n| n != ".pv")
+            .collect();
+        v.sort();
+        v
+    };
+    assert_eq!(names(copy.path()), names(src.path()), "every file is kept");
+    assert!(!names(copy.path()).is_empty(), "the fixture is not empty");
 }
 
 #[test]
