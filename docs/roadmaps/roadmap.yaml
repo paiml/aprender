@@ -26049,3 +26049,23 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: null
+- id: PMAT-6267
+  github_issue: 6267
+  item_type: task
+  title: 'ci: one-PR-per-ticket R1 allowance for EMR-001 squash integration PRs'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T14:30:00Z
+  updated: 2026-10-24T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a commit carrying "EMR: 001" and "Squashed-From: #N" on the same commit exempts open PR #N from R1, and only #N'
+  - 'planted rows: exempt, other PR still RED, two sources, no EMR marker, wrong EMR id, split commits, unnamed PR; three mutants turn the table red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs EMR-001 E-1. EMR-001 forbids closing a source PR, so the source stays open while the integration PR is judged. Sensitive tier (scripts/*): quorum before seats.'
+  epic: null
