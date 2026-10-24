@@ -64,6 +64,7 @@ if [[ -n $gaps ]]; then echo "FAIL  CI-named files outside the sensitive list:";
 mutant mode-change-ignored 's#  \[\[ $(git ls-tree "$1" -- "$3" | cut -d. . -f1) == .*|| return 1#  true#'
 mutant malformed-line-dropped 's#{ print "review_tier: malformed table line: " $0 > "/dev/stderr"; bad = 1; exit 2 }#{ next }#'
 mutant read-by-code-ignored 's#if read_by_code "$1" "$2" "$3"; then#if false; then#'
-mutant basename-include-ignored 's#include(_str|_bytes)?!\.\*#include(_str|_bytes)?!NOPE#'
+mutant basename-include-ignored 's#-e "\[\\"/\]\$b\\""#-e "NOPE$b"#'
+mutant include-per-line-only 's#--all-match -e .include(_str|_bytes)?!. -e "\[\\"/\]\$b\\""#-e "include(_str|_bytes)?!.*[\\"/]$b\\""#'
 mutant no-paths-ok    's/  \[\[ $n -gt 0 \]\] || die/  true || die/'
 exit "$fail"
