@@ -18,7 +18,7 @@
       --package trueno --package trueno-gpu \
       --lib \
       --no-default-features \
-      --features "parallel,cuda,wgpu,ml-tuner,execution-graph,hardware-detect,tracing" \
+      --features "parallel,cuda,wgpu,execution-graph,hardware-detect,tracing" \
       --html
     ```
 2.  **Close the Gaps**:

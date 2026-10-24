@@ -50,7 +50,7 @@ struct Binding {
 ///
 /// "softmax-kernel-v1.yaml" + "softmax" -> "CONTRACT_SOFTMAX_KERNEL_V1_SOFTMAX"
 fn binding_env_var_name(contract: &str, equation: &str) -> String {
-    provable_contracts::build_helper::env_key(
+    aprender_contracts_key::env_key(
         contract.trim_end_matches(".yaml").trim_end_matches(".yml"),
         equation,
     )

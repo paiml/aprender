@@ -85,6 +85,10 @@ impl RandomForestRegressor {
         if n_samples == 0 {
             return Err("Cannot fit with zero samples".into());
         }
+        // A NaN or infinite label would be fitted silently and make every prediction NaN (#6125).
+        if let Some(i) = y.as_slice().iter().position(|v| !v.is_finite()) {
+            return Err(format!("non-finite label at row {i}").into());
+        }
 
         self.trees = Vec::with_capacity(self.n_estimators);
         self.oob_indices = Vec::with_capacity(self.n_estimators);
