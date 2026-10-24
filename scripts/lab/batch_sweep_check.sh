@@ -16,6 +16,23 @@ DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^ci/explici
 GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')
 readme_neutral() { sed 's/<!-- CONTRACT_COUNT_START -->.*<!-- CONTRACT_COUNT_END -->/<!-- CONTRACT_COUNT -->/'; }
 bad() { echo "BS-$1 VIOLATED: $2"; return 1; }
+# Every hunk of PATCH must already be on the tree at WT. An addition/replacement hunk lands iff it reverse-applies. A
+# DELETION-only hunk reverse-applies anywhere (re-inserting a line always works), so it lands iff it no longer applies forward.
+hunks_landed() {
+  local wt="$1" patch="$2" d f ok=0
+  [ -s "$patch" ] || return 0
+  d="$(mktemp -d)" || return 2
+  awk -v d="$d" '/^diff --git /{h=""; n=0} /^@@/{n++; f=sprintf("%s/h%06d", d, ++c); printf "%s", h > f; close(f); cur=f} !/^@@/ && n==0{h=h $0 "\n"} n>0{print >> cur}' "$patch"
+  for f in "$d"/h*; do
+    [ -e "$f" ] || continue
+    if grep -q '^+[^+]' "$f" || grep -q '^+$' "$f"; then
+      git -C "$wt" apply -R --check --unidiff-zero "$f" 2> /dev/null || ok=1
+    else
+      ! git -C "$wt" apply --check --unidiff-zero "$f" 2> /dev/null || ok=1
+    fi
+  done
+  rm -rf -- "${d:?}"; return "$ok"
+}
 bs1() {
   local repo="$1" main="$2" pr mb wt rc=0; shift 2
   wt="$(mktemp -d)" || return 2
@@ -28,8 +45,10 @@ bs1() {
       git -C "$repo" show "$mb:README.md" | readme_neutral > "$wt.a"; git -C "$repo" show "$pr:README.md" | readme_neutral > "$wt.b"
       git -C "$wt" diff --no-index -U0 --src-prefix=a/ --dst-prefix=b/ "$wt.a" "$wt.b" 2> /dev/null | sed -e "s#a$wt\.a#a/README.md#g" -e "s#b$wt\.b#b/README.md#g" -e "s#^--- .*#--- a/README.md#" -e "s#^+++ .*#+++ b/README.md#" >> "$wt.patch"
       [ -f "$wt/README.md" ] && readme_neutral < "$wt/README.md" > "$wt.m" && cp "$wt.m" "$wt/README.md"
+    else # README on one side only (added or deleted): judged whole, nothing to neutralise
+      git -C "$repo" diff -U0 "$mb" "$pr" -- README.md >> "$wt.patch"
     fi
-    if [ -s "$wt.patch" ] && ! git -C "$wt" apply -R --check --unidiff-zero "$wt.patch" 2> /dev/null; then bad 1 "$pr has a hunk missing from $main"; rc=1; fi
+    hunks_landed "$wt" "$wt.patch" || { bad 1 "$pr has a hunk missing from $main"; rc=1; }
   done
   git -C "$repo" worktree remove --force "$wt"; rm -f -- "${wt:?}.patch" "${wt:?}.a" "${wt:?}.b" "${wt:?}.m"; return "$rc"
 }
@@ -57,7 +76,7 @@ bs4() {
   done < "$1"; return "$rc"
 }
 bs5() {
-  local hit; hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+(#|[A-Za-z0-9_./-]+#|https?://[^ ]*/(issues|pull)/)?[0-9]+' "$1")" || true
+  local hit; hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+(#|[A-Za-z0-9_./-]+#|https?://[^ ]*/(issues|pull)/)[0-9]+' "$1")" || true
   [ -z "$hit" ] || { bad 5 "closing keyword: $hit"; return 1; }
 }
 bs6() {
@@ -87,11 +106,17 @@ selftest() {
   printf 'o\n' > "$t/r/other.txt"; g add -A; g commit -qm unrelated; g cherry-pick prN; printf '1\ntwo\nthree\nfour\n5\n6\n' > "$t/r/f.txt"; g commit -qam neighbour
   expect "BS-1 GREEN landed hunk with a neighbouring edit on main" 0 bs1 "$t/r" main prN
   expect "BS-1 RED unlanded hunk beside a neighbouring edit" 1 bs1 "$t/r" main prD
+  printf 'del1\ndel2\n' > "$t/r/d.txt"; g add -A; g commit -qm del-base; g checkout -qb prDel; printf 'del1\n' > "$t/r/d.txt"; g commit -qam del-only; g checkout -q main
+  expect "BS-1 RED deletion-only hunk that never landed" 1 bs1 "$t/r" main prDel
+  g cherry-pick prDel > /dev/null 2>&1 || { printf 'del1\n' > "$t/r/d.txt"; g commit -qam del-landed; }
+  expect "BS-1 GREEN deletion-only hunk that landed" 0 bs1 "$t/r" main prDel
   printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g add -A; g commit -qm readme-base
   g checkout -qb prR; printf 'x <!-- CONTRACT_COUNT_START -->2<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g commit -qam count-only
   g checkout -qb prP main; printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nnew prose\n' > "$t/r/README.md"; g commit -qam prose-edit; g checkout -q main
   expect "BS-1 GREEN README CONTRACT_COUNT-only change is generated" 0 bs1 "$t/r" main prR
   expect "BS-1 RED README prose change that never landed" 1 bs1 "$t/r" main prP
+  g checkout -qb prRA "$b0"; printf 'brand new readme\n' > "$t/r/README.md"; g add -A; g commit -qm readme-added; g checkout -q main
+  expect "BS-1 RED README added on one side only, never landed" 1 bs1 "$t/r" main prRA
   g checkout -qb good $b0; g cherry-pick prA prB; printf 'b\nc\n' > "$t/r/gen.nt"; g commit -q --allow-empty -m "batch: regenerate"
   expect "BS-2 GREEN 2 tickets + regenerate" 0 bs2 "$t/r" $b0 good 2
   g checkout -qb merged $b0; g merge -q --no-ff -m "Merge prA" prA; g commit -q --allow-empty -m "batch: regenerate"
@@ -117,6 +142,8 @@ selftest() {
   printf 'Closes https://github.com/paiml/aprender/issues/5724\n' > "$t/b-url.md"; printf 'resolves https://github.com/paiml/aprender/pull/5558\n' > "$t/b-url2.md"
   expect "BS-5 RED 'Closes <issue URL>'" 1 bs5 "$t/b-url.md"
   expect "BS-5 RED 'resolves <pull URL>'" 1 bs5 "$t/b-url2.md"
+  printf 'This fixes 2 flakes and closes 3 gaps.\n' > "$t/b-prose.md"
+  expect "BS-5 GREEN prose 'fixes 2 flakes' without #/URL" 0 bs5 "$t/b-prose.md"
   expect "BS-5 GREEN Supersedes/Refs only" 0 bs5 "$t/b-ok.md"
   expect "BS-5 RED 'Closes #N'" 1 bs5 "$t/b-bad.md"
   expect "BS-5 RED 'Fixes: org/repo#N'" 1 bs5 "$t/b-bad2.md"
