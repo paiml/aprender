@@ -225,8 +225,18 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    row 13 the bump calls regen_roadmap before it lists the files that must ride\n'
     else printf 'FAIL  row 13 regen_roadmap is not called before the ride list (call=%s list=%s)\n' "${call_ln:-none}" "${list_ln:-none}"; fails=1; fi
 
+    # Rows 14-15 pin the call site's text, so deleting the `exit 1`, softening `|| {` to `|| true`, or
+    # dropping roadmap.yaml from the ride list turns the self-test red (MT-2).
+    if [ -n "$call_ln" ] && [ "$(sed -n "${call_ln}p" "$0")" = 'regen_roadmap "$REPO_ROOT" || {' ] \
+        && [ "$(sed -n "$((call_ln + 2))p" "$0")" = '    exit 1' ] && [ "$(sed -n "$((call_ln + 3))p" "$0")" = '}' ]; then
+        printf 'ok    row 14 a failed regeneration exits 1 (no `|| true`, `exit 1` present)\n'
+    else printf 'FAIL  row 14 the regen_roadmap call no longer fails the bump on error\n'; fails=1; fi
+    if [ -n "$list_ln" ] && sed -n "$((list_ln + 1))p" "$0" | grep -q 'git status --porcelain -- crates/facades docs/roadmaps/roadmap.yaml'; then
+        printf 'ok    row 15 docs/roadmaps/roadmap.yaml is on the must-ride list\n'
+    else printf 'FAIL  row 15 docs/roadmaps/roadmap.yaml is not on the must-ride list\n'; fails=1; fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (13/13)\n'
+    printf '\nSELF-TEST PASSED (15/15)\n'
     exit 0
 fi
 
