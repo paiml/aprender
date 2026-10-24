@@ -6,7 +6,11 @@ use crate::brick::{Brick, BrickAssertion, BrickBudget, BrickVerification};
 use crate::ring_buffer::RingBuffer;
 use std::any::Any;
 use std::fs;
+use std::path::Path;
 use std::time::Instant;
+
+/// Legal PCIe link widths (x0 = down/unknown).
+const VALID_WIDTHS: [u8; 8] = [0, 1, 2, 4, 8, 12, 16, 32];
 
 #[derive(Debug, Clone)]
 pub struct PcieMetrics {
@@ -48,42 +52,38 @@ impl PcieCollectorBrick {
     }
 
     fn read_pcie(&self) -> Result<PcieMetrics, std::io::Error> {
-        let mut gen4 = 0;
-        let mut gen5 = 0;
-        let mut max_width = 0;
+        Self::read_pcie_from(Path::new("/sys/bus/pci/devices"))
+    }
 
-        if let Ok(entries) = fs::read_dir("/sys/bus/pci/devices") {
-            for entry in entries {
-                if let Ok(entry) = entry {
-                    let path = entry.path();
-
-                    // Check generation
-                    if let Ok(speed) = fs::read_to_string(path.join("current_link_speed")) {
-                        if speed.contains("16.0 GT/s") {
-                            gen4 += 1;
-                        } else if speed.contains("32.0 GT/s") {
-                            gen5 += 1;
-                        }
-                    }
-
-                    // Check width
-                    if let Ok(width_str) = fs::read_to_string(path.join("current_link_width")) {
-                        if let Ok(width) = width_str.trim().parse::<u8>() {
-                            if width > max_width {
-                                max_width = width;
-                            }
-                        }
-                    }
-                }
+    /// Scan a sysfs PCI devices directory (injectable so tests need no real hardware).
+    fn read_pcie_from(root: &Path) -> Result<PcieMetrics, std::io::Error> {
+        let mut m = PcieMetrics::default();
+        let Ok(entries) = fs::read_dir(root) else {
+            return Ok(m);
+        };
+        for path in entries.flatten().map(|e| e.path()) {
+            match fs::read_to_string(path.join("current_link_speed")) {
+                Ok(s) if s.contains("16.0 GT/s") => m.gen4_count += 1,
+                Ok(s) if s.contains("32.0 GT/s") => m.gen5_count += 1,
+                _ => {}
+            }
+            if let Some(w) = Self::read_width(&path) {
+                m.max_width = m.max_width.max(w);
             }
         }
+        m.timestamp = Instant::now();
+        Ok(m)
+    }
 
-        Ok(PcieMetrics {
-            timestamp: Instant::now(),
-            gen4_count: gen4,
-            gen5_count: gen5,
-            max_width,
-        })
+    /// Link width of one device; None when unreadable or an unknown-width sentinel.
+    /// Some bridges report 63 (0x3f) or 255 (measured on kfocus: 4 devices at 63).
+    fn read_width(dev: &Path) -> Option<u8> {
+        let w = fs::read_to_string(dev.join("current_link_width"))
+            .ok()?
+            .trim()
+            .parse::<u8>()
+            .ok()?;
+        VALID_WIDTHS.contains(&w).then_some(w)
     }
 
     pub fn history(&self) -> &RingBuffer<PcieMetrics> {
@@ -133,10 +133,52 @@ impl Brick for PcieCollectorBrick {
 mod tests {
     use super::*;
 
+    fn device(root: &Path, name: &str, speed: &str, width: &str) {
+        let d = root.join(name);
+        fs::create_dir_all(&d).expect("mkdir fixture device");
+        fs::write(d.join("current_link_speed"), speed).expect("write speed");
+        fs::write(d.join("current_link_width"), width).expect("write width");
+    }
+
     #[test]
     fn test_pcie_collector() {
+        // Real host width is hardware-dependent (a 32-lane link is legal): only the
+        // PCIe width set {0,1,2,4,8,12,16,32} is invariant.
         let mut collector = PcieCollectorBrick::new();
         let metrics = collector.collect();
-        assert!(metrics.max_width <= 16);
+        assert!([0u8, 1, 2, 4, 8, 12, 16, 32].contains(&metrics.max_width));
+    }
+
+    #[test]
+    fn test_pcie_read_from_fixture() {
+        let root = std::env::temp_dir().join(format!("cbtop-pcie-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        device(&root, "0000:01:00.0", "16.0 GT/s PCIe\n", "16\n");
+        device(&root, "0000:02:00.0", "32.0 GT/s PCIe\n", "32\n");
+        device(&root, "0000:03:00.0", "8.0 GT/s PCIe\n", "4\n");
+        // kfocus reports 63 (and 255 is the other sentinel) for unknown width: ignored.
+        device(&root, "0000:04:00.0", "8.0 GT/s PCIe\n", "63\n");
+        device(&root, "0000:05:00.0", "8.0 GT/s PCIe\n", "255\n");
+        let m = PcieCollectorBrick::read_pcie_from(&root).expect("fixture read");
+        fs::remove_dir_all(&root).expect("cleanup");
+        assert_eq!((m.gen4_count, m.gen5_count, m.max_width), (1, 1, 32));
+    }
+
+    #[test]
+    fn test_pcie_unknown_width_sentinels_ignored() {
+        let root = std::env::temp_dir().join(format!("cbtop-pcie-s-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        device(&root, "0000:00:01.0", "8.0 GT/s PCIe\n", "63\n");
+        device(&root, "0000:00:02.0", "8.0 GT/s PCIe\n", "4\n");
+        let m = PcieCollectorBrick::read_pcie_from(&root).expect("fixture read");
+        fs::remove_dir_all(&root).expect("cleanup");
+        assert_eq!(m.max_width, 4);
+    }
+
+    #[test]
+    fn test_pcie_missing_root_is_zero() {
+        let m = PcieCollectorBrick::read_pcie_from(Path::new("/nonexistent-pcie-root"))
+            .expect("missing root is not an error");
+        assert_eq!(m.max_width, 0);
     }
 }
