@@ -425,3 +425,23 @@
         let sum: f32 = importances.iter().sum();
         assert!((sum - 1.0).abs() < 1e-5, "importances must sum to 1: {sum}");
     }
+
+    #[test]
+    fn test_regressor_fit_refuses_non_finite_labels() {
+        // #6125: fit used to accept NaN/inf labels and then predict NaN for every row.
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let (x, y) = regression_data();
+            let mut labels = y.as_slice().to_vec();
+            labels[2] = bad;
+            let mut rf = RandomForestRegressor::new(3).with_random_state(1);
+            let err = rf
+                .fit(&x, &Vector::from_vec(labels))
+                .expect_err("a non-finite label must be refused");
+            assert_eq!(err.to_string(), "non-finite label at row 2", "label {bad}");
+            assert!(rf.trees.is_empty(), "a refused fit must not leave trees behind");
+        }
+        let (x, y) = regression_data();
+        let mut rf = RandomForestRegressor::new(3).with_random_state(1);
+        rf.fit(&x, &y).expect("finite labels still fit");
+        assert!(rf.predict(&x).as_slice().iter().all(|p| p.is_finite()));
+    }
