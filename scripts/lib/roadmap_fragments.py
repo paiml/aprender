@@ -434,6 +434,13 @@ def _shape_rows():
             and _shape_rc(os.path.join(ed, "PMAT-518.yaml")) == 1)
         row("shape: a named roadmap with no base to build on exits 2 (not measured)",
             _shape_rc(os.path.join(ed, "PMAT-501.yaml"), os.path.join(d, "nope", "roadmap.yaml")) == 2)
+        saved = sys.modules.get("yaml")
+        sys.modules["yaml"] = None  # `import yaml` now raises ImportError, as on a box without PyYAML
+        try:
+            rc_no_yaml = _shape_rc(os.path.join(ed, "PMAT-501.yaml"))
+        finally:
+            sys.modules["yaml"] = saved
+        row("shape: PyYAML missing exits 2 (not measured), never 0 or 1", rc_no_yaml == 2, "rc=%s" % rc_no_yaml)
         row("shape: a plain one-entry fragment passes",
             fragment_shape(os.path.join(ed, "PMAT-501.yaml")) == "")
 
