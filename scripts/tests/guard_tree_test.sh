@@ -248,8 +248,8 @@ fi
 # The guard-cargo job body: from its key to the next top-level job key.
 # guard-cargo AND its guard-cargo-steps manifest (#4415): the docker steps run by
 # scripts/ci_guards.sh guard-cargo live in the manifest.
-guard_cargo_job="$(awk '/^  guard-cargo(-steps)?:/{f=1;print;next} f&&/^  [a-z][a-z0-9_-]*:/{f=0} f' <<<"$ci_text")"
-n_job="$(grep -c 'guard-cargo:' <<<"$guard_cargo_job")"
+guard_cargo_job="$(awk '/^  guard-cargo-(shard|steps):/{f=1;print;next} f&&/^  [a-z][a-z0-9_-]*:/{f=0} f' <<<"$ci_text")"
+n_job="$(grep -c '^    name: guard-cargo-shard' <<<"$guard_cargo_job")"
 n_registry_only="$(grep -c -- ':/usr/local/cargo/registry' <<<"$guard_cargo_job")"
 n_cargo_home="$(grep -c -- '-e CARGO_HOME=' <<<"$guard_cargo_job")"
 
@@ -1080,6 +1080,49 @@ else
     fi
 fi
 cp "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"
+
+# 56-58 (#6255): guard-cargo's --shard I/K partition and the --verdict fan-in.
+cg="$REPO_ROOT/scripts/ci_guards.sh"
+full56="$(bash "$cg" --list guard-cargo | grep -v '^==' | awk '{print $1}' | sort)"
+# The state writers of the manifest, derived from the YAML (not from the code under test): each step block that
+# appends to GITHUB_PATH/GITHUB_ENV, counted between the manifest job and the next job.
+writers56="$(awk '/^  guard-cargo-steps:/{on=1;next} on&&/^  [a-z]/{on=0} on&&/^      - /{n++} on&&/(>>|tee -a) *"?\$\{?GITHUB_(PATH|ENV)/&&n!=last{c++;last=n} END{print c+0}' "$REPO_ROOT/ci/sections.yml")"
+bad56=""
+for k in 1 2 3 4 5; do
+    u=""
+    for ((i = 1; i <= k; i++)); do u+="$(bash "$cg" --list --shard "$i/$k" guard-cargo | grep -v '^==' | awk '{print $1}')"$'\n'; done
+    [ "$(sort -u <<<"$u" | grep -v '^$')" = "$full56" ] || bad56+=" union@K=$k"
+    once="$(grep -v '^$' <<<"$u" | sort | uniq -c | awk '$1 == 1' | wc -l)"
+    all="$(grep -v '^$' <<<"$u" | sort | uniq -c | awk -v k="$k" '$1 == k' | wc -l)"
+    n56="$(wc -l <<<"$full56")"
+    if [ "$k" -eq 1 ]; then [ "$once" -eq "$n56" ] || bad56+=" K=1:$once"
+    else
+        [ "$all" -eq "$writers56" ] && [ "$once" -eq $((n56 - writers56)) ] || bad56+=" K=$k:once=$once,all=$all,writers=$writers56"
+    fi
+done
+if [ -z "$bad56" ] && [ -n "$full56" ] && [ "$writers56" -ge 1 ]; then
+    pass_row "56: --shard i/K lists every guard-cargo item; non-writers in exactly one shard, the $writers56 GITHUB_PATH/ENV writer(s) in all K (K=1..5)"
+else
+    fail_row "56: guard-cargo shard partition" "$bad56"
+fi
+bad57=""
+for i in 1 2 3; do
+    l57="$(bash "$cg" --list --shard "$i/3" guard-cargo)"
+    [[ $l57 == *'Install cargo-deny'* ]] || bad57+=" shard$i"
+done
+if [ -z "$bad57" ]; then
+    pass_row "57: the cargo-deny installer (writes GITHUB_PATH) is listed in shards 1, 2 and 3"
+else
+    fail_row "57: state-handing step in every shard" "missing from:$bad57"
+fi
+bad58=""
+for r in success; do bash "$cg" guard-cargo --verdict "$r" > /dev/null 2>&1 || bad58+=" $r->red"; done
+for r in failure cancelled skipped ""; do bash "$cg" guard-cargo --verdict "$r" > /dev/null 2>&1 && bad58+=" [$r]->green"; done
+if [ -z "$bad58" ]; then
+    pass_row "58: --verdict passes only on success (failure, cancelled, skipped, empty are red)"
+else
+    fail_row "58: --verdict case table" "$bad58"
+fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
