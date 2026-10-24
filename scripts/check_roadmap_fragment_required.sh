@@ -318,6 +318,24 @@ judge() {
 }$name does not start its mapping with '- id: $stem'"
                 what="MISFILED: a fragment at head carries another id than its filename"
             fi
+            # PMAT-980 additive rule, per fragment: roadmap_diff.py only reads roadmap.yaml, and an
+            # entries-only PR no longer touches it, so an edit to a fragment that already exists at the
+            # base may change lifecycle fields only; anything else is a supersede (a new fragment).
+            if git -C "$repo" cat-file -e "$base:$ENTRIES_DIR/${name##*/}" 2>/dev/null; then
+                git -C "$repo" show "$base:$ENTRIES_DIR/${name##*/}" > "$td/base-frag.yaml" 2>/dev/null
+                if ! nonlife=$(PYTHONPATH="$REPO_ROOT/scripts/lib" python3 -c '
+import sys, yaml
+import roadmap_diff as r
+b = yaml.safe_load(open(sys.argv[1]))[0]
+h = yaml.safe_load(open(sys.argv[2]))[0]
+cb = r.strip_lifecycle(r.normalize(b)); ch = r.strip_lifecycle(r.normalize(h))
+bad = sorted(k for k in set(cb) | set(ch) if cb.get(k) != ch.get(k))
+print(",".join(bad)); sys.exit(1 if bad else 0)' "$td/base-frag.yaml" "$td/entries/${name##*/}" 2>&1); then
+                    rc=1; out="${out:+$out
+}$name edits non-lifecycle field(s) of an entry that exists at the base: $nonlife"
+                    what="NOT ADDITIVE: a fragment edit may change lifecycle fields only (PMAT-980)"
+                fi
+            fi
         done < <(printf '%s\n' "$frag_paths")
     fi
     rm -rf -- "${td:?}"
@@ -348,7 +366,7 @@ judge() {
 # A mutant that survives means the case table cannot tell the guard from a broken one.
 mutants() {
     local m copy survived=0 killed=0 name
-    for m in lag-strict id-check-off first-line-off drift-off bump-license-off one-entry-off delete-ok; do
+    for m in lag-strict id-check-off first-line-off drift-off bump-license-off one-entry-off delete-ok additive-off; do
         copy=$(mktemp "$REPO_ROOT/scripts/zz-mut-${m}.XXXXXX.sh") || return 2   # fresh name: a stale copy is never scored
         python3 - "$REPO_ROOT/scripts/$PROG" "$copy" "$m" <<'PY'
 import sys
@@ -361,6 +379,7 @@ subs = {
     "bump-license-off": ('if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then', 'if false; then'),
     "one-entry-off": ('if [ "$nitems" != 1 ]; then', 'if false; then'),
     "delete-ok": ('if [ -n "$deleted" ]; then', 'if false; then'),
+    "additive-off": ('if ! nonlife=$(PYTHONPATH', 'if false && ! nonlife=$(PYTHONPATH'),
     "drift-off": ('rc=$?\n        what="DRIFT', 'rc=0\n        what="DRIFT'),
 }
 a, b = subs[m]
@@ -377,7 +396,7 @@ PY
         fi
         name="$copy"; rm -f -- "${name:?}"
     done
-    printf '%s/7 mutants killed\n' "$killed"
+    printf '%s/8 mutants killed\n' "$killed"
     [ "$survived" = 0 ]
 }
 
@@ -511,6 +530,14 @@ self_test() {
     }
     b_fragment_two_entries() {
         printf -- '- id: PMAT-201\n  title: first\n  status: planned\n- id: PMAT-999\n  title: smuggled second entry\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        commit_all "$1"
+    }
+    b_fragment_title_edit() {
+        printf -- '- id: PMAT-100\n  title: first, rewritten\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
+        commit_all "$1"
+    }
+    b_fragment_status_edit() {
+        printf -- '- id: PMAT-100\n  title: first\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
         commit_all "$1"
     }
     b_fragment_deleted() {
@@ -693,6 +720,10 @@ PY
         1 'FROZEN: docs/roadmaps/roadmap-base.yaml changed' b_base_edited
     row 'PARITY: header of roadmap.yaml hand-edited away from the frozen base -> REFUSE' \
         1 'FAIL  DRIFT' b_tampered_header
+    row 'an existing fragment has its TITLE rewritten -> REFUSE (PMAT-980 additive rule)' \
+        1 'NOT ADDITIVE' b_fragment_title_edit
+    row 'an existing fragment has a LIFECYCLE field edited -> PASS' \
+        0 'may lag' b_fragment_status_edit
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
