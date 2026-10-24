@@ -368,6 +368,11 @@ def _shape_rows():
         why = fragment_shape(os.path.join(ed, "PMAT-502.yaml"))
         row("shape: a '- id:' line inside a quoted scalar is refused (the splitter would cut there)",
             "lines opening" in why, why)
+        put("PMAT-503.yaml", "- id: PMAT-503\n  title: x\n...\n")
+        put("PMAT-504.yaml", "---\n- id: PMAT-504\n  title: x\n")
+        row("shape: a fragment ending in '...' or opening with '---' is refused",
+            all("document marker" in fragment_shape(os.path.join(ed, n))
+                for n in ("PMAT-503.yaml", "PMAT-504.yaml")))
         row("shape: a plain one-entry fragment passes",
             fragment_shape(os.path.join(ed, "PMAT-501.yaml")) == "")
 
@@ -620,9 +625,15 @@ def _unique_loader():
     return Loader
 
 
-def _opening_lines(path):
+def _line_problem(path):
+    """The first line-level defect of a fragment, or ''. The splitter cuts on every `- id:` line
+    (even inside a quoted scalar) and a `---` / `...` line breaks the aggregate's parse."""
     with open(path, encoding="utf-8") as fh:
-        return sum(1 for line in fh if line.startswith("- id:"))
+        lines = fh.read().splitlines()
+    if any(re.match(r"(---|\.\.\.)(\s|$)", line) for line in lines):
+        return "carries a '---' or '...' document marker line"
+    cuts = sum(1 for line in lines if line.startswith("- id:"))
+    return "" if cuts == 1 else "has %d lines opening '- id:', want exactly 1" % cuts
 
 
 def _load_unique(path):
@@ -641,9 +652,9 @@ def fragment_shape(path):
     doc, why = _load_unique(path)
     if why:
         return why
-    cuts = _opening_lines(path)  # split_entries cuts on every `- id:` line, even inside a quoted scalar
-    if cuts != 1:
-        return "has %d lines opening '- id:', want exactly 1" % cuts
+    why = _line_problem(path)
+    if why:
+        return why
     items = doc if isinstance(doc, list) else []
     if len(items) != 1:
         return "holds %d top-level items, want exactly 1" % len(items)
@@ -656,6 +667,11 @@ def _cmd_shape(a):
     """`shape --file F` -> rc 0 if F is one entry filed under its own id, else rc 1 and the reason."""
     if not a.file:
         sys.stderr.write("shape: --file is required\n")
+        return 2
+    try:
+        import yaml  # noqa: F401
+    except ImportError:
+        sys.stderr.write("shape: PyYAML is not installed; not measured\n")
         return 2
     why = fragment_shape(a.file)
     if why:
