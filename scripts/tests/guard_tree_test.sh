@@ -1106,7 +1106,10 @@ else
     fail_row "56: guard-cargo shard partition" "$bad56"
 fi
 bad57=""
-for i in 1 2 3; do bash "$cg" --list --shard "$i/3" guard-cargo | grep -q 'Install cargo-deny' || bad57+=" shard$i"; done
+for i in 1 2 3; do
+    l57="$(bash "$cg" --list --shard "$i/3" guard-cargo)"
+    [[ $l57 == *'Install cargo-deny'* ]] || bad57+=" shard$i"
+done
 if [ -z "$bad57" ]; then
     pass_row "57: the cargo-deny installer (writes GITHUB_PATH) is listed in shards 1, 2 and 3"
 else
