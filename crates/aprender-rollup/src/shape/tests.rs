@@ -175,34 +175,23 @@ fn a_fragment_that_dangles_an_alias_is_refused() {
     assert_eq!(judge(&good, Some(&rm)).unwrap(), None);
 }
 
-/// Entries a strict YAML 1.2 parser refuses though PyYAML reads them (a note closes its quote early;
-/// continuation lines of a quoted scalar sit at column 0). Touching one means repairing its YAML.
-const LEGACY_LENIENT: &[&str] = &[
-    "PMAT-3699",
-    "PMAT-3731",
-    "PMAT-3732",
-    "PMAT-3740",
-    "PMAT-3741",
-];
-
+/// Red until the quorum rules on the five entries a strict YAML 1.2 parser refuses though PyYAML
+/// reads them (PMAT-3699, 3731, 3732, 3740, 3741). No exception list: a list would be a waiver.
 #[test]
-fn every_existing_entry_passes_except_the_named_legacy_five() {
+fn every_existing_entry_passes() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/roadmaps");
     let (mut n, mut refused) = (0, Vec::new());
-    for e in std::fs::read_dir(root.join("entries")).unwrap() {
-        let p = e.unwrap().path();
+    for e in std::fs::read_dir(root.join("entries")).expect("entries dir") {
+        let p = e.expect("dir entry").path();
         if judge(&p, Some(&root.join("roadmap.yaml")))
-            .unwrap()
+            .expect("measured")
             .is_some()
         {
-            refused.push(p.file_stem().unwrap().to_string_lossy().into_owned());
+            refused.push(p.file_stem().expect("stem").to_string_lossy().into_owned());
         }
         n += 1;
     }
     refused.sort();
     assert!(n > 100, "only {n} entries seen");
-    assert_eq!(
-        refused, LEGACY_LENIENT,
-        "a new entry is refused, or a legacy one was repaired (shrink the list)"
-    );
+    assert!(refused.is_empty(), "refused: {refused:?}");
 }
