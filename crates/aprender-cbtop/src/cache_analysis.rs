@@ -138,11 +138,9 @@ impl CacheConfig {
 
     /// Get effective L3 size per core (accounting for sharing)
     pub fn l3_per_core(&self) -> usize {
-        if self.l3_sharing > 0 {
-            self.l3_size / self.l3_sharing
-        } else {
-            self.l3_size
-        }
+        self.l3_size
+            .checked_div(self.l3_sharing)
+            .unwrap_or(self.l3_size)
     }
 }
 

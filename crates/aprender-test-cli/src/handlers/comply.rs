@@ -248,27 +248,32 @@ fn print_machine_output(args: &ComplyArgs, results: &[ComplianceResult]) {
 pub fn generate_comply_report(results: &[ComplianceResult], format: &ComplyOutputFormat) -> String {
     match format {
         ComplyOutputFormat::Json => {
-            let json_results: Vec<_> = results
+            let json_results: Vec<serde_json::Value> = results
                 .iter()
                 .map(|r| {
-                    serde_json::json!({
-                        "id": r.id,
-                        "passed": r.passed,
-                        "details": r.details,
-                    })
+                    let mut entry = serde_json::Map::new();
+                    entry.insert("id".into(), r.id.clone().into());
+                    entry.insert("passed".into(), r.passed.into());
+                    entry.insert("details".into(), r.details.clone().into());
+                    entry.into()
                 })
                 .collect();
-            serde_json::json!({
-                "version": "1.0",
-                "timestamp": chrono::Utc::now().to_rfc3339(),
-                "results": json_results,
-                "summary": {
-                    "total": results.len(),
-                    "passed": results.iter().filter(|r| r.passed).count(),
-                    "failed": results.iter().filter(|r| !r.passed).count(),
-                }
-            })
-            .to_string()
+            let mut summary = serde_json::Map::new();
+            summary.insert("total".into(), results.len().into());
+            summary.insert(
+                "passed".into(),
+                results.iter().filter(|r| r.passed).count().into(),
+            );
+            summary.insert(
+                "failed".into(),
+                results.iter().filter(|r| !r.passed).count().into(),
+            );
+            let mut report = serde_json::Map::new();
+            report.insert("version".into(), "1.0".into());
+            report.insert("timestamp".into(), chrono::Utc::now().to_rfc3339().into());
+            report.insert("results".into(), json_results.into());
+            report.insert("summary".into(), summary.into());
+            serde_json::Value::from(report).to_string()
         }
         ComplyOutputFormat::Junit => {
             let timestamp = chrono::Utc::now().to_rfc3339();
@@ -543,19 +548,24 @@ fn find_html_files_in_dir(dir: &Path) -> Vec<std::path::PathBuf> {
     files
 }
 
+/// Directories that file discovery never descends into.
+fn is_skipped_dir(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    name.starts_with('.') || name == "target" || name == "node_modules"
+}
+
 /// Recursively find files with extension
 fn find_files_recursive(dir: &Path, ext: &str, files: &mut Vec<std::path::PathBuf>) {
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                if !name.starts_with('.') && name != "target" && name != "node_modules" {
-                    find_files_recursive(&path, ext, files);
-                }
-            } else if path.extension().is_some_and(|e| e == ext) {
-                files.push(path);
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for path in entries.flatten().map(|entry| entry.path()) {
+        if path.is_dir() {
+            if !is_skipped_dir(&path) {
+                find_files_recursive(&path, ext, files);
             }
+        } else if path.extension().is_some_and(|e| e == ext) {
+            files.push(path);
         }
     }
 }
