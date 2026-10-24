@@ -1086,7 +1086,7 @@ cg="$REPO_ROOT/scripts/ci_guards.sh"
 full56="$(bash "$cg" --list guard-cargo | grep -v '^==' | awk '{print $1}' | sort)"
 # The state writers of the manifest, derived from the YAML (not from the code under test): each step block that
 # appends to GITHUB_PATH/GITHUB_ENV, counted between the manifest job and the next job.
-writers56="$(awk '/^  guard-cargo-steps:/{on=1;next} on&&/^  [a-z]/{on=0} on&&/^      - /{n++} on&&/GITHUB_(PATH|ENV)/&&n!=last{c++;last=n} END{print c+0}' "$REPO_ROOT/ci/sections.yml")"
+writers56="$(awk '/^  guard-cargo-steps:/{on=1;next} on&&/^  [a-z]/{on=0} on&&/^      - /{n++} on&&/(>>|tee -a) *"?\$\{?GITHUB_(PATH|ENV)/&&n!=last{c++;last=n} END{print c+0}' "$REPO_ROOT/ci/sections.yml")"
 bad56=""
 for k in 1 2 3 4 5; do
     u=""
