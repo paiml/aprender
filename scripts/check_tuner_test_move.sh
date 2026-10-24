@@ -23,9 +23,9 @@ WANT="f041_empty_training_errors f042_single_sample_graceful f043_nan_labels_err
 
 DIGESTS="
 f041_empty_training_errors 070237018993271c
-f042_single_sample_graceful bc88d040de7f6792
-f043_nan_labels_error 9fd06ac9384bfcaa
-f044_negative_labels_handled fbb01296c746a127
+f042_single_sample_graceful 733fc0fa3581c5d1
+f043_nan_labels_error 44de7d832308e336
+f044_negative_labels_handled 5f44bd20d123d1b1
 f045_heuristic_no_training 8cabd670f956b0d0
 f046_training_improves f221030467215901
 f047_large_training_no_oom 140c3b8e5cb1d85b
@@ -33,8 +33,8 @@ f048_classifier_training 72c5d41797dc1285
 f049_training_data_variance 1f2fd8cbb55e4919
 f050_feature_correlation 0a494cbb1416adde
 f051_to_f060_reserved fbb8c9ddc4be9944
-fit_throughput_rf 7da5ef57b0d6baeb
-@tail:crates/aprender-core/tests/tuner_training_data_quality.rs e599e682001e6f49
+fit_throughput_rf e8c6b456ce81ff7d
+@tail:crates/aprender-core/tests/tuner_training_data_quality.rs 3b3d67c9f0380b4f
 @tail:crates/aprender-compute/tests/tuner_falsification/training_data_quality.rs 4268c362cc9890b0
 @file:crates/aprender-compute/tests/tuner_falsification/main.rs 2a75089411202f35
 "
@@ -142,7 +142,7 @@ if [ "${1:-}" = "--self-test" ]; then
   mk s3; printf '[dev-dependencies]\naprender = { path = "../aprender-core", package = "aprender-core" }\n' >> "$t/s3/crates/aprender-compute/Cargo.toml"; scase "S4 MUTANT: dev-dep on aprender-core back" 1 s3
   mk s4; printf 'use aprender::tree::RandomForestRegressor;\n' > "$t/s4/crates/aprender-compute/examples/x.rs"; scase "S5 MUTANT: compute example calls aprender::" 1 s4
   mk s5; sed -i 's/< 10/< 11/' "$t/s5/$KF";                                              scase "S6 MUTANT: helper fit_throughput_rf guard changed" 1 s5
-  mk s6; sed -i '/Should error (insufficient), not panic/{N;s/\n */ /}' "$t/s6/$KF";   scase "S7 MUTANT: code joined onto a // line (the r3/r4 hole)" 1 s6
+  mk s6; sed -i '/Generate training data that matches heuristic pattern/{N;s/\n */ /}' "$t/s6/$KF";   scase "S7 MUTANT: code joined onto a // line (the r3/r4 hole)" 1 s6
   mk s7; sed -i '/^use trueno::tuner::TunerFeatures;/a macro_rules! assert { ($($t:tt)*) => {}; }' "$t/s7/$KF"; scase "S8 MUTANT: macro_rules! assert shadow after the use line" 1 s7
   mk s8; sed -i '/^use trueno::tuner::TunerFeatures;/a #[path = "elsewhere.rs"] mod shadow;' "$t/s8/$KF"; scase "S9 MUTANT: #[path] mod in the header" 1 s8
   mk s9; sed -i 's/F045 FALSIFIED/F045 weakened/' "$t/s9/$CF";                           scase "S10 MUTANT: a compute-resident test body edited" 1 s9
