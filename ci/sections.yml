@@ -142,7 +142,7 @@ jobs:
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
             docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R "$OWNER" /workspace 2>/dev/null || true'
+              bash -c 'chown -R "$OWNER" /workspace || echo "::warning::ownership restore of /workspace to $OWNER failed (rc=$?)"'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
@@ -343,11 +343,11 @@ jobs:
         # Idempotent — `|| true` tolerates dirs that are already
         # noah-owned (e.g. a rerun of the same run-id).
         run: |
-          docker run --rm \
+          docker run --rm -e OWNER="$(id -u):$(id -g)" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             "$IMAGE" \
-            bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
+            bash -c 'chown -R "$OWNER" /workspace/target /usr/local/cargo/registry || echo "::warning::pre-build chown to $OWNER failed (rc=$?)"'
       # BSE-17 (PMAT-1077): which tier this run owes. quick on pull_request —
       # the touched crates + direct reverse dependents (BSE-16's selection, cap
       # -> full) plus EVERY test target that reads the tree, derived and
@@ -1158,13 +1158,13 @@ jobs:
           unit="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
           target_mount=()
           if [ -d "$unit" ]; then target_mount=(-v "${unit}:/workspace/target"); fi
-          docker run --rm \
+          docker run --rm -e OWNER="$(id -u):$(id -g)" \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             "${target_mount[@]}" \
             "$IMAGE" \
-            bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+            bash -c 'for d in /workspace /usr/local/cargo/registry /workspace/target; do chown -R "$OWNER" "$d" || echo "::warning::post-job chown of $d to $OWNER failed (rc=$?)"; done'
 
   # PACK-001: the check-run named `workspace-test`. Branch protection requires
   # this context, `gate` needs it, and the BSE-17 reuse lookup reads it by
@@ -1250,7 +1250,7 @@ jobs:
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
             docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R "$OWNER" /workspace 2>/dev/null || true'
+              bash -c 'chown -R "$OWNER" /workspace || echo "::warning::ownership restore of /workspace to $OWNER failed (rc=$?)"'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
@@ -1805,7 +1805,7 @@ jobs:
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
             docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R "$OWNER" /workspace 2>/dev/null || true'
+              bash -c 'chown -R "$OWNER" /workspace || echo "::warning::ownership restore of /workspace to $OWNER failed (rc=$?)"'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
