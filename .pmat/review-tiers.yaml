@@ -79,8 +79,10 @@ light:
 # which review_tier.sh checks mechanically and treats as light.
 # Scope, declared: every script under scripts/ and every file a CI surface (.github, ci/) names is sensitive; the
 # check proves it by scanning those surfaces. contracts/*, docs/specifications and CLAUDE.md are standard (gates
-# validate them; they are not gate machinery). `light` is an allowlist that fails closed: a light-matching file is
-# light only if no file under crates/ src/ tests/ scripts/ ci/ .github/ or the Makefile names its path (include_str!,
-# include!, a gate script reading it); a named file is standard. crates/*/Cargo.toml and build.rs stay standard (rev6
+# validate them; they are not gate machinery). `light` is an allowlist: a light-matching file is
+# light only if no file under crates/ src/ tests/ scripts/ ci/ .github/ or the Makefile names its path (the full path
+# as a literal, or its basename on an include!/include_str!/include_bytes! line); a named file is standard. Known
+# limit: a reader that builds the path at runtime (concatenation, a glob, a variable) names no literal and is not
+# seen, so a light file only ever read that way stays light; the fail-closed guarantee covers named paths only. crates/*/Cargo.toml and build.rs stay standard (rev6
 # names only the workspace Cargo.toml). Comment stripping is line-based: a whole-line `#` or `//` comment is dropped
 # even inside a heredoc or multi-line string, so such a body is a known limit, not code that is compared verbatim.
