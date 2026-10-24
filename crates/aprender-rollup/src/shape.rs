@@ -6,7 +6,7 @@
 
 use saphyr_parser::{Event, Parser};
 use std::collections::HashSet;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// `str.splitlines` breaks on these besides `\n` and `\r`; the splitter and the parser disagree on them.
 const SEPARATORS: &str = "\x0b\x0c\x1c\x1d\x1e\u{85}\u{2028}\u{2029}";
@@ -84,6 +84,18 @@ struct Map {
     last_key: Option<String>,
 }
 
+/// `shape <fragment> [--roadmap <path>]`; anything else (a bare `--roadmap`, an extra word) is
+/// not a measurement, so the caller exits 2.
+pub fn parse_args(args: &[String]) -> Result<(PathBuf, Option<PathBuf>), String> {
+    let words: Vec<&str> = args.iter().map(String::as_str).collect();
+    match words.as_slice() {
+        ["shape", file] => Ok((PathBuf::from(file), None)),
+        ["shape", file, "--roadmap", path] => Ok((PathBuf::from(file), Some(PathBuf::from(path)))),
+        ["shape", _, "--roadmap"] => Err("--roadmap needs a path".into()),
+        _ => Err("expected: shape <fragment> [--roadmap <path>]".into()),
+    }
+}
+
 /// Walk state: one slot per open container (`Some` mapping, `None` sequence) plus what the
 /// item checks need.
 struct Scan<'s> {
@@ -100,10 +112,10 @@ impl Scan<'_> {
         let depth = self.stack.len();
         match self.stack.last_mut() {
             Some(Some(m)) if m.want_key => {
-                let Event::Scalar(v, style, _, _) = ev else {
+                let Event::Scalar(v, _, _, _) = ev else {
                     return Some("unparseable: unhashable key".into());
                 };
-                if !m.keys.insert(format!("{style:?}:{v}")) {
+                if !m.keys.insert(v.to_string()) {
                     return Some(format!("unparseable: found duplicate key \"{v}\""));
                 }
                 m.last_key = Some(v.to_string());

@@ -1,5 +1,5 @@
 #![allow(clippy::disallowed_methods)] // unwrap in tests, as the crate's other test files
-use super::judge;
+use super::{judge, parse_args};
 use std::path::{Path, PathBuf};
 
 fn dir(tag: &str) -> PathBuf {
@@ -22,6 +22,16 @@ fn why(d: &Path, name: &str, text: &str) -> String {
 
 /// (file, text, substring of the refusal). Every row of the Python selftest carries over.
 const REFUSED: &[(&str, &str, &str)] = &[
+    (
+        "PMAT-530.yaml",
+        "- id: PMAT-530\n  title: a\n  \"title\": b\n",
+        "duplicate key",
+    ),
+    (
+        "PMAT-531.yaml",
+        "- id: PMAT-531\n  'title': a\n  title: b\n",
+        "duplicate key",
+    ),
     (
         "PMAT-502.yaml",
         "- id: PMAT-502\n  title: \"line one\n- id: PMAT-6270\n  line two\"\n",
@@ -194,4 +204,21 @@ fn every_existing_entry_passes() {
     refused.sort();
     assert!(n > 100, "only {n} entries seen");
     assert!(refused.is_empty(), "refused: {refused:?}");
+}
+
+#[test]
+fn arguments_are_strict() {
+    let a = |s: &[&str]| s.iter().map(|x| (*x).to_string()).collect::<Vec<_>>();
+    assert!(parse_args(&a(&["shape", "f.yaml"])).is_ok());
+    assert!(parse_args(&a(&["shape", "f.yaml", "--roadmap", "r.yaml"])).is_ok());
+    for bad in [
+        &["shape", "f.yaml", "--roadmap"][..],
+        &["shape", "f.yaml", "--roadmap", "r.yaml", "x"],
+        &["shape", "f.yaml", "r.yaml"],
+        &["shape"],
+        &[],
+        &["other", "f.yaml"],
+    ] {
+        assert!(parse_args(&a(bad)).is_err(), "{bad:?}");
+    }
 }
