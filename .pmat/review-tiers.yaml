@@ -78,8 +78,10 @@ light:
 # A file matching neither list is standard, unless its diff is comment-only (blank lines and whole-line comments),
 # which review_tier.sh checks mechanically and treats as light.
 # docs/roadmaps/entries/* is sensitive because it is the source of the generated, sensitive roadmap.yaml.
-# Scope, declared: every script under scripts/ and every file a CI surface (.github, ci/) names is sensitive; the
-# check proves it by scanning those surfaces. contracts/*, docs/specifications and CLAUDE.md are standard (gates
+# Scope, declared: every script under scripts/ and every file under the gate directories (scripts, ci, tools, schemas,
+# .pmat, .github, .config, .cargo) that a CI surface (.github workflows, ci/, the Makefile) names is sensitive; the
+# check proves it by scanning those surfaces. A file outside the gate directories that CI names (e.g. a root-level
+# script) is not covered by that scan. contracts/*, docs/specifications and CLAUDE.md are standard (gates
 # validate them; they are not gate machinery). `light` is an allowlist: a light-matching file is
 # light only if no file under crates/ src/ tests/ scripts/ ci/ .github/ or the Makefile names its path (the full path
 # as a literal, or its basename on an include!/include_str!/include_bytes! line); a named file is standard. Known
