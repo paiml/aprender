@@ -9,6 +9,7 @@ pub mod close;
 pub mod gh_json;
 pub mod mg;
 pub mod report;
+pub mod shape;
 
 /// Largest PR (additions + deletions, from `gh`) that may join a rollup.
 pub const MAX_LINES: u32 = 200;
