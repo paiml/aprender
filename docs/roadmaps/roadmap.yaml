@@ -25946,7 +25946,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-24T01:20:00Z
   spec: null
   acceptance_criteria:
-  - 'cargo test -p apr-cli --bin aprender-corpus-ingest -- civil_from_days now_utc passes (2 tests); changing the 719_468 epoch offset by one turns civil_from_days_epoch_and_leap_boundaries RED; contracts/bin-apr-cli--aprender-corpus-ingest-v1.yaml carries FALSIFY-BIN-APR_CORPUS_INGEST-006 and pv validate passes'
+  - 'cargo test -p apr-cli --bin aprender-corpus-ingest -- civil_from_days now_utc format_utc passes (3 tests); changing the 719_468 epoch offset by one turns civil_from_days_epoch_and_leap_boundaries RED; contracts/bin-apr-cli--aprender-corpus-ingest-v1.yaml carries FALSIFY-BIN-APR_CORPUS_INGEST-006 and pv validate passes'
   phases: []
   subtasks: []
   estimated_effort: null
