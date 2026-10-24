@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # check_review_tier.sh -- proves scripts/review_tier.sh (FLOW-011 MT-13): its own case table passes, and each planted
 # mutant of it turns that table RED. A mutant that does not apply, or survives, fails this check.
-#   bash scripts/check_review_tier.sh --self-test
+#   bash scripts/check_review_tier.sh [--self-test]   (no argument runs the same proof: guard_tree runs every guard bare)
 set -uo pipefail
-[[ ${1:-} == --self-test ]] || { echo "usage: check_review_tier.sh --self-test" >&2; exit 2; }
+[[ -z ${1:-} || ${1:-} == --self-test ]] || { echo "usage: check_review_tier.sh [--self-test]" >&2; exit 2; }
 SRC=scripts/review_tier.sh
 W=$(mktemp -d); trap 'rm -rf "${W:?}"' EXIT
 fail=0

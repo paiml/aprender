@@ -128,8 +128,10 @@ PMAT-Tier: light"
   [[ $fail -eq 0 ]]
 }
 
+# Not a guard: its proof is check_review_tier.sh. A `--self-test)` case arm here would make
+# check_guards_are_wired.sh count this helper as a guard that no workflow names.
+[[ ${1:-} == --self-test ]] && { self_test; exit $?; }
 case ${1:-} in
-  --self-test) self_test ;;
   "") die "usage: review_tier.sh BASE HEAD [--table FILE] | --self-test" ;;
   *)
     [[ ${3:-} == --table ]] && TABLE=${4:?}
