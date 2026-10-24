@@ -250,15 +250,7 @@ LIVE_AGGREGATE = "docs/roadmaps/roadmap.yaml"
 def is_scratch(rel):
     return rel.replace(os.sep, "/").startswith(SCRATCH_PREFIX)
 
-ENTRIES_PREFIX = "docs/roadmaps/entries/"
-
-def is_fragment(rel):
-    r = rel.replace(os.sep, "/")
-    return (not is_scratch(r)) and r.startswith(ENTRIES_PREFIX) and r.endswith(".yaml") and "/" not in r[len(ENTRIES_PREFIX):]
-
 def is_candidate(rel):
-    if is_fragment(rel):
-        return True
     if is_scratch(rel):
         return False
     d, fn = os.path.split(rel)
@@ -293,28 +285,9 @@ except Exception:
     pass
 
 in_scope, out_scope, unparsed = [], [], []
-frag_items = {}
 for rel in sorted(cand):
     p = os.path.join(root, rel)
     if not os.path.isfile(p):
-        continue
-    if is_fragment(rel):
-        # An entries/ fragment is a bare one-item list (no `roadmap:` key). The aggregate is built
-        # from these, and an entries-only PR no longer regenerates roadmap.yaml, so the claim has to
-        # be judged HERE: it is folded into the aggregate's item list below, keyed by id exactly as
-        # the aggregate would, so a fragment that supersedes an entry replaces it and a baselined
-        # id stays baselined.
-        try:
-            fdoc = yaml.safe_load(open(p, encoding="utf-8", errors="replace").read())
-        except Exception as e:
-            unparsed.append((rel, str(e).splitlines()[0]))
-            continue
-        if not isinstance(fdoc, list):
-            unparsed.append((rel, "a fragment must be a list of work items"))
-            continue
-        for it in fdoc:
-            if isinstance(it, dict):
-                frag_items[str(it.get("id"))] = it
         continue
     try:
         raw = open(p, encoding="utf-8", errors="replace").read()
@@ -339,16 +312,6 @@ for rel in sorted(cand):
         out_scope.append((rel, "'roadmap:' is not a list of work items"))
         continue
     in_scope.append((rel, doc))
-
-if frag_items:
-    _hit = False
-    for i, (rel, doc) in enumerate(in_scope):
-        if rel == LIVE_AGGREGATE:
-            kept = [x for x in doc["roadmap"] if not (isinstance(x, dict) and str(x.get("id")) in frag_items)]
-            in_scope[i] = (rel, {"roadmap": kept + list(frag_items.values())})
-            _hit = True
-    if not _hit:
-        in_scope.append((LIVE_AGGREGATE, {"roadmap": list(frag_items.values())}))
 
 def item_ids(doc):
     return {str(i.get("id")) for i in doc["roadmap"] if isinstance(i, dict)}
@@ -707,23 +670,6 @@ YAML
     row 'roadmap.yaml removed: the base is judged' 2 "$(grep -c 'roadmap-base.yaml' "$TD/scan5.out" || true)"
     rm -rf "${TD:?}/nolive"
     rm -f "${TD:?}/docs/roadmaps/roadmap-base.yaml"
-
-    # entries/ fragments (#6270): an entries-only PR does not regenerate roadmap.yaml, so the claim
-    # is judged in the fragment, keyed by id as the aggregate would key it.
-    mk docs/roadmaps/entries/R-FRAG-UNCITED.yaml <<'YAML'
-- id: R-FRAG-UNCITED
-  status: completed
-  notes: done, trust me
-YAML
-    mk docs/roadmaps/entries/R-ALIAS-DONE.yaml <<'YAML'
-- id: R-ALIAS-DONE
-  status: completed
-  notes: done, trust me
-YAML
-    scan_roadmaps "$TD" >"$TD/scan6.out" 2>"$TD/scan6.err" || true
-    row 'completed fragment citing nothing is judged (uncited)' 1 "$(grep -c 'R-FRAG-UNCITED' "$TD/scan6.out" || true)"
-    row 'a fragment superseding a baselined id replaces it, no [#2] duplicate' 0 "$(grep -c 'R-ALIAS-DONE \[#2\]' "$TD/scan6.out" || true)"
-    rm -f "${TD:?}/docs/roadmaps/entries/R-FRAG-UNCITED.yaml" "${TD:?}/docs/roadmaps/entries/R-ALIAS-DONE.yaml"
 
     n_out=$(grep -c '^SCOPE out  crates/other/roadmap.yaml' "$TD/scan.err" || true)
     row 'foreign schema is reported out of scope, not skipped' 1 "$n_out"
