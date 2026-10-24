@@ -1924,6 +1924,11 @@ jobs:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
     steps:
+      # #6255: the verdict runs scripts/ci_guards.sh, so the job needs the script on disk; a sparse checkout of scripts/ is enough.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          sparse-checkout: scripts
       - name: Every shard passed
         env:
           SHARD_RESULT: ${{ needs.guard-cargo-shard.result }}
