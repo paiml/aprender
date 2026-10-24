@@ -696,7 +696,8 @@ fn print_run_output(
         // #3720: an empty completion exits 8 on the text surface too, as it does on --json.
         return empty_completion_exit(result, accel_forced);
     }
-    Ok(())
+    // #3720: --benchmark (any format) exits 8 on an empty completion like every other surface.
+    empty_completion_exit(result, accel_forced)
 }
 
 /// `tok_per_sec` when the inference engine reported one (GH-250); otherwise
