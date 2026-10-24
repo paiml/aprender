@@ -25378,6 +25378,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-5803
+  github_issue: 5803
+  item_type: task
+  title: 'FLOW-010 cut 1: drop aprender-compute dev-dep on aprender-core (tuner training-data tests move to aprender-core)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:40:00Z
+  updated: 2026-10-23T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'aprender-compute has no dev-dependency on aprender-core; the tuner training-data tests run from aprender-core and a guard fails if a moved test is missing, duplicated or ignored'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
 - id: PMAT-5817
   github_issue: 5817
   item_type: task
