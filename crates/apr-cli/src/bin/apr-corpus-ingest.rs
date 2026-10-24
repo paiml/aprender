@@ -409,6 +409,10 @@ fn now_utc_iso8601() -> String {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+    format_utc_iso8601(secs)
+}
+
+fn format_utc_iso8601(secs: u64) -> String {
     // Civil-date conversion (Howard Hinnant, "date" algorithms).
     let days = (secs / 86_400) as i64;
     let sod = secs % 86_400;
@@ -536,6 +540,16 @@ mod tests {
         assert_eq!(civil_from_days(-1), (1969, 12, 31));
         assert_eq!(civil_from_days(-25_508), (1900, 3, 1));
         assert_eq!(civil_from_days(-25_509), (1900, 2, 28));
+    }
+
+    #[test]
+    fn format_utc_iso8601_known_instant() {
+        // 2000-02-29 is day 11_016; + 1h 1m 1s.
+        assert_eq!(
+            format_utc_iso8601(11_016 * 86_400 + 3_661),
+            "2000-02-29T01:01:01Z"
+        );
+        assert_eq!(format_utc_iso8601(0), "1970-01-01T00:00:00Z");
     }
 
     #[test]
