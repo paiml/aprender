@@ -1894,7 +1894,7 @@ jobs:
           # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
           # gate there is red, never a silent skip.
           if command -v ci-target-admit >/dev/null 2>&1; then
-            CI_TARGET_ADMIT_WAIT_S=300 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 5 min, not 20: the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
+            CI_TARGET_ADMIT_WAIT_S=600 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 10 min: 3 sibling shards meet the live<2 cap, the 3rd waits ~452 s (#6286); the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
           elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
             echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
           fi
