@@ -974,7 +974,36 @@ def hash_files(ws: Path, pats) -> str:
     return h.hexdigest() if files else ""
 
 
+def _checkout_git(sec, g, args):
+    """stdout of a git call, or None after logging what git said (a dropped stderr hid rc128)."""
+    p = subprocess.run(g + args, capture_output=True, text=True)
+    if p.returncode != 0:
+        sec.log.write(f"::error::checkout: git {' '.join(args[:2])} failed rc={p.returncode}: {p.stderr.strip()}\n")
+        return None
+    return p.stdout
+
+
 # uses: handlers --------------------------------------------------------------
+def _checkout_depth1(sec, g):
+    """Cut the section clone to depth 1: tags dropped, `.git/shallow` naming HEAD. False on a git failure."""
+    # A fresh runner clone can hold a tag ref whose object it never received; with
+    # tag.sort set, `git tag -l` then dies rc128 ("refs/tags/v1.11.0 is not a commit!").
+    # Fetch the tags first so the objects exist, and say what git said when one still fails.
+    fp = subprocess.run(g + ["fetch", "-q", "--tags", "--force", "origin"], capture_output=True, text=True)
+    if fp.returncode != 0:
+        sec.log.write(f"::warning::checkout: git fetch --tags failed rc={fp.returncode}: {fp.stderr.strip()}\n")
+    tags = _checkout_git(sec, g, ["tag", "-l"])
+    if tags is None:
+        return False
+    tags = tags.split()
+    if tags and _checkout_git(sec, g, ["tag", "-d", *tags]) is None:
+        return False
+    gitdir = subprocess.run(g + ["rev-parse", "--absolute-git-dir"], capture_output=True,
+                            text=True, check=True).stdout.strip()
+    Path(gitdir, "shallow").write_text(sec.ctx.head + "\n")
+    return True
+
+
 def uses_checkout(sec: Section, w, ev):
     ref = w.get("ref")
     if ref:
@@ -993,12 +1022,8 @@ def uses_checkout(sec: Section, w, ev):
     depth = int(to_str(w.get("fetch-depth", 1)) or 1)
     g = ["git", "-C", str(sec.workspace)]
     if depth == 1:
-        tags = subprocess.run(g + ["tag", "-l"], capture_output=True, text=True, check=True).stdout.split()
-        if tags:
-            subprocess.run(g + ["tag", "-d", *tags], capture_output=True, check=True)
-        gitdir = subprocess.run(g + ["rev-parse", "--absolute-git-dir"], capture_output=True,
-                                text=True, check=True).stdout.strip()
-        Path(gitdir, "shallow").write_text(sec.ctx.head + "\n")
+        if not _checkout_depth1(sec, g):
+            return False, {}
     elif depth != 0:
         sec.log.write(f"::error::checkout: fetch-depth {depth} is not emulated (only 0 and 1)\n")
         return False, {}
@@ -1627,6 +1652,58 @@ def _st_artifact(row):
     srv.shutdown()
 
 
+def _st_checkout_tags(row, src, g, clone):
+    # A tag ref whose object the clone never received (the runner sets tag.sort, which makes
+    # `git tag -l` read every tag object and die rc128). The fetch repairs it; a tag no remote
+    # has fails the checkout and the log carries git's own words.
+    import io
+    tg = ["git", "-C", str(src), "-c", "user.name=t", "-c", "user.email=t@t"]
+    subprocess.run(tg + ["commit", "-q", "--allow-empty", "-m", "late"], check=True)
+    late = subprocess.run(g + ["rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    subprocess.run(g + ["tag", "v9"], check=True)
+    old_env = {k: os.environ.get(k) for k in ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0")}
+    os.environ.update(GIT_CONFIG_COUNT="1", GIT_CONFIG_KEY_0="tag.sort", GIT_CONFIG_VALUE_0="creatordate")
+    try:
+        sec = clone("d3")
+        (sec.workspace / ".git" / "refs" / "tags" / "v9").write_text(late + "\n")
+        subprocess.run(["rm", "-rf", "--", str(sec.workspace / ".git" / "objects" / late[:2] / late[2:])])
+        sec.log = io.StringIO()
+        ok, _ = uses_checkout(sec, {}, None)
+        tags = subprocess.run(["git", "-C", str(sec.workspace), "tag", "-l"], capture_output=True,
+                              text=True).stdout.split()
+        row("checkout depth 1: a tag whose object is missing is fetched, then dropped", (ok, tags), (True, []))
+        sec = clone("d4")
+        (sec.workspace / ".git" / "refs" / "tags" / "vX").write_text("1" * 40 + "\n")
+        sec.log = io.StringIO()
+        ok, _ = uses_checkout(sec, {}, None)
+        logged = sec.log.getvalue()
+        row("checkout depth 1: an unfetchable tag fails the checkout and logs git's stderr",
+            (ok, "missing object" in logged and "rc=128" in logged), (False, True))
+        # a tag moved on the remote since the clone: only --force lets the fetch take it
+        subprocess.run(g + ["tag", "vm"], check=True)
+        sec = clone("d5")
+        subprocess.run(tg + ["commit", "-q", "--allow-empty", "-m", "moved"], check=True)
+        subprocess.run(g + ["tag", "-f", "vm"], capture_output=True, check=True)
+        sec.log = io.StringIO()
+        ok, _ = uses_checkout(sec, {}, None)
+        row("checkout depth 1: a tag moved on the remote does not fail the fetch",
+            (ok, "::warning::" in sec.log.getvalue()), (True, False))
+        # the tag cannot be deleted (read-only refs/tags; root ignores modes, so the row skips there)
+        sec = clone("d6")
+        rt = sec.workspace / ".git" / "refs" / "tags"
+        rt.chmod(0o555)
+        sec.log = io.StringIO()
+        try:
+            ok, _ = uses_checkout(sec, {}, None)
+        finally:
+            rt.chmod(0o755)
+        row("checkout depth 1: a tag that cannot be deleted fails the checkout and logs why",
+            (ok, "tag -d failed" in sec.log.getvalue()) if os.geteuid() else (False, True), (False, True))
+    finally:
+        for k, v in old_env.items():
+            os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
+
+
 def _st_checkout(row):
     import tempfile
     from types import SimpleNamespace
@@ -1666,6 +1743,8 @@ def _st_checkout(row):
         row("checkout fetch-depth 0: full history", (ok, cnt), (True, "3"))
         ok, _ = uses_checkout(clone("d2"), {"fetch-depth": 2}, None)
         row("checkout fetch-depth 2 refuses (not emulated)", ok, False)
+
+        _st_checkout_tags(row, src, g, clone)
 
 
 # #4507: a leftover section tree the runner user cannot delete (root-owned files
