@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_batch_sweep.sh -- the six obligations of contracts/batch-sweep-v1.yaml (PRB-001 §7).
+# batch_sweep_check.sh -- the six obligations of contracts/batch-sweep-v1.yaml (PRB-001 §7).
 #   bs1 REPO MAIN PR_REF...      every hunk of each absorbed PR (merge-base..PR) is on MAIN
 #   bs2 REPO BASE HEAD N         BASE..HEAD = N ticket commits + 1 trailing "batch: regenerate", no merge commit
 #   bs3 REPO MAIN CLOSED.tsv     "PR<TAB>sha" per closed PR: sha must be an ancestor of MAIN
@@ -124,11 +124,11 @@ selftest() {
   expect "BS-6 RED committed artifact differs from regeneration" 1 bs6 "$t/r" 'sort gen.nt -o gen.nt'
   printf 'b\nc\n' > "$t/r/gen.nt"; g commit -qam sorted
   expect "BS-6 GREEN artifact equals regeneration" 0 bs6 "$t/r" 'sort gen.nt -o gen.nt'
-  printf 'check_batch_sweep self-test: %d broke\n' "$fail"; [ "$fail" -eq 0 ]
+  printf 'batch_sweep_check self-test: %d broke\n' "$fail"; [ "$fail" -eq 0 ]
 }
 case "${1:-}" in
   --self-test) selftest ;;
   bs1|bs2|bs3|bs4|bs5|bs6) f="$1"; shift; "$f" "$@" ;;
   -h|--help|"") awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0" ;;
-  *) echo "check_batch_sweep: unknown '$1'" >&2; exit 2 ;;
+  *) echo "batch_sweep_check: unknown '$1'" >&2; exit 2 ;;
 esac
