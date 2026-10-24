@@ -96,13 +96,13 @@ self_test() {
   local d fail=0 pass=0 base
   d=$(mktemp -d); trap 'rm -rf "${d:?}"' RETURN
   git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
-  mkdir -p "$d/.pmat" "$d/.github/workflows" "$d/crates/x/src" "$d/docs" "$d/scripts"
+  mkdir -p "$d/.pmat" "$d/.github/workflows" "$d/crates/x/src" "$d/docs" "$d/scripts" "$d/bin"
   cp "$TABLE" "$d/.pmat/review-tiers.yaml"
   unset REVIEW_TIER_TABLE   # the rows run children that must read the table from the scratch repo
   printf 'fn a() {}\n// note\n' > "$d/crates/x/src/lib.rs"
   printf 'name: ci\n' > "$d/.github/workflows/ci.yml"
   printf '# doc\n' > "$d/docs/a.md"
-  printf 'echo hi\n' > "$d/scripts/run.sh"
+  printf '' > "$d/scripts/.keep"; printf 'echo hi\n' > "$d/bin/run.sh"
   git -C "$d" add -A; git -C "$d" commit -qm base; base=$(git -C "$d" rev-parse HEAD)
   expect() { # NAME WANT -- mutation commands run in $d
     local name=$1 want=$2 got
@@ -116,7 +116,7 @@ self_test() {
   printf 'fn b() {}\n' >> "$d/crates/x/src/lib.rs";                              expect code-change standard
   printf '// only a comment\n\n' >> "$d/crates/x/src/lib.rs";                    expect comment-only-rs light
   printf '// c\nfn b() {}\n' >> "$d/crates/x/src/lib.rs";                        expect comment-plus-code standard
-  printf '# c\n' >> "$d/scripts/run.sh";                                         expect comment-only-sh light
+  printf '# c\n' >> "$d/bin/run.sh";                                         expect comment-only-sh light
   printf 'on: push\n' >> "$d/.github/workflows/ci.yml";                          expect workflow-change sensitive
   printf '# just a comment\n' >> "$d/.github/workflows/ci.yml";                  expect workflow-comment-only-is-still-sensitive sensitive
   printf '# d\n' >> "$d/docs/a.md"; printf 'on: push\n' >> "$d/.github/workflows/ci.yml"; expect docs-plus-workflow-highest-wins sensitive
@@ -129,13 +129,21 @@ self_test() {
   printf 'x\n' > "$d/crates/x/src/é.rs";                                        expect non-ascii-code-path standard
   printf '/// ```\n/// assert!(false);\n/// ```\nfn a() {}\n' > "$d/crates/x/src/lib.rs"; expect doc-comment-change-standard standard
   printf '//! crate docs\n' >> "$d/crates/x/src/lib.rs";                        expect inner-doc-comment-standard standard
-  printf '#!/bin/bash\necho hi\n' > "$d/scripts/run.sh";                        expect shebang-change-standard standard
+  printf '#!/bin/bash\necho hi\n' > "$d/bin/run.sh";                        expect shebang-change-standard standard
   mkdir -p "$d/.claude/skills/x" "$d/notes"
   printf 'read by a gate\n' > "$d/.claude/skills/x/SKILL.md";                  expect gate-read-claude-md sensitive
-  printf 'x\n' > "$d/.agents/a.md" 2>/dev/null || { mkdir -p "$d/.agents"; printf 'x\n' > "$d/.agents/a.md"; }; expect agents-dir sensitive
+  mkdir -p "$d/.agents"; printf 'x\n' > "$d/.agents/a.md"; expect agents-dir sensitive
+  mkdir -p "$d/scripts/ci" "$d/scripts/lib" "$d/.config"
+  printf 'x\n' > "$d/scripts/ci/fat_driver.py";                               expect scripts-ci sensitive
+  printf 'x\n' > "$d/scripts/lib/x.py";                                        expect scripts-lib sensitive
+  printf 'x\n' > "$d/.config/nextest.toml";                                    expect nextest-config sensitive
+  printf 'x\n' > "$d/.github/pr-review.pub";                                    expect pr-review-key sensitive
+  printf 'x\n' > "$d/scripts/guard_tree.sh";                                   expect guard-tree sensitive
+  printf 'x\n' > "$d/scripts/cargo_step.sh";                                   expect cargo-step sensitive
+  printf 'x\n' > "$d/scripts/new.baseline.txt";                               expect baseline-txt sensitive
   printf 'x\n' > "$d/.pmat-gates.toml";                                        expect pmat-gates-toml sensitive
   printf 'x\n' > "$d/.clippy.toml";                                            expect clippy-toml sensitive
-  printf 'x\n' > "$d/docs/roadmaps/roadmap-base.yaml" 2>/dev/null || { mkdir -p "$d/docs/roadmaps"; printf 'x\n' > "$d/docs/roadmaps/roadmap-base.yaml"; }; expect roadmap-base sensitive
+  mkdir -p "$d/docs/roadmaps"; printf 'x\n' > "$d/docs/roadmaps/roadmap-base.yaml"; expect roadmap-base sensitive
   printf 'x\n' > "$d/README.md";                                               expect readme-light light
   printf 'x\n' > "$d/notes/n.md";                                              expect stray-md-standard standard
   printf 'x\n' > "$d/key.pem";                                                   expect key-file sensitive
@@ -168,6 +176,12 @@ PMAT-Tier: light"
 # Not a guard: its proof is check_review_tier.sh. A `--self-test)` case arm here would make
 # check_guards_are_wired.sh count this helper as a guard that no workflow names.
 [[ ${1:-} == --self-test ]] && { self_test; exit $?; }
+# --classify PATH: is PATH sensitive in the working-tree table (used by check_review_tier.sh to scan CI surfaces).
+if [[ ${1:-} == --classify ]]; then
+  SENS=$(list_of sensitive "${REVIEW_TIER_TABLE:-.pmat/review-tiers.yaml}"); [[ -n $SENS ]] || die "table lists no sensitive paths"
+  if matches_any "${2:?usage: review_tier.sh --classify PATH}" <<< "$SENS"; then echo sensitive; else echo other; fi
+  exit 0
+fi
 case ${1:-} in
   "") die "usage: review_tier.sh BASE HEAD [--table FILE] | --self-test" ;;
   *)

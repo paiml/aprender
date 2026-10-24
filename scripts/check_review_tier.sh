@@ -36,16 +36,27 @@ mutant missing-table-uses-worktree 's#then missing=1; fi#then cp "$TABLE" "$tbl"
 tmutant() { # NAME PATTERN-to-delete ROW (the case row that must be the one to fail)
   local T="$W/t.yaml"; grep -Fv -- "$2" "$TBL" > "$T"
   if cmp -s "$TBL" "$T"; then echo "FAIL  table mutant $1 did not apply"; fail=1; return; fi
-  if REVIEW_TIER_TABLE="$T" bash "$SRC" --self-test > "$W/m.log" 2>&1; then echo "FAIL  table mutant $1 survived"; fail=1; else echo "ok    table mutant $1 turns the table red"; fi
+  if REVIEW_TIER_TABLE="$T" bash "$SRC" --self-test > "$W/m.log" 2>&1; then echo "FAIL  table mutant $1 survived"; fail=1
+  elif ! grep -aq "^FAIL $3:" "$W/m.log"; then echo "FAIL  table mutant $1 is red but row $3 did not fail (red for the wrong reason)"; fail=1
+  else echo "ok    table mutant $1 turns row $3 red"; fi
 }
 # Control: an UNMUTATED copy passed the same way must pass, or every table mutant below is red for the wrong reason.
 cp "$TBL" "$W/control.yaml"
 if REVIEW_TIER_TABLE="$W/control.yaml" bash "$SRC" --self-test > "$W/c.log" 2>&1; then echo "ok    control: an unmutated table copy passes"; else echo "FAIL  control: an unmutated table copy is red:"; tail -3 "$W/c.log"; fail=1; fi
 tmutant claude-dir-dropped '".claude/*"' gate-read-claude-md
 tmutant agents-dir-dropped '".agents/*"' agents-dir
-tmutant pmat-gates-dropped '".pmat-gates.toml"' pmat-gates-toml
+tmutant pmat-gates-dropped '".pmat-*"' pmat-gates-toml
 tmutant clippy-dropped '".clippy.toml"' clippy-toml
 tmutant roadmap-base-dropped '"docs/roadmaps/roadmap-base.yaml"' roadmap-base
 tmutant broad-md-removed-readme '"README.md"' readme-light
+tmutant scripts-dropped '"scripts/*"' guard-tree
+tmutant github-dropped '".github/*"' pr-review-key
+tmutant nextest-config-dropped '".config/*"' nextest-config
+# Surface scan: every file a CI surface names under the gate directories must be sensitive in the table, so a new
+# gate script cannot sit outside it. (Derived from the tree, not a list kept here.)
+gaps=$(cat .github/workflows/*.yml ci/sections.yml ci/explicit-test-commands.d/*.cmd Makefile 2>/dev/null \
+  | grep -aoE '(scripts|ci|tools|schemas|\.pmat|\.github|\.config|\.cargo)/[A-Za-z0-9_./-]+' | sort -u \
+  | while IFS= read -r f; do [[ -f $f ]] && [[ $(bash "$SRC" --classify "$f") != sensitive ]] && echo "$f"; done)
+if [[ -n $gaps ]]; then echo "FAIL  CI-named files outside the sensitive list:"; echo "$gaps" | head; fail=1; else echo "ok    every gate file a CI surface names is sensitive"; fi
 mutant no-paths-ok    's/  \[\[ $n -gt 0 \]\] || die/  true || die/'
 exit "$fail"

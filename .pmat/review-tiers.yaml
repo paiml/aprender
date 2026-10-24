@@ -4,11 +4,11 @@
 version: 1
 default: standard
 sensitive:
-  - ".github/workflows/*"
-  - ".github/CODEOWNERS"
+  - ".github/*"
   - "ci/*"
   - ".pmat/*"
   - "scripts/check_*"
+  - "scripts/*"
   - "scripts/review_tier.sh"
   - "scripts/pre_receipt.sh"
   - "scripts/ci_*"
@@ -27,9 +27,25 @@ sensitive:
   - ".cargo/*"
   - "Makefile"
   - ".gitignore"
+  - ".config/*"
+  - ".githooks/*"
+  - ".pv/*"
+  - ".pv.toml"
+  - ".quorum/*"
+  - ".bashrsignore"
+  - ".cargo-mutants.toml"
+  - ".gitattributes"
+  - ".proptest.toml"
+  - ".pmat-*"
+  - ".pmat.yaml"
+  - "pmat.toml"
+  - "tools/*"
+  - "tools.toml"
+  - "schemas/*"
+  - "codecov.yml"
+  - "rustfmt.toml"
   - ".claude/*"
   - ".agents/*"
-  - ".pmat-gates.toml"
   - ".clippy.toml"
   - "docs/roadmaps/roadmap-base.yaml"
 light:
@@ -41,3 +57,8 @@ light:
   - "docs/roadmaps/entries/*"
 # A file matching neither list is standard, unless its diff is comment-only (blank lines and whole-line comments),
 # which review_tier.sh checks mechanically and treats as light.
+# Scope, declared: every script under scripts/ and every file a CI surface (.github, ci/) names is sensitive; the
+# check proves it by scanning those surfaces. contracts/*, docs/specifications and CLAUDE.md are standard (gates
+# validate them; they are not gate machinery).  crates/*/Cargo.toml and build.rs stay standard (rev6 names only the workspace Cargo.toml). A
+# script a workflow runs but that is not named above is standard until it is added here; comment stripping is
+# line-based (whole-line `#`/`//` comments), so a heredoc or multi-line string body is code, not stripped.
