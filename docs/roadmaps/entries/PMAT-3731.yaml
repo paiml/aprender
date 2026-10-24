@@ -5,8 +5,8 @@
   status: in_progress
   priority: critical
   assigned_to: aprender-f0
-  created: 2026-09-21 16:24:47+00:00
-  updated: 2026-09-22 02:20:00+00:00
+  created: 2026-09-21T16:24:47Z
+  updated: 2026-09-22T02:20:00Z
   spec: null
   acceptance_criteria:
   - 'Issue #3731 done_when 1 (verbatim from #3544), verbatim: "**The directory is created before it is written to**, and a redirect failure is reported as an infrastructure fault, never as a host verdict. Falsifier: remove `$AP/receipts/`, run the step, and require an error that names the missing directory rather than four failing hosts."'

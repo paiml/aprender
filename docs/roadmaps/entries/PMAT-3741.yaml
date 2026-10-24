@@ -5,8 +5,8 @@
   status: in_progress
   priority: high
   assigned_to: aprender-f0
-  created: 2026-09-21 16:46:28+00:00
-  updated: 2026-09-22 03:05:00+00:00
+  created: 2026-09-21T16:46:28Z
+  updated: 2026-09-22T03:05:00Z
   spec: null
   acceptance_criteria:
   - 'Issue #3741 done_when 1 (verbatim from #3563), verbatim: "Enumerate every committed artifact citing `39173bcac` and classify each: *still valid* (measured before the bump and honestly labelled with the pin it used), or *stale* (claims a current baseline against a superseded comparator)."'

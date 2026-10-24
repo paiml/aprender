@@ -5,8 +5,8 @@
   status: in_progress
   priority: high
   assigned_to: aprender-f0
-  created: 2026-09-21 16:46:26+00:00
-  updated: 2026-09-22 00:00:00+00:00
+  created: 2026-09-21T16:46:26Z
+  updated: 2026-09-22T00:00:00Z
   spec: null
   acceptance_criteria:
   - 'Issue #3740 done_when (verbatim from #3563''s done_when, added by the cop), verbatim: "done_when (added): exactly one pin in-tree; `llama_bin.sh` resolves and PROVES it on lambda and gx10 (a version+sha line) or fails naming why; every comparator consumer reads it — the clause this issue owns: **every comparator consumer reads it**."'
