@@ -25878,3 +25878,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5923
+- id: PMAT-6211
+  github_issue: 6211
+  item_type: task
+  title: 'model-ladder: per-cell memory admission so large cells do not swap the host'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T01:00:00Z
+  updated: 2026-10-24T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'with --admit (LADDER_ADMIT=1 in model_ladder.sh), each cell is checked against free memory, swap in use and live runner jobs; a cell the host cannot take is recorded not_measured with the reason and never run; an unreadable host admits nothing'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
