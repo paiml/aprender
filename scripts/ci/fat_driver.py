@@ -974,6 +974,9 @@ def hash_files(ws: Path, pats) -> str:
     return h.hexdigest() if files else ""
 
 
+CHECKOUT_FETCH_TIMEOUT = 600  # seconds; the same bound uses_checkout gives the ref fetch
+
+
 def _checkout_git(sec, g, args):
     """stdout of a git call, or None after logging what git said (a dropped stderr hid rc128)."""
     p = subprocess.run(g + args, capture_output=True, text=True)
@@ -989,9 +992,14 @@ def _checkout_depth1(sec, g):
     # A fresh runner clone can hold a tag ref whose object it never received; with
     # tag.sort set, `git tag -l` then dies rc128 ("refs/tags/v1.11.0 is not a commit!").
     # Fetch the tags first so the objects exist, and say what git said when one still fails.
-    fp = subprocess.run(g + ["fetch", "-q", "--tags", "--force", "origin"], capture_output=True, text=True)
-    if fp.returncode != 0:
-        sec.log.write(f"::warning::checkout: git fetch --tags failed rc={fp.returncode}: {fp.stderr.strip()}\n")
+    # Bounded like the ref fetch beside it (600s): a hung remote must not hold the section for ever.
+    try:
+        fp = subprocess.run(g + ["fetch", "-q", "--tags", "--force", "origin"], capture_output=True, text=True,
+                            timeout=CHECKOUT_FETCH_TIMEOUT)
+        if fp.returncode != 0:
+            sec.log.write(f"::warning::checkout: git fetch --tags failed rc={fp.returncode}: {fp.stderr.strip()}\n")
+    except subprocess.TimeoutExpired:
+        sec.log.write(f"::warning::checkout: git fetch --tags timed out after {CHECKOUT_FETCH_TIMEOUT}s\n")
     tags = _checkout_git(sec, g, ["tag", "-l"])
     if tags is None:
         return False
@@ -1652,6 +1660,27 @@ def _st_artifact(row):
     srv.shutdown()
 
 
+def _st_checkout_fetch_timeout(row, clone):
+    import io
+    # a hung `git fetch --tags` is bounded by a timeout and the checkout goes on (the fetch only repairs)
+    seen, real_run = [], subprocess.run
+
+    def fake_run(argv, *a, **kw):
+        if "fetch" in argv:
+            seen.append(kw.get("timeout"))
+            raise subprocess.TimeoutExpired(argv, kw.get("timeout") or 0)
+        return real_run(argv, *a, **kw)
+    sec = clone("d7")
+    sec.log = io.StringIO()
+    subprocess.run = fake_run
+    try:
+        ok, _ = uses_checkout(sec, {}, None)
+    finally:
+        subprocess.run = real_run
+    row("checkout depth 1: the tag fetch runs under a timeout and a timeout is a warning, not a failure",
+        (ok, seen, "timed out" in sec.log.getvalue()), (True, [CHECKOUT_FETCH_TIMEOUT], True))
+
+
 def _st_checkout_tags(row, src, g, clone):
     # A tag ref whose object the clone never received (the runner sets tag.sort, which makes
     # `git tag -l` read every tag object and die rc128). The fetch repairs it; a tag no remote
@@ -1689,17 +1718,19 @@ def _st_checkout_tags(row, src, g, clone):
         ok, _ = uses_checkout(sec, {}, None)
         row("checkout depth 1: a tag moved on the remote does not fail the fetch",
             (ok, "::warning::" in sec.log.getvalue()), (True, False))
-        # the tag cannot be deleted (read-only refs/tags; root ignores modes, so the row skips there)
-        sec = clone("d6")
-        rt = sec.workspace / ".git" / "refs" / "tags"
-        rt.chmod(0o555)
-        sec.log = io.StringIO()
-        try:
-            ok, _ = uses_checkout(sec, {}, None)
-        finally:
-            rt.chmod(0o755)
-        row("checkout depth 1: a tag that cannot be deleted fails the checkout and logs why",
-            (ok, "git tag -d " in sec.log.getvalue()) if os.geteuid() else (False, True), (False, True))
+        _st_checkout_fetch_timeout(row, clone)
+        # the tag cannot be deleted (read-only refs/tags); root ignores modes, so the row is not run there
+        if os.geteuid() != 0:
+            sec = clone("d6")
+            rt = sec.workspace / ".git" / "refs" / "tags"
+            rt.chmod(0o555)
+            sec.log = io.StringIO()
+            try:
+                ok, _ = uses_checkout(sec, {}, None)
+            finally:
+                rt.chmod(0o755)
+            row("checkout depth 1: a tag that cannot be deleted fails the checkout and logs why",
+                (ok, "git tag -d " in sec.log.getvalue()), (False, True))
     finally:
         for k, v in old_env.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
