@@ -574,6 +574,54 @@ def _cmd_changed(a):
     return 0
 
 
+def _unique_loader():
+    """A SafeLoader that refuses a repeated key in one mapping (PyYAML keeps the last)."""
+    import yaml
+
+    class Loader(yaml.SafeLoader):
+        pass
+
+    def mapping(loader, node, deep=False):
+        seen = set()
+        for knode, _ in node.value:
+            key = loader.construct_object(knode, deep=True)
+            if key in seen:
+                raise ValueError("repeated key %r" % (key,))
+            seen.add(key)
+        return yaml.SafeLoader.construct_mapping(loader, node, deep)
+
+    Loader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, mapping)
+    return Loader
+
+
+def fragment_shape(path):
+    """'' when the file is ONE mapping whose id is its stem; else the reason (PMAT-6270)."""
+    import yaml
+    stem = os.path.basename(path)[:-len(".yaml")]
+    try:
+        with open(path, encoding="utf-8") as fh:
+            doc = yaml.load(fh, Loader=_unique_loader())  # noqa: S506 - a SafeLoader subclass
+    except (OSError, ValueError, yaml.YAMLError) as e:
+        return "unparseable: %s" % str(e).splitlines()[0]
+    if not isinstance(doc, list) or len(doc) != 1:
+        return "holds %d top-level items, want exactly 1" % (len(doc) if isinstance(doc, list) else 0)
+    if not isinstance(doc[0], dict) or doc[0].get("id") != stem:
+        return "its item is not a mapping with id %s" % stem
+    return ""
+
+
+def _cmd_shape(a):
+    """`shape --file F` -> rc 0 if F is one entry filed under its own id, else rc 1 and the reason."""
+    if not a.file:
+        sys.stderr.write("shape: --file is required\n")
+        return 2
+    why = fragment_shape(a.file)
+    if why:
+        sys.stdout.write(why + "\n")
+        return 1
+    return 0
+
+
 def _cmd_adopt(a, roadmap, entries_dir):
     if not a.ids:
         sys.stderr.write("adopt: name at least one entry id\n")
@@ -597,7 +645,7 @@ def _cmd_adopt(a, roadmap, entries_dir):
 
 def _parser():
     ap = argparse.ArgumentParser(prog="roadmap_fragments.py")
-    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt"])
+    ap.add_argument("cmd", nargs="?", choices=["aggregate", "changed", "adopt", "shape"])
     ap.add_argument("ids", nargs="*", help="adopt: the entry id(s) to move into entries/")
     ap.add_argument("--write", action="store_true")
     ap.add_argument("--check", action="store_true",
@@ -606,6 +654,7 @@ def _parser():
     ap.add_argument("--entries", help="read fragments from here instead of docs/roadmaps/entries/")
     ap.add_argument("--base", help="changed: the roadmap.yaml to compare FROM")
     ap.add_argument("--head", help="changed: the roadmap.yaml to compare TO")
+    ap.add_argument("--file", help="shape: the one fragment to judge")
     ap.add_argument("--selftest", action="store_true")
     return ap
 
@@ -618,6 +667,8 @@ def main(argv=None):
     roadmap, entries_dir = _paths(a)
     if a.cmd == "changed":
         return _cmd_changed(a)
+    if a.cmd == "shape":
+        return _cmd_shape(a)
     if a.cmd == "adopt":
         return _cmd_adopt(a, roadmap, entries_dir)
     if a.cmd != "aggregate":

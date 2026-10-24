@@ -141,7 +141,7 @@ intro_regenerates() {
     cp "$td/base.yaml" "$td/intro/roadmap.yaml" || return 1
     cp "$td/roadmap-base.yaml" "$td/intro/roadmap-base.yaml" || return 1
     while IFS= read -r name; do
-        case "$name" in *.yaml) ;; *) continue ;; esac
+        [[ "$name" =~ ^"$ENTRIES_DIR"/[^/]+\.yaml$ ]] || continue   # flat only, as the head read
         git -C "$repo" show "$base:$name" >"$td/intro/entries/${name##*/}" || return 1
     done < <(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null)
     python3 "$PY_LIB" aggregate --check --roadmap "$td/intro/roadmap.yaml" --entries "$td/intro/entries" >/dev/null 2>&1
@@ -324,13 +324,10 @@ judge() {
             [ -f "$td/entries/${name##*/}" ] || continue
             stem=${name##*/}; stem=${stem%.yaml}
             first=$(head -n 1 -- "$td/entries/${name##*/}")
-            # one entry per fragment: a second top-level `- ` item would carry an id nobody checks
-            # a top-level item is "- id:", or any "- key:" line whose next line is an indented key (a second
-            # item may open with another key); prose bullets inside a scalar are not followed by one
-            nitems=$(awk '{ l[NR] = $0 } END { n = 0; for (i = 1; i <= NR; i++) { if (l[i] ~ /^- id:/) n++; else if (l[i] ~ /^- [A-Za-z_]+:/ && l[i+1] ~ /^  [A-Za-z_]+:/) n++ } print n }' "$td/entries/${name##*/}")
-            if [ "$nitems" != 1 ]; then
+            # one entry per fragment, parsed (not counted): a second item, a repeated key or a foreign id is refused
+            if ! shape_why=$(python3 "$PY_LIB" shape --file "$td/entries/${name##*/}"); then
                 rc=1; out="${out:+$out
-}$name holds $nitems top-level \"- id:\" entries, want exactly 1"
+}$name holds more than one entry or is not filed under its id: $shape_why"
                 what="MISFILED: a fragment must hold exactly one entry, with its filename as id"
                 continue
             fi
@@ -400,7 +397,7 @@ mutants() {
             id-check-off) a=$'if [ "$rc" = 0 ]; then\n        out=""'; b=$'if false; then\n        out=""' ;;
             first-line-off) a='first=$(head -n 1 -- "$td/entries/${name##*/}")'; b='first=$(cat -- "$td/entries/${name##*/}")' ;;
             bump-license-off) a='if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then'; b='if false; then' ;;
-            one-entry-off) a='if [ "$nitems" != 1 ]; then'; b='if false; then' ;;
+            one-entry-off) a='if ! shape_why=$(python3 "$PY_LIB" shape'; b='if ! shape_why=$(true; echo' ;;
             delete-ok) a='if [ -n "$deleted" ]; then'; b='if false; then' ;;
             drift-off) a=$'rc=$?\n        what="DRIFT'; b=$'rc=0\n        what="DRIFT' ;;
             additive-off) a='            what="NOT ADDITIVE'; b=$'            rc=0\n            what="NOT ADDITIVE' ;;
@@ -599,6 +596,22 @@ self_test() {
         printf -- '- id: PMAT-201\n  status: planned\n- title: smuggled\n  id: PMAT-6270\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
         commit_all "$1"
     }
+    b_fragment_second_item_quoted_key() {
+        printf -- '- id: PMAT-202\n  status: planned\n- "id": PMAT-6270\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-202.yaml"
+        commit_all "$1"
+    }
+    b_fragment_second_item_bare_dash() {
+        printf -- '- id: PMAT-203\n  status: planned\n-\n  id: PMAT-6270\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-203.yaml"
+        commit_all "$1"
+    }
+    b_fragment_second_item_flow() {
+        printf -- '- id: PMAT-204\n  status: planned\n- {id: PMAT-6270, status: completed}\n' >"$1/$ENTRIES_DIR/PMAT-204.yaml"
+        commit_all "$1"
+    }
+    b_fragment_repeated_key() {
+        printf -- '- id: PMAT-205\n  status: planned\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-205.yaml"
+        commit_all "$1"
+    }
     b_fragment_deleted() {
         git -C "$1" rm -q "$1/$ENTRIES_DIR/PMAT-100.yaml"
         commit_all "$1"
@@ -746,7 +759,7 @@ PY
     row 'a fragment whose id is not its first line, aggregate regenerated in the diff -> REFUSE' \
         1 'FAIL  MISFILED' b_fragment_misfiled_regen
     row 'a fragment holding a second entry, aggregate not in the diff -> REFUSE' \
-        1 'holds 2 top-level "- id:" entries' b_fragment_two_entries
+        1 'more than one entry' b_fragment_two_entries
     row 'a fragment DELETED, aggregate not in the diff -> REFUSE' \
         1 'FAIL  DELETED' b_fragment_deleted
     row 'a fragment RENAMED (git sees R, not D), aggregate not in the diff -> REFUSE' \
@@ -790,7 +803,15 @@ PY
     row 'a subfolder copy shadowing a real fragment -> REFUSE' \
         1 'BADPATH' b_fragment_subfolder_shadow
     row 'a second item that opens with another key than id -> REFUSE' \
-        1 'holds 2 top-level' b_fragment_second_item_other_key
+        1 'more than one entry' b_fragment_second_item_other_key
+    row 'a second item written as - "id": X -> REFUSE' \
+        1 'more than one entry' b_fragment_second_item_quoted_key
+    row 'a second item opened by a bare dash line -> REFUSE' \
+        1 'more than one entry' b_fragment_second_item_bare_dash
+    row 'a second item written as a flow mapping -> REFUSE' \
+        1 'more than one entry' b_fragment_second_item_flow
+    row 'a repeated key inside one entry -> REFUSE' \
+        1 'more than one entry' b_fragment_repeated_key
     row 'a stem with a regex operator is compared as data -> REFUSE' \
         1 'MISFILED' b_fragment_stem_is_data
     row 'a fragment with the .yml extension -> REFUSE, never a skipped PASS' \
