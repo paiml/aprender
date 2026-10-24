@@ -239,6 +239,14 @@ def tokens(*texts):
 # universe is covered by the same rule.
 SCRATCH_PREFIX = ".claude/worktrees/"
 
+# docs/roadmaps/roadmap-base.yaml is a FROZEN byte copy of roadmap.yaml (check_roadmap_fragment_required.sh rule 3 holds it to the
+# base ref). While docs/roadmaps/roadmap.yaml is in scope and holds EVERY id the base holds, roadmap.yaml judges those entries and
+# counting the base again would charge 287 entries to a data-only file and force a baseline GROWTH, so the base is not counted.
+# This is CONTENT-bound, not a path waiver: once roadmap.yaml is removed (the S4 follow-up), or the base holds an id it lacks, the
+# base is judged like any roadmap file and its completed entries are gated.
+FROZEN_BASE = "docs/roadmaps/roadmap-base.yaml"
+LIVE_AGGREGATE = "docs/roadmaps/roadmap.yaml"
+
 def is_scratch(rel):
     return rel.replace(os.sep, "/").startswith(SCRATCH_PREFIX)
 
@@ -304,6 +312,19 @@ for rel in sorted(cand):
         out_scope.append((rel, "'roadmap:' is not a list of work items"))
         continue
     in_scope.append((rel, doc))
+
+def item_ids(doc):
+    return {str(i.get("id")) for i in doc["roadmap"] if isinstance(i, dict)}
+
+_live = [d for r, d in in_scope if r == LIVE_AGGREGATE]
+if _live:
+    _keep = []
+    for rel, doc in in_scope:
+        if rel == FROZEN_BASE and item_ids(doc) <= item_ids(_live[0]):
+            out_scope.append((rel, "frozen byte copy; every id is judged in " + LIVE_AGGREGATE))
+        else:
+            _keep.append((rel, doc))
+    in_scope = _keep
 
 for rel, why in out_scope:
     sys.stderr.write(f"SCOPE out  {rel}  ({why})\n")
@@ -623,6 +644,33 @@ YAML
     n_lane=$(grep -c 'lane-deadbeef' "$TD/scan3.out" "$TD/scan3.err" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')
     row 'lane scratch contributes no records'  0 "$n_lane"
 
+    # THE FROZEN BASE is judged by roadmap.yaml while roadmap.yaml holds every id it holds, and by itself otherwise.
+    mk docs/roadmaps/roadmap-base.yaml <<'YAML'
+roadmap:
+- id: R-ALIAS-DONE
+  status: completed
+  notes: null
+YAML
+    scan_roadmaps "$TD" >"$TD/scan4.out" 2>"$TD/scan4.err" || true
+    row 'frozen base, ids all in roadmap.yaml: no records' 0 "$(grep -c 'roadmap-base.yaml' "$TD/scan4.out" || true)"
+    mk docs/roadmaps/roadmap-base.yaml <<'YAML'
+roadmap:
+- id: R-ALIAS-DONE
+  status: completed
+  notes: null
+- id: R-ONLY-IN-BASE
+  status: completed
+  notes: null
+YAML
+    scan_roadmaps "$TD" >"$TD/scan4.out" 2>"$TD/scan4.err" || true
+    row 'frozen base holding an id roadmap.yaml lacks is judged' 2 "$(grep -c 'roadmap-base.yaml' "$TD/scan4.out" || true)"
+    mkdir -p "$TD/nolive/docs/roadmaps"
+    cp "$TD/docs/roadmaps/roadmap-base.yaml" "$TD/nolive/docs/roadmaps/roadmap-base.yaml"
+    scan_roadmaps "$TD/nolive" >"$TD/scan5.out" 2>"$TD/scan5.err" || true
+    row 'roadmap.yaml removed: the base is judged' 2 "$(grep -c 'roadmap-base.yaml' "$TD/scan5.out" || true)"
+    rm -rf "${TD:?}/nolive"
+    rm -f "${TD:?}/docs/roadmaps/roadmap-base.yaml"
+
     n_out=$(grep -c '^SCOPE out  crates/other/roadmap.yaml' "$TD/scan.err" || true)
     row 'foreign schema is reported out of scope, not skipped' 1 "$n_out"
     n_rec=$(grep -c 'crates/other/roadmap.yaml' <<< "$SCAN" || true)
@@ -672,6 +720,26 @@ YAML
         printf '         the gh invocation itself is unexercised here.\n'
     fi
     PR_CACHE_DIR=""
+
+    # MUTANTS. Each rewrites the frozen-base exemption in a COPY of this script and re-runs the copy's own case rows; the
+    # mutant is killed iff that run goes RED. SELFTEST_IN_MUTANT stops the copy from running its own mutants (no recursion).
+    if [ -z "${SELFTEST_IN_MUTANT:-}" ]; then
+        printf -- '--- mutants: the exemption must be content-bound ------------------\n'
+        mutant() { # NAME SED-EXPR -- killed iff the mutated script's self-test fails
+            mkdir -p "$TD/mut/scripts"
+            sed "$2" "${BASH_SOURCE[0]}" > "$TD/mut/scripts/m.sh"
+            if cmp -s "${BASH_SOURCE[0]}" "$TD/mut/scripts/m.sh"; then row "mutant $1 changed the script" changed same; return; fi
+            if SELFTEST_IN_MUTANT=1 bash "$TD/mut/scripts/m.sh" --self-test >/dev/null 2>&1; then
+                row "mutant $1 is killed" killed survived
+            else
+                row "mutant $1 is killed" killed killed
+            fi
+        }
+        mutant path-waiver 's/if rel == FROZEN_BASE and item_ids(doc) <= item_ids(_live\[0\])/if rel == FROZEN_BASE/'
+        mutant drop-subset-test 's/item_ids(doc) <= item_ids(_live\[0\])/True/'
+        mutant no-live-requirement 's/^_live = \[d for r, d in in_scope if r == LIVE_AGGREGATE\]/_live = [d for r, d in in_scope if r == LIVE_AGGREGATE] or [{"roadmap": [{"id": "R-ALIAS-DONE"}, {"id": "R-ONLY-IN-BASE"}]}]/'
+        rm -rf "${TD:?}/mut"
+    fi
 
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
     if [ "$f" -ne 0 ]; then printf 'SELFTEST FAILED\n'; exit 1; fi
