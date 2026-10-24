@@ -26065,22 +26065,3 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: null
-- id: PMAT-6262
-  github_issue: 6262
-  item_type: task
-  title: 'deps: tokio 1.52.3 trips RUSTSEC-2026-0386, main red on guard-cargo#m70'
-  status: in_progress
-  priority: critical
-  assigned_to: null
-  created: 2026-10-24T11:10:00Z
-  updated: 2026-10-24T11:10:00Z
-  spec: null
-  acceptance_criteria:
-  - 'cargo deny check advisories passes with no new exemption'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-  epic: null
