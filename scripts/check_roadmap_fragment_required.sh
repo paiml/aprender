@@ -129,6 +129,13 @@ remedy() {
     printf '    fragment path: it stays in the base and is immutable (RMFR-OB-005).\n'
 }
 
+# path_state REPO REF PATH -- 0 present, 1 absent, 2 the read failed (a git error is never "absent").
+path_state() {
+    local out
+    out=$(git -C "$1" ls-tree --name-only "$2" -- "$3" 2>/dev/null) || return 2
+    [ -n "$out" ]
+}
+
 # intro_regenerates REPO BASE TD -- the introduced base is right when it regenerates the base
 # ref's aggregate from the base ref's own fragments. Exact equality with the base ref's
 # roadmap.yaml would refuse a correct snapshot whenever another roadmap PR lands first.
@@ -152,7 +159,7 @@ intro_regenerates() {
 judge() {
     local repo=$1 base=$2 head=$3
     local td roadmap_changed=0 frag_paths names name verdict eid line
-    local violations=0 checked=0 out rc cout crc irc
+    local violations=0 checked=0 out rc cout crc irc ps
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
         printf 'ENV   %s: base ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$base" >&2
@@ -198,7 +205,12 @@ judge() {
     # Absent at a ref = empty; present but unreadable = ENV (rc 2).
     local side_ref
     for side_ref in "base:$base" "head:$head"; do
-        if git -C "$repo" cat-file -e "${side_ref#*:}:$ROADMAP_FILE" 2>/dev/null; then
+        path_state "$repo" "${side_ref#*:}" "$ROADMAP_FILE"; ps=$?
+        if [ "$ps" = 2 ]; then
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: cannot look up %s at %s\n' "$PROG" "$ROADMAP_FILE" "${side_ref#*:}" >&2
+            return 2
+        elif [ "$ps" = 0 ]; then
             git -C "$repo" show "${side_ref#*:}:$ROADMAP_FILE" >"$td/${side_ref%%:*}.yaml" 2>/dev/null || {
                 rm -rf -- "${td:?}"
                 printf 'ENV   %s: cannot read %s at %s\n' "$PROG" "$ROADMAP_FILE" "${side_ref#*:}" >&2
@@ -211,7 +223,12 @@ judge() {
     # The frozen base the head aggregate grows from (#6185). Absent at head (a pre-S1
     # commit), head.yaml is its own base: said out loud below, never a silent skip.
     have_base=0
-    if git -C "$repo" cat-file -e "$head:$BASE_FILE" 2>/dev/null; then
+    path_state "$repo" "$head" "$BASE_FILE"; ps=$?
+    if [ "$ps" = 2 ]; then
+        rm -rf -- "${td:?}"
+        printf 'ENV   %s: cannot look up %s at %s\n' "$PROG" "$BASE_FILE" "$head" >&2
+        return 2
+    elif [ "$ps" = 0 ]; then
         git -C "$repo" show "$head:$BASE_FILE" >"$td/roadmap-base.yaml" 2>/dev/null || {
             rm -rf -- "${td:?}"
             printf 'ENV   %s: cannot read %s at %s\n' "$PROG" "$BASE_FILE" "$head" >&2
@@ -271,7 +288,12 @@ judge() {
     # would make it the new hotspot and a way round rule 1. The one allowed change is its
     # introduction, as a snapshot that regenerates the base ref's aggregate.
     if [ -n "$base_changed" ]; then
-        if git -C "$repo" cat-file -e "$base:$BASE_FILE" 2>/dev/null; then
+        path_state "$repo" "$base" "$BASE_FILE"; ps=$?
+        if [ "$ps" = 2 ]; then
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: cannot look up %s at %s\n' "$PROG" "$BASE_FILE" "$base" >&2
+            return 2
+        elif [ "$ps" = 0 ]; then
             violations=$((violations + 1))
             printf 'FAIL  FROZEN: %s changed. It is frozen: supersede an entry with a fragment in %s/ instead\n' \
                 "$BASE_FILE" "$ENTRIES_DIR"
@@ -646,7 +668,9 @@ PY
         judge "$@"
     )
     local gpat fout frc
-    for gpat in "diff --name-only|git diff --name-only failed" "ls-tree -r --name-only HEAD|cannot list" \
+    for gpat in "ls-tree --name-only HEAD -- $ROADMAP_FILE|cannot look up $ROADMAP_FILE" "ls-tree --name-only HEAD~1 -- $ROADMAP_FILE|cannot look up $ROADMAP_FILE" \
+        "ls-tree --name-only HEAD -- $BASE_FILE|cannot look up $BASE_FILE" \
+        "diff --name-only|git diff --name-only failed" "ls-tree -r --name-only HEAD|cannot list" \
         "show HEAD:$ROADMAP_FILE|cannot read $ROADMAP_FILE" "show HEAD~1:$ROADMAP_FILE|cannot read $ROADMAP_FILE" \
         "show HEAD:$ENTRIES_DIR/PMAT-200.yaml|cannot read $ENTRIES_DIR/PMAT-200.yaml" "show HEAD:$BASE_FILE|cannot read $BASE_FILE"; do
         n=$((n + 1))
@@ -663,7 +687,7 @@ PY
     done
 
     # The introduced-base regeneration reads the base ref too: a failed read is ENV, not a FROZEN verdict.
-    for gpat in "ls-tree -r --name-only HEAD~1|at the base ref" "show HEAD~1:$ENTRIES_DIR/PMAT-100.yaml|at the base ref"; do
+    for gpat in "ls-tree --name-only HEAD~1 -- $BASE_FILE|cannot look up $BASE_FILE" "ls-tree -r --name-only HEAD~1|at the base ref" "show HEAD~1:$ENTRIES_DIR/PMAT-100.yaml|at the base ref"; do
         n=$((n + 1))
         mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1
         fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1)
