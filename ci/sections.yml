@@ -141,8 +141,8 @@ jobs:
         # registry-outage-tolerant).
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+            docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R "$OWNER" /workspace 2>/dev/null || true'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
@@ -1248,8 +1248,8 @@ jobs:
         # safe (and keeps this step tolerant of a registry outage).
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+            docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R "$OWNER" /workspace 2>/dev/null || true'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
@@ -1803,8 +1803,8 @@ jobs:
         # safe (and keeps this step tolerant of a registry outage).
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+            docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R "$OWNER" /workspace 2>/dev/null || true'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
