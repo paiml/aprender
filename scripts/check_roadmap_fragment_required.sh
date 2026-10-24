@@ -241,7 +241,9 @@ judge() {
     # intro_regenerates does). Entries-only PRs land without regenerating roadmap.yaml, so the base
     # ref's file can lag its fragments: judged against it, the bump PR that regenerates would be refused
     # by RULE 1 for entries it never touched. Without a frozen base at the base ref, it is judged as is.
-    if git -C "$repo" show "$base:$BASE_FILE" >"$td/rb-base.yaml" 2>/dev/null; then
+    # Only when this diff touches roadmap.yaml itself: on an entries-only diff the head aggregate lags too,
+    # and judging it against a regenerated base would call every fragment already on main REMOVED.
+    if [ "$roadmap_changed" = 1 ] && git -C "$repo" show "$base:$BASE_FILE" >"$td/rb-base.yaml" 2>/dev/null; then
         mkdir -p "$td/rb/entries"
         cp "$td/rb-base.yaml" "$td/rb/roadmap-base.yaml"
         cp "$td/base.yaml" "$td/rb/roadmap.yaml"
@@ -306,13 +308,47 @@ judge() {
 
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
     if [ "$entries_only" = 1 ]; then
+        # RULE 2 is deferred, but a malformed fragment must not ride in with it: parse and
+        # schema-check every fragment this diff changes (one mapping, id == file name, id/title/status).
         rc=0; out=""
+        while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            case "$name" in *.yaml) ;; *) continue ;; esac
+            [ -f "$td/entries/${name##*/}" ] || continue
+            if ! fout=$(python3 -I - "$td/entries/${name##*/}" <<'PYEOF' 2>&1
+import sys, os, yaml
+path = sys.argv[1]
+stem = os.path.basename(path)[:-5]
+try:
+    got = yaml.safe_load(open(path, encoding="utf-8"))
+except Exception as e:
+    sys.exit("does not parse: %s" % str(e).splitlines()[0])
+if not (isinstance(got, list) and len(got) == 1 and isinstance(got[0], dict)):
+    sys.exit("must be a YAML list of exactly one mapping")
+e = got[0]
+if e.get("id") != stem:
+    sys.exit("id %r does not match the file name %r" % (e.get("id"), stem))
+missing = [k for k in ("title", "status") if not e.get(k)]
+if missing:
+    sys.exit("missing required key(s): %s" % ", ".join(missing))
+PYEOF
+            ); then
+                rc=1
+                out="${out:+$out$'\n'}${name}: ${fout}"
+            fi
+        done < <(printf '%s\n' "$frag_paths")
     else
         out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
         rc=$?
     fi
     rm -rf -- "${td:?}"
-    if [ "$entries_only" = 1 ]; then
+    if [ "$entries_only" = 1 ] && [ "$rc" != 0 ]; then
+        violations=$((violations + 1))
+        printf 'FAIL  FRAGMENT: a changed fragment is malformed (RULE 2 is deferred, the fragment check is not)\n'
+        while IFS= read -r line; do
+            [ -n "$line" ] && printf '      %s\n' "$line"
+        done < <(printf '%s\n' "$out")
+    elif [ "$entries_only" = 1 ]; then
         printf 'note  entries-only diff: the regenerated-aggregate check (RULE 2) is deferred to the bump PR and to --full / make roadmap-aggregate-check\n'
     elif [ "$rc" = 0 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
@@ -437,6 +473,14 @@ self_test() {
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
+    # Base ref: frozen base + a fragment on main whose aggregate lags; head: another fragment only.
+    b_lag_entries_only() {
+        cp "$1/$ROADMAP_FILE" "$1/$BASE_FILE"
+        printf -- '- id: PMAT-200\n  title: landed entries-only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        git -C "$1" add -A && git -C "$1" commit -qm lagging-base || return 1
+        printf -- '- id: PMAT-201\n  title: next entries-only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        commit_all "$1"
+    }
     b_bump_nospace_both() {
         printf '[workspace.package]\nversion="0.1.0"\n' >"$1/Cargo.toml"; git -C "$1" add -A && git -C "$1" commit -qm cargo || return 1
         printf '[workspace.package]\nversion="0.1.1"\n' >"$1/Cargo.toml"
@@ -482,6 +526,15 @@ self_test() {
     # A fragment with no `make roadmap-aggregate`.
     b_fragment_no_regen() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # A malformed fragment (no `status`, id != file name) beside an entries-only diff.
+    b_fragment_bad() {
+        printf -- '- id: PMAT-200\n  title: no status\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    b_fragment_unparsable() {
+        printf 'not: [valid\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
     }
     b_unrelated() {
@@ -601,12 +654,18 @@ PY
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
     row 'fragment added, aggregate NOT regenerated (entries-only diff) -> PASS, regen deferred out loud' \
         0 'entries-only diff: the regenerated-aggregate check' b_fragment_no_regen
+    row 'entries-only diff, fragment lacks `status` -> REFUSE (RULE 2 deferred, fragment check not)' \
+        1 'FAIL  FRAGMENT' b_fragment_bad
+    row 'entries-only diff, fragment does not parse -> REFUSE' \
+        1 'FAIL  FRAGMENT' b_fragment_unparsable
     FULL_REGEN=1 row 'entries-only diff under --full (main / bump check) -> REFUSE, naming the drift' \
         1 'FAIL  DRIFT' b_fragment_no_regen
     row 'frozen base introduced + a fragment, aggregate stale -> REFUSE (a touched base never reaches the skip)' \
         1 'FAIL  DRIFT' b_base_and_fragment_stale
     row 'LAG: the base ref aggregate is stale vs its fragments, a bump regenerates it -> PASS (no deadlock)' \
         0 'ok    ' b_lag_then_regen
+    row 'entries-only PR over a lagging frozen base (fragment already on main) -> PASS, nothing REMOVED' \
+        0 'entries-only diff: the regenerated-aggregate check' b_lag_entries_only
     row 'a bump written version="x" (no spaces) with an unregenerated aggregate -> REFUSE' \
         1 'FAIL  DRIFT' b_bump_nospace_no_regen
     row 'version="x" with NO spaces on both sides of the bump, aggregate stale -> REFUSE' \
@@ -737,17 +796,27 @@ PY
     DR_BUILDER=b_fragment_no_regen DR_ARGS=--full dispatch_row 'the same change through the CLI with --full -> REFUSE, naming the drift' \
         1 'FAIL  DRIFT' HEAD~1
 
+    # ... and --full is honoured after the refs, not only as the first argument.
+    DR_BUILDER=b_fragment_no_regen DR_ARGS='HEAD~1 HEAD --full' dispatch_row 'the same change with --full AFTER the refs -> REFUSE' \
+        1 'FAIL  DRIFT' HEAD~1
+
     printf '%s/%s rows, %s failed\n' "$((n - red))" "$n" "$red"
     [ "$red" = 0 ]
 }
 
 # ---------------------------------------------------------------------------
-case "${1:-}" in
-    --self-test|--selftest) unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH; self_test; exit $? ;;
-    --full) FULL_REGEN=1; shift ;;
-    --help|-h) usage ;;
-    --*) usage ;;
-esac
+# --full is accepted in ANY argument position; every other option is as before.
+_args=()
+for _a in "$@"; do
+    case "$_a" in
+        --self-test|--selftest) unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH; self_test; exit $? ;;
+        --full) FULL_REGEN=1 ;;
+        --help|-h) usage ;;
+        --*) usage ;;
+        *) _args+=("$_a") ;;
+    esac
+done
+set -- ${_args[@]+"${_args[@]}"}
 
 if ! git -C "$REPO_ROOT" rev-parse --verify -q origin/main >/dev/null; then
     printf '%s: origin/main is not resolvable here (no such remote-tracking ref).\n' "$PROG" >&2
