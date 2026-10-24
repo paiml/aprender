@@ -1081,6 +1081,37 @@ else
 fi
 cp "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"
 
+# 56-58 (#6255): guard-cargo's --shard I/K partition and the --verdict fan-in.
+cg="$REPO_ROOT/scripts/ci_guards.sh"
+full56="$(bash "$cg" --list guard-cargo | grep -v '^==' | awk '{print $1}' | sort)"
+bad56=""
+for k in 1 2 3 4 5; do
+    u=""
+    for ((i = 1; i <= k; i++)); do u+="$(bash "$cg" --list --shard "$i/$k" guard-cargo | grep -v '^==' | awk '{print $1}')"$'\n'; done
+    [ "$(sort -u <<<"$u" | grep -v '^$')" = "$full56" ] || bad56+=" union@K=$k"
+    # a step is in exactly one shard, except the GITHUB_PATH/GITHUB_ENV writers, which are in all K
+    dup="$(grep -v '^$' <<<"$u" | sort | uniq -c | awk -v k="$k" '$1 != 1 && $1 != k {print $2}')"
+    [ -z "$dup" ] || bad56+=" dup@K=$k:$dup"
+done
+if [ -z "$bad56" ] && [ -n "$full56" ]; then
+    pass_row "56: the union of guard-cargo --shard i/K is the full item list for K=1..5, each item in one shard"
+else
+    fail_row "56: guard-cargo shard partition" "$bad56"
+fi
+if bash "$cg" --list --shard 1/3 guard-cargo | grep -q 'm69' && bash "$cg" --list --shard 3/3 guard-cargo | grep -q 'm69'; then
+    pass_row "57: the cargo-deny installer (writes GITHUB_PATH) runs in every shard"
+else
+    fail_row "57: state-handing step in every shard" "m69 missing from a shard"
+fi
+bad58=""
+for r in success; do bash "$cg" guard-cargo --verdict "$r" > /dev/null 2>&1 || bad58+=" $r->red"; done
+for r in failure cancelled skipped ""; do bash "$cg" guard-cargo --verdict "$r" > /dev/null 2>&1 && bad58+=" [$r]->green"; done
+if [ -z "$bad58" ]; then
+    pass_row "58: --verdict passes only on success (failure, cancelled, skipped, empty are red)"
+else
+    fail_row "58: --verdict case table" "$bad58"
+fi
+
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
     exit 1
