@@ -315,24 +315,23 @@ judge() {
             [ -n "$name" ] || continue
             case "$name" in *.yaml) ;; *) continue ;; esac
             [ -f "$td/entries/${name##*/}" ] || continue
-            if ! fout=$(python3 -I - "$td/entries/${name##*/}" <<'PYEOF' 2>&1
-import sys, os, yaml
-path = sys.argv[1]
-stem = os.path.basename(path)[:-5]
-try:
-    got = yaml.safe_load(open(path, encoding="utf-8"))
-except Exception as e:
-    sys.exit("does not parse: %s" % str(e).splitlines()[0])
-if not (isinstance(got, list) and len(got) == 1 and isinstance(got[0], dict)):
-    sys.exit("must be a YAML list of exactly one mapping")
-e = got[0]
-if e.get("id") != stem:
-    sys.exit("id %r does not match the file name %r" % (e.get("id"), stem))
-missing = [k for k in ("title", "status") if not e.get(k)]
-if missing:
-    sys.exit("missing required key(s): %s" % ", ".join(missing))
-PYEOF
-            ); then
+            fr="$td/entries/${name##*/}"; stem=${name##*/}; stem=${stem%.yaml}; fout=""
+            # A clean one-entry block: first line `- id: <file stem>`, exactly one top-level entry,
+            # exactly one `id:` key, and a title and a status.
+            [ "$(head -n 1 "$fr")" = "- id: $stem" ] || fout="${fout}first line is not '- id: $stem'; "
+            [ "$(grep -c '^- ' "$fr")" = 1 ] || fout="${fout}not exactly one entry; "
+            [ "$(grep -cE '^(- |  )id:' "$fr")" = 1 ] || fout="${fout}id: key missing or duplicated; "
+            grep -qE '^  title: *[^ ]' "$fr" || fout="${fout}no title; "
+            grep -qE '^  status: *[^ ]' "$fr" || fout="${fout}no status; "
+            # and the real aggregator must accept it: aggregate --write, then --check, on a scratch copy.
+            mkdir -p "$td/fc/entries" && cp "$td/roadmap-base.yaml" "$td/fc/roadmap-base.yaml" 2>/dev/null || cp "$td/head.yaml" "$td/fc/roadmap-base.yaml"
+            cp "$td/head.yaml" "$td/fc/roadmap.yaml"; cp "$fr" "$td/fc/entries/"
+            if ! python3 "$PY_LIB" aggregate --write --roadmap "$td/fc/roadmap.yaml" --entries "$td/fc/entries" >/dev/null 2>&1 \
+                || ! python3 "$PY_LIB" aggregate --check --roadmap "$td/fc/roadmap.yaml" --entries "$td/fc/entries" >/dev/null 2>&1; then
+                fout="${fout}the aggregator refuses it; "
+            fi
+            rm -rf -- "${td:?}/fc"
+            if [ -n "$fout" ]; then
                 rc=1
                 out="${out:+$out$'\n'}${name}: ${fout}"
             fi
@@ -533,6 +532,22 @@ self_test() {
         printf -- '- id: PMAT-200\n  title: no status\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
     }
+    b_fragment_dupid() {
+        printf -- '- id: PMAT-200\n  id: PMAT-200\n  title: t\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    b_fragment_wrongid() {
+        printf -- '- id: PMAT-999\n  title: t\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    b_fragment_two() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: planned\n- id: PMAT-201\n  title: u\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    b_fragment_notitle() {
+        printf -- '- id: PMAT-200\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
     b_fragment_unparsable() {
         printf 'not: [valid\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
@@ -655,7 +670,11 @@ PY
     row 'fragment added, aggregate NOT regenerated (entries-only diff) -> PASS, regen deferred out loud' \
         0 'entries-only diff: the regenerated-aggregate check' b_fragment_no_regen
     row 'entries-only diff, fragment lacks `status` -> REFUSE (RULE 2 deferred, fragment check not)' \
-        1 'FAIL  FRAGMENT' b_fragment_bad
+        1 'no status' b_fragment_bad
+    row 'entries-only diff, duplicate id: key -> REFUSE' 1 'id: key missing or duplicated' b_fragment_dupid
+    row 'entries-only diff, id != file name -> REFUSE' 1 "first line is not '- id: PMAT-200'" b_fragment_wrongid
+    row 'entries-only diff, two entries in one fragment -> REFUSE' 1 'not exactly one entry' b_fragment_two
+    row 'entries-only diff, fragment without a title -> REFUSE' 1 'no title' b_fragment_notitle
     row 'entries-only diff, fragment does not parse -> REFUSE' \
         1 'FAIL  FRAGMENT' b_fragment_unparsable
     FULL_REGEN=1 row 'entries-only diff under --full (main / bump check) -> REFUSE, naming the drift' \
