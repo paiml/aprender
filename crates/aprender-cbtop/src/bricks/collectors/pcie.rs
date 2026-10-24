@@ -6,7 +6,7 @@ use crate::brick::{Brick, BrickAssertion, BrickBudget, BrickVerification};
 use crate::ring_buffer::RingBuffer;
 use std::any::Any;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 /// Legal PCIe link widths (x0 = down/unknown).
@@ -36,12 +36,22 @@ impl Default for PcieMetrics {
 
 pub struct PcieCollectorBrick {
     history: RingBuffer<PcieMetrics>,
+    root: PathBuf,
 }
 
 impl PcieCollectorBrick {
     pub fn new() -> Self {
         Self {
             history: RingBuffer::new(120),
+            root: PathBuf::from("/sys/bus/pci/devices"),
+        }
+    }
+
+    /// Collector reading a different sysfs devices directory (tests, containers).
+    pub fn with_root(root: PathBuf) -> Self {
+        Self {
+            root,
+            ..Self::new()
         }
     }
 
@@ -52,7 +62,7 @@ impl PcieCollectorBrick {
     }
 
     fn read_pcie(&self) -> Result<PcieMetrics, std::io::Error> {
-        Self::read_pcie_from(Path::new("/sys/bus/pci/devices"))
+        Self::read_pcie_from(&self.root)
     }
 
     /// Scan a sysfs PCI devices directory (injectable so tests need no real hardware).
@@ -86,6 +96,13 @@ impl PcieCollectorBrick {
         VALID_WIDTHS.contains(&w).then_some(w)
     }
 
+    /// The newest sample's max width is a legal PCIe width (vacuously true when empty).
+    pub fn width_valid(&self) -> bool {
+        self.history
+            .back()
+            .map_or(true, |m| VALID_WIDTHS.contains(&m.max_width))
+    }
+
     pub fn history(&self) -> &RingBuffer<PcieMetrics> {
         &self.history
     }
@@ -102,7 +119,9 @@ impl Brick for PcieCollectorBrick {
                 let s = b
                     .downcast_ref::<PcieCollectorBrick>()
                     .expect("brick MUST be PcieCollectorBrick");
-                s.history.back().map_or(true, |m| m.max_width <= 16)
+                s.history
+                    .back()
+                    .map_or(true, |m| VALID_WIDTHS.contains(&m.max_width))
             }),
             BrickAssertion::max_latency_ms(10), // Filesystem scan can be slow
         ]
@@ -146,7 +165,7 @@ mod tests {
         // PCIe width set {0,1,2,4,8,12,16,32} is invariant.
         let mut collector = PcieCollectorBrick::new();
         let metrics = collector.collect();
-        assert!([0u8, 1, 2, 4, 8, 12, 16, 32].contains(&metrics.max_width));
+        assert!(VALID_WIDTHS.contains(&metrics.max_width));
     }
 
     #[test]
@@ -180,5 +199,51 @@ mod tests {
         let m = PcieCollectorBrick::read_pcie_from(Path::new("/nonexistent-pcie-root"))
             .expect("missing root is not an error");
         assert_eq!(m.max_width, 0);
+    }
+
+    fn with_width(w: u8) -> PcieCollectorBrick {
+        let mut c = PcieCollectorBrick::new();
+        c.history.push(PcieMetrics {
+            max_width: w,
+            ..PcieMetrics::default()
+        });
+        c
+    }
+
+    #[test]
+    fn test_width_valid_accepts_every_legal_width_including_x32() {
+        for w in VALID_WIDTHS {
+            assert!(with_width(w).width_valid(), "x{w} must verify");
+        }
+    }
+
+    #[test]
+    fn test_width_valid_rejects_invalid_and_accepts_empty_history() {
+        assert!(!with_width(63).width_valid());
+        assert!(!with_width(3).width_valid());
+        assert!(PcieCollectorBrick::new().width_valid());
+    }
+
+    #[test]
+    fn test_max_width_takes_the_largest_not_the_last() {
+        let root = std::env::temp_dir().join(format!("cbtop-pcie-m-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        device(&root, "0000:00:01.0", "8.0 GT/s PCIe\n", "8\n");
+        device(&root, "0000:00:02.0", "8.0 GT/s PCIe\n", "1\n");
+        let m = PcieCollectorBrick::read_pcie_from(&root).expect("fixture read");
+        fs::remove_dir_all(&root).expect("cleanup");
+        assert_eq!(m.max_width, 8);
+    }
+
+    #[test]
+    fn test_collect_reads_root_and_records_history() {
+        let root = std::env::temp_dir().join(format!("cbtop-pcie-c-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&root);
+        device(&root, "0000:00:01.0", "16.0 GT/s PCIe\n", "8\n");
+        let mut c = PcieCollectorBrick::with_root(root.clone());
+        let m = c.collect();
+        fs::remove_dir_all(&root).expect("cleanup");
+        assert_eq!((m.gen4_count, m.max_width), (1, 8));
+        assert_eq!(c.history().back().map(|h| h.max_width), Some(8));
     }
 }
