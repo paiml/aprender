@@ -73,6 +73,9 @@ read_by_code() { # BASE HEAD PATH -> 0 when some file other than PATH names PATH
   local t
   for t in "$1" "$2"; do
     git grep -qF -e "$3" "$t" -- crates src tests scripts ci .github Makefile build.rs ':!'"$3" 2>/dev/null && return 0
+    # include_str!("../CHANGELOG.md") names the file relatively: match the basename on any include line.
+    local b=${3##*/}; b=${b//./\\.}
+    git grep -qE -e "include(_str|_bytes)?!.*$b" "$t" -- crates src tests build.rs ':!'"$3" 2>/dev/null && return 0
   done
   return 1
 }
@@ -125,7 +128,7 @@ self_test() {
   printf 'name: ci\n' > "$d/.github/workflows/ci.yml"
   printf '# doc\n' > "$d/docs/a.md"
   printf '' > "$d/scripts/.keep"; printf 'echo hi\n' > "$d/bin/run.sh"
-  printf 'doc\n' > "$d/docs/read.md"; printf 'const D: &str = include_str!("../../../docs/read.md");\n' > "$d/crates/x/src/inc.rs"
+  printf 'doc\n' > "$d/docs/read.md"; printf 'const D: &str = include_str!("../../../docs/read.md");\nconst R: &str = include_str!("../CHANGELOG.md");\n' > "$d/crates/x/src/inc.rs"; printf 'r\n' > "$d/crates/x/CHANGELOG.md"
   git -C "$d" add -A; git -C "$d" commit -qm base; base=$(git -C "$d" rev-parse HEAD)
   expect() { # NAME WANT -- mutation commands run in $d
     local name=$1 want=$2 got
@@ -183,6 +186,7 @@ self_test() {
   mkdir -p "$d/sub"; printf 'x\n' > "$d/sub/rules.mk";                                             expect mk-file sensitive
   printf 'x\n' > "$d/crates/x/Cargo.lock";                                      expect nested-cargo-lock sensitive
   printf 'more\n' >> "$d/docs/read.md";                                       expect doc-read-by-code-standard standard
+  printf 'x\n' >> "$d/crates/x/CHANGELOG.md";                                       expect rel-include-changelog-standard standard
   printf 'doc\n' > "$d/docs/unread.md"; expect unread-doc-light light
   mkdir -p "$d/docs/specifications"; printf 'x\n' > "$d/docs/specifications/s.md";   expect spec-md-not-light standard
   printf '#!/bin/sh\nx\n' > "$d/crates/x/data.txt"; printf '# data\n' >> "$d/crates/x/data.txt"; expect txt-hash-line-is-data standard
