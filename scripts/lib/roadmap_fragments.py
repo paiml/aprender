@@ -350,6 +350,15 @@ def _census_rows():
         "filename-safety is load-bearing, not defensive")
 
 
+def _shape_rc(path):
+    import types
+    err, sys.stderr = sys.stderr, open(os.devnull, "w")
+    try:
+        return _cmd_shape(types.SimpleNamespace(file=path))
+    finally:
+        sys.stderr = err
+
+
 def _shape_rows():
     # PMAT-6270: a fragment is one entry, and a last line without a newline cannot eat the next.
     import tempfile
@@ -373,6 +382,25 @@ def _shape_rows():
         row("shape: a fragment ending in '...' or opening with '---' is refused",
             all("document marker" in fragment_shape(os.path.join(ed, n))
                 for n in ("PMAT-503.yaml", "PMAT-504.yaml")))
+        put("PMAT-505.yaml", "- id: PMAT-505\n  created: &id001 2026-10-24\n")
+        put("PMAT-506.yaml", "- id: PMAT-506\n  created: *id001\n")
+        row("shape: an anchor or an alias is refused (anchors are shared across the aggregate)",
+            all("anchor" in fragment_shape(os.path.join(ed, n)) for n in ("PMAT-505.yaml", "PMAT-506.yaml")))
+        with open(os.path.join(ed, "PMAT-507.yaml"), "w", encoding="utf-8") as fh:
+            fh.write("\ufeff---\n- id: PMAT-507\n")
+        row("shape: a byte order mark before '---' is refused",
+            "byte order mark" in fragment_shape(os.path.join(ed, "PMAT-507.yaml")))
+        put("PMAT-508.yaml", "- id: 'PMAT-508'  # quoted\n  title: x\n")
+        put("PMAT-509.yml", "- id: PMAT-509\n")
+        row("shape: the first line is exactly '- id: <stem>', and the name ends in .yaml",
+            "does not start" in fragment_shape(os.path.join(ed, "PMAT-508.yaml"))
+            and "<id>.yaml" in fragment_shape(os.path.join(ed, "PMAT-509.yml")))
+        put("PMAT-510.yaml", "- id: PMAT-510\n  ? [a]\n  : 1\n")
+        row("shape: an unhashable key is a refusal, not a crash",
+            "unparseable" in fragment_shape(os.path.join(ed, "PMAT-510.yaml")))
+        os.makedirs(os.path.join(ed, "PMAT-512.yaml"))
+        row("shape: a missing or unreadable path exits 2 (not measured), never 1",
+            _shape_rc(os.path.join(ed, "PMAT-511.yaml")) == 2 and _shape_rc(os.path.join(ed, "PMAT-512.yaml")) == 2)
         row("shape: a plain one-entry fragment passes",
             fragment_shape(os.path.join(ed, "PMAT-501.yaml")) == "")
 
@@ -625,42 +653,60 @@ def _unique_loader():
     return Loader
 
 
-def _line_problem(path):
-    """The first line-level defect of a fragment, or ''. The splitter cuts on every `- id:` line
-    (even inside a quoted scalar) and a `---` / `...` line breaks the aggregate's parse."""
-    with open(path, encoding="utf-8") as fh:
-        lines = fh.read().splitlines()
+def _text_problem(text, stem):
+    """The first text-level defect of a fragment, or ''. The splitter cuts on every `- id:` line
+    (even inside a quoted scalar), a `---` / `...` line or a BOM breaks the aggregate's parse, and
+    the first line is read raw by every text consumer, so it must be exactly `- id: <stem>`."""
+    lines = text.splitlines()
+    if "\ufeff" in text:
+        return "carries a byte order mark"
     if any(re.match(r"(---|\.\.\.)(\s|$)", line) for line in lines):
         return "carries a '---' or '...' document marker line"
     cuts = sum(1 for line in lines if line.startswith("- id:"))
-    return "" if cuts == 1 else "has %d lines opening '- id:', want exactly 1" % cuts
+    if cuts != 1:
+        return "has %d lines opening '- id:', want exactly 1" % cuts
+    return "" if lines[0] == "- id: " + stem else "does not start with '- id: %s'" % stem
 
 
-def _load_unique(path):
+def _anchor_problem(text):
+    """Anchors are scoped to the whole aggregate document: one fragment's `&a` collides with the
+    base's or another fragment's, so a fragment carries none and aliases none."""
+    import yaml
+    try:
+        events = list(yaml.parse(text))
+    except yaml.YAMLError:
+        return ""  # the loader reports it
+    if any(getattr(e, "anchor", None) or isinstance(e, yaml.AliasEvent) for e in events):
+        return "carries a YAML anchor or alias (anchors are shared across the aggregate)"
+    return ""
+
+
+def _load_unique(text):
     """-> (doc, reason): the parsed fragment, or why it would not parse."""
     import yaml
     try:
-        with open(path, encoding="utf-8") as fh:
-            return yaml.load(fh, Loader=_unique_loader()), ""  # noqa: S506 - a SafeLoader subclass
-    except (OSError, ValueError, yaml.YAMLError) as e:
+        return yaml.load(text, Loader=_unique_loader()), ""  # noqa: S506 - a SafeLoader subclass
+    except (TypeError, ValueError, yaml.YAMLError) as e:
         return None, "unparseable: %s" % str(e).splitlines()[0]
 
 
 def fragment_shape(path):
-    """'' when the file is ONE mapping whose id is its stem; else the reason (PMAT-6270)."""
-    stem = os.path.basename(path)[:-len(".yaml")]
-    doc, why = _load_unique(path)
+    """'' when the file is ONE mapping whose id is its stem; else the reason (PMAT-6270).
+    Raises OSError when the file cannot be read: that is not-measured, never a verdict."""
+    base = os.path.basename(path)
+    if not base.endswith(".yaml"):
+        return "is not named <id>.yaml"
+    stem = base[:-len(".yaml")]
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    why = _text_problem(text, stem) or _anchor_problem(text)
     if why:
         return why
-    why = _line_problem(path)
-    if why:
-        return why
+    doc, why = _load_unique(text)
     items = doc if isinstance(doc, list) else []
-    if len(items) != 1:
-        return "holds %d top-level items, want exactly 1" % len(items)
-    if not isinstance(items[0], dict) or items[0].get("id") != stem:
-        return "its item is not a mapping with id %s" % stem
-    return ""
+    if why or len(items) != 1:
+        return why or "holds %d top-level items, want exactly 1" % len(items)
+    return "" if isinstance(items[0], dict) and items[0].get("id") == stem else "its item is not a mapping with id %s" % stem
 
 
 def _cmd_shape(a):
@@ -673,7 +719,11 @@ def _cmd_shape(a):
     except ImportError:
         sys.stderr.write("shape: PyYAML is not installed; not measured\n")
         return 2
-    why = fragment_shape(a.file)
+    try:
+        why = fragment_shape(a.file)
+    except OSError as e:
+        sys.stderr.write("shape: cannot read %s (%s); not measured\n" % (a.file, e.strerror or e))
+        return 2
     if why:
         sys.stdout.write(why + "\n")
         return 1
