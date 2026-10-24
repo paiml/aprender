@@ -404,7 +404,7 @@ mkrepo() {
 }
 
 self_test() {
-    local td n=0 red=0 TEMPLATE
+    local td n=0 red=0 okc=0 want_rows=45 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
         local victim=${td:-}
@@ -430,14 +430,14 @@ self_test() {
             return
         fi
         "$builder" "$d" || { printf 'FAIL  row %-2s %s: builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
-        out=$(judge "$d" HEAD~1 HEAD 2>&1)
-        rc=$?
+        rc=0; out=$(judge "$d" HEAD~1 HEAD 2>&1) || rc=$?
         if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out" || { [ -n "${ONLY_ENV:-}" ] && ! only_env "$out"; }; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
             red=$((red + 1))
             return
         fi
+        okc=$((okc + 1))
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
@@ -483,10 +483,10 @@ self_test() {
     # An uncited completed entry already in the base, untouched by the diff: not this diff's to judge.
     b_done_preexisting() {
         b_done_uncited "$1" || return 1
-        grep -q 'status: completed' "$1/$ROADMAP_FILE" || return 1 # the uncited entry is really in the aggregate
         printf -- '- id: PMAT-100\n  title: first, edited\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
-        commit_all "$1"
+        # commit only if the uncited PMAT-200 really is in the aggregate: without it the row would pass vacuously
+        grep -q 'id: PMAT-200' "$1/$ROADMAP_FILE" && commit_all "$1"
     }
     b_fragment_no_regen() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
@@ -656,9 +656,9 @@ PY
     n=$((n + 1))
     local out rc
     mkrepo "$td/r$n" >/dev/null 2>&1
-    out=$(judge "$td/r$n" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD 2>&1)
-    rc=$?
+    rc=0; out=$(judge "$td/r$n" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD 2>&1) || rc=$?
     if [ "$rc" = 2 ] && grep -qF 'refusing to judge' <<<"$out" && only_env "$out"; then
+        okc=$((okc + 1))
         printf 'ok    row %-2s rc=2  an unresolvable base ref is ENV, never a pass\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s (wanted 2)  an unresolvable base ref is ENV, never a pass\n' "$n" "$rc"
@@ -685,9 +685,9 @@ PY
         "show HEAD:$ENTRIES_DIR/PMAT-200.yaml|cannot read $ENTRIES_DIR/PMAT-200.yaml" "show HEAD:$BASE_FILE|cannot read $BASE_FILE"; do
         n=$((n + 1))
         mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1 && b_fragment_and_aggregate "$td/r$n" >/dev/null 2>&1
-        fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1)
-        frc=$?
+        frc=0; fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1) || frc=$?
         if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout" && only_env "$fout"; then
+            okc=$((okc + 1))
             printf 'ok    row %-2s rc=2  a failing git [%s] is ENV, never a pass\n' "$n" "$gpat"
         else
             printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] must be ENV\n' "$n" "$frc" "$gpat"
@@ -700,9 +700,9 @@ PY
     for gpat in "ls-tree --name-only HEAD~1 -- $BASE_FILE|cannot look up $BASE_FILE" "ls-tree -r --name-only HEAD~1|at the base ref" "show HEAD~1:$ENTRIES_DIR/PMAT-100.yaml|at the base ref"; do
         n=$((n + 1))
         mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1
-        fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1)
-        frc=$?
+        frc=0; fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1) || frc=$?
         if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout" && only_env "$fout"; then
+            okc=$((okc + 1))
             printf 'ok    row %-2s rc=2  a failing git [%s] on the introduced base is ENV\n' "$n" "${gpat%%|*}"
         else
             printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] on the introduced base must be ENV\n' "$n" "$frc" "${gpat%%|*}"
@@ -714,9 +714,9 @@ PY
     # An unresolvable HEAD ref, likewise the only verdict.
     n=$((n + 1))
     mkrepo "$td/r$n" >/dev/null 2>&1
-    out=$(judge "$td/r$n" HEAD deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2>&1)
-    rc=$?
+    rc=0; out=$(judge "$td/r$n" HEAD deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2>&1) || rc=$?
     if [ "$rc" = 2 ] && grep -qF 'head ref' <<<"$out" && only_env "$out"; then
+        okc=$((okc + 1))
         printf 'ok    row %-2s rc=2  an unresolvable head ref is ENV, never a pass\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s (wanted 2)  an unresolvable head ref must be ENV only\n' "$n" "$rc"
@@ -765,14 +765,14 @@ PY
             fi
         done
         git -C "$d" update-ref refs/remotes/origin/main "$(git -C "$d" rev-parse "$target")"
-        out=$(bash "$d/scripts/$PROG" 2>&1)
-        rc=$?
+        rc=0; out=$(bash "$d/scripts/$PROG" 2>&1) || rc=$?
         if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
             red=$((red + 1))
             return
         fi
+        okc=$((okc + 1))
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
@@ -781,8 +781,14 @@ PY
     dispatch_row 'PR shape (origin/main is its parent), SAME fragment-less content -> REFUSE, exit 1' \
         1 'FAIL  ADDED    PMAT-200' HEAD~1
 
-    printf '%s/%s rows, %s failed\n' "$((n - red))" "$n" "$red"
-    [ "$red" = 0 ]
+    printf '%s/%s rows, %s failed\n' "$okc" "$n" "$red"
+    # passing rows are counted, not inferred: ok == n == the fixed row count, or the self-test is red
+    # Four separate gates: any ONE deleted line, even paired with a deleted red++/okc++/row line, still leaves a red exit.
+    [ "$red" = 0 ] || return 1
+    [ "$okc" = "$n" ] || return 1
+    [ "$okc" = "$want_rows" ] || return 1
+    [ "$n" = "$want_rows" ] || return 1
+    return 0
 }
 
 # ---------------------------------------------------------------------------
