@@ -412,6 +412,10 @@ def _shape_rows():
         put("PMAT-602.yaml", "- id: PMAT-602\n  title: leaves every alias alone\n")
         row("shape: a fragment that leaves the aggregate unparseable is refused (dangling alias)",
             _shape_rc(os.path.join(ed, "PMAT-600.yaml"), rm) == 1 and _shape_rc(os.path.join(ed, "PMAT-602.yaml"), rm) == 0)
+        with open(os.path.join(ed, "PMAT-514.yaml"), "wb") as fh:
+            fh.write(b"- id: PMAT-514\n  title: \xff\xfe\n")
+        row("shape: bytes that are not UTF-8 are a refusal, not a traceback",
+            "UTF-8" in fragment_shape(os.path.join(ed, "PMAT-514.yaml")) and _shape_rc(os.path.join(ed, "PMAT-514.yaml")) == 1)
         row("shape: a plain one-entry fragment passes",
             fragment_shape(os.path.join(ed, "PMAT-501.yaml")) == "")
 
@@ -706,6 +710,25 @@ def _load_unique(text):
         return None, "unparseable: %s" % str(e).splitlines()[0]
 
 
+def _read_text(path):
+    """The fragment's text with its line endings intact (a lone CR must stay visible), or None."""
+    try:
+        with open(path, encoding="utf-8", newline="") as fh:
+            return fh.read()
+    except UnicodeDecodeError:
+        return None
+
+
+def _item_problem(text, stem):
+    """'' when the parsed fragment is one mapping whose id is the stem; else why not."""
+    doc, why = _load_unique(text)
+    items = doc if isinstance(doc, list) else []
+    if why or len(items) != 1:
+        return why or "holds %d top-level items, want exactly 1" % len(items)
+    ok = isinstance(items[0], dict) and items[0].get("id") == stem
+    return "" if ok else "its item is not a mapping with id %s" % stem
+
+
 def fragment_shape(path):
     """'' when the file is ONE mapping whose id is its stem; else the reason (PMAT-6270).
     Raises OSError when the file cannot be read: that is not-measured, never a verdict."""
@@ -713,16 +736,10 @@ def fragment_shape(path):
     if not base.endswith(".yaml"):
         return "is not named <id>.yaml"
     stem = base[:-len(".yaml")]
-    with open(path, encoding="utf-8", newline="") as fh:  # newline="": a lone CR must stay visible
-        text = fh.read()
-    why = _text_problem(text, stem) or _anchor_problem(text)
-    if why:
-        return why
-    doc, why = _load_unique(text)
-    items = doc if isinstance(doc, list) else []
-    if why or len(items) != 1:
-        return why or "holds %d top-level items, want exactly 1" % len(items)
-    return "" if isinstance(items[0], dict) and items[0].get("id") == stem else "its item is not a mapping with id %s" % stem
+    text = _read_text(path)
+    if text is None:
+        return "is not valid UTF-8"
+    return _text_problem(text, stem) or _anchor_problem(text) or _item_problem(text, stem)
 
 
 def aggregate_problem(roadmap, stem, text):
@@ -747,7 +764,7 @@ def _judge_shape(path, roadmap):
     why = fragment_shape(path)
     if why or not roadmap:
         return why
-    with open(path, encoding="utf-8", newline="") as fh:
+    with open(path, encoding="utf-8", newline="") as fh:  # fragment_shape already read it as UTF-8
         return aggregate_problem(roadmap, os.path.basename(path)[:-len(".yaml")], fh.read())
 
 
