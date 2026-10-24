@@ -81,6 +81,7 @@
 #       base for an arbitrary head (how the retro and the case table reach the
 #       push-shape arm at a commit that is not the checkout's HEAD)
 #   bash scripts/check_roadmap_fragment_required.sh --self-test
+#   bash scripts/check_roadmap_fragment_required.sh --mutants   # each planted defect must turn the self-test red
 #
 # Exit: 0 clean · 1 a violation · 2 this box cannot judge (never a silent pass).
 #
@@ -273,16 +274,21 @@ judge() {
         cp "$td/head.yaml" "$td/scratch.yaml"
         out=$(python3 "$PY_LIB" aggregate --write --roadmap "$td/scratch.yaml" --entries "$td/entries" 2>&1)
         rc=$?
-        # the aggregator accepts a fragment filed under another id; the lag must not hide that
+        what="UNREADABLE: the fragments at head do not build $ROADMAP_FILE"
+    fi
+    # The aggregator accepts a fragment filed under another id, with the aggregate changed or
+    # not, so the lag must not hide one: the FIRST line of each changed fragment names its stem.
+    if [ "$rc" = 0 ]; then
         while IFS= read -r name; do
             case "$name" in *.yaml) ;; *) continue ;; esac
             [ -f "$td/entries/${name##*/}" ] || continue
             stem=${name##*/}; stem=${stem%.yaml}
-            if ! grep -Eq -- "^- id: ['\"]?${stem//./\\.}['\"]?[[:space:]]*\$" "$td/entries/${name##*/}"; then
+            first=$(head -n 1 -- "$td/entries/${name##*/}")
+            if ! grep -Eq -- "^- id: ['\"]?${stem//./\\.}['\"]?[[:space:]]*\$" <<<"$first"; then
                 rc=1; out="$name does not start its mapping with '- id: $stem'"
+                what="MISFILED: a fragment at head carries another id than its filename"
             fi
         done < <(printf '%s\n' "$frag_paths")
-        what="UNREADABLE: the fragments at head do not build $ROADMAP_FILE"
     fi
     rm -rf -- "${td:?}"
     if [ "$rc" = 0 ] && [ "$roadmap_changed" = 1 ]; then
@@ -308,6 +314,40 @@ judge() {
 }
 
 # ---------------------------------------------------------------------------
+# --mutants: plant each defect in a copy of this guard and require the self-test to go red.
+# A mutant that survives means the case table cannot tell the guard from a broken one.
+mutants() {
+    local m copy survived=0 killed=0 name
+    for m in lag-strict id-check-off first-line-off drift-off; do
+        copy="$REPO_ROOT/scripts/zz-mut-${m}.sh"
+        python3 - "$REPO_ROOT/scripts/$PROG" "$copy" "$m" <<'PY'
+import sys
+src, dst, m = sys.argv[1:4]
+t = open(src, encoding="utf-8").read()
+subs = {
+    "lag-strict": ('if [ "$roadmap_changed" = 1 ]; then\n        out=$(python3', 'if true; then\n        out=$(python3'),
+    "id-check-off": ('if [ "$rc" = 0 ]; then\n        while IFS= read -r name', 'if false; then\n        while IFS= read -r name'),
+    "first-line-off": ('first=$(head -n 1 -- "$td/entries/${name##*/}")', 'first=$(cat -- "$td/entries/${name##*/}")'),
+    "drift-off": ('rc=$?\n        what="DRIFT', 'rc=0\n        what="DRIFT'),
+}
+a, b = subs[m]
+if a not in t:
+    sys.exit("mutant %s: site not found" % m)
+# the first site is the guard's own; this table, further down, quotes the same text
+open(dst, "w", encoding="utf-8").write(t.replace(a, b, 1))
+PY
+        [ -f "$copy" ] || { printf 'FAIL  mutant %s could not be planted\n' "$m"; survived=$((survived + 1)); continue; }
+        if bash "$copy" --self-test >/dev/null 2>&1; then
+            printf 'FAIL  mutant %s SURVIVED the self-test\n' "$m"; survived=$((survived + 1))
+        else
+            printf 'ok    mutant %s killed\n' "$m"; killed=$((killed + 1))
+        fi
+        name="$copy"; rm -f -- "${name:?}"
+    done
+    printf '%s/4 mutants killed\n' "$killed"
+    [ "$survived" = 0 ]
+}
+
 # --self-test: hermetic fixture repos under mktemp -d. No file in this repo is
 # read as data and none is written.
 # ---------------------------------------------------------------------------
@@ -405,9 +445,21 @@ self_test() {
         commit_all "$1"
     }
     b_fragment_unreadable() {
-        # two fragments claim one id: the aggregator refuses (duplicate id among fragments)
+        # two fragments claim one id (the aggregator keys on the filename and accepts this)
         printf -- '- id: PMAT-200\n  title: one\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         printf -- '- id: PMAT-200\n  title: two\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        commit_all "$1"
+    }
+    b_fragment_misfiled() {
+        # no duplicate id: only the first-line stem check can see this one
+        printf -- '- id: PMAT-999\n  title: filed under the wrong name\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        commit_all "$1"
+    }
+    b_fragment_misfiled_regen() {
+        # the aggregate IS regenerated (the DRIFT branch runs, clean), the id is right, but it is
+        # not on the FIRST line: a grep that accepts "- id: stem" anywhere would let this through
+        printf -- '# note\n- id: PMAT-201\n  title: id not first\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        python3 "$REPO_ROOT/scripts/lib/roadmap_fragments.py" aggregate --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1
         commit_all "$1"
     }
     b_unrelated() {
@@ -529,8 +581,12 @@ PY
         0 'may lag' b_fragment_no_regen
     row 'the aggregate CHANGED but is not aggregate(entries/) -> REFUSE, naming the drift' \
         1 'FAIL  DRIFT' b_fragment_stale_aggregate
-    row 'entries-only PR whose fragment the aggregator cannot read -> REFUSE' \
-        1 'FAIL  UNREADABLE' b_fragment_unreadable
+    row 'entries-only PR whose fragment carries the id of another fragment -> REFUSE' \
+        1 'FAIL  MISFILED' b_fragment_unreadable
+    row 'a fragment filed under another id (an id no other fragment carries), aggregate not in the diff -> REFUSE' \
+        1 'FAIL  MISFILED' b_fragment_misfiled
+    row 'a fragment whose id is not its first line, aggregate regenerated in the diff -> REFUSE' \
+        1 'FAIL  MISFILED' b_fragment_misfiled_regen
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
@@ -623,6 +679,7 @@ PY
 
 # ---------------------------------------------------------------------------
 case "${1:-}" in
+    --mutants) mutants; exit $? ;;
     --self-test|--selftest) unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH; self_test; exit $? ;;
     --help|-h) usage ;;
     --*) usage ;;
