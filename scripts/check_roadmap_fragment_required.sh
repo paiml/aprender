@@ -325,7 +325,9 @@ judge() {
             stem=${name##*/}; stem=${stem%.yaml}
             first=$(head -n 1 -- "$td/entries/${name##*/}")
             # one entry per fragment: a second top-level `- ` item would carry an id nobody checks
-            nitems=$(grep -c '^- id:' -- "$td/entries/${name##*/}")   # how split_entries cuts a fragment into entries
+            # a top-level item is "- id:", or any "- key:" line whose next line is an indented key (a second
+            # item may open with another key); prose bullets inside a scalar are not followed by one
+            nitems=$(awk '{ l[NR] = $0 } END { n = 0; for (i = 1; i <= NR; i++) { if (l[i] ~ /^- id:/) n++; else if (l[i] ~ /^- [A-Za-z_]+:/ && l[i+1] ~ /^  [A-Za-z_]+:/) n++ } print n }' "$td/entries/${name##*/}")
             if [ "$nitems" != 1 ]; then
                 rc=1; out="${out:+$out
 }$name holds $nitems top-level \"- id:\" entries, want exactly 1"
@@ -593,6 +595,10 @@ self_test() {
         printf -- '- id: PMAT-200\n  title: wrong extension\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yml"
         commit_all "$1"
     }
+    b_fragment_second_item_other_key() {
+        printf -- '- id: PMAT-201\n  status: planned\n- title: smuggled\n  id: PMAT-6270\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        commit_all "$1"
+    }
     b_fragment_deleted() {
         git -C "$1" rm -q "$1/$ENTRIES_DIR/PMAT-100.yaml"
         commit_all "$1"
@@ -783,6 +789,8 @@ PY
         0 'may lag' b_adopt_unchanged
     row 'a subfolder copy shadowing a real fragment -> REFUSE' \
         1 'BADPATH' b_fragment_subfolder_shadow
+    row 'a second item that opens with another key than id -> REFUSE' \
+        1 'holds 2 top-level' b_fragment_second_item_other_key
     row 'a stem with a regex operator is compared as data -> REFUSE' \
         1 'MISFILED' b_fragment_stem_is_data
     row 'a fragment with the .yml extension -> REFUSE, never a skipped PASS' \
