@@ -10,8 +10,9 @@
   spec: null
   acceptance_criteria:
   - 'a diff that changes entries/ and not roadmap.yaml passes check_roadmap_fragment_required.sh; the aggregate may lag until the bump PR'
+  - 'the bump PR (a diff that only regenerates roadmap.yaml from fragments already at head) passes; a hand-written aggregate entry still fails'
   - 'a diff that changes roadmap.yaml must still equal aggregate(entries/); a fragment whose first line is not its own id is refused, with or without the aggregate in the diff'
-  - '`--mutants` plants four defects (lag-strict, id-check-off, first-line-off, drift-off); each turns the self-test red'
+  - '`--mutants` plants five defects (lag-strict, id-check-off, first-line-off, drift-off, bump-license-off); each turns the self-test red'
   phases: []
   subtasks: []
   estimated_effort: null

@@ -231,6 +231,14 @@ judge() {
             printf 'ok    %-8s %s — %s/%s.yaml changes in the same diff\n' "$verdict" "$eid" "$ENTRIES_DIR" "$eid"
             continue
         fi
+        # The bump PR regenerates an aggregate that lagged fragments landed earlier: the fragment is
+        # at head though not in this diff. That is licensed only because rule 2 below then requires
+        # the aggregate to equal aggregate(entries/), so the roadmap block cannot differ from it.
+        if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then
+            printf 'ok    %-8s %s — %s/%s.yaml is already at head; rule 2 proves the aggregate regenerates it\n' \
+                "$verdict" "$eid" "$ENTRIES_DIR" "$eid"
+            continue
+        fi
         violations=$((violations + 1))
         if filename_safe "$eid"; then
             printf 'FAIL  %-8s %s in %s with NO change to %s/%s.yaml — a roadmap edit without its fragment\n' \
@@ -279,13 +287,15 @@ judge() {
     # The aggregator accepts a fragment filed under another id, with the aggregate changed or
     # not, so the lag must not hide one: the FIRST line of each changed fragment names its stem.
     if [ "$rc" = 0 ]; then
+        out=""
         while IFS= read -r name; do
             case "$name" in *.yaml) ;; *) continue ;; esac
             [ -f "$td/entries/${name##*/}" ] || continue
             stem=${name##*/}; stem=${stem%.yaml}
             first=$(head -n 1 -- "$td/entries/${name##*/}")
             if ! grep -Eq -- "^- id: ['\"]?${stem//./\\.}['\"]?[[:space:]]*\$" <<<"$first"; then
-                rc=1; out="$name does not start its mapping with '- id: $stem'"
+                rc=1; out="${out:+$out
+}$name does not start its mapping with '- id: $stem'"
                 what="MISFILED: a fragment at head carries another id than its filename"
             fi
         done < <(printf '%s\n' "$frag_paths")
@@ -318,7 +328,7 @@ judge() {
 # A mutant that survives means the case table cannot tell the guard from a broken one.
 mutants() {
     local m copy survived=0 killed=0 name
-    for m in lag-strict id-check-off first-line-off drift-off; do
+    for m in lag-strict id-check-off first-line-off drift-off bump-license-off; do
         copy="$REPO_ROOT/scripts/zz-mut-${m}.sh"
         python3 - "$REPO_ROOT/scripts/$PROG" "$copy" "$m" <<'PY'
 import sys
@@ -326,8 +336,9 @@ src, dst, m = sys.argv[1:4]
 t = open(src, encoding="utf-8").read()
 subs = {
     "lag-strict": ('if [ "$roadmap_changed" = 1 ]; then\n        out=$(python3', 'if true; then\n        out=$(python3'),
-    "id-check-off": ('if [ "$rc" = 0 ]; then\n        while IFS= read -r name', 'if false; then\n        while IFS= read -r name'),
+    "id-check-off": ('if [ "$rc" = 0 ]; then\n        out=""', 'if false; then\n        out=""'),
     "first-line-off": ('first=$(head -n 1 -- "$td/entries/${name##*/}")', 'first=$(cat -- "$td/entries/${name##*/}")'),
+    "bump-license-off": ('if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then', 'if false; then'),
     "drift-off": ('rc=$?\n        what="DRIFT', 'rc=0\n        what="DRIFT'),
 }
 a, b = subs[m]
@@ -344,7 +355,7 @@ PY
         fi
         name="$copy"; rm -f -- "${name:?}"
     done
-    printf '%s/4 mutants killed\n' "$killed"
+    printf '%s/5 mutants killed\n' "$killed"
     [ "$survived" = 0 ]
 }
 
@@ -442,6 +453,20 @@ self_test() {
     b_fragment_stale_aggregate() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         printf '# hand edit\n' >>"$1/$ROADMAP_FILE"
+        commit_all "$1"
+    }
+    # The bump PR: the fragment landed earlier (the aggregate lags), and this diff only regenerates.
+    b_bump_regen() {
+        printf -- '- id: PMAT-200\n  title: landed earlier\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+        python3 "$REPO_ROOT/scripts/lib/roadmap_fragments.py" aggregate --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1
+        commit_all "$1"
+    }
+    # The bump shape, but the aggregate entry is hand-written and differs from the fragment.
+    b_bump_tampered() {
+        printf -- '- id: PMAT-200\n  title: landed earlier\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+        printf -- '- id: PMAT-200\n  title: rewritten by hand\n  status: completed\n' >>"$1/$ROADMAP_FILE"
         commit_all "$1"
     }
     b_fragment_unreadable() {
@@ -579,6 +604,10 @@ PY
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
     row 'entries-only PR: fragment added, aggregate not in the diff -> PASS (it lags until the bump PR)' \
         0 'may lag' b_fragment_no_regen
+    row 'the BUMP PR: only regenerates an aggregate that lagged fragments already on the base -> PASS' \
+        0 'PASS' b_bump_regen
+    row 'the bump shape, but the aggregate entry differs from the fragment already at head -> REFUSE' \
+        1 'FAIL  DRIFT' b_bump_tampered
     row 'the aggregate CHANGED but is not aggregate(entries/) -> REFUSE, naming the drift' \
         1 'FAIL  DRIFT' b_fragment_stale_aggregate
     row 'entries-only PR whose fragment carries the id of another fragment -> REFUSE' \
