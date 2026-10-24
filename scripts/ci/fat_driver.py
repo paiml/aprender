@@ -1681,6 +1681,24 @@ def _st_checkout_fetch_timeout(row, clone):
         (ok, seen, "timed out" in sec.log.getvalue()), (True, [CHECKOUT_FETCH_TIMEOUT], True))
 
 
+def _st_checkout_undeletable(row, clone, euid):
+    """The tag cannot be deleted (read-only refs/tags). Root ignores modes, so no row runs there; True if one did."""
+    import io
+    if euid == 0:
+        return False
+    sec = clone("d6")
+    rt = sec.workspace / ".git" / "refs" / "tags"
+    rt.chmod(0o555)
+    sec.log = io.StringIO()
+    try:
+        ok, _ = uses_checkout(sec, {}, None)
+    finally:
+        rt.chmod(0o755)
+    row("checkout depth 1: a tag that cannot be deleted fails the checkout and logs why",
+        (ok, "git tag -d " in sec.log.getvalue()), (False, True))
+    return True
+
+
 def _st_checkout_tags(row, src, g, clone):
     # A tag ref whose object the clone never received (the runner sets tag.sort, which makes
     # `git tag -l` read every tag object and die rc128). The fetch repairs it; a tag no remote
@@ -1719,18 +1737,9 @@ def _st_checkout_tags(row, src, g, clone):
         row("checkout depth 1: a tag moved on the remote does not fail the fetch",
             (ok, "::warning::" in sec.log.getvalue()), (True, False))
         _st_checkout_fetch_timeout(row, clone)
-        # the tag cannot be deleted (read-only refs/tags); root ignores modes, so the row is not run there
-        if os.geteuid() != 0:
-            sec = clone("d6")
-            rt = sec.workspace / ".git" / "refs" / "tags"
-            rt.chmod(0o555)
-            sec.log = io.StringIO()
-            try:
-                ok, _ = uses_checkout(sec, {}, None)
-            finally:
-                rt.chmod(0o755)
-            row("checkout depth 1: a tag that cannot be deleted fails the checkout and logs why",
-                (ok, "git tag -d " in sec.log.getvalue()), (False, True))
+        row("checkout depth 1: the undeletable-tag row is not run as root (euid 0)",
+            _st_checkout_undeletable(row, clone, 0), False)
+        _st_checkout_undeletable(row, clone, os.geteuid())
     finally:
         for k, v in old_env.items():
             os.environ.pop(k, None) if v is None else os.environ.__setitem__(k, v)
