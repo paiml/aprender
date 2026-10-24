@@ -242,10 +242,12 @@ GH2EOF
   fx="$(mktemp)"; Q="'"
   printf 'on:\n  pull_request:\n  merge_group:\njobs:\n  planted:\n    if: ${{ github.event_name != %spull_request%s }}\n  both:\n    if: ${{ github.event_name != %spull_request%s || x }}\n' "$Q" "$Q" "$Q" "$Q" > "$fx"
   printf '  allmq:\n    if: github.event_name == %smerge_group%s || github.event_name == %spush%s\n' "$Q" "$Q" "$Q" "$Q" >> "$fx"
+  printf '  prpush:\n    if: github.event_name == %spull_request%s && github.event_name != %spull_request_target%s\n' "$Q" "$Q" "$Q" "$Q" >> "$fx"
   printf '  child:\n    needs: [planted]\n  grand:\n    needs:\n      - child\n  ok:\n    needs: both\n' >> "$fx"
   eq 'static: a planted merge-queue-only required check is caught' "$(required_is_mq_only planted "$fx")" planted
   eq 'static: an if with || that can run on a PR is not merge-queue-only' "$(required_is_mq_only both "$fx")" ''
   eq 'static: an if whose every || branch is merge-queue-only is caught' "$(required_is_mq_only allmq "$fx")" allmq
+  eq 'static: an if that names pull_request alongside a != pull_request_target token can run on a PR' "$(required_is_mq_only prpush "$fx")" ''
   eq 'static: a job that needs a merge-queue-only job is caught' "$(required_is_mq_only child "$fx")" child
   eq 'static: needs reaches through a chain (block list)' "$(required_is_mq_only grand "$fx")" grand
   printf '  x-main:\n    if: ${{ github.event_name != %spull_request%s }}\n  y-child:\n    needs: [x-main, pr-light]\n  z-always:\n    needs: [x-main]\n    if: always()\n' "$Q" "$Q" >> "$fx"
