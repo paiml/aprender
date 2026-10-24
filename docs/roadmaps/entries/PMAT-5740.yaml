@@ -1,0 +1,19 @@
+- id: PMAT-5740
+  github_issue: 5740
+  item_type: task
+  title: 'ci: fat_driver prints the first failing line of a failed section into the job log'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T10:08:50Z
+  updated: 2026-10-19T10:08:50Z
+  spec: null
+  acceptance_criteria:
+  - 'Print the first ::error:: / failing-step line of a failed section next to the result line and in the verdict (GH #5740).'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

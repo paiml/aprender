@@ -744,8 +744,8 @@ aprender-profile,aprender-profile validate -- <COMMAND> (golden-baseline trace v
 aprender-ptx-debug,aprender-ptx-debug analyze,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-ptx-debug/src/cli.rs:49,high
 aprender-ptx-debug,aprender-ptx-debug gen-fkr,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-ptx-debug/src/cli.rs:53,high
 aprender-ptx-debug,aprender-ptx-debug version,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-ptx-debug/src/cli.rs:56,high
-aprender-test-cli,"GET / (dev server, static)",6,UNKNOWN,NONE,no,12,test-harness,crates/aprender-test-cli/src/dev_server.rs:338,medium
-aprender-test-cli,"GET /ws (dev server, WebSocket)",6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-test-cli/src/dev_server.rs:330,medium
+aprender-test-cli,"GET / (dev server, static)",6,UNKNOWN,NONE,no,12,test-harness,crates/aprender-test-cli/src/dev_server.rs:337,medium
+aprender-test-cli,"GET /ws (dev server, WebSocket)",6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-test-cli/src/dev_server.rs:329,medium
 aprender-test-cli,aprender-test-cli animation check,6,UNKNOWN,NONE,no,12,test-harness,crates/aprender-test-cli/src/commands.rs:298,high
 aprender-test-cli,aprender-test-cli audio check,6,UNKNOWN,NONE,no,12,test-harness,crates/aprender-test-cli/src/commands.rs:202,high
 aprender-test-cli,aprender-test-cli av-sync check,6,UNKNOWN,NONE,no,12,test-harness,crates/aprender-test-cli/src/commands.rs:132,high

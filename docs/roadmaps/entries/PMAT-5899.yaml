@@ -1,0 +1,18 @@
+- id: PMAT-5899
+  github_issue: 5899
+  item_type: task
+  title: 'FLOW-007 B1: repo_flow binding_station argmin of bounds'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T21:55:20Z
+  updated: 2026-10-21T21:55:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
