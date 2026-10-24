@@ -26023,10 +26023,11 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   spec: null
   acceptance_criteria:
   - 'cargo deny check advisories passes with no new exemption'
+  - 'Cargo.lock changes only tokio version 1.52.3 -> 1.53.3 and its checksum (2 lines); no deny.toml change'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'Measured at 509a74b498 (tokio 1.53.3): cargo deny check advisories -> advisories ok; cargo metadata --locked -> exit 0. The same entry appears in roadmap.yaml because that file is the generated aggregate of entries/ (scripts/lib/roadmap_fragments.py aggregate --write); the fragment is the source.'
   epic: null
