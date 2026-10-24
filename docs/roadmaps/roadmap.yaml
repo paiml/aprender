@@ -25878,6 +25878,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5923
+- id: PMAT-6206
+  github_issue: 6206
+  item_type: task
+  title: 'CI: fat_driver depth-1 checkout fetches tags first and surfaces git stderr'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-24T00:17:40Z
+  updated: 2026-10-24T00:17:40Z
+  spec: null
+  acceptance_criteria:
+  - 'fat_driver.py uses_checkout (fetch-depth 1) runs git fetch --tags --force origin before git tag -l, and a failing git tag -l or git tag -d fails the checkout with git stderr and rc in the section log; the self-test rows (missing tag object fetched, unfetchable tag fails with stderr, moved tag does not fail the fetch, undeletable tag fails with why) each turn red under the mutants that drop the fetch, --force, the failure check, the stderr or the rc'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
 - id: PMAT-6208
   github_issue: 6208
   item_type: bug
