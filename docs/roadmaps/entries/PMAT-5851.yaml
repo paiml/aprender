@@ -1,0 +1,19 @@
+- id: PMAT-5851
+  github_issue: 5851
+  item_type: task
+  title: 'ci: run cancel/rerun helper reads each run''s final state back, exits non-zero on any miss'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T11:38:41Z
+  updated: 2026-10-21T11:38:41Z
+  spec: null
+  acceptance_criteria:
+  - Noah 11:37Z item 2. Unsplit zsh id list cancelled 0 of 7 silently at 11:29Z.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

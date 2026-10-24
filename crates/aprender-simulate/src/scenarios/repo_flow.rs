@@ -103,6 +103,7 @@ pub fn repo_preset(name: &str) -> Option<PrFlowConfig> {
         rev_mode: ReviewMode::Serial,
         rev_lanes: 0,
         rev_tiers: Vec::new(),
+        rev_lineages: Vec::new(),
     })
 }
 
@@ -305,5 +306,43 @@ mod tests {
     #[test]
     fn unknown_case_is_none() {
         assert!(repo_preset("nope").is_none());
+    }
+    /// FLOW-007 B1: the binding station is the argmin of the bounds, whatever the utilisation.
+    #[test]
+    fn binding_station_is_the_smallest_bound() {
+        for name in [
+            "rmedia-design",
+            "infra-today",
+            "infra-rule",
+            "infra-33",
+            "small-10",
+        ] {
+            let c = repo_preset(name).expect("case");
+            let r = run_repo_reference(&c);
+            let want = super::super::pr_flow::bounds(&c, &r)
+                .into_iter()
+                .min_by(|a, b| a.1.total_cmp(&b.1))
+                .map(|b| b.0)
+                .expect("four bounds");
+            assert_eq!(sim_block(name, &c, &r)["binding_station"], want, "{name}");
+        }
+    }
+
+    #[test]
+    fn a_cap_bound_scenario_reports_cap() {
+        let mut c = repo_preset("small-15").expect("case");
+        c.cap = 1;
+        c.n = 1000.0;
+        let r = run_repo_reference(&c);
+        assert_eq!(sim_block("capped", &c, &r)["binding_station"], "cap");
+    }
+
+    #[test]
+    fn an_author_starved_scenario_reports_supply() {
+        let mut c = repo_preset("small-15").expect("case");
+        c.n = 0.5;
+        c.cap = 1000;
+        let r = run_repo_reference(&c);
+        assert_eq!(sim_block("starved", &c, &r)["binding_station"], "supply");
     }
 }

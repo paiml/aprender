@@ -432,7 +432,7 @@ impl TraceAnalysis {
     pub fn calculate_critical_path(&mut self) {
         // Sort spans by duration descending
         let mut spans: Vec<_> = self.timeline.iter().collect();
-        spans.sort_by(|a, b| b.duration_us.cmp(&a.duration_us));
+        spans.sort_by_key(|a| std::cmp::Reverse(a.duration_us));
 
         // Take top contributors
         self.critical_path = spans
@@ -615,7 +615,7 @@ pub fn render_trace_report(analysis: &TraceAnalysis) -> String {
         );
 
         let mut stats: Vec<_> = analysis.syscall_breakdown.values().collect();
-        stats.sort_by(|a, b| b.total_us.cmp(&a.total_us));
+        stats.sort_by_key(|a| std::cmp::Reverse(a.total_us));
 
         for stat in stats.iter().take(10) {
             out.push_str(&format!(

@@ -431,8 +431,8 @@ impl StressRunner {
             }
 
             // Simulate vsync wait
-            if frame_time < frame_budget {
-                std::thread::sleep(frame_budget.checked_sub(frame_time).unwrap());
+            if let Some(wait) = frame_budget.checked_sub(frame_time) {
+                std::thread::sleep(wait);
             }
         }
 

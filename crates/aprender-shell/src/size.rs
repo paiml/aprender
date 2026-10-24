@@ -1,5 +1,4 @@
 impl MarkovModel {
-
     /// Number of unique n-grams
     pub fn ngram_count(&self) -> usize {
         self.ngrams.values().map(|m| m.len()).sum()
@@ -35,7 +34,7 @@ impl MarkovModel {
     pub fn top_commands(&self, count: usize) -> Vec<(String, u32)> {
         let mut cmds: Vec<_> = Vec::with_capacity(self.command_freq.len());
         cmds.extend(self.command_freq.iter().map(|(k, v)| (k.clone(), *v)));
-        cmds.sort_unstable_by(|a, b| b.1.cmp(&a.1));
+        cmds.sort_unstable_by_key(|a| std::cmp::Reverse(a.1));
         cmds.truncate(count);
         cmds
     }
@@ -71,15 +70,7 @@ impl MarkovModel {
 
             // For command completion, check if target starts with any suggestion
             // (e.g., "git commit -m" matches suggestion "git commit")
-            let mut found_rank: Option<usize> = None;
-            for (rank, (suggestion, _)) in suggestions.iter().enumerate() {
-                if cmd.starts_with(suggestion.as_str()) || suggestion.starts_with(cmd) {
-                    found_rank = Some(rank);
-                    break;
-                }
-            }
-
-            if let Some(rank) = found_rank {
+            if let Some(rank) = completion_rank(cmd, &suggestions) {
                 if rank == 0 {
                     hit_1_sum += 1.0;
                 }
@@ -109,4 +100,11 @@ impl MarkovModel {
             metrics,
         }
     }
+}
+
+/// Rank of the first suggestion that prefix-matches `cmd` in either direction.
+fn completion_rank(cmd: &str, suggestions: &[(String, f32)]) -> Option<usize> {
+    suggestions.iter().position(|(suggestion, _)| {
+        cmd.starts_with(suggestion.as_str()) || suggestion.starts_with(cmd)
+    })
 }

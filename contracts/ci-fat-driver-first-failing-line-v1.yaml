@@ -1,0 +1,83 @@
+# ci-fat-driver-first-failing-line-v1 — PMAT-5740 (GH #5740): a failed x86-main
+# section names its first failing line in the job log.
+#
+# Before: the driver printed `section N: failure in Ns` and `::error::section N:
+# failure`; the cause sat in the section's own log, dumped only inside a ::group.
+# A red whose group was cut off was not measured.
+#
+# Verification level:
+#   * L1 — `aprender-ci-tools section-first-fail` exists (crates/aprender-ci-tools/src/section_first_fail.rs).
+#   * L2 — falsified by 7 Rust tests (section_first_fail::tests); mutations `starts_with("::error")`
+#          -> `"::errorX"` (3 tests fail) and dropping `|| coe` (1 fails), each restored GREEN.
+#   * L3/L4 — NOT APPLICABLE: a CI log-reporting rule, not a kernel.
+#   * WHAT BLOCKS: unchanged. One ci.yml step (if: failure()) prints a log line; the driver,
+#     scripts/ci/fat_driver.py, is not edited (its complexity is already over the hook).
+name: ci-fat-driver-first-failing-line
+version: "1.0.0"
+scope: >
+  What the section driver prints into the job log when a section ends in any
+  result other than success or skipped. Out of scope: the verdict rule and the
+  full per-section log dump.
+status: active
+
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: '2026-10-19'
+  last_modified: '2026-10-19'
+  author: PAIML Engineering
+  references:
+    - 'crates/aprender-ci-tools/src/section_first_fail.rs first_failing_line, report, report_results'
+    - '.github/workflows/ci.yml x86-main step First failing line of each failed section'
+  description: >
+    After the driver's wait step fails, a step prints one `::error::section N first failing line: …`
+    beside its result line: the first `::error` line of its log, else the first
+    panic or `error:` line. A clean or missing log prints nothing.
+
+equations:
+  failed_section_names_its_cause:
+    formula: |
+      result(n) not in {success, skipped} and log(n) has a failing line  =>  job log has "section n first failing line: <that line>"
+      the line is the first ::error line, else the first panic / error: line
+    domain: 'one section log'
+    codomain: 'a single line of at most 300 chars, or none'
+    invariants:
+    - 'first_failing_line prefers the first ::error line over a later or earlier panic line'
+    - 'a clean or absent log yields the empty string'
+    preconditions:
+    - 'the section has ended'
+    postconditions:
+    - 'the verdict and results output are unchanged'
+
+proof_obligations:
+  - id: CFF-OB-001
+    statement: "A failed section's first failing line is printed into the job log."
+    discharged_by: falsification_tests[0]
+
+falsification_tests:
+  - id: CFF-F-001
+    rule: the first failing line of a failed section reaches the job log
+    prediction: >-
+      On a planted log, ::error:: lines yield the first one, a bare panic yields
+      that line, a clean log and a missing log yield none; results mode reads only
+      failed, blocking sections (7 tests).
+    test: 'cargo test -p aprender-ci-tools --lib section_first_fail'
+    if_fails: >-
+      a red whose ::group dump is cut off names no cause and is not measured
+    mutation: >-
+      starts_with("::error") -> "::errorX" fails 3 tests; dropping the continue_on_error skip fails 1; each restored GREEN (2026-10-19).
+
+  - id: CFF-F-002
+    rule: a rustc killed by a signal under sccache is named, not shown as a compile error (GH #5750)
+    prediction: >-
+      A log with `could not compile` then an sccache `(exit status: 2)` yields
+      `rustc killed by signal ...` naming the crate; an `(exit status: 1)` compile
+      error keeps its own `error:` line.
+    test: 'cargo test -p aprender-ci-tools --lib section_first_fail'
+    if_fails: >-
+      an OOM-killed shard reads as a compile error and nobody looks at the runner
+    mutation: >-
+      "(exit status: 2)" -> "(exit status: 3)" fails 1 test; restored GREEN (2026-10-19). Dropping the real-error-first guard fails 1 test (a real error before the exit-2 line is not masked); restored GREEN.
+
+non_goals:
+  - "Changing which sections block, or the per-section log dump."
