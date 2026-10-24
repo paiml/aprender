@@ -37,6 +37,10 @@ sovereign-ci:
 matrix-pins:
   workspace-test-shard:
     - {shard: 1, shards: 1}
+  guard-cargo-shard:
+    - {shard: 1, shards: 3}
+    - {shard: 2, shards: 3}
+    - {shard: 3, shards: 3}
   workspace-test-shard-merge_group:
     - {shard: 1, shards: 1}
   determinism:
@@ -1751,7 +1755,18 @@ jobs:
   #
   # No `needs:` — running these AFTER workspace-test would serialise ~40
   # minutes onto every green run for no ordering that anything requires.
-  guard-cargo:
+  guard-cargo-shard:
+    name: guard-cargo-shard (${{ matrix.shard }}/${{ matrix.shards }})
+    # #6255: the 77 guard-cargo items ran serially in ONE container, 1192 s of the 1286 s merge-queue `guards` job
+    # (run 10:09Z 2026-10-23: sum of items 1190.8 s; warm target dir saves 61 s of it). Three shards run in
+    # parallel; shard I runs the steps with m<N> where N mod 3 = I-1 (scripts/ci_guards.sh --shard I/K).
+    # The verdict job `guard-cargo` below keeps the name the gate reads. Measured per-shard sums (that run): 452 s max.
+    strategy:
+      fail-fast: false
+      matrix:
+        # NOTE: the matrix-pins above override this matrix (fat_driver.py)
+        shard: [1]
+        shards: [1]
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
     # the BSE-05 formula rather than being derived from it.
@@ -1777,7 +1792,7 @@ jobs:
       # This job's OWN per-run target dir. The `-guards` suffix is the whole
       # point: workspace-test mounts `run-<RUN_ID>` and this job must never
       # resolve to the same path. Reaped by the same `run-*` sweep on intel.
-      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards
+      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards-${{ matrix.shard }}
       # PMAT-238 (paiml/infra#435): the CARGO_HOME mount is the WHOLE cargo
       # home, not `registry/` alone. `.package-cache` and
       # `.package-cache-mutate` are cargo's flock files and they live beside
@@ -1897,7 +1912,27 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
-        run: bash scripts/ci_guards.sh guard-cargo
+          GUARD_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
+        run: bash scripts/ci_guards.sh --shard "$GUARD_SHARD" guard-cargo
+
+  # #6255: the check-run the gate reads is still named `guard-cargo`: ONE job that fans the shards in, exactly as
+  # `workspace-test` fans in workspace-test-shard. `if: always()` so a red shard is a red check, never a skipped one.
+  guard-cargo:
+    needs: [guard-cargo-shard]
+    if: always()
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    steps:
+      - name: Every shard passed
+        env:
+          SHARD_RESULT: ${{ needs.guard-cargo-shard.result }}
+        run: |
+          set -euo pipefail
+          printf 'guard-cargo-shard matrix result: %s\n' "$SHARD_RESULT"
+          case "$SHARD_RESULT" in
+            success) echo "guard-cargo: all shards green" ;;
+            *) echo "::error::guard-cargo: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1 ;;
+          esac
 
   guard-cargo-steps:
     # MANIFEST, never run by GitHub (`if: false`). These are guard-cargo's guard steps,
