@@ -285,7 +285,7 @@ cmd_run() {
     # 4800 s per step, not 1200: car's whole `guard_tree.sh --no-cargo` universe is
     # ONE manifest step and took 2481 s on CI (run 36229622731, x86-main, 2026-09-26),
     # so a 1200 s cap would kill it on every run. ~2x the measured worst step.
-    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job
+    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job shard_i="" shard_k=""
     # A step that outlives the JOB (guard-cargo was killed at 3567 s and 3494 s, #4914 #4917, #4919)
     # dies before its own --step-timeout fires, and the log never said which step it was. Every
     # CI_GUARDS_HEARTBEAT seconds (default 300, 0 = off) the running step is named on stderr.
@@ -295,6 +295,7 @@ cmd_run() {
         case "$1" in
             --only) [ "$#" -ge 2 ] || die "--only needs a value"; only=$2; shift 2 ;;
             --step-timeout) [ "$#" -ge 2 ] || die "--step-timeout needs a value"; timeout=$2; shift 2 ;;
+            --shard) [ "$#" -ge 2 ] || die "--shard needs I/K"; [[ $2 =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ] || die "--shard wants I/K with 1<=I<=K, got $2"; shard_i=${BASH_REMATCH[1]}; shard_k=${BASH_REMATCH[2]}; shift 2 ;;
             --stream) stream=1; shift ;;
             --no-stream) stream=0; shift ;;
             -*) die "run: unknown flag $1" ;;
@@ -404,6 +405,8 @@ cmd_run() {
                 ek+=("$k"); ev+=("$v")
             done
             if [ -n "$only" ] && ! [[ $name =~ $only ]]; then continue; fi
+            # --shard I/K (#6255): step idx n runs in shard (n mod K)+1, so the K shards partition the manifest exactly once
+            if [ -n "$shard_k" ]; then [[ $idx =~ ^m([0-9]+)$ ]] || die "--shard: step id <$idx> is not m<N>"; [ $((BASH_REMATCH[1] % shard_k)) -eq $((shard_i - 1)) ] || continue; fi
             reason=""
             if ! in_ci; then
                 if [[ $cond == *event_name* ]]; then reason="if: needs a CI event"
@@ -569,6 +572,11 @@ cmd_run() {
 }
 
 cmd_list() {
+    local shard_i="" shard_k=""
+    if [ "${1:-}" = --shard ]; then
+        [ "$#" -ge 2 ] && [[ $2 =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ] || die "--shard wants I/K with 1<=I<=K"
+        shard_i=${BASH_REMATCH[1]}; shard_k=${BASH_REMATCH[2]}; shift 2
+    fi
     local job ci=false
     in_ci && ci=true
     load_jobs
@@ -578,7 +586,7 @@ cmd_list() {
     for job in "${names[@]}"; do
         echo "== $job"
         [ "$ci" = true ] && [ "$(jqj --arg m "$job$MANIFEST_SUFFIX" 'has($m)')" = true ] || job_steps_ok "$job"
-        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)"'
+        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)"'  | { if [ -n "$shard_k" ]; then awk -v i="$shard_i" -v k="$shard_k" '/^==/{print;next} {n=$1; sub(/^m/,"",n); if (n % k == i - 1) print}'; else cat; fi; }
     done
 }
 
