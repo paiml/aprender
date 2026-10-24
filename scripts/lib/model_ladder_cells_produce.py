@@ -134,6 +134,89 @@ def gpu_memory():
         return None, None
 
 
+GIB = 1024 * MIB
+
+
+class Admit:
+    """Per-cell memory admission (#6211). A 27B cell is a multi-GB `apr serve`/`apr run`; started while the host
+    is short of memory or while another runner job is live, it swaps the host under that job (gx10 swap 99%,
+    0.71.3 ladder). Before EACH cell: the host's free memory must cover the cell's own arithmetic plus a
+    headroom, swap in use must be under a cap, and no runner job other than our own ancestors may be live.
+    Any answer the probe cannot give is a no: an unmeasured host never admits. A refused cell is recorded
+    `not_measured` with the reason and is NOT run; the judge reads that as not a pass (nightly LAB lane)."""
+
+    def __init__(self, a):
+        self.on = a.admit
+        self.headroom, self.swap_pct, self.max_jobs = a.admit_headroom_gib * GIB, a.admit_swap_pct, a.admit_runner_jobs
+        self.probe_file, self.rung_tok = a.admit_probe_file, {}
+
+    @staticmethod
+    def _ancestors():
+        pids, p = set(), os.getpid()
+        while p > 1 and p not in pids:
+            pids.add(p)
+            try:
+                p = int(open(f"/proc/{p}/stat").read().rsplit(")", 1)[1].split()[1])
+            except (OSError, ValueError, IndexError):
+                break
+        return pids
+
+    @classmethod
+    def _runner_jobs(cls):
+        mine, n = cls._ancestors(), 0
+        for d in os.listdir("/proc"):
+            if d.isdigit() and int(d) not in mine:
+                try:
+                    n += open(f"/proc/{d}/comm").read().strip() == "Runner.Worker"
+                except OSError:
+                    pass
+        return n
+
+    def host(self):
+        """-> {mem_available, swap_total, swap_free, runner_jobs}; a key is None when unreadable."""
+        if self.probe_file:
+            return json.load(open(self.probe_file))
+        h = {"mem_available": None, "swap_total": None, "swap_free": None, "runner_jobs": None}
+        try:
+            mi = dict(l.split(":", 1) for l in open("/proc/meminfo"))
+            for k, key in (("MemAvailable", "mem_available"), ("SwapTotal", "swap_total"), ("SwapFree", "swap_free")):
+                h[key] = int(mi[k].split()[0]) * 1024
+            h["runner_jobs"] = self._runner_jobs()
+        except (OSError, KeyError, ValueError):
+            pass
+        return h
+
+    def check(self, item, tok, rid, verb):
+        """-> None to run the cell, else the reason it is deferred. A serve cell is judged when its serve
+        starts (the rung's token count was noted by its run/chat/code cells); here it only notes the rung."""
+        if tok is not None:
+            self.rung_tok[rid] = tok
+        if not self.on or (verb == "serve" and tok is not None):
+            return None
+        tok = self.rung_tok.get(rid, tok)
+        h = self.host()
+        if any(h.get(k) is None for k in ("mem_available", "swap_total", "swap_free", "runner_jobs")):
+            return "admission: host memory or runner jobs unreadable, so nothing is admitted"
+        _fit, need = J.fits(item, 1 << 62, tok or 0)
+        return self.refusal(h, need or 0)
+
+    def refusal(self, h, need):
+        if h["runner_jobs"] > self.max_jobs:
+            return f"admission: {h['runner_jobs']} live runner job(s) on this host (max {self.max_jobs})"
+        used = (h["swap_total"] - h["swap_free"]) * 100 // h["swap_total"] if h["swap_total"] else 0
+        if used > self.swap_pct:
+            return f"admission: swap {used}% in use (max {self.swap_pct}%)"
+        if h["mem_available"] < need + self.headroom:
+            return f"admission: {h['mem_available']} B available < cell need {need} B + headroom {self.headroom} B"
+        return None
+
+
+def defer(row, why):
+    """The cell is not run: recorded, with the reason, as not_measured."""
+    row["verdict"], row["reason"] = "not_measured", why
+    return row
+
+
 # --------------------------------------------------------------------------------------- measure
 def build_prompt(tokens, chars_per_token):
     """A prompt of at least `tokens` tokens at the given density: the needle FIRST, then filler, then
@@ -373,6 +456,18 @@ def measure_run_sized(R, path, pf, prompt, target, density, cell):
     return row, prompt, density
 
 
+def cell_prompt(item, a, cell, density):
+    """-> (answer budget, prompt tokens aimed at, the prompt, the file it is written to)"""
+    rid, tok, mode = cell
+    ctx = item.get("context_length")
+    budget = a.max_tokens_thinking if mode == "on" else a.max_tokens
+    target = min(tok, int(ctx) - budget - 1) if ctx else tok
+    prompt = build_prompt(target, density)
+    pf = os.path.join(a.work, f"prompt-{rid}-{mode}.txt")
+    open(pf, "w").write(prompt)
+    return budget, target, prompt, pf
+
+
 def measure_mode(R, item, path, a, cell, verbs, density, rows, deferred):
     """One rung x one thinking mode: size its prompt, then measure its verbs, run first (it counts). -> density"""
     rid, tok, mode = cell
@@ -381,15 +476,13 @@ def measure_mode(R, item, path, a, cell, verbs, density, rows, deferred):
     # At the `declared` rung (tok == context_length) the prompt is context_length - budget - 1,
     # which the judge's `prompt_tokens >= tok` refuses: that conflict is the judge's to rule on
     # (reported on #3712), not this file's to hide.
-    ctx = item.get("context_length")
-    budget = a.max_tokens_thinking if mode == "on" else a.max_tokens
-    target = min(tok, int(ctx) - budget - 1) if ctx else tok
-    prompt = build_prompt(target, density)
-    pf = os.path.join(a.work, f"prompt-{rid}-{mode}.txt")
-    open(pf, "w").write(prompt)
+    budget, target, prompt, pf = cell_prompt(item, a, cell, density)
     measured = None
     for verb in sorted(verbs, key=lambda v: v != "run"):
         row = base_row(item, verb, mode, rid, budget)
+        if (why := a.admit_obj.check(item, tok, rid, verb)):
+            rows.append(defer(row, why))
+            continue
         if verb == "serve":
             rows.append(row)
             deferred.append((len(rows) - 1, prompt, mode, budget, measured))
@@ -403,11 +496,15 @@ def measure_mode(R, item, path, a, cell, verbs, density, rows, deferred):
     return density
 
 
-def measure_deferred(R, path, a, rows, deferred):
+def measure_deferred(R, item, path, a, rows, deferred):
     """The serve cells, on ONE serve per model, after every other cell of it (see measure_item)."""
     serve = None
     try:
         for i, prompt, mode, budget, measured in deferred:
+            why = a.admit_obj.check(item, None, rows[i]["context"], "serve")
+            if why:
+                rows[i] = defer(rows[i], why)
+                continue
             serve = serve or Serve(R, path, a.serve_ceiling)
             rows[i] = borrow_count(measure_serve(serve, prompt, mode, budget, rows[i], R.timeout), measured)
     finally:
@@ -438,7 +535,7 @@ def measure_item(R, item, path, L, rungs_doc, a):
     # and every cell after it (09-28 pilot, #3715). Deferring keeps ONE serve per model and never waits on ourselves.
     for (rid, tok), jobs in sorted(by_rung.items(), key=lambda kv: kv[0][1] or 0):
         density = measure_rung(R, item, path, a, (rid, tok), jobs, density, rows, deferred)
-    measure_deferred(R, path, a, rows, deferred)
+    measure_deferred(R, item, path, a, rows, deferred)
     return rows
 
 
@@ -475,12 +572,19 @@ def measure_inventory(R, a, L, rungs_doc, paths, dec):
     return rows, matched
 
 
+def tally(rows):
+    n = lambda v: sum(r["verdict"] == v for r in rows)
+    nm = f", {n('not_measured')} not_measured (admission)" if n("not_measured") else ""
+    return f"cells: {len(rows)} row(s), {n('pass')} pass, {n('refused')} refused{nm}"
+
+
 def cmd_measure(a):
     import yaml
     L = yaml.safe_load(open(a.ladder))["ladder"]
     rungs_doc = json.load(open(a.rungs))
     paths = dict(l.rstrip("\n").split("|", 1) for l in open(a.models) if "|" in l)
     R = Runner(a.apr, a.lock, a.lock_wait, a.timeout)
+    a.admit_obj = Admit(a)
     dec, drc = J.declaimed(L.get("cells") or {}, {h.get("id") for h in L.get("hosts") or []}, lambda w: print("cells: refused -- " + w, file=sys.stderr))
     if drc:
         return 1
@@ -491,8 +595,7 @@ def cmd_measure(a):
         print(f"cells: refused -- --only {a.only!r} names no inventory model; cells are measured per model", file=sys.stderr)
         return 2
     json.dump(rows, open(a.out, "w"), indent=1)
-    print(f"cells: {len(rows)} row(s), {sum(r['verdict'] == 'pass' for r in rows)} pass, "
-          f"{sum(r['verdict'] == 'refused' for r in rows)} refused")
+    print(tally(rows))
     return 0
 
 
@@ -519,6 +622,11 @@ def main(argv=None):
     m.add_argument("--max-tokens-thinking", type=int, default=1024, help="a think block must have room to CLOSE")
     m.add_argument("--chars-per-token", type=float, default=4.5)
     m.add_argument("--only", default="")
+    m.add_argument("--admit", action="store_true", help="per-cell memory admission (#6211): defer a cell as not_measured when the host says no")
+    m.add_argument("--admit-headroom-gib", type=int, default=8, help="free memory left after the cell's own need")
+    m.add_argument("--admit-swap-pct", type=int, default=25, help="max swap in use")
+    m.add_argument("--admit-runner-jobs", type=int, default=0, help="max live runner jobs other than our own ancestors")
+    m.add_argument("--admit-probe-file", default="", help="a JSON host reading to use instead of /proc (the case table's)")
     a = p.parse_args(argv)
     if a.cmd == "gpumem":
         t, f = gpu_memory()
