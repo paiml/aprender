@@ -1142,6 +1142,10 @@ jobs:
     steps:
       - name: plain step
         run: "true"
+  guard-w:
+    steps:
+      - name: writer step
+        run: echo "/x" >> "$GITHUB_PATH"
   guard-b:
     steps:
       - name: stub
@@ -1152,7 +1156,9 @@ jobs:
         run: "true"
 Y60
 out60="$(bash "$REPO_ROOT/scripts/lib/ci_guard_steps.sh" --workflow "$t60" list --shard 1/3 guard-a guard-b 2>&1)"; rc60=$?
+wout60="$(bash "$REPO_ROOT/scripts/lib/ci_guard_steps.sh" --workflow "$t60" list --shard 2/3 guard-w 2>&1)"; wrc60=$?
 rm -f "${t60:?}"
+[[ $wrc60 -eq 0 && $wout60 == *'writer step'* ]] || rc60=0   # a GITHUB_PATH/ENV writer with a non-m id is listed in every shard, as the run path runs it (seat B, #6286)
 if [ "$rc60" -ne 0 ] && [[ $out60 == *'step id <0> is not m<N>'* ]]; then
     pass_row "60: --list --shard refuses a non-m<N> id (rc=$rc60, named), even when a later job is clean"
 else

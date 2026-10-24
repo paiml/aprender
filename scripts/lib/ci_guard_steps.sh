@@ -588,7 +588,7 @@ cmd_list() {
     for job in "${names[@]}"; do
         echo "== $job"
         [ "$ci" = true ] && [ "$(jqj --arg m "$job$MANIFEST_SUFFIX" 'has($m)')" = true ] || job_steps_ok "$job"
-        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)\(if (.step.run // "" | tostring | test("(>>|tee -a)\\s*\"?\\$\\{?GITHUB_(PATH|ENV)")) then "\u0001" else "" end)"'  | { if [ -n "$shard_k" ]; then awk -v i="$shard_i" -v k="$shard_k" '/^==/{print;next} $1 !~ /^m[0-9]+$/{print "ci_guards: --shard: step id <" $1 "> is not m<N>" > "/dev/stderr"; bad=1; next} {n=substr($1,2); if (/\001/ || n % k == i - 1) {sub(/\001/,""); print}} END{exit bad}'; else tr -d '\001'; fi; } || rc=1   # a refusal on an earlier job must not be masked by the last job's status
+        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)\(if (.step.run // "" | tostring | test("(>>|tee -a)\\s*\"?\\$\\{?GITHUB_(PATH|ENV)")) then "\u0001" else "" end)"'  | { if [ -n "$shard_k" ]; then awk -v i="$shard_i" -v k="$shard_k" '/^==/{print;next} /\001/{sub(/\001/,"");print;next} $1 !~ /^m[0-9]+$/{print "ci_guards: --shard: step id <" $1 "> is not m<N>" > "/dev/stderr"; bad=1; next} {n=substr($1,2); if (n % k == i - 1) print} END{exit bad}'; else tr -d '\001'; fi; } || rc=1   # a refusal on an earlier job must not be masked by the last job's status
     done
     return "$rc"
 }
