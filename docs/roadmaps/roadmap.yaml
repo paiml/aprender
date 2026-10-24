@@ -25590,6 +25590,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:measurement
   notes: null
   epic: 5510
+- id: PMAT-5909
+  github_issue: 5909
+  item_type: task
+  title: 'Crate fan-out: aprender-contracts (24 commits/30d) dirties 47 of 85 crates; split build_helper out'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-22T12:00:00Z
+  updated: 2026-10-22T12:00:00Z
+  spec: null
+  acceptance_criteria:
+  - See issue #5909; registered so quorum-review.sh resolves the commit trailer (EMG epic PRs)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-5914
   github_issue: 5914
   item_type: task
