@@ -25973,6 +25973,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'Re-cut from the EMG-001 return of #5590; its step-profiler half already landed (a743e8c23d).'
   epic: 5510
+- id: PMAT-6235
+  github_issue: 6235
+  item_type: task
+  title: 'ci/sections.yml: pre-checkout ownership restore chowns to the runner uid, not 1000:1000'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T04:30:00Z
+  updated: 2026-10-24T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the three Pre-checkout ownership restore steps chown /workspace to the invoking runner uid:gid passed into the container, never a hardcoded 1000:1000'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
 - id: PMAT-6239
   github_issue: 6239
   item_type: task

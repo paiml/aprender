@@ -721,6 +721,26 @@ YAML
     fi
     PR_CACHE_DIR=""
 
+    # MUTANTS. Each rewrites the frozen-base exemption in a COPY of this script and re-runs the copy's own case rows; the
+    # mutant is killed iff that run goes RED. SELFTEST_IN_MUTANT stops the copy from running its own mutants (no recursion).
+    if [ -z "${SELFTEST_IN_MUTANT:-}" ]; then
+        printf -- '--- mutants: the exemption must be content-bound ------------------\n'
+        mutant() { # NAME SED-EXPR -- killed iff the mutated script's self-test fails
+            mkdir -p "$TD/mut/scripts"
+            sed "$2" "${BASH_SOURCE[0]}" > "$TD/mut/scripts/m.sh"
+            if cmp -s "${BASH_SOURCE[0]}" "$TD/mut/scripts/m.sh"; then row "mutant $1 changed the script" changed same; return; fi
+            if SELFTEST_IN_MUTANT=1 bash "$TD/mut/scripts/m.sh" --self-test >/dev/null 2>&1; then
+                row "mutant $1 is killed" killed survived
+            else
+                row "mutant $1 is killed" killed killed
+            fi
+        }
+        mutant path-waiver 's/if rel == FROZEN_BASE and item_ids(doc) <= item_ids(_live\[0\])/if rel == FROZEN_BASE/'
+        mutant drop-subset-test 's/item_ids(doc) <= item_ids(_live\[0\])/True/'
+        mutant no-live-requirement 's/^_live = \[d for r, d in in_scope if r == LIVE_AGGREGATE\]/_live = [d for r, d in in_scope if r == LIVE_AGGREGATE] or [{"roadmap": [{"id": "R-ALIAS-DONE"}, {"id": "R-ONLY-IN-BASE"}]}]/'
+        rm -rf "${TD:?}/mut"
+    fi
+
     printf '  %s case(s), %s failure(s)\n' "$t" "$f"
     if [ "$f" -ne 0 ]; then printf 'SELFTEST FAILED\n'; exit 1; fi
     printf 'SELFTEST PASSED — no roadmap in this tree was scanned; run with no\n'
