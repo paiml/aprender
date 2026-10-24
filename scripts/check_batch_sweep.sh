@@ -11,7 +11,7 @@
 # Exit: 0 held . 1 violated . 2 could not check. LAB: wired into no workflow.
 set -uo pipefail
 DENY_AUTHORS="${BS_DENY_AUTHORS:-guyernest}"
-DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^ci/explicit-test-commands\.d/|^\.pmat-gates\.toml$|^deny\.toml$|^scripts/ci/|^scripts/check_[^/]*\.sh$}"
+DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^ci/explicit-test-commands\.d/|^\.pmat-gates\.toml$|^deny\.toml$|^scripts/ci/|^scripts/check_[^/]*\.sh$|^scripts/contracts_gate\.sh$|^ci/vendor/|^Makefile$|^\.clippy\.toml$|^rust-toolchain\.toml$}"
 # Generated: the contract artifacts, and ONLY the CONTRACT_COUNT blocks of README.md (PRB-001 §6), neutralised by readme_neutral.
 GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')
 readme_neutral() { sed 's/<!-- CONTRACT_COUNT_START -->.*<!-- CONTRACT_COUNT_END -->/<!-- CONTRACT_COUNT -->/'; }
@@ -110,6 +110,9 @@ selftest() {
   expect "BS-4 RED ci/explicit-test-commands.d path" 1 bs4 "$t/a-cmd.tsv"
   expect "BS-4 RED .pmat-gates.toml" 1 bs4 "$t/a-pmat.tsv"
   expect "BS-4 RED scripts/check_*.sh" 1 bs4 "$t/a-chk.tsv"
+  for gp in ci/vendor/x.rs Makefile .clippy.toml rust-toolchain.toml scripts/contracts_gate.sh; do
+    printf '6\tnoah\t%s\n' "$gp" > "$t/a-more.tsv"; expect "BS-4 RED $gp" 1 bs4 "$t/a-more.tsv"
+  done
   printf 'Supersedes #5724, #5558.\nRefs #5831\n' > "$t/b-ok.md"; printf 'Batch.\nCloses #5724\n' > "$t/b-bad.md"; printf 'Fixes: paiml/aprender#5558\n' > "$t/b-bad2.md"
   printf 'Closes https://github.com/paiml/aprender/issues/5724\n' > "$t/b-url.md"; printf 'resolves https://github.com/paiml/aprender/pull/5558\n' > "$t/b-url2.md"
   expect "BS-5 RED 'Closes <issue URL>'" 1 bs5 "$t/b-url.md"

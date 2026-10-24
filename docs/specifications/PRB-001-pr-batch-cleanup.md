@@ -121,7 +121,7 @@ The structural fix is a separate pmat ticket: generated artifacts come off the P
 
 ## 7. Contract: batch-sweep-v1
 
-The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/check_batch_sweep.sh --self-test` runs each on a fixture repo, RED then GREEN (15 rows, LAB, wired into no workflow).
+The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/check_batch_sweep.sh --self-test` runs each on a fixture repo, RED then GREEN (29 rows, LAB, wired into no workflow).
 
 | Id | Obligation | How it is falsified |
 | --- | --- | --- |
@@ -166,7 +166,7 @@ Relayed by aprender-57 on 2026-10-21 as the operator's answers; the verbatim tex
 
 - [x] **Do drafts count toward the ≤10 open-PR limit?** YES (relayed).
 - [x] **May the sweep absorb stop-the-line drafts that are test-only?** YES (relayed).
-- Q3 and Q4: relayed as ruled; their text is not in the relay. Fill in from the cop's record.
+- Q3 and Q4: relayed as ruled by aprender-57; their question text is not in the relay and is NOT recorded here. Nothing in this spec depends on them.
 - Batch cap: ≤7 tickets per batch (09:17Z ruling, relayed). Lane B is never batched (amendment 3, relayed).
 
 ## 11. Amendment log
