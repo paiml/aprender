@@ -176,7 +176,17 @@ judge() {
     frag_paths=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ENTRIES_DIR")
     base_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE")
 
-    if [ "$roadmap_changed" = 0 ] && [ -z "$frag_paths" ] && [ -z "$base_changed" ]; then
+    # A version bump (root Cargo.toml `version =` line) is a full-regen diff even when it touches neither
+    # roadmap file (bump-version.sh does not regenerate). A git failure reading that diff fails closed:
+    # it counts as a bump, so freshness is checked rather than skipped.
+    bumped=0
+    if cargo_diff=$(git -C "$repo" diff -U0 "$base" "$head" -- Cargo.toml 2>/dev/null); then
+        grep -Eq '^[+-][[:space:]]*version[[:space:]]*=' <<<"$cargo_diff" && bumped=1
+    else
+        bumped=1
+    fi
+
+    if [ "$roadmap_changed" = 0 ] && [ -z "$frag_paths" ] && [ -z "$base_changed" ] && [ "$bumped" = 0 ]; then
         rm -rf -- "${td:?}"
         printf 'PASS  %s: this diff touches neither %s nor %s/ — nothing to judge\n' \
             "$PROG" "$ROADMAP_FILE" "$ENTRIES_DIR"
@@ -189,12 +199,8 @@ judge() {
     # (#6268 was removed twice). A version bump (root Cargo.toml `version =` line), or --full, is the
     # full regen check; so is any diff that touches roadmap.yaml.
     entries_only=0
-    if [ "$roadmap_changed" = 0 ] && [ -z "$base_changed" ] && [ -n "$frag_paths" ] && [ "${FULL_REGEN:-0}" != 1 ]; then
-        # A git failure reading the Cargo.toml diff is NOT "no version bump": it fails closed (full check).
-        if cargo_diff=$(git -C "$repo" diff -U0 "$base" "$head" -- Cargo.toml 2>/dev/null) \
-            && ! grep -Eq '^[+-][[:space:]]*version[[:space:]]*=' <<<"$cargo_diff"; then
-            entries_only=1
-        fi
+    if [ "$roadmap_changed" = 0 ] && [ -z "$base_changed" ] && [ -n "$frag_paths" ] && [ "${FULL_REGEN:-0}" != 1 ] && [ "$bumped" = 0 ]; then
+        entries_only=1
     fi
 
     # The ids whose FRAGMENT this diff changes (added, edited or deleted).
@@ -431,6 +437,30 @@ self_test() {
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
+    b_bump_nospace_both() {
+        printf '[workspace.package]\nversion="0.1.0"\n' >"$1/Cargo.toml"; git -C "$1" add -A && git -C "$1" commit -qm cargo || return 1
+        printf '[workspace.package]\nversion="0.1.1"\n' >"$1/Cargo.toml"
+        printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # A Cargo.toml-only bump (bump-version.sh regenerates nothing) over a base ref whose aggregate lags its fragments.
+    b_cargo_only_bump_stale() {
+        printf '[workspace.package]\nversion = "0.1.0"\n' >"$1/Cargo.toml"
+        printf -- '- id: PMAT-200\n  title: landed entries-only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        git -C "$1" add -A && git -C "$1" commit -qm lagging || return 1
+        printf '[workspace.package]\nversion = "0.1.1"\n' >"$1/Cargo.toml"
+        commit_all "$1"
+    }
+    b_cargo_only_bump_fresh() {
+        printf '[workspace.package]\nversion = "0.1.0"\n' >"$1/Cargo.toml"; git -C "$1" add -A && git -C "$1" commit -qm cargo || return 1
+        printf '[workspace.package]\nversion = "0.1.1"\n' >"$1/Cargo.toml"
+        commit_all "$1"
+    }
+    # The real-PR path: the frozen base already exists at the base ref, then an entry goes into the monolith.
+    b_base_present_monolith() {
+        cp "$1/$ROADMAP_FILE" "$1/$BASE_FILE" && git -C "$1" add -A && git -C "$1" commit -qm snapshot || return 1
+        b_monolith_only "$1"
+    }
     b_bump_nospace_no_regen() {
         printf '[workspace.package]\nversion = "0.1.0"\n' >"$1/Cargo.toml"; git -C "$1" add -A && git -C "$1" commit -qm cargo || return 1
         printf '[workspace.package]\nversion="0.1.1"\n' >"$1/Cargo.toml"
@@ -579,6 +609,14 @@ PY
         0 'ok    ' b_lag_then_regen
     row 'a bump written version="x" (no spaces) with an unregenerated aggregate -> REFUSE' \
         1 'FAIL  DRIFT' b_bump_nospace_no_regen
+    row 'version="x" with NO spaces on both sides of the bump, aggregate stale -> REFUSE' \
+        1 'FAIL  DRIFT' b_bump_nospace_both
+    row 'a Cargo.toml-only bump over a lagging aggregate -> REFUSE (never "nothing to judge")' \
+        1 'FAIL  DRIFT' b_cargo_only_bump_stale
+    row 'a Cargo.toml-only bump over a fresh aggregate -> PASS, freshness checked' \
+        0 'ok    docs/roadmaps/roadmap.yaml == aggregate' b_cargo_only_bump_fresh
+    row 'frozen base present at the base ref, entry written to the monolith only -> REFUSE (rule 1, real-PR path)' \
+        1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_base_present_monolith
     row 'a bump PR (root Cargo.toml version changes) with an unregenerated aggregate -> REFUSE' \
         1 'FAIL  DRIFT' b_bump_fragment_no_regen
     row 'a diff touching roadmap.yaml and a fragment, aggregate stale -> REFUSE (entries-only never applies)' \
@@ -609,6 +647,29 @@ PY
         1 'FROZEN: docs/roadmaps/roadmap-base.yaml changed' b_base_edited
     row 'PARITY: header of roadmap.yaml hand-edited away from the frozen base -> REFUSE' \
         1 'FAIL  DRIFT' b_tampered_header
+
+    # A git failure reading the Cargo.toml diff fails CLOSED: the entries-only skip must not be taken.
+    n=$((n + 1))
+    local fout frc
+    mkrepo "$td/r$n" >/dev/null 2>&1 && b_fragment_no_regen "$td/r$n" >/dev/null 2>&1
+    judge_with_failing_cargo_diff() {
+        git() {
+            case " $* " in
+                *" -- Cargo.toml "*) return 1 ;;
+            esac
+            command git "$@"
+        }
+        judge "$@"
+    }
+    fout=$(judge_with_failing_cargo_diff "$td/r$n" HEAD~1 HEAD 2>&1)
+    frc=$?
+    if [ "$frc" = 1 ] && grep -qF 'FAIL  DRIFT' <<<"$fout"; then
+        printf 'ok    row %-2s rc=1  a git failure reading the Cargo.toml diff fails closed (full check, DRIFT)\n' "$n"
+    else
+        printf 'FAIL  row %-2s rc=%s (wanted 1 + DRIFT)  a git failure reading the Cargo.toml diff must fail closed\n' "$n" "$frc"
+        printf '%s\n' "$fout" | sed 's/^/        /'
+        red=$((red + 1))
+    fi
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
