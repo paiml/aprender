@@ -1,0 +1,110 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-21'
+  author: PAIML Engineering
+  kind: pattern
+  description: >-
+    A batch-sweep absorbs lane A test-only PRs into one batch PR. The sweep may
+    only shorten the queue; it must never lose a ticket, merge a ticket it may
+    not touch, or hide a revert behind a regenerated file.
+  references:
+  - 'docs/specifications/PRB-001-pr-batch-cleanup.md §5 (sweep), §6 (generated artifacts), §7 (this contract)'
+  - 'scripts/lab/batch_sweep_check.sh — the obligations as a case table, RED then GREEN (LAB, wired into no workflow)'
+equations:
+  batch_absorbs_every_ticket_linearly:
+    formula: >-
+      main(batch) = N ticket commits (one per absorbed PR) + 1 trailing
+      "batch: regenerate" commit; no commit in the range has 2 parents
+    domain: a batch of N <= 7 lane A PRs, rebase-merged
+    invariants:
+    - "every absorbed PR's merge-base..head hunks are on main after the merge (generated paths excluded)"
+    - "the regenerate commit is never amended into a ticket commit, so reverting a ticket does not revert the regenerated set"
+    - "no PR is closed before its merge sha is an ancestor of main"
+    - "no external-author PR and no gate-file PR is absorbed"
+    - "a batch PR body carries Supersedes #N, never a closing keyword before #N"
+    - "committed generated artifacts equal their regenerated output"
+    preconditions:
+    - "N >= 1 and N <= 7"
+    postconditions:
+    - "commit count in the batch range == N + 1"
+proof_obligations:
+- id: BS-1
+  type: invariant
+  property: every absorbed PR's tree diff is on main after the merge
+  formal: >-
+    ∀ pr ∈ absorbed: reverse_apply(diff(merge_base(pr), pr), main) succeeds
+  applies_to: all
+- id: BS-2
+  type: invariant
+  property: "N ticket commits plus 1 trailing `batch: regenerate`, no merge commits"
+  formal: >-
+    count(base..head) = N + 1 ∧ merges(base..head) = 0 ∧ subject(head) = "batch: regenerate"
+  applies_to: all
+- id: BS-3
+  type: invariant
+  property: no PR is closed before its merge sha exists on main
+  formal: >-
+    ∀ pr ∈ closed: is_ancestor(sha(pr), main)
+  applies_to: all
+- id: BS-4
+  type: invariant
+  property: no external-author PR or gate-file PR is ever absorbed
+  formal: >-
+    ∀ pr ∈ absorbed: author(pr) ∉ deny_authors ∧ ¬∃ p ∈ paths(pr): p ∈ deny_paths
+  applies_to: all
+- id: BS-5
+  type: invariant
+  property: no closing keyword before #N in a batch PR body
+  formal: >-
+    ¬∃ m ∈ body: closing_keyword(m) ∧ refers_to_issue_or_pr(m)
+  applies_to: all
+- id: BS-6
+  type: equivalence
+  property: generated artifacts equal their regenerated output
+  formal: >-
+    regenerate(repo) ⇒ porcelain(repo) = ∅
+  applies_to: all
+falsification_tests:
+- id: FALSIFY-BS-001
+  rule: BS-1
+  prediction: a PR whose hunk never landed on main is reported
+  test: "bash scripts/lab/batch_sweep_check.sh --self-test: 'BS-1 RED a PR whose hunk never landed' exits 1; 'BS-1 GREEN' exits 0"
+  if_fails: a ticket is silently lost by the sweep
+- id: FALSIFY-BS-002
+  rule: BS-2
+  prediction: a merge commit (the --no-ff batch_fold.sh) and a regenerate amended into a ticket are both reported
+  test: "--self-test: 'BS-2 RED a merge commit' and 'BS-2 RED regenerate amended into a ticket' exit 1; 'BS-2 GREEN' exits 0"
+  if_fails: rebase-merge cannot carry the batch, or a ticket revert drags the regenerated set with it
+- id: FALSIFY-BS-003
+  rule: BS-3
+  prediction: a PR closed while its sha is not on main is reported
+  test: "--self-test: 'BS-3 RED closed before its sha is on main' exits 1; 'BS-3 GREEN' exits 0"
+  if_fails: a ticket is closed with its work unmerged
+- id: FALSIFY-BS-004
+  rule: BS-4
+  prediction: an external author and a .github/workflows path are each reported
+  test: "--self-test: 'BS-4 RED external author' and 'BS-4 RED gate-file path' exit 1; 'BS-4 GREEN' exits 0"
+  if_fails: a one-way change or a contributor's PR is folded without its own review
+- id: FALSIFY-BS-005
+  rule: BS-5
+  prediction: "'Closes #N' and 'Fixes: org/repo#N' are both reported"
+  test: "--self-test: both 'BS-5 RED' rows exit 1; 'BS-5 GREEN' exits 0"
+  if_fails: merging the batch auto-closes the issues it only supersedes
+- id: FALSIFY-BS-006
+  rule: BS-6
+  prediction: a committed artifact that differs from its regeneration is reported
+  test: "--self-test: 'BS-6 RED' exits 1; 'BS-6 GREEN' exits 0"
+  if_fails: a stale generated file rides a batch into main
+qa_gate:
+  id: F-BS-001
+  name: Batch sweep contract
+  description: BS-1..BS-6 each RED then GREEN on a fixture repo
+  checks:
+  - bs1_hunks_on_main
+  - bs2_linear_commits
+  - bs3_close_after_merge
+  - bs4_deny_list
+  - bs5_no_closing_keyword
+  - bs6_regenerated_equal
+  pass_criteria: scripts/lab/batch_sweep_check.sh --self-test exits 0 (33 rows)
+  falsification: planted violating fixtures, one per obligation
