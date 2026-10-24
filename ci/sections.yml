@@ -1926,13 +1926,7 @@ jobs:
       - name: Every shard passed
         env:
           SHARD_RESULT: ${{ needs.guard-cargo-shard.result }}
-        run: |
-          set -euo pipefail
-          printf 'guard-cargo-shard matrix result: %s\n' "${SHARD_RESULT:-}"
-          case "${SHARD_RESULT:-}" in
-            success) echo "guard-cargo: all shards green" ;;
-            *) echo "::error::guard-cargo: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1 ;;
-          esac
+        run: bash scripts/ci_guards.sh guard-cargo --verdict "${SHARD_RESULT:-}"
 
   guard-cargo-steps:
     # MANIFEST, never run by GitHub (`if: false`). These are guard-cargo's guard steps,
