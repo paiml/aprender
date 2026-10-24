@@ -1084,24 +1084,33 @@ cp "$GUARD_TREE" "$lfix/scripts/guard_tree.sh"
 # 56-58 (#6255): guard-cargo's --shard I/K partition and the --verdict fan-in.
 cg="$REPO_ROOT/scripts/ci_guards.sh"
 full56="$(bash "$cg" --list guard-cargo | grep -v '^==' | awk '{print $1}' | sort)"
+# The state writers of the manifest, derived from the YAML (not from the code under test): each step block that
+# appends to GITHUB_PATH/GITHUB_ENV, counted between the manifest job and the next job.
+writers56="$(awk '/^  guard-cargo-steps:/{on=1;next} on&&/^  [a-z]/{on=0} on&&/^      - /{n++} on&&/GITHUB_(PATH|ENV)/&&n!=last{c++;last=n} END{print c+0}' "$REPO_ROOT/ci/sections.yml")"
 bad56=""
 for k in 1 2 3 4 5; do
     u=""
     for ((i = 1; i <= k; i++)); do u+="$(bash "$cg" --list --shard "$i/$k" guard-cargo | grep -v '^==' | awk '{print $1}')"$'\n'; done
     [ "$(sort -u <<<"$u" | grep -v '^$')" = "$full56" ] || bad56+=" union@K=$k"
-    # a step is in exactly one shard, except the GITHUB_PATH/GITHUB_ENV writers, which are in all K
-    dup="$(grep -v '^$' <<<"$u" | sort | uniq -c | awk -v k="$k" '$1 != 1 && $1 != k {print $2}')"
-    [ -z "$dup" ] || bad56+=" dup@K=$k:$dup"
+    once="$(grep -v '^$' <<<"$u" | sort | uniq -c | awk '$1 == 1' | wc -l)"
+    all="$(grep -v '^$' <<<"$u" | sort | uniq -c | awk -v k="$k" '$1 == k' | wc -l)"
+    n56="$(wc -l <<<"$full56")"
+    if [ "$k" -eq 1 ]; then [ "$once" -eq "$n56" ] || bad56+=" K=1:$once"
+    else
+        [ "$all" -eq "$writers56" ] && [ "$once" -eq $((n56 - writers56)) ] || bad56+=" K=$k:once=$once,all=$all,writers=$writers56"
+    fi
 done
-if [ -z "$bad56" ] && [ -n "$full56" ]; then
-    pass_row "56: the union of guard-cargo --shard i/K is the full item list for K=1..5, each item in one shard"
+if [ -z "$bad56" ] && [ -n "$full56" ] && [ "$writers56" -ge 1 ]; then
+    pass_row "56: --shard i/K lists every guard-cargo item; non-writers in exactly one shard, the $writers56 GITHUB_PATH/ENV writer(s) in all K (K=1..5)"
 else
     fail_row "56: guard-cargo shard partition" "$bad56"
 fi
-if bash "$cg" --list --shard 1/3 guard-cargo | grep -q 'm69' && bash "$cg" --list --shard 3/3 guard-cargo | grep -q 'm69'; then
-    pass_row "57: the cargo-deny installer (writes GITHUB_PATH) runs in every shard"
+bad57=""
+for i in 1 2 3; do bash "$cg" --list --shard "$i/3" guard-cargo | grep -q 'Install cargo-deny' || bad57+=" shard$i"; done
+if [ -z "$bad57" ]; then
+    pass_row "57: the cargo-deny installer (writes GITHUB_PATH) is listed in shards 1, 2 and 3"
 else
-    fail_row "57: state-handing step in every shard" "m69 missing from a shard"
+    fail_row "57: state-handing step in every shard" "missing from:$bad57"
 fi
 bad58=""
 for r in success; do bash "$cg" guard-cargo --verdict "$r" > /dev/null 2>&1 || bad58+=" $r->red"; done
