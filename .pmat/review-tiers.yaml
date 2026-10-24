@@ -9,6 +9,8 @@ sensitive:
   - "ci/*"
   - ".pmat/*"
   - "scripts/check_*"
+  - "scripts/review_tier.sh"
+  - "scripts/pre_receipt.sh"
   - "scripts/ci_*"
   - "scripts/*gate*"
   - "scripts/release/*"

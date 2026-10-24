@@ -38,17 +38,23 @@ matches_any() { # PATH, globs on stdin
 # strip_comments EXT -> stdin without blank lines and whole-line comments of that file type.
 strip_comments() {
   case $1 in
-    rs|c|h|cu|js|ts|go|java) grep -Ev '^[[:space:]]*(//.*)?$' || true ;;
+    # `///` and `//!` are doc comments: rustdoc runs the examples in them, so they are code to a reviewer.
+    rs) grep -Ev '^[[:space:]]*(//([^/!].*)?)?$' || true ;;
+    c|h|cu|js|ts|go|java) grep -Ev '^[[:space:]]*(//.*)?$' || true ;;
     sh|py|yaml|yml|toml|cmd|mk|rb|txt) grep -Ev '^[[:space:]]*(#.*)?$' || true ;;
     *) cat ;;
   esac
 }
 
 comment_only() { # BASE HEAD PATH -> 0 when the change to PATH touches only blank lines and comments
-  local ext=${3##*.} before after
+  local ext=${3##*.} before after b_raw a_raw
   [[ $3 == Makefile ]] && ext=mk
-  before=$(git show "$1:$3" 2>/dev/null | strip_comments "$ext") || before=""
-  after=$(git show "$2:$3" 2>/dev/null | strip_comments "$ext") || after=""
+  b_raw=$(git show "$1:$3" 2>/dev/null; echo x) && b_raw=${b_raw%x} || b_raw=
+  a_raw=$(git show "$2:$3" 2>/dev/null; echo x) && a_raw=${a_raw%x} || a_raw=
+  # Neither side readable (a path git could not name): nothing was compared, so it is not comment-only.
+  git cat-file -e "$1:$3" 2>/dev/null || git cat-file -e "$2:$3" 2>/dev/null || return 1
+  before=$(printf '%s' "$b_raw" | strip_comments "$ext")
+  after=$(printf '%s' "$a_raw" | strip_comments "$ext")
   [[ $before == "$after" ]]
 }
 
@@ -73,7 +79,7 @@ derive() { # BASE HEAD
     n=$((n + 1))
     t=$(tier_of "$1" "$2" "$f")
     (( $(rank "$t") > $(rank "$best") )) && best=$t
-  done < <(git diff --name-only --no-renames "$1" "$2")
+  done < <(git -c core.quotePath=false diff --name-only -z --no-renames "$1" "$2" | tr '\0' '\n')
   [[ $n -gt 0 ]] || die "no changed paths between $1 and $2"
   echo "$best"
 }
@@ -109,6 +115,11 @@ self_test() {
   printf 'x\n' > "$d/scripts/check_new.sh";                                      expect new-gate-script sensitive
   printf 'version: 1\n' > "$d/.pmat/review-tiers.yaml";                          expect table-itself sensitive
   printf 'version: 1\nsensitive:\n  - "nothing"\nlight:\n  - "*"\n' > "$d/.pmat/review-tiers.yaml"; printf 'on: push\n' >> "$d/.github/workflows/ci.yml"; expect loosened-table-in-same-pr-ignored sensitive
+  printf 'x\n' > "$d/scripts/review_tier.sh";                                  expect the-tier-script-itself sensitive
+  printf 'on: push\n' > "$d/.github/workflows/é.yml";                           expect non-ascii-workflow-name sensitive
+  printf 'x\n' > "$d/crates/x/src/é.rs";                                        expect non-ascii-code-path standard
+  printf '/// ```\n/// assert!(false);\n/// ```\nfn a() {}\n' > "$d/crates/x/src/lib.rs"; expect doc-comment-change-standard standard
+  printf '//! crate docs\n' >> "$d/crates/x/src/lib.rs";                        expect inner-doc-comment-standard standard
   printf 'x\n' > "$d/key.pem";                                                   expect key-file sensitive
   # an author-set tier is not read: the commit message and a trailer say light, the path says sensitive
   printf 'on: push\n' >> "$d/.github/workflows/ci.yml"
