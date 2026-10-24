@@ -13,7 +13,8 @@
 # is judged by; a BASE without a table (bootstrap) falls back to the working-tree file.
 set -euo pipefail
 
-TABLE=.pmat/review-tiers.yaml
+TABLE=${REVIEW_TIER_TABLE:-.pmat/review-tiers.yaml}
+TABLE_FILE=
 
 die() { echo "review_tier: $*" >&2; exit 2; }
 
@@ -41,7 +42,8 @@ strip_comments() {
     # `///` and `//!` are doc comments: rustdoc runs the examples in them, so they are code to a reviewer.
     rs) grep -Ev '^[[:space:]]*(//([^/!].*)?)?$' || true ;;
     c|h|cu|js|ts|go|java) grep -Ev '^[[:space:]]*(//.*)?$' || true ;;
-    sh|py|yaml|yml|toml|cmd|mk|rb|txt) grep -Ev '^[[:space:]]*(#.*)?$' || true ;;
+    # Line 1 `#!` is the interpreter, not a comment: changing it changes what runs.
+    sh|py|yaml|yml|toml|cmd|mk|rb|txt) awk 'NR == 1 && /^#!/ { print; next } !/^[ \t]*(#.*)?$/' ;;
     *) cat ;;
   esac
 }
@@ -69,15 +71,20 @@ tier_of() { # BASE HEAD PATH
 }
 
 derive() { # BASE HEAD
-  local f t best=light n=0
+  local f t best=light n=0 missing=0
   local tbl; tbl=$(mktemp); trap 'rm -f "${tbl:?}"' RETURN
-  git show "$1:$TABLE" > "$tbl" 2>/dev/null || cp "$TABLE" "$tbl" 2>/dev/null || die "table $TABLE is readable at neither $1 nor the working tree"
-  SENS=$(list_of sensitive "$tbl"); LIGHT=$(list_of light "$tbl")
-  [[ -n $SENS && -n $LIGHT ]] || die "table $TABLE lists no sensitive or no light paths"
+  # A BASE without the table (the PR that introduces it, an old base) is never judged by the working tree's copy,
+  # which the PR itself could have loosened: every path is sensitive. --table FILE is the explicit override.
+  if [[ -n $TABLE_FILE ]]; then cp "$TABLE_FILE" "$tbl" 2>/dev/null || die "table $TABLE_FILE is unreadable"
+  elif ! git show "$1:$TABLE" > "$tbl" 2>/dev/null; then missing=1; fi
+  if [[ $missing -eq 0 ]]; then
+    SENS=$(list_of sensitive "$tbl"); LIGHT=$(list_of light "$tbl")
+    [[ -n $SENS && -n $LIGHT ]] || die "table $TABLE lists no sensitive or no light paths"
+  fi
   while IFS= read -r f; do
     [[ -n $f ]] || continue
     n=$((n + 1))
-    t=$(tier_of "$1" "$2" "$f")
+    if [[ $missing -eq 1 ]]; then t=sensitive; else t=$(tier_of "$1" "$2" "$f"); fi
     (( $(rank "$t") > $(rank "$best") )) && best=$t
   done < <(git -c core.quotePath=false diff --name-only -z --no-renames "$1" "$2" | tr '\0' '\n')
   [[ $n -gt 0 ]] || die "no changed paths between $1 and $2"
@@ -120,6 +127,15 @@ self_test() {
   printf 'x\n' > "$d/crates/x/src/é.rs";                                        expect non-ascii-code-path standard
   printf '/// ```\n/// assert!(false);\n/// ```\nfn a() {}\n' > "$d/crates/x/src/lib.rs"; expect doc-comment-change-standard standard
   printf '//! crate docs\n' >> "$d/crates/x/src/lib.rs";                        expect inner-doc-comment-standard standard
+  printf '#!/bin/bash\necho hi\n' > "$d/scripts/run.sh";                        expect shebang-change-standard standard
+  mkdir -p "$d/.claude/skills/x" "$d/notes"
+  printf 'read by a gate\n' > "$d/.claude/skills/x/SKILL.md";                  expect gate-read-claude-md sensitive
+  printf 'x\n' > "$d/.agents/a.md" 2>/dev/null || { mkdir -p "$d/.agents"; printf 'x\n' > "$d/.agents/a.md"; }; expect agents-dir sensitive
+  printf 'x\n' > "$d/.pmat-gates.toml";                                        expect pmat-gates-toml sensitive
+  printf 'x\n' > "$d/.clippy.toml";                                            expect clippy-toml sensitive
+  printf 'x\n' > "$d/docs/roadmaps/roadmap-base.yaml" 2>/dev/null || { mkdir -p "$d/docs/roadmaps"; printf 'x\n' > "$d/docs/roadmaps/roadmap-base.yaml"; }; expect roadmap-base sensitive
+  printf 'x\n' > "$d/README.md";                                               expect readme-light light
+  printf 'x\n' > "$d/notes/n.md";                                              expect stray-md-standard standard
   printf 'x\n' > "$d/key.pem";                                                   expect key-file sensitive
   # an author-set tier is not read: the commit message and a trailer say light, the path says sensitive
   printf 'on: push\n' >> "$d/.github/workflows/ci.yml"
@@ -130,6 +146,14 @@ PMAT-Tier: light"
   git -C "$d" reset -q --hard "$base"
   # an empty diff has no tier: error, never light
   if (cd "$d" && bash "$SELF" HEAD HEAD >/dev/null 2>&1); then fail=$((fail + 1)); echo "FAIL empty-diff accepted"; else pass=$((pass + 1)); fi
+  # a BASE without the table is never judged by the PR's own (loosened) copy: sensitive
+  git -C "$d" checkout -q --orphan nobase; git -C "$d" rm -rqf . ; printf 'x\n' > "$d/f"; git -C "$d" add -A; git -C "$d" commit -qm nobase
+  nb=$(git -C "$d" rev-parse HEAD); mkdir -p "$d/.pmat"
+  printf 'version: 1\nsensitive:\n  - "nothing"\nlight:\n  - "*"\n' > "$d/.pmat/review-tiers.yaml"; printf 'on: push\n' > "$d/ci.yml"
+  git -C "$d" add -A; git -C "$d" commit -qm loosened
+  got=$(cd "$d" && bash "$SELF" "$nb" HEAD 2>&1) || true
+  if [[ $got == sensitive ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL missing-base-table: want sensitive, got $got"; fi
+  git -C "$d" checkout -q -f master 2>/dev/null || git -C "$d" checkout -q -f main; git -C "$d" reset -q --hard "$base"
   # an unreadable or empty table is an error, never a quiet light
   printf 'version: 1\n' > "$d/.pmat/review-tiers.yaml"; git -C "$d" add -A; git -C "$d" commit -qm emptytable; base=$(git -C "$d" rev-parse HEAD)
   printf '# x\n' >> "$d/docs/a.md"; git -C "$d" add -A; git -C "$d" commit -qm e
@@ -145,6 +169,6 @@ PMAT-Tier: light"
 case ${1:-} in
   "") die "usage: review_tier.sh BASE HEAD [--table FILE] | --self-test" ;;
   *)
-    [[ ${3:-} == --table ]] && TABLE=${4:?}
+    [[ ${3:-} == --table ]] && TABLE_FILE=${4:?}
     derive "$1" "${2:?usage: review_tier.sh BASE HEAD}" ;;
 esac

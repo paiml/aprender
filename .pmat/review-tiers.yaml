@@ -27,9 +27,17 @@ sensitive:
   - ".cargo/*"
   - "Makefile"
   - ".gitignore"
+  - ".claude/*"
+  - ".agents/*"
+  - ".pmat-gates.toml"
+  - ".clippy.toml"
+  - "docs/roadmaps/roadmap-base.yaml"
 light:
   - "docs/*"
-  - "*.md"
+  - "README.md"
+  - "CHANGELOG.md"
+  - "*/README.md"
+  - "*/CHANGELOG.md"
   - "examples/*"
   - "docs/roadmaps/entries/*"
 # A file matching neither list is standard, unless its diff is comment-only (blank lines and whole-line comments),
