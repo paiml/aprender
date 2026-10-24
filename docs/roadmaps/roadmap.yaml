@@ -26124,6 +26124,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'Refs EMR-001 E-1. EMR-001 forbids closing a source PR, so the source stays open while the integration PR is judged. Sensitive tier (scripts/*): quorum before seats.'
   epic: null
+- id: PMAT-6278
+  github_issue: 6278
+  item_type: task
+  title: 'nightly LAB lane: cargo semver-checks vs 0.71.4 heavy-lane receipt'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-24T15:31:39Z
+  updated: 2026-10-24T15:31:39Z
+  spec: null
+  acceptance_criteria:
+  - 'Nightly LAB receipt, never on a PR or merge-queue path (C324). Per-crate CLEAN/BREAKING/not_measured; see #6273.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
 - id: PMAT-6281
   github_issue: 6281
   item_type: task
