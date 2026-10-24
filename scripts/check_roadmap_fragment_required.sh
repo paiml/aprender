@@ -249,6 +249,18 @@ judge() {
         fi
     done < <(printf '%s\n' "$out")
 
+    # --- RULE 2b: a fragment is never deleted or renamed away ------------------
+    # The aggregator only adds or supersedes: regenerating never drops an entry whose fragment is
+    # gone, so a deleted fragment leaves the entry in roadmap.yaml with nothing behind it, and the
+    # bump PR then sees an id with no fragment. Retire an entry by superseding it (status), not by
+    # deleting its file. --no-renames: a rename is a delete plus an add.
+    deleted=$(git -C "$repo" diff --name-only --no-renames --diff-filter=D "$base" "$head" -- "$ENTRIES_DIR")
+    if [ -n "$deleted" ]; then
+        violations=$((violations + 1))
+        printf 'FAIL  DELETED: a fragment was deleted or renamed away; supersede the entry with a status change instead (the aggregator never drops an id):\n'
+        printf '      %s\n' $deleted
+    fi
+
     # --- RULE 3: the frozen base never changes (#6185) -----------------------
     # A change to a legacy entry is a fragment that supersedes its id; editing the base
     # would make it the new hotspot and a way round rule 1. The one allowed change is its
@@ -336,7 +348,7 @@ judge() {
 # A mutant that survives means the case table cannot tell the guard from a broken one.
 mutants() {
     local m copy survived=0 killed=0 name
-    for m in lag-strict id-check-off first-line-off drift-off bump-license-off one-entry-off; do
+    for m in lag-strict id-check-off first-line-off drift-off bump-license-off one-entry-off delete-ok; do
         copy=$(mktemp "$REPO_ROOT/scripts/zz-mut-${m}.XXXXXX.sh") || return 2   # fresh name: a stale copy is never scored
         python3 - "$REPO_ROOT/scripts/$PROG" "$copy" "$m" <<'PY'
 import sys
@@ -348,6 +360,7 @@ subs = {
     "first-line-off": ('first=$(head -n 1 -- "$td/entries/${name##*/}")', 'first=$(cat -- "$td/entries/${name##*/}")'),
     "bump-license-off": ('if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ]; then', 'if false; then'),
     "one-entry-off": ('if [ "$nitems" != 1 ]; then', 'if false; then'),
+    "delete-ok": ('if [ -n "$deleted" ]; then', 'if false; then'),
     "drift-off": ('rc=$?\n        what="DRIFT', 'rc=0\n        what="DRIFT'),
 }
 a, b = subs[m]
@@ -356,7 +369,7 @@ if a not in t:
 # the first site is the guard's own; this table, further down, quotes the same text
 open(dst, "w", encoding="utf-8").write(t.replace(a, b, 1))
 PY
-        [ -f "$copy" ] || { printf 'FAIL  mutant %s could not be planted\n' "$m"; survived=$((survived + 1)); continue; }
+        [ -s "$copy" ] || { rm -f -- "${copy:?}"; printf 'FAIL  mutant %s could not be planted\n' "$m"; survived=$((survived + 1)); continue; }
         if bash "$copy" --self-test >/dev/null 2>&1; then
             printf 'FAIL  mutant %s SURVIVED the self-test\n' "$m"; survived=$((survived + 1))
         else
@@ -364,7 +377,7 @@ PY
         fi
         name="$copy"; rm -f -- "${name:?}"
     done
-    printf '%s/6 mutants killed\n' "$killed"
+    printf '%s/7 mutants killed\n' "$killed"
     [ "$survived" = 0 ]
 }
 
@@ -500,6 +513,23 @@ self_test() {
         printf -- '- id: PMAT-201\n  title: first\n  status: planned\n- id: PMAT-999\n  title: smuggled second entry\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
         commit_all "$1"
     }
+    b_fragment_deleted() {
+        git -C "$1" rm -q "$1/$ENTRIES_DIR/PMAT-100.yaml"
+        commit_all "$1"
+    }
+    b_fragment_renamed() {
+        git -C "$1" mv "$1/$ENTRIES_DIR/PMAT-100.yaml" "$1/$ENTRIES_DIR/PMAT-101.yaml"
+        commit_all "$1"
+    }
+    b_fragment_deleted_regen() {
+        # a fragment-born entry lands with its regenerated aggregate; the next diff deletes both
+        printf -- '- id: PMAT-200\n  title: born as a fragment\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$REPO_ROOT/scripts/lib/roadmap_fragments.py" aggregate --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1
+        commit_all "$1"
+        git -C "$1" rm -q "$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$REPO_ROOT/scripts/lib/roadmap_fragments.py" aggregate --write --roadmap "$1/$ROADMAP_FILE" --entries "$1/$ENTRIES_DIR" >/dev/null 2>&1
+        commit_all "$1"
+    }
     b_unrelated() {
         printf 'a docs-only change\n' >>"$1/docs/roadmaps/README.md"
         commit_all "$1"
@@ -631,6 +661,12 @@ PY
         1 'FAIL  MISFILED' b_fragment_misfiled_regen
     row 'a fragment holding a second entry, aggregate not in the diff -> REFUSE' \
         1 'holds 2 top-level entries' b_fragment_two_entries
+    row 'a fragment DELETED, aggregate not in the diff -> REFUSE' \
+        1 'FAIL  DELETED' b_fragment_deleted
+    row 'a fragment RENAMED (git sees R, not D), aggregate not in the diff -> REFUSE' \
+        1 'FAIL  DELETED' b_fragment_renamed
+    row 'a fragment deleted WITH the regenerated aggregate -> REFUSE (the aggregator never drops an id)' \
+        1 'FAIL  DELETED' b_fragment_deleted_regen
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
