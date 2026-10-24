@@ -134,14 +134,14 @@ remedy() {
 # roadmap.yaml would refuse a correct snapshot whenever another roadmap PR lands first.
 intro_regenerates() {
     local repo=$1 base=$2 td=$3 name
-    mkdir -p "$td/intro/entries" || return 1
-    cp "$td/base.yaml" "$td/intro/roadmap.yaml" || return 1
-    cp "$td/roadmap-base.yaml" "$td/intro/roadmap-base.yaml" || return 1
+    mkdir -p "$td/intro/entries" || return 2
+    cp "$td/base.yaml" "$td/intro/roadmap.yaml" || return 2
+    cp "$td/roadmap-base.yaml" "$td/intro/roadmap-base.yaml" || return 2
     local names
-    names=$(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null) || return 1
+    names=$(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null) || return 2
     while IFS= read -r name; do
         case "$name" in *.yaml) ;; *) continue ;; esac
-        git -C "$repo" show "$base:$name" >"$td/intro/entries/${name##*/}" || return 1
+        git -C "$repo" show "$base:$name" >"$td/intro/entries/${name##*/}" || return 2
     done < <(printf '%s\n' "$names")
     python3 "$PY_LIB" aggregate --check --roadmap "$td/intro/roadmap.yaml" --entries "$td/intro/entries" >/dev/null 2>&1
 }
@@ -152,7 +152,7 @@ intro_regenerates() {
 judge() {
     local repo=$1 base=$2 head=$3
     local td roadmap_changed=0 frag_paths names name verdict eid line
-    local violations=0 checked=0 out rc cout crc
+    local violations=0 checked=0 out rc cout crc irc
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
         printf 'ENV   %s: base ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$base" >&2
@@ -275,7 +275,11 @@ judge() {
             violations=$((violations + 1))
             printf 'FAIL  FROZEN: %s changed. It is frozen: supersede an entry with a fragment in %s/ instead\n' \
                 "$BASE_FILE" "$ENTRIES_DIR"
-        elif intro_regenerates "$repo" "$base" "$td"; then
+        elif intro_regenerates "$repo" "$base" "$td"; irc=$?; [ "$irc" != 2 ] || {
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: cannot read %s at the base ref %s\n' "$PROG" "$ENTRIES_DIR" "$base" >&2
+            return 2
+        }; [ "$irc" = 0 ]; then
             printf 'ok    %s introduced: aggregate(it, entries/ at the base ref) == %s at the base ref\n' "$BASE_FILE" "$ROADMAP_FILE"
         else
             violations=$((violations + 1))
@@ -321,7 +325,7 @@ judge() {
 # The completion guard's own scan and classifier, over the head aggregate: each completed entry whose id
 # is a changed fragment must cite a live proof. Prints "id (verdict); " per problem; rc 2 when the guard is absent.
 completion_problems() {
-    local repo=$1 td=$2 cc="${PY_LIB%/*}/../check_roadmap_completion_is_cited.sh" fn rec id toks verdict
+    local scan repo=$1 td=$2 cc="${RFR_COMPLETION_GUARD:-${PY_LIB%/*}/../check_roadmap_completion_is_cited.sh}" fn rec id toks verdict
     [ -f "$cc" ] || { printf '%s is absent' "$cc"; return 2; }
     mkdir -p "$td/cc/docs/roadmaps"; cp "$td/head.yaml" "$td/cc/docs/roadmaps/roadmap.yaml"
     for fn in scan_roadmaps resolve_path_ref resolve_pr_ref classify_record; do
@@ -330,11 +334,13 @@ completion_problems() {
     (
         # shellcheck disable=SC1090
         . "$td/cc.sh" || exit 2
+        PR_CACHE_DIR=${RFR_PR_CACHE:-$td/prcache}; mkdir -p "$PR_CACHE_DIR" || exit 2
+        scan=$(scan_roadmaps "$td/cc" 2>/dev/null) || { printf 'the completion scan failed (PyYAML?)'; exit 2; }
         while IFS=$'\t' read -r _ id toks; do
             grep -Fxq -- "$id" "$td/frag_ids" || continue
             verdict=$(classify_record "$repo" "$toks")
             [ "$verdict" = cited ] || printf '%s (%s); ' "$id" "$verdict"
-        done < <(scan_roadmaps "$td/cc" 2>/dev/null)
+        done < <(printf '%s\n' "$scan")
     )
 }
 
@@ -438,6 +444,18 @@ self_test() {
     }
     b_done_dangling() {
         printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:no/such/file\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_prcited() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:PR#4242\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # An uncited completed entry already in the base, untouched by the diff: not this diff's to judge.
+    b_done_preexisting() {
+        b_done_uncited "$1" || return 1
+        printf -- '- id: PMAT-100\n  title: first, edited\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
@@ -565,6 +583,16 @@ PY
     row 'a completed fragment with no proof: token -> REFUSE' 1 'FAIL  UNCITED' b_done_uncited
     row 'a completed fragment whose proof: path does not exist -> REFUSE' 1 'FAIL  UNCITED' b_done_dangling
     row 'a completed fragment citing an existing proof: path -> PASS' 0 'PASS  check_roadmap_fragment_required.sh' b_done_cited
+    mkdir -p "$td/prc" && printf 'MERGED\n' >"$td/prc/4242"
+    RFR_PR_CACHE="$td/prc" row 'a completed fragment citing a MERGED proof:PR#N -> PASS (the PR cache is wired)' \
+        0 'PASS  check_roadmap_fragment_required.sh' b_done_prcited
+    row 'an uncited completed entry the diff does not touch -> PASS (only changed fragments are judged)' \
+        0 'PASS  check_roadmap_fragment_required.sh' b_done_preexisting
+    RFR_COMPLETION_GUARD="$td/no-such-guard.sh" row 'the completion guard absent -> ENV rc 2, never a pass' \
+        2 'is absent' b_done_uncited
+    mkdir -p "$td/stub" && printf '#!/bin/sh\n[ "$1" = - ] && exit 3\nexec %s "$@"\n' "$(command -v python3)" >"$td/stub/python3" && chmod +x "$td/stub/python3"
+    PATH="$td/stub:$PATH" row 'the completion scan failing (no PyYAML) -> ENV rc 2, never a pass' \
+        2 'the completion scan failed' b_done_uncited
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
@@ -629,6 +657,21 @@ PY
             printf 'ok    row %-2s rc=2  a failing git [%s] is ENV, never a pass\n' "$n" "$gpat"
         else
             printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] must be ENV\n' "$n" "$frc" "$gpat"
+            printf '%s\n' "$fout" | sed 's/^/        /'
+            red=$((red + 1))
+        fi
+    done
+
+    # The introduced-base regeneration reads the base ref too: a failed read is ENV, not a FROZEN verdict.
+    for gpat in "ls-tree -r --name-only HEAD~1|at the base ref" "show HEAD~1:$ENTRIES_DIR/PMAT-100.yaml|at the base ref"; do
+        n=$((n + 1))
+        mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1
+        fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1)
+        frc=$?
+        if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout"; then
+            printf 'ok    row %-2s rc=2  a failing git [%s] on the introduced base is ENV\n' "$n" "${gpat%%|*}"
+        else
+            printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] on the introduced base must be ENV\n' "$n" "$frc" "${gpat%%|*}"
             printf '%s\n' "$fout" | sed 's/^/        /'
             red=$((red + 1))
         fi
