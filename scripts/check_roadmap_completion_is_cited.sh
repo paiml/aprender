@@ -239,11 +239,16 @@ def tokens(*texts):
 # universe is covered by the same rule.
 SCRATCH_PREFIX = ".claude/worktrees/"
 
+# docs/roadmaps/roadmap-base.yaml is a FROZEN byte copy of roadmap.yaml (check_roadmap_fragment_required.sh rule 3 holds it to the
+# base ref). Its 'completed' entries are the ones roadmap.yaml was already judged on; counting them again would charge 287 entries
+# to a data-only file and force a baseline GROWTH. That ONE path is out of the universe; roadmap.yaml still is not.
+FROZEN_BASE = "docs/roadmaps/roadmap-base.yaml"
+
 def is_scratch(rel):
     return rel.replace(os.sep, "/").startswith(SCRATCH_PREFIX)
 
 def is_candidate(rel):
-    if is_scratch(rel):
+    if is_scratch(rel) or rel.replace(os.sep, "/") == FROZEN_BASE:
         return False
     d, fn = os.path.split(rel)
     if not fn.lower().endswith(".yaml"):
@@ -622,6 +627,25 @@ YAML
     scan_roadmaps "$TD" >"$TD/scan3.out" 2>"$TD/scan3.err" || true
     n_lane=$(grep -c 'lane-deadbeef' "$TD/scan3.out" "$TD/scan3.err" 2>/dev/null | awk -F: '{t+=$2} END {print t+0}')
     row 'lane scratch contributes no records'  0 "$n_lane"
+
+    # THE FROZEN BASE. docs/roadmaps/roadmap-base.yaml is a byte copy of roadmap.yaml; it contributes no records, while a
+    # sibling file under docs/roadmaps/ with the same content still does (the exclusion is that one path, not the directory).
+    mk docs/roadmaps/roadmap-base.yaml <<'YAML'
+roadmap:
+- id: R-FROZEN-BASE
+  status: completed
+  notes: null
+YAML
+    mk docs/roadmaps/roadmap-other.yaml <<'YAML'
+roadmap:
+- id: R-FROZEN-SIBLING
+  status: completed
+  notes: null
+YAML
+    scan_roadmaps "$TD" >"$TD/scan4.out" 2>"$TD/scan4.err" || true
+    row 'frozen roadmap-base.yaml contributes no records' 0 "$(grep -c 'R-FROZEN-BASE' "$TD/scan4.out" || true)"
+    row 'a sibling under docs/roadmaps/ still does' 1 "$(grep -c 'R-FROZEN-SIBLING' "$TD/scan4.out" || true)"
+    rm -f "${TD:?}/docs/roadmaps/roadmap-base.yaml" "${TD:?}/docs/roadmaps/roadmap-other.yaml"
 
     n_out=$(grep -c '^SCOPE out  crates/other/roadmap.yaml' "$TD/scan.err" || true)
     row 'foreign schema is reported out of scope, not skipped' 1 "$n_out"
