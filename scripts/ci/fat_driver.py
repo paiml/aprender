@@ -1678,7 +1678,7 @@ def _st_checkout_fetch_timeout(row, clone):
     finally:
         subprocess.run = real_run
     row("checkout depth 1: the tag fetch runs under a timeout and a timeout is a warning, not a failure",
-        (ok, seen, "timed out" in sec.log.getvalue()), (True, [CHECKOUT_FETCH_TIMEOUT], True))
+        (ok, seen, "timed out" in sec.log.getvalue()), (True, [600], True))  # literal: the bound is the ref fetch's 600s, not whatever the constant says
 
 
 def _st_checkout_undeletable(row, clone, euid):
