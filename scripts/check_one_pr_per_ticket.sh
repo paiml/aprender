@@ -12,7 +12,7 @@
 #   R1  another OPEN PR (draft included) carries the same ticket -> RED, unless this PR's body says
 #       "supersedes #M" for that PR AND #M is already closed. A named PR that is still open is RED:
 #       close it in the same step, then re-run.
-#       EMR-001 allowance: a commit of THIS PR that carries the line "EMR: 001" and the line "Squashed-From: #N"
+#       EMR-001 allowance: a commit of THIS PR that carries the line "EMR: 001" and the line "Squashed-From: #N" or "#N@<sha>" (the EMR-001 section 4 form)
 #       exempts PR #N from R1 (EMR-001 forbids closing a source PR, so it stays open while the integration PR
 #       is judged). Both lines must be on the SAME commit; the exemption is for #N only, never for another PR.
 #   R2  more than one commit on this PR carries the same ticket -> RED (EMG-7: one commit per ticket).
@@ -27,7 +27,7 @@ set -euo pipefail
 JQ_JUDGE='
   def tickets: [.[] | capture("(?m)^PMAT-Ticket:[ \t]*(?<t>PMAT-[0-9]+)[ \t]*$").t];
   def squashed: [.[] | select(test("(?m)^EMR:[ \t]*001[ \t]*$"))
-                     | [scan("(?m)^Squashed-From:[ \t]*#([0-9]+)[ \t]*$") | .[0] | tonumber]] | add // [];
+                     | [scan("(?m)^Squashed-From:[ \t]*#([0-9]+)(@[0-9a-fA-F]{7,40})?[ \t]*$") | .[0] | tonumber]] | add // [];
   . as $s
   | ($s.commits | squashed) as $sq
   | ($s.commits | tickets) as $mine
@@ -91,10 +91,13 @@ self_test() {
   mk no-trailer 10 "" '["chore: nothing"]' "[{\"number\":10,\"isDraft\":false,\"body\":\"\",\"commits\":[\"chore: nothing\"]},{\"number\":11,\"isDraft\":false,\"body\":\"\",\"commits\":[\"chore: nothing\"]}]"
   local E=$'fix: z\n\nEMR: 001\nSquashed-From: #11\nPMAT-Ticket: PMAT-6000' E2=$'fix: z\n\nEMR: 001\nSquashed-From: #11\nSquashed-From: #12\nPMAT-Ticket: PMAT-6000'
   local NOEMR=$'fix: z\n\nSquashed-From: #11\nPMAT-Ticket: PMAT-6000' EMR2=$'fix: z\n\nEMR: 002\nSquashed-From: #11\nPMAT-Ticket: PMAT-6000'
+  local S4=$'fix: z (#11)\n\nCloses #11\nPMAT-Ticket: PMAT-6000\nSquashed-From: #11@0123456789abcdef0123456789abcdef01234567\nEMR-Key: k\nEMR: 001' BADSHA=$'fix: z\n\nEMR: 001\nSquashed-From: #11@zz\nPMAT-Ticket: PMAT-6000'
   local SPLIT=$'fix: z\n\nEMR: 001\nPMAT-Ticket: PMAT-6000'
   local OP="{\"number\":11,\"isDraft\":false,\"body\":\"\",\"commits\":$t6}" OP12="{\"number\":12,\"isDraft\":false,\"body\":\"\",\"commits\":$t6}"
   local ME="{\"number\":10,\"isDraft\":false,\"body\":\"\",\"commits\":[]}"
   mk emr-exempt 10 "" "$(jq -n --arg a "$E" '[$a]')" "[$ME,$OP]"
+  mk emr-section4 10 "" "$(jq -n --arg a "$S4" '[$a]')" "[$ME,$OP]"
+  mk emr-bad-sha 10 "" "$(jq -n --arg a "$BADSHA" '[$a]')" "[$ME,$OP]"
   mk emr-other-pr-still-red 10 "" "$(jq -n --arg a "$E" '[$a]')" "[$ME,$OP,$OP12]"
   mk emr-two-sources 10 "" "$(jq -n --arg a "$E2" '[$a]')" "[$ME,$OP,$OP12]"
   mk emr-no-marker 10 "" "$(jq -n --arg a "$NOEMR" '[$a]')" "[$ME,$OP]"
@@ -113,6 +116,8 @@ self_test() {
   row two-tickets 0 "" "$S"
   row no-trailer 0 "" "$S"
   row emr-exempt 0 "" "$S"
+  row emr-section4 0 "" "$S"
+  row emr-bad-sha 1 '^R1 PMAT-6000 .*#11' "$S"
   row emr-other-pr-still-red 1 '^R1 PMAT-6000 .*#12' "$S"
   row emr-two-sources 0 "" "$S"
   row emr-no-marker 1 '^R1 PMAT-6000 .*#11' "$S"
