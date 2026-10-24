@@ -145,3 +145,15 @@ fn document_exit_codes_come_from_cli_error_and_accelerator_wins_when_both_refuse
         CliError::InferenceFailed(String::new()).exit_code_value()
     );
 }
+
+#[test]
+fn benchmark_surface_exits_8_on_an_empty_completion() {
+    for fmt in ["json", "text"] {
+        let err = print_run_output(&contract_result(" "), "m.gguf", fmt, 8, true, false, false)
+            .expect_err("empty benchmark completion must fail");
+        assert_eq!(err.exit_code_value(), 8);
+        assert!(
+            print_run_output(&contract_result("4"), "m.gguf", fmt, 8, true, false, false).is_ok()
+        );
+    }
+}
