@@ -7,11 +7,14 @@
 #   bs5 BODY.md                  no closing keyword before an issue/PR number in a batch PR body
 #   bs6 REPO 'REGEN CMD'         running REGEN CMD in REPO leaves the tree unchanged
 #   --self-test                  each obligation on a violating fixture (must exit 1) and a conforming one (must exit 0)
+# BS-1 judges README.md only outside CONTRACT_COUNT blocks; BS-4 denies ci/explicit-test-commands.d, .pmat-gates.toml, scripts/check_*.sh.
 # Exit: 0 held . 1 violated . 2 could not check. LAB: wired into no workflow.
 set -uo pipefail
 DENY_AUTHORS="${BS_DENY_AUTHORS:-guyernest}"
-DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^deny\.toml$|^scripts/ci/}"
+DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^ci/explicit-test-commands\.d/|^\.pmat-gates\.toml$|^deny\.toml$|^scripts/ci/|^scripts/check_[^/]*\.sh$}"
+# Generated: the contract artifacts, and ONLY the CONTRACT_COUNT blocks of README.md (PRB-001 §6), neutralised by readme_neutral.
 GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')
+readme_neutral() { sed 's/<!-- CONTRACT_COUNT_START -->.*<!-- CONTRACT_COUNT_END -->/<!-- CONTRACT_COUNT -->/'; }
 bad() { echo "BS-$1 VIOLATED: $2"; return 1; }
 bs1() {
   local repo="$1" main="$2" pr mb wt rc=0; shift 2
@@ -19,10 +22,16 @@ bs1() {
   git -C "$repo" worktree add -q --detach "$wt" "$main" || return 2
   for pr in "$@"; do
     mb="$(git -C "$repo" merge-base "$main" "$pr")" || { bad 1 "no merge-base for $pr"; rc=1; continue; }
-    git -C "$repo" diff "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
-    if [ -s "$wt.patch" ] && ! git -C "$wt" apply -R --check "$wt.patch" 2> /dev/null; then bad 1 "$pr has a hunk missing from $main"; rc=1; fi
+    # -U0 + --unidiff-zero: a hunk is judged by its own lines, so a neighbouring edit on main cannot false-RED it.
+    git -C "$repo" diff -U0 "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
+    if git -C "$repo" cat-file -e "$mb:README.md" 2> /dev/null && git -C "$repo" cat-file -e "$pr:README.md" 2> /dev/null; then
+      git -C "$repo" show "$mb:README.md" | readme_neutral > "$wt.a"; git -C "$repo" show "$pr:README.md" | readme_neutral > "$wt.b"
+      git -C "$wt" diff --no-index -U0 --src-prefix=a/ --dst-prefix=b/ "$wt.a" "$wt.b" 2> /dev/null | sed -e "s#a$wt\.a#a/README.md#g" -e "s#b$wt\.b#b/README.md#g" -e "s#^--- .*#--- a/README.md#" -e "s#^+++ .*#+++ b/README.md#" >> "$wt.patch"
+      [ -f "$wt/README.md" ] && readme_neutral < "$wt/README.md" > "$wt.m" && cp "$wt.m" "$wt/README.md"
+    fi
+    if [ -s "$wt.patch" ] && ! git -C "$wt" apply -R --check --unidiff-zero "$wt.patch" 2> /dev/null; then bad 1 "$pr has a hunk missing from $main"; rc=1; fi
   done
-  git -C "$repo" worktree remove --force "$wt"; rm -f -- "${wt:?}.patch"; return "$rc"
+  git -C "$repo" worktree remove --force "$wt"; rm -f -- "${wt:?}.patch" "${wt:?}.a" "${wt:?}.b" "${wt:?}.m"; return "$rc"
 }
 bs2() {
   local repo="$1" base="$2" head="$3" n="$4" c m last
@@ -48,7 +57,7 @@ bs4() {
   done < "$1"; return "$rc"
 }
 bs5() {
-  local hit; hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+(#|[A-Za-z0-9_./-]+#)?[0-9]+' "$1")" || true
+  local hit; hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+(#|[A-Za-z0-9_./-]+#|https?://[^ ]*/(issues|pull)/)?[0-9]+' "$1")" || true
   [ -z "$hit" ] || { bad 5 "closing keyword: $hit"; return 1; }
 }
 bs6() {
@@ -71,21 +80,40 @@ selftest() {
   expect "BS-1 GREEN both PRs on main" 0 bs1 "$t/r" main prA prB
   g checkout -qb prC main~2; printf 'C\n' > "$t/r/c.txt"; g add -A; g commit -qm ticketC; g checkout -q main
   expect "BS-1 RED a PR whose hunk never landed" 1 bs1 "$t/r" main prC
-  g checkout -qb good main~2; g cherry-pick prA prB; printf 'b\nc\n' > "$t/r/gen.nt"; g commit -q --allow-empty -m "batch: regenerate"
-  expect "BS-2 GREEN 2 tickets + regenerate" 0 bs2 "$t/r" main~2 good 2
-  g checkout -qb merged main~2; g merge -q --no-ff -m "Merge prA" prA; g commit -q --allow-empty -m "batch: regenerate"
-  expect "BS-2 RED a merge commit (the --no-ff batch_fold.sh)" 1 bs2 "$t/r" main~2 merged 1
-  g checkout -qb amended main~2; g cherry-pick prA; g commit -q --amend -m "ticketA + regenerate"
-  expect "BS-2 RED regenerate amended into a ticket" 1 bs2 "$t/r" main~2 amended 1
+  b0="$(git -C "$t/r" rev-parse main~2)"
+  # edits on BOTH sides of a landed hunk (git apply only trims context symmetrically) must not false-RED a landed hunk (-U0), and README is judged only outside CONTRACT_COUNT blocks
+  printf '1\n2\n3\n4\n5\n6\n' > "$t/r/f.txt"; g add -A; g commit -qm f-base; g checkout -qb prN; printf '1\n2\nthree\n4\n5\n6\n' > "$t/r/f.txt"; g commit -qam prN-edit
+  g checkout -qb prD main; printf '1\n2\n3\n4\nfive\n6\n' > "$t/r/f.txt"; g commit -qam prD-edit; g checkout -q main
+  printf 'o\n' > "$t/r/other.txt"; g add -A; g commit -qm unrelated; g cherry-pick prN; printf '1\ntwo\nthree\nfour\n5\n6\n' > "$t/r/f.txt"; g commit -qam neighbour
+  expect "BS-1 GREEN landed hunk with a neighbouring edit on main" 0 bs1 "$t/r" main prN
+  expect "BS-1 RED unlanded hunk beside a neighbouring edit" 1 bs1 "$t/r" main prD
+  printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g add -A; g commit -qm readme-base
+  g checkout -qb prR; printf 'x <!-- CONTRACT_COUNT_START -->2<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g commit -qam count-only
+  g checkout -qb prP main; printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nnew prose\n' > "$t/r/README.md"; g commit -qam prose-edit; g checkout -q main
+  expect "BS-1 GREEN README CONTRACT_COUNT-only change is generated" 0 bs1 "$t/r" main prR
+  expect "BS-1 RED README prose change that never landed" 1 bs1 "$t/r" main prP
+  g checkout -qb good $b0; g cherry-pick prA prB; printf 'b\nc\n' > "$t/r/gen.nt"; g commit -q --allow-empty -m "batch: regenerate"
+  expect "BS-2 GREEN 2 tickets + regenerate" 0 bs2 "$t/r" $b0 good 2
+  g checkout -qb merged $b0; g merge -q --no-ff -m "Merge prA" prA; g commit -q --allow-empty -m "batch: regenerate"
+  expect "BS-2 RED a merge commit (the --no-ff batch_fold.sh)" 1 bs2 "$t/r" $b0 merged 1
+  g checkout -qb amended $b0; g cherry-pick prA; g commit -q --amend -m "ticketA + regenerate"
+  expect "BS-2 RED regenerate amended into a ticket" 1 bs2 "$t/r" $b0 amended 1
   printf '1\t%s\n' "$(git -C "$t/r" rev-parse main)" > "$t/ok.tsv"; printf '2\t%s\n' "$(git -C "$t/r" rev-parse prC)" > "$t/early.tsv"
   expect "BS-3 GREEN closed after its sha is on main" 0 bs3 "$t/r" main "$t/ok.tsv"
   expect "BS-3 RED closed before its sha is on main" 1 bs3 "$t/r" main "$t/early.tsv"
   printf '7\tnoah\tcrates/x/src/lib.rs docs/a.md\n' > "$t/a-ok.tsv"
   printf '8\tguyernest\tcrates/x/src/lib.rs\n' > "$t/a-ext.tsv"; printf '9\tnoah\t.github/workflows/ci.yml\n' > "$t/a-gate.tsv"
+  printf '3\tnoah\tci/explicit-test-commands.d/9-x.cmd\n' > "$t/a-cmd.tsv"; printf '4\tnoah\t.pmat-gates.toml\n' > "$t/a-pmat.tsv"; printf '5\tnoah\tscripts/check_x.sh\n' > "$t/a-chk.tsv"
   expect "BS-4 GREEN internal author, source paths" 0 bs4 "$t/a-ok.tsv"
   expect "BS-4 RED external author" 1 bs4 "$t/a-ext.tsv"
   expect "BS-4 RED gate-file path" 1 bs4 "$t/a-gate.tsv"
+  expect "BS-4 RED ci/explicit-test-commands.d path" 1 bs4 "$t/a-cmd.tsv"
+  expect "BS-4 RED .pmat-gates.toml" 1 bs4 "$t/a-pmat.tsv"
+  expect "BS-4 RED scripts/check_*.sh" 1 bs4 "$t/a-chk.tsv"
   printf 'Supersedes #5724, #5558.\nRefs #5831\n' > "$t/b-ok.md"; printf 'Batch.\nCloses #5724\n' > "$t/b-bad.md"; printf 'Fixes: paiml/aprender#5558\n' > "$t/b-bad2.md"
+  printf 'Closes https://github.com/paiml/aprender/issues/5724\n' > "$t/b-url.md"; printf 'resolves https://github.com/paiml/aprender/pull/5558\n' > "$t/b-url2.md"
+  expect "BS-5 RED 'Closes <issue URL>'" 1 bs5 "$t/b-url.md"
+  expect "BS-5 RED 'resolves <pull URL>'" 1 bs5 "$t/b-url2.md"
   expect "BS-5 GREEN Supersedes/Refs only" 0 bs5 "$t/b-ok.md"
   expect "BS-5 RED 'Closes #N'" 1 bs5 "$t/b-bad.md"
   expect "BS-5 RED 'Fixes: org/repo#N'" 1 bs5 "$t/b-bad2.md"
