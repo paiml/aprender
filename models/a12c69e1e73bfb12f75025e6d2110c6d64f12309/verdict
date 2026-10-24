@@ -1,0 +1,8 @@
+commit=a12c69e1e73bfb12f75025e6d2110c6d64f12309
+sha9=a12c69e1e
+version=0.71.3
+entry=scripts/release/models_t1.sh@f7b3d1894a59a14c591f4a428b6251201b2baf73
+measure=ladder
+t1_rc=1
+state=not_measured
+reason=MODELS lambda NO-GO: no receipt -- model_ladder.sh wrote no receipt (rc 2)

@@ -1,0 +1,11 @@
+MODELS lambda NO-GO: no receipt -- model_ladder.sh wrote no receipt (rc 2)
+MODELS gx10 NO-GO: no receipt -- model_ladder.sh wrote no receipt (rc 2)
+MODELS NO-GO: the judge found red or missing cells (rc 1):
+MODELS   FAIL  lambda  no receipt at /mnt/nvme-raid0/models-nightly/work/out/lambda.json — run scripts/model_ladder.sh on lambda (RTX 4090, sm_89)
+MODELS   FAIL  gx10    no receipt at /mnt/nvme-raid0/models-nightly/work/out/gx10.json — run scripts/model_ladder.sh on gx10 (GB10, sm_121)
+MODELS   FAIL  known-red entry qwen35-0.8b-q4km #4030 covered NOTHING on this sweep -- the clause no longer fails (or the model changed): delete the entry, a known red must not outlive its defect
+MODELS   FAIL  no CRUX receipt under 'evidence/crux/0.71.3' -- no verb of any model has been judged against an outside engine, so every cell below is unproven (#3957 F4)
+MODELS   FAIL  certified model 00fe7986ff5f is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)
+MODELS   FAIL  certified model aaf42c8b7c3c is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)
+MODELS   FAIL  certified model b252c5610a42 is held by no required host -- CRUX must prove every certified model (#3710 ruling 1)
+MODELS   FAIL  no cell was owed -- a release that measured no cell proved nothing

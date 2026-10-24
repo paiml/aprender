@@ -1,0 +1,25 @@
+--- model capability ladder on gx10 (NVIDIA GB10, cc 12.1) apr=/home/noah/.cache/aprender-release/rel-0.71.3-4071707/target/release/apr sha=a12c69e1e version=0.71.3 ---
+    inventory: 23 model(s) matching *q4_k*.gguf,*q4k*.gguf,*q4_k*.apr,*q4k*.apr,*qwen2.5*.gguf,*qwen3.5*.gguf,*qwen2.5*.apr,*qwen3.5*.apr under /home/noah/models:/home/noah/.apr/models:/home/noah/.cache/apr/models
+  [N/A   ] qwen2-1.5b-q4km                not listed for gx10 (hosts: lambda)
+  [N/A   ] qwen3-1.7b-q4km                not listed for gx10 (hosts: lambda)
+  [N/A   ] qwen3-8b-q4km                  not listed for gx10 (hosts: lambda)
+  [FAIL  ] qwen35-0.8b-q4km               golden_output: golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 6723 chars generated, no answer was reached). This is not an empty answer. Before treating it as a model defect, check whether 2048 is MEASURED for this model in contracts/thinking-budgets-v1.yaml or inherited from `default` — the default's basis is one 8B model (#3907). [budget basis — Qwen3.5-0.8B-Q4_K_M.gguf: Measured on lambda (RTX 4090, cuda). History: #3948 @ 5103e07de, on apr's old ON prompt
+(`assistant\n`), the `<think>` block closed EMPTY at 16, 64 and 2048 alike; the official
+template (#3990, ends `assistant\n<think>\n`) removed that. RE-MEASURED (aprender#4666,
+operator ruling A, 2026-10-04) on released apr 0.70.1 cuda (04332f838), greedy ON leg on
+the official template: UNCLOSED at 2048 / 4096 / 8192 / 16384 with 6,723 / 13,225 /
+26,243 / 52,290 chars; output grows linearly with the budget. The text is coherent,
+reaches "2 + 2 = 4", then loops ("Wait, I should check..."). So the budget is not what
+fails and no budget makes this leg pass; it stays FAIL, known_red. A model property, not
+apr: with Qwen's sampling (T 0.6, top-k 20, top-p 0.95, 8 seeds, 2048) llama.cpp closes
+2/8 and apr closes 5/8; llama.cpp greedy closes only because an early near-tie resolves
+differently across engines. Evidence (in-tree):
+evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md.]
+  [ OK   ] qwen35-2b-q4km                 qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen35-4b-q4km                 qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen35-9b-q4km                 qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen35-27b-q4km                qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] inv:Qwen2.5-0.5B-Instruct-IQ3_M.gguf qa cap+golden pass, backends cuda honoured
+  [ OK   ] inv:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf qa cap+golden pass, backends cuda honoured
+  [ OK   ] inv:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf qa cap+golden pass, backends cuda honoured
+decline: ENV the GPU was not exclusive for apr run inv:Qwen3.5-0.8B-UD-IQ2_XXS.gguf (cuda) -- gpu_exclusive_run: CONTENDED -- foreign GPU process(es) during the run, result refused:     1967764, /home/noah/actions-runner-gx10/_work/aprender/aprender/target/release/apr . Not a model verdict.
