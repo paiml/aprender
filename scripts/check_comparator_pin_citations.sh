@@ -333,6 +333,8 @@ PY
     mutant drop-class-filter 'if v[0] == "historical" and r == COPY_SRC' 'if r == COPY_SRC' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c22"
     mutant widen-scope 'if rel == COPY_DST and rel not in led and COPY_SRC' 'if rel not in led and COPY_SRC' 1 'R1 evidence/parity/copy.md:1' "$TMP/c23"
     mutant membership-only 'and pinned[rel] == src_pin' '' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c25"
+    # mutant WANT-RC is the UNMUTATED row's rc (C26 is green, 0): a mutant is KILLED when the mutated guard stops giving it, so live-row-pool
+    # (rc 1, R1 on the base) is killed and 'SURVIVED' prints only if the mutated guard still returns 0.
     export COPY_ANCHOR; COPY_ANCHOR=$(git -C "$TMP/c26" rev-parse HEAD)
     mutant live-row-pool 'src_pin, src_lines = pin_of(alines), set(alines)' 'pass' 0 'every one ledgered' "$TMP/c26"
     COPY_ANCHOR=$(git -C "$TMP/c29" rev-parse HEAD)
