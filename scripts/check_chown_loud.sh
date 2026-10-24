@@ -35,7 +35,7 @@ self_test() {
     if check "$w/m.yml" > /dev/null 2>&1; then echo "FAIL  mutant $1 survived"; rc=1; else echo "ok    mutant $1 turns it red"; fi
   }
   mutant fixed-uid     '0,/chown -R "\$OWNER"/s//chown -R 1000:1000/'
-  mutant silent-stderr '0,/chown -R "\$OWNER" \/workspace |/s//chown -R "$OWNER" \/workspace 2>\/dev\/null |/'
+  mutant silent-stderr '0,/\/workspace |/s//\/workspace 2>\/dev\/null |/'
   mutant swallowed-rc  '0,/ || echo "::warning::ownership/s// || true # ::warning::ownership/'
   printf '# a comment about chown 1000:1000 || true\n' > "$w/c.yml"; printf 'run: chown -R "$OWNER" /w || echo warn\n' >> "$w/c.yml"
   m=$(check "$w/c.yml") && echo "ok    a comment naming 1000:1000 is not a violation" || { echo "FAIL  comment judged: $m"; rc=1; }
