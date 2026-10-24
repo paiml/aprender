@@ -11,7 +11,9 @@
 #   4. content pin, VERBATIM bytes (no whitespace normalising -- that let code be joined onto a `//` line): a digest of
 #      each moved test fn with its doc/attr lines, a digest of each file from its first item on, and the header before
 #      it may hold only blank/`//!`/`#![allow]`/single `use` lines (no macro_rules!). The moved bodies equal the
-#      merge-base bodies up to rustfmt and the dropped `#[cfg(feature = "ml-tuner")]` lines (proved in the PR body).
+#      merge-base bodies up to rustfmt and the dropped `#[cfg(feature = "ml-tuner")]` lines, EXCEPT f042-f044, which
+#      were strengthened to assert the contract unconditionally (#6125); their digests pin the strengthened text.
+#      F043 now exercises the library: RandomForestRegressor::fit itself refuses a non-finite label.
 #      Text cannot prove a test runs; parts 1-2 do. Editing a moved test means updating its digest here in the same PR.
 # `--self-test` feeds synthetic cargo listings, so it needs no compile; the mutants must turn it RED.
 set -u
@@ -33,8 +35,8 @@ f048_classifier_training 72c5d41797dc1285
 f049_training_data_variance 1f2fd8cbb55e4919
 f050_feature_correlation 0a494cbb1416adde
 f051_to_f060_reserved fbb8c9ddc4be9944
-fit_throughput_rf e8c6b456ce81ff7d
-@tail:crates/aprender-core/tests/tuner_training_data_quality.rs 3b3d67c9f0380b4f
+fit_throughput_rf 7da5ef57b0d6baeb
+@tail:crates/aprender-core/tests/tuner_training_data_quality.rs 251b7174cb88652f
 @tail:crates/aprender-compute/tests/tuner_falsification/training_data_quality.rs 4268c362cc9890b0
 @file:crates/aprender-compute/tests/tuner_falsification/main.rs 2a75089411202f35
 "

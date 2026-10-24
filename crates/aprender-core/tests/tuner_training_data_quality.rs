@@ -22,10 +22,6 @@ fn fit_throughput_rf(
     if rows.len() < 10 {
         return Err(format!("insufficient data: {} < 10", rows.len()));
     }
-    // RandomForestRegressor::fit accepts NaN labels and then predicts NaN everywhere (measured), so the guard is here.
-    if let Some(i) = rows.iter().position(|(_, t)| !t.is_finite()) {
-        return Err(format!("non-finite label at row {i}"));
-    }
     let dim = TunerFeatures::DIM;
     let n = rows.len();
     let mut x = Vec::with_capacity(n * dim);
