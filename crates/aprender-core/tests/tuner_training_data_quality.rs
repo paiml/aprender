@@ -53,14 +53,18 @@ fn f041_empty_training_errors() {
 fn f042_single_sample_graceful() {
     let features = TunerFeatures::builder().model_params_b(1.5).build();
     let data = vec![(features, 100.0)];
-    // Should error (insufficient), not panic
-    let _ = fit_throughput_rf(&data, 10);
+    let err = fit_throughput_rf(&data, 10)
+        .err()
+        .expect("F042: a single sample must error");
+    assert!(
+        err.contains("insufficient data"),
+        "F042: wrong error: {err}"
+    );
 }
 
-/// F043: Training with NaN labels should not produce NaN predictions
+/// F043: Training with NaN labels must error (never fit and predict NaN)
 #[test]
 fn f043_nan_labels_error() {
-    use aprender::primitives::Matrix;
     let mut data: Vec<(TunerFeatures, f32)> = (0..10)
         .map(|i| {
             (
@@ -72,14 +76,13 @@ fn f043_nan_labels_error() {
         })
         .collect();
     data[0].1 = f32::NAN;
-    if let Ok(rf) = fit_throughput_rf(&data, 10) {
-        let fx = Matrix::from_vec(1, TunerFeatures::DIM, data[1].0.to_vector().to_vec()).unwrap();
-        let pred = rf.predict(&fx);
-        assert!(
-            pred.as_slice()[0].is_finite() || pred.as_slice()[0].is_nan(),
-            "F043: prediction must be a well-defined float"
-        );
-    }
+    let err = fit_throughput_rf(&data, 10)
+        .err()
+        .expect("F043: NaN labels must be refused, not fitted");
+    assert!(
+        err.contains("non-finite label at row 0"),
+        "F043: wrong error: {err}"
+    );
 }
 
 /// F044: Training with negative labels should be handled without panic
@@ -93,8 +96,16 @@ fn f044_negative_labels_handled() {
             (f, if i % 2 == 0 { -100.0 } else { 100.0 })
         })
         .collect();
-    // Must not panic; result may be Ok or Err.
-    let _ = fit_throughput_rf(&data, 10);
+    use aprender::primitives::Matrix;
+    let rf = fit_throughput_rf(&data, 10).expect("F044: negative finite labels must fit");
+    for (feat, _) in &data {
+        let fx = Matrix::from_vec(1, TunerFeatures::DIM, feat.to_vector().to_vec()).unwrap();
+        let p = rf.predict(&fx).as_slice()[0];
+        assert!(
+            p.is_finite() && (-100.0..=100.0).contains(&p),
+            "F044: prediction {p} outside the label range"
+        );
+    }
 }
 
 /// F046: Training improves over heuristic (or doesn't regress)
