@@ -79,11 +79,11 @@ if [ "${1:-}" = --self-test ]; then
   cp ci/sections.yml "$t/s.yml"; sed -E 's/^( +SHARDS=)"\$\(awk.*ci\/sections\.yml\)"/\112/' .github/workflows/ci.yml > "$t/c.yml"
   cmp -s .github/workflows/ci.yml "$t/c.yml" && { echo "self-test: SHARDS=12 mutant did not apply"; exit 1; }
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: typed aggregator SHARDS=12 must be RED"; exit 1; }
-  sed -E '0,/^        shards: \[12\]/s//        shards: [11]/' ci/sections.yml > "$t/s.yml"
+  sed -E '0,/^        shards: \[1\]/s//        shards: [2]/' ci/sections.yml > "$t/s.yml"
   cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: inert-matrix mutant did not apply"; exit 1; }
   check "$t/s.yml" .github/workflows/ci.yml >/dev/null && { echo "self-test: sections.yml jobs matrix drift must be RED"; exit 1; }
   cp .github/workflows/ci.yml "$t/c.yml"
-  sed -E '/^  workspace-test-shard-merge_group:/,/^  determinism:/s/\{shard: 4, shards: 4\}/{shard: 4, shards: 3}/' ci/sections.yml > "$t/s.yml"
+  sed -E '/^  workspace-test-shard-merge_group:/,/^  determinism:/s/\{shard: 1, shards: 1\}/{shard: 1, shards: 2}/' ci/sections.yml > "$t/s.yml"
   cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: merge_group pin mutant did not apply"; exit 1; }
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: a merge_group pin with the wrong shards must be RED"; exit 1; }
   awk '/^  workspace-test-shard-merge_group:/{print; for(i=1;i<=13;i++) printf "    - {shard: %d, shards: 13}\n", i; skip=1; next} skip&&/^    - /{next} {skip=0; print}' ci/sections.yml > "$t/s.yml"

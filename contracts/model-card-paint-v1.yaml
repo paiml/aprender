@@ -1,0 +1,47 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  description: "presentar-widgets ModelCard::paint (#5539) — draws background, border and status badge, then title and version, then optional description, framework/task line, parameters, at most 4 metrics (only when the chart is on) and at most 5 tags, each row below the previous."
+  kind: pattern
+  references:
+    - "crates/aprender-present-widgets/src/model_card.rs — paint"
+    - "aprender#5539 — coverage ticket"
+
+equations:
+  paint_draw_list:
+    formula: "paint emits 3 rects (bg, border, badge) + texts [status, name, vN]; description adds 24 to y of later rows; framework/task text is 'f • t', f or t; metrics emit 2 texts each for min(n,4) when show_metrics_chart; tags emit rect(len*6+12 x 18)+text for min(n,5)"
+    domain: "a laid-out ModelCard and a RecordingCanvas"
+    codomain: "the recorded DrawCommand list"
+    invariants:
+      - "metrics beyond the 4th and tags beyond the 5th are never drawn"
+      - "show_metrics_chart=false suppresses all metric text"
+
+proof_obligations:
+  - id: MODELCARD-PAINT-INV-001
+    type: invariant
+    property: "Metrics are capped at 4 and gated by show_metrics_chart"
+    formal: "∀ run: cargo test -p aprender-present-widgets --lib test_paint_metrics_cap_at_four_and_toggle exits 0"
+    applies_to: paint_draw_list
+  - id: MODELCARD-PAINT-INV-002
+    type: invariant
+    property: "Tags are capped at 5 and sized from their length"
+    formal: "∀ run: cargo test -p aprender-present-widgets --lib test_paint_tags_cap_at_five_with_width_from_len exits 0"
+    applies_to: paint_draw_list
+
+falsification_tests:
+  - id: FALSIFY-MODELCARD-PAINT-001
+    rule: "metric cap raised"
+    prediction: "changing take(4) to take(5) turns test_paint_metrics_cap_at_four_and_toggle RED"
+    test: "cargo test -p aprender-present-widgets --lib test_paint_metrics_cap_at_four_and_toggle"
+    if_fails: "metric cap is unguarded"
+  - id: FALSIFY-MODELCARD-PAINT-002
+    rule: "tag width formula changed"
+    prediction: "using len*5 instead of len*6 turns test_paint_tags_cap_at_five_with_width_from_len RED"
+    test: "cargo test -p aprender-present-widgets --lib test_paint_tags_cap_at_five_with_width_from_len"
+    if_fails: "tag sizing is unguarded"
+  - id: FALSIFY-MODELCARD-PAINT-003
+    rule: "description offset changed"
+    prediction: "y_offset += 20 after the description turns test_paint_description_shifts_following_rows_by_24 RED"
+    test: "cargo test -p aprender-present-widgets --lib test_paint_description_shifts_following_rows_by_24"
+    if_fails: "row layout is unguarded"

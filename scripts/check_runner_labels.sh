@@ -24,7 +24,8 @@ cd "$(dirname "$0")/.."
 # review-light (#4729): one runner on intel-clean-room-15, same unit and isolation as the
 # clean-room pool, deliberately WITHOUT clean-room so build jobs cannot queue in front of
 # pr-review-quorum `present` (a seconds-long check). A one-box label, like perf-solo.
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light'
+# kfocus (#5889): the Kubuntu Focus host's own label; one box, so it discriminates like perf-solo.
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light|kfocus'
 fail=0
 
 while IFS=: read -r file line sel; do

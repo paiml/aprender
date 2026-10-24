@@ -97,7 +97,7 @@ provable-contracts-macros = { workspace = true }
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
+serde-saphyr = { workspace = true }  # #5208: build.rs reads contract YAML through saphyr, not unsafe-libyaml
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)

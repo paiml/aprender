@@ -587,7 +587,7 @@ STUB
   wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
-  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}"
+  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
   wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}"
   # Q6 quorum, C324: mac-check is LAB and left ci.yml (nightly.yml now). The `mac` key is
@@ -596,18 +596,95 @@ STUB
     fail=$((fail + 1)); echo "FAIL wiring: ci.yml runs mac-check, a LAB job (Q6 quorum, C324)"; fi
   if grep -qF 'outputs.mac' <<<"$(job mg-reuse)"; then
     fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
-  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true }}"
+  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire x86-main-advisories "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire workspace-test-shard "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
+  wire pr-light 'runs-on: [self-hosted, Linux, X64, clean-room]'
+  wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, pr-light]'
   wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'
-  wire ci-gate 'needs: [x86-main, mg-reuse, x86-main-advisories]'
+  wire ci-gate 'needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]'
   wire gate 'MG-REUSE-VERDICT-BEGIN'
-  wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test]'
+  wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]'
   wire gate '[ "$MST" = success ]'
   # #5472 variant: the pr-only label is retired; pull_request and push take the one shared clean-room
   # pool. The merge_group half (this row): x86-main and workspace-test-shard take the mq lane on a
   # merge_group entry and clean-room on every other event, and nothing else is event-conditional.
   # Each row is compared as the EXACT line (trailing comment stripped), so a third state cannot slip in.
+  # #5955 (Noah 15:09Z): heavy jobs run only in the merge queue. Both directions, run through the real step scripts:
+  # a pull_request with the heavy jobs skipped PASSES when pr-light passed; a merge_group, push, empty or unknown
+  # event with the heavy jobs skipped FAILS, even when pr-light is (wrongly) green.
+  stepscript() { # stepscript WF JOB -> the job's first `run: |` body, de-indented
+    awk -v j="  $2:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null \
+      | awk '/^        run: \|$/ {r = 1; next} r && /^      - / {exit} r {sub(/^          /, ""); print}'
+  }
+  # pr-light is the ONLY runner of the PR path: no merge-queue label (mq) may sit on it. X64 is allowed (clean-room X64 pool, not the gx10 build host).
+  if grep -qE '"mq"|\bmq\b' <<< "$(job pr-light | grep -m1 '^    runs-on:')"; then
+    fail=$((fail + 1)); echo "FAIL pr-light: runs-on carries a merge-queue label"; else pass=$((pass + 1)); fi
+  # Opus-A on #5964: the sections that run only for a PR (guard-tree incl. R-2 / 11.1, pr-review-shadow, pr-review-sign)
+  # ran inside x86-main, which a PR no longer runs. pr-light must run all three, and the feeder must judge pr-light.
+  for sec in guard-tree pr-review-shadow pr-review-sign; do
+    if grep -q -- "--sections '[^']*\b$sec\b" <<<"$(job pr-light)"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL pr-light: does not run the PR-only section $sec"; fi
+  done
+  if grep -q '^export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-pr-light}"' "${BASH_SOURCE[0]%/*}/mq_feeder.sh"; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL mq_feeder: GUARD_CHECK_NAME is not pr-light, so it judges a check a PR no longer runs"; fi
+  prlrow() { # prlrow WF NAME JOB WANT(0|red) EVT PRL [extra env...]
+    local f="$1" n="$2" j="$3" want="$4" ev="$5" prl="$6" rc scr; shift 6
+    scr=$(stepscript "$f" "$j")
+    [ -n "$scr" ] || { fail=$((fail + 1)); echo "FAIL prl-$n: no run script found for $j"; return; }
+    rc=0
+    env EVT="$ev" PRL="$prl" DRAFT="" RESULTS="null" MG="skipped" MG_X86="" MG_DET="" MG_CITE="" ADV="skipped" \
+      X86="null" DET="null" WT="success" MST="success" SHARD_RESULT="skipped" WT_REUSE="" WT_CITE="" "$@" \
+      bash -c "$scr" > /dev/null 2>&1 || rc=$?
+    case "$want" in
+      0) [ "$rc" = 0 ] ;;
+      red) [ "$rc" != 0 ] ;;
+    esac && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL prl-$n: want $want got rc=$rc"; }
+  }
+  prlsuite() { # prlsuite WF TAG -> every row against workflow WF (TAG names the variant)
+    local f="$1" t="$2" j
+    for j in ci-gate gate workspace-test; do
+      prlrow "$f" "$t-$j-pr-light-ok"        "$j" 0   pull_request success
+      prlrow "$f" "$t-$j-pr-light-failed"    "$j" red pull_request failure
+      prlrow "$f" "$t-$j-pr-light-skipped"   "$j" red pull_request skipped
+      prlrow "$f" "$t-$j-pr-light-cancelled" "$j" red pull_request cancelled
+      prlrow "$f" "$t-$j-pr-light-empty"     "$j" red pull_request ""
+      # the FAIL direction: heavy jobs skipped on any non-PR event, pr-light adversarially green
+      prlrow "$f" "$t-$j-mg-heavy-skipped"   "$j" red merge_group success
+      prlrow "$f" "$t-$j-push-heavy-skipped" "$j" red push success
+      prlrow "$f" "$t-$j-empty-heavy-skipped" "$j" red "" success
+      prlrow "$f" "$t-$j-unknown-heavy-skipped" "$j" red workflow_dispatch success
+      prlrow "$f" "$t-$j-mg-heavy-skipped-light-skipped" "$j" red merge_group skipped
+    done
+    # control: the same scripts still pass a merge_group whose heavy jobs ran and passed
+    prlrow "$f" "$t-ci-gate-mg-heavy-green" ci-gate 0 merge_group skipped \
+      MG=skipped ADV=skipped 'RESULTS={"sov.gate":{"result":"success"}}'
+    prlrow "$f" "$t-gate-mg-heavy-green" gate 0 merge_group skipped \
+      'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+      'GRD={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' GRDR=success \
+      'DET={"determinism-compare":{"result":"success"}}'
+    prlrow "$f" "$t-workspace-test-mg-shards-ran" workspace-test red merge_group skipped SHARD_RESULT=skipped
+  }
+  prlsuite "$wf" real
+  prlmut() { # prlmut NAME SED_EXPR: the mutant must change ci.yml and at least one prl row must go RED against it
+    sed -E "$2" "$wf" > "$T/prl-mut.yml"
+    if cmp -s "$wf" "$T/prl-mut.yml"; then
+      fail=$((fail + 1)); echo "FAIL mutant $1: the sed did not change ci.yml"; return; fi
+    local before=$fail; local keep=$pass
+    prlsuite "$T/prl-mut.yml" "mut-$1" > "$T/prl-mut.out" 2>&1 || true
+    # prlsuite counts into pass/fail; undo its counting and judge the mutant by whether it produced a FAIL
+    local newfail=$((fail - before)); fail=$before; pass=$keep
+    if [ "$newfail" -gt 0 ]; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL mutant $1: no prl row went RED (the event check is not guarded)"; fi
+  }
+  prlmut event-check-deleted-ci-gate '/^  ci-gate:$/,/^  gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
+  prlmut event-check-deleted-gate '/^  gate:$/,$ {s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
+  prlmut event-check-deleted-workspace-test '/^  workspace-test:$/,/^  ci-gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
+  prlmut empty-event-counts-as-pr '/^  ci-gate:$/,/^  gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if [ "${EVT:-pull_request}" = pull_request ]; then/}'
+  prlmut pr-light-result-ignored '/^  ci-gate:$/,/^  gate:$/{s/\[ "\$\{PRL:-\}" = success \] \|\| /true || /}'
   poolrows() { # poolrows WF -> one line per violated pool row
     local j l want
     local plain="runs-on: [self-hosted, Linux, X64, clean-room]"
@@ -683,7 +760,7 @@ STUB
     fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
   mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
   mgmut mg-if-removed-string-elsewhere "is not the push-only key" "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
-  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
   mgmut determinism-if-loses-cancelled "job determinism needs mg-reuse but its if lacks" '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
   mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
   mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'

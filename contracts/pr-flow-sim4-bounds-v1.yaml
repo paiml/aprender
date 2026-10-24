@@ -49,3 +49,9 @@ falsification_tests:
     test: "cargo test -p aprender-simulate --lib sim4_pr_runner_load_scales_with_runs_per_pr"
     prediction: "the test passes"
     if_fails: "rework runs are not counted, so the PR pool bound is understated"
+
+  - id: FALSIFY-004
+    description: "repo_flow names the binding station as the argmin of the station bounds: L = cap reports cap, an N-starved run reports supply, and a run with no merge queue never reports merge_queue"
+    test: "cargo test -p aprender-simulate --lib repo_flow"
+    prediction: "the test passes"
+    if_fails: "repo_flow went back to fixed utilisation thresholds, so the reported binding station can disagree with the bound that is actually lowest"

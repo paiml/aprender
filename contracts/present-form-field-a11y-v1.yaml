@@ -1,0 +1,77 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-10-18"
+  updated: "2026-10-18"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#5551 — check_field coverage row"
+    - "crates/aprender-present-test/src/a11y.rs — the checker this pins"
+  description: >
+    FormA11yChecker decides, per form field, which WCAG rules are violated.
+    A field that silently stops reporting a rule makes an inaccessible form
+    pass. These are the per-field rules a form author relies on.
+
+name: present-form-field-a11y
+version: "1.0.0"
+scope: >
+  Per-field rules of `FormA11yChecker::check` in
+  crates/aprender-present-test/src/a11y.rs (label, required, error state,
+  autocomplete, placeholder-as-label), observed through the public API.
+status: active
+
+contract: |
+  (1) A FIELD NEEDS A NAME. With no label, aria-label or aria-labelledby the
+      field reports MissingLabel (Critical), naming the field id.
+  (2) REQUIRED NEEDS TWO SIGNALS. aria-required and a visual indicator are
+      checked independently; each missing one is its own violation.
+  (3) ERRORS NEED STATE, MESSAGE AND ASSOCIATION. aria-invalid, an error
+      message, and aria-errormessage/describedby are independent checks.
+  (4) PERSONAL-DATA TYPES NEED AUTOCOMPLETE. Only the text-like types report
+      MissingAutocomplete; date, radio, checkbox and hidden do not.
+  (5) A PLACEHOLDER IS NOT A LABEL. A placeholder without label or aria-label
+      reports PlaceholderAsLabel in addition to MissingLabel.
+equations:
+  field_rules:
+    description: "Each rule fires exactly when its precondition holds"
+    formula: "violations(f) = { r | precondition_r(f) }, in rule order"
+    domain: "a FormFieldA11y"
+    codomain: "ordered list of FormViolation"
+    invariants:
+      - "rules are independent: clearing one condition removes only its violation"
+      - "a fully annotated field yields no violations"
+falsification:
+  - id: FALSIFY-PRESENT-FORM-A11Y-V1-001
+    description: "Each field rule is independent and a clean field passes"
+    test: "cargo test -p aprender-present-test --test form_field_a11y"
+    evidence: "13 passed, 2026-10-18"
+open_obligations:
+  - |
+    check_widget (the non-form widget checker) is not covered here.
+falsification_tests:
+  - id: FALSIFY-PRESENT_FORM_FIELD_A11Y-001
+    description: "a field with no label source reports MissingLabel (Critical) naming the field"
+    test: "cargo test -p aprender-present-test --test form_field_a11y missing_label_is_critical_and_names_the_field"
+    prediction: "one MissingLabel violation, impact Critical, field_id equal to the field"
+    if_fails: "an unlabeled field passes the accessibility check"
+  - id: FALSIFY-PRESENT_FORM_FIELD_A11Y-002
+    description: "required indicators are checked independently"
+    test: "cargo test -p aprender-present-test --test form_field_a11y required_reports_only_the_missing_indicator"
+    prediction: "missing aria-required and missing visual indicator each report alone"
+    if_fails: "one required signal masks the other"
+  - id: FALSIFY-PRESENT_FORM_FIELD_A11Y-003
+    description: "error state, message and association are independent checks"
+    test: "cargo test -p aprender-present-test --test form_field_a11y error_state_branches_are_independent"
+    prediction: "clearing aria-invalid, message, then association removes exactly one violation each"
+    if_fails: "an error field passes with a missing state, message or association"
+  - id: FALSIFY-PRESENT_FORM_FIELD_A11Y-004
+    description: "autocomplete is required only for personal-data input types"
+    test: "cargo test -p aprender-present-test --test form_field_a11y autocomplete_required_only_for_personal_data_types"
+    prediction: "text-like types report MissingAutocomplete; date, radio, checkbox, hidden do not"
+    if_fails: "the autocomplete rule fires on, or skips, the wrong input types"
+  - id: FALSIFY-PRESENT_FORM_FIELD_A11Y-005
+    description: "a placeholder alone is flagged as a label substitute"
+    test: "cargo test -p aprender-present-test --test form_field_a11y placeholder_only_labeling_is_flagged"
+    prediction: "MissingLabel then PlaceholderAsLabel"
+    if_fails: "placeholder-only fields are treated as labeled"
