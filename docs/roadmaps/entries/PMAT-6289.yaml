@@ -18,9 +18,9 @@
   labels:
   - kind:code
   notes: |-
-    Mutant table (self-test 38/38; each mutant turned rows RED, 0 survivors): diff --name-only failure ignored: 1 |
+    Mutant table (self-test 45/45; each mutant turned rows RED, 0 survivors): diff --name-only failure ignored: 1 |
     roadmap.yaml show failure ignored: 2 | roadmap-base.yaml show failure ignored: 1 | entries ls-tree failure ignored: 1 |
-    uncited check off: 2 | dangling treated as cited: 1 | PR cache dir unset: 1 | introduced-base ls-tree / show failure ignored: 1 / 1 | intro rc 2 not honoured: 2 | completion guard absent ignored: 1 | crc 2 ignored: 2 | only-changed-fragments filter off: 5 | scan failure ignored: 1 | path lookup error read as absent (ls-tree, 3 sites): 2 / 1 / 1 / 4. Deferred to follow-up tickets that must close before any
+    uncited check off: 2 | dangling treated as cited: 1 | PR cache dir unset: 1 | introduced-base ls-tree / show failure ignored: 1 / 1 | intro rc 2 not honoured: 2 | completion guard absent ignored: 1 | crc 2 ignored: 2 | only-changed-fragments filter off: 5 | scan failure ignored: 1 | path lookup error read as absent (ls-tree, 3 sites): 2 / 1 / 1 / 4. MT-2 (delete each of 187 added code lines, 12-way parallel): every `return 2` deleted turns a row red except L144 (intro mkdir, equivalent: the next write into the missing dir returns 2) and self-test fixture setup lines; the survivors that remain are comments, `local` declarations, deleted row/table lines and row-failure reporting lines (printf/red++/rc=$? in the harness), not guard behaviour. ENV-only assertions (exactly one ENV, no FAIL/PASS) hold in the failing-git and stub rows. Deferred to follow-up tickets that must close before any
     entries-only skip ships: (a) a second entry written as flow-map `- {id: X}` or `- id : X` passes a fragment alone then
     duplicates in the aggregate; (b) an entries/<sub>/ copy shadows the real fragment.
   epic: null

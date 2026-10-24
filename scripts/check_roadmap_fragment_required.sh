@@ -150,7 +150,7 @@ intro_regenerates() {
         case "$name" in *.yaml) ;; *) continue ;; esac
         git -C "$repo" show "$base:$name" >"$td/intro/entries/${name##*/}" || return 2
     done < <(printf '%s\n' "$names")
-    python3 "$PY_LIB" aggregate --check --roadmap "$td/intro/roadmap.yaml" --entries "$td/intro/entries" >/dev/null 2>&1
+    python3 "$PY_LIB" aggregate --check --roadmap "$td/intro/roadmap.yaml" --entries "$td/intro/entries" >/dev/null 2>&1 || return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -170,7 +170,10 @@ judge() {
         return 2
     }
 
-    td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq.XXXXXX") || return 2
+    td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq.XXXXXX") || {
+        printf 'ENV   %s: cannot make a scratch directory\n' "$PROG" >&2
+        return 2
+    }
 
     # A failed git read is ENV (rc 2), never "nothing changed".
     local rm_changed
@@ -349,7 +352,8 @@ judge() {
 completion_problems() {
     local scan repo=$1 td=$2 cc="${RFR_COMPLETION_GUARD:-${PY_LIB%/*}/../check_roadmap_completion_is_cited.sh}" fn rec id toks verdict
     [ -f "$cc" ] || { printf '%s is absent' "$cc"; return 2; }
-    mkdir -p "$td/cc/docs/roadmaps"; cp "$td/head.yaml" "$td/cc/docs/roadmaps/roadmap.yaml"
+    mkdir -p "$td/cc/docs/roadmaps" && cp "$td/head.yaml" "$td/cc/docs/roadmaps/roadmap.yaml" \
+        || { printf 'cannot stage the aggregate for the completion scan'; return 2; }
     for fn in scan_roadmaps resolve_path_ref resolve_pr_ref classify_record; do
         sed -n "/^$fn() {/,/^}/p" "$cc"
     done >"$td/cc.sh"
@@ -428,7 +432,7 @@ self_test() {
         "$builder" "$d" || { printf 'FAIL  row %-2s %s: builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
         out=$(judge "$d" HEAD~1 HEAD 2>&1)
         rc=$?
-        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
+        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out" || { [ -n "${ONLY_ENV:-}" ] && ! only_env "$out"; }; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
             red=$((red + 1))
@@ -438,6 +442,8 @@ self_test() {
     }
 
     commit_all() { git -C "$1" add -A && git -C "$1" commit -qm head; }
+    # The ENV line must be the ONLY verdict: a later read failing rc 2 anyway must not hide a deleted return.
+    only_env() { [ "$(grep -c '^ENV' <<<"$1")" = 1 ] && ! grep -q '^\(FAIL\|PASS\)' <<<"$1"; }
 
     # ---- builders -------------------------------------------------------
     # THE MEASURED SHAPE: `pmat work add` appends an entry to the monolith and
@@ -477,6 +483,7 @@ self_test() {
     # An uncited completed entry already in the base, untouched by the diff: not this diff's to judge.
     b_done_preexisting() {
         b_done_uncited "$1" || return 1
+        grep -q 'status: completed' "$1/$ROADMAP_FILE" || return 1 # the uncited entry is really in the aggregate
         printf -- '- id: PMAT-100\n  title: first, edited\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
@@ -615,6 +622,9 @@ PY
     mkdir -p "$td/stub" && printf '#!/bin/sh\n[ "$1" = - ] && exit 3\nexec %s "$@"\n' "$(command -v python3)" >"$td/stub/python3" && chmod +x "$td/stub/python3"
     PATH="$td/stub:$PATH" row 'the completion scan failing (no PyYAML) -> ENV rc 2, never a pass' \
         2 'the completion scan failed' b_done_uncited
+    mkdir -p "$td/cpstub" && printf '#!/bin/sh\ncase "$1" in */head.yaml) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v cp)" >"$td/cpstub/cp" && chmod +x "$td/cpstub/cp"
+    PATH="$td/cpstub:$PATH" row 'staging the aggregate for the completion scan failing -> ENV rc 2' \
+        2 'cannot stage the aggregate' b_done_cited
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
@@ -648,7 +658,7 @@ PY
     mkrepo "$td/r$n" >/dev/null 2>&1
     out=$(judge "$td/r$n" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD 2>&1)
     rc=$?
-    if [ "$rc" = 2 ] && grep -qF 'refusing to judge' <<<"$out"; then
+    if [ "$rc" = 2 ] && grep -qF 'refusing to judge' <<<"$out" && only_env "$out"; then
         printf 'ok    row %-2s rc=2  an unresolvable base ref is ENV, never a pass\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s (wanted 2)  an unresolvable base ref is ENV, never a pass\n' "$n" "$rc"
@@ -677,7 +687,7 @@ PY
         mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1 && b_fragment_and_aggregate "$td/r$n" >/dev/null 2>&1
         fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1)
         frc=$?
-        if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout"; then
+        if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout" && only_env "$fout"; then
             printf 'ok    row %-2s rc=2  a failing git [%s] is ENV, never a pass\n' "$n" "$gpat"
         else
             printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] must be ENV\n' "$n" "$frc" "$gpat"
@@ -692,7 +702,7 @@ PY
         mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1
         fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1)
         frc=$?
-        if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout"; then
+        if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout" && only_env "$fout"; then
             printf 'ok    row %-2s rc=2  a failing git [%s] on the introduced base is ENV\n' "$n" "${gpat%%|*}"
         else
             printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] on the introduced base must be ENV\n' "$n" "$frc" "${gpat%%|*}"
@@ -700,6 +710,30 @@ PY
             red=$((red + 1))
         fi
     done
+
+    # An unresolvable HEAD ref, likewise the only verdict.
+    n=$((n + 1))
+    mkrepo "$td/r$n" >/dev/null 2>&1
+    out=$(judge "$td/r$n" HEAD deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2>&1)
+    rc=$?
+    if [ "$rc" = 2 ] && grep -qF 'head ref' <<<"$out" && only_env "$out"; then
+        printf 'ok    row %-2s rc=2  an unresolvable head ref is ENV, never a pass\n' "$n"
+    else
+        printf 'FAIL  row %-2s rc=%s (wanted 2)  an unresolvable head ref must be ENV only\n' "$n" "$rc"
+        printf '%s\n' "$out" | sed 's/^/        /'
+        red=$((red + 1))
+    fi
+
+    # Local tooling failing is ENV too: stubs on PATH fail exactly one call each.
+    stubrow() { # stubrow LABEL WANT MATCH BUILDER CMD GUARD   (GUARD: a sh test on "$@" that makes CMD fail)
+        mkdir -p "$td/stub-$5" && printf '#!/bin/sh\nif %s; then exit 1; fi\nexec %s "$@"\n' "$6" "$(command -v "$5")" >"$td/stub-$5/$5" && chmod +x "$td/stub-$5/$5"
+        ONLY_ENV=1 PATH="$td/stub-$5:$PATH" row "$1" "$2" "$3" "$4"
+    }
+    stubrow 'the entry reader failing to compare -> ENV rc 2' 2 'could not compare' b_fragment_and_aggregate python3 '[ "$2" = changed ]'
+    stubrow 'staging the introduced base: mkdir failing -> ENV rc 2' 2 'at the base ref' b_base_snapshot mkdir 'case "$*" in *intro/entries) true ;; *) false ;; esac'
+    stubrow 'staging the introduced base: roadmap copy failing -> ENV rc 2' 2 'at the base ref' b_base_snapshot cp 'case "$*" in *intro/roadmap.yaml) true ;; *) false ;; esac'
+    stubrow 'staging the introduced base: frozen-base copy failing -> ENV rc 2' 2 'at the base ref' b_base_snapshot cp 'case "$*" in *intro/roadmap-base.yaml) true ;; *) false ;; esac'
+    stubrow 'no scratch dir (mktemp failing) -> rc 2, never a pass' 2 'cannot make a scratch directory' b_fragment_and_aggregate mktemp 'true'
 
     # ---- the push-shape pair (§8). These exercise the real DISPATCH --
     # resolve_base plus the skip -- not judge(), so the fixture carries its own
