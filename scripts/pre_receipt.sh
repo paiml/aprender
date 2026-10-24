@@ -5,7 +5,7 @@
 #        [--gate-cmd CMD] [--mutants-list-cmd CMD] [--mutants-run-cmd CMD]
 #   bash scripts/pre_receipt.sh --self-test
 #
-# Writes a JSON receipt {head, base, verdict, reasons, gate, mutants, selftest, self_review, size, solo, tier} and
+# Writes a JSON receipt {head, base, verdict, reasons, gate, mutants:{state,listed}, selftest, self_review, size, solo_class, tier} and
 # exits 0 only when every check passed. CHECKS (each failure is a named reason, none is skipped):
 #   head      the working tree IS HEAD and is clean, so what ran is what the receipt names.
 #   gate      the repo's own gate (default `make gate`) passes on that head.
@@ -103,8 +103,8 @@ emit() { # BASE HEAD
   r=$(printf '%s\n' "${reasons[@]:-}" | jq -R . | jq -s 'map(select(. != ""))')
   jq -n --arg head "$(git rev-parse "$2")" --arg base "$(git rev-parse "$1")" --arg v "$verdict" --argjson reasons "$r" \
      --arg gate "${GATE:-}" --arg ms "${MUT_STATE:-}" --argjson ml "${MUT_LISTED:-0}" --argjson st "${SELFTEST:-0}" \
-     --arg sr "${REVIEW:-}" --argjson size "${SIZE:-0}" --arg solo "${SOLO:-}" --arg tier "${TIER:-}" \
-     '{head:$head, base:$base, verdict:$v, reasons:$reasons, gate:$gate, mutants:{state:$ms, listed:$ml}, selftest:($st==1), self_review:$sr, size:$size, solo:$solo, tier:$tier}'
+     --arg sr "${REVIEW:-}" --argjson size "${SIZE:-0}" --arg solo_class "${SOLO:-}" --arg tier "${TIER:-}" \
+     '{head:$head, base:$base, verdict:$v, reasons:$reasons, gate:$gate, mutants:{state:$ms, listed:$ml}, selftest:($st==1), self_review:$sr, size:$size, solo_class:$solo_class, tier:$tier}'
   [[ $verdict == pass ]]
 }
 
