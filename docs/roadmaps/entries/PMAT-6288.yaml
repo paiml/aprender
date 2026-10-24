@@ -1,0 +1,24 @@
+- id: PMAT-6288
+  github_issue: 6288
+  item_type: task
+  title: 'ci: roadmap fragment shape check, newline-safe aggregation, bump regenerates (part 1 of PMAT-6270)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T18:00:00Z
+  updated: 2026-10-24T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - '`roadmap_fragments.py shape --file F` exits 0 only for one mapping with unique keys, id = filename stem, first line exactly `- id: <stem>`, one line opening `- id:`, no anchor or alias, no BOM, CR or document marker line, and an aggregate built with the fragment that still parses'
+  - '`shape` exits 2 (not measured) when PyYAML is missing or the file cannot be read, and 1 with a reason for non-UTF-8 bytes'
+  - '`read_fragments` ends a last line that has no newline, so a trailing comment cannot swallow the next entry'
+  - 'check_roadmap_completion_is_cited.sh judges entries/*.yaml fragments, folded into the live aggregate by id'
+  - 'scripts/bump-version.sh regenerates docs/roadmaps/roadmap.yaml from entries/ and carries it in the bump commit'
+  - 'every existing entries/*.yaml passes `shape`; each rule has a selftest row'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Part 1 of the split of #6271. The guard that wires shape into a PR path (check_roadmap_fragment_required.sh) is part 2, PMAT-6270.'
+  epic: null
