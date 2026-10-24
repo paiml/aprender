@@ -33,13 +33,14 @@
 #      changes no field still counts as changed — check_roadmap_diff_additive.sh
 #      already refuses that shape, so this gate must not be the one place it
 #      reads as "nothing happened".
-#   2. THE AGGREGATE MUST BE REGENERATED. Whenever either side of the pair
-#      changes, head's roadmap.yaml must equal aggregate(head's entries/).
-#      That placement rule is NOT restated here: it is
-#      `roadmap_fragments.py aggregate --check`, the same function `make
-#      roadmap-aggregate` writes with, so the guard and the generator cannot
-#      drift. A fragment landed without `make roadmap-aggregate` is drift and is
-#      named as such.
+#   2. A CHANGED AGGREGATE MUST BE REGENERATED. Whenever the diff changes roadmap.yaml,
+#      head's roadmap.yaml must equal aggregate(head's entries/). That placement rule is
+#      NOT restated here: it is `roadmap_fragments.py aggregate --check`, the same function
+#      `make roadmap-aggregate` writes with, so the guard and the generator cannot drift.
+#      ENTRIES-ONLY PRs (#6270): a diff that changes entries/ and NOT roadmap.yaml is
+#      allowed, so no two PRs share the aggregate. It may lag the fragments until the bump
+#      PR runs `make roadmap-aggregate`. Each changed fragment must still be named for the
+#      id it carries, and the fragments must still aggregate (UNREADABLE otherwise).
 #
 # WHAT IS STILL ALLOWED: the aggregate changing AS AN AGGREGATE — every entry
 # that moved has its fragment in the same diff and the file equals
@@ -258,16 +259,40 @@ judge() {
     fi
     [ "$have_base" = 1 ] || printf 'note  %s absent at head: the aggregate is judged against itself (pre-S1 shape)\n' "$BASE_FILE"
 
-    # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
-    out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
-    rc=$?
+    # --- RULE 2: a diff that CHANGES the aggregate leaves it regenerated -------
+    # Entries-only PRs (#6270): a PR adds docs/roadmaps/entries/*.yaml and does not touch the
+    # aggregate, so no two PRs share a file. The aggregate is regenerated in the bump PR
+    # (`make roadmap-aggregate`); until then it may lag the fragments. A diff that DOES change
+    # the aggregate must leave it equal to aggregate(entries/), exactly as before.
+    if [ "$roadmap_changed" = 1 ]; then
+        out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
+        rc=$?
+        what="DRIFT: at head, $ROADMAP_FILE is NOT aggregate($ENTRIES_DIR/) — the aggregate changed and was not regenerated (run \`make roadmap-aggregate\`)"
+    else
+        # Lagging is allowed; a fragment the aggregator cannot read is not.
+        cp "$td/head.yaml" "$td/scratch.yaml"
+        out=$(python3 "$PY_LIB" aggregate --write --roadmap "$td/scratch.yaml" --entries "$td/entries" 2>&1)
+        rc=$?
+        # the aggregator accepts a fragment filed under another id; the lag must not hide that
+        while IFS= read -r name; do
+            case "$name" in *.yaml) ;; *) continue ;; esac
+            [ -f "$td/entries/${name##*/}" ] || continue
+            stem=${name##*/}; stem=${stem%.yaml}
+            if ! grep -Eq -- "^- id: ['\"]?${stem//./\\.}['\"]?[[:space:]]*\$" "$td/entries/${name##*/}"; then
+                rc=1; out="$name does not start its mapping with '- id: $stem'"
+            fi
+        done < <(printf '%s\n' "$frag_paths")
+        what="UNREADABLE: the fragments at head do not build $ROADMAP_FILE"
+    fi
     rm -rf -- "${td:?}"
-    if [ "$rc" = 0 ]; then
+    if [ "$rc" = 0 ] && [ "$roadmap_changed" = 1 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
+    elif [ "$rc" = 0 ]; then
+        printf 'ok    %s is not in this diff: it may lag %s/ until the bump PR regenerates it; the fragments aggregate cleanly\n' \
+            "$ROADMAP_FILE" "$ENTRIES_DIR"
     else
         violations=$((violations + 1))
-        printf 'FAIL  DRIFT: at head, %s is NOT aggregate(%s/) — a fragment changed and the aggregate was not regenerated (run `make roadmap-aggregate`)\n' \
-            "$ROADMAP_FILE" "$ENTRIES_DIR"
+        printf 'FAIL  %s\n' "$what"
         while IFS= read -r line; do
             [ -n "$line" ] && printf '      %s\n' "$line"
         done < <(printf '%s\n' "$out")
@@ -278,7 +303,7 @@ judge() {
         remedy
         return 1
     fi
-    printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated\n' "$PROG" "$checked"
+    printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated or not in the diff\n' "$PROG" "$checked"
     return 0
 }
 
@@ -371,6 +396,18 @@ self_test() {
     # A fragment with no `make roadmap-aggregate`.
     b_fragment_no_regen() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # The aggregate is touched (a header edit) while a new fragment is not folded in.
+    b_fragment_stale_aggregate() {
+        printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        printf '# hand edit\n' >>"$1/$ROADMAP_FILE"
+        commit_all "$1"
+    }
+    b_fragment_unreadable() {
+        # two fragments claim one id: the aggregator refuses (duplicate id among fragments)
+        printf -- '- id: PMAT-200\n  title: one\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        printf -- '- id: PMAT-200\n  title: two\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
         commit_all "$1"
     }
     b_unrelated() {
@@ -488,8 +525,12 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
     row 'fragment + regenerated aggregate, in sync -> PASS' \
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
-    row 'fragment added, aggregate NOT regenerated -> REFUSE, naming the drift' \
-        1 'FAIL  DRIFT' b_fragment_no_regen
+    row 'entries-only PR: fragment added, aggregate not in the diff -> PASS (it lags until the bump PR)' \
+        0 'may lag' b_fragment_no_regen
+    row 'the aggregate CHANGED but is not aggregate(entries/) -> REFUSE, naming the drift' \
+        1 'FAIL  DRIFT' b_fragment_stale_aggregate
+    row 'entries-only PR whose fragment the aggregator cannot read -> REFUSE' \
+        1 'FAIL  UNREADABLE' b_fragment_unreadable
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \

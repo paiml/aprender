@@ -1,0 +1,21 @@
+- id: PMAT-6270
+  github_issue: 6270
+  item_type: task
+  title: 'ci: roadmap PRs add only entries/*.yaml; roadmap.yaml is regenerated in the bump PR'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T14:40:00Z
+  updated: 2026-10-24T14:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a diff that changes entries/ and not roadmap.yaml passes check_roadmap_fragment_required.sh; the aggregate may lag until the bump PR'
+  - 'a diff that changes roadmap.yaml must still equal aggregate(entries/); a fragment filed under another id is refused'
+  - 'three planted mutants (lag-strict, id-check-off, drift-off) each turn the self-test red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Operator ruling NOAH 14:30Z (6), relayed by aprender-b9. Gate content: quorum plus non-author sign-off. Known cost: pmat work status and quorum-review read roadmap.yaml, so a new ticket is invisible to them until the bump PR regenerates it.'
+  epic: null
