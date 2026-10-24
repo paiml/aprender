@@ -113,14 +113,14 @@ for rel in tracked:
 # A byte-identical COPY of a citing line that a HISTORICAL ledgered file already pins (R6) is that same dated history, not a new
 # claim: a frozen snapshot of roadmap.yaml (docs/roadmaps/roadmap-base.yaml) repeats its lines. NO path is exempt; one
 # novel citing line in the copy is R1 like any other file.
-# Membership only: a line in the copy must equal a pinned line, nothing checks its position or count (R6 pins the source). The pool
+# The copy must carry EXACTLY the source's pin (count + text hash, the row R6 holds), so a duplicated or dropped line is R1, not just a novel one. The pool
 # reads the LIVE roadmap.yaml row, so when the epic removes the tracked aggregate the ledger row MOVES to roadmap-base.yaml in the same
 # change (same count, so R4 holds; the file is then ledgered and R7 no longer applies; C24). A re-pin of roadmap.yaml that DROPS a
 # citing line is R1 on the base until the base is re-cut or its row takes over: recorded in PMAT-6185 as a follow-up.
 COPY_SRC, COPY_DST = "docs/roadmaps/roadmap.yaml", "docs/roadmaps/roadmap-base.yaml"  # the one pair R7 knows
 ledlines = {t for r, v in led.items() if v[0] == "historical" and r == COPY_SRC and r in ctexts for t in ctexts[r]}  # NOT fixture rows: a fixture value is a sample, copying it is a claim
 for rel, lines in sorted(citing.items()):
-    if rel == COPY_DST and rel not in led and all(t in ledlines for t in ctexts[rel]): continue
+    if rel == COPY_DST and rel not in led and COPY_SRC in led and pinned[rel] == led[COPY_SRC][2] and all(t in ledlines for t in ctexts[rel]): continue  # EXACTLY the source's pinned lines
     if rel not in led:
         print(f"FAIL  R1 {rel}:{lines[0]} cites a superseded comparator pin and is not on {os.path.relpath(ledger, root)} "
               f"({len(lines)} line(s)). A live claim against a superseded comparator is the defect; dated history or a fixture value is listed by file, with why.")
@@ -264,6 +264,8 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'C22 a copy of a FIXTURE-class ledger line -> R1 (only historical lines can be copied)' "$TMP/c22" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
     pair c23 historical evidence/parity/copy.md
     expect 'C23 the same historical line copied into any OTHER path -> R1 (R7 knows one pair)' "$TMP/c23" 1 'R1 evidence/parity/copy.md:1'
+    pair c25 historical docs/roadmaps/roadmap-base.yaml && cat "$TMP/c25/docs/roadmaps/roadmap.yaml" >> "$TMP/c25/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c25" add -A
+    expect 'C25 the copy DUPLICATES a pinned line (membership holds, the pin differs) -> R1' "$TMP/c25" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
     pair c24 historical docs/roadmaps/roadmap-base.yaml && git -C "$TMP/c24" rm -qf docs/roadmaps/roadmap.yaml && sed -i 's|^docs/roadmaps/roadmap.yaml\t|docs/roadmaps/roadmap-base.yaml\t|' "$TMP/c24/scripts/comparator_pin_citations.txt" && git -C "$TMP/c24" add -A
     expect 'C24 the aggregate removed and its ledger row moved onto roadmap-base.yaml -> green' "$TMP/c24" 0 'every one ledgered'
     fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
@@ -302,10 +304,11 @@ PY
     mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
     mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
     mutant prefix-exempt 'pin_rel):' 'pin_rel) or rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
-    mutant drop-copy-rule 'if rel == COPY_DST and rel not in led and all(t in ledlines for t in ctexts[rel]): continue' 'if False: continue' 0 'every one ledgered' "$TMP/c20"
-    mutant any-copy-line 'rel not in led and all(t in ledlines' 'rel not in led and any(t in ledlines' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c21"
+    mutant drop-copy-rule 'if rel == COPY_DST and rel not in led and COPY_SRC in led' 'if False and COPY_SRC in led' 0 'every one ledgered' "$TMP/c20"
+    mutant any-copy-line 'and pinned[rel] == led[COPY_SRC][2] and all(t in ledlines' 'and any(t in ledlines' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c21"
     mutant drop-class-filter 'if v[0] == "historical" and r == COPY_SRC' 'if r == COPY_SRC' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c22"
-    mutant widen-scope 'if rel == COPY_DST and rel not in led' 'if rel not in led' 1 'R1 evidence/parity/copy.md:1' "$TMP/c23"
+    mutant widen-scope 'if rel == COPY_DST and rel not in led and COPY_SRC' 'if rel not in led and COPY_SRC' 1 'R1 evidence/parity/copy.md:1' "$TMP/c23"
+    mutant membership-only 'and pinned[rel] == led[COPY_SRC][2]' '' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c25"
     mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s of %s)\n' "$fails" "$rows"; exit 1; }

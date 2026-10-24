@@ -15,5 +15,5 @@
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'GATE CHANGE (S1b, PR carrying docs/roadmaps/roadmap-base.yaml): S1b is NOT data-only and OVERRIDES the S1a/S1b wording in acceptance_criteria, which cannot be edited in place. It adds rule R7 to scripts/check_comparator_pin_citations.sh, loosening R1 for the one pair roadmap.yaml -> roadmap-base.yaml: the base passes unledgered only if its citing lines carry EXACTLY the pin of the historical roadmap.yaml ledger row and every line is a byte-copy of one of them. Self-test C20-C25; mutants drop-copy-rule, any-copy-line, drop-class-filter, widen-scope, membership-only. Scope and A/B ruling: docs/audits/quorum-PMAT-6185-R1-pin-cites.md. Follow-up: the step removing the tracked roadmap.yaml moves its ledger row onto roadmap-base.yaml (C24).'
   epic: null
