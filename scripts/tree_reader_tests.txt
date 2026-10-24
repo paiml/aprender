@@ -97,6 +97,7 @@ aprender-contracts-cli	--lib	commands::certify
 aprender-contracts-cli	--lib	commands::obligations
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
+aprender-contracts-cli	--lib	roadmap::yamlval
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	coverage_report_render
 aprender-contracts-cli	--test	ev11_lint_ratchets
