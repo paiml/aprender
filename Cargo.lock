@@ -1410,6 +1410,7 @@ dependencies = [
  "approx",
  "aprender-compute",
  "aprender-contracts",
+ "aprender-contracts-key",
  "aprender-contracts-macros",
  "aprender-core",
  "aprender-cuda-edge",
