@@ -600,7 +600,7 @@ STUB
   wire x86-main-advisories "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire workspace-test-shard "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
-  wire pr-light 'runs-on: [self-hosted, Linux, clean-room]'
+  wire pr-light 'runs-on: [self-hosted, Linux, X64, clean-room]'
   wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, pr-light]'
   wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
@@ -620,9 +620,9 @@ STUB
     awk -v j="  $2:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null \
       | awk '/^        run: \|$/ {r = 1; next} r && /^      - / {exit} r {sub(/^          /, ""); print}'
   }
-  # pr-light is the ONLY runner of the PR path: no heavy label (X64, mq) may sit on it.
-  if grep -qE 'X64|"mq"|\bmq\b' <<< "$(job pr-light | grep -m1 '^    runs-on:')"; then
-    fail=$((fail + 1)); echo "FAIL pr-light: runs-on carries a heavy label"; else pass=$((pass + 1)); fi
+  # pr-light is the ONLY runner of the PR path: no merge-queue label (mq) may sit on it. X64 is allowed (clean-room X64 pool, not the gx10 build host).
+  if grep -qE '"mq"|\bmq\b' <<< "$(job pr-light | grep -m1 '^    runs-on:')"; then
+    fail=$((fail + 1)); echo "FAIL pr-light: runs-on carries a merge-queue label"; else pass=$((pass + 1)); fi
   # Opus-A on #5964: the sections that run only for a PR (guard-tree incl. R-2 / 11.1, pr-review-shadow, pr-review-sign)
   # ran inside x86-main, which a PR no longer runs. pr-light must run all three, and the feeder must judge pr-light.
   for sec in guard-tree pr-review-shadow pr-review-sign; do
