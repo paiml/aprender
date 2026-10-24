@@ -207,7 +207,6 @@ aprender-serve	--lib	kernel_registry
 aprender-serve	--lib	quantize::contract_tests
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
-aprender-simulate	--lib	demos::tsp_instance
 aprender-simulate	--lib	edd::runner
 aprender-simulate	--lib	edd::v2
 aprender-simulate	--lib	orbit::wasm

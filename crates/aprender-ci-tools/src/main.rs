@@ -2,8 +2,8 @@
 
 use aprender_ci_tools::{
     coverage_report_scope, dag_status, git_patch_id, ladder_cells_produce, llama_fit_verdict,
-    nextest_fail_fast, package_include_diff, publishable_crates, section_first_fail,
-    tarball_build_errors, tarball_shrink_report, tarball_workspace,
+    lockfile_registry_packages, nextest_fail_fast, package_include_diff, publishable_crates,
+    section_first_fail, tarball_build_errors, tarball_shrink_report, tarball_workspace,
 };
 use clap::{ArgGroup, Parser, Subcommand};
 use std::io::{Read, Write};
@@ -85,6 +85,12 @@ enum Cmd {
         /// --stable, --verbatim or --unstable (the default), as git spells them.
         #[arg(allow_hyphen_values = true, value_name = "MODE")]
         mode: Option<String>,
+    },
+    /// Name of every crates.io-sourced package in a Cargo.lock, one per line (was
+    /// scripts/lib/lockfile_registry_packages.py). No argument exits 1, as the original did.
+    LockfileRegistryPackages {
+        /// The Cargo.lock to read.
+        lock: Option<PathBuf>,
     },
     /// llama.cpp's fit verdict for one model-ladder cell, one JSON line (was
     /// scripts/lib/llama_fit_verdict.py). `--help` is an argument here, as it was there; use
@@ -173,6 +179,13 @@ fn run(cmd: Cmd) -> Result<String, Refusal> {
                 .read_to_end(&mut diff)
                 .map_err(|e| nothing_printed(format!("stdin: {e}")))?;
             Ok(git_patch_id::run(&diff, mode))
+        }
+        Cmd::LockfileRegistryPackages { lock } => {
+            let lock = lock.ok_or_else(|| {
+                nothing_printed("usage: lockfile-registry-packages <Cargo.lock>".to_owned())
+            })?;
+            let bytes = read(&lock).map_err(nothing_printed)?;
+            Ok(lockfile_registry_packages::run(&bytes))
         }
         Cmd::PublishableCrates => {
             let mut meta = String::new();

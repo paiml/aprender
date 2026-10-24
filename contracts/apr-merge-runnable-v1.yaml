@@ -1,6 +1,6 @@
 metadata:
   id: C-APR-MERGE-RUNNABLE
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-07-02'
   author: PAIML Engineering
   kind: pattern
@@ -276,6 +276,24 @@ falsification_tests:
   ship_blocking: true
   counter_example_classes:
   - zero_match_merge_returns_ok
+
+- id: FALSIFY-APR-MERGE-RUNNABLE-006
+  rule: |
+    apr_merge TIES elects the per-element majority sign (ties go positive),
+    averages only agreeing trimmed deltas over ALL models, and DARE is
+    seed-deterministic with kept deltas rescaled by 1/(1-drop_rate);
+    DARE refuses drop_rate outside (0, 1).
+  prediction: |
+    Two models with deltas [1,-1,.05,2] and [1,1,.05,-2] at density 0.5
+    merge to base + [1, 0.5, 0, 1]; two DARE runs with one seed are equal.
+  test: cargo test -p aprender-core --lib advanced_merge_tests
+  if_fails: |
+    Sign election, trim threshold, model-count scaling or the DARE
+    determinism/rescale contract changed in format/converter/ties_merge.rs.
+  ship_blocking: true
+  counter_example_classes:
+  - ties_wrong_sign_election
+  - dare_nondeterministic_mask
 
 qa_gate:
   id: QA-APR-MERGE-RUNNABLE-001

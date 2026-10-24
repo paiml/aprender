@@ -30,6 +30,11 @@ reap_work() {
   rm -rf "${WORK:?}"
 }
 trap reap_work EXIT
+# EXIT does not run on SIGKILL (a cancelled or timed-out job): a detached watcher repeats the sweep once this shell is gone
+# (8 fake serves leaked on lambda, 2026-10-21). The dir is removed by the same name, never by a pattern.
+( setsid bash -c 'while kill -0 "$1" 2>/dev/null; do sleep 2; done
+  for p in /proc/[0-9]*; do c=$(tr "\0" " " 2>/dev/null < "$p/cmdline") || continue; case "$c" in *"$2/"*) kill -TERM "${p#/proc/}" 2>/dev/null ;; esac; done
+  rm -rf -- "${2:?}"' _ "$$" "$WORK" < /dev/null > /dev/null 2>&1 & )
 FAKE="$ROOT/scripts/lib/model_ladder_cells_produce_cases/fake_apr.py"
 
 cat > "$WORK/ladder.yaml" <<'EOF'
@@ -174,6 +179,48 @@ declaim() {
   printf 'FAIL  %s (t=%s rows, u=%s rows)\n' "declaim: the de-claim was ignored on its host or leaked to another" "$n_t" "$n_u"; return 1
 }
 
+# admit <lib> -> per-cell memory admission (#6211): a host that says no gets every cell recorded not_measured with the
+# reason and NEVER run (the fake apr logs each call); a host that says yes measures all 16. One probe per refusal axis.
+admit() {
+  local lib=$1 d name probe ok=0
+  SEQ=$((SEQ + 1)); d="$WORK/adm.$SEQ"; mkdir -p "$d" || return 1
+  FAKE_APR_MODE=good python3 "$lib/model_ladder_cells_produce.py" enrich --apr "$FAKE" \
+      --inventory "$WORK/inventory.jsonl" --models "$WORK/models.txt" --out "$d/inv.jsonl" > /dev/null 2>&1
+  for name in ok jobs swap mem need unmeasured unreadable; do
+    inv=$d/inv.jsonl; hr=
+    case $name in
+      ok) probe='{"mem_available": 68719476736, "swap_total": 8589934592, "swap_free": 8589934592, "runner_jobs": 0}' ;;
+      jobs) probe='{"mem_available": 68719476736, "swap_total": 8589934592, "swap_free": 8589934592, "runner_jobs": 2}' ;;
+      swap) probe='{"mem_available": 68719476736, "swap_total": 8589934592, "swap_free": 85899345, "runner_jobs": 0}' ;;
+      mem) probe='{"mem_available": 1048576, "swap_total": 8589934592, "swap_free": 8589934592, "runner_jobs": 0}' ;;
+      need) probe='{"mem_available": 1, "swap_total": 8589934592, "swap_free": 8589934592, "runner_jobs": 0}'; hr='--admit-headroom-gib 0' ;;
+      unmeasured) probe='{"mem_available": 68719476736, "swap_total": 8589934592, "swap_free": 8589934592, "runner_jobs": 0}'
+        python3 -c 'import json,sys;[print(json.dumps({k:v for k,v in json.loads(l).items() if k!="kv_bytes_per_token"})) for l in open(sys.argv[1])]' "$d/inv.jsonl" > "$d/inv-unm.jsonl"; inv=$d/inv-unm.jsonl ;;
+      unreadable) probe='{"mem_available": null, "swap_total": 0, "swap_free": 0, "runner_jobs": 0}' ;;
+    esac
+    printf '%s\n' "$probe" > "$d/$name.probe"
+    : > "$d/calls.$name"
+    FAKE_APR_MODE=good FAKE_APR_LOG="$d/calls.$name" python3 "$lib/model_ladder_cells_produce.py" measure --apr "$FAKE" \
+        --inventory "$inv" --models "$WORK/models.txt" --ladder "$WORK/ladder.yaml" \
+        --rungs "$WORK/rungs.json" --work "$d" --timeout 60 --serve-ceiling 30 --admit $hr --admit-probe-file "$d/$name.probe" \
+        --out "$d/cells-$name.json" > "$d/log-$name" 2>&1 || { printf 'FAIL  admit: measure (%s) crashed\n' "$name"; return 1; }
+    python3 - "$name" "$d/cells-$name.json" "$d/calls.$name" <<'PY4' || ok=1
+import json, sys
+name, cells, calls = sys.argv[1], json.load(open(sys.argv[2])), open(sys.argv[3]).read()
+nm = [c for c in cells if c["verdict"] == "not_measured"]
+if name == "ok":
+    good = len(cells) == 16 and not nm and all(c["verdict"] == "pass" for c in cells)
+else:
+    good = len(cells) == 16 and len(nm) == 16 and all(c["reason"].startswith("admission:") for c in nm) and not calls.strip()
+if not good:
+    print(f"FAIL  admit[{name}]: {len(cells)} rows, {len(nm)} not_measured, apr calls: {len(calls.split())}")
+    sys.exit(1)
+PY4
+  done
+  [ "$ok" = 0 ] && { printf 'ok    %s\n' "admit: a host that says no defers every cell as not_measured without running apr; one that says yes measures all 16"; return 0; }
+  return 1
+}
+
 cases() { # cases <lib> -> 0 all as expected
   local lib=$1 r=0
   expect "$lib" "enrich derives the owed-set terms from the header (arch, context, both thinking modes, KV)" good \
@@ -197,6 +244,7 @@ cases() { # cases <lib> -> 0 all as expected
   offmode "$lib" || r=1
   selflock "$lib" || r=1
   declaim "$lib" || r=1
+  admit "$lib" || r=1
   return $r
 }
 
@@ -238,6 +286,14 @@ mutant rungs-silent 's/^    if rc:$/    if False:/'
 mutant serve-inline 's/deferred.append((len(rows) - 1, prompt, mode, budget, measured))/a.serve = getattr(a, "serve", None) or Serve(R, path, a.serve_ceiling); rows[-1] = measure_serve(a.serve, prompt, mode, budget, rows[-1], R.timeout)/'
 mutant declaim      's/        if d:  # the judge owes nothing here/        if False:  # the judge owes nothing here/'
 mutant offmode-budget 's/target = min(tok, int(ctx) - budget - 1)/target = min(tok, int(ctx) - a.max_tokens_thinking - 1)/'
+mutant admit-off 's/        return None if (not self.on or verb == "serve") else/        return None if True else/'
+mutant admit-jobs 's/        if h\["runner_jobs"\] > self.max_jobs:/        if False:/'
+mutant admit-swap 's/        if used > self.swap_pct:/        if False:/'
+mutant admit-mem  's/        if h\["mem_available"\] < need + self.headroom:/        if False:/'
+mutant admit-unreadable 's/        if any(h.get(k) is None for k in/        if False and any(h.get(k) is None for k in/'
+mutant admit-serve 's/        why = a.admit_obj.check_serve(item, .*/        why = None/'
+mutant admit-need 's/        return None if w is None or kv is None else int(w).*/        return 0/'
+mutant admit-unmeasured 's/        return "admission: cell need unmeasured.*/        return self.refusal(h, need or 0)/'
 
 wait
 n=1

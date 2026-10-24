@@ -422,26 +422,49 @@ pub fn print_github(report: &LintReport) {
     }
 }
 
+/// `println!` that targets `out`; a failed write (closed pipe) is dropped.
+macro_rules! wl {
+    ($w:expr) => {{
+        let _ = writeln!($w);
+    }};
+    ($w:expr, $($a:tt)*) => {{
+        let _ = writeln!($w, $($a)*);
+    }};
+}
+
 /// Print long-form explanation for a lint rule.
 pub fn print_explain(rule_id: &str) {
-    use provable_contracts::lint::rules::{find_rule, RuleCategory};
-
-    let Some(rule) = find_rule(rule_id) else {
+    if !write_explain(&mut std::io::stdout().lock(), rule_id) {
         eprintln!("Unknown rule: {rule_id}");
         eprintln!("Use `pv lint` to see active rules, or check docs/specifications/sub/lint.md");
         std::process::exit(1);
+    }
+}
+
+/// Write the explanation for `rule_id` to `out`; `false` when the rule is unknown
+/// (nothing is written in that case).
+fn write_explain(out: &mut impl Write, rule_id: &str) -> bool {
+    use provable_contracts::lint::rules::{find_rule, RuleCategory};
+
+    let Some(rule) = find_rule(rule_id) else {
+        return false;
     };
 
-    let _ = writeln!(
-        std::io::stdout(),
+    wl!(
+        out,
         "{}\n",
         bold(&format!("{}: {}", rule.id, rule.description))
     );
-    println!(
+    wl!(
+        out,
         "Category:         {}",
         format!("{:?}", rule.category).to_lowercase()
     );
-    println!("Default severity: {}\n", rule.default_severity.as_str());
+    wl!(
+        out,
+        "Default severity: {}\n",
+        rule.default_severity.as_str()
+    );
 
     // Long-form guidance per rule category
     let (why, how) = match rule.category {
@@ -500,15 +523,147 @@ pub fn print_explain(rule_id: &str) {
         ),
     };
 
-    println!("WHY IT MATTERS:");
+    wl!(out, "WHY IT MATTERS:");
     for line in why.lines() {
-        println!("  {line}");
+        wl!(out, "  {line}");
     }
-    println!("\nHOW TO FIX:");
+    wl!(out, "\nHOW TO FIX:");
     for line in how.lines() {
-        println!("  {line}");
+        wl!(out, "  {line}");
     }
-    println!("\nREFERENCES:");
-    println!("  - docs/specifications/sub/lint.md");
-    println!("  - docs/specifications/pv-spec.md Section 5 (CLI Reference)");
+    wl!(out, "\nREFERENCES:");
+    wl!(out, "  - docs/specifications/sub/lint.md");
+    wl!(
+        out,
+        "  - docs/specifications/pv-spec.md Section 5 (CLI Reference)"
+    );
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use provable_contracts::lint::rules::{rules_for_category, RuleCategory};
+
+    fn explain(rule_id: &str) -> Option<String> {
+        let mut buf: Vec<u8> = Vec::new();
+        let known = write_explain(&mut buf, rule_id);
+        let text = String::from_utf8(buf).expect("explanation is UTF-8");
+        known.then_some(text)
+    }
+
+    #[test]
+    fn unknown_rule_writes_nothing_and_reports_false() {
+        let mut buf: Vec<u8> = Vec::new();
+        assert!(!write_explain(&mut buf, "PV-NOPE-999"));
+        assert!(buf.is_empty(), "nothing is written for an unknown rule");
+    }
+
+    #[test]
+    fn explanation_has_header_metadata_and_all_sections_in_order() {
+        let rule = &rules_for_category(RuleCategory::Validate)[0];
+        let text = explain(rule.id).expect("catalog rule is known");
+
+        assert!(text.contains(&format!("{}: {}", rule.id, rule.description)));
+        assert!(text.contains("Category:         validate\n"));
+        assert!(text.contains(&format!(
+            "Default severity: {}\n",
+            rule.default_severity.as_str()
+        )));
+        let at = |needle: &str| {
+            text.find(needle)
+                .unwrap_or_else(|| panic!("missing {needle}"))
+        };
+        assert!(at("Category:") < at("WHY IT MATTERS:"));
+        assert!(at("WHY IT MATTERS:") < at("HOW TO FIX:"));
+        assert!(at("HOW TO FIX:") < at("REFERENCES:"));
+        assert!(text.contains("  - docs/specifications/sub/lint.md\n"));
+    }
+
+    #[test]
+    fn guidance_lines_are_indented_two_spaces() {
+        let rule = &rules_for_category(RuleCategory::Audit)[0];
+        let text = explain(rule.id).expect("catalog rule is known");
+        let why = text
+            .split("WHY IT MATTERS:\n")
+            .nth(1)
+            .and_then(|t| t.split("\nHOW TO FIX:").next())
+            .expect("WHY section present");
+        assert!(why.lines().count() >= 2, "multi-line guidance is split");
+        assert!(why.lines().all(|l| l.starts_with("  ")), "{why}");
+    }
+
+    /// Each category must carry ITS OWN guidance: a swapped or collapsed
+    /// match arm shows up as the wrong marker phrase.
+    #[test]
+    fn every_category_gets_its_own_guidance() {
+        let cases = [
+            (
+                RuleCategory::Validate,
+                "validate",
+                "Schema validation ensures",
+                "pv validate <contract>",
+            ),
+            (
+                RuleCategory::Audit,
+                "audit",
+                "traceability chain from paper to proof",
+                "pv audit <contract>",
+            ),
+            (
+                RuleCategory::Score,
+                "score",
+                "Score rules flag contracts below",
+                "pv score <contract>",
+            ),
+            (
+                RuleCategory::Provability,
+                "provability",
+                "core invariant",
+                "pv scaffold <contract>",
+            ),
+            (
+                RuleCategory::Trend,
+                "trend",
+                "detect quality regression",
+                "pv lint --show-trend",
+            ),
+            (
+                RuleCategory::Suppression,
+                "suppression",
+                "Stale suppressions accumulate",
+                "--suppress-rule",
+            ),
+            (
+                RuleCategory::Enforcement,
+                "enforcement",
+                "per-contract verification levels",
+                "pv unlock <contract>",
+            ),
+            (
+                RuleCategory::Verify,
+                "verify",
+                "cross-check contract claims",
+                "--strict-test-binding",
+            ),
+        ];
+        for (cat, label, why, how) in cases {
+            let rules = rules_for_category(cat);
+            let Some(rule) = rules.first() else {
+                continue; // category with no catalog rule has nothing to explain
+            };
+            let text = explain(rule.id).expect("catalog rule is known");
+            assert!(
+                text.contains(&format!("Category:         {label}\n")),
+                "{label}: {text}"
+            );
+            assert!(text.contains(why), "{label} WHY marker missing: {text}");
+            assert!(text.contains(how), "{label} HOW marker missing: {text}");
+            for (other, _, other_why, _) in cases {
+                if other != cat {
+                    assert!(!text.contains(other_why), "{label} leaked {other_why}");
+                }
+            }
+        }
+    }
 }

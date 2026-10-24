@@ -2,7 +2,7 @@ name: Nightly Train
 
 on:
   schedule:
-    - cron: '45 4 * * *'   # 04:45Z, after the last producer (mutants 01:00Z)
+    - cron: '30 4 * * *'   # 04:30Z, after the last producer (mutants 01:00Z)
   workflow_dispatch: {}    # drills only; a dispatched run never counts toward the streak
 
 permissions:

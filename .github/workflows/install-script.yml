@@ -50,6 +50,7 @@ jobs:
   test:
     name: install_test.sh
     runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 

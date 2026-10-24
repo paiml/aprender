@@ -401,6 +401,94 @@ impl CbtopApp {
 }
 
 #[cfg(test)]
+mod render_sparklines_tests {
+    use super::*;
+    use presentar_terminal::direct::CellBuffer;
+
+    const W: u16 = 80;
+    const H: u16 = 40;
+
+    fn row_text(buf: &CellBuffer, y: u16) -> String {
+        (0..W)
+            .map(|x| buf.get(x, y).map_or(" ", |c| c.symbol.as_str()))
+            .collect()
+    }
+
+    /// Run `render_sparklines` on a blank buffer; returns (buffer, final current_y).
+    fn run(start_y: f32, height: u16, cpu: &[f64], bricks: &[f64]) -> (CellBuffer, f32) {
+        let mut buf = CellBuffer::new(W, H);
+        let theme = Theme::default();
+        let style = TextStyle::default();
+        let mut y = start_y;
+        {
+            let mut canvas = DirectTerminalCanvas::new(&mut buf);
+            CbtopApp::render_sparklines(
+                &mut canvas,
+                &mut y,
+                height,
+                cpu,
+                bricks,
+                60,
+                62,
+                40,
+                &theme,
+                &style,
+                &style,
+            );
+        }
+        (buf, y)
+    }
+
+    #[test]
+    fn empty_data_draws_nothing_and_keeps_y() {
+        let (buf, y) = run(2.0, H, &[], &[]);
+        assert_eq!(y, 2.0);
+        for row in 0..H {
+            assert!(!row_text(&buf, row).contains('┌'), "row {row} drew a box");
+        }
+    }
+
+    #[test]
+    fn cpu_box_draws_header_and_advances_four() {
+        let (buf, y) = run(2.0, H, &[0.5, 0.9], &[]);
+        assert_eq!(y, 6.0);
+        assert!(row_text(&buf, 2).contains("CPU History (braille)"));
+        assert!(row_text(&buf, 3).contains('│'));
+        assert!(row_text(&buf, 4).contains('└'));
+        assert!(!row_text(&buf, 6).contains("Bricks"));
+    }
+
+    #[test]
+    fn cpu_box_skipped_when_too_close_to_bottom() {
+        // threshold is current_y < height - 8
+        let (_, y) = run(32.0, H, &[0.5], &[]);
+        assert_eq!(y, 32.0);
+        let (buf, y) = run(31.0, H, &[0.5], &[]);
+        assert_eq!(y, 35.0);
+        assert!(row_text(&buf, 31).contains("CPU History"));
+    }
+
+    #[test]
+    fn bricks_box_has_own_threshold_and_no_trailing_advance() {
+        // threshold is current_y < height - 5
+        let (_, y) = run(35.0, H, &[], &[1.0]);
+        assert_eq!(y, 35.0);
+        let (buf, y) = run(34.0, H, &[], &[1.0]);
+        assert_eq!(y, 36.0);
+        assert!(row_text(&buf, 34).contains("Bricks/sec (braille)"));
+        assert!(row_text(&buf, 36).contains('└'));
+    }
+
+    #[test]
+    fn both_boxes_stack_cpu_then_bricks() {
+        let (buf, y) = run(2.0, H, &[0.5], &[2.0]);
+        assert!(row_text(&buf, 2).contains("CPU History"));
+        assert!(row_text(&buf, 6).contains("Bricks/sec"));
+        assert_eq!(y, 8.0);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use presentar_terminal::direct::CellBuffer;
@@ -552,5 +640,97 @@ mod tests {
             assert_eq!(got, want, "bar colour at {pct}%");
         }
         assert_ne!(theme.memory_color(10.0), theme.memory_color(95.0));
+    }
+}
+
+#[cfg(test)]
+mod hardware_box_tests {
+    use super::*;
+    use presentar_terminal::direct::CellBuffer;
+
+    const W: u16 = 60;
+
+    fn hw(gpu: Option<&str>, cpu: &str) -> HardwareInfo {
+        HardwareInfo {
+            cpu_model: cpu.to_string(),
+            cpu_cores: 8,
+            simd_type: "AVX2",
+            gpu_name: gpu.map(str::to_string),
+            memory_gb: 31.5,
+        }
+    }
+
+    /// Draw the box into a fresh buffer; returns its rows (trailing blanks trimmed) and the final y.
+    fn draw(hardware: &HardwareInfo, inner: usize) -> (Vec<String>, f32) {
+        let mut buf = CellBuffer::new(W, 12);
+        let mut y = 0.0_f32;
+        {
+            let mut canvas = DirectTerminalCanvas::new(&mut buf);
+            CbtopApp::render_hardware_box(
+                &mut canvas,
+                &mut y,
+                hardware,
+                inner,
+                inner + 2,
+                &Theme::tokyo_night(),
+                &TextStyle::default(),
+            );
+        }
+        let rows = (0..12u16)
+            .map(|r| {
+                let line: String = (0..W)
+                    .map(|c| {
+                        buf.get(c, r)
+                            .map_or(" ", |cell| cell.symbol.as_str())
+                            .to_string()
+                    })
+                    .collect();
+                line.trim_end().to_string()
+            })
+            .collect();
+        (rows, y)
+    }
+
+    #[test]
+    fn box_rows_with_gpu_and_cursor_advance() {
+        let (rows, y) = draw(&hw(Some("RTX 4090"), "Test CPU"), 40);
+        assert!(
+            rows[0].trim_start().starts_with("┌─ Hardware ") && rows[0].ends_with('┐'),
+            "{:?}",
+            rows[0]
+        );
+        assert!(rows[1].contains("CPU:  Test CPU") && rows[1].ends_with('│'));
+        assert!(rows[2].contains("Cores: 8 │ SIMD: AVX2"));
+        assert!(rows[3].contains("GPU:  RTX 4090") && !rows[3].contains("Not detected"));
+        assert!(rows[4].contains("RAM:  31.5 GB"));
+        assert!(rows[5].trim_start().starts_with('└') && rows[5].ends_with('┘'));
+        // 5 content rows plus 2 trailing blank rows
+        assert_eq!(y, 7.0);
+    }
+
+    #[test]
+    fn missing_gpu_prints_not_detected_with_closing_bar_at_box_width() {
+        let (rows, _) = draw(&hw(None, "Test CPU"), 40);
+        assert!(rows[3].contains("GPU:  Not detected"));
+        assert!(!rows[3].contains("RTX"));
+        // the closing bar sits at x = box_width (42)
+        assert_eq!(rows[3].chars().nth(42), Some('│'), "{:?}", rows[3]);
+    }
+
+    #[test]
+    fn long_cpu_and_gpu_names_are_truncated_to_inner_width() {
+        let long = "X".repeat(100);
+        let (rows, _) = draw(&hw(Some(&long), &long), 30);
+        assert_eq!(rows[1].matches('X').count(), 20);
+        assert_eq!(rows[3].matches('X').count(), 20);
+    }
+
+    #[test]
+    fn tiny_inner_width_saturates_instead_of_underflowing() {
+        let (rows, y) = draw(&hw(Some("GPU"), "CPU"), 3);
+        assert!(rows[0].trim_start().starts_with("┌─ Hardware "));
+        // take(0): only the "CPU:" label survives, the model name is dropped
+        assert_eq!(rows[1].matches("CPU").count(), 1);
+        assert_eq!(y, 7.0);
     }
 }

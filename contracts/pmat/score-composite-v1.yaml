@@ -83,6 +83,11 @@ falsification_tests:
   prediction: Composite always in [0, 100] for inputs in [0, 100]
   test: proptest with boundary values
   if_fails: Overflow or domain violation in geometric mean
+- id: FALSIFY-SCORE-005
+  rule: Codebase critical path
+  prediction: With critical_path declared, the codebase binding score is matched entries over declared entries, and gaps are impact-sorted and capped at 10
+  test: Unit tests critical_path_declared_scores_matched_fraction and compute_gaps_sorted_by_impact_and_truncated_to_ten
+  if_fails: Critical-path coverage or gap ranking in scoring/codebase.rs is wrong
 kani_harnesses:
 - id: KANI-SCORE-001
   obligation: Composite bounded
