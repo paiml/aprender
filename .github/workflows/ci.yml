@@ -283,7 +283,8 @@ jobs:
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
     # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    timeout-minutes: ${{ github.event_name == 'merge_group' && 120 || 240 }}
+    # merge_group: 2 x p95 (8.9 min, last 24 green queue runs, 2026-10-24); the 240 stays for push.
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 18 || 240 }}
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
     permissions: write-all
@@ -464,7 +465,8 @@ jobs:
     # merge_group-only (a draft never reaches the queue); skipped with x86-main when mg-reuse reuses the cited run.
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    timeout-minutes: ${{ github.event_name == 'merge_group' && 120 || 240 }}
+    # merge_group: 2 x p95 (22.5 min, last 24 green queue runs, 2026-10-24); run 40107798347 printed nothing for 22 min and ran to a hand cancel.
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 45 || 240 }}
     permissions: write-all
     outputs:
       results: ${{ steps.sections.outputs.results }}
@@ -694,7 +696,8 @@ jobs:
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     # >= section 150 (sections.yml:108, unscaled under merge_group) + the untimed ~20-min image pull on the full-tier fallback
-    timeout-minutes: 180
+    # merge_group: 2 x p95 (21.5 min, last 24 green queue runs, 2026-10-24); pull_request/push keep 180 (>= sections.yml's 150).
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 45 || 180 }}
     permissions:
       contents: read
       checks: read     # ci_mg_workspace_result.sh reads check-suites
