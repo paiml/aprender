@@ -12,6 +12,9 @@
 #   R1  another OPEN PR (draft included) carries the same ticket -> RED, unless this PR's body says
 #       "supersedes #M" for that PR AND #M is already closed. A named PR that is still open is RED:
 #       close it in the same step, then re-run.
+#       EMR-001 allowance: a commit of THIS PR that carries the line "EMR: 001" and the line "Squashed-From: #N" or "#N@<sha>" (the EMR-001 section 4 form)
+#       exempts PR #N from R1 (EMR-001 forbids closing a source PR, so it stays open while the integration PR
+#       is judged). Both lines must be on the SAME commit; the exemption is for #N only, never for another PR.
 #   R2  more than one commit on this PR carries the same ticket -> RED (EMG-7: one commit per ticket).
 #
 # EXIT: 0 green, 1 red, 2 not measured (read failed: L23, no decision is made on it; CI fails closed).
@@ -23,11 +26,14 @@ set -euo pipefail
 
 JQ_JUDGE='
   def tickets: [.[] | capture("(?m)^PMAT-Ticket:[ \t]*(?<t>PMAT-[0-9]+)[ \t]*$").t];
+  def squashed: [.[] | select(test("(?m)^EMR:[ \t]*001[ \t]*$"))
+                     | [scan("(?m)^Squashed-From:[ \t]*#([0-9]+)(@[0-9a-fA-F]{7,40})?[ \t]*$") | .[0] | tonumber]] | add // [];
   . as $s
+  | ($s.commits | squashed) as $sq
   | ($s.commits | tickets) as $mine
   | ([$s.body | scan("(?i)supersedes[ \t]+#([0-9]+)") | .[0] | tonumber]) as $sup
   | [ ($mine | group_by(.)[] | select(length > 1) | "R2 \(.[0]) is on \(length) commits of this PR"),
-      ( $s.open[] | select(.number != $s.pr) as $o
+      ( $s.open[] | select(.number != $s.pr) | select(.number as $n | ($sq | index($n)) == null) as $o
         | ($o.commits | tickets) as $theirs
         | ($mine | unique | .[] | select(. as $t | $theirs | index($t))) as $t
         | if ($sup | index($o.number)) then "R1 \($t): #\($o.number) is named in \"supersedes\" but is still open; close it"
@@ -83,6 +89,21 @@ self_test() {
   mk two-commits 10 "" "$(jq -n --arg a "$T6" '[$a,$a]')" "[{\"number\":10,\"isDraft\":false,\"body\":\"\",\"commits\":$t6}]"
   mk two-tickets 10 "" "$(jq -n --arg a "$T6" --arg b "$T7" '[$a,$b]')" "[{\"number\":10,\"isDraft\":false,\"body\":\"\",\"commits\":$t6}]"
   mk no-trailer 10 "" '["chore: nothing"]' "[{\"number\":10,\"isDraft\":false,\"body\":\"\",\"commits\":[\"chore: nothing\"]},{\"number\":11,\"isDraft\":false,\"body\":\"\",\"commits\":[\"chore: nothing\"]}]"
+  local E=$'fix: z\n\nEMR: 001\nSquashed-From: #11\nPMAT-Ticket: PMAT-6000' E2=$'fix: z\n\nEMR: 001\nSquashed-From: #11\nSquashed-From: #12\nPMAT-Ticket: PMAT-6000'
+  local NOEMR=$'fix: z\n\nSquashed-From: #11\nPMAT-Ticket: PMAT-6000' EMR2=$'fix: z\n\nEMR: 002\nSquashed-From: #11\nPMAT-Ticket: PMAT-6000'
+  local S4=$'fix: z (#11)\n\nCloses #11\nPMAT-Ticket: PMAT-6000\nSquashed-From: #11@0123456789abcdef0123456789abcdef01234567\nEMR-Key: k\nEMR: 001' BADSHA=$'fix: z\n\nEMR: 001\nSquashed-From: #11@zz\nPMAT-Ticket: PMAT-6000'
+  local SPLIT=$'fix: z\n\nEMR: 001\nPMAT-Ticket: PMAT-6000'
+  local OP="{\"number\":11,\"isDraft\":false,\"body\":\"\",\"commits\":$t6}" OP12="{\"number\":12,\"isDraft\":false,\"body\":\"\",\"commits\":$t6}"
+  local ME="{\"number\":10,\"isDraft\":false,\"body\":\"\",\"commits\":[]}"
+  mk emr-exempt 10 "" "$(jq -n --arg a "$E" '[$a]')" "[$ME,$OP]"
+  mk emr-section4 10 "" "$(jq -n --arg a "$S4" '[$a]')" "[$ME,$OP]"
+  mk emr-bad-sha 10 "" "$(jq -n --arg a "$BADSHA" '[$a]')" "[$ME,$OP]"
+  mk emr-other-pr-still-red 10 "" "$(jq -n --arg a "$E" '[$a]')" "[$ME,$OP,$OP12]"
+  mk emr-two-sources 10 "" "$(jq -n --arg a "$E2" '[$a]')" "[$ME,$OP,$OP12]"
+  mk emr-no-marker 10 "" "$(jq -n --arg a "$NOEMR" '[$a]')" "[$ME,$OP]"
+  mk emr-wrong-id 10 "" "$(jq -n --arg a "$EMR2" '[$a]')" "[$ME,$OP]"
+  mk emr-split-commits 10 "" "$(jq -n --arg a "$SPLIT" --arg b $'fix: w\n\nSquashed-From: #11\nPMAT-Ticket: PMAT-7000' '[$a,$b]')" "[$ME,$OP]"
+  mk emr-unnamed-pr 10 "" "$(jq -n --arg a "$E" '[$a]')" "[$ME,${OP/\"number\":11/\"number\":13}]"
   local S=${BASH_SOURCE[0]}
   row alone 0 "" "$S"
   row other-ticket 0 "" "$S"
@@ -94,16 +115,31 @@ self_test() {
   row two-commits 1 '^R2 PMAT-6000 is on 2 commits' "$S"
   row two-tickets 0 "" "$S"
   row no-trailer 0 "" "$S"
+  row emr-exempt 0 "" "$S"
+  row emr-section4 0 "" "$S"
+  row emr-bad-sha 1 '^R1 PMAT-6000 .*#11' "$S"
+  row emr-other-pr-still-red 1 '^R1 PMAT-6000 .*#12' "$S"
+  row emr-two-sources 0 "" "$S"
+  row emr-no-marker 1 '^R1 PMAT-6000 .*#11' "$S"
+  row emr-wrong-id 1 '^R1 PMAT-6000 .*#11' "$S"
+  row emr-split-commits 1 '^R1 PMAT-6000 .*#11' "$S"
+  row emr-unnamed-pr 1 '^R1 PMAT-6000 .*#13' "$S"
   # MUTANTS: each rule removed must turn its row green-when-it-should-be-red (so the table above would catch it).
   sed 's/^      ( \$s.open\[\]/      ( empty ) , ( $s.open[]|empty ) , ( $s.open[]|select(false)/' "$S" >"$td/m-r1.sh"
   sed 's/select(length > 1)/select(length > 99)/' "$S" >"$td/m-r2.sh"
   sed 's/(\$sup | index(\$o.number)) then/($sup | index($o.number)) then empty elif false then/' "$S" >"$td/m-open.sh"
-  for m in m-r1 m-r2 m-open; do
+  sed 's/ | select(\.number as \$n | (\$sq | index(\$n)) == null) as \$o/ as $o/' "$S" >"$td/m-emr.sh"
+  sed 's/EMR:\[ \\t\]\*001/EMR:[ \\t]*[0-9]+/' "$S" >"$td/m-emrid.sh"
+  sed 's/(\$sq | index(\$n)) == null/(\$sq | length) == 0/' "$S" >"$td/m-all.sh"
+  for m in m-r1 m-r2 m-open m-emr m-emrid m-all; do
     cmp -s "$S" "$td/$m.sh" && { printf 'FAIL mutant %s equals the script\n' "$m"; fails=$((fails + 1)); }
   done
   row dup-open 0 "" "$td/m-r1.sh" && true
   row two-commits 0 "" "$td/m-r2.sh" && true
   row sup-open 0 "" "$td/m-open.sh" && true
+  row emr-exempt 1 "" "$td/m-emr.sh" && true
+  row emr-wrong-id 0 "" "$td/m-emrid.sh" && true
+  row emr-other-pr-still-red 0 "" "$td/m-all.sh" && true
   # a mutant that stays red would mean the table cannot see the rule: the rows above report FAIL for it.
   rm -rf "${td:?}"
   [ "$fails" = 0 ] && { echo "self-test: all rows pass"; return 0; }
