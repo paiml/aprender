@@ -60,8 +60,8 @@
 #
 #     pmat work add "<title>" --github-issue <N>          # writes the monolith
 #     python3 scripts/lib/roadmap_fragments.py adopt <ID> # -> entries/<ID>.yaml
-#                                                         #    + regenerates
-#     git add docs/roadmaps/entries/<ID>.yaml docs/roadmaps/roadmap.yaml
+#     git checkout -- docs/roadmaps/roadmap.yaml          # entries-only (#6270): leave the
+#     git add docs/roadmaps/entries/<ID>.yaml             #   aggregate alone; the bump regenerates it
 #
 # PUSH SHAPE IS NOT JUDGED (§8 decision, 2026-09-16). resolve_base names
 # HEAD^1 as the base when HEAD is on the origin/main first-parent line, because
@@ -124,9 +124,9 @@ remedy() {
     printf '        python3 scripts/lib/roadmap_fragments.py adopt <ID>\n'
     printf '  * an EXISTING entry — adopt it once, then edit %s/<ID>.yaml\n' "$ENTRIES_DIR"
     printf '    (a fragment SUPERSEDES the base entry of the same id).\n'
-    printf '  * then regenerate and stage BOTH sides:\n'
-    printf '        make roadmap-aggregate\n'
-    printf '        git add %s/<ID>.yaml %s\n' "$ENTRIES_DIR" "$ROADMAP_FILE"
+    printf '  * then stage the FRAGMENT only (#6270); leave %s alone, the bump PR regenerates it:\n' "$ROADMAP_FILE"
+    printf '        git checkout -- %s\n' "$ROADMAP_FILE"
+    printf '        git add %s/<ID>.yaml\n' "$ENTRIES_DIR"
     printf '  * an id that is not filename-safe (prose, or carrying a path separator) has NO\n'
     printf '    fragment path: it stays in the base and is immutable (RMFR-OB-005).\n'
 }
