@@ -113,6 +113,10 @@ for rel in tracked:
 # A byte-identical COPY of a citing line that a HISTORICAL ledgered file already pins (R6) is that same dated history, not a new
 # claim: a frozen snapshot of roadmap.yaml (docs/roadmaps/roadmap-base.yaml) repeats its lines. NO path is exempt; one
 # novel citing line in the copy is R1 like any other file.
+# Membership only: a line in the copy must equal a pinned line, nothing checks its position or count (R6 pins the source). The pool
+# reads the LIVE roadmap.yaml row, so when the epic removes the tracked aggregate the ledger row MOVES to roadmap-base.yaml in the same
+# change (same count, so R4 holds; the file is then ledgered and R7 no longer applies; C24). A re-pin of roadmap.yaml that DROPS a
+# citing line is R1 on the base until the base is re-cut or its row takes over: recorded in PMAT-6185 as a follow-up.
 COPY_SRC, COPY_DST = "docs/roadmaps/roadmap.yaml", "docs/roadmaps/roadmap-base.yaml"  # the one pair R7 knows
 ledlines = {t for r, v in led.items() if v[0] == "historical" and r == COPY_SRC and r in ctexts for t in ctexts[r]}  # NOT fixture rows: a fixture value is a sample, copying it is a claim
 for rel, lines in sorted(citing.items()):
@@ -260,6 +264,8 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'C22 a copy of a FIXTURE-class ledger line -> R1 (only historical lines can be copied)' "$TMP/c22" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
     pair c23 historical evidence/parity/copy.md
     expect 'C23 the same historical line copied into any OTHER path -> R1 (R7 knows one pair)' "$TMP/c23" 1 'R1 evidence/parity/copy.md:1'
+    pair c24 historical docs/roadmaps/roadmap-base.yaml && git -C "$TMP/c24" rm -qf docs/roadmaps/roadmap.yaml && sed -i 's|^docs/roadmaps/roadmap.yaml\t|docs/roadmaps/roadmap-base.yaml\t|' "$TMP/c24/scripts/comparator_pin_citations.txt" && git -C "$TMP/c24" add -A
+    expect 'C24 the aggregate removed and its ledger row moved onto roadmap-base.yaml -> green' "$TMP/c24" 0 'every one ledgered'
     fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
     expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
 
