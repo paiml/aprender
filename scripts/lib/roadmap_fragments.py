@@ -350,11 +350,11 @@ def _census_rows():
         "filename-safety is load-bearing, not defensive")
 
 
-def _shape_rc(path):
+def _shape_rc(path, roadmap=None):
     import types
     err, sys.stderr = sys.stderr, open(os.devnull, "w")
     try:
-        return _cmd_shape(types.SimpleNamespace(file=path))
+        return _cmd_shape(types.SimpleNamespace(file=path), roadmap)
     finally:
         sys.stderr = err
 
@@ -401,6 +401,17 @@ def _shape_rows():
         os.makedirs(os.path.join(ed, "PMAT-512.yaml"))
         row("shape: a missing or unreadable path exits 2 (not measured), never 1",
             _shape_rc(os.path.join(ed, "PMAT-511.yaml")) == 2 and _shape_rc(os.path.join(ed, "PMAT-512.yaml")) == 2)
+        with open(os.path.join(ed, "PMAT-513.yaml"), "w", encoding="utf-8", newline="") as fh:
+            fh.write("- id: PMAT-513\r  title: x\n")
+        row("shape: a lone carriage return is refused (the splitter reads another line)",
+            "carriage return" in fragment_shape(os.path.join(ed, "PMAT-513.yaml")))
+        rm = os.path.join(d, "roadmap.yaml")
+        with open(rm, "w", encoding="utf-8") as fh:
+            fh.write("roadmap:\n- id: PMAT-600\n  created: &a x\n- id: PMAT-601\n  updated: *a\n")
+        put("PMAT-600.yaml", "- id: PMAT-600\n  title: replaces the anchor's owner\n")
+        put("PMAT-602.yaml", "- id: PMAT-602\n  title: leaves every alias alone\n")
+        row("shape: a fragment that leaves the aggregate unparseable is refused (dangling alias)",
+            _shape_rc(os.path.join(ed, "PMAT-600.yaml"), rm) == 1 and _shape_rc(os.path.join(ed, "PMAT-602.yaml"), rm) == 0)
         row("shape: a plain one-entry fragment passes",
             fragment_shape(os.path.join(ed, "PMAT-501.yaml")) == "")
 
@@ -653,19 +664,24 @@ def _unique_loader():
     return Loader
 
 
+_MARKER = re.compile(r"(---|\.\.\.)(\s|$)")
+
+
 def _text_problem(text, stem):
     """The first text-level defect of a fragment, or ''. The splitter cuts on every `- id:` line
-    (even inside a quoted scalar), a `---` / `...` line or a BOM breaks the aggregate's parse, and
-    the first line is read raw by every text consumer, so it must be exactly `- id: <stem>`."""
+    (even inside a quoted scalar), a `---` / `...` line or a BOM breaks the aggregate's parse, a CR
+    makes the splitter and the parser read different lines, and the first line is read raw by every
+    text consumer, so it must be exactly `- id: <stem>`."""
     lines = text.splitlines()
-    if "\ufeff" in text:
-        return "carries a byte order mark"
-    if any(re.match(r"(---|\.\.\.)(\s|$)", line) for line in lines):
-        return "carries a '---' or '...' document marker line"
     cuts = sum(1 for line in lines if line.startswith("- id:"))
-    if cuts != 1:
-        return "has %d lines opening '- id:', want exactly 1" % cuts
-    return "" if lines[0] == "- id: " + stem else "does not start with '- id: %s'" % stem
+    checks = [
+        ("\ufeff" in text, "carries a byte order mark"),
+        ("\r" in text, "carries a carriage return (the splitter and the parser read different lines)"),
+        (any(_MARKER.match(line) for line in lines), "carries a '---' or '...' document marker line"),
+        (cuts != 1, "has %d lines opening '- id:', want exactly 1" % cuts),
+        (lines[:1] != ["- id: " + stem], "does not start with '- id: %s'" % stem),
+    ]
+    return next((why for bad, why in checks if bad), "")
 
 
 def _anchor_problem(text):
@@ -697,7 +713,7 @@ def fragment_shape(path):
     if not base.endswith(".yaml"):
         return "is not named <id>.yaml"
     stem = base[:-len(".yaml")]
-    with open(path, encoding="utf-8") as fh:
+    with open(path, encoding="utf-8", newline="") as fh:  # newline="": a lone CR must stay visible
         text = fh.read()
     why = _text_problem(text, stem) or _anchor_problem(text)
     if why:
@@ -709,18 +725,44 @@ def fragment_shape(path):
     return "" if isinstance(items[0], dict) and items[0].get("id") == stem else "its item is not a mapping with id %s" % stem
 
 
-def _cmd_shape(a):
-    """`shape --file F` -> rc 0 if F is one entry filed under its own id, else rc 1 and the reason."""
+def aggregate_problem(roadmap, stem, text):
+    """'' when the aggregate built with this fragment still parses; else why not. The class the
+    per-fragment checks cannot see: a fragment that replaces the entry owning an anchor leaves
+    its aliases dangling. Absent roadmap: nothing to build on, so nothing to judge."""
+    import yaml
+    base = base_path(roadmap) if os.path.exists(base_path(roadmap)) else roadmap
+    if not os.path.exists(base):
+        return ""
+    with open(base, encoding="utf-8") as fh:
+        built = aggregate(fh.read(), [(stem, text)])
+    try:
+        yaml.load(built, Loader=getattr(yaml, "CSafeLoader", yaml.SafeLoader))  # noqa: S506
+    except yaml.YAMLError as e:
+        return "makes the aggregate unparseable: %s" % str(e).splitlines()[0]
+    return ""
+
+
+def _judge_shape(path, roadmap):
+    """The reason `path` is not a fragment the aggregate can take, or ''. Raises OSError (rc 2)."""
+    why = fragment_shape(path)
+    if why or not roadmap:
+        return why
+    with open(path, encoding="utf-8", newline="") as fh:
+        return aggregate_problem(roadmap, os.path.basename(path)[:-len(".yaml")], fh.read())
+
+
+def _cmd_shape(a, roadmap=None):
+    """`shape --file F` -> rc 0 if F is one entry filed under its own id and the aggregate built
+    with it still parses, else rc 1 and the reason; rc 2 when it cannot be measured."""
     if not a.file:
         sys.stderr.write("shape: --file is required\n")
         return 2
     try:
         import yaml  # noqa: F401
+        why = _judge_shape(a.file, roadmap)
     except ImportError:
         sys.stderr.write("shape: PyYAML is not installed; not measured\n")
         return 2
-    try:
-        why = fragment_shape(a.file)
     except OSError as e:
         sys.stderr.write("shape: cannot read %s (%s); not measured\n" % (a.file, e.strerror or e))
         return 2
@@ -776,7 +818,7 @@ def main(argv=None):
     if a.cmd == "changed":
         return _cmd_changed(a)
     if a.cmd == "shape":
-        return _cmd_shape(a)
+        return _cmd_shape(a, roadmap)
     if a.cmd == "adopt":
         return _cmd_adopt(a, roadmap, entries_dir)
     if a.cmd != "aggregate":
