@@ -11,7 +11,7 @@ def steps_for($job; $ci):
     (.[$job + $sfx]) as $man
     | ( if $man != null then [($man.steps // []) | to_entries[] | {idx: "m\(.key)", step: .value}] else [] end )
     + ( if $man == null or ($ci | not) then
-          (.[$job].steps // []) as $s | ($s | setup_end) as $e
+          (.[own($job)].steps // []) as $s | ($s | setup_end) as $e
           | [$s | to_entries[] | select(.key > $e and (.value | calls_runner($job) | not)
                 and (((.value.if // "") | tostring) | contains("always") | not)) | {idx: "\(.key)", step: .value}]
         else [] end );
