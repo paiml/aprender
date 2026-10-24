@@ -1133,6 +1133,31 @@ if [ -z "$bad59" ]; then
 else
     fail_row "59: --list/--shard step-id agreement" "$bad59"
 fi
+# 60: the refusal itself, on a test manifest. guard-a has no -steps manifest (its id is 0), guard-b has one (m0);
+# a is listed FIRST so only an exit status that survives the loop (not the last job's) shows the refusal.
+t60="$(mktemp)"
+cat > "$t60" <<'Y60'
+jobs:
+  guard-a:
+    steps:
+      - name: plain step
+        run: "true"
+  guard-b:
+    steps:
+      - name: stub
+        run: "true"
+  guard-b-steps:
+    steps:
+      - name: manifest step
+        run: "true"
+Y60
+out60="$(bash "$REPO_ROOT/scripts/lib/ci_guard_steps.sh" --workflow "$t60" list --shard 1/3 guard-a guard-b 2>&1)"; rc60=$?
+rm -f "${t60:?}"
+if [ "$rc60" -ne 0 ] && [[ $out60 == *'step id <0> is not m<N>'* ]]; then
+    pass_row "60: --list --shard refuses a non-m<N> id (rc=$rc60, named), even when a later job is clean"
+else
+    fail_row "60: --list --shard refusal" "rc=$rc60 out=$out60"
+fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
