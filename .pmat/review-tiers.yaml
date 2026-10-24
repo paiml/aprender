@@ -30,6 +30,7 @@ sensitive:
   - "*CODEOWNERS"
   - "docs/audits/*"
   - "docs/roadmaps/roadmap.yaml"
+  - "docs/roadmaps/entries/*"
   - "clippy.toml"
   - "*/clippy.toml"
   - "rust-toolchain"
@@ -74,9 +75,9 @@ light:
   - "CHANGELOG.md"
   - "*/README.md"
   - "*/CHANGELOG.md"
-  - "docs/roadmaps/entries/*"
 # A file matching neither list is standard, unless its diff is comment-only (blank lines and whole-line comments),
 # which review_tier.sh checks mechanically and treats as light.
+# docs/roadmaps/entries/* is sensitive because it is the source of the generated, sensitive roadmap.yaml.
 # Scope, declared: every script under scripts/ and every file a CI surface (.github, ci/) names is sensitive; the
 # check proves it by scanning those surfaces. contracts/*, docs/specifications and CLAUDE.md are standard (gates
 # validate them; they are not gate machinery). `light` is an allowlist: a light-matching file is

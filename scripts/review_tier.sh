@@ -69,14 +69,17 @@ comment_only() { # BASE HEAD PATH -> 0 when the change to PATH touches only blan
   [[ $before == "$after" ]]
 }
 
-read_by_code() { # BASE HEAD PATH -> 0 when some file other than PATH names PATH
-  local t
+read_by_code() { # BASE HEAD PATH -> 0 when some file other than PATH names PATH, or when git could not answer
+  local t rc b
   for t in "$1" "$2"; do
-    git grep -qF -e "$3" "$t" -- crates src tests scripts ci .github Makefile build.rs ':!'"$3" 2>/dev/null && return 0
+    git grep -qF -e "$3" "$t" -- crates src tests scripts ci .github Makefile build.rs ':!'"$3" 2>/dev/null; rc=$?
+    # rc 0 = named; rc 1 = not named; anything else (bad rev, git error) cannot answer: fail closed, not light.
+    [[ $rc -eq 1 ]] || return 0
     # include_str!("../CHANGELOG.md") names the file relatively: match the basename on any include line.
-    local b=${3##*/}; b=${b//./\\.}
+    b=${3##*/}; b=${b//./\\.}
     # File-level, not per line, so include_str!(\n "../X.md",\n) split over lines is still caught.
-    git grep -qE --all-match -e 'include(_str|_bytes)?!' -e "[\"/]$b\"" "$t" -- crates src tests build.rs ':!'"$3" 2>/dev/null && return 0
+    git grep -qE --all-match -e 'include(_str|_bytes)?!' -e "[\"/]$b\"" "$t" -- crates src tests build.rs ':!'"$3" 2>/dev/null; rc=$?
+    [[ $rc -eq 1 ]] || return 0
   done
   return 1
 }
@@ -172,6 +175,7 @@ self_test() {
   printf 'x\n' > "$d/.clippy.toml";                                            expect clippy-toml sensitive
   mkdir -p "$d/docs/roadmaps"; printf 'x\n' > "$d/docs/roadmaps/roadmap-base.yaml"; expect roadmap-base sensitive
   printf 'x\n' > "$d/README.md";                                               expect readme-light light
+  mkdir -p "$d/docs/roadmaps/entries"; printf 'x\n' > "$d/docs/roadmaps/entries/PMAT-1.yaml"; expect roadmap-entry-sensitive sensitive
   printf 'x\n' > "$d/notes/n.md";                                              expect stray-md-standard standard
   chmod +x "$d/bin/run.sh";                                                 expect mode-only-change standard
   mkdir -p "$d/docs/audits" "$d/docs/roadmaps" "$d/docs/tools" "$d/crates/x/src/lib" "$d/sub"
@@ -222,6 +226,8 @@ PMAT-Tier: light"
   printf '# x\n' >> "$d/docs/a.md"; git -C "$d" add -A; git -C "$d" commit -qm e
   if (cd "$d" && bash "$SELF" "$base" HEAD >/dev/null 2>&1); then
     fail=$((fail + 1)); echo "FAIL empty-table accepted"; else pass=$((pass + 1)); fi
+  # git cannot answer (unresolvable rev): read_by_code must say "named" (standard), never "not named" (light).
+  if (cd "$d" && read_by_code no-such-rev no-such-rev docs/read.md); then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL git-error-fails-closed: read_by_code returned light"; fi
   echo "review_tier self-test: $pass passed, $fail failed"
   [[ $fail -eq 0 ]]
 }

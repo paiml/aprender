@@ -57,14 +57,22 @@ tmutant github-dropped '".github/*"' pr-review-key
 tmutant nextest-config-dropped '".config/*"' nextest-config
 # Surface scan: every file a CI surface names under the gate directories must be sensitive in the table, so a new
 # gate script cannot sit outside it. (Derived from the tree, not a list kept here.)
-gaps=$(cat .github/workflows/*.yml ci/sections.yml ci/explicit-test-commands.d/*.cmd Makefile 2>/dev/null \
-  | grep -aoE '(scripts|ci|tools|schemas|\.pmat|\.github|\.config|\.cargo)/[A-Za-z0-9_./-]+' | sort -u \
-  | while IFS= read -r f; do [[ -f $f ]] && [[ $(bash "$SRC" --classify "$f") != sensitive ]] && echo "$f"; done)
+surface_gaps() { # TABLE -> CI-named gate files that TABLE does not classify sensitive
+  cat .github/workflows/*.yml ci/sections.yml ci/explicit-test-commands.d/*.cmd Makefile 2>/dev/null \
+    | grep -aoE '(scripts|ci|tools|schemas|\.pmat|\.github|\.config|\.cargo)/[A-Za-z0-9_./-]+' | sort -u \
+    | while IFS= read -r f; do [[ -f $f ]] && [[ $(REVIEW_TIER_TABLE="$1" bash "$SRC" --classify "$f") != sensitive ]] && echo "$f"; done
+}
+gaps=$(surface_gaps "$TBL")
 if [[ -n $gaps ]]; then echo "FAIL  CI-named files outside the sensitive list:"; echo "$gaps" | head; fail=1; else echo "ok    every gate file a CI surface names is sensitive"; fi
+# RED fixture: the scan must go red on a table that leaves a gate directory out, or a green scan proves nothing.
+grep -Fv -- '"scripts/*"' "$TBL" > "$W/nos.yaml"
+if cmp -s "$TBL" "$W/nos.yaml"; then echo "FAIL  surface-scan fixture did not apply"; fail=1
+elif [[ -n $(surface_gaps "$W/nos.yaml") ]]; then echo "ok    surface scan goes RED on a table without scripts/*"; else echo "FAIL  surface scan stayed green on a table without scripts/*"; fail=1; fi
 mutant mode-change-ignored 's#  \[\[ $(git ls-tree "$1" -- "$3" | cut -d. . -f1) == .*|| return 1#  true#'
 mutant malformed-line-dropped 's#{ print "review_tier: malformed table line: " $0 > "/dev/stderr"; bad = 1; exit 2 }#{ next }#'
 mutant read-by-code-ignored 's#if read_by_code "$1" "$2" "$3"; then#if false; then#'
 mutant basename-include-ignored 's#-e "\[\\"/\]\$b\\""#-e "NOPE$b"#'
 mutant include-per-line-only 's#--all-match -e .include(_str|_bytes)?!. -e "\[\\"/\]\$b\\""#-e "include(_str|_bytes)?!.*[\\"/]$b\\""#'
+mutant git-error-light 's#\[\[ \$rc -eq 1 \]\] || return 0#true#g'
 mutant no-paths-ok    's/  \[\[ $n -gt 0 \]\] || die/  true || die/'
 exit "$fail"
