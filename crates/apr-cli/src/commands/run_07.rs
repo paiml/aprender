@@ -13,5 +13,6 @@ include!("run_tests_stream_output.rs");
 include!("run_tests_accel_reconcile.rs");
 include!("run_tests_logprobs_surface_4026.rs");
 include!("run_tests_usage_3718.rs");
+include!("run_tests_contract_3720.rs");
 include!("run_tests_top_k_default_3754.rs");
 }
