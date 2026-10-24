@@ -27,6 +27,8 @@
 #   R6  the file's citing lines match their pin: a line APPENDED to a ledgered file, or a dated line
 #       EDITED in place into a live claim, is RED (#3741 quorum r3/r4) -- a ledgered file is not a
 #       blind spot. A deliberate edit re-pins in the same diff: --pin prints the value.
+#   R7  an unledgered file passes ONLY if every one of its citing lines is a byte-identical copy of a citing line a
+#       ledgered file pins (a frozen snapshot of roadmap.yaml repeats its lines). No path is exempt; one novel line is R1.
 #   A citation is the commit's first 7 hex digits followed by hex (git's abbreviation floor), so
 #   the 8-digit, 9-digit and 40-digit forms of the previous pin all count.
 #
@@ -87,7 +89,7 @@ led = entries(ledger)
 tracked = subprocess.run(["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], capture_output=True).stdout.decode(errors="replace").split("\0")
 tracked = sorted({t for t in tracked if t})
 if len(tracked) < 1: print("FAIL  the tracked universe is empty"); sys.exit(1)
-citing, pinned, decoded = {}, {}, {}
+citing, pinned, decoded, ctexts = {}, {}, {}, {}
 for rel in tracked:
     if rel in (os.path.relpath(ledger, root), pin_rel):
         continue  # the ledger and the pin file declare the old pins. NOTHING else is exempt by path or shape: a roadmap
@@ -106,8 +108,13 @@ for rel in tracked:
     lines, texts = [], []
     for i, line in enumerate(text.splitlines(), 1):
         if any(pt.search(line) for pt in pats): lines.append(i); texts.append(line)
-    if lines: citing[rel] = lines; pinned[rel] = pin_of(texts); decoded[rel] = text
+    if lines: citing[rel] = lines; pinned[rel] = pin_of(texts); decoded[rel] = text; ctexts[rel] = texts
+# A byte-identical COPY of a citing line that a ledgered file already pins (R6) is that same dated history, not a new
+# claim: a frozen snapshot of roadmap.yaml (docs/roadmaps/roadmap-base.yaml) repeats its lines. NO path is exempt; one
+# novel citing line in the copy is R1 like any other file.
+ledlines = {t for r in led if r in ctexts for t in ctexts[r]}
 for rel, lines in sorted(citing.items()):
+    if rel not in led and all(t in ledlines for t in ctexts[rel]): continue
     if rel not in led:
         print(f"FAIL  R1 {rel}:{lines[0]} cites a superseded comparator pin and is not on {os.path.relpath(ledger, root)} "
               f"({len(lines)} line(s)). A live claim against a superseded comparator is the defect; dated history or a fixture value is listed by file, with why.")
@@ -236,6 +243,10 @@ if [ "${1:-}" = "--self-test" ]; then
         && printf 'evidence/parity/u16.md\thistorical\ta UTF-16 record\t%s\n' "$(pin_line "$TMP/c19b" evidence/parity/u16.md)" >> "$TMP/c19b/scripts/comparator_pin_citations.txt" && git -C "$TMP/c19b" add -A
     expect 'C19b --pin and the judge decode UTF-16 the same way: ledgered by --pin -> green' "$TMP/c19b" 0 'every one ledgered'
     expect 'C17 a dated line EDITED IN PLACE into a live claim (same count, a date elsewhere) -> R6' "$TMP/c17" 1 'a citing line was EDITED in place'
+    fixture c20 && printf 'measured 2026-08-24 against llama.cpp %s: 0.59x\n' "$OLD" > "$TMP/c20/evidence/parity/copy.md" && git -C "$TMP/c20" add -A
+    expect 'C20 an unledgered file whose citing line is a byte-copy of a ledgered line -> green' "$TMP/c20" 0 'every one ledgered'
+    fixture c21 && printf 'measured 2026-08-24 against llama.cpp %s: 0.59x\nnow CURRENT at %s\n' "$OLD" "$OLD" > "$TMP/c21/evidence/parity/copy.md" && git -C "$TMP/c21" add -A
+    expect 'C21 a copy that adds ONE novel citing line -> R1' "$TMP/c21" 1 'R1 evidence/parity/copy.md:1'
     fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
     expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
 
@@ -270,6 +281,8 @@ PY
     mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
     mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
     mutant prefix-exempt 'pin_rel):' 'pin_rel) or rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
+    mutant drop-copy-rule 'if rel not in led and all(t in ledlines for t in ctexts[rel]): continue' 'if False: continue' 0 'every one ledgered' "$TMP/c20"
+    mutant any-copy-line 'if rel not in led and all(t in ledlines for t in ctexts[rel]): continue' 'if rel not in led and any(t in ledlines for t in ctexts[rel]): continue' 1 'R1 evidence/parity/copy.md:1' "$TMP/c21"
     mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s of %s)\n' "$fails" "$rows"; exit 1; }
