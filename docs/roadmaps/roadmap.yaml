@@ -25702,6 +25702,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6042
+  github_issue: 6042
+  item_type: task
+  title: 'gate: affected_set.sh narrows docs/contracts/*.md to READERS-only (split out of #6035)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:00:00Z
+  updated: 2026-10-23T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - docs, contracts, root *.md and .claude/ paths select READERS only, not ALL
+  - nothing on a PR, merge-queue or release path calls affected_set.sh (dormant)
+  - the readers case table and self-test run as a nightly LAB step with one owner
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-6068
   github_issue: 6068
   item_type: task
@@ -25757,6 +25777,46 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-6131
+  github_issue: 6131
+  item_type: task
+  title: 'pmat_bin.sh reads its pin from tools.toml, one source (m36 FAIL ENV; child of PMAT-1059)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:20:00Z
+  updated: 2026-10-23T10:20:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/pmat_bin.sh holds no version literal; PMAT_PIN is tools.toml [pmat] version
+  - an unreadable pin returns 1, never a default
+  - check_hardcoded_paths.sh --self-test reads the pin from tools.toml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6133
+  github_issue: 6133
+  item_type: task
+  title: 'move the pmat pin to 3.42.0; re-stamp CB-200 and complexity baselines (child of PMAT-6131)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:40:00Z
+  updated: 2026-10-23T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - tools.toml [pmat] version is 3.42.0 and check_tool_versions.sh reports no pmat header mismatch
+  - instrument vs tree separated by measuring 3.41.1 and 3.42.0 on the same tree
+  - complexity_baseline.txt and cb200_baseline.txt carry tool_version=pmat 3.42.0; no count rises for tree debt
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-6134
   github_issue: 6134
   item_type: task
@@ -25780,6 +25840,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6135
+  github_issue: 6135
+  item_type: task
+  title: 'mq-feeder: gate auto-arm with non-author seats + fresh_derived byte-compare (split from #6112)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T10:35:00Z
+  updated: 2026-10-23T10:35:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The mq-feeder arms a gate PR only when every head patch-id has 2 distinct non-author seats and a 3/3 fresh_derived byte-compare receipt (as #6134 needs_seats); a no-op rebase or merge of main voids 0 receipts and an amended commit voids only its own id; a falsifier test shows an author-only seat or a stale byte-compare does not arm'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-6151
   github_issue: 6151
   item_type: task
@@ -25791,6 +25870,158 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-23T11:45:00Z
   spec: null
   acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6185
+  github_issue: 6185
+  item_type: task
+  title: 'roadmap: frozen roadmap-base.yaml, generator reads it (S1 of removing the tracked aggregate)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T17:20:00Z
+  updated: 2026-10-23T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'S1a (this change, scripts only): roadmap_fragments.py aggregate reads roadmap-base.yaml when it sits beside roadmap.yaml, check_roadmap_fragment_required.sh freezes it and judges roadmap.yaml against aggregate(roadmap-base.yaml, entries/); a scratch dir without roadmap-base.yaml behaves as before. S1b (the data-only follow-up PR, stacked on this one) adds docs/roadmaps/roadmap-base.yaml, a snapshot that equals roadmap.yaml, and rule 3 verifies it on introduction. This change deliberately contains no roadmap-base.yaml'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'GATE CHANGE (S1b, PR carrying docs/roadmaps/roadmap-base.yaml): S1b is NOT data-only and OVERRIDES the S1a/S1b wording in acceptance_criteria, which cannot be edited in place. It adds rule R7 to scripts/check_comparator_pin_citations.sh, loosening R1 for the one pair roadmap.yaml -> roadmap-base.yaml: the base passes unledgered only if its citing lines carry EXACTLY the pin of the historical roadmap.yaml ledger row and every line is a byte-copy of one of them. Self-test C20-C25; mutants drop-copy-rule, any-copy-line, drop-class-filter, widen-scope, membership-only. Scope and A/B ruling: docs/audits/quorum-PMAT-6185-R1-pin-cites.md. SECOND GATE CHANGE in the same PR: scripts/check_roadmap_completion_is_cited.sh does not count the completed entries of roadmap-base.yaml while docs/roadmaps/roadmap.yaml is in scope and holds EVERY id the base holds (content-bound, not a path waiver); if roadmap.yaml is removed or the base holds an id it lacks, the base is judged like any roadmap file. Self-test rows: ids all present (no records), extra id (judged), roadmap.yaml removed (judged); mutants path-waiver and drop-subset-test are killed. Follow-ups for the step removing the tracked roadmap.yaml: move the ledger row onto roadmap-base.yaml (C24) and let the completion-citation guard judge the base (it does so automatically).'
+  epic: null
+- id: PMAT-6200
+  github_issue: 6200
+  item_type: task
+  title: 'CI: pin ci/gate, gate, mg-reuse-self-test to X64 runners'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-23T19:02:47Z
+  updated: 2026-10-23T19:02:47Z
+  spec: null
+  acceptance_criteria:
+  - 'ci.yml jobs mg-reuse-self-test, ci-gate (ci / gate) and gate carry the X64 label in runs-on, so no gx10 aarch64 runner can take them; a guard fails if any of the three loses it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6206
+  github_issue: 6206
+  item_type: task
+  title: 'CI: fat_driver depth-1 checkout fetches tags first and surfaces git stderr'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-24T00:17:40Z
+  updated: 2026-10-24T00:17:40Z
+  spec: null
+  acceptance_criteria:
+  - 'fat_driver.py uses_checkout (fetch-depth 1) runs git fetch -q origin +refs/tags/*:refs/tags/* (tags only, the + forces a moved tag; no --force flag, no bare --tags) under a 600s timeout before git tag -l, and a failing git tag -l or git tag -d fails the checkout with git stderr and rc in the section log; the self-test rows (missing tag object fetched, unfetchable tag fails with stderr, moved tag does not fail the fetch, undeletable tag fails with why) each turn red under the mutants that drop the fetch, the + of the refspec, the tags-only refspec (bare --tags or a wide refspec), the failure check, the stderr, the rc, the timeout or its 600'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6208
+  github_issue: 6208
+  item_type: bug
+  title: 'PP-29 D6: PP-LLAMA-001 §12 rows 16, 17, 20 expired 2026-10-23, main RED'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-24T00:45:00Z
+  updated: 2026-10-24T00:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/spec_conformance.sh passes on the branch; rows 16, 17, 20 carry 2026-11-06 (the 0.73.0 milestone date rows 13, 15, 19, 21 already use) with the was-date shown; a changelog row names the quorum round, says none of the three has evidence, and carries the NO SPEED DELIVERED consequence for the 0.72 notes; with SPEC_CONFORMANCE_TODAY=2026-11-07 the andon is RED again for exactly these rows; derived_expiries.json is regenerated by --write'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-date is renewal, not discharge; it ships only on a quorum AGREED at the final head. Real discharge needs lambda/CUDA hardware cells.'
+  epic: 5510
+- id: PMAT-6211
+  github_issue: 6211
+  item_type: task
+  title: 'model-ladder: per-cell memory admission so large cells do not swap the host'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T01:00:00Z
+  updated: 2026-10-24T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'with --admit (LADDER_ADMIT=1 in model_ladder.sh), each cell is checked against free memory, swap in use and live runner jobs; a cell the host cannot take is recorded not_measured with the reason and never run; an unreadable host admits nothing'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6212
+  github_issue: 6212
+  item_type: task
+  title: 'corpus-ingest: civil_from_days and now_utc_iso8601 tests + FALSIFY-006 (the #5590 delta not on main)'
+  status: in_progress
+  priority: low
+  assigned_to: aprender-w5382
+  created: 2026-10-24T01:20:00Z
+  updated: 2026-10-24T01:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --bin aprender-corpus-ingest -- civil_from_days now_utc format_utc passes (3 tests); changing the 719_468 epoch offset by one turns civil_from_days_epoch_and_leap_boundaries RED; contracts/bin-apr-cli--aprender-corpus-ingest-v1.yaml carries FALSIFY-BIN-APR_CORPUS_INGEST-006 and pv validate passes'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-cut from the EMG-001 return of #5590; its step-profiler half already landed (a743e8c23d).'
+  epic: 5510
+- id: PMAT-6235
+  github_issue: 6235
+  item_type: task
+  title: 'ci/sections.yml: pre-checkout ownership restore chowns to the runner uid, not 1000:1000'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T04:30:00Z
+  updated: 2026-10-24T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the three Pre-checkout ownership restore steps chown /workspace to the invoking runner uid:gid passed into the container, never a hardcoded 1000:1000'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6239
+  github_issue: 6239
+  item_type: task
+  title: 'ci: pr-light runs on an X64 clean-room runner, not gx10-build'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T05:05:00Z
+  updated: 2026-10-24T05:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'pr-light runs-on is [self-hosted, Linux, X64, clean-room] and the mg-reuse wiring check pins that exact line'
   phases: []
   subtasks: []
   estimated_effort: null

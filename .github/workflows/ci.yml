@@ -180,7 +180,7 @@ jobs:
   # its own PR, not first in the queue. gate requires it.
   mg-reuse-self-test:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -194,10 +194,10 @@ jobs:
           setsid --wait bash scripts/check_ci_wait_cancel.sh
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
-  # before "install the toolchain") and the fat_driver self-test; no X64 label, no section, no cargo build.
+  # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
   pr-light:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
     permissions: write-all
@@ -833,7 +833,7 @@ jobs:
 
   ci-gate:
     name: ci / gate
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]
     if: always()
@@ -880,7 +880,7 @@ jobs:
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
 
   gate:
-    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    runs-on: [self-hosted, Linux, X64, clean-room]   # X64 only: gx10 aarch64 runners die at job start (#6200)
     timeout-minutes: 22
     needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
     if: always()

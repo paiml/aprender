@@ -274,6 +274,8 @@ local_leg() {
         [ ! -f "$cdir/$LREC" ] || cp -- "$cdir/$LREC" "$out/$LREC"
         return "$lrc"
     fi
+    # the full ladder is LAB (#5147): a cell the host cannot take without swapping a runner job is deferred, not run (#6211)
+    export LADDER_ADMIT=1
     choom -n 1000 -- bash scripts/model_ladder.sh --host "$LOCAL_HOST" --cells --out "$out"
 }
 
@@ -307,6 +309,7 @@ cargo build --release -p apr-cli --bin apr --features cuda --locked > "\$dir/bui
 got=\$("\$CARGO_TARGET_DIR/release/apr" --version 2>/dev/null | head -n 1)
 mt_version_is "\$got" "$ver" "$sha" || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE: '\$got' (want '$want')"; exit 3; }
 rm -rf -- "\$dir/out"
+export LADDER_ADMIT=1  # LAB ladder: defer a cell the host cannot take (#6211)
 case $MEASURE in
 crux) choom -n 1000 -- bash scripts/crux_sweep_shards.sh "$ver" --host $REMOTE_HOST --apr "\$CARGO_TARGET_DIR/release/apr" --out "\$dir/out" --backend gpu --certification "$CERT" 8>&- ;;
 *) choom -n 1000 -- bash scripts/model_ladder.sh --host $REMOTE_HOST --cells --out "\$dir/out" 8>&- ;;
