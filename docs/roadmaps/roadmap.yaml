@@ -26124,6 +26124,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'Refs EMR-001 E-1. EMR-001 forbids closing a source PR, so the source stays open while the integration PR is judged. Sensitive tier (scripts/*): quorum before seats.'
   epic: null
+- id: PMAT-6274
+  github_issue: 6274
+  item_type: task
+  title: 'release: return 0.71.4 version and CHANGELOG to main'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T15:14:00Z
+  updated: 2026-10-24T15:14:00Z
+  spec: null
+  acceptance_criteria:
+  - 'main workspace version is 0.71.4 (scripts/bump-version.sh) and CHANGELOG.md has a 0.71.4 entry; no tag moves'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-6281
   github_issue: 6281
   item_type: task

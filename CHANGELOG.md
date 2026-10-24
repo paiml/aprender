@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.4] - 2026-10-14
+
+A patch release on 0.71.3: rustls 0.23.45 -> 0.23.46 and `aws-sdk-s3` with `default-features = false` in `aprender-data`, which drops the legacy rustls 0.21.12 stack from `Cargo.lock` (RUSTSEC-2026-0346..0349). Cut on `release/0.71.4`; this entry and the version bump return it to `main`.
+
 ## [0.71.3] - 2026-10-14
 
 A patch release on 0.71.2: `apr embed` loads EmbeddingGemma 2 from GGUF, the chat route returns logprobs, CRUX gains category R (SHACL ontologies against Apache Jena), the regression tree's split search sorts once instead of rescanning per candidate, the release model run binds its binary by sha prefix under one run lock, memory headroom scales with the device instead of assuming 16 GiB, and the shrink-only ratchets, the weekly mutants run and a new edge-device fast-verbs run all live on nightly LAB lanes, off the PR path.
