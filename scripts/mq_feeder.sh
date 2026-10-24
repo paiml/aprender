@@ -220,11 +220,13 @@ case "$*" in
 esac
 GH2EOF
   chmod +x "$d2/gh"
-  fm() { STATE="$d2/st" REPO=x/y T_CALLS="$d2/calls" PATH="$d2:$PATH" fetch_main_ci; }
-  before=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -type f -name 'tmp.*' -newer "$d2/gh" 2>/dev/null | wc -l)
+  # a private TMPDIR, so the leak row counts only this fetch's own tmp.* (the shared one raced other sessions)
+  mkdir "$d2/tmp" || exit 2
+  fm() { TMPDIR="$d2/tmp" STATE="$d2/st" REPO=x/y T_CALLS="$d2/calls" PATH="$d2:$PATH" fetch_main_ci; }
+  before=$(find "$d2/tmp" -maxdepth 1 -type f -name 'tmp.*' | wc -l)
   f1=$(fm); f2=$(fm)
   eq 'fetch: second read carries If-None-Match and serves the cache' "$(grep -c 'jobs:' "$f2")|$(wc -l < "$d2/calls")|$f1|$(grep -c 'If-None-Match: "abc"' "$d2/calls")" "1|2|$d2/st/ci.yml|1"
-  eq 'fetch: no temp file is left per read' "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -type f -name 'tmp.*' -newer "$d2/gh" 2>/dev/null | wc -l)" "$before"
+  eq 'fetch: no temp file is left per read' "$(find "$d2/tmp" -maxdepth 1 -type f -name 'tmp.*' | wc -l)" "$before"
   n=$(STATE="$d2/st2" INBOX="$d2/in"; for _ in 1 2 3; do inbox_once k "line"; done; wc -l < "$d2/in")
   eq 'inbox_once: three ticks, one line' "$n" 1
   # a busy queue acts on nothing, so it must not read ci.yml (GH-1: no REST call before the idle checks)
