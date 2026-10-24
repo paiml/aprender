@@ -1123,6 +1123,16 @@ if [ -z "$bad58" ]; then
 else
     fail_row "58: --verdict case table" "$bad58"
 fi
+bad59=""
+for i in 1 2 3; do
+    ids59="$(bash "$cg" --list --shard "$i/3" guard-cargo 2> /dev/null | grep -v '^==' | awk '{print $1}')" || bad59+=" shard$i-rc"
+    while read -r id; do [[ -z $id || $id =~ ^m[0-9]+$ ]] || bad59+=" $id"; done <<< "$ids59"
+done
+if [ -z "$bad59" ]; then
+    pass_row "59: --list --shard lists only m<N> ids, the form --shard's run path accepts"
+else
+    fail_row "59: --list/--shard step-id agreement" "$bad59"
+fi
 
 printf '%d checks, %d failed\n' "$total" "$failed"
 if [ "$failed" -gt 0 ]; then
