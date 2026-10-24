@@ -329,7 +329,7 @@ judge() {
 mutants() {
     local m copy survived=0 killed=0 name
     for m in lag-strict id-check-off first-line-off drift-off bump-license-off; do
-        copy="$REPO_ROOT/scripts/zz-mut-${m}.sh"
+        copy=$(mktemp "$REPO_ROOT/scripts/zz-mut-${m}.XXXXXX.sh") || return 2   # fresh name: a stale copy is never scored
         python3 - "$REPO_ROOT/scripts/$PROG" "$copy" "$m" <<'PY'
 import sys
 src, dst, m = sys.argv[1:4]
