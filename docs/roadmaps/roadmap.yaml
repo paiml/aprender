@@ -25896,6 +25896,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'GATE CHANGE (S1b, PR carrying docs/roadmaps/roadmap-base.yaml): S1b is NOT data-only and OVERRIDES the S1a/S1b wording in acceptance_criteria, which cannot be edited in place. It adds rule R7 to scripts/check_comparator_pin_citations.sh, loosening R1 for the one pair roadmap.yaml -> roadmap-base.yaml: the base passes unledgered only if its citing lines carry EXACTLY the pin of the historical roadmap.yaml ledger row and every line is a byte-copy of one of them. Self-test C20-C25; mutants drop-copy-rule, any-copy-line, drop-class-filter, widen-scope, membership-only. Scope and A/B ruling: docs/audits/quorum-PMAT-6185-R1-pin-cites.md. SECOND GATE CHANGE in the same PR: scripts/check_roadmap_completion_is_cited.sh does not count the completed entries of roadmap-base.yaml while docs/roadmaps/roadmap.yaml is in scope and holds EVERY id the base holds (content-bound, not a path waiver); if roadmap.yaml is removed or the base holds an id it lacks, the base is judged like any roadmap file. Self-test rows: ids all present (no records), extra id (judged), roadmap.yaml removed (judged); mutants path-waiver and drop-subset-test are killed. Follow-ups for the step removing the tracked roadmap.yaml: move the ledger row onto roadmap-base.yaml (C24) and let the completion-citation guard judge the base (it does so automatically).'
   epic: null
+- id: PMAT-6190
+  github_issue: 6190
+  item_type: task
+  title: 'kfocus-shadow-lab: run the workspace-test-shard sections and upload sigma-shard junit (G7 comparator input)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T17:50:00Z
+  updated: 2026-10-23T17:50:00Z
+  spec: null
+  acceptance_criteria:
+  - kfocus-shadow-lab.yml runs the workspace-test-shard sections and uploads sigma-shard-*/lib.junit.xml with if-no-files-found error
+  - the workflow stays workflow_dispatch only (LAB), no pull_request, push, merge_group or schedule trigger
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
 - id: PMAT-6200
   github_issue: 6200
   item_type: task
