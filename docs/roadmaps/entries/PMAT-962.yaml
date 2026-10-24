@@ -1,0 +1,19 @@
+- id: PMAT-962
+  github_issue: null
+  item_type: bug
+  title: 'Post-publish parity of the published 0.65.2 (cargo install aprender, default features) is FAIL on lambda CPU: decode 0.59x, prefill 0.005x of llama.cpp the superseded pin at c=1/4/8/16 (5 interleaved replicates per band); TTFT 2.6 s vs 16 ms at c=1 - the CPU prefill runs at decode speed'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-09-05 01:15:00+00:00
+  updated: 2026-09-05 01:15:00+00:00
+  spec: docs/specifications/0.66-performance-parity-report.md
+  acceptance_criteria:
+  - evidence/dogfood/<next>/lambda.json parity lane cpu verdict PASS against the pinned comparator (floor 1.0 from scripts/perf-matrix.yaml#arms.L3.delta), measured by scripts/parity_host_receipt.sh on the published binary, not on a tree build
+  - 'prefill tok/s within the L3 band of the comparator at c=1 (measured 47.7 vs 8982.4 on 2026-09-05): the prefill must batch the prompt, not decode it one token at a time on CPU'
+  - the receipt records the install command and feature set that produced each lane; a lane from a --features cuda install is labelled as such
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: 'Measured 2026-09-05 by the 0.65.2 post-publish host receipt (evidence/dogfood/0.65.2/lambda.json, run_id e167c1ab2c68496cbe1a2a881ab25900). Subject aggregate tok/s at c=1 23.2 vs comparator 75.2; subject decode 44.1 vs 74.2 at c=1. Every c>1 band is INVALID-CORRECTNESS(#2753/#2776): no PP-26 witness was run, so no c>1 ratio is quoted (P-4). The published default-feature binary resolves 0 GPU layers on a 4090 host; a second install of the same crate with --features cuda (167 s) gave the cuda lane, also FAIL at c=1: decode 0.69x, prefill 0.18x (326.8 vs 492.5 aggregate at c=1; TTFT 24 vs 5 ms). c>1 bands: INVALID-CORRECTNESS(#2753/#2776), no witness, ratios struck. Related: chunked prefill (Arm E), the accelerator-quantity contract, and the 0.66 parity report section 6.'

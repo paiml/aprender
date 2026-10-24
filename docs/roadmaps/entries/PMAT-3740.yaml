@@ -25,7 +25,7 @@
 
 ### Rust: three consumers locate llama.cpp OUTSIDE the pin
 1. **`crates/apr-cli/src/commands/showcase/benchmark_helpers.rs:39` `run_llama_cpp_bench`**: `which llama-server` (PATH), and then **no measurement at all**: it returns `35.0 + jitter` tok/s, and `apr showcase` turns that into a "speedup vs llama.cpp". Filed separately as **#3773**, because it is a fabricated baseline in a shipped command, not only a resolution defect.
-2. **`crates/aprender-serve/tests/qwen3_moe_argmax_parity.rs:102` `locate_llama_cli`**: `which llama-cli` (PATH), then a hard-coded `LLAMA_CLI_CANDIDATE_PATHS` list. That''s a second resolver, with no pin and no version check. It''s a parity test, so its verdict is about whichever llama-cli PATH yields (on lambda, `~/src/llama.cpp` is 60b06ab9a with a broken llama-cli).
+2. **`crates/aprender-serve/tests/qwen3_moe_argmax_parity.rs:102` `locate_llama_cli`**: `which llama-cli` (PATH), then a hard-coded `LLAMA_CLI_CANDIDATE_PATHS` list. That''s a second resolver, with no pin and no version check. It''s a parity test, so its verdict is about whichever llama-cli PATH yields (on lambda, `~/src/llama.cpp` is the superseded pin with a broken llama-cli).
 3. **`crates/aprender-serve/src/bench/runtime.rs:281` `LlamaCppConfig::default()`**: `binary_path: "llama-cli"` (PATH). It is consumed by `benches/external_matrix.rs` and `examples/pmat_benchmark_matrix.rs` (apr vs llama.cpp).
 
 Not consumers: `test_llm_band.rs` spawns `bash scripts/perf_receipt_sign.sh`; `apr test llm bench --url` talks HTTP to a server someone else started (in-tree, `parity_host_receipt.sh`, which resolves it via the pin).
