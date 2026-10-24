@@ -1,0 +1,41 @@
+<!-- In-tree copy of the quorum triage record for the R1 pin-cites question (A vs B). It is the A/B QUESTION RULING, not the sign-off; the review round on the final commit of this PR is the sign-off. The two superseded comparator pins are elided to 6 hex digits + "…" so this file does not itself trip R1. -->
+# #6228 R1 comparator_pin_citations: A (rewrite 18 cites) vs B (guard exemption). Opus x3, read-only. Verdict: NOT A (3/3). Lanes: C3 / B / B = a narrow, text-pinned guard rule (not a path exemption): a file whose citing lines are identical (same n:sha12) to an already-ledgered file's is admitted; needs self-test row + mutant + non-author sign-off (gate content). Partial C: freeze base without entries that have their own file -> 1 citing line left (PMAT-962).
+Why not A: 17 of 18 lines come from entries/PMAT-3741(14)/3563(2)/3740(1), which are ledgered dated history (2026-09-24); editing roadmap.yaml alone drifts aggregate --check; editing entries rewrites verbatim issue text; PMAT-962:14641 records a measurement at 39173b…. Swap roadmap.yaml->base: R4 in the guard is count-only (passes) but check_baseline_ratchets.sh set class (comm -13) refuses it. Unmeasured by lanes: nightly ratchet run, aggregate --check.
+## lane 1
+**C3: change the guard's rules so that a line copied from history already on the ledger is admitted by its text, not by its path. It is not a path exemption (B), not a swap, and not A.**
+
+- **A is out.** Of the 18 lines, 17 come from entry files: PMAT-3741 (14), PMAT-3563 (2) and PMAT-3740 (1). Only PMAT-962 (:14641) lives in roadmap.yaml alone. `aggregate()` lets an entry file replace the base entry with the same id, so editing roadmap.yaml by itself is undone on regeneration and `aggregate --check` would drift. Editing the entry files as well trips R6, and it rewrites issue text quoted verbatim in records ledgered as dated history. The PMAT-962 title is dated history too. A rewrites history.
+- **A swap is out.** The guard's own R4 only compares counts (`len(led) > len(mled)`), so a swap would pass it. But `_br_cmp_set` in `lib_baseline_ratchet.sh` checks that the new ledger is a whole-line subset of main's (`comm -13`). Its own table has a row for this case, "swap, count unchanged", and expects RED. Taking roadmap.yaml off git doesn't help either: its line goes stale under R2, and the replacement line still counts as growth.
+- **B is out as worded.** The guard says nothing is exempt by path. A path exemption is a waiver, which is banned.
+- **C3 is a real change to what the gate accepts.** A new ledger line is admitted only when its citing lines are text-identical to lines already ledgered at origin/main. That is the same idea as set-aperture's (a2) "moved" proof, but across files. Changing the ratchet class needs a mutant row, the non-author sign-off round and two reviews. Separately, R4's count-only check is weaker than the `set` class it claims, which is a defect worth logging.
+
+**What I couldn't measure:**
+- I ran neither `--self-test` nor `check_baseline_ratchets.sh` on this head.
+- I didn't run `aggregate --check`.
+- I didn't check whether a base that drops the ids with entry files (shrinking the citations to 1 line) still aggregates byte-identically.
+## lane 2
+**B**, but done as a rule change bound to a pin, not as an exemption row.
+
+- **A is out.** Of the 18 citing lines in `roadmap.yaml`, 16 come from fragments: PMAT-3563 at :19950 and :19965, and PMAT-3741 at :21493–21549. A fragment overrides the base entry with the same id, so editing only `roadmap.yaml` breaks `aggregate --check`. Fixing it means also editing `entries/PMAT-3563.yaml` and `entries/PMAT-3741.yaml`. Both are on the ledger as historical, and 3741 *is* the verbatim list of old-pin citations, so rewriting it falsifies dated history. Only :14641 (PMAT-962) comes from the base alone.
+- **R4 swap test:** the PR-path R4 in `check_comparator_pin_citations.sh:137` only compares counts (`len(led) > len(mled)`), so a roadmap.yaml→roadmap-base.yaml swap passes it. The nightly `set` ratchet in `check_baseline_ratchets.sh` checks a whole-line subset (`comm -13`) and refuses the swap. Its own header calls a swap "an append wearing the old total". The swap also needs `roadmap.yaml` to stop citing the pin, but it's byte-identical to the base, so R1 goes red. Every C variant I tried either grows the ledger or changes a path in it.
+- **Form of B:** the guard learns one rule. The declared frozen base must pin to the same `n:sha12` as the ledgered `roadmap.yaml` line (today 18:38afc7a5fac9). R6 still applies, the ledger doesn't grow, and there is no third state. Because it changes what the gate accepts, it needs a quorum sign-off from a session that is not the author, two reviews, and a self-test row plus mutant.
+
+**Not measured:**
+- I did not run `aggregate --check` or the nightly ratchet.
+- `grep` finds 0 hits in `entries/PMAT-3740.yaml`, but the ledger says 1. The guard accepts it, so it's probably a different encoding.
+- A re-pin also fails the nightly whole-line `set` check, which is an existing mismatch.
+## lane 3
+**B** (a narrow guard change with sign-off from a session that isn't the author), plus a C clean-up first
+
+- **A rewrites history and breaks `aggregate --check`.** The 18 lines belong to tickets PMAT-3563, PMAT-3741 and PMAT-3740, plus one line in PMAT-962. The first three are generated from `entries/*.yaml`, and an entry there replaces the matching base entry (`roadmap_fragments.py:91-118`). So editing `roadmap.yaml` alone fails `--check`. Editing the entries too rewrites ledgered historical records dated 2026-09-24. Line `:14641` (PMAT-962) records a measurement taken against 39173b…, so changing that pin makes the record false.
+- **The C swap fails.** R4 in the guard only compares counts (`len(led) > len(mled)`, line 137), so swapping the `roadmap.yaml` ledger line for a `roadmap-base.yaml` line would pass R4. But `check_baseline_ratchets.sh` classifies this ledger as `set`, which is subset-based: "counting passes a swap, which is an append wearing the old total". A new path is RED there. The swap also needs `roadmap.yaml` to stop citing, which it can't, because it is generated from the base. Dropping it gives R1 or R2.
+- **Partial C, worth doing.** Freeze the base without the entries that already have their own file in `entries/` (they are dropped from the output anyway). That takes it from 18 citing lines to 1, PMAT-962. That one line is still unledgered and still R1 under today's guard.
+- **B, done right, is not a waiver.** Change what the gate accepts so that a file whose citing lines exactly match an already-ledgered file's lines (same n:sha12) is accepted. Ship it with self-test cases, a mutant and a non-author sign-off round bound to the final commit. No third state, and nothing is ever exempted by path: mutants line 272 already rejects that.
+
+**Not measured:** I didn't run `check_baseline_ratchets.sh` on a swapped tree, didn't run `aggregate --check` with a trimmed base, and didn't reconcile the 16 lines my grep found with the guard's 18 (probably 60b06a… citations).
+
+## Scope of the PR that carries this file (declared here, not in the PMAT-6185 entry)
+
+That PR is a **GATE CHANGE**, not data-only, and it ADDS `docs/roadmaps/roadmap-base.yaml` (S1b of #6185). The PMAT-6185 acceptance text says S1a "contains no roadmap-base.yaml" and S1b is "data-only"; that wording is superseded by this paragraph, because `check_roadmap_diff_additive` rejects any rewrite of an existing acceptance line.
+It adds rule R7 to `scripts/check_comparator_pin_citations.sh`, which loosens R1 for one pair: `roadmap-base.yaml` passes unledgered only if every citing line is a byte-identical copy of a line the HISTORICAL ledger row for `roadmap.yaml` pins (fixture rows are not copyable; membership only). Self-test rows C20-C24; mutants drop-copy-rule, any-copy-line, drop-class-filter, widen-scope, all killed. Follow-up for the step that removes the tracked `roadmap.yaml`: move its ledger row onto `roadmap-base.yaml` in the same change (C24). Residual: a copy of a historical line skips R3/R6; a re-pin that drops a citing line needs the base re-cut.
+This file is the A/B question ruling, not the sign-off; the review round on the final commit is the sign-off.
