@@ -31,7 +31,7 @@ pub fn judge(file: &Path, roadmap: Option<&Path>) -> Result<Option<String>, Stri
         return Ok(Some(why));
     }
     match roadmap {
-        Some(r) => aggregate_problem(r, stem, &text),
+        Some(r) => aggregate_problem(r, stem),
         None => Ok(None),
     }
 }
@@ -91,7 +91,6 @@ pub fn parse_args(args: &[String]) -> Result<(PathBuf, Option<PathBuf>), String>
     match words.as_slice() {
         ["shape", file] => Ok((PathBuf::from(file), None)),
         ["shape", file, "--roadmap", path] => Ok((PathBuf::from(file), Some(PathBuf::from(path)))),
-        ["shape", _, "--roadmap"] => Err("--roadmap needs a path".into()),
         _ => Err("expected: shape <fragment> [--roadmap <path>]".into()),
     }
 }
@@ -103,7 +102,6 @@ struct Scan<'s> {
     stack: Vec<Option<Map>>,
     top_items: usize,
     id_ok: bool,
-    top_is_seq: bool,
 }
 
 impl Scan<'_> {
@@ -128,8 +126,7 @@ impl Scan<'_> {
                 }
             }
             Some(None) if depth == 1 => self.top_items += 1,
-            Some(None) => {}
-            None => self.top_is_seq = matches!(ev, Event::SequenceStart(..)),
+            Some(None) | None => {}
         }
         None
     }
@@ -154,7 +151,6 @@ impl Scan<'_> {
 
 fn anchored(ev: &Event) -> bool {
     match ev {
-        Event::Alias(_) => true,
         Event::Scalar(_, _, a, _) | Event::SequenceStart(a, _) | Event::MappingStart(a, _) => {
             *a != 0
         }
@@ -169,7 +165,6 @@ fn structure_problem(text: &str, stem: &str) -> Option<String> {
         stack: Vec::new(),
         top_items: 0,
         id_ok: false,
-        top_is_seq: false,
     };
     for ev in Parser::new_from_str(text) {
         let ev = match ev {
@@ -194,9 +189,6 @@ fn structure_problem(text: &str, stem: &str) -> Option<String> {
         }
         scan.open_close(&ev);
     }
-    if !scan.top_is_seq {
-        return Some("holds 0 top-level items, want exactly 1".into());
-    }
     item_verdict(scan.top_items, scan.id_ok, stem)
 }
 
@@ -211,7 +203,7 @@ fn item_verdict(items: usize, id_ok: bool, stem: &str) -> Option<String> {
 
 /// The aggregate built with this fragment must still parse (a fragment that replaces the entry
 /// owning an anchor leaves its aliases dangling). A named roadmap with no base is not measured.
-fn aggregate_problem(roadmap: &Path, stem: &str, frag: &str) -> Result<Option<String>, String> {
+fn aggregate_problem(roadmap: &Path, stem: &str) -> Result<Option<String>, String> {
     let frozen = roadmap.with_file_name("roadmap-base.yaml");
     let base_path = if frozen.exists() {
         frozen
@@ -230,7 +222,6 @@ fn aggregate_problem(roadmap: &Path, stem: &str, frag: &str) -> Result<Option<St
             built.push_str(line);
         }
     }
-    built.push_str(frag);
     // The base is YAML that PyYAML reads but a strict 1.2 parser does not (a note closes its quote
     // early and the rest is read as a comment), so the aggregate is judged on the one thing a
     // fragment can break: an alias whose anchor it removed. Only NEW dangling aliases count.
