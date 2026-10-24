@@ -1,0 +1,18 @@
+- id: PMAT-6275
+  github_issue: 6275
+  item_type: task
+  title: 'FLOW-008 F7 andon printer: fire after 72 h of unreleased publishable change'
+  status: planned
+  priority: high
+  assigned_to: aprender-wsweep
+  created: 2026-10-24T15:31:05Z
+  updated: 2026-10-24T15:31:05Z
+  spec: null
+  acceptance_criteria:
+  - 'a LAB job prints one andon line when publishable change is older than 72 h with no release, or two consecutive non-idle slots are skipped; falsifier: two non-idle skips with no line is RED, an idle slot that raises a line is RED'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Observed 2026-10-24: no release after v0.71.4 (2026-10-14) and no F7 line anywhere; no printer workflow exists.'
