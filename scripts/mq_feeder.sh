@@ -56,6 +56,77 @@ needs_seats() {
   echo "skip (no quorum receipt at ${2:0:10}: quorum 3/3 PASS receipts $q/1, $rc request-changes)"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
+# ci_jobs MODE WORKFLOW -> job ids and display names under `jobs:` (MODE all), or only those a pull_request event can never run
+# (MODE mq): the workflow has no pull_request trigger, or every `||` branch of the job's `if:` needs `!= 'pull_request'`,
+# `== 'merge_group'` or `== 'push'` without `== 'pull_request'`, or the job `needs:` such a job (a skipped need skips it). An
+# `if:` branch that names no event is PR-runnable (conservative). A job that is not under `jobs:` (e.g. `on:` keys) is never a job.
+# PMAT-5843: the feeder required x86-main, a merge-queue-only job, and refused every CLEAN PR.
+ci_jobs() {
+  awk -v mode="$1" '
+    function mqbranch(d) { return d ~ /(!= .pull_request.|== .merge_group.|== .push.)/ && d !~ /== .pull_request./ }
+    function condmq(c,   n, i, parts) { if (c == "") return 0; n = split(c, parts, "[|][|]"); for (i = 1; i <= n; i++) if (!mqbranch(parts[i])) return 0; return 1 }
+    /^on:/ { sec = "on"; if ($0 ~ /pull_request/) haspr = 1; next }
+    /^jobs:/ { sec = "jobs"; next }
+    /^[A-Za-z_]/ { sec = "other"; next }
+    sec == "on" && /^  pull_request(_target)?:/ { haspr = 1 }
+    sec != "jobs" { next }
+    /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { id = $1; sub(/:$/, "", id); order[++nj] = id; key = ""; next }
+    id == "" { next }
+    /^    name:/ { v = $0; sub(/^    name:[[:space:]]*/, "", v); gsub(/["\047]/, "", v); nm[id] = v; key = ""; next }
+    /^    if:/ { cond[id] = $0; key = "if"; next }
+    /^    needs:/ { v = $0; sub(/^    needs:[[:space:]]*/, "", v); needs[id] = v; key = "needs"; next }
+    /^    [A-Za-z0-9_-]+:/ { key = ""; next }
+    key == "if" && /^      / { cond[id] = cond[id] " " $0 }
+    key == "needs" && /^      / { needs[id] = needs[id] " " $0 }
+    END {
+      for (i = 1; i <= nj; i++) { j = order[i]; mq[j] = (!haspr) || condmq(cond[j]) }
+      for (pass = 0; pass < nj; pass++) for (i = 1; i <= nj; i++) { j = order[i]; if (mq[j]) continue
+        if (cond[j] ~ /always\(\)|cancelled\(\)|failure\(\)/) continue
+        n = split(needs[j], dep, /[][, ]+/); for (k = 1; k <= n; k++) if (dep[k] != "" && (dep[k] in mq) && mq[dep[k]]) { mq[j] = 1; break } }
+      for (i = 1; i <= nj; i++) { j = order[i]; if (mode == "all" || mq[j]) { print j; if (nm[j] != "") print nm[j] } }
+    }
+  ' "$2"
+}
+mq_only_jobs() { ci_jobs mq "$1"; }
+# required_is_mq_only NAME WORKFLOW -> 0 (and the name) when the feeder's required check is a merge-queue-only job
+required_is_mq_only() { local jobs; jobs="$(ci_jobs mq "$2")"; grep -qxF -e "$1" <<< "$jobs" && echo "$1"; }
+# check_required WORKFLOW -> 0 when GUARD_CHECK_NAME is a job of WORKFLOW that a PR head runs; 1 (with the reason) otherwise.
+check_required() {
+  local wf="$1"
+  [ -f "$wf" ] || { echo "check-required: workflow $wf not found"; return 2; }
+  local all_jobs; all_jobs="$(ci_jobs all "$wf")"
+  grep -qxF -e "$GUARD_CHECK_NAME" <<< "$all_jobs" || { echo "check-required: FAIL the required check ${GUARD_CHECK_NAME} is not a job under jobs: in $wf"; return 1; }
+  required_is_mq_only "$GUARD_CHECK_NAME" "$wf" > /dev/null && { echo "check-required: FAIL the required check ${GUARD_CHECK_NAME} runs only in merge_group/push (a PR head never has it)"; return 1; }
+  echo "check-required: ok ${GUARD_CHECK_NAME} runs on a PR head"; return 0
+}
+# fetch_main_ci -> path of main's ci.yml (MQ_FEEDER_CI_FILE overrides, for tests). The deployed copy sits in ~/.local/libexec, so the
+# workflow to judge is main's, read from GitHub, never a file beside the script and never a pinned tree's own copy.
+# One cached copy in $STATE with If-None-Match (FLEET RULE GH-1): a 304 costs no REST call and nothing is left in /tmp.
+fetch_main_ci() {
+  if [ -n "${MQ_FEEDER_CI_FILE:-}" ]; then printf '%s' "$MQ_FEEDER_CI_FILE"; return 0; fi
+  mkdir -p "$STATE" || return 1
+  local c="$STATE/ci.yml" e="$STATE/ci.etag" h="$STATE/ci.resp" tag="" st newtag
+  [ -s "$c" ] && [ -s "$e" ] && tag="$(cat "$e")"
+  gh api -i -H 'Accept: application/vnd.github.raw' ${tag:+-H "If-None-Match: $tag"} "repos/$REPO/contents/.github/workflows/ci.yml?ref=main" > "$h" 2>/dev/null
+  st="$(head -n 1 "$h" | awk '{print $2}')"
+  case "$st" in
+    304) [ -s "$c" ] && { printf '%s' "$c"; return 0; } ;;
+    200) newtag="$(awk '/^[Ee][Tt]ag:/ { sub(/^[^:]*:[ ]*/, ""); sub(/\r$/, ""); print; exit }' "$h")"
+         awk 'b { print; next } /^\r?$/ { b = 1 }' "$h" > "$c.new"
+         if [ -s "$c.new" ] && [ -n "$newtag" ]; then mv "$c.new" "$c" && printf '%s' "$newtag" > "$e" && { printf '%s' "$c"; return 0; }; fi ;;
+  esac
+  rm -f "${c:?}.new"; return 1
+}
+# inbox_once KEY MSG -> inbox line at most once an hour per KEY (a stuck guard ticks every 5 min; the cop reads the inbox hourly)
+inbox_once() {
+  mkdir -p "$STATE"
+  if [ -n "$(find "$STATE/once.$1" -mmin -60 2>/dev/null)" ]; then return 0; fi
+  : > "$STATE/once.$1"; inbox "$2"
+}
+if [ "${1:-}" = --check-required ]; then
+  wf="${2:-}"; [ -n "$wf" ] || wf="$(fetch_main_ci)" || { echo "check-required: FAIL could not read main's ci.yml (not measured)"; exit 2; }
+  check_required "$wf"; exit $?
+fi
 if [ "${1:-}" = --self-test ]; then
   fail=0
   mk() { printf '{"data":{"repository":{"mergeQueue":{"entries":{"totalCount":%s}},"pullRequests":{"nodes":[%s]}}}}' "$1" "$2"; }
@@ -131,13 +202,66 @@ GHEOF
   printf '#!/usr/bin/env bash\necho "$1" >> "$T_MARK"\n[ "$T_ARMRC" = 3 ] && echo "refuse: guard check not green"\nexit "$T_ARMRC"\n' > "$d/arm"
   chmod +x "$d/gh" "$d/arm"
   run_feeder() { rm -f "${d:?}/mark" "${d:?}/inbox" "${d:?}/st/kicked"; : > "$d/inbox"
-    T_FILES=$1 T_REVIEWS=$2 T_ARMRC=$3 T_MARK="$d/mark" PATH="$d:$PATH" MQ_FEEDER_STATE="$d/st" MQ_FEEDER_INBOX="$d/inbox" MQ_FEEDER_ARM="$d/arm" MQ_FEEDER_RECHECK=0 bash "$0" >/dev/null 2>&1
+    T_FILES=$1 T_REVIEWS=$2 T_ARMRC=$3 T_MARK="$d/mark" PATH="$d:$PATH" MQ_FEEDER_STATE="$d/st" MQ_FEEDER_INBOX="$d/inbox" MQ_FEEDER_ARM="$d/arm" MQ_FEEDER_RECHECK=0 MQ_FEEDER_CI_FILE="${T_CI:-$(dirname "$0")/../.github/workflows/ci.yml}" bash "$0" >/dev/null 2>&1
     echo "armed=$([ -e "$d/mark" ] && echo yes || echo no) enq=$(grep -c 'enqueued oldest' "$d/inbox")"; }
   eq 'feeder: REFUSE (arm rc 3) with a receipt never enqueues' "$(run_feeder docs/x.md "$Q3" 3)" 'armed=yes enq=0'
   eq 'feeder: no receipt never calls ARM' "$(run_feeder docs/x.md '' 0)" 'armed=no enq=0'
   eq 'feeder: gate content with a receipt never calls ARM' "$(run_feeder scripts/x.sh "$Q3" 0)" 'armed=no enq=0'
   eq 'feeder: request-changes at head never calls ARM' "$(run_feeder docs/x.md "${Q3}CHANGES_REQUESTED\tx\n" 0)" 'armed=no enq=0'
   eq 'feeder control: receipt + ARM rc 0 enqueues' "$(run_feeder docs/x.md "$Q3" 0)" 'armed=yes enq=1'
+  # runtime guard: etag-cached fetch (304 serves the cache), no /tmp leak, one inbox line an hour, nothing read before QUEUE_BUSY
+  d2=$(mktemp -d) || exit 2
+  cat > "$d2/gh" <<'GH2EOF'
+#!/usr/bin/env bash
+echo "$*" >> "$T_CALLS"
+case "$*" in
+  *If-None-Match*) printf 'HTTP/2.0 304 Not Modified\r\n\r\n';;
+  *contents*) printf 'HTTP/2.0 200 OK\r\nEtag: "abc"\r\n\r\njobs:\n  pr-light:\n    runs-on: x\n';;
+esac
+GH2EOF
+  chmod +x "$d2/gh"
+  fm() { STATE="$d2/st" REPO=x/y T_CALLS="$d2/calls" PATH="$d2:$PATH" fetch_main_ci; }
+  before=$(find "${TMPDIR:-/tmp}" -maxdepth 1 -type f -name 'tmp.*' -newer "$d2/gh" 2>/dev/null | wc -l)
+  f1=$(fm); f2=$(fm)
+  eq 'fetch: second read carries If-None-Match and serves the cache' "$(grep -c 'jobs:' "$f2")|$(wc -l < "$d2/calls")|$f1|$(grep -c 'If-None-Match: "abc"' "$d2/calls")" "1|2|$d2/st/ci.yml|1"
+  eq 'fetch: no temp file is left per read' "$(find "${TMPDIR:-/tmp}" -maxdepth 1 -type f -name 'tmp.*' -newer "$d2/gh" 2>/dev/null | wc -l)" "$before"
+  n=$(STATE="$d2/st2" INBOX="$d2/in"; for _ in 1 2 3; do inbox_once k "line"; done; wc -l < "$d2/in")
+  eq 'inbox_once: three ticks, one line' "$n" 1
+  # a busy queue acts on nothing, so it must not read ci.yml (GH-1: no REST call before the idle checks)
+  printf '#!/usr/bin/env bash\necho "$*" >> "$T_CALLS"\ncase "$*" in *rate_limit*) echo 5000;; *"mergeQueue(branch"*) printf %%s %s;; esac\n' "'"'{"data":{"repository":{"mergeQueue":{"entries":{"totalCount":2}},"pullRequests":{"nodes":[]}}}}'"'"'' > "$d2/gh"
+  : > "$d2/calls"; rm -rf "${d2:?}/st"
+  T_CALLS="$d2/calls" PATH="$d2:$PATH" MQ_FEEDER_STATE="$d2/st" MQ_FEEDER_INBOX="$d2/in" MQ_FEEDER_RECHECK=0 bash "$0" > /dev/null 2>&1
+  eq 'busy queue: ci.yml is not read' "$(grep -c contents "$d2/calls")" 0
+  rm -rf "${d2:?}"
+  # PMAT-5843: the required check must exist on a PR head. required set ∩ merge_group-only jobs = ∅, read from the real ci.yml.
+  wf="$(dirname "$0")/../.github/workflows/ci.yml"
+  eq 'static: the parser finds the known merge-queue-only job x86-main' "$(mq_only_jobs "$wf" | grep -cxF x86-main)" 1
+  eq 'static: the parser does not call pr-light merge-queue-only' "$(mq_only_jobs "$wf" | grep -cxF pr-light)" 0
+  eq 'static: the feeder requires a job that exists in ci.yml' "$(ci_jobs all "$wf" | grep -cxF -e "$GUARD_CHECK_NAME")" 1
+  eq 'static: the feeder required set is disjoint from the merge-queue-only jobs' "$(required_is_mq_only "$GUARD_CHECK_NAME" "$wf")" ''
+  fx="$(mktemp)"; Q="'"
+  printf 'on:\n  pull_request:\n  merge_group:\njobs:\n  planted:\n    if: ${{ github.event_name != %spull_request%s }}\n  both:\n    if: ${{ github.event_name != %spull_request%s || x }}\n' "$Q" "$Q" "$Q" "$Q" > "$fx"
+  printf '  allmq:\n    if: github.event_name == %smerge_group%s || github.event_name == %spush%s\n' "$Q" "$Q" "$Q" "$Q" >> "$fx"
+  printf '  prpush:\n    if: github.event_name == %spull_request%s && github.event_name != %spull_request_target%s\n' "$Q" "$Q" "$Q" "$Q" >> "$fx"
+  printf '  child:\n    needs: [planted]\n  grand:\n    needs:\n      - child\n  ok:\n    needs: both\n' >> "$fx"
+  eq 'static: a planted merge-queue-only required check is caught' "$(required_is_mq_only planted "$fx")" planted
+  eq 'static: an if with || that can run on a PR is not merge-queue-only' "$(required_is_mq_only both "$fx")" ''
+  eq 'static: an if whose every || branch is merge-queue-only is caught' "$(required_is_mq_only allmq "$fx")" allmq
+  eq 'static: an if that names pull_request alongside a != pull_request_target token can run on a PR' "$(required_is_mq_only prpush "$fx")" ''
+  eq 'static: a job that needs a merge-queue-only job is caught' "$(required_is_mq_only child "$fx")" child
+  eq 'static: needs reaches through a chain (block list)' "$(required_is_mq_only grand "$fx")" grand
+  printf '  x-main:\n    if: ${{ github.event_name != %spull_request%s }}\n  y-child:\n    needs: [x-main, pr-light]\n  z-always:\n    needs: [x-main]\n    if: always()\n' "$Q" "$Q" >> "$fx"
+  eq 'static: needs reaches a hyphenated job id (the real ci.yml shape)' "$(required_is_mq_only y-child "$fx")" y-child
+  eq 'static: an if: always() job runs when its need is skipped, so it is not merge-queue-only' "$(required_is_mq_only z-always "$fx")" ''
+  eq 'static: a job that needs a PR-runnable job is not merge-queue-only' "$(required_is_mq_only ok "$fx")" ''
+  printf 'on:\n  push:\n  merge_group:\njobs:\n  pr-light:\n    runs-on: x\n' > "$fx"
+  eq 'static: a workflow with no pull_request trigger is merge-queue-only' "$(required_is_mq_only pr-light "$fx")" pr-light
+  printf 'on:\n  pull_request:\njobs:\n  a:\n    runs-on: x\nenv:\n  pr-light:\n    x: 1\n' > "$fx"
+  eq 'static: a key outside jobs: is not a job (grep over the whole file was wrong)' "$(ci_jobs all "$fx" | grep -cxF pr-light)" 0
+  eq 'static: a regex metacharacter in the name is matched literally' "$(GUARD_CHECK_NAME='pr.light' check_required "$fx" >/dev/null; echo $?)" 1
+  printf 'on:\n  pull_request:\njobs:\n  prXlight:\n    runs-on: x\n' > "$fx"
+  eq 'static: a dot in the name is not a wildcard' "$(GUARD_CHECK_NAME='pr.light' check_required "$fx" >/dev/null; echo $?)" 1
+  rm -f "${fx:?}"
   rm -rf "${d:?}"
   [ "$fail" -eq 0 ] && echo "ok: self-test"; exit "$fail"
 fi
@@ -157,6 +281,10 @@ json=$(gh api graphql -f query="$Q" -f o="${REPO%/*}" -f n="${REPO#*/}" 2>/dev/n
 cands=$(pick "$json") || exit 2
 [ "$cands" = QUEUE_BUSY ] && exit 0
 [ -n "$cands" ] || exit 0
+# Runtime guard (#6175, mandatory), only when about to act: judge main's ci.yml, not a file beside this script.
+# Unreadable = not measured = do not act. Inbox lines are deduped to one an hour.
+if ! cf=$(fetch_main_ci); then inbox_once ci-unread "mq-feeder: cannot read main's ci.yml; not acting (required check ${GUARD_CHECK_NAME} unverified)"; exit 2; fi
+if ! cr=$(check_required "$cf"); then inbox_once ci-required "mq-feeder: $cr"; exit 2; fi
 n=0 why=""
 for pr in $cands; do
   head=$(gh pr view "$pr" --repo "$REPO" --json headRefOid --jq .headRefOid 2>/dev/null || true)
