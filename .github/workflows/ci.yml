@@ -194,10 +194,10 @@ jobs:
           setsid --wait bash scripts/check_ci_wait_cancel.sh
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
-  # before "install the toolchain") and the fat_driver self-test; no X64 label, no section, no cargo build.
+  # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
   pr-light:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
     permissions: write-all
