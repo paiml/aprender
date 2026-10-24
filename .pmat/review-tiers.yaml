@@ -1,0 +1,34 @@
+# Review tiers by what a change touches (FLOW-011 rev6 section 4). pmat and the gate derive the tier from the
+# changed paths with scripts/review_tier.sh; an author-set tier is never read. A diff spanning tiers takes the
+# highest. Globs are bash [[ == ]] patterns against repo-relative paths ('*' also matches '/').
+version: 1
+default: standard
+sensitive:
+  - ".github/workflows/*"
+  - ".github/CODEOWNERS"
+  - "ci/*"
+  - ".pmat/*"
+  - "scripts/check_*"
+  - "scripts/ci_*"
+  - "scripts/*gate*"
+  - "scripts/release/*"
+  - "scripts/*publish*"
+  - "scripts/*sign*"
+  - "scripts/*forjar*"
+  - "forjar/*"
+  - "*.pem"
+  - "*.key"
+  - "Cargo.toml"
+  - "Cargo.lock"
+  - "rust-toolchain.toml"
+  - "deny.toml"
+  - ".cargo/*"
+  - "Makefile"
+  - ".gitignore"
+light:
+  - "docs/*"
+  - "*.md"
+  - "examples/*"
+  - "docs/roadmaps/entries/*"
+# A file matching neither list is standard, unless its diff is comment-only (blank lines and whole-line comments),
+# which review_tier.sh checks mechanically and treats as light.
