@@ -1,5 +1,5 @@
 #![allow(clippy::disallowed_methods)] // unwrap in tests, as the crate's other test files
-use super::{aggregate, fold, parse_args, parse_id, read_fragments};
+use super::{aggregate, fold, id_value, parse_args, parse_id, read_fragments};
 use std::path::{Path, PathBuf};
 
 const BASE: &str = "# header\nroadmap:\n- id: PMAT-100\n  title: a\n- id: PMAT-300\n  title: c\n- id: LEGACY-THING\n  title: l\n";
@@ -195,4 +195,17 @@ fn the_committed_roadmap_is_the_fold_of_its_base() {
         got == want,
         "fold(roadmap-base.yaml, entries/) != roadmap.yaml"
     );
+}
+
+#[test]
+fn id_value_undoes_each_quoting_shape() {
+    for (raw, want) in [
+        ("'it''s'", "it's"),
+        ("\"a\\\"b\"", "a\"b"),
+        ("PMAT-5", "PMAT-5"),
+        ("'", "'"),
+        ("'a\"", "'a\""),
+    ] {
+        assert_eq!(id_value(raw), want, "{raw:?}");
+    }
 }
