@@ -467,6 +467,28 @@ bindings:
         }
     }
 
+    /// The shared `aprender-contracts-key` copy (used by other crates' build.rs) must give
+    /// the same key as this crate's own `env_key` and as the macro (#5909).
+    #[test]
+    fn shared_key_crate_agrees_with_env_key_and_the_macro() {
+        use provable_contracts_macros::contract_env_key;
+        for (c, e) in [
+            ("rmsnorm-kernel-v1", "rmsnorm"),
+            ("v1.0", "eq.1"),
+            ("mixed-Case.v2", "Eq-x.y"),
+        ] {
+            assert_eq!(aprender_contracts_key::env_key(c, e), env_key(c, e));
+        }
+        assert_eq!(
+            aprender_contracts_key::env_key("v1.0", "eq.1"),
+            contract_env_key!("v1.0", "eq.1")
+        );
+        assert_eq!(
+            aprender_contracts_key::env_key("mixed-Case.v2", "Eq-x.y"),
+            contract_env_key!("mixed-Case.v2", "Eq-x.y")
+        );
+    }
+
     #[test]
     fn test_make_env_key_matches_macro_convention() {
         assert_eq!(
