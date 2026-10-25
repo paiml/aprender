@@ -49,7 +49,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # (no aprender dependency) → dev-dep introduces no cycle. Used only in tests.
 half = { workspace = true }
 # The shared key builder, dev-only: a normal or build dependency would add a unit to the pv build (12-unit budget, ci/sections.yml m5). #5909
-aprender-contracts-key = { path = "../aprender-contracts-key", version = "0.71.3" }
+aprender-contracts-key = { workspace = true }
 
 [[bench]]
 name = "benchmarks"

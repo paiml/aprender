@@ -19,5 +19,5 @@
   labels:
   - kind:code
   notes: |-
-    Scope taken from #6294 (commit 1, PMAT-5909; issue #5909: aprender-contracts is 24 commits in 30 days and dirties 47 of 85 crates). #6294 is split by quorum triage-quorum-tickets-6294-6309-0718Z into one PR per ticket; this entry lets w5032 cut this piece.
+    Scope taken from #6294 (commit 1, PMAT-5909; issue #5909: aprender-contracts is 24 commits in 30 days and dirties 47 of 85 crates). #6294 is split by quorum triage-quorum-tickets-6294-6309-0718Z into one PR per ticket; this entry lets w5032 cut this piece. Why env_key stays in both crates: aprender-contracts cannot build-depend on or include!() a file outside its own package (crates.io packaging, and a normal dep adds a pv build unit past the 12-unit budget), so it keeps src/env_key.rs and the key crate is a dev-dependency (workspace = true); the test shared_key_crate_agrees_with_env_key_and_the_macro fails if the two copies drift.
   epic: null
