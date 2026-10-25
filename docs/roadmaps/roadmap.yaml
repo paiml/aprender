@@ -25400,7 +25400,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
 - id: PMAT-5803
   github_issue: 5803
   item_type: task
-  title: 'build: FLOW-010 cut 1, slice 1 of 3 — move the tuner training-data-quality tests into aprender-core'
+  title: 'build: FLOW-010 cut 1, slice 2 of 3 — aprender-compute drops its dev-dependency on aprender-core'
   status: in_progress
   priority: medium
   assigned_to: null
@@ -25409,6 +25409,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   spec: null
   acceptance_criteria:
   - the tuner training-data-quality tests move from crates/aprender-compute/tests/tuner_falsification to crates/aprender-core/tests/tuner_training_data_quality.rs and still run (ci/explicit-test-commands.d fragments 295 and 298 name them)
+  - aprender-compute has no dev-dependency on aprender-core (Cargo.toml, Cargo.lock, the ml_tuner_demo example and the docs that cited it)
   - this slice is one PR of at most 400 changed lines (the 810-line move in #6294 was split; no size waiver, quorum triage-quorum-6336-sizewaiver2-0816Z)
   phases: []
   subtasks: []
