@@ -46,3 +46,10 @@ fn bad_usage_exits_2_with_the_usage_line() {
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("usage: aprender-rollup shape"));
 }
+
+#[test]
+fn an_unknown_subcommand_exits_2_and_the_usage_names_shape() {
+    let o = run(&["bogus"]);
+    assert_eq!(o.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&o.stderr).contains("shape <fragment>"));
+}
