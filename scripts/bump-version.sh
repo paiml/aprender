@@ -116,6 +116,10 @@ set_facade_pins() {  # root new_version
 }
 
 # ---------------------------------------------------------------------------
+# #6270: roadmap PRs add only entries/*.yaml, so docs/roadmaps/roadmap.yaml lags them until a bump PR
+# regenerates it. The regeneration is part of the bump, not left to whoever remembers.
+regen_roadmap() { ( cd "$1" && make roadmap-aggregate ); }
+
 if [ "${1:-}" = "--self-test" ]; then
     fails=0
     TD="$(mktemp -d)" || exit 1
@@ -205,8 +209,41 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 10 pin 0.64.1 vs a workspace-versioned upstream (0.64.0) was ACCEPTED\n'; fails=1
     else printf 'ok    row 10 pin 0.64.1 vs a workspace-versioned upstream (0.64.0) is RED\n'; fi
 
+    # Rows 11-13: the bump regenerates roadmap.yaml from entries/ (#6270).
+    mkdir -p "$TD/rg-ok" "$TD/rg-bad"
+    printf 'roadmap-aggregate:\n\t@echo regenerated > regen.marker\n' > "$TD/rg-ok/Makefile"
+    printf 'roadmap-aggregate:\n\t@echo ran > ran.marker\n\t@exit 3\n' > "$TD/rg-bad/Makefile"
+    if regen_roadmap "$TD/rg-ok" >/dev/null 2>&1 && [ -f "$TD/rg-ok/regen.marker" ]; then
+        printf 'ok    row 11 regen_roadmap runs the roadmap-aggregate target\n'
+    else printf 'FAIL  row 11 regen_roadmap did not run the target\n'; fails=1; fi
+    if regen_roadmap "$TD/rg-bad" >/dev/null 2>&1 || [ ! -f "$TD/rg-bad/ran.marker" ]; then
+        printf 'FAIL  row 12 a failing roadmap-aggregate was reported as success (or never ran)\n'; fails=1
+    else printf 'ok    row 12 a failing roadmap-aggregate fails the bump\n'; fi
+    call_ln=$(grep -n '^regen_roadmap "\$REPO_ROOT" ||' "$0" | head -1 | cut -d: -f1)
+    list_ln=$(grep -n "^printf -- .*MUST ride" "$0" | head -1 | cut -d: -f1)
+    if [ -n "$call_ln" ] && [ -n "$list_ln" ] && [ "$call_ln" -lt "$list_ln" ]; then
+        printf 'ok    row 13 the bump calls regen_roadmap before it lists the files that must ride\n'
+    else printf 'FAIL  row 13 regen_roadmap is not called before the ride list (call=%s list=%s)\n' "${call_ln:-none}" "${list_ln:-none}"; fails=1; fi
+
+    # Rows 14-15 pin the call site's text, so deleting the `exit 1`, softening `|| {` to `|| true`, or
+    # dropping roadmap.yaml from the ride list turns the self-test red (MT-2).
+    if [ -n "$call_ln" ] && [ "$(sed -n "${call_ln}p" "$0")" = 'regen_roadmap "$REPO_ROOT" || {' ] \
+        && [ "$(sed -n "$((call_ln + 2))p" "$0")" = '    exit 1' ] && [ "$(sed -n "$((call_ln + 3))p" "$0")" = '}' ]; then
+        printf 'ok    row 14 a failed regeneration exits 1 (no `|| true`, `exit 1` present)\n'
+    else printf 'FAIL  row 14 the regen_roadmap call no longer fails the bump on error\n'; fails=1; fi
+    if [ -n "$list_ln" ] && [[ "$(sed -n "$((list_ln + 1))p" "$0")" == *'git status --porcelain -- crates/facades docs/roadmaps/roadmap.yaml'* ]]; then
+        printf 'ok    row 15 docs/roadmaps/roadmap.yaml is on the must-ride list\n'
+    else printf 'FAIL  row 15 docs/roadmaps/roadmap.yaml is not on the must-ride list\n'; fails=1; fi
+
+    # Rows 16-17: a stray edit that unbalances the script, or drops the success line, is red.
+    if bash -n "$0" 2>/dev/null; then printf 'ok    row 16 the script parses (bash -n)\n'
+    else printf 'FAIL  row 16 the script does not parse\n'; fails=1; fi
+    if grep -q "^printf 'regenerated docs/roadmaps/roadmap.yaml from entries/" "$0"; then
+        printf 'ok    row 17 the bump reports the regeneration\n'
+    else printf 'FAIL  row 17 the bump no longer reports the regeneration\n'; fails=1; fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (10/10)\n'
+    printf '\nSELF-TEST PASSED (17/17)\n'
     exit 0
 fi
 
@@ -278,8 +315,14 @@ if [ "$NOW_FACADE_OWN" != "$OLD_FACADE_OWN" ]; then
 fi
 printf 'crates/facades/Cargo.toml version left at %s (independent, #2546)\n' "$NOW_FACADE_OWN"
 
+regen_roadmap "$REPO_ROOT" || {
+    printf 'FAIL  make roadmap-aggregate failed; docs/roadmaps/roadmap.yaml would lag entries/\n' >&2
+    exit 1
+}
+printf 'regenerated docs/roadmaps/roadmap.yaml from entries/\n'
+
 printf -- '\n--- files that MUST ride in the bump commit ---\n'
-( cd "$REPO_ROOT" && git status --porcelain -- crates/facades ) | sed 's/^/  /'
+( cd "$REPO_ROOT" && git status --porcelain -- crates/facades docs/roadmaps/roadmap.yaml ) | sed 's/^/  /'
 
 printf -- '\n--- verifying ---\n'
 exec bash "$REPO_ROOT/scripts/bump-version.sh" --check
