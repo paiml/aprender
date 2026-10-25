@@ -1,7 +1,7 @@
 - id: PMAT-6251
   github_issue: 6251
   item_type: task
-  title: 'FLOW-011 T2: review tiers by changed paths (.pmat/review-tiers.yaml, MT-13)'
+  title: 'FLOW-011 T2: review tiers by changed paths (tools/review-tiers.yaml, MT-13)'
   status: in_progress
   priority: high
   assigned_to: null

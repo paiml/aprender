@@ -4,7 +4,7 @@
 #   bash scripts/review_tier.sh BASE HEAD [--table FILE]   -> prints light | standard | sensitive
 #   bash scripts/review_tier.sh --self-test
 #
-# RULES. The tier comes from .pmat/review-tiers.yaml and the diff, never from the PR text: there is no flag, label
+# RULES. The tier comes from tools/review-tiers.yaml and the diff, never from the PR text: there is no flag, label
 # or trailer that sets it. A diff spanning tiers takes the highest. A path matching `sensitive` is sensitive,
 # then one matching `light` is light; any other path is standard unless its diff is comment-only, which is
 # checked here by stripping blank lines and whole-line comments from both sides and comparing (never by the
@@ -14,7 +14,7 @@
 # working tree's copy, which the PR could have loosened; --table FILE is the explicit override.
 set -euo pipefail
 
-TABLE=${REVIEW_TIER_TABLE:-.pmat/review-tiers.yaml}
+TABLE=${REVIEW_TIER_TABLE:-tools/review-tiers.yaml}
 TABLE_FILE=
 
 die() { echo "review_tier: $*" >&2; exit 2; }
@@ -125,8 +125,8 @@ self_test() {
   local d fail=0 pass=0 base
   d=$(mktemp -d); trap 'rm -rf "${d:?}"' RETURN
   git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
-  mkdir -p "$d/.pmat" "$d/.github/workflows" "$d/crates/x/src" "$d/docs" "$d/scripts" "$d/bin"
-  cp "$TABLE" "$d/.pmat/review-tiers.yaml"
+  mkdir -p "$d/.pmat" "$d/tools" "$d/.github/workflows" "$d/crates/x/src" "$d/docs" "$d/scripts" "$d/bin"
+  cp "$TABLE" "$d/tools/review-tiers.yaml"
   unset REVIEW_TIER_TABLE   # the rows run children that must read the table from the scratch repo
   printf 'fn a() {}\n// note\n' > "$d/crates/x/src/lib.rs"
   printf 'name: ci\n' > "$d/.github/workflows/ci.yml"
@@ -137,7 +137,7 @@ self_test() {
   expect() { # NAME WANT -- mutation commands run in $d
     local name=$1 want=$2 got
     git -C "$d" add -A; git -C "$d" commit -qm "$name" --allow-empty
-    got=$(cd "$d" && TABLE=.pmat/review-tiers.yaml bash "$SELF" "$base" HEAD 2>&1) || true
+    got=$(cd "$d" && TABLE=tools/review-tiers.yaml bash "$SELF" "$base" HEAD 2>&1) || true
     if [[ $got == "$want" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL $name: want $want, got $got"; fi
     git -C "$d" reset -q --hard "$base"
   }
@@ -152,8 +152,8 @@ self_test() {
   printf '# d\n' >> "$d/docs/a.md"; printf 'on: push\n' >> "$d/.github/workflows/ci.yml"; expect docs-plus-workflow-highest-wins sensitive
   printf '# d\n' >> "$d/docs/a.md"; printf 'fn b() {}\n' >> "$d/crates/x/src/lib.rs";   expect docs-plus-code-standard standard
   printf 'x\n' > "$d/scripts/check_new.sh";                                      expect new-gate-script sensitive
-  printf 'version: 1\n' > "$d/.pmat/review-tiers.yaml";                          expect table-itself sensitive
-  printf 'version: 1\nsensitive:\n  - "nothing"\nlight:\n  - "*"\n' > "$d/.pmat/review-tiers.yaml"; printf 'on: push\n' >> "$d/.github/workflows/ci.yml"; expect loosened-table-in-same-pr-ignored sensitive
+  printf 'version: 1\n' > "$d/tools/review-tiers.yaml";                          expect table-itself sensitive
+  printf 'version: 1\nsensitive:\n  - "nothing"\nlight:\n  - "*"\n' > "$d/tools/review-tiers.yaml"; printf 'on: push\n' >> "$d/.github/workflows/ci.yml"; expect loosened-table-in-same-pr-ignored sensitive
   printf 'x\n' > "$d/scripts/review_tier.sh";                                  expect the-tier-script-itself sensitive
   printf 'on: push\n' > "$d/.github/workflows/é.yml";                           expect non-ascii-workflow-name sensitive
   printf 'x\n' > "$d/crates/x/src/é.rs";                                        expect non-ascii-code-path standard
@@ -208,8 +208,8 @@ PMAT-Tier: light"
   if (cd "$d" && bash "$SELF" HEAD HEAD >/dev/null 2>&1); then fail=$((fail + 1)); echo "FAIL empty-diff accepted"; else pass=$((pass + 1)); fi
   # a BASE without the table is never judged by the PR's own (loosened) copy: sensitive
   git -C "$d" checkout -q --orphan nobase; git -C "$d" rm -rqf . ; printf 'x\n' > "$d/f"; git -C "$d" add -A; git -C "$d" commit -qm nobase
-  nb=$(git -C "$d" rev-parse HEAD); mkdir -p "$d/.pmat"
-  printf 'version: 1\nsensitive:\n  - "nothing"\nlight:\n  - "*"\n' > "$d/.pmat/review-tiers.yaml"; printf 'on: push\n' > "$d/ci.yml"
+  nb=$(git -C "$d" rev-parse HEAD); mkdir -p "$d/tools"
+  printf 'version: 1\nsensitive:\n  - "nothing"\nlight:\n  - "*"\n' > "$d/tools/review-tiers.yaml"; printf 'on: push\n' > "$d/ci.yml"
   git -C "$d" add -A; git -C "$d" commit -qm loosened
   got=$(cd "$d" && bash "$SELF" "$nb" HEAD 2>&1) || true
   if [[ $got == sensitive ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL missing-base-table: want sensitive, got $got"; fi
@@ -222,7 +222,7 @@ PMAT-Tier: light"
   done
   git -C "$d" reset -q --hard "$base"
   # an unreadable or empty table is an error, never a quiet light
-  printf 'version: 1\n' > "$d/.pmat/review-tiers.yaml"; git -C "$d" add -A; git -C "$d" commit -qm emptytable; base=$(git -C "$d" rev-parse HEAD)
+  printf 'version: 1\n' > "$d/tools/review-tiers.yaml"; git -C "$d" add -A; git -C "$d" commit -qm emptytable; base=$(git -C "$d" rev-parse HEAD)
   printf '# x\n' >> "$d/docs/a.md"; git -C "$d" add -A; git -C "$d" commit -qm e
   if (cd "$d" && bash "$SELF" "$base" HEAD >/dev/null 2>&1); then
     fail=$((fail + 1)); echo "FAIL empty-table accepted"; else pass=$((pass + 1)); fi
@@ -237,7 +237,7 @@ PMAT-Tier: light"
 [[ ${1:-} == --self-test ]] && { self_test; exit $?; }
 # --classify PATH: is PATH sensitive in the working-tree table (used by check_review_tier.sh to scan CI surfaces).
 if [[ ${1:-} == --classify ]]; then
-  SENS=$(list_of sensitive "${REVIEW_TIER_TABLE:-.pmat/review-tiers.yaml}") || die "table is malformed"; [[ -n $SENS ]] || die "table lists no sensitive paths"
+  SENS=$(list_of sensitive "${REVIEW_TIER_TABLE:-tools/review-tiers.yaml}") || die "table is malformed"; [[ -n $SENS ]] || die "table lists no sensitive paths"
   if matches_any "${2:?usage: review_tier.sh --classify PATH}" <<< "$SENS"; then echo sensitive; else echo other; fi
   exit 0
 fi

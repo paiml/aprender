@@ -5,7 +5,7 @@
 set -uo pipefail
 [[ -z ${1:-} || ${1:-} == --self-test ]] || { echo "usage: check_review_tier.sh [--self-test]" >&2; exit 2; }
 SRC=scripts/review_tier.sh
-TBL=.pmat/review-tiers.yaml
+TBL=tools/review-tiers.yaml
 W=$(mktemp -d); trap 'rm -rf "${W:?}"' EXIT
 fail=0
 
