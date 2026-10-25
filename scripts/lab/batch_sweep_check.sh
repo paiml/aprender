@@ -7,11 +7,12 @@
 #   bs5 BODY.md                  no closing keyword before an issue/PR number in a batch PR body
 #   bs6 REPO 'REGEN CMD'         running REGEN CMD in REPO leaves the tree unchanged
 #   --self-test                  each obligation on a violating fixture (must exit 1) and a conforming one (must exit 0)
-# BS-1 judges README.md only outside CONTRACT_COUNT blocks; BS-4 path deny-list also covers Cargo.toml, scripts/arm_*, .pmat/, release|publish|sign|forjar scripts and configs, gate*.sh, and denies ci/explicit-test-commands.d, .pmat-gates.toml, scripts/check_*.sh.
+# BS-1 judges README.md only outside CONTRACT_COUNT blocks, with one context line (-U1) pinning each hunk; BS-4 denies all of .github/, ci/ and scripts/lib/, plus Cargo.toml, scripts/arm_*, .pmat/, scripts/check_*.sh, release|publish|sign|forjar scripts and configs, gate*.sh.
 # Exit: 0 held . 1 violated . 2 could not check. LAB: wired into no workflow.
+# No -e: every obligation is tallied by an explicit return code (0/1/2), so one violation must not stop the rest.
 set -uo pipefail
 ALLOW_AUTHORS="${BS_ALLOW_AUTHORS:-}"  # BS-4: any author not listed is external; empty = nobody allowed, so the caller must pass it
-DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^ci/explicit-test-commands\.d/|^\.pmat-gates\.toml$|^deny\.toml$|^scripts/ci/|^scripts/check_[^/]*\.sh$|^scripts/contracts_gate\.sh$|^ci/vendor/|^Makefile$|^\.clippy\.toml$|^rust-toolchain\.toml$|^Cargo\.toml$|^scripts/arm_|^\.pmat/|(^|/)(release|publish|sign|forjar)[^/]*\.(sh|ya?ml|toml)$|(^|/)gate[^/]*\.sh$}"
+DENY_PATHS="${BS_DENY_PATHS:-^\.github/|^ci/|^scripts/lib/|^\.pmat-gates\.toml$|^deny\.toml$|^scripts/ci/|^scripts/check_[^/]*\.sh$|^scripts/contracts_gate\.sh$|^Makefile$|^\.clippy\.toml$|^rust-toolchain\.toml$|^Cargo\.toml$|^scripts/arm_|^\.pmat/|(^|/)(release|publish|sign|forjar)[^/]*\.(sh|ya?ml|toml)$|(^|/)gate[^/]*\.sh$}"
 # Generated: the contract artifacts, and ONLY the CONTRACT_COUNT blocks of README.md (PRB-001 §6), neutralised by readme_neutral.
 GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')
 readme_neutral() { sed 's/<!-- CONTRACT_COUNT_START -->.*<!-- CONTRACT_COUNT_END -->/<!-- CONTRACT_COUNT -->/'; }
@@ -25,35 +26,38 @@ hunks_landed() {
   awk -v d="$d" '/^diff --git /{h=""; n=0} /^@@/{n++; f=sprintf("%s/h%06d", d, ++c); printf "%s", h > f; close(f); cur=f} !/^@@/ && n==0{h=h $0 "\n"} n>0{print >> cur}' "$patch"
   for f in "$d"/h*; do
     [ -e "$f" ] || continue
-    if grep -q '^+[^+]' "$f" || grep -q '^+$' "$f"; then
-      git -C "$wt" apply -R --check --unidiff-zero "$f" 2> /dev/null || ok=1
+    if sed -n "/^@@/,\$p" "$f" | grep -q "^+"; then
+      git -C "$wt" apply -R --check "$f" 2> /dev/null || ok=1
     else
-      ! git -C "$wt" apply --check --unidiff-zero "$f" 2> /dev/null || ok=1
+      ! git -C "$wt" apply --check "$f" 2> /dev/null || ok=1
     fi
   done
   rm -rf -- "${d:?}"; return "$ok"
 }
 bs1() {
   local repo="$1" main="$2" pr mb wt rc=0; shift 2
+  [ "$#" -gt 0 ] || { echo "BS-1 no PR refs given, nothing checked"; return 2; }
   wt="$(mktemp -d)" || return 2
-  git -C "$repo" worktree add -q --detach "$wt" "$main" || return 2
+  git -C "$repo" worktree add -q --detach "$wt" "$main" || { rm -rf -- "${wt:?}"; return 2; }
   for pr in "$@"; do
+    git -C "$repo" rev-parse --verify -q "$pr^{commit}" > /dev/null || { echo "BS-1 could not read $pr"; rc=2; continue; }
     mb="$(git -C "$repo" merge-base "$main" "$pr")" || { bad 1 "no merge-base for $pr"; rc=1; continue; }
-    # -U0 + --unidiff-zero: a hunk is judged by its own lines, so a neighbouring edit on main cannot false-RED it.
-    git -C "$repo" diff -U0 "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
+    # -U1: one context line on each side pins a hunk to where it belongs (zero context let a lost `}` land anywhere). A main edit ON that line is a false RED: LAB, fails closed.
+    git -C "$repo" diff -U1 "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
     if git -C "$repo" cat-file -e "$mb:README.md" 2> /dev/null && git -C "$repo" cat-file -e "$pr:README.md" 2> /dev/null; then
       git -C "$repo" show "$mb:README.md" | readme_neutral > "$wt.a"; git -C "$repo" show "$pr:README.md" | readme_neutral > "$wt.b"
-      git -C "$wt" diff --no-index -U0 --src-prefix=a/ --dst-prefix=b/ "$wt.a" "$wt.b" 2> /dev/null | sed -e "s#a$wt\.a#a/README.md#g" -e "s#b$wt\.b#b/README.md#g" -e "s#^--- .*#--- a/README.md#" -e "s#^+++ .*#+++ b/README.md#" >> "$wt.patch"
+      git -C "$wt" diff --no-index -U1 --src-prefix=a/ --dst-prefix=b/ "$wt.a" "$wt.b" 2> /dev/null | sed -e "s#a$wt\.a#a/README.md#g" -e "s#b$wt\.b#b/README.md#g" -e "s#^--- .*#--- a/README.md#" -e "s#^+++ .*#+++ b/README.md#" >> "$wt.patch"
       [ -f "$wt/README.md" ] && readme_neutral < "$wt/README.md" > "$wt.m" && cp "$wt.m" "$wt/README.md"
     else # README on one side only (added or deleted): judged whole, nothing to neutralise
-      git -C "$repo" diff -U0 "$mb" "$pr" -- README.md >> "$wt.patch"
+      git -C "$repo" diff -U1 "$mb" "$pr" -- README.md >> "$wt.patch"
     fi
-    hunks_landed "$wt" "$wt.patch" || { bad 1 "$pr has a hunk missing from $main"; rc=1; }
+    hunks_landed "$wt" "$wt.patch"; case $? in 0) ;; 2) echo "BS-1 could not check $pr"; [ "$rc" = 1 ] || rc=2 ;; *) bad 1 "$pr has a hunk missing from $main"; rc=1 ;; esac
   done
   git -C "$repo" worktree remove --force "$wt"; rm -f -- "${wt:?}.patch" "${wt:?}.a" "${wt:?}.b" "${wt:?}.m"; return "$rc"
 }
 bs2() {
   local repo="$1" base="$2" head="$3" n="$4" c m last
+  case "$n" in [1-7]) ;; *) echo "BS-2 N must be 1..7 (the batch cap), got '$n'"; return 2 ;; esac
   c="$(git -C "$repo" rev-list --count "$base..$head" 2> /dev/null)" && m="$(git -C "$repo" rev-list --merges --count "$base..$head" 2> /dev/null)" || { echo "BS-2 could not read $base..$head"; return 2; }
   last="$(git -C "$repo" log -1 --format=%s "$head")"
   [ "$m" = 0 ] || { bad 2 "$m merge commit(s) in $base..$head"; return 1; }
@@ -68,28 +72,29 @@ bs3() {
   done < "$tsv"; [ "$n" -gt 0 ] || { echo "BS-3 0 rows in $tsv, nothing checked"; return 2; }; echo "BS-3 $n rows checked"; return "$rc"
 }
 bs4() {
-  local pr author paths p rc=0
+  local pr author paths p rc=0 n=0
   while IFS=$'\t' read -r pr author paths; do
-    [ -n "$pr" ] || continue
+    [ -n "$pr" ] || continue; n=$((n + 1))
     case ",$ALLOW_AUTHORS," in *",$author,"*) ;; *) bad 4 "#$pr is by external author $author"; rc=1 ;; esac
     for p in $paths; do [[ "$p" =~ $DENY_PATHS ]] && { bad 4 "#$pr touches gate path $p"; rc=1; }; done
-  done < "$1"; return "$rc"
+  done < "$1"; [ "$n" -gt 0 ] || { echo "BS-4 0 rows in $1, nothing checked"; return 2; }; echo "BS-4 $n rows checked"; return "$rc"
 }
 bs5() {
-  local hit; hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+(#|[A-Za-z0-9_./-]+#|https?://[^ ]*/(issues|pull)/)[0-9]+' "$1")" || true
+  local hit; [ -r "${1:-}" ] || { echo "BS-5 could not read '${1:-}'"; return 2; }
+  hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+(#|[A-Za-z0-9_./-]+#|https?://[^ ]*/(issues|pull)/)[0-9]+' "$1")" || true
   [ -z "$hit" ] || { bad 5 "closing keyword: $hit"; return 1; }
 }
 bs6() {
   local repo="$1" cmd="$2" d
   (cd "$repo" && bash -c "$cmd") > /dev/null 2>&1 || return 2
-  d="$(git -C "$repo" status --porcelain)"
+  d="$(git -C "$repo" status --porcelain 2> /dev/null)" || { echo "BS-6 $repo is not a git work tree"; return 2; }
   [ -z "$d" ] || { bad 6 "regeneration changed: $d"; return 1; }
 }
 selftest() {
-  local fail=0; t="$(mktemp -d)" || exit 2; trap 'rm -rf -- "${t:?}"' EXIT
+  local fail=0 rows=0; t="$(mktemp -d)" || exit 2; trap 'rm -rf -- "${t:?}"' EXIT
   g() { git -C "$t/r" -c user.name=t -c user.email=t@t "$@" > /dev/null 2>&1; }
   expect() { # label want cmd...
-    local label="$1" want="$2" rc; shift 2; "$@" > "$t/out" 2>&1; rc=$?
+    local label="$1" want="$2" rc; shift 2; "$@" > "$t/out" 2>&1; rc=$?; rows=$((rows + 1))
     if [ "$rc" = "$want" ]; then printf '  ok   %s (rc %s)\n' "$label" "$rc"; else printf '  BROKE %s: rc %s, want %s\n' "$label" "$rc" "$want"; cat "$t/out"; fail=$((fail + 1)); fi
   }
   git init -q -b main "$t/r"; printf 'a\n' > "$t/r/a.txt"; printf 'b\nc\n' > "$t/r/gen.nt"; g add -A; g commit -qm base
@@ -100,10 +105,10 @@ selftest() {
   g checkout -qb prC main~2; printf 'C\n' > "$t/r/c.txt"; g add -A; g commit -qm ticketC; g checkout -q main
   expect "BS-1 RED a PR whose hunk never landed" 1 bs1 "$t/r" main prC
   b0="$(git -C "$t/r" rev-parse main~2)"
-  # edits on BOTH sides of a landed hunk (git apply only trims context symmetrically) must not false-RED a landed hunk (-U0), and README is judged only outside CONTRACT_COUNT blocks
-  printf '1\n2\n3\n4\n5\n6\n' > "$t/r/f.txt"; g add -A; g commit -qm f-base; g checkout -qb prN; printf '1\n2\nthree\n4\n5\n6\n' > "$t/r/f.txt"; g commit -qam prN-edit
-  g checkout -qb prD main; printf '1\n2\n3\n4\nfive\n6\n' > "$t/r/f.txt"; g commit -qam prD-edit; g checkout -q main
-  printf 'o\n' > "$t/r/other.txt"; g add -A; g commit -qm unrelated; g cherry-pick prN; printf '1\ntwo\nthree\nfour\n5\n6\n' > "$t/r/f.txt"; g commit -qam neighbour
+  # edits on BOTH sides of a landed hunk (git apply only trims context symmetrically) must not false-RED a landed hunk (-U1: edits two or more lines away), and README is judged only outside CONTRACT_COUNT blocks
+  printf '1\n2\n3\n4\n5\n6\n7\n8\n' > "$t/r/f.txt"; g add -A; g commit -qm f-base; g checkout -qb prN; printf '1\n2\n3\nfour\n5\n6\n7\n8\n' > "$t/r/f.txt"; g commit -qam prN-edit
+  g checkout -qb prD main; printf '1\n2\n3\n4\n5\n6\nseven\n8\n' > "$t/r/f.txt"; g commit -qam prD-edit; g checkout -q main
+  printf 'o\n' > "$t/r/other.txt"; g add -A; g commit -qm unrelated; g cherry-pick prN; printf 'one\ntwo\n3\nfour\n5\nsix\nseven7\n8\n' > "$t/r/f.txt"; g commit -qam neighbour
   expect "BS-1 GREEN landed hunk with a neighbouring edit on main" 0 bs1 "$t/r" main prN
   expect "BS-1 RED unlanded hunk beside a neighbouring edit" 1 bs1 "$t/r" main prD
   printf 'del1\ndel2\n' > "$t/r/d.txt"; g add -A; g commit -qm del-base; g checkout -qb prDel; printf 'del1\n' > "$t/r/d.txt"; g commit -qam del-only; g checkout -q main
@@ -140,7 +145,7 @@ selftest() {
   printf '13\tnoah\tscripts/release_publish.sh\n' > "$t/a-rel.tsv"; expect "BS-4 RED a release script" 1 bs4 "$t/a-rel.tsv"
   printf '14\tnoah\tscripts/sign_artifacts.sh\n' > "$t/a-sig.tsv"; expect "BS-4 RED a signing script" 1 bs4 "$t/a-sig.tsv"
   ALLOW_AUTHORS=; expect "BS-4 RED empty allow-list fails closed" 1 bs4 "$t/a-ok.tsv"; ALLOW_AUTHORS=noah
-  expect "BS-4 RED default allow-list is empty (no env, script run as the caller would)" 0 bash -c 'env -u BS_ALLOW_AUTHORS bash "$0" bs4 "$1" 2>&1 | grep -q "external author noah"' "$0" "$t/a-ok.tsv"
+  expect "BS-4 RED default allow-list is empty (no env, script run as the caller would)" 0 bash -c 'out="$(env -u BS_ALLOW_AUTHORS bash "$0" bs4 "$1" 2>&1)"; case "$out" in *"external author noah"*) exit 0 ;; *) exit 1 ;; esac' "$0" "$t/a-ok.tsv"
   expect "BS-4 RED external author" 1 bs4 "$t/a-ext.tsv"
   expect "BS-4 RED gate-file path" 1 bs4 "$t/a-gate.tsv"
   expect "BS-4 RED ci/explicit-test-commands.d path" 1 bs4 "$t/a-cmd.tsv"
@@ -162,7 +167,24 @@ selftest() {
   expect "BS-6 RED committed artifact differs from regeneration" 1 bs6 "$t/r" 'sort gen.nt -o gen.nt'
   printf 'b\nc\n' > "$t/r/gen.nt"; g commit -qam sorted
   expect "BS-6 GREEN artifact equals regeneration" 0 bs6 "$t/r" 'sort gen.nt -o gen.nt'
-  printf 'batch_sweep_check self-test: %d broke\n' "$fail"; [ "$fail" -eq 0 ]
+  # BS-1: -U1 pins a hunk to its place; a lost `}` must not land on some other `}` (zero context did that), and `++i;` is an addition
+  printf 'x\n}\ny\nz\n' > "$t/r/g2.txt"; g add -A; g commit -qm g2-base; g checkout -qb prG; printf 'x\n}\ny\n}\nz\n' > "$t/r/g2.txt"; g commit -qam g2-add; g checkout -q main
+  expect "BS-1 RED a lost '}' hunk beside another '}' on main" 1 bs1 "$t/r" main prG
+  printf 'i\nj\n' > "$t/r/h2.txt"; g add -A; g commit -qm h2-base; g checkout -qb prI; printf 'i\n++k;\nj\n' > "$t/r/h2.txt"; g commit -qam h2-inc; g checkout -q main; g cherry-pick prI
+  expect "BS-1 GREEN a landed '++k;' addition" 0 bs1 "$t/r" main prI
+  expect "BS-1 could-not-check with no PR refs" 2 bs1 "$t/r" main
+  expect "BS-1 could-not-check on a missing PR ref" 2 bs1 "$t/r" main nosuchpr
+  expect "BS-2 could-not-check on N=8 (batch cap is 7)" 2 bs2 "$t/r" $b0 good 8
+  expect "BS-2 could-not-check on N=0" 2 bs2 "$t/r" $b0 good 0
+  for gp in .github/pr-review.pub ci/mutants-debt.tsv ci/guard-lane-steps.txt ci/step-budgets.tsv scripts/lib/ci_guard_steps.sh; do
+    printf '15\tnoah\t%s\n' "$gp" > "$t/a-read.tsv"; expect "BS-4 RED gate-read file $gp" 1 bs4 "$t/a-read.tsv"
+  done
+  expect "BS-4 could-not-check on an empty list" 2 bs4 "$t/empty.tsv"
+  expect "BS-4 could-not-check on a missing file" 2 bs4 "$t/no-such.tsv"
+  expect "BS-5 could-not-check on a missing file" 2 bs5 "$t/no-such.md"
+  expect "BS-6 could-not-check outside a git work tree" 2 bs6 "$t" 'true'
+  expect "unknown subcommand exits 2" 2 bash "$0" bs7
+  printf 'batch_sweep_check self-test: %d rows, %d broke\n' "$rows" "$fail"; [ "$rows" -gt 0 ] && [ "$fail" -eq 0 ]
 }
 case "${1:-}" in
   --self-test) selftest ;;

@@ -50,7 +50,7 @@ proof_obligations:
   type: invariant
   property: no external-author PR or gate-file PR is ever absorbed
   formal: >-
-    ∀ pr ∈ absorbed: author(pr) ∉ deny_authors ∧ ¬∃ p ∈ paths(pr): p ∈ deny_paths
+    ∀ pr ∈ absorbed: author(pr) ∈ allow_authors ∧ ¬∃ p ∈ paths(pr): p ∈ deny_paths
   applies_to: all
 - id: BS-5
   type: invariant
@@ -106,5 +106,5 @@ qa_gate:
   - bs4_deny_list
   - bs5_no_closing_keyword
   - bs6_regenerated_equal
-  pass_criteria: 'scripts/lab/batch_sweep_check.sh --self-test exits 0 and prints "batch_sweep_check self-test: 0 broke"; the row count is the number of ok lines it prints, derived and never quoted'
+  pass_criteria: 'scripts/lab/batch_sweep_check.sh --self-test exits 0 and prints "batch_sweep_check self-test: N rows, 0 broke" (N the count of ok lines it printed, never zero); the row count is the number of ok lines it prints, derived and never quoted'
   falsification: planted violating fixtures, one per obligation
