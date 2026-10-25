@@ -17,17 +17,18 @@ DENY_PATHS="${BS_DENY_PATHS:-^\.github/|^ci/|^scripts/lib/|^\.pmat-gates\.toml$|
 GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')
 readme_neutral() { sed 's/<!-- CONTRACT_COUNT_START -->.*<!-- CONTRACT_COUNT_END -->/<!-- CONTRACT_COUNT -->/'; }
 bad() { echo "BS-$1 VIOLATED: $2"; return 1; }
-# Every hunk of PATCH must already be on the tree at WT. An addition/replacement hunk lands iff it reverse-applies. A
-# DELETION-only hunk reverse-applies anywhere (re-inserting a line always works), so it lands iff it no longer applies forward.
+# Every hunk of PATCH must already be on the tree at WT, and so must every file diff that has no hunk (binary, pure rename, mode-only):
+# each lands iff its patch reverse-applies (git apply -R --check), so a deletion-only hunk whose context main edited counts as not landed (fail closed).
 hunks_landed() {
   local wt="$1" patch="$2" d f ok=0
   [ -s "$patch" ] || return 0
   d="$(mktemp -d)" || return 2
-  awk -v d="$d" '/^diff --git /{h=""; n=0} /^@@/{n++; f=sprintf("%s/h%06d", d, ++c); printf "%s", h > f; close(f); cur=f} !/^@@/ && n==0{h=h $0 "\n"} n>0{print >> cur}' "$patch"
+  awk -v d="$d" 'function flush(  g) { if (h != "" && n == 0) { g = sprintf("%s/h%06d", d, ++c); printf "%s", h > g; close(g) } } /^diff --git /{flush(); h=""; n=0} /^@@/{n++; f=sprintf("%s/h%06d", d, ++c); printf "%s", h > f; close(f); cur=f} !/^@@/ && n==0{h=h $0 "\n"} n>0{print >> cur} END{flush()}' "$patch"
   for f in "$d"/h*; do
     [ -e "$f" ] || continue
     # landed means the hunk reverse-applies (its context is intact and its lines are in place); a deletion-only hunk whose context main edited fails here too, which counts as not landed (fail closed)
-    git -C "$wt" apply -R --check "$f" 2> /dev/null || ok=1
+    # git apply does not compare modes, so a mode-only diff (no hunk, no rename, no binary data, no file added or deleted) cannot be shown landed: not landed (fail closed)
+    case "$(< "$f")" in *"@@"*|*"GIT binary patch"*|*"rename from"*|*"new file mode"*|*"deleted file mode"*) git -C "$wt" apply -R --check "$f" 2> /dev/null || ok=1 ;; *) ok=1 ;; esac
   done
   rm -rf -- "${d:?}"; return "$ok"
 }
@@ -40,7 +41,7 @@ bs1() {
     git -C "$repo" rev-parse --verify -q "$pr^{commit}" > /dev/null || { echo "BS-1 could not read $pr"; rc=2; continue; }
     mb="$(git -C "$repo" merge-base "$main" "$pr")" || { bad 1 "no merge-base for $pr"; rc=1; continue; }
     # -U1: one context line on each side pins a hunk to where it belongs (zero context let a lost `}` land anywhere). A main edit ON that line is a false RED: LAB, fails closed.
-    git -C "$repo" diff -U1 "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
+    git -C "$repo" diff -U1 --binary "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
     if git -C "$repo" cat-file -e "$mb:README.md" 2> /dev/null && git -C "$repo" cat-file -e "$pr:README.md" 2> /dev/null; then
       git -C "$repo" show "$mb:README.md" | readme_neutral > "$wt.a"; git -C "$repo" show "$pr:README.md" | readme_neutral > "$wt.b"
       git -C "$wt" diff --no-index -U1 --src-prefix=a/ --dst-prefix=b/ "$wt.a" "$wt.b" 2> /dev/null | sed -e "s#a$wt\.a#a/README.md#g" -e "s#b$wt\.b#b/README.md#g" -e "s#^--- .*#--- a/README.md#" -e "s#^+++ .*#+++ b/README.md#" >> "$wt.patch"
@@ -63,14 +64,14 @@ bs2() {
 }
 bs3() {
   local repo="$1" main="$2" tsv="$3" pr sha rc=0 n=0
-  while IFS=$'\t' read -r pr sha; do
+  while IFS=$'\t' read -r pr sha || [ -n "$pr" ]; do
     [ -n "$pr" ] || continue; n=$((n + 1))
     if [ -z "$sha" ] || ! git -C "$repo" merge-base --is-ancestor "$sha" "$main" 2> /dev/null; then bad 3 "#$pr closed, '$sha' is not on $main"; rc=1; fi
   done < "$tsv"; [ "$n" -gt 0 ] || { echo "BS-3 0 rows in $tsv, nothing checked"; return 2; }; echo "BS-3 $n rows checked"; return "$rc"
 }
 bs4() {
   local pr author paths p rc=0 n=0
-  while IFS=$'\t' read -r pr author paths; do
+  while IFS=$'\t' read -r pr author paths || [ -n "$pr" ]; do
     [ -n "$pr" ] || continue; n=$((n + 1))
     case ",$ALLOW_AUTHORS," in *",$author,"*) ;; *) bad 4 "#$pr is by external author $author"; rc=1 ;; esac
     for p in $paths; do [[ "$p" =~ $DENY_PATHS ]] && { bad 4 "#$pr touches gate path $p"; rc=1; }; done
@@ -116,6 +117,14 @@ selftest() {
   printf 'a\nb\nc\nd\n' > "$t/r/e.txt"; g add -A; g commit -qm e-base; g checkout -qb prE; printf 'a\nb\nd\n' > "$t/r/e.txt"; g commit -qam e-del-c; g checkout -q main
   printf 'a\nB\nc\nd\n' > "$t/r/e.txt"; g commit -qam e-main-edits-neighbour
   expect "BS-1 RED deletion-only hunk whose neighbour main edited (forward apply fails, not landed)" 1 bs1 "$t/r" main prE
+  # a file diff with no @@ hunk (binary, pure rename, mode-only) is still judged: it must reverse-apply, else it never landed (it used to pass unchecked)
+  g checkout -qb prBin main; printf '\000\001\002\377' > "$t/r/blob.bin"; g add -A; g commit -qm blob; g checkout -q main
+  g checkout -qb prRen main; g mv a.txt a2.txt; g commit -qm rename; g checkout -q main
+  g checkout -qb prMode main; chmod +x "$t/r/other.txt"; g commit -qam mode; g checkout -q main
+  expect "BS-1 RED a binary file that never landed" 1 bs1 "$t/r" main prBin
+  expect "BS-1 RED a pure rename that never landed" 1 bs1 "$t/r" main prRen
+  expect "BS-1 RED a mode-only change that never landed" 1 bs1 "$t/r" main prMode
+  g cherry-pick prBin; expect "BS-1 GREEN a binary file that landed" 0 bs1 "$t/r" main prBin
   printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g add -A; g commit -qm readme-base
   g checkout -qb prR; printf 'x <!-- CONTRACT_COUNT_START -->2<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g commit -qam count-only
   g checkout -qb prP main; printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nnew prose\n' > "$t/r/README.md"; g commit -qam prose-edit; g checkout -q main
@@ -142,6 +151,8 @@ selftest() {
   printf '1\t%s\n' "$(git -C "$t/r" rev-parse main)" > "$t/ok.tsv"; printf '2\t%s\n' "$(git -C "$t/r" rev-parse prC)" > "$t/early.tsv"
   expect "BS-3 GREEN closed after its sha is on main" 0 bs3 "$t/r" main "$t/ok.tsv"
   expect "BS-3 RED closed before its sha is on main" 1 bs3 "$t/r" main "$t/early.tsv"
+  printf '2\t%s' "$(git -C "$t/r" rev-parse prC)" > "$t/early-nonl.tsv"; expect "BS-3 RED an unterminated last row is still checked" 1 bs3 "$t/r" main "$t/early-nonl.tsv"
+  printf '9\tnoah\t.github/workflows/ci.yml' > "$t/a-gate-nonl.tsv"; expect "BS-4 RED an unterminated last row is still checked" 1 bs4 "$t/a-gate-nonl.tsv"
   : > "$t/empty.tsv"; expect "BS-3 could-not-check on an empty list" 2 bs3 "$t/r" main "$t/empty.tsv"
   expect "BS-2 could-not-check on an unreadable ref" 2 bs2 "$t/r" nosuchref good 1
   printf '7\tnoah\tcrates/x/src/lib.rs docs/a.md\n' > "$t/a-ok.tsv"
