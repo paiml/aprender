@@ -25356,6 +25356,44 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-5772
+  github_issue: 5772
+  item_type: task
+  title: "simulate: per-lineage review pools in pr_flow (flow model B7)"
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-w5382
+  created: 2026-10-23T20:00:00Z
+  updated: 2026-10-23T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'pr_flow draws review lanes from one pool per lineage, contracts/pr-flow-review-lineage-v1.yaml validates with pv, and the simulate lib tests pass'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-cut from main out of the stale draft #5946 (EMG-001 epic 5510-p2-v4), which cannot be merged as is.'
+  epic: 5510
+- id: PMAT-5782
+  github_issue: 5782
+  item_type: task
+  title: "clippy 1.99 findings across the workspace (A-5, nightly fails)"
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-w5382
+  created: 2026-10-23T20:00:00Z
+  updated: 2026-10-23T20:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo clippy on current stable reports no finding the workspace lints deny; scripts/check_clippy_current_stable.sh passes'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-cut from main out of the stale draft #5946 (EMG-001 epic 5510-p2-v4), which cannot be merged as is.'
+  epic: 5510
 - id: PMAT-5792
   github_issue: 5792
   item_type: task
