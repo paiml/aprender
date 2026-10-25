@@ -129,19 +129,28 @@ remedy() {
     printf '    fragment path: it stays in the base and is immutable (RMFR-OB-005).\n'
 }
 
+# path_state REPO REF PATH -- 0 present, 1 absent, 2 the read failed (a git error is never "absent").
+path_state() {
+    local out
+    out=$(git -C "$1" ls-tree --name-only "$2" -- "$3" 2>/dev/null) || return 2
+    [ -n "$out" ]
+}
+
 # intro_regenerates REPO BASE TD -- the introduced base is right when it regenerates the base
 # ref's aggregate from the base ref's own fragments. Exact equality with the base ref's
 # roadmap.yaml would refuse a correct snapshot whenever another roadmap PR lands first.
 intro_regenerates() {
     local repo=$1 base=$2 td=$3 name
-    mkdir -p "$td/intro/entries" || return 1
-    cp "$td/base.yaml" "$td/intro/roadmap.yaml" || return 1
-    cp "$td/roadmap-base.yaml" "$td/intro/roadmap-base.yaml" || return 1
+    mkdir -p "$td/intro/entries" || return 2
+    cp "$td/base.yaml" "$td/intro/roadmap.yaml" || return 2
+    cp "$td/roadmap-base.yaml" "$td/intro/roadmap-base.yaml" || return 2
+    local names
+    names=$(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null) || return 2
     while IFS= read -r name; do
         case "$name" in *.yaml) ;; *) continue ;; esac
-        git -C "$repo" show "$base:$name" >"$td/intro/entries/${name##*/}" || return 1
-    done < <(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null)
-    python3 "$PY_LIB" aggregate --check --roadmap "$td/intro/roadmap.yaml" --entries "$td/intro/entries" >/dev/null 2>&1
+        git -C "$repo" show "$base:$name" >"$td/intro/entries/${name##*/}" || return 2
+    done < <(printf '%s\n' "$names")
+    python3 "$PY_LIB" aggregate --check --roadmap "$td/intro/roadmap.yaml" --entries "$td/intro/entries" >/dev/null 2>&1 || return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -150,7 +159,7 @@ intro_regenerates() {
 judge() {
     local repo=$1 base=$2 head=$3
     local td roadmap_changed=0 frag_paths names name verdict eid line
-    local violations=0 checked=0 out rc
+    local violations=0 checked=0 out rc cout crc irc ps
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
         printf 'ENV   %s: base ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$base" >&2
@@ -161,13 +170,21 @@ judge() {
         return 2
     }
 
-    td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq.XXXXXX") || return 2
+    td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq.XXXXXX") || {
+        printf 'ENV   %s: cannot make a scratch directory\n' "$PROG" >&2
+        return 2
+    }
 
-    if [ -n "$(git -C "$repo" diff --name-only "$base" "$head" -- "$ROADMAP_FILE")" ]; then
-        roadmap_changed=1
-    fi
-    frag_paths=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ENTRIES_DIR")
-    base_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE")
+    # A failed git read is ENV (rc 2), never "nothing changed".
+    local rm_changed
+    rm_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ROADMAP_FILE") \
+        && frag_paths=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ENTRIES_DIR") \
+        && base_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE") || {
+        rm -rf -- "${td:?}"
+        printf 'ENV   %s: git diff --name-only failed between %s and %s — refusing to judge (never a pass)\n' "$PROG" "$base" "$head" >&2
+        return 2
+    }
+    [ -z "$rm_changed" ] || roadmap_changed=1
 
     if [ "$roadmap_changed" = 0 ] && [ -z "$frag_paths" ] && [ -z "$base_changed" ]; then
         rm -rf -- "${td:?}"
@@ -188,18 +205,48 @@ judge() {
     # Materialise both roadmaps and head's fragment set. A side that does not
     # exist at that ref is EMPTY, not an error: before the first fragment lands,
     # the aggregate is just the base.
-    git -C "$repo" show "$base:$ROADMAP_FILE" >"$td/base.yaml" 2>/dev/null || : >"$td/base.yaml"
-    git -C "$repo" show "$head:$ROADMAP_FILE" >"$td/head.yaml" 2>/dev/null || : >"$td/head.yaml"
+    # Absent at a ref = empty; present but unreadable = ENV (rc 2).
+    local side_ref
+    for side_ref in "base:$base" "head:$head"; do
+        path_state "$repo" "${side_ref#*:}" "$ROADMAP_FILE"; ps=$?
+        if [ "$ps" = 2 ]; then
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: cannot look up %s at %s\n' "$PROG" "$ROADMAP_FILE" "${side_ref#*:}" >&2
+            return 2
+        elif [ "$ps" = 0 ]; then
+            git -C "$repo" show "${side_ref#*:}:$ROADMAP_FILE" >"$td/${side_ref%%:*}.yaml" 2>/dev/null || {
+                rm -rf -- "${td:?}"
+                printf 'ENV   %s: cannot read %s at %s\n' "$PROG" "$ROADMAP_FILE" "${side_ref#*:}" >&2
+                return 2
+            }
+        else
+            : >"$td/${side_ref%%:*}.yaml"
+        fi
+    done
     # The frozen base the head aggregate grows from (#6185). Absent at head (a pre-S1
     # commit), head.yaml is its own base: said out loud below, never a silent skip.
     have_base=0
-    if git -C "$repo" show "$head:$BASE_FILE" >"$td/roadmap-base.yaml" 2>/dev/null; then
+    path_state "$repo" "$head" "$BASE_FILE"; ps=$?
+    if [ "$ps" = 2 ]; then
+        rm -rf -- "${td:?}"
+        printf 'ENV   %s: cannot look up %s at %s\n' "$PROG" "$BASE_FILE" "$head" >&2
+        return 2
+    elif [ "$ps" = 0 ]; then
+        git -C "$repo" show "$head:$BASE_FILE" >"$td/roadmap-base.yaml" 2>/dev/null || {
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: cannot read %s at %s\n' "$PROG" "$BASE_FILE" "$head" >&2
+            return 2
+        }
         have_base=1
     else
         rm -f -- "${td:?}/roadmap-base.yaml"
     fi
     mkdir -p "$td/entries"
-    names=$(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null) || names=""
+    names=$(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null) || {
+        rm -rf -- "${td:?}"
+        printf 'ENV   %s: cannot list %s at %s\n' "$PROG" "$ENTRIES_DIR" "$head" >&2
+        return 2
+    }
     while IFS= read -r name; do
         [ -n "$name" ] || continue
         case "$name" in *.yaml) ;; *) continue ;; esac
@@ -244,11 +291,20 @@ judge() {
     # would make it the new hotspot and a way round rule 1. The one allowed change is its
     # introduction, as a snapshot that regenerates the base ref's aggregate.
     if [ -n "$base_changed" ]; then
-        if git -C "$repo" cat-file -e "$base:$BASE_FILE" 2>/dev/null; then
+        path_state "$repo" "$base" "$BASE_FILE"; ps=$?
+        if [ "$ps" = 2 ]; then
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: cannot look up %s at %s\n' "$PROG" "$BASE_FILE" "$base" >&2
+            return 2
+        elif [ "$ps" = 0 ]; then
             violations=$((violations + 1))
             printf 'FAIL  FROZEN: %s changed. It is frozen: supersede an entry with a fragment in %s/ instead\n' \
                 "$BASE_FILE" "$ENTRIES_DIR"
-        elif intro_regenerates "$repo" "$base" "$td"; then
+        elif intro_regenerates "$repo" "$base" "$td"; irc=$?; [ "$irc" != 2 ] || {
+            rm -rf -- "${td:?}"
+            printf 'ENV   %s: cannot read %s at the base ref %s\n' "$PROG" "$ENTRIES_DIR" "$base" >&2
+            return 2
+        }; [ "$irc" = 0 ]; then
             printf 'ok    %s introduced: aggregate(it, entries/ at the base ref) == %s at the base ref\n' "$BASE_FILE" "$ROADMAP_FILE"
         else
             violations=$((violations + 1))
@@ -261,7 +317,16 @@ judge() {
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
     out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
     rc=$?
+    # --- RULE 4: a completed fragment this diff changes cites its proof (the completion guard's own parser) --
+    cout=$(completion_problems "$repo" "$td" "$head"); crc=$?
     rm -rf -- "${td:?}"
+    if [ "$crc" = 2 ]; then
+        printf 'ENV   %s: %s\n' "$PROG" "$cout" >&2
+        return 2
+    elif [ -n "$cout" ]; then
+        violations=$((violations + 1))
+        printf 'FAIL  UNCITED: a changed fragment is completed without a live proof: %s\n' "$cout"
+    fi
     if [ "$rc" = 0 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
     else
@@ -280,6 +345,38 @@ judge() {
     fi
     printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated\n' "$PROG" "$checked"
     return 0
+}
+
+# The completion guard's own scan and classifier, over the head aggregate: each completed entry whose id
+# is a changed fragment must cite a live proof. Prints "id (verdict); " per problem; rc 2 when the guard is absent.
+# A sub:/phase: record and a repeated-id "[#n]" record belong to their parent fragment's id; a proof: path
+# resolves in the JUDGED head tree (git), not in whatever the working tree holds.
+completion_problems() {
+    local scan repo=$1 td=$2 head=$3 cc="${RFR_COMPLETION_GUARD:-${PY_LIB%/*}/../check_roadmap_completion_is_cited.sh}" fn rec id toks verdict
+    [ -f "$cc" ] || { printf '%s is absent' "$cc"; return 2; }
+    mkdir -p "$td/cc/docs/roadmaps" && cp "$td/head.yaml" "$td/cc/docs/roadmaps/roadmap.yaml" \
+        || { printf 'cannot stage the aggregate for the completion scan'; return 2; }
+    for fn in scan_roadmaps resolve_path_ref resolve_pr_ref classify_record; do
+        sed -n "/^$fn() {/,/^}/p" "$cc"
+    done >"$td/cc.sh"
+    (
+        # shellcheck disable=SC1090
+        . "$td/cc.sh" || exit 2
+        PR_CACHE_DIR=${RFR_PR_CACHE:-$td/prcache}; mkdir -p "$PR_CACHE_DIR" || exit 2
+        resolve_path_ref() { # <root> <ref>: rc 0 when <ref> is a non-empty blob or a non-empty tree at $head
+            local ref=$2 kind
+            kind=$(git -C "$repo" cat-file -t "$head:$ref" 2>/dev/null) || return 1 # git refuses an absolute or ".." path
+            if [ "$kind" = tree ]; then [ -n "$(git -C "$repo" ls-tree "$head:$ref")" ]; return; fi
+            [ "$kind" = blob ] && [ "$(git -C "$repo" cat-file -s "$head:$ref")" -gt 0 ]
+        }
+        scan=$(scan_roadmaps "$td/cc" 2>/dev/null) || { printf 'the completion scan failed (PyYAML?)'; exit 2; }
+        while IFS=$'\t' read -r _ id toks; do
+            pid=${id#sub:}; pid=${pid#phase:}; pid=${pid%%/*}; pid=${pid% \[#*}
+            grep -Fxq -- "$pid" "$td/frag_ids" || continue
+            verdict=$(classify_record "$repo" "$toks")
+            [ "$verdict" = cited ] || printf '%s (%s); ' "$id" "$verdict"
+        done < <(printf '%s\n' "$scan")
+    )
 }
 
 # ---------------------------------------------------------------------------
@@ -316,7 +413,7 @@ mkrepo() {
 }
 
 self_test() {
-    local td n=0 red=0 TEMPLATE
+    local td n=0 red=0 okc=0 want_rows=56 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
         local victim=${td:-}
@@ -333,7 +430,7 @@ self_test() {
     # row NAME WANT_RC MUST_MATCH BUILDER -- BUILDER edits a fresh fixture repo
     # and commits; the guard then judges HEAD~1..HEAD inside it.
     row() {
-        local label=$1 want=$2 pat=$3 builder=$4 d out rc
+        local label=$1 want=$2 pat=$3 builder=$4 refs=${5:-HEAD~1 HEAD} d out rc
         n=$((n + 1))
         d="$td/r$n"
         if ! mkrepo "$d" >/dev/null 2>&1; then
@@ -342,18 +439,20 @@ self_test() {
             return
         fi
         "$builder" "$d" || { printf 'FAIL  row %-2s %s: builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
-        out=$(judge "$d" HEAD~1 HEAD 2>&1)
-        rc=$?
-        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
+        rc=0; out=$(judge "$d" $refs 2>&1) || rc=$?
+        if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out" || { [ -n "${ONLY_ENV:-}" ] && ! only_env "$out"; }; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
             red=$((red + 1))
             return
         fi
+        okc=$((okc + 1))
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
     commit_all() { git -C "$1" add -A && git -C "$1" commit -qm head; }
+    # The ENV line must be the ONLY verdict: a later read failing rc 2 anyway must not hide a deleted return.
+    only_env() { [ "$(grep -c '^ENV' <<<"$1")" = 1 ] && ! grep -q '^\(FAIL\|PASS\)' <<<"$1"; }
 
     # ---- builders -------------------------------------------------------
     # THE MEASURED SHAPE: `pmat work add` appends an entry to the monolith and
@@ -369,6 +468,101 @@ self_test() {
         commit_all "$1"
     }
     # A fragment with no `make roadmap-aggregate`.
+    # A completed fragment, aggregate regenerated: with and without a live proof: token.
+    b_done_uncited() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_cited() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_mixed() { # one cited and one uncited completed fragment, both changed by the diff
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        printf -- '- id: PMAT-201\n  title: t\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # completed sub-task / phase records under a changed fragment: judged like the entry itself
+    b_done_sub() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: planned\n  subtasks:\n  - id: s1\n    title: t\n    status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_phase() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: planned\n  phases:\n  - name: p1\n    status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_sub_cited() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: planned\n  notes: proof:docs/roadmaps/README.md\n  subtasks:\n  - id: s1\n    title: t\n    status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # a proof: path that exists only in the working tree (never committed) is not a proof at the judged head
+    b_done_untracked_proof() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/only-in-worktree.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1" || return 1
+        mkdir -p "$1/docs" && printf 'x\n' >"$1/docs/only-in-worktree.md" || return 1
+        [ -s "$1/docs/only-in-worktree.md" ] || return 1
+    }
+    # the converse: a proof committed at head but deleted from the working tree still counts
+    b_done_head_proof() {
+        mkdir -p "$1/docs" && printf 'x\n' >"$1/docs/at-head.md"
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/at-head.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1" || return 1
+        rm -f -- "${1:?}/docs/at-head.md"
+        [ ! -e "$1/docs/at-head.md" ] || return 1
+    }
+    # the aggregate repeats a changed fragment's id: the repeat ("[#2]") is judged as that fragment's record
+    b_done_dup_id() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n' >>"$1/$ROADMAP_FILE"
+        commit_all "$1"
+    }
+    b_done_dirproof() { # a proof: that names a non-empty directory committed at head
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_emptyproof() { # a proof: that names an empty file committed at head is not a proof
+        mkdir -p "$1/docs" && : >"$1/docs/empty.md" || return 1
+        [ -e "$1/docs/empty.md" ] || return 1
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/empty.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # commit A cites a proof that only the LATER commit B adds: judging base..A must not see B's file
+    b_done_proof_at_later() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/probe-at-later.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1" || return 1
+        mkdir -p "$1/docs" && printf 'x\n' >"$1/docs/probe-at-later.md" || return 1
+        commit_all "$1"
+    }
+    b_done_dangling() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:no/such/file\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_prcited() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:PR#4242\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # An uncited completed entry already in the base, untouched by the diff: not this diff's to judge.
+    b_done_preexisting() {
+        b_done_uncited "$1" || return 1
+        printf -- '- id: PMAT-100\n  title: first, edited\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        # commit only if the uncited PMAT-200 really is in the aggregate: without it the row would pass vacuously
+        grep -q 'id: PMAT-200' "$1/$ROADMAP_FILE" && commit_all "$1"
+    }
     b_fragment_no_regen() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         commit_all "$1"
@@ -440,7 +634,7 @@ PY
     }
     # Supersession: edit an ADOPTED entry through its fragment, regenerate.
     b_supersede() {
-        printf -- '- id: PMAT-100\n  title: first\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
+        printf -- '- id: PMAT-100\n  title: first\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-100.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
@@ -490,6 +684,33 @@ PY
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
     row 'fragment added, aggregate NOT regenerated -> REFUSE, naming the drift' \
         1 'FAIL  DRIFT' b_fragment_no_regen
+    row 'a completed fragment with no proof: token -> REFUSE' 1 'FAIL  UNCITED' b_done_uncited
+    row 'a completed fragment whose proof: path does not exist -> REFUSE' 1 'FAIL  UNCITED' b_done_dangling
+    row 'two changed completed fragments, one uncited -> REFUSE, naming the uncited one (the check ran over frag_ids)' 1 'PMAT-201 (' b_done_mixed
+    row 'changed fragment with an uncited completed subtask -> REFUSE, naming the sub: record' 1 'sub:PMAT-200/s1 (' b_done_sub
+    row 'changed fragment with an uncited completed phase -> REFUSE, naming the phase: record' 1 'phase:PMAT-200/p1 (' b_done_phase
+    row 'completed subtask citing its parent fragment notes -> PASS' 0 'PASS' b_done_sub_cited
+    row 'proof: path present only in the working tree -> REFUSE (judged at head, not the worktree)' 1 'PMAT-200 (dangling' b_done_untracked_proof
+    row 'proof: path committed at head, absent from the working tree -> PASS' 0 '1 changed entry/entries' b_done_head_proof
+    row 'proof: added only by a LATER commit than the judged head -> REFUSE (judged at the head ref, not HEAD)' 1 'PMAT-200 (dangling' b_done_proof_at_later 'HEAD~2 HEAD~1'
+    row 'proof: naming an empty file at head -> REFUSE' 1 'PMAT-200 (dangling' b_done_emptyproof
+    row 'proof: naming a non-empty directory at head -> PASS' 0 '1 changed entry/entries' b_done_dirproof
+    row 'aggregate repeating a changed fragment id with an uncited completed record -> REFUSE, naming PMAT-200 [#2]' 1 'PMAT-200 [#2] (' b_done_dup_id
+    row 'two changed completed fragments, one uncited -> exactly 1 violation over 2 changed entries (the cited one is judged and passes)' 1 '1 violation(s) over 2 changed entry/entries' b_done_mixed
+    row 'a completed fragment citing an existing proof: path -> PASS' 0 'PASS  check_roadmap_fragment_required.sh' b_done_cited
+    mkdir -p "$td/prc" && printf 'MERGED\n' >"$td/prc/4242"
+    RFR_PR_CACHE="$td/prc" row 'a completed fragment citing a MERGED proof:PR#N -> PASS (the PR cache is wired)' \
+        0 'PASS  check_roadmap_fragment_required.sh' b_done_prcited
+    row 'an uncited completed entry the diff does not touch -> PASS (only changed fragments are judged)' \
+        0 'PASS  check_roadmap_fragment_required.sh' b_done_preexisting
+    RFR_COMPLETION_GUARD="$td/no-such-guard.sh" row 'the completion guard absent -> ENV rc 2, never a pass' \
+        2 'is absent' b_done_uncited
+    mkdir -p "$td/stub" && printf '#!/bin/sh\n[ "$1" = - ] && exit 3\nexec %s "$@"\n' "$(command -v python3)" >"$td/stub/python3" && chmod +x "$td/stub/python3"
+    PATH="$td/stub:$PATH" row 'the completion scan failing (no PyYAML) -> ENV rc 2, never a pass' \
+        2 'the completion scan failed' b_done_uncited
+    mkdir -p "$td/cpstub" && printf '#!/bin/sh\ncase "$1" in */head.yaml) exit 1 ;; esac\nexec %s "$@"\n' "$(command -v cp)" >"$td/cpstub/cp" && chmod +x "$td/cpstub/cp"
+    PATH="$td/cpstub:$PATH" row 'staging the aggregate for the completion scan failing -> ENV rc 2' \
+        2 'cannot stage the aggregate' b_done_cited
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \
@@ -521,15 +742,84 @@ PY
     n=$((n + 1))
     local out rc
     mkrepo "$td/r$n" >/dev/null 2>&1
-    out=$(judge "$td/r$n" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD 2>&1)
-    rc=$?
-    if [ "$rc" = 2 ] && grep -qF 'refusing to judge' <<<"$out"; then
+    rc=0; out=$(judge "$td/r$n" deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD 2>&1) || rc=$?
+    if [ "$rc" = 2 ] && grep -qF 'refusing to judge' <<<"$out" && only_env "$out"; then
+        okc=$((okc + 1))
         printf 'ok    row %-2s rc=2  an unresolvable base ref is ENV, never a pass\n' "$n"
     else
         printf 'FAIL  row %-2s rc=%s (wanted 2)  an unresolvable base ref is ENV, never a pass\n' "$n" "$rc"
         printf '%s\n' "$out" | sed 's/^/        /'
         red=$((red + 1))
     fi
+
+    # A failed git read is ENV (rc 2), never a pass or an empty set. One row per read the guard makes.
+    judge_with_failing_git() ( # judge_with_failing_git <pattern> <judge args...>
+        local pat=$1; shift
+        git() {
+            case " $* " in
+                *" $pat "*) return 1 ;;
+            esac
+            command git "$@"
+        }
+        judge "$@"
+    )
+    local gpat fout frc
+    for gpat in "ls-tree --name-only HEAD -- $ROADMAP_FILE|cannot look up $ROADMAP_FILE" "ls-tree --name-only HEAD~1 -- $ROADMAP_FILE|cannot look up $ROADMAP_FILE" \
+        "ls-tree --name-only HEAD -- $BASE_FILE|cannot look up $BASE_FILE" \
+        "diff --name-only|git diff --name-only failed" "ls-tree -r --name-only HEAD|cannot list" \
+        "show HEAD:$ROADMAP_FILE|cannot read $ROADMAP_FILE" "show HEAD~1:$ROADMAP_FILE|cannot read $ROADMAP_FILE" \
+        "show HEAD:$ENTRIES_DIR/PMAT-200.yaml|cannot read $ENTRIES_DIR/PMAT-200.yaml" "show HEAD:$BASE_FILE|cannot read $BASE_FILE"; do
+        n=$((n + 1))
+        mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1 && b_fragment_and_aggregate "$td/r$n" >/dev/null 2>&1
+        frc=0; fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1) || frc=$?
+        if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout" && only_env "$fout"; then
+            okc=$((okc + 1))
+            printf 'ok    row %-2s rc=2  a failing git [%s] is ENV, never a pass\n' "$n" "$gpat"
+        else
+            printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] must be ENV\n' "$n" "$frc" "$gpat"
+            printf '%s\n' "$fout" | sed 's/^/        /'
+            red=$((red + 1))
+        fi
+    done
+
+    # The introduced-base regeneration reads the base ref too: a failed read is ENV, not a FROZEN verdict.
+    for gpat in "ls-tree --name-only HEAD~1 -- $BASE_FILE|cannot look up $BASE_FILE" "ls-tree -r --name-only HEAD~1|at the base ref" "show HEAD~1:$ENTRIES_DIR/PMAT-100.yaml|at the base ref"; do
+        n=$((n + 1))
+        mkrepo "$td/r$n" >/dev/null 2>&1 && b_base_snapshot "$td/r$n" >/dev/null 2>&1
+        frc=0; fout=$(judge_with_failing_git "${gpat%%|*}" "$td/r$n" HEAD~1 HEAD 2>&1) || frc=$?
+        if [ "$frc" = 2 ] && grep -qF -- "${gpat#*|}" <<<"$fout" && only_env "$fout"; then
+            okc=$((okc + 1))
+            printf 'ok    row %-2s rc=2  a failing git [%s] on the introduced base is ENV\n' "$n" "${gpat%%|*}"
+        else
+            printf 'FAIL  row %-2s rc=%s (wanted 2)  a failing git [%s] on the introduced base must be ENV\n' "$n" "$frc" "${gpat%%|*}"
+            printf '%s\n' "$fout" | sed 's/^/        /'
+            red=$((red + 1))
+        fi
+    done
+
+    # An unresolvable HEAD ref, likewise the only verdict.
+    n=$((n + 1))
+    mkrepo "$td/r$n" >/dev/null 2>&1
+    rc=0; out=$(judge "$td/r$n" HEAD deadbeefdeadbeefdeadbeefdeadbeefdeadbeef 2>&1) || rc=$?
+    if [ "$rc" = 2 ] && grep -qF 'head ref' <<<"$out" && only_env "$out"; then
+        okc=$((okc + 1))
+        printf 'ok    row %-2s rc=2  an unresolvable head ref is ENV, never a pass\n' "$n"
+    else
+        printf 'FAIL  row %-2s rc=%s (wanted 2)  an unresolvable head ref must be ENV only\n' "$n" "$rc"
+        printf '%s\n' "$out" | sed 's/^/        /'
+        red=$((red + 1))
+    fi
+
+    # Local tooling failing is ENV too: stubs on PATH fail exactly one call each.
+    stubrow() { # stubrow LABEL WANT MATCH BUILDER CMD GUARD   (GUARD: a sh test on "$@" that makes CMD fail)
+        mkdir -p "$td/stub-$5" && printf '#!/bin/sh\nif %s; then exit 1; fi\nexec %s "$@"\n' "$6" "$(command -v "$5")" >"$td/stub-$5/$5" && chmod +x "$td/stub-$5/$5"
+        ONLY_ENV=1 PATH="$td/stub-$5:$PATH" row "$1" "$2" "$3" "$4"
+    }
+    stubrow 'the entry reader failing to compare -> ENV rc 2' 2 'could not compare' b_fragment_and_aggregate python3 '[ "$2" = changed ]'
+    stubrow 'staging the introduced base: mkdir failing -> ENV rc 2' 2 'at the base ref' b_base_snapshot mkdir 'case "$*" in *intro/entries) true ;; *) false ;; esac'
+    stubrow 'staging the introduced base: roadmap copy failing -> ENV rc 2' 2 'at the base ref' b_base_snapshot cp 'case "$*" in *intro/roadmap.yaml) true ;; *) false ;; esac'
+    stubrow 'staging the introduced base: frozen-base copy failing -> ENV rc 2' 2 'at the base ref' b_base_snapshot cp 'case "$*" in *intro/roadmap-base.yaml) true ;; *) false ;; esac'
+    stubrow 'no scratch dir (mktemp failing) -> rc 2, never a pass' 2 'cannot make a scratch directory' b_fragment_and_aggregate mktemp 'true'
 
     # ---- the push-shape pair (§8). These exercise the real DISPATCH --
     # resolve_base plus the skip -- not judge(), so the fixture carries its own
@@ -552,6 +842,7 @@ PY
             red=$((red + 1))
             return
         fi
+        cp "$REPO_ROOT/scripts/check_roadmap_completion_is_cited.sh" "$d/scripts/" || return
         for f in resolve_base.sh roadmap_fragments.py roadmap_diff.py roadmap_merge.py; do
             if ! cp "$REPO_ROOT/scripts/lib/$f" "$d/scripts/lib/$f"; then
                 printf 'FAIL  row %-2s %s: scripts/lib/%s could not be copied into the fixture\n' "$n" "$label" "$f"
@@ -560,14 +851,14 @@ PY
             fi
         done
         git -C "$d" update-ref refs/remotes/origin/main "$(git -C "$d" rev-parse "$target")"
-        out=$(bash "$d/scripts/$PROG" 2>&1)
-        rc=$?
+        rc=0; out=$(bash "$d/scripts/$PROG" 2>&1) || rc=$?
         if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out"; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
             red=$((red + 1))
             return
         fi
+        okc=$((okc + 1))
         printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
     }
 
@@ -576,8 +867,14 @@ PY
     dispatch_row 'PR shape (origin/main is its parent), SAME fragment-less content -> REFUSE, exit 1' \
         1 'FAIL  ADDED    PMAT-200' HEAD~1
 
-    printf '%s/%s rows, %s failed\n' "$((n - red))" "$n" "$red"
-    [ "$red" = 0 ]
+    printf '%s/%s rows, %s failed\n' "$okc" "$n" "$red"
+    # passing rows are counted, not inferred: ok == n == the fixed row count, or the self-test is red
+    # Four separate gates: any ONE deleted line, even paired with a deleted red++/okc++/row line, still leaves a red exit.
+    [ "$red" = 0 ] || return 1
+    [ "$okc" = "$n" ] || return 1
+    [ "$okc" = "$want_rows" ] || return 1
+    [ "$n" = "$want_rows" ] || return 1
+    return 0
 }
 
 # ---------------------------------------------------------------------------
