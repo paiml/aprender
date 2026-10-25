@@ -26304,7 +26304,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-25T17:40:00Z
   spec: null
   acceptance_criteria:
-  - a bare run of the replay example prints a stderr line opening "Usage: replay" and exits 2
+  - 'a bare run of the replay example prints a stderr line opening "Usage: replay" and exits 2'
   - no change to scripts/dogfood_examples.sh or its needs-args pattern (no allow-list)
   phases: []
   subtasks: []
