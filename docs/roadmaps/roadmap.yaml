@@ -26104,6 +26104,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: null
+- id: PMAT-6265
+  github_issue: 6265
+  item_type: task
+  title: 'PRB-001: PR batch cleanup spec + batch-sweep-v1 contract (BS-1..6)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-24T11:16:00Z
+  updated: 2026-10-24T11:16:00Z
+  spec: docs/specifications/PRB-001-pr-batch-cleanup.md
+  acceptance_criteria:
+  - 'contracts/batch-sweep-v1.yaml validates with pv and scripts/lab/batch_sweep_check.sh turns RED on each planted BS-1..BS-6 violation and GREEN on the clean case'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Replaces the earlier cite of #5831, an unrelated closed CUDA issue.'
+  epic: null
 - id: PMAT-6267
   github_issue: 6267
   item_type: task
