@@ -25912,6 +25912,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: null
+- id: PMAT-6169
+  github_issue: 6169
+  item_type: task
+  title: 'ci: pr-light takes the pr-x64 runner pool on pull_request (never merge_group, never release)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T14:05:00Z
+  updated: 2026-10-23T14:05:00Z
+  spec: null
+  acceptance_criteria:
+  - pr-light runs-on selects [self-hosted, Linux, X64, pr-x64] when repo variable PR_LIGHT_POOL is pr-x64, and [self-hosted, Linux, X64, clean-room] otherwise (the default, so merging changes nothing)
+  - scripts/ci_mg_reuse.sh asserts both arms and that no mq label sits on pr-light
+  - no merge_group, release or clean-room-only job changes its runs-on
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-6185
   github_issue: 6185
   item_type: task
