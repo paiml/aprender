@@ -168,6 +168,10 @@ O3='R.GENERATION.update({"POST /v1/brand-new": {"kind": "brand_new", "modes": ("
 if oracle_assert "$ROUTES_PY" "$O1"; then ok "O1 every generation route maps to an oracle route whose wire has its modes"; else bad "O1 oracle map"; fi
 if oracle_assert "$ROUTES_PY" "$O2"; then ok "O2 oracle-routes prints exactly the mapped set"; else bad "O2 oracle-routes"; fi
 if oracle_assert "$ROUTES_PY" "$O3"; then ok "O3 MUST-RED a route of an unmapped kind has no oracle"; else bad "O3 unmapped kind"; fi
+# A mounted route that returns ids and no text is classified, so the nightly sweep does not emit a RED
+# unclassified_route cell for it (models-crux went red on POST /v1/chat/prompt-ids after abf66f9086).
+P4='"POST /v1/chat/prompt-ids" in R.NOT_GENERATION and "POST /v1/chat/prompt-ids" not in R.GENERATION'
+if oracle_assert "$ROUTES_PY" "$P4"; then ok "P4 POST /v1/chat/prompt-ids is classified not-generation"; else bad "P4 prompt-ids classification"; fi
 
 sweep_rows() { # <index> <out dir> [cell-why]: sweep + rows into $TMP/<dir>/manifest.jsonl
   start "$1" ok

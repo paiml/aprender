@@ -26314,3 +26314,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   notes: |-
     examples-nightly run 40213290024 @45aa358732 read pass=605 fail=1; the one fail was this example. rex.rs already opens its usage line with Usage:.
     MT-2: the const and the match arm are compile-checked; the eprintln line in the example is read only by the sweep itself, so deleting it is a named survivor.
+- id: PMAT-6383
+  github_issue: 6383
+  item_type: task
+  title: 'crux: classify POST /v1/chat/prompt-ids as a not-generation route'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T22:40:00Z
+  updated: 2026-10-25T22:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'crux_serve_routes.py plan on an index listing POST /v1/chat/prompt-ids has no unclassified route'
+  - an unlisted new route is still RED unclassified_route (check row P2 unchanged)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    models-crux/dad8bf7a9b: 16 red cells per host, all this route, rc 3 unclassified_route. The route returns ids, no text, like /tokenize.
+    MT-2: the table entry and check row P4 are asserted by check_crux_serve_code.sh (78 rows pass).
