@@ -413,7 +413,7 @@ mkrepo() {
 }
 
 self_test() {
-    local td n=0 red=0 okc=0 want_rows=55 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
+    local td n=0 red=0 okc=0 want_rows=56 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
         local victim=${td:-}
@@ -430,7 +430,7 @@ self_test() {
     # row NAME WANT_RC MUST_MATCH BUILDER -- BUILDER edits a fresh fixture repo
     # and commits; the guard then judges HEAD~1..HEAD inside it.
     row() {
-        local label=$1 want=$2 pat=$3 builder=$4 d out rc
+        local label=$1 want=$2 pat=$3 builder=$4 refs=${5:-HEAD~1 HEAD} d out rc
         n=$((n + 1))
         d="$td/r$n"
         if ! mkrepo "$d" >/dev/null 2>&1; then
@@ -439,7 +439,7 @@ self_test() {
             return
         fi
         "$builder" "$d" || { printf 'FAIL  row %-2s %s: builder failed\n' "$n" "$label"; red=$((red + 1)); return; }
-        rc=0; out=$(judge "$d" HEAD~1 HEAD 2>&1) || rc=$?
+        rc=0; out=$(judge "$d" $refs 2>&1) || rc=$?
         if [ "$rc" != "$want" ] || ! grep -qF -- "$pat" <<<"$out" || { [ -n "${ONLY_ENV:-}" ] && ! only_env "$out"; }; then
             printf 'FAIL  row %-2s rc=%s (wanted %s, must contain: %s)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
             printf '%s\n' "$out" | sed 's/^/        /'
@@ -535,6 +535,14 @@ self_test() {
         [ -e "$1/docs/empty.md" ] || return 1
         printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/empty.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # commit A cites a proof that only the LATER commit B adds: judging base..A must not see B's file
+    b_done_proof_at_later() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/probe-at-later.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1" || return 1
+        mkdir -p "$1/docs" && printf 'x\n' >"$1/docs/probe-at-later.md" || return 1
         commit_all "$1"
     }
     b_done_dangling() {
@@ -684,6 +692,7 @@ PY
     row 'completed subtask citing its parent fragment notes -> PASS' 0 'PASS' b_done_sub_cited
     row 'proof: path present only in the working tree -> REFUSE (judged at head, not the worktree)' 1 'PMAT-200 (dangling' b_done_untracked_proof
     row 'proof: path committed at head, absent from the working tree -> PASS' 0 '1 changed entry/entries' b_done_head_proof
+    row 'proof: added only by a LATER commit than the judged head -> REFUSE (judged at the head ref, not HEAD)' 1 'PMAT-200 (dangling' b_done_proof_at_later 'HEAD~2 HEAD~1'
     row 'proof: naming an empty file at head -> REFUSE' 1 'PMAT-200 (dangling' b_done_emptyproof
     row 'proof: naming a non-empty directory at head -> PASS' 0 '1 changed entry/entries' b_done_dirproof
     row 'aggregate repeating a changed fragment id with an uncited completed record -> REFUSE, naming PMAT-200 [#2]' 1 'PMAT-200 [#2] (' b_done_dup_id
