@@ -21,7 +21,6 @@ bad() { echo "BS-$1 VIOLATED: $2"; return 1; }
 # each lands iff its patch reverse-applies (git apply -R --check), so a deletion-only hunk whose context main edited counts as not landed (fail closed).
 hunks_landed() {
   local wt="$1" patch="$2" d f ok=0
-  [ -s "$patch" ] || return 0
   d="$(mktemp -d)" || return 2
   awk -v d="$d" 'function flush(  g) { if (h != "" && n == 0) { g = sprintf("%s/h%06d", d, ++c); printf "%s", h > g; close(g) } } /^diff --git /{flush(); h=""; n=0} /^@@/{n++; f=sprintf("%s/h%06d", d, ++c); printf "%s", h > f; close(f); cur=f} !/^@@/ && n==0{h=h $0 "\n"} n>0{print >> cur} END{flush()}' "$patch"
   for f in "$d"/h*; do
@@ -198,6 +197,10 @@ selftest() {
   expect "BS-1 could-not-check on a missing PR ref" 2 bs1 "$t/r" main nosuchpr
   expect "BS-2 could-not-check on N=8 (batch cap is 7)" 2 bs2 "$t/r" $b0 good 8
   expect "BS-2 could-not-check on N=0" 2 bs2 "$t/r" $b0 good 0
+  expect "BS-1 could-not-check when MAIN cannot be checked out" 2 bs1 "$t/r" nosuchmain prA
+  g checkout -q --orphan prO; g rm -rqf .; printf 'o\n' > "$t/r/orph.txt"; g add -A; g commit -qm orphan; g checkout -q -f main
+  expect "BS-1 RED a PR with no merge-base against MAIN" 1 bs1 "$t/r" main prO
+  expect "BS-6 could-not-check when the regenerate command fails" 2 bs6 "$t/r" 'false'
   for gp in .github/pr-review.pub ci/mutants-debt.tsv ci/guard-lane-steps.txt ci/step-budgets.tsv scripts/lib/ci_guard_steps.sh; do
     printf '15\tnoah\t%s\n' "$gp" > "$t/a-read.tsv"; expect "BS-4 RED gate-read file $gp" 1 bs4 "$t/a-read.tsv"
   done
@@ -214,6 +217,7 @@ selftest() {
     expect "harness: the verdict inside selftest alone catches a wrong want" 1 env BSC_INNER=1 BSC_INJECT=1 BSC_VERDICT=final bash "$0" --self-test
     expect "harness: the printed-count assert alone catches a wrong want" 1 env BSC_INNER=1 BSC_INJECT=1 BSC_VERDICT=dispatch bash "$0" --self-test
     expect "harness: with both verdicts off a wrong want exits 0 (the switches work)" 0 env BSC_INNER=1 BSC_INJECT=1 BSC_VERDICT=none bash "$0" --self-test
+    expect "harness: a failing status with a clean printed count still exits 1" 1 env BSC_INNER=1 BSC_RCFAIL=1 bash "$0" --self-test
     expect "harness: the verdict inside selftest alone refuses zero rows" 1 env BSC_INNER=1 BSC_ZERO_ROWS=1 BSC_VERDICT=final bash "$0" --self-test
     expect "harness: the printed-count assert alone refuses zero rows" 1 env BSC_INNER=1 BSC_ZERO_ROWS=1 BSC_VERDICT=dispatch bash "$0" --self-test
     inj="$(BSC_INNER=1 BSC_INJECT=1 bash "$0" --self-test 2>&1 || true)"; cln="$(BSC_INNER=1 bash "$0" --self-test 2>&1 || true)"
@@ -222,10 +226,11 @@ selftest() {
   fi
   printf 'batch_sweep_check self-test: %d rows, %d broke\n' "$rows" "$((rows - ok))"
   case "${BSC_VERDICT:-both}" in dispatch|none) return 0 ;; esac
+  [ -z "${BSC_RCFAIL:-}" ] || return 1 # harness meta-check only: a failing status with a clean printed count must still exit 1
   [ "$rows" -gt 0 ] && [ "$ok" -eq "$rows" ]
 }
 case "${1:-}" in
-  --self-test) out="$(selftest)"; rc=$?; printf '%s\n' "$out"; case "${BSC_VERDICT:-both}" in final|none) exit "$rc" ;; esac; [ -z "${out##*self-test: [1-9]* rows, 0 broke}" ] ;; # the printed count is asserted here, apart from the verdict inside selftest
+  --self-test) out="$(selftest)"; rc=$?; printf '%s\n' "$out"; case "${BSC_VERDICT:-both}" in final|none) exit "$rc" ;; dispatch) ;; *) [ "$rc" -eq 0 ] || exit "$rc" ;; esac; [ -z "${out##*self-test: [1-9]* rows, 0 broke}" ] ;; # the printed count is asserted here, apart from the verdict inside selftest
   bs1|bs2|bs3|bs4|bs5|bs6) f="$1"; shift; "$f" "$@" ;;
   -h|--help|"") awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0" ;;
   *) echo "batch_sweep_check: unknown '$1'" >&2; exit 2 ;;
