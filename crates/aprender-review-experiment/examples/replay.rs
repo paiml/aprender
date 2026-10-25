@@ -51,7 +51,7 @@ use aprender_review_experiment::harness::{classify, compose, post};
 use aprender_review_experiment::prereg::PROMPT_V1;
 use aprender_review_experiment::replay::{
     build, ids_sha256, pins_prompt, replay_request, summarize, BuildError, Candidate, Engine, Row,
-    Set, PER_STRATUM, ROW_SCHEMA,
+    Set, PER_STRATUM, ROW_SCHEMA, USAGE,
 };
 use serde_json::Value;
 
@@ -76,7 +76,10 @@ fn main() -> ExitCode {
             (Some(x), Some(y)) => cmd_ids_diff(x, y),
             _ => Err("ids-diff A B".into()),
         },
-        _ => Err("usage: replay build|run|prompt-ids|ids-diff|sketch|voters|summary (see the example's docs)".into()),
+        _ => {
+            eprintln!("{USAGE}");
+            return ExitCode::from(2);
+        }
     };
     match r {
         Ok(()) => ExitCode::SUCCESS,

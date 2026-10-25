@@ -1,0 +1,21 @@
+- id: PMAT-6360
+  github_issue: 6360
+  item_type: task
+  title: 'examples: replay prints a Usage: line on a bare run so the sweep reads needs-args, not fail'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T17:40:00Z
+  updated: 2026-10-25T17:40:00Z
+  spec: null
+  acceptance_criteria:
+  - a bare run of the replay example prints a stderr line opening "Usage: replay" and exits 2
+  - no change to scripts/dogfood_examples.sh or its needs-args pattern (no allow-list)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    examples-nightly run 40213290024 @45aa358732 read pass=605 fail=1; the one fail was this example. rex.rs already opens its usage line with Usage:.
+    MT-2: the const and the match arm are compile-checked; the eprintln line in the example is read only by the sweep itself, so deleting it is a named survivor.

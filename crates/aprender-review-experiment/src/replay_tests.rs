@@ -472,3 +472,8 @@ fn falsify_replay_007_ids_sha_is_order_sensitive() {
     assert_ne!(ids_sha256(&[1, 2]), ids_sha256(&[2, 1]));
     assert_ne!(ids_sha256(&[12]), ids_sha256(&[1, 2]));
 }
+
+#[test]
+fn usage_opens_with_the_line_the_examples_sweep_reads_as_needs_args() {
+    assert!(USAGE.starts_with("Usage: replay "), "{USAGE}");
+}
