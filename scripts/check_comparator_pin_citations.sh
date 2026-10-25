@@ -303,6 +303,8 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'C28 the base re-cut to the RE-INDENTED live line (not what the anchor froze) -> R1' "$TMP/c28" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
     anchored c29 fixture && export COPY_ANCHOR=$ANCHOR
     expect 'C29 the same re-pinned pair with the live row FIXTURE-class -> R1 (only a historical row opens the pool)' "$TMP/c29" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    anchored c30 && printf 'measured against llama.cpp %s: CURRENT\n' "$OLD" > "$TMP/c30/evidence/parity/other.md" && git -C "$TMP/c30" add -A && export COPY_ANCHOR=$ANCHOR
+    expect 'C30 R7 exempts the base but ANOTHER unledgered file cites the pin -> rc 1 with THAT file'"'"'s R1 (the exemption is one line, not the verdict)' "$TMP/c30" 1 'R1 evidence/parity/other.md:1'
     unset COPY_ANCHOR
     expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
 
@@ -348,6 +350,9 @@ PY
     mutant live-row-pool 'if src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null); then' 'if false; then' 0 'every one ledgered' "$TMP/c26"
     COPY_ANCHOR=$(git -C "$TMP/c29" rev-parse HEAD)
     mutant anchor-any-class "$CLS" '$1==p{h=1}' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c29"
+    COPY_ANCHOR=$(git -C "$TMP/c30" rev-parse HEAD)
+    mutant widen-r1-filter 'out=$(grep -vF -- "FAIL  R1 $COPY_DST:" <<< "$out")' 'out=$(grep -vF -- "FAIL  R1" <<< "$out")' 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
+    mutant swallow-fails "if grep -q '^FAIL' <<< \"\$out\"; then rc=1;" "if false; then rc=1;" 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
     unset COPY_ANCHOR
     mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
 
