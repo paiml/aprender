@@ -1,0 +1,19 @@
+- id: PMAT-6353
+  github_issue: 6353
+  item_type: task
+  title: 'pv-roadmap port S1: scaffold, bin stub with --help/--version (child of #5902)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T07:50:00Z
+  updated: 2026-10-25T07:50:00Z
+  spec: null
+  acceptance_criteria:
+  - pv-roadmap builds as its own bin in aprender-contracts-cli and answers --help and --version with exit 0, any other argument with usage and exit 2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Slice 1 of 12 of the PMAT-5902 port, split from #6176 per the #6312 size quorum.
+  epic: 4741

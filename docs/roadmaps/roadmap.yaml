@@ -26234,3 +26234,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
     missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; and the self-test's
     `exit 1` at L168 (was a survivor of the exit status alone: deleting it, with a failing row, exits 0; now caught because 849-idle-watchdog.cmd also fails when a `FAIL ` row appears in the output or the `all rows pass` line is missing; re-mutated: L168 `exit 1` deleted plus one broken row -> exit status 0, the .cmd line rc 1). `kill "$sp"` (two sites) and `kill "$gp"` were survivors (a leftover sleep holds a caller's pipe open: 8 s against 6 ms) and are now caught by three pipe-close rows that time the run through a command substitution; and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
     with the production line it checks.
+- id: PMAT-6353
+  github_issue: 6353
+  item_type: task
+  title: 'pv-roadmap port S1: scaffold, bin stub with --help/--version (child of #5902)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T07:50:00Z
+  updated: 2026-10-25T07:50:00Z
+  spec: null
+  acceptance_criteria:
+  - pv-roadmap builds as its own bin in aprender-contracts-cli and answers --help and --version with exit 0, any other argument with usage and exit 2.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Slice 1 of 12 of the PMAT-5902 port, split from #6176 per the #6312 size quorum.
+  epic: 4741

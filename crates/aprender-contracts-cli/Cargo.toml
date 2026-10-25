@@ -17,6 +17,13 @@ path = "src/main.rs"
 name = "pv-sat"
 path = "src/bin/pv-sat/main.rs"
 
+# #5902: the roadmap tooling (fragments aggregate, additive-diff check/trim, id-keyed merge driver),
+# ported from scripts/lib/roadmap_{fragments,diff,merge}.py in slices. Its own bin, not a `pv`
+# subcommand, so the pv surface gate is untouched.
+[[bin]]
+name = "pv-roadmap"
+path = "src/bin/pv-roadmap/main.rs"
+
 [dependencies]
 aprender-contracts = { path = "../aprender-contracts", version = "0.71.3" }
 # #3745 S1: `--model` is declared through the shared role type `ModelPath`, so
