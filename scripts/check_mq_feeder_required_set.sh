@@ -27,8 +27,32 @@ if [ "${1:-}" = --self-test ]; then
     PATH="$d:$PATH" GUARD_CHECK_NAME=x86-main MQ_FEEDER_CI_FILE="$d/incident.yml" MQ_FEEDER_STATE="$d/st" MQ_FEEDER_INBOX="$d/inbox" bash "$FEEDER" > /dev/null 2>&1; rc=$?
     [ "$rc" -eq 2 ] || { echo "FAIL feeder acted on an unsatisfiable required check (rc=$rc)"; fail=1; }
     grep -q 'runs only in merge_group/push' "$d/inbox" || { echo "FAIL feeder refused silently (no inbox line)"; fail=1; }
+    # the bare run needs BOTH legs: the feeder --self-test and --check-required on this tree's ci.yml. Each row turns exactly one
+    # leg red (a stub feeder, steered by env, answers only the two bare-run calls; every other call goes to the real feeder),
+    # so deleting either leg lets its row pass and fails this self-test. CHECK_MQ_IN_ROW stops the rows recursing.
+    if [ -z "${CHECK_MQ_IN_ROW:-}" ]; then
+        printf '#!/usr/bin/env bash\ncase "$*" in\n  *--self-test*) [ -z "${STUB_SELF:-}" ] || exit "$STUB_SELF" ;;\n  *%s*) [ -z "${STUB_CHK:-}" ] || exit "$STUB_CHK" ;;\nesac\nexec bash %s "$@"\n' '/.github/workflows/ci.yml' "$ROOT/scripts/mq_feeder.sh" > "$d/stub.sh"
+        row() { # NAME WANT-RC STUB_SELF STUB_CHK
+            CHECK_MQ_IN_ROW=1 MQ_FEEDER_UNDER_TEST="$d/stub.sh" STUB_SELF="$3" STUB_CHK="$4" bash "$0" > /dev/null 2>&1; got=$?
+            [ "$got" -eq "$2" ] || { echo "FAIL bare run: $1 (rc=$got, want $2)"; fail=1; }
+        }
+        row "both legs green passes" 0 "" ""
+        row "ci.yml without pr-light refused (feeder --self-test green)" 1 "" 1
+        row "feeder --self-test red refused (ci.yml green)" 1 1 ""
+    fi
+    # mq_feeder_install.sh refuses to install a feeder whose required check main's ci.yml cannot satisfy (L18 of that script)
+    for want in 0 1; do
+        mkdir -p "$d/i$want"; cp "$ROOT/scripts/mq_feeder_install.sh" "$d/i$want/"; : > "$d/i$want/arm_pr_automerge.sh"
+        printf '#!/usr/bin/env bash\nexit %s\n' "$want" > "$d/i$want/mq_feeder.sh"
+        bash "$d/i$want/mq_feeder_install.sh" "$d/dest$want" > /dev/null 2>&1; got=$?
+        if [ "$want" -eq 0 ]; then
+            { [ "$got" -eq 0 ] && [ -f "$d/dest0/mq_feeder.sh" ]; } || { echo "FAIL installer refused a satisfiable feeder (rc=$got)"; fail=1; }
+        else
+            { [ "$got" -eq 2 ] && [ ! -e "$d/dest1" ]; } || { echo "FAIL installer installed a feeder whose required check cannot be met (rc=$got)"; fail=1; }
+        fi
+    done
     rm -rf "${d:?}"
-    [ "$fail" -eq 0 ] && echo "check_mq_feeder_required_set: self-test ok (2 good, 4 planted bad, 1 end-to-end)"
+    [ "$fail" -eq 0 ] && echo "check_mq_feeder_required_set: self-test ok (2 good, 4 planted bad, 1 end-to-end, 3 bare-run legs, 2 installer)"
     exit "$fail"
 fi
 bash "$0" --self-test || exit 1
