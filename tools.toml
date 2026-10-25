@@ -5,7 +5,7 @@
 # runner (paiml/infra, machines/intel/forjar.yaml):
 #
 #   stack-tool-pmat                version: "3.42.0"   # infra declares 3.42.0 (infra-02, 2026-10-23); was 3.41.1 (infra#692)
-#   stack-tool-bashrs                version: "7.4.1"
+#   stack-tool-bashrs                version: "7.4.2"
 #
 # ALWAYS LATEST (operator rule, 2026-09-14): "we always go latest crates.io on
 # our stack." This file names that version and check_tool_versions.sh asserts it.
@@ -56,4 +56,4 @@
 version = "3.42.0"
 
 [bashrs]
-version = "7.4.1"
+version = "7.4.2"
