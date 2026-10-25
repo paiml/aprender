@@ -237,6 +237,8 @@ jobs:
         run: |
           set -euo pipefail
           setsid --wait bash scripts/lab/batch_sweep_check.sh --self-test 2>&1 | tee "$RUNNER_TEMP/batch-sweep.log"
+          # an independent check on what the run printed: a self-test that stops judging itself still has to report a clean count
+          grep -Eq '^batch_sweep_check self-test: [1-9][0-9]* rows, 0 broke$' "$RUNNER_TEMP/batch-sweep.log"
       - name: Coverage scan files no per-function ticket (LAB, #5879)
         id: lab_cov_scan
         if: ${{ !cancelled() }}
