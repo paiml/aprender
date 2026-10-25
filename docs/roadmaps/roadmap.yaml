@@ -26376,6 +26376,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
     missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; and the self-test's
     `exit 1` at L168 (was a survivor of the exit status alone: deleting it, with a failing row, exits 0; now caught because 849-idle-watchdog.cmd also fails when a `FAIL ` row appears in the output or the `all rows pass` line is missing; re-mutated: L168 `exit 1` deleted plus one broken row -> exit status 0, the .cmd line rc 1). `kill "$sp"` (two sites) and `kill "$gp"` were survivors (a leftover sleep holds a caller's pipe open: 8 s against 6 ms) and are now caught by three pipe-close rows that time the run through a command substitution; and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
     with the production line it checks.
+- id: PMAT-6306
+  github_issue: 6306
+  item_type: task
+  title: 'comparator-pin R7: anchor the frozen roadmap-base.yaml pool to the base-intro commit'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T23:20:00Z
+  updated: 2026-10-24T23:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'roadmap.yaml re-indented and re-pinned with an untouched roadmap-base.yaml stays green; a novel or re-cut base line is R1; the live-row pool and the class filter each have a killed mutant'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Quorum 6303-R7 2/2: neither re-freezing the base (a waiver of rule 3) nor main-pinned lines. Pool = roadmap.yaml at 9e8f8ad8c7; base 18 lines == anchor 18 == main 18 (38afc7a5fac9). Lands before #6303.'
+  epic: null
 - id: PMAT-6360
   github_issue: 6360
   item_type: task
