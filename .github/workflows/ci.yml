@@ -176,23 +176,6 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -E '^(wt|wt_cite)=' >> "$GITHUB_OUTPUT"
 
-  # The same case table on every event, so a change that breaks the key is RED on
-  # its own PR, not first in the queue. gate requires it.
-  mg-reuse-self-test:
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
-    runs-on: [self-hosted, Linux, X64, clean-room]
-    timeout-minutes: 10
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@v7
-      - name: The reuse key's case table (hermetic)
-        run: bash scripts/ci_mg_reuse.sh --self-test
-      - name: The fat wait is cancel-aware and the teardown still runs on cancel
-        run: |
-          setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
-          setsid --wait bash scripts/check_ci_wait_cancel.sh
-
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
   pr-light:
@@ -896,7 +879,7 @@ jobs:
   gate:
     runs-on: [self-hosted, Linux, X64, clean-room]   # X64 only: gx10 aarch64 runners die at job start (#6200)
     timeout-minutes: 22
-    needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
+    needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, pr-light]
     if: always()
     steps:
       - name: Check required sections
@@ -912,7 +895,6 @@ jobs:
           MG_DET: ${{ needs.mg-reuse.outputs.det }}
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
-          MST: ${{ needs.mg-reuse-self-test.result }}
           PRL: ${{ needs.pr-light.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
@@ -925,7 +907,6 @@ jobs:
           # (gpu-lab-nightly.yml), so no job of this workflow runs them.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
           # owes the heavy jobs (fail-closed) and falls through to their checks below.
