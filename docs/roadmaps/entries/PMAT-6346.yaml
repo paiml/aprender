@@ -1,0 +1,21 @@
+- id: PMAT-6346
+  github_issue: 6346
+  item_type: task
+  title: 'ci: aprender-rollup shape part A, the text checks (child of PMAT-6300)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T07:50:00Z
+  updated: 2026-10-25T07:50:00Z
+  spec: null
+  acceptance_criteria:
+  - '`shape::judge` refuses a file not named <id>.yaml, non-UTF-8 bytes, a BOM, CR, Unicode line separator or document marker line, a file without exactly one line opening `- id:`, and a first line other than `- id: <stem>`; an unreadable file is `Err` (not measured)'
+  - '`shape::parse_args` accepts `shape <file>` and `shape <file> --roadmap <path>` only'
+  - 'each text-level row of the Python selftest is a Rust test row; no Python, no unsafe'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Part A of the three-part re-cut of #6301 (size cap). Part B is the structure walk (duplicate keys, anchors, item count); part C is the aggregate dangling check, the frozen base and the CLI wiring.'
+  epic: null
