@@ -94,6 +94,26 @@ self_test() {
     row "idle: the exit status of the command passes through" "$(FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'exit 7'; echo $?)" 7
 
     t0=$SECONDS
+    out=$(FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'echo once >>"$0/h.log"; sleep 30.4' "$td" 2>&1); rc=$?
+    row "idle: a step that printed once and then hangs is declared hung" "$rc" 124
+    row "idle: ...promptly, not when the step ends" "$((SECONDS - t0 < 10 ? 1 : 0))" 1
+
+    FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'trap "sleep 0.5; echo t >\"\$0/term.out\"; exit 0" TERM; sleep 31.1 & wait' "$td" >/dev/null 2>&1
+    row "idle: the hung step is sent TERM and given the grace period to finish (not killed at once)" "$(cat "$td/term.out" 2>/dev/null)" t
+
+    FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'trap "" TERM; while :; do sleep 0.1; done' twk-marker >/dev/null 2>&1
+    rc=$?
+    sleep 0.3
+    row "idle: a step that ignores TERM is KILLed after the grace period" "$(pgrep -f twk-marker >/dev/null && echo alive || echo gone)" gone
+    row "idle: ...and the exit is still 124" "$rc" 124
+
+    row "idle: a leading-zero limit is decimal, not octal" "$(FAT_IDLE_LIMIT_S=08 bash "$me" --limit-us)" 8000000
+    row "idle: a leading-zero fraction is decimal, not octal" "$(FAT_IDLE_LIMIT_S=1.08 bash "$me" --limit-us)" 1080000
+    out=$(FAT_IDLE_LIMIT_S=5 bash "$me" "$td" 2>&1 </dev/null); rc=$?
+    row "idle: a missing command is refused (exit 2)" "$rc" 2
+    row "idle: ...and says so" "$([[ $out == *'no command'* ]] && echo yes)" yes
+
+    t0=$SECONDS
     FAT_IDLE_LIMIT_S=100 timeout 2 bash "$me" "$td" -- sleep 31.7; rc=$?
     row "idle: the timeout still ends the run alongside the watchdog" "$rc" 124
     sleep 0.5
