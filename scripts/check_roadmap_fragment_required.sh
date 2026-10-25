@@ -159,7 +159,7 @@ intro_regenerates() {
 judge() {
     local repo=$1 base=$2 head=$3
     local td roadmap_changed=0 frag_paths names name verdict eid line
-    local violations=0 checked=0 out rc cout crc irc ps
+    local violations=0 checked=0 out rc cout crc irc ps rm_changed side_ref
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
         printf 'ENV   %s: base ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$base" >&2
@@ -176,7 +176,6 @@ judge() {
     }
 
     # A failed git read is ENV (rc 2), never "nothing changed".
-    local rm_changed
     rm_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ROADMAP_FILE") \
         && frag_paths=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ENTRIES_DIR") \
         && base_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE") || {
@@ -206,7 +205,6 @@ judge() {
     # exist at that ref is EMPTY, not an error: before the first fragment lands,
     # the aggregate is just the base.
     # Absent at a ref = empty; present but unreadable = ENV (rc 2).
-    local side_ref
     for side_ref in "base:$base" "head:$head"; do
         path_state "$repo" "${side_ref#*:}" "$ROADMAP_FILE"; ps=$?
         if [ "$ps" = 2 ]; then
