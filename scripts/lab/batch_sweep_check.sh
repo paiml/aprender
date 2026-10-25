@@ -88,12 +88,13 @@ bs6() {
   [ -z "$d" ] || { bad 6 "regeneration changed: $d"; return 1; }
 }
 selftest() {
-  local fail=0 rows=0; t="$(mktemp -d)" || exit 2; trap 'rm -rf -- "${t:?}"' EXIT
+  local ok=0 rows=0; t="$(mktemp -d)" || exit 2; trap 'rm -rf -- "${t:?}"' EXIT
   g() { git -C "$t/r" -c user.name=t -c user.email=t@t "$@" > /dev/null 2>&1; }
   expect() { # label want cmd...
     local label="$1" want="$2" rc; shift 2; "$@" > "$t/out" 2>&1; rc=$?; rows=$((rows + 1))
-    if [ "$rc" = "$want" ]; then printf '  ok   %s (rc %s)\n' "$label" "$rc"; else printf '  BROKE %s: rc %s, want %s\n' "$label" "$rc" "$want"; cat "$t/out"; fail=$((fail + 1)); fi
+    if [ "$rc" = "$want" ]; then printf '  ok   %s (rc %s)\n' "$label" "$rc"; ok=$((ok + 1)); else printf '  BROKE %s: rc %s, want %s\n' "$label" "$rc" "$want"; cat "$t/out"; fi
   }
+  [ -z "${BSC_ZERO_ROWS:-}" ] || expect() { :; } # harness meta-check only: an empty run must not pass
   git init -q -b main "$t/r"; printf 'a\n' > "$t/r/a.txt"; printf 'b\nc\n' > "$t/r/gen.nt"; g add -A; g commit -qm base
   g checkout -qb prA; printf 'a\nA\n' > "$t/r/a.txt"; g commit -qam ticketA
   g checkout -qb prB main; printf 'B\n' > "$t/r/b.txt"; g add -A; g commit -qm ticketB
@@ -122,12 +123,22 @@ selftest() {
   expect "BS-1 RED README prose change that never landed" 1 bs1 "$t/r" main prP
   g checkout -qb prRA "$b0"; printf 'brand new readme\n' > "$t/r/README.md"; g add -A; g commit -qm readme-added; g checkout -q main
   expect "BS-1 RED README added on one side only, never landed" 1 bs1 "$t/r" main prRA
+  # a landed prose hunk whose context line is a CONTRACT_COUNT line that main has since regenerated: only the neutralised worktree README keeps it from a false RED
+  g checkout -qb prQ main; printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nnewer prose\n' > "$t/r/README.md"; g commit -qam prose-q; g checkout -q main
+  printf 'x <!-- CONTRACT_COUNT_START -->7<!-- CONTRACT_COUNT_END --> y\nnewer prose\n' > "$t/r/README.md"; g commit -qam main-lands-q-and-regenerates-count
+  expect "BS-1 GREEN landed prose hunk beside a regenerated CONTRACT_COUNT line" 0 bs1 "$t/r" main prQ
   g checkout -qb good $b0; g cherry-pick prA prB; printf 'b\nc\n' > "$t/r/gen.nt"; g commit -q --allow-empty -m "batch: regenerate"
   expect "BS-2 GREEN 2 tickets + regenerate" 0 bs2 "$t/r" $b0 good 2
   g checkout -qb merged $b0; g merge -q --no-ff -m "Merge prA" prA; g commit -q --allow-empty -m "batch: regenerate"
   expect "BS-2 RED a merge commit (the --no-ff batch_fold.sh)" 1 bs2 "$t/r" $b0 merged 1
   g checkout -qb amended $b0; g cherry-pick prA; g commit -q --amend -m "ticketA + regenerate"
   expect "BS-2 RED regenerate amended into a ticket" 1 bs2 "$t/r" $b0 amended 1
+  # each BS-2 rule alone: the other two hold, so deleting that rule turns its row GREEN
+  g checkout -qb mergeonly $b0; g cherry-pick prA; g checkout -qb side $b0; g cherry-pick prB; g checkout -q mergeonly; g merge -q --no-ff -m "Merge side" side; g commit -q --allow-empty -m "batch: regenerate"
+  expect "BS-2 RED merge commit alone (count 4 = 3+1, last is regenerate)" 1 bs2 "$t/r" $b0 mergeonly 3
+  expect "BS-2 RED wrong commit count alone (no merge, last is regenerate)" 1 bs2 "$t/r" $b0 good 1
+  g checkout -qb lastonly $b0; g cherry-pick prA prB; g commit -q --allow-empty -m "late ticket"
+  expect "BS-2 RED last commit not regenerate alone (count 3 = 2+1, no merge)" 1 bs2 "$t/r" $b0 lastonly 2
   printf '1\t%s\n' "$(git -C "$t/r" rev-parse main)" > "$t/ok.tsv"; printf '2\t%s\n' "$(git -C "$t/r" rev-parse prC)" > "$t/early.tsv"
   expect "BS-3 GREEN closed after its sha is on main" 0 bs3 "$t/r" main "$t/ok.tsv"
   expect "BS-3 RED closed before its sha is on main" 1 bs3 "$t/r" main "$t/early.tsv"
@@ -184,7 +195,16 @@ selftest() {
   expect "BS-5 could-not-check on a missing file" 2 bs5 "$t/no-such.md"
   expect "BS-6 could-not-check outside a git work tree" 2 bs6 "$t" 'true'
   expect "unknown subcommand exits 2" 2 bash "$0" bs7
-  printf 'batch_sweep_check self-test: %d rows, %d broke\n' "$rows" "$fail"; [ "$rows" -gt 0 ] && [ "$fail" -eq 0 ]
+  # the harness judges itself: an injected wrong expectation must break the run, and a run with no rows must not pass (BSC_INNER stops the recursion)
+  [ -z "${BSC_INJECT:-}" ] || expect "injected wrong want (meta-check only)" 9 true
+  if [ -z "${BSC_INNER:-}" ]; then
+    expect "harness: a wrong want makes the self-test exit 1" 1 env BSC_INNER=1 BSC_INJECT=1 bash "$0" --self-test
+    expect "harness: zero rows is not a pass" 1 env BSC_INNER=1 BSC_ZERO_ROWS=1 bash "$0" --self-test
+    inj="$(BSC_INNER=1 BSC_INJECT=1 bash "$0" --self-test 2>&1 || true)"; cln="$(BSC_INNER=1 bash "$0" --self-test 2>&1 || true)"
+    expect "harness: the injected run names its BROKE row" 0 test "${inj#*BROKE injected}" != "$inj"
+    expect "harness: the clean run prints no BROKE" 0 test "${cln#*BROKE}" = "$cln"
+  fi
+  printf 'batch_sweep_check self-test: %d rows, %d broke\n' "$rows" "$((rows - ok))"; [ "$rows" -gt 0 ] && [ "$ok" -eq "$rows" ]
 }
 case "${1:-}" in
   --self-test) selftest ;;
