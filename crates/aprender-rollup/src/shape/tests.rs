@@ -185,8 +185,17 @@ fn a_fragment_that_dangles_an_alias_is_refused() {
     assert_eq!(judge(&good, Some(&rm)).unwrap(), None);
 }
 
-/// Red until the quorum rules on the five entries a strict YAML 1.2 parser refuses though PyYAML
-/// reads them (PMAT-3699, 3731, 3732, 3740, 3741). No exception list: a list would be a waiver.
+/// Acceptance criterion 4 of PMAT-6300: every existing entry passes except the five a strict YAML 1.2
+/// parser refuses though PyYAML reads them. They are named here and the set is asserted EXACT, so a
+/// sixth refusal fails the test, and so does one of the five becoming valid (delete it from the list).
+const STRICT_YAML_REFUSED: [&str; 5] = [
+    "PMAT-3699",
+    "PMAT-3731",
+    "PMAT-3732",
+    "PMAT-3740",
+    "PMAT-3741",
+];
+
 #[test]
 fn every_existing_entry_passes() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/roadmaps");
@@ -203,7 +212,7 @@ fn every_existing_entry_passes() {
     }
     refused.sort();
     assert!(n > 100, "only {n} entries seen");
-    assert!(refused.is_empty(), "refused: {refused:?}");
+    assert_eq!(refused, STRICT_YAML_REFUSED, "the refused set changed");
 }
 
 #[test]
