@@ -120,8 +120,8 @@ self_test() {
   self=$(realpath "${BASH_SOURCE[0]}")
   d=$(mktemp -d); trap 'rm -rf "${d:?}" "${d:?}.rv"' RETURN
   git -C "$d" init -q; git -C "$d" config user.email t@t; git -C "$d" config user.name t
-  mkdir -p "$d/scripts" "$d/crates/x/src" "$d/docs" "$d/.pmat"
-  cp "$HERE/review_tier.sh" "$d/scripts/"; cp "$HERE/../.pmat/review-tiers.yaml" "$d/.pmat/"
+  mkdir -p "$d/scripts" "$d/crates/x/src" "$d/docs" "$d/tools"
+  cp "$HERE/review_tier.sh" "$d/scripts/"; cp "$HERE/../tools/review-tiers.yaml" "$d/tools/"
   printf 'fn a() {}\n' > "$d/crates/x/src/lib.rs"; printf '# d\n' > "$d/docs/a.md"
   git -C "$d" add -A; git -C "$d" commit -qm base; base=$(git -C "$d" rev-parse HEAD)
   mkdir -p "$d.rv"; printf 'open: 0\n' > "$d.rv/review.txt"; printf 'open: 2\n' > "$d.rv/review-open.txt"
