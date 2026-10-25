@@ -200,14 +200,21 @@ selftest() {
   if [ -z "${BSC_INNER:-}" ]; then
     expect "harness: a wrong want makes the self-test exit 1" 1 env BSC_INNER=1 BSC_INJECT=1 bash "$0" --self-test
     expect "harness: zero rows is not a pass" 1 env BSC_INNER=1 BSC_ZERO_ROWS=1 bash "$0" --self-test
+    expect "harness: the verdict inside selftest alone catches a wrong want" 1 env BSC_INNER=1 BSC_INJECT=1 BSC_VERDICT=final bash "$0" --self-test
+    expect "harness: the printed-count assert alone catches a wrong want" 1 env BSC_INNER=1 BSC_INJECT=1 BSC_VERDICT=dispatch bash "$0" --self-test
+    expect "harness: with both verdicts off a wrong want exits 0 (the switches work)" 0 env BSC_INNER=1 BSC_INJECT=1 BSC_VERDICT=none bash "$0" --self-test
+    expect "harness: the verdict inside selftest alone refuses zero rows" 1 env BSC_INNER=1 BSC_ZERO_ROWS=1 BSC_VERDICT=final bash "$0" --self-test
+    expect "harness: the printed-count assert alone refuses zero rows" 1 env BSC_INNER=1 BSC_ZERO_ROWS=1 BSC_VERDICT=dispatch bash "$0" --self-test
     inj="$(BSC_INNER=1 BSC_INJECT=1 bash "$0" --self-test 2>&1 || true)"; cln="$(BSC_INNER=1 bash "$0" --self-test 2>&1 || true)"
     expect "harness: the injected run names its BROKE row" 0 test "${inj#*BROKE injected}" != "$inj"
     expect "harness: the clean run prints no BROKE" 0 test "${cln#*BROKE}" = "$cln"
   fi
-  printf 'batch_sweep_check self-test: %d rows, %d broke\n' "$rows" "$((rows - ok))"; [ "$rows" -gt 0 ] && [ "$ok" -eq "$rows" ]
+  printf 'batch_sweep_check self-test: %d rows, %d broke\n' "$rows" "$((rows - ok))"
+  case "${BSC_VERDICT:-both}" in dispatch|none) return 0 ;; esac
+  [ "$rows" -gt 0 ] && [ "$ok" -eq "$rows" ]
 }
 case "${1:-}" in
-  --self-test) selftest ;;
+  --self-test) out="$(selftest)"; rc=$?; printf '%s\n' "$out"; case "${BSC_VERDICT:-both}" in final|none) exit "$rc" ;; esac; [ -z "${out##*self-test: [1-9]* rows, 0 broke}" ] ;; # the printed count is asserted here, apart from the verdict inside selftest
   bs1|bs2|bs3|bs4|bs5|bs6) f="$1"; shift; "$f" "$@" ;;
   -h|--help|"") awk 'NR == 1 { next } !/^#/ { exit } { sub(/^# ?/, ""); print }' "$0" ;;
   *) echo "batch_sweep_check: unknown '$1'" >&2; exit 2 ;;
