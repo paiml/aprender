@@ -26118,7 +26118,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   spec: null
   acceptance_criteria:
   - a failed git read (diff, ls-tree, show of roadmap.yaml, a fragment or roadmap-base.yaml) exits rc 2 with an ENV line, never a pass
-  - a changed fragment that is completed without a live proof: token is refused (FAIL UNCITED), judged by check_roadmap_completion_is_cited.sh own functions
+  - 'a changed fragment that is completed without a live proof: token is refused (FAIL UNCITED), judged by check_roadmap_completion_is_cited.sh own functions'
   - the regenerated-aggregate check runs on every diff (no entries-only skip); each row has a planted mutant that turns it RED
   phases: []
   subtasks: []
