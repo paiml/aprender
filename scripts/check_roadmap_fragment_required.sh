@@ -404,7 +404,7 @@ mkrepo() {
 }
 
 self_test() {
-    local td n=0 red=0 okc=0 want_rows=45 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
+    local td n=0 red=0 okc=0 want_rows=46 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
         local victim=${td:-}
@@ -467,6 +467,12 @@ self_test() {
     }
     b_done_cited() {
         printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_mixed() { # one cited and one uncited completed fragment, both changed by the diff
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        printf -- '- id: PMAT-201\n  title: t\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
@@ -611,6 +617,7 @@ PY
         1 'FAIL  DRIFT' b_fragment_no_regen
     row 'a completed fragment with no proof: token -> REFUSE' 1 'FAIL  UNCITED' b_done_uncited
     row 'a completed fragment whose proof: path does not exist -> REFUSE' 1 'FAIL  UNCITED' b_done_dangling
+    row 'two changed completed fragments, one uncited -> REFUSE, naming the uncited one (the check ran over frag_ids)' 1 'PMAT-201 (' b_done_mixed
     row 'a completed fragment citing an existing proof: path -> PASS' 0 'PASS  check_roadmap_fragment_required.sh' b_done_cited
     mkdir -p "$td/prc" && printf 'MERGED\n' >"$td/prc/4242"
     RFR_PR_CACHE="$td/prc" row 'a completed fragment citing a MERGED proof:PR#N -> PASS (the PR cache is wired)' \
