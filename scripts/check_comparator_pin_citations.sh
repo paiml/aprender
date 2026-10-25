@@ -306,6 +306,8 @@ if [ "${1:-}" = "--self-test" ]; then
     expect 'C30 R7 exempts the base but ANOTHER unledgered file cites the pin -> rc 1 with THAT file'"'"'s R1 (the exemption is one line, not the verdict)' "$TMP/c30" 1 'R1 evidence/parity/other.md:1'
     anchored c31 && export COPY_ANCHOR=0123456789abcdef0123456789abcdef01234567
     expect 'C31 the anchor object is ABSENT (shallow clone, cannot be fetched) -> R7 fails closed, the base is R1' "$TMP/c31" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    pair c33 historical docs/roadmaps/roadmap-base.yaml && export COPY_ANCHOR=0123456789abcdef0123456789abcdef01234567
+    expect 'C33 anchor ABSENT and the base EQUALS the live row -> R1 (a live-row fallback would go green here)' "$TMP/c33" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
     anchored c32 && printf 'measured against llama.cpp %s: x\n' "$OLD" > "$TMP/c32/docs/roadmaps/roadmap-base.yaml:x.md" && git -C "$TMP/c32" add -A && export COPY_ANCHOR="$ANCHOR"
     expect 'C32 R7 exempts the base but an unledgered docs/roadmaps/roadmap-base.yaml:x.md cites the pin -> rc 1 with THAT file' "$TMP/c32" 1 'R1 docs/roadmaps/roadmap-base.yaml:x.md:1'
     unset COPY_ANCHOR
@@ -359,6 +361,11 @@ PY
     mutant widen-r1-filter 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "' 'local r1="^FAIL  R1 "' 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
     COPY_ANCHOR=$(git -C "$TMP/c32" rev-parse HEAD) mutant prefix-r1-filter 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "' 'local r1="FAIL  R1 $COPY_DST:"' 1 'R1 docs/roadmaps/roadmap-base.yaml:x.md:1' "$TMP/c32"
     mutant swallow-fails "if grep -q '^FAIL' <<< \"\$out\"; then rc=1;" "if false; then rc=1;" 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
+    COPY_ANCHOR=0123456789abcdef0123456789abcdef01234567 mutant live-fallback 'src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || return 1' 'src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || src=$(cat "$r/$COPY_SRC")' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c33"
+    # mutant() must refuse a row the UNMUTATED guard does not give: a wrong needle has to be reported, not counted as a kill
+    meta=$(mutant meta-baseline 'local r1=' 'local r1=' 1 'needle-that-is-never-printed' "$TMP/c33" 2>&1)
+    if grep -qF 'the unmutated guard does not give the row' <<< "$meta"; then rows=$((rows + 1)); printf 'ok    mutant() precheck rejects a row the unmutated guard does not give\n'
+    else rows=$((rows + 1)); fails=$((fails + 1)); printf 'FAIL  mutant() precheck is gone: a wrong expectation was not reported\n'; fi
     unset COPY_ANCHOR
     mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
 
