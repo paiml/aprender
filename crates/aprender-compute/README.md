@@ -222,7 +222,6 @@ GEMV, Quantization (Q4K/Q5K/Q6K). JIT disk cache at
 | `parallel` | Rayon parallel iterators |
 | `cuda-monitor` | NVIDIA device info via trueno-gpu |
 | `cuda` | Full CUDA support via trueno-gpu |
-| `ml-tuner` | ML-based kernel selection via aprender RandomForest |
 | `execution-graph` | PTX-to-kernel call graph profiling |
 | `tui-monitor` | Terminal monitoring dashboard |
 | `hardware-detect` | Hardware capability detection and caching |
