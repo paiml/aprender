@@ -11,8 +11,16 @@
 set -uo pipefail
 DENY_AUTHORS="${BS_DENY_AUTHORS:-guyernest}"
 DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^deny\.toml$|^scripts/ci/}"
-GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')
+GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')  # README.md is judged below with its CONTRACT_COUNT blocks collapsed
 bad() { echo "BS-$1 VIOLATED: $2"; return 1; }
+bs1_readme() {  # README.md judged with its CONTRACT_COUNT blocks collapsed; the rest is hand-written (PRB-001 §6)
+  local repo="$1" main="$2" mb="$3" pr="$4" wt="$5" n='s/(<!-- CONTRACT_COUNT_START -->).*(<!-- CONTRACT_COUNT_END -->)/\1\2/' rc=0
+  git -C "$repo" show "$mb:README.md" 2> /dev/null | sed -E "$n" > "$wt.rb" || return 0
+  git -C "$repo" show "$pr:README.md" 2> /dev/null | sed -E "$n" > "$wt.rp"; git -C "$repo" show "$main:README.md" 2> /dev/null | sed -E "$n" > "$wt/README.md"
+  diff -u --label a/README.md --label b/README.md "$wt.rb" "$wt.rp" > "$wt.rpatch"
+  if [ -s "$wt.rpatch" ] && ! git -C "$wt" apply -R --check "$wt.rpatch" 2> /dev/null; then rc=1; fi
+  rm -f -- "${wt:?}.rb" "${wt:?}.rp" "${wt:?}.rpatch"; return "$rc"
+}
 bs1() {
   local repo="$1" main="$2" pr mb wt rc=0; shift 2
   wt="$(mktemp -d)" || return 2
@@ -21,6 +29,7 @@ bs1() {
     mb="$(git -C "$repo" merge-base "$main" "$pr")" || { bad 1 "no merge-base for $pr"; rc=1; continue; }
     git -C "$repo" diff "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
     if [ -s "$wt.patch" ] && ! git -C "$wt" apply -R --check "$wt.patch" 2> /dev/null; then bad 1 "$pr has a hunk missing from $main"; rc=1; fi
+    bs1_readme "$repo" "$main" "$mb" "$pr" "$wt" || { bad 1 "$pr has a hand-written README.md hunk missing from $main"; rc=1; }
   done
   git -C "$repo" worktree remove --force "$wt"; rm -f -- "${wt:?}.patch"; return "$rc"
 }
@@ -71,6 +80,9 @@ selftest() {
   expect "BS-1 GREEN both PRs on main" 0 bs1 "$t/r" main prA prB
   g checkout -qb prC main~2; printf 'C\n' > "$t/r/c.txt"; g add -A; g commit -qm ticketC; g checkout -q main
   expect "BS-1 RED a PR whose hunk never landed" 1 bs1 "$t/r" main prC
+  git init -q -b main "$t/rd"; printf 'x <!-- CONTRACT_COUNT_START -->5<!-- CONTRACT_COUNT_END -->\nhand\n' > "$t/rd/README.md"; git -C "$t/rd" add -A; git -C "$t/rd" commit -qm base; git -C "$t/rd" checkout -qb prN; printf 'x <!-- CONTRACT_COUNT_START -->6<!-- CONTRACT_COUNT_END -->\nhand\n' > "$t/rd/README.md"; git -C "$t/rd" commit -qam count; git -C "$t/rd" checkout -qb prH main; printf 'x <!-- CONTRACT_COUNT_START -->5<!-- CONTRACT_COUNT_END -->\nhand\nlost\n' > "$t/rd/README.md"; git -C "$t/rd" commit -qam hand; git -C "$t/rd" checkout -q main; printf 'x <!-- CONTRACT_COUNT_START -->7<!-- CONTRACT_COUNT_END -->\nhand\n' > "$t/rd/README.md"; git -C "$t/rd" commit -qam regen
+  expect "BS-1 GREEN README count block differs, hand text same" 0 bs1 "$t/rd" main prN
+  expect "BS-1 RED a hand-written README hunk never landed" 1 bs1 "$t/rd" main prH
   g checkout -qb good main~2; g cherry-pick prA prB; printf 'b\nc\n' > "$t/r/gen.nt"; g commit -q --allow-empty -m "batch: regenerate"
   expect "BS-2 GREEN 2 tickets + regenerate" 0 bs2 "$t/r" main~2 good 2
   g checkout -qb merged main~2; g merge -q --no-ff -m "Merge prA" prA; g commit -q --allow-empty -m "batch: regenerate"
