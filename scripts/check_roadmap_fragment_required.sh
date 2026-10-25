@@ -404,7 +404,7 @@ mkrepo() {
 }
 
 self_test() {
-    local td n=0 red=0 okc=0 want_rows=46 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
+    local td n=0 red=0 okc=0 want_rows=47 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
         local victim=${td:-}
@@ -618,6 +618,7 @@ PY
     row 'a completed fragment with no proof: token -> REFUSE' 1 'FAIL  UNCITED' b_done_uncited
     row 'a completed fragment whose proof: path does not exist -> REFUSE' 1 'FAIL  UNCITED' b_done_dangling
     row 'two changed completed fragments, one uncited -> REFUSE, naming the uncited one (the check ran over frag_ids)' 1 'PMAT-201 (' b_done_mixed
+    row 'two changed completed fragments, one uncited -> exactly 1 violation over 2 changed entries (the cited one is judged and passes)' 1 '1 violation(s) over 2 changed entry/entries' b_done_mixed
     row 'a completed fragment citing an existing proof: path -> PASS' 0 'PASS  check_roadmap_fragment_required.sh' b_done_cited
     mkdir -p "$td/prc" && printf 'MERGED\n' >"$td/prc/4242"
     RFR_PR_CACHE="$td/prc" row 'a completed fragment citing a MERGED proof:PR#N -> PASS (the PR cache is wired)' \
