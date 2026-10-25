@@ -26177,7 +26177,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   acceptance_criteria:
   - fat_driver.py is byte-identical to its content before #6285 (StepIdle, idle_limit_seconds, wait_or_idle, _st_idle gone; 0 net Python lines)
   - scripts/ci/idle_watchdog.sh kills a command whose section logs stop growing for FAT_IDLE_LIMIT_S and exits 124
-  - parity rows in its --self-test: a stalled log fires, a growing log never does, a timeout still ends the run and leaves no orphan, the limit parses (unset, 1500, decimal, garbage, negative)
+  - 'parity rows in its --self-test: a stalled log fires, a growing log never does, a timeout still ends the run and leaves no orphan, the limit parses (unset, 1500, decimal, garbage, negative)'
   - the merge-queue shard runs fat_driver.py run under the watchdog; PR/push runs are unchanged (limit unset = exec passthrough)
   phases: []
   subtasks: []
@@ -26189,9 +26189,9 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
     the Python watchdog watched one step's log; this one watches the sum of all section logs of the driver run, so on a shard with several
     live sections one busy section hides another's hang. The shard runs a single section (workspace-test-shard), so no loss there.
     Added .py lines vs origin/main: 2, both pre-#6285 lines restored verbatim (p.wait(timeout=timeout) and the self-test section tuple); removed: 91.
-    MT-2 (every line of scripts/ci/idle_watchdog.sh deleted in turn, unique per-run process tags): no behaviour line survives.
+    MT-2 (every line of scripts/ci/idle_watchdog.sh deleted in turn, unique per-run process tags): the survivors are named below; none is a behaviour line except the one marked inherent.
     A TERM to the watchdog now escalates TERM, FAT_IDLE_GRACE, KILL and exits 143 deterministically (stop_group, shared with the idle path); a row
     sends TERM to a watchdog over a TERM-ignoring step. The old spin guard (L55-56) is gone. Rows exist for hang-after-print, TERM grace, KILL, octal parse,
-    missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; `kill "$sp"` / `kill "$gp"`
-    (they only reap a leftover tick or grace sleep); and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
+    missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; and the self-test's
+    `exit 1` (inherent: deleting the line that makes the self-test exit non-zero cannot turn its own exit status red; the meta row proves a failing row exits 1, and the mutant prints FAIL for it). `kill "$sp"` (two sites) and `kill "$gp"` were survivors (a leftover sleep holds a caller's pipe open: 8 s against 6 ms) and are now caught by three pipe-close rows that time the run through a command substitution; and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
     with the production line it checks.

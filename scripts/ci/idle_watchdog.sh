@@ -127,6 +127,17 @@ self_test() {
     row "idle: ...and a step that ignores TERM is KILLed after the grace period" "$(pgrep -f "$tag-d" >/dev/null && echo alive || echo gone)" gone
     row "idle: ...within the grace period, not at the step's end" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
 
+    # The pipe: a helper sleep left running holds a caller's $(...) open until it ends, so each of these is timed THROUGH a command substitution.
+    t0=$SECONDS
+    out=$(FAT_IDLE_GRACE=20 FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'sleep 30.5; :' "$tag-e" 2>&1)
+    row "idle: the grace sleep is reaped when the step exits on TERM (the caller's pipe closes)" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
+    t0=$SECONDS
+    out=$(FAT_IDLE_TICK=20 FAT_IDLE_LIMIT_S=100 bash "$me" "$td" -- sh -c 'sleep 0.3; exit 0' 2>&1)
+    row "idle: the tick sleep is reaped when the step exits (the caller's pipe closes)" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
+    t0=$SECONDS
+    out=$({ FAT_IDLE_TICK=20 FAT_IDLE_LIMIT_S=100 bash "$me" "$td" -- sh -c 'sleep 31.9; :' "$tag-f" 2>&1 & wp=$!; sleep 0.5; kill -TERM "$wp"; wait "$wp"; })
+    row "idle: the tick sleep is reaped on a TERM to the watchdog (the caller's pipe closes)" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
+
     row "idle: a leading-zero limit is decimal, not octal" "$(FAT_IDLE_LIMIT_S=08 bash "$me" --limit-us)" 8000000
     row "idle: a leading-zero fraction is decimal, not octal" "$(FAT_IDLE_LIMIT_S=1.08 bash "$me" --limit-us)" 1080000
     out=$(FAT_IDLE_LIMIT_S=5 bash "$me" "$td" 2>&1 </dev/null); rc=$?
@@ -146,6 +157,13 @@ self_test() {
     row "idle: garbage means off" "$(FAT_IDLE_LIMIT_S=abc bash "$me" --limit-us)" 0
     row "idle: a negative limit means off" "$(FAT_IDLE_LIMIT_S=-5 bash "$me" --limit-us)" 0
     row "idle: off runs the command untouched" "$(FAT_IDLE_LIMIT_S=0 bash "$me" "$td" -- sh -c 'sleep 0.7; exit 3'; echo $?)" 3
+
+    if [ -z "${FAT_IDLE_NESTED:-}" ]; then # the meta row: a self-test with a failing row must exit 1
+        sed 's/"\$rc" 124$/"$rc" 125/' "$me" >"$td/mut.sh"
+        out=$(FAT_IDLE_NESTED=1 bash "$td/mut.sh" --self-test 2>&1); rc=$?
+        row "idle: a failing row makes the self-test exit 1" "$rc" 1
+        row "idle: ...and the failing row is reported" "$([[ $out == *'row(s) failed'* ]] && echo yes)" yes
+    fi
 
     if [ "$bad" -ne 0 ]; then echo "idle_watchdog self-test: $bad row(s) failed"; exit 1; fi
     echo "idle_watchdog self-test: all rows pass"
