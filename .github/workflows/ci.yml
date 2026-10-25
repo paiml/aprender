@@ -716,7 +716,7 @@ jobs:
       FAT_VARS_JSON: ${{ toJSON(vars) }}
       # merge_group: unscaled section timeouts (default x2 would make the 110-min nextest step 220 > the 120-min job wall)
       FAT_TIMEOUT_SCALE: ${{ github.event_name == 'merge_group' && '1' || '' }}
-      # merge_group: a step that writes nothing to the section log for 20 min is hung, not slow (fat_driver.wait_or_idle)
+      # merge_group: a run whose section logs grow not at all for 20 min is hung, not slow (scripts/ci/idle_watchdog.sh around fat_driver.py run)
       FAT_IDLE_LIMIT_S: ${{ github.event_name == 'merge_group' && '1200' || '' }}
     steps:
       - uses: actions/checkout@v7
@@ -729,7 +729,7 @@ jobs:
       - name: Sections
         id: run
         run: >-
-          python3 scripts/ci/fat_driver.py run
+          bash scripts/ci/idle_watchdog.sh "$RUNNER_TEMP/fat" -- python3 scripts/ci/fat_driver.py run
           --sections 'workspace-test-shard?${{ matrix.shard }}?${{ matrix.shards }}?'
           --results "$RUNNER_TEMP/fat/results.json"
       # Operator 2026-10-19: root cause is no gate time budget. A merge_group entry that is already RED must
