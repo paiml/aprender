@@ -1,0 +1,23 @@
+- id: PMAT-5803
+  github_issue: 5803
+  item_type: task
+  title: 'build: FLOW-010 cut 1 — move the tuner tests that need aprender-core out of aprender-compute so compute drops its dev-dependency on core'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T07:50:00Z
+  updated: 2026-10-25T07:50:00Z
+  spec: null
+  acceptance_criteria:
+  - the tuner training-data-quality tests move from crates/aprender-compute/tests/tuner_falsification to crates/aprender-core/tests/tuner_training_data_quality.rs and still run (ci/explicit-test-commands.d fragments 295 and 298 name them)
+  - aprender-compute has no dev-dependency on aprender-core
+  - scripts/check_tuner_test_move.sh proves the move lost no test (count and names before and after)
+  - one PR, at most 400 lines or a recorded PMAT-Size-Waiver (the move was 810 lines in #6294 commit ebf773587a, waiver sanctioned by quorum triage-quorum-door6261-conditions-2136Z)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Scope taken from #6294 (commit 2, PMAT-5803; issue #5803, FLOW-010 five-whys on crate fan-out, cut 1). Entry minted so w5032 can cut this piece as its own PR.
+  epic: null

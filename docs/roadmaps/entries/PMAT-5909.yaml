@@ -1,0 +1,23 @@
+- id: PMAT-5909
+  github_issue: 5909
+  item_type: task
+  title: 'build: split env_key out of aprender-contracts into aprender-contracts-key so a contracts edit stops dirtying 47 of 85 crates'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T07:50:00Z
+  updated: 2026-10-25T07:50:00Z
+  spec: null
+  acceptance_criteria:
+  - a new crate crates/aprender-contracts-key holds env_key (src/lib.rs, README, Cargo.toml) and aprender-contracts re-uses it through build_helper
+  - the build.rs and Cargo.toml of each dependent crate (aprender-core, -compute, -db, -orchestrate, -present-cli, -present-core, -rag, -serve, -simulate, -train, -viz-ttop) depend on aprender-contracts-key instead of aprender-contracts
+  - cargo metadata --locked is clean and the crate is registered in scripts/release/publish-order.txt and scripts/cascade-publish.sh; publishing it stays on the release path
+  - one PR, at most 400 lines, no Sensitive-path change beyond the workspace member and publish order lines (cut from #6294 commit 4b8f637715)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Scope taken from #6294 (commit 1, PMAT-5909; issue #5909: aprender-contracts is 24 commits in 30 days and dirties 47 of 85 crates). #6294 is split by quorum triage-quorum-tickets-6294-6309-0718Z into one PR per ticket; this entry lets w5032 cut this piece.
+  epic: null

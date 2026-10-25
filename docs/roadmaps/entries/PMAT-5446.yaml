@@ -1,0 +1,22 @@
+- id: PMAT-5446
+  github_issue: 5446
+  item_type: task
+  title: 'ci: shrink the slow quick-tier tests (apr-cli test_llm_band, contracts-cli ont4 gate tests) at the root'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T07:50:00Z
+  updated: 2026-10-25T07:50:00Z
+  spec: null
+  acceptance_criteria:
+  - 'contracts-cli ont4_relations_gate, ont4b_shapes_gate and ont5_consistency_gate lint a planted fixture or copied files, not the full contracts tree, and each finishes well under 60 s (landed by #5893 via the EMR-001 integration PR #6309)'
+  - the pv-sat corpus() lint tests use a planted .pv fixture (same change)
+  - apr-cli commands::test_llm_band tests no longer take 60-240 s each (separate PR; not covered by #6309)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Entry minted for the #5893 planted-.pv tests carried by #6309 (quorum handoff triage-quorum-tickets-6294-6309-0718Z). Issue #5446 names both slow families; #5893 is the contracts-cli half (gate tests lint a fixture, 11/11 per its body). The test_llm_band half has no PR yet, so the item stays in_progress.
+  epic: null
