@@ -36,10 +36,8 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
-aprender-contracts-key = { path = "../aprender-contracts-key", version = "0.71.3" }
 
 [build-dependencies]
-aprender-contracts-key = { path = "../aprender-contracts-key", version = "0.71.3" }
 serde = { version = "1", features = ["derive"] }
 serde_yaml = "0.9"
 
@@ -50,6 +48,8 @@ criterion = { version = "0.5", features = ["html_reports"] }
 # Oracle for f16-conversion falsifiers (PMAT-905). `half` is a workspace leaf crate
 # (no aprender dependency) → dev-dep introduces no cycle. Used only in tests.
 half = { workspace = true }
+# The shared key builder, dev-only: a normal or build dependency would add a unit to the pv build (12-unit budget, ci/sections.yml m5). #5909
+aprender-contracts-key = { path = "../aprender-contracts-key", version = "0.71.3" }
 
 [[bench]]
 name = "benchmarks"
