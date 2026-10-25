@@ -72,7 +72,7 @@ watch_cmd() {
 }
 
 self_test() {
-    local me bad=0 rc t0 out
+    local me bad=0 rc t0 out tag=wdst$$
     me=$(readlink -f "$0")
     td=$(mktemp -d) || exit 2 # global: the EXIT trap reads it after this function returns
     trap 'rm -rf -- "${td:?}"' EXIT
@@ -82,10 +82,10 @@ self_test() {
     export FAT_IDLE_TICK=0.2 FAT_IDLE_GRACE=1
 
     t0=$SECONDS
-    out=$(FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sleep 30.3 2>&1); rc=$?
+    out=$(FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'sleep 30.3; :' "$tag-a" 2>&1); rc=$?
     row "idle: the hung step is killed promptly, not left to finish" "$((SECONDS - t0 < 10 ? 1 : 0))" 1
     sleep 0.3
-    row "idle: the hung step's group is gone" "$(pgrep -fx 'sleep 30[.]3' >/dev/null && echo alive || echo gone)" gone
+    row "idle: the hung step's group is gone" "$(pgrep -f "$tag-a" >/dev/null && echo alive || echo gone)" gone
     row "idle: a step that prints nothing past FAT_IDLE_LIMIT_S is declared hung" "$rc" 124
     row "idle: the hang is named" "$([[ $out == *'printed nothing'* ]] && echo yes)" yes
 
@@ -94,17 +94,17 @@ self_test() {
     row "idle: the exit status of the command passes through" "$(FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'exit 7'; echo $?)" 7
 
     t0=$SECONDS
-    out=$(FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'echo once >>"$0/h.log"; sleep 30.4' "$td" 2>&1); rc=$?
+    out=$(FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'sleep 0.5; echo once >>"$0/h.log"; sleep 30.4' "$td" 2>&1); rc=$?
     row "idle: a step that printed once and then hangs is declared hung" "$rc" 124
     row "idle: ...promptly, not when the step ends" "$((SECONDS - t0 < 10 ? 1 : 0))" 1
 
     FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'trap "sleep 0.5; echo t >\"\$0/term.out\"; exit 0" TERM; sleep 31.1 & wait' "$td" >/dev/null 2>&1
     row "idle: the hung step is sent TERM and given the grace period to finish (not killed at once)" "$(cat "$td/term.out" 2>/dev/null)" t
 
-    FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'trap "" TERM; while :; do sleep 0.1; done' twk-marker >/dev/null 2>&1
+    FAT_IDLE_LIMIT_S=1 bash "$me" "$td" -- sh -c 'trap "" TERM; while :; do sleep 0.1; done' "$tag-c" >/dev/null 2>&1
     rc=$?
     sleep 0.3
-    row "idle: a step that ignores TERM is KILLed after the grace period" "$(pgrep -f twk-marker >/dev/null && echo alive || echo gone)" gone
+    row "idle: a step that ignores TERM is KILLed after the grace period" "$(pgrep -f "$tag-c" >/dev/null && echo alive || echo gone)" gone
     row "idle: ...and the exit is still 124" "$rc" 124
 
     row "idle: a leading-zero limit is decimal, not octal" "$(FAT_IDLE_LIMIT_S=08 bash "$me" --limit-us)" 8000000
@@ -114,10 +114,10 @@ self_test() {
     row "idle: ...and says so" "$([[ $out == *'no command'* ]] && echo yes)" yes
 
     t0=$SECONDS
-    FAT_IDLE_LIMIT_S=100 timeout 2 bash "$me" "$td" -- sleep 31.7; rc=$?
+    FAT_IDLE_LIMIT_S=100 timeout 2 bash "$me" "$td" -- sh -c 'sleep 31.7; :' "$tag-b"; rc=$?
     row "idle: the timeout still ends the run alongside the watchdog" "$rc" 124
     sleep 0.5
-    row "idle: the timeout leaves no orphan behind" "$(pgrep -fx 'sleep 31[.]7' >/dev/null && echo orphan || echo none)" none
+    row "idle: the timeout leaves no orphan behind" "$(pgrep -f "$tag-b" >/dev/null && echo orphan || echo none)" none
     row "idle: the timeout fired at its own deadline, not the idle one" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
 
     row "idle: unset means off" "$(env -u FAT_IDLE_LIMIT_S bash "$me" --limit-us)" 0
