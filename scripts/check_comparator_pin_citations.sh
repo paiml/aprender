@@ -161,6 +161,7 @@ if main != "-":
 if not bad:
     print(f"ok    build_commit {build}; superseded {' '.join(sup)}; {len(citing)} file(s) cite a superseded pin, every one ledgered "
           f"({sum(1 for v in led.values() if v[0]=='historical')} historical, {sum(1 for v in led.values() if v[0]=='fixture')} fixture), {sum(int(v[2].split(':')[0]) for v in led.values())} line(s) pinned; no stale entry")
+print("@@judged")  # the last line: a crash before it must not read as a verdict
 sys.exit(bad)
 PY
 }
@@ -168,6 +169,9 @@ PY
 judge() {
     local r=$1 out rc ledger="$1/$LEDGER_REL"
     out=$(judge_py "$@"); rc=$?
+    local done=0   # judge_py prints @@judged last; without it the Python died mid-way and no verdict, ok or FAIL, can be trusted
+    if grep -qx -- "@@judged" <<< "$out"; then done=1; out=$(grep -vx -- "@@judged" <<< "$out" || true); fi
+    if [ "$done" = 0 ]; then printf '%s\nFAIL  judge: the checker did not finish (no end marker, rc=%s)\n' "$out" "$rc"; return 1; fi
     local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "   # the base's own R1 row, not 'roadmap-base.yaml:x.md:3'
     if [ "$rc" = 1 ] && grep -qE -- "$r1" <<< "$out" && r7_base_copy "$r" "$ledger"; then
         out=$(grep -vE -- "$r1" <<< "$out")
@@ -377,6 +381,18 @@ PY
     else printf 'ok    mutant drop-fetch killed\n'; fi
     mutant swallow-fails "if grep -q '^FAIL' <<< \"\$out\"; then rc=1;" "if false; then rc=1;" 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
     COPY_ANCHOR=0123456789abcdef0123456789abcdef01234567 mutant live-fallback 'src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || return 1' 'src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || src=$(cat "$r/$COPY_SRC")' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c33"
+    # planted crash: the Python dies after the R1 rows but before its end marker. The unmutated judge() must go RED, and with the
+    # marker check gone the same crash reads green (the fail-open the marker closes), so the row is a real discriminator
+    COPY_ANCHOR=$(git -C "$TMP/c20" rev-parse HEAD)
+    sed 's#^print("@@judged").*#raise RuntimeError("planted crash")#' "$0" > "$TMP/crash.sh"
+    sed 's#if \[ "\$done" = 0 \]; then printf#if false; then printf#' "$TMP/crash.sh" > "$TMP/crash-open.sh"; rows=$((rows + 2))
+    out=$( . "$TMP/crash.sh" --source-only; judge "$TMP/c20" 2>&1 ); rc=$?
+    if [ "$rc" = 1 ] && grep -qF 'the checker did not finish' <<< "$out"; then printf 'ok    a planted crash before the end marker is RED, never green\n'
+    else printf 'FAIL  a planted crash was not caught (rc=%s): %s\n' "$rc" "$(tr '\n' '|' <<< "$out" | cut -c1-200)"; fails=$((fails + 1)); fi
+    out=$( . "$TMP/crash-open.sh" --source-only; judge "$TMP/c20" 2>&1 ); rc=$?
+    if [ "$rc" = 0 ] && grep -qF 'every one ledgered' <<< "$out"; then printf 'ok    mutant no-marker-check killed (the crash reads green without it)\n'
+    else printf 'FAIL  mutant no-marker-check SURVIVED (rc=%s): the crash row proves nothing\n' "$rc"; fails=$((fails + 1)); fi
+    unset COPY_ANCHOR
     # mutant() must refuse a row the UNMUTATED guard does not give: a wrong needle has to be reported, not counted as a kill
     meta=$(mutant meta-baseline 'local r1=' 'local r1=' 1 'needle-that-is-never-printed' "$TMP/c33" 2>&1)
     if grep -qF 'the unmutated guard does not give the row' <<< "$meta"; then rows=$((rows + 1)); printf 'ok    mutant() precheck rejects a row the unmutated guard does not give\n'
