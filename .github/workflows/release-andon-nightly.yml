@@ -1,8 +1,8 @@
 # FLOW-008 A7/F7 andon printer, LAB nightly (#6275).
 #
 # LAB, by the GATE/LAB rule: it cannot block a merge or a release, so it never runs in a PR, merge-queue or release
-# job. No pull_request, merge_group or push trigger, on purpose. Red (andon or not_measured) comments ONE line on
-# #6275 and stays silent otherwise.
+# job. No pull_request, merge_group or push trigger, on purpose. Red (andon, not_measured or a red self-test) UPDATES ONE
+# comment on #6275 in place (no new comment per night) and stays silent otherwise.
 name: release-andon-nightly
 
 on:
@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   andon:
-    runs-on: [self-hosted, Linux, X64]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -26,14 +26,21 @@ jobs:
           ref: main
           fetch-depth: 0
           fetch-tags: true
-      - name: self-test
-        run: bash scripts/lab/release_andon.sh --self-test
-      - name: print
+      - name: self-test and print
         run: |
           set +e
+          st=$(bash scripts/lab/release_andon.sh --self-test 2>&1); src=$?
           out=$(bash scripts/lab/release_andon.sh --ref origin/main 2>&1); rc=$?
-          printf '%s\n' "$out" | tee -a "$GITHUB_STEP_SUMMARY"
-          if [ "$rc" -ne 0 ]; then
-            gh issue comment 6275 --body "$(date -u +%FT%TZ) run ${GITHUB_RUN_ID}: $(printf '%s\n' "$out" | grep -E '^(ANDON|NOT_MEASURED F7:)' | head -1)"
+          printf '%s\n%s\n' "$st" "$out" | tee -a "$GITHUB_STEP_SUMMARY"
+          line=
+          if [ "$src" -ne 0 ]; then line="SELF-TEST RED F7: $(printf '%s\n' "$st" | grep -E '^BROKE' | head -1)"
+          elif [ "$rc" -ne 0 ]; then line=$(printf '%s\n' "$out" | grep -E '^(ANDON|NOT_MEASURED F7:)' | head -1); fi
+          if [ -n "$line" ]; then
+            marker='<!-- release-andon-nightly -->'
+            body="$marker $(date -u +%FT%TZ) run ${GITHUB_RUN_ID}: $line"
+            id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/6275/comments" --paginate --jq "[.[] | select(.body | startswith(\"$marker\"))][0].id // empty" | head -1)
+            if [ -n "$id" ]; then gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/$id" -f body="$body" > /dev/null
+            else gh issue comment 6275 --body "$body"; fi
           fi
-          exit "$rc"
+          [ "$src" -eq 0 ] && exit "$rc"
+          exit "$src"

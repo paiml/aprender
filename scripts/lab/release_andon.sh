@@ -51,7 +51,7 @@ self_test() {
     }
     expect() { # NAME WANT-RC WANT-TEXT -- OUTPUT-VAR RC
         n=$((n + 1))
-        if [ "$4" = "$2" ] && printf '%s' "$5" | grep -q -- "$3"; then echo "ok   $1"; else echo "BROKE $1 (rc=$4 want $2, text '$3')"; printf '%s\n' "$5" | sed 's/^/     | /'; f=$((f + 1)); fi
+        if [ "$4" = "$2" ] && grep -q -- "$3" <<< "$5"; then echo "ok   $1"; else echo "BROKE $1 (rc=$4 want $2, text '$3')"; printf '%s\n' "$5" | sed 's/^/     | /'; f=$((f + 1)); fi
     }
     git init -q -b main "$t/r"
     local out rc
