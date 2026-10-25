@@ -900,11 +900,15 @@ fn check_dtype(
 pub(crate) fn all_finite(dtype: TensorDType, bytes: &[u8]) -> bool {
     match dtype {
         TensorDType::F16 => bytes
-            .chunks_exact(2)
-            .all(|c| u16::from_le_bytes([c[0], c[1]]) & 0x7C00 != 0x7C00),
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .all(|c| u16::from_le_bytes(*c) & 0x7C00 != 0x7C00),
         TensorDType::F32 => bytes
-            .chunks_exact(4)
-            .all(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]) & 0x7F80_0000 != 0x7F80_0000),
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .all(|c| u32::from_le_bytes(*c) & 0x7F80_0000 != 0x7F80_0000),
         _ => false,
     }
 }
