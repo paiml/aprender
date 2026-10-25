@@ -930,9 +930,13 @@ class Section:
         with PROCS_LOCK:
             PROCS.add(p)
         try:
-            return p.wait(timeout=timeout)
+            return wait_or_idle(p, self.log, timeout, idle_limit_seconds())
         except subprocess.TimeoutExpired:
             self.log.write(f"::error::step exceeded its timeout ({timeout:.0f}s); killing group {p.pid}\n")
+            kill_group(p)
+            return 124
+        except StepIdle as e:
+            self.log.write(f"::error::step printed nothing for {e.idle:.0f}s (FAT_IDLE_LIMIT_S): a hang, not a slow run; killing group {p.pid}\n")
             kill_group(p)
             return 124
         finally:
@@ -948,6 +952,66 @@ class Section:
         if h is None:
             raise ExprError(f"unsupported action {uses}")
         return h(self, w, ev)
+
+
+class StepIdle(Exception):
+    def __init__(self, idle):
+        super().__init__(idle)
+        self.idle = idle
+
+
+def idle_limit_seconds() -> float:
+    """FAT_IDLE_LIMIT_S: seconds a step may write NOTHING to the section log before it counts as hung.
+    Unset or 0 = off (a PR/push run keeps its wall-clock timeouts only). Set on the merge-queue shard,
+    where a tier=full run is legitimately long but never silent."""
+    try:
+        return max(0.0, float(os.environ.get("FAT_IDLE_LIMIT_S") or 0))
+    except ValueError:
+        return 0.0
+
+
+def _log_size(log, default):
+    try:
+        return os.fstat(log.fileno()).st_size
+    except (OSError, ValueError):
+        return default
+
+
+class _IdleWatch:
+    """Raises StepIdle from check() once the log has not grown for `idle` seconds."""
+
+    def __init__(self, log, idle):
+        self.log, self.idle = log, idle
+        self.size, self.since = -1, time.monotonic()
+
+    def check(self):
+        now = time.monotonic()
+        size = _log_size(self.log, self.size)
+        if size != self.size:
+            self.size, self.since = size, now
+        elif now - self.since >= self.idle:
+            raise StepIdle(now - self.since)
+
+
+def _poll(p, tick):
+    try:
+        return p.wait(timeout=tick)
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def wait_or_idle(p, log, timeout, idle, tick=5.0):
+    """p.wait(timeout), plus: raise StepIdle if the log file did not grow for `idle` seconds."""
+    if not idle:
+        return p.wait(timeout=timeout)
+    t0, watch = time.monotonic(), _IdleWatch(log, idle)
+    rc = _poll(p, tick)
+    while rc is None:
+        if timeout and time.monotonic() - t0 >= timeout:
+            raise subprocess.TimeoutExpired(p.args, timeout)
+        watch.check()
+        rc = _poll(p, tick)
+    return rc
 
 
 def kill_group(p):
@@ -1627,6 +1691,31 @@ def _st_timeouts(row):
             os.environ["FAT_TIMEOUT_SCALE"] = saved
 
 
+def _idle_run(argv, idle=1.0):
+    import tempfile
+    with tempfile.TemporaryFile() as lg:
+        p = subprocess.Popen(argv, stdout=lg, stderr=lg, start_new_session=True)
+        try:
+            return wait_or_idle(p, lg, 60, idle, tick=0.2)
+        except StepIdle:
+            return "idle"
+        finally:
+            kill_group(p)
+
+
+def _st_idle(row):
+    row("idle: a step that prints nothing past FAT_IDLE_LIMIT_S is declared hung", _idle_run(["sleep", "30"]), "idle")
+    row("idle: a step that keeps printing is never declared hung",
+        _idle_run(["sh", "-c", "for i in 1 2 3 4 5 6; do echo tick; sleep 0.4; done"]), 0)
+    saved = os.environ.pop("FAT_IDLE_LIMIT_S", None)
+    row("idle: unset means off", idle_limit_seconds(), 0.0)
+    os.environ["FAT_IDLE_LIMIT_S"] = "1500"
+    row("idle: FAT_IDLE_LIMIT_S=1500 is 25 min", idle_limit_seconds(), 1500.0)
+    os.environ.pop("FAT_IDLE_LIMIT_S", None)
+    if saved is not None:
+        os.environ["FAT_IDLE_LIMIT_S"] = saved
+
+
 def _st_artifact(row):
     import tempfile
     import http.server
@@ -1960,7 +2049,7 @@ def cmd_self_test(a):
     def row(label, got, want):
         rows.append((label, got == want, got, want))
 
-    for section in (_st_vendored, _st_expressions, _st_timeouts, _st_artifact, _st_checkout, _st_aside,
+    for section in (_st_vendored, _st_expressions, _st_timeouts, _st_idle, _st_artifact, _st_checkout, _st_aside,
                     _st_external, _st_results_output):
         section(row)
     bad = 0

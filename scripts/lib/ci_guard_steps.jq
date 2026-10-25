@@ -1,7 +1,9 @@
 # ci_guard_steps.jq -- the jq definitions behind ci_guard_steps.sh (#4415).
 # Prepended to every query; the bash side binds $runner $sfx $status $expr.
 def rx: gsub("(?<c>[.^$*+?()\\[\\]{}|\\\\])"; "\\\(.c)");
-def calls_runner($job): ((.run // "") | tostring) | test("(^|\\s)" + ($runner | rx) + "\\s+" + ($job | rx) + "(\\s|$)");
+def calls_runner($job): ((.run // "") | tostring) | test("(^|\\s)" + ($runner | rx) + "(\\s+--shard\\s+\\S+)?\\s+" + ($job | rx) + "(\\s|$)");
+# #6255: a sharded guard job keeps the name the gate reads; its steps live in <job>-shard
+def own($job): if has($job + "-shard") then $job + "-shard" else $job end;
 def setup_end: (map(.id == "guard-setup") | index(true)) // -1;
 def fail_fast: (.if == null) or ((.if | tostring) | test($status) | not);
 def name_of: .name // .uses // "(unnamed)";
@@ -9,17 +11,17 @@ def steps_for($job; $ci):
     (.[$job + $sfx]) as $man
     | ( if $man != null then [($man.steps // []) | to_entries[] | {idx: "m\(.key)", step: .value}] else [] end )
     + ( if $man == null or ($ci | not) then
-          (.[$job].steps // []) as $s | ($s | setup_end) as $e
+          (.[own($job)].steps // []) as $s | ($s | setup_end) as $e
           | [$s | to_entries[] | select(.key > $e and (.value | calls_runner($job) | not)
                 and (((.value.if // "") | tostring) | contains("always") | not)) | {idx: "\(.key)", step: .value}]
         else [] end );
 # "<setup index> <fail-fast steps after it>" for check-run-all
 def fail_fast_count($job):
-    .[$job].steps as $s | ($s | setup_end) as $e
+    .[own($job)].steps as $s | ($s | setup_end) as $e
     | "\($e) \([$s[($e + 1):][] | select(fail_fast)] | length)";
 # one finding per line: what the runner could not honour in <job>-steps
 def manifest_findings($job; $known):
-    ($job + $sfx) as $m | .[$m] as $man | (.[$job].steps // []) as $own
+    ($job + $sfx) as $m | .[$m] as $man | (.[own($job)].steps // []) as $own
     | ($known | split(", ")) as $kn
     | if $man == null then
         if any($own[]; calls_runner($job)) then "\($job): a step runs `bash \($runner) \($job)` but there is no \($m) job" else empty end

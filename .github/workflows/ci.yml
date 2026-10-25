@@ -283,7 +283,8 @@ jobs:
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
     # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    timeout-minutes: ${{ github.event_name == 'merge_group' && 120 || 240 }}
+    # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 40 || 240 }}
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
     permissions: write-all
@@ -387,7 +388,7 @@ jobs:
               --background-until 'determinism[X64]'
           else
             python3 scripts/ci/fat_driver.py run \
-              --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]' \
+              --sections 'sov.*,guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]' \
               --results "$RUNNER_TEMP/fat/results.json" \
               --background-until 'determinism[X64]'
           fi
@@ -464,7 +465,8 @@ jobs:
     # merge_group-only (a draft never reaches the queue); skipped with x86-main when mg-reuse reuses the cited run.
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    timeout-minutes: ${{ github.event_name == 'merge_group' && 120 || 240 }}
+    # merge_group: 2 x p95 (22.5 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull; the 240 stays for push.
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 65 || 240 }}
     permissions: write-all
     outputs:
       results: ${{ steps.sections.outputs.results }}
@@ -498,7 +500,7 @@ jobs:
         id: sections
         run: >-
           python3 scripts/ci/fat_driver.py run
-          --sections 'guard-tree,guard-cargo,vendored-schemas'
+          --sections 'guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas'
           --results "$RUNNER_TEMP/fat/results.json"
       # Same fail-fast as x86-main (operator 2026-10-19): a red guards (vendored-schemas included, which gate does not read)
       # cancels the run instead of holding the mq runners; the teardown below is always() and still reaps.
@@ -694,6 +696,9 @@ jobs:
     # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
     runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     # >= section 150 (sections.yml:108, unscaled under merge_group) + the untimed ~20-min image pull on the full-tier fallback
+    # The wall stays 180 on every event: a tier=full entry (Cargo.lock / root Cargo.toml / toolchain touched, or the base
+    # unfetchable) is green at 46-64 min and the tier is decided inside the job. The hang cap is FAT_IDLE_LIMIT_S below.
+    # Run 40107798347 printed lines at 15:37/15:38/15:48/15:57, then nothing until the 16:19 hand cancel (22 min silent).
     timeout-minutes: 180
     permissions:
       contents: read
@@ -711,6 +716,8 @@ jobs:
       FAT_VARS_JSON: ${{ toJSON(vars) }}
       # merge_group: unscaled section timeouts (default x2 would make the 110-min nextest step 220 > the 120-min job wall)
       FAT_TIMEOUT_SCALE: ${{ github.event_name == 'merge_group' && '1' || '' }}
+      # merge_group: a step that writes nothing to the section log for 20 min is hung, not slow (fat_driver.wait_or_idle)
+      FAT_IDLE_LIMIT_S: ${{ github.event_name == 'merge_group' && '1200' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
