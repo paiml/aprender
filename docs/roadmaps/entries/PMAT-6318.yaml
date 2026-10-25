@@ -1,0 +1,19 @@
+- id: PMAT-6318
+  github_issue: 6318
+  item_type: task
+  title: 'PRB-001: wire the batch-sweep self-test into the nightly as a LAB step with its one ticket'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T00:58:00Z
+  updated: 2026-10-25T00:58:00Z
+  spec: docs/specifications/PRB-001-pr-batch-cleanup.md
+  acceptance_criteria:
+  - 'guards-nightly runs scripts/lab/batch_sweep_check.sh --self-test as a LAB step, and a red night opens or updates one lab-batch-sweep ticket through scripts/lab_ticket.sh'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Split out of #6312 (PMAT-6265) by the quorum; stacked on it, because the script lands there.'
+  epic: null
