@@ -639,6 +639,11 @@ pub fn summarize(
     })
 }
 
+/// The example's no-command line. It opens with `Usage:` because the examples
+/// sweep (`scripts/dogfood_examples.sh`) reads that opening, and only that, as
+/// "needs a subcommand, not broken"; `replay: usage: ...` read as a failure.
+pub const USAGE: &str = "Usage: replay build|run|prompt-ids|ids-diff|sketch|voters|summary (see the example's docs)";
+
 #[cfg(test)]
 #[path = "replay_tests.rs"]
 mod tests;
