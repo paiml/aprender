@@ -26,11 +26,8 @@ hunks_landed() {
   awk -v d="$d" '/^diff --git /{h=""; n=0} /^@@/{n++; f=sprintf("%s/h%06d", d, ++c); printf "%s", h > f; close(f); cur=f} !/^@@/ && n==0{h=h $0 "\n"} n>0{print >> cur}' "$patch"
   for f in "$d"/h*; do
     [ -e "$f" ] || continue
-    if [ -n "$(sed -n "/^@@/,\$p" "$f" | grep "^+" || true)" ]; then
-      git -C "$wt" apply -R --check "$f" 2> /dev/null || ok=1
-    else
-      ! git -C "$wt" apply --check "$f" 2> /dev/null || ok=1
-    fi
+    # landed means the hunk reverse-applies (its context is intact and its lines are in place); a deletion-only hunk whose context main edited fails here too, which counts as not landed (fail closed)
+    git -C "$wt" apply -R --check "$f" 2> /dev/null || ok=1
   done
   rm -rf -- "${d:?}"; return "$ok"
 }
@@ -115,6 +112,9 @@ selftest() {
   expect "BS-1 RED deletion-only hunk that never landed" 1 bs1 "$t/r" main prDel
   g cherry-pick prDel > /dev/null 2>&1 || { printf 'del1\n' > "$t/r/d.txt"; g commit -qam del-landed; }
   expect "BS-1 GREEN deletion-only hunk that landed" 0 bs1 "$t/r" main prDel
+  printf 'a\nb\nc\nd\n' > "$t/r/e.txt"; g add -A; g commit -qm e-base; g checkout -qb prE; printf 'a\nb\nd\n' > "$t/r/e.txt"; g commit -qam e-del-c; g checkout -q main
+  printf 'a\nB\nc\nd\n' > "$t/r/e.txt"; g commit -qam e-main-edits-neighbour
+  expect "BS-1 RED deletion-only hunk whose neighbour main edited (forward apply fails, not landed)" 1 bs1 "$t/r" main prE
   printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g add -A; g commit -qm readme-base
   g checkout -qb prR; printf 'x <!-- CONTRACT_COUNT_START -->2<!-- CONTRACT_COUNT_END --> y\nprose\n' > "$t/r/README.md"; g commit -qam count-only
   g checkout -qb prP main; printf 'x <!-- CONTRACT_COUNT_START -->1<!-- CONTRACT_COUNT_END --> y\nnew prose\n' > "$t/r/README.md"; g commit -qam prose-edit; g checkout -q main
