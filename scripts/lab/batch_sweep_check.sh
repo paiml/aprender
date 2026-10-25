@@ -7,11 +7,11 @@
 #   bs5 BODY.md                  no closing keyword before an issue/PR number in a batch PR body
 #   bs6 REPO 'REGEN CMD'         running REGEN CMD in REPO leaves the tree unchanged
 #   --self-test                  each obligation on a violating fixture (must exit 1) and a conforming one (must exit 0)
-# BS-1 judges README.md only outside CONTRACT_COUNT blocks; BS-4 path deny-list also covers Cargo.toml, scripts/arm_*, .pmat/, release|publish|sign|forjar, gate*.sh, and denies ci/explicit-test-commands.d, .pmat-gates.toml, scripts/check_*.sh.
+# BS-1 judges README.md only outside CONTRACT_COUNT blocks; BS-4 path deny-list also covers Cargo.toml, scripts/arm_*, .pmat/, release|publish|sign|forjar scripts and configs, gate*.sh, and denies ci/explicit-test-commands.d, .pmat-gates.toml, scripts/check_*.sh.
 # Exit: 0 held . 1 violated . 2 could not check. LAB: wired into no workflow.
 set -uo pipefail
 ALLOW_AUTHORS="${BS_ALLOW_AUTHORS:-}"  # BS-4: any author not listed is external; empty = nobody allowed, so the caller must pass it
-DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^ci/explicit-test-commands\.d/|^\.pmat-gates\.toml$|^deny\.toml$|^scripts/ci/|^scripts/check_[^/]*\.sh$|^scripts/contracts_gate\.sh$|^ci/vendor/|^Makefile$|^\.clippy\.toml$|^rust-toolchain\.toml$|^Cargo\.toml$|^scripts/arm_|^\.pmat/|(release|publish|sign|forjar)[^/]*$|gate[^/]*\.sh$}"
+DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^ci/explicit-test-commands\.d/|^\.pmat-gates\.toml$|^deny\.toml$|^scripts/ci/|^scripts/check_[^/]*\.sh$|^scripts/contracts_gate\.sh$|^ci/vendor/|^Makefile$|^\.clippy\.toml$|^rust-toolchain\.toml$|^Cargo\.toml$|^scripts/arm_|^\.pmat/|(^|/)(release|publish|sign|forjar)[^/]*\.(sh|ya?ml|toml)$|(^|/)gate[^/]*\.sh$}"
 # Generated: the contract artifacts, and ONLY the CONTRACT_COUNT blocks of README.md (PRB-001 §6), neutralised by readme_neutral.
 GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')
 readme_neutral() { sed 's/<!-- CONTRACT_COUNT_START -->.*<!-- CONTRACT_COUNT_END -->/<!-- CONTRACT_COUNT -->/'; }
@@ -136,6 +136,9 @@ selftest() {
   expect "BS-4 GREEN internal author, source paths" 0 bs4 "$t/a-ok.tsv"
   expect "BS-4 RED any author not on the allow-list" 1 bs4 "$t/a-ext2.tsv"
   expect "BS-4 RED root Cargo.toml and scripts/arm_*" 1 bs4 "$t/a-arm.tsv"
+  printf '12\tnoah\tdocs/design.md crates/x/src/signal.rs docs/release-notes.md\n' > "$t/a-name.tsv"; expect "BS-4 GREEN ordinary paths whose names merely contain sign/release" 0 bs4 "$t/a-name.tsv"
+  printf '13\tnoah\tscripts/release_publish.sh\n' > "$t/a-rel.tsv"; expect "BS-4 RED a release script" 1 bs4 "$t/a-rel.tsv"
+  printf '14\tnoah\tscripts/sign_artifacts.sh\n' > "$t/a-sig.tsv"; expect "BS-4 RED a signing script" 1 bs4 "$t/a-sig.tsv"
   ALLOW_AUTHORS=; expect "BS-4 RED empty allow-list fails closed" 1 bs4 "$t/a-ok.tsv"; ALLOW_AUTHORS=noah
   expect "BS-4 RED default allow-list is empty (no env, script run as the caller would)" 0 bash -c 'env -u BS_ALLOW_AUTHORS bash "$0" bs4 "$1" 2>&1 | grep -q "external author noah"' "$0" "$t/a-ok.tsv"
   expect "BS-4 RED external author" 1 bs4 "$t/a-ext.tsv"

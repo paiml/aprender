@@ -121,7 +121,7 @@ The structural fix is a separate pmat ticket: generated artifacts come off the P
 
 ## 7. Contract: batch-sweep-v1
 
-The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/lab/batch_sweep_check.sh --self-test` runs each on a fixture repo, RED then GREEN (33 rows, LAB, wired into no workflow).
+The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/lab/batch_sweep_check.sh --self-test` runs each on a fixture repo, RED then GREEN (every row prints an "ok" line and the count is derived from the run, not quoted; LAB, wired into no workflow).
 
 | Id | Obligation | How it is falsified |
 | --- | --- | --- |
