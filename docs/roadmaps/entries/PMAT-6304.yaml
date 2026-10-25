@@ -23,9 +23,9 @@
     the Python watchdog watched one step's log; this one watches the sum of all section logs of the driver run, so on a shard with several
     live sections one busy section hides another's hang. The shard runs a single section (workspace-test-shard), so no loss there.
     Added .py lines vs origin/main: 2, both pre-#6285 lines restored verbatim (p.wait(timeout=timeout) and the self-test section tuple); removed: 91.
-    MT-2 (every line of scripts/ci/idle_watchdog.sh deleted in turn, unique per-run process tags): production survivors named, none hidden.
-    Rows added for the behaviour survivors seat B found: hang-after-print (L61), TERM with grace then KILL (L65-68), leading-zero decimal parse (L20),
-    missing command (L121). Remaining survivors: comments and blanks; the `local` declaration (L38); the EXIT cleanup trap (L78); `[ -f ] || continue`
-    (L28, equivalent: stat on a non-file fails into the same continue); the spin guard (L55-56, reached only when a TERM interrupts wait -n after the child
-    is already gone, a race: the same TERM exits 143 when the child is still a zombie, so no deterministic row exists); and `row` lines of the self-test,
-    each caught when paired with the production line it checks.
+    MT-2 (every line of scripts/ci/idle_watchdog.sh deleted in turn, unique per-run process tags): no behaviour line survives.
+    A TERM to the watchdog now escalates TERM, FAT_IDLE_GRACE, KILL and exits 143 deterministically (stop_group, shared with the idle path); a row
+    sends TERM to a watchdog over a TERM-ignoring step. The old spin guard (L55-56) is gone. Rows exist for hang-after-print, TERM grace, KILL, octal parse,
+    missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; `kill "$sp"` / `kill "$gp"`
+    (they only reap a leftover tick or grace sleep); and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
+    with the production line it checks.
