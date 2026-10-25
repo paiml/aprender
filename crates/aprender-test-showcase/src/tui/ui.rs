@@ -142,11 +142,9 @@ impl<'a> CalculatorUI<'a> {
         buf.write_str(area.x + 1, area.y, " History (newest first) ");
         let history = self.app.history();
 
-        let mut y = area.y + 1;
-        for entry in history.iter_rev().take(10) {
+        for (y, entry) in (area.y + 1..).zip(history.iter_rev().take(10)) {
             let line = format!("{} = {}", entry.expression, entry.result);
             buf.write_str(area.x + 1, y, &line);
-            y += 1;
         }
     }
 
@@ -155,10 +153,8 @@ impl<'a> CalculatorUI<'a> {
         buf.write_str(area.x + 1, area.y, " Anomaly Status ");
         let status_lines = self.app.jidoka_status();
 
-        let mut y = area.y + 1;
-        for line in &status_lines {
+        for (y, line) in (area.y + 1..).zip(&status_lines) {
             buf.write_str(area.x + 1, y, line);
-            y += 1;
         }
     }
 }
