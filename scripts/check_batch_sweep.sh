@@ -48,7 +48,7 @@ bs4() {
   done < "$1"; return "$rc"
 }
 bs5() {
-  local hit; hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+(#|[A-Za-z0-9_./-]+#)?[0-9]+' "$1")" || true
+  local hit; hit="$(grep -inE '\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\b[: ]+([A-Za-z0-9_./-]+)?#[0-9]+' "$1")" || true
   [ -z "$hit" ] || { bad 5 "closing keyword: $hit"; return 1; }
 }
 bs6() {
@@ -74,7 +74,7 @@ selftest() {
   g checkout -qb good main~2; g cherry-pick prA prB; printf 'b\nc\n' > "$t/r/gen.nt"; g commit -q --allow-empty -m "batch: regenerate"
   expect "BS-2 GREEN 2 tickets + regenerate" 0 bs2 "$t/r" main~2 good 2
   g checkout -qb merged main~2; g merge -q --no-ff -m "Merge prA" prA; g commit -q --allow-empty -m "batch: regenerate"
-  expect "BS-2 RED a merge commit (the --no-ff batch_fold.sh)" 1 bs2 "$t/r" main~2 merged 1
+  expect "BS-2 RED a merge commit (what batch_fold.sh produces until PRB-001 §5.4)" 1 bs2 "$t/r" main~2 merged 1
   g checkout -qb amended main~2; g cherry-pick prA; g commit -q --amend -m "ticketA + regenerate"
   expect "BS-2 RED regenerate amended into a ticket" 1 bs2 "$t/r" main~2 amended 1
   printf '1\t%s\n' "$(git -C "$t/r" rev-parse main)" > "$t/ok.tsv"; printf '2\t%s\n' "$(git -C "$t/r" rev-parse prC)" > "$t/early.tsv"
@@ -87,6 +87,7 @@ selftest() {
   expect "BS-4 RED gate-file path" 1 bs4 "$t/a-gate.tsv"
   printf 'Supersedes #5724, #5558.\nRefs #5831\n' > "$t/b-ok.md"; printf 'Batch.\nCloses #5724\n' > "$t/b-bad.md"; printf 'Fixes: paiml/aprender#5558\n' > "$t/b-bad2.md"
   expect "BS-5 GREEN Supersedes/Refs only" 0 bs5 "$t/b-ok.md"
+  printf 'Batch of 3; fixed 3 flakes, closes 2 gaps.\n' > "$t/b-prose.md"; expect "BS-5 GREEN prose with no issue number" 0 bs5 "$t/b-prose.md"
   expect "BS-5 RED 'Closes #N'" 1 bs5 "$t/b-bad.md"
   expect "BS-5 RED 'Fixes: org/repo#N'" 1 bs5 "$t/b-bad2.md"
   g checkout -q main; printf 'c\nb\n' > "$t/r/gen.nt"; g commit -qam unsorted

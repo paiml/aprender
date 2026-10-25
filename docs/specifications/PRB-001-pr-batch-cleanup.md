@@ -85,7 +85,7 @@ The sweep is a worker under aprender-cop on lambda, not a new top-level agent; t
 1. **Ticket.** Open a pmat ticket before starting. Work in a fresh worktree off `origin/main`, never the primary checkout.
 2. **De-duplicate.** Give each folded ticket one owner PR. Close the others as "superseded by #N". Rebase or close the PRs that are CONFLICTING.
 3. **Select.** Take lane A only, oldest first, at most 7 per batch. Drafts held by stop-the-line are allowed. Skip any PR whose diff is already on main.
-4. **Absorb.** Fix `scripts/batch_fold.sh` in place: it uses `git merge --no-ff` today, and rebase-merge cannot carry merge commits. Squash cherry-pick each PR into one linear commit. Keep the original author and the `Refs #ticket` line. Strip the generated paths listed in §6.
+4. **Absorb.** Fix `scripts/batch_fold.sh` in place: it uses `git merge --no-ff` today, and rebase-merge cannot carry merge commits. This supersedes the `--no-ff` batch model in APR-RELEASE-001 §13 and hard rule 9 for the sweep; those lines are amended when the script is fixed, and until then BS-2 reports what `batch_fold.sh` produces. Squash cherry-pick each PR into one linear commit. Keep the original author and the `Refs #ticket` line. Strip the generated paths listed in §6.
 5. **Drop on failure.** If a PR conflicts or its tests fail locally, drop it and label it `batch-reject`. Continue with the rest.
 6. **Regenerate.** Run `scripts/contracts_resolve.sh` and `scripts/readme_sync.sh --write` once, as a single trailing commit titled `batch: regenerate`. Never amend this into a ticket commit, or reverting that ticket would also revert the regeneration.
 7. **Verify.** Run affected-set nextest on lambda (#5802 once landed, otherwise the full workspace) plus coverage. Produce a signed receipt.
@@ -171,4 +171,4 @@ Relayed by aprender-57 on 2026-10-21 as the operator's answers; the verbatim tex
 
 ## 11. Amendment log
 
-- 2026-10-21: cap ≤7; lane B never batched; native batching test reads NO; `batch_fold.sh` fix and README `CONTRACT_COUNT`-only rule folded in; tool paths verified on origin/main; `batch-sweep-v1.yaml` and its self-test added.
+- 2026-10-21: cap ≤7; lane B never batched; native batching test reads NO; README `CONTRACT_COUNT`-only rule folded in; the `batch_fold.sh` fix is specified in §5 step 4 and NOT yet made (the script still uses `--no-ff`); tool paths verified on origin/main; `batch-sweep-v1.yaml` and its self-test added.

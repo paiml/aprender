@@ -72,7 +72,7 @@ falsification_tests:
   if_fails: a ticket is silently lost by the sweep
 - id: FALSIFY-BS-002
   rule: BS-2
-  prediction: a merge commit (the --no-ff batch_fold.sh) and a regenerate amended into a ticket are both reported
+  prediction: a merge commit (what batch_fold.sh produces until PRB-001 §5 step 4 is made) and a regenerate amended into a ticket are both reported
   test: "--self-test: 'BS-2 RED a merge commit' and 'BS-2 RED regenerate amended into a ticket' exit 1; 'BS-2 GREEN' exits 0"
   if_fails: rebase-merge cannot carry the batch, or a ticket revert drags the regenerated set with it
 - id: FALSIFY-BS-003
