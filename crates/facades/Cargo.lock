@@ -15,7 +15,6 @@ dependencies = [
 name = "aprender-contracts"
 version = "0.71.3"
 dependencies = [
- "aprender-contracts-key",
  "aprender-contracts-macros",
  "blake3",
  "proc-macro2",
@@ -27,10 +26,6 @@ dependencies = [
  "syn 2.0.119",
  "thiserror",
 ]
-
-[[package]]
-name = "aprender-contracts-key"
-version = "0.71.3"
 
 [[package]]
 name = "aprender-contracts-macros"
