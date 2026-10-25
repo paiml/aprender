@@ -9,7 +9,7 @@ metadata:
     not touch, or hide a revert behind a regenerated file.
   references:
   - 'docs/specifications/PRB-001-pr-batch-cleanup.md §5 (sweep), §6 (generated artifacts), §7 (this contract)'
-  - 'scripts/lab/batch_sweep_check.sh — the obligations as a case table, RED then GREEN (LAB, wired into no workflow)'
+  - 'scripts/lab/batch_sweep_check.sh — the obligations as a case table, RED then GREEN (LAB: runs nightly in guards-nightly.yml as lab_batch_sweep, on no PR, merge-queue or release path)'
 equations:
   batch_absorbs_every_ticket_linearly:
     formula: >-

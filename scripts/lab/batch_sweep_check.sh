@@ -8,7 +8,7 @@
 #   bs6 REPO 'REGEN CMD'         running REGEN CMD in REPO leaves the tree unchanged
 #   --self-test                  each obligation on a violating fixture (must exit 1) and a conforming one (must exit 0)
 # BS-1 judges README.md only outside CONTRACT_COUNT blocks, with one context line (-U1) pinning each hunk; BS-4 denies all of .github/, ci/ and scripts/lib/, plus Cargo.toml, scripts/arm_*, .pmat/, scripts/check_*.sh, release|publish|sign|forjar scripts and configs, gate*.sh.
-# Exit: 0 held . 1 violated . 2 could not check. LAB: wired into no workflow.
+# Exit: 0 held . 1 violated . 2 could not check. LAB: runs nightly in guards-nightly.yml (lab_batch_sweep), never on a PR, merge-queue or release path.
 # No -e: every obligation is tallied by an explicit return code (0/1/2), so one violation must not stop the rest.
 set -uo pipefail
 ALLOW_AUTHORS="${BS_ALLOW_AUTHORS:-}"  # BS-4: any author not listed is external; empty = nobody allowed, so the caller must pass it
