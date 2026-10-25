@@ -231,6 +231,12 @@ jobs:
         run: setsid --wait bash scripts/check_book_examples_compile.sh
       - name: Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
         run: setsid --wait bash scripts/check_harness_server_cleanup.sh
+      - name: Batch-sweep obligations BS-1..BS-6 hold on their fixtures (LAB, PRB-001, PMAT-6265)
+        id: lab_batch_sweep
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          setsid --wait bash scripts/lab/batch_sweep_check.sh --self-test 2>&1 | tee "$RUNNER_TEMP/batch-sweep.log"
       - name: Coverage scan files no per-function ticket (LAB, #5879)
         id: lab_cov_scan
         if: ${{ !cancelled() }}
@@ -343,6 +349,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-ladder-gap --title "LAB: the model ladder owes cells to model-cell commands (ladder-gap, #3745)" \
             --owner aprender-a7 --log "$RUNNER_TEMP/ladder-gap.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red batch-sweep night opens or updates its one LAB ticket (PRB-001)
+        if: failure() && steps.lab_batch_sweep.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-batch-sweep --title "LAB: batch-sweep obligations BS-1..BS-6 self-test red (PRB-001)" \
+            --owner aprender-w5032 --log "$RUNNER_TEMP/batch-sweep.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red coverage-scan night opens or updates its one LAB ticket (#5879)
         if: failure() && steps.lab_cov_scan.outcome == 'failure'
         env:
