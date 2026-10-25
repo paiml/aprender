@@ -25606,7 +25606,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-25T07:50:00Z
   spec: null
   acceptance_criteria:
-  - a new crate crates/aprender-contracts-key holds env_key (src/lib.rs, README, Cargo.toml) and aprender-contracts re-uses it through build_helper
+  - a new crate crates/aprender-contracts-key holds env_key (src/lib.rs, README, Cargo.toml) and aprender-contracts keeps its own src/env_key.rs (included by build.rs and build_helper.rs) and depends on the key crate as a dev-dependency only, where a test asserts the two builders agree
   - the build.rs and Cargo.toml of each dependent crate (aprender-core, -compute, -db, -orchestrate, -present-cli, -present-core, -rag, -serve, -simulate, -train, -viz-ttop) depend on aprender-contracts-key instead of aprender-contracts
   - cargo metadata --locked is clean and the crate is registered in scripts/release/publish-order.txt and scripts/cascade-publish.sh; publishing it stays on the release path
   - one PR, at most 400 lines, no Sensitive-path change beyond the workspace member and publish order lines (cut from #6294 commit 4b8f637715)
