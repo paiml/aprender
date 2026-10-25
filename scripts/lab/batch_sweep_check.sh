@@ -26,7 +26,7 @@ hunks_landed() {
   awk -v d="$d" '/^diff --git /{h=""; n=0} /^@@/{n++; f=sprintf("%s/h%06d", d, ++c); printf "%s", h > f; close(f); cur=f} !/^@@/ && n==0{h=h $0 "\n"} n>0{print >> cur}' "$patch"
   for f in "$d"/h*; do
     [ -e "$f" ] || continue
-    if sed -n "/^@@/,\$p" "$f" | grep -q "^+"; then
+    if [ -n "$(sed -n "/^@@/,\$p" "$f" | grep "^+" || true)" ]; then
       git -C "$wt" apply -R --check "$f" 2> /dev/null || ok=1
     else
       ! git -C "$wt" apply --check "$f" 2> /dev/null || ok=1
