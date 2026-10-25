@@ -12,6 +12,7 @@ publish = false
 
 [dependencies]
 serde_json = { workspace = true }
+saphyr-parser = { workspace = true }
 
 [lints]
 workspace = true

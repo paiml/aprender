@@ -20,7 +20,7 @@ fn why(d: &Path, name: &str, text: &str) -> String {
         .unwrap_or_default()
 }
 
-/// (file, text, substring of the refusal): the text-level rows of the Python selftest.
+/// (file, text, substring of the refusal): the text-level and structure rows of the Python selftest.
 const REFUSED: &[(&str, &str, &str)] = &[
     (
         "PMAT-502.yaml",
@@ -59,6 +59,51 @@ const REFUSED: &[(&str, &str, &str)] = &[
         "does not start",
     ),
     ("PMAT-521.yaml", "just a scalar\n", "lines opening"),
+    (
+        "PMAT-530.yaml",
+        "- id: PMAT-530\n  title: a\n  \"title\": b\n",
+        "duplicate key",
+    ),
+    (
+        "PMAT-531.yaml",
+        "- id: PMAT-531\n  'title': a\n  title: b\n",
+        "duplicate key",
+    ),
+    (
+        "PMAT-505.yaml",
+        "- id: PMAT-505\n  created: &id001 2026-10-24\n",
+        "anchor",
+    ),
+    (
+        "PMAT-506.yaml",
+        "- id: PMAT-506\n  created: *id001\n",
+        "anchor",
+    ),
+    (
+        "PMAT-510.yaml",
+        "- id: PMAT-510\n  ? [a]\n  : 1\n",
+        "unparseable",
+    ),
+    (
+        "PMAT-516.yaml",
+        "- id: PMAT-516\n  title: a\n  title: b\n",
+        "duplicate key",
+    ),
+    (
+        "PMAT-517.yaml",
+        "- id: PMAT-517\n  title: a\n- title: second\n",
+        "2 top-level items",
+    ),
+    (
+        "PMAT-519.yaml",
+        "- id: PMAT-519\n  title: [a, {b: 1, b: 2}]\n",
+        "duplicate key",
+    ),
+    (
+        "PMAT-520.yaml",
+        "- id: PMAT-520\n  tags: [a, b]\n- x\n",
+        "2 top-level items",
+    ),
 ];
 
 #[test]

@@ -273,6 +273,7 @@ aprender-contracts-macros = { path = "crates/aprender-contracts-macros", version
 serde_yaml = "0.9"
 # #5205: serde_yaml (0.9) and serde_yaml_ng pull unsafe-libyaml (RUSTSEC-2024-0449); crates move here
 serde-saphyr = "1.3"
+saphyr-parser = "0.2.2"
 
 # HF Hub
 hf-hub = { version = "0.5", default-features = false, features = ["ureq"] }
