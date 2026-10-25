@@ -600,7 +600,9 @@ STUB
   wire x86-main-advisories "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire workspace-test-shard "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
-  wire pr-light 'runs-on: [self-hosted, Linux, X64, clean-room]'
+  # PMAT-6169: pr-x64 is a variable-selected OPTION; the runs-on line is compared EXACT. PR_LIGHT_POOL == 'pr-x64' picks the
+  # X64 pr-x64 pool, anything else (unset, today) keeps X64 clean-room.
+  wire pr-light "runs-on: \${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"pr-x64\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
   wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, pr-light]'
   wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'

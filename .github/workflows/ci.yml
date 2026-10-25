@@ -197,7 +197,11 @@ jobs:
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
   pr-light:
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    # Noah 12:36Z: pr-x64 is an OPTION for PR quick-tier jobs, never merge_group, never release. A runs-on label list is an AND, so
+    # "either pool" is not expressible; the option is a repo variable instead. Unset (the default) or anything but 'pr-x64' keeps the
+    # X64 clean-room pool; PR_LIGHT_POOL=pr-x64 (and unsetting it) is the reversible switch. NO fallback: with the variable set and
+    # both pr-x64 runners offline, pr-light queues until it is unset. pull_request only, so no merge_group or release path reads it.
+    runs-on: ${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('["self-hosted","Linux","X64","pr-x64"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     timeout-minutes: 60
     # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
     permissions: write-all
