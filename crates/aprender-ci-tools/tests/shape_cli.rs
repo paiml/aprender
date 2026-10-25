@@ -42,7 +42,7 @@ fn a_missing_file_exits_2_not_measured() {
 
 #[test]
 fn bad_usage_exits_2_with_the_usage_line() {
-    let o = run(&[]);
+    let o = run(&["shape"]);
     assert_eq!(o.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&o.stderr).contains("usage: aprender-rollup shape"));
 }

@@ -1,4 +1,5 @@
 //! `aprender-rollup plan` prints the rollup it would build (read-only).
+//! `aprender-rollup shape <fragment> [--roadmap <path>]` judges a roadmap fragment (exit 0 ok / 1 refused / 2 not measured).
 //! `aprender-rollup build <dir>` assembles it locally in worktree `<dir>`; it never pushes or closes.
 
 use aprender_rollup::mg::{self, Verdict};
@@ -163,6 +164,30 @@ fn version_line() -> String {
     )
 }
 
+/// `shape <fragment> [--roadmap <path>]`: exit 0 ok, 1 refused (reason on stdout), 2 bad usage / not measured.
+fn shape(args: &[String]) -> ExitCode {
+    let mut argv = vec!["shape".to_string()];
+    argv.extend_from_slice(args);
+    let (file, roadmap) = match aprender_rollup::shape::parse_args(&argv) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("shape: {e}; usage: aprender-rollup shape <fragment> [--roadmap <path>]");
+            return ExitCode::from(2);
+        }
+    };
+    match aprender_rollup::shape::judge(&file, roadmap.as_deref()) {
+        Ok(None) => ExitCode::SUCCESS,
+        Ok(Some(why)) => {
+            println!("{why}");
+            ExitCode::from(1)
+        }
+        Err(e) => {
+            eprintln!("shape: {e}; not measured");
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("");
@@ -170,11 +195,14 @@ fn main() -> ExitCode {
         println!("{}", version_line());
         return ExitCode::SUCCESS;
     }
+    if cmd == "shape" {
+        return shape(&args[2..]);
+    }
     let res = match cmd {
         "plan" | "build" => run(cmd, args.get(2).map(String::as_str)),
         "verify" => verify(&args[2..]),
         _ => {
-            eprintln!("usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]");
+            eprintln!("usage: aprender-rollup plan | build <dir> | shape <fragment> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]");
             return ExitCode::from(2);
         }
     };
