@@ -1,0 +1,20 @@
+- id: PMAT-6352
+  github_issue: 6352
+  item_type: task
+  title: 'ci: aprender-rollup fold CLI subcommand (child of PMAT-6313)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T08:00:24Z
+  updated: 2026-10-25T08:00:24Z
+  spec: null
+  acceptance_criteria:
+  - '`aprender-rollup fold <base.yaml> <entries-dir>` is wired to the PMAT-6313 fold core and prints its output on stdout; exit 0, and exit 2 with `not measured` on an unreadable input, as `tests/fold_cli.rs` asserts'
+  - 'the fragment 851-aprender-rollup-fold-cli.cmd runs `cargo test -p aprender-ci-tools --test fold_cli`; 0 added Python lines'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Child of PMAT-6313 (fold core, #6341), split so each PR carries one ticket. Stacked on #6341.'
+  epic: 4741
