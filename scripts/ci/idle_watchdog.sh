@@ -32,8 +32,18 @@ logs_size() {
     echo "$t"
 }
 
+stop_group() { # TERM the child's group, give it FAT_IDLE_GRACE seconds, then KILL it
+    local gp
+    kill -TERM -- "-$pid" 2>/dev/null
+    sleep "${FAT_IDLE_GRACE:-150}" &
+    gp=$!
+    wait -n -p who "$pid" "$gp"
+    [ "${who:-}" = "$pid" ] || kill -KILL -- "-$pid" 2>/dev/null
+    kill "$gp" 2>/dev/null
+}
+
 watch_cmd() {
-    local dir=$1 limit=$2 tick=${FAT_IDLE_TICK:-5} grace=${FAT_IDLE_GRACE:-150}
+    local dir=$1 limit=$2 tick=${FAT_IDLE_TICK:-5}
     shift 2
     local pid sp who rc size last now since
     set -m # the child leads its own process group, so one signal reaches all of it
@@ -51,9 +61,10 @@ watch_cmd() {
             kill "$sp" 2>/dev/null
             exit "$rc"
         fi
-        if [ -z "${who:-}" ] && ! kill -0 "$pid" 2>/dev/null; then # child already reaped: never spin on a failing wait
+        if [ -z "${who:-}" ]; then # wait -n was interrupted (TERM/INT: the trap has signalled the group) or failed
             kill "$sp" 2>/dev/null
-            exit 125
+            kill -0 "$pid" 2>/dev/null && stop_group
+            exit 143
         fi
         size=$(logs_size "$dir")
         now=${EPOCHREALTIME/./}
@@ -62,17 +73,14 @@ watch_cmd() {
             since=$now
         elif [ $((now - since)) -ge "$limit" ]; then
             echo "::error::step printed nothing for $(((now - since) / 1000000))s (FAT_IDLE_LIMIT_S): a hang, not a slow run; killing group $pid"
-            kill -TERM -- "-$pid" 2>/dev/null
-            sleep "$grace" &
-            wait -n -p who "$pid" $!
-            [ "${who:-}" = "$pid" ] || kill -KILL -- "-$pid" 2>/dev/null
+            stop_group
             exit 124
         fi
     done
 }
 
 self_test() {
-    local me bad=0 rc t0 out tag=wdst$$
+    local me bad=0 rc t0 out wp tag=wdst$$
     me=$(readlink -f "$0")
     td=$(mktemp -d) || exit 2 # global: the EXIT trap reads it after this function returns
     trap 'rm -rf -- "${td:?}"' EXIT
@@ -106,6 +114,18 @@ self_test() {
     sleep 0.3
     row "idle: a step that ignores TERM is KILLed after the grace period" "$(pgrep -f "$tag-c" >/dev/null && echo alive || echo gone)" gone
     row "idle: ...and the exit is still 124" "$rc" 124
+
+    t0=$SECONDS
+    FAT_IDLE_LIMIT_S=100 bash "$me" "$td" -- sh -c 'trap "" TERM; while :; do sleep 0.1; done' "$tag-d" >/dev/null 2>&1 &
+    wp=$!
+    sleep 0.7
+    kill -TERM "$wp"
+    wait "$wp" 2>/dev/null
+    rc=$?
+    sleep 0.3
+    row "idle: a TERM to the watchdog exits 143" "$rc" 143
+    row "idle: ...and a step that ignores TERM is KILLed after the grace period" "$(pgrep -f "$tag-d" >/dev/null && echo alive || echo gone)" gone
+    row "idle: ...within the grace period, not at the step's end" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
 
     row "idle: a leading-zero limit is decimal, not octal" "$(FAT_IDLE_LIMIT_S=08 bash "$me" --limit-us)" 8000000
     row "idle: a leading-zero fraction is decimal, not octal" "$(FAT_IDLE_LIMIT_S=1.08 bash "$me" --limit-us)" 1080000
