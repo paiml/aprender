@@ -318,7 +318,7 @@ judge() {
     out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
     rc=$?
     # --- RULE 4: a completed fragment this diff changes cites its proof (the completion guard's own parser) --
-    cout=$(completion_problems "$repo" "$td"); crc=$?
+    cout=$(completion_problems "$repo" "$td" "$head"); crc=$?
     rm -rf -- "${td:?}"
     if [ "$crc" = 2 ]; then
         printf 'ENV   %s: %s\n' "$PROG" "$cout" >&2
@@ -349,8 +349,10 @@ judge() {
 
 # The completion guard's own scan and classifier, over the head aggregate: each completed entry whose id
 # is a changed fragment must cite a live proof. Prints "id (verdict); " per problem; rc 2 when the guard is absent.
+# A sub:/phase: record and a repeated-id "[#n]" record belong to their parent fragment's id; a proof: path
+# resolves in the JUDGED head tree (git), not in whatever the working tree holds.
 completion_problems() {
-    local scan repo=$1 td=$2 cc="${RFR_COMPLETION_GUARD:-${PY_LIB%/*}/../check_roadmap_completion_is_cited.sh}" fn rec id toks verdict
+    local scan repo=$1 td=$2 head=$3 cc="${RFR_COMPLETION_GUARD:-${PY_LIB%/*}/../check_roadmap_completion_is_cited.sh}" fn rec id toks verdict
     [ -f "$cc" ] || { printf '%s is absent' "$cc"; return 2; }
     mkdir -p "$td/cc/docs/roadmaps" && cp "$td/head.yaml" "$td/cc/docs/roadmaps/roadmap.yaml" \
         || { printf 'cannot stage the aggregate for the completion scan'; return 2; }
@@ -361,9 +363,16 @@ completion_problems() {
         # shellcheck disable=SC1090
         . "$td/cc.sh" || exit 2
         PR_CACHE_DIR=${RFR_PR_CACHE:-$td/prcache}; mkdir -p "$PR_CACHE_DIR" || exit 2
+        resolve_path_ref() { # <root> <ref>: rc 0 when <ref> is a non-empty blob or a non-empty tree at $head
+            local ref=$2 kind
+            kind=$(git -C "$repo" cat-file -t "$head:$ref" 2>/dev/null) || return 1 # git refuses an absolute or ".." path
+            if [ "$kind" = tree ]; then [ -n "$(git -C "$repo" ls-tree "$head:$ref")" ]; return; fi
+            [ "$kind" = blob ] && [ "$(git -C "$repo" cat-file -s "$head:$ref")" -gt 0 ]
+        }
         scan=$(scan_roadmaps "$td/cc" 2>/dev/null) || { printf 'the completion scan failed (PyYAML?)'; exit 2; }
         while IFS=$'\t' read -r _ id toks; do
-            grep -Fxq -- "$id" "$td/frag_ids" || continue
+            pid=${id#sub:}; pid=${pid#phase:}; pid=${pid%%/*}; pid=${pid% \[#*}
+            grep -Fxq -- "$pid" "$td/frag_ids" || continue
             verdict=$(classify_record "$repo" "$toks")
             [ "$verdict" = cited ] || printf '%s (%s); ' "$id" "$verdict"
         done < <(printf '%s\n' "$scan")
@@ -404,7 +413,7 @@ mkrepo() {
 }
 
 self_test() {
-    local td n=0 red=0 okc=0 want_rows=47 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
+    local td n=0 red=0 okc=0 want_rows=55 TEMPLATE # a FAIL row that loses its red++ still leaves okc < n
     td=$(mktemp -d "${TMPDIR:-/tmp}/rmfragreq-selftest.XXXXXX") || return 2
     cleanup() {
         local victim=${td:-}
@@ -473,6 +482,58 @@ self_test() {
     b_done_mixed() { # one cited and one uncited completed fragment, both changed by the diff
         printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         printf -- '- id: PMAT-201\n  title: t\n  status: completed\n' >"$1/$ENTRIES_DIR/PMAT-201.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # completed sub-task / phase records under a changed fragment: judged like the entry itself
+    b_done_sub() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: planned\n  subtasks:\n  - id: s1\n    title: t\n    status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_phase() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: planned\n  phases:\n  - name: p1\n    status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_sub_cited() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: planned\n  notes: proof:docs/roadmaps/README.md\n  subtasks:\n  - id: s1\n    title: t\n    status: completed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # a proof: path that exists only in the working tree (never committed) is not a proof at the judged head
+    b_done_untracked_proof() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/only-in-worktree.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1" || return 1
+        mkdir -p "$1/docs" && printf 'x\n' >"$1/docs/only-in-worktree.md" || return 1
+        [ -s "$1/docs/only-in-worktree.md" ] || return 1
+    }
+    # the converse: a proof committed at head but deleted from the working tree still counts
+    b_done_head_proof() {
+        mkdir -p "$1/docs" && printf 'x\n' >"$1/docs/at-head.md"
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/at-head.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1" || return 1
+        rm -f -- "${1:?}/docs/at-head.md"
+        [ ! -e "$1/docs/at-head.md" ] || return 1
+    }
+    # the aggregate repeats a changed fragment's id: the repeat ("[#2]") is judged as that fragment's record
+    b_done_dup_id() {
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps/README.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n' >>"$1/$ROADMAP_FILE"
+        commit_all "$1"
+    }
+    b_done_dirproof() { # a proof: that names a non-empty directory committed at head
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/roadmaps\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    b_done_emptyproof() { # a proof: that names an empty file committed at head is not a proof
+        mkdir -p "$1/docs" && : >"$1/docs/empty.md" || return 1
+        [ -e "$1/docs/empty.md" ] || return 1
+        printf -- '- id: PMAT-200\n  title: t\n  status: completed\n  notes: proof:docs/empty.md\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
@@ -618,6 +679,14 @@ PY
     row 'a completed fragment with no proof: token -> REFUSE' 1 'FAIL  UNCITED' b_done_uncited
     row 'a completed fragment whose proof: path does not exist -> REFUSE' 1 'FAIL  UNCITED' b_done_dangling
     row 'two changed completed fragments, one uncited -> REFUSE, naming the uncited one (the check ran over frag_ids)' 1 'PMAT-201 (' b_done_mixed
+    row 'changed fragment with an uncited completed subtask -> REFUSE, naming the sub: record' 1 'sub:PMAT-200/s1 (' b_done_sub
+    row 'changed fragment with an uncited completed phase -> REFUSE, naming the phase: record' 1 'phase:PMAT-200/p1 (' b_done_phase
+    row 'completed subtask citing its parent fragment notes -> PASS' 0 'PASS' b_done_sub_cited
+    row 'proof: path present only in the working tree -> REFUSE (judged at head, not the worktree)' 1 'PMAT-200 (dangling' b_done_untracked_proof
+    row 'proof: path committed at head, absent from the working tree -> PASS' 0 '1 changed entry/entries' b_done_head_proof
+    row 'proof: naming an empty file at head -> REFUSE' 1 'PMAT-200 (dangling' b_done_emptyproof
+    row 'proof: naming a non-empty directory at head -> PASS' 0 '1 changed entry/entries' b_done_dirproof
+    row 'aggregate repeating a changed fragment id with an uncited completed record -> REFUSE, naming PMAT-200 [#2]' 1 'PMAT-200 [#2] (' b_done_dup_id
     row 'two changed completed fragments, one uncited -> exactly 1 violation over 2 changed entries (the cited one is judged and passes)' 1 '1 violation(s) over 2 changed entry/entries' b_done_mixed
     row 'a completed fragment citing an existing proof: path -> PASS' 0 'PASS  check_roadmap_fragment_required.sh' b_done_cited
     mkdir -p "$td/prc" && printf 'MERGED\n' >"$td/prc/4242"
