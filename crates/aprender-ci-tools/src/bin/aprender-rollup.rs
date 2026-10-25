@@ -1,4 +1,5 @@
 //! `aprender-rollup plan` prints the rollup it would build (read-only).
+//! `aprender-rollup fold <base.yaml> <entries-dir>` prints the roadmap aggregate (exit 2: not measured).
 //! `aprender-rollup build <dir>` assembles it locally in worktree `<dir>`; it never pushes or closes.
 
 use aprender_rollup::mg::{self, Verdict};
@@ -163,6 +164,29 @@ fn version_line() -> String {
     )
 }
 
+/// `fold <base> <entries>`: the aggregate on stdout and exit 0, or exit 2 (bad usage / not measured).
+fn fold(args: &[String]) -> ExitCode {
+    let mut argv = vec!["fold".to_string()];
+    argv.extend_from_slice(args);
+    let (base, entries) = match aprender_rollup::fold::parse_args(&argv) {
+        Ok(parsed) => parsed,
+        Err(e) => {
+            eprintln!("fold: {e}");
+            return ExitCode::from(2);
+        }
+    };
+    match aprender_rollup::fold::fold(&base, &entries) {
+        Ok(text) => {
+            print!("{text}");
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("fold: {e}; not measured");
+            ExitCode::from(2)
+        }
+    }
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("");
@@ -170,11 +194,14 @@ fn main() -> ExitCode {
         println!("{}", version_line());
         return ExitCode::SUCCESS;
     }
+    if cmd == "fold" {
+        return fold(&args[2..]);
+    }
     let res = match cmd {
         "plan" | "build" => run(cmd, args.get(2).map(String::as_str)),
         "verify" => verify(&args[2..]),
         _ => {
-            eprintln!("usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]");
+            eprintln!("usage: aprender-rollup plan | build <dir> | fold <base> <entries> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]");
             return ExitCode::from(2);
         }
     };
