@@ -1446,12 +1446,12 @@ mod tests {
 
     /// FALSIFY-KREG-007: every row's (qtype, ggml_type, block_elems) matches the facts read
     /// from llama.cpp and vLLM at the commits pinned in
-    /// `docs/kernel-registry/upstream-reference-v1.json`. A wrong type id or block size would
+    /// `crates/aprender-serve/data/upstream-reference-v1.json`. A wrong type id or block size would
     /// admit a kernel for bytes it cannot decode. APR-native ids (>= 128) have no upstream row.
     #[test]
     fn every_row_agrees_with_the_upstream_reference() {
         let doc: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../docs/kernel-registry/upstream-reference-v1.json"
+            "../data/upstream-reference-v1.json"
         ))
         .expect("reference json");
         let refs = doc["rows"].as_array().expect("rows");

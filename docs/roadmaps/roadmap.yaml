@@ -26452,3 +26452,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6390
+- id: PMAT-6422
+  github_issue: 6422
+  item_type: task
+  title: 'aprender-serve .crate compiles its lib tests: ship upstream-reference-v1.json inside the crate'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5404
+  created: 2026-10-26T18:30:00Z
+  updated: 2026-10-26T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'crates/aprender-serve/data/upstream-reference-v1.json is listed by cargo package -p aprender-serve --list'
+  - 'both include_str! sites (matmul_fused.rs, kernel_registry.rs) read the crate copy'
+  - 'docs/kernel-registry/upstream-reference-v1.json stays as a symlink to the crate copy'
+  - 'package_tarball_build passes for aprender-serve'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
