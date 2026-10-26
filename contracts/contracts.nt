@@ -880,9 +880,17 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-ci-tools/aprender-rollup> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-rollup --version"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-rollup build"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-rollup plan"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-rollup verify"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-rollup verify --apply"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "acde1c41ec2a53a4783464a72f12ac097702256c"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/helpFailed> "true"^^<http://www.w3.org/2001/XMLSchema#boolean> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "build"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "plan"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "verify"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-rollup"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-ci-tools"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-ci-tools/aprender-rollup> <https://ont.paiml.dev/v1alpha1/bin/sha256> "1a8d68713c3c2cdbf8a416eef593606e234d0687eace936e7c23159787c8f312"^^<http://www.w3.org/2001/XMLSchema#string> .
