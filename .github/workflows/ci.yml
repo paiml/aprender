@@ -703,9 +703,9 @@ jobs:
     # The wall stays 180 on pull_request/push (not merge_group, below): a tier=full entry (Cargo.lock / root Cargo.toml / toolchain touched, or the base
     # unfetchable) is green at 46-64 min and the tier is decided inside the job. The hang cap is FAT_IDLE_LIMIT_S below.
     # Run 40107798347 printed lines at 15:37/15:38/15:48/15:57, then nothing until the 16:19 hand cancel (22 min silent).
-    # OPERATOR 2026-10-26 16:43Z: "timeout = 2x p95 going forward". merge_group: 111 = max(2 x p95 49, 1.25 x max 89.2) of 655 green merge_group shard jobs, 14 d (NOAH-1648Z)
+    # OPERATOR 2026-10-26 16:43Z: "timeout = 2x p95 going forward". merge_group: 112 = ceil(max(2 x p95 49, 1.25 x max 89.2 = 111.5)) of 655 green merge_group shard jobs, 14 d (NOAH-1648Z)
     # holding an mq runner. pull_request/push keep 180 (the untimed image pull and the full-tier fallback).
-    timeout-minutes: ${{ github.event_name == 'merge_group' && 111 || 180 }}
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 112 || 180 }}
     permissions:
       contents: read
       checks: read     # ci_mg_workspace_result.sh reads check-suites

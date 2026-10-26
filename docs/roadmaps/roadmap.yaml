@@ -26455,7 +26455,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
 - id: PMAT-6418
   github_issue: 6418
   item_type: task
-  title: workspace-test-shard timeout-minutes 66 on merge_group (2x p95)
+  title: workspace-test-shard timeout-minutes 112 on merge_group (max(2x p95, 1.25x max), measured)
   status: in_progress
   priority: high
   assigned_to: null
@@ -26463,10 +26463,10 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-26T16:44:11Z
   spec: null
   acceptance_criteria:
-  - ci.yml workspace-test-shard timeout-minutes is 66 for merge_group and 180 for pull_request and push
+  - ci.yml workspace-test-shard timeout-minutes is 112 for merge_group and 180 for pull_request and push
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'Measured 2026-10-26 17:0xZ by handoff/shard-timeout-measure.sh (NOAH-1648Z), 14 d of green merge_group workspace-test-shard jobs: n=655 p95=49.0 max=89.2; max(2x49.0=98, 1.25x89.2=111.5) rounded UP = 112 (the script prints 111, its int floor). Output: shard-timeout.out in cop-inbox/handoff.'
