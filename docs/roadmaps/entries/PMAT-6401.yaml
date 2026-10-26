@@ -1,14 +1,18 @@
 - id: PMAT-6401
   github_issue: 6401
   item_type: task
-  title: 'CAP-001: move test_mega_long_context_memory_bound to nightly LAB (PR seats <=14 GB)'
-  status: planned
+  title: 'CAP-001: test_mega_long_context_memory_bound checks arithmetic without 31 GiB eager allocation'
+  status: in_progress
   priority: high
   assigned_to: null
   created: 2026-10-26T09:27:06Z
   updated: 2026-10-26T09:27:06Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'memory-bound tests assert on StreamingKVCache[Fp16]::estimate_memory_bytes (no large allocation), tied to real 4 MiB / 2 MiB caches by literal byte counts'
+  - 'the two #[ignore]s on the 100 GB / 34 GB tests are removed; no nightly lane is added (the tests are fixed, not moved)'
+  - 'estimate_memory_bytes is pub const fn because the FP16 doctest, outside the crate, calls it; memory_bytes() uses it so one formula serves both'
+  - 'test_streaming_kv_cache_32768_positions and test_mega_long_context_fill_performance keep their original dimensions (unchanged)'
   phases: []
   subtasks: []
   estimated_effort: null

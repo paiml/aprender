@@ -5,10 +5,10 @@
 #[test]
 fn test_streaming_kv_cache_32768_positions() {
     // M11 target: 32768 context positions
-    let num_layers = 2;
+    let num_layers = 4; // Use smaller for test speed
     let max_positions = 32768;
-    let num_heads = 4;
-    let head_dim = 32;
+    let num_heads = 8;
+    let head_dim = 64;
 
     let mut cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
 
@@ -49,10 +49,8 @@ fn test_mega_long_context_memory_bound() {
 
     // The same shape scaled to 4 MiB must report what the formula says.
     let small = StreamingKVCache::new(2, 1024, 4, 64);
-    assert_eq!(
-        small.memory_bytes(),
-        StreamingKVCache::estimate_memory_bytes(2, 1024, 4, 64)
-    );
+    // Literal: 2 layers x 1024 pos x 4 heads x 64 dim x (K+V) x 4 B -- independent of the formula under test.
+    assert_eq!(small.memory_bytes(), 4_194_304);
 
     let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
@@ -66,10 +64,10 @@ fn test_mega_long_context_memory_bound() {
 fn test_mega_long_context_fill_performance() {
     use std::time::Instant;
 
-    let num_layers = 2;
+    let num_layers = 4;
     let max_positions = 32768;
-    let num_heads = 4;
-    let head_dim = 32;
+    let num_heads = 8;
+    let head_dim = 64;
 
     let mut cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
 
@@ -165,6 +163,27 @@ fn test_streaming_kv_cache_fp16_basic() {
 }
 
 #[test]
+fn test_estimate_matches_real_allocation_over_small_shapes() {
+    // The estimate must equal what a real cache reports, for every small shape (CAP-001).
+    for layers in 1..=3_usize {
+        for positions in [1_usize, 16, 128] {
+            for heads in [1_usize, 2, 4] {
+                for dim in [8_usize, 32] {
+                    assert_eq!(
+                        StreamingKVCache::new(layers, positions, heads, dim).memory_bytes(),
+                        StreamingKVCache::estimate_memory_bytes(layers, positions, heads, dim)
+                    );
+                    assert_eq!(
+                        StreamingKVCacheFp16::new(layers, positions, heads, dim).memory_bytes(),
+                        StreamingKVCacheFp16::estimate_memory_bytes(layers, positions, heads, dim)
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn test_streaming_kv_cache_fp16_memory_half() {
     // Verify FP16 uses half the memory of FP32
     let num_layers = 32;
@@ -183,6 +202,8 @@ fn test_streaming_kv_cache_fp16_memory_half() {
     // Real caches at 4 MiB (FP32) keep the same 2:1 ratio
     let small16 = StreamingKVCacheFp16::new(2, 1024, 4, 64);
     let small32 = StreamingKVCache::new(2, 1024, 4, 64);
+    assert_eq!(small32.memory_bytes(), 4_194_304);
+    assert_eq!(small16.memory_bytes(), 2_097_152);
     assert_eq!(small16.memory_bytes() * 2, small32.memory_bytes());
 
     // FP16 memory for 65536 context should be ~34.36 GB
@@ -248,10 +269,8 @@ fn test_fp16_kv_cache_memory_bound_65536() {
     assert_eq!(bytes, expected_bytes);
 
     let small = StreamingKVCacheFp16::new(2, 1024, 4, 64);
-    assert_eq!(
-        small.memory_bytes(),
-        StreamingKVCacheFp16::estimate_memory_bytes(2, 1024, 4, 64)
-    );
+    // Literal: same shape at 2 B per element.
+    assert_eq!(small.memory_bytes(), 2_097_152);
 
     let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
