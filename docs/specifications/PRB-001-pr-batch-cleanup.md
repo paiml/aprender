@@ -101,16 +101,18 @@ The structural fix is a separate pmat ticket: generated artifacts come off the P
 
 ## 7. Contract: batch-sweep-v1
 
-The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/check_batch_sweep.sh --self-test` runs each on a fixture repo, RED then GREEN (22 rows, LAB, wired into no workflow).
+The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/check_batch_sweep.sh --self-test` runs each on a fixture repo, RED then GREEN (25 rows, LAB, wired into no workflow).
 
 | Id | Obligation | How it is falsified |
 | --- | --- | --- |
 | BS-1 | Every absorbed PR's tree diff is on main after the merge | Diff the PR's merge-base..head against main; any missing hunk fails |
 | BS-2 | Main gets N ticket commits plus 1 trailing `batch: regenerate` commit; no merge commits | Commit count in the batch range must equal N + 1; any commit with 2 parents fails |
 | BS-3 | No PR is closed before its merge sha exists | A PR closed while its sha is not an ancestor of main fails |
-| BS-4 | No external-author PR or gate-file PR is ever absorbed | Check each absorbed PR's author and paths against a deny-list |
+| BS-4 | No external-author PR or gate-file PR is ever absorbed | Check each absorbed PR's author and paths against a deny-list. "Gate file" means a path matching `DENY_PATHS` in `scripts/check_batch_sweep.sh` |
 | BS-5 | No closing keyword appears before #N in a batch PR body | A regex guard on the body |
 | BS-6 | Generated artifacts equal their regenerated output | `ci / gate` re-derives them and diffs |
+
+A check that cannot run exits 2, never 1 or 0 (BS-1 no merge-base or diff, BS-3 bad ref, BS-6 not a git work tree). Known limits: `DENY_AUTHORS` and `DENY_PATHS` are deny-lists, so a new gate path is absorbable until it is added; BS-1 can show a false RED when two absorbed PRs overlap; BS-5 matches `#N` and `org/repo#N`, not a full issue URL; BS-1 passes a README.md absent at the merge-base; BS-2 does not check that N is numeric.
 
 ## 8. KPIs and exit
 

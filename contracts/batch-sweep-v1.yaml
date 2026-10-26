@@ -106,5 +106,5 @@ qa_gate:
   - bs4_deny_list
   - bs5_no_closing_keyword
   - bs6_regenerated_equal
-  pass_criteria: scripts/check_batch_sweep.sh --self-test exits 0 (22 rows)
+  pass_criteria: scripts/check_batch_sweep.sh --self-test exits 0 (25 rows)
   falsification: planted violating fixtures, one per obligation

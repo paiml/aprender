@@ -10,7 +10,7 @@
 # Exit: 0 held . 1 violated . 2 could not check. LAB: wired into no workflow.
 set -uo pipefail
 DENY_AUTHORS="${BS_DENY_AUTHORS:-guyernest}"
-DENY_PATHS="${BS_DENY_PATHS:-^\.github/|^ci/|^deny\.toml$|^Makefile$|^rust-toolchain|^scripts/(ci/|contracts_gate\.sh|contracts_resolve\.sh|readme_sync\.sh|batch_fold\.sh|check_)}"
+DENY_PATHS="${BS_DENY_PATHS:-^\.github/|^ci/|^deny\.toml$|^Makefile$|^rust-toolchain|^Cargo\.(toml|lock)$|^\.cargo/|^\.config/nextest\.toml$|^\.pmat-gates\.toml$|^\.clippy\.toml$|^crates/aprender-contracts|^scripts/(ci/|release/|contracts_gate\.sh|contracts_resolve\.sh|readme_sync\.sh|batch_fold\.sh|pv_bin\.sh|apr_bin\.sh|check_)}"
 GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!contracts/census.json' ':!README.md')  # README.md: judged below, generated lines collapsed
 bad() { echo "BS-$1 VIOLATED: $2"; return 1; }
 bs1_readme() {  # README.md judged with its generated lines collapsed (CONTRACT_COUNT blocks, frontmatter contract_count); the rest is hand-written (PRB-001 §6)
@@ -26,8 +26,8 @@ bs1() {
   wt="$(mktemp -d)" || return 2
   git -C "$repo" worktree add -q --detach "$wt" "$main" || { rm -rf -- "${wt:?}"; return 2; }
   for pr in "$@"; do
-    mb="$(git -C "$repo" merge-base "$main" "$pr")" || { bad 1 "no merge-base for $pr"; rc=1; continue; }
-    git -C "$repo" diff "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch" || { bad 1 "git diff failed for $pr"; rc=1; continue; }
+    mb="$(git -C "$repo" merge-base "$main" "$pr")" || { echo "BS-1 could not check $pr: no merge-base"; rc=2; continue; }
+    git -C "$repo" diff "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch" || { echo "BS-1 could not check $pr: git diff failed"; rc=2; continue; }
     if [ -s "$wt.patch" ] && ! git -C "$wt" apply -R --check "$wt.patch" 2> /dev/null; then bad 1 "$pr has a hunk missing from $main"; rc=1; fi
     bs1_readme "$repo" "$main" "$mb" "$pr" "$wt" || { bad 1 "$pr has a hand-written README.md hunk missing from $main"; rc=1; }
   done
@@ -42,7 +42,7 @@ bs2() {
   case "$last" in "batch: regenerate"*) ;; *) bad 2 "last commit is '$last', not 'batch: regenerate...'"; return 1 ;; esac  # prefix: batch_fold.sh writes a longer subject
 }
 bs3() {
-  local repo="$1" main="$2" tsv="$3" pr sha rc=0; [ -r "$tsv" ] || return 2
+  local repo="$1" main="$2" tsv="$3" pr sha rc=0; [ -r "$tsv" ] && git -C "$repo" rev-parse -q --verify "$main^{commit}" > /dev/null || return 2
   while IFS=$'\t' read -r pr sha; do
     [ -n "$pr" ] || continue
     if [ -z "$sha" ] || ! git -C "$repo" merge-base --is-ancestor "$sha" "$main" 2> /dev/null; then bad 3 "#$pr closed, '$sha' is not on $main"; rc=1; fi
@@ -61,7 +61,7 @@ bs5() {
   [ -z "$hit" ] || { bad 5 "closing keyword: $hit"; return 1; }
 }
 bs6() {
-  local repo="$1" cmd="$2" d
+  local repo="$1" cmd="$2" d; git -C "$repo" rev-parse --is-inside-work-tree > /dev/null 2>&1 || return 2
   (cd "$repo" && bash -c "$cmd") > /dev/null 2>&1 || return 2
   d="$(git -C "$repo" status --porcelain)"
   [ -z "$d" ] || { bad 6 "regeneration changed: $d"; return 1; }
@@ -80,6 +80,7 @@ selftest() {
   expect "BS-1 GREEN both PRs on main" 0 bs1 "$t/r" main prA prB
   g checkout -qb prC main~2; printf 'C\n' > "$t/r/c.txt"; g add -A; g commit -qm ticketC; g checkout -q main
   expect "BS-1 RED a PR whose hunk never landed" 1 bs1 "$t/r" main prC
+  expect "BS-1 could not check an unknown PR ref (rc 2)" 2 bs1 "$t/r" main nope
   git init -q -b main "$t/rd"; printf 'contract_count: 1\nx <!-- CONTRACT_COUNT_START -->5<!-- CONTRACT_COUNT_END -->\nhand\n' > "$t/rd/README.md"; git -C "$t/rd" add -A; git -C "$t/rd" commit -qm base; git -C "$t/rd" checkout -qb prN; printf 'contract_count: 2\nx <!-- CONTRACT_COUNT_START -->6<!-- CONTRACT_COUNT_END -->\nhand\n' > "$t/rd/README.md"; git -C "$t/rd" commit -qam count; git -C "$t/rd" checkout -qb prH main; printf 'contract_count: 1\nx <!-- CONTRACT_COUNT_START -->5<!-- CONTRACT_COUNT_END -->\nhand\nlost\n' > "$t/rd/README.md"; git -C "$t/rd" commit -qam hand; git -C "$t/rd" checkout -q main; printf 'contract_count: 3\nx <!-- CONTRACT_COUNT_START -->7<!-- CONTRACT_COUNT_END -->\nhand\n' > "$t/rd/README.md"; git -C "$t/rd" commit -qam regen
   expect "BS-1 GREEN README count block differs, hand text same" 0 bs1 "$t/rd" main prN
   expect "BS-1 RED a hand-written README hunk never landed" 1 bs1 "$t/rd" main prH
@@ -94,7 +95,7 @@ selftest() {
   printf '1\t%s\n' "$(git -C "$t/r" rev-parse main)" > "$t/ok.tsv"; printf '2\t%s\n' "$(git -C "$t/r" rev-parse prC)" > "$t/early.tsv"
   expect "BS-3 GREEN closed after its sha is on main" 0 bs3 "$t/r" main "$t/ok.tsv"
   expect "BS-3 RED closed before its sha is on main" 1 bs3 "$t/r" main "$t/early.tsv"
-  expect "BS-3 could not check a missing file (rc 2)" 2 bs3 "$t/r" main "$t/none.tsv"
+  expect "BS-3 could not check a missing file (rc 2)" 2 bs3 "$t/r" main "$t/none.tsv"; expect "BS-3 could not check a bad MAIN ref (rc 2)" 2 bs3 "$t/r" nope "$t/ok.tsv"
   printf '7\tnoah\tcrates/x/src/lib.rs docs/a.md\n' > "$t/a-ok.tsv"
   printf '8\tguyernest\tcrates/x/src/lib.rs\n' > "$t/a-ext.tsv"; printf '9\tnoah\t.github/workflows/ci.yml\n' > "$t/a-gate.tsv"
   expect "BS-4 GREEN internal author, source paths" 0 bs4 "$t/a-ok.tsv"
@@ -108,6 +109,7 @@ selftest() {
   expect "BS-5 RED 'Fixes: org/repo#N'" 1 bs5 "$t/b-bad2.md"
   g checkout -q main; printf 'c\nb\n' > "$t/r/gen.nt"; g commit -qam unsorted
   expect "BS-6 RED committed artifact differs from regeneration" 1 bs6 "$t/r" 'sort gen.nt -o gen.nt'
+  expect "BS-6 could not check a non-repo (rc 2)" 2 bs6 "$t" true
   printf 'b\nc\n' > "$t/r/gen.nt"; g commit -qam sorted
   expect "BS-6 GREEN artifact equals regeneration" 0 bs6 "$t/r" 'sort gen.nt -o gen.nt'
   printf 'check_batch_sweep self-test: %d broke\n' "$fail"; [ "$fail" -eq 0 ]
