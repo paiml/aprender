@@ -103,6 +103,15 @@ t2_pick() {
     awk 'NR == FNR { if ($1 ~ /^[0-9a-f]{40}$/) m[$1] = 1; next } ($1 in m) { print $1; f = 1; exit } END { exit !f }' "$2" "$1"
 }
 
+# t2_wt_leaks <worktree> <root>... : rc 0 when the worktree sits under any root. Cargo reads every ancestor
+# .cargo/config.toml, so a worktree under the checkout OR under the main checkout (the release state root,
+# where the gitignored [patch.crates-io] config lives) inherits it.
+t2_wt_leaks() {
+    local wt=$1 r; shift
+    for r in "$@"; do case "$wt" in "$r"/*) return 0 ;; esac; done
+    return 1
+}
+
 # ---------------------------------------------------------------------------
 # --self-test: the case table. Doctrine 4 -- crash / missing input / never-asked
 # are UNKNOWN with reason=<why> with exit 2, never GO and never a fabricated FAIL.
@@ -268,6 +277,12 @@ if [ "${1:-}" = "--self-test" ]; then
     printf '%s\n' "${c3:0:12}" > "$d/fp2"; cat "$d/fp" >> "$d/fp2"
     v=$(t2_pick "$d/fp2" "$d/runs"); [ "$v" = "$c2" ] && ok "short sha in runs is no match; the full one is" || nok "case 25 -> '$v'"
 
+    # 26. the worktree guard: under the checkout or under the state root leaks the .cargo patch; outside does not
+    t2_wt_leaks "/r/wt/x" "/r/wt" "/m" && ok "worktree under the script checkout leaks" || nok "case 26a"
+    t2_wt_leaks "/m/target/x" "/r/wt" "/m" && ok "worktree under the state root leaks (the worktree-run case)" || nok "case 26b"
+    t2_wt_leaks "/tmp/x" "/r/wt" "/m" && nok "case 26c outside flagged" || ok "worktree outside both roots is fine"
+    t2_wt_leaks "/m2/x" "/r/wt" "/m" && nok "case 26d prefix sibling flagged" || ok "a sibling sharing a name prefix is not under the root"
+
     [ "$bad" -eq 0 ] && { echo "self-test OK"; exit 0; }
     echo "self-test FAILED: $bad case(s)"; exit 1
 fi
@@ -302,7 +317,12 @@ fi
 # gitignored one carries [patch.crates-io] path overrides. Under $AP (inside it) they leaked in,
 # wrote [[patch.unused]] into Cargo.lock, and the dirty tree voided fmt/comply/test/coverage.
 wt="${TMPDIR:-/tmp}/preflight-wt-$(basename "$AP")"
-case "$wt" in "$REPO_ROOT"/*) echo "t2_preflight: worktree $wt is inside $REPO_ROOT, so its .cargo/config.toml would leak in" >&2; exit 2;; esac
+state_root=$(release_state_root "$REPO_ROOT")
+if t2_wt_leaks "$wt" "$REPO_ROOT" "$state_root"; then
+    echo "t2_preflight: worktree $wt is inside $REPO_ROOT or $state_root, so its .cargo/config.toml would leak in" >&2; exit 2
+fi
+# Worktrees registered at the old location by earlier runs are never reused: drop them.
+git worktree remove --force "$AP/preflight-wt" > /dev/null 2>&1; git worktree prune
 [ -d "$wt" ] && git worktree remove --force "$wt" > /dev/null 2>&1
 git worktree add --detach "$wt" "$sha" > /dev/null 2>&1 || exit 2
 cd "$wt" || exit 2
