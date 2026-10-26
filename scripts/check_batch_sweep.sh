@@ -10,12 +10,12 @@
 # Exit: 0 held . 1 violated . 2 could not check. LAB: wired into no workflow.
 set -uo pipefail
 DENY_AUTHORS="${BS_DENY_AUTHORS:-guyernest}"
-DENY_PATHS="${BS_DENY_PATHS:-^\.github/workflows/|^ci/sections\.yml$|^deny\.toml$|^scripts/ci/}"
-GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!README.md')  # README.md is judged below with its CONTRACT_COUNT blocks collapsed
+DENY_PATHS="${BS_DENY_PATHS:-^\.github/|^ci/|^deny\.toml$|^scripts/ci/}"
+GEN_PATHS=(':!contracts/contracts.nt' ':!contracts/shapes.ttl' ':!contracts/witness' ':!contracts/census.json' ':!README.md')  # README.md: judged below, generated lines collapsed
 bad() { echo "BS-$1 VIOLATED: $2"; return 1; }
-bs1_readme() {  # README.md judged with its CONTRACT_COUNT blocks collapsed; the rest is hand-written (PRB-001 §6)
-  local repo="$1" main="$2" mb="$3" pr="$4" wt="$5" n='s/(<!-- CONTRACT_COUNT_START -->).*(<!-- CONTRACT_COUNT_END -->)/\1\2/' rc=0
-  git -C "$repo" show "$mb:README.md" 2> /dev/null | sed -E "$n" > "$wt.rb" || return 0
+bs1_readme() {  # README.md judged with its generated lines collapsed (CONTRACT_COUNT blocks, frontmatter contract_count); the rest is hand-written (PRB-001 §6)
+  local repo="$1" main="$2" mb="$3" pr="$4" wt="$5" n='s/(<!-- CONTRACT_COUNT_START -->).*(<!-- CONTRACT_COUNT_END -->)/\1\2/;s/^contract_count: .*/contract_count: N/' rc=0
+  git -C "$repo" show "$mb:README.md" 2> /dev/null | sed -E "$n" > "$wt.rb" || { rm -f -- "${wt:?}.rb"; return 0; }
   git -C "$repo" show "$pr:README.md" 2> /dev/null | sed -E "$n" > "$wt.rp"; git -C "$repo" show "$main:README.md" 2> /dev/null | sed -E "$n" > "$wt/README.md"
   diff -u --label a/README.md --label b/README.md "$wt.rb" "$wt.rp" > "$wt.rpatch"
   if [ -s "$wt.rpatch" ] && ! git -C "$wt" apply -R --check "$wt.rpatch" 2> /dev/null; then rc=1; fi
@@ -24,7 +24,7 @@ bs1_readme() {  # README.md judged with its CONTRACT_COUNT blocks collapsed; the
 bs1() {
   local repo="$1" main="$2" pr mb wt rc=0; shift 2
   wt="$(mktemp -d)" || return 2
-  git -C "$repo" worktree add -q --detach "$wt" "$main" || return 2
+  git -C "$repo" worktree add -q --detach "$wt" "$main" || { rm -rf -- "${wt:?}"; return 2; }
   for pr in "$@"; do
     mb="$(git -C "$repo" merge-base "$main" "$pr")" || { bad 1 "no merge-base for $pr"; rc=1; continue; }
     git -C "$repo" diff "$mb" "$pr" -- . "${GEN_PATHS[@]}" > "$wt.patch"
@@ -39,7 +39,7 @@ bs2() {
   last="$(git -C "$repo" log -1 --format=%s "$head")"
   [ "$m" = 0 ] || { bad 2 "$m merge commit(s) in $base..$head"; return 1; }
   [ "$c" = "$((n + 1))" ] || { bad 2 "$c commits, want $n tickets + 1 = $((n + 1))"; return 1; }
-  [ "$last" = "batch: regenerate" ] || { bad 2 "last commit is '$last', not 'batch: regenerate'"; return 1; }
+  case "$last" in "batch: regenerate"*) ;; *) bad 2 "last commit is '$last', not 'batch: regenerate...'"; return 1 ;; esac  # prefix: batch_fold.sh writes a longer subject
 }
 bs3() {
   local repo="$1" main="$2" tsv="$3" pr sha rc=0

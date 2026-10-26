@@ -87,7 +87,7 @@ The sweep is a worker under aprender-cop on lambda, not a new top-level agent; t
 3. **Select.** Take lane A only, oldest first, at most 7 per batch. Drafts held by stop-the-line are allowed. Skip any PR whose diff is already on main.
 4. **Absorb.** Fix `scripts/batch_fold.sh` in place: it uses `git merge --no-ff` today, and rebase-merge cannot carry merge commits. Squash cherry-pick each PR into one linear commit. Keep the original author and the `Refs #ticket` line. Strip the generated paths listed in §6.
 5. **Drop on failure.** If a PR conflicts or its tests fail locally, drop it and label it `batch-reject`. Continue with the rest.
-6. **Regenerate.** Run `scripts/contracts_resolve.sh` and `scripts/readme_sync.sh --write` once, as a single trailing commit titled `batch: regenerate`. Never amend this into a ticket commit, or reverting that ticket would also revert the regeneration.
+6. **Regenerate.** Run `scripts/contracts_resolve.sh` and `scripts/readme_sync.sh --write` once, as a single trailing commit titled `batch: regenerate` (BS-2 matches that prefix, because `batch_fold.sh --regen` appends a longer description). Never amend this into a ticket commit, or reverting that ticket would also revert the regeneration.
 7. **Verify.** Run affected-set nextest on lambda (#5802 once landed, otherwise the full workspace) plus coverage. Produce a signed receipt.
 8. **Open the batch PR.** List each absorbed PR in the body as "Supersedes #N". Never use a closing keyword (close, fix, resolve) before #N.
 9. **Merge.** `ci / gate` (clean-room) runs, then the merge queue rebase-merges the batch.
@@ -107,7 +107,8 @@ Rules for each file until then:
 | `contracts/contracts.nt`, `contracts/shapes.ttl` | Strip from each absorbed PR. Regenerate once per batch with `scripts/contracts_resolve.sh`. `ci / gate` re-derives them and fails on any mismatch. |
 | `contracts/witness/*.json` | Same as above. A witness is gate evidence, and the producer is never the gate. |
 | `docs/findings/*.jsonl` | Use `merge=union`. Never strip it: it is an append log, and stripping loses findings. |
-| `README.md` `CONTRACT_COUNT` blocks | Strip, then regenerate with `scripts/readme_sync.sh --write`. |
+| `contracts/census.json` | Same as `contracts.nt`: strip, regenerate once per batch. |
+| `README.md` `CONTRACT_COUNT` blocks and the frontmatter `contract_count:` | Generated from `contracts/census.json`. Strip, then regenerate with `scripts/readme_sync.sh --write`. BS-1 collapses both before it compares. |
 | The rest of `README.md` | Hand-written. Resolve conflicts by hand; never strip. |
 
 The structural fix is a separate pmat ticket: generated artifacts come off the PR path.
@@ -166,7 +167,8 @@ Relayed by aprender-57 on 2026-10-21 as the operator's answers; the verbatim tex
 
 - [x] **Do drafts count toward the ≤10 open-PR limit?** YES (relayed).
 - [x] **May the sweep absorb stop-the-line drafts that are test-only?** YES (relayed).
-- **Q3: #5816 (0.71.5) lands today as a patch release?** YES, with a clean-room on the tag. Publish only after a green clean-room on the tagged commit (the never rule is unchanged). Source: the cop record of the 07:54Z operator paste (cop-state.md, 2026-10-21 07:55Z), not a quote. - **Q4: may the sweep close absorbed PRs and delete their branches?** YES, for absorbed PRs only after the merge sha is on main (BS-3); duplicates are closed as "superseded by #N". Same source.
+- **Q3: #5816 (0.71.5) lands today as a patch release?** YES, with a clean-room on the tag. Publish only after a green clean-room on the tagged commit (the never rule is unchanged). Source: the cop record of the 07:54Z operator paste (cop-state.md, 2026-10-21 07:55Z), not a quote.
+- **Q4: may the sweep close absorbed PRs and delete their branches?** YES, for absorbed PRs only after the merge sha is on main (BS-3); duplicates are closed as "superseded by #N". Same source.
 - Batch cap: ≤7 tickets per batch (09:17Z ruling, relayed). Lane B is never batched (amendment 3, relayed).
 
 ## 11. Amendment log

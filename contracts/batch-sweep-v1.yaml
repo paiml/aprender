@@ -38,7 +38,7 @@ proof_obligations:
   type: invariant
   property: "N ticket commits plus 1 trailing `batch: regenerate`, no merge commits"
   formal: >-
-    rev-list --count base..head == N + 1 and rev-list --merges --count == 0 and last subject == "batch: regenerate"
+    rev-list --count base..head == N + 1 and rev-list --merges --count == 0 and last subject starts with "batch: regenerate"
   applies_to: all
 - id: BS-3
   type: invariant
