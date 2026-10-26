@@ -1511,6 +1511,7 @@ dependencies = [
  "rand_pcg 0.9.0",
  "regex",
  "serde",
+ "serde-saphyr",
  "serde-wasm-bindgen",
  "serde_json",
  "serde_yaml",
@@ -12345,9 +12346,9 @@ dependencies = [
 
 [[package]]
 name = "tokio"
-version = "1.52.3"
+version = "1.53.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8fc7f01b389ac15039e4dc9531aa973a135d7a4135281b12d7c1bc79fd57fffe"
+checksum = "ce3335fa71841cda333a58d7615b03901380ecf09d59b3296d21f8bbac0dde4e"
 dependencies = [
  "bytes",
  "libc",

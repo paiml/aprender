@@ -1,5 +1,5 @@
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
   created: "2026-04-08"
   author: PAIML Engineering
   registry: true
@@ -109,6 +109,12 @@ falsification_tests:
     apr finetune --json --data test.jsonl --epochs 1 2>&1 | \
       jq '.tokens_per_sec > 0'
   if_fails: "tokens_per_sec is zero or negative"
+
+- id: FALSIFY-FINETUNE-005
+  rule: classify checkpoint APR round-trips and refuses non-finite weights
+  prediction: "model.apr carries schema 1.2.0 metadata, exact classifier tensors and training state; NaN/Inf weights error (F-CKPT-007) and write no file"
+  test: cargo test -p aprender-train --lib save_apr_checkpoint
+  if_fails: "save_apr_checkpoint wrote a lossy checkpoint or persisted NaN/Inf weights"
 
 proof_obligations:
 - id: AFM-INV-001

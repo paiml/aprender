@@ -13,6 +13,7 @@ CI helpers ported from `scripts/**/*.py` to Rust (C301: no Python in the build).
 | `tarball-build-errors LOG` | `scripts/lib/tarball_build_errors.py` (kept: its caller `scripts/package_tarball_build.sh` is on the publish gate path, N-1) |
 | `dag-status --root DIR` (reads `[id, row]` JSON pairs on stdin) | `scripts/lib/dag_status.py` (kept for now, see below) |
 | `git-patch-id [--stable\|--unstable\|--verbatim]` (reads a diff on stdin) | `scripts/lib/git_patch_id.py` (kept: callers `scripts/lib/pr_review_patch_id.sh` and `scripts/check_pr_review_arm4.sh` not yet switched) |
+| `lockfile-registry-packages LOCK` | `scripts/lib/lockfile_registry_packages.py` (kept: its caller `scripts/check_lockfile_no_registry_siblings.sh` is a gate, so it switches once a released `aprender-ci-tools` carries the port, N-1) |
 | `llama-fit-verdict TOOL_FOUND PIN RC FREE_MIB VERSION_FILE STDOUT_FILE MODEL` | `scripts/lib/llama_fit_verdict.py` (kept: `scripts/model_ladder.sh` calls it on the certification path, and `scripts/check_model_ladder.sh` mutates copies of it) |
 | `ladder-cells-produce gpumem` · `enrich --apr --inventory --models --out` · `measure ...` (same flags as the original) | `scripts/lib/model_ladder_cells_produce.py` (kept: `scripts/model_ladder.sh` calls it on the certification path and `scripts/check_ladder_cells_producer.sh` checks it; the judge functions it imports are ported too, and `scripts/lib/model_ladder_cells_judge.py` stays) |
 | `nextest-fail-fast [--reader library\|fallback] TOML` | the inline Python judge in `scripts/check_nextest_ci_profile_no_fail_fast.sh` (kept: the guard runs it inline and switches once a released `aprender-ci-tools` carries the port, N-1) |
@@ -35,6 +36,9 @@ carries `dag-status`.
 compares the bin with the `.py` and counts those cases on its own. Native `git patch-id`
 is a separate verdict there. On a git older than 2.40 only the text-only cases are
 compared, and the rest print NOT_MEASURED.
+
+`lockfile-registry-packages` is checked by `scripts/tests/ci_tools_lockfile_registry_packages_parity_test.sh`
+against the working-tree `.py` on hand-written edge cases and the repo lockfiles.
 
 ## Where the argv surface differs from the originals (by design, not parity-checked)
 

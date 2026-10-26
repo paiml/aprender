@@ -451,7 +451,7 @@ async fn try_constrained_chat(
         return Some(fail_response(state, StatusCode::NOT_IMPLEMENTED, reason));
     }
     let answered = constrained_chat(state, request, constraint, request_id, start, cancel).await;
-    Some(answered.unwrap_or_else(|refusal| refusal))
+    Some(answered.unwrap_or_else(|refusal| *refusal))
 }
 
 /// The constrained turn on the route the chain would take, read again before it ships.
@@ -462,19 +462,20 @@ async fn constrained_chat(
     request_id: &str,
     start: Instant,
     cancel: &CancelToken,
-) -> Result<Response, Response> {
+) -> Result<Response, Box<Response>> {
     use crate::error::RealizarError;
-    let route = constrained_route(state).map_err(|e| constraint_refusal(state, &e))?;
+    let route = constrained_route(state).map_err(|e| Box::new(constraint_refusal(state, &e)))?;
     let mapped = state.mapped_gguf_model().ok_or_else(|| {
         let e = unsupported_path(
             "serve-without-gguf",
             "not scheduled: a constraint's vocabulary is read from the GGUF the server \
              retains, and this server retains none",
         );
-        constraint_refusal(state, &e)
+        Box::new(constraint_refusal(state, &e))
     })?;
-    let prompt = constrained_prompt(state, &route, &mapped, request)?;
-    let (prompt, config) = constrained_config(state, &route, &mapped, request, prompt, cancel)?;
+    let prompt = constrained_prompt(state, &route, &mapped, request).map_err(Box::new)?;
+    let (prompt, config) =
+        constrained_config(state, &route, &mapped, request, prompt, cancel).map_err(Box::new)?;
     let prompt_tokens = prompt.len();
     let job_mapped = Arc::clone(&mapped);
     let job_constraint = constraint.clone();
@@ -492,35 +493,37 @@ async fn constrained_chat(
     .await;
     let (turn, stop) = match joined {
         Ok(Ok(done)) => done,
-        Ok(Err(RealizarError::Constraint(e))) => return Err(constraint_refusal(state, &e)),
+        Ok(Err(RealizarError::Constraint(e))) => {
+            return Err(Box::new(constraint_refusal(state, &e)))
+        },
         Ok(Err(e)) => {
-            return Err(fail_response(
+            return Err(Box::new(fail_response(
                 state,
                 crate::api::generation_error_status(&e),
                 e,
-            ))
+            )))
         },
         Err(e) => {
-            return Err(fail_response(
+            return Err(Box::new(fail_response(
                 state,
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("the constrained generation task failed: {e}"),
-            ))
+            )))
         },
     };
     if cancel.peek_cancelled() {
         // The client went away mid-turn: no budget cut it, so it is not `Truncated`, and no
         // one reads this reply
-        return Err(fail_response(
+        return Err(Box::new(fail_response(
             state,
             client_closed_status(),
             "the client closed the request before the constrained turn ended",
-        ));
+        )));
     }
     let reply = &turn.tokens[prompt_tokens..];
     let text = mapped.model.decode(reply);
     constrained_verdict(&constraint, stop, &text, reply.len())
-        .map_err(|e| constraint_refusal(state, &e))?;
+        .map_err(|e| Box::new(constraint_refusal(state, &e)))?;
     state.metrics.record_success(reply.len(), start.elapsed());
     let response = constrained_response(
         request_id,

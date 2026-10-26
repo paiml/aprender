@@ -1,0 +1,10 @@
+2026-10-21T10:46:43Z
+HEAD dbd2eaa1ad4deff71c9cf7f7a554abc86e2fc6b6 (clean tree: 0 changes)
+$ cargo run -q -p aprender-contracts-cli --bin pv -- extract contracts
+extract_rc=0
+  "written": [],
+  "check": null
+}
+$ git diff --exit-code contracts/contracts.nt contracts/shapes.ttl
+diff_rc=0
+2026-10-21T10:54:18Z

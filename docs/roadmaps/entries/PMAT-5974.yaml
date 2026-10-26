@@ -1,0 +1,18 @@
+- id: PMAT-5974
+  github_issue: 5974
+  item_type: task
+  title: 'ci: silicon-coverage scores a consistently empty workflow listing MISSING instead of NOT_MEASURED'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:49:18Z
+  updated: 2026-10-22T16:49:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863

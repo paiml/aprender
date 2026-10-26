@@ -1,0 +1,19 @@
+NOTE: manual mutation via 'cargo test', NOT cargo-mutants; raw output below.
+2026-10-21T09:59:33Z
+test cli::profiling_assertion_tests::no_profile_ci_records_nothing ... ok
+test cli::profiling_assertion_tests::legacy_min_throughput_applies_to_both_backends ... ok
+test cli::profiling_assertion_tests::per_backend_minimum_overrides_legacy_minimum ... ok
+test cli::profiling_assertion_tests::defaults_are_5_cpu_and_50_gpu ... FAILED
+test cli::profiling_assertion_tests::throughput_at_default_threshold_passes ... FAILED
+---- cli::profiling_assertion_tests::defaults_are_5_cpu_and_50_gpu stdout ----
+thread 'cli::profiling_assertion_tests::defaults_are_5_cpu_and_50_gpu' (1561049) panicked at crates/aprender-qa-cli/src/certification_processing.rs:556:9:
+---- cli::profiling_assertion_tests::throughput_at_default_threshold_passes stdout ----
+thread 'cli::profiling_assertion_tests::throughput_at_default_threshold_passes' (1561053) panicked at crates/aprender-qa-cli/src/certification_processing.rs:570:9:
+    cli::profiling_assertion_tests::defaults_are_5_cpu_and_50_gpu
+    cli::profiling_assertion_tests::throughput_at_default_threshold_passes
+test result: FAILED. 3 passed; 2 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s
+mutant_rc=101
+test cli::profiling_assertion_tests::defaults_are_5_cpu_and_50_gpu ... ok
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 122 filtered out; finished in 0.00s
+restored_rc=0
+2026-10-21T10:29:13Z

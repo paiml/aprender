@@ -1,0 +1,76 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-10-18"
+  updated: "2026-10-18"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#5553 — ShellAutocomplete::suggest coverage row"
+    - "crates/aprender-present-lib/src/browser/shell_autocomplete.rs — the code this pins"
+  description: >
+    suggest() merges trie hits with n-gram completions and filters corrupted
+    entries. A silent change in score weights or filtering reorders every
+    suggestion the user sees, and nothing else asserts the numbers.
+
+name: present-shell-autocomplete-suggest
+version: "1.0.0"
+scope: >
+  `ShellAutocomplete::suggest` ranking, filtering and truncation, observed
+  through models built by `load_from_bytes`.
+status: active
+
+contract: |
+  (1) TRIE HITS SCORE freq/total and rank by it; the result is truncated to
+      `count` only after sorting.
+  (2) CORRUPTED ENTRIES ARE DROPPED. Commands or n-gram tokens that contain
+      double spaces or look malformed never appear.
+  (3) N-GRAM COMPLETIONS CARRY WEIGHT 0.9 * count/total-of-row, use a context
+      of n-1 tokens, and never duplicate a trie hit.
+  (4) A ZERO total never divides by zero; scores stay finite.
+equations:
+  trie_score:
+    description: "Score of a trie hit"
+    formula: "score(c) = freq(c) / total_commands"
+    domain: "total_commands > 0"
+    codomain: "f32 in [0,1]"
+    invariants:
+      - "total_commands = 0 yields a finite score"
+  ngram_score:
+    description: "Score of an n-gram completion"
+    formula: "score(t | ctx) = 0.9 * count(ctx, t) / sum(count(ctx, *))"
+    domain: "ctx the last n-1 tokens"
+    codomain: "f32"
+    invariants:
+      - "a completion already produced by the trie is not repeated"
+falsification:
+  - id: FALSIFY-PRESENT-SHELL-AC-V1-001
+    description: "suggest() ranking, filtering and truncation match the contract"
+    test: "cargo test -p aprender-present-lib --test shell_autocomplete_suggest"
+    evidence: "13 passed, 2026-10-18"
+open_obligations:
+  - |
+    Strategy 2 (the trailing-space n-gram branch) is unreachable: the prefix is
+    trimmed before ends_with_space is computed. Logged as a finding in
+    docs/findings; a test pins the current behaviour.
+falsification_tests:
+  - id: FALSIFY-PRESENT_SHELL_AUTOCOMPLETE_SUGGEST-001
+    description: "trie hits rank by frequency score and truncate after sorting"
+    test: "cargo test -p aprender-present-lib --test shell_autocomplete_suggest trie_matches_rank_by_frequency_score count_truncates_after_sorting"
+    prediction: "git commit first at 0.6; count=1 keeps the top hit; count=0 is empty"
+    if_fails: "suggestions are mis-ranked or truncated before sorting"
+  - id: FALSIFY-PRESENT_SHELL_AUTOCOMPLETE_SUGGEST-002
+    description: "corrupted trie entries and n-gram tokens are dropped"
+    test: "cargo test -p aprender-present-lib --test shell_autocomplete_suggest corrupted_trie_entries_are_dropped corrupted_ngram_tokens_are_filtered"
+    prediction: "'git  push' and 'git commit-m' never appear"
+    if_fails: "malformed model entries surface to the user"
+  - id: FALSIFY-PRESENT_SHELL_AUTOCOMPLETE_SUGGEST-003
+    description: "n-gram completions weigh 0.9 and use an n-1 token context"
+    test: "cargo test -p aprender-present-lib --test shell_autocomplete_suggest partial_token_uses_ngram_context_at_090_weight context_window_is_n_minus_one_tokens"
+    prediction: "git config scores 0.9*1/8; bigram context scores git commit -m at 0.9*2/3"
+    if_fails: "n-gram weighting or context length drifted"
+  - id: FALSIFY-PRESENT_SHELL_AUTOCOMPLETE_SUGGEST-004
+    description: "a zero command total stays finite"
+    test: "cargo test -p aprender-present-lib --test shell_autocomplete_suggest zero_total_commands_does_not_divide_by_zero"
+    prediction: "the score is finite"
+    if_fails: "NaN or inf scores reach the sort"
