@@ -1,0 +1,43 @@
+MODELS lambda NO-GO: no receipt -- model_ladder.sh wrote no receipt (rc 2)
+MODELS gx10 measured by apr 0.72.0 (10ff0b466): executed=20 red=6 (model_ladder rc 1)
+MODELS NO-GO: the judge found red or missing cells (rc 1):
+MODELS   FAIL  lambda  no receipt at /mnt/nvme-raid0/models-nightly/work/out/lambda.json — run scripts/model_ladder.sh on lambda (RTX 4090, sm_89)
+MODELS   FAIL  gx10    receipt says red=6 but carries 9 non-green row(s) — a red that is counted and not recorded is a red nobody can read (#3842)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf declared RED-MODEL (wrong_answer, #4004) but NOT RE-PROVEN on this sweep, so it is plain RED: the key claims the wrong answer on prompt(s) ['ctl-2plus2'], and this sweep has no greedy entry for them; RED-MODEL excuses only the declared wrong_answer defect, and the row ALSO fails: apr qa exited 5 — gates_failed: golden_output, tensor_contract (#3898) -- was: golden_output FAIL: golden_output_runtime: Expected one of ["4"], got: 'The user wants to know about the 2+2 question.
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: run/on/4k 'pass' is not a pass: thinking never closed
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: chat/on/4k 'pass' is not a pass: thinking never closed
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: code/on/4k 'pass' is not a pass: thinking never closed
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: chat/on/8k 'pass' is not a pass: thinking never closed
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: serve/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: serve/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: code/on/8k 'pass' is not a pass: thinking never closed
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: run/on/20k 'pass' is not a pass: thinking never closed
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: chat/on/20k 'pass' is not a pass: thinking never closed
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: serve/off/20k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-Q4_K_M.gguf: ... and 12 more
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: ... and 28 more
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+MODELS   FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)

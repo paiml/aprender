@@ -1,0 +1,200 @@
+FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-0.8B-UD-IQ2_XXS.gguf: ... and 28 more
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-27B-Q4_K_M.gguf: ... and 28 more
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-2B-Q4_K_M.gguf: ... and 28 more
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-35B-A3B-UD-IQ4_XS.gguf: ... and 12 more
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-Q4_K_M.gguf: ... and 28 more
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-4B-UD-Q4_K_XL.gguf: ... and 28 more
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: run/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: run/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: chat/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: chat/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: serve/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: serve/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: code/off/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: code/on/4k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: run/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: run/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: chat/off/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: chat/on/8k not_measured: admission: 1 live runner job(s) on this host (max 0)
+FAIL  gx10    Qwen3.5-9B-Q4_K_M.gguf: ... and 28 more
+DECLAIMED gx10    Qwen2.5-0.5B-Instruct-IQ3_M.gguf: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    Qwen3-1.7B-Q4_K_M.gguf: arch qwen3 is not claimed on gx10 -- #4590, restored in 0.70.1: correct but 27-34x slower than Qwen3.5 on GB10 sm_121 (8k think-on: Qwen3-1.7B 967 s, Qwen3-8B 2163  ... and 169 more chars
+DECLAIMED gx10    Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf: arch qwen3moe is not claimed on gx10 -- #3715, restored in 0.70.1: Qwen3-30B-A3B (and Coder-30B-A3B) on GB10 sm_121: every verb hits the 600 s cell timeout at the 20k  ... and 283 more chars
+DECLAIMED gx10    Qwen3-8B-Q4_K_M.gguf: arch qwen3 is not claimed on gx10 -- #4590, restored in 0.70.1: correct but 27-34x slower than Qwen3.5 on GB10 sm_121 (8k think-on: Qwen3-1.7B 967 s, Qwen3-8B 2163  ... and 169 more chars
+DECLAIMED gx10    Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf: arch qwen3moe is not claimed on gx10 -- #3715, restored in 0.70.1: Qwen3-30B-A3B (and Coder-30B-A3B) on GB10 sm_121: every verb hits the 600 s cell timeout at the 20k  ... and 283 more chars
+DECLAIMED gx10    cb-4096-Qwen2.5-0.5B-IQ2_M.gguf: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-1.5b-instruct-q4_k_m.gguf: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-coder-0.5b-instruct-q4_k_m.gguf: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-coder-1.5b-instruct-fp16.apr: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-coder-1.5b-instruct-q4_k_m.apr: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-coder-1.5b-instruct-q4_k_m.gguf: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-coder-1.5b-instruct-q4k.apr: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-coder-32b-instruct-q4_k_m.gguf: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+DECLAIMED gx10    qwen2.5-coder-7b-instruct-q4_k_m.gguf: arch qwen2 is not claimed on gx10 -- #4590, restored in 0.70.1: GB10 dense models: prompt processing unbatched (11.4 tok/s); fixed in 0.70.1 (#4590). Correct output ... and 205 more chars
+info  gx10    cells: 304 owed, 16 pass, 0 honest refusal(s)
+FAIL  arch llama has no long-rung representative in the contract -- no llama model is ever tested past the short rungs
+FAIL  arch qwen35moe has no long-rung representative in the contract -- no qwen35moe model is ever tested past the short rungs
+FAIL  no CRUX receipt under 'evidence/crux/0.72.0' -- no verb of any model has been judged against an outside engine, so every cell below is unproven (#3957 F4)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=run -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=chat -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=serve -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=code -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-2B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=run -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=chat -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=serve -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=code -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-9B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cpu verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-27B-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen2.5-0.5B-Instruct-IQ3_M.gguf fmt=gguf quant=IQ3_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen2.5-0.5B-Instruct-IQ3_M.gguf fmt=gguf quant=IQ3_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen2.5-0.5B-Instruct-IQ3_M.gguf fmt=gguf quant=IQ3_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen2.5-0.5B-Instruct-IQ3_M.gguf fmt=gguf quant=IQ3_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-UD-IQ2_XXS.gguf fmt=gguf quant=IQ2_XXS host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-UD-IQ2_XXS.gguf fmt=gguf quant=IQ2_XXS host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-UD-IQ2_XXS.gguf fmt=gguf quant=IQ2_XXS host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell Qwen3.5-0.8B-UD-IQ2_XXS.gguf fmt=gguf quant=IQ2_XXS host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+RED-UNSUPPORTED cell Qwen3.5-35B-A3B-UD-IQ4_XS.gguf fmt=gguf quant=IQ4_XS host=gx10 backend=cuda verb=run -- apr refused this architecture by name on this sweep; counted RED, never green (#3957 F10)
+RED-UNSUPPORTED cell Qwen3.5-35B-A3B-UD-IQ4_XS.gguf fmt=gguf quant=IQ4_XS host=gx10 backend=cuda verb=chat -- apr refused this architecture by name on this sweep; counted RED, never green (#3957 F10)
+RED-UNSUPPORTED cell Qwen3.5-35B-A3B-UD-IQ4_XS.gguf fmt=gguf quant=IQ4_XS host=gx10 backend=cuda verb=serve -- apr refused this architecture by name on this sweep; counted RED, never green (#3957 F10)
+RED-UNSUPPORTED cell Qwen3.5-35B-A3B-UD-IQ4_XS.gguf fmt=gguf quant=IQ4_XS host=gx10 backend=cuda verb=code -- apr refused this architecture by name on this sweep; counted RED, never green (#3957 F10)
+FAIL  cell Qwen3.5-4B-UD-Q4_K_XL.gguf fmt=gguf quant=Q4_K_XL host=gx10 backend=cuda verb=run -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-UD-Q4_K_XL.gguf fmt=gguf quant=Q4_K_XL host=gx10 backend=cuda verb=chat -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-UD-Q4_K_XL.gguf fmt=gguf quant=Q4_K_XL host=gx10 backend=cuda verb=serve -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+FAIL  cell Qwen3.5-4B-UD-Q4_K_XL.gguf fmt=gguf quant=Q4_K_XL host=gx10 backend=cuda verb=code -- no CRUX verdict: no outside engine has judged this cell, so it is not proven
+note  cell cb-4096-Qwen2.5-0.5B-IQ2_M.gguf fmt=gguf quant=IQ2_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell cb-4096-Qwen2.5-0.5B-IQ2_M.gguf fmt=gguf quant=IQ2_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell cb-4096-Qwen2.5-0.5B-IQ2_M.gguf fmt=gguf quant=IQ2_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell cb-4096-Qwen2.5-0.5B-IQ2_M.gguf fmt=gguf quant=IQ2_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-0.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-0.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-0.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-0.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+FAIL  cell qwen2.5-coder-1.5b-instruct-fp16.apr fmt=apr quant=FP16 host=gx10 backend=cuda verb=run -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-fp16.apr fmt=apr quant=FP16 host=gx10 backend=cuda verb=chat -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-fp16.apr fmt=apr quant=FP16 host=gx10 backend=cuda verb=serve -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-fp16.apr fmt=apr quant=FP16 host=gx10 backend=cuda verb=code -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4_k_m.apr fmt=apr quant=Q4_K_M host=gx10 backend=cuda verb=run -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4_k_m.apr fmt=apr quant=Q4_K_M host=gx10 backend=cuda verb=chat -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4_k_m.apr fmt=apr quant=Q4_K_M host=gx10 backend=cuda verb=serve -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4_k_m.apr fmt=apr quant=Q4_K_M host=gx10 backend=cuda verb=code -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+note  cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-1.5b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4k.apr fmt=apr quant=Q4K host=gx10 backend=cuda verb=run -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4k.apr fmt=apr quant=Q4K host=gx10 backend=cuda verb=chat -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4k.apr fmt=apr quant=Q4K host=gx10 backend=cuda verb=serve -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+FAIL  cell qwen2.5-coder-1.5b-instruct-q4k.apr fmt=apr quant=Q4K host=gx10 backend=cuda verb=code -- no external oracle: the .apr records no conversion source (file + 64-hex sha256), and no engine but apr reads .apr (#3957 F8)
+note  cell qwen2.5-coder-32b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-32b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-32b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-32b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-7b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-7b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-7b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell qwen2.5-coder-7b-instruct-q4_k_m.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=run -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=chat -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=serve -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+note  cell tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf fmt=gguf quant=Q4_K_M host=gx10 backend=cuda verb=code -- not CRUX-certified: proven by the ladder's golden oracle, not by CRUX (#3710 ruling 1)
+cells by format: apr 0/12 proven, gguf 0/88 proven, 4 named RED (F9/F10), 64 ladder-only (not CRUX-certified)
+RED   the release claims a capability no receipt proves — see FAIL rows (EPIC #3477)
