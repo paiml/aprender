@@ -914,3 +914,5 @@ aprender-ci-tools,aprender-ci-tools --version,6,x86_64-linux,NONE,no,12,test-har
 aprender-rollup,aprender-rollup plan,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:174,high
 aprender-rollup,aprender-rollup build,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:174,high
 aprender-rollup,aprender-rollup --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:169,high
+aprender-rollup,aprender-rollup verify,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:175,high
+aprender-rollup,aprender-rollup verify --apply,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:139,high
