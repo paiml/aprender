@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.72.0] - 2026-10-26
 
-Release commit-range: v0.71.4..ac65aa7e21 (255 non-merge commits). Entries are commit subjects.
+Release commit-range: v0.71.4..8f82ba7e49 (257 non-merge commits). Entries are commit subjects.
 
 ### Added
 
@@ -48,6 +48,8 @@ Release commit-range: v0.71.4..ac65aa7e21 (255 non-merge commits). Entries are c
 
 ### Fixed
 
+- fix(model_ladder): fit-refused rungs count as appended rows (PMAT-6410) (#6411)
+- fix(serve): streaming KV tests stop allocating 32 GiB (CAP-001 S3, PMAT-6401) (#6402)
 - fix(release): preflight worktree guard checks the state root too, with a self-test (#6406)
 - fix(release): preflight worktree outside the checkout so .cargo patches cannot dirty Cargo.lock
 - fix(flow): revert .gitignore **/.pmat/* to **/.pmat/ (CB-510, out of scope)
