@@ -13,15 +13,17 @@ categories = ["command-line-utilities", "text-processing"]
 name = "batuta_common"
 
 [features]
-default = []
+default = ["zstd"]
 # #3745 S1: typed CLI argument roles (`batuta_common::cli_roles`). Optional so the
 # default build of this crate stays clap-free.
 cli-roles = ["dep:clap"]
+# ZSTD codec (`Compression::Zstd`). On by default; zstd 0.14.3 has no advisory (PMAT-6416). Disable for an lz4-only build.
+zstd = ["dep:zstd"]
 
 [dependencies]
 clap = { workspace = true, optional = true }
 lz4_flex = { version = "0.11", default-features = false, features = ["safe-encode", "safe-decode"] }
-zstd = { version = "0.13", default-features = false }
+zstd = { version = "0.14", default-features = false, optional = true }
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
