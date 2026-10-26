@@ -1,4 +1,3 @@
-
 // ============================================================================
 // M11 Mega-Long Context Tests (32768+ positions)
 // ============================================================================
@@ -44,12 +43,16 @@ fn test_mega_long_context_memory_bound() {
     // 32 layers * 32768 positions * 32 heads * 128 dim * 2 (K+V) * 4 bytes
     // = 34,359,738,368 bytes = 34.36 GB
     let expected_bytes = num_layers * max_positions * num_heads * head_dim * 2 * 4;
-    let bytes = StreamingKVCache::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
+    let bytes =
+        StreamingKVCache::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
     assert_eq!(bytes, expected_bytes);
 
     // The same shape scaled to 4 MiB must report what the formula says.
     let small = StreamingKVCache::new(2, 1024, 4, 64);
-    assert_eq!(small.memory_bytes(), StreamingKVCache::estimate_memory_bytes(2, 1024, 4, 64));
+    assert_eq!(
+        small.memory_bytes(),
+        StreamingKVCache::estimate_memory_bytes(2, 1024, 4, 64)
+    );
 
     let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
@@ -169,8 +172,10 @@ fn test_streaming_kv_cache_fp16_memory_half() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let fp16_bytes = StreamingKVCacheFp16::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
-    let fp32_bytes = StreamingKVCache::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
+    let fp16_bytes =
+        StreamingKVCacheFp16::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
+    let fp32_bytes =
+        StreamingKVCache::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
 
     // FP16 should be exactly half
     assert_eq!(fp16_bytes * 2, fp32_bytes);
@@ -233,7 +238,8 @@ fn test_fp16_kv_cache_memory_bound_65536() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let bytes = StreamingKVCacheFp16::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
+    let bytes =
+        StreamingKVCacheFp16::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
 
     // Memory calculation (nothing allocated, CAP-001):
     // 32 layers * 65536 positions * 32 heads * 128 dim * 2 (K+V) * 2 bytes
@@ -242,7 +248,10 @@ fn test_fp16_kv_cache_memory_bound_65536() {
     assert_eq!(bytes, expected_bytes);
 
     let small = StreamingKVCacheFp16::new(2, 1024, 4, 64);
-    assert_eq!(small.memory_bytes(), StreamingKVCacheFp16::estimate_memory_bytes(2, 1024, 4, 64));
+    assert_eq!(
+        small.memory_bytes(),
+        StreamingKVCacheFp16::estimate_memory_bytes(2, 1024, 4, 64)
+    );
 
     let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
