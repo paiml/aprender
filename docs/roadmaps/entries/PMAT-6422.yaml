@@ -11,7 +11,7 @@
   acceptance_criteria:
   - 'crates/aprender-serve/data/upstream-reference-v1.json is listed by cargo package -p aprender-serve --list'
   - 'both include_str! sites (matmul_fused.rs, kernel_registry.rs) read the crate copy'
-  - 'docs/kernel-registry/upstream-reference-v1.json stays as a symlink to the crate copy'
+  - 'docs/kernel-registry/upstream-reference-v1.json is removed; the crate copy is the only one'
   - 'package_tarball_build passes for aprender-serve'
   phases: []
   subtasks: []
