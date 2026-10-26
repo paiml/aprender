@@ -106,7 +106,6 @@ provable-contracts = { path = "../aprender-contracts", package = "aprender-contr
 proptest = "1.5"
 criterion = { version = "0.5", default-features = false }
 tempfile = "3.14"
-# own tests exercise checkpoint compression; dev-deps do not reach downstream graphs (PMAT-6416)
 # jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
 # Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
 # Presentar TUI testing framework (SPEC-024 Section 12 & 13)
