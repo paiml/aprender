@@ -26438,13 +26438,14 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   github_issue: 6407
   item_type: task
   title: REV 2.0 step 6 nightly-bench runs-on perf-solo
-  status: planned
+  status: in_progress
   priority: high
   assigned_to: null
   created: 2026-10-26T11:03:41Z
   updated: 2026-10-26T11:03:41Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - nightly-bench measure job selects [self-hosted, X64, Linux, intel, perf-solo] and lands on intel-clean-room-16
   phases: []
   subtasks: []
   estimated_effort: null

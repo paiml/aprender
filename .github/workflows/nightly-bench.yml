@@ -60,7 +60,7 @@ jobs:
     concurrency:
       group: perf-intel
       cancel-in-progress: false
-    runs-on: [self-hosted, Linux, X64, clean-room, perf-solo]   # REV 2.0 step 6: perf-solo = intel-clean-room-16 ONLY (one runner, so two timings can never overlap)
+    runs-on: [self-hosted, X64, Linux, intel, perf-solo]   # REV 2.0 step 6: same selector as beat-speed-nightly.yml:68; perf-solo = one runner, so two timings can never overlap
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
