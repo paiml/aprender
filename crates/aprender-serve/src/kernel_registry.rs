@@ -1450,10 +1450,9 @@ mod tests {
     /// admit a kernel for bytes it cannot decode. APR-native ids (>= 128) have no upstream row.
     #[test]
     fn every_row_agrees_with_the_upstream_reference() {
-        let doc: serde_json::Value = serde_json::from_str(include_str!(
-            "../data/upstream-reference-v1.json"
-        ))
-        .expect("reference json");
+        let doc: serde_json::Value =
+            serde_json::from_str(include_str!("../data/upstream-reference-v1.json"))
+                .expect("reference json");
         let refs = doc["rows"].as_array().expect("rows");
         let r = registry().expect("registry");
         let mut checked = 0;
