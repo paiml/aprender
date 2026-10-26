@@ -26335,3 +26335,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   notes: |-
     models-crux/dad8bf7a9b: 16 red cells per host, all this route, rc 3 unclassified_route. The route returns ids, no text, like /tokenize.
     MT-2: the table entry and check row P4 are asserted by check_crux_serve_code.sh (78 rows pass).
+- id: PMAT-6386
+  github_issue: 6386
+  item_type: task
+  title: 'release: infra_gh names the path and HTTP status of a refused read (rehearsal pick not_measured)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T05:10:00Z
+  updated: 2026-10-26T05:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a refused infra read prints "infra_gh: GET <path> -> HTTP <status>" on stderr and still exits 2 (not_measured)'
+  - 'no check is waived or softened, a failed read stays not_measured'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    release-rehearsal-nightly pick: not_measured every night since 10-15; the reason was swallowed (gh stderr to /dev/null).
+    MT-2: row measured_cpu_a_refused_read_names_its_status, mutant m53.
