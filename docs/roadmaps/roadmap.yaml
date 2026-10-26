@@ -26434,6 +26434,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6390
+- id: PMAT-6407
+  github_issue: 6407
+  item_type: task
+  title: REV 2.0 step 6 nightly-bench runs-on perf-solo
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T11:03:41Z
+  updated: 2026-10-26T11:03:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
 - id: PMAT-6410
   github_issue: 6410
   item_type: task
