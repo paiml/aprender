@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.72.0] - 2026-10-26
 
-Release commit-range: v0.71.4..a781138719 (250 non-merge commits). Entries are commit subjects.
+Release commit-range: v0.71.4..ac65aa7e21 (255 non-merge commits). Entries are commit subjects.
 
 ### Added
 
+- feat(flow): review tier derived from changed paths, fail-closed (eefa01ea4c)
+- ci: review-tier table moves from .pmat/ to tools/ (check_publish_safety forbids tracked .pmat/ paths) (Refs #6251)
 - feat(roadmap): fragment shape check, newline-safe aggregation, bump regenerates (Refs #6288)
 - feat(ci): one-PR-per-ticket R1 allowance for EMR-001 squash PRs (Refs #6267)
 - feat(run): apr run --json response contract: status, error, model_digest (Refs #3720)
@@ -46,6 +48,9 @@ Release commit-range: v0.71.4..a781138719 (250 non-merge commits). Entries are c
 
 ### Fixed
 
+- fix(release): preflight worktree guard checks the state root too, with a self-test (#6406)
+- fix(release): preflight worktree outside the checkout so .cargo patches cannot dirty Cargo.lock
+- fix(flow): revert .gitignore **/.pmat/* to **/.pmat/ (CB-510, out of scope)
 - fix(contracts): regenerate contracts.nt for the 917 breakdown (Refs #6385)
 - fix(audit): contract breakdowns sum to 917 (per-binary aprender-rollup, test-harness, q5_6)
 - fix(audit): ledger the aprender-rollup verify verb and --apply (917 rows)
