@@ -34,11 +34,7 @@ Five whys:
 1. **Why are the fold PRs stale?** Each one waits for its own `ci / gate` slot.
 2. **Why are the merges serial?** Each merge forces the rest to rebase.
 3. **Why do the rebases conflict?** The PRs write the same files. Five files are each touched by 3 or more lane A PRs (the batch-able test PRs, §3) \[A\]:
-   - `contracts/witness/811c7818…json`: 6 PRs
-   - `contracts/contracts.nt`: 5 PRs
-   - `README.md`: 4 PRs
-   - `docs/findings/aprender-w5404.jsonl`: 3 PRs
-   - `classify_trainer_tests.rs`: 3 PRs
+   - `contracts/witness/811c7818…json` (6 PRs), `contracts/contracts.nt` (5), `README.md` (4), `docs/findings/aprender-w5404.jsonl` (3), `classify_trainer_tests.rs` (3)
 4. **Why didn't batching already fix it?** #5572, #5558, #5723, #5724 and #5781 are already batches. They overlap each other and went stale too.
 5. **Root mechanism:** generated artifacts travel on the PR path, and each has many writers. This is the same failure as `roadmap.yaml` in 2026-09-15, where one shared file forced every PR into a single line.
 
@@ -53,16 +49,6 @@ Every open PR goes in exactly one lane. Only lane A is batched by the sweep.
 | C: release | 5816 (0.71.5) | Runs solo, first in the queue. |
 | D: external contributors | 5710, 5235 (guyernest) | Never absorbed. Reviewed one at a time. |
 | E: held | 5830, 5829, 5834 (LAB), 5711 (HELD), 5562 (draft) | Stay in draft until stop-the-line ends. |
-
-Total: 14 + 22 + 1 + 2 + 5 = 44 lane entries. #5832 is the 45th PR; it goes in the enabler queue (§4).
-
-Known overlaps in lane A \[A\]:
-
-- \#5724 and #5558 both fold #5539 and #5540.
-- \#5572 overlaps #5723, #5724 and #5728.
-- \#5827 is split c of #5590.
-- \#5781 overlaps #5724 and #5558 on `classify_trainer_tests.rs`.
-- \#5657, #5591 and #5572 are already CONFLICTING with main.
 
 ## 4. Queue order
 
@@ -94,8 +80,6 @@ The sweep is a worker under aprender-cop on lambda, not a new top-level agent; t
 10. **Close out.** Once the merge sha exists on main, comment it on each absorbed PR, close the PR, and delete its branch.
 11. **On a red batch.** Split it locally (7 into 4 and 3). Never resubmit the whole batch.
 
-When searching for prior art, use `pmat query` (for example, "batch receipt" or "steward enqueue"), not grep.
-
 ## 6. Generated artifacts
 
 Regenerating the shared files once per batch is only a stopgap. The real fix is to take generated files off the PR path entirely.
@@ -107,22 +91,17 @@ Rules for each file until then:
 | `contracts/contracts.nt`, `contracts/shapes.ttl` | Strip from each absorbed PR. Regenerate once per batch with `scripts/contracts_resolve.sh`. `ci / gate` re-derives them and fails on any mismatch. |
 | `contracts/witness/*.json` | Same as above. A witness is gate evidence, and the producer is never the gate. |
 | `docs/findings/*.jsonl` | Use `merge=union`. Never strip it: it is an append log, and stripping loses findings. |
-| `contracts/census.json` | Same as `contracts.nt`: strip, regenerate once per batch. |
-| `README.md` `CONTRACT_COUNT` blocks and the frontmatter `contract_count:` | Generated from `contracts/census.json`. Strip, then regenerate with `scripts/readme_sync.sh --write`. BS-1 collapses both before it compares. |
+| `contracts/census.json`, README frontmatter `contract_count:` | A release-train snapshot that lags by design (#3569), not a per-batch artifact. Strip it from absorbed PRs and leave it to the release train. BS-1 ignores both. |
+| README `CONTRACT_COUNT` blocks | Count of the walked contract tree. Strip, then regenerate once with `scripts/readme_sync.sh --write`. BS-1 collapses the blocks. |
 | The rest of `README.md` | Hand-written. Resolve conflicts by hand; never strip. |
 
-The structural fix is a separate pmat ticket: generated artifacts come off the PR path.
-
-- PRs carry sources only.
-- Main regenerates the artifacts after each merge, deterministically, with a single writer.
-- The gate checks that regeneration reproduces the committed output.
-- This is the same pattern as the `roadmap.yaml` fragments fix.
+The structural fix is a separate pmat ticket: generated artifacts come off the PR path. PRs carry sources only; main regenerates the artifacts after each merge with a single writer; the gate checks that regeneration reproduces the committed output (the `roadmap.yaml` fragments pattern).
 
 **Target:** 0 open PRs touch `contracts.nt` or `witness/*.json` after the ticket lands.
 
 ## 7. Contract: batch-sweep-v1
 
-The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/check_batch_sweep.sh --self-test` runs each on a fixture repo, RED then GREEN (18 rows, LAB, wired into no workflow).
+The contract is `contracts/batch-sweep-v1.yaml` (valid under `pv validate`). Every obligation has a test that can fail: `bash scripts/check_batch_sweep.sh --self-test` runs each on a fixture repo, RED then GREEN (22 rows, LAB, wired into no workflow).
 
 | Id | Obligation | How it is falsified |
 | --- | --- | --- |
