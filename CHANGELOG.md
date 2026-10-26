@@ -7,6 +7,166 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.72.0] - 2026-10-26
+
+Release commit-range: v0.71.4..a781138719 (250 non-merge commits). Entries are commit subjects.
+
+### Added
+
+- feat(roadmap): fragment shape check, newline-safe aggregation, bump regenerates (Refs #6288)
+- feat(ci): one-PR-per-ticket R1 allowance for EMR-001 squash PRs (Refs #6267)
+- feat(run): apr run --json response contract: status, error, model_digest (Refs #3720)
+- feat(ladder): per-cell memory admission, deferred cells are not_measured (Refs #6211)
+- feat(roadmap): generator and guard learn the frozen roadmap-base.yaml (S1a, Refs #6185)
+- feat(affected-set): docs/contracts/*.md give READERS, not ALL; dormant, no consumer (Refs #6042)
+- feat(ci-tools): lockfile-registry-packages, the Rust port of lockfile_registry_packages.py (Refs #4827)
+- feat(pre-push): keyed warm cache + parallel guard-tree for pre_push_local.sh (#5983)
+- feat(train): train-step profiler JSON report contract (Refs #5577)
+- feat(flow-010): affected_set.sh helper, diff to crates + reverse-dep closure + nextest filter (E5)
+- feat(rollup): rollup bot — select, build, verify, close-with-SHA (Refs #5737) (#5742)
+- feat(simulate): PR-flow, repo-flow, course-flow scenarios and flow-model rows B1-B7 (Refs #5511) (#5559)
+- feat(viz): GGPlot::to_svg draws title, xlab and ylab (Refs #5334, Refs #3590) (#5453)
+- feat(apr-cli): derived-cell coverage for release surfaces, LAB checks and zero-cell refusal (#3745) (#5417)
+- feat(bench): parity receipts carry per-replicate server resources (Refs #5322) (#5419)
+- feat(ci-tools): port model_ladder_cells_produce.py to ladder-cells-produce (#5225) (#5410)
+- feat(rex): land the review-experiment epic work on main (PMAT-4524) (#5393)
+- feat(embed): EmbeddingGemma 2 EG-3..EG-6 — serve, CUDA f32, refusals + qa gate, GGUF round trip (Refs #5319) (#5390)
+- feat(serve): Qwen3.5 on CUDA batches concurrent chat requests, sampled slots seeded per request (#5312) (#5364)
+- feat(contracts): pv census ratchet, LAB nightly (#4709) (#5359)
+- feat(edge): ollama parity rows, chat-template fix and verb x device matrix (#5254) (#5292)
+
+### Performance
+
+- perf(ci): balance workspace-test shards — GPU crates + their Σ check + two guards to shard 2 (Refs #5486) (#5487)
+- perf(ci): CARGO_PROFILE_{DEV,TEST}_DEBUG=0 in workspace-test-shard (P1a, Refs #5486) (#5745)
+- perf(guard): check_crux_ollama_in_lock runs its 6 dogfood rows 3 at a time, 71s -> 37s, output identical (#5485)
+- perf(guard): check_silicon_coverage forked tr twice per label test (3680 forks per run) (#5484)
+- perf(guard): cut forks in the guard-cargo apr-pinning scan (same verdicts) (#5482)
+- perf(ci): tree-reader derive in one grep pass; guard-tree m0 1404s -> 606s (Refs #5427) (#5434)
+
+### Fixed
+
+- fix(contracts): regenerate contracts.nt for the 917 breakdown (Refs #6385)
+- fix(audit): contract breakdowns sum to 917 (per-binary aprender-rollup, test-harness, q5_6)
+- fix(audit): ledger the aprender-rollup verify verb and --apply (917 rows)
+- fix(audit): restate the dogfood coverage totals for the 915-row ledger
+- fix(audit): surface ledger rows for the aprender-rollup bin (T-2 pre-publish 31/31)
+- fix(release): infra_gh names the path and status of a refused read (Refs #6386)
+- fix(crux): classify POST /v1/chat/prompt-ids as a not-generation route (Refs #6383)
+- fix(roadmap): single-quote the PMAT-6360 criterion that held a colon (Refs #6360)
+- fix(examples): replay prints a Usage: line on a bare run (Refs #6360)
+- fix(clippy): clippy 1.99 findings, part 1 of the workspace sweep (Refs #5782)
+- fix(deps): tokio 1.52.3 -> 1.53.3 for RUSTSEC-2026-0386
+- fix(cbtop): pcie collector reads link width from a fixture-testable root and ignores sentinel widths (Refs #6282)
+- fix(guards): --list --shard lists GITHUB_PATH/ENV writers in every shard before the m<N> check, as the run path runs them (Refs #6255)
+- fix(ci): guard-cargo shards wait 600 s for ci-target-admit; 3 sibling shards meet the live<2 cap (Refs #6255)
+- fix(guards): --list --shard rejects a non-m<N> step id like the run path does (Refs #6255)
+- fix(ci): the guard-cargo verdict job checks out scripts/ so ci_guards.sh --verdict exists (Refs #6255)
+- fix(guards): state-writer match is an append to GITHUB_PATH/ENV; regenerate roadmap.yaml (#6255)
+- fix(ci): skip absent dirs in the post-job chown, fix the stale comment, quiet SEC011 (Refs #6256)
+- fix(ci): ownership restores chown to the runner uid and say when they fail (Refs #6256)
+- fix(run): --benchmark exits 8 on an empty completion like every other surface (Refs #3720)
+- fix(ci): pre-checkout ownership restore chowns to the runner uid (Refs #6235)
+- fix(release): the LAB model ladder runs with per-cell admission on (Refs #6211)
+- fix(ci): pr-light runs on an X64 clean-room runner, off the gx10 build host (Refs #6239)
+- fix(affected-set): rex-001/prereg.lock is a build input, build_inputs reads each include whole, shard table narrowing dropped (Refs #6042)
+- fix(train): restore the #5686 ClassifyTrainer::train tests train-loop-v1 cites (Refs #5678)
+- fix(ci): carry #5724 test fold onto current main, overlap with #5935 kept as nested mod (Refs #5678)
+- fix(simulate): repo-flow binding_station is the argmin of the station bounds (FLOW-007 B1, Refs #6068)
+- fix(ci): check_ci_wait_cancel gate rows read the step env EVT, so merge_group rows ran as pull_request (#6061)
+- fix(ci): ci_resolve_dirty self-test reads its output by here-string, not a pipe into grep -q (Refs #4780)
+- fix(pre-push): checked CRATES selection, one trapped scratch dir, clone-isolation row in --prove (#5983)
+- fix(ladder): hung health-wait case asserts the stall event, not stall+3 ticks
+- fix(guards): check_ladder_cells_producer reaps its fake serves when SIGKILLed
+- fix(resolve_base): name merge_group.base_sha and pull_request.base.sha so a REBASE-replayed PR is judged whole
+- fix(ci): silicon coverage re-reads an all-empty listing once and prints request ids (Refs #5978)
+- fix(ci): silicon coverage reads the workflow's newest run when listing and probe both come back empty (Refs #5974)
+- fix(ci): draft_skip shard-unguarded mutant missed the shard once needs: sat above its if: (main red since #5891) (#5905)
+- fix(rollup): aprender-rollup answers --version with the build sha (Refs #5888) (#5890)
+- fix(ci): pv_bin.sh keeps exit status and raw output of an empty --version (Refs #5894)
+- fix(ci): remove check_harness_server_cleanup.sh + its 817 explicit command; keep #5806's launcher fixes (Refs #5806)
+- fix: read pull_request.base.sha past the nested repo/user objects of a real payload (#5859)
+- fix(laya-rules): judge merge_group.base_sha..head so a REBASE-replayed multi-commit PR is not exit 2 (#5855)
+- fix(harness): crux launchers kill their fixture servers on TERM/INT/KILL (#5806)
+- fix(ci): bogus-m-crux fixture hermetic CARGO_TARGET_DIR (PMAT-5817) (#5818)
+- fix(deps): ureq 2→3 + webpki bumps — RUSTSEC-2026-0381/0382/0383 (main-red P0) (#5813)
+- fix(arm): plain gh pr merge on merge-queue repos, RED scanner on method flags (#5796)
+- fix(deps): wasmtime 48.0.7 clears RUSTSEC-2026-0378/0379 (lock only) (#5789)
+- fix(contracts): stop writing volatile reasoner_git_sha and cpu_ms to the witness (P5) (#5752)
+- fix(data): validate_readme reports unparseable YAML front matter instead of returning Ok (Refs #5500, #5328) (#5513)
+- fix(serve): accept absent/null assistant content, max_completion_tokens alias, gate the GGUF router (supersedes #5411) (#5544)
+- fix(deps): aprender-viz-ttop build.rs reads YAML through serde-saphyr; drop unused serde_yaml_ng from the present/test workspace shells (Refs #5326) (#5499)
+- fix(ci-tools): Serve::signal_group used a kill executable the rust-slim clean-room lacks (#5492) (#5493)
+- fix(deps): aprender-decide reads YAML through serde-saphyr, not serde_yaml (Refs #5326) (#5413)
+- fix(ci): vendored-schemas mutant harness runs its nine guard runs in parallel (#5481)
+- fix(build-sha): stamp apr --version with --short=9, the comparators' length (#5262)
+- fix(pr-review): current quorum-lane model ids (gemini-4-argon-high, claude-sonnet-5-5, claude-haiku-5-5) (#5428)
+- fix(gate): laya-train SCOPE no longer reads the judge crate's laya-named files as model code (Refs #5448) (#5450)
+- fix(guard): dogfood.sh C14 reads its output with here-strings, not printf into grep -q (Refs #5457) (#5458)
+- fix(apr-cli): apr ptx --help carries the unavailable-in-this-build marker (Refs #4474) (#5456)
+- fix(deps): zip 2.4.2 -> 9.0.4 for RUSTSEC-2026-0367, deflate only (Refs #5459) (#5460)
+- fix(deps): port aprender-orchestrate to serde-saphyr (Refs #5209) (#5421)
+- fix(guard): check_bashrs_gate.sh feeds grep -q without a pipe (Refs #5374) (#5424)
+- fix(guard): check_row_pr_write_set.sh feeds grep -q without a pipe (Refs #5374) (#5422)
+- fix(#3431): GgmlType matches name every id instead of swallowing them with _ (Refs #3431) (#5420)
+- fix(guard): ci_gpu_touched.sh feeds grep -q without a pipe (Refs #5374) (#5425)
+- fix(serve): apr run -v prints every encoded prompt id, not the first 30 (Refs #5056) (#5418)
+- fix(rex): S-4 cap in decide() records its reason (FALSIFY-RXG-008) (#5415)
+- fix(serve): Ollama shim reports done_reason "length" when num_predict is hit (Refs #5357) (#5414)
+- fix(serve): GPU/CUDA routes stop on the EOS plus every EOG marker (Refs #4345) (#5386)
+- fix(ci): a kicked merge-queue entry's re-enqueue cancels the dead run on its ref (#5381) (#5385)
+- fix(serve): constrained EOS and 499, response_format type refusal, Ollama done_reason, code help (#3568 #5357 #5211) (#5407)
+- fix(ci): test tier diffs the PR from its merge-base, not the base tip (#5391) (#5405)
+- fix(release): rehearsal guard refuses a cargo config token (Refs #4844) (#5402)
+- fix(docs): no README or manifest points at an archived pre-monorepo repo; pv ontology readme gates it (Refs #5382) (#5392)
+- fix(ci): install the pinned toolchain before the x86-main sections (#5403) (#5406)
+- fix(ci): the merge_group tier step retries its two GitHub lookups, then falls to full (Refs #5399) (#5400)
+- fix(finetune): from_pretrained refuses a trained adapter it cannot read (#4698) (#5377)
+- fix(deps): aprender-present-terminal reads YAML through serde-saphyr (S3b, Refs #5326) (#5378)
+- fix(guard): four self-test rows read a match as a miss under pipefail (Refs #5374) (#5379)
+- fix(build): serve reads its arch-requirements and tensor-names contracts in-tree; three dead binding stubs removed (Refs #4380) (#5372)
+- fix(contracts): 370 contracts bound to real tests, off the no-test debt list (803 -> 433) (#5291) (#5369)
+- fix(deps): 14 small crates read YAML through serde-saphyr, not serde_yaml (Refs #5326) (#5365)
+- fix(pv): refuse empty or missing falsification tests; walk kaizen; no-test debt 803 only shrinks, capped per release (Refs #5291) (#5362)
+- fix(rehearse): D5 matched a refusal line prepare_bump no longer prints (#5060) (#5354)
+- fix(nightly): the lanes rows test pinned rows main no longer has, so the train self-test broke before any verdict (#5079) (#5355)
+- fix(deps): wasmtime 48.0.4 -> 48.0.6 for the RUSTSEC-2026-0353..0364 advisories (Refs #4633) (#5361)
+- fix(flake): test_stack_unwinding_does_not_crash lists a dir it owns, and says why it failed (Refs #5018) (#5352)
+- fix(deps): drop the unused bashrs crate from aprender-compute-xtask and aprender-orchestrate (#5205) (#5350)
+- fix(deps): rustls 0.23.46 and drop aws-sdk-s3's legacy rustls 0.21 client (RUSTSEC-2026-0346..0349) (#5343)
+- fix(apr-wgpu): the stop token ended the reply and was printed as its id (Refs #4984) (#5269)
+
+### Changed
+
+- refactor(simulate): split tsp_instance.rs so each file passes the pre-commit complexity limit (Refs #6025)
+- refactor(simulate): split edd/loader.rs so each file passes the pre-commit complexity limit (Refs #6025)
+- refactor(simulate): split tsp_engine.rs so each file passes the pre-commit complexity limit (Refs #6025)
+- refactor(yaml): aprender-simulate build.rs reads contract YAML through serde-saphyr (S2, Refs #6020)
+- refactor(yaml): aprender-contracts-cli reads YAML through serde-saphyr (S4, Refs #5209) (#5507)
+- refactor(apr-cli): five hook-refused files under complexity 30/25 (unblocks DIRTY #5262/#5295/#5440/#5447) (#5464)
+- refactor(yaml): apr-cli reads YAML through serde-saphyr (S4, Refs #5209) (#5416)
+- refactor(yaml): five crates read YAML through serde-saphyr (S2, Refs #5208) (#5363)
+
+### Other
+
+- evidence(perf041): refresh the PP-26 witness and marker on lambda at 046ad6a84d
+- roadmap: regenerate roadmap.yaml from fragments (main + PMAT-6200 only) (Refs #6200)
+- lab: guard against per-function coverage tickets; the scan updates epic #5875 (Refs #5879)
+- batch: lane-a-1 coverage fold, regenerate (Refs #5784)
+- Revert "ci: drop X64 from arch-neutral runs-on, pin the FULL tier's shards to X64 ... (#5891)" (#5907)
+- tooling(arm): arm_pr_automerge.sh refuses a PR whose base is not main (#5824)
+- batch 6: draw_scrollbar + render_disk_box tests (Refs #5623, #5603) (#5777)
+- batch 5: StepProfiler split + /health binary_sha256 (Refs #5577, #5348) (#5776)
+- batch 4: SIM-4 capacity-bound check (Refs #5511) (#5774)
+- batch(manual-1615): fold 6 ready branches (#5735 #5592 #5586 #5657 #5672 #5762) (#5765)
+- batch(manual-b2): fold 3 ready branches (#5621 #5625 #5624) (#5766)
+- test+refactor: fold cbtop bottleneck (#5548) and process_tracer next cog (#5568) (#5709)
+- evidence(perf041): Qwen3.5-4B batched-serving witnesses, c 1/4/8/16 (Refs #5312) (#5495)
+- ci-tools: nextest-fail-fast, the nextest guard's TOML judge in Rust (Refs #5032) (#5370)
+
+Also in this range: 112 ci, test, chore and docs commits (not listed).
+
+
 ## [0.71.3] - 2026-10-14
 
 A patch release on 0.71.2: `apr embed` loads EmbeddingGemma 2 from GGUF, the chat route returns logprobs, CRUX gains category R (SHACL ontologies against Apache Jena), the regression tree's split search sorts once instead of rescanning per candidate, the release model run binds its binary by sha prefix under one run lock, memory headroom scales with the device instead of assuming 16 GiB, and the shrink-only ratchets, the weekly mutants run and a new edge-device fast-verbs run all live on nightly LAB lanes, off the PR path.
