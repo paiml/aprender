@@ -143,7 +143,7 @@ apr-format = { path = "../apr-format", version = "0.71" }
 
 # Compression for .apr format (optional, spec §3.3)
 lz4_flex = { version = "0.11", optional = true }
-zstd = { version = "0.13", optional = true }
+zstd = { version = "0.14", optional = true }
 
 # Half-precision floats for quantization (spec §6.2)
 half = { version = "2.4", optional = true, default-features = false, features = ["std"] }

@@ -39,7 +39,7 @@ rand_pcg = { version = "0.9", features = ["serde"] }
 indexmap = { version = "2.0", features = ["serde"] }
 
 # Compression
-zstd = "0.13"
+zstd = { version = "0.14", optional = true }
 
 # Hashing
 blake3 = "1.5"
@@ -106,6 +106,8 @@ provable-contracts = { path = "../aprender-contracts", package = "aprender-contr
 proptest = "1.5"
 criterion = { version = "0.5", default-features = false }
 tempfile = "3.14"
+# own tests exercise checkpoint compression; dev-deps do not reach downstream graphs (PMAT-6416)
+aprender-simulate = { path = ".", features = ["zstd"] }
 # jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
 # Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
 # Presentar TUI testing framework (SPEC-024 Section 12 & 13)
@@ -113,6 +115,8 @@ presentar-test = { path = "../aprender-present-test", package = "aprender-presen
 
 [features]
 default = []
+# zstd is off by default: RUSTSEC-2026-0391/-0398/-0403/-0410 (PMAT-6416). Enables checkpoint compression.
+zstd = ["dep:zstd"]
 tui = ["dep:crossterm", "dep:presentar-terminal", "dep:presentar-core"]
 web = ["dep:tokio"]
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:getrandom", "dep:serde-wasm-bindgen", "dep:console_error_panic_hook"]

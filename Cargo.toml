@@ -224,7 +224,7 @@ clap = { version = "4.5", features = ["derive"] }
 
 # Compression
 lz4_flex = "0.11"
-zstd = "0.13"
+zstd = "0.14"
 
 # Crypto
 sha1 = "0.10"  # git_patch_id in aprender-ci-tools: git's patch-id is SHA-1 by definition

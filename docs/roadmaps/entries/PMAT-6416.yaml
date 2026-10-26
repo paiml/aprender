@@ -1,0 +1,18 @@
+- id: PMAT-6416
+  github_issue: 6416
+  item_type: task
+  title: 'advisories: zstd 0.14.3 + parquet/arrow 60 (RUSTSEC-2026-0391/0398/0403/0410)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T15:45:02Z
+  updated: 2026-10-26T15:45:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
