@@ -18,6 +18,116 @@ use crate::engine::rng::RngState;
 use crate::engine::{SimState, SimTime};
 use crate::error::{SimError, SimResult};
 
+/// Checkpoint compression. zstd is the default `zstd` feature; without it every call returns an
+/// error instead of linking zstd (PMAT-6416).
+#[cfg(feature = "zstd")]
+mod codec {
+    use crate::error::{SimError, SimResult};
+    use std::fs::File;
+
+    pub fn encode(data: &[u8], level: i32) -> SimResult<Vec<u8>> {
+        Ok(zstd::encode_all(data, level)?)
+    }
+
+    pub fn decode(data: &[u8]) -> SimResult<Vec<u8>> {
+        Ok(zstd::decode_all(data)?)
+    }
+
+    pub struct Encoder(zstd::stream::Encoder<'static, File>);
+
+    impl Encoder {
+        pub fn new(file: File, level: i32) -> SimResult<Self> {
+            zstd::stream::Encoder::new(file, level)
+                .map(Self)
+                .map_err(|e| SimError::serialization(format!("Zstd encoder init: {e}")))
+        }
+
+        pub fn finish(self) -> SimResult<File> {
+            self.0
+                .finish()
+                .map_err(|e| SimError::serialization(format!("Zstd finish: {e}")))
+        }
+    }
+
+    impl std::io::Write for Encoder {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0.write(buf)
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            self.0.flush()
+        }
+    }
+
+    pub struct Decoder(zstd::stream::Decoder<'static, std::io::BufReader<File>>);
+
+    impl Decoder {
+        pub fn new(file: File) -> SimResult<Self> {
+            zstd::stream::Decoder::new(file)
+                .map(Self)
+                .map_err(|e| SimError::serialization(format!("Zstd decoder init: {e}")))
+        }
+    }
+
+    impl std::io::Read for Decoder {
+        fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+            self.0.read(buf)
+        }
+    }
+}
+
+#[cfg(not(feature = "zstd"))]
+mod codec {
+    use crate::error::{SimError, SimResult};
+    use std::fs::File;
+
+    fn off() -> SimError {
+        SimError::config("checkpoint compression needs the `zstd` feature of aprender-simulate")
+    }
+
+    pub fn encode(_data: &[u8], _level: i32) -> SimResult<Vec<u8>> {
+        Err(off())
+    }
+
+    pub fn decode(_data: &[u8]) -> SimResult<Vec<u8>> {
+        Err(off())
+    }
+
+    pub struct Encoder;
+
+    impl Encoder {
+        pub fn new(_file: File, _level: i32) -> SimResult<Self> {
+            Err(off())
+        }
+
+        pub fn finish(self) -> SimResult<File> {
+            Err(off())
+        }
+    }
+
+    impl std::io::Write for Encoder {
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("zstd feature off"))
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Err(std::io::Error::other("zstd feature off"))
+        }
+    }
+
+    pub struct Decoder;
+
+    impl Decoder {
+        pub fn new(_file: File) -> SimResult<Self> {
+            Err(off())
+        }
+    }
+
+    impl std::io::Read for Decoder {
+        fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("zstd feature off"))
+        }
+    }
+}
+
 /// Checkpoint with compressed state.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Checkpoint {
@@ -51,7 +161,7 @@ impl Checkpoint {
             bincode::serialize(state).map_err(|e| SimError::serialization(e.to_string()))?;
 
         // Compress
-        let compressed = zstd::encode_all(&serialized[..], compression_level)?;
+        let compressed = codec::encode(&serialized, compression_level)?;
 
         // Hash for integrity
         let hash = blake3::hash(&compressed);
@@ -78,7 +188,7 @@ impl Checkpoint {
         }
 
         // Decompress
-        let decompressed = zstd::decode_all(&self.data[..])?;
+        let decompressed = codec::decode(&self.data)?;
 
         // Deserialize
         bincode::deserialize(&decompressed).map_err(|e| SimError::serialization(e.to_string()))
@@ -483,8 +593,7 @@ impl StreamingCheckpointManager {
 
         // Create file and wrap in streaming encoder
         let file = std::fs::File::create(&path)?;
-        let mut encoder = zstd::stream::Encoder::new(file, self.compression_level)
-            .map_err(|e| SimError::serialization(format!("Zstd encoder init: {e}")))?;
+        let mut encoder = codec::Encoder::new(file, self.compression_level)?;
 
         // Stream checkpoint header
         let header = CheckpointHeader {
@@ -500,9 +609,7 @@ impl StreamingCheckpointManager {
         bincode::serialize_into(&mut encoder, state)
             .map_err(|e| SimError::serialization(format!("State serialize: {e}")))?;
 
-        let file = encoder
-            .finish()
-            .map_err(|e| SimError::serialization(format!("Zstd finish: {e}")))?;
+        let file = encoder.finish()?;
 
         // Get compressed size
         let metadata = file.metadata()?;
@@ -522,8 +629,7 @@ impl StreamingCheckpointManager {
         path: &std::path::Path,
     ) -> SimResult<(CheckpointHeader, S)> {
         let file = std::fs::File::open(path)?;
-        let mut decoder = zstd::stream::Decoder::new(file)
-            .map_err(|e| SimError::serialization(format!("Zstd decoder init: {e}")))?;
+        let mut decoder = codec::Decoder::new(file)?;
 
         let header: CheckpointHeader = bincode::deserialize_from(&mut decoder)
             .map_err(|e| SimError::serialization(format!("Header deserialize: {e}")))?;
