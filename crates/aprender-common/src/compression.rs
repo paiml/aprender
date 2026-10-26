@@ -9,7 +9,7 @@ pub enum Compression {
     /// LZ4 - Fast compression with prepended size, good for real-time
     #[default]
     Lz4,
-    /// ZSTD - Better compression ratio, slower (needs the `zstd` feature)
+    /// ZSTD - Better compression ratio, slower (needs the `zstd` feature, on by default)
     #[cfg(feature = "zstd")]
     Zstd,
 }

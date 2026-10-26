@@ -107,16 +107,14 @@ proptest = "1.5"
 criterion = { version = "0.5", default-features = false }
 tempfile = "3.14"
 # own tests exercise checkpoint compression; dev-deps do not reach downstream graphs (PMAT-6416)
-# Self dev-dependency: unifies the `zstd` feature into this crate's own test builds only (the checkpoint tests need the codec).
-aprender-simulate = { path = ".", features = ["zstd"] }
 # jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
 # Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
 # Presentar TUI testing framework (SPEC-024 Section 12 & 13)
 presentar-test = { path = "../aprender-present-test", package = "aprender-present-test" }
 
 [features]
-default = []
-# zstd is off by default: RUSTSEC-2026-0391/-0398/-0403/-0410 (PMAT-6416). Enables checkpoint compression.
+default = ["zstd"]
+# Checkpoint compression (zstd 0.14.3, no advisory; PMAT-6416). Disable for a zstd-free build.
 zstd = ["dep:zstd"]
 tui = ["dep:crossterm", "dep:presentar-terminal", "dep:presentar-core"]
 web = ["dep:tokio"]

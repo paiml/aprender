@@ -18,8 +18,8 @@ use crate::engine::rng::RngState;
 use crate::engine::{SimState, SimTime};
 use crate::error::{SimError, SimResult};
 
-/// Checkpoint compression. zstd is an off-by-default feature (RUSTSEC-2026-0391/-0398/-0403/-0410,
-/// PMAT-6416); without it every call returns an error instead of pulling zstd into downstream graphs.
+/// Checkpoint compression. zstd is the default `zstd` feature; without it every call returns an
+/// error instead of linking zstd (PMAT-6416).
 #[cfg(feature = "zstd")]
 mod codec {
     use crate::error::{SimError, SimResult};

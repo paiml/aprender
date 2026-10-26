@@ -82,8 +82,6 @@ duckdb = { version = "1.10506", features = ["bundled"], optional = true }
 rusqlite = { version = "0.32", optional = true }
 
 [dev-dependencies]
-# tests exercise Compression::Zstd; dev-deps do not reach downstream graphs (PMAT-6416)
-batuta-common = { workspace = true, features = ["zstd"] }
 # Testing
 criterion = { version = "0.5", features = ["html_reports", "async_tokio"] }
 proptest = "1.5"           # Property-based testing

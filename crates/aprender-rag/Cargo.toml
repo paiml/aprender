@@ -77,8 +77,6 @@ serde = { version = "1", features = ["derive"] }
 serde-saphyr = { workspace = true }
 
 [dev-dependencies]
-# tests exercise Compression::Zstd; dev-deps do not reach downstream graphs (PMAT-6416)
-batuta-common = { workspace = true, features = ["zstd"] }
 tokio-test = "0.4"
 proptest = "1.9"
 criterion = { version = "0.6", features = ["html_reports"] }

@@ -1493,7 +1493,6 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-present-test",
- "aprender-simulate",
  "bincode",
  "bitflags 2.13.0",
  "blake3",

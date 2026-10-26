@@ -13,11 +13,11 @@ categories = ["command-line-utilities", "text-processing"]
 name = "batuta_common"
 
 [features]
-default = []
+default = ["zstd"]
 # #3745 S1: typed CLI argument roles (`batuta_common::cli_roles`). Optional so the
 # default build of this crate stays clap-free.
 cli-roles = ["dep:clap"]
-# zstd is off by default: RUSTSEC-2026-0391/-0398/-0403/-0410 (PMAT-6416). Opting in adds `Compression::Zstd`.
+# ZSTD codec (`Compression::Zstd`). On by default; zstd 0.14.3 has no advisory (PMAT-6416). Disable for an lz4-only build.
 zstd = ["dep:zstd"]
 
 [dependencies]
