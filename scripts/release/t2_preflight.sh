@@ -298,7 +298,11 @@ else
         || { echo "t2_preflight: not_measured: no commit in main's newest 60 first-parent commits has a completed coverage-nightly run; T-2 judges a measured commit, never main's head (#5082)" >&2; exit 2; }
     echo "t2_preflight: judging $sha, the newest main commit coverage-nightly measured (main's head: $(git rev-parse origin/main))"
 fi
-wt="$AP/preflight-wt"
+# Outside the checkout: cargo reads every ancestor .cargo/config.toml, and the main checkout's
+# gitignored one carries [patch.crates-io] path overrides. Under $AP (inside it) they leaked in,
+# wrote [[patch.unused]] into Cargo.lock, and the dirty tree voided fmt/comply/test/coverage.
+wt="${TMPDIR:-/tmp}/preflight-wt-$(basename "$AP")"
+case "$wt" in "$REPO_ROOT"/*) echo "t2_preflight: worktree $wt is inside $REPO_ROOT, so its .cargo/config.toml would leak in" >&2; exit 2;; esac
 [ -d "$wt" ] && git worktree remove --force "$wt" > /dev/null 2>&1
 git worktree add --detach "$wt" "$sha" > /dev/null 2>&1 || exit 2
 cd "$wt" || exit 2
