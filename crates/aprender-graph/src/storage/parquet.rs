@@ -110,9 +110,7 @@ impl CsrGraph {
             File::create(&edges_path).with_context(|| format!("Failed to create {edges_path}"))?;
 
         let props = WriterProperties::builder()
-            .set_compression(parquet::basic::Compression::ZSTD(parquet::basic::ZstdLevel::try_new(
-                3,
-            )?))
+            .set_compression(parquet::basic::Compression::UNCOMPRESSED)
             .build();
 
         let mut writer = ArrowWriter::try_new(file, schema, Some(props))?;
@@ -159,9 +157,7 @@ impl CsrGraph {
             File::create(&nodes_path).with_context(|| format!("Failed to create {nodes_path}"))?;
 
         let props = WriterProperties::builder()
-            .set_compression(parquet::basic::Compression::ZSTD(parquet::basic::ZstdLevel::try_new(
-                3,
-            )?))
+            .set_compression(parquet::basic::Compression::UNCOMPRESSED)
             .build();
 
         let mut writer = ArrowWriter::try_new(file, schema, Some(props))?;

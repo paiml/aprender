@@ -399,7 +399,8 @@ chromiumoxide = { version = "0.8", default-features = false, features = ["tokio-
 # never builds it, so the MSRV check never fires. It does mean
 # `--features runtime` needs Rust 1.95+ until the toolchain pin moves. Tracked
 # in #2806; cargo fails with an explicit MSRV message, not silently.
-wasmtime = "48.0.3"
+# PMAT-6416: default features minus `cache` (wasmtime-internal-cache pins zstd ^0.13, RUSTSEC-2026-0391/-0398/-0403, no fixed wasmtime up to 50.0.0); nothing here uses the module cache.
+wasmtime = { version = "48.0.3", default-features = false, features = ["anyhow","async","backtrace","gc","gc-copying","gc-drc","gc-null","wat","profiling","parallel-compilation","cranelift","pooling-allocator","demangle","addr2line","coredump","debug-builtins","runtime","component-model","component-model-async","threads","stack-switching","std","debug","compile-time-builtins","wit-parser"] }
 bollard = "0.17"
 
 # Old crate name aliases (workspace = true refs in migrated sub-crates)

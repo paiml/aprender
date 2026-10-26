@@ -105,11 +105,11 @@ mod codec {
     }
 
     impl std::io::Write for Encoder {
-        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-            Ok(buf.len())
+        fn write(&mut self, _buf: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::Error::other("zstd feature off"))
         }
         fn flush(&mut self) -> std::io::Result<()> {
-            Ok(())
+            Err(std::io::Error::other("zstd feature off"))
         }
     }
 
@@ -123,7 +123,7 @@ mod codec {
 
     impl std::io::Read for Decoder {
         fn read(&mut self, _buf: &mut [u8]) -> std::io::Result<usize> {
-            Ok(0)
+            Err(std::io::Error::other("zstd feature off"))
         }
     }
 }

@@ -107,6 +107,7 @@ proptest = "1.5"
 criterion = { version = "0.5", default-features = false }
 tempfile = "3.14"
 # own tests exercise checkpoint compression; dev-deps do not reach downstream graphs (PMAT-6416)
+# Self dev-dependency: unifies the `zstd` feature into this crate's own test builds only (the checkpoint tests need the codec).
 aprender-simulate = { path = ".", features = ["zstd"] }
 # jugar-probar removed from dev-deps to reduce Cargo.lock (CB-081)
 # Tests in tests/probar_*.rs require jugar-probar and are gated via required-features
