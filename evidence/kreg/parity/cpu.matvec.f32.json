@@ -1,25 +1,28 @@
 {
-  "build_identity": "1cd1634d4851eb380481c442682fd5974aef134b",
+  "build_identity": "04775283180db634691abc0169a43e5d6d44423c",
   "fp32_activations": {
     "max_abs_err": 1.7067602402498494e-6,
     "max_rel_err": 7.356022484897627e-7
   },
-  "host": "yoga",
+  "host": "noah-Lambda-Vector",
   "host_arch": "x86_64",
   "input_set": {
-    "device": "x86_64+sse4.2+avx+avx2+fma",
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
     "driver": "none",
     "oracle": "le_decode_half_f64",
     "row_sha256": "64bc26b83b54d8de3067e9dbe5da399f6d5aed69b3877650a7279804c3d9f010",
-    "source_sha256": "8e02ab0033044cbce9ef5f0e9348b6225f96465eaf3490b13d1322a453cfb624",
+    "source_sha256": "ed2d28580994205ad4b6bc45b958036d156dc933600251a07683e888690732b5",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "c770fc86aea618e84e480067904cc66e7f15c25ed6351256d10c7412dbed7636",
+  "input_set_hash": "90e51aa23a55e5b00cb97f24da4fe5100d1b4c04d7f46d6a8f563b12b52babef",
   "isa_detected": [
     "sse4.2",
     "avx",
     "avx2",
-    "fma"
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
   ],
   "isa_forced": "native",
   "kernel_id": "cpu.matvec.f32",
@@ -42,7 +45,7 @@
   },
   "source_fn": "fused_matmul_f32",
   "tolerance_rel": 2e-6,
-  "ts": "2026-10-13T11:07:06Z",
+  "ts": "2026-10-26T23:58:15Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,
