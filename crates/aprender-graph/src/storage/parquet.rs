@@ -110,7 +110,9 @@ impl CsrGraph {
             File::create(&edges_path).with_context(|| format!("Failed to create {edges_path}"))?;
 
         let props = WriterProperties::builder()
-            .set_compression(parquet::basic::Compression::UNCOMPRESSED)
+            .set_compression(parquet::basic::Compression::ZSTD(parquet::basic::ZstdLevel::try_new(
+                3,
+            )?))
             .build();
 
         let mut writer = ArrowWriter::try_new(file, schema, Some(props))?;
@@ -157,7 +159,9 @@ impl CsrGraph {
             File::create(&nodes_path).with_context(|| format!("Failed to create {nodes_path}"))?;
 
         let props = WriterProperties::builder()
-            .set_compression(parquet::basic::Compression::UNCOMPRESSED)
+            .set_compression(parquet::basic::Compression::ZSTD(parquet::basic::ZstdLevel::try_new(
+                3,
+            )?))
             .build();
 
         let mut writer = ArrowWriter::try_new(file, schema, Some(props))?;
@@ -277,6 +281,33 @@ mod tests {
         assert_eq!(loaded.get_node_name(NodeId(0)), Some("main"));
         assert_eq!(loaded.get_node_name(NodeId(1)), Some("parse_args"));
         assert_eq!(loaded.get_node_name(NodeId(2)), Some("validate"));
+    }
+
+    /// Files written by <=0.72.0 are ZSTD; they must stay readable and new ones stay ZSTD.
+    #[tokio::test]
+    async fn test_parquet_zstd_file_reads() {
+        use parquet::basic::Compression;
+        use parquet::file::reader::{FileReader, SerializedFileReader};
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zstd_graph");
+
+        let mut graph = CsrGraph::new();
+        graph.add_edge(NodeId(0), NodeId(1), 1.5).unwrap();
+        graph.set_node_name(NodeId(0), "a".to_string());
+        graph.set_node_name(NodeId(1), "b".to_string());
+        graph.write_parquet(&path).await.unwrap();
+
+        for suffix in ["edges", "nodes"] {
+            let file = File::open(format!("{}_{suffix}.parquet", path.display())).unwrap();
+            let meta = SerializedFileReader::new(file).unwrap();
+            let codec = meta.metadata().row_group(0).column(0).compression();
+            assert!(matches!(codec, Compression::ZSTD(_)), "{suffix}: {codec:?}");
+        }
+
+        let loaded = CsrGraph::read_parquet(&path).await.unwrap();
+        assert_eq!(loaded.outgoing_neighbors(NodeId(0)).unwrap(), &[1]);
+        assert_eq!(loaded.get_node_name(NodeId(1)), Some("b"));
     }
 
     #[tokio::test]

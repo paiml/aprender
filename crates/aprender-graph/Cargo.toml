@@ -18,7 +18,8 @@ name = "trueno_graph"
 # Data formats (columnar) - MVP uses Arrow/Parquet directly
 # Minimal features: drops arrow-csv, arrow-json (~fewer transitive deps)
 arrow = { version = "60", default-features = false, optional = true }  # RecordBatch zero-copy
-parquet = { version = "60", default-features = false, features = ["arrow"], optional = true }                       # Persistent storage
+# zstd codec stays on: parquet 60 uses zstd 0.14.3 (no advisory) and files <=0.72.0 are ZSTD (PMAT-6416)
+parquet = { version = "60", default-features = false, features = ["arrow", "zstd"], optional = true }                       # Persistent storage
 
 # Async runtime (required for I/O)
 tokio = { version = "1", features = ["rt", "fs", "sync", "macros"] }
