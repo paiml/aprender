@@ -5,5 +5,14 @@
 
 fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    // G0.1 (#4476): the same `<semver> (<sha>)` shape as `pv --version`, so the binary snapshot row carries the commit.
+    if matches!(args.as_slice(), [flag] if flag == "-V" || flag == "--version") {
+        println!(
+            "pv-readme {} ({}) (aprender README renderer)",
+            env!("CARGO_PKG_VERSION"),
+            env!("APR_GIT_SHA")
+        );
+        return std::process::ExitCode::SUCCESS;
+    }
     aprender_contracts_cli::readme_cmd::main_with(&args)
 }
