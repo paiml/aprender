@@ -33,10 +33,10 @@ dhat-heap = ["dep:dhat"]
 [dependencies]
 # Core (always)
 # NOTE: arrow 57+ fixes comfy-table let_chains compatibility
-arrow = { version = "59", default-features = false, features = ["prettyprint", "ipc"] }
-arrow-csv = { version = "59" }
-arrow-json = { version = "59" }
-parquet = { version = "59", default-features = false, features = ["arrow", "snap", "zstd"] }
+arrow = { version = "60", default-features = false, features = ["prettyprint", "ipc"] }
+arrow-csv = { version = "60" }
+arrow-json = { version = "60" }
+parquet = { version = "60", default-features = false, features = ["arrow", "snap", "zstd"] }
 thiserror = "2"
 bytes = "1"
 serde = { version = "1", features = ["derive"] }
@@ -44,7 +44,7 @@ serde_json = "1"
 
 # Format serialization
 rmp-serde = "1"
-zstd = "0.13"
+zstd = "0.14"
 lz4_flex = "0.11"
 
 # Random (for shuffle) - with JS support for WASM
