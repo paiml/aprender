@@ -95,7 +95,7 @@ metadata:
       clusters: 14
       clusters_at_zero_coverage: 9
       note: >
-        All 144 covered features are in `apr`. 29 of 30 binaries have no gate at
+        All 144 covered features are in `apr`. 30 of 31 binaries have no gate at
         all, including aprender-orchestrate (189 features), aprender-test-cli (40)
         and pv (49).
 
@@ -134,6 +134,7 @@ metadata:
       aprender-zram-generator: {total: 2, covered: 0}
       pv-sat: {total: 2, covered: 0}
       aprender-ci-tools: {total: 11, covered: 0}
+      aprender-rollup: {total: 5, covered: 0}
 
     per_cluster:
       command: "python3 scripts/dogfood_baseline.py  # section: per_cluster"
@@ -177,7 +178,7 @@ metadata:
       data-pipeline: {total: 77, covered: 0}                #  ZERO
       apr-lint-diag: {total: 71, covered: 55}               # 77.5% of cluster, 38.2% of gate effort
       orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
-      test-harness: {total: 62, covered: 0}                 #  ZERO
+      test-harness: {total: 67, covered: 0}                 #  ZERO
       http-apr-serve: {total: 46, covered: 40}              # 87.0% of cluster, 27.8% of gate effort
       profiling: {total: 46, covered: 1}                    # 2.2% of cluster,  0.7% of gate effort
       rag-eval: {total: 46, covered: 0}                     #  ZERO
@@ -195,7 +196,7 @@ metadata:
         the 4.3% coverage of that band is why.
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
-      q5_6: {total: 723, covered: 29}    # 4.1%
+      q5_6: {total: 728, covered: 29}    # 4.0%
       q7_8: {total: 38, covered: 10}      # 26.3%
       q9_10: {total: 22, covered: 20}    # 90.9%
 
