@@ -28,7 +28,7 @@ sovereign-ci:
     advisories_diff_only: true
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
-# runs as ONE shard (EMG-001 C1; was twelve) (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
+# runs as FOUR shards (PMAT-6420; EMG-001 C1 had collapsed twelve to one, the 85-min MQ shard) (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
 # it took 5358 s of x86-main and was the release critical path. nextest's hash
 # partition N/12 and the explicit runner's round-robin N/12 each cover their list
 # exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
@@ -36,13 +36,19 @@ sovereign-ci:
 # [X64], the determinism fat job runs [ARM64] + the compare.
 matrix-pins:
   workspace-test-shard:
-    - {shard: 1, shards: 1}
+    - {shard: 1, shards: 4}
+    - {shard: 2, shards: 4}
+    - {shard: 3, shards: 4}
+    - {shard: 4, shards: 4}
   guard-cargo-shard:
     - {shard: 1, shards: 3}
     - {shard: 2, shards: 3}
     - {shard: 3, shards: 3}
   workspace-test-shard-merge_group:
-    - {shard: 1, shards: 1}
+    - {shard: 1, shards: 4}
+    - {shard: 2, shards: 4}
+    - {shard: 3, shards: 4}
+    - {shard: 4, shards: 4}
   determinism:
     - {arch: X64}
     - {arch: ARM64}
@@ -84,8 +90,8 @@ jobs:
       fail-fast: false
       matrix:
         # NOTE: the matrix-pins above override this matrix (fat_driver.py); the guard checks the pins and ci.yml only
-        shard: [1]
-        shards: [1]
+        shard: [1, 2, 3, 4]
+        shards: [4]
     # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
     # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
     # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
