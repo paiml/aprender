@@ -1,0 +1,18 @@
+- id: PMAT-6401
+  github_issue: 6401
+  item_type: task
+  title: 'CAP-001: move test_mega_long_context_memory_bound to nightly LAB (PR seats <=14 GB)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T09:27:06Z
+  updated: 2026-10-26T09:27:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923

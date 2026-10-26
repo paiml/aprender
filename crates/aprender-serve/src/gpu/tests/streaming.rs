@@ -6,10 +6,10 @@
 #[test]
 fn test_streaming_kv_cache_32768_positions() {
     // M11 target: 32768 context positions
-    let num_layers = 4; // Use smaller for test speed
+    let num_layers = 2;
     let max_positions = 32768;
-    let num_heads = 8;
-    let head_dim = 64;
+    let num_heads = 4;
+    let head_dim = 32;
 
     let mut cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
 
@@ -40,15 +40,18 @@ fn test_mega_long_context_memory_bound() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
-
-    // Memory calculation:
+    // Memory calculation (nothing allocated, CAP-001):
     // 32 layers * 32768 positions * 32 heads * 128 dim * 2 (K+V) * 4 bytes
     // = 34,359,738,368 bytes = 34.36 GB
     let expected_bytes = num_layers * max_positions * num_heads * head_dim * 2 * 4;
-    assert_eq!(cache.memory_bytes(), expected_bytes);
+    let bytes = StreamingKVCache::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
+    assert_eq!(bytes, expected_bytes);
 
-    let memory_gb = cache.memory_mb() / 1024.0;
+    // The same shape scaled to 4 MiB must report what the formula says.
+    let small = StreamingKVCache::new(2, 1024, 4, 64);
+    assert_eq!(small.memory_bytes(), StreamingKVCache::estimate_memory_bytes(2, 1024, 4, 64));
+
+    let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
         memory_gb < 36.0,
         "32768 context KV cache should be < 36 GB, got {:.2} GB",
@@ -60,10 +63,10 @@ fn test_mega_long_context_memory_bound() {
 fn test_mega_long_context_fill_performance() {
     use std::time::Instant;
 
-    let num_layers = 4;
+    let num_layers = 2;
     let max_positions = 32768;
-    let num_heads = 8;
-    let head_dim = 64;
+    let num_heads = 4;
+    let head_dim = 32;
 
     let mut cache = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
 
@@ -159,7 +162,6 @@ fn test_streaming_kv_cache_fp16_basic() {
 }
 
 #[test]
-#[ignore = "allocates 100GB+ memory - run with --ignored"]
 fn test_streaming_kv_cache_fp16_memory_half() {
     // Verify FP16 uses half the memory of FP32
     let num_layers = 32;
@@ -167,17 +169,19 @@ fn test_streaming_kv_cache_fp16_memory_half() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let cache_fp16 = StreamingKVCacheFp16::new(num_layers, max_positions, num_heads, head_dim);
-    let cache_fp32 = StreamingKVCache::new(num_layers, max_positions, num_heads, head_dim);
-
-    let fp16_bytes = cache_fp16.memory_bytes();
-    let fp32_bytes = cache_fp32.memory_bytes();
+    let fp16_bytes = StreamingKVCacheFp16::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
+    let fp32_bytes = StreamingKVCache::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
 
     // FP16 should be exactly half
     assert_eq!(fp16_bytes * 2, fp32_bytes);
 
+    // Real caches at 4 MiB (FP32) keep the same 2:1 ratio
+    let small16 = StreamingKVCacheFp16::new(2, 1024, 4, 64);
+    let small32 = StreamingKVCache::new(2, 1024, 4, 64);
+    assert_eq!(small16.memory_bytes() * 2, small32.memory_bytes());
+
     // FP16 memory for 65536 context should be ~34.36 GB
-    let fp16_gb = cache_fp16.memory_mb() / 1024.0;
+    let fp16_gb = fp16_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
         fp16_gb < 36.0,
         "FP16 65536 context should be < 36 GB, got {:.2} GB",
@@ -222,7 +226,6 @@ fn test_streaming_kv_cache_fp16_65536_positions() {
 }
 
 #[test]
-#[ignore = "allocates 34GB+ memory - run with --ignored"]
 fn test_fp16_kv_cache_memory_bound_65536() {
     // Verify 65536 context FP16 memory stays bounded
     let num_layers = 32;
@@ -230,15 +233,18 @@ fn test_fp16_kv_cache_memory_bound_65536() {
     let num_heads = 32;
     let head_dim = 128;
 
-    let cache = StreamingKVCacheFp16::new(num_layers, max_positions, num_heads, head_dim);
+    let bytes = StreamingKVCacheFp16::estimate_memory_bytes(num_layers, max_positions, num_heads, head_dim);
 
-    // Memory calculation:
+    // Memory calculation (nothing allocated, CAP-001):
     // 32 layers * 65536 positions * 32 heads * 128 dim * 2 (K+V) * 2 bytes
     // = 34,359,738,368 bytes = 34.36 GB
     let expected_bytes = num_layers * max_positions * num_heads * head_dim * 2 * 2;
-    assert_eq!(cache.memory_bytes(), expected_bytes);
+    assert_eq!(bytes, expected_bytes);
 
-    let memory_gb = cache.memory_mb() / 1024.0;
+    let small = StreamingKVCacheFp16::new(2, 1024, 4, 64);
+    assert_eq!(small.memory_bytes(), StreamingKVCacheFp16::estimate_memory_bytes(2, 1024, 4, 64));
+
+    let memory_gb = bytes as f64 / (1024.0 * 1024.0 * 1024.0);
     assert!(
         memory_gb < 36.0,
         "65536 context FP16 KV cache should be < 36 GB, got {:.2} GB",

@@ -167,12 +167,26 @@ impl StreamingKVCache {
         // Note: We don't zero the memory for performance
     }
 
+    /// Memory in bytes a cache of this shape holds (keys + values, f32), without allocating it.
+    #[must_use]
+    pub const fn estimate_memory_bytes(
+        num_layers: usize,
+        max_positions: usize,
+        num_heads: usize,
+        head_dim: usize,
+    ) -> usize {
+        num_layers * max_positions * num_heads * head_dim * 2 * 4
+    }
+
     /// Calculate memory usage in bytes
     #[must_use]
     pub fn memory_bytes(&self) -> usize {
-        let kv_size = self.max_positions * self.num_heads * self.head_dim;
-        // Keys + Values, f32 = 4 bytes
-        self.num_layers * kv_size * 2 * 4
+        Self::estimate_memory_bytes(
+            self.num_layers,
+            self.max_positions,
+            self.num_heads,
+            self.head_dim,
+        )
     }
 
     /// Calculate memory usage in megabytes
@@ -198,8 +212,8 @@ impl StreamingKVCache {
 /// ```
 /// use realizar::gpu::StreamingKVCacheFp16;
 ///
-/// let mut cache = StreamingKVCacheFp16::new(32, 65536, 32, 128);
-/// assert!(cache.memory_mb() < 36000.0); // < 36 GB
+/// let bytes = StreamingKVCacheFp16::estimate_memory_bytes(32, 65536, 32, 128);
+/// assert!(bytes < 36_000_000_000); // < 36 GB, nothing allocated
 /// ```
 pub struct StreamingKVCacheFp16 {
     /// Number of transformer layers
@@ -369,12 +383,26 @@ impl StreamingKVCacheFp16 {
         self.valid_positions = 0;
     }
 
+    /// Memory in bytes a cache of this shape holds (keys + values, FP16), without allocating it.
+    #[must_use]
+    pub const fn estimate_memory_bytes(
+        num_layers: usize,
+        max_positions: usize,
+        num_heads: usize,
+        head_dim: usize,
+    ) -> usize {
+        num_layers * max_positions * num_heads * head_dim * 2 * 2
+    }
+
     /// Calculate memory usage in bytes (half of FP32 version)
     #[must_use]
     pub fn memory_bytes(&self) -> usize {
-        let kv_size = self.max_positions * self.num_heads * self.head_dim;
-        // Keys + Values, u16 (FP16) = 2 bytes
-        self.num_layers * kv_size * 2 * 2
+        Self::estimate_memory_bytes(
+            self.num_layers,
+            self.max_positions,
+            self.num_heads,
+            self.head_dim,
+        )
     }
 
     /// Calculate memory usage in megabytes
