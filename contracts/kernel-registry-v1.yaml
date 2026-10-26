@@ -214,7 +214,7 @@ falsification_tests:
     if_fails: a Q6_K gate is read as Q4_K blocks on wgpu and decodes to garbage
   - id: FALSIFY-KREG-007
     rule: every row's (qtype, ggml_type, block_elems) matches the upstream facts
-    prediction: each row agrees with llama.cpp and vLLM at the commits pinned in docs/kernel-registry/upstream-reference-v1.json; APR-native ids (>= 128) have no upstream row
+    prediction: each row agrees with llama.cpp and vLLM at the commits pinned in crates/aprender-serve/data/upstream-reference-v1.json; APR-native ids (>= 128) have no upstream row
     test: cargo test -p aprender-serve --lib every_row_agrees_with_the_upstream_reference
     if_fails: a wrong type id or block size admits a kernel for bytes it cannot decode
   - id: FALSIFY-KREG-008
