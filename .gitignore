@@ -61,7 +61,7 @@ crates/aprender-shell/qa_test_artifacts/
 
 # PMAT caches and generated data (recursive — covers root AND subcrates)
 # CB-510 lesson: non-recursive patterns miss crates/*/.pmat/ files
-**/.pmat/*
+**/.pmat/
 
 # predict_merge.sh records (BSE-14): a per-branch prediction of whether
 # merge(origin/main, HEAD) passes the tree-property guards. Machine-local
