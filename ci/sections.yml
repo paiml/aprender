@@ -29,8 +29,9 @@ sovereign-ci:
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
 # runs as FOUR shards (PMAT-6420; EMG-001 C1 had collapsed twelve to one, the 85-min MQ shard) (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
-# it took 5358 s of x86-main and was the release critical path. nextest's hash
-# partition N/12 and the explicit runner's round-robin N/12 each cover their list
+# it took 5358 s of x86-main (2026-09) and was the release critical path; the one-shard
+# merge-queue run took 83+ min (2026-10-26, PMAT-6420). nextest's hash
+# partition N/4 and the explicit runner's round-robin N/4 each cover their list
 # exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
 # verdict job checks that by id. determinism keeps both arches; x86-main runs
 # [X64], the determinism fat job runs [ARM64] + the compare.
