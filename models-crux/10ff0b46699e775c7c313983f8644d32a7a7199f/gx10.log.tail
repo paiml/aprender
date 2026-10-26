@@ -1,0 +1,200 @@
+        "why": "not measured for the serve stream verb"
+      }
+    },
+    {
+      "key": {
+        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
+        "host": "gx10",
+        "verb": "code",
+        "thinking": "on",
+        "rung": "easy",
+        "prompt_id": "ctl-code-add"
+      },
+      "verdict": "GREEN",
+      "reasons": [],
+      "format": "gguf",
+      "extracted": {
+        "apr": "def add(a, b):\n    return a + b",
+        "llama.cpp": "def add(a, b):\n    return a + b",
+        "hf": "def add(a, b):\n    return a + b"
+      },
+      "all_wrong": false,
+      "quorum": {
+        "floor": 2,
+        "engines_answered": 3,
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp"
+        ],
+        "comparators_answered": [
+          "hf",
+          "llama.cpp"
+        ],
+        "met": true
+      },
+      "subject": {
+        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
+        "apr_version": "apr 0.72.0 (10ff0b466)",
+        "under_development": false,
+        "development_note": null
+      },
+      "positive_control": true,
+      "oracle": {
+        "type": "code_tests",
+        "lang": "python",
+        "entry": "add",
+        "tests": "assert add(2, 3) == 5\nassert add(-4, 4) == 0\nassert add(10, 0) == 10",
+        "timeout_s": 10
+      },
+      "engines": {
+        "apr": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint 1: Be direct.\n    *   Constraint 2: Put *only* the function in a single ```python code block.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a Python function? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single code block? Yes.\n    *   Are there any extra explanations outside the block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies no text outside the block, or at least the code block should contain the *only* relevant content. To be safe and \"direct\", I should minimize surrounding text.\n\n4.  **Final Formatting:**\n    *   ```python\n    *   def add(a, b):\n    *       return a + b\n    *   ```\n\n5.  **Refinement:** The prompt says \"Put only the function in a single ```python code block.\" I will ensure no markdown text precedes or follows the block.\n\n6.  **Final Output Generation:** (Matches the drafted code).\n\n```python\ndef add(a, b):\n    return a + b\n```\n\n\n```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "reported_by": "apr",
+            "prompt_tokens": null,
+            "completion_tokens": null,
+            "decode_rate": null,
+            "rate_unit": "tokens per second, as the engine reported it",
+            "inference_ms": null
+          },
+          "backend": null,
+          "prompt_ids": null,
+          "prompt_token_count": null,
+          "rendered_prompt": null,
+          "correct": true,
+          "version": "apr 0.72.0 (10ff0b466)"
+        },
+        "llama.cpp": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "route": "POST /v1/chat/completions",
+            "mode": "nonstream",
+            "device": "cuda (-ngl 999)",
+            "thinking_requested": "on",
+            "thinking_control": "none: apr serve reads no per-request thinking toggle on any router",
+            "http": 200,
+            "chunks": null,
+            "terminal": null,
+            "finish_reason": "stop",
+            "rendered_prompts": []
+          },
+          "correct": true,
+          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)"
+        },
+        "ollama": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "hf": {
+          "answered": true,
+          "rc": 0,
+          "why": null,
+          "answer": "<think><think>Thinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function named `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint: Put *only* the function in a single ```python code block.\n    *   Output format: Markdown code block with Python syntax highlighting.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a function? Yes.\n    *   Is it named `add`? Yes.\n    *   Does it take `a` and `b`? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single ```python code block? Yes.\n    *   Are there any other texts outside the block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies I should avoid introductory text or explanatory text outside the block, though sometimes a brief sentence is acceptable. However, strict adherence suggests just the code block. Let's look at the instruction again: \"Put only the function in a single ```python code block.\" This means the output should primarily be the code block, potentially with no surrounding text to be safe.\n\n4.  **Final Polish:**\n    *   Ensure indentation is correct (though for a single line function, it's less critical, but good practice).\n    *   Ensure no imports or test cases are included.\n\n5.  **Construct Output:**\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n6.  **Review against \"only the function\" constraint:**\n    *   If I add text like \"Here is the function:\", it violates \"Put only the function...\".\n    *   So, just the code block.\n\n7.  **Final Decision:**\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n    (Or one-liner: `def add(a, b): return a + b`)\n    I'll use the standard multi-line format for clarity, or the one-liner. Both are fine. I'll stick to the standard readable format.\n\n    Wait, checking the instruction \"Put only the function in a single ```python code block.\"\n    Does it mean I cannot have any text *outside* the block? Yes.\n    Does it mean I cannot have multiple blocks? Yes.\n\n    Okay, generating the response.cw</think>```python\ndef add(a, b):\n    return a + b\n```",
+          "reported": {
+            "interface": "transformers serve",
+            "thinking_requested": "on",
+            "thinking_emitted": true,
+            "prompt_opens_think": true,
+            "prompt_tokens": 40,
+            "completion_tokens": 600,
+            "device": "cuda:0 NVIDIA GB10 (transformers serve --device cuda)"
+          },
+          "correct": true,
+          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb"
+        },
+        "llamafile": {
+          "answered": false,
+          "missing": true,
+          "why": "not requested",
+          "correct": false,
+          "version": null,
+          "not_ran_reason": "not_requested"
+        },
+        "vllm": {
+          "answered": false,
+          "rc": null,
+          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "answer": null,
+          "reported": {},
+          "correct": false,
+          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
+          "not_ran_reason": "refused"
+        }
+      },
+      "agreement": {
+        "answered": [
+          "apr",
+          "hf",
+          "llama.cpp"
+        ],
+        "all_identical": false,
+        "apr_matches": []
+      },
+      "token_parity": {
+        "measured": false,
+        "why": "not measured for the code verb"
+      }
+    }
+  ],
+  "deterministic": [],
+  "greedy": [],
+  "summary": {
+    "RED": 0,
+    "GREEN": 134,
+    "ALL_WRONG": 0,
+    "cells": 134,
+    "judged": 134,
+    "verdict": "PASS",
+    "deterministic": {
+      "RED": 0,
+      "GREEN": 0
+    },
+    "all_wrong_by_model": {},
+    "controls": [
+      "ctl-2plus2",
+      "ctl-recall-7",
+      "ctl-code-add"
+    ],
+    "negative_controls": {
+      "chat": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      },
+      "code": {
+        "prompt_id": "ctl-code-add",
+        "planted": "```python\ndef add(a, b):\n    return a - b\n```",
+        "verdict": "RED"
+      },
+      "run": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      },
+      "serve run": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      },
+      "serve stream": {
+        "prompt_id": "ctl-2plus2",
+        "planted": "<answer>5</answer>",
+        "verdict": "RED"
+      }
+    },
+    "certified": true,
+    "declined_because": null
+  }
+}
+---END RECEIPT---
