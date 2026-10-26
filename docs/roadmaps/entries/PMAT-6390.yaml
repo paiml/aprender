@@ -1,0 +1,18 @@
+- id: PMAT-6390
+  github_issue: 6390
+  item_type: epic
+  title: 'release train 0.72.0'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T08:00:00Z
+  updated: 2026-10-26T12:50:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:release
+  notes: null
+  epic: null
