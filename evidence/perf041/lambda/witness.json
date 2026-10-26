@@ -343,14 +343,14 @@
       ]
     }
   ],
-  "binary_sha256": "0ca721d8899670fa7997597b3c7d87aede4a184fc20d5abcdec9cbebdd3a0ad0",
-  "commit": "40980071333be516b6ec6683079646897e9cbcfc",
+  "binary_sha256": "7cae6df18b109ef52dd33ad7cf086b134f5aacf6e95c3f307d57b60111f315e9",
+  "commit": "046ad6a84d6a3d5cc6c5c3e6e122dcc7459e8edc",
   "declared_min": 64,
   "env": {
     "APR_DECODE_GEMM": null,
     "BATCHED_PREFILL": null,
     "CUBLAS_GEMM_THRESHOLD": null,
-    "CUDA_BATCH_WINDOW_MS": "200",
+    "CUDA_BATCH_WINDOW_MS": "800",
     "FP8_DECODE": null,
     "FP8_PREFILL": null,
     "FUSED_GATE_UP": null,
