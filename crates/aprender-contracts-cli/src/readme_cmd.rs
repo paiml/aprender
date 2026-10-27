@@ -1,41 +1,17 @@
-//! `pv-readme` — a release's README.md update, rendered and SHACL-validated (#6394, epic #2870 PVL-001).
+//! README.md rendering half of the `pv` README update (#6394, epic #2870 PVL-001), part 1 of 2.
 //!
-//! Noah, 2026-10-26: "confirm all crates.io releases and tagged github releases will do a pv SHACL validated
-//! update of README.md on release". Two halves, both already owned by the ontology:
+//! The generated parts of README.md are the `CONTRACT_COUNT` inline blocks (the walked count of contract
+//! files, the one definition `pv census` and `scripts/readme_sync.sh` share) and the frontmatter
+//! `contract_count:` line (the tracked `census.json` `n_files`, which lags the walk by design). This is the
+//! Rust port of `scripts/readme_sync.sh`'s rewrite; the script stays until the fold.
 //!
-//! * RENDER — the generated parts of README.md are the `CONTRACT_COUNT` inline blocks (the walked count of
-//!   contract files, the one definition `pv census` and `scripts/readme_sync.sh` share) and the frontmatter
-//!   `contract_count:` line (the tracked `census.json` `n_files`, which lags the walk by design). This is the
-//!   Rust port of `scripts/readme_sync.sh`'s rewrite; the script stays until the fold.
-//! * VALIDATE — README.md goes through `extract:readme` (the same emitter `pv extract` runs) into a
-//!   `readme:Readme` node, which is checked against the `readme:Readme` shape(s) `pv extract` writes to
-//!   `shapes.ttl` (here read from the `shape:` blocks they are generated from). Required sections, entrypoints
-//!   that exist, claim-fence commands a merge-path workflow runs, and a printed count equal to the census all
-//!   fail through that shape, not through code here. A plant (a bare `readme:Readme`) must violate the shape
-//!   first: a shape that cannot fail is refused, never a silent pass.
-//!
-//! ```text
-//! pv-readme --check [--readme F] [--contracts DIR]   write nothing; exit 1 if render(F) != F or F violates
-//! pv-readme --write [--readme F] [--contracts DIR]   render F in place (atomic), then validate it
-//! ```
-//!
-//! Exit: 0 · 1 stale or violating README · 2 usage or an unmeasured input · 3 nothing to render or no shape
-//! (a README with no `CONTRACT_COUNT` block, a corpus with no `readme:Readme` shape, a plant that does not fire).
+//! This part is the pure render and the contract walk, with their tests. The SHACL validation, the
+//! check/write driver and the `pv-readme` binary land in the stacked PR (#6432).
 
-use std::collections::BTreeSet;
-use std::path::{Path, PathBuf};
-use std::process::ExitCode;
-
-use provable_contracts::lint::shapes_gate::collect_shapes;
-use provable_contracts::ontology::extract::{claims, readme, repo_root};
-use provable_contracts::ontology::rdf::{Graph, Term, RDF_TYPE};
-use provable_contracts::ontology::shapes::{self, NodeShape};
+use std::path::Path;
 
 const START: &str = "<!-- CONTRACT_COUNT_START -->";
 const END: &str = "<!-- CONTRACT_COUNT_END -->";
-
-const USAGE: &str =
-    "usage: pv-readme (--check | --write) [--readme FILE] [--contracts DIR]   (default README.md, contracts)";
 
 /// A reason the run did not pass, with the exit code it maps to.
 #[derive(Debug, PartialEq, Eq)]
@@ -149,173 +125,6 @@ pub fn walked_count(contract_dir: &Path) -> Result<u64, Refusal> {
     Ok(n)
 }
 
-/// The `readme:Readme` shapes of the corpus. None is a refusal: no shape is a pass nobody can fail.
-pub fn readme_shapes(contract_dir: &Path) -> Result<Vec<NodeShape>, Refusal> {
-    let (all, _) = collect_shapes(contract_dir).or_else(|e| refuse(3, format!("shapes: {e}")))?;
-    let class = shapes::expand("readme:Readme");
-    let ours: Vec<NodeShape> = all
-        .into_iter()
-        .map(|(s, _)| s)
-        .filter(|s| s.target_class == class)
-        .collect();
-    if ours.is_empty() {
-        return refuse(
-            3,
-            format!("no readme:Readme shape under {}", contract_dir.display()),
-        );
-    }
-    Ok(ours)
-}
-
-/// The positive control: a bare `readme:Readme` node must violate the shapes. Run on every invocation.
-#[must_use]
-pub fn plant_fires(shapes_: &[NodeShape]) -> bool {
-    let mut g = Graph::new();
-    let node = provable_contracts::ontology::rdf::iri("readme", "__plant__");
-    g.insert(node, RDF_TYPE, Term::iri(readme::readme("Readme")));
-    shapes::validate(&g, shapes_).violations() > 0
-}
-
-/// Every reason `text` does not satisfy the `readme:Readme` shapes: extractor refusals, then SHACL violations.
-#[must_use]
-pub fn violations(
-    text: &str,
-    rel: &str,
-    contract_dir: &Path,
-    shapes_: &[NodeShape],
-) -> Vec<String> {
-    let root = repo_root(contract_dir);
-    let ci: BTreeSet<String> = claims::ci_run_lines(&root);
-    let ctx = readme::Ctx {
-        root: &root,
-        ci: &ci,
-        census_n: readme::census_n(contract_dir),
-    };
-    let mut g = Graph::new();
-    let stats = readme::emit(&mut g, "readme", rel, text, &ctx);
-    let mut out: Vec<String> = stats
-        .errors
-        .iter()
-        .map(|e| format!("{}: {}", e.file, e.what))
-        .collect();
-    let report = shapes::validate(&g, shapes_);
-    if report.focus_nodes_n == 0 {
-        out.push(format!(
-            "{rel}: no readme:Readme node (frontmatter missing?)"
-        ));
-    }
-    for r in report
-        .results
-        .iter()
-        .filter(|r| r.severity == shapes::Severity::Violation)
-    {
-        out.push(format!(
-            "{rel}: {} {} — {}",
-            r.component,
-            r.path.as_deref().unwrap_or("-"),
-            r.message
-        ));
-    }
-    out
-}
-
-/// Run the verb. `Ok(report)` is a pass; `Err` carries the exit code.
-pub fn run(readme_path: &Path, contract_dir: &Path, write: bool) -> Result<String, Refusal> {
-    let text = std::fs::read_to_string(readme_path)
-        .or_else(|e| refuse(2, format!("cannot read {}: {e}", readme_path.display())))?;
-    if block_count(&text) == 0 {
-        return refuse(
-            3,
-            format!(
-                "{} carries no {START} marker: the count is AUTHORED, nothing to render",
-                readme_path.display()
-            ),
-        );
-    }
-    let walked = walked_count(contract_dir)?;
-    let Some(census) = readme::census_n(contract_dir) else {
-        return refuse(
-            2,
-            format!(
-                "{}/census.json n_files is unreadable: UNMEASURED",
-                contract_dir.display()
-            ),
-        );
-    };
-    let shapes_ = readme_shapes(contract_dir)?;
-    if !plant_fires(&shapes_) {
-        return refuse(3, "the plant (a bare readme:Readme) did not violate the shapes: a shape that cannot fail is refused");
-    }
-    let rendered = render(&text, walked, census);
-    let stale = rendered != text;
-    if stale && !write {
-        return refuse(1, format!("{} is stale: a render states {walked} contracts (frontmatter {census}); run `pv-readme --write`", readme_path.display()));
-    }
-    if stale {
-        let tmp = readme_path.with_extension("md.pv-readme.tmp");
-        std::fs::write(&tmp, &rendered)
-            .or_else(|e| refuse(2, format!("write {}: {e}", tmp.display())))?;
-        std::fs::rename(&tmp, readme_path).or_else(|e| refuse(2, format!("rename: {e}")))?;
-    }
-    let rel = readme_path
-        .file_name()
-        .map_or_else(|| "README.md".into(), |n| n.to_string_lossy().into_owned());
-    let bad = violations(&rendered, &rel, contract_dir, &shapes_);
-    if !bad.is_empty() {
-        return refuse(1, bad.join("\n"));
-    }
-    Ok(format!(
-        "ok    pv-readme: {} states {walked} contracts (census {census}), conforms to {} readme:Readme shape(s){}",
-        readme_path.display(),
-        shapes_.len(),
-        if stale { ", rewritten" } else { "" }
-    ))
-}
-
-/// The bin entry: parse `args`, run, print, map to an exit code.
-#[must_use]
-pub fn main_with(args: &[String]) -> ExitCode {
-    let mut mode: Option<bool> = None;
-    let mut readme_path = PathBuf::from("README.md");
-    let mut contracts = PathBuf::from("contracts");
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "--check" => mode = Some(false),
-            "--write" => mode = Some(true),
-            "--readme" | "--contracts" => {
-                let Some(v) = it.next() else {
-                    eprintln!("{USAGE}");
-                    return ExitCode::from(2);
-                };
-                if a == "--readme" {
-                    readme_path = PathBuf::from(v)
-                } else {
-                    contracts = PathBuf::from(v)
-                }
-            }
-            "-h" | "--help" => {
-                println!("{USAGE}");
-                return ExitCode::SUCCESS;
-            }
-            _ => {
-                eprintln!("{USAGE}");
-                return ExitCode::from(2);
-            }
-        }
-    }
-    let Some(write) = mode else {
-        eprintln!("{USAGE}");
-        return ExitCode::from(2);
-    };
-    match run(&readme_path, &contracts, write) {
-        Ok(m) => {
-            println!("{m}");
-            ExitCode::SUCCESS
-        }
-        Err(r) => {
-            eprintln!("FAIL  pv-readme: {}", r.what);
-            ExitCode::from(r.code)
-        }
-    }
-}
+#[cfg(test)]
+#[path = "readme_cmd_tests.rs"]
+mod tests;
