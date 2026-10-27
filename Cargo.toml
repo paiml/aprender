@@ -805,6 +805,8 @@ path = "src/lib.rs"
 # Contract: ci-infra-v1.yaml F-INFRA-004 — every patch must have tracking issue.
 
 # RUSTSEC-2024-0436 (paste unmaintained): forward paste to maintained pastey. Refs #1740, #1744.
+# NOTE: [patch] applies to workspace builds only. crates.io installs (`cargo install aprender`)
+# still resolve paste 1.0.15 from the registry; tracked in rmedia#1740.
 [patch.crates-io]
 paste = { path = "vendor/paste-shim" }
 
