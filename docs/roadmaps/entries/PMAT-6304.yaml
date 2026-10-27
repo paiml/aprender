@@ -1,0 +1,31 @@
+- id: PMAT-6304
+  github_issue: 6304
+  item_type: task
+  title: 'ci(mq): replace the fat_driver.py idle watchdog (landed Python, #6285) with scripts/ci/idle_watchdog.sh'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T23:30:00Z
+  updated: 2026-10-25T23:30:00Z
+  spec: null
+  acceptance_criteria:
+  - fat_driver.py is byte-identical to its content before #6285 (StepIdle, idle_limit_seconds, wait_or_idle, _st_idle gone; 0 net Python lines)
+  - scripts/ci/idle_watchdog.sh kills a command whose section logs stop growing for FAT_IDLE_LIMIT_S and exits 124
+  - 'parity rows in its --self-test: a stalled log fires, a growing log never does, a timeout still ends the run and leaves no orphan, the limit parses (unset, 1500, decimal, garbage, negative)'
+  - the merge-queue shard runs fat_driver.py run under the watchdog; PR/push runs are unchanged (limit unset = exec passthrough)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Quorum verdict A on landed Python (handoff/triage-quorum-6285-landedpython-2307Z.lane1.md). Behaviour change to name for the sign-off:
+    the Python watchdog watched one step's log; this one watches the sum of all section logs of the driver run, so on a shard with several
+    live sections one busy section hides another's hang. The shard runs a single section (workspace-test-shard), so no loss there.
+    Added .py lines vs origin/main: 2, both pre-#6285 lines restored verbatim (p.wait(timeout=timeout) and the self-test section tuple); removed: 91.
+    MT-2 (every line of scripts/ci/idle_watchdog.sh deleted in turn, unique per-run process tags): the survivors are named below; none is a behaviour line except the one marked inherent.
+    A TERM to the watchdog now escalates TERM, FAT_IDLE_GRACE, KILL and exits 143 deterministically (stop_group, shared with the idle path); a row
+    sends TERM to a watchdog over a TERM-ignoring step. The old spin guard (L55-56) is gone. Rows exist for hang-after-print, TERM grace, KILL, octal parse,
+    missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; and the self-test's
+    `exit 1` at L168 (was a survivor of the exit status alone: deleting it, with a failing row, exits 0; now caught because 849-idle-watchdog.cmd also fails when a `FAIL ` row appears in the output or the `all rows pass` line is missing; re-mutated: L168 `exit 1` deleted plus one broken row -> exit status 0, the .cmd line rc 1). `kill "$sp"` (two sites) and `kill "$gp"` were survivors (a leftover sleep holds a caller's pipe open: 8 s against 6 ms) and are now caught by three pipe-close rows that time the run through a command substitution; and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
+    with the production line it checks.

@@ -95,7 +95,7 @@ dirs="$(jq -r --arg root "$root/" '.packages[] | [.name, (.manifest_path | sub($
 # check_affected_readers.sh derives this list from the tree and is RED on a file it omits.
 BUILD_CONTRACTS="${AFFECTED_BUILD_CONTRACTS:-apr-mcp-tool-schemas-v1.yaml apr-model-capability-v1.yaml arch-constraints-v1.yaml architecture-requirements-v1.yaml kernel-fusion-v1.yaml kernel-registry-v1.yaml layer-parity-v1.yaml softmax-kernel-v1.yaml tensor-names-v1.yaml thinking-budgets-v1.yaml}"
 # docs/ files embedded the same way (include_str!/include_bytes!, also nested ones): a change reaches the compiling crate's dependents, so ALL. Same RED guard.
-BUILD_DOCS="${AFFECTED_BUILD_DOCS:-audits/prm-001/analysis-plan.md audits/prm-001/prereg.lock audits/rex-001/prereg.lock audits/review-corpus/prompts/v1.txt audits/review-corpus/test-manifest-v1.txt audits/rex-001/analysis-plan.md kernel-registry/upstream-reference-v1.json specifications/PRM-001-prometheus.md specifications/review-experiment-protocol.md}"
+BUILD_DOCS="${AFFECTED_BUILD_DOCS:-audits/prm-001/analysis-plan.md audits/prm-001/prereg.lock audits/rex-001/prereg.lock audits/review-corpus/prompts/v1.txt audits/review-corpus/test-manifest-v1.txt audits/rex-001/analysis-plan.md specifications/PRM-001-prometheus.md specifications/review-experiment-protocol.md}"
 touched="" skipped=0
 while IFS= read -r f; do
   case "$f" in */*) ;; *.md) skipped=1; continue ;; esac   # root *.md: its run-time readers are in READERS

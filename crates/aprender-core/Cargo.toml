@@ -135,7 +135,7 @@ trueno-quant = { workspace = true }
 # APR-2231: sovereign `.apr` container leaf. aprender-core From-wraps its
 # AprFormatError into AprenderError and re-exports it (no API break). Leaf has
 # no dependency back on core, so this introduces no publish cycle.
-apr-format = { path = "../apr-format", version = "0.71" }
+apr-format = { path = "../apr-format", version = "0.72" }
 
 # NOTE: trueno-rag (=aprender-rag) removed (APR-MONO self-containment): aprender-rag
 # depends on aprender-core + aprender-serve, so core→rag closed a core→rag→serve→core
@@ -143,7 +143,7 @@ apr-format = { path = "../apr-format", version = "0.71" }
 
 # Compression for .apr format (optional, spec §3.3)
 lz4_flex = { version = "0.11", optional = true }
-zstd = { version = "0.13", optional = true }
+zstd = { version = "0.14", optional = true }
 
 # Half-precision floats for quantization (spec §6.2)
 half = { version = "2.4", optional = true, default-features = false, features = ["std"] }
