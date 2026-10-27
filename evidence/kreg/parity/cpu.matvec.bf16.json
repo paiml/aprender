@@ -1,5 +1,5 @@
 {
-  "build_identity": "04775283180db634691abc0169a43e5d6d44423c",
+  "build_identity": "cdba226891ac07a7f35aa1d1f2475bc9d353d3e5",
   "fp32_activations": {
     "max_abs_err": 4.6349241955567777e-7,
     "max_rel_err": 2.3198091807248875e-7
@@ -11,10 +11,10 @@
     "driver": "none",
     "oracle": "le_decode_half_f64",
     "row_sha256": "1d3596616744c07da9f03cdac8b7bd105362db5ce05350d6e801cb5aa21788d1",
-    "source_sha256": "ed2d28580994205ad4b6bc45b958036d156dc933600251a07683e888690732b5",
+    "source_sha256": "693f29c7284a582f069a49d9c239186922c9b916ef233fe82d8d4f2af4cc6d35",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "33a84207f73403c6c5df1bc5b8c4cf81ffe6757f4999d180ae128d2377f868b1",
+  "input_set_hash": "faf9afbe96696b39fac42c1c9f298d34515dd00f8bdf6cbf58872f49d237bd2f",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -45,7 +45,7 @@
   },
   "source_fn": "float16_matmul",
   "tolerance_rel": 5e-7,
-  "ts": "2026-10-26T23:58:18Z",
+  "ts": "2026-10-27T00:48:21Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,

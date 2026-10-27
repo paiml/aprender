@@ -1,5 +1,5 @@
 {
-  "build_identity": "04775283180db634691abc0169a43e5d6d44423c",
+  "build_identity": "cdba226891ac07a7f35aa1d1f2475bc9d353d3e5",
   "host": "noah-Lambda-Vector",
   "host_arch": "x86_64",
   "input_set": {
@@ -7,10 +7,10 @@
     "driver": "none",
     "oracle": "f64_definition:embed:E[token*n..(token+1)*n]",
     "row_sha256": "20297cf8e023d329d88f45714d9b06fd9e313fcef2b0b0f4aa9be47cb75b6f55",
-    "source_sha256": "ed2d28580994205ad4b6bc45b958036d156dc933600251a07683e888690732b5",
+    "source_sha256": "693f29c7284a582f069a49d9c239186922c9b916ef233fe82d8d4f2af4cc6d35",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "28432b5f0a5d24a3cb15dce7f1b90002904161a56172f1dc01c7ac6c556df868",
+  "input_set_hash": "4aeca65e026399f96f8f401d9d5afb8499cdeff2021038533db4dbe8a190487d",
   "isa_detected": [
     "sse4.2",
     "avx",
@@ -38,7 +38,7 @@
   },
   "source_fn": "embed_into",
   "tolerance_rel": 2.9999999999999997e-308,
-  "ts": "2026-10-26T23:58:14Z",
+  "ts": "2026-10-27T00:48:41Z",
   "workload": {
     "n": 896,
     "seed": 1161367296,
