@@ -1,0 +1,19 @@
+- id: PMAT-6407
+  github_issue: 6407
+  item_type: task
+  title: REV 2.0 step 6 nightly-bench runs-on perf-solo
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T11:03:41Z
+  updated: 2026-10-26T11:03:41Z
+  spec: null
+  acceptance_criteria:
+  - nightly-bench measure job selects [self-hosted, X64, Linux, intel, perf-solo] and lands on intel-clean-room-16
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
