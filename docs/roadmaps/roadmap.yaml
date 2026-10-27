@@ -26617,3 +26617,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6390
+- id: PMAT-6437
+  github_issue: 6437
+  item_type: task
+  title: 'release: 0.72.1 (skip 0.72.0; zstd advisories cleared)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-a3
+  created: 2026-10-27T08:00:00Z
+  updated: 2026-10-27T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/bump-version.sh --check prints root workspace 0.72.1 and facade pins 0.72.1'
+  - 'cargo deny check advisories = 0 on the tagged commit'
+  - 'Clean-Room CI green on tag v0.72.1 before cargo publish'
+  - 'crates.io aprender max_version == 0.72.1 read back after publish'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
