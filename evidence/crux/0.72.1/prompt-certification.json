@@ -2,7 +2,7 @@
   "schema": "crux-prompt-certification/v1",
   "prompts": "scripts/crux_inference_prompts.v2.json",
   "prompts_sha256": "cea80df5e785213667e27697fe3d139b99dcba95cfc6e970d76ac005d50fc806",
-  "apr_commit": "a781138719bc6d147f585ed6d803190456663fec",
+  "apr_commit": "c40d31f74e9cc037b6ea7c0757903d8f9ec90d0e",
   "inventory_sha256": "b8e4c4626b20b7764041f5b5fe6d8a98166a952a64b3a844207b796b388778e0",
   "manifests": {
     "evidence/crux/0.69.1/prompt-certification/manifest-lambda.jsonl": "f56747953b33bb2e4adac4bac12be902224a202b2a07c35ede3e47121d178728",
