@@ -6,6 +6,7 @@ ignore = [
     # Unmaintained transitive deps — no available fix
     "RUSTSEC-2024-0375",  # atty: transitive, unmaintained
     "RUSTSEC-2024-0384",  # instant: transitive via web-time
+    "RUSTSEC-2024-0436",  # paste: transitive via simba/nalgebra/parquet
     "RUSTSEC-2025-0057",  # unsafe-libyaml: transitive
     "RUSTSEC-2025-0119",  # number_prefix: transitive via indicatif
     "RUSTSEC-2025-0134",  # rustls-pemfile 1.x: transitive
