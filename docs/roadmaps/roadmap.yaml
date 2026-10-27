@@ -24407,6 +24407,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'SCOPE: scripts/release/publish_strict.sh, scripts/cascade-publish.sh (clean_room_gate gains an optional third argument, a pinned run id), scripts/check_cascade_clean_room_gate.sh (10 pinned rows), scripts/check_publish_strict_cleanroom.sh (new), contracts/publish-workspace-v1.yaml (PW-DOOR-005, FALSIFY-PUB-008). HOW IT IS MET: publish_strict.sh reads the recorded run id and loads clean_room_gate from the cascade script (the same extraction the existing guard uses), then calls it pinned to that one run. Pinned mode reads exactly that run through the runs API, refuses a run of another workflow, and never lists runs, so a green run elsewhere cannot stand in for a red recorded one. A missing, empty, non-numeric, unreadable, red or other-commit id stops the cascade before any upload. --plan is unchanged. MEASURED: check_publish_strict_cleanroom.sh runs the real publish_strict.sh against a fixture tag checkout and a stub gh and cargo. BEFORE (origin/main 645dc34101): 8 of 9 checks FAIL; the non-numeric, red, other-commit and unreadable ids all pass the door and stop later, on the B2-gpu id. AFTER: 9 of 9 hold; check_cascade_clean_room_gate.sh holds every row, including the 10 pinned ones.'
+- id: PMAT-4709
+  github_issue: 4709
+  item_type: task
+  title: 'CENSUS-RATCHET: entity-bound contracts never drop and rise every release'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T08:00:00Z
+  updated: 2026-10-27T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Evidence: bash scripts/census_ratchet.sh at this head prints GREEN (base bound=50 unbound=1955, head bound=84 unbound=1921, n=2005)'
+  - 'Evidence: pv lint contracts prints Result: PASS; 34 contracts bound to entity {type: repo, ref: <owner/name>} (HF model/dataset ids excluded)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
 - id: PMAT-4715
   github_issue: 4715
   item_type: task
