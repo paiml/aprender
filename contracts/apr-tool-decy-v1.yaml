@@ -42,3 +42,7 @@ falsification:
   - condition: "Zero tests in repository"
     severity: P1
     action: add_tests
+
+entity:
+  type: repo
+  ref: paiml/decy

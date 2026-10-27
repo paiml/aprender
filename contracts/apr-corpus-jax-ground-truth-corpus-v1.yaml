@@ -45,3 +45,7 @@ falsification:
   - condition: "Ground-truth pattern contradicts current aprender API"
     severity: P0
     action: update_pattern
+
+entity:
+  type: repo
+  ref: paiml/jax-ground-truth-corpus
