@@ -8,9 +8,9 @@
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 FEEDER="${MQ_FEEDER_UNDER_TEST:-$ROOT/scripts/mq_feeder.sh}"
-# hermetic: every fixture below is judged against the feeder's default required check, whatever the caller exports (rows that plant another name set it inline)
-export GUARD_CHECK_NAME=pr-light
 if [ "${1:-}" = --self-test ]; then
+    # hermetic: fixtures are judged against the feeder's default required check whatever the caller exports; only this branch pins it (it exits), so the bare run below still sees the real default
+    export GUARD_CHECK_NAME=pr-light
     d="$(mktemp -d)"; fail=0
     printf 'on:\n  pull_request:\njobs:\n  pr-light:\n    if: ${{ github.event_name == '"'pull_request'"' }}\n' > "$d/good.yml"
     printf 'on:\n  pull_request:\njobs:\n  pr-light:\n    if: ${{ github.event_name != '"'pull_request'"' }}\n' > "$d/bad-mqonly.yml"
