@@ -26586,8 +26586,8 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-27T11:30:00Z
   spec: null
   acceptance_criteria:
-  - 'the four merge_group runs-on lists in ci.yml (mg-reuse-wt, x86-main, workspace-test-shard, determinism) read [self-hosted, Linux, X64, clean-room, build]; the PR path is unchanged'
-  - 'ci_mg_reuse.sh --self-test pins the lane and kills the mutants that put mq back, drop build, or add a third label'
+  - 'the four merge_group runs-on lists in ci.yml (mg-reuse-wt, x86-main, guards, workspace-test-shard); determinism (ARM64) is untouched read [self-hosted, Linux, X64, clean-room, build]; the PR path is unchanged'
+  - 'ci_mg_reuse.sh --self-test pins the lane and kills the mutants that put mq back (x86-main, guards, shard), drop build, or add a third label'
   - 'no runner label, runner group or ruleset change'
   phases: []
   subtasks: []

@@ -691,9 +691,9 @@ STUB
     local j l want
     local plain="runs-on: [self-hosted, Linux, X64, clean-room]"
     local lane="runs-on: \${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\",\"build\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-    for j in x86-main x86-main-advisories workspace-test-shard; do
+    for j in x86-main x86-main-advisories workspace-test-shard guards; do
       l=$(awk -v j="  $j:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null | grep -m1 '^    runs-on:' | sed -E 's/^ +//; s/ +#.*$//')
-      want=$plain; case $j in x86-main | workspace-test-shard) want=$lane ;; esac
+      want=$plain; case $j in x86-main | workspace-test-shard | guards) want=$lane ;; esac
       if [ "$l" != "$want" ]; then
         echo "$j does not land on the clean-room pool (mq on merge_group for x86-main/workspace-test-shard) (runs-on: $l)"; fi
     done
@@ -716,6 +716,7 @@ STUB
   poolmut pr-path-takes-mq "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\].\)/|| fromJSON('"'"'["self-hosted","Linux","X64","mq"]'"'"')/}'
   poolmut mq-lane-uncertified-seat "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"clean-room","build"/"mq"/}'
   poolmut mq-lane-uncertified-seat-shard "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/"clean-room","build"/"mq"/}'
+  poolmut mq-lane-uncertified-seat-guards "does not land on the clean-room pool" '/^  guards:$/,/^    steps:/{s/"clean-room","build"/"mq"/}'
   poolmut mq-lane-third-label "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"X64","clean-room","build"/"X64","clean-room","build","pr-only"/}'
 
   # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
