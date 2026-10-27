@@ -65,6 +65,9 @@ if [ "${1:-}" = --self-test ]; then
   sed -E "s/^( +shards: .*&& '\\[)[0-9]+\\]/\\1999]/" .github/workflows/ci.yml > "$t/c.yml"
   cmp -s .github/workflows/ci.yml "$t/c.yml" && { echo "self-test: merge_group matrix mutant did not apply"; exit 1; }
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: merge_group matrix mismatch must be RED"; exit 1; }
+  sed -E "s/(&& ')\\[1,2,3\\](' \\|\\|)/\\1[1,2,3,4]\\2/" .github/workflows/ci.yml > "$t/c.yml"
+  cmp -s .github/workflows/ci.yml "$t/c.yml" && { echo "self-test: merge_group shard-list mutant did not apply"; exit 1; }
+  check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: a merge_group shard list that drifts from the pins must be RED"; exit 1; }
   sed 's/for n in \$(seq 1 "\$SHARDS")/for n in 1 2 3/' .github/workflows/ci.yml > "$t/c.yml"
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: literal loop must be RED"; exit 1; }
   cp .github/workflows/ci.yml "$t/c.yml" # rows 5 and 6 mutate sections.yml only: start from a CLEAN ci.yml, not the RED literal-loop copy above
@@ -83,12 +86,12 @@ if [ "${1:-}" = --self-test ]; then
   cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: inert-matrix mutant did not apply"; exit 1; }
   check "$t/s.yml" .github/workflows/ci.yml >/dev/null && { echo "self-test: sections.yml jobs matrix drift must be RED"; exit 1; }
   cp .github/workflows/ci.yml "$t/c.yml"
-  sed -E '/^  workspace-test-shard-merge_group:/,/^  determinism:/s/\{shard: 1, shards: 4\}/{shard: 1, shards: 2}/' ci/sections.yml > "$t/s.yml"
+  sed -E '/^  workspace-test-shard-merge_group:/,/^  determinism:/s/\{shard: 1, shards: 3\}/{shard: 1, shards: 2}/' ci/sections.yml > "$t/s.yml"
   cmp -s ci/sections.yml "$t/s.yml" && { echo "self-test: merge_group pin mutant did not apply"; exit 1; }
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: a merge_group pin with the wrong shards must be RED"; exit 1; }
   awk '/^  workspace-test-shard-merge_group:/{print; for(i=1;i<=13;i++) printf "    - {shard: %d, shards: 13}\n", i; skip=1; next} skip&&/^    - /{next} {skip=0; print}' ci/sections.yml > "$t/s.yml"
   check "$t/s.yml" "$t/c.yml" >/dev/null && { echo "self-test: a merge_group count above the pull_request count must be RED"; exit 1; }
-  echo "PASS  check_shard_count_single_source self-test: 10 rows"
+  echo "PASS  check_shard_count_single_source self-test: 11 rows"
   exit 0
 fi
 check ci/sections.yml .github/workflows/ci.yml
