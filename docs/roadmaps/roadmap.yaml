@@ -25912,6 +25912,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: null
+- id: PMAT-6159
+  github_issue: 6159
+  item_type: task
+  title: 'pr-light body guard: retry PR-vs-issue resolution on transient API errors, fail fast on 404'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T12:50:00Z
+  updated: 2026-10-23T12:50:00Z
+  spec: null
+  acceptance_criteria:
+  - ref_kind retries transient gh errors (3 calls) and fails fast on HTTP 404/410; unknown is judged as an issue
+  - self-test rows gh-transient-error-retried and gh-404-fails-fast; mutants go red
+  - re-run on body edit is NOT automated (ci.yml edited would re-run everything; a non-required job is LAB); use gh run rerun --failed
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
 - id: PMAT-6169
   github_issue: 6169
   item_type: task
@@ -26448,6 +26469,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-26T10:41:57Z
   spec: null
   acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6407
+  github_issue: 6407
+  item_type: task
+  title: REV 2.0 step 6 nightly-bench runs-on perf-solo
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T11:03:41Z
+  updated: 2026-10-26T11:03:41Z
+  spec: null
+  acceptance_criteria:
+  - nightly-bench measure job selects [self-hosted, X64, Linux, intel, perf-solo] and lands on intel-clean-room-16
   phases: []
   subtasks: []
   estimated_effort: null
