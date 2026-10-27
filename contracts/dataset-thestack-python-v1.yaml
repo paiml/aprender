@@ -346,3 +346,7 @@ gates:
       non-NFC bytes in corpus → tokenizer drift between train and
       inference → MODEL-2 generates garbage at inference.
     blocks_ac: "AC-SHIP2-003 + AC-SHIP2-010 (Golden Output)"
+
+entity:
+  type: repo
+  ref: bigcode/the-stack-dedup

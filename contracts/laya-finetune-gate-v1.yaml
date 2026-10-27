@@ -981,3 +981,7 @@ qa_gate:
     Change constants.gate_max_ece alone and every recorded gate report must be refused by the
     verifier for carrying the old thresholds — the thresholds are read from here, never from the
     report.
+
+entity:
+  type: repo
+  ref: convaiinnovations/laya
