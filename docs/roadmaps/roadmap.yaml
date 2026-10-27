@@ -24418,8 +24418,8 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-27T08:00:00Z
   spec: null
   acceptance_criteria:
-  - 'Evidence: bash scripts/census_ratchet.sh at this head prints GREEN (base bound=50 unbound=1955, head bound=84 unbound=1921, n=2005)'
-  - 'Evidence: pv lint contracts prints Result: PASS; 34 contracts bound to entity {type: repo, ref: <owner/name>} (HF model/dataset ids excluded)'
+  - 'Run bash scripts/census_ratchet.sh: it prints GREEN (rc 0), bound never below the base and the unbound share never above it'
+  - 'Run pv lint contracts: Result: PASS; run pv census --format json contracts and read by_anchoring.class + instance as the bound count'
   phases: []
   subtasks: []
   estimated_effort: null
