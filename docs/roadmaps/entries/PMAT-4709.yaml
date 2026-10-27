@@ -1,0 +1,20 @@
+- id: PMAT-4709
+  github_issue: 4709
+  item_type: task
+  title: 'CENSUS-RATCHET: entity-bound contracts never drop and rise every release'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T08:00:00Z
+  updated: 2026-10-27T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/census_ratchet.sh is GREEN in PR mode (bound never falls, unbound share never rises)
+  - 'Each train binds contracts to an entity: bound 50 -> 86 in #6442'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
