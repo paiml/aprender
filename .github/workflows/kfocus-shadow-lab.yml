@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   x86-main-shadow:
-    runs-on: [self-hosted, Linux, X64, clean-room, kfocus]
+    runs-on: [self-hosted, Linux, X64, mq]  # kfocus host = kfocus-mq, kfocus-mq-2 (label mq only; no seat ever carried a kfocus label, so the old selector never matched, AC-1430-SAT). LAB dispatch only, never PR/MQ
     timeout-minutes: 360
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
