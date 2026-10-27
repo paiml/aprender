@@ -26586,12 +26586,12 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   updated: 2026-10-27T12:30:00Z
   spec: docs/specifications/release-reconcile.md
   acceptance_criteria:
-  - 'Run grep -c "^## " docs/specifications/release-reconcile.md: the design names Rules, Drift classes, GATE / LAB, Falsifiers'
+  - 'Run grep -E "^## (Rules|Drift classes|GATE / LAB|Falsifiers)" docs/specifications/release-reconcile.md: 4 lines, one per named section'
   - 'Run gh issue view 6471: the design PR cites it and the code follows only after a non-author sign-off'
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
-  - kind:code
+  - kind:docs
   notes: null
   epic: 3998
