@@ -57,6 +57,8 @@ if [ "${1:-}" = --self-test ]; then
     [ "$fail" -eq 0 ] && echo "check_mq_feeder_required_set: self-test ok (2 good, 4 planted bad, 1 end-to-end, 3 bare-run legs, 2 installer)"
     exit "$fail"
 fi
+# The bare run below sets no GUARD_CHECK_NAME: it judges the default scripts/mq_feeder.sh:17 gives (`${GUARD_CHECK_NAME:-pr-light}`),
+# so a feeder default changed to a merge-queue-only job turns it red. Only the --self-test branch above pins the name (and exits).
 bash "$0" --self-test || exit 1
 # the feeder's own self-test holds the real-ci.yml assertion (x86-main is merge-queue-only, pr-light is not) and the runtime tests
 bash "$FEEDER" --self-test > /dev/null || { echo "check_mq_feeder_required_set: FAIL the feeder --self-test is red"; exit 1; }
