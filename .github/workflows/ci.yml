@@ -147,8 +147,8 @@ jobs:
   # are NOT read here: they stay un-reused on the queue (20X r2), so x86-main still never waits for this job.
   mg-reuse-wt:
     if: github.event_name == 'merge_group'
-    # same lane as the shards it gates (mq on a queue entry); the job only runs on merge_group, the clean-room arm just names the pool for the label guard
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","clean-room","build"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # same plain clean-room lane as the shards it gates (AC-1352-SEL); the job only runs on merge_group
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 5
     permissions:
       contents: read
@@ -285,8 +285,8 @@ jobs:
     # Noah 15:09Z (#5955): heavy jobs run only in the merge queue and on push; a PR runs pr-light. `!= 'pull_request'` is
     # fail-closed: an empty or unknown event name owes the heavy job.
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
-    # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","clean-room","build"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
     timeout-minutes: ${{ github.event_name == 'merge_group' && 40 || 240 }}
     # The sections carry their own permissions blocks (the sov provenance section
@@ -468,7 +468,7 @@ jobs:
     needs: [mg-reuse]
     # merge_group-only (a draft never reaches the queue); skipped with x86-main when mg-reuse reuses the cited run.
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","clean-room","build"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (22.5 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull; the 240 stays for push.
     timeout-minutes: ${{ github.event_name == 'merge_group' && 65 || 240 }}
     permissions: write-all
@@ -697,8 +697,8 @@ jobs:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
     needs: [mg-reuse-wt]
     if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
-    # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","clean-room","build"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # same lane as x86-main: the plain clean-room seats on every event
+    runs-on: [self-hosted, Linux, X64, clean-room]
     # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
     # below that section cap (NOAH 16:43Z: timeout = 2x p95, measured): the job wall ends the step first, by ruling.
     # The wall stays 180 on pull_request/push (not merge_group, below): a tier=full entry (Cargo.lock / root Cargo.toml / toolchain touched, or the base
