@@ -98,9 +98,24 @@ ref_kind() { # ref_kind NUM -> pr | closed | issue | unknown
         return 0
     fi
     command -v gh > /dev/null 2>&1 || { printf 'unknown'; return 0; }
-    gh api "repos/${PR_CLOSES_REPO:-paiml/aprender}/issues/$1" \
-        -q 'if .pull_request then "pr" elif .state == "closed" then "closed" else "issue" end' \
-        2>/dev/null || printf 'unknown'
+    # A transient API error (5xx, rate limit, runner network blip) used to make a PR
+    # reference read as an unresolved ISSUE and fail the body (#6158), so retry those.
+    # A permanent answer (HTTP 404/410: the number does not exist) fails fast. Giving
+    # up is still `unknown`, i.e. judged as an issue (fails closed).
+    _rk_try=0; _rk_out=""; _rk_err=""; _rk_f="$(mktemp)"
+    while [ "$_rk_try" -lt "${PR_CLOSES_REF_TRIES:-3}" ]; do
+        if _rk_out="$(gh api "repos/${PR_CLOSES_REPO:-paiml/aprender}/issues/$1" \
+            -q 'if .pull_request then "pr" elif .state == "closed" then "closed" else "issue" end' \
+            2>"$_rk_f")" && [ -n "$_rk_out" ]; then
+            rm -f "${_rk_f:?}"; printf '%s' "$_rk_out"; return 0
+        fi
+        _rk_err="$(cat "$_rk_f" 2>/dev/null || true)"
+        case "$_rk_err" in *"HTTP 404"*|*"HTTP 410"*) break ;; esac
+        _rk_try=$((_rk_try + 1))
+        [ "$_rk_try" -lt "${PR_CLOSES_REF_TRIES:-3}" ] && sleep "${PR_CLOSES_REF_SLEEP:-3}"
+    done
+    rm -f "${_rk_f:?}"
+    printf 'unknown'
 }
 
 # AN ISSUE THAT IS ALREADY CLOSED CANNOT BE LEFT OPEN FOREVER.
@@ -335,10 +350,43 @@ STUB
     got=0
     cases=$((cases + 1))
     ( PATH="${tmp}/ghfail:$PATH"; export PATH
-      unset PR_CLOSES_REF_KIND_CMD
+      unset PR_CLOSES_REF_KIND_CMD; PR_CLOSES_REF_SLEEP=0; export PR_CLOSES_REF_SLEEP
       bash "$SELF_PATH" --body "${tmp}/no-gh.txt" ) >/dev/null 2>&1 || got=$?
     if [ "$got" -ne 1 ]; then
         printf 'FAIL case gh-error-fails-closed: expected exit 1, got %s\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
+
+    # A permanent 404 is NOT retried: gh is called exactly once.
+    mkdir -p "${tmp}/gh404"
+    printf '#!/usr/bin/env bash\necho x >> "%s/calls404"\necho "gh: Not Found (HTTP 404)" >&2\nexit 1\n' "${tmp}" > "${tmp}/gh404/gh"
+    chmod +x "${tmp}/gh404/gh"
+    got=0
+    cases=$((cases + 1))
+    ( PATH="${tmp}/gh404:$PATH"; export PATH
+      unset PR_CLOSES_REF_KIND_CMD; PR_CLOSES_REF_SLEEP=0; export PR_CLOSES_REF_SLEEP
+      bash "$SELF_PATH" --body "${tmp}/no-gh.txt" ) >/dev/null 2>&1 || got=$?
+    # Fail closed: a stub that was never called leaves no calls404 file, and that is a FAIL, not a pass.
+    n404=0
+    [ -f "${tmp}/calls404" ] && n404="$(wc -l < "${tmp}/calls404")"
+    if [ "$got" -ne 1 ] || [ ! -f "${tmp}/calls404" ] || [ "$n404" -ne 1 ]; then
+        printf 'FAIL case gh-404-fails-fast: expected exit 1 after 1 call, got rc=%s\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
+
+    # A TRANSIENT gh error is retried: the first call fails, the second answers
+    # `pr`, and a body citing only that number passes. Without the retry this
+    # body failed on a runner API blip (#6158).
+    mkdir -p "${tmp}/ghflaky"
+    printf '#!/usr/bin/env bash\nf="%s/n"; n=$(cat "$f" 2>/dev/null || echo 0); echo $((n+1)) > "$f"\n[ "$n" -ge 1 ] && { echo pr; exit 0; }\nexit 1\n' "${tmp}" > "${tmp}/ghflaky/gh"
+    chmod +x "${tmp}/ghflaky/gh"
+    got=0
+    cases=$((cases + 1))
+    ( PATH="${tmp}/ghflaky:$PATH"; export PATH
+      unset PR_CLOSES_REF_KIND_CMD; PR_CLOSES_REF_SLEEP=0; export PR_CLOSES_REF_SLEEP
+      bash "$SELF_PATH" --body "${tmp}/no-gh.txt" ) >/dev/null 2>&1 || got=$?
+    if [ "$got" -ne 0 ]; then
+        printf 'FAIL case gh-transient-error-retried: expected exit 0, got %s\n' "$got" >&2
         fails=$((fails + 1))
     fi
 
