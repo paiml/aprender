@@ -26662,3 +26662,258 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6390
+- id: PMAT-6453
+  github_issue: 6453
+  item_type: task
+  title: 'PVB-0: preflight — PVL gate landed, public probe library, Float32 probe'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:43Z
+  updated: 2026-10-27T11:35:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6454
+  github_issue: 6454
+  item_type: task
+  title: 'PVB-1: pv bridge census'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:48Z
+  updated: 2026-10-27T11:35:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6455
+  github_issue: 6455
+  item_type: task
+  title: 'PVB-2: proof.bridge schema + typed rust: predicates'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:52Z
+  updated: 2026-10-27T11:35:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6456
+  github_issue: 6456
+  item_type: task
+  title: 'PVB-3a: pilot — five existing computable exact models bound'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:57Z
+  updated: 2026-10-27T11:35:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6457
+  github_issue: 6457
+  item_type: task
+  title: 'PVB-3b: author computable Q4_K scale/min unpacker model + theorem'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:02Z
+  updated: 2026-10-27T11:36:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6458
+  github_issue: 6458
+  item_type: task
+  title: 'PVB-4: Lean reference executable pv-ref'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:06Z
+  updated: 2026-10-27T11:36:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6459
+  github_issue: 6459
+  item_type: task
+  title: 'PVB-5: pv bridge diff — B3 + tracked bridge-summary.json'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:11Z
+  updated: 2026-10-27T11:36:11Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6460
+  github_issue: 6460
+  item_type: task
+  title: 'PVB-6: B2 — extend pv kani to generate from rust: predicates'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:15Z
+  updated: 2026-10-27T11:36:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6461
+  github_issue: 6461
+  item_type: task
+  title: 'PVB-7: L5 = B0∧B1∧B2∧B3, read from summaries'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:20Z
+  updated: 2026-10-27T11:36:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6462
+  github_issue: 6462
+  item_type: task
+  title: 'PVB-7b: pv bridge fresh — hash-only freshness for consumers'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:24Z
+  updated: 2026-10-27T11:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6463
+  github_issue: 6463
+  item_type: task
+  title: 'PVB-8: bridge step in provable-ladder (PVL EV-9), freshness + never-down'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:29Z
+  updated: 2026-10-27T11:36:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6464
+  github_issue: 6464
+  item_type: task
+  title: 'PVB-9: expand to D-3 (repeatable)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:33Z
+  updated: 2026-10-27T11:36:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6465
+  github_issue: 6465
+  item_type: task
+  title: 'PVB-10: spec-weakness sweep'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:38Z
+  updated: 2026-10-27T11:36:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6477
+  github_issue: 6477
+  item_type: task
+  title: 'ci(mq): merge_group workspace-test-shard count 3 until the fourth mq seat is online (AC-1520-SHARD3)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T15:30:00Z
+  updated: 2026-10-27T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ci/sections.yml workspace-test-shard-merge_group has 3 pins of 3; ci.yml merge_group arms are [1,2,3] and [3]; pull_request stays 4'
+  - 'check_shard_count_single_source.sh passes and goes red when either side drifts (self-test, 11 rows)'
+  - 'keep open: restore 4 when the fourth mq seat is online'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Operator order via arbiter-cop (NOAH-forjar-andon-1520Z): shard count follows the online mq seats.
