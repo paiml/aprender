@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.72.1] - 2026-10-27
+
+Supersedes 0.72.0, which was never published.
+
+### Fixed
+
+- fix(deps): zstd 0.14 + arrow/parquet 60; zstd off by default in common/simulate (PMAT-6416) (#6417)
+- fix(serve): ship upstream-reference-v1.json inside the aprender-serve crate (PMAT-6422) (#6424)
+- fix(ci): pr-light body guard retries transient PR-vs-issue resolution errors (#6427)
+
+### Changed
+
+- ci(gate): workspace-test-shard 4 shards on merge queue and push (PMAT-6420) (#6421)
+- ci: workspace-test-shard timeout 66 min on merge_group (#6419)
+- ci(nightly-bench): runs-on perf-solo (#6428)
+
 ## [0.72.0] - 2026-10-26
 
 Release commit-range: v0.71.4..8f82ba7e49 (257 non-merge commits). Entries are commit subjects.
