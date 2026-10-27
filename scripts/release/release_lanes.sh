@@ -248,13 +248,13 @@ infra_gh() {
     local k st hdr=()
     k="$INFRA_CACHE/$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')"
     [ -s "$k.etag" ] && [ -f "$k.body" ] && hdr=(-H "If-None-Match: $(cat -- "$k.etag")")
-    GH_TOKEN="$INFRA_TOKEN" gh api -i "${hdr[@]}" "$1" > "$k.http" 2>/dev/null
+    GH_TOKEN="$INFRA_TOKEN" gh api -i "${hdr[@]}" "$1" > "$k.http" 2> "$k.err"
     st="$(awk 'NR == 1 { print $2; exit }' "$k.http")"
     case "$st" in
         200) awk 'f { print } /^\r?$/ { f = 1 }' "$k.http" > "$k.body" || return 1
              awk 'tolower($1) == "etag:" { sub(/\r$/, ""); sub(/^[^:]*: */, ""); print; exit }' "$k.http" > "$k.etag" ;;
-        304) [ -f "$k.body" ] || return 1 ;;
-        *) return 1 ;;
+        304) [ -f "$k.body" ] || { echo "infra_gh: GET $1 -> HTTP 304 and nothing cached" >&2; return 1; } ;;
+        *) printf "infra_gh: GET %s -> HTTP %s (%s)\n" "$1" "${st:-none}" "$(head -c 160 -- "$k.err" | tr "\n" " ")" >&2; return 1 ;;
     esac
     cat -- "$k.body"
 }
@@ -491,6 +491,9 @@ FAKE
     rm -f -- "$fg/all304"
     runs "$fg" 403
     exact measured_cpu_a_refused_read_is_not_measured_cache_or_not 2 "" -- cpu "$fg" "$tmp/ca"
+    o="$(cpu "$fg" "$tmp/ca" 2>&1 >/dev/null)"
+    case "$o" in *"infra_gh: GET "*" -> HTTP 403"*) ok measured_cpu_a_refused_read_names_its_status "HTTP 403 on stderr" ;;
+        *) broke measured_cpu_a_refused_read_names_its_status "stderr: ${o:0:200}" ;; esac
     runs "$fg" 200 '{"workflow_runs":[{"id":40,"run_attempt":1},{"id":30,"run_attempt":1},{"id":25,"run_attempt":1},{"id":20,"run_attempt":1}]}'
     logs "$fg" 250 502
     exact measured_cpu_a_failed_log_read_is_not_measured 2 "" -- cpu "$fg" "$tmp/cc"
@@ -793,7 +796,8 @@ m48_lanes_ref_takes_any_word s#"\${LANES_REF:-}" .~ \^\[0-9a-f\]{40}\$ \]\]#-n "
 m49_lanes_caller_takes_any_word s#\[\[ "\${LANES_CALLER:-}" .~ \^\[A-Za-z0-9._-\]\*\$ \]\]#true#
 m50_wiring_ignores_the_pick s# || bad="\$bad pick"# || true#
 m51_wiring_ignores_needs_pick s# || bad="\$bad \$j(needs-pick)"# || true#
-m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#'
+m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#
+m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#'
 
 mutants() {
     local tmp pass=0 fail=0 name expr o rc m

@@ -347,7 +347,7 @@ fn emit_recurrence_in_registers(
         ctx.add_f32_inplace(out_sum, prod);
         s_new.push(new);
     }
-    for (pair, chunk) in s_new.chunks_exact(2).enumerate() {
+    for (pair, chunk) in s_new.as_chunks::<2>().0.iter().enumerate() {
         let off = ctx.mov_u64_imm(pair as u64 * 8);
         let addr = ctx.add_u64(s_row, off);
         ctx.st_global_f32_v2(addr, chunk[0], chunk[1]);

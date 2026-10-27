@@ -1,0 +1,20 @@
+- id: PMAT-6251
+  github_issue: 6251
+  item_type: task
+  title: 'FLOW-011 T2: review tiers by changed paths (tools/review-tiers.yaml, MT-13)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T08:40:00Z
+  updated: 2026-10-24T08:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/review_tier.sh derives light|standard|sensitive from the changed paths, highest wins, comment-only checked mechanically, table read from the base, no author-set tier'
+  - 'scripts/check_review_tier.sh --self-test: the case table passes and every planted mutant turns it red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null

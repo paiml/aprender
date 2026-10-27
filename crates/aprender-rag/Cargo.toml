@@ -51,7 +51,7 @@ async-trait = "0.1"
 # Compression for index storage (GH-2) - via batuta-common shared module
 batuta-common = { workspace = true }
 lz4_flex = { version = "0.11", optional = true }
-zstd = { version = "0.13", optional = true }
+zstd = { version = "0.14", optional = true }
 bincode = { version = "1.3", optional = true }  # Binary serialization for indices
 
 # SQLite+FTS5 persistent index (sqlite-rag-integration spec)
@@ -63,7 +63,7 @@ fastembed = { version = "5", optional = true }
 
 # NVIDIA Embed Nemotron 8B via realizar GGUF infrastructure (GH-3)
 # Large model (~4-32GB depending on quantization), requires GGUF file
-realizar = { version = "0.71.3", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
+realizar = { version = "0.72.0", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
 
 
 # Eval: LLM-as-judge via Anthropic API (PMAT-015)

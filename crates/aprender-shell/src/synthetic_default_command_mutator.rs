@@ -188,7 +188,7 @@ impl CoverageGuidedGenerator {
         }
 
         // Sort by coverage gain (descending)
-        generated.sort_by(|a, b| b.1.cmp(&a.1));
+        generated.sort_by_key(|a| std::cmp::Reverse(a.1));
 
         // Return top commands
         generated
