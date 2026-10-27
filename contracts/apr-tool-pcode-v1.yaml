@@ -45,4 +45,3 @@ falsification:
 
 entity:
   type: repo
-  ref: paiml/pcode
