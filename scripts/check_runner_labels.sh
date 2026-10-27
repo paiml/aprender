@@ -25,13 +25,37 @@ cd "$(dirname "$0")/.."
 # clean-room pool, deliberately WITHOUT clean-room so build jobs cannot queue in front of
 # pr-review-quorum `present` (a seconds-long check). A one-box label, like perf-solo.
 # kfocus (#5889): the Kubuntu Focus host's own label; one box, so it discriminates like perf-solo.
-DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light|kfocus'
+# mq: the merge-queue / kfocus-host seats' label (kfocus-mq, kfocus-mq-2 carry only this; no seat ever carried
+# `kfocus`, AC-1430-SAT). Not the PR pool; kfocus-shadow-lab (LAB, dispatch only) selects it.
+DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light|kfocus|mq'
+# A trailing `# comment` is not part of the selector: a label named only in a comment must not pass.
+strip_comment() { sed -E 's/[[:space:]]+#.*$//' <<< "$1"; }
+discriminates() { grep -q 'self-hosted' <<< "$1" && grep -qE "$DISCRIM" <<< "$(strip_comment "$1")"; }
+
+if [ "${1:-}" = "--self-test" ]; then
+  t=0; f=0
+  row() { # row WANT SELECTOR
+    if discriminates "$2"; then got=match; else got=nomatch; fi
+    if [ "$got" = "$1" ]; then t=$((t + 1)); else f=$((f + 1)); echo "FAIL: want $1 for: $2"; fi
+  }
+  row match 'runs-on: [self-hosted, Linux, X64, clean-room]'
+  row match 'runs-on: [self-hosted, Linux, X64, mq]'
+  row match 'runs-on: [self-hosted, Linux, X64, mq]  # kfocus host'
+  row match 'runs-on: [self-hosted, Linux, X64, perf-solo]'
+  row nomatch 'runs-on: [self-hosted, Linux, X64]'
+  row nomatch 'runs-on: [self-hosted, Linux, X64]  # kfocus, mq, clean-room'
+  row nomatch 'runs-on: [self-hosted, Linux, X64, tier2]'
+  echo "check_runner_labels self-test: $t passed, $f failed"
+  [ "$f" -eq 0 ]
+  exit
+fi
+
 fail=0
 
 while IFS=: read -r file line sel; do
   # Only inline self-hosted selectors.
   grep -q 'self-hosted' <<< "$sel" || continue
-  if ! grep -qE "$DISCRIM" <<< "$sel" ; then
+  if ! discriminates "$sel"; then
     echo "::error file=${file},line=${line}::self-hosted job lacks a discriminating runner label (need clean-room or a GPU/macOS label): ${sel# }"
     fail=1
   fi
