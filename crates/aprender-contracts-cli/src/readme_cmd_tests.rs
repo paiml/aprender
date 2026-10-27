@@ -166,3 +166,18 @@ fn main_with_maps_usage_and_failure_to_nonzero() {
     assert_eq!(main_with(&args("--write")), ExitCode::SUCCESS);
     assert_eq!(main_with(&args("--check")), ExitCode::SUCCESS);
 }
+
+#[test]
+fn write_validates_before_it_replaces_the_readme() {
+    let d = fixture(SHAPE);
+    // stale count AND an entrypoint that does not exist: the render would fix the first, the shape fails the second
+    let text = readme(7, 2, "", "crates/nope");
+    let p = put(&d, &text);
+    let e = run(&p, &d.path().join("contracts"), true).expect_err("violates the shape");
+    assert_eq!(e.code, 1);
+    assert_eq!(
+        std::fs::read_to_string(&p).expect("r"),
+        text,
+        "--write must not rewrite a README that fails validation"
+    );
+}

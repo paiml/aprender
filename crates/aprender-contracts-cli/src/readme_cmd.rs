@@ -251,18 +251,19 @@ pub fn run(readme_path: &Path, contract_dir: &Path, write: bool) -> Result<Strin
     if stale && !write {
         return refuse(1, format!("{} is stale: a render states {walked} contracts (frontmatter {census}); run `pv-readme --write`", readme_path.display()));
     }
-    if stale {
-        let tmp = readme_path.with_extension("md.pv-readme.tmp");
-        std::fs::write(&tmp, &rendered)
-            .or_else(|e| refuse(2, format!("write {}: {e}", tmp.display())))?;
-        std::fs::rename(&tmp, readme_path).or_else(|e| refuse(2, format!("rename: {e}")))?;
-    }
     let rel = readme_path
         .file_name()
         .map_or_else(|| "README.md".into(), |n| n.to_string_lossy().into_owned());
     let bad = violations(&rendered, &rel, contract_dir, &shapes_);
     if !bad.is_empty() {
         return refuse(1, bad.join("\n"));
+    }
+    // validate first: a render that violates the shape must not replace the README
+    if stale {
+        let tmp = readme_path.with_extension("md.pv-readme.tmp");
+        std::fs::write(&tmp, &rendered)
+            .or_else(|e| refuse(2, format!("write {}: {e}", tmp.display())))?;
+        std::fs::rename(&tmp, readme_path).or_else(|e| refuse(2, format!("rename: {e}")))?;
     }
     Ok(format!(
         "ok    pv-readme: {} states {walked} contracts (census {census}), conforms to {} readme:Readme shape(s){}",
