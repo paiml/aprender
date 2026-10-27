@@ -60,7 +60,7 @@ row "BUILD_CONTRACTS file next to a leaf .rs -> ALL" ALL "$(run contracts/tensor
 row "contracts/binding.yaml -> ALL" ALL "$(run contracts/binding.yaml)"
 row "contracts/model-families -> ALL (aprender-core build.rs generates code from it)" ALL "$(run contracts/model-families/q.yaml)"
 row "BUILD_DOCS file (include_str!ed docs/ file) -> ALL" ALL "$(run docs/specifications/PRM-001-prometheus.md)"
-row "BUILD_DOCS file next to a leaf .rs -> ALL" ALL "$(run docs/kernel-registry/upstream-reference-v1.json "$ld/src/lib.rs")"
+row "BUILD_DOCS file next to a leaf .rs -> ALL" ALL "$(run docs/specifications/PRM-001-prometheus.md "$ld/src/lib.rs")"
 row "a nested BUILD_CONTRACTS entry (contracts/sub/x.yaml) -> ALL" ALL "$(printf 'contracts/sub/x.yaml\n' >"$t/dn"; AFFECTED_BUILD_CONTRACTS='sub/x.yaml' $A --diff-from "$t/dn")"
 row "a nested contracts file that is NOT listed stays READERS only" "$(printf '%s\n' $readers | sort -u)" "$(run contracts/sub/other.yaml | sort -u)"
 row "a diff under the separately-built crates/facades workspace -> ALL (unplaceable, never skipped)" ALL "$(run crates/facades/provable-contracts/src/lib.rs)"
