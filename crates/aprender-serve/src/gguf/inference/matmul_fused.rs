@@ -580,10 +580,9 @@ mod tests {
     /// the gate AND by the ungated dequant fallback — otherwise a CPU kernel exists with no row.
     #[test]
     fn cpu_rows_equal_the_types_the_cpu_matmul_serves() {
-        let reference: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../data/upstream-reference-v1.json"
-        ))
-        .expect("reference json");
+        let reference: serde_json::Value =
+            serde_json::from_str(include_str!("../../../data/upstream-reference-v1.json"))
+                .expect("reference json");
         let reg = crate::kernel_registry::registry().expect("registry");
         let model =
             crate::gguf::test_helpers::create_test_model_with_config(&crate::gguf::GGUFConfig {
