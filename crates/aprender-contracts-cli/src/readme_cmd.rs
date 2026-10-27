@@ -319,3 +319,7 @@ pub fn main_with(args: &[String]) -> ExitCode {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "readme_cmd_tests.rs"]
+mod tests;
