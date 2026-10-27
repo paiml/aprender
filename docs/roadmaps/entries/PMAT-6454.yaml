@@ -1,0 +1,18 @@
+- id: PMAT-6454
+  github_issue: 6454
+  item_type: task
+  title: 'PVB-1: pv bridge census'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:48Z
+  updated: 2026-10-27T11:35:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452

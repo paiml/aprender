@@ -1,0 +1,18 @@
+- id: PMAT-6455
+  github_issue: 6455
+  item_type: task
+  title: 'PVB-2: proof.bridge schema + typed rust: predicates'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:52Z
+  updated: 2026-10-27T11:35:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
