@@ -13,7 +13,7 @@ consumer that requires it. A second hit: the fix landed in source while a pin ke
 1. A change that moves a job between event paths names every consumer of that job (feeder, arm script, rulesets).
 2. A check a consumer requires must be a job the consumer's own event runs. The feeder asks `--check-required` on every
    tick against main's `ci.yml` read from GitHub (not a file beside the script, not a pin's copy), refuses to act with an
-   inbox line when it fails or cannot be read, and `mq_feeder_install.sh` refuses to install such a feeder. CI runs
-   `scripts/check_mq_feeder_required_set.sh` (`ci/explicit-test-commands.d/843-*`): planted incident, absent job, missing
+   inbox line when it fails or cannot be read, and `mq_feeder_install.sh` refuses to install such a feeder. The guards-nightly LAB lane (#6175; never the PR or merge-queue path) runs
+   `scripts/check_mq_feeder_required_set.sh` : planted incident, absent job, missing
    file, good file, and an end-to-end refusal.
 3. After merging a change to a script a unit runs, read the unit's ExecStart and confirm it runs the merged copy.

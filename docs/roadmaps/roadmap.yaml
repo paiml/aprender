@@ -25945,7 +25945,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   acceptance_criteria:
   - 'The feeder refuses to act (exit 2, one inbox line an hour) when main''s ci.yml is unreadable, or when the required check is absent under jobs:, or is a job a pull_request event cannot run (no pull_request trigger, every || branch merge-queue-only, or a needs: chain reaching such a job)'
   - 'main''s ci.yml is read only when the feeder is about to act (after the rate-limit and QUEUE_BUSY checks), with If-None-Match, from one cached copy in the state dir and no temp file per tick'
-  - 'scripts/check_mq_feeder_required_set.sh, wired as ci/explicit-test-commands.d/843, runs the feeder --self-test (real ci.yml: x86-main is merge-queue-only, pr-light is not) and its planted bad workflows (merge-queue-only required check, hyphenated needs chain, always() child) each turn the feeder self-test red'
+  - 'scripts/check_mq_feeder_required_set.sh, wired as a nightly LAB step in guards-nightly.yml (never on the PR or merge-queue path), runs the feeder --self-test (real ci.yml: x86-main is merge-queue-only, pr-light is not) and its planted bad workflows (merge-queue-only required check, hyphenated needs chain, always() child) each turn the feeder self-test red'
   phases: []
   subtasks: []
   estimated_effort: null

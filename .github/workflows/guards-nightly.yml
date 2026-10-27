@@ -197,6 +197,13 @@ jobs:
           set -euo pipefail
           exec > >(tee -a "$RUNNER_TEMP/affected-set.log") 2>&1
           setsid --wait bash scripts/affected_set.sh --self-test
+      - name: MQ feeder required-set check (#6175, LAB)
+        id: lab_mq_feeder
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/mq-feeder.log") 2>&1
+          setsid --wait bash scripts/check_mq_feeder_required_set.sh
       # C324 item 5: red or unmeasured for 7 days, this check stops running until its owner dispatches the workflow
       # (scripts/guard_lane_stop.sh: per STEP, because this job carries many guards; its case table runs first).
       # The stop reads Actions history with conditional GETs (GH-1); the 304s need last night's ETags, so the cache
@@ -481,6 +488,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: affected_set.sh case table red (FLOW-010 E5)" \
             --owner aprender-cd --log "$RUNNER_TEMP/affected-set.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red MQ feeder night opens or updates its one LAB ticket (#6175)
+        if: failure() && steps.lab_mq_feeder.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-mq-feeder --title "LAB: MQ feeder required-set check red (#6175)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/mq-feeder.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red guard-lane night opens or updates its one LAB ticket (#5920)
         if: failure() && (steps.lab_guard_lane.outcome == 'failure' || steps.lab_guard_lane_stop.outcome == 'failure')
         env:
