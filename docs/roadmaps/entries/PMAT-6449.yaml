@@ -1,0 +1,22 @@
+- id: PMAT-6449
+  github_issue: 6449
+  item_type: task
+  title: 'ci(mq): merge_group lanes take clean-room,build seats, not uncertified mq (A-C4)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:30:00Z
+  updated: 2026-10-27T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the four merge_group runs-on lists in ci.yml (mg-reuse-wt, x86-main, workspace-test-shard, determinism) read [self-hosted, Linux, X64, clean-room, build]; the PR path is unchanged'
+  - 'ci_mg_reuse.sh --self-test pins the lane and kills the mutants that put mq back, drop build, or add a third label'
+  - 'no runner label, runner group or ruleset change'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Operator order 2026-10-27: merge_group shards ran on kfocus-mq/-mq-2, which carry only the mq label and are not certified clean-room (A-C4).
+    No seat carries both mq and clean-room, so the lane moves to the existing clean-room,build labels (intel-clean-room-7, yoga-build online at 11:1xZ).
