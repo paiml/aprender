@@ -2,13 +2,17 @@
   github_issue: 3745
   item_type: task
   title: '#3745 S3: hand-list guard (LAB nightly) + hand-list migration'
-  status: planned
+  status: in_progress
   priority: medium
   assigned_to: null
   created: 2026-10-12T16:14:06Z
   updated: 2026-10-12T16:14:06Z
   spec: null
-  acceptance_criteria: []
+  acceptance_criteria:
+  - 'surface emitter: hidden `apr surface --json` (crates/apr-cli/src/surface.rs, surface_tests.rs dummy-flag test)'
+  - 'mutants 1 and 2: ont_release_readiness.rs issue_mutant_1_* and issue_mutant_2_* are RED naming the owed cell'
+  - 'mutant 3: marker guard tests in surface_guard_tests.rs; mutant 4: hand_list_guard.rs, run nightly as LAB by guards-nightly.yml'
+  - 'release_readiness.sh refuses a Pass over zero derived cells and prints cells=N in the ENFORCE PASS line; autopilot.sh and readiness-nightly.yml run it'
   phases: []
   subtasks: []
   estimated_effort: null
