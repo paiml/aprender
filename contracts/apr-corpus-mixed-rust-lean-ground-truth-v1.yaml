@@ -48,4 +48,3 @@ falsification:
 
 entity:
   type: repo
-  ref: paiml/mixed-rust-lean-ground-truth
