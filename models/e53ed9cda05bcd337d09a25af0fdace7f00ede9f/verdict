@@ -1,0 +1,8 @@
+commit=e53ed9cda05bcd337d09a25af0fdace7f00ede9f
+sha9=e53ed9cda
+version=0.72.0
+entry=scripts/release/models_t1.sh@f7b3d1894a59a14c591f4a428b6251201b2baf73
+measure=ladder
+t1_rc=2
+state=not_measured
+reason=MODELS NO-GO: another models_t1.sh holds /home/noah/.cache/aprender-release/models-t1.lock -- refused before touching either host (#5264)
