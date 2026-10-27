@@ -255,6 +255,7 @@ tier3:
 	@echo "Checking build.rs crate-root escapes (v0.31.1 yank class)..."
 	@bash scripts/check_build_rs_paths.sh
 	@echo "Checking self-hosted CI jobs pin a discriminating runner label..."
+	@bash scripts/check_runner_labels.sh --self-test
 	@bash scripts/check_runner_labels.sh
 	@echo "Checking the toolchain-ceiling guard's comparator (aprender#2370)..."
 	@bash scripts/check_clippy_current_stable.sh --self-test

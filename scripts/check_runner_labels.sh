@@ -28,10 +28,34 @@ cd "$(dirname "$0")/.."
 DISCRIM='clean-room|cuda|gpu|rtx4090|ada|blackwell|gb10|apple-silicon|m4|perf-solo|mini-builder|review-light|kfocus'
 fail=0
 
+# A selector is judged on its YAML value only: a trailing `# comment` must not
+# supply the label (#6433: `[self-hosted, X64, Linux, intel]  # perf-solo` passed).
+pinned() { # $1 = text after `runs-on:`; true when it carries a discriminating label
+  local sel=${1%%#*}
+  grep -qE "$DISCRIM" <<< "$sel"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  bad=0
+  expect() { # $1 = want (ok|bad), $2 = selector line
+    local got=bad
+    if pinned "$2"; then got=ok; fi
+    if [ "$got" != "$1" ]; then echo "FAIL self-test: want $1, got $got: $2" >&2; bad=1; fi
+  }
+  expect ok  '[self-hosted, Linux, X64, clean-room]'
+  expect ok  '[self-hosted, X64, Linux, intel, perf-solo]  # one box'
+  expect bad '[self-hosted, X64, Linux]'
+  expect bad '[self-hosted, X64, Linux, intel]  # perf-solo'
+  expect bad '[self-hosted, X64, Linux]  # clean-room'
+  [ "$bad" -eq 0 ] || exit 1
+  echo "✓ check_runner_labels --self-test: 5 rows (2 pass, 3 must-fail incl. comment-only labels)"
+  exit 0
+fi
+
 while IFS=: read -r file line sel; do
   # Only inline self-hosted selectors.
   grep -q 'self-hosted' <<< "$sel" || continue
-  if ! grep -qE "$DISCRIM" <<< "$sel" ; then
+  if ! pinned "$sel"; then
     echo "::error file=${file},line=${line}::self-hosted job lacks a discriminating runner label (need clean-room or a GPU/macOS label): ${sel# }"
     fail=1
   fi
