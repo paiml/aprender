@@ -1,0 +1,8 @@
+commit=e53ed9cda05bcd337d09a25af0fdace7f00ede9f
+sha9=e53ed9cda
+version=0.72.0
+entry=scripts/release/models_t1.sh@f7b3d1894a59a14c591f4a428b6251201b2baf73
+measure=crux
+t1_rc=1
+state=red
+reason=gx10 receipt has red cells; the judge found red or missing cells on two bound receipts
