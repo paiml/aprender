@@ -38,7 +38,7 @@
 #   bash scripts/check_comparator_pin_citations.sh --pin PATH   # the n:sha12 for a ledger line
 # exit 0 green; 1 RED; 2 ENV (nothing was judged).
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
+[ "${1:-}" = "--source-only" ] || { ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2; }
 PIN_REL="scripts/llama_pin.toml"
 LEDGER_REL="scripts/comparator_pin_citations.txt"
 
@@ -205,10 +205,12 @@ if [ "${1:-}" = "--pin" ]; then [ -n "${2:-}" ] || env_die "--pin PATH"; pin_lin
 
 # ---- the case table --------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
+    SELF="$ROOT/scripts/check_comparator_pin_citations.sh"
     TMP=$(mktemp -d) || exit 2
     cleanup() { case "${TMP:-}" in ''|/) return 0 ;; *) [ -d "$TMP" ] && rm -rf -- "$TMP" ;; esac; }
     trap cleanup EXIT
-    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=fx GIT_AUTHOR_EMAIL=fx@x GIT_COMMITTER_NAME=fx GIT_COMMITTER_EMAIL=fx@x
+    cd -- "$TMP" || exit 2
+    export GIT_CEILING_DIRECTORIES="${TMP%/*}" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=fx GIT_AUTHOR_EMAIL=fx@x GIT_COMMITTER_NAME=fx GIT_COMMITTER_EMAIL=fx@x
     fails=0; rows=0
     # the superseded shas, BUILT so this file cites none of them (its own R1 would read it otherwise)
     OLD="39173""bcac"; OLD2="60b06""ab9a"; CUR="d1d3c""3396"
@@ -331,7 +333,7 @@ if [ "${1:-}" = "--self-test" ]; then
     # WANT-RC/NEEDLE are the UNMUTATED row's expectation (e.g. drop-copy-rule: C20 expects rc 0). The mutant is killed when the
     # mutated guard NO LONGER gives that rc+needle (disabling R7 makes C20 fail R1); it survives only if it still does.
         local name=$1 old=$2 new=$3 want=$4 needle=$5; shift 5
-        python3 - "$0" "$TMP/mut-$name.sh" "$old" "$new" <<'PY' || { printf 'FAIL  mutant %s: anchor not found exactly once\n' "$name"; fails=$((fails + 1)); return; }
+        python3 - "$SELF" "$TMP/mut-$name.sh" "$old" "$new" <<'PY' || { printf 'FAIL  mutant %s: anchor not found exactly once\n' "$name"; fails=$((fails + 1)); return; }
 import sys
 src, dst, old, new = sys.argv[1:5]
 s = open(src).read()
@@ -375,8 +377,8 @@ PY
     COPY_ANCHOR=$(git -C "$TMP/c32" rev-parse HEAD) mutant prefix-r1-filter 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "' 'local r1="FAIL  R1 $COPY_DST:"' 1 'R1 docs/roadmaps/roadmap-base.yaml:x.md:1' "$TMP/c32"
     COPY_ANCHOR=$(git -C "$TMP/c34" rev-parse HEAD) mutant loose-r1-filter 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "' 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9:]+ cites "' 1 'R1 docs/roadmaps/roadmap-base.yaml:1:1' "$TMP/c34"
     # drop-fetch is hand-run: mutant()'s precheck would itself fetch the anchor into the clone and hide the kill
-    sed 's# || git -C "$r" fetch -q --depth=1 origin "$COPY_ANCHOR" 2> /dev/null##' "$0" > "$TMP/mut-drop-fetch.sh"; rows=$((rows + 1))
-    if cmp -s "$0" "$TMP/mut-drop-fetch.sh"; then printf 'FAIL  mutant drop-fetch: anchor not found\n'; fails=$((fails + 1))
+    sed 's# || git -C "$r" fetch -q --depth=1 origin "$COPY_ANCHOR" 2> /dev/null##' "$SELF" > "$TMP/mut-drop-fetch.sh"; rows=$((rows + 1))
+    if cmp -s "$SELF" "$TMP/mut-drop-fetch.sh"; then printf 'FAIL  mutant drop-fetch: anchor not found\n'; fails=$((fails + 1))
     elif out=$( . "$TMP/mut-drop-fetch.sh" --source-only; COPY_ANCHOR=$(git -C "$TMP/c35m" rev-parse HEAD~1) judge "$TMP/c35m-shallow" 2>&1 ); [ "$?" = 0 ] && grep -qF 'every one ledgered' <<< "$out"; then printf 'FAIL  mutant drop-fetch SURVIVED (the row still holds)\n'; fails=$((fails + 1))
     else printf 'ok    mutant drop-fetch killed\n'; fi
     mutant swallow-fails "if grep -q '^FAIL' <<< \"\$out\"; then rc=1;" "if false; then rc=1;" 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
@@ -384,7 +386,7 @@ PY
     # planted crash: the Python dies after the R1 rows but before its end marker. The unmutated judge() must go RED, and with the
     # marker check gone the same crash reads green (the fail-open the marker closes), so the row is a real discriminator
     COPY_ANCHOR=$(git -C "$TMP/c20" rev-parse HEAD)
-    sed 's#^print("@@judged").*#raise RuntimeError("planted crash")#' "$0" > "$TMP/crash.sh"
+    sed 's#^print("@@judged").*#raise RuntimeError("planted crash")#' "$SELF" > "$TMP/crash.sh"
     sed 's#if \[ "\$done" = 0 \]; then printf#if false; then printf#' "$TMP/crash.sh" > "$TMP/crash-open.sh"; rows=$((rows + 2))
     out=$( . "$TMP/crash.sh" --source-only; judge "$TMP/c20" 2>&1 ); rc=$?
     if [ "$rc" = 1 ] && grep -qF 'the checker did not finish' <<< "$out"; then printf 'ok    a planted crash before the end marker is RED, never green\n'
