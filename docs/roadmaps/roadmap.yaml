@@ -21593,17 +21593,13 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   created: 2026-10-12T16:14:06Z
   updated: 2026-10-12T16:14:06Z
   spec: null
-  acceptance_criteria:
-  - 'surface emitter: hidden `apr surface --json` (crates/apr-cli/src/surface.rs, surface_tests.rs dummy-flag test)'
-  - 'mutants 1 and 2: ont_release_readiness.rs issue_mutant_1_* and issue_mutant_2_* are RED naming the owed cell'
-  - 'mutant 3: marker guard tests in surface_guard_tests.rs; mutant 4: hand_list_guard.rs, run nightly as LAB by guards-nightly.yml'
-  - 'release_readiness.sh refuses a Pass over zero derived cells and prints cells=N in the ENFORCE PASS line; autopilot.sh and readiness-nightly.yml run it'
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'done_when evidence on main: (1) surface emitter: hidden `apr surface --json` (crates/apr-cli/src/surface.rs, surface_tests.rs dummy-flag test); (2) mutants 1 and 2: ont_release_readiness.rs issue_mutant_1_* and issue_mutant_2_* are RED naming the owed cell; (3) mutant 3: marker guard tests in surface_guard_tests.rs; mutant 4: hand_list_guard.rs, run nightly as LAB by guards-nightly.yml; (4) release_readiness.sh refuses a Pass over zero derived cells and prints cells=N in the ENFORCE PASS line; autopilot.sh and readiness-nightly.yml run it'
   epic: 3863
 - id: PMAT-3747
   github_issue: 3747
