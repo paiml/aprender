@@ -180,9 +180,18 @@ pub(super) fn build_binding_info(
 }
 
 pub(super) fn build_diff_info(entry: &types::ContractEntry) -> Option<DiffInfo> {
+    // Run git from the file's own directory so the repository that owns the
+    // file is found regardless of the inherited cwd (PMAT-6487).
+    let path = std::path::Path::new(&entry.path);
+    let dir = match path.parent() {
+        Some(p) if !p.as_os_str().is_empty() => p,
+        _ => std::path::Path::new("."),
+    };
     let output = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
         .args(["log", "-1", "--format=%H %aI", "--"])
-        .arg(&entry.path)
+        .arg(path.file_name()?)
         .output()
         .ok()?;
     if !output.status.success() {
