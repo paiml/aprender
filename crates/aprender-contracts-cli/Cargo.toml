@@ -17,6 +17,11 @@ path = "src/main.rs"
 name = "pv-sat"
 path = "src/bin/pv-sat/main.rs"
 
+# #6394 PVL-001: `pv readme` as its own target until the fold decision; the `pv --help` surface is untouched.
+[[bin]]
+name = "pv-readme"
+path = "src/bin/pv-readme/main.rs"
+
 [dependencies]
 aprender-contracts = { path = "../aprender-contracts", version = "0.72.1" }
 # #3745 S1: `--model` is declared through the shared role type `ModelPath`, so
