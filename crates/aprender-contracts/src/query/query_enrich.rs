@@ -190,6 +190,10 @@ pub(super) fn build_diff_info(entry: &types::ContractEntry) -> Option<DiffInfo> 
     let output = std::process::Command::new("git")
         .arg("-C")
         .arg(dir)
+        // A linked-worktree hook exports these; they would override `-C`.
+        .env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_INDEX_FILE")
         .args(["log", "-1", "--format=%H %aI", "--"])
         .arg(path.file_name()?)
         .output()
