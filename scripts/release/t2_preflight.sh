@@ -43,6 +43,17 @@ head_tagged_version() {
     return 0
 }
 
+# judged_tagged_version <sha> <git_dir>: like head_tagged_version, but reads the Cargo.toml of commit <sha>
+# (git show), never the worktree's -- the worktree may sit on another commit than the one judged.
+judged_tagged_version() {
+    local t out=''
+    t=$(mktemp) || return 0
+    git -C "$2" show "$1:Cargo.toml" > "$t" 2> /dev/null && out=$(head_tagged_version "$t" "$2")
+    rm -f -- "${t:?}"
+    printf '%s' "$out"
+    return 0
+}
+
 decide() {
     local sha=$1 log=$2 rc=$3 lad=${4:-} hver=${5:-} rows fails declared name red dn vrow line deferred=''
 
@@ -86,7 +97,9 @@ decide() {
     # Needs BOTH the caller's tag proof AND the version row's positive absence evidence (HTTP 200, index parsed;
     # a 404/down row never matches). It only widens the ladder deferral, never the version row.
     if [ "$vrow" -eq 0 ] && [ -n "$hver" ] \
-       && grep -qE "^[[:space:]]*\[ OK \] version-unpublished +${hver//./\\.} absent from the crates\.io index \(consulted directly, HTTP 200, index parsed" "$log"; then
+       && awk -v h="$hver" 'BEGIN { w = h " absent from the crates.io index (consulted directly, HTTP 200, index parsed" }
+              match($0, /^[[:space:]]*\[ OK \] version-unpublished +/) && index(substr($0, RLENGTH + 1), w) == 1 { f = 1 }
+              END { exit !f }' "$log"; then
         vrow=2
     fi
     fails=0
@@ -306,6 +319,15 @@ if [ "${1:-}" = "--self-test" ]; then
     # T2L-8d (M8). a BRANCH named v0.72.1 is not the tag: refs/tags/ must be required
     git -C "$d/tg" tag -d v0.72.1 > /dev/null && git -C "$d/tg" branch v0.72.1
     v=$(head_tagged_version "$d/tg/Cargo.toml" "$d/tg"); [ -z "$v" ] && ok "branch v0.72.1 is not the tag -> empty" || nok "T2L-8d -> '$v'"
+    # T2L-9. judged_tagged_version reads the JUDGED commit's manifest, not the worktree's
+    git -C "$d/tg" checkout -q -b w9 && git -C "$d/tg" branch -D v0.72.1 > /dev/null 2>&1
+    git -C "$d/tg" add Cargo.toml && git -C "$d/tg" -c user.name=t -c user.email=t@t commit -q -m a
+    j1=$(git -C "$d/tg" rev-parse HEAD); git -C "$d/tg" tag v0.72.1 "$j1"
+    printf '[workspace.package]\nversion = "0.72.2"\n' > "$d/tg/Cargo.toml"
+    git -C "$d/tg" -c user.name=t -c user.email=t@t commit -q -am b; j2=$(git -C "$d/tg" rev-parse HEAD)
+    v=$(judged_tagged_version "$j1" "$d/tg"); [ "$v" = 0.72.1 ] && ok "judged commit tagged, worktree head not -> hver set" || nok "T2L-9a -> '$v'"
+    printf '[workspace.package]\nversion = "0.72.1"\n' > "$d/tg/Cargo.toml"
+    v=$(judged_tagged_version "$j2" "$d/tg"); [ -z "$v" ] && ok "judged commit untagged, worktree tagged -> empty" || nok "T2L-9b -> '$v'"
     printf 'name = "x"\n' > "$d/tg/nov.toml"
     v=$(head_tagged_version "$d/tg/nov.toml" "$d/tg"); [ -z "$v" ] && ok "no version line -> empty" || nok "T2L-8c -> '$v'"
 
@@ -385,7 +407,7 @@ bash scripts/dogfood.sh --phase pre-publish > "$AP/preflight-$sha.log" 2>&1; rc=
 bash scripts/check_model_ladder.sh > "$AP/preflight-$sha.ladder.log" 2>&1
 # The verdict is decided by decide() above -- the same function the --self-test case table
 # exercises, so the fixtures judge the code this path actually runs.
-hver=$(head_tagged_version Cargo.toml "$REPO_ROOT")
+hver=$(judged_tagged_version "$sha" "$REPO_ROOT")
 decide "$sha" "$AP/preflight-$sha.log" "$rc" "$AP/preflight-$sha.ladder.log" "$hver" > "$AP/preflight-$sha.verdict"
 printf '%s\n' "$sha" > "$AP/preflight.commit"
 cat "$AP/preflight-$sha.verdict"; grep -E '^\s*\[FAIL\]' "$AP/preflight-$sha.log" | cut -c1-160
