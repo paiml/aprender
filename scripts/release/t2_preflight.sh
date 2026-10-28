@@ -10,7 +10,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || exit 2
 export PATH="${CARGO_HOME:-$HOME/.cargo}/bin:$PATH"
 
 # ---------------------------------------------------------------------------
-# decide <sha> <log> <dogfood_rc> [ladder_log]
+# decide <sha> <log> <dogfood_rc> [ladder_log] [hver]
+#   hver = the version main's head carries WHEN its tag v<hver> exists (caller: head_tagged_version), else empty.
 #   Prints ONE verdict line and returns 0 GO / 1 NO-GO / 2 UNKNOWN.
 #   GO requires POSITIVE EVIDENCE the gate ran: dogfood's terminal VERDICT line, AND a
 #   row count at or above the declared gate set, AND zero failures outside the rows that
@@ -34,8 +35,16 @@ ladder_unmeasurable_pre_bump() {
     [ "$(grep -E '^FAIL ' "$l" | grep -cvE '^FAIL  host [A-Za-z0-9_.-]+ has no CRUX receipt from the release binary -- ')" -eq 0 ]
 }
 
+# head_tagged_version <Cargo.toml> <git_dir>: prints the manifest's first `version = "x"` ONLY when tag vx exists there.
+head_tagged_version() {
+    local v
+    v=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$1" | head -n 1)
+    [ -n "$v" ] && git -C "$2" rev-parse -q --verify "refs/tags/v$v^{commit}" > /dev/null 2>&1 && printf '%s' "$v"
+    return 0
+}
+
 decide() {
-    local sha=$1 log=$2 rc=$3 lad=${4:-} rows fails declared name red dn vrow line deferred=''
+    local sha=$1 log=$2 rc=$3 lad=${4:-} hver=${5:-} rows fails declared name red dn vrow line deferred=''
 
     # Doctrine 4: crash / missing input / never-asked are UNKNOWN with reason=<why>, exit 2 --
     # never GO, never a fabricated FAIL. GO requires POSITIVE EVIDENCE that the gate
@@ -72,6 +81,14 @@ decide() {
     dn=$(grep -cE '^[[:space:]]*\[FAIL\] declared:' <<< "$red")
     vrow=0
     if grep -qE '^[[:space:]]*\[FAIL\] version-unpublished ' <<< "$red"; then vrow=1; fi
+    # Second proof of a pre-bump head: the head's version was TAGGED but never published (0.72.1: tag v0.72.1,
+    # absent from crates.io), so the version row is green and vrow stays 0 although the head is still pre-bump.
+    # Needs BOTH the caller's tag proof AND the version row's positive absence evidence (HTTP 200, index parsed;
+    # a 404/down row never matches). It only widens the ladder deferral, never the version row.
+    if [ "$vrow" -eq 0 ] && [ -n "$hver" ] \
+       && grep -qE "^[[:space:]]*\[ OK \] version-unpublished +${hver//./\\.} absent from the crates\.io index \(consulted directly, HTTP 200, index parsed" "$log"; then
+        vrow=2
+    fi
     fails=0
     while IFS= read -r line; do
         [ -n "$line" ] || continue
@@ -79,7 +96,7 @@ decide() {
         case "$name" in
             version-unpublished) continue ;;
             declared:check_model_ladder)
-                if [[ "$line" == *' -- SCOPED: crux-smoke '* ]] && [ "$vrow" -eq 1 ] \
+                if [[ "$line" == *' -- SCOPED: crux-smoke '* ]] && [ "$vrow" -ge 1 ] \
                    && ladder_unmeasurable_pre_bump "$lad"; then
                     deferred=check_model_ladder; continue
                 fi ;;
@@ -257,6 +274,41 @@ if [ "${1:-}" = "--self-test" ]; then
       grep '^RED ' "$d/lad.log"; } > "$d/lad20.log"
     v=$(dec "$d/d5.log" "$d/lad20.log"); case "$v" in NO-GO*) ok "a stray FAIL row ahead of 20000 host rows -> NO-GO";; *) nok "case 20 (SIGPIPE) -> '$v'";; esac
 
+    # T2L-1..8. head's version tagged but never published (0.72.1): version row GREEN, ladder row scoped-red.
+    VOK='  [ OK ] version-unpublished        0.72.1 absent from the crates.io index (consulted directly, HTTP 200, index parsed; pre-publish)'
+    mkred "$d/t1.log" 8 1 "$LROW" "$VOK"
+    dect() { decide abc "$1" 1 "$d/lad.log" "${2-0.72.1}"; }
+    v=$(dect "$d/t1.log"); rc=$?
+    [ "$v" = 'GO abc dogfood_rc=1 rows=11 declared=9 fails_excluding_version_row=0 deferred_to_T1=check_model_ladder' ] && [ "$rc" -eq 0 ] \
+        && ok "tagged-unpublished head + scoped ladder row -> GO, deferred_to_T1 named" || nok "T2L-1 -> '$v' rc=$rc"
+    v=$(dect "$d/t1.log" ''); case "$v" in NO-GO*) ok "no tag proof -> NO-GO";; *) nok "T2L-2 -> '$v'";; esac
+    mkred "$d/t3.log" 8 1 "$LROW" '  [ OK ] version-unpublished        0.72.1 absent from the crates.io index (crate not found, HTTP 404)'
+    v=$(dect "$d/t3.log"); case "$v" in NO-GO*) ok "tagged but absence not positively read -> NO-GO";; *) nok "T2L-3 -> '$v'";; esac
+    mkred "$d/t4.log" 8 1 "$LROW"
+    v=$(dect "$d/t4.log"); case "$v" in NO-GO*) ok "tagged, no version row at all -> NO-GO";; *) nok "T2L-4 -> '$v'";; esac
+    v=$(decide abc "$d/t1.log" 1 "$d/lad11.log" 0.72.1); case "$v" in NO-GO*) ok "tagged-unpublished + wrong-sha CRUX red -> NO-GO";; *) nok "T2L-5 -> '$v'";; esac
+    mkred "$d/t6.log" 7 2 "$LROW" '  [FAIL] declared:check_perf041_marker scripts/check_perf041_marker.sh exit=1 — stale' "$VOK"
+    v=$(dect "$d/t6.log"); case "$v" in NO-GO*) ok "tagged-unpublished + another declared red -> NO-GO";; *) nok "T2L-6 -> '$v'";; esac
+    # T2L-7. F1: tag v0.72.1 but the OK row names 9.9.9 (or a dot-wildcard twin 0x72x1) -> NO-GO
+    mkred "$d/t7.log" 8 1 "$LROW" "${VOK/0.72.1/9.9.9}"
+    v=$(dect "$d/t7.log"); case "$v" in NO-GO*) ok "tag v0.72.1 + OK row for 9.9.9 -> NO-GO";; *) nok "T2L-7a -> '$v'";; esac
+    mkred "$d/t7b.log" 8 1 "$LROW" "${VOK/0.72.1/0x72x1}"
+    v=$(dect "$d/t7b.log"); case "$v" in NO-GO*) ok "dots in the version are literal -> NO-GO";; *) nok "T2L-7b -> '$v'";; esac
+    # T2L-7c (M7). a row for 10.72.1 must NOT satisfy head 0.72.1 (the version must follow the padding space)
+    mkred "$d/t7c.log" 8 1 "$LROW" "${VOK/ 0.72.1/ 10.72.1}"
+    v=$(dect "$d/t7c.log"); case "$v" in NO-GO*) ok "OK row for 10.72.1 vs head 0.72.1 -> NO-GO";; *) nok "T2L-7c -> '$v'";; esac
+    # T2L-8. the caller's derivation: tag present -> version; tag absent / no version line -> empty
+    mkdir "$d/tg" && printf '[workspace.package]\nversion = "0.72.1"\n[package]\nversion = "9.9.9"\n' > "$d/tg/Cargo.toml"
+    git -C "$d/tg" init -q && git -C "$d/tg" -c user.name=t -c user.email=t@t commit -q --allow-empty -m x
+    v=$(head_tagged_version "$d/tg/Cargo.toml" "$d/tg"); [ -z "$v" ] && ok "no tag -> empty" || nok "T2L-8a -> '$v'"
+    git -C "$d/tg" tag v0.72.1
+    v=$(head_tagged_version "$d/tg/Cargo.toml" "$d/tg"); [ "$v" = 0.72.1 ] && ok "tag v0.72.1 exists -> 0.72.1" || nok "T2L-8b -> '$v'"
+    # T2L-8d (M8). a BRANCH named v0.72.1 is not the tag: refs/tags/ must be required
+    git -C "$d/tg" tag -d v0.72.1 > /dev/null && git -C "$d/tg" branch v0.72.1
+    v=$(head_tagged_version "$d/tg/Cargo.toml" "$d/tg"); [ -z "$v" ] && ok "branch v0.72.1 is not the tag -> empty" || nok "T2L-8d -> '$v'"
+    printf 'name = "x"\n' > "$d/tg/nov.toml"
+    v=$(head_tagged_version "$d/tg/nov.toml" "$d/tg"); [ -z "$v" ] && ok "no version line -> empty" || nok "T2L-8c -> '$v'"
+
     # 21-25. t2_pick (#5082): the commit judged is the one the producer measured, never main's head
     c1=$(printf 'c%039d' 1); c2=$(printf 'c%039d' 2); c3=$(printf 'c%039d' 3); br=$(printf 'b%039d' 9)
     printf '%s\n' "$c3" "$c2" "$c1" > "$d/fp"
@@ -333,6 +385,7 @@ bash scripts/dogfood.sh --phase pre-publish > "$AP/preflight-$sha.log" 2>&1; rc=
 bash scripts/check_model_ladder.sh > "$AP/preflight-$sha.ladder.log" 2>&1
 # The verdict is decided by decide() above -- the same function the --self-test case table
 # exercises, so the fixtures judge the code this path actually runs.
-decide "$sha" "$AP/preflight-$sha.log" "$rc" "$AP/preflight-$sha.ladder.log" > "$AP/preflight-$sha.verdict"
+hver=$(head_tagged_version Cargo.toml "$REPO_ROOT")
+decide "$sha" "$AP/preflight-$sha.log" "$rc" "$AP/preflight-$sha.ladder.log" "$hver" > "$AP/preflight-$sha.verdict"
 printf '%s\n' "$sha" > "$AP/preflight.commit"
 cat "$AP/preflight-$sha.verdict"; grep -E '^\s*\[FAIL\]' "$AP/preflight-$sha.log" | cut -c1-160
