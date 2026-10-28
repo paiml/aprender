@@ -26618,3 +26618,84 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6390
+- id: PMAT-6449
+  github_issue: 6449
+  item_type: task
+  title: 'ci(mq): merge_group lanes take the plain clean-room seats, not uncertified mq (A-C4)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:30:00Z
+  updated: 2026-10-27T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the four merge_group runs-on lists in ci.yml (mg-reuse-wt, x86-main, guards, workspace-test-shard); determinism (ARM64) is untouched read exactly [self-hosted, Linux, X64, clean-room]; the PR path is unchanged'
+  - 'ci_mg_reuse.sh --self-test pins the plain lane and kills the mutants that put mq back (x86-main, guards, shard, mg-reuse-wt) or add a third label'
+  - 'no runner label, runner group or ruleset change'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Operator order 2026-10-27: merge_group shards ran on kfocus-mq/-mq-2, which carry only the mq label and are not certified clean-room (A-C4).
+    Operator order (AC-1352-SEL): the lane is exactly [self-hosted, Linux, X64, clean-room]; the build label is dropped so any certified clean-room seat can take a queue entry.
+- id: PMAT-6450
+  github_issue: 6450
+  item_type: task
+  title: 'PVB-S: land PVB-001 v1.3 spec (proof-code bridge)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-27T11:45:00Z
+  updated: 2026-10-27T11:45:00Z
+  spec: docs/specifications/PVB-001-proof-code-bridge.md
+  acceptance_criteria:
+  - 'docs/specifications/PVB-001-proof-code-bridge.md is byte-identical to the handoff file (sha256 f127e2d95108f8ac5da455921d2c96696e79f67cee87164cc51057f7f8ee389c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: null
+- id: PMAT-6471
+  github_issue: 6471
+  item_type: task
+  title: 'release-reconcile: milestones must reflect releases (design)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T12:30:00Z
+  updated: 2026-10-27T12:30:00Z
+  spec: docs/specifications/release-reconcile.md
+  acceptance_criteria:
+  - 'Run grep -E "^## (Rules|Drift classes|GATE / LAB|Falsifiers)" docs/specifications/release-reconcile.md: 4 lines, one per named section'
+  - 'Run gh issue view 6471: the design PR cites it and the code follows only after a non-author sign-off'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 3998
+- id: PMAT-6474
+  github_issue: 6474
+  item_type: task
+  title: 'ci(lab): kfocus-shadow-lab selector reaches the kfocus seats (AC-1430-SAT)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:30:00Z
+  updated: 2026-10-27T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'kfocus-shadow-lab.yml runs-on is [self-hosted, Linux, X64, mq], matching kfocus-mq and kfocus-mq-2'
+  - 'dispatch-only trigger unchanged; no runner label, group or ruleset change'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    The old selector named a kfocus label no runner carries, so the lab could never run (AC-1430-SAT).
