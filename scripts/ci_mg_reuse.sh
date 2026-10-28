@@ -690,12 +690,11 @@ STUB
   poolrows() { # poolrows WF -> one line per violated pool row
     local j l want
     local plain="runs-on: [self-hosted, Linux, X64, clean-room]"
-    local lane="runs-on: \${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-    for j in x86-main x86-main-advisories workspace-test-shard; do
+    for j in x86-main x86-main-advisories workspace-test-shard guards; do
       l=$(awk -v j="  $j:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null | grep -m1 '^    runs-on:' | sed -E 's/^ +//; s/ +#.*$//')
-      want=$plain; case $j in x86-main | workspace-test-shard) want=$lane ;; esac
+      want=$plain
       if [ "$l" != "$want" ]; then
-        echo "$j does not land on the clean-room pool (mq on merge_group for x86-main/workspace-test-shard) (runs-on: $l)"; fi
+        echo "$j does not land on the clean-room pool (runs-on: $l)"; fi
     done
   }
   pr=$(poolrows "$wf")
@@ -711,10 +710,10 @@ STUB
   poolmut pool-back-on-pr-only "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^(    runs-on: \[.*)\]/\1, pr-only]/}'
   poolmut pool-advisories-takes-mq "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^(    runs-on: \[.*)\]/\1, mq]/}'
   poolmut pool-advisories-event-conditional "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: ${{ github.event_name == '"'"'merge_group'"'"' \&\& fromJSON('"'"'["clean-room"]'"'"') || fromJSON('"'"'["clean-room"]'"'"') }}/}'
-  poolmut mq-lane-lost-on-x86-main "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"mq"/"clean-room"/}'
-  poolmut mq-lane-dropped-on-shard "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: [self-hosted, Linux, X64, clean-room]/}'
-  poolmut pr-path-takes-mq "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\].\)/|| fromJSON('"'"'["self-hosted","Linux","X64","mq"]'"'"')/}'
-  poolmut mq-lane-third-label "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"X64","mq"/"X64","mq","pr-only"/}'
+  poolmut mq-lane-uncertified-seat "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/clean-room\]/mq]/}'
+  poolmut mq-lane-uncertified-seat-shard "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/clean-room\]/mq]/}'
+  poolmut mq-lane-uncertified-seat-guards "does not land on the clean-room pool" '/^  guards:$/,/^    steps:/{s/clean-room\]/mq]/}'
+  poolmut third-label-on-x86-main "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/clean-room\]/clean-room, build]/}'
 
   # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
   # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips
@@ -738,8 +737,8 @@ STUB
         # the marker must prove the shards ran: it needs them and its if requires their success (else a run with skipped shards owns it)
         if (jneeds["workspace-test-ran"] !~ /workspace-test-shard/) print "workspace-test-ran does not need workspace-test-shard: the marker no longer proves the shards ran"
         if (jif["workspace-test-ran"] !~ /needs\.workspace-test-shard\.result == .success./) print "workspace-test-ran if lacks the shard success clause: skipped or failed shards would still own the marker"
-        # the reuse lookup gates every queue entry shard, so it shares their lane (mq), never the PR clean-room pool
-        if (jrun["mg-reuse-wt"] !~ /"mq"/) print "mg-reuse-wt is not on the mq lane: it would queue behind PR work ahead of every shard"
+        # the reuse lookup gates every queue entry shard, so it shares their lane: the plain clean-room seats
+        if (jrun["mg-reuse-wt"] !~ /clean-room\]/ || jrun["mg-reuse-wt"] ~ /mq|build|pr-only/) print "mg-reuse-wt is not on the plain clean-room lane: it would queue off the certified seats"
         n = split("x86-main determinism x86-main-advisories ci-gate gate", must, " ")
         for (i = 1; i <= n; i++) {
           if (!(must[i] in seen)) print "job " must[i] " is missing from the workflow"
@@ -772,7 +771,7 @@ STUB
   mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:\n    needs: [receipt-judge]#'
   mgmut ran-marker-drops-shard-needs "workspace-test-ran does not need workspace-test-shard" '/^  workspace-test-ran:$/,/^    runs-on:/{/^    needs: \[workspace-test-shard\]$/d}'
   mgmut ran-marker-if-drops-shard-result "workspace-test-ran if lacks the shard success clause" "/^  workspace-test-ran:\$/,/^    runs-on:/{s/ \&\& needs.workspace-test-shard.result == 'success'//}"
-  mgmut mg-reuse-wt-leaves-mq-lane "mg-reuse-wt is not on the mq lane" '/^  mg-reuse-wt:$/,/^    timeout-minutes:/{s/,"mq"\]/,"clean-room"]/}'
+  mgmut mg-reuse-wt-leaves-clean-room "mg-reuse-wt is not on the plain clean-room lane" '/^  mg-reuse-wt:$/,/^    timeout-minutes:/{s/clean-room\]/mq]/}'
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every
