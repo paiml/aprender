@@ -22,9 +22,15 @@
 #                The readiness path (policy 0) is not supported here.
 #   cert         evidence/crux/<ver>/prompt-certification.json exists at --sha and parses
 #   cleanroom, models, dryrun
-#                DIR/<lane>.json is {"lane":"<lane>","sha":"<--sha>","status":"green"} for the lanes
-#                clean-room, models (CRUX smoke GO), publish-dry-run. Missing, unreadable, red,
+#                DIR/<lane>.json is exactly ONE document {"lane","sha":"<--sha>","status":"green"} for
+#                clean-room, models, publish-dry-run. Missing, unreadable, two documents, red,
 #                not_measured, another lane or another sha: refuse. Absent is never green.
+#   cleanroom_run  clean-room also carries run_id (numeric), job "clean-room (aprender)", conclusion
+#                success, tested_shas exactly [<sha>] (autopilot cascade_cleanroom_at_tag's assertions)
+#   models_go    models also carries go "MODELS GO (CRUX smoke) on lambda and gx10 at <sha9>:" (the string
+#                cut_tag greps) and hosts [gx10, lambda]
+#   clean        no tracked change and no untracked file in --repo
+#   facade       root [package] version equals the workspace version (or version.workspace = true)
 #   coverage     scripts/release/tag_coverage_gate.sh --resolve <sha> (the existing coverage path) exits 0
 #
 # NEVER here: cargo build/test/publish, gh workflow/release, tag delete, force push. The crates.io
@@ -60,9 +66,15 @@ check_head() {
     local h
     h=$(G rev-parse HEAD 2> /dev/null) || die "$repo is not a git checkout"
     [ "$h" = "$sha" ] || die "the checkout HEAD ($h) is not --sha ($sha): check out the candidate first"
-    G diff --quiet HEAD -- 2> /dev/null || die "the checkout is not clean (tracked files differ from HEAD)"
 }
 check_head # CHK:head
+# clean: no tracked change and no untracked file (a fresh release worktree has neither); ignored files do not count
+check_clean() {
+    local st
+    st=$(G status --porcelain 2> /dev/null) || die "cannot read the checkout status: nothing is measured"
+    [ -z "$st" ] || die "the checkout is not clean (tracked changes or untracked files): $(printf '%s' "$st" | head -n 3 | tr '\n' ' ')"
+}
+check_clean # CHK:clean
 
 # onmain: --sha is on origin/main
 check_onmain() {
@@ -82,6 +94,18 @@ check_version() {
     [ -z "$want_tag" ] || [ "$want_tag" = "$tag" ] || die "--tag $want_tag does not match the workspace version tag $tag"
 }
 check_version # CHK:version
+
+# facade: the root [package] version is the workspace version (literal or version.workspace = true)
+check_facade() {
+    local fv
+    fv=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '
+        /^\[/ { s = ($0 ~ /^\[package\][[:space:]]*$/) }
+        s && /^version\.workspace[[:space:]]*=[[:space:]]*true/ { print "WORKSPACE"; exit }
+        s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
+    [ -n "$fv" ] || die "facade: the root [package] has no version at $sha"
+    [ "$fv" = WORKSPACE ] || [ "$fv" = "$ver" ] || die "facade: the root [package] version $fv is not the workspace version $ver"
+}
+check_facade # CHK:facade
 
 # never re-tag: absent locally and on origin
 check_tag_local() {
@@ -120,14 +144,31 @@ check_cert # CHK:cert
 
 # receipts: {"lane","sha","status":"green"} for exactly this sha
 [ -d "$rdir" ] || die "receipts directory '$rdir' does not exist"
+# Every receipt is read with jq -s: exactly ONE JSON document, so a second document cannot hide behind the first.
 receipt() {
     local lane=$1 f="$rdir/$1.json"
     [ -s "$f" ] || die "$lane receipt missing: $f"
-    jq -e --arg l "$lane" --arg s "$sha" '.lane == $l and .sha == $s and .status == "green"' "$f" > /dev/null 2>&1 \
-        || die "$lane receipt $f is unreadable, not for lane $lane, not bound to $sha, or not green (status: $(jq -r '.status // "absent"' "$f" 2> /dev/null || echo unreadable))"
+    jq -s -e --arg l "$lane" --arg s "$sha" 'length == 1 and (.[0] | .lane == $l and .sha == $s and .status == "green")' "$f" > /dev/null 2>&1 \
+        || die "$lane receipt $f is unreadable, not exactly one document, not for lane $lane, not bound to $sha, or not green"
+}
+# models: the same go-string autopilot cut_tag greps for, at this sha9, on both hosts
+receipt_models_go() {
+    jq -s -e --arg g "MODELS GO (CRUX smoke) on lambda and gx10 at ${sha:0:9}:" \
+        'length == 1 and (.[0] | .go == $g and ((.hosts // []) | sort) == ["gx10", "lambda"])' "$rdir/models.json" > /dev/null 2>&1 \
+        || die "models receipt does not carry 'MODELS GO (CRUX smoke) on lambda and gx10 at ${sha:0:9}:' with hosts gx10 and lambda"
+}
+# clean-room: what autopilot cascade_cleanroom_at_tag asserts: a run id, job 'clean-room (aprender)' concluded success,
+# and the tested-sha lines of that job are exactly the one sha
+receipt_cleanroom_run() {
+    jq -s -e --arg s "$sha" \
+        'length == 1 and (.[0] | (.run_id | tostring | test("^[0-9]+$")) and .job == "clean-room (aprender)" and .conclusion == "success" and .tested_shas == [$s])' \
+        "$rdir/clean-room.json" > /dev/null 2>&1 \
+        || die "clean-room receipt lacks a numeric run_id, job 'clean-room (aprender)' with conclusion success, or tested_shas exactly [$sha]"
 }
 receipt clean-room # CHK:cleanroom
+receipt_cleanroom_run # CHK:cleanroom_run
 receipt models # CHK:models
+receipt_models_go # CHK:models_go
 receipt publish-dry-run # CHK:dryrun
 
 # coverage: the existing path (coverage-nightly's receipt, judged by tag_coverage_gate.sh) before the tag

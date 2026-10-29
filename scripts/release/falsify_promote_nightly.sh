@@ -36,7 +36,7 @@ build_template() {
     cat > "$w/Cargo.toml" <<'TOML'
 [package]
 name = "facade"
-version = "9.9.9"
+version = "0.72.2"
 
 [workspace.dependencies]
 foo = { version = "1.0.0" }
@@ -70,7 +70,13 @@ SH
     git -C "$w" rev-parse HEAD > "$t/sha"
 }
 
-rcpt() { printf '{"lane":"%s","sha":"%s","status":"%s"}\n' "$1" "$3" "$2" > "$R/$1.json"; }
+rcpt() {
+    case "$1" in
+        clean-room) printf '{"lane":"clean-room","sha":"%s","status":"%s","run_id":"4242424242","job":"clean-room (aprender)","conclusion":"success","tested_shas":["%s"]}\n' "$3" "$2" "$3" > "$R/$1.json" ;;
+        models) printf '{"lane":"models","sha":"%s","status":"%s","hosts":["lambda","gx10"],"go":"MODELS GO (CRUX smoke) on lambda and gx10 at %s:"}\n' "$3" "$2" "${3:0:9}" > "$R/$1.json" ;;
+        *) printf '{"lane":"%s","sha":"%s","status":"%s"}\n' "$1" "$3" "$2" > "$R/$1.json" ;;
+    esac
+}
 all_green() { local lane; for lane in clean-room models publish-dry-run; do rcpt "$lane" green "$S"; done; }
 # bump: commit the working change in $W on main, push, and rebind S and every receipt to the new head
 bump() {
@@ -242,6 +248,66 @@ table() {
     mkdir -p "$W/evidence/crux/0.60.0" && cp "$W/evidence/crux/0.72.2/prompt-certification.json" "$W/evidence/crux/0.60.0/"
     bump "old version"
     row "a version the standing policy does not cover refused" 1 "policy" --sha "$S" --receipts "$R"
+
+
+    # ---- quorum findings: one document, the models go-string, the clean-room run, the facade, untracked files ----
+    for lane in clean-room models publish-dry-run; do
+        fx "twodoc-rg-$lane"
+        { printf '{"lane":"%s","sha":"%s","status":"red"}\n' "$lane" "$S"; cat "$R/$lane.json"; } > "$R/two"; mv "$R/two" "$R/$lane.json"
+        row "two-document $lane receipt (red then green) refused" 1 "$lane" --sha "$S" --receipts "$R"
+        fx "twodoc-gr-$lane"
+        { cat "$R/$lane.json"; printf '{"lane":"%s","sha":"%s","status":"red"}\n' "$lane" "$S"; } > "$R/two"; mv "$R/two" "$R/$lane.json"
+        row "two-document $lane receipt (green then red) refused" 1 "$lane" --sha "$S" --receipts "$R"
+    done
+    fx mgo-sha
+    jq --arg g "MODELS GO (CRUX smoke) on lambda and gx10 at 123456789:" '.go = $g' "$R/models.json" > "$R/m" && mv "$R/m" "$R/models.json"
+    row "models go-string at another sha9 refused" 1 "models" --sha "$S" --receipts "$R"
+    fx mgo-none
+    jq 'del(.go)' "$R/models.json" > "$R/m" && mv "$R/m" "$R/models.json"
+    row "models receipt without the go-string refused (a bare green is not the gate)" 1 "models" --sha "$S" --receipts "$R"
+    fx mgo-host
+    jq --arg g "MODELS GO (CRUX smoke) on lambda at ${S:0:9}:" '.go = $g | .hosts = ["lambda"]' "$R/models.json" > "$R/m" && mv "$R/m" "$R/models.json"
+    row "models receipt for one host only refused" 1 "models" --sha "$S" --receipts "$R"
+    fx mgo-host2
+    jq '.hosts = ["lambda"]' "$R/models.json" > "$R/m" && mv "$R/m" "$R/models.json"
+    row "models hosts list missing gx10 refused" 1 "models" --sha "$S" --receipts "$R"
+    fx cr-norun
+    jq 'del(.run_id)' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+    row "clean-room receipt without a run id refused" 1 "clean-room" --sha "$S" --receipts "$R"
+    fx cr-badrun
+    jq '.run_id = "abc"' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+    row "clean-room run id that is not a number refused" 1 "clean-room" --sha "$S" --receipts "$R"
+    fx cr-concl
+    jq '.conclusion = "failure"' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+    row "clean-room job conclusion not success refused" 1 "clean-room" --sha "$S" --receipts "$R"
+    fx cr-job
+    jq '.job = "clean-room (other)"' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+    row "clean-room job that is not clean-room (aprender) refused" 1 "clean-room" --sha "$S" --receipts "$R"
+    fx cr-tested
+    jq '.tested_shas = ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+    row "clean-room that tested another sha refused" 1 "clean-room" --sha "$S" --receipts "$R"
+    fx cr-tested2
+    jq --arg s "$S" '.tested_shas = [$s, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+    row "clean-room that tested more than exactly the sha refused" 1 "clean-room" --sha "$S" --receipts "$R"
+
+    fx facade
+    sed -i '0,/^version = "0.72.2"/s//version = "9.9.9"/' "$W/Cargo.toml"
+    bump "facade version differs"
+    row "root [package] version differing from [workspace.package] refused" 1 "facade" --sha "$S" --receipts "$R"
+    fx facade-ws
+    printf '[package]\nname = "facade"\nversion.workspace = true\n\n[workspace.package]\nversion = "0.72.2"\n' > "$W/Cargo.toml"
+    bump "facade inherits"
+    row "[package] version.workspace = true is accepted" 0 "PROMOTE" --sha "$S" --receipts "$R"
+    fx facade-none
+    printf '[package]\nname = "facade"\n\n[workspace.package]\nversion = "0.72.2"\n' > "$W/Cargo.toml"
+    bump "facade no version"
+    row "[package] without any version refused" 1 "facade" --sha "$S" --receipts "$R"
+
+    fx untracked
+    printf 'x\n' > "$W/stray.txt"
+    row "untracked file in the checkout refused" 1 "not clean" --sha "$S" --receipts "$R"
+    row "untracked file with --execute refused" 1 "not clean" --sha "$S" --receipts "$R" --execute
+    holds "untracked --execute made no tag" no_local_tag
 
     # ---- (c) --execute ----
     fx exec
