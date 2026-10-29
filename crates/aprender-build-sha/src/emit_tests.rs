@@ -97,19 +97,53 @@ fn run(bin: &Path, pkg: &Path, ceiling: Option<&Path>, env: &[(&str, &str)]) -> 
         .env("OUT_DIR", &out_dir)
         .env("CARGO_PKG_VERSION", "9.9.9")
         .env_remove("APR_GIT_SHA_OVERRIDE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
         .env(
             "GIT_CEILING_DIRECTORIES",
             ceiling.unwrap_or_else(|| Path::new("/nonexistent")),
         )
         .envs(env.iter().copied());
+    scrub_git_env(&mut cmd);
     let out = cmd.output().expect("run build script");
     String::from_utf8_lossy(&out.stdout)
         .lines()
         .find_map(|l| l.strip_prefix("cargo:rustc-env=APR_GIT_SHA="))
         .unwrap_or("<none>")
         .to_string()
+}
+
+/// git's own test knob, in a config-free environment so a runner's global or system
+/// `safe.directory=*` cannot mask it: makes git see another owner.
+const OTHER_OWNER: [(&str, &str); 3] = [
+    ("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1"),
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_SYSTEM", "/dev/null"),
+];
+
+/// Precondition of the `foreign-owner` row: plain git, under [`OTHER_OWNER`], must refuse a repo
+/// it owns. There is no skip and no third state: a git that does not refuse (no knob, or a config
+/// source that still leaks past the scrub) fails the test, naming what to look at.
+fn assert_foreign_owner_simulable() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    git(tmp.path(), &["init", "-q"]);
+    let mut probe = Command::new("git");
+    probe
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(tmp.path())
+        .envs(OTHER_OWNER);
+    scrub_git_env(&mut probe);
+    assert!(
+        !probe.output().expect("git").status.success(),
+        "cannot simulate a checkout owned by another user: this git ignores GIT_TEST_ASSUME_DIFFERENT_OWNER \
+         (no knob, or a config source leaked past the scrub: see `git config --show-origin safe.directory`)"
+    );
+}
+
+/// Drop every environment source that could hand git a `safe.directory` or a repo of its own.
+fn scrub_git_env(cmd: &mut Command) {
+    cmd.env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_CONFIG_COUNT")
+        .env_remove("GIT_CONFIG_PARAMETERS");
 }
 
 /// The case table. Returns the names of the rows that landed wrong (empty = all as expected).
@@ -188,17 +222,8 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
     );
     // the release lane: root in a container over the runner-owned checkout. git's own test knob
     // makes it see another owner; the precondition proves plain git really refuses the repo here
-    let other_owner = [("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")];
-    let refused = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(&dev)
-        .envs(other_owner)
-        .output();
-    assert!(
-        !refused.expect("git").status.success(),
-        "cannot simulate a checkout owned by another user: this git ignores GIT_TEST_ASSUME_DIFFERENT_OWNER"
-    );
-    expect("foreign-owner", run(&bin, &dev, None, &other_owner), &head);
+    assert_foreign_owner_simulable();
+    expect("foreign-owner", run(&bin, &dev, None, &OTHER_OWNER), &head);
     wrong
 }
 
