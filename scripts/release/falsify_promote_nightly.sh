@@ -290,7 +290,8 @@ table() {
     jq 'del(.go)' "$R/models.json" > "$R/m" && mv "$R/m" "$R/models.json"
     row "models receipt without the go-string refused (a bare green is not the gate)" 1 "models" --sha "$S" --receipts "$R"
     fx mgo-host
-    jq --arg g "MODELS GO (CRUX smoke) on lambda at ${S:0:9}:" '.go = $g | .hosts = ["lambda"]' "$R/models.json" > "$R/m" && mv "$R/m" "$R/models.json"
+    jq --arg g "MODELS GO (CRUX smoke) on lambda at ${S:0:9}:" '.go = $g | .hosts = ["lambda"]' "$R/models.json" > "$R/m"
+    mv "$R/m" "$R/models.json"
     row "models receipt for one host only refused" 1 "models" --sha "$S" --receipts "$R"
     fx mgo-host2
     jq '.hosts = ["lambda"]' "$R/models.json" > "$R/m" && mv "$R/m" "$R/models.json"
@@ -311,7 +312,8 @@ table() {
     jq '.tested_shas = ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
     row "clean-room that tested another sha refused" 1 "clean-room" --sha "$S" --receipts "$R"
     fx cr-tested2
-    jq --arg s "$S" '.tested_shas = [$s, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+    jq --arg s "$S" '.tested_shas = [$s, "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]' "$R/clean-room.json" > "$R/m"
+    mv "$R/m" "$R/clean-room.json"
     row "clean-room that tested more than exactly the sha refused" 1 "clean-room" --sha "$S" --receipts "$R"
 
     fx facade
