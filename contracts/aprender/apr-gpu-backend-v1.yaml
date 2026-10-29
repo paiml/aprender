@@ -279,6 +279,18 @@ falsification_tests:
     A forced-GPU apr code run that fell back to the CPU prints the same
     document as one that stayed on the GPU, and a ladder code cell cannot
     prove CUDA (#3719)
+- id: FALSIFY-GPU-011
+  rule: A dense GGUF whose CUDA init fails prints one stderr CPU-fallback line in text mode
+  prediction: |
+    When OwnedQuantizedModelCuda init fails for a dense GGUF, `apr run` prints one
+    line starting with CUDA_FALLBACK_LOG_PREFIX and containing "falling back to CPU"
+    and the init error, with or without --verbose (the qwen35 path already does, via
+    QWEN35_GPU_FALLBACK_PREFIX).
+  test: |
+    cargo test -p aprender-serve --lib --features cuda cuda_init_failure_names_the_cpu_fallback
+  if_fails: >-
+    A dense GGUF run on a box whose CUDA init fails reports nothing and reads as a
+    GPU run at CPU speed (#4977)
 
 kani_harnesses:
 - id: KANI-GPU-001

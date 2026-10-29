@@ -497,6 +497,12 @@ fn try_gguf_gpu_generate(
     ))
 }
 
+/// #4977: the one stderr line for a dense GGUF whose CUDA init failed, so a CPU run is
+/// never mistaken for a GPU one. Pure so it is testable without a device.
+fn cuda_init_fallback_msg(err: &dyn std::fmt::Display) -> String {
+    format!("{CUDA_FALLBACK_LOG_PREFIX}, falling back to CPU: CUDA init failed: {err}")
+}
+
 /// The dense model on the device, validated (#3568 PR 3: the unconstrained and the
 /// constrained run share it): uploaded with a KV that holds the whole turn, then the F2
 /// first-token check. `Err(model)` hands the model back for the CPU: the device could not
@@ -518,9 +524,8 @@ fn cuda_dense_model(
     let mut cuda_model = match OwnedQuantizedModelCuda::with_max_seq_len(model, 0, kv_len) {
         Ok(m) => m,
         Err(e) => {
-            if verbose {
-                eprintln!("Backend: CPU (GPU unavailable: {})", e);
-            }
+            // #4977: printed in text mode too, not only under `--verbose`.
+            eprintln!("{}", cuda_init_fallback_msg(&e));
             // Model is preserved inside CudaInitError for CPU fallback.
             // Boxed to keep the `Err` variant small (clippy::result_large_err).
             return Err(Box::new(e.into_model()));
@@ -1382,7 +1387,21 @@ fn try_safetensors_cuda_inference(
 #[cfg(test)]
 mod tests {
     use super::run_report::FinishReason;
-    use super::{wgpu_greedy_decode, wgpu_reply, CUDA_FALLBACK_LOG_PREFIX, WGPU_FALLBACK_LOG_PREFIX};
+    use super::{
+        cuda_init_fallback_msg, wgpu_greedy_decode, wgpu_reply, CUDA_FALLBACK_LOG_PREFIX,
+        WGPU_FALLBACK_LOG_PREFIX,
+    };
+
+    /// #4977: a dense GGUF whose CUDA init fails must say so in text mode, not only under
+    /// `--verbose`; the line carries the shared prefix, the reason and the CPU destination.
+    #[test]
+    fn cuda_init_failure_names_the_cpu_fallback() {
+        let msg = cuda_init_fallback_msg(&"CUDA_ERROR_NO_DEVICE");
+        assert!(msg.starts_with(CUDA_FALLBACK_LOG_PREFIX), "{msg}");
+        assert!(msg.contains("CUDA_ERROR_NO_DEVICE"), "{msg}");
+        assert!(msg.contains("falling back to CPU"), "{msg}");
+        assert!(!msg.contains('\n'), "one line: {msg}");
+    }
 
     /// #4264: a fake KV-cached forward that records every (token, position) it
     /// is fed and returns the position as the "hidden state".
