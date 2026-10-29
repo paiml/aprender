@@ -456,7 +456,7 @@ proof_obligations:
     statement: "gate and ci / gate share one MG-REUSE-VERDICT block that reuses only on x86=det=1 with mg-reuse and x86-main-advisories success on merge_group or on a push to main (#4748), and fails on a split, flags set on any other event or by a failed mg-reuse, or a reused x86-main whose advisory job did not succeed."
     discharged_by: falsification_tests[10]
   - id: RC-OB-012
-    statement: "ci.yml wires the rule: mg-reuse runs only on merge_group and on a push to main; x86-main and determinism need it and skip only on their own flag; mac-check is LAB and is not a ci.yml job (Q6 quorum, C324), so the mac flag is computed but read by no ci.yml job; x86-main-advisories runs exactly when x86 = 1; gate needs mg-reuse and x86-main-advisories (mg-reuse-self-test is LAB, #6193)."
+    statement: "ci.yml wires the rule: mg-reuse runs only on merge_group and on a push to main; x86-main and determinism need it and skip only on their own flag; mac-check is LAB and is not a ci.yml job (Q6 quorum, C324), so the mac flag is computed but read by no ci.yml job; x86-main-advisories runs exactly when x86 = 1; gate needs mg-reuse, x86-main-advisories and mg-reuse-self-test."
     discharged_by: falsification_tests[11]
   - id: RC-OB-013
     statement: "On a push to main, x86=det=1 only when the merge_group run on the pushed single-parent commit S (queue base = S's parent = before) completed, RAN x86-main and determinism (x86-main-advisories skipped) and passed them, gate and ci / gate; mac is never reused on a push; every other input and every failed lookup gives 0."
@@ -710,7 +710,7 @@ falsification_tests:
       the script could be correct and never consulted, or consulted by a
       job whose skip no aggregator checks
     mutation: >-
-      remove `mg-reuse` from gate's needs in a copy of ci.yml and
+      remove `mg-reuse-self-test` from gate's needs in a copy of ci.yml and
       run the self-test with --workflow on the copy; it must turn RED.
 
   - id: RC-F-013

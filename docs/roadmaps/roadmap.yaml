@@ -26033,27 +26033,6 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
-- id: PMAT-6193
-  github_issue: 6193
-  item_type: task
-  title: "Retire mg-reuse-self-test from gate; it runs nightly in mg-reuse-lab-nightly (infra#2327)"
-  status: planned
-  priority: medium
-  assigned_to: null
-  created: 2026-10-23T18:00:00Z
-  updated: 2026-10-23T18:00:00Z
-  spec: null
-  acceptance_criteria:
-  - 'ci.yml has no mg-reuse-self-test job; gate.needs and gate''s verdict block no longer read it; ci_mg_reuse.sh --self-test fails if the job or a gate read of it comes back (three planted mutants red)'
-  - 'mg-reuse-lab-nightly.yml (own workflow, schedule + dispatch) runs ci_mg_reuse.sh --self-test and check_ci_wait_cancel.sh (self-test and bare) as a LAB job; a red opens or updates the one ticket owned by aprender-w5382, then stays silent'
-  - 'apr-required-checks-v1 RC-F-012 mutation and release-ready-v1 RR-M13 no longer name the retired job; the draft-gate invariant table drops its row and its two anchored mutants (18 to 16)'
-  phases: []
-  subtasks: []
-  estimated_effort: null
-  labels:
-  - kind:code
-  notes: null
-  epic: null
 - id: PMAT-6199
   github_issue: 6199
   item_type: task

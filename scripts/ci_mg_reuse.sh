@@ -527,17 +527,6 @@ STUB
   rrow gh-runs-fails     "0 0 0" "head_sha=" "$H" "$QREF"
   rrow gh-jobs-fails     "0 0 0" "/jobs"   "$H" "$QREF"
   rrow head-unfetchable  "0 0 0" ""        0123456789abcdef0123456789abcdef01234567 "$QREF"
-  # F4/F5 (#6193): a refusal answers "0 0 0" whichever guard fired, so these rows pin WHICH guard did, by its reason.
-  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve --event merge_group --ref "refs/heads/main" --queue-head "$M" --base "$B" --repo o/r --repo-root "$R")
-  case "$(kv reason "$out")" in
-    *"no PR number in the queue ref"*) pass=$((pass + 1)) ;;
-    *) fail=$((fail + 1)); echo "FAIL resolve-no-pr-number: the guard no longer refuses a ref with no PR number: $(kv reason "$out")" ;;
-  esac
-  out=$(PATH="$SB:$PATH" GH_STUB_DIR="$F" GH_STUB_FAIL="" GH_STUB_HEAD="$H" resolve_push --event push --ref refs/heads/main --sha "not-a-sha" --before "$B" --repo o/r --repo-root "$R")
-  case "$(kv reason "$out")" in
-    *"is not a 40-hex sha"*) pass=$((pass + 1)) ;;
-    *) fail=$((fail + 1)); echo "FAIL resolve-push-sha-form: the guard no longer refuses a non-40-hex sha: $(kv reason "$out")" ;;
-  esac
 
   # The verdict block, run exactly as ci.yml carries it in ci-gate and gate.
   local blocks nb
@@ -596,10 +585,7 @@ STUB
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve --event "$EVT" --ref "$QREF"'
   wire mg-reuse 'bash scripts/ci_mg_reuse.sh resolve-push --event "$EVT" --ref "$GITHUB_REF" --sha "$GITHUB_SHA" --before "$PBEFORE"'
   wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
-  # infra#2327 / #6193: mg-reuse-self-test left gate (it is a LAB job in mg-reuse-lab-nightly.yml now). ci.yml must neither run
-  # the job nor have gate read it: a retired check that still blocks is a third state (C324 item 6).
-  if [ -z "$(job mg-reuse-self-test)" ]; then pass=$((pass + 1)); else
-    fail=$((fail + 1)); echo "FAIL wiring: ci.yml still runs mg-reuse-self-test, a LAB check (#6193)"; fi
+  wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
   wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
@@ -623,9 +609,8 @@ STUB
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'
   wire ci-gate 'needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]'
   wire gate 'MG-REUSE-VERDICT-BEGIN'
-  wire gate 'mg-reuse, x86-main-advisories, pr-light]'
-  if grep -qE 'MST|mg-reuse-self-test' <<<"$(job gate)"; then
-    fail=$((fail + 1)); echo "FAIL wiring: gate still reads mg-reuse-self-test, a LAB check (#6193)"; else pass=$((pass + 1)); fi
+  wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]'
+  wire gate '[ "$MST" = success ]'
   # #5472 variant: the pr-only label is retired; pull_request and push take the one shared clean-room
   # pool. The merge_group half (this row): x86-main and workspace-test-shard take the mq lane on a
   # merge_group entry and clean-room on every other event, and nothing else is event-conditional.

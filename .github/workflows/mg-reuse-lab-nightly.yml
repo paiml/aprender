@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   mg-reuse-self-test:
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 15
     permissions:
       contents: read
