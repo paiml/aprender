@@ -1,0 +1,20 @@
+- id: PMAT-4709
+  github_issue: 4709
+  item_type: task
+  title: 'CENSUS-RATCHET: entity-bound contracts never drop and rise every release'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T08:00:00Z
+  updated: 2026-10-27T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Run bash scripts/census_ratchet.sh: it prints GREEN (rc 0), bound never below the base and the unbound share never above it'
+  - 'Run pv lint contracts: Result: PASS; run pv census --format json contracts and read by_anchoring.class + instance as the bound count'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678

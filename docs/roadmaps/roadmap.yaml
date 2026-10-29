@@ -21587,7 +21587,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   github_issue: 3745
   item_type: task
   title: '#3745 S3: hand-list guard (LAB nightly) + hand-list migration'
-  status: planned
+  status: in_progress
   priority: medium
   assigned_to: null
   created: 2026-10-12T16:14:06Z
@@ -21599,7 +21599,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels:
   - kind:code
-  notes: null
+  notes: 'done_when evidence on main: (1) surface emitter: hidden `apr surface --json` (crates/apr-cli/src/surface.rs, surface_tests.rs dummy-flag test); (2) mutants 1 and 2: ont_release_readiness.rs issue_mutant_1_* and issue_mutant_2_* are RED naming the owed cell; (3) mutant 3: marker guard tests in surface_guard_tests.rs; mutant 4: hand_list_guard.rs, run nightly as LAB by guards-nightly.yml; (4) release_readiness.sh refuses a Pass over zero derived cells and prints cells=N in the ENFORCE PASS line; autopilot.sh and readiness-nightly.yml run it'
   epic: 3863
 - id: PMAT-3747
   github_issue: 3747
@@ -24403,6 +24403,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'SCOPE: scripts/release/publish_strict.sh, scripts/cascade-publish.sh (clean_room_gate gains an optional third argument, a pinned run id), scripts/check_cascade_clean_room_gate.sh (10 pinned rows), scripts/check_publish_strict_cleanroom.sh (new), contracts/publish-workspace-v1.yaml (PW-DOOR-005, FALSIFY-PUB-008). HOW IT IS MET: publish_strict.sh reads the recorded run id and loads clean_room_gate from the cascade script (the same extraction the existing guard uses), then calls it pinned to that one run. Pinned mode reads exactly that run through the runs API, refuses a run of another workflow, and never lists runs, so a green run elsewhere cannot stand in for a red recorded one. A missing, empty, non-numeric, unreadable, red or other-commit id stops the cascade before any upload. --plan is unchanged. MEASURED: check_publish_strict_cleanroom.sh runs the real publish_strict.sh against a fixture tag checkout and a stub gh and cargo. BEFORE (origin/main 645dc34101): 8 of 9 checks FAIL; the non-numeric, red, other-commit and unreadable ids all pass the door and stop later, on the B2-gpu id. AFTER: 9 of 9 hold; check_cascade_clean_room_gate.sh holds every row, including the 10 pinned ones.'
+- id: PMAT-4709
+  github_issue: 4709
+  item_type: task
+  title: 'CENSUS-RATCHET: entity-bound contracts never drop and rise every release'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T08:00:00Z
+  updated: 2026-10-27T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Run bash scripts/census_ratchet.sh: it prints GREEN (rc 0), bound never below the base and the unbound share never above it'
+  - 'Run pv lint contracts: Result: PASS; run pv census --format json contracts and read by_anchoring.class + instance as the bound count'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
 - id: PMAT-4715
   github_issue: 4715
   item_type: task
@@ -26013,6 +26033,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5510
+- id: PMAT-6199
+  github_issue: 6199
+  item_type: task
+  title: "LAB twin: mg-reuse-lab-nightly runs the reuse-key and fat-wait self-tests nightly (infra#2327)"
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T18:00:00Z
+  updated: 2026-10-23T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'mg-reuse-lab-nightly.yml triggers only on schedule and workflow_dispatch, has one job, and is in no PR, merge-queue or release path'
+  - 'its header names owner aprender-w5382 and the ticket; a red opens or updates the one ticket via scripts/lab_ticket.sh'
+  - 'ci_mg_reuse.sh --self-test and check_ci_wait_cancel.sh (self-test and bare) pass locally at the head, and the workflow steps run exactly those commands'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Post-merge obligation, not an AC of this PR: one workflow_dispatch on main, green, run URL recorded in #6194. It is a merge condition of #6194 (the retirement), not of this twin.'
+  epic: null
 - id: PMAT-6200
   github_issue: 6200
   item_type: task
@@ -26355,6 +26396,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
     missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; and the self-test's
     `exit 1` at L168 (was a survivor of the exit status alone: deleting it, with a failing row, exits 0; now caught because 849-idle-watchdog.cmd also fails when a `FAIL ` row appears in the output or the `all rows pass` line is missing; re-mutated: L168 `exit 1` deleted plus one broken row -> exit status 0, the .cmd line rc 1). `kill "$sp"` (two sites) and `kill "$gp"` were survivors (a leftover sleep holds a caller's pipe open: 8 s against 6 ms) and are now caught by three pipe-close rows that time the run through a command substitution; and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
     with the production line it checks.
+- id: PMAT-6306
+  github_issue: 6306
+  item_type: task
+  title: 'comparator-pin R7: anchor the frozen roadmap-base.yaml pool to the base-intro commit'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T23:20:00Z
+  updated: 2026-10-24T23:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'roadmap.yaml re-indented and re-pinned with an untouched roadmap-base.yaml stays green; a novel or re-cut base line is R1; the live-row pool and the class filter each have a killed mutant'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Quorum 6303-R7 2/2: neither re-freezing the base (a waiver of rule 3) nor main-pinned lines. Pool = roadmap.yaml at 9e8f8ad8c7; base 18 lines == anchor 18 == main 18 (38afc7a5fac9). Lands before #6303.'
+  epic: null
 - id: PMAT-6360
   github_issue: 6360
   item_type: task
@@ -26734,6 +26794,240 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:docs
   notes: null
   epic: null
+- id: PMAT-6453
+  github_issue: 6453
+  item_type: task
+  title: 'PVB-0: preflight — PVL gate landed, public probe library, Float32 probe'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:43Z
+  updated: 2026-10-27T11:35:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6454
+  github_issue: 6454
+  item_type: task
+  title: 'PVB-1: pv bridge census'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:48Z
+  updated: 2026-10-27T11:35:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6455
+  github_issue: 6455
+  item_type: task
+  title: 'PVB-2: proof.bridge schema + typed rust: predicates'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:52Z
+  updated: 2026-10-27T11:35:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6456
+  github_issue: 6456
+  item_type: task
+  title: 'PVB-3a: pilot — five existing computable exact models bound'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:57Z
+  updated: 2026-10-27T11:35:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6457
+  github_issue: 6457
+  item_type: task
+  title: 'PVB-3b: author computable Q4_K scale/min unpacker model + theorem'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:02Z
+  updated: 2026-10-27T11:36:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6458
+  github_issue: 6458
+  item_type: task
+  title: 'PVB-4: Lean reference executable pv-ref'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:06Z
+  updated: 2026-10-27T11:36:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6459
+  github_issue: 6459
+  item_type: task
+  title: 'PVB-5: pv bridge diff — B3 + tracked bridge-summary.json'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:11Z
+  updated: 2026-10-27T11:36:11Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6460
+  github_issue: 6460
+  item_type: task
+  title: 'PVB-6: B2 — extend pv kani to generate from rust: predicates'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:15Z
+  updated: 2026-10-27T11:36:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6461
+  github_issue: 6461
+  item_type: task
+  title: 'PVB-7: L5 = B0∧B1∧B2∧B3, read from summaries'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:20Z
+  updated: 2026-10-27T11:36:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6462
+  github_issue: 6462
+  item_type: task
+  title: 'PVB-7b: pv bridge fresh — hash-only freshness for consumers'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:24Z
+  updated: 2026-10-27T11:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6463
+  github_issue: 6463
+  item_type: task
+  title: 'PVB-8: bridge step in provable-ladder (PVL EV-9), freshness + never-down'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:29Z
+  updated: 2026-10-27T11:36:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6464
+  github_issue: 6464
+  item_type: task
+  title: 'PVB-9: expand to D-3 (repeatable)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:33Z
+  updated: 2026-10-27T11:36:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6465
+  github_issue: 6465
+  item_type: task
+  title: 'PVB-10: spec-weakness sweep'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:38Z
+  updated: 2026-10-27T11:36:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
 - id: PMAT-6471
   github_issue: 6471
   item_type: task
@@ -26774,3 +27068,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: |-
     The old selector named a kfocus label no runner carries, so the lab could never run (AC-1430-SAT).
+- id: PMAT-6477
+  github_issue: 6477
+  item_type: task
+  title: 'ci(mq): merge_group workspace-test-shard count 3 until the fourth mq seat is online (AC-1520-SHARD3)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T15:30:00Z
+  updated: 2026-10-27T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ci/sections.yml workspace-test-shard-merge_group has 3 pins of 3; ci.yml merge_group arms are [1,2,3] and [3]; pull_request stays 4'
+  - 'check_shard_count_single_source.sh passes and goes red when either side drifts (self-test, 11 rows)'
+  - 'keep open: restore 4 when the fourth mq seat is online'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Operator order via arbiter-cop (NOAH-forjar-andon-1520Z): shard count follows the online mq seats.

@@ -1,0 +1,18 @@
+- id: PMAT-6453
+  github_issue: 6453
+  item_type: task
+  title: 'PVB-0: preflight — PVL gate landed, public probe library, Float32 probe'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:43Z
+  updated: 2026-10-27T11:35:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452

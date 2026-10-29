@@ -830,7 +830,7 @@ meta = {
         *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
         "thinking ON until #3723 adds an apr toggle",
         "consumer-brief context rungs (#3716) and each engine's max accepted context",
-        "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
+        "TTFT (run verb: only ollama reports a prefill_ms, which is a lower bound; llama-cli and apr print none) and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
     ],
 }
 json.dump(meta, open(out, "w"), indent=2)

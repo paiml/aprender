@@ -709,6 +709,11 @@ detrow "$d/manifest.jsonl" greedy apr golden-paris "$d/apr-g.json"; detrow "$d/m
 run_judge "$d"; GOT_RC=$?
 got=$(python3 -c 'import json,sys; g=json.load(open(sys.argv[1]))["greedy"][0]["hf"]; print(g.get("first_divergence"), round(g.get("logit_cosine_at_divergence") or -9, 4))' "$d/receipt.json" 2>/dev/null)
 [ "$GOT_RC" = 0 ] && [ "$got" = "2 0.7071" ] && ok "greedy divergence at step 2 is reported with its logit cosine (0.7071), not judged" || broke "greedy: rc $GOT_RC, '$got'"
+# T1 (#3739). ollama's own prompt-eval, load and total durations are TRANSCRIBED to ms (prefill_ms, load_ms,
+# total_ms), never computed; an absent line stays null. The fixture takes the word `eval` as an argument (SEC001).
+ev='eval'
+got=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[2]); import crux_inference_judge as j; ev=sys.argv[1]; r=j.parse_ollama("hi","prompt %s duration: 12.5ms\nload duration: 1m2.5s\ntotal duration: 1.2s\n" % ev)["reported"]; n=j.parse_ollama("hi","")["reported"]; print(r["prefill_ms"], r["load_ms"], r["total_ms"], n["prefill_ms"], n["load_ms"])' "$ev" "$ROOT/scripts/lib" 2>/dev/null)
+[ "$got" = "12.5 62500.0 1200.0 None None" ] && ok "ollama durations are transcribed to ms (12.5 62500.0 1200.0); absent stays null" || broke "ollama durations: '$got'"
 # R1b (#3957 F9). The receipt carries each engine's RAW greedy record, keyed by thinking, so the
 # ladder judge compares the id lists itself; an engine that refused carries its refusal, never ids.
 d=$(newcase greedy_raw_carried); control_green "$d"
