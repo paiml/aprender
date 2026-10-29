@@ -1,0 +1,9 @@
+[Unit]
+Description=N26 nightly promotion (receipt-gated; PMAT-5306)
+
+[Service]
+Type=oneshot
+# --execute still passes through every gate of promote_nightly.sh; state under the cop-inbox NVMe.
+ExecStart=/usr/bin/env bash %h/src/aprender-promote/scripts/release/promote_scheduler.sh --repo %h/src/aprender-promote --state /mnt/nvme-raid0/cop-inbox/promote-state --not-before 2026-10-31T06:00:00Z --dispatch-cleanroom --execute
+SuccessExitStatus=0 3
+TimeoutStartSec=3h
