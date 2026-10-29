@@ -97,13 +97,12 @@ fn run(bin: &Path, pkg: &Path, ceiling: Option<&Path>, env: &[(&str, &str)]) -> 
         .env("OUT_DIR", &out_dir)
         .env("CARGO_PKG_VERSION", "9.9.9")
         .env_remove("APR_GIT_SHA_OVERRIDE")
-        .env_remove("GIT_DIR")
-        .env_remove("GIT_WORK_TREE")
         .env(
             "GIT_CEILING_DIRECTORIES",
             ceiling.unwrap_or_else(|| Path::new("/nonexistent")),
         )
         .envs(env.iter().copied());
+    scrub_git_env(&mut cmd);
     let out = cmd.output().expect("run build script");
     String::from_utf8_lossy(&out.stdout)
         .lines()
@@ -120,22 +119,61 @@ const OTHER_OWNER: [(&str, &str); 3] = [
     ("GIT_CONFIG_SYSTEM", "/dev/null"),
 ];
 
-/// Does plain git, under [`OTHER_OWNER`], really refuse a repo it owns? Git 2.34.1 (the
-/// intel-clean-room seats) has no ownership check, so the `foreign-owner` row cannot be
-/// simulated there: it reports `not_measured` instead of passing or panicking.
+/// Does plain git, under [`OTHER_OWNER`], really refuse a repo it owns? Behaviour decides first;
+/// the version only classifies a non-refusal. A git older than 2.35.2 has no ownership check, so
+/// it never refuses a checkout and the #4110 failure cannot occur there: the row is unobservable,
+/// not waived, and is reported `not_measured` (stderr, and the file named by
+/// `EMIT_TESTS_NOT_MEASURED`). A git that has the check yet does not refuse is a leaked config
+/// source: that panics, as the old precondition did.
 fn foreign_owner_measurable() -> bool {
     static M: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *M.get_or_init(|| {
         let tmp = tempfile::tempdir().expect("tempdir");
         git(tmp.path(), &["init", "-q"]);
-        let refused = Command::new("git")
+        let mut probe = Command::new("git");
+        probe
             .args(["rev-parse", "--git-dir"])
             .current_dir(tmp.path())
-            .envs(OTHER_OWNER)
-            .output()
-            .expect("git");
-        !refused.status.success()
+            .envs(OTHER_OWNER);
+        scrub_git_env(&mut probe);
+        if !probe.output().expect("git").status.success() {
+            return true;
+        }
+        let raw = Command::new("git").arg("--version").output().expect("git");
+        let text = String::from_utf8_lossy(&raw.stdout).trim().to_string();
+        let nums: Vec<u32> = text
+            .split_whitespace()
+            .find_map(|w| w.chars().next().filter(char::is_ascii_digit).map(|_| w))
+            .unwrap_or("")
+            .split('.')
+            .map_while(|p| p.parse().ok())
+            .collect();
+        assert!(
+            nums.len() >= 3 && nums[..3] < [2, 35, 2][..],
+            "git ({text}) has an ownership check but did not refuse under GIT_TEST_ASSUME_DIFFERENT_OWNER: \
+             a config source leaked past the scrubbed environment (see `git config --show-origin safe.directory`)"
+        );
+        let line = format!("not_measured: foreign-owner ({text} has no ownership check)");
+        eprintln!("{line}");
+        if let Some(path) = std::env::var_os("EMIT_TESTS_NOT_MEASURED") {
+            use std::io::Write;
+            let mut f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(path)
+                .expect("open EMIT_TESTS_NOT_MEASURED");
+            writeln!(f, "{line}").expect("write EMIT_TESTS_NOT_MEASURED");
+        }
+        false
     })
+}
+
+/// Drop every environment source that could hand git a `safe.directory` or a repo of its own.
+fn scrub_git_env(cmd: &mut Command) {
+    cmd.env_remove("GIT_DIR")
+        .env_remove("GIT_WORK_TREE")
+        .env_remove("GIT_CONFIG_COUNT")
+        .env_remove("GIT_CONFIG_PARAMETERS");
 }
 
 /// The case table. Returns the names of the rows that landed wrong (empty = all as expected).
@@ -216,8 +254,6 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
     // makes it see another owner; the precondition proves plain git really refuses the repo here
     if foreign_owner_measurable() {
         expect("foreign-owner", run(&bin, &dev, None, &OTHER_OWNER), &head);
-    } else {
-        println!("foreign-owner: not_measured (this git has no ownership check; the row is skipped, every other row is asserted)");
     }
     wrong
 }
@@ -275,8 +311,6 @@ fn planted_regressions_turn_red() {
             w3.iter().any(|r| r.starts_with("foreign-owner:")),
             "no-retry plant survived: {w3:#?}"
         );
-    } else {
-        println!("plant_no_retry: not_measured (foreign-owner row unmeasurable on this git)");
     }
     let w2 = table(&git_first, "plant_git_first");
     assert!(
