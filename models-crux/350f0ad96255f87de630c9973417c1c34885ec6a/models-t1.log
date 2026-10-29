@@ -1,0 +1,4 @@
+MODELS lambda measured by apr 0.72.2 (350f0ad96): cells=134 red=0 (crux_sweep_shards rc 0)
+MODELS gx10 NO-GO: no receipt -- ENV: busy -- another models_t1 leg holds /home/noah/.cache/aprender-release/.lock there; refused before the sweep and the build (rc 3)
+MODELS NO-GO: the judge found red or missing cells (rc 1):
+MODELS   FAIL  host gx10 has no CRUX receipt from the release binary -- the smoke gate needs every named host
