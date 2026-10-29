@@ -85,6 +85,9 @@ impl RandomForestRegressor {
         if n_samples == 0 {
             return Err("Cannot fit with zero samples".into());
         }
+        if y.as_slice().iter().any(|v| !v.is_finite()) {
+            return Err("Labels must be finite (no NaN or infinity)".into());
+        }
 
         self.trees = Vec::with_capacity(self.n_estimators);
         self.oob_indices = Vec::with_capacity(self.n_estimators);
