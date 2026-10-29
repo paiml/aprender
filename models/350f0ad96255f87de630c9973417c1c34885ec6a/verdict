@@ -1,0 +1,8 @@
+commit=350f0ad96255f87de630c9973417c1c34885ec6a
+sha9=350f0ad96
+version=0.72.2
+entry=scripts/release/models_t1.sh@f7b3d1894a59a14c591f4a428b6251201b2baf73
+measure=ladder
+t1_rc=1
+state=red
+reason=lambda receipt has red cells; gx10 receipt has red cells; the judge found red or missing cells on two bound receipts

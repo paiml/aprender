@@ -1,0 +1,126 @@
+cargo-memcap: WARNING: no systemd user bus at /run/user/1000/bus — this job runs UNCAPPED (infra#930)
+   Compiling aprender-build-sha v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-build-sha)
+   Compiling aprender-contracts-macros v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-contracts-macros)
+   Compiling aprender-gemm-codegen v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-gemm-codegen)
+   Compiling aprender-contracts v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-contracts)
+   Compiling aprender-quant v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-quant)
+   Compiling aprender-viz v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-viz)
+   Compiling aprender-common v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-common)
+   Compiling apr-format v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/apr-format)
+   Compiling aprender-profile-core v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-profile-core)
+   Compiling aprender-mcp v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-mcp)
+   Compiling aprender-zram-core v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-zram-core)
+   Compiling aprender-contracts-cli v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-contracts-cli)
+   Compiling aprender-test-lib v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-test-lib)
+   Compiling aprender-registry v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-registry)
+   Compiling aprender-update v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-update)
+   Compiling aprender-present-terminal v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-present-terminal)
+   Compiling aprender-data v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-data)
+   Compiling aprender-train-lora v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-train-lora)
+   Compiling aprender-cgp v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-cgp)
+   Compiling aprender-profile v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-profile)
+   Compiling aprender-zram-cli v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-zram-cli)
+   Compiling aprender-train-distill v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-train-distill)
+   Compiling aprender-rag-cli v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-rag-cli)
+   Compiling aprender-ptx-debug v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-ptx-debug)
+   Compiling apr-cli v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/apr-cli)
+   Compiling aprender-zram-adaptive v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-zram-adaptive)
+   Compiling aprender-gpu v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-gpu)
+warning: aprender-contracts@0.72.2: [contract] Assertions: 1570 preconditions, 594 postconditions from YAML
+warning: aprender-contracts@0.72.2: [contract] Assertions: 1570 preconditions, 594 postconditions from YAML
+   Compiling aprender-compute v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-compute)
+   Compiling aprender-core v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-core)
+   Compiling aprender-present-core v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-present-core)
+   Compiling aprender-rag v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-rag)
+   Compiling aprender-db v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-db)
+   Compiling aprender-train v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-train)
+   Compiling aprender-serve v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-serve)
+   Compiling aprender-orchestrate v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-orchestrate)
+   Compiling aprender-simulate v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-simulate)
+warning: aprender-train@0.72.2: [contract] PARTIAL: CONTRACT_BACKWARD_PASS_V1_BACKWARD — #4369: #[contract] site at crates/aprender-train/src/transformer/cuda_block.rs:1275 (feature cuda) had no binding row, and contracts/backward-pass-v1.yaml does not exist in-tree: the annotation cites no contract
+warning: aprender-train@0.72.2: [contract] UNKNOWN STATUS 'pending': CONTRACT_CUDA_CLASSIFY_TRAINING_V1_WEIGHT_ROUNDTRIP
+warning: aprender-train@0.72.2: [contract] UNKNOWN STATUS 'pending': CONTRACT_DISTRIBUTED_TRAINING_V1_LORA_GRADIENT_SIZE
+warning: aprender-train@0.72.2: [contract] UNKNOWN STATUS 'pending': CONTRACT_DISTRIBUTED_TRAINING_V1_WEIGHTED_LOSS
+warning: aprender-train@0.72.2: [contract] PARTIAL: CONTRACT_METRICS_REGRESSION_V1_RMSE — RMSE of quantization error, not of a regression; the regression metric is bound as aprender::metrics::rmse.
+warning: aprender-train@0.72.2: [contract] PARTIAL: CONTRACT_QLORA_HYPERPARAMETERS_V1_EFFECTIVE_BATCH_SIZE — Checks the hyperparameters and returns diagnostics; it warns and does not enforce the equation.
+warning: aprender-train@0.72.2: [contract] PARTIAL: CONTRACT_QLORA_HYPERPARAMETERS_V1_LORA_ALPHA_RATIO — Checks the hyperparameters and returns diagnostics; it warns and does not enforce the equation.
+warning: aprender-train@0.72.2: [contract] PARTIAL: CONTRACT_QLORA_HYPERPARAMETERS_V1_WARMUP_FRACTION — warmup_steps = (warmup_fraction * total_steps) as usize, computed inline in train
+warning: aprender-train@0.72.2: [contract] AllImplemented: 42/47 implemented, 5 partial, 0 gaps
+warning: aprender-train@0.72.2: [contract] Assertions: 79 preconditions, 60 postconditions from YAML
+warning: aprender-compute@0.72.2: [contract] PARTIAL: CONTRACT_WGPU_FORWARD_PASS_V1_RMSNORM_CORRECTNESS — #4369: #[contract] site at crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:753 had no binding row, and contracts/wgpu-forward-pass-v1.yaml does not exist in-tree: the annotation cites no contract
+warning: aprender-compute@0.72.2: [contract] AllImplemented: 41/42 implemented, 1 partial, 0 gaps
+warning: aprender-present-core@0.72.2: [contract] Assertions: 18 preconditions, 12 postconditions from YAML
+warning: aprender-present-core@0.72.2: [contract] AllImplemented: 20/41 implemented, 0 partial, 21 gaps
+warning: aprender-present-core@0.72.2: [contract] AllImplemented: 21 binding(s) are not_implemented — implement before next release
+warning: aprender-orchestrate@0.72.2: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
+warning: aprender-simulate@0.72.2: [contract] Assertions: 2 preconditions, 1 postconditions from YAML
+warning: aprender-simulate@0.72.2: [contract] AllImplemented: 20/20 implemented, 0 gaps
+warning: aprender-core@0.72.2: [contract] AllImplemented: 221/233 implemented, 0 partial, 12 allowed gaps
+warning: aprender-core@0.72.2: [contract] L2: 64 bound function(s) not found in source (soft warning)
+warning: aprender-serve@0.72.2: [PMAT-228] Generated arch_requirements from YAML (14 weight roles, 4 constraint cells)
+warning: aprender-serve@0.72.2: [GH-323] Generated arch_constraints from YAML (28 architectures)
+warning: aprender-serve@0.72.2: [contract] PARTIAL: CONTRACT_FORWARD_PASS_V1_RMS_NORM — #4369: #[contract] site at crates/aprender-serve/src/gguf/ops.rs:128 had no binding row, and contracts/forward-pass-v1.yaml does not exist in-tree: the annotation cites no contract
+warning: aprender-serve@0.72.2: [contract] PARTIAL: CONTRACT_GEMM_V1_FLATTENED_BATCHED_GEMM — #4369: #[contract] site at crates/aprender-serve/src/gguf/inference/cached/single_flattened_batched_owned.rs:19 had no binding row, and contracts/gemm-v1.yaml does not exist in-tree: the annotation cites no contract
+warning: aprender-serve@0.72.2: [contract] PARTIAL: CONTRACT_GPU_DECODE_PROFILING_V1_REPORT_METADATA — PMAT-403: metadata fields must be measured or zero. No hardcoded nonzero constants (137, 173.9, etc.). Bound to the simulated report path only.
+warning: aprender-serve@0.72.2: [contract] PARTIAL: CONTRACT_INFERENCE_PIPELINE_V1_KV_CACHE_GROWTH — PMAT-405: KV cache = 2 * layers * seq_len * kv_dim * 4 bytes
+warning: aprender-serve@0.72.2: [contract] PARTIAL: CONTRACT_SAMPLING_V1_SOFTMAX_INPLACE — #4369: #[contract] site at crates/aprender-serve/src/gguf/ops.rs:347 had no binding row, and contracts/sampling-v1.yaml does not exist in-tree: the annotation cites no contract
+warning: aprender-serve@0.72.2: [contract] PARTIAL: CONTRACT_WGPU_FORWARD_PASS_V1_DEQUANT_CORRECTNESS — #4369: #[contract] site at crates/aprender-serve/src/gpu/adapters/wgpu_adapter.rs:52 had no binding row, and contracts/wgpu-forward-pass-v1.yaml does not exist in-tree: the annotation cites no contract
+warning: aprender-serve@0.72.2: [contract] AllImplemented: 95/101 implemented, 6 partial, 0 gaps
+warning: aprender-serve@0.72.2: [contract] L2: 20 bound function(s) not found in source (soft warning)
+warning: aprender-serve@0.72.2: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
+   Compiling aprender-train-common v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-train-common)
+   Compiling aprender-graph v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-graph)
+    Finished `release` profile [optimized] target(s) in 1m 27s
+--- model capability ladder on lambda (NVIDIA GeForce RTX 4090, cc 8.9) apr=/mnt/nvme-raid0/models-nightly/work/target/release/apr sha=350f0ad96 version=0.72.2 ---
+    inventory: 26 model(s) matching *q4_k*.gguf,*q4k*.gguf,*q4_k*.apr,*q4k*.apr,*qwen2.5*.gguf,*qwen3.5*.gguf,*qwen2.5*.apr,*qwen3.5*.apr under /home/noah/models:/home/noah/.apr/models:/home/noah/.cache/apr/models
+  [ OK   ] qwen2-1.5b-q4km                qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen3-1.7b-q4km                qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen3-8b-q4km                  qa cap+golden pass, backends cpu,cuda honoured
+  [FAIL  ] qwen35-0.8b-q4km               golden_output: golden_output_thinking_on: think block unclosed within 2048 tokens (the model was still reasoning at the budget; 6723 chars generated, no answer was reached). This is not an empty answer. Before treating it as a model defect, check whether 2048 is MEASURED for this model in contracts/thinking-budgets-v1.yaml or inherited from `default` — the default's basis is one 8B model (#3907). [budget basis — Qwen3.5-0.8B-Q4_K_M.gguf: Measured on lambda (RTX 4090, cuda). History: #3948 @ 5103e07de, on apr's old ON prompt
+(`assistant\n`), the `<think>` block closed EMPTY at 16, 64 and 2048 alike; the official
+template (#3990, ends `assistant\n<think>\n`) removed that. RE-MEASURED (aprender#4666,
+operator ruling A, 2026-10-04) on released apr 0.70.1 cuda (04332f838), greedy ON leg on
+the official template: UNCLOSED at 2048 / 4096 / 8192 / 16384 with 6,723 / 13,225 /
+26,243 / 52,290 chars; output grows linearly with the budget. The text is coherent,
+reaches "2 + 2 = 4", then loops ("Wait, I should check..."). So the budget is not what
+fails and no budget makes this leg pass; it stays FAIL, known_red. A model property, not
+apr: with Qwen's sampling (T 0.6, top-k 20, top-p 0.95, 8 seeds, 2048) llama.cpp closes
+2/8 and apr closes 5/8; llama.cpp greedy closes only because an early near-tie resolves
+differently across engines. Evidence (in-tree):
+evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md.]
+  [ OK   ] qwen35-2b-q4km                 qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen35-4b-q4km                 qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen35-9b-q4km                 qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] qwen35-27b-q4km                qa cap+golden pass, backends cpu,cuda honoured
+  [ OK   ] inv:Qwen2.5-0.5B-Instruct-IQ3_M.gguf qa cap+golden pass, backends cuda honoured
+  [ OK   ] inv:Qwen2.5-0.5B-Instruct-IQ4_XS.gguf qa cap+golden pass, backends cuda honoured
+  [FAIL  ] inv:Qwen2.5-0.5B-Instruct-f16.gguf cuda: serve routes answered 200 with bad output: /api/chat|stream=false (gibberish (fragment ' | |' repeats 3+ times)), /api/chat|stream=true (gibberish (fragment ' | |' repeats 3+ times))
+  [ OK   ] inv:Qwen3-30B-A3B-Instruct-2507-Q4_K_M.gguf qa cap+golden pass, backends cuda honoured
+  [ OK   ] inv:Qwen3-Coder-30B-A3B-Instruct-Q4_K_M.gguf qa cap+golden pass, backends cuda honoured
+  [FAIL  ] inv:Qwen3.5-0.8B-IQ4_XS.gguf   golden_output: golden_output_thinking_on: no measured thinking budget for `Qwen3.5-0.8B-IQ4_XS.gguf` (matches `Qwen3.5-0.8B-IQ4_XS.gguf` in contracts/thinking-budgets-v1.yaml, which declares no `budget`). Refusing rather than inheriting the default, which was measured on a different model: Generated 8,901 chars without closing at 2048 on lambda (#3907). MEASURED since
+(aprender#4663, operator ruling A, 2026-10-04): NO budget closes it, so the entry
+keeps no `budget` and the leg stays FAIL-CLOSED. Released apr 0.70.1 cuda
+(04332f838), lambda RTX 4090, greedy ON leg on the official template: unclosed at
+2048 / 4096 / 8192 / 16384 with 8,910 / 17,795 / 35,574 / 71,140 chars; output
+grows linearly with the budget. The text is coherent, reaches "2 + 2 = 4", then
+loops ("Wait, I should check..."). A model property, not apr: llama.cpp with
+Qwen's sampling (T 0.6, top-k 20, top-p 0.95, 8 seeds, 2048) closes 4/8; llama.cpp
+greedy closes only because an early near-tie ("Identify the Core Task") resolves
+differently across engines and backends. Evidence (in-tree):
+evidence/thinking-budgets/qwen35-0.8b-thinking-on-2026-10-04.md. (#3907)
+  [FAIL  ] inv:Qwen3.5-0.8B-UD-IQ2_XXS.gguf golden_output: golden_output_runtime: Expected one of ["4"], got: 'The user wants to know about the 2+2 question.
+The user wants to know about the 2+2 question.
+The us ... and 1624 more chars'
+  [FAIL  ] inv:Qwen3.5-35B-A3B-UD-IQ4_XS.gguf capability_match: this build has no CUDA forward for architecture 'qwen35moe': Qwen3.5 MoE is a hybrid (Gated DeltaNet / SSM layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM layers. Re-run without --gpu to use the CPU path deliberately. This is a refusal, not a fallback: nothing was loaded and nothing was generated.; golden_output: SKIPPED: Skipped: Skipped due to capability match failure; cuda: did not run (rc=75); cuda: verb `chat` did not run (rc=8); cuda: verb `code` did not run (rc=1); cuda: serve NOT PROBED: apr serve did not answer /health: died after 2s (stall window 90s, ceiling 900s); last log line: error: Model load failed: Failed to build quantized model: Format error: Architecture 'qwen35moe' uses SSM/Gated Delta Net layers (detected tensor 'blk.0.ssm_a'). There is no CPU or GPU forward for ar
+  [ OK   ] inv:Qwen3.5-4B-UD-Q4_K_XL.gguf qa cap+golden pass, backends cuda honoured
+  [ OK   ] inv:qwen2.5-coder-0.5b-instruct-q4_k_m.gguf qa cap+golden pass, backends cuda honoured
+  [REFUSE] inv:qwen2.5-coder-0.5b-instruct.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
+  [ OK   ] inv:qwen2.5-coder-1.5b-instruct-q4_k_m.gguf qa cap+golden pass, backends cuda honoured
+  [REFUSE] inv:qwen2.5-coder-1.5b-instruct-q4k-v2.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
+  [REFUSE] inv:qwen2.5-coder-1.5b-instruct-q4k.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
+  [REFUSE] inv:qwen2.5-coder-1.5b-instruct-st.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
+  [ OK   ] inv:qwen2.5-coder-7b-instruct-q4_k_m.gguf qa cap+golden pass, backends cuda honoured
+  [REFUSE] inv:qwen2.5-coder-1.5b-q4k.apr fit: does-not-fit -- llama-fit-params exit 1: the model does not fit this host's free memory
+  [ OK   ] inv:tinyllama-1.1b-chat-v1.0.Q4_K_M.gguf qa cap+golden pass, backends cuda honoured
+cells: 624 row(s), 0 pass, 0 refused, 624 not_measured (admission)
+receipt: /mnt/nvme-raid0/models-nightly/work/out/lambda.json (executed=26 red=10 inventory=26)
