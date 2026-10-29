@@ -492,6 +492,11 @@ jobs:
           fetch-depth: 0
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      - name: Binary Release bin filter (#6502) keeps every published bin and drops every publish=false one
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash scripts/tests/release_bin_filter_test.sh
       - name: Sections
         id: sections
         run: >-
