@@ -297,8 +297,9 @@ measured_cpu() {
     local INFRA_CACHE=$1 lim rem fl rows sha v
     [ -n "${INFRA_TOKEN:-}" ] || { echo "not_measured: no infra read token (INFRA_ACTIONS_READ); paiml/infra is private" >&2; return 2; }
     mkdir -p -- "$INFRA_CACHE" || return 2
-    read -r lim rem <<< "$(GH_TOKEN="$INFRA_TOKEN" gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
-    case "$lim:$rem" in *[!0-9:]*|:*|*:) echo "not_measured: rate_limit unreadable" >&2; return 2 ;; esac
+    local rl_err="$INFRA_CACHE/rate_limit.err"
+    read -r lim rem <<< "$(GH_TOKEN="$INFRA_TOKEN" gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>"$rl_err")"
+    case "$lim:$rem" in *[!0-9:]*|:*|*:) echo "not_measured: rate_limit unreadable ($(head -c 200 -- "$rl_err" 2>/dev/null | tr '\n' ' '))" >&2; return 2 ;; esac
     fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR
     [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }
     rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }
