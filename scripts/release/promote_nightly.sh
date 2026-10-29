@@ -213,7 +213,7 @@ fi
 # exactly cut_tag's tail: tag, arm the pre-push tag guard for 120 s, push
 git -C "$wt" tag -a "$tag" -m "aprender $tag" "$sha" || die "git tag failed"
 (cd "$wt" && $arm) || die "arming $tag for the pre-push tag guard failed -- tag NOT pushed (the local tag $tag stays; a human decides)"
-git -C "$wt" push origin "$tag" || die "tag push failed ($tag exists locally, not on origin)"
+git -C "$wt" -c push.followTags=false push --no-follow-tags origin "refs/tags/$tag:refs/tags/$tag" || die "tag push failed ($tag exists locally, not on origin)"
 
 printf '%s: TAGGED and pushed %s at %s. Next, by hand:\n' "$PROG" "$tag" "$sha"
 printf '  1. gh release create %s --verify-tag --draft ...   (then Binary Release)\n' "$tag"
