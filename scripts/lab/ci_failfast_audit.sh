@@ -1,41 +1,29 @@
 #!/usr/bin/env bash
-# scripts/lab/ci_failfast_audit.sh -- a RED merge_group job must cancel its run (operator 2026-10-19, refs #5394).
-# x86-main and workspace-test-shard each carry a `gh run cancel` step guarded by
-# `failure() && github.event_name == 'merge_group'`, and the shard job holds `actions: write`.
+# scripts/lab/ci_failfast_audit.sh -- NO merge_group job may cancel its own run (operator 2026-10-27, refs #6438 throughput).
+# The 2026-10-19 fail-fast (`gh run cancel` on the first red merge_group job) is removed: it hid the cause behind
+# cancelled siblings and cost merges. This audit now fails if a `gh run cancel "$GITHUB_RUN_ID"` step comes back.
 # Also runs scripts/ci/step_budget_check.sh --self-test and checks every budget row has 3 fields.
 #   bash scripts/lab/ci_failfast_audit.sh [workflow] | --self-test
 set -uo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../.." || exit 2
 
-# job_has_failfast <workflow> <job>: 0 when the job block holds the guarded cancel step
-job_has_failfast() {
-  awk -v job="$2" '
-    $0 ~ "^  " job ":" { on = 1; next }
-    on && /^  [a-z0-9-]+:/ { on = 0 }
-    on && /^ *if: \$\{\{ failure\(\) && github\.event_name == .merge_group. \}\}$/ { g = 1 }
-    on && g && /^ *run: gh run cancel "\$GITHUB_RUN_ID"/ { ok = 1 }
-    END { exit ok ? 0 : 1 }' "$1"
-}
-
+# check <workflow>: 0 when no step cancels the run it is in
 check() {
-  local wf=$1 rc=0 j
-  for j in x86-main workspace-test-shard; do
-    job_has_failfast "$wf" "$j" || { echo "FAIL: job $j has no merge_group failure() -> gh run cancel step"; rc=1; }
-  done
-  awk '/^  workspace-test-shard:/{on=1;next} on&&/^  [a-z0-9-]+:/{on=0} on&&/actions: write/{f=1} END{exit f?0:1}' "$wf" \
-    || { echo "FAIL: workspace-test-shard lacks 'actions: write' (gh run cancel would 403)"; rc=1; }
-  return $rc
+  if grep -n 'gh run cancel "\$GITHUB_RUN_ID"' "$1"; then
+    echo "FAIL: $1 has a step that cancels its own run (fail-fast removed 2026-10-27)"; return 1
+  fi
+  return 0
 }
 
 case "${1:-}" in -h|--help) echo "usage: scripts/lab/ci_failfast_audit.sh [workflow] | --self-test"; exit 0 ;; esac
 
 if [ "${1:-}" = "--self-test" ]; then
-  check .github/workflows/ci.yml || { echo "FAIL: the real workflow is not fail-fast"; exit 1; }
+  check .github/workflows/ci.yml || { echo "FAIL: the real workflow cancels its own run"; exit 1; }
   t=$(mktemp -d); trap 'rm -rf "${t:?}"' EXIT
-  grep -v 'gh run cancel' .github/workflows/ci.yml > "$t/mut.yml"
-  check "$t/mut.yml" > /dev/null && { echo "FAIL: a workflow with the cancel step removed still passed"; exit 1; }
+  { cat .github/workflows/ci.yml; printf '      - run: gh run cancel "$GITHUB_RUN_ID" --repo x\n'; } > "$t/mut.yml"
+  check "$t/mut.yml" > /dev/null && { echo "FAIL: a workflow with a self-cancel step still passed"; exit 1; }
   bash scripts/ci/step_budget_check.sh --self-test || exit 1
   awk -F'\t' '!/^#/ && NF != 3 { bad = 1 } END { exit bad }' ci/step-budgets.tsv || { echo "FAIL: ci/step-budgets.tsv row without 3 fields"; exit 1; }
   echo "ok: ci_failfast_audit case table"; exit 0
 fi
-check "${1:-.github/workflows/ci.yml}" && echo "ok: merge_group failures cancel the run"
+check "${1:-.github/workflows/ci.yml}" && echo "ok: no merge_group step cancels its own run"

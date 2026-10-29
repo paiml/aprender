@@ -26436,6 +26436,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:release
   notes: null
   epic: null
+- id: PMAT-6394
+  github_issue: 6394
+  item_type: task
+  title: 'pv readme: render README.md and SHACL-validate against pv extract shapes.ttl (#6394)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T08:55:20Z
+  updated: 2026-10-26T08:55:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2870
 - id: PMAT-6401
   github_issue: 6401
   item_type: task
@@ -26596,6 +26614,44 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6390
+- id: PMAT-6435
+  github_issue: 6435
+  item_type: task
+  title: 'pv readme A: README render and contract walk'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-wsweep
+  created: 2026-10-27T07:30:00Z
+  updated: 2026-10-27T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the CONTRACT_COUNT render, frontmatter line and contract walk land with tests (#6431)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6394
+- id: PMAT-6436
+  github_issue: 6436
+  item_type: task
+  title: 'pv readme B: SHACL validation driver and pv-readme bin'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-wsweep
+  created: 2026-10-27T07:30:00Z
+  updated: 2026-10-27T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the readme:Readme validation, a check/write driver that validates before it writes, and the pv-readme bin land with tests (#6432)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6394
 - id: PMAT-6437
   github_issue: 6437
   item_type: task
@@ -26618,6 +26674,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6390
+- id: PMAT-6444
+  github_issue: 6444
+  item_type: task
+  title: 'MQ: remove the merge_group fail-fast (gh run cancel) steps from ci.yml'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T11:30:00Z
+  updated: 2026-10-27T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ci.yml has no step that runs gh run cancel on its own run, and scripts/lab/ci_failfast_audit.sh fails if one returns'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5965
 - id: PMAT-6449
   github_issue: 6449
   item_type: task
