@@ -914,8 +914,8 @@ aprender-ci-tools,aprender-ci-tools git-patch-id,6,x86_64-linux,NONE,no,12,test-
 aprender-ci-tools,aprender-ci-tools llama-fit-verdict,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:99,high
 aprender-ci-tools,aprender-ci-tools ladder-cells-produce,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:108,high
 aprender-ci-tools,aprender-ci-tools --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:16,high
-aprender-rollup,aprender-rollup plan,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:174,high
-aprender-rollup,aprender-rollup build,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:174,high
-aprender-rollup,aprender-rollup --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:169,high
-aprender-rollup,aprender-rollup verify,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:175,high
+aprender-rollup,aprender-rollup plan,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:180,high
+aprender-rollup,aprender-rollup build,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:180,high
+aprender-rollup,aprender-rollup --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:171,high
+aprender-rollup,aprender-rollup verify,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:181,high
 aprender-rollup,aprender-rollup verify --apply,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:139,high
