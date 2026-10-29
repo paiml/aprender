@@ -6,8 +6,8 @@ warning: aprender-contracts@0.72.2: [contract] Assertions: 1570 preconditions, 5
    Compiling aprender-db v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-db)
    Compiling aprender-train v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-train)
    Compiling aprender-serve v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-serve)
-   Compiling aprender-simulate v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-simulate)
    Compiling aprender-orchestrate v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-orchestrate)
+   Compiling aprender-simulate v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-simulate)
 warning: aprender-train@0.72.2: [contract] PARTIAL: CONTRACT_BACKWARD_PASS_V1_BACKWARD — #4369: #[contract] site at crates/aprender-train/src/transformer/cuda_block.rs:1275 (feature cuda) had no binding row, and contracts/backward-pass-v1.yaml does not exist in-tree: the annotation cites no contract
 warning: aprender-train@0.72.2: [contract] UNKNOWN STATUS 'pending': CONTRACT_CUDA_CLASSIFY_TRAINING_V1_WEIGHT_ROUNDTRIP
 warning: aprender-train@0.72.2: [contract] UNKNOWN STATUS 'pending': CONTRACT_DISTRIBUTED_TRAINING_V1_LORA_GRADIENT_SIZE
@@ -20,12 +20,12 @@ warning: aprender-train@0.72.2: [contract] AllImplemented: 42/47 implemented, 5 
 warning: aprender-train@0.72.2: [contract] Assertions: 79 preconditions, 60 postconditions from YAML
 warning: aprender-compute@0.72.2: [contract] PARTIAL: CONTRACT_WGPU_FORWARD_PASS_V1_RMSNORM_CORRECTNESS — #4369: #[contract] site at crates/aprender-compute/src/backends/gpu/device/linalg/wgsl_forward.rs:753 had no binding row, and contracts/wgpu-forward-pass-v1.yaml does not exist in-tree: the annotation cites no contract
 warning: aprender-compute@0.72.2: [contract] AllImplemented: 41/42 implemented, 1 partial, 0 gaps
+warning: aprender-simulate@0.72.2: [contract] Assertions: 2 preconditions, 1 postconditions from YAML
+warning: aprender-simulate@0.72.2: [contract] AllImplemented: 20/20 implemented, 0 gaps
 warning: aprender-present-core@0.72.2: [contract] Assertions: 18 preconditions, 12 postconditions from YAML
 warning: aprender-present-core@0.72.2: [contract] AllImplemented: 20/41 implemented, 0 partial, 21 gaps
 warning: aprender-present-core@0.72.2: [contract] AllImplemented: 21 binding(s) are not_implemented — implement before next release
 warning: aprender-orchestrate@0.72.2: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
-warning: aprender-simulate@0.72.2: [contract] Assertions: 2 preconditions, 1 postconditions from YAML
-warning: aprender-simulate@0.72.2: [contract] AllImplemented: 20/20 implemented, 0 gaps
 warning: aprender-core@0.72.2: [contract] AllImplemented: 221/233 implemented, 0 partial, 12 allowed gaps
 warning: aprender-core@0.72.2: [contract] L2: 64 bound function(s) not found in source (soft warning)
 warning: aprender-serve@0.72.2: [PMAT-228] Generated arch_requirements from YAML (14 weight roles, 4 constraint cells)
@@ -41,7 +41,7 @@ warning: aprender-serve@0.72.2: [contract] L2: 20 bound function(s) not found in
 warning: aprender-serve@0.72.2: [contract] Assertions: 0 preconditions, 0 postconditions from YAML
    Compiling aprender-train-common v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-train-common)
    Compiling aprender-graph v0.72.2 (/mnt/nvme-raid0/models-nightly/work/wt/crates/aprender-graph)
-    Finished `release` profile [optimized] target(s) in 1m 29s
+    Finished `release` profile [optimized] target(s) in 1m 46s
 crux_sweep_shards: plan for lambda (gpu lane, scope controls) -> /mnt/nvme-raid0/models-nightly/work/out/lambda-crux/lambda-gpu.plan.tsv
   RUN	00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4	off	/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf	ctl-2plus2,ctl-recall-7,ctl-code-add
   RUN	00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4	on	/home/noah/models/Qwen3.5-4B-Q4_K_M.gguf	ctl-2plus2,ctl-code-add
@@ -52,7 +52,7 @@ crux_sweep_shards: plan for lambda (gpu lane, scope controls) -> /mnt/nvme-raid0
 merged meta: 3 model(s)
 # CRUX inference dogfood: 0.72.2 on lambda (gpu lane)
 
-apr `apr 0.72.2 (350f0ad96)` · llama.cpp `version: 0.4.1-dev (build 10987, commit d1d3c3396)` · ollama `None` · hf `transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GeForce_RTX_4090 capability=sm_89 arch_list=sm_75,sm_80,sm_86,sm_90,sm_100,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb` · llamafile `None` · vllm `vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GeForce_RTX_4090 capability=sm_89 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1` · judged 2026-10-29T18:47Z
+apr `apr 0.72.2 (350f0ad96)` · llama.cpp `version: 0.4.1-dev (build 10987, commit d1d3c3396)` · ollama `None` · hf `transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GeForce_RTX_4090 capability=sm_89 arch_list=sm_75,sm_80,sm_86,sm_90,sm_100,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb` · llamafile `None` · vllm `vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GeForce_RTX_4090 capability=sm_89 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1` · judged 2026-10-29T21:39Z
 
 **PASS**: 134 cells, 0 RED (0 of them ALL_WRONG), 134 GREEN.
 

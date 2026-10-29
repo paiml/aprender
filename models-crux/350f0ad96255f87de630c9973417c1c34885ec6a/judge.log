@@ -8,5 +8,9 @@ ok    lambda certified model 00fe7986ff5f thinking=on: 19 CRUX cell(s) GREEN, co
 ok    lambda certified model aaf42c8b7c3c thinking=off: 32 CRUX cell(s) GREEN, control GREEN
 ok    lambda certified model b252c5610a42 thinking=off: 32 CRUX cell(s) GREEN, control GREEN
 ok    lambda certified model b252c5610a42 thinking=on: 19 CRUX cell(s) GREEN, control GREEN
-FAIL  host gx10 has no CRUX receipt from the release binary -- the smoke gate needs every named host
-RED   OPERATOR EMERGENCY SCOPE: CRUX smoke only -- NOT satisfied (see FAIL rows)
+ok    gx10 certified model 00fe7986ff5f thinking=off: 32 CRUX cell(s) GREEN, control GREEN
+ok    gx10 certified model 00fe7986ff5f thinking=on: 19 CRUX cell(s) GREEN, control GREEN
+ok    gx10 certified model aaf42c8b7c3c thinking=off: 32 CRUX cell(s) GREEN, control GREEN
+ok    gx10 certified model b252c5610a42 thinking=off: 32 CRUX cell(s) GREEN, control GREEN
+ok    gx10 certified model b252c5610a42 thinking=on: 19 CRUX cell(s) GREEN, control GREEN
+ok    OPERATOR EMERGENCY SCOPE: CRUX smoke only -- satisfied. The model ladder was NOT run for this release (nightly only); this is not "every rung green"

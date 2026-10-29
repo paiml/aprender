@@ -112,7 +112,7 @@
   ],
   "merged_shards": 5,
   "schema": "crux-inference-receipt/v1",
-  "judged_at": "2026-10-29T18:47Z",
+  "judged_at": "2026-10-29T21:39Z",
   "cells": [
     {
       "key": {
@@ -171,9 +171,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 26.4,
+            "decode_rate": 17.4,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 8978.49
+            "inference_ms": 5441.13
           },
           "backend": {
             "requested": "gpu",
@@ -224,8 +224,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 425.8,
-            "decode_rate": 164.8,
+            "prompt_rate": 444.2,
+            "decode_rate": 169.2,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -378,9 +378,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 32.9,
+            "decode_rate": 33.4,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 5668.19
+            "inference_ms": 5542.18
           },
           "backend": {
             "requested": "gpu",
@@ -443,8 +443,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 723.5,
-            "decode_rate": 196.9,
+            "prompt_rate": 740.9,
+            "decode_rate": 194.9,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -5575,9 +5575,9 @@
             "reported_by": "apr",
             "prompt_tokens": 28,
             "completion_tokens": 163,
-            "decode_rate": 77.9,
+            "decode_rate": 77.3,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 7193.3
+            "inference_ms": 7222.17
           },
           "backend": {
             "requested": "gpu",
@@ -5627,8 +5627,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:** The user is asking for the result of the arithmetic operation \"2+2\". They also specify a formatting constraint: the final answer must be inside `<answer></answer>` tags.\n\n2.  **Perform the Calculation:** 2 + 2 = 4.\n\n3.  **Format the Output:** The user wants the answer in a specific XML-like tag format.\n    *   Content: 4\n    *   Tags: `<answer>4</answer>`\n\n4.  **Final Verification:** Does the output match the constraint? Yes. Is the math correct? Yes.\n\n5.  **Construct Final Response:**\n    <answer>4</answer>\n</think>\n\n<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 495.7,
-            "decode_rate": 186.8,
+            "prompt_rate": 485.7,
+            "decode_rate": 190.9,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -5781,7 +5781,7 @@
             "completion_tokens": 347,
             "decode_rate": 84.7,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 9210.69
+            "inference_ms": 9103.6
           },
           "backend": {
             "requested": "gpu",
@@ -5843,8 +5843,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function named `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint: Put *only* the function in a single ```python code block.\n    *   Output format: Markdown code block with Python syntax highlighting.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a function? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single code block? Yes.\n    *   Are there any extra explanations outside the code block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies I should minimize or exclude any surrounding text, but typically a brief introduction is acceptable unless it strictly says \"only the code\". However, to be safe and adhere strictly to \"Put only the function...\", I will output just the code block.\n\n4.  **Final Polish:**\n    *   Ensure no imports are needed (none needed for basic addition).\n    *   Ensure indentation is correct (though a single line is fine).\n\n5.  **Construct Output:**\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n6.  **Review against \"only the function\" constraint:**\n    *   If I add text like \"Here is the function:\", it might violate \"Put only the function...\".\n    *   Best to output just the code block.\n\n7.  **Final Decision:**\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n    (Or one-liner: `def add(a, b): return a + b`)\n    I'll use the standard multi-line format for clarity, or one-liner. Standard is usually clearer. Let's stick to the standard definition.\n\n    Wait, re-reading: \"Put only the function in a single ```python code block.\"\n    This means no markdown outside the block, no comments explaining it, just the block.\n\n    Let's write it.cw\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 716.1,
-            "decode_rate": 209.2,
+            "prompt_rate": 650.7,
+            "decode_rate": 191.6,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -8592,9 +8592,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 56.9,
+            "decode_rate": 17.1,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 4862.75
+            "inference_ms": 4968.94
           },
           "backend": {
             "requested": "gpu",
@@ -8645,8 +8645,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 811.7,
-            "decode_rate": 293.4,
+            "prompt_rate": 729.1,
+            "decode_rate": 280.9,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -8799,9 +8799,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 52.2,
+            "decode_rate": 46.9,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 3004.28
+            "inference_ms": 3822.58
           },
           "backend": {
             "requested": "gpu",
@@ -8864,8 +8864,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 1122.6,
-            "decode_rate": 332.7,
+            "prompt_rate": 884.6,
+            "decode_rate": 291.4,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -13970,9 +13970,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 26.4,
+            "decode_rate": 17.5,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 11647.41
+            "inference_ms": 5798.46
           },
           "backend": {
             "requested": "gpu",
@@ -14023,8 +14023,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 232.9,
-            "decode_rate": 118.4,
+            "prompt_rate": 247.0,
+            "decode_rate": 127.7,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -14177,9 +14177,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 32.4,
+            "decode_rate": 32.1,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 6017.93
+            "inference_ms": 8409.2
           },
           "backend": {
             "requested": "gpu",
@@ -14242,8 +14242,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 347.3,
-            "decode_rate": 172.6,
+            "prompt_rate": 333.9,
+            "decode_rate": 156.0,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -19374,9 +19374,9 @@
             "reported_by": "apr",
             "prompt_tokens": 28,
             "completion_tokens": 213,
-            "decode_rate": 80.5,
+            "decode_rate": 74.1,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 8045.38
+            "inference_ms": 8488.12
           },
           "backend": {
             "requested": "gpu",
@@ -19426,8 +19426,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:** The user is asking for the sum of 2 and 2 (\"What is 2+2?\"). They have specified a formatting constraint: \"Reply with the final answer inside <answer></answer>.\"\n\n2.  **Calculate the Answer:** 2 + 2 = 4.\n\n3.  **Format the Output:** The user wants the final answer enclosed in specific tags: `<answer>` and `</answer>`.\n\n4.  **Construct the Final String:**\n    *   Content: 4\n    *   Tags: <answer>4</answer>\n\n5.  **Review Constraints:**\n    *   Did I answer the question? Yes (4).\n    *   Did I follow the formatting constraint? Yes (inside <answer></answer>).\n\n6.  **Final Output Generation:** <answer>4</answer>\n</think>\n\n<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 234.3,
-            "decode_rate": 198.5,
+            "prompt_rate": 217.2,
+            "decode_rate": 171.2,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -19576,9 +19576,9 @@
             "reported_by": "apr",
             "prompt_tokens": 40,
             "completion_tokens": 356,
-            "decode_rate": 86.1,
+            "decode_rate": 77.5,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 9507.93
+            "inference_ms": 10078.09
           },
           "backend": {
             "requested": "gpu",
@@ -19640,8 +19640,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function named `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint: Put *only* the function in a single ```python code block.\n    *   Output Format: Markdown code block with the language specified as `python`.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a function? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single code block? Yes.\n    *   Are there any extra explanations outside the block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies I should avoid conversational filler before or after the block, or at least keep it minimal. However, standard AI behavior often includes a brief intro. But the instruction \"Put only the function...\" suggests strict adherence. I will output just the code block to be safe and precise.\n\n4.  **Final Polish:**\n    *   Ensure no imports are needed (none needed).\n    *   Ensure indentation is correct (though a single line is fine).\n\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n    Or one line:\n    ```python\n    def add(a, b): return a + b\n    ```\n\n    The multi-line version is more readable. I'll use that.\n\n5.  **Final Decision:** Output the code block containing the function definition.\n\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n    Wait, checking the instruction again: \"Put only the function in a single ```python code block.\"\n    This means no text outside the block.\n\n    Let's assemble the response.cw\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 320.5,
-            "decode_rate": 201.5,
+            "prompt_rate": 322.2,
+            "decode_rate": 176.3,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
