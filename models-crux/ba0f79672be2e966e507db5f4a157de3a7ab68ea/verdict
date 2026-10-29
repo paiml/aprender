@@ -1,0 +1,8 @@
+commit=ba0f79672be2e966e507db5f4a157de3a7ab68ea
+sha9=ba0f79672
+version=0.72.2
+entry=scripts/release/models_t1.sh@f7b3d1894a59a14c591f4a428b6251201b2baf73
+measure=crux
+t1_rc=2
+state=not_measured
+reason=MODELS NO-GO: no prompt certification for 0.72.2 at evidence/crux/0.72.2/prompt-certification.json -- CRUX smoke cannot be planned
