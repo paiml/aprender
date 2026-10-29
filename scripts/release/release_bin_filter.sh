@@ -5,13 +5,8 @@
 # Used by .github/workflows/binary-release.yml and scripts/tests/release_bin_filter_test.sh.
 set -euo pipefail
 [ $# -eq 1 ] || { echo "usage: $0 <metadata.json>" >&2; exit 2; }
-python3 -I -c '
-import json, sys
-m = json.load(open(sys.argv[1]))
-keep = [p for p in m["packages"] if p.get("publish") != [] and not p["name"].endswith("-ci-tools")]
-ids = {p["id"] for p in keep}
-m["packages"] = keep
-if m.get("workspace_members"):
-    m["workspace_members"] = [i for i in m["workspace_members"] if i in ids]
-json.dump(m, sys.stdout)
+jq '
+  [.packages[] | select(.publish != [] and (.name | endswith("-ci-tools") | not)) | .id] as $keep
+  | .packages |= map(select(.id as $i | $keep | index($i)))
+  | if .workspace_members then .workspace_members |= map(select(. as $i | $keep | index($i))) else . end
 ' "$1"
