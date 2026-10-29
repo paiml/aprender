@@ -229,7 +229,8 @@ gh_err() {
 }
 
 # gh_read <stderr file> <gh args>... -> one API read, retried while gh says the
-# SERVER failed (HTTP 5xx), at most GH_READ_TRIES reads in all (#5212). One
+# SERVER failed (HTTP 5xx) or the TRANSPORT dropped it (HTTP/2 stream CANCEL,
+# reset, EOF, timeout: run 39081569168, L23), at most GH_READ_TRIES reads in all (#5212). One
 # [run] is ~75 reads, and a single 502 on any of them turned x86-main red on
 # runs 38222226230, 38241398316 and 38246271098. A retried read that answers is
 # a measured read. One that is still failing after the last try fails exactly as
@@ -246,7 +247,7 @@ gh_read() {
         if gh "$@" > "$_gr_of" 2> "$_gr_ef"; then
             cat "$_gr_of"; rm -f "${_gr_of:?}"; return 0
         fi
-        if [ "$_gr_n" -ge "$GH_READ_TRIES" ] || ! grep -Eq 'HTTP 5[0-9][0-9]' "$_gr_ef"; then
+        if [ "$_gr_n" -ge "$GH_READ_TRIES" ] || ! grep -Eq 'HTTP 5[0-9][0-9]|stream error|CANCEL; received from peer|connection reset|unexpected EOF|i/o timeout|TLS handshake timeout' "$_gr_ef"; then
             [ "$_gr_n" -gt 1 ] && printf '(failed on all %s reads)\n' "$_gr_n" >> "$_gr_ef"
             rm -f "${_gr_of:?}"; return 1
         fi
@@ -644,6 +645,10 @@ if [ "$f" = "@ERROR" ]; then
     printf 'gh: Server Error (HTTP 502)\n' >&2
     exit 1
 fi
+if [ "$f" = "@CANCEL" ]; then
+    printf 'stream error: stream ID 1; CANCEL; received from peer\n' >&2
+    exit 1
+fi
 if [ "$f" = "@E403" ]; then
     printf '{"message":"Resource not accessible by integration","status":"403"}'
     printf 'gh: Resource not accessible by integration (HTTP 403)\n' >&2
@@ -668,6 +673,10 @@ st_fail_route() {
 # stdout, exactly as the job token's do on a pull_request run (#5213).
 st_deny_runners() {
     awk -F'\t' -v OFS='\t' '$1 ~ /actions[/]runners[?]/ { $2 = "@E403" } { print }' \
+        "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
+}
+st_cancel_route() {
+    awk -F'\t' -v OFS='\t' -v p="$1" '$1 == p { $2 = "@CANCEL" } { print }' \
         "$ST/u/routes.tsv" > "$ST/u/routes.new" && mv "$ST/u/routes.new" "$ST/u/routes.tsv"
 }
 # st_fail_jobs <run id>: that run's jobs page answers with a gh error.
@@ -1197,6 +1206,29 @@ selftest_rows() {
     if st_check n4-4xx-once 2 '^jobs read FAILED \(not_measured\): run 9101 .*HTTP 403' \
         && [ "$(st_calls 'runs/9101/jobs')" = 1 ]; then :
     else printf '  FAIL %-14s the jobs page was read %s time(s), want 1\n' n4-4xx-once "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n5) L23: a transient TRANSPORT fault (HTTP/2 stream CANCEL, run
+    # 39081569168) is retried like a 5xx. One CANCEL then the page: measured
+    # (rc 0), asked twice. A real gap behind the same fault stays a gap (l).
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_flaky_route 'runs/9101/jobs' @CANCEL
+    _rows=$((_rows + 1))
+    if st_check n5-cancel-once 0 '^api calls: .*5xx retries: 1\)$' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 2 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 2\n' n5-cancel-once "$(st_calls 'runs/9101/jobs')"
+        _rows_bad=$((_rows_bad + 1)); fi
+
+    # (n6) a CANCEL on EVERY read is still NOT_MEASURED (rc 2): never a pass,
+    # never rc 0. C324: no third state, so the rc stays the existing 2.
+    st_reset
+    st_run 9001 sil.yml schedule 12 1 "$CPU_JOB"; st_run 9101 gpu.yml schedule 20 1 "$GPU_JOB"
+    st_finish; st_cancel_route "repos/$ST_REPO/actions/runs/9101/jobs?per_page=100"
+    _rows=$((_rows + 1))
+    if st_check n6-cancel-always 2 '^jobs read FAILED \(not_measured\): run 9101 .*CANCEL.*failed on all 3 reads' \
+        && [ "$(st_calls 'runs/9101/jobs')" = 3 ]; then :
+    else printf '  FAIL %-14s the jobs page was read %s time(s), want 3\n' n6-cancel-always "$(st_calls 'runs/9101/jobs')"
         _rows_bad=$((_rows_bad + 1)); fi
 
     rm -rf "${ST:?}"
