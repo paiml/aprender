@@ -10,8 +10,7 @@
 #
 # THE CHECKS (each one marked `# CHK:<name>`; falsify_promote_nightly.sh --mutants drops each in turn
 # and requires a case-table row to go red):
-#   head         --repo's HEAD is exactly --sha and its tracked tree is clean, so every gate script
-#                below is the SHA's own, as in autopilot's release worktree
+#   (head: --repo is a git checkout and --sha a commit in it; an early, readable refusal, not a mutant target)
 #   onmain       --sha is an ancestor of origin/main (fetched now)
 #   version      [workspace.package] version in Cargo.toml at --sha is a final X.Y.Z; the tag is v<that>;
 #                --tag, if given, must equal it
@@ -29,7 +28,9 @@
 #                success, tested_shas exactly [<sha>] (autopilot cascade_cleanroom_at_tag's assertions)
 #   models_go    models also carries go "MODELS GO (CRUX smoke) on lambda and gx10 at <sha9>:" (the string
 #                cut_tag greps) and hosts [gx10, lambda]
-#   clean        no tracked change and no untracked file in --repo
+#   worktree     every gate, the tag, the arm marker and the push run from a fresh detached worktree of --sha
+#                (the checkout's HEAD, index flags, untracked and excluded files are never consulted)
+#   nodup        no duplicate key in a receipt;  runid  clean-room run_id is a plain positive integer string
 #   facade       root [package] version equals the workspace version (or version.workspace = true)
 #   coverage     scripts/release/tag_coverage_gate.sh --resolve <sha> (the existing coverage path) exits 0
 #
@@ -61,20 +62,14 @@ command -v jq > /dev/null 2>&1 || die "jq is not installed: no receipt can be re
 [ -d "$repo" ] || die "--repo $repo is not a directory"
 G() { git -C "$repo" "$@"; }
 
-# head: the checkout is the SHA
+# head: --repo is a git checkout and --sha is a commit in it. The checkout's own HEAD and working tree are NOT
+# judged and NOT used: every gate runs from a fresh worktree of --sha (below), so assume-unchanged, skip-worktree,
+# untracked and excluded files in the checkout cannot reach a gate.
 check_head() {
-    local h
-    h=$(G rev-parse HEAD 2> /dev/null) || die "$repo is not a git checkout"
-    [ "$h" = "$sha" ] || die "the checkout HEAD ($h) is not --sha ($sha): check out the candidate first"
+    G rev-parse --git-dir > /dev/null 2>&1 || die "$repo is not a git checkout"
+    [ "$(G cat-file -t "$sha" 2> /dev/null)" = commit ] || die "$sha is not a commit in $repo"
 }
-check_head # CHK:head
-# clean: no tracked change and no untracked file (a fresh release worktree has neither); ignored files do not count
-check_clean() {
-    local st
-    st=$(G status --porcelain 2> /dev/null) || die "cannot read the checkout status: nothing is measured"
-    [ -z "$st" ] || die "the checkout is not clean (tracked changes or untracked files): $(printf '%s' "$st" | head -n 3 | tr '\n' ' ')"
-}
-check_clean # CHK:clean
+check_head # redundant with onmain for refusals (fetch / merge-base fail first), so deliberately unmarked
 
 # onmain: --sha is on origin/main
 check_onmain() {
@@ -82,6 +77,20 @@ check_onmain() {
     G merge-base --is-ancestor "$sha" refs/remotes/origin/main 2> /dev/null || die "$sha is not on origin/main"
 }
 check_onmain # CHK:onmain
+
+# worktree: a fresh detached worktree of exactly --sha, like cut_tag's release worktree. The policy library, the
+# coverage gate, the tag and the arm marker (which lives in this work tree's git dir) all run here.
+wt="$repo"
+wt_tmp=""
+cleanup() { [ -z "$wt_tmp" ] || { G worktree remove --force "$wt_tmp/wt" > /dev/null 2>&1; rm -rf -- "${wt_tmp:?}"; G worktree prune > /dev/null 2>&1; }; return 0; }
+trap cleanup EXIT
+make_worktree() {
+    wt_tmp=$(mktemp -d) || die "cannot make a temp directory"
+    G worktree add -q --detach "$wt_tmp/wt" "$sha" > /dev/null 2>&1 || die "cannot make a worktree of $sha"
+    wt="$wt_tmp/wt"
+    [ "$(git -C "$wt" rev-parse HEAD)" = "$sha" ] || die "the worktree is not at $sha"
+}
+make_worktree # CHK:worktree
 
 # version: the workspace version at the SHA, and the tag it names
 ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '
@@ -123,7 +132,7 @@ check_tag_origin # CHK:tag_origin
 # policy: the standing release policy covers this version (autopilot ap_policy_applies, from this commit's own library)
 check_policy() {
     local pol
-    pol=$(cd "$repo" && . scripts/lib/release_policy.sh || exit 2
+    pol=$(cd "$wt" && . scripts/lib/release_policy.sh || exit 2
         t=$(mktemp) || exit 2
         release_policy_ladder contracts/model-capability-ladder-v1.yaml "$ver" > "$t"; r=$?
         l=$(cat "$t"); rm -f "${t:?}"
@@ -145,9 +154,16 @@ check_cert # CHK:cert
 # receipts: {"lane","sha","status":"green"} for exactly this sha
 [ -d "$rdir" ] || die "receipts directory '$rdir' does not exist"
 # Every receipt is read with jq -s: exactly ONE JSON document, so a second document cannot hide behind the first.
+# receipt_nodup FILE: no key may appear twice in the one document (jq keeps the last, which would hide a red).
+# Flat receipts only: a key counts once per scalar value or once at its first array element.
+receipt_nodup() {
+    jq -n --stream -e '[inputs | select(length == 2) | .[0] | select(.[1:] | all(. == 0)) | .[0]] | length == (unique | length)' "$1" > /dev/null 2>&1 \
+        || die "$1 has a duplicate key"
+}
 receipt() {
     local lane=$1 f="$rdir/$1.json"
     [ -s "$f" ] || die "$lane receipt missing: $f"
+    receipt_nodup "$f" # CHK:nodup
     jq -s -e --arg l "$lane" --arg s "$sha" 'length == 1 and (.[0] | .lane == $l and .sha == $s and .status == "green")' "$f" > /dev/null 2>&1 \
         || die "$lane receipt $f is unreadable, not exactly one document, not for lane $lane, not bound to $sha, or not green"
 }
@@ -159,13 +175,19 @@ receipt_models_go() {
 }
 # clean-room: what autopilot cascade_cleanroom_at_tag asserts: a run id, job 'clean-room (aprender)' concluded success,
 # and the tested-sha lines of that job are exactly the one sha
+# run_id: a plain positive decimal integer in a string (no 4.2e1, no 042, no trailing newline)
+receipt_runid() {
+    jq -s -e 'length == 1 and (.[0].run_id | type == "string" and test("\\A[1-9][0-9]*\\z"))' "$rdir/clean-room.json" > /dev/null 2>&1 \
+        || die "clean-room receipt run_id is not a plain positive integer string"
+}
 receipt_cleanroom_run() {
     jq -s -e --arg s "$sha" \
-        'length == 1 and (.[0] | (.run_id | tostring | test("^[0-9]+$")) and .job == "clean-room (aprender)" and .conclusion == "success" and .tested_shas == [$s])' \
+        'length == 1 and (.[0] | .job == "clean-room (aprender)" and .conclusion == "success" and .tested_shas == [$s])' \
         "$rdir/clean-room.json" > /dev/null 2>&1 \
         || die "clean-room receipt lacks a numeric run_id, job 'clean-room (aprender)' with conclusion success, or tested_shas exactly [$sha]"
 }
 receipt clean-room # CHK:cleanroom
+receipt_runid # CHK:runid
 receipt_cleanroom_run # CHK:cleanroom_run
 receipt models # CHK:models
 receipt_models_go # CHK:models_go
@@ -173,9 +195,9 @@ receipt publish-dry-run # CHK:dryrun
 
 # coverage: the existing path (coverage-nightly's receipt, judged by tag_coverage_gate.sh) before the tag
 check_coverage() {
-    local cov="$repo/scripts/release/tag_coverage_gate.sh" o
+    local cov="$wt/scripts/release/tag_coverage_gate.sh" o
     [ -f "$cov" ] || die "coverage: $cov is missing at $sha"
-    o=$(cd "$repo" && bash scripts/release/tag_coverage_gate.sh --resolve "$sha" 2>&1) || die "coverage gate refused: $(printf '%s' "$o" | tail -n 2 | tr '\n' ' ')"
+    o=$(cd "$wt" && bash scripts/release/tag_coverage_gate.sh --resolve "$sha" 2>&1) || die "coverage gate refused: $(printf '%s' "$o" | tail -n 2 | tr '\n' ' ')"
 }
 check_coverage # CHK:coverage
 
@@ -189,9 +211,9 @@ if [ "$execute" != 1 ]; then
 fi
 
 # exactly cut_tag's tail: tag, arm the pre-push tag guard for 120 s, push
-G tag -a "$tag" -m "aprender $tag" "$sha" || die "git tag failed"
-(cd "$repo" && $arm) || die "arming $tag for the pre-push tag guard failed -- tag NOT pushed (the local tag $tag stays; a human decides)"
-G push origin "$tag" || die "tag push failed ($tag exists locally, not on origin)"
+git -C "$wt" tag -a "$tag" -m "aprender $tag" "$sha" || die "git tag failed"
+(cd "$wt" && $arm) || die "arming $tag for the pre-push tag guard failed -- tag NOT pushed (the local tag $tag stays; a human decides)"
+git -C "$wt" push origin "$tag" || die "tag push failed ($tag exists locally, not on origin)"
 
 printf '%s: TAGGED and pushed %s at %s. Next, by hand:\n' "$PROG" "$tag" "$sha"
 printf '  1. gh release create %s --verify-tag --draft ...   (then Binary Release)\n' "$tag"

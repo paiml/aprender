@@ -55,7 +55,7 @@ SH
     printf '0\n' > "$w/fx-coverage-rc"
     cat > "$w/scripts/hooks/pre-push-tags.sh" <<'SH'
 #!/usr/bin/env bash
-printf 'ARM %s\n' "$*" >> "$(dirname "$0")/../../fx-calls"
+printf 'ARM %s\n' "$*" >> "${FX_CALLS:?}"
 exit "$(cat "$(dirname "$0")/../../fx-arm-rc")"
 SH
     printf '0\n' > "$w/fx-arm-rc"
@@ -91,6 +91,7 @@ fx() {
     cp -a "$TMP/tpl" "$d" || return 1
     git -C "$d/work" remote set-url origin "$d/origin.git"
     W="$d/work" S=$(cat "$d/sha") R="$d/receipts"
+    export FX_CALLS="$d/calls"
     mkdir -p "$R"
     all_green
 }
@@ -116,10 +117,10 @@ holds() {
 origin_of() { printf '%s/origin.git\n' "$(dirname "$W")"; }
 no_local_tag() { [ -z "$(git -C "$W" tag -l 'v*')" ]; }
 no_origin_tag() { [ -z "$(git -C "$(origin_of)" tag -l 'v*')" ]; }
-no_calls() { [ ! -s "$W/fx-calls" ]; }
+no_calls() { [ ! -s "$FX_CALLS" ]; }
 tag_at_sha() { [ "$(git -C "$1" rev-parse 'v0.72.2^{commit}' 2>/dev/null)" = "$S" ]; }
 tag_subject_ok() { [ "$(git -C "$W" tag -l --format='%(contents:subject)' v0.72.2)" = "aprender v0.72.2" ]; }
-armed_once() { [ "$(cat "$W/fx-calls" 2>/dev/null)" = "ARM --arm-release v0.72.2 120" ]; }
+armed_once() { [ "$(cat "$FX_CALLS" 2>/dev/null)" = "ARM --arm-release v0.72.2 120" ]; }
 
 table() {
     local lane a
@@ -154,11 +155,34 @@ table() {
 
     fx headmismatch
     git_q -C "$W" commit -q --allow-empty -m next && git_q -C "$W" push -q origin main 2>/dev/null
-    row "checkout HEAD is not the sha refused" 1 "HEAD" --sha "$S" --receipts "$R"
+    row "checkout HEAD ahead of the sha: judged on the sha, promotes" 0 "PROMOTE" --sha "$S" --receipts "$R"
 
     fx dirty
     printf '# edit\n' >> "$W/Cargo.toml"
-    row "tracked modification in the checkout refused" 1 "not clean" --sha "$S" --receipts "$R"
+    row "dirty tracked Cargo.toml in the checkout is not what is judged" 0 "PROMOTE" --sha "$S" --receipts "$R"
+
+    # a hidden edit to a gate script must not decide the run: the gates run from a fresh worktree of the sha
+    for flag in --assume-unchanged --skip-worktree; do
+        fx "hide$flag"
+        printf '1\n' > "$W/fx-coverage-rc"; git_q -C "$W" add fx-coverage-rc; git_q -C "$W" commit -q -m "cov red" && git_q -C "$W" push -q origin main 2>/dev/null
+        S=$(git -C "$W" rev-parse HEAD); all_green
+        printf '0\n' > "$W/fx-coverage-rc"
+        git -C "$W" update-index "$flag" fx-coverage-rc
+        row "hidden ($flag) edit of a gate input cannot green the run" 1 "coverage" --sha "$S" --receipts "$R"
+        row "hidden ($flag) edit with --execute makes no tag" 1 "coverage" --sha "$S" --receipts "$R" --execute
+        holds "hidden ($flag) --execute made no tag" no_local_tag
+        holds "hidden ($flag) --execute pushed no tag" no_origin_tag
+    done
+    fx hidearm
+    printf '1\n' > "$W/fx-arm-rc"; git_q -C "$W" add fx-arm-rc; git_q -C "$W" commit -q -m "arm red" && git_q -C "$W" push -q origin main 2>/dev/null
+    S=$(git -C "$W" rev-parse HEAD); all_green
+    printf '0\n' > "$W/fx-arm-rc"; git -C "$W" update-index --assume-unchanged fx-arm-rc
+    row "hidden edit of the arm hook cannot arm" 1 "arm" --sha "$S" --receipts "$R" --execute
+    holds "hidden arm edit pushed no tag" no_origin_tag
+
+    fx excluded
+    mkdir -p "$W/.git/info"; printf "stray\n" > "$W/stray.txt"; printf "stray.txt\n" >> "$W/.git/info/exclude"; printf 'u\n' > "$W/untracked.txt"
+    row "untracked and excluded files do not decide the run" 0 "PROMOTE" --sha "$S" --receipts "$R"
 
     fx notacommit
     row "unknown sha refused" 1 "" --sha 0123456789abcdef0123456789abcdef01234567 --receipts "$R"
@@ -303,11 +327,26 @@ table() {
     bump "facade no version"
     row "[package] without any version refused" 1 "facade" --sha "$S" --receipts "$R"
 
-    fx untracked
-    printf 'x\n' > "$W/stray.txt"
-    row "untracked file in the checkout refused" 1 "not clean" --sha "$S" --receipts "$R"
-    row "untracked file with --execute refused" 1 "not clean" --sha "$S" --receipts "$R" --execute
-    holds "untracked --execute made no tag" no_local_tag
+    # ---- duplicate keys and run ids ----
+    for lane in clean-room models publish-dry-run; do
+        fx "dupkey-$lane"
+        jq -c . "$R/$lane.json" | sed 's/"status":"green"/"status":"red","status":"green"/' > "$R/m" && mv "$R/m" "$R/$lane.json"
+        row "$lane receipt with a duplicate status key (red, green) refused" 1 "$lane" --sha "$S" --receipts "$R"
+        fx "dupkey2-$lane"
+        jq -c . "$R/$lane.json" | sed 's/"status":"green"/"status":"green","status":"red"/' > "$R/m" && mv "$R/m" "$R/$lane.json"
+        row "$lane receipt with a duplicate status key (green, red) refused" 1 "$lane" --sha "$S" --receipts "$R"
+    done
+    fx dupsha
+    jq -c . "$R/models.json" | sed "s/\"sha\":\"$S\"/\"sha\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sha\":\"$S\"/" > "$R/m" && mv "$R/m" "$R/models.json"
+    row "models receipt with a duplicate sha key refused" 1 "models" --sha "$S" --receipts "$R"
+    fx dupgo
+    jq -c . "$R/models.json" | sed 's/"hosts":\["lambda","gx10"\]/"hosts":["lambda"],"hosts":["lambda","gx10"]/' > "$R/m" && mv "$R/m" "$R/models.json"
+    row "models receipt with a duplicate array-valued key refused" 1 "models" --sha "$S" --receipts "$R"
+    for bad in '4.2e1' '"42\n"' '"0"' '"042"' '"-5"' '42' '"4 2"' 'null'; do
+        fx "runid-$bad"
+        jq --argjson v "$bad" '.run_id = $v' "$R/clean-room.json" > "$R/m" && mv "$R/m" "$R/clean-room.json"
+        row "clean-room run_id $bad refused" 1 "run_id" --sha "$S" --receipts "$R"
+    done
 
     # ---- (c) --execute ----
     fx exec
