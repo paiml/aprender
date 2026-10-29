@@ -360,6 +360,12 @@ table() {
     holds "execute output names the manual publish (RP-001)" test -n "$(grep -F 'RP-001' <<< "$a")"
     row "second --execute is refused: the tag exists" 1 "already exists" --sha "$S" --receipts "$R" --execute
 
+    fx followtags
+    git_q -C "$W" tag -a zz-extra -m extra "$S" && git_q -C "$W" config push.followTags true
+    a=$(cd "$W" && bash "$SUBJECT" --sha "$S" --receipts "$R" --execute 2>&1); a_rc=$?
+    holds "followTags=true: --execute exits 0" test "$a_rc" = 0
+    holds "followTags=true: origin got exactly the one release tag" test "$(git -C "$(origin_of)" tag -l | tr -d '\n')" = "v0.72.2"
+
     fx armfail
     printf '1\n' > "$W/fx-arm-rc"
     bump "arm fails"
