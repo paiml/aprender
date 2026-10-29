@@ -25321,6 +25321,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:docs
   notes: null
   epic: 5281
+- id: PMAT-5306
+  github_issue: 5306
+  item_type: task
+  title: 'N26 promote-nightly adapter: receipt-gated promote_nightly.sh'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-29T18:00:36Z
+  updated: 2026-10-29T18:00:36Z
+  spec: null
+  acceptance_criteria:
+  - 'FLOW-008/N26: scripts/release/promote_nightly.sh verifies on-main sha, version/tag, sha-bound clean-room+models+coverage+publish-dry-run receipts; dry-run by default; --execute does what autopilot cut_tag does. Falsify: scripts/release/falsify_promote_nightly.sh'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
 - id: PMAT-5374
   github_issue: 5374
   item_type: task
