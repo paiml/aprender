@@ -111,61 +111,31 @@ fn run(bin: &Path, pkg: &Path, ceiling: Option<&Path>, env: &[(&str, &str)]) -> 
         .to_string()
 }
 
-/// git's own test knob (and a config-free environment, so a runner's global `safe.directory=*`
-/// cannot mask it): makes git see another owner. Honoured only by git >= 2.35.2.
+/// git's own test knob, in a config-free environment so a runner's global or system
+/// `safe.directory=*` cannot mask it: makes git see another owner.
 const OTHER_OWNER: [(&str, &str); 3] = [
     ("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1"),
     ("GIT_CONFIG_GLOBAL", "/dev/null"),
     ("GIT_CONFIG_SYSTEM", "/dev/null"),
 ];
 
-/// Does plain git, under [`OTHER_OWNER`], really refuse a repo it owns? Behaviour decides first;
-/// the version only classifies a non-refusal. A git older than 2.35.2 has no ownership check, so
-/// it never refuses a checkout and the #4110 failure cannot occur there: the row is unobservable,
-/// not waived, and is reported `not_measured` (stderr, and the file named by
-/// `EMIT_TESTS_NOT_MEASURED`). A git that has the check yet does not refuse is a leaked config
-/// source: that panics, as the old precondition did.
-fn foreign_owner_measurable() -> bool {
-    static M: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *M.get_or_init(|| {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        git(tmp.path(), &["init", "-q"]);
-        let mut probe = Command::new("git");
-        probe
-            .args(["rev-parse", "--git-dir"])
-            .current_dir(tmp.path())
-            .envs(OTHER_OWNER);
-        scrub_git_env(&mut probe);
-        if !probe.output().expect("git").status.success() {
-            return true;
-        }
-        let raw = Command::new("git").arg("--version").output().expect("git");
-        let text = String::from_utf8_lossy(&raw.stdout).trim().to_string();
-        let nums: Vec<u32> = text
-            .split_whitespace()
-            .find_map(|w| w.chars().next().filter(char::is_ascii_digit).map(|_| w))
-            .unwrap_or("")
-            .split('.')
-            .map_while(|p| p.parse().ok())
-            .collect();
-        assert!(
-            nums.len() >= 3 && nums[..3] < [2, 35, 2][..],
-            "git ({text}) has an ownership check but did not refuse under GIT_TEST_ASSUME_DIFFERENT_OWNER: \
-             a config source leaked past the scrubbed environment (see `git config --show-origin safe.directory`)"
-        );
-        let line = format!("not_measured: foreign-owner ({text} has no ownership check)");
-        eprintln!("{line}");
-        if let Some(path) = std::env::var_os("EMIT_TESTS_NOT_MEASURED") {
-            use std::io::Write;
-            let mut f = std::fs::OpenOptions::new()
-                .create(true)
-                .append(true)
-                .open(path)
-                .expect("open EMIT_TESTS_NOT_MEASURED");
-            writeln!(f, "{line}").expect("write EMIT_TESTS_NOT_MEASURED");
-        }
-        false
-    })
+/// Precondition of the `foreign-owner` row: plain git, under [`OTHER_OWNER`], must refuse a repo
+/// it owns. There is no skip and no third state: a git that does not refuse (no knob, or a config
+/// source that still leaks past the scrub) fails the test, naming what to look at.
+fn assert_foreign_owner_simulable() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    git(tmp.path(), &["init", "-q"]);
+    let mut probe = Command::new("git");
+    probe
+        .args(["rev-parse", "--git-dir"])
+        .current_dir(tmp.path())
+        .envs(OTHER_OWNER);
+    scrub_git_env(&mut probe);
+    assert!(
+        !probe.output().expect("git").status.success(),
+        "cannot simulate a checkout owned by another user: this git ignores GIT_TEST_ASSUME_DIFFERENT_OWNER \
+         (no knob, or a config source leaked past the scrub: see `git config --show-origin safe.directory`)"
+    );
 }
 
 /// Drop every environment source that could hand git a `safe.directory` or a repo of its own.
@@ -252,9 +222,8 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
     );
     // the release lane: root in a container over the runner-owned checkout. git's own test knob
     // makes it see another owner; the precondition proves plain git really refuses the repo here
-    if foreign_owner_measurable() {
-        expect("foreign-owner", run(&bin, &dev, None, &OTHER_OWNER), &head);
-    }
+    assert_foreign_owner_simulable();
+    expect("foreign-owner", run(&bin, &dev, None, &OTHER_OWNER), &head);
     wrong
 }
 
@@ -306,12 +275,10 @@ fn planted_regressions_turn_red() {
         &shipped.replace(retry, "").replace(dot_git, ""),
         "plant_no_retry",
     );
-    if foreign_owner_measurable() {
-        assert!(
-            w3.iter().any(|r| r.starts_with("foreign-owner:")),
-            "no-retry plant survived: {w3:#?}"
-        );
-    }
+    assert!(
+        w3.iter().any(|r| r.starts_with("foreign-owner:")),
+        "no-retry plant survived: {w3:#?}"
+    );
     let w2 = table(&git_first, "plant_git_first");
     assert!(
         w2.iter().any(|r| r.starts_with("foreign-repo:")),
