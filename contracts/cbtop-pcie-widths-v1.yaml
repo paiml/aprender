@@ -23,12 +23,12 @@ proof_obligations:
   - id: CBTOP-PCIEW-INV-001
     type: invariant
     property: "the code width set equals the contract set"
-    formal: "VALID_WIDTHS == [0,1,2,4,8,12,16,32]"
+    formal: "w ∈ VALID_WIDTHS ⟺ w ∈ {0,1,2,4,8,12,16,32}"
     applies_to: legal_link_width
   - id: CBTOP-PCIEW-INV-002
     type: invariant
     property: "non-PCIe widths are rejected"
-    formal: "w in {3,5,6,7,24,63,255} => not valid"
+    formal: "w ∈ {3,5,6,7,24,63,255} ⇒ w ∉ VALID_WIDTHS"
     applies_to: legal_link_width
 
 falsification_tests:
