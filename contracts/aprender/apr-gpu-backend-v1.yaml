@@ -287,7 +287,7 @@ falsification_tests:
     and the init error, with or without --verbose (the qwen35 path already does, via
     QWEN35_GPU_FALLBACK_PREFIX).
   test: |
-    cargo test -p aprender-serve --lib --features cuda cuda_init_failure_names_the_cpu_fallback
+    cargo test -p aprender-serve --lib cuda_init_f
   if_fails: >-
     A dense GGUF run on a box whose CUDA init fails reports nothing and reads as a
     GPU run at CPU speed (#4977)

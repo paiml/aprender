@@ -1771,6 +1771,32 @@ mod pmat3757_wgpu_attempt_gate {
         );
     }
 
+    /// MUST-RED (#4977): the CUDA-init fallback line is actually EMITTED in
+    /// `cuda_dense_model`, not behind `--verbose`. The formatter test alone would pass on the
+    /// old code, whose silence was the bug. Read from source: the path needs a GPU to run.
+    #[test]
+    fn the_cuda_init_fallback_line_is_emitted_unconditionally_not_behind_verbose() {
+        let src = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/infer/gguf_gpu_generate.rs"
+        ))
+        .expect("own source readable");
+        let call = "eprintln!(\"{}\", cuda_init_fallback_msg(&e))";
+        let at = src
+            .find(call)
+            .expect("the CUDA-init failure arm must print cuda_init_fallback_msg");
+        let head = &src[at.saturating_sub(160)..at];
+        assert!(
+            !head.contains("if verbose"),
+            "the CUDA-init fallback line must not be behind --verbose: the user who needs it \
+             is the one who did not pass it"
+        );
+        assert!(
+            head.contains("Err(e) =>"),
+            "the print must sit in the OwnedQuantizedModelCuda init-failure arm"
+        );
+    }
+
     /// MUST-RED: the notice is actually EMITTED at the exit, unconditionally.
     ///
     /// Read from source because the alternative is capturing stderr from a path that needs
