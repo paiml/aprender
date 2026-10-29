@@ -112,6 +112,32 @@ fn run(bin: &Path, pkg: &Path, ceiling: Option<&Path>, env: &[(&str, &str)]) -> 
         .to_string()
 }
 
+/// git's own test knob (and a config-free environment, so a runner's global `safe.directory=*`
+/// cannot mask it): makes git see another owner. Honoured only by git >= 2.35.2.
+const OTHER_OWNER: [(&str, &str); 3] = [
+    ("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1"),
+    ("GIT_CONFIG_GLOBAL", "/dev/null"),
+    ("GIT_CONFIG_SYSTEM", "/dev/null"),
+];
+
+/// Does plain git, under [`OTHER_OWNER`], really refuse a repo it owns? Git 2.34.1 (the
+/// intel-clean-room seats) has no ownership check, so the `foreign-owner` row cannot be
+/// simulated there: it reports `not_measured` instead of passing or panicking.
+fn foreign_owner_measurable() -> bool {
+    static M: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *M.get_or_init(|| {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        git(tmp.path(), &["init", "-q"]);
+        let refused = Command::new("git")
+            .args(["rev-parse", "--git-dir"])
+            .current_dir(tmp.path())
+            .envs(OTHER_OWNER)
+            .output()
+            .expect("git");
+        !refused.status.success()
+    })
+}
+
 /// The case table. Returns the names of the rows that landed wrong (empty = all as expected).
 fn table(build_rs: &str, label: &str) -> Vec<String> {
     let tmp = tempfile::tempdir().expect("tempdir");
@@ -188,17 +214,11 @@ fn table(build_rs: &str, label: &str) -> Vec<String> {
     );
     // the release lane: root in a container over the runner-owned checkout. git's own test knob
     // makes it see another owner; the precondition proves plain git really refuses the repo here
-    let other_owner = [("GIT_TEST_ASSUME_DIFFERENT_OWNER", "1")];
-    let refused = Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(&dev)
-        .envs(other_owner)
-        .output();
-    assert!(
-        !refused.expect("git").status.success(),
-        "cannot simulate a checkout owned by another user: this git ignores GIT_TEST_ASSUME_DIFFERENT_OWNER"
-    );
-    expect("foreign-owner", run(&bin, &dev, None, &other_owner), &head);
+    if foreign_owner_measurable() {
+        expect("foreign-owner", run(&bin, &dev, None, &OTHER_OWNER), &head);
+    } else {
+        println!("foreign-owner: not_measured (this git has no ownership check; the row is skipped, every other row is asserted)");
+    }
     wrong
 }
 
@@ -250,10 +270,14 @@ fn planted_regressions_turn_red() {
         &shipped.replace(retry, "").replace(dot_git, ""),
         "plant_no_retry",
     );
-    assert!(
-        w3.iter().any(|r| r.starts_with("foreign-owner:")),
-        "no-retry plant survived: {w3:#?}"
-    );
+    if foreign_owner_measurable() {
+        assert!(
+            w3.iter().any(|r| r.starts_with("foreign-owner:")),
+            "no-retry plant survived: {w3:#?}"
+        );
+    } else {
+        println!("plant_no_retry: not_measured (foreign-owner row unmeasurable on this git)");
+    }
     let w2 = table(&git_first, "plant_git_first");
     assert!(
         w2.iter().any(|r| r.starts_with("foreign-repo:")),
