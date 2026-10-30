@@ -49,7 +49,7 @@ tickets:
   - {n: 3863, release: "0.80.0", class: slip, epic: null, owner: "aprender-a7", size: "-", deps: []}
   - {n: 3972, release: "0.74.0", class: ship, epic: 3269, owner: "aprender-a7", size: "M", deps: []}
   - {n: 3997, release: "0.80.0", class: slip, epic: null, owner: "aprender-wcensus", size: "-", deps: []}
-  - {n: 3998, release: "0.76.0", class: ship, epic: null, owner: "build-kaizen", size: "-", deps: []}
+  - {n: 3998, release: "0.80.0", class: slip, epic: null, owner: "build-kaizen", size: "-", deps: []}
   - {n: 3999, release: "0.80.0", class: slip, epic: null, owner: "la-0.73", size: "-", deps: []}
   - {n: 4000, release: "0.75.0", class: ship, epic: null, owner: "la-0.72", size: "-", deps: []}
   - {n: 4001, release: "0.74.0", class: ship, epic: null, owner: "aprender-a7", size: "-", deps: []}
@@ -101,7 +101,7 @@ tickets:
   - {n: 5222, release: "0.80.0", class: slip, epic: 5305, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 5276, release: "0.76.0", class: ship, epic: 5321, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 5305, release: "0.80.0", class: slip, epic: 3598, owner: "noahgift", size: "-", deps: []}
-  - {n: 5306, release: "0.76.0", class: ship, epic: 3998, owner: "build-kaizen", size: "-", deps: []}
+  - {n: 5306, release: "0.80.0", class: slip, epic: 3998, owner: "build-kaizen", size: "-", deps: []}
   - {n: 5308, release: "0.74.0", class: ship, epic: 3269, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 5312, release: "0.75.0", class: ship, epic: 5348, owner: "aprender-w5018", size: "-", deps: []}
   - {n: 5317, release: "0.76.0", class: ship, epic: 4381, owner: "aprender-w5018", size: "-", deps: []}
