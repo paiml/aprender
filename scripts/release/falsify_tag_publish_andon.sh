@@ -231,8 +231,14 @@ has "operator fixture: gate says why" "$TMP/gate.out" "crates.io does not show 1
 ( . "$BIN/lib_crates_io.sh" && CRATES_IO_RESPONSE_FILE="$J_500" crates_io_close_gate aprender 1.0.0 ) > "$TMP/gate2.out" 2>&1; expect "operator fixture: unmeasured read also refuses" 2 "$?"
 ( . "$BIN/lib_crates_io.sh" && CRATES_IO_RESPONSE_FILE="$J_HAS" crates_io_close_gate aprender 1.0.0 ) > /dev/null 2>&1; expect "close gate opens once crates.io shows it" 0 "$?"
 andon operator "$J_NONE" --since $SINCE_OLD; expect "operator fixture: andon fires" 1 "$RC"; has "operator fixture: paged" "$TMP/out-operator" "PAGE apr:cop"
-hasnt "operator fixture: no milestone/epic write was attempted" "$FX_GH_LOG" "close"
-hasnt "operator fixture: no PATCH was attempted" "$FX_GH_LOG" "PATCH"
+# that autopilot step 9 itself closes nothing on this refusal is proven in check_release_autopilot_dogfood_close.sh
+# (row close-crates-absent): the andon never closes anything, so asserting "no close" on its gh log would be vacuous
+
+# a failed escalate append never blocks the live page: inbox line, no stamp, the page still goes out
+mkdir -p "$TMP/esc-is-a-dir"; : > "$FX_TMUX_LOG"; ANDON_LIVE=1 andon escfail "$J_NONE" --since $SINCE_OLD --escalate "$TMP/esc-is-a-dir"; expect "escalate write fails: andon still open" 1 "$RC"
+has "escalate write fails: inbox says so" "$TMP/inb-escfail" "ESCALATE WRITE FAILED"
+has "escalate write fails: page still delivered" "$FX_TMUX_LOG" "send-keys -t apr:cop"
+[ ! -e "$TMP/st-escfail/escalated-v1.0.0" ]; expect "escalate write fails: not stamped" 0 "$?"
 # the autopilot calls the gate in step 9, before any close
 grep -q 'crates_io_close_gate aprender "\$V"' "$HERE/autopilot.sh" && ok || bad "autopilot.sh step 9 does not call crates_io_close_gate"
 
