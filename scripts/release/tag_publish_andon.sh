@@ -88,7 +88,8 @@ open=0 nm=0
 # A tag is dated by its push, measured as the run that first saw it on origin (state/seen-<tag>; at most one timer period late).
 # The first run cannot know when the tags already present were pushed, so it dates each by the newest lower bound it has:
 # the tagger date of an annotated tag, the commit date of a lightweight one. Either can only date the push early (an early
-# page, never a silent pass); a tag older than --since by that bound is skipped. Install the timer before the next tag.
+# page); a tag older than --since by that bound is skipped. So the timer is installed before the next tag is pushed: a tag
+# pushed between --since and the first run is the one case git cannot date (measured empty at install, 2026-10-30).
 baseline=0; [ -e "$state/baseline" ] || baseline=1
 tag_time() { # tag_time TAG -> the epoch the tag is dated by (see above)
     local t=$1 seen="$state/seen-$1" lw=1
@@ -106,7 +107,7 @@ tag_time() { # tag_time TAG -> the epoch the tag is dated by (see above)
 while IFS= read -r tag; do
     [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
     ts=$(tag_time "$tag")
-    [[ $ts =~ ^[0-9]+$ ]] || continue
+    [[ $ts =~ ^[0-9]+$ ]] || { nm=1; inbox_line "NOT_MEASURED tag $tag: cannot date it (state dir unwritable or git read failed); no decision"; continue; }
     [ "$ts" -ge "$since_s" ] || continue
     age=$(( (now - ts) / 60 ))
     [ "$age" -ge "$win" ] || continue

@@ -40,6 +40,7 @@ if [ "${1:-}" = --mutants ]; then
     mut stamp-without-delivery tag_publish_andon.sh 's/if page "\$line"; then : >/if page "$line" || true; then : >/'
     mut lightweight-by-commit-date tag_publish_andon.sh 's/    ts=$(tag_time "$tag")/    ts=$(G for-each-ref --format=%(creatordate:unix) "refs\/tags\/$tag")/'
     mut baseline-dropped tag_publish_andon.sh 's/^baseline=0; .*$/baseline=0/'
+    mut undatable-is-silent tag_publish_andon.sh 's/^    \[\[ \$ts =~ \^\[0-9\]+\$ \]\] || {.*$/    [[ $ts =~ ^[0-9]+$ ]] || continue/'
     mut baseline-lightweight-zero tag_publish_andon.sh 's/G log -1 --format=%ct "refs\/tags\/$t" > "$seen"/echo 0 > "$seen"/'
     mut push-dated-by-tagger tag_publish_andon.sh 's/if \[ "\$baseline" = 1 \] && \[ "\$lw" = 0 \]; then/if [ "$lw" = 0 ]; then/'
     mut lsremote-fail-is-absent tag_publish_andon.sh 's/^            \*) printf .origin unreadable.*$/            *) printf "tag not on origin"; return ;;/'
@@ -282,6 +283,10 @@ andon lwa "$J_NONE" --since "$SINCE_4H"; has "step: tag absent on origin" "$TMP/
 FX_LSREMOTE_RC=128 andon lwa "$J_NONE" --since "$SINCE_4H"; has "step: origin unreadable is not measured" "$TMP/out-lwa" "origin unreadable (tag-on-origin not measured)"
 hasnt "step: origin unreadable is never 'not on origin'" "$TMP/out-lwa" "blocking step: tag not on origin"
 mv "$TMP/stub/git" "$TMP/git-stub.off"; g remote remove origin
+# a tag the andon cannot date (state unwritable) is not measured (exit 2 + inbox line), never a silent skip
+g tag -a -m v4.0.0 v4.0.0; mkdir -p "$TMP/st-lwa/seen-v4.0.0"
+andon lwa "$J_NONE" --since "$SINCE_4H"; has "undatable tag: NOT_MEASURED inbox line" "$TMP/inb-lwa" "NOT_MEASURED tag v4.0.0: cannot date it"
+g tag -d v4.0.0 > /dev/null
 
 # the autopilot calls the gate in step 9 (a code line, not a comment); that it runs BEFORE any close is the behavioural
 # row close-crates-absent in check_release_autopilot_dogfood_close.sh
