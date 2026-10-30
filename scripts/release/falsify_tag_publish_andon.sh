@@ -40,6 +40,8 @@ if [ "${1:-}" = --mutants ]; then
     mut stamp-without-delivery tag_publish_andon.sh 's/if page "\$line"; then : >/if page "$line" || true; then : >/'
     mut lightweight-by-commit-date tag_publish_andon.sh 's/    ts=$(tag_time "$tag")/    ts=$(G for-each-ref --format=%(creatordate:unix) "refs\/tags\/$tag")/'
     mut baseline-dropped tag_publish_andon.sh 's/^baseline=0; .*$/baseline=0/'
+    mut push-dated-by-tagger tag_publish_andon.sh 's/if \[ "\$baseline" = 1 \] && \[ "\$lw" = 0 \]; then/if [ "$lw" = 0 ]; then/'
+    mut lsremote-fail-is-absent tag_publish_andon.sh 's/^            \*) printf .origin unreadable.*$/            *) printf "tag not on origin"; return ;;/'
     mut page-always-succeeds tag_publish_andon.sh 's/^    \[ "\$delivered" = 1 \]$/    true/'
     mut undelivered-inbox-dropped tag_publish_andon.sh 's/else inbox_line "PAGE UNDELIVERED[^"]*"; fi/else :; fi/'
     mut has-session-dropped tag_publish_andon.sh 's/^        tmux has-session .*$/        :/'
@@ -257,8 +259,27 @@ echo $((NOW - 180 * 60)) > "$TMP/st-lw/seen-v2.0.0" # 3 h after first sight
 andon lw "$J_NONE" --since "$SINCE_4H"; expect "lightweight tag 3 h after first sight, absent: andon" 1 "$RC"
 has "lightweight andon names the tag" "$TMP/out-lw" "v2.0.0"; hasnt "baselined tag never pages" "$TMP/out-lw" "v0.9.0"
 
-# the autopilot calls the gate in step 9, before any close
-grep -q 'crates_io_close_gate aprender "\$V"' "$HERE/autopilot.sh" && ok || bad "autopilot.sh step 9 does not call crates_io_close_gate"
+# ---- an annotated tag is dated by its push (first sight on origin), not its tagger date (lane round 4) ----
+mkdir -p "$TMP/st-lwa"; : > "$TMP/st-lwa/baseline" # a later run: the baseline already happened
+GIT_COMMITTER_DATE="@$((NOW - 86400)) +0000" g tag -a -m v3.0.0 v3.0.0 # created a day ago (before --since), pushed now
+andon lwa "$J_NONE" --since "$SINCE_4H"; expect "annotated tag created before --since, pushed after: no page at once" 0 "$RC"
+expect "annotated tag: dated by first sight" "$NOW" "$(cat "$TMP/st-lwa/seen-v3.0.0")"
+hasnt "annotated tag: no LIGHTWEIGHT line" "$TMP/inb-lwa" "LIGHTWEIGHT TAG v3.0.0"
+echo $((NOW - 180 * 60)) > "$TMP/st-lwa/seen-v3.0.0" # 3 h after its push
+andon lwa "$J_NONE" --since "$SINCE_4H"; expect "annotated tag 3 h after its push, absent: andon" 1 "$RC"; has "annotated andon names the tag" "$TMP/out-lwa" "v3.0.0"
+
+# ---- blocking step: tag absent on origin (ls-remote rc 2) vs origin unreadable (any other rc: not measured, never "absent") ----
+git init -q --bare "$TMP/origin.git"; g remote add origin "$TMP/origin.git"
+FX_REALGIT=$(command -v git)
+printf '#!/usr/bin/env bash\ncase " $* " in *" ls-remote "*) [ -z "${FX_LSREMOTE_RC:-}" ] || exit "$FX_LSREMOTE_RC" ;; esac\nexec %s "$@"\n' "$FX_REALGIT" > "$TMP/stub/git"; chmod +x "$TMP/stub/git"
+andon lwa "$J_NONE" --since "$SINCE_4H"; has "step: tag absent on origin" "$TMP/out-lwa" "blocking step: tag not on origin"
+FX_LSREMOTE_RC=128 andon lwa "$J_NONE" --since "$SINCE_4H"; has "step: origin unreadable is not measured" "$TMP/out-lwa" "origin unreadable (tag-on-origin not measured)"
+hasnt "step: origin unreadable is never 'not on origin'" "$TMP/out-lwa" "blocking step: tag not on origin"
+mv "$TMP/stub/git" "$TMP/git-stub.off"; g remote remove origin
+
+# the autopilot calls the gate in step 9 (a code line, not a comment); that it runs BEFORE any close is the behavioural
+# row close-crates-absent in check_release_autopilot_dogfood_close.sh
+grep -qE '^[[:space:]]+crates_io_close_gate aprender "\$V"' "$HERE/autopilot.sh" && ok || bad "autopilot.sh step 9 does not call crates_io_close_gate"
 
 printf 'falsify_tag_publish_andon: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

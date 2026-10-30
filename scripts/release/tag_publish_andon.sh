@@ -5,7 +5,7 @@
 #
 # Operator ruling 2026-10-30: "a release = the version is on crates.io and passed the clean-container smoke. A tag alone is
 # not a release. A tag not on crates.io within 2 h of push is an andon that pages Noah live."
-# For every v<semver> tag (no pre-release) created at or after --since and older than --window-min: crate `aprender` must show
+# For every v<semver> tag (no pre-release) pushed at or after --since and older than --window-min: crate `aprender` must show
 # that version on crates.io. Absent = ANDON: an inbox line EVERY run while open, an escalate line and a live page ONCE per tag.
 # A crates.io read that fails is NOT_MEASURED: inbox line, exit 2, no page, no decision.
 # A page is stamped (once per tag) ONLY when at least one --page-target (verified with tmux has-session) accepted it; otherwise an inbox
@@ -65,8 +65,13 @@ page() { # page LINE: rc 0 only when at least one --page-target accepted it. Eac
 # blocking_step TAG: the first missing step visible from here
 blocking_step() {
     local tag=$1
-    if ! G ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1 && G remote get-url origin > /dev/null 2>&1; then
-        printf 'tag not on origin'; return
+    if G remote get-url origin > /dev/null 2>&1; then
+        G ls-remote --exit-code --tags origin "refs/tags/$tag" > /dev/null 2>&1
+        case $? in
+            0) ;;
+            2) printf 'tag not on origin'; return ;;
+            *) printf 'origin unreadable (tag-on-origin not measured); crates.io publish missing'; return ;;
+        esac
     fi
     if ! command -v gh > /dev/null 2>&1; then printf "GitHub release state unreadable (no gh); crates.io publish missing"; return; fi
     if ! gh release view "$tag" --repo paiml/aprender > /dev/null 2>&1; then printf 'no GitHub release (assets/clean-room not started or incomplete)'; return; fi
@@ -80,17 +85,19 @@ fi
 now=$(date -u +%s) # bashrs disable-line=DET002
 tags=$(G tag --list 'v[0-9]*.[0-9]*.[0-9]*' 2> /dev/null) || usage "cannot list tags in $repo"
 open=0 nm=0
-# the first run baselines every lightweight tag already present (dated 0, so --since skips it): its push time is unknowable
+# A tag is dated by its push, measured as the run that first saw it on origin (state/seen-<tag>; at most one timer period late).
+# The first run cannot know when the tags already present were pushed: it dates an annotated one by its tagger date and a
+# lightweight one 0 (--since skips it), since a lightweight tag's only date is its commit's.
 baseline=0; [ -e "$state/baseline" ] || baseline=1
-tag_time() { # tag_time TAG -> epoch it is dated by. Annotated (what promote_nightly.sh and autopilot.sh cut): tagger date.
-    # Lightweight: the commit date says nothing about the push, so it is dated by when this andon first saw it.
-    local t=$1 seen="$state/seen-$1"
-    if [ "$(G cat-file -t "refs/tags/$t" 2> /dev/null)" = tag ]; then G for-each-ref --format="%(taggerdate:unix)" "refs/tags/$t" 2> /dev/null; return; fi
+tag_time() { # tag_time TAG -> the epoch the tag is dated by (see above)
+    local t=$1 seen="$state/seen-$1" lw=1
+    [ "$(G cat-file -t "refs/tags/$t" 2> /dev/null)" = tag ] && lw=0
     if [ ! -s "$seen" ]; then
-        if [ "$baseline" = 1 ]; then echo 0 > "$seen" || return 1
+        if [ "$baseline" = 1 ] && [ "$lw" = 0 ]; then G for-each-ref --format="%(taggerdate:unix)" "refs/tags/$t" > "$seen" 2> /dev/null || return 1
+        elif [ "$baseline" = 1 ]; then echo 0 > "$seen" || return 1
         else
             echo "$now" > "$seen" || return 1
-            inbox_line "LIGHTWEIGHT TAG $t: not cut by the release path; dated by first sight, not its commit"
+            [ "$lw" = 0 ] || inbox_line "LIGHTWEIGHT TAG $t: not cut by the release path; dated by first sight, not its commit"
         fi
     fi
     cat -- "$seen"
