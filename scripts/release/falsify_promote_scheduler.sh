@@ -26,7 +26,7 @@ if [ "${1:-}" = --mutants ]; then
     mut train-verdict-ignored 's/--exit-verdict > "\$d\/train.log" 2>&1 || {/--exit-verdict > "$d\/train.log" 2>\&1 || true || {/'
     mut no-ff-when-behind 's/ || G merge -q --ff-only .*$//'
     mut seams-in-repo-allowed 's/^    case "\$(realpath -e.*$/    :/'
-    mut rate-floor-dropped 's/-lt 1000 \]; then/-lt 0 ]; then/'
+    mut rate-floor-dropped 's/-lt "\$floor" \]; then/-lt 0 ]; then/'
     mut dispatch-time-filter-dropped 's/select(.createdAt >= [^)]*)/select(true)/'
     mut sandbox-dropped 's/"\${SANDBOX\[@\]}" bash "\$TRAIN"/bash "$TRAIN"/'
     mut already-promoted-check-dropped 's/ls-remote origin "refs\/tags\/v\$ver"/ls-remote origin "refs\/tags\/none-$ver"/'
@@ -157,7 +157,7 @@ sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environ
     : > "$TMP/calls"; : > "$INB"; rm -rf "${ST:?}" "${TMP:?}/pt-flag"
     if [ "${FX_PRESEED:-0}" = 1 ]; then mkdir -p "$ST/$R2"; echo 999 > "$ST/$R2/cleanroom-run-id"; fi
     FX_CALLS="$TMP/calls" FX_PT_FLAG="$TMP/pt-flag" FX_R1=$R1 FX_R2=$R2 FX_R0=$R0 \
-        bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" "$@" > "$TMP/out-$n" 2>&1; rc=$?
+        bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 "$@" > "$TMP/out-$n" 2>&1; rc=$?
     expect "$n rc" "$wr" "$rc"
     expect "$n promote calls" "$wp" "$(grep -c '^PROMOTE' "$TMP/calls")"
     expect "$n execute calls" "$we" "$(grep -c '^PROMOTE.*--execute' "$TMP/calls")"
@@ -208,6 +208,9 @@ g push -q origin "$R2:refs/tags/v1.2.3"
 sched already-promoted-tag-on-origin 0 0 0 --execute
 grep -q 'already promoted' "$INB" && ok || bad "already-promoted inbox line"
 g push -q origin ":refs/tags/v1.2.3"
+# the inbox and the floor are required: absent = usage error (2), nothing run
+: > "$TMP/calls"; bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --rate-floor 1000 > /dev/null 2>&1; expect "no --inbox" 2 "$?"
+bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" > /dev/null 2>&1; expect "no --rate-floor" 2 "$?"
 # liveness: a clean checkout BEHIND origin/main fast-forwards and runs
 printf n > "$W/f2"; g add f2; g commit -q -m c3; g push -q origin main; g reset -q --hard HEAD~1
 sched behind-origin-fast-forwards 0 1 0
@@ -223,7 +226,7 @@ GH="$TMP/gh" PROMOTE="$TMP/promote" RECEIPTS="$BIN/receipts_from_night.sh" DRYRU
 expect "env: no stub gh call" 0 "$(grep -c '^GH' "$TMP/calls")"
 # lock: a second run while the first holds it does nothing
 mkdir -p "$ST"; : > "$TMP/calls"
-( exec 8> "$ST/.lock"; flock -n 8; FX_CALLS="$TMP/calls" bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" --execute > "$TMP/out-lock" 2>&1; echo $? > "$TMP/lock-rc" )
+( exec 8> "$ST/.lock"; flock -n 8; FX_CALLS="$TMP/calls" bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 --execute > "$TMP/out-lock" 2>&1; echo $? > "$TMP/lock-rc" )
 expect "lock rc" 0 "$(cat "$TMP/lock-rc")"; grep -q 'holds the lock' "$TMP/out-lock" && ok || bad "lock message"
 expect "lock: nothing ran" 0 "$(wc -l < "$TMP/calls")"
 inbox_has lock-held SKIP

@@ -6,6 +6,6 @@ Type=oneshot
 # No EnvironmentFile and no Environment=: nothing from the environment changes behaviour (the script also unsets its own seams).
 UnsetEnvironment=GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS GITHUB_OUTPUT
 # exit 3 = clean-room still running (not a failure); exit 1 = a red/unmeasured gate (failure, visible in systemctl --user --failed)
-ExecStart=/usr/bin/env bash %h/src/aprender-promote/scripts/release/promote_scheduler.sh --repo %h/src/aprender-promote --state /mnt/nvme-raid0/cop-inbox/promote-state --not-before 2026-10-31T06:00:00Z --dispatch-cleanroom --execute
+ExecStart=/usr/bin/env bash %h/src/aprender-promote/scripts/release/promote_scheduler.sh --repo %h/src/aprender-promote --state /mnt/nvme-raid0/cop-inbox/promote-state --inbox /mnt/nvme-raid0/cop-inbox/inbox.md --rate-floor 1000 --not-before 2026-10-31T06:00:00Z --dispatch-cleanroom --execute
 SuccessExitStatus=0 3
 TimeoutStartSec=3h

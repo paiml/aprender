@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # promote_scheduler.sh -- the unattended driver of promote_nightly.sh (N26: "the nightly is the release", PMAT-5306)
 #
-#   bash scripts/release/promote_scheduler.sh --repo DIR --state DIR [--not-before ISO8601Z] [--dispatch-cleanroom] [--execute] [--inbox FILE]
+#   bash scripts/release/promote_scheduler.sh --repo DIR --state DIR --inbox FILE --rate-floor N [--not-before ISO8601Z] [--dispatch-cleanroom] [--execute]
 #
 # Run by a systemd user timer on the build host (scripts/release/systemd/). Dry-run unless --execute.
 # SHA-SELECTION RULE (full text: handoff/aprender-cop/scheduler-sha-rule.md):
@@ -23,7 +23,7 @@ set -uo pipefail
 unset GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""; DISPATCH_WAIT=5
-repo="" state="" nb="" disp=0 exe=0 inbox=/mnt/nvme-raid0/cop-inbox/inbox.md
+repo="" state="" nb="" disp=0 exe=0 inbox="" floor=""
 usage() { printf 'promote_scheduler: %s\n' "$*" >&2; exit 2; }
 say() { printf 'promote_scheduler: %s\n' "$*"; }
 # inbox_line MSG: one line, <= 300 chars, to the cop inbox. A skipped or failed promotion is never silent.
@@ -38,12 +38,16 @@ while [ $# -gt 0 ]; do
         --state) [ $# -ge 2 ] || usage "--state needs a value"; state=$2; shift 2 ;;
         --not-before) [ $# -ge 2 ] || usage "--not-before needs a value"; nb=$2; shift 2 ;;
         --inbox) [ $# -ge 2 ] || usage "--inbox needs a value"; inbox=$2; shift 2 ;;
+        --rate-floor) [ $# -ge 2 ] || usage "--rate-floor needs a value"; floor=$2; shift 2 ;;
         --dispatch-cleanroom) disp=1; shift ;;
         --execute) exe=1; shift ;;
         *) usage "unknown argument: $1" ;;
     esac
 done
 [ -d "${repo:-/nonexistent}" ] && [ -n "$state" ] || usage "--repo DIR and --state DIR are required"
+# no default for either: the installed unit supplies the cop inbox and the GH-1 REST floor; absent = refuse (never silent, never a guess)
+[ -n "$inbox" ] || usage "--inbox FILE is required (the cop inbox)"
+[[ $floor =~ ^[0-9]+$ ]] || usage "--rate-floor N is required (the GH-1 REST allowance floor)"
 if [ -n "$nb" ]; then
     nbs=$(date -u -d "$nb" +%s 2> /dev/null) || usage "bad --not-before '$nb'"
     [ "$(date -u +%s)" -ge "$nbs" ] || { say "too early (before $nb): nothing done"; exit 0; }
@@ -87,7 +91,7 @@ fi
 ev=$EVIDENCE_DIR
 # GH-1: below the REST floor only the release path may call; unreadable = not_measured. Skip, never silent.
 rem=$("$GH" api rate_limit --jq .resources.core.remaining 2> /dev/null)
-if ! [[ $rem =~ ^[0-9]+$ ]] || [ "$rem" -lt 1000 ]; then say "GitHub REST allowance '${rem:-unreadable}' < 1000: nothing done"; inbox_line "SKIP GitHub REST remaining '${rem:-unreadable}' < 1000 (GH-1); will retry next tick"; exit 0; fi
+if ! [[ $rem =~ ^[0-9]+$ ]] || [ "$rem" -lt "$floor" ]; then say "GitHub REST allowance '${rem:-unreadable}' < $floor: nothing done"; inbox_line "SKIP GitHub REST remaining '${rem:-unreadable}' < $floor (GH-1); will retry next tick"; exit 0; fi
 
 # candidates: the newest NCAND bundles (any state), on origin/main, no older than MAX_AGE_DAYS
 cutoff=$(( $(date -u +%s) - MAX_AGE_DAYS * 86400 ))
