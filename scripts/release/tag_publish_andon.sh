@@ -100,8 +100,14 @@ tag_time() { # tag_time TAG -> the epoch the tag is dated by (see above)
     local t=$1 seen="$state/seen-$1" lw=1
     [ "$(G cat-file -t "refs/tags/$t" 2> /dev/null)" = tag ] && lw=0
     if [ ! -s "$seen" ]; then
-        if [ "$baseline" = 1 ] && [ "$lw" = 0 ]; then G for-each-ref --format="%(taggerdate:unix)" "refs/tags/$t" > "$seen" 2> /dev/null || return 1
-        elif [ "$baseline" = 1 ]; then G log -1 --format=%ct "refs/tags/$t" > "$seen" 2> /dev/null || return 1
+        if [ "$baseline" = 1 ]; then
+            local b
+            if [ "$lw" = 0 ]; then b=$(G for-each-ref --format="%(taggerdate:unix)" "refs/tags/$t" 2> /dev/null) || return 1
+            else b=$(G log -1 --format=%ct "refs/tags/$t" 2> /dev/null) || return 1; fi
+            [[ $b =~ ^[0-9]+$ ]] || return 1
+            # a tag first seen after a gap was pushed after the previous run, so lastrun bounds it too (keeps it above --since)
+            [[ $last =~ ^[0-9]+$ ]] && [ "$last" -gt "$b" ] && b=$last
+            echo "$b" > "$seen" || return 1
         else
             echo "$now" > "$seen" || return 1
             [ "$lw" = 0 ] || inbox_line "LIGHTWEIGHT TAG $t: not cut by the release path; dated by first sight, not its commit"

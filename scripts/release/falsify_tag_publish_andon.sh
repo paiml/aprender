@@ -41,10 +41,11 @@ if [ "${1:-}" = --mutants ]; then
     mut lightweight-by-commit-date tag_publish_andon.sh 's/    ts=$(tag_time "$tag")/    ts=$(G for-each-ref --format=%(creatordate:unix) "refs\/tags\/$tag")/'
     mut baseline-dropped tag_publish_andon.sh 's/^baseline=1; last=/baseline=0; last=/'
     mut gap-ignored tag_publish_andon.sh 's/-le \$((gap \* 60))/-ge 0/'
+    mut lastrun-bound-dropped tag_publish_andon.sh 's/ && b=\$last$//'
     mut dry-stamps-live tag_publish_andon.sh 's/|| pstamp=dry-paged-/|| pstamp=paged-/'
     mut undatable-is-silent tag_publish_andon.sh 's/^    \[\[ \$ts =~ \^\[0-9\]+\$ \]\] || {.*$/    [[ $ts =~ ^[0-9]+$ ]] || continue/'
-    mut baseline-lightweight-zero tag_publish_andon.sh 's/G log -1 --format=%ct "refs\/tags\/$t" > "$seen"/echo 0 > "$seen"/'
-    mut push-dated-by-tagger tag_publish_andon.sh 's/if \[ "\$baseline" = 1 \] && \[ "\$lw" = 0 \]; then/if [ "$lw" = 0 ]; then/'
+    mut baseline-lightweight-zero tag_publish_andon.sh 's/b=$(G log -1 --format=%ct "refs\/tags\/$t" 2> \/dev\/null)/b=0/'
+    mut push-dated-by-tagger tag_publish_andon.sh 's/^        if \[ "\$baseline" = 1 \]; then$/        if true; then/'
     mut lsremote-fail-is-absent tag_publish_andon.sh 's/^            \*) printf .origin unreadable.*$/            *) printf "tag not on origin"; return ;;/'
     mut page-always-succeeds tag_publish_andon.sh 's/^    \[ "\$delivered" = 1 \]$/    true/'
     mut undelivered-inbox-dropped tag_publish_andon.sh 's/else inbox_line "PAGE UNDELIVERED[^"]*"; fi/else :; fi/'
@@ -272,7 +273,7 @@ andon lw "$J_NONE" --since "$SINCE_4H"; expect "lightweight tag 3 h after first 
 has "lightweight andon names the tag" "$TMP/out-lw" "v2.0.0"; hasnt "baselined tag never pages" "$TMP/out-lw" "v0.9.0"
 
 # ---- an annotated tag is dated by its push (first sight on origin), not its tagger date (lane round 4) ----
-mkdir -p "$TMP/st-lwa"; echo "$NOW" > "$TMP/st-lwa/lastrun" # a later run: the previous run was just now
+mkdir -p "$TMP/st-lwa"; echo $((NOW - 600)) > "$TMP/st-lwa/lastrun" # a later run: the previous run was 10 min ago
 GIT_COMMITTER_DATE="@$((NOW - 86400)) +0000" g tag -a -m v3.0.0 v3.0.0 # created a day ago (before --since), pushed now
 andon lwa "$J_NONE" --since "$SINCE_4H"; expect "annotated tag created before --since, pushed after: no page at once" 0 "$RC"
 expect "annotated tag: dated by first sight" "$NOW" "$(cat "$TMP/st-lwa/seen-v3.0.0")"
@@ -286,6 +287,10 @@ andon gap "$J_NONE" --since "$SINCE_4H"; expect "timer down 3 h, tag pushed mean
 has "gap andon names the tag" "$TMP/out-gap" "v5.0.0"; expect "gap run: dated by tagger date" "$((NOW - 170 * 60))" "$(cat "$TMP/st-gap/seen-v5.0.0")"
 andon gapq "$J_NONE" --since "$SINCE_4H" --max-gap-min nope; expect "bad --max-gap-min: usage" 2 "$RC"
 g tag -d v5.0.0 > /dev/null
+# timer down 3 h, a lightweight tag on a pre---since commit pushed meanwhile: dated by lastrun, never skipped (lane round 9)
+mkdir -p "$TMP/st-gap2"; echo $((NOW - 180 * 60)) > "$TMP/st-gap2/lastrun"; g tag v5.1.0 "v0.9.0^{commit}"
+andon gap2 "$J_NONE" --since "$SINCE_4H"; expect "gap, old-commit lightweight tag, absent: andon" 1 "$RC"
+expect "gap: dated by lastrun (pushed after it)" "$((NOW - 180 * 60))" "$(cat "$TMP/st-gap2/seen-v5.1.0")"; g tag -d v5.1.0 > /dev/null
 
 # ---- blocking step: tag absent on origin (ls-remote rc 2) vs origin unreadable (any other rc: not measured, never "absent") ----
 git init -q --bare "$TMP/origin.git"; g remote add origin "$TMP/origin.git"
