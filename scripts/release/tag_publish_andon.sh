@@ -1,9 +1,3 @@
-        # a failed escalate write never blocks the live page below: inbox line, no stamp, retried next run
-        if printf '%s %s\n' "$(date -u +%FT%TZ)" "$line" >> "$esc" 2> /dev/null; then
-            : > "$state/escalated-$tag"
-        else
-            inbox_line "ESCALATE WRITE FAILED $tag: cannot append to $esc; paging anyway, retrying next run"
-        fi
 #!/usr/bin/env bash
 # tag_publish_andon.sh -- a tag that is not on crates.io is not a release (PMAT-5306)
 #

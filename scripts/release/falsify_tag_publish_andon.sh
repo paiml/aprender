@@ -30,7 +30,7 @@ if [ "${1:-}" = --mutants ]; then
     mut not-measured-is-absent tag_publish_andon.sh 's/^        \*) nm=1;.*$/        *) ;;/'
     mut page-every-run tag_publish_andon.sh 's/if \[ ! -e "\$state\/paged-\$tag" \]; then/if true; then/'
     mut page-stamp-dropped tag_publish_andon.sh 's/then : > "$state\/paged-$tag"; else/then :; else/'
-    mut escalate-dropped tag_publish_andon.sh '/>> "\$esc" ||/d'
+    mut escalate-dropped tag_publish_andon.sh 's/>> "\$esc" 2> \/dev\/null/> \/dev\/null/'
     mut inbox-line-dropped tag_publish_andon.sh 's/^    inbox_line "\$line"$/    :/'
     mut exit-1-dropped tag_publish_andon.sh 's/^\[ "\$open" = 1 \] && exit 1$/[ "$open" = 1 ] \&\& exit 0/'
     mut exit-2-dropped tag_publish_andon.sh 's/^\[ "\$nm" = 1 \] && exit 2$/:/'
