@@ -1,15 +1,19 @@
 # Release plan 2026-10-30 (PMAT-5306): every open ticket -> release, epic, owner, size, class.
-# Date-driven (operator 2026-10-30): 0.73.0 11-06, 0.74.0 11-13, 0.75.0 11-20, 0.76.0 11-27; overflow 0.80.0, unplanned backlog.
-# Generated from a GraphQL read of open issues; owners only from evidence (assignee, owner:<lane> label, epic, epics-progress.md).
-# class: ship = in a dated release 0.73-0.76, slip = pushed to 0.80.0 or backlog, close = CANDIDATE only (evidence comment posted, never closed).
+# Date-driven (operator 2026-10-30): 0.73.0 11-06, 0.74.0 11-13, 0.75.0 11-20, 0.76.0 11-27; overflow 0.80.0.
+# Re-planned at 5 merges/day (the 3-day rate under the N21 freeze), operator rulings 11:17Z: 35 PR-sized tickets per release, never overfilled.
+# Owners only from evidence (assignee, owner:<lane> label, epic, epics-progress.md).
+# class: ship = in a dated release 0.73-0.76, slip = pushed to 0.80.0 (kept open), iceboxed = closed as not planned with a comment linking epic #6521 (never an epic, never a ticket with an open PR or in progress, never a P0 without evidence), close = evidence-backed close candidate (merged, duplicate or obsolete), closed as not planned the same way.
 plan: release-plan-0730
-throughput: {merged_7d: 110, per_day: 15.7, method: "git log origin/main --since='7 days ago' --first-parent"}
+rev: 2
+throughput: {merged_7d: 110, per_day_7d: 15.7, per_day_planning: 5, method: "git log origin/main --since='7 days ago' --first-parent; planning rate = last 3 days under the freeze"}
+capacity_per_release: 35
+epics_added: [{n: 6519, name: "5510-A flow rollout"}, {n: 6520, name: "5510-B CI throughput"}, {n: 6521, name: "Icebox (not planned)"}]
 tickets:
   - {n: 2582, release: "backlog", class: slip, epic: 3997, owner: "aprender-a7", size: "-", deps: []}
-  - {n: 2815, release: "0.75.0", class: ship, epic: 5329, owner: "la-0.71", size: "M", deps: []}
-  - {n: 2817, release: "0.75.0", class: ship, epic: 5317, owner: "la-0.71", size: "M", deps: []}
+  - {n: 2815, release: "0.76.0", class: ship, epic: 5329, owner: "la-0.71", size: "M", deps: []}
+  - {n: 2817, release: "0.76.0", class: ship, epic: 5317, owner: "la-0.71", size: "M", deps: []}
   - {n: 2870, release: "0.80.0", class: slip, epic: null, owner: "aprender-df", size: "-", deps: []}
-  - {n: 3111, release: "0.75.0", class: ship, epic: 5323, owner: "la-0.71", size: "M", deps: []}
+  - {n: 3111, release: "0.76.0", class: ship, epic: 5323, owner: "la-0.71", size: "M", deps: []}
   - {n: 3204, release: "0.73.0", class: ship, epic: 4381, owner: "aprender-a7", size: "M", deps: []}
   - {n: 3269, release: "0.74.0", class: ship, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
   - {n: 3433, release: "0.74.0", class: ship, epic: 4001, owner: "aprender-a7", size: "M", deps: []}
@@ -19,34 +23,34 @@ tickets:
   - {n: 3558, release: "0.74.0", class: ship, epic: 5317, owner: "la-0.71", size: "M", deps: []}
   - {n: 3568, release: "0.74.0", class: ship, epic: 3598, owner: "la-0.71", size: "M", deps: []}
   - {n: 3574, release: "0.74.0", class: ship, epic: 5317, owner: "la-0.71", size: "M", deps: []}
-  - {n: 3598, release: "0.75.0", class: ship, epic: null, owner: "la-0.71", size: "-", deps: []}
+  - {n: 3598, release: "0.76.0", class: ship, epic: null, owner: "la-0.71", size: "-", deps: []}
   - {n: 3602, release: "0.73.0", class: ship, epic: 5323, owner: "aprender-w4664", size: "M", deps: []}
-  - {n: 3676, release: "0.73.0", class: ship, epic: 3998, owner: "aprender-wcensus", size: "-", deps: [3658]}
+  - {n: 3676, release: "0.76.0", class: ship, epic: 3998, owner: "aprender-wcensus", size: "-", deps: [3658]}
   - {n: 3714, release: "0.74.0", class: ship, epic: 3994, owner: "apr-embed", size: "M", deps: []}
   - {n: 3715, release: "0.73.0", class: ship, epic: 3269, owner: "aprender-a7", size: "-", deps: []}
   - {n: 3719, release: "0.74.0", class: ship, epic: 5325, owner: "aprender-w71-e3a", size: "M", deps: []}
   - {n: 3720, release: "0.73.0", class: ship, epic: 4000, owner: "aprender-a7", size: "M", deps: []}
-  - {n: 3725, release: "0.75.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
+  - {n: 3725, release: "0.76.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
   - {n: 3739, release: "0.73.0", class: ship, epic: 3999, owner: "la-0.73", size: "M", deps: [3563]}
   - {n: 3745, release: "0.73.0", class: ship, epic: 3863, owner: "aprender-a7", size: "M", deps: []}
   - {n: 3759, release: "0.73.0", class: ship, epic: 5323, owner: "apr-4918", size: "M", deps: []}
-  - {n: 3761, release: "0.75.0", class: ship, epic: 5321, owner: "la-0.71", size: "M", deps: []}
+  - {n: 3761, release: "0.76.0", class: ship, epic: 5321, owner: "la-0.71", size: "M", deps: []}
   - {n: 3850, release: "0.73.0", class: ship, epic: 5323, owner: "la-0.71", size: "M", deps: []}
-  - {n: 3863, release: "0.80.0", class: slip, epic: null, owner: "aprender-a7", size: "-", deps: []}
+  - {n: 3863, release: "0.73.0", class: ship, epic: null, owner: "aprender-a7", size: "-", deps: []}
   - {n: 3972, release: "0.74.0", class: ship, epic: 3269, owner: "aprender-a7", size: "M", deps: []}
   - {n: 3997, release: "0.80.0", class: slip, epic: null, owner: "aprender-wcensus", size: "-", deps: []}
-  - {n: 3998, release: "0.74.0", class: ship, epic: null, owner: "build-kaizen", size: "-", deps: []}
+  - {n: 3998, release: "0.76.0", class: ship, epic: null, owner: "build-kaizen", size: "-", deps: []}
   - {n: 3999, release: "0.73.0", class: ship, epic: null, owner: "la-0.73", size: "-", deps: []}
-  - {n: 4000, release: "0.74.0", class: ship, epic: null, owner: "la-0.72", size: "-", deps: []}
+  - {n: 4000, release: "0.75.0", class: ship, epic: null, owner: "la-0.72", size: "-", deps: []}
   - {n: 4001, release: "0.74.0", class: ship, epic: null, owner: "aprender-a7", size: "-", deps: []}
   - {n: 4096, release: "0.73.0", class: ship, epic: 5323, owner: "la-0.71", size: "M", deps: []}
   - {n: 4162, release: "0.74.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
   - {n: 4274, release: "0.73.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
   - {n: 4313, release: "0.73.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
-  - {n: 4353, release: "0.74.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 4374, release: "0.75.0", class: ship, epic: 5325, owner: "la-0.71", size: "M", deps: []}
+  - {n: 4353, release: "0.75.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 4374, release: "0.76.0", class: ship, epic: 5325, owner: "la-0.71", size: "M", deps: []}
   - {n: 4376, release: "0.74.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
-  - {n: 4378, release: "0.75.0", class: ship, epic: 5323, owner: "la-0.71", size: "M", deps: []}
+  - {n: 4378, release: "0.76.0", class: ship, epic: 5323, owner: "la-0.71", size: "M", deps: []}
   - {n: 4381, release: "0.80.0", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
   - {n: 4434, release: "0.73.0", class: ship, epic: 3998, owner: "aprender-a7", size: "M", deps: []}
   - {n: 4442, release: "0.74.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
@@ -58,248 +62,248 @@ tickets:
   - {n: 4485, release: "0.74.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
   - {n: 4486, release: "0.74.0", class: ship, epic: 5312, owner: "la-0.71", size: "M", deps: []}
   - {n: 4487, release: "0.74.0", class: ship, epic: 5305, owner: "aprender-cd", size: "M", deps: []}
-  - {n: 4522, release: "0.74.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
-  - {n: 4526, release: "0.74.0", class: ship, epic: 4381, owner: "aprender-w4664", size: "L", deps: []}
+  - {n: 4522, release: "0.75.0", class: ship, epic: 5305, owner: "la-0.71", size: "M", deps: []}
+  - {n: 4526, release: "0.76.0", class: ship, epic: 4381, owner: "aprender-w4664", size: "L", deps: []}
   - {n: 4531, release: "0.73.0", class: ship, epic: 3269, owner: "aprender-a7", size: "M", deps: []}
-  - {n: 4536, release: "0.74.0", class: ship, epic: 3676, owner: "aprender-wcensus", size: "M", deps: []}
-  - {n: 4539, release: "0.74.0", class: ship, epic: 5323, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 4536, release: "0.76.0", class: ship, epic: 3676, owner: "aprender-wcensus", size: "M", deps: []}
+  - {n: 4539, release: "0.75.0", class: ship, epic: 5323, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 4600, release: "0.73.0", class: ship, epic: 3715, owner: "aprender-w71-e3a", size: "M", deps: []}
   - {n: 4602, release: "0.73.0", class: ship, epic: 4741, owner: "la-0.71", size: "M", deps: []}
-  - {n: 4652, release: "0.74.0", class: ship, epic: 5307, owner: "aprender-w4664", size: "M", deps: []}
-  - {n: 4696, release: "0.74.0", class: ship, epic: 5317, owner: "aprender-a7n", size: "M", deps: []}
-  - {n: 4698, release: "0.74.0", class: ship, epic: 4000, owner: "la-0.72", size: "S", deps: []}
-  - {n: 4701, release: "0.74.0", class: ship, epic: 3998, owner: "aprender-wprodmodels", size: "L", deps: []}
+  - {n: 4652, release: "0.76.0", class: ship, epic: 5307, owner: "aprender-w4664", size: "M", deps: []}
+  - {n: 4696, release: "0.75.0", class: ship, epic: 5317, owner: "aprender-a7n", size: "M", deps: []}
+  - {n: 4698, release: "0.75.0", class: ship, epic: 4000, owner: "la-0.72", size: "S", deps: []}
+  - {n: 4701, release: "0.75.0", class: ship, epic: 3998, owner: "aprender-wprodmodels", size: "L", deps: []}
   - {n: 4709, release: "0.73.0", class: ship, epic: 4381, owner: "la-0.71", size: "S", deps: []}
   - {n: 4715, release: "0.73.0", class: ship, epic: 3998, owner: "aprender-a7n", size: "M", deps: []}
-  - {n: 4741, release: "0.76.0", class: ship, epic: 3997, owner: "aprender-w4472", size: "-", deps: []}
+  - {n: 4741, release: "0.80.0", class: slip, epic: 3997, owner: "aprender-w4472", size: "-", deps: []}
   - {n: 4780, release: "backlog", class: close, epic: 3863, owner: "aprender-a7n", size: "-", deps: []}
-  - {n: 4947, release: "0.75.0", class: ship, epic: 5325, owner: "aprender-w71-e3b", size: "M", deps: []}
+  - {n: 4947, release: "0.80.0", class: iceboxed, epic: 5325, owner: "aprender-w71-e3b", size: "M", deps: []}
   - {n: 4954, release: "0.73.0", class: ship, epic: 4220, owner: "aprender-w4664", size: "M", deps: []}
-  - {n: 4958, release: "0.75.0", class: ship, epic: 5317, owner: "apr-4918", size: "M", deps: []}
+  - {n: 4958, release: "0.80.0", class: iceboxed, epic: 5317, owner: "apr-4918", size: "M", deps: []}
   - {n: 4969, release: "0.73.0", class: ship, epic: 5325, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 4971, release: "0.74.0", class: ship, epic: 5312, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 4971, release: "0.75.0", class: ship, epic: 5312, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 4979, release: "0.74.0", class: ship, epic: 5329, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 4986, release: "0.75.0", class: ship, epic: 5325, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 5045, release: "0.75.0", class: ship, epic: 5325, owner: "aprender-w71-e3a", size: "M", deps: []}
+  - {n: 4986, release: "0.80.0", class: iceboxed, epic: 5325, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 5045, release: "0.80.0", class: iceboxed, epic: 5325, owner: "aprender-w71-e3a", size: "M", deps: []}
   - {n: 5060, release: "0.73.0", class: ship, epic: 3998, owner: "aprender-78", size: "M", deps: []}
   - {n: 5079, release: "0.73.0", class: ship, epic: 3998, owner: "aprender-78", size: "M", deps: []}
-  - {n: 5221, release: "0.74.0", class: ship, epic: 5305, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 5222, release: "0.74.0", class: ship, epic: 5305, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 5276, release: "0.75.0", class: ship, epic: 5321, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5305, release: "0.75.0", class: ship, epic: 3598, owner: "noahgift", size: "-", deps: []}
-  - {n: 5306, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "-", deps: []}
+  - {n: 5221, release: "0.75.0", class: ship, epic: 5305, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 5222, release: "0.75.0", class: ship, epic: 5305, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 5276, release: "0.76.0", class: ship, epic: 5321, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 5305, release: "0.76.0", class: ship, epic: 3598, owner: "noahgift", size: "-", deps: []}
+  - {n: 5306, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "-", deps: []}
   - {n: 5308, release: "0.74.0", class: ship, epic: 3269, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5312, release: "0.74.0", class: ship, epic: 5348, owner: "aprender-w5018", size: "-", deps: []}
-  - {n: 5317, release: "0.75.0", class: ship, epic: 4381, owner: "aprender-w5018", size: "-", deps: []}
-  - {n: 5321, release: "0.75.0", class: ship, epic: 3598, owner: "la-0.71", size: "-", deps: []}
-  - {n: 5323, release: "0.75.0", class: ship, epic: 3994, owner: "aprender-cop (unassigned)", size: "-", deps: []}
-  - {n: 5325, release: "0.75.0", class: ship, epic: 3994, owner: "aprender-cop (unassigned)", size: "-", deps: []}
-  - {n: 5326, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
-  - {n: 5329, release: "0.75.0", class: ship, epic: 3994, owner: "aprender-cop (unassigned)", size: "-", deps: []}
-  - {n: 5332, release: "0.75.0", class: ship, epic: 3994, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 5345, release: "0.75.0", class: ship, epic: 4381, owner: "aprender-w5018", size: "M", deps: []}
+  - {n: 5312, release: "0.75.0", class: ship, epic: 5348, owner: "aprender-w5018", size: "-", deps: []}
+  - {n: 5317, release: "0.80.0", class: slip, epic: 4381, owner: "aprender-w5018", size: "-", deps: []}
+  - {n: 5321, release: "0.76.0", class: ship, epic: 3598, owner: "la-0.71", size: "-", deps: []}
+  - {n: 5323, release: "0.76.0", class: ship, epic: 3994, owner: "aprender-cop (unassigned)", size: "-", deps: []}
+  - {n: 5325, release: "0.80.0", class: slip, epic: 3994, owner: "aprender-cop (unassigned)", size: "-", deps: []}
+  - {n: 5326, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
+  - {n: 5329, release: "0.76.0", class: ship, epic: 3994, owner: "aprender-cop (unassigned)", size: "-", deps: []}
+  - {n: 5332, release: "0.76.0", class: ship, epic: 3994, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 5345, release: "0.76.0", class: ship, epic: 4381, owner: "aprender-w5018", size: "M", deps: []}
   - {n: 5347, release: "0.74.0", class: ship, epic: 4381, owner: "aprender-w5018", size: "M", deps: []}
-  - {n: 5348, release: "0.74.0", class: ship, epic: 4000, owner: "la-0.72", size: "-", deps: []}
+  - {n: 5348, release: "0.75.0", class: ship, epic: 4000, owner: "la-0.72", size: "-", deps: []}
   - {n: 5349, release: "0.73.0", class: ship, epic: 4000, owner: "aprender-cd", size: "M", deps: []}
   - {n: 5381, release: "0.73.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
   - {n: 5388, release: "0.74.0", class: ship, epic: 3863, owner: "aprender-a7", size: "S", deps: []}
-  - {n: 5397, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
-  - {n: 5399, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
-  - {n: 5403, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
-  - {n: 5427, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5429, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5430, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5431, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5432, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5433, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5435, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5439, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
-  - {n: 5441, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
-  - {n: 5446, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5454, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5455, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5462, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5471, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5472, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5473, release: "0.74.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
-  - {n: 5478, release: "0.74.0", class: ship, epic: 5348, owner: "aprender-w5018", size: "M", deps: []}
-  - {n: 5502, release: "0.76.0", class: ship, epic: 3997, owner: "aprender-wcensus", size: "M", deps: []}
-  - {n: 5510, release: "0.75.0", class: ship, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
-  - {n: 5557, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5577, release: "0.76.0", class: ship, epic: 3997, owner: "aprender-wcensus", size: "S", deps: []}
-  - {n: 5582, release: "0.76.0", class: ship, epic: 3997, owner: "aprender-wcensus", size: "S", deps: []}
-  - {n: 5651, release: "backlog", class: slip, epic: 5875, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 5678, release: "backlog", class: slip, epic: 5875, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 5743, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5761, release: "0.74.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5797, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5803, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5809, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5875, release: "0.80.0", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: [5689]}
+  - {n: 5397, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
+  - {n: 5399, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
+  - {n: 5403, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
+  - {n: 5427, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5429, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5430, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5431, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5432, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5433, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5435, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5439, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
+  - {n: 5441, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
+  - {n: 5446, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5454, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5455, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5462, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5471, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5472, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5473, release: "0.75.0", class: ship, epic: 3998, owner: "build-kaizen", size: "M", deps: []}
+  - {n: 5478, release: "0.75.0", class: ship, epic: 5348, owner: "aprender-w5018", size: "M", deps: []}
+  - {n: 5502, release: "0.80.0", class: iceboxed, epic: 3997, owner: "aprender-wcensus", size: "M", deps: []}
+  - {n: 5510, release: "0.80.0", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
+  - {n: 5557, release: "0.80.0", class: iceboxed, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5577, release: "0.80.0", class: iceboxed, epic: 3997, owner: "aprender-wcensus", size: "S", deps: []}
+  - {n: 5582, release: "0.80.0", class: iceboxed, epic: 3997, owner: "aprender-wcensus", size: "S", deps: []}
+  - {n: 5651, release: "backlog", class: iceboxed, epic: 5875, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 5678, release: "backlog", class: iceboxed, epic: 5875, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 5743, release: "0.80.0", class: iceboxed, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5761, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 5797, release: "0.80.0", class: iceboxed, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5803, release: "0.80.0", class: iceboxed, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5809, release: "0.80.0", class: iceboxed, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5875, release: "backlog", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: [5689]}
   - {n: 5897, release: "0.74.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5902, release: "backlog", class: slip, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5909, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5914, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 5917, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5922, release: "backlog", class: slip, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5923, release: "0.75.0", class: ship, epic: 3997, owner: "aprender-wcensus", size: "-", deps: []}
-  - {n: 5926, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 5951, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5958, release: "backlog", class: slip, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 5959, release: "0.76.0", class: ship, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
+  - {n: 5902, release: "backlog", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 5909, release: "0.80.0", class: iceboxed, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5914, release: "0.80.0", class: iceboxed, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 5917, release: "0.76.0", class: ship, epic: 5510, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 5922, release: "backlog", class: iceboxed, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 5923, release: "0.80.0", class: slip, epic: 3997, owner: "aprender-wcensus", size: "-", deps: []}
+  - {n: 5926, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 5951, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 5958, release: "backlog", class: iceboxed, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 5959, release: "0.80.0", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
   - {n: 5960, release: "backlog", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
   - {n: 5961, release: "backlog", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
   - {n: 5962, release: "backlog", class: slip, epic: null, owner: "aprender-wsweep", size: "-", deps: []}
   - {n: 5963, release: "backlog", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
-  - {n: 5965, release: "0.75.0", class: ship, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
+  - {n: 5965, release: "0.80.0", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
   - {n: 5967, release: "backlog", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
-  - {n: 5968, release: "0.80.0", class: slip, epic: null, owner: "aprender-wsweep", size: "-", deps: []}
-  - {n: 5971, release: "0.76.0", class: ship, epic: 5959, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 5990, release: "0.74.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 5968, release: "backlog", class: slip, epic: null, owner: "aprender-wsweep", size: "-", deps: []}
+  - {n: 5971, release: "0.80.0", class: iceboxed, epic: 5959, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 5990, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 5996, release: "0.74.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6039, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6040, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6041, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 6042, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6046, release: "backlog", class: slip, epic: 5875, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6059, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6069, release: "0.74.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
-  - {n: 6082, release: "backlog", class: slip, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6088, release: "0.74.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6101, release: "0.74.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6103, release: "backlog", class: slip, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6104, release: "backlog", class: slip, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6110, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6111, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 6113, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-w4472", size: "M", deps: []}
-  - {n: 6120, release: "backlog", class: slip, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6121, release: "backlog", class: slip, epic: 6113, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6122, release: "backlog", class: slip, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6124, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6039, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6040, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6041, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 6042, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6046, release: "backlog", class: iceboxed, epic: 5875, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6059, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6069, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "M", deps: []}
+  - {n: 6082, release: "backlog", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6088, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6101, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6103, release: "backlog", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6104, release: "backlog", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6110, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6111, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 6113, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-w4472", size: "M", deps: []}
+  - {n: 6120, release: "backlog", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6121, release: "backlog", class: iceboxed, epic: 6113, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6122, release: "backlog", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6124, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 6126, release: "0.73.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6134, release: "0.76.0", class: ship, epic: 5963, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6145, release: "backlog", class: slip, epic: 5959, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 6149, release: "backlog", class: slip, epic: 3863, owner: "aprender-a7", size: "M", deps: []}
-  - {n: 6184, release: "backlog", class: slip, epic: 3863, owner: "aprender-a7", size: "S", deps: []}
-  - {n: 6185, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6193, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6196, release: "0.74.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6198, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6199, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6202, release: "0.76.0", class: ship, epic: 5960, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6205, release: "0.75.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6210, release: "0.75.0", class: ship, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6211, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6212, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6213, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6216, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 6235, release: "0.76.0", class: ship, epic: 5960, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6253, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6255, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6265, release: "0.76.0", class: ship, epic: 5967, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6269, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6270, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 6273, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6274, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6275, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6281, release: "0.76.0", class: ship, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6134, release: "0.80.0", class: iceboxed, epic: 5963, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6145, release: "backlog", class: iceboxed, epic: 5959, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 6149, release: "backlog", class: iceboxed, epic: 3863, owner: "aprender-a7", size: "M", deps: []}
+  - {n: 6184, release: "backlog", class: iceboxed, epic: 3863, owner: "aprender-a7", size: "S", deps: []}
+  - {n: 6185, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6193, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6196, release: "0.76.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6198, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6199, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6202, release: "0.80.0", class: iceboxed, epic: 5960, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6205, release: "0.80.0", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6210, release: "0.80.0", class: iceboxed, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6211, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6212, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6213, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6216, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 6235, release: "0.80.0", class: iceboxed, epic: 5960, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6253, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6255, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6265, release: "0.80.0", class: iceboxed, epic: 5967, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6269, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6270, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 6273, release: "0.80.0", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6274, release: "0.80.0", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6275, release: "0.80.0", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6281, release: "0.80.0", class: iceboxed, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6284, release: "backlog", class: close, epic: 5326, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6289, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6289, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 6291, release: "0.73.0", class: ship, epic: 3997, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6292, release: "0.76.0", class: ship, epic: 3997, owner: "aprender-wcensus", size: "S", deps: []}
-  - {n: 6295, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6296, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6300, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-w4472", size: "M", deps: []}
-  - {n: 6302, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6304, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-w4472", size: "M", deps: []}
-  - {n: 6306, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 6308, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6292, release: "0.80.0", class: iceboxed, epic: 3997, owner: "aprender-wcensus", size: "S", deps: []}
+  - {n: 6295, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6296, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6300, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-w4472", size: "M", deps: []}
+  - {n: 6302, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6304, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-w4472", size: "M", deps: []}
+  - {n: 6306, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 6308, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 6313, release: "0.73.0", class: ship, epic: 4741, owner: "aprender-w4472", size: "M", deps: []}
-  - {n: 6318, release: "0.76.0", class: ship, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6340, release: "0.76.0", class: ship, epic: 3863, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6346, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6350, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6351, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6352, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6353, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6360, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6318, release: "0.80.0", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6340, release: "0.80.0", class: iceboxed, epic: 3863, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6346, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6350, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6351, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6352, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6353, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6360, release: "0.76.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6362, release: "backlog", class: close, epic: 5923, owner: "aprender-wsweep", size: "S", deps: []}
-  - {n: 6363, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6363, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6364, release: "backlog", class: close, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6365, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6365, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6366, release: "backlog", class: close, epic: 5923, owner: "aprender-wsweep", size: "S", deps: []}
-  - {n: 6367, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6369, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6370, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6371, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6367, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6369, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6370, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6371, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6372, release: "backlog", class: close, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6373, release: "backlog", class: close, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6374, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6374, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6375, release: "backlog", class: close, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6376, release: "backlog", class: close, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6377, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6378, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6379, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6380, release: "0.76.0", class: ship, epic: 4001, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6377, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6378, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6379, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6380, release: "0.80.0", class: iceboxed, epic: 4001, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6381, release: "0.73.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6382, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6389, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6391, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6392, release: "0.75.0", class: ship, epic: 5306, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6393, release: "0.76.0", class: ship, epic: 4001, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6394, release: "0.75.0", class: ship, epic: 2870, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6395, release: "0.75.0", class: ship, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6396, release: "0.75.0", class: ship, epic: null, owner: "aprender-wsweep", size: "-", deps: []}
-  - {n: 6397, release: "0.75.0", class: ship, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6398, release: "0.75.0", class: ship, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6399, release: "0.75.0", class: ship, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6400, release: "0.75.0", class: ship, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6408, release: "0.74.0", class: ship, epic: 6390, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6382, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6389, release: "0.76.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6391, release: "0.76.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6392, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6393, release: "0.80.0", class: iceboxed, epic: 4001, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6394, release: "0.80.0", class: iceboxed, epic: 2870, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6395, release: "0.80.0", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6396, release: "0.80.0", class: slip, epic: null, owner: "aprender-wsweep", size: "-", deps: []}
+  - {n: 6397, release: "0.80.0", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6398, release: "0.80.0", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6399, release: "0.80.0", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6400, release: "0.80.0", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6408, release: "0.76.0", class: ship, epic: 6390, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6415, release: "backlog", class: close, epic: 5326, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6425, release: "0.75.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6426, release: "0.76.0", class: ship, epic: 5959, owner: "aprender-wsweep", size: "S", deps: []}
-  - {n: 6433, release: "0.76.0", class: ship, epic: 5960, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6435, release: "0.75.0", class: ship, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6436, release: "0.75.0", class: ship, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6439, release: "0.76.0", class: ship, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6425, release: "0.80.0", class: iceboxed, epic: 5923, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6426, release: "0.80.0", class: iceboxed, epic: 5959, owner: "aprender-wsweep", size: "S", deps: []}
+  - {n: 6433, release: "0.80.0", class: iceboxed, epic: 5960, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6435, release: "0.80.0", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6436, release: "0.80.0", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6439, release: "0.80.0", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6444, release: "0.73.0", class: ship, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6445, release: "0.73.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6446, release: "0.73.0", class: ship, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6447, release: "0.73.0", class: ship, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6450, release: "0.74.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6452, release: "0.75.0", class: ship, epic: 2870, owner: "aprender-wsweep", size: "-", deps: []}
+  - {n: 6452, release: "0.80.0", class: slip, epic: 2870, owner: "aprender-wsweep", size: "-", deps: []}
   - {n: 6453, release: "0.74.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6454, release: "0.74.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6455, release: "0.74.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6456, release: "0.74.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6457, release: "0.74.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6458, release: "0.74.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6459, release: "0.75.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6460, release: "0.75.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6461, release: "0.75.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6462, release: "0.75.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6463, release: "0.75.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6464, release: "0.75.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6465, release: "0.75.0", class: ship, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6467, release: "0.74.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6468, release: "0.75.0", class: ship, epic: 6390, owner: "aprender-wsweep", size: "S", deps: []}
+  - {n: 6459, release: "0.80.0", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6460, release: "0.80.0", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6461, release: "0.80.0", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6462, release: "0.80.0", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6463, release: "0.80.0", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6464, release: "0.80.0", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6465, release: "0.80.0", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6467, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6468, release: "0.76.0", class: ship, epic: 6390, owner: "aprender-wsweep", size: "S", deps: []}
   - {n: 6470, release: "0.73.0", class: ship, epic: 5306, owner: "aprender-wsweep", size: "M", deps: []}
-  - {n: 6471, release: "backlog", class: slip, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6474, release: "backlog", class: slip, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6477, release: "0.76.0", class: ship, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
+  - {n: 6471, release: "backlog", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6474, release: "backlog", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6477, release: "0.80.0", class: iceboxed, epic: 5962, owner: "aprender-wsweep", size: "M", deps: []}
   - {n: 6481, release: "backlog", class: slip, epic: 3999, owner: "la-0.73", size: "-", deps: []}
   - {n: 6490, release: "backlog", class: slip, epic: 3863, owner: "aprender-a7", size: "-", deps: []}
   - {n: 6491, release: "0.73.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 6492, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "S", deps: []}
+  - {n: 6492, release: "0.80.0", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "S", deps: []}
   - {n: 6493, release: "0.73.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "S", deps: []}
-  - {n: 6494, release: "0.73.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6495, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6494, release: "0.74.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6495, release: "0.80.0", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 6496, release: "backlog", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
-  - {n: 6498, release: "backlog", class: slip, epic: 5960, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6499, release: "backlog", class: slip, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6500, release: "0.73.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6498, release: "backlog", class: iceboxed, epic: 5960, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6499, release: "backlog", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6500, release: "0.74.0", class: ship, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 6501, release: "0.73.0", class: ship, epic: 6390, owner: "aprender-cop (unassigned)", size: "M", deps: []}
-  - {n: 6513, release: "backlog", class: slip, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
+  - {n: 6513, release: "backlog", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M", deps: []}
   - {n: 6515, release: "0.72.3", class: left-alone, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
 split_proposals:
   # L-sized (> 1 day) tickets. Proposals only; split issues are created later, paced, by the epic owner.
