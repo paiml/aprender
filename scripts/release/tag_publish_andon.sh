@@ -35,6 +35,7 @@ while [ $# -gt 0 ]; do
 done
 [ -d "${repo:-/nonexistent}" ] && [ -n "$state" ] && [ -n "$inbox" ] && [ -n "$esc" ] || usage "--repo DIR --state DIR --inbox FILE --escalate FILE are required"
 [ "$dry" = 1 ] || [ "${#targets[@]}" -gt 0 ] || usage "--page-target T (repeatable) is required unless --page-dry"
+pstamp=paged-; [ "$dry" = 0 ] || pstamp=dry-paged- # a --page-dry run never writes the live page stamp, so it cannot suppress a real page
 [[ $win =~ ^[0-9]+$ ]] || usage "bad --window-min '$win'"
 since_s=$(date -u -d "$since" +%s 2> /dev/null) || usage "bad --since '$since'"
 # shellcheck source=scripts/release/lib_crates_io.sh
@@ -131,9 +132,9 @@ while IFS= read -r tag; do
             inbox_line "ESCALATE WRITE FAILED $tag: cannot append to $esc; paging anyway, retrying next run"
         fi
     fi
-    if [ ! -e "$state/paged-$tag" ]; then
+    if [ ! -e "$state/$pstamp$tag" ]; then
         # stamped ONLY on delivery: an undelivered page is an inbox line and a retry next run, never a silent "paged"
-        if page "$line"; then : > "$state/paged-$tag"; else inbox_line "PAGE UNDELIVERED $tag: no page target accepted it; retrying next run"; fi
+        if page "$line"; then : > "$state/$pstamp$tag"; else inbox_line "PAGE UNDELIVERED $tag: no page target accepted it; retrying next run"; fi
     fi
 done <<< "$tags"
 [ "$baseline" = 1 ] && : > "$state/baseline"

@@ -28,8 +28,8 @@ if [ "${1:-}" = --mutants ]; then
     mut since-dropped tag_publish_andon.sh 's/\[ "\$ts" -ge "\$since_s" \] || continue/true/'
     mut present-still-andon tag_publish_andon.sh 's/^        0) continue ;;$/        0) ;;/'
     mut not-measured-is-absent tag_publish_andon.sh 's/^        \*) nm=1;.*$/        *) ;;/'
-    mut page-every-run tag_publish_andon.sh 's/if \[ ! -e "\$state\/paged-\$tag" \]; then/if true; then/'
-    mut page-stamp-dropped tag_publish_andon.sh 's/then : > "$state\/paged-$tag"; else/then :; else/'
+    mut page-every-run tag_publish_andon.sh 's/if \[ ! -e "\$state\/\$pstamp\$tag" \]; then/if true; then/'
+    mut page-stamp-dropped tag_publish_andon.sh 's/then : > "\$state\/\$pstamp\$tag"; else/then :; else/'
     mut escalate-dropped tag_publish_andon.sh 's/>> "\$esc" 2> \/dev\/null/> \/dev\/null/'
     mut inbox-line-dropped tag_publish_andon.sh 's/^    inbox_line "\$line"$/    :/'
     mut exit-1-dropped tag_publish_andon.sh 's/^\[ "\$open" = 1 \] && exit 1$/[ "$open" = 1 ] \&\& exit 0/'
@@ -40,6 +40,7 @@ if [ "${1:-}" = --mutants ]; then
     mut stamp-without-delivery tag_publish_andon.sh 's/if page "\$line"; then : >/if page "$line" || true; then : >/'
     mut lightweight-by-commit-date tag_publish_andon.sh 's/    ts=$(tag_time "$tag")/    ts=$(G for-each-ref --format=%(creatordate:unix) "refs\/tags\/$tag")/'
     mut baseline-dropped tag_publish_andon.sh 's/^baseline=0; .*$/baseline=0/'
+    mut dry-stamps-live tag_publish_andon.sh 's/|| pstamp=dry-paged-/|| pstamp=paged-/'
     mut undatable-is-silent tag_publish_andon.sh 's/^    \[\[ \$ts =~ \^\[0-9\]+\$ \]\] || {.*$/    [[ $ts =~ ^[0-9]+$ ]] || continue/'
     mut baseline-lightweight-zero tag_publish_andon.sh 's/G log -1 --format=%ct "refs\/tags\/$t" > "$seen"/echo 0 > "$seen"/'
     mut push-dated-by-tagger tag_publish_andon.sh 's/if \[ "\$baseline" = 1 \] && \[ "\$lw" = 0 \]; then/if [ "$lw" = 0 ]; then/'
@@ -150,7 +151,7 @@ andon old-absent "$J_NONE" --since $SINCE_OLD; expect "second run rc" 1 "$RC"
 expect "second run: no second escalate" 1 "$(lines "$TMP/esc-old-absent")"
 expect "second run: inbox line again" 2 "$(grep -c 'tag-andon' "$TMP/inb-old-absent")"
 expect "second run: no second page" 0 "$(grep -c '^PAGE' "$TMP/out-old-absent")"
-expect "second run: state stamp" 1 "$(ls "$TMP/st-old-absent" | grep -c '^paged-v1.0.0$')"
+expect "second run: state stamp" 1 "$(ls "$TMP/st-old-absent" | grep -c '^dry-paged-v1.0.0$')"
 # version present: silent, exit 0
 andon present "$J_HAS" --since $SINCE_OLD; expect "present rc" 0 "$RC"
 expect "present: no inbox" 0 "$(lines "$TMP/inb-present")"; expect "present: no escalate" 0 "$(lines "$TMP/esc-present")"; hasnt "present: no page" "$TMP/out-present" "PAGE"
@@ -209,6 +210,9 @@ FX_SEND_RC=1 ANDON_LIVE=1 andon live-sendfail "$J_NONE" --since $SINCE_OLD
 expect "send-keys fails: NOT stamped" 0 "$(ls "$TMP/st-live-sendfail" | grep -c '^paged-')"; has "send-keys fails: UNDELIVERED" "$TMP/inb-live-sendfail" "PAGE UNDELIVERED v1.0.0"
 FX_BAD_SESSION=apr ANDON_LIVE=1 andon live-one-dead "$J_NONE" --since $SINCE_OLD
 expect "one dead target, one live: stamped" 1 "$(ls "$TMP/st-live-one-dead" | grep -c '^paged-v1.0.0$')"; hasnt "one dead target, one live: not undelivered" "$TMP/inb-live-one-dead" "PAGE UNDELIVERED"
+# a --page-dry run on the live state dir never suppresses the real page (lane round 7)
+andon drylive "$J_NONE" --since $SINCE_OLD; : > "$FX_TMUX_LOG"; ANDON_LIVE=1 andon drylive "$J_NONE" --since $SINCE_OLD
+has "dry run first, live run still pages" "$FX_TMUX_LOG" "send-keys -t apr:cop"; expect "dry then live: live stamp" 1 "$(ls "$TMP/st-drylive" | grep -c '^paged-v1.0.0$')"
 git -C "$R" tag -d v1.0.0 > /dev/null
 # lock: a second run while the first holds it does nothing and says so (exit 3)
 mktag v1.0.0 180; mkdir -p "$TMP/st-lock"
