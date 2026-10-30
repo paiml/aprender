@@ -779,7 +779,8 @@ FAKE
     refused wiring_refuses_b2_gpu_without_the_pick '/^  b2-gpu-at-c:$/,/^  [a-z]/{/^    needs: pick$/d}'
     refused wiring_refuses_a_head_read_outside_the_pick '/^  case-table:$/,/^  [a-z]/s/^          ref: .*$/          ref: ${{ github.sha }}/'
     rl_rows_b1
-    rl_rows_anchors
+    [ -n "${RL_SKIP_ANCHOR_ROWS:-}" ] || rl_rows_anchors   # --mutants sets it: anchor rows break for every mutant, so they prove nothing about one
+    rl_rows_verdict
     rm -rf -- "${tmp:?}"
     printf -- '--- %s ok, %s broke ---\n' "$pass" "$fail"
     [ "$fail" -eq 0 ]
@@ -851,14 +852,31 @@ mutant_sed() {   # mutant_sed ID EXPR : the sed script that applies EXPR to the 
     printf '/# MUTANT-ANCHOR: %s$/{/^[[:space:]]*#/{n;};%s;}' "$1" "$2"
 }
 mutant_ids() { printf '%s\n' "$RL_MUTANTS" | awk 'NF { print substr($1, 1, 3) }'; }
-anchors_check() {   # anchors_check FILE : prints each mutant without a marker, marker without a mutant, or repeated mutant id; 1 if any
-    local f=$1 want have bad=0 id
-    want="$(mutant_ids | sort)"
-    have="$(grep -oE '# MUTANT-ANCHOR: m[0-9]+$' -- "$f" | sed 's/.*: //' | sort -u)"
-    [ "$(printf '%s\n' "$want" | uniq -d | wc -l)" -eq 0 ] || { printf 'repeated mutant id: %s\n' "$(printf '%s\n' "$want" | uniq -d | tr '\n' ' ')"; bad=1; }
-    for id in $(comm -23 <(printf '%s\n' "$want" | sort -u) <(printf '%s\n' "$have")); do printf 'mutant %s has no # MUTANT-ANCHOR marker\n' "$id"; bad=1; done
-    for id in $(comm -13 <(printf '%s\n' "$want" | sort -u) <(printf '%s\n' "$have")); do printf 'orphan marker %s: no mutant of that id\n' "$id"; bad=1; done
+mutant_expect() { case "$1" in m20|m43) echo 2 ;; *) echo 1 ;; esac; }   # markers each mutant's line(s) must carry
+anchors_check() {   # anchors_check FILE : prints each mutant whose marker count is not the expected one, an orphan marker, an empty table or no markers; 1 if any
+    local f=$1 bad=0 id n e ids markers
+    ids="$(mutant_ids)"
+    [ -n "$ids" ] || { printf 'empty mutant table\n'; return 1; }
+    markers="$(grep -oE '# MUTANT-ANCHOR: m[0-9]+$' -- "$f" | sed 's/.*: //')"
+    [ -n "$markers" ] || { printf 'no # MUTANT-ANCHOR markers in %s\n' "$f"; return 1; }
+    [ "$(printf '%s\n' "$ids" | sort | uniq -d | wc -l)" -eq 0 ] || { printf 'repeated mutant id: %s\n' "$(printf '%s\n' "$ids" | sort | uniq -d | tr '\n' ' ')"; bad=1; }
+    for id in $ids; do
+        n="$(printf '%s\n' "$markers" | grep -cx "$id" || true)"; e="$(mutant_expect "$id")"
+        if [ "$n" -eq 0 ]; then printf 'mutant %s has no # MUTANT-ANCHOR marker\n' "$id"; bad=1
+        elif [ "$n" -ne "$e" ]; then printf 'mutant %s has %s markers, expected %s\n' "$id" "$n" "$e"; bad=1; fi
+    done
+    for id in $(printf '%s\n' "$markers" | sort -u); do
+        grep -qx "$id" <<< "$ids" || { printf 'orphan marker %s: no mutant of that id\n' "$id"; bad=1; }
+    done
     [ "$bad" -eq 0 ]
+}
+# a mutant is killed only by a broken row that is not an anchor row: anchor rows break for every mutant (the mutated
+# script's markers no longer match), so counting them let a mutant whose real behaviour row went blind read as killed
+mutant_verdict() {   # mutant_verdict RC OUTPUT : prints "killed N", "survived" or "no-kill"
+    local rc=$1 o=$2 n
+    [ "$rc" -ne 0 ] || { echo survived; return 0; }
+    n="$(printf '%s\n' "$o" | grep '^  BROKE ' | grep -vc '^  BROKE anchor' || true)"
+    if [ "$n" -gt 0 ]; then echo "killed $n"; else echo no-kill; fi
 }
 # the self-test rows for the markers: the guard passes on this script and refuses a missing or an orphan marker, and an
 # unrelated edit next to every marker (a comment line inserted, the neighbouring lines reworded) leaves every mutant applying
@@ -871,6 +889,18 @@ rl_rows_anchors() {
     { cat -- "$SCRIPT_PATH"; printf '# MUTANT-ANCHOR: m%s\n' 99; } > "$f"
     if o="$(anchors_check "$f")"; then broke anchors_refuse_an_orphan_marker "accepted"; else
         case "$o" in *"orphan marker m99"*) ok anchors_refuse_an_orphan_marker "$o" ;; *) broke anchors_refuse_an_orphan_marker "never named m99: $o" ;; esac; fi
+    { cat -- "$SCRIPT_PATH"; printf '# MUTANT-ANCHOR: m%s\n' 05; } > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_a_stray_duplicate_marker "accepted"; else
+        case "$o" in *"mutant m05 has 2 markers, expected 1"*) ok anchors_refuse_a_stray_duplicate_marker "$o" ;; *) broke anchors_refuse_a_stray_duplicate_marker "never named m05: $o" ;; esac; fi
+    n="$(grep -n '# MUTANT-ANCHOR: m43$' -- "$SCRIPT_PATH" | tail -n 1 | cut -d: -f1)"
+    sed -e "${n}s/  # MUTANT-ANCHOR: m43\$//" "$SCRIPT_PATH" > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_a_missing_second_m43_marker "accepted"; else
+        case "$o" in *"mutant m43 has 1 markers, expected 2"*) ok anchors_refuse_a_missing_second_m43_marker "$o" ;; *) broke anchors_refuse_a_missing_second_m43_marker "never named m43: $o" ;; esac; fi
+    if o="$(RL_MUTANTS='' anchors_check "$SCRIPT_PATH")"; then broke anchors_refuse_an_empty_table "accepted"; else
+        case "$o" in *"empty mutant table"*) ok anchors_refuse_an_empty_table "$o" ;; *) broke anchors_refuse_an_empty_table "wrong refusal: $o" ;; esac; fi
+    sed -e 's/  # MUTANT-ANCHOR: m[0-9]*$//' -e '/^[[:space:]]*# MUTANT-ANCHOR: m[0-9]*$/d' "$SCRIPT_PATH" > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_a_file_with_no_markers "accepted"; else
+        case "$o" in *"no # MUTANT-ANCHOR markers"*) ok anchors_refuse_a_file_with_no_markers "$o" ;; *) broke anchors_refuse_a_file_with_no_markers "wrong refusal: $o" ;; esac; fi
     awk '
         { L[NR] = $0 }
         END {
@@ -891,25 +921,35 @@ rl_rows_anchors() {
     else broke anchored_mutants_survive_unrelated_edits "changed nothing after an unrelated edit:$lost"; fi
 }
 
+# mutant_verdict on synthetic output: an anchor row alone is never a kill; a behaviour row is
+rl_rows_verdict() {
+    local v b='  BROKE anchored_mutants_survive_unrelated_edits       x' a='  BROKE wiring_refuses_something                      x'
+    v="$(mutant_verdict 1 "$b")"; [ "$v" = no-kill ] && ok verdict_anchor_row_alone_is_no_kill "$v" || broke verdict_anchor_row_alone_is_no_kill "$v"
+    v="$(mutant_verdict 1 "$b"$'\n'"$a")"; [ "$v" = "killed 1" ] && ok verdict_behaviour_row_kills "$v" || broke verdict_behaviour_row_kills "$v"
+    v="$(mutant_verdict 0 "$b")"; [ "$v" = survived ] && ok verdict_exit_zero_survives "$v" || broke verdict_exit_zero_survives "$v"
+    v="$(mutant_verdict 1 '  ok    a   x')"; [ "$v" = no-kill ] && ok verdict_no_broken_row_is_no_kill "$v" || broke verdict_no_broken_row_is_no_kill "$v"
+    v="$(mutant_verdict 1 "$a"$'\n'"$a")"; [ "$v" = "killed 2" ] && ok verdict_counts_behaviour_rows "$v" || broke verdict_counts_behaviour_rows "$v"
+}
 mutants() {
-    local tmp pass=0 fail=0 name expr o rc m
+    local tmp pass=0 fail=0 name expr o rc m v
     tmp="$(mktemp -d)" || return 1
     mkdir -p "$tmp/scripts/release" "$tmp/.github/workflows"
     cp "$WORKFLOW" "$tmp/.github/workflows/" 2>/dev/null
     m="$tmp/scripts/release/release_lanes.sh"
     cp "$SCRIPT_PATH" "$m"
     if ! o="$(anchors_check "$SCRIPT_PATH")"; then printf '  BROKE %-46s %s\n' anchors "$o"; rm -rf -- "${tmp:?}"; return 1; fi
-    if ! bash "$m" --self-test > /dev/null 2>&1; then printf '  BROKE %-46s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
+    if ! RL_SKIP_ANCHOR_ROWS=1 bash "$m" --self-test > /dev/null 2>&1; then printf '  BROKE %-46s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
     while read -r name expr; do
         [ -n "$name" ] || continue
         sed -e "$(mutant_sed "${name:0:3}" "$expr")" "$SCRIPT_PATH" > "$m"
         if cmp -s "$SCRIPT_PATH" "$m"; then printf '  BROKE %-46s changed nothing: its pattern no longer matches\n' "$name"; fail=$((fail + 1)); continue; fi
         if ! bash -n "$m" 2>/dev/null; then printf '  BROKE %-46s does not parse\n' "$name"; fail=$((fail + 1)); continue; fi
-        o="$(bash "$m" --self-test 2>&1)"; rc=$?
-        case "$rc:$o" in
-            0:*) printf '  BROKE %-46s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
-            *"  BROKE "*) printf '  ok    %-46s killed, %s row(s) broke\n' "$name" "$(printf '%s\n' "$o" | grep -c '^  BROKE ')"; pass=$((pass + 1)) ;;
-            *) printf '  BROKE %-46s exit %s with no broken row: not a kill\n' "$name" "$rc"; fail=$((fail + 1)) ;;
+        o="$(RL_SKIP_ANCHOR_ROWS=1 bash "$m" --self-test 2>&1)"; rc=$?
+        v="$(mutant_verdict "$rc" "$o")"
+        case "$v" in
+            survived) printf '  BROKE %-46s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
+            killed*) printf '  ok    %-46s killed, %s row(s) broke\n' "$name" "${v#killed }"; pass=$((pass + 1)) ;;
+            *) printf '  BROKE %-46s exit %s with no broken behaviour row: not a kill\n' "$name" "$rc"; fail=$((fail + 1)) ;;
         esac
     done < <(printf '%s\n' "$RL_MUTANTS")
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"

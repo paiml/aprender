@@ -255,8 +255,11 @@ jobs:
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
       - name: every section secret is plumbed under its full name
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
+      # Assert the fleet-pinned bashrs/pmat (never install), the way book.yml and install-script.yml do, so the gate below lints with the release's linter.
+      - name: assert the fleet-pinned bashrs and pmat
+        run: setsid --wait bash scripts/check_tool_versions.sh
       # N38 (#6529): guard-cargo m16 (bashrs) and m28 (mutants) skip on PR events, so a release_lanes.sh break showed only in
-      # merge_group. Path-filtered: runs release_lanes.sh --self-test and --mutants, and bashrs lint on changed scripts/release/*.sh.
+      # merge_group. Path-filtered: runs release_lanes.sh --self-test and --mutants, and the release bashrs gate (check_bashrs_gate.sh) when any scripts/release/*.sh changed.
       - name: release_lanes.sh case table, mutants and bashrs (only when scripts/release/*.sh changed)
         run: |
           setsid --wait bash scripts/ci/pr_release_lanes_gate.sh --self-test
