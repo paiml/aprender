@@ -2,13 +2,16 @@
 # Date-driven (operator 2026-10-30): 0.73.0 11-06, 0.74.0 11-13, 0.75.0 11-20, 0.76.0 11-27; overflow 0.80.0.
 # Re-planned at 5 merges/day (the 3-day rate under the N21 freeze), operator rulings 11:17Z: 35 PR-sized tickets per release, never overfilled.
 # A split ticket counts as one slot per part (4701 = 3, 4526 = 4); the sum of slots per release is <= 35.
+# Epic and tracking rows (size "-") take no slot; only PR-sized leaf tickets count against the 35.
 # Owners only from evidence (assignee, owner:<lane> label, parent epic label, epics-progress.md). No ticket in 0.73-0.76 is unowned.
 # release values: 0.73.0 .. 0.76.0 = dated releases; 0.80.0 = later work (every slip ticket and every epic with no open child in 0.73-0.76);
-#   0.72.3 = the nightly patch milestone (#31, due 11-01), left alone; icebox = closed as not planned, GitHub milestone 0.80.0, comment links epic #6521.
+#   0.72.3 = the nightly patch milestone (#31, due 11-01), left alone; icebox = closed as not planned (milestone as it was when closed), comment links epic #6521 when closed by this plan.
 #   An epic's release is its last open child's release, so an epic never sits before an open child.
 #   An epic with no owner evidence (no assignee, label, or epics-progress entry) is unowned, so it sits in 0.80.0, after its children.
-# class: ship = in a dated release 0.73-0.76; slip = release 0.80.0, kept open; close = close candidate with an evidence comment (not closed);
-#   iceboxed = closed as not planned with a comment linking epic #6521 (never an epic, never a ticket with an open PR or in progress);
+# class: ship = in a dated release 0.73-0.76; slip = release 0.80.0, kept open; close = close candidate with an evidence comment, still open;
+#   iceboxed = closed as not planned with a comment linking epic #6521 (never a ticket with an open PR or in progress; never an epic, except a rollup whose children are all iceboxed with it, e.g. #6113 and its only child #6121);
+#   closed = a close candidate or parent that is now closed not_planned (by others or after the evidence comment), release icebox; close = close candidate still open, release 0.80.0;
+#   release icebox means closed, never open.
 #   left-alone = release 0.72.3 only: epic #6515 (the 0.72.3 release train), untouched, no planning field written.
 plan: release-plan-0730
 rev: 3
@@ -83,7 +86,7 @@ tickets:
   - {n: 4709, release: "0.73.0", class: ship, epic: 4381, owner: "la-0.71", size: "S", deps: []}
   - {n: 4715, release: "0.73.0", class: ship, epic: 3998, owner: "aprender-a7n", size: "M", deps: []}
   - {n: 4741, release: "0.73.0", class: ship, epic: 3997, owner: "aprender-w4472", size: "-", deps: []}
-  - {n: 4780, release: "icebox", class: close, epic: 3863, owner: "aprender-a7n", size: "-", deps: []}
+  - {n: 4780, release: "0.80.0", class: close, epic: 3863, owner: "aprender-a7n", size: "-", deps: []}
   - {n: 4947, release: "icebox", class: iceboxed, epic: 5325, owner: "aprender-w71-e3b", size: "M(est)", deps: []}
   - {n: 4954, release: "0.73.0", class: ship, epic: 4220, owner: "aprender-w4664", size: "M(est)", deps: []}
   - {n: 4958, release: "icebox", class: iceboxed, epic: 5317, owner: "apr-4918", size: "M(est)", deps: []}
@@ -214,7 +217,7 @@ tickets:
   - {n: 6274, release: "icebox", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6275, release: "icebox", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6281, release: "icebox", class: iceboxed, epic: 5962, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6284, release: "icebox", class: close, epic: 5326, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
+  - {n: 6284, release: "icebox", class: closed, epic: 5326, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6289, release: "icebox", class: iceboxed, epic: 5923, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6291, release: "0.73.0", class: ship, epic: 3997, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6292, release: "icebox", class: iceboxed, epic: 3997, owner: "aprender-wcensus", size: "S(est)", deps: []}
@@ -234,20 +237,20 @@ tickets:
   - {n: 6352, release: "icebox", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6353, release: "icebox", class: iceboxed, epic: 4741, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6360, release: "0.76.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6362, release: "icebox", class: close, epic: 5923, owner: "aprender-wsweep", size: "S(est)", deps: []}
+  - {n: 6362, release: "icebox", class: closed, epic: 5923, owner: "aprender-wsweep", size: "S(est)", deps: []}
   - {n: 6363, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6364, release: "icebox", class: close, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
+  - {n: 6364, release: "icebox", class: closed, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6365, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6366, release: "icebox", class: close, epic: 5923, owner: "aprender-wsweep", size: "S(est)", deps: []}
+  - {n: 6366, release: "icebox", class: closed, epic: 5923, owner: "aprender-wsweep", size: "S(est)", deps: []}
   - {n: 6367, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6369, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6370, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6371, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6372, release: "icebox", class: close, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6373, release: "icebox", class: close, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
+  - {n: 6372, release: "icebox", class: closed, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
+  - {n: 6373, release: "icebox", class: closed, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6374, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6375, release: "icebox", class: close, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6376, release: "icebox", class: close, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
+  - {n: 6375, release: "icebox", class: closed, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
+  - {n: 6376, release: "icebox", class: closed, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6377, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6378, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6379, release: "0.76.0", class: ship, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
@@ -265,8 +268,8 @@ tickets:
   - {n: 6398, release: "icebox", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6399, release: "icebox", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6400, release: "icebox", class: iceboxed, epic: 6396, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6408, release: "0.76.0", class: ship, epic: 6390, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6415, release: "icebox", class: close, epic: 5326, owner: "aprender-wsweep", size: "M(est)", deps: []}
+  - {n: 6408, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-wsweep", size: "M(est)", deps: []}
+  - {n: 6415, release: "icebox", class: closed, epic: 5326, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6425, release: "icebox", class: iceboxed, epic: 5923, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6426, release: "icebox", class: iceboxed, epic: 5959, owner: "aprender-wsweep", size: "S(est)", deps: []}
   - {n: 6433, release: "icebox", class: iceboxed, epic: 5960, owner: "aprender-wsweep", size: "M(est)", deps: []}
@@ -293,7 +296,7 @@ tickets:
   - {n: 6464, release: "icebox", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6465, release: "icebox", class: iceboxed, epic: 6452, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6467, release: "0.75.0", class: ship, epic: 5965, owner: "aprender-wsweep", size: "M(est)", deps: []}
-  - {n: 6468, release: "0.76.0", class: ship, epic: 6390, owner: "aprender-wsweep", size: "S(est)", deps: []}
+  - {n: 6468, release: "0.76.0", class: ship, epic: 5306, owner: "aprender-wsweep", size: "S(est)", deps: []}
   - {n: 6470, release: "0.73.0", class: ship, epic: 5306, owner: "aprender-wsweep", size: "M(est)", deps: []}
   - {n: 6471, release: "icebox", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6474, release: "icebox", class: iceboxed, epic: 5965, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
@@ -309,9 +312,13 @@ tickets:
   - {n: 6498, release: "icebox", class: iceboxed, epic: 5960, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6499, release: "icebox", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6500, release: "0.74.0", class: ship, epic: 5306, owner: "build-kaizen", size: "M(est)", deps: []}
-  - {n: 6501, release: "0.80.0", class: slip, epic: 6390, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
+  - {n: 6501, release: "0.80.0", class: slip, epic: 5306, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6513, release: "icebox", class: iceboxed, epic: 5306, owner: "aprender-cop (unassigned)", size: "M(est)", deps: []}
   - {n: 6515, release: "0.72.3", class: left-alone, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}
+  - {n: 3994, release: "icebox", class: closed, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}  # parent, closed not_planned by others; children keep epic 3994 in the data
+  - {n: 4220, release: "icebox", class: closed, epic: 3598, owner: "aprender-cop (unassigned)", size: "-", deps: []}  # parent, closed not_planned by others
+  - {n: 5307, release: "icebox", class: closed, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}  # parent, closed not_planned by others
+  - {n: 6390, release: "icebox", class: closed, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}  # closed not_planned 10-30; children 6408/6468/6501 moved to live epic 5306
   - {n: 6519, release: "0.75.0", class: ship, epic: 5510, owner: "aprender-pace", size: "-", deps: []}
   - {n: 6520, release: "0.76.0", class: ship, epic: 5510, owner: "aprender-pace", size: "-", deps: []}
   - {n: 6521, release: "0.80.0", class: slip, epic: null, owner: "aprender-cop (unassigned)", size: "-", deps: []}

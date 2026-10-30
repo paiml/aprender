@@ -2,7 +2,7 @@
 # (delegated by the traffic cop). Read by scripts/check_issue_flow.sh (FALSIFY-FLOW-004/008).
 # budget = max open children; repo-wide cap 100, andon at 95, steady state 90.
 spec: APR-EPIC-001
-# Release plan (dates, per-ticket release/epic/owner): docs/roadmaps/release-plan-0730.yaml (PMAT-5306, 2026-10-30). The train: fields below are the epic themes; the plan file is the dated schedule.
+# Release plan (dates, per-ticket release/epic/owner): docs/roadmaps/release-plan-0730.yaml (PMAT-5306, 2026-10-30). The per-epic fields below are the themes; the plan file is the dated schedule.
 cap: {open_issues: 100, andon: 95, steady_state: 90}
 epics:
   - {id: E0, issue: 3269, name: "Ontology (ONT-001)", train: "0.70", budget: 13, successor: S2,
