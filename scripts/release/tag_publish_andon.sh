@@ -1,17 +1,19 @@
 #!/usr/bin/env bash
 # tag_publish_andon.sh -- a tag that is not on crates.io is not a release (PMAT-5306)
 #
-#   bash scripts/release/tag_publish_andon.sh --repo DIR --state DIR --inbox FILE --escalate FILE [--window-min 120] [--since ISO8601Z] [--page-dry]
+#   bash scripts/release/tag_publish_andon.sh --repo DIR --state DIR --inbox FILE --escalate FILE (--page-target T ... | --page-dry) [--window-min 120] [--since ISO8601Z]
 #
 # Operator ruling 2026-10-30: "a release = the version is on crates.io and passed the clean-container smoke. A tag alone is
 # not a release. A tag not on crates.io within 2 h of push is an andon that pages Noah live."
 # For every v<semver> tag (no pre-release) created at or after --since and older than --window-min: crate `aprender` must show
 # that version on crates.io. Absent = ANDON: an inbox line EVERY run while open, an escalate line and a live page ONCE per tag.
 # A crates.io read that fails is NOT_MEASURED: inbox line, exit 2, no page, no decision.
-# Exit 0 all clear, 1 andon fired or open, 2 usage / not measured.
+# A page is stamped (once per tag) ONLY when at least one --page-target (verified with tmux has-session) accepted it; otherwise an inbox
+# line "PAGE UNDELIVERED <tag>" is written and the next run retries.
+# Exit 0 all clear, 1 andon fired or open, 2 usage / not measured, 3 another run holds the lock.
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 CRATE=aprender
-repo="" state="" inbox="" esc="" win=120 since=2026-10-30T00:00:00Z dry=0
+repo="" state="" inbox="" esc="" win=120 since=2026-10-30T00:00:00Z dry=0 targets=()
 usage() { printf 'tag_publish_andon: %s\n' "$*" >&2; exit 2; }
 say() { printf 'tag_publish_andon: %s\n' "$*"; }
 inbox_line() {
@@ -26,11 +28,13 @@ while [ $# -gt 0 ]; do
         --escalate) [ $# -ge 2 ] || usage "--escalate needs a value"; esc=$2; shift 2 ;;
         --window-min) [ $# -ge 2 ] || usage "--window-min needs a value"; win=$2; shift 2 ;;
         --since) [ $# -ge 2 ] || usage "--since needs a value"; since=$2; shift 2 ;;
+        --page-target) [ $# -ge 2 ] || usage "--page-target needs a value"; targets+=("$2"); shift 2 ;;
         --page-dry) dry=1; shift ;;
         *) usage "unknown argument: $1" ;;
     esac
 done
 [ -d "${repo:-/nonexistent}" ] && [ -n "$state" ] && [ -n "$inbox" ] && [ -n "$esc" ] || usage "--repo DIR --state DIR --inbox FILE --escalate FILE are required"
+[ "$dry" = 1 ] || [ "${#targets[@]}" -gt 0 ] || usage "--page-target T (repeatable) is required unless --page-dry"
 [[ $win =~ ^[0-9]+$ ]] || usage "bad --window-min '$win'"
 since_s=$(date -u -d "$since" +%s 2> /dev/null) || usage "bad --since '$since'"
 # shellcheck source=scripts/release/lib_crates_io.sh
@@ -38,21 +42,24 @@ since_s=$(date -u -d "$since" +%s 2> /dev/null) || usage "bad --since '$since'"
 install -d -- "$state" || usage "cannot create $state"
 install -d -- "$(dirname "$esc")" || usage "cannot create the escalate dir"
 exec 9> "${state:?}/.lock"
-flock -n 9 || { say "another run holds the lock: nothing done"; exit 0; }
+flock -n 9 || { say "another run holds the lock: nothing done"; exit 3; }
 G() { git -C "$repo" "$@"; }
 
 # page_text: quotes, backticks, $, ! and backslashes stripped (tmux send-keys / echo safe), <= 240 chars (merge-drought precedent)
 page_text() { printf '%s' "$1" | tr -d "'\"\`\$!\\\\" | tr '\n' ' ' | cut -c1-240; }
-page() { # page LINE: tmux page to a3 (send-keys -l then Enter) and the cop window (echo only); --page-dry prints
-    local msg tgt; msg="OPERATOR-FACING ESCALATION aprender-flow-relay-free $(page_text "$1")"
-    for tgt in apr:aprender-a3 apr:cop; do
-        if [ "$dry" = 1 ]; then echo "PAGE $tgt: $msg"; continue; fi
+page() { # page LINE: rc 0 only when at least one --page-target accepted it. Each target is verified with tmux has-session first;
+    # a target whose name is "apr:cop" style is a bare shell (echo only), any other is a claude TUI (send-keys -l, then Enter). --page-dry prints.
+    local msg tgt delivered=0; msg="OPERATOR-FACING ESCALATION aprender-flow-relay-free $(page_text "$1")"
+    if [ "$dry" = 1 ] && [ "${#targets[@]}" -eq 0 ]; then echo "PAGE (dry): $msg"; return 0; fi
+    for tgt in "${targets[@]}"; do
+        if [ "$dry" = 1 ]; then echo "PAGE $tgt: $msg"; delivered=1; continue; fi
+        tmux has-session -t "${tgt%%:*}" > /dev/null 2>&1 || { say "page target $tgt: no such tmux session"; continue; }
         case "$tgt" in
-            apr:cop) tmux send-keys -t "$tgt" "echo '$msg'" Enter 2> /dev/null ;;
-            *) tmux send-keys -t "$tgt" -l "$msg" 2> /dev/null && tmux send-keys -t "$tgt" Enter 2> /dev/null ;;
+            apr:cop) tmux send-keys -t "$tgt" "echo '$msg'" Enter > /dev/null 2>&1 && delivered=1 ;;
+            *) tmux send-keys -t "$tgt" -l "$msg" > /dev/null 2>&1 && tmux send-keys -t "$tgt" Enter > /dev/null 2>&1 && delivered=1 ;;
         esac
     done
-    return 0
+    [ "$delivered" = 1 ]
 }
 # blocking_step TAG: the first missing step visible from here
 blocking_step() {
@@ -91,10 +98,13 @@ while IFS= read -r tag; do
     line="ANDON $tag pushed ${age} min ago and $CRATE $ver is NOT on crates.io (window ${win} min); blocking step: $step"
     say "$line"
     inbox_line "$line"
-    if [ ! -e "$state/paged-$tag" ]; then
+    if [ ! -e "$state/escalated-$tag" ]; then
         printf '%s %s\n' "$(date -u +%FT%TZ)" "$line" >> "$esc" || usage "cannot write $esc"
-        page "$line"
-        : > "$state/paged-$tag"
+        : > "$state/escalated-$tag"
+    fi
+    if [ ! -e "$state/paged-$tag" ]; then
+        # stamped ONLY on delivery: an undelivered page is an inbox line and a retry next run, never a silent "paged"
+        if page "$line"; then : > "$state/paged-$tag"; else inbox_line "PAGE UNDELIVERED $tag: no page target accepted it; retrying next run"; fi
     fi
 done <<< "$tags"
 [ "$open" = 1 ] && exit 1

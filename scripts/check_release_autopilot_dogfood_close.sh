@@ -123,7 +123,7 @@ fixture() {
         && cp -- "$preflight" "$r/scripts/check_publish_preflight.sh" || return 2
     printf '#!/usr/bin/env bash\nexit 0\n' > "$r/scripts/bump-version.sh"
     cp -- "$ROOT/scripts/release/lib_crates_io.sh" "$r/scripts/release/" && : > "$r/scripts/release/.crates-io-test-seams" || return 2
-    printf '{"versions":[{"num":"9.9.9","yanked":false}]}\n' > "$d/crates.json"
+    printf '200\n{"version":{"num":"9.9.9","yanked":false}}\n' > "$d/crates.json"
     # the autopilot judges the standing release policy first (unreadable = STOP): the real reader and a
     # ladder with no policy block, so 9.9.9 runs the pre-policy train these rows were written for
     mkdir -p "$r/scripts/lib" "$r/contracts" && cp -- "$ROOT/scripts/lib/release_policy.sh" "$ROOT"/scripts/lib/release_policy_*.awk "$r/scripts/lib/" \
@@ -162,7 +162,7 @@ STUB
 autopilot() {
     local d="$TMP/$1" from=$2 to=$3; shift 3
     ( export RELEASE_AP="$d/ap" RELEASE_EPIC=9002 CARGO_HOME="$TMP/cargo" PATH="$TMP/bin:$PATH" \
-          FX_STATE="$d/state" FX_MC="$(cat "$d/mc")" CRATES_IO_JSON_FILE="$d/crates.json"
+          FX_STATE="$d/state" FX_MC="$(cat "$d/mc")" CRATES_IO_RESPONSE_FILE="$d/crates.json"
       for kv in "$@"; do export "${kv?}"; done
       bash "$d/repo/scripts/release/autopilot.sh" 9.9.9 99 "$from" "$to" ) > "$d/out.log" 2>&1
     printf '%s\n' "$?" > "$d/rc"
@@ -239,7 +239,7 @@ close_other_open() { # TAG AUTOPILOT
 close_crates_absent() { # TAG AUTOPILOT: tag pushed, publish failed -> crates.io lacks 9.9.9 -> nothing closes (PMAT-5306)
     local n="absent-$1" d; d="$TMP/absent-$1"
     fixture "$n" "$2" || return 2
-    printf '{"versions":[{"num":"9.9.8","yanked":false}]}\n' > "$d/crates.json"
+    printf '404\n{"errors":[{"detail":"Not Found"}]}\n' > "$d/crates.json"
     autopilot "$n" close close
     [ "$(cat "$d/rc")" != 0 ] || { printf 'close exited 0 with the version absent from crates.io\n'; return 1; }
     ! grep -q '^issue close' "$d/state/gh.log" || { printf 'the epic was closed without crates.io\n'; return 1; }

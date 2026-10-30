@@ -4,7 +4,8 @@ Description=Tag-publish andon: a v<semver> tag not on crates.io after 2 h pages 
 [Service]
 Type=oneshot
 # No EnvironmentFile and no Environment=: nothing from the environment changes behaviour (the script honours no env and no seams).
-UnsetEnvironment=CRATES_IO_JSON_FILE
-# exit 1 = an andon is open (failure, visible in systemctl --user --failed); exit 2 = crates.io unreadable (not measured, no page)
-ExecStart=/usr/bin/env bash %h/src/aprender-promote/scripts/release/tag_publish_andon.sh --repo %h/src/aprender-promote --state /mnt/nvme-raid0/cop-inbox/tag-andon-state --inbox /mnt/nvme-raid0/cop-inbox/inbox.md --escalate /mnt/nvme-raid0/cop-inbox/escalate/tag-andon
+UnsetEnvironment=CRATES_IO_RESPONSE_FILE
+# exit 1 = an andon is open (failure, visible in systemctl --user --failed); exit 2 = crates.io unreadable (not measured, no page); exit 3 = another run holds the lock
+ExecStart=/usr/bin/env bash %h/src/aprender-promote/scripts/release/tag_publish_andon.sh --repo %h/src/aprender-promote --state /mnt/nvme-raid0/cop-inbox/tag-andon-state --inbox /mnt/nvme-raid0/cop-inbox/inbox.md --escalate /mnt/nvme-raid0/cop-inbox/escalate/tag-andon --page-target apr:cop
+SuccessExitStatus=0 3
 TimeoutStartSec=5min
