@@ -40,6 +40,7 @@ if [ "${1:-}" = --mutants ]; then
     mut stamp-without-delivery tag_publish_andon.sh 's/if page "\$line"; then : >/if page "$line" || true; then : >/'
     mut lightweight-by-commit-date tag_publish_andon.sh 's/    ts=$(tag_time "$tag")/    ts=$(G for-each-ref --format=%(creatordate:unix) "refs\/tags\/$tag")/'
     mut baseline-dropped tag_publish_andon.sh 's/^baseline=0; .*$/baseline=0/'
+    mut baseline-lightweight-zero tag_publish_andon.sh 's/G log -1 --format=%ct "refs\/tags\/$t" > "$seen"/echo 0 > "$seen"/'
     mut push-dated-by-tagger tag_publish_andon.sh 's/if \[ "\$baseline" = 1 \] && \[ "\$lw" = 0 \]; then/if [ "$lw" = 0 ]; then/'
     mut lsremote-fail-is-absent tag_publish_andon.sh 's/^            \*) printf .origin unreadable.*$/            *) printf "tag not on origin"; return ;;/'
     mut page-always-succeeds tag_publish_andon.sh 's/^    \[ "\$delivered" = 1 \]$/    true/'
@@ -248,10 +249,15 @@ for t in $(g tag -l); do g tag -d "$t" > /dev/null; done
 GIT_COMMITTER_DATE="@$((NOW - 3 * 86400)) +0000" g commit -q --allow-empty -m old-lw
 g tag v0.9.0 # lightweight, present before the first run
 SINCE_4H=$("$FX_REALDATE" -u -d "@$((NOW - 240 * 60))" +%FT%TZ)
-andon lw "$J_NONE" --since $SINCE_OLD; expect "baseline run: a pre-existing lightweight tag never pages" 0 "$RC"
-expect "baseline run: dated 0" 0 "$(cat "$TMP/st-lw/seen-v0.9.0")"
+andon lw "$J_NONE" --since "$SINCE_4H"; expect "baseline run: a lightweight tag on a commit older than --since never pages" 0 "$RC"
+expect "baseline run: lightweight dated by its commit (a lower bound of the push)" "$((NOW - 3 * 86400))" "$(cat "$TMP/st-lw/seen-v0.9.0")"
 [ -e "$TMP/st-lw/baseline" ]; expect "baseline run: baseline stamped" 0 "$?"
-g tag v2.0.0 # lightweight, pushed now on a 3-day-old commit (older than --since)
+# a lightweight tag pushed after --since but before the first run is still caught (dated by its commit: early, never silent)
+GIT_COMMITTER_DATE="@$((NOW - 180 * 60)) +0000" g commit -q --allow-empty -m recent-lw; g tag v0.9.5
+andon lwb "$J_NONE" --since "$SINCE_4H"; expect "baseline run: lightweight tag pushed before install, absent: andon" 1 "$RC"
+has "baseline andon names the tag" "$TMP/out-lwb" "v0.9.5"; hasnt "baseline andon skips the pre---since tag" "$TMP/out-lwb" "v0.9.0"
+g tag -d v0.9.5 > /dev/null
+g tag v2.0.0 "v0.9.0^{commit}" # lightweight, pushed now on the 3-day-old commit (older than --since)
 andon lw "$J_NONE" --since "$SINCE_4H"; expect "new lightweight tag on an old commit: no page at once" 0 "$RC"
 has "new lightweight tag: not skipped silently, inbox says so" "$TMP/inb-lw" "LIGHTWEIGHT TAG v2.0.0"
 expect "new lightweight tag: dated by first sight" "$NOW" "$(cat "$TMP/st-lw/seen-v2.0.0")"

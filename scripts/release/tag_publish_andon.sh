@@ -86,15 +86,16 @@ now=$(date -u +%s) # bashrs disable-line=DET002
 tags=$(G tag --list 'v[0-9]*.[0-9]*.[0-9]*' 2> /dev/null) || usage "cannot list tags in $repo"
 open=0 nm=0
 # A tag is dated by its push, measured as the run that first saw it on origin (state/seen-<tag>; at most one timer period late).
-# The first run cannot know when the tags already present were pushed: it dates an annotated one by its tagger date and a
-# lightweight one 0 (--since skips it), since a lightweight tag's only date is its commit's.
+# The first run cannot know when the tags already present were pushed, so it dates each by the newest lower bound it has:
+# the tagger date of an annotated tag, the commit date of a lightweight one. Either can only date the push early (an early
+# page, never a silent pass); a tag older than --since by that bound is skipped. Install the timer before the next tag.
 baseline=0; [ -e "$state/baseline" ] || baseline=1
 tag_time() { # tag_time TAG -> the epoch the tag is dated by (see above)
     local t=$1 seen="$state/seen-$1" lw=1
     [ "$(G cat-file -t "refs/tags/$t" 2> /dev/null)" = tag ] && lw=0
     if [ ! -s "$seen" ]; then
         if [ "$baseline" = 1 ] && [ "$lw" = 0 ]; then G for-each-ref --format="%(taggerdate:unix)" "refs/tags/$t" > "$seen" 2> /dev/null || return 1
-        elif [ "$baseline" = 1 ]; then echo 0 > "$seen" || return 1
+        elif [ "$baseline" = 1 ]; then G log -1 --format=%ct "refs/tags/$t" > "$seen" 2> /dev/null || return 1
         else
             echo "$now" > "$seen" || return 1
             [ "$lw" = 0 ] || inbox_line "LIGHTWEIGHT TAG $t: not cut by the release path; dated by first sight, not its commit"
@@ -118,7 +119,7 @@ while IFS= read -r tag; do
     esac
     open=1
     step=$(blocking_step "$tag")
-    line="ANDON $tag pushed ${age} min ago and $CRATE $ver is NOT on crates.io (window ${win} min); blocking step: $step"
+    line="ANDON $tag pushed ${age} min ago and $CRATE $ver is NOT on crates.io, absent or yanked (window ${win} min); blocking step: $step"
     say "$line"
     inbox_line "$line"
     if [ ! -e "$state/escalated-$tag" ]; then
