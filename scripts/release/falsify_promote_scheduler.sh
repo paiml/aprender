@@ -23,7 +23,13 @@ if [ "${1:-}" = --mutants ]; then
     mut dirty-check-dropped 's/^\[ -z "\$(G status --porcelain.*$/true/'
     mut not-at-main-dropped 's/^\[ "\$(G rev-parse HEAD.*$/true/'
     mut models-always-ok 's/^    \[ "\$(sed -n .s\/\^state=\/\/p. "\$go".*$/    true/'
-    mut lanes-always-ok 's/^    \[ -z "\$miss" \] || { printf .%s. "\$miss"; return 1; }$/    return 0/'
+    mut train-verdict-ignored 's/--exit-verdict > "\$d\/train.log" 2>&1 || {/--exit-verdict > "$d\/train.log" 2>\&1 || true || {/'
+    mut no-ff-when-behind 's/ || G merge -q --ff-only .*$//'
+    mut seams-in-repo-allowed 's/^    case "\$(realpath -e.*$/    :/'
+    mut rate-floor-dropped 's/-lt 1000 \]; then/-lt 0 ]; then/'
+    mut dispatch-time-filter-dropped 's/select(.createdAt >= [^)]*)/select(true)/'
+    mut pending-silent 's/inbox_line "PENDING clean-room run \$id on[^;]*;//'
+    mut lock-silent 's/inbox_line "SKIP lock held[^;]*;//'
     mut cleanroom-red-pending 's/completed\*) fail .*$/completed*) say pending; exit 3 ;;/'
     mut seams-read-from-env 's|^\[ ! -f "\$HERE/.promote-test-seams" \] .*$|[ -z "${GH_SEAMS:-}" ] \|\| . "$GH_SEAMS"|'
     mut flock-dropped 's/^flock -n 9 .*$/true/'
@@ -92,16 +98,11 @@ cat > "$TMP/gh" <<'SH'
 #!/usr/bin/env bash
 echo "GH $*" >> "$FX_CALLS"
 repo=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --repo ] && { j=$((i+1)); repo=${!j}; }; done
-if [ "$repo" = paiml/aprender ]; then
-  case "$1 $2" in
-    "run list") [ "$FX_LANES" = none ] && echo '[]' || echo "[{\"databaseId\":55,\"headSha\":\"$FX_R1\",\"event\":\"schedule\"},{\"databaseId\":55,\"headSha\":\"$FX_R0\",\"event\":\"schedule\"},{\"databaseId\":55,\"headSha\":\"$FX_R2\",\"event\":\"schedule\"}]" ;;
-    "run view") jq -n --arg red "${FX_RED_JOB:-}" '{jobs:(["deep-doctests","deep-nodefault","examples","x86_64-unknown-linux-gnu on lam","cleanroom-gpu","preflight","milestone"]|map({name:.,conclusion:(if .==$red then "failure" else "success" end)}))}' ;;
-  esac
-  exit 0
-fi
+case "$*" in *rate_limit*) echo "${FX_RATE:-5000}"; exit 0 ;; esac
 case "$*" in
   *"workflow run"*) exit 0 ;;
-  *"--limit 1 "*) echo 999 ;;
+  *"--json databaseId,createdAt"*) fx_j='[{"databaseId":111,"createdAt":"2000-01-01T00:00:00Z"}]'; [ "${FX_STALE_RUN:-0}" = 1 ] || fx_j='[{"databaseId":111,"createdAt":"2000-01-01T00:00:00Z"},{"databaseId":999,"createdAt":"2999-01-01T00:00:00Z"}]'
+      fx_f=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --jq ] && { j=$((i+1)); fx_f=${!j}; }; done; printf '%s' "$fx_j" | jq -r "$fx_f" ;;
   *"run list"*) [ "$FX_CR" = none ] || echo 777 ;;
   *"--job"*) echo "tested-sha: $FX_SHA" ;;
   *"status,conclusion"*) echo "$FX_RUN_STATE" ;;
@@ -126,10 +127,23 @@ cat > "$TMP/pt" <<'SH'
 echo "PT $*" >> "$FX_CALLS"
 case "$1" in --install) [ "${FX_PT_INSTALL_FAILS:-0}" = 1 ] || touch "$FX_PT_FLAG" ;; --verify) [ "${FX_PT_OK:-1}" = 1 ] || [ -e "$FX_PT_FLAG" ] ;; esac
 SH
+cat > "$TMP/train" <<'SH'
+#!/usr/bin/env bash
+echo "TRAIN $*" >> "$FX_CALLS"
+sha=""; out=""; ev=0
+for ((i=1;i<=$#;i++)); do case "${!i}" in --commit) j=$((i+1)); sha=${!j} ;; --out) j=$((i+1)); out=${!j} ;; --exit-verdict) ev=1 ;; esac; done
+[ -n "$out" ] && [ "$ev" = 1 ] && [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "train: bad args" >&2; exit 3; }
+[ "$FX_LANES" = none ] && { echo "NOT RELEASABLE: ci-main not_measured"; exit 1; }
+[ -z "${FX_RED_JOB:-}" ] || { echo "NOT RELEASABLE: $FX_RED_JOB red"; exit 1; }
+[ "$sha" = "${FX_TRAIN_RED_SHA:-none}" ] && { echo "NOT RELEASABLE: attempt 2"; exit 1; }
+mkdir -p "$out"; echo "RELEASABLE"
+SH
+chmod +x "$TMP/train"
 chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate" "$TMP/models" "$TMP/pt"
 cat > "$BIN/.promote-test-seams" <<EOF
 GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
-MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"
+MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"; DISPATCH_WAIT=0
+TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
 [ -z "\${FX_REAL_MODELS:-}" ] || MODELS_NIGHTLY="$HERE/models_nightly.sh"
 EOF
 sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environment)
@@ -157,12 +171,20 @@ FX_MODELS=not_measured sched models-not-measured 1 0 0 --execute
 FX_REAL_MODELS=1 sched real-models-nightly-weak-bundle 1 0 0 --execute
 FX_RED_JOB=preflight sched release-day-lane-red 1 0 0 --execute
 FX_RED_JOB=cleanroom-gpu sched cleanroom-gpu-lane-red 1 0 0 --execute
+FX_RED_JOB=ci-main sched ci-main-red 1 0 0 --execute
+FX_TRAIN_PATH=/nonexistent/train sched train-unavailable-fails-closed 1 0 0 --execute; inbox_has train-unavailable RED
+FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched train-red-newest-falls-back 0 2 1 --execute
+grep -q "TRAIN --out .* --commit $R1 --exit-verdict" "$TMP/calls" || grep -q "TRAIN.*--commit $R1.*--exit-verdict\|TRAIN.*--exit-verdict.*--commit $R1" "$TMP/calls" && ok || bad "train not called with --commit/--exit-verdict"
+FX_RATE=999 sched rate-floor 0 0 0 --execute; inbox_has rate-floor SKIP
+FX_RATE=x sched rate-unreadable 0 0 0 --execute
 FX_LANES=none sched lane-evidence-missing-fails-closed 1 0 0 --execute; inbox_has lane-evidence-missing RED
 FX_CR=none sched cleanroom-missing-no-flag 1 0 0 --execute
 FX_CR=none sched cleanroom-missing-dispatches-pending 3 0 0 --execute --dispatch-cleanroom
 grep -q 'workflow run clean-room.yml' "$TMP/calls" && ok || bad "dispatch not issued"
+inbox_has dispatch PENDING
 expect "run id recorded" 999 "$(cat "$ST/$R2/cleanroom-run-id" 2> /dev/null)"
-FX_CR=none FX_PRESEED=1 FX_RUN_STATE="in_progress " sched cleanroom-running-pending 3 0 0 --execute --dispatch-cleanroom
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="in_progress " sched cleanroom-running-pending 3 0 0 --execute --dispatch-cleanroom; inbox_has cleanroom-running PENDING
+FX_CR=none FX_STALE_RUN=1 sched dispatch-only-older-runs-not-adopted 1 0 0 --execute --dispatch-cleanroom
 FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute --dispatch-cleanroom; inbox_has cleanroom-ended-red RED
 FX_CR=none FX_PRESEED=1 FX_RUN_STATE="" sched cleanroom-unreadable 1 0 0 --execute --dispatch-cleanroom
 sched too-early 0 0 0 --execute --not-before 2999-01-01T00:00:00Z
@@ -173,6 +195,14 @@ FX_MODELS_RED_SHA="$R2 $R1" FX_SHA=$R0 sched age-cap-skips-old-green-sha 1 0 0 -
 # checkout hygiene
 printf z >> "$W/f"; sched dirty-checkout 1 0 0 --execute; git -C "$W" checkout -q -- f
 g commit -q --allow-empty -m local; sched checkout-not-at-origin-main 1 0 0 --execute; g reset -q --hard origin/main
+# liveness: a clean checkout BEHIND origin/main fast-forwards and runs
+printf n > "$W/f2"; g add f2; g commit -q -m c3; g push -q origin main; g reset -q --hard HEAD~1
+sched behind-origin-fast-forwards 0 1 0
+expect "ff reached origin/main" "$(g rev-parse origin/main)" "$(g rev-parse HEAD)"
+# a seams file inside the repo checkout is refused
+mkdir -p "$W/sb"; cp "$BIN/promote_scheduler.sh" "$BIN/receipts_from_night.sh" "$BIN/.promote-test-seams" "$W/sb/"
+SCHED_BIN="$W/sb/promote_scheduler.sh" sched seams-inside-repo-refused 1 0 0 --execute; inbox_has seams-inside-repo RED
+rm -rf -- "${W:?}/sb"
 # env never honoured: a sandbox copy WITHOUT the seams file, hostile env
 mkdir -p "$TMP/bin2"; cp "$SRC" "$TMP/bin2/promote_scheduler.sh"
 GH="$TMP/gh" PROMOTE="$TMP/promote" RECEIPTS="$BIN/receipts_from_night.sh" DRYRUN_GATE="$TMP/gate" MODELS_NIGHTLY="$TMP/models" PUSHTAGS="$TMP/pt" EVIDENCE_DIR="$EV" \
@@ -183,11 +213,6 @@ mkdir -p "$ST"; : > "$TMP/calls"
 ( exec 8> "$ST/.lock"; flock -n 8; FX_CALLS="$TMP/calls" bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" --execute > "$TMP/out-lock" 2>&1; echo $? > "$TMP/lock-rc" )
 expect "lock rc" 0 "$(cat "$TMP/lock-rc")"; grep -q 'holds the lock' "$TMP/out-lock" && ok || bad "lock message"
 expect "lock: nothing ran" 0 "$(wc -l < "$TMP/calls")"
-# age cap: a main whose newest commits are 10 days old has no candidate
-OLD=$(date -u -d '10 days ago' +%s)
-g checkout -q -b old-main; g reset -q --hard "$R1"
-GIT_AUTHOR_DATE="@$OLD" GIT_COMMITTER_DATE="@$OLD" g commit -q --amend -m old; RO=$(g rev-parse HEAD); g checkout -q main
-unset OLD RO
-
+inbox_has lock-held SKIP
 printf 'falsify_promote_scheduler: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

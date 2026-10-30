@@ -22,7 +22,7 @@
 set -uo pipefail
 unset GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
-GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""
+GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""; DISPATCH_WAIT=5
 repo="" state="" nb="" disp=0 exe=0 inbox=/mnt/nvme-raid0/cop-inbox/inbox.md
 usage() { printf 'promote_scheduler: %s\n' "$*" >&2; exit 2; }
 say() { printf 'promote_scheduler: %s\n' "$*"; }
@@ -49,11 +49,17 @@ if [ -n "$nb" ]; then
     [ "$(date -u +%s)" -ge "$nbs" ] || { say "too early (before $nb): nothing done"; exit 0; }
 fi
 install -d -- "$state" || usage "cannot create $state"
+# a seams file inside the repo checkout (tracked or not) would stub the gates in production: refused
+if [ -e "$HERE/.promote-test-seams" ]; then
+    case "$(realpath -e -- "$HERE")/" in "$(realpath -e -- "$repo")"/*) fail "test seams file inside the repo checkout $repo: refused" ;; esac
+fi
 exec 9> "${state:?}/.lock"
-flock -n 9 || { say "another promote_scheduler holds the lock: nothing done"; exit 0; }
+flock -n 9 || { say "another promote_scheduler holds the lock: nothing done"; inbox_line "SKIP lock held by another promote_scheduler run"; exit 0; }
 G() { git -C "$repo" "$@"; }
 G fetch -q origin main nightly-evidence 2> /dev/null || fail "cannot fetch origin main/nightly-evidence: nothing measured"
 [ -z "$(G status --porcelain --untracked-files=no 2> /dev/null)" ] || fail "checkout $repo is dirty: refused"
+# liveness: a clean checkout that is behind origin/main fast-forwards (never reset/force); diverged stays refused below
+[ "$(G rev-parse HEAD 2> /dev/null)" = "$(G rev-parse refs/remotes/origin/main 2> /dev/null)" ] || G merge -q --ff-only refs/remotes/origin/main > /dev/null 2>&1
 [ "$(G rev-parse HEAD 2> /dev/null)" = "$(G rev-parse refs/remotes/origin/main 2> /dev/null)" ] || fail "checkout $repo is not at origin/main: refused"
 
 work=$(mktemp -d) || usage "no temp dir"
@@ -62,7 +68,7 @@ trap cleanup EXIT
 G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&1 || fail "cannot make a gate worktree of origin/main"
 S="$work/gate/scripts/release"
 PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
-MODELS_NIGHTLY="$S/models_nightly.sh"; PUSHTAGS="$work/gate/scripts/hooks/pre-push-tags.sh"
+MODELS_NIGHTLY="$S/models_nightly.sh"; TRAIN="$S/nightly_train.sh"; PUSHTAGS="$work/gate/scripts/hooks/pre-push-tags.sh"
 # test seams: only a file beside this script, i.e. only in the falsifier's sandbox copy
 # shellcheck disable=SC1091
 [ ! -f "$HERE/.promote-test-seams" ] || . "$HERE/.promote-test-seams"
@@ -71,6 +77,9 @@ if [ -z "$EVIDENCE_DIR" ]; then
     EVIDENCE_DIR="$work/ev"
 fi
 ev=$EVIDENCE_DIR
+# GH-1: below the REST floor only the release path may call; unreadable = not_measured. Skip, never silent.
+rem=$("$GH" api rate_limit --jq .resources.core.remaining 2> /dev/null)
+if ! [[ $rem =~ ^[0-9]+$ ]] || [ "$rem" -lt 1000 ]; then say "GitHub REST allowance '${rem:-unreadable}' < 1000: nothing done"; inbox_line "SKIP GitHub REST remaining '${rem:-unreadable}' < 1000 (GH-1); will retry next tick"; exit 0; fi
 
 # candidates: the newest NCAND bundles (any state), on origin/main, no older than MAX_AGE_DAYS
 cutoff=$(( $(date -u +%s) - MAX_AGE_DAYS * 86400 ))
@@ -92,29 +101,14 @@ models_ok() {
     (cd "$work/gate" && GITHUB_OUTPUT="$go" bash "$MODELS_NIGHTLY" --relay --commit "$sha" --out "$d/relay" --evidence "$ev/models-crux/$sha" --measure crux) > "$d/relay.log" 2>&1 || return 1
     [ "$(sed -n 's/^state=//p' "$go" | head -n 1)" = green ]
 }
-# lane_ok SHA WORKFLOW JOBREGEX: a schedule/dispatch run of WORKFLOW on main at exactly SHA with every matching job success
-lane_ok() {
-    local sha=$1 wf=$2 re=$3 id
-    while read -r id; do
-        [ -n "$id" ] || continue
-        "$GH" run view "$id" --repo "$APR" --json jobs 2> /dev/null \
-            | jq -e --arg re "$re" '[.jobs[] | select(.name | test($re))] | length > 0 and all(.conclusion == "success")' > /dev/null 2>&1 && return 0
-    done < <("$GH" run list --repo "$APR" --workflow "$wf" --branch main --limit 30 --json databaseId,headSha,event 2> /dev/null \
-        | jq -r --arg s "$sha" '.[] | select(.headSha == $s and (.event == "schedule" or .event == "workflow_dispatch")) | .databaseId')
-    return 1
-}
-LANES='deep-doctests|deep-nightly.yml|^deep-doctests$
-deep-nodefault|deep-nightly.yml|^deep-nodefault$
-deep-examples|examples-nightly.yml|^examples$
-deep-bins-build|nightly.yml|-unknown-linux-gnu on
-cleanroom-gpu|release-lanes-nightly.yml|^cleanroom-gpu$
-preflight|release-gates-nightly.yml|^preflight$
-milestone|release-gates-nightly.yml|^milestone$'
-# lanes_ok SHA -> 0 all lanes; else prints the lanes with no green evidence (not_measured: fail closed)
+# lanes_ok SHA DIR: the train's own judgement (ci-main, deep-*, models, milestone, cleanroom-gpu, preflight ... incl. FLOW-003 G4
+# attempt>=2 = red and newest-completed-run-only), read for exactly SHA: nightly_train.sh --commit SHA --exit-verdict from the gate
+# worktree. A missing train script, a failed read or NOT RELEASABLE = fail closed (prints why).
 lanes_ok() {
-    local sha=$1 name wf re miss=""
-    while IFS='|' read -r name wf re; do lane_ok "$sha" "$wf" "$re" || miss+="$name "; done <<< "$LANES"
-    [ -z "$miss" ] || { printf '%s' "$miss"; return 1; }
+    local sha=$1 d=$2
+    [ -f "$TRAIN" ] || { printf 'nightly_train.sh missing in the gate worktree (not_measured)'; return 1; }
+    rm -rf -- "${d:?}/train"
+    bash "$TRAIN" --out "$d/train" --commit "$sha" --exit-verdict > "$d/train.log" 2>&1 || { printf 'train: %s' "$(grep -m1 -E 'RELEASABLE|trap|read=' "$d/train.log" | cut -c1-120)"; return 1; }
 }
 # cleanroom_for SHA OUT: a successful clean-room (aprender) job whose log says tested-sha == exactly SHA
 cleanroom_for() {
@@ -140,15 +134,21 @@ cleanroom_marker() { # SHA DIR FIRST
             "completed success") return 0 ;;
             completed*) fail "clean-room run $id for ${sha:0:9} ended '${st#completed }': nothing promoted" ;;
             "") fail "clean-room run $id for ${sha:0:9} cannot be read: not_measured" ;;
-            *) say "clean-room run $id for ${sha:0:9} still running; pending"; exit 3 ;;
+            *) say "clean-room run $id for ${sha:0:9} still running; pending"; inbox_line "PENDING clean-room run $id on ${sha:0:9} still running"; exit 3 ;;
         esac
     fi
     [ "$3" = 1 ] && [ "$disp" = 1 ] || return 0
+    t0=$(date -u +%Y-%m-%dT%H:%M:%SZ) # bashrs disable-line=DET002
     "$GH" workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" > "$d/dispatch.log" 2>&1 || fail "clean-room dispatch on ${sha:0:9} failed ($(tail -n 1 "$d/dispatch.log"))"
-    id=$("$GH" run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId' 2> /dev/null)
+    id=""
+    for _ in 1 2 3; do
+        id=$("$GH" run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$t0\")] | .[0].databaseId" 2> /dev/null)
+        [[ $id =~ ^[1-9][0-9]*$ ]] && break
+        sleep "$DISPATCH_WAIT"
+    done
     [[ $id =~ ^[1-9][0-9]*$ ]] || fail "clean-room dispatched on ${sha:0:9} but its run id cannot be read"
     printf '%s\n' "$id" > "$d/cleanroom-run-id"
-    say "clean-room run $id dispatched on ${sha:0:9}; pending"; exit 3
+    say "clean-room run $id dispatched on ${sha:0:9}; pending"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
 }
 
 first=1 newest=1 notes=""
@@ -160,7 +160,7 @@ for sha in "${cands[@]}"; do
         newest=0; continue
     fi
     newest=0
-    if miss=$(lanes_ok "$sha"); then :; else notes+="${sha:0:9} no green evidence for lanes: $miss; "; continue; fi
+    if miss=$(lanes_ok "$sha" "$d"); then :; else notes+="${sha:0:9} the train does not judge it releasable: $miss; "; continue; fi
     if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
         cleanroom_marker "$sha" "$d" "$first"
         if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
@@ -173,16 +173,16 @@ for sha in "${cands[@]}"; do
     wsha=$(git -C "$w/wt" rev-parse HEAD)
     bash "$DRYRUN_GATE" --verify "$w/wt" > "$d/publish-dryrun.log" 2>&1; drc=$?
     G worktree remove --force "$w/wt" > /dev/null 2>&1; rm -rf -- "${w:?}"
-    rm -rf -- "${d:?}/receipts"
-    bash "$RECEIPTS" --sha "$sha" --out "$d/receipts" --models-dir "$ev/models-crux/$sha" --cleanroom-json "$d/cleanroom.json" \
+    rcpt="$work/receipts-$sha"; rm -rf -- "${rcpt:?}"
+    bash "$RECEIPTS" --sha "$sha" --out "$rcpt" --models-dir "$ev/models-crux/$sha" --cleanroom-json "$d/cleanroom.json" \
         --dryrun-rc "$drc" --dryrun-commit "$wsha" > "$d/receipts.log" 2>&1 || { notes+="${sha:0:9} receipts incomplete ($(tr '\n' ' ' < "$d/receipts.log" | cut -c1-80)); "; continue; }
-    if ! bash "$PROMOTE" --sha "$sha" --receipts "$d/receipts" --repo "$repo" > "$d/promote-dry.log" 2>&1; then
+    if ! bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" > "$d/promote-dry.log" 2>&1; then
         notes+="${sha:0:9} promote dry-run refused: $(grep -m1 REFUSE "$d/promote-dry.log" | cut -c1-100); "; continue
     fi
     if [ "$exe" != 1 ]; then say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
     (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
         || fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"
-    bash "$PROMOTE" --sha "$sha" --receipts "$d/receipts" --repo "$repo" --execute > "$d/promote-exec.log" 2>&1; rc=$?
+    bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" --execute > "$d/promote-exec.log" 2>&1; rc=$?
     tail -n 6 "$d/promote-exec.log"
     [ "$rc" = 0 ] && inbox_line "DONE promoted ${sha:0:9}: $(grep -m1 TAGGED "$d/promote-exec.log" | cut -c1-120)" || inbox_line "RED promote --execute failed rc=$rc at ${sha:0:9} ($d/promote-exec.log)"
     exit "$rc"
