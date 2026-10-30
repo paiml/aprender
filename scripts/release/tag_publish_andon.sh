@@ -49,6 +49,7 @@ G() { git -C "$repo" "$@"; }
 page_text() { printf '%s' "$1" | tr -d "'\"\`\$!\\\\" | tr '\n' ' ' | cut -c1-240; }
 page() { # page LINE: rc 0 only when at least one --page-target accepted it. Each target is verified with tmux has-session first;
     # a target whose name is "apr:cop" style is a bare shell (echo only), any other is a claude TUI (send-keys -l, then Enter). --page-dry prints.
+    # "aprender-flow-relay-free" is the sender label merge-drought.sh pages with, so both andons read alike in the cop window
     local msg tgt delivered=0; msg="OPERATOR-FACING ESCALATION aprender-flow-relay-free $(page_text "$1")"
     if [ "$dry" = 1 ] && [ "${#targets[@]}" -eq 0 ]; then echo "PAGE (dry): $msg"; return 0; fi
     for tgt in "${targets[@]}"; do
@@ -79,9 +80,24 @@ fi
 now=$(date -u +%s) # bashrs disable-line=DET002
 tags=$(G tag --list 'v[0-9]*.[0-9]*.[0-9]*' 2> /dev/null) || usage "cannot list tags in $repo"
 open=0 nm=0
+# the first run baselines every lightweight tag already present (dated 0, so --since skips it): its push time is unknowable
+baseline=0; [ -e "$state/baseline" ] || baseline=1
+tag_time() { # tag_time TAG -> epoch it is dated by. Annotated (what promote_nightly.sh and autopilot.sh cut): tagger date.
+    # Lightweight: the commit date says nothing about the push, so it is dated by when this andon first saw it.
+    local t=$1 seen="$state/seen-$1"
+    if [ "$(G cat-file -t "refs/tags/$t" 2> /dev/null)" = tag ]; then G for-each-ref --format="%(taggerdate:unix)" "refs/tags/$t" 2> /dev/null; return; fi
+    if [ ! -s "$seen" ]; then
+        if [ "$baseline" = 1 ]; then echo 0 > "$seen" || return 1
+        else
+            echo "$now" > "$seen" || return 1
+            inbox_line "LIGHTWEIGHT TAG $t: not cut by the release path; dated by first sight, not its commit"
+        fi
+    fi
+    cat -- "$seen"
+}
 while IFS= read -r tag; do
     [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
-    ts=$(G for-each-ref --format='%(creatordate:unix)' "refs/tags/$tag" 2> /dev/null)
+    ts=$(tag_time "$tag")
     [[ $ts =~ ^[0-9]+$ ]] || continue
     [ "$ts" -ge "$since_s" ] || continue
     age=$(( (now - ts) / 60 ))
@@ -111,6 +127,7 @@ while IFS= read -r tag; do
         if page "$line"; then : > "$state/paged-$tag"; else inbox_line "PAGE UNDELIVERED $tag: no page target accepted it; retrying next run"; fi
     fi
 done <<< "$tags"
+[ "$baseline" = 1 ] && : > "$state/baseline"
 [ "$open" = 1 ] && exit 1
 [ "$nm" = 1 ] && exit 2
 exit 0

@@ -38,6 +38,8 @@ if [ "${1:-}" = --mutants ]; then
     mut prerelease-tag-allowed tag_publish_andon.sh 's/^    \[\[ \$tag =~ \^v.*$/    :/'
     mut step-not-named tag_publish_andon.sh 's/; blocking step: \$step//'
     mut stamp-without-delivery tag_publish_andon.sh 's/if page "\$line"; then : >/if page "$line" || true; then : >/'
+    mut lightweight-by-commit-date tag_publish_andon.sh 's/    ts=$(tag_time "$tag")/    ts=$(G for-each-ref --format=%(creatordate:unix) "refs\/tags\/$tag")/'
+    mut baseline-dropped tag_publish_andon.sh 's/^baseline=0; .*$/baseline=0/'
     mut page-always-succeeds tag_publish_andon.sh 's/^    \[ "\$delivered" = 1 \]$/    true/'
     mut undelivered-inbox-dropped tag_publish_andon.sh 's/else inbox_line "PAGE UNDELIVERED[^"]*"; fi/else :; fi/'
     mut has-session-dropped tag_publish_andon.sh 's/^        tmux has-session .*$/        :/'
@@ -239,6 +241,22 @@ mkdir -p "$TMP/esc-is-a-dir"; : > "$FX_TMUX_LOG"; ANDON_LIVE=1 andon escfail "$J
 has "escalate write fails: inbox says so" "$TMP/inb-escfail" "ESCALATE WRITE FAILED"
 has "escalate write fails: page still delivered" "$FX_TMUX_LOG" "send-keys -t apr:cop"
 [ ! -e "$TMP/st-escfail/escalated-v1.0.0" ]; expect "escalate write fails: not stamped" 0 "$?"
+# ---- lightweight tags: dated by first sight, never by their commit date (lane round 3) ----
+for t in $(g tag -l); do g tag -d "$t" > /dev/null; done
+GIT_COMMITTER_DATE="@$((NOW - 3 * 86400)) +0000" g commit -q --allow-empty -m old-lw
+g tag v0.9.0 # lightweight, present before the first run
+SINCE_4H=$("$FX_REALDATE" -u -d "@$((NOW - 240 * 60))" +%FT%TZ)
+andon lw "$J_NONE" --since $SINCE_OLD; expect "baseline run: a pre-existing lightweight tag never pages" 0 "$RC"
+expect "baseline run: dated 0" 0 "$(cat "$TMP/st-lw/seen-v0.9.0")"
+[ -e "$TMP/st-lw/baseline" ]; expect "baseline run: baseline stamped" 0 "$?"
+g tag v2.0.0 # lightweight, pushed now on a 3-day-old commit (older than --since)
+andon lw "$J_NONE" --since "$SINCE_4H"; expect "new lightweight tag on an old commit: no page at once" 0 "$RC"
+has "new lightweight tag: not skipped silently, inbox says so" "$TMP/inb-lw" "LIGHTWEIGHT TAG v2.0.0"
+expect "new lightweight tag: dated by first sight" "$NOW" "$(cat "$TMP/st-lw/seen-v2.0.0")"
+echo $((NOW - 180 * 60)) > "$TMP/st-lw/seen-v2.0.0" # 3 h after first sight
+andon lw "$J_NONE" --since "$SINCE_4H"; expect "lightweight tag 3 h after first sight, absent: andon" 1 "$RC"
+has "lightweight andon names the tag" "$TMP/out-lw" "v2.0.0"; hasnt "baselined tag never pages" "$TMP/out-lw" "v0.9.0"
+
 # the autopilot calls the gate in step 9, before any close
 grep -q 'crates_io_close_gate aprender "\$V"' "$HERE/autopilot.sh" && ok || bad "autopilot.sh step 9 does not call crates_io_close_gate"
 
