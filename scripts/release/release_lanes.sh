@@ -807,7 +807,7 @@ m24_disagreeing_legacy_record_counts s/\*) case "\$s" in "\$a"\*) ;; \*) return 
 m25_token_in_argv s/-H @<(printf .Authorization: Bearer %s\\n. "\$2")/-H "Authorization: Bearer $2"/
 m26_failed_infra_read_is_none s#rows="\$(infra_rows "" infra_gh)" || {#rows="$(infra_rows "" infra_gh)" || true || {#
 m27_failed_log_read_is_no_commit s#/logs")" || return 1#/logs")" || log=""#
-m28_304_with_no_cache_is_empty s#304) \[ -f "\$k.body" \] || return 1 ;;#304) touch -- "$k.body" ;;#
+m28_304_with_no_cache_is_empty s#304) \[ -f "\$k.body" \] || {.*return 1; } ;;#304) touch -- "$k.body" ;;#
 m29_rate_floor_ignored s#\[ "\$rem" -ge "\$fl" \] || {#true || {#
 m30_floor_is_never_a_fifth s#fl=\$((lim / 5)); \[ "\$fl" -le "\$RATE_FLOOR" \] || fl=\$RATE_FLOOR#fl=$RATE_FLOOR#
 m31_floor_is_never_capped s#\] || fl=\$RATE_FLOOR#] || true#
