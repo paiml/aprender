@@ -49,10 +49,6 @@ if [ -n "$nb" ]; then
     [ "$(date -u +%s)" -ge "$nbs" ] || { say "too early (before $nb): nothing done"; exit 0; }
 fi
 install -d -- "$state" || usage "cannot create $state"
-# a seams file inside the repo checkout (tracked or not) would stub the gates in production: refused
-if [ -e "$HERE/.promote-test-seams" ]; then
-    case "$(realpath -e -- "$HERE")/" in "$(realpath -e -- "$repo")"/*) fail "test seams file inside the repo checkout $repo: refused" ;; esac
-fi
 exec 9> "${state:?}/.lock"
 flock -n 9 || { say "another promote_scheduler holds the lock: nothing done"; inbox_line "SKIP lock held by another promote_scheduler run"; exit 0; }
 G() { git -C "$repo" "$@"; }
@@ -68,7 +64,19 @@ trap cleanup EXIT
 G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&1 || fail "cannot make a gate worktree of origin/main"
 S="$work/gate/scripts/release"
 PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
-MODELS_NIGHTLY="$S/models_nightly.sh"; TRAIN="$S/nightly_train.sh"; PUSHTAGS="$work/gate/scripts/hooks/pre-push-tags.sh"
+MODELS_NIGHTLY="$S/models_nightly.sh"; TRAIN="$S/nightly_train.sh"
+# the train refuses to start while a registry token is reachable (its no-token step), and a build host has ~/.cargo/credentials.toml:
+# so the train call, and ONLY that call (never the tag push, never the gates), runs in the train's own installer sandbox --
+# a user namespace with an empty read-only tmpfs over ~/.cargo and an empty CARGO_HOME. Credentials are never read here.
+SANDBOX=()
+if command -v systemd-run > /dev/null 2>&1; then
+    SANDBOX=(systemd-run --user --wait --pipe --quiet --collect -p PrivateUsers=yes -p "TemporaryFileSystem=$HOME/.cargo:ro" -p "Environment=CARGO_HOME=$work/cargo" -p "Environment=PATH=$PATH")
+fi
+ PUSHTAGS="$work/gate/scripts/hooks/pre-push-tags.sh"
+# a seams file inside the repo checkout (tracked or not) would stub the gates in production: refused
+if [ -e "$HERE/.promote-test-seams" ]; then
+    case "$(realpath -e -- "$HERE")/" in "$(realpath -e -- "$repo")"/*) fail "test seams file inside the repo checkout $repo: refused" ;; esac
+fi
 # test seams: only a file beside this script, i.e. only in the falsifier's sandbox copy
 # shellcheck disable=SC1091
 [ ! -f "$HERE/.promote-test-seams" ] || . "$HERE/.promote-test-seams"
@@ -107,8 +115,8 @@ models_ok() {
 lanes_ok() {
     local sha=$1 d=$2
     [ -f "$TRAIN" ] || { printf 'nightly_train.sh missing in the gate worktree (not_measured)'; return 1; }
-    rm -rf -- "${d:?}/train"
-    bash "$TRAIN" --out "$d/train" --commit "$sha" --exit-verdict > "$d/train.log" 2>&1 || { printf 'train: %s' "$(grep -m1 -E 'RELEASABLE|trap|read=' "$d/train.log" | cut -c1-120)"; return 1; }
+    rm -rf -- "${d:?}/train"; install -d -- "$work/cargo"
+    "${SANDBOX[@]}" bash "$TRAIN" --out "$d/train" --commit "$sha" --exit-verdict > "$d/train.log" 2>&1 || { printf 'train: %s' "$(grep -m1 -E 'RELEASABLE|trap|read=' "$d/train.log" | cut -c1-120)"; return 1; }
 }
 # cleanroom_for SHA OUT: a successful clean-room (aprender) job whose log says tested-sha == exactly SHA
 cleanroom_for() {
@@ -132,8 +140,8 @@ cleanroom_marker() { # SHA DIR FIRST
         st=$("$GH" run view "$id" --repo "$INFRA" --json status,conclusion --jq '"\(.status) \(.conclusion)"' 2> /dev/null) || st=""
         case $st in
             "completed success") return 0 ;;
-            completed*) fail "clean-room run $id for ${sha:0:9} ended '${st#completed }': nothing promoted" ;;
-            "") fail "clean-room run $id for ${sha:0:9} cannot be read: not_measured" ;;
+            completed*) inbox_line "RED clean-room run $id on ${sha:0:9} ended '${st#completed }': this sha is skipped, older candidates still tried"; say "clean-room run $id on ${sha:0:9} ended red"; return 2 ;;
+            "") inbox_line "RED clean-room run $id on ${sha:0:9} cannot be read (not_measured): this sha is skipped"; say "clean-room run $id unreadable"; return 2 ;;
             *) say "clean-room run $id for ${sha:0:9} still running; pending"; inbox_line "PENDING clean-room run $id on ${sha:0:9} still running"; exit 3 ;;
         esac
     fi
@@ -142,7 +150,7 @@ cleanroom_marker() { # SHA DIR FIRST
     "$GH" workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" > "$d/dispatch.log" 2>&1 || fail "clean-room dispatch on ${sha:0:9} failed ($(tail -n 1 "$d/dispatch.log"))"
     id=""
     for _ in 1 2 3; do
-        id=$("$GH" run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select(.createdAt >= \"$t0\")] | .[0].databaseId" 2> /dev/null)
+        id=$("$GH" run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt,displayTitle --jq "[.[] | select(.createdAt >= \"$t0\")] | (map(select((.displayTitle // \"\") | contains(\"${sha:0:9}\"))) + .) | .[0].databaseId" 2> /dev/null)
         [[ $id =~ ^[1-9][0-9]*$ ]] && break
         sleep "$DISPATCH_WAIT"
     done
@@ -160,9 +168,16 @@ for sha in "${cands[@]}"; do
         newest=0; continue
     fi
     newest=0
+    ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '/^\[/ { s = ($0 ~ /^\[workspace\.package\][[:space:]]*$/) } s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
+    if [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$(G ls-remote origin "refs/tags/v$ver" 2> /dev/null)" ]; then
+        say "${sha:0:9}: v$ver is already on origin: already promoted, nothing to do"
+        [ -e "$d/already-promoted" ] || { : > "$d/already-promoted"; inbox_line "DONE already promoted: v$ver is on origin (newest verified ${sha:0:9}); nothing to do"; }
+        exit 0
+    fi
     if miss=$(lanes_ok "$sha" "$d"); then :; else notes+="${sha:0:9} the train does not judge it releasable: $miss; "; continue; fi
     if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
-        cleanroom_marker "$sha" "$d" "$first"
+        cleanroom_marker "$sha" "$d" "$first"; mrc=$?
+        if [ "$mrc" = 2 ]; then notes+="${sha:0:9} its clean-room run ended red or unreadable; "; continue; fi
         if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
             if [ "$first" = 1 ]; then fail "no clean-room success tested on exactly ${sha:0:9} (pass --dispatch-cleanroom to start one)"; fi
             notes+="${sha:0:9} no clean-room on this exact sha; "; continue

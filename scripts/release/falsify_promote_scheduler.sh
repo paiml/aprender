@@ -28,9 +28,13 @@ if [ "${1:-}" = --mutants ]; then
     mut seams-in-repo-allowed 's/^    case "\$(realpath -e.*$/    :/'
     mut rate-floor-dropped 's/-lt 1000 \]; then/-lt 0 ]; then/'
     mut dispatch-time-filter-dropped 's/select(.createdAt >= [^)]*)/select(true)/'
+    mut sandbox-dropped 's/"\${SANDBOX\[@\]}" bash "\$TRAIN"/bash "$TRAIN"/'
+    mut already-promoted-check-dropped 's/ls-remote origin "refs\/tags\/v\$ver"/ls-remote origin "refs\/tags\/none-$ver"/'
+    mut title-preference-dropped 's/(map(select([^+]*)) + \.)/./'
+    mut red-marker-blocks-all 's/return 2 ;;/fail "red" ;;/'
     mut pending-silent 's/inbox_line "PENDING clean-room run \$id on[^;]*;//'
     mut lock-silent 's/inbox_line "SKIP lock held[^;]*;//'
-    mut cleanroom-red-pending 's/completed\*) fail .*$/completed*) say pending; exit 3 ;;/'
+    mut cleanroom-red-pending 's/^            completed\*) .*$/            completed*) say pending; exit 3 ;;/'
     mut seams-read-from-env 's|^\[ ! -f "\$HERE/.promote-test-seams" \] .*$|[ -z "${GH_SEAMS:-}" ] \|\| . "$GH_SEAMS"|'
     mut flock-dropped 's/^flock -n 9 .*$/true/'
     mut age-cap-dropped 's/\[ "\$ct" -ge "\$cutoff" \] || continue/true/'
@@ -82,7 +86,7 @@ DRC="" DCM=""; run_r dryrun-unset 1 2
 O="$TMP/origin.git"; W="$TMP/work"; ST="$TMP/state"; INB="$TMP/inbox.md"
 git init -q --bare "$O"; git clone -q "$O" "$W" 2> /dev/null
 g() { git -C "$W" -c user.email=f@x -c user.name=f -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
-g checkout -q -b main; printf w > "$W/f"; g add f; T0=$(( $(date +%s) - 864000 )); GIT_AUTHOR_DATE="@$T0" GIT_COMMITTER_DATE="@$T0" g commit -q -m c0; R0=$(g rev-parse HEAD) # bashrs disable-line=DET002
+g checkout -q -b main; printf w > "$W/f"; printf '[workspace.package]\nversion = "1.2.3"\n' > "$W/Cargo.toml"; g add f Cargo.toml; T0=$(( $(date +%s) - 864000 )); GIT_AUTHOR_DATE="@$T0" GIT_COMMITTER_DATE="@$T0" g commit -q -m c0; R0=$(g rev-parse HEAD) # bashrs disable-line=DET002
 printf x > "$W/f"; g add f; T1=$(( $(date +%s) - 7200 )); GIT_AUTHOR_DATE="@$T1" GIT_COMMITTER_DATE="@$T1" g commit -q -m c1; R1=$(g rev-parse HEAD) # bashrs disable-line=DET002
 printf y > "$W/f"; g commit -q -am c2; R2=$(g rev-parse HEAD); g push -q origin main
 g checkout -q -b nightly-evidence
@@ -101,7 +105,7 @@ repo=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --repo ] && { j=$((i+1)); repo=${
 case "$*" in *rate_limit*) echo "${FX_RATE:-5000}"; exit 0 ;; esac
 case "$*" in
   *"workflow run"*) exit 0 ;;
-  *"--json databaseId,createdAt"*) fx_j='[{"databaseId":111,"createdAt":"2000-01-01T00:00:00Z"}]'; [ "${FX_STALE_RUN:-0}" = 1 ] || fx_j='[{"databaseId":111,"createdAt":"2000-01-01T00:00:00Z"},{"databaseId":999,"createdAt":"2999-01-01T00:00:00Z"}]'
+  *"--json databaseId,createdAt"*) fx_j='[{"databaseId":111,"createdAt":"2000-01-01T00:00:00Z","displayTitle":""}]'; [ "${FX_STALE_RUN:-0}" = 1 ] || fx_j="[{\"databaseId\":998,\"createdAt\":\"2999-01-01T00:00:00Z\",\"displayTitle\":\"other\"},{\"databaseId\":999,\"createdAt\":\"2999-01-01T00:00:00Z\",\"displayTitle\":\"clean-room ${FX_SHA:0:9}\"},{\"databaseId\":111,\"createdAt\":\"2000-01-01T00:00:00Z\",\"displayTitle\":\"\"}]"
       fx_f=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --jq ] && { j=$((i+1)); fx_f=${!j}; }; done; printf '%s' "$fx_j" | jq -r "$fx_f" ;;
   *"run list"*) [ "$FX_CR" = none ] || echo 777 ;;
   *"--job"*) echo "tested-sha: $FX_SHA" ;;
@@ -130,6 +134,7 @@ SH
 cat > "$TMP/train" <<'SH'
 #!/usr/bin/env bash
 echo "TRAIN $*" >> "$FX_CALLS"
+[ ! -e "$HOME/.cargo/credentials.toml" ] || [ -n "${FX_HIDDEN:-}" ] || { echo "no-token: a credentials file is reachable" >&2; exit 2; }
 sha=""; out=""; ev=0
 for ((i=1;i<=$#;i++)); do case "${!i}" in --commit) j=$((i+1)); sha=${!j} ;; --out) j=$((i+1)); out=${!j} ;; --exit-verdict) ev=1 ;; esac; done
 [ -n "$out" ] && [ "$ev" = 1 ] && [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "train: bad args" >&2; exit 3; }
@@ -138,11 +143,12 @@ for ((i=1;i<=$#;i++)); do case "${!i}" in --commit) j=$((i+1)); sha=${!j} ;; --o
 [ "$sha" = "${FX_TRAIN_RED_SHA:-none}" ] && { echo "NOT RELEASABLE: attempt 2"; exit 1; }
 mkdir -p "$out"; echo "RELEASABLE"
 SH
-chmod +x "$TMP/train"
+chmod +x "$TMP/train"; mkdir -p "$TMP/h/.cargo"; : > "$TMP/h/.cargo/credentials.toml"  # a FAKE file in the sandbox test home
 chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate" "$TMP/models" "$TMP/pt"
 cat > "$BIN/.promote-test-seams" <<EOF
 GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
 MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"; DISPATCH_WAIT=0
+SANDBOX=(env "HOME=$TMP/h" FX_HIDDEN=1)
 TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
 [ -z "\${FX_REAL_MODELS:-}" ] || MODELS_NIGHTLY="$HERE/models_nightly.sh"
 EOF
@@ -182,11 +188,13 @@ FX_CR=none sched cleanroom-missing-no-flag 1 0 0 --execute
 FX_CR=none sched cleanroom-missing-dispatches-pending 3 0 0 --execute --dispatch-cleanroom
 grep -q 'workflow run clean-room.yml' "$TMP/calls" && ok || bad "dispatch not issued"
 inbox_has dispatch PENDING
-expect "run id recorded" 999 "$(cat "$ST/$R2/cleanroom-run-id" 2> /dev/null)"
+expect "run id recorded (named for the sha, not unrelated 998)" 999 "$(cat "$ST/$R2/cleanroom-run-id" 2> /dev/null)"
 FX_CR=none FX_PRESEED=1 FX_RUN_STATE="in_progress " sched cleanroom-running-pending 3 0 0 --execute --dispatch-cleanroom; inbox_has cleanroom-running PENDING
 FX_CR=none FX_STALE_RUN=1 sched dispatch-only-older-runs-not-adopted 1 0 0 --execute --dispatch-cleanroom
-FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute --dispatch-cleanroom; inbox_has cleanroom-ended-red RED
-FX_CR=none FX_PRESEED=1 FX_RUN_STATE="" sched cleanroom-unreadable 1 0 0 --execute --dispatch-cleanroom
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute; inbox_has cleanroom-ended-red RED
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="" sched cleanroom-unreadable 1 0 0 --execute
+FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched red-marker-does-not-block-older 0 2 1 --execute
+grep -q "PROMOTE --sha $R1" "$TMP/calls" && ok || bad "older candidate not promoted after red marker"
 sched too-early 0 0 0 --execute --not-before 2999-01-01T00:00:00Z
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched newest-red-falls-back-to-last-green 0 2 1 --execute; inbox_has newest-red RED
 grep -q "PROMOTE --sha $R1" "$TMP/calls" && ok || bad "fallback did not promote the older green sha"
@@ -195,6 +203,11 @@ FX_MODELS_RED_SHA="$R2 $R1" FX_SHA=$R0 sched age-cap-skips-old-green-sha 1 0 0 -
 # checkout hygiene
 printf z >> "$W/f"; sched dirty-checkout 1 0 0 --execute; git -C "$W" checkout -q -- f
 g commit -q --allow-empty -m local; sched checkout-not-at-origin-main 1 0 0 --execute; g reset -q --hard origin/main
+# idempotence: the version tag is already on origin -> exit 0, no promote, no older candidate
+g push -q origin "$R2:refs/tags/v1.2.3"
+sched already-promoted-tag-on-origin 0 0 0 --execute
+grep -q 'already promoted' "$INB" && ok || bad "already-promoted inbox line"
+g push -q origin ":refs/tags/v1.2.3"
 # liveness: a clean checkout BEHIND origin/main fast-forwards and runs
 printf n > "$W/f2"; g add f2; g commit -q -m c3; g push -q origin main; g reset -q --hard HEAD~1
 sched behind-origin-fast-forwards 0 1 0
