@@ -30,13 +30,14 @@ command -v jq > /dev/null 2>&1 || usage "jq is not installed"
 mkdir -p -- "$out" || usage "cannot create $out"
 rm -f -- "${out:?}/clean-room.json" "${out:?}/models.json" "${out:?}/publish-dry-run.json"
 bad=0
+vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }'; }
 no() { printf '%s: NOT WRITTEN %s -- %s\n' "$PROG" "$1" "$2" >&2; bad=1; }
 
 # models: the exact go-line autopilot cut_tag greps, at this sha9, AND the judge's own verdict green with rc 0
 lane_models() {
     local log="$mdir/models-t1.log" ver="$mdir/verdict" go
     [ -s "$log" ] && [ -s "$ver" ] || { no models "no models-t1.log / verdict in '$mdir'"; return; }
-    grep -qx 'state=green' "$ver" && grep -qx 't1_rc=0' "$ver" || { no models "verdict is not state=green with t1_rc=0"; return; }
+    [ "$(vget state < "$ver")" = green ] && [ "$(vget t1_rc < "$ver")" = 0 ] && [ "$(vget commit < "$ver")" = "$sha" ] || { no models "verdict (first-line keys) is not state=green, t1_rc=0, commit=sha"; return; }
     go="MODELS GO (CRUX smoke) on lambda and gx10 at ${sha:0:9}:"
     grep -qF "$go" "$log" || { no models "models-t1.log has no '$go'"; return; }
     if grep -q '^MODELS .*FAIL' "$log"; then no models "models-t1.log carries a FAIL line"; return; fi

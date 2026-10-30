@@ -1,38 +1,60 @@
 #!/usr/bin/env bash
-# falsify_promote_scheduler.sh -- the case table for receipts_from_night.sh and promote_scheduler.sh (N26, PMAT-5306)
+# falsify_promote_scheduler.sh -- the case table and mutants for receipts_from_night.sh + promote_scheduler.sh (N26, PMAT-5306)
 #
-#   bash scripts/release/falsify_promote_scheduler.sh
+#   bash scripts/release/falsify_promote_scheduler.sh            # every row
+#   bash scripts/release/falsify_promote_scheduler.sh --mutants  # the table, then one mutant per check: each must turn it red
 #
-# Proves a red, missing, wrong-sha or unsuccessful input writes NO receipt / starts NO promotion, and that the one green
-# row does. Throwaway origin + clone under mktemp; gh and the promote script are stubs; nothing real is touched.
-# Exit 0 = every row held, 1 = a row failed.
+# Proves a red, missing, wrong-sha, unverified or unmeasured input starts NO promotion, and that the green row does.
+# The scheduler under test runs from a SANDBOX COPY with a .promote-test-seams file beside it (the only way to stub gh,
+# the promote script and the verifiers); the installed script never honours env or seams. Throwaway origin + clone under
+# mktemp; nothing real is touched.  Exit 0 = every row held (and every mutant caught), 1 = not.
 set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
+SRC="${SCHED_SRC:-$HERE/promote_scheduler.sh}"
+if [ "${1:-}" = --mutants ]; then
+    T=$(mktemp -d) || exit 2; trap 'rm -rf -- "${T:?}"' EXIT
+    bash "$0" > "$T/base.log" 2>&1 || { tail -n 5 "$T/base.log"; echo "mutants: the unmutated table is not green"; exit 1; }
+    miss=0 n=0
+    mut() { # name sed-expr
+        n=$((n + 1)); sed "$2" "$SRC" > "$T/m.sh"
+        if cmp -s "$SRC" "$T/m.sh"; then printf 'MUTANT %s did not apply\n' "$1" >&2; miss=$((miss + 1)); return; fi
+        if SCHED_SRC="$T/m.sh" bash "$0" > "$T/m.log" 2>&1; then printf 'MUTANT %s SURVIVED\n' "$1" >&2; miss=$((miss + 1)); fi
+    }
+    mut dirty-check-dropped 's/^\[ -z "\$(G status --porcelain.*$/true/'
+    mut not-at-main-dropped 's/^\[ "\$(G rev-parse HEAD.*$/true/'
+    mut models-always-ok 's/^    \[ "\$(sed -n .s\/\^state=\/\/p. "\$go".*$/    true/'
+    mut lanes-always-ok 's/^    \[ -z "\$miss" \] || { printf .%s. "\$miss"; return 1; }$/    return 0/'
+    mut cleanroom-red-pending 's/completed\*) fail .*$/completed*) say pending; exit 3 ;;/'
+    mut seams-read-from-env 's|^\[ ! -f "\$HERE/.promote-test-seams" \] .*$|[ -z "${GH_SEAMS:-}" ] \|\| . "$GH_SEAMS"|'
+    mut flock-dropped 's/^flock -n 9 .*$/true/'
+    mut age-cap-dropped 's/\[ "\$ct" -ge "\$cutoff" \] || continue/true/'
+    mut pushtags-unchecked 's/ \\$/ ;/; /not installed\/verified in/d'
+    mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then say.*$/    :/'
+    printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
+    [ "$miss" = 0 ]; exit
+fi
+
 TMP=$(mktemp -d) || exit 2
 trap 'rm -rf -- "${TMP:?}"' EXIT
 pass=0 fail=0
 ok() { pass=$((pass + 1)); }
 bad() { fail=$((fail + 1)); printf 'FAIL: %s\n' "$1" >&2; }
-expect() { # name want_rc got_rc
-    if [ "$2" = "$3" ]; then ok; else bad "$1: want rc $2, got $3"; fi
-}
+expect() { if [ "$2" = "$3" ]; then ok; else bad "$1: want $2, got $3"; fi; }
 SHA=$(printf 'a%.0s' $(seq 40)); OTHER=$(printf 'b%.0s' $(seq 40))
 
 # ---- receipts_from_night.sh rows ----
-mk_models() { # dir state rc golast
+mk_models() { # dir state rc golast commit
     mkdir -p "$1"
-    printf 'measure=crux\nt1_rc=%s\nstate=%s\n' "$3" "$2" > "$1/verdict"
+    printf 'commit=%s\nmeasure=crux\nt1_rc=%s\nstate=%s\n' "${5:-$SHA}" "$3" "$2" > "$1/verdict"
     printf 'MODELS GO (CRUX smoke) on lambda and gx10 at %s: judge passed\n' "${4:-${SHA:0:9}}" > "$1/models-t1.log"
 }
-mk_cr() { # file sha conclusion
-    jq -n --arg s "$2" --arg c "$3" '{run_id:"123",job:"clean-room (aprender)",conclusion:$c,tested_shas:[$s]}' > "$1"
-}
-run_r() { # name want_rc want_files(count) -- args via vars
-    local n=$1 want=$2 files=$3 o="$TMP/o-$1" rc
+mk_cr() { jq -n --arg s "$2" --arg c "$3" '{run_id:"123",job:"clean-room (aprender)",conclusion:$c,tested_shas:[$s]}' > "$1"; }
+run_r() { # name want_rc want_files
+    local n=$1 o="$TMP/o-$1" rc
     rm -rf "${o:?}"
     bash "$HERE/receipts_from_night.sh" --sha "$SHA" --out "$o" --models-dir "$MD" --cleanroom-json "$CR" --dryrun-rc "$DRC" --dryrun-commit "$DCM" > /dev/null 2>&1; rc=$?
-    expect "$n rc" "$want" "$rc"
-    [ "$(find "$o" -name '*.json' | wc -l)" = "$files" ] && ok || bad "$n: expected $files receipt files"
+    expect "$n rc" "$2" "$rc"
+    expect "$n files" "$3" "$(find "$o" -name '*.json' | wc -l)"
 }
 MD="$TMP/md-green"; mk_models "$MD" green 0; CR="$TMP/cr-green.json"; mk_cr "$CR" "$SHA" success; DRC=0 DCM=$SHA
 run_r green 0 3
@@ -41,6 +63,8 @@ MD="$TMP/md-redrc"; mk_models "$MD" green 1; run_r models-green-state-rc1 1 2
 MD="$TMP/md-stale"; mk_models "$MD" green 0 cafef00d1; run_r models-go-other-sha 1 2
 MD="$TMP/md-missing"; run_r models-missing 1 2
 MD="$TMP/md-fail"; mk_models "$MD" green 0; printf 'MODELS   FAIL  gx10 cell\n' >> "$MD/models-t1.log"; run_r models-fail-line 1 2
+MD="$TMP/md-dupkey"; mk_models "$MD" red 0; printf 'state=green\n' >> "$MD/verdict"; run_r models-later-state-green-first-is-red 1 2
+MD="$TMP/md-commit"; mk_models "$MD" green 0 "" "$OTHER"; run_r models-verdict-other-commit 1 2
 MD="$TMP/md-green"; CR="$TMP/cr-fail.json"; mk_cr "$CR" "$SHA" failure; run_r cleanroom-failure 1 2
 CR="$TMP/cr-other.json"; mk_cr "$CR" "$OTHER" success; run_r cleanroom-other-sha 1 2
 CR="$TMP/cr-none.json"; run_r cleanroom-missing 1 2
@@ -48,56 +72,122 @@ CR="$TMP/cr-green.json"; DRC=1; run_r dryrun-red 1 2
 DRC=0 DCM=$OTHER; run_r dryrun-other-sha 1 2
 DRC="" DCM=""; run_r dryrun-unset 1 2
 
-# ---- promote_scheduler.sh rows ----
-O="$TMP/origin.git"; W="$TMP/work"; EV="$TMP/ev"; ST="$TMP/state"
+# ---- promote_scheduler.sh rows: origin with two main commits (R1 older, R2 newest) and an evidence branch ----
+O="$TMP/origin.git"; W="$TMP/work"; ST="$TMP/state"; INB="$TMP/inbox.md"
 git init -q --bare "$O"; git clone -q "$O" "$W" 2> /dev/null
 g() { git -C "$W" -c user.email=f@x -c user.name=f -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
-g checkout -q -b main; printf x > "$W/f"; g add f; g commit -q -m c1; g push -q origin main
-RS=$(g rev-parse HEAD)
-g checkout -q -b nightly-evidence; mkdir -p "$W/models-crux/$RS"; printf 'state=green\nt1_rc=0\n' > "$W/models-crux/$RS/verdict"
-printf 'MODELS GO (CRUX smoke) on lambda and gx10 at %s: ok\n' "${RS:0:9}" > "$W/models-crux/$RS/models-t1.log"
+g checkout -q -b main; printf w > "$W/f"; g add f; T0=$(( $(date +%s) - 864000 )); GIT_AUTHOR_DATE="@$T0" GIT_COMMITTER_DATE="@$T0" g commit -q -m c0; R0=$(g rev-parse HEAD) # bashrs disable-line=DET002
+printf x > "$W/f"; g add f; T1=$(( $(date +%s) - 7200 )); GIT_AUTHOR_DATE="@$T1" GIT_COMMITTER_DATE="@$T1" g commit -q -m c1; R1=$(g rev-parse HEAD) # bashrs disable-line=DET002
+printf y > "$W/f"; g commit -q -am c2; R2=$(g rev-parse HEAD); g push -q origin main
+g checkout -q -b nightly-evidence
+for r in $R0 $R1 $R2; do
+    mkdir -p "$W/models-crux/$r"; printf 'commit=%s\nmeasure=crux\nt1_rc=0\nstate=green\n' "$r" > "$W/models-crux/$r/verdict"
+    printf 'MODELS GO (CRUX smoke) on lambda and gx10 at %s: ok\n' "${r:0:9}" > "$W/models-crux/$r/models-t1.log"
+done
 g add -A; g commit -q -m ev; g push -q origin nightly-evidence; g checkout -q main
-git clone -q "$O" "$TMP/ev-src" 2> /dev/null; git -C "$TMP/ev-src" checkout -q nightly-evidence; EV="$TMP/ev-src"
+EV="$TMP/ev-src"; git clone -q "$O" "$EV" 2> /dev/null; git -C "$EV" checkout -q nightly-evidence
 
+BIN="$TMP/bin"; mkdir -p "$BIN"; cp "$SRC" "$BIN/promote_scheduler.sh"; cp "$HERE/receipts_from_night.sh" "$BIN/"
 cat > "$TMP/gh" <<'SH'
 #!/usr/bin/env bash
-# stub gh: records dispatches; run list/view answer from FX_CR (green|none)
-echo "$*" >> "$FX_CALLS"
-case "$1 $2" in
-  "run list") [ "$FX_CR" = none ] || echo 777 ;;
-  "run view") if [ "$3" = --job ]; then echo "tested-sha: $FX_SHA"; else echo "success 888"; fi ;;
-  "workflow run") exit 0 ;;
+echo "GH $*" >> "$FX_CALLS"
+repo=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --repo ] && { j=$((i+1)); repo=${!j}; }; done
+if [ "$repo" = paiml/aprender ]; then
+  case "$1 $2" in
+    "run list") [ "$FX_LANES" = none ] && echo '[]' || echo "[{\"databaseId\":55,\"headSha\":\"$FX_R1\",\"event\":\"schedule\"},{\"databaseId\":55,\"headSha\":\"$FX_R0\",\"event\":\"schedule\"},{\"databaseId\":55,\"headSha\":\"$FX_R2\",\"event\":\"schedule\"}]" ;;
+    "run view") jq -n --arg red "${FX_RED_JOB:-}" '{jobs:(["deep-doctests","deep-nodefault","examples","x86_64-unknown-linux-gnu on lam","cleanroom-gpu","preflight","milestone"]|map({name:.,conclusion:(if .==$red then "failure" else "success" end)}))}' ;;
+  esac
+  exit 0
+fi
+case "$*" in
+  *"workflow run"*) exit 0 ;;
+  *"--limit 1 "*) echo 999 ;;
+  *"run list"*) [ "$FX_CR" = none ] || echo 777 ;;
+  *"--job"*) echo "tested-sha: $FX_SHA" ;;
+  *"status,conclusion"*) echo "$FX_RUN_STATE" ;;
+  *"run view"*) echo "success 888" ;;
 esac
 SH
 cat > "$TMP/promote" <<'SH'
 #!/usr/bin/env bash
 echo "PROMOTE $*" >> "$FX_CALLS"
 [ "$FX_PROMOTE_RC" = 0 ] || { echo "promote_nightly: REFUSE -- stub" >&2; exit 1; }
-exit 0
 SH
-printf '#!/usr/bin/env bash\nexit "${FX_GATE_RC:-0}"\n' > "$TMP/gate"
-chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate"
-sched() { # name want_rc want_promote_calls want_execute_calls args...
+printf '#!/usr/bin/%s\nexit "${FX_GATE_RC:-0}"\n' env\ bash > "$TMP/gate"
+cat > "$TMP/models" <<'SH'
+#!/usr/bin/env bash
+# stub verifier: state per sha
+sha=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --commit ] && { j=$((i+1)); sha=${!j}; }; done
+st=green; case " ${FX_MODELS_RED_SHA:-none} " in *" $sha "*) st=red ;; esac; [ "${FX_MODELS:-green}" = green ] || st=$FX_MODELS
+printf 'state=%s\n' "$st" >> "$GITHUB_OUTPUT"
+SH
+cat > "$TMP/pt" <<'SH'
+#!/usr/bin/env bash
+echo "PT $*" >> "$FX_CALLS"
+case "$1" in --install) [ "${FX_PT_INSTALL_FAILS:-0}" = 1 ] || touch "$FX_PT_FLAG" ;; --verify) [ "${FX_PT_OK:-1}" = 1 ] || [ -e "$FX_PT_FLAG" ] ;; esac
+SH
+chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate" "$TMP/models" "$TMP/pt"
+cat > "$BIN/.promote-test-seams" <<EOF
+GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
+MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"
+[ -z "\${FX_REAL_MODELS:-}" ] || MODELS_NIGHTLY="$HERE/models_nightly.sh"
+EOF
+sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environment)
     local n=$1 wr=$2 wp=$3 we=$4 rc; shift 4
-    : > "$TMP/calls"; rm -rf "${ST:?}"
-    FX_CALLS="$TMP/calls" FX_SHA="$RS" GH="$TMP/gh" PROMOTE="$TMP/promote" DRYRUN_GATE="$TMP/gate" EVIDENCE_DIR="$EV/" \
-        bash "$HERE/promote_scheduler.sh" --repo "$W" --state "$ST" "$@" > "$TMP/out-$n" 2>&1; rc=$?
+    : > "$TMP/calls"; : > "$INB"; rm -rf "${ST:?}" "${TMP:?}/pt-flag"
+    if [ "${FX_PRESEED:-0}" = 1 ]; then mkdir -p "$ST/$R2"; echo 999 > "$ST/$R2/cleanroom-run-id"; fi
+    FX_CALLS="$TMP/calls" FX_PT_FLAG="$TMP/pt-flag" FX_R1=$R1 FX_R2=$R2 FX_R0=$R0 \
+        bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" "$@" > "$TMP/out-$n" 2>&1; rc=$?
     expect "$n rc" "$wr" "$rc"
-    [ "$(grep -c '^PROMOTE' "$TMP/calls")" = "$wp" ] && ok || bad "$n: want $wp promote call(s), got $(grep -c '^PROMOTE' "$TMP/calls")"
-    [ "$(grep -c '^PROMOTE.*--execute' "$TMP/calls")" = "$we" ] && ok || bad "$n: want $we --execute call(s)"
+    expect "$n promote calls" "$wp" "$(grep -c '^PROMOTE' "$TMP/calls")"
+    expect "$n execute calls" "$we" "$(grep -c '^PROMOTE.*--execute' "$TMP/calls")"
 }
-# nightly-evidence is read through EVIDENCE_DIR (a checkout); fetch targets the clone's origin
-export FX_CR=green FX_PROMOTE_RC=0 FX_GATE_RC=0
+inbox_has() { grep -q "$2" "$INB" && ok || bad "$1: inbox lacks '$2'"; }
+export FX_CR=green FX_PROMOTE_RC=0 FX_GATE_RC=0 FX_LANES=green FX_SHA=$R2 FX_RUN_STATE="completed success"
 sched dry-run-all-green 0 1 0
-sched execute-all-green 0 2 1 --execute
-FX_PROMOTE_RC=1 sched promote-dry-refuses-no-execute 1 1 0 --execute
-FX_PROMOTE_RC=0 FX_GATE_RC=1 sched publish-dryrun-red 1 0 0 --execute
-FX_GATE_RC=0 FX_CR=none sched cleanroom-missing-no-dispatch-flag 1 0 0 --execute
+sched execute-all-green 0 2 1 --execute; inbox_has execute-all-green DONE
+grep -q "PT --verify" "$TMP/calls" && ok || bad "execute did not run pre-push-tags --verify"
+FX_PT_OK=0 sched pushtags-installed-then-verified 0 2 1 --execute
+grep -q "PT --install" "$TMP/calls" && ok || bad "pushtags --install not run"
+FX_PT_OK=0 FX_PT_INSTALL_FAILS=1 sched pushtags-cannot-install 1 1 0 --execute; inbox_has pushtags-cannot-install RED
+FX_PROMOTE_RC=1 sched promote-dry-refuses 1 1 0 --execute; inbox_has promote-dry-refuses RED
+FX_GATE_RC=1 sched publish-dryrun-red 1 0 0 --execute; inbox_has publish-dryrun-red RED
+FX_MODELS=red sched models-not-green 1 0 0 --execute; inbox_has models-not-green RED
+FX_MODELS=not_measured sched models-not-measured 1 0 0 --execute
+FX_REAL_MODELS=1 sched real-models-nightly-weak-bundle 1 0 0 --execute
+FX_RED_JOB=preflight sched release-day-lane-red 1 0 0 --execute
+FX_RED_JOB=cleanroom-gpu sched cleanroom-gpu-lane-red 1 0 0 --execute
+FX_LANES=none sched lane-evidence-missing-fails-closed 1 0 0 --execute; inbox_has lane-evidence-missing RED
+FX_CR=none sched cleanroom-missing-no-flag 1 0 0 --execute
 FX_CR=none sched cleanroom-missing-dispatches-pending 3 0 0 --execute --dispatch-cleanroom
 grep -q 'workflow run clean-room.yml' "$TMP/calls" && ok || bad "dispatch not issued"
-FX_CR=green sched too-early 0 0 0 --execute --not-before 2999-01-01T00:00:00Z
-sed -i 's/state=green/state=red/' "$EV/models-crux/$RS/verdict"
-FX_CR=green sched models-red-no-candidate 1 0 0 --execute
+expect "run id recorded" 999 "$(cat "$ST/$R2/cleanroom-run-id" 2> /dev/null)"
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="in_progress " sched cleanroom-running-pending 3 0 0 --execute --dispatch-cleanroom
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute --dispatch-cleanroom; inbox_has cleanroom-ended-red RED
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="" sched cleanroom-unreadable 1 0 0 --execute --dispatch-cleanroom
+sched too-early 0 0 0 --execute --not-before 2999-01-01T00:00:00Z
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched newest-red-falls-back-to-last-green 0 2 1 --execute; inbox_has newest-red RED
+grep -q "PROMOTE --sha $R1" "$TMP/calls" && ok || bad "fallback did not promote the older green sha"
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R2 sched newest-red-no-clean-room-on-older 1 0 0 --execute
+FX_MODELS_RED_SHA="$R2 $R1" FX_SHA=$R0 sched age-cap-skips-old-green-sha 1 0 0 --execute
+# checkout hygiene
+printf z >> "$W/f"; sched dirty-checkout 1 0 0 --execute; git -C "$W" checkout -q -- f
+g commit -q --allow-empty -m local; sched checkout-not-at-origin-main 1 0 0 --execute; g reset -q --hard origin/main
+# env never honoured: a sandbox copy WITHOUT the seams file, hostile env
+mkdir -p "$TMP/bin2"; cp "$SRC" "$TMP/bin2/promote_scheduler.sh"
+GH="$TMP/gh" PROMOTE="$TMP/promote" RECEIPTS="$BIN/receipts_from_night.sh" DRYRUN_GATE="$TMP/gate" MODELS_NIGHTLY="$TMP/models" PUSHTAGS="$TMP/pt" EVIDENCE_DIR="$EV" \
+    SCHED_BIN="$TMP/bin2/promote_scheduler.sh" sched env-overrides-ignored 1 0 0 --execute
+expect "env: no stub gh call" 0 "$(grep -c '^GH' "$TMP/calls")"
+# lock: a second run while the first holds it does nothing
+mkdir -p "$ST"; : > "$TMP/calls"
+( exec 8> "$ST/.lock"; flock -n 8; FX_CALLS="$TMP/calls" bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" --execute > "$TMP/out-lock" 2>&1; echo $? > "$TMP/lock-rc" )
+expect "lock rc" 0 "$(cat "$TMP/lock-rc")"; grep -q 'holds the lock' "$TMP/out-lock" && ok || bad "lock message"
+expect "lock: nothing ran" 0 "$(wc -l < "$TMP/calls")"
+# age cap: a main whose newest commits are 10 days old has no candidate
+OLD=$(date -u -d '10 days ago' +%s)
+g checkout -q -b old-main; g reset -q --hard "$R1"
+GIT_AUTHOR_DATE="@$OLD" GIT_COMMITTER_DATE="@$OLD" g commit -q --amend -m old; RO=$(g rev-parse HEAD); g checkout -q main
+unset OLD RO
 
 printf 'falsify_promote_scheduler: %d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" = 0 ]

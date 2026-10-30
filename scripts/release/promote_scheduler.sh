@@ -1,67 +1,122 @@
 #!/usr/bin/env bash
 # promote_scheduler.sh -- the unattended driver of promote_nightly.sh (N26: "the nightly is the release", PMAT-5306)
 #
-#   bash scripts/release/promote_scheduler.sh --repo DIR --state DIR [--not-before ISO8601Z] [--dispatch-cleanroom] [--execute]
+#   bash scripts/release/promote_scheduler.sh --repo DIR --state DIR [--not-before ISO8601Z] [--dispatch-cleanroom] [--execute] [--inbox FILE]
 #
-# Run by a systemd user timer on the build host (scripts/release/systemd/). Dry-run unless --execute. Each run:
-#   1. before --not-before: do nothing (exit 0).
-#   2. fetch origin main + nightly-evidence. Candidates = models-crux/<sha>/ dirs whose verdict is state=green, sha on
-#      origin/main, newest commit first (at most 5).
-#   3. per candidate, newest first: find a paiml/infra clean-room run whose 'clean-room (aprender)' job succeeded and whose
-#      log says tested-sha == exactly that sha. None: with --dispatch-cleanroom and none already dispatched for it, dispatch
-#      one on the NEWEST candidate only (gh workflow run clean-room.yml -f repos=aprender -f ref=<sha>), exit 3 (pending;
-#      the timer's next tick judges it). No fallback to an older sha while the newest waits.
-#   4. run rc_publish_gate.sh --verify in a fresh worktree of the sha; build receipts (receipts_from_night.sh);
-#      run promote_nightly.sh DRY-RUN; with --execute and the dry-run exit 0, run it again with --execute.
+# Run by a systemd user timer on the build host (scripts/release/systemd/). Dry-run unless --execute.
+# SHA-SELECTION RULE (full text: handoff/aprender-cop/scheduler-sha-rule.md):
+#   candidates = the newest 5 models-crux/<sha>/ bundles on nightly-evidence, on origin/main, commit age <= 3 days.
+#   A candidate must pass, on that EXACT sha: (a) models_nightly.sh --relay --measure crux (the real verifier: SHA256SUMS,
+#   commit, measure, version, C's own models_t1.sh blob, replayed verdict) = green; (b) the release-day nightly lanes
+#   (deep-doctests deep-nodefault deep-examples deep-bins-build cleanroom-gpu preflight milestone) each succeeded on it;
+#   (c) a paiml/infra clean-room run whose log says tested-sha == exactly that sha; (d) rc_publish_gate.sh --verify.
+#   The newest candidate that passes (a)+(b) is the one a clean-room is dispatched for. If the newest nightly is red the
+#   rule is "last candidate that passes all of the above"; none -> SKIP and a line to the cop inbox. Never silent.
+# GATES RUN FROM A CLEAN WORKTREE OF origin/main (never the checkout's own files); the checkout must be clean and AT
+# origin/main or the run refuses. No environment variable changes behaviour: GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR
+# MODELS_NIGHTLY are unset at start; the test seams are read only from a file named .promote-test-seams NEXT TO THIS
+# SCRIPT, which exists only in the falsifier's sandbox copy.
 # It never waives, never edits a receipt, never tags itself, never deletes a tag, never force-pushes: the one write to git
 # is promote_nightly.sh --execute, which refuses an existing tag and goes through pre-push-tags.sh --arm-release.
-# Env overrides (the falsifier uses them): GH, PROMOTE, RECEIPTS, DRYRUN_GATE, EVIDENCE_DIR.
-# exit: 0 promoted (or dry-run would promote, or too early) - 1 no candidate passed - 3 pending clean-room - 2 usage
+# exit: 0 promoted / would promote (dry-run) / too early - 1 nothing promoted (a line is in the cop inbox) - 3 clean-room running - 2 usage
 set -uo pipefail
+unset GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
-GH=${GH:-gh}; PROMOTE=${PROMOTE:-$HERE/promote_nightly.sh}; RECEIPTS=${RECEIPTS:-$HERE/receipts_from_night.sh}
-INFRA=paiml/infra
-repo="" state="" nb="" disp=0 exe=0
+GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""
+repo="" state="" nb="" disp=0 exe=0 inbox=/mnt/nvme-raid0/cop-inbox/inbox.md
 usage() { printf 'promote_scheduler: %s\n' "$*" >&2; exit 2; }
 say() { printf 'promote_scheduler: %s\n' "$*"; }
+# inbox_line MSG: one line, <= 300 chars, to the cop inbox. A skipped or failed promotion is never silent.
+inbox_line() {
+    local t; t=$(date -u +%H:%MZ) # bashrs disable-line=DET002
+    printf '%s | promote-scheduler | PMAT-5306 | %s\n' "$t" "$1" | cut -c1-300 >> "$inbox" 2> /dev/null || true
+}
+fail() { say "$*"; inbox_line "RED promote: $* (state $state)"; exit 1; }
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo) [ $# -ge 2 ] || usage "--repo needs a value"; repo=$2; shift 2 ;;
         --state) [ $# -ge 2 ] || usage "--state needs a value"; state=$2; shift 2 ;;
         --not-before) [ $# -ge 2 ] || usage "--not-before needs a value"; nb=$2; shift 2 ;;
+        --inbox) [ $# -ge 2 ] || usage "--inbox needs a value"; inbox=$2; shift 2 ;;
         --dispatch-cleanroom) disp=1; shift ;;
         --execute) exe=1; shift ;;
         *) usage "unknown argument: $1" ;;
     esac
 done
 [ -d "${repo:-/nonexistent}" ] && [ -n "$state" ] || usage "--repo DIR and --state DIR are required"
-mkdir -p -- "$state" || usage "cannot create $state"
 if [ -n "$nb" ]; then
     nbs=$(date -u -d "$nb" +%s 2> /dev/null) || usage "bad --not-before '$nb'"
     [ "$(date -u +%s)" -ge "$nbs" ] || { say "too early (before $nb): nothing done"; exit 0; }
 fi
+install -d -- "$state" || usage "cannot create $state"
+exec 9> "${state:?}/.lock"
+flock -n 9 || { say "another promote_scheduler holds the lock: nothing done"; exit 0; }
 G() { git -C "$repo" "$@"; }
-G fetch -q origin main nightly-evidence 2> /dev/null || { say "cannot fetch origin main/nightly-evidence: nothing measured"; exit 1; }
+G fetch -q origin main nightly-evidence 2> /dev/null || fail "cannot fetch origin main/nightly-evidence: nothing measured"
+[ -z "$(G status --porcelain --untracked-files=no 2> /dev/null)" ] || fail "checkout $repo is dirty: refused"
+[ "$(G rev-parse HEAD 2> /dev/null)" = "$(G rev-parse refs/remotes/origin/main 2> /dev/null)" ] || fail "checkout $repo is not at origin/main: refused"
 
-ev="${EVIDENCE_DIR:-}" own_ev=0 evroot=""
-if [ -z "$ev" ]; then
-    evroot=$(mktemp -d) && G worktree add -q --detach "$evroot/ev" refs/remotes/origin/nightly-evidence > /dev/null 2>&1 || { say "cannot read nightly-evidence"; exit 1; }
-    ev="$evroot/ev"; own_ev=1
-fi
-cleanup() { if [ "$own_ev" = 1 ]; then G worktree remove --force "$ev" > /dev/null 2>&1; rm -rf -- "${evroot:?}"; fi; return 0; }
+work=$(mktemp -d) || usage "no temp dir"
+cleanup() { G worktree remove --force "$work/gate" > /dev/null 2>&1; G worktree remove --force "$work/ev" > /dev/null 2>&1; G worktree prune > /dev/null 2>&1; rm -rf -- "${work:?}"; return 0; }
 trap cleanup EXIT
+G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&1 || fail "cannot make a gate worktree of origin/main"
+S="$work/gate/scripts/release"
+PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
+MODELS_NIGHTLY="$S/models_nightly.sh"; PUSHTAGS="$work/gate/scripts/hooks/pre-push-tags.sh"
+# test seams: only a file beside this script, i.e. only in the falsifier's sandbox copy
+# shellcheck disable=SC1091
+[ ! -f "$HERE/.promote-test-seams" ] || . "$HERE/.promote-test-seams"
+if [ -z "$EVIDENCE_DIR" ]; then
+    G worktree add -q --detach "$work/ev" refs/remotes/origin/nightly-evidence > /dev/null 2>&1 || fail "cannot read nightly-evidence"
+    EVIDENCE_DIR="$work/ev"
+fi
+ev=$EVIDENCE_DIR
 
+# candidates: the newest NCAND bundles (any state), on origin/main, no older than MAX_AGE_DAYS
+cutoff=$(( $(date -u +%s) - MAX_AGE_DAYS * 86400 ))
 cands=()
 while read -r _ s; do cands+=("$s"); done < <(
     for d in "$ev"/models-crux/*/; do
         s=$(basename "$d"); [[ $s =~ ^[0-9a-f]{40}$ ]] || continue
-        grep -qx 'state=green' "$d/verdict" 2> /dev/null || continue
         G merge-base --is-ancestor "$s" refs/remotes/origin/main 2> /dev/null || continue
-        printf '%s %s\n' "$(G show -s --format=%ct "$s" 2> /dev/null || echo 0)" "$s"
-    done | sort -rn | head -n 5)
-[ "${#cands[@]}" -gt 0 ] || { say "no green models-crux sha on origin/main: nothing to promote"; exit 1; }
+        ct=$(G show -s --format=%ct "$s" 2> /dev/null) || continue
+        [ "$ct" -ge "$cutoff" ] || continue
+        printf '%s %s\n' "$ct" "$s"
+    done | sort -rn | head -n "$NCAND")
+[ "${#cands[@]}" -gt 0 ] || fail "no models-crux bundle on origin/main newer than $MAX_AGE_DAYS days: SKIP"
 
-# clean-room summary for sha -> file; 0 found success, 1 none
+# models_ok SHA DIR: the real verifier. green only.
+models_ok() {
+    local sha=$1 d=$2 go="$2/relay.out"
+    : > "$go"
+    (cd "$work/gate" && GITHUB_OUTPUT="$go" bash "$MODELS_NIGHTLY" --relay --commit "$sha" --out "$d/relay" --evidence "$ev/models-crux/$sha" --measure crux) > "$d/relay.log" 2>&1 || return 1
+    [ "$(sed -n 's/^state=//p' "$go" | head -n 1)" = green ]
+}
+# lane_ok SHA WORKFLOW JOBREGEX: a schedule/dispatch run of WORKFLOW on main at exactly SHA with every matching job success
+lane_ok() {
+    local sha=$1 wf=$2 re=$3 id
+    while read -r id; do
+        [ -n "$id" ] || continue
+        "$GH" run view "$id" --repo "$APR" --json jobs 2> /dev/null \
+            | jq -e --arg re "$re" '[.jobs[] | select(.name | test($re))] | length > 0 and all(.conclusion == "success")' > /dev/null 2>&1 && return 0
+    done < <("$GH" run list --repo "$APR" --workflow "$wf" --branch main --limit 30 --json databaseId,headSha,event 2> /dev/null \
+        | jq -r --arg s "$sha" '.[] | select(.headSha == $s and (.event == "schedule" or .event == "workflow_dispatch")) | .databaseId')
+    return 1
+}
+LANES='deep-doctests|deep-nightly.yml|^deep-doctests$
+deep-nodefault|deep-nightly.yml|^deep-nodefault$
+deep-examples|examples-nightly.yml|^examples$
+deep-bins-build|nightly.yml|-unknown-linux-gnu on
+cleanroom-gpu|release-lanes-nightly.yml|^cleanroom-gpu$
+preflight|release-gates-nightly.yml|^preflight$
+milestone|release-gates-nightly.yml|^milestone$'
+# lanes_ok SHA -> 0 all lanes; else prints the lanes with no green evidence (not_measured: fail closed)
+lanes_ok() {
+    local sha=$1 name wf re miss=""
+    while IFS='|' read -r name wf re; do lane_ok "$sha" "$wf" "$re" || miss+="$name "; done <<< "$LANES"
+    [ -z "$miss" ] || { printf '%s' "$miss"; return 1; }
+}
+# cleanroom_for SHA OUT: a successful clean-room (aprender) job whose log says tested-sha == exactly SHA
 cleanroom_for() {
     local sha=$1 out=$2 id jid jc shas
     while read -r id; do
@@ -75,32 +130,61 @@ cleanroom_for() {
     done < <("$GH" run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 20 --json databaseId --jq '.[].databaseId' 2> /dev/null)
     return 1
 }
+# the dispatched clean-room run: pending (3), red (1, never forever-pending), or fall through when green
+cleanroom_marker() { # SHA DIR FIRST
+    local sha=$1 d=$2 id st
+    if [ -s "$d/cleanroom-run-id" ]; then
+        id=$(cat "$d/cleanroom-run-id")
+        st=$("$GH" run view "$id" --repo "$INFRA" --json status,conclusion --jq '"\(.status) \(.conclusion)"' 2> /dev/null) || st=""
+        case $st in
+            "completed success") return 0 ;;
+            completed*) fail "clean-room run $id for ${sha:0:9} ended '${st#completed }': nothing promoted" ;;
+            "") fail "clean-room run $id for ${sha:0:9} cannot be read: not_measured" ;;
+            *) say "clean-room run $id for ${sha:0:9} still running; pending"; exit 3 ;;
+        esac
+    fi
+    [ "$3" = 1 ] && [ "$disp" = 1 ] || return 0
+    "$GH" workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" > "$d/dispatch.log" 2>&1 || fail "clean-room dispatch on ${sha:0:9} failed ($(tail -n 1 "$d/dispatch.log"))"
+    id=$("$GH" run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 1 --json databaseId --jq '.[0].databaseId' 2> /dev/null)
+    [[ $id =~ ^[1-9][0-9]*$ ]] || fail "clean-room dispatched on ${sha:0:9} but its run id cannot be read"
+    printf '%s\n' "$id" > "$d/cleanroom-run-id"
+    say "clean-room run $id dispatched on ${sha:0:9}; pending"; exit 3
+}
 
-first=1
+first=1 newest=1 notes=""
 for sha in "${cands[@]}"; do
-    d="$state/$sha"; mkdir -p -- "$d"
+    d="$state/$sha"; install -d -- "$d"
+    if ! models_ok "$sha" "$d"; then
+        notes+="${sha:0:9} models not green ($(tail -n 1 "$d/relay.log" | cut -c1-80)); "
+        [ "$newest" = 1 ] && inbox_line "RED newest nightly crux ${sha:0:9} is not a verified green: falling back to the last verified green"
+        newest=0; continue
+    fi
+    newest=0
+    if miss=$(lanes_ok "$sha"); then :; else notes+="${sha:0:9} no green evidence for lanes: $miss; "; continue; fi
     if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
-        if [ "$first" = 1 ] && [ "$disp" = 1 ] && [ ! -e "$d/cleanroom-dispatched" ]; then
-            if "$GH" workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" > "$d/dispatch.log" 2>&1; then
-                date -u +%FT%TZ > "$d/cleanroom-dispatched"; say "clean-room dispatched on ${sha:0:9}; pending"; exit 3
-            fi
-            say "clean-room dispatch on ${sha:0:9} failed ($(tail -n 1 "$d/dispatch.log"))"; exit 1
+        cleanroom_marker "$sha" "$d" "$first"
+        if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
+            if [ "$first" = 1 ]; then fail "no clean-room success tested on exactly ${sha:0:9} (pass --dispatch-cleanroom to start one)"; fi
+            notes+="${sha:0:9} no clean-room on this exact sha; "; continue
         fi
-        if [ "$first" = 1 ] && [ -e "$d/cleanroom-dispatched" ]; then say "clean-room for ${sha:0:9} dispatched, not green yet; pending"; exit 3; fi
-        say "${sha:0:9}: no clean-room success tested on this exact sha; skip"; first=0; continue
     fi
     first=0
-    w=$(mktemp -d) && G worktree add -q --detach "$w/wt" "$sha" > /dev/null 2>&1 || { say "cannot make a worktree of $sha"; continue; }
-    bash "${DRYRUN_GATE:-$HERE/rc_publish_gate.sh}" --verify "$w/wt" > "$d/publish-dryrun.log" 2>&1; drc=$?
+    w=$(mktemp -d) && G worktree add -q --detach "$w/wt" "$sha" > /dev/null 2>&1 || { notes+="${sha:0:9} no worktree; "; continue; }
+    wsha=$(git -C "$w/wt" rev-parse HEAD)
+    bash "$DRYRUN_GATE" --verify "$w/wt" > "$d/publish-dryrun.log" 2>&1; drc=$?
     G worktree remove --force "$w/wt" > /dev/null 2>&1; rm -rf -- "${w:?}"
     rm -rf -- "${d:?}/receipts"
     bash "$RECEIPTS" --sha "$sha" --out "$d/receipts" --models-dir "$ev/models-crux/$sha" --cleanroom-json "$d/cleanroom.json" \
-        --dryrun-rc "$drc" --dryrun-commit "$sha" > "$d/receipts.log" 2>&1 || { say "${sha:0:9}: receipts incomplete ($(tr '\n' ' ' < "$d/receipts.log"))"; continue; }
+        --dryrun-rc "$drc" --dryrun-commit "$wsha" > "$d/receipts.log" 2>&1 || { notes+="${sha:0:9} receipts incomplete ($(tr '\n' ' ' < "$d/receipts.log" | cut -c1-80)); "; continue; }
     if ! bash "$PROMOTE" --sha "$sha" --receipts "$d/receipts" --repo "$repo" > "$d/promote-dry.log" 2>&1; then
-        say "${sha:0:9}: promote dry-run REFUSED: $(grep -m1 REFUSE "$d/promote-dry.log")"; continue
+        notes+="${sha:0:9} promote dry-run refused: $(grep -m1 REFUSE "$d/promote-dry.log" | cut -c1-100); "; continue
     fi
     if [ "$exe" != 1 ]; then say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
+    (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
+        || fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"
     bash "$PROMOTE" --sha "$sha" --receipts "$d/receipts" --repo "$repo" --execute > "$d/promote-exec.log" 2>&1; rc=$?
-    tail -n 6 "$d/promote-exec.log"; exit "$rc"
+    tail -n 6 "$d/promote-exec.log"
+    [ "$rc" = 0 ] && inbox_line "DONE promoted ${sha:0:9}: $(grep -m1 TAGGED "$d/promote-exec.log" | cut -c1-120)" || inbox_line "RED promote --execute failed rc=$rc at ${sha:0:9} ($d/promote-exec.log)"
+    exit "$rc"
 done
-say "no candidate passed every gate"; exit 1
+fail "no candidate passed every gate: ${notes:-none}"
