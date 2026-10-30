@@ -51,17 +51,17 @@ self_test() {
   local wf="$ROOT/.github/workflows/ci.yml" n
   n="$(awk '/^  pr-light:/{j=1;next} /^  [a-z0-9-]+:$/{j=0} j && /pr_release_lanes_gate\.sh/{c++} END{print c+0}' "$wf")"
   if [ "$n" -ge 1 ]; then echo "  ok    wired_into_pr_light"; else echo "  BAD   wired_into_pr_light: no call in pr-light"; bad=$((bad + 1)); fi
-  if grep -A3 'pr_release_lanes_gate\.sh' "$wf" | grep -q 'continue-on-error'; then echo "  BAD   no_continue_on_error"; bad=$((bad + 1)); else echo "  ok    no_continue_on_error"; fi
+  wfctx="$(grep -A3 'pr_release_lanes_gate\.sh' "$wf")"; if grep -q 'continue-on-error' <<<"$wfctx"; then echo "  BAD   no_continue_on_error"; bad=$((bad + 1)); else echo "  ok    no_continue_on_error"; fi
   # the bashrs verdict is check_bashrs_gate.sh's, never bashrs's raw exit, and the pinned bashrs is asserted first
   local raw_re='(^|[;&|(] *)(command +)?(bashrs|"?[$][{]?BASHRS[}]?"?) +lint' c
   for c in 'bashrs lint x' 'x && bashrs lint x' 'command bashrs lint x' '"$BASHRS" lint x' '$BASHRS lint x' '${BASHRS} lint x'; do
-    if printf '%s\n' "$c" | grep -Eq "$raw_re"; then echo "  ok    raw_re_matches[$c]"; else echo "  BAD   raw_re_matches[$c]"; bad=$((bad + 1)); fi
+    if grep -Eq "$raw_re" <<<"$c"; then echo "  ok    raw_re_matches[$c]"; else echo "  BAD   raw_re_matches[$c]"; bad=$((bad + 1)); fi
   done
   for c in 'echo bashrs lint x' 'bashrs_lint x' 'x=bashrs lintel' 'bash scripts/check_bashrs_gate.sh --root r'; do
-    if printf '%s\n' "$c" | grep -Eq "$raw_re"; then echo "  BAD   raw_re_ignores[$c]"; bad=$((bad + 1)); else echo "  ok    raw_re_ignores[$c]"; fi
+    if grep -Eq "$raw_re" <<<"$c"; then echo "  BAD   raw_re_ignores[$c]"; bad=$((bad + 1)); else echo "  ok    raw_re_ignores[$c]"; fi
   done
-  if grep -Ev '^[[:space:]]*#|for c in' "$HERE/pr_release_lanes_gate.sh" | grep -Eq "$raw_re"; then echo "  BAD   no_raw_bashrs_exit: a bashrs lint call is back"; bad=$((bad + 1)); else echo "  ok    no_raw_bashrs_exit"; fi
-  if grep -Ev '^[[:space:]]*(#|echo|printf)' "$HERE/pr_release_lanes_gate.sh" | grep -q 'scripts/check_bashrs_gate[.]sh --root "[$]ROOT"'; then echo "  ok    calls_check_bashrs_gate"; else echo "  BAD   calls_check_bashrs_gate: not called"; bad=$((bad + 1)); fi
+  self_nc="$(grep -Ev '^[[:space:]]*#|for c in' "$HERE/pr_release_lanes_gate.sh")"; if grep -Eq "$raw_re" <<<"$self_nc"; then echo "  BAD   no_raw_bashrs_exit: a bashrs lint call is back"; bad=$((bad + 1)); else echo "  ok    no_raw_bashrs_exit"; fi
+  self_ne="$(grep -Ev '^[[:space:]]*(#|echo|printf)' "$HERE/pr_release_lanes_gate.sh")"; if grep -q 'scripts/check_bashrs_gate[.]sh --root "[$]ROOT"' <<<"$self_ne"; then echo "  ok    calls_check_bashrs_gate"; else echo "  BAD   calls_check_bashrs_gate: not called"; bad=$((bad + 1)); fi
   n="$(awk '/^  pr-light:/{j=1;next} /^  [a-z0-9-]+:$/{j=0} j && /check_tool_versions\.sh/ && !t{t=NR} j && /pr_release_lanes_gate\.sh/ && !g{g=NR} END{print (t && g && t < g) ? 1 : 0}' "$wf")"
   if [ "$n" = 1 ]; then echo "  ok    pr_light_asserts_pinned_bashrs_before_gate"; else echo "  BAD   pr_light_asserts_pinned_bashrs_before_gate: no check_tool_versions.sh step before the gate"; bad=$((bad + 1)); fi
   echo "$PROG self-test: $bad broke"
@@ -80,11 +80,11 @@ steps="$(printf '%s\n' "$changed" | plan)"
 if [ -z "$steps" ]; then echo "$PROG: not triggered (no scripts/release/*.sh in the diff)"; exit 0; fi
 
 rc=0
-if printf '%s\n' "$steps" | grep -qx lanes; then
+if grep -qx lanes <<<"$steps"; then
   bash scripts/release/release_lanes.sh --self-test || rc=1
   bash scripts/release/release_lanes.sh --mutants || rc=1
 fi
-if printf '%s\n' "$steps" | grep -qx bashrs; then
+if grep -qx bashrs <<<"$steps"; then
   # The release's own bashrs verdict (SEC/DET/IDEM gating, positive control, receipt count), never bashrs's raw exit
   # (0/1/2 are overloaded). Whole repo: the gate has no per-file mode. Its exit 2 (bashrs absent, silent control, receipt
   # mismatch) is an environment failure and stays 2: a gate that did not run is not a pass.
