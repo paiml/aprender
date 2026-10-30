@@ -853,6 +853,9 @@ mutant_sed() {   # mutant_sed ID EXPR : the sed script that applies EXPR to the 
 }
 mutant_ids() { printf '%s\n' "$RL_MUTANTS" | awk 'NF { print substr($1, 1, 3) }'; }
 mutant_expect() { case "$1" in m20|m43) echo 2 ;; *) echo 1 ;; esac; }   # markers each mutant's line(s) must carry
+mutant_changed() { diff -- "$1" "$2" | grep -c '^>' || true; }   # mutant_changed ORIG MUTATED : how many lines the mutation rewrote
+mutant_expr() { printf '%s\n' "$RL_MUTANTS" | awk -v id="$1" 'substr($1, 1, 3) == id { sub(/^[^ ]+ /, ""); print; exit }'; }
+mutant_applies() { [ "$(mutant_changed "$2" "$3")" -eq "$(mutant_expect "$1")" ]; }   # mutant_applies ID ORIG MUTATED : every anchored site changed
 anchors_check() {   # anchors_check FILE : prints each mutant whose marker count is not the expected one, an orphan marker, an empty table or no markers; 1 if any
     local f=$1 bad=0 id n e ids markers
     ids="$(mutant_ids)"
@@ -915,8 +918,16 @@ rl_rows_anchors() {
         [ -n "$id" ] || continue
         id="${id:0:3}"; n=$((n + 1))
         sed -e "$(mutant_sed "$id" "$expr")" "$p" > "$f" 2> /dev/null
-        cmp -s "$p" "$f" && lost="$lost $id"
+        mutant_applies "$id" "$p" "$f" || lost="$lost $id"
     done < <(printf '%s\n' "$RL_MUTANTS")
+    # a half-applied two-site mutant (one site reworded so its pattern no longer matches) must be refused
+    for id in m20 m43; do
+        { grep -n "MUTANT-ANCHOR: $id\$" -- "$SCRIPT_PATH" | head -n 1 | cut -d: -f1; } > "$tmp/half.n"
+        sed -e "$(head -n 1 "$tmp/half.n")s/sort -u)\"/sort -u | cat)\"/; $(head -n 1 "$tmp/half.n")s/\"\$INFRA_TOKEN\" gh/\"\${INFRA_TOKEN}\" gh/" "$SCRIPT_PATH" > "$p"
+        sed -e "$(mutant_sed "$id" "$(mutant_expr "$id")")" "$p" > "$f" 2> /dev/null
+        if mutant_applies "$id" "$p" "$f"; then broke "mutant_half_applied_${id}_refused" "accepted: $(mutant_changed "$p" "$f") line(s) changed"
+        else ok "mutant_half_applied_${id}_refused" "$(mutant_changed "$p" "$f") of $(mutant_expect "$id") sites changed"; fi
+    done
     if [ -z "$lost" ] && [ "$n" -gt 0 ]; then ok anchored_mutants_survive_unrelated_edits "$n mutants still apply"
     else broke anchored_mutants_survive_unrelated_edits "changed nothing after an unrelated edit:$lost"; fi
 }
@@ -942,7 +953,7 @@ mutants() {
     while read -r name expr; do
         [ -n "$name" ] || continue
         sed -e "$(mutant_sed "${name:0:3}" "$expr")" "$SCRIPT_PATH" > "$m"
-        if cmp -s "$SCRIPT_PATH" "$m"; then printf '  BROKE %-46s changed nothing: its pattern no longer matches\n' "$name"; fail=$((fail + 1)); continue; fi
+        if ! mutant_applies "${name:0:3}" "$SCRIPT_PATH" "$m"; then printf '  BROKE %-46s changed %s line(s), expected %s: its pattern no longer matches every site\n' "$name" "$(mutant_changed "$SCRIPT_PATH" "$m")" "$(mutant_expect "${name:0:3}")"; fail=$((fail + 1)); continue; fi
         if ! bash -n "$m" 2>/dev/null; then printf '  BROKE %-46s does not parse\n' "$name"; fail=$((fail + 1)); continue; fi
         o="$(RL_SKIP_ANCHOR_ROWS=1 bash "$m" --self-test 2>&1)"; rc=$?
         v="$(mutant_verdict "$rc" "$o")"
