@@ -297,6 +297,11 @@ measured_cpu() {
     local INFRA_CACHE=$1 lim rem fl rows sha v
     [ -n "${INFRA_TOKEN:-}" ] || { echo "not_measured: no infra read token (INFRA_ACTIONS_READ); paiml/infra is private" >&2; return 2; }
     mkdir -p -- "$INFRA_CACHE" || return 2
+    # a gh config dir the runner user cannot read makes every gh call fail ("failed to load config ... permission denied")
+    # though the token is fine: use a private one under the cache instead. A readable config dir is left alone.
+    if [ -n "${GH_CONFIG_DIR:-}" ] && { [ ! -r "$GH_CONFIG_DIR" ] || [ ! -x "$GH_CONFIG_DIR" ] || { [ -e "$GH_CONFIG_DIR/config.yml" ] && [ ! -r "$GH_CONFIG_DIR/config.yml" ]; }; }; then
+        mkdir -p -- "$INFRA_CACHE/gh-config" && GH_CONFIG_DIR="$INFRA_CACHE/gh-config" && export GH_CONFIG_DIR || return 2
+    fi
     local rl_out rl_err rl_st
     rl_err="$INFRA_CACHE/rate_limit.err"
     rl_out="$(GH_TOKEN="$INFRA_TOKEN" gh api -i rate_limit 2> "$rl_err")" || true
@@ -458,6 +463,9 @@ rl_rows_b1() {
 [ "${GH_TOKEN:-}" = fixture-infra-token ] || exit 4
 [ "${1:-}" = api ] || exit 9
 shift
+if [ -n "${GH_CONFIG_DIR:-}" ] && { [ ! -r "$GH_CONFIG_DIR" ] || [ ! -x "$GH_CONFIG_DIR" ]; }; then
+    echo "warning: failed to load config: open $GH_CONFIG_DIR/config.yml: permission denied" >&2; exit 1
+fi
 if [ "${1:-}" = -i ] && [ "${2:-}" = rate_limit ]; then
     # `api -i rate_limit`: HTTP head, blank line, JSON body. $FGH/rate is "LIMIT REMAINING"; $FGH/rate.status makes it a refusal (gh exits 1)
     [ -f "$FGH/rate" ] || exit 1
@@ -536,6 +544,13 @@ FAKE
     case "$o" in *fixture-infra-token*) broke measured_cpu_a_refused_rate_limit_never_prints_the_token "token on stderr" ;;
         *) ok measured_cpu_a_refused_rate_limit_never_prints_the_token "token absent" ;; esac
     rm -f -- "${fg:?}/rate.status"
+    printf '5000 4000\n' > "$fg/rate"
+    if [ "$(id -u)" -eq 0 ]; then ok measured_cpu_survives_an_unreadable_gh_config_dir "skipped: root reads everything"
+    else
+        mkdir -p -- "$tmp/cfgdenied" && chmod 000 "$tmp/cfgdenied"
+        exact measured_cpu_survives_an_unreadable_gh_config_dir 0 "$want" -- env GH_CONFIG_DIR="$tmp/cfgdenied" PATH="$tmp/ghbin:$PATH" FGH="$fg" INFRA_TOKEN=fixture-infra-token bash "$SCRIPT_PATH" measured-cpu --cache "$tmp/cz"
+        chmod 700 "$tmp/cfgdenied"
+    fi
     exact measured_cpu_without_a_token_is_not_measured 2 "" -- env -u INFRA_TOKEN PATH="$tmp/ghbin:$PATH" FGH="$fg" bash "$SCRIPT_PATH" measured-cpu --cache "$tmp/ci"
     exact measured_cpu_needs_its_cache 3 "" -- bash "$SCRIPT_PATH" measured-cpu
     # fixture b: c tested twice, the newest run (green) decides and c is listed once
@@ -818,6 +833,7 @@ m50_wiring_ignores_the_pick s# || bad="\$bad pick"# || true#
 m51_wiring_ignores_needs_pick s# || bad="\$bad \$j(needs-pick)"# || true#
 m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#
 m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#
+m55_unreadable_gh_config_dir_kept s#GH_CONFIG_DIR="\$INFRA_CACHE/gh-config"#GH_CONFIG_DIR="$GH_CONFIG_DIR"#
 m54_rate_limit_refusal_thrown_away s#gh api -i rate_limit 2> "\$rl_err"#gh api -i rate_limit 2>/dev/null#'
 
 mutants() {
