@@ -297,8 +297,12 @@ measured_cpu() {
     local INFRA_CACHE=$1 lim rem fl rows sha v
     [ -n "${INFRA_TOKEN:-}" ] || { echo "not_measured: no infra read token (INFRA_ACTIONS_READ); paiml/infra is private" >&2; return 2; }
     mkdir -p -- "$INFRA_CACHE" || return 2
-    read -r lim rem <<< "$(GH_TOKEN="$INFRA_TOKEN" gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
-    case "$lim:$rem" in *[!0-9:]*|:*|*:) echo "not_measured: rate_limit unreadable" >&2; return 2 ;; esac
+    local rl_out rl_err rl_st
+    rl_err="$INFRA_CACHE/rate_limit.err"
+    rl_out="$(GH_TOKEN="$INFRA_TOKEN" gh api -i rate_limit 2> "$rl_err")" || true
+    rl_st="$(printf '%s\n' "$rl_out" | awk 'NR == 1 { print $2; exit }')"
+    read -r lim rem <<< "$(printf '%s\n' "$rl_out" | awk 'f { print } /^\r?$/ { f = 1 }' | jq -r '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
+    case "$lim:$rem" in *[!0-9:]*|:*|*:) printf 'not_measured: rate_limit unreadable (HTTP %s: %s)\n' "${rl_st:-none}" "$(head -c 160 -- "$rl_err" | tr '\n' ' ')" >&2; return 2 ;; esac
     fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR
     [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }
     rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }
@@ -454,7 +458,16 @@ rl_rows_b1() {
 [ "${GH_TOKEN:-}" = fixture-infra-token ] || exit 4
 [ "${1:-}" = api ] || exit 9
 shift
-if [ "${1:-}" = rate_limit ]; then [ -f "$FGH/rate" ] || exit 1; cat -- "$FGH/rate"; exit 0; fi
+if [ "${1:-}" = -i ] && [ "${2:-}" = rate_limit ]; then
+    # `api -i rate_limit`: HTTP head, blank line, JSON body. $FGH/rate is "LIMIT REMAINING"; $FGH/rate.status makes it a refusal (gh exits 1)
+    [ -f "$FGH/rate" ] || exit 1
+    if [ -f "$FGH/rate.status" ]; then
+        printf 'HTTP/2.0 %s Refused\r\ncontent-type: application/json\r\n\r\n{"message":"Bad credentials"}\n' "$(cat -- "$FGH/rate.status")"
+        printf 'gh: Bad credentials (HTTP %s)\n' "$(cat -- "$FGH/rate.status")" >&2; exit 1
+    fi
+    read -r l r < "$FGH/rate"
+    printf 'HTTP/2.0 200 OK\r\ncontent-type: application/json\r\n\r\n{"resources":{"core":{"limit":%s,"remaining":%s}}}\n' "$l" "$r"; exit 0
+fi
 inm="" path=""
 while [ $# -gt 0 ]; do
     case $1 in
@@ -515,7 +528,14 @@ FAKE
     exact measured_cpu_floor_holds_on_a_small_limit 2 "" -- cpu "$fg" "$tmp/cg"
     rm -f -- "$fg/rate"
     exact measured_cpu_unreadable_rate_limit_is_not_measured 2 "" -- cpu "$fg" "$tmp/ch"
-    printf '5000 4000\n' > "$fg/rate"
+    printf '5000 4000\n' > "$fg/rate"; printf '401\n' > "$fg/rate.status"
+    exact measured_cpu_a_refused_rate_limit_is_not_measured 2 "" -- cpu "$fg" "$tmp/cn"
+    o="$(cpu "$fg" "$tmp/cn" 2>&1 >/dev/null)"
+    case "$o" in *"rate_limit unreadable (HTTP 401: gh: Bad credentials"*) ok measured_cpu_a_refused_rate_limit_names_its_status "HTTP 401 and gh's own words on stderr" ;;
+        *) broke measured_cpu_a_refused_rate_limit_names_its_status "stderr: ${o:0:200}" ;; esac
+    case "$o" in *fixture-infra-token*) broke measured_cpu_a_refused_rate_limit_never_prints_the_token "token on stderr" ;;
+        *) ok measured_cpu_a_refused_rate_limit_never_prints_the_token "token absent" ;; esac
+    rm -f -- "${fg:?}/rate.status"
     exact measured_cpu_without_a_token_is_not_measured 2 "" -- env -u INFRA_TOKEN PATH="$tmp/ghbin:$PATH" FGH="$fg" bash "$SCRIPT_PATH" measured-cpu --cache "$tmp/ci"
     exact measured_cpu_needs_its_cache 3 "" -- bash "$SCRIPT_PATH" measured-cpu
     # fixture b: c tested twice, the newest run (green) decides and c is listed once
@@ -797,7 +817,8 @@ m49_lanes_caller_takes_any_word s#\[\[ "\${LANES_CALLER:-}" .~ \^\[A-Za-z0-9._-\
 m50_wiring_ignores_the_pick s# || bad="\$bad pick"# || true#
 m51_wiring_ignores_needs_pick s# || bad="\$bad \$j(needs-pick)"# || true#
 m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#
-m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#'
+m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#
+m54_rate_limit_refusal_thrown_away s#gh api -i rate_limit 2> "\$rl_err"#gh api -i rate_limit 2>/dev/null#'
 
 mutants() {
     local tmp pass=0 fail=0 name expr o rc m
