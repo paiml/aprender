@@ -1,0 +1,9 @@
+[Unit]
+Description=Tag-publish andon, every 15 minutes (PMAT-5306)
+
+[Timer]
+OnCalendar=*-*-* *:00,15,30,45:00 UTC
+Persistent=false
+
+[Install]
+WantedBy=timers.target
