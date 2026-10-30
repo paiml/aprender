@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tag_publish_andon.sh -- a tag that is not on crates.io is not a release (PMAT-5306)
 #
-#   bash scripts/release/tag_publish_andon.sh --repo DIR --state DIR --inbox FILE --escalate FILE (--page-target T ... | --page-dry) [--window-min 120] [--since ISO8601Z]
+#   bash scripts/release/tag_publish_andon.sh --repo DIR --state DIR --inbox FILE --escalate FILE (--page-target T ... | --page-dry) [--window-min 120] [--max-gap-min 45] [--since ISO8601Z]
 #
 # Operator ruling 2026-10-30: "a release = the version is on crates.io and passed the clean-container smoke. A tag alone is
 # not a release. A tag not on crates.io within 2 h of push is an andon that pages Noah live."
@@ -13,7 +13,7 @@
 # Exit 0 all clear, 1 andon fired or open, 2 usage / not measured, 3 another run holds the lock.
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 CRATE=aprender
-repo="" state="" inbox="" esc="" win=120 since=2026-10-30T00:00:00Z dry=0 targets=()
+repo="" state="" inbox="" esc="" win=120 gap=45 since=2026-10-30T00:00:00Z dry=0 targets=()
 usage() { printf 'tag_publish_andon: %s\n' "$*" >&2; exit 2; }
 say() { printf 'tag_publish_andon: %s\n' "$*"; }
 inbox_line() {
@@ -27,6 +27,7 @@ while [ $# -gt 0 ]; do
         --inbox) [ $# -ge 2 ] || usage "--inbox needs a value"; inbox=$2; shift 2 ;;
         --escalate) [ $# -ge 2 ] || usage "--escalate needs a value"; esc=$2; shift 2 ;;
         --window-min) [ $# -ge 2 ] || usage "--window-min needs a value"; win=$2; shift 2 ;;
+        --max-gap-min) [ $# -ge 2 ] || usage "--max-gap-min needs a value"; gap=$2; shift 2 ;;
         --since) [ $# -ge 2 ] || usage "--since needs a value"; since=$2; shift 2 ;;
         --page-target) [ $# -ge 2 ] || usage "--page-target needs a value"; targets+=("$2"); shift 2 ;;
         --page-dry) dry=1; shift ;;
@@ -37,6 +38,7 @@ done
 [ "$dry" = 1 ] || [ "${#targets[@]}" -gt 0 ] || usage "--page-target T (repeatable) is required unless --page-dry"
 pstamp=paged-; [ "$dry" = 0 ] || pstamp=dry-paged- # a --page-dry run never writes the live page stamp, so it cannot suppress a real page
 [[ $win =~ ^[0-9]+$ ]] || usage "bad --window-min '$win'"
+[[ $gap =~ ^[0-9]+$ ]] || usage "bad --max-gap-min '$gap'"
 since_s=$(date -u -d "$since" +%s 2> /dev/null) || usage "bad --since '$since'"
 # shellcheck source=scripts/release/lib_crates_io.sh
 . "$HERE/lib_crates_io.sh" || usage "cannot source lib_crates_io.sh"
@@ -87,11 +89,13 @@ now=$(date -u +%s) # bashrs disable-line=DET002
 tags=$(G tag --list 'v[0-9]*.[0-9]*.[0-9]*' 2> /dev/null) || usage "cannot list tags in $repo"
 open=0 nm=0
 # A tag is dated by its push, measured as the run that first saw it on origin (state/seen-<tag>; at most one timer period late).
-# The first run cannot know when the tags already present were pushed, so it dates each by the newest lower bound it has:
-# the tagger date of an annotated tag, the commit date of a lightweight one. Either can only date the push early (an early
-# page); a tag older than --since by that bound is skipped. So the timer is installed before the next tag is pushed: a tag
-# pushed between --since and the first run is the one case git cannot date (measured empty at install, 2026-10-30).
-baseline=0; [ -e "$state/baseline" ] || baseline=1
+# A run that follows a coverage gap (the first run, or no run within --max-gap-min: the timer was down) cannot know when the
+# tags it sees for the first time were pushed, so it dates each by the newest lower bound it has: the tagger date of an
+# annotated tag, the commit date of a lightweight one. Either can only date the push early (an early page, never a late one);
+# a tag older than --since by that bound is skipped. So the timer is installed before the next tag is pushed: a tag pushed
+# between --since and the first run is the one case git cannot date (measured empty at install, 2026-10-30).
+baseline=1; last=$(cat -- "$state/lastrun" 2> /dev/null) || last=""
+[[ $last =~ ^[0-9]+$ ]] && [ $((now - last)) -le $((gap * 60)) ] && baseline=0
 tag_time() { # tag_time TAG -> the epoch the tag is dated by (see above)
     local t=$1 seen="$state/seen-$1" lw=1
     [ "$(G cat-file -t "refs/tags/$t" 2> /dev/null)" = tag ] && lw=0
@@ -137,7 +141,7 @@ while IFS= read -r tag; do
         if page "$line"; then : > "$state/$pstamp$tag"; else inbox_line "PAGE UNDELIVERED $tag: no page target accepted it; retrying next run"; fi
     fi
 done <<< "$tags"
-[ "$baseline" = 1 ] && : > "$state/baseline"
+echo "$now" > "$state/lastrun" || inbox_line "LASTRUN WRITE FAILED: every run is a gap run (tags dated early, never late)"
 [ "$open" = 1 ] && exit 1
 [ "$nm" = 1 ] && exit 2
 exit 0

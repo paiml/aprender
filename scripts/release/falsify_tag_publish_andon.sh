@@ -39,7 +39,8 @@ if [ "${1:-}" = --mutants ]; then
     mut step-not-named tag_publish_andon.sh 's/; blocking step: \$step//'
     mut stamp-without-delivery tag_publish_andon.sh 's/if page "\$line"; then : >/if page "$line" || true; then : >/'
     mut lightweight-by-commit-date tag_publish_andon.sh 's/    ts=$(tag_time "$tag")/    ts=$(G for-each-ref --format=%(creatordate:unix) "refs\/tags\/$tag")/'
-    mut baseline-dropped tag_publish_andon.sh 's/^baseline=0; .*$/baseline=0/'
+    mut baseline-dropped tag_publish_andon.sh 's/^baseline=1; last=/baseline=0; last=/'
+    mut gap-ignored tag_publish_andon.sh 's/-le \$((gap \* 60))/-ge 0/'
     mut dry-stamps-live tag_publish_andon.sh 's/|| pstamp=dry-paged-/|| pstamp=paged-/'
     mut undatable-is-silent tag_publish_andon.sh 's/^    \[\[ \$ts =~ \^\[0-9\]+\$ \]\] || {.*$/    [[ $ts =~ ^[0-9]+$ ]] || continue/'
     mut baseline-lightweight-zero tag_publish_andon.sh 's/G log -1 --format=%ct "refs\/tags\/$t" > "$seen"/echo 0 > "$seen"/'
@@ -256,7 +257,7 @@ g tag v0.9.0 # lightweight, present before the first run
 SINCE_4H=$("$FX_REALDATE" -u -d "@$((NOW - 240 * 60))" +%FT%TZ)
 andon lw "$J_NONE" --since "$SINCE_4H"; expect "baseline run: a lightweight tag on a commit older than --since never pages" 0 "$RC"
 expect "baseline run: lightweight dated by its commit (a lower bound of the push)" "$((NOW - 3 * 86400))" "$(cat "$TMP/st-lw/seen-v0.9.0")"
-[ -e "$TMP/st-lw/baseline" ]; expect "baseline run: baseline stamped" 0 "$?"
+expect "baseline run: lastrun stamped" "$NOW" "$(cat "$TMP/st-lw/lastrun")"
 # a lightweight tag pushed after --since but before the first run is still caught (dated by its commit: early, never silent)
 GIT_COMMITTER_DATE="@$((NOW - 180 * 60)) +0000" g commit -q --allow-empty -m recent-lw; g tag v0.9.5
 andon lwb "$J_NONE" --since "$SINCE_4H"; expect "baseline run: lightweight tag pushed before install, absent: andon" 1 "$RC"
@@ -271,13 +272,20 @@ andon lw "$J_NONE" --since "$SINCE_4H"; expect "lightweight tag 3 h after first 
 has "lightweight andon names the tag" "$TMP/out-lw" "v2.0.0"; hasnt "baselined tag never pages" "$TMP/out-lw" "v0.9.0"
 
 # ---- an annotated tag is dated by its push (first sight on origin), not its tagger date (lane round 4) ----
-mkdir -p "$TMP/st-lwa"; : > "$TMP/st-lwa/baseline" # a later run: the baseline already happened
+mkdir -p "$TMP/st-lwa"; echo "$NOW" > "$TMP/st-lwa/lastrun" # a later run: the previous run was just now
 GIT_COMMITTER_DATE="@$((NOW - 86400)) +0000" g tag -a -m v3.0.0 v3.0.0 # created a day ago (before --since), pushed now
 andon lwa "$J_NONE" --since "$SINCE_4H"; expect "annotated tag created before --since, pushed after: no page at once" 0 "$RC"
 expect "annotated tag: dated by first sight" "$NOW" "$(cat "$TMP/st-lwa/seen-v3.0.0")"
 hasnt "annotated tag: no LIGHTWEIGHT line" "$TMP/inb-lwa" "LIGHTWEIGHT TAG v3.0.0"
 echo $((NOW - 180 * 60)) > "$TMP/st-lwa/seen-v3.0.0" # 3 h after its push
 andon lwa "$J_NONE" --since "$SINCE_4H"; expect "annotated tag 3 h after its push, absent: andon" 1 "$RC"; has "annotated andon names the tag" "$TMP/out-lwa" "v3.0.0"
+# the timer was down 3 h: a tag pushed then is dated by its tagger date (early), never by first sight (late) (lane round 8)
+mkdir -p "$TMP/st-gap"; echo $((NOW - 180 * 60)) > "$TMP/st-gap/lastrun"
+GIT_COMMITTER_DATE="@$((NOW - 170 * 60)) +0000" g tag -a -m v5.0.0 v5.0.0
+andon gap "$J_NONE" --since "$SINCE_4H"; expect "timer down 3 h, tag pushed meanwhile, absent: andon on the first run back" 1 "$RC"
+has "gap andon names the tag" "$TMP/out-gap" "v5.0.0"; expect "gap run: dated by tagger date" "$((NOW - 170 * 60))" "$(cat "$TMP/st-gap/seen-v5.0.0")"
+andon gapq "$J_NONE" --since "$SINCE_4H" --max-gap-min nope; expect "bad --max-gap-min: usage" 2 "$RC"
+g tag -d v5.0.0 > /dev/null
 
 # ---- blocking step: tag absent on origin (ls-remote rc 2) vs origin unreadable (any other rc: not measured, never "absent") ----
 git init -q --bare "$TMP/origin.git"; g remote add origin "$TMP/origin.git"
