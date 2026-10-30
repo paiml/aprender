@@ -162,7 +162,7 @@ andon yanked "$J_YANK" --since $SINCE_OLD; expect "yanked version is still an an
 andon othernum "$J_OTHERNUM" --since $SINCE_OLD; expect "200 naming another version: not measured" 2 "$RC"
 # crates.io status: 404 = absent (above); 500, 429, timeout (000), 200 with a garbage body = NOT MEASURED, no page
 for nm in 500 429 TIMEOUT GARBAGE; do
-    eval "j=\$J_$nm"; n=nm-$nm
+    jv="J_$nm"; j="${!jv}"; n=nm-$nm
     andon "$n" "$j" --since $SINCE_OLD; expect "$nm: rc" 2 "$RC"; hasnt "$nm: no page" "$TMP/out-$n" "PAGE"
     has "$nm: NOT_MEASURED inbox" "$TMP/inb-$n" "NOT_MEASURED"; expect "$nm: no escalate" 0 "$(lines "$TMP/esc-$n")"
 done
@@ -222,7 +222,7 @@ mktag v1.0.0 180; mkdir -p "$TMP/st-lock"
 expect "lock held: rc 3" 3 "$(cat "$TMP/lock-rc")"; has "lock held: says so" "$TMP/out-lock" "holds the lock"; hasnt "lock held: no page" "$TMP/out-lock" "PAGE"
 
 # ---- library rows ----
-eval "$(grep "^page_text()" "$BIN/tag_publish_andon.sh")"
+grep "^page_text()" "$BIN/tag_publish_andon.sh" > "$TMP/page_text.sh"; . "$TMP/page_text.sh"
 expect "page_text strips quotes, backticks, dollar, bang, backslash" "abcdef" "$(page_text "a'b\`c\$d!e\\f")"
 lib() { ( . "$BIN/lib_crates_io.sh" && CRATES_IO_RESPONSE_FILE="$1" "${@:2}" ) > /dev/null 2>&1; }
 lib "$J_HAS" crates_io_has_version aprender 1.0.0; expect "has_version 200 + matching num" 0 "$?"
