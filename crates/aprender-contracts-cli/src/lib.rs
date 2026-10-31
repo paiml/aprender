@@ -177,6 +177,9 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             Ok(fmt) => commands::graph::run(&contract_dir, fmt),
             Err(e) => Err(e.into()),
         },
+        Commands::CheckSymbolic { contract, json } => {
+            commands::check_symbolic::run(&contract, json)
+        }
         Commands::Equations { contract, format } => {
             match commands::equations::OutputFormat::from_str(&format) {
                 Ok(fmt) => commands::equations::run(&contract, fmt),
