@@ -140,3 +140,17 @@ fn test_display_train_result_best_epoch_not_last() {
     let dir = tempdir().expect("tempdir");
     display_train_result(&result, dir.path(), "apr", false);
 }
+
+// PMAT-6393: the merge summary reports merged / LoRA targets, never merged / total base tensors.
+#[test]
+fn merge_targets_label_names_targets_not_total_tensors() {
+    // 24 layers x (q_proj, v_proj) = 48 targets on a 291-tensor base: a full merge, not "48/291".
+    let l = merge_targets_label(48, 48);
+    assert_eq!(l, "48 / 48 LoRA targets");
+    assert!(!l.contains("291"));
+}
+
+#[test]
+fn merge_targets_label_shows_a_real_partial_merge() {
+    assert_eq!(merge_targets_label(40, 48), "40 / 48 LoRA targets");
+}

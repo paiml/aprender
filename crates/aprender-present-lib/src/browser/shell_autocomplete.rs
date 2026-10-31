@@ -198,40 +198,13 @@ impl ShellAutocomplete {
         let mut seen = std::collections::HashSet::with_capacity(capacity);
 
         // Strategy 1: Trie prefix match for exact commands
-        for cmd in self.trie.find_prefix(prefix, capacity) {
-            if Self::is_corrupted_command(&cmd) {
-                continue;
-            }
-            let freq = self.command_freq.get(&cmd).copied().unwrap_or(1);
-            let score = freq as f32 / self.total_commands.max(1) as f32;
-            seen.insert(cmd.clone());
-            suggestions.push((cmd, score));
-        }
+        self.suggest_from_trie(prefix, capacity, &mut seen, &mut suggestions);
 
         // Strategy 2: N-gram prediction for next token (only when prefix ends with space)
         if !tokens.is_empty() && ends_with_space {
             let context_start = tokens.len().saturating_sub(self.n - 1);
             let context = tokens[context_start..].join(" ");
-            let prefix_trimmed = prefix.trim();
-
-            if let Some(next_tokens) = self.ngrams.get(&context) {
-                let total: u32 = next_tokens.values().sum();
-                let mut completion = String::with_capacity(prefix_trimmed.len() + 32);
-
-                for (token, ngram_count) in next_tokens {
-                    completion.clear();
-                    completion.push_str(prefix_trimmed);
-                    completion.push(' ');
-                    completion.push_str(token);
-
-                    let score = *ngram_count as f32 / total as f32;
-
-                    if !seen.contains(&completion) {
-                        seen.insert(completion.clone());
-                        suggestions.push((completion.clone(), score * 0.8));
-                    }
-                }
-            }
+            self.push_ngram_completions(&context, prefix, None, 0.8, &mut seen, &mut suggestions);
         }
 
         // Strategy 3: N-gram prediction with partial token filter
@@ -241,38 +214,19 @@ impl ShellAutocomplete {
             let context_start = context_tokens.len().saturating_sub(self.n - 1);
             let context = context_tokens[context_start..].join(" ");
             let context_prefix = context_tokens.join(" ");
-
-            if let Some(next_tokens) = self.ngrams.get(&context) {
-                let total: u32 = next_tokens.values().sum();
-                let mut completion = String::with_capacity(context_prefix.len() + 32);
-
-                for (token, ngram_count) in next_tokens {
-                    if token.starts_with(partial_token) && !Self::is_corrupted_token(token) {
-                        completion.clear();
-                        completion.push_str(&context_prefix);
-                        completion.push(' ');
-                        completion.push_str(token);
-
-                        let score = *ngram_count as f32 / total as f32;
-
-                        if !seen.contains(&completion) {
-                            seen.insert(completion.clone());
-                            suggestions.push((completion.clone(), score * 0.9));
-                        }
-                    }
-                }
-            }
+            self.push_ngram_completions(
+                &context,
+                &context_prefix,
+                Some(partial_token),
+                0.9,
+                &mut seen,
+                &mut suggestions,
+            );
         }
 
         // If no prefix and no suggestions, return top commands
         if prefix.is_empty() && suggestions.is_empty() {
-            let mut top_cmds: Vec<_> = self
-                .command_freq
-                .iter()
-                .map(|(k, v)| (k.clone(), *v as f32 / self.total_commands.max(1) as f32))
-                .collect();
-            top_cmds.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-            suggestions = top_cmds;
+            suggestions = self.top_commands();
         }
 
         // Sort by score and truncate
@@ -280,6 +234,66 @@ impl ShellAutocomplete {
         suggestions.truncate(count);
 
         suggestions
+    }
+
+    /// Strategy 1: exact commands from the trie, scored by frequency.
+    fn suggest_from_trie(
+        &self,
+        prefix: &str,
+        capacity: usize,
+        seen: &mut std::collections::HashSet<String>,
+        suggestions: &mut Vec<(String, f32)>,
+    ) {
+        for cmd in self.trie.find_prefix(prefix, capacity) {
+            if Self::is_corrupted_command(&cmd) {
+                continue;
+            }
+            let freq = self.command_freq.get(&cmd).copied().unwrap_or(1);
+            let score = freq as f32 / self.total_commands.max(1) as f32;
+            seen.insert(cmd.clone());
+            suggestions.push((cmd, score));
+        }
+    }
+
+    /// Strategies 2/3: append `base + " " + token` for each n-gram successor of `context`,
+    /// scored by relative count times `weight`. With `partial`, only tokens starting with it
+    /// (and not corrupted) qualify.
+    fn push_ngram_completions(
+        &self,
+        context: &str,
+        base: &str,
+        partial: Option<&str>,
+        weight: f32,
+        seen: &mut std::collections::HashSet<String>,
+        suggestions: &mut Vec<(String, f32)>,
+    ) {
+        let Some(next_tokens) = self.ngrams.get(context) else {
+            return;
+        };
+        let total: u32 = next_tokens.values().sum();
+        for (token, ngram_count) in next_tokens {
+            if let Some(p) = partial {
+                if !token.starts_with(p) || Self::is_corrupted_token(token) {
+                    continue;
+                }
+            }
+            let completion = format!("{base} {token}");
+            if seen.insert(completion.clone()) {
+                let score = *ngram_count as f32 / total as f32;
+                suggestions.push((completion, score * weight));
+            }
+        }
+    }
+
+    /// All known commands by frequency (fallback for an empty prefix).
+    fn top_commands(&self) -> Vec<(String, f32)> {
+        let mut top_cmds: Vec<_> = self
+            .command_freq
+            .iter()
+            .map(|(k, v)| (k.clone(), *v as f32 / self.total_commands.max(1) as f32))
+            .collect();
+        top_cmds.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        top_cmds
     }
 
     /// Detect corrupted commands
