@@ -171,8 +171,9 @@ proof_obligations:
     status: sorry
 - id: AGB-INV-006
   type: invariant
-  property: A refused forced accelerator is refused before the CPU forward
-  formal: 'accel_forced && !no_gpu && gpu_attempted && !gpu_served => exit 14 && cpu_forward_calls == 0'
+  property: >-
+    A refused forced accelerator is refused before the CPU forward: when the accelerator is forced, GPU is not
+    disabled, a GPU attempt was made and the GPU did not serve, the run exits 14 and makes zero CPU forward calls
   applies_to: backend_selection
 
 falsification_tests:
