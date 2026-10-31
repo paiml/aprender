@@ -471,6 +471,8 @@ if run_step cleanroom; then
     rw_read "$INFRA" "$crun" || :  # #4929: the runner-wait rule's read, inside this wait, at its cadence
     sleep "$AP_POLL"
   done
+  # ANDON T1 (#6491): a red clean-room opens the next-patch bump PR at once; its outcome is logged, the stop below still holds
+  [ "$jc" = success ] || [ -z "$jc" ] || say "ANDON-BUMP $(bash "$REPO_ROOT/scripts/release/cleanroom_red_bump.sh" "$T" "$crun" 2>> "$LOG" | tail -n 1)"
   [ "$jc" = success ] || die "clean-room (aprender) on $T concluded '${jc:-absent}' (run $crun)"
   say "B2-CPU GREEN on $T (infra run $crun)"
   printf '%s\n' "$crun" > "$AP/cleanroom-run-id"
