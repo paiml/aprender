@@ -43,6 +43,8 @@
 #[macro_use]
 #[allow(unused_macros)]
 mod generated_contracts;
+#[cfg(test)]
+mod build_binding_tests;
 
 // Fallback macros for contracts not yet in build.rs codegen
 // (embedding-lookup-v1 was added in provable-contracts 0.2 but
