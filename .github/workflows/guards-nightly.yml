@@ -181,6 +181,13 @@ jobs:
         run: setsid --wait bash scripts/tests/compute_row_zero_tests_test.sh --mutants
       - name: shared-checkout shallow lock case table and mutants (#5025, LAB)
         run: setsid --wait bash scripts/shared_checkout_no_shallow.sh --mutants
+      - name: Parity-receipt count equals EXPECTED_RECEIPTS (verify mode, #5502, LAB)
+        id: lab_parity_receipts
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/parity-receipts.log") 2>&1
+          setsid --wait bash scripts/parity_receipt_denominator.sh
       - name: nextest list-wrapper case table (#5298, LAB)
         run: setsid --wait bash scripts/ci/nextest_list_wrapper.sh --self-test
       - name: affected_set.sh case table and mutants (FLOW-010 E5, LAB)
@@ -190,6 +197,13 @@ jobs:
           set -euo pipefail
           exec > >(tee -a "$RUNNER_TEMP/affected-set.log") 2>&1
           setsid --wait bash scripts/affected_set.sh --self-test
+      - name: MQ feeder required-set check (#6175, LAB)
+        id: lab_mq_feeder
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/mq-feeder.log") 2>&1
+          setsid --wait bash scripts/check_mq_feeder_required_set.sh
       # C324 item 5: red or unmeasured for 7 days, this check stops running until its owner dispatches the workflow
       # (scripts/guard_lane_stop.sh: per STEP, because this job carries many guards; its case table runs first).
       # The stop reads Actions history with conditional GETs (GH-1); the 304s need last night's ETags, so the cache
@@ -429,6 +443,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-affected-readers --title "LAB: nightly affected-set guards red (#5809)" \
             --owner aprender-w5018 --log "$RUNNER_TEMP/affected.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red parity-receipt night opens or updates its one LAB ticket (#5502)
+        if: failure() && steps.lab_parity_receipts.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-parity-receipts --title "LAB: parity-receipt count differs from EXPECTED_RECEIPTS (#5502)" \
+            --owner aprender-w5018 --log "$RUNNER_TEMP/parity-receipts.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red census night opens or updates the one LAB ticket (#4709)
         if: failure() && steps.ratchet_census.outcome == 'failure'
         env:
@@ -464,6 +488,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: affected_set.sh case table red (FLOW-010 E5)" \
             --owner aprender-cd --log "$RUNNER_TEMP/affected-set.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red MQ feeder night opens or updates its one LAB ticket (#6175)
+        if: failure() && steps.lab_mq_feeder.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-mq-feeder --title "LAB: MQ feeder required-set check red (#6175)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/mq-feeder.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red guard-lane night opens or updates its one LAB ticket (#5920)
         if: failure() && (steps.lab_guard_lane.outcome == 'failure' || steps.lab_guard_lane_stop.outcome == 'failure')
         env:

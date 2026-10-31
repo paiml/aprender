@@ -163,6 +163,8 @@ fn version_line() -> String {
     )
 }
 
+const USAGE: &str = "usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]";
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
     let cmd = args.get(1).map(String::as_str).unwrap_or("");
@@ -171,10 +173,14 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let res = match cmd {
+        "-h" | "--help" => {
+            println!("{USAGE}");
+            return ExitCode::SUCCESS;
+        }
         "plan" | "build" => run(cmd, args.get(2).map(String::as_str)),
         "verify" => verify(&args[2..]),
         _ => {
-            eprintln!("usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]");
+            eprintln!("{USAGE}");
             return ExitCode::from(2);
         }
     };

@@ -1,0 +1,19 @@
+- id: PMAT-6436
+  github_issue: 6436
+  item_type: task
+  title: 'pv readme B: SHACL validation driver and pv-readme bin'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-wsweep
+  created: 2026-10-27T07:30:00Z
+  updated: 2026-10-27T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the readme:Readme validation, a check/write driver that validates before it writes, and the pv-readme bin land with tests (#6432)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6394

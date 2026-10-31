@@ -58,11 +58,7 @@ impl Qwen35Embedding {
         num_elements: usize,
         row_len: usize,
     ) -> Result<Self> {
-        let rows = if row_len == 0 {
-            0
-        } else {
-            num_elements / row_len
-        };
+        let rows = num_elements.checked_div(row_len).unwrap_or(0);
         if rows == 0 || rows * row_len != num_elements || data.len() % rows != 0 {
             return Err(RealizarError::InvalidShape {
                 reason: format!(

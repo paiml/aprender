@@ -931,6 +931,7 @@ rid, rfile, inv, sha, req, fit = sys.argv[1:7]
 print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv == "1", "present": True, "sha_ok": True,
                   "sha256": sha, "required": req == "1", "fit": json.loads(fit), "refused": "fit", "green": False}))
 PY
+        LADDER_APPENDS_ROWS=$((LADDER_APPENDS_ROWS + 1))   # #6410: this write bypasses ladder_append, and the receipt assertion counts rows appended
         EXECUTED=$((EXECUTED + 1)); RED=$((RED + 1))
         printf '  [REFUSE] %-30s fit: %s\n' "$rid" "$(python3 -c 'import json,sys; f=json.loads(sys.argv[1]); print(f["verdict"]+" -- "+f["reason"])' "$fit_json")"
         return

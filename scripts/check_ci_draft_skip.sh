@@ -73,7 +73,7 @@ self_test() {
     return "$fails"
 }
 
-root="$(git rev-parse --show-toplevel)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1  # script-relative: no repo query, so a dubious-ownership checkout (clean-room container) cannot fail it (PMAT-6479)
 case "${1:-}" in
     --self-test) self_test "${2:-$root/.github/workflows/ci.yml}"; exit $? ;;
     *)

@@ -828,6 +828,9 @@ aprender-ptop,aprender-ptop (interactive TUI system monitor),6,UNKNOWN,NONE,no,0
 aprender-ptop,aprender-ptop --dump-config,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:56,high
 aprender-ptop,aprender-ptop --render-once,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:117,high
 aprender-ptop,aprender-ptop --render-once --explode <PANEL>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:63,high
+pv-readme,pv-readme --check,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/readme_cmd.rs:285,high
+pv-readme,pv-readme --write,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/readme_cmd.rs:286,high
+pv-readme,pv-readme --version,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-readme/main.rs:10,high
 pv-sat,pv-sat [CONTRACT_DIR] (SAT witness write),6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:44-45,high
 pv-sat,pv-sat --self-test,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:39,high
 aprender-score,"aprender-score --ci --threshold <N> (gate mode, exit 1 below threshold)",6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:49,high
@@ -911,3 +914,8 @@ aprender-ci-tools,aprender-ci-tools git-patch-id,6,x86_64-linux,NONE,no,12,test-
 aprender-ci-tools,aprender-ci-tools llama-fit-verdict,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:99,high
 aprender-ci-tools,aprender-ci-tools ladder-cells-produce,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:108,high
 aprender-ci-tools,aprender-ci-tools --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/main.rs:16,high
+aprender-rollup,aprender-rollup plan,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:180,high
+aprender-rollup,aprender-rollup build,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:180,high
+aprender-rollup,aprender-rollup --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:171,high
+aprender-rollup,aprender-rollup verify,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:181,high
+aprender-rollup,aprender-rollup verify --apply,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:139,high

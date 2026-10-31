@@ -830,6 +830,10 @@ fi
 
 # 9. close: the epic hears the receipts and closes once it is the last open item; then the milestone
 if run_step close; then
+  # PMAT-5306 (operator 2026-10-30): a tag alone is not a release. Neither the epic nor the milestone closes until crates.io shows $V.
+  # shellcheck source=scripts/release/lib_crates_io.sh
+  . "$REPO_ROOT/scripts/release/lib_crates_io.sh" || die "cannot source lib_crates_io.sh: milestone and epic stay open"
+  crates_io_close_gate aprender "$V" || die "crates.io does not show $V: milestone and epic stay open"
   # SEC010 (bashrs-gate): read the run id with the read builtin, not $(cat "$AP/…") -- AP is derived
   # now (#3655), so a cat over it inside the message is flagged as a path-traversal risk.
   cleanroom_run_id=unknown; IFS= read -r cleanroom_run_id < "$AP/cleanroom-run-id" 2>/dev/null || cleanroom_run_id=unknown

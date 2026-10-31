@@ -143,8 +143,10 @@ pub(crate) fn dequantize_q8_0_into(data: &[u8], result: &mut [f32]) -> Result<()
     check_into_len("Q8_0", result.len(), num_blocks * BLOCK_SIZE)?;
 
     for (block, out) in data
-        .chunks_exact(BLOCK_BYTES)
-        .zip(result.chunks_exact_mut(BLOCK_SIZE))
+        .as_chunks::<BLOCK_BYTES>()
+        .0
+        .iter()
+        .zip(result.as_chunks_mut::<BLOCK_SIZE>().0.iter_mut())
     {
         // Read scale (f16 -> f32)
         let scale = f16_to_f32(u16::from_le_bytes([block[0], block[1]]));

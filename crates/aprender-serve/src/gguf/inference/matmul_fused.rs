@@ -575,15 +575,14 @@ mod tests {
     }
 
     /// KREG coverage (CPU): over every upstream qtype (ids and byte sizes from
-    /// `docs/kernel-registry/upstream-reference-v1.json`, so no hand-kept list), a type with a
+    /// `crates/aprender-serve/data/upstream-reference-v1.json`, so no hand-kept list), a type with a
     /// `cpu` registry row is served by `fused_matmul`, and a type without one is refused by
     /// the gate AND by the ungated dequant fallback — otherwise a CPU kernel exists with no row.
     #[test]
     fn cpu_rows_equal_the_types_the_cpu_matmul_serves() {
-        let reference: serde_json::Value = serde_json::from_str(include_str!(
-            "../../../../../docs/kernel-registry/upstream-reference-v1.json"
-        ))
-        .expect("reference json");
+        let reference: serde_json::Value =
+            serde_json::from_str(include_str!("../../../data/upstream-reference-v1.json"))
+                .expect("reference json");
         let reg = crate::kernel_registry::registry().expect("registry");
         let model =
             crate::gguf::test_helpers::create_test_model_with_config(&crate::gguf::GGUFConfig {

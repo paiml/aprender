@@ -38,7 +38,7 @@
 #   bash scripts/check_comparator_pin_citations.sh --pin PATH   # the n:sha12 for a ledger line
 # exit 0 green; 1 RED; 2 ENV (nothing was judged).
 set -uo pipefail
-ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
+[ "${1:-}" = "--source-only" ] || { ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2; }
 PIN_REL="scripts/llama_pin.toml"
 LEDGER_REL="scripts/comparator_pin_citations.txt"
 
@@ -48,8 +48,27 @@ for t in git python3 grep; do command -v "$t" > /dev/null 2>&1 || env_die "no $t
 # pin_value FILE KEY -> the quoted value of KEY in a llama_pin.toml (the same shape llama_bin.sh reads)
 pin_value() { sed -n "s/^[[:space:]]*$2[[:space:]]*=[[:space:]]*\"\\(.*\\)\"[[:space:]]*$/\\1/p" "$1" | head -n 1; }
 
-# judge ROOT [MAIN_LEDGER_FILE|-] -> prints ok/FAIL rows; rc 0/1; rc 2 when nothing could be judged
-judge() {
+# R7: roadmap-base.yaml is a frozen byte copy of roadmap.yaml. Unledgered, it passes ONLY if its citing lines carry EXACTLY the pin (count + text hash)
+# of roadmap.yaml AS FROZEN at COPY_ANCHOR (the commit that introduced the base) and every one is a line of that snapshot. The pool is the anchor, not
+# the live aggregate: a data repair that re-indents a citing line of roadmap.yaml must not turn the untouched base R1 (#6306; rule 3 forbids editing
+# it). The live roadmap.yaml row must exist and be HISTORICAL (a fixture value is a sample). The anchor object is FETCHED when a shallow clone lacks
+# it, and when it cannot be had R7 FAILS CLOSED (the base stays an R1): there is no live-row fallback. The one pair COPY_SRC/COPY_DST only; any other file is R1. COPY_ANCHOR is overridden by the self-test only.
+COPY_SRC="docs/roadmaps/roadmap.yaml"; COPY_DST="docs/roadmaps/roadmap-base.yaml"; COPY_ANCHOR=${COPY_ANCHOR:-9e8f8ad8c7c960a2ab95fd93c918e99fa6bab581}
+pinof() { printf '%s:%s' "$(grep -c '' <<< "$1")" "$(printf '%s' "$1" | sha256sum | cut -c1-12)"; }
+# r7_base_copy ROOT LEDGER -> 0 iff COPY_DST is unledgered and exactly the frozen copy
+r7_base_copy() {
+    local r=$1 led=$2 re base src srcl srcpin
+    re="(^|[^0-9a-f])($(printf '%s\n' $(pin_value "$r/$PIN_REL" superseded_commits) | cut -c1-7 | paste -sd'|'))"
+    awk -F'\t' -v p="$COPY_SRC" -v d="$COPY_DST" '$1==d{x=1} $1==p&&$2=="historical"{h=1} END{exit !(h&&!x)}' "$led" || return 1
+    base=$(grep -E -- "$re" "$r/$COPY_DST") || return 1
+    git -C "$r" cat-file -e "$COPY_ANCHOR^{commit}" 2> /dev/null || git -C "$r" fetch -q --depth=1 origin "$COPY_ANCHOR" 2> /dev/null
+    src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || return 1
+    srcl=$(grep -E -- "$re" <<< "$src") || return 1; srcpin=$(pinof "$srcl")
+    [ "$(pinof "$base")" = "$srcpin" ]  # count + sha256 of the lines: equal pins mean the same lines, so no separate membership test
+}
+
+# judge_py ROOT [MAIN_LEDGER_FILE|-] -> prints ok/FAIL rows; rc 0/1; rc 2 when nothing could be judged
+judge_py() {
     local r=$1 main=${2:--} pin ledger build sup rc
     pin="$r/$PIN_REL"; ledger="$r/$LEDGER_REL"
     [ -f "$pin" ] || { printf 'FAIL  R5 no %s\n' "$PIN_REL"; return 1; }
@@ -110,17 +129,7 @@ for rel in tracked:
     for i, line in enumerate(text.splitlines(), 1):
         if any(pt.search(line) for pt in pats): lines.append(i); texts.append(line)
     if lines: citing[rel] = lines; pinned[rel] = pin_of(texts); decoded[rel] = text; ctexts[rel] = texts
-# A byte-identical COPY of a citing line that a HISTORICAL ledgered file already pins (R6) is that same dated history, not a new
-# claim: a frozen snapshot of roadmap.yaml (docs/roadmaps/roadmap-base.yaml) repeats its lines. NO path is exempt; one
-# novel citing line in the copy is R1 like any other file.
-# The copy must carry EXACTLY the source's pin (count + text hash, the row R6 holds), so a duplicated or dropped line is R1, not just a novel one. The pool
-# reads the LIVE roadmap.yaml row, so when the epic removes the tracked aggregate the ledger row MOVES to roadmap-base.yaml in the same
-# change (same count, so R4 holds; the file is then ledgered and R7 no longer applies; C24). A re-pin of roadmap.yaml that DROPS a
-# citing line is R1 on the base until the base is re-cut or its row takes over: recorded in PMAT-6185 as a follow-up.
-COPY_SRC, COPY_DST = "docs/roadmaps/roadmap.yaml", "docs/roadmaps/roadmap-base.yaml"  # the one pair R7 knows
-ledlines = {t for r, v in led.items() if v[0] == "historical" and r == COPY_SRC and r in ctexts for t in ctexts[r]}  # NOT fixture rows: a fixture value is a sample, copying it is a claim
 for rel, lines in sorted(citing.items()):
-    if rel == COPY_DST and rel not in led and COPY_SRC in led and pinned[rel] == led[COPY_SRC][2] and all(t in ledlines for t in ctexts[rel]): continue  # EXACTLY the source's pinned lines
     if rel not in led:
         print(f"FAIL  R1 {rel}:{lines[0]} cites a superseded comparator pin and is not on {os.path.relpath(ledger, root)} "
               f"({len(lines)} line(s)). A live claim against a superseded comparator is the defect; dated history or a fixture value is listed by file, with why.")
@@ -152,8 +161,23 @@ if main != "-":
 if not bad:
     print(f"ok    build_commit {build}; superseded {' '.join(sup)}; {len(citing)} file(s) cite a superseded pin, every one ledgered "
           f"({sum(1 for v in led.values() if v[0]=='historical')} historical, {sum(1 for v in led.values() if v[0]=='fixture')} fixture), {sum(int(v[2].split(':')[0]) for v in led.values())} line(s) pinned; no stale entry")
+print("@@judged")  # the last line: a crash before it must not read as a verdict
 sys.exit(bad)
 PY
+}
+# judge ROOT [MAIN_LEDGER_FILE|-]: judge_py's verdict, minus the R1 on roadmap-base.yaml when R7 holds
+judge() {
+    local r=$1 out rc ledger="$1/$LEDGER_REL"
+    out=$(judge_py "$@"); rc=$?
+    local done=0   # judge_py prints @@judged last; without it the Python died mid-way and no verdict, ok or FAIL, can be trusted
+    if grep -qx -- "@@judged" <<< "$out"; then done=1; out=$(grep -vx -- "@@judged" <<< "$out" || true); fi
+    if [ "$done" = 0 ]; then printf '%s\nFAIL  judge: the checker did not finish (no end marker, rc=%s)\n' "$out" "$rc"; return 1; fi
+    local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "   # the base's own R1 row, not 'roadmap-base.yaml:x.md:3'
+    if [ "$rc" = 1 ] && grep -qE -- "$r1" <<< "$out" && r7_base_copy "$r" "$ledger"; then
+        out=$(grep -vE -- "$r1" <<< "$out")
+        if grep -q '^FAIL' <<< "$out"; then rc=1; else rc=0; out="ok    $COPY_DST is the frozen copy of $COPY_SRC at $COPY_ANCHOR; every one ledgered"; fi
+    fi
+    printf '%s\n' "$out"; return "$rc"
 }
 
 # pin_line ROOT PATH -> the n:sha12 value R6 compares (the same formula as judge()'s pin_of)
@@ -181,10 +205,12 @@ if [ "${1:-}" = "--pin" ]; then [ -n "${2:-}" ] || env_die "--pin PATH"; pin_lin
 
 # ---- the case table --------------------------------------------------------------------------
 if [ "${1:-}" = "--self-test" ]; then
+    SELF="$ROOT/scripts/check_comparator_pin_citations.sh"
     TMP=$(mktemp -d) || exit 2
     cleanup() { case "${TMP:-}" in ''|/) return 0 ;; *) [ -d "$TMP" ] && rm -rf -- "$TMP" ;; esac; }
     trap cleanup EXIT
-    export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=fx GIT_AUTHOR_EMAIL=fx@x GIT_COMMITTER_NAME=fx GIT_COMMITTER_EMAIL=fx@x
+    cd -- "$TMP" || exit 2
+    export GIT_CEILING_DIRECTORIES="${TMP%/*}" GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1 GIT_AUTHOR_NAME=fx GIT_AUTHOR_EMAIL=fx@x GIT_COMMITTER_NAME=fx GIT_COMMITTER_EMAIL=fx@x
     fails=0; rows=0
     # the superseded shas, BUILT so this file cites none of them (its own R1 would read it otherwise)
     OLD="39173""bcac"; OLD2="60b06""ab9a"; CUR="d1d3c""3396"
@@ -254,21 +280,52 @@ if [ "${1:-}" = "--self-test" ]; then
         mkdir -p "$d/docs/roadmaps" "$d/$(dirname "$3")" || return 2
         printf 'measured 2026-08-24 against llama.cpp %s: 0.59x\n' "$OLD" > "$d/docs/roadmaps/roadmap.yaml"
         printf 'docs/roadmaps/roadmap.yaml\t%s\tdated 2026-08-24\t%s\n' "$2" "$(pin_line "$d" docs/roadmaps/roadmap.yaml)" >> "$d/scripts/comparator_pin_citations.txt"
-        cp "$d/docs/roadmaps/roadmap.yaml" "$d/$3" && git -C "$d" add -A
+        cp "$d/docs/roadmaps/roadmap.yaml" "$d/$3" && git -C "$d" add -A && git -C "$d" commit -qm anchor && ANCHOR=$(git -C "$d" rev-parse HEAD)   # R7 reads the pool AT this commit
     }
-    pair c20 historical docs/roadmaps/roadmap-base.yaml
+    pair c20 historical docs/roadmaps/roadmap-base.yaml && export COPY_ANCHOR="$ANCHOR"
     expect 'C20 roadmap-base.yaml, a byte-copy of the historical roadmap.yaml line -> green' "$TMP/c20" 0 'every one ledgered'
-    pair c21 historical docs/roadmaps/roadmap-base.yaml && printf 'now CURRENT at %s\n' "$OLD" >> "$TMP/c21/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c21" add -A
+    pair c21 historical docs/roadmaps/roadmap-base.yaml && export COPY_ANCHOR="$ANCHOR" && printf 'now CURRENT at %s\n' "$OLD" >> "$TMP/c21/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c21" add -A
     expect 'C21 that copy plus ONE novel citing line -> R1' "$TMP/c21" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
-    pair c22 fixture docs/roadmaps/roadmap-base.yaml
+    pair c22 fixture docs/roadmaps/roadmap-base.yaml && export COPY_ANCHOR="$ANCHOR"
     expect 'C22 a copy of a FIXTURE-class ledger line -> R1 (only historical lines can be copied)' "$TMP/c22" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
-    pair c23 historical evidence/parity/copy.md
+    pair c23 historical evidence/parity/copy.md && export COPY_ANCHOR="$ANCHOR"
     expect 'C23 the same historical line copied into any OTHER path -> R1 (R7 knows one pair)' "$TMP/c23" 1 'R1 evidence/parity/copy.md:1'
-    pair c25 historical docs/roadmaps/roadmap-base.yaml && cat "$TMP/c25/docs/roadmaps/roadmap.yaml" >> "$TMP/c25/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c25" add -A
+    pair c25 historical docs/roadmaps/roadmap-base.yaml && export COPY_ANCHOR="$ANCHOR" && cat "$TMP/c25/docs/roadmaps/roadmap.yaml" >> "$TMP/c25/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c25" add -A
     expect 'C25 the copy DUPLICATES a pinned line (membership holds, the pin differs) -> R1' "$TMP/c25" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
-    pair c24 historical docs/roadmaps/roadmap-base.yaml && git -C "$TMP/c24" rm -qf docs/roadmaps/roadmap.yaml && sed -i 's|^docs/roadmaps/roadmap.yaml\t|docs/roadmaps/roadmap-base.yaml\t|' "$TMP/c24/scripts/comparator_pin_citations.txt" && git -C "$TMP/c24" add -A
+    pair c24 historical docs/roadmaps/roadmap-base.yaml && export COPY_ANCHOR="$ANCHOR" && git -C "$TMP/c24" rm -qf docs/roadmaps/roadmap.yaml && sed -i 's|^docs/roadmaps/roadmap.yaml\t|docs/roadmaps/roadmap-base.yaml\t|' "$TMP/c24/scripts/comparator_pin_citations.txt" && git -C "$TMP/c24" add -A
     expect 'C24 the aggregate removed and its ledger row moved onto roadmap-base.yaml -> green' "$TMP/c24" 0 'every one ledgered'
     fixture c16 && printf 'evidence/parity/old-ratio.md\thistorical\tdated in the file\ntests/fx/case.json\tfixture\ta sample value\n' > "$TMP/c16/scripts/comparator_pin_citations.txt"
+    anchored() { # NAME [CLASS]: pair, committed (the anchor), then roadmap.yaml re-indented and RE-PINNED while the base stays untouched
+        pair "$1" "${2:-historical}" docs/roadmaps/roadmap-base.yaml || return 2
+        printf '  measured 2026-08-24 against llama.cpp %s: 0.59x\n' "$OLD" > "$TMP/$1/docs/roadmaps/roadmap.yaml"
+        sed -i "s|^\(docs/roadmaps/roadmap.yaml\t.*\t\).*\$|\1$(pin_line "$TMP/$1" docs/roadmaps/roadmap.yaml)|" "$TMP/$1/scripts/comparator_pin_citations.txt" && git -C "$TMP/$1" add -A
+    }
+    anchored c26 && export COPY_ANCHOR="$ANCHOR"
+    expect 'C26 roadmap.yaml re-indented and re-pinned, base untouched -> green (R7 reads the pool at the anchor, #6306)' "$TMP/c26" 0 'every one ledgered'
+    anchored c27 && printf 'now CURRENT at %s\n' "$OLD" >> "$TMP/c27/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c27" add -A && export COPY_ANCHOR="$ANCHOR"
+    expect 'C27 re-pinned live roadmap.yaml plus a NOVEL line in the base -> R1' "$TMP/c27" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    anchored c28 && cp "$TMP/c28/docs/roadmaps/roadmap.yaml" "$TMP/c28/docs/roadmaps/roadmap-base.yaml" && git -C "$TMP/c28" add -A && export COPY_ANCHOR="$ANCHOR"
+    expect 'C28 the base re-cut to the RE-INDENTED live line (not what the anchor froze) -> R1' "$TMP/c28" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    anchored c29 fixture && export COPY_ANCHOR="$ANCHOR"
+    expect 'C29 the same re-pinned pair with the live row FIXTURE-class -> R1 (only a historical row opens the pool)' "$TMP/c29" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    anchored c30 && printf 'measured against llama.cpp %s: CURRENT\n' "$OLD" > "$TMP/c30/evidence/parity/other.md" && git -C "$TMP/c30" add -A && export COPY_ANCHOR="$ANCHOR"
+    expect 'C30 R7 exempts the base but ANOTHER unledgered file cites the pin -> rc 1 with THAT file'"'"'s R1 (the exemption is one line, not the verdict)' "$TMP/c30" 1 'R1 evidence/parity/other.md:1'
+    anchored c31 && export COPY_ANCHOR=0123456789abcdef0123456789abcdef01234567
+    expect 'C31 the anchor object is ABSENT (shallow clone, cannot be fetched) -> R7 fails closed, the base is R1' "$TMP/c31" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    pair c33 historical docs/roadmaps/roadmap-base.yaml && export COPY_ANCHOR=0123456789abcdef0123456789abcdef01234567
+    expect 'C33 anchor ABSENT and the base EQUALS the live row -> R1 (a live-row fallback would go green here)' "$TMP/c33" 1 'R1 docs/roadmaps/roadmap-base.yaml:1'
+    anchored c32 && printf 'measured against llama.cpp %s: x\n' "$OLD" > "$TMP/c32/docs/roadmaps/roadmap-base.yaml:x.md" && git -C "$TMP/c32" add -A && export COPY_ANCHOR="$ANCHOR"
+    expect 'C32 R7 exempts the base but an unledgered docs/roadmaps/roadmap-base.yaml:x.md cites the pin -> rc 1 with THAT file' "$TMP/c32" 1 'R1 docs/roadmaps/roadmap-base.yaml:x.md:1'
+    anchored c34 && printf 'measured against llama.cpp %s: x\n' "$OLD" > "$TMP/c34/docs/roadmaps/roadmap-base.yaml:1" && git -C "$TMP/c34" add -A && export COPY_ANCHOR="$ANCHOR"
+    expect 'C34 R7 exempts the base but an unledgered docs/roadmaps/roadmap-base.yaml:1 (a FILE whose name ends :1) cites the pin -> rc 1 with THAT file'"'"'s R1, not the base'"'"'s' "$TMP/c34" 1 'R1 docs/roadmaps/roadmap-base.yaml:1:1'
+    # depth-1 clone over file://: the anchor is NOT in the clone, so only the fetch can bring it in (a full clone never exercises it)
+    for c in c35 c35m; do
+        pair "$c" historical docs/roadmaps/roadmap-base.yaml && git -C "$TMP/$c" commit -q --allow-empty -m tip && git clone -q --depth=1 "file://$TMP/$c" "$TMP/$c-shallow" 2> /dev/null || { printf 'FAIL  C35 cannot build the depth-1 clone\n'; fails=$((fails + 1)); }
+        git -C "$TMP/$c-shallow" cat-file -e "$ANCHOR^{commit}" 2> /dev/null && { printf 'FAIL  C35 the depth-1 clone already holds the anchor: the row would not need the fetch\n'; fails=$((fails + 1)); }
+    done
+    export COPY_ANCHOR; COPY_ANCHOR=$(git -C "$TMP/c35" rev-parse HEAD~1)
+    expect 'C35 depth-1 file:// clone lacking the anchor: R7 FETCHES it and exempts the base -> green' "$TMP/c35-shallow" 0 'every one ledgered'
+    unset COPY_ANCHOR
     expect 'C16 a ledger line with no pin -> RED, never a pass' "$TMP/c16" 1 'TAB<n>:<sha12>'
 
     # MUTANTS: each must turn its row RED. The judge is re-sourced from a mutated copy of this file.
@@ -276,7 +333,7 @@ if [ "${1:-}" = "--self-test" ]; then
     # WANT-RC/NEEDLE are the UNMUTATED row's expectation (e.g. drop-copy-rule: C20 expects rc 0). The mutant is killed when the
     # mutated guard NO LONGER gives that rc+needle (disabling R7 makes C20 fail R1); it survives only if it still does.
         local name=$1 old=$2 new=$3 want=$4 needle=$5; shift 5
-        python3 - "$0" "$TMP/mut-$name.sh" "$old" "$new" <<'PY' || { printf 'FAIL  mutant %s: anchor not found exactly once\n' "$name"; fails=$((fails + 1)); return; }
+        python3 - "$SELF" "$TMP/mut-$name.sh" "$old" "$new" <<'PY' || { printf 'FAIL  mutant %s: anchor not found exactly once\n' "$name"; fails=$((fails + 1)); return; }
 import sys
 src, dst, old, new = sys.argv[1:5]
 s = open(src).read()
@@ -284,9 +341,11 @@ s = open(src).read()
 if s.count(old) < 1: sys.exit(1)
 open(dst, "w").write(s.replace(old, new, 1))
 PY
-        local out rc
-        out=$( . "$TMP/mut-$name.sh" --source-only; judge "$@" 2>&1 ); rc=$?
+        local out rc base brc
+        base=$(judge "$@" 2>&1); brc=$?   # the UNMUTATED guard must give the expectation, or 'killed' only means the fixture broke
         rows=$((rows + 1))
+        if [ "$brc" != "$want" ] || ! grep -qF -- "$needle" <<< "$base"; then printf 'FAIL  mutant %s: the unmutated guard does not give the row (rc=%s)\n' "$name" "$brc"; fails=$((fails + 1)); return; fi
+        out=$( . "$TMP/mut-$name.sh" --source-only; judge "$@" 2>&1 ); rc=$?
         if [ "$rc" = "$want" ] && grep -qF -- "$needle" <<< "$out"; then printf 'FAIL  mutant %s SURVIVED (the row still holds)\n' "$name"; fails=$((fails + 1))
         else printf 'ok    mutant %s killed\n' "$name"; fi
     }
@@ -304,11 +363,43 @@ PY
     mutant drop-r4 '    if mled is not None and len(led) > len(mled):' '    if False:' 1 'R4 the ledger GREW' "$TMP/c6" "$TMP/c6/main-ledger.txt"
     mutant shape-exempt 'pin_rel):' 'pin_rel) or rel.startswith("docs/roadmaps/entries/PMAT-"):' 1 'R1 docs/roadmaps/entries/PMAT-9.yaml:1' "$TMP/c11"
     mutant prefix-exempt 'pin_rel):' 'pin_rel) or rel.startswith(("docs/roadmaps/", "docs/audits/quorum-")):' 1 'R1 docs/roadmaps/entries/PLANTED.yaml:1' "$TMP/c12"
-    mutant drop-copy-rule 'if rel == COPY_DST and rel not in led and COPY_SRC in led' 'if False and COPY_SRC in led' 0 'every one ledgered' "$TMP/c20"
-    mutant any-copy-line 'and pinned[rel] == led[COPY_SRC][2] and all(t in ledlines' 'and any(t in ledlines' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c21"
-    mutant drop-class-filter 'if v[0] == "historical" and r == COPY_SRC' 'if r == COPY_SRC' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c22"
-    mutant widen-scope 'if rel == COPY_DST and rel not in led and COPY_SRC' 'if rel not in led and COPY_SRC' 1 'R1 evidence/parity/copy.md:1' "$TMP/c23"
-    mutant membership-only 'and pinned[rel] == led[COPY_SRC][2]' '' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c25"
+    CLS='$1==p&&$2=="historical"{h=1}'
+    COPY_ANCHOR=$(git -C "$TMP/c20" rev-parse HEAD) mutant drop-copy-rule '&& r7_base_copy "$r" "$ledger"; then' '&& false; then' 0 'every one ledgered' "$TMP/c20"
+    COPY_ANCHOR=$(git -C "$TMP/c22" rev-parse HEAD) mutant drop-class-filter "$CLS" '$1==p{h=1}' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c22"
+    COPY_ANCHOR=$(git -C "$TMP/c25" rev-parse HEAD) mutant pin-dropped '[ "$(pinof "$base")" = "$srcpin" ]  #' 'true  #' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c25"
+    export COPY_ANCHOR; COPY_ANCHOR=$(git -C "$TMP/c26" rev-parse HEAD)
+    # mutant WANT-RC is the UNMUTATED row's rc (C26 is green, 0): a mutant is KILLED when the mutated guard stops giving it
+    mutant live-row-pool 'src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || return 1' 'src=$(cat "$r/$COPY_SRC")' 0 'every one ledgered' "$TMP/c26"
+    COPY_ANCHOR=$(git -C "$TMP/c29" rev-parse HEAD)
+    mutant anchor-any-class "$CLS" '$1==p{h=1}' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c29"
+    COPY_ANCHOR=$(git -C "$TMP/c30" rev-parse HEAD)
+    mutant widen-r1-filter 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "' 'local r1="^FAIL  R1 "' 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
+    COPY_ANCHOR=$(git -C "$TMP/c32" rev-parse HEAD) mutant prefix-r1-filter 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "' 'local r1="FAIL  R1 $COPY_DST:"' 1 'R1 docs/roadmaps/roadmap-base.yaml:x.md:1' "$TMP/c32"
+    COPY_ANCHOR=$(git -C "$TMP/c34" rev-parse HEAD) mutant loose-r1-filter 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9]+ cites "' 'local r1="^FAIL  R1 ${COPY_DST//./\\.}:[0-9:]+ cites "' 1 'R1 docs/roadmaps/roadmap-base.yaml:1:1' "$TMP/c34"
+    # drop-fetch is hand-run: mutant()'s precheck would itself fetch the anchor into the clone and hide the kill
+    sed 's# || git -C "$r" fetch -q --depth=1 origin "$COPY_ANCHOR" 2> /dev/null##' "$SELF" > "$TMP/mut-drop-fetch.sh"; rows=$((rows + 1))
+    if cmp -s "$SELF" "$TMP/mut-drop-fetch.sh"; then printf 'FAIL  mutant drop-fetch: anchor not found\n'; fails=$((fails + 1))
+    elif out=$( . "$TMP/mut-drop-fetch.sh" --source-only; COPY_ANCHOR=$(git -C "$TMP/c35m" rev-parse HEAD~1) judge "$TMP/c35m-shallow" 2>&1 ); [ "$?" = 0 ] && grep -qF 'every one ledgered' <<< "$out"; then printf 'FAIL  mutant drop-fetch SURVIVED (the row still holds)\n'; fails=$((fails + 1))
+    else printf 'ok    mutant drop-fetch killed\n'; fi
+    mutant swallow-fails "if grep -q '^FAIL' <<< \"\$out\"; then rc=1;" "if false; then rc=1;" 1 'R1 evidence/parity/other.md:1' "$TMP/c30"
+    COPY_ANCHOR=0123456789abcdef0123456789abcdef01234567 mutant live-fallback 'src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || return 1' 'src=$(git -C "$r" show "$COPY_ANCHOR:$COPY_SRC" 2> /dev/null) || src=$(cat "$r/$COPY_SRC")' 1 'R1 docs/roadmaps/roadmap-base.yaml:1' "$TMP/c33"
+    # planted crash: the Python dies after the R1 rows but before its end marker. The unmutated judge() must go RED, and with the
+    # marker check gone the same crash reads green (the fail-open the marker closes), so the row is a real discriminator
+    COPY_ANCHOR=$(git -C "$TMP/c20" rev-parse HEAD)
+    sed 's#^print("@@judged").*#raise RuntimeError("planted crash")#' "$SELF" > "$TMP/crash.sh"
+    sed 's#if \[ "\$done" = 0 \]; then printf#if false; then printf#' "$TMP/crash.sh" > "$TMP/crash-open.sh"; rows=$((rows + 2))
+    out=$( . "$TMP/crash.sh" --source-only; judge "$TMP/c20" 2>&1 ); rc=$?
+    if [ "$rc" = 1 ] && grep -qF 'the checker did not finish' <<< "$out"; then printf 'ok    a planted crash before the end marker is RED, never green\n'
+    else printf 'FAIL  a planted crash was not caught (rc=%s): %s\n' "$rc" "$(tr '\n' '|' <<< "$out" | cut -c1-200)"; fails=$((fails + 1)); fi
+    out=$( . "$TMP/crash-open.sh" --source-only; judge "$TMP/c20" 2>&1 ); rc=$?
+    if [ "$rc" = 0 ] && grep -qF 'every one ledgered' <<< "$out"; then printf 'ok    mutant no-marker-check killed (the crash reads green without it)\n'
+    else printf 'FAIL  mutant no-marker-check SURVIVED (rc=%s): the crash row proves nothing\n' "$rc"; fails=$((fails + 1)); fi
+    unset COPY_ANCHOR
+    # mutant() must refuse a row the UNMUTATED guard does not give: a wrong needle has to be reported, not counted as a kill
+    meta=$(mutant meta-baseline 'local r1=' 'local r1=' 1 'needle-that-is-never-printed' "$TMP/c33" 2>&1)
+    if grep -qF 'the unmutated guard does not give the row' <<< "$meta"; then rows=$((rows + 1)); printf 'ok    mutant() precheck rejects a row the unmutated guard does not give\n'
+    else rows=$((rows + 1)); fails=$((fails + 1)); printf 'FAIL  mutant() precheck is gone: a wrong expectation was not reported\n'; fi
+    unset COPY_ANCHOR
     mutant full-sha-only 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s[:7]) + r"[0-9a-f]*") for s in sup]' 'pats = [re.compile(r"(?<![0-9a-f])" + re.escape(s) + r"(?![0-9a-f])") for s in sup]' 1 'R1 evidence/parity/abbrev.md:1' "$TMP/c3"
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED (%s of %s)\n' "$fails" "$rows"; exit 1; }

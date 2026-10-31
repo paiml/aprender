@@ -452,10 +452,9 @@ fn exit_with_validation_status(passed: bool) -> ! {
     if passed {
         println!("\n✓ Model conforms to tensor layout contract");
         std::process::exit(0);
-    } else {
-        println!("\n✗ Model DOES NOT conform to tensor layout contract");
-        std::process::exit(1);
     }
+    println!("\n✗ Model DOES NOT conform to tensor layout contract");
+    std::process::exit(1);
 }
 
 /// Verify kernel coverage across HuggingFace architectures (Spec §20).

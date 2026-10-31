@@ -223,12 +223,12 @@ fn terms_ref(v: Option<&Value>, gaps: &mut Vec<Gap>) -> Option<TermsRef> {
             gaps.push(Gap::TermsFetchedAt(t.clone()));
         }
     }
-    Some(TermsRef {
+    let terms = TermsRef {
         url: url?,
         effective_date: effective_date?,
         fetched_at: fetched_at?,
-    })
-    .filter(|_| gaps.len() == before)
+    };
+    (gaps.len() == before).then_some(terms)
 }
 
 /// `YYYY-MM-DD` with a month 01-12 and a day 01-31.

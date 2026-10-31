@@ -17,8 +17,9 @@ name = "trueno_graph"
 [dependencies]
 # Data formats (columnar) - MVP uses Arrow/Parquet directly
 # Minimal features: drops arrow-csv, arrow-json (~fewer transitive deps)
-arrow = { version = "59", default-features = false, optional = true }  # RecordBatch zero-copy
-parquet = { version = "59", optional = true }                       # Persistent storage
+arrow = { version = "60", default-features = false, optional = true }  # RecordBatch zero-copy
+# Default codecs stay on (snappy/brotli/flate2/lz4/zstd) so graph files written by any tool read back; zstd is 0.14.3 (PMAT-6416)
+parquet = { version = "60", optional = true }                       # Persistent storage
 
 # Async runtime (required for I/O)
 tokio = { version = "1", features = ["rt", "fs", "sync", "macros"] }
@@ -28,7 +29,7 @@ anyhow = "1"
 thiserror = "2"
 
 # Phase 2+ dependencies
-aprender = { path = "../aprender-core", version = "0.71.3", package = "aprender-core" }                                        # Sparse matrix ops, PageRank
+aprender = { path = "../aprender-core", version = "0.72.3", package = "aprender-core" }                                        # Sparse matrix ops, PageRank
 trueno = { workspace = true }
 
 # Phase 3: GPU acceleration (optional - requires wgpu-capable hardware)
