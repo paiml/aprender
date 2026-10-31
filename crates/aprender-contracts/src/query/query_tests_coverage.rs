@@ -250,22 +250,22 @@
 
     #[test]
     fn coverage_map_enrichment() {
-        // Coverage map requires sibling repos for binding data. The prior
-        // `parent.join("aprender")` check was a self-match (both locally and
-        // in GHA's `/__w/aprender/aprender` layout). Probing for
-        // `provable-contracts` still false-positives on self-hosted runners
-        // that carry stale sibling checkouts. Probe for other paiml repos
-        // that only exist in a dev workspace checkout.
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap();
-        let has_sibling = root.parent().is_some_and(|p| {
-            ["trueno", "bashrs", "forjar"].iter().any(|name| p.join(name).exists())
-        });
-        if !has_sibling { return; }
+        // Hermetic (#6573): feed the binding via `include_project` from a
+        // tempdir fixture named `aprender` instead of probing sibling dirs.
+        let tmp = tempfile::tempdir().unwrap();
+        let consumer = tmp.path().join("aprender");
+        std::fs::create_dir_all(consumer.join("contracts/aprender")).unwrap();
+        std::fs::write(
+            consumer.join("contracts/aprender/binding.yaml"),
+            "version: 1.0.0\ntarget_crate: aprender\nbindings:\n- contract: softmax-kernel-v1.yaml\n  equation: softmax\n  module_path: aprender::nn::softmax\n  function: softmax\n  status: implemented\n",
+        )
+        .unwrap();
         let index = test_index();
         let params = QueryParams {
             query: "softmax".to_string(),
             show_coverage_map: true,
-            limit: 3,
+            limit: 50,
+            include_project: Some(consumer.display().to_string()),
             ..Default::default()
         };
         let output = execute(&index, &params);
