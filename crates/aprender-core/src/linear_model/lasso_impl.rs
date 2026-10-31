@@ -245,6 +245,144 @@ impl Lasso {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Coordinate-descent helpers shared by `Lasso::fit` (here) and `ElasticNet::fit`
+// (input.rs). Loop and summation order are kept exactly as the original inlined
+// code so scikit-learn parity tests stay bit-equal.
+// ---------------------------------------------------------------------------
+
+/// Checks `x`/`y` agree and are non-empty; returns `(n_samples, n_features)`.
+fn validate_fit_inputs(x: &Matrix<f32>, y: &Vector<f32>) -> Result<(usize, usize)> {
+    let (n_samples, n_features) = x.shape();
+    if n_samples != y.len() {
+        return Err("Number of samples must match target length".into());
+    }
+    if n_samples == 0 {
+        return Err("Cannot fit with zero samples".into());
+    }
+    Ok((n_samples, n_features))
+}
+
+/// Per-column means of `x`.
+fn column_means(x: &Matrix<f32>) -> Vec<f32> {
+    let (n_samples, n_features) = x.shape();
+    let mut x_mean = vec![0.0; n_features];
+    for i in 0..n_samples {
+        for (j, mean_j) in x_mean.iter_mut().enumerate() {
+            *mean_j += x.get(i, j);
+        }
+    }
+    for mean in &mut x_mean {
+        *mean /= n_samples as f32;
+    }
+    x_mean
+}
+
+/// Returns `(x_centered, y_centered, y_mean)`; without an intercept the data is
+/// passed through and `y_mean` is 0.
+fn center_data(
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    fit_intercept: bool,
+) -> (Matrix<f32>, Vector<f32>, f32) {
+    if !fit_intercept {
+        return (x.clone(), y.clone(), 0.0);
+    }
+    let (n_samples, n_features) = x.shape();
+    let x_mean = column_means(x);
+    let mut y_sum = 0.0;
+    for i in 0..n_samples {
+        y_sum += y[i];
+    }
+    let y_mean = y_sum / n_samples as f32;
+
+    let mut x_data = vec![0.0; n_samples * n_features];
+    let mut y_data = vec![0.0; n_samples];
+    for i in 0..n_samples {
+        for j in 0..n_features {
+            x_data[i * n_features + j] = x.get(i, j) - x_mean[j];
+        }
+        y_data[i] = y[i] - y_mean;
+    }
+    (
+        Matrix::from_vec(n_samples, n_features, x_data)
+            .expect("Valid matrix dimensions for property test"),
+        Vector::from_vec(y_data),
+        y_mean,
+    )
+}
+
+/// Squared L2 norm of each column (the diagonal of X^T X).
+fn column_norms_sq(x: &Matrix<f32>) -> Vec<f32> {
+    let (n_samples, n_features) = x.shape();
+    let mut col_norms_sq = vec![0.0; n_features];
+    for (j, norm_sq) in col_norms_sq.iter_mut().enumerate() {
+        for i in 0..n_samples {
+            let val = x.get(i, j);
+            *norm_sq += val * val;
+        }
+    }
+    col_norms_sq
+}
+
+/// `x_j . (y - X_{-j} beta_{-j})`: the correlation of feature `j` with the
+/// residual that excludes its own contribution.
+fn partial_residual_rho(x: &Matrix<f32>, y: &Vector<f32>, beta: &[f32], j: usize) -> f32 {
+    let mut rho = 0.0;
+    for i in 0..x.shape().0 {
+        let mut pred = 0.0;
+        for (k, &beta_k) in beta.iter().enumerate() {
+            if k != j {
+                pred += x.get(i, k) * beta_k;
+            }
+        }
+        let residual = y[i] - pred;
+        rho += x.get(i, j) * residual;
+    }
+    rho
+}
+
+/// Cyclic coordinate descent on centered data. `(l1, l2)` are the already
+/// sample-scaled penalties (Lasso passes `l2 = 0`); `(max_iter, tol)` bound the
+/// sweeps. Updates `beta` in place.
+fn coordinate_descent(
+    x: &Matrix<f32>,
+    y: &Vector<f32>,
+    col_norms_sq: &[f32],
+    beta: &mut [f32],
+    (l1, l2): (f32, f32),
+    (max_iter, tol): (usize, f32),
+) {
+    for _ in 0..max_iter {
+        let mut max_change = 0.0f32;
+        for j in 0..beta.len() {
+            if col_norms_sq[j] < 1e-10 {
+                continue; // Skip zero-variance features
+            }
+            let rho = partial_residual_rho(x, y, beta, j);
+            let old_beta = beta[j];
+            beta[j] = Lasso::soft_threshold(rho, l1) / (col_norms_sq[j] + l2);
+            max_change = max_change.max((beta[j] - old_beta).abs());
+        }
+        if max_change < tol {
+            break;
+        }
+    }
+}
+
+/// Intercept implied by `beta` on the uncentered data (0 without an intercept).
+fn fitted_intercept(x: &Matrix<f32>, y_mean: f32, beta: &[f32], fit_intercept: bool) -> f32 {
+    if !fit_intercept {
+        return 0.0;
+    }
+    let x_mean = column_means(x);
+    let mut intercept = y_mean;
+    for (b, m) in beta.iter().zip(&x_mean) {
+        intercept -= b * m;
+    }
+    intercept
+}
+
 impl Estimator for Lasso {
     /// Fits the Lasso regression model using coordinate descent.
     ///
@@ -252,127 +390,27 @@ impl Estimator for Lasso {
     ///
     /// Returns an error if input dimensions don't match.
     fn fit(&mut self, x: &Matrix<f32>, y: &Vector<f32>) -> Result<()> {
-        let (n_samples, n_features) = x.shape();
+        let (n_samples, n_features) = validate_fit_inputs(x, y)?;
+        let (x_centered, y_centered, y_mean) = center_data(x, y, self.fit_intercept);
+        let col_norms_sq = column_norms_sq(&x_centered);
 
-        if n_samples != y.len() {
-            return Err("Number of samples must match target length".into());
-        }
+        // scikit-learn minimizes (1/(2*n_samples))*||y - Xb||^2 + alpha*||b||_1,
+        // whose coordinate update thresholds rho at n_samples*alpha (PMAT-848).
+        // Without the n_samples factor the effective penalty is ~n times too
+        // weak, so `alpha` would not match the scikit-learn convention.
+        let l1_penalty = n_samples as f32 * self.alpha;
 
-        if n_samples == 0 {
-            return Err("Cannot fit with zero samples".into());
-        }
-
-        // Center data if fitting intercept
-        let (x_centered, y_centered, y_mean) = if self.fit_intercept {
-            // Compute means
-            let mut x_mean = vec![0.0; n_features];
-            let mut y_sum = 0.0;
-
-            for i in 0..n_samples {
-                for (j, mean_j) in x_mean.iter_mut().enumerate() {
-                    *mean_j += x.get(i, j);
-                }
-                y_sum += y[i];
-            }
-
-            for mean in &mut x_mean {
-                *mean /= n_samples as f32;
-            }
-            let y_mean = y_sum / n_samples as f32;
-
-            // Center data
-            let mut x_data = vec![0.0; n_samples * n_features];
-            let mut y_data = vec![0.0; n_samples];
-
-            for i in 0..n_samples {
-                for j in 0..n_features {
-                    x_data[i * n_features + j] = x.get(i, j) - x_mean[j];
-                }
-                y_data[i] = y[i] - y_mean;
-            }
-
-            (
-                Matrix::from_vec(n_samples, n_features, x_data)
-                    .expect("Valid matrix dimensions for property test"),
-                Vector::from_vec(y_data),
-                y_mean,
-            )
-        } else {
-            (x.clone(), y.clone(), 0.0)
-        };
-
-        // Initialize coefficients to zero
         let mut beta = vec![0.0; n_features];
+        coordinate_descent(
+            &x_centered,
+            &y_centered,
+            &col_norms_sq,
+            &mut beta,
+            (l1_penalty, 0.0),
+            (self.max_iter, self.tol),
+        );
 
-        // Precompute X^T X diagonal (column norms squared)
-        let mut col_norms_sq = vec![0.0; n_features];
-        for (j, norm_sq) in col_norms_sq.iter_mut().enumerate() {
-            for i in 0..n_samples {
-                let val = x_centered.get(i, j);
-                *norm_sq += val * val;
-            }
-        }
-
-        // Coordinate descent
-        for _ in 0..self.max_iter {
-            let mut max_change = 0.0f32;
-
-            for j in 0..n_features {
-                if col_norms_sq[j] < 1e-10 {
-                    continue; // Skip zero-variance features
-                }
-
-                // Compute residual without current feature
-                let mut rho = 0.0;
-                for i in 0..n_samples {
-                    let mut pred = 0.0;
-                    for (k, &beta_k) in beta.iter().enumerate() {
-                        if k != j {
-                            pred += x_centered.get(i, k) * beta_k;
-                        }
-                    }
-                    let residual = y_centered[i] - pred;
-                    rho += x_centered.get(i, j) * residual;
-                }
-
-                // Update coefficient with soft-thresholding.
-                //
-                // scikit-learn minimizes (1/(2*n_samples))*||y - Xb||^2 + alpha*||b||_1,
-                // whose coordinate update thresholds rho at n_samples*alpha (PMAT-848).
-                // Without the n_samples factor the effective penalty is ~n times too
-                // weak, so `alpha` would not match the scikit-learn convention.
-                let old_beta = beta[j];
-                let n = n_samples as f32;
-                beta[j] = Self::soft_threshold(rho, n * self.alpha) / col_norms_sq[j];
-
-                let change = (beta[j] - old_beta).abs();
-                if change > max_change {
-                    max_change = change;
-                }
-            }
-
-            // Check convergence
-            if max_change < self.tol {
-                break;
-            }
-        }
-
-        // Set intercept
-        if self.fit_intercept {
-            let mut intercept = y_mean;
-            let mut x_mean = vec![0.0; n_features];
-            for j in 0..n_features {
-                for i in 0..n_samples {
-                    x_mean[j] += x.get(i, j);
-                }
-                x_mean[j] /= n_samples as f32;
-                intercept -= beta[j] * x_mean[j];
-            }
-            self.intercept = intercept;
-        } else {
-            self.intercept = 0.0;
-        }
-
+        self.intercept = fitted_intercept(x, y_mean, &beta, self.fit_intercept);
         self.coefficients = Some(Vector::from_vec(beta));
         Ok(())
     }

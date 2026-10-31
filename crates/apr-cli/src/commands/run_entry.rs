@@ -716,10 +716,6 @@ fn effective_tok_per_sec(result: &RunResult, tokens_generated: usize) -> f64 {
     })
 }
 
-/// #3602/#3826/#3606: the `backend` object distinguishing a deliberate CPU
-/// run from a rejected GPU run. See the long comment on its call site in
-/// [`build_final_json`] for why each field exists and why `accel_forced`
-/// alone cannot be dropped in favor of `gpu_attempted`.
 /// #3602/#3826: an accelerator was tried (asked for, or entered) and CPU answered. One definition for the
 /// `--json` `backend.fell_back` and the text-mode notice, so the two surfaces cannot disagree.
 fn fell_back_to_cpu(result: &RunResult, accel_forced: bool) -> bool {
@@ -736,6 +732,10 @@ fn cpu_fallback_notice(result: &RunResult, accel_forced: bool) -> Option<&'stati
     fell_back_to_cpu(result, accel_forced).then_some(CPU_FALLBACK_NOTICE)
 }
 
+/// #3602/#3826/#3606: the `backend` object distinguishing a deliberate CPU
+/// run from a rejected GPU run. See the long comment on its call site in
+/// [`build_final_json`] for why each field exists and why `accel_forced`
+/// alone cannot be dropped in favor of `gpu_attempted`.
 fn backend_json(result: &RunResult, accel_forced: bool) -> serde_json::Value {
     serde_json::json!({
         "requested": if accel_forced { "gpu" } else { "default" },
