@@ -7,9 +7,15 @@
 #   cleanroom_red_bump.sh --self-test                               the case table, no network
 #
 # The next patch is X.Y.(Z+1) of the failed tag. Idempotent: nothing is done when a tag or a `release: <next>`
-# PR (open or merged) exists. It drafts the bump with prepare_bump.sh, fills the one-paragraph placeholder with
-# the andon cause, and ships it with prepare_bump.sh --ship, whose own gates (T-2 GO receipt, R-2 body check,
-# auto-merge arm) all still apply: no gate is waived. Any refusal is printed as `ANDON-BUMP-BLOCKED <why>`, rc 1.
+# PR (open or merged) exists. The tag test is an EXACT ref match (refs/tags/v<next>), never a prefix: v0.72.2 must
+# not be hidden by an existing v0.72.20. It drafts the bump with prepare_bump.sh, fills the one-paragraph placeholder with
+# the andon cause, and ships it with prepare_bump.sh --ship.
+#
+# --SHIP SCOPE: --ship is prepare_bump.sh's own path and does all of this, with its own gates unchanged:
+# judges the PR body by §6 R-2, requires the model-ladder receipts for <next>, runs the pre-push checks,
+# commits, pushes the release-<next> branch, opens the `release: <next>` PR in milestone <next> and arms
+# auto-merge. It never tags, publishes, yanks or merges past the required checks; autopilot.sh runs the rest
+# of the train once the PR merges. No gate is waived here (T-2 GO receipt, R-2 body check, auto-merge arm). Any refusal is printed as `ANDON-BUMP-BLOCKED <why>`, rc 1.
 set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 GH=${CRB_GH:-gh}; PREPARE=${CRB_PREPARE:-$HERE/prepare_bump.sh}; REPO=${CRB_REPO:-paiml/aprender}
@@ -44,6 +50,18 @@ if [ "${1:-}" = --self-test ]; then
     printf '#!/bin/sh\nexit 1\n' > "$d/gh"
     out=$(CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.1 2>&1); rc=$?
     chk "gh failure -> not_measured, blocked rc 1" "$rc:${out%% *}" "1:ANDON-BUMP-BLOCKED"
+    # exact tag match: a stub that APPLIES the --jq filter to canned matching-refs JSON, so the filter itself is tested
+    cat > "$d/gh" <<'STUB'
+#!/bin/bash
+expr=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && expr=$2; shift; done
+case "$expr" in *refs/tags*) printf '%s' "$CRB_REFS" | jq "$expr" ;; *) echo 0 ;; esac
+STUB
+    chmod +x "$d/gh"; rm -f "${d:?}/calls"
+    CRB_REFS='[{"ref":"refs/tags/v0.72.20"}]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.1 > /dev/null 2>&1
+    chk "only v0.72.20 exists (prefix of v0.72.2) -> bump still drafted" "$(tr '\n' '|' < "$d/calls" 2>/dev/null)" "0.72.2|0.72.2 --ship|"
+    rm -f "${d:?}/calls"
+    CRB_REFS='[{"ref":"refs/tags/v0.72.2"},{"ref":"refs/tags/v0.72.20"}]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.1 > /dev/null 2>&1
+    chk "exact v0.72.2 exists -> prepare_bump not called" "$([ -e "$d/calls" ] && echo called || echo none)" none
     # wiring: autopilot.sh calls this script on a non-success clean-room, before its die
     w=$(awk '/cleanroom_red_bump.sh/ {c = NR} /die "clean-room \(aprender\) on/ {d = NR} END {print (c && d && c < d) ? "wired" : "unwired"}' "$HERE/autopilot.sh")
     chk "autopilot calls the bump before the clean-room die" "$w" wired
@@ -57,7 +75,7 @@ failed=${1:-}; run=${2:-unknown}
 next=$(crb_next_patch "$failed") || { echo "usage: cleanroom_red_bump.sh <failed-version> [<run-id>]" >&2; exit 2; }
 blocked() { printf 'ANDON-BUMP-BLOCKED %s\n' "$*"; exit 1; }
 
-tags=$($GH api "repos/$REPO/git/matching-refs/tags/v$next" --jq 'length') || blocked "cannot read tags for v$next (not_measured)"
+tags=$($GH api "repos/$REPO/git/matching-refs/tags/v$next" --jq "[.[] | select(.ref == \"refs/tags/v$next\")] | length") || blocked "cannot read tags for v$next (not_measured)"
 [ "${tags:-0}" = 0 ] || { echo "NEXT $next: tag v$next exists; nothing to open"; exit 0; }
 prs=$($GH pr list --repo "$REPO" --state all --search "\"release: $next\" in:title" --json title --jq "[.[] | select(.title == \"release: $next\")] | length") \
     || blocked "cannot list PRs for release: $next (not_measured)"
