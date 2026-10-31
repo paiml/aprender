@@ -304,7 +304,7 @@ falsification_tests:
     A dense GGUF run on a box whose CUDA init fails reports nothing and reads as a
     GPU run at CPU speed (#4977)
 
-- id: FALSIFY-GPU-012
+- id: FALSIFY-GPU-013
   rule: A forced accelerator that is refused never redoes the generation on CPU (#4969)
   prediction: >
     forced --gpu whose GPU attempt is refused exits 14 before any CPU forward and prints no
