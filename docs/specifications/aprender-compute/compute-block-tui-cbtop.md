@@ -2928,7 +2928,7 @@ impl Brick for PcieCollectorBrick {
                 validator: |b| {
                     let s = b.downcast_ref::<PcieCollectorBrick>().unwrap();
                     s.history.back().map_or(true, |m| {
-                        [1, 2, 4, 8, 16].contains(&m.link_width)
+                        [0, 1, 2, 4, 8, 12, 16, 32].contains(&m.link_width)
                     })
                 }
             },

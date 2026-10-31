@@ -218,6 +218,15 @@ mod tests {
     }
 
     #[test]
+    fn test_valid_widths_match_contract_set() {
+        // cbtop-pcie-widths-v1: x0 (down) plus the PCIe widths x1..x32.
+        assert_eq!(VALID_WIDTHS, [0, 1, 2, 4, 8, 12, 16, 32]);
+        for w in [3u8, 5, 6, 7, 24, 63, 255] {
+            assert!(!VALID_WIDTHS.contains(&w), "x{w} must be rejected");
+        }
+    }
+
+    #[test]
     fn test_width_valid_rejects_invalid_and_accepts_empty_history() {
         assert!(!with_width(63).width_valid());
         assert!(!with_width(3).width_valid());
