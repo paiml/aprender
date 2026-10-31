@@ -1,0 +1,19 @@
+- id: PMAT-5326
+  github_issue: 5326
+  item_type: task
+  title: 'aprender-train build.rs: move serde_yaml_ng to serde-saphyr (RUSTSEC-2024-0449 slice of #5326)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-31T06:42:18Z
+  updated: 2026-10-31T06:42:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Slice of #5326. build.rs parses binding.yaml with serde-saphyr; serde_yaml_ng leaves Cargo.lock; 2 lib tests guard it.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
