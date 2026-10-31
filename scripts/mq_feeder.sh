@@ -216,7 +216,7 @@ if [ "${1:-}" = --self-test ]; then
   gh() { local ep=$2 jf=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && jf=$2; shift; done
     case "$ep" in */files) [ "${CASE:-}" = filefail ] && return 1
       printf '%s\n' "${FILES:-docs/x.md}" | while IFS=$'\t' read -r n pv pf st; do
-        jq -nc --arg n "$n" --arg pv "$([ "$pv" = - ] || printf %s "$pv")" --arg p "$( [ -n "$pf" ] && [ "$pf" != - ] && cat "$pf" )" --arg st "$st" '{sha:"s",filename:$n,status:(if $st!="" then $st elif $pv!="" then "renamed" else "modified" end),additions:1,previous_filename:(if $pv!="" then $pv else null end),patch:(if $p!="" then $p else null end)}'; done | jq -sc '.' | jq -r "$jf";;
+        jq -nc --arg n "$n" --arg pv "$([ "$pv" = - ] || printf %s "$pv")" --arg p "$( [ -n "$pf" ] && [ "$pf" != - ] && printf %s "$(<"$pf")" )" --arg st "$st" '{sha:"s",filename:$n,status:(if $st!="" then $st elif $pv!="" then "renamed" else "modified" end),additions:1,previous_filename:(if $pv!="" then $pv else null end),patch:(if $p!="" then $p else null end)}'; done | jq -sc '.' | jq -r "$jf";;
     */reviews) printf '%b' "${REVIEWS:-}";; esac; }
   ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tquorum 3/3 AGREED PASS\n'
