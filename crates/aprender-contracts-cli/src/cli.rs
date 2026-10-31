@@ -166,6 +166,9 @@ pub enum Commands {
         /// Generate .github/workflows/contracts.yml
         #[arg(long)]
         ci: bool,
+        /// Preview: list each path that would be created or overwritten; write nothing
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Show contract dependency graph
     Graph {
@@ -388,6 +391,9 @@ pub enum Commands {
         /// Path to SUMMARY.md (default: book/src/SUMMARY.md)
         #[arg(long)]
         summary_path: Option<PathBuf>,
+        /// Preview: list each page that would be created or overwritten; write nothing
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Infer contracts and bindings for unbound functions in a crate
     Infer {
@@ -421,6 +427,9 @@ pub enum Commands {
         /// Mandatory reason for unlocking (audit trail)
         #[arg(long)]
         reason: String,
+        /// Preview: show the YAML diff that would be applied; write nothing
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Compute roofline ceilings from contract equations
     Roofline {
