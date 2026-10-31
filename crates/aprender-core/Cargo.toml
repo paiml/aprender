@@ -103,7 +103,9 @@ serde = { version = "1.0", features = ["derive"] }
 # is why those tests previously asserted the INEXACTNESS instead. The feature adds no
 # dependency (`float_roundtrip = []` in serde_json's manifest).
 serde_json = { version = "1.0", features = ["float_roundtrip"] }
-bincode = "1.3"
+# bincode 1.x is unmaintained (RUSTSEC-2025-0141, aprender#6592). The in-tree codec is byte-identical and keeps this crate's source untouched:
+# its files already exceed the pre-commit complexity limits, so a rename would be refused. Package = aprender-legacy-codec.
+bincode = { package = "aprender-legacy-codec", path = "../aprender-legacy-codec", version = "0.72.3" }
 rmp-serde = "1.3"  # MessagePack for .apr metadata (spec §2)
 tempfile = "3.14"  # Streaming APR writer temp file (realizar#136)
 
