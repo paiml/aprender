@@ -18,7 +18,8 @@ metadata:
     `aprender-legacy-codec` is a serde Serializer/Deserializer for the bincode 1.3
     `serialize`/`deserialize` layout (fixed-width little-endian integers, u64 length
     prefixes, u8 Option tag, u32 enum variant index). It replaces `bincode` in
-    apr-format, aprender-rag and aprender-test-lib (aprender-core, aprender-simulate, aprender-distribute and aprender-present-lib still use bincode 1.x pending complexity-hook refactors). Status is partial: bincode 1.3.3 is
+    apr-format, aprender-core, aprender-rag, aprender-simulate, aprender-distribute,
+    aprender-present-lib and aprender-test-lib. Status is partial: bincode 1.3.3 is
     still pulled into Cargo.lock by syntect 5.3.0 (aprender-orchestrate `highlighting`
     feature, dump-load), so the root deny.toml ignore stays until that is ruled on.
   references:
@@ -26,6 +27,7 @@ metadata:
   - 'RUSTSEC-2025-0141'
   - 'crates/aprender-legacy-codec/src/lib.rs'
   - 'crates/aprender-legacy-codec/tests/byte_compat.rs'
+  - 'crates/aprender-core/tests/legacy_codec_model_files.rs'
   - 'crates/apr-format/tests/golden_fixtures.rs'
 
 equations:
@@ -66,6 +68,12 @@ falsification_tests:
     cargo test -p aprender-legacy-codec --test byte_compat stream_api_matches_slice_api_and_consumes_only_what_it_needs
   if_fails: "replay/trajectory streams misparse"
 - id: FALSIFY-LEGACY-CODEC-005
+  rule: "real model files written by 1.x load and re-save identically"
+  prediction: "LinearRegression and KMeans fixtures from origin/main reload and re-save byte-for-byte"
+  test: |
+    cargo test -p aprender-core --test legacy_codec_model_files
+  if_fails: "users' saved models become unreadable or silently change on re-save"
+- id: FALSIFY-LEGACY-CODEC-006
   rule: ".apr containers written by 1.x still read"
   prediction: "apr-format golden v1/v2 fixtures pass"
   test: |
