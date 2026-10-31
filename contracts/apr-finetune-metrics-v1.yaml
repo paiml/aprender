@@ -116,6 +116,12 @@ falsification_tests:
   test: cargo test -p aprender-train --lib save_apr_checkpoint
   if_fails: "save_apr_checkpoint wrote a lossy checkpoint or persisted NaN/Inf weights"
 
+- id: FALSIFY-FINETUNE-006
+  rule: merge summary denominator is the adapter LoRA target count
+  prediction: "apr finetune --merge reports merged / LoRA targets (a full merge of 48 targets on a 291-tensor base prints 48 / 48), never merged / total base tensors; JSON carries lora_targets and total_tensors"
+  test: cargo test -p apr-cli --lib merge_targets_label
+  if_fails: "the merge summary again divides by the base tensor count, so a full merge reads as a partial one"
+
 proof_obligations:
 - id: AFM-INV-001
   type: invariant

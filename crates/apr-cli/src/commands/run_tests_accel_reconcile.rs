@@ -451,3 +451,46 @@ fn print_run_output_serves_every_mode_and_derives_the_rate() {
     r.duration_secs = 0.0;
     assert!(effective_tok_per_sec(&r, 4).abs() < f64::EPSILON);
 }
+
+// #4977 — a dense GGUF whose CUDA init fails must say so in text mode, not only in `--json`.
+
+fn attempted(used_gpu: Option<bool>, gpu_attempted: Option<bool>) -> RunResult {
+    RunResult {
+        gpu_attempted,
+        ..gpu_result(used_gpu)
+    }
+}
+
+/// The defect: a default run that entered a GPU backend and ran on CPU printed nothing.
+#[test]
+fn a_default_run_that_attempted_gpu_and_ran_on_cpu_gets_one_notice() {
+    let r = attempted(Some(false), Some(true));
+    assert_eq!(cpu_fallback_notice(&r, false), Some(CPU_FALLBACK_NOTICE));
+    assert!(CPU_FALLBACK_NOTICE.contains("CPU"));
+}
+
+/// Both directions: a deliberate CPU run, a GPU run and a non-reporting backend stay silent.
+#[test]
+fn no_notice_without_a_fallback() {
+    assert_eq!(cpu_fallback_notice(&attempted(Some(false), None), false), None);
+    assert_eq!(cpu_fallback_notice(&attempted(Some(false), Some(false)), false), None);
+    assert_eq!(cpu_fallback_notice(&attempted(Some(true), Some(true)), false), None);
+    assert_eq!(cpu_fallback_notice(&attempted(None, Some(true)), false), None);
+}
+
+/// The text notice and the JSON `fell_back` are the same predicate over every input.
+#[test]
+fn notice_and_json_fell_back_agree() {
+    for used in [None, Some(false), Some(true)] {
+        for tried in [None, Some(false), Some(true)] {
+            for forced in [false, true] {
+                let r = attempted(used, tried);
+                assert_eq!(
+                    cpu_fallback_notice(&r, forced).is_some(),
+                    backend_json(&r, forced)["fell_back"] == true,
+                    "{used:?} {tried:?} {forced}"
+                );
+            }
+        }
+    }
+}
