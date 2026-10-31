@@ -62,7 +62,7 @@ impl RemoteWorker {
 
         // Serialize task
         let message = RemoteMessage::SubmitTask(task);
-        let encoded = bincode::serialize(&message).map_err(|e| {
+        let encoded = aprender_legacy_codec::serialize(&message).map_err(|e| {
             error!("Failed to serialize task {task_id}: {e}");
             RepartirError::InvalidTask { reason: format!("Serialization failed: {e}") }
         })?;
@@ -115,10 +115,11 @@ impl RemoteWorker {
             drop(stream);
 
             // Deserialize result
-            let message: RemoteMessage = bincode::deserialize(&buffer).map_err(|e| {
-                error!("Failed to deserialize result from {}: {e}", self.address);
-                RepartirError::InvalidTask { reason: format!("Deserialization failed: {e}") }
-            })?;
+            let message: RemoteMessage =
+                aprender_legacy_codec::deserialize(&buffer).map_err(|e| {
+                    error!("Failed to deserialize result from {}: {e}", self.address);
+                    RepartirError::InvalidTask { reason: format!("Deserialization failed: {e}") }
+                })?;
 
             if let RemoteMessage::TaskResult(result) = message {
                 debug!("Received result for task {} from {}", result.task_id(), self.address);
@@ -270,60 +271,60 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
+    /// Reads one length-prefixed message; EOF is an `Err`.
+    async fn read_frame(stream: &mut tokio::net::TcpStream) -> std::io::Result<Vec<u8>> {
+        let mut len_bytes = [0u8; 4];
+        stream.read_exact(&mut len_bytes).await?;
+        let mut buffer = vec![0u8; u32::from_le_bytes(len_bytes) as usize];
+        stream.read_exact(&mut buffer).await?;
+        Ok(buffer)
+    }
+
+    /// Writes one length-prefixed message and flushes.
+    async fn write_frame(
+        stream: &mut tokio::net::TcpStream,
+        payload: &[u8],
+    ) -> std::io::Result<()> {
+        let len = u32::try_from(payload.len()).unwrap();
+        stream.write_all(&len.to_le_bytes()).await?;
+        stream.write_all(payload).await?;
+        stream.flush().await
+    }
+
+    /// Answers one request: a `SubmitTask` gets a canned success result, anything else is ignored.
+    async fn serve_one_request(stream: &mut tokio::net::TcpStream) -> std::io::Result<()> {
+        let buffer = read_frame(stream).await?;
+        if let Ok(RemoteMessage::SubmitTask(task)) =
+            aprender_legacy_codec::deserialize::<RemoteMessage>(&buffer)
+        {
+            let result = ExecutionResult::new(
+                task.id(),
+                0,
+                b"test output".to_vec(),
+                Vec::new(),
+                std::time::Duration::from_millis(10),
+            );
+            let encoded =
+                aprender_legacy_codec::serialize(&RemoteMessage::TaskResult(result)).unwrap();
+            write_frame(stream, &encoded).await?;
+        }
+        Ok(())
+    }
+
+    /// Serves requests on one connection until the peer closes or an I/O error occurs.
+    async fn serve_connection(mut stream: tokio::net::TcpStream) {
+        while serve_one_request(&mut stream).await.is_ok() {}
+    }
+
     /// Creates a test TCP server that echoes back a successful result.
     async fn start_test_worker() -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap().to_string();
 
         tokio::spawn(async move {
-            // Handle multiple connections in a loop
             loop {
-                if let Ok((mut stream, _)) = listener.accept().await {
-                    tokio::spawn(async move {
-                        // Handle multiple requests on the same connection
-                        loop {
-                            // Read task message
-                            let mut len_bytes = [0u8; 4];
-                            if stream.read_exact(&mut len_bytes).await.is_err() {
-                                return;
-                            }
-                            let len = u32::from_le_bytes(len_bytes) as usize;
-
-                            let mut buffer = vec![0u8; len];
-                            if stream.read_exact(&mut buffer).await.is_err() {
-                                return;
-                            }
-
-                            // Deserialize to get task ID
-                            if let Ok(RemoteMessage::SubmitTask(task)) =
-                                bincode::deserialize::<RemoteMessage>(&buffer)
-                            {
-                                // Send back a success result
-                                let result = ExecutionResult::new(
-                                    task.id(),
-                                    0,
-                                    b"test output".to_vec(),
-                                    Vec::new(),
-                                    std::time::Duration::from_millis(10),
-                                );
-
-                                let response = RemoteMessage::TaskResult(result);
-                                let encoded = bincode::serialize(&response).unwrap();
-
-                                // Send length and payload
-                                let response_len = u32::try_from(encoded.len()).unwrap();
-                                if stream.write_all(&response_len.to_le_bytes()).await.is_err() {
-                                    return;
-                                }
-                                if stream.write_all(&encoded).await.is_err() {
-                                    return;
-                                }
-                                if stream.flush().await.is_err() {
-                                    return;
-                                }
-                            }
-                        }
-                    });
+                if let Ok((stream, _)) = listener.accept().await {
+                    tokio::spawn(serve_connection(stream));
                 }
             }
         });
@@ -433,8 +434,8 @@ mod tests {
             .unwrap();
 
         let message = RemoteMessage::SubmitTask(task.clone());
-        let encoded = bincode::serialize(&message).unwrap();
-        let decoded: RemoteMessage = bincode::deserialize(&encoded).unwrap();
+        let encoded = aprender_legacy_codec::serialize(&message).unwrap();
+        let decoded: RemoteMessage = aprender_legacy_codec::deserialize(&encoded).unwrap();
 
         match decoded {
             RemoteMessage::SubmitTask(decoded_task) => {

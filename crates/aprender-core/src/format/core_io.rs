@@ -261,7 +261,7 @@ pub(crate) fn decompress_and_deserialize<M: DeserializeOwned>(
     compression: Compression,
 ) -> Result<M> {
     let payload_uncompressed = decompress_payload(payload_compressed, compression)?;
-    bincode::deserialize(&payload_uncompressed)
+    aprender_legacy_codec::deserialize(&payload_uncompressed)
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
@@ -420,7 +420,7 @@ pub fn load_from_bytes_encrypted<M: DeserializeOwned>(
     let payload_compressed = decrypt_encrypted_payload(password, &salt, &nonce, ciphertext)?;
 
     let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
-    bincode::deserialize(&payload_uncompressed)
+    aprender_legacy_codec::deserialize(&payload_uncompressed)
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 

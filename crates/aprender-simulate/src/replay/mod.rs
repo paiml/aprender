@@ -157,8 +157,8 @@ impl Checkpoint {
         compression_level: i32,
     ) -> SimResult<Self> {
         // Serialize state
-        let serialized =
-            bincode::serialize(state).map_err(|e| SimError::serialization(e.to_string()))?;
+        let serialized = aprender_legacy_codec::serialize(state)
+            .map_err(|e| SimError::serialization(e.to_string()))?;
 
         // Compress
         let compressed = codec::encode(&serialized, compression_level)?;
@@ -191,7 +191,8 @@ impl Checkpoint {
         let decompressed = codec::decode(&self.data)?;
 
         // Deserialize
-        bincode::deserialize(&decompressed).map_err(|e| SimError::serialization(e.to_string()))
+        aprender_legacy_codec::deserialize(&decompressed)
+            .map_err(|e| SimError::serialization(e.to_string()))
     }
 
     /// Get compressed size in bytes.
@@ -365,8 +366,8 @@ impl EventJournal {
         event: &T,
         rng_state: Option<&RngState>,
     ) -> SimResult<()> {
-        let event_data =
-            bincode::serialize(event).map_err(|e| SimError::serialization(e.to_string()))?;
+        let event_data = aprender_legacy_codec::serialize(event)
+            .map_err(|e| SimError::serialization(e.to_string()))?;
 
         let rng_state = if self.record_rng_state {
             rng_state.cloned()
@@ -602,11 +603,11 @@ impl StreamingCheckpointManager {
             rng_state: rng_state.clone(),
             version: (0, 1, 0),
         };
-        bincode::serialize_into(&mut encoder, &header)
+        aprender_legacy_codec::serialize_into(&mut encoder, &header)
             .map_err(|e| SimError::serialization(format!("Header serialize: {e}")))?;
 
         // Stream state directly into encoder (no intermediate Vec)
-        bincode::serialize_into(&mut encoder, state)
+        aprender_legacy_codec::serialize_into(&mut encoder, state)
             .map_err(|e| SimError::serialization(format!("State serialize: {e}")))?;
 
         let file = encoder.finish()?;
@@ -631,10 +632,10 @@ impl StreamingCheckpointManager {
         let file = std::fs::File::open(path)?;
         let mut decoder = codec::Decoder::new(file)?;
 
-        let header: CheckpointHeader = bincode::deserialize_from(&mut decoder)
+        let header: CheckpointHeader = aprender_legacy_codec::deserialize_from(&mut decoder)
             .map_err(|e| SimError::serialization(format!("Header deserialize: {e}")))?;
 
-        let state: S = bincode::deserialize_from(&mut decoder)
+        let state: S = aprender_legacy_codec::deserialize_from(&mut decoder)
             .map_err(|e| SimError::serialization(format!("State deserialize: {e}")))?;
 
         Ok((header, state))
@@ -719,8 +720,8 @@ impl SplitEventJournal {
         event_type: u32,
         event: &T,
     ) -> SimResult<()> {
-        let payload =
-            bincode::serialize(event).map_err(|e| SimError::serialization(e.to_string()))?;
+        let payload = aprender_legacy_codec::serialize(event)
+            .map_err(|e| SimError::serialization(e.to_string()))?;
 
         let header = EventHeader {
             time,
@@ -765,7 +766,7 @@ impl SplitEventJournal {
             return Err(SimError::journal("Payload offset out of bounds"));
         }
 
-        bincode::deserialize(&self.payloads[start..end])
+        aprender_legacy_codec::deserialize(&self.payloads[start..end])
             .map_err(|e| SimError::journal(format!("Payload deserialize: {e}")))
     }
 
@@ -832,8 +833,8 @@ impl VersionedEntry {
         entry_type: impl Into<String>,
         data: &T,
     ) -> SimResult<Self> {
-        let payload =
-            bincode::serialize(data).map_err(|e| SimError::serialization(e.to_string()))?;
+        let payload = aprender_legacy_codec::serialize(data)
+            .map_err(|e| SimError::serialization(e.to_string()))?;
 
         Ok(Self {
             version,
@@ -848,7 +849,8 @@ impl VersionedEntry {
     ///
     /// Returns error if deserialization fails.
     pub fn deserialize<T: serde::de::DeserializeOwned>(&self) -> SimResult<T> {
-        bincode::deserialize(&self.payload).map_err(|e| SimError::serialization(e.to_string()))
+        aprender_legacy_codec::deserialize(&self.payload)
+            .map_err(|e| SimError::serialization(e.to_string()))
     }
 }
 
