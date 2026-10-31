@@ -38,16 +38,80 @@ END='[.;:,!]?([[:space:]]+@[0-9a-f]{7,40})?[.;:,!]?[[:space:]]*$'
 quorum_receipts() {
   grep -iE "^(COMMENTED|APPROVED)"$'\t'"quorum[: ]+3/3[ :,;-]+(AGREED[ :,;-]+)?(PASS|APPROVED?)${END}" <<<"$1" | grep -viE "$NEG" | wc -l
 }
+# bump_patch PATCH -> 0 when every changed line of a unified-diff PATCH is a `version = "X"` -> `version = "Y"` edit
+# (one X, one Y, X != Y, same lines on both sides once X/Y are masked; a dependency line like
+# `name = { path = "..", version = "X" }` qualifies, `rust-version`, external crate versions and checksums do not).
+# Fails closed on an empty patch (GitHub omits it for large/binary diffs) and on anything else.
+# bump_lines_ok PATCH -> 0 when every changed line is (a) a bare `version = "X.Y.Z"` key while the nearest section header visible in
+# its hunk (context, since a hunk has only 3 lines) is [package], [workspace.package] or [[package]] (Cargo.lock), or (b) a
+# `key = { ... path = "..." ... version = "X.Y.Z" ... }` dependency line. No visible header = fail closed. Trailing `# comments`
+# are stripped (outside quotes) before matching, so `# was { path = "x" }` cannot supply a path key. A changed header is a failure.
+bump_lines_ok() {
+  awk '
+    function strip(s,  i, c, q, o) { q = 0; o = ""; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (c == "\"") q = !q; if (c == "#" && !q) break; o = o c } return o }
+    /^@@/ { sec = ""; next }
+    /^(---|[+][+][+])/ { next }
+    { k = substr($0, 1, 1); t = strip(substr($0, 2)); gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (t ~ /^[[]/ && k == " ") { sec = t; next }
+      if (k != "-" && k != "+") next
+      if (t ~ /^[[]/) bad = 1
+      else if (t ~ /^version *= *"[0-9]+[.][0-9]+[.][0-9]+[^"]*"$/) { if (sec !~ /^([[]package[]]|[[]workspace[.]package[]]|[[][[]package[]][]])$/) bad = 1 }
+      else if (t ~ /^[A-Za-z0-9_-]+ *= *[{].*[{, ]path *= *"[^"]*"/ && t ~ /[{, ]version *= *"[0-9]+[.][0-9]+[.][0-9]+[^"]*"/) { }
+      else bad = 1 }
+    END { exit bad }' <<<"$1"
+}
+# mask_ver V < LINES -> each line minus its leading +/- with every literal "V" replaced by "V" (the word V), no regex
+mask_ver() { awk -v v="\"$1\"" '{ $0 = substr($0, 2); o = ""; while ((i = index($0, v)) > 0) { o = o substr($0, 1, i - 1) "\"V\""; $0 = substr($0, i + length(v)) } print o $0 }'; }
+bump_patch() {
+  [ -n "$1" ] || return 1
+  local old new xs ys x y mo mn
+  old=$(grep -E '^-' <<<"$1" | grep -vE '^---' ); new=$(grep -E '^\+' <<<"$1" | grep -vE '^\+\+\+')
+  [ -n "$old" ] && [ -n "$new" ] || return 1
+  [ "$(wc -l <<<"$old")" -eq "$(wc -l <<<"$new")" ] || return 1
+  # every changed line must be a workspace `version` edit, judged line by line with the section it sits in (bump_lines_ok)
+  bump_lines_ok "$1" || return 1
+  # a registry package (Cargo.lock `source =`/`checksum =` context) or a [*dependencies*] table is not a workspace version
+  grep -qE '^ (source|checksum) *=' <<<"$1" && return 1
+  xs=$(grep -oE '(^[-+]|[^-_[:alnum:]])version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$old" | grep -oE '"[^"]*"' | sort -u)
+  ys=$(grep -oE '(^[-+]|[^-_[:alnum:]])version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$new" | grep -oE '"[^"]*"' | sort -u)
+  [ "$(wc -l <<<"$xs")" -eq 1 ] && [ "$(wc -l <<<"$ys")" -eq 1 ] && [ "$xs" != "$ys" ] || return 1
+  x=${xs//\"/}; y=${ys//\"/}
+  # every line must carry its own side's version and nothing else may differ. Literal compare (awk index), never a sed pattern:
+  # a version holding / [ . * would otherwise break or loosen the pattern. Any failure fails closed.
+  mo=$(mask_ver "$x" <<<"$old") && mn=$(mask_ver "$y" <<<"$new") || return 1
+  [ -n "$mo" ] && [ "$(sort <<<"$mo")" = "$(sort <<<"$mn")" ] || return 1
+  grep -qF "\"$x\"" <<<"$new" && return 1
+  return 0
+}
+# gate_changed FILES_JSONL -> 0 when the PR changes gate content. A gate-path file is tolerated ONLY when it is a modified
+# (not renamed/added/deleted) Cargo.toml / Cargo.lock whose whole patch is a version bump (bump_patch). Ruling N35 item 2.
+gate_changed() {
+  local line fn st pv pt
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    fn=$(jq -r '.filename' <<<"$line") || return 0
+    pv=$(jq -r '.previous_filename // empty' <<<"$line") || return 0
+    st=$(jq -r '.status' <<<"$line") || return 0
+    if [ -n "$pv" ] && gate_paths "$pv"; then return 0; fi
+    gate_paths "$fn" || continue
+    [ "$st" = modified ] && [ -z "$pv" ] || return 0
+    grep -qE '^(.*/)?Cargo\.(toml|lock)$' <<<"$fn" || return 0
+    pt=$(jq -r '.patch // empty' <<<"$line") || return 0
+    bump_patch "$pt" || return 0
+  done <<<"$1"
+  return 1
+}
 # needs_seats PR HEAD -> prints the skip reason and returns 0 (skip) unless the PR is NON-gate content AND holds a
 # "quorum 3/3 [AGREED] PASS" receipt review bound to HEAD with no request-changes/FAIL/BLOCKING bound to HEAD.
 # Gate-content PRs are never enqueued by the feeder (operator/arbiter arms them; 16:18Z #5849 was enqueued
 # without a receipt). FAILS CLOSED: unreadable file list or review list, or an empty HEAD, means skip.
 needs_seats() {
-  local f rv rc q
+  local f fj rv rc q
   [ -n "$2" ] || { echo "skip (head unreadable)"; return 0; }
-  f=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[]|.filename, (.previous_filename // empty)' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
+  fj=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[]|{filename,status,previous_filename,patch}|tojson' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
+  f=$(jq -r '.filename, (.previous_filename // empty)' <<<"$fj" 2>/dev/null) || { echo "skip (files unparsable)"; return 0; }
   [ -n "$f" ] || { echo "skip (file list empty)"; return 0; }
-  gate_paths "$f" && { echo "skip (gate content: the feeder never enqueues a gate change)"; return 0; }
+  gate_changed "$fj" && { echo "skip (gate content: the feeder never enqueues a gate change)"; return 0; }
   # reviews bound to HEAD (commit_id); one body per line, newlines folded
   rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
   rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST[-_ ]?CHANGES|\bFAIL|\bREJECT|\bBLOCKING\b|\bBLOCKER|\bBLOCKS\b|NO[-_ ]?GO|DO[-_ ]?N(OT|.?T)[-_ ]MERGE|CHANGES[-_ ]REQUESTED' <<<"$rv")
@@ -146,8 +210,13 @@ if [ "${1:-}" = --self-test ]; then
   for p in scripts/contracts_gate.sh scripts/mutate_foo_guard.sh scripts/lib_baseline_ratchet.sh scripts/pv_bin.sh scripts/pmat_bin.sh scripts/tests/x.sh; do gate_paths "$p" || { echo "FAIL gate_paths $p"; fail=1; }; done
   # needs_seats with a stubbed gh: REVIEWS is "STATE<TAB>body" lines, FILES the PR file list
   # FILES lines are "name" or "name<TAB>previous_name"; the stub feeds them through the REAL --jq filter, so the filter is under test
-  gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1; local flt=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && flt=$2; shift; done
-      printf '%s\n' "${FILES:-docs/x.md}" | jq -Rn '[inputs|split("\t")|{filename:.[0]}+(if length>1 then {previous_filename:.[1]} else {} end)]' | jq -r "$flt";;
+  # FILES lines: name[<TAB>previous_name[<TAB>patch_file]]; the stub emits the JSON lines the real --jq filter would
+  # FILES lines: name[<TAB>previous_name|-[<TAB>patch_file|-[<TAB>status]]]; the stub emits the GitHub files array and pipes it through
+  # the --jq filter needs_seats really passes, so a change to the real filter changes what the self-test sees
+  gh() { local ep=$2 jf=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && jf=$2; shift; done
+    case "$ep" in */files) [ "${CASE:-}" = filefail ] && return 1
+      printf '%s\n' "${FILES:-docs/x.md}" | while IFS=$'\t' read -r n pv pf st; do
+        jq -nc --arg n "$n" --arg pv "$([ "$pv" = - ] || printf %s "$pv")" --arg p "$( [ -n "$pf" ] && [ "$pf" != - ] && printf %s "$(<"$pf")" )" --arg st "$st" '{sha:"s",filename:$n,status:(if $st!="" then $st elif $pv!="" then "renamed" else "modified" end),additions:1,previous_filename:(if $pv!="" then $pv else null end),patch:(if $p!="" then $p else null end)}'; done | jq -sc '.' | jq -r "$jf";;
     */reviews) printf '%b' "${REVIEWS:-}";; esac; }
   ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tquorum 3/3 AGREED PASS\n'
@@ -164,6 +233,52 @@ if [ "${1:-}" = --self-test ]; then
   for p in rustfmt.toml .rustfmt.toml .gitignore codecov.yml build.rs crates/foo/Cargo.toml crates/foo/build.rs; do
     eq "gate path $p + receipt -> skip" "$(FILES=$p REVIEWS="$Q3" ns)" 0
   done
+  # N35 item 2: a version-bump-only diff is enqueueable; a bump plus one real gate line, or a gate-only diff, is not
+  FX=$(mktemp -d); trap 'rm -rf "${FX:?}"' EXIT
+  printf '%s\n' '@@ -1,3 +1,3 @@' ' [workspace.package]' '-version = "0.72.2"' '+version = "0.72.3"' '@@ -9,2 +9,2 @@' '-aprender-core = { path = "crates/aprender-core", version = "0.72.2" }' '+aprender-core = { path = "crates/aprender-core", version = "0.72.3" }' > "$FX/toml.patch"
+  printf '%s\n' '@@ -5,3 +5,3 @@' ' [[package]]' ' name = "aprender-core"' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/lock.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2"' '+version = "0.72.3"' '-lto = "thin"' '+lto = "fat"' > "$FX/toml-extra.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-rust-version = "1.80.0"' '+rust-version = "1.81.0"' > "$FX/rustver.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-serde = { version = "1.0.1" }' '+serde = { version = "1.0.2" }' '-tokio = { version = "1.0.1" }' '+tokio = { version = "1.0.3" }' > "$FX/ext.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-echo old' '+echo new' > "$FX/gate.patch"
+  BUMP=$'Cargo.toml\t-\t'"$FX/toml.patch"$'\nCargo.lock\t-\t'"$FX/lock.patch"$'\ncrates/facades/Cargo.lock\t-\t'"$FX/lock.patch"$'\ncrates/foo/Cargo.toml\t-\t'"$FX/toml.patch"$'\nevidence/crux/0.72.3/x.json'
+  eq 'bump-only diff + receipt -> armable' "$(FILES="$BUMP" REVIEWS="$Q3" ns)" 1
+  eq 'bump-only diff, no receipt -> skip' "$(FILES="$BUMP" REVIEWS='' ns)" 0
+  eq 'bump + one gate-file line -> skip' "$(FILES="$BUMP"$'\nscripts/release_lanes.sh\t-\t'"$FX/gate.patch" REVIEWS="$Q3" ns)" 0
+  eq 'bump + gate file without patch -> skip' "$(FILES="$BUMP"$'\nscripts/release_lanes.sh' REVIEWS="$Q3" ns)" 0
+  eq 'gate-only diff -> skip' "$(FILES=$'scripts/release_lanes.sh\t-\t'"$FX/gate.patch" REVIEWS="$Q3" ns)" 0
+  eq 'Cargo.toml with an extra non-version line -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/toml-extra.patch" REVIEWS="$Q3" ns)" 0
+  eq 'rust-version change -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/rustver.patch" REVIEWS="$Q3" ns)" 0
+  eq 'external dependency versions -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/ext.patch" REVIEWS="$Q3" ns)" 0
+  # review 6531: single external bump, registry lock entry, non-Cargo gate file, non-modified status, regex-special versions
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-serde = { version = "1.0.1" }' '+serde = { version = "1.0.2" }' > "$FX/ext1.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [dependencies.serde]' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/exttable.patch"
+  printf '%s\n' '@@ -5,4 +5,4 @@' ' name = "serde"' '-version = "1.0.1"' '+version = "1.0.2"' ' source = "registry+https://github.com/rust-lang/crates.io-index"' > "$FX/extlock.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [package]' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/ver.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [package]' '-version = "0.72.2-[a/b.*"' '+version = "0.72.3-[a/b.*"' > "$FX/special.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-aprender-core = { path = "crates/aprender-core", version = "0.72.2" }' '+aprender-core = { path = "crates/aprender-core", version = "0.72.3" }' > "$FX/pathdep.patch"
+  # review 6531b: header must be visible and nearest; path must be a real key
+  printf '%s\n' '@@ -1,5 +1,5 @@' ' [dependencies.serde]' ' default-features = false' ' features = ["derive"]' ' optional = true' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/dep3.patch"
+  printf '%s\n' '@@ -1,3 +1,3 @@' ' [patch.crates-io.serde]' ' git = "https://x/y"' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/patch.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/nohdr.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-serde = { version = "1.0.1" } # was { path = "x" }' '+serde = { version = "1.0.2" } # was { path = "x" }' > "$FX/cmt.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [package]' ' [dependencies.serde]' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/after.patch"
+  eq '[dependencies.serde] with 3 keys above version -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/dep3.patch" REVIEWS="$Q3" ns)" 0
+  eq '[patch.crates-io.serde] header -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/patch.patch" REVIEWS="$Q3" ns)" 0
+  eq 'bare version with no header in the hunk -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/nohdr.patch" REVIEWS="$Q3" ns)" 0
+  eq 'bare version under a dependency header that follows [package] -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/after.patch" REVIEWS="$Q3" ns)" 0
+  eq 'path only inside a trailing comment -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/cmt.patch" REVIEWS="$Q3" ns)" 0
+  eq 'single external dep bump -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/ext1.patch" REVIEWS="$Q3" ns)" 0
+  eq 'external [dependencies.x] table bump -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/exttable.patch" REVIEWS="$Q3" ns)" 0
+  eq 'Cargo.lock registry package bump -> skip' "$(FILES=$'Cargo.lock\t-\t'"$FX/extlock.patch" REVIEWS="$Q3" ns)" 0
+  eq 'version-only patch on a non-Cargo gate file -> skip' "$(FILES=$'scripts/x.sh\t-\t'"$FX/ver.patch" REVIEWS="$Q3" ns)" 0
+  for st in added copied changed removed; do
+    eq "Cargo.toml version bump with status $st -> skip" "$(FILES=$'Cargo.toml\t-\t'"$FX/ver.patch"$'\t'"$st" REVIEWS="$Q3" ns)" 0
+  done
+  eq 'version with / [ . * (regex-special) -> armable' "$(FILES=$'Cargo.toml\t-\t'"$FX/special.patch" REVIEWS="$Q3" ns)" 1
+  eq 'workspace path dep version bump -> armable' "$(FILES=$'Cargo.toml\t-\t'"$FX/pathdep.patch" REVIEWS="$Q3" ns)" 1
+  eq 'Cargo.toml with no patch (large/binary) -> skip' "$(FILES=Cargo.toml REVIEWS="$Q3" ns)" 0
+  eq 'Cargo.toml renamed -> skip' "$(FILES=$'Cargo.toml\tother/Cargo.toml\t'"$FX/toml.patch" REVIEWS="$Q3" ns)" 0
   for r in 'seat w3 BLOCKER' 'NO-GO' 'seat w3 BLOCKS' 'DO NOT MERGE'; do
     eq "review '$r' at head -> skip" "$(REVIEWS="${Q3}COMMENTED\t$r\n" ns)" 0
   done
@@ -194,7 +309,7 @@ case "$*" in
   *"mergeQueue(branch"*) printf '{"data":{"repository":{"mergeQueue":{"entries":{"totalCount":0}},"pullRequests":{"nodes":[{"number":7,"isDraft":false,"baseRefName":"main","mergeStateStatus":"CLEAN","autoMergeRequest":null,"mergeQueueEntry":null}]}}}}';;
   *graphql*) echo QUEUED;;
   "pr view"*) echo deadbeefdeadbeef;;
-  */files*) printf '%s\n' "$T_FILES";;
+  */files*) printf '%s\n' "$T_FILES" | jq -Rc '{filename:.,status:"modified"}';;
   */reviews*) printf '%b' "$T_REVIEWS";;
   */commits*) echo 0;;
 esac
