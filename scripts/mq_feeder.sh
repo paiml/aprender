@@ -42,6 +42,24 @@ quorum_receipts() {
 # (one X, one Y, X != Y, same lines on both sides once X/Y are masked; a dependency line like
 # `name = { path = "..", version = "X" }` qualifies, `rust-version`, external crate versions and checksums do not).
 # Fails closed on an empty patch (GitHub omits it for large/binary diffs) and on anything else.
+# bump_lines_ok PATCH -> 0 when every changed line is (a) a bare `version = "X.Y.Z"` key while the nearest section header visible in
+# its hunk (context, since a hunk has only 3 lines) is [package], [workspace.package] or [[package]] (Cargo.lock), or (b) a
+# `key = { ... path = "..." ... version = "X.Y.Z" ... }` dependency line. No visible header = fail closed. Trailing `# comments`
+# are stripped (outside quotes) before matching, so `# was { path = "x" }` cannot supply a path key. A changed header is a failure.
+bump_lines_ok() {
+  awk '
+    function strip(s,  i, c, q, o) { q = 0; o = ""; for (i = 1; i <= length(s); i++) { c = substr(s, i, 1); if (c == "\"") q = !q; if (c == "#" && !q) break; o = o c } return o }
+    /^@@/ { sec = ""; next }
+    /^(---|[+][+][+])/ { next }
+    { k = substr($0, 1, 1); t = strip(substr($0, 2)); gsub(/^[ \t]+|[ \t]+$/, "", t)
+      if (t ~ /^[[]/ && k == " ") { sec = t; next }
+      if (k != "-" && k != "+") next
+      if (t ~ /^[[]/) bad = 1
+      else if (t ~ /^version *= *"[0-9]+[.][0-9]+[.][0-9]+[^"]*"$/) { if (sec !~ /^([[]package[]]|[[]workspace[.]package[]]|[[][[]package[]][]])$/) bad = 1 }
+      else if (t ~ /^[A-Za-z0-9_-]+ *= *[{].*[{, ]path *= *"[^"]*"/ && t ~ /[{, ]version *= *"[0-9]+[.][0-9]+[.][0-9]+[^"]*"/) { }
+      else bad = 1 }
+    END { exit bad }' <<<"$1"
+}
 # mask_ver V < LINES -> each line minus its leading +/- with every literal "V" replaced by "V" (the word V), no regex
 mask_ver() { awk -v v="\"$1\"" '{ $0 = substr($0, 2); o = ""; while ((i = index($0, v)) > 0) { o = o substr($0, 1, i - 1) "\"V\""; $0 = substr($0, i + length(v)) } print o $0 }'; }
 bump_patch() {
@@ -50,16 +68,10 @@ bump_patch() {
   old=$(grep -E '^-' <<<"$1" | grep -vE '^---' ); new=$(grep -E '^\+' <<<"$1" | grep -vE '^\+\+\+')
   [ -n "$old" ] && [ -n "$new" ] || return 1
   [ "$(wc -l <<<"$old")" -eq "$(wc -l <<<"$new")" ] || return 1
-  # every changed line must be a workspace `version` edit: a bare `version = "X"` key, or a dependency line that names a
-  # `path =` key (a workspace member). `serde = { version = "1" }` has no path, so an external dep bump never qualifies.
-  local l
-  while IFS= read -r l; do
-    [[ $l =~ ^[-+]version\ *=\ *\"[0-9]+\.[0-9]+\.[0-9]+[^\"]*\" ]] && continue
-    [[ $l =~ ^[-+][^#]*\{.*[{,\ ]path\ *=\ *\"[^\"]*\" ]] && [[ $l =~ [{,\ ]version\ *=\ *\"[0-9]+\.[0-9]+\.[0-9]+[^\"]*\" ]] && continue
-    return 1
-  done <<<"$old"$'\n'"$new"
+  # every changed line must be a workspace `version` edit, judged line by line with the section it sits in (bump_lines_ok)
+  bump_lines_ok "$1" || return 1
   # a registry package (Cargo.lock `source =`/`checksum =` context) or a [*dependencies*] table is not a workspace version
-  grep -qE '^ (source|checksum) *=|^[ +-]?\[[^]]*dependencies' <<<"$1" && return 1
+  grep -qE '^ (source|checksum) *=' <<<"$1" && return 1
   xs=$(grep -oE '(^[-+]|[^-_[:alnum:]])version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$old" | grep -oE '"[^"]*"' | sort -u)
   ys=$(grep -oE '(^[-+]|[^-_[:alnum:]])version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$new" | grep -oE '"[^"]*"' | sort -u)
   [ "$(wc -l <<<"$xs")" -eq 1 ] && [ "$(wc -l <<<"$ys")" -eq 1 ] && [ "$xs" != "$ys" ] || return 1
@@ -224,7 +236,7 @@ if [ "${1:-}" = --self-test ]; then
   # N35 item 2: a version-bump-only diff is enqueueable; a bump plus one real gate line, or a gate-only diff, is not
   FX=$(mktemp -d); trap 'rm -rf "${FX:?}"' EXIT
   printf '%s\n' '@@ -1,3 +1,3 @@' ' [workspace.package]' '-version = "0.72.2"' '+version = "0.72.3"' '@@ -9,2 +9,2 @@' '-aprender-core = { path = "crates/aprender-core", version = "0.72.2" }' '+aprender-core = { path = "crates/aprender-core", version = "0.72.3" }' > "$FX/toml.patch"
-  printf '%s\n' '@@ -5,3 +5,3 @@' ' name = "aprender-core"' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/lock.patch"
+  printf '%s\n' '@@ -5,3 +5,3 @@' ' [[package]]' ' name = "aprender-core"' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/lock.patch"
   printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2"' '+version = "0.72.3"' '-lto = "thin"' '+lto = "fat"' > "$FX/toml-extra.patch"
   printf '%s\n' '@@ -1,2 +1,2 @@' '-rust-version = "1.80.0"' '+rust-version = "1.81.0"' > "$FX/rustver.patch"
   printf '%s\n' '@@ -1,2 +1,2 @@' '-serde = { version = "1.0.1" }' '+serde = { version = "1.0.2" }' '-tokio = { version = "1.0.1" }' '+tokio = { version = "1.0.3" }' > "$FX/ext.patch"
@@ -242,9 +254,20 @@ if [ "${1:-}" = --self-test ]; then
   printf '%s\n' '@@ -1,2 +1,2 @@' '-serde = { version = "1.0.1" }' '+serde = { version = "1.0.2" }' > "$FX/ext1.patch"
   printf '%s\n' '@@ -1,2 +1,2 @@' ' [dependencies.serde]' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/exttable.patch"
   printf '%s\n' '@@ -5,4 +5,4 @@' ' name = "serde"' '-version = "1.0.1"' '+version = "1.0.2"' ' source = "registry+https://github.com/rust-lang/crates.io-index"' > "$FX/extlock.patch"
-  printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/ver.patch"
-  printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2-[a/b.*"' '+version = "0.72.3-[a/b.*"' > "$FX/special.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [package]' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/ver.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [package]' '-version = "0.72.2-[a/b.*"' '+version = "0.72.3-[a/b.*"' > "$FX/special.patch"
   printf '%s\n' '@@ -1,2 +1,2 @@' '-aprender-core = { path = "crates/aprender-core", version = "0.72.2" }' '+aprender-core = { path = "crates/aprender-core", version = "0.72.3" }' > "$FX/pathdep.patch"
+  # review 6531b: header must be visible and nearest; path must be a real key
+  printf '%s\n' '@@ -1,5 +1,5 @@' ' [dependencies.serde]' ' default-features = false' ' features = ["derive"]' ' optional = true' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/dep3.patch"
+  printf '%s\n' '@@ -1,3 +1,3 @@' ' [patch.crates-io.serde]' ' git = "https://x/y"' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/patch.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/nohdr.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-serde = { version = "1.0.1" } # was { path = "x" }' '+serde = { version = "1.0.2" } # was { path = "x" }' > "$FX/cmt.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [package]' ' [dependencies.serde]' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/after.patch"
+  eq '[dependencies.serde] with 3 keys above version -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/dep3.patch" REVIEWS="$Q3" ns)" 0
+  eq '[patch.crates-io.serde] header -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/patch.patch" REVIEWS="$Q3" ns)" 0
+  eq 'bare version with no header in the hunk -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/nohdr.patch" REVIEWS="$Q3" ns)" 0
+  eq 'bare version under a dependency header that follows [package] -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/after.patch" REVIEWS="$Q3" ns)" 0
+  eq 'path only inside a trailing comment -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/cmt.patch" REVIEWS="$Q3" ns)" 0
   eq 'single external dep bump -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/ext1.patch" REVIEWS="$Q3" ns)" 0
   eq 'external [dependencies.x] table bump -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/exttable.patch" REVIEWS="$Q3" ns)" 0
   eq 'Cargo.lock registry package bump -> skip' "$(FILES=$'Cargo.lock\t-\t'"$FX/extlock.patch" REVIEWS="$Q3" ns)" 0
