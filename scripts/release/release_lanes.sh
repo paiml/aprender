@@ -85,7 +85,7 @@ ASSETS_ENV='^(Set up job|Complete job|Set up runner|Run actions/checkout@.*|Chec
 caller_error() { printf '%s: caller error: %s\n' "$PROG" "$*" >&2; exit 3; }
 tsv() { local IFS="$TAB"; printf '%s\n' "$*"; }
 # called PREFIX -> PREFIX as this run's job names carry it: after the caller job's name when the workflow was called
-called() { printf '%s%s\n' "${LANES_CALLER:+$LANES_CALLER / }" "$1"; }
+called() { printf '%s%s\n' "${LANES_CALLER:+$LANES_CALLER / }" "$1"; }  # MUTANT-ANCHOR: m34
 
 # ---------------------------------------------------------------- pure judges: print VERDICT, TAB, REASON --------
 # judge_jobs PREFIX ENV_RE (a run's jobs JSON on stdin). The jobs a lane judges are the ones named `PREFIX / ...`
@@ -95,20 +95,21 @@ called() { printf '%s%s\n' "${LANES_CALLER:+$LANES_CALLER / }" "$1"; }
 judge_jobs() {
     jq -r --arg p "$1" --arg env "$2" '
         def cut: (.conclusion == "failure" or .conclusion == "timed_out");
-        def failed_step: [.steps[]? | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled") | .name][0] // "";
-        [.jobs[]? | select(.name | startswith($p + " / "))] as $js
+        def failed_step: [.steps[]? | select(.conclusion == "failure" or .conclusion == "timed_out" or .conclusion == "cancelled") | .name][0] // "";  # MUTANT-ANCHOR: m10
+        [.jobs[]? | select(.name | startswith($p + " / "))] as $js  # MUTANT-ANCHOR: m18
         | if ($js | length) == 0 then "not_measured\tno job named \($p) / ... in this run"
-          elif any($js[]; .status != "completed") then
+          elif any($js[]; .status != "completed") then  # MUTANT-ANCHOR: m03
             ($js | map(select(.status != "completed"))[0]) as $j | "not_measured\t\($j.name) is still \($j.status)"
           else
             [$js[] | select(cut) | {name, step: failed_step}] as $f
-            | [$f[] | select(.step != "" and (.step | test($env) | not))] as $red
+            # MUTANT-ANCHOR: m02
+            | [$f[] | select(.step != "" and (.step | test($env) | not))] as $red  # MUTANT-ANCHOR: m01
             | if ($red | length) > 0 then
                 "red\t\($red[0].name): step \"\($red[0].step)\" failed" + (if ($red | length) > 1 then " (+\(($red | length) - 1) more job(s))" else "" end)
               elif ($f | length) > 0 then
                 if $f[0].step == "" then "not_measured\t\($f[0].name) failed with no failed step recorded (runner lost?)"
                 else "not_measured\t\($f[0].name): precondition step \"\($f[0].step)\" failed, so the code was not measured" end
-              elif any($js[]; .conclusion != "success") then
+              elif any($js[]; .conclusion != "success") then  # MUTANT-ANCHOR: m04
                 ($js | map(select(.conclusion != "success"))[0]) as $j | "not_measured\t\($j.name) ended \($j.conclusion)"
               else "green\tall \($js | length) job(s) of \($p) succeeded" end
           end' 2>/dev/null || printf 'not_measured\tthe job list did not parse\n'
@@ -119,11 +120,11 @@ judge_jobs() {
 # commit is named in the reason only when its sha is as long as C's.
 judge_cpu() {
     awk -F '\t' -v c="$1" -v shalen="${#1}" '
-        NF >= 5 && $5 == c { found = 1
+        NF >= 5 && $5 == c { found = 1  # MUTANT-ANCHOR: m06
             if ($3 != "completed") { printf "not_measured\tinfra run %s on C is still %s\n", $1, $3; exit }
-            if ($4 == "success" && $2 == 1) { printf "green\tinfra run %s tested C: success at attempt 1\n", $1; exit }
+            if ($4 == "success" && $2 == 1) { printf "green\tinfra run %s tested C: success at attempt 1\n", $1; exit }  # MUTANT-ANCHOR: m05
             if ($4 == "success") { printf "red\tinfra run %s tested C: success only at attempt %s, a retried green is not a green\n", $1, $2; exit }
-            if ($4 == "failure" || $4 == "timed_out" || $4 == "startup_failure") { printf "red\tinfra run %s tested C: %s\n", $1, $4; exit }
+            if ($4 == "failure" || $4 == "timed_out" || $4 == "startup_failure") { printf "red\tinfra run %s tested C: %s\n", $1, $4; exit }  # MUTANT-ANCHOR: m17
             printf "not_measured\tinfra run %s tested C and ended %s\n", $1, $4; exit }
         NF >= 5 && $3 != "completed" && run == "" { run = $1 }
         NF >= 5 && $3 == "completed" && $5 ~ /^[0-9a-f]+$/ && length($5) == shalen && newest == "" { newest = substr($5, 1, 12) }
@@ -137,13 +138,14 @@ judge_cpu() {
 # newest (sort -V, not strings). A prerelease of a published version (0.70.1-rc.1 vs 0.70.1) is NOT bumped: `^0.70.1-rc.1`
 # matches the published 0.70.1, the same false red.
 is_bumped() {
-    local m="${1%%[-+]*}" r="${2%%[-+]*}"
-    [ -n "$m" ] && [ -n "$r" ] && [ "$m" != "$r" ] && [ "$(printf '%s\n%s\n' "$r" "$m" | sort -V | tail -n 1)" = "$m" ]
+    # MUTANT-ANCHOR: m21
+    local m="${1%%[-+]*}" r="${2%%[-+]*}"  # MUTANT-ANCHOR: m15
+    [ -n "$m" ] && [ -n "$r" ] && [ "$m" != "$r" ] && [ "$(printf '%s\n%s\n' "$r" "$m" | sort -V | tail -n 1)" = "$m" ]  # MUTANT-ANCHOR: m11
 }
 
 # registry_newest (the crates.io sparse index lines on stdin) -> the newest version that is not yanked
 registry_newest() {
-    jq -r 'select(.yanked | not) | .vers' 2>/dev/null | sort -V | tail -n 1
+    jq -r 'select(.yanked | not) | .vers' 2>/dev/null | sort -V | tail -n 1  # MUTANT-ANCHOR: m16
 }
 
 # judge_dryrun RC MAIN_VERSION REGISTRY_NEWEST. RC is `-` when the gate was not run.
@@ -151,12 +153,12 @@ judge_dryrun() {
     local rc=$1 main=$2 reg=$3
     [ -n "$main" ] || { printf 'not_measured\tcargo metadata named no version for aprender at C\n'; return; }
     [ -n "$reg" ] || { printf 'not_measured\tthe crates.io index for aprender was not read\n'; return; }
-    if ! is_bumped "$main" "$reg"; then
+    if ! is_bumped "$main" "$reg"; then  # MUTANT-ANCHOR: m07
         printf 'not_measured\tmain is %s and crates.io already has %s: --verify would resolve the registry copy (the gate'"'"'s documented false red); main must be bumped first (BLD-002 R3)\n' "$main" "$reg"
         return
     fi
     case "$rc" in
-        0) printf 'green\trc_publish_gate --verify green at %s (crates.io newest %s)\n' "$main" "$reg" ;;
+        0) printf 'green\trc_publish_gate --verify green at %s (crates.io newest %s)\n' "$main" "$reg" ;;  # MUTANT-ANCHOR: m08
         1) printf 'red\trc_publish_gate --verify found a publish defect at %s\n' "$main" ;;
         -) printf 'not_measured\trc_publish_gate was not run\n' ;;
         *) printf 'not_measured\trc_publish_gate could not measure (exit %s)\n' "$rc" ;;
@@ -173,14 +175,14 @@ tested_sha() {
     local log s a
     log="$(tr -d '\r')"
     s="$(printf '%s\n' "$log" | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?[[:space:]]*tested-sha: .+$' || true; } \
-        | sed -E 's/^.*tested-sha: //; s/[[:space:]]+$//' | sort -u)"
+        | sed -E 's/^.*tested-sha: //; s/[[:space:]]+$//' | sort -u)"  # MUTANT-ANCHOR: m20
     a="$(printf '%s\n' "$log" | { grep -E '^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z )?    commit:  [0-9a-f]{7,40}$' || true; } \
-        | sed -E 's/^.*    commit:  //' | sort -u)"
+        | sed -E 's/^.*    commit:  //' | sort -u)"  # MUTANT-ANCHOR: m20
     [[ "$s" =~ ^[0-9a-f]{40}$ ]] || return 0
     case "$a" in
         "") ;;
-        *$'\n'*) return 0 ;;
-        *) case "$s" in "$a"*) ;; *) return 0 ;; esac ;;
+        *$'\n'*) return 0 ;;  # MUTANT-ANCHOR: m23
+        *) case "$s" in "$a"*) ;; *) return 0 ;; esac ;;  # MUTANT-ANCHOR: m24
     esac
     printf '%s\n' "$s"
 }
@@ -193,10 +195,10 @@ emit() {
     v="${line%%"$TAB"*}"; r="${line#*"$TAB"}"
     [ "$r" != "$line" ] || r=""
     case "$v" in
-        green|red|not_measured) ;;
+        green|red|not_measured) ;;  # MUTANT-ANCHOR: m09
         *) r="the judge printed no verdict (got: ${line:0:80})"; v=not_measured ;;
     esac
-    r="$(printf '%s' "$r" | tr -d '\r\n')"
+    r="$(printf '%s' "$r" | tr -d '\r\n')"  # MUTANT-ANCHOR: m19
     if [ -n "${GITHUB_OUTPUT:-}" ]; then printf 'verdict=%s\nreason=%s\n' "$v" "$r" >> "$GITHUB_OUTPUT" || return 3; fi
     if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then printf '**%s: %s** — %s\n' "$lane" "$v" "$r" >> "$GITHUB_STEP_SUMMARY"; fi
     printf '%s %s: %s — %s\n' "$PROG" "$lane" "$v" "$r"
@@ -207,6 +209,7 @@ emit() {
 # host, and curl drops the Authorization header on that hop. The token goes in through a header file (printf is a
 # builtin), so it never sits in curl's argv where any process on the runner could read it.
 api() {
+    # MUTANT-ANCHOR: m25
     curl -fsSL --max-time 120 -H @<(printf 'Authorization: Bearer %s\n' "$2") -H "Accept: application/vnd.github+json" \
         -H "X-GitHub-Api-Version: 2022-11-28" "$1"
 }
@@ -235,7 +238,7 @@ infra_job() {
 # log_proves STATUS ASSERT -> 0 when the job's log may name its commit: the job completed and its commit assert
 # succeeded. A log whose assert did not succeed proves no commit, whatever it prints (the release driver's rule).
 log_proves() {
-    [ "$1" = completed ] && [ "$2" = completed/success ]
+    [ "$1" = completed ] && [ "$2" = completed/success ]  # MUTANT-ANCHOR: m22
 }
 
 # infra_curl PATH -> the body of API PATH, read with INFRA_TOKEN (measure's read)
@@ -247,14 +250,14 @@ infra_curl() { api "$API/$1" "$INFRA_TOKEN"; }
 infra_gh() {
     local k st hdr=()
     k="$INFRA_CACHE/$(printf '%s' "$1" | tr -c 'A-Za-z0-9._-' '_')"
-    [ -s "$k.etag" ] && [ -f "$k.body" ] && hdr=(-H "If-None-Match: $(cat -- "$k.etag")")
-    GH_TOKEN="$INFRA_TOKEN" gh api -i "${hdr[@]}" "$1" > "$k.http" 2> "$k.err"
+    [ -s "$k.etag" ] && [ -f "$k.body" ] && hdr=(-H "If-None-Match: $(cat -- "$k.etag")")  # MUTANT-ANCHOR: m46
+    GH_TOKEN="$INFRA_TOKEN" gh api -i "${hdr[@]}" "$1" > "$k.http" 2> "$k.err"  # MUTANT-ANCHOR: m43
     st="$(awk 'NR == 1 { print $2; exit }' "$k.http")"
     case "$st" in
-        200) awk 'f { print } /^\r?$/ { f = 1 }' "$k.http" > "$k.body" || return 1
+        200) awk 'f { print } /^\r?$/ { f = 1 }' "$k.http" > "$k.body" || return 1  # MUTANT-ANCHOR: m44
              awk 'tolower($1) == "etag:" { sub(/\r$/, ""); sub(/^[^:]*: */, ""); print; exit }' "$k.http" > "$k.etag" ;;
-        304) [ -f "$k.body" ] || { echo "infra_gh: GET $1 -> HTTP 304 and nothing cached" >&2; return 1; } ;;
-        *) printf "infra_gh: GET %s -> HTTP %s (%s)\n" "$1" "${st:-none}" "$(head -c 160 -- "$k.err" | tr "\n" " ")" >&2; return 1 ;;
+        304) [ -f "$k.body" ] || { echo "infra_gh: GET $1 -> HTTP 304 and nothing cached" >&2; return 1; } ;;  # MUTANT-ANCHOR: m28
+        *) printf "infra_gh: GET %s -> HTTP %s (%s)\n" "$1" "${st:-none}" "$(head -c 160 -- "$k.err" | tr "\n" " ")" >&2; return 1 ;;  # MUTANT-ANCHOR: m53
     esac
     cat -- "$k.body"
 }
@@ -275,7 +278,7 @@ infra_rows() {
         sha="?"
         if log_proves "$jst" "$jassert" && [ "$logs" -lt "$INFRA_MAX_LOGS" ]; then
             logs=$((logs + 1))
-            log="$("$get" "repos/$INFRA_REPO/actions/jobs/$jid/logs")" || return 1
+            log="$("$get" "repos/$INFRA_REPO/actions/jobs/$jid/logs")" || return 1  # MUTANT-ANCHOR: m27
             sha="$(printf '%s\n' "$log" | tested_sha)"
             [ -n "$sha" ] || sha="?"
         fi
@@ -297,18 +300,29 @@ measured_cpu() {
     local INFRA_CACHE=$1 lim rem fl rows sha v
     [ -n "${INFRA_TOKEN:-}" ] || { echo "not_measured: no infra read token (INFRA_ACTIONS_READ); paiml/infra is private" >&2; return 2; }
     mkdir -p -- "$INFRA_CACHE" || return 2
-    read -r lim rem <<< "$(GH_TOKEN="$INFRA_TOKEN" gh api rate_limit --jq '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
-    case "$lim:$rem" in *[!0-9:]*|:*|*:) echo "not_measured: rate_limit unreadable" >&2; return 2 ;; esac
-    fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR
-    [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }
-    rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }
+    # a gh config dir the runner user cannot read makes every gh call fail ("failed to load config ... permission denied")
+    # though the token is fine: use a private one under the cache instead. A readable config dir is left alone.
+    if [ -n "${GH_CONFIG_DIR:-}" ] && { [ ! -r "$GH_CONFIG_DIR" ] || [ ! -x "$GH_CONFIG_DIR" ] || { [ -e "$GH_CONFIG_DIR/config.yml" ] && [ ! -r "$GH_CONFIG_DIR/config.yml" ]; }; }; then
+        mkdir -p -- "$INFRA_CACHE/gh-config" && GH_CONFIG_DIR="$INFRA_CACHE/gh-config" && export GH_CONFIG_DIR || return 2  # MUTANT-ANCHOR: m55
+    fi
+    local rl_out rl_err rl_st
+    rl_err="$INFRA_CACHE/rate_limit.err"
+    # MUTANT-ANCHOR: m54
+    rl_out="$(GH_TOKEN="$INFRA_TOKEN" gh api -i rate_limit 2> "$rl_err")" || true  # MUTANT-ANCHOR: m43
+    rl_st="$(printf '%s\n' "$rl_out" | awk 'NR == 1 { print $2; exit }')"
+    read -r lim rem <<< "$(printf '%s\n' "$rl_out" | awk 'f { print } /^\r?$/ { f = 1 }' | jq -r '"\(.resources.core.limit) \(.resources.core.remaining)"' 2>/dev/null)"
+    case "$lim:$rem" in *[!0-9:]*|:*|*:) printf 'not_measured: rate_limit unreadable (HTTP %s: %s)\n' "${rl_st:-none}" "$(head -c 160 -- "$rl_err" | tr '\n' ' ')" >&2; return 2 ;; esac
+    # MUTANT-ANCHOR: m31
+    fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR  # MUTANT-ANCHOR: m30
+    [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }  # MUTANT-ANCHOR: m29
+    rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }  # MUTANT-ANCHOR: m26
     while read -r sha; do
         [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || continue
         v="$(printf '%s\n' "$rows" | judge_cpu "$sha")"
         case "${v%%"$TAB"*}" in
-            green|red) tsv "$sha" "${v%%"$TAB"*}" "$(printf '%s\n' "$rows" | awk -F '\t' -v s="$sha" '$5 == s { print $1; exit }')" ;;
+            green|red) tsv "$sha" "${v%%"$TAB"*}" "$(printf '%s\n' "$rows" | awk -F '\t' -v s="$sha" '$5 == s { print $1; exit }')" ;;  # MUTANT-ANCHOR: m32
         esac
-    done < <(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && !seen[$5]++ { print $5 }')
+    done < <(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && !seen[$5]++ { print $5 }')  # MUTANT-ANCHOR: m45
 }
 
 # assert_head REF -> 0 when this checkout's HEAD is REF, a 40-hex sha; prints the tested-sha record. A lane job runs it
@@ -316,9 +330,9 @@ measured_cpu() {
 # from a job whose assert step passed).
 assert_head() {
     local ref=${1:-} head
-    [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { printf '%s: assert-head: "%s" is not a 40-hex sha\n' "$PROG" "$ref" >&2; return 1; }
+    [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { printf '%s: assert-head: "%s" is not a 40-hex sha\n' "$PROG" "$ref" >&2; return 1; }  # MUTANT-ANCHOR: m47
     head="$(git rev-parse --verify -q HEAD 2>/dev/null)" || { printf '%s: assert-head: no HEAD here\n' "$PROG" >&2; return 1; }
-    [ "$head" = "$ref" ] || { printf '%s: assert-head: HEAD is %s, not %s\n' "$PROG" "$head" "$ref" >&2; return 1; }
+    [ "$head" = "$ref" ] || { printf '%s: assert-head: HEAD is %s, not %s\n' "$PROG" "$head" "$ref" >&2; return 1; }  # MUTANT-ANCHOR: m33
     printf 'tested-sha: %s\n' "$head"
 }
 
@@ -338,12 +352,12 @@ measure_dryrun() {
 
 measure() {
     local lane=${1:-} line
-    [[ "${LANES_CALLER:-}" =~ ^[A-Za-z0-9._-]*$ ]] || caller_error "LANES_CALLER '${LANES_CALLER:-}' is not a caller job name"
+    [[ "${LANES_CALLER:-}" =~ ^[A-Za-z0-9._-]*$ ]] || caller_error "LANES_CALLER '${LANES_CALLER:-}' is not a caller job name"  # MUTANT-ANCHOR: m49
     case "$lane" in
         cleanroom-gpu) line="$(measure_jobs "$(called "$GPU_PREFIX")" "$GPU_ENV")" ;;
         assets) line="$(measure_jobs "$(called "$ASSETS_PREFIX")" "$ASSETS_ENV")" ;;
         cleanroom-cpu)
-            [[ "${LANES_REF:-}" =~ ^[0-9a-f]{40}$ ]] || caller_error "LANES_REF is not a 40-hex sha (the workflow passes inputs.ref || github.sha)"
+            [[ "${LANES_REF:-}" =~ ^[0-9a-f]{40}$ ]] || caller_error "LANES_REF is not a 40-hex sha (the workflow passes inputs.ref || github.sha)"  # MUTANT-ANCHOR: m48
             line="$(measure_cpu "$LANES_REF")" ;;
         publish-dryrun)
             [ -n "${2:-}" ] || caller_error "measure publish-dryrun ROOT"
@@ -366,34 +380,34 @@ wiring() {
     [ -f "$wf" ] || { printf '%s is missing' "$wf"; return 1; }
     for lane in $WIRED_LANES; do
         n=$((n + 1))
-        grep -qE "^    name: $lane\$" "$wf" || bad="$bad $lane(name)"
-        grep -qE "^    if: always\(\) && contains\(fromJSON\('\[\"green\",\"red\"\]'\), needs\.measure-$lane\.outputs\.verdict\)\$" "$wf" || bad="$bad $lane(if)"
+        grep -qE "^    name: $lane\$" "$wf" || bad="$bad $lane(name)"  # MUTANT-ANCHOR: m14
+        grep -qE "^    if: always\(\) && contains\(fromJSON\('\[\"green\",\"red\"\]'\), needs\.measure-$lane\.outputs\.verdict\)\$" "$wf" || bad="$bad $lane(if)"  # MUTANT-ANCHOR: m12
         grep -qE "^        run: bash scripts/release/release_lanes.sh measure $lane( |\$)" "$wf" || bad="$bad $lane(measure)"
         b="$(job_block "$wf" "$lane")"
-        grep -qE "^          ref: $at\$" <<< "$b" || bad="$bad $lane(checkout-at-C)"
+        grep -qE "^          ref: $at\$" <<< "$b" || bad="$bad $lane(checkout-at-C)"  # MUTANT-ANCHOR: m36
         { grep -qE "^      - name: Assert HEAD is $at\$" <<< "$b" && grep -qE "^          REF: $at\$" <<< "$b" \
-            && grep -qE '^        run: bash scripts/release/release_lanes\.sh assert-head "\$REF"$' <<< "$b"; } || bad="$bad $lane(assert-head)"
-        grep -qE "^          ref: $at\$" <<< "$(job_block "$wf" "measure-$lane")" || bad="$bad measure-$lane(checkout-at-C)"
+            && grep -qE '^        run: bash scripts/release/release_lanes\.sh assert-head "\$REF"$' <<< "$b"; } || bad="$bad $lane(assert-head)"  # MUTANT-ANCHOR: m35
+        grep -qE "^          ref: $at\$" <<< "$(job_block "$wf" "measure-$lane")" || bad="$bad measure-$lane(checkout-at-C)"  # MUTANT-ANCHOR: m37
     done
-    rest="$(awk '$0 == "  pick:" { s = 1; next } s && /^  [^ #]/ { s = 0 } !s' "$wf")"   # every job but the pick
-    [ "$(grep -cE '^      - uses: actions/checkout@' <<< "$rest")" -eq "$(grep -cE "^          ref: $at\$" <<< "$rest")" ] || bad="$bad checkout-at-C"
-    grep -qE "^      ref: $at\$" <<< "$(job_block "$wf" b2-gpu-at-c)" || bad="$bad b2-gpu-at-c(ref)"
-    grep -qE "^          LANES_REF: $at\$" <<< "$(job_block "$wf" measure-cleanroom-cpu)" || bad="$bad cleanroom-cpu(LANES_REF)"
-    grep -qE '^          LANES_CALLER: \$\{\{ inputs\.caller \}\}$' <<< "$(job_block "$wf" measure-cleanroom-gpu)" || bad="$bad cleanroom-gpu(LANES_CALLER)"
-    ! grep -qE 'github\.sha|GITHUB_SHA' <<< "$(sed -E "/^ *#/d; s/$at//g" <<< "$rest")" || bad="$bad caller-sha"
+    rest="$(awk '$0 == "  pick:" { s = 1; next } s && /^  [^ #]/ { s = 0 } !s' "$wf")"   # every job but the pick  # MUTANT-ANCHOR: m52
+    [ "$(grep -cE '^      - uses: actions/checkout@' <<< "$rest")" -eq "$(grep -cE "^          ref: $at\$" <<< "$rest")" ] || bad="$bad checkout-at-C"  # MUTANT-ANCHOR: m38
+    grep -qE "^      ref: $at\$" <<< "$(job_block "$wf" b2-gpu-at-c)" || bad="$bad b2-gpu-at-c(ref)"  # MUTANT-ANCHOR: m40
+    grep -qE "^          LANES_REF: $at\$" <<< "$(job_block "$wf" measure-cleanroom-cpu)" || bad="$bad cleanroom-cpu(LANES_REF)"  # MUTANT-ANCHOR: m41
+    grep -qE '^          LANES_CALLER: \$\{\{ inputs\.caller \}\}$' <<< "$(job_block "$wf" measure-cleanroom-gpu)" || bad="$bad cleanroom-gpu(LANES_CALLER)"  # MUTANT-ANCHOR: m42
+    ! grep -qE 'github\.sha|GITHUB_SHA' <<< "$(sed -E "/^ *#/d; s/$at//g" <<< "$rest")" || bad="$bad caller-sha"  # MUTANT-ANCHOR: m39
     # the pick (#5082): a caller's ref, else tonight's nightly.yml commit on the schedule, else (a dispatch) github.sha
     b="$(job_block "$wf" pick)"
     { grep -qE '^          REF: \$\{\{ inputs\.ref \}\}$' <<< "$b" && grep -qE '^          EVENT: \$\{\{ github\.event_name \}\}$' <<< "$b" \
         && grep -qE '^          SHA: \$\{\{ github\.sha \}\}$' <<< "$b" && grep -qE '^      c: \$\{\{ steps\.c\.outputs\.c \}\}$' <<< "$b" \
-        && grep -qF 'c="$(bash scripts/release/lanes_pick_c.sh c "$GITHUB_REPOSITORY" "$REF" "$EVENT" "$SHA")" || exit 1' <<< "$b"; } || bad="$bad pick"
+        && grep -qF 'c="$(bash scripts/release/lanes_pick_c.sh c "$GITHUB_REPOSITORY" "$REF" "$EVENT" "$SHA")" || exit 1' <<< "$b"; } || bad="$bad pick"  # MUTANT-ANCHOR: m50
     # a job that reads C without needing the pick reads an empty C, and an empty checkout ref is github.sha
     for j in $(awk '/^jobs:/ { f = 1; next } f && /^  [a-z0-9-]+:$/ { sub(/:$/, ""); print $1 }' "$wf"); do
         [ "$j" != pick ] || continue
         b="$(job_block "$wf" "$j")"
         grep -qE "$at" <<< "$b" || continue
-        grep -qE '^    needs: (pick|\[pick(, [a-z0-9-]+)*\])$' <<< "$b" || bad="$bad $j(needs-pick)"
+        grep -qE '^    needs: (pick|\[pick(, [a-z0-9-]+)*\])$' <<< "$b" || bad="$bad $j(needs-pick)"  # MUTANT-ANCHOR: m51
     done
-    [ "$(grep -cE '^      - run: test "\$VERDICT" = green$' "$wf")" -eq "$n" ] || bad="$bad exit(green-only)"
+    [ "$(grep -cE '^      - run: test "\$VERDICT" = green$' "$wf")" -eq "$n" ] || bad="$bad exit(green-only)"  # MUTANT-ANCHOR: m13
     if [ -n "$bad" ]; then printf 'miswired:%s' "$bad"; return 1; fi
     printf '%s lanes' "$n"
 }
@@ -454,7 +468,19 @@ rl_rows_b1() {
 [ "${GH_TOKEN:-}" = fixture-infra-token ] || exit 4
 [ "${1:-}" = api ] || exit 9
 shift
-if [ "${1:-}" = rate_limit ]; then [ -f "$FGH/rate" ] || exit 1; cat -- "$FGH/rate"; exit 0; fi
+if [ -n "${GH_CONFIG_DIR:-}" ] && { [ ! -r "$GH_CONFIG_DIR" ] || [ ! -x "$GH_CONFIG_DIR" ]; }; then
+    echo "warning: failed to load config: open $GH_CONFIG_DIR/config.yml: permission denied" >&2; exit 1
+fi
+if [ "${1:-}" = -i ] && [ "${2:-}" = rate_limit ]; then
+    # `api -i rate_limit`: HTTP head, blank line, JSON body. $FGH/rate is "LIMIT REMAINING"; $FGH/rate.status makes it a refusal (gh exits 1)
+    [ -f "$FGH/rate" ] || exit 1
+    if [ -f "$FGH/rate.status" ]; then
+        printf 'HTTP/2.0 %s Refused\r\ncontent-type: application/json\r\n\r\n{"message":"Bad credentials"}\n' "$(cat -- "$FGH/rate.status")"
+        printf 'gh: Bad credentials (HTTP %s)\n' "$(cat -- "$FGH/rate.status")" >&2; exit 1
+    fi
+    read -r l r < "$FGH/rate"
+    printf 'HTTP/2.0 200 OK\r\ncontent-type: application/json\r\n\r\n{"resources":{"core":{"limit":%s,"remaining":%s}}}\n' "$l" "$r"; exit 0
+fi
 inm="" path=""
 while [ $# -gt 0 ]; do
     case $1 in
@@ -515,7 +541,21 @@ FAKE
     exact measured_cpu_floor_holds_on_a_small_limit 2 "" -- cpu "$fg" "$tmp/cg"
     rm -f -- "$fg/rate"
     exact measured_cpu_unreadable_rate_limit_is_not_measured 2 "" -- cpu "$fg" "$tmp/ch"
+    printf '5000 4000\n' > "$fg/rate"; printf '401\n' > "$fg/rate.status"
+    exact measured_cpu_a_refused_rate_limit_is_not_measured 2 "" -- cpu "$fg" "$tmp/cn"
+    o="$(cpu "$fg" "$tmp/cn" 2>&1 >/dev/null)"
+    case "$o" in *"rate_limit unreadable (HTTP 401: gh: Bad credentials"*) ok measured_cpu_a_refused_rate_limit_names_its_status "HTTP 401 and gh's own words on stderr" ;;
+        *) broke measured_cpu_a_refused_rate_limit_names_its_status "stderr: ${o:0:200}" ;; esac
+    case "$o" in *fixture-infra-token*) broke measured_cpu_a_refused_rate_limit_never_prints_the_token "token on stderr" ;;
+        *) ok measured_cpu_a_refused_rate_limit_never_prints_the_token "token absent" ;; esac
+    rm -f -- "${fg:?}/rate.status"
     printf '5000 4000\n' > "$fg/rate"
+    if [ "$(id -u)" -eq 0 ]; then ok measured_cpu_survives_an_unreadable_gh_config_dir "skipped: root reads everything"
+    else
+        mkdir -p -- "$tmp/cfgdenied" && chmod 000 "$tmp/cfgdenied"
+        exact measured_cpu_survives_an_unreadable_gh_config_dir 0 "$want" -- env GH_CONFIG_DIR="$tmp/cfgdenied" PATH="$tmp/ghbin:$PATH" FGH="$fg" INFRA_TOKEN=fixture-infra-token bash "$SCRIPT_PATH" measured-cpu --cache "$tmp/cz"
+        chmod 700 "$tmp/cfgdenied"
+    fi
     exact measured_cpu_without_a_token_is_not_measured 2 "" -- env -u INFRA_TOKEN PATH="$tmp/ghbin:$PATH" FGH="$fg" bash "$SCRIPT_PATH" measured-cpu --cache "$tmp/ci"
     exact measured_cpu_needs_its_cache 3 "" -- bash "$SCRIPT_PATH" measured-cpu
     # fixture b: c tested twice, the newest run (green) decides and c is listed once
@@ -739,6 +779,8 @@ FAKE
     refused wiring_refuses_b2_gpu_without_the_pick '/^  b2-gpu-at-c:$/,/^  [a-z]/{/^    needs: pick$/d}'
     refused wiring_refuses_a_head_read_outside_the_pick '/^  case-table:$/,/^  [a-z]/s/^          ref: .*$/          ref: ${{ github.sha }}/'
     rl_rows_b1
+    [ -n "${RL_SKIP_ANCHOR_ROWS:-}" ] || rl_rows_anchors   # --mutants sets it: anchor rows break for every mutant, so they prove nothing about one
+    rl_rows_verdict
     rm -rf -- "${tmp:?}"
     printf -- '--- %s ok, %s broke ---\n' "$pass" "$fail"
     [ "$fail" -eq 0 ]
@@ -772,7 +814,7 @@ m24_disagreeing_legacy_record_counts s/\*) case "\$s" in "\$a"\*) ;; \*) return 
 m25_token_in_argv s/-H @<(printf .Authorization: Bearer %s\\n. "\$2")/-H "Authorization: Bearer $2"/
 m26_failed_infra_read_is_none s#rows="\$(infra_rows "" infra_gh)" || {#rows="$(infra_rows "" infra_gh)" || true || {#
 m27_failed_log_read_is_no_commit s#/logs")" || return 1#/logs")" || log=""#
-m28_304_with_no_cache_is_empty s#304) \[ -f "\$k.body" \] || return 1 ;;#304) touch -- "$k.body" ;;#
+m28_304_with_no_cache_is_empty s#304) \[ -f "\$k.body" \] || {.*return 1; } ;;#304) touch -- "$k.body" ;;#
 m29_rate_floor_ignored s#\[ "\$rem" -ge "\$fl" \] || {#true || {#
 m30_floor_is_never_a_fifth s#fl=\$((lim / 5)); \[ "\$fl" -le "\$RATE_FLOOR" \] || fl=\$RATE_FLOOR#fl=$RATE_FLOOR#
 m31_floor_is_never_capped s#\] || fl=\$RATE_FLOOR#] || true#
@@ -797,26 +839,128 @@ m49_lanes_caller_takes_any_word s#\[\[ "\${LANES_CALLER:-}" .~ \^\[A-Za-z0-9._-\
 m50_wiring_ignores_the_pick s# || bad="\$bad pick"# || true#
 m51_wiring_ignores_needs_pick s# || bad="\$bad \$j(needs-pick)"# || true#
 m52_wiring_counts_the_pick_as_a_job s#^    rest="\$(awk .*#    rest="$(cat "$wf")"#
-m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#'
+m53_refused_read_names_nothing s#infra_gh: GET %s -> HTTP %s#infra_gh: x %s -> HTTP %s#
+m55_unreadable_gh_config_dir_kept s#GH_CONFIG_DIR="\$INFRA_CACHE/gh-config"#GH_CONFIG_DIR="$GH_CONFIG_DIR"#
+m54_rate_limit_refusal_thrown_away s#gh api -i rate_limit 2> "\$rl_err"#gh api -i rate_limit 2>/dev/null#'
 
+# Every mutant above is keyed to a stable marker, not to the text around it (N47: a text-matched mutant broke on the
+# commit that carried its fix). The marker is the comment `# MUTANT-ANCHOR: mNN` at the end of the source line the
+# mutant edits, or alone on the line right above it when that line cannot take a trailing comment (a `\` continuation,
+# or a line that already carries another mutant's marker). A mutant's expression is applied to that one line only, so an
+# edit anywhere else leaves it applying. A mutant with no marker, or a marker with no mutant, fails anchors_check.
+mutant_sed() {   # mutant_sed ID EXPR : the sed script that applies EXPR to the line ID's marker names
+    printf '/# MUTANT-ANCHOR: %s$/{/^[[:space:]]*#/{n;};%s;}' "$1" "$2"
+}
+mutant_ids() { printf '%s\n' "$RL_MUTANTS" | awk 'NF { print substr($1, 1, 3) }'; }
+mutant_expect() { case "$1" in m20|m43) echo 2 ;; *) echo 1 ;; esac; }   # markers each mutant's line(s) must carry
+mutant_changed() { diff -- "$1" "$2" | grep -c '^>' || true; }   # mutant_changed ORIG MUTATED : how many lines the mutation rewrote
+mutant_expr() { printf '%s\n' "$RL_MUTANTS" | awk -v id="$1" 'substr($1, 1, 3) == id { sub(/^[^ ]+ /, ""); print; exit }'; }
+mutant_applies() { [ "$(mutant_changed "$2" "$3")" -eq "$(mutant_expect "$1")" ]; }   # mutant_applies ID ORIG MUTATED : every anchored site changed
+anchors_check() {   # anchors_check FILE : prints each mutant whose marker count is not the expected one, an orphan marker, an empty table or no markers; 1 if any
+    local f=$1 bad=0 id n e ids markers
+    ids="$(mutant_ids)"
+    [ -n "$ids" ] || { printf 'empty mutant table\n'; return 1; }
+    markers="$(grep -oE '# MUTANT-ANCHOR: m[0-9]+$' -- "$f" | sed 's/.*: //')"
+    [ -n "$markers" ] || { printf 'no # MUTANT-ANCHOR markers in %s\n' "$f"; return 1; }
+    [ "$(printf '%s\n' "$ids" | sort | uniq -d | wc -l)" -eq 0 ] || { printf 'repeated mutant id: %s\n' "$(printf '%s\n' "$ids" | sort | uniq -d | tr '\n' ' ')"; bad=1; }
+    for id in $ids; do
+        n="$(printf '%s\n' "$markers" | grep -cx "$id" || true)"; e="$(mutant_expect "$id")"
+        if [ "$n" -eq 0 ]; then printf 'mutant %s has no # MUTANT-ANCHOR marker\n' "$id"; bad=1
+        elif [ "$n" -ne "$e" ]; then printf 'mutant %s has %s markers, expected %s\n' "$id" "$n" "$e"; bad=1; fi
+    done
+    for id in $(printf '%s\n' "$markers" | sort -u); do
+        grep -qx "$id" <<< "$ids" || { printf 'orphan marker %s: no mutant of that id\n' "$id"; bad=1; }
+    done
+    [ "$bad" -eq 0 ]
+}
+# a mutant is killed only by a broken row that is not an anchor row: anchor rows break for every mutant (the mutated
+# script's markers no longer match), so counting them let a mutant whose real behaviour row went blind read as killed
+mutant_verdict() {   # mutant_verdict RC OUTPUT : prints "killed N", "survived" or "no-kill"
+    local rc=$1 o=$2 n
+    [ "$rc" -ne 0 ] || { echo survived; return 0; }
+    n="$(printf '%s\n' "$o" | grep '^  BROKE ' | grep -vc '^  BROKE anchor' || true)"
+    if [ "$n" -gt 0 ]; then echo "killed $n"; else echo no-kill; fi
+}
+# the self-test rows for the markers: the guard passes on this script and refuses a missing or an orphan marker, and an
+# unrelated edit next to every marker (a comment line inserted, the neighbouring lines reworded) leaves every mutant applying
+rl_rows_anchors() {
+    local f="$tmp/anch.sh" p="$tmp/anch-perturbed.sh" o id expr n=0 lost=""
+    if o="$(anchors_check "$SCRIPT_PATH")"; then ok anchors_cover_every_mutant "$(mutant_ids | wc -l) mutants, each anchored"; else broke anchors_cover_every_mutant "$o"; fi
+    sed -e 's/  # MUTANT-ANCHOR: m28$//' -e '/^[[:space:]]*# MUTANT-ANCHOR: m28$/d' "$SCRIPT_PATH" > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_a_mutant_without_a_marker "accepted"; else
+        case "$o" in *"mutant m28 has no"*) ok anchors_refuse_a_mutant_without_a_marker "$o" ;; *) broke anchors_refuse_a_mutant_without_a_marker "never named m28: $o" ;; esac; fi
+    { cat -- "$SCRIPT_PATH"; printf '# MUTANT-ANCHOR: m%s\n' 99; } > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_an_orphan_marker "accepted"; else
+        case "$o" in *"orphan marker m99"*) ok anchors_refuse_an_orphan_marker "$o" ;; *) broke anchors_refuse_an_orphan_marker "never named m99: $o" ;; esac; fi
+    { cat -- "$SCRIPT_PATH"; printf '# MUTANT-ANCHOR: m%s\n' 05; } > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_a_stray_duplicate_marker "accepted"; else
+        case "$o" in *"mutant m05 has 2 markers, expected 1"*) ok anchors_refuse_a_stray_duplicate_marker "$o" ;; *) broke anchors_refuse_a_stray_duplicate_marker "never named m05: $o" ;; esac; fi
+    n="$(grep -n '# MUTANT-ANCHOR: m43$' -- "$SCRIPT_PATH" | tail -n 1 | cut -d: -f1)"
+    sed -e "${n}s/  # MUTANT-ANCHOR: m43\$//" "$SCRIPT_PATH" > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_a_missing_second_m43_marker "accepted"; else
+        case "$o" in *"mutant m43 has 1 markers, expected 2"*) ok anchors_refuse_a_missing_second_m43_marker "$o" ;; *) broke anchors_refuse_a_missing_second_m43_marker "never named m43: $o" ;; esac; fi
+    if o="$(RL_MUTANTS='' anchors_check "$SCRIPT_PATH")"; then broke anchors_refuse_an_empty_table "accepted"; else
+        case "$o" in *"empty mutant table"*) ok anchors_refuse_an_empty_table "$o" ;; *) broke anchors_refuse_an_empty_table "wrong refusal: $o" ;; esac; fi
+    sed -e 's/  # MUTANT-ANCHOR: m[0-9]*$//' -e '/^[[:space:]]*# MUTANT-ANCHOR: m[0-9]*$/d' "$SCRIPT_PATH" > "$f"
+    if o="$(anchors_check "$f")"; then broke anchors_refuse_a_file_with_no_markers "accepted"; else
+        case "$o" in *"no # MUTANT-ANCHOR markers"*) ok anchors_refuse_a_file_with_no_markers "$o" ;; *) broke anchors_refuse_a_file_with_no_markers "wrong refusal: $o" ;; esac; fi
+    awk '
+        { L[NR] = $0 }
+        END {
+            for (i = 1; i <= NR; i++) A[i] = (L[i] ~ /# MUTANT-ANCHOR: m[0-9]+$/)
+            for (i = 1; i <= NR; i++) if (A[i]) { pure[i] = (L[i] ~ /^[[:space:]]*#/); t = pure[i] ? i + 1 : i; W[i - 1] = 1; W[t + 1] = 1 }
+            for (i = 1; i <= NR; i++) {
+                if (A[i] && !(i > 1 && A[i - 1] && pure[i - 1])) print "# a harmless comment line inserted by the fixture"
+                if (W[i] && !A[i] && L[i] !~ /\\$/) print L[i] "  # reworded by the fixture"; else print L[i]
+            }
+        }' "$SCRIPT_PATH" > "$p"
+    while read -r id expr; do
+        [ -n "$id" ] || continue
+        id="${id:0:3}"; n=$((n + 1))
+        sed -e "$(mutant_sed "$id" "$expr")" "$p" > "$f" 2> /dev/null
+        mutant_applies "$id" "$p" "$f" || lost="$lost $id"
+    done < <(printf '%s\n' "$RL_MUTANTS")
+    # a half-applied two-site mutant (one site reworded so its pattern no longer matches) must be refused
+    for id in m20 m43; do
+        { grep -n "MUTANT-ANCHOR: $id\$" -- "$SCRIPT_PATH" | head -n 1 | cut -d: -f1; } > "$tmp/half.n"
+        sed -e "$(head -n 1 "$tmp/half.n")s/sort -u)\"/sort -u | cat)\"/; $(head -n 1 "$tmp/half.n")s/\"\$INFRA_TOKEN\" gh/\"\${INFRA_TOKEN}\" gh/" "$SCRIPT_PATH" > "$p"
+        sed -e "$(mutant_sed "$id" "$(mutant_expr "$id")")" "$p" > "$f" 2> /dev/null
+        if mutant_applies "$id" "$p" "$f"; then broke "mutant_half_applied_${id}_refused" "accepted: $(mutant_changed "$p" "$f") line(s) changed"
+        else ok "mutant_half_applied_${id}_refused" "$(mutant_changed "$p" "$f") of $(mutant_expect "$id") sites changed"; fi
+    done
+    if [ -z "$lost" ] && [ "$n" -gt 0 ]; then ok anchored_mutants_survive_unrelated_edits "$n mutants still apply"
+    else broke anchored_mutants_survive_unrelated_edits "changed nothing after an unrelated edit:$lost"; fi
+}
+
+# mutant_verdict on synthetic output: an anchor row alone is never a kill; a behaviour row is
+rl_rows_verdict() {
+    local v b='  BROKE anchored_mutants_survive_unrelated_edits       x' a='  BROKE wiring_refuses_something                      x'
+    v="$(mutant_verdict 1 "$b")"; [ "$v" = no-kill ] && ok verdict_anchor_row_alone_is_no_kill "$v" || broke verdict_anchor_row_alone_is_no_kill "$v"
+    v="$(mutant_verdict 1 "$b"$'\n'"$a")"; [ "$v" = "killed 1" ] && ok verdict_behaviour_row_kills "$v" || broke verdict_behaviour_row_kills "$v"
+    v="$(mutant_verdict 0 "$b")"; [ "$v" = survived ] && ok verdict_exit_zero_survives "$v" || broke verdict_exit_zero_survives "$v"
+    v="$(mutant_verdict 1 '  ok    a   x')"; [ "$v" = no-kill ] && ok verdict_no_broken_row_is_no_kill "$v" || broke verdict_no_broken_row_is_no_kill "$v"
+    v="$(mutant_verdict 1 "$a"$'\n'"$a")"; [ "$v" = "killed 2" ] && ok verdict_counts_behaviour_rows "$v" || broke verdict_counts_behaviour_rows "$v"
+}
 mutants() {
-    local tmp pass=0 fail=0 name expr o rc m
+    local tmp pass=0 fail=0 name expr o rc m v
     tmp="$(mktemp -d)" || return 1
     mkdir -p "$tmp/scripts/release" "$tmp/.github/workflows"
     cp "$WORKFLOW" "$tmp/.github/workflows/" 2>/dev/null
     m="$tmp/scripts/release/release_lanes.sh"
     cp "$SCRIPT_PATH" "$m"
-    if ! bash "$m" --self-test > /dev/null 2>&1; then printf '  BROKE %-46s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
+    if ! o="$(anchors_check "$SCRIPT_PATH")"; then printf '  BROKE %-46s %s\n' anchors "$o"; rm -rf -- "${tmp:?}"; return 1; fi
+    if ! RL_SKIP_ANCHOR_ROWS=1 bash "$m" --self-test > /dev/null 2>&1; then printf '  BROKE %-46s the unmutated script is not green in the mutant dir\n' baseline; rm -rf -- "${tmp:?}"; return 1; fi
     while read -r name expr; do
         [ -n "$name" ] || continue
-        sed -e "$expr" "$SCRIPT_PATH" > "$m"
-        if cmp -s "$SCRIPT_PATH" "$m"; then printf '  BROKE %-46s changed nothing: its pattern no longer matches\n' "$name"; fail=$((fail + 1)); continue; fi
+        sed -e "$(mutant_sed "${name:0:3}" "$expr")" "$SCRIPT_PATH" > "$m"
+        if ! mutant_applies "${name:0:3}" "$SCRIPT_PATH" "$m"; then printf '  BROKE %-46s changed %s line(s), expected %s: its pattern no longer matches every site\n' "$name" "$(mutant_changed "$SCRIPT_PATH" "$m")" "$(mutant_expect "${name:0:3}")"; fail=$((fail + 1)); continue; fi
         if ! bash -n "$m" 2>/dev/null; then printf '  BROKE %-46s does not parse\n' "$name"; fail=$((fail + 1)); continue; fi
-        o="$(bash "$m" --self-test 2>&1)"; rc=$?
-        case "$rc:$o" in
-            0:*) printf '  BROKE %-46s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
-            *"  BROKE "*) printf '  ok    %-46s killed, %s row(s) broke\n' "$name" "$(printf '%s\n' "$o" | grep -c '^  BROKE ')"; pass=$((pass + 1)) ;;
-            *) printf '  BROKE %-46s exit %s with no broken row: not a kill\n' "$name" "$rc"; fail=$((fail + 1)) ;;
+        o="$(RL_SKIP_ANCHOR_ROWS=1 bash "$m" --self-test 2>&1)"; rc=$?
+        v="$(mutant_verdict "$rc" "$o")"
+        case "$v" in
+            survived) printf '  BROKE %-46s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
+            killed*) printf '  ok    %-46s killed, %s row(s) broke\n' "$name" "${v#killed }"; pass=$((pass + 1)) ;;
+            *) printf '  BROKE %-46s exit %s with no broken behaviour row: not a kill\n' "$name" "$rc"; fail=$((fail + 1)) ;;
         esac
     done < <(printf '%s\n' "$RL_MUTANTS")
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"

@@ -45,23 +45,23 @@ stop_group() { # TERM the child's group, give it FAT_IDLE_GRACE seconds, then KI
 watch_cmd() {
     local dir=$1 limit=$2 tick=${FAT_IDLE_TICK:-5}
     shift 2
-    local pid sp who rc size last now since
+    local pid sp who rc size last now since termed=
     set -m # the child leads its own process group, so one signal reaches all of it
     "$@" &
     pid=$!
-    trap 'kill -TERM -- "-$pid" 2>/dev/null' TERM INT
+    trap 'termed=1; kill -TERM -- "-$pid" 2>/dev/null' TERM INT
     last=$(logs_size "$dir")
     since=${EPOCHREALTIME/./}
     while :; do
         sleep "$tick" &
         sp=$!
-        wait -n -p who "$pid" "$sp"
+        [ -n "$termed" ] || wait -n -p who "$pid" "$sp" # a TERM that landed outside wait -n (the trap ran mid-loop) is not lost: termed stays set
         rc=$?
         if [ "${who:-}" = "$pid" ]; then
             kill "$sp" 2>/dev/null
             exit "$rc"
         fi
-        if [ -z "${who:-}" ]; then # wait -n was interrupted (TERM/INT: the trap has signalled the group) or failed
+        if [ -n "$termed" ] || [ -z "${who:-}" ]; then # TERM/INT arrived (the trap has signalled the group; termed survives a signal that missed wait -n) or wait -n failed
             kill "$sp" 2>/dev/null
             kill -0 "$pid" 2>/dev/null && stop_group
             exit 143
@@ -116,16 +116,20 @@ self_test() {
     row "idle: ...and the exit is still 124" "$rc" 124
 
     t0=$SECONDS
-    FAT_IDLE_LIMIT_S=100 bash "$me" "$td" -- sh -c 'trap "" TERM; while :; do sleep 0.1; done' "$tag-d" >/dev/null 2>&1 &
+    rm -f "$td/d.up"
+    FAT_IDLE_LIMIT_S=100 bash "$me" "$td" -- sh -c 'trap "" TERM; : >"$1"; while :; do sleep 0.1; done' "$tag-d" "$td/d.up" >/dev/null 2>&1 &
     wp=$!
-    sleep 0.7
+    # sync on state, not the clock: the step has its TERM trap set, and the watchdog is in its loop (its tick sleep exists)
+    for _ in {1..1200}; do [ -e "$td/d.up" ] && pgrep -P "$wp" -x sleep >/dev/null && break; sleep 0.05; done
+    t0=$SECONDS
     kill -TERM "$wp"
     wait "$wp" 2>/dev/null
     rc=$?
+    el=$((SECONDS - t0))
     sleep 0.3
     row "idle: a TERM to the watchdog exits 143" "$rc" 143
     row "idle: ...and a step that ignores TERM is KILLed after the grace period" "$(pgrep -f "$tag-d" >/dev/null && echo alive || echo gone)" gone
-    row "idle: ...within the grace period, not at the step's end" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
+    row "idle: ...within the grace period, not at the step's end" "$((el < 8 ? 1 : 0))" 1
 
     # The pipe: a helper sleep left running holds a caller's $(...) open until it ends, so each of these is timed THROUGH a command substitution.
     t0=$SECONDS
@@ -146,10 +150,11 @@ self_test() {
 
     t0=$SECONDS
     FAT_IDLE_LIMIT_S=100 timeout 2 bash "$me" "$td" -- sh -c 'sleep 31.7; :' "$tag-b"; rc=$?
+    el=$((SECONDS - t0)) # stop the clock at the exit, before the settle sleep and pgrep below
     row "idle: the timeout still ends the run alongside the watchdog" "$rc" 124
     sleep 0.5
     row "idle: the timeout leaves no orphan behind" "$(pgrep -f "$tag-b" >/dev/null && echo orphan || echo none)" none
-    row "idle: the timeout fired at its own deadline, not the idle one" "$((SECONDS - t0 < 8 ? 1 : 0))" 1
+    row "idle: the timeout fired at its own deadline, not the idle one" "$((el < 8 ? 1 : 0))" 1
 
     row "idle: unset means off" "$(env -u FAT_IDLE_LIMIT_S bash "$me" --limit-us)" 0
     row "idle: FAT_IDLE_LIMIT_S=1500 is 25 min" "$(FAT_IDLE_LIMIT_S=1500 bash "$me" --limit-us)" 1500000000

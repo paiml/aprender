@@ -324,6 +324,18 @@ OLLAMA_STAT = re.compile(r"^(total duration|load duration|prompt eval count|prom
                          r"prompt eval rate|eval count|eval duration|eval rate):\s*(.+?)\s*$", re.M)
 
 
+DUR_PART = re.compile(r"([0-9.]+)\s*(ms|µs|us|s|m|h)")
+DUR_UNIT_MS = {"h": 3600000.0, "m": 60000.0, "s": 1000.0, "ms": 1.0, "µs": 0.001, "us": 0.001}
+
+
+def duration_ms(text):
+    """ollama prints Go durations ("1m2.5s", "123.4ms"). Transcribe to ms; None if nothing parses."""
+    parts = DUR_PART.findall(text or "")
+    if not parts:
+        return None
+    return sum(float(n) * DUR_UNIT_MS[u] for n, u in parts)
+
+
 def parse_ollama(stdout, stderr):
     out = {"answer": None, "why": None, "reported": {}}
     stats = {k: v for k, v in OLLAMA_STAT.findall(ANSI.sub("", stderr))}
@@ -342,6 +354,11 @@ def parse_ollama(stdout, stderr):
         "rate_unit": "tokens per second, as the engine reported it",
         "load_duration": stats.get("load duration"),
         "total_duration": stats.get("total duration"),
+        # The engine's own prompt-eval time, transcribed to ms: the prefill time, a lower bound on TTFT.
+        # It is not TTFT, and nothing here is computed from other fields.
+        "prefill_ms": duration_ms(stats.get("prompt eval duration")),
+        "load_ms": duration_ms(stats.get("load duration")),
+        "total_ms": duration_ms(stats.get("total duration")),
     }
     answer = ANSI.sub("", stdout).strip()
     if not answer:

@@ -74,7 +74,7 @@ jobs:
   # container/outputs exactly as the Actions runner did. The workspace tests
   # are the exception: as one shard inside x86-main they took 5358 s of it and
   # were the release critical path, so ci/sections.yml `matrix-pins` splits
-  # them into shards (12, ONE count in ci/sections.yml matrix-pins) and each runs as its own `workspace-test-shard` job
+  # them into shards (4, ONE count in ci/sections.yml matrix-pins) and each runs as its own `workspace-test-shard` job
   # below, in parallel. The `workspace-test` verdict job compares the UNION of
   # the shards' executed test ids with the owed universe, by id (#4433).
   #
@@ -147,8 +147,8 @@ jobs:
   # are NOT read here: they stay un-reused on the queue (20X r2), so x86-main still never waits for this job.
   mg-reuse-wt:
     if: github.event_name == 'merge_group'
-    # same lane as the shards it gates (mq on a queue entry); the job only runs on merge_group, the clean-room arm just names the pool for the label guard
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # same plain clean-room lane as the shards it gates (AC-1352-SEL); the job only runs on merge_group
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 5
     permissions:
       contents: read
@@ -255,6 +255,15 @@ jobs:
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
       - name: every section secret is plumbed under its full name
         run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
+      # Assert the fleet-pinned bashrs/pmat (never install), the way book.yml and install-script.yml do, so the gate below lints with the release's linter.
+      - name: assert the fleet-pinned bashrs and pmat
+        run: setsid --wait bash scripts/check_tool_versions.sh
+      # N38 (#6529): guard-cargo m16 (bashrs) and m28 (mutants) skip on PR events, so a release_lanes.sh break showed only in
+      # merge_group. Path-filtered: runs release_lanes.sh --self-test and --mutants, and the release bashrs gate (check_bashrs_gate.sh) when any scripts/release/*.sh changed.
+      - name: release_lanes.sh case table, mutants and bashrs (only when scripts/release/*.sh changed)
+        run: |
+          setsid --wait bash scripts/ci/pr_release_lanes_gate.sh --self-test
+          setsid --wait bash scripts/ci/pr_release_lanes_gate.sh origin/${{ github.base_ref }}
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
       # Noah 15:09Z (#5955), Opus-A on #5964: the sections that exist ONLY for a pull request (guard-tree with its
@@ -285,8 +294,8 @@ jobs:
     # Noah 15:09Z (#5955): heavy jobs run only in the merge queue and on push; a PR runs pr-light. `!= 'pull_request'` is
     # fail-closed: an empty or unknown event name owes the heavy job.
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
-    # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
     timeout-minutes: ${{ github.event_name == 'merge_group' && 40 || 240 }}
     # The sections carry their own permissions blocks (the sov provenance section
@@ -408,14 +417,6 @@ jobs:
         # the teardown below keeps always() and still reaps the containers.
         if: ${{ !cancelled() }}
         run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
-      # Operator 2026-10-19: root cause is no gate time budget. A merge_group entry that is already RED must
-      # not keep the other jobs and shards holding mq runners for another ~45 min: the first failed job requests a cancel
-      # the run. merge_group only (a PR run keeps every verdict); the teardown below is always() and still reaps.
-      - name: Fail fast, cancel this merge-group run
-        if: ${{ failure() && github.event_name == 'merge_group' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" || echo "::warning::fail-fast cancel did not take"
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
       # for days. always() runs on cancel too; on the passing path the driver
@@ -468,7 +469,7 @@ jobs:
     needs: [mg-reuse]
     # merge_group-only (a draft never reaches the queue); skipped with x86-main when mg-reuse reuses the cited run.
     if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (22.5 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull; the 240 stays for push.
     timeout-minutes: ${{ github.event_name == 'merge_group' && 65 || 240 }}
     permissions: write-all
@@ -500,19 +501,17 @@ jobs:
           fetch-depth: 0
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      - name: Binary Release bin filter (#6502) keeps every published bin and drops every publish=false one
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash scripts/tests/release_bin_filter_test.sh
       - name: Sections
         id: sections
         run: >-
           python3 scripts/ci/fat_driver.py run
           --sections 'guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas'
           --results "$RUNNER_TEMP/fat/results.json"
-      # Same fail-fast as x86-main (operator 2026-10-19): a red guards (vendored-schemas included, which gate does not read)
-      # cancels the run instead of holding the mq runners; the teardown below is always() and still reaps.
-      - name: Fail fast, cancel this merge-group run
-        if: ${{ failure() && github.event_name == 'merge_group' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" || echo "::warning::fail-fast cancel did not take"
       - name: Remove this job's section containers (runs on cancel too)
         if: always()
         run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
@@ -678,8 +677,8 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
-  # The workspace tests, one shard per job (nextest hash partition N/12 plus the
-  # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
+  # The workspace tests, one shard per job (nextest hash partition N/4 plus the
+  # explicit runner's round-robin N/4), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
   # mg-reuse-wt may cite a PR run only if that run really tested the tree. A receipt-reuse run (#5850, tier=reuse)
   # runs no test step, so its shards are green over zero tests. This marker needs the shards and runs only after
@@ -697,22 +696,24 @@ jobs:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
     needs: [mg-reuse-wt]
     if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
-    # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    # >= section 150 (sections.yml:108, unscaled under merge_group) + the untimed ~20-min image pull on the full-tier fallback
-    # The wall stays 180 on every event: a tier=full entry (Cargo.lock / root Cargo.toml / toolchain touched, or the base
+    # same lane as x86-main: the plain clean-room seats on every event
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
+    # below that section cap (NOAH 16:43Z: timeout = 2x p95, measured): the job wall ends the step first, by ruling.
+    # The wall stays 180 on pull_request/push (not merge_group, below): a tier=full entry (Cargo.lock / root Cargo.toml / toolchain touched, or the base
     # unfetchable) is green at 46-64 min and the tier is decided inside the job. The hang cap is FAT_IDLE_LIMIT_S below.
     # Run 40107798347 printed lines at 15:37/15:38/15:48/15:57, then nothing until the 16:19 hand cancel (22 min silent).
-    timeout-minutes: 180
+    # OPERATOR 2026-10-26 16:43Z: "timeout = 2x p95 going forward". merge_group: 119 = ceil(max(2 x p95 50.0, 1.25 x max 94.5 = 118.1)) of 656 green merge_group shard jobs, 14 d (NOAH-1648Z)
+    # holding an mq runner. pull_request/push keep 180 (the untimed image pull and the full-tier fallback).
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 119 || 180 }}
     permissions:
       contents: read
       checks: read     # ci_mg_workspace_result.sh reads check-suites
-      actions: write   # the fail-fast step cancels this run
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1]' || '[1]') }}
-        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[1]' || '[1]') }}
+        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1,2,3]' || '[1,2,3,4]') }}
+        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[3]' || '[4]') }}
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
@@ -736,14 +737,6 @@ jobs:
           bash scripts/ci/idle_watchdog.sh "$RUNNER_TEMP/fat" -- python3 scripts/ci/fat_driver.py run
           --sections 'workspace-test-shard?${{ matrix.shard }}?${{ matrix.shards }}?'
           --results "$RUNNER_TEMP/fat/results.json"
-      # Operator 2026-10-19: root cause is no gate time budget. A merge_group entry that is already RED must
-      # not keep the other jobs and shards holding mq runners for another ~45 min: the first failed job requests a cancel
-      # the run. merge_group only (a PR run keeps every verdict); the teardown below is always() and still reaps.
-      - name: Fail fast, cancel this merge-group run
-        if: ${{ failure() && github.event_name == 'merge_group' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh run cancel "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" || echo "::warning::fail-fast cancel did not take"
       # #4948: a cancelled run never reaches a section's own container removal,
       # and its fat-<run>-<section> container then sits on `tail -f /dev/null`
       # for days. always() runs on cancel too; on the passing path the driver

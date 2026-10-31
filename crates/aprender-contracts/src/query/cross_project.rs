@@ -199,6 +199,15 @@ fn discover_projects(parent_dir: &Path, self_dir: &Path) -> Vec<ProjectEntry> {
 
 /// Find binding.yaml for a project — check common locations.
 fn find_binding_path(project_dir: &Path, name: &str) -> Option<PathBuf> {
+    // Check <project>/contracts/<name>/binding.yaml (in-tree, post APR-MONO)
+    let in_tree_binding = project_dir
+        .join("contracts")
+        .join(name)
+        .join("binding.yaml");
+    if in_tree_binding.exists() {
+        return Some(in_tree_binding);
+    }
+
     // Check contracts/<name>/binding.yaml (in provable-contracts repo)
     let sibling_binding = project_dir
         .parent()?

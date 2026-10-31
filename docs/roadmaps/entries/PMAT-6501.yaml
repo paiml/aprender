@@ -1,0 +1,19 @@
+- id: PMAT-6501
+  github_issue: 6501
+  item_type: task
+  title: 'release_lanes.sh measured_cpu: stop hiding gh api rate_limit stderr (pick not_measured)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-29T13:37:59Z
+  updated: 2026-10-29T13:37:59Z
+  spec: null
+  acceptance_criteria:
+  - 'Rehearsal pick fails; stderr of gh api rate_limit goes to /dev/null. Capture and print first 200 bytes. Release-path script: non-author quorum + 2 reviews.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
