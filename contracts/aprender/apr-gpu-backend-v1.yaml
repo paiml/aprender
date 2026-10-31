@@ -183,46 +183,46 @@ falsification_tests:
   test: |
     Start apr serve on GPU system, curl /health, check compute_mode.
   if_fails: Health reports cpu on GPU system (GH-628)
-- id: FALSIFY-GPU-012
+- id: FALSIFY-GPU-003
   rule: A CPU fallback is announced in text mode
   prediction: a default run that attempted a GPU backend and ran on CPU prints one stderr line naming the CPU fallback, without --verbose; the line and --json backend.fell_back share one predicate
   test: |
-    cargo test -p apr-cli --lib a_default_run_that_attempted_gpu_and_ran_on_cpu_gets_one_notice no_notice_without_a_fallback notice_and_json_fell_back_agree
+    cargo test -p apr-cli --lib a_default_run_that_attempted_gpu_and_ran_on_cpu_gets_one_notice no_notice_without_a_fallback notice_and_json_fell_back_agree text_mode_fallback_line_is_on_stderr_exactly_once_and_never_on_stdout json_mode_never_prints_the_fallback_line_but_reports_fell_back a_cpu_run_that_attempted_no_gpu_prints_no_line
   if_fails: dense GGUF CUDA-init failure is silent in text mode (#4977)
-- id: FALSIFY-GPU-003
+- id: FALSIFY-GPU-004
   rule: Temperature zero non-empty output
   prediction: apr run --temperature 0 produces tokens (not empty)
   test: |
     Run apr run model.gguf --temperature 0 --max-tokens 16 --json.
     Assert completion_tokens > 0.
   if_fails: Temperature 0 generates 0 tokens on GPU (GH-637)
-- id: FALSIFY-GPU-004
+- id: FALSIFY-GPU-005
   rule: GPU/CPU parity
   prediction: Same prompt produces similar output on CPU and GPU
   test: |
     Run apr parity model.gguf. Assert Cpk > 1.0.
   if_fails: GPU/CPU parity much worse on some platforms (GH-639)
-- id: FALSIFY-GPU-005
+- id: FALSIFY-GPU-006
   rule: JSON output validity
   prediction: apr serve plan --json outputs valid JSON (not human text)
   test: |
     Run apr serve plan --json model.gguf | jq . > /dev/null
     Assert exit code 0 (valid JSON).
   if_fails: --json outputs human-readable text (GH-630)
-- id: FALSIFY-GPU-006
+- id: FALSIFY-GPU-007
   rule: No all-zero dequantization
   prediction: Q6_K tensors on aarch64 dequantize to non-zero values
   test: |
     Load Q6_K model on aarch64, check first 100 values.
     Assert not all zeros.
   if_fails: NEON dequantization produces all-zeros (GH-646)
-- id: FALSIFY-GPU-007
+- id: FALSIFY-GPU-008
   rule: Backend flag naming consistent
   prediction: All inference commands accept --backend {cpu,gpu}
   test: |
     Check run, serve, bench all accept --backend.
   if_fails: Inconsistent flag naming across commands (GH-645)
-- id: FALSIFY-GPU-008
+- id: FALSIFY-GPU-009
   rule: run --gpu uses same CUDA Q4K path as serve --gpu
   prediction: apr run --gpu tok/s within 2x of apr serve run --gpu tok/s
   test: |
@@ -249,7 +249,7 @@ falsification_tests:
         }
     }
   if_fails: run --gpu silently falls back to CPU dequant while serve --gpu uses CUDA (GH-698, GH-573)
-- id: FALSIFY-GPU-009
+- id: FALSIFY-GPU-010
   rule: rosetta compare-inference must not exit 0 with 0 tokens
   prediction: apr rosetta compare-inference exits non-zero when 0 tokens captured
   test: |
@@ -268,7 +268,7 @@ falsification_tests:
         }
     }
   if_fails: Silent failure — 0 tokens captured but exit code 0 (GH-699, GH-641)
-- id: FALSIFY-GPU-010
+- id: FALSIFY-GPU-011
   rule: apr code's JSON document reports the device its completions ran on
   prediction: |
     The Qwen3.5 /v1/chat/completions response carries used_gpu for the turn it
@@ -285,7 +285,7 @@ falsification_tests:
     A forced-GPU apr code run that fell back to the CPU prints the same
     document as one that stayed on the GPU, and a ladder code cell cannot
     prove CUDA (#3719)
-- id: FALSIFY-GPU-011
+- id: FALSIFY-GPU-012
   rule: A dense GGUF whose CUDA init fails prints one stderr CPU-fallback line in text mode
   prediction: |
     When OwnedQuantizedModelCuda init fails for a dense GGUF, `apr run` prints one
