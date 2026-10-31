@@ -1,0 +1,58 @@
+# PV-LINT-REFERENCES-RESOLVE — a `metadata.references` repo path must exist
+#
+# aprender#6397 (PMAT-6397). Nothing checked `metadata.references`; pv only printed
+# it in the book. Repo-path references rot silently when a file is moved or deleted,
+# and a dead reference is a provenance claim that cannot be followed.
+#
+# `pv lint --gate references-resolve` (PV-RAT-004) classifies each entry
+# conservatively and fails only on a repo path that does not exist. The debt is
+# shrink-only against `dead_references` in contracts/lint-baseline.json.
+
+metadata:
+  id: PV-LINT-REFERENCES-RESOLVE
+  version: "1.0.0"
+  created: "2026-10-31"
+  updated: "2026-10-31"
+  author: PAIML Engineering
+  status: partial
+  kind: pattern
+  description: >
+    Every `metadata.references` entry that names a repo path (first token's first
+    segment is a top-level repo entry, ends in a file extension, no glob/brace
+    characters) must exist. URLs, `../` paths, arXiv/DOI ids and author-year
+    citations are free text and never fail. The count of dead paths may not rise.
+  references:
+  - 'aprender#6397 — pv lint: references must resolve'
+  - 'crates/aprender-contracts/src/lint/references_gate.rs'
+
+equations:
+  references_resolve:
+    formula: |
+      dead(C) := { r ∈ C.metadata.references | repo_path(r) = p ∧ ¬exists(root/p) }
+      gate passes ⇔ |⋃ dead(C)| ≤ baseline.dead_references
+    domain: "a contract corpus and the lint-baseline.json beside it"
+    codomain: "pass, or PV-RAT-004 naming the count that rose"
+    invariants:
+    - "an entry that is not classified as a repo path is never a failure"
+    - "no baseline key ⇒ reported, not judged (Unknown(Report))"
+    - "a corpus with no repo-path reference declines: nothing was measured"
+
+falsification_tests:
+- id: FALSIFY-PV-REFS-001
+  rule: "a reference to a missing repo path is reported by name"
+  prediction: "dead_references lists `stem: path` for a planted missing file"
+  test: |
+    cargo test -p aprender-contracts --lib lint::references_gate::tests::dead_path_is_reported_and_live_one_is_not
+  if_fails: "dead references pass unseen"
+- id: FALSIFY-PV-REFS-002
+  rule: "a NEW dead path above the baseline fails, existing debt does not"
+  prediction: "baseline 1 + one dead passes; a second dead path yields PV-RAT-004"
+  test: |
+    cargo test -p aprender-contracts --lib lint::references_gate::tests::baseline_tolerates_existing_debt_but_not_a_new_dead_path
+  if_fails: "the ratchet does not ratchet"
+- id: FALSIFY-PV-REFS-003
+  rule: "the classifier never flags URLs, citations, globs, braces or ../ paths"
+  prediction: "the case table returns None for each"
+  test: |
+    cargo test -p aprender-contracts --lib lint::references_gate::tests::classifier_case_table
+  if_fails: "free text is judged as a path and the gate gives false reds"

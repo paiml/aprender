@@ -9,6 +9,7 @@
   "unpaired_theorem_modules": 129,
   "contracts_without_depends_on": 277,
   "underived_proved_claims": 95,
+  "dead_references": 47,
   "ont": {
     "formal_prose": 1464,
     "legacy_unresolved_depends_on": 8,
