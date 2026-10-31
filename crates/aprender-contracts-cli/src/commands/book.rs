@@ -9,11 +9,22 @@ pub fn run(
     output_dir: &Path,
     update_summary_flag: bool,
     summary_path: Option<&Path>,
+    dry_run: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let contracts = load_contracts(contract_dir)?;
 
     let refs: Vec<(String, &Contract)> = contracts.iter().map(|(s, c)| (s.clone(), c)).collect();
     let graph = dependency_graph(&refs);
+
+    if dry_run {
+        return preview(
+            &contracts,
+            output_dir,
+            &graph,
+            update_summary_flag,
+            summary_path,
+        );
+    }
 
     std::fs::create_dir_all(output_dir)?;
     let generated = write_contract_pages(&contracts, output_dir, &graph)?;
@@ -86,4 +97,37 @@ fn print_manifest(generated: &[(String, usize)], output_dir: &Path) {
             output_dir = output_dir.display()
         );
     }
+}
+
+/// `--dry-run`: render every page in memory and list what a real run would write. Writes nothing.
+fn preview(
+    contracts: &[(String, Contract)],
+    output_dir: &Path,
+    graph: &provable_contracts::graph::DependencyGraph,
+    update_summary_flag: bool,
+    summary_path: Option<&Path>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    println!(
+        "Dry run: {} contract pages would be written (nothing written):",
+        contracts.len()
+    );
+    for (stem, contract) in contracts {
+        let page = generate_contract_page(contract, stem, graph);
+        let out_path = output_dir.join(format!("{stem}.md"));
+        let verb = if out_path.exists() {
+            "overwrite"
+        } else {
+            "create"
+        };
+        println!(
+            "  would {verb} {} ({} bytes)",
+            out_path.display(),
+            page.len()
+        );
+    }
+    if update_summary_flag {
+        let summary = summary_path.unwrap_or_else(|| Path::new("book/src/SUMMARY.md"));
+        println!("  would update {}", summary.display());
+    }
+    Ok(())
 }

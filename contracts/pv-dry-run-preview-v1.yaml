@@ -1,0 +1,53 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-31'
+  author: PAIML Engineering
+  description: "pv --dry-run preview — generate, book and unlock accept --dry-run: they list what a real run would create, overwrite or remove, exit 0, and write nothing."
+  kind: pattern
+  references:
+    - "paiml/aprender#6395 — pv generate/book/unlock write with no --dry-run preview"
+    - "crates/aprender-contracts-cli/tests/pv_dry_run_6395.rs — the falsifiers"
+
+equations:
+  dry_run_writes_nothing:
+    formula: "for v in {generate, book, unlock}: pv v --dry-run ... exits 0 AND fs_before == fs_after AND stdout names every path the real run writes"
+    domain: "a valid contract (or contract directory) and an output directory that may not exist"
+    codomain: "exit 0 plus a textual plan"
+    invariants:
+      - "The output directory is not created by generate --dry-run or book --dry-run"
+      - "The contract file bytes are unchanged by unlock --dry-run"
+      - "The planned path set equals the path set of the real run"
+
+proof_obligations:
+  - id: PVDR-INV-001
+    type: invariant
+    property: "generate --dry-run leaves the filesystem untouched and names all files the real run creates"
+    formal: "tree(out) after dry run = tree(out) before ∧ plan_paths = real_run_paths"
+    applies_to: dry_run_writes_nothing
+  - id: PVDR-INV-002
+    type: invariant
+    property: "book --dry-run writes no pages and names every page"
+    formal: "tree(out) unchanged ∧ plan_paths = real_run_paths"
+    applies_to: dry_run_writes_nothing
+  - id: PVDR-INV-003
+    type: invariant
+    property: "unlock --dry-run leaves the contract bytes unchanged and shows the removed line"
+    formal: "bytes(contract) unchanged ∧ stdout contains '-  locked_level'"
+    applies_to: dry_run_writes_nothing
+
+falsification_tests:
+  - id: FALSIFY-PVDR-001
+    rule: "generate dry run writes files"
+    prediction: "making preview() call the real writer into output_dir turns the test RED"
+    test: "cargo test -p aprender-contracts-cli --test pv_dry_run_6395 generate_dry_run"
+    if_fails: "generate --dry-run writes to disk"
+  - id: FALSIFY-PVDR-002
+    rule: "book dry run writes pages"
+    prediction: "creating output_dir in the dry-run branch turns the test RED"
+    test: "cargo test -p aprender-contracts-cli --test pv_dry_run_6395 book_dry_run"
+    if_fails: "book --dry-run writes to disk"
+  - id: FALSIFY-PVDR-003
+    rule: "unlock dry run rewrites contract"
+    prediction: "moving the dry-run return after fs::write turns the test RED"
+    test: "cargo test -p aprender-contracts-cli --test pv_dry_run_6395 unlock_dry_run"
+    if_fails: "unlock --dry-run modifies the contract"
