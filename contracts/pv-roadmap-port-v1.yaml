@@ -1,0 +1,55 @@
+# PV-ROADMAP-PORT — scripts/lib/roadmap_fragments.py becomes Rust (`pv-roadmap`)
+#
+# Epic aprender#5902; slice S1 = aprender#6353 (PMAT-6353). Operator never-rule: no new
+# Python. The .py predates the rule and is retired by the 12-slice port (slice plan in
+# the cop inbox, 2026-10-25). This contract pins the scaffold slice and the shape of the
+# whole port, so later slices extend it rather than invent a second one.
+
+metadata:
+  id: PV-ROADMAP-PORT
+  version: "1.0.0"
+  created: "2026-10-31"
+  updated: "2026-10-31"
+  author: PAIML Engineering
+  status: partial
+  kind: pattern
+  description: >
+    `pv-roadmap` is a bin target of aprender-contracts-cli. S1 ships `--help` and
+    `--version` only; any subcommand is refused with exit 2 until its slice lands,
+    so a half-ported tool can never read as a passing guard. Done when no `python3`
+    reference to roadmap_fragments.py remains in scripts/, Makefile or ci.yml and
+    the .py is deleted (S12).
+  references:
+  - 'aprender#5902 — port roadmap_fragments.py to Rust'
+  - 'aprender#6353 — S1 scaffold'
+  - 'scripts/lib/roadmap_fragments.py'
+  - 'crates/aprender-contracts-cli/src/bin/pv-roadmap/main.rs'
+  - 'contracts/binary-debt-v1.yaml'
+
+equations:
+  scaffold_refuses_unported:
+    formula: |
+      run([-h|--help])    = (usage, 0)
+      run([-V|--version]) = ("pv-roadmap <semver> (<sha>) …", 0)
+      run([])             = (usage on stderr, 2)
+      run([sub, …])       = (refusal naming the slice plan on stderr, 2)
+    domain: "argv without the program name"
+    codomain: "(stdout, stderr, exit code)"
+    invariants:
+    - "no subcommand exits 0 before its slice lands"
+    - "--version carries the build SHA, as pv and pv-readme do"
+    - "the bin is registered in binary-debt-v1 as KEEP, not folded into `pv --help`"
+
+falsification_tests:
+- id: FALSIFY-PV-ROADMAP-001
+  rule: "--help and --version exit 0 on the built binary"
+  prediction: "the integration test sees code 0 and the expected prefix"
+  test: |
+    cargo test -p aprender-contracts-cli --test pv_roadmap_scaffold
+  if_fails: "the scaffold does not run"
+- id: FALSIFY-PV-ROADMAP-002
+  rule: "an unported subcommand is refused with exit 2"
+  prediction: "`pv-roadmap aggregate --check` exits 2 with empty stdout"
+  test: |
+    cargo test -p aprender-contracts-cli --bin pv-roadmap
+  if_fails: "a stub could pass as the real guard"
