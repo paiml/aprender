@@ -267,13 +267,47 @@ fn match_pat(pat: &Expr, v: f64, env: &mut Env) -> Option<()> {
     }
 }
 
-fn eval(e: &Expr, env: &Env, defs: &[Clause]) -> Option<f64> {
+/// Recursion guard for self-referencing definitions (#6591): `depth` is the live user-definition call
+/// depth, `overflow` records that the limit was hit, so the verdict is Unparsed, not a stack overflow.
+#[derive(Default)]
+struct Limits {
+    depth: std::cell::Cell<usize>,
+    overflow: std::cell::Cell<bool>,
+}
+
+const MAX_CALL_DEPTH: usize = 64;
+/// Most points one invariant is evaluated at; beyond it the axes are sampled, not swept (#6591).
+const MAX_POINTS: usize = 20_000;
+
+/// Call a user-defined function: first clause whose patterns match, under the recursion guard.
+fn call_user(n: &str, v: &[f64], env: &Env, defs: &[Clause], lim: &Limits) -> Option<f64> {
+    if lim.depth.get() >= MAX_CALL_DEPTH {
+        lim.overflow.set(true);
+        return None;
+    }
+    lim.depth.set(lim.depth.get() + 1);
+    let out = defs
+        .iter()
+        .filter(|c| c.name == n && c.pats.len() == v.len())
+        .find_map(|c| {
+            let mut benv = env.clone();
+            c.pats
+                .iter()
+                .zip(v)
+                .try_for_each(|(p, x)| match_pat(p, *x, &mut benv))?;
+            eval(&c.body, &benv, defs, lim)
+        });
+    lim.depth.set(lim.depth.get() - 1);
+    out
+}
+
+fn eval(e: &Expr, env: &Env, defs: &[Clause], lim: &Limits) -> Option<f64> {
     let r = match e {
         Expr::Num(n) => *n,
         Expr::Var(v) => *env.get(v)?,
-        Expr::Neg(a) => -eval(a, env, defs)?,
+        Expr::Neg(a) => -eval(a, env, defs, lim)?,
         Expr::Bin(o, a, b) => {
-            let (x, y) = (eval(a, env, defs)?, eval(b, env, defs)?);
+            let (x, y) = (eval(a, env, defs, lim)?, eval(b, env, defs, lim)?);
             match o {
                 '+' => x + y,
                 '-' => x - y,
@@ -285,7 +319,7 @@ fn eval(e: &Expr, env: &Env, defs: &[Clause]) -> Option<f64> {
         Expr::Call(n, args) => {
             let v: Vec<f64> = args
                 .iter()
-                .map(|a| eval(a, env, defs))
+                .map(|a| eval(a, env, defs, lim))
                 .collect::<Option<_>>()?;
             match (n.as_str(), v.as_slice()) {
                 ("sin", [x]) => x.sin(),
@@ -293,19 +327,7 @@ fn eval(e: &Expr, env: &Env, defs: &[Clause]) -> Option<f64> {
                 ("exp", [x]) => x.exp(),
                 ("sqrt", [x]) => x.sqrt(),
                 ("abs", [x]) => x.abs(),
-                _ => {
-                    let amb: Env = env.clone();
-                    defs.iter()
-                        .filter(|c| c.name == *n && c.pats.len() == v.len())
-                        .find_map(|c| {
-                            let mut benv = amb.clone();
-                            c.pats
-                                .iter()
-                                .zip(&v)
-                                .try_for_each(|(p, x)| match_pat(p, *x, &mut benv))?;
-                            eval(&c.body, &benv, defs)
-                        })?
-                }
+                _ => call_user(n, &v, env, defs, lim)?,
             }
         }
     };
@@ -325,17 +347,34 @@ fn parse_defs(formula: &str) -> Vec<Clause> {
         .collect()
 }
 
+/// Byte offset of the first ` for ` outside any parentheses (`F(x) = (a for b)` keeps its right side).
+fn top_level_for(s: &str) -> Option<usize> {
+    let mut depth = 0i32;
+    for (i, ch) in s.char_indices() {
+        match ch {
+            '(' => depth += 1,
+            ')' => depth -= 1,
+            ' ' if depth == 0 && s[i..].starts_with(" for ") => return Some(i),
+            _ => {}
+        }
+    }
+    None
+}
+
 /// Drop a trailing ` (comment)` and a ` for all ...` / ` for ...` suffix.
 fn strip_prose(s: &str) -> String {
     let mut s = s.trim().to_string();
     if s.ends_with(')') {
         if let Some(i) = s.rfind(" (") {
-            if s[i + 2..].matches('(').count() < s[i + 2..].matches(')').count() {
+            let opens_operand = s[..i]
+                .trim_end()
+                .ends_with(['=', '+', '-', '*', '/', '^', '<', '>', ',', '(']);
+            if !opens_operand && s[i + 2..].matches('(').count() < s[i + 2..].matches(')').count() {
                 s.truncate(i);
             }
         }
     }
-    if let Some(i) = s.find(" for ") {
+    if let Some(i) = top_level_for(&s) {
         s.truncate(i);
     }
     s.trim().to_string()
@@ -470,18 +509,6 @@ fn sample_axes(vars: &[String], idxv: &[String], amb: &[String]) -> Vec<(String,
         .collect()
 }
 
-/// Advance the odometer; false once every combination has been visited.
-fn advance(idx: &mut [usize], names: &[(String, Vec<f64>)]) -> bool {
-    for (i, slot) in idx.iter_mut().enumerate() {
-        *slot += 1;
-        if *slot < names[i].1.len() {
-            return true;
-        }
-        *slot = 0;
-    }
-    false
-}
-
 fn counterexample(env: &Env, parts: &[String], cmps: &[Cmp], v: &[f64]) -> Option<String> {
     let k = (0..cmps.len()).find(|&k| !holds_cmp(cmps[k], v[k], v[k + 1]))?;
     let at: Vec<String> = env.iter().map(|(n, x)| format!("{n}={x}")).collect();
@@ -496,32 +523,79 @@ fn counterexample(env: &Env, parts: &[String], cmps: &[Cmp], v: &[f64]) -> Optio
     ))
 }
 
-/// Evaluate every combination; Err carries the first counterexample, Ok the number of in-domain points.
+/// Why a sweep stopped before finishing: a counterexample, or a limit that makes the verdict Unparsed.
+enum Stop {
+    Violated(String),
+    Unparsed(String),
+}
+
+/// The combination indices to visit: all of them when they fit the budget, otherwise `MAX_POINTS`
+/// fixed-seed pseudo-random ones (reproducible), always including the first (all-edge) one.
+fn plan_indices(total: u128) -> Vec<u128> {
+    if total <= MAX_POINTS as u128 {
+        return (0..total).collect();
+    }
+    let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut out = vec![0u128];
+    while out.len() < MAX_POINTS {
+        s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        out.push((u128::from(s) << 32 ^ u128::from(s >> 7)) % total);
+    }
+    out
+}
+
+/// Mixed-radix decode of a combination number into one index per axis.
+fn decode(mut n: u128, names: &[(String, Vec<f64>)]) -> Vec<usize> {
+    names
+        .iter()
+        .map(|(_, p)| {
+            let r = p.len().max(1) as u128;
+            let i = (n % r) as usize;
+            n /= r;
+            i
+        })
+        .collect()
+}
+
+/// Evaluate the combinations (all, or a capped sample); Err carries the first counterexample or the
+/// limit hit, Ok the number of in-domain points.
 fn sweep(
     names: &[(String, Vec<f64>)],
     exprs: &[Expr],
     defs: &[Clause],
     parts: &[String],
     cmps: &[Cmp],
-) -> Result<usize, String> {
-    let (mut idx, mut points) = (vec![0usize; names.len()], 0usize);
-    loop {
+) -> Result<usize, Stop> {
+    let total = names
+        .iter()
+        .map(|(_, p)| p.len().max(1) as u128)
+        .try_fold(1u128, u128::checked_mul)
+        .unwrap_or(u128::MAX);
+    let lim = Limits::default();
+    let mut points = 0usize;
+    for n in plan_indices(total) {
+        let idx = decode(n, names);
         let env: Env = names
             .iter()
             .zip(&idx)
-            .map(|((n, p), &i)| (n.clone(), p[i]))
+            .map(|((nm, p), &i)| (nm.clone(), p[i]))
             .collect();
-        let vals: Option<Vec<f64>> = exprs.iter().map(|e| eval(e, &env, defs)).collect();
+        let vals: Option<Vec<f64>> = exprs.iter().map(|e| eval(e, &env, defs, &lim)).collect();
+        if lim.overflow.get() {
+            return Err(Stop::Unparsed(format!(
+                "a definition recurses deeper than {MAX_CALL_DEPTH} calls"
+            )));
+        }
         if let Some(v) = vals {
             points += 1;
             if let Some(c) = counterexample(&env, parts, cmps, &v) {
-                return Err(c);
+                return Err(Stop::Violated(c));
             }
         }
-        if !advance(&mut idx, names) {
-            return Ok(points);
-        }
     }
+    Ok(points)
 }
 
 fn check_conjunct(text: &str, defs: &[Clause]) -> Verdict {
@@ -547,7 +621,8 @@ fn check_conjunct(text: &str, defs: &[Clause]) -> Verdict {
     let names = sample_axes(&vars, &idxv, &amb);
     let points = match sweep(&names, &exprs, defs, &parts, &cmps) {
         Ok(n) => n,
-        Err(c) => return Verdict::Violated { counterexample: c },
+        Err(Stop::Violated(c)) => return Verdict::Violated { counterexample: c },
+        Err(Stop::Unparsed(r)) => return unparsed(r),
     };
     if points == 0 {
         unparsed("no sampled point fell in the definition's domain".into())
@@ -708,5 +783,68 @@ mod tests {
         );
         assert!(run(&bad, false).is_err(), "sin->cos must report violated");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn strip_prose_case_table() {
+        let t: [(&str, &str); 9] = [
+            ("F(x) = (x + 1)", "F(x) = (x + 1)"),
+            ("F(x) = 2 * (x + 1)", "F(x) = 2 * (x + 1)"),
+            ("F(x) <= (x + 1) (a note)", "F(x) <= (x + 1)"),
+            ("PE(0, 2i) = 0 (known zero-position value)", "PE(0, 2i) = 0"),
+            (
+                "-1 <= PE(pos, j) <= 1 for all pos, j (sin/cos range)",
+                "-1 <= PE(pos, j) <= 1",
+            ),
+            ("F(x) = G(x, (y + 1))", "F(x) = G(x, (y + 1))"),
+            ("F(x) = (a for b)", "F(x) = (a for b)"),
+            ("F(x) = x for all x", "F(x) = x"),
+            ("F(x) = x", "F(x) = x"),
+        ];
+        for (input, want) in t {
+            assert_eq!(strip_prose(input), want, "{input}");
+        }
+    }
+
+    #[test]
+    fn a_parenthesised_right_hand_side_is_still_checked() {
+        assert!(matches!(
+            check_invariant("F(x) = x + 1", "F(x) = (x + 1)"),
+            Verdict::Holds { .. }
+        ));
+        assert!(matches!(
+            check_invariant("F(x) = x + 1", "F(x) = (x + 2)"),
+            Verdict::Violated { .. }
+        ));
+    }
+
+    #[test]
+    fn a_self_recursive_definition_is_unparsed_not_a_stack_overflow() {
+        let v = check_invariant("F(x) = F(x) + 1", "F(x) = F(x) + 1");
+        assert!(
+            matches!(&v, Verdict::Unparsed { reason } if reason.contains("recurses")),
+            "{v:?}"
+        );
+    }
+
+    #[test]
+    fn a_wide_invariant_is_capped_at_the_point_budget() {
+        let v = check_invariant(
+            "G(a, b, c, d, e) = a + b + c + d + e",
+            "G(a, b, c, d, e) = G(e, d, c, b, a)",
+        );
+        assert!(
+            matches!(v, Verdict::Holds { points } if points > 0 && points <= MAX_POINTS),
+            "{v:?}"
+        );
+    }
+
+    #[test]
+    fn a_capped_sweep_still_finds_a_violation() {
+        let v = check_invariant(
+            "G(a, b, c, d, e) = a + b + c + d + e",
+            "G(a, b, c, d, e) = G(e, d, c, b, a) + a",
+        );
+        assert!(matches!(v, Verdict::Violated { .. }), "{v:?}");
     }
 }
