@@ -41,6 +41,13 @@ build_listed() { # full repo-relative paths: contracts/<BUILD_CONTRACTS entry>, 
 }
 # Any contracts/** or docs/** file (nested too) that a build.rs names or an include*! macro embeds (the macro may span lines): compiled into a crate, so ALL.
 # Over-approximates on purpose (a path anywhere in the 300 chars after the macro name); a file that does not exist is dropped. Paths relative to the repo root = ${AFFECTED_ROOT_DIR:-.}.
+existing_only() { # keep the listed paths that exist under AFFECTED_ROOT_DIR
+  local f
+  while read -r f; do
+    [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ] && echo "$f"
+  done
+  return 0
+}
 build_inputs() { # $1 = crates dir
   local p='(contracts|docs)/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+' f
   {
@@ -48,7 +55,7 @@ build_inputs() { # $1 = crates dir
     { g -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1"; } | while IFS= read -r f; do
       g -vE '^\s*//' "$f" | g -oE "$p"
       g -vE '^\s*//' "$f" | g -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' | sed 's#^#contracts/#'; done
-  } | sort -u | while read -r f; do if [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ]; then echo "$f"; fi; done | g -vE '(^|/)binding\.yaml$|/model-families/'
+  } | sort -u | existing_only | g -vE '(^|/)binding\.yaml$|/model-families/'
 }
 check() {
   local bad="" l c h bl bi; [ -d "$1" ] || { echo "RED: crates dir '$1' is missing or not a directory (fail closed)"; return 2; }
