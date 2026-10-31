@@ -183,6 +183,12 @@ falsification_tests:
   test: |
     Start apr serve on GPU system, curl /health, check compute_mode.
   if_fails: Health reports cpu on GPU system (GH-628)
+- id: FALSIFY-GPU-012
+  rule: A CPU fallback is announced in text mode
+  prediction: a default run that attempted a GPU backend and ran on CPU prints one stderr line naming the CPU fallback, without --verbose; the line and --json backend.fell_back share one predicate
+  test: |
+    cargo test -p apr-cli --lib a_default_run_that_attempted_gpu_and_ran_on_cpu_gets_one_notice no_notice_without_a_fallback notice_and_json_fell_back_agree
+  if_fails: dense GGUF CUDA-init failure is silent in text mode (#4977)
 - id: FALSIFY-GPU-003
   rule: Temperature zero non-empty output
   prediction: apr run --temperature 0 produces tokens (not empty)

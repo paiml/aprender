@@ -677,6 +677,9 @@ fn print_run_output(
     if benchmark {
         print_benchmark_results(result, source, output_format, max_tokens);
     } else {
+        if let Some(note) = cpu_fallback_notice(result, accel_forced) {
+            eprintln!("{note}");
+        }
         println!();
         println!("{}", "Output:".green().bold());
         println!("{}", result.text);
@@ -717,12 +720,27 @@ fn effective_tok_per_sec(result: &RunResult, tokens_generated: usize) -> f64 {
 /// run from a rejected GPU run. See the long comment on its call site in
 /// [`build_final_json`] for why each field exists and why `accel_forced`
 /// alone cannot be dropped in favor of `gpu_attempted`.
+/// #3602/#3826: an accelerator was tried (asked for, or entered) and CPU answered. One definition for the
+/// `--json` `backend.fell_back` and the text-mode notice, so the two surfaces cannot disagree.
+fn fell_back_to_cpu(result: &RunResult, accel_forced: bool) -> bool {
+    result.used_gpu == Some(false) && (accel_forced || result.gpu_attempted == Some(true))
+}
+
+/// #4977: the one stderr line a TEXT-mode run prints when the accelerator did not produce the answer. A forced
+/// `--gpu` that fell back is refused (exit 14) before this is reached, so this covers the default selection.
+pub(crate) const CPU_FALLBACK_NOTICE: &str =
+    "note: GPU backend did not run, falling back to CPU (backend.fell_back = true)";
+
+/// The notice for `result`, or `None` when nothing fell back.
+fn cpu_fallback_notice(result: &RunResult, accel_forced: bool) -> Option<&'static str> {
+    fell_back_to_cpu(result, accel_forced).then_some(CPU_FALLBACK_NOTICE)
+}
+
 fn backend_json(result: &RunResult, accel_forced: bool) -> serde_json::Value {
     serde_json::json!({
         "requested": if accel_forced { "gpu" } else { "default" },
         "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
-        "fell_back": result.used_gpu == Some(false)
-            && (accel_forced || result.gpu_attempted == Some(true)),
+        "fell_back": fell_back_to_cpu(result, accel_forced),
     })
 }
 
