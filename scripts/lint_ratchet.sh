@@ -95,6 +95,31 @@ measure() {
     printf '%s\n' "$n"
 }
 
+# prune_set FILE DEAD_JSON: drop `dead_reference_set` members that are no longer dead (a fixed path must
+# stop being accepted). Never adds a member. Prints nothing and changes nothing when the key is absent.
+# DEAD_JSON is the JSON array of `stem: path` strings the gate currently measures.
+prune_set() {
+    local file="$1" dead="$2" old new
+    grep -qE '^  "dead_reference_set"[[:space:]]*:' "$file" || return 0
+    old="$(grep -E '^  "dead_reference_set"[[:space:]]*:' "$file" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/,[[:space:]]*$//')"
+    new="$(jq -nr --argjson old "$old" --argjson dead "$dead" \
+        '[$old[] | select(. as $m | $dead | index($m))] | unique | "[" + (map(@json) | join(", ")) + "]"')" || return 2
+    [ "$(printf '%s' "$old" | jq -c 'sort')" = "$(printf '%s' "$new" | jq -c '.')" ] && {
+        printf '  unchanged %-30s %s members\n' dead_reference_set "$(printf '%s' "$old" | jq 'length')"; return 0; }
+    set_line "$file" dead_reference_set "$new" || return 2
+    printf '  pruned    %-30s %s -> %s members\n' dead_reference_set "$(printf '%s' "$old" | jq 'length')" "$(printf '%s' "$new" | jq 'length')"
+}
+
+# measure_dead -> the JSON array of dead `stem: path` strings `references-resolve` reports.
+measure_dead() {
+    local out
+    set +e
+    out="$("$PV" lint "$REPO_ROOT/contracts" --gate references-resolve 2>/dev/null)"
+    set -e
+    printf '%s' "$out" | jq -ce '.dead | arrays' 2>/dev/null \
+        || { printf 'NO-GO: `pv lint --gate references-resolve` reported no dead list; nothing was pruned\n' >&2; return 2; }
+}
+
 self_test() {
     local t pass=0 fail=0
     t="$(mktemp -d)"
@@ -132,6 +157,19 @@ self_test() {
     printf '{\n  "armed_gates": []\n}\n' > "$t/noont.json"
     set +e; set_line "$t/noont.json" command '"x"' 2>/dev/null; rc=$?; set -e
     row "no ont object and no key is refused, not guessed" "$rc" 2
+    printf '{\n  "dead_references": 3,\n  "dead_reference_set": ["a: x/1.rs", "b: x/2.rs", "c: x/3.rs"],\n  "ont": {\n    "x": 1\n  }\n}\n' > "$t/d.json"
+    prune_set "$t/d.json" '["a: x/1.rs", "c: x/3.rs", "z: x/9.rs"]' >/dev/null
+    row "a member whose path is fixed is pruned"           "$(jq -c '.dead_reference_set' "$t/d.json")" '["a: x/1.rs","c: x/3.rs"]'
+    row "a new dead path is never added by the prune"      "$(grep -c 'z: x/9.rs' "$t/d.json")" 0
+    row "the pruned file is still valid JSON, ont intact"  "$(jq -c '.ont.x' "$t/d.json")" 1
+    cp "$t/d.json" "$t/e.json"; prune_set "$t/e.json" '["a: x/1.rs", "c: x/3.rs"]' >/dev/null
+    row "an unchanged set leaves the file byte-identical"  "$(md5sum < "$t/d.json" | cut -c1-8)" "$(md5sum < "$t/e.json" | cut -c1-8)"
+    printf '{\n  "dead_reference_set": ["a: x/1.rs", "a: x/1.rs"]\n}\n' > "$t/g.json"
+    prune_set "$t/g.json" '["a: x/1.rs"]' >/dev/null
+    row "a duplicate member in the baseline is collapsed"  "$(jq -c '.dead_reference_set' "$t/g.json")" '["a: x/1.rs"]'
+    printf '{\n  "command": "x"\n}\n' > "$t/f.json"
+    prune_set "$t/f.json" '[]' >/dev/null
+    row "no set key: the prune is a no-op"                 "$(grep -c dead_reference_set "$t/f.json")" 0
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
@@ -153,6 +191,14 @@ main() {
     set_line "$BASELINE" command "\"$COMMAND_VALUE\"" || return 2
     ratchet_one "$BASELINE" unpaired_theorem_modules "$pairing" || rc=$?
     ratchet_one "$BASELINE" contracts_without_depends_on "$depends" || rc=$?
+    # references-resolve (PV-RAT-004): the count only falls, and a fixed path leaves the accepted set.
+    if grep -qE '^  "dead_references"[[:space:]]*:' "$BASELINE"; then
+        local dead_json dead_n
+        dead_json="$(measure_dead)" || return 2
+        dead_n="$(printf '%s' "$dead_json" | jq 'unique | length')"
+        prune_set "$BASELINE" "$dead_json" || return 2
+        ratchet_one "$BASELINE" dead_references "$dead_n" || rc=$?
+    fi
     return "$rc"
 }
 

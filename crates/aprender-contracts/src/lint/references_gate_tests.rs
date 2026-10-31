@@ -168,3 +168,24 @@ fn a_trailing_period_is_trimmed_so_the_path_is_checked_not_skipped() {
         vec!["a-v1: crates/x/src/gone.rs".to_string()]
     );
 }
+
+#[test]
+fn a_duplicate_dead_entry_is_new_debt_even_when_the_set_lists_it() {
+    // Same `stem: path` twice in one contract: both are "in the set", but only one was accepted.
+    let t = repo(&["crates/x/src/gone.rs", "crates/x/src/gone.rs"]);
+    write(
+        t.path(),
+        "contracts/lint-baseline.json",
+        r#"{"dead_references": 1, "dead_reference_set": ["a-v1: crates/x/src/gone.rs"]}"#,
+    );
+    let (r, rules) = run(t.path());
+    assert!(!r.passed, "the duplicate must fail");
+    assert_eq!(rules, vec!["PV-RAT-004".to_string()]);
+    // One occurrence, same baseline: passes.
+    write(
+        t.path(),
+        "contracts/a-v1.yaml",
+        &contract(&["crates/x/src/gone.rs"]),
+    );
+    assert!(run(t.path()).0.passed);
+}

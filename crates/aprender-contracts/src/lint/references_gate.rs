@@ -83,17 +83,28 @@ fn dead_findings(
             .into_iter()
             .collect();
     };
+    let finding = |msg: String| {
+        let mut f = LintFinding::new(
+            "PV-RAT-004",
+            RuleSeverity::Error,
+            msg,
+            "contracts/lint-baseline.json".to_string(),
+        );
+        f.contract_stem = Some("lint-baseline".to_string());
+        f
+    };
+    // A member of the set is accepted ONCE: a second identical `stem: path` entry is new debt that the
+    // membership test alone would wave through.
+    let mut seen = BTreeSet::new();
     dead.iter()
-        .filter(|d| !set.contains(*d))
-        .map(|d| {
-            let mut f = LintFinding::new(
-                "PV-RAT-004",
-                RuleSeverity::Error,
-                format!("new dead reference `{d}` is not in the {DEAD_SET_KEY} baseline: {FIX}. The baseline is shrink-only; `make lint-ratchet` only removes members"),
-                "contracts/lint-baseline.json".to_string(),
-            );
-            f.contract_stem = Some("lint-baseline".to_string());
-            f
+        .filter_map(|d| {
+            if !set.contains(d) {
+                Some(finding(format!("new dead reference `{d}` is not in the {DEAD_SET_KEY} baseline: {FIX}. The baseline is shrink-only; `make lint-ratchet` removes members whose path now resolves")))
+            } else if !seen.insert(d.as_str()) {
+                Some(finding(format!("dead reference `{d}` is listed more than once: {FIX}. Each `stem: path` is accepted once")))
+            } else {
+                None
+            }
         })
         .collect()
 }
