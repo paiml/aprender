@@ -62,7 +62,7 @@ impl RemoteWorker {
 
         // Serialize task
         let message = RemoteMessage::SubmitTask(task);
-        let encoded = bincode::serialize(&message).map_err(|e| {
+        let encoded = aprender_legacy_codec::serialize(&message).map_err(|e| {
             error!("Failed to serialize task {task_id}: {e}");
             RepartirError::InvalidTask { reason: format!("Serialization failed: {e}") }
         })?;
@@ -115,10 +115,11 @@ impl RemoteWorker {
             drop(stream);
 
             // Deserialize result
-            let message: RemoteMessage = bincode::deserialize(&buffer).map_err(|e| {
-                error!("Failed to deserialize result from {}: {e}", self.address);
-                RepartirError::InvalidTask { reason: format!("Deserialization failed: {e}") }
-            })?;
+            let message: RemoteMessage =
+                aprender_legacy_codec::deserialize(&buffer).map_err(|e| {
+                    error!("Failed to deserialize result from {}: {e}", self.address);
+                    RepartirError::InvalidTask { reason: format!("Deserialization failed: {e}") }
+                })?;
 
             if let RemoteMessage::TaskResult(result) = message {
                 debug!("Received result for task {} from {}", result.task_id(), self.address);
@@ -293,7 +294,8 @@ mod tests {
     /// Answers one request: a `SubmitTask` gets a canned success result, anything else is ignored.
     async fn serve_one_request(stream: &mut tokio::net::TcpStream) -> std::io::Result<()> {
         let buffer = read_frame(stream).await?;
-        if let Ok(RemoteMessage::SubmitTask(task)) = bincode::deserialize::<RemoteMessage>(&buffer)
+        if let Ok(RemoteMessage::SubmitTask(task)) =
+            aprender_legacy_codec::deserialize::<RemoteMessage>(&buffer)
         {
             let result = ExecutionResult::new(
                 task.id(),
@@ -302,7 +304,8 @@ mod tests {
                 Vec::new(),
                 std::time::Duration::from_millis(10),
             );
-            let encoded = bincode::serialize(&RemoteMessage::TaskResult(result)).unwrap();
+            let encoded =
+                aprender_legacy_codec::serialize(&RemoteMessage::TaskResult(result)).unwrap();
             write_frame(stream, &encoded).await?;
         }
         Ok(())
@@ -431,8 +434,8 @@ mod tests {
             .unwrap();
 
         let message = RemoteMessage::SubmitTask(task.clone());
-        let encoded = bincode::serialize(&message).unwrap();
-        let decoded: RemoteMessage = bincode::deserialize(&encoded).unwrap();
+        let encoded = aprender_legacy_codec::serialize(&message).unwrap();
+        let decoded: RemoteMessage = aprender_legacy_codec::deserialize(&encoded).unwrap();
 
         match decoded {
             RemoteMessage::SubmitTask(decoded_task) => {
