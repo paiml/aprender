@@ -115,7 +115,7 @@ binaries:
   - {crate: aprender-contracts-cli, bin: pv, class: KEEP, reason: "contract CLI, dogfooded by every gate", target: null}
   - {crate: aprender-contracts-cli, bin: pv-sat, class: KEEP, reason: "ONT-5 SHACL reasoner (added after the census); gates call it as its own ELF. Folding it into `pv sat` is a cop ruling, and would count as debt", target: null}
   - {crate: aprender-contracts-cli, bin: pv-readme, class: KEEP, reason: "#6394 PVL-001: README render + SHACL validate for the release path; its own ELF so the pv --help surface gate is untouched. Folding it into `pv readme` is a cop ruling, and would count as debt", target: null}
-  - {crate: aprender-contracts-cli, bin: pv-roadmap, class: KEEP, reason: "#6353 PMAT-5902 S1: Rust port of scripts/lib/roadmap_fragments.py (retires the .py, C301); its own ELF so the pv --help surface gate is untouched. Folding it into `pv roadmap` is a cop ruling, and would count as debt", target: null}
+  - {crate: aprender-contracts-cli, bin: aprender-roadmap, class: KEEP, reason: "#6353 PMAT-5902 S1: Rust port of scripts/lib/roadmap_fragments.py (retires the .py, C301); its own ELF so the pv --help surface gate is untouched. Folding it into `pv roadmap` is a cop ruling, and would count as debt", target: null}
   - {crate: aprender-zram-generator, bin: aprender-zram-generator, class: KEEP, reason: "systemd generator, must be a standalone ELF", target: null}
   - {crate: ccpa-sft-export, bin: ccpa-sft-export, class: KEEP, reason: "publish = false dev tool (excluded crate; missed by the #4057 census)", target: null}
   - {crate: aprender-crux-judge, bin: aprender-crux-judge, class: KEEP, reason: "publish = false dev tool (excluded crate): the CRUX judge port, run by the nightly only", target: null}

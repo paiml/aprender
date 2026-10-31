@@ -1,4 +1,4 @@
-//! `pv-roadmap` — Rust port of `scripts/lib/roadmap_fragments.py` (epic #5902, slice S1 of 12, #6353).
+//! `aprender-roadmap` — Rust port of `scripts/lib/roadmap_fragments.py` (epic #5902, slice S1 of 12, #6353).
 //!
 //! S1 is the scaffold only: the bin stub with `--help` and `--version`. Every subcommand lands in a later slice
 //! (S2 yamlval, S3 merge, S5 fragments, S8/S9 diff, S10 dispatch); until then a subcommand is refused with exit
@@ -7,9 +7,9 @@
 use std::process::ExitCode;
 
 const USAGE: &str = "\
-pv-roadmap — roadmap fragment tooling (port of scripts/lib/roadmap_fragments.py, #5902)
+aprender-roadmap — roadmap fragment tooling (port of scripts/lib/roadmap_fragments.py, #5902)
 
-usage: pv-roadmap [-h | --help] [-V | --version]
+usage: aprender-roadmap [-h | --help] [-V | --version]
 
 Subcommands (aggregate, changed, adopt, fragment-ids, fragments) are not ported yet: slices S2-S10 of #5902.";
 
@@ -20,7 +20,7 @@ pub fn run(args: &[String]) -> (String, String, u8) {
         [flag] if flag == "-h" || flag == "--help" => (format!("{USAGE}\n"), String::new(), 0),
         [flag] if flag == "-V" || flag == "--version" => (
             format!(
-                "pv-roadmap {} ({}) (aprender roadmap fragment tooling)\n",
+                "aprender-roadmap {} ({}) (aprender roadmap fragment tooling)\n",
                 env!("CARGO_PKG_VERSION"),
                 env!("APR_GIT_SHA")
             ),
@@ -30,7 +30,9 @@ pub fn run(args: &[String]) -> (String, String, u8) {
         [] => (String::new(), format!("{USAGE}\n"), 2),
         [first, ..] => (
             String::new(),
-            format!("pv-roadmap: `{first}` is not ported yet (slices S2-S10 of #5902)\n{USAGE}\n"),
+            format!(
+                "aprender-roadmap: `{first}` is not ported yet (slices S2-S10 of #5902)\n{USAGE}\n"
+            ),
             2,
         ),
     }
@@ -56,11 +58,11 @@ mod tests {
     fn help_and_version_exit_zero_on_stdout() {
         for f in ["-h", "--help"] {
             let (o, e, c) = run(&a(&[f]));
-            assert!(o.contains("usage: pv-roadmap") && e.is_empty() && c == 0);
+            assert!(o.contains("usage: aprender-roadmap") && e.is_empty() && c == 0);
         }
         for f in ["-V", "--version"] {
             let (o, e, c) = run(&a(&[f]));
-            assert!(o.starts_with("pv-roadmap ") && e.is_empty() && c == 0);
+            assert!(o.starts_with("aprender-roadmap ") && e.is_empty() && c == 0);
         }
     }
 
