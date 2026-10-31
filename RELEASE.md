@@ -87,6 +87,14 @@ Follow Semantic Versioning (SemVer):
 
 Current: `0.1.0` (initial release)
 
+## Release definition
+
+Operator ruling, 2026-10-30, verbatim: "a release = the version is on crates.io and passed the clean-container smoke. A tag alone is not a release. A tag not on crates.io within 2 h of push is an andon that pages Noah live. The post-publish step closes the milestone/epic ONLY after crates.io shows the version. Fixture: tag pushed, publish fails -> milestone stays open, andon fires."
+
+- **The andon**: `scripts/release/tag_publish_andon.sh` (user timer `scripts/release/systemd/aprender-tag-andon.timer`, every 15 min). For every `v<semver>` tag created on or after `--since` and older than 120 min, crate `aprender` must show that version on crates.io. If it does not, it writes a cop-inbox line every run, one escalation line and one live page per tag, and exits 1. An unreadable crates.io is NOT_MEASURED (exit 2, no page).
+- **The close gate**: `crates_io_close_gate` in `scripts/release/lib_crates_io.sh`, called at the top of step 9 (`close`) of `scripts/release/autopilot.sh`. Unless crates.io shows the version, the epic and the milestone stay open.
+- Proof: `bash scripts/release/falsify_tag_publish_andon.sh --mutants` and `scripts/check_release_autopilot_dogfood_close.sh`.
+
 ## Post-Release
 
 1. Verify release on crates.io: https://crates.io/crates/aprender
