@@ -82,7 +82,8 @@ blocking_step() {
 }
 
 # the tag list must be current: a failed fetch is not measured, never "no tags"
-if G remote get-url origin > /dev/null 2>&1 && ! G fetch -q --tags origin > /dev/null 2>&1; then
+# --force: an upstream tag that moved (nightly) is a normal update, not a failure ("would clobber existing tag", PMAT-2742)
+if G remote get-url origin > /dev/null 2>&1 && ! G fetch -q --force --tags origin > /dev/null 2>&1; then
     inbox_line "NOT_MEASURED tag andon: cannot fetch tags from origin"; say "cannot fetch tags: not measured"; exit 2
 fi
 now=$(date -u +%s) # bashrs disable-line=DET002
