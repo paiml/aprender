@@ -127,7 +127,16 @@ fn preview(
     }
     if update_summary_flag {
         let summary = summary_path.unwrap_or_else(|| Path::new("book/src/SUMMARY.md"));
-        println!("  would update {}", summary.display());
+        // Same read a real run does, so a missing SUMMARY.md fails the preview the same way.
+        let existing = std::fs::read_to_string(summary)?;
+        let stems: Vec<&str> = contracts.iter().map(|(s, _)| s.as_str()).collect();
+        let changed = update_summary(&existing, &stems) != existing;
+        let what = if changed {
+            "would update"
+        } else {
+            "would leave unchanged"
+        };
+        println!("  {what} {}", summary.display());
     }
     Ok(())
 }

@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use provable_contracts::binding::{parse_binding, BindingRegistry};
-use provable_contracts::generate::{generate_all, GeneratedFiles};
+use provable_contracts::generate::{generate_all, plan_all, GeneratedFiles};
 use provable_contracts::readme_gen::{generate_ci_workflow, generate_readme};
 use provable_contracts::schema::{parse_contract, Contract};
 
@@ -107,9 +107,8 @@ fn verb(path: &Path) -> &'static str {
     }
 }
 
-/// `--dry-run`: run the real generators into a scratch directory outside `output_dir`, report
-/// the paths a real run would write under `output_dir`, then delete the scratch directory.
-/// `output_dir` itself is never created or touched.
+/// `--dry-run`: render the artifacts in memory (`plan_all`) and report the paths a real run would
+/// write under `output_dir`. No file or directory is created anywhere, `TMPDIR` included.
 fn preview(
     c: &Contract,
     stem: &str,
@@ -118,10 +117,7 @@ fn preview(
     readme: bool,
     ci: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let scratch = std::env::temp_dir().join(format!("pv-generate-dry-run-{}", std::process::id()));
-    let result = generate_all(c, stem, &scratch, binding);
-    let _ = std::fs::remove_dir_all(&scratch);
-    let result = result?;
+    let result = plan_all(c, stem, output_dir, binding);
 
     let mut planned: Vec<(std::path::PathBuf, String, usize)> = result
         .files

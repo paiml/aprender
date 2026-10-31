@@ -46,6 +46,11 @@ falsification_tests:
     prediction: "creating output_dir in the dry-run branch turns the test RED"
     test: "cargo test -p aprender-contracts-cli --test pv_dry_run_6395 book_dry_run"
     if_fails: "book --dry-run writes to disk"
+  - id: FALSIFY-PVDR-004
+    rule: "generate dry run touches the filesystem (including TMPDIR)"
+    prediction: "a scratch-dir implementation fails on a read-only TMPDIR"
+    test: "cargo test -p aprender-contracts-cli --test pv_dry_run_6395 read_only_tmpdir"
+    if_fails: "generate --dry-run writes somewhere"
   - id: FALSIFY-PVDR-003
     rule: "unlock dry run rewrites contract"
     prediction: "moving the dry-run return after fs::write turns the test RED"
