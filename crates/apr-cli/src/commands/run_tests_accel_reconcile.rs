@@ -494,3 +494,67 @@ fn notice_and_json_fell_back_agree() {
         }
     }
 }
+
+// #6590 — what `print_run_output` actually WRITES, on which stream, how many times. libtest's capture cannot
+// be read in-process, so the test re-runs itself as a child (env `APR_FALLBACK_CHILD=<mode>`) and reads the
+// child's real stdout and stderr. The child arm calls `print_run_output`; the parent arm counts.
+
+fn child_print(mode: &str) {
+    let r = attempted(Some(false), Some(true));
+    let (format, accel) = match mode {
+        "text" => ("text", false),
+        "json" => ("json", false),
+        "cpu_ok" => ("text", false),
+        _ => panic!("unknown child mode {mode}"),
+    };
+    let r = if mode == "cpu_ok" { attempted(Some(false), None) } else { r };
+    print_run_output(&r, "m.gguf", format, 1, false, false, accel).expect("print_run_output");
+}
+
+fn run_child(mode: &str) -> (String, String) {
+    let exe = std::env::current_exe().expect("test exe");
+    let out = std::process::Command::new(exe)
+        .args([
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+            "commands::run::tests::fallback_child_entry",
+        ])
+        .env("APR_FALLBACK_CHILD", mode)
+        .output()
+        .expect("spawn child");
+    assert!(out.status.success(), "child failed: {}", String::from_utf8_lossy(&out.stderr));
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Child entry: a no-op unless the parent set the mode, so a normal run passes it trivially.
+#[test]
+fn fallback_child_entry() {
+    if let Ok(mode) = std::env::var("APR_FALLBACK_CHILD") {
+        child_print(&mode);
+    }
+}
+
+#[test]
+fn text_mode_fallback_line_is_on_stderr_exactly_once_and_never_on_stdout() {
+    let (out, err) = run_child("text");
+    assert_eq!(err.matches(CPU_FALLBACK_NOTICE).count(), 1, "stderr: {err}");
+    assert_eq!(out.matches(CPU_FALLBACK_NOTICE).count(), 0, "stdout: {out}");
+}
+
+#[test]
+fn json_mode_never_prints_the_fallback_line_but_reports_fell_back() {
+    let (out, err) = run_child("json");
+    assert_eq!(err.matches(CPU_FALLBACK_NOTICE).count(), 0, "stderr: {err}");
+    assert_eq!(out.matches(CPU_FALLBACK_NOTICE).count(), 0, "stdout: {out}");
+    assert!(out.contains("\"fell_back\": true"), "stdout: {out}");
+}
+
+#[test]
+fn a_cpu_run_that_attempted_no_gpu_prints_no_line() {
+    let (out, err) = run_child("cpu_ok");
+    assert_eq!(err.matches(CPU_FALLBACK_NOTICE).count() + out.matches(CPU_FALLBACK_NOTICE).count(), 0);
+}
