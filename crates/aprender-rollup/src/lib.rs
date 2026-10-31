@@ -6,6 +6,7 @@
 
 pub mod build;
 pub mod close;
+pub mod fold;
 pub mod gh_json;
 pub mod mg;
 pub mod report;

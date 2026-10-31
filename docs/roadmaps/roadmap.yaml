@@ -26453,6 +26453,28 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'Quorum 6303-R7 2/2: neither re-freezing the base (a waiver of rule 3) nor main-pinned lines. Pool = roadmap.yaml at 9e8f8ad8c7; base 18 lines == anchor 18 == main 18 (38afc7a5fac9). Lands before #6303.'
   epic: null
+- id: PMAT-6313
+  github_issue: 6313
+  item_type: task
+  title: 'ci: aprender-rollup fold, the Rust roadmap aggregate (C301 port, part of PMAT-6270)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T00:50:00Z
+  updated: 2026-10-25T00:50:00Z
+  spec: null
+  acceptance_criteria:
+  - '`aprender-rollup fold <base.yaml> <entries-dir>` prints base plus fragments on stdout, each fragment at the sorted slot of its id prefix (numerals compared as integers of any width, legacy ids last), exit 0; exit 2 with `not measured` when the base or a fragment cannot be read or is not UTF-8'
+  - 'a fragment supersedes a base entry of the same id, two fragments of one id are refused, the output is idempotent and independent of fragment order, and no byte of the base is normalised'
+  - 'the committed docs/roadmaps/roadmap.yaml equals fold(roadmap-base.yaml, entries/), as a test'
+  - '0 added Python lines, 0 added python3 calls, no new dependency'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Port of aggregate() from scripts/lib/roadmap_fragments.py, split from PMAT-6300 (#6301, shape only) per RULING B. Blocks #6271. main.rs is new on main; #6301 also adds it, whichever lands second merges the two dispatches.'
+  epic: null
 - id: PMAT-6360
   github_issue: 6360
   item_type: task
