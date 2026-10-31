@@ -166,6 +166,12 @@ impl<'de, R: Read> de::Deserializer<'de> for &mut Deserializer<R> {
     }
 }
 
+/// Upper bound on the `size_hint` handed to a `Visitor`. The length prefix is untrusted: a
+/// visitor that does `Vec::with_capacity(hint)` would otherwise allocate from a corrupt `u64`.
+/// The hint is advisory, so capping it never changes what is decoded (same as serde's own
+/// `cautious` helper, which caps at 4096 elements).
+pub(crate) const MAX_SIZE_HINT: usize = 4096;
+
 struct Counted<'a, R: Read> {
     de: &'a mut Deserializer<R>,
     left: usize,
@@ -181,7 +187,7 @@ impl<'de, R: Read> de::SeqAccess<'de> for Counted<'_, R> {
         seed.deserialize(&mut *self.de).map(Some)
     }
     fn size_hint(&self) -> Option<usize> {
-        Some(self.left)
+        Some(self.left.min(MAX_SIZE_HINT))
     }
 }
 
@@ -198,7 +204,7 @@ impl<'de, R: Read> de::MapAccess<'de> for Counted<'_, R> {
         seed.deserialize(&mut *self.de)
     }
     fn size_hint(&self) -> Option<usize> {
-        Some(self.left)
+        Some(self.left.min(MAX_SIZE_HINT))
     }
 }
 

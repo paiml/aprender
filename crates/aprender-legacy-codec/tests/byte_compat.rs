@@ -148,3 +148,50 @@ fn corrupt_input_is_an_error_not_a_panic_or_a_huge_allocation() {
         Err(Error::InvalidUtf8)
     ));
 }
+
+// FALSIFY-LEGACY-CODEC-005: an untrusted length prefix must not reach a Visitor as a huge
+// size_hint (a visitor that pre-allocates from it would abort on a corrupt length).
+mod size_hint_cap {
+    use aprender_legacy_codec::{deserialize, Error};
+    use serde::de::{Deserialize, Deserializer, SeqAccess, Visitor};
+    use std::cell::Cell;
+    use std::fmt;
+
+    thread_local!(static HINT: Cell<Option<usize>> = const { Cell::new(None) });
+
+    struct Probe;
+    impl<'de> Deserialize<'de> for Probe {
+        fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+            struct V;
+            impl<'de> Visitor<'de> for V {
+                type Value = Probe;
+                fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                    f.write_str("seq")
+                }
+                fn visit_seq<A: SeqAccess<'de>>(self, mut a: A) -> Result<Probe, A::Error> {
+                    HINT.with(|h| h.set(a.size_hint()));
+                    while a.next_element::<u8>()?.is_some() {}
+                    Ok(Probe)
+                }
+            }
+            d.deserialize_seq(V)
+        }
+    }
+
+    #[test]
+    fn corrupt_huge_length_is_capped_and_errors_cleanly() {
+        let mut bytes = u64::MAX.to_le_bytes().to_vec(); // corrupt length prefix, no payload
+        bytes.extend_from_slice(&[1, 2, 3]);
+        let r: Result<Probe, Error> = deserialize(&bytes);
+        assert!(r.is_err(), "truncated payload must error, not succeed");
+        let hint = HINT.with(Cell::get).expect("visitor saw a size_hint");
+        assert!(hint <= 4096, "size_hint {hint} leaks the untrusted length");
+    }
+
+    #[test]
+    fn honest_small_length_hint_is_exact() {
+        let bytes = [3u8, 0, 0, 0, 0, 0, 0, 0, 7, 8, 9];
+        assert!(deserialize::<Probe>(&bytes).is_ok());
+        assert_eq!(HINT.with(Cell::get), Some(3));
+    }
+}

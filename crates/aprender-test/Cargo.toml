@@ -75,8 +75,6 @@ tempfile = "3"
 # AST analysis for linting
 syn = { version = "2.0", features = ["full", "visit", "parsing", "extra-traits"] }
 
-# Serialization for mock fidelity
-
 # GPU compute (trueno - SIMD-accelerated tensor operations)
 # APR-MONO: in-tree sibling, not crates.io (package aprender-compute, [lib] name = "trueno")
 trueno = { path = "../aprender-compute", package = "aprender-compute", features = ["gpu"] }
