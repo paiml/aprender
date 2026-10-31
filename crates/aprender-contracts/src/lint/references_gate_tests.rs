@@ -54,6 +54,8 @@ fn classifier_case_table() {
             Some("crates/x/src/lib.rs"),
         ),
         ("crates/x/src/lib.rs,", Some("crates/x/src/lib.rs")),
+        ("crates/x/src/lib.rs.", Some("crates/x/src/lib.rs")),
+        ("crates/x/src/gone.rs).", Some("crates/x/src/gone.rs")),
         ("https://arxiv.org/abs/1706.03762", None),
         ("Vaswani et al. (2017) Attention Is All You Need", None),
         ("../trueno/src/a.rs", None),
@@ -131,4 +133,38 @@ fn no_path_reference_declines() {
         run_references_gate(&t.path().join("contracts")),
         RatchetOutcome::Declined(_)
     ));
+}
+
+#[test]
+fn swapping_one_dead_path_for_another_fails_though_the_count_is_equal() {
+    let t = repo(&["crates/x/src/gone2.rs"]);
+    write(
+        t.path(),
+        "contracts/lint-baseline.json",
+        r#"{"dead_references": 1, "dead_reference_set": ["a-v1: crates/x/src/gone.rs"]}"#,
+    );
+    let (r, rules) = run(t.path());
+    assert!(!r.passed);
+    assert_eq!(rules, vec!["PV-RAT-004".to_string()]);
+    // The same debt, unswapped, passes.
+    write(
+        t.path(),
+        "contracts/a-v1.yaml",
+        &contract(&["crates/x/src/gone.rs"]),
+    );
+    assert!(run(t.path()).0.passed);
+}
+
+#[test]
+fn a_trailing_period_is_trimmed_so_the_path_is_checked_not_skipped() {
+    let t = repo(&["crates/x/src/gone.rs."]);
+    write(
+        t.path(),
+        "contracts/lint-baseline.json",
+        r#"{"dead_references": 0}"#,
+    );
+    assert_eq!(
+        dead_of(&run(t.path()).0),
+        vec!["a-v1: crates/x/src/gone.rs".to_string()]
+    );
 }

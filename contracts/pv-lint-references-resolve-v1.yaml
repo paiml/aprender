@@ -6,7 +6,14 @@
 #
 # `pv lint --gate references-resolve` (PV-RAT-004) classifies each entry
 # conservatively and fails only on a repo path that does not exist. The debt is
-# shrink-only against `dead_references` in contracts/lint-baseline.json.
+# shrink-only against `dead_references` (count) and `dead_reference_set` (members) in
+# contracts/lint-baseline.json: a new dead path fails even when another was fixed, so a swap
+# cannot hide behind an equal count.
+#
+# OUT OF SCOPE (stated, not omitted): (1) the paper-citation warning — author-year and
+# arXiv/DOI entries are free text and are never judged here; (2) the online `pv refs --check`
+# — whether a URL or DOI resolves needs the network and is not run by this offline gate.
+# This gate checks only that repo paths exist.
 
 metadata:
   id: PV-LINT-REFERENCES-RESOLVE
@@ -20,7 +27,9 @@ metadata:
     Every `metadata.references` entry that names a repo path (first token's first
     segment is a top-level repo entry, ends in a file extension, no glob/brace
     characters) must exist. URLs, `../` paths, arXiv/DOI ids and author-year
-    citations are free text and never fail. The count of dead paths may not rise.
+    citations are free text and never fail. No dead path may appear that is not in the baseline set (a swap fails; a trailing `.`
+    is trimmed before the check). Out of scope: the paper-citation warning and the online
+    `pv refs --check`.
   references:
   - 'aprender#6397 — pv lint: references must resolve'
   - 'crates/aprender-contracts/src/lint/references_gate.rs'
@@ -29,13 +38,15 @@ equations:
   references_resolve:
     formula: |
       dead(C) := { r ∈ C.metadata.references | repo_path(r) = p ∧ ¬exists(root/p) }
-      gate passes ⇔ |⋃ dead(C)| ≤ baseline.dead_references
+      gate passes ⇔ ⋃ dead(C) ⊆ baseline.dead_reference_set   (count-only fallback when the set key is absent)
     domain: "a contract corpus and the lint-baseline.json beside it"
     codomain: "pass, or PV-RAT-004 naming the count that rose"
     invariants:
     - "an entry that is not classified as a repo path is never a failure"
     - "no baseline key ⇒ reported, not judged (Unknown(Report))"
     - "a corpus with no repo-path reference declines: nothing was measured"
+    - "a trailing `.` on the path token is trimmed, never silently skipped"
+    - "paper-citation warnings and online `pv refs --check` are out of scope"
 
 falsification_tests:
 - id: FALSIFY-PV-REFS-001
@@ -56,3 +67,15 @@ falsification_tests:
   test: |
     cargo test -p aprender-contracts --lib lint::references_gate::tests::classifier_case_table
   if_fails: "free text is judged as a path and the gate gives false reds"
+- id: FALSIFY-PV-REFS-004
+  rule: "swapping one dead path for another fails though the count is equal"
+  prediction: "set {gone} baseline + dead {gone2} yields PV-RAT-004; the unswapped debt passes"
+  test: |
+    cargo test -p aprender-contracts --lib lint::references_gate::tests::swapping_one_dead_path_for_another_fails_though_the_count_is_equal
+  if_fails: "a swap hides behind an equal count"
+- id: FALSIFY-PV-REFS-005
+  rule: "a path ending in `.` is trimmed and checked"
+  prediction: "`crates/x/src/gone.rs.` is reported dead as `crates/x/src/gone.rs`"
+  test: |
+    cargo test -p aprender-contracts --lib lint::references_gate::tests::a_trailing_period_is_trimmed_so_the_path_is_checked_not_skipped
+  if_fails: "a dotted reference is silently skipped"
