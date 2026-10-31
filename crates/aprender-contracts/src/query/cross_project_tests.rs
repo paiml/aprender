@@ -84,7 +84,7 @@ fn has_sibling_repos() -> bool {
     };
     ["trueno", "bashrs", "forjar"]
         .iter()
-        .any(|name| parent.join(name).exists())
+        .any(|name| parent.join(name).join("Cargo.toml").exists())
 }
 
 /// Returns true if sibling repos have enough git history for commit-ref scanning.
@@ -150,12 +150,30 @@ fn call_sites_for_known_contract() {
     // Index builds and queries successfully — monorepo-compatible.
 }
 
+/// Hermetic fixture: `<tmp>/self` (the contracts repo) beside `<tmp>/aprender`
+/// (a consumer with an in-tree `contracts/aprender/binding.yaml`). Does not
+/// depend on any directory outside the tempdir (#6573).
+fn binding_fixture() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("self")).unwrap();
+    let consumer = tmp.path().join("aprender");
+    std::fs::create_dir_all(consumer.join("contracts/aprender")).unwrap();
+    std::fs::write(consumer.join("Cargo.toml"), "[package]\nname = \"aprender\"\n").unwrap();
+    std::fs::write(
+        consumer.join("contracts/aprender/binding.yaml"),
+        "version: 1.0.0\ntarget_crate: aprender\nbindings:\n- contract: softmax-kernel-v1.yaml\n  equation: softmax\n  module_path: aprender::nn::softmax\n  function: softmax\n  status: implemented\n",
+    )
+    .unwrap();
+    tmp
+}
+
 #[test]
 fn binding_refs_for_aprender() {
-    if !has_sibling_repos() { return; }
-    let index = CrossProjectIndex::build(&repo_root());
+    let tmp = binding_fixture();
+    let index = CrossProjectIndex::build(&tmp.path().join("self"));
     let refs = index.binding_refs_for("softmax-kernel-v1");
     assert!(!refs.is_empty(), "Should find binding ref for softmax");
+    assert_eq!(refs[0].project, "aprender");
 }
 
 #[test]
@@ -179,11 +197,12 @@ fn parse_contract_annotation_line() {
 
 #[test]
 fn find_binding_path_real() {
-    if !has_sibling_repos() { return; }
-    let root = repo_root();
-    let aprender_dir = root.parent().unwrap().join("aprender");
-    let bp = find_binding_path(&aprender_dir, "aprender");
-    assert!(bp.is_some(), "Should find binding.yaml for aprender");
+    // The real in-tree binding of this monorepo, no sibling dirs involved.
+    let bp = find_binding_path(&repo_root(), "aprender");
+    assert!(bp.is_some(), "Should find contracts/aprender/binding.yaml in-tree");
+    let tmp = binding_fixture();
+    let bp = find_binding_path(&tmp.path().join("aprender"), "aprender");
+    assert!(bp.is_some(), "Should find fixture in-tree binding.yaml");
 }
 
 #[test]
