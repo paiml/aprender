@@ -55,6 +55,7 @@ aprender-contracts	--lib	lint::finding
 aprender-contracts	--lib	lint::gates
 aprender-contracts	--lib	lint::gates_extended
 aprender-contracts	--lib	lint::ratchet_gates
+aprender-contracts	--lib	lint::references_gate
 aprender-contracts	--lib	lint::refines_gate
 aprender-contracts	--lib	lint::relations_gate
 aprender-contracts	--lib	lint::sarif
