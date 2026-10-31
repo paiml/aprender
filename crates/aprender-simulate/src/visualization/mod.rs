@@ -559,7 +559,7 @@ impl Exporter {
             File::create(path).map_err(|e| SimError::io(format!("Failed to create file: {e}")))?;
         let writer = BufWriter::new(file);
 
-        bincode::serialize_into(writer, trajectory)
+        aprender_legacy_codec::serialize_into(writer, trajectory)
             .map_err(|e| SimError::serialization(format!("Binary serialization failed: {e}")))?;
 
         Ok(())
@@ -575,7 +575,7 @@ impl Exporter {
             File::open(path).map_err(|e| SimError::io(format!("Failed to open file: {e}")))?;
         let reader = io::BufReader::new(file);
 
-        bincode::deserialize_from(reader)
+        aprender_legacy_codec::deserialize_from(reader)
             .map_err(|e| SimError::serialization(format!("Binary deserialization failed: {e}")))
     }
 
