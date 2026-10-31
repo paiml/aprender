@@ -42,21 +42,32 @@ quorum_receipts() {
 # (one X, one Y, X != Y, same lines on both sides once X/Y are masked; a dependency line like
 # `name = { path = "..", version = "X" }` qualifies, `rust-version`, external crate versions and checksums do not).
 # Fails closed on an empty patch (GitHub omits it for large/binary diffs) and on anything else.
+# mask_ver V < LINES -> each line minus its leading +/- with every literal "V" replaced by "V" (the word V), no regex
+mask_ver() { awk -v v="\"$1\"" '{ $0 = substr($0, 2); o = ""; while ((i = index($0, v)) > 0) { o = o substr($0, 1, i - 1) "\"V\""; $0 = substr($0, i + length(v)) } print o $0 }'; }
 bump_patch() {
   [ -n "$1" ] || return 1
-  local old new xs ys x y
+  local old new xs ys x y mo mn
   old=$(grep -E '^-' <<<"$1" | grep -vE '^---' ); new=$(grep -E '^\+' <<<"$1" | grep -vE '^\+\+\+')
   [ -n "$old" ] && [ -n "$new" ] || return 1
   [ "$(wc -l <<<"$old")" -eq "$(wc -l <<<"$new")" ] || return 1
-  # every changed line must be a bare `version` key edit (not rust-version, not checksum/source lines)
-  grep -qvE '^[-+](.*[^-_[:alnum:]])?version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$old" && return 1
-  grep -qvE '^[-+](.*[^-_[:alnum:]])?version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$new" && return 1
+  # every changed line must be a workspace `version` edit: a bare `version = "X"` key, or a dependency line that names a
+  # `path =` key (a workspace member). `serde = { version = "1" }` has no path, so an external dep bump never qualifies.
+  local l
+  while IFS= read -r l; do
+    [[ $l =~ ^[-+]version\ *=\ *\"[0-9]+\.[0-9]+\.[0-9]+[^\"]*\" ]] && continue
+    [[ $l =~ ^[-+][^#]*\{.*[{,\ ]path\ *=\ *\"[^\"]*\" ]] && [[ $l =~ [{,\ ]version\ *=\ *\"[0-9]+\.[0-9]+\.[0-9]+[^\"]*\" ]] && continue
+    return 1
+  done <<<"$old"$'\n'"$new"
+  # a registry package (Cargo.lock `source =`/`checksum =` context) or a [*dependencies*] table is not a workspace version
+  grep -qE '^ (source|checksum) *=|^[ +-]?\[[^]]*dependencies' <<<"$1" && return 1
   xs=$(grep -oE '(^[-+]|[^-_[:alnum:]])version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$old" | grep -oE '"[^"]*"' | sort -u)
   ys=$(grep -oE '(^[-+]|[^-_[:alnum:]])version *= *"[0-9]+\.[0-9]+\.[0-9]+[^"]*"' <<<"$new" | grep -oE '"[^"]*"' | sort -u)
   [ "$(wc -l <<<"$xs")" -eq 1 ] && [ "$(wc -l <<<"$ys")" -eq 1 ] && [ "$xs" != "$ys" ] || return 1
   x=${xs//\"/}; y=${ys//\"/}
-  # every line must carry its own side's version exactly once-or-more and nothing else may differ
-  [ "$(sed "s/^-//; s/\"$x\"/\"V\"/g" <<<"$old" | sort)" = "$(sed "s/^+//; s/\"$y\"/\"V\"/g" <<<"$new" | sort)" ] || return 1
+  # every line must carry its own side's version and nothing else may differ. Literal compare (awk index), never a sed pattern:
+  # a version holding / [ . * would otherwise break or loosen the pattern. Any failure fails closed.
+  mo=$(mask_ver "$x" <<<"$old") && mn=$(mask_ver "$y" <<<"$new") || return 1
+  [ -n "$mo" ] && [ "$(sort <<<"$mo")" = "$(sort <<<"$mn")" ] || return 1
   grep -qF "\"$x\"" <<<"$new" && return 1
   return 0
 }
@@ -188,9 +199,12 @@ if [ "${1:-}" = --self-test ]; then
   # needs_seats with a stubbed gh: REVIEWS is "STATE<TAB>body" lines, FILES the PR file list
   # FILES lines are "name" or "name<TAB>previous_name"; the stub feeds them through the REAL --jq filter, so the filter is under test
   # FILES lines: name[<TAB>previous_name[<TAB>patch_file]]; the stub emits the JSON lines the real --jq filter would
-  gh() { case "$2" in */files) [ "${CASE:-}" = filefail ] && return 1
-      printf '%s\n' "${FILES:-docs/x.md}" | while IFS=$'\t' read -r n pv pf; do
-        jq -nc --arg n "$n" --arg pv "$([ "$pv" = - ] || printf %s "$pv")" --arg p "$( [ -n "$pf" ] && cat "$pf" )" '{filename:$n,status:(if $pv!="" then "renamed" else "modified" end),previous_filename:(if $pv!="" then $pv else null end),patch:(if $p!="" then $p else null end)}'; done;;
+  # FILES lines: name[<TAB>previous_name|-[<TAB>patch_file|-[<TAB>status]]]; the stub emits the GitHub files array and pipes it through
+  # the --jq filter needs_seats really passes, so a change to the real filter changes what the self-test sees
+  gh() { local ep=$2 jf=; while [ $# -gt 0 ]; do [ "$1" = --jq ] && jf=$2; shift; done
+    case "$ep" in */files) [ "${CASE:-}" = filefail ] && return 1
+      printf '%s\n' "${FILES:-docs/x.md}" | while IFS=$'\t' read -r n pv pf st; do
+        jq -nc --arg n "$n" --arg pv "$([ "$pv" = - ] || printf %s "$pv")" --arg p "$( [ -n "$pf" ] && [ "$pf" != - ] && cat "$pf" )" --arg st "$st" '{sha:"s",filename:$n,status:(if $st!="" then $st elif $pv!="" then "renamed" else "modified" end),additions:1,previous_filename:(if $pv!="" then $pv else null end),patch:(if $p!="" then $p else null end)}'; done | jq -sc '.' | jq -r "$jf";;
     */reviews) printf '%b' "${REVIEWS:-}";; esac; }
   ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tquorum 3/3 AGREED PASS\n'
@@ -224,6 +238,22 @@ if [ "${1:-}" = --self-test ]; then
   eq 'Cargo.toml with an extra non-version line -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/toml-extra.patch" REVIEWS="$Q3" ns)" 0
   eq 'rust-version change -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/rustver.patch" REVIEWS="$Q3" ns)" 0
   eq 'external dependency versions -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/ext.patch" REVIEWS="$Q3" ns)" 0
+  # review 6531: single external bump, registry lock entry, non-Cargo gate file, non-modified status, regex-special versions
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-serde = { version = "1.0.1" }' '+serde = { version = "1.0.2" }' > "$FX/ext1.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' ' [dependencies.serde]' '-version = "1.0.1"' '+version = "1.0.2"' > "$FX/exttable.patch"
+  printf '%s\n' '@@ -5,4 +5,4 @@' ' name = "serde"' '-version = "1.0.1"' '+version = "1.0.2"' ' source = "registry+https://github.com/rust-lang/crates.io-index"' > "$FX/extlock.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2"' '+version = "0.72.3"' > "$FX/ver.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-version = "0.72.2-[a/b.*"' '+version = "0.72.3-[a/b.*"' > "$FX/special.patch"
+  printf '%s\n' '@@ -1,2 +1,2 @@' '-aprender-core = { path = "crates/aprender-core", version = "0.72.2" }' '+aprender-core = { path = "crates/aprender-core", version = "0.72.3" }' > "$FX/pathdep.patch"
+  eq 'single external dep bump -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/ext1.patch" REVIEWS="$Q3" ns)" 0
+  eq 'external [dependencies.x] table bump -> skip' "$(FILES=$'Cargo.toml\t-\t'"$FX/exttable.patch" REVIEWS="$Q3" ns)" 0
+  eq 'Cargo.lock registry package bump -> skip' "$(FILES=$'Cargo.lock\t-\t'"$FX/extlock.patch" REVIEWS="$Q3" ns)" 0
+  eq 'version-only patch on a non-Cargo gate file -> skip' "$(FILES=$'scripts/x.sh\t-\t'"$FX/ver.patch" REVIEWS="$Q3" ns)" 0
+  for st in added copied changed removed; do
+    eq "Cargo.toml version bump with status $st -> skip" "$(FILES=$'Cargo.toml\t-\t'"$FX/ver.patch"$'\t'"$st" REVIEWS="$Q3" ns)" 0
+  done
+  eq 'version with / [ . * (regex-special) -> armable' "$(FILES=$'Cargo.toml\t-\t'"$FX/special.patch" REVIEWS="$Q3" ns)" 1
+  eq 'workspace path dep version bump -> armable' "$(FILES=$'Cargo.toml\t-\t'"$FX/pathdep.patch" REVIEWS="$Q3" ns)" 1
   eq 'Cargo.toml with no patch (large/binary) -> skip' "$(FILES=Cargo.toml REVIEWS="$Q3" ns)" 0
   eq 'Cargo.toml renamed -> skip' "$(FILES=$'Cargo.toml\tother/Cargo.toml\t'"$FX/toml.patch" REVIEWS="$Q3" ns)" 0
   for r in 'seat w3 BLOCKER' 'NO-GO' 'seat w3 BLOCKS' 'DO NOT MERGE'; do
