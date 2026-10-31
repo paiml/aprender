@@ -487,11 +487,29 @@ impl Exporter {
             File::create(path).map_err(|e| SimError::io(format!("Failed to create file: {e}")))?;
         let mut writer = BufWriter::new(file);
 
-        // Write header
+        writeln!(writer, "{}", self.csv_header(trajectory))
+            .map_err(|e| SimError::io(format!("Write header failed: {e}")))?;
+
+        for (i, frame) in trajectory.frames.iter().enumerate() {
+            if i % self.config.decimation.max(1) != 0 {
+                continue;
+            }
+            writeln!(writer, "{}", self.csv_row(frame))
+                .map_err(|e| SimError::io(format!("Write data failed: {e}")))?;
+        }
+
+        writer
+            .flush()
+            .map_err(|e| SimError::io(format!("Flush failed: {e}")))?;
+
+        Ok(())
+    }
+
+    /// CSV header line for a trajectory (column set follows the export config).
+    fn csv_header(&self, trajectory: &Trajectory) -> String {
         let mut header = String::from("time,index");
-        if !trajectory.frames.is_empty() {
-            let n_bodies = trajectory.frames[0].positions.len() / 3;
-            for i in 0..n_bodies {
+        if let Some(first) = trajectory.frames.first() {
+            for i in 0..first.positions.len() / 3 {
                 let _ = write!(header, ",x{i},y{i},z{i}");
                 if self.config.include_velocities {
                     let _ = write!(header, ",vx{i},vy{i},vz{i}");
@@ -501,46 +519,34 @@ impl Exporter {
         if self.config.include_metrics {
             header.push_str(",total_energy,kinetic_energy,potential_energy");
         }
-        writeln!(writer, "{header}")
-            .map_err(|e| SimError::io(format!("Write header failed: {e}")))?;
+        header
+    }
 
-        // Write data
-        for (i, frame) in trajectory.frames.iter().enumerate() {
-            if i % self.config.decimation.max(1) != 0 {
-                continue;
-            }
-
-            let mut line = format!("{},{}", frame.time, frame.index);
-
-            for (j, pos) in frame.positions.chunks(3).enumerate() {
-                if pos.len() == 3 {
-                    let _ = write!(line, ",{},{},{}", pos[0], pos[1], pos[2]);
-                }
-                if self.config.include_velocities {
-                    if let Some(vel) = frame.velocities.chunks(3).nth(j) {
-                        if vel.len() == 3 {
-                            let _ = write!(line, ",{},{},{}", vel[0], vel[1], vel[2]);
-                        }
-                    }
+    /// One CSV data line for a frame.
+    fn csv_row(&self, frame: &TrajectoryFrame) -> String {
+        let mut line = format!("{},{}", frame.time, frame.index);
+        for (j, pos) in frame.positions.chunks(3).enumerate() {
+            Self::push_triple(&mut line, pos);
+            if self.config.include_velocities {
+                if let Some(vel) = frame.velocities.chunks(3).nth(j) {
+                    Self::push_triple(&mut line, vel);
                 }
             }
-
-            if self.config.include_metrics {
-                let te = frame.metrics.total_energy.unwrap_or(0.0);
-                let ke = frame.metrics.kinetic_energy.unwrap_or(0.0);
-                let pe = frame.metrics.potential_energy.unwrap_or(0.0);
-                let _ = write!(line, ",{te},{ke},{pe}");
-            }
-
-            writeln!(writer, "{line}")
-                .map_err(|e| SimError::io(format!("Write data failed: {e}")))?;
         }
+        if self.config.include_metrics {
+            let te = frame.metrics.total_energy.unwrap_or(0.0);
+            let ke = frame.metrics.kinetic_energy.unwrap_or(0.0);
+            let pe = frame.metrics.potential_energy.unwrap_or(0.0);
+            let _ = write!(line, ",{te},{ke},{pe}");
+        }
+        line
+    }
 
-        writer
-            .flush()
-            .map_err(|e| SimError::io(format!("Flush failed: {e}")))?;
-
-        Ok(())
+    /// Append `,a,b,c` when the chunk is a full xyz triple (partial chunks are skipped).
+    fn push_triple(line: &mut String, v: &[f64]) {
+        if let [a, b, c] = v {
+            let _ = write!(line, ",{a},{b},{c}");
+        }
     }
 
     /// Export trajectory to binary format (bincode).
@@ -1063,6 +1069,37 @@ mod tests {
         // Should have frames 0, 2, 4, 6, 8
         let lines: Vec<_> = content.lines().collect();
         assert_eq!(lines.len(), 5);
+    }
+
+    #[test]
+    fn test_export_to_csv_exact_text_with_partial_chunks() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("exact.csv");
+
+        let mut traj = Trajectory::new();
+        traj.add_frame(TrajectoryFrame {
+            time: 0.0,
+            index: 0,
+            // 2 full bodies plus a dangling value (skipped); velocities cover body 0 only.
+            positions: vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0],
+            velocities: vec![0.5, 0.25, 0.125],
+            metrics: SimMetrics::new(),
+        });
+
+        let config = ExportConfig {
+            include_velocities: true,
+            include_metrics: true,
+            decimation: 1,
+            ..Default::default()
+        };
+        Exporter::with_config(config).to_csv(&traj, &path).unwrap();
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            content,
+            "time,index,x0,y0,z0,vx0,vy0,vz0,x1,y1,z1,vx1,vy1,vz1,total_energy,kinetic_energy,potential_energy\n\
+             0,0,1,2,3,0.5,0.25,0.125,4,5,6,0,0,0\n"
+        );
     }
 
     #[test]
