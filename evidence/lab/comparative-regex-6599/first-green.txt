@@ -1,0 +1,30 @@
+# #6599 PRREV-019 F5 B4 comparative-regex agreement -- first-green receipt
+# origin/main: 513a1c1be1fee97416bed6b0c85d589d1899a2f9   measured: 2026-10-31T16:37:26Z
+# lab check, run by hand; not wired into any PR, merge-queue or release job
+
+## REAL TREE (expect GREEN, rc 0)
+  ok    gap    RATIO_LEFT_RE identical
+  ok    gap    MULT_RE identical
+  ok    gap    RATIO_GAP_RE identical
+  ok    union  B4's competitor list contains the claim-literals list
+  INFO  claim-literals says NO-MATCH, table says MATCH: 4.9x faster than scikit-learn
+  INFO  claim-literals says NO-MATCH, table says MATCH: 2.93 × Ollama
+  INFO  claim-literals says NO-MATCH, table says MATCH: 3.2x faster than HuggingFace transformers
+  INFO  claim-literals says NO-MATCH, table says MATCH: Gaussian naive Bayes is 4.9x sklearn
+  ok    table  B4 agrees on all 40 rows
+  info  residual: claim-literals RATIO_RE disagrees on 4 of 40 rows (advisory, F5)
+GREEN comparative-regex agreement
+rc=0
+
+## PLANTED VIOLATIONS + case table (self-test)
+comparative_regex_agreement self-test
+  ok    real tree is GREEN                                         0
+  ok    PLANTED: gap narrowed to zero words -> RED                 1
+  ok    PLANTED: competitor dropped from B4 -> RED                 1
+  ok    PLANTED: multiplier loses the typographic x -> RED         1
+  ok    PLANTED: table row contradicting B4 -> RED                 1
+  ok    empty table is NO-MEASURE (2), not green                   2
+  ok    missing script is NO-MEASURE (2), not green                2
+  ok    B4 with an EXTRA competitor stays GREEN (superset ok)      0
+self-test: 8 passed, 0 failed
+rc=0
