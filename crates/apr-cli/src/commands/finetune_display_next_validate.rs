@@ -102,6 +102,13 @@ fn read_adapter_lora_params(adapter: &Path) -> Result<(u32, f32)> {
     Ok((rank, alpha))
 }
 
+/// "merged / targets" for the merge summary. The denominator is the number of LoRA targets the
+/// adapter carries (one per `.lora_a`), NOT the base model's total tensor count: a merge only
+/// touches adapter targets, so "48 / 291" read as a partial merge (PMAT-6393).
+fn merge_targets_label(merged: u64, targets: usize) -> String {
+    format!("{merged} / {targets} LoRA targets")
+}
+
 /// Display merge result.
 #[allow(clippy::disallowed_methods)]
 fn display_merge_result(
@@ -110,7 +117,8 @@ fn display_merge_result(
     output_path: &Path,
     output_size: u64,
     merged_count: u64,
-    total_layers: usize,
+    lora_targets: usize,
+    total_tensors: usize,
     lora_rank: u32,
     lora_alpha: f32,
     json_output: bool,
@@ -123,7 +131,11 @@ fn display_merge_result(
             "output": output_path.display().to_string(),
             "output_size": output_size,
             "merged_layers": merged_count,
-            "total_layers": total_layers,
+            "merged_targets": merged_count,
+            "lora_targets": lora_targets,
+            "total_tensors": total_tensors,
+            // deprecated alias of total_tensors (base tensor count, not layers); kept for consumers
+            "total_layers": total_tensors,
             "rank": lora_rank,
             "alpha": lora_alpha,
         });
@@ -138,7 +150,8 @@ fn display_merge_result(
         println!(
             "{}",
             output::kv_table(&[
-                ("Layers merged", format!("{merged_count} / {total_layers}")),
+                ("LoRA targets merged", merge_targets_label(merged_count, lora_targets)),
+                ("Base tensors", total_tensors.to_string()),
                 (
                     "Output size",
                     humansize::format_size(output_size, humansize::BINARY)
@@ -625,6 +638,7 @@ fn run_merge(
         out,
         bytes.len() as u64,
         merged_count,
+        adapter_lora_count,
         base_report.tensors.len(),
         lora_rank,
         lora_alpha,

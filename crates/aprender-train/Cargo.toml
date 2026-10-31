@@ -137,7 +137,7 @@ alimentar = { workspace = true, optional = true }  # Dataset loading with parque
 [build-dependencies]
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1", features = ["derive"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }  # #5326: build.rs reads contract YAML through saphyr, not unsafe-libyaml (RUSTSEC-2024-0449)
 
 [dev-dependencies]
 proptest = "1.4"
