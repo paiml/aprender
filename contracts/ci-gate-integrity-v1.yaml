@@ -92,6 +92,12 @@ falsification_tests:
     test: "! MIN_EXPECTED=9999 bash scripts/check_pass_grep_anchored.sh >/dev/null 2>&1"
     if_fails: "The ratchet would report OK on an empty set — a blind checker is indistinguishable from a clean tree"
 
+  - id: FALSIFY-CI-GATE-INTEGRITY-006
+    rule: "The affected-set readers check fails closed (PMAT-6069): only grep rc 1 means no readers"
+    prediction: "A missing crates dir, an unreadable subdir and a grep error (rc>=2) each exit 2 with RED, never ok"
+    test: "bash scripts/check_affected_readers.sh --self-test"
+    if_fails: "scripts/check_affected_readers.sh swallows grep rc>=2 again — an unreadable tree reads as no readers and the gate prints ok before it can fail"
+
 qa_gate:
   id: F-CI-GATE-INTEGRITY-001
   name: "CI gate integrity — every pass-detector must be able to fail"

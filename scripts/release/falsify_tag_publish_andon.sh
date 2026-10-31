@@ -53,6 +53,7 @@ if [ "${1:-}" = --mutants ]; then
     mut page-target-not-required tag_publish_andon.sh 's/^\[ "\$dry" = 1 \] || \[ "\${#targets\[@\]}" -gt 0 \] || usage.*$/:/'
     mut escalate-every-run tag_publish_andon.sh 's/if \[ ! -e "\$state\/escalated-\$tag" \]; then/if true; then/'
     mut lock-exit-0 tag_publish_andon.sh 's/nothing done"; exit 3; }/nothing done"; exit 0; }/'
+    mut fetch-unforced tag_publish_andon.sh 's/fetch -q --force --tags origin/fetch -q --tags origin/'
     mut http-500-is-absent lib_crates_io.sh 's/^        \*) return 2 ;;$/        *) return 1 ;;/'
     mut http-404-is-unmeasured lib_crates_io.sh 's/^        404) return 1 ;;$/        404) return 2 ;;/'
     mut num-mismatch-ignored lib_crates_io.sh 's/jq -e --arg v "\$v" .\.version\.num == \$v. > \/dev\/null 2>&1 || return 2/:/'
@@ -304,6 +305,24 @@ mv "$TMP/stub/git" "$TMP/git-stub.off"; g remote remove origin
 g tag -a -m v4.0.0 v4.0.0; mkdir -p "$TMP/st-lwa/seen-v4.0.0"
 andon lwa "$J_NONE" --since "$SINCE_4H"; has "undatable tag: NOT_MEASURED inbox line" "$TMP/inb-lwa" "NOT_MEASURED tag v4.0.0: cannot date it"
 g tag -d v4.0.0 > /dev/null
+
+# PMAT-2742: a tag that MOVED upstream (nightly) makes a plain `git fetch --tags` exit 1 ("would clobber existing tag"); that is a
+# moved tag, not an unreadable origin, so the andon must still measure. A genuinely broken remote must stay not-measured (exit 2).
+R_SAVE=$R; R="$TMP/repo-mv"; O_MV="$TMP/origin-mv.git"
+git init -q --bare "$O_MV"; git init -q "$R"
+printf x > "$R/f"; g add f; g commit -q -m c0; g remote add origin "$O_MV"
+g tag nightly; g push -q origin nightly 2> /dev/null
+CLONE="$TMP/clone-mv"; git clone -q "$O_MV" "$CLONE" 2> /dev/null; git -C "$CLONE" fetch -q --tags origin 2> /dev/null
+printf y > "$R/f"; g commit -q -am c1; g tag -f nightly > /dev/null; g push -q -f origin nightly 2> /dev/null   # upstream moved nightly
+R="$CLONE"
+andon mv "$J_NONE" --since "$SINCE_4H"
+expect "moved tag: not a fetch failure (rc != 2)" 0 "$([ "$RC" = 2 ] && echo 1 || echo 0)"
+hasnt "moved tag: fetch is not reported unmeasured" "$TMP/out-mv" "cannot fetch tags"
+git -C "$R" remote set-url origin "$TMP/does-not-exist.git"
+andon mvbad "$J_NONE" --since "$SINCE_4H"
+expect "broken remote: still exits 2" 2 "$RC"
+has "broken remote: still not measured" "$TMP/out-mvbad" "cannot fetch tags: not measured"
+R=$R_SAVE
 
 # the autopilot calls the gate in step 9 (a code line, not a comment); that it runs BEFORE any close is the behavioural
 # row close-crates-absent in check_release_autopilot_dogfood_close.sh
