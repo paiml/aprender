@@ -327,7 +327,7 @@ dependencies = [
 name = "apr-format"
 version = "0.72.3"
 dependencies = [
- "bincode",
+ "aprender-legacy-codec",
  "cargo_metadata",
  "half",
  "lz4_flex 0.11.6",
@@ -880,6 +880,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aprender-legacy-codec"
+version = "0.72.3"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "aprender-mcp"
 version = "0.72.3"
 dependencies = [
@@ -1294,9 +1301,9 @@ dependencies = [
  "aprender-common",
  "aprender-compute",
  "aprender-contracts",
+ "aprender-legacy-codec",
  "aprender-serve",
  "async-trait",
- "bincode",
  "criterion 0.6.0",
  "fastembed",
  "lz4_flex 0.11.6",
@@ -1614,13 +1621,13 @@ name = "aprender-test-lib"
 version = "0.72.3"
 dependencies = [
  "aprender-compute",
+ "aprender-legacy-codec",
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-test-derive",
  "aprender-test-lib",
  "async-trait",
  "base64 0.22.1",
- "bincode",
  "bollard",
  "chromiumoxide",
  "chrono",
