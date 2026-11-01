@@ -1,0 +1,20 @@
+[package]
+name = "aprender-legacy-codec"
+version.workspace = true
+edition = "2021"
+rust-version = "1.91"
+description = "serde codec that reads and writes the bincode 1.x legacy layout byte-for-byte (fixint, little-endian), without the unmaintained bincode crate (RUSTSEC-2025-0141)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/aprender"
+keywords = ["serde", "serialization", "bincode", "binary", "legacy"]
+categories = ["encoding"]
+authors = ["PAIML Engineering"]
+
+[dependencies]
+serde = { version = "1.0", default-features = false, features = ["std"] }
+
+[dev-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+
+[lints]
+workspace = true
