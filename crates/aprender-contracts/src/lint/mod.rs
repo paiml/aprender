@@ -22,6 +22,7 @@ pub use gates::{collect_yaml_files, UNWALKED_DIRS};
 pub mod bindings_gate;
 mod gates_extended;
 pub mod ratchet_gates;
+pub mod references_gate;
 pub mod refinement_gate;
 pub mod refines_gate;
 pub mod relations_gate;
@@ -314,6 +315,22 @@ pub enum GateExtra {
         contracts_without_depends_on: usize,
         /// The top-level `contracts_without_depends_on` in `lint-baseline.json`; `None` = not recorded (reported only).
         baseline: Option<usize>,
+        /// Findings.
+        violations: usize,
+    },
+    /// aprender#6397: `metadata.references` repo paths that do not exist — the ratchet.
+    #[serde(rename = "references_resolve")]
+    ReferencesResolve {
+        /// Contract files parsed.
+        contracts_checked: usize,
+        /// References classified as repo paths.
+        path_references: usize,
+        /// Repo-path references that do not exist — the debt, shrink-only.
+        dead_references: usize,
+        /// The top-level `dead_references` in `lint-baseline.json`; `None` = not recorded.
+        baseline: Option<usize>,
+        /// `stem: path`, in byte order.
+        dead: Vec<String>,
         /// Findings.
         violations: usize,
     },
@@ -1090,6 +1107,9 @@ pub fn run_named_gate_with(
         "depends-on-present" => {
             NamedGateOutcome::Ratchet(ratchet_gates::run_depends_on_present_gate(contract_dir))
         }
+        references_gate::GATE => {
+            NamedGateOutcome::Ratchet(references_gate::run_references_gate(contract_dir))
+        }
         "proved-is-derived" => {
             NamedGateOutcome::Ratchet(ratchet_gates::run_proved_is_derived_gate(contract_dir))
         }
@@ -1106,7 +1126,8 @@ pub fn run_named_gate_with(
 }
 
 /// The gate names `--gate` computes alone, for the refusal message.
-pub const NAMED_GATES: [&str; 14] = [
+pub const NAMED_GATES: [&str; 15] = [
+    references_gate::GATE,
     bindings_gate::GATE,
     refinement_gate::GATE,
     "depends-on-present",
@@ -1125,7 +1146,7 @@ pub const NAMED_GATES: [&str; 14] = [
 
 /// The EV-11 ratchet gates, by name, in the order the full run computes them.
 type RatchetRun = fn(&Path) -> ratchet_gates::RatchetOutcome;
-const RATCHET_GATES: [(&str, RatchetRun); 3] = [
+const RATCHET_GATES: [(&str, RatchetRun); 4] = [
     ("theorem-pairing", ratchet_gates::run_theorem_pairing_gate),
     (
         "depends-on-present",
@@ -1135,6 +1156,7 @@ const RATCHET_GATES: [(&str, RatchetRun); 3] = [
         "proved-is-derived",
         ratchet_gates::run_proved_is_derived_gate,
     ),
+    (references_gate::GATE, references_gate::run_references_gate),
 ];
 
 /// An EV-11 ratchet as `run_lint` reports it. Its decline becomes a SKIPPED gate here, as sigma's non-verdict
