@@ -22,6 +22,11 @@ path = "src/bin/pv-sat/main.rs"
 name = "pv-readme"
 path = "src/bin/pv-readme/main.rs"
 
+# #6353 (PMAT-5902 S1): Rust port of scripts/lib/roadmap_fragments.py; subcommands land in S2-S10.
+[[bin]]
+name = "aprender-roadmap"
+path = "src/bin/aprender-roadmap/main.rs"
+
 [dependencies]
 aprender-contracts = { path = "../aprender-contracts", version = "0.72.3" }
 # #3745 S1: `--model` is declared through the shared role type `ModelPath`, so

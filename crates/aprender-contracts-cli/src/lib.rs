@@ -169,7 +169,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             binding,
             readme,
             ci,
-        } => commands::generate::run(&contract, &output, binding.as_deref(), readme, ci),
+            dry_run,
+        } => commands::generate::run(&contract, &output, binding.as_deref(), readme, ci, dry_run),
         Commands::Graph {
             contract_dir,
             format,
@@ -337,11 +338,13 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             output,
             update_summary,
             summary_path,
+            dry_run,
         } => commands::book::run(
             &contract_dir,
             &output,
             update_summary,
             summary_path.as_deref(),
+            dry_run,
         ),
         Commands::Infer {
             crate_dir,
@@ -350,7 +353,11 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             top,
         } => commands::infer::run(&crate_dir, &binding, &contract_dir, top),
         Commands::Obligations { root, gate } => commands::obligations::run(&root, gate),
-        Commands::Unlock { contract, reason } => commands::unlock::run(&contract, &reason),
+        Commands::Unlock {
+            contract,
+            reason,
+            dry_run,
+        } => commands::unlock::run(&contract, &reason, dry_run),
         Commands::Roofline {
             contract_dir,
             params,
