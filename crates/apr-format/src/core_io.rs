@@ -99,7 +99,7 @@ pub fn save<M: Serialize>(
         });
     }
 
-    let payload_uncompressed = bincode::serialize(model)
+    let payload_uncompressed = aprender_legacy_codec::serialize(model)
         .map_err(|e| AprFormatError::Serialization(format!("Failed to serialize model: {e}")))?;
 
     let (payload_compressed, compression) =
@@ -194,7 +194,7 @@ pub fn load_from_bytes<M: DeserializeOwned>(data: &[u8], expected_type: ModelTyp
     let payload_compressed = &data[metadata_end..payload_end];
     let payload_uncompressed = decompress_payload(payload_compressed, header.compression)?;
 
-    bincode::deserialize(&payload_uncompressed)
+    aprender_legacy_codec::deserialize(&payload_uncompressed)
         .map_err(|e| AprFormatError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 

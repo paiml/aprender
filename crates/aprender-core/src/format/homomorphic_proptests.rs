@@ -309,8 +309,8 @@ mod tests {
     #[test]
     fn test_he_parameters_serialize_roundtrip() {
         let params = HeParameters::default_128bit();
-        let serialized = bincode::serialize(&params).expect("serialize");
-        let deserialized: HeParameters = bincode::deserialize(&serialized).expect("deserialize");
+        let serialized = aprender_legacy_codec::serialize(&params).expect("serialize");
+        let deserialized: HeParameters = aprender_legacy_codec::deserialize(&serialized).expect("deserialize");
 
         assert_eq!(deserialized.security_level, params.security_level);
         assert_eq!(deserialized.scheme, params.scheme);
@@ -320,8 +320,8 @@ mod tests {
     #[test]
     fn test_ciphertext_serialize_roundtrip() {
         let ct = Ciphertext::new(vec![1, 2, 3, 4], HeScheme::Ckks);
-        let serialized = bincode::serialize(&ct).expect("serialize");
-        let deserialized: Ciphertext = bincode::deserialize(&serialized).expect("deserialize");
+        let serialized = aprender_legacy_codec::serialize(&ct).expect("serialize");
+        let deserialized: Ciphertext = aprender_legacy_codec::deserialize(&serialized).expect("deserialize");
 
         assert_eq!(deserialized.data(), ct.data());
         assert_eq!(deserialized.scheme(), ct.scheme());

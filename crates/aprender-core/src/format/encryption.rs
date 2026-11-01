@@ -53,7 +53,7 @@ pub fn save_encrypted<M: Serialize>(
     let path = path.as_ref();
 
     // Serialize payload with bincode
-    let payload_uncompressed = bincode::serialize(model)
+    let payload_uncompressed = aprender_legacy_codec::serialize(model)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
 
     // Compress payload
@@ -164,7 +164,7 @@ pub fn load_encrypted<M: DeserializeOwned>(
 
     // Decompress and deserialize
     let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
-    bincode::deserialize(&payload_uncompressed)
+    aprender_legacy_codec::deserialize(&payload_uncompressed)
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
@@ -272,7 +272,7 @@ pub fn save_for_recipient<M: Serialize>(
     let path = path.as_ref();
 
     // Serialize payload with bincode
-    let payload_uncompressed = bincode::serialize(model)
+    let payload_uncompressed = aprender_legacy_codec::serialize(model)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
 
     // Compress payload
@@ -406,7 +406,7 @@ pub fn load_as_recipient<M: DeserializeOwned>(
 
     // Decompress and deserialize
     let payload_uncompressed = decompress_payload(&payload_compressed, header.compression)?;
-    bincode::deserialize(&payload_uncompressed)
+    aprender_legacy_codec::deserialize(&payload_uncompressed)
         .map_err(|e| AprenderError::Serialization(format!("Failed to deserialize model: {e}")))
 }
 
