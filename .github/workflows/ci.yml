@@ -74,7 +74,7 @@ jobs:
   # container/outputs exactly as the Actions runner did. The workspace tests
   # are the exception: as one shard inside x86-main they took 5358 s of it and
   # were the release critical path, so ci/sections.yml `matrix-pins` splits
-  # them into shards (12, ONE count in ci/sections.yml matrix-pins) and each runs as its own `workspace-test-shard` job
+  # them into shards (4, ONE count in ci/sections.yml matrix-pins) and each runs as its own `workspace-test-shard` job
   # below, in parallel. The `workspace-test` verdict job compares the UNION of
   # the shards' executed test ids with the owed universe, by id (#4433).
   #
@@ -139,10 +139,48 @@ jobs:
           printf '%s\n' "$out"
           printf '%s\n' "$out" | grep -E '^(x86|det|cite|pr_head)=' >> "$GITHUB_OUTPUT"
 
+  # T43b (#5884, Noah 16:28Z #3, extends mg-reuse): on merge_group, workspace-test-shard is skipped ONLY when the queue
+  # entry's tree sha == the tree sha of a green PR run's head (K1-K5: queue head has one parent, the base; the base
+  # has one parent; the base is an ancestor of the head; M^{tree} == H^{tree}; the head's newest ci.yml pull_request
+  # run is complete and every job is that run's) AND that run's `workspace-test` verdict succeeded. Any difference
+  # (changed main, another tree, a lookup that failed) leaves wt=0 and the full shards run. x86-main and determinism
+  # are NOT read here: they stay un-reused on the queue (20X r2), so x86-main still never waits for this job.
+  mg-reuse-wt:
+    if: github.event_name == 'merge_group'
+    # same plain clean-room lane as the shards it gates (AC-1352-SEL); the job only runs on merge_group
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: read
+    outputs:
+      wt: ${{ steps.key.outputs.wt }}
+      wt_cite: ${{ steps.key.outputs.wt_cite }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          # full history: K3 (merge-base --is-ancestor) walks the PR head back to the base; the mq runner keeps a warm clone
+          fetch-depth: 0
+      - name: Read the workspace-test reuse key for this queue entry (3 API calls)
+        id: key
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QREF: ${{ github.event.merge_group.head_ref }}
+          QHEAD: ${{ github.event.merge_group.head_sha }}
+          QBASE: ${{ github.event.merge_group.base_sha }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          out=$(bash scripts/ci_mg_reuse.sh resolve --event merge_group --ref "$QREF" --queue-head "$QHEAD" --base "$QBASE" --repo "$REPO")
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -E '^(wt|wt_cite)=' >> "$GITHUB_OUTPUT"
+
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
   mg-reuse-self-test:
-    runs-on: [self-hosted, Linux, clean-room]
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     permissions:
       contents: read
@@ -155,12 +193,111 @@ jobs:
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
 
+  # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
+  # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
+  pr-light:
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
+    # Noah 12:36Z: pr-x64 is an OPTION for PR quick-tier jobs, never merge_group, never release. A runs-on label list is an AND, so
+    # "either pool" is not expressible; the option is a repo variable instead. Unset (the default) or anything but 'pr-x64' keeps the
+    # X64 clean-room pool; PR_LIGHT_POOL=pr-x64 (and unsetting it) is the reversible switch. NO fallback: with the variable set and
+    # both pr-x64 runners offline, pr-light queues until it is unset. pull_request only, so no merge_group or release path reads it.
+    runs-on: ${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('["self-hosted","Linux","X64","pr-x64"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    timeout-minutes: 60
+    # The PR-only sections (guard-tree, pr-review-shadow, pr-review-sign) carry their own permissions blocks; one job token covers all.
+    permissions: write-all
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+    steps:
+      # Both arches get the pinned jq 1.8.2 (guard_tree_test needs 1.8.x; gx10-pool3 ships jq 1.7). Any other arch fails closed.
+      - name: Pin jq 1.8.2 (x86_64 and aarch64; sha256-verified, fail closed)
+        env:
+          JQ_BASE: https://github.com/jqlang/jq/releases/download/jq-1.8.2
+          JQ_SHA256_AMD64: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+          JQ_SHA256_ARM64: 8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309
+        run: |
+          set -euo pipefail
+          case "$(uname -m)" in
+            x86_64) JQ_URL="$JQ_BASE/jq-linux-amd64"; JQ_SHA256="$JQ_SHA256_AMD64" ;;
+            aarch64 | arm64) JQ_URL="$JQ_BASE/jq-linux-arm64"; JQ_SHA256="$JQ_SHA256_ARM64" ;;
+            *) echo "::error::no pinned jq for arch $(uname -m)"; exit 1 ;;
+          esac
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          [ "$("$d/jq" --version)" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$("$d/jq" --version)'"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Cheap checks (fmt, falsification-ID order, guard case tables)
+        run: |
+          set -euo pipefail
+          python3 scripts/ci/fail_fast.py self-test
+          python3 scripts/ci/fail_fast.py ids --base origin/main
+          docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -w /w \
+            localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 \
+            cargo fmt --all -- --check
+          bash scripts/tests/guard_tree_test.sh
+          bash scripts/bump-version.sh --self-test
+          setsid --wait bash scripts/check_no_claim_literals.sh --selftest
+          setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
+          setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
+          setsid --wait bash scripts/ci/fixture_quiet.sh --self-test
+          setsid --wait bash scripts/ci/fetch_p6.sh --self-test
+          setsid --wait bash scripts/ci/fetch_p6.sh --check-wiring
+      - name: fat_driver case table must still turn RED
+        run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
+      - name: FAT_SECRET plumbing guard case table
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
+      - name: every section secret is plumbed under its full name
+        run: setsid --wait bash scripts/check_ci_fat_secrets_plumbed.sh
+      # Assert the fleet-pinned bashrs/pmat (never install), the way book.yml and install-script.yml do, so the gate below lints with the release's linter.
+      - name: assert the fleet-pinned bashrs and pmat
+        run: setsid --wait bash scripts/check_tool_versions.sh
+      # N38 (#6529): guard-cargo m16 (bashrs) and m28 (mutants) skip on PR events, so a release_lanes.sh break showed only in
+      # merge_group. Path-filtered: runs release_lanes.sh --self-test and --mutants, and the release bashrs gate (check_bashrs_gate.sh) when any scripts/release/*.sh changed.
+      - name: release_lanes.sh case table, mutants and bashrs (only when scripts/release/*.sh changed)
+        run: |
+          setsid --wait bash scripts/ci/pr_release_lanes_gate.sh --self-test
+          setsid --wait bash scripts/ci/pr_release_lanes_gate.sh origin/${{ github.base_ref }}
+      - name: install the toolchain rust-toolchain.toml pins
+        run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      # Noah 15:09Z (#5955), Opus-A on #5964: the sections that exist ONLY for a pull request (guard-tree with its
+      # R-2 and 11.1 steps, pr-review-shadow, pr-review-sign) ran inside x86-main, which a PR no longer runs.
+      # They run here, on a PR only, so arming still sees guard-tree and the receipt signed.
+      - name: PR-only sections (guard-tree, pr-review-shadow, pr-review-sign)
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'guard-tree,pr-review-shadow,pr-review-sign'
+          --results "$RUNNER_TEMP/fat/results.json"
+          --background-until 'guard-tree'
+      - name: PR-only sections (wait for every one to finish)
+        if: ${{ !cancelled() }}
+        run: python3 scripts/ci/fat_driver.py wait --results "$RUNNER_TEMP/fat/results.json"
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: pr-review-shadow-sample
+          path: ${{ runner.temp }}/fat/artifacts/pr-review-shadow-sample/
+          retention-days: 90
+          if-no-files-found: ignore
+
   x86-main:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}
-    # pull_request/push stay on the shared clean-room pool; a merge_group entry takes the mq lane (custom label exactly mq)
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    timeout-minutes: 240
+    # Noah 15:09Z (#5955): heavy jobs run only in the merge queue and on push; a PR runs pr-light. `!= 'pull_request'` is
+    # fail-closed: an empty or unknown event name owes the heavy job.
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 40 || 240 }}
     # The sections carry their own permissions blocks (the sov provenance section
     # needs id-token + attestations); one job token must cover all of them.
     permissions: write-all
@@ -170,6 +307,8 @@ jobs:
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
+      # merge_group: unscaled section timeouts (default x2 would make the 110-min nextest step 220 > the 120-min job wall)
+      FAT_TIMEOUT_SCALE: ${{ github.event_name == 'merge_group' && '1' || '' }}
       FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
       # The fleet pins jq 1.8.2. Runners in this clean-room pool whose image ships jq 1.6
@@ -248,12 +387,24 @@ jobs:
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh --self-test
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      # PMAT-5971: on a merge_group entry guard-tree, guard-cargo and vendored-schemas run in the
+      # `guards` job (below), not here: measured over 20 queue runs they were the two longest
+      # sections (guard-cargo 1602 s median / 2100 s p90) and x86-main waited for them.
       - name: Sections (the determinism raster returns first; the rest keep running)
-        run: >-
-          python3 scripts/ci/fat_driver.py run
-          --sections 'sov.*,guard-tree,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]'
-          --results "$RUNNER_TEMP/fat/results.json"
-          --background-until 'determinism[X64]'
+        env:
+          EVT: ${{ github.event_name }}
+        run: |
+          if [ "$EVT" = merge_group ]; then
+            python3 scripts/ci/fat_driver.py run \
+              --sections 'sov.*,pr-review-shadow,pr-review-sign,determinism[X64]' \
+              --results "$RUNNER_TEMP/fat/results.json" \
+              --background-until 'determinism[X64]'
+          else
+            python3 scripts/ci/fat_driver.py run \
+              --sections 'sov.*,guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas,pr-review-shadow,pr-review-sign,determinism[X64]' \
+              --results "$RUNNER_TEMP/fat/results.json" \
+              --background-until 'determinism[X64]'
+          fi
       # Published mid-run: the determinism job's compare section is waiting for it.
       - uses: actions/upload-artifact@v7
         with:
@@ -309,13 +460,68 @@ jobs:
         if: always()
         run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}" "$GITHUB_RUN_ID"; fi
 
-  # T43: x86-main's RustSec advisory steps, verbatim from ci/sections.yml
-  # guard-cargo, for a merge_group run where mg-reuse skipped x86-main. Their input
-  # is the advisory database, which changes with no commit, so a green head run is
-  # no evidence for them. ci / gate and gate require this job whenever they reuse.
+  # PMAT-5971 (NOAH 16:16Z / 16:19Z): the three longest x86-main sections, as their own merge-queue job.
+  # Same fat_driver, same section definitions (ci/sections.yml), same Σ: only the box differs. Measured
+  # over 20 queue runs (median / p90 s): guard-cargo 1602/2100, guard-tree 1043/1318, vendored-schemas
+  # 103/156; x86-main waited for guard-cargo. Required: `gate` reads this job's results exactly as it read
+  # x86-main's guard-tree and guard-cargo.
+  guards:
+    needs: [mg-reuse]
+    # merge_group-only (a draft never reaches the queue); skipped with x86-main when mg-reuse reuses the cited run.
+    if: ${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # merge_group: 2 x p95 (22.5 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull; the 240 stays for push.
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 65 || 240 }}
+    permissions: write-all
+    outputs:
+      results: ${{ steps.sections.outputs.results }}
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      FAT_VARS_JSON: ${{ toJSON(vars) }}
+      FAT_TIMEOUT_SCALE: ${{ github.event_name == 'merge_group' && '1' || '' }}
+      FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+    steps:
+      # The same pinned jq as x86-main: guard-tree turns RED on jq 1.6 (tag_coverage_gate.sh --self-test).
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
+        run: |
+          set -euo pipefail
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: install the toolchain rust-toolchain.toml pins
+        run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      - name: Binary Release bin filter (#6502) keeps every published bin and drops every publish=false one
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash scripts/tests/release_bin_filter_test.sh
+      - name: Sections
+        id: sections
+        run: >-
+          python3 scripts/ci/fat_driver.py run
+          --sections 'guard-tree,guard-cargo-shard?*,guard-cargo,vendored-schemas'
+          --results "$RUNNER_TEMP/fat/results.json"
+      - name: Remove this job's section containers (runs on cancel too)
+        if: always()
+        run: if [ -f scripts/ci/fat_teardown.sh ]; then bash scripts/ci/fat_teardown.sh "$GITHUB_RUN_ID" "$RUNNER_TEMP"; fi
+      - name: Free this job's own cargo target dir
+        if: always()
+        run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}" "$GITHUB_RUN_ID"; fi
+
   x86-main-advisories:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
@@ -471,24 +677,52 @@ jobs:
   # missing from its fat job's results (the job died before writing them) is a
   # failure, never a pass.
   # ==========================================================================
-  # The workspace tests, one shard per job (nextest hash partition N/12 plus the
-  # explicit runner's round-robin N/12), in parallel on the X64 clean-room pool.
+  # The workspace tests, one shard per job (nextest hash partition N/4 plus the
+  # explicit runner's round-robin N/4), in parallel on the X64 clean-room pool.
   # The section body is ci/sections.yml `workspace-test-shard`, unchanged.
+  # mg-reuse-wt may cite a PR run only if that run really tested the tree. A receipt-reuse run (#5850, tier=reuse)
+  # runs no test step, so its shards are green over zero tests. This marker needs the shards and runs only after
+  # they SUCCEEDED, so a run whose shards were skipped or failed never has it; ci_mg_reuse.sh refuses wt=1 unless it
+  # succeeded (R:k6-wt-ran). Once #5850's receipt-judge job exists, ci_mg_reuse.sh --self-test
+  # (mgshape) is RED until this job needs it and keys its if on receipt-judge.outputs.ok.
+  workspace-test-ran:
+    needs: [workspace-test-shard]
+    if: ${{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 5
+    steps:
+      - run: echo "this run owes and runs the test suite"
   workspace-test-shard:
-    if: ${{ github.event.pull_request.draft != true }}
-    # same lanes as x86-main: clean-room for pull_request/push, mq for a merge_group entry
-    runs-on: ${{ github.event_name == 'merge_group' && fromJSON('["self-hosted","Linux","X64","mq"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
-    timeout-minutes: 180
+    # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
+    needs: [mg-reuse-wt]
+    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    # same lane as x86-main: the plain clean-room seats on every event
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
+    # below that section cap (NOAH 16:43Z: timeout = 2x p95, measured): the job wall ends the step first, by ruling.
+    # The wall stays 180 on pull_request/push (not merge_group, below): a tier=full entry (Cargo.lock / root Cargo.toml / toolchain touched, or the base
+    # unfetchable) is green at 46-64 min and the tier is decided inside the job. The hang cap is FAT_IDLE_LIMIT_S below.
+    # Run 40107798347 printed lines at 15:37/15:38/15:48/15:57, then nothing until the 16:19 hand cancel (22 min silent).
+    # OPERATOR 2026-10-26 16:43Z: "timeout = 2x p95 going forward". merge_group: 119 = ceil(max(2 x p95 50.0, 1.25 x max 94.5 = 118.1)) of 656 green merge_group shard jobs, 14 d (NOAH-1648Z)
+    # holding an mq runner. pull_request/push keep 180 (the untimed image pull and the full-tier fallback).
+    timeout-minutes: ${{ github.event_name == 'merge_group' && 119 || 180 }}
+    permissions:
+      contents: read
+      checks: read     # ci_mg_workspace_result.sh reads check-suites
     strategy:
       fail-fast: false
       matrix:
-        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1,2,3,4]' || '[1,2,3,4,5,6,7,8,9,10,11,12]') }}
-        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[4]' || '[12]') }}
+        shard: ${{ fromJSON(github.event_name == 'merge_group' && '[1,2,3]' || '[1,2,3,4]') }}
+        shards: ${{ fromJSON(github.event_name == 'merge_group' && '[3]' || '[4]') }}
     outputs:
       results: ${{ steps.run.outputs.results }}
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
+      # merge_group: unscaled section timeouts (default x2 would make the 110-min nextest step 220 > the 120-min job wall)
+      FAT_TIMEOUT_SCALE: ${{ github.event_name == 'merge_group' && '1' || '' }}
+      # merge_group: a run whose section logs grow not at all for 20 min is hung, not slow (scripts/ci/idle_watchdog.sh around fat_driver.py run)
+      FAT_IDLE_LIMIT_S: ${{ github.event_name == 'merge_group' && '1200' || '' }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -500,7 +734,7 @@ jobs:
       - name: Sections
         id: run
         run: >-
-          python3 scripts/ci/fat_driver.py run
+          bash scripts/ci/idle_watchdog.sh "$RUNNER_TEMP/fat" -- python3 scripts/ci/fat_driver.py run
           --sections 'workspace-test-shard?${{ matrix.shard }}?${{ matrix.shards }}?'
           --results "$RUNNER_TEMP/fat/results.json"
       # #4948: a cancelled run never reaches a section's own container removal,
@@ -527,22 +761,41 @@ jobs:
   workspace-test:
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 10
-    needs: [workspace-test-shard]
+    needs: [workspace-test-shard, mg-reuse-wt, pr-light]
     if: always()
     steps:
-      - name: Every shard passed
+      - name: Every shard passed (or the whole set was reused from an identical-tree green PR run)
         env:
           SHARD_RESULT: ${{ needs.workspace-test-shard.result }}
+          WT_REUSE: ${{ needs.mg-reuse-wt.outputs.wt }}
+          WT_CITE: ${{ needs.mg-reuse-wt.outputs.wt_cite }}
           DRAFT: ${{ github.event.pull_request.draft }}
+          EVT: ${{ github.event_name }}
+          PRL: ${{ needs.pr-light.result }}
         run: |
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
-          echo "workspace-test-shard matrix result: $SHARD_RESULT"
+          # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
+          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
+          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          if [ "${EVT:-}" = pull_request ]; then
+            [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
+            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+          fi
+          # --- PR-LIGHT-VERDICT-END ---
+          echo "workspace-test-shard matrix result: $SHARD_RESULT (reuse key wt='${WT_REUSE:-}')"
+          if [ "${WT_REUSE:-}" = 1 ]; then
+            # T43b: the shards are skipped ONLY under the key; a shard that ran anyway is a contradiction, never a pass
+            [ "$SHARD_RESULT" = skipped ] || { echo "::error::workspace-test: reuse key wt=1 but the shard matrix result is '$SHARD_RESULT'"; exit 1; }
+            [ -n "${WT_CITE:-}" ] || { echo "::error::workspace-test: reuse key wt=1 without a citation"; exit 1; }
+            echo "workspace-test reused: merge-group tree == tree of a green PR run (${WT_CITE})"
+            exit 0
+          fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
       - uses: actions/checkout@v7
-        if: ${{ github.event.pull_request.draft != true }}
+        if: ${{ github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
       - uses: actions/download-artifact@v4
-        if: ${{ github.event.pull_request.draft != true }}
+        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -551,7 +804,7 @@ jobs:
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
       - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
-        if: ${{ github.event.pull_request.draft != true }}
+        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
@@ -584,9 +837,9 @@ jobs:
 
   ci-gate:
     name: ci / gate
-    runs-on: [self-hosted, Linux, clean-room]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
-    needs: [x86-main, mg-reuse, x86-main-advisories]
+    needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]
     if: always()
     steps:
       - name: The sovereign-ci gate section's result
@@ -598,10 +851,19 @@ jobs:
           MG_DET: ${{ needs.mg-reuse.outputs.det }}
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
+          PRL: ${{ needs.pr-light.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
+          # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
+          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
+          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          if [ "${EVT:-}" = pull_request ]; then
+            [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
+            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+          fi
+          # --- PR-LIGHT-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
@@ -622,14 +884,16 @@ jobs:
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
 
   gate:
-    runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
+    runs-on: [self-hosted, Linux, X64, clean-room]   # X64 only: gx10 aarch64 runners die at job start (#6200)
     timeout-minutes: 22
-    needs: [x86-main, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test]
+    needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
     if: always()
     steps:
       - name: Check required sections
         env:
           X86: ${{ needs.x86-main.outputs.results }}
+          GRD: ${{ needs.guards.outputs.results }}
+          GRDR: ${{ needs.guards.result }}
           DET: ${{ needs.determinism.outputs.results }}
           WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
@@ -639,6 +903,7 @@ jobs:
           MG_CITE: ${{ needs.mg-reuse.outputs.cite }}
           ADV: ${{ needs.x86-main-advisories.result }}
           MST: ${{ needs.mg-reuse-self-test.result }}
+          PRL: ${{ needs.pr-light.result }}
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
@@ -651,6 +916,14 @@ jobs:
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
+          # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
+          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
+          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          if [ "${EVT:-}" = pull_request ]; then
+            [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
+            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+          fi
+          # --- PR-LIGHT-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
@@ -667,7 +940,11 @@ jobs:
           # --- MG-REUSE-VERDICT-END ---
           # x86-main and determinism were skipped when REUSE=1: the cited run's gate passed these on this tree (PR head run on merge_group, merge_group run on push).
           if [ "$REUSE" = 0 ]; then
-            for pair in X86:guard-tree X86:guard-cargo X86:sov.gate DET:determinism-compare; do
+            # PMAT-5971: on a merge_group entry guard-tree and guard-cargo ran in the `guards` job
+            G=X86; [ "$EVT" != merge_group ] || G=GRD
+            # the whole guards job, not only the two sections read below: a red vendored-schemas must block the entry
+            [ "$EVT" != merge_group ] || [ "${GRDR:-}" = success ] || { echo "guards job: ${GRDR:-missing}"; exit 1; }
+            for pair in "$G:guard-tree" "$G:guard-cargo" X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
               # determinism does not run on a PR head (job-level if above): not a failure there.
               [ "$job:$EVT" = "DET:pull_request" ] && continue

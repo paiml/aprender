@@ -1,0 +1,22 @@
+- id: PMAT-6416
+  github_issue: 6416
+  item_type: task
+  title: 'advisories: zstd 0.14.3 + parquet/arrow 60 (RUSTSEC-2026-0391/0398/0403/0410)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-a3
+  created: 2026-10-26T15:45:02Z
+  updated: 2026-10-26T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo deny check advisories = 0 (RUSTSEC-2026-0391/0398/0403/0410 cleared)'
+  - 'cargo tree --workspace --all-features --target all -i zstd --locked shows only zstd 0.14.3 (wasmtime cache feature dropped)'
+  - 'aprender-graph parquet round-trip, ZSTD-read and Snappy-read tests are green under --features storage'
+  - 'default features of aprender-common and aprender-simulate keep Compression::Zstd and checkpointing'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390

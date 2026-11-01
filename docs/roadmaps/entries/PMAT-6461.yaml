@@ -1,0 +1,18 @@
+- id: PMAT-6461
+  github_issue: 6461
+  item_type: task
+  title: 'PVB-7: L5 = B0∧B1∧B2∧B3, read from summaries'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:20Z
+  updated: 2026-10-27T11:36:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452

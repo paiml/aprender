@@ -48,7 +48,7 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
         fi
     done
     blk="$(job_block "$f" workspace-test)"
-    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c 'if: ${{ github.event.pull_request.draft != true }}')" -lt 3 ]; then
+    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E 'if: [$][{][{] (needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && github[.]event_name != .pull_request.)? [}][}]')" -lt 3 ]; then
         echo "FAIL  workspace-test: checkout, download-artifact and sigma steps are not all skipped on a draft"; bad=1
     fi
     return "$bad"
@@ -64,7 +64,7 @@ self_test() {
         if got="$(check "$td/m.yml")"; then echo "FAIL  mutant $name stayed GREEN"; fails=1; else echo "ok    red   mutant $name"; fi
     }
     mutant no-ready-for-review 's/, ready_for_review\]/]/'
-    mutant x86-main-unguarded 's/ && github\.event\.pull_request\.draft != true \}\}/ }}/'
+    mutant x86-main-unguarded 's/ && github\.event\.pull_request\.draft != true( && github\.event_name != .pull_request.)? \}\}/ }}/'
     mutant shard-unguarded '/^  workspace-test-shard:$/,/runs-on:/{/draft != true/d;}'
     mutant gate-no-draft-exit '/echo "gate: draft PR/d'
     mutant ci-gate-no-draft-flag '/^  ci-gate:/,/^  gate:/{/DRAFT: \$/d}'
@@ -73,7 +73,7 @@ self_test() {
     return "$fails"
 }
 
-root="$(git rev-parse --show-toplevel)"
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" || exit 1  # script-relative: no repo query, so a dubious-ownership checkout (clean-room container) cannot fail it (PMAT-6479)
 case "${1:-}" in
     --self-test) self_test "${2:-$root/.github/workflows/ci.yml}"; exit $? ;;
     *)

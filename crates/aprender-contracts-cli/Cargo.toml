@@ -17,8 +17,18 @@ path = "src/main.rs"
 name = "pv-sat"
 path = "src/bin/pv-sat/main.rs"
 
+# #6394 PVL-001: `pv readme` as its own target until the fold decision; the `pv --help` surface is untouched.
+[[bin]]
+name = "pv-readme"
+path = "src/bin/pv-readme/main.rs"
+
+# #6353 (PMAT-5902 S1): Rust port of scripts/lib/roadmap_fragments.py; subcommands land in S2-S10.
+[[bin]]
+name = "aprender-roadmap"
+path = "src/bin/aprender-roadmap/main.rs"
+
 [dependencies]
-aprender-contracts = { path = "../aprender-contracts", version = "0.71.3" }
+aprender-contracts = { path = "../aprender-contracts", version = "0.72.3" }
 # #3745 S1: `--model` is declared through the shared role type `ModelPath`, so
 # `apr surface` reads `apr pv verify-structure --model` as a model argument.
 batuta-common = { workspace = true, features = ["cli-roles"] }

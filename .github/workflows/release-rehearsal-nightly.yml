@@ -59,14 +59,19 @@ jobs:
     # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
     runs-on: [self-hosted, Linux, clean-room]   # #5435: pure shell+gh, arch-neutral
     environment: infra-read   # holds INFRA_ACTIONS_READ; only main may use it
-    # rehearse.sh --mutants ran 145 mutants in 18.4 and 20.3 min on 2026-10-09; a timed-out pick is a not_measured night
-    timeout-minutes: 45
+    # rehearse.sh --mutants ran 145 mutants in 18.4 and 20.3 min on 2026-10-09; run 41130440359 (2026-10-30, 168 mutants,
+    # 12-22 s each as the case table grew) had 162 killed at 45 min, so ~49 min in all; a timed-out pick is a not_measured night
+    timeout-minutes: 75
     outputs:
       c: ${{ steps.c.outputs.c }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           fetch-depth: 0       # --pick-c walks main's first parents and refuses a shallow clone
+      - name: A gh config dir this user can write (the runner's /opt/ci-gh is unreadable)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gh-config"
+          echo "GH_CONFIG_DIR=$RUNNER_TEMP/gh-config" >> "$GITHUB_ENV"
       - name: The pick's case table and mutants (a red table picks no C)
         run: |
           bash scripts/release/rehearse.sh --selftest
@@ -151,6 +156,10 @@ jobs:
         run: |
           h=$(git rev-parse --verify HEAD)
           [ "$h" = "$C" ] || { echo "::error::HEAD is $h, not C $C"; exit 1; }
+      - name: A gh config dir this user can write (the runner's /opt/ci-gh is unreadable)
+        run: |
+          mkdir -p "$RUNNER_TEMP/gh-config"
+          echo "GH_CONFIG_DIR=$RUNNER_TEMP/gh-config" >> "$GITHUB_ENV"
       - name: The rehearsal's case table and mutants at C (a red table runs no night)
         run: |
           bash scripts/release/rehearse.sh --selftest

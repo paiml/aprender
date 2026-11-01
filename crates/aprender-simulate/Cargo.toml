@@ -39,7 +39,7 @@ rand_pcg = { version = "0.9", features = ["serde"] }
 indexmap = { version = "2.0", features = ["serde"] }
 
 # Compression
-zstd = "0.13"
+zstd = { version = "0.14", optional = true }
 
 # Hashing
 blake3 = "1.5"
@@ -59,7 +59,7 @@ crossterm = { version = "0.28", optional = true }
 # ComputeBlocks from presentar-terminal (SIMD-optimized TUI widgets)
 # Path deps to avoid jugar-probar prod dep chain (CB-081)
 presentar-terminal = { workspace = true, optional = true }
-presentar-core = { version = "0.71.3", path = "../aprender-present-core", package = "aprender-present-core", default-features = false, optional = true }
+presentar-core = { version = "0.72.3", path = "../aprender-present-core", package = "aprender-present-core", default-features = false, optional = true }
 
 # WASM (optional)
 wasm-bindgen = { version = "0.2", optional = true }
@@ -97,7 +97,7 @@ provable-contracts-macros = { workspace = true }
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9"
+serde-saphyr = { workspace = true }  # #5208: build.rs reads contract YAML through saphyr, not unsafe-libyaml
 
 [dev-dependencies]
 # Contract trait enforcement (Section 23)
@@ -112,7 +112,9 @@ tempfile = "3.14"
 presentar-test = { path = "../aprender-present-test", package = "aprender-present-test" }
 
 [features]
-default = []
+default = ["zstd"]
+# Checkpoint compression (zstd 0.14.3, no advisory; PMAT-6416). Disable for a zstd-free build.
+zstd = ["dep:zstd"]
 tui = ["dep:crossterm", "dep:presentar-terminal", "dep:presentar-core"]
 web = ["dep:tokio"]
 wasm = ["dep:wasm-bindgen", "dep:js-sys", "dep:web-sys", "dep:getrandom", "dep:serde-wasm-bindgen", "dep:console_error_panic_hook"]

@@ -85,7 +85,7 @@ guard_jobs() {
     local read_by_gate out
     [ -r "$GATE_WORKFLOW" ] || die "cannot read $GATE_WORKFLOW: no such file"
     read_by_gate="$(awk '/^  gate:[ \t]*$/ { g = 1; next } g && /^  [^ #]/ { g = 0 } g' "$GATE_WORKFLOW" \
-        | grep -oE '(X86:|res "\$X86" )guard-[A-Za-z0-9_-]+' | sed -E 's/^(X86:|res "\$X86" )//' | LC_ALL=C sort -u)" || true
+        | grep -oE '(X86:|GRD:|\$G:|res "\$X86" )guard-[A-Za-z0-9_-]+' | sed -E 's/^(X86:|GRD:|\$G:|res "\$X86" )//' | LC_ALL=C sort -u)" || true
     [ -n "$read_by_gate" ] || die "the gate job in $GATE_WORKFLOW reads no guard-* section"
     out="$(jqj -r --arg n "$read_by_gate" '($n | split("\n")) as $n
         | keys_unsorted[] | select(startswith("guard-") and (. as $j | $n | index([$j]) != null))')"
@@ -285,7 +285,7 @@ cmd_run() {
     # 4800 s per step, not 1200: car's whole `guard_tree.sh --no-cargo` universe is
     # ONE manifest step and took 2481 s on CI (run 36229622731, x86-main, 2026-09-26),
     # so a 1200 s cap would kill it on every run. ~2x the measured worst step.
-    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job
+    local only="" stream="" timeout="${CI_GUARDS_STEP_TIMEOUT:-4800}" root scratch job shard_i="" shard_k=""
     # A step that outlives the JOB (guard-cargo was killed at 3567 s and 3494 s, #4914 #4917, #4919)
     # dies before its own --step-timeout fires, and the log never said which step it was. Every
     # CI_GUARDS_HEARTBEAT seconds (default 300, 0 = off) the running step is named on stderr.
@@ -295,6 +295,7 @@ cmd_run() {
         case "$1" in
             --only) [ "$#" -ge 2 ] || die "--only needs a value"; only=$2; shift 2 ;;
             --step-timeout) [ "$#" -ge 2 ] || die "--step-timeout needs a value"; timeout=$2; shift 2 ;;
+            --shard) [ "$#" -ge 2 ] || die "--shard needs I/K"; [[ $2 =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ] || die "--shard wants I/K with 1<=I<=K, got $2"; shard_i=${BASH_REMATCH[1]}; shard_k=${BASH_REMATCH[2]}; shift 2 ;;
             --stream) stream=1; shift ;;
             --no-stream) stream=0; shift ;;
             -*) die "run: unknown flag $1" ;;
@@ -338,6 +339,36 @@ cmd_run() {
         fi
     }
 
+    # FLOW-010 / stop-the-line (#5920): the CARGO-FREE LANE. guard-cargo's steps are strictly serial
+    # (step sum 2076 s vs section wall 2100 s on a merge-queue run), so ~2/3 of x86-main's 29 min was
+    # one section. A step named in ci/guard-lane-steps.txt (job<TAB>exact step name) runs beside the
+    # serial steps instead of after them, under four rules that keep "the same guards ran" true:
+    #  1. its own `git worktree` (HEAD): a self-test that plants a mutant never touches the tree the
+    #     serial steps or another lane step read;
+    #  2. a `cargo`/`rustc`/`rustup` shim first on PATH that FAILS the step (rc 97): a misfiled step
+    #     is a red row, never a silent compile racing the serial cargo steps for the target-dir lock;
+    #  3. it may not hand state to later steps: a non-empty GITHUB_ENV/PATH/OUTPUT file is a FAIL;
+    #  4. the same row (PASS/FAIL/TIMEOUT), the same SUMMARY counts, emitted in manifest order after
+    #     the serial rows. CI_GUARDS_LANE=0 is the all-serial run the counts are compared against.
+    local lane_on="${CI_GUARDS_LANE:-}" lane_w="${CI_GUARDS_LANE_WIDTH:-4}" lane_file="${CI_GUARDS_LANE_FILE:-$root/ci/guard-lane-steps.txt}"
+    local -A LANE=()
+    local -a lane_rec=() lane_pids=()
+    local lane_serial=0 lane_shim="$scratch/lane-shim" lk lv
+    [ -n "$lane_on" ] || lane_on=0   # OFF by default, in CI too: C324 -- a new merge-path behavior needs 3 green nights; CI_GUARDS_LANE=1 opts in
+    if [ "$lane_on" = 1 ]; then
+        [[ $lane_w =~ ^[1-9][0-9]*$ ]] || die "CI_GUARDS_LANE_WIDTH wants a positive integer, got '$lane_w'"
+        [ -r "$lane_file" ] || die "lane list $lane_file is unreadable (set CI_GUARDS_LANE=0 for the all-serial run)"
+        while IFS=$'\t' read -r lk lv; do
+            case "$lk" in ''|'#'*) continue ;; esac
+            [ -n "$lv" ] || die "$lane_file: a row needs job<TAB>step name, got '$lk'"
+            LANE["$lk"$'\t'"$lv"]=1
+        done < "$lane_file"
+        mkdir -p "$lane_shim" || die "cannot create $lane_shim"
+        for lk in cargo rustc rustup; do
+            printf '#!/bin/sh\necho "ci_guards lane: %s was invoked by a step listed in ci/guard-lane-steps.txt -- a cargo step belongs in the serial lane; remove the row" >&2\nexit 97\n' "$lk" > "$lane_shim/$lk"
+            chmod +x "$lane_shim/$lk"
+        done
+    fi
     local idx name run cond has_uses has_run n i reason k v r tag log t0 t1 rc status detail p ci=false
     local -a ek=() ev=() senv=() paths=()
     in_ci && ci=true
@@ -356,7 +387,7 @@ cmd_run() {
                     GUARD_TARGET_DIR|GUARD_CARGO_HOME) ENV[$k]="$scratch/${k,,}" ;;
                     *) ENV[$k]="$(printf '%s' "$v" | sed -E 's/\$\{\{[^}]*\}\}/local/g')" ;;
                 esac
-            done < <(jqj -j --arg j "$job" '(.[$j].env // {}) | to_entries[] | "\(.key)\u0000\(.value | tostring)\u0000"')
+            done < <(jqj -j --arg j "$job" '(.[$j + (if has($j + "-shard") then "-shard" else "" end)].env // {}) | to_entries[] | "\(.key)\u0000\(.value | tostring)\u0000"')
         fi
         [ "$ci" = true ] || job_steps_ok "$job"
         # jq writes the records to a file first: a jq that dies mid-stream behind <(...)
@@ -374,6 +405,10 @@ cmd_run() {
                 ek+=("$k"); ev+=("$v")
             done
             if [ -n "$only" ] && ! [[ $name =~ $only ]]; then continue; fi
+            # --shard I/K (#6255): step idx n runs in shard (n mod K)+1, so the K shards partition the manifest exactly once
+            # A step that appends to GITHUB_PATH/GITHUB_ENV hands state to the steps after it, so it runs in EVERY shard:
+            # the serial run carried that state forward, and a shard without it would lose it (m69 -> m70/m71 cargo-deny).
+            if [ -n "$shard_k" ] && ! [[ $run =~ (\>\>|tee\ -a)[[:space:]]*\"?\$\{?GITHUB_(PATH|ENV) ]]; then [[ $idx =~ ^m([0-9]+)$ ]] || die "--shard: step id <$idx> is not m<N>"; [ $((BASH_REMATCH[1] % shard_k)) -eq $((shard_i - 1)) ] || continue; fi
             reason=""
             if ! in_ci; then
                 if [[ $cond == *event_name* ]]; then reason="if: needs a CI event"
@@ -404,6 +439,34 @@ cmd_run() {
             done
             [ -n "$(getenv GITHUB_STEP_SUMMARY)" ] || senv+=("GITHUB_STEP_SUMMARY=$scratch/step_summary")
             log="$scratch/$tag.log"
+            if [ "$lane_on" = 1 ] && [ -n "${LANE[$job$'\t'$name]+x}" ]; then
+                [ "$timeout" -gt 0 ] && tcmd=(timeout -s TERM -k 60 "$timeout") || tcmd=()
+                local lbase="${PATH}"; local -a lenv=()
+                for p in "${senv[@]}"; do case "$p" in PATH=*) lbase="${p#PATH=}" ;; esac; done
+                for p in "${senv[@]}"; do case "$p" in GITHUB_WORKSPACE=*) ;; *) lenv+=("$p") ;; esac; done
+                while [ "$(jobs -rp | wc -l | tr -d ' ')" -ge "$lane_w" ]; do wait -n || true; done
+                (
+                    set +e   # a caller's set -e must not end this subshell before the .res row is written and the tree removed
+                    ltree="$scratch/lane-tree.$tag"
+                    lt0="$(now)"
+                    # the PATH shim cannot catch an absolute path or a PATH re-prepend, so a step that names the word cargo/rustc/rustup, bare or in a path, is the same red row
+                    if [[ $run =~ (CARGO_HOME|RUSTUP_HOME|(^|[^[:alnum:]_-])(cargo|rustc|rustup)($|[^[:alnum:]_-])) ]]; then
+                        echo "ci_guards lane: a cargo/rustc/rustup path was named by a step listed in ci/guard-lane-steps.txt -- a cargo step belongs in the serial lane; remove the row" > "$log"
+                        printf '97 %s %s\n' "$lt0" "$(now)" > "$scratch/lane.$tag.res"; exit 0
+                    fi
+                    if ! { flock 9; git -C "$root" worktree add --detach -q "$ltree" HEAD; } > "$log" 2>&1 9> "$scratch/lane-wt.lock"; then
+                        echo "ci_guards lane: cannot create the step's worktree" >> "$log"
+                        printf '98 %s %s\n' "$lt0" "$(now)" > "$scratch/lane.$tag.res"; exit 0
+                    fi
+                    ( env -C "$ltree" env "${lenv[@]}" "GITHUB_WORKSPACE=$ltree" "PATH=$lane_shim:$lbase" "CARGO_HOME=$lane_shim/no-cargo-home" "RUSTUP_HOME=$lane_shim/no-rustup-home" "${tcmd[@]}" bash --noprofile --norc -eo pipefail -c "$run" < /dev/null >> "$log" 2>&1 3<&-)
+                    printf '%s %s %s\n' "$?" "$lt0" "$(now)" > "$scratch/lane.$tag.res"
+                    { flock 9; git -C "$root" worktree remove --force "$ltree"; } > /dev/null 2>&1 9> "$scratch/lane-wt.lock"   # the same lock as the add: both rewrite .git/worktrees
+                ) &
+                lane_pids+=("$!")
+                lane_rec+=("$job"$'\x1f'"$idx"$'\x1f'"$tag"$'\x1f'"$name")
+                continue
+            fi
+            lane_serial=$((lane_serial + 1))
             [ "$stream" = 1 ] && echo "::group::$job#$idx $name"
             t0="$(now)"
             # timeout puts the step in its own process group and SIGKILLs the
@@ -463,6 +526,28 @@ cmd_run() {
         done 3< "$scratch/steps.$job"
     done
 
+    # join the lane: one row per lane step, in manifest order, same statuses as a serial step
+    if [ "${#lane_rec[@]}" -gt 0 ]; then wait "${lane_pids[@]}" 2> /dev/null || true; fi
+    local lrec ljob lidx ltag lname lrc lt0 lt1 lst lbad lf
+    for lrec in "${lane_rec[@]}"; do
+        IFS=$'\x1f' read -r ljob lidx ltag lname <<< "$lrec"
+        lst=PASS; lrc=1; lt0=0; lt1=0
+        if [ -s "$scratch/lane.$ltag.res" ]; then read -r lrc lt0 lt1 < "$scratch/lane.$ltag.res"; else lrc=99; echo "ci_guards lane: no result recorded (step vanished)" >> "$scratch/$ltag.log"; fi
+        lbad=""
+        for lf in github_path github_env github_output; do [ -s "$scratch/$lf.$ltag" ] && lbad="$lbad $lf"; done
+        if [ -n "$lbad" ]; then lrc=96; echo "ci_guards lane: step wrote${lbad} -- a lane step may not hand state to later steps" >> "$scratch/$ltag.log"; fi
+        if [ "$lrc" -ne 0 ]; then
+            lst=FAIL
+            if [ "$timeout" -gt 0 ] && { [ "$lrc" -eq 124 ] || [ "$lrc" -eq 137 ]; } && awk -v a="$lt0" -v b="$lt1" -v t="$timeout" 'BEGIN { exit !(b - a >= t) }'; then lst=TIMEOUT; lrc=124; fi
+        fi
+        if [ "$stream" = 1 ]; then echo "::group::$ljob#$lidx $lname"; awk 1 "$scratch/$ltag.log"; echo "::endgroup::"; fi
+        if [ "$lrc" -ne 0 ]; then
+            if [ "$stream" = 1 ]; then lname="$lname  [rc=$lrc]"; else lname="$lname  [rc=$lrc, log $scratch/$ltag.log]"; fi
+        fi
+        emit "$ljob" "$lidx" "$lst" "$(awk -v a="$lt0" -v b="$lt1" 'BEGIN { printf "%.3f", b - a }')" "$lname"
+    done
+    if [ "$lane_on" = 1 ]; then echo "ci_guards: lane on, width $lane_w: ${#lane_rec[@]} step(s) parallel + $lane_serial serial"
+    else echo "ci_guards: lane off: every step serial"; fi
     local failed=0 ran=0 skipped=0 row
     local -a fl=()
     for row in "${rows[@]}"; do
@@ -489,7 +574,12 @@ cmd_run() {
 }
 
 cmd_list() {
-    local job ci=false
+    local shard_i="" shard_k=""
+    if [ "${1:-}" = --shard ]; then
+        [ "$#" -ge 2 ] && [[ $2 =~ ^([1-9][0-9]*)/([1-9][0-9]*)$ ]] && [ "${BASH_REMATCH[1]}" -le "${BASH_REMATCH[2]}" ] || die "--shard wants I/K with 1<=I<=K"
+        shard_i=${BASH_REMATCH[1]}; shard_k=${BASH_REMATCH[2]}; shift 2
+    fi
+    local job ci=false rc=0
     in_ci && ci=true
     load_jobs
     local -a names=("$@")
@@ -498,8 +588,9 @@ cmd_list() {
     for job in "${names[@]}"; do
         echo "== $job"
         [ "$ci" = true ] && [ "$(jqj --arg m "$job$MANIFEST_SUFFIX" 'has($m)')" = true ] || job_steps_ok "$job"
-        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)"'
+        jqd -r --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx | if length < 4 then (" " * (4 - length)) + . else . end)  \(.step | name_of | tostring)\(if (.step.run // "" | tostring | test("(>>|tee -a)\\s*\"?\\$\\{?GITHUB_(PATH|ENV)")) then "\u0001" else "" end)"'  | { if [ -n "$shard_k" ]; then awk -v i="$shard_i" -v k="$shard_k" '/^==/{print;next} /\001/{sub(/\001/,"");print;next} $1 !~ /^m[0-9]+$/{print "ci_guards: --shard: step id <" $1 "> is not m<N>" > "/dev/stderr"; bad=1; next} {n=substr($1,2); if (n % k == i - 1) print} END{exit bad}'; else tr -d '\001'; fi; } || rc=1   # a refusal on an earlier job must not be masked by the last job's status
     done
+    return "$rc"
 }
 
 cmd_sha() {

@@ -998,6 +998,10 @@ mod tests_dense_session_4268;
 #[cfg(test)]
 #[path = "tests_encoded_ids_5056.rs"]
 mod tests_encoded_ids_5056;
+// #5691: run_batch_loop failure rows.
+#[cfg(test)]
+#[path = "tests_batch_loop_5691.rs"]
+mod tests_batch_loop_5691;
 
 #[cfg(test)]
 mod sibling_tokenizer_config_3990 {

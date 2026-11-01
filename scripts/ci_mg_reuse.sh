@@ -49,7 +49,7 @@ set -uo pipefail
 CI_WORKFLOW_PATH=".github/workflows/ci.yml"
 PRH=""
 
-emit() { printf 'x86=%s\ndet=%s\nmac=%s\ncite=%s\npr_head=%s\nreason=%s\n' "$1" "$2" "$3" "$4" "$5" "$6"; }
+emit() { printf 'x86=%s\ndet=%s\nmac=%s\ncite=%s\npr_head=%s\nreason=%s\nwt=%s\nwt_cite=%s\n' "$1" "$2" "$3" "$4" "$5" "$6" "${7:-0}" "${8:-}"; }
 refuse() { emit 0 0 0 "" "$PRH" "$1"; }
 usage() { echo "usage: ci_mg_reuse.sh decide|resolve|decide-push|resolve-push [opts] | --self-test [--workflow FILE]" >&2; exit 2; }
 
@@ -65,6 +65,14 @@ pick_run() {
 concl() {
   jq -r --arg n "$2" '[.jobs[]? | select(.name == $n)]
     | if length == 1 then (.[0].conclusion // "none") else "count=\(length)" end' "$1" 2> /dev/null
+}
+
+# The matrix jobs `workspace-test-shard (N, M)` in jobs file $1: prints "<count> <not-success count> <M>", M = the shard total every
+# name agrees on (0 if they disagree). A draft PR run (or a reused one) has green `workspace-test` and NO such jobs (#5885 lane-b).
+shards() {
+  jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+, [0-9]+\\)$"))] as $s
+    | ($s | map(.name | capture(", (?<m>[0-9]+)\\)$").m | tonumber) | unique) as $m
+    | "\($s | map(.name) | unique | length) \($s | map(select(.conclusion != "success")) | length) \(if ($m | length) == 1 then ($m | first) else 0 end)"' "$1" 2> /dev/null || echo "0 1 0"
 }
 
 decide() {
@@ -112,17 +120,39 @@ decide() {
   [ "$(concl "$jobs" 'ci / gate')" = success ] || why="${why:+$why; }ci / gate is $(concl "$jobs" 'ci / gate')" # R:k6-cigate
   x=1
   [ -z "$why" ] || x=0
+  # T43b (#5884, operator 16:28Z #3): workspace-test is its own unit. K1-K5 held, so the queue entry's tree IS the tree
+  # the head's run tested; reuse that run's `workspace-test` verdict (it is the Σ-executed fan-in over every shard).
+  # Not tied to x86-main/determinism: a red x86-main on the head does not make a green workspace-test stale.
+  wt=0
+  # wt=1 needs the verdict green AND >=1 shard job, all success: a draft run is green with zero shards (#5885 lane-b).
+  read -r nsh nbad msh <<< "$(shards "$jobs")"
+  wcite="run $rid attempt $att on ${h:0:10}"
+  # ...and EVERY shard of the matrix is present: (N, M) names must agree on M and number M (a partial list is not a run).
+  [ "$(concl "$jobs" workspace-test)" = success ] && [ "${msh:-0}" -ge 1 ] 2> /dev/null && [ "${nsh:-0}" = "${msh:-0}" ] && [ "${nbad:-1}" = 0 ] && wt=1 # R:k6-wt-all-shards
+  # ...and the run owed and ran a test suite: a receipt-reuse PR run (#5850 tier=reuse) skips the test step, so its 12/12 shards are green over ZERO tests;
+  # `workspace-test-ran` runs only when the tier is not reuse, so only a run that tested the tree may be cited.
+  [ "$(concl "$jobs" workspace-test-ran)" = success ] || wt=0 # R:k6-wt-ran
+  # a reuse with nothing to cite is not a reuse
+  [[ "$wcite" =~ ^run\ [0-9]+\ attempt\ [0-9]+\ on\ [0-9a-f]{10}$ ]] || wt=0 # R:k6-wt-cite
   mc=1
   [ "$(concl "$jobs" mac-check)" = success ] || mc=0 # R:k6-mac
   emit "$x" "$x" "$mc" "run $rid attempt $att on ${h:0:10}" "$h" \
-    "K1-K5 hold; x86-main+determinism: $([ "$x" = 1 ] && echo reuse || echo "run ($why)"); mac-check: $([ "$mc" = 1 ] && echo reuse || echo "run ($(concl "$jobs" mac-check))")"
+    "K1-K5 hold; x86-main+determinism: $([ "$x" = 1 ] && echo reuse || echo "run ($why)"); mac-check: $([ "$mc" = 1 ] && echo reuse || echo "run ($(concl "$jobs" mac-check))"); workspace-test: $([ "$wt" = 1 ] && echo reuse || echo "run ($(concl "$jobs" workspace-test))")" \
+    "$wt" "$([ "$wt" = 1 ] && echo "$wcite")"
 }
 
 # The queue-entry override, FORCED: drop whatever decide said for these keys (or omitted) and write
 # the values explicitly, so a decide that leaves a key out cannot fail open (r6).
 force_no_reuse() {
-  { grep -v -E '^(x86|det|mac|cite|pr_head)=' || true; }
-  printf 'x86=0\ndet=0\nmac=0\ncite=\npr_head=\n'
+  local in wt=0 wc=""
+  in=$(cat)
+  # T43b (#5884): workspace-test reuse crosses the override ONLY as exactly wt=1 with its citation; anything else is 0.
+  if [ "$(printf '%s\n' "$in" | sed -n 's/^wt=//p' | tail -n 1)" = 1 ]; then
+    wt=1
+    wc=$(printf '%s\n' "$in" | sed -n 's/^wt_cite=//p' | tail -n 1)
+  fi
+  { printf '%s\n' "$in" | grep -v -E '^(x86|det|mac|cite|pr_head|wt|wt_cite)=' || true; }
+  printf 'x86=0\ndet=0\nmac=0\ncite=\npr_head=\nwt=%s\nwt_cite=%s\n' "$wt" "$wc"
 }
 
 resolve() {
@@ -268,10 +298,11 @@ resolve_push() {
 }
 
 # ---------------------------------------------------------------- case table
-# The jobs of run 37040341824, #4655's only PR-head run (db86acf021), verbatim
-# from the API (two GPU-host leg job names replaced; the key never reads them):
-# x86-main failed while gate and ci / gate passed.
-PLANTED_4655_JOBS=$'gpu-touched\tsuccess\nmutants-table-scope\tsuccess\ndeterminism\tsuccess\nworkspace-test-shard (1)\tsuccess\nmac-check\tsuccess\nworkspace-test-shard (3)\tsuccess\nworkspace-test-shard (2)\tsuccess\nx86-main\tfailure\nmutants-table\tskipped\nmutants-shard\tskipped\ngpu-host-leg-a\tsuccess\ngpu-host-leg-b\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
+# The jobs of run 37040341824, #4655's only PR-head run (db86acf021), from the API: two GPU-host leg job names
+# replaced (the key never reads them), and the workspace-test-shard names rewritten from the run's old names to the
+# live matrix form "workspace-test-shard (N, M)" (MG run 39666213701), so this is NOT verbatim. The verdict shape is
+# the planted one: x86-main failed while gate and ci / gate passed.
+PLANTED_4655_JOBS=$'gpu-touched\tsuccess\nmutants-table-scope\tsuccess\ndeterminism\tsuccess\nworkspace-test-shard (1, 4)\tsuccess\nmac-check\tsuccess\nworkspace-test-shard (3, 4)\tsuccess\nworkspace-test-shard (2, 4)\tsuccess\nx86-main\tfailure\nmutants-table\tskipped\nmutants-shard\tskipped\ngpu-host-leg-a\tsuccess\ngpu-host-leg-b\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
 GREEN_JOBS=$'x86-main\tsuccess\ndeterminism\tsuccess\nmac-check\tsuccess\nworkspace-test\tsuccess\nci / gate\tsuccess\ngate\tsuccess'
 
 # jobs_json HEAD RUN_ID EXTRA_TOTAL < "name<TAB>conclusion" lines
@@ -381,6 +412,57 @@ self_test() {
   dr k6-head-ci-gate-failed     "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.fail-ci___gate
   dr k6-x86-main-twice          "0 0 1" merge_group "$M" "$B" "$H" runs.ok jobs.dup-x86
   dr k6-mac-failed              "1 1 0" merge_group "$M" "$B" "$H" runs.ok jobs.fail-mac-check
+
+  # T43b (#5884, Noah 16:28Z #3): workspace-test reuse. RED->GREEN falsifier: a changed main must run, an identical tree may skip.
+  sed '/^workspace-test	/d' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.no-wt"
+  # shard job names are the real matrix names, "workspace-test-shard (N, M)" (MG run 39666213701); sh4 N... = those N of 4, success
+  sh4() { local n; for n in "$@"; do printf 'workspace-test-shard (%s, 4)\tsuccess\n' "$n"; done; }
+  ran() { printf 'workspace-test-ran\t%s\n' "$1"; }
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-ok"
+  # the same fully-tested jobs on the other head, so a row whose reason is the K1-K5 key reaches wt=0 for that reason alone
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran success; } | jobs_json "$H2" 1001 0 > "$F/jobs.wt-ok-h2"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; ran skipped; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-receipt"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-noran"
+  sed "s|^determinism\tsuccess\$|determinism\tfailure|" <<< "$GREEN_JOBS" | { cat; sh4 1 2 3 4; ran success; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-x86fail"
+  { cat <<< "$GREEN_JOBS"; sh4 1 3 4; printf 'workspace-test-shard (2, 4)\tfailure\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-shard-failed"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-partial"
+  { cat <<< "$GREEN_JOBS"; sh4 1 2 3 4; printf 'workspace-test-shard (5, 12)\tsuccess\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-mixed-m"
+  run_obj 1001 "$H" completed | jq '.run_attempt = ""' | runs_json 0 > "$F/runs.no-attempt"
+  { cat <<< "$GREEN_JOBS"; printf 'workspace-test-shard\tskipped\n'; } | jobs_json "$H" 1001 0 > "$F/jobs.wt-draft"
+  sed 's|^workspace-test	success$|workspace-test	failure|' <<< "$GREEN_JOBS" | jobs_json "$H" 1001 0 > "$F/jobs.fail-wt"
+  wrow() { # wrow NAME WANT decide-args...
+    local n="$1" want="$2" out; shift 2
+    out=$(decide "$@" --repo-root "$R")
+    if [ "$(kv wt "$out")" = "$want" ]; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL wt-$n: want wt=$want got '$(kv wt "$out")' -- $(kv reason "$out")"; fi
+  }
+  wd() { local n="$1" want="$2" m="$3" b="$4" h="$5" r="$6" j="$7"
+    wrow "$n" "$want" --event merge_group --queue-head "$m" --base "$b" --pr-head "$h" --runs "$F/$r" --jobs "$F/$j"; }
+  wd identical-tree-skips       1 "$M" "$B" "$H" runs.ok jobs.wt-ok
+  wd draft-run-no-shards-runs   0 "$M" "$B" "$H" runs.ok jobs.wt-draft
+  wd receipt-reuse-12of12-green-runs 0 "$M" "$B" "$H" runs.ok jobs.wt-receipt
+  wd ran-job-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.wt-noran
+  wd greenverdict-zero-shards   0 "$M" "$B" "$H" runs.ok jobs.ok
+  wd one-shard-failed-runs      0 "$M" "$B" "$H" runs.ok jobs.wt-shard-failed
+  wd partial-shards-runs        0 "$M" "$B" "$H" runs.ok jobs.wt-partial
+  wd mixed-shard-totals-runs    0 "$M" "$B" "$H" runs.ok jobs.wt-mixed-m
+  wd empty-attempt-no-cite-runs 0 "$M" "$B" "$H" runs.no-attempt jobs.wt-ok
+  wd changed-tree-runs          0 "$M_TREE" "$B" "$H" runs.ok jobs.wt-ok
+  wd changed-main-not-ancestor  0 "$M_K3" "$B2" "$H" runs.ok jobs.wt-ok
+  wd base-is-a-merge-runs       0 "$M_K2" "$BM" "$H2" runs.h2 jobs.wt-ok-h2
+  wd head-wt-failed-runs        0 "$M" "$B" "$H" runs.ok jobs.fail-wt
+  wd head-wt-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.no-wt
+  wd run-in-progress-runs       0 "$M" "$B" "$H" runs.newer-running jobs.wt-ok
+  wd head-x86-failed-still-skips 1 "$M" "$B" "$H" runs.ok jobs.wt-x86fail
+  wrow push-never-skips         0 --event push --queue-head "$M" --base "$B" --pr-head "$H" --runs "$F/runs.ok" --jobs "$F/jobs.ok"
+  # the override passes wt only as exactly 1, with its citation
+  local wo
+  wo=$(force_no_reuse <<< $'wt=1\nwt_cite=run 7\nx86=1')
+  [ "$(kv wt "$wo")|$(kv wt_cite "$wo")|$(kv x86 "$wo")" = "1|run 7|0" ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL wt-override-pass: $wo"; }
+  for wo in $'wt=2' $'wt=' $'wt=0\nwt_cite=run 7' $'reason=x'; do
+    wo=$(force_no_reuse <<< "$wo")
+    [ "$(kv wt "$wo")|$(kv wt_cite "$wo")" = "0|" ] && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL wt-override-closed: $wo"; }
+  done
 
   # resolve, end to end, through a stub gh serving canned JSON. A failed lookup never reuses.
   local SB="$T/bin"; mkdir -p "$SB"
@@ -505,7 +587,7 @@ STUB
   wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
-  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}"
+  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
   wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}"
   # Q6 quorum, C324: mac-check is LAB and left ci.yml (nightly.yml now). The `mac` key is
@@ -514,27 +596,105 @@ STUB
     fail=$((fail + 1)); echo "FAIL wiring: ci.yml runs mac-check, a LAB job (Q6 quorum, C324)"; fi
   if grep -qF 'outputs.mac' <<<"$(job mg-reuse)"; then
     fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
-  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' }}"
+  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire x86-main-advisories "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire workspace-test-shard "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
+  # PMAT-6169: pr-x64 is a variable-selected OPTION; the runs-on line is compared EXACT. PR_LIGHT_POOL == 'pr-x64' picks the
+  # X64 pr-x64 pool, anything else (unset, today) keeps X64 clean-room.
+  wire pr-light "runs-on: \${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"pr-x64\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
+  wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, pr-light]'
   wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'
-  wire ci-gate 'needs: [x86-main, mg-reuse, x86-main-advisories]'
+  wire ci-gate 'needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]'
   wire gate 'MG-REUSE-VERDICT-BEGIN'
-  wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test]'
+  wire gate 'mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]'
   wire gate '[ "$MST" = success ]'
   # #5472 variant: the pr-only label is retired; pull_request and push take the one shared clean-room
   # pool. The merge_group half (this row): x86-main and workspace-test-shard take the mq lane on a
   # merge_group entry and clean-room on every other event, and nothing else is event-conditional.
   # Each row is compared as the EXACT line (trailing comment stripped), so a third state cannot slip in.
+  # #5955 (Noah 15:09Z): heavy jobs run only in the merge queue. Both directions, run through the real step scripts:
+  # a pull_request with the heavy jobs skipped PASSES when pr-light passed; a merge_group, push, empty or unknown
+  # event with the heavy jobs skipped FAILS, even when pr-light is (wrongly) green.
+  stepscript() { # stepscript WF JOB -> the job's first `run: |` body, de-indented
+    awk -v j="  $2:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null \
+      | awk '/^        run: \|$/ {r = 1; next} r && /^      - / {exit} r {sub(/^          /, ""); print}'
+  }
+  # pr-light is the ONLY runner of the PR path: no merge-queue label (mq) may sit on it. X64 is allowed (clean-room X64 pool, not the gx10 build host).
+  if grep -qE '"mq"|\bmq\b' <<< "$(job pr-light | grep -m1 '^    runs-on:')"; then
+    fail=$((fail + 1)); echo "FAIL pr-light: runs-on carries a merge-queue label"; else pass=$((pass + 1)); fi
+  # Opus-A on #5964: the sections that run only for a PR (guard-tree incl. R-2 / 11.1, pr-review-shadow, pr-review-sign)
+  # ran inside x86-main, which a PR no longer runs. pr-light must run all three, and the feeder must judge pr-light.
+  for sec in guard-tree pr-review-shadow pr-review-sign; do
+    if grep -q -- "--sections '[^']*\b$sec\b" <<<"$(job pr-light)"; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL pr-light: does not run the PR-only section $sec"; fi
+  done
+  if grep -q '^export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-pr-light}"' "${BASH_SOURCE[0]%/*}/mq_feeder.sh"; then pass=$((pass + 1)); else
+    fail=$((fail + 1)); echo "FAIL mq_feeder: GUARD_CHECK_NAME is not pr-light, so it judges a check a PR no longer runs"; fi
+  prlrow() { # prlrow WF NAME JOB WANT(0|red) EVT PRL [extra env...]
+    local f="$1" n="$2" j="$3" want="$4" ev="$5" prl="$6" rc scr; shift 6
+    scr=$(stepscript "$f" "$j")
+    [ -n "$scr" ] || { fail=$((fail + 1)); echo "FAIL prl-$n: no run script found for $j"; return; }
+    rc=0
+    env EVT="$ev" PRL="$prl" DRAFT="" RESULTS="null" MG="skipped" MG_X86="" MG_DET="" MG_CITE="" ADV="skipped" \
+      X86="null" DET="null" WT="success" MST="success" SHARD_RESULT="skipped" WT_REUSE="" WT_CITE="" "$@" \
+      bash -c "$scr" > /dev/null 2>&1 || rc=$?
+    case "$want" in
+      0) [ "$rc" = 0 ] ;;
+      red) [ "$rc" != 0 ] ;;
+    esac && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL prl-$n: want $want got rc=$rc"; }
+  }
+  prlsuite() { # prlsuite WF TAG -> every row against workflow WF (TAG names the variant)
+    local f="$1" t="$2" j
+    for j in ci-gate gate workspace-test; do
+      prlrow "$f" "$t-$j-pr-light-ok"        "$j" 0   pull_request success
+      prlrow "$f" "$t-$j-pr-light-failed"    "$j" red pull_request failure
+      prlrow "$f" "$t-$j-pr-light-skipped"   "$j" red pull_request skipped
+      prlrow "$f" "$t-$j-pr-light-cancelled" "$j" red pull_request cancelled
+      prlrow "$f" "$t-$j-pr-light-empty"     "$j" red pull_request ""
+      # the FAIL direction: heavy jobs skipped on any non-PR event, pr-light adversarially green
+      prlrow "$f" "$t-$j-mg-heavy-skipped"   "$j" red merge_group success
+      prlrow "$f" "$t-$j-push-heavy-skipped" "$j" red push success
+      prlrow "$f" "$t-$j-empty-heavy-skipped" "$j" red "" success
+      prlrow "$f" "$t-$j-unknown-heavy-skipped" "$j" red workflow_dispatch success
+      prlrow "$f" "$t-$j-mg-heavy-skipped-light-skipped" "$j" red merge_group skipped
+    done
+    # control: the same scripts still pass a merge_group whose heavy jobs ran and passed
+    prlrow "$f" "$t-ci-gate-mg-heavy-green" ci-gate 0 merge_group skipped \
+      MG=skipped ADV=skipped 'RESULTS={"sov.gate":{"result":"success"}}'
+    prlrow "$f" "$t-gate-mg-heavy-green" gate 0 merge_group skipped \
+      'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+      'GRD={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' GRDR=success \
+      'DET={"determinism-compare":{"result":"success"}}'
+    prlrow "$f" "$t-workspace-test-mg-shards-ran" workspace-test red merge_group skipped SHARD_RESULT=skipped
+  }
+  prlsuite "$wf" real
+  prlmut() { # prlmut NAME SED_EXPR: the mutant must change ci.yml and at least one prl row must go RED against it
+    sed -E "$2" "$wf" > "$T/prl-mut.yml"
+    if cmp -s "$wf" "$T/prl-mut.yml"; then
+      fail=$((fail + 1)); echo "FAIL mutant $1: the sed did not change ci.yml"; return; fi
+    local before=$fail; local keep=$pass
+    prlsuite "$T/prl-mut.yml" "mut-$1" > "$T/prl-mut.out" 2>&1 || true
+    # prlsuite counts into pass/fail; undo its counting and judge the mutant by whether it produced a FAIL
+    local newfail=$((fail - before)); fail=$before; pass=$keep
+    if [ "$newfail" -gt 0 ]; then pass=$((pass + 1)); else
+      fail=$((fail + 1)); echo "FAIL mutant $1: no prl row went RED (the event check is not guarded)"; fi
+  }
+  prlmut event-check-deleted-ci-gate '/^  ci-gate:$/,/^  gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
+  prlmut event-check-deleted-gate '/^  gate:$/,$ {s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
+  prlmut event-check-deleted-workspace-test '/^  workspace-test:$/,/^  ci-gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
+  prlmut empty-event-counts-as-pr '/^  ci-gate:$/,/^  gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if [ "${EVT:-pull_request}" = pull_request ]; then/}'
+  prlmut pr-light-result-ignored '/^  ci-gate:$/,/^  gate:$/{s/\[ "\$\{PRL:-\}" = success \] \|\| /true || /}'
   poolrows() { # poolrows WF -> one line per violated pool row
     local j l want
     local plain="runs-on: [self-hosted, Linux, X64, clean-room]"
-    local lane="runs-on: \${{ github.event_name == 'merge_group' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"mq\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-    for j in x86-main x86-main-advisories workspace-test-shard; do
+    for j in x86-main x86-main-advisories workspace-test-shard guards; do
       l=$(awk -v j="  $j:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$1" 2> /dev/null | grep -m1 '^    runs-on:' | sed -E 's/^ +//; s/ +#.*$//')
-      want=$plain; case $j in x86-main | workspace-test-shard) want=$lane ;; esac
+      want=$plain
       if [ "$l" != "$want" ]; then
-        echo "$j does not land on the clean-room pool (mq on merge_group for x86-main/workspace-test-shard) (runs-on: $l)"; fi
+        echo "$j does not land on the clean-room pool (runs-on: $l)"; fi
     done
   }
   pr=$(poolrows "$wf")
@@ -550,10 +710,10 @@ STUB
   poolmut pool-back-on-pr-only "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^(    runs-on: \[.*)\]/\1, pr-only]/}'
   poolmut pool-advisories-takes-mq "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^(    runs-on: \[.*)\]/\1, mq]/}'
   poolmut pool-advisories-event-conditional "does not land on the clean-room pool" '/^  x86-main-advisories:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: ${{ github.event_name == '"'"'merge_group'"'"' \&\& fromJSON('"'"'["clean-room"]'"'"') || fromJSON('"'"'["clean-room"]'"'"') }}/}'
-  poolmut mq-lane-lost-on-x86-main "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"mq"/"clean-room"/}'
-  poolmut mq-lane-dropped-on-shard "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/^    runs-on: .*/    runs-on: [self-hosted, Linux, X64, clean-room]/}'
-  poolmut pr-path-takes-mq "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/\|\| fromJSON\(.\["self-hosted","Linux","X64","clean-room"\].\)/|| fromJSON('"'"'["self-hosted","Linux","X64","mq"]'"'"')/}'
-  poolmut mq-lane-third-label "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/"X64","mq"/"X64","mq","pr-only"/}'
+  poolmut mq-lane-uncertified-seat "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/clean-room\]/mq]/}'
+  poolmut mq-lane-uncertified-seat-shard "does not land on the clean-room pool" '/^  workspace-test-shard:$/,/^    steps:/{s/clean-room\]/mq]/}'
+  poolmut mq-lane-uncertified-seat-guards "does not land on the clean-room pool" '/^  guards:$/,/^    steps:/{s/clean-room\]/mq]/}'
+  poolmut third-label-on-x86-main "does not land on the clean-room pool" '/^  x86-main:$/,/^    steps:/{s/clean-room\]/clean-room, build]/}'
 
   # S1 (20X): mg-reuse runs on push only, so on merge_group it is SKIPPED and every dependent
   # runs only because its own `if:` carries !cancelled()/always() (a skipped need otherwise skips
@@ -564,12 +724,21 @@ STUB
     awk -v tok='(^|[^A-Za-z0-9_-])mg-reuse($|[^A-Za-z0-9_-])' -v want="if: github.event_name == 'push' && github.ref == 'refs/heads/main'" '
       /^  [A-Za-z0-9_-]+:$/ { j = $1; sub(/:$/, "", j); seen[j] = 1; next }
       /^    if:/    { jif[j] = $0; sub(/^    /, "", jif[j]) }
+      /^    runs-on:/ { jrun[j] = $0 }
+      /^    needs:/ || (inn && /^      /) { jneeds[j] = jneeds[j] $0 }
       /^    needs:/ { inn = 1; if ($0 ~ tok) dep[j] = 1; next }
       inn && /^      / { if ($0 ~ tok) dep[j] = 1; next }
       /^    [A-Za-z]/ { inn = 0 }
       END {
         if (jif["mg-reuse"] != want) print "mg-reuse job-level if is not the push-only key: [" jif["mg-reuse"] "]"
         if (jif["mg-reuse"] ~ /merge_group/) print "mg-reuse if names merge_group: a queue entry could reuse"
+        # once the receipt judge exists, the test-ran marker must be keyed on its verdict, else a receipt run reads as tested
+        if (("receipt-judge" in seen) && (jneeds["workspace-test-ran"] !~ /receipt-judge/ || jif["workspace-test-ran"] !~ /receipt-judge\.outputs\.ok/)) print "workspace-test-ran ignores receipt-judge: a receipt-reuse run would read as tested"
+        # the marker must prove the shards ran: it needs them and its if requires their success (else a run with skipped shards owns it)
+        if (jneeds["workspace-test-ran"] !~ /workspace-test-shard/) print "workspace-test-ran does not need workspace-test-shard: the marker no longer proves the shards ran"
+        if (jif["workspace-test-ran"] !~ /needs\.workspace-test-shard\.result == .success./) print "workspace-test-ran if lacks the shard success clause: skipped or failed shards would still own the marker"
+        # the reuse lookup gates every queue entry shard, so it shares their lane: the plain clean-room seats
+        if (jrun["mg-reuse-wt"] !~ /clean-room\]/ || jrun["mg-reuse-wt"] ~ /mq|build|pr-only/) print "mg-reuse-wt is not on the plain clean-room lane: it would queue off the certified seats"
         n = split("x86-main determinism x86-main-advisories ci-gate gate", must, " ")
         for (i = 1; i <= n; i++) {
           if (!(must[i] in seen)) print "job " must[i] " is missing from the workflow"
@@ -592,11 +761,17 @@ STUB
     fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
   mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
   mgmut mg-if-removed-string-elsewhere "is not the push-only key" "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
-  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
   mgmut determinism-if-loses-cancelled "job determinism needs mg-reuse but its if lacks" '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
   mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
   mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'
   mgmut gate-if-loses-always "job gate needs mg-reuse but its if lacks" "/^  gate:\$/,/^    steps:/{s/^    if: always\(\)/    if: success()/}"
+  # once a receipt-judge job exists (#5850), the marker must need it and key its if on the verdict
+  mgmut ran-marker-ignores-receipt-judge "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:#'
+  mgmut ran-marker-needs-judge-but-if-ignores-it "workspace-test-ran ignores receipt-judge" 's#^  workspace-test-ran:$#  receipt-judge:\n    runs-on: x\n  workspace-test-ran:\n    needs: [receipt-judge]#'
+  mgmut ran-marker-drops-shard-needs "workspace-test-ran does not need workspace-test-shard" '/^  workspace-test-ran:$/,/^    runs-on:/{/^    needs: \[workspace-test-shard\]$/d}'
+  mgmut ran-marker-if-drops-shard-result "workspace-test-ran if lacks the shard success clause" "/^  workspace-test-ran:\$/,/^    runs-on:/{s/ \&\& needs.workspace-test-shard.result == 'success'//}"
+  mgmut mg-reuse-wt-leaves-clean-room "mg-reuse-wt is not on the plain clean-room lane" '/^  mg-reuse-wt:$/,/^    timeout-minutes:/{s/clean-room\]/mq]/}'
 
   # Positive control for wire itself: one job of more than 64 KiB (a pipe buffer) whose
   # wanted line comes first. A pipe from job into grep -q takes SIGPIPE on this every

@@ -931,6 +931,7 @@ rid, rfile, inv, sha, req, fit = sys.argv[1:7]
 print(json.dumps({"id": rid, "file": rfile, "inventory_only": inv == "1", "present": True, "sha_ok": True,
                   "sha256": sha, "required": req == "1", "fit": json.loads(fit), "refused": "fit", "green": False}))
 PY
+        LADDER_APPENDS_ROWS=$((LADDER_APPENDS_ROWS + 1))   # #6410: this write bypasses ladder_append, and the receipt assertion counts rows appended
         EXECUTED=$((EXECUTED + 1)); RED=$((RED + 1))
         printf '  [REFUSE] %-30s fit: %s\n' "$rid" "$(python3 -c 'import json,sys; f=json.loads(sys.argv[1]); print(f["verdict"]+" -- "+f["reason"])' "$fit_json")"
         return
@@ -1428,9 +1429,11 @@ fi
 CELLS_JSON=""
 if [ "$CELLS" = 1 ]; then
   CELLS_JSON="$WORK/cells.json"
+  ADMIT_ARG=(); [ "${LADDER_ADMIT:-}" = 1 ] && ADMIT_ARG=(--admit)   # only the literal 1 (#6211): 0 or empty leaves admission off
   python3 "$PRODUCE" measure --apr "$APR" --inventory "$INV_RECEIPT" --models "$WORK/models.txt" \
       --ladder "$LADDER" --rungs evidence/release/context-rungs.json --work "$WORK" \
-      --lock "$GPU_LOCK" --lock-wait "$LOCK_WAIT" --only "$ONLY" --host "$HOST" --out "$CELLS_JSON" > "$WORK/cells.log" 2>&1
+      --lock "$GPU_LOCK" --lock-wait "$LOCK_WAIT" --only "$ONLY" --host "$HOST" --out "$CELLS_JSON" \
+      ${ADMIT_ARG[@]+"${ADMIT_ARG[@]}"} > "$WORK/cells.log" 2>&1
   cells_rc=$?
   tail -1 "$WORK/cells.log"
   # A crashed producer writes NO cells key and says why: a partial cells block would read as

@@ -9,7 +9,8 @@ pub enum Compression {
     /// LZ4 - Fast compression with prepended size, good for real-time
     #[default]
     Lz4,
-    /// ZSTD - Better compression ratio, slower
+    /// ZSTD - Better compression ratio, slower (needs the `zstd` feature, on by default)
+    #[cfg(feature = "zstd")]
     Zstd,
 }
 
@@ -19,6 +20,7 @@ impl Compression {
     pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Lz4 => "lz4",
+            #[cfg(feature = "zstd")]
             Self::Zstd => "zstd",
         }
     }
@@ -35,6 +37,7 @@ impl Compression {
         }
         match self {
             Self::Lz4 => Ok(lz4_flex::compress_prepend_size(data)),
+            #[cfg(feature = "zstd")]
             Self::Zstd => zstd::encode_all(data, 3)
                 .map_err(|e| CompressionError(format!("ZSTD compression failed: {e}"))),
         }
@@ -53,6 +56,7 @@ impl Compression {
         match self {
             Self::Lz4 => lz4_flex::decompress_size_prepended(data)
                 .map_err(|e| CompressionError(format!("LZ4 decompression failed: {e}"))),
+            #[cfg(feature = "zstd")]
             Self::Zstd => zstd::decode_all(data)
                 .map_err(|e| CompressionError(format!("ZSTD decompression failed: {e}"))),
         }
@@ -83,6 +87,7 @@ mod tests {
         assert_eq!(data.as_slice(), decompressed.as_slice());
     }
 
+    #[cfg(feature = "zstd")]
     #[test]
     fn test_zstd_roundtrip() {
         let data = b"hello world hello world hello world";
@@ -94,6 +99,7 @@ mod tests {
     #[test]
     fn test_as_str() {
         assert_eq!(Compression::Lz4.as_str(), "lz4");
+        #[cfg(feature = "zstd")]
         assert_eq!(Compression::Zstd.as_str(), "zstd");
     }
 
@@ -111,6 +117,7 @@ mod tests {
         assert!(decompressed.is_empty());
     }
 
+    #[cfg(feature = "zstd")]
     #[test]
     fn test_empty_data_zstd() {
         let empty: &[u8] = &[];
@@ -127,6 +134,7 @@ mod tests {
         assert!(compressed.len() < data.len() / 10);
     }
 
+    #[cfg(feature = "zstd")]
     #[test]
     fn test_zstd_compresses_repeated_data() {
         let data = vec![0u8; 10000];

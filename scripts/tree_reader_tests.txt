@@ -55,6 +55,7 @@ aprender-contracts	--lib	lint::finding
 aprender-contracts	--lib	lint::gates
 aprender-contracts	--lib	lint::gates_extended
 aprender-contracts	--lib	lint::ratchet_gates
+aprender-contracts	--lib	lint::references_gate
 aprender-contracts	--lib	lint::refines_gate
 aprender-contracts	--lib	lint::relations_gate
 aprender-contracts	--lib	lint::sarif
@@ -97,6 +98,7 @@ aprender-contracts-cli	--lib	commands::certify
 aprender-contracts-cli	--lib	commands::obligations
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
+aprender-contracts-cli	--lib	readme_cmd
 aprender-contracts-cli	--test	cli_integration
 aprender-contracts-cli	--test	coverage_report_render
 aprender-contracts-cli	--test	ev11_lint_ratchets
@@ -132,6 +134,7 @@ aprender-contracts-cli	--test	pvl_discharge_leanchecker
 aprender-contracts-cli	--test	pvl_ghost_binding
 aprender-contracts-cli	--test	pvl_obligations_golden
 aprender-contracts-cli	--test	pvl_zero_contracts
+aprender-contracts-cli	--test	repo_tree_pv
 aprender-contracts-cli	--test	shapes_vacuity
 aprender-core	--lib	format::metadata_bounds_contract_falsify
 aprender-core	--lib	format::model_family_loader
@@ -206,7 +209,6 @@ aprender-serve	--lib	kernel_registry
 aprender-serve	--lib	quantize::contract_tests
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
-aprender-simulate	--lib	demos::tsp_instance
 aprender-simulate	--lib	edd::runner
 aprender-simulate	--lib	edd::v2
 aprender-simulate	--lib	orbit::wasm

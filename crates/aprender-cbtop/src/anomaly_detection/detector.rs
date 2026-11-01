@@ -264,7 +264,8 @@ impl AnomalyDetector {
         self.anomalies.retain(|a| seen.insert(a.index));
 
         // Sort by severity (critical first)
-        self.anomalies.sort_by(|a, b| b.severity.cmp(&a.severity));
+        self.anomalies
+            .sort_by_key(|a| std::cmp::Reverse(a.severity));
 
         let mean = Self::mean(&self.data);
         let std_dev = Self::std_dev(&self.data, mean);

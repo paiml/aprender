@@ -2,7 +2,7 @@ metadata:
   kind: pattern
   version: "1.0.0"
   created: "2026-09-22"
-  updated: "2026-09-22"
+  updated: "2026-10-18"
   author: PAIML Engineering
   registry: false
   references:
@@ -20,7 +20,7 @@ scope: >
   `ExpressionExecutor`'s comparison table, window parsing and numeric
   aggregation in crates/aprender-present-yaml/src/executor.rs, plus `Value`'s
   length and array accessors. Out of scope: the transform pipeline's
-  orchestration (apply_join, apply_pivot, apply_suggest), which needs fixture
+  orchestration (apply_pivot, apply_suggest), which needs fixture
   documents rather than unit inputs and is a named follow-up.
 status: active
 
@@ -126,7 +126,7 @@ open_obligations:
     Pinned as current behaviour here so a change is deliberate; making it
     visible is a separate row.
   - |
-    apply_join, apply_pivot, apply_group_by, apply_rank and apply_suggest are
+    apply_pivot, apply_group_by, apply_rank and apply_suggest are
     NOT covered by this contract. They need fixture documents rather than unit
     inputs and remain at 0%.
 
@@ -181,3 +181,18 @@ falsification_tests:
     test: "cargo test -p aprender-present-yaml --lib a_transform_that_needs_an_array_refuses_anything_else"
     prediction: "require_array is Err for Null, Number, String and Object, and Ok for an empty Array"
     if_fails: "transforms coerce non-array input"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-011
+    description: "apply_join: refusals name what was wrong (non-array left, missing source, non-array right)"
+    test: "cargo test -p aprender-present-yaml --test join_transform join_refuses"
+    prediction: "ExpectedArray for a non-array left or right side; SourceNotFound carrying the source name"
+    if_fails: "a bad join input is coerced or reported as the wrong error"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-012
+    description: "apply_join: matched rows merge, the right key is dropped, collisions are prefixed with the source name and the left value wins"
+    test: "cargo test -p aprender-present-yaml --test join_transform join_merges_matching_fields_and_drops_the_right_key"
+    prediction: "merged row = left fields + right non-key fields; a colliding field appears as {source}_{field} and the left value is kept"
+    if_fails: "a right-hand field overwrites a left-hand one, or the join key is duplicated"
+  - id: FALSIFY-PRESENT_YAML_EXPRESSION_EXECUTOR-013
+    description: "apply_join is a left join: unmatched, key-less and non-object left rows survive unchanged; one output row per right match"
+    test: "cargo test -p aprender-present-yaml --test join_transform join_keeps join_emits_one_row_per_matching_right_item_in_order join_ignores_right_rows join_compares_keys_by_their_string_form join_resolves_a_dotted_source_name"
+    prediction: "output length >= left length; unmatched rows equal their input; matches follow right-hand order; keys compare by string form"
+    if_fails: "the join drops left rows or reorders matches"

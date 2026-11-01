@@ -31,7 +31,7 @@ tempfile = "3.14"
 memmap2 = { version = "0.9", optional = true }
 # Payload compression for the v1 container.
 lz4_flex = { version = "0.11", optional = true }
-zstd = { version = "0.13", optional = true }
+zstd = { version = "0.14", optional = true }
 
 [dev-dependencies]
 # Property tests for the model-card JSON round-trip (generating.rs).

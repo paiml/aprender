@@ -1125,3 +1125,182 @@ fn falsify_mono_014_path_pins_name_their_target_version() {
          [workspace.dependencies] entry instead): {stale:#?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// D1 (FLOW-010 runner-wait, #5801): a DRAFT pull request takes no runner slot.
+//
+// Parsed, not grepped: three rounds of shell patterns over ci.yml each accepted a padded guard.
+// The workflow is read with the workspace YAML reader (`serde-saphyr`, the dev-dependency the
+// contract tests use; `serde_yaml` is frozen to the modernbert test, #5208) and compared by
+// equality: each job's `if:` scalar equals ONE canonical string, the job set equals JOBS, and
+// `on.pull_request.types` equals the canonical list. A new job is RED until added here on purpose.
+// The three aggregators stay `always()` so the required check names exist and FAIL on a draft
+// (a skipped required check counts as passing on GitHub).
+// ---------------------------------------------------------------------------
+
+/// The one draft form the PR-only jobs use (main already has it on `x86-main` and the shard).
+const DF: &str = "github.event.pull_request.draft != true";
+const NOT_PR: &str = "github.event_name != 'pull_request'";
+const G_ALL: &str =
+    "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
+const CI_TYPES: [&str; 4] = ["opened", "synchronize", "reopened", "ready_for_review"];
+
+/// (job, canonical `if:` scalar)
+fn draft_gate_canon() -> Vec<(&'static str, String)> {
+    vec![
+        ("mg-reuse", "github.event_name == 'push' && github.ref == 'refs/heads/main'".into()),
+        ("mg-reuse-self-test", G_ALL.into()),
+        ("pr-light", format!("${{{{ github.event_name == 'pull_request' && {DF} }}}}")),
+        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}")),
+        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} && {NOT_PR} }}}}")),
+        ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
+        // merge_group-only: a draft never reaches the queue, so there is nothing to skip.
+        ("mg-reuse-wt", "github.event_name == 'merge_group'".into()),
+        ("guards", "${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}".into()),
+        ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && {DF} && {NOT_PR} }}}}")),
+        ("workspace-test-ran", format!("${{{{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && {DF} }}}}")),
+        ("workspace-test", "always()".into()),
+        ("ci-gate", "always()".into()),
+        ("gate", "always()".into()),
+    ]
+}
+
+/// Every violation of the draft-gate rule in `ci_yml` (empty = the rule holds).
+fn draft_gate_violations(ci_yml: &str) -> Vec<String> {
+    let doc: serde_json::Value = match serde_saphyr::from_str_with_options(
+        ci_yml,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) {
+        Ok(d) => d,
+        Err(e) => return vec![format!("ci.yml does not parse: {e}")],
+    };
+    let mut bad = Vec::new();
+    let types: Vec<&str> = doc["on"]["pull_request"]["types"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|t| t.as_str()).collect())
+        .unwrap_or_default();
+    if types != CI_TYPES {
+        bad.push(format!(
+            "on.pull_request.types is {types:?}, want {CI_TYPES:?}"
+        ));
+    }
+    let canon = draft_gate_canon();
+    let Some(jobs) = doc["jobs"].as_object() else {
+        bad.push("no `jobs:` mapping".into());
+        return bad;
+    };
+    for name in jobs.keys() {
+        if !canon.iter().any(|(j, _)| j == name) {
+            bad.push(format!(
+                "job `{name}` is not in the CANON list (add it with its draft behaviour)"
+            ));
+        }
+    }
+    for (job, want) in &canon {
+        match jobs.get(*job) {
+            None => bad.push(format!("listed job `{job}` is missing")),
+            Some(j) => match j["if"].as_str() {
+                Some(got) if got == want => {}
+                got => bad.push(format!("job `{job}`: if: {got:?} != canonical {want:?}")),
+            },
+        }
+    }
+    bad
+}
+
+fn ci_yml_text() -> String {
+    std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).expect("read ci.yml")
+}
+
+/// `from` -> `to`, every occurrence; the mutant must differ from the source or the fixture is dead.
+fn mutate(src: &str, from: &str, to: &str) -> String {
+    assert!(
+        src.contains(from),
+        "fixture anchor not found in ci.yml: {from:?}"
+    );
+    src.replace(from, to)
+}
+
+/// The `    if:` line of `job` replaced by `new` (None deletes it).
+fn rewrite_if(src: &str, job: &str, new: Option<&str>) -> String {
+    let header = format!("  {job}:");
+    let mut out = Vec::new();
+    let (mut in_job, mut done) = (false, false);
+    for line in src.lines() {
+        if line.starts_with("  ") && !line.starts_with("   ") && line.trim_end().ends_with(':') {
+            in_job = line.trim_end() == header;
+        }
+        if in_job && !done && line.starts_with("    if:") {
+            done = true;
+            if let Some(n) = new {
+                out.push(n.to_string());
+            }
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    assert!(done, "no `if:` found for job {job}");
+    out.join("\n") + "\n"
+}
+
+/// The 18 planted mutants: (label, mutated ci.yml). Each must be RED.
+fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
+    let x86_if = format!(
+        "    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}"
+    );
+    let gate_tail = src.split_once("\n  gate:\n").expect("gate job").1;
+    let gate_mut = src.replacen(
+        gate_tail,
+        &gate_tail.replacen("    if: always()", "    if: success()", 1),
+        1,
+    );
+    vec![
+        ("m1 draft guard dropped", mutate(src, &format!(" && {DF}"), "")),
+        ("m2 ready_for_review dropped", mutate(src, ", ready_for_review", "")),
+        ("m3 guard unscoped", mutate(src, DF, "true")),
+        ("m4 guard polarity flipped", mutate(src, &format!(" && {DF}"), " && github.event.pull_request.draft == true")),
+        ("m5 aggregator not always()", gate_mut),
+        ("m6 empty parse", "on:\n  pull_request:\n    types: [ready_for_review]\njobs:\n".to_string()),
+        ("m7 DF guard padded with || true", mutate(src, "draft != true }}", "draft != true || true }}")),
+        ("m7b G_ALL padded with || true", mutate(src, "!github.event.pull_request.draft }}", "!github.event.pull_request.draft || true }}")),
+        ("m8 shard if = push || true", rewrite_if(src, "workspace-test-shard", Some("    if: ${{ github.event_name == 'push' || true }}"))),
+        ("m9 ready_for_review_x", mutate(src, "ready_for_review]", "ready_for_review_x]")),
+        ("m11 && true == DF", mutate(src, &format!(" && {DF}"), &format!(" && true == {DF}"))),
+        ("m12 && !DF", mutate(src, &format!(" && {DF}"), &format!(" && !{DF}"))),
+        ("m13 comment-suffixed header, no if", mutate(&rewrite_if(src, "workspace-test-shard", None), "  workspace-test-shard:\n", "  workspace-test-shard: # no guard\n")),
+        ("m14 new job outside CANON", mutate(src, "\njobs:\n", "\njobs:\n  extra-job: # unguarded\n    runs-on: [self-hosted, Linux, clean-room]\n    steps: []\n")),
+        ("m15 || true then a comment", mutate(src, "draft != true }}\n", "draft != true || true }} # fine\n")),
+        ("m16 more-indented || true line folds into the scalar", mutate(src, &format!("{x86_if}\n"), &format!("{x86_if}\n      || true\n"))),
+        ("m17 decoy types line, real list lacks ready_for_review", mutate(src, "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened]") + "# types: [ready_for_review]\n"),
+        ("m18 G_ALL polarity flipped", mutate(src, "|| !github.event.pull_request.draft", "|| github.event.pull_request.draft")),
+    ]
+}
+
+/// D1 / #5801: the real workflow satisfies the draft-gate rule.
+#[test]
+fn falsify_ci_draft_gate_real_workflow_holds() {
+    let bad = draft_gate_violations(&ci_yml_text());
+    assert!(
+        bad.is_empty(),
+        "ci.yml breaks the D1 draft-gate rule:\n{}",
+        bad.join("\n")
+    );
+}
+
+/// D1 / #5801: each of the 18 planted mutants is RED, so the rule cannot pass vacuously.
+#[test]
+fn falsify_ci_draft_gate_every_planted_mutant_is_red() {
+    let src = ci_yml_text();
+    let mutants = draft_gate_mutants(&src);
+    assert_eq!(mutants.len(), 18, "the fixture table lost a mutant");
+    for (label, text) in &mutants {
+        assert_ne!(
+            text, &src,
+            "mutant `{label}` is identical to ci.yml (dead fixture)"
+        );
+        assert!(
+            !draft_gate_violations(text).is_empty(),
+            "mutant `{label}` stayed GREEN"
+        );
+    }
+}

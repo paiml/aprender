@@ -1,0 +1,91 @@
+# Review tiers by what a change touches (FLOW-011 rev6 section 4). pmat and the gate derive the tier from the
+# changed paths with scripts/review_tier.sh; an author-set tier is never read. A diff spanning tiers takes the
+# highest. Globs are bash [[ == ]] patterns against repo-relative paths ('*' also matches '/').
+version: 1
+default: standard
+sensitive:
+  - ".github/*"
+  - "ci/*"
+  - ".pmat/*"
+  - "scripts/check_*"
+  - "scripts/*"
+  - "scripts/review_tier.sh"
+  - "scripts/pre_receipt.sh"
+  - "scripts/ci_*"
+  - "scripts/*gate*"
+  - "scripts/release/*"
+  - "scripts/*publish*"
+  - "scripts/*sign*"
+  - "scripts/*forjar*"
+  - "forjar/*"
+  - "*.pem"
+  - "*.key"
+  - "Cargo.toml"
+  - "Cargo.lock"
+  - "rust-toolchain.toml"
+  - "deny.toml"
+  - ".cargo/*"
+  - "Makefile"
+  - ".gitignore"
+  - "*CODEOWNERS"
+  - "docs/audits/*"
+  - "docs/roadmaps/roadmap.yaml"
+  - "docs/roadmaps/entries/*"
+  - "clippy.toml"
+  - "*/clippy.toml"
+  - "rust-toolchain"
+  - "*/rust-toolchain*"
+  - ".gitmodules"
+  - "*/.gitignore"
+  - "GNUmakefile"
+  - "*/Makefile"
+  - "*.mk"
+  - "*/Cargo.lock"
+  - "*/deny.toml"
+  - "*/.cargo/*"
+  - ".config/*"
+  - ".githooks/*"
+  - ".pv/*"
+  - ".pv.toml"
+  - ".quorum/*"
+  - ".bashrsignore"
+  - ".cargo-mutants.toml"
+  - ".gitattributes"
+  - ".proptest.toml"
+  - ".pmat-*"
+  - ".pmat.yaml"
+  - "pmat.toml"
+  - "tools/*"
+  - "tools.toml"
+  - "schemas/*"
+  - "codecov.yml"
+  - "rustfmt.toml"
+  - ".claude/*"
+  - ".agents/*"
+  - ".clippy.toml"
+  - "docs/roadmaps/roadmap-base.yaml"
+standard:
+  - "docs/specifications/*"
+light:
+  - "docs/*.md"
+  - "docs/*.txt"
+  - "docs/*.png"
+  - "docs/*.svg"
+  - "README.md"
+  - "CHANGELOG.md"
+  - "*/README.md"
+  - "*/CHANGELOG.md"
+# A file matching neither list is standard, unless its diff is comment-only (blank lines and whole-line comments),
+# which review_tier.sh checks mechanically and treats as light.
+# docs/roadmaps/entries/* is sensitive because it is the source of the generated, sensitive roadmap.yaml.
+# Scope, declared: every script under scripts/ and every file under the gate directories (scripts, ci, tools, schemas,
+# .pmat, .github, .config, .cargo) that a CI surface (.github workflows, ci/, the Makefile) names is sensitive; the
+# check proves it by scanning those surfaces. A file outside the gate directories that CI names (e.g. a root-level
+# script) is not covered by that scan. contracts/*, docs/specifications and CLAUDE.md are standard (gates
+# validate them; they are not gate machinery). `light` is an allowlist: a light-matching file is
+# light only if no file under crates/ src/ tests/ scripts/ ci/ .github/ or the Makefile names its path (the full path
+# as a literal, or its basename on an include!/include_str!/include_bytes! line); a named file is standard. Known
+# limit: a reader that builds the path at runtime (concatenation, a glob, a variable) names no literal and is not
+# seen, so a light file only ever read that way stays light; the fail-closed guarantee covers named paths only. crates/*/Cargo.toml and build.rs stay standard (rev6
+# names only the workspace Cargo.toml). Comment stripping is line-based: a whole-line `#` or `//` comment is dropped
+# even inside a heredoc or multi-line string, so such a body is a known limit, not code that is compared verbatim.

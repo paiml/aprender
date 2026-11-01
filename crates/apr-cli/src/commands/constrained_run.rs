@@ -48,6 +48,12 @@ pub(crate) fn constraint_request(args: &ConstraintArgs) -> Result<Option<Constra
 pub(crate) fn inference_or_refusal(e: realizar::error::RealizarError) -> CliError {
     match e {
         realizar::error::RealizarError::Constraint(c) => refused(c),
+        // #4969: the engine refused a forced accelerator before running the CPU loop (exit 14)
+        realizar::error::RealizarError::UnsupportedOperation { operation, reason }
+            if operation == realizar::infer::FORCED_GPU_REFUSED_OP =>
+        {
+            CliError::BackendUnavailable(reason)
+        }
         other => crate::commands::run::inference_error(other),
     }
 }
@@ -123,3 +129,31 @@ pub(crate) fn constraint_verdict(
 #[cfg(test)]
 #[path = "constrained_run_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod forced_gpu_refusal_4969_tests {
+    use super::*;
+
+    #[test]
+    fn engine_forced_gpu_refusal_is_exit_14_backend_unavailable() {
+        let e = realizar::error::RealizarError::UnsupportedOperation {
+            operation: realizar::infer::FORCED_GPU_REFUSED_OP.to_string(),
+            reason: "gpu was forced, but refused".to_string(),
+        };
+        let cli = inference_or_refusal(e);
+        assert!(matches!(cli, CliError::BackendUnavailable(_)), "{cli:?}");
+        assert_eq!(cli.exit_code_value(), 14);
+    }
+
+    #[test]
+    fn other_unsupported_operations_stay_inference_failures() {
+        let e = realizar::error::RealizarError::UnsupportedOperation {
+            operation: "something_else".to_string(),
+            reason: "x".to_string(),
+        };
+        assert!(!matches!(
+            inference_or_refusal(e),
+            CliError::BackendUnavailable(_)
+        ));
+    }
+}
