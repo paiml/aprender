@@ -95,6 +95,7 @@ aprender-contracts	--test	kani_harness_generation
 aprender-contracts	--test	probar_test_generation
 aprender-contracts	--test	validate_contracts
 aprender-contracts-cli	--lib	commands::certify
+aprender-contracts-cli	--lib	commands::check_symbolic
 aprender-contracts-cli	--lib	commands::obligations
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk
