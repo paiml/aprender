@@ -651,6 +651,8 @@ fn run_gguf_generate(
     // `--gpu` on such a build already REFUSES ("no GPU backend compiled in") and
     // `--backend wgpu` already refuses to report a fallback as success. The bare
     // default was the only path that paid for wgpu silently.
+    #[allow(unused_mut)]
+    let mut wgpu_refusal: Option<String> = None;
     #[cfg(feature = "gpu")]
     if wgpu_fallback_allowed(config.no_gpu, config.accel_forced, has_legacy_quant)
         && wgpu_can_serve(gen_config.temperature, gen_config.top_k)
@@ -659,11 +661,18 @@ fn run_gguf_generate(
         match try_wgpu_generate(&model, input_tokens, gen_config, config.verbose) {
             Ok((t, u)) => return Ok((t, u, true)),
             Err(e) => {
+                wgpu_refusal = Some(e.to_string());
                 if config.verbose {
                     eprintln!("Backend: CPU (wgpu unavailable: {})", e);
                 }
             }
         }
+    }
+
+    // #4969: a FORCED accelerator whose attempt was refused is refused for good (R-0b, #3002).
+    // The CPU generation below would be thrown away by the caller, so fail before it runs.
+    if forced_gpu_refused_before_cpu(config.no_gpu, config.accel_forced, gpu_attempted) {
+        return Err(forced_gpu_refusal(wgpu_refusal.as_deref()));
     }
 
     log_cpu_backend(config.verbose, has_legacy_quant);
@@ -683,6 +692,35 @@ fn run_gguf_generate(
     // nothing else was tried" from "CPU because the accelerator's result was
     // refused" — the second is the fallback a consumer needs to see.
     Ok((tokens, false, gpu_attempted))
+}
+
+/// `RealizarError::UnsupportedOperation::operation` of a forced-accelerator refusal (#4969);
+/// `apr run` maps it to `BackendUnavailable` (exit 14).
+pub const FORCED_GPU_REFUSED_OP: &str = "forced_gpu_refused";
+
+/// #4969: true when the CPU loop must NOT run — the user forced an accelerator (`--gpu`,
+/// `--backend <gpu>`), a GPU backend was entered, and it did not produce the answer.
+/// `--no-gpu` wins (CPU was asked for); an unforced run falls back as before.
+#[must_use]
+pub(crate) fn forced_gpu_refused_before_cpu(
+    no_gpu: bool,
+    accel_forced: bool,
+    gpu_attempted: bool,
+) -> bool {
+    !no_gpu && accel_forced && gpu_attempted
+}
+
+/// The refusal for [`forced_gpu_refused_before_cpu`]. CUDA's own reason (device error, or the
+/// F2 cosine and position) is the `warning: GPU (CUDA) path rejected` line printed just before.
+pub(crate) fn forced_gpu_refusal(wgpu_reason: Option<&str>) -> RealizarError {
+    let detail = wgpu_reason.map_or_else(String::new, |r| format!(" wgpu: {r}."));
+    RealizarError::UnsupportedOperation {
+        operation: FORCED_GPU_REFUSED_OP.to_string(),
+        reason: format!(
+            "gpu was forced, but its runtime attempt on this model was refused (reason: the \"path rejected\" / F2 line above).{detail} \
+             No CPU generation was run. Re-run with --no-gpu to run on CPU deliberately (R-0b, #3002; #4969)."
+        ),
+    }
 }
 
 /// Run APR model inference (PAR-302, PMAT-APR-CUDA-001)
@@ -1826,5 +1864,39 @@ mod pmat3757_wgpu_attempt_gate {
             "the decline notice must not be behind --verbose: the user who needs it is the \
              one who did not pass it"
         );
+    }
+}
+
+#[cfg(test)]
+mod forced_gpu_refusal_4969_tests {
+    use super::*;
+
+    /// (no_gpu, accel_forced, gpu_attempted, refuse_before_cpu, what this invocation is)
+    const CASES: [(bool, bool, bool, bool, &str); 6] = [
+        (false, true, true, true, "forced --gpu, attempt refused: no CPU redo"),
+        (false, true, false, false, "forced but nothing was entered (legacy quant): CPU as before"),
+        (false, false, true, false, "unforced, attempt refused: falls back to CPU"),
+        (false, false, false, false, "bare CPU run"),
+        (true, true, true, false, "--no-gpu wins: CPU was asked for"),
+        (true, false, false, false, "--no-gpu"),
+    ];
+
+    #[test]
+    fn only_a_forced_refused_attempt_skips_the_cpu_loop() {
+        for (no_gpu, forced, attempted, want, why) in CASES {
+            assert_eq!(forced_gpu_refused_before_cpu(no_gpu, forced, attempted), want, "{why}");
+        }
+    }
+
+    #[test]
+    fn the_refusal_carries_the_marker_operation_and_the_wgpu_reason() {
+        let RealizarError::UnsupportedOperation { operation, reason } =
+            forced_gpu_refusal(Some("cosine=0.95 < 0.99 at step 3/8"))
+        else {
+            panic!("expected UnsupportedOperation");
+        };
+        assert_eq!(operation, FORCED_GPU_REFUSED_OP);
+        assert!(reason.contains("cosine=0.95 < 0.99 at step 3/8"), "{reason}");
+        assert!(reason.contains("No CPU generation was run"), "{reason}");
     }
 }

@@ -285,6 +285,7 @@ fn json_report_carries_the_lattice() {
             serde_json::Value::String("depends-on-present".into()),
             // PVL-001 EV-8a's ratchet: same R-8 shape.
             serde_json::Value::String("proved-is-derived".into()),
+            serde_json::Value::String("references-resolve".into()),
             // PVL-001 EV-7b's gate: same R-8 shape.
             serde_json::Value::String("challenge-fresh".into()),
             // ONT-5 (gate 19) likewise: computed everywhere, armed by nobody yet.

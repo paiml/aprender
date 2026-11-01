@@ -42,7 +42,7 @@ fn lint_passes_on_real_contracts() {
     // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
     // files are real, so `report.passed` requires them fresh), ont-consistency (ONT-5), refines (ONT-4e), bindings (ONT-3a),
     // refinement (ONT-3b), evidence (ONT-8).
-    assert_eq!(report.gates.len(), 22);
+    assert_eq!(report.gates.len(), 23);
 }
 
 /// #4502: this test is where CI runs the head-vs-base refinement gate (the workspace-test shards run
@@ -276,7 +276,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 22);
+    assert_eq!(report.gates.len(), 23);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -496,6 +496,8 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus(report: 
             "depends-on-present".to_string(),
             // PVL-001 EV-8a: born armed in the repo's own baseline, not in the default set.
             "proved-is-derived".to_string(),
+            // aprender#6397: dead `metadata.references` ratchet, same R-8 shape.
+            "references-resolve".to_string(),
             "challenge-fresh".to_string(),
             // ONT-5: computed everywhere (R-8), armed by nobody until its quorum passes.
             "ont-consistency".to_string(),

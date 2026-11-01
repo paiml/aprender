@@ -78,94 +78,94 @@ pub fn generate_all(
     output_dir: &Path,
     binding: Option<&BindingRegistry>,
 ) -> Result<GeneratedFiles, std::io::Error> {
+    let rendered = render_all(contract, stem, binding);
     std::fs::create_dir_all(output_dir)?;
+    let mut files = Vec::with_capacity(rendered.len());
+    for (relative_path, kind, content) in rendered {
+        let absolute_path = output_dir.join(&relative_path);
+        std::fs::write(&absolute_path, &content)?;
+        files.push(GeneratedFile {
+            relative_path,
+            absolute_path,
+            kind,
+            bytes: content.len(),
+        });
+    }
+    Ok(GeneratedFiles { files })
+}
 
-    let mut files = Vec::new();
+/// The files `generate_all` writes, rendered in memory: no directory is created and no file is
+/// written (`pv generate --dry-run`, #6395). `output_dir` only prefixes `absolute_path`.
+#[must_use]
+pub fn plan_all(
+    contract: &Contract,
+    stem: &str,
+    output_dir: &Path,
+    binding: Option<&BindingRegistry>,
+) -> GeneratedFiles {
+    let files = render_all(contract, stem, binding)
+        .into_iter()
+        .map(|(relative_path, kind, content)| GeneratedFile {
+            absolute_path: output_dir.join(&relative_path),
+            relative_path,
+            kind,
+            bytes: content.len(),
+        })
+        .collect();
+    GeneratedFiles { files }
+}
 
-    // Scaffold
-    let scaffold_content = generate_trait(contract);
-    let scaffold_path = output_dir.join(format!("{stem}_scaffold.rs"));
-    std::fs::write(&scaffold_path, &scaffold_content)?;
-    files.push(GeneratedFile {
-        relative_path: PathBuf::from(format!("{stem}_scaffold.rs")),
-        absolute_path: scaffold_path,
-        kind: ArtifactKind::Scaffold,
-        bytes: scaffold_content.len(),
-    });
-
-    // Kani harnesses
-    let kani_content = generate_kani_harnesses(contract);
-    let kani_path = output_dir.join(format!("{stem}_kani.rs"));
-    std::fs::write(&kani_path, &kani_content)?;
-    files.push(GeneratedFile {
-        relative_path: PathBuf::from(format!("{stem}_kani.rs")),
-        absolute_path: kani_path,
-        kind: ArtifactKind::KaniHarness,
-        bytes: kani_content.len(),
-    });
-
-    // Probar tests
-    let probar_content = generate_probar_tests(contract);
-    let probar_path = output_dir.join(format!("{stem}_probar.rs"));
-    std::fs::write(&probar_path, &probar_content)?;
-    files.push(GeneratedFile {
-        relative_path: PathBuf::from(format!("{stem}_probar.rs")),
-        absolute_path: probar_path,
-        kind: ArtifactKind::ProbarTest,
-        bytes: probar_content.len(),
-    });
-
-    // Wired probar tests (only if binding provided)
+/// Render every artifact `generate_all` emits, in emission order. Pure: touches no filesystem.
+fn render_all(
+    contract: &Contract,
+    stem: &str,
+    binding: Option<&BindingRegistry>,
+) -> Vec<(PathBuf, ArtifactKind, String)> {
+    let mut out = vec![
+        (
+            PathBuf::from(format!("{stem}_scaffold.rs")),
+            ArtifactKind::Scaffold,
+            generate_trait(contract),
+        ),
+        (
+            PathBuf::from(format!("{stem}_kani.rs")),
+            ArtifactKind::KaniHarness,
+            generate_kani_harnesses(contract),
+        ),
+        (
+            PathBuf::from(format!("{stem}_probar.rs")),
+            ArtifactKind::ProbarTest,
+            generate_probar_tests(contract),
+        ),
+    ];
     if let Some(reg) = binding {
         let contract_file = format!("{stem}.yaml");
-        let wired_content = generate_wired_probar_tests(contract, &contract_file, reg);
-        let wired_path = output_dir.join(format!("{stem}_wired_probar.rs"));
-        std::fs::write(&wired_path, &wired_content)?;
-        files.push(GeneratedFile {
-            relative_path: PathBuf::from(format!("{stem}_wired_probar.rs")),
-            absolute_path: wired_path,
-            kind: ArtifactKind::WiredProbarTest,
-            bytes: wired_content.len(),
-        });
+        out.push((
+            PathBuf::from(format!("{stem}_wired_probar.rs")),
+            ArtifactKind::WiredProbarTest,
+            generate_wired_probar_tests(contract, &contract_file, reg),
+        ));
     }
-
-    // Type invariants (only if contract has type_invariants)
     let invariant_content = generate_invariants(contract);
     if !invariant_content.is_empty() {
-        let inv_path = output_dir.join(format!("{stem}_invariants.rs"));
-        std::fs::write(&inv_path, &invariant_content)?;
-        files.push(GeneratedFile {
-            relative_path: PathBuf::from(format!("{stem}_invariants.rs")),
-            absolute_path: inv_path,
-            kind: ArtifactKind::Invariants,
-            bytes: invariant_content.len(),
-        });
+        out.push((
+            PathBuf::from(format!("{stem}_invariants.rs")),
+            ArtifactKind::Invariants,
+            invariant_content,
+        ));
     }
-
-    // Coq theorem stubs
-    let coq_content = generate_coq_spec(contract, stem);
-    let coq_path = output_dir.join(format!("{stem}.v"));
-    std::fs::write(&coq_path, &coq_content)?;
-    files.push(GeneratedFile {
-        relative_path: PathBuf::from(format!("{stem}.v")),
-        absolute_path: coq_path,
-        kind: ArtifactKind::CoqSpec,
-        bytes: coq_content.len(),
-    });
-
-    // Book page (single-contract graph with just this contract)
+    out.push((
+        PathBuf::from(format!("{stem}.v")),
+        ArtifactKind::CoqSpec,
+        generate_coq_spec(contract, stem),
+    ));
     let single_graph = build_single_contract_graph(contract, stem);
-    let book_content = generate_contract_page(contract, stem, &single_graph);
-    let book_path = output_dir.join(format!("{stem}_book.md"));
-    std::fs::write(&book_path, &book_content)?;
-    files.push(GeneratedFile {
-        relative_path: PathBuf::from(format!("{stem}_book.md")),
-        absolute_path: book_path,
-        kind: ArtifactKind::BookPage,
-        bytes: book_content.len(),
-    });
-
-    Ok(GeneratedFiles { files })
+    out.push((
+        PathBuf::from(format!("{stem}_book.md")),
+        ArtifactKind::BookPage,
+        generate_contract_page(contract, stem, &single_graph),
+    ));
+    out
 }
 
 /// Build a minimal dependency graph for a single contract.

@@ -12,9 +12,11 @@ SET="${AFFECTED_SET_SH:-scripts/affected_set.sh}"
 # the exact file:line exemptions (a crate-wide exemption hides a later reader in the same crate)
 ALLOW="${AFFECTED_READERS_ALLOW:-crates/aprender-bench-tokenizer/src/lib.rs:50}"   # joins ../.. only for <root>/tokenizer.json and <root>/models/
 PAT='"\.\."|"[^"]*(\.\./|/\.\.)[^"]*"|\bparent\(\)|ancestors\(\)|current_dir|"[^"]*crates/|"crates"|CARGO_WORKSPACE_DIR|workspace_path_or_skip|read_dir\([^)]*(MANIFEST|crates|root|workspace)|format!\([^)]*(MANIFEST_DIR|crates/)'
-listed() { sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sort -u; }
+g() { local rc=0; grep "$@" || rc=$?; [ "$rc" -le 1 ]; }   # rc 1 (no match) is empty; rc>=2 (unreadable dir, bad regex) is an error and must fail closed (PMAT-6069)
+listed() { sed -n 's/^READERS="${AFFECTED_READERS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | g -v '^$' | sort -u; }
 excluded() { # the root Cargo.toml exclude = [...] entries: separate workspaces, not members; a diff there is unplaceable, so affected_set.sh answers ALL
-  sed -n '/^exclude *= *\[/,/^\]/p' "${AFFECTED_ROOT_MANIFEST:-Cargo.toml}" 2>/dev/null | grep -v '^[[:space:]]*#' | grep -oE "[\"'][^\"']+[\"']" | tr -d "\"'" || true
+  [ -f "${AFFECTED_ROOT_MANIFEST:-Cargo.toml}" ] || return 0   # no root manifest = no excludes
+  sed -n '/^exclude *= *\[/,/^\]/p' "${AFFECTED_ROOT_MANIFEST:-Cargo.toml}" | g -v '^[[:space:]]*#' | g -oE "[\"'][^\"']+[\"']" | tr -d "\"'"
 }
 pkg_of() { # $1 = a directory holding a flagged file, $2 = crates dir; prints the cargo PACKAGE name of the nearest Cargo.toml (affected_set.sh READERS holds package names, not directory names)
   local d="$1" e
@@ -28,35 +30,45 @@ pkg_of() { # $1 = a directory holding a flagged file, $2 = crates dir; prints th
   local top="${1#"$2"/}"; echo "${top%%/*}"   # no manifest on the way up: the top directory under the crates dir
 }
 hits() { # $1 = crates dir; prints package names
-  { grep -rEn --include='*.rs' "$PAT" "$1" 2>/dev/null || true; } \
-    | grep -vE '^[^:]*/target/' | grep -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
+  g -rEn --include='*.rs' "$PAT" "$1" \
+    | g -vE '^[^:]*/target/' | g -vE '^[^:]+:[0-9]+:[[:space:]]*//' \
     | awk -F: -v allow=" $ALLOW " '{ k = $1 ":" $2; if (index(allow, " " k " ")) next; d = $1; sub("/[^/]*$", "", d); print d }' | sort -u \
     | while IFS= read -r d; do pkg_of "$d" "$1"; done | sort -u
 }
 build_listed() { # full repo-relative paths: contracts/<BUILD_CONTRACTS entry>, docs/<BUILD_DOCS entry>
-  sed -n 's/^BUILD_CONTRACTS="\${AFFECTED_BUILD_CONTRACTS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sed 's#^#contracts/#' || true
-  sed -n 's/^BUILD_DOCS="\${AFFECTED_BUILD_DOCS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | grep -v '^$' | sed 's#^#docs/#' || true
+  sed -n 's/^BUILD_CONTRACTS="\${AFFECTED_BUILD_CONTRACTS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | g -v '^$' | sed 's#^#contracts/#'
+  sed -n 's/^BUILD_DOCS="\${AFFECTED_BUILD_DOCS:-\(.*\)}"$/\1/p' "$SET" | tr ' ' '\n' | g -v '^$' | sed 's#^#docs/#'
 }
 # Any contracts/** or docs/** file (nested too) that a build.rs names or an include*! macro embeds (the macro may span lines): compiled into a crate, so ALL.
 # Over-approximates on purpose (a path anywhere in the 300 chars after the macro name); a file that does not exist is dropped. Paths relative to the repo root = ${AFFECTED_ROOT_DIR:-.}.
+existing_only() { # keep the listed paths that exist under AFFECTED_ROOT_DIR
+  local f
+  while read -r f; do
+    [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ] && echo "$f"
+  done
+  return 0
+}
 build_inputs() { # $1 = crates dir
   local p='(contracts|docs)/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+' f
   {
-    grep -rzohE --include='*.rs' 'include(_str|_bytes)?![^;]{0,300}' "$1" 2>/dev/null | tr '\0' '\n' | grep -oE "$p" || true   # -z: one record per file, so a macro split over lines still matches
-    { grep -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1" 2>/dev/null || true; } | while IFS= read -r f; do
-      grep -vE '^\s*//' "$f" | grep -oE "$p" || true
-      grep -vE '^\s*//' "$f" | grep -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' | sed 's#^#contracts/#' || true; done
-  } | sort -u | while read -r f; do [ -f "${AFFECTED_ROOT_DIR:-.}/$f" ] && echo "$f"; done | grep -vE '(^|/)binding\.yaml$|/model-families/' || true
+    g -rzohE --include='*.rs' 'include(_str|_bytes)?![^;]{0,300}' "$1" | tr '\0' '\n' | g -oE "$p"   # -z: one record per file, so a macro split over lines still matches
+    { g -rlE --include=build.rs '(contracts|docs)/|[A-Za-z0-9_-]+\.yaml"' "$1"; } | while IFS= read -r f; do
+      g -vE '^\s*//' "$f" | g -oE "$p"
+      g -vE '^\s*//' "$f" | g -oE '[A-Za-z0-9_-]+\.yaml"' | tr -d '"' | sed 's#^#contracts/#'; done
+  } | sort -u | existing_only | g -vE '(^|/)binding\.yaml$|/model-families/'
 }
 check() {
-  local bad="" l c; l="$(listed)"
-  for c in $(hits "$1"); do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
-  local bl; bl="$(build_listed)"
-  for c in $(build_inputs "$1"); do grep -qx "$c" <<<"$bl" || bad="$bad $c(BUILD_CONTRACTS/BUILD_DOCS)"; done
+  local bad="" l c h bl bi; [ -d "$1" ] || { echo "RED: crates dir '$1' is missing or not a directory (fail closed)"; return 2; }
+  l="$(listed)" || { echo "RED: cannot read READERS from $SET (fail closed)"; return 2; }
+  h="$(hits "$1")" || { echo "RED: reader scan of '$1' failed, grep rc>=2 (fail closed)"; return 2; }
+  for c in $h; do grep -qx "$c" <<<"$l" || bad="$bad $c"; done
+  bl="$(build_listed)" || { echo "RED: cannot read BUILD_CONTRACTS/BUILD_DOCS from $SET (fail closed)"; return 2; }
+  bi="$(build_inputs "$1")" || { echo "RED: build-input scan of '$1' failed, grep rc>=2 (fail closed)"; return 2; }
+  for c in $bi; do grep -qx "$c" <<<"$bl" || bad="$bad $c(BUILD_CONTRACTS/BUILD_DOCS)"; done
   if [ -n "$bad" ]; then echo "RED: crates can reach other crates' files but are not in READERS (scripts/affected_set.sh):$bad"; return 1; fi
   echo "ok: every crate with a path-escape form is in READERS"
 }
-if [ "${1:-}" = "--list" ]; then hits crates; exit 0; fi
+if [ "${1:-}" = "--list" ]; then hits crates; exit; fi
 if [ "${1:-}" = "--self-test" ]; then
   t=$(mktemp -d); trap 'rm -rf -- "${t:?}"' EXIT
   SET="$(pwd)/$SET"; cd "$t"
@@ -113,6 +125,15 @@ if [ "${1:-}" = "--self-test" ]; then
   mkdir -p "$t/docs/d"; : >"$t/docs/d/second.lock"
   fresh zz-s; { printf 'const A: &str = include_str!("docs/d/m.md");\n//%*s\n' 246 ''; printf 'const B: &str = include_str!("docs/d/second.lock");\n'; } >"$t/crates/zz-s/src/x.rs"
   out=$(SET="$t/set-listed.sh" check crates 2>&1 || true); grep -q 'second.lock' <<<"$out" || { echo "FAIL self-test: an include_str! path cut by the previous match's window was not read"; fail=1; }
+  # PMAT-6069: grep rc>=2 / a missing crates dir fail CLOSED (rc 2), never "no readers"
+  rm -rf -- "${t:?}/crates"; rc=0; (check crates >/dev/null 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || { echo "FAIL self-test: a missing crates dir did not fail closed (rc=$rc)"; fail=1; }
+  fresh zz-t; echo 'fn f() {}' >"$t/crates/zz-t/src/x.rs"; rc=0; (check crates >/dev/null 2>&1) || rc=$?
+  [ "$rc" -eq 0 ] || { echo "FAIL self-test: a clean crates dir was not green (rc=$rc)"; fail=1; }
+  if [ "$(id -u)" -ne 0 ]; then chmod 000 "$t/crates/zz-t/src"; rc=0; (check crates >/dev/null 2>&1) || rc=$?; chmod 755 "$t/crates/zz-t/src"
+    [ "$rc" -eq 2 ] || { echo "FAIL self-test: an unreadable crates subdir did not fail closed (rc=$rc)"; fail=1; }; fi
+  rc=0; (PAT='(' check crates >/dev/null 2>&1) || rc=$?
+  [ "$rc" -eq 2 ] || { echo "FAIL self-test: a grep error (bad regex, rc 2) did not fail closed (rc=$rc)"; fail=1; }
   [ "$fail" -eq 0 ] && echo "ok: self-test"
   exit "$fail"
 fi
