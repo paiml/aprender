@@ -60,14 +60,14 @@ pub enum RatchetOutcome {
 
 /// The top-level integer `key` of `<contract_dir>/lint-baseline.json`. Absent, unreadable, or not a
 /// non-negative integer → `None`.
-fn baseline_of(contract_dir: &Path, key: &str) -> Option<usize> {
+pub(super) fn baseline_of(contract_dir: &Path, key: &str) -> Option<usize> {
     let raw = std::fs::read_to_string(contract_dir.join("lint-baseline.json")).ok()?;
     let doc: serde_json::Value = serde_json::from_str(&raw).ok()?;
     doc.get(key)?.as_u64().and_then(|n| usize::try_from(n).ok())
 }
 
 /// The repo root the contract dir sits in: its parent, or `.` for a bare relative name.
-fn repo_root(contract_dir: &Path) -> PathBuf {
+pub(super) fn repo_root(contract_dir: &Path) -> PathBuf {
     match contract_dir.parent() {
         Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
         _ => PathBuf::from("."),
@@ -131,7 +131,7 @@ pub fn mentions_module(text: &str, name: &str) -> bool {
 }
 
 /// PV-RAT-001 / PV-RAT-002: the debt may fall, never rise. No baseline → no finding (the verdict says why).
-fn ratchet_finding(
+pub(super) fn ratchet_finding(
     rule: &str,
     key: &str,
     baseline: Option<usize>,
@@ -154,7 +154,7 @@ fn ratchet_finding(
     Some(f)
 }
 
-fn result_of(
+pub(super) fn result_of(
     name: &str,
     checked: usize,
     findings: &[LintFinding],

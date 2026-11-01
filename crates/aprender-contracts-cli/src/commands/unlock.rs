@@ -12,6 +12,18 @@ fn key_of(line: &str) -> Option<&str> {
     Some(key.trim().trim_matches(['"', '\'']))
 }
 
+/// Print the one line `drop_locked_level` removes, as a unified-diff style hunk.
+fn print_removed_line(old: &str, new: &str) {
+    let mut kept = new.lines().peekable();
+    for (n, line) in old.lines().enumerate() {
+        if kept.peek() == Some(&line) {
+            kept.next();
+        } else {
+            println!("@@ line {} @@\n-{line}", n + 1);
+        }
+    }
+}
+
 /// Drop the `locked_level` key of the top-level `metadata:` block and nothing else.
 /// `None` when the key is not written as a line of that block (flow style, absent).
 fn drop_locked_level(content: &str) -> Option<String> {
@@ -57,7 +69,7 @@ fn metadata_without_lock(doc: &Doc) -> Doc {
     copy
 }
 
-pub fn run(contract: &Path, reason: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn run(contract: &Path, reason: &str, dry_run: bool) -> Result<(), Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(contract)?;
 
     // Parse to verify it's valid
@@ -87,6 +99,15 @@ pub fn run(contract: &Path, reason: &str) -> Result<(), Box<dyn std::error::Erro
     if !gone || after != metadata_without_lock(&before) {
         return Err("unlock would change more than metadata.locked_level; file left as is".into());
     }
+    if dry_run {
+        println!(
+            "Dry run: would unlock {} (nothing written):",
+            contract.display()
+        );
+        println!("Reason: {reason}");
+        print_removed_line(&content, &new_content);
+        return Ok(());
+    }
     std::fs::write(contract, &new_content)?;
 
     println!("Unlocked: {}", contract.display());
@@ -106,7 +127,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("c.yaml");
         std::fs::write(&path, text)?;
-        run(&path, "test")?;
+        run(&path, "test", false)?;
         Ok(std::fs::read_to_string(&path)?)
     }
 
@@ -166,7 +187,7 @@ mod tests {
         let path = dir.path().join("c.yaml");
         let text = "metadata: {version: 1.0.0, locked_level: 3}\n";
         std::fs::write(&path, text).expect("write");
-        assert!(run(&path, "t").is_err());
+        assert!(run(&path, "t", false).is_err());
         assert_eq!(std::fs::read_to_string(&path).expect("read"), text);
     }
 }

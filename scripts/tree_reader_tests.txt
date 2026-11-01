@@ -55,6 +55,7 @@ aprender-contracts	--lib	lint::finding
 aprender-contracts	--lib	lint::gates
 aprender-contracts	--lib	lint::gates_extended
 aprender-contracts	--lib	lint::ratchet_gates
+aprender-contracts	--lib	lint::references_gate
 aprender-contracts	--lib	lint::refines_gate
 aprender-contracts	--lib	lint::relations_gate
 aprender-contracts	--lib	lint::sarif
@@ -126,6 +127,7 @@ aprender-contracts-cli	--test	ont_extract_json
 aprender-contracts-cli	--test	ont_findings_ledger
 aprender-contracts-cli	--test	ont_refusal_receipt
 aprender-contracts-cli	--test	ont_release_readiness
+aprender-contracts-cli	--test	pv_dry_run_6395
 aprender-contracts-cli	--test	pv_surface_gate
 aprender-contracts-cli	--test	pvl_challenge
 aprender-contracts-cli	--test	pvl_comparator
