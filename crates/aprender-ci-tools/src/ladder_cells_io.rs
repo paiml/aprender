@@ -66,6 +66,28 @@ fn spawn_reader<R: Read + Send + 'static>(
     });
 }
 
+/// `ETXTBSY` (os error 26): exec of a file some other thread still holds open for write.
+const ETXTBSY: i32 = 26;
+/// Bounded retries and backoff for [`retry_etxtbsy`].
+const ETXTBSY_TRIES: u32 = 20;
+const ETXTBSY_BACKOFF: Duration = Duration::from_millis(25);
+
+/// Run `f` (a spawn), retrying ONLY on `ETXTBSY`, up to `ETXTBSY_TRIES` times with a short
+/// backoff. fork() in a parallel thread can briefly hand a child a write fd of a binary we
+/// just wrote, so exec of it races; every other error is returned unchanged on the first try.
+fn retry_etxtbsy<T>(mut f: impl FnMut() -> std::io::Result<T>) -> std::io::Result<T> {
+    let mut tries = 1;
+    loop {
+        match f() {
+            Err(e) if e.raw_os_error() == Some(ETXTBSY) && tries < ETXTBSY_TRIES => {
+                tries += 1;
+                std::thread::sleep(ETXTBSY_BACKOFF);
+            }
+            r => return r,
+        }
+    }
+}
+
 /// `subprocess.run(argv, input=stdin, capture_output=True, text=True, timeout=timeout_s)`.
 /// `stdin` `None` inherits ours, as Python does. On the timeout the child is killed and the
 /// result is `(124, "", "timed out after T s")`, as the original's `Runner.call` returns.
@@ -85,9 +107,8 @@ pub fn run_with_timeout(
         } else {
             Stdio::inherit()
         });
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("FileNotFoundError: {prog}: {e}"))?;
+    let mut child =
+        retry_etxtbsy(|| cmd.spawn()).map_err(|e| format!("FileNotFoundError: {prog}: {e}"))?;
     let until = deadline(secs(timeout_s));
     if let (Some(text), Some(mut pipe)) = (stdin, child.stdin.take()) {
         let bytes = text.as_bytes().to_vec();
@@ -360,14 +381,14 @@ impl Serve {
     /// `GET /health` to answer 2xx, retrying each second while the child lives.
     pub fn start(argv: &[String], port: u16, ceiling_s: i64) -> Result<Self, String> {
         let (prog, rest) = argv.split_first().ok_or("an empty argv")?;
-        let child = Command::new(prog)
-            .args(rest)
+        let mut cmd = Command::new(prog);
+        cmd.args(rest)
             .stdin(Stdio::inherit())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
-            .process_group(0)
-            .spawn()
-            .map_err(|e| format!("FileNotFoundError: {prog}: {e}"))?;
+            .process_group(0);
+        let child =
+            retry_etxtbsy(|| cmd.spawn()).map_err(|e| format!("FileNotFoundError: {prog}: {e}"))?;
         let mut serve = Self {
             child,
             port,
@@ -435,6 +456,42 @@ mod tests {
 
     fn argv(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| (*s).to_owned()).collect()
+    }
+
+    #[test]
+    fn etxtbsy_is_retried_then_succeeds() {
+        let mut n = 0;
+        let r = retry_etxtbsy(|| {
+            n += 1;
+            if n < 4 {
+                Err(std::io::Error::from_raw_os_error(ETXTBSY))
+            } else {
+                Ok(n)
+            }
+        });
+        assert_eq!(r.expect("ok after retries"), 4);
+    }
+
+    #[test]
+    fn etxtbsy_retry_is_bounded() {
+        let mut n = 0;
+        let r: std::io::Result<()> = retry_etxtbsy(|| {
+            n += 1;
+            Err(std::io::Error::from_raw_os_error(ETXTBSY))
+        });
+        assert!(r.is_err());
+        assert_eq!(n, ETXTBSY_TRIES);
+    }
+
+    #[test]
+    fn other_spawn_errors_are_not_retried() {
+        let mut n = 0;
+        let r: std::io::Result<()> = retry_etxtbsy(|| {
+            n += 1;
+            Err(std::io::Error::from_raw_os_error(2))
+        });
+        assert_eq!(r.expect_err("enoent").raw_os_error(), Some(2));
+        assert_eq!(n, 1);
     }
 
     #[test]
