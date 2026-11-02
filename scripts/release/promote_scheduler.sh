@@ -18,6 +18,7 @@
 # SCRIPT, which exists only in the falsifier's sandbox copy.
 # It never waives, never edits a receipt, never tags itself, never deletes a tag, never force-pushes: the one write to git
 # is promote_nightly.sh --execute, which refuses an existing tag and goes through pre-push-tags.sh --arm-release.
+# A fallback past ANY skipped newer candidate (not only a red nightly) writes one RED inbox line naming each skip (C12, aprender#6677).
 # exit: 0 promoted / would promote (dry-run) / too early - 1 nothing promoted (a line is in the cop inbox) - 3 clean-room running - 2 usage
 set -uo pipefail
 unset GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
@@ -198,6 +199,8 @@ for sha in "${cands[@]}"; do
     if ! bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" > "$d/promote-dry.log" 2>&1; then
         notes+="${sha:0:9} promote dry-run refused: $(grep -m1 REFUSE "$d/promote-dry.log" | cut -c1-100); "; continue
     fi
+    # C12 (aprender#6677): a fallback past a red/skipped NEWER candidate is never silent: one RED line names what was skipped and why
+    [ -z "$notes" ] || { say "fell back past newer candidate(s): $notes"; inbox_line "RED fallback: using ${sha:0:9}, newer candidate(s) skipped: $notes"; }
     if [ "$exe" != 1 ]; then say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
     (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
         || fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"

@@ -39,6 +39,7 @@ if [ "${1:-}" = --mutants ]; then
     mut flock-dropped 's/^flock -n 9 .*$/true/'
     mut age-cap-dropped 's/\[ "\$ct" -ge "\$cutoff" \] || continue/true/'
     mut pushtags-unchecked 's/ \\$/ ;/; /not installed\/verified in/d'
+    mut fallback-silent 's/inbox_line "RED fallback: using[^;]*;//'
     mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then say.*$/    :/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
@@ -181,6 +182,13 @@ FX_RED_JOB=ci-main sched ci-main-red 1 0 0 --execute
 FX_TRAIN_PATH=/nonexistent/train sched train-unavailable-fails-closed 1 0 0 --execute; inbox_has train-unavailable RED
 FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched train-red-newest-falls-back 0 2 1 --execute
 grep -q "TRAIN --out .* --commit $R1 --exit-verdict" "$TMP/calls" || grep -q "TRAIN.*--commit $R1.*--exit-verdict\|TRAIN.*--exit-verdict.*--commit $R1" "$TMP/calls" && ok || bad "train not called with --commit/--exit-verdict"
+# C12 (aprender#6677): fallback past a red newer candidate (train-red, not a models-red) must leave a visible RED line naming the skip
+inbox_has train-red-fallback-visible "RED fallback: using ${R1:0:9}"
+inbox_has train-red-fallback-names-skipped "newer candidate(s) skipped: ${R2:0:9}"
+FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched train-red-fallback-dry-run 0 1 0
+inbox_has train-red-fallback-dry-run-visible "RED fallback"
+sched no-fallback-no-red-fallback-line 0 2 1 --execute
+grep -q 'RED fallback' "$INB" && bad "all-green run wrote a RED fallback line" || ok
 FX_RATE=999 sched rate-floor 0 0 0 --execute; inbox_has rate-floor SKIP
 FX_RATE=x sched rate-unreadable 0 0 0 --execute
 FX_LANES=none sched lane-evidence-missing-fails-closed 1 0 0 --execute; inbox_has lane-evidence-missing RED
