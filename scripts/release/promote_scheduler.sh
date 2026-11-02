@@ -20,9 +20,9 @@
 # is promote_nightly.sh --execute, which refuses an existing tag and goes through pre-push-tags.sh --arm-release.
 # exit: 0 promoted / would promote (dry-run) / too early - 1 nothing promoted (a line is in the cop inbox) - 3 clean-room running - 2 usage
 set -uo pipefail
-unset GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
+unset BUILD_APR GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
-GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""; DISPATCH_WAIT=5
+BUILD_APR=build_apr; GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""; DISPATCH_WAIT=5
 repo="" state="" nb="" disp=0 exe=0 inbox="" floor=""
 usage() { printf 'promote_scheduler: %s\n' "$*" >&2; exit 2; }
 say() { printf 'promote_scheduler: %s\n' "$*"; }
@@ -163,6 +163,37 @@ cleanroom_marker() { # SHA DIR FIRST
     say "clean-room run $id dispatched on ${sha:0:9}; pending"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
 }
 
+# binary_preflight SHA DIR: #6679. Build apr fresh from SHA in a clean worktree with its own CARGO_TARGET_DIR, sha256 it, and compare
+# with .apr.binary_sha256 in every $DIR/r7/*-gpu.meta.json. Per host/arch: a receipt whose .isa is not this host's arch is compared with
+# $DIR/build-<isa>.sha256 (a fresh build made on a host of that arch); none there = RED. A mismatch or a missing sha is RED, never
+# not_measured. Prints why and returns 1 on any RED; no r7 receipt at all is RED too (nothing proves the tested binary).
+build_apr() { # WT TARGET_DIR -> prints the binary path
+    (cd "$1" && CARGO_TARGET_DIR="$2" cargo build --release --bin apr > "$2.log" 2>&1) || return 1
+    printf '%s/release/apr' "$2"
+}
+binary_preflight() {
+    local sha=$1 d=$2 w tgt bin fresh here m isa host want got n=0 bad=0
+    w=$(mktemp -d) && G worktree add -q --detach "$w/wt" "$sha" > /dev/null 2>&1 || { printf 'no worktree for the fresh build'; return 1; }
+    tgt="$w/target"
+    bin=$($BUILD_APR "$w/wt" "$tgt"); fresh=""
+    [ -n "$bin" ] && [ -x "$bin" ] && fresh=$(sha256sum -- "$bin" | cut -d' ' -f1)
+    G worktree remove --force "$w/wt" > /dev/null 2>&1; rm -rf -- "${w:?}"
+    [[ $fresh =~ ^[0-9a-f]{64}$ ]] || { printf 'fresh build of %s failed: no binary sha' "${sha:0:9}"; return 1; }
+    here=$(uname -m)
+    for m in "$d"/r7/*-gpu.meta.json; do
+        [ -e "$m" ] || continue
+        n=$((n + 1)); host=$(basename "$m" -gpu.meta.json)
+        isa=$(jq -r '.isa // empty' "$m" 2> /dev/null); got=$(jq -r '.apr.binary_sha256 // empty' "$m" 2> /dev/null)
+        want=$fresh
+        if [ -n "$isa" ] && [ "$isa" != "$here" ]; then want=$(cat "$d/build-$isa.sha256" 2> /dev/null); fi
+        if [[ ! $got =~ ^[0-9a-f]{64}$ ]]; then printf '%s: receipt has no binary sha; ' "$host"; bad=1
+        elif [[ ! $want =~ ^[0-9a-f]{64}$ ]]; then printf '%s: no fresh %s build to compare; ' "$host" "${isa:-?}"; bad=1
+        elif [ "$got" != "$want" ]; then printf '%s: binary %s != fresh build %s; ' "$host" "${got:0:12}" "${want:0:12}"; bad=1; fi
+    done
+    [ "$n" -gt 0 ] || { printf 'no r7/*-gpu.meta.json receipt under %s' "$d"; return 1; }
+    [ "$bad" = 0 ]
+}
+
 first=1 newest=1 notes=""
 for sha in "${cands[@]}"; do
     d="$state/$sha"; install -d -- "$d"
@@ -188,6 +219,7 @@ for sha in "${cands[@]}"; do
         fi
     fi
     first=0
+    if pf=$(binary_preflight "$sha" "$d"); then :; else notes+="${sha:0:9} RED binary preflight: $pf; "; inbox_line "RED binary preflight ${sha:0:9}: $pf"; continue; fi
     w=$(mktemp -d) && G worktree add -q --detach "$w/wt" "$sha" > /dev/null 2>&1 || { notes+="${sha:0:9} no worktree; "; continue; }
     wsha=$(git -C "$w/wt" rev-parse HEAD)
     bash "$DRYRUN_GATE" --verify "$w/wt" > "$d/publish-dryrun.log" 2>&1; drc=$?

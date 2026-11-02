@@ -39,6 +39,8 @@ if [ "${1:-}" = --mutants ]; then
     mut flock-dropped 's/^flock -n 9 .*$/true/'
     mut age-cap-dropped 's/\[ "\$ct" -ge "\$cutoff" \] || continue/true/'
     mut pushtags-unchecked 's/ \\$/ ;/; /not installed\/verified in/d'
+    mut binary-preflight-dropped 's/^    if pf=$(binary_preflight.*$/    :/'
+    mut sha-mismatch-ignored 's/\[ "\$got" != "\$want" \]/false/'
     mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then say.*$/    :/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
@@ -149,13 +151,26 @@ cat > "$BIN/.promote-test-seams" <<EOF
 GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
 MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"; DISPATCH_WAIT=0
 SANDBOX=(env "HOME=$TMP/h" FX_HIDDEN=1)
+BUILD_APR=fx_build
+fx_build() { mkdir -p "\$2/release"; printf 'fake-apr-binary' > "\$2/release/apr"; chmod +x "\$2/release/apr"; [ "\${FX_BUILD_FAILS:-0}" != 1 ] && printf '%s' "\$2/release/apr"; }
 TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
 [ -z "\${FX_REAL_MODELS:-}" ] || MODELS_NIGHTLY="$HERE/models_nightly.sh"
 EOF
+FRESH=$(printf 'fake-apr-binary' | sha256sum | cut -d' ' -f1)
+mk_r7() { # sha: per FX_R7 = match (default) | mismatch | missing | none ; FX_R7_ISA overrides the isa
+    local d="$ST/$1/r7" got=$FRESH isa; isa=${FX_R7_ISA:-$(uname -m)}; mkdir -p "$d"
+    case "${FX_R7:-match}" in
+        mismatch) got=$(printf 'e%.0s' $(seq 64)) ;;
+        missing) got="" ;;
+        none) return 0 ;;
+    esac
+    jq -n --arg g "$got" --arg i "$isa" '{host:"h1",isa:$i,apr:({version_line:"apr x"} + (if $g == "" then {} else {binary_sha256:$g} end))}' > "$d/h1-gpu.meta.json"
+}
 sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environment)
     local n=$1 wr=$2 wp=$3 we=$4 rc; shift 4
     : > "$TMP/calls"; : > "$INB"; rm -rf "${ST:?}" "${TMP:?}/pt-flag"
     if [ "${FX_PRESEED:-0}" = 1 ]; then mkdir -p "$ST/$R2"; echo 999 > "$ST/$R2/cleanroom-run-id"; fi
+    for rs in $R0 $R1 $R2; do mk_r7 "$rs"; done
     FX_CALLS="$TMP/calls" FX_PT_FLAG="$TMP/pt-flag" FX_R1=$R1 FX_R2=$R2 FX_R0=$R0 \
         bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 "$@" > "$TMP/out-$n" 2>&1; rc=$?
     expect "$n rc" "$wr" "$rc"
@@ -200,6 +215,12 @@ FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched newest-red-falls-back-to-last-green 0 2 1
 grep -q "PROMOTE --sha $R1" "$TMP/calls" && ok || bad "fallback did not promote the older green sha"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R2 sched newest-red-no-clean-room-on-older 1 0 0 --execute
 FX_MODELS_RED_SHA="$R2 $R1" FX_SHA=$R0 sched age-cap-skips-old-green-sha 1 0 0 --execute
+# #6679 binary preflight: the receipts' binary sha must equal a fresh build of the candidate, per host/arch
+FX_R7=mismatch sched binary-sha-mismatch-red 1 0 0 --execute; inbox_has binary-sha-mismatch RED
+FX_R7=missing sched binary-sha-missing-red 1 0 0 --execute; inbox_has binary-sha-missing RED
+FX_R7=none sched binary-receipts-absent-red 1 0 0 --execute
+FX_BUILD_FAILS=1 sched fresh-build-fails-red 1 0 0 --execute
+FX_R7_ISA=riscv64 sched other-arch-no-fresh-build-red 1 0 0 --execute
 # checkout hygiene
 printf z >> "$W/f"; sched dirty-checkout 1 0 0 --execute; git -C "$W" checkout -q -- f
 g commit -q --allow-empty -m local; sched checkout-not-at-origin-main 1 0 0 --execute; g reset -q --hard origin/main
