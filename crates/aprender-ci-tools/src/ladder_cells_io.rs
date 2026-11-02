@@ -494,6 +494,47 @@ mod tests {
         assert_eq!(n, 1);
     }
 
+    /// Real-kernel ETXTBSY: an executable script with a write fd still open cannot be exec'd.
+    /// A thread closes the fd after ~100 ms; the retrying spawn must then succeed, while the
+    /// same spawn without the retry must fail with the kernel's own `ETXTBSY`.
+    #[test]
+    fn real_etxtbsy_retry_succeeds_once_writer_closes_and_plain_spawn_fails() {
+        use std::io::Write;
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("etxtbsy-real-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let script = dir.join("cell.sh");
+        let mut writer = std::fs::File::create(&script).expect("create");
+        writer.write_all(b"#!/bin/sh\nexit 0\n").expect("write");
+        writer.flush().expect("flush");
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).expect("chmod");
+
+        // Without the retry: the write fd is still open, so exec is refused by the kernel.
+        let err = std::process::Command::new(&script)
+            .spawn()
+            .expect_err("exec with an open writer must fail");
+        assert_eq!(err.raw_os_error(), Some(ETXTBSY), "got {err}");
+
+        // With the retry: a thread drops the writer after ~100 ms; the spawn then succeeds.
+        let closer = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            drop(writer);
+        });
+        let mut tries = 0;
+        let mut child = retry_etxtbsy(|| {
+            tries += 1;
+            std::process::Command::new(&script).spawn()
+        })
+        .expect("spawn succeeds after the writer closes");
+        closer.join().expect("closer thread");
+        assert!(child.wait().expect("wait").success());
+        assert!(
+            tries > 1,
+            "must have hit at least one real ETXTBSY, tries={tries}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn run_captures_both_pipes_and_stdin() {
         let r = run_with_timeout(
