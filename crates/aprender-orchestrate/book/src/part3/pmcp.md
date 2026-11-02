@@ -6,7 +6,7 @@
 
 ```toml
 [dependencies]
-pmcp = "2.3"
+pmcp = "2.23"
 ```
 
 ## Features

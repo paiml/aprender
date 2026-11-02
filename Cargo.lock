@@ -9477,13 +9477,13 @@ dependencies = [
 
 [[package]]
 name = "pmcp"
-version = "2.9.0"
+version = "2.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "88c9cf51f3ce3953091a5f58e4de10d11a739705058dc9d9a5c66103c7c1cba6"
+checksum = "bcedba798ccfe036c8317d71c89b7f966082c3b2422d3b704c11a26bb9f886b3"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "dashmap",
  "futures",
@@ -9515,6 +9515,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "web-time",
 ]
 
 [[package]]
