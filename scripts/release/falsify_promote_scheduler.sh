@@ -46,13 +46,17 @@ if [ "${1:-}" = --mutants ]; then
     mut cleanroom-fail-label-dropped 's/FL="no clean-room at" fail/fail/'
     mut fallback-cleanroom-dispatched-silent 's/fallback_line "clean-room dispatched at" "\$sha"; //'
     mut fallback-cleanroom-pending-silent 's/fallback_line "clean-room pending at" "\$sha"; //'
-    mut cleanroom-red-second-line 's/completed\*) crnote=/completed*) inbox_line "RED clean-room run $id on ${sha:0:9}"; crnote=/'
-    mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then fallback_line.*$/    :/'
+    mut restored-cleanroom-red-line-dropped 's/inbox_line "RED clean-room run \$id on \${sha:0:9} ended[^;]*; //'
+    mut restored-cleanroom-unread-line-dropped 's/inbox_line "RED clean-room run \$id on \${sha:0:9} cannot be read[^;]*; //'
+    mut restored-newest-crux-line-dropped 's/^        \[ "\$newest" = 1 \] \&\& inbox_line "RED newest nightly crux.*$/        :/'
+    mut dryrun-skipped-on-execute 's/^        say "\${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0$/        :/'
+    mut dry-run-dedupe-marker-never-written 's/\(fallback_line "using" "\$sha"; \)\[ "\$nskip" -eq 0 \] || : > "\$mk"/\1:/'
+    mut dry-run-dedupe-dropped 's/if \[ ! -e "\$mk" \]; then fallback_line "using"/if true; then fallback_line "using"/'
     mut fallback-already-promoted-behind-marker 's/^            fallback_line "already-promoted at" "\$sha"$/            [ -e "$d\/already-promoted" ] || fallback_line "already-promoted at" "$sha"/'
     mut fail-drops-skipped-names 's/if \[ "\${nskip:-0}" -gt 0 \]; then red_line "\${FL/if false; then red_line "${FL/'
     mut using-line-before-guard 's/^    (cd "\$repo" \&\& {/    fallback_line "using" "$sha"; (cd "$repo" \&\& {/'
     mut promote-exec-fail-second-line 's/else FRC=\$rc FL=using/else inbox_line "RED promote --execute failed"; FRC=$rc FL=using/'
-    mut dry-run-using-line-dropped 's/if \[ "\$exe" != 1 \]; then fallback_line "using" "\$sha"; say/if [ "$exe" != 1 ]; then say/'
+    mut dry-run-using-line-dropped 's/if \[ ! -e "\$mk" \]; then fallback_line "using" "\$sha";/if [ ! -e "$mk" ]; then :;/'
     mut final-fail-names-dropped 's/^FL="all candidates skipped, last" FS=\$last fail/nskip=0 fail/'
     mut unexpected-exit-net-dropped 's/|| inbox_line "RED promote: exited 1 without a verdict (state \$state)"//'
     mut dispatch-fail-label-dropped 's/FL="clean-room dispatch failed at" //'
@@ -221,6 +225,9 @@ FX_RED_JOB=ci-main sched ci-main-red 1 0 0 --execute
 FX_TRAIN_PATH=/nonexistent/train sched train-unavailable-fails-closed 1 0 0 --execute; inbox_has train-unavailable RED
 FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched train-red-newest-falls-back 0 2 1 --execute
 grep -q "TRAIN --out .* --commit $R1 --exit-verdict" "$TMP/calls" || grep -q "TRAIN.*--commit $R1.*--exit-verdict\|TRAIN.*--exit-verdict.*--commit $R1" "$TMP/calls" && ok || bad "train not called with --commit/--exit-verdict"
+# red_n: the RED lines THIS branch is accountable for. The two pre-existing origin/main lines ("RED clean-room run ..." and "RED newest nightly crux ...") are restored verbatim
+# and are in ADDITION to the single fallback line, so they are not counted here (they are asserted by their own rows against origin/main text).
+red_n() { grep '| RED ' "$INB" | grep -vcE '\| RED (clean-room run|newest nightly crux) '; }
 # C12 (aprender#6677): fallback past a red newer candidate (train-red, not a models-red) must leave a visible RED line naming the skip
 inbox_has train-red-fallback-visible "RED fallback: using ${R1:0:9}"
 inbox_has train-red-fallback-names-skipped "newer candidate(s) skipped: ${R2:0:9}"
@@ -240,7 +247,7 @@ FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched fallback-line-already-promoted 0 0 0 --ex
 inbox_has fallback-line-already-promoted "RED fallback: already-promoted at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 g push -q origin ":refs/tags/v1.2.3"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-fail 1 0 0 --execute
-expect "cleanroom-fail RED count" 1 "$(grep -c "| RED " "$INB")"
+expect "cleanroom-fail RED count" 1 "$(red_n)"
 inbox_has fallback-line-cleanroom-fail "RED fallback: no clean-room at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-dispatched 3 0 0 --execute --dispatch-cleanroom
 inbox_has fallback-line-cleanroom-dispatched "RED fallback: clean-room dispatched at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
@@ -248,10 +255,9 @@ FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_PRESEED=1 FX_PRESEED_SHA=$R1 FX_R
 inbox_has fallback-line-cleanroom-pending "RED fallback: clean-room pending at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 # (3) a red clean-room run on the skipped sha + fallback to the older one = exactly ONE RED line carrying both facts
 FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched cleanroom-red-fallback-one-line 0 2 1 --execute
-expect "cleanroom-red fallback RED line count" 1 "$(grep -c 'RED' "$INB")"
+expect "cleanroom-red fallback RED line count" 1 "$(red_n)"
 grep 'RED' "$INB" | grep -q "clean-room run 999 ended 'failure'" && grep 'RED' "$INB" | grep -q "RED fallback: using ${R1:0:9}" && ok || bad "single RED line lacks the clean-room fact or the fallback"
 # C12 round 4 (aprender#6677): the contract is ONE RED line on EVERY exit path, reported once the outcome is known
-red_n() { grep -c '| RED ' "$INB"; }
 # (a) an already-promoted marker left by an earlier tick on the OLDER candidate must not silence the fallback past the red newer one
 g push -q origin "$R1:refs/tags/v1.2.3"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_MARK_PROMOTED=$R1 sched fallback-line-already-promoted-marker-preseeded 0 0 0 --execute
@@ -325,7 +331,7 @@ else printf 'NOTE: origin/main unreadable here; the old-text anchor row is not m
 mv -- "$EV/models-crux/$R1" "$TMP/hold-r1"
 FX_MODELS=red sched single-candidate-final-fail-old-text 1 0 0 --execute
 mv -- "$TMP/hold-r1" "$EV/models-crux/$R1"
-expect "single-candidate final line" "RED promote: no candidate passed every gate: ${R2:0:9} models not green ();  (state $ST)" "$(sed 's/^[^|]*|[^|]*|[^|]*| //' "$INB")"
+expect "single-candidate final lines (restored crux line, then the pre-C12 final line)" "RED newest nightly crux ${R2:0:9} is not a verified green: falling back to the last verified green"$'\n'"RED promote: no candidate passed every gate: ${R2:0:9} models not green ();  (state $ST)" "$(sed 's/^[^|]*|[^|]*|[^|]*| //' "$INB")"
 # the per-path loop: name|env|want_rc|want_promote|want_exec|args -- RED count must be exactly 1 on every one of these exit paths
 red_paths=(
     "path-pushtags-guard-fails-after-fallback|FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 FX_PT_OK=0 FX_PT_INSTALL_FAILS=1|1|1|0|--execute"
@@ -361,7 +367,7 @@ inbox_has dispatch PENDING
 expect "run id recorded (named for the sha, not unrelated 998)" 999 "$(cat "$ST/$R2/cleanroom-run-id" 2> /dev/null)"
 FX_CR=none FX_PRESEED=1 FX_RUN_STATE="in_progress " sched cleanroom-running-pending 3 0 0 --execute --dispatch-cleanroom; inbox_has cleanroom-running PENDING
 FX_CR=none FX_STALE_RUN=1 sched dispatch-only-older-runs-not-adopted 1 0 0 --execute --dispatch-cleanroom
-FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute; inbox_has cleanroom-ended-red "RED fallback: no clean-room at ${R1:0:9}"
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute; inbox_has cleanroom-ended-red RED
 inbox_has cleanroom-ended-red-fact "clean-room run 999 ended 'failure'"
 FX_CR=none FX_PRESEED=1 FX_RUN_STATE="" sched cleanroom-unreadable 1 0 0 --execute
 FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched red-marker-does-not-block-older 0 2 1 --execute
@@ -397,9 +403,26 @@ GH="$TMP/gh" PROMOTE="$TMP/promote" RECEIPTS="$BIN/receipts_from_night.sh" DRYRU
 expect "env: no stub gh call" 0 "$(grep -c '^GH' "$TMP/calls")"
 # C12 (aprender#6677) round 2: the fallback is exactly ONE RED line, and a long skip list never loses a name to the 300-char cut
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched newest-models-red-fallback-one-red-line 0 2 1 --execute
-expect "newest-models-red-fallback RED line count" 1 "$(grep -c ' RED ' "$INB")"
+expect "newest-models-red-fallback RED line count" 1 "$(red_n)"
+# C12 r6 (c): the pre-existing origin/main line is restored verbatim and sits IN ADDITION to the one fallback line
+inbox_has restored-newest-crux-line "RED newest nightly crux ${R2:0:9} is not a verified green: falling back to the last verified green"
+expect "restored newest-crux line count" 1 "$(grep -c '| RED newest nightly crux ' "$INB")"
+# C12 r6 (b): the dry-run path has the same per-pair dedupe -- two identical dry runs give 1 RED fallback line, then 0
+FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched dry-run-pair-first 0 1 0
+expect "dry-run pair first run RED count" 1 "$(red_n)"
+FX_KEEP_STATE=1 FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched dry-run-pair-identical-second 0 1 0
+expect "dry-run pair identical second run RED count" 0 "$(red_n)"
+# C12 r6 (c): the restored strings are asserted against origin/main's own text, not against this file's memory of it
+OLDM=$(git -C "$HERE" show origin/main:scripts/release/promote_scheduler.sh 2> /dev/null)
+if [ -n "$OLDM" ]; then
+    for s in 'inbox_line "RED clean-room run $id on ${sha:0:9} ended '"'"'${st#completed }'"'"': this sha is skipped, older candidates still tried"' \
+        'inbox_line "RED clean-room run $id on ${sha:0:9} cannot be read (not_measured): this sha is skipped"' \
+        'inbox_line "RED newest nightly crux ${sha:0:9} is not a verified green: falling back to the last verified green"'; do
+        grep -qF -- "$s" <<< "$OLDM" && grep -qF -- "$s" "$SRC" && ok || bad "restored origin/main line missing from main or from the branch: $s"
+    done
+else printf 'NOTE: origin/main unreadable here; the restored-string anchor rows are not measured\n' >&2; fi
 FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched train-red-fallback-count 0 2 1 --execute
-expect "train-red fallback RED line count" 1 "$(grep -c ' RED ' "$INB")"
+expect "train-red fallback RED line count" 1 "$(red_n)"
 LONG=""
 for k in 1 2 3 4; do
     printf 'q%s' "$k" > "$W/f"; T=$(( $(date +%s) + 600 * k )) # bashrs disable-line=DET002
@@ -412,7 +435,7 @@ ge() { git -C "$EV" -c user.email=f@x -c user.name=f -c commit.gpgsign=false -c 
 ge add -A; ge commit -q -m ev-long; ge push -q origin nightly-evidence
 FX_TRAIN_RED_SHA="$LONG" FX_SHA=$R2 sched long-skip-list-fallback 0 2 1 --execute
 for L in $LONG; do inbox_has "long-skip-list-names-${L:0:9}" "${L:0:9}"; done
-expect "long-skip-list RED line count" 1 "$(grep -c ' RED ' "$INB")"
+expect "long-skip-list RED line count" 1 "$(red_n)"
 # lock: a second run while the first holds it does nothing
 mkdir -p "$ST"; : > "$TMP/calls"
 ( exec 8> "$ST/.lock"; flock -n 8; FX_CALLS="$TMP/calls" bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 --execute > "$TMP/out-lock" 2>&1; echo $? > "$TMP/lock-rc" )

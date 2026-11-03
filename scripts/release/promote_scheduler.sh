@@ -179,8 +179,8 @@ cleanroom_marker() { # SHA DIR FIRST
         st=$("$GH" run view "$id" --repo "$INFRA" --json status,conclusion --jq '"\(.status) \(.conclusion)"' 2> /dev/null) || st=""
         case $st in
             "completed success") return 0 ;;
-            completed*) crnote="clean-room run $id ended '${st#completed }'"; say "clean-room run $id on ${sha:0:9} ended red"; return 2 ;;
-            "") crnote="clean-room run $id cannot be read (not_measured)"; say "clean-room run $id unreadable"; return 2 ;;
+            completed*) crnote="clean-room run $id ended '${st#completed }'"; inbox_line "RED clean-room run $id on ${sha:0:9} ended '${st#completed }': this sha is skipped, older candidates still tried"; say "clean-room run $id on ${sha:0:9} ended red"; return 2 ;;
+            "") crnote="clean-room run $id cannot be read (not_measured)"; inbox_line "RED clean-room run $id on ${sha:0:9} cannot be read (not_measured): this sha is skipped"; say "clean-room run $id unreadable"; return 2 ;;
             *) say "clean-room run $id for ${sha:0:9} still running; pending"; fallback_line "clean-room pending at" "$sha"; inbox_line "PENDING clean-room run $id on ${sha:0:9} still running"; exit 3 ;;
         esac
     fi
@@ -198,15 +198,17 @@ cleanroom_marker() { # SHA DIR FIRST
     say "clean-room run $id dispatched on ${sha:0:9}; pending"; fallback_line "clean-room dispatched at" "$sha"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
 }
 
-first=1 last=""
+first=1 newest=1 last=""
 for sha in "${cands[@]}"; do
     [ -z "$last" ] || snames+="$last "; last=${sha:0:9}; nskip=$(wc -w <<< "$snames"); cur=$sha
     [ "$nskip" -eq 0 ] || printf '%s\n' "${snames% }" > "$state/pending-red" 2> /dev/null || true
     d="$state/$sha"; install -d -- "$d"
     if ! models_ok "$sha" "$d"; then
         notes+="${sha:0:9} models not green ($(tail -n 1 "$d/relay.log" | cut -c1-80)); "
-        continue
+        [ "$newest" = 1 ] && inbox_line "RED newest nightly crux ${sha:0:9} is not a verified green: falling back to the last verified green"
+        newest=0; continue
     fi
+    newest=0
     ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '/^\[/ { s = ($0 ~ /^\[workspace\.package\][[:space:]]*$/) } s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
     if [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$(G ls-remote origin "refs/tags/v$ver" 2> /dev/null)" ]; then
         say "${sha:0:9}: v$ver is already on origin: already promoted, nothing to do"
@@ -240,7 +242,11 @@ for sha in "${cands[@]}"; do
     fi
     # C12 r4 (aprender#6677): the fallback line is written only once the outcome is known (dry-run verdict, guard result, promote rc),
     # so a later failure is the SAME single RED line (fail() with FL=using), never a second one
-    if [ "$exe" != 1 ]; then fallback_line "using" "$sha"; say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
+    if [ "$exe" != 1 ]; then
+        mk="$d/fallback-reported-dry-${cands[0]:0:12}"
+        if [ ! -e "$mk" ]; then fallback_line "using" "$sha"; [ "$nskip" -eq 0 ] || : > "$mk"; fi
+        say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0
+    fi
     (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
         || FL=using FS=$sha fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"
     bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" --execute > "$d/promote-exec.log" 2>&1; rc=$?
