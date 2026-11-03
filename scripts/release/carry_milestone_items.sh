@@ -122,7 +122,7 @@ carry() { # REPO TITLE DRY
 self_test() {
     local d stub rc bad=0 out
     d=$(mktemp -d) || return 2
-    case "$d" in /tmp/?*) ;; *) echo "self-test: bad temp dir $d"; return 2 ;; esac
+    case "$d" in /tmp/?*|"${TMPDIR:-/tmp}"/?*) ;; *) echo "self-test: bad temp dir $d"; return 2 ;; esac
     stub="$d/bin"; mkdir -p "$stub"
     # a stub gh: serves the fixture reads and RECORDS every write (edit/comment) to $STUB_DIR/writes
     cat > "$stub/gh" <<'STUB'

@@ -99,6 +99,6 @@ jobs:
       # Verification Discipline #2: cite a behaviour delta, not intent).
       - name: Verify paiml.com/apr/install.sh matches the published source
         run: |
-          curl -fsSL https://paiml.com/apr/install.sh -o /tmp/deployed-install.sh
-          diff scripts/install.sh /tmp/deployed-install.sh
+          curl -fsSL https://paiml.com/apr/install.sh -o "$RUNNER_TEMP"/deployed-install.sh
+          diff scripts/install.sh "$RUNNER_TEMP"/deployed-install.sh
           echo "OK: https://paiml.com/apr/install.sh matches ${{ steps.ref.outputs.ref }}:scripts/install.sh"
