@@ -1,0 +1,19 @@
+- id: PMAT-6677
+  github_issue: 6677
+  item_type: task
+  title: promote_scheduler fallback past a red candidate is silent (C12)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T00:40:56Z
+  updated: 2026-11-03T00:40:56Z
+  spec: null
+  acceptance_criteria:
+  - 'C12: fallback past a skipped newer candidate writes one RED inbox line. Issue 6677.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
