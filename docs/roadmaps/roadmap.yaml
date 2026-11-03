@@ -27206,6 +27206,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-6593
+  github_issue: 6592
+  item_type: task
+  title: move apr-format, rag, test-lib and four crates off bincode 1.x onto in-tree aprender-legacy-codec
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-04T00:00:00Z
+  updated: 2026-11-04T00:00:00Z
+  spec: null
+  acceptance_criteria:
+  - no direct bincode 1.x dependency remains in the seven migrated crates
+  - aprender-legacy-codec reads and writes the bincode 1.3 layout byte-for-byte (golden fixtures)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'PR #6595 commits carry PMAT-Ticket PMAT-6593 (#6593 is the PR number, not an issue, so pmat could not mint it); the tracking issue is #6592.'
+  epic: 6519
 - id: PMAT-6677
   github_issue: 6677
   item_type: task
