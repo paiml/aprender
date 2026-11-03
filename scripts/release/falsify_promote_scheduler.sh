@@ -42,7 +42,7 @@ if [ "${1:-}" = --mutants ]; then
     mut fallback-silent 's/^    inbox_line "\$head_\$why"$/    :/'
     mut fallback-names-cut 's/snames% }/snames%% *}/'
     mut cut-marker-room-not-reserved 's/room=\$((room - 24))/room=$((room - 0))/'
-    mut fallback-already-promoted-silent 's/^            fallback_line "already-promoted at" "\$sha"$/            :/'
+    mut fallback-already-promoted-silent 's/^        fallback_once "already-promoted at" "\$sha" "fallback-reported-.*$/        :/'
     mut cleanroom-fail-label-dropped 's/FL="no clean-room at" fail/fail/'
     mut fallback-cleanroom-dispatched-silent 's/fallback_line "clean-room dispatched at" "\$sha"; //'
     mut fallback-cleanroom-pending-silent 's/fallback_line "clean-room pending at" "\$sha"; //'
@@ -50,13 +50,14 @@ if [ "${1:-}" = --mutants ]; then
     mut restored-cleanroom-unread-line-dropped 's/inbox_line "RED clean-room run \$id on \${sha:0:9} cannot be read[^;]*; //'
     mut restored-newest-crux-line-dropped 's/^        \[ "\$newest" = 1 \] \&\& inbox_line "RED newest nightly crux.*$/        :/'
     mut dryrun-skipped-on-execute 's/^        say "\${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0$/        :/'
-    mut dry-run-dedupe-marker-never-written 's/\(fallback_line "using" "\$sha"; \)\[ "\$nskip" -eq 0 \] || : > "\$mk"/\1:/'
-    mut dry-run-dedupe-dropped 's/if \[ ! -e "\$mk" \]; then fallback_line "using"/if true; then fallback_line "using"/'
-    mut fallback-already-promoted-behind-marker 's/^            fallback_line "already-promoted at" "\$sha"$/            [ -e "$d\/already-promoted" ] || fallback_line "already-promoted at" "$sha"/'
+    mut dry-run-dedupe-marker-never-written 's/\[ "\$nskip" -eq 0 \] || : > "\$mk"/:/'
+    mut dry-run-dedupe-dropped 's/if \[ ! -e "\$mk" \]; then fallback_line "\$1"/if true; then fallback_line "$1"/'
+    mut fallback-already-promoted-behind-marker 's/^        fallback_once "already-promoted at" "\$sha" "fallback-reported-.*$/        [ -e "$d\/already-promoted" ] || fallback_once "already-promoted at" "$sha" "x"/'
     mut fail-drops-skipped-names 's/if \[ "\${nskip:-0}" -gt 0 \]; then red_line "\${FL/if false; then red_line "${FL/'
     mut using-line-before-guard 's/^    (cd "\$repo" \&\& {/    fallback_line "using" "$sha"; (cd "$repo" \&\& {/'
     mut promote-exec-fail-second-line 's/else FRC=\$rc FL=using/else inbox_line "RED promote --execute failed"; FRC=$rc FL=using/'
-    mut dry-run-using-line-dropped 's/if \[ ! -e "\$mk" \]; then fallback_line "using" "\$sha";/if [ ! -e "$mk" ]; then :;/'
+    mut dry-run-using-line-dropped 's/^        fallback_once "using" "\$sha" "fallback-reported-dry-.*$/        :/'
+    mut execute-marker-dropped 's/fallback_once "using" "\$sha" "fallback-reported-\${cands\[0\]:0:12}"; inbox_line/fallback_line "using" "$sha"; inbox_line/'
     mut final-fail-names-dropped 's/^FL="all candidates skipped, last" FS=\$last fail/nskip=0 fail/'
     mut unexpected-exit-net-dropped 's/|| inbox_line "RED promote: exited 1 without a verdict (state \$state)"//'
     mut dispatch-fail-label-dropped 's/FL="clean-room dispatch failed at" //'
@@ -253,10 +254,19 @@ FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-dispat
 inbox_has fallback-line-cleanroom-dispatched "RED fallback: clean-room dispatched at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_PRESEED=1 FX_PRESEED_SHA=$R1 FX_RUN_STATE="in_progress " sched fallback-line-cleanroom-pending 3 0 0 --execute --dispatch-cleanroom
 inbox_has fallback-line-cleanroom-pending "RED fallback: clean-room pending at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
-# (3) a red clean-room run on the skipped sha + fallback to the older one = exactly ONE RED line carrying both facts
-FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched cleanroom-red-fallback-one-line 0 2 1 --execute
-expect "cleanroom-red fallback RED line count" 1 "$(red_n)"
-grep 'RED' "$INB" | grep -q "clean-room run 999 ended 'failure'" && grep 'RED' "$INB" | grep -q "RED fallback: using ${R1:0:9}" && ok || bad "single RED line lacks the clean-room fact or the fallback"
+# (3) a red clean-room run on the skipped sha + fallback to the older one = the restored pre-existing clean-room RED line plus exactly ONE fallback RED line
+FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched cleanroom-red-restored-line-plus-one-fallback 0 2 1 --execute
+expect "cleanroom-red fallback RED line count" 1 "$(grep -c 'RED fallback: using' "$INB")"
+grep -qE "\| RED clean-room run 999 on [0-9a-f]+ ended 'failure'" "$INB" && ok || bad "restored pre-existing clean-room RED line missing"
+expect "cleanroom-red restored-line-plus-fallback red_n" 1 "$(red_n)"
+# C12 r7 (aprender#6677): an execute tick that promotes past a skip, then the already-promoted tick on the same pair = 1 fallback RED line in total
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched execute-then-already-promoted-first 0 2 1 --execute
+inbox_has execute-then-already-promoted-first "RED fallback: using ${R1:0:9}"
+c1=$(grep -c 'RED fallback' "$INB")
+g push -q origin "$R1:refs/tags/v1.2.3"
+FX_KEEP_STATE=1 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched execute-then-already-promoted-second 0 0 0 --execute
+expect "execute+already-promoted fallback RED lines in total" 1 "$((c1 + $(grep -c 'RED fallback' "$INB")))"
+g push -q origin ":refs/tags/v1.2.3"
 # C12 round 4 (aprender#6677): the contract is ONE RED line on EVERY exit path, reported once the outcome is known
 # (a) an already-promoted marker left by an earlier tick on the OLDER candidate must not silence the fallback past the red newer one
 g push -q origin "$R1:refs/tags/v1.2.3"

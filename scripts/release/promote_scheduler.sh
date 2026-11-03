@@ -157,6 +157,11 @@ fallback_line() {
     say "fallback past newer candidate(s) ($1 ${2:0:9}): $notes"
     red_line "$1" "$2" ""
 }
+# fallback_once LABEL SHA MARKER: fallback_line at most once per (sha dir, MARKER); the marker is written only when a candidate was actually skipped.
+fallback_once() {
+    local mk="$d/$3"
+    if [ ! -e "$mk" ]; then fallback_line "$1" "$2"; [ "$nskip" -eq 0 ] || : > "$mk"; fi
+}
 # cleanroom_for SHA OUT: a successful clean-room (aprender) job whose log says tested-sha == exactly SHA
 cleanroom_for() {
     local sha=$1 out=$2 id jid jc shas
@@ -212,11 +217,7 @@ for sha in "${cands[@]}"; do
     ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '/^\[/ { s = ($0 ~ /^\[workspace\.package\][[:space:]]*$/) } s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
     if [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$(G ls-remote origin "refs/tags/v$ver" 2> /dev/null)" ]; then
         say "${sha:0:9}: v$ver is already on origin: already promoted, nothing to do"
-        mk="$d/fallback-reported-${cands[0]:0:12}"
-        if [ ! -e "$mk" ]; then
-            fallback_line "already-promoted at" "$sha"
-            [ "$nskip" -eq 0 ] || : > "$mk"
-        fi
+        fallback_once "already-promoted at" "$sha" "fallback-reported-${cands[0]:0:12}"
         [ -e "$d/already-promoted" ] || { : > "$d/already-promoted"; inbox_line "DONE already promoted: v$ver is on origin (newest verified ${sha:0:9}); nothing to do"; }
         exit 0
     fi
@@ -243,15 +244,14 @@ for sha in "${cands[@]}"; do
     # C12 r4 (aprender#6677): the fallback line is written only once the outcome is known (dry-run verdict, guard result, promote rc),
     # so a later failure is the SAME single RED line (fail() with FL=using), never a second one
     if [ "$exe" != 1 ]; then
-        mk="$d/fallback-reported-dry-${cands[0]:0:12}"
-        if [ ! -e "$mk" ]; then fallback_line "using" "$sha"; [ "$nskip" -eq 0 ] || : > "$mk"; fi
+        fallback_once "using" "$sha" "fallback-reported-dry-${cands[0]:0:12}"
         say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0
     fi
     (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
         || FL=using FS=$sha fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"
     bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" --execute > "$d/promote-exec.log" 2>&1; rc=$?
     tail -n 6 "$d/promote-exec.log"
-    if [ "$rc" = 0 ]; then fallback_line "using" "$sha"; inbox_line "DONE promoted ${sha:0:9}: $(grep -m1 TAGGED "$d/promote-exec.log" | cut -c1-120)"
+    if [ "$rc" = 0 ]; then fallback_once "using" "$sha" "fallback-reported-${cands[0]:0:12}"; inbox_line "DONE promoted ${sha:0:9}: $(grep -m1 TAGGED "$d/promote-exec.log" | cut -c1-120)"
     else FRC=$rc FL=using FS=$sha fail "promote --execute failed rc=$rc at ${sha:0:9} ($d/promote-exec.log)"; fi
     exit "$rc"
 done
