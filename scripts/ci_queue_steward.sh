@@ -90,7 +90,18 @@ def q4:
     {rule: "Q4", type: "report", target: $box, labels: ($labels | join(","))}
   else empty end;
 
-q1, q2, q3, q4
+def q5:
+  # #6494 (ANDON T5): a release bump waits behind unrelated trains. Entries AHEAD of a queued release bump
+  # that are neither P0 nor a bump themselves are dequeued so the bump runs next.
+  ($s1|.[0]).data.repository.mergeQueue.entries.nodes as $all |
+  ($all | map(select((.pullRequest.title // "") | test("^release: *bump"))) | map(.position) | min) as $bp |
+  select($bp != null) |
+  $all[] | select(.position < $bp) |
+  select((.pullRequest.title // "") | test("^release: *bump") | not) |
+  select(((.pullRequest.labels.nodes // []) | map(.name) | index("P0")) == null) |
+  {rule: "Q5", type: "dequeue", target: (.pullRequest.number | tostring), target_id: .pullRequest.id};
+
+q1, q2, q3, q4, q5
 '
 
 process_tick() {
@@ -135,14 +146,14 @@ process_tick() {
   jq -n -c --slurpfile s1 "$out_dir/s1.json" --slurpfile s2 "$out_dir/s2.json" --slurpfile s3 "$out_dir/s3.json" \
     --arg milestone "$MILESTONE" --argjson now "$tick" "$JQ_FILTER" | sort -u > "$out_dir/actions.json" || true
     
-  local q1=0 q2=0 q3=0 q4=0 writes=0 refused=0
+  local q1=0 q2=0 q3=0 q4=0 q5=0 writes=0 refused=0
   local mode="observe"
   if [[ "$APPLY" == 1 ]]; then mode="apply"; fi
   
   if [[ -z "$prev" ]]; then
     echo "quorum: first sample, no action"
-    echo "ci_queue_steward: tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 writes=$writes refused=$refused"
-    printf '{"tick":%s,"mode":"%s","q1":0,"q2":0,"q3":0,"q4":0,"writes":0,"refused":0,"note":"first sample, no action"}\n' "$tick" "$mode" >> "$STATE_DIR/receipts.jsonl"
+    echo "ci_queue_steward: tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 q5=$q5 writes=$writes refused=$refused"
+    printf '{"tick":%s,"mode":"%s","q1":0,"q2":0,"q3":0,"q4":0,"q5":0,"writes":0,"refused":0,"note":"first sample, no action"}\n' "$tick" "$mode" >> "$STATE_DIR/receipts.jsonl"
     return
   fi
   
@@ -174,7 +185,7 @@ process_tick() {
       continue
     fi
     
-    if [[ "$rule" == "Q1" ]]; then ((q1+=1)); elif [[ "$rule" == "Q2" ]]; then ((q2+=1)); elif [[ "$rule" == "Q3" ]]; then ((q3+=1)); elif [[ "$rule" == "Q4" ]]; then ((q4+=1)); fi
+    if [[ "$rule" == "Q1" ]]; then ((q1+=1)); elif [[ "$rule" == "Q2" ]]; then ((q2+=1)); elif [[ "$rule" == "Q3" ]]; then ((q3+=1)); elif [[ "$rule" == "Q4" ]]; then ((q4+=1)); elif [[ "$rule" == "Q5" ]]; then ((q5+=1)); fi
     
     if [[ "$rule" == "Q4" ]]; then
       labels=$(echo "$action" | jq -r '.labels')
@@ -211,6 +222,10 @@ process_tick() {
         run_id=$(echo "$action" | jq -r '.run_id')
         gh api graphql -f id="$target_id" -f query='mutation($id: ID!) { dequeuePullRequest(input: {pullRequestId: $id}) { clientMutationId } }'
         gh pr comment "$target" --body "Dequeued due to failure in required check: $job (run $run_id)"
+      elif [[ "$rule" == "Q5" ]]; then
+        target_id=$(echo "$action" | jq -r '.target_id')
+        gh api graphql -f id="$target_id" -f query='mutation($id: ID!) { dequeuePullRequest(input: {pullRequestId: $id}) { clientMutationId } }'
+        gh pr comment "$target" --body "Dequeued so the queued release bump runs next (#6494). Non-P0 entries ahead of a release bump drain; re-arm after the bump merges."
       elif [[ "$rule" == "Q3" ]]; then
         target_id=$(echo "$action" | jq -r '.target_id')
         gh api graphql -f id="$target_id" -f query='mutation($id: ID!) { enqueuePullRequest(input: {pullRequestId: $id}) { clientMutationId } }' || echo "refused by github"
@@ -219,10 +234,10 @@ process_tick() {
     
   done < <(jq -c '.' "$out_dir/actions.json")
   
-  local rline="{\"ci_queue_steward\": \"tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 writes=$writes refused=$refused\"}"
+  local rline="{\"ci_queue_steward\": \"tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 q5=$q5 writes=$writes refused=$refused\"}"
   echo "$rline" >> "$STATE_DIR/receipts.jsonl"
   # echo the text version
-  echo "ci_queue_steward: tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 writes=$writes refused=$refused"
+  echo "ci_queue_steward: tick=$tick mode=$mode q1=$q1 q2=$q2 q3=$q3 q4=$q4 q5=$q5 writes=$writes refused=$refused"
 }
 
 if [[ "$SELFTEST" == 1 ]]; then
@@ -253,6 +268,8 @@ if [[ "$SELFTEST" == 1 ]]; then
       case7_pending) ! grep -q "action=planned" "$last_out" && echo "ok case7" || { echo "FAIL case7"; test_fail=1; } ;;
       case8_idle_gx10) grep -q "IDLE-NEXT-TO-QUEUE gx10" "$last_out" && echo "ok case8" || { echo "FAIL case8"; test_fail=1; } ;;
       case9_idle_noq) ! grep -q "IDLE-NEXT-TO-QUEUE" "$last_out" && echo "ok case9" || { echo "FAIL case9"; test_fail=1; } ;;
+      case11_drain_ahead_of_bump) grep -q "decision: Q5 201 quorum=2/2 action=planned" "$last_out" && echo "ok case11" || { echo "FAIL case11"; test_fail=1; } ;;
+      case12_p0_not_drained|case13_behind_bump_kept|case14_no_bump) ! grep -q "Q5" "$last_out" && echo "ok $case_name" || { echo "FAIL $case_name"; test_fail=1; } ;;
       case10_two_orphans) MAX_WRITES=1; process_tick "1400" "$case_dir/1400/s1.json" "$case_dir/1400/s2.json" "$case_dir/1400/s3.json" > "$STATE_DIR/out_1400_cap.log"; grep -q "refused:cap" "$STATE_DIR/out_1400_cap.log" && echo "ok case10" || { echo "FAIL case10"; test_fail=1; } ;;
     esac
   done
@@ -287,7 +304,7 @@ if [[ -z "$FIXTURES" ]]; then
       mergeQueue(branch: "main") {
         entries(first: 50) {
           nodes {
-            pullRequest { number id }
+            pullRequest { number id title labels(first: 20) { nodes { name } } }
             state
             position
             enqueuedAt
