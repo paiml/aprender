@@ -6,7 +6,7 @@ cd "$(dirname "$0")/../.."
 FILES=(.github/workflows/cuda-nightly.yml .github/workflows/coverage-nightly.yml .github/workflows/nightly-bench.yml scripts/check_coverage_receipt.sh
        .github/workflows/book.yml .github/workflows/deploy-apr-install.yml .github/workflows/qwen-story-daily.yml)
 M=scripts/release/models_t1.sh
-BAD='/tmp/(cov\.log|gaps\.txt|bench\.log|pp26-prev-witness|bashrs\.log|deployed-install\.sh|story\.log|qwen-story-artifacts|prev/|issue-body\.md)'
+BAD='/tmp/(cov\.log|gaps\.txt|bench\.log|pp26-prev-witness|bashrs\.log|deployed-install\.sh|story\.log|qwen-story-artifacts|prev([/[:space:]]|$)|issue-body\.md)'
 
 # scan <file...> : rc 1 and a line per hit when a fixed /tmp name is used outside a comment
 scan() {
@@ -36,6 +36,12 @@ mutants() {
     for f in "${FILES[@]}"; do
         sed -E 's#"\$RUNNER_TEMP"/#/tmp/#g; s#\$\{\{ runner\.temp \}\}/#/tmp/#g' "$f" > "$d/m"
         if scan "$d/m" >/dev/null; then echo "MUTANT SURVIVED: $f"; rc=1; fi
+        # one line at a time: a name hidden behind another hit in the same file must still be caught
+        case "$f" in .github/workflows/book.yml|.github/workflows/deploy-apr-install.yml|.github/workflows/qwen-story-daily.yml) ;; *) continue ;; esac
+        for n in $(grep -nE '"\$RUNNER_TEMP"/|\$\{\{ runner\.temp \}\}/' "$f" | cut -d: -f1); do
+            sed -E "${n}s#\"\\\$RUNNER_TEMP\"/#/tmp/#g; ${n}s#\\\$\\{\\{ runner\\.temp \\}\\}/#/tmp/#g" "$f" > "$d/m"
+            if scan "$d/m" >/dev/null; then echo "MUTANT SURVIVED: $f:$n"; rc=1; fi
+        done
     done
     sed -E 's# -p "\$\{RUNNER_TEMP:-\$\{TMPDIR:-/tmp\}\}"##' "$M" > "$d/m"
     if models_ok "$d/m"; then echo "MUTANT SURVIVED: models_t1 drop -p"; rc=1; fi
