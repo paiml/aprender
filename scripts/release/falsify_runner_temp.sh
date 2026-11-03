@@ -31,7 +31,7 @@ check() {
 mutants() {
     local d f rc=0
     d=$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || exit 2
-    trap 'rm -rf "$d"' RETURN
+    trap 'rm -rf -- "${d:?}"' RETURN
     for f in "${FILES[@]}"; do
         sed -E 's#"\$RUNNER_TEMP"/#/tmp/#' "$f" > "$d/m"
         if scan "$d/m" >/dev/null; then echo "MUTANT SURVIVED: $f"; rc=1; fi
