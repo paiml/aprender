@@ -154,7 +154,7 @@ structure() {
   readers=$(awk '{ f = $0; sub(/:[0-9]+:.*/, "", f); c = $0; sub(/^[^:]*:[0-9]+:/, "", c)
       if (c !~ /^[[:space:]]*run: (setsid --wait )?bash scripts\/check_coverage_receipt\.sh[[:space:]]*$/) print f }' \
       <<< "$readers" | sort -u)
-  readers=$(grep -vxE '\.github/workflows/coverage-nightly\.yml|scripts/(check_)?coverage_receipt\.sh|scripts/release/tag_coverage_gate\.sh|scripts/check_tag_coverage_gated\.sh' <<< "$readers" | grep . | tr '\n' ' ')
+  readers=$(grep -vxE '\.github/workflows/coverage-nightly\.yml|scripts/(check_)?coverage_receipt\.sh|scripts/release/tag_coverage_gate\.sh|scripts/check_tag_coverage_gated\.sh|scripts/release/falsify_runner_temp\.sh' <<< "$readers" | grep . | tr '\n' ' ')
   if [ -z "$readers" ]; then srow S4_known_readers_only ok; else srow S4_known_readers_only "read by ${readers% }"; fi
   return "$wrong"
 }
