@@ -164,7 +164,7 @@ jobs:
           # Ahead of ~/.cargo/bin for every later step in this job.
           echo "$COV_TOOLS/bin" >> "$GITHUB_PATH"
 
-      # The coverage receipt (below) must never carry a previous run's number: /tmp/cov.log
+      # The coverage receipt (below) must never carry a previous run's number: $RUNNER_TEMP/cov.log
       # outlives the job, so a log that is not newer than this marker is not this run's.
       - name: Mark the coverage step start (receipt freshness)
         run: touch "$RUNNER_TEMP/cov-start"
@@ -215,10 +215,10 @@ jobs:
           # through a pipe is the recurring defect this repo has shipped twice
           # (#2336 qwen-story-daily, #2360 make publish).
           set +e
-          make coverage COV_TARGET_DIR= 2>&1 | tee /tmp/cov.log
+          make coverage COV_TARGET_DIR= 2>&1 | tee "$RUNNER_TEMP"/cov.log
           cov_rc=${PIPESTATUS[0]}
           set -e
-          pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' /tmp/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
+          pct="$(grep -oE 'TOTAL: [0-9]+/[0-9]+ lines covered \([0-9]+%\)' "$RUNNER_TEMP"/cov.log | tail -1 | grep -oE '[0-9]+%' || true)"
           echo "pct=${pct:-unknown}" >> "$GITHUB_OUTPUT"
           # Still fails the job on a real coverage regression: the gate stays
           # ARMED, it just reports a value first.
@@ -260,7 +260,7 @@ jobs:
           set -uo pipefail
           # shellcheck disable=SC2016 # $(COV_FLOOR) is for make, not the shell
           floor="$(make -s --eval='print-floor: ; @echo $(COV_FLOOR)' print-floor 2>/dev/null || echo unknown)"
-          bash scripts/coverage_receipt.sh /tmp/cov.log "$(git rev-parse HEAD)" "$floor" \
+          bash scripts/coverage_receipt.sh "$RUNNER_TEMP"/cov.log "$(git rev-parse HEAD)" "$floor" \
             "$RUNNER_TEMP/cov-receipt" "$RUNNER_TEMP/cov-start"
 
       - name: Publish the coverage receipt
@@ -295,10 +295,10 @@ jobs:
         run: |
           export PATH="$COV_TOOLS/bin:$HOME/.cargo/bin:$HOME/.local/bin:$PATH"
           if command -v pmat >/dev/null 2>&1; then
-            pmat query --coverage-gaps --exclude-tests --limit 30 > /tmp/gaps.txt 2>/dev/null \
-              || echo "(pmat --coverage-gaps returned no data — coverage profile missing?)" > /tmp/gaps.txt
+            pmat query --coverage-gaps --exclude-tests --limit 30 > "$RUNNER_TEMP"/gaps.txt 2>/dev/null \
+              || echo "(pmat --coverage-gaps returned no data — coverage profile missing?)" > "$RUNNER_TEMP"/gaps.txt
           else
-            echo "(pmat unavailable on runner — gap ranking skipped; coverage % above is authoritative)" > /tmp/gaps.txt
+            echo "(pmat unavailable on runner — gap ranking skipped; coverage % above is authoritative)" > "$RUNNER_TEMP"/gaps.txt
           fi
 
       - name: Job summary
@@ -320,7 +320,7 @@ jobs:
             echo ""
             echo "### Top uncovered functions (\`pmat query --coverage-gaps --exclude-tests\`)"
             echo '```'
-            head -30 /tmp/gaps.txt
+            head -30 "$RUNNER_TEMP"/gaps.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -338,7 +338,7 @@ jobs:
             "" \
             "### Top uncovered (pmat --coverage-gaps --exclude-tests)" \
             '```' \
-            "$(head -30 /tmp/gaps.txt)" \
+            "$(head -30 "$RUNNER_TEMP"/gaps.txt)" \
             '```' \
             "" \
             "The autonomous loop fixes top gaps as small \`test(...)\` PRs. Per Rule 7, coverage and contracts co-evolve — each gap fix also adds/strengthens a contract." )"
