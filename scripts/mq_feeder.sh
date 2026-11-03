@@ -50,7 +50,7 @@ pass_count() {
   local r; r=$(na_lines "$1" | grep -iE "^(COMMENTED|APPROVED)"$'\t'"$WHO:[ ]+(PASS|APPROVED?)${END}" | grep -viE "$NEG") || true
   if [ -n "${2:-}" ]; then r=$(grep -iE "^[A-Z]+"$'\t'"(claude-)?opus(-[0-9][^:]*| [^:]*)?:" <<<"$r") || true; fi
   # an "@sha" in the body must be a prefix of HEAD (MQ_HEAD): a PASS that names another commit is not a PASS for this one
-  if [ -n "$r" ]; then r=$(awk -v h="${MQ_HEAD:-}" '{ if (match($0, /@[0-9a-f]+[.;:,! ]*$/)) { s = substr($0, RSTART + 1); sub(/[^0-9a-f].*$/, "", s); if (index(h, s) != 1) next } print }' <<<"$r"); fi
+  if [ -n "$r" ]; then r=$(awk -v h="${MQ_HEAD:-}" '{ l = tolower($0); if (index(l, "@")) { if (!match(l, /@[0-9a-f]+[^0-9a-f@]*$/)) next; s = substr(l, RSTART + 1); sub(/[^0-9a-f].*$/, "", s); if (index(h, s) != 1) next } print }' <<<"$r"); fi
   [ -n "$r" ] && wc -l <<<"$r" || echo 0
 }
 # bump_patch PATCH -> 0 when every changed line of a unified-diff PATCH is a `version = "X"` -> `version = "Y"` edit
@@ -333,6 +333,11 @@ if [ "${1:-}" = --self-test ]; then
   # round-5 review: an @sha naming another commit, and hedges riding in the label / session slot
   eq 'PASS naming another @sha -> skip' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS @2222222222\n' ns)" 0
   eq 'HIGH: Opus PASS naming another @sha -> skip' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tOpus 5.5 (s2, non-author): PASS @2222222\n' ns)" 0
+  for q in '@DEADBEEF12' '@2222222A' '@2222222\f' '@2222222\v' '@zz'; do
+    eq "PASS $q -> skip (fail closed)" "$(REVIEWS="COMMENTED\tSeat 1 (s1, non-author): PASS $q\n" ns)" 0
+  done
+  eq 'HIGH: Opus PASS @DEADBEEF12 -> skip' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tOpus 5.5 (s2, non-author): PASS @DEADBEEF12\n' ns)" 0
+  eq 'PASS with uppercase @sha prefix of HEAD -> armable' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS @ABCDEF1\n' ns)" 1
   eq 'PASS with @sha prefix of HEAD -> armable' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS @abcdef1\n' ns)" 1
   for q in 'Draft verdict only (s1, non-author): PASS' 'Partial skim only (s1, non-author): PASS' 'Seat 1 (unverified, non-author): PASS' 'Opus unverified guess (s2, non-author): PASS'; do
     eq "'$q' -> skip" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
