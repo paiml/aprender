@@ -179,6 +179,12 @@ pub enum Commands {
         #[arg(long, default_value = "text")]
         format: String,
     },
+    /// Check stated invariants against each equation's formula (equality/bounds subset; unparsed is not a pass)
+    CheckSymbolic {
+        contract: PathBuf,
+        #[arg(long)]
+        json: bool,
+    },
     /// Display equations from a contract
     Equations {
         contract: PathBuf,
