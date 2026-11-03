@@ -284,7 +284,7 @@ fn eval_at(e: &Expr, env: &Env, defs: &[Clause], depth: usize) -> Option<f64> {
         Expr::Var(v) => *env.get(v)?,
         Expr::Neg(a) => -eval_at(a, env, defs, depth)?,
         Expr::Bin(o, a, b) => {
-            let (x, y) = (eval_at(a, env, defs, depth)?, eval(b, env, defs)?);
+            let (x, y) = (eval_at(a, env, defs, depth)?, eval_at(b, env, defs, depth)?);
             match o {
                 '+' => x + y,
                 '-' => x - y,
@@ -740,6 +740,15 @@ mod tests {
     fn a_self_recursive_definition_is_unparsed_not_a_stack_overflow() {
         assert!(matches!(
             check_invariant("F(n) = F(n + 1)", "F(1) = 0"),
+            Verdict::Unparsed { .. }
+        ));
+    }
+
+    #[test]
+    fn a_right_operand_recursion_is_unparsed_not_a_stack_overflow() {
+        // The depth must thread through the RIGHT operand too: `F(n) = n + F(n + 1)` recurses only there.
+        assert!(matches!(
+            check_invariant("F(n) = n + F(n + 1)", "F(1) = 0"),
             Verdict::Unparsed { .. }
         ));
     }
