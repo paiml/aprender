@@ -89,7 +89,7 @@ if [ "${CRB_NO_EDIT:-}" != 1 ]; then
     release_params "$next" "$REPO_ROOT" || blocked "release_params $next failed"
     cl="$AP/bump/CHANGELOG.md"
     mark='<!-- one-paragraph summary of the train: EDIT BEFORE --ship -->'
-    msg="Patch for v${failed#v}: clean-room (aprender) went red on the tag (infra run $run); this bump was opened automatically by the ANDON T1 branch (#6491)."
+    msg=${CRB_REASON:-"Patch for v${failed#v}: clean-room (aprender) went red on the tag (infra run $run); this bump was opened automatically by the ANDON T1 branch (#6491)."}
     [ -f "$cl" ] || blocked "no drafted CHANGELOG at $cl"
     n=$(grep -cF "$mark" "$cl"); [ "$n" = 1 ] || blocked "$cl carries $n placeholder lines, expected 1"
     sed -i "s|$mark|$msg|" "$cl" || blocked "cannot fill the CHANGELOG placeholder"
