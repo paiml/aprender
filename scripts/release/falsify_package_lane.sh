@@ -275,11 +275,14 @@ SH
 
 # the real repo graph, list mode only
 real_rows() {
-    local o n
+    local o n floor
     o=$(fresh 30); run --root "$ROOT" --out "$o" --list-only
     expect_rc "real repo: derive + self-verify" 0
     n=$(wc -l < "$o/order.txt" 2> /dev/null || echo 0)
-    if [ "$n" -ge 70 ]; then ok; else bad "real repo" "only $n crates enumerated"; fi
+    # derived, not a literal (R3): the lane must enumerate at least half of the crates/*/Cargo.toml manifests
+    floor=$(find "$ROOT/crates" -maxdepth 2 -name Cargo.toml | wc -l)
+    floor=$((floor / 2))
+    if [ "$n" -ge "$floor" ] && [ "$floor" -gt 0 ]; then ok; else bad "real repo" "only $n crates enumerated (floor $floor)"; fi
     # #3892: profile -> db is the trueno-db alias (crates/aprender-profile/Cargo.toml:86 -> root Cargo.toml:293, package = "aprender-db")
     local pd pp
     pd=$(grep -n -x 'aprender-db' "$o/order.txt" | cut -d: -f1); pp=$(grep -n -x 'aprender-profile' "$o/order.txt" | cut -d: -f1)
@@ -312,7 +315,7 @@ mutants() {
         's/\$pos\[\.\] > \$pos\[\$c\]/$pos[.] < $pos[$c]/@@verify comparator inverted'
         's/select(\.kind != "dev" and /select(/@@dev edges counted'
         's/\$fix\.lv\[\.\], \.\]/.]/@@level ordering dropped'
-        's/select(\$pos\[\.\] == null) | "missing/select($pos[.] == 9999) | "missing/@@missing check dead'
+        's/select(\$pos\[\.\] == null) | "missing/select(false) | "missing/@@missing check dead'
         's/ --no-verify / /@@--no-verify dropped'
         's/ --locked / /@@--locked dropped'
         's/\[\[ "\$n" -ge "\$floor" \]\] || die/true || die/@@vacuity floor dead'
