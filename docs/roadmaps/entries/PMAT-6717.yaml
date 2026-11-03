@@ -1,0 +1,18 @@
+- id: PMAT-6717
+  github_issue: 6717
+  item_type: task
+  title: C61-7 runner temp for four workflows
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T18:16:19Z
+  updated: 2026-11-03T18:16:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
