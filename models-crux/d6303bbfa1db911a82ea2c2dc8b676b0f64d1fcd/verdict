@@ -1,0 +1,8 @@
+commit=d6303bbfa1db911a82ea2c2dc8b676b0f64d1fcd
+sha9=d6303bbfa
+version=0.72.3
+entry=scripts/release/models_t1.sh@f79404fdafb9f6936a9196859f70a72e6952108e
+measure=crux
+t1_rc=0
+state=green
+reason=models_t1 GO (CRUX smoke) on lambda and gx10, both receipts bound to apr 0.72.3 (d6303bbfa)
