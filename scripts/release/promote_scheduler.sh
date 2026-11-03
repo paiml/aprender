@@ -123,6 +123,18 @@ lanes_ok() {
     rm -rf -- "${d:?}/train"; install -d -- "$work/cargo"
     "${SANDBOX[@]}" bash "$TRAIN" --out "$d/train" --commit "$sha" --exit-verdict > "$d/train.log" 2>&1 || { printf 'train: %s' "$(grep -m1 -E 'RELEASABLE|trap|read=' "$d/train.log" | cut -c1-120)"; return 1; }
 }
+# fallback_line LABEL SHA: C12 (aprender#6677) -- when a newer candidate was skipped, EVERY path that stops or promotes writes exactly ONE RED inbox line:
+# every skipped name first, then the prose; the whole line, cut marker included, fits inbox_line's 300 chars (prefix 41 + slack).
+fallback_line() {
+    [ "${nskip:-0}" -gt 0 ] || return 0
+    local head_ room why
+    head_="RED fallback: $1 ${2:0:9}, $nskip newer candidate(s) skipped: ${snames% } | why: "
+    room=$((300 - 42 - ${#head_}))
+    if [ "${#notes}" -le "$room" ]; then why=$notes
+    else room=$((room - 24)); [ "$room" -gt 0 ] || room=0; why="${notes:0:room}(+$(( ${#notes} - room )) chars cut)"; fi
+    say "fallback past newer candidate(s) ($1 ${2:0:9}): $notes"
+    inbox_line "$head_$why"
+}
 # cleanroom_for SHA OUT: a successful clean-room (aprender) job whose log says tested-sha == exactly SHA
 cleanroom_for() {
     local sha=$1 out=$2 id jid jc shas
@@ -145,9 +157,9 @@ cleanroom_marker() { # SHA DIR FIRST
         st=$("$GH" run view "$id" --repo "$INFRA" --json status,conclusion --jq '"\(.status) \(.conclusion)"' 2> /dev/null) || st=""
         case $st in
             "completed success") return 0 ;;
-            completed*) inbox_line "RED clean-room run $id on ${sha:0:9} ended '${st#completed }': this sha is skipped, older candidates still tried"; say "clean-room run $id on ${sha:0:9} ended red"; return 2 ;;
-            "") inbox_line "RED clean-room run $id on ${sha:0:9} cannot be read (not_measured): this sha is skipped"; say "clean-room run $id unreadable"; return 2 ;;
-            *) say "clean-room run $id for ${sha:0:9} still running; pending"; inbox_line "PENDING clean-room run $id on ${sha:0:9} still running"; exit 3 ;;
+            completed*) crnote="clean-room run $id ended '${st#completed }'"; say "clean-room run $id on ${sha:0:9} ended red"; return 2 ;;
+            "") crnote="clean-room run $id cannot be read (not_measured)"; say "clean-room run $id unreadable"; return 2 ;;
+            *) say "clean-room run $id for ${sha:0:9} still running; pending"; fallback_line "clean-room pending at" "$sha"; inbox_line "PENDING clean-room run $id on ${sha:0:9} still running"; exit 3 ;;
         esac
     fi
     [ "$3" = 1 ] && [ "$disp" = 1 ] || return 0
@@ -161,10 +173,10 @@ cleanroom_marker() { # SHA DIR FIRST
     done
     [[ $id =~ ^[1-9][0-9]*$ ]] || fail "clean-room dispatched on ${sha:0:9} but its run id cannot be read"
     printf '%s\n' "$id" > "$d/cleanroom-run-id"
-    say "clean-room run $id dispatched on ${sha:0:9}; pending"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
+    say "clean-room run $id dispatched on ${sha:0:9}; pending"; fallback_line "clean-room dispatched at" "$sha"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
 }
 
-first=1 notes="" snames="" last=""
+first=1 notes="" snames="" last="" crnote=""
 for sha in "${cands[@]}"; do
     [ -z "$last" ] || snames+="$last "; last=${sha:0:9}; nskip=$(wc -w <<< "$snames")
     d="$state/$sha"; install -d -- "$d"
@@ -175,15 +187,15 @@ for sha in "${cands[@]}"; do
     ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '/^\[/ { s = ($0 ~ /^\[workspace\.package\][[:space:]]*$/) } s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
     if [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$(G ls-remote origin "refs/tags/v$ver" 2> /dev/null)" ]; then
         say "${sha:0:9}: v$ver is already on origin: already promoted, nothing to do"
-        [ -e "$d/already-promoted" ] || { : > "$d/already-promoted"; inbox_line "DONE already promoted: v$ver is on origin (newest verified ${sha:0:9}); nothing to do"; }
+        [ -e "$d/already-promoted" ] || { : > "$d/already-promoted"; fallback_line "already-promoted at" "$sha"; inbox_line "DONE already promoted: v$ver is on origin (newest verified ${sha:0:9}); nothing to do"; }
         exit 0
     fi
     if miss=$(lanes_ok "$sha" "$d"); then :; else notes+="${sha:0:9} the train does not judge it releasable: $miss; "; continue; fi
     if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
         cleanroom_marker "$sha" "$d" "$first"; mrc=$?
-        if [ "$mrc" = 2 ]; then notes+="${sha:0:9} its clean-room run ended red or unreadable; "; continue; fi
+        if [ "$mrc" = 2 ]; then notes+="${sha:0:9} $crnote; "; continue; fi
         if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
-            if [ "$first" = 1 ]; then fail "no clean-room success tested on exactly ${sha:0:9} (pass --dispatch-cleanroom to start one)"; fi
+            if [ "$first" = 1 ]; then fallback_line "no clean-room at" "$sha"; fail "no clean-room success tested on exactly ${sha:0:9} (pass --dispatch-cleanroom to start one)"; fi
             notes+="${sha:0:9} no clean-room on this exact sha; "; continue
         fi
     fi
@@ -199,13 +211,7 @@ for sha in "${cands[@]}"; do
         notes+="${sha:0:9} promote dry-run refused: $(grep -m1 REFUSE "$d/promote-dry.log" | cut -c1-100); "; continue
     fi
     # C12 (aprender#6677): a fallback past a red/skipped NEWER candidate is never silent: exactly ONE RED line, every skipped name first, the prose after and cut last
-    if [ -n "$notes" ]; then
-        say "fell back past newer candidate(s): $notes"
-        head_="RED fallback: using ${sha:0:9}, $nskip newer candidate(s) skipped: ${snames% } | why: "
-        room=$((300 - 42 - ${#head_})); [ "$room" -gt 0 ] || room=0
-        [ "${#notes}" -le "$room" ] && why=$notes || why="${notes:0:room}(+$(( ${#notes} - room )) chars cut)"
-        inbox_line "$head_$why"
-    fi
+    [ -z "$notes" ] || fallback_line "using" "$sha"
     if [ "$exe" != 1 ]; then say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
     (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
         || fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"

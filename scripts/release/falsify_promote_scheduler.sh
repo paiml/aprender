@@ -39,8 +39,14 @@ if [ "${1:-}" = --mutants ]; then
     mut flock-dropped 's/^flock -n 9 .*$/true/'
     mut age-cap-dropped 's/\[ "\$ct" -ge "\$cutoff" \] || continue/true/'
     mut pushtags-unchecked 's/ \\$/ ;/; /not installed\/verified in/d'
-    mut fallback-silent 's/^        inbox_line "\$head_\$why"$/        :/'
+    mut fallback-silent 's/^    inbox_line "\$head_\$why"$/    :/'
     mut fallback-names-cut 's/snames% }/snames%% *}/'
+    mut cut-marker-room-not-reserved 's/room=\$((room - 24))/room=$((room - 0))/'
+    mut fallback-already-promoted-silent 's/fallback_line "already-promoted at" "\$sha"; //'
+    mut fallback-cleanroom-fail-silent 's/fallback_line "no clean-room at" "\$sha"; //'
+    mut fallback-cleanroom-dispatched-silent 's/fallback_line "clean-room dispatched at" "\$sha"; //'
+    mut fallback-cleanroom-pending-silent 's/fallback_line "clean-room pending at" "\$sha"; //'
+    mut cleanroom-red-second-line 's/completed\*) crnote=/completed*) inbox_line "RED clean-room run $id on ${sha:0:9}"; crnote=/'
     mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then say.*$/    :/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
@@ -142,7 +148,7 @@ for ((i=1;i<=$#;i++)); do case "${!i}" in --commit) j=$((i+1)); sha=${!j} ;; --o
 [ -n "$out" ] && [ "$ev" = 1 ] && [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "train: bad args" >&2; exit 3; }
 [ "$FX_LANES" = none ] && { echo "NOT RELEASABLE: ci-main not_measured"; exit 1; }
 [ -z "${FX_RED_JOB:-}" ] || { echo "NOT RELEASABLE: $FX_RED_JOB red"; exit 1; }
-case " ${FX_TRAIN_RED_SHA:-none} " in *" $sha "*) echo "NOT RELEASABLE: attempt 2"; exit 1 ;; esac
+case " ${FX_TRAIN_RED_SHA:-none} " in *" $sha "*) echo "NOT RELEASABLE: attempt 2 ${FX_TRAIN_PAD:-}"; exit 1 ;; esac
 mkdir -p "$out"; echo "RELEASABLE"
 SH
 chmod +x "$TMP/train"; mkdir -p "$TMP/h/.cargo"; : > "$TMP/h/.cargo/credentials.toml"  # a FAKE file in the sandbox test home
@@ -153,11 +159,12 @@ MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDEN
 SANDBOX=(env "HOME=$TMP/h" FX_HIDDEN=1)
 TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
 [ -z "\${FX_REAL_MODELS:-}" ] || MODELS_NIGHTLY="$HERE/models_nightly.sh"
+[ -z "\${FX_WIDE:-}" ] || MAX_AGE_DAYS=30
 EOF
 sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environment)
     local n=$1 wr=$2 wp=$3 we=$4 rc; shift 4
     : > "$TMP/calls"; : > "$INB"; rm -rf "${ST:?}" "${TMP:?}/pt-flag"
-    if [ "${FX_PRESEED:-0}" = 1 ]; then mkdir -p "$ST/$R2"; echo 999 > "$ST/$R2/cleanroom-run-id"; fi
+    if [ "${FX_PRESEED:-0}" = 1 ]; then mkdir -p "$ST/${FX_PRESEED_SHA:-$R2}"; echo 999 > "$ST/${FX_PRESEED_SHA:-$R2}/cleanroom-run-id"; fi
     FX_CALLS="$TMP/calls" FX_PT_FLAG="$TMP/pt-flag" FX_R1=$R1 FX_R2=$R2 FX_R0=$R0 \
         bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 "$@" > "$TMP/out-$n" 2>&1; rc=$?
     expect "$n rc" "$wr" "$rc"
@@ -190,6 +197,27 @@ FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched train-red-fallback-dry-run 0 1 0
 inbox_has train-red-fallback-dry-run-visible "RED fallback"
 sched no-fallback-no-red-fallback-line 0 2 1 --execute
 grep -q 'RED fallback' "$INB" && bad "all-green run wrote a RED fallback line" || ok
+# C12 round 3 (aprender#6677): (1) a cut note keeps its whole "(+N chars cut)" marker inside 300 chars
+PAD=$(printf 'p%.0s' $(seq 200))
+FX_WIDE=1 FX_TRAIN_PAD=$PAD FX_TRAIN_RED_SHA="$R2 $R1" FX_SHA=$R0 sched fallback-long-notes-cut 0 1 0
+inbox_has fallback-long-notes-cut-used "RED fallback: using ${R0:0:9}, 2 newer"
+grep 'RED fallback' "$INB" | grep -qE '\(\+[0-9]+ chars cut\)$' && ok || bad "cut marker clipped or missing: $(grep 'RED fallback' "$INB" | tail -c 60)"
+expect "fallback line <= 300 chars" 1 "$(grep 'RED fallback' "$INB" | awk 'length($0) <= 300' | wc -l)"
+# (2) every path that skips a newer candidate writes the fallback line with the skipped names
+g push -q origin "$R2:refs/tags/v1.2.3"
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched fallback-line-already-promoted 0 0 0 --execute
+inbox_has fallback-line-already-promoted "RED fallback: already-promoted at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+g push -q origin ":refs/tags/v1.2.3"
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-fail 1 0 0 --execute
+inbox_has fallback-line-cleanroom-fail "RED fallback: no clean-room at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-dispatched 3 0 0 --execute --dispatch-cleanroom
+inbox_has fallback-line-cleanroom-dispatched "RED fallback: clean-room dispatched at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_PRESEED=1 FX_PRESEED_SHA=$R1 FX_RUN_STATE="in_progress " sched fallback-line-cleanroom-pending 3 0 0 --execute --dispatch-cleanroom
+inbox_has fallback-line-cleanroom-pending "RED fallback: clean-room pending at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+# (3) a red clean-room run on the skipped sha + fallback to the older one = exactly ONE RED line carrying both facts
+FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched cleanroom-red-fallback-one-line 0 2 1 --execute
+expect "cleanroom-red fallback RED line count" 1 "$(grep -c 'RED' "$INB")"
+grep 'RED' "$INB" | grep -q "clean-room run 999 ended 'failure'" && grep 'RED' "$INB" | grep -q "RED fallback: using ${R1:0:9}" && ok || bad "single RED line lacks the clean-room fact or the fallback"
 FX_RATE=999 sched rate-floor 0 0 0 --execute; inbox_has rate-floor SKIP
 FX_RATE=x sched rate-unreadable 0 0 0 --execute
 FX_LANES=none sched lane-evidence-missing-fails-closed 1 0 0 --execute; inbox_has lane-evidence-missing RED
