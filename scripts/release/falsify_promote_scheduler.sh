@@ -39,7 +39,8 @@ if [ "${1:-}" = --mutants ]; then
     mut flock-dropped 's/^flock -n 9 .*$/true/'
     mut age-cap-dropped 's/\[ "\$ct" -ge "\$cutoff" \] || continue/true/'
     mut pushtags-unchecked 's/ \\$/ ;/; /not installed\/verified in/d'
-    mut fallback-silent 's/inbox_line "RED fallback: using[^;]*;//'
+    mut fallback-silent 's/^        inbox_line "\$head_\$why"$/        :/'
+    mut fallback-names-cut 's/snames% }/snames%% *}/'
     mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then say.*$/    :/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
@@ -141,7 +142,7 @@ for ((i=1;i<=$#;i++)); do case "${!i}" in --commit) j=$((i+1)); sha=${!j} ;; --o
 [ -n "$out" ] && [ "$ev" = 1 ] && [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "train: bad args" >&2; exit 3; }
 [ "$FX_LANES" = none ] && { echo "NOT RELEASABLE: ci-main not_measured"; exit 1; }
 [ -z "${FX_RED_JOB:-}" ] || { echo "NOT RELEASABLE: $FX_RED_JOB red"; exit 1; }
-[ "$sha" = "${FX_TRAIN_RED_SHA:-none}" ] && { echo "NOT RELEASABLE: attempt 2"; exit 1; }
+case " ${FX_TRAIN_RED_SHA:-none} " in *" $sha "*) echo "NOT RELEASABLE: attempt 2"; exit 1 ;; esac
 mkdir -p "$out"; echo "RELEASABLE"
 SH
 chmod +x "$TMP/train"; mkdir -p "$TMP/h/.cargo"; : > "$TMP/h/.cargo/credentials.toml"  # a FAKE file in the sandbox test home
@@ -232,6 +233,24 @@ mkdir -p "$TMP/bin2"; cp "$SRC" "$TMP/bin2/promote_scheduler.sh"
 GH="$TMP/gh" PROMOTE="$TMP/promote" RECEIPTS="$BIN/receipts_from_night.sh" DRYRUN_GATE="$TMP/gate" MODELS_NIGHTLY="$TMP/models" PUSHTAGS="$TMP/pt" EVIDENCE_DIR="$EV" \
     SCHED_BIN="$TMP/bin2/promote_scheduler.sh" sched env-overrides-ignored 1 0 0 --execute
 expect "env: no stub gh call" 0 "$(grep -c '^GH' "$TMP/calls")"
+# C12 (aprender#6677) round 2: the fallback is exactly ONE RED line, and a long skip list never loses a name to the 300-char cut
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched newest-models-red-fallback-one-red-line 0 2 1 --execute
+expect "newest-models-red-fallback RED line count" 1 "$(grep -c ' RED ' "$INB")"
+FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched train-red-fallback-count 0 2 1 --execute
+expect "train-red fallback RED line count" 1 "$(grep -c ' RED ' "$INB")"
+LONG=""
+for k in 1 2 3 4; do
+    printf 'q%s' "$k" > "$W/f"; T=$(( $(date +%s) + 600 * k )) # bashrs disable-line=DET002
+    GIT_AUTHOR_DATE="@$T" GIT_COMMITTER_DATE="@$T" g commit -q -am "long$k"; L=$(g rev-parse HEAD); LONG+="$L "
+    mkdir -p "$EV/models-crux/$L"; printf 'commit=%s\nmeasure=crux\nt1_rc=0\nstate=green\n' "$L" > "$EV/models-crux/$L/verdict"
+    printf 'MODELS GO (CRUX smoke) on lambda and gx10 at %s: ok\n' "${L:0:9}" > "$EV/models-crux/$L/models-t1.log"
+done
+g push -q origin main
+ge() { git -C "$EV" -c user.email=f@x -c user.name=f -c commit.gpgsign=false -c core.hooksPath=/dev/null "$@"; }
+ge add -A; ge commit -q -m ev-long; ge push -q origin nightly-evidence
+FX_TRAIN_RED_SHA="$LONG" FX_SHA=$R2 sched long-skip-list-fallback 0 2 1 --execute
+for L in $LONG; do inbox_has "long-skip-list-names-${L:0:9}" "${L:0:9}"; done
+expect "long-skip-list RED line count" 1 "$(grep -c ' RED ' "$INB")"
 # lock: a second run while the first holds it does nothing
 mkdir -p "$ST"; : > "$TMP/calls"
 ( exec 8> "$ST/.lock"; flock -n 8; FX_CALLS="$TMP/calls" bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 --execute > "$TMP/out-lock" 2>&1; echo $? > "$TMP/lock-rc" )

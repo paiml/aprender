@@ -164,15 +164,14 @@ cleanroom_marker() { # SHA DIR FIRST
     say "clean-room run $id dispatched on ${sha:0:9}; pending"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
 }
 
-first=1 newest=1 notes=""
+first=1 notes="" snames="" last=""
 for sha in "${cands[@]}"; do
+    [ -z "$last" ] || snames+="$last "; last=${sha:0:9}; nskip=$(wc -w <<< "$snames")
     d="$state/$sha"; install -d -- "$d"
     if ! models_ok "$sha" "$d"; then
         notes+="${sha:0:9} models not green ($(tail -n 1 "$d/relay.log" | cut -c1-80)); "
-        [ "$newest" = 1 ] && inbox_line "RED newest nightly crux ${sha:0:9} is not a verified green: falling back to the last verified green"
-        newest=0; continue
+        continue
     fi
-    newest=0
     ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '/^\[/ { s = ($0 ~ /^\[workspace\.package\][[:space:]]*$/) } s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
     if [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$(G ls-remote origin "refs/tags/v$ver" 2> /dev/null)" ]; then
         say "${sha:0:9}: v$ver is already on origin: already promoted, nothing to do"
@@ -199,8 +198,14 @@ for sha in "${cands[@]}"; do
     if ! bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" > "$d/promote-dry.log" 2>&1; then
         notes+="${sha:0:9} promote dry-run refused: $(grep -m1 REFUSE "$d/promote-dry.log" | cut -c1-100); "; continue
     fi
-    # C12 (aprender#6677): a fallback past a red/skipped NEWER candidate is never silent: one RED line names what was skipped and why
-    [ -z "$notes" ] || { say "fell back past newer candidate(s): $notes"; inbox_line "RED fallback: using ${sha:0:9}, newer candidate(s) skipped: $notes"; }
+    # C12 (aprender#6677): a fallback past a red/skipped NEWER candidate is never silent: exactly ONE RED line, every skipped name first, the prose after and cut last
+    if [ -n "$notes" ]; then
+        say "fell back past newer candidate(s): $notes"
+        head_="RED fallback: using ${sha:0:9}, $nskip newer candidate(s) skipped: ${snames% } | why: "
+        room=$((300 - 42 - ${#head_})); [ "$room" -gt 0 ] || room=0
+        [ "${#notes}" -le "$room" ] && why=$notes || why="${notes:0:room}(+$(( ${#notes} - room )) chars cut)"
+        inbox_line "$head_$why"
+    fi
     if [ "$exe" != 1 ]; then say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
     (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
         || fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"
