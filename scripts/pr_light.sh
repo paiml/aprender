@@ -29,7 +29,7 @@ run_steps() { # run_steps -> prints one row per step; returns 1 if any failed
         [ -n "$name" ] || continue
         n=$((n + 1))
         set +e
-        (cd "$REPO_ROOT" && bash -c "$cmd") > /dev/null 2>&1
+        (cd "$REPO_ROOT" && bash -c "$cmd") > /dev/null 2>&1 < /dev/null
         rc=$?
         set -e
         if [ "$rc" -eq 0 ]; then printf 'ok    %s\n' "$name"; else printf 'FAIL  %s (rc=%s) -- rerun: %s\n' "$name" "$rc" "$cmd"; failed=1; fi
@@ -51,6 +51,8 @@ self_test() {
     row "all green exits 0" "$rc" 0
     set +e; printf '' | run_steps > /dev/null; rc=$?; set -e
     row "zero steps is not a verdict" "$rc" 2
+    set +e; out="$(printf 'eat|cat\nlast|true\n' | run_steps)"; set -e
+    row "a step that reads stdin cannot swallow the next steps" "$(printf '%s\n' "$out" | grep -c '^ok    last')" 1
     printf 'pr_light self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ "$fail" -eq 0 ]
 }
