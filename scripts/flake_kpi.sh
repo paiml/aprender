@@ -23,10 +23,11 @@ kpi() {
   ' "$f"
 }
 
+d=""
 self_test() {
-  local d rc=0 out
+  local rc=0 out
   d="$(mktemp -d "${TMPDIR:-/tmp}/flake_kpi.XXXXXX")" || return 2
-  trap 'rm -r "$d"' EXIT
+  trap '[ -n "$d" ] && rm -r "$d"' EXIT
   printf '%s\n' '<testsuites><testsuite name="a"><testcase name="t1" classname="c"/></testsuite></testsuites>' > "$d/clean.xml"
   printf '%s\n' '<testsuites><testsuite name="a">' \
     '<testcase name="t1" classname="c"><flakyFailure type="x"/><flakyFailure type="x"/></testcase>' \
