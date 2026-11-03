@@ -123,7 +123,7 @@ mt_version_is() {
 
 mt_self_test() {
     local d fail=0 want got
-    d=$(mktemp -d) || return 2
+    d=$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || return 2
     while IFS='~' read -r want got; do
         printf '%s' "$got" > "$d/r.json"
         got=$(mt_receipt_fields "$d/r.json" | tr '\t' '|')
