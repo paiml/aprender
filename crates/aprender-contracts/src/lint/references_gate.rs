@@ -78,24 +78,24 @@ fn dead_findings(
     dead: &[String],
 ) -> Vec<LintFinding> {
     const FIX: &str = "a `metadata.references` repo path that does not exist was added — fix the path or drop the reference";
+    let count = ratchet_finding("PV-RAT-004", DEAD_KEY, baseline, dead.len(), FIX);
     let Some(set) = baseline_set(contract_dir) else {
-        return ratchet_finding("PV-RAT-004", DEAD_KEY, baseline, dead.len(), FIX)
-            .into_iter()
-            .collect();
+        return count.into_iter().collect();
     };
-    dead.iter()
+    // The count ratchet still holds beside the member check: a duplicate of an accepted entry adds no new member.
+    let members = dead.iter()
         .filter(|d| !set.contains(*d))
         .map(|d| {
             let mut f = LintFinding::new(
                 "PV-RAT-004",
                 RuleSeverity::Error,
-                format!("new dead reference `{d}` is not in the {DEAD_SET_KEY} baseline: {FIX}. The baseline is shrink-only; `make lint-ratchet` only removes members"),
+                format!("new dead reference `{d}` is not in the {DEAD_SET_KEY} baseline: {FIX}. The baseline is shrink-only; `make lint-ratchet` removes members that now resolve"),
                 "contracts/lint-baseline.json".to_string(),
             );
             f.contract_stem = Some("lint-baseline".to_string());
             f
-        })
-        .collect()
+        });
+    count.into_iter().chain(members).collect()
 }
 
 /// The `references-resolve` gate over `contract_dir`.
