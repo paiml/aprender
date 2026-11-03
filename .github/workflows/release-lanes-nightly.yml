@@ -96,6 +96,8 @@ jobs:
           fetch-depth: 1
       - run: bash scripts/release/release_lanes.sh --self-test
       - run: bash scripts/release/release_lanes.sh --mutants
+      - run: bash scripts/release/falsify_worktree_prune.sh --self-test
+      - run: bash scripts/release/falsify_worktree_prune.sh --mutants
 
   # ------------------------------------------------------------------ cleanroom-gpu
   b2-gpu-at-c:
