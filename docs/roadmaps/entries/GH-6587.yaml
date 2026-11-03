@@ -1,0 +1,17 @@
+- id: GH-6587
+  github_issue: 6587
+  item_type: task
+  title: 'pv lint references gate: lint_ratchet.sh must prune dead_reference_set; set branch must reject duplicate stem:path (follow-up #6582)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:02:11.469582878+00:00
+  updated: 2026-11-03T07:02:11.469582878+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P2
+  notes: null

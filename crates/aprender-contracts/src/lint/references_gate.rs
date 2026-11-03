@@ -83,7 +83,11 @@ fn dead_findings(
             .into_iter()
             .collect();
     };
-    dead.iter()
+    // The count key is checked too: a repeated `stem: path` is already a member of the set but is one more
+    // dead reference than the recorded debt (aprender#6587).
+    let count = ratchet_finding("PV-RAT-004", DEAD_KEY, baseline, dead.len(), FIX);
+    let mut findings: Vec<LintFinding> = dead
+        .iter()
         .filter(|d| !set.contains(*d))
         .map(|d| {
             let mut f = LintFinding::new(
@@ -95,7 +99,11 @@ fn dead_findings(
             f.contract_stem = Some("lint-baseline".to_string());
             f
         })
-        .collect()
+        .collect();
+    if findings.is_empty() {
+        findings.extend(count);
+    }
+    findings
 }
 
 /// The `references-resolve` gate over `contract_dir`.

@@ -77,6 +77,27 @@ ratchet_one() {
     fi
 }
 
+# set_value FILE KEY -> the recorded one-line JSON array (empty when absent). The array is written by this script
+# and by hand on ONE top-level line, members separated by ", ".
+set_value() {
+    { grep -E "^  \"$2\"[[:space:]]*:" "$1" || true; } | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/,[[:space:]]*$//'
+}
+
+# prune_set FILE KEY DEAD_JSON: drop recorded members that are no longer dead, never add one. Prints the
+# removed count; rewrites the line only when something went. A fixed path must not stay accepted forever (#6587).
+prune_set() {
+    local file="$1" key="$2" dead="$3" old new removed line
+    old="$(set_value "$file" "$key")"
+    [ -n "$old" ] || { printf 0; return 0; }
+    new="$(jq -cn --argjson old "$old" --argjson dead "$dead" '[$old[] | select(. as $m | $dead | index($m))]')" || return 2
+    removed="$(jq -n --argjson old "$old" --argjson new "$new" '($old|length) - ($new|length)')"
+    if [ "$removed" -gt 0 ]; then
+        line="$(printf '%s' "$new" | jq -r '"[" + (map(@json) | join(", ")) + "]"')" || return 2
+        set_line "$file" "$key" "$line" || return 2
+    fi
+    printf '%s' "$removed"
+}
+
 # measure GATE FIELD -> the count the gate reports. A report is printed on
 # exit 0 (at/below the baseline), 1 (above it) and 2 with no baseline recorded;
 # a decline prints no report, and that is a refusal here, not a zero.
@@ -132,6 +153,13 @@ self_test() {
     printf '{\n  "armed_gates": []\n}\n' > "$t/noont.json"
     set +e; set_line "$t/noont.json" command '"x"' 2>/dev/null; rc=$?; set -e
     row "no ont object and no key is refused, not guessed" "$rc" 2
+    printf '{\n  "dead_references": 3,\n  "dead_reference_set": ["a: x/1.rs", "b: x/2.rs", "c: x/3.rs"],\n  "ont": {\n    "x": 1\n  }\n}\n' > "$t/s.json"
+    row "a still-dead member is kept, a fixed one pruned" "$(prune_set "$t/s.json" dead_reference_set '["a: x/1.rs","c: x/3.rs"]')" 1
+    row "the pruned set is on one line, same format"     "$(grep -c '^  "dead_reference_set": \["a: x/1.rs", "c: x/3.rs"\],$' "$t/s.json")" 1
+    row "a pruned file is still valid JSON"              "$(jq -r '.dead_reference_set|length' "$t/s.json")" 2
+    row "a newly dead path is never added"               "$(prune_set "$t/s.json" dead_reference_set '["a: x/1.rs","c: x/3.rs","z: x/9.rs"]')" 0
+    row "the set is unchanged after an add attempt"      "$(jq -c '.dead_reference_set' "$t/s.json")" '["a: x/1.rs","c: x/3.rs"]'
+    row "no set recorded prunes nothing"                 "$(prune_set "$t/b.json" dead_reference_set '[]')" 0
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
@@ -153,6 +181,25 @@ main() {
     set_line "$BASELINE" command "\"$COMMAND_VALUE\"" || return 2
     ratchet_one "$BASELINE" unpaired_theorem_modules "$pairing" || rc=$?
     ratchet_one "$BASELINE" contracts_without_depends_on "$depends" || rc=$?
+    refs_ratchet || rc=$?
+    return "$rc"
+}
+
+# refs_ratchet: lower `dead_references` and prune `dead_reference_set` to what is still dead (#6587).
+# Skipped when the baseline records no set: there is nothing to prune.
+refs_ratchet() {
+    [ -n "$(set_value "$BASELINE" dead_reference_set)" ] || return 0
+    local out n dead removed rc=0
+    set +e
+    out="$("$PV" lint "$REPO_ROOT/contracts" --gate references-resolve 2>/dev/null)"
+    set -e
+    n="$(printf '%s' "$out" | jq -r '.dead_references // empty' 2>/dev/null || true)"
+    dead="$(printf '%s' "$out" | jq -c '.dead // empty' 2>/dev/null || true)"
+    case "$n" in ''|*[!0-9]*) printf 'NO-GO: `pv lint --gate references-resolve` reported no dead_references\n' >&2; return 2 ;; esac
+    [ -n "$dead" ] || { printf 'NO-GO: `pv lint --gate references-resolve` reported no dead list\n' >&2; return 2; }
+    ratchet_one "$BASELINE" dead_references "$n" || rc=$?
+    removed="$(prune_set "$BASELINE" dead_reference_set "$dead")" || return 2
+    printf '  pruned    %-30s %s member(s)\n' dead_reference_set "$removed"
     return "$rc"
 }
 
