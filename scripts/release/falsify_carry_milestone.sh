@@ -27,17 +27,18 @@ elif [ "$1" = pr ]; then exit 0
 fi
 FAKE
 chmod +x "$TMP/gh"
-MS='[{"number":31,"title":"0.72.3"},{"number":16,"title":"0.74.0"},{"number":15,"title":"0.73.0"},{"number":11,"title":"backlog"}]'
+FIXTURE_MS='[{"number":31,"title":"0.72.3"},{"number":16,"title":"0.74.0"},{"number":15,"title":"0.73.0"},{"number":11,"title":"backlog"}]'
 pass=0 fail=0
 row() { # name want_rc must_match must_not_match -- args ; env via exports
     local name=$1 want=$2 yes=$3 no=$4; shift 5
     : > "$TMP/log"; out=$(FAKE_LOG="$TMP/log" GH="$TMP/gh" CARRY_PACE=0 bash "$SUBJECT" "$@" 2>&1); rc=$?
+    all="$out$(cat "$TMP/log")"
     ok=1; [ "$rc" = "$want" ] || ok=0
-    [ -z "$yes" ] || printf '%s' "$out$(cat "$TMP/log")" | grep -Eq -- "$yes" || ok=0
-    [ -z "$no" ] || ! printf '%s' "$out$(cat "$TMP/log")" | grep -Eq -- "$no" || ok=0
+    [ -z "$yes" ] || grep -Eq -- "$yes" <<<"$all" || ok=0
+    [ -z "$no" ] || ! grep -Eq -- "$no" <<<"$all" || ok=0
     if [ $ok = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL %s (rc=%s want %s)\n%s\n' "$name" "$rc" "$want" "$out"; fi
 }
-export FAKE_MS="$MS" FAKE_NEXT=15 FAKE_PATCH=ok
+export FAKE_MS="$FIXTURE_MS" FAKE_NEXT=15 FAKE_PATCH=ok
 export FAKE_PATCH=ok
 row dry-run 0 'dry-run: #2 0.72.3 -> 0.73.0' 'api -X PATCH' -- 0.72.3
 export FAKE_PATCH=ok
