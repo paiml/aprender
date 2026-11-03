@@ -5,4 +5,5 @@
 #   bash scripts/release/falsify_promote_nightly.sh --mutants
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)" || exit 2
+bash "$ROOT/scripts/release/falsify_carry_milestone.sh" || exit 1
 exec bash "$ROOT/scripts/release/falsify_promote_nightly.sh"
