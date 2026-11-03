@@ -8,7 +8,7 @@
 #                       order.txt      one crate name per line, every crate after all its in-set dependencies
 #                       crates/*.crate the `cargo package --no-verify --locked` output, packaged in that order
 #                       SHA256SUMS     sha256 of order.txt and of every .crate (`sha256sum -c` from inside DIR)
-#                       package-lane.json  receipt {lane,sha,status:green,...}: written LAST and ONLY when all of the above held
+#                       package-lane.json  receipt {lane,sha,scope:full|only:LIST,status:green,...}: written LAST and ONLY when all of the above held
 #                       logs/<crate>.log   the cargo output of each crate
 #   --list-only       derive and verify the order, write order.txt only: no cargo package, no SHA256SUMS, no receipt
 #   --sha SHA         refuse unless the repo HEAD is exactly this sha (the receipt is bound to it)
@@ -165,7 +165,8 @@ sums_in_out() {
 }
 
 package_all() {
-    local head c ver man f line
+    local head c ver man f line scope=full
+    if [[ -n "$only" ]]; then scope="only:$only"; fi
     local files=()
     git -C "$root" rev-parse --git-dir > /dev/null 2>&1 || die "$root is not a git checkout: no sha to bind the receipt to"
     head=$(git -C "$root" rev-parse HEAD)
@@ -184,8 +185,8 @@ package_all() {
     done < <(jq -r '.order[] as $c | [$c, .versions[$c], .manifests[$c]] | @tsv' <<< "$GRAPH")
     (sums_in_out "${files[@]}") || die "SHA256SUMS does not verify"
     line=$(sha256sum < "$out/order.txt")
-    jq -n --arg s "$head" --argjson n "${#files[@]}" --arg o "${line%% *}" --arg f "$(sha256sum < "$out/SHA256SUMS" | cut -d' ' -f1)" \
-        '{lane: "package-order", sha: $s, status: "green", crates: $n, order_sha256: $o, sums_sha256: $f}' > "$out/package-lane.json"
+    jq -n --arg s "$head" --arg sc "$scope" --argjson n "${#files[@]}" --arg o "${line%% *}" --arg f "$(sha256sum < "$out/SHA256SUMS" | cut -d' ' -f1)" \
+        '{lane: "package-order", sha: $s, scope: $sc, status: "green", crates: $n, order_sha256: $o, sums_sha256: $f}' > "$out/package-lane.json"
     printf '%s: packaged %s crate(s) for %s into %s\n' "$PROG" "${#files[@]}" "${head:0:9}" "$out" >&2
 }
 

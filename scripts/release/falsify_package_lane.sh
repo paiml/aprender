@@ -213,7 +213,7 @@ SH
     expect_rc "package happy rc" 0
     if (cd "$o" && sha256sum --quiet -c SHA256SUMS > /dev/null 2>&1); then ok; else bad "SHA256SUMS" "does not verify"; fi
     if [ "$(wc -l < "$o/SHA256SUMS")" -eq 4 ]; then ok; else bad "SHA256SUMS" "expected order.txt + 3 crates"; fi
-    if jq -e --arg s "$head" '.lane == "package-order" and .sha == $s and .status == "green" and .crates == 3' "$o/package-lane.json" > /dev/null 2>&1; then ok; else bad "receipt" "missing or wrong"; fi
+    if jq -e --arg s "$head" '.lane == "package-order" and .sha == $s and .scope == "full" and .status == "green" and .crates == 3' "$o/package-lane.json" > /dev/null 2>&1; then ok; else bad "receipt" "missing or wrong"; fi
     if [ "$(sed 's/ .*//; s/^package //' "$STUB_LOG" | wc -l)" -eq 3 ] && [ "$(grep -c -- '--no-verify' "$STUB_LOG")" -eq 3 ] && [ "$(grep -c -- '--locked' "$STUB_LOG")" -eq 3 ]; then ok; else bad "cargo flags" "every crate must be packaged with --no-verify --locked"; fi
     if grep -q -- '--allow-dirty' "$STUB_LOG"; then bad "cargo flags" "--allow-dirty was passed"; else ok; fi
     local seq
@@ -224,6 +224,12 @@ SH
     if (cd "$TMP/tamper1" && sha256sum --quiet -c SHA256SUMS > /dev/null 2>&1); then bad "tamper" "altered .crate still verifies"; else ok; fi
     cp -r "$o" "$TMP/tamper2"; printf 'a\nb\nc\n' > "$TMP/tamper2/order.txt"
     if (cd "$TMP/tamper2" && sha256sum --quiet -c SHA256SUMS > /dev/null 2>&1); then bad "tamper" "altered order.txt still verifies"; else ok; fi
+
+    # an --only run must not leave the receipt of a full run: scope names the restriction
+    o=$(fresh 25)
+    run --metadata "$FX/chain.json" --root "$repo" --out "$o" --sha "$head" --only a,c
+    expect_rc "--only package rc" 0
+    if jq -e '.scope == "only:a,c" and .crates == 2 and .status == "green"' "$o/package-lane.json" > /dev/null 2>&1; then ok; else bad "receipt scope" "an --only run must carry scope only:a,c, got $(jq -c .scope "$o/package-lane.json" 2> /dev/null)"; fi
 
     # a failing crate: no SHA256SUMS, no receipt, and a stale receipt from an earlier run is gone
     o=$(fresh 21); mkdir -p "$o"; echo '{"stale":true}' > "$o/package-lane.json"; echo stale > "$o/SHA256SUMS"
@@ -265,7 +271,7 @@ real_rows() {
     # the real TIERS[] table of cascade-publish.sh, flattened, must be refused for exactly the #3892 pair (skipped once the table is retired)
     if grep -qE '^TIERS\[[0-9]+\]=' "$ROOT/scripts/cascade-publish.sh" 2> /dev/null; then
         sed -nE 's/^TIERS\[([0-9]+)\]="(.*)"$/\1 \2/p' "$ROOT/scripts/cascade-publish.sh" | sort -n | cut -d' ' -f2- | tr ' ' '\n' > "$TMP/tiers.txt"
-        run --verify-order "$TMP/tiers.txt"
+        run --root "$ROOT" --verify-order "$TMP/tiers.txt"
         expect_rc "real TIERS[] order is refused (#3892)" 1; expect_err "real TIERS[] names profile before db" "aprender-profile ("
         if grep -qE 'aprender-profile \(.*before its dependency aprender-db' "$TMP/err"; then ok; else bad "real TIERS[]" "profile/db pair not named"; fi
     fi
@@ -285,16 +291,33 @@ mutants() {
         's/ --locked / /@@--locked dropped'
         's/\[\[ "\$n" -ge "\$floor" \]\] || die/true || die/@@vacuity floor dead'
         's/select(publishable)/select(true)/@@publish filter dropped'
+        's/scope="only:$only"/scope=full/@@scope always full'
         's/\.publish == null or (\.publish | index("crates-io") != null)/true/@@publishable() always true'
     )
+    # Every copy lives at $TMP/mroot/scripts/release/<name>.sh, the layout of the real repo, so the copy's default root is a
+    # real directory rather than "/" -- and the table still passes --root "$ROOT" wherever a row needs the real repo.
+    mkdir -p "$TMP/mroot/scripts/release"
+    # CONTROL: the unmutated script, copied the same way, must pass every row; otherwise a "caught" mutant proves nothing.
+    ctl="$TMP/mroot/scripts/release/control.sh"
+    cp "$HERE/package_lane.sh" "$ctl"
+    if ! PACKAGE_LANE_SCRIPT="$ctl" bash "${BASH_SOURCE[0]}" > "$TMP/ctl.out" 2> "$TMP/ctl.err"; then
+        printf 'CONTROL FAILED: the unmutated copy does not pass the table; every verdict below would be vacuous:\n' >&2
+        head -n 5 "$TMP/ctl.err" >&2; fail=$((fail + 1)); return
+    fi
+    printf 'control: unmutated copy passes every row (%s)\n' "$(tail -n 1 "$TMP/ctl.out")"
     for m in "${MUT[@]}"; do
-        n=$((n + 1)); tgt="$TMP/mut$n.sh"
+        n=$((n + 1)); tgt="$TMP/mroot/scripts/release/mut$n.sh"
         sed -e "${m%%@@*}" "$HERE/package_lane.sh" > "$tgt"
         if cmp -s "$tgt" "$HERE/package_lane.sh"; then printf 'MUTANT %s did not apply: %s\n' "$n" "${m#*@@}" >&2; fail=$((fail + 1)); continue; fi
         # the mutant runs the whole table in a child falsifier so its counters stay separate
-        if PACKAGE_LANE_SCRIPT="$tgt" bash "${BASH_SOURCE[0]}" > /dev/null 2>&1; then
+        if PACKAGE_LANE_SCRIPT="$tgt" bash "${BASH_SOURCE[0]}" > /dev/null 2> "$TMP/mut$n.err"; then
             printf 'MUTANT SURVIVED: %s\n' "${m#*@@}" >&2; fail=$((fail + 1))
-        else caught=$((caught + 1)); fi
+        elif grep -qF 'no Cargo.toml under' "$TMP/mut$n.err"; then
+            printf 'MUTANT %s "caught" only by a harness artifact (no Cargo.toml under): %s\n' "$n" "${m#*@@}" >&2; fail=$((fail + 1))
+        else
+            caught=$((caught + 1))
+            printf 'mutant %s (%s) caught by: %s\n' "$n" "${m#*@@}" "$(grep -m1 '^FAIL ' "$TMP/mut$n.err" | cut -c1-110)"
+        fi
     done
     printf 'mutants: %s of %s caught\n' "$caught" "$n"
 }
