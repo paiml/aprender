@@ -46,7 +46,7 @@ na_lines() {
 # argument only those whose <who> BEGINS with the lane name Opus (a model named elsewhere in <who> is not the lane).
 pass_count() {
   local r; r=$(na_lines "$1" | grep -iE "^(COMMENTED|APPROVED)"$'\t'"[^:]{0,120}:[ ]+(PASS|APPROVED?)${END}" | grep -viE "$NEG") || true
-  if [ -n "${2:-}" ]; then r=$(grep -iE "^[A-Z]+"$'\t'"(claude-)?opus([^[:alnum:]][^:]*)?:" <<<"$r") || true; fi
+  if [ -n "${2:-}" ]; then r=$(grep -iE "^[A-Z]+"$'\t'"(claude-)?opus(-[0-9][^:]*| [^:]*)?:" <<<"$r") || true; fi
   [ -n "$r" ] && wc -l <<<"$r" || echo 0
 }
 # bump_patch PATCH -> 0 when every changed line of a unified-diff PATCH is a `version = "X"` -> `version = "Y"` edit
@@ -124,12 +124,11 @@ needs_seats() {
   tier=LOW; gate_changed "$fj" && tier=HIGH
   # reviews bound to HEAD (commit_id); one body per line, newlines folded
   rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
-  rc=$(grep -ciE '^CHANGES_REQUESTED|REQUEST[-_ ]?CHANGES|\bFAIL|\bREJECT|\bBLOCKING\b|\bBLOCKER|\bBLOCKS\b|NO[-_ ]?GO|DO[-_ ]?N(OT|.?T)[-_ ]MERGE|CHANGES[-_ ]REQUESTED|\bBLOCK(ED)?\b|\bVETO|\bDENY|\bDENIED|DISAPPROVE|\bNACK|CHANGES[-_ ]NEEDED|DO[-_ ]NOT[-_ ]ARM' <<<"$rv")
-  # fail closed: a non-author review at HEAD that is not a PASS (any dissent wording) vetoes, whatever words it uses
-  rc=$((${rc:-0} + $(na_lines "$rv" | wc -l) - $(pass_count "$rv")))
+  # fail closed (C48): EVERY review at HEAD that is not a qualifying PASS vetoes, whatever its wording (no word list to dodge)
+  rc=$(( $(grep -c . <<<"$rv") - $(pass_count "$rv") ))
   if [ "$tier" = HIGH ]; then q=$(pass_count "$rv" opus); else q=$(pass_count "$rv"); fi
   { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ]; } && return 1
-  echo "skip ($tier tier at ${2:0:10}: $q/1 $([ "$tier" = HIGH ] && echo Opus || echo non-author) PASS, $rc FAIL/request-changes)"
+  echo "skip ($tier tier at ${2:0:10}: $q/1 $([ "$tier" = HIGH ] && echo Opus || echo non-author) PASS, $rc other/dissenting review(s))"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
 # ci_jobs MODE WORKFLOW -> job ids and display names under `jobs:` (MODE all), or only those a pull_request event can never run
@@ -319,6 +318,15 @@ if [ "${1:-}" = --self-test ]; then
       'Seat 2 (s2, author): PASS' 'Seat 2 (s2): PASS' 'non-author' 'non-author PASS'; do
     eq "row '$q' is not a PASS" "$(REVIEWS="COMMENTED\t$q\n" ns)" 0
   done
+  # round-2 review: dissent in any wording vetoes, even from a review that is not marked non-author or names "author" elsewhere
+  for q in 'Seat 3 (non-author; the author missed B1): broken' 'Seat 3: non-author review -- broken, do not ship' 'Seat 3 (s3, non‑author): broken' \
+      'Sonnet lane (s3): changes required' 'Sonnet lane (s3): -1 not ready' 'Sonnet lane (s3): NO' 'Sonnet lane (s3): regression in B2'; do
+    eq "Opus PASS + '$q' at head -> skip" "$(FILES=scripts/x.sh REVIEWS="${QO}COMMENTED\t$q\n" ns)" 0
+  done
+  for q in 'Opus-impostor (non-author): PASS' 'opus_fake (non-author): PASS'; do
+    eq "HIGH: '$q' is not an Opus lane" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
+  done
+  eq 'two valid PASSes (non-author + Opus) -> armable' "$(FILES=scripts/x.sh REVIEWS="${QO}${Q3}" ns)" 1
   # Opus-lane review fixes: a lane is Opus only if its name BEGINS with Opus; "non-author" is a word; any non-author dissent vetoes
   for q in 'Sonnet 5 (s2, non-author; PR author is opus): PASS' 'Sonnet 5 (s2, non-author, octopus): PASS' 'Seat 2 (opus s2, non-author): PASS'; do
     eq "HIGH: '$q' is not an Opus lane" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
