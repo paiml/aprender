@@ -346,6 +346,7 @@ red_paths=(
 )
 for row in "${red_paths[@]}"; do
     IFS='|' read -r pn penv prc pp pe pargs <<< "$row"
+    # bashrs disable-next-line=SEC001
     eval "$penv sched $pn $prc $pp $pe $pargs"
     expect "$pn: exactly one RED line" 1 "$(red_n)"
 done
