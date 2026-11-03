@@ -4,7 +4,7 @@
 # and never a stale, partial or rounded-up number.
 #
 # BEHAVIOUR rows run the producer against fixture logs. STRUCTURE rows judge the workflow:
-#   S1  a marker is touched BEFORE the coverage step, so a previous run's /tmp/cov.log cannot pass as this run's;
+#   S1  a marker is touched BEFORE the coverage step, so a previous run's $RUNNER_TEMP/cov.log cannot pass as this run's;
 #   S2  the receipt step runs AFTER it, if: always(), continue-on-error (shadow, L31), keyed by
 #       `git rev-parse HEAD`, floor = COV_FLOOR as make resolves it, and judged against the marker;
 #   S3  the receipt is uploaded by its exact glob, if: always(), continue-on-error, a missing one an upload error;
@@ -101,7 +101,7 @@ RECEIPT=$(cat <<'EOF'
         run: |
           set -uo pipefail
           floor="$(make -s --eval='print-floor: ; @echo $(COV_FLOOR)' print-floor 2>/dev/null || echo unknown)"
-          bash scripts/coverage_receipt.sh /tmp/cov.log "$(git rev-parse HEAD)" "$floor" \
+          bash scripts/coverage_receipt.sh "$RUNNER_TEMP"/cov.log "$(git rev-parse HEAD)" "$floor" \
             "$RUNNER_TEMP/cov-receipt" "$RUNNER_TEMP/cov-start"
 EOF
 )

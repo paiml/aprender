@@ -164,8 +164,8 @@ jobs:
           # Ahead of ~/.cargo/bin for every later step in this job.
           echo "$COV_TOOLS/bin" >> "$GITHUB_PATH"
 
-      # The coverage receipt (below) must never carry a previous run's number: $RUNNER_TEMP/cov.log
-      # outlives the job, so a log that is not newer than this marker is not this run's.
+      # The coverage receipt (below) must never carry a previous run's number: a log that is not
+      # newer than this marker is not this run's (RUNNER_TEMP is per-job, the marker guards a reused log path).
       - name: Mark the coverage step start (receipt freshness)
         run: touch "$RUNNER_TEMP/cov-start"
 
