@@ -707,8 +707,7 @@ HOST
   for h in $rhosts; do
     receipt_to "$RDIR/dogfood/$h.out"
     if [ "$h" = "$train_host" ]; then
-      bash -c 'd=$(mktemp -d) || exit 2; tar -C "$d" -xf "$1" || exit 2; bash "$d/scripts/release/host_receipt.sh" "$2" "$3" --gpu-prio 1; rc=$?; if [ -n "$d" ] && [ "$d" != "/" ]; then rm -rf -- "$d"; fi; exit $rc' \
-        _ "$RDIR/kit.tar" "$V" "$h" > "$RDIR/dogfood/$h.out" 2>&1 &
+      bash "$REPO_ROOT/scripts/release/kit_receipt_run.sh" "$RDIR/kit.tar" "$V" "$h" > "$RDIR/dogfood/$h.out" 2>&1 &
     else
       ssh -o BatchMode=yes -o ConnectTimeout=10 "$h" \
         'd=$(mktemp -d) || exit 2; tar -C "$d" -xf - || exit 2; bash "$d/scripts/release/host_receipt.sh" '"$V $h"' --gpu-prio 1; rc=$?; if [ -n "$d" ] && [ "$d" != "/" ]; then rm -rf -- "$d"; fi; exit $rc' \
