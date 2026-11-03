@@ -206,7 +206,7 @@ jobs:
       - name: A worktree of C
         env:
           REF: ${{ needs.pick.outputs.c }}
-        run: git worktree add --detach "$RUNNER_TEMP/lanes-c" "$REF"
+        run: git worktree prune && git worktree add --detach "$RUNNER_TEMP/lanes-c" "$REF"
       - id: m
         run: bash scripts/release/release_lanes.sh measure publish-dryrun "$RUNNER_TEMP/lanes-c"
 
