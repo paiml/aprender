@@ -6,7 +6,8 @@ cd "$(dirname "$0")/../.."
 FILES=(scripts/check_cascade_clean_room_gate.sh scripts/check_comparator_one_client.sh
     scripts/check_ladder_write_errors.sh scripts/check_perf_receipt_fields_have_producers.sh
     scripts/perf_gate.sh scripts/perf_receipt_sign.sh scripts/spec_conformance.sh
-    scripts/release/carry_milestone_items.sh)
+    scripts/release/carry_milestone_items.sh scripts/check_thresholds_in_matrix.sh
+    scripts/check_perf_matrix_schema.sh)
 
 # ok <file> : a case arm lists "${TMPDIR:-/tmp}", and the /tmp arm is still there
 ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*\)' "$1" && grep -qE '/tmp/(\?)?\*' "$1"; }
@@ -35,4 +36,4 @@ if [ "${1:-}" = "--mutants" ]; then
     done
     exit 0
 fi
-check && behave && echo "PASS: 8 guards accept \${TMPDIR:-/tmp}"
+check && behave && echo "PASS: 10 guards accept \${TMPDIR:-/tmp}"
