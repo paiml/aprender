@@ -200,7 +200,7 @@ EOF
 # a throwaway git checkout + a stub cargo for the package-mode rows
 package_rows() {
     local repo="$FX/repo" head o
-    mkdir -p "$repo" && git -C "$repo" init -q && git -C "$repo" -c user.email=f@x -c user.name=falsify -c commit.gpgsign=false -c core.hooksPath=/dev/null commit -q --allow-empty -m fx || return 1
+    mkdir -p "$repo" && git -C "$repo" init -q && git -C "$repo" -c user.email=f@x -c user.name=falsify -c commit.gpgsign=false commit -q --allow-empty -m fx || return 1
     head=$(git -C "$repo" rev-parse HEAD)
     cat > "$FX/stub-cargo" <<'SH'
 #!/usr/bin/env bash
@@ -293,13 +293,14 @@ real_rows() {
         if has_alias_edge "$TMP/root-meta.json" aprender-profile aprender-db trueno-db; then ok; else bad "real repo #3892 alias" "aprender-profile no longer depends on aprender-db as trueno-db (crates/aprender-profile/Cargo.toml:86, Cargo.toml:293)"; fi
     else bad "real repo #3892 alias" "cargo metadata failed on the root manifest"; fi
     if grep -q -x 'provable-contracts' "$o/order.txt"; then ok; else bad "real repo" "the crates/facades workspace is not enumerated"; fi
-    # the real TIERS[] table of cascade-publish.sh, flattened, must be refused for exactly the #3892 pair (skipped once the table is retired)
-    if grep -qE '^TIERS\[[0-9]+\]=' "$ROOT/scripts/cascade-publish.sh" 2> /dev/null; then
-        sed -nE 's/^TIERS\[([0-9]+)\]="(.*)"$/\1 \2/p' "$ROOT/scripts/cascade-publish.sh" | sort -n | cut -d' ' -f2- | tr ' ' '\n' > "$TMP/tiers.txt"
-        run --root "$ROOT" --verify-order "$TMP/tiers.txt"
-        expect_rc "real TIERS[] order is refused (#3892)" 1; expect_err "real TIERS[] names profile before db" "aprender-profile ("
-        if grep -qE 'aprender-profile \(.*before its dependency aprender-db' "$TMP/err"; then ok; else bad "real TIERS[]" "profile/db pair not named"; fi
-    fi
+    # the real TIERS[] table of cascade-publish.sh, flattened, must be refused for exactly the #3892 pair. A missing table is a
+    # regression (the counted row below goes RED), not a skip; CASCADE_SCRIPT lets the mutant run on a copy without TIERS.
+    local casc="${CASCADE_SCRIPT:-$ROOT/scripts/cascade-publish.sh}"
+    if grep -qE '^TIERS\[[0-9]+\]=' "$casc" 2> /dev/null; then ok; else bad "real TIERS[] table present" "no TIERS[] rows in $casc: a missing table is a regression, not a skip"; fi
+    sed -nE 's/^TIERS\[([0-9]+)\]="(.*)"$/\1 \2/p' "$casc" 2> /dev/null | sort -n | cut -d' ' -f2- | tr ' ' '\n' > "$TMP/tiers.txt"
+    run --root "$ROOT" --verify-order "$TMP/tiers.txt"
+    expect_rc "real TIERS[] order is refused (#3892)" 1; expect_err "real TIERS[] names profile before db" "aprender-profile ("
+    if grep -qE 'aprender-profile \(.*before its dependency aprender-db' "$TMP/err"; then ok; else bad "real TIERS[]" "profile/db pair not named"; fi
 }
 
 run_all() { fail=0; pass=0; table; package_rows; real_rows; }
@@ -344,6 +345,15 @@ mutants() {
             printf 'mutant %s (%s) caught by: %s\n' "$n" "${m#*@@}" "$(grep -m1 '^FAIL ' "$TMP/mut$n.err" | cut -c1-110)"
         fi
     done
+    # mutant: cascade-publish.sh copy with every TIERS[] row deleted -- the counted table-present row must go RED
+    n=$((n + 1)); tgt="$TMP/mroot/scripts/cascade-nontiers.sh"
+    sed -e '/^TIERS\[/d' "$ROOT/scripts/cascade-publish.sh" > "$tgt"
+    if cmp -s "$tgt" "$ROOT/scripts/cascade-publish.sh"; then printf 'MUTANT %s did not apply: TIERS[] deleted\n' "$n" >&2; fail=$((fail + 1))
+    elif CASCADE_SCRIPT="$tgt" PACKAGE_LANE_SCRIPT="$ctl" bash "${BASH_SOURCE[0]}" > /dev/null 2> "$TMP/mut$n.err"; then
+        printf 'MUTANT SURVIVED: TIERS[] table deleted\n' >&2; fail=$((fail + 1))
+    elif grep -qF 'FAIL real TIERS[] table present' "$TMP/mut$n.err"; then
+        caught=$((caught + 1)); printf 'mutant %s (TIERS[] table deleted) caught by: %s\n' "$n" "$(grep -m1 '^FAIL real TIERS' "$TMP/mut$n.err" | cut -c1-110)"
+    else printf 'MUTANT %s caught by the wrong row\n' "$n" >&2; fail=$((fail + 1)); fi
     printf 'mutants: %s of %s caught\n' "$caught" "$n"
 }
 
