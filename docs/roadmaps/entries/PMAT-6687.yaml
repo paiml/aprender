@@ -1,0 +1,19 @@
+- id: PMAT-6687
+  github_issue: 6687
+  item_type: task
+  title: Remove producer|grep -q pipe in falsify_package_lane (pipe_grep_q baseline 40>39)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T00:41:08Z
+  updated: 2026-11-03T00:41:08Z
+  spec: null
+  acceptance_criteria:
+  - 'graph-ordered cargo package lane, aprender issue #3892'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3999

@@ -267,7 +267,7 @@ real_rows() {
         sed -nE 's/^TIERS\[([0-9]+)\]="(.*)"$/\1 \2/p' "$ROOT/scripts/cascade-publish.sh" | sort -n | cut -d' ' -f2- | tr ' ' '\n' > "$TMP/tiers.txt"
         run --verify-order "$TMP/tiers.txt"
         expect_rc "real TIERS[] order is refused (#3892)" 1; expect_err "real TIERS[] names profile before db" "aprender-profile ("
-        if grep -F 'aprender-profile (' "$TMP/err" | grep -qF 'before its dependency aprender-db'; then ok; else bad "real TIERS[]" "profile/db pair not named"; fi
+        if grep -qE 'aprender-profile \(.*before its dependency aprender-db' "$TMP/err"; then ok; else bad "real TIERS[]" "profile/db pair not named"; fi
     fi
 }
 
