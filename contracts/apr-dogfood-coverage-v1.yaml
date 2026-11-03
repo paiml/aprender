@@ -111,6 +111,7 @@ metadata:
       aprender-data: {total: 36, covered: 0}
       aprender-cgp: {total: 26, covered: 0}
       aprender-profile: {total: 17, covered: 0}
+      aprender-roadmap: {total: 2, covered: 0}
       apr-qa: {total: 16, covered: 0}
       aprender-rag: {total: 14, covered: 0}
       aprender-train-shell: {total: 14, covered: 0}
@@ -175,7 +176,7 @@ metadata:
       apr-core-commands: {total: 112, covered: 39}          # 34.8% of cluster, 27.1% of gate effort
       entrypoint-and-mcp: {total: 120, covered: 9}           # 7.5% of cluster,  6.2% of gate effort
       http-orchestrate-banco: {total: 96, covered: 0}       #  ZERO -- one HTTP harness, the cheapest large win
-      contracts-pv: {total: 105, covered: 0}                #  ZERO -- one contract-CLI harness, 105 pv rows
+      contracts-pv: {total: 107, covered: 0}                #  ZERO -- one contract-CLI harness, 107 pv rows
       data-pipeline: {total: 77, covered: 0}                #  ZERO
       apr-lint-diag: {total: 71, covered: 55}               # 77.5% of cluster, 38.2% of gate effort
       orchestrate-agent-stack: {total: 56, covered: 0}      #  ZERO
@@ -197,7 +198,7 @@ metadata:
         the 4.3% coverage of that band is why.
       q1_2: {total: 80, covered: 58}     # 72.5%
       q3_4: {total: 49, covered: 27}     # 55.1%
-      q5_6: {total: 731, covered: 29}    # 4.0%
+      q5_6: {total: 733, covered: 29}    # 4.0%
       q7_8: {total: 38, covered: 10}      # 26.3%
       q9_10: {total: 22, covered: 20}    # 90.9%
 
