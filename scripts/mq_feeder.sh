@@ -28,7 +28,7 @@ pick() {
 # Wide on purpose: every path under scripts/, ci/ and .github/ (the explicit-test fragments run arbitrary scripts) plus root build/lint config.
 gate_paths() { grep -qE '(^|/)(Cargo\.toml$|build\.rs$|\.?clippy\.toml$|deny\.toml$|rust-toolchain|\.cargo/|\.?rustfmt\.toml$|\.gitignore$|\.?codecov\.yml$)|^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
 # (There is no dissent word list: every review at HEAD that is not a qualifying PASS vetoes.)
-# Review format the feeder accepts (C48 tiers, C61-2). One review at HEAD whose body is "<who>, non-author: PASS|APPROVE(D)" --
+# Review format the feeder accepts (C48 tiers, C61-2). One review at HEAD whose body is "<who> ([sN, ]non-author): PASS|APPROVE(D)" --
 #   LOW  (no gate content): one non-author PASS;  HIGH (gate content): one PASS from an Opus lane (the <who> BEGINS with an Opus lane name).
 # The retired "quorum 3/3 PASS" receipt counts for nothing. The verdict is followed ONLY by optional punctuation and an
 # optional " @<sha>" up to the end of the body. A body with a quote mark, a negation/deferral/failure word or a
@@ -336,6 +336,12 @@ if [ "${1:-}" = --self-test ]; then
   for q in '@DEADBEEF12' '@2222222A' '@2222222\f' '@2222222\v' '@zz'; do
     eq "PASS $q -> skip (fail closed)" "$(REVIEWS="COMMENTED\tSeat 1 (s1, non-author): PASS $q\n" ns)" 0
   done
+  # round-8: LOW-tier rows (docs only, no Opus filter to hide behind) that fail when WHO/END is loosened
+  for q in 'claude-sonnet-5-5-draft-unverified-skim (non-author): PASS' 'Opus 5.5 (unverified draft, non-author): PASS' 'Seat draft (s1, non-author): PASS' \
+      'Draft (s1, non-author): PASS' 'Seat 1 (s1, non-author): PASS?' 'Seat 1 (s1, non-author): PASS @abcdef1-skim' 'Seat 1 (unverified, non-author): PASS'; do
+    eq "LOW: '$q' -> skip" "$(FILES=docs/x.md REVIEWS="COMMENTED\t$q\n" ns)" 0
+  done
+  eq 'HIGH: Opus 5.5 (unverified draft, non-author) -> skip' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tOpus 5.5 (unverified draft, non-author): PASS\n' ns)" 0
   eq 'PASS @2222222 + U+2003 -> skip' "$(REVIEWS=$'COMMENTED\tSeat 1 (s1, non-author): PASS @2222222\u2003\n' ns)" 0
   eq 'HIGH: Opus PASS @DEADBEEF12 -> skip' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tOpus 5.5 (s2, non-author): PASS @DEADBEEF12\n' ns)" 0
   # round-7: the claude- slot is a fixed model-id shape; the Opus filter is exercised by WHO-valid non-Opus lanes
