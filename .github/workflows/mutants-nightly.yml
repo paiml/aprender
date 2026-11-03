@@ -102,9 +102,9 @@ jobs:
               export CARGO_INSTALL_ROOT=/usr/local/cargo-mutants-root
               export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
               if ! cargo mutants --version > /dev/null 2>&1; then
-                cargo install cargo-mutants --locked --version 27.1.0 > "$RUNNER_TEMP"/mi.log 2>&1 || {
+                cargo install cargo-mutants --locked --version 27.1.0 > /tmp/mi.log 2>&1 || {
                   echo "::error::cargo-mutants install failed; the nightly cannot run"
-                  tail -20 "$RUNNER_TEMP"/mi.log
+                  tail -20 /tmp/mi.log
                   exit 1
                 }
               fi

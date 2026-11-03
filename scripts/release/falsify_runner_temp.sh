@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # RS-5 falsifier: nightly workflows, their guard and models_t1.sh must not use fixed /tmp names
-# a concurrent job can sweep (C61-7 adds book, deploy-apr-install, mutants-nightly, qwen-story-daily); they live under $RUNNER_TEMP. --mutants proves each check can fail.
+# a concurrent job can sweep (C61-7 adds book, deploy-apr-install, qwen-story-daily; mutants-nightly keeps /tmp/mi.log because it runs inside a private docker container where RUNNER_TEMP is unset); they live under $RUNNER_TEMP. --mutants proves each check can fail.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 FILES=(.github/workflows/cuda-nightly.yml .github/workflows/coverage-nightly.yml .github/workflows/nightly-bench.yml scripts/check_coverage_receipt.sh
-       .github/workflows/book.yml .github/workflows/deploy-apr-install.yml .github/workflows/mutants-nightly.yml .github/workflows/qwen-story-daily.yml)
+       .github/workflows/book.yml .github/workflows/deploy-apr-install.yml .github/workflows/qwen-story-daily.yml)
 M=scripts/release/models_t1.sh
-BAD='/tmp/(cov\.log|gaps\.txt|bench\.log|pp26-prev-witness|bashrs\.log|deployed-install\.sh|mi\.log|story\.log|qwen-story-artifacts|prev/|issue-body\.md)'
+BAD='/tmp/(cov\.log|gaps\.txt|bench\.log|pp26-prev-witness|bashrs\.log|deployed-install\.sh|story\.log|qwen-story-artifacts|prev/|issue-body\.md)'
 
 # scan <file...> : rc 1 and a line per hit when a fixed /tmp name is used outside a comment
 scan() {
