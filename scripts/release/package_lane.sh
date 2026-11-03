@@ -21,7 +21,7 @@
 #
 # The graph: every publishable crate (`publish` unset or listing crates-io) of the root workspace AND of crates/facades
 # (a second, excluded workspace); an edge for each normal and build dependency on another crate in the set. Dev-dependencies
-# carry no edge: they are stripped on publish when path-only and would make a cycle out of every `foo-test-support`.
+# carry no edge: they are stripped on publish when path-only (a dev-dep with both version and path is NOT stripped and is not ordered here) and would make a cycle out of every `foo-test-support`.
 # Ties break by (level, name), so the order is deterministic. A cycle is an error, not an order.
 #
 # No `--allow-dirty`: the nightly packages a clean checkout of the pick sha, and a dirty one is refused by cargo.
