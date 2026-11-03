@@ -42,12 +42,22 @@ if [ "${1:-}" = --mutants ]; then
     mut fallback-silent 's/^    inbox_line "\$head_\$why"$/    :/'
     mut fallback-names-cut 's/snames% }/snames%% *}/'
     mut cut-marker-room-not-reserved 's/room=\$((room - 24))/room=$((room - 0))/'
-    mut fallback-already-promoted-silent 's/fallback_line "already-promoted at" "\$sha"; //'
-    mut fallback-cleanroom-fail-silent 's/fallback_line "no clean-room at" "\$sha"; //'
+    mut fallback-already-promoted-silent 's/^        fallback_line "already-promoted at" "\$sha"$/        :/'
+    mut cleanroom-fail-label-dropped 's/FL="no clean-room at" fail/fail/'
     mut fallback-cleanroom-dispatched-silent 's/fallback_line "clean-room dispatched at" "\$sha"; //'
     mut fallback-cleanroom-pending-silent 's/fallback_line "clean-room pending at" "\$sha"; //'
     mut cleanroom-red-second-line 's/completed\*) crnote=/completed*) inbox_line "RED clean-room run $id on ${sha:0:9}"; crnote=/'
-    mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then say.*$/    :/'
+    mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then fallback_line.*$/    :/'
+    mut fallback-already-promoted-behind-marker 's/^        fallback_line "already-promoted at" "\$sha"$/        [ -e "$d\/already-promoted" ] || fallback_line "already-promoted at" "$sha"/'
+    mut fail-drops-skipped-names 's/if \[ "\${nskip:-0}" -gt 0 \]; then red_line "\${FL/if false; then red_line "${FL/'
+    mut using-line-before-guard 's/^    (cd "\$repo" \&\& {/    fallback_line "using" "$sha"; (cd "$repo" \&\& {/'
+    mut promote-exec-fail-second-line 's/else FRC=\$rc FL=using/else inbox_line "RED promote --execute failed"; FRC=$rc FL=using/'
+    mut dry-run-using-line-dropped 's/if \[ "\$exe" != 1 \]; then fallback_line "using" "\$sha"; say/if [ "$exe" != 1 ]; then say/'
+    mut final-fail-names-dropped 's/^FL="all candidates skipped, last" FS=\$last fail/nskip=0 fail/'
+    mut unexpected-exit-net-dropped 's/|| inbox_line "RED promote: exited 1 without a verdict (state \$state)"//'
+    mut dispatch-fail-label-dropped 's/FL="clean-room dispatch failed at" //'
+    mut exec-rc-dropped 's/FRC=\$rc FL=using/FL=using/'
+    mut cleanroom-red-fact-dropped 's/crnote="clean-room run $id ended/crnote="run ended/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
 fi
@@ -112,7 +122,7 @@ echo "GH $*" >> "$FX_CALLS"
 repo=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --repo ] && { j=$((i+1)); repo=${!j}; }; done
 case "$*" in *rate_limit*) echo "${FX_RATE:-5000}"; exit 0 ;; esac
 case "$*" in
-  *"workflow run"*) exit 0 ;;
+  *"workflow run"*) [ "${FX_DISPATCH_FAIL:-0}" = 1 ] && { echo "HTTP 422 boom"; exit 1; }; exit 0 ;;
   *"--json databaseId,createdAt"*) fx_j='[{"databaseId":111,"createdAt":"2000-01-01T00:00:00Z","displayTitle":""}]'; [ "${FX_STALE_RUN:-0}" = 1 ] || fx_j="[{\"databaseId\":998,\"createdAt\":\"2999-01-01T00:00:00Z\",\"displayTitle\":\"other\"},{\"databaseId\":999,\"createdAt\":\"2999-01-01T00:00:00Z\",\"displayTitle\":\"clean-room ${FX_SHA:0:9}\"},{\"databaseId\":111,\"createdAt\":\"2000-01-01T00:00:00Z\",\"displayTitle\":\"\"}]"
       fx_f=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --jq ] && { j=$((i+1)); fx_f=${!j}; }; done; printf '%s' "$fx_j" | jq -r "$fx_f" ;;
   *"run list"*) [ "$FX_CR" = none ] || echo 777 ;;
@@ -125,6 +135,7 @@ cat > "$TMP/promote" <<'SH'
 #!/usr/bin/env bash
 echo "PROMOTE $*" >> "$FX_CALLS"
 [ "$FX_PROMOTE_RC" = 0 ] || { echo "promote_nightly: REFUSE -- stub" >&2; exit 1; }
+case "$*" in *--execute*) [ "${FX_PROMOTE_EXEC_RC:-0}" = 0 ] || { echo "promote_nightly: exec failed -- stub" >&2; exit "$FX_PROMOTE_EXEC_RC"; } ;; esac
 SH
 printf '#!/usr/bin/%s\nexit "${FX_GATE_RC:-0}"\n' env\ bash > "$TMP/gate"
 cat > "$TMP/models" <<'SH'
@@ -160,10 +171,12 @@ SANDBOX=(env "HOME=$TMP/h" FX_HIDDEN=1)
 TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
 [ -z "\${FX_REAL_MODELS:-}" ] || MODELS_NIGHTLY="$HERE/models_nightly.sh"
 [ -z "\${FX_WIDE:-}" ] || MAX_AGE_DAYS=30
+[ -z "\${FX_BOOM:-}" ] || : "\$undefined_boom_var"
 EOF
 sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environment)
     local n=$1 wr=$2 wp=$3 we=$4 rc; shift 4
     : > "$TMP/calls"; : > "$INB"; rm -rf "${ST:?}" "${TMP:?}/pt-flag"
+    if [ -n "${FX_MARK_PROMOTED:-}" ]; then mkdir -p "$ST/$FX_MARK_PROMOTED"; : > "$ST/$FX_MARK_PROMOTED/already-promoted"; fi
     if [ "${FX_PRESEED:-0}" = 1 ]; then mkdir -p "$ST/${FX_PRESEED_SHA:-$R2}"; echo 999 > "$ST/${FX_PRESEED_SHA:-$R2}/cleanroom-run-id"; fi
     FX_CALLS="$TMP/calls" FX_PT_FLAG="$TMP/pt-flag" FX_R1=$R1 FX_R2=$R2 FX_R0=$R0 \
         bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 "$@" > "$TMP/out-$n" 2>&1; rc=$?
@@ -209,6 +222,7 @@ FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched fallback-line-already-promoted 0 0 0 --ex
 inbox_has fallback-line-already-promoted "RED fallback: already-promoted at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 g push -q origin ":refs/tags/v1.2.3"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-fail 1 0 0 --execute
+expect "cleanroom-fail RED count" 1 "$(grep -c "| RED " "$INB")"
 inbox_has fallback-line-cleanroom-fail "RED fallback: no clean-room at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-dispatched 3 0 0 --execute --dispatch-cleanroom
 inbox_has fallback-line-cleanroom-dispatched "RED fallback: clean-room dispatched at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
@@ -218,6 +232,50 @@ inbox_has fallback-line-cleanroom-pending "RED fallback: clean-room pending at $
 FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched cleanroom-red-fallback-one-line 0 2 1 --execute
 expect "cleanroom-red fallback RED line count" 1 "$(grep -c 'RED' "$INB")"
 grep 'RED' "$INB" | grep -q "clean-room run 999 ended 'failure'" && grep 'RED' "$INB" | grep -q "RED fallback: using ${R1:0:9}" && ok || bad "single RED line lacks the clean-room fact or the fallback"
+# C12 round 4 (aprender#6677): the contract is ONE RED line on EVERY exit path, reported once the outcome is known
+red_n() { grep -c '| RED ' "$INB"; }
+# (a) an already-promoted marker left by an earlier tick on the OLDER candidate must not silence the fallback past the red newer one
+g push -q origin "$R1:refs/tags/v1.2.3"
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_MARK_PROMOTED=$R1 sched fallback-line-already-promoted-marker-preseeded 0 0 0 --execute
+inbox_has fallback-line-already-promoted-marker-preseeded "RED fallback: already-promoted at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+expect "marker-preseeded RED count" 1 "$(red_n)"
+expect "marker-preseeded DONE not repeated" 0 "$(grep -c 'DONE already promoted' "$INB")"
+g push -q origin ":refs/tags/v1.2.3"
+# (c) a clean-room dispatch that fails, or whose run id is unreadable, still names the skipped candidate
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_DISPATCH_FAIL=1 sched cleanroom-dispatch-fails-names-skipped 1 0 0 --execute --dispatch-cleanroom
+inbox_has cleanroom-dispatch-fails-names-skipped "RED fallback: clean-room dispatch failed at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+expect "dispatch-fails RED count" 1 "$(red_n)"
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_STALE_RUN=1 sched cleanroom-run-id-unreadable-names-skipped 1 0 0 --execute --dispatch-cleanroom
+inbox_has cleanroom-run-id-unreadable-names-skipped "RED fallback: clean-room run id unreadable at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+expect "run-id-unreadable RED count" 1 "$(red_n)"
+# (f) every candidate skipped: the final fail line carries the names first
+FX_MODELS=red sched all-candidates-skipped-names-first 1 0 0 --execute
+inbox_has all-candidates-skipped-names-first "RED fallback: all candidates skipped, last ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9} | why: ${R2:0:9} models not green"
+expect "all-skipped RED count" 1 "$(red_n)"
+# the per-path loop: name|env|want_rc|want_promote|want_exec|args -- RED count must be exactly 1 on every one of these exit paths
+red_paths=(
+    "path-pushtags-guard-fails-after-fallback|FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 FX_PT_OK=0 FX_PT_INSTALL_FAILS=1|1|1|0|--execute"
+    "path-pushtags-guard-fails-no-fallback|FX_PT_OK=0 FX_PT_INSTALL_FAILS=1|1|1|0|--execute"
+    "path-promote-exec-fails-after-fallback|FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 FX_PROMOTE_EXEC_RC=5|5|2|1|--execute"
+    "path-promote-exec-fails-no-fallback|FX_PROMOTE_EXEC_RC=5|5|2|1|--execute"
+    "path-dry-run-using-fallback|FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1|0|1|0|"
+    "path-execute-using-fallback|FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1|0|2|1|--execute"
+    "path-cleanroom-red-then-older|FX_PRESEED=1 FX_RUN_STATE=\"completed failure\" FX_SHA=$R1|0|2|1|--execute"
+    "path-cleanroom-missing-after-fallback|FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none|1|0|0|--execute"
+    "path-cleanroom-dispatched-after-fallback|FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none|3|0|0|--execute --dispatch-cleanroom"
+    "path-cleanroom-pending-after-fallback|FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_PRESEED=1 FX_PRESEED_SHA=$R1 FX_RUN_STATE=\"in_progress \"|3|0|0|--execute --dispatch-cleanroom"
+    "path-cleanroom-dispatch-fails-after-fallback|FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_DISPATCH_FAIL=1|1|0|0|--execute --dispatch-cleanroom"
+    "path-cleanroom-run-red-not-pending|FX_CR=none FX_PRESEED=1 FX_RUN_STATE=\"completed failure\"|1|0|0|--execute"
+    "path-all-candidates-skipped|FX_MODELS=red|1|0|0|--execute"
+    "path-lanes-evidence-missing|FX_LANES=none|1|0|0|--execute"
+    "path-unexpected-exit-1|FX_BOOM=1|1|0|0|--execute"
+)
+for row in "${red_paths[@]}"; do
+    IFS='|' read -r pn penv prc pp pe pargs <<< "$row"
+    eval "$penv sched $pn $prc $pp $pe $pargs"
+    expect "$pn: exactly one RED line" 1 "$(red_n)"
+done
+inbox_has path-unexpected-exit-1 "RED promote: exited 1 without a verdict"
 FX_RATE=999 sched rate-floor 0 0 0 --execute; inbox_has rate-floor SKIP
 FX_RATE=x sched rate-unreadable 0 0 0 --execute
 FX_LANES=none sched lane-evidence-missing-fails-closed 1 0 0 --execute; inbox_has lane-evidence-missing RED
@@ -228,7 +286,8 @@ inbox_has dispatch PENDING
 expect "run id recorded (named for the sha, not unrelated 998)" 999 "$(cat "$ST/$R2/cleanroom-run-id" 2> /dev/null)"
 FX_CR=none FX_PRESEED=1 FX_RUN_STATE="in_progress " sched cleanroom-running-pending 3 0 0 --execute --dispatch-cleanroom; inbox_has cleanroom-running PENDING
 FX_CR=none FX_STALE_RUN=1 sched dispatch-only-older-runs-not-adopted 1 0 0 --execute --dispatch-cleanroom
-FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute; inbox_has cleanroom-ended-red RED
+FX_CR=none FX_PRESEED=1 FX_RUN_STATE="completed failure" sched cleanroom-ended-red-not-pending 1 0 0 --execute; inbox_has cleanroom-ended-red "RED fallback: no clean-room at ${R1:0:9}"
+inbox_has cleanroom-ended-red-fact "clean-room run 999 ended 'failure'"
 FX_CR=none FX_PRESEED=1 FX_RUN_STATE="" sched cleanroom-unreadable 1 0 0 --execute
 FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched red-marker-does-not-block-older 0 2 1 --execute
 grep -q "PROMOTE --sha $R1" "$TMP/calls" && ok || bad "older candidate not promoted after red marker"

@@ -24,7 +24,7 @@ set -uo pipefail
 unset GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""; DISPATCH_WAIT=5
-repo="" state="" nb="" disp=0 exe=0 inbox="" floor=""
+repo="" state="" nb="" disp=0 exe=0 inbox="" floor="" reds=0 notes="" snames="" nskip=0 cur="" crnote=""
 usage() { printf 'promote_scheduler: %s\n' "$*" >&2; exit 2; }
 say() { printf 'promote_scheduler: %s\n' "$*"; }
 # inbox_line MSG: one line, <= 300 chars, to the cop inbox. A skipped or failed promotion is never silent.
@@ -32,7 +32,26 @@ inbox_line() {
     local t; t=$(date -u +%H:%MZ) # bashrs disable-line=DET002
     printf '%s | promote-scheduler | PMAT-5306 | %s\n' "$t" "$1" | cut -c1-300 >> "$inbox" 2> /dev/null || true
 }
-fail() { say "$*"; inbox_line "RED promote: $* (state $state)"; exit 1; }
+# red_line LABEL SHA TAIL: THE one RED writer (C12 r4, aprender#6677). Every exit that is not a success goes through fail() or
+# fallback_line(), and both end here: ONE line = every skipped name first, then the prose (notes + TAIL), the whole of it
+# cut last with its marker inside inbox_line's 300 chars (prefix 41 + slack). reds counts them; the EXIT trap proves >= 1 on rc 1.
+red_line() {
+    local head_ room why
+    why="${notes:-}$3"
+    head_="RED fallback: $1 ${2:0:9}, $nskip newer candidate(s) skipped: ${snames% } | why: "
+    room=$((300 - 42 - ${#head_}))
+    if [ "${#why}" -le "$room" ]; then :
+    else room=$((room - 24)); [ "$room" -gt 0 ] || room=0; why="${why:0:room}(+$(( ${#why} - room )) chars cut)"; fi
+    reds=$((reds + 1))
+    inbox_line "$head_$why"
+}
+# fail MSG: stop with ONE RED line. A skipped newer candidate puts its names in front (FL label, FS sha, FRC exit code via prefix vars).
+fail() {
+    say "$*"
+    if [ "${nskip:-0}" -gt 0 ]; then red_line "${FL:-stopped at}" "${FS:-${cur:-unknown}}" "$*"
+    else reds=$((reds + 1)); inbox_line "RED promote: ${notes:-}$* (state $state)"; fi
+    exit "${FRC:-1}"
+}
 while [ $# -gt 0 ]; do
     case "$1" in
         --repo) [ $# -ge 2 ] || usage "--repo needs a value"; repo=$2; shift 2 ;;
@@ -65,7 +84,8 @@ G fetch -q origin main nightly-evidence 2> /dev/null || fail "cannot fetch origi
 
 work=$(mktemp -d) || usage "no temp dir"
 cleanup() { G worktree remove --force "$work/gate" > /dev/null 2>&1; G worktree remove --force "$work/ev" > /dev/null 2>&1; G worktree prune > /dev/null 2>&1; rm -rf -- "${work:?}"; return 0; }
-trap cleanup EXIT
+# every exit goes through here: rc 1 with no RED line written is itself a RED line (the contract holds on EVERY exit path)
+trap 'rc=$?; cleanup; { [ "$rc" != 1 ] || [ "$reds" -gt 0 ]; } || inbox_line "RED promote: exited 1 without a verdict (state $state)"; exit "$rc"' EXIT
 G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&1 || fail "cannot make a gate worktree of origin/main"
 S="$work/gate/scripts/release"
 PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
@@ -127,13 +147,8 @@ lanes_ok() {
 # every skipped name first, then the prose; the whole line, cut marker included, fits inbox_line's 300 chars (prefix 41 + slack).
 fallback_line() {
     [ "${nskip:-0}" -gt 0 ] || return 0
-    local head_ room why
-    head_="RED fallback: $1 ${2:0:9}, $nskip newer candidate(s) skipped: ${snames% } | why: "
-    room=$((300 - 42 - ${#head_}))
-    if [ "${#notes}" -le "$room" ]; then why=$notes
-    else room=$((room - 24)); [ "$room" -gt 0 ] || room=0; why="${notes:0:room}(+$(( ${#notes} - room )) chars cut)"; fi
     say "fallback past newer candidate(s) ($1 ${2:0:9}): $notes"
-    inbox_line "$head_$why"
+    red_line "$1" "$2" ""
 }
 # cleanroom_for SHA OUT: a successful clean-room (aprender) job whose log says tested-sha == exactly SHA
 cleanroom_for() {
@@ -164,21 +179,21 @@ cleanroom_marker() { # SHA DIR FIRST
     fi
     [ "$3" = 1 ] && [ "$disp" = 1 ] || return 0
     t0=$(date -u +%Y-%m-%dT%H:%M:%SZ) # bashrs disable-line=DET002
-    "$GH" workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" > "$d/dispatch.log" 2>&1 || fail "clean-room dispatch on ${sha:0:9} failed ($(tail -n 1 "$d/dispatch.log"))"
+    "$GH" workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" > "$d/dispatch.log" 2>&1 || FL="clean-room dispatch failed at" fail "clean-room dispatch on ${sha:0:9} failed ($(tail -n 1 "$d/dispatch.log"))"
     id=""
     for _ in 1 2 3; do
         id=$("$GH" run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt,displayTitle --jq "[.[] | select(.createdAt >= \"$t0\")] | (map(select((.displayTitle // \"\") | contains(\"${sha:0:9}\"))) + .) | .[0].databaseId" 2> /dev/null)
         [[ $id =~ ^[1-9][0-9]*$ ]] && break
         sleep "$DISPATCH_WAIT"
     done
-    [[ $id =~ ^[1-9][0-9]*$ ]] || fail "clean-room dispatched on ${sha:0:9} but its run id cannot be read"
+    [[ $id =~ ^[1-9][0-9]*$ ]] || FL="clean-room run id unreadable at" fail "clean-room dispatched on ${sha:0:9} but its run id cannot be read"
     printf '%s\n' "$id" > "$d/cleanroom-run-id"
     say "clean-room run $id dispatched on ${sha:0:9}; pending"; fallback_line "clean-room dispatched at" "$sha"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
 }
 
-first=1 notes="" snames="" last="" crnote=""
+first=1 last=""
 for sha in "${cands[@]}"; do
-    [ -z "$last" ] || snames+="$last "; last=${sha:0:9}; nskip=$(wc -w <<< "$snames")
+    [ -z "$last" ] || snames+="$last "; last=${sha:0:9}; nskip=$(wc -w <<< "$snames"); cur=$sha
     d="$state/$sha"; install -d -- "$d"
     if ! models_ok "$sha" "$d"; then
         notes+="${sha:0:9} models not green ($(tail -n 1 "$d/relay.log" | cut -c1-80)); "
@@ -187,7 +202,8 @@ for sha in "${cands[@]}"; do
     ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '/^\[/ { s = ($0 ~ /^\[workspace\.package\][[:space:]]*$/) } s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
     if [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$(G ls-remote origin "refs/tags/v$ver" 2> /dev/null)" ]; then
         say "${sha:0:9}: v$ver is already on origin: already promoted, nothing to do"
-        [ -e "$d/already-promoted" ] || { : > "$d/already-promoted"; fallback_line "already-promoted at" "$sha"; inbox_line "DONE already promoted: v$ver is on origin (newest verified ${sha:0:9}); nothing to do"; }
+        fallback_line "already-promoted at" "$sha"
+        [ -e "$d/already-promoted" ] || { : > "$d/already-promoted"; inbox_line "DONE already promoted: v$ver is on origin (newest verified ${sha:0:9}); nothing to do"; }
         exit 0
     fi
     if miss=$(lanes_ok "$sha" "$d"); then :; else notes+="${sha:0:9} the train does not judge it releasable: $miss; "; continue; fi
@@ -195,7 +211,7 @@ for sha in "${cands[@]}"; do
         cleanroom_marker "$sha" "$d" "$first"; mrc=$?
         if [ "$mrc" = 2 ]; then notes+="${sha:0:9} $crnote; "; continue; fi
         if ! cleanroom_for "$sha" "$d/cleanroom.json"; then
-            if [ "$first" = 1 ]; then fallback_line "no clean-room at" "$sha"; fail "no clean-room success tested on exactly ${sha:0:9} (pass --dispatch-cleanroom to start one)"; fi
+            if [ "$first" = 1 ]; then FL="no clean-room at" fail "no clean-room success tested on exactly ${sha:0:9} (pass --dispatch-cleanroom to start one)"; fi
             notes+="${sha:0:9} no clean-room on this exact sha; "; continue
         fi
     fi
@@ -210,14 +226,15 @@ for sha in "${cands[@]}"; do
     if ! bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" > "$d/promote-dry.log" 2>&1; then
         notes+="${sha:0:9} promote dry-run refused: $(grep -m1 REFUSE "$d/promote-dry.log" | cut -c1-100); "; continue
     fi
-    # C12 (aprender#6677): a fallback past a red/skipped NEWER candidate is never silent: exactly ONE RED line, every skipped name first, the prose after and cut last
-    [ -z "$notes" ] || fallback_line "using" "$sha"
-    if [ "$exe" != 1 ]; then say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
+    # C12 r4 (aprender#6677): the fallback line is written only once the outcome is known (dry-run verdict, guard result, promote rc),
+    # so a later failure is the SAME single RED line (fail() with FL=using), never a second one
+    if [ "$exe" != 1 ]; then fallback_line "using" "$sha"; say "${sha:0:9}: dry-run: would promote (re-run with --execute)"; exit 0; fi
     (cd "$repo" && { bash "$PUSHTAGS" --verify || { bash "$PUSHTAGS" --install && bash "$PUSHTAGS" --verify; }; }) > "$d/pushtags.log" 2>&1 \
-        || fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"
+        || FL=using FS=$sha fail "pre-push-tags guard is not installed/verified in $repo: not executing ($d/pushtags.log)"
     bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" --execute > "$d/promote-exec.log" 2>&1; rc=$?
     tail -n 6 "$d/promote-exec.log"
-    [ "$rc" = 0 ] && inbox_line "DONE promoted ${sha:0:9}: $(grep -m1 TAGGED "$d/promote-exec.log" | cut -c1-120)" || inbox_line "RED promote --execute failed rc=$rc at ${sha:0:9} ($d/promote-exec.log)"
+    if [ "$rc" = 0 ]; then fallback_line "using" "$sha"; inbox_line "DONE promoted ${sha:0:9}: $(grep -m1 TAGGED "$d/promote-exec.log" | cut -c1-120)"
+    else FRC=$rc FL=using FS=$sha fail "promote --execute failed rc=$rc at ${sha:0:9} ($d/promote-exec.log)"; fi
     exit "$rc"
 done
-fail "no candidate passed every gate: ${notes:-none}"
+FL="all candidates skipped, last" FS=$last fail "no candidate passed every gate"
