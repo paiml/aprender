@@ -31,3 +31,10 @@ Measured at code commit f040aa8e328f04df240c3320edfbf98c6546fa8d (the receipt co
 - (1) execute success path now goes through fallback_once() with the already-promoted key (fallback-reported-<newest12>); rows execute-then-already-promoted-first/second give 1 fallback RED line in total; mutant execute-marker-dropped is caught.
 - (2) row renamed cleanroom-red-restored-line-plus-one-fallback: asserts the restored clean-room RED line separately and the fallback count with red_n == 1.
 - Measured at final code commit f040aa8e328f04df240c3320edfbf98c6546fa8d; the make roadmap-aggregate line is unchanged since no roadmap fragment changed after r6.
+
+## r8 (round 8 of 8)
+
+- F1 (promote_scheduler.sh:189, pending path wrote a RED fallback line every tick): CONFIRMED by reading the code; the pending and dispatched paths called fallback_line, which has no marker. Both now call fallback_once with the per-pair marker fallback-reported-cr-<newest12>. Rows pending-tick-first (1 RED) and pending-tick-second (0 RED); mutant cleanroom-pending-marker-dropped is caught; the pending/dispatched silent mutants were re-anchored to the new text.
+- F2 (dry-run and execute use different markers): unchanged by design, per the r6 rulings (b) above, which required a separate dry-run key. Ruling quorum on BLOCKER vs POLISH: /mnt/nvme-raid0/tmp/ruling-aprender-6684-r8-f2.json (bound to the final head).
+- bash scripts/release/falsify_promote_scheduler.sh: falsify_promote_scheduler: 401 passed, 0 failed
+- bash scripts/release/falsify_promote_scheduler.sh --mutants: falsify_promote_scheduler --mutants: 58 mutants, 0 not caught

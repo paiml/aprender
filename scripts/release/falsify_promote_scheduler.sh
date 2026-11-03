@@ -44,8 +44,9 @@ if [ "${1:-}" = --mutants ]; then
     mut cut-marker-room-not-reserved 's/room=\$((room - 24))/room=$((room - 0))/'
     mut fallback-already-promoted-silent 's/^        fallback_once "already-promoted at" "\$sha" "fallback-reported-.*$/        :/'
     mut cleanroom-fail-label-dropped 's/FL="no clean-room at" fail/fail/'
-    mut fallback-cleanroom-dispatched-silent 's/fallback_line "clean-room dispatched at" "\$sha"; //'
-    mut fallback-cleanroom-pending-silent 's/fallback_line "clean-room pending at" "\$sha"; //'
+    mut fallback-cleanroom-dispatched-silent 's/fallback_once "clean-room dispatched at" "\$sha" "fallback-reported-cr-[^;]*; //'
+    mut fallback-cleanroom-pending-silent 's/fallback_once "clean-room pending at" "\$sha" "fallback-reported-cr-[^;]*; //'
+    mut cleanroom-pending-marker-dropped 's/fallback_once "clean-room pending at" "\$sha" "fallback-reported-cr-\${cands\[0\]:0:12}"/fallback_line "clean-room pending at" "$sha"/'
     mut restored-cleanroom-red-line-dropped 's/inbox_line "RED clean-room run \$id on \${sha:0:9} ended[^;]*; //'
     mut restored-cleanroom-unread-line-dropped 's/inbox_line "RED clean-room run \$id on \${sha:0:9} cannot be read[^;]*; //'
     mut restored-newest-crux-line-dropped 's/^        \[ "\$newest" = 1 \] \&\& inbox_line "RED newest nightly crux.*$/        :/'
@@ -254,6 +255,11 @@ FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none sched fallback-line-cleanroom-dispat
 inbox_has fallback-line-cleanroom-dispatched "RED fallback: clean-room dispatched at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_PRESEED=1 FX_PRESEED_SHA=$R1 FX_RUN_STATE="in_progress " sched fallback-line-cleanroom-pending 3 0 0 --execute --dispatch-cleanroom
 inbox_has fallback-line-cleanroom-pending "RED fallback: clean-room pending at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+# C12 r8 (aprender#6677): repeated ticks while the clean-room run is pending write ONE fallback RED line for the pair
+FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_PRESEED=1 FX_PRESEED_SHA=$R1 FX_RUN_STATE="in_progress " sched pending-tick-first 3 0 0 --execute --dispatch-cleanroom
+expect "pending first tick RED count" 1 "$(red_n)"
+FX_KEEP_STATE=1 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_PRESEED=1 FX_PRESEED_SHA=$R1 FX_RUN_STATE="in_progress " sched pending-tick-second 3 0 0 --execute --dispatch-cleanroom
+expect "pending second tick RED count (one line per pair)" 0 "$(red_n)"
 # (3) a red clean-room run on the skipped sha + fallback to the older one = the restored pre-existing clean-room RED line plus exactly ONE fallback RED line
 FX_PRESEED=1 FX_RUN_STATE="completed failure" FX_SHA=$R1 sched cleanroom-red-restored-line-plus-one-fallback 0 2 1 --execute
 expect "cleanroom-red fallback RED line count" 1 "$(grep -c 'RED fallback: using' "$INB")"

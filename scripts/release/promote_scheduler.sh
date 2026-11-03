@@ -186,7 +186,7 @@ cleanroom_marker() { # SHA DIR FIRST
             "completed success") return 0 ;;
             completed*) crnote="clean-room run $id ended '${st#completed }'"; inbox_line "RED clean-room run $id on ${sha:0:9} ended '${st#completed }': this sha is skipped, older candidates still tried"; say "clean-room run $id on ${sha:0:9} ended red"; return 2 ;;
             "") crnote="clean-room run $id cannot be read (not_measured)"; inbox_line "RED clean-room run $id on ${sha:0:9} cannot be read (not_measured): this sha is skipped"; say "clean-room run $id unreadable"; return 2 ;;
-            *) say "clean-room run $id for ${sha:0:9} still running; pending"; fallback_line "clean-room pending at" "$sha"; inbox_line "PENDING clean-room run $id on ${sha:0:9} still running"; exit 3 ;;
+            *) say "clean-room run $id for ${sha:0:9} still running; pending"; fallback_once "clean-room pending at" "$sha" "fallback-reported-cr-${cands[0]:0:12}"; inbox_line "PENDING clean-room run $id on ${sha:0:9} still running"; exit 3 ;;
         esac
     fi
     [ "$3" = 1 ] && [ "$disp" = 1 ] || return 0
@@ -200,7 +200,7 @@ cleanroom_marker() { # SHA DIR FIRST
     done
     [[ $id =~ ^[1-9][0-9]*$ ]] || FL="clean-room run id unreadable at" fail "clean-room dispatched on ${sha:0:9} but its run id cannot be read"
     printf '%s\n' "$id" > "$d/cleanroom-run-id"
-    say "clean-room run $id dispatched on ${sha:0:9}; pending"; fallback_line "clean-room dispatched at" "$sha"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
+    say "clean-room run $id dispatched on ${sha:0:9}; pending"; fallback_once "clean-room dispatched at" "$sha" "fallback-reported-cr-${cands[0]:0:12}"; inbox_line "PENDING clean-room run $id dispatched on ${sha:0:9}"; exit 3
 }
 
 first=1 newest=1 last=""
