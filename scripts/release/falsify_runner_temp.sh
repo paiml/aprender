@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # RS-5 falsifier: nightly workflows, their guard and models_t1.sh must not use fixed /tmp names
-# a concurrent job can sweep; they live under $RUNNER_TEMP. --mutants proves each check can fail.
+# a concurrent job can sweep (C61-7 adds book, deploy-apr-install, mutants-nightly, qwen-story-daily); they live under $RUNNER_TEMP. --mutants proves each check can fail.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
-FILES=(.github/workflows/cuda-nightly.yml .github/workflows/coverage-nightly.yml .github/workflows/nightly-bench.yml scripts/check_coverage_receipt.sh)
+FILES=(.github/workflows/cuda-nightly.yml .github/workflows/coverage-nightly.yml .github/workflows/nightly-bench.yml scripts/check_coverage_receipt.sh
+       .github/workflows/book.yml .github/workflows/deploy-apr-install.yml .github/workflows/mutants-nightly.yml .github/workflows/qwen-story-daily.yml)
 M=scripts/release/models_t1.sh
-BAD='/tmp/(cov\.log|gaps\.txt|bench\.log|pp26-prev-witness)'
+BAD='/tmp/(cov\.log|gaps\.txt|bench\.log|pp26-prev-witness|bashrs\.log|deployed-install\.sh|mi\.log|story\.log|qwen-story-artifacts|prev/|issue-body\.md)'
 
 # scan <file...> : rc 1 and a line per hit when a fixed /tmp name is used outside a comment
 scan() {
@@ -33,7 +34,7 @@ mutants() {
     d=$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || exit 2
     trap 'rm -rf -- "${d:?}"' RETURN
     for f in "${FILES[@]}"; do
-        sed -E 's#"\$RUNNER_TEMP"/#/tmp/#' "$f" > "$d/m"
+        sed -E 's#"\$RUNNER_TEMP"/#/tmp/#g; s#\$\{\{ runner\.temp \}\}/#/tmp/#g' "$f" > "$d/m"
         if scan "$d/m" >/dev/null; then echo "MUTANT SURVIVED: $f"; rc=1; fi
     done
     sed -E 's# -p "\$\{RUNNER_TEMP:-\$\{TMPDIR:-/tmp\}\}"##' "$M" > "$d/m"

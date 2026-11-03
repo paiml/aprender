@@ -189,7 +189,7 @@ jobs:
         run: |
           set +e
           set -o pipefail
-          bash scripts/qwen-story.sh 2>&1 | tee /tmp/story.log
+          bash scripts/qwen-story.sh 2>&1 | tee "$RUNNER_TEMP"/story.log
           echo "exit_code=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
 
       - name: Extract pmat bug-hunt manifest
@@ -206,17 +206,17 @@ jobs:
           # `growth` at 0 forever and made the "manifest grew by >5" alert
           # branch below unreachable. Anchor on leading whitespace instead of a
           # hardcoded indent so the two files cannot drift apart again.
-          mkdir -p /tmp/qwen-story-artifacts
-          grep -E '^[[:space:]]+(gap|churn|fault)[[:space:]]' /tmp/story.log \
-            > /tmp/qwen-story-artifacts/pmat-manifest.txt || true
-          LINES=$(wc -l < /tmp/qwen-story-artifacts/pmat-manifest.txt)
+          mkdir -p "$RUNNER_TEMP"/qwen-story-artifacts
+          grep -E '^[[:space:]]+(gap|churn|fault)[[:space:]]' "$RUNNER_TEMP"/story.log \
+            > "$RUNNER_TEMP"/qwen-story-artifacts/pmat-manifest.txt || true
+          LINES=$(wc -l < "$RUNNER_TEMP"/qwen-story-artifacts/pmat-manifest.txt)
           echo "manifest_lines=$LINES" >> "$GITHUB_OUTPUT"
           # Compare against the last successful run's manifest (artifact from prior workflow).
           # If the manifest grew by >5 lines, flag it.
           PREV_LINES=$(gh run list --workflow=qwen-story-daily.yml --status=success --limit=1 \
             --json databaseId --jq '.[0].databaseId' 2>/dev/null \
-            | xargs -I {} gh run download {} -n pmat-manifest -D /tmp/prev 2>/dev/null \
-            && wc -l < /tmp/prev/pmat-manifest.txt 2>/dev/null || echo 0)
+            | xargs -I {} gh run download {} -n pmat-manifest -D "$RUNNER_TEMP"/prev 2>/dev/null \
+            && wc -l < "$RUNNER_TEMP"/prev/pmat-manifest.txt 2>/dev/null || echo 0)
           GROWTH=$((LINES - PREV_LINES))
           echo "growth=$GROWTH" >> "$GITHUB_OUTPUT"
           echo "Previous manifest: $PREV_LINES lines, current: $LINES lines, growth: $GROWTH"
@@ -226,7 +226,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: pmat-manifest
-          path: /tmp/qwen-story-artifacts/pmat-manifest.txt
+          path: ${{ runner.temp }}/qwen-story-artifacts/pmat-manifest.txt
           retention-days: 90
 
       - name: Upload story log artifact
@@ -234,7 +234,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: story-log
-          path: /tmp/story.log
+          path: ${{ runner.temp }}/story.log
           retention-days: 30
 
       # NOTE `continue-on-error`. This step NOTIFIES; it does not judge. When it
@@ -275,22 +275,22 @@ jobs:
             echo ""
             echo "### Story log (tail)"
             echo '```'
-            tail -50 /tmp/story.log
+            tail -50 "$RUNNER_TEMP"/story.log
             echo '```'
             echo ""
             echo "### Manifest (top 20 lines)"
             echo '```'
-            head -20 /tmp/qwen-story-artifacts/pmat-manifest.txt 2>/dev/null || echo "(empty)"
+            head -20 "$RUNNER_TEMP"/qwen-story-artifacts/pmat-manifest.txt 2>/dev/null || echo "(empty)"
             echo '```'
-          } > /tmp/issue-body.md
+          } > "$RUNNER_TEMP"/issue-body.md
           if [ -n "$EXISTING" ]; then
             echo "Commenting on existing issue #$EXISTING"
-            gh issue comment "$EXISTING" --body-file /tmp/issue-body.md
+            gh issue comment "$EXISTING" --body-file "$RUNNER_TEMP"/issue-body.md
           else
             echo "Filing new tracking issue"
             gh issue create --title "$TITLE" \
               --label qwen-story-daily,regression \
-              --body-file /tmp/issue-body.md
+              --body-file "$RUNNER_TEMP"/issue-body.md
           fi
 
       # `always() &&` is load-bearing. Without a status function GitHub prepends
