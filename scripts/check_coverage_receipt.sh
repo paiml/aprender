@@ -4,7 +4,7 @@
 # and never a stale, partial or rounded-up number.
 #
 # BEHAVIOUR rows run the producer against fixture logs. STRUCTURE rows judge the workflow:
-#   S1  a marker is touched BEFORE the coverage step, so a previous run's /tmp/cov.log cannot pass as this run's;
+#   S1  a marker is touched BEFORE the coverage step, so a previous run's $RUNNER_TEMP/cov.log cannot pass as this run's;
 #   S2  the receipt step runs AFTER it, if: always(), continue-on-error (shadow, L31), keyed by
 #       `git rev-parse HEAD`, floor = COV_FLOOR as make resolves it, and judged against the marker;
 #   S3  the receipt is uploaded by its exact glob, if: always(), continue-on-error, a missing one an upload error;
@@ -101,7 +101,7 @@ RECEIPT=$(cat <<'EOF'
         run: |
           set -uo pipefail
           floor="$(make -s --eval='print-floor: ; @echo $(COV_FLOOR)' print-floor 2>/dev/null || echo unknown)"
-          bash scripts/coverage_receipt.sh /tmp/cov.log "$(git rev-parse HEAD)" "$floor" \
+          bash scripts/coverage_receipt.sh "$RUNNER_TEMP"/cov.log "$(git rev-parse HEAD)" "$floor" \
             "$RUNNER_TEMP/cov-receipt" "$RUNNER_TEMP/cov-start"
 EOF
 )
@@ -154,7 +154,7 @@ structure() {
   readers=$(awk '{ f = $0; sub(/:[0-9]+:.*/, "", f); c = $0; sub(/^[^:]*:[0-9]+:/, "", c)
       if (c !~ /^[[:space:]]*run: (setsid --wait )?bash scripts\/check_coverage_receipt\.sh[[:space:]]*$/) print f }' \
       <<< "$readers" | sort -u)
-  readers=$(grep -vxE '\.github/workflows/coverage-nightly\.yml|scripts/(check_)?coverage_receipt\.sh|scripts/release/tag_coverage_gate\.sh|scripts/check_tag_coverage_gated\.sh' <<< "$readers" | grep . | tr '\n' ' ')
+  readers=$(grep -vxE '\.github/workflows/coverage-nightly\.yml|scripts/(check_)?coverage_receipt\.sh|scripts/release/tag_coverage_gate\.sh|scripts/check_tag_coverage_gated\.sh|scripts/release/falsify_runner_temp\.sh' <<< "$readers" | grep . | tr '\n' ' ')
   if [ -z "$readers" ]; then srow S4_known_readers_only ok; else srow S4_known_readers_only "read by ${readers% }"; fi
   return "$wrong"
 }
