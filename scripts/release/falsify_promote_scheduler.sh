@@ -241,7 +241,8 @@ grep -q 'RED fallback' "$INB" && bad "all-green run wrote a RED fallback line" |
 PAD=$(printf 'p%.0s' $(seq 200))
 FX_WIDE=1 FX_TRAIN_PAD=$PAD FX_TRAIN_RED_SHA="$R2 $R1" FX_SHA=$R0 sched fallback-long-notes-cut 0 1 0
 inbox_has fallback-long-notes-cut-used "RED fallback: using ${R0:0:9}, 2 newer"
-grep 'RED fallback' "$INB" | grep -qE '\(\+[0-9]+ chars cut\)$' && ok || bad "cut marker clipped or missing: $(grep 'RED fallback' "$INB" | tail -c 60)"
+RED_FB="$(grep 'RED fallback' "$INB" || true)"
+grep -qE '\(\+[0-9]+ chars cut\)$' <<< "$RED_FB" && ok || bad "cut marker clipped or missing: $(tail -c 60 <<< "$RED_FB")"
 expect "fallback line <= 300 chars" 1 "$(grep 'RED fallback' "$INB" | awk 'length($0) <= 300' | wc -l)"
 # (2) every path that skips a newer candidate writes the fallback line with the skipped names
 g push -q origin "$R2:refs/tags/v1.2.3"
