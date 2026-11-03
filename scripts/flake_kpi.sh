@@ -38,8 +38,8 @@ self_test() {
   out="$(kpi "$d/clean.xml")"; [ "$out" = "flake_kpi retried_pass=0" ] || { echo "FAIL clean: $out"; rc=1; }
   out="$(kpi "$d/flaky.xml")"
   [ "$(printf '%s\n' "$out" | sed -n 1p)" = "flake_kpi retried_pass=2" ] || { echo "FAIL flaky count: $out"; rc=1; }
-  printf '%s\n' "$out" | grep -qx 'FLAKE c::t1' || { echo "FAIL flaky name t1"; rc=1; }
-  printf '%s\n' "$out" | grep -qx 'FLAKE d::t3' || { echo "FAIL flaky name t3"; rc=1; }
+  grep -qx 'FLAKE c::t1' <<<"$out" || { echo "FAIL flaky name t1"; rc=1; }
+  grep -qx 'FLAKE d::t3' <<<"$out" || { echo "FAIL flaky name t3"; rc=1; }
   kpi "$d/bad.xml" >/dev/null 2>&1; [ $? -eq 2 ] || { echo "FAIL bad file not unmeasured"; rc=1; }
   kpi "$d/missing.xml" >/dev/null 2>&1; [ $? -eq 2 ] || { echo "FAIL missing file not unmeasured"; rc=1; }
   [ $rc -eq 0 ] && echo "flake_kpi self-test: 6 rows PASS"
