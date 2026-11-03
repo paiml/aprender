@@ -34,8 +34,8 @@ gate_paths() { grep -qE '(^|/)(Cargo\.toml$|build\.rs$|\.?clippy\.toml$|deny\.to
 # optional " @<sha>" up to the end of the body. A body with a quote mark, a negation/deferral/failure word or a
 # carried-over marker anywhere is rejected, so quoted evidence and "APPROVE once X lands" never count.
 NEG='\b(NOT|NO|NEED|NEEDS|PENDING|REQUIRED|MISSING|AWAITING|WITHOUT|UNTIL|IF|ONCE|AFTER|WHEN|UNLESS|CANNOT|FAIL|FAILS|FAILED|REJECT|REJECTED|BLOCK|BLOCKS|BLOCKING|CARRIED|PREVIOUS|EARLIER|PRIOR)\b|REQUEST[-_ ]?CHANGES|[0-2]/3|"'"'"'`'
-# <who>: a short label of up to 3 words, then "(session, non-author)" -- no prose fits before the colon, so no hedge can ride on a PASS
-WHO='[A-Za-z][A-Za-z0-9._-]*( [A-Za-z0-9._-]+){0,2} \(([A-Za-z0-9._-]+, )?non-author\)'
+# <who>: a CLOSED grammar -- a lane/model name, an optional number or "lane", then "(sN|hexid, non-author)" -- so no word of prose fits before the colon
+WHO='(Seat|Opus|Sonnet|Haiku|Argon|Agy|Gemini|claude-[a-z0-9.-]+)( ([0-9][0-9.]*|lane))? \(((s[0-9]+|[0-9a-f]{6,12}), )?non-author\)'
 END='[.;:,!]?([[:space:]]+@[0-9a-f]{7,40})?[.;:,!]?[[:space:]]*$'
 # na_lines REVIEWS -> the review lines whose <who> (text before the first colon) carries the WORD non-author and no other "author"
 # ("non-authoritative", "the author, ... non-author seat" and a bare "author" do not qualify).
@@ -49,6 +49,8 @@ na_lines() {
 pass_count() {
   local r; r=$(na_lines "$1" | grep -iE "^(COMMENTED|APPROVED)"$'\t'"$WHO:[ ]+(PASS|APPROVED?)${END}" | grep -viE "$NEG") || true
   if [ -n "${2:-}" ]; then r=$(grep -iE "^[A-Z]+"$'\t'"(claude-)?opus(-[0-9][^:]*| [^:]*)?:" <<<"$r") || true; fi
+  # an "@sha" in the body must be a prefix of HEAD (MQ_HEAD): a PASS that names another commit is not a PASS for this one
+  if [ -n "$r" ]; then r=$(awk -v h="${MQ_HEAD:-}" '{ if (match($0, /@[0-9a-f]+[.;:,! ]*$/)) { s = substr($0, RSTART + 1); sub(/[^0-9a-f].*$/, "", s); if (index(h, s) != 1) next } print }' <<<"$r"); fi
   [ -n "$r" ] && wc -l <<<"$r" || echo 0
 }
 # bump_patch PATCH -> 0 when every changed line of a unified-diff PATCH is a `version = "X"` -> `version = "Y"` edit
@@ -123,7 +125,7 @@ needs_seats() {
   fj=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[]|{filename,status,previous_filename,patch}|tojson' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
   f=$(jq -r '.filename, (.previous_filename // empty)' <<<"$fj" 2>/dev/null) || { echo "skip (files unparsable)"; return 0; }
   [ -n "$f" ] || { echo "skip (file list empty)"; return 0; }
-  tier=LOW; gate_changed "$fj" && tier=HIGH
+  MQ_HEAD=$2; tier=LOW; gate_changed "$fj" && tier=HIGH
   # reviews bound to HEAD (commit_id); one body per line, newlines folded
   rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
   # fail closed (C48): EVERY review at HEAD that is not a qualifying PASS vetoes, whatever its wording (no word list to dodge)
@@ -231,8 +233,9 @@ if [ "${1:-}" = --self-test ]; then
       printf '%s\n' "${FILES:-docs/x.md}" | while IFS=$'\t' read -r n pv pf st; do
         jq -nc --arg n "$n" --arg pv "$([ "$pv" = - ] || printf %s "$pv")" --arg p "$( [ -n "$pf" ] && [ "$pf" != - ] && printf %s "$(<"$pf")" )" --arg st "$st" '{sha:"s",filename:$n,status:(if $st!="" then $st elif $pv!="" then "renamed" else "modified" end),additions:1,previous_filename:(if $pv!="" then $pv else null end),patch:(if $p!="" then $p else null end)}'; done | jq -sc '.' | jq -r "$jf";;
     */reviews) printf '%b' "${REVIEWS:-}" | while IFS=$'\t' read -r st bd cm; do [ -n "$st" ] || continue
-        jq -nc --arg s "$st" --arg b "$bd" --arg c "${cm:-H}" '{state:$s,body:$b,commit_id:$c}'; done | jq -sc '.' | jq -r "$jf";; esac; }
-  ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
+        jq -nc --arg s "$st" --arg b "$bd" --arg c "${cm:-$TH}" '{state:$s,body:$b,commit_id:$c}'; done | jq -sc '.' | jq -r "$jf";; esac; }
+  TH=abcdef1234567890abcdef1234567890abcdef12
+  ns() { REPO=r needs_seats 1 "$TH" >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tSeat 1 (s1, non-author): PASS\n'   # LOW tier: one non-author PASS (C48)
   QO='COMMENTED\tOpus lane (s2, non-author): PASS @abcdef1234\n'   # HIGH tier: one Opus PASS (C48)
   QOLD='COMMENTED\tquorum 3/3 AGREED PASS\n'   # the retired 3/3 format counts for nothing
@@ -327,6 +330,13 @@ if [ "${1:-}" = --self-test ]; then
     eq "HIGH: '$q' is not a PASS" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
     eq "LOW: '$q' is not a PASS" "$(REVIEWS="COMMENTED\t$q\n" ns)" 0
   done
+  # round-5 review: an @sha naming another commit, and hedges riding in the label / session slot
+  eq 'PASS naming another @sha -> skip' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS @2222222222\n' ns)" 0
+  eq 'HIGH: Opus PASS naming another @sha -> skip' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tOpus 5.5 (s2, non-author): PASS @2222222\n' ns)" 0
+  eq 'PASS with @sha prefix of HEAD -> armable' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS @abcdef1\n' ns)" 1
+  for q in 'Draft verdict only (s1, non-author): PASS' 'Partial skim only (s1, non-author): PASS' 'Seat 1 (unverified, non-author): PASS' 'Opus unverified guess (s2, non-author): PASS'; do
+    eq "'$q' -> skip" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
+  done
   eq 'PASS bound to an OLDER commit -> skip (HEAD binding)' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS\told\n' ns)" 0
   eq 'PASS at HEAD + one on an older commit -> armable' "$(REVIEWS="${Q3}COMMENTED\tSeat 2 (s2, non-author): FAIL\told\n" ns)" 1
   eq 'CHANGES_REQUESTED at HEAD with a PASS body -> skip' "$(REVIEWS='CHANGES_REQUESTED\tSeat 1 (s1, non-author): PASS\n' ns)" 0
@@ -362,7 +372,7 @@ case "$*" in
   *rate_limit*) echo 5000;;
   *"mergeQueue(branch"*) printf '{"data":{"repository":{"mergeQueue":{"entries":{"totalCount":0}},"pullRequests":{"nodes":[{"number":7,"isDraft":false,"baseRefName":"main","mergeStateStatus":"CLEAN","autoMergeRequest":null,"mergeQueueEntry":null}]}}}}';;
   *graphql*) echo QUEUED;;
-  "pr view"*) echo deadbeefdeadbeef;;
+  "pr view"*) echo abcdef1234567890abcdef1234567890abcdef12;;
   */files*) printf '%s\n' "$T_FILES" | jq -Rc '{filename:.,status:"modified"}';;
   */reviews*) printf '%b' "$T_REVIEWS";;
   */commits*) echo 0;;
