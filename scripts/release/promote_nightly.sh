@@ -34,6 +34,7 @@
 #   facade       root [package] version equals the workspace version (or version.workspace = true)
 #   coverage     scripts/release/tag_coverage_gate.sh --resolve <sha> (the existing coverage path) exits 0
 #
+# AFTER the push (--execute): scripts/release/carry_milestone.sh moves the released milestone's open items to the next (warns, never undoes the tag).
 # NEVER here: cargo build/test/publish, gh workflow/release, tag delete, force push. The crates.io
 # publish stays the manual `make publish` of RP-001; the Binary Release dispatch stays a printed step.
 #
@@ -214,6 +215,14 @@ fi
 git -C "$wt" tag -a "$tag" -m "aprender $tag" "$sha" || die "git tag failed"
 (cd "$wt" && $arm) || die "arming $tag for the pre-push tag guard failed -- tag NOT pushed (the local tag $tag stays; a human decides)"
 git -C "$wt" -c push.followTags=false push --no-follow-tags origin "refs/tags/$tag:refs/tags/$tag" || die "tag push failed ($tag exists locally, not on origin)"
+
+# milestones are labels, not gates (operator 2026-11-03): carry the released milestone's open items to the next.
+# A failure here warns and never undoes the tag.
+if [ -f "$wt/scripts/release/carry_milestone.sh" ]; then
+    bash "$wt/scripts/release/carry_milestone.sh" "${tag#v}" --execute || printf '%s: WARN milestone carry for %s failed -- tag stands; re-run carry_milestone.sh %s --execute\n' "$PROG" "$tag" "${tag#v}" >&2
+else
+    printf '%s: WARN carry_milestone.sh absent at %s -- open items stay in milestone %s\n' "$PROG" "$sha" "${tag#v}" >&2
+fi
 
 printf '%s: TAGGED and pushed %s at %s. Next, by hand:\n' "$PROG" "$tag" "$sha"
 printf '  1. gh release create %s --verify-tag --draft ...   (then Binary Release)\n' "$tag"
