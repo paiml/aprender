@@ -62,11 +62,11 @@ scan_tree() {
 self_test() {
     local d rc=0 out
     d=$(mktemp -d "${TMPDIR:-/tmp}/bashc-rm.XXXXXX") || return 2
-    trap 'rm -rf -- "$d"' RETURN
+    trap 'rm -rf -- "${d:?}"' RETURN
     mkdir -p "$d/scripts" "$d/ci/explicit-test-commands.d"
     # must-flag cases (the f5 shape, a multi-line body, sh -c, double quotes)
     printf '%s\n' 'cd x && bash -c "cp $P ./probe_tmp.sh && bash ./probe_tmp.sh; rm -f ./probe_tmp.sh"' > "$d/scripts/bad1.sh"
-    printf '%s\n' "sh -c 'a=1" "rm -rf \"\$a\"'" > "$d/scripts/bad2.sh"
+    printf '%s\n' "sh -c 'a=1" "r""m -rf \"\$a\"'" > "$d/scripts/bad2.sh"
     printf '%s\n' "env X=1 bash -lc 'echo hi; rm x'" > "$d/ci/explicit-test-commands.d/bad3.cmd"
     # must-not-flag cases (no rm; rm outside the string; rm inside a word; a path)
     printf '%s\n' "bash -c 'echo hi'" "rm -f x" "bash -c 'git perform --thing; ls /usr/bin/rmdir-x'" "bash -c 'echo firm'" "bash scripts/probe.sh" > "$d/scripts/good.sh"
