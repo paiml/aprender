@@ -1,0 +1,2 @@
+# C4 green-nightly bump bot (#6675): green opens the bump from the latest tag, red/running/absent nightly opens nothing, unreadable tag or run fails closed; fails on a FAIL row or a missing PASS line as well as the exit status
+out=$(bash scripts/release/nightly_green_bump.sh --self-test 2>&1); rc=$?; printf '%s\n' "$out"; [ "$rc" -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'FAIL' && printf '%s\n' "$out" | grep -q 'self-test: PASS$'

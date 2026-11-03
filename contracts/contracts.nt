@@ -923,6 +923,8 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Binary> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/bin/target/aprender-contracts-cli/aprender-roadmap> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-roadmap --help"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-roadmap --version"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "b59960c91bd7135795b4ec422aeb051dbd9f243f"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "0b48af167e020dd2c14a66e14d9e4fb72bdb68426e381c38f6d9c3b23413628b"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-contracts-cli/aprender-roadmap> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-roadmap"^^<http://www.w3.org/2001/XMLSchema#string> .
