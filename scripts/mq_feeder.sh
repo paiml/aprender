@@ -35,7 +35,7 @@ gate_paths() { grep -qE '(^|/)(Cargo\.toml$|build\.rs$|\.?clippy\.toml$|deny\.to
 # carried-over marker anywhere is rejected, so quoted evidence and "APPROVE once X lands" never count.
 NEG='\b(NOT|NO|NEED|NEEDS|PENDING|REQUIRED|MISSING|AWAITING|WITHOUT|UNTIL|IF|ONCE|AFTER|WHEN|UNLESS|CANNOT|FAIL|FAILS|FAILED|REJECT|REJECTED|BLOCK|BLOCKS|BLOCKING|CARRIED|PREVIOUS|EARLIER|PRIOR)\b|REQUEST[-_ ]?CHANGES|[0-2]/3|"'"'"'`'
 # <who>: a CLOSED grammar -- a lane/model name, an optional number or "lane", then "(sN|hexid, non-author)" -- so no word of prose fits before the colon
-WHO='(Seat|Opus|Sonnet|Haiku|Argon|Agy|Gemini|claude-[a-z0-9.-]+)( ([0-9][0-9.]*|lane))? \(((s[0-9]+|[0-9a-f]{6,12}), )?non-author\)'
+WHO='(Seat|Opus|Sonnet|Haiku|Argon|Agy|Gemini|claude-(opus|sonnet|haiku)-[0-9]+(-[0-9]+)*)( ([0-9][0-9.]*|lane))? \((s[0-9]+, )?non-author\)'
 END='[.;:,!]?([[:space:]]+@[0-9a-f]{7,40})?[.;:,!]?[[:space:]]*$'
 # na_lines REVIEWS -> the review lines whose <who> (text before the first colon) carries the WORD non-author and no other "author"
 # ("non-authoritative", "the author, ... non-author seat" and a bare "author" do not qualify).
@@ -48,7 +48,7 @@ na_lines() {
 # argument only those whose <who> BEGINS with the lane name Opus (a model named elsewhere in <who> is not the lane).
 pass_count() {
   local r; r=$(na_lines "$1" | grep -iE "^(COMMENTED|APPROVED)"$'\t'"$WHO:[ ]+(PASS|APPROVED?)${END}" | grep -viE "$NEG") || true
-  if [ -n "${2:-}" ]; then r=$(grep -iE "^[A-Z]+"$'\t'"(claude-)?opus(-[0-9][^:]*| [^:]*)?:" <<<"$r") || true; fi
+  if [ -n "${2:-}" ]; then r=$(grep -iE "^[A-Z]+"$'\t'"(claude-opus-[0-9]+(-[0-9]+)*|opus( [0-9][0-9.]*| lane)?) \\(" <<<"$r") || true; fi
   # an "@sha" in the body must be a prefix of HEAD (MQ_HEAD): a PASS that names another commit is not a PASS for this one
   if [ -n "$r" ]; then r=$(awk -v h="${MQ_HEAD:-}" '{ l = tolower($0); if (index(l, "@")) { if (!match(l, /@[0-9a-f]+[^0-9a-f@]*$/)) next; s = substr(l, RSTART + 1); sub(/[^0-9a-f].*$/, "", s); if (index(h, s) != 1) next } print }' <<<"$r"); fi
   [ -n "$r" ] && wc -l <<<"$r" || echo 0
@@ -127,7 +127,7 @@ needs_seats() {
   [ -n "$f" ] || { echo "skip (file list empty)"; return 0; }
   MQ_HEAD=$2; tier=LOW; gate_changed "$fj" && tier=HIGH
   # reviews bound to HEAD (commit_id); one body per line, newlines folded
-  rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,(.body|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
+  rv=$(gh api "repos/$REPO/pulls/$1/reviews" --paginate --jq ".[]|select(.commit_id==\"$2\" and (.state==\"COMMENTED\" or .state==\"APPROVED\" or .state==\"CHANGES_REQUESTED\"))|[.state,((.body // \"\")|gsub(\"[\\n\\r]+\";\" \"))]|@tsv" 2>/dev/null) || { echo "needs seats (reviews unreadable)"; return 0; }
   # fail closed (C48): EVERY review at HEAD that is not a qualifying PASS vetoes, whatever its wording (no word list to dodge)
   rc=$(( $(grep -c . <<<"$rv") - $(pass_count "$rv") ))
   if [ "$tier" = HIGH ]; then q=$(pass_count "$rv" opus); else q=$(pass_count "$rv"); fi
@@ -336,7 +336,17 @@ if [ "${1:-}" = --self-test ]; then
   for q in '@DEADBEEF12' '@2222222A' '@2222222\f' '@2222222\v' '@zz'; do
     eq "PASS $q -> skip (fail closed)" "$(REVIEWS="COMMENTED\tSeat 1 (s1, non-author): PASS $q\n" ns)" 0
   done
+  eq 'PASS @2222222 + U+2003 -> skip' "$(REVIEWS=$'COMMENTED\tSeat 1 (s1, non-author): PASS @2222222\u2003\n' ns)" 0
   eq 'HIGH: Opus PASS @DEADBEEF12 -> skip' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tOpus 5.5 (s2, non-author): PASS @DEADBEEF12\n' ns)" 0
+  # round-7: the claude- slot is a fixed model-id shape; the Opus filter is exercised by WHO-valid non-Opus lanes
+  for q in 'claude-opus-5-5-draft-unverified-skim (s2, non-author): PASS' 'claude-opus-5-5-tentative-partial-review (non-author): PASS' 'claude-opus-5-5-relaying-sonnet-seat (non-author): APPROVED' 'claude-opus-unverified-guess-5 (s2, non-author): PASS' 'claude-opus-5-5-unverified-guess (s2, non-author): PASS' 'claude-opus-4-sonnet (non-author): PASS'; do
+    eq "HIGH: '$q' -> skip" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
+  done
+  eq 'LOW: claude-draft-unverified-partial-skim -> skip' "$(REVIEWS='COMMENTED\tclaude-draft-unverified-partial-skim (non-author): PASS\n' ns)" 0
+  for q in 'claude-sonnet-5-opus (non-author): PASS' 'Sonnet 5 (s2, non-author): PASS' 'Seat 2 (s2, non-author): PASS' 'claude-haiku-5-5 (non-author): PASS'; do
+    eq "HIGH: non-Opus lane '$q' -> skip" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
+  done
+  eq 'HIGH: claude-opus-4-1 (s2) -> armable' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tclaude-opus-4-1 (s2, non-author): PASS\n' ns)" 1
   eq 'PASS with uppercase @sha prefix of HEAD -> armable' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS @ABCDEF1\n' ns)" 1
   eq 'PASS with @sha prefix of HEAD -> armable' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS @abcdef1\n' ns)" 1
   for q in 'Draft verdict only (s1, non-author): PASS' 'Partial skim only (s1, non-author): PASS' 'Seat 1 (unverified, non-author): PASS' 'Opus unverified guess (s2, non-author): PASS'; do
