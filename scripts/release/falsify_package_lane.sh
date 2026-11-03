@@ -9,6 +9,8 @@
 # packages anything for real. The real-repo rows run --list-only only (cargo metadata, no cargo package). The one real
 # package run is a separate, documented command: package_lane.sh --out DIR --only a,b,c.
 # Defect #3892: aprender-profile requires aprender-db, yet scripts/cascade-publish.sh TIERS[] lists profile (T3) long before db (T13).
+# The edge is the trueno-db ALIAS: crates/aprender-profile/Cargo.toml:86 `trueno-db = { workspace = true }` resolves through the root
+# Cargo.toml:293 `trueno-db = { ..., package = "aprender-db" }`, so cargo metadata lists the dep as name aprender-db, rename trueno-db.
 #
 # Exit 0 = every row held (and, with --mutants, every mutant was caught). 1 = a row or mutant failed.
 set -uo pipefail
@@ -56,6 +58,15 @@ expect_order() { # name outdir "space separated order"
 }
 meta() { mk_meta > "$FX/$1.json"; }
 fresh() { rm -rf -- "${TMP:?}/o$1"; echo "$TMP/o$1"; }
+
+# flags_ok LOG N : exactly N stub-cargo lines, and EVERY one is `package --no-verify --locked --manifest-path ...` (flags present, in order)
+flags_ok() {
+    [ "$(wc -l < "$1")" -eq "$2" ] && [ "$(grep -c -E '^package --no-verify --locked --manifest-path ' "$1")" -eq "$2" ]
+}
+# has_alias_edge DOC PKG DEP RENAME : the metadata document lists PKG depending on package DEP under the rename RENAME
+has_alias_edge() {
+    jq -e --arg p "$2" --arg d "$3" --arg r "$4" '[.packages[] | select(.name == $p) | .dependencies[] | select(.name == $d and .rename == $r)] | length > 0' "$1" > /dev/null 2>&1
+}
 
 table() {
     local o f
@@ -214,7 +225,12 @@ SH
     if (cd "$o" && sha256sum --quiet -c SHA256SUMS > /dev/null 2>&1); then ok; else bad "SHA256SUMS" "does not verify"; fi
     if [ "$(wc -l < "$o/SHA256SUMS")" -eq 4 ]; then ok; else bad "SHA256SUMS" "expected order.txt + 3 crates"; fi
     if jq -e --arg s "$head" '.lane == "package-order" and .sha == $s and .scope == "full" and .status == "green" and .crates == 3' "$o/package-lane.json" > /dev/null 2>&1; then ok; else bad "receipt" "missing or wrong"; fi
-    if [ "$(sed 's/ .*//; s/^package //' "$STUB_LOG" | wc -l)" -eq 3 ] && [ "$(grep -c -- '--no-verify' "$STUB_LOG")" -eq 3 ] && [ "$(grep -c -- '--locked' "$STUB_LOG")" -eq 3 ]; then ok; else bad "cargo flags" "every crate must be packaged with --no-verify --locked"; fi
+    if flags_ok "$STUB_LOG" 3; then ok; else bad "cargo flags" "every crate must be packaged with --no-verify --locked, in that order"; fi
+    # the check must discriminate: a --locked dropped from one line but doubled on another keeps both counts at 3, and a swapped order
+    printf 'package --no-verify --locked --manifest-path /x/a/Cargo.toml\npackage --no-verify --manifest-path /x/b/Cargo.toml\npackage --no-verify --locked --locked --manifest-path /x/c/Cargo.toml\n' > "$TMP/planted1.log"
+    if flags_ok "$TMP/planted1.log" 3; then bad "cargo flags planted drop" "a package line without --locked was accepted"; else ok; fi
+    printf 'package --locked --no-verify --manifest-path /x/a/Cargo.toml\npackage --no-verify --locked --manifest-path /x/b/Cargo.toml\npackage --no-verify --locked --manifest-path /x/c/Cargo.toml\n' > "$TMP/planted2.log"
+    if flags_ok "$TMP/planted2.log" 3; then bad "cargo flags planted order" "flags out of order were accepted"; else ok; fi
     if grep -q -- '--allow-dirty' "$STUB_LOG"; then bad "cargo flags" "--allow-dirty was passed"; else ok; fi
     local seq
     seq=$(sed -E 's#.*--manifest-path [^ ]*/([^/ ]+)/Cargo.toml.*#\1#' "$STUB_LOG" | tr '\n' ' ' | sed 's/ $//')
@@ -264,9 +280,18 @@ real_rows() {
     expect_rc "real repo: derive + self-verify" 0
     n=$(wc -l < "$o/order.txt" 2> /dev/null || echo 0)
     if [ "$n" -ge 70 ]; then ok; else bad "real repo" "only $n crates enumerated"; fi
+    # #3892: profile -> db is the trueno-db alias (crates/aprender-profile/Cargo.toml:86 -> root Cargo.toml:293, package = "aprender-db")
     local pd pp
     pd=$(grep -n -x 'aprender-db' "$o/order.txt" | cut -d: -f1); pp=$(grep -n -x 'aprender-profile' "$o/order.txt" | cut -d: -f1)
     if [ -n "$pd" ] && [ -n "$pp" ] && [ "$pd" -lt "$pp" ]; then ok; else bad "real repo #3892" "aprender-db (#${pd:-none}) must come before aprender-profile (#${pp:-none})"; fi
+    # the #3892 edge is the trueno-db ALIAS (profile Cargo.toml:86 -> root Cargo.toml:293 package = "aprender-db"): assert it from cargo metadata
+    jq -n '{packages: [{name: "aprender-profile", dependencies: [{name: "aprender-db", rename: "trueno-db", kind: null}]}]}' > "$FX/alias-on.json"
+    jq -n '{packages: [{name: "aprender-profile", dependencies: [{name: "serde", rename: null, kind: null}]}]}' > "$FX/alias-off.json"
+    if has_alias_edge "$FX/alias-on.json" aprender-profile aprender-db trueno-db; then ok; else bad "alias fixture" "present alias not seen"; fi
+    if has_alias_edge "$FX/alias-off.json" aprender-profile aprender-db trueno-db; then bad "alias fixture" "removed alias still passes"; else ok; fi
+    if cargo metadata --no-deps --format-version 1 --manifest-path "$ROOT/Cargo.toml" > "$TMP/root-meta.json" 2> /dev/null; then
+        if has_alias_edge "$TMP/root-meta.json" aprender-profile aprender-db trueno-db; then ok; else bad "real repo #3892 alias" "aprender-profile no longer depends on aprender-db as trueno-db (crates/aprender-profile/Cargo.toml:86, Cargo.toml:293)"; fi
+    else bad "real repo #3892 alias" "cargo metadata failed on the root manifest"; fi
     if grep -q -x 'provable-contracts' "$o/order.txt"; then ok; else bad "real repo" "the crates/facades workspace is not enumerated"; fi
     # the real TIERS[] table of cascade-publish.sh, flattened, must be refused for exactly the #3892 pair (skipped once the table is retired)
     if grep -qE '^TIERS\[[0-9]+\]=' "$ROOT/scripts/cascade-publish.sh" 2> /dev/null; then
