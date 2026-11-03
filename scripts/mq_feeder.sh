@@ -24,16 +24,18 @@ pick() {
     | if ($r.mergeQueue.entries.totalCount // 0) > 0 then "QUEUE_BUSY"
       else $r.pullRequests.nodes[] | select(.isDraft==false and .baseRefName=="main" and .mergeStateStatus=="CLEAN" and .autoMergeRequest==null and .mergeQueueEntry==null) | .number end' <<<"$1"
 }
-# gate_paths FILES -> 0 when any path is gate content (a gate change needs 2 non-author seats bound to the head).
+# gate_paths FILES -> 0 when any path is gate content (a gate change is HIGH tier: one Opus PASS bound to the head, C48).
 # Wide on purpose: every path under scripts/, ci/ and .github/ (the explicit-test fragments run arbitrary scripts) plus root build/lint config.
 gate_paths() { grep -qE '(^|/)(Cargo\.toml$|build\.rs$|\.?clippy\.toml$|deny\.toml$|rust-toolchain|\.cargo/|\.?rustfmt\.toml$|\.gitignore$|\.?codecov\.yml$)|^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
-# (The request-changes word list is best-effort; the hard vetoes are the CHANGES_REQUESTED state and not arming.)
+# (There is no dissent word list: every review at HEAD that is not a qualifying PASS vetoes.)
 # Review format the feeder accepts (C48 tiers, C61-2). One review at HEAD whose body is "<who>, non-author: PASS|APPROVE(D)" --
-#   LOW  (no gate content): one non-author PASS;  HIGH (gate content): one PASS from an Opus lane (the <who> names "opus").
+#   LOW  (no gate content): one non-author PASS;  HIGH (gate content): one PASS from an Opus lane (the <who> BEGINS with an Opus lane name).
 # The retired "quorum 3/3 PASS" receipt counts for nothing. The verdict is followed ONLY by optional punctuation and an
 # optional " @<sha>" up to the end of the body. A body with a quote mark, a negation/deferral/failure word or a
 # carried-over marker anywhere is rejected, so quoted evidence and "APPROVE once X lands" never count.
 NEG='\b(NOT|NO|NEED|NEEDS|PENDING|REQUIRED|MISSING|AWAITING|WITHOUT|UNTIL|IF|ONCE|AFTER|WHEN|UNLESS|CANNOT|FAIL|FAILS|FAILED|REJECT|REJECTED|BLOCK|BLOCKS|BLOCKING|CARRIED|PREVIOUS|EARLIER|PRIOR)\b|REQUEST[-_ ]?CHANGES|[0-2]/3|"'"'"'`'
+# <who>: a short label of up to 3 words, then "(session, non-author)" -- no prose fits before the colon, so no hedge can ride on a PASS
+WHO='[A-Za-z][A-Za-z0-9._-]*( [A-Za-z0-9._-]+){0,2} \(([A-Za-z0-9._-]+, )?non-author\)'
 END='[.;:,!]?([[:space:]]+@[0-9a-f]{7,40})?[.;:,!]?[[:space:]]*$'
 # na_lines REVIEWS -> the review lines whose <who> (text before the first colon) carries the WORD non-author and no other "author"
 # ("non-authoritative", "the author, ... non-author seat" and a bare "author" do not qualify).
@@ -45,7 +47,7 @@ na_lines() {
 # pass_count REVIEWS [opus] -> count of non-author reviews that are exactly "<who>: PASS|APPROVE(D)" (see above); with a second
 # argument only those whose <who> BEGINS with the lane name Opus (a model named elsewhere in <who> is not the lane).
 pass_count() {
-  local r; r=$(na_lines "$1" | grep -iE "^(COMMENTED|APPROVED)"$'\t'"[^:]{0,120}:[ ]+(PASS|APPROVED?)${END}" | grep -viE "$NEG") || true
+  local r; r=$(na_lines "$1" | grep -iE "^(COMMENTED|APPROVED)"$'\t'"$WHO:[ ]+(PASS|APPROVED?)${END}" | grep -viE "$NEG") || true
   if [ -n "${2:-}" ]; then r=$(grep -iE "^[A-Z]+"$'\t'"(claude-)?opus(-[0-9][^:]*| [^:]*)?:" <<<"$r") || true; fi
   [ -n "$r" ] && wc -l <<<"$r" || echo 0
 }
@@ -228,7 +230,8 @@ if [ "${1:-}" = --self-test ]; then
     case "$ep" in */files) [ "${CASE:-}" = filefail ] && return 1
       printf '%s\n' "${FILES:-docs/x.md}" | while IFS=$'\t' read -r n pv pf st; do
         jq -nc --arg n "$n" --arg pv "$([ "$pv" = - ] || printf %s "$pv")" --arg p "$( [ -n "$pf" ] && [ "$pf" != - ] && printf %s "$(<"$pf")" )" --arg st "$st" '{sha:"s",filename:$n,status:(if $st!="" then $st elif $pv!="" then "renamed" else "modified" end),additions:1,previous_filename:(if $pv!="" then $pv else null end),patch:(if $p!="" then $p else null end)}'; done | jq -sc '.' | jq -r "$jf";;
-    */reviews) printf '%b' "${REVIEWS:-}";; esac; }
+    */reviews) printf '%b' "${REVIEWS:-}" | while IFS=$'\t' read -r st bd cm; do [ -n "$st" ] || continue
+        jq -nc --arg s "$st" --arg b "$bd" --arg c "${cm:-H}" '{state:$s,body:$b,commit_id:$c}'; done | jq -sc '.' | jq -r "$jf";; esac; }
   ns() { REPO=r needs_seats 1 H >/dev/null; echo $?; }   # 0 = skip (not armable), 1 = armable
   Q3='COMMENTED\tSeat 1 (s1, non-author): PASS\n'   # LOW tier: one non-author PASS (C48)
   QO='COMMENTED\tOpus lane (s2, non-author): PASS @abcdef1234\n'   # HIGH tier: one Opus PASS (C48)
@@ -318,6 +321,16 @@ if [ "${1:-}" = --self-test ]; then
       'Seat 2 (s2, author): PASS' 'Seat 2 (s2): PASS' 'non-author' 'non-author PASS'; do
     eq "row '$q' is not a PASS" "$(REVIEWS="COMMENTED\t$q\n" ns)" 0
   done
+  # round-3 review: no prose before the colon; the real reviews filter binds HEAD and keeps CHANGES_REQUESTED
+  for q in 'Seat 3 (non-author) B1 still broken, provisional verdict: PASS' 'Opus lane (non-author) found regression in B2; tentative verdict: PASS' \
+      'Seat 2 (non-author) draft verdict, awaits CI: PASS' 'Opus 5.5, relaying Sonnet seat 2 (non-author): PASS'; do
+    eq "HIGH: '$q' is not a PASS" "$(FILES=scripts/x.sh REVIEWS="COMMENTED\t$q\n" ns)" 0
+    eq "LOW: '$q' is not a PASS" "$(REVIEWS="COMMENTED\t$q\n" ns)" 0
+  done
+  eq 'PASS bound to an OLDER commit -> skip (HEAD binding)' "$(REVIEWS='COMMENTED\tSeat 1 (s1, non-author): PASS\told\n' ns)" 0
+  eq 'PASS at HEAD + one on an older commit -> armable' "$(REVIEWS="${Q3}COMMENTED\tSeat 2 (s2, non-author): FAIL\told\n" ns)" 1
+  eq 'CHANGES_REQUESTED at HEAD with a PASS body -> skip' "$(REVIEWS='CHANGES_REQUESTED\tSeat 1 (s1, non-author): PASS\n' ns)" 0
+  eq 'DISMISSED review state is not read' "$(REVIEWS="${Q3}DISMISSED\tSeat 2 (s2, non-author): FAIL\n" ns)" 1
   # round-2 review: dissent in any wording vetoes, even from a review that is not marked non-author or names "author" elsewhere
   for q in 'Seat 3 (non-author; the author missed B1): broken' 'Seat 3: non-author review -- broken, do not ship' 'Seat 3 (s3, non‑author): broken' \
       'Sonnet lane (s3): changes required' 'Sonnet lane (s3): -1 not ready' 'Sonnet lane (s3): NO' 'Sonnet lane (s3): regression in B2'; do
