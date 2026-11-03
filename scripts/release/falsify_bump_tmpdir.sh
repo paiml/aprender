@@ -16,15 +16,15 @@ row() {
 
 table() {
     row "/tmp child, TMPDIR unset"                0 - /tmp/tmp.abc
-    row "TMPDIR child outside /tmp (the incident)" 0 /mnt/ci/tmp /mnt/ci/tmp/tmp.abc
-    row "TMPDIR with trailing slash"              0 /mnt/ci/tmp/ /mnt/ci/tmp/tmp.abc
-    row "TMPDIR set, /tmp child still ok"         0 /mnt/ci/tmp /tmp/tmp.abc
-    row "path outside TMPDIR and /tmp"            1 /mnt/ci/tmp /mnt/other/tmp.abc
-    row "sibling sharing TMPDIR prefix"           1 /mnt/ci/tmp /mnt/ci/tmpx/tmp.abc
-    row "TMPDIR itself is not a child"            1 /mnt/ci/tmp /mnt/ci/tmp
-    row "TMPDIR=/ does not widen"                 1 / /etc/x
-    row "TMPDIR empty does not widen"             1 "" /etc/x
-    row "empty path"                              1 /mnt/ci/tmp ""
+    row "TMPDIR child outside /tmp (the incident)" 0 ci/tmp ci/tmp/tmp.abc
+    row "TMPDIR with trailing slash"              0 ci/tmp/ ci/tmp/tmp.abc
+    row "TMPDIR set, /tmp child still ok"         0 ci/tmp /tmp/tmp.abc
+    row "path outside TMPDIR and /tmp"            1 ci/tmp other/tmp.abc
+    row "sibling sharing TMPDIR prefix"           1 ci/tmp ci/tmpx/tmp.abc
+    row "TMPDIR itself is not a child"            1 ci/tmp ci/tmp
+    row "TMPDIR=/ does not widen"                 1 / /
+    row "TMPDIR empty does not widen"             1 "" /
+    row "empty path"                              1 ci/tmp ""
 }
 
 run() { SCRIPT=$1; fails=0; table; return "$fails"; }
