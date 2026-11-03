@@ -42,13 +42,13 @@ if [ "${1:-}" = --mutants ]; then
     mut fallback-silent 's/^    inbox_line "\$head_\$why"$/    :/'
     mut fallback-names-cut 's/snames% }/snames%% *}/'
     mut cut-marker-room-not-reserved 's/room=\$((room - 24))/room=$((room - 0))/'
-    mut fallback-already-promoted-silent 's/^        fallback_line "already-promoted at" "\$sha"$/        :/'
+    mut fallback-already-promoted-silent 's/^            fallback_line "already-promoted at" "\$sha"$/            :/'
     mut cleanroom-fail-label-dropped 's/FL="no clean-room at" fail/fail/'
     mut fallback-cleanroom-dispatched-silent 's/fallback_line "clean-room dispatched at" "\$sha"; //'
     mut fallback-cleanroom-pending-silent 's/fallback_line "clean-room pending at" "\$sha"; //'
     mut cleanroom-red-second-line 's/completed\*) crnote=/completed*) inbox_line "RED clean-room run $id on ${sha:0:9}"; crnote=/'
     mut dryrun-skipped-on-execute 's/^    if \[ "\$exe" != 1 \]; then fallback_line.*$/    :/'
-    mut fallback-already-promoted-behind-marker 's/^        fallback_line "already-promoted at" "\$sha"$/        [ -e "$d\/already-promoted" ] || fallback_line "already-promoted at" "$sha"/'
+    mut fallback-already-promoted-behind-marker 's/^            fallback_line "already-promoted at" "\$sha"$/            [ -e "$d\/already-promoted" ] || fallback_line "already-promoted at" "$sha"/'
     mut fail-drops-skipped-names 's/if \[ "\${nskip:-0}" -gt 0 \]; then red_line "\${FL/if false; then red_line "${FL/'
     mut using-line-before-guard 's/^    (cd "\$repo" \&\& {/    fallback_line "using" "$sha"; (cd "$repo" \&\& {/'
     mut promote-exec-fail-second-line 's/else FRC=\$rc FL=using/else inbox_line "RED promote --execute failed"; FRC=$rc FL=using/'
@@ -58,6 +58,20 @@ if [ "${1:-}" = --mutants ]; then
     mut dispatch-fail-label-dropped 's/FL="clean-room dispatch failed at" //'
     mut exec-rc-dropped 's/FRC=\$rc FL=using/FL=using/'
     mut cleanroom-red-fact-dropped 's/crnote="clean-room run $id ended/crnote="run ended/'
+    mut signal-term-trap-dropped "/^trap 'sig=TERM; exit 143' TERM\$/d"
+    mut signal-int-trap-dropped "/^trap 'sig=INT; exit 130' INT\$/d"
+    mut signal-hup-trap-dropped "/^trap 'sig=HUP; exit 129' HUP\$/d"
+    mut killed-line-dropped 's/red_line "killed by SIG\$sig at" "\${cur:-unknown}" ""/:/'
+    mut killed-line-needs-no-skip-guard-inverted 's/\[ -z "\$sig" \] || \[ "\${nskip:-0}" -eq 0 \] ||/[ -z "$sig" ] ||/'
+    mut breadcrumb-not-written 's/^    \[ "\$nskip" -eq 0 \] || printf .*$/    :/'
+    mut stale-breadcrumb-ignored 's/^if \[ -s "\$state\/pending-red" \]; then.*$/:/'
+    mut stale-breadcrumb-silent 's/inbox_line "RED previous run died[^;]*;//'
+    mut stale-breadcrumb-kept 's/; rm -f -- "\$state\/pending-red"; fi$/; fi/'
+    mut breadcrumb-not-removed-on-exit 's/cleanup; rm -f -- "\$state\/pending-red"; /cleanup; /'
+    mut dedupe-marker-never-written 's/\[ "\$nskip" -eq 0 \] || : > "\$mk"/:/'
+    mut dedupe-ignores-newest-sha 's/fallback-reported-\${cands\[0\]:0:12}/fallback-reported/'
+    mut single-candidate-text-changed 's/^\[ "\$nskip" -gt 0 \] || fail "no candidate passed every gate: .*$/:/'
+    mut fail-prefixes-notes-again 's/inbox_line "RED promote: \$\* (state \$state)"/inbox_line "RED promote: ${notes:-}$* (state $state)"/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
 fi
@@ -142,6 +156,7 @@ cat > "$TMP/models" <<'SH'
 #!/usr/bin/env bash
 # stub verifier: state per sha
 sha=""; for ((i=1;i<=$#;i++)); do [ "${!i}" = --commit ] && { j=$((i+1)); sha=${!j}; }; done
+[ "$sha" != "${FX_KILL_SHA:-none}" ] || kill "-${FX_SIG:-TERM}" "$(cat "$FX_PIDFILE")"
 st=green; case " ${FX_MODELS_RED_SHA:-none} " in *" $sha "*) st=red ;; esac; [ "${FX_MODELS:-green}" = green ] || st=$FX_MODELS
 printf 'state=%s\n' "$st" >> "$GITHUB_OUTPUT"
 SH
@@ -172,14 +187,17 @@ TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
 [ -z "\${FX_REAL_MODELS:-}" ] || MODELS_NIGHTLY="$HERE/models_nightly.sh"
 [ -z "\${FX_WIDE:-}" ] || MAX_AGE_DAYS=30
 [ -z "\${FX_BOOM:-}" ] || : "\$undefined_boom_var"
+[ -z "\${FX_PIDFILE:-}" ] || echo \$\$ > "\$FX_PIDFILE"
 EOF
+# a harness started under nohup or in the background hands us INT/HUP ignored, and an ignored signal cannot be trapped: reset them
+DEFSIG=(); env --default-signal=INT,HUP,TERM true 2> /dev/null && DEFSIG=(env --default-signal=INT,HUP,TERM)
 sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environment)
     local n=$1 wr=$2 wp=$3 we=$4 rc; shift 4
-    : > "$TMP/calls"; : > "$INB"; rm -rf "${ST:?}" "${TMP:?}/pt-flag"
+    : > "$TMP/calls"; : > "$INB"; rm -rf "${TMP:?}/pt-flag"; [ -n "${FX_KEEP_STATE:-}" ] || rm -rf "${ST:?}"
     if [ -n "${FX_MARK_PROMOTED:-}" ]; then mkdir -p "$ST/$FX_MARK_PROMOTED"; : > "$ST/$FX_MARK_PROMOTED/already-promoted"; fi
     if [ "${FX_PRESEED:-0}" = 1 ]; then mkdir -p "$ST/${FX_PRESEED_SHA:-$R2}"; echo 999 > "$ST/${FX_PRESEED_SHA:-$R2}/cleanroom-run-id"; fi
-    FX_CALLS="$TMP/calls" FX_PT_FLAG="$TMP/pt-flag" FX_R1=$R1 FX_R2=$R2 FX_R0=$R0 \
-        bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 "$@" > "$TMP/out-$n" 2>&1; rc=$?
+    FX_CALLS="$TMP/calls" FX_PT_FLAG="$TMP/pt-flag" FX_PIDFILE="$TMP/sched-pid" FX_R1=$R1 FX_R2=$R2 FX_R0=$R0 \
+        "${DEFSIG[@]}" bash "${SCHED_BIN:-$BIN/promote_scheduler.sh}" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 "$@" > "$TMP/out-$n" 2>&1; rc=$?
     expect "$n rc" "$wr" "$rc"
     expect "$n promote calls" "$wp" "$(grep -c '^PROMOTE' "$TMP/calls")"
     expect "$n execute calls" "$we" "$(grep -c '^PROMOTE.*--execute' "$TMP/calls")"
@@ -240,6 +258,21 @@ FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_MARK_PROMOTED=$R1 sched fallback-line-alread
 inbox_has fallback-line-already-promoted-marker-preseeded "RED fallback: already-promoted at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
 expect "marker-preseeded RED count" 1 "$(red_n)"
 expect "marker-preseeded DONE not repeated" 0 "$(grep -c 'DONE already promoted' "$INB")"
+# round 5 (2): deduped, not silenced -- the identical second tick (same promoted sha, same newest red sha) writes NO RED line
+FX_KEEP_STATE=1 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 sched fallback-already-promoted-identical-second-tick 0 0 0 --execute
+expect "identical second tick RED count" 0 "$(red_n)"
+# ... and a different newest red sha is a different pair: promoted R0, tick A skips R2 and R1 (newest red R2); tick B has R2's bundle gone (newest red R1)
+FX_WIDE=1 FX_MODELS_RED_SHA="$R2 $R1" FX_SHA=$R0 sched fallback-pair-a-first-tick 0 0 0 --execute
+expect "pair A first tick RED count" 1 "$(red_n)"
+FX_WIDE=1 FX_KEEP_STATE=1 FX_MODELS_RED_SHA="$R2 $R1" FX_SHA=$R0 sched fallback-pair-a-second-tick 0 0 0 --execute
+expect "pair A second tick RED count" 0 "$(red_n)"
+mv -- "$EV/models-crux/$R2" "$TMP/hold-r2"
+FX_WIDE=1 FX_KEEP_STATE=1 FX_MODELS_RED_SHA="$R1" FX_SHA=$R0 sched fallback-new-newest-red-sha-writes-again 0 0 0 --execute
+mv -- "$TMP/hold-r2" "$EV/models-crux/$R2"
+expect "new newest red sha RED count" 1 "$(red_n)"
+inbox_has fallback-new-newest-red-sha-writes-again "RED fallback: already-promoted at ${R0:0:9}, 1 newer candidate(s) skipped: ${R1:0:9}"
+FX_KEEP_STATE=1 FX_WIDE=1 FX_MODELS_RED_SHA="$R2 $R1" FX_SHA=$R0 sched fallback-pair-a-again-after-b 0 0 0 --execute
+expect "pair A after B is already recorded: RED count" 0 "$(red_n)"
 g push -q origin ":refs/tags/v1.2.3"
 # (c) a clean-room dispatch that fails, or whose run id is unreadable, still names the skipped candidate
 FX_MODELS_RED_SHA=$R2 FX_SHA=$R1 FX_CR=none FX_DISPATCH_FAIL=1 sched cleanroom-dispatch-fails-names-skipped 1 0 0 --execute --dispatch-cleanroom
@@ -252,6 +285,47 @@ expect "run-id-unreadable RED count" 1 "$(red_n)"
 FX_MODELS=red sched all-candidates-skipped-names-first 1 0 0 --execute
 inbox_has all-candidates-skipped-names-first "RED fallback: all candidates skipped, last ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9} | why: ${R2:0:9} models not green"
 expect "all-skipped RED count" 1 "$(red_n)"
+# C12 round 5 (1): a run killed AFTER it skipped a newer candidate still writes ONE RED line naming the skipped sha
+for sg in TERM INT HUP; do
+    case $sg in TERM) wrc=143 ;; INT) wrc=130 ;; *) wrc=129 ;; esac
+    FX_MODELS_RED_SHA=$R2 FX_KILL_SHA=$R1 FX_SIG=$sg FX_SHA=$R1 sched "signal-$sg-after-skip" $wrc 0 0 --execute
+    expect "signal $sg after a skip: RED count" 1 "$(red_n)"
+    inbox_has "signal-$sg-after-skip" "RED fallback: killed by SIG$sg at ${R1:0:9}, 1 newer candidate(s) skipped: ${R2:0:9}"
+    [ ! -e "$ST/pending-red" ] && ok || bad "signal $sg: breadcrumb left behind"
+done
+# a signal BEFORE any skip owes no fallback line
+FX_KILL_SHA=$R2 FX_SIG=TERM FX_SHA=$R2 sched signal-term-before-any-skip 143 0 0 --execute
+expect "signal before a skip: RED count" 0 "$(red_n)"
+# SIGKILL (OOM) cannot be trapped: the first skip left a breadcrumb; the NEXT tick writes one RED line for it and removes it
+mkdir -p "$TMP/leak"
+TMPDIR="$TMP/leak" FX_MODELS_RED_SHA=$R2 FX_KILL_SHA=$R1 FX_SIG=KILL FX_SHA=$R1 sched sigkill-after-skip 137 0 0 --execute 2> /dev/null
+grep -q "${R2:0:9}" "$ST/pending-red" 2> /dev/null && ok || bad "sigkill: no breadcrumb naming the skipped sha"
+rm -rf -- "${TMP:?}/leak"; git -C "$W" worktree prune
+FX_KEEP_STATE=1 sched stale-breadcrumb-next-tick 0 1 0
+expect "stale breadcrumb: RED count" 1 "$(red_n)"
+inbox_has stale-breadcrumb-next-tick "RED previous run died after skipping: ${R2:0:9}"
+[ ! -e "$ST/pending-red" ] && ok || bad "stale breadcrumb not removed by the next tick"
+FX_KEEP_STATE=1 sched breadcrumb-written-once 0 1 0
+expect "breadcrumb is reported once: RED count" 0 "$(red_n)"
+# the report-and-remove does not wait for the EXIT trap: a tick that stops before the trap exists (a dirty checkout) must not report the same death twice
+mkdir -p "$ST"; printf '%s\n' "${R2:0:9}" > "$ST/pending-red"
+printf z >> "$W/f"; FX_KEEP_STATE=1 sched stale-breadcrumb-then-early-stop 1 0 0 --execute; git -C "$W" checkout -q -- f
+expect "stale breadcrumb on an early-stopping tick: 'previous run died' lines" 1 "$(grep -c 'previous run died' "$INB")"
+FX_KEEP_STATE=1 sched stale-breadcrumb-not-reported-twice 0 1 0
+expect "stale breadcrumb already removed: 'previous run died' lines" 0 "$(grep -c 'previous run died' "$INB")"
+# a clean run that skipped and fell back leaves no breadcrumb
+FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 sched clean-fallback-run-leaves-no-breadcrumb 0 2 1 --execute
+expect "clean fallback RED count" 1 "$(red_n)"
+[ ! -e "$ST/pending-red" ] && ok || bad "a clean run left its breadcrumb"
+# round 5 (3): ONE candidate, nothing skipped: the final line is the pre-diff text from origin/main, byte for byte
+OLDMAIN=$(git -C "$HERE" show origin/main:scripts/release/promote_scheduler.sh 2> /dev/null)
+if [ -n "$OLDMAIN" ]; then
+    grep -qF 'fail "no candidate passed every gate: ${notes:-none}"' <<< "$OLDMAIN" && grep -qF 'inbox_line "RED promote: $* (state $state)"' <<< "$OLDMAIN" && ok || bad "origin/main no longer carries the old single-candidate text"
+else printf 'NOTE: origin/main unreadable here; the old-text anchor row is not measured\n' >&2; fi
+mv -- "$EV/models-crux/$R1" "$TMP/hold-r1"
+FX_MODELS=red sched single-candidate-final-fail-old-text 1 0 0 --execute
+mv -- "$TMP/hold-r1" "$EV/models-crux/$R1"
+expect "single-candidate final line" "RED promote: no candidate passed every gate: ${R2:0:9} models not green ();  (state $ST)" "$(sed 's/^[^|]*|[^|]*|[^|]*| //' "$INB")"
 # the per-path loop: name|env|want_rc|want_promote|want_exec|args -- RED count must be exactly 1 on every one of these exit paths
 red_paths=(
     "path-pushtags-guard-fails-after-fallback|FX_TRAIN_RED_SHA=$R2 FX_SHA=$R1 FX_PT_OK=0 FX_PT_INSTALL_FAILS=1|1|1|0|--execute"

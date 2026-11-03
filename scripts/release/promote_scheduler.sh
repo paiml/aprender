@@ -49,7 +49,7 @@ red_line() {
 fail() {
     say "$*"
     if [ "${nskip:-0}" -gt 0 ]; then red_line "${FL:-stopped at}" "${FS:-${cur:-unknown}}" "$*"
-    else reds=$((reds + 1)); inbox_line "RED promote: ${notes:-}$* (state $state)"; fi
+    else reds=$((reds + 1)); inbox_line "RED promote: $* (state $state)"; fi
     exit "${FRC:-1}"
 }
 while [ $# -gt 0 ]; do
@@ -75,6 +75,8 @@ fi
 install -d -- "$state" || usage "cannot create $state"
 exec 9> "${state:?}/.lock"
 flock -n 9 || { say "another promote_scheduler holds the lock: nothing done"; inbox_line "SKIP lock held by another promote_scheduler run"; exit 0; }
+# a SIGKILL/OOM cannot be trapped: its breadcrumb (written at the first skip) is the proof the last run died holding a skip. The lock makes it dead.
+if [ -s "$state/pending-red" ]; then inbox_line "RED previous run died after skipping: $(head -n 1 "$state/pending-red")"; rm -f -- "$state/pending-red"; fi
 G() { git -C "$repo" "$@"; }
 G fetch -q origin main nightly-evidence 2> /dev/null || fail "cannot fetch origin main/nightly-evidence: nothing measured"
 [ -z "$(G status --porcelain --untracked-files=no 2> /dev/null)" ] || fail "checkout $repo is dirty: refused"
@@ -85,7 +87,12 @@ G fetch -q origin main nightly-evidence 2> /dev/null || fail "cannot fetch origi
 work=$(mktemp -d) || usage "no temp dir"
 cleanup() { G worktree remove --force "$work/gate" > /dev/null 2>&1; G worktree remove --force "$work/ev" > /dev/null 2>&1; G worktree prune > /dev/null 2>&1; rm -rf -- "${work:?}"; return 0; }
 # every exit goes through here: rc 1 with no RED line written is itself a RED line (the contract holds on EVERY exit path)
-trap 'rc=$?; cleanup; { [ "$rc" != 1 ] || [ "$reds" -gt 0 ]; } || inbox_line "RED promote: exited 1 without a verdict (state $state)"; exit "$rc"' EXIT
+sig=""
+# TERM, INT and HUP end in the SAME single reporter: a killed run that had skipped a newer candidate still writes its one RED line
+trap 'rc=$?; cleanup; rm -f -- "$state/pending-red"; [ -z "$sig" ] || [ "${nskip:-0}" -eq 0 ] || [ "$reds" -gt 0 ] || red_line "killed by SIG$sig at" "${cur:-unknown}" ""; { [ "$rc" != 1 ] || [ "$reds" -gt 0 ]; } || inbox_line "RED promote: exited 1 without a verdict (state $state)"; exit "$rc"' EXIT
+trap 'sig=TERM; exit 143' TERM
+trap 'sig=INT; exit 130' INT
+trap 'sig=HUP; exit 129' HUP
 G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&1 || fail "cannot make a gate worktree of origin/main"
 S="$work/gate/scripts/release"
 PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
@@ -194,6 +201,7 @@ cleanroom_marker() { # SHA DIR FIRST
 first=1 last=""
 for sha in "${cands[@]}"; do
     [ -z "$last" ] || snames+="$last "; last=${sha:0:9}; nskip=$(wc -w <<< "$snames"); cur=$sha
+    [ "$nskip" -eq 0 ] || printf '%s\n' "${snames% }" > "$state/pending-red" 2> /dev/null || true
     d="$state/$sha"; install -d -- "$d"
     if ! models_ok "$sha" "$d"; then
         notes+="${sha:0:9} models not green ($(tail -n 1 "$d/relay.log" | cut -c1-80)); "
@@ -202,7 +210,11 @@ for sha in "${cands[@]}"; do
     ver=$(G show "$sha:Cargo.toml" 2> /dev/null | awk '/^\[/ { s = ($0 ~ /^\[workspace\.package\][[:space:]]*$/) } s && /^version[[:space:]]*=/ { v = $0; sub(/^[^"]*"/, "", v); sub(/".*$/, "", v); print v; exit }')
     if [[ $ver =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] && [ -n "$(G ls-remote origin "refs/tags/v$ver" 2> /dev/null)" ]; then
         say "${sha:0:9}: v$ver is already on origin: already promoted, nothing to do"
-        fallback_line "already-promoted at" "$sha"
+        mk="$d/fallback-reported-${cands[0]:0:12}"
+        if [ ! -e "$mk" ]; then
+            fallback_line "already-promoted at" "$sha"
+            [ "$nskip" -eq 0 ] || : > "$mk"
+        fi
         [ -e "$d/already-promoted" ] || { : > "$d/already-promoted"; inbox_line "DONE already promoted: v$ver is on origin (newest verified ${sha:0:9}); nothing to do"; }
         exit 0
     fi
@@ -237,4 +249,6 @@ for sha in "${cands[@]}"; do
     else FRC=$rc FL=using FS=$sha fail "promote --execute failed rc=$rc at ${sha:0:9} ($d/promote-exec.log)"; fi
     exit "$rc"
 done
+# one candidate only (nothing skipped): the pre-C12 message, byte for byte
+[ "$nskip" -gt 0 ] || fail "no candidate passed every gate: ${notes:-none}"
 FL="all candidates skipped, last" FS=$last fail "no candidate passed every gate"
