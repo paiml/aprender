@@ -15,7 +15,7 @@ set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 ROOT=$(cd "$HERE/../.." && pwd) || exit 2
 SUBJECT="${PROMOTE_SCRIPT:-$HERE/promote_nightly.sh}"
-TMP=$(mktemp -d) || exit 2
+TMP=$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || exit 2
 trap 'rm -rf -- "${TMP:?}"' EXIT
 
 export GIT_AUTHOR_NAME=falsify GIT_AUTHOR_EMAIL=f@x GIT_COMMITTER_NAME=falsify GIT_COMMITTER_EMAIL=f@x
