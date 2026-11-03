@@ -12,6 +12,10 @@
 #                            ratchet that could be raised here is not one)
 #   not recorded          -> recorded (the first baseline)
 #
+# `references-resolve` is ratcheted the same way: `dead_references` is lowered to the measured count, and
+# `dead_reference_set` is PRUNED to the members that are still dead (a fixed path leaves the set, so it is not
+# accepted forever). A dead reference that is not in the set is a rise: REFUSED, the set never grows here.
+#
 # It also records `"command": "make lint-ratchet"`, so the file names the
 # command that moves it.
 #
@@ -95,6 +99,40 @@ measure() {
     printf '%s\n' "$n"
 }
 
+# prune_set FILE LIVE_JSON_ARRAY -> rewrite the `dead_reference_set` line to (old set ∩ live), keeping order.
+# Returns 1 (REFUSED) when a live dead reference is not in the old set: the set only shrinks.
+prune_set() {
+    local file="$1" live="$2" old new added
+    old="$(grep -E '^  "dead_reference_set"[[:space:]]*:' "$file" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/,[[:space:]]*$//' || true)"
+    [ -n "$old" ] || return 0
+    added="$(jq -rn --argjson o "$old" --argjson l "$live" '[$l[] | select(. as $x | $o | index($x) | not)] | length')"
+    if [ "$added" -gt 0 ]; then
+        printf '  REFUSED   %-30s %s new dead reference(s) not in the set: it only shrinks\n' dead_reference_set "$added"
+        return 1
+    fi
+    new="$(jq -cn --argjson o "$old" --argjson l "$live" '[$o[] | select(. as $x | $l | index($x))]')"
+    # jq -c writes `["a","b"]`; the file's own style is `["a", "b"]`.
+    new="$(printf '%s' "$new" | sed -E 's/","/", "/g')"
+    if [ "$new" = "$old" ]; then
+        printf '  unchanged %-30s %s members\n' dead_reference_set "$(jq -n --argjson o "$old" '$o|length')"
+        return 0
+    fi
+    set_line "$file" dead_reference_set "$new" || return 2
+    printf '  pruned    %-30s %s -> %s members\n' dead_reference_set "$(jq -n --argjson o "$old" '$o|length')" "$(jq -n --argjson o "$new" '$o|length')"
+}
+
+# measure_dead -> the JSON array of dead references the references-resolve gate reports.
+measure_dead() {
+    local out
+    set +e
+    out="$("$PV" lint "$REPO_ROOT/contracts" --gate references-resolve 2>/dev/null)"
+    set -e
+    printf '%s' "$out" | jq -ce '.dead // empty' 2>/dev/null || {
+        printf 'NO-GO: `pv lint --gate references-resolve` reported no dead list; nothing was measured\n' >&2
+        return 2
+    }
+}
+
 self_test() {
     local t pass=0 fail=0
     t="$(mktemp -d)"
@@ -132,6 +170,14 @@ self_test() {
     printf '{\n  "armed_gates": []\n}\n' > "$t/noont.json"
     set +e; set_line "$t/noont.json" command '"x"' 2>/dev/null; rc=$?; set -e
     row "no ont object and no key is refused, not guessed" "$rc" 2
+    printf '{\n  "dead_references": 3,\n  "dead_reference_set": ["a: x.rs", "b: y.rs", "c: z.rs"],\n  "ont": {\n    "x": 1\n  }\n}\n' > "$t/d.json"
+    prune_set "$t/d.json" '["a: x.rs","c: z.rs"]' >/dev/null
+    row "a fixed path leaves the set"                    "$(grep -c '"dead_reference_set": \["a: x.rs", "c: z.rs"\],' "$t/d.json")" 1
+    set +e; prune_set "$t/d.json" '["a: x.rs","q: new.rs"]' >/dev/null; rc=$?; set -e
+    row "a new dead reference is refused"                "$rc" 1
+    row "a refused rise leaves the set"                  "$(grep -c '"dead_reference_set": \["a: x.rs", "c: z.rs"\],' "$t/d.json")" 1
+    cp "$t/d.json" "$t/e.json"; prune_set "$t/e.json" '["a: x.rs","c: z.rs"]' >/dev/null
+    row "an unchanged set leaves the file byte-identical" "$(md5sum < "$t/e.json" | cut -c1-8)" "$(md5sum < "$t/d.json" | cut -c1-8)"
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]
@@ -153,6 +199,10 @@ main() {
     set_line "$BASELINE" command "\"$COMMAND_VALUE\"" || return 2
     ratchet_one "$BASELINE" unpaired_theorem_modules "$pairing" || rc=$?
     ratchet_one "$BASELINE" contracts_without_depends_on "$depends" || rc=$?
+    local dead
+    dead="$(measure_dead)" || return 2
+    ratchet_one "$BASELINE" dead_references "$(printf '%s' "$dead" | jq 'length')" || rc=$?
+    prune_set "$BASELINE" "$dead" || rc=$?
     return "$rc"
 }
 
