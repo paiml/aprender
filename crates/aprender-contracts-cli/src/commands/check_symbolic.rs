@@ -267,13 +267,24 @@ fn match_pat(pat: &Expr, v: f64, env: &mut Env) -> Option<()> {
     }
 }
 
+/// Deepest chain of clause bodies `eval` follows; a self-recursive definition stops here (declines) instead of
+/// overflowing the stack (aprender#6591).
+const MAX_EVAL_DEPTH: usize = 64;
+
 fn eval(e: &Expr, env: &Env, defs: &[Clause]) -> Option<f64> {
+    eval_at(e, env, defs, 0)
+}
+
+fn eval_at(e: &Expr, env: &Env, defs: &[Clause], depth: usize) -> Option<f64> {
+    if depth > MAX_EVAL_DEPTH {
+        return None;
+    }
     let r = match e {
         Expr::Num(n) => *n,
         Expr::Var(v) => *env.get(v)?,
-        Expr::Neg(a) => -eval(a, env, defs)?,
+        Expr::Neg(a) => -eval_at(a, env, defs, depth)?,
         Expr::Bin(o, a, b) => {
-            let (x, y) = (eval(a, env, defs)?, eval(b, env, defs)?);
+            let (x, y) = (eval_at(a, env, defs, depth)?, eval(b, env, defs)?);
             match o {
                 '+' => x + y,
                 '-' => x - y,
@@ -285,7 +296,7 @@ fn eval(e: &Expr, env: &Env, defs: &[Clause]) -> Option<f64> {
         Expr::Call(n, args) => {
             let v: Vec<f64> = args
                 .iter()
-                .map(|a| eval(a, env, defs))
+                .map(|a| eval_at(a, env, defs, depth))
                 .collect::<Option<_>>()?;
             match (n.as_str(), v.as_slice()) {
                 ("sin", [x]) => x.sin(),
@@ -303,7 +314,7 @@ fn eval(e: &Expr, env: &Env, defs: &[Clause]) -> Option<f64> {
                                 .iter()
                                 .zip(&v)
                                 .try_for_each(|(p, x)| match_pat(p, *x, &mut benv))?;
-                            eval(&c.body, &benv, defs)
+                            eval_at(&c.body, &benv, defs, depth + 1)
                         })?
                 }
             }
@@ -330,7 +341,11 @@ fn strip_prose(s: &str) -> String {
     let mut s = s.trim().to_string();
     if s.ends_with(')') {
         if let Some(i) = s.rfind(" (") {
-            if s[i + 2..].matches('(').count() < s[i + 2..].matches(')').count() {
+            // A parenthetical after an operator or `=` is an operand, not a comment: `F(x) = (x + 1)`.
+            let operand = s[..i].trim_end().ends_with([
+                '=', '<', '>', '+', '-', '*', '/', '^', '(', ',', '\u{2264}', '\u{2265}',
+            ]);
+            if !operand && s[i + 2..].matches('(').count() < s[i + 2..].matches(')').count() {
                 s.truncate(i);
             }
         }
@@ -524,6 +539,9 @@ fn sweep(
     }
 }
 
+/// Most combinations `sweep` will visit; the product grows ~18^vars x 4^ambient (aprender#6591).
+const MAX_SWEEP_POINTS: usize = 2_000_000;
+
 fn check_conjunct(text: &str, defs: &[Clause]) -> Verdict {
     let unparsed = |r: String| Verdict::Unparsed { reason: r };
     let (parts, cmps) = match split_chain(text) {
@@ -545,6 +563,14 @@ fn check_conjunct(text: &str, defs: &[Clause]) -> Verdict {
     }
     let amb = ambient_vars(defs, &vars);
     let names = sample_axes(&vars, &idxv, &amb);
+    let space = names
+        .iter()
+        .fold(1usize, |n, (_, p)| n.saturating_mul(p.len().max(1)));
+    if space > MAX_SWEEP_POINTS {
+        return unparsed(format!(
+            "sample space {space} exceeds the {MAX_SWEEP_POINTS}-point budget"
+        ));
+    }
     let points = match sweep(&names, &exprs, defs, &parts, &cmps) {
         Ok(n) => n,
         Err(c) => return Verdict::Violated { counterexample: c },
@@ -708,5 +734,34 @@ mod tests {
         );
         assert!(run(&bad, false).is_err(), "sin->cos must report violated");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_self_recursive_definition_is_unparsed_not_a_stack_overflow() {
+        assert!(matches!(
+            check_invariant("F(n) = F(n + 1)", "F(1) = 0"),
+            Verdict::Unparsed { .. }
+        ));
+    }
+
+    #[test]
+    fn a_wide_invariant_is_unparsed_over_the_point_budget() {
+        let f = "F(x) = x";
+        let inv = "F(a) + F(b) + F(c) + F(d) + F(e) + F(f) + F(g) + F(h) = 0";
+        assert!(matches!(check_invariant(f, inv), Verdict::Unparsed { .. }));
+    }
+
+    #[test]
+    fn strip_prose_case_table() {
+        for (input, want) in [
+            ("F(x) = (x + 1)", "F(x) = (x + 1)"),
+            ("F(x) = 2 * (x + 1)", "F(x) = 2 * (x + 1)"),
+            ("F(x) <= (x + 1)", "F(x) <= (x + 1)"),
+            ("F(x) = x (shape preservation)", "F(x) = x"),
+            ("F(x) = x for all x", "F(x) = x"),
+            ("F(x) = x", "F(x) = x"),
+        ] {
+            assert_eq!(strip_prose(input), want, "{input}");
+        }
     }
 }
