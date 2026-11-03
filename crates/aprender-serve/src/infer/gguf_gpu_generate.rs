@@ -1899,4 +1899,54 @@ mod forced_gpu_refusal_4969_tests {
         assert!(reason.contains("cosine=0.95 < 0.99 at step 3/8"), "{reason}");
         assert!(reason.contains("No CPU generation was run"), "{reason}");
     }
+
+    /// #6588: the CPU loop marks `mark_generation_start` right before its first forward and nowhere
+    /// else, so an unset mark after a forced run proves zero CPU forward calls. Runs on any host:
+    /// the wgpu attempt is refused (no adapter, or its parity gate) or serves on the GPU; the one
+    /// outcome that must never happen is a CPU answer.
+    #[cfg(feature = "gpu")]
+    #[test]
+    fn a_forced_gpu_run_never_runs_the_cpu_forward() {
+        let cfg = crate::gguf::GGUFConfig {
+            architecture: "test".to_string(),
+            constraints: crate::gguf::ArchConstraints::from_architecture("test"),
+            hidden_dim: 64,
+            intermediate_dim: 128,
+            num_heads: 4,
+            num_kv_heads: 4,
+            num_layers: 1,
+            vocab_size: 100,
+            rope_theta: 10000.0,
+            context_length: 512,
+            eps: 1e-5,
+            rope_type: 0,
+            explicit_head_dim: None,
+            query_pre_attn_scalar: None,
+            bos_token_id: None,
+            eos_token_id: None,
+        };
+        let model = crate::gguf::test_helpers::create_test_model_with_config(&cfg);
+        let gen = crate::gguf::QuantizedGenerateConfig {
+            max_tokens: 2,
+            temperature: 0.0,
+            top_k: 1,
+            ..Default::default()
+        };
+        let mut config = InferenceConfig::new("unused.gguf");
+        config.accel_forced = true;
+        config.no_gpu = false;
+        assert!(!generation_started(), "a mark was already set on this thread");
+        let result = run_gguf_generate(model, &[1, 2], &gen, &config);
+        match result {
+            Err(RealizarError::UnsupportedOperation { operation, .. }) => {
+                assert_eq!(operation, FORCED_GPU_REFUSED_OP);
+            }
+            Ok((_, used_gpu, _)) => assert!(used_gpu, "forced GPU run answered from the CPU"),
+            Err(other) => panic!("unexpected error: {other:?}"),
+        }
+        assert!(
+            !generation_started(),
+            "the CPU generation loop started on a forced GPU run"
+        );
+    }
 }
