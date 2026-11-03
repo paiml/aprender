@@ -37,8 +37,7 @@ self_test() {
 sites() {
   local bad=0 f
   for f in .github/workflows/release-lanes-nightly.yml .github/workflows/rc-cut.yml .github/workflows/guards-nightly.yml; do
-    if grep -n 'git worktree add' "$f" | grep -v 'git worktree prune' >/dev/null \
-       && ! grep -B1 'git worktree add' "$f" | grep -q 'git worktree prune'; then
+    if awk '/git worktree add/ && !/git worktree prune/ {bad=1} END {exit !bad}' "$f"; then
       echo "FAIL $f: worktree add without a prune"; bad=1
     fi
   done
