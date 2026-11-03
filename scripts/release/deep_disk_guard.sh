@@ -8,7 +8,7 @@
 # prints the numbers, and exits 3 ("INFRA disk") below the floor, so the red names its cause (#6126).
 # It deletes nothing: a shared clean-room host holds other runs' directories, and no path here is this job's own.
 #
-#   bash scripts/release/deep_disk_guard.sh              # DEEP_DISK_MIN_GIB (default 20)
+#   bash scripts/release/deep_disk_guard.sh              # DEEP_DISK_MIN_GIB (default 38 = measured peak 25 GiB x 1.5)
 #   bash scripts/release/deep_disk_guard.sh --self-test  # proves it can go RED
 # Exit 0 enough space everywhere | 3 a path is below the floor | 2 cannot measure.
 set -uo pipefail
@@ -27,7 +27,7 @@ guard() {
         printf 'deep_disk_guard: %-8s %s GiB free at %s (floor %s)\n' "$name" "$free" "$path" "$min"
         [ "$free" -ge "$min" ] || bad=1
     done
-    if [ "$bad" -ne 0 ]; then echo "INFRA disk: a lane path is below the ${min} GiB floor; not_measured, not a code failure (#6126)" >&2; return 3; fi
+    if [ "$bad" -ne 0 ]; then echo "infra: disk — a lane path is below the ${min} GiB floor (free GiB printed above); not_measured, not a code failure (#6126)" >&2; return 3; fi
     return 0
 }
 
@@ -39,4 +39,4 @@ if [ "${1:-}" = "--self-test" ]; then
     [ "$rc" -eq 0 ] && echo "self-test: PASS"
     exit "$rc"
 fi
-guard "${DEEP_DISK_MIN_GIB:-20}"
+guard "${DEEP_DISK_MIN_GIB:-38}"
