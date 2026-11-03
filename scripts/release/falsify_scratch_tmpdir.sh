@@ -9,7 +9,12 @@ FILES=(scripts/check_cascade_clean_room_gate.sh scripts/check_comparator_one_cli
     scripts/release/carry_milestone_items.sh scripts/check_thresholds_in_matrix.sh
     scripts/check_perf_matrix_schema.sh
     scripts/check_apr_bin_resolution.sh scripts/check_cascade_converges.sh scripts/check_crux_greedy_rows.sh
-    scripts/check_lockfile_current.sh scripts/check_nextest_config_keys.sh scripts/model_ladder.sh)
+    scripts/check_lockfile_current.sh scripts/check_nextest_config_keys.sh scripts/model_ladder.sh
+    scripts/check_arch_constraints_contract_covers_fallback.sh scripts/check_bin_cli_tests_wired.sh
+    scripts/check_cascade_covers_all_crates.sh scripts/check_crux_inference_judge.sh
+    scripts/check_crux_ollama_in_lock.sh scripts/check_crux_serve_code.sh
+    scripts/check_facade_order_gate.sh scripts/check_guards_nightly_manifest.sh
+    scripts/crux_inference_dogfood.sh)
 
 # ok <file> : a case arm lists "${TMPDIR:-/tmp}", and the /tmp arm is still there
 ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*\)' "$1" && grep -qE '/tmp/(\?)?\*' "$1"; }
@@ -72,4 +77,4 @@ if [ "${1:-}" = "--mutants" ]; then
     done
     exit 0
 fi
-check && table && behave && ladder_cleanup && echo "PASS: 16 guards accept \${TMPDIR:-/tmp}"
+check && table && behave && ladder_cleanup && echo "PASS: 25 guards accept \${TMPDIR:-/tmp}"
