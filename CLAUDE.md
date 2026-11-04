@@ -43,6 +43,15 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 3. Open PR: `gh pr create`
 4. CI must pass before merge — enforced by GitHub
 
+## Intake and Pull Signal (RAX-INTERIM, operator, 2026-11-04)
+
+- **Intake:** workers and seats never run `gh issue create`. Record a finding as one line in
+  `docs/findings/<session>.jsonl` or in the cop inbox. Only cops mint tickets, under an epic with a budget.
+- **Pull signal:** when the repo is over its cap (open PRs > 15 or open issues > 100), its cop opens no new
+  feature PRs and spawns no new feature workers there. Only fixes, expedite and triage folds proceed.
+- **Closes:** every new PR body carries `Closes #N` or `no-issue: <reason>`.
+- Cops report created vs closed (24 h) per repo.
+
 ## Autonomous Operation Mode (DEFAULT)
 
 **Operate autonomously by default. Ship PRs, don't ask permission for routine work.**
