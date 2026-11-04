@@ -341,7 +341,8 @@ if run_step readiness && [ "$AP_POLICY" != 1 ]; then
   # #3745: the cells are derived from the candidate's own surface, taken from the apr models_t1 built from
   # $MC (re-proved here: a stale binary's surface would derive another release's cells).
   TD=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)}
-  "$TD/release/apr" --version 2>/dev/null | head -n 1 | grep -qF "(${MC:0:9}" \
+  apr_ver=$("$TD/release/apr" --version 2>/dev/null | head -n 1)
+  grep -qF "(${MC:0:9}" <<< "$apr_ver" \
     || die "T-1 readiness: $TD/release/apr is not built from $MC -- its surface cannot derive this release's cells"
   "$TD/release/apr" surface --json > "$AP/surface-t1.json" 2>> "$LOG" || die "T-1 readiness: apr surface --json failed"
   bash scripts/release/release_readiness.sh --root "$WT" --version "$V" --commit "$MC" --receipts "$AP/models-t1" \

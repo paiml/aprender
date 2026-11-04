@@ -72,9 +72,9 @@ self_test() {
     printf '%s\n' "bash -c 'echo hi'" "rm -f x" "bash -c 'git perform --thing; ls /usr/bin/rmdir-x'" "bash -c 'echo firm'" "bash scripts/probe.sh" > "$d/scripts/good.sh"
     out=$(scan_tree "$d") || true
     for want in bad1.sh bad2.sh bad3.cmd; do
-        printf '%s\n' "$out" | grep -q "$want" || { echo "FAIL self-test: planted $want not flagged"; rc=1; }
+        grep -q "$want" <<< "$out" || { echo "FAIL self-test: planted $want not flagged"; rc=1; }
     done
-    if printf '%s\n' "$out" | grep -q "good.sh"; then echo "FAIL self-test: clean file flagged: $(printf '%s\n' "$out" | grep good.sh)"; rc=1; fi
+    if grep -q "good.sh" <<< "$out"; then echo "FAIL self-test: clean file flagged: $(printf '%s\n' "$out" | grep good.sh)"; rc=1; fi
     [ "$rc" -eq 0 ] && echo "self-test: PASS"
     return "$rc"
 }
