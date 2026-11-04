@@ -6,6 +6,16 @@
 set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 SRC="${ONE_CMD_SRC:-$HERE/one_command.sh}"
+if [ "${1:-}" = --mutants ]; then
+  M=$(mktemp -d) || exit 2; trap 'rm -rf -- "${M:?}"' EXIT; miss=0
+  mut() { sed "$2" "$HERE/one_command.sh" > "$M/m.sh"; cmp -s "$HERE/one_command.sh" "$M/m.sh" && { echo "MUTANT $1 did not apply"; miss=$((miss+1)); return; }
+    ONE_CMD_SRC="$M/m.sh" bash "$0" > /dev/null 2>&1 && { echo "MUTANT $1 SURVIVED"; miss=$((miss+1)); }; }
+  mut sha-check-dropped 's/^\[ "\$tested" = "\$SHA" \] .*$/:/'
+  mut success-check-dropped 's/^\[ "\$c" = success \] .*$/:/'
+  mut dry-run-ignored 's/^if \[ "\$DRY" = 1 \]; then$/if false; then/'
+  mut tag-before-verdict 's/^git push -q origin "\$BR".*$/git tag -a "$T" -m x "$SHA"/'
+  [ "$miss" = 0 ] && { echo "all mutants caught"; exit 0; }; exit 1
+fi
 [ -f "$SRC" ] || { echo "FAIL one_command.sh missing at $SRC"; exit 1; }
 T=$(mktemp -d) || exit 2; trap 'rm -rf -- "${T:?}"' EXIT
 BIN=$T/bin; mkdir -p "$BIN"
@@ -18,9 +28,9 @@ row() { # name want_rc want_calls_regex forbid_calls_regex dry cr_conclusion cr_
   mkstub git 'case "$1" in rev-parse) echo '$SHA';; esac; exit 0'
   mkstub bump 'exit 0'
   mkstub publish 'exit 0'
-  mkstub gh 'case "$*" in *"run view"*) echo "'"$concl $crsha"'";; esac; exit 0'
-  PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_POLL=0 bash "$SRC" 0.73.0 "$dry" > "$T/out" 2>&1
-  local rc=$?
+  mkstub gh 'case "$*" in *"run list"*) echo 42;; *"--log"*) echo "tested-sha: '"$crsha"'";; *"run view"*) echo "'"$concl"'";; esac; exit 0'
+  PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_POLL=0 ONE_CMD_ARM=true bash "$SRC" 0.73.0 "$dry" > "$T/out" 2>&1
+  local rc=$?; [ -n "${DBG:-}" ] && cat "$T/out"
   [ "$rc" = "$wrc" ] || { echo "FAIL $name: rc=$rc want $wrc"; fails=$((fails+1)); return; }
   [ -z "$want" ] || grep -Eq -- "$want" "$CALLS" || { echo "FAIL $name: no call /$want/"; fails=$((fails+1)); return; }
   [ -z "$forbid" ] || ! grep -Eq -- "$forbid" "$CALLS" || { echo "FAIL $name: forbidden call /$forbid/"; fails=$((fails+1)); return; }

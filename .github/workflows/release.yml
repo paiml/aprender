@@ -1,0 +1,52 @@
+name: Release
+
+# One command: gh workflow run release.yml -f version=0.73.0 [-f dry_run=true]
+# bump on release/X.Y.Z -> infra clean-room on THAT sha -> tag -> cascade publish -> binary-release.
+# KZ-001 item b, aprender#6729. Logic and case table: scripts/release/one_command.sh, falsify_one_command.sh.
+# dry_run=true stops after the bump (WOULD lines): no push, no tag, no publish. Needs no crates.io token.
+# Real run needs secrets CARGO_REGISTRY_TOKEN (publish) and INFRA_ACTIONS_READ (clean-room dispatch on paiml/infra).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'X.Y.Z to release (must be above the last tag)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Stop after the bump; no push, tag or publish'
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: git identity
+        run: |
+          git config user.name "aprender-release"
+          git config user.email "noreply@paiml.com"
+      - name: release
+        env:
+          GH_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          DRY: ${{ inputs.dry_run && '1' || '0' }}
+        run: bash scripts/release/one_command.sh "$VERSION" "$DRY"
+      - name: binary assets
+        if: ${{ !inputs.dry_run }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: gh workflow run binary-release.yml --ref "v$VERSION" -f tag="v$VERSION"
