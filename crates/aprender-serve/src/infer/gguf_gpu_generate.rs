@@ -671,27 +671,46 @@ fn run_gguf_generate(
 
     // #4969: a FORCED accelerator whose attempt was refused is refused for good (R-0b, #3002).
     // The CPU generation below would be thrown away by the caller, so fail before it runs.
-    if forced_gpu_refused_before_cpu(config.no_gpu, config.accel_forced, gpu_attempted) {
-        return Err(forced_gpu_refusal(wgpu_refusal.as_deref()));
-    }
-
-    log_cpu_backend(config.verbose, has_legacy_quant);
-    mark_generation_start(); // #3981
-    let tokens = if gen_config.trace {
-        // #4268: `--trace` keeps the instrumented loop; the engine has no brick profiler.
-        model.generate_with_cache(input_tokens, gen_config)
-    } else {
-        let mut session = crate::gguf::dense_session::DenseSession::new(
-            crate::gguf::dense_session::DenseForward::cpu(std::sync::Arc::new(model)),
-        );
-        crate::gguf::dense_session::dense_turn(&mut session, input_tokens, gen_config)
-            .map(|(tokens, _)| tokens)
-    }
-    .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))?;
+    // #6588: the refusal and the CPU loop meet in `cpu_unless_forced_gpu_refused`, so a test can
+    // hand it a counting closure and prove the CPU forward is never entered.
+    let tokens = cpu_unless_forced_gpu_refused(
+        config,
+        gpu_attempted,
+        wgpu_refusal.as_deref(),
+        || {
+            log_cpu_backend(config.verbose, has_legacy_quant);
+            mark_generation_start(); // #3981
+            if gen_config.trace {
+                // #4268: `--trace` keeps the instrumented loop; the engine has no brick profiler.
+                model.generate_with_cache(input_tokens, gen_config)
+            } else {
+                let mut session = crate::gguf::dense_session::DenseSession::new(
+                    crate::gguf::dense_session::DenseForward::cpu(std::sync::Arc::new(model)),
+                );
+                crate::gguf::dense_session::dense_turn(&mut session, input_tokens, gen_config)
+                    .map(|(tokens, _)| tokens)
+            }
+            .map_err(|e| RealizarError::InferenceError(format!("CPU generation failed: {}", e)))
+        },
+    )?;
     // #3826: the CPU answered. `gpu_attempted` distinguishes "CPU because
     // nothing else was tried" from "CPU because the accelerator's result was
     // refused" — the second is the fallback a consumer needs to see.
     Ok((tokens, false, gpu_attempted))
+}
+
+/// #6588: run `cpu_forward` unless a forced accelerator's attempt was refused (#4969), in which
+/// case return [`forced_gpu_refusal`] WITHOUT calling it (AGB-INV-006: zero CPU forward calls).
+pub(crate) fn cpu_unless_forced_gpu_refused<T>(
+    config: &InferenceConfig,
+    gpu_attempted: bool,
+    wgpu_refusal: Option<&str>,
+    cpu_forward: impl FnOnce() -> Result<T>,
+) -> Result<T> {
+    if forced_gpu_refused_before_cpu(config.no_gpu, config.accel_forced, gpu_attempted) {
+        return Err(forced_gpu_refusal(wgpu_refusal));
+    }
+    cpu_forward()
 }
 
 /// `RealizarError::UnsupportedOperation::operation` of a forced-accelerator refusal (#4969);
@@ -1898,5 +1917,44 @@ mod forced_gpu_refusal_4969_tests {
         assert_eq!(operation, FORCED_GPU_REFUSED_OP);
         assert!(reason.contains("cosine=0.95 < 0.99 at step 3/8"), "{reason}");
         assert!(reason.contains("No CPU generation was run"), "{reason}");
+    }
+
+    fn config_with(no_gpu: bool, accel_forced: bool) -> InferenceConfig {
+        let mut c = InferenceConfig::new("unused.gguf");
+        c.no_gpu = no_gpu;
+        c.accel_forced = accel_forced;
+        c
+    }
+
+    /// #6588 (AGB-INV-006): a forced, refused GPU attempt never enters the CPU forward.
+    #[test]
+    fn a_refused_forced_gpu_attempt_makes_zero_cpu_forward_calls() {
+        let cpu_forward_calls = std::cell::Cell::new(0u32);
+        let r = cpu_unless_forced_gpu_refused(&config_with(false, true), true, Some("cosine=0.95"), || {
+            cpu_forward_calls.set(cpu_forward_calls.get() + 1);
+            Ok(vec![1u32])
+        });
+        let Err(RealizarError::UnsupportedOperation { operation, .. }) = r else {
+            panic!("expected the forced-GPU refusal");
+        };
+        assert_eq!(operation, FORCED_GPU_REFUSED_OP);
+        assert_eq!(cpu_forward_calls.get(), 0, "CPU forward ran after a refused forced GPU");
+    }
+
+    /// Planted control: every other invocation DOES run the CPU forward exactly once.
+    #[test]
+    fn every_other_invocation_runs_the_cpu_forward_once() {
+        for (no_gpu, forced, attempted, refused, why) in CASES {
+            if refused {
+                continue;
+            }
+            let calls = std::cell::Cell::new(0u32);
+            let r = cpu_unless_forced_gpu_refused(&config_with(no_gpu, forced), attempted, None, || {
+                calls.set(calls.get() + 1);
+                Ok(7u32)
+            });
+            assert_eq!(r.ok(), Some(7), "{why}");
+            assert_eq!(calls.get(), 1, "{why}");
+        }
     }
 }
