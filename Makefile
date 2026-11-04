@@ -1538,6 +1538,14 @@ ont-ratchet-check:
 # PVL-001 EV-11 (PMAT-4166): the two `pv lint` ratchets (theorem-pairing, depends-on-present) move ONLY
 # through this target, and only DOWN. The gates read contracts/lint-baseline.json and never write it.
 # NEVER in CI: a CI job that could rewrite the baseline is a ratchet that turns both ways.
+# Operator C2 (2026-11-03): checks before review. The cargo-free half of CI's `pr-light`, run before you push.
+.PHONY: pr-light pr-light-self-test
+pr-light:
+	@bash scripts/pr_light.sh
+
+pr-light-self-test:
+	@bash scripts/pr_light.sh --self-test
+
 .PHONY: lint-ratchet lint-ratchet-self-test
 lint-ratchet:
 	@bash scripts/lint_ratchet.sh
