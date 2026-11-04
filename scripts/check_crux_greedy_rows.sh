@@ -62,7 +62,7 @@ reap_recorded() { # reap_recorded <root>: stub_reap every pid in a llama-server.
 _rm_tmp() {
   reap_recorded "$TMP"; stub_reap "${hsp:-}"
   case "${TMP:-}" in
-    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
   esac
 }
