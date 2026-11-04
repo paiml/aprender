@@ -125,13 +125,15 @@ if [ "${PACKS_BEFORE}" -ge 24 ]; then
 else
   echo "REPORT checkout holds ${PACKS_BEFORE} pack file(s); no repack needed (gix-odb overflows at 33)"
 fi
-echo "== cargo publish -p apr-format --dry-run --no-verify (dev-dep cycle check) =="
+echo "== cargo publish -p aprender-legacy-codec -p apr-format --dry-run --no-verify (dev-dep cycle check) =="
+# Both packages in ONE invocation: apr-format depends on the in-tree codec, which is not on the
+# registry until it publishes first; a multi-package publish resolves it from the workspace.
 # ONE invocation, output captured, `rc` read DIRECTLY. This was
 # `cargo publish ... | tee "${PUBLISH_LOG}" | tail -3`, so the `if` tested the
 # PIPELINE's status -- `tail`'s, made survivable only by `set -o pipefail`. The
 # repo has shipped that construct as a live defect twice (#2336, #2360).
 set +e
-cargo publish -p apr-format --dry-run --no-verify --allow-dirty > "${PUBLISH_LOG}" 2>&1
+cargo publish -p aprender-legacy-codec -p apr-format --dry-run --no-verify --allow-dirty > "${PUBLISH_LOG}" 2>&1
 PUB_RC=$?
 set -e
 tail -3 "${PUBLISH_LOG}"

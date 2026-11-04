@@ -71,3 +71,6 @@ falsification_tests:
   test: |
     cargo test -p apr-format --test golden_fixtures
   if_fails: "published .apr models stop opening"
+
+entity:
+  type: crate
