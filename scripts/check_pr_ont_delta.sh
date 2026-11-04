@@ -132,7 +132,7 @@ self_test() {
     # SEC011: an unvalidated `rm -rf "$tmp"` is a delete-anything primitive if the
     # variable is ever empty or `/`. Prove the shape before the sweep, not after.
     case "$tmp" in
-        /tmp/*|/var/tmp/*) : ;;
+        /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/tmp/*) : ;;
         *) printf 'NO-GO: mktemp -d gave an unexpected path: %s\n' "$tmp" >&2; return 2 ;;
     esac
 

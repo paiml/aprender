@@ -231,7 +231,7 @@ gate() {
 selftest() {
   local tmp pass=0 fail=0
   tmp="$(mktemp -d)"
-  case "$tmp" in /tmp/*|/var/folders/*) : ;; *) echo "refusing $tmp"; exit 2 ;; esac
+  case "$tmp" in /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/folders/*) : ;; *) echo "refusing $tmp"; exit 2 ;; esac
   mkdir -p "$tmp/scripts"
   cp "$ROOT/scripts/perf_gate.sh" "$tmp/scripts/" 2>/dev/null || true
 

@@ -110,7 +110,7 @@ if [[ "$mode" = selftest ]]; then
   # typo away from deleting the tree it was meant to clean up after.
   _rm_td() {
     local v="${TD:-}"
-    case "$v" in /tmp/?*|/var/folders/?*) ;; *) return 0 ;; esac
+    case "$v" in /tmp/?*|"${TMPDIR:-/tmp}"/?*|/var/folders/?*) ;; *) return 0 ;; esac
     [ -n "$v" ] && [ "$v" != "/" ] && rm -rf -- "$v" || :
   }
   trap _rm_td EXIT

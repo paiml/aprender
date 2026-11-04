@@ -17,10 +17,16 @@ FILES=(scripts/check_cascade_clean_room_gate.sh scripts/check_comparator_one_cli
     scripts/crux_inference_dogfood.sh
     scripts/check_perf_concurrency_groups.sh scripts/check_no_hand_rolled_parsers.sh
     scripts/check_publishable_deps_publishable.sh scripts/check_pv_bin_resolution.sh
-    scripts/check_publish_preflight.sh scripts/include_fmt_ratchet.sh)
+    scripts/check_publish_preflight.sh scripts/include_fmt_ratchet.sh
+    scripts/check_moe_routes_through_one_dispatch.sh scripts/check_no_competing_harnesses.sh
+    scripts/check_perf041_marker.sh scripts/check_pr_ont_delta.sh scripts/check_readme_numeric_claims.sh
+    scripts/check_serve_probe_evidence.sh scripts/check_tokenizer_nonascii_parity.sh
+    scripts/ci/nextest_list_wrapper.sh scripts/dogfood_surfaces.sh scripts/lab/comparative_regex_agreement.sh
+    scripts/lint_ratchet.sh scripts/parity_receipt_denominator.sh
+    scripts/tests/model_ladder_diagnostic_not_truncated_test.sh)
 
 # ok <file> : a case arm lists "${TMPDIR:-/tmp}", and the /tmp arm is still there
-ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*\)' "$1" && grep -qE '/tmp/(\?)?\*' "$1"; }
+ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*[|)]' "$1" && grep -qE '/tmp/(\?)?\*' "$1"; }
 
 # fast behaviour: the cascade gate completes with a scratch dir outside /tmp
 # outside_tmp : a scratch base that is NOT under /tmp, so the base-only arm is what lets the guard pass

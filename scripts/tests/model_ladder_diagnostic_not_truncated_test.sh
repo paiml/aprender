@@ -50,7 +50,7 @@ T=$(mktemp -d) || exit 2
 # the same guard scripts/dogfood.sh's `_rm_worklog` uses.
 cleanup() {
   case "${T:-}" in
-    /tmp/?*|/var/folders/?*|/mnt/?*) [ -d "$T" ] && rm -rf -- "$T" ;;
+    /tmp/?*|"${TMPDIR:-/tmp}"/?*|/var/folders/?*|/mnt/?*) [ -d "$T" ] && rm -rf -- "$T" ;;
     *) return 0 ;;
   esac
 }

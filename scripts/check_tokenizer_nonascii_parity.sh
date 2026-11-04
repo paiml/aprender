@@ -27,7 +27,7 @@ if [ "${1:-}" = --self-test ]; then
   TMP=$(mktemp -d) || exit 2
   _rm_tmp() {
     case "${TMP:-}" in
-      /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+      /tmp/?*|"${TMPDIR:-/tmp}"/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
       *) : ;;
     esac
   }

@@ -188,7 +188,7 @@ if [ "$SELF_TEST" = 1 ]; then
   # Remove only what mktemp made: never empty, never "/", never outside a temp root.
   _rm() {
     case "${T:-}" in
-      /tmp/?*|/var/folders/?*) [ -d "$T" ] && rm -rf -- "$T" ;;
+      /tmp/?*|"${TMPDIR:-/tmp}"/?*|/var/folders/?*) [ -d "$T" ] && rm -rf -- "$T" ;;
       *) : ;;
     esac
   }

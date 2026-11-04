@@ -100,7 +100,7 @@ run_wrapped() {
 if [ "${1:-}" = "--self-test" ]; then
     fails=0
     SD="$(mktemp -d)" || exit 1
-    case "$SD" in /tmp/*) : ;; *) printf 'BADTMP %s\n' "$SD"; exit 1 ;; esac
+    case "$SD" in /tmp/*|"${TMPDIR:-/tmp}"/?*) : ;; *) printf 'BADTMP %s\n' "$SD"; exit 1 ;; esac
     trap 'rm -rf "${SD:?}"' EXIT
     self="${BASH_SOURCE[0]}"
 

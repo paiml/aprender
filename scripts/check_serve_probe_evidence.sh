@@ -40,7 +40,7 @@ TMPD=$(mktemp -d) || { echo "cannot create a temp dir" >&2; exit 2; }
 # temp root. Same rule as model_ladder.sh's _rm_work (SEC011).
 _rm_tmpd() {
   case "${TMPD:-}" in
-    /tmp/?*|/var/folders/?*) [ -d "$TMPD" ] && rm -rf -- "$TMPD" ;;
+    /tmp/?*|"${TMPDIR:-/tmp}"/?*|/var/folders/?*) [ -d "$TMPD" ] && rm -rf -- "$TMPD" ;;
     *) : ;;
   esac
 }
