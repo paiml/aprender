@@ -634,7 +634,8 @@ fixture() {
     kit_files "$r" "$3" || return 2
     cp -- "$2" "$r/scripts/release/autopilot.sh" && cp -- "$PARAMS" "$r/scripts/release/lib_release_params.sh" \
         && cp -- "$GATE" "$r/scripts/check_multiplatform_dogfood.sh" && cp -- "$TMP/cargo-stub" "$d/pkg/bin/cargo" \
-        && cp -- "$LEDGER" "$r/scripts/release/ledger.py" || return 2
+        && cp -- "$LEDGER" "$r/scripts/release/ledger.py" \
+        && cp -- "$ROOT/scripts/release/kit_receipt_run.sh" "$r/scripts/release/kit_receipt_run.sh" || return 2
     if [ -n "${4:-}" ]; then
         python3 - "$r/scripts/check_multiplatform_dogfood.sh" "$4" <<'PY' || return 2
 import re, sys
