@@ -43,7 +43,7 @@ pub fn save_signed<M: Serialize>(
     let path = path.as_ref();
 
     // Serialize payload with bincode
-    let payload_uncompressed = bincode::serialize(model)
+    let payload_uncompressed = aprender_legacy_codec::serialize(model)
         .map_err(|e| AprenderError::Serialization(format!("Failed to serialize model: {e}")))?;
 
     // Compress payload

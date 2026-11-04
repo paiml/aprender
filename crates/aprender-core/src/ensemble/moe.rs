@@ -307,7 +307,7 @@ where
     G: GatingNetwork + Serialize + serde::de::DeserializeOwned,
 {
     pub fn save<P: AsRef<std::path::Path>>(&self, path: P) -> Result<()> {
-        let bytes = bincode::serialize(&SerializableMoe {
+        let bytes = aprender_legacy_codec::serialize(&SerializableMoe {
             experts: &self.experts,
             gating: &self.gating,
             config: &self.config,
@@ -322,8 +322,10 @@ where
     pub fn load<P: AsRef<std::path::Path>>(path: P) -> Result<Self> {
         let bytes = std::fs::read(path).map_err(crate::AprenderError::Io)?;
         let data: DeserializableMoe<E, G> =
-            bincode::deserialize(&bytes).map_err(|e| crate::AprenderError::FormatError {
-                message: format!("MoE deserialization failed: {e}"),
+            aprender_legacy_codec::deserialize(&bytes).map_err(|e| {
+                crate::AprenderError::FormatError {
+                    message: format!("MoE deserialization failed: {e}"),
+                }
             })?;
         Ok(Self {
             experts: data.experts,

@@ -656,7 +656,7 @@ pub fn verify_rng_consistency<S: Clone + Serialize + for<'de> Deserialize<'de>>(
 ///
 /// Returns error if serialization fails.
 pub fn hash_state<S: Serialize>(state: &S) -> SimResult<[u8; 32]> {
-    let bytes = bincode::serialize(state)
+    let bytes = aprender_legacy_codec::serialize(state)
         .map_err(|e| SimError::serialization(format!("Hash state: {e}")))?;
     Ok(*blake3::hash(&bytes).as_bytes())
 }

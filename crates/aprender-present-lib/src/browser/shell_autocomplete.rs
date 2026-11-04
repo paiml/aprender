@@ -169,7 +169,7 @@ impl ShellAutocomplete {
         };
 
         // Deserialize the model data with bincode
-        let model_data: MarkovModelData = bincode::deserialize(&payload_decompressed)
+        let model_data: MarkovModelData = aprender_legacy_codec::deserialize(&payload_decompressed)
             .map_err(|e| format!("Failed to deserialize model: {}", e))?;
 
         // Build trie from commands

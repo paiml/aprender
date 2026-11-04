@@ -96,7 +96,7 @@ impl KMeans {
     ///
     /// Returns an error if serialization or file writing fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> std::result::Result<(), String> {
-        let bytes = bincode::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
+        let bytes = aprender_legacy_codec::serialize(self).map_err(|e| format!("Serialization failed: {e}"))?;
         fs::write(path, bytes).map_err(|e| format!("File write failed: {e}"))?;
         Ok(())
     }
@@ -109,7 +109,7 @@ impl KMeans {
     pub fn load<P: AsRef<Path>>(path: P) -> std::result::Result<Self, String> {
         let bytes = fs::read(path).map_err(|e| format!("File read failed: {e}"))?;
         let model =
-            bincode::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
+            aprender_legacy_codec::deserialize(&bytes).map_err(|e| format!("Deserialization failed: {e}"))?;
         Ok(model)
     }
 

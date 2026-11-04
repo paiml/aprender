@@ -212,9 +212,9 @@ impl MockWasmRuntime {
     #[allow(clippy::expect_used)] // Intentional: simulates browser postMessage failure
     pub fn post_message(&self, msg: MockMessage) {
         // Round-trip through bincode to simulate structuredClone
-        let serialized = bincode::serialize(&msg)
+        let serialized = aprender_legacy_codec::serialize(&msg)
             .expect("MockMessage serialization failed - this would fail in browser postMessage");
-        let cloned: MockMessage = bincode::deserialize(&serialized)
+        let cloned: MockMessage = aprender_legacy_codec::deserialize(&serialized)
             .expect("MockMessage deserialization failed - corrupted message");
 
         self.outgoing.borrow_mut().push_back(cloned);
@@ -239,9 +239,9 @@ impl MockWasmRuntime {
     #[allow(clippy::expect_used)] // Intentional: simulates browser postMessage failure
     pub fn receive_message(&self, msg: MockMessage) {
         // Round-trip through bincode to simulate structuredClone
-        let serialized = bincode::serialize(&msg)
+        let serialized = aprender_legacy_codec::serialize(&msg)
             .expect("MockMessage serialization failed - this would fail in browser postMessage");
-        let cloned: MockMessage = bincode::deserialize(&serialized)
+        let cloned: MockMessage = aprender_legacy_codec::deserialize(&serialized)
             .expect("MockMessage deserialization failed - corrupted message");
 
         self.incoming.borrow_mut().push_back(cloned);
@@ -728,9 +728,9 @@ mod tests {
         ];
 
         for msg in messages {
-            let serialized = bincode::serialize(&msg).expect("Should serialize");
+            let serialized = aprender_legacy_codec::serialize(&msg).expect("Should serialize");
             let deserialized: MockMessage =
-                bincode::deserialize(&serialized).expect("Should deserialize");
+                aprender_legacy_codec::deserialize(&serialized).expect("Should deserialize");
             assert_eq!(msg, deserialized);
         }
     }
