@@ -1,4 +1,4 @@
-# measured 2026-11-04T11:08:13Z
+# measured 2026-11-04T11:34:04Z
 lambda-labs	apr	GREEN	ok (installed nightly@2fa8c77, target nightly@2fa8c77)
 lambda-labs	pv	GREEN	ok (installed v0.72.3@9c34b9a, target v0.72.3@9c34b9a)
 lambda-labs	forjar	GREEN	no-sha (installed nightly@468cf29, target nightly@468cf29)
@@ -29,6 +29,6 @@ yoga	pmat	GREEN	ok (installed nightly@ecc75a4, target nightly@ecc75a4)
 yoga	pzsh	GREEN	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 yoga	copia	GREEN	no-sha (installed nightly@afac53b, target nightly@afac53b)
 yoga	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
-intel	apex	RED	mirror-unreachable (installed v-apex-0.1.0-rc.2@f2e20b6, target -)
+intel	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
 intel	ollama	GREEN	ok (installed 0.40.14, target v0.40.14)
 mini	apr	GREEN	no-sha (installed nightly@2fa8c77, target nightly@2fa8c77)
