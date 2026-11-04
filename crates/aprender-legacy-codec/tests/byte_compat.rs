@@ -148,3 +148,14 @@ fn corrupt_input_is_an_error_not_a_panic_or_a_huge_allocation() {
         Err(Error::InvalidUtf8)
     ));
 }
+
+#[test]
+fn claimed_huge_length_never_drives_preallocation() {
+    // A 2^40-element claim on a near-empty input must fail by running out of bytes, for the
+    // seq and map paths (their size_hint is capped, not the untrusted length).
+    let huge = (1u64 << 40).to_le_bytes();
+    assert!(deserialize::<Vec<u8>>(&huge).is_err());
+    assert!(deserialize::<std::collections::HashMap<u8, u8>>(&huge).is_err());
+    assert!(deserialize::<BTreeMap<u64, u64>>(&huge).is_err());
+    assert!(deserialize::<std::collections::VecDeque<u64>>(&huge).is_err());
+}

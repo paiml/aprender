@@ -166,6 +166,9 @@ impl<'de, R: Read> de::Deserializer<'de> for &mut Deserializer<R> {
     }
 }
 
+/// Upper bound on the pre-allocation hint: `left` comes from an untrusted length prefix.
+const MAX_SIZE_HINT: usize = 4096;
+
 struct Counted<'a, R: Read> {
     de: &'a mut Deserializer<R>,
     left: usize,
@@ -181,7 +184,7 @@ impl<'de, R: Read> de::SeqAccess<'de> for Counted<'_, R> {
         seed.deserialize(&mut *self.de).map(Some)
     }
     fn size_hint(&self) -> Option<usize> {
-        Some(self.left)
+        Some(self.left.min(MAX_SIZE_HINT))
     }
 }
 
@@ -198,7 +201,7 @@ impl<'de, R: Read> de::MapAccess<'de> for Counted<'_, R> {
         seed.deserialize(&mut *self.de)
     }
     fn size_hint(&self) -> Option<usize> {
-        Some(self.left)
+        Some(self.left.min(MAX_SIZE_HINT))
     }
 }
 
