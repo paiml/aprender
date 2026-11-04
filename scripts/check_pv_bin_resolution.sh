@@ -490,7 +490,7 @@ resolve_in() {
 safe_tmpdir() {
     st_dir=$(mktemp -d) || return 1
     case "$st_dir" in
-        /tmp/*|/var/folders/*) printf '%s\n' "$st_dir" ;;
+        /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/?*) printf '%s\n' "$st_dir" ;;
         *) return 1 ;;
     esac
 }
