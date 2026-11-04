@@ -120,10 +120,22 @@ set_facade_pins() {  # root new_version
 # regenerates it. The regeneration is part of the bump, not left to whoever remembers.
 regen_roadmap() { ( cd "$1" && make roadmap-aggregate ); }
 
+# #6719: mktemp -d honours TMPDIR, so a CI job with TMPDIR outside /tmp made the self-test print
+# "bad tmp" and dequeued a PR. A scratch dir is under /tmp, /var/folders, or "${TMPDIR:-/tmp}" and
+# nowhere else; a TMPDIR of "" or "/" falls back to /tmp so it cannot widen the set to every path.
+scratch_ok() {  # path
+    local base="${TMPDIR:-/tmp}"
+    base="${base%/}"
+    [ -n "$base" ] || base=/tmp
+    case "$1" in /tmp/*|/var/folders/*|"$base"/*) return 0 ;; *) return 1 ;; esac
+}
+
+if [ "${1:-}" = "--scratch-ok" ]; then scratch_ok "${2:-}"; exit; fi
+
 if [ "${1:-}" = "--self-test" ]; then
     fails=0
     TD="$(mktemp -d)" || exit 1
-    case "$TD" in /tmp/*|/var/folders/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
+    scratch_ok "$TD" || { printf 'bad tmp\n'; exit 1; }
     trap 'rm -rf "${TD:?}"' EXIT
 
     mkdir -p "$TD/crates/facades/reexport" "$TD/crates/facades/signpost"
