@@ -23732,6 +23732,7 @@
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Contract Validation: DOGFOOD `pv`, NEVER bash"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Debugging: Use apr Tools First (MANDATORY)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Git Workflow (Branch Protection)"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Intake and Pull Signal (RAX-INTERIM, operator, 2026-11-04)"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Key Files"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "LAYOUT-001/002: Tensor Layout Safety"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/llm/claude-md> <https://ont.paiml.dev/v1alpha1/llm/section> "Linting"^^<http://www.w3.org/2001/XMLSchema#string> .
