@@ -14,7 +14,10 @@ FILES=(scripts/check_cascade_clean_room_gate.sh scripts/check_comparator_one_cli
     scripts/check_cascade_covers_all_crates.sh scripts/check_crux_inference_judge.sh
     scripts/check_crux_ollama_in_lock.sh scripts/check_crux_serve_code.sh
     scripts/check_facade_order_gate.sh scripts/check_guards_nightly_manifest.sh
-    scripts/crux_inference_dogfood.sh)
+    scripts/crux_inference_dogfood.sh
+    scripts/check_perf_concurrency_groups.sh scripts/check_no_hand_rolled_parsers.sh
+    scripts/check_publishable_deps_publishable.sh scripts/check_pv_bin_resolution.sh
+    scripts/check_publish_preflight.sh scripts/include_fmt_ratchet.sh)
 
 # ok <file> : a case arm lists "${TMPDIR:-/tmp}", and the /tmp arm is still there
 ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*\)' "$1" && grep -qE '/tmp/(\?)?\*' "$1"; }
@@ -77,4 +80,4 @@ if [ "${1:-}" = "--mutants" ]; then
     done
     exit 0
 fi
-check && table && behave && ladder_cleanup && echo "PASS: 25 guards accept \${TMPDIR:-/tmp}"
+check && table && behave && ladder_cleanup && echo "PASS: ${#FILES[@]} guards accept \${TMPDIR:-/tmp}"
