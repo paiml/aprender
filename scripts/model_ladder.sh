@@ -851,7 +851,7 @@ WORK=$(mktemp -d 2>/dev/null) && [ -d "$WORK" ] || { echo "decline: cannot creat
 _rm_work() {
   local v="${WORK:-}"
   case "$v" in
-    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    /tmp/?*|/var/folders/?*|/mnt/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
     *) return 0 ;;
   esac
 }

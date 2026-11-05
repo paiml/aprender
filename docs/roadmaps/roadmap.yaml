@@ -25870,6 +25870,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-6126
+  github_issue: 6126
+  item_type: task
+  title: 'deep-nightly: disk-floor guard so runner ENOSPC is an INFRA fault, not a red'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:45:19Z
+  updated: 2026-11-03T07:45:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5306
 - id: PMAT-6131
   github_issue: 6131
   item_type: task
@@ -27206,6 +27224,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-6588
+  github_issue: 6588
+  item_type: task
+  title: 'apr run: zero CPU forward calls on a refused forced GPU run'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:10:21Z
+  updated: 2026-11-03T07:10:21Z
+  spec: null
+  acceptance_criteria:
+  - 'AGB-INV-006 test, see #6588'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3999
 - id: PMAT-6677
   github_issue: 6677
   item_type: task
@@ -27221,6 +27258,46 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - 'C12 r5/r6: a run killed (TERM, INT, HUP) after it skipped a newer candidate writes one RED line naming the skip; a SIGKILL leaves a breadcrumb that the next run reports once and removes.'
   - 'C12 r5/r6: the already-promoted and dry-run fallback lines are written once per (promoted sha, newest red sha) pair; an identical second run writes none.'
   - 'C12 r6: the pre-existing RED clean-room run and RED newest nightly crux lines are unchanged from origin/main; the fallback line is in addition to them.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6687
+  github_issue: 6687
+  item_type: task
+  title: 'Graph-ordered cargo package lane (package_lane.sh + falsify_package_lane.sh, #3892) (falsify_package_lane.sh carries no producer|grep -q pipe)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T00:41:08Z
+  updated: 2026-11-03T00:41:08Z
+  spec: null
+  acceptance_criteria:
+  - 'package_lane.sh derives publish order from cargo metadata and packages each crate in that order, writing a sha-bound receipt (aprender issue #3892)'
+  - 'falsify_package_lane.sh --mutants at 77e2c9761: 77 rows held, 11/11 mutants caught (receipt docs/audits/impl-PMAT-6687-receipt.md, TIERS[] table deleted mutant included, run output lines: "falsify_package_lane: 77 rows held, 0 failed"; "mutants: 11 of 11 caught"; the catching row of each is printed; unmutated control copy passes every row); the #3892 profile-before-db order is a refused fixture'
+  - 'no producer|grep -q pipe in falsify_package_lane.sh (this PR does not touch scripts/pipe_grep_q_baseline.txt; the 42>39 move landed on main in d468dccc4, so the baseline stays at 39)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3999
+- id: PMAT-6689
+  github_issue: 6689
+  item_type: task
+  title: 'LAB lint: reject bash -c / sh -c wrappers containing rm'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T06:37:51Z
+  updated: 2026-11-03T06:37:51Z
+  spec: null
+  acceptance_criteria:
+  - 'see #6689'
   phases: []
   subtasks: []
   estimated_effort: null
@@ -27246,6 +27323,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6519
+- id: PMAT-6717
+  github_issue: 6717
+  item_type: task
+  title: C61-7 runner temp for four workflows
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T18:16:19Z
+  updated: 2026-11-03T18:16:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
 - id: PMAT-6719
   github_issue: 6719
   item_type: task
@@ -27255,6 +27350,42 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   assigned_to: null
   created: 2026-11-03T20:37:32Z
   updated: 2026-11-03T20:37:32Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6721
+  github_issue: 6721
+  item_type: task
+  title: guards accept RS-5 per-runner TMPDIR scratch dirs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T21:10:06Z
+  updated: 2026-11-03T21:10:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6723
+  github_issue: 6723
+  item_type: task
+  title: 35 scripts accept RS-5 per-runner TMPDIR scratch dirs
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T21:37:44Z
+  updated: 2026-11-03T21:37:44Z
   spec: null
   acceptance_criteria: []
   phases: []
