@@ -170,7 +170,8 @@ for a in "$R_VER" "$R_RED" "$R_LINES" "$R_DECLINE" "$R_NOJUDGE"; do
 done
 grep -q '^rule_r7() {' "$PREFLIGHT" || env_die "check_publish_preflight.sh has no rule_r7() -- the subject moved"
 
-TMP=$(mktemp -d) || exit 2
+# R34-3: fixtures live under the runner's own temp root, never the shared /tmp a concurrent job can sweep
+TMP=$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || exit 2
 # SEC011: validate before rm -rf. An empty or '/' value must never reach it.
 cleanup() { case "${TMP:-}" in ''|/) return 0 ;; *) [ -d "$TMP" ] && rm -rf -- "$TMP" ;; esac; }
 trap cleanup EXIT
