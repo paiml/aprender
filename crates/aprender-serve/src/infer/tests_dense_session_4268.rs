@@ -99,3 +99,34 @@ fn batch_serves_a_dense_model_through_the_engine() {
         );
     }
 }
+
+/// aprender#6588 (AGB-INV-006): a refused FORCED accelerator attempt must reach `BackendUnavailable`
+/// (exit 14) with ZERO CPU forward. The witness records every engine `generate`, so an `Err` that
+/// still left an entry means the CPU loop ran before the refusal.
+#[test]
+fn a_refused_forced_accelerator_runs_no_cpu_forward() {
+    let prompt = [42_u32, 6588 % 100, 17, 99, 6];
+    let mut config = InferenceConfig::new("/forced-6588.gguf");
+    config.accel_forced = true; // `--gpu`: no_gpu stays false
+    let result = run_gguf_generate(model(), &prompt, &greedy(4), &config);
+    match result {
+        Err(RealizarError::UnsupportedOperation { operation, .. }) => {
+            assert_eq!(operation, FORCED_GPU_REFUSED_OP);
+            assert!(
+                entries_for(&prompt).is_empty(),
+                "the CPU forward ran before the forced-GPU refusal"
+            );
+        },
+        Err(other) => panic!("expected the forced-GPU refusal, got {other:?}"),
+        // An accelerator that answered (a host with a working GPU, or a build with none compiled in
+        // that took the CPU path as unforced) must not have left a CPU entry when it was the GPU.
+        Ok((_, used_gpu, _)) => {
+            if used_gpu {
+                assert!(
+                    entries_for(&prompt).is_empty(),
+                    "GPU answered but a CPU forward also ran"
+                );
+            }
+        },
+    }
+}

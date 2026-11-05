@@ -1,0 +1,18 @@
+- id: PMAT-6126
+  github_issue: 6126
+  item_type: task
+  title: 'deep-nightly: disk-floor guard so runner ENOSPC is an INFRA fault, not a red'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:45:19Z
+  updated: 2026-11-03T07:45:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5306

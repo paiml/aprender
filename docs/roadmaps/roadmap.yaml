@@ -25870,6 +25870,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: null
+- id: PMAT-6126
+  github_issue: 6126
+  item_type: task
+  title: 'deep-nightly: disk-floor guard so runner ENOSPC is an INFRA fault, not a red'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:45:19Z
+  updated: 2026-11-03T07:45:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5306
 - id: PMAT-6131
   github_issue: 6131
   item_type: task
@@ -27206,6 +27224,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3863
+- id: PMAT-6588
+  github_issue: 6588
+  item_type: task
+  title: 'apr run: zero CPU forward calls on a refused forced GPU run'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:10:21Z
+  updated: 2026-11-03T07:10:21Z
+  spec: null
+  acceptance_criteria:
+  - 'AGB-INV-006 test, see #6588'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3999
 - id: PMAT-6677
   github_issue: 6677
   item_type: task
@@ -27249,6 +27286,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3999
+- id: PMAT-6689
+  github_issue: 6689
+  item_type: task
+  title: 'LAB lint: reject bash -c / sh -c wrappers containing rm'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T06:37:51Z
+  updated: 2026-11-03T06:37:51Z
+  spec: null
+  acceptance_criteria:
+  - 'see #6689'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
 - id: PMAT-6715
   github_issue: 6715
   item_type: task
