@@ -10,7 +10,7 @@ V="${1:?usage: one_command.sh <X.Y.Z> [dry_run 0|1]}"; DRY="${2:-0}"
 INFRA="${ONE_CMD_INFRA:-paiml/infra}"; POLL="${ONE_CMD_POLL:-300}"; T="v$V"; BR="release/$V"
 BUMP="${ONE_CMD_BUMP:-scripts/bump-version.sh}"; PUBLISH="${ONE_CMD_PUBLISH:-scripts/cascade-publish.sh}"
 ARM="${ONE_CMD_ARM:-bash scripts/hooks/pre-push-tags.sh --arm-release}"
-say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
+say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }  # bashrs disable-line=DET002
 die() { say "STOP $*"; exit 1; }
 git checkout -q -b "$BR" || die "cannot create $BR"
 $BUMP "$V" || die "bump $V failed"
@@ -21,7 +21,7 @@ if [ "$DRY" = 1 ]; then
   say "WOULD push $BR; clean-room ref=$SHA; git tag -a $T $SHA; push $T; $PUBLISH; carry PR to main"; exit 0
 fi
 git push -q origin "$BR" || die "push $BR failed"
-t0=$(date -u +%s)
+t0=$(date -u +%s)  # bashrs disable-line=DET002
 gh workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$SHA" || die "clean-room dispatch failed"
 sleep "$POLL"; id=""
 for _ in 1 2 3 4 5 6; do
