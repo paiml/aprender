@@ -41,6 +41,7 @@ apr-format	--test	golden_fixtures
 aprender-build-sha	--lib	<root>
 aprender-cgp	--lib	analysis::contracts
 aprender-ci-tools	--lib	nextest_fail_fast
+aprender-ci-tools	--test	rollup_fold
 aprender-compute-xtask	--bins
 aprender-contracts	--lib	binding
 aprender-contracts	--lib	build_helper
@@ -95,6 +96,7 @@ aprender-contracts	--test	kani_harness_generation
 aprender-contracts	--test	probar_test_generation
 aprender-contracts	--test	validate_contracts
 aprender-contracts-cli	--lib	commands::certify
+aprender-contracts-cli	--lib	commands::check_symbolic
 aprender-contracts-cli	--lib	commands::obligations
 aprender-contracts-cli	--lib	commands::verify_pipeline
 aprender-contracts-cli	--lib	contract_walk

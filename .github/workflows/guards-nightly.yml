@@ -175,6 +175,8 @@ jobs:
       # ─────────────────────────────────────────────────────────────────────
       - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
         run: bash scripts/ci_test_tier.sh --self-test
+      - name: flake_kpi case table (#6446, LAB)
+        run: bash scripts/flake_kpi.sh --self-test
       - name: Fleet-cells gate case table and mutants (#5064, LAB)
         run: setsid --wait bash scripts/release/fleet_cells_gate.sh --self-test
       - name: compute row zero-tests case table and mutants (#5048, LAB)
@@ -299,7 +301,7 @@ jobs:
           # export-ignore, so an ignored source file would vanish from the
           # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
           comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
-          git worktree add --detach "$comparand" origin/main
+          git worktree prune && git worktree add --detach "$comparand" origin/main
           trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
           DR_ENV=(-e SATD_BASELINE=0)
           set +e
