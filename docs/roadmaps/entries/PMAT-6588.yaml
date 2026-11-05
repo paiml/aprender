@@ -1,0 +1,19 @@
+- id: PMAT-6588
+  github_issue: 6588
+  item_type: task
+  title: 'apr run: zero CPU forward calls on a refused forced GPU run'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:10:21Z
+  updated: 2026-11-03T07:10:21Z
+  spec: null
+  acceptance_criteria:
+  - 'AGB-INV-006 test, see #6588'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3999

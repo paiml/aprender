@@ -47,10 +47,10 @@ lift() { # the three helpers, from the shipped script
 }
 
 T=$(mktemp -d) || { echo "  cannot check: mktemp failed" >&2; exit 2; }
-case "$T" in /tmp/?*) ;; *) echo "  cannot check: expected a temp dir under /tmp, got '$T'" >&2; exit 2 ;; esac
+case "$T" in /tmp/?*|"${TMPDIR:-/tmp}"/?*) ;; *) echo "  cannot check: expected a temp dir under /tmp or ${TMPDIR}, got '$T'" >&2; exit 2 ;; esac
 cleanup() {
   case "${T:-}" in
-    /tmp/?*) [ -d "$T" ] && { chmod -R u+w -- "$T" 2>/dev/null; rm -rf -- "$T"; } ;;
+    /tmp/?*|"${TMPDIR:-/tmp}"/?*) [ -d "$T" ] && { chmod -R u+w -- "$T" 2>/dev/null; rm -rf -- "$T"; } ;;
   esac
 }
 trap cleanup EXIT

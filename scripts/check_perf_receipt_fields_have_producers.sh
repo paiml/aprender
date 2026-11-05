@@ -338,7 +338,7 @@ self_test() {
   # and print a failure after a clean pass.
   td="$(mktemp -d)" || exit 2
   case "$td" in
-    /tmp/*|/var/folders/*) : ;;
+    /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
     *) printf 'refusing to rm -rf %s\n' "${td:-<empty>}" >&2; exit 2 ;;
   esac
   trap 'rm -rf "${td:?}"' EXIT
