@@ -11,6 +11,7 @@ if [ "${1:-}" = --mutants ]; then
   mut() { sed "$2" "$HERE/one_command.sh" > "$M/m.sh"; cmp -s "$HERE/one_command.sh" "$M/m.sh" && { echo "MUTANT $1 did not apply"; miss=$((miss+1)); return; }
     ONE_CMD_SRC="$M/m.sh" bash "$0" > /dev/null 2>&1 && { echo "MUTANT $1 SURVIVED"; miss=$((miss+1)); }; }
   mut sha-check-dropped 's/^\[ "\$tested" = "\$SHA" \] .*$/:/'
+  mut first-match-unanchored "s/^tested=.*\$/tested=\$(gh run view \"\$id\" --repo \"\$INFRA\" --log | sed -n 's\/.*tested-sha: *\/\/p' | head -1)/"
   mut success-check-dropped 's/^\[ "\$c" = success \] .*$/:/'
   mut dry-run-ignored 's/^if \[ "\$DRY" = 1 \]; then$/if false; then/'
   mut tag-before-verdict 's/^git push -q origin "\$BR".*$/git tag -a "$T" -m x "$SHA"/'
@@ -28,7 +29,7 @@ row() { # name want_rc want_calls_regex forbid_calls_regex dry cr_conclusion cr_
   mkstub git 'case "$1" in rev-parse) echo '$SHA';; esac; exit 0'
   mkstub bump 'exit 0'
   mkstub publish 'exit 0'
-  mkstub gh 'case "$*" in *"run list"*) echo 42;; *"--log"*) echo "tested-sha: '"$crsha"'";; *"run view"*) echo "'"$concl"'";; esac; exit 0'
+  mkstub gh 'case "$*" in *"run list"*) echo 42;; *"--log"*) [ -z "${DECOY:-}" ] || echo "2026-11-05T00:00:00Z   claim step summary carries \"tested-sha: <40hex>\""; echo "2026-11-05T00:00:01Z     tested-sha: '"$crsha"'";; *"run view"*) echo "'"$concl"'";; esac; exit 0'
   PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_POLL=0 ONE_CMD_ARM=true bash "$SRC" 0.73.0 "$dry" > "$T/out" 2>&1
   local rc=$?; [ -n "${DBG:-}" ] && cat "$T/out"
   [ "$rc" = "$wrc" ] || { echo "FAIL $name: rc=$rc want $wrc"; fails=$((fails+1)); return; }
@@ -39,6 +40,7 @@ row() { # name want_rc want_calls_regex forbid_calls_regex dry cr_conclusion cr_
 row green-tags-then-publishes  0 '^git tag .*v0\.73\.0 '$SHA 'ZZZ'          0 success $SHA
 row dry-run-never-tags         0 '^bump'                      '^(git tag|publish)' 1 success $SHA
 row red-cleanroom-no-tag       1 ''                           '^(git tag|publish)' 0 failure $SHA
+DECOY=1 row decoy-line-first-still-tags 0 '^git tag .*v0\.73\.0 '$SHA 'ZZZ' 0 success $SHA
 row wrong-sha-no-tag           1 ''                           '^(git tag|publish)' 0 success deadbeef
 row absent-verdict-no-tag      1 ''                           '^(git tag|publish)' 0 "" ""
 [ "$fails" = 0 ] && { echo "all rows held"; exit 0; }

@@ -36,7 +36,7 @@ for _ in $(seq 1 ${ONE_CMD_TRIES:-3}); do
   [ -n "$c" ] && break; sleep "$POLL"
 done
 [ "$c" = success ] || die "clean-room (aprender) run $id concluded '${c:-absent}'; no tag"
-tested=$(gh run view "$id" --repo "$INFRA" --log | sed -n 's/.*tested-sha: *//p' | head -1)
+tested=$(gh run view "$id" --repo "$INFRA" --log | sed -n 's/.*tested-sha: *\([0-9a-f]\{40\}\)\r*$/\1/p' | head -1)
 [ "$tested" = "$SHA" ] || die "clean-room run $id tested '${tested:-nothing}', not $SHA; no tag"
 say "CLEANROOM GREEN run $id on $SHA"
 git tag -a "$T" -m "aprender $T" "$SHA" || die "tag failed"
