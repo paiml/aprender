@@ -73,4 +73,4 @@ falsification_tests:
   if_fails: "published .apr models stop opening"
 
 entity:
-  type: crate
+  type: repo
