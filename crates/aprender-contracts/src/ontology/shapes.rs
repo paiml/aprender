@@ -11,6 +11,7 @@
 //! | `in`, `pattern`, `minLength`, `maxLength` | `languageIn`, `uniqueLang` |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
+//! | `minInclusive`, `maxInclusive`, `minExclusive`, `maxExclusive` (numeric) | |
 //! | `lessThan`, `lessThanOrEquals` (property pairs) | `equals`, `disjoint` |
 //! | a single predicate `path` | sequence, alternative, inverse, `*`/`+` paths |
 //! | — | `and`/`or`/`not`/`xone`, `sparql`, and every component not in this table |
@@ -120,6 +121,14 @@ pub struct PropertyShape {
     pub less_than: Option<String>,
     /// `sh:lessThanOrEquals`: every value must be `<=` every value of this predicate on the same focus node.
     pub less_than_or_equals: Option<String>,
+    /// `sh:minInclusive` (SHACL §4.4.3): every value must be `>=` this number.
+    pub min_inclusive: Option<InEntry>,
+    /// `sh:maxInclusive` (§4.4.4): every value must be `<=` this number.
+    pub max_inclusive: Option<InEntry>,
+    /// `sh:minExclusive` (§4.4.1): every value must be `>` this number.
+    pub min_exclusive: Option<InEntry>,
+    /// `sh:maxExclusive` (§4.4.2): every value must be `<` this number.
+    pub max_exclusive: Option<InEntry>,
     pub resolves: Option<String>,
     pub severity: Severity,
 }
@@ -216,6 +225,10 @@ const PROPERTY_KEYS: &[&str] = &[
     "node",
     "lessThan",
     "lessThanOrEquals",
+    "minInclusive",
+    "maxInclusive",
+    "minExclusive",
+    "maxExclusive",
     "resolves",
     "severity",
 ];
@@ -509,12 +522,32 @@ fn parse_property(
         node,
         less_than: iri_opt("lessThan"),
         less_than_or_equals: iri_opt("lessThanOrEquals"),
+        min_inclusive: parse_bound(shape, pm, "minInclusive")?,
+        max_inclusive: parse_bound(shape, pm, "maxInclusive")?,
+        min_exclusive: parse_bound(shape, pm, "minExclusive")?,
+        max_exclusive: parse_bound(shape, pm, "maxExclusive")?,
         resolves: pm
             .get("resolves")
             .and_then(serde_yaml::Value::as_str)
             .map(String::from),
         severity,
     })
+}
+
+/// A range bound (`minInclusive` …): a YAML number, typed by its own kind like a `sh:in` entry.
+fn parse_bound(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+    key: &str,
+) -> Result<Option<InEntry>, ShapeError> {
+    match pm.get(key) {
+        None => Ok(None),
+        Some(v @ serde_yaml::Value::Number(_)) => Ok(Some(in_entry(v))),
+        Some(_) => Err(ShapeError::Malformed {
+            shape: shape.to_string(),
+            what: format!("`{key}` is not a number"),
+        }),
+    }
 }
 
 fn malformed_in(shape: &str, what: String) -> ShapeError {
@@ -778,6 +811,7 @@ fn validate_focus(graph: &Graph, shape: &NodeShape, focus: &str, out: &mut Vec<V
             check_value(graph, p, v, &mut push);
         }
         check_pairs(graph, focus, p, &values, &mut push);
+        check_ranges(p, &values, &mut push);
     }
     if shape.closed {
         check_closed(graph, shape, focus, &mut push);
@@ -871,6 +905,45 @@ fn check_pairs(
                         ),
                     );
                 }
+            }
+        }
+    }
+}
+
+/// `sh:minInclusive` / `maxInclusive` / `minExclusive` / `maxExclusive` (SHACL §4.4) on one property: one
+/// result per value outside the bound. A value SPARQL cannot order against the bound (a string, an IRI) fails,
+/// never skips; no value means no result.
+fn check_ranges(
+    p: &PropertyShape,
+    values: &[&Term],
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let checks: [(&Option<InEntry>, &'static str, &str, &[std::cmp::Ordering]); 4] = [
+        (&p.min_inclusive, "minInclusive", ">=", &[Greater, Equal]),
+        (&p.max_inclusive, "maxInclusive", "<=", &[Less, Equal]),
+        (&p.min_exclusive, "minExclusive", ">", &[Greater]),
+        (&p.max_exclusive, "maxExclusive", "<", &[Less]),
+    ];
+    for (bound, component, op, allowed) in checks {
+        let Some(bound) = bound else { continue };
+        let b = Term::Literal {
+            value: bound.lexical.clone(),
+            datatype: bound.datatype.clone(),
+        };
+        for v in values {
+            if !compare_terms(v, &b).is_some_and(|o| allowed.contains(&o)) {
+                push(
+                    p.severity,
+                    Some(&p.path),
+                    component,
+                    format!(
+                        "{}: {} is not {op} {}",
+                        short(&p.path),
+                        term_short(v),
+                        bound.lexical
+                    ),
+                );
             }
         }
     }
@@ -1359,6 +1432,16 @@ fn turtle_property(p: &PropertyShape) -> String {
     for l in turtle_string_and_pair_lines(p) {
         line(l);
     }
+    for (key, bound) in [
+        ("minInclusive", &p.min_inclusive),
+        ("maxInclusive", &p.max_inclusive),
+        ("minExclusive", &p.min_exclusive),
+        ("maxExclusive", &p.max_exclusive),
+    ] {
+        if let Some(b) = bound {
+            line(format!("sh:{key} \"{}\"^^<{}>", b.lexical, b.datatype));
+        }
+    }
     if p.severity == Severity::Warning {
         line("sh:severity sh:Warning".to_string());
     }
@@ -1632,6 +1715,136 @@ mod tests {
             "{t}"
         );
         assert!(t.contains(&format!("sh:lessThan <{}>", ont("hi"))), "{t}");
+    }
+
+    /// SHACL §4.4 numeric range components, one focus node per value; returns the sorted components that fire.
+    fn range_components(prop: &str, value: Option<Term>) -> Vec<&'static str> {
+        let s = shape(&format!(
+            "shape:\n  targetClass: ont:Lesson\n  properties:\n    - {{path: ont:v, {prop}}}\n"
+        ));
+        let mut g = Graph::new();
+        let n = iri("lesson", "m1");
+        g.insert(n.clone(), RDF_TYPE, Term::iri(ont("Lesson")));
+        if let Some(v) = value {
+            g.insert(n, ont("v"), v);
+        }
+        let mut c: Vec<_> = validate(&g, std::slice::from_ref(&s))
+            .results
+            .iter()
+            .map(|r| r.component)
+            .collect();
+        c.sort_unstable();
+        c
+    }
+
+    fn num(v: &str, t: &str) -> Term {
+        Term::Literal {
+            value: v.into(),
+            datatype: format!("{XSD_NS}{t}"),
+        }
+    }
+
+    #[test]
+    fn min_and_max_inclusive_accept_the_boundary_and_refuse_beyond_it() {
+        assert!(range_components("minInclusive: 0.9", Some(num("0.9", "decimal"))).is_empty());
+        assert!(range_components("minInclusive: 0.9", Some(num("0.95", "double"))).is_empty());
+        assert_eq!(
+            range_components("minInclusive: 0.9", Some(num("0.89", "decimal"))),
+            vec!["minInclusive"]
+        );
+        assert!(range_components("maxInclusive: 5", Some(num("5", "integer"))).is_empty());
+        assert_eq!(
+            range_components("maxInclusive: 5", Some(num("5.01", "decimal"))),
+            vec!["maxInclusive"]
+        );
+    }
+
+    #[test]
+    fn min_and_max_exclusive_refuse_the_boundary_itself() {
+        assert_eq!(
+            range_components("minExclusive: 0", Some(num("0", "integer"))),
+            vec!["minExclusive"]
+        );
+        assert!(range_components("minExclusive: 0", Some(num("1", "integer"))).is_empty());
+        assert_eq!(
+            range_components("maxExclusive: 10", Some(num("10", "integer"))),
+            vec!["maxExclusive"]
+        );
+        assert!(range_components("maxExclusive: 10", Some(num("9.99", "decimal"))).is_empty());
+    }
+
+    #[test]
+    fn a_two_sided_range_models_loudness_minus19_to_minus17() {
+        let r = "minInclusive: -19, maxInclusive: -17";
+        assert!(range_components(r, Some(num("-18.2", "decimal"))).is_empty());
+        assert!(range_components(r, Some(num("-19", "integer"))).is_empty());
+        assert!(range_components(r, Some(num("-17", "integer"))).is_empty());
+        assert_eq!(
+            range_components(r, Some(num("-16.9", "decimal"))),
+            vec!["maxInclusive"]
+        );
+        assert_eq!(
+            range_components(r, Some(num("-19.5", "decimal"))),
+            vec!["minInclusive"]
+        );
+    }
+
+    #[test]
+    fn a_non_numeric_value_fails_every_range_and_a_missing_value_fires_none() {
+        for prop in [
+            "minInclusive: 1",
+            "maxInclusive: 1",
+            "minExclusive: 1",
+            "maxExclusive: 1",
+        ] {
+            assert_eq!(
+                range_components(prop, Some(Term::string("abc"))).len(),
+                1,
+                "{prop}: a string is not comparable to a number"
+            );
+            assert_eq!(
+                range_components(prop, Some(Term::iri(ont("x")))).len(),
+                1,
+                "{prop}: an IRI is not comparable"
+            );
+            assert!(range_components(prop, None).is_empty(), "{prop}: no value");
+        }
+    }
+
+    /// The first user (course-lesson-v1, m1-05): `global_motion_fraction <= 0.20` must catch 0.37.
+    #[test]
+    fn motion_fraction_above_point_two_fails_and_at_point_two_passes() {
+        let r = "maxInclusive: 0.20";
+        assert!(range_components(r, Some(num("0.20", "decimal"))).is_empty());
+        assert!(range_components(r, Some(num("0.12", "double"))).is_empty());
+        assert_eq!(
+            range_components(r, Some(num("0.37", "double"))),
+            vec!["maxInclusive"]
+        );
+    }
+
+    #[test]
+    fn a_non_numeric_bound_is_malformed_and_the_turtle_export_names_each_range() {
+        let doc: serde_yaml::Value = serde_yaml::from_str(
+            "shape:\n  targetClass: ont:L\n  properties:\n    - {path: ont:v, minInclusive: abc}\n",
+        )
+        .unwrap();
+        assert!(matches!(
+            parse_shape_with("t", &doc, &pv_map()),
+            Err(ShapeError::Malformed { .. })
+        ));
+        let s = shape(
+            "shape:\n  targetClass: ont:L\n  properties:\n    - {path: ont:v, minInclusive: -19, maxInclusive: -17, minExclusive: 0.5, maxExclusive: 9}\n",
+        );
+        let t = to_turtle(std::slice::from_ref(&s));
+        for k in [
+            "minInclusive",
+            "maxInclusive",
+            "minExclusive",
+            "maxExclusive",
+        ] {
+            assert!(t.contains(&format!("sh:{k} ")), "{k} missing: {t}");
+        }
     }
 
     #[test]
