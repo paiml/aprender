@@ -8,7 +8,7 @@ set -uo pipefail
 V="${1:?usage: one_command.sh <X.Y.Z> [dry_run 0|1]}"; DRY="${2:-0}"
 [[ $V =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "STOP bad version '$V'" >&2; exit 2; }
 INFRA="${ONE_CMD_INFRA:-paiml/infra}"; POLL="${ONE_CMD_POLL:-300}"; T="v$V"; BR="release/$V"
-BUMP="${ONE_CMD_BUMP:-scripts/bump-version.sh}"; PUBLISH="${ONE_CMD_PUBLISH:-scripts/cascade-publish.sh}"
+BUMP="${ONE_CMD_BUMP:-bash scripts/bump-version.sh}"; PUBLISH="${ONE_CMD_PUBLISH:-bash scripts/cascade-publish.sh}"
 ARM="${ONE_CMD_ARM:-bash scripts/hooks/pre-push-tags.sh --arm-release}"
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }  # bashrs disable-line=DET002
 die() { say "STOP $*"; exit 1; }
