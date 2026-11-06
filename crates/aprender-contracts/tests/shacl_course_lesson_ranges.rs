@@ -107,3 +107,44 @@ fn m1_01_passes_every_range_and_fails_only_the_plot_rule() -> Result<(), String>
     assert_eq!(c, vec!["lessThanOrEquals:plotWritten".to_string()], "{c:?}");
     Ok(())
 }
+
+/// m1-01 with `plotWritten` / `plotShown` replaced by the given booleans.
+fn with_plot(written: bool, shown: bool) -> String {
+    M1_01
+        .replace(
+            "ads:plotWritten true",
+            &format!("ads:plotWritten {written}"),
+        )
+        .replace(
+            "ads:plotShown \"unknown\"",
+            &format!("ads:plotShown {shown}"),
+        )
+}
+
+#[test]
+fn plot_rule_boolean_truth_table() -> Result<(), String> {
+    let plot = |w: bool, s: bool| -> Result<Vec<String>, String> {
+        let ttl = with_plot(w, s);
+        assert!(ttl.contains(&format!("ads:plotWritten {w}")), "{ttl}");
+        assert!(ttl.contains(&format!("ads:plotShown {s}")), "{ttl}");
+        Ok(components(&results(&ttl)?))
+    };
+    assert!(plot(false, false)?.is_empty());
+    assert!(plot(true, true)?.is_empty());
+    assert!(plot(false, true)?.is_empty());
+    assert_eq!(
+        plot(true, false)?,
+        vec!["lessThanOrEquals:plotWritten".to_string()]
+    );
+    Ok(())
+}
+
+#[test]
+fn m1_05_unknown_plot_manifest_fires_the_plot_rule() -> Result<(), String> {
+    let c = components(&results(M1_05)?);
+    assert!(
+        c.contains(&"lessThanOrEquals:plotWritten".to_string()),
+        "{c:?}"
+    );
+    Ok(())
+}
