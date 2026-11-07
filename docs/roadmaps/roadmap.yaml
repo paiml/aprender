@@ -25340,7 +25340,7 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:docs
   epic: 6570
   notes: >-
-    Owner aprender-w5018, first measurement cells due 2026-11-20 (hard stop; no evidence file by then goes to a retire/re-scope/LAB quorum, never re-dated; quorum 2026-11-07, docs/audits/quorum-PMAT-5305.ruling.json). Per-row plan, all non-lambda (lambda builds banned). Row 13 cargo bench batched Q4_K GEMV on intel. Row 15 gx10 shakedown W1 n>=5 interleaved, new LEDGER row (row 18 derives from it). Rows 16 and 17 (W3 open-loop, W4 token sweep) re-scoped from lambda to gx10. Rows 19, 20, 21 gx10 CUDA profile (per-token host work, prefill sync copies, KV-scatter on Blackwell).
+    Owner aprender-w5018, first measurement cells due 2026-11-20 (hard stop; no evidence file by then goes to a retire/re-scope/LAB quorum, never re-dated; quorum 2026-11-07, docs/audits/quorum-PMAT-5305.ruling.json). Per-row plan, all non-lambda (lambda builds banned). Row 13 cargo bench batched Q4_K GEMV on intel. Row 15 gx10 shakedown W1 n>=5 interleaved, new LEDGER row (row 18 derives from it). Rows 16 and 17 (W3 open-loop, W4 token sweep) re-scoped from lambda to gx10. Rows 19, 20, 21 gx10 CUDA profile (per-token host work, prefill sync copies, KV-scatter on Blackwell). Row 18 (reference cell, derived from 15) runs after 15 is clean; its host is chosen at the 2026-11-20 checkpoint and is never a lambda build (prebuilt binary, measurement only).
 - id: PMAT-5306
   github_issue: 5306
   item_type: task
