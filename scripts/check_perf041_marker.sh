@@ -171,7 +171,7 @@ selftest_cleanup() {
 selftest() {
     local tmp pass=0 fail=0 out rc
     tmp="$(mktemp -d)" || return 2
-    case "$tmp" in /tmp/*|/var/folders/*) : ;; *) printf 'refusing %s\n' "$tmp"; return 2 ;; esac
+    case "$tmp" in /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/folders/*) : ;; *) printf 'refusing %s\n' "$tmp"; return 2 ;; esac
     SELFTEST_TMP="$tmp"
     trap selftest_cleanup EXIT
 
