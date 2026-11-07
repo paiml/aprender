@@ -4,7 +4,7 @@
   title: 'PP-LLAMA-001 D6 unjam: time-boxed re-date of expired section-12 rows 13,15-17,19-21 + dated re-measure ticket'
   status: planned
   priority: critical
-  assigned_to: null
+  assigned_to: aprender-w5018
   created: 2026-11-07T08:25:11Z
   updated: 2026-11-07T08:25:11Z
   spec: null
@@ -15,13 +15,6 @@
   estimated_effort: null
   labels:
   - kind:docs
-  notes: null
   epic: 6570
-  owner: aprender-w5018
-  due: '2026-11-20'
-  remeasure_plan:
-  - 'row 13: cargo bench batched Q4_K GEMV M in {4,8} vs {16,32} on intel (CPU/AVX path); evidence/parity file by 2026-11-20'
-  - 'row 15: gx10 shakedown W1, n>=5 interleaved, new LEDGER row; row 18 derives from it'
-  - 'rows 16, 17: W3 open-loop and W4 token sweep re-scoped from lambda to gx10 (lambda builds banned)'
-  - 'rows 19, 20, 21: gx10 CUDA profile (per-token host work, prefill sync copies, KV-scatter on Blackwell)'
-  - 'hard stop 2026-11-20: a row with no evidence file goes to a retire/re-scope/LAB quorum, never re-dated (quorum 2026-11-07, ruling-aprender-pp-llama-redate-1107.json)'
+  notes: >-
+    Owner aprender-w5018, first measurement cells due 2026-11-20 (hard stop; no evidence file by then goes to a retire/re-scope/LAB quorum, never re-dated; quorum 2026-11-07, docs/audits/quorum-PMAT-5305.ruling.json). Per-row plan, all non-lambda (lambda builds banned). Row 13 cargo bench batched Q4_K GEMV on intel. Row 15 gx10 shakedown W1 n>=5 interleaved, new LEDGER row (row 18 derives from it). Rows 16 and 17 (W3 open-loop, W4 token sweep) re-scoped from lambda to gx10. Rows 19, 20, 21 gx10 CUDA profile (per-token host work, prefill sync copies, KV-scatter on Blackwell).

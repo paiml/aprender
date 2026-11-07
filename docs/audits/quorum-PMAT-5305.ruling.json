@@ -1,0 +1,52 @@
+{
+  "summary": "Planted quorum: time-boxed re-date of PP-LLAMA-001 section-12 rows 13,15,16,17,19,20,21 from 2026-11-06 to 2026-11-27 to unjam aprender main (D6/PP-29 RED, 37h no merge)?",
+  "result": {
+    "agreed": true,
+    "verdict": "YES",
+    "acted": false,
+    "lanes": [
+      {
+        "verdict": "YES",
+        "model": "claude-opus-5-5",
+        "date": "2026-11-27"
+      },
+      {
+        "verdict": "YES",
+        "model": "claude-opus-5-5",
+        "date": "2026-11-27"
+      },
+      {
+        "verdict": "YES",
+        "model": "claude-opus-5-5",
+        "date": "2026-11-27"
+      }
+    ],
+    "date": "2026-11-27",
+    "condition": "4th re-date = last: 11-20 checkpoint, no evidence -> retire/re-scope quorum, never re-date; per-row plan on reachable non-lambda hosts; one owner; changelog names quorum + NO SPEED DELIVERED; derived_expiries.json via --write only; andon logic untouched; R41 bound to final commit",
+    "deciding_rule": "C197/C314/PMAT-6208 precedent + C324 (GATE red 24h: fix or rule)",
+    "author_model": "claude-sonnet-5-5",
+    "lanes_full": [
+      {
+        "verdict": "YES",
+        "date": "2026-11-27",
+        "condition": "(1) In the same PR, rows that depend only on lambda W3/W4 cells must be re-scoped to a host the fleet is allowed to use (gx10 or Blackwell) or restated in the spec to reflect reality. A row that can only be closed by a banned build is not time-boxed: re-dating it is a waiver. (2) The 3.1 changelog row names this quorum receipt, records that this is the 4th re-date of these rows (10-01, 10-14, 10-24, 11-07), and carries NO SPEED DELIVERED into the release notes. (3) The pmat re-measure ticket exists before the PR is opened and is linked from the changelog row. It is due 2026-11-20 and needs at least one real evidence file under evidence/parity/ (the cargo bench Q4_K GEMV cell is the cheapest) before that date. (4) No 5th re-date of a row that still has zero evidence by 2026-11-27. Such a row goes to a spec change (re-scope or retire, with its own quorum), not a date bump. (5) The D6 andon logic is left as it is. derived_expiries.json is regenerated only with spec_conformance.sh --write. The PR passes R41 (opus + a non-author, non-haiku lane), bound to the final commit, before merge.",
+        "reason": "This follows the established precedent (C197, C314, PMAT-6208): a re-date that names its quorum, sits in the changelog, is tied to a dated ticket and leaves the andon RED past the new date is a visible, bounded deferral, not a quiet bump or a waiver. A main that has not merged for 37h stalls all work. 0.75.0 (2026-11-08) is too soon for any hardware cell, and 0.76.0 (2026-11-27) is the next real milestone. Two risks would turn it into a rolling waiver: this is the 4th slip with zero evidence landed, and some rows need lambda cells while lambda builds are banned. Conditions 1, 3 and 4 close those risks by making the time box binding."
+      },
+      {
+        "verdict": "YES",
+        "date": "2026-11-27",
+        "condition": "Before merge: (1) the pmat re-measure ticket exists with one named owner, a due date of 2026-11-20 for the first cells, and a per-row plan naming the host and command for each of rows 13, 15, 16, 17, 19, 20 and 21. The W3/W4 rows must name a host other than lambda, because lambda builds are banned. (2) The 3.1 changelog row of 2026-11-07 names this quorum receipt, states that this is the fourth re-date (after C197, C314 and PMAT-6208), and carries NO SPEED DELIVERED, which also goes into the release notes. (3) derived_expiries.json is regenerated only with spec_conformance.sh --write; the D6 andon logic and m15 PP-29 are byte-for-byte unchanged. (4) The PR passes R41 review (Opus plus a non-author, non-Haiku lane) bound to the final commit. (5) This is the last re-date. If a row has no evidence cell by 2026-11-20, it goes to a quorum on 2026-11-20 to be re-scoped, retired by spec amendment, or moved to LAB by operator ruling, not dated again. Rows 15 and 18 are discharged or re-dated together.",
+        "reason": "This is not a waiver. The gate code and the andon stay as they are, the change is quorum-named and time-boxed per the C197, C314 and PMAT-6208 precedent, and D6 turns RED again on its own after 2026-11-27. A main branch jammed for 37 hours on cells that cannot be discharged today hurts all merge flow, which DUTY 0 ranks first. 2026-11-27 matches milestone 0.76.0; 2026-11-08 is too soon to measure anything. The real risk is that this is the fourth re-date with no evidence progress, and some cells depend on banned lambda hardware, so repeated re-dating would become a de facto permanent waiver. Approval is therefore conditional on a hard stop at the 2026-11-20 checkpoint: re-scope, retire or move to LAB, never another re-date."
+      },
+      {
+        "verdict": "YES",
+        "date": "2026-11-27",
+        "condition": "(1) This is the fourth re-date of the same rows, so it must be the last. The changelog row should say plainly that if any of rows 13/15-17/19-21 expires again without an evidence file, it goes to a ruling quorum to be retired, re-scoped, or moved to LAB, and is never re-dated again. (2) The re-measure ticket must name one owner and, for each row, hardware that is actually reachable. The W3/W4 cells depend on lambda, and lambda builds are banned, so the ticket must re-scope them to gx10 or Blackwell or mark them for retirement. A date that cannot be discharged is a waiver. (3) Regenerate derived_expiries.json with spec_conformance.sh --write, never by hand, and keep row 18 derived from row 15. (4) Leave the D6 andon logic and its threshold untouched; the diff may touch only dates, the changelog and the derived file. (5) Put NO SPEED DELIVERED in the 3.1 row and in the next release notes. (6) The R41 review (opus plus a non-author, non-haiku reviewer) must be bound to the final commit SHA. (7) Log progress on 2026-11-20. If no measurement cell has landed by then, open the retire/re-scope quorum early instead of waiting for 11-27.",
+        "reason": "The gate still checks the same thing. Only the dates move, and the andon goes RED again after 11-27. A changelog row naming this quorum, a dated ticket and the NO SPEED DELIVERED disclosure follow the C197, C314 and PMAT-6208 precedent, so this is a recorded, time-boxed decision, not a quiet bump. 37h with nothing merged breaks DUTY 0. The C324 rule says a GATE red for 24h is fixed that day or ruled on, and this quorum is that ruling. 0.75.0 (11-08) is too soon for hardware cells and 0.76.0 (11-27) fits. Two risks need conditions: four re-dates in a row with nothing measured is turning into a rolling waiver, and rows that need banned lambda hardware can never be discharged. Hence the last-re-date clause and the re-scope requirement."
+      }
+    ]
+  },
+  "acted": true,
+  "acted_at": "2026-11-07T08:25:30Z",
+  "acted_by": "aprender-d6-unjam worker"
+}
