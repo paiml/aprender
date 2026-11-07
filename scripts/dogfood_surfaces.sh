@@ -525,7 +525,7 @@ if [ "${1:-}" = "--self-test" ]; then
     fails=0
     # The load-bearing property: a probe must REJECT, not merely run.
     tmp=$(mktemp -d) || exit 1
-    case "$tmp" in /tmp/*|/var/folders/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
+    case "$tmp" in /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/folders/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
     trap 'rm -rf "${tmp:?}"' EXIT
 
     printf '#!/usr/bin/env bash\necho "usage: permissive [OPTIONS]"\nexit 0\n' > "$tmp/permissive"
