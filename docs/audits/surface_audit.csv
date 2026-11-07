@@ -923,3 +923,4 @@ aprender-rollup,aprender-rollup build,6,x86_64-linux,NONE,no,12,test-harness,cra
 aprender-rollup,aprender-rollup --version,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:171,high
 aprender-rollup,aprender-rollup verify,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:181,high
 aprender-rollup,aprender-rollup verify --apply,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:139,high
+aprender-rollup,aprender-rollup fold,6,x86_64-linux,NONE,no,12,test-harness,crates/aprender-ci-tools/src/bin/aprender-rollup.rs:183,high

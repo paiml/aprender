@@ -163,7 +163,7 @@ fn version_line() -> String {
     )
 }
 
-const USAGE: &str = "usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply]";
+const USAGE: &str = "usage: aprender-rollup plan | build <dir> | verify <branch> <head-sha> <sha|-> <n,..> [--apply] | fold <base.yaml> <entries-dir>";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -179,6 +179,19 @@ fn main() -> ExitCode {
         }
         "plan" | "build" => run(cmd, args.get(2).map(String::as_str)),
         "verify" => verify(&args[2..]),
+        // #6313: roadmap.yaml as a pure function of (base, entries/). Aggregate on stdout; rc 0, or 2 = not measured.
+        "fold" => match aprender_rollup::fold::parse_args(&args[1..])
+            .and_then(|(base, entries)| aprender_rollup::fold::fold(&base, &entries))
+        {
+            Ok(text) => {
+                print!("{text}");
+                return ExitCode::SUCCESS;
+            }
+            Err(e) => {
+                eprintln!("not_measured: {e}");
+                return ExitCode::from(2);
+            }
+        },
         _ => {
             eprintln!("{USAGE}");
             return ExitCode::from(2);

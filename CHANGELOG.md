@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.72.4] - 2026-11-04
+
+Patch release: changes merged since v0.72.3 (see the list below).
+
+### Added
+
+- feat(pv): generate, book and unlock get --dry-run preview (PMAT-6395) (#6581)
+- feat(pv): pv check-symbolic — test stated invariants against the formula (PMAT-6399) (#6586)
+- feat(release): graph-ordered package lane + falsifier (BLD-002 N1/A3, #3892) (#6685)
+- feat(make): make pr-light — cargo-free half of CI pr-light, run before push (advisory) (#6698)
+- feat(rollup): aprender-rollup fold subcommand (#6313, part B) (#6701)
+- feat(release): CI bot opens the version-bump PR from the green nightly (PMAT-6675) (#6702)
+- feat(mq-feeder): C48 tiers - LOW 1 non-author PASS, HIGH 1 Opus PASS, refuse any FAIL (PMAT-6715) (#6716)
+
+### Fixed
+
+- fix(ci-tools): retry ETXTBSY on ladder cell spawn (PMAT-6678) (#6680)
+- fix(dogfood): surface_audit row for aprender-roadmap (PMAT-5902) (#6682)
+- fix(release): promote_scheduler fallback past a red candidate no longer silent (C12, #6677) (#6684)
+- fix(pv): references-resolve keeps the count ratchet beside the set; lint-ratchet prunes dead_reference_set (#6587) (#6695)
+- fix(ci-tools): flake_kpi self-test trap no longer trips set -u (PMAT-6446) (#6696)
+- fix(ci): prune stale worktree registrations before lanes-c add (Refs #6676) (#6704)
+- fix(pv): check-symbolic depth limit, point budget, strip_prose operands (PMAT-6591) (#6705)
+- fix(ci): regenerate assets-rehearsal-nightly.yml from binary-release.yml (nightly red since 10-30) (#6708)
+- fix(hooks): pre-commit clippy warns, CI blocks (C52-3) (#6712)
+- fix(ci): RS-5 nightly and models_t1 temp files under RUNNER_TEMP (#6713)
+- fix(guards): 8 scripts accept ${TMPDIR:-/tmp} scratch dirs (PMAT-6721) (#6722)
+- fix(guards): 7 more scripts accept ${TMPDIR:-/tmp}; ladder cleanup arms stop leaking (PMAT-6723) (#6724)
+- fix(guards): 9 more scripts accept ${TMPDIR:-/tmp}; crux dogfood stops leaking (PMAT-6723 batch 2) (#6725)
+
+### Changed
+
+- docs(roadmap): PMAT-6689 entry (#6691)
+- release: promote carries the released milestone's open items to the next (#6690) (#6692)
+- ci: three workflows write under RUNNER_TEMP; extend RS-5 falsifier (C61-7) (#6718)
+
 ## [0.72.1] - 2026-10-27
 
 Supersedes 0.72.0, which was never published.
