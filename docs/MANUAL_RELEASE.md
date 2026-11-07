@@ -179,3 +179,18 @@ Before releasing, ensure:
 - ✅ Documentation builds without warnings
 - ✅ CHANGELOG.md updated
 - ✅ All CI checks passing
+
+## Split-host T-2 preflight: per-host receipt merge (fallback, REL1, epic #6728)
+
+`scripts/release/t2_preflight.sh` `decide()` judges ONE dogfood log and is unchanged. When the gate set
+must run on two hosts (for example an x86_64 CUDA box and an arm64 box), never hand-write a merged
+verdict. Use `scripts/release/merge_host_receipts.sh --commit SHA --out FILE --log HOST=PATH
+--log HOST=PATH [--arch HOST=x86_64] [--x86-cuda-ruling PATH]`. Each log must carry a header line
+`# receipt-commit: <sha>` (or t2_preflight's `judging <sha>` line). The merge writes `GO` only if all
+header shas equal `--commit`; every `[FAIL]` row is the pre-bump class `decide()` tolerates or is
+environment-only (`Feature not enabled: cuda`, `NOT HELD under`, `is not on this host`, `GitHub read
+failed`) and green on another host; the declared gate count agrees; and the `model-parity` (C14) row is
+green with `--features cuda` on a host named `--arch HOST=x86_64`, else exit 2 unless a quorum receipt
+naming the commit is given with `--x86-cuda-ruling`. Exit 0 GO, 1 NO-GO, 2 refused; the verdict file
+lists receipt path and host per row. The pre-bump model-ladder deferral is not merged: a red ladder row
+fails the merge. Falsifier: `scripts/release/falsify_merge_host_receipts.sh` (CI fragment 862).
