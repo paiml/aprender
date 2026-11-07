@@ -3,7 +3,7 @@
   "result": {
     "agreed": true,
     "verdict": "YES",
-    "acted": false,
+    "acted": true,
     "lanes": [
       {
         "verdict": "YES",
@@ -45,7 +45,8 @@
         "reason": "The gate still checks the same thing. Only the dates move, and the andon goes RED again after 11-27. A changelog row naming this quorum, a dated ticket and the NO SPEED DELIVERED disclosure follow the C197, C314 and PMAT-6208 precedent, so this is a recorded, time-boxed decision, not a quiet bump. 37h with nothing merged breaks DUTY 0. The C324 rule says a GATE red for 24h is fixed that day or ruled on, and this quorum is that ruling. 0.75.0 (11-08) is too soon for hardware cells and 0.76.0 (11-27) fits. Two risks need conditions: four re-dates in a row with nothing measured is turning into a rolling waiver, and rows that need banned lambda hardware can never be discharged. Hence the last-re-date clause and the re-scope requirement."
       }
     ],
-    "lanes_note": "three samples of ONE model, claude-opus-5-5 (author claude-sonnet-5-5), as the P0 brief directed; this is a time-boxed deferral ruling and is not the R41 review of the PR, which is separate (quorum-review.sh on the PR head)"
+    "lanes_note": "three samples of ONE model, claude-opus-5-5 (author claude-sonnet-5-5), as the P0 brief directed. These lanes are NOT independent: same model family, same prompt, no cross-family check. This is a time-boxed deferral ruling and is not the R41 review of the PR, which is separate (quorum-review.sh on the PR head).",
+    "acted_note": "acted is true as of 2026-11-07T08:25:30Z (see top-level acted_at): the worker applied the ruling in the PR branch; the PR itself is not merged and the R41 review is separate."
   },
   "acted": true,
   "acted_at": "2026-11-07T08:25:30Z",
