@@ -29,4 +29,7 @@ if [ "${APR_PREPUSH_GUARDS:-0}" = 1 ]; then
     bash scripts/ci_guards.sh || exit 1
 fi
 
+echo "── RS-6 (C49): contracts_gate.sh regen leaves the generated graph unchanged ──"
+bash scripts/hooks/prepush_regen_diff.sh || exit 1
+
 echo "✅ Pre-push passed"
