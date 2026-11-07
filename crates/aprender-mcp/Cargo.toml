@@ -38,7 +38,7 @@ native = []
 # A caller serving its own tools (ToolIndex::from_entries + AprMcpServer::with_tools)
 # builds with default-features = false, features = ["native"]: serde + serde_json only.
 apr-tools = ["dep:inventory", "dep:nix", "dep:serde-saphyr"]
-# M5 scaffold: enables the pmcp v2.3 dispatcher path alongside the hand-rolled
+# M5 scaffold: enables the pmcp v2.23 dispatcher path alongside the hand-rolled
 # stdio loop. Off by default — PR 1 wires the dep, PR 2 lands the parity test
 # (FALSIFY-MCP-009), PR 3 extends cancellation, PR 4/5 add SSE/WebSocket
 # transports. See docs/specifications/apr-mcp-server-spec.md §M5.
@@ -52,12 +52,12 @@ serde_json = { workspace = true }
 # iterates `inventory::iter::<McpToolEntry>` at startup. See
 # contracts/apr-mcp-tool-inventory-v1.yaml.
 inventory = { version = "0.3", optional = true }
-# M5 prep: pmcp 2.3 is PAIML's Rust MCP SDK, already pinned in
+# M5 prep: pmcp 2.23 is PAIML's Rust MCP SDK, already pinned in
 # aprender-orchestrate for the MCP client side. Pulled in here as an optional
 # dep so PR 1 is a zero-behaviour-change patch — the dispatcher still runs on
 # the hand-rolled JSON-RPC loop in server.rs until PR 2 wires pmcp::Server
 # behind the `pmcp-dispatcher` feature flag.
-pmcp = { version = "2.3", optional = true }
+pmcp = { version = "2.23", optional = true }
 # FALSIFY-MCP-006: SIGTERM/SIGKILL for cancelling in-flight `apr.run` subprocesses.
 # nix 0.29 is already in the workspace lockfile (pulled in by other crates).
 [target.'cfg(unix)'.dependencies]

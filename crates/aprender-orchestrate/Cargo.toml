@@ -178,11 +178,11 @@ jugar-probar = { workspace = true, features = ["browser"], optional = true }
 base64 = { version = "0.22", optional = true }
 
 # MCP protocol: client (consume external tools) + server (expose agent tools).
-# pmcp 2.3 = PAIML's Rust MCP SDK (github.com/paiml/rust-mcp-sdk) — actively maintained,
+# pmcp 2.23 = PAIML's Rust MCP SDK (github.com/paiml/rust-mcp-sdk) — actively maintained,
 # covers both client + server roles. pforge-runtime was previously listed here but
 # dropped: (1) nothing imports it, (2) it still pins pmcp 1.x, forcing a dual-version
 # build. Framework-style MCP helpers can live behind a separate feature if wanted later.
-pmcp = { version = "2.3", optional = true }
+pmcp = { version = "2.23", optional = true }
 
 # Provable design-by-contract (compile-time contract binding)
 provable-contracts = { workspace = true, optional = true }
