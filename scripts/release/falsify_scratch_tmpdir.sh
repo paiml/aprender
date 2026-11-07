@@ -22,7 +22,7 @@ FILES=(scripts/check_cascade_clean_room_gate.sh scripts/check_comparator_one_cli
     scripts/check_perf041_marker.sh scripts/check_pr_ont_delta.sh scripts/check_readme_numeric_claims.sh
     scripts/check_serve_probe_evidence.sh scripts/check_tokenizer_nonascii_parity.sh
     scripts/ci/nextest_list_wrapper.sh scripts/dogfood_surfaces.sh scripts/lab/comparative_regex_agreement.sh
-    scripts/lint_ratchet.sh scripts/parity_receipt_denominator.sh
+    scripts/lint_ratchet.sh scripts/parity_receipt_denominator.sh scripts/check_tool_versions.sh
     scripts/tests/model_ladder_diagnostic_not_truncated_test.sh)
 
 # ok <file> : a case arm lists "${TMPDIR:-/tmp}", and the /tmp arm is still there
