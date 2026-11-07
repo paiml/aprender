@@ -27,7 +27,7 @@ EPIC="${RELEASE_EPIC:-}"
 if [ "$MODE" = run ]; then
   [[ $EPIC =~ ^[0-9]+$ ]] || { echo "RELEASE_EPIC (release epic issue number) required for --run" >&2; exit 64; }
 else EPIC="${EPIC:-0}"; fi
-FLOOR_GB=210; WATCH_FLOOR_GB=210; POLL_S=30; STALL_S=3600; LOAD_MAX=40; MEM_MIN_KB=$((64*1024*1024)); CAP="6h"
+FLOOR_GB=210; WATCH_FLOOR_GB=210; POLL_MAX_S=$((6*10)); SIGKILL_RC=$((128+9)); POLL_S=30; STALL_S=3600; LOAD_MAX=40; MEM_MIN_KB=$((64*1024*1024)); CAP="6h"
 if [ "$MODE" = run ]; then
   # overrides are inert in real runs
   unset WATCH_FLOOR_GB_TEST T2_LOAD1 T2_MEMAVAIL_KB T2_NVSMI_CMD T2_SWAP_GROWTH_KB T2_TMPDIR T2_CAP FLOOR_GB_TEST POLL_S_TEST STALL_S_TEST
@@ -35,7 +35,7 @@ else
   FLOOR_GB="${FLOOR_GB_TEST:-$FLOOR_GB}"; WATCH_FLOOR_GB="${WATCH_FLOOR_GB_TEST:-$WATCH_FLOOR_GB}"
   POLL_S="${POLL_S_TEST:-$POLL_S}"; STALL_S="${STALL_S_TEST:-$STALL_S}"
 fi
-[ "$POLL_S" -le 60 ] || { echo "FAIL: POLL_S>60" >&2; exit 1; }
+[ "$POLL_S" -le "$POLL_MAX_S" ] || { echo "FAIL: POLL_S>60" >&2; exit 1; }
 
 RAID_ROOT="${RAID_ROOT:-/mnt/nvme-raid0}"
 # run id from the inputs (version, commit) plus pid: no wall-clock in artifact names (DET002); CHECKOUT-must-be-fresh still guards reuse
@@ -178,7 +178,7 @@ watcher & WATCH_PID=$!
 RC=0; wait "$CHILD" || RC=$?
 if [ ! -s "$VERDICT" ]; then
   if [ "$RC" -eq 0 ]; then echo "completed rc=0 (GO/NO-GO is the VERDICT line in $LOG)" > "$VERDICT"
-  elif [ "$RC" -eq 137 ]; then echo "not_measured: SIGKILL (6h cap or external kill) rc=137" > "$VERDICT"
+  elif [ "$RC" -eq "$SIGKILL_RC" ]; then echo "not_measured: SIGKILL (6h cap or external kill) rc=137" > "$VERDICT"
   else echo "completed rc=$RC (see $LOG)" > "$VERDICT"; fi
 fi
 exit "$RC"
