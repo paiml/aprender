@@ -94,10 +94,10 @@ def q5:
   # #6494 (ANDON T5): a release bump waits behind unrelated trains. Entries AHEAD of a queued release bump
   # that are neither P0 nor a bump themselves are dequeued so the bump runs next.
   ($s1|.[0]).data.repository.mergeQueue.entries.nodes as $all |
-  ($all | map(select((.pullRequest.title // "") | test("^release: *bump"))) | map(.position) | min) as $bp |
+  ($all | map(select((.pullRequest.title // "") | test("^(chore\\(release\\): *bump|release: *(bump|[0-9]+\\.[0-9]+\\.[0-9]+))"))) | map(.position) | min) as $bp |
   select($bp != null) |
   $all[] | select(.position < $bp) |
-  select((.pullRequest.title // "") | test("^release: *bump") | not) |
+  select((.pullRequest.title // "") | test("^(chore\\(release\\): *bump|release: *(bump|[0-9]+\\.[0-9]+\\.[0-9]+))") | not) |
   select(((.pullRequest.labels.nodes // []) | map(.name) | index("P0")) == null) |
   {rule: "Q5", type: "dequeue", target: (.pullRequest.number | tostring), target_id: .pullRequest.id};
 
@@ -268,7 +268,7 @@ if [[ "$SELFTEST" == 1 ]]; then
       case7_pending) ! grep -q "action=planned" "$last_out" && echo "ok case7" || { echo "FAIL case7"; test_fail=1; } ;;
       case8_idle_gx10) grep -q "IDLE-NEXT-TO-QUEUE gx10" "$last_out" && echo "ok case8" || { echo "FAIL case8"; test_fail=1; } ;;
       case9_idle_noq) ! grep -q "IDLE-NEXT-TO-QUEUE" "$last_out" && echo "ok case9" || { echo "FAIL case9"; test_fail=1; } ;;
-      case11_drain_ahead_of_bump) grep -q "decision: Q5 201 quorum=2/2 action=planned" "$last_out" && echo "ok case11" || { echo "FAIL case11"; test_fail=1; } ;;
+      case11_drain_ahead_of_bump|case15_plain_release_title) grep -q "decision: Q5 201 quorum=2/2 action=planned" "$last_out" && echo "ok $case_name" || { echo "FAIL $case_name"; test_fail=1; } ;;
       case12_p0_not_drained|case13_behind_bump_kept|case14_no_bump) ! grep -q "Q5" "$last_out" && echo "ok $case_name" || { echo "FAIL $case_name"; test_fail=1; } ;;
       case10_two_orphans) MAX_WRITES=1; process_tick "1400" "$case_dir/1400/s1.json" "$case_dir/1400/s2.json" "$case_dir/1400/s3.json" > "$STATE_DIR/out_1400_cap.log"; grep -q "refused:cap" "$STATE_DIR/out_1400_cap.log" && echo "ok case10" || { echo "FAIL case10"; test_fail=1; } ;;
     esac
