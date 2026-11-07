@@ -524,6 +524,31 @@ fn key_forms(key: &str) -> Vec<String> {
     forms
 }
 
+/// Shortest block name the one-edit typo rule applies to. Short names (`beat`,
+/// `qa_gate`) sit one edit from ordinary words, so only longer ones are guarded.
+const MIN_TYPO_FIELD_LEN: usize = 8;
+
+/// Are `a` and `b` one insertion, deletion, substitution or adjacent swap apart?
+fn within_one_edit(a: &str, b: &str) -> bool {
+    let (a, b): (Vec<char>, Vec<char>) = (a.chars().collect(), b.chars().collect());
+    if a == b {
+        return true;
+    }
+    if a.len().abs_diff(b.len()) > 1 {
+        return false;
+    }
+    let p = a.iter().zip(&b).take_while(|(x, y)| x == y).count();
+    let (ra, rb) = (&a[p..], &b[p..]);
+    match ra.len().cmp(&rb.len()) {
+        std::cmp::Ordering::Equal => {
+            ra[1..] == rb[1..]
+                || (ra.len() > 1 && ra[0] == rb[1] && ra[1] == rb[0] && ra[2..] == rb[2..])
+        }
+        std::cmp::Ordering::Greater => ra[1..] == rb[..],
+        std::cmp::Ordering::Less => ra[..] == rb[1..],
+    }
+}
+
 /// The real block name an unknown top-level key is a near-miss of, if any.
 ///
 /// Exact field names never reach here (the parser filters them out), so a hit
@@ -534,10 +559,12 @@ fn key_forms(key: &str) -> Vec<String> {
 /// not `coq_spec`.
 fn near_miss_of(key: &str) -> Option<&'static str> {
     let forms = key_forms(key);
-    CONTRACT_TOP_LEVEL_FIELDS
-        .iter()
-        .copied()
-        .find(|field| key_forms(field).iter().any(|f| forms.contains(f)))
+    let squashed = forms[0].clone();
+    CONTRACT_TOP_LEVEL_FIELDS.iter().copied().find(|field| {
+        key_forms(field).iter().any(|f| forms.contains(f))
+            || (field.len() >= MIN_TYPO_FIELD_LEN
+                && within_one_edit(&squashed, &key_forms(field)[0]))
+    })
 }
 
 /// SCHEMA-018 / SCHEMA-019: reject the two top-level shapes that are never

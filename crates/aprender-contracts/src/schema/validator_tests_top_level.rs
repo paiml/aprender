@@ -298,3 +298,53 @@ fn allow_list_matches_the_contract_struct() {
         "CONTRACT_TOP_LEVEL_FIELDS has drifted from the Contract struct"
     );
 }
+
+// PV-VAL closed-world gap (FLEET-OPS-DELIVERY-001 F8): `equationz:` slipped past
+// SCHEMA-019 because the near-miss test only knew case/separator/plural variants.
+
+#[test]
+fn pv_val_mutant_equationz_is_rejected() {
+    let broken = contract_with_top_level("equationz:\n  f:\n    formula: \"x\"");
+    assert!(
+        rules_fired(&broken).contains(&"SCHEMA-019".to_string()),
+        "`equationz:` must raise SCHEMA-019 (reported as PV-VAL-001), got {:?}",
+        rules_fired(&broken)
+    );
+    let fixed = contract_with_top_level("equations:\n  f:\n    formula: \"x\"");
+    assert!(!rules_fired(&fixed).contains(&"SCHEMA-019".to_string()));
+}
+
+#[test]
+fn pv_val_valid_contract_still_passes() {
+    assert!(rules_fired(&contract_with_top_level("")).is_empty());
+}
+
+#[test]
+fn pv_val_typo_case_table() {
+    // must-reject: one edit (substitution, insertion, deletion, transposition)
+    for (key, meant) in [
+        ("equationz", "equations"),
+        ("equatoins", "equations"),
+        ("equatons", "equations"),
+        ("equationss", "equations"),
+        ("proof_obligatoins", "proof_obligations"),
+        ("falsification_tezts", "falsification_tests"),
+        ("kani_harnesess", "kani_harnesses"),
+    ] {
+        let v = contract_with_top_level(&format!("{key}: {{}}"));
+        let c = parse_contract_str(&v).expect("fixture must parse");
+        let hit = validate_contract(&c)
+            .into_iter()
+            .find(|v| v.rule == "SCHEMA-019")
+            .unwrap_or_else(|| panic!("`{key}` must raise SCHEMA-019"));
+        assert!(hit.message.contains(meant), "`{key}` should suggest `{meant}`");
+    }
+    // must-accept: real downstream keys, including short ones near a field name
+    for key in ["name", "spec", "gates", "invariants", "stories_note", "requirements"] {
+        let v = contract_with_top_level(&format!("{key}: {{}}"));
+        assert!(
+            !rules_fired(&v).contains(&"SCHEMA-019".to_string()),
+            "`{key}` is legitimate and must not raise SCHEMA-019"
+        );
+    }
+}
