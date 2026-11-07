@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Known gaps
+
+- NO SPEED DELIVERED: PP-LLAMA-001 rows 13, 15, 16, 17, 18, 19, 20, 21 (re-dated to 2026-11-27 by the 2026-11-07 quorum, `docs/audits/quorum-PMAT-5305.ruling.json`, PMAT-5305). Carry this line into the 0.75 and 0.76 release notes.
+
 ## [0.72.4] - 2026-11-04
 
 Patch release: changes merged since v0.72.3 (see the list below).
