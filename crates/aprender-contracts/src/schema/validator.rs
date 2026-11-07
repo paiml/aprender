@@ -524,9 +524,12 @@ fn key_forms(key: &str) -> Vec<String> {
     forms
 }
 
-/// Shortest block name the one-edit typo rule applies to. Short names (`beat`,
-/// `qa_gate`) sit one edit from ordinary words, so only longer ones are guarded.
-const MIN_TYPO_FIELD_LEN: usize = 8;
+/// Shortest block name the one-edit typo rule applies to, counted on the
+/// separator-free form (`coq_spec` is 7, not 8). Short names (`beat`, `qa_gate`,
+/// `requires`, `metadata`) sit one edit from ordinary words — `required`,
+/// `metadatas` — that downstream contracts use legitimately, so only longer
+/// ones (`equations`, `proof_obligations`, ...) are guarded.
+const MIN_TYPO_FIELD_LEN: usize = 9;
 
 /// Are `a` and `b` one insertion, deletion, substitution or adjacent swap apart?
 fn within_one_edit(a: &str, b: &str) -> bool {
@@ -561,9 +564,10 @@ fn near_miss_of(key: &str) -> Option<&'static str> {
     let forms = key_forms(key);
     let squashed = forms[0].clone();
     CONTRACT_TOP_LEVEL_FIELDS.iter().copied().find(|field| {
-        key_forms(field).iter().any(|f| forms.contains(f))
-            || (field.len() >= MIN_TYPO_FIELD_LEN
-                && within_one_edit(&squashed, &key_forms(field)[0]))
+        let field_forms = key_forms(field);
+        field_forms.iter().any(|f| forms.contains(f))
+            || (field_forms[0].chars().count() >= MIN_TYPO_FIELD_LEN
+                && within_one_edit(&squashed, &field_forms[0]))
     })
 }
 

@@ -330,6 +330,9 @@ fn pv_val_typo_case_table() {
         ("proof_obligatoins", "proof_obligations"),
         ("falsification_tezts", "falsification_tests"),
         ("kani_harnesess", "kani_harnesses"),
+        ("kernel_structurre", "kernel_structure"),
+        ("simd_dispatchh", "simd_dispatch"),
+        ("type_invariantz", "type_invariants"),
     ] {
         let v = contract_with_top_level(&format!("{key}: {{}}"));
         let c = parse_contract_str(&v).expect("fixture must parse");
@@ -340,7 +343,20 @@ fn pv_val_typo_case_table() {
         assert!(hit.message.contains(meant), "`{key}` should suggest `{meant}`");
     }
     // must-accept: real downstream keys, including short ones near a field name
-    for key in ["name", "spec", "gates", "invariants", "stories_note", "requirements"] {
+    // `required` is one edit from `requires` and `coq_spek` one from `coq_spec`
+    // (8 raw chars, 7 once the underscore is gone): ordinary words and short
+    // names, never block-name typos — the floor is on the underscore-free length.
+    for key in [
+        "name",
+        "spec",
+        "gates",
+        "invariants",
+        "stories_note",
+        "requirements",
+        "required",
+        "ensured",
+        "coq_spek",
+    ] {
         let v = contract_with_top_level(&format!("{key}: {{}}"));
         assert!(
             !rules_fired(&v).contains(&"SCHEMA-019".to_string()),
