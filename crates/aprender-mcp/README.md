@@ -52,7 +52,7 @@ apr mcp
   `params._meta.progressToken`.
 - **M4** (in progress): Claude Code dogfood + contract promotion to
   ENFORCED + real-model FALSIFY-MCP-003/-004.
-- **M5** (planned): port dispatcher to `pmcp = "2.3"`, add SSE/WebSocket
+- **M5** (planned): port dispatcher to `pmcp = "2.23"`, add SSE/WebSocket
   transports, extend cancel to `apr.serve`.
 
 `apr.serve` is still fire-and-forget — M3's cancellation path covers

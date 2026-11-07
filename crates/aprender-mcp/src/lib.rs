@@ -34,7 +34,7 @@
 //!   `params._meta.progressToken` (FALSIFY-MCP-PROGRESS-001).
 //!
 //! M4 (in progress) promotes FALSIFY-MCP-003/-004 from surface tests to
-//! real-model end-to-end; M5 ports the dispatcher to `pmcp = "2.3"` and
+//! real-model end-to-end; M5 ports the dispatcher to `pmcp = "2.23"` and
 //! extends cancellation to `apr.serve`.
 
 pub mod apr_bin;
