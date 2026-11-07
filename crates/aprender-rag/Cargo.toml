@@ -52,7 +52,7 @@ async-trait = "0.1"
 batuta-common = { workspace = true }
 lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.14", optional = true }
-bincode = { version = "1.3", optional = true }  # Binary serialization for indices
+aprender-legacy-codec = { path = "../aprender-legacy-codec", version = "0.72.3", optional = true }  # Binary serialization for indices
 
 # SQLite+FTS5 persistent index (sqlite-rag-integration spec)
 # FTS5 is included in bundled SQLite by default (SQLITE_ENABLE_FTS5)
@@ -96,7 +96,7 @@ default = ["sqlite"]
 # SQLite+FTS5 persistent BM25 index (sqlite-rag-integration spec)
 sqlite = ["dep:rusqlite"]
 # Compressed index serialization (GH-2)
-compression = ["dep:lz4_flex", "dep:zstd", "dep:bincode"]
+compression = ["dep:lz4_flex", "dep:zstd", "dep:aprender-legacy-codec"]
 # Real semantic embeddings via fastembed (GH-1)
 # Adds ONNX Runtime dependency for production-quality embeddings
 embeddings = ["dep:fastembed"]
