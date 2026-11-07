@@ -38,7 +38,8 @@ fi
 [ "$POLL_S" -le 60 ] || { echo "FAIL: POLL_S>60" >&2; exit 1; }
 
 RAID_ROOT="${RAID_ROOT:-/mnt/nvme-raid0}"
-RUN_ID="t2-$VERSION-$(date -u +%Y%m%dT%H%M%SZ)-$$"
+# run id from the inputs (version, commit) plus pid: no wall-clock in artifact names (DET002); CHECKOUT-must-be-fresh still guards reuse
+RUN_ID="t2-$VERSION-${SHA:0:12}-$$"
 CHECKOUT="${CHECKOUT:-$RAID_ROOT/$RUN_ID/checkout}"
 RUN_DIR="$(dirname "$CHECKOUT")"
 TMPDIR="${T2_TMPDIR:-$RAID_ROOT/$RUN_ID-tmp}"
@@ -100,14 +101,18 @@ echo "RECEIPT: log=$LOG verdict=$VERDICT (index: $RECEIPT_DIR/$RUN_ID.receipt-pa
 
 PGID=""; WATCH_PID=""
 cleanup() {
-  local rc=$?
+  local rc=$? src_v dst_v
   trap - EXIT INT TERM HUP
   if [ -n "$WATCH_PID" ]; then kill "$WATCH_PID" 2>/dev/null || true; fi
   if [ -n "$PGID" ] && kill -0 -- "-$PGID" 2>/dev/null; then
     { kill -TERM -- "-$PGID" 2>/dev/null; sleep 2; kill -KILL -- "-$PGID" 2>/dev/null; } || true
   fi
   [ -s "$VERDICT" ] || echo "not_measured: wrapper exited rc=$rc before a verdict" > "$VERDICT"
-  if [ -d "$CHECKOUT/target/release-verdicts" ]; then cp -r "$CHECKOUT/target/release-verdicts" "$RECEIPT_DIR/$RUN_ID.verdicts" 2>/dev/null || true; fi
+  src_v="$CHECKOUT/target/release-verdicts"; dst_v="$RECEIPT_DIR/$RUN_ID.verdicts"
+  # SEC010: refuse any '..' segment or relative path before copying
+  if [ -d "$src_v" ] && [[ "$src_v" != *..* ]] && [[ "$dst_v" != *..* ]] && [[ "$src_v" == /* ]] && [[ "$dst_v" == /* ]]; then
+    cp -r -- "$src_v" "$dst_v" 2>/dev/null || true
+  fi
   rm -rf -- "${RUN_DIR:?}" "${TMPDIR:?}" "${WORKLOG:?}"
   echo "CLEANUP: removed $RUN_DIR $TMPDIR $WORKLOG; verdict: $(cat "$VERDICT")"
   exit "$rc"
