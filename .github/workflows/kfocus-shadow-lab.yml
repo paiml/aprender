@@ -32,7 +32,7 @@ concurrency:
 
 jobs:
   x86-main-shadow:
-    runs-on: [self-hosted, Linux, X64, mq]  # kfocus host = kfocus-mq, kfocus-mq-2 (label mq only; no seat ever carried a kfocus label, so the old selector never matched, AC-1430-SAT). LAB dispatch only, never PR/MQ
+    runs-on: [X64, kfocus]  # kfocus and kfocus-2 (repo-level seats) carry kfocus; no seat carries mq live, so [.., mq] queued forever (infra C47 report 11:29Z). Runs the sov, guard-tree, guard-cargo and workspace-test-shard sections via fat_driver. LAB dispatch only, never PR/MQ
     timeout-minutes: 360
     env:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
