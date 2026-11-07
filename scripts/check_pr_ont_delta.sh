@@ -182,7 +182,7 @@ trailer'
 predicate_row() { # predicate_row NAME WANT CHANGED_PATH  (want: 0 = sweep, 1 = not a sweep)
     local name="$1" want="$2" path="$3" tmp rc
     tmp="$(mktemp -d)"
-    case "$tmp" in /tmp/*|/var/tmp/*) : ;; *) printf 'NO-GO: mktemp -d gave %s\n' "$tmp" >&2; return 2 ;; esac
+    case "$tmp" in /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/tmp/*) : ;; *) printf 'NO-GO: mktemp -d gave %s\n' "$tmp" >&2; return 2 ;; esac
     printf '%s\n' "$path" > "$tmp/c.txt"
     set +e; sweep_reason "$tmp/c.txt" >/dev/null 2>&1; rc=$?; set -e
     [ -n "$tmp" ] && [ -d "$tmp" ] && rm -rf "$tmp"

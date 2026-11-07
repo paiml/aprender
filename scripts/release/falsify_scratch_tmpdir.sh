@@ -26,7 +26,7 @@ FILES=(scripts/check_cascade_clean_room_gate.sh scripts/check_comparator_one_cli
     scripts/tests/model_ladder_diagnostic_not_truncated_test.sh)
 
 # ok <file> : a case arm lists "${TMPDIR:-/tmp}", and the /tmp arm is still there
-ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*[|)]' "$1" && grep -qE '/tmp/(\?)?\*' "$1"; }
+ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*[|)]' "$1" && grep -qE '/tmp/(\?)?\*' "$1" && ! grep -E 'case .* in /tmp/\*' "$1" | grep -qv TMPDIR; }
 
 # fast behaviour: the cascade gate completes with a scratch dir outside /tmp
 # outside_tmp : a scratch base that is NOT under /tmp, so the base-only arm is what lets the guard pass
