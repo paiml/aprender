@@ -11,11 +11,11 @@ GENERATED=(contracts/contracts.nt contracts/shapes.ttl)
 check() {
     local root=$1 regen=${REGEN_CMD:-"bash scripts/contracts_gate.sh regen"}
     ( cd "$root" && eval "$regen" > /dev/null 2>&1 ) || { echo "RS-6 ENV: regen failed to run (rc!=0) -- not measured" >&2; return 2; }
-    if git -C "$root" diff --quiet -- "${GENERATED[@]}"; then
+    if git -C "$root" diff --quiet HEAD -- "${GENERATED[@]}"; then
         echo "RS-6 ok: regen leaves ${GENERATED[*]} unchanged"; return 0
     fi
     echo "RS-6 FAIL: regen changed a generated file; commit contracts/contracts.nt contracts/shapes.ttl" >&2
-    git -C "$root" diff --stat -- "${GENERATED[@]}" >&2
+    git -C "$root" diff --stat HEAD -- "${GENERATED[@]}" >&2
     return 1
 }
 
@@ -28,6 +28,8 @@ self_test() {
     REGEN_CMD="printf 'b\n' >> contracts/contracts.nt" check "$d" > /dev/null 2>&1; rc=$?; [ "$rc" -eq 1 ] || { echo "FAIL row drift: rc=$rc"; bad=1; }
     git -C "$d" checkout -q -- contracts
     REGEN_CMD=false check "$d" > /dev/null 2>&1; rc=$?; [ "$rc" -eq 2 ] || { echo "FAIL row regen-broken: rc=$rc"; bad=1; }
+    REGEN_CMD="printf 'b\\n' >> contracts/contracts.nt && git add contracts/contracts.nt" check "$d" > /dev/null 2>&1; rc=$?; [ "$rc" -eq 1 ] || { echo "FAIL row staged-drift: rc=$rc"; bad=1; }
+    git -C "$d" reset -q --hard HEAD
     rm -rf -- "${d:?}"
     [ "$bad" -eq 0 ] && echo "self-test: PASS"
     return "$bad"
