@@ -298,3 +298,39 @@ fn allow_list_matches_the_contract_struct() {
         "CONTRACT_TOP_LEVEL_FIELDS has drifted from the Contract struct"
     );
 }
+
+/// A fleet-ops contract (`metadata.kind: fleet-ops`), with `extra` at the top level.
+fn fleet_ops(extra: &str) -> String {
+    format!(
+        r#"{extra}
+metadata:
+  version: "1.0.0"
+  description: "fleet-ops fixture"
+  kind: fleet-ops
+  references:
+    - "Test (2026)"
+"#
+    )
+}
+
+#[test]
+fn fleet_ops_without_name_is_an_error_and_with_name_is_not() {
+    // RED direction: no `name:` => SCHEMA-026 (reported as PV-VAL).
+    assert!(rules_fired(&fleet_ops("")).contains(&"SCHEMA-026".to_string()));
+    // GREEN direction: the same document with `name:` is clean of that rule.
+    assert!(!rules_fired(&fleet_ops("name: fleet-ops-v1")).contains(&"SCHEMA-026".to_string()));
+}
+
+#[test]
+fn fleet_ops_empty_name_counts_as_missing() {
+    assert!(rules_fired(&fleet_ops("name: ''")).contains(&"SCHEMA-026".to_string()));
+    assert!(rules_fired(&fleet_ops("name: null")).contains(&"SCHEMA-026".to_string()));
+}
+
+#[test]
+fn other_kinds_without_name_are_unchanged() {
+    // registry, kernel-default, and schema contracts carry no `name:` and must not gain a finding.
+    assert!(!rules_fired(&contract_with_top_level("")).contains(&"SCHEMA-026".to_string()));
+    let schema = contract_with_top_level("").replace("registry: true", "kind: schema");
+    assert!(!rules_fired(&schema).contains(&"SCHEMA-026".to_string()));
+}

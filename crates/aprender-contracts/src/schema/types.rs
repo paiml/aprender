@@ -125,6 +125,10 @@ pub struct Contract {
     /// parsed: it only ever adds an explanation to an error that already fired.
     #[serde(skip)]
     pub kind_declared: bool,
+    /// Does the document carry a non-empty string top-level `name:`? A parse
+    /// artifact like `kind_declared`; SCHEMA-026 reads it for `fleet-ops` only.
+    #[serde(skip)]
+    pub name_declared: bool,
     /// The kaizen-record blocks (`contract:`, `kaizen:`, `baseline:`,
     /// `target:`, …) captured by a second parse pass when — and only when —
     /// `metadata.kind` is `kaizen`.

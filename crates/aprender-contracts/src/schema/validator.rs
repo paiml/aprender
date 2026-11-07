@@ -63,6 +63,18 @@ pub fn validate_contract(contract: &Contract) -> Vec<Violation> {
         crate::schema::kaizen::validate_kaizen(contract, &mut violations);
     }
 
+    // SCHEMA-026 (quorum ruling A, pvname-20261107T0230Z): a fleet-ops contract must name
+    // itself. Scoped to that one kind on purpose; every other kind is unchanged.
+    if contract.kind() == ContractKind::FleetOps && !contract.name_declared {
+        violations.push(Violation {
+            severity: Severity::Error,
+            rule: "SCHEMA-026".to_string(),
+            message: "a `fleet-ops` contract must declare a non-empty top-level `name:`"
+                .to_string(),
+            location: Some("name".to_string()),
+        });
+    }
+
     // CRUX competitive-research metadata (aprender#2555): kind-independent —
     // the three fields are carried by 275 `crux-*` contracts of several kinds
     // and by non-crux contracts that reuse the vocabulary.

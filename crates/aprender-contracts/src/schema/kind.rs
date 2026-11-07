@@ -72,6 +72,10 @@ pub enum ContractKind {
     /// task, with a pinned baseline that fails CI on regression. The measurement
     /// backbone for the four-pillar "replace AND beat" mission (PMAT-741).
     BeatBenchmark,
+    /// A fleet-operations contract (`metadata.kind: fleet-ops`). Held to one extra
+    /// rule, SCHEMA-026: it must carry a non-empty top-level `name:` (quorum ruling
+    /// A, pvname-20261107T0230Z). No other kind is required to.
+    FleetOps,
 }
 
 impl std::fmt::Display for ContractKind {
@@ -90,6 +94,7 @@ impl std::fmt::Display for ContractKind {
             Self::Schema => "schema",
             Self::Kaizen => "kaizen",
             Self::BeatBenchmark => "beat-benchmark",
+            Self::FleetOps => "fleet-ops",
         };
         write!(f, "{s}")
     }

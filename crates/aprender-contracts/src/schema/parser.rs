@@ -81,6 +81,7 @@ pub fn parse_contract_str(yaml: &str) -> Result<Contract, ContractError> {
     let mut contract: Contract = serde_yaml::from_str(yaml)?;
     contract.unknown_top_level_keys = unknown_top_level_keys(yaml);
     contract.kind_declared = kind_is_declared(yaml);
+    contract.name_declared = name_is_declared(yaml);
     contract.strict_yaml_error = strict_yaml_error(yaml);
     contract.falsification_tests_declared = top_level_key_written(yaml, "falsification_tests");
     contract.kaizen_record = kaizen_record(yaml, contract.kind())?;
@@ -132,6 +133,18 @@ fn unknown_top_level_keys(yaml: &str) -> Vec<String> {
     map.into_keys()
         .filter(|k| !CONTRACT_TOP_LEVEL_FIELDS.contains(&k.as_str()))
         .collect()
+}
+
+/// Is a non-empty string `name:` written at the top level? (SCHEMA-026)
+fn name_is_declared(yaml: &str) -> bool {
+    use std::collections::BTreeMap;
+    serde_yaml::from_str::<BTreeMap<String, serde_yaml::Value>>(yaml)
+        .ok()
+        .and_then(|m| {
+            m.get("name")
+                .and_then(|v| v.as_str().map(|s| !s.trim().is_empty()))
+        })
+        .unwrap_or(false)
 }
 
 /// Was `metadata.kind:` written in the document? (ONT-6b, infra#751)
