@@ -1,0 +1,3 @@
+{"data":{"repository":{"mergeQueue":{"entries":{"nodes":[
+{"pullRequest":{"number":200,"id":"PR_node_200","title":"feat: a","labels":{"nodes":[{"name":"P2"}]}},"position":2,"state":"AWAITING_CHECKS","headCommit":{"oid":"aaa"}},
+{"pullRequest":{"number":201,"id":"PR_node_201","title":"feat: x","labels":{"nodes":[{"name":"P2"}]}},"position":1,"state":"AWAITING_CHECKS","headCommit":{"oid":"bbb"}}]}},"milestones":{"nodes":[{"title":"0.67.0","pullRequests":{"nodes":[]}}]}}}}
