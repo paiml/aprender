@@ -4,7 +4,9 @@
 set -uo pipefail
 here=$(cd -- "$(dirname -- "$0")" && pwd)
 exp="$here/dogfood_nightly_explain.sh"
-t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+t=$(mktemp -d) || exit 1
+[ -n "$t" ] && [ -d "$t" ] || exit 1
+trap 'rm -rf -- "${t:?}"' EXIT
 fail=0
 chk() { # name, want-substring, got
   case "$3" in *"$2"*) echo "ok   $1" ;; *) echo "FAIL $1: wanted '$2' in: $3"; fail=1 ;; esac
