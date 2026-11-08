@@ -30,7 +30,7 @@ ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*[|)]' "$1" && grep -qE '/tmp/(\?)
 
 # fast behaviour: the cascade gate completes with a scratch dir outside /tmp
 # outside_tmp : a scratch base that is NOT under /tmp, so the base-only arm is what lets the guard pass
-outside_tmp() { mktemp -d -p "${XDG_CACHE_HOME:-$HOME/.cache}"; }
+outside_tmp() { local b=${XDG_CACHE_HOME:-$HOME/.cache}; mkdir -p "$b" && mktemp -d -p "$b"; }
 
 behave() {
     local d; d=$(outside_tmp); trap 'rm -rf "${d:?}"' RETURN
