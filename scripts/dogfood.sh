@@ -370,7 +370,7 @@ WORKLOG=$(mktemp -d)
 _rm_worklog() {
   local v="${WORKLOG:-}"
   case "$v" in
-    /tmp/?*|/var/folders/?*|/mnt/?*) ;;
+    /tmp/?*|/var/folders/?*|/mnt/?*|"${TMPDIR:-/tmp}"/?*) ;;
     *) return 0 ;;
   esac
   [ -n "$v" ] && [ "$v" != "/" ] || return 0
@@ -1791,7 +1791,7 @@ elif [ -f scripts/dogfood-use.sh ] || [ -f "$(git rev-parse --show-toplevel 2>/d
   WORK=$(mktemp -d)
   gate dogfood-use env BIN="$BINPATH" WORK="$WORK" bash "$DF_SCRIPT"
   case "${WORK:-}" in
-    /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$WORK" ] && [ "$WORK" != "/" ]; then rm -rf -- "$WORK" || :; fi ;;
+    /tmp/?*|/var/folders/?*|/mnt/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$WORK" ] && [ "$WORK" != "/" ]; then rm -rf -- "$WORK" || :; fi ;;
     *) : ;;
   esac
 else
