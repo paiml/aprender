@@ -295,7 +295,7 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    row 21 crates/facades own version is untouched by the workspace bump\n'
     else printf 'FAIL  row 21 crates/facades own version moved\n'; fails=1; fi
     # Row 22: no executable `cargo set-version` call remains (comments and printf text excluded).
-    if ! grep -E '^[[:space:]]*(if ! )?cargo set-version' "$0" | grep -q .; then
+    if ! grep -qE '^[[:space:]]*(if ! )?cargo set-version' "$0"; then
         printf 'ok    row 22 the bump does not invoke cargo set-version (cargo-edit)\n'
     else printf 'FAIL  row 22 the bump still invokes cargo set-version\n'; fails=1; fi
 
