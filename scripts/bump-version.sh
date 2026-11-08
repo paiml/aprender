@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # bump-version.sh — bump the release version across EVERY workspace, including
-# the one `cargo set-version --workspace` cannot reach.
+# the one a workspace-wide version edit cannot reach.
 #
 # WHY THIS EXISTS (aprender#2559)
 # -------------------------------
@@ -113,6 +113,27 @@ set_facade_pins() {  # root new_version
         n=$((n + 1))
     done < <(facade_pinned_manifests "$1")
     printf '%s\n' "$n"
+}
+
+# KZ-001/PMAT-6729: `cargo set-version` is a cargo-edit subcommand, not cargo; the release runner has
+# no cargo-edit, so the bump died with "is cargo-edit installed?" (Release Rehearsal 42478090078).
+# Edit the version with sed instead: no third-party dependency. Touches only (a) a bare
+# `version = "OLD"` line (workspace.package / package) and (b) the `version = "OLD"` field of an
+# intra-repo `path =` dependency line, in the root manifest and crates/*/Cargo.toml. crates/facades
+# is a separate workspace with its own version line (#2546) and is never visited here.
+set_workspace_version() {  # root new_version
+    local old f n=0
+    old="$(root_version "$1")"
+    [ -n "$old" ] || return 1
+    for f in "$1/Cargo.toml" "$1"/crates/*/Cargo.toml; do
+        [ -f "$f" ] || continue
+        case "$f" in */crates/facades/Cargo.toml) continue ;; esac
+        sed -i -E \
+            -e "s|^(version *= *\")$old(\")|\1$2\2|" \
+            -e "/path *= *\"/ s|(version *= *\")$old(\")|\1$2\2|" "$f"
+        n=$((n + 1))
+    done
+    [ "$n" -ge 1 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -254,8 +275,32 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'ok    row 17 the bump reports the regeneration\n'
     else printf 'FAIL  row 17 the bump no longer reports the regeneration\n'; fails=1; fi
 
+    # Rows 18-22: the workspace version is edited WITHOUT cargo-edit (the release runner has none).
+    mkdir -p "$TD/sv/crates/m1" "$TD/sv/crates/facades"
+    printf '[workspace.package]\nversion = "0.64.0"\n[workspace.dependencies]\nm1 = { path = "crates/m1", version = "0.64.0" }\nserde = { version = "0.64.0" }\n' > "$TD/sv/Cargo.toml"
+    printf '[package]\nname = "m1"\nversion = "0.64.0"\n[dependencies]\nm1x = { version = "0.64.0", path = "../m1x", package = "m1x" }\nthird = "0.64.0"\n' > "$TD/sv/crates/m1/Cargo.toml"
+    printf '[workspace.package]\nversion = "0.64.0"\n' > "$TD/sv/crates/facades/Cargo.toml"
+    set_workspace_version "$TD/sv" 0.65.0 >/dev/null 2>&1
+    if grep -q '^version = "0.65.0"' "$TD/sv/Cargo.toml" && grep -q '^version = "0.65.0"' "$TD/sv/crates/m1/Cargo.toml"; then
+        printf 'ok    row 18 workspace.package and member package versions are bumped\n'
+    else printf 'FAIL  row 18 a package version was not bumped\n'; fails=1; fi
+    if grep -q 'path = "crates/m1", version = "0.65.0"' "$TD/sv/Cargo.toml" \
+       && grep -q 'version = "0.65.0", path = "../m1x", package = "m1x"' "$TD/sv/crates/m1/Cargo.toml"; then
+        printf 'ok    row 19 path-dependency version fields are bumped in both key orders\n'
+    else printf 'FAIL  row 19 a path-dependency version was not bumped\n'; fails=1; fi
+    if grep -q 'serde = { version = "0.64.0" }' "$TD/sv/Cargo.toml" && grep -q 'third = "0.64.0"' "$TD/sv/crates/m1/Cargo.toml"; then
+        printf 'ok    row 20 a registry dependency that happens to share the number is untouched\n'
+    else printf 'FAIL  row 20 a non-path dependency was rewritten\n'; fails=1; fi
+    if [ "$(facade_own_version "$TD/sv")" = "0.64.0" ]; then
+        printf 'ok    row 21 crates/facades own version is untouched by the workspace bump\n'
+    else printf 'FAIL  row 21 crates/facades own version moved\n'; fails=1; fi
+    # Row 22: no executable `cargo set-version` call remains (comments and printf text excluded).
+    if ! grep -E '^[[:space:]]*(if ! )?cargo set-version' "$0" | grep -q .; then
+        printf 'ok    row 22 the bump does not invoke cargo set-version (cargo-edit)\n'
+    else printf 'FAIL  row 22 the bump still invokes cargo set-version\n'; fails=1; fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (17/17)\n'
+    printf '\nSELF-TEST PASSED (22/22)\n'
     exit 0
 fi
 
@@ -285,11 +330,14 @@ fi
 OLD_FACADE_OWN="$(facade_own_version "$REPO_ROOT")"
 printf '=== bumping to %s ===\n' "$NEW"
 
-printf -- '--- root workspace (cargo set-version --workspace) ---\n'
-# --manifest-path targets the root manifest directly, so this never has to
-# `cd` into $REPO_ROOT before the mutating command runs.
-if ! cargo set-version --manifest-path "$REPO_ROOT/Cargo.toml" --workspace "$NEW"; then
-    printf 'FAIL  cargo set-version failed (is cargo-edit installed?)\n' >&2
+printf -- '--- root workspace (version fields, no cargo-edit) ---\n'
+if ! set_workspace_version "$REPO_ROOT" "$NEW"; then
+    printf 'FAIL  could not rewrite the workspace version in %s/Cargo.toml\n' "$REPO_ROOT" >&2
+    exit 1
+fi
+# Refresh the lockfile for the new member versions; offline, no resolution change.
+if ! ( cd "$REPO_ROOT" && cargo update --workspace --offline ) >/dev/null 2>&1; then
+    printf 'FAIL  could not refresh Cargo.lock for %s\n' "$NEW" >&2
     exit 1
 fi
 
