@@ -644,7 +644,7 @@ receipt_gate() {
 selftest() {
     local tmp pass=0 fail=0
     tmp="$(mktemp -d)"
-    case "$tmp" in /tmp/*|/var/folders/*|/mnt/*) : ;; *) die_env "mktemp gave ${tmp:-<empty>}, refusing to rm -rf it" ;; esac
+    case "$tmp" in /tmp/*|/var/folders/*|/mnt/*|"${TMPDIR:-/tmp}"/?*) : ;; *) die_env "mktemp gave ${tmp:-<empty>}, refusing to rm -rf it" ;; esac
     # SEC011: the delete is guarded by the same case the creation was, and an
     # empty or root path is left alone rather than deleted carefully.
     _rm_scratch() {
@@ -652,7 +652,7 @@ selftest() {
         [ -n "$victim" ] || return 0
         [ "$victim" != "/" ] || return 0
         case "$victim" in
-            /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;;
+            /tmp/?*|/var/folders/?*|/mnt/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;;
             *) return 0 ;;
         esac
     }

@@ -253,7 +253,7 @@ selftest() {
   local pass=0 fail=0 td
   td="$(mktemp -d)" || return 2
   case "$td" in
-    /tmp/*|/var/folders/*) : ;;
+    /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
     *) printf 'refusing to rm -rf %s\n' "${td:-<empty>}" >&2; return 2 ;;
   esac
   trap 'rm -rf "${td:?}"' RETURN

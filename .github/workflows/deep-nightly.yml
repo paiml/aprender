@@ -64,6 +64,9 @@ jobs:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
+      - name: "Disk floor (label infra: disk, not a code failure; #6126)"
+        run: bash scripts/release/deep_disk_guard.sh
+
       - name: cargo test --doc --workspace (rc must be 0)
         run: |
           set -uo pipefail
@@ -95,6 +98,9 @@ jobs:
         env:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
+
+      - name: "Disk floor (label infra: disk, not a code failure; #6126)"
+        run: bash scripts/release/deep_disk_guard.sh
 
       - name: deep_nodefault_verdict.sh case table and mutants (#4871)
         run: |
@@ -132,6 +138,9 @@ jobs:
         env:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
+
+      - name: "Disk floor (label infra: disk, not a code failure; #6126)"
+        run: bash scripts/release/deep_disk_guard.sh
 
       - name: deep_bins_smoke.sh case table (hermetic)
         run: bash scripts/release/deep_bins_smoke.sh --self-test

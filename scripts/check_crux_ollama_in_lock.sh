@@ -56,7 +56,7 @@ _cleanup() {
     [ -f "$f" ] && p=$(cat "$f") && grep -aq stub_server.py "/proc/$p/cmdline" 2>/dev/null && kill "$p" 2>/dev/null
   done
   case "${TMP:-}" in
-    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
   esac
 }

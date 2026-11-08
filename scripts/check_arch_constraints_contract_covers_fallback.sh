@@ -77,7 +77,7 @@ PY
   # 4. an empty fallback is a decline, never a pass
   : > "$t/empty.rs"; compare "$YAML" "$t/empty.rs" >/dev/null; rc=$?
   [ $rc -eq 2 ] && echo "ok    empty fallback: decline (rc=2)" || { echo "FAIL  empty fallback rc=$rc (want 2)"; bad=1; }
-  case "$t" in /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$t" ] && [ "$t" != "/" ]; then rm -rf -- "$t" || :; fi ;; *) : ;; esac
+  case "$t" in /tmp/?*|/var/folders/?*|/mnt/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$t" ] && [ "$t" != "/" ]; then rm -rf -- "$t" || :; fi ;; *) : ;; esac
   echo "self-test: $([ $bad -eq 0 ] && echo PASS || echo FAIL)"; exit $bad
 fi
 compare "$YAML" "$FB"

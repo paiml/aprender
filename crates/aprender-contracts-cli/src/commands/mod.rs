@@ -4,6 +4,7 @@ pub mod census;
 pub mod certify;
 pub mod challenge;
 pub mod check_parity;
+pub mod check_symbolic;
 pub mod codegen;
 pub mod coq;
 pub mod coverage;

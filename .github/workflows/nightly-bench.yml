@@ -94,8 +94,8 @@ jobs:
         run: |
           set -o pipefail
           cargo test -p aprender-compute --lib issue_2567_measure --release \
-            -- --ignored --nocapture 2>&1 | tee /tmp/bench.log
-          grep -q '^speedup' /tmp/bench.log || {
+            -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP"/bench.log
+          grep -q '^speedup' "$RUNNER_TEMP"/bench.log || {
             echo "::error::the measurement produced no speedup line — silence is red"
             exit 1
           }

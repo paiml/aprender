@@ -29,7 +29,7 @@ echo "=== cascade clean-room gate (check_cascade_clean_room_gate.sh) ==="
 
 WORK=$(mktemp -d)
 case "$WORK" in
-  /tmp/*|/var/folders/*) : ;;
+  /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
   *) echo "FAIL: mktemp -d returned an unexpected path '$WORK'; refusing to clean up"; exit 1 ;;
 esac
 trap 'rm -rf "${WORK:?}"' EXIT

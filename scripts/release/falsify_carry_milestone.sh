@@ -6,7 +6,7 @@
 set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 SUBJECT="${CARRY_SCRIPT:-$HERE/carry_milestone.sh}"
-TMP=$(mktemp -d) || exit 2
+TMP=$(mktemp -d -p "${RUNNER_TEMP:-${TMPDIR:-/tmp}}") || exit 2
 trap 'rm -rf -- "${TMP:?}"' EXIT
 cat > "$TMP/gh" <<'FAKE'
 #!/usr/bin/env bash
