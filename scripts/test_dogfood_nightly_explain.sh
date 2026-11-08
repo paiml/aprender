@@ -13,7 +13,7 @@ chk() { # name, want-substring, got
 }
 printf 'noise\nNO-GO — these gates are RED:\n  · fmt                      cargo fmt dirty\nVERDICT: NO-GO\n' > "$t/nogo.log"
 out=$(bash "$exp" "$t/nogo.log" 1 2>&1)
-chk nogo-gate "fmt" "$out"; chk nogo-reason "cargo fmt dirty" "$out"; chk nogo-rc "rc=1" "$out"
+chk nogo-branch "failing gates:" "$out"; chk nogo-gate "fmt" "$out"; chk nogo-reason "cargo fmt dirty" "$out"; chk nogo-rc "rc=1" "$out"
 printf 'building...\nsome tool crashed\n' > "$t/crash.log"
 out=$(bash "$exp" "$t/crash.log" 1 2>&1)
 chk crash-says-noverdict "no VERDICT line" "$out"; chk crash-tail "some tool crashed" "$out"
