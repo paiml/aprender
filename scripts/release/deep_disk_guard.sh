@@ -58,6 +58,12 @@ CASES
     [ "$(cat "$ge")" = "TMPDIR=/r" ] || { echo "FAIL self-test: export_tmp must write TMPDIR=/r"; rc=1; }
     rm -f "${ge:?}"
     guard 0 > /dev/null 2>&1 || { echo "FAIL self-test: floor 0 must pass"; rc=1; }
+    # guard() must measure the dir resolve_tmp names (#6797): with TMPDIR unset it reads RUNNER_TEMP, not /tmp.
+    # Capture to a variable, not `| grep -q`: grep exiting early SIGPIPEs guard's next printf under pipefail.
+    rt=$(mktemp -d) && [ -d "$rt" ] || { echo "FAIL self-test: mktemp"; exit 1; }
+    go=$(unset TMPDIR; RUNNER_TEMP=$rt guard 0 2>&1)
+    case "$go" in *"TMPDIR   "*" at $rt "*) ;; *) echo "FAIL self-test: guard must measure RUNNER_TEMP when TMPDIR is unset"; rc=1 ;; esac
+    rmdir -- "${rt:?}"
     guard 99999999 > /dev/null 2>&1; g=$?
     [ "$g" -eq 3 ] || { echo "FAIL self-test: impossible floor must exit 3, got $g"; rc=1; }
     [ "$rc" -eq 0 ] && echo "self-test: PASS"
