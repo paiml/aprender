@@ -23,7 +23,8 @@ FILES=(scripts/check_cascade_clean_room_gate.sh scripts/check_comparator_one_cli
     scripts/check_serve_probe_evidence.sh scripts/check_tokenizer_nonascii_parity.sh
     scripts/ci/nextest_list_wrapper.sh scripts/dogfood_surfaces.sh scripts/lab/comparative_regex_agreement.sh
     scripts/lint_ratchet.sh scripts/parity_receipt_denominator.sh scripts/check_tool_versions.sh
-    scripts/tests/model_ladder_diagnostic_not_truncated_test.sh)
+    scripts/tests/model_ladder_diagnostic_not_truncated_test.sh
+    scripts/dogfood.sh scripts/publish/albor-370m-publish-readiness.sh)
 
 # ok <file> : a case arm lists "${TMPDIR:-/tmp}", and the /tmp arm is still there
 ok() { grep -qE '\|"\$\{TMPDIR:-/tmp\}"/(\?)?\*[|)]' "$1" && grep -qE '/tmp/(\?)?\*' "$1" && ! grep -E 'case .* in /tmp/\*' "$1" | grep -qv TMPDIR; }
