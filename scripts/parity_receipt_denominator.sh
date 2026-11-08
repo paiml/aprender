@@ -228,7 +228,7 @@ discard_tempdir() {
     [ -n "$dir" ] || return 0
     [ -d "$dir" ] || return 0
     case "$dir" in
-        /tmp/*|/var/folders/*) : ;;
+        /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/folders/*) : ;;
         *) printf 'refusing to remove %s: not a temp directory this script made\n' "$dir" >&2; return 0 ;;
     esac
     rm -rf -- "$dir"
