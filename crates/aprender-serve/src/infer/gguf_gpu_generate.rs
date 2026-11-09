@@ -2007,4 +2007,16 @@ mod forced_gpu_refusal_4969_tests {
             assert_eq!(calls.get(), 1, "{why}");
         }
     }
+
+    /// #6588: the F-GPU-GATE criteria line states its count again, and the count is the
+    /// falsifier list's length, so a falsifier added or dropped without the line fails here.
+    #[test]
+    fn gpu_backend_contract_criteria_count_matches_falsifiers() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/aprender/apr-gpu-backend-v1.yaml");
+        let c = provable_contracts::schema::parse_contract(&path).expect("parse apr-gpu-backend-v1");
+        let criteria = c.qa_gate.and_then(|g| g.pass_criteria).expect("qa_gate.pass_criteria");
+        let want = format!("All {} falsification tests pass", c.falsification_tests.len());
+        assert_eq!(criteria, want, "{}", path.display());
+    }
 }
