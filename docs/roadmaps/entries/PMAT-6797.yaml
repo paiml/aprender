@@ -1,7 +1,7 @@
 - id: PMAT-6797
   github_issue: 6797
   item_type: task
-  title: deep_disk_guard measures the temp volume: self-test pins guard() call site
+  title: 'deep_disk_guard measures the temp volume: self-test pins guard() call site'
   status: planned
   priority: high
   assigned_to: null
