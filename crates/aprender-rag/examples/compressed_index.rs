@@ -86,7 +86,7 @@ fn demo_compression_comparison() -> aprender_rag::Result<()> {
     }
 
     // Get uncompressed size (bincode)
-    let uncompressed = bincode::serialize(&index).expect("serialize");
+    let uncompressed = aprender_legacy_codec::serialize(&index).expect("serialize");
     let lz4_bytes = index.to_compressed_bytes(Compression::Lz4)?;
     let zstd_bytes = index.to_compressed_bytes(Compression::Zstd)?;
 

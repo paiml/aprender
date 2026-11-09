@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # one_command.sh -- one-command release (KZ-001 b, aprender#6729). Called by .github/workflows/release.yml.
-#   one_command.sh <X.Y.Z> [dry_run 0|1]
+#   one_command.sh <X.Y.Z> [dry_run 0|1] <green-nightly-sha>   (T5: arg 3 is required; never main HEAD)
 # bump on release/X.Y.Z -> clean-room (infra) on THAT sha -> tag that sha -> publish. Fail-closed: no verdict,
 # a red verdict, or a verdict on another sha means no tag and no publish. dry_run stops after the bump (WOULD lines).
 # Never --force, never --no-verify, no tag delete or move. Seams for the case table: ONE_CMD_{BUMP,ARM,PUBLISH,POLL}.
@@ -12,7 +12,12 @@ BUMP="${ONE_CMD_BUMP:-bash scripts/bump-version.sh}"; PUBLISH="${ONE_CMD_PUBLISH
 ARM="${ONE_CMD_ARM:-bash scripts/hooks/pre-push-tags.sh --arm-release}"
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }  # bashrs disable-line=DET002
 die() { say "STOP $*"; exit 1; }
-git checkout -q -b "$BR" || die "cannot create $BR"
+# APR-RELEASE-TRAIN T5: the release builds from the green nightly sha it is handed (arg 3), never main HEAD, so
+# feature PRs keep merging while it runs. NEXTDEV opens the X.(Y+1).0-dev bump on main the moment the tag is pushed.
+BASE="${3:-}"; NEXTDEV="${ONE_CMD_NEXTDEV:-bash scripts/release/next_dev_bump.sh}"
+[[ $BASE =~ ^[0-9a-f]{40}$ ]] || { echo "STOP no green nightly sha (arg 3, 40 hex); a release never builds from main HEAD" >&2; exit 2; }
+git merge-base --is-ancestor "$BASE" origin/main || die "$BASE is not on origin/main"
+git checkout -q -b "$BR" "$BASE" || die "cannot create $BR at $BASE"
 $BUMP "$V" || die "bump $V failed"
 git commit -q -am "chore(release): bump to $V" || die "bump commit failed"
 SHA=$(git rev-parse HEAD) || die "no sha"
@@ -43,5 +48,7 @@ git tag -a "$T" -m "aprender $T" "$SHA" || die "tag failed"
 $ARM "$T" 120 || die "arming $T failed"
 git push origin "$T" || die "tag push failed"
 say "TAG $T at $SHA"
+late=0; $NEXTDEV "$V" || { say "ANDON next-dev bump after $T failed; publish continues"; late=1; }
 $PUBLISH || die "publish failed after tag $T (tag stays; crates.io is the truth)"
 say "PUBLISHED $T"
+[ "$late" = 0 ] || die "published $T, but the next-dev bump PR was not opened"
