@@ -58,7 +58,7 @@ pub(crate) fn simd_dot_f32(a: &[f32], b: &[f32]) -> f32 {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") && a.len() >= 8 {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") && a.len() >= 8 {
             // SAFETY: AVX2+FMA verified by is_x86_feature_detected!, len >= 8 checked above
             return unsafe { simd_dot_f32_avx2(a, b) };
         }
@@ -122,7 +122,7 @@ pub(crate) fn simd_add_weighted(out: &mut [f32], val: &[f32], weight: f32) {
 
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") && out.len() >= 8 {
+        if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") && out.len() >= 8 {
             // SAFETY: is_x86_feature_detected! ensures CPU supports AVX2/FMA before calling
             unsafe { simd_add_weighted_avx2(out, val, weight) };
             return;
@@ -554,7 +554,7 @@ mod determinism_tests {
     fn falsify_ffn_gguf_006_simd_vs_scalar_reduction_order_byte_identity() {
         // Skip if AVX2+FMA not available — the test requires both paths
         // to be exercised and only AVX2 hosts have both.
-        if !is_x86_feature_detected!("avx2") || !is_x86_feature_detected!("fma") {
+        if !crate::isa::cpu_feature!("avx2") || !crate::isa::cpu_feature!("fma") {
             eprintln!(
                 "FALSIFY-FFN-GGUF-006: skipped — host lacks AVX2+FMA (required for SIMD path)"
             );

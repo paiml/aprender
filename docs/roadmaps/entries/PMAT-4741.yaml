@@ -1,0 +1,22 @@
+- id: PMAT-4741
+  github_issue: 4741
+  item_type: task
+  title: 'PY-PORT-2: port publishable_crates / package_include_diff / coverage_report_scope to Rust (C301)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-w4664
+  created: 2026-10-04T17:05:00Z
+  updated: 2026-10-04T17:05:00Z
+  spec: null
+  acceptance_criteria:
+  - crates/aprender-ci-tools builds with publish = false. It has one clap-derive bin with subcommands publishable-crates, package-include-diff and coverage-report-scope, ported from scripts/lib/publishable_crates.py, scripts/lib/package_include_diff.py and scripts/coverage_report_scope.py
+  - scripts/tests/ci_tools_py_parity_test.sh runs every case through the .py original (as external validator) and the Rust bin. stdout is byte-identical and success or failure agrees, including on live `cargo metadata`. The argv forms where clap deliberately differs (--help/--version exit 0, --exclude=NAME accepted, extra positionals refused) are listed in the crate README and are out of parity scope. A planted mismatch must be detected, and a run of fewer cases than declared fails
+  - contracts/binary-debt-v1.yaml has a KEEP row for the bin. The crate has a README linking paiml/aprender, and readme_contract and check_binary_debt.sh are green
+  - 'FALSIFY-MONO-011: aprender-ci-tools is added to the [[bin]] allowlist with ALLOWLIST_BASELINE 27 -> 28, in its own commit (sign-off row 38: loosens a shrink-only list, so it waits for operator sign-off and can be reverted alone)'
+  - Out of scope - switching any caller (Makefile, scripts/*.sh) to the bin; CI behaviour is unchanged by this ticket
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:tooling
+  notes: 'Ruled by aprender-a7 (PY-PORT decision; MONO-011 option A as sign-off row 38). Branch-only, no PR.'

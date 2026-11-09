@@ -23,6 +23,12 @@ fn verify_architecture_from_tensor_evidence<S: AsRef<str>>(
     tensor_names: impl Iterator<Item = S>,
     user_specified: bool,
 ) -> Architecture {
+    // APR-EMBED-001 EG-6: EmbeddingGemma 2 carries QK norm too. Its exact
+    // `general.architecture` string is the evidence, and Qwen3 naming would
+    // mangle it.
+    if metadata_arch == Architecture::EmbeddingGemma2 {
+        return metadata_arch;
+    }
     let mut has_qk_norm = false;
     let mut has_attn_bias = false;
 

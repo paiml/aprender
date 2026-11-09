@@ -59,7 +59,7 @@ fn main() {
             let size = std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
             println!("  [OK] {name} ({} bytes)", size);
         } else {
-            println!("  [MISSING] {name}");
+            println!("  [MISSING] {name} not found at {path}");
             missing.push(name);
         }
     }

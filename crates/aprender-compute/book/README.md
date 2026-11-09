@@ -78,6 +78,6 @@ All documentation should:
 
 The book is automatically deployed to GitHub Pages on every push to `main`:
 
-<https://paiml.github.io/trueno/>
+<https://github.com/paiml/aprender/tree/main/crates/aprender-compute/book>
 
 CI workflow: `.github/workflows/mdbook.yml`

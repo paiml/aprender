@@ -9,6 +9,8 @@ pub mod commands;
 pub mod contract_walk;
 pub mod json_obj;
 pub mod query_args;
+pub mod readme_cmd;
+pub mod yaml;
 
 // `PathBuf` is imported rather than fully qualified because the `#[cfg(test)]`
 // include modules below open with `use super::*` and take it from here — as
@@ -167,7 +169,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             binding,
             readme,
             ci,
-        } => commands::generate::run(&contract, &output, binding.as_deref(), readme, ci),
+            dry_run,
+        } => commands::generate::run(&contract, &output, binding.as_deref(), readme, ci, dry_run),
         Commands::Graph {
             contract_dir,
             format,
@@ -175,6 +178,9 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             Ok(fmt) => commands::graph::run(&contract_dir, fmt),
             Err(e) => Err(e.into()),
         },
+        Commands::CheckSymbolic { contract, json } => {
+            commands::check_symbolic::run(&contract, json)
+        }
         Commands::Equations { contract, format } => {
             match commands::equations::OutputFormat::from_str(&format) {
                 Ok(fmt) => commands::equations::run(&contract, fmt),
@@ -225,6 +231,7 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             explain,
             watch,
             strict_test_binding,
+            strict_test_binding_only,
             armed_baseline_ref,
             gate,
             shape,
@@ -257,7 +264,8 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
                 crate_dir.as_deref(),
                 min_level.as_deref(),
                 watch,
-                strict_test_binding,
+                strict_test_binding || strict_test_binding_only,
+                strict_test_binding_only,
                 armed_baseline_ref.as_deref(),
                 &gate,
                 commands::lint::shapes_options(
@@ -333,11 +341,13 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             output,
             update_summary,
             summary_path,
+            dry_run,
         } => commands::book::run(
             &contract_dir,
             &output,
             update_summary,
             summary_path.as_deref(),
+            dry_run,
         ),
         Commands::Infer {
             crate_dir,
@@ -346,7 +356,11 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             top,
         } => commands::infer::run(&crate_dir, &binding, &contract_dir, top),
         Commands::Obligations { root, gate } => commands::obligations::run(&root, gate),
-        Commands::Unlock { contract, reason } => commands::unlock::run(&contract, &reason),
+        Commands::Unlock {
+            contract,
+            reason,
+            dry_run,
+        } => commands::unlock::run(&contract, &reason, dry_run),
         Commands::Roofline {
             contract_dir,
             params,

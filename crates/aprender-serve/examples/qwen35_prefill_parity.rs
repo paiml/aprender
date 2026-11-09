@@ -64,7 +64,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 5 {
         eprintln!(
-            "usage: qwen35_prefill_parity <model.gguf> <n_tokens> <stride> <out.json> [ids.txt]"
+            "Usage: qwen35_prefill_parity <model.gguf> <n_tokens> <stride> <out.json> [ids.txt]"
         );
         std::process::exit(2);
     }

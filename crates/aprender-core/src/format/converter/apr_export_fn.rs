@@ -226,6 +226,9 @@ fn try_raw_gguf_passthrough(
     {
         return Ok(None);
     }
+    if let Some(report) = try_gguf_kv_verbatim_export(input_path, output_path)? {
+        return Ok(Some(report));
+    }
     match detect_apr_quantization(input_path) {
         Some(detected) => {
             eprintln!(

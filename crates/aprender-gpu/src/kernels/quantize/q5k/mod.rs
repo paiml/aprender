@@ -24,4 +24,4 @@ mod gemv;
 
 pub use dequant::Q5KDequantKernel;
 pub use gemm::Q5KKernel;
-pub use gemv::Q5KGemvKernel;
+pub use gemv::{BatchedQ5KGemvKernel, Q5KGemvKernel};

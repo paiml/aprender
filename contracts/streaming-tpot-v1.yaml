@@ -57,6 +57,11 @@ falsification_tests:
   prediction: Streaming and non-streaming produce identical output text
   test: Send same prompt with stream:true and stream:false, compare
   if_fails: Streaming tokenization differs from batch response
+- id: FALSIFY-ST-004
+  rule: Open-loop phase scheduling
+  prediction: run_phase_rate keeps in-flight requests <= concurrency, paces Constant at 1/rate, cycles prompts round-robin, and records HTTP errors as failed records
+  test: cargo test -p aprender-test-lib --lib run_phase_rate (loopback server; inverting the semaphore size or the Constant delay turns 5 of 7 RED)
+  if_fails: Load generator over-drives the server or mislabels failures, so latency and throughput numbers are wrong
 kani_harnesses:
 - id: KANI-ST-001
   obligation: TPOT computed from streaming data
@@ -87,5 +92,5 @@ qa_gate:
   - tpot_nonzero
   - ttft_separable
   - content_parity
-  pass_criteria: All 3 falsification tests pass + TPOT P50 > 0
+  pass_criteria: All 4 falsification tests pass + TPOT P50 > 0
   falsification: Disable streaming — verify TPOT drops to 0

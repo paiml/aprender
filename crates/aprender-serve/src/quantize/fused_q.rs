@@ -127,7 +127,7 @@ pub fn fused_q4k_q8k_parallel_matvec_into(
     // Check if we can use the optimized 4-row micro-kernel
     #[cfg(target_arch = "x86_64")]
     let use_4row_kernel =
-        is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni");
+        crate::isa::cpu_feature!("avx512f") && crate::isa::cpu_feature!("avx512vnni");
     #[cfg(not(target_arch = "x86_64"))]
     let use_4row_kernel = false;
 

@@ -258,6 +258,17 @@ falsification_tests:
       MEASURED 2026-09-22 (#3839). MUTANT D, widening the macro-body window
       from 20 to 30 lines: 1 row RED. The window is load-bearing and invisible —
       adding comments above a predicate demotes the macro.
+  - id: FALSIFY-PV-SURFACE-012
+    rule: "pv lint --explain gives each rule category its own guidance (#5554)"
+    prediction: >
+      write_explain prints the rule header, category and default severity, then
+      WHY IT MATTERS, HOW TO FIX and REFERENCES in that order, with the guidance
+      text of the rule's own category and no other; an unknown rule id writes
+      nothing and returns false so print_explain can exit 1.
+    test_harness: "cargo test -p aprender-contracts-cli --lib lint_render::tests"
+    expected_output: "4 passed on an unmutated tree"
+    if_fails: "pv lint --explain tells the operator the wrong remediation for a rule."
+
 
 qa_gate:
   id: F-PV-SURFACE-001
@@ -269,6 +280,6 @@ qa_gate:
     - "advertised_implies_reachable"
     - "unusable_input_is_rejected"
   pass_criteria: >
-    All 11 falsification tests pass via
+    All 12 falsification tests pass via
     `cargo test -p aprender-contracts-cli --test pv_surface_gate`, which is wired
     into the required `workspace-test` integration step in .github/workflows/ci.yml.

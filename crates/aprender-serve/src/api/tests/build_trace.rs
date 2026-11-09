@@ -280,6 +280,7 @@ fn test_chat_completion_chunk_serde() {
             delta: ChatDelta {
                 role: Some("assistant".to_string()),
                 content: Some("Hello".to_string()),
+                tool_calls: None,
             },
             finish_reason: None,
         }],
@@ -334,6 +335,7 @@ fn test_chat_chunk_choice_serde() {
         delta: ChatDelta {
             role: None,
             content: Some("world".to_string()),
+            tool_calls: None,
         },
         finish_reason: Some("stop".to_string()),
     };
@@ -351,6 +353,7 @@ fn test_chat_chunk_choice_debug() {
         delta: ChatDelta {
             role: Some("user".to_string()),
             content: None,
+            tool_calls: None,
         },
         finish_reason: None,
     };
@@ -364,6 +367,7 @@ fn test_chat_delta_serde() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
         content: Some("response".to_string()),
+        tool_calls: None,
     };
     let json = serde_json::to_string(&delta).expect("JSON serialization failed");
     assert!(json.contains("assistant"));
@@ -377,6 +381,7 @@ fn test_chat_delta_debug() {
     let delta = ChatDelta {
         role: None,
         content: Some("text".to_string()),
+        tool_calls: None,
     };
     let debug = format!("{:?}", delta);
     assert!(debug.contains("ChatDelta"));
@@ -387,6 +392,7 @@ fn test_chat_delta_clone() {
     let delta = ChatDelta {
         role: Some("user".to_string()),
         content: Some("hello".to_string()),
+        tool_calls: None,
     };
     let cloned = delta.clone();
     assert_eq!(cloned.role.as_deref(), Some("user"));

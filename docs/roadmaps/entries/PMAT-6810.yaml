@@ -1,0 +1,18 @@
+- id: PMAT-6810
+  github_issue: 6810
+  item_type: epic
+  title: 'Red nightlies deep/dogfood/conleche/provable-ladder: five-whys'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null

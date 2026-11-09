@@ -2,8 +2,8 @@
 
 Pure Rust PTX generation for NVIDIA CUDA - no LLVM, no nvcc, no external dependencies.
 
-[![Crates.io](https://img.shields.io/crates/v/trueno-gpu.svg)](https://crates.io/crates/trueno-gpu)
-[![Documentation](https://docs.rs/trueno-gpu/badge.svg)](https://docs.rs/trueno-gpu)
+[![Crates.io](https://img.shields.io/crates/v/aprender-gpu.svg)](https://crates.io/crates/aprender-gpu)
+[![Documentation](https://docs.rs/aprender-gpu/badge.svg)](https://docs.rs/aprender-gpu)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 ## Philosophy
@@ -74,4 +74,4 @@ MIT License - see [LICENSE](../../../../LICENSE) for details.
 
 ## Part of Trueno
 
-This crate is part of the [Trueno](https://github.com/paiml/trueno) high-performance compute library.
+This crate is part of the [Trueno](https://github.com/paiml/aprender/tree/main/crates/aprender-compute) high-performance compute library.

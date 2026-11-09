@@ -110,6 +110,20 @@ pub(crate) fn preflight_context(context: Option<usize>, prompt_tokens: usize) ->
     }
 }
 
+/// The token ids a native generate route stops on (aprender#4345).
+///
+/// The model's EOS, or the vocabulary's fallback for it, plus every
+/// end-of-generation marker the vocabulary has. A Qwen instruct GGUF declares
+/// `<|im_end|>` as EOS, yet a raw prompt ends with `<|endoftext|>`, so a route
+/// that stopped on the EOS alone ran past the answer to `max_tokens`. One
+/// function, so the quantized and the CUDA backends cannot drift apart again.
+pub(crate) fn generate_stop_tokens(tokenizer: &BPETokenizer, model_eos: Option<u32>) -> Vec<u32> {
+    crate::api::realize_handlers::completion_stop_tokens(
+        tokenizer,
+        Some(eos_id(tokenizer, model_eos)),
+    )
+}
+
 /// Build the quantized engine config shared by `/generate` and `/batch/generate`.
 ///
 /// `cancel` is the request's [`CancelToken`] (aprender#2376(3)). It is a required
@@ -131,10 +145,7 @@ fn quantized_config(
         temperature,
         top_k: sampling.top_k,
         top_p: sampling.top_p,
-        stop_tokens: crate::api::realize_handlers::completion_stop_tokens(
-            tokenizer,
-            Some(eos_id(tokenizer, state.model_eos_token_id())),
-        ), // aprender#4345
+        stop_tokens: generate_stop_tokens(tokenizer, state.model_eos_token_id()),
         trace: state.is_trace_enabled(),
         cancel: cancel.clone(),
         ..Default::default()
@@ -232,8 +243,10 @@ async fn try_apr_q4k_generate(
     let (response_tx, response_rx) = tokio::sync::oneshot::channel();
 
     // ALB-109: Get EOS token IDs from model config or tokenizer.
-    // Qwen3 uses 151643 (<|endoftext|>), not the default 0/2.
-    let eos_ids = state.model_eos_ids();
+    // Qwen3 uses 151643 (<|endoftext|>), not the default 0/2. aprender#4345:
+    // plus every EOG marker the vocabulary has.
+    let eos_ids =
+        crate::api::realize_handlers::eos_ids_with_eog(&tokenizer, state.model_eos_ids());
 
     q4k_tx
         .send(AprQ4kRequest {

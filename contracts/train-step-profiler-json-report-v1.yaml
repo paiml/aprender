@@ -1,0 +1,37 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  description: "PMAT-483 StepProfiler::json_report — the structured profiling report is None before any step, carries steps/avg_step_ms/wall_coverage, classifies the bottleneck as transfer (>30% H2D) / launch (<20% forward) / memory_bw, reports gemm_pct, and lists only non-zero ops."
+  kind: pattern
+  references:
+    - "crates/aprender-train/src/train/transformer_trainer/step_profiler.rs — json_report, print_json_report"
+    - "aprender#5536 — sibling classify_trainer coverage tickets (different function)"
+
+equations:
+  json_report_classifies_and_omits_zero:
+    formula: "report == None iff step_count == 0; bottleneck == transfer if (h2d+grad_h2d)/wall > 0.30 else launch if forward/wall < 0.20 else memory_bw; ops lists exactly the ops with time > 0"
+    domain: "a StepProfiler with accumulated totals"
+    codomain: "Option<String> JSON"
+    invariants:
+      - "A zero wall never divides: percentages and coverage read 0"
+      - "print_json_report only forwards json_report() to stderr"
+
+proof_obligations:
+  - id: TSP-INV-001
+    type: invariant
+    property: "Bottleneck thresholds are 30% transfer then 20% forward"
+    formal: "∀ t ∈ {test_json_report_bottleneck_classification}: exit(t) = 0"
+    applies_to: json_report_classifies_and_omits_zero
+  - id: TSP-INV-002
+    type: invariant
+    property: "gemm_pct counts forward and backward GEMM ops; zero ops are omitted"
+    formal: "∀ t ∈ {test_json_report_gemm_pct_and_nonzero_ops_only}: exit(t) = 0"
+    applies_to: json_report_classifies_and_omits_zero
+
+falsification_tests:
+  - id: FALSIFY-TSP-001
+    rule: "bottleneck thresholds shifted"
+    prediction: "moving 30.0 to 40.0 and 20.0 to 5.0 turns the classification test RED"
+    test: "cargo test -p aprender-train --lib test_json_report_bottleneck_classification"
+    if_fails: "bottleneck thresholds are unguarded"

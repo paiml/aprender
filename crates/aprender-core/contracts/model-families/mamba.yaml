@@ -74,3 +74,25 @@ shape_template:
 quantizations:
   - f16
   - f32
+
+falsification_tests:
+  - id: FALSIFY-MF-MAMBA-001
+    description: "every mamba size variant declares nonzero dimensions"
+    test: "cargo test -p aprender-core --lib falsify_mf_001_positive_dimensions"
+    prediction: "load_all_families loads mamba.yaml and none of its size variants has a zero hidden_dim, num_layers, num_heads, num_kv_heads, intermediate_dim, vocab_size or head_dim"
+    if_fails: "a mamba size variant declares a zero dimension"
+  - id: FALSIFY-MF-MAMBA-002
+    description: "every mamba size variant divides its query heads evenly into KV groups"
+    test: "cargo test -p aprender-core --lib falsify_mf_002_gqa_divisibility"
+    prediction: "for every mamba size variant, num_heads % num_kv_heads == 0"
+    if_fails: "a mamba size variant has a head count the GQA kernel cannot group"
+  - id: FALSIFY-MF-MAMBA-003
+    description: "mamba.yaml loads through the family loader with every required field"
+    test: "cargo test -p aprender-core --lib falsify_mf_004_schema_completeness"
+    prediction: "load_family_yaml parses mamba.yaml without error and the result has a family, vendor, architectures and at least one size variant"
+    if_fails: "mamba.yaml is missing a required field or no longer parses"
+  - id: FALSIFY-MF-MAMBA-004
+    description: "no mamba size variant has more KV heads than query heads"
+    test: "cargo test -p aprender-core --lib falsify_mf_008_kv_heads_le_q_heads"
+    prediction: "for every mamba size variant, num_kv_heads <= num_heads"
+    if_fails: "a mamba size variant declares more KV heads than query heads"

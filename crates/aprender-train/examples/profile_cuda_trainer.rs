@@ -95,6 +95,6 @@ fn main() {
 
 #[cfg(not(feature = "cuda"))]
 fn main() {
-    eprintln!("This example requires --features cuda");
+    eprintln!("This example requires the 'cuda' feature (--features cuda)");
     std::process::exit(1);
 }

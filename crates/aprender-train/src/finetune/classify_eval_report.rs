@@ -1190,60 +1190,7 @@ pub fn evaluate_checkpoint(
             }
         };
 
-        // Load trained LoRA + classifier weights from checkpoint
-        let st_path = checkpoint_dir.join("model.safetensors");
-        let st_data = std::fs::read(&st_path).map_err(|e| {
-            crate::Error::Io(format!("Failed to read checkpoint model.safetensors: {e}"))
-        })?;
-        let tensors = safetensors::SafeTensors::deserialize(&st_data).map_err(|e| {
-            crate::Error::Serialization(format!("Failed to deserialize checkpoint: {e}"))
-        })?;
-
-        // Restore classifier head weights
-        if let Ok(w) = tensors.tensor("classifier.weight") {
-            let w_data: &[f32] = bytemuck::cast_slice(w.data());
-            pipe.classifier
-                .weight
-                .data_mut()
-                .as_slice_mut()
-                .expect("contiguous classifier.weight")
-                .copy_from_slice(w_data);
-        }
-        if let Ok(b) = tensors.tensor("classifier.bias") {
-            let b_data: &[f32] = bytemuck::cast_slice(b.data());
-            pipe.classifier
-                .bias
-                .data_mut()
-                .as_slice_mut()
-                .expect("contiguous classifier.bias")
-                .copy_from_slice(b_data);
-        }
-
-        // Restore LoRA adapter weights (convention: 2 per layer, Q=even V=odd)
-        for (idx, lora) in pipe.lora_layers.iter_mut().enumerate() {
-            let layer = idx / 2;
-            let proj = if idx % 2 == 0 { "q" } else { "v" };
-
-            if let Ok(a) = tensors.tensor(&format!("lora.{layer}.{proj}_proj.lora_a")) {
-                let a_data: &[f32] = bytemuck::cast_slice(a.data());
-                lora.lora_a_mut()
-                    .data_mut()
-                    .as_slice_mut()
-                    .expect("contiguous lora_a")
-                    .copy_from_slice(a_data);
-            }
-            if let Ok(b) = tensors.tensor(&format!("lora.{layer}.{proj}_proj.lora_b")) {
-                let b_data: &[f32] = bytemuck::cast_slice(b.data());
-                lora.lora_b_mut()
-                    .data_mut()
-                    .as_slice_mut()
-                    .expect("contiguous lora_b")
-                    .copy_from_slice(b_data);
-            }
-        }
-
-        let loaded_count = tensors.names().len();
-        println!("Restored {loaded_count} tensors from checkpoint");
+        restore_checkpoint_weights(&mut pipe, checkpoint_dir)?;
         pipe
     } else {
         // Full model checkpoint: load directly
@@ -1283,4 +1230,68 @@ pub fn evaluate_checkpoint(
         label_names,
         start.elapsed().as_millis() as u64,
     ))
+}
+
+/// Restore the classifier head and Q/V LoRA adapter weights from
+/// `<checkpoint_dir>/model.safetensors` into `pipe`.
+///
+/// Tensors absent from the file leave the pipeline's current values untouched.
+pub(crate) fn restore_checkpoint_weights(
+    pipe: &mut ClassifyPipeline,
+    checkpoint_dir: &Path,
+) -> crate::Result<()> {
+    let st_path = checkpoint_dir.join("model.safetensors");
+    let st_data = std::fs::read(&st_path).map_err(|e| {
+        crate::Error::Io(format!("Failed to read checkpoint model.safetensors: {e}"))
+    })?;
+    let tensors = safetensors::SafeTensors::deserialize(&st_data).map_err(|e| {
+        crate::Error::Serialization(format!("Failed to deserialize checkpoint: {e}"))
+    })?;
+
+    // Restore classifier head weights
+    if let Ok(w) = tensors.tensor("classifier.weight") {
+        let w_data: &[f32] = bytemuck::cast_slice(w.data());
+        pipe.classifier
+            .weight
+            .data_mut()
+            .as_slice_mut()
+            .expect("contiguous classifier.weight")
+            .copy_from_slice(w_data);
+    }
+    if let Ok(b) = tensors.tensor("classifier.bias") {
+        let b_data: &[f32] = bytemuck::cast_slice(b.data());
+        pipe.classifier
+            .bias
+            .data_mut()
+            .as_slice_mut()
+            .expect("contiguous classifier.bias")
+            .copy_from_slice(b_data);
+    }
+
+    // Restore LoRA adapter weights (convention: 2 per layer, Q=even V=odd)
+    for (idx, lora) in pipe.lora_layers.iter_mut().enumerate() {
+        let layer = idx / 2;
+        let proj = if idx % 2 == 0 { "q" } else { "v" };
+
+        if let Ok(a) = tensors.tensor(&format!("lora.{layer}.{proj}_proj.lora_a")) {
+            let a_data: &[f32] = bytemuck::cast_slice(a.data());
+            lora.lora_a_mut()
+                .data_mut()
+                .as_slice_mut()
+                .expect("contiguous lora_a")
+                .copy_from_slice(a_data);
+        }
+        if let Ok(b) = tensors.tensor(&format!("lora.{layer}.{proj}_proj.lora_b")) {
+            let b_data: &[f32] = bytemuck::cast_slice(b.data());
+            lora.lora_b_mut()
+                .data_mut()
+                .as_slice_mut()
+                .expect("contiguous lora_b")
+                .copy_from_slice(b_data);
+        }
+    }
+
+    let loaded_count = tensors.names().len();
+    println!("Restored {loaded_count} tensors from checkpoint");
+    Ok(())
 }

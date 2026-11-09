@@ -444,11 +444,11 @@ mod ship_010_tests {
             return;
         };
 
-        let doc: serde_yaml::Value = serde_yaml::from_str(contract_yaml.as_str())
+        let doc: serde_json::Value = serde_saphyr::from_str_with_options(contract_yaml.as_str(), serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
             .expect("publish-manifest-v1.yaml must parse as YAML");
 
         let falsifications = doc["falsification_tests"]
-            .as_sequence()
+            .as_array()
             .expect("falsification_tests must be a sequence in publish-manifest-v1");
         let block = falsifications
             .iter()
@@ -468,7 +468,7 @@ mod ship_010_tests {
              manifests at v1.5.0; previous PARTIAL_ALGORITHM_LEVEL at v1.4.0)",
         );
         assert!(
-            block["discharged_evidence"].is_mapping(),
+            block["discharged_evidence"].is_object(),
             "FALSIFY-SHIP-010 DISCHARGED status requires discharged_evidence \
              block documenting the host, command, and per-manifest live verdicts",
         );
@@ -478,7 +478,7 @@ mod ship_010_tests {
             "discharged_evidence.host must pin to the lambda-labs RTX 4090 host",
         );
         let manifests = block["discharged_evidence"]["manifests"]
-            .as_sequence()
+            .as_array()
             .expect("discharged_evidence.manifests must be a sequence");
         assert_eq!(
             manifests.len(),

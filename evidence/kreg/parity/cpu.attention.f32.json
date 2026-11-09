@@ -1,0 +1,46 @@
+{
+  "build_identity": "ad82594d66",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:attention_gqa:softmax(q.k/sqrt(d))v,kv=h/(H/KV),H=14,KV=2,d=64,cache<512",
+    "row_sha256": "ce4f1afb17a02964bc6c9484c9d498790e3571caf8f938a51fcfad6618db692d",
+    "source_sha256": "73536e63bfcf983e4f572dbfa23c6419d25200adff294d13a7361512bad4bc88",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "11c5cab45088484949e800d83e0acb8f538276cf4cc39f149130b911a3d58083",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.attention.f32",
+  "margin": {
+    "error_model": "EM-ATT",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "attention_gqa:softmax(q.k/sqrt(d))v,kv=h/(H/KV),H=14,KV=2,d=64,cache<512",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 2.0482558032997034e-7,
+    "max_rel_err": 7.225632483497156e-7
+  },
+  "source_fn": "attention_with_cache_gqa_into",
+  "tolerance_rel": 2e-6,
+  "ts": "2026-09-29T06:21:33Z",
+  "workload": {
+    "n": 896,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}

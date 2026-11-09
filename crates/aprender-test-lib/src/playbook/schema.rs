@@ -400,7 +400,7 @@ impl Playbook {
     /// Returns error if YAML is invalid or schema validation fails.
     pub fn from_yaml(yaml: &str) -> Result<Self, PlaybookError> {
         let playbook: Playbook =
-            serde_yaml_ng::from_str(yaml).map_err(|e| PlaybookError::ParseError(e.to_string()))?;
+            serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(|e| PlaybookError::ParseError(e.to_string()))?;
         playbook.validate()?;
         Ok(playbook)
     }

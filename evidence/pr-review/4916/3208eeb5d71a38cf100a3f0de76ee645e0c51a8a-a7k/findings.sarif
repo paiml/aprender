@@ -1,0 +1,137 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "exit-code-parity-fixed",
+          "level": "note",
+          "message": {
+            "text": "The three blocking exit-code findings of the 3f1db21f7b review are fixed: tarball-workspace refusals and usage errors for tarball-workspace and tarball-shrink-report exit 2 as the Python originals do, the uncaught-traceback cases exit 1, and the parity harness compares the exact code for those cases (EXACT_RC=1)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-ci-tools/src/main.rs"
+                },
+                "region": {
+                  "startLine": 118
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "None remaining: before the fix, a tarball-workspace refusal or usage error exited 1 where the Python original exits 2, so a caller branching on rc==2 would misroute; the parity harness now compares the exact code (EXACT_RC=1) for those cases."
+          }
+        },
+        {
+          "ruleId": "bashrs-sc1044-false-positive",
+          "level": "note",
+          "message": {
+            "text": "bashrs lint reports 2 errors (SC1044, heredoc end token) on the arithmetic shifts $((1 << 61)) and $((1 << 40)); the bash is valid, and no CI step or make lint-scripts (scripts/*.sh only) lints scripts/tests/. Non-blocking; $((2**61)) would silence it. Found by the antigravity lane, reproduced by the reviewer."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/tests/ci_tools_py_parity_test.sh"
+                },
+                "region": {
+                  "startLine": 544
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "bashrs lint reports SC1044 on the arithmetic shift at parity_test.sh:544, reading it as a heredoc; no gate fails today because make lint-scripts covers scripts/*.sh only and ci.yml runs no bashrs, but extending lint to scripts/tests/ would turn this into a red build on correct code."
+          }
+        },
+        {
+          "ruleId": "complexity-over-threshold",
+          "level": "note",
+          "message": {
+            "text": "pmat analyze complexity: tarball_shrink_report.rs:116 report() cyclomatic 12 > 10 and cognitive 22 > 15; dag_status.rs:176 receipt_marker() cognitive 21; publishable_crates.rs:18 run() cognitive 20. Warnings, new functions."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-ci-tools/src/tarball_shrink_report.rs"
+                },
+                "region": {
+                  "startLine": 116
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "report() (cyclomatic 12, cognitive 22), receipt_marker (cognitive 21) and run (cognitive 20) exceed max_complexity 10 in .pmat-gates.toml; a later edit to these functions inherits branches no single test isolates."
+          }
+        },
+        {
+          "ruleId": "duplication-scan-incomplete",
+          "level": "note",
+          "message": {
+            "text": "scripts/pr_review_duplication_scan.sh did not finish inside the reviewer 600 s budget over the full horizon; no duplication evidence is claimed, so the verdict is DEGRADED."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-ci-tools/src/lib.rs"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "pr_review_duplication_scan.sh --rust-semantic was killed at 600 s, so duplication_coverage is none: a clone of existing code in the 3312 added lines would go unreported by this review."
+          }
+        },
+        {
+          "ruleId": "crux-surface-uncovered",
+          "level": "note",
+          "message": {
+            "text": "The new aprender-ci-tools CLI surface (clap derive Parser/Subcommand, #[arg(long ...)] flags and the required ArgGroup \"mode\" in main.rs and git_patch_id.rs) is not covered by any crux contract under contracts/; the surface is pinned only by the Python parity harness. S3.C: no contract covers this surface, so the gap widens. Non-blocking note; a crux contract for the ci-tools CLI is follow-up work."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-ci-tools/src/main.rs"
+                },
+                "region": {
+                  "startLine": 12
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A rename or removal of a ci-tools subcommand or flag (e.g. --name, the mode ArgGroup) would break callers in scripts/ with no crux contract to fail; only the Python parity harness pins the surface."
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -7,11 +7,16 @@
 //! No contract under contracts/ carries a TFLOP/s floor for these tests (grep'd 2026-09-09);
 //! throughput is reported, never asserted -- a wall-clock floor cannot sit in a required check.
 
+// Every test here creates a cuBLAS handle, and dropping one runs `cublasDestroy_v2`,
+// which synchronizes the whole context. A context-wide sync must not overlap a stream
+// capture, so each test holds `CAPTURE_VS_CTX_SYNC` (driver/cuda_tests/mod.rs) for its
+// whole body, taken first so the handle is dropped while the lock is still held (#4956).
 use crate::driver::{CublasHandle, CudaContext, CudaStream, GpuBuffer, LaunchConfig};
 
 /// Handle lifecycle: CublasHandle creates and destroys cleanly (no contract id: none exists under contracts/)
 #[test]
 fn test_cublas_handle_lifecycle() {
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context required");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle creation must succeed");
     let stream = CudaStream::new(&ctx).expect("stream required");
@@ -25,6 +30,7 @@ fn test_cublas_handle_lifecycle() {
 /// Expected C = [[19, 22], [43, 50]]
 #[test]
 fn test_cublas_gemm_f32_small() {
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context required");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle required");
     let stream = CudaStream::new(&ctx).expect("stream required");
@@ -87,6 +93,7 @@ fn test_cublas_gemm_f32_small() {
 /// check. If a speed claim is wanted it belongs to the beat/bench lane, with a comparand.
 #[test]
 fn test_cublas_gemm_f16_training_shape() {
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context required");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle required");
     let stream = CudaStream::new(&ctx).expect("stream required");
@@ -194,6 +201,7 @@ fn test_cublas_gemm_f16_training_shape() {
 /// All 6 training shapes from cublas-gemm-v1.yaml must work
 #[test]
 fn test_cublas_all_training_shapes() {
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context required");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle required");
     let stream = CudaStream::new(&ctx).expect("stream required");
@@ -253,6 +261,7 @@ fn test_cublas_all_training_shapes() {
 fn cublas_bench_gemm_fp16_throughput() {
     use std::time::Instant;
 
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context");
     let stream = CudaStream::new(&ctx).expect("stream");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle");
@@ -347,6 +356,7 @@ fn ptx_vs_cublas_gemm_f32() {
     use std::ffi::c_void;
     use std::time::Instant;
 
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context");
     let stream = CudaStream::new(&ctx).expect("stream");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle");
@@ -520,6 +530,7 @@ fn wmma_vs_cublas_fp16() {
     use std::ffi::c_void;
     use std::time::Instant;
 
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context");
     let stream = CudaStream::new(&ctx).expect("stream");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle");
@@ -676,6 +687,7 @@ fn cta_wmma_vs_cublas_fp16() {
     use std::ffi::c_void;
     use std::time::Instant;
 
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context");
     let stream = CudaStream::new(&ctx).expect("stream");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle");
@@ -825,6 +837,7 @@ fn cta_wmma_dbuf_bench_fp16() {
     use std::ffi::c_void;
     use std::time::Instant;
 
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context");
     let stream = CudaStream::new(&ctx).expect("stream");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle");
@@ -1009,17 +1022,7 @@ fn cta_wmma_dbuf_bench_fp16() {
 /// Run: cargo test -p trueno-gpu --features cuda --lib --release -- cta64_vs_cta32 --no-capture
 #[test]
 fn cta64_vs_cta32_vs_cublas_fp16() {
-    use crate::driver::module::CudaModule;
-    use crate::kernels::gemm::basic::tensor_core::cta64_wmma::{
-        build_cta64_mma_fp16_cpasync, build_cta64_wmma_fp16, build_cta64_wmma_fp16_cpasync,
-        build_cta64_wmma_fp16_dbuf, build_cta64x128_mma_fp16_cpasync,
-        build_cta64x128_mma_pipeline_fp16,
-    };
-    use crate::kernels::gemm::basic::tensor_core::cta_wmma::build_cta_wmma_fp16;
-    use crate::ptx::PtxModule;
-    use std::ffi::c_void;
-    use std::time::Instant;
-
+    let _capture = super::cuda_tests::capture_vs_ctx_sync();
     let ctx = CudaContext::new(0).expect("CUDA context");
     let stream = CudaStream::new(&ctx).expect("stream");
     let handle = CublasHandle::new(&ctx).expect("cuBLAS handle");
@@ -1034,522 +1037,460 @@ fn cta64_vs_cta32_vs_cublas_fp16() {
     eprintln!("{}", "-".repeat(80));
 
     for &n in &[128_usize, 256, 512, 1024, 2048, 4096] {
-        let m = n;
-        let k = n;
-        let flops = 2.0 * m as f64 * n as f64 * k as f64;
-
-        let a16 = vec![0x3C00u16; m * k];
-        let b16 = vec![0x3C00u16; k * n];
-        let c32 = vec![0.0f32; m * n];
-
-        let a_buf = GpuBuffer::from_host(&ctx, &a16).expect("A");
-        let b_buf = GpuBuffer::from_host(&ctx, &b16).expect("B");
-        let c_buf = GpuBuffer::from_host(&ctx, &c32).expect("C");
-
-        // Scale iterations for larger sizes
-        let iters = if n <= 1024 {
-            50
-        } else if n <= 2048 {
-            20
-        } else {
-            10
-        };
-
-        // ─── 32×32 CTA (baseline) ───
-        let kernel_32 = build_cta_wmma_fp16(m as u32, n as u32, k as u32);
-        let ptx_32 = PtxModule::new().add_kernel(kernel_32).emit();
-        let mut mod_32 = match CudaModule::from_ptx(&ctx, &ptx_32) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("{:<8} CTA32 compile failed: {e}", n);
-                continue;
-            }
-        };
-        let cfg_32 = LaunchConfig {
-            grid: (((n + 31) / 32) as u32, ((m + 31) / 32) as u32, 1),
-            block: (128, 1, 1),
-            shared_mem: 2048,
-        };
-
-        let mut a_ptr = a_buf.as_ptr();
-        let mut b_ptr = b_buf.as_ptr();
-        let mut c_ptr = c_buf.as_ptr();
-        let mut m_v = m as u32;
-        let mut n_v = n as u32;
-        let mut k_v = k as u32;
-        let mut args: Vec<*mut c_void> = vec![
-            &mut a_ptr as *mut _ as *mut c_void,
-            &mut b_ptr as *mut _ as *mut c_void,
-            &mut c_ptr as *mut _ as *mut c_void,
-            &mut m_v as *mut _ as *mut c_void,
-            &mut n_v as *mut _ as *mut c_void,
-            &mut k_v as *mut _ as *mut c_void,
-        ];
-
-        for _ in 0..5 {
-            unsafe {
-                stream
-                    .launch_kernel(&mut mod_32, "gemm_cta_wmma_fp16", &cfg_32, &mut args)
-                    .ok();
-            }
-        }
-        stream.synchronize().ok();
-        let start = Instant::now();
-        for _ in 0..iters {
-            unsafe {
-                stream
-                    .launch_kernel(&mut mod_32, "gemm_cta_wmma_fp16", &cfg_32, &mut args)
-                    .ok();
-            }
-        }
-        stream.synchronize().ok();
-        let cta32_us = start.elapsed().as_micros() as f64 / iters as f64;
-
-        // ─── 64×64 CTA ───
-        let kernel_64 = build_cta64_wmma_fp16(m as u32, n as u32, k as u32);
-        let ptx_64 = PtxModule::new().add_kernel(kernel_64).emit();
-        let mut mod_64 = match CudaModule::from_ptx(&ctx, &ptx_64) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("{:<8} CTA64 compile failed: {e}", n);
-                continue;
-            }
-        };
-        let cfg_64 = LaunchConfig {
-            grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
-            block: (512, 1, 1),
-            shared_mem: 4096,
-        };
-
-        a_ptr = a_buf.as_ptr();
-        b_ptr = b_buf.as_ptr();
-        c_ptr = c_buf.as_ptr();
-        m_v = m as u32;
-        n_v = n as u32;
-        k_v = k as u32;
-
-        for _ in 0..5 {
-            unsafe {
-                stream
-                    .launch_kernel(&mut mod_64, "gemm_cta64_wmma_fp16", &cfg_64, &mut args)
-                    .ok();
-            }
-        }
-        stream.synchronize().ok();
-        let start = Instant::now();
-        for _ in 0..iters {
-            unsafe {
-                stream
-                    .launch_kernel(&mut mod_64, "gemm_cta64_wmma_fp16", &cfg_64, &mut args)
-                    .ok();
-            }
-        }
-        stream.synchronize().ok();
-        let cta64_us = start.elapsed().as_micros() as f64 / iters as f64;
-
-        // ─── 64×64 CTA double-buffer ───
-        let kernel_db = build_cta64_wmma_fp16_dbuf(m as u32, n as u32, k as u32);
-        let ptx_db = PtxModule::new().add_kernel(kernel_db).emit();
-        let mut mod_db = match CudaModule::from_ptx(&ctx, &ptx_db) {
-            Ok(m) => m,
-            Err(e) => {
-                eprintln!("{:<6} CTA64-dbuf compile failed: {e}", n);
-                continue;
-            }
-        };
-        let cfg_db = LaunchConfig {
-            grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
-            block: (512, 1, 1),
-            shared_mem: 8192, // 2×4096
-        };
-
-        a_ptr = a_buf.as_ptr();
-        b_ptr = b_buf.as_ptr();
-        c_ptr = c_buf.as_ptr();
-        m_v = m as u32;
-        n_v = n as u32;
-        k_v = k as u32;
-
-        for _ in 0..5 {
-            unsafe {
-                stream
-                    .launch_kernel(&mut mod_db, "gemm_cta64_wmma_fp16", &cfg_db, &mut args)
-                    .ok();
-            }
-        }
-        stream.synchronize().ok();
-        let start = Instant::now();
-        for _ in 0..iters {
-            unsafe {
-                stream
-                    .launch_kernel(&mut mod_db, "gemm_cta64_wmma_fp16", &cfg_db, &mut args)
-                    .ok();
-            }
-        }
-        stream.synchronize().ok();
-        let dbuf64_us = start.elapsed().as_micros() as f64 / iters as f64;
-        let _dbuf64_tflops = flops / (dbuf64_us * 1e6);
-
-        // ─── 64×64 cp.async (SM 8.0+) ───
-        let kernel_cp = build_cta64_wmma_fp16_cpasync(m as u32, n as u32, k as u32);
-        // cp.async requires sm_80+ target
-        let ptx_cp = PtxModule::new()
-            .target("sm_80")
-            .add_kernel(kernel_cp)
-            .emit();
-        let cpasync_us = match CudaModule::from_ptx(&ctx, &ptx_cp) {
-            Ok(mut mod_cp) => {
-                let cfg_cp = LaunchConfig {
-                    grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
-                    block: (512, 1, 1),
-                    shared_mem: 8192,
-                };
-                a_ptr = a_buf.as_ptr();
-                b_ptr = b_buf.as_ptr();
-                c_ptr = c_buf.as_ptr();
-                m_v = m as u32;
-                n_v = n as u32;
-                k_v = k as u32;
-                for _ in 0..5 {
-                    unsafe {
-                        stream
-                            .launch_kernel(
-                                &mut mod_cp,
-                                "gemm_cta64_cpasync_fp16",
-                                &cfg_cp,
-                                &mut args,
-                            )
-                            .ok();
-                    }
-                }
-                stream.synchronize().ok();
-                let start = Instant::now();
-                for _ in 0..iters {
-                    unsafe {
-                        stream
-                            .launch_kernel(
-                                &mut mod_cp,
-                                "gemm_cta64_cpasync_fp16",
-                                &cfg_cp,
-                                &mut args,
-                            )
-                            .ok();
-                    }
-                }
-                stream.synchronize().ok();
-                start.elapsed().as_micros() as f64 / iters as f64
-            }
-            Err(e) => {
-                eprintln!("{:<6} cp.async compile failed: {e}", n);
-                f64::INFINITY
-            }
-        };
-        let cpasync_tflops = flops / (cpasync_us * 1e6);
-
-        // ─── cuBLAS reference ───
-        let c16_buf = GpuBuffer::from_host(&ctx, &vec![0u16; m * n]).expect("C16");
-        for _ in 0..5 {
-            handle
-                .gemm_f16_row_major(
-                    m as i32,
-                    n as i32,
-                    k as i32,
-                    1.0,
-                    a_buf.as_ptr(),
-                    b_buf.as_ptr(),
-                    0.0,
-                    c16_buf.as_ptr(),
-                )
-                .ok();
-        }
-        stream.synchronize().ok();
-        let start = Instant::now();
-        for _ in 0..iters {
-            handle
-                .gemm_f16_row_major(
-                    m as i32,
-                    n as i32,
-                    k as i32,
-                    1.0,
-                    a_buf.as_ptr(),
-                    b_buf.as_ptr(),
-                    0.0,
-                    c16_buf.as_ptr(),
-                )
-                .ok();
-        }
-        stream.synchronize().ok();
-        let cublas_us = start.elapsed().as_micros() as f64 / iters as f64;
-
-        let cp_vs_cublas = cublas_us / cpasync_us;
-
-        // ─── 128×128 cp.async (Phase 2 bridge plan) ───
-        let kernel_128 =
-            crate::kernels::gemm::basic::tensor_core::cta128_wmma::build_cta128_wmma_fp16_cpasync(
-                m as u32, n as u32, k as u32,
-            );
-        let ptx_128 = PtxModule::new()
-            .target("sm_80")
-            .add_kernel(kernel_128)
-            .emit();
-        let cta128_us = match CudaModule::from_ptx(&ctx, &ptx_128) {
-            Ok(mut mod_128) => {
-                let cfg_128 = LaunchConfig {
-                    grid: (((n + 127) / 128) as u32, ((m + 127) / 128) as u32, 1),
-                    block: (512, 1, 1),
-                    shared_mem: 16384, // 2 stages × 8KB
-                };
-                a_ptr = a_buf.as_ptr();
-                b_ptr = b_buf.as_ptr();
-                c_ptr = c_buf.as_ptr();
-                m_v = m as u32;
-                n_v = n as u32;
-                k_v = k as u32;
-                for _ in 0..5 {
-                    unsafe {
-                        stream
-                            .launch_kernel(
-                                &mut mod_128,
-                                "gemm_cta128_cpasync_fp16",
-                                &cfg_128,
-                                &mut args,
-                            )
-                            .ok();
-                    }
-                }
-                stream.synchronize().ok();
-                let start = Instant::now();
-                for _ in 0..iters {
-                    unsafe {
-                        stream
-                            .launch_kernel(
-                                &mut mod_128,
-                                "gemm_cta128_cpasync_fp16",
-                                &cfg_128,
-                                &mut args,
-                            )
-                            .ok();
-                    }
-                }
-                stream.synchronize().ok();
-                start.elapsed().as_micros() as f64 / iters as f64
-            }
-            Err(e) => {
-                eprintln!("{:<6} cta128 compile failed: {e}", n);
-                f64::INFINITY
-            }
-        };
-        let cta128_tflops = flops / (cta128_us * 1e6);
-        let cta128_vs_cublas = cublas_us / cta128_us;
-
-        // ─── 64×64 mma.sync (Phase 1 bridge plan) ───
-        let kernel_mma = build_cta64_mma_fp16_cpasync(m as u32, n as u32, k as u32);
-        let ptx_mma = PtxModule::new()
-            .target("sm_80")
-            .add_kernel(kernel_mma)
-            .emit();
-        let mma_us = match CudaModule::from_ptx(&ctx, &ptx_mma) {
-            Ok(mut mod_mma) => {
-                let cfg_mma = LaunchConfig {
-                    grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
-                    block: (512, 1, 1),
-                    shared_mem: 8192,
-                };
-                a_ptr = a_buf.as_ptr();
-                b_ptr = b_buf.as_ptr();
-                c_ptr = c_buf.as_ptr();
-                m_v = m as u32;
-                n_v = n as u32;
-                k_v = k as u32;
-                for _ in 0..5 {
-                    unsafe {
-                        stream
-                            .launch_kernel(&mut mod_mma, "gemm_cta64_mma_fp16", &cfg_mma, &mut args)
-                            .ok();
-                    }
-                }
-                stream.synchronize().ok();
-                let start = Instant::now();
-                for _ in 0..iters {
-                    unsafe {
-                        stream
-                            .launch_kernel(&mut mod_mma, "gemm_cta64_mma_fp16", &cfg_mma, &mut args)
-                            .ok();
-                    }
-                }
-                stream.synchronize().ok();
-                start.elapsed().as_micros() as f64 / iters as f64
-            }
-            Err(e) => {
-                eprintln!("{:<6} mma.sync compile failed: {e}", n);
-                f64::INFINITY
-            }
-        };
-        let mma_tflops = flops / (mma_us * 1e6);
-
-        // ─── 64×128 mma.sync (wider tile, +33% AI) ───
-        let mma128_us = if n >= 256 {
-            let kernel_128 = build_cta64x128_mma_fp16_cpasync(m as u32, n as u32, k as u32);
-            let ptx_128 = PtxModule::new()
-                .target("sm_80")
-                .add_kernel(kernel_128)
-                .emit();
-            match CudaModule::from_ptx(&ctx, &ptx_128) {
-                Ok(mut mod_128) => {
-                    let cfg_128 = LaunchConfig {
-                        grid: (((n + 127) / 128) as u32, ((m + 63) / 64) as u32, 1),
-                        block: (512, 1, 1),
-                        shared_mem: 12288,
-                    };
-                    a_ptr = a_buf.as_ptr();
-                    b_ptr = b_buf.as_ptr();
-                    c_ptr = c_buf.as_ptr();
-                    m_v = m as u32;
-                    n_v = n as u32;
-                    k_v = k as u32;
-                    for _ in 0..5 {
-                        unsafe {
-                            stream
-                                .launch_kernel(
-                                    &mut mod_128,
-                                    "gemm_cta64x128_mma_fp16",
-                                    &cfg_128,
-                                    &mut args,
-                                )
-                                .ok();
-                        }
-                    }
-                    stream.synchronize().ok();
-                    let start = Instant::now();
-                    for _ in 0..iters {
-                        unsafe {
-                            stream
-                                .launch_kernel(
-                                    &mut mod_128,
-                                    "gemm_cta64x128_mma_fp16",
-                                    &cfg_128,
-                                    &mut args,
-                                )
-                                .ok();
-                        }
-                    }
-                    stream.synchronize().ok();
-
-                    // Correctness spot-check: all-ones inputs → C[i] should be K
-                    if n == 256 {
-                        let mut result = vec![0.0f32; m * n];
-                        c_buf.copy_to_host(&mut result).expect("D2H");
-                        let expected = k as f32;
-                        let max_err = result
-                            .iter()
-                            .map(|&v| (v - expected).abs())
-                            .fold(0.0f32, f32::max);
-                        assert!(
-                            max_err < 1.0,
-                            "64x128 correctness FAILED at {n}: max_err={max_err}, expected={expected}"
-                        );
-                        eprintln!("  64x128 correctness OK at {n}: max_err={max_err:.4}");
-                        // Reset C buffer for timing
-                        let c32 = vec![0.0f32; m * n];
-                        let c_buf_fresh = GpuBuffer::from_host(&ctx, &c32).expect("C reset");
-                        c_ptr = c_buf_fresh.as_ptr();
-                    }
-
-                    start.elapsed().as_micros() as f64 / iters as f64
-                }
-                Err(e) => {
-                    eprintln!("  64x128 compile failed: {e}");
-                    f64::INFINITY
-                }
-            }
-        } else {
-            f64::INFINITY
-        };
-        let mma128_tflops = flops / (mma128_us * 1e6);
-
-        // ─── 64×128 pipelined mma.sync (3-stage sw pipeline) ───
-        let pipe_us = if n >= 256 {
-            let kernel_pipe = build_cta64x128_mma_pipeline_fp16(m as u32, n as u32, k as u32);
-            let ptx_pipe = PtxModule::new()
-                .target("sm_80")
-                .add_kernel(kernel_pipe)
-                .emit();
-            match CudaModule::from_ptx(&ctx, &ptx_pipe) {
-                Ok(mut mod_pipe) => {
-                    let cfg_pipe = LaunchConfig {
-                        grid: (((n + 127) / 128) as u32, ((m + 63) / 64) as u32, 1),
-                        block: (512, 1, 1),
-                        shared_mem: 18432,
-                    };
-                    // Reset C
-                    let c32 = vec![0.0f32; m * n];
-                    let c_buf_p = GpuBuffer::from_host(&ctx, &c32).expect("C pipe");
-                    let mut c_ptr_p = c_buf_p.as_ptr();
-                    let mut args_pipe: Vec<*mut c_void> = vec![
-                        &mut a_ptr as *mut _ as *mut c_void,
-                        &mut b_ptr as *mut _ as *mut c_void,
-                        &mut c_ptr_p as *mut _ as *mut c_void,
-                        &mut m_v as *mut _ as *mut c_void,
-                        &mut n_v as *mut _ as *mut c_void,
-                        &mut k_v as *mut _ as *mut c_void,
-                    ];
-                    // Warmup
-                    for _ in 0..5 {
-                        unsafe {
-                            stream
-                                .launch_kernel(
-                                    &mut mod_pipe,
-                                    "gemm_cta64x128_mma_pipeline_fp16",
-                                    &cfg_pipe,
-                                    &mut args_pipe,
-                                )
-                                .ok();
-                        }
-                    }
-                    stream.synchronize().ok();
-                    let start = Instant::now();
-                    for _ in 0..iters {
-                        unsafe {
-                            stream
-                                .launch_kernel(
-                                    &mut mod_pipe,
-                                    "gemm_cta64x128_mma_pipeline_fp16",
-                                    &cfg_pipe,
-                                    &mut args_pipe,
-                                )
-                                .ok();
-                        }
-                    }
-                    stream.synchronize().ok();
-                    start.elapsed().as_micros() as f64 / iters as f64
-                }
-                Err(e) => {
-                    eprintln!("  pipeline compile failed: {e}");
-                    f64::INFINITY
-                }
-            }
-        } else {
-            f64::INFINITY
-        };
-        let pipe_tflops = flops / (pipe_us * 1e6);
-
-        eprintln!(
-            "{:<6} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>5.2}x | mma: {:>8.1} {:>8.1} | 128: {:>8.1} {:>8.1} | pipe: {:>8.1} {:>8.1}",
-            n,
-            cta32_us,
-            cta64_us,
-            dbuf64_us,
-            cpasync_us,
-            cublas_us,
-            cpasync_tflops,
-            cp_vs_cublas,
-            mma_us,
-            mma_tflops,
-            mma128_us,
-            mma128_tflops,
-            pipe_us,
-            pipe_tflops,
-        );
+        cta64_bench_size(&ctx, &stream, &handle, n);
     }
     eprintln!();
+}
+
+/// One row of [`cta64_vs_cta32_vs_cublas_fp16`]: every variant at M = N = K = `n`.
+///
+/// Prints no row when the CTA32, CTA64 or CTA64-dbuf module fails to load.
+fn cta64_bench_size(ctx: &CudaContext, stream: &CudaStream, handle: &CublasHandle, n: usize) {
+    use crate::kernels::gemm::basic::tensor_core::cta64_wmma::{
+        build_cta64_mma_fp16_cpasync, build_cta64_wmma_fp16, build_cta64_wmma_fp16_cpasync,
+        build_cta64_wmma_fp16_dbuf,
+    };
+    use crate::kernels::gemm::basic::tensor_core::cta_wmma::build_cta_wmma_fp16;
+    use crate::ptx::PtxModule;
+
+    let m = n;
+    let k = n;
+    let flops = 2.0 * m as f64 * n as f64 * k as f64;
+
+    let a16 = vec![0x3C00u16; m * k];
+    let b16 = vec![0x3C00u16; k * n];
+    let c32 = vec![0.0f32; m * n];
+
+    let a_buf = GpuBuffer::from_host(ctx, &a16).expect("A");
+    let b_buf = GpuBuffer::from_host(ctx, &b16).expect("B");
+    let c_buf = GpuBuffer::from_host(ctx, &c32).expect("C");
+
+    // Scale iterations for larger sizes
+    let iters = if n <= 1024 {
+        50
+    } else if n <= 2048 {
+        20
+    } else {
+        10
+    };
+
+    let mut params = CtaGemmParams {
+        a: a_buf.as_ptr(),
+        b: b_buf.as_ptr(),
+        c: c_buf.as_ptr(),
+        m: m as u32,
+        n: n as u32,
+        k: k as u32,
+    };
+    let mut args = params.args();
+
+    // ─── 32×32 CTA (baseline) ───
+    let kernel_32 = build_cta_wmma_fp16(m as u32, n as u32, k as u32);
+    let ptx_32 = PtxModule::new().add_kernel(kernel_32).emit();
+    let cfg_32 = LaunchConfig {
+        grid: (((n + 31) / 32) as u32, ((m + 31) / 32) as u32, 1),
+        block: (128, 1, 1),
+        shared_mem: 2048,
+    };
+    let cta32_us = match time_cta_kernel(
+        ctx,
+        stream,
+        &ptx_32,
+        "gemm_cta_wmma_fp16",
+        &cfg_32,
+        &mut args,
+        iters,
+    ) {
+        Ok(us) => us,
+        Err(e) => {
+            eprintln!("{:<8} CTA32 compile failed: {e}", n);
+            return;
+        }
+    };
+
+    // ─── 64×64 CTA ───
+    let kernel_64 = build_cta64_wmma_fp16(m as u32, n as u32, k as u32);
+    let ptx_64 = PtxModule::new().add_kernel(kernel_64).emit();
+    let cfg_64 = LaunchConfig {
+        grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
+        block: (512, 1, 1),
+        shared_mem: 4096,
+    };
+    let cta64_us = match time_cta_kernel(
+        ctx,
+        stream,
+        &ptx_64,
+        "gemm_cta64_wmma_fp16",
+        &cfg_64,
+        &mut args,
+        iters,
+    ) {
+        Ok(us) => us,
+        Err(e) => {
+            eprintln!("{:<8} CTA64 compile failed: {e}", n);
+            return;
+        }
+    };
+
+    // ─── 64×64 CTA double-buffer ───
+    let kernel_db = build_cta64_wmma_fp16_dbuf(m as u32, n as u32, k as u32);
+    let ptx_db = PtxModule::new().add_kernel(kernel_db).emit();
+    let cfg_db = LaunchConfig {
+        grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
+        block: (512, 1, 1),
+        shared_mem: 8192, // 2×4096
+    };
+    let dbuf64_us = match time_cta_kernel(
+        ctx,
+        stream,
+        &ptx_db,
+        "gemm_cta64_wmma_fp16",
+        &cfg_db,
+        &mut args,
+        iters,
+    ) {
+        Ok(us) => us,
+        Err(e) => {
+            eprintln!("{:<6} CTA64-dbuf compile failed: {e}", n);
+            return;
+        }
+    };
+    let _dbuf64_tflops = flops / (dbuf64_us * 1e6);
+
+    // ─── 64×64 cp.async (SM 8.0+) ───
+    let kernel_cp = build_cta64_wmma_fp16_cpasync(m as u32, n as u32, k as u32);
+    // cp.async requires sm_80+ target
+    let ptx_cp = PtxModule::new()
+        .target("sm_80")
+        .add_kernel(kernel_cp)
+        .emit();
+    let cfg_cp = LaunchConfig {
+        grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
+        block: (512, 1, 1),
+        shared_mem: 8192,
+    };
+    let cpasync_us = match time_cta_kernel(
+        ctx,
+        stream,
+        &ptx_cp,
+        "gemm_cta64_cpasync_fp16",
+        &cfg_cp,
+        &mut args,
+        iters,
+    ) {
+        Ok(us) => us,
+        Err(e) => {
+            eprintln!("{:<6} cp.async compile failed: {e}", n);
+            f64::INFINITY
+        }
+    };
+    let cpasync_tflops = flops / (cpasync_us * 1e6);
+
+    // ─── cuBLAS reference ───
+    let c16_buf = GpuBuffer::from_host(ctx, &vec![0u16; m * n]).expect("C16");
+    let start = warm_then_time(stream, iters, || {
+        handle
+            .gemm_f16_row_major(
+                m as i32,
+                n as i32,
+                k as i32,
+                1.0,
+                a_buf.as_ptr(),
+                b_buf.as_ptr(),
+                0.0,
+                c16_buf.as_ptr(),
+            )
+            .ok();
+    });
+    let cublas_us = us_per_iter(start, iters);
+
+    let cp_vs_cublas = cublas_us / cpasync_us;
+
+    // ─── 128×128 cp.async (Phase 2 bridge plan) ───
+    let kernel_128 =
+        crate::kernels::gemm::basic::tensor_core::cta128_wmma::build_cta128_wmma_fp16_cpasync(
+            m as u32, n as u32, k as u32,
+        );
+    let ptx_128 = PtxModule::new()
+        .target("sm_80")
+        .add_kernel(kernel_128)
+        .emit();
+    let cfg_128 = LaunchConfig {
+        grid: (((n + 127) / 128) as u32, ((m + 127) / 128) as u32, 1),
+        block: (512, 1, 1),
+        shared_mem: 16384, // 2 stages × 8KB
+    };
+    let cta128_us = match time_cta_kernel(
+        ctx,
+        stream,
+        &ptx_128,
+        "gemm_cta128_cpasync_fp16",
+        &cfg_128,
+        &mut args,
+        iters,
+    ) {
+        Ok(us) => us,
+        Err(e) => {
+            eprintln!("{:<6} cta128 compile failed: {e}", n);
+            f64::INFINITY
+        }
+    };
+    let _cta128_tflops = flops / (cta128_us * 1e6);
+    let _cta128_vs_cublas = cublas_us / cta128_us;
+
+    // ─── 64×64 mma.sync (Phase 1 bridge plan) ───
+    let kernel_mma = build_cta64_mma_fp16_cpasync(m as u32, n as u32, k as u32);
+    let ptx_mma = PtxModule::new()
+        .target("sm_80")
+        .add_kernel(kernel_mma)
+        .emit();
+    let cfg_mma = LaunchConfig {
+        grid: (((n + 63) / 64) as u32, ((m + 63) / 64) as u32, 1),
+        block: (512, 1, 1),
+        shared_mem: 8192,
+    };
+    let mma_us = match time_cta_kernel(
+        ctx,
+        stream,
+        &ptx_mma,
+        "gemm_cta64_mma_fp16",
+        &cfg_mma,
+        &mut args,
+        iters,
+    ) {
+        Ok(us) => us,
+        Err(e) => {
+            eprintln!("{:<6} mma.sync compile failed: {e}", n);
+            f64::INFINITY
+        }
+    };
+    let mma_tflops = flops / (mma_us * 1e6);
+
+    // ─── 64×128 mma.sync (wider tile, +33% AI) ───
+    let mma128_us = if n >= 256 {
+        time_cta64x128_mma(ctx, stream, &c_buf, &mut args, n, iters)
+    } else {
+        f64::INFINITY
+    };
+    let mma128_tflops = flops / (mma128_us * 1e6);
+
+    // ─── 64×128 pipelined mma.sync (3-stage sw pipeline) ───
+    let pipe_us = if n >= 256 {
+        time_cta64x128_pipeline(ctx, stream, params, n, iters)
+    } else {
+        f64::INFINITY
+    };
+    let pipe_tflops = flops / (pipe_us * 1e6);
+
+    eprintln!(
+        "{:<6} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>8.1} {:>5.2}x | mma: {:>8.1} {:>8.1} | 128: {:>8.1} {:>8.1} | pipe: {:>8.1} {:>8.1}",
+        n,
+        cta32_us,
+        cta64_us,
+        dbuf64_us,
+        cpasync_us,
+        cublas_us,
+        cpasync_tflops,
+        cp_vs_cublas,
+        mma_us,
+        mma_tflops,
+        mma128_us,
+        mma128_tflops,
+        pipe_us,
+        pipe_tflops,
+    );
+}
+
+/// Host-side `(A, B, C, M, N, K)` parameters every CTA GEMM kernel above takes.
+///
+/// `launch_kernel` reads each one through a pointer, so the struct must outlive
+/// the vector [`CtaGemmParams::args`] returns.
+#[derive(Clone, Copy)]
+struct CtaGemmParams {
+    a: u64,
+    b: u64,
+    c: u64,
+    m: u32,
+    n: u32,
+    k: u32,
+}
+
+impl CtaGemmParams {
+    fn args(&mut self) -> Vec<*mut std::ffi::c_void> {
+        use std::ffi::c_void;
+
+        vec![
+            &mut self.a as *mut _ as *mut c_void,
+            &mut self.b as *mut _ as *mut c_void,
+            &mut self.c as *mut _ as *mut c_void,
+            &mut self.m as *mut _ as *mut c_void,
+            &mut self.n as *mut _ as *mut c_void,
+            &mut self.k as *mut _ as *mut c_void,
+        ]
+    }
+}
+
+/// 5 untimed warmup launches and a sync, then `iters` timed launches and a sync.
+///
+/// Returns the instant the timed loop started; [`us_per_iter`] turns it into a mean.
+fn warm_then_time(
+    stream: &CudaStream,
+    iters: usize,
+    mut launch: impl FnMut(),
+) -> std::time::Instant {
+    for _ in 0..5 {
+        launch();
+    }
+    stream.synchronize().ok();
+    let start = std::time::Instant::now();
+    for _ in 0..iters {
+        launch();
+    }
+    stream.synchronize().ok();
+    start
+}
+
+/// Mean microseconds per timed launch since `start`.
+fn us_per_iter(start: std::time::Instant, iters: usize) -> f64 {
+    start.elapsed().as_micros() as f64 / iters as f64
+}
+
+/// Load `ptx`, then time kernel `name` with [`warm_then_time`], in µs per launch.
+///
+/// A load failure comes back unprinted: each variant prints its own message and
+/// either skips the size or reports infinity.
+fn time_cta_kernel(
+    ctx: &CudaContext,
+    stream: &CudaStream,
+    ptx: &str,
+    name: &str,
+    cfg: &LaunchConfig,
+    args: &mut [*mut std::ffi::c_void],
+    iters: usize,
+) -> Result<f64, crate::GpuError> {
+    use crate::driver::module::CudaModule;
+
+    let mut module = CudaModule::from_ptx(ctx, ptx)?;
+    let start = warm_then_time(stream, iters, || unsafe {
+        stream.launch_kernel(&mut module, name, cfg, args).ok();
+    });
+    Ok(us_per_iter(start, iters))
+}
+
+/// 64×128 mma.sync in µs per launch, or infinity when its module fails to load.
+///
+/// At `n == 256` it also spot-checks C. The check runs before the clock is read,
+/// so at that size the D2H copy is inside the reported time.
+fn time_cta64x128_mma(
+    ctx: &CudaContext,
+    stream: &CudaStream,
+    c_buf: &GpuBuffer<f32>,
+    args: &mut [*mut std::ffi::c_void],
+    n: usize,
+    iters: usize,
+) -> f64 {
+    use crate::driver::module::CudaModule;
+    use crate::kernels::gemm::basic::tensor_core::cta64_wmma::build_cta64x128_mma_fp16_cpasync;
+    use crate::ptx::PtxModule;
+
+    let m = n;
+    let k = n;
+    let kernel_128 = build_cta64x128_mma_fp16_cpasync(m as u32, n as u32, k as u32);
+    let ptx_128 = PtxModule::new()
+        .target("sm_80")
+        .add_kernel(kernel_128)
+        .emit();
+    let mut mod_128 = match CudaModule::from_ptx(ctx, &ptx_128) {
+        Ok(module) => module,
+        Err(e) => {
+            eprintln!("  64x128 compile failed: {e}");
+            return f64::INFINITY;
+        }
+    };
+    let cfg_128 = LaunchConfig {
+        grid: (((n + 127) / 128) as u32, ((m + 63) / 64) as u32, 1),
+        block: (512, 1, 1),
+        shared_mem: 12288,
+    };
+    let start = warm_then_time(stream, iters, || unsafe {
+        stream
+            .launch_kernel(&mut mod_128, "gemm_cta64x128_mma_fp16", &cfg_128, args)
+            .ok();
+    });
+
+    // Correctness spot-check: all-ones inputs → C[i] should be K
+    if n == 256 {
+        let mut result = vec![0.0f32; m * n];
+        c_buf.copy_to_host(&mut result).expect("D2H");
+        let expected = k as f32;
+        let max_err = result
+            .iter()
+            .map(|&v| (v - expected).abs())
+            .fold(0.0f32, f32::max);
+        assert!(
+            max_err < 1.0,
+            "64x128 correctness FAILED at {n}: max_err={max_err}, expected={expected}"
+        );
+        eprintln!("  64x128 correctness OK at {n}: max_err={max_err:.4}");
+        // Reset C buffer for timing. No later launch reads the shared C argument,
+        // so the buffer is only allocated and freed.
+        let c32 = vec![0.0f32; m * n];
+        let _c_buf_fresh = GpuBuffer::from_host(ctx, &c32).expect("C reset");
+    }
+
+    us_per_iter(start, iters)
+}
+
+/// 64×128 pipelined mma.sync in µs per launch, or infinity when its module fails to load.
+///
+/// Writes to its own zeroed C buffer; A, B, M, N and K are the row's `params`.
+fn time_cta64x128_pipeline(
+    ctx: &CudaContext,
+    stream: &CudaStream,
+    params: CtaGemmParams,
+    n: usize,
+    iters: usize,
+) -> f64 {
+    use crate::driver::module::CudaModule;
+    use crate::kernels::gemm::basic::tensor_core::cta64_wmma::build_cta64x128_mma_pipeline_fp16;
+    use crate::ptx::PtxModule;
+
+    let m = n;
+    let k = n;
+    let kernel_pipe = build_cta64x128_mma_pipeline_fp16(m as u32, n as u32, k as u32);
+    let ptx_pipe = PtxModule::new()
+        .target("sm_80")
+        .add_kernel(kernel_pipe)
+        .emit();
+    let mut mod_pipe = match CudaModule::from_ptx(ctx, &ptx_pipe) {
+        Ok(module) => module,
+        Err(e) => {
+            eprintln!("  pipeline compile failed: {e}");
+            return f64::INFINITY;
+        }
+    };
+    let cfg_pipe = LaunchConfig {
+        grid: (((n + 127) / 128) as u32, ((m + 63) / 64) as u32, 1),
+        block: (512, 1, 1),
+        shared_mem: 18432,
+    };
+    // Reset C
+    let c32 = vec![0.0f32; m * n];
+    let c_buf_p = GpuBuffer::from_host(ctx, &c32).expect("C pipe");
+    let mut params_pipe = CtaGemmParams {
+        c: c_buf_p.as_ptr(),
+        ..params
+    };
+    let mut args_pipe = params_pipe.args();
+    let start = warm_then_time(stream, iters, || unsafe {
+        stream
+            .launch_kernel(
+                &mut mod_pipe,
+                "gemm_cta64x128_mma_pipeline_fp16",
+                &cfg_pipe,
+                &mut args_pipe,
+            )
+            .ok();
+    });
+    us_per_iter(start, iters)
 }

@@ -1,0 +1,7 @@
+# PRM-001 pre-registration lock (rex-prereg-v2) over spec PRM-001 v4. Written by PRM-00b; v1 had 0 data rows; the v3 lock f0b4e4ac… is superseded.
+# A mismatch against the tree is a new spec version (R-1), never an edit here.
+spec_s2_s5=76a03bdb80ea53737f3c5ba314856cc4b2066bcb194b32782d6cd2fb5ace9b53
+stats_rs=abb51113c5971f9460f8c990fdb58094ca04943cbdb863f00a916472d9b088cc
+analysis_plan=2b84b3b0026300364bdcf09e66967a25c43dc47749abf790f7c238380e9f2969
+prompt_v1=dd9d67c2df458d92d66aed65fd7f3f6f2e5602499c05e6b0967465b9bd2662e6
+prereg_sha=be2085c058b7e76130f249692914c901f672adcbe253130274cebfa631823041

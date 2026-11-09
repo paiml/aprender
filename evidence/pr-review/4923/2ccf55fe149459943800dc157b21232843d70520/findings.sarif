@@ -1,0 +1,282 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "awk-tab-before-hash-missed",
+          "level": "note",
+          "message": {
+            "text": "A tab before # is a YAML comment, but index(val, \" #\") looks only for a space. 'ticket_owner: bob<TAB># c' exits 0 and the reader keeps the raw value 'bob<TAB># c'. The new rule's stated aim (reader and YAML parser never disagree) is not met for this form; the self-test has no tab row."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A policy line 'hosts: [lambda]<TAB># gx10 off' is accepted; the raw value with the comment is copied into the synthesized emergency_scopes entry. ticket_owner and since are re-validated downstream and still fail closed, so impact is limited to hosts, thinking, quote, date, name.",
+            "precision_class": "advisory",
+            "command": [
+              "awk",
+              "-v",
+              "keys=name since date quote hosts thinking larger_rows red_row_needs ticket_owner release_notes",
+              "-f",
+              "scripts/lib/release_policy_block.awk",
+              "/tmp/claude-1000/-mnt-nvme-raid0-la-71/7705b2a4-f00a-4190-9eb8-5feffc6cba66/scratchpad/tab.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "40f969c8aefe83d139fce0ea284e14fa96a96ee96a05009782be7e8ada469d18"
+          }
+        },
+        {
+          "ruleId": "awk-comment-after-double-quoted-missed",
+          "level": "note",
+          "message": {
+            "text": "A double-quoted value skips the whole check, so a comment after the closing quote is not refused: 'ticket_owner: \"bob\" # c' exits 0 with the raw value '\"bob\" # c'. The # is only meaningful outside the quotes, which the rule does not look at."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A policy author writes 'quote: \"...\" # note'. The awk accepts it and the raw text, comment included, is copied into the entry; rp_unq then fails to strip quotes on since/ticket_owner (fails closed, rc 2) but date/quote/hosts pass through unvalidated.",
+            "precision_class": "advisory",
+            "command": [
+              "awk",
+              "-v",
+              "keys=name since date quote hosts thinking larger_rows red_row_needs ticket_owner release_notes",
+              "-f",
+              "scripts/lib/release_policy_block.awk",
+              "/tmp/claude-1000/-mnt-nvme-raid0-la-71/7705b2a4-f00a-4190-9eb8-5feffc6cba66/scratchpad/dq.yaml"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b815054043346abccae9953080783534531dfebb6b2763f040f6792f0efd9a96"
+          }
+        },
+        {
+          "ruleId": "awk-single-quoted-hash-refused",
+          "level": "note",
+          "message": {
+            "text": "A single-quoted value is scanned for ' #' while a double-quoted one is exempt, so the two YAML quote styles are treated differently. A legitimate single-quoted value such as 'see #5' is refused with 'quote the value', advice that cannot be followed. The real release_policy block (contracts/model-capability-ladder-v1.yaml lines 102-112) has no ' #' in any value, and the real-* rows pass, so nothing real is refused today."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A maintainer edits the single-quoted quote: line (it is single-quoted because it holds double quotes) to cite 'ticket #3598'. The ladder is then unreadable (rc 2) until the text is reworded, with a misleading hint.",
+            "precision_class": "advisory",
+            "command": [
+              "awk",
+              "-v",
+              "keys=name since date quote hosts thinking larger_rows red_row_needs ticket_owner release_notes",
+              "-f",
+              "scripts/lib/release_policy_block.awk",
+              "/tmp/claude-1000/-mnt-nvme-raid0-la-71/7705b2a4-f00a-4190-9eb8-5feffc6cba66/scratchpad/sq.yaml"
+            ],
+            "exit_code": 2,
+            "stdout_sha256": "b84ee7eefa935d0e7da5f3bc795bd9c79ab414fa4048fb718d5e2fbd40779a36"
+          }
+        },
+        {
+          "ruleId": "unrelated-change-bundled",
+          "level": "note",
+          "message": {
+            "text": "The PR adds a models_nightly --self-test row (tickets_unset_green_rung_is_red) that has nothing to do with the release_policy # rule or its title. It passes (84/84) and is not wrong; it is scope that a reviewer of the awk change will not expect."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/models_nightly.sh"
+                },
+                "region": {
+                  "startLine": 604
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "failure_scenario": "None at run time; a revert of the awk change would leave an unrelated row in the diff history.",
+            "precision_class": "advisory",
+            "rationale": "The PR adds a models_nightly --self-test row (tickets_unset_green_rung_is_red) that has nothing to do with the release_policy # rule or its title. It passes (84/84) and is not wrong; it is scope that a reviewer of the awk change will not expect."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-refuse-legitimate-list-with-comment",
+          "level": "note",
+          "message": {
+            "text": "Awk script incorrectly refuses a legitimate flow sequence with a trailing comment."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If a flow sequence with a trailing comment (like the one present in contracts/model-capability-ladder-v1.yaml: `hosts: [lambda]   # gx10 DE-CLAIMED...`) is placed in the release_policy block, the script refuses it because it starts with `[` and contains ` #`. The script incorrectly instructs the user to 'quote the value', which would change the YAML type from a list to a string.",
+            "command": [
+              "awk",
+              "-v",
+              "keys=hosts",
+              "-f",
+              "scripts/lib/release_policy_block.awk",
+              "test-finding-4.yaml"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-miss-tab-before-hash",
+          "level": "note",
+          "message": {
+            "text": "Awk script misses a YAML comment that is preceded by a tab instead of a space."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If a user uses a tab to separate a comment (`ticket_owner: 3598\\t# comment`), the `index(val, \" #\")` check returns 0 because it strictly looks for a space-hash. The script misses the comment and includes the comment string inside the parsed value, disagreeing with the YAML parser.",
+            "command": [
+              "awk",
+              "-v",
+              "keys=ticket_owner",
+              "-f",
+              "scripts/lib/release_policy_block.awk",
+              "test-finding-2.yaml"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-miss-comment-after-quoted-value",
+          "level": "note",
+          "message": {
+            "text": "Awk script misses a trailing YAML comment after a double-quoted value."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If a trailing comment is added after a double-quoted string (`name: \"crux-smoke\" # comment`), `substr(val, 1, 1)` is `\"`. This causes the condition `substr(val, 1, 1) != \"\\\"\"` to be false, short-circuiting the space-hash check. The script misses the comment and includes it in the parsed value, disagreeing with the YAML parser.",
+            "command": [
+              "awk",
+              "-v",
+              "keys=name",
+              "-f",
+              "scripts/lib/release_policy_block.awk",
+              "test-finding-3.yaml"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        }
+      ]
+    }
+  ]
+}

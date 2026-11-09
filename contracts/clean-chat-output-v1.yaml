@@ -141,3 +141,20 @@ status_history:
     date: "2026-05-21"
     pr: "TBD"
     summary: "Initial contract registering the M287→#1852→#1853 cascade invariants as falsifier-backed guarantees. Codifies the sanitization layer that prevents 'Human:'/'User:'/'Assistant:' / ChatML markers from leaking into chat-completion responses."
+
+falsification_tests:
+  - id: FALSIFY-CLEAN_CHAT_OUTPUT-001
+    description: "Output never contains a stop sequence: with several stop markers, truncation happens at the EARLIEST one"
+    test: "cargo test -p aprender-serve --lib test_clean_chat_output_earliest_wins_gh219"
+    prediction: "clean_chat_output(\"Hello</s>mid<|im_end|>end\") == \"Hello\""
+    if_fails: "a later stop marker is used and earlier marker text leaks into the reply"
+  - id: FALSIFY-CLEAN_CHAT_OUTPUT-002
+    description: "A self-emitted turn marker ('\\nHuman:', '\\nUser:', '<|im_start|>') ends the reply (prompt-injection prevention)"
+    test: "cargo test -p aprender-serve --lib test_clean_chat_output_human_turn_gh219"
+    prediction: "clean_chat_output(\"Response\\nHuman: new question\") == \"Response\""
+    if_fails: "the model's fabricated next turn is returned to the client"
+  - id: FALSIFY-CLEAN_CHAT_OUTPUT-003
+    description: "Output has no leading or trailing whitespace after stripping"
+    test: "cargo test -p aprender-serve --lib test_clean_chat_output_trims_whitespace_gh219"
+    prediction: "clean_chat_output(\"  answer  <|im_end|>\") == \"answer\""
+    if_fails: "surrounding whitespace survives post-processing"

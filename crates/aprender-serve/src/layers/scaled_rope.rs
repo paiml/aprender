@@ -324,7 +324,8 @@ impl ScaledRoPE {
 /// ```
 ///
 /// where m[h] is the head-specific slope computed as:
-/// - For powers of 2: m[h] = 2^(-8h/n) where n is the number of heads
+/// - For powers of 2: m[h] = 2^(-8(h+1)/n) for heads h = 0..n, where n is the
+///   number of heads (so head 0 carries 2^(-8/n), never 1.0)
 /// - For non-powers of 2: interpolation between adjacent powers of 2
 ///
 /// # References

@@ -572,6 +572,12 @@ falsification_tests:
   test: "bash scripts/check_model_ladder.sh (reads evidence/dogfood/models/<version>/{lambda,gx10}.json written by scripts/model_ladder.sh)"
   if_fails: "an architecture the release claims silently runs on the CPU — 0.68.1 shipped dense Qwen3 this way while the qwen2.5 control was green on the same binary (#3413, EPIC #3477)"
 
+- id: FALSIFY-CPU-GPU-016
+  rule: "A CUDA load failure that is the parity gate is refused when the GPU was forced, and only then"
+  prediction: "on_cuda_load_error returns Err (with the measured cosine) for a forced gate failure, Ok(true) for an unforced one, and Ok(false) for any non-gate error"
+  test: "cargo test -p apr-cli --lib on_cuda_load_error"
+  if_fails: "a forced --gpu silently downgrades to CPU after a parity-gate failure, or an unrelated CUDA error is swallowed as a gate verdict (R-0b, #2971)"
+
 proof_obligations:
 - id: ACVGOP-INV-001
   type: invariant
@@ -625,5 +631,5 @@ qa_gate:
   - no_fallback_line_on_claimed_backend
   - golden_output_gpu_per_rung
   - both_required_hosts
-  pass_criteria: "All 15 falsification tests pass, and scripts/check_model_ladder.sh exits 0 (FALSIFY-CPU-GPU-015 is the ladder itself)"
+  pass_criteria: "All 16 falsification tests pass, and scripts/check_model_ladder.sh exits 0 (FALSIFY-CPU-GPU-015 is the ladder itself)"
   falsification: "plant backends.cuda.fallback=true in a receipt → exit 1 (scripts/lib/model_ladder_cases/red-fallback)"

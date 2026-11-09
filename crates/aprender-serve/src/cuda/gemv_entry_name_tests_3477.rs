@@ -23,8 +23,10 @@ mod gemv_entry_name_tests_3477 {
             KernelType::CoalescedGemv { k, n },
             KernelType::Q4KGemv { k, n },
             KernelType::Q5KGemv { k, n },
+            KernelType::BatchedQ5KGemv { k, n, m: 4 },
             KernelType::Q6KGemv { k, n },
             KernelType::Q8_0Gemv { k, n },
+            KernelType::BatchedQ8_0Gemv { k, n },
             KernelType::Q5_0Gemv { k, n },
             KernelType::Q4_0Gemv { k, n },
             KernelType::Q4_1Gemv { k, n },
@@ -64,6 +66,12 @@ mod gemv_entry_name_tests_3477 {
             KernelType::WideQ4KGemv { k, n },
             KernelType::VectorizedQ4KGemv { k, n },
             KernelType::MwvQ4KGemv { k, n, num_warps: w },
+            KernelType::BatchedMwvQ4KGemv {
+                k,
+                n,
+                m: w,
+                num_warps: w,
+            },
             KernelType::MwvDp4aQ4KGemv { k, n, num_warps: w },
             KernelType::HwDp4aQ4KGemv { k, n, num_warps: w },
             KernelType::Dp4aQ4KGemv { k, n },
@@ -92,8 +100,20 @@ mod gemv_entry_name_tests_3477 {
             KernelType::CoalescedQ6KGemv { k, n },
             KernelType::BatchedQ6KGemv { k, n, m: w },
             KernelType::MwvQ6KGemv { k, n, num_warps: w },
+            KernelType::BatchedMwvQ6KGemv {
+                k,
+                n,
+                m: w,
+                num_warps: w,
+            },
             KernelType::Dp4aQ6KGemv { k, n, num_warps: w },
             KernelType::HwDp4aQ6KGemv { k, n, num_warps: w },
+            KernelType::BatchedHwDp4aQ6KGemv {
+                k,
+                n,
+                m: w,
+                num_warps: w,
+            },
             KernelType::Fp16Q4KGemv { k, n },
             KernelType::FusedRmsNormQ4KGemv {
                 k,
@@ -1354,6 +1374,146 @@ mod gemv_entry_name_tests_3477 {
         assert_eq!(
             W::resolve_declared_or_sized(Some(W::Q4K), 12_345, rows, cols),
             Some(W::Q4K)
+        );
+    }
+
+    /// #3953 / #4952: a prefill dequant (Qwen3.5 batched prefill) is not a GEMV, so
+    /// the guards above never iterate it. Its own checks, all GPU-free:
+    ///   * the launcher's name is the PTX's one `.visible .entry`;
+    ///   * ASCII only (ptxas rejects any other byte, comments included);
+    ///   * LOOP-FREE: every `bra` jumps FORWARD, so sm_121's backward-branch patch
+    ///     has nothing to rewrite and cannot change this kernel;
+    ///   * ptxas assembles it.
+    ///
+    /// Returns the PTX for the caller's table checks.
+    fn dequant_ptx_named_ascii_loop_free_and_assembling(kt: &KernelType, want: &str) -> String {
+        let kernels = CudaKernels::new();
+        let name = kernels.kernel_name(kt);
+        let ptx = kernels.generate_ptx(kt);
+        assert_eq!(name, want);
+        assert_eq!(
+            ptx.matches(".visible .entry ").count(),
+            1,
+            "{want}: exactly one entry per module"
+        );
+        assert!(ptx.contains(&format!(".visible .entry {name}(")));
+        assert!(
+            ptx.is_ascii(),
+            "{want}: non-ASCII byte in the dequant PTX; ptxas refuses it"
+        );
+        let lines: Vec<&str> = ptx.lines().map(str::trim).collect();
+        let mut branches = 0;
+        for (i, l) in lines.iter().enumerate() {
+            let Some(target) = l.split("bra ").nth(1) else {
+                continue;
+            };
+            let target = target.trim_end_matches(';');
+            let at = lines
+                .iter()
+                .position(|m| *m == format!("{target}:"))
+                .unwrap_or_else(|| panic!("{want}: branch to undefined label {target}"));
+            assert!(
+                at > i,
+                "{want}: backward branch `{l}` -- the dequant must be loop-free"
+            );
+            branches += 1;
+        }
+        assert!(
+            branches >= 2,
+            "{want}: found {branches} branches; the scan broke"
+        );
+        let target = crate::test_ptxas::declared_target(&ptx);
+        if let Err(e) = crate::test_ptxas::assemble(&ptx, name, &[target.as_str()]) {
+            panic!("the {want} PTX does not assemble: {e}");
+        }
+        ptx
+    }
+
+    /// The body of the PTX `.global` array `decl` (e.g. `iq3s_dq_grid[512]`), parsed
+    /// back to numbers.
+    fn dequant_ptx_table_values(ptx: &str, decl: &str) -> Vec<u64> {
+        ptx.split(&format!("{decl} = {{"))
+            .nth(1)
+            .and_then(|t| t.split("};").next())
+            .unwrap_or_else(|| panic!("no table {decl}"))
+            .split(',')
+            .map(|v| {
+                v.trim()
+                    .parse()
+                    .unwrap_or_else(|e| panic!("{decl}: {v:?}: {e}"))
+            })
+            .collect()
+    }
+
+    /// #3953: the IQ2_S dequant's grid table is byte-identical to the measured GEMV's.
+    #[test]
+    fn the_iq2_s_dequant_kernel_is_named_ascii_loop_free_and_assembles() {
+        let kt = KernelType::Iq2SDequant { k: 3584, n: 1024 };
+        let ptx = dequant_ptx_named_ascii_loop_free_and_assembling(&kt, "iq2_s_dequant_to_f32");
+        let table = |p: &str| {
+            p.split("iq2s_grid_g[2048] = {")
+                .nth(1)
+                .and_then(|t| t.split("};").next())
+                .expect("grid table")
+                .to_string()
+        };
+        let gemv = CudaKernels::new().generate_ptx(&KernelType::Iq2SGemv { k: 3584, n: 1024 });
+        assert_eq!(
+            table(&ptx),
+            table(&gemv),
+            "the dequant must read the GEMV's grid"
+        );
+        assert_eq!(table(&ptx).split(',').count(), 2048);
+    }
+
+    /// #4952: the IQ2_XXS, IQ3_S, IQ3_XXS and Q2_K dequants pass the same checks, and
+    /// every lookup table they carry parses back to the Rust constant the CPU oracle
+    /// reads, entry for entry.
+    #[test]
+    fn the_4952_dequant_kernels_are_named_ascii_loop_free_assemble_and_carry_the_oracle_tables() {
+        use crate::quantize::iq_grids::{IQ2XXS_GRID, IQ3S_GRID, IQ3XXS_GRID, KSIGNS_IQ2XS};
+        let (k, n) = (3584, 1024);
+        let ksigns: Vec<u64> = KSIGNS_IQ2XS.iter().map(|&v| u64::from(v)).collect();
+
+        let ptx = dequant_ptx_named_ascii_loop_free_and_assembling(
+            &KernelType::Iq2XxsDequant { k, n },
+            "iq2_xxs_dequant_to_f32",
+        );
+        let words: Vec<u64> = IQ2XXS_GRID
+            .iter()
+            .flat_map(|&v| [v & 0xffff_ffff, v >> 32])
+            .collect();
+        assert_eq!(dequant_ptx_table_values(&ptx, "iq2xxs_dq_grid[512]"), words);
+        assert_eq!(
+            dequant_ptx_table_values(&ptx, "ksigns_iq2xs_dq[128]"),
+            ksigns
+        );
+
+        let ptx = dequant_ptx_named_ascii_loop_free_and_assembling(
+            &KernelType::Iq3SDequant { k, n },
+            "iq3_s_dequant_to_f32",
+        );
+        let grid: Vec<u64> = IQ3S_GRID.iter().map(|&v| u64::from(v)).collect();
+        assert_eq!(dequant_ptx_table_values(&ptx, "iq3s_dq_grid[512]"), grid);
+
+        let ptx = dequant_ptx_named_ascii_loop_free_and_assembling(
+            &KernelType::Iq3XxsDequant { k, n },
+            "iq3_xxs_dequant_to_f32",
+        );
+        let grid: Vec<u64> = IQ3XXS_GRID.iter().map(|&v| u64::from(v)).collect();
+        assert_eq!(dequant_ptx_table_values(&ptx, "iq3xxs_dq_grid[256]"), grid);
+        assert_eq!(
+            dequant_ptx_table_values(&ptx, "ksigns_iq2xs_dq[128]"),
+            ksigns
+        );
+
+        let ptx = dequant_ptx_named_ascii_loop_free_and_assembling(
+            &KernelType::Q2KDequant { k, n },
+            "q2_k_dequant_to_f32",
+        );
+        assert!(
+            !ptx.lines().any(|l| l.trim_start().starts_with(".global")),
+            "Q2_K needs no lookup table"
         );
     }
 }

@@ -146,6 +146,16 @@ falsification_tests:
   prediction: 'pass + warn + fail equals the number of pre-flight checks, so none is counted twice or dropped'
   test: 'aprender-train finetune::training_plan::tests::check_counts_partitions_every_preflight_check'
   if_fails: 'A status bucket was dropped or a filter loosened; the displayed summary and the verdict would then disagree about the same checks. MUTANT: fail = 0 turns 2 rows RED.'
+- id: FALSIFY-CLASS-010
+  rule: Evaluation restores the checkpoint's weights
+  prediction: 'evaluate_checkpoint on an adapter checkpoint evaluates with the classifier head stored in model.safetensors, so a bias of +50 on class k puts every sample in confusion-matrix column k'
+  test: 'aprender-train finetune::classify_trainer::tests::test_evaluate_checkpoint_uses_restored_weights'
+  if_fails: 'The report would describe a randomly initialised model, not the trained checkpoint, and look plausible. MUTANT: skip restore_checkpoint_weights turns 2 rows RED.'
+- id: FALSIFY-CLASS-011
+  rule: Apply preconditions fail loudly, by kind
+  prediction: 'execute_plan returns ConfigError naming a missing model dir, Io naming missing training data, and ConfigError for an unknown model size (GH-377) after creating the output dir; none fall through to training'
+  test: 'aprender-train --test execute_plan_guards_5674 (4 tests)'
+  if_fails: 'A precondition was dropped or its error kind changed; apply would start training against a missing model/data or silently default the model size. MUTANT: execute_plan missing-data guard returning ConfigError instead of Io turns missing_training_data_is_an_io_error RED.'
 kani_harnesses:
 - id: KANI-FT-001
   obligation: FT-INV-001
@@ -204,5 +214,5 @@ qa_gate:
   - softmax_sum_invariant
   - nan_inf_rejection
   - config_factory_contract_sync
-  pass_criteria: All 9 falsification tests pass
+  pass_criteria: All 10 falsification tests pass
   falsification: Bypass ValidatedClassLogits::new() with unsafe or wrong constructor

@@ -1,0 +1,58 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PRM-S2 (PRM-001 v3 "PROMETHEUS" §0.2, §2.4): the review workload profile. It reads
+    `agent-trace-v1` rows (`timing.tokens{input,output}`) and reports the measured distribution of
+    input and output tokens per lane. `rex workload ROWS --min-n N` (crates/aprender-review-experiment:
+    workload.rs, examples/rex.rs) computes it. Rows with `trace_status = capture_failed`, rows that
+    do not parse, and rows without a positive `tokens.input` or with no `tokens.output` are excluded.
+    They are counted as excluded and never read as zero tokens. Quantiles are nearest-rank
+    (stats::percentile, the same rule as every other rex percentile).
+    §0.2 says a diff of 2k–32k tokens goes in and a verdict plus at most 5 bullets comes out, so review
+    is prefill-heavy. It is decided per lane, with both bounds taken from §0.2's own text:
+    in_band ⇔ input p50 ≥ 2000 ∧ input p95 ≤ 32000; prefill_heavy ⇔ output p95 < input p50.
+    Only lanes with at least min_n rows decide. The claim is confirmed when every deciding lane holds
+    both, falsified when a deciding lane fails either (the lane is named), and undecided when no lane
+    reaches min_n. An undecided claim is refused and never read as confirmed.
+    Strata weights (§2.4: 2k / 8k / 16k / 32k) are taken over distinct work units (`diff_sha256`).
+    A unit's size is the largest `tokens.input` any lane measured for it, and its stratum is the
+    smallest bound ≥ that size. A unit over 32k is counted as `over_32k` and left out of the
+    weights, which sum to 1 over the in-range units.
+  references:
+    - "docs/specifications/PRM-001-prometheus.md"
+    - "contracts/trace-datacard-v1.yaml"
+
+equations:
+  quantile:
+    formula: "p_q(lane, k) = nearest_rank_q({tokens.k(r) : r ∈ rows(lane), measured(r)}), k ∈ {input, output}, q ∈ {0.5, 0.95}"
+  claim:
+    formula: "D = {lane : n(lane) ≥ min_n}; claim = None if D = ∅ else Some(∀ lane ∈ D: p50_in ≥ 2000 ∧ p95_in ≤ 32000 ∧ p95_out < p50_in)"
+  strata:
+    formula: "size(u) = max_{r ∈ u} tokens.input(r); stratum(u) = min{b ∈ {2000, 8000, 16000, 32000} : size(u) ≤ b}; w_b = |{u : stratum(u) = b}| / |{u : size(u) ≤ 32000}|"
+
+falsification_tests:
+  - id: FALSIFY-WLP-001
+    name: quantiles_are_nearest_rank_on_measured_rows_only
+    prediction: "capture_failed, unparseable, input-0 and output-missing rows are excluded and counted, and they do not move any lane's p50/p95; p50/p95 equal nearest rank on the planted sample"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_wlp_001"
+    expected_output: "exit 0"
+    if_fails: "A failed capture would read as a 0-token review and drag the profile toward decode-bound."
+  - id: FALSIFY-WLP-002
+    name: claim_is_decided_per_lane_and_refused_when_thin
+    prediction: "in-band prefill-heavy lanes confirm; a lane whose output p95 ≥ input p50, or whose input p50 < 2000 or p95 > 32000, falsifies and is named; lanes below min_n do not decide; with no lane at min_n the claim is undecided and refused"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_wlp_002"
+    expected_output: "exit 0"
+    if_fails: "§0.2 would stay an assertion: speed work would chase prefill on a workload nobody measured."
+  - id: FALSIFY-WLP-003
+    name: strata_weights_are_over_distinct_diffs
+    prediction: "one diff reviewed by 3 lanes counts once, at its largest lane measurement; bounds are inclusive (2000 → 2k, 2001 → 8k); a unit over 32k is over_32k and unweighted; weights sum to 1"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_wlp_003"
+    expected_output: "exit 0"
+    if_fails: "Replay strata would be weighted by lane count rather than by the diffs the lane actually sees."
+  - id: FALSIFY-WLP-004
+    name: receipt_block_matches_the_v3_template
+    prediction: "the rendered block is `workload: {input_tokens_p50_p95: {lane: [p50, p95]}, output_tokens_p50_p95: {…}}` plus claim, strata and excluded; an undecided claim renders null, not true"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_wlp_004"
+    expected_output: "exit 0"
+    if_fails: "The §7 receipt reader would miss the workload block or read an undecided claim as confirmed."

@@ -37,3 +37,10 @@ falsification:
     description: "MoE + head_dim keys are read from config.json, not hardcoded None. Discharges C-CONVERT-MOE-001/002."
     test: "loads_moe_and_head_dim_from_config — Mixtral-style config.json (num_local_experts=8, num_experts_per_tok=2, head_dim=128): RED pre-fix all None, GREEN post-fix Some(8)/Some(2)/Some(128)."
     evidence: "cargo test -p aprender-core --lib loads_moe_and_head_dim_from_config"
+
+falsification_tests:
+  - id: FALSIFY-CONVERTER_MOE_HEADDIM_IMPORT-001
+    description: "load_model_config_from_json reads num_local_experts, num_experts_per_tok and explicit head_dim from a Mixtral config.json"
+    test: "cargo test -p aprender-core --lib loads_moe_and_head_dim_from_config"
+    prediction: "num_experts == Some(8), num_experts_per_tok == Some(2), head_dim == Some(128)"
+    if_fails: "MoE keys hardcoded to None: MoE SafeTensors converts to a dense .apr and head_dim is lost"

@@ -1,0 +1,18 @@
+- id: PMAT-5256
+  github_issue: 5256
+  item_type: task
+  title: 'apr --version short sha: one fixed length (9) for build and comparators'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-13T19:42:15Z
+  updated: 2026-10-13T19:42:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998

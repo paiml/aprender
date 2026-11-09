@@ -59,3 +59,24 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-MATRIX_TRANSPOSE_BLIS_V1-001
+    description: "Matrix::transpose gives result[j, i] == self[i, j] with result.rows == self.cols and result.cols == self.rows"
+    test: "cargo test -p aprender-compute --lib matrix::tests::transpose::"
+    prediction: "a 2x3 matrix [1..6] transposes to 3x2 with t[0,1]=4, t[1,0]=2, t[2,1]=6, and square, single-row, single-col, 1x1 and identity cases match element by element"
+    if_fails: "Matrix::transpose swaps the wrong indices or reports the wrong output dimensions after delegating to blis::transpose"
+  - id: FALSIFY-MATRIX_TRANSPOSE_BLIS_V1-002
+    description: "output dimensions are swapped for every shape, including ones large enough for the BLIS path"
+    test: "cargo test -p aprender-compute --lib proptest_properties::test_transpose_dimension_swap"
+    prediction: "for random m, n in 1..20, Matrix::zeros(m, n).transpose() has rows == n and cols == m"
+    if_fails: "Matrix::transpose builds the result with unswapped dimensions for some shapes"
+  - id: FALSIFY-MATRIX_TRANSPOSE_BLIS_V1-003
+    description: "the dispatched (AVX2) transpose is bitwise identical to the scalar transpose"
+    test: "cargo test -p aprender-compute --lib blis::transpose::tests::test_avx2_scalar_parity"
+    prediction: "for the 2048x128 attention shape, transpose() output equals transpose_scalar_impl() output under assert_eq (bitwise)"
+    if_fails: "the AVX2 8x8 micro-kernel misplaces or alters values, so the SIMD path diverges from the scalar reference"
+  - id: FALSIFY-MATRIX_TRANSPOSE_BLIS_V1-004
+    description: "BLIS transpose handles non-8-aligned remainder edges internally"
+    test: "cargo test -p aprender-compute --lib blis::transpose::tests::test_non_aligned"
+    prediction: "for shapes 7x13, 17x3, 1x32, 32x1, 1x1 and 3x3, transpose() equals the naive element-copy transpose exactly"
+    if_fails: "edge rows or columns outside the 8x8 tiles are skipped or written to the wrong place"

@@ -175,7 +175,7 @@ impl OwnedQuantizedModel {
     fn simd_dot_f32(a: &[f32], b: &[f32]) -> f32 {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma") {
+            if crate::isa::cpu_feature!("avx2") && crate::isa::cpu_feature!("fma") {
                 // SAFETY: We've verified AVX2+FMA support
                 unsafe { Self::simd_dot_f32_avx2(a, b) }
             } else {
@@ -253,7 +253,7 @@ impl OwnedQuantizedModel {
     fn simd_axpy_f32(out: &mut [f32], weight: f32, val: &[f32]) {
         #[cfg(target_arch = "x86_64")]
         {
-            if is_x86_feature_detected!("avx2") {
+            if crate::isa::cpu_feature!("avx2") {
                 // SAFETY: We've verified AVX2 support
                 unsafe { Self::simd_axpy_f32_avx2(out, weight, val) }
             } else {

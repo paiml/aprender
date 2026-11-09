@@ -398,7 +398,7 @@ mod tests {
             .add_row("200px", &["m1"])
             .build();
 
-        let yaml = serde_yaml_ng::to_string(&dashboard).expect("yaml serialize failed");
+        let yaml = serde_saphyr::to_string(&dashboard).expect("yaml serialize failed");
         assert!(yaml.contains("name: Test"));
         assert!(yaml.contains("type: timeseries"));
         assert!(yaml.contains("height: 200px"));
@@ -422,7 +422,7 @@ layout:
 "#;
 
         let dashboard: DashboardConfig =
-            serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+            crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(dashboard.app.name, "Deserialized");
         assert_eq!(dashboard.app.port, 9000);
         assert_eq!(dashboard.data_source.source_type, "file");
@@ -677,9 +677,9 @@ layout:
             .add_row("250px", &["ts", "g"])
             .build();
 
-        let yaml = serde_yaml_ng::to_string(&original).expect("yaml serialize failed");
+        let yaml = serde_saphyr::to_string(&original).expect("yaml serialize failed");
         let deserialized: DashboardConfig =
-            serde_yaml_ng::from_str(&yaml).expect("yaml deserialize failed");
+            crate::yaml::from_str(&yaml).expect("yaml deserialize failed");
         assert_eq!(original, deserialized);
     }
 

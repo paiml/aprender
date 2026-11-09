@@ -312,6 +312,8 @@ mod activations;
 mod attention;
 mod bound_dispatch;
 mod core;
+/// APR-EMBED-001 EG-4 (#4903): the EmbeddingGemma 2 encoder's device ops.
+pub(crate) mod embedding_gemma2_ops;
 // #3727: PMAT-084 FP8 activation reuse, opt-in per shared-input group.
 mod fp8_activation_cache;
 // #3759: one module-cache key, one PTX text (debug builds prove it).
@@ -361,6 +363,10 @@ mod poison_trace_test;
 mod tests_q5k_ggml;
 #[cfg(test)]
 mod tests_q8_activation_staleness;
+
+// FALSIFY (#5303): the batched MWV Q4_K and Q6_K GEMVs are bitwise the single-row ones, row by row
+#[cfg(test)]
+mod tests_batched_mwv;
 
 // COV-003 through COV-006 (layer preload, kv_cache, attention, quantized)
 #[cfg(test)]

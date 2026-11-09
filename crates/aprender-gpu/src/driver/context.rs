@@ -44,8 +44,9 @@ static CUDA_INIT_OK: AtomicBool = AtomicBool::new(false);
 /// Returns `Err(GpuError::CudaNotAvailable)` if CUDA driver is not installed.
 /// Returns `Err(GpuError::DeviceInit)` if cuInit fails.
 pub(crate) fn get_driver() -> Result<&'static CudaDriver, GpuError> {
-    let driver = CudaDriver::load()
-        .ok_or_else(|| GpuError::CudaNotAvailable("CUDA driver not found".to_string()))?;
+    let driver = CudaDriver::load().ok_or_else(|| {
+        GpuError::CudaNotAvailable("CUDA driver not found (libcuda.so)".to_string())
+    })?;
 
     // Initialize CUDA exactly once; concurrent callers BLOCK here until the
     // single cuInit completes, then all observe the result via CUDA_INIT_OK.

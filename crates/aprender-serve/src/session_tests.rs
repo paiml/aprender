@@ -20,6 +20,16 @@ struct Scripted {
     restores: usize,
     /// The forward loses its checkpoint (a reallocation, a fallback).
     lose_checkpoint: bool,
+    /// What `set_layer_timing` answers: whether this forward times its layers.
+    times_layers: bool,
+    /// Every `set_layer_timing` argument, in order.
+    timing_log: Vec<bool>,
+    /// What `take_layer_timings` hands back, once.
+    timed: Option<Vec<LayerTiming>>,
+    /// The forward call (0-based) from which every forward errors.
+    fail_from: Option<usize>,
+    /// What each `validate` call judged the backend on (#4342).
+    probes: Vec<Vec<u32>>,
 }
 
 impl Scripted {
@@ -35,6 +45,11 @@ impl Scripted {
             saved: None,
             restores: 0,
             lose_checkpoint: false,
+            times_layers: false,
+            timing_log: Vec::new(),
+            timed: None,
+            fail_from: None,
+            probes: Vec::new(),
         }
     }
 
@@ -66,6 +81,10 @@ impl ArchForward for Scripted {
         self.reserves += 1;
         Ok(self.drop_on_reserve)
     }
+    fn validate(&mut self, probe: &[u32]) -> Result<()> {
+        self.probes.push(probe.to_vec());
+        Ok(())
+    }
     fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
         let marker = self.marker?;
         prompt.iter().rposition(|&t| t == marker)
@@ -93,11 +112,23 @@ impl ArchForward for Scripted {
             "forward from {start}, but the state holds {}",
             self.held
         );
+        if self.fail_from.is_some_and(|n| self.calls.len() >= n) {
+            return Err(RealizarError::InvalidShape {
+                reason: "scripted forward failure".to_string(),
+            });
+        }
         self.calls.push((tokens.len(), start));
         self.held = tokens.len();
         let mut logits = vec![0.0; 8];
         logits[self.next as usize] = 1.0;
         Ok(logits)
+    }
+    fn set_layer_timing(&mut self, on: bool) -> bool {
+        self.timing_log.push(on);
+        self.times_layers
+    }
+    fn take_layer_timings(&mut self) -> Option<Vec<LayerTiming>> {
+        self.timed.take()
     }
 }
 
@@ -123,6 +154,125 @@ fn generate_prefills_once_then_decodes_one_token_per_step() {
     // The prompt whole from 0, then each chosen token (not the last) from where it left.
     assert_eq!(s.engine().calls, vec![(3, 0), (4, 3), (5, 4)]);
     assert_eq!(s.processed_len(), 5);
+}
+
+/// A tracer that records what a `step` or `layer` serve trace records.
+fn step_tracer() -> crate::inference_trace::InferenceTracer {
+    use crate::inference_trace::{InferenceTracer, TraceConfig, TraceStep};
+    let mut config = TraceConfig::enabled();
+    config.steps = [TraceStep::TransformerBlock, TraceStep::Decode]
+        .into_iter()
+        .collect();
+    InferenceTracer::new(config)
+}
+
+/// What a traced turn filed, as `(step, iteration)` in order.
+fn filed(
+    tracer: &crate::inference_trace::InferenceTracer,
+) -> Vec<(crate::inference_trace::TraceStep, usize)> {
+    tracer
+        .events()
+        .iter()
+        .map(|e| (e.step, e.iteration))
+        .collect()
+}
+
+const TIMED: LayerTiming = LayerTiming {
+    total_us: 7,
+    calls: 2,
+    kind: "scripted",
+};
+
+/// APR-OBS-001 OBS-09: a traced turn files one `TransformerBlock` per forward,
+/// iteration 0 being the prompt's, and one `Decode` per `on_token` at the
+/// iteration of the token it emits. `serve_trace` splits prefill from decode
+/// on exactly this shape, so a shifted iteration would report a decode as
+/// prefill and still fit under the wall clock.
+#[test]
+fn a_traced_turn_files_one_event_per_forward_and_per_token() {
+    use crate::inference_trace::TraceStep::{Decode, TransformerBlock};
+    let mut s = Session::new(Scripted {
+        times_layers: true,
+        timed: Some(vec![TIMED]),
+        ..Scripted::new(3, 100)
+    });
+    let mut tracer = step_tracer();
+    let turn = s
+        .generate_traced(
+            &[7901, 7902, 7903],
+            &greedy(3),
+            &mut |_| true,
+            Some(TurnTrace {
+                tracer: &mut tracer,
+                layers: true,
+            }),
+        )
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7901, 7902, 7903, 3, 3, 3]);
+    assert_eq!(
+        filed(&tracer),
+        [
+            (TransformerBlock, 0),
+            (Decode, 0),
+            (TransformerBlock, 1),
+            (Decode, 1),
+            (TransformerBlock, 2),
+            (Decode, 2),
+        ]
+    );
+    assert_eq!(
+        s.engine().timing_log,
+        [true, false],
+        "on for the turn, then off"
+    );
+    assert_eq!(s.take_layer_timings(), Some(vec![TIMED]));
+    assert_eq!(s.take_layer_timings(), None, "taking it clears it");
+}
+
+/// Layer timing is asked for only by a layer trace, and turned off after the
+/// turn, Ok or Err, on every forward that said it would time its layers. A
+/// forward left timing would run every later decode eager, syncing after each
+/// layer, with nothing in any reply to show it.
+#[test]
+fn layer_timing_is_on_for_the_turn_and_off_after_it_ok_or_err() {
+    // (layer trace, forward times layers, first failing forward call,
+    // the set_layer_timing calls the forward sees)
+    let cases: [(bool, bool, Option<usize>, &[bool]); 6] = [
+        (true, true, None, &[true, false]),
+        (true, true, Some(0), &[true, false]), // the prompt's forward errors
+        (true, true, Some(2), &[true, false]), // a decode forward errors
+        (true, false, None, &[true]),          // a CPU forward: nothing to undo
+        (false, true, None, &[]),              // a step trace times no layer
+        (false, true, Some(0), &[]),
+    ];
+    for (layers, times, fail_from, want) in cases {
+        let case = format!("layers={layers} times={times} fail_from={fail_from:?}");
+        let mut s = Session::new(Scripted {
+            times_layers: times,
+            fail_from,
+            ..Scripted::new(3, 100)
+        });
+        let mut tracer = step_tracer();
+        let r = s.generate_traced(
+            &[7911, 7912],
+            &greedy(3),
+            &mut |_| true,
+            Some(TurnTrace {
+                tracer: &mut tracer,
+                layers,
+            }),
+        );
+        assert_eq!(r.is_err(), fail_from.is_some(), "{case}");
+        assert_eq!(s.engine().timing_log, want, "{case}");
+    }
+    // An untraced turn asks nothing of the forward's timing.
+    let mut s = Session::new(Scripted {
+        times_layers: true,
+        ..Scripted::new(3, 100)
+    });
+    s.generate(&[7913], &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert!(s.engine().timing_log.is_empty());
 }
 
 #[test]
@@ -216,11 +366,34 @@ fn digest_separates_order_and_length() {
 }
 
 /// Scripted with a device argmax: counts `forward_greedy` calls and answers
-/// `greedy_answer` without logits.
+/// `greedy_answer`, with `read_back` as the logits when they are asked for.
 struct DeviceGreedy {
     inner: Scripted,
     greedy_answer: u32,
     greedy_calls: usize,
+    /// Each call's `read_logits` (#4971).
+    reads: Vec<bool>,
+    /// The logits a read hands back; `None` plays a backend that drops them.
+    read_back: Option<Vec<f32>>,
+}
+
+impl DeviceGreedy {
+    fn new(greedy_answer: u32) -> Self {
+        Self {
+            inner: Scripted::new(3, 100),
+            greedy_answer,
+            greedy_calls: 0,
+            reads: Vec::new(),
+            read_back: None,
+        }
+    }
+
+    fn reading(greedy_answer: u32, read_back: Vec<f32>) -> Self {
+        Self {
+            read_back: Some(read_back),
+            ..Self::new(greedy_answer)
+        }
+    }
 }
 
 impl ArchForward for DeviceGreedy {
@@ -254,21 +427,30 @@ impl ArchForward for DeviceGreedy {
     fn restore_checkpoint(&mut self) -> Result<bool> {
         self.inner.restore_checkpoint()
     }
-    fn forward_greedy(&mut self, tokens: &[u32], start: usize) -> Result<Option<u32>> {
+    fn forward_greedy(
+        &mut self,
+        tokens: &[u32],
+        start: usize,
+        read_logits: bool,
+    ) -> Result<Option<GreedyStep>> {
         self.inner.calls.push((tokens.len(), start));
         self.inner.held = tokens.len();
         self.greedy_calls += 1;
-        Ok(Some(self.greedy_answer))
+        self.reads.push(read_logits);
+        Ok(Some(GreedyStep {
+            token: self.greedy_answer,
+            logits: if read_logits {
+                self.read_back.clone()
+            } else {
+                None
+            },
+        }))
     }
 }
 
 #[test]
 fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
-    let device = |answer| DeviceGreedy {
-        inner: Scripted::new(3, 100),
-        greedy_answer: answer,
-        greedy_calls: 0,
-    };
+    let device = DeviceGreedy::new;
     let mut s = Session::new(device(5));
     let turn = s
         .generate(&[7701, 7702], &greedy(2), &mut |_| true)
@@ -292,6 +474,99 @@ fn plain_greedy_takes_the_device_argmax_and_a_penalty_or_sampling_does_not() {
         "a repeat penalty needs the logits"
     );
 }
+
+/// #4026: `logprobs_top_k` on a greedy config.
+fn greedy_logprobs(max_tokens: usize, k: usize) -> QuantizedGenerateConfig {
+    QuantizedGenerateConfig {
+        logprobs_top_k: k,
+        ..greedy(max_tokens)
+    }
+}
+
+#[test]
+fn logprobs_record_one_step_per_generated_token_whose_top1_is_the_choice() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s
+        .generate(&[7801, 7802], &greedy_logprobs(3, 2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7801, 7802, 3, 3, 3]);
+    let steps = take_last_turn_steps().expect("recorded");
+    assert_eq!(steps.len(), 3, "one record per generated token");
+    for (i, step) in steps.iter().enumerate() {
+        assert_eq!(step.step, i);
+        assert_eq!(step.chosen, turn.tokens[2 + i]);
+        assert_eq!(step.top.len(), 2);
+        assert_eq!(
+            step.top[0].token_id, step.chosen,
+            "greedy: top-1 is the choice"
+        );
+        assert_eq!(step.top[0].logit, 1.0);
+        assert!(step.top[0].logprob > step.top[1].logprob);
+    }
+    assert_eq!(take_last_turn_steps(), None, "a take clears it");
+}
+
+#[test]
+fn logprobs_zero_records_nothing_and_publishes_nothing() {
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    s.generate(&[7811], &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(take_last_turn_steps(), None);
+}
+
+#[test]
+fn logprobs_carry_the_full_vocabulary_logsumexp() {
+    // PRM C11: the chosen token's logprob and the log-sum-exp come from the
+    // same logits as `top` (3 → 1.0, the other 7 of the 8 → 0.0). The LSE is
+    // carried, never recovered from top-K (#4026).
+    let _ = take_last_turn_steps();
+    let mut s = Session::new(Scripted::new(3, 100));
+    s.generate(&[7821], &greedy_logprobs(1, 2), &mut |_| true)
+        .expect("turn");
+    let steps = take_last_turn_steps().expect("recorded");
+    let lse = (1.0_f64.exp() + 7.0).ln();
+    let s0 = &steps[0];
+    assert!(
+        (f64::from(s0.logsumexp_full) - lse).abs() < 1e-5,
+        "{}",
+        s0.logsumexp_full
+    );
+    assert!(
+        (f64::from(s0.chosen_logprob) - (1.0 - lse)).abs() < 1e-5,
+        "{}",
+        s0.chosen_logprob
+    );
+    assert!((f64::from(s0.top[1].logprob) + lse).abs() < 1e-5);
+}
+
+#[test]
+fn logprobs_follow_the_logits_a_planted_change_moves_the_record() {
+    // Negative control: the same prompt against a forward whose argmax was
+    // moved must record a different top-1, or the record is not reading them.
+    let run = |next| {
+        let _ = take_last_turn_steps();
+        let mut s = Session::new(Scripted::new(next, 100));
+        s.generate(&[7831], &greedy_logprobs(1, 1), &mut |_| true)
+            .expect("turn");
+        take_last_turn_steps().expect("recorded")[0].top[0].token_id
+    };
+    assert_eq!(run(3), 3);
+    assert_eq!(run(6), 6);
+}
+
+#[test]
+fn logprobs_stop_on_a_stop_token_with_its_own_record() {
+    let _ = take_last_turn_steps();
+    let mut cfg = greedy_logprobs(4, 1);
+    cfg.stop_tokens = vec![3];
+    let mut s = Session::new(Scripted::new(3, 100));
+    let turn = s.generate(&[7841], &cfg, &mut |_| true).expect("turn");
+    assert_eq!(turn.tokens, vec![7841, 3]);
+    assert_eq!(take_last_turn_steps().expect("recorded").len(), 1);
+}
+
 // #4445: `apr bench` repeats one prompt and must time a whole prefill each time.
 // An extending prompt would resume the held state; after forget_prefix it may not.
 #[test]
@@ -416,6 +691,8 @@ fn a_device_argmax_from_below_the_checkpoint_drops_it() {
         inner: Scripted::checkpointing(3, 100, MARK),
         greedy_answer: 5,
         greedy_calls: 0,
+        reads: Vec::new(),
+        read_back: None,
     });
     let prompt = [7861, 7862, MARK, 7863];
     s.generate(&prompt, &greedy(1), &mut |_| true).expect("t1");
@@ -490,6 +767,30 @@ fn the_default_forward_keeps_no_checkpoint() {
         !b.restore_checkpoint().expect("default restore"),
         "the default has nothing to return to"
     );
+}
+
+/// The default times nothing and says so: a layer trace on such a forward
+/// turns no timing on and leaves no per-layer rows (APR-OBS-001 OBS-09).
+#[test]
+fn the_default_forward_times_no_layer() {
+    let mut b = Bare;
+    assert!(!b.set_layer_timing(true), "the default times no layer");
+    assert!(!b.set_layer_timing(false));
+    assert!(b.take_layer_timings().is_none());
+
+    let mut s = Session::new(Bare);
+    let mut tracer = step_tracer();
+    s.generate_traced(
+        &[1, 2],
+        &greedy(2),
+        &mut |_| true,
+        Some(TurnTrace {
+            tracer: &mut tracer,
+            layers: true,
+        }),
+    )
+    .expect("a layer trace on a forward that cannot time layers still runs the turn");
+    assert!(s.take_layer_timings().is_none());
 }
 
 /// A forward that names a fixed checkpoint position whatever the prompt.
@@ -581,4 +882,292 @@ fn a_checkpoint_inside_the_prompt_is_taken() {
     s.prepare_prompt(&[7881, 7882, 7883]).expect("prepare");
     assert_eq!(s.engine().inner.calls, vec![(2, 0)]);
     assert_eq!(s.checkpoint, Some(vec![7881, 7882]));
+}
+
+// #4954: the turn's prefill marks, which the server's `timings` split the TTFT
+// on. Judged by order against the forwards themselves, not by magnitudes, so
+// a loaded machine cannot turn them red (FALSIFY-APR-TTFT-014).
+
+const PLANT: std::time::Duration = std::time::Duration::from_millis(5);
+
+/// A [`Scripted`] forward that sleeps in `reserve` and in each of its first
+/// `prefill_calls` forwards, and records when each forward ran.
+struct Clocked {
+    inner: Scripted,
+    prefill_calls: usize,
+    reserved_at: Option<Instant>,
+    /// `(entered, left)` of each forward, in call order.
+    spans: Vec<(Instant, Instant)>,
+}
+
+impl Clocked {
+    fn new(inner: Scripted, prefill_calls: usize) -> Self {
+        Self {
+            inner,
+            prefill_calls,
+            reserved_at: None,
+            spans: Vec::new(),
+        }
+    }
+}
+
+impl ArchForward for Clocked {
+    fn arch(&self) -> &'static str {
+        "clocked"
+    }
+    fn on_gpu(&self) -> bool {
+        false
+    }
+    fn context_length(&self) -> usize {
+        self.inner.context_length()
+    }
+    fn batched_prefills(&self) -> usize {
+        0
+    }
+    fn notices(&self) -> &[String] {
+        &[]
+    }
+    fn reserve(&mut self, positions: usize) -> Result<bool> {
+        std::thread::sleep(PLANT);
+        let dropped = self.inner.reserve(positions)?;
+        self.reserved_at = Some(Instant::now());
+        Ok(dropped)
+    }
+    fn checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        self.inner.checkpoint_at(prompt)
+    }
+    fn save_checkpoint(&mut self) -> Result<()> {
+        self.inner.save_checkpoint()
+    }
+    fn restore_checkpoint(&mut self) -> Result<bool> {
+        self.inner.restore_checkpoint()
+    }
+    fn forward(&mut self, tokens: &[u32], start: usize) -> Result<Vec<f32>> {
+        let entered = Instant::now();
+        if self.spans.len() < self.prefill_calls {
+            std::thread::sleep(PLANT);
+        }
+        let logits = self.inner.forward(tokens, start)?;
+        self.spans.push((entered, Instant::now()));
+        Ok(logits)
+    }
+}
+
+/// The gx10 shape: a prompt prefilled in two calls, up to its checkpoint and
+/// then the rest. Both calls are prefill; the reserve before them is not, and
+/// no decode forward is.
+#[test]
+fn prefill_marks_bracket_every_prompt_forward_and_nothing_else() {
+    let mut s = Session::new(Clocked::new(Scripted::checkpointing(3, 100, MARK), 2));
+    let prompt = [7901, 7902, MARK, 7903];
+    let turn = s
+        .generate(&prompt, &greedy(3), &mut |_| true)
+        .expect("turn");
+    let f = s.engine();
+    assert_eq!(f.inner.calls[..2], [(2, 0), (4, 2)], "two prefill calls");
+    assert_eq!(f.spans.len(), 4, "two prefill calls and two decode steps");
+
+    let reserved = f.reserved_at.expect("the turn reserved");
+    assert!(
+        reserved <= turn.prefill_started,
+        "the reserve was counted as prefill"
+    );
+    for (i, (entered, left)) in f.spans[..2].iter().enumerate() {
+        assert!(
+            turn.prefill_started <= *entered && *left <= turn.prefill_ended,
+            "prefill call {i} ran outside the prefill marks"
+        );
+    }
+    for (i, (entered, _)) in f.spans[2..].iter().enumerate() {
+        assert!(
+            turn.prefill_ended <= *entered,
+            "decode step {i} began inside the prefill marks"
+        );
+    }
+    assert!(turn.prefill_ended.duration_since(turn.prefill_started) >= 2 * PLANT);
+}
+
+/// What the caller does with a token — send it down a channel, sleep — happens
+/// after prefill has ended, so it can only ever show up as decode.
+#[test]
+fn prefill_marks_exclude_time_the_caller_spends_in_on_token() {
+    let mut s = Session::new(Clocked::new(Scripted::new(3, 100), 1));
+    let mut first_call: Option<Instant> = None;
+    let turn = s
+        .generate(&[7911, 7912, 7913], &greedy(3), &mut |_| {
+            first_call.get_or_insert_with(Instant::now);
+            std::thread::sleep(PLANT);
+            true
+        })
+        .expect("turn");
+    let first_call = first_call.expect("on_token ran");
+    assert!(
+        turn.prefill_ended <= first_call,
+        "prefill ended after the first token reached the caller"
+    );
+    let (first_decode, _) = s.engine().spans[1];
+    assert!(
+        first_decode.duration_since(turn.prefill_ended) >= PLANT,
+        "the caller's delay landed inside prefill"
+    );
+}
+
+/// #4342: `prepare_turn` is `generate`'s setup run ahead of it, so a caller can
+/// time generation alone. It refuses what `generate` refuses, reserves the
+/// turn, runs no forward, and the turn after it is the turn `generate` alone
+/// would have produced.
+#[test]
+fn prepare_turn_is_the_setup_generate_would_do() {
+    let mut s = Session::new(Scripted::new(3, 10));
+    assert!(
+        s.prepare_turn(&[], 4).is_err(),
+        "an empty prompt is refused"
+    );
+    assert!(
+        s.prepare_turn(&[7401; 10], 4).is_err(),
+        "a prompt the context cannot hold is refused"
+    );
+    assert_eq!(s.engine().reserves, 0, "a refused prompt reserves nothing");
+    s.prepare_turn(&[7401, 7402, 7403], 4)
+        .expect("a prompt that fits");
+    assert_eq!(s.engine().reserves, 1);
+    assert!(s.engine().calls.is_empty(), "setup runs no forward");
+    let turn = s
+        .generate(&[7401, 7402, 7403], &greedy(4), &mut |_| true)
+        .expect("turn");
+    assert_eq!(turn.tokens, vec![7401, 7402, 7403, 3, 3, 3, 3]);
+    assert_eq!(s.engine().calls, vec![(3, 0), (4, 3), (5, 4), (6, 5)]);
+}
+
+/// #4342: the guard `prepare_turn` runs judges the positions it judged when it
+/// ran inside `generate`, on the turn's first forward: the prefix the session
+/// checkpoints when it takes one (a chat prompt's last turn marker), else the
+/// whole prompt.
+#[test]
+fn prepare_turn_probes_what_the_first_forward_covers() {
+    let mut s = Session::new(Scripted::new(3, 10));
+    s.prepare_turn(&[7401, 7402, 7403], 4)
+        .expect("a prompt that fits");
+    assert_eq!(s.engine().probes, vec![vec![7401, 7402, 7403]]);
+
+    let mut s = Session::new(Scripted::checkpointing(3, 16, 7900));
+    let prompt = [7401, 7900, 7402, 7403];
+    s.prepare_turn(&prompt, 4).expect("a prompt that fits");
+    assert_eq!(
+        s.engine().probes,
+        vec![vec![7401]],
+        "the checkpointed prefix"
+    );
+    s.generate(&prompt, &greedy(2), &mut |_| true)
+        .expect("turn");
+    assert_eq!(
+        s.engine().calls[0],
+        (1, 0),
+        "the first forward covers the probe"
+    );
+}
+
+// #4971: logprobs come from the logits the choice read, and asking for them
+// never changes the token or the path that chose it.
+mod logprobs_4971 {
+    use super::*;
+
+    fn collect(
+        s: &mut Session<impl ArchForward>,
+        prompt: &[u32],
+        config: &QuantizedGenerateConfig,
+        top_n: Option<usize>,
+    ) -> Result<(Turn, Vec<Option<StepLogprobs>>)> {
+        let mut records = Vec::new();
+        let turn = s.generate_with_logprobs(prompt, config, top_n, &mut |_, r| {
+            records.push(r);
+            true
+        })?;
+        Ok((turn, records))
+    }
+
+    #[test]
+    fn the_host_path_records_each_step_and_chooses_the_same_tokens() {
+        let mut plain = Session::new(Scripted::new(3, 100));
+        let want = plain
+            .generate(&[7901, 7902], &greedy(3), &mut |_| true)
+            .expect("plain");
+        let mut s = Session::new(Scripted::new(3, 100));
+        let (turn, records) = collect(&mut s, &[7901, 7902], &greedy(3), Some(2)).expect("turn");
+        assert_eq!(turn.tokens, want.tokens);
+        assert_eq!(records.len(), 3);
+        for (i, r) in records.iter().enumerate() {
+            let r = r.as_ref().expect("a record per step");
+            assert_eq!(r.step, i);
+            assert_eq!(r.chosen, 3);
+            assert_eq!(r.top[0].token_id, 3, "greedy: top-1 is the choice");
+            assert_eq!(r.chosen_logprob, r.top[0].logprob);
+            assert_eq!(r.top.len(), 2);
+            assert!(r.top2_margin().is_some_and(|m| (m - 1.0).abs() < 1e-6));
+        }
+        // Without top_n nothing is recorded.
+        let mut s = Session::new(Scripted::new(3, 100));
+        let (_, none) = collect(&mut s, &[7901, 7902], &greedy(3), None).expect("turn");
+        assert!(none.iter().all(Option::is_none));
+    }
+
+    #[test]
+    fn the_device_argmax_is_kept_and_its_logits_are_reported_as_read() {
+        // The read-back logits rank token 2 first; the device chose 5. The
+        // record must keep the device's token and report the distribution.
+        let read_back = vec![0.0, 0.0, 3.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        let mut s = Session::new(DeviceGreedy::reading(5, read_back.clone()));
+        let (turn, records) = collect(&mut s, &[7911, 7912], &greedy(2), Some(2)).expect("turn");
+        assert_eq!(turn.tokens, vec![7911, 7912, 5, 5]);
+        assert_eq!(s.engine().greedy_calls, 2, "the device path, every step");
+        assert_eq!(s.engine().reads, vec![true, true]);
+        for r in records.iter().map(|r| r.as_ref().expect("record")) {
+            assert_eq!(r.chosen, 5);
+            assert_eq!(r.top[0].token_id, 2);
+            let want = crate::gguf::logprob_of(&read_back, 5);
+            assert!((r.chosen_logprob - want).abs() < 1e-6);
+        }
+
+        // The same turn without logprobs: same tokens, same path, no read.
+        let mut s = Session::new(DeviceGreedy::reading(5, read_back));
+        let (plain, _) = collect(&mut s, &[7911, 7912], &greedy(2), None).expect("turn");
+        assert_eq!(plain.tokens, turn.tokens);
+        assert_eq!(s.engine().greedy_calls, 2);
+        assert_eq!(s.engine().reads, vec![false, false]);
+    }
+
+    #[test]
+    fn a_near_tie_and_a_clear_winner_read_as_their_margins() {
+        let near = vec![0.0, 1.0, 1.01, -3.0, 0.0, 0.0, 0.0, 0.0];
+        let mut s = Session::new(DeviceGreedy::reading(2, near));
+        let (_, records) = collect(&mut s, &[7921], &greedy(1), Some(2)).expect("turn");
+        let margin = records[0].as_ref().and_then(StepLogprobs::top2_margin);
+        assert!(margin.is_some_and(|m| m < 0.05), "{margin:?}");
+
+        let clear = vec![0.0, 5.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let mut s = Session::new(DeviceGreedy::reading(1, clear));
+        let (_, records) = collect(&mut s, &[7922], &greedy(1), Some(2)).expect("turn");
+        let margin = records[0].as_ref().and_then(StepLogprobs::top2_margin);
+        assert!(margin.is_some_and(|m| m > 1.0), "{margin:?}");
+    }
+
+    #[test]
+    fn a_device_path_that_drops_the_logits_fails_loudly() {
+        let mut s = Session::new(DeviceGreedy::new(5));
+        let err = collect(&mut s, &[7931, 7932], &greedy(2), Some(2))
+            .expect_err("asked for logits, got none");
+        assert!(err.to_string().contains("returned none"), "{err}");
+    }
+
+    #[test]
+    fn a_penalized_step_reports_the_logits_after_the_penalty() {
+        let mut config = greedy(2);
+        config.repeat_penalty = 2.0;
+        let mut s = Session::new(Scripted::new(3, 100));
+        let (_, records) = collect(&mut s, &[7941], &config, Some(1)).expect("turn");
+        let logit = |i: usize| records[i].as_ref().expect("record").top[0].logit;
+        // Step 0: token 3 is not yet in the context; step 1: it is, halved.
+        assert_eq!(logit(0), 1.0);
+        assert_eq!(logit(1), 0.5);
+    }
 }

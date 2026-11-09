@@ -53,7 +53,6 @@ crates/aprender-serve/examples/imp_700_realworld_verification.rs:299
 crates/aprender-serve/examples/imp_700_realworld_verification.rs:364
 crates/aprender-serve/examples/imp_701_performance_gap.rs:15
 crates/aprender-serve/examples/imp_701_performance_gap.rs:16
-crates/aprender-serve/examples/performance_parity.rs:1741
 crates/aprender-serve/examples/profile_all_layers.rs:274
 crates/aprender-serve/examples/profile_all_matmuls.rs:178
 crates/aprender-serve/examples/profile_cpu_kernel.rs:166

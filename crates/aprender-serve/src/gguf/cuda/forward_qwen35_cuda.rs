@@ -96,6 +96,33 @@ enum CudaLayer {
     Attention(Box<CudaAttentionLayer>),
 }
 
+/// The SwiGLU FFN both layer kinds end with.
+struct CudaFfn<'w> {
+    norm: &'w GpuBuffer<f32>,
+    gate: &'w CudaQuantWeight,
+    up: &'w CudaQuantWeight,
+    down: &'w CudaQuantWeight,
+}
+
+impl CudaLayer {
+    fn ffn(&self) -> CudaFfn<'_> {
+        match self {
+            CudaLayer::DeltaNet(w) => CudaFfn {
+                norm: &w.post_attention_norm,
+                gate: &w.ffn_gate,
+                up: &w.ffn_up,
+                down: &w.ffn_down,
+            },
+            CudaLayer::Attention(w) => CudaFfn {
+                norm: &w.post_attention_norm,
+                gate: &w.ffn_gate,
+                up: &w.ffn_up,
+                down: &w.ffn_down,
+            },
+        }
+    }
+}
+
 /// Per-sequence Qwen3.5 decode state on the device: one causal-conv window and
 /// one recurrent state per Gated `DeltaNet` layer, one K/V cache per
 /// full-attention layer, all sized from the config.
@@ -271,6 +298,9 @@ pub struct Qwen35CudaModel<'a> {
     /// copied in, every layer updates it in place. `None` only while a forward
     /// has it out.
     hidden_buf: Option<GpuBuffer<f32>>,
+    /// Host `[hidden_dim]` the embedding row is dequantized into (#4991), reused so
+    /// a decode token allocates nothing on the host.
+    embed_row: Vec<f32>,
     dims: Qwen35CudaDims,
     /// Positions the device KV caches hold.
     max_seq_len: usize,
@@ -287,6 +317,17 @@ pub struct Qwen35CudaModel<'a> {
     /// #4233: route [`Self::forward_single`] through the captured graph.
     /// Starts from `QWEN35_CUDA_GRAPH=1`; [`Self::set_decode_graph`] overrides.
     use_decode_graph: bool,
+    /// APR-OBS-001 OBS-09: per-layer decode time, `Some` while a traced request
+    /// asked for it. Timing syncs the stream after every layer, so a timed
+    /// forward runs eager, never through the captured graph.
+    layer_timings: Option<Vec<crate::session::LayerTiming>>,
+    /// Whether [`Self::layer_timings`] is being filled right now.
+    timing_on: bool,
+    /// #5303: the m-row buffers of [`Self::forward_batch_greedy`], allocated
+    /// by the first batch of more than one slot and grown with the batch.
+    batch_bufs: Option<batch::Qwen35BatchBufs>,
+    /// #5279: the batched step captured as one CUDA graph per batch shape.
+    batch_graphs: batch::Qwen35BatchGraphs,
 }
 
 /// Why a projection cannot go on the GPU, stated so the user can act on it
@@ -667,12 +708,17 @@ impl<'a> Qwen35CudaModel<'a> {
             out_normed,
             logits_buf,
             hidden_buf,
+            embed_row: vec![0.0; dims.hidden_dim as usize],
             dims,
             max_seq_len,
             prefill_rows: prefill::PREFILL_MAX_CHUNK_ROWS,
             prefill_attention,
             decode_graph: None,
             use_decode_graph: graph::graph_enabled(),
+            layer_timings: None,
+            timing_on: false,
+            batch_bufs: None,
+            batch_graphs: batch::Qwen35BatchGraphs::default(),
         };
         m.warm_prefill_weights();
         Ok(m)
@@ -1160,8 +1206,22 @@ impl<'a> Qwen35CudaModel<'a> {
     }
 
     /// The op-for-op attention body; every error here is a GPU error.
-    #[allow(clippy::too_many_lines)]
     fn attention_layer_inner(
+        &mut self,
+        state: &mut Qwen35CudaState,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+        position: usize,
+        graph_io: Option<&graph::Qwen35GraphIo>,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        self.attention_mixer_inner(state, il, hidden, position, graph_io)?;
+        self.ffn_inner(il, hidden)
+    }
+
+    /// The attention mixer up to and including the first residual: everything
+    /// of the layer but its FFN. The KV row it writes is counted in `kv_len`.
+    #[allow(clippy::too_many_lines)]
+    fn attention_mixer_inner(
         &mut self,
         state: &mut Qwen35CudaState,
         il: usize,
@@ -1331,41 +1391,6 @@ impl<'a> Qwen35CudaModel<'a> {
         )?;
         ex.residual_add_into(hidden, &a.attn_out, hidden, d.hidden_dim)?;
 
-        // post_attention_norm -> SwiGLU FFN -> the second residual
-        ex.rmsnorm_into(
-            hidden,
-            &w.post_attention_norm,
-            &s.post_normed,
-            d.hidden_dim,
-            d.eps,
-        )?;
-        ex.gemv_dispatch(
-            w.ffn_gate.qtype,
-            w.ffn_gate.ptr,
-            &s.post_normed,
-            &s.ffn_gate,
-            w.ffn_gate.n,
-            w.ffn_gate.k,
-        )?;
-        ex.gemv_dispatch(
-            w.ffn_up.qtype,
-            w.ffn_up.ptr,
-            &s.post_normed,
-            &s.ffn_up,
-            w.ffn_up.n,
-            w.ffn_up.k,
-        )?;
-        ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
-        ex.gemv_dispatch(
-            w.ffn_down.qtype,
-            w.ffn_down.ptr,
-            &s.ffn_act,
-            &s.ffn_down,
-            w.ffn_down.n,
-            w.ffn_down.k,
-        )?;
-        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
-
         // NO sync here (#3090 review). Every op above is enqueued on the one
         // stream this model uses, so the next layer's first kernel is already
         // ordered after this layer's last one; a sync inside the per-token loop
@@ -1495,9 +1520,10 @@ impl<'a> Qwen35CudaModel<'a> {
             .map_err(|e| gpu_err("qwen35_cuda_deltanet", &e))
     }
 
-    /// The op-for-op body; every error here is a GPU error.
+    /// The token mixer up to and including the first residual: everything of
+    /// the layer but its FFN.
     #[allow(clippy::too_many_lines)]
-    fn deltanet_layer_inner(
+    fn deltanet_mixer_inner(
         &mut self,
         state: &Qwen35CudaState,
         il: usize,
@@ -1615,46 +1641,94 @@ impl<'a> Qwen35CudaModel<'a> {
             w.ssm_out.n,
             w.ssm_out.k,
         )?;
-        ex.residual_add_into(hidden, &s.ssm_out, hidden, d.hidden_dim)?;
+        ex.residual_add_into(hidden, &s.ssm_out, hidden, d.hidden_dim)
+    }
 
-        // post_attention_norm -> SwiGLU FFN -> the second residual
-        ex.rmsnorm_into(
-            hidden,
-            &w.post_attention_norm,
-            &s.post_normed,
-            d.hidden_dim,
-            d.eps,
-        )?;
+    /// The op-for-op body; every error here is a GPU error.
+    fn deltanet_layer_inner(
+        &mut self,
+        state: &Qwen35CudaState,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        self.deltanet_mixer_inner(state, il, hidden)?;
+        self.ffn_inner(il, hidden)
+        // NO sync here — see `attention_layer_inner`. Stream order IS the
+        // dependency; the host only has to wait where it reads.
+    }
+
+    /// post_attention_norm -> SwiGLU FFN -> the second residual, the tail both
+    /// layer kinds share, in place on one row of the residual stream.
+    fn ffn_inner(
+        &mut self,
+        il: usize,
+        hidden: &GpuBuffer<f32>,
+    ) -> std::result::Result<(), trueno_gpu::GpuError> {
+        let d = self.dims;
+        let w = self.layers[il].ffn();
+        let s = &self.scratch;
+        let ex = &mut self.executor;
+        ex.rmsnorm_into(hidden, w.norm, &s.post_normed, d.hidden_dim, d.eps)?;
         ex.gemv_dispatch(
-            w.ffn_gate.qtype,
-            w.ffn_gate.ptr,
+            w.gate.qtype,
+            w.gate.ptr,
             &s.post_normed,
             &s.ffn_gate,
-            w.ffn_gate.n,
-            w.ffn_gate.k,
+            w.gate.n,
+            w.gate.k,
         )?;
         ex.gemv_dispatch(
-            w.ffn_up.qtype,
-            w.ffn_up.ptr,
+            w.up.qtype,
+            w.up.ptr,
             &s.post_normed,
             &s.ffn_up,
-            w.ffn_up.n,
-            w.ffn_up.k,
+            w.up.n,
+            w.up.k,
         )?;
         ex.fused_swiglu_into(&s.ffn_gate, &s.ffn_up, &s.ffn_act, d.intermediate_dim)?;
         ex.gemv_dispatch(
-            w.ffn_down.qtype,
-            w.ffn_down.ptr,
+            w.down.qtype,
+            w.down.ptr,
             &s.ffn_act,
             &s.ffn_down,
-            w.ffn_down.n,
-            w.ffn_down.k,
+            w.down.n,
+            w.down.k,
         )?;
-        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)?;
+        ex.residual_add_into(hidden, &s.ffn_down, hidden, d.hidden_dim)
+    }
 
-        // NO sync here — see `attention_layer_inner`. Stream order IS the
-        // dependency; the host only has to wait where it reads.
-        Ok(())
+    /// APR-OBS-001 OBS-09: time every layer of the single-token forwards that
+    /// follow, or stop. Turning it on starts an empty tally; turning it off
+    /// keeps what was measured for [`Self::take_layer_timings`].
+    pub fn set_layer_timing(&mut self, on: bool) {
+        if on {
+            let tally = self
+                .layers
+                .iter()
+                .map(|l| crate::session::LayerTiming {
+                    total_us: 0,
+                    calls: 0,
+                    kind: match l {
+                        CudaLayer::DeltaNet(_) => "deltanet",
+                        CudaLayer::Attention(_) => "attention",
+                    },
+                })
+                .collect();
+            self.layer_timings = Some(tally);
+            self.timing_on = true;
+        } else {
+            self.timing_on = false;
+        }
+    }
+
+    /// The per-layer tally since timing went on, or `None` when no layer was
+    /// timed (no single-token forward ran, or timing was never on). Taking it
+    /// clears it.
+    pub fn take_layer_timings(&mut self) -> Option<Vec<crate::session::LayerTiming>> {
+        self.timing_on = false;
+        self.layer_timings
+            .take()
+            .filter(|t| t.iter().any(|l| l.calls > 0))
     }
 
     /// #4233: turn the captured-graph decode step on or off. Turning it off
@@ -1683,7 +1757,7 @@ impl<'a> Qwen35CudaModel<'a> {
         state: &mut Qwen35CudaState,
         position: usize,
     ) -> Result<Vec<f32>> {
-        if self.use_decode_graph {
+        if self.use_decode_graph && !self.timing_on {
             return self.forward_single_graphed(token, state, position);
         }
         self.forward_to_logits(token, state, position)?;
@@ -1700,21 +1774,20 @@ impl<'a> Qwen35CudaModel<'a> {
         Ok(logits)
     }
 
-    /// `token`'s embedding row, after checking the token and the position.
+    /// `token`'s embedding row, dequantized into the reused `embed_row` (#4991),
+    /// after checking the token and the position. The caller hands the buffer
+    /// back with `self.embed_row = row` once the row is uploaded.
     fn embedding_row(
-        &self,
+        &mut self,
         token: u32,
         state: &Qwen35CudaState,
         position: usize,
-    ) -> Result<&'a [f32]> {
-        let hidden_dim = self.dims.hidden_dim as usize;
-        let embedding = self.model.base.token_embedding();
-        let start = (token as usize) * hidden_dim;
-        if start + hidden_dim > embedding.len() {
+    ) -> Result<Vec<f32>> {
+        let rows = self.model.embedding.rows();
+        if token as usize >= rows {
             return Err(RealizarError::InvalidShape {
                 reason: format!(
-                    "qwen35_cuda: token {token} is outside the {}-row embedding table",
-                    embedding.len() / hidden_dim
+                    "qwen35_cuda: token {token} is outside the {rows}-row embedding table"
                 ),
             });
         }
@@ -1727,7 +1800,10 @@ impl<'a> Qwen35CudaModel<'a> {
             });
         }
 
-        Ok(&embedding[start..start + hidden_dim])
+        let mut row = std::mem::take(&mut self.embed_row);
+        row.resize(self.model.embedding.row_len(), 0.0);
+        self.model.embedding.row_into(token as usize, &mut row)?;
+        Ok(row)
     }
 
     /// The token temperature 0 picks after `token` at `position` (#4215): the
@@ -1773,8 +1849,9 @@ impl<'a> Qwen35CudaModel<'a> {
             .ok_or_else(|| RealizarError::InvalidShape {
                 reason: "qwen35_cuda: the hidden buffer is already in use".to_string(),
             })?;
-        let run = self.run_layers_and_head(&mut dev, row, state, position);
+        let run = self.run_layers_and_head(&mut dev, &row, state, position);
         self.hidden_buf = Some(dev);
+        self.embed_row = row;
         run
     }
 
@@ -1787,14 +1864,37 @@ impl<'a> Qwen35CudaModel<'a> {
     ) -> Result<()> {
         dev.copy_from_host(embedding_row)
             .map_err(|e| gpu_err("qwen35_cuda_forward", &e))?;
+        if self.timing_on {
+            // Nothing queued before the first layer may be billed to it.
+            self.executor
+                .sync_stream()
+                .map_err(|e| gpu_err("qwen35_cuda_layer_timing", &e))?;
+        }
         for il in 0..self.layers.len() {
+            let clock = self.timing_on.then(std::time::Instant::now);
             match self.layers[il] {
                 CudaLayer::DeltaNet(_) => self.deltanet_layer(state, il, dev)?,
                 CudaLayer::Attention(_) => self.attention_layer(state, il, dev, position)?,
             }
+            if let Some(clock) = clock {
+                self.tally_layer(il, clock)?;
+            }
         }
         self.lm_head_tail(dev)
             .map_err(|e| gpu_err("qwen35_cuda_lm_head", &e))
+    }
+
+    /// Wait for layer `il` to finish and add its time to the tally.
+    fn tally_layer(&mut self, il: usize, clock: std::time::Instant) -> Result<()> {
+        self.executor
+            .sync_stream()
+            .map_err(|e| gpu_err("qwen35_cuda_layer_timing", &e))?;
+        let us = u64::try_from(clock.elapsed().as_micros()).unwrap_or(u64::MAX);
+        if let Some(slot) = self.layer_timings.as_mut().and_then(|t| t.get_mut(il)) {
+            slot.total_us = slot.total_us.saturating_add(us);
+            slot.calls = slot.calls.saturating_add(1);
+        }
+        Ok(())
     }
 
     /// The output norm and the `lm_head` GEMV into `logits_buf`, enqueued on
@@ -1874,6 +1974,11 @@ pub use prefill::{
 /// #4233: the decode step captured as one CUDA graph.
 #[path = "forward_qwen35_cuda_graph.rs"]
 mod graph;
+
+/// #5289: one greedy decode step for m sequences.
+#[path = "forward_qwen35_cuda_batch.rs"]
+mod batch;
+pub use batch::Qwen35StepOut;
 
 /// Per-layer CPU parity on the real Qwen3.5-0.8B file.
 #[cfg(test)]

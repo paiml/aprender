@@ -574,4 +574,47 @@ mod parallel_matches_serial {
             );
         }
     }
+
+    /// #5642: the 8960x1536 FFN shape the `--ignored` timing test in `issue_2567_measure` times,
+    /// checked for VALUE (that test only asserts a wall-clock ratio). Rows split across threads,
+    /// 6 super-blocks per row, and 8960 is not a multiple of every thread count, so the short
+    /// final chunk is exercised too.
+    #[test]
+    fn test_q4k_parallel_matches_serial_on_the_ffn_shape() {
+        let (out_dim, in_dim) = (8960usize, 1536usize);
+        let blocks = in_dim.div_ceil(SUPER_BLOCK_SIZE);
+        // xorshift fill so no two rows repeat (a periodic fill repeats every 2 rows here, which
+        // lets a row-offset mutant of an even distance pass); finite f16 d/dmin per super-block.
+        let mut state = 0x2545_F491_u32;
+        let mut next = move || {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            state
+        };
+        let mut q4k = vec![0u8; out_dim * blocks * SUPER_BLOCK_BYTES];
+        for b in &mut q4k {
+            *b = (next() >> 24) as u8;
+        }
+        for sb in q4k.chunks_exact_mut(SUPER_BLOCK_BYTES) {
+            sb[..4].copy_from_slice(&[0x66, 0x2E, 0x66, 0x22]);
+        }
+        let input: Vec<f32> =
+            (0..in_dim).map(|_| (next() >> 8) as f32 / 16_777_216.0 - 0.5).collect();
+        let want = scalar::matmul_q4k_f32(&q4k, &input, out_dim, in_dim);
+        let got = matmul_q4k_f32_parallel(&q4k, &input, out_dim, in_dim);
+        assert_eq!(got.len(), out_dim);
+        assert!(
+            want.iter().any(|&w| w != 0.0),
+            "reference is all zeros: the check would be vacuous"
+        );
+        assert!(want[0] != want[2], "rows 0 and 2 must differ or a row-offset mutant survives");
+        for (row, (g, w)) in got.iter().zip(&want).enumerate() {
+            assert!(g.is_finite() && w.is_finite(), "row {row}: parallel {g}, serial {w}");
+            assert!(
+                (g - w).abs() <= 1e-3 * g.abs().max(w.abs()).max(1.0),
+                "row {row}: parallel {g}, serial {w}"
+            );
+        }
+    }
 }

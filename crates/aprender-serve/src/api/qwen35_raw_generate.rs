@@ -51,7 +51,11 @@ fn qwen35_raw_tokens(
             ),
         ));
     }
-    let stop_tokens: Vec<u32> = state.model_eos_token_id().into_iter().collect();
+    // aprender#4345: the EOS plus every EOG marker the vocabulary has.
+    let stop_tokens: Vec<u32> = crate::api::realize_handlers::qwen35_completion_stop_tokens(
+        state.tokenizer.as_deref(),
+        state.model_eos_token_id(),
+    );
     let gen_config = QuantizedGenerateConfig {
         max_tokens: max_tokens.min(session.context_length - prompt_len),
         temperature,

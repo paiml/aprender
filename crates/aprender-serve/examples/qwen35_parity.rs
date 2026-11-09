@@ -81,9 +81,10 @@ fn read_pairs(path: &Path) -> std::io::Result<Vec<(Vec<u32>, Vec<u32>)>> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut args = std::env::args().skip(1);
-    let model_path = args
-        .next()
-        .ok_or("usage: qwen35_parity <model.gguf> [tokens.txt]")?;
+    let Some(model_path) = args.next() else {
+        eprintln!("Usage: qwen35_parity <model.gguf> [tokens.txt]");
+        std::process::exit(2);
+    };
     let tokens_path = args
         .next()
         .unwrap_or_else(|| "evidence/parity/qwen35/lambda/llama_tokens.txt".to_string());

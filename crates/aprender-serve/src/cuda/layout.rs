@@ -1479,17 +1479,7 @@ $L_x2_exit:
 /// LAYOUT-001: row-major. Row `ctaid` starts at `w_ptr + ctaid * ceil(k/256) * 82`.
 fn generate_iq2_s_gemv_ptx(k: u32, n: u32) -> String {
     let _ = (k, n);
-    let grid = &crate::quantize::iq_grids::IQ2S_GRID;
-    let mut table = String::with_capacity(grid.len() * 24);
-    for (i, e) in grid.iter().enumerate() {
-        if i % 4 == 0 {
-            table.push_str("\n    ");
-        }
-        table.push_str(&format!("{}, {}", *e as u32, (*e >> 32) as u32));
-        if i + 1 != grid.len() {
-            table.push_str(", ");
-        }
-    }
+    let table = iq2s_grid_ptx_words();
 
     let mut ptx = String::from(
         r"
@@ -1702,6 +1692,24 @@ $L_2s_exit:
 ",
     );
     ptx
+}
+
+/// `IQ2S_GRID` as the body of a PTX `.u32` array: 1024 u64 entries as 2048
+/// little-endian words (lo, hi), four entries per line. Shared by the IQ2_S GEMV
+/// and the IQ2_S dequant, so both read the table the CPU oracle reads.
+fn iq2s_grid_ptx_words() -> String {
+    let grid = &crate::quantize::iq_grids::IQ2S_GRID;
+    let mut table = String::with_capacity(grid.len() * 24);
+    for (i, e) in grid.iter().enumerate() {
+        if i % 4 == 0 {
+            table.push_str("\n    ");
+        }
+        table.push_str(&format!("{}, {}", *e as u32, (*e >> 32) as u32));
+        if i + 1 != grid.len() {
+            table.push_str(", ");
+        }
+    }
+    table
 }
 
 /// #3963: IQ3_XXS (GGML type 18) GEMV, row-major.

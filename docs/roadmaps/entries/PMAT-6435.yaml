@@ -1,0 +1,19 @@
+- id: PMAT-6435
+  github_issue: 6435
+  item_type: task
+  title: 'pv readme A: README render and contract walk'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-wsweep
+  created: 2026-10-27T07:30:00Z
+  updated: 2026-10-27T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the CONTRACT_COUNT render, frontmatter line and contract walk land with tests (#6431)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6394

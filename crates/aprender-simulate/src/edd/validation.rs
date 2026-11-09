@@ -1559,4 +1559,54 @@ mod tests {
         let result_loose = richardson_extrapolation(&values, 2.0, 2.5, 1.0);
         assert!(result_loose.order_matches);
     }
+
+    fn emc_with_tests(tests: &[(&str, f64, f64)]) -> EquationModelCard {
+        let mut b = EmcBuilder::new()
+            .name("Test")
+            .equation("x = y")
+            .citation(Citation::new(&["Test"], "Test", 2024));
+        for (d, e, t) in tests {
+            b = b.add_verification_test(*d, *e, *t);
+        }
+        b.build().ok().unwrap()
+    }
+
+    #[test]
+    fn test_validate_verification_tests_all_pass_records_nothing() {
+        let mut v = EddValidator::new();
+        let emc = emc_with_tests(&[("a", 1.0, 0.1), ("b", 1.0, 0.5)]);
+        assert!(v.validate_verification_tests(&emc, |_| 1.05).is_ok());
+        assert!(v.violations().is_empty());
+    }
+
+    #[test]
+    fn test_validate_verification_tests_failure_is_edd07_critical_with_context() {
+        let mut v = EddValidator::new();
+        let emc = emc_with_tests(&[("good", 1.0, 0.1), ("bad", 5.0, 0.1)]);
+        let errs = v.validate_verification_tests(&emc, |_| 1.0).err().unwrap();
+        assert_eq!(errs.len(), 1, "only the failing test is reported");
+        assert_eq!(errs[0].code, "EDD-07");
+        assert_eq!(errs[0].severity, ViolationSeverity::Critical);
+        assert!(errs[0].message.contains("Verification test failed: bad"));
+        assert!(errs[0]
+            .context
+            .as_deref()
+            .unwrap_or("")
+            .contains("FAIL: bad"));
+    }
+
+    #[test]
+    fn test_validate_verification_tests_failures_accumulate_in_validator() {
+        let mut v = EddValidator::new();
+        let emc = emc_with_tests(&[("x", 9.0, 0.1), ("y", 8.0, 0.1)]);
+        let errs = v.validate_verification_tests(&emc, |_| 0.0).err().unwrap();
+        assert_eq!(errs.len(), 2);
+        assert_eq!(v.violations().len(), 2);
+        let _ = v.validate_verification_tests(&emc, |_| 0.0);
+        assert_eq!(
+            v.violations().len(),
+            4,
+            "a second run appends, not replaces"
+        );
+    }
 }

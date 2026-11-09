@@ -1,0 +1,21 @@
+- id: PMAT-6420
+  github_issue: 6420
+  item_type: task
+  title: shard merge-queue tests N=4; target MQ test p95 < 15 min
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-pace
+  created: 2026-10-26T17:02:29Z
+  updated: 2026-10-26T17:02:29Z
+  spec: null
+  acceptance_criteria:
+  - workspace-test-shard runs as 4 shards (pins, ci.yml matrix, sections.yml jobs matrix) with check names unchanged
+  - check_shard_union.sh proves union of the 4 shard lists equals the pre-split list (134 explicit commands)
+  - merge-queue test p95 under 15 min measured over the first 20 green merge_group runs after merge; falsifier is p95 above 15
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5961

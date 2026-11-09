@@ -40,6 +40,56 @@ pub fn run_cli(cli: Cli) -> ExitCode {
             duration,
             seed,
         } => render_svg(&domain, &format, &output, fps, duration, seed),
+        Commands::PrFlow {
+            design,
+            json,
+            r_pr,
+            r_mq,
+            cap,
+            builds,
+            f,
+            n,
+            pr_min,
+            mq_min,
+            p_red,
+            pr_setup,
+            t_rev,
+            rev_concurrent,
+            rev_lanes,
+            observed_24h: obs24,
+            src_runs: runs,
+            params,
+            seeds,
+            hours,
+            warmup,
+            sha,
+        } => match params {
+            Some(path) => pr_flow_params(&path, seeds, hours, warmup),
+            None => pr_flow(
+                &design,
+                json,
+                &FlowOverrides {
+                    r_pr,
+                    r_mq,
+                    cap,
+                    builds,
+                    f,
+                    n,
+                    pr_min,
+                    mq_min,
+                    p_red,
+                    pr_setup,
+                    t_rev,
+                    rev_concurrent,
+                    rev_lanes,
+                    obs24,
+                    runs,
+                },
+                &sha,
+            ),
+        },
+        Commands::RepoFlow { case, inputs, json } => repo_flow(&case, inputs.as_deref(), json),
+        Commands::CourseFlow { case, inputs, json } => course_flow(&case, inputs.as_deref(), json),
         Commands::Validate { experiment_path } => validate_experiment(&experiment_path),
         Commands::Verify {
             experiment_path,
@@ -563,4 +613,256 @@ fn render_bouncing_balls(
         }
     }
     Ok(())
+}
+
+/// Measured inputs that replace a design's defaults; each is labelled `measured` in the sim block.
+#[derive(Default, Clone)]
+struct FlowOverrides {
+    r_pr: Option<usize>,
+    r_mq: Option<usize>,
+    cap: Option<usize>,
+    builds: Option<usize>,
+    f: Option<f64>,
+    n: Option<f64>,
+    pr_min: Option<f64>,
+    mq_min: Option<f64>,
+    p_red: Option<f64>,
+    pr_setup: Option<f64>,
+    t_rev: Option<f64>,
+    rev_concurrent: bool,
+    rev_lanes: Option<usize>,
+    obs24: Option<f64>,
+    runs: Option<String>,
+}
+
+impl FlowOverrides {
+    fn apply(&self, c: &mut crate::scenarios::PrFlowConfig) {
+        c.r_pr = self.r_pr.unwrap_or(c.r_pr);
+        c.r_mq = self.r_mq.unwrap_or(c.r_mq);
+        c.cap = self.cap.unwrap_or(c.cap);
+        c.builds = self.builds.unwrap_or(c.builds);
+        c.f = self.f.unwrap_or(c.f);
+        c.n = self.n.unwrap_or(c.n);
+        c.pr_runner_min = self.pr_min.unwrap_or(c.pr_runner_min);
+        c.mq_runner_min = self.mq_min.unwrap_or(c.mq_runner_min);
+        c.p_red = self.p_red.unwrap_or(c.p_red);
+        c.pr_setup_min = self.pr_setup.unwrap_or(c.pr_setup_min);
+        c.t_rev_min = self.t_rev.unwrap_or(c.t_rev_min);
+        if self.rev_concurrent {
+            c.rev_mode = crate::scenarios::ReviewMode::Concurrent;
+        }
+        c.rev_lanes = self.rev_lanes.unwrap_or(c.rev_lanes);
+    }
+
+    fn cli_flags(&self) -> String {
+        let parts = [
+            self.r_pr.map(|v| format!(" --r-pr {v}")),
+            self.r_mq.map(|v| format!(" --r-mq {v}")),
+            self.cap.map(|v| format!(" --cap {v}")),
+            self.builds.map(|v| format!(" --builds {v}")),
+            self.f.map(|v| format!(" --f {v}")),
+            self.n.map(|v| format!(" --n {v}")),
+            self.pr_min.map(|v| format!(" --pr-min {v}")),
+            self.mq_min.map(|v| format!(" --mq-min {v}")),
+            self.p_red.map(|v| format!(" --p-red {v}")),
+            self.pr_setup.map(|v| format!(" --pr-setup {v}")),
+            self.t_rev.map(|v| format!(" --t-rev {v}")),
+            self.rev_concurrent.then(|| " --rev-concurrent".to_string()),
+            self.rev_lanes.map(|v| format!(" --rev-lanes {v}")),
+            self.obs24.map(|v| format!(" --observed-24h {v}")),
+            self.runs.as_ref().map(|v| format!(" --src-runs {v}")),
+        ];
+        parts.into_iter().flatten().collect()
+    }
+}
+
+/// Print the reference run (5 seeds x 400 h, 20 h warm-up) of a named PR-flow design.
+fn pr_flow(design: &str, json: bool, ov: &FlowOverrides, sha: &str) -> ExitCode {
+    let Some(mut cfg) = crate::scenarios::preset(design) else {
+        eprintln!("unknown design: {design}");
+        return ExitCode::FAILURE;
+    };
+    ov.apply(&mut cfg);
+    if json {
+        println!("{}", pr_flow_sim_block(design, &cfg, ov, sha));
+        return ExitCode::SUCCESS;
+    }
+    let r = crate::scenarios::run_reference(&cfg);
+    println!(
+        "design {design}: merged/h {:.2}  W mean {:.1} min  W p90 {:.1} min  L {:.2}",
+        r.merged_per_h, r.w_mean_min, r.w_p90_min, r.l
+    );
+    println!(
+        "PRs/pass {:.2}  PR util {:.0}%  MQ util {:.0}%  runs/PR {:.2}",
+        r.prs_per_pass,
+        r.pr_util * 100.0,
+        r.mq_util * 100.0,
+        r.runs_per_pr
+    );
+    println!(
+        "stages: run wall {:.1}  open->green {:.1}  green->armed {:.1}  armed->merged {:.1} min",
+        r.run_wall_min, r.checks_min, r.arm_min, r.mq_min
+    );
+    ExitCode::SUCCESS
+}
+
+/// The cycle-record "sim" block: seeds 1..=5, 400 h, 20 h warm-up, one JSON line.
+/// `optimum` compares the design's own reference run with this run; `drift_pct_24h` is null (not computed here).
+fn pr_flow_sim_block(
+    design: &str,
+    cfg: &crate::scenarios::PrFlowConfig,
+    ov: &FlowOverrides,
+    sha: &str,
+) -> String {
+    let runs: Vec<_> = (1..=5)
+        .map(|s| crate::scenarios::run_pr_flow(cfg, s, 400.0, 20.0))
+        .collect();
+    let n = runs.len() as f64;
+    let mean = |f: fn(&crate::scenarios::PrFlowResult) -> f64| runs.iter().map(f).sum::<f64>() / n;
+    let m = mean(|r| r.merged_per_h);
+    let var = runs
+        .iter()
+        .map(|r| (r.merged_per_h - m).powi(2))
+        .sum::<f64>()
+        / (n - 1.0);
+    let ci95 = 1.96 * (var / n).sqrt();
+    let avg = crate::scenarios::PrFlowResult {
+        w_mean_min: mean(|r| r.w_mean_min),
+        runs_per_pr: mean(|r| r.runs_per_pr),
+        prs_per_pass: mean(|r| r.prs_per_pass),
+        run_wall_min: mean(|r| r.run_wall_min),
+        pass_wait_min: mean(|r| r.pass_wait_min),
+        pass_wall_min: mean(|r| r.pass_wall_min),
+        ..Default::default()
+    };
+    let binding = crate::scenarios::binding_station(cfg, &avg);
+    let law = crate::scenarios::eq7_law(cfg, &avg);
+    let w_sim = mean(|r| r.w_mean_min);
+    let base = crate::scenarios::preset(design)
+        .map_or(0.0, |c| crate::scenarios::run_reference(&c).merged_per_h);
+    let contract = crate::scenarios::reference_contract_ok();
+    let src = |m: bool| if m { "measured" } else { "design_default" };
+    serde_json::json!({
+        "aprender_sha": sha,
+        "scenario": "pr-flow",
+        "cli": format!("aprender-simulate pr-flow --design {design} --json{} --sha {sha}", ov.cli_flags()),
+        "seeds": [1, 2, 3, 4, 5],
+        "hours": 400,
+        "inputs": {
+            "design": design, "cap": cfg.cap, "n": cfg.n, "t_author_min": cfg.t_author_min,
+            "r_pr": cfg.r_pr, "r_mq": cfg.r_mq, "builds": cfg.builds, "p_red": cfg.p_red,
+            "pr_runner_min": cfg.pr_runner_min, "mq_runner_min": cfg.mq_runner_min,
+            "pr_setup_min": cfg.pr_setup_min, "t_rev_min": cfg.t_rev_min, "f": cfg.f
+        },
+        "inputs_source": {
+            "t_author_min": "design_default", "n": src(ov.n.is_some()), "cap": src(ov.cap.is_some()),
+            "r_pr": src(ov.r_pr.is_some()), "r_mq": src(ov.r_mq.is_some()), "p_red": src(ov.p_red.is_some()),
+            "pr_runner_min": src(ov.pr_min.is_some()), "mq_runner_min": src(ov.mq_min.is_some()),
+            "pr_setup_min": src(ov.pr_setup.is_some()), "f": src(ov.f.is_some()), "builds": src(ov.builds.is_some())
+        },
+        "predicted": {
+            "merged_h": m, "ci95_h": ci95,
+            "W_min_mean": w_sim, "L": mean(|r| r.l), "rho_a": mean(|r| r.rho_a), "rho_a_assumed": 0.95
+        },
+        "law": {
+            "eq": 7, "W_law_min": law.w_law_min(), "gap_pct": (w_sim - law.w_law_min()) / law.w_law_min() * 100.0,
+            "r": law.r, "w_min": law.w_min, "c_wall_min": law.c_wall_min, "t_fix_min": law.t_fix_min,
+            "t_arm_min": law.t_arm_min, "p_dirty": law.p_dirty, "t_reb_min": law.t_reb_min,
+            "wait_mq_min": law.wait_mq_min, "t_pass_min": law.t_pass_min, "w_pass_min": law.w_pass_min, "f": law.f,
+            "checks_min": law.checks_min(), "rebase_min": law.rebase_min(), "W_mq_min": law.w_mq_min()
+        },
+        "binding_station": binding,
+        "optimum": {
+            "design": design, "design_merged_h": base, "this_run_merged_h": m,
+            "gap_h": base - m, "gap_pct": if base > 0.0 { (base - m) / base * 100.0 } else { 0.0 }
+        },
+        "sim3_contract": if contract { "pass" } else { "fail" },
+        "observed_24h": ov.obs24, "source_runs": ov.runs,
+        "drift_pct_24h": ov.obs24.map(|o| (m - o / 24.0) / (o / 24.0) * 100.0)
+    })
+    .to_string()
+}
+
+/// `pr-flow --params <file>`: one repo's arbiter params in, `{actual, one_change, optimum}` out (one JSON line).
+fn pr_flow_params(path: &Path, seeds: u64, hours: f64, warmup: f64) -> ExitCode {
+    let text = match std::fs::read_to_string(path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("params: cannot read {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    match crate::scenarios::parse_params(&text) {
+        Ok(p) => {
+            println!("{}", crate::scenarios::evaluate(&p, seeds, hours, warmup));
+            ExitCode::SUCCESS
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Print the reference run of a repo case, optionally with the ledger's inputs, as text or JSON.
+fn repo_flow(case: &str, inputs: Option<&Path>, json: bool) -> ExitCode {
+    let Some(mut cfg) = crate::scenarios::repo_preset(case) else {
+        eprintln!("unknown case: {case}");
+        return ExitCode::FAILURE;
+    };
+    if let Some(p) = inputs {
+        let applied = std::fs::read_to_string(p)
+            .map_err(|e| e.to_string())
+            .and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))
+            .and_then(|v| crate::scenarios::apply_inputs(&mut cfg, &v));
+        if let Err(e) = applied {
+            eprintln!("inputs: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    let r = crate::scenarios::run_repo_reference(&cfg);
+    if json {
+        println!("{}", crate::scenarios::sim_block(case, &cfg, &r));
+    } else {
+        println!(
+            "case {case}: merged/h {:.3}  W mean {:.1} min  L {:.2}  pool {:.0}%",
+            r.merged_per_h,
+            r.w_mean_min,
+            r.l,
+            r.pr_util * 100.0
+        );
+    }
+    ExitCode::SUCCESS
+}
+
+/// Print the reference run of a course-factory case, optionally with the ledger's inputs.
+fn course_flow(case: &str, inputs: Option<&Path>, json: bool) -> ExitCode {
+    let Some(mut cfg) = crate::scenarios::course_preset(case) else {
+        eprintln!("unknown case: {case}");
+        return ExitCode::FAILURE;
+    };
+    if let Some(p) = inputs {
+        let applied = std::fs::read_to_string(p)
+            .map_err(|e| e.to_string())
+            .and_then(|s| serde_json::from_str(&s).map_err(|e| e.to_string()))
+            .and_then(|v| crate::scenarios::apply_course_inputs(&mut cfg, &v));
+        if let Err(e) = applied {
+            eprintln!("inputs: {e}");
+            return ExitCode::FAILURE;
+        }
+    }
+    let r = crate::scenarios::run_course_reference(&cfg);
+    if json {
+        println!("{}", crate::scenarios::course_sim_block(case, &cfg, &r));
+    } else {
+        let (st, u) = r.busiest();
+        println!(
+            "case {case}: courses/day {:.2}  shorts/day {:.2}  lead {:.1} d  busiest {st} {:.0}%",
+            r.courses_per_day,
+            r.shorts_per_day,
+            r.lead_days,
+            u * 100.0
+        );
+    }
+    ExitCode::SUCCESS
 }

@@ -417,6 +417,11 @@ pub enum EmbeddingInput {
     Single(String),
     /// Batch of input strings (one embedding returned per element, in order).
     Batch(Vec<String>),
+    /// APR-EMBED-001 I-7 (#4902): anything else — an image, audio or video part, a token
+    /// array. It is kept, not failed at parse time, so the route can answer a 4xx that
+    /// names what it refuses (the missing encoder) instead of a bare 422; no route
+    /// embeds it.
+    Unsupported(serde_json::Value),
 }
 
 impl EmbeddingInput {
@@ -424,7 +429,7 @@ impl EmbeddingInput {
     #[must_use]
     pub fn len(&self) -> usize {
         match self {
-            EmbeddingInput::Single(_) => 1,
+            EmbeddingInput::Single(_) | EmbeddingInput::Unsupported(_) => 1,
             EmbeddingInput::Batch(v) => v.len(),
         }
     }
@@ -433,17 +438,21 @@ impl EmbeddingInput {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         match self {
-            EmbeddingInput::Single(_) => false,
+            EmbeddingInput::Single(_) | EmbeddingInput::Unsupported(_) => false,
             EmbeddingInput::Batch(v) => v.is_empty(),
         }
     }
 
     /// Iterate the input strings in request order (preserves index ordering).
+    ///
+    /// An `Unsupported` input yields no strings: the embedding routes refuse it before
+    /// they iterate.
     pub fn iter(&self) -> impl Iterator<Item = &str> {
         // Box to unify the two iterator types.
         let it: Box<dyn Iterator<Item = &str>> = match self {
             EmbeddingInput::Single(s) => Box::new(std::iter::once(s.as_str())),
             EmbeddingInput::Batch(v) => Box::new(v.iter().map(String::as_str)),
+            EmbeddingInput::Unsupported(_) => Box::new(std::iter::empty()),
         };
         it
     }
@@ -475,6 +484,11 @@ pub struct EmbeddingRequest {
     /// Model ID (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
+    /// OpenAI `dimensions` (APR-EMBED-001 EG-3): the width of the returned vectors. An
+    /// EmbeddingGemma 2 model truncates to one of its Matryoshka widths; a generative
+    /// model accepts only its hidden size. Absent, the model's own width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dimensions: Option<usize>,
 }
 
 /// Response for embeddings
@@ -715,6 +729,7 @@ pub struct CompletionChunkChoice {
 }
 
 include!("realize_handlers_embed_completion.rs");
+include!("realize_handlers_embed_kind.rs");
 include!("gpu_completions_handler.rs");
 include!("realize_handlers_model_lineage.rs");
 

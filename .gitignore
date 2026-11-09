@@ -48,6 +48,9 @@ crates/aprender-shell/qa_test_artifacts/
 # Model files (downloaded/converted - don't commit large binaries)
 *.gguf
 *.safetensors
+# Tiny test fixtures the decide/ModernBERT tests read (96 KB and 173 KB)
+!/crates/aprender-core/tests/fixtures/modernbert_tiny/model.safetensors
+!/crates/aprender-decide/tests/fixtures/laya_tiny/checkpoint/model.safetensors
 # Root-level .apr files (test fixtures in crates/ are OK)
 /*.apr
 # Root-level models/ only (NOT src/models/ which is source code)

@@ -375,6 +375,7 @@ fn dispatch_book() {
         output: dir.path().to_path_buf(),
         update_summary: false,
         summary_path: None,
+        dry_run: false,
     });
     assert!(result.is_ok());
     assert!(dir.path().join("softmax-kernel-v1.md").exists());

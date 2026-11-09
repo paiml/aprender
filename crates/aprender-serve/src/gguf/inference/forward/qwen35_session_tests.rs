@@ -103,7 +103,8 @@ fn a_prompt_the_declared_context_cannot_hold_is_refused_whole() {
 #[test]
 fn cpu_a_turn_that_extends_the_last_one_reuses_the_state_and_matches_one_shot() {
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     assert!(!session.on_gpu(), "--no-gpu is the CPU route");
     let config = greedy(6);
 
@@ -143,7 +144,8 @@ fn cpu_a_turn_that_extends_the_last_one_reuses_the_state_and_matches_one_shot() 
 #[test]
 fn cpu_a_turn_that_does_not_extend_resets_in_place_and_matches_one_shot() {
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     session
@@ -162,7 +164,8 @@ fn cpu_a_turn_that_does_not_extend_resets_in_place_and_matches_one_shot() {
 #[test]
 fn on_token_returning_false_ends_the_turn_after_that_token() {
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     let mut seen = Vec::new();
     let t = session
@@ -207,7 +210,8 @@ fn re_rendered_turn_two(mapped: &MappedGGUFModel, p1: &[u32]) -> Vec<u32> {
 fn cpu_an_identical_prompt_again_resumes_at_its_generation_header_and_matches_one_shot() {
     // #4214: the same prompt twice cost the whole prefill twice.
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     let t1 = session
@@ -230,7 +234,8 @@ fn cpu_an_identical_prompt_again_resumes_at_its_generation_header_and_matches_on
 fn cpu_a_re_rendered_turn_two_resumes_at_turn_ones_header_and_matches_one_shot() {
     // #4274: serve re-renders the history, so turn 2 never extended turn 1.
     let mapped = mapped_or_skip!();
-    let mut session = Qwen35Session::load(&mapped, true).expect("load");
+    let mut session =
+        Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), &mapped, true).expect("load");
     let config = greedy(6);
     let p1 = encode(&mapped, &user_turn("Name the capital of Peru."));
     session
@@ -282,7 +287,8 @@ mod gpu {
             eprintln!("SKIP: no CUDA device");
             return None;
         }
-        let session = Qwen35Session::load(mapped, false).expect("load");
+        let session = Qwen35Session::load_cached(std::path::Path::new(MODEL_PATH), mapped, false)
+            .expect("load");
         assert!(
             session.on_gpu(),
             "a CUDA build on a CUDA host serves from the GPU"
@@ -696,6 +702,11 @@ fn synthetic_forward() -> Qwen35Forward {
     let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
     let qwen: &'static Qwen35Model<'static> = Box::leak(Box::new(Qwen35Model {
         base,
+        embedding: crate::gguf::forward_qwen35::qwen35_embedding::Qwen35Embedding::from_f32(
+            &base.token_embedding,
+            4,
+        )
+        .expect("embedding table"),
         layers: vec![],
         head_dim: 4,
         num_kv_heads: 1,
@@ -802,4 +813,57 @@ fn a_failed_restore_falls_back_on_the_device_and_propagates_on_the_cpu() {
         "{:?}",
         f.notices
     );
+}
+
+/// #4947 F2: the host-RAM check runs inside the host build, before it. A synthetic
+/// qwen35 file with an embedding and no layers cannot build, so with ample memory
+/// the build itself fails; with too little, the guard refuses first.
+#[test]
+fn leak_host_refuses_on_host_ram_before_building() {
+    use crate::gguf::test_factory::GGUFBuilder;
+    use crate::host_capacity::HostMemory;
+    use std::io::Write;
+
+    let file = GGUFBuilder::new()
+        .architecture("qwen35")
+        .add_f32_tensor("token_embd.weight", &[4, 8], &[0.0; 32])
+        .build();
+    let mut tmp = tempfile::NamedTempFile::new().expect("tempfile");
+    tmp.write_all(&file).expect("write the synthetic GGUF");
+    let mapped = MappedGGUFModel::from_path(tmp.path()).expect("map the synthetic GGUF");
+
+    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(1)) {
+        Err(RealizarError::HostRamRefused(_)) => {},
+        Err(other) => panic!("expected HostRamRefused, got {other}"),
+        Ok(_) => panic!("a 1-byte host admitted the build"),
+    }
+    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(u64::MAX)) {
+        Err(RealizarError::HostRamRefused(msg)) => panic!("refused with ample RAM: {msg}"),
+        Err(_) => {},
+        Ok(_) => panic!("a file with no layers built a host model"),
+    }
+}
+
+/// #4947 F2 on the real 0.8B: its embedding is the 970 MiB f32 term, its need is
+/// 1140.6 MiB (admitted from 1268 MiB), and a host below that is refused unbuilt.
+#[test]
+fn the_real_08b_is_admitted_on_a_jetson_and_refused_below_its_need() {
+    use crate::host_capacity::{admit_qwen35_host_build, qwen35_embedding_f32_bytes, HostMemory};
+
+    let mapped = mapped_or_skip!();
+    assert_eq!(
+        qwen35_embedding_f32_bytes(&mapped.model),
+        248_320 * 1024 * 4
+    );
+    let file_bytes = mapped.data().len() as u64;
+    let mib = 1024 * 1024;
+    assert!(
+        admit_qwen35_host_build(&mapped.model, file_bytes, HostMemory::Available(1300 * mib))
+            .is_ok()
+    );
+    match Qwen35Forward::leak_host_within(&mapped, HostMemory::Available(1200 * mib)) {
+        Err(RealizarError::HostRamRefused(_)) => {},
+        Err(other) => panic!("expected HostRamRefused, got {other}"),
+        Ok(_) => panic!("1200 MiB admitted a build whose need is 1141 MiB"),
+    }
 }

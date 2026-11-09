@@ -415,6 +415,23 @@ impl BPETokenizer {
     /// Returns error if any token ID is invalid
     pub fn decode(&self, token_ids: &[u32]) -> Result<String> {
         contract_pre_decode!();
+        let bytes = self.decode_bytes(token_ids)?;
+
+        // Decode as UTF-8, replacing invalid sequences
+        let result = String::from_utf8_lossy(&bytes).into_owned();
+        contract_post_decode!(&result);
+        Ok(result)
+    }
+
+    /// The raw bytes `token_ids` decode to, before [`Self::decode`] turns them
+    /// into text (#4971: a logprobs entry reports its token's own bytes, which
+    /// can be part of one character). Special tokens decode to no bytes, as
+    /// they decode to no text.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if any token ID is invalid
+    pub fn decode_bytes(&self, token_ids: &[u32]) -> Result<Vec<u8>> {
         let mut bytes: Vec<u8> = Vec::new();
 
         for &id in token_ids {
@@ -425,64 +442,54 @@ impl BPETokenizer {
                         operation: "decode_bpe_token".to_string(),
                         reason: format!("Invalid token ID: {id}"),
                     })?;
-            Self::decode_token_bytes(token, &mut bytes);
+            Self::push_token_bytes(token, &mut bytes);
         }
-
-        // Decode as UTF-8, replacing invalid sequences
-        let result = String::from_utf8_lossy(&bytes).into_owned();
-        contract_post_decode!(&result);
-        Ok(result)
+        Ok(bytes)
     }
 
-    /// One token's bytes: nothing for a special token, the byte of a `<0xNN>` byte token,
-    /// otherwise its byte-level glyphs.
-    fn decode_token_bytes(token: &str, bytes: &mut Vec<u8>) {
-        if Self::is_skipped_special(token) {
+    /// Append one token's bytes: none for a special token, the byte of a `<0xNN>`
+    /// token, else each character's byte-level-BPE byte (split out of
+    /// `decode_bytes` for #4971, unchanged).
+    fn push_token_bytes(token: &str, bytes: &mut Vec<u8>) {
+        if Self::is_unprinted_special(token) {
             return;
         }
-        if let Some(byte_val) = Self::byte_token_value(token) {
-            bytes.push(byte_val);
+        if let Some(byte) = Self::byte_token_value(token) {
+            bytes.push(byte);
             return;
         }
         // Decode GPT-2 style byte-level BPE
         for c in token.chars() {
-            Self::decode_glyph_bytes(c, bytes);
+            Self::push_char_bytes(c, bytes);
         }
     }
 
     /// Special tokens decode to nothing.
-    fn is_skipped_special(token: &str) -> bool {
+    fn is_unprinted_special(token: &str) -> bool {
         (token.starts_with("<|") && token.ends_with("|>"))
             || matches!(token, "<s>" | "</s>" | "<unk>" | "<pad>")
     }
 
-    /// The byte of a byte token like `<0xE6>`; `None` for anything else.
+    /// The byte a token like `<0xE6>` stands for; `None` for any other token.
     fn byte_token_value(token: &str) -> Option<u8> {
-        if token.starts_with("<0x") && token.ends_with('>') && token.len() == 6 {
-            u8::from_str_radix(token.get(3..5)?, 16).ok()
-        } else {
-            None
+        if !(token.starts_with("<0x") && token.ends_with('>') && token.len() == 6) {
+            return None;
         }
+        u8::from_str_radix(token.get(3..5)?, 16).ok()
     }
 
-    /// One byte-level glyph's bytes.
-    fn decode_glyph_bytes(c: char, bytes: &mut Vec<u8>) {
+    /// One character of a byte-level-BPE token, as the byte(s) it stands for.
+    fn push_char_bytes(c: char, bytes: &mut Vec<u8>) {
         match c {
             'Ġ' => bytes.push(b' '),  // U+0120 -> space
             'Ċ' => bytes.push(b'\n'), // U+010A -> newline
             'ċ' => bytes.push(b'\n'), // lowercase variant
             'Ḃ' => bytes.push(b'\r'), // U+1E02 -> carriage return
             '▁' => bytes.push(b' '),  // U+2581 SentencePiece -> space
-            _ => {
-                // Try GPT-2 unicode-to-byte mapping
-                if let Some(byte) = Self::gpt2_char_to_byte(c) {
-                    bytes.push(byte);
-                } else {
-                    // Regular UTF-8 character
-                    let mut buf = [0u8; 4];
-                    let encoded = c.encode_utf8(&mut buf);
-                    bytes.extend_from_slice(encoded.as_bytes());
-                }
+            // Try GPT-2 unicode-to-byte mapping, else the character's own UTF-8.
+            _ => match Self::gpt2_char_to_byte(c) {
+                Some(byte) => bytes.push(byte),
+                None => bytes.extend_from_slice(c.encode_utf8(&mut [0u8; 4]).as_bytes()),
             },
         }
     }

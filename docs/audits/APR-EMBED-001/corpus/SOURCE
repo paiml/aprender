@@ -1,0 +1,3 @@
+commit=f745e7abc20890e0d25f37b7db24c37902dc6888
+source=book/src (MIT, this repository)
+generator=scripts/apr_embed_corpus.sh

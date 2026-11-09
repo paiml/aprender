@@ -55,8 +55,7 @@ impl TextBuffer {
 
     /// Write a string at the given position.
     pub fn write_str(&mut self, x: u16, y: u16, s: &str) {
-        let mut cx = x;
-        for ch in s.chars() {
+        for (cx, ch) in (x..).zip(s.chars()) {
             if cx >= self.width || y >= self.height {
                 break;
             }
@@ -64,7 +63,6 @@ impl TextBuffer {
             if idx < self.cells.len() {
                 self.cells[idx] = ch;
             }
-            cx += 1;
         }
     }
 

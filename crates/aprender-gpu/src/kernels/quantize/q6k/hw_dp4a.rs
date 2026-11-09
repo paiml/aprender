@@ -60,51 +60,125 @@ impl Kernel for HalfWarpDp4aQ6KGemvKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        let num_warps = self.num_warps;
-        let num_half_warps = num_warps * 2;
-        let num_threads = num_warps * 32;
+        build_hw_dp4a_q6k("hw_dp4a_q6k_gemv", self.k, self.num_warps, 1)
+    }
+}
 
-        // Shared memory layout:
-        //   [0, num_half_warps*4)             — warp reduction scratch
-        //   [q8_smem_off, q8_smem_off + q8_total_bytes) — Q8 activation cache
-        let reduction_bytes = num_half_warps * 4;
-        // Align Q8 region to 4 bytes
-        let q8_smem_off = (reduction_bytes + 3) & !3;
-        let num_sb = (self.k + Q6K_SUPER_BLOCK_SIZE - 1) / Q6K_SUPER_BLOCK_SIZE;
-        let q8_total_bytes = num_sb * Q8_SB_STRIDE;
-        let smem_size = (q8_smem_off + q8_total_bytes) as usize;
+/// Batched half-warp DP4A Q6_K GEMV (#5279): `m` Q8_1 activation rows
+/// against one weight matrix, `y[r] = W · q8[r]` for `r < m`.
+///
+/// Each weight super-block is read and unpacked once for all `m` rows. Every
+/// row keeps its own integer and float accumulators, updated in exactly the
+/// order of [`HalfWarpDp4aQ6KGemvKernel`], so row `r` of the output is bitwise
+/// equal to that kernel run on `q8[r]` alone.
+///
+/// The single-row kernel caches its Q8 row in shared memory; `m` rows of it
+/// would not fit for large `k`, so this kernel reads Q8 from global memory.
+/// The bytes are the same, so the sums are too.
+///
+/// Layout: `q8` is `m` rows of `ceil(k / 256) × 288` bytes, `y` is `m × n`
+/// row-major f32. Launch it as the single-row kernel.
+pub struct BatchedHwDp4aQ6KGemvKernel {
+    /// Number of elements per row (K dimension).
+    pub k: u32,
+    /// Number of rows (N dimension).
+    pub n: u32,
+    /// Activation rows per launch (M dimension).
+    pub m: u32,
+    /// Number of warps per CTA.
+    pub num_warps: u32,
+}
 
-        PtxKernel::new("hw_dp4a_q6k_gemv")
-            .param(PtxType::U64, "y_ptr")
-            .param(PtxType::U64, "w_ptr")
-            .param(PtxType::U64, "q8_ptr")
-            .param(PtxType::U32, "k_dim")
-            .param(PtxType::U32, "n_dim")
-            .shared_memory(smem_size)
-            .max_regs(255)
-            .build(move |ctx| {
-                // ===== Thread identity =====
-                let block_id = ctx.special_reg(PtxReg::CtaIdX);
-                let thread_id = ctx.special_reg(PtxReg::TidX);
-                let lane_id = ctx.rem_u32(thread_id, 32);
-                let warp_id = ctx.div_u32(thread_id, 32);
-                let grid_dim = ctx.special_reg(PtxReg::NctaIdX);
+impl BatchedHwDp4aQ6KGemvKernel {
+    /// Create a batched kernel with the single-row kernel's 3 warps per CTA.
+    pub fn new(k: u32, n: u32, m: u32) -> Self {
+        Self {
+            k,
+            n,
+            m,
+            num_warps: 3,
+        }
+    }
+}
 
-                // ===== Parameters =====
-                let n_dim = ctx.load_param_u32("n_dim");
-                let k_dim = ctx.load_param_u32("k_dim");
-                let y_ptr = ctx.load_param_u64("y_ptr");
-                let w_ptr = ctx.load_param_u64("w_ptr");
-                let q8_ptr = ctx.load_param_u64("q8_ptr");
+impl Kernel for BatchedHwDp4aQ6KGemvKernel {
+    fn name(&self) -> &str {
+        "batched_hw_dp4a_q6k_gemv"
+    }
 
-                let k_rounded = ctx.add_u32(k_dim, Q6K_SUPER_BLOCK_SIZE - 1);
-                let num_sb_reg = ctx.div_u32(k_rounded, Q6K_SUPER_BLOCK_SIZE);
-                let sb_bytes_reg = ctx.mov_u32_imm(Q6K_SUPER_BLOCK_BYTES);
-                let row_bytes = ctx.mul_u32_reg(num_sb_reg, sb_bytes_reg);
+    fn build_ptx(&self) -> PtxKernel {
+        build_hw_dp4a_q6k("batched_hw_dp4a_q6k_gemv", self.k, self.num_warps, self.m)
+    }
+}
 
-                // ===== PMAT-078: Cooperative Q8 load into shared memory =====
-                // All threads cooperatively load Q8 activation data before the row loop.
-                // Q8 data is identical for all output rows — load once, reuse across all.
+/// The HW DP4A Q6_K GEMV over `rows` activation rows. With `rows == 1` it
+/// emits the single-row kernel's PTX unchanged, Q8 shared-memory cache and
+/// all; with `rows > 1` Q8 is read from global memory.
+#[allow(clippy::too_many_lines)]
+fn build_hw_dp4a_q6k(name: &str, k: u32, num_warps: u32, rows: u32) -> PtxKernel {
+    let num_half_warps = num_warps * 2;
+    let num_threads = num_warps * 32;
+    let q8_in_smem = rows == 1;
+
+    // Shared memory layout:
+    //   [0, rows*num_half_warps*4)        — warp reduction scratch, per row
+    //   [q8_smem_off, q8_smem_off + q8_total_bytes) — Q8 activation cache
+    //                                       (single row only)
+    let reduction_bytes = rows * num_half_warps * 4;
+    // Align Q8 region to 4 bytes
+    let q8_smem_off = (reduction_bytes + 3) & !3;
+    let num_sb = (k + Q6K_SUPER_BLOCK_SIZE - 1) / Q6K_SUPER_BLOCK_SIZE;
+    let q8_total_bytes = num_sb * Q8_SB_STRIDE;
+    let smem_size = if q8_in_smem {
+        (q8_smem_off + q8_total_bytes) as usize
+    } else {
+        reduction_bytes as usize
+    };
+
+    PtxKernel::new(name)
+        .param(PtxType::U64, "y_ptr")
+        .param(PtxType::U64, "w_ptr")
+        .param(PtxType::U64, "q8_ptr")
+        .param(PtxType::U32, "k_dim")
+        .param(PtxType::U32, "n_dim")
+        .shared_memory(smem_size)
+        .max_regs(255)
+        .build(move |ctx| {
+            // ===== Thread identity =====
+            let block_id = ctx.special_reg(PtxReg::CtaIdX);
+            let thread_id = ctx.special_reg(PtxReg::TidX);
+            let lane_id = ctx.rem_u32(thread_id, 32);
+            let warp_id = ctx.div_u32(thread_id, 32);
+            let grid_dim = ctx.special_reg(PtxReg::NctaIdX);
+
+            // ===== Parameters =====
+            let n_dim = ctx.load_param_u32("n_dim");
+            let k_dim = ctx.load_param_u32("k_dim");
+            let y_ptr = ctx.load_param_u64("y_ptr");
+            let w_ptr = ctx.load_param_u64("w_ptr");
+            let q8_ptr = ctx.load_param_u64("q8_ptr");
+
+            let k_rounded = ctx.add_u32(k_dim, Q6K_SUPER_BLOCK_SIZE - 1);
+            let num_sb_reg = ctx.div_u32(k_rounded, Q6K_SUPER_BLOCK_SIZE);
+            let sb_bytes_reg = ctx.mov_u32_imm(Q6K_SUPER_BLOCK_BYTES);
+            let row_bytes = ctx.mul_u32_reg(num_sb_reg, sb_bytes_reg);
+
+            // Batched: row r of Q8 starts r × q8_total_bytes in.
+            let q8_rows: Vec<_> = (0..rows)
+                .filter(|_| !q8_in_smem)
+                .map(|r| {
+                    if r == 0 {
+                        return q8_ptr;
+                    }
+                    let off = ctx.mov_u64_imm(u64::from(r) * u64::from(q8_total_bytes));
+                    ctx.add_u64(q8_ptr, off)
+                })
+                .collect();
+
+            // ===== PMAT-078: Cooperative Q8 load into shared memory =====
+            // All threads cooperatively load Q8 activation data before the row loop.
+            // Q8 data is identical for all output rows — load once, reuse across all.
+            let q8_smem_base = q8_in_smem.then(|| {
                 let q8_total_u32s = q8_total_bytes / 4;
                 let q8_smem_base = ctx.mov_u32_imm(q8_smem_off);
                 // Cooperative load: thread_id strides by num_threads
@@ -133,121 +207,134 @@ impl Kernel for HalfWarpDp4aQ6KGemvKernel {
 
                 ctx.label("hwq6_q8_load_done");
                 ctx.bar_sync(0);
+                q8_smem_base
+            });
 
-                // ===== C1: Half-warp thread mapping =====
-                let half_lane = ctx.and_u32_imm(lane_id, 15);
-                let half_warp_in_warp = ctx.shr_u32_imm(lane_id, 4);
-                let warp_x2 = ctx.shl_u32_imm(warp_id, 1);
-                let half_warp_id = ctx.add_u32_reg(warp_x2, half_warp_in_warp);
-                let num_hw = ctx.mov_u32_imm(num_half_warps);
+            // ===== C1: Half-warp thread mapping =====
+            let half_lane = ctx.and_u32_imm(lane_id, 15);
+            let half_warp_in_warp = ctx.shr_u32_imm(lane_id, 4);
+            let warp_x2 = ctx.shl_u32_imm(warp_id, 1);
+            let half_warp_id = ctx.add_u32_reg(warp_x2, half_warp_in_warp);
+            let num_hw = ctx.mov_u32_imm(num_half_warps);
 
-                // ===== C2: Per-thread data mapping =====
-                let c1 = ctx.mov_u32_imm(1);
-                let c2 = ctx.mov_u32_imm(2);
-                let c3 = ctx.mov_u32_imm(3);
-                let c4 = ctx.mov_u32_imm(4);
-                let c7 = ctx.mov_u32_imm(7);
-                let c16 = ctx.mov_u32_imm(16);
-                let c32 = ctx.mov_u32_imm(32);
-                let c64 = ctx.mov_u32_imm(64);
+            // ===== C2: Per-thread data mapping =====
+            let c1 = ctx.mov_u32_imm(1);
+            let c2 = ctx.mov_u32_imm(2);
+            let c3 = ctx.mov_u32_imm(3);
+            let c4 = ctx.mov_u32_imm(4);
+            let c7 = ctx.mov_u32_imm(7);
+            let c16 = ctx.mov_u32_imm(16);
+            let c32 = ctx.mov_u32_imm(32);
+            let c64 = ctx.mov_u32_imm(64);
 
-                let n_idx = ctx.shr_u32(half_lane, c3);
-                let hl_mod8 = ctx.and_u32(half_lane, c7);
-                let q_path = ctx.shr_u32(hl_mod8, c1);
-                let l_half = ctx.and_u32(half_lane, c1);
+            let n_idx = ctx.shr_u32(half_lane, c3);
+            let hl_mod8 = ctx.and_u32(half_lane, c7);
+            let q_path = ctx.shr_u32(hl_mod8, c1);
+            let l_half = ctx.and_u32(half_lane, c1);
 
-                // ql_base = n_idx*64 + (q_path & 1)*32 + l_half*16
-                let n_x64 = ctx.mul_u32_reg(n_idx, c64);
-                let qp_low = ctx.and_u32(q_path, c1);
-                let qp_x32 = ctx.mul_u32_reg(qp_low, c32);
-                let lh_x16 = ctx.mul_u32_reg(l_half, c16);
-                let ql_base = ctx.add_u32_reg(n_x64, qp_x32);
-                let ql_base = ctx.add_u32_reg(ql_base, lh_x16);
-                let ql_base_64 = ctx.cvt_u64_u32(ql_base);
+            // ql_base = n_idx*64 + (q_path & 1)*32 + l_half*16
+            let n_x64 = ctx.mul_u32_reg(n_idx, c64);
+            let qp_low = ctx.and_u32(q_path, c1);
+            let qp_x32 = ctx.mul_u32_reg(qp_low, c32);
+            let lh_x16 = ctx.mul_u32_reg(l_half, c16);
+            let ql_base = ctx.add_u32_reg(n_x64, qp_x32);
+            let ql_base = ctx.add_u32_reg(ql_base, lh_x16);
+            let ql_base_64 = ctx.cvt_u64_u32(ql_base);
 
-                // nibble_shift = (q_path >> 1) << 2
-                let qp_div2 = ctx.shr_u32(q_path, c1);
-                let nibble_shift = ctx.shl_u32(qp_div2, c2);
+            // nibble_shift = (q_path >> 1) << 2
+            let qp_div2 = ctx.shr_u32(q_path, c1);
+            let nibble_shift = ctx.shl_u32(qp_div2, c2);
 
-                // qh_base = 128 + n_idx*32 + l_half*16
-                let n_x32 = ctx.mul_u32_reg(n_idx, c32);
-                let qh_base_off = ctx.add_u32(n_x32, 128);
-                let qh_base = ctx.add_u32_reg(qh_base_off, lh_x16);
-                let qh_base_64 = ctx.cvt_u64_u32(qh_base);
+            // qh_base = 128 + n_idx*32 + l_half*16
+            let n_x32 = ctx.mul_u32_reg(n_idx, c32);
+            let qh_base_off = ctx.add_u32(n_x32, 128);
+            let qh_base = ctx.add_u32_reg(qh_base_off, lh_x16);
+            let qh_base_64 = ctx.cvt_u64_u32(qh_base);
 
-                // qh_shift = q_path * 2
-                let qh_shift = ctx.shl_u32(q_path, c1);
+            // qh_shift = q_path * 2
+            let qh_shift = ctx.shl_u32(q_path, c1);
 
-                // Q8 block within SB = half_lane / 2
-                let q8_block_in_sb = ctx.shr_u32(half_lane, c1);
-                // Q8 sub-offset within block = (half_lane & 1) * 16
-                let q8_sub = ctx.mul_u32_reg(l_half, c16);
+            // Q8 block within SB = half_lane / 2
+            let q8_block_in_sb = ctx.shr_u32(half_lane, c1);
+            // Q8 sub-offset within block = (half_lane & 1) * 16
+            let q8_sub = ctx.mul_u32_reg(l_half, c16);
 
-                // Pre-computed Q8 block byte offset within SB (block * 36)
-                let c36 = ctx.mov_u32_imm(Q8_BLOCK_BYTES);
-                let q8_blk_bytes = ctx.mul_u32_reg(q8_block_in_sb, c36);
+            // Pre-computed Q8 block byte offset within SB (block * 36)
+            let c36 = ctx.mov_u32_imm(Q8_BLOCK_BYTES);
+            let q8_blk_bytes = ctx.mul_u32_reg(q8_block_in_sb, c36);
 
-                // DP4A constants
-                let mask_0f = ctx.mov_u32_imm(0x0F0F_0F0F);
-                let mask_03 = ctx.mov_u32_imm(0x0303_0303);
-                let ones_packed = ctx.mov_u32_imm(0x0101_0101);
-                let c5 = ctx.mov_u32_imm(5);
+            // DP4A constants
+            let mask_0f = ctx.mov_u32_imm(0x0F0F_0F0F);
+            let mask_03 = ctx.mov_u32_imm(0x0303_0303);
+            let ones_packed = ctx.mov_u32_imm(0x0101_0101);
+            let c5 = ctx.mov_u32_imm(5);
 
-                let c32_smem = ctx.mov_u32_imm(32); // Q8 d scale offset within block
-                let c192_64 = ctx.mov_u64_imm(192);
-                let c208_64 = ctx.mov_u64_imm(208);
-                let c256_f32 = ctx.mov_f32_imm(256.0);
+            let c32_smem = ctx.mov_u32_imm(32); // Q8 d scale offset within block
+            let c192_64 = ctx.mov_u64_imm(192);
+            let c208_64 = ctx.mov_u64_imm(208);
+            let c256_f32 = ctx.mov_f32_imm(256.0);
 
-                let c288 = ctx.mov_u32_imm(Q8_SB_STRIDE);
+            let c288 = ctx.mov_u32_imm(Q8_SB_STRIDE);
 
-                let zero = ctx.mov_u32_imm(0);
+            let zero = ctx.mov_u32_imm(0);
 
-                // ===== Grid-stride row loop =====
-                let row_idx = ctx.mov_u32_imm(0);
-                ctx.add_u32_reg_inplace(row_idx, block_id);
+            // Batched: the same per-thread Q8 offsets as 64-bit global offsets.
+            let q8_global_offs = (!q8_in_smem).then(|| {
+                let blk_bytes_64 = ctx.cvt_u64_u32(q8_blk_bytes);
+                let sub_64 = ctx.cvt_u64_u32(q8_sub);
+                let c32_64 = ctx.mov_u64_imm(32);
+                (blk_bytes_64, sub_64, c32_64)
+            });
 
-                ctx.label("hwq6_row_loop");
-                let row_oob = ctx.setp_ge_u32(row_idx, n_dim);
-                ctx.branch_if(row_oob, "hwq6_exit");
+            // ===== Grid-stride row loop =====
+            let row_idx = ctx.mov_u32_imm(0);
+            ctx.add_u32_reg_inplace(row_idx, block_id);
 
-                let row_off = ctx.mul_wide_u32_reg(row_idx, row_bytes);
-                let row_base = ctx.add_u64(w_ptr, row_off);
+            ctx.label("hwq6_row_loop");
+            let row_oob = ctx.setp_ge_u32(row_idx, n_dim);
+            ctx.branch_if(row_oob, "hwq6_exit");
 
-                let acc = ctx.mov_f32_imm(0.0);
+            let row_off = ctx.mul_wide_u32_reg(row_idx, row_bytes);
+            let row_base = ctx.add_u64(w_ptr, row_off);
 
-                // SB loop: stride by num_half_warps
-                let sb_idx = ctx.mov_u32_imm(0);
-                ctx.add_u32_reg_inplace(sb_idx, half_warp_id);
+            let accs: Vec<_> = (0..rows).map(|_| ctx.mov_f32_imm(0.0)).collect();
 
-                ctx.label("hwq6_sb_loop");
-                let sb_done = ctx.setp_ge_u32(sb_idx, num_sb_reg);
-                ctx.branch_if(sb_done, "hwq6_sb_end");
+            // SB loop: stride by num_half_warps
+            let sb_idx = ctx.mov_u32_imm(0);
+            ctx.add_u32_reg_inplace(sb_idx, half_warp_id);
 
-                // Super-block base address (weights — from global memory)
-                let sb_off = ctx.mul_wide_u32(sb_idx, Q6K_SUPER_BLOCK_BYTES);
-                let sb_addr = ctx.add_u64(row_base, sb_off);
+            ctx.label("hwq6_sb_loop");
+            let sb_done = ctx.setp_ge_u32(sb_idx, num_sb_reg);
+            ctx.branch_if(sb_done, "hwq6_sb_end");
 
-                // ===== C3: Direct scale loading (from global — weights are per-row) =====
-                let sc_addr = ctx.add_u64(sb_addr, c192_64);
-                let sc_lane_off = ctx.cvt_u64_u32(half_lane);
-                let sc_my_addr = ctx.add_u64(sc_addr, sc_lane_off);
-                let sc_u8 = ctx.ld_global_u8(sc_my_addr);
-                let sc_u32 = ctx.cvt_u32_u8(sc_u8);
+            // Super-block base address (weights — from global memory)
+            let sb_off = ctx.mul_wide_u32(sb_idx, Q6K_SUPER_BLOCK_BYTES);
+            let sb_addr = ctx.add_u64(row_base, sb_off);
 
-                // Signed i8 → f32
-                let sign_bit = ctx.shr_u32(sc_u32, c7);
-                let raw_f32 = ctx.cvt_f32_u32(sc_u32);
-                let sign_f32 = ctx.cvt_f32_u32(sign_bit);
-                let correction = ctx.mul_f32(sign_f32, c256_f32);
-                let scale_f32 = ctx.sub_f32(raw_f32, correction);
+            // ===== C3: Direct scale loading (from global — weights are per-row) =====
+            let sc_addr = ctx.add_u64(sb_addr, c192_64);
+            let sc_lane_off = ctx.cvt_u64_u32(half_lane);
+            let sc_my_addr = ctx.add_u64(sc_addr, sc_lane_off);
+            let sc_u8 = ctx.ld_global_u8(sc_my_addr);
+            let sc_u32 = ctx.cvt_u32_u8(sc_u8);
 
-                // Load d (f16 at offset 208 — weight-specific, from global)
-                let d_addr = ctx.add_u64(sb_addr, c208_64);
-                let d_f16 = ctx.ld_global_f16(d_addr);
-                let d = ctx.cvt_f32_f16(d_f16);
+            // Signed i8 → f32
+            let sign_bit = ctx.shr_u32(sc_u32, c7);
+            let raw_f32 = ctx.cvt_f32_u32(sc_u32);
+            let sign_f32 = ctx.cvt_f32_u32(sign_bit);
+            let correction = ctx.mul_f32(sign_f32, c256_f32);
+            let scale_f32 = ctx.sub_f32(raw_f32, correction);
 
-                let d_scale = ctx.mul_f32(d, scale_f32);
+            // Load d (f16 at offset 208 — weight-specific, from global)
+            let d_addr = ctx.add_u64(sb_addr, c208_64);
+            let d_f16 = ctx.ld_global_f16(d_addr);
+            let d = ctx.cvt_f32_f16(d_f16);
 
+            let d_scale = ctx.mul_f32(d, scale_f32);
+
+            // Per activation row: the Q8 d scale and this thread's Q8 qs base.
+            let mut q8_rows_here = Vec::with_capacity(rows as usize);
+            if let Some(q8_smem_base) = q8_smem_base {
                 // ===== PMAT-078: Q8 from shared memory =====
                 // Q8 SB base in shared memory: q8_smem_off + sb_idx * 288
                 let q8_sb_smem_off = ctx.mul_u32_reg(sb_idx, c288);
@@ -268,40 +355,63 @@ impl Kernel for HalfWarpDp4aQ6KGemvKernel {
                 // Q8 qs base for this thread (in shared memory)
                 let q8_sub_u32 = ctx.cvt_u64_u32(q8_sub);
                 let q8_qs_smem = ctx.add_u64(q8_blk_smem_64, q8_sub_u32);
+                q8_rows_here.push((combined_scale, q8_qs_smem));
+            }
+            if let Some((blk_bytes_64, sub_64, c32_64)) = q8_global_offs {
+                // Batched: Q8 from global, at the offsets the cache would use.
+                let q8_sb_off = ctx.mul_wide_u32(sb_idx, Q8_SB_STRIDE);
+                for &q8_row in &q8_rows {
+                    let q8_sb = ctx.add_u64(q8_row, q8_sb_off);
+                    let q8_blk = ctx.add_u64(q8_sb, blk_bytes_64);
+                    let q8_d_addr = ctx.add_u64(q8_blk, c32_64);
+                    let q8_d_f16 = ctx.ld_global_f16(q8_d_addr);
+                    let q8_d = ctx.cvt_f32_f16(q8_d_f16);
+                    let combined_scale = ctx.mul_f32(d_scale, q8_d);
+                    let q8_qs = ctx.add_u64(q8_blk, sub_64);
+                    q8_rows_here.push((combined_scale, q8_qs));
+                }
+            }
 
-                // ===== 4 dp4a iterations =====
-                let int_acc = ctx.mov_u32_imm(0);
+            // ===== 4 dp4a iterations =====
+            let int_accs: Vec<_> = (0..rows).map(|_| ctx.mov_u32_imm(0)).collect();
 
-                for i in 0..4u32 {
-                    let i_x4 = ctx.mov_u64_imm(u64::from(i * 4));
+            for i in 0..4u32 {
+                let i_x4 = ctx.mov_u64_imm(u64::from(i * 4));
 
-                    // ql load (from global — weights are per-row)
-                    let ql_iter_addr = ctx.add_u64(sb_addr, ql_base_64);
-                    let ql_addr = ctx.add_u64(ql_iter_addr, i_x4);
-                    let ql_raw = ctx.ld_global_u32_unaligned(ql_addr);
+                // ql load (from global — weights are per-row)
+                let ql_iter_addr = ctx.add_u64(sb_addr, ql_base_64);
+                let ql_addr = ctx.add_u64(ql_iter_addr, i_x4);
+                let ql_raw = ctx.ld_global_u32_unaligned(ql_addr);
 
-                    let ql_shifted = ctx.shr_u32(ql_raw, nibble_shift);
-                    let ql_nibs = ctx.and_u32(ql_shifted, mask_0f);
+                let ql_shifted = ctx.shr_u32(ql_raw, nibble_shift);
+                let ql_nibs = ctx.and_u32(ql_shifted, mask_0f);
 
-                    // qh load (from global — weights are per-row)
-                    let qh_iter_addr = ctx.add_u64(sb_addr, qh_base_64);
-                    let qh_addr = ctx.add_u64(qh_iter_addr, i_x4);
-                    let qh_raw = ctx.ld_global_u32_unaligned(qh_addr);
+                // qh load (from global — weights are per-row)
+                let qh_iter_addr = ctx.add_u64(sb_addr, qh_base_64);
+                let qh_addr = ctx.add_u64(qh_iter_addr, i_x4);
+                let qh_raw = ctx.ld_global_u32_unaligned(qh_addr);
 
-                    let qh_shifted = ctx.shr_u32(qh_raw, qh_shift);
-                    let qh_2bits = ctx.and_u32(qh_shifted, mask_03);
+                let qh_shifted = ctx.shr_u32(qh_raw, qh_shift);
+                let qh_2bits = ctx.and_u32(qh_shifted, mask_03);
 
-                    let qh_up = ctx.shl_u32(qh_2bits, c4);
-                    let combined = ctx.or_u32(ql_nibs, qh_up);
+                let qh_up = ctx.shl_u32(qh_2bits, c4);
+                let combined = ctx.or_u32(ql_nibs, qh_up);
 
-                    // Q8 qs load (from shared memory — PMAT-078)
-                    let i_x4_u32 = ctx.mov_u32_imm(i * 4);
-                    let i_x4_u64 = ctx.cvt_u64_u32(i_x4_u32);
-                    let q8_addr = ctx.add_u64(q8_qs_smem, i_x4_u64);
-                    // Truncate to u32 for shared memory address
-                    let q8_addr_u32 = ctx.cvt_u32_u64(q8_addr);
-                    let q8_addr_shared = ctx.cvt_u64_u32(q8_addr_u32);
-                    let q8_int32 = ctx.ld_shared_u32(q8_addr_shared);
+                // The same unpacked weights against every row's Q8.
+                for (&int_acc, &(_, q8_qs)) in int_accs.iter().zip(&q8_rows_here) {
+                    let q8_int32 = if q8_in_smem {
+                        // Q8 qs load (from shared memory — PMAT-078)
+                        let i_x4_u32 = ctx.mov_u32_imm(i * 4);
+                        let i_x4_u64 = ctx.cvt_u64_u32(i_x4_u32);
+                        let q8_addr = ctx.add_u64(q8_qs, i_x4_u64);
+                        // Truncate to u32 for shared memory address
+                        let q8_addr_u32 = ctx.cvt_u32_u64(q8_addr);
+                        let q8_addr_shared = ctx.cvt_u64_u32(q8_addr_u32);
+                        ctx.ld_shared_u32(q8_addr_shared)
+                    } else {
+                        let q8_addr = ctx.add_u64(q8_qs, i_x4);
+                        ctx.ld_global_u32(q8_addr)
+                    };
 
                     // dp4a: unsigned Q6K × signed Q8
                     ctx.dp4a_u32_s32_inplace(int_acc, combined, q8_int32);
@@ -314,17 +424,23 @@ impl Kernel for HalfWarpDp4aQ6KGemvKernel {
                     let int_acc_new = ctx.sub_u32(int_acc, sum_x32);
                     ctx.mov_u32_reg(int_acc, int_acc_new);
                 }
+            }
 
+            for ((&acc, &int_acc), &(combined_scale, _)) in
+                accs.iter().zip(&int_accs).zip(&q8_rows_here)
+            {
                 let int_f32 = ctx.cvt_f32_s32(int_acc);
                 ctx.fma_f32_inplace(acc, combined_scale, int_f32);
+            }
 
-                // Stride by num_half_warps
-                ctx.add_u32_reg_inplace(sb_idx, num_hw);
-                ctx.branch("hwq6_sb_loop");
+            // Stride by num_half_warps
+            ctx.add_u32_reg_inplace(sb_idx, num_hw);
+            ctx.branch("hwq6_sb_loop");
 
-                ctx.label("hwq6_sb_end");
+            ctx.label("hwq6_sb_end");
 
-                // ===== C4: Half-warp reduction via shfl_down =====
+            // ===== C4: Half-warp reduction via shfl_down, each row on its own =====
+            for &acc in &accs {
                 let t = ctx.shfl_down_f32(acc, 8, 0xFFFF_FFFF);
                 ctx.add_f32_inplace(acc, t);
                 let t = ctx.shfl_down_f32(acc, 4, 0xFFFF_FFFF);
@@ -333,44 +449,61 @@ impl Kernel for HalfWarpDp4aQ6KGemvKernel {
                 ctx.add_f32_inplace(acc, t);
                 let t = ctx.shfl_down_f32(acc, 1, 0xFFFF_FFFF);
                 ctx.add_f32_inplace(acc, t);
+            }
 
-                // Half-warp lane 0 stores to shared memory (reduction region)
-                let is_hl0 = ctx.setp_eq_u32(half_lane, zero);
-                ctx.branch_if_not(is_hl0, "hwq6_skip_sm");
+            // Half-warp lane 0 stores to shared memory (reduction region)
+            let is_hl0 = ctx.setp_eq_u32(half_lane, zero);
+            ctx.branch_if_not(is_hl0, "hwq6_skip_sm");
 
-                let sm_off = ctx.shl_u32_imm(half_warp_id, 2);
-                let sm_addr = ctx.cvt_u64_u32(sm_off);
+            // Row r's slots start r × num_half_warps in.
+            let sm_off = ctx.shl_u32_imm(half_warp_id, 2);
+            for (r, &acc) in (0u32..).zip(&accs) {
+                let row_sm_off = if r == 0 {
+                    sm_off
+                } else {
+                    ctx.add_u32(sm_off, r * num_half_warps * 4)
+                };
+                let sm_addr = ctx.cvt_u64_u32(row_sm_off);
                 ctx.st_shared_f32(sm_addr, acc);
+            }
 
-                ctx.label("hwq6_skip_sm");
-                ctx.bar_sync(0);
+            ctx.label("hwq6_skip_sm");
+            ctx.bar_sync(0);
 
-                // Thread 0 reduces all half-warps and stores
-                let is_t0 = ctx.setp_eq_u32(thread_id, zero);
-                ctx.branch_if_not(is_t0, "hwq6_skip_store");
+            // Thread 0 reduces all half-warps and stores
+            let is_t0 = ctx.setp_eq_u32(thread_id, zero);
+            ctx.branch_if_not(is_t0, "hwq6_skip_store");
 
+            for r in 0..rows {
                 let result = ctx.mov_f32_imm(0.0);
                 for hw in 0..num_half_warps {
-                    let off = ctx.mov_u64_imm(u64::from(hw * 4));
+                    let off = ctx.mov_u64_imm(u64::from((r * num_half_warps + hw) * 4));
                     let val = ctx.ld_shared_f32(off);
                     ctx.add_f32_inplace(result, val);
                 }
 
-                let y_off = ctx.mul_wide_u32(row_idx, 4);
+                // Row r of y starts r × n floats in.
+                let out_idx = if r == 0 {
+                    row_idx
+                } else {
+                    let row_start = ctx.mul_u32(n_dim, r);
+                    ctx.add_u32_reg(row_start, row_idx)
+                };
+                let y_off = ctx.mul_wide_u32(out_idx, 4);
                 let y_addr = ctx.add_u64(y_ptr, y_off);
                 ctx.st_global_f32(y_addr, result);
+            }
 
-                ctx.label("hwq6_skip_store");
+            ctx.label("hwq6_skip_store");
 
-                // Next row (grid-stride)
-                ctx.add_u32_reg_inplace(row_idx, grid_dim);
-                ctx.bar_sync(0);
-                ctx.branch("hwq6_row_loop");
+            // Next row (grid-stride)
+            ctx.add_u32_reg_inplace(row_idx, grid_dim);
+            ctx.bar_sync(0);
+            ctx.branch("hwq6_row_loop");
 
-                ctx.label("hwq6_exit");
-                ctx.ret();
-            })
-    }
+            ctx.label("hwq6_exit");
+            ctx.ret();
+        })
 }
 
 #[cfg(test)]
@@ -467,5 +600,25 @@ mod tests {
             let expected_qh_shift = q_idx * 2;
             assert_eq!(qh_shift, expected_qh_shift);
         }
+    }
+
+    #[test]
+    fn test_batched_reads_q8_from_global() {
+        let ptx = BatchedHwDp4aQ6KGemvKernel::new(9216, 2560, 4).emit_ptx();
+        assert!(ptx.contains("batched_hw_dp4a_q6k_gemv"), "kernel name");
+        // m rows of Q8 do not fit in shared memory: no cooperative load.
+        assert!(!ptx.contains("st.shared.u32"), "no Q8 cache store");
+        assert!(!ptx.contains("ld.shared.u32"), "no Q8 cache load");
+        assert!(ptx.contains("ld.global.u32"), "Q8 from global");
+    }
+
+    #[test]
+    fn test_batched_one_row_is_the_single_row_kernel() {
+        let single = HalfWarpDp4aQ6KGemvKernel::new(2560, 8192).emit_ptx();
+        let batched = BatchedHwDp4aQ6KGemvKernel::new(2560, 8192, 1).emit_ptx();
+        assert_eq!(
+            batched.replace("batched_hw_dp4a_q6k_gemv", "hw_dp4a_q6k_gemv"),
+            single
+        );
     }
 }

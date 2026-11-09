@@ -328,13 +328,13 @@ check_crate_count() {
 # ONE definition of "a contract file", the one `provable_contracts::lint`'s walker
 # applies and `pv census` (ONT-001 ONT-1) counts: *.yaml, no dotfile, not the
 # binding registry, not ONT-1's external-corpora declaration, not ONT-2b's Σ, and nothing under
-# kaizen/, legacy/, pipelines/, publish-manifests/ or quarantine/. Reading a tar
+# legacy/, pipelines/, publish-manifests/ or quarantine/ (kaizen/ counts, #5291). Reading a tar
 # listing with a SECOND definition is how the README came to state 1841 while
 # every gate measured 1790 — the on-disk reading, the two revisions and the
 # README claim are now one instrument.
 contract_files_only() {
   grep -E '\.yaml$' \
-    | grep -Ev '(^|/)(kaizen|legacy|pipelines|publish-manifests|quarantine)/' \
+    | grep -Ev '(^|/)(legacy|pipelines|publish-manifests|quarantine)/' \
     | grep -Ev '(^|/)(binding\.yaml|binding\.yml|external-corpora\.yaml|ontology\.yaml)$' \
     | grep -Ev '(^|/)\.[^/]*$'
 }
@@ -377,7 +377,7 @@ check_contract_count() {
   case "$mode" in
     UNRESOLVABLE)
       { printf 'FAIL FALSIFY-README-002 contract_count: PREFLIGHT — cannot resolve the comparand ref <%s>, so the count is UNMEASURED against anything. That is not "no drift", and it is not degraded to comparing this branch against itself.\n' "$ref"
-        printf '     In CI, before this guard runs:  git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'; } >&2
+        printf '     In CI, before this guard runs:  %s\n' "$(baseline_ratchet_fetch_hint "$ref")"; } >&2
       return 1 ;;
     ABSENT|BOOTSTRAP)
       printf 'FAIL FALSIFY-README-002 contract_count: PREFLIGHT — <%s> carries no contracts/ tree, so there is no comparand to diff against. A missing comparand is not "no drift".\n' "$ref" >&2

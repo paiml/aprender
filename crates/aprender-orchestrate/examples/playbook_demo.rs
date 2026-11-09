@@ -100,7 +100,7 @@ policy:
     let mut overrides = HashMap::new();
     overrides.insert(
         "greeting".to_string(),
-        serde_yaml_ng::Value::String("sovereign ai stack".to_string()),
+        serde_json::Value::String("sovereign ai stack".to_string()),
     );
     let config_override = RunConfig {
         playbook_path: yaml_path.clone(),

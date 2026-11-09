@@ -795,10 +795,26 @@ fn witness_of(band: &Value, source: &str, path: &Path) -> Result<BatchInvariance
         divergence_at: as_u32(band.get("divergence_at")),
         intra_agree_to: as_u32(band.get("intra_agree_to")),
         max_constant_run: as_u32(band.get("max_constant_run")),
+        top2_margin_at_divergence: margin_of(band, path)?,
         declared_min: as_u32(band.get("declared_min")).unwrap_or_default(),
         m_formed: as_u32(band.get("m_formed")).unwrap_or_default(),
         source: source.to_string(),
     })
+}
+
+/// Master §12 row 22 (#4971): the top-2 margin at `divergence_at`, when the
+/// probe recorded one. A value that is not a number is REFUSED, like an unknown
+/// verdict token: reading `true` as "no margin" would hide what the probe wrote.
+fn margin_of(band: &Value, path: &Path) -> Result<Option<f64>> {
+    match band.get("top2_margin_at_divergence") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_f64().map(Some).ok_or_else(|| {
+            CliError::InvalidFormat(format!(
+                "--witness-json {}: top2_margin_at_divergence {v} is not a number (#4971)",
+                path.display()
+            ))
+        }),
+    }
 }
 
 /// §4.2.2 — who measured, what served, and what the pinned comparator was.
@@ -1012,6 +1028,8 @@ fn band_input(run: &BandRun, comparator: ComparatorStatus) -> BandInput {
                 expected_tokens: extra.expected_tokens,
                 ttft_ms: s.token_times_s.first().map(|t| (t - s.start_s) * 1000.0),
                 prefill_ms: extra.prefill_ms,
+                load_ms: extra.load_ms,
+                first_token_ms: extra.first_token_ms,
                 in_flight_at_start: u32::try_from(s.in_flight_at_start).unwrap_or(u32::MAX),
                 token_times_ms: s.token_times_s.iter().map(|t| t * 1000.0).collect(),
             }
@@ -2673,6 +2691,32 @@ mod tests {
     }
 
     #[test]
+    fn a_recorded_top2_margin_is_read_and_a_non_number_is_refused() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = witness_file(
+            dir.path(),
+            r#"{"bands":[
+                 {"c":1,"result":"PASS","divergence_at":null,"declared_min":64,"m_formed":1},
+                 {"c":4,"result":"PASS","divergence_at":3,"declared_min":64,"m_formed":4,
+                  "top2_margin_at_divergence":0.01}
+               ]}"#,
+        );
+        let w = load_witness(Some(&path)).expect("loads");
+        assert_eq!(w[&1].top2_margin_at_divergence, None);
+        assert_eq!(w[&4].top2_margin_at_divergence, Some(0.01));
+        let path = witness_file(
+            dir.path(),
+            r#"{"bands":[{"c":4,"result":"PASS","divergence_at":3,"declared_min":64,
+                 "m_formed":4,"top2_margin_at_divergence":"0.01"}]}"#,
+        );
+        let err = load_witness(Some(&path)).expect_err("a string is not a margin");
+        assert!(
+            err.to_string().contains("top2_margin_at_divergence"),
+            "{err}"
+        );
+    }
+
+    #[test]
     fn a_document_that_is_not_a_perf041_witness_is_refused() {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = witness_file(dir.path(), r#"{"probe":"perf041"}"#);
@@ -2748,6 +2792,8 @@ mod tests {
                     expected_tokens: Some(128),
                     ttft_ms: Some(ttft),
                     prefill_ms: Some(dur * 0.04),
+                    load_ms: None,
+                    first_token_ms: None,
                     in_flight_at_start: c,
                     token_times_ms: times,
                 }

@@ -281,7 +281,7 @@ impl Playbook {
     ///
     /// Returns an error if the YAML is invalid or required fields are missing.
     pub fn from_yaml(yaml: &str) -> Result<Self> {
-        let playbook: Self = serde_yaml::from_str(yaml).map_err(Error::from)?;
+        let playbook: Self = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(Error::from)?;
         playbook.validate()?;
         Ok(playbook)
     }
@@ -322,7 +322,7 @@ impl Playbook {
     ///
     /// Returns an error if serialization fails.
     pub fn to_yaml(&self) -> Result<String> {
-        serde_yaml::to_string(self).map_err(Error::from)
+        serde_saphyr::to_string(self).map_err(Error::from)
     }
 
     /// Generate all scenarios from this playbook

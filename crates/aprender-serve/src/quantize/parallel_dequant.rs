@@ -51,15 +51,14 @@ pub fn dequantize_q4_k_parallel(data: &[u8]) -> Result<Vec<f32>> {
 
     let num_super_blocks = data.len() / SUPER_BLOCK_BYTES;
 
-    // Process super-blocks in parallel
-    let result: Vec<f32> = (0..num_super_blocks)
-        .into_par_iter()
-        .flat_map(|sb_idx| {
-            let sb_start = sb_idx * SUPER_BLOCK_BYTES;
-            let sb_data = &data[sb_start..sb_start + SUPER_BLOCK_BYTES];
-            dequantize_q4_k_superblock(sb_data)
-        })
-        .collect();
+    // Write each super-block into its slot of one preallocated output. A
+    // flat_map().collect() keeps every per-thread piece alive until the
+    // concatenated Vec is built, so a token embedding is held twice (#4990).
+    let mut result = vec![0.0f32; num_super_blocks * QK_K];
+    result
+        .par_chunks_mut(QK_K)
+        .zip(data.par_chunks(SUPER_BLOCK_BYTES))
+        .for_each(|(out, sb_data)| out.copy_from_slice(&dequantize_q4_k_superblock(sb_data)));
 
     Ok(result)
 }
@@ -141,12 +140,12 @@ pub(crate) fn dequantize_q4_k_superblock(sb_data: &[u8]) -> Vec<f32> {
 ///
 /// # Performance
 ///
-/// AVX2: ~4x speedup over scalar per super-block
-/// Combined with rayon: ~40x speedup on 16-core system
+/// Uses AVX2 per super-block where the CPU has it, and rayon across
+/// super-blocks.
 pub fn dequantize_q4_k_simd(data: &[u8]) -> Result<Vec<f32>> {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: AVX2 verified at runtime
             return unsafe { dequantize_q4_k_avx2_parallel(data) };
         }
@@ -196,18 +195,23 @@ unsafe fn dequantize_q4_k_avx2_parallel(data: &[u8]) -> Result<Vec<f32>> {
         return Ok(result);
     }
 
-    // Process chunks of super-blocks in parallel
-    let result: Vec<f32> = data
-        .par_chunks(CHUNK_BYTES)
-        .flat_map(|chunk| {
-            let mut chunk_result = Vec::with_capacity(chunk.len() / SUPER_BLOCK_BYTES * QK_K);
-            for sb_data in chunk.as_chunks::<SUPER_BLOCK_BYTES>().0 {
+    // Process chunks of super-blocks in parallel, each into its own slice of
+    // one preallocated output (no second full-size copy, #4990)
+    let mut result = vec![0.0f32; num_super_blocks * QK_K];
+    result
+        .par_chunks_mut(CHUNK_SIZE * QK_K)
+        .zip(data.par_chunks(CHUNK_BYTES))
+        .for_each(|(out, chunk)| {
+            for (dst, sb_data) in out
+                .as_chunks_mut::<QK_K>()
+                .0
+                .iter_mut()
+                .zip(chunk.as_chunks::<SUPER_BLOCK_BYTES>().0)
+            {
                 // SAFETY: AVX2 availability verified by caller
-                chunk_result.extend(unsafe { dequantize_q4_k_superblock_avx2(sb_data) });
+                dst.copy_from_slice(&unsafe { dequantize_q4_k_superblock_avx2(sb_data) });
             }
-            chunk_result
-        })
-        .collect();
+        });
 
     Ok(result)
 }
@@ -389,7 +393,7 @@ pub(crate) fn dequantize_q8_0_block(block_data: &[u8]) -> Vec<f32> {
 pub fn dequantize_q8_0_simd(data: &[u8]) -> Result<Vec<f32>> {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: AVX2 verified at runtime
             return unsafe { dequantize_q8_0_avx2_parallel(data) };
         }

@@ -262,6 +262,16 @@ async fn handle_gpu_chat_completion(
             return err_response;
         }
     }
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&req, super::response_format::APR_CUDA)
+    {
+        return refusal;
+    }
+    // #4971: run_gpu_generation computes no logprobs, so a request for them is refused.
+    if let Some(refused) = logprobs_refusal_response(&req, "APR CUDA (AprV2ModelCuda)") {
+        return refused;
+    }
 
     let messages = req.get("messages").and_then(|m| m.as_array());
     let stream_mode = req.get("stream").and_then(serde_json::Value::as_bool).unwrap_or(false);
@@ -395,6 +405,11 @@ fn start_gguf_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
     if realizar::gguf::hybrid_forward_handles(mapped_model.model.architecture().unwrap_or_default()) {
         return start_qwen35_server(mapped_model, config);
     }
+    // APR-EMBED-001 EG-3 (#4902): an embedding model is served from its encoder, routed here
+    // BEFORE `build_serve_model`, whose generative loader refuses it by kind (I-3).
+    if serve_route_is_embedding(&mapped_model.model)? {
+        return start_embedding_server(&mapped_model, config);
+    }
 
     println!("{}", "Building quantized inference model...".dimmed());
     let quantized_model = build_serve_model(&mapped_model)?;
@@ -463,25 +478,33 @@ fn build_serve_model(
     mapped_model: &realizar::gguf::MappedGGUFModel,
 ) -> Result<realizar::gguf::OwnedQuantizedModel> {
     use realizar::gguf::OwnedQuantizedModel;
+    // APR-EMBED-001 EG-1 (I-3): every GGUF route comes through here, so an embedding model is refused
+    // by kind once, naming the verb that serves it.
+    crate::commands::model_kind_gate::refuse_non_generative(&mapped_model.model, "serve")?;
     // #3571: the Qwen3.5 hybrid (Gated Delta Net) has no dense layers, so `from_mapped` refuses
     // it by name and `apr serve` could not load the architecture the last release shipped — while
     // `apr run` loaded it fine, because `run_gguf_inference` has carried exactly this branch since
     // #3091. The routing gap was in ONE verb, and it was invisible because every gate we own is
     // single-stream `apr run`: no ladder rung, parity record or dogfood row has ever asked
     // `apr serve` to load a model (#3555).
-    let is_qwen35 = mapped_model.model.architecture() == Some("qwen35");
-    let quantized_model = if is_qwen35 {
-        realizar::gguf::forward_qwen35::Qwen35Model::create_base_model(
-            &mapped_model.model,
-            mapped_model.data(),
-        )
-        .map_err(|e| {
-            CliError::ModelLoadFailed(format!("Failed to build the Qwen3.5 base model: {e}"))
-        })?
-    } else {
-        OwnedQuantizedModel::from_mapped(mapped_model)
-            .map_err(|e| CliError::ModelLoadFailed(format!("Failed to build quantized model: {e}")))?
-    };
+    //
+    // #4989: the hybrid's base (`create_base_model`) is always built with `layers: vec![]`, so
+    // the refusal below always fired for it, but only AFTER the build: `token_embd` dequantized
+    // to f32 plus an owned `lm_head`, a GiB-class allocation with no host-RAM admission, on the
+    // one route that still got here (`--backend wgpu`). It is refused by architecture now,
+    // before a byte is built. The hybrid's real serve route, `start_qwen35_server`, builds
+    // through `Qwen35Session::load` -> `Qwen35Forward::leak_host`, which admits it against
+    // host RAM (#4947).
+    if let Some(refusal) = mapped_model
+        .model
+        .architecture()
+        .filter(|a| *a == "qwen35")
+        .and_then(|a| zero_layer_refusal(a, 0))
+    {
+        return Err(refusal);
+    }
+    let quantized_model = OwnedQuantizedModel::from_mapped(mapped_model)
+        .map_err(|e| CliError::ModelLoadFailed(format!("Failed to build quantized model: {e}")))?;
     // #3571: before ANY route is chosen — --gpu, --gpu --batch or the CPU server — so no
     // request handler can be handed a stack with nothing in it.
     if let Some(refusal) = zero_layer_refusal(
@@ -590,7 +613,7 @@ fn start_gguf_server_cuda(
     config: &ServerConfig,
     offload: realizar::api::OffloadReport,
 ) -> Result<()> {
-    use realizar::api::{create_router_with_config, AppState, BatchConfig};
+    use realizar::api::{AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     // #3987: a qwen3moe file has no DENSE FFN, only per-expert tensors, so the dense
@@ -727,7 +750,7 @@ fn start_gguf_server_cuda(
             #[cfg(not(feature = "cuda"))]
             let state = state.with_verbose(config.verbose);
 
-            let app = create_router_with_config(state, config.router_config());
+            let app = build_gguf_router(state, config, super::auth::AuthGate::from_env()); // #5478
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
         }
         Err(e) => {
@@ -908,6 +931,53 @@ mod zero_layer_refusal_tests {
     #[test]
     fn serve_refuses_a_synthetic_zero_layer_hybrid_base_at_load() {
         let file = zero_block_gguf();
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("'qwen35' resolved to 0 transformer layers"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("a {}-layer stack reached the serve routes", model.layers().len()),
+        }
+    }
+
+    /// FALSIFY-EG2L-007 (APR-EMBED-001 EG-1, I-3): every GGUF serve route refuses an embedding
+    /// model by kind, naming `apr embed`. Delete the call in `build_serve_model` and this goes RED.
+    #[test]
+    fn falsify_eg2l_007_serve_refuses_embedding_by_kind() {
+        let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
+        std::fs::write(
+            file.path(),
+            crate::commands::model_kind_gate::tests::eg1_gguf("gemma-embedding2", Some(false)),
+        )
+        .expect("write");
+        let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
+        match build_serve_model(&mapped) {
+            Err(CliError::ModelLoadFailed(msg)) => {
+                assert!(msg.contains("`apr serve`"), "{msg}");
+                assert!(msg.contains("Use `apr embed`"), "{msg}");
+            }
+            Err(other) => panic!("refused for the wrong reason: {other}"),
+            Ok(model) => panic!("an embedding file reached the serve routes ({} layers)", model.layers().len()),
+        }
+    }
+
+    /// #4989: the hybrid is refused BEFORE its base is built. This header names `qwen35` and
+    /// carries no config and no tensors, so any build fails first — on the config or on
+    /// `token_embd` — with a "Failed to build" message. Only a refusal by architecture, ahead
+    /// of the build, returns the zero-layer message. Move the check back after the build and
+    /// this goes RED.
+    #[test]
+    fn serve_refuses_the_hybrid_before_building_its_base() {
+        use aprender::format::gguf::{export_tensors_to_gguf, GgufValue};
+        let metadata = vec![(
+            "general.architecture".to_string(),
+            GgufValue::String("qwen35".to_string()),
+        )];
+        let file = tempfile::NamedTempFile::with_suffix(".gguf").expect("temp file");
+        let mut writer = std::io::BufWriter::new(&file);
+        export_tensors_to_gguf(&mut writer, &[], &metadata).expect("write GGUF");
+        drop(writer);
         let mapped = realizar::gguf::MappedGGUFModel::from_path(file.path()).expect("map");
         match build_serve_model(&mapped) {
             Err(CliError::ModelLoadFailed(msg)) => {

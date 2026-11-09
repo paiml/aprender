@@ -211,11 +211,7 @@ impl StreamingHistogram {
 
     /// Get mean latency
     pub fn mean(&self) -> u64 {
-        if self.count == 0 {
-            0
-        } else {
-            self.sum / self.count
-        }
+        self.sum.checked_div(self.count).unwrap_or(0)
     }
 
     /// Get count

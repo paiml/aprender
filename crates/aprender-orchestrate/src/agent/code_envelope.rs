@@ -12,12 +12,20 @@
 //! The Claude-Code-parity fields (`type`, `subtype`, `is_error`, `result`, …)
 //! stay beside them, with `is_error == (status != "ok")`.
 //!
+//! * `backend`: `{requested, ran, fell_back}` (#3719), on every document: the
+//!   device the `apr serve` child was asked for and the one its completions
+//!   reported running on. `null` where nothing was measured: no driver ran, the
+//!   driver cannot say, or the server did not report on every completion.
+//!   Before it, a forced-GPU run that fell back to the CPU printed the same
+//!   document as one that stayed on the GPU.
+//!
 //! Before #3775 a driver error (the serve child failing to load, an HTTP 500)
 //! printed only to stderr and left stdout EMPTY, and an empty completion
 //! printed an error document but exited 0. A consumer asking for JSON could
 //! not tell failure from nothing.
 
 use super::code_prompts::exit_code;
+use super::driver::served_backend::BackendReport;
 use super::result::{AgentError, AgentLoopResult, DriverError};
 
 /// How a non-interactive run ended, in the #3720 vocabulary.
@@ -112,10 +120,13 @@ fn session_id() -> String {
 /// The one JSON document a `-p --output-format json` run writes to stdout.
 ///
 /// `result` is the loop's result when the loop ran; `outcome` is `None` for a
-/// successful run and names the refusal or failure otherwise.
+/// successful run and names the refusal or failure otherwise. `backend` is the
+/// driver's [`LlmDriver::backend_observed`](super::driver::LlmDriver::backend_observed),
+/// `None` when no driver ran.
 pub fn envelope(
     result: Option<&AgentLoopResult>,
     outcome: Option<&CodeOutcome>,
+    backend: Option<&BackendReport>,
     elapsed: std::time::Duration,
 ) -> String {
     let mut doc = serde_json::json!({
@@ -131,6 +142,7 @@ pub fn envelope(
         "tokens_out": result.map_or(0, |r| r.usage.output_tokens),
         // Local sovereign inference: cost is always zero by construction.
         "total_cost_usd": 0,
+        "backend": backend.map_or(serde_json::Value::Null, BackendReport::to_json),
     });
     if let Some(o) = outcome {
         doc["error"] = serde_json::json!({

@@ -111,4 +111,4 @@ make wasm-clean
 
 - [DuckDB-WASM](https://duckdb.org/docs/api/wasm/overview): HTTP range request pattern
 - [Abadi et al. 2008](https://doi.org/10.1145/1376616.1376712): Late materialization
-- [trueno](https://github.com/paiml/trueno): SIMD backend (v0.7.1)
+- [trueno](https://github.com/paiml/aprender/tree/main/crates/aprender-compute): SIMD backend (v0.7.1)

@@ -248,6 +248,27 @@ impl OwnedQuantizedModelCuda {
         trace: bool,
         extract_first_token: bool,
     ) -> Result<Option<u32>> {
+        let first = if extract_first_token {
+            FirstToken::Token
+        } else {
+            FirstToken::Skip
+        };
+        self.run_prefill_extracting(prompt, cache, prefill_count, trace, first)
+    }
+
+    /// [`Self::run_prefill`] with the first-token extraction spelled out: with
+    /// [`FirstToken::TokenAndLogits`] (#4971) the logits the batched prefill's
+    /// device argmax read are copied into the vector after it. A serial
+    /// prefill extracts nothing, so it returns `None` and leaves the vector
+    /// alone.
+    pub(crate) fn run_prefill_extracting(
+        &mut self,
+        prompt: &[u32],
+        cache: &mut OwnedQuantizedKVCache,
+        prefill_count: usize,
+        trace: bool,
+        first: FirstToken<'_>,
+    ) -> Result<Option<u32>> {
         if prefill_count == 0 {
             // No prefill PHASE ran. `None`, not `Some(0.0)`: a zero would be
             // read as "prefill was instantaneous" and would enter a ratio.
@@ -362,23 +383,26 @@ impl OwnedQuantizedModelCuda {
         // Runs output RMSNorm + LM head GEMV + GPU argmax on the last position.
         // This eliminates the separate first decode step (~7ms savings).
         // Must happen BEFORE force_workspace_reinit (hidden_buf2 still valid).
-        let first_token = if extract_first_token {
-            let token = self
-                .executor
-                .prefill_extract_first_token(
-                    last_row, // the last position's row in the final chunk
-                    hidden_dim as u32,
-                    vocab_size as u32,
-                    eps,
-                )
-                .map_err(|e| RealizarError::UnsupportedOperation {
-                    operation: "prefill_extract_first_token".to_string(),
-                    reason: format!("PMAT-083 first token extraction failed: {e}"),
-                })?;
-            Some(token)
-        } else {
-            None
-        };
+        // `last_row` is the last position's row in the final chunk. #4971: with
+        // `TokenAndLogits` the same steps run on one logits buffer, copied to
+        // the host after the argmax.
+        let (hidden, vocab) = (hidden_dim as u32, vocab_size as u32);
+        let first_token = match first {
+            FirstToken::Skip => None,
+            FirstToken::Token => Some(
+                self.executor
+                    .prefill_extract_first_token(last_row, hidden, vocab, eps),
+            ),
+            FirstToken::TokenAndLogits(out) => Some(
+                self.executor
+                    .prefill_extract_first_token_and_logits(last_row, hidden, vocab, eps, out),
+            ),
+        }
+        .transpose()
+        .map_err(|e| RealizarError::UnsupportedOperation {
+            operation: "prefill_extract_first_token".to_string(),
+            reason: format!("PMAT-083 first token extraction failed: {e}"),
+        })?;
 
         // CORRECTNESS-016: Log KV cache fingerprint after batched prefill.
         // Non-destructive: just reads the KV cache, no serial comparison.
@@ -1117,6 +1141,16 @@ impl OwnedQuantizedModelCuda {
         };
         Ok(ppl)
     }
+}
+
+/// What a prefill hands back besides the KV cache (#4971).
+pub(crate) enum FirstToken<'a> {
+    /// Nothing: the caller runs the first decode itself.
+    Skip,
+    /// The batched prefill's device argmax of the last row.
+    Token,
+    /// That argmax and, copied after it, the logits it read.
+    TokenAndLogits(&'a mut Vec<f32>),
 }
 
 /// #4590: warn, once per process, when this model on this GPU is a 0.70 known

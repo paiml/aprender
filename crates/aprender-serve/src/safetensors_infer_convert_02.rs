@@ -37,4 +37,5 @@ mod tests {
 include!("safetensors_infer_concat_qkv_valid.rs");
 include!("safetensors_infer_convert_separate.rs");
 include!("safetensors_infer_transpose_weight.rs");
+include!("safetensors_infer_extract_linear.rs");
 }

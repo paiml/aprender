@@ -58,7 +58,6 @@ proptest-regressions/
 .pmat-metrics/
 book/.pmat/
 .cargo/config.toml
-src/generated_contracts.rs
 
 # Provable-contracts lint cache
 .pv/

@@ -17,8 +17,8 @@
 - [Contributing](#contributing)
 - [License](#license)
 
-[![Crates.io](https://img.shields.io/crates/v/trueno-zram-core.svg)](https://crates.io/crates/trueno-zram-core)
-[![Documentation](https://docs.rs/trueno-zram-core/badge.svg)](https://docs.rs/trueno-zram-core)
+[![Crates.io](https://img.shields.io/crates/v/aprender-zram-core.svg)](https://crates.io/crates/aprender-zram-core)
+[![Documentation](https://docs.rs/aprender-zram-core/badge.svg)](https://docs.rs/aprender-zram-core)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)]()
 [![Coverage](https://img.shields.io/badge/coverage-96%25-brightgreen)]()
 
@@ -230,7 +230,7 @@ trueno-ublk benchmark --size 4G --format html -o report.html
 ## Documentation
 
 - [Book](book/src/SUMMARY.md) - Comprehensive guide
-- [API Docs](https://docs.rs/trueno-zram-core) - Library documentation
+- [API Docs](https://docs.rs/aprender-zram-core) - Library documentation
 - [Visualization Guide](book/src/ublk/visualization.md) - TUI and metrics
 
 ## Contributing
@@ -260,7 +260,7 @@ MIT OR Apache-2.0
 
 <div align="center">
 
-*Part of the PAIML ecosystem: [trueno](https://crates.io/crates/trueno) | [aprender](https://crates.io/crates/aprender) | [bashrs](https://crates.io/crates/bashrs)*
+*Part of the PAIML ecosystem: [trueno](https://crates.io/crates/aprender-compute) | [aprender](https://crates.io/crates/aprender) | [bashrs](https://crates.io/crates/bashrs)*
 
 **25 GB/s decompression. 19x faster than kernel zram. Use it today.**
 

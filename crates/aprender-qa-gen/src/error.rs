@@ -26,7 +26,7 @@ pub enum Error {
 
     /// YAML serialization error
     #[error("YAML error: {0}")]
-    YamlError(#[from] serde_yaml::Error),
+    YamlError(#[from] serde_saphyr::Error),
 
     /// IO error
     #[error("IO error: {0}")]
@@ -71,8 +71,8 @@ mod tests {
     }
 
     #[test]
-    fn test_error_from_serde_yaml() {
-        let yaml_err: serde_yaml::Error = serde_yaml::from_str::<i32>("not: [yaml").unwrap_err();
+    fn test_error_from_serde_saphyr() {
+        let yaml_err: serde_saphyr::Error = serde_saphyr::from_str_with_options::<i32>("not: [yaml", serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_err();
         let err: Error = yaml_err.into();
         assert!(matches!(err, Error::YamlError(_)));
         assert!(err.to_string().contains("YAML error"));

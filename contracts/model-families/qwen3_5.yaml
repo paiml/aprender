@@ -109,3 +109,25 @@ certification:
   size_categories:
     9b: medium
     27b: large
+
+falsification_tests:
+  - id: FALSIFY-MF-QWEN3_5-001
+    description: "every qwen3_5 size variant declares nonzero dimensions"
+    test: "cargo test -p aprender-core --lib falsify_mf_001_positive_dimensions"
+    prediction: "load_all_families loads qwen3_5.yaml and none of its size variants has a zero hidden_dim, num_layers, num_heads, num_kv_heads, intermediate_dim, vocab_size or head_dim"
+    if_fails: "a qwen3_5 size variant declares a zero dimension"
+  - id: FALSIFY-MF-QWEN3_5-002
+    description: "every qwen3_5 size variant divides its query heads evenly into KV groups"
+    test: "cargo test -p aprender-core --lib falsify_mf_002_gqa_divisibility"
+    prediction: "for every qwen3_5 size variant, num_heads % num_kv_heads == 0"
+    if_fails: "a qwen3_5 size variant has a head count the GQA kernel cannot group"
+  - id: FALSIFY-MF-QWEN3_5-003
+    description: "qwen3_5.yaml loads through the family loader with every required field"
+    test: "cargo test -p aprender-core --lib falsify_mf_004_schema_completeness"
+    prediction: "load_family_yaml parses qwen3_5.yaml without error and the result has a family, vendor, architectures and at least one size variant"
+    if_fails: "qwen3_5.yaml is missing a required field or no longer parses"
+  - id: FALSIFY-MF-QWEN3_5-004
+    description: "no qwen3_5 size variant has more KV heads than query heads"
+    test: "cargo test -p aprender-core --lib falsify_mf_008_kv_heads_le_q_heads"
+    prediction: "for every qwen3_5 size variant, num_kv_heads <= num_heads"
+    if_fails: "a qwen3_5 size variant declares more KV heads than query heads"

@@ -313,7 +313,7 @@ fn main() -> anyhow::Result<()> {
         ],
     };
 
-    let yaml = serde_yaml_ng::to_string(&config)?;
+    let yaml = serde_saphyr::to_string(&config)?;
     println!("{}", yaml);
 
     // 2. Create MCP server with tools

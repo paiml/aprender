@@ -466,22 +466,10 @@ impl SandboxConfig {
 mod tests {
     use super::*;
 
-    fn skip_if_no_python(executor: &SandboxedPythonExecutor) -> bool {
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            true
-        } else {
-            false
-        }
-    }
-
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_basic_execution() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("print(1 + 1)", "", 5000)
             .expect("execution should succeed");
@@ -491,12 +479,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_os_import() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("import os\nprint(os.getcwd())", "", 5000)
             .expect("execution should succeed");
@@ -506,12 +491,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_subprocess() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("import subprocess\nsubprocess.run(['ls'])", "", 5000)
             .expect("execution should succeed");
@@ -521,12 +503,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_socket() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("import socket", "", 5000)
             .expect("execution should succeed");
@@ -535,12 +514,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_eval() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("eval('1+1')", "", 5000)
             .expect("execution should succeed");
@@ -549,12 +525,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_exec() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("exec('print(1)')", "", 5000)
             .expect("execution should succeed");
@@ -563,12 +536,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_allows_safe_math() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("import math\nprint(math.sqrt(16))", "", 5000)
             .expect("execution should succeed");
@@ -578,12 +548,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_allows_safe_builtins() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let code = r#"
 x = [1, 2, 3, 4, 5]
 print(sum(x))
@@ -603,10 +570,6 @@ print(min(x))
     #[ignore] // Takes too long for CI - run with `cargo test -- --ignored`
     fn test_sandbox_timeout() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor.execute("while True: pass", "", 500);
 
         assert!(result.is_err());
@@ -615,12 +578,9 @@ print(min(x))
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_output_truncation() {
         let executor = SandboxedPythonExecutor::new().with_max_output(100);
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("print('x' * 1000)", "", 5000)
             .expect("execution should succeed");
@@ -630,12 +590,9 @@ print(min(x))
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_input_handling() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let code = r#"
 name = input()
 print(f"Hello, {name}!")
@@ -648,12 +605,9 @@ print(f"Hello, {name}!")
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_multiple_inputs() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let code = r#"
 a = int(input())
 b = int(input())
@@ -773,12 +727,9 @@ print(a + b)
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_with_file_io_enabled() {
         let executor = SandboxedPythonExecutor::new().with_file_io(true);
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         // With file I/O enabled, open should work (but we don't actually write files)
         // Just test that the sandbox generates different code
         let code = "print('file io test')";
@@ -790,12 +741,9 @@ print(a + b)
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_open_by_default() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         // Default should block open()
         let code = "open('/etc/passwd', 'r')";
         let result = executor
@@ -807,12 +755,9 @@ print(a + b)
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_ctypes() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("import ctypes", "", 5000)
             .expect("execution should succeed");
@@ -821,12 +766,9 @@ print(a + b)
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_blocks_sys() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         let result = executor
             .execute("import sys\nprint(sys.executable)", "", 5000)
             .expect("execution should succeed");
@@ -836,12 +778,9 @@ print(a + b)
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_empty_input() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         // With empty input, input() should return empty string
         let code = "x = input()\nprint(f'got: [{x}]')";
         let result = executor
@@ -852,12 +791,9 @@ print(a + b)
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_input_with_quotes() {
         let executor = SandboxedPythonExecutor::new();
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         // Test that quotes in input are properly escaped
         let code = "x = input()\nprint(f'got: {x}')";
         let result = executor
@@ -875,12 +811,9 @@ print(a + b)
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_sandbox_with_custom_blocked_module_execution() {
         let executor = SandboxedPythonExecutor::new().with_blocked_modules(&["json"]);
-        if skip_if_no_python(&executor) {
-            return;
-        }
-
         // json is normally allowed, but we blocked it
         let result = executor
             .execute("import json\nprint(json.dumps({}))", "", 5000)

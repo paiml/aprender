@@ -81,231 +81,286 @@ impl Kernel for MultiWarpQ6KGemvKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        let num_warps = self.num_warps;
-        let smem_size = (num_warps * 4) as usize; // f32 per warp for cross-warp reduction
+        build_mwv_q6k("mwv_q6k_gemv", self.num_warps, 1)
+    }
+}
 
-        PtxKernel::new("mwv_q6k_gemv")
-            .param(PtxType::U64, "y_ptr")
-            .param(PtxType::U64, "w_ptr")
-            .param(PtxType::U64, "x_ptr")
-            .param(PtxType::U32, "k_dim")
-            .param(PtxType::U32, "n_dim")
-            .shared_memory(smem_size)
-            .build(move |ctx| {
-                let block_id = ctx.special_reg(PtxReg::CtaIdX);
-                let thread_id = ctx.special_reg(PtxReg::TidX);
-                let lane_id = ctx.rem_u32(thread_id, 32);
-                let warp_id = ctx.div_u32(thread_id, 32);
+/// Batched multi-warp Q6_K GEMV (#5303): `m` activation rows against one
+/// weight matrix, `y[r] = W · x[r]` for `r < m`.
+///
+/// Each weight value is dequantized once and applied to all `m` rows. Every
+/// row keeps its own partial sums, added in exactly the order of
+/// [`MultiWarpQ6KGemvKernel`], so row `r` of the output is bitwise equal to
+/// that kernel run on `x[r]` alone.
+///
+/// Layout: `x` is `m × k` and `y` is `m × n`, both row-major f32. Launch it
+/// as the single-row kernel: `n` blocks of `num_warps × 32` threads.
+pub struct BatchedMwvQ6KGemvKernel {
+    /// K dimension (input dimension, need not be multiple of 256 — bounds-checked)
+    pub k: u32,
+    /// N dimension (output dimension)
+    pub n: u32,
+    /// M dimension: activation rows per launch
+    pub m: u32,
+    /// Number of warps per block, as for the single-row kernel
+    pub num_warps: u32,
+}
 
-                // Precondition: block_id < n_dim (bounds check)
-                let n_dim = ctx.load_param_u32("n_dim");
-                let oob = ctx.setp_ge_u32(block_id, n_dim);
-                ctx.branch_if(oob, "mwv_q6k_exit");
+impl Kernel for BatchedMwvQ6KGemvKernel {
+    fn name(&self) -> &str {
+        "batched_mwv_q6k_gemv"
+    }
 
-                let k_dim = ctx.load_param_u32("k_dim");
-                let y_ptr = ctx.load_param_u64("y_ptr");
-                let w_ptr = ctx.load_param_u64("w_ptr");
-                let x_ptr = ctx.load_param_u64("x_ptr");
+    fn build_ptx(&self) -> PtxKernel {
+        build_mwv_q6k("batched_mwv_q6k_gemv", self.num_warps, self.m)
+    }
+}
 
-                let acc = ctx.mov_f32_imm(0.0);
+/// The multi-warp Q6_K GEMV over `rows` activation rows. With `rows == 1` it
+/// emits the single-row kernel's PTX unchanged.
+fn build_mwv_q6k(name: &str, num_warps: u32, rows: u32) -> PtxKernel {
+    // f32 per warp and row for cross-warp reduction
+    let smem_size = (num_warps * rows * 4) as usize;
 
-                // Ceiling division: (k + 255) / 256
-                let k_rounded = ctx.add_u32(k_dim, Q6K_SUPER_BLOCK_SIZE - 1);
-                let num_super_blocks = ctx.div_u32(k_rounded, Q6K_SUPER_BLOCK_SIZE);
+    PtxKernel::new(name)
+        .param(PtxType::U64, "y_ptr")
+        .param(PtxType::U64, "w_ptr")
+        .param(PtxType::U64, "x_ptr")
+        .param(PtxType::U32, "k_dim")
+        .param(PtxType::U32, "n_dim")
+        .shared_memory(smem_size)
+        .build(move |ctx| {
+            let block_id = ctx.special_reg(PtxReg::CtaIdX);
+            let thread_id = ctx.special_reg(PtxReg::TidX);
+            let lane_id = ctx.rem_u32(thread_id, 32);
+            let warp_id = ctx.div_u32(thread_id, 32);
 
-                // Row base address for this output element
-                let sb_bytes_c = ctx.mov_u32_imm(Q6K_SUPER_BLOCK_BYTES);
-                let row_bytes = ctx.mul_u32_reg(num_super_blocks, sb_bytes_c);
-                let row_offset = ctx.mul_wide_u32_reg(block_id, row_bytes);
-                let row_base = ctx.add_u64(w_ptr, row_offset);
+            // Precondition: block_id < n_dim (bounds check)
+            let n_dim = ctx.load_param_u32("n_dim");
+            let oob = ctx.setp_ge_u32(block_id, n_dim);
+            ctx.branch_if(oob, "mwv_q6k_exit");
 
-                // Invariant: each warp starts at warp_id, strides by num_warps
-                // This partitions super-blocks disjointly across warps.
-                let sb_idx_z = ctx.mov_u32_imm(0);
-                let sb_idx = ctx.add_u32_reg(sb_idx_z, warp_id);
-                let nw_reg = ctx.mov_u32_imm(num_warps);
+            let k_dim = ctx.load_param_u32("k_dim");
+            let y_ptr = ctx.load_param_u64("y_ptr");
+            let w_ptr = ctx.load_param_u64("w_ptr");
+            let x_ptr = ctx.load_param_u64("x_ptr");
+            // Row r of x starts r × k floats in.
+            let x_rows: Vec<_> = (0..rows)
+                .map(|r| {
+                    if r == 0 {
+                        return x_ptr;
+                    }
+                    let off = ctx.mul_wide_u32(k_dim, 4 * r);
+                    ctx.add_u64(x_ptr, off)
+                })
+                .collect();
 
-                ctx.label("mwv_q6k_sb_loop");
-                let sb_done = ctx.setp_ge_u32(sb_idx, num_super_blocks);
-                ctx.branch_if(sb_done, "mwv_q6k_sb_end");
+            let accs: Vec<_> = (0..rows).map(|_| ctx.mov_f32_imm(0.0)).collect();
 
-                let sb_off = ctx.mul_wide_u32(sb_idx, Q6K_SUPER_BLOCK_BYTES);
-                let sb_addr = ctx.add_u64(row_base, sb_off);
+            // Ceiling division: (k + 255) / 256
+            let k_rounded = ctx.add_u32(k_dim, Q6K_SUPER_BLOCK_SIZE - 1);
+            let num_super_blocks = ctx.div_u32(k_rounded, Q6K_SUPER_BLOCK_SIZE);
 
-                // Load d (f16 at offset 208)
-                let d_offset = ctx.mov_u64_imm(208);
-                let d_addr = ctx.add_u64(sb_addr, d_offset);
-                let d_f16 = ctx.ld_global_f16(d_addr);
-                let d = ctx.cvt_f32_f16(d_f16);
+            // Row base address for this output element
+            let sb_bytes_c = ctx.mov_u32_imm(Q6K_SUPER_BLOCK_BYTES);
+            let row_bytes = ctx.mul_u32_reg(num_super_blocks, sb_bytes_c);
+            let row_offset = ctx.mul_wide_u32_reg(block_id, row_bytes);
+            let row_base = ctx.add_u64(w_ptr, row_offset);
 
-                // ================================================================
-                // Scale loading: lanes 0-15 each load one scale byte,
-                // broadcast to all lanes via warp shuffle (PAR-066 pattern).
-                // Q6K scales are i8 at bytes 192-207 of the super-block.
-                // ================================================================
-                let scales_base_offset = ctx.mov_u64_imm(192);
-                let scales_base = ctx.add_u64(sb_addr, scales_base_offset);
+            // Invariant: each warp starts at warp_id, strides by num_warps
+            // This partitions super-blocks disjointly across warps.
+            let sb_idx_z = ctx.mov_u32_imm(0);
+            let sb_idx = ctx.add_u32_reg(sb_idx_z, warp_id);
+            let nw_reg = ctx.mov_u32_imm(num_warps);
 
-                let lane_mod_16 = ctx.rem_u32(lane_id, 16);
-                let lane_offset = ctx.cvt_u64_u32(lane_mod_16);
-                let scale_addr = ctx.add_u64(scales_base, lane_offset);
+            ctx.label("mwv_q6k_sb_loop");
+            let sb_done = ctx.setp_ge_u32(sb_idx, num_super_blocks);
+            ctx.branch_if(sb_done, "mwv_q6k_sb_end");
 
-                let my_scale_byte = ctx.mov_u32_imm(0);
-                let sixteen_const = ctx.mov_u32_imm(16);
-                let is_low_lane = ctx.setp_lt_u32(lane_id, sixteen_const);
-                ctx.branch_if_not(is_low_lane, "mwv_skip_scale_load");
-                let scale_u8 = ctx.ld_global_u8(scale_addr);
-                let scale_u32 = ctx.cvt_u32_u8(scale_u8);
-                ctx.mov_u32_reg(my_scale_byte, scale_u32);
-                ctx.label("mwv_skip_scale_load");
+            let sb_off = ctx.mul_wide_u32(sb_idx, Q6K_SUPER_BLOCK_BYTES);
+            let sb_addr = ctx.add_u64(row_base, sb_off);
 
-                // Broadcast all 16 scales via warp shuffle
-                let mut scale_regs = Vec::with_capacity(16);
-                for i in 0..16u32 {
-                    scale_regs.push(ctx.shfl_idx_u32(my_scale_byte, i, 0xFFFF_FFFF));
-                }
+            // Load d (f16 at offset 208)
+            let d_offset = ctx.mov_u64_imm(208);
+            let d_addr = ctx.add_u64(sb_addr, d_offset);
+            let d_f16 = ctx.ld_global_f16(d_addr);
+            let d = ctx.cvt_f32_f16(d_f16);
 
-                // Convert i8 scales to signed f32: if >= 128, subtract 256
-                let seven = ctx.mov_u32_imm(7);
-                let twofiftysix_f32 = ctx.mov_f32_imm(256.0);
+            // ================================================================
+            // Scale loading: lanes 0-15 each load one scale byte,
+            // broadcast to all lanes via warp shuffle (PAR-066 pattern).
+            // Q6K scales are i8 at bytes 192-207 of the super-block.
+            // ================================================================
+            let scales_base_offset = ctx.mov_u64_imm(192);
+            let scales_base = ctx.add_u64(sb_addr, scales_base_offset);
 
-                let mut scale_f32s = Vec::with_capacity(16);
-                for &sr in &scale_regs {
-                    let sign_bit = ctx.shr_u32(sr, seven);
-                    let raw_f32 = ctx.cvt_f32_u32(sr);
-                    let sign_f32 = ctx.cvt_f32_u32(sign_bit);
-                    let correction = ctx.mul_f32(sign_f32, twofiftysix_f32);
-                    let signed_f32 = ctx.sub_f32(raw_f32, correction);
-                    scale_f32s.push(signed_f32);
-                }
+            let lane_mod_16 = ctx.rem_u32(lane_id, 16);
+            let lane_offset = ctx.cvt_u64_u32(lane_mod_16);
+            let scale_addr = ctx.add_u64(scales_base, lane_offset);
 
-                // Precompute d * scale for all 16 sub-block scales
-                let mut ds = Vec::with_capacity(16);
-                for &sf in &scale_f32s {
-                    ds.push(ctx.mul_f32(d, sf));
-                }
+            let my_scale_byte = ctx.mov_u32_imm(0);
+            let sixteen_const = ctx.mov_u32_imm(16);
+            let is_low_lane = ctx.setp_lt_u32(lane_id, sixteen_const);
+            ctx.branch_if_not(is_low_lane, "mwv_skip_scale_load");
+            let scale_u8 = ctx.ld_global_u8(scale_addr);
+            let scale_u32 = ctx.cvt_u32_u8(scale_u8);
+            ctx.mov_u32_reg(my_scale_byte, scale_u32);
+            ctx.label("mwv_skip_scale_load");
 
-                // ================================================================
-                // Dequantize 256 values: 8 offsets × 32 lanes = 256 values per sb
-                //
-                // Contract: identical dequant formula to Q6KGemvKernel
-                //   quant = (ql_nibble | (qh_2bits << 4)) - 32
-                //   scale_idx = 8 * n_idx + is + 2 * group
-                //   value = d * scale[scale_idx] * quant
-                // ================================================================
-                let thread_partial = ctx.mov_f32_imm(0.0);
-                let thirty_two_f32 = ctx.mov_f32_imm(32.0);
+            // Broadcast all 16 scales via warp shuffle
+            let mut scale_regs = Vec::with_capacity(16);
+            for i in 0..16u32 {
+                scale_regs.push(ctx.shfl_idx_u32(my_scale_byte, i, 0xFFFF_FFFF));
+            }
 
-                // offset_params: (offset, n_idx, group, ds_even_idx, ds_odd_idx)
-                // scale_idx = 8 * n_idx + is + 2 * group
-                // is = 0 for lanes 0-15, 1 for lanes 16-31
-                // ds_even = ds[8*n + 2*g], ds_odd = ds[8*n + 2*g + 1]
-                let offset_params: [(u32, u32, u32, usize, usize); 8] = [
-                    (0, 0, 0, 0, 1),     // n=0, g=0: scale_idx = 0 or 1
-                    (32, 0, 1, 2, 3),    // n=0, g=1: scale_idx = 2 or 3
-                    (64, 0, 2, 4, 5),    // n=0, g=2: scale_idx = 4 or 5
-                    (96, 0, 3, 6, 7),    // n=0, g=3: scale_idx = 6 or 7
-                    (128, 1, 0, 8, 9),   // n=1, g=0: scale_idx = 8 or 9
-                    (160, 1, 1, 10, 11), // n=1, g=1: scale_idx = 10 or 11
-                    (192, 1, 2, 12, 13), // n=1, g=2: scale_idx = 12 or 13
-                    (224, 1, 3, 14, 15), // n=1, g=3: scale_idx = 14 or 15
-                ];
+            // Convert i8 scales to signed f32: if >= 128, subtract 256
+            let seven = ctx.mov_u32_imm(7);
+            let twofiftysix_f32 = ctx.mov_f32_imm(256.0);
 
-                // Precompute lane_is: 0 for lanes 0-15, 1 for lanes 16-31
-                let lane_is = ctx.div_u32(lane_id, 16);
-                let lane_is_f32 = ctx.cvt_f32_u32(lane_is);
+            let mut scale_f32s = Vec::with_capacity(16);
+            for &sr in &scale_regs {
+                let sign_bit = ctx.shr_u32(sr, seven);
+                let raw_f32 = ctx.cvt_f32_u32(sr);
+                let sign_f32 = ctx.cvt_f32_u32(sign_bit);
+                let correction = ctx.mul_f32(sign_f32, twofiftysix_f32);
+                let signed_f32 = ctx.sub_f32(raw_f32, correction);
+                scale_f32s.push(signed_f32);
+            }
 
-                for &(offset, n_idx_val, group_val, ds_even, ds_odd) in &offset_params {
-                    let offset_reg = ctx.mov_u32_imm(offset);
-                    let val_idx = ctx.add_u32_reg(lane_id, offset_reg);
+            // Precompute d * scale for all 16 sub-block scales
+            let mut ds = Vec::with_capacity(16);
+            for &sf in &scale_f32s {
+                ds.push(ctx.mul_f32(d, sf));
+            }
 
-                    // Select ds based on lane position (is=0 → ds_even, is=1 → ds_odd)
-                    let ds_diff = ctx.sub_f32(ds[ds_odd], ds[ds_even]);
-                    let ds_selected = ctx.fma_f32(lane_is_f32, ds_diff, ds[ds_even]);
+            // ================================================================
+            // Dequantize 256 values: 8 offsets × 32 lanes = 256 values per sb
+            //
+            // Contract: identical dequant formula to Q6KGemvKernel
+            //   quant = (ql_nibble | (qh_2bits << 4)) - 32
+            //   scale_idx = 8 * n_idx + is + 2 * group
+            //   value = d * scale[scale_idx] * quant
+            // ================================================================
+            let partials: Vec<_> = (0..rows).map(|_| ctx.mov_f32_imm(0.0)).collect();
+            let thirty_two_f32 = ctx.mov_f32_imm(32.0);
 
-                    // l = lane_id (position within 32-value group)
-                    let l = lane_id;
+            // offset_params: (offset, n_idx, group, ds_even_idx, ds_odd_idx)
+            // scale_idx = 8 * n_idx + is + 2 * group
+            // is = 0 for lanes 0-15, 1 for lanes 16-31
+            // ds_even = ds[8*n + 2*g], ds_odd = ds[8*n + 2*g + 1]
+            let offset_params: [(u32, u32, u32, usize, usize); 8] = [
+                (0, 0, 0, 0, 1),     // n=0, g=0: scale_idx = 0 or 1
+                (32, 0, 1, 2, 3),    // n=0, g=1: scale_idx = 2 or 3
+                (64, 0, 2, 4, 5),    // n=0, g=2: scale_idx = 4 or 5
+                (96, 0, 3, 6, 7),    // n=0, g=3: scale_idx = 6 or 7
+                (128, 1, 0, 8, 9),   // n=1, g=0: scale_idx = 8 or 9
+                (160, 1, 1, 10, 11), // n=1, g=1: scale_idx = 10 or 11
+                (192, 1, 2, 12, 13), // n=1, g=2: scale_idx = 12 or 13
+                (224, 1, 3, 14, 15), // n=1, g=3: scale_idx = 14 or 15
+            ];
 
-                    let n_idx = ctx.mov_u32_imm(n_idx_val);
-                    let group = ctx.mov_u32_imm(group_val);
+            // Precompute lane_is: 0 for lanes 0-15, 1 for lanes 16-31
+            let lane_is = ctx.div_u32(lane_id, 16);
+            let lane_is_f32 = ctx.cvt_f32_u32(lane_is);
 
-                    // ql_byte_offset = 64 * n_idx + l + (32 * group_is_odd)
-                    let sixty_four = ctx.mov_u32_imm(64);
-                    let thirty_two = ctx.mov_u32_imm(32);
-                    let one_32 = ctx.mov_u32_imm(1);
-                    let n_idx_x64 = ctx.mul_u32_reg(n_idx, sixty_four);
-                    let ql_base = ctx.add_u32_reg(n_idx_x64, l);
-                    let group_is_odd = ctx.and_u32(group, one_32);
-                    let ql_offset_add = ctx.mul_u32_reg(group_is_odd, thirty_two);
-                    let ql_byte_offset = ctx.add_u32_reg(ql_base, ql_offset_add);
+            for &(offset, n_idx_val, group_val, ds_even, ds_odd) in &offset_params {
+                let offset_reg = ctx.mov_u32_imm(offset);
+                let val_idx = ctx.add_u32_reg(lane_id, offset_reg);
 
-                    // Load ql byte
-                    let ql_byte_offset_64 = ctx.cvt_u64_u32(ql_byte_offset);
-                    let ql_addr = ctx.add_u64(sb_addr, ql_byte_offset_64);
-                    let ql_byte = ctx.ld_global_u8(ql_addr);
-                    let ql_byte_32 = ctx.cvt_u32_u8(ql_byte);
+                // Select ds based on lane position (is=0 → ds_even, is=1 → ds_odd)
+                let ds_diff = ctx.sub_f32(ds[ds_odd], ds[ds_even]);
+                let ds_selected = ctx.fma_f32(lane_is_f32, ds_diff, ds[ds_even]);
 
-                    // Extract nibble: low if group < 2, high if group >= 2
-                    let group_div_2 = ctx.shr_u32(group, one_32);
-                    let four = ctx.mov_u32_imm(4);
-                    let nibble_shift = ctx.mul_u32_reg(group_div_2, four);
-                    let ql_shifted = ctx.shr_u32(ql_byte_32, nibble_shift);
-                    let mask_0xf = ctx.mov_u32_imm(0xF);
-                    let ql_nibble = ctx.and_u32(ql_shifted, mask_0xf);
+                // l = lane_id (position within 32-value group)
+                let l = lane_id;
 
-                    // qh_byte_offset = 32 * n_idx + l
-                    let n_idx_x32 = ctx.mul_u32_reg(n_idx, thirty_two);
-                    let qh_byte_offset = ctx.add_u32_reg(n_idx_x32, l);
+                let n_idx = ctx.mov_u32_imm(n_idx_val);
+                let group = ctx.mov_u32_imm(group_val);
 
-                    // Load qh byte (offset 128 + qh_byte_offset)
-                    let qh_base_offset = ctx.mov_u64_imm(128);
-                    let qh_base = ctx.add_u64(sb_addr, qh_base_offset);
-                    let qh_byte_offset_64 = ctx.cvt_u64_u32(qh_byte_offset);
-                    let qh_addr = ctx.add_u64(qh_base, qh_byte_offset_64);
-                    let qh_byte = ctx.ld_global_u8(qh_addr);
-                    let qh_byte_32 = ctx.cvt_u32_u8(qh_byte);
+                // ql_byte_offset = 64 * n_idx + l + (32 * group_is_odd)
+                let sixty_four = ctx.mov_u32_imm(64);
+                let thirty_two = ctx.mov_u32_imm(32);
+                let one_32 = ctx.mov_u32_imm(1);
+                let n_idx_x64 = ctx.mul_u32_reg(n_idx, sixty_four);
+                let ql_base = ctx.add_u32_reg(n_idx_x64, l);
+                let group_is_odd = ctx.and_u32(group, one_32);
+                let ql_offset_add = ctx.mul_u32_reg(group_is_odd, thirty_two);
+                let ql_byte_offset = ctx.add_u32_reg(ql_base, ql_offset_add);
 
-                    // qh_bit_shift = 2 * group
-                    let two = ctx.mov_u32_imm(2);
-                    let qh_shift = ctx.mul_u32_reg(group, two);
-                    let qh_shifted = ctx.shr_u32(qh_byte_32, qh_shift);
-                    let mask_0x3 = ctx.mov_u32_imm(0x3);
-                    let qh_2bits = ctx.and_u32(qh_shifted, mask_0x3);
+                // Load ql byte
+                let ql_byte_offset_64 = ctx.cvt_u64_u32(ql_byte_offset);
+                let ql_addr = ctx.add_u64(sb_addr, ql_byte_offset_64);
+                let ql_byte = ctx.ld_global_u8(ql_addr);
+                let ql_byte_32 = ctx.cvt_u32_u8(ql_byte);
 
-                    // Combine: quant = ql_nibble | (qh_2bits << 4) - 32
-                    let qh_shifted_up = ctx.shl_u32(qh_2bits, four);
-                    let combined = ctx.or_u32(ql_nibble, qh_shifted_up);
-                    let combined_f32 = ctx.cvt_f32_u32(combined);
-                    let quant_signed = ctx.sub_f32(combined_f32, thirty_two_f32);
+                // Extract nibble: low if group < 2, high if group >= 2
+                let group_div_2 = ctx.shr_u32(group, one_32);
+                let four = ctx.mov_u32_imm(4);
+                let nibble_shift = ctx.mul_u32_reg(group_div_2, four);
+                let ql_shifted = ctx.shr_u32(ql_byte_32, nibble_shift);
+                let mask_0xf = ctx.mov_u32_imm(0xF);
+                let ql_nibble = ctx.and_u32(ql_shifted, mask_0xf);
 
-                    // Dequantize: val = ds_selected * quant
-                    let dequant = ctx.mul_f32(ds_selected, quant_signed);
+                // qh_byte_offset = 32 * n_idx + l
+                let n_idx_x32 = ctx.mul_u32_reg(n_idx, thirty_two);
+                let qh_byte_offset = ctx.add_u32_reg(n_idx_x32, l);
 
-                    // Load activation x[sb_idx * 256 + val_idx]
-                    // GH-215 FIX: Bounds-check for non-256-aligned K dimensions.
-                    let sb_k_base = ctx.mul_u32(sb_idx, Q6K_SUPER_BLOCK_SIZE);
-                    let x_idx = ctx.add_u32_reg(sb_k_base, val_idx);
-                    let x_idx_64 = ctx.cvt_u64_u32(x_idx);
-                    let x_bytes = ctx.mul_u64(x_idx_64, 4);
+                // Load qh byte (offset 128 + qh_byte_offset)
+                let qh_base_offset = ctx.mov_u64_imm(128);
+                let qh_base = ctx.add_u64(sb_addr, qh_base_offset);
+                let qh_byte_offset_64 = ctx.cvt_u64_u32(qh_byte_offset);
+                let qh_addr = ctx.add_u64(qh_base, qh_byte_offset_64);
+                let qh_byte = ctx.ld_global_u8(qh_addr);
+                let qh_byte_32 = ctx.cvt_u32_u8(qh_byte);
+
+                // qh_bit_shift = 2 * group
+                let two = ctx.mov_u32_imm(2);
+                let qh_shift = ctx.mul_u32_reg(group, two);
+                let qh_shifted = ctx.shr_u32(qh_byte_32, qh_shift);
+                let mask_0x3 = ctx.mov_u32_imm(0x3);
+                let qh_2bits = ctx.and_u32(qh_shifted, mask_0x3);
+
+                // Combine: quant = ql_nibble | (qh_2bits << 4) - 32
+                let qh_shifted_up = ctx.shl_u32(qh_2bits, four);
+                let combined = ctx.or_u32(ql_nibble, qh_shifted_up);
+                let combined_f32 = ctx.cvt_f32_u32(combined);
+                let quant_signed = ctx.sub_f32(combined_f32, thirty_two_f32);
+
+                // Dequantize: val = ds_selected * quant
+                let dequant = ctx.mul_f32(ds_selected, quant_signed);
+
+                // Load activation x[sb_idx * 256 + val_idx]
+                // GH-215 FIX: Bounds-check for non-256-aligned K dimensions.
+                let sb_k_base = ctx.mul_u32(sb_idx, Q6K_SUPER_BLOCK_SIZE);
+                let x_idx = ctx.add_u32_reg(sb_k_base, val_idx);
+                let x_idx_64 = ctx.cvt_u64_u32(x_idx);
+                let x_bytes = ctx.mul_u64(x_idx_64, 4);
+                // Each row reads its own activation against the same
+                // dequantized value, in the single-row order.
+                for (&x_ptr, &thread_partial) in x_rows.iter().zip(&partials) {
                     let x_addr = ctx.add_u64(x_ptr, x_bytes);
                     let in_bounds = ctx.setp_lt_u32(x_idx, k_dim);
                     let x_val = ctx.ld_global_f32_predicated(x_addr, in_bounds, 0.0);
 
                     ctx.fma_f32_inplace(thread_partial, x_val, dequant);
                 }
+            }
 
+            for (&acc, &thread_partial) in accs.iter().zip(&partials) {
                 ctx.add_f32_inplace(acc, thread_partial);
+            }
 
-                // Invariant: stride by num_warps (disjoint partition)
-                ctx.add_u32_reg_inplace(sb_idx, nw_reg);
-                ctx.branch("mwv_q6k_sb_loop");
+            // Invariant: stride by num_warps (disjoint partition)
+            ctx.add_u32_reg_inplace(sb_idx, nw_reg);
+            ctx.branch("mwv_q6k_sb_loop");
 
-                ctx.label("mwv_q6k_sb_end");
+            ctx.label("mwv_q6k_sb_end");
 
-                // ================================================================
-                // Phase 1: Intra-warp reduction via shuffle (warp-synchronous)
-                // Postcondition: lane 0 of each warp holds that warp's partial sum
-                // ================================================================
+            // ================================================================
+            // Phase 1: Intra-warp reduction via shuffle (warp-synchronous)
+            // Postcondition: lane 0 of each warp holds that warp's partial sum
+            // ================================================================
+            for &acc in &accs {
                 let t16 = ctx.shfl_down_f32(acc, 16, 0xFFFF_FFFF);
                 ctx.add_f32_inplace(acc, t16);
                 let t8 = ctx.shfl_down_f32(acc, 8, 0xFFFF_FFFF);
@@ -316,47 +371,64 @@ impl Kernel for MultiWarpQ6KGemvKernel {
                 ctx.add_f32_inplace(acc, t2);
                 let t1 = ctx.shfl_down_f32(acc, 1, 0xFFFF_FFFF);
                 ctx.add_f32_inplace(acc, t1);
+            }
 
-                // ================================================================
-                // Phase 2: Cross-warp reduction via shared memory
-                // Invariant: bar.sync ensures all warps have written before any reads.
-                // PARITY-114: all threads reach barrier unconditionally.
-                // ================================================================
-                let z = ctx.mov_u32_imm(0);
-                let is_l0 = ctx.setp_eq_u32(lane_id, z);
-                ctx.branch_if_not(is_l0, "mwv_q6k_skip_sm");
+            // ================================================================
+            // Phase 2: Cross-warp reduction via shared memory
+            // Invariant: bar.sync ensures all warps have written before any reads.
+            // PARITY-114: all threads reach barrier unconditionally.
+            // Row r's per-warp sums sit at [r × num_warps, (r + 1) × num_warps).
+            // ================================================================
+            let z = ctx.mov_u32_imm(0);
+            let is_l0 = ctx.setp_eq_u32(lane_id, z);
+            ctx.branch_if_not(is_l0, "mwv_q6k_skip_sm");
 
-                let f4 = ctx.mov_u32_imm(4);
-                let wo = ctx.mul_u32_reg(warp_id, f4);
-                let sa = ctx.cvt_u64_u32(wo);
-                ctx.st_shared_f32(sa, acc);
+            let f4 = ctx.mov_u32_imm(4);
+            let wo = ctx.mul_u32_reg(warp_id, f4);
+            let sa = ctx.cvt_u64_u32(wo);
+            for (r, &acc) in (0u32..).zip(&accs) {
+                if r == 0 {
+                    ctx.st_shared_f32(sa, acc);
+                } else {
+                    let ro = ctx.mov_u64_imm(u64::from(r * num_warps * 4));
+                    let ra = ctx.add_u64(sa, ro);
+                    ctx.st_shared_f32(ra, acc);
+                }
+            }
 
-                ctx.label("mwv_q6k_skip_sm");
+            ctx.label("mwv_q6k_skip_sm");
 
-                // PARITY-114: ALL threads reach this barrier (not just lane 0)
-                ctx.bar_sync(0);
+            // PARITY-114: ALL threads reach this barrier (not just lane 0)
+            ctx.bar_sync(0);
 
-                // Only thread 0 reads shared memory and writes output
-                let is_t0 = ctx.setp_eq_u32(thread_id, z);
-                ctx.branch_if_not(is_t0, "mwv_q6k_exit");
+            // Only thread 0 reads shared memory and writes output
+            let is_t0 = ctx.setp_eq_u32(thread_id, z);
+            ctx.branch_if_not(is_t0, "mwv_q6k_exit");
 
+            for r in 0..rows {
                 // Postcondition: sum all warp partial sums
                 let fs = ctx.mov_f32_imm(0.0);
                 for w in 0..num_warps {
-                    let wo = ctx.mov_u64_imm(u64::from(w * 4));
+                    let wo = ctx.mov_u64_imm(u64::from((r * num_warps + w) * 4));
                     let pv = ctx.ld_shared_f32(wo);
                     ctx.add_f32_inplace(fs, pv);
                 }
 
-                // Postcondition: y[block_id] = final reduced sum
+                // Postcondition: y[r][block_id] = final reduced sum
                 let yo = ctx.mul_wide_u32(block_id, 4);
                 let ya = ctx.add_u64(y_ptr, yo);
+                let ya = if r == 0 {
+                    ya
+                } else {
+                    let ro = ctx.mul_wide_u32(n_dim, 4 * r);
+                    ctx.add_u64(ya, ro)
+                };
                 ctx.st_global_f32(ya, fs);
+            }
 
-                ctx.label("mwv_q6k_exit");
-                ctx.ret();
-            })
-    }
+            ctx.label("mwv_q6k_exit");
+            ctx.ret();
+        })
 }
 
 #[cfg(test)]

@@ -36,3 +36,10 @@ falsification:
     description: "GLM IRLS converges to the correct logistic coefficients. Discharges C-GLMIRLS-001/002."
     test: "falsify_glm_irls_link_derivative — Binomial/logit fit: RED slope 1.0333 / P 0.1124, GREEN slope 1.1266 / P 0.0951."
     evidence: "cargo test -p aprender-core --lib falsify_glm_irls_link_derivative"
+
+falsification_tests:
+  - id: FALSIFY-GLM_IRLS_LINK_DERIVATIVE-001
+    description: "C-GLMIRLS-001/002: IRLS uses dη/dμ (link derivative) so Binomial/logit fit recovers the reference MLE"
+    test: "cargo test -p aprender-core --lib falsify_glm_irls_link_derivative"
+    prediction: "slope == 1.1266 within 0.01 and P(y=1|x=-2) == 0.0951 within 0.005"
+    if_fails: "IRLS swapped the link and inverse-link derivatives (slope ~1.0333, P ~0.1124)"

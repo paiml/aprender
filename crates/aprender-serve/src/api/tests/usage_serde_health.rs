@@ -98,3 +98,26 @@ async fn test_chat_completions_with_trace_header() {
     // MOUNTED route is 503, and that is now what is asserted.
     crate::api::test_helpers::assert_no_model_status(response.status());
 }
+
+#[tokio::test]
+async fn test_health_reports_binary_sha256() {
+    // #5348 R-8: /health pins the gateway by the sha256 of the running binary.
+    use sha2::{Digest, Sha256};
+    let app = create_test_app();
+    let request = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .body(Body::empty())
+        .expect("test value should be present");
+    let response = app.oneshot(request).await.expect("test value should be present");
+    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("body should read");
+    let body: serde_json::Value = serde_json::from_slice(&bytes).expect("health body is JSON");
+    let want = format!(
+        "{:x}",
+        Sha256::digest(std::fs::read(std::env::current_exe().expect("exe")).expect("read exe"))
+    );
+    assert_eq!(body["binary_sha256"].as_str(), Some(want.as_str()));
+    assert_eq!(body["status"], "ok", "contract fields stay flattened alongside the pin");
+}

@@ -403,3 +403,20 @@ references:
   - "contracts/training-loop-pretrain-v1.yaml"
   - "docs/specifications/aprender-train/ship-two-models-spec.md §5, §7.2"
   - "Mitchell et al. (2019) arXiv:1810.03993"
+
+falsification_tests:
+  - id: FALSIFY-APR_PROVENANCE-001
+    description: "INV-APR-PROV-001: AprV2Metadata round-trips license, data_source and data_license as NAMED JSON keys, never in custom"
+    test: "cargo test -p aprender-core --lib falsify_ship_022_apr_metadata_provenance_round_trip"
+    prediction: "reparsed fields equal the originals and custom has none of the three keys"
+    if_fails: "a provenance field is dropped or leaks into custom (FM-APR-PROV-MISSING)"
+  - id: FALSIFY-APR_PROVENANCE-002
+    description: "INV-APR-PROV-002 (JSON half): None provenance fields serialize as explicit nulls (no skip_serializing_if)"
+    test: "cargo test -p aprender-core --lib falsify_ship_022_inspect_emits_provenance_keys"
+    prediction: "JSON object contains license, data_source, data_license, each null"
+    if_fails: "None fields are omitted, hiding missing provenance from auditors (FM-APR-PROV-SILENT-SKIP)"
+  - id: FALSIFY-APR_PROVENANCE-003
+    description: "Mixed Some/None provenance values round-trip; None survives as None"
+    test: "cargo test -p aprender-core --lib falsify_ship_022_partial_provenance_round_trip"
+    prediction: "license and data_license are CC-BY-4.0 after reparse, absent field stays None"
+    if_fails: "None mangles into empty string or a value is lost"

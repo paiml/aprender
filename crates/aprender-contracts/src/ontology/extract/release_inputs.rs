@@ -48,6 +48,12 @@ pub struct Subject {
     pub surface: Option<PathBuf>,
     /// `--crux-receipts`: `None` → `evidence/crux/<version>/` (#3739's harness, S2.4).
     pub crux_receipts_dir: Option<PathBuf>,
+    /// aprender#3715 v2: the kernel-cell evidence directory (`kernel_cells::read_v2`). `None` → no v2 cells in
+    /// the graph. Opt-in until P3, when v2 becomes the gate.
+    pub v2_dir: Option<PathBuf>,
+    /// `--gate-utc` (`YYYY-MM-DDTHH:MM:SSZ`): the time v2 sanitizer runs are aged against. The extractor reads
+    /// no clock, so `None` judges every sanitizer run stale (RED on S-SAN).
+    pub v2_gate_utc: Option<String>,
 }
 
 impl Subject {
@@ -67,6 +73,8 @@ impl Subject {
             tokenizer_receipts_dir: None,
             surface: None,
             crux_receipts_dir: None,
+            v2_dir: None,
+            v2_gate_utc: None,
         })
     }
 

@@ -47,3 +47,15 @@ falsification:
     description: "Encode byte->glyph inverts decode glyph->byte for every byte. Discharges C-GPT2BPE-ENC-001."
     test: "falsify_byte_to_bpe_char_roundtrips_all_bytes / falsify_gpt2_byte_to_unicode_roundtrip_all_bytes — ∀ b in 0..=255: gpt2_unicode_to_byte(byte_to_bpe_char(b)) == Some(b): RED pre-fix (bytes >=0x80 returned multi-char '<0xNN>'), GREEN post-fix all 256 round-trip."
     evidence: "cargo test -p aprender-serve --lib falsify_byte_to_bpe_char_roundtrips_all_bytes"
+
+falsification_tests:
+  - id: FALSIFY-BPE_ENCODE_BYTES_TO_UNICODE-001
+    description: "C-GPT2BPE-ENC-002: a non-ASCII char ('é' = 0xC3 0xA9) encodes to its per-byte glyph token ids, not dropped"
+    test: "cargo test -p aprender-serve --lib falsify_bpe_encode_non_ascii_accented_latin"
+    prediction: "encode('é') == [10, 11] (ids of glyphs 'Ã' and '©')"
+    if_fails: "byte_to_bpe_char emits <0xNN> strings absent from the vocab and the char is silently dropped"
+  - id: FALSIFY-BPE_ENCODE_BYTES_TO_UNICODE-002
+    description: "C-GPT2BPE-ENC-001: the encode byte->glyph map inverts the decode glyph->byte map for all 256 bytes"
+    test: "cargo test -p aprender-serve --lib falsify_byte_to_bpe_char_roundtrips_all_bytes"
+    prediction: "for every byte b, byte_to_bpe_char(b) is one glyph that decodes back to b"
+    if_fails: "some byte maps to a glyph the decoder does not invert, corrupting non-ASCII text"

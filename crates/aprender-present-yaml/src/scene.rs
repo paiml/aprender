@@ -621,7 +621,7 @@ pub struct KeySequence {
     /// Key sequence (e.g., `["ctrl+b", "0"]`)
     pub keys: Vec<String>,
     /// Action to perform
-    pub action: serde_yaml_ng::Value,
+    pub action: serde_json::Value,
 }
 
 /// A single global key binding.
@@ -630,14 +630,14 @@ pub struct GlobalKeyBinding {
     /// Key name
     pub key: String,
     /// Action to perform
-    pub action: serde_yaml_ng::Value,
+    pub action: serde_json::Value,
 }
 
 /// Error type for scene parsing and validation.
 #[derive(Debug)]
 pub enum SceneError {
     /// YAML parsing error
-    Yaml(serde_yaml_ng::Error),
+    Yaml(serde_saphyr::Error),
 
     /// Invalid prs_version format
     InvalidVersion(String),
@@ -729,8 +729,8 @@ impl std::error::Error for SceneError {
     }
 }
 
-impl From<serde_yaml_ng::Error> for SceneError {
-    fn from(e: serde_yaml_ng::Error) -> Self {
+impl From<serde_saphyr::Error> for SceneError {
+    fn from(e: serde_saphyr::Error) -> Self {
         Self::Yaml(e)
     }
 }
@@ -742,7 +742,10 @@ impl Scene {
     ///
     /// Returns an error if the YAML is invalid or fails validation.
     pub fn from_yaml(yaml: &str) -> Result<Self, SceneError> {
-        let scene: Self = serde_yaml_ng::from_str(yaml)?;
+        let scene: Self = serde_saphyr::from_str_with_options(
+            yaml,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )?;
         scene.validate()?;
         Ok(scene)
     }
@@ -752,8 +755,8 @@ impl Scene {
     /// # Errors
     ///
     /// Returns an error if serialization fails.
-    pub fn to_yaml(&self) -> Result<String, serde_yaml_ng::Error> {
-        serde_yaml_ng::to_string(self)
+    pub fn to_yaml(&self) -> Result<String, serde_saphyr::SerializeError> {
+        serde_saphyr::to_string(self)
     }
 
     /// Validate the scene structure.

@@ -158,3 +158,25 @@ falsification:
     description: "convert_report f32_to_f16 strided exhaustive sweep over all 2^32 f32 inputs is bit-identical to half. Discharges C-QSF16-004/005."
     test: "cargo test -p aprender-core --lib falsify_convert_f32_to_f16_bit_identical_to_half_on_grid"
     evidence: "every sampled input's f16 bits equal half::f16::from_f32(v).to_bits() (NaN canonicalized); old impl ~251.6M divergences"
+
+falsification_tests:
+  - id: FALSIFY-QUANT_SOLVE_F16_ROUND-001
+    description: "C-QSF16-001..003 (solve): f32_to_f16 matches half on the known RNE divergences, subnormal half-way and the 65520 carry"
+    test: "cargo test -p aprender-solve --lib falsify_f32_to_f16_known_rne_divergences"
+    prediction: "asserted bits equal half::f16::from_f32, 65520.0 -> 0x7C00, subnormal half-way -> 0x0001, 65504.0 -> 0x7BFF"
+    if_fails: "aprender-solve's f16 encoder truncates instead of rounding to nearest even"
+  - id: FALSIFY-QUANT_SOLVE_F16_ROUND-002
+    description: "C-QSF16-001 (solve): exact ties round to the even f16 value"
+    test: "cargo test -p aprender-solve --lib falsify_f32_to_f16_ties_to_even"
+    prediction: "halfway inputs encode to the even neighbour"
+    if_fails: "tie handling is biased"
+  - id: FALSIFY-QUANT_SOLVE_F16_ROUND-003
+    description: "C-QSF16-001..003 (quant): aprender-quant f32_to_f16 matches half on the known divergences"
+    test: "cargo test -p aprender-quant --lib falsify_quant_f32_to_f16_rne_known_divergences"
+    prediction: "asserted bits equal half::f16::from_f32, 65520.0 -> 0x7C00, subnormal half-way -> 0x0001"
+    if_fails: "aprender-quant's f16 encoder truncates instead of RNE"
+  - id: FALSIFY-QUANT_SOLVE_F16_ROUND-004
+    description: "C-QSF16-001..003 (core converter): convert_f32_to_f16 matches half on the known RNE divergences"
+    test: "cargo test -p aprender-core --lib falsify_convert_f32_to_f16_known_rne_divergences"
+    prediction: "asserted bits equal half::f16::from_f32 for each divergence input"
+    if_fails: "the aprender-core converter's f16 encoder truncates instead of RNE"

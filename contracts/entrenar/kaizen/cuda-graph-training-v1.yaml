@@ -174,17 +174,17 @@ proof_obligations:
   - id: CGT-INV-001
     type: invariant
     property: All kernels captured in graph
-    formal: "graph.node_count >= 588"
+    formal: "graph.node_count ≥ 588"
     applies_to: all
   - id: CGT-INV-002
     type: invariant
     property: Graph invalidated on shape change
-    formal: "seq_len != cached_seq_len => graph.recapture()"
+    formal: "seq_len ≠ cached_seq_len ⇒ graph.recapture()"
     applies_to: all
   - id: CGT-EQ-003
     type: equivalence
     property: Graph output matches non-graph output
-    formal: "|forward_graph(x) - forward_plain(x)| < eps element-wise"
+    formal: "∀ i: |forward_graph(x)[i] − forward_plain(x)[i]| < ε"
     applies_to: all
 
 kani_harnesses:

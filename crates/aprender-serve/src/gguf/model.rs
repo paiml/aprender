@@ -17,12 +17,14 @@
 
 use std::fs::File;
 use std::path::Path;
+use std::sync::{Arc, OnceLock};
 
 use memmap2::Mmap;
 
 use super::config::GGUFConfig;
 use super::quantized::{OwnedQuantizedLayer, OwnedQuantizedTensor};
 use super::types::GGUFModel;
+use crate::constrain::{ConstraintEnv, ConstraintError};
 use crate::error::{RealizarError, Result};
 
 // ============================================================================
@@ -45,6 +47,12 @@ pub struct MappedGGUFModel {
     pub model: GGUFModel,
     /// Memory-mapped file contents
     pub(crate) mmap: Mmap,
+    /// [`Self::host_memory_before_map`].
+    host_memory_before_map: crate::host_capacity::HostMemory,
+    /// #3568: the constraint engine over this model's vocabulary, indexed on first use and kept.
+    /// Indexing walks the whole vocabulary (248,320 tokens for Qwen3.5), so a server must not pay
+    /// it per request. A refusal is kept too: the vocabulary never changes.
+    constraint_env: OnceLock<std::result::Result<Arc<ConstraintEnv>, ConstraintError>>,
 }
 
 impl MappedGGUFModel {
@@ -79,6 +87,8 @@ impl MappedGGUFModel {
             operation: "open_model_file".to_string(),
             reason: format!("Failed to open {}: {}", path.as_ref().display(), e),
         })?;
+
+        let host_memory_before_map = crate::host_capacity::HostMemory::measure();
 
         // PMAT-304: MAP_POPULATE + MADV_RANDOM (matching llama.cpp's llama-mmap.cpp)
         // MAP_POPULATE: synchronously pre-fault ALL pages at mmap time.
@@ -120,7 +130,40 @@ impl MappedGGUFModel {
         // Parse the memory-mapped data
         let model = GGUFModel::from_bytes(&mmap)?;
 
-        Ok(Self { model, mmap })
+        Ok(Self {
+            model,
+            mmap,
+            host_memory_before_map,
+            constraint_env: OnceLock::new(),
+        })
+    }
+
+    /// Host RAM as measured just before this file was mapped (#4947). The map is
+    /// populated and locked at open, so a measurement taken after it has already
+    /// spent the file, while the host-build need counts the file in full.
+    #[must_use]
+    pub fn host_memory_before_map(&self) -> crate::host_capacity::HostMemory {
+        self.host_memory_before_map
+    }
+
+    /// The constraint engine over this model's vocabulary (#3568), built on first use and kept.
+    /// `apr run` and every `apr serve` request share it.
+    ///
+    /// # Errors
+    /// `Vocab` when this GGUF has no tokenizer vocabulary or no end-of-sequence id; otherwise the
+    /// engine's own refusal (`NotCompiled` without `structured-output`).
+    pub fn constraint_env(&self) -> std::result::Result<Arc<ConstraintEnv>, ConstraintError> {
+        self.constraint_env
+            .get_or_init(|| {
+                let vocab = self.model.constraint_vocab().ok_or_else(|| {
+                    ConstraintError::Vocab(
+                        "this GGUF has no tokenizer vocabulary or no end-of-sequence id"
+                            .to_string(),
+                    )
+                })?;
+                ConstraintEnv::new(&vocab).map(Arc::new)
+            })
+            .clone()
     }
 
     /// Get the raw memory-mapped file data
@@ -130,6 +173,42 @@ impl MappedGGUFModel {
     #[must_use]
     pub fn data(&self) -> &[u8] {
         &self.mmap
+    }
+
+    /// Drop this process's resident pages of the map (#4991). The map is
+    /// populated and locked at open, so a caller that COPIES the weights out
+    /// (the Qwen3.5 host build) holds the file twice unless it lets them go.
+    /// The file is opened read-only, so a later read faults the bytes back in
+    /// from the page cache; nothing it returns changes.
+    ///
+    /// # Errors
+    /// `munlock` or `madvise(MADV_DONTNEED)` refused the range.
+    #[cfg(target_os = "linux")]
+    pub(crate) fn release_resident_pages(&self) -> std::io::Result<()> {
+        let (ptr, len) = (self.mmap.as_ptr(), self.mmap.len());
+        // SAFETY: the range is exactly this live mapping. `munlock` only undoes the
+        // `mlock` taken at open, and `MADV_DONTNEED` on a read-only file-backed
+        // mapping discards resident pages that are re-read from the file on the next
+        // access, so every slice already handed out stays valid and reads the same bytes.
+        let rc = unsafe {
+            libc::munlock(ptr.cast::<libc::c_void>(), len);
+            libc::madvise(
+                ptr.cast_mut().cast::<libc::c_void>(),
+                len,
+                libc::MADV_DONTNEED,
+            )
+        };
+        if rc == 0 {
+            Ok(())
+        } else {
+            Err(std::io::Error::last_os_error())
+        }
+    }
+
+    /// No resident-page release off Linux.
+    #[cfg(not(target_os = "linux"))]
+    pub(crate) fn release_resident_pages(&self) -> std::io::Result<()> {
+        Ok(())
     }
 
     /// Get tensor data slice by offset and size

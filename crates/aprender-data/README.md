@@ -11,11 +11,11 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/alimentar"><img src="https://img.shields.io/crates/v/alimentar.svg" alt="Crates.io"></a>
-  <a href="https://docs.rs/alimentar"><img src="https://docs.rs/alimentar/badge.svg" alt="Documentation"></a>
-  <a href="https://github.com/paiml/alimentar/actions/workflows/ci.yml"><img src="https://github.com/paiml/alimentar/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/aprender-data"><img src="https://img.shields.io/crates/v/aprender-data.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/aprender-data"><img src="https://docs.rs/aprender-data/badge.svg" alt="Documentation"></a>
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
-  <a href="https://github.com/paiml/alimentar/blob/main/SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy-green.svg" alt="Security Policy"></a>
+  <a href="https://github.com/paiml/aprender/blob/main/crates/aprender-data/SECURITY.md"><img src="https://img.shields.io/badge/Security-Policy-green.svg" alt="Security Policy"></a>
 </p>
 
 <p align="center">
@@ -63,14 +63,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-alimentar = "0.2"
+aprender-data = "0.71"
 ```
 
 With specific features:
 
 ```toml
 [dependencies]
-alimentar = { version = "0.2", features = ["s3", "hf-hub"] }
+aprender-data = { version = "0.71", features = ["s3", "hf-hub"] }
 ```
 
 ## Quick Start
@@ -229,7 +229,7 @@ If you use alimentar in your research, please cite:
   title        = {alimentar: Data Loading, Distribution and Tooling in Pure Rust},
   year         = {2025},
   publisher    = {GitHub},
-  url          = {https://github.com/paiml/alimentar},
+  url          = {https://github.com/paiml/aprender/tree/main/crates/aprender-data},
   version      = {0.2}
 }
 ```
@@ -253,5 +253,5 @@ MIT License - see [LICENSE](LICENSE) for details.
 ## Related Projects
 - [Cookbook](https://github.com/paiml/apr-cookbook)
 
-- [trueno-db](https://github.com/paiml/trueno-db) - GPU-accelerated vector database
+- [trueno-db](https://github.com/paiml/aprender/tree/main/crates/aprender-db) - GPU-accelerated vector database
 - [aprender](https://github.com/paiml/aprender) - ML/DL framework in Rust

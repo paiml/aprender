@@ -40,7 +40,7 @@ impl DistillConfig {
 
     /// Parse configuration from YAML string.
     pub fn from_yaml(content: &str, path: &Path) -> Result<Self> {
-        serde_yaml::from_str(content).map_err(|e| EntrenarError::ConfigParsing {
+        serde_saphyr::from_str_with_options(content, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(|e| EntrenarError::ConfigParsing {
             path: path.to_path_buf(),
             message: e.to_string(),
         })
@@ -381,7 +381,7 @@ output:
     #[test]
     fn test_parse_yaml_config() {
         let config: DistillConfig =
-            serde_yaml::from_str(SAMPLE_YAML).expect("Failed to parse YAML");
+            serde_saphyr::from_str_with_options(SAMPLE_YAML, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("Failed to parse YAML");
 
         assert_eq!(config.teacher.model_id, "meta-llama/Llama-2-7b");
         assert_eq!(config.student.model_id, "TinyLlama/TinyLlama-1.1B");
@@ -426,7 +426,7 @@ enabled: true
 layer_mapping: [[0, 3], [1, 7], [2, 11]]
 weight: 0.3
 ";
-        let config: ProgressiveConfig = serde_yaml::from_str(yaml).expect("config should be valid");
+        let config: ProgressiveConfig = serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).expect("config should be valid");
         assert!(config.enabled);
         assert_eq!(config.layer_mapping.len(), 3);
         assert_eq!(config.layer_mapping[0], (0, 3));

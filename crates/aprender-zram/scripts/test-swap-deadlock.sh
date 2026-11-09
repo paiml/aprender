@@ -33,19 +33,25 @@ pass() { echo -e "${GREEN}[PASS]${NC} $*" | tee -a "$LOG_FILE"; }
 fail() { echo -e "${RED}[FAIL]${NC} $*" | tee -a "$LOG_FILE"; }
 warn() { echo -e "${YELLOW}[WARN]${NC} $*" | tee -a "$LOG_FILE"; }
 
+# Pids recorded at spawn. cleanup signals these and nothing found by name (#5108): the old cleanup ran
+# `pkill -9 python3`, which killed every python3 on the host.
+DAEMON_PID=""
+PRESSURE_PID=""
+
 cleanup() {
     log "Cleaning up..."
-    # Kill stress processes
-    pkill -9 stress-ng 2>/dev/null || true
-    pkill -9 python3 2>/dev/null || true
+    # Kill the memory-pressure process this test started
+    [ -n "$PRESSURE_PID" ] && kill -9 "$PRESSURE_PID" 2>/dev/null || true
 
     # Disable swap
     swapoff /dev/ublkb0 2>/dev/null || true
 
-    # Kill daemon
-    pkill -TERM -f "trueno-ublk" 2>/dev/null || true
-    sleep 2
-    pkill -9 -f "trueno-ublk" 2>/dev/null || true
+    # Kill the daemon this test started
+    if [ -n "$DAEMON_PID" ]; then
+        kill -TERM "$DAEMON_PID" 2>/dev/null || true
+        sleep 2
+        kill -9 "$DAEMON_PID" 2>/dev/null || true
+    fi
 
     # Unload module
     rmmod ublk_drv 2>/dev/null || true

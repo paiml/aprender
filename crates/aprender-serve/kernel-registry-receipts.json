@@ -1,0 +1,123 @@
+{
+ "schema": "apr-kernel-registry-receipts/v2",
+ "note": "KREG-001 AC-3 (aprender#4539): a registry row is admitted with a per-arch parity receipt from a host whose arch equals the row's arch (any host for an arch=any row). Each entry below names a real row, once, and its receipt path is that row's tolerance; every row's tolerance is its receipt path or \"unmeasured\". Every cpu row has a receipt except the dequant-only and IQ rows, which stay \"unmeasured\" until an independent oracle at the current comparator pin measures them. A GPU row may still be \"unmeasured\": GPU receipt coverage is a LAB check, off the merge path (#4574), and no count is kept in this file. Checked by realizar::kernel_registry tests (FALSIFY-KREG-008).",
+ "receipts": [
+  {
+   "kernel_id": "cpu.matvec.q4_k",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.q4_k.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.q5_k",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.q5_k.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.q6_k",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.q6_k.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.q4_0",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.q4_0.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.q8_0",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.q8_0.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.f32.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.f16",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.f16.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.bf16",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.bf16.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.apr_q4",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.apr_q4.json"
+  },
+  {
+   "kernel_id": "cpu.matvec.apr_q8",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.matvec.apr_q8.json"
+  }
+ ],
+ "op_receipts": [
+  {
+   "kernel_id": "cpu.rmsnorm.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.rmsnorm.f32.json"
+  },
+  {
+   "kernel_id": "cpu.layernorm.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.layernorm.f32.json"
+  },
+  {
+   "kernel_id": "cpu.gelu.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.gelu.f32.json"
+  },
+  {
+   "kernel_id": "cpu.argmax.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.argmax.f32.json"
+  },
+  {
+   "kernel_id": "cpu.rope.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.rope.f32.json"
+  },
+  {
+   "kernel_id": "cpu.attention.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.attention.f32.json"
+  },
+  {
+   "kernel_id": "cpu.embed.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.embed.f32.json"
+  },
+  {
+   "kernel_id": "cpu.kv_write.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.kv_write.f32.json"
+  },
+  {
+   "kernel_id": "cpu.swiglu.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.swiglu.f32.json"
+  },
+  {
+   "kernel_id": "cpu.residual_add.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.residual_add.f32.json"
+  },
+  {
+   "kernel_id": "cpu.sample.topk.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.sample.topk.f32.json"
+  },
+  {
+   "kernel_id": "cpu.sample.seeded.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.sample.seeded.f32.json"
+  },
+  {
+   "kernel_id": "cpu.repeat_penalty.f32",
+   "host_arch": "x86_64",
+   "receipt": "evidence/kreg/parity/cpu.repeat_penalty.f32.json"
+  }
+ ]
+}

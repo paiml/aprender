@@ -75,10 +75,25 @@ pub struct BenchArgs<'a> {
     pub profile: &'a str,
     /// Prompt file, overriding the profile.
     pub prompts: Option<&'a Path>,
+    /// Where to write the V2 serve receipt (#4953).
+    pub serve_receipt: Option<&'a Path>,
+    /// The model file the started server loads, hashed into the receipt.
+    pub model_file: Option<&'a Path>,
+    /// Host label for the receipt.
+    pub host_label: &'a str,
 }
 
 /// Run the benchmark lifecycle and report.
 pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
+    // A serve receipt from an earlier run must not survive this one failing
+    // or being refused (#4953).
+    if let Some(path) = args.serve_receipt {
+        match std::fs::remove_file(path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
     let prompts = resolve_prompts(args.profile, args.prompts)?;
     let workload = describe_workload(args.profile, args.prompts, prompts.len());
     let baseline = load_baseline(args.baseline)?;
@@ -181,6 +196,10 @@ pub async fn run_bench(args: BenchArgs<'_>) -> Result<()> {
         )));
     }
 
+    if let Some(path) = args.serve_receipt {
+        write_serve_receipt(&report, path, &args)?;
+    }
+
     // A benchmark that detects a regression past its declared threshold and
     // then exits 0 is a gate that cannot fail.
     let failed: Vec<&str> = report
@@ -236,6 +255,44 @@ pub(crate) fn describe_workload(profile: &str, file: Option<&Path>, count: usize
         Some(p) => format!("{} prompt(s) from {}", count, p.display()),
         None => format!("profile {profile} ({count} prompt(s))"),
     }
+}
+
+/// V2 (#4953): build the serve receipt from this run, or refuse with the
+/// measurement it lacks. A refusal is an error, so a run that cannot carry
+/// the claim exits non-zero and writes no receipt.
+fn write_serve_receipt(report: &BenchmarkReport, path: &Path, args: &BenchArgs<'_>) -> Result<()> {
+    let model = args.model_file.ok_or_else(|| {
+        CliError::ValidationFailed("--serve-receipt needs --model-file".to_string())
+    })?;
+    // Hash the model only once the cheap refusals have passed: build with the
+    // sha left empty, then fill it in.
+    let meta = apr_test::llm::serve_receipt::ReceiptMeta {
+        apr_version: env!("CARGO_PKG_VERSION").to_string(),
+        apr_commit: env!("APR_GIT_SHA").to_string(),
+        model_sha256: String::new(),
+        host: args.host_label.to_string(),
+        workload: args.prompts.map_or_else(
+            || format!("profile {}", args.profile),
+            |p| p.display().to_string(),
+        ),
+    };
+    let mut receipt = apr_test::llm::serve_receipt::build(report, meta)
+        .map_err(|e| CliError::ValidationFailed(format!("serve receipt refused: {e}")))?;
+    receipt.meta.model_sha256 = super::manifest::sha256_of_file(model)?.1;
+    let json = serde_json::to_string_pretty(&receipt)
+        .map_err(|e| CliError::InvalidFormat(format!("serialising serve receipt: {e}")))?;
+    std::fs::write(path, json)?;
+    println!(
+        "\nserve receipt  {} · load {:.0} ms · ttft p50 {:.1} ms · pp512 {:.1} tok/s · tg128 {:.1} tok/s · n {}",
+        receipt.compute_mode,
+        receipt.load_ms,
+        receipt.ttft_ms.p50,
+        receipt.pp512_tok_s,
+        receipt.tg128_tok_s,
+        receipt.n
+    );
+    println!("serve receipt written to {}", path.display());
+    Ok(())
 }
 
 /// Accept either a full report or a bare run as the baseline.
@@ -410,30 +467,69 @@ mod tests {
 // ===========================================================================
 use crate::LlmSubcommand;
 
-/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode).
+/// Route `apr test llm <SUB>` (GH-876 Milestone 2; PERF-025 band mode;
+/// #4954 ttft-verdict and #4971 shape-check, which read files and need no
+/// runtime, and #4971 parity, the perf041 probe).
 ///
 /// # Errors
 /// Propagates whichever mode ran.
-#[cfg(feature = "inference")]
 pub fn dispatch(command: &LlmSubcommand) -> Result<()> {
+    match command {
+        LlmSubcommand::TtftVerdict { runs } => super::test_llm_ttft::run(runs),
+        LlmSubcommand::ShapeCheck { witness } => super::test_llm_shape::run(witness),
+        LlmSubcommand::Parity { .. } => dispatch_parity(command),
+        LlmSubcommand::Bench { .. } => dispatch_bench(command),
+    }
+}
+
+/// `apr test llm parity`: the probe drives its server through tokio.
+#[cfg(feature = "inference")]
+fn dispatch_parity(command: &LlmSubcommand) -> Result<()> {
+    super::test_llm_parity::run(command)
+}
+
+/// As [`dispatch_bench`]'s stub: a minimal build names the missing feature.
+///
+/// # Errors
+/// Always: this build cannot run the probe.
+#[cfg(not(feature = "inference"))]
+fn dispatch_parity(_command: &LlmSubcommand) -> Result<()> {
+    Err(CliError::InferenceFailed(
+        "`apr test llm parity` needs the `inference` feature (this apr was built without it)"
+            .to_string(),
+    ))
+}
+
+/// `apr test llm bench`, in either of its two modes.
+#[cfg(feature = "inference")]
+fn dispatch_bench(command: &LlmSubcommand) -> Result<()> {
     let rt = tokio::runtime::Runtime::new()
         .map_err(|e| CliError::InferenceFailed(format!("tokio runtime: {e}")))?;
     match command {
         LlmSubcommand::Bench { band, .. } if *band => rt.block_on(dispatch_band(command)),
-        LlmSubcommand::Bench { .. } => rt.block_on(dispatch_legacy(command)),
+        _ => rt.block_on(dispatch_legacy(command)),
     }
 }
 
 /// #4041: the benchmark drives its server through tokio, which only the `inference` feature brings. A minimal
 /// build (`--no-default-features`) names the missing feature instead of failing to compile.
+/// `ttft-verdict` and `shape-check` read files only and never reach here, so
+/// they run in every build (#4954, #4971).
 ///
 /// # Errors
-/// Always: this build cannot run the benchmark.
+/// `bench`, always: this build cannot run the benchmark.
 #[cfg(not(feature = "inference"))]
-pub fn dispatch(_command: &LlmSubcommand) -> Result<()> {
+fn dispatch_bench(_command: &LlmSubcommand) -> Result<()> {
     Err(CliError::InferenceFailed(
-        "`apr test llm` needs the `inference` feature (this apr was built without it)".to_string(),
+        "`apr test llm bench` needs the `inference` feature (this apr was built without it)"
+            .to_string(),
     ))
+}
+
+/// The refusal of a `bench` mode handed another subcommand. `dispatch` routes
+/// only `bench` to them, so this names a routing defect if it ever prints.
+fn not_bench() -> CliError {
+    CliError::InvalidInput("`apr test llm`: only `bench` routes to a benchmark mode".to_string())
 }
 
 /// TWO MODES, ONE ENTRYPOINT — the §4.4-conformant one.
@@ -477,7 +573,10 @@ async fn dispatch_band(command: &LlmSubcommand) -> Result<()> {
         key_id,
         keyring,
         ..
-    } = command;
+    } = command
+    else {
+        return Err(not_bench());
+    };
     // Unreachable: clap's `requires = "receipt"` enforces it. Stated rather
     // than unwrapped, because a receipt-less band run would measure for
     // minutes and then discard the measurement.
@@ -546,8 +645,14 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         stream,
         profile,
         prompts,
+        serve_receipt,
+        model_file,
+        host_label,
         ..
-    } = command;
+    } = command
+    else {
+        return Err(not_bench());
+    };
     run_bench(BenchArgs {
         url,
         model,
@@ -565,6 +670,9 @@ async fn dispatch_legacy(command: &LlmSubcommand) -> Result<()> {
         stream: *stream,
         profile,
         prompts: prompts.as_deref(),
+        serve_receipt: serve_receipt.as_deref(),
+        model_file: model_file.as_deref(),
+        host_label,
     })
     .await
 }

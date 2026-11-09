@@ -20,6 +20,8 @@ pub use probabilistic::{
 };
 pub mod drift;
 pub mod evaluator;
+pub mod exact_sum;
+pub use exact_sum::fsum;
 pub mod grad_norm;
 pub mod percentile;
 pub mod perplexity;
@@ -370,6 +372,9 @@ mod tests_clustering_contract;
 #[cfg(test)]
 #[path = "tests_ranking_contract.rs"]
 mod tests_ranking_contract;
+
+#[cfg(test)]
+mod f32_bits_tests;
 pub use classification::{fbeta_score, jaccard_score};
 
 /// Remaps cluster labels to a dense `0..k` range based on the set of DISTINCT
@@ -392,20 +397,14 @@ fn dense_relabel(labels: &[usize]) -> (Vec<usize>, usize) {
     (dense, distinct.len())
 }
 
-/// Davies–Bouldin score (lower is better), matching `sklearn.metrics.davies_bouldin_score`.
-/// Mean over clusters of the worst-case ratio `(S_i + S_j) / d(c_i, c_j)`, where
-/// `S` is mean intra-cluster distance to centroid and `d` is centroid distance.
-///
-/// The score depends only on the partition and is invariant under relabeling:
-/// cluster count is `k = |distinct labels|`, so non-contiguous labels never create
-/// phantom empty clusters (sklearn `LabelEncoder` semantics).
-#[must_use]
-pub fn davies_bouldin_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
+/// Per-cluster centroids (f64) and member counts for dense labels `0..k`.
+/// Sums every row into its cluster, then divides each non-empty cluster by its count.
+fn cluster_centroids(
+    data: &Matrix<f32>,
+    labels: &[usize],
+    k: usize,
+) -> (Vec<Vec<f64>>, Vec<usize>) {
     let (n, nf) = data.shape();
-    let (labels, k) = dense_relabel(labels);
-    if k < 2 {
-        return 0.0;
-    }
     let mut centroids = vec![vec![0.0f64; nf]; k];
     let mut counts = vec![0usize; k];
     for i in 0..n {
@@ -422,44 +421,122 @@ pub fn davies_bouldin_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
             }
         }
     }
-    let mut scatter = vec![0.0f64; k];
-    for i in 0..n {
-        let c = labels[i];
-        let mut d = 0.0f64;
-        for j in 0..nf {
-            let diff = f64::from(data.get(i, j)) - centroids[c][j];
-            d += diff * diff;
-        }
-        scatter[c] += d.sqrt();
+    (centroids, counts)
+}
+
+/// Squared Euclidean distance between row `i` of `data` and `point`, summed in column order.
+fn sq_dist_row(data: &Matrix<f32>, i: usize, point: &[f64]) -> f64 {
+    let mut d = 0.0f64;
+    for (j, p) in point.iter().enumerate() {
+        let diff = f64::from(data.get(i, j)) - p;
+        d += diff * diff;
     }
-    for c in 0..k {
-        if counts[c] > 0 {
-            scatter[c] /= counts[c] as f64;
+    d
+}
+
+/// Squared Euclidean distance between two f64 points, summed in column order.
+fn sq_dist(a: &[f64], b: &[f64]) -> f64 {
+    let mut d = 0.0f64;
+    for (x, y) in a.iter().zip(b) {
+        let diff = x - y;
+        d += diff * diff;
+    }
+    d
+}
+
+/// Mean distance from each cluster's members to its centroid (`S_i` in Davies–Bouldin).
+fn mean_scatter(
+    data: &Matrix<f32>,
+    labels: &[usize],
+    centroids: &[Vec<f64>],
+    counts: &[usize],
+) -> Vec<f64> {
+    let mut scatter = vec![0.0f64; centroids.len()];
+    for (i, &c) in labels.iter().take(data.shape().0).enumerate() {
+        scatter[c] += sq_dist_row(data, i, &centroids[c]).sqrt();
+    }
+    for (s, &count) in scatter.iter_mut().zip(counts) {
+        if count > 0 {
+            *s /= count as f64;
         }
     }
+    scatter
+}
+
+/// Worst-case `(S_c + S_j) / d(c_c, c_j)` over the other clusters `j`; coincident centroids are skipped.
+fn worst_ratio(c: usize, centroids: &[Vec<f64>], scatter: &[f64]) -> f64 {
+    let mut max_r = 0.0f64;
+    for cp in 0..centroids.len() {
+        if cp == c {
+            continue;
+        }
+        let dc = sq_dist(&centroids[c], &centroids[cp]).sqrt();
+        if dc > 0.0 {
+            let r = (scatter[c] + scatter[cp]) / dc;
+            if r > max_r {
+                max_r = r;
+            }
+        }
+    }
+    max_r
+}
+
+/// Davies–Bouldin score (lower is better), matching `sklearn.metrics.davies_bouldin_score`.
+/// Mean over clusters of the worst-case ratio `(S_i + S_j) / d(c_i, c_j)`, where
+/// `S` is mean intra-cluster distance to centroid and `d` is centroid distance.
+///
+/// The score depends only on the partition and is invariant under relabeling:
+/// cluster count is `k = |distinct labels|`, so non-contiguous labels never create
+/// phantom empty clusters (sklearn `LabelEncoder` semantics).
+#[must_use]
+pub fn davies_bouldin_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
+    let (labels, k) = dense_relabel(labels);
+    if k < 2 {
+        return 0.0;
+    }
+    let (centroids, counts) = cluster_centroids(data, &labels, k);
+    let scatter = mean_scatter(data, &labels, &centroids, &counts);
     let mut db = 0.0f64;
     for c in 0..k {
-        let mut max_r = 0.0f64;
-        for cp in 0..k {
-            if cp == c {
-                continue;
-            }
-            let mut dc = 0.0f64;
-            for j in 0..nf {
-                let diff = centroids[c][j] - centroids[cp][j];
-                dc += diff * diff;
-            }
-            let dc = dc.sqrt();
-            if dc > 0.0 {
-                let r = (scatter[c] + scatter[cp]) / dc;
-                if r > max_r {
-                    max_r = r;
-                }
-            }
-        }
-        db += max_r;
+        db += worst_ratio(c, &centroids, &scatter);
     }
     (db / k as f64) as f32
+}
+
+/// Column means over all rows, accumulated row by row.
+fn overall_mean(data: &Matrix<f32>) -> Vec<f64> {
+    let (n, nf) = data.shape();
+    let mut overall = vec![0.0f64; nf];
+    for i in 0..n {
+        for j in 0..nf {
+            overall[j] += f64::from(data.get(i, j));
+        }
+    }
+    for v in &mut overall {
+        *v /= n as f64;
+    }
+    overall
+}
+
+/// Within-cluster sum of squares `W`, one running sum over every row and column.
+fn within_ss(data: &Matrix<f32>, labels: &[usize], centroids: &[Vec<f64>]) -> f64 {
+    let mut w = 0.0f64;
+    for (i, &c) in labels.iter().take(data.shape().0).enumerate() {
+        for (j, m) in centroids[c].iter().enumerate() {
+            let diff = f64::from(data.get(i, j)) - m;
+            w += diff * diff;
+        }
+    }
+    w
+}
+
+/// Between-cluster sum of squares `B`: count-weighted squared centroid offsets from the overall mean.
+fn between_ss(centroids: &[Vec<f64>], counts: &[usize], overall: &[f64]) -> f64 {
+    let mut b = 0.0f64;
+    for (centroid, &count) in centroids.iter().zip(counts) {
+        b += count as f64 * sq_dist(centroid, overall);
+    }
+    b
 }
 
 /// Calinski–Harabasz score (variance ratio; higher is better), matching
@@ -471,50 +548,15 @@ pub fn davies_bouldin_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
 /// (sklearn `LabelEncoder` semantics).
 #[must_use]
 pub fn calinski_harabasz_score(data: &Matrix<f32>, labels: &[usize]) -> f32 {
-    let (n, nf) = data.shape();
+    let n = data.shape().0;
     let (labels, k) = dense_relabel(labels);
     if k < 2 || n <= k {
         return 0.0;
     }
-    let mut overall = vec![0.0f64; nf];
-    let mut centroids = vec![vec![0.0f64; nf]; k];
-    let mut counts = vec![0usize; k];
-    for i in 0..n {
-        let c = labels[i];
-        counts[c] += 1;
-        for j in 0..nf {
-            let v = f64::from(data.get(i, j));
-            centroids[c][j] += v;
-            overall[j] += v;
-        }
-    }
-    for j in 0..nf {
-        overall[j] /= n as f64;
-    }
-    for c in 0..k {
-        if counts[c] > 0 {
-            for j in 0..nf {
-                centroids[c][j] /= counts[c] as f64;
-            }
-        }
-    }
-    let mut w = 0.0f64;
-    for i in 0..n {
-        let c = labels[i];
-        for j in 0..nf {
-            let diff = f64::from(data.get(i, j)) - centroids[c][j];
-            w += diff * diff;
-        }
-    }
-    let mut b = 0.0f64;
-    for c in 0..k {
-        let mut d = 0.0f64;
-        for j in 0..nf {
-            let diff = centroids[c][j] - overall[j];
-            d += diff * diff;
-        }
-        b += counts[c] as f64 * d;
-    }
+    let overall = overall_mean(data);
+    let (centroids, counts) = cluster_centroids(data, &labels, k);
+    let w = within_ss(data, &labels, &centroids);
+    let b = between_ss(&centroids, &counts, &overall);
     if w == 0.0 {
         return 0.0;
     }
@@ -581,6 +623,27 @@ mod tests_clustering_extra {
         assert!(
             (db_gapped - 0.4150).abs() < 1e-3,
             "DB must match sklearn 0.4150, got {db_gapped}"
+        );
+    }
+
+    /// #5105 falsifier: labels past the last row are ignored, as they were before the
+    /// split. The extra labels reuse existing ids, so the partition of the 5 rows is
+    /// unchanged and both scores must be bit-identical to the truncated labels.
+    /// RED (split without the row bound): indexing row 5 of a 5-row matrix panics.
+    #[test]
+    fn clustering_metrics_ignore_labels_past_rows_5105() {
+        let data = Matrix::from_vec(5, 2, vec![1.0, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0, 7.0, 3.5, 5.0])
+            .expect("valid");
+        let exact = [0usize, 0, 1, 1, 1];
+        let extra = [0usize, 0, 1, 1, 1, 1, 0, 1];
+
+        assert_eq!(
+            davies_bouldin_score(&data, &extra).to_bits(),
+            davies_bouldin_score(&data, &exact).to_bits()
+        );
+        assert_eq!(
+            calinski_harabasz_score(&data, &extra).to_bits(),
+            calinski_harabasz_score(&data, &exact).to_bits()
         );
     }
 }

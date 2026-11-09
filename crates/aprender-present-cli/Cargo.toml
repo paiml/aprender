@@ -25,7 +25,7 @@ tungstenite = { version = "0.26", optional = true }
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1", features = ["derive"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }
 
 [features]
 default = []

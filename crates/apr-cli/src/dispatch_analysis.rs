@@ -495,6 +495,7 @@ fn dispatch_analysis_commands_rest(cli: &Cli) -> Option<Result<(), CliError>> {
         // complexity debt the pre-commit gate refuses to let any edit ride on.
         #[cfg(feature = "inference")]
         ExtendedCommands::Capability { json } => commands::capability::run(*json || cli.json),
+        #[cfg(feature = "inference")]
         ExtendedCommands::Devices { json } => commands::devices::run(*json || cli.json),
         ExtendedCommands::OtlpLint {
             otlp_file,
@@ -1523,6 +1524,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             skip_metadata,
             skip_capability,
             assert_classifier_head,
+            ollama_from_file,
         } => qa::run(
             file,
             *assert_tps,
@@ -1548,6 +1550,7 @@ fn dispatch_profiling_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             *skip_metadata,
             *skip_capability,
             *assert_classifier_head,
+            *ollama_from_file,
         ),
 
         ExtendedCommands::Parity {
@@ -1875,6 +1878,9 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             vocab,
             pool,
             normalize,
+            task,
+            title,
+            dim,
             hidden_dim,
             num_layers,
             num_heads,
@@ -1883,21 +1889,28 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             max_position_embeddings,
             type_vocab_size,
             json,
-        } => commands::embed::run(
+        } => commands::embed_gguf::run(
             model,
-            &batuta_common::cli_roles::strings(text),
-            text_file.as_deref(),
-            vocab,
-            pool,
-            *normalize,
-            *hidden_dim,
-            *num_layers,
-            *num_heads,
-            *intermediate_dim,
-            *vocab_size,
-            *max_position_embeddings,
-            *type_vocab_size,
-            *json,
+            &commands::embed_gguf::EmbedFlags {
+                texts: &batuta_common::cli_roles::strings(text),
+                text_file: text_file.as_deref(),
+                vocab: vocab.as_deref(),
+                pool,
+                normalize: *normalize,
+                task: *task,
+                title: title.as_deref(),
+                dim: *dim,
+                sizes: commands::embed_gguf::BertSizes {
+                    hidden_dim: *hidden_dim,
+                    num_layers: *num_layers,
+                    num_heads: *num_heads,
+                    intermediate_dim: *intermediate_dim,
+                    vocab_size: *vocab_size,
+                    max_position_embeddings: *max_position_embeddings,
+                    type_vocab_size: *type_vocab_size,
+                },
+                json: *json,
+            },
         ),
 
         // All other extended commands handled by sub-dispatchers above

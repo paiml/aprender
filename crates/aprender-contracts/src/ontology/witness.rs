@@ -160,11 +160,13 @@ pub struct Witness {
     pub census_id_set_sha256: String,
     pub relations_sha256: String,
     /// `git rev-parse HEAD` where pv-sat ran, when it could ask.
+    #[serde(default, skip_serializing)]
     pub reasoner_git_sha: Option<String>,
     pub checkable_n: usize,
     pub result: WitnessResult,
     /// `fired` — pv-sat's plant `A⇒B, B⇒C, contradicts(A,C)` yielded the core `[A, B, C]` before it wrote this.
     pub pc_reasoner: String,
+    #[serde(default, skip_serializing)]
     pub cpu_ms: u64,
 }
 

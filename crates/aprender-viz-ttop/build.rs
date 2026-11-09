@@ -27,7 +27,7 @@ fn process_contract(path: &std::path::Path) -> (usize, usize) {
         Ok(c) => c,
         Err(_) => return (0, 0),
     };
-    let yaml: ContractYaml = match serde_yaml_ng::from_str(&content) {
+    let yaml: ContractYaml = match serde_saphyr::from_str(&content) {
         Ok(y) => y,
         Err(_) => return (0, 0),
     };

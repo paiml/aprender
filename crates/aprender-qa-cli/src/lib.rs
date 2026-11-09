@@ -148,7 +148,7 @@ pub fn generate_model_scenarios(model_id: &str, count: usize) -> Vec<aprender_qa
 pub fn scenarios_to_yaml(scenarios: &[aprender_qa_gen::QaScenario]) -> Result<String, String> {
     let mut output = String::new();
     for scenario in scenarios {
-        match serde_yaml::to_string(scenario) {
+        match serde_saphyr::to_string(scenario) {
             Ok(yaml) => {
                 output.push_str("---\n");
                 output.push_str(&yaml);

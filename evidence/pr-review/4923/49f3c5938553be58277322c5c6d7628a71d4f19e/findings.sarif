@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": { "driver": { "name": "pmat", "version": "3.42.0" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+      "results": [
+        {
+          "ruleId": "cascade-no-secret-reader-absent",
+          "level": "error",
+          "message": { "text": "cascade_no_secret_green calls `release_ready.sh --budget`, a function `rp_entries` and a `seven: no-secret-in-crates` field of contracts/release-ready-v1.yaml. None exists on this branch or on origin/main: release_ready.sh answers `unknown argument --budget` (rc 3), scripts/lib/release_policy.sh defines no rp_entries, and the contract has no `seven:` key. The harness hides this by writing a stub rp_entries and a stub release_ready.sh (check_tag_step_gated.sh:189-190)." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/release/autopilot.sh" }, "region": { "startLine": 193 } } } ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "The release pass reaches the cascade step on the first real release after this merges: release_ready.sh --budget exits 3, die fires, and the crates.io cascade can never start unattended. Fail-closed, but the checker that reaches this point (check_tag_step_gated.sh) is green because it stubs the very reader that is missing, so nothing before the release tells anyone the step cannot succeed.",
+            "command": ["bash", "scripts/release/release_ready.sh", "--budget"],
+            "exit_code": 3,
+            "stdout_sha256": "11d97df9c59e88d6fbf39567ee464ba3865b14febd31548579ea41ea55e168f9"
+          }
+        },
+        {
+          "ruleId": "cascade-cleanroom-run-log-needs-finished-run",
+          "level": "warning",
+          "message": { "text": "cascade_cleanroom_at_tag reads the tested-sha with `gh run view <run> --log`, which needs the whole infra run to be complete. The cleanroom step deliberately judges the JOB conclusion because a sibling job may never start (comment at the job loop), so the run can stay in progress while the aprender job is green." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/release/autopilot.sh" }, "region": { "startLine": 180 } } } ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "Infra run has clean-room (aprender) = success and a sibling job queued forever. gh refuses the log of an unfinished run, shas is empty, die reports tested '' and the cascade never publishes, although the clean-room premise holds. The job log (actions/jobs/<id>/logs) that scripts/cascade-publish.sh clean_room_gate already reads has no such condition.",
+            "rationale": "gh run view --log is documented to refuse an in-progress run; not exercised here because no infra run was available to read without spending shared GitHub allowance."
+          }
+        },
+        {
+          "ruleId": "cascade-cleanroom-duplicates-existing-gate",
+          "level": "note",
+          "message": { "text": "cascade_cleanroom_at_tag re-implements, in a second place, what scripts/cascade-publish.sh clean_room_gate ROOT TAG RUN_ID (line 478) and clean_room_tested_shas (line 470) already do on the same run, with the same refuse rules. Two readers of one premise can drift." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/release/autopilot.sh" }, "region": { "startLine": 172 } } } ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "The tested-sha line format changes; cascade-publish.sh is updated and tested, the autopilot copy is not, and the cascade dies one function before the real gate would have passed (or accepts what the real gate refuses).",
+            "rationale": "The duplication scan matched no name (needles are exact names); this is a judgement from reading cascade-publish.sh:464-483, not a scan hit."
+          }
+        },
+        {
+          "ruleId": "coverage-run-id-never-expires",
+          "level": "warning",
+          "message": { "text": "$AP/coverage-run-id is written once and then trusted: a resumed pass 'attaches' to it without looking at the run, and cov_wait only waits for it." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/release/autopilot.sh" }, "region": { "startLine": 133 } } } ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "The dispatched coverage-nightly run is cancelled or fails on a runner fault. Every later resume prints 'attached to run N', cov_wait dies on its non-success conclusion, and the fix is an undocumented rm of coverage-run-id; the branch coverage/<V> is also never deleted.",
+            "rationale": "Read from cov_dispatch_at_mc and cov_wait; no run was dispatched."
+          }
+        },
+        {
+          "ruleId": "tag-pre-push-hook-not-on-branch",
+          "level": "note",
+          "message": { "text": "autopilot.sh:425 calls scripts/hooks/pre-push-tags.sh --arm-release TAG 120. That file is not on this branch (it is on origin/main, landed after the merge base) and check_tag_step_gated.sh writes a stub for it, so the real hook interface is exercised by no test in this PR." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/release/autopilot.sh" }, "region": { "startLine": 425 } } } ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If the merge queue lands this before the hook (or on a checkout that predates it) bash cannot open the file, die fires, and the tag is created but never pushed; the real flag shape matches origin/main (--arm-release vX.Y.Z [SECONDS]) so it resolves once both are in.",
+            "command": ["git", "cat-file", "-e", "HEAD:scripts/hooks/pre-push-tags.sh"],
+            "exit_code": 128,
+            "stdout_sha256": "ef26c8eb97d69bf801180c1f54e3581d39cbb228075bad9bbe6032dc8778277f"
+          }
+        },
+        {
+          "ruleId": "pr-body-describes-a-smaller-diff",
+          "level": "note",
+          "message": { "text": "The PR body says '20 lines in 3 files' and the title is about the policy reader; the diff is 15 files and 1317 additions, including the release autopilot (tag arm, cascade premises, polling) that the body never mentions." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/release/autopilot.sh" }, "region": { "startLine": 1 } } } ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "A reviewer or quorum lane reads the body, judges a 20-line awk change, and approves the autopilot rewrite unseen.",
+            "command": ["gh", "pr", "view", "4923", "--repo", "paiml/aprender", "--json", "additions,files"],
+            "exit_code": 0,
+            "stdout_sha256": "a51fc18ca3dbaf9ea34b39897a42a8697fe57d869867e72868dab7fed134d7ef"
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "cargo-mutants", "version": "bash-sed-mutants" } },
+      "invocations": [ { "executionSuccessful": true, "toolExecutionNotifications": [] } ],
+      "results": [
+        {
+          "ruleId": "tag-arm-ttl-not-asserted",
+          "level": "warning",
+          "message": { "text": "Beyond the guard's own 28 committed mutants, an extra mutant that changes `--arm-release \"$t\" 120` to 100000 leaves check_tag_step_gated.sh GREEN; a second extra, dropping the `|| die` after the push of coverage/<V>, also stays green. The harness checks that arming is called and its verdict honoured, not the lifetime." },
+          "locations": [ { "physicalLocation": { "artifactLocation": { "uri": "scripts/check_tag_step_gated.sh" }, "region": { "startLine": 78 } } } ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "Someone widens the one-shot marker to hours; the guard that exists to prove the tag step is gated stays green, and a marker meant to be consumed in the next push now stays valid for any tag push in the window (the hook caps it at TTL_MAX, so the harm is bounded).",
+            "command": ["bash", "scripts/check_tag_step_gated.sh"],
+            "exit_code": 0,
+            "stdout_sha256": "23e2ea15e227626339e6a375fc4f9000fd7318dc69d4c00aca82b686013a2a31"
+          }
+        }
+      ]
+    },
+    {
+      "tool": { "driver": { "name": "antigravity", "version": "1.3.2" } },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": { "text": "antigravity unreachable: agy 1.3.2 (--model gemini-3.1-pro-high, disposable git-archive tree, 46123-byte diff file) ran 52 s, rc 0, status SUCCESS, but headless mode auto-denied the command permission: response empty, no structured_output. The --dangerously-skip-permissions bypass was not used." },
+              "properties": { "grounding": "measured", "command": ["agy", "-p", "<prompt file>", "--output-format", "json", "--json-schema", ".pr-review-schema.json", "--model", "gemini-3.1-pro-high"], "exit_code": 0, "stdout_sha256": "27e96f2e67aa7790433680a22206f53c54f96e026821a17d6eaa2bd12357558e" }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

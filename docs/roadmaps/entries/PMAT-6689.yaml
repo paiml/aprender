@@ -1,0 +1,19 @@
+- id: PMAT-6689
+  github_issue: 6689
+  item_type: task
+  title: 'LAB lint: reject bash -c / sh -c wrappers containing rm'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T06:37:51Z
+  updated: 2026-11-03T06:37:51Z
+  spec: null
+  acceptance_criteria:
+  - 'see #6689'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519

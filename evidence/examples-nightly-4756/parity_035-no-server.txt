@@ -1,0 +1,16 @@
+09:32:25Z
+22954be7ab1f63b168ee6f6ae2843b70903570a2
+
+╔════════════════════════════════════════════════════════════════╗
+║         PARITY-035: M4 Parity Verification Benchmark          ║
+║                     RTX 4090 vs Ollama                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+Configuration:
+  Prompt: "Write a function that calculates the factorial of "
+  Max tokens: 50
+  Warmup: 2 iterations
+  Measurement: 5 iterations
+
+Ollama server not found at http://localhost:11434 (run `ollama serve` and `ollama pull phi2:2.7b`)
+END rc=1 secs=0 09:32:25Z

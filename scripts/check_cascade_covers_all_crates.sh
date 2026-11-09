@@ -168,7 +168,7 @@ run_rules() {  # universe_names_file cascade_file repo_for_edges
 if [ "${1:-}" = "--self-test" ]; then
     fails=0
     TD="$(mktemp -d)" || exit 1
-    case "$TD" in /tmp/*|/var/folders/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
+    case "$TD" in /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
     trap 'rm -rf "${TD:?}"' EXIT
 
     # A miniature repo: two upstreams, one facade that pins one of them, one

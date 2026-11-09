@@ -22,6 +22,8 @@ model drafted while reasoning cannot count. An UNCLOSED think block (`<think>` w
 means the budget ran out mid-reasoning; that is `unclosed think (budget exhausted)`, never "empty
 answer" (quorum Q5).
 
+Kept only as the N-1 gate caller until a released aprender-crux-judge carries the port; the helper split is for the pre-commit complexity hook, with no behaviour change. Retire at 0.71+1.
+
 API (agreed with the #3957 judge, aprender-6c [8b6b78]):
   evaluate(prompt, text, turns=None) -> {"correct": bool, "extracted": str|None, "why": str|None}
       `text` is the raw engine answer, the final turn's for a multi-turn cell; `turns`, when the engine
@@ -127,29 +129,44 @@ def _limits(timeout_s: int):
     return apply
 
 
-def judge_code(text: str, oracle: dict) -> dict:
-    if oracle.get("lang", "python") != "python":
-        return verdict(False, "lang_unsupported")
-    blocks = FENCE_RE.findall(text)
-    if not blocks:
-        return verdict(False, "no_code_block")
-    code = blocks[-1]
-    if not re.search(rf"^\s*def\s+{re.escape(oracle['entry'])}\s*\(", code, re.M):
-        return verdict(False, "entry_not_defined", code)
-    wrap = sandbox_argv()
-    if wrap is None:
-        return verdict(False, "sandbox_unavailable", code)
-    timeout_s = int(oracle.get("timeout_s", 10))
+def _run_cell(wrap, code, oracle, timeout_s):
+    """Write the cell and run it in the sandbox; None when the run timed out."""
     with tempfile.TemporaryDirectory(prefix="crux-code-") as d:
         path = os.path.join(d, "cell.py")
         with open(path, "w", encoding="utf-8") as f:
             f.write(code + "\n\n" + oracle["tests"] + "\nprint('CRUX_TESTS_PASSED')\n")
         try:
-            p = subprocess.run(wrap + [sys.executable, "-I", path], cwd=d, capture_output=True, text=True,
-                               timeout=timeout_s + 5, preexec_fn=_limits(timeout_s),
-                               env={"PATH": "/usr/bin:/bin"}, check=False)
+            return subprocess.run(wrap + [sys.executable, "-I", path], cwd=d, capture_output=True, text=True,
+                                  timeout=timeout_s + 5, preexec_fn=_limits(timeout_s),
+                                  env={"PATH": "/usr/bin:/bin"}, check=False)
         except subprocess.TimeoutExpired:
-            return verdict(False, "tests_timeout", code)
+            return None
+
+
+def _code_block(text: str, oracle: dict):
+    """(rejecting verdict, None), or (None, the last fenced block) when it defines the entry."""
+    if oracle.get("lang", "python") != "python":
+        return verdict(False, "lang_unsupported"), None
+    blocks = FENCE_RE.findall(text)
+    if not blocks:
+        return verdict(False, "no_code_block"), None
+    code = blocks[-1]
+    if not re.search(rf"^\s*def\s+{re.escape(oracle['entry'])}\s*\(", code, re.M):
+        return verdict(False, "entry_not_defined", code), None
+    return None, code
+
+
+def judge_code(text: str, oracle: dict) -> dict:
+    rejected, code = _code_block(text, oracle)
+    if rejected is not None:
+        return rejected
+    wrap = sandbox_argv()
+    if wrap is None:
+        return verdict(False, "sandbox_unavailable", code)
+    timeout_s = int(oracle.get("timeout_s", 10))
+    p = _run_cell(wrap, code, oracle, timeout_s)
+    if p is None:
+        return verdict(False, "tests_timeout", code)
     # The sentinel prints after the last assert; rc 0 alone would accept a reply that calls sys.exit(0).
     passed = p.returncode == 0 and p.stdout.rstrip().endswith("CRUX_TESTS_PASSED")
     tail = (p.stderr.strip().splitlines() or [f"rc={p.returncode}"])[-1]
@@ -168,20 +185,15 @@ def judge_structure(text: str, oracle: dict) -> dict:
     return verdict(False, f"lines_differ_at_{first}: got {len(lines)} want {len(want)}", lines)
 
 
-def evaluate(prompt: dict, text, turns=None) -> dict:
-    oracle = prompt["oracle"]
-    kind = oracle.get("type")
-    if turns is not None:
-        n_user = sum(1 for m in prompt["messages"] if m["role"] == "user")
-        if len(turns) != n_user:
-            return verdict(False, f"turns_missing: got {len(turns)} want {n_user}")
-        if kind == "state_recall":
-            text = turns[-1]
-    if not isinstance(text, str):
-        return verdict(False, "no_text")
-    text = strip_think(text)
-    if text is None:
-        return verdict(False, UNCLOSED)
+def _turns_check(prompt: dict, turns):
+    """The turns_missing verdict, or None when the engine's turns number the prompt's user turns."""
+    n_user = sum(1 for m in prompt["messages"] if m["role"] == "user")
+    if len(turns) != n_user:
+        return verdict(False, f"turns_missing: got {len(turns)} want {n_user}")
+    return None
+
+
+def _judge_kind(kind, text: str, oracle: dict) -> dict:
     if kind in ("answer", "state_recall"):
         return judge_answer(text, oracle)
     if kind == "code_tests":
@@ -191,6 +203,23 @@ def evaluate(prompt: dict, text, turns=None) -> dict:
     return verdict(False, f"unknown_oracle {kind!r}")
 
 
+def evaluate(prompt: dict, text, turns=None) -> dict:
+    oracle = prompt["oracle"]
+    kind = oracle.get("type")
+    if turns is not None:
+        missing = _turns_check(prompt, turns)
+        if missing is not None:
+            return missing
+        if kind == "state_recall":
+            text = turns[-1]
+    if not isinstance(text, str):
+        return verdict(False, "no_text")
+    text = strip_think(text)
+    if text is None:
+        return verdict(False, UNCLOSED)
+    return _judge_kind(kind, text, oracle)
+
+
 def extract(prompt: dict, text):
     """What a same-representation comparison compares, normalized as the oracle would; None if absent."""
     if not isinstance(text, str):
@@ -198,7 +227,10 @@ def extract(prompt: dict, text):
     text = strip_think(text)
     if text is None:
         return None
-    oracle = prompt["oracle"]
+    return _extract_unit(prompt["oracle"], text)
+
+
+def _extract_unit(oracle: dict, text: str):
     if oracle.get("type") == "code_tests":
         blocks = FENCE_RE.findall(text)
         return blocks[-1].strip() if blocks else None
@@ -217,11 +249,22 @@ def validate_prompt(p: dict) -> list:
     pid = p.get("id", "?")
     o = p.get("oracle") or {}
     kind = o.get("type")
+    _check_type_and_verb(p, pid, kind, errs)
+    _check_oracle_fields(pid, o, kind, errs)
+    _check_asks(p, pid, kind, errs)
+    _check_controls(p, pid, o, errs)
+    return errs
+
+
+def _check_type_and_verb(p: dict, pid, kind, errs: list) -> None:
     if kind not in ORACLE_TYPES:
         errs.append(f"{pid}: oracle.type must be one of {ORACLE_TYPES}")
     verbs = p.get("verb")
     if not verbs or any(v not in VERBS for v in verbs):
         errs.append(f"{pid}: verb must be a non-empty list drawn from {VERBS}")
+
+
+def _check_oracle_fields(pid, o: dict, kind, errs: list) -> None:
     if kind in ("answer", "state_recall"):
         if "expect" not in o:
             errs.append(f"{pid}: answer oracle needs `expect`")
@@ -231,6 +274,9 @@ def validate_prompt(p: dict) -> list:
         errs.append(f"{pid}: code_tests needs `entry` and `tests`")
     if kind == "structure" and not o.get("lines"):
         errs.append(f"{pid}: structure needs `lines`")
+
+
+def _check_asks(p: dict, pid, kind, errs: list) -> None:
     asks = " ".join(m.get("content", "") for m in p.get("messages", []))
     if kind in ("answer", "state_recall", "structure") and "<answer>" not in asks:
         errs.append(f"{pid}: the prompt never asks for <answer></answer>, so no reply can satisfy its oracle")
@@ -238,6 +284,9 @@ def validate_prompt(p: dict) -> list:
         errs.append(f"{pid}: the prompt never asks for a fenced code block")
     if kind == "state_recall" and sum(m.get("role") == "user" for m in p.get("messages", [])) < 2:
         errs.append(f"{pid}: state_recall needs at least 2 user turns")
+
+
+def _check_controls(p: dict, pid, o: dict, errs: list) -> None:
     if p.get("control") and not isinstance(p.get("negative"), str):
         errs.append(f"{pid}: a positive control needs `negative`, the planted-wrong reply the judge's negative control injects")
     if isinstance(p.get("negative"), str) and o.get("type") in ORACLE_TYPES and evaluate(p, p["negative"])["correct"]:
@@ -245,7 +294,6 @@ def validate_prompt(p: dict) -> list:
     mt = p.get("max_tokens") or {}
     if not (isinstance(mt.get("off"), int) and isinstance(mt.get("on"), int)):
         errs.append(f"{pid}: max_tokens must give both `off` and `on`")
-    return errs
 
 
 def validate_set(doc: dict) -> list:
@@ -258,27 +306,43 @@ def validate_set(doc: dict) -> list:
     errs = [e for p in prompts for e in validate_prompt(p)]
     ids = [p.get("id") for p in prompts]
     errs += [f"duplicate id {i!r}" for i in sorted({i for i in ids if ids.count(i) > 1})]
-    for verb in VERBS:
-        if not any(p.get("control") and verb in (p.get("verb") or []) for p in prompts):
-            errs.append(f"no positive control (\"control\": true) serves verb {verb!r}")
+    _check_verb_controls(prompts, errs)
     return errs
+
+
+def _serves(p: dict, verb) -> bool:
+    return p.get("control") and verb in (p.get("verb") or [])
+
+
+def _check_verb_controls(prompts: list, errs: list) -> None:
+    for verb in VERBS:
+        if not any(_serves(p, verb) for p in prompts):
+            errs.append(f"no positive control (\"control\": true) serves verb {verb!r}")
+
+
+def _main_eval(prompt_path, reply_path) -> int:
+    with open(prompt_path, encoding="utf-8") as f:
+        prompt = json.load(f)
+    with open(reply_path, encoding="utf-8") as f:
+        reply = json.load(f)
+    v = evaluate(prompt, reply.get("text"), reply.get("turns"))
+    print(json.dumps(v, ensure_ascii=False))
+    return 0 if v["correct"] else 1
+
+
+def _main_lint(path) -> int:
+    with open(path, encoding="utf-8") as f:
+        errs = validate_set(json.load(f))
+    for e in errs:
+        print(e)
+    return 1 if errs else 0
 
 
 def main(argv: list) -> int:
     if len(argv) == 3 and argv[0] == "eval":
-        with open(argv[1], encoding="utf-8") as f:
-            prompt = json.load(f)
-        with open(argv[2], encoding="utf-8") as f:
-            reply = json.load(f)
-        v = evaluate(prompt, reply.get("text"), reply.get("turns"))
-        print(json.dumps(v, ensure_ascii=False))
-        return 0 if v["correct"] else 1
+        return _main_eval(argv[1], argv[2])
     if len(argv) == 2 and argv[0] == "lint":
-        with open(argv[1], encoding="utf-8") as f:
-            errs = validate_set(json.load(f))
-        for e in errs:
-            print(e)
-        return 1 if errs else 0
+        return _main_lint(argv[1])
     print(__doc__.split("CLI:")[1].strip(), file=sys.stderr)
     return 2
 

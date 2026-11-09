@@ -12,6 +12,7 @@
 
     fn layer_trace_result(duration_secs: f64, tokens: usize) -> RunResult {
         RunResult {
+            logprobs: None,
             text: "hi".to_string(),
             duration_secs,
             cached: true,
@@ -22,6 +23,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         }
     }
 

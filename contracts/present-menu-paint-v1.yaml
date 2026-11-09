@@ -1,0 +1,74 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-10-18"
+  updated: "2026-10-18"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#5555 — Menu::paint coverage row"
+    - "crates/aprender-present-widgets/src/menu.rs — the widget this pins"
+  description: >
+    Menu::paint turns menu state into draw commands. A menu that paints a
+    disabled row as hoverable, or draws while closed, misleads the user and
+    no other test looks at the command stream.
+
+name: present-menu-paint
+version: "1.0.0"
+scope: >
+  The draw commands emitted by `Menu::paint` (shadow, panel, hover rect,
+  labels, shortcut, checkbox mark, submenu arrow, separator), observed
+  through `RecordingCanvas`. Out of scope: `Menu::event`.
+status: active
+
+contract: |
+  (1) A CLOSED MENU DRAWS NOTHING, except its trigger widget.
+  (2) AN OPEN MENU DRAWS SHADOW THEN PANEL, in that order, the panel at the
+      layout origin and the shadow offset by (2, 2).
+  (3) DISABLED ROWS NEVER SHOW HOVER, even when highlighted, and use the
+      disabled color for all their text.
+  (4) ROW GEOMETRY IS ADDITIVE. Each row advances by its own height, so a
+      separator shifts every later row by exactly the separator height.
+equations:
+  row_offset:
+    description: "Text baseline of row n"
+    formula: "y(n) = panel.y + 8 + sum(height(i), i < n) + 20"
+    domain: "an open menu with items"
+    codomain: "f32"
+    invariants:
+      - "a separator contributes its own height and draws an inset 1px line"
+falsification:
+  - id: FALSIFY-PRESENT-MENU-PAINT-V1-001
+    description: "Paint output matches the contract for every item kind"
+    test: "cargo test -p aprender-present-widgets --test menu_paint"
+    evidence: "10 passed, 2026-10-18"
+open_obligations:
+  - |
+    Menu::event (cyc 30, cog 133) is not covered by this contract and exceeds
+    the pre-commit complexity limit; splitting it is a separate ticket.
+falsification_tests:
+  - id: FALSIFY-PRESENT_MENU_PAINT-001
+    description: "a closed menu draws nothing but its trigger"
+    test: "cargo test -p aprender-present-widgets --test menu_paint closed_menu"
+    prediction: "no commands without a trigger; the trigger text only with one"
+    if_fails: "a closed menu leaks its panel"
+  - id: FALSIFY-PRESENT_MENU_PAINT-002
+    description: "an open menu draws shadow then panel at the expected rects"
+    test: "cargo test -p aprender-present-widgets --test menu_paint open_menu_draws_shadow_then_panel"
+    prediction: "shadow (12,54) then panel (10,52), width 200, height 48"
+    if_fails: "panel and shadow are mis-ordered or misplaced"
+  - id: FALSIFY-PRESENT_MENU_PAINT-003
+    description: "disabled rows never draw hover and use the disabled color"
+    test: "cargo test -p aprender-present-widgets --test menu_paint disabled_items_never_hover_and_use_the_disabled_color"
+    prediction: "only shadow and panel fills; all text in disabled_color"
+    if_fails: "a disabled row looks interactive"
+  - id: FALSIFY-PRESENT_MENU_PAINT-004
+    description: "a separator advances later rows by its height and draws an inset line"
+    test: "cargo test -p aprender-present-widgets --test menu_paint separator_draws_an_inset_line_and_advances_by_its_height"
+    prediction: "line (18,96)-(202,96), width 1; next row baseline 121"
+    if_fails: "rows after a separator are mispositioned"
+  - id: FALSIFY-PRESENT_MENU_PAINT-005
+    description: "checkbox and submenu rows draw their marks"
+    test: "cargo test -p aprender-present-widgets --test menu_paint checkbox_marks_checked_and_unchecked submenu_draws_label_and_arrow"
+    prediction: "check mark vs blank at x=22, label at x=42; submenu arrow at x=190"
+    if_fails: "state marks are missing or misplaced"

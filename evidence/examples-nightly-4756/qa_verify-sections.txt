@@ -1,0 +1,93 @@
+# Colour escape codes were removed from the example output after the run; nothing else was changed.
+# qa_verify sections, debug, stdout and stdin not a terminal; job started 03:02:35Z 2026-10-10
+73f34268e616d941f5443b9f289b42804f302280
+# root package (where qa_verify runs its nested cargo): aprender
+# CARGO_BUILD_JOBS=4, CPUs 24-27 at nice 19; empty build directory at the start
+
+# build-example: cargo build -q --example qa_verify -p aprender-core
+# END build-example rc=0 secs=227 03:06:22Z
+
+# section-2-first: cargo run -q --example qa_verify -p aprender-core -- --section 2
+╔══════════════════════════════════════════════════════════════╗
+║       APRENDER QA VERIFY - Quality Gates Verification        ║
+║       PMAT-QA-RUST-001 Section D (20 Points)                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+=== Section D: qa_verify.rs Tests (20 Points) ===
+
+
+--- Mathematical Correctness ---
+[FAIL] P040: Math: Monte Carlo
+       Tests failed
+[FAIL] P041: Math: Statistics
+       Tests failed
+[FAIL] P042: Math: ML Algorithms
+       Tests failed
+[FAIL] P043: Math: Optimization
+       Tests failed
+
+═══════════════════════════════════════════════════════════════
+Total: 4, Passed: 0, Failed: 4
+Points: 0/4 (0%)
+Elapsed: 323.1s
+
+Grade: F
+Quality gates FAILED. Remediation required.
+# END section-2-first rc=1 secs=325 03:11:47Z
+
+# section-2-again: cargo run -q --example qa_verify -p aprender-core -- --section 2
+╔══════════════════════════════════════════════════════════════╗
+║       APRENDER QA VERIFY - Quality Gates Verification        ║
+║       PMAT-QA-RUST-001 Section D (20 Points)                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+=== Section D: qa_verify.rs Tests (20 Points) ===
+
+
+--- Mathematical Correctness ---
+[FAIL] P040: Math: Monte Carlo
+       Tests failed
+[FAIL] P041: Math: Statistics
+       Tests failed
+[FAIL] P042: Math: ML Algorithms
+       Tests failed
+[FAIL] P043: Math: Optimization
+       Tests failed
+
+═══════════════════════════════════════════════════════════════
+Total: 4, Passed: 0, Failed: 4
+Points: 0/4 (0%)
+Elapsed: 73.8s
+
+Grade: F
+Quality gates FAILED. Remediation required.
+# END section-2-again rc=1 secs=81 03:13:08Z
+
+# section-1: cargo run -q --example qa_verify -p aprender-core -- --section 1
+╔══════════════════════════════════════════════════════════════╗
+║       APRENDER QA VERIFY - Quality Gates Verification        ║
+║       PMAT-QA-RUST-001 Section D (20 Points)                  ║
+╚══════════════════════════════════════════════════════════════╝
+
+=== Section D: qa_verify.rs Tests (20 Points) ===
+
+--- Mandatory Gates ---
+[FAIL] P034: Unit Tests Pass
+       Tests failed
+[FAIL] P035: Test Count > 700
+       Only 0 tests
+[PASS] P036: Examples Build
+[FAIL] P037: Clippy Clean
+       4 warnings
+[PASS] P038: Format Check
+[FAIL] P039: Docs Build
+       Doc build failed
+
+═══════════════════════════════════════════════════════════════
+Total: 6, Passed: 2, Failed: 4
+Points: 4/16 (25%)
+Elapsed: 275.3s
+
+Grade: F
+Quality gates FAILED. Remediation required.
+# END section-1 rc=1 secs=283 03:17:51Z

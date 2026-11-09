@@ -10,6 +10,8 @@
 # decision lives in scripts/nightly_manifest.py, pinned by its --self-test:
 #   gate    no work (HEAD already holds a verdict) -> reused; required checks
 #           red on HEAD -> red-ci; not finished -> ci-pending; green -> build.
+#           ci-pending is asked again for 2h the same night, then the run
+#           ends RED (scripts/nightly_gate_retry.sh, #5053).
 #   build   each arch builds, runs `--version` on every bin, and records a
 #           fragment -- green, or red with the reason -- even when it fails.
 #   publish ALWAYS runs. Only an arch that came out green at HEAD gets its
@@ -46,7 +48,7 @@ on:
     # This is CALIBRATION AGAINST A MOVING TARGET: the delay varies by
     # ~3h and is growing. The durable fix is a fleet-side timer calling
     # `gh workflow run` (#3292); until then, re-measure before trusting.
-    - cron: '0 23 * * *'   # 23:00 UTC -> lands ~04:00 UTC
+    - cron: '0 20 * * *'   # 20:00 UTC: longest needs: chain is 160+120+120+120 = 520 min, so it ends by 04:40Z (PMAT-5847: end by 05:00Z)
   workflow_dispatch:
 
 permissions:
@@ -66,6 +68,7 @@ jobs:
   # ── Is there work, and is HEAD green? ────────────────────
   gate:
     runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 160
     outputs:
       decision: ${{ steps.gate.outputs.decision }}
       sha: ${{ steps.gate.outputs.sha }}
@@ -83,9 +86,15 @@ jobs:
         run: |
           python3 scripts/nightly_manifest.py --self-test
           bash scripts/nightly_prune_release.sh --self-test
+          bash scripts/nightly_gate_retry.sh --self-test
 
+      # ci-pending is asked again the same night, for the same sha (#5053): run
+      # 38016007449 gated main 2m after its push, skipped every build and ended
+      # green, and the nightly went 27h unbuilt. 7 tries 20 min apart = 2h of
+      # waiting; still pending after that, the run ends RED (last step).
       - name: Decide (reused | build | red-ci | ci-pending)
         id: gate
+        timeout-minutes: 150
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -94,7 +103,8 @@ jobs:
           echo "sha=$NIGHTLY_SHA" >> "$GITHUB_OUTPUT"
           # A missing manifest (first run) is "no previous verdict", not an error.
           bash scripts/nightly_fetch_manifest.sh prev-manifest.json
-          d=$(python3 scripts/nightly_manifest.py gate --sha "$NIGHTLY_SHA" --prev prev-manifest.json)
+          d=$(bash scripts/nightly_gate_retry.sh decide 7 1200 -- \
+                python3 scripts/nightly_manifest.py gate --sha "$NIGHTLY_SHA" --prev prev-manifest.json)
           echo "decision=$d" >> "$GITHUB_OUTPUT"
           echo "### nightly gate for \`${NIGHTLY_SHA:0:9}\`: **$d**" >> "$GITHUB_STEP_SUMMARY"
 
@@ -114,6 +124,7 @@ jobs:
             host: gx10
             labels: '["self-hosted", "Linux", "ARM64", "cuda", "gx10"]'
     runs-on: ${{ fromJSON(matrix.labels) }}
+    timeout-minutes: 120
     env:
       NIGHTLY_SHA: ${{ needs.gate.outputs.sha }}
     steps:
@@ -235,8 +246,8 @@ jobs:
 
   # ── Build apr: macOS aarch64 natively on mini-m4 (#3204) ──
   # Host-native: there is no docker on macOS and no glibc floor to pin, so the
-  # toolchain is rust-toolchain.toml via the runner's rustup, as in ci.yml's
-  # mac-check. A LITERAL runs-on list, not fromJSON, so check_runner_labels.sh
+  # toolchain is rust-toolchain.toml via the runner's rustup, as in the
+  # mac-check job below. A LITERAL runs-on list, not fromJSON, so check_runner_labels.sh
   # sees the apple-silicon label. Gated on the same `gate` decision as the Linux
   # matrix (car's `check-activity` job does not exist on this branch -- folded
   # into `gate`'s reused/build/red-ci/ci-pending verdict, #4189). One box with
@@ -292,11 +303,44 @@ jobs:
             apr-aarch64-apple-darwin.tar.gz
             apr-aarch64-apple-darwin.tar.gz.sha256
 
+  # ── mac-check: LAB, moved here from ci.yml (Q6 quorum, C324) ──
+  # PACK-001's macOS lane: a locked workspace check plus the CLI's lib tests on
+  # the pinned toolchain. It was never in ci.yml's gate, so it could not block a
+  # merge or a release, and a check that cannot block is LAB: nightly only. The
+  # mini is one 16 GB box, so this runs AFTER build-darwin (always(): a red build
+  # still gets its check) and nothing waits on it -- neither `publish` nor
+  # `publish-darwin` needs this job, so it never holds the nightly publish.
+  # crates/aprender-profile is a compile_error! on non-Linux by design
+  # ("renacer requires Linux (ptrace syscall tracing)"), so it is excluded by
+  # name; any OTHER crate that fails to check on macOS is a finding.
+  mac-check:
+    needs: [gate, build-darwin]
+    if: always() && needs.gate.result == 'success' && needs.gate.outputs.decision != 'reused'
+    runs-on: [self-hosted, macOS, ARM64, apple-silicon, m4, mini]
+    timeout-minutes: 60
+    env:
+      CARGO_INCREMENTAL: 0
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.gate.outputs.sha }}
+      - name: Toolchain is the pinned one
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          cargo --version
+      - name: cargo check --workspace --all-targets --locked (minus the Linux-only profiler)
+        run: cargo check --workspace --all-targets --locked --exclude aprender-profile
+      - name: apr-cli lib tests (nextest, ci profile)
+        run: cargo nextest run --profile ci -p apr-cli --lib
+
   # ── Publish per arch, then the manifest ──────────────────
   publish:
     needs: [gate, build]
     if: always() && needs.gate.result == 'success'
     runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 120
     env:
       NIGHTLY_SHA: ${{ needs.gate.outputs.sha }}
     steps:
@@ -346,11 +390,8 @@ jobs:
           DECISION: ${{ steps.merge.outputs.decision }}
         run: |
           echo "### nightly: **$DECISION** at \`${NIGHTLY_SHA:0:9}\`" >> "$GITHUB_STEP_SUMMARY"
-          case "$DECISION" in
-            built|reused) exit 0 ;;
-            ci-pending) echo "::warning::required checks not finished on ${NIGHTLY_SHA:0:9}; last green kept"; exit 0 ;;
-            *) echo "::error::nightly $DECISION at ${NIGHTLY_SHA:0:9}; see nightly-manifest.json"; exit 1 ;;
-          esac
+          # ci-pending here means pending after the gate's last retry: RED, never green (#5053).
+          bash scripts/nightly_gate_retry.sh verdict "$DECISION" "$NIGHTLY_SHA"
 
   # ── Attach the darwin asset to the nightly release ────────
   # `publish`'s manifest system (scripts/nightly_manifest.py) tracks the Linux
@@ -362,6 +403,7 @@ jobs:
     needs: [gate, build-darwin, publish]
     if: always() && needs.gate.outputs.decision == 'build' && needs.build-darwin.result == 'success'
     runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 120
     steps:
       - name: Download darwin artifact
         uses: actions/download-artifact@v4

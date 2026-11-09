@@ -11,6 +11,10 @@
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
 
+/// Digest held by [`AuthGate::deny_all`]: all zeros, which no SHA-256 preimage
+/// is known to produce, so no bearer token matches it.
+const DENY_ALL_HASH: [u8; 32] = [0u8; 32];
+
 /// Configured authentication state for an `apr serve` instance.
 ///
 /// `expected_hash == None` means auth is disabled — every request passes.
@@ -46,31 +50,60 @@ impl AuthGate {
         Self::from_hash(sha256_32(key.as_bytes()))
     }
 
+    /// A gate that is enabled and rejects every request. Fail-closed stand-in
+    /// for a configuration that was set but unusable (#5479): the digest is
+    /// not reachable from any bearer token.
+    #[must_use]
+    pub fn deny_all() -> Self {
+        Self {
+            expected_hash: Some(DENY_ALL_HASH),
+        }
+    }
+
+    /// Pure core of [`Self::try_from_env`]. An empty value counts as unset.
+    /// A non-empty `APR_API_KEY_HASH` must be 64 hex chars, else `Err` — a
+    /// plaintext key never papers over a malformed hash.
+    ///
+    /// # Errors
+    ///
+    /// Returns the reason when `hash` is set, non-empty and not a SHA-256 hex digest.
+    pub fn from_values(hash: Option<&str>, plain: Option<&str>) -> Result<Self, &'static str> {
+        if let Some(hex) = hash.filter(|h| !h.is_empty()) {
+            return decode_hex_32(hex).map(Self::from_hash);
+        }
+        match plain.filter(|p| !p.is_empty()) {
+            Some(plain) => Ok(Self::from_plain_key(plain)),
+            None => Ok(Self::disabled()),
+        }
+    }
+
     /// Read configuration from env. `APR_API_KEY_HASH` (hex-encoded
     /// SHA-256) wins over `APR_API_KEY` (plaintext, hashed in-process).
     /// Neither set → disabled with a single stderr warning.
+    ///
+    /// # Errors
+    ///
+    /// A set, non-empty, malformed `APR_API_KEY_HASH` refuses to start.
+    pub fn try_from_env() -> Result<Self, &'static str> {
+        let hash = std::env::var("APR_API_KEY_HASH").ok();
+        let plain = std::env::var("APR_API_KEY").ok();
+        let gate = Self::from_values(hash.as_deref(), plain.as_deref())?;
+        if !gate.is_enabled() {
+            eprintln!(
+                "[apr serve] WARNING: no APR_API_KEY or APR_API_KEY_HASH set; HTTP routes are unauthenticated",
+            );
+        }
+        Ok(gate)
+    }
+
+    /// [`Self::try_from_env`] for callers that cannot return an error: a
+    /// malformed `APR_API_KEY_HASH` yields [`Self::deny_all`], never an open gate.
     #[must_use]
     pub fn from_env() -> Self {
-        if let Ok(hex) = std::env::var("APR_API_KEY_HASH") {
-            match decode_hex_32(&hex) {
-                Ok(bytes) => return Self::from_hash(bytes),
-                Err(reason) => {
-                    eprintln!(
-                        "[apr serve] APR_API_KEY_HASH set but {reason}; ignoring (auth disabled)",
-                    );
-                    return Self::disabled();
-                }
-            }
-        }
-        if let Ok(plain) = std::env::var("APR_API_KEY") {
-            if !plain.is_empty() {
-                return Self::from_plain_key(&plain);
-            }
-        }
-        eprintln!(
-            "[apr serve] WARNING: no APR_API_KEY or APR_API_KEY_HASH set; HTTP routes are unauthenticated",
-        );
-        Self::disabled()
+        Self::try_from_env().unwrap_or_else(|reason| {
+            eprintln!("[apr serve] {reason}; rejecting all requests (fail closed)");
+            Self::deny_all()
+        })
     }
 
     /// True iff the gate has a configured hash.
@@ -250,5 +283,53 @@ mod tests {
         let mut bad = "0".repeat(64);
         bad.replace_range(0..1, "Z");
         assert!(decode_hex_32(&bad).is_err());
+    }
+
+    // #5479: a bad APR_API_KEY_HASH must never yield an open gate.
+    #[test]
+    fn from_values_malformed_hash_is_an_error_not_a_disabled_gate() {
+        for bad in ["zz", "abc", &"g".repeat(64), &"a".repeat(63), " "] {
+            assert!(
+                AuthGate::from_values(Some(bad), None).is_err(),
+                "malformed hash {bad:?} must be refused"
+            );
+            assert!(
+                AuthGate::from_values(Some(bad), Some("secret")).is_err(),
+                "a plaintext key must not paper over malformed hash {bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn from_values_empty_hash_is_unset_so_the_plain_key_applies() {
+        let g = AuthGate::from_values(Some(""), Some("secret")).expect("empty hash is unset");
+        assert!(g.is_enabled());
+        assert!(g.check_bearer(Some("Bearer secret")));
+        assert!(!g.check_bearer(None));
+    }
+
+    #[test]
+    fn from_values_valid_hash_wins_over_plain_key() {
+        let hex = "a".repeat(64);
+        let g = AuthGate::from_values(Some(&hex), Some("secret")).expect("valid hash");
+        assert!(g.is_enabled());
+        assert!(!g.check_bearer(Some("Bearer secret")));
+    }
+
+    #[test]
+    fn from_values_neither_set_is_disabled() {
+        assert!(!AuthGate::from_values(None, None).expect("ok").is_enabled());
+        assert!(!AuthGate::from_values(Some(""), Some(""))
+            .expect("ok")
+            .is_enabled());
+    }
+
+    #[test]
+    fn deny_all_gate_rejects_every_request() {
+        let g = AuthGate::deny_all();
+        assert!(g.is_enabled());
+        for h in [None, Some("Bearer "), Some("Bearer x"), Some("garbage")] {
+            assert!(!g.check_bearer(h));
+        }
     }
 }

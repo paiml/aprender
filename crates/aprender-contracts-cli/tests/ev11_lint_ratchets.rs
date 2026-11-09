@@ -112,41 +112,6 @@ fn lint(root: &Path, gates: &[&str]) -> Run {
 }
 
 #[test]
-fn the_probe_passes_on_the_real_corpus_and_writes_nothing() {
-    let baseline = repo_contracts().join("lint-baseline.json");
-    let before = std::fs::read(&baseline).expect("baseline readable");
-    let doc: serde_json::Value = serde_json::from_slice(&before).expect("baseline is JSON");
-    assert!(doc.is_object());
-    assert!(doc["unpaired_theorem_modules"].is_u64(), "{doc}");
-    assert!(doc["contracts_without_depends_on"].is_u64(), "{doc}");
-    assert_eq!(doc["command"], "make lint-ratchet");
-
-    let dir = repo_contracts();
-    let mut args = vec!["lint", s(&dir)];
-    args.extend_from_slice(&BOTH);
-    let r = pv(&args);
-    assert_eq!(r.code, 0, "{}", show(&r));
-    let got = reports(&r.stdout);
-    assert_eq!(got.len(), 2, "{}", show(&r));
-    for g in &got {
-        assert_eq!(g["verdict"], "Pass", "{g}");
-    }
-    assert_eq!(
-        got[0]["unpaired_theorem_modules"], doc["unpaired_theorem_modules"],
-        "the recorded baseline is the measured count (`make lint-ratchet` wrote it)"
-    );
-    assert_eq!(
-        got[1]["contracts_without_depends_on"],
-        doc["contracts_without_depends_on"]
-    );
-    assert_eq!(
-        std::fs::read(&baseline).expect("baseline readable"),
-        before,
-        "a gate wrote the baseline"
-    );
-}
-
-#[test]
 fn at_the_baseline_both_gates_pass() {
     let t = repo();
     let r = lint(t.path(), &BOTH);

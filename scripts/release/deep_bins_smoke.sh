@@ -10,7 +10,10 @@
 # USAGE
 #   deep_bins_smoke.sh bins METADATA.json [list|cargo]
 #       list  (default) bin names, comma-joined, sorted
-#       cargo the cargo arguments that build exactly those bins (-p ... --bin ... --features ...)
+#       cargo the cargo arguments that build exactly those bins (-p ... --bin ... --features ...),
+#             plus --features <pkg>/build-sha for every selected package that declares it: the
+#             in-tree build stamps its SHA only with that feature, off by default for crates.io
+#             (#4604 C2), so pv and pv-sat printed +no-git and went version-no-sha (#5010)
 #   deep_bins_smoke.sh smoke SHA BINS BIN_DIR [VERSION]
 #       one TSV row per bin: bin, verdict, reason, first --version line. Exit 0 iff every bin
 #       is green AND there is at least one bin. A smoke over zero bins measured nothing: exit 1.
@@ -45,7 +48,8 @@ dbs_bins() {
           | . as $p
           | .targets[]
           | select(.kind | index("bin"))
-          | {b: .name, pkg: $p.name, f: (.["required-features"] // []), root: ($p.manifest_path == $root)} ]
+          | {b: .name, pkg: $p.name, f: (.["required-features"] // []), root: ($p.manifest_path == $root),
+             sha: (($p.features // {}) | has("build-sha"))} ]
       | group_by(.b)
       | map( (map(select(.root | not))) as $nr
              | if ($nr | map(.pkg) | unique | length) > 1
@@ -56,6 +60,7 @@ dbs_bins() {
         elif $fmt == "cargo" then
           ( reduce .[] as $x ([]; if index($x.pkg) then . else . + [$x.pkg] end) | map("-p", .) )
           + ( map(. as $x | ["--bin", $x.b] + ($x.f | map("--features", "\($x.pkg)/\(.)"))) | add // [] )
+          + ( map(select(.sha) | .pkg) | unique | map("--features", "\(.)/build-sha") )
           | join(" ")
         else error("format must be list or cargo, got \($fmt)") end
     ' "$meta"
@@ -135,13 +140,13 @@ dbs_self_test() {
  "packages":[
   {"id":"f","name":"aprender","version":"0.70.2","manifest_path":"/w/Cargo.toml","targets":[{"name":"apr","kind":["bin"]}]},
   {"id":"a","name":"apr-cli","version":"9.9.9","manifest_path":"/w/crates/apr-cli/Cargo.toml","targets":[{"name":"apr","kind":["bin"]},{"name":"apr_cli","kind":["lib"]}]},
-  {"id":"c","name":"aprender-contracts-cli","manifest_path":"/w/crates/c/Cargo.toml","targets":[{"name":"pv","kind":["bin"],"required-features":["cli"]}]},
+  {"id":"c","name":"aprender-contracts-cli","manifest_path":"/w/crates/c/Cargo.toml","features":{"cli":[],"build-sha":["dep:aprender-build-sha"]},"targets":[{"name":"pv","kind":["bin"],"required-features":["cli"]}]},
   {"id":"x","name":"zz","manifest_path":"/w/crates/zz/Cargo.toml","targets":[{"name":"aprender-zz","kind":["bin"]}]},
   {"id":"dep","name":"notmember","manifest_path":"/r/x/Cargo.toml","targets":[{"name":"evil","kind":["bin"]}]}]}
 J
     expect "bins: members only, one per name, sorted" "apr,aprender-zz,pv" "$(dbs_bins "$t/meta.json")"
-    expect "bins: facade loses to the member package; features scoped to their package" \
-        "-p apr-cli -p zz -p aprender-contracts-cli --bin apr --bin aprender-zz --bin pv --features aprender-contracts-cli/cli" \
+    expect "bins: facade loses to the member package; features scoped to their package; build-sha on where declared (#5010)" \
+        "-p apr-cli -p zz -p aprender-contracts-cli --bin apr --bin aprender-zz --bin pv --features aprender-contracts-cli/cli --features aprender-contracts-cli/build-sha" \
         "$(dbs_bins "$t/meta.json" cargo)"
     jq '.packages[3].targets[0].name = "apr"' "$t/meta.json" > "$t/dup.json"
     rc=0; dbs_bins "$t/dup.json" >/dev/null 2>&1 || rc=$?

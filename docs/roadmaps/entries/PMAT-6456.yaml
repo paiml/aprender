@@ -1,0 +1,18 @@
+- id: PMAT-6456
+  github_issue: 6456
+  item_type: task
+  title: 'PVB-3a: pilot — five existing computable exact models bound'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:57Z
+  updated: 2026-10-27T11:35:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452

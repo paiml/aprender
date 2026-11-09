@@ -161,9 +161,22 @@ fn record_device_free(bytes: usize) {
 /// state.
 static DEVICE_MEMORY_EXCLUSIVE: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
+thread_local! {
+    /// Whether this thread holds [`device_memory_exclusive`] right now, so its
+    /// own allocations pass the claim instead of waiting on it (#4956).
+    static HOLDS_DEVICE_MEMORY_EXCLUSIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
 /// Exclusive claim on the device's allocation state. See
 /// [`device_memory_exclusive`].
 pub struct DeviceMemoryExclusive(std::sync::MutexGuard<'static, ()>);
+
+impl Drop for DeviceMemoryExclusive {
+    fn drop(&mut self) {
+        // Runs before the guard field unlocks the mutex.
+        HOLDS_DEVICE_MEMORY_EXCLUSIVE.with(|h| h.set(false));
+    }
+}
 
 /// Acquire an exclusive claim on the device's allocation state.
 ///
@@ -188,16 +201,41 @@ pub struct DeviceMemoryExclusive(std::sync::MutexGuard<'static, ()>);
 ///
 /// Both categories must take this lock, because they conflict with each other,
 /// not merely within their own category.
+///
+/// In this crate's own test build every `GpuBuffer` allocation also waits for
+/// the claim (see `allocation_claim`), so a test that is not itself making a
+/// capacity claim cannot allocate into the window either (#4956).
 #[must_use]
 pub fn device_memory_exclusive() -> DeviceMemoryExclusive {
     // The lock orders test-scoped claims; it guards no invariant that a panic
     // could leave broken, so recovering from poisoning is correct and stops one
     // unrelated failure from cascading into every later allocation test.
-    DeviceMemoryExclusive(
-        DEVICE_MEMORY_EXCLUSIVE
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner),
-    )
+    let guard = DEVICE_MEMORY_EXCLUSIVE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    HOLDS_DEVICE_MEMORY_EXCLUSIVE.with(|h| h.set(true));
+    DeviceMemoryExclusive(guard)
+}
+
+/// #4956: the claim a single allocation waits for, in this crate's own tests.
+///
+/// The claim alone excluded only the tests that took it. Every other test kept
+/// allocating while one held it: `test_oom_resilience` filled the card on one
+/// thread and `cta64_vs_cta32_vs_cublas_fp16` then failed `from_host` with an
+/// OOM on another, and an allocation could read `MANAGED_MEMORY` while an
+/// env-override test had it set. So under `cfg(test)` each allocation takes the
+/// claim around the driver call and waits while another thread holds it. The
+/// holder's own allocations pass straight through. Outside tests this is
+/// `None` and costs nothing.
+///
+/// Not covered: device memory the driver or cuBLAS allocates outside
+/// `GpuBuffer` (handle workspaces, module loads).
+fn allocation_claim() -> Option<DeviceMemoryExclusive> {
+    if cfg!(test) && !HOLDS_DEVICE_MEMORY_EXCLUSIVE.with(std::cell::Cell::get) {
+        Some(device_memory_exclusive())
+    } else {
+        None
+    }
 }
 
 // ============================================================================
@@ -295,6 +333,9 @@ impl<T> GpuBuffer<T> {
             });
         }
 
+        // #4956: taken before MANAGED_MEMORY is read, not just around cuMemAlloc.
+        let _claim = allocation_claim();
+
         // PMAT-701: Autodetect unified-memory devices (Grace Blackwell) and
         // route to cuMemAllocManaged by default. PMAT-394's env-var opt-in
         // is preserved for forcing/forbidding managed mode explicitly.
@@ -336,6 +377,8 @@ impl<T> GpuBuffer<T> {
                 _marker: PhantomData,
             });
         }
+        // #4956: `None` when reached from `new`, which already holds it.
+        let _claim = allocation_claim();
         let driver = get_driver()?;
         let size = len * mem::size_of::<T>();
         let mut ptr: CUdeviceptr = 0;

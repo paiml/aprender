@@ -41,7 +41,7 @@ metadata:
     - "Potvin & Levenberg, Why Google Stores Billions of Lines of Code in a Single Repository, CACM 2016"
     - "scripts/cascade-publish.sh (the 13-tier publish order this contract describes)"
     - "scripts/check_gate5_stage.sh (the guard that enforces FALSIFY-PUB-005/006/007)"
-    - "scripts/check_publish_strict_cleanroom.sh (the guard that enforces FALSIFY-PUB-008, #4687)"
+    - "scripts/check_cascade_clean_room_gate.sh (the guard that enforces FALSIFY-PUB-008, #4687; #4688 deleted publish_strict.sh and its guard)"
     - ".claude/skills/pre-release/SKILL.md (Gate 5 and Gate 11)"
   depends_on: []
 
@@ -111,8 +111,8 @@ proof_obligations:
 
   - id: PW-DOOR-005
     type: precondition
-    property: "publish_strict.sh uploads only after the recorded clean-room run is read back and found green on exactly the tag's commit"
-    formal: "upload(T) ⇒ recorded_run(T) ≠ ∅ ∧ conclusion(recorded_run(T)) = success ∧ tested_sha(recorded_run(T)) = commit(T)"
+    property: "cascade-publish.sh uploads only after clean_room_gate reads a clean-room run back and finds it green on exactly the tag's commit"
+    formal: "upload(T) ⇒ ∃ r ∈ clean_room_runs(T) : conclusion(r) = success ∧ tested_sha(r) = commit(T)"
     applies_to: all
 
 falsification_tests:
@@ -224,21 +224,23 @@ falsification_tests:
 
   - id: FALSIFY-PUB-008
     rule: |
-      The one door to crates.io (#4687): publish_strict.sh refuses a recorded
-      clean-room run id that is missing, not a run id, unreadable, red, or a run
-      that tested another commit. A non-empty file is not proof; the run is read
-      back and judged by clean_room_gate pinned to that one run.
+      The one door to crates.io (#4687): the cascade's clean_room_gate refuses
+      unless a completed clean-room run is read back green on exactly the tag's
+      commit; a red, unreadable or other-commit run never passes. Pinned to a
+      recorded run id, it judges that one run only, and a missing, non-numeric or
+      unreadable id is refused. (#4688 deleted publish_strict.sh, which no
+      release step ran, and its guard; the cascade is the executor.)
     prediction: |
-      Run the case table against the v0.70.1 publish_strict.sh (which checks only
-      that the file is non-empty) and it FAILS four rows (non-numeric, red, other
-      commit, unreadable) with "the clean-room door let this run through".
+      Make clean_room_gate pass a red run, a run that tested another commit, or
+      (pinned) a run other than the recorded one, and the case table FAILS those
+      rows.
     test: |
-      bash scripts/check_publish_strict_cleanroom.sh
+      bash scripts/check_cascade_clean_room_gate.sh
     test_harness: |
       bash scripts/check_cascade_clean_room_gate.sh
     if_fails: |
-      publish_strict.sh no longer reads the recorded run back, or clean_room_gate
-      lost its pinned mode and judges a run other than the one recorded.
+      clean_room_gate no longer reads the run back, or lost its pinned mode and
+      judges a run other than the one recorded.
 
 kani_harnesses:
   - id: KANI-PUB-001

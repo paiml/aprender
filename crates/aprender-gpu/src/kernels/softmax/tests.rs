@@ -209,3 +209,27 @@ fn test_shared_sum_reduce_implemented() {
         has_loop_back
     );
 }
+
+/// APR-EMBED-001 EG-4 (#4903): the band mask is both-sided, and every shape value is a
+/// launch parameter (one module serves every pass).
+#[test]
+fn band_softmax_masks_both_sides_with_runtime_shapes() {
+    let ptx = BandSoftmaxKernel.emit_ptx();
+    assert!(ptx.contains(".visible .entry band_softmax("), "{ptx}");
+    for param in ["scores", "m", "total", "base", "half_window"] {
+        assert!(ptx.contains(&format!(" {param}")), "missing param {param}");
+    }
+    // Two comparisons per key (the low and the high edge) joined by an and, then a select
+    // of -inf: the causal kernel has only the high edge.
+    assert!(ptx.contains("and.pred"), "no and of the two band edges");
+    assert!(
+        ptx.contains("selp.f32"),
+        "masked keys are not selected to -inf"
+    );
+    assert!(ptx.contains("ex2"), "no exponential");
+    assert_eq!(
+        BAND_UNBOUNDED,
+        i32::MAX as u32,
+        "j + w must not wrap for j < 2^31"
+    );
+}

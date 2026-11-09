@@ -1413,6 +1413,13 @@ pub struct Receipt {
     /// must parse, and `scripts/lib/receipt_sig.py --verify` is the verifier.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signature: Option<serde_json::Value>,
+    /// PMAT-973 / #2756 — the sha256 of the prompts file the `workload` label is
+    /// bound to (`apr-workload-corpus-binding-v1`). The band writer appends it
+    /// after rendering, so a run with a prompts file carries it and one without
+    /// does not. Before the reader knew the key, `deny_unknown_fields` refused
+    /// every receipt the writer bound to a corpus.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub corpus_sha256: Option<String>,
 }
 
 /// One band, read back.
@@ -1532,7 +1539,8 @@ impl Receipt {
     ///
     /// # Errors
     /// When the spec string or schema version is wrong, when provenance fails
-    /// its own checks (PP-2, 18, 20, 25, 30), when a band's `status` is outside
+    /// its own checks (PP-2, 18, 20, 25, 30), when `corpus_sha256` is present
+    /// and not 64 lowercase hex characters, when a band's `status` is outside
     /// the §7.4 vocabulary, or when a band carries `ratios` without a
     /// `baseline` (PP-3, PP-17).
     pub fn validate(&self) -> Result<(), String> {
@@ -1551,6 +1559,13 @@ impl Receipt {
         }
         self.provenance.validate()?;
         self.tokenization.validate()?;
+        if let Some(digest) = &self.corpus_sha256 {
+            if !is_sha256(digest) {
+                return Err(format!(
+                    "receipt.corpus_sha256: {digest:?} is not 64 lowercase hex characters"
+                ));
+            }
+        }
         if self.bands.is_empty() {
             return Err(
                 "receipt has no bands — a measurement over zero bands is a vacuous \

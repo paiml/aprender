@@ -15,8 +15,8 @@
   <a href="https://docs.rs/provable-contracts">
     <img src="https://docs.rs/provable-contracts/badge.svg" alt="docs.rs">
   </a>
-  <a href="https://github.com/paiml/provable-contracts/actions">
-    <img src="https://github.com/paiml/provable-contracts/actions/workflows/ci.yml/badge.svg"
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
+    <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg"
          alt="CI">
   </a>
   <a href="LICENSE">

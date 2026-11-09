@@ -33,6 +33,9 @@
 #   R5  the newest dogfood receipt (`.dogfood/receipt-*.json`, written by
 #       scripts/dogfood.sh) says `verdict: GO` for THIS commit and THIS
 #       version. A stale receipt, a NO-GO, or no receipt at all refuses.
+#       Under the STANDING RELEASE POLICY (as R8 below) R5 is not run (#5174): the pre-publish
+#       dogfood never went green on a release and takes ~55 min, so it is not a release gate; it is
+#       a nightly lane, ticketed on red. `--receipt-only` still judges every receipt it is given.
 #   R7  the model matrix (#3717, #3712): the per-host receipts COMMITTED in this tree for this
 #       version (evidence/dogfood/models/<version>/, put there by the bump, #3708) are judged by
 #       scripts/check_model_ladder.sh -- the same judge autopilot's T-1 `models` step runs on its
@@ -135,6 +138,13 @@ newest_receipt() { # dir -> path of the newest receipt-*.json, or nothing
 # rule_r5 root head version -> prints its row; 0 accepted, 1 refused
 rule_r5() {
     local root="$1" head="$2" version="$3" rdir receipt verdict rcommit rversion rphase rdeferred ropen bad_defer g
+    # The STANDING RELEASE POLICY covers this version: R5 is not run at all and no receipt is read (#5174).
+    # The pre-publish dogfood is a nightly lane; it returns here only as a GATE the operator rules in.
+    if [ "${POL_APPLIES:-0}" = 1 ]; then
+        echo "ok    R5 STANDING RELEASE POLICY covers $version: the pre-publish dogfood was not run and no receipt was read; CRUX smoke (R7) is the release gate"
+        R5_SCOPED=1
+        return 0
+    fi
     rdir="${PUBLISH_PREFLIGHT_RECEIPT_DIR:-$root/.dogfood}"
     receipt="$(newest_receipt "$rdir")"
     if [ -z "$receipt" ]; then
@@ -156,6 +166,14 @@ print(d.get("verdict") or "-", d.get("commit") or "-", d.get("version") or "-",
         # receipt and only for the closed list; the list is a whitelist, so a row not named in
         # it is refused whatever it is called.
         bad_defer=""
+        # #4672: a --phase nightly receipt measures the train's commit under test against its NEXT
+        # version, not this release. It is evidence for the nightly lane only; a release that
+        # accepted it would publish on a receipt that never asked the version question it owes.
+        if [ "$rphase" = nightly ]; then
+            printf 'FAIL  R5 dogfood receipt %s is a --phase nightly receipt -- evidence for the nightly lane, never for a publish (#4672); run dogfood.sh --phase pre-publish\n' \
+                "$(basename "$receipt")"
+            return 1
+        fi
         if [ "$rdeferred" != "-" ]; then
             printf 'FAIL  R5 dogfood receipt %s DEFERS [%s] -- DEFER is abolished (#3957 F1b): a row is measured or it is RED\n' \
                 "$(basename "$receipt")" "$rdeferred"
@@ -439,6 +457,7 @@ gate() {
     local root="${PUBLISH_PREFLIGHT_ROOT:-}" release_ref r4_ref r4_on
     local fails=0 status version tags head
     R8_SCOPED=""
+    R5_SCOPED=""
     for t in git cargo python3; do
         command -v "$t" >/dev/null 2>&1 || die_env "$t is not on PATH"
     done
@@ -474,7 +493,7 @@ gate() {
         local prc=0
         policy_ladder "$root" "$version" || prc=$?
         case "$prc" in
-            0) [ "$POL_APPLIES" != 1 ] || echo "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers $version: CRUX smoke under R7 is the release gate, R8 is not run, the larger ladder rows are nightly" ;;
+            0) [ "$POL_APPLIES" != 1 ] || echo "POLICY: crux-smoke -- the standing release policy in contracts/model-capability-ladder-v1.yaml covers $version: CRUX smoke under R7 is the release gate, R5 and R8 are not run, the larger ladder rows are nightly" ;;
             *) echo "FAIL  R7/R8 the standing release policy cannot be applied to $version, so neither the scope nor the full gate can be chosen: $POL_WHY"
                fails=1; pol_bad=1 ;;
         esac
@@ -498,7 +517,18 @@ gate() {
     tags="$(git -C "$root" tag --points-at HEAD 2>/dev/null)"
     # -F: the version is a string, not a pattern. With -x alone `v1-2-3` on HEAD
     # satisfied `v1.2.3` (second review of #2859, tag-regex-injection).
-    if [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
+    # A release rehearsal (scripts/release/rehearse.sh, APR-071 B1/H10) cuts no tag: its tag step
+    # writes "<tag> <commit>" for the tag it would make, and R3 judges THAT tag against HEAD. Only
+    # under RELEASE_REHEARSAL=1; otherwise the variable is ignored and the real tag is required.
+    if [ "${RELEASE_REHEARSAL:-}" = 1 ] && [ -n "${PUBLISH_PREFLIGHT_WOULD_TAG:-}" ]; then
+        if [ -n "$version" ] && [ "$PUBLISH_PREFLIGHT_WOULD_TAG" = "v$version $head" ]; then
+            echo "ok    R3 would-be tag v$version names HEAD ${head:0:9} (rehearsal: the tag is a WOULD line)"
+        else
+            printf 'FAIL  R3 would-be tag (%s) is not v%s on HEAD %s\n' \
+                "$PUBLISH_PREFLIGHT_WOULD_TAG" "${version:-?}" "${head:0:9}"
+            fails=1
+        fi
+    elif [ -n "$version" ] && grep -Fqx -- "v$version" <<<"$tags"; then
         echo "ok    R3 tag v$version points at HEAD ${head:0:9}"
     else
         printf 'FAIL  R3 tag v%s does not point at HEAD %s (tags here: %s)\n' \
@@ -546,9 +576,9 @@ gate() {
         return 1
     fi
     if [ -n "${SCOPE:-}" ]; then
-        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate${R8_SCOPED:+; release-readiness was NOT the gate})"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, $([ -n "${R5_SCOPED:-}" ] && echo "the dogfood was NOT the gate" || echo "dogfood GO"), OPERATOR EMERGENCY SCOPE $SCOPE satisfied (the model matrix was NOT the gate${R8_SCOPED:+; release-readiness was NOT the gate})"
     else
-        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, dogfood GO, model matrix green"
+        echo "PASS  $PROG: clean, versioned, tagged, on $release_ref, $([ -n "${R5_SCOPED:-}" ] && echo "the dogfood was NOT the gate" || echo "dogfood GO"), model matrix green"
     fi
     return 0
 }
@@ -599,6 +629,9 @@ receipt_gate() {
         return 1
     fi
     echo "ok    R2 version $version (cargo metadata, root manifest)"
+    # No policy is read here: --receipt-only judges the receipt it is given, whatever the release (the
+    # nightly negative control asks it to refuse a nightly receipt).
+    POL_APPLIES=0
     if ! rule_r5 "$root" "$head" "$version"; then
         echo "REFUSE $PROG --receipt-only: the T-4 publish gate would refuse this receipt (R5)."
         return 1
@@ -611,7 +644,7 @@ receipt_gate() {
 selftest() {
     local tmp pass=0 fail=0
     tmp="$(mktemp -d)"
-    case "$tmp" in /tmp/*|/var/folders/*|/mnt/*) : ;; *) die_env "mktemp gave ${tmp:-<empty>}, refusing to rm -rf it" ;; esac
+    case "$tmp" in /tmp/*|/var/folders/*|/mnt/*|"${TMPDIR:-/tmp}"/?*) : ;; *) die_env "mktemp gave ${tmp:-<empty>}, refusing to rm -rf it" ;; esac
     # SEC011: the delete is guarded by the same case the creation was, and an
     # empty or root path is left alone rather than deleted carefully.
     _rm_scratch() {
@@ -619,7 +652,7 @@ selftest() {
         [ -n "$victim" ] || return 0
         [ "$victim" != "/" ] || return 0
         case "$victim" in
-            /tmp/?*|/var/folders/?*|/mnt/?*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;;
+            /tmp/?*|/var/folders/?*|/mnt/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$victim" ] && [ "$victim" != "/" ]; then rm -rf -- "$victim"; fi ;;
             *) return 0 ;;
         esac
     }
@@ -750,6 +783,18 @@ FXREADY
     git -C "$d" tag v1.2.3 HEAD~1; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
     row tag_on_another_commit_refuses  1 "FAIL  R3" "$d"
 
+    # R3 in a rehearsal (B1, E1 #3998): no tag exists, the tag step's WOULD line names it. The would-be
+    # tag must be v<version> on HEAD; outside a rehearsal the same line is ignored and the real tag rules.
+    d="$tmp/would-tag"; build_repo "$d"; git -C "$d" tag -d v1.2.3 >/dev/null
+    RELEASE_REHEARSAL=1 PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.3 $(git -C "$d" rev-parse HEAD)" \
+        row rehearsal_would_tag_on_head_holds 0 "ok    R3 would-be tag v1.2.3" "$d"
+    RELEASE_REHEARSAL=1 PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.3 $(git -C "$d" rev-parse HEAD~0^{tree})" \
+        row rehearsal_would_tag_elsewhere_refuses 1 "FAIL  R3 would-be tag" "$d"
+    RELEASE_REHEARSAL=1 PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.4 $(git -C "$d" rev-parse HEAD)" \
+        row rehearsal_would_tag_other_version_refuses 1 "FAIL  R3 would-be tag" "$d"
+    PUBLISH_PREFLIGHT_WOULD_TAG="v1.2.3 $(git -C "$d" rev-parse HEAD)" \
+        row would_tag_outside_rehearsal_ignored 1 "FAIL  R3 tag v1.2.3 does not point" "$d"
+
     d="$tmp/branch"; build_repo "$d"; git -C "$d" checkout -q -b topic
     printf 'pub fn k() {}\n' >> "$d/src/lib.rs"; git -C "$d" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qam 'topic' >/dev/null
     git -C "$d" tag -f v1.2.3 >/dev/null; write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
@@ -836,6 +881,10 @@ FXREADY
     d="$tmp/full-open"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 full '[]' '["publish-dry-run"]'
     row open_outside_prepublish_refuses 1 "OPEN obligations outside the pre-publish phase" "$d"
+
+    d="$tmp/nightly-go"; build_repo "$d"
+    write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 nightly '[]' '[]'
+    row nightly_receipt_refuses 1 "is a --phase nightly receipt" "$d"
 
     d="$tmp/prepub-bad"; build_repo "$d"
     write_receipt "$d" GO "$(git -C "$d" rev-parse HEAD)" 1.2.3 pre-publish '["publish-dry-run","bashrs"]'
@@ -986,11 +1035,19 @@ FXREADY
     FX_SCOPE_RC=1 row policy_scope_red_refuses 1 "FAIL  R7 OPERATOR EMERGENCY SCOPE crux-smoke NOT satisfied" "$d"
     FX_READINESS_RC=1 row policy_r8_is_not_the_gate 0 "release-readiness was NOT the gate" "$d"
     FX_READINESS_RC=1 row policy_r8_is_not_run 0 "ok    R8 STANDING RELEASE POLICY covers 1.2.3: release-readiness was not run" "$d"
+    # #5174: under the policy R5 reads no receipt -- a NO-GO one, or none at all, does not refuse --
+    # and --receipt-only still refuses the same NO-GO receipt.
+    write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row policy_r5_is_not_run 0 "ok    R5 STANDING RELEASE POLICY covers 1.2.3: the pre-publish dogfood was not run" "$d"
+    row policy_pass_names_dogfood_not_gate 0 "the dogfood was NOT the gate" "$d"
+    POL_APPLIES=1 row policy_receipt_only_still_judges 1 "FAIL  R5 dogfood receipt" "$d" receipt_gate
     d="$tmp/pol-rc"; build_repo "$d"; record_policy "$d" 1.2.3
     row policy_since_equal_covers 0 "POLICY: crux-smoke" "$d"
     d="$tmp/pol-later"; build_repo "$d"; record_policy "$d" 1.2.4
     FX_READINESS_RC=1 row policy_later_r8_enforced 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"
     FX_LADDER_RC=1 row policy_later_r7_is_matrix 1 "FAIL  R7 model matrix NOT green" "$d"
+    write_receipt "$d" NO-GO "$(git -C "$d" rev-parse HEAD)" 1.2.3
+    row policy_later_r5_enforced 1 "FAIL  R5 dogfood receipt" "$d"
     d="$tmp/pol-dup"; build_repo "$d"; record_policy "$d" 1.2.0 1.2.3
     row policy_and_record_refuse 1 "one release takes one ruling" "$d"
     FX_READINESS_RC=1 row policy_and_record_no_scope 1 "FAIL  R8 the release-readiness wrapper exited 1" "$d"

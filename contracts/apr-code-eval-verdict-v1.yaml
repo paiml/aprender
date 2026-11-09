@@ -1,0 +1,135 @@
+# apr-code-eval-verdict-v1 — the VERDICT node of the apr code eval ontology (APR-CODE-EVAL-001).
+#
+# A verdict turns one sandbox report into one closed label. The failure this contract
+# exists to stop: a run that executed nothing, or got nothing from the model, being
+# counted as solved. "No tests ran" and "the model said nothing" are labels of their own.
+metadata:
+  version: "1.0.0"
+  created: "2026-10-14"
+  author: PAIML Engineering
+  kind: kernel
+  registry: true
+  description: |
+    Per-task verdict for the `apr code` eval (epic #5281, ticket #5285). SWE-bench's
+    "resolved" rule (every FAIL_TO_PASS passes and every PASS_TO_PASS still passes),
+    extended with explicit labels for format errors, empty output, timeouts, sandbox
+    errors and zero executed tests.
+  references:
+    - "docs/specifications/apr-code-eval-v1.md §5 (verdict)"
+    - "Jimenez et al. (2024) SWE-bench — resolved = all FAIL_TO_PASS and PASS_TO_PASS pass"
+    - "Aider polyglot (2024) — malformed edits counted as failures, edit-format conformance reported"
+    - "contracts/apr-code-eval-sandbox-v1.yaml (SandboxReport)"
+    - "contracts/apr-code-eval-task-v1.yaml (F2P / P2P)"
+name: apr-code-eval-verdict
+version: "1.0.0"
+status: PROPOSED
+scope: "verdict function of the apr code eval harness (ticket #5285)"
+description: |
+  verdict(t, out, rep) ∈ V = { RESOLVED, FAILED, FORMAT_ERROR, EMPTY, TIMEOUT,
+  SANDBOX_ERROR, NO_TESTS }, checked in this order: EMPTY (model output has no edit),
+  FORMAT_ERROR (edit does not parse or does not apply under the task's edit format),
+  TIMEOUT / SANDBOX_ERROR (from the sandbox status), NO_TESTS (0 F2P tests executed),
+  then RESOLVED or FAILED. Only RESOLVED counts toward a pass. Every label stays in the
+  denominator. pre(t, out) := edits(out) ≠ ∅ ∧ parses(out, fmt(t)) ∧ applies(edits(out), snapshot(t)).
+  pass(x) := x ∈ executed ∧ outcome(x) = passed, so an F2P or P2P test that never ran is not a
+  pass; all_pass(S) := ∀ x ∈ S. pass(x). rep.status = ok implies rep.killed_by = ⊥ (ACE-SBX-003).
+  ACE-VER-006 is the function itself; every other equation is a consequence of it.
+
+equations:
+  ACE-VER-001:
+    description: "Resolved is the SWE-bench rule, with every F2P test actually executed"
+    formula: "RESOLVED ⇔ pre(t, out) ∧ rep.status = ok ∧ executed(F2P) = F2P ∧ ∀ x ∈ F2P. pass(x) ∧ ∀ y ∈ P2P. pass(y)"
+  ACE-VER-002:
+    description: "Empty model output is never resolved"
+    formula: "edits(out) = ∅ ⇒ verdict = EMPTY"
+    note: "Holds even when the hidden tests would pass on the untouched snapshot; ACE-TASK-003 should have excluded that task, and this is the second line."
+  ACE-VER-003:
+    description: "Zero executed tests is never resolved"
+    formula: "(rep.tests_executed = 0 ∨ executed(F2P) ≠ F2P) ⇒ verdict ≠ RESOLVED;  pre(t, out) ∧ rep.status = ok ∧ (rep.tests_executed = 0 ∨ executed(F2P) ≠ F2P) ⇒ verdict = NO_TESTS"
+    note: "pre(t, out) := edits(out) ≠ ∅ ∧ parses(out, fmt(t)) ∧ applies(edits(out), snapshot(t)). EMPTY, FORMAT_ERROR, TIMEOUT and SANDBOX_ERROR are checked first (description order), so VER-003 never contradicts VER-002/004/005."
+  ACE-VER-004:
+    description: "A sandbox failure is never resolved and never dropped"
+    formula: "pre(t, out) ∧ rep.killed_by = timeout ⇒ TIMEOUT;  pre(t, out) ∧ rep.killed_by ≠ timeout ∧ rep.status ≠ ok ⇒ SANDBOX_ERROR;  both stay in |T|"
+  ACE-VER-005:
+    description: "A malformed or non-applying edit is a format error, not silently repaired"
+    formula: "edits(out) ≠ ∅ ∧ (¬parses(out, fmt(t)) ∨ ¬applies(edits(out), snapshot(t))) ⇒ verdict = FORMAT_ERROR"
+  ACE-VER-006:
+    description: "The label set is closed and total"
+    formula: "verdict = first match of [ edits(out) = ∅ → EMPTY;  ¬parses ∨ ¬applies → FORMAT_ERROR;  killed_by = timeout → TIMEOUT;  status ≠ ok → SANDBOX_ERROR;  tests_executed = 0 ∨ executed(F2P) ≠ F2P → NO_TESTS;  all_pass(F2P ∪ P2P) → RESOLVED;  otherwise → FAILED ],  so ∀ (t, out, rep). ∃! v ∈ V. verdict(t, out, rep) = v"
+  ACE-VER-007:
+    description: "A P2P regression fails the task even when every F2P passes"
+    formula: "∃ y ∈ P2P. ¬pass(y) ⇒ verdict ≠ RESOLVED"
+
+proof_obligations:
+  - id: ACE-VER-PO-001
+    type: equivalence
+    property: "RESOLVED matches the SWE-bench rule exactly (ACE-VER-001)"
+    formal: "(verdict = RESOLVED ⇒ R) ∧ (R ⇒ verdict = RESOLVED), R := pre(t, out) ∧ ok ∧ F2P ⊆ executed ∧ all_pass(F2P ∪ P2P)"
+  - id: ACE-VER-PO-002
+    type: invariant
+    property: "Empty output gives EMPTY whatever the report says (ACE-VER-002)"
+    formal: "edits(out) = ∅ ⇒ verdict = EMPTY"
+  - id: ACE-VER-PO-003
+    type: invariant
+    property: "No executed F2P test means no RESOLVED (ACE-VER-003)"
+    formal: "executed(F2P) ≠ F2P ⇒ verdict ≠ RESOLVED"
+  - id: ACE-VER-PO-004
+    type: invariant
+    property: "Timeout and sandbox error are labels, never RESOLVED (ACE-VER-004)"
+    formal: "rep.status ≠ ok ⇒ verdict ≠ RESOLVED;  pre(t, out) ∧ rep.status ≠ ok ⇒ verdict ∈ {TIMEOUT, SANDBOX_ERROR}"
+  - id: ACE-VER-PO-005
+    type: invariant
+    property: "A non-applying edit is FORMAT_ERROR (ACE-VER-005)"
+    formal: "edits(out) ≠ ∅ ∧ ¬applies(edits(out)) ⇒ verdict = FORMAT_ERROR"
+  - id: ACE-VER-PO-006
+    type: completeness
+    property: "verdict is total over all inputs and returns exactly one label (ACE-VER-006)"
+    formal: "∀ inputs. verdict(inputs) ∈ V, and the first-match order of ACE-VER-006 picks exactly one"
+  - id: ACE-VER-PO-007
+    type: invariant
+    property: "Any P2P failure blocks RESOLVED (ACE-VER-007)"
+    formal: "∃ y ∈ P2P. fail(y) ⇒ verdict ≠ RESOLVED"
+
+falsification_tests:
+  - id: FALSIFY-ACE-VER-001
+    name: resolved_rule_table
+    prediction: "A 12-row case table (F2P all/some/none pass × P2P all/one fail × executed full/partial) gives RESOLVED only on the one all-pass, fully-executed row."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_ver_001_resolved_table in the verdict module"
+    expected_output: "test result: ok"
+    if_fails: "The resolved rule is looser than SWE-bench's."
+  - id: FALSIFY-ACE-VER-002
+    name: empty_output_never_resolved
+    prediction: "Empty model output against an all-pass report gives EMPTY, not RESOLVED."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_ver_002_empty_output in the verdict module"
+    expected_output: "test result: ok"
+    if_fails: "A model that answers nothing can score."
+  - id: FALSIFY-ACE-VER-003
+    name: zero_executed_never_resolved
+    prediction: "A report with status ok, exit 0 and tests_executed=0 gives NO_TESTS."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_ver_003_zero_executed in the verdict module"
+    expected_output: "test result: ok"
+    if_fails: "A test runner that collected nothing reads as a pass."
+  - id: FALSIFY-ACE-VER-004
+    name: timeout_and_error_are_labels
+    prediction: "killed_by=timeout gives TIMEOUT and status=sandbox_error gives SANDBOX_ERROR, each with passed tests in the report."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_ver_004_sandbox_failures in the verdict module"
+    expected_output: "test result: ok"
+    if_fails: "Partial results from a killed run are scored."
+  - id: FALSIFY-ACE-VER-005
+    name: bad_edit_is_format_error
+    prediction: "A search/replace block whose search text is not in the file gives FORMAT_ERROR, and the harness does not fuzzy-apply it."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_ver_005_format_error in the verdict module"
+    expected_output: "test result: ok"
+    if_fails: "The harness repairs the model's edits and credits the model."
+  - id: FALSIFY-ACE-VER-006
+    name: verdict_total
+    prediction: "proptest over arbitrary reports and outputs: verdict never panics and always returns a member of V."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test prop_ace_ver_006_total in the verdict module"
+    expected_output: "test result: ok"
+    if_fails: "An unexpected report shape crashes the run or escapes the label set."
+  - id: FALSIFY-ACE-VER-007
+    name: p2p_regression_fails
+    prediction: "All F2P pass and one P2P fails gives FAILED."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_ver_007_p2p_regression in the verdict module"
+    expected_output: "test result: ok"
+    if_fails: "A fix that breaks other behaviour scores as resolved."

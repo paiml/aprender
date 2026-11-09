@@ -1,0 +1,22 @@
+- id: PMAT-6677
+  github_issue: 6677
+  item_type: task
+  title: promote_scheduler fallback past a red candidate is silent (C12)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T00:40:56Z
+  updated: 2026-11-03T00:40:56Z
+  spec: null
+  acceptance_criteria:
+  - 'C12: fallback past a skipped newer candidate writes one RED inbox line. Issue 6677.'
+  - 'C12 r5/r6: a run killed (TERM, INT, HUP) after it skipped a newer candidate writes one RED line naming the skip; a SIGKILL leaves a breadcrumb that the next run reports once and removes.'
+  - 'C12 r5/r6: the already-promoted and dry-run fallback lines are written once per (promoted sha, newest red sha) pair; an identical second run writes none.'
+  - 'C12 r6: the pre-existing RED clean-room run and RED newest nightly crux lines are unchanged from origin/main; the fallback line is in addition to them.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519

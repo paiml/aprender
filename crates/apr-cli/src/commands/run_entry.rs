@@ -46,6 +46,10 @@ pub(crate) fn run(
     chat_template: bool,
     // #3723: `--thinking on|off` (None: the production default), applied in realizar.
     thinking: Option<bool>,
+    // #4026: `--logprobs K`: the K most likely tokens at every generated step.
+    logprobs_top_k: usize,
+    // #3793: --json-schema / --grammar
+    constraint: super::run::ConstraintArgs,
 ) -> Result<()> {
     // GH-516: Warn on --language/--task since whisper integration is not yet wired up
     if language.is_some() {
@@ -60,6 +64,7 @@ pub(crate) fn run(
     // no banner, no `Source:` line and no generation — the caller sees a named
     // refusal and nothing that looks like a result.
     refuse_forced_accelerator_without_forward(source, accel_forced)?;
+    refuse_logprobs_without_machine_output(logprobs_top_k, stream, output_format, benchmark)?;
 
     // GH-240: Suppress header/source in JSON mode for clean machine-parseable output
     if output_format != "json" {
@@ -118,10 +123,12 @@ pub(crate) fn run(
         split_prompt,
         chat_template,
         thinking,
+        logprobs_top_k,
         stream,
+        constraint,
     };
 
-    let result = run_model(source, &options)?;
+    let result = run_model_answering_refusals(source, &options)?;
 
     if trace && trace_level == "layer" {
         print_layer_trace(&result, max_tokens);
@@ -189,7 +196,14 @@ fn reconcile_and_emit(
     stream: bool,
     accel_forced: bool,
 ) -> Result<()> {
-    let reconciled = reconcile_accelerator(accel_forced, result);
+    // #3793: a constrained output refused after it was produced (Truncated, SchemaViolation)
+    // follows the same rule: the machine surfaces emit it beside the refusal, the human one
+    // stays silent, and the run exits non-zero
+    let reconciled = reconcile_accelerator(accel_forced, result).and_then(|()| {
+        result.constraint_refusal.clone().map_or(Ok(()), |r| {
+            Err(crate::error::CliError::ConstraintRefused(r))
+        })
+    });
     if reconciled.is_ok() || emits_machine_output(stream, output_format, benchmark) {
         print_run_output(
             result,
@@ -212,6 +226,7 @@ fn reconcile_and_emit(
 /// (not a GGUF, a hub id rather than a path, an unreadable header), and an
 /// unknown architecture is never refused — this predicate lists what we know we
 /// did NOT build, never what we support.
+#[cfg(feature = "inference")]
 pub(crate) fn forced_accelerator_refusal(
     accel_forced: bool,
     architecture: Option<&str>,
@@ -220,6 +235,20 @@ pub(crate) fn forced_accelerator_refusal(
         return None;
     }
     realizar::capability::no_cuda_forward_reason(architecture?)
+}
+
+/// #4972: a build without `inference` has no forward on any accelerator, so a
+/// forced one is refused whatever the architecture, including an unread one.
+#[cfg(not(feature = "inference"))]
+pub(crate) fn forced_accelerator_refusal(
+    accel_forced: bool,
+    _architecture: Option<&str>,
+) -> Option<String> {
+    accel_forced.then(|| {
+        "an accelerator was forced, but this apr was built without the `inference` \
+         feature, so it has no forward on any device (#4972)"
+            .to_string()
+    })
 }
 
 /// Read the declared architecture from a model path without loading it.
@@ -285,6 +314,53 @@ fn refuse_forced_accelerator_without_forward(source: &str, accel_forced: bool) -
     }
 }
 
+/// [`run_model`], where a constrained run refused before it produced output (#3793) still
+/// answers a machine-readable request: the refusal document on stdout, then the error.
+fn run_model_answering_refusals(
+    source: &str,
+    options: &RunOptions,
+) -> Result<super::run::RunResult> {
+    match run_model(source, options) {
+        Err(crate::error::CliError::ConstraintRefused(refusal)) => {
+            if emits_machine_output(options.stream, &options.output_format, options.benchmark) {
+                let doc = refusal_doc(source, &refusal);
+                println!(
+                    "{}",
+                    if options.stream {
+                        serde_json::to_string(&doc).unwrap_or_default()
+                    } else {
+                        serde_json::to_string_pretty(&doc).unwrap_or_default()
+                    }
+                );
+            }
+            Err(crate::error::CliError::ConstraintRefused(refusal))
+        }
+        other => other,
+    }
+}
+
+/// #3720: the document for a run refused before it produced output carries the same consumer
+/// envelope as a completed one (`status`, `error`, `model_digest`), so a consumer reads one shape.
+fn refusal_doc(source: &str, refusal: &crate::error::ConstraintRefusal) -> serde_json::Value {
+    with_model_digest(
+        serde_json::json!({
+            "model": source,
+            "text": serde_json::Value::Null,
+            "finish_reason": refusal.finish_reason,
+            "refusal": refusal.to_json(),
+            "status": RunStatus::Refused.as_str(),
+            "error": {
+                "kind": "constraint_refused",
+                "message": refusal.message,
+                "exit_code": crate::error::CliError::ConstraintRefused(refusal.clone()).exit_code_value(),
+            },
+            "apr_version": env!("CARGO_PKG_VERSION"),
+            "apr_commit": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
+        }),
+        source,
+    )
+}
+
 /// Does [`print_run_output`] emit a MACHINE-readable document for these flags?
 ///
 /// The refusal path above needs to know this, and the first draft answered it
@@ -300,6 +376,29 @@ fn refuse_forced_accelerator_without_forward(source: &str, accel_forced: bool) -
 /// either side that does not change the other turns the test red.
 pub(crate) fn emits_machine_output(stream: bool, output_format: &str, benchmark: bool) -> bool {
     !benchmark && (stream || output_format == "json")
+}
+
+/// #4026: `--logprobs K` is reported only in the `--json` and `--stream` documents
+/// ([`emits_machine_output`]). On the text and `--benchmark` surfaces the run would record
+/// them, print none and exit 0, so K > 0 is refused by name there, before the load.
+///
+/// # Errors
+/// [`CliError::InvalidInput`] when `top_k > 0` and the flags select a human surface.
+pub(crate) fn refuse_logprobs_without_machine_output(
+    top_k: usize,
+    stream: bool,
+    output_format: &str,
+    benchmark: bool,
+) -> Result<()> {
+    if top_k == 0 || emits_machine_output(stream, output_format, benchmark) {
+        return Ok(());
+    }
+    let surface = if benchmark { "--benchmark" } else { "text" };
+    Err(CliError::InvalidInput(format!(
+        "--logprobs {top_k}: the {surface} output does not report logprobs; only the \
+         --json and --stream documents do (#4026). Add --json (without --benchmark), \
+         or drop --logprobs."
+    )))
 }
 
 /// Compare the accelerator the user ASKED for against the one that RAN.
@@ -558,22 +657,29 @@ fn print_run_output(
     // structured output regardless of --format. (--stream --json is the same
     // as --stream alone.)
     if stream && !benchmark {
-        return print_stream_output(result, source, max_tokens, accel_forced);
+        print_stream_output(result, source, max_tokens, accel_forced)?;
+        return empty_completion_exit(result, accel_forced);
     }
 
     // GH-240/GH-250: JSON output mode with accurate token counts
     if output_format == "json" && !benchmark {
-        let json = build_final_json(result, source, max_tokens, accel_forced);
+        let json = with_model_digest(
+            build_final_json(result, source, max_tokens, accel_forced),
+            source,
+        );
         println!(
             "{}",
             serde_json::to_string_pretty(&json).unwrap_or_default()
         );
-        return Ok(());
+        return empty_completion_exit(result, accel_forced);
     }
 
     if benchmark {
         print_benchmark_results(result, source, output_format, max_tokens);
     } else {
+        if let Some(note) = cpu_fallback_notice(result, accel_forced) {
+            eprintln!("{note}");
+        }
         println!();
         println!("{}", "Output:".green().bold());
         println!("{}", result.text);
@@ -590,8 +696,52 @@ fn print_run_output(
                 "(downloaded)".dimmed()
             }
         );
+        // #3720: an empty completion exits 8 on the text surface too, as it does on --json.
+        return empty_completion_exit(result, accel_forced);
     }
-    Ok(())
+    // #3720: --benchmark (any format) exits 8 on an empty completion like every other surface.
+    empty_completion_exit(result, accel_forced)
+}
+
+/// `tok_per_sec` when the inference engine reported one (GH-250); otherwise
+/// derived from `tokens_generated / duration_secs`, or `0.0` on a zero
+/// duration (nothing decoded, so there is no rate to report).
+fn effective_tok_per_sec(result: &RunResult, tokens_generated: usize) -> f64 {
+    result.tok_per_sec.unwrap_or_else(|| {
+        if result.duration_secs > 0.0 {
+            tokens_generated as f64 / result.duration_secs
+        } else {
+            0.0
+        }
+    })
+}
+
+/// #3602/#3826: an accelerator was tried (asked for, or entered) and CPU answered. One definition for the
+/// `--json` `backend.fell_back` and the text-mode notice, so the two surfaces cannot disagree.
+fn fell_back_to_cpu(result: &RunResult, accel_forced: bool) -> bool {
+    result.used_gpu == Some(false) && (accel_forced || result.gpu_attempted == Some(true))
+}
+
+/// #4977: the one stderr line a TEXT-mode run prints when the accelerator did not produce the answer. A forced
+/// `--gpu` that fell back is refused (exit 14) before this is reached, so this covers the default selection.
+pub(crate) const CPU_FALLBACK_NOTICE: &str =
+    "note: GPU backend did not run, falling back to CPU (backend.fell_back = true)";
+
+/// The notice for `result`, or `None` when nothing fell back.
+fn cpu_fallback_notice(result: &RunResult, accel_forced: bool) -> Option<&'static str> {
+    fell_back_to_cpu(result, accel_forced).then_some(CPU_FALLBACK_NOTICE)
+}
+
+/// #3602/#3826/#3606: the `backend` object distinguishing a deliberate CPU
+/// run from a rejected GPU run. See the long comment on its call site in
+/// [`build_final_json`] for why each field exists and why `accel_forced`
+/// alone cannot be dropped in favor of `gpu_attempted`.
+fn backend_json(result: &RunResult, accel_forced: bool) -> serde_json::Value {
+    serde_json::json!({
+        "requested": if accel_forced { "gpu" } else { "default" },
+        "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
+        "fell_back": fell_back_to_cpu(result, accel_forced),
+    })
 }
 
 /// Build the terminal JSON blob shared by `--json` and `--stream` final events.
@@ -602,13 +752,7 @@ fn build_final_json(
     accel_forced: bool,
 ) -> serde_json::Value {
     let tokens_generated = result.tokens_generated.unwrap_or(0);
-    let tok_per_sec = result.tok_per_sec.unwrap_or_else(|| {
-        if result.duration_secs > 0.0 {
-            tokens_generated as f64 / result.duration_secs
-        } else {
-            0.0
-        }
-    });
+    let tok_per_sec = effective_tok_per_sec(result, tokens_generated);
     // GH-250: Include generated token IDs for parity checking
     let tokens_json = result.generated_tokens.as_deref().unwrap_or(&[]);
     serde_json::json!({
@@ -634,6 +778,11 @@ fn build_final_json(
         // is the whole window (load, upload, F2, generation), kept for compatibility.
         "generation_ms": result.usage.generation_ms,
         "setup_ms": result.usage.setup_ms,
+        // #4026: always present, and `null` unless `--logprobs K` asked for it; then
+        // the prompt ids the model read and, per generated step, the K most likely
+        // tokens before any penalty or sampling. A path that cannot record them
+        // refused the run.
+        "logprobs": result.logprobs,
         // #3602: `used_gpu: false` alone collapses two different outcomes — "no
         // accelerator was asked for" and "one was asked for, attempted, and
         // REFUSED at runtime". A consumer cannot tell a CPU run from a rejected
@@ -673,12 +822,15 @@ fn build_final_json(
         // never Fail, so a backend that did not report has not reported a
         // fallback. That is `reconcile_accelerator`'s own rule, and the JSON
         // must not contradict the check that runs beside it.
-        "backend": {
-            "requested": if accel_forced { "gpu" } else { "default" },
-            "ran": if result.used_gpu == Some(true) { "gpu" } else { "cpu" },
-            "fell_back": result.used_gpu == Some(false)
-                && (accel_forced || result.gpu_attempted == Some(true)),
-        },
+        "backend": backend_json(result, accel_forced),
+        // #3793: a constrained output refused after it was produced (Truncated,
+        // SchemaViolation); null otherwise
+        "refusal": result.constraint_refusal.as_ref().map(crate::error::ConstraintRefusal::to_json),
+        // #3720: the consumer envelope. `status` is ok|refused|failed, `error` is null on ok.
+        "status": run_status(result, accel_forced).as_str(),
+        "error": run_error_json(result, accel_forced),
+        "apr_version": env!("CARGO_PKG_VERSION"),
+        "apr_commit": option_env!("APR_GIT_SHA").unwrap_or("unknown"),
     })
 }
 
@@ -733,7 +885,10 @@ pub(crate) fn write_stream_output<W: std::io::Write>(
         }
     }
 
-    let mut final_blob = build_final_json(result, source, max_tokens, accel_forced);
+    let mut final_blob = with_model_digest(
+        build_final_json(result, source, max_tokens, accel_forced),
+        source,
+    );
     if let Some(obj) = final_blob.as_object_mut() {
         obj.insert(
             "event".to_string(),
@@ -760,8 +915,25 @@ pub(crate) fn run_batch(
     top_k: usize,
     no_gpu: bool,
     verbose: bool,
+    // #3793: the batch loop applies no constraint, so a constrained batch is refused
+    constraint: &super::run::ConstraintArgs,
 ) -> Result<()> {
     use realizar::{run_batch_inference, BatchInferenceConfig};
+    if constraint.is_set() {
+        return Err(crate::error::CliError::ConstraintRefused(
+            crate::error::ConstraintRefusal {
+                kind: "SchemaUnsupportedPath",
+                message: "SchemaUnsupportedPath: the batch generation path (--batch-jsonl) does \
+                          not apply a constraint yet, so it refuses rather than running \
+                          unconstrained"
+                    .to_string(),
+                removed_by: Some(
+                    "not scheduled: #3568 constrains `apr run` on one prompt".to_string(),
+                ),
+                finish_reason: None,
+            },
+        ));
+    }
 
     // Resolve model path (same logic as regular run)
     let model_source = ModelSource::parse(source)?;
@@ -835,4 +1007,130 @@ fn print_benchmark_results(
             result.duration_secs * 1000.0
         );
     }
+}
+
+/// #3720: the three outcomes a consumer must tell apart. `Refused` means the run was declined on
+/// purpose (a forced accelerator that did not run, a constraint that rejected the output);
+/// `Failed` means it ran and produced nothing usable. Both are `is_error`; neither is `Ok`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum RunStatus {
+    Ok,
+    Refused,
+    Failed,
+}
+
+impl RunStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Ok => "ok",
+            Self::Refused => "refused",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// An empty completion is a failure, not an answer: trimmed text with nothing in it.
+fn is_empty_completion(result: &RunResult) -> bool {
+    result.text.trim().is_empty()
+}
+
+fn run_status(result: &RunResult, accel_forced: bool) -> RunStatus {
+    if result.constraint_refusal.is_some() || (accel_forced && result.used_gpu == Some(false)) {
+        RunStatus::Refused
+    } else if is_empty_completion(result) {
+        RunStatus::Failed
+    } else {
+        RunStatus::Ok
+    }
+}
+
+/// `{kind, message, exit_code}` when the run is not `ok`, `null` otherwise. The exit code is the
+/// one the process exits with, so a consumer can read it without waiting for the process.
+fn run_error_json(result: &RunResult, accel_forced: bool) -> serde_json::Value {
+    use crate::error::CliError;
+    // The accelerator refusal is checked first because `reconcile_accelerator` runs before the
+    // constraint refusal in `reconcile_and_emit`: when both fire, the process exits with the
+    // accelerator's code, so the document must name that one. Codes come from `CliError`, so a
+    // remap in error.rs reaches the document; the one literal is the unreachable no-refusal fallback below.
+    let accel_refused = accel_forced && result.used_gpu == Some(false);
+    let (kind, message, exit_code) = match run_status(result, accel_forced) {
+        RunStatus::Ok => return serde_json::Value::Null,
+        RunStatus::Refused if accel_refused => {
+            let message = "an accelerator was forced and the run did not use it".to_string();
+            let code = CliError::BackendUnavailable(message.clone()).exit_code_value();
+            ("backend_unavailable", message, code)
+        }
+        RunStatus::Refused => {
+            // `run_status` is Refused only for an accelerator or a constraint refusal, so a
+            // missing refusal here cannot happen; the fallback is 15, ConstraintRefused's code in
+            // error.rs. The message is the refusal's own, as in the constraint-refused document above.
+            let message = result.constraint_refusal.as_ref().map_or_else(
+                || "the constrained output was refused after it was produced".to_string(),
+                |r| r.message.clone(),
+            );
+            let code = result
+                .constraint_refusal
+                .clone()
+                .map_or(15, |r| CliError::ConstraintRefused(r).exit_code_value());
+            ("constraint_refused", message, code)
+        }
+        RunStatus::Failed => {
+            let message = "the model produced no text".to_string();
+            let code = CliError::InferenceFailed(message.clone()).exit_code_value();
+            ("empty_completion", message, code)
+        }
+    };
+    serde_json::json!({"kind": kind, "message": message, "exit_code": exit_code})
+}
+
+/// A machine surface that printed an empty completion exits with the inference-failure code, so
+/// the exit status and the document agree. Other non-ok states are already errors upstream.
+fn empty_completion_exit(result: &RunResult, accel_forced: bool) -> Result<()> {
+    if run_status(result, accel_forced) == RunStatus::Failed {
+        return Err(crate::error::CliError::InferenceFailed(
+            "empty completion: the model produced no text (#3720)".to_string(),
+        ));
+    }
+    Ok(())
+}
+
+/// #3720: lowercase hex SHA-256 of a file, streamed so a multi-GB model is never held in memory.
+fn sha256_file_hex(path: &std::path::Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect())
+}
+
+/// #3720: `model_digest` is the SHA-256 of the weights file named by `source`; `null` when the
+/// source is not a local file, never a guess. Known limit: a hub id or registry name resolves to
+/// a cached file only later in `run`, so it reads `null` here; threading the resolved path
+/// through is follow-up work, together with the `serve` surface of the same ticket.
+/// The digest hashes the WHOLE file in 1 MiB reads (no mmap): one sequential pass over the weights
+/// after the run has finished. Full-file SHA-256 is chosen over a header or sampled hash because a
+/// partial hash could not tell two quantisations of one model apart. An unreadable file reads `null`.
+fn with_model_digest(mut json: serde_json::Value, source: &str) -> serde_json::Value {
+    let path = std::path::Path::new(source);
+    let digest = if path.is_file() {
+        sha256_file_hex(path).ok()
+    } else {
+        None
+    };
+    if let Some(obj) = json.as_object_mut() {
+        obj.insert("model_digest".to_string(), serde_json::json!(digest));
+    }
+    json
 }

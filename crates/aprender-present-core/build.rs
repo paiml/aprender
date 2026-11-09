@@ -77,7 +77,10 @@ fn emit_contract_file_pre_post(path: &PathBuf, total_pre: &mut usize, total_post
     let Ok(contents) = std::fs::read_to_string(path) else {
         return;
     };
-    let Ok(parsed) = serde_yaml_ng::from_str::<ContractYaml>(&contents) else {
+    let Ok(parsed) = serde_saphyr::from_str_with_options::<ContractYaml>(
+        &contents,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) else {
         return;
     };
     for (eq_name, eq) in &parsed.equations {
@@ -135,7 +138,10 @@ fn emit_presentar_binding_env() {
         println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
         return;
     };
-    let Ok(bf) = serde_yaml_ng::from_str::<BindingFile>(&content) else {
+    let Ok(bf) = serde_saphyr::from_str_with_options::<BindingFile>(
+        &content,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) else {
         println!("cargo:warning=[contract] Failed to parse binding.yaml");
         println!("cargo:rustc-env=CONTRACT_BINDING_SOURCE=none");
         return;

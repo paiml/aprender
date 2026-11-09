@@ -109,8 +109,8 @@ fi
 
 if [ "${1:-}" = "--self-test" ]; then
   TD=$(mktemp -d) || exit 2
-  case "$TD" in /tmp/?*) ;; *) echo "self-test: unexpected temp dir $TD"; exit 2 ;; esac
-  cleanup() { case "${TD:-}" in /tmp/?*) [ -d "$TD" ] && rm -rf -- "$TD" ;; esac; }
+  case "$TD" in /tmp/?*|"${TMPDIR:-/tmp}"/?*) ;; *) echo "self-test: unexpected temp dir $TD"; exit 2 ;; esac
+  cleanup() { case "${TD:-}" in /tmp/?*|"${TMPDIR:-/tmp}"/?*) [ -d "$TD" ] && rm -rf -- "$TD" ;; esac; }
   trap cleanup EXIT
   fails=0; R="$TD/repo"
   commit() { git -C "$R" add -A && git -C "$R" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@t commit -qm "$1"; }

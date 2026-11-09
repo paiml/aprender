@@ -195,6 +195,7 @@ fn test_chat_delta_fields_cov() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
         content: Some("Hello".to_string()),
+        tool_calls: None,
     };
     assert!(delta.role.is_some());
     assert!(delta.content.is_some());
@@ -207,6 +208,7 @@ fn test_chat_chunk_choice_fields_cov() {
         delta: ChatDelta {
             role: Some("assistant".to_string()),
             content: None,
+            tool_calls: None,
         },
         finish_reason: None,
     };
@@ -392,6 +394,7 @@ fn test_context_window_config_default_cov() {
 #[test]
 fn test_embedding_request_fields_cov() {
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "Some text to embed".to_string().into(),
         model: Some("text-embedding".to_string()),
     };

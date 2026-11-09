@@ -283,6 +283,68 @@ mod tests {
         assert_eq!(loaded.get_node_name(NodeId(2)), Some("validate"));
     }
 
+    /// Files written by <=0.72.0 are ZSTD; they must stay readable and new ones stay ZSTD.
+    #[tokio::test]
+    async fn test_parquet_zstd_file_reads() {
+        use parquet::basic::Compression;
+        use parquet::file::reader::{FileReader, SerializedFileReader};
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("zstd_graph");
+
+        let mut graph = CsrGraph::new();
+        graph.add_edge(NodeId(0), NodeId(1), 1.5).unwrap();
+        graph.set_node_name(NodeId(0), "a".to_string());
+        graph.set_node_name(NodeId(1), "b".to_string());
+        graph.write_parquet(&path).await.unwrap();
+
+        for suffix in ["edges", "nodes"] {
+            let file = File::open(format!("{}_{suffix}.parquet", path.display())).unwrap();
+            let meta = SerializedFileReader::new(file).unwrap();
+            let codec = meta.metadata().row_group(0).column(0).compression();
+            assert!(matches!(codec, Compression::ZSTD(_)), "{suffix}: {codec:?}");
+        }
+
+        let loaded = CsrGraph::read_parquet(&path).await.unwrap();
+        assert_eq!(loaded.outgoing_neighbors(NodeId(0)).unwrap(), &[1]);
+        assert_eq!(loaded.get_node_name(NodeId(1)), Some("b"));
+    }
+
+    /// Graph files re-encoded as Snappy (other tools default to it) must still load.
+    #[tokio::test]
+    async fn test_parquet_snappy_file_reads() {
+        use parquet::basic::Compression;
+
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("snappy_graph");
+
+        let mut graph = CsrGraph::new();
+        graph.add_edge(NodeId(0), NodeId(1), 2.5).unwrap();
+        graph.set_node_name(NodeId(0), "a".to_string());
+        graph.set_node_name(NodeId(1), "b".to_string());
+        graph.write_parquet(&path).await.unwrap();
+
+        for suffix in ["edges", "nodes"] {
+            let file_path = format!("{}_{suffix}.parquet", path.display());
+            let builder =
+                ParquetRecordBatchReaderBuilder::try_new(File::open(&file_path).unwrap()).unwrap();
+            let schema = builder.schema().clone();
+            let batches: Vec<RecordBatch> = builder.build().unwrap().map(|b| b.unwrap()).collect();
+            let props = WriterProperties::builder().set_compression(Compression::SNAPPY).build();
+            let mut writer =
+                ArrowWriter::try_new(File::create(&file_path).unwrap(), schema, Some(props))
+                    .unwrap();
+            for batch in &batches {
+                writer.write(batch).unwrap();
+            }
+            writer.close().unwrap();
+        }
+
+        let loaded = CsrGraph::read_parquet(&path).await.unwrap();
+        assert_eq!(loaded.outgoing_neighbors(NodeId(0)).unwrap(), &[1]);
+        assert_eq!(loaded.get_node_name(NodeId(1)), Some("b"));
+    }
+
     #[tokio::test]
     async fn test_empty_graph_parquet() {
         let dir = tempdir().unwrap();

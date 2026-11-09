@@ -79,7 +79,6 @@ impl OwnedQuantizedModel {
     /// `fused_matmul`, so that function's complexity does not rise (the
     /// per-function ratchet is shrink-only).
     pub(crate) fn dequant_fallback_or_refuse(
-        &self,
         input: &[f32],
         weight: &OwnedQuantizedTensor,
         in_dim: usize,
@@ -98,7 +97,7 @@ impl OwnedQuantizedModel {
                 ),
             });
         }
-        self.dequant_fallback_matmul(input, weight, in_dim, out_dim, seq_len)
+        Self::dequant_fallback_matmul(input, weight, in_dim, out_dim, seq_len)
     }
 
     /// Dequantize-then-dot CPU path for the types with no fused kernel here
@@ -110,7 +109,6 @@ impl OwnedQuantizedModel {
     /// here, not fast: one row is dequantized into a 256-element scratch at a
     /// time and dotted with the activation.
     pub(crate) fn dequant_fallback_matmul(
-        &self,
         input: &[f32],
         weight: &OwnedQuantizedTensor,
         in_dim: usize,

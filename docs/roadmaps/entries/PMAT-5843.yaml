@@ -1,0 +1,19 @@
+- id: PMAT-5843
+  github_issue: 5843
+  item_type: task
+  title: 'MQ feeder: every 5 min enqueue the oldest green non-draft PR when the merge queue is empty'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T10:55:00Z
+  updated: 2026-10-21T10:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/mq_feeder.sh --self-test green; timer live; kicked PRs re-read at 30s and skipped'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

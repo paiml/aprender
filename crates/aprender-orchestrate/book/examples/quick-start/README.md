@@ -5,7 +5,7 @@ This example demonstrates basic Batuta usage for analyzing and orchestrating a p
 ## Prerequisites
 
 ```bash
-cargo install batuta
+cargo install aprender-orchestrate
 ```
 
 ## Usage
@@ -14,30 +14,30 @@ cargo install batuta
 
 ```bash
 # Analyze languages and dependencies
-batuta analyze --languages --dependencies
+aprender-orchestrate analyze --languages --dependencies
 
 # Get technical debt grade
-batuta analyze --tdg
+aprender-orchestrate analyze --tdg
 ```
 
 ### 2. Initialize Orchestration
 
 ```bash
-# Initialize batuta configuration
-batuta init
+# Initialize aprender-orchestrate configuration
+aprender-orchestrate init
 ```
 
 ### 3. Use Oracle Mode
 
 ```bash
 # Ask questions about your project
-batuta oracle "How do I convert this Python code to Rust?"
+aprender-orchestrate oracle "How do I convert this Python code to Rust?"
 ```
 
 ## Example Output
 
 ```
-$ batuta analyze --languages
+$ aprender-orchestrate analyze --languages
 
 Language Analysis:
   Python: 45 files (2,340 lines)
@@ -51,6 +51,6 @@ Detected Frameworks:
 
 ## Next Steps
 
-- Read the [full documentation](https://paiml.github.io/batuta/)
-- Explore the [5-phase workflow](https://paiml.github.io/batuta/part2/workflow-overview.html)
-- Learn about [Toyota Way principles](https://paiml.github.io/batuta/part1/toyota-way.html)
+- Read the [full documentation](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book)
+- Explore the [5-phase workflow](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book)
+- Learn about [Toyota Way principles](https://github.com/paiml/aprender/tree/main/crates/aprender-orchestrate/book)

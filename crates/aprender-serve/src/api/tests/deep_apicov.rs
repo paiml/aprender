@@ -295,6 +295,7 @@ fn test_deep_apicov_default_functions() {
 #[test]
 fn test_deep_apicov_embedding_request_serialize() {
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "test input".to_string().into(),
         model: Some("test-model".to_string()),
     };

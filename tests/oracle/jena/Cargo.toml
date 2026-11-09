@@ -1,0 +1,18 @@
+# CRUX category R (spec §14, contract draft crux-shacl-jena-v1): pv against Apache Jena 5.6.0, run on a JVM.
+# A SCRATCH CRATE, DETACHED from the workspace (`[workspace]` below) and from the two oracles beside it, so no JVM
+# path and no oracle dependency is reachable from pv (R-13). Jena is not a cargo dependency: its binary zip is
+# fetched by sha256 at run time. `make oracle-jena` runs it on demand; no PR, merge-queue or release job does.
+[package]
+name = "ont-jena-oracle"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+serde_json = "1"
+
+[[bin]]
+name = "jena-oracle"
+path = "src/main.rs"

@@ -173,6 +173,11 @@ fn unknown_competitor_is_an_error() {
         "llama.cpp",
         "openai",
         "''",
+        // The category-R admission is the one lower-case word, nothing near it:
+        // the project's own name and the CLI verbs are not registry members.
+        "Jena",
+        "apache-jena",
+        "riot",
     ] {
         let yaml = crux_contract(&format!("'{}'", bad.trim_matches('\'')), "3", "missing");
         let errors = crux_errors(&yaml);
@@ -218,6 +223,9 @@ fn competitor_registry_covers_the_corpus_vocabulary() {
         "linfa",
         // Category O — AutoML Parity (aprender#3370, 2026-09-16). 24 contracts.
         "autogluon",
+        // Category R — SHACL ontologies vs Apache Jena (aprender#3598,
+        // 2026-10-09). 4 contracts, one per cell.
+        "jena",
     ] {
         assert!(
             CRUX_COMPETITORS.contains(&required),
@@ -262,6 +270,8 @@ fn beat_incumbents_cannot_name_the_crux_corpus() {
         "linfa",
         // AutoGluon: not a BEAT pillar either; scikit-learn stays the pillar.
         "autogluon",
+        // Apache Jena: a second SHACL engine, not a model framework at all.
+        "jena",
     ] {
         assert!(!beat_accepts(c), "BEAT_INCUMBENTS unexpectedly accepts {c}");
     }

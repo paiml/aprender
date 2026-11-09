@@ -1,0 +1,19 @@
+- id: PMAT-6491
+  github_issue: 6491
+  item_type: task
+  title: 'release: auto-open next-patch bump PR when clean-room goes red (ANDON T1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-31T09:50:28Z
+  updated: 2026-10-31T09:50:28Z
+  spec: null
+  acceptance_criteria:
+  - cleanroom_red_bump.sh + autopilot hook
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5306

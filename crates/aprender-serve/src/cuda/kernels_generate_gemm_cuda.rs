@@ -67,6 +67,9 @@ impl CudaKernels {
             KernelType::Gemv { k, n } => GemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::CoalescedGemv { k, n } => CoalescedGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::Q5KGemv { k, n } => Q5KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
+            KernelType::BatchedQ5KGemv { k, n, m } => {
+                BatchedQ5KGemvKernel { k: *k, n: *n, m: *m }.emit_ptx_for_target(target)
+            },
             KernelType::Q6KGemv { k, n } => Q6KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::CoalescedQ6KGemv { k, n } => CoalescedQ6KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::BatchedQ6KGemv { k, n, m } => {
@@ -75,14 +78,21 @@ impl CudaKernels {
             KernelType::MwvQ6KGemv { k, n, num_warps } => {
                 MultiWarpQ6KGemvKernel::with_warps(*k, *n, *num_warps).emit_ptx_for_target(target)
             },
+            KernelType::BatchedMwvQ6KGemv { k, n, m, num_warps } => {
+                BatchedMwvQ6KGemvKernel { k: *k, n: *n, m: *m, num_warps: *num_warps }.emit_ptx_for_target(target)
+            },
             KernelType::Dp4aQ6KGemv { k, n, num_warps } => {
                 Dp4aQ6KGemvKernel::with_warps(*k, *n, *num_warps).emit_ptx_for_target(target)
             },
             KernelType::HwDp4aQ6KGemv { k, n, num_warps: _ } => {
                 HalfWarpDp4aQ6KGemvKernel::new(*k, *n).emit_ptx_for_target(target)
             },
+            KernelType::BatchedHwDp4aQ6KGemv { k, n, m, num_warps: _ } => {
+                BatchedHwDp4aQ6KGemvKernel::new(*k, *n, *m).emit_ptx_for_target(target)
+            },
             KernelType::Fp16Q4KGemv { k, n } => Fp16Q4KGemvKernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::Q8_0Gemv { k, n } => Q8_0GemvKernel::new(*k, *n).emit_ptx_for_target(target),
+            KernelType::BatchedQ8_0Gemv { k, n } => BatchedQ8_0GemvKernel { k: *k, n: *n }.emit_ptx_for_target(target),
             KernelType::Q5_0Gemv { k, n } => generate_q5_0_candle_ptx(*k, *n),
             KernelType::Q4_0Gemv { k, n } => generate_q4_0_candle_ptx(*k, *n),
             KernelType::Q4_1Gemv { k, n } => generate_q4_1_candle_ptx(*k, *n),
@@ -118,6 +128,9 @@ impl CudaKernels {
                 let mut kernel = MultiWarpVectorizedQ4KGemvKernel::new(*k, *n);
                 kernel.num_warps = *num_warps;
                 kernel.emit_ptx_for_target(target)
+            },
+            KernelType::BatchedMwvQ4KGemv { k, n, m, num_warps } => {
+                BatchedMwvQ4KGemvKernel { k: *k, n: *n, m: *m, num_warps: *num_warps }.emit_ptx_for_target(target)
             },
             KernelType::MwvDp4aQ4KGemv { k, n, num_warps } => {
                 let mut kernel = MwvDp4aQ4KGemvKernel::new(*k, *n);
@@ -232,6 +245,12 @@ impl CudaKernels {
             KernelType::VectorizedRmsNorm { hidden_size, epsilon } => {
                 VectorizedRmsNormKernel::new(*hidden_size).with_epsilon(*epsilon).emit_ptx_for_target(target)
             },
+            KernelType::RowsRmsNorm { hidden_size, epsilon, vectorized } => RowsRmsNormKernel {
+                hidden_size: *hidden_size,
+                epsilon: *epsilon,
+                vectorized: *vectorized,
+            }
+            .emit_ptx_for_target(target),
             KernelType::BatchedVectorizedRmsNorm { hidden_size, batch_size, epsilon } => {
                 BatchedVectorizedRmsNormKernel::new(*hidden_size, *batch_size).with_epsilon(*epsilon).emit_ptx_for_target(target)
             },
@@ -353,6 +372,11 @@ impl CudaKernels {
                     .indirect()
                     .emit_ptx_for_target(target)
             },
+            KernelType::GdnPartialNeoxRopeSlots { num_heads, head_dim, n_rot } => {
+                PartialNeoxRopeKernel::new(*num_heads, *head_dim, *n_rot)
+                    .slots()
+                    .emit_ptx_for_target(target)
+            },
             KernelType::GdnDecodeAttentionIndirect { num_heads, num_kv_heads, head_dim } => {
                 DecodeAttention256Kernel::new(*num_heads, *num_kv_heads, *head_dim)
                     .indirect()
@@ -361,13 +385,26 @@ impl CudaKernels {
             KernelType::GdnKvRowScatterIndirect { row } => {
                 KvRowScatterIndirectKernel::new(*row).emit_ptx_for_target(target)
             },
+            KernelType::GdnKvRowScatterSlots { row } => {
+                KvRowScatterIndirectKernel::new(*row).slots().emit_ptx_for_target(target)
+            },
             KernelType::GdnDecodeAttentionSplit { num_heads, num_kv_heads, head_dim, split_len } => {
                 DecodeAttentionSplitKernel::new(*num_heads, *num_kv_heads, *head_dim)
                     .with_split_len(*split_len)
                     .emit_ptx_for_target(target)
             },
             KernelType::GdnDecodeAttentionReduce { num_heads, head_dim, split_len } => {
-                DecodeAttentionReduceKernel { num_heads: *num_heads, head_dim: *head_dim, split_len: *split_len }
+                DecodeAttentionReduceKernel { num_heads: *num_heads, head_dim: *head_dim, split_len: *split_len, slots: false }
+                    .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttentionSplitSlots { num_heads, num_kv_heads, head_dim, split_len } => {
+                DecodeAttentionSplitKernel::new(*num_heads, *num_kv_heads, *head_dim)
+                    .with_split_len(*split_len)
+                    .slots()
+                    .emit_ptx_for_target(target)
+            },
+            KernelType::GdnDecodeAttentionReduceSlots { num_heads, head_dim, split_len } => {
+                DecodeAttentionReduceKernel { num_heads: *num_heads, head_dim: *head_dim, split_len: *split_len, slots: true }
                     .emit_ptx_for_target(target)
             },
             _ => return None,
@@ -413,6 +450,10 @@ impl CudaKernels {
             KernelType::PackedDp4aQ4KQ8 { k, n } => PackedDp4aQ4KQ8Kernel::new(*k, *n).emit_ptx_for_target(target),
             KernelType::ArgMax { length } => ArgMaxKernel::new(*length).emit_ptx_for_target(target),
             KernelType::ArgMaxFinal { num_blocks } => ArgMaxFinalKernel::new(*num_blocks).emit_ptx_for_target(target),
+            KernelType::ArgMaxRows { length } => ArgMaxKernel::new(*length).rows().emit_ptx_for_target(target),
+            KernelType::ArgMaxFinalRows { num_blocks } => {
+                ArgMaxFinalKernel::new(*num_blocks).rows().emit_ptx_for_target(target)
+            },
             KernelType::Q8Dequant { n } => generate_q8_dequant_ptx(*n),
             _ => return None,
         };

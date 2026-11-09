@@ -31,6 +31,7 @@
     #[test]
     fn test_run_result_debug() {
         let result = RunResult {
+            logprobs: None,
             text: "Hello".to_string(),
             duration_secs: 0.1,
             cached: true,
@@ -41,6 +42,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         let _debug = format!("{:?}", result);
         assert_eq!(result.tokens_generated, Some(5));
@@ -141,6 +143,7 @@
     #[test]
     fn test_run_result_clone() {
         let result = RunResult {
+            logprobs: None,
             text: "Test".to_string(),
             duration_secs: 1.0,
             cached: false,
@@ -151,6 +154,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         let cloned = result.clone();
         assert_eq!(result.text, cloned.text);

@@ -13,7 +13,10 @@
 # Actions suite of a merge-queue branch (gh-readonly-queue/...). It reports what it found, a
 # failure included; judging it is ci_test_tier.sh's job.
 #
-# Exactly two API calls, both on the checks endpoints (the ones the merge_group arm already reads).
+# Three API calls: two on the checks endpoints (the ones the merge_group arm already reads) and, for a success, one
+# on the found run's jobs. A queue run that SKIPPED its workspace-test shards (it cited a PR run, mg-reuse-wt #5884)
+# also reports a green `workspace-test`; reusing that on the push would cite a citation, so the lookup refuses
+# unless every `workspace-test-shard (N, M)` job of that run succeeded.
 # Anything that is not a clean answer prints NOTHING on stdout, one reason on stderr, and exits 1:
 # the caller then decides the tier from the push's own diff, as before T36.
 #
@@ -50,4 +53,14 @@ done <<<"$runs"
 read -r hsha concl url <<<"$found"
 [[ $hsha =~ ^[0-9a-f]{40}$ ]] || no "the workspace-test check run reports no sha" # R-HEADSHA
 [[ $url =~ /actions/runs/([0-9]+)(/|$) ]] || no "the workspace-test details_url names no run id: $url" # R-RUNID
-printf -- '--mg-run\n%s\n--mg-sha\n%s\n--mg-conclusion\n%s\n' "${BASH_REMATCH[1]}" "$hsha" "$concl"
+rid=${BASH_REMATCH[1]}
+
+# Call 3 (a success only): the shards of that run. A skipped, failed or absent shard means the green
+# `workspace-test` was a citation of another run (or tested nothing), never this tree's own measurement.
+if [ "$concl" = success ]; then
+    jobs=$(gh api "repos/$repo/actions/runs/$rid/jobs?per_page=100&filter=latest"); rc=$?
+    [ "$rc" -eq 0 ] || no "the jobs lookup failed for run $rid" # R-JOBSAPI
+    shards=$(jq -r '[.jobs[]? | select(.name | test("^workspace-test-shard \\([0-9]+, [0-9]+\\)$"))] | if length == 0 then "none" elif all(.conclusion == "success") then "ok" else "no" end' <<<"$jobs" 2>/dev/null)
+    [ "$shards" = ok ] || no "run $rid did not run and pass its own workspace-test shards (${shards:-unreadable}): its green verdict may be a citation" # R-SHARDS
+fi
+printf -- '--mg-run\n%s\n--mg-sha\n%s\n--mg-conclusion\n%s\n' "$rid" "$hsha" "$concl"

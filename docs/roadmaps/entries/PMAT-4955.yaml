@@ -1,0 +1,18 @@
+- id: PMAT-4955
+  github_issue: 4955
+  item_type: task
+  title: 'Q6: non-blocking PR-path rows to nightly LAB'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-09T09:05:55Z
+  updated: 2026-10-09T09:05:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998

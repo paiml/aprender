@@ -258,3 +258,186 @@ fn falsify_perlayer_003_validation_rejects() {
         );
     }
 }
+
+// ============================================================================
+// Report accounting and parser helper tests
+// ============================================================================
+
+#[test]
+fn report_counts_matched_and_defaulted_tensors() {
+    let mut report = LayerMergeReport::default();
+    assert_eq!(report.tensors_processed, 0);
+    assert_eq!(report.total_matched(), 0);
+    assert_eq!(report.total_defaulted(), 0);
+
+    report.record_tensor(Some("attn"));
+    report.record_tensor(Some("attn"));
+    report.record_tensor(Some("mlp"));
+    report.record_tensor(None);
+    report.record_tensor(None);
+
+    assert_eq!(report.tensors_processed, 5);
+    assert_eq!(report.rules_matched["attn"], 2);
+    assert_eq!(report.rules_matched["mlp"], 1);
+    assert_eq!(report.total_matched(), 3);
+    assert_eq!(report.total_defaulted(), 2);
+}
+
+#[test]
+fn report_defaulted_saturates_instead_of_underflowing() {
+    let mut report = LayerMergeReport::new();
+    report.rules_matched.insert("x".to_string(), 7);
+    report.tensors_processed = 3;
+    assert_eq!(report.total_defaulted(), 0);
+}
+
+#[test]
+fn wildcard_pattern_requires_segments_in_order() {
+    assert!(pattern_matches(
+        "model.layers.0.q_proj.weight",
+        "layers.0.*weight"
+    ));
+    assert!(!pattern_matches(
+        "model.layers.0.q_proj.bias",
+        "layers.0.*weight"
+    ));
+    assert!(!pattern_matches("weight.layers.0.q", "layers.0.*weight"));
+    assert!(pattern_matches("anything", "*"));
+    assert!(pattern_matches("a.b", "a**b"));
+}
+
+#[test]
+fn escaped_dot_is_a_literal_dot() {
+    assert!(pattern_matches("layers.10.attn", "layers\\.10\\."));
+    assert!(!pattern_matches("layers_10_attn", "layers\\.10\\."));
+}
+
+#[test]
+fn parse_kv_handles_spaced_bare_and_missing_keys() {
+    assert_eq!(
+        parse_kv("  output: /tmp/m.apr  ", "output"),
+        Some("/tmp/m.apr")
+    );
+    assert_eq!(parse_kv("models:", "models"), None);
+    assert_eq!(parse_kv("output:/tmp/m.apr", "output"), Some("/tmp/m.apr"));
+    assert_eq!(parse_kv("output:", "output"), None);
+    assert_eq!(parse_kv("weight: 0.5", "output"), None);
+}
+
+#[test]
+fn unquote_strips_matching_quotes_only() {
+    assert_eq!(unquote("\"abc\""), "abc");
+    assert_eq!(unquote("'abc'"), "abc");
+    assert_eq!(unquote("  plain  "), "plain");
+    assert_eq!(unquote("\"mixed'"), "\"mixed'");
+    assert_eq!(unquote("\""), "\"");
+    assert_eq!(unquote("\"\""), "");
+}
+
+#[test]
+fn parse_float_list_skips_unparseable_items() {
+    assert_eq!(parse_float_list("[0.7, 0.3]"), vec![0.7, 0.3]);
+    assert_eq!(parse_float_list(" [ ] "), Vec::<f64>::new());
+    assert_eq!(parse_float_list("[1, x, 2.5]"), vec![1.0, 2.5]);
+    assert_eq!(parse_float_list("0.5"), vec![0.5]);
+}
+
+#[test]
+fn flush_entries_only_fire_in_their_own_section() {
+    let mut models = Vec::new();
+    let mut path = "a.apr".to_string();
+    let mut weight = Some(0.4);
+    flush_model_entry(&ParserSection::Root, &mut models, &mut path, &mut weight);
+    assert!(models.is_empty());
+    assert_eq!(path, "a.apr");
+    flush_model_entry(
+        &ParserSection::ModelEntry,
+        &mut models,
+        &mut path,
+        &mut weight,
+    );
+    assert_eq!(models.len(), 1);
+    assert_eq!(models[0].weight, Some(0.4));
+    assert!(path.is_empty() && weight.is_none());
+
+    let mut rules = Vec::new();
+    let (mut pat, mut strat, mut w, mut scale) =
+        ("attn".to_string(), String::new(), None, Some(2.0));
+    flush_layer_entry(
+        &ParserSection::Layers,
+        &mut rules,
+        &mut pat,
+        &mut strat,
+        &mut w,
+        &mut scale,
+    );
+    assert!(rules.is_empty());
+    flush_layer_entry(
+        &ParserSection::LayerEntry,
+        &mut rules,
+        &mut pat,
+        &mut strat,
+        &mut w,
+        &mut scale,
+    );
+    assert_eq!(rules.len(), 1);
+    assert_eq!(
+        rules[0].strategy, "average",
+        "empty strategy defaults to average"
+    );
+    assert_eq!(rules[0].scale, Some(2.0));
+    assert!(pat.is_empty() && scale.is_none());
+}
+
+fn valid_config() -> MergeYamlConfig {
+    parse_merge_yaml(
+        "models:\n  - path: a.apr\n  - path: b.apr\noutput: o.apr\ndefault_strategy: average\n",
+    )
+    .expect("valid")
+}
+
+#[test]
+fn validate_rejects_each_bad_field_by_name() {
+    let mut c = valid_config();
+    c.models[0].weight = Some(f64::NAN);
+    assert!(validate_merge_config(&c)
+        .unwrap_err()
+        .to_string()
+        .contains("weight"));
+
+    let mut c = valid_config();
+    c.models[1].path.clear();
+    assert!(validate_merge_config(&c)
+        .unwrap_err()
+        .to_string()
+        .contains("empty path"));
+
+    let mut c = valid_config();
+    c.output.clear();
+    assert!(validate_merge_config(&c)
+        .unwrap_err()
+        .to_string()
+        .contains("output path"));
+
+    let rule = |p: &str, s: &str, w: Option<Vec<f64>>, sc: Option<f64>| LayerRule {
+        layer_pattern: p.to_string(),
+        strategy: s.to_string(),
+        weights: w,
+        scale: sc,
+    };
+    for (r, needle) in [
+        (rule("", "average", None, None), "empty pattern"),
+        (rule("a", "nosuch", None, None), "unknown strategy"),
+        (
+            rule("a", "average", Some(vec![f64::INFINITY]), None),
+            "weight[0]",
+        ),
+        (rule("a", "average", None, Some(f64::NAN)), "scale"),
+    ] {
+        let mut c = valid_config();
+        c.layers = Some(vec![r]);
+        let msg = validate_merge_config(&c).unwrap_err().to_string();
+        assert!(msg.contains(needle), "{needle}: {msg}");
+    }
+    assert!(validate_merge_config(&valid_config()).is_ok());
+}

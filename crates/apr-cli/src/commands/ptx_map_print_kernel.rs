@@ -715,4 +715,28 @@ st.global.f32 [%r3], %f2;
         );
         assert_eq!(dominant_weight_quant(std::iter::empty()), None);
     }
+
+    /// FALSIFY-OPS-011: the printers run to completion on the decode and
+    /// prefill tables, on a hit, a miss and an empty step list. They print to
+    /// stdout, so what is asserted is the arithmetic they print from.
+    #[test]
+    fn print_json_and_reverse_lookup_cover_every_branch() {
+        let info = sample_info();
+        let decode = build_decode_sequence(&info);
+        let prefill = build_prefill_sequence(&info);
+        print_json(&decode, &info, false);
+        print_json(&prefill, &info, true);
+        print_json(&[], &info, false);
+        print_reverse_lookup(&decode, "q4kgemv", &info);
+        print_reverse_lookup(&decode, "NoSuchKernel", &info);
+        print_kernel_table(&decode, None);
+        // launches/layer x layers, the figure print_reverse_lookup reports
+        let per_layer = decode
+            .iter()
+            .filter(|s| s.name.to_lowercase().contains("q4kgemv"))
+            .count();
+        assert_eq!(per_layer * info.num_layers, 5 * 28);
+        // the +2 (final norm + lm_head) print_json adds to total_launches
+        assert_eq!(decode.len() * info.num_layers + 2, 12 * 28 + 2);
+    }
 }

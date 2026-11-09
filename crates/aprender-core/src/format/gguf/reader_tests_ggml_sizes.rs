@@ -261,3 +261,74 @@ fn test_3947_whole_model_f32_load_still_refuses_decoded_iq_types() {
         );
     }
 }
+
+/// Values whose low 16 bits are zero, so BF16 holds each exactly: the sign of zero, the
+/// smallest normal, a short fraction, a large negative value and infinity.
+const BF16_EXACT: [f32; 8] = [
+    1.0,
+    -2.5,
+    0.0,
+    -0.0,
+    f32::MIN_POSITIVE,
+    3.140625,
+    -65280.0,
+    f32::INFINITY,
+];
+
+/// The BF16 bytes of `values`: the top 16 bits of each, little-endian.
+fn bf16_bytes(values: &[f32]) -> Vec<u8> {
+    values
+        .iter()
+        .flat_map(|v| ((v.to_bits() >> 16) as u16).to_le_bytes())
+        .collect()
+}
+
+/// APR-EMBED-001 EG-1 (#4900): `get_tensor_f32` refused BF16 (ggml type 30) as having no
+/// dequantizer, so `apr validate` failed every BF16 tensor of the EmbeddingGemma 2 files.
+/// BF16 is the top half of an F32, so it widens bit-exactly; the 0xEE tail is not read.
+#[test]
+fn test_4900_get_tensor_f32_widens_bf16_bit_exactly() {
+    assert!(
+        BF16_EXACT.iter().all(|v| v.to_bits().trailing_zeros() >= 16),
+        "fixture: every value must be exact in BF16"
+    );
+    let n = BF16_EXACT.len();
+    let reader = one_tensor(&[n as u64], 30, &bf16_bytes(&BF16_EXACT), 64);
+    let (got, shape) = reader.get_tensor_f32("t.weight").expect("BF16 must widen");
+    assert_eq!(shape, vec![n]);
+    let bits = |v: &[f32]| v.iter().map(|x| x.to_bits()).collect::<Vec<_>>();
+    assert_eq!(bits(&got), bits(&BF16_EXACT), "BF16 must widen bit-exactly");
+}
+
+/// F16 shares the two-byte path with BF16 and keeps its own widening: 0x3C00 is 1.0 in
+/// F16 and 2^-7 in BF16, so a swapped widener fails here.
+#[test]
+fn test_4900_f16_keeps_its_own_widening() {
+    let halves: [u16; 4] = [0x3C00, 0xC000, 0x7BFF, 0x0000];
+    let bytes: Vec<u8> = halves.iter().flat_map(|h| h.to_le_bytes()).collect();
+    let reader = one_tensor(&[4], 1, &bytes, 64);
+    let (got, _) = reader.get_tensor_f32("t.weight").expect("F16 widens");
+    assert_eq!(got, vec![1.0, -2.0, 65504.0, 0.0]);
+}
+
+/// A BF16 tensor whose data runs past the end of the file is refused by name, not read short.
+#[test]
+fn test_4900_short_bf16_data_is_refused() {
+    let reader = one_tensor(&[64], 30, &payload(64), 0);
+    let err = reader
+        .get_tensor_f32("t.weight")
+        .expect_err("64 elements need 128 bytes")
+        .to_string();
+    assert!(err.contains("t.weight") && err.contains("exceeds file size"), "{err}");
+}
+
+/// The whole-model F32 load (`apr import`'s GH-375 fallback, `apr convert`) now reads BF16
+/// too, and gets the same exact values: unlike the #3947 IQ types, nothing is decoded, only
+/// widened, so no weight is invented.
+#[test]
+fn test_4900_whole_model_f32_load_widens_bf16_exactly() {
+    let reader = one_tensor(&[BF16_EXACT.len() as u64], 30, &bf16_bytes(&BF16_EXACT), 0);
+    let all = reader.get_all_tensors_f32().expect("BF16 loads whole-model");
+    let (got, _) = all.get("t.weight").expect("tensor present");
+    assert!(got.iter().zip(&BF16_EXACT).all(|(a, b)| a.to_bits() == b.to_bits()));
+}

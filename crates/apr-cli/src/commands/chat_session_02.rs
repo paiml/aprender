@@ -174,6 +174,12 @@ impl ChatSession {
 
             report_loaded_format(format, &model_bytes, start.elapsed());
 
+            // APR-EMBED-001 EG-1 (I-3): an embedding model is refused by kind before any tokenizer
+            // or backend is built, on every host; the CUDA preload was the only place it was refused.
+            if format == ModelFormat::Gguf {
+                crate::commands::model_kind_gate::refuse_non_generative_bytes(&model_bytes, "chat")?;
+            }
+
             let (llama_tokenizer, qwen_tokenizer) = load_tokenizers(format, &model_bytes, path)?;
 
             if matches!(

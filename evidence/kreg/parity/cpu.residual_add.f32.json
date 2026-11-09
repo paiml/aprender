@@ -1,0 +1,46 @@
+{
+  "build_identity": "f32881e0b6",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:residual_add:fl32(h+d),h+d exact in f64,d=U(-4,4)*2^-k,k<12",
+    "row_sha256": "6948580b716506c7e82ed2e8126ca4f8bc2b4b042b6cdf288f64d7bb00d0ac7d",
+    "source_sha256": "5df0d8485e9c3420c808832bfba46f52fc8e82aea8196c003121684f809a9549",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "ffef3de419f9a238b8cdc6cd0eb934389c65ef72ddea765f6706fd6425c7bec5",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.residual_add.f32",
+  "margin": {
+    "error_model": "EM-ELEM",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "residual_add:fl32(h+d),h+d exact in f64,d=U(-4,4)*2^-k,k<12",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.0,
+    "max_rel_err": 0.0
+  },
+  "source_fn": "residual_add_into",
+  "tolerance_rel": 2.9999999999999997e-308,
+  "ts": "2026-09-29T17:11:20Z",
+  "workload": {
+    "n": 896,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}

@@ -3,7 +3,7 @@
 # AND the instrument (PP-066 DAG row G-10, epic #2873, issue #2999; PMAT-1059)
 #
 # WHAT IT GOVERNS
-#   scripts/pmat_bin.sh (the ONE pin: PMAT_PIN, resolution order, refusal),
+#   scripts/pmat_bin.sh (PMAT_PIN, read from tools.toml [pmat] version by scripts/pmat_pin.sh; resolution order, refusal),
 #   scripts/hardcoded_path_shipped_baseline.txt (stamped: count, pmat_version,
 #   basis) and scripts/check_hardcoded_paths.sh --full-if-capable (absolute
 #   compare only under a matching stamp; otherwise REPORT and decide HEAD vs
@@ -40,7 +40,8 @@ metadata:
   last_modified: '2026-09-06'
   author: PAIML Engineering
   references:
-    - 'scripts/pmat_bin.sh — PMAT_PIN, resolution order, refusal with both versions named'
+    - 'scripts/pmat_bin.sh — PMAT_PIN (from tools.toml via scripts/pmat_pin.sh), resolution order, refusal with both versions named'
+    - 'scripts/pmat_pin.sh — the one strict X.Y.Z reader of the [pmat] pin (PMAT-6131)'
     - 'scripts/check_hardcoded_paths.sh — --full-if-capable: stamped baseline, REPORT BASELINE-STALE/INVALID, HEAD vs merge-base'
     - 'scripts/hardcoded_path_shipped_baseline.txt — count:, pmat_version:, basis:'
     - 'scripts/lib/resolve_base.sh — the base resolver shared with check_roadmap_diff_additive.sh (G-6)'

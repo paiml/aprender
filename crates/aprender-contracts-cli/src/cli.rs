@@ -166,6 +166,9 @@ pub enum Commands {
         /// Generate .github/workflows/contracts.yml
         #[arg(long)]
         ci: bool,
+        /// Preview: list each path that would be created or overwritten; write nothing
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Show contract dependency graph
     Graph {
@@ -175,6 +178,12 @@ pub enum Commands {
         /// Output format: text (default), dot, json, or mermaid
         #[arg(long, default_value = "text")]
         format: String,
+    },
+    /// Check stated invariants against each equation's formula (equality/bounds subset; unparsed is not a pass)
+    CheckSymbolic {
+        contract: PathBuf,
+        #[arg(long)]
+        json: bool,
     },
     /// Display equations from a contract
     Equations {
@@ -304,6 +313,12 @@ pub enum Commands {
         /// promote to Error and fail CI. Issue #1510.
         #[arg(long)]
         strict_test_binding: bool,
+        /// Run only what `--strict-test-binding` needs: validate (its precondition) and the strict
+        /// test-binding gate. Gates 2-22 do not run and nothing is cached or recorded as trend;
+        /// every armed gate that did not run reads `NotRun`, so this never reports a full-lint
+        /// PASS. The JSON keeps the full-lint shape. Implies `--strict-test-binding`. aprender#4974.
+        #[arg(long, conflicts_with_all = ["gate", "watch", "trend"])]
+        strict_test_binding_only: bool,
         /// Git ref whose `lint-baseline.json` is the `armed_gates` comparand (ONT-001 section 3.9). Default:
         /// merge-base(HEAD, origin/main), else the origin/main tip; with neither, NOT CHECKED is printed.
         #[arg(long)]
@@ -382,6 +397,9 @@ pub enum Commands {
         /// Path to SUMMARY.md (default: book/src/SUMMARY.md)
         #[arg(long)]
         summary_path: Option<PathBuf>,
+        /// Preview: list each page that would be created or overwritten; write nothing
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Infer contracts and bindings for unbound functions in a crate
     Infer {
@@ -415,6 +433,9 @@ pub enum Commands {
         /// Mandatory reason for unlocking (audit trail)
         #[arg(long)]
         reason: String,
+        /// Preview: show the YAML diff that would be applied; write nothing
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Compute roofline ceilings from contract equations
     Roofline {
@@ -674,6 +695,13 @@ pub struct ReleaseArgs {
     /// The CRUX receipts, apr vs its comparators (default: evidence/crux/<version>/)
     #[arg(long)]
     pub crux_receipts: Option<PathBuf>,
+    /// aprender#3715 v2: the kernel-cell evidence dir (`input-sets.json`, `<host>/parity/*.json`). Adds the v2
+    /// kernel and model cells to the release graph; absent → none. Needs the kernel registry in the repo.
+    #[arg(long)]
+    pub v2_evidence: Option<PathBuf>,
+    /// The gate time (`YYYY-MM-DDTHH:MM:SSZ`) v2 sanitizer runs are aged against; absent → every run is stale
+    #[arg(long)]
+    pub gate_utc: Option<String>,
 }
 
 impl ReleaseArgs {
@@ -689,6 +717,8 @@ impl ReleaseArgs {
             || self.tokenizer_receipts.is_some()
             || self.surface.is_some()
             || self.crux_receipts.is_some()
+            || self.v2_evidence.is_some()
+            || self.gate_utc.is_some()
     }
 
     /// The subject, or `None` when no flag was passed. A partial set is refused, never completed by a default.
@@ -718,6 +748,8 @@ impl ReleaseArgs {
             .clone_from(&self.tokenizer_receipts);
         s.surface.clone_from(&self.surface);
         s.crux_receipts_dir.clone_from(&self.crux_receipts);
+        s.v2_dir.clone_from(&self.v2_evidence);
+        s.v2_gate_utc.clone_from(&self.gate_utc);
         Ok(Some(s))
     }
 }
@@ -745,5 +777,11 @@ pub enum OntologyCommand {
         /// Write `tbox-report.json` next to Σ instead of printing it
         #[arg(long)]
         write: bool,
+    },
+    /// Published READMEs and manifest URLs name the monorepo, never an archived repo (#5382). Exit 1 on a finding
+    Readme {
+        /// Workspace root: its README.md, and every README.md and Cargo.toml under crates/
+        #[arg(default_value = ".")]
+        root: PathBuf,
     },
 }

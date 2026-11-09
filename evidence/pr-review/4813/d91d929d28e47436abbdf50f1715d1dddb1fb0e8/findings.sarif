@@ -1,0 +1,159 @@
+{
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "no_reusable_prior_art",
+          "level": "note",
+          "message": {
+            "text": "pmat query over the head-built index found no reusable issue opener; the duplication scan reached all 1564 branches and its only hits are this PR's own merge-queue refs and the stacked part #4716 of the same work."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "pmat query run at this head; scripts/pr_review_duplication_scan.sh run with --base ad8fafc794 --head d91d929d28 (symbols_searched 29, 1564/1564 branches).",
+            "failure_scenario": "A reusable opener would leave a drifting second copy; none was found.",
+            "precision_class": "advisory",
+            "command": [
+              "pmat",
+              "query",
+              "release ticket issue create nightly",
+              "--limit",
+              "5",
+              "--format",
+              "json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "c6d8c19f7d527c5eaf72bd894745c42a3cd042016f5e54fcd4b60298ebbf9152"
+          }
+        },
+        {
+          "ruleId": "no_satd_introduced",
+          "level": "note",
+          "message": {
+            "text": "The full PR diff adds no TODO, FIXME, HACK or XXX marker in scripts/release or .github (grep -c exits 1 on zero)."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "Added lines only.",
+            "failure_scenario": "A new debt marker would ship without a ticket; there is none.",
+            "precision_class": "advisory",
+            "command": [
+              "sh",
+              "-c",
+              "git diff ad8fafc794 d91d929d28 -- scripts/release .github | grep -E \"^[+]\" | grep -v \"^[+][+][+]\" | grep -ciE \"TODO|FIXME|HACK|XXX\""
+            ],
+            "exit_code": 1
+          }
+        },
+        {
+          "ruleId": "self_test_and_drift_check_green",
+          "level": "note",
+          "message": {
+            "text": "At this head, scripts/release/assets_rehearsal.sh --self-test reads 116 pass, 0 fail and --check reports the generated workflow equal to a fresh generation."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "Both run in the review worktree; no cargo involved.",
+            "failure_scenario": "A hand edit of the generated workflow, or a failing case-table row, would read red here; neither does.",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/release/assets_rehearsal.sh",
+              "--self-test"
+            ],
+            "exit_code": 0
+          }
+        },
+        {
+          "ruleId": "merge_and_roadmap_regen_only",
+          "level": "note",
+          "message": {
+            "text": "Since the last reviewed head the only changes are a merge of origin/main and the roadmap.yaml aggregate, which adds exactly the PMAT-4806 fragment text; the full diff (4 code/doc files plus evidence) was read in full."
+          },
+          "properties": {
+            "grounding": "measured",
+            "rationale": "git diff ad8fafc794 HEAD -- docs/roadmaps/roadmap.yaml shows one +23 hunk equal to docs/roadmaps/entries/PMAT-4806.yaml.",
+            "failure_scenario": "A divergent aggregate would drift from its fragment; it does not.",
+            "precision_class": "advisory",
+            "command": [
+              "git",
+              "diff",
+              "ad8fafc794",
+              "HEAD",
+              "--",
+              "docs/roadmaps/roadmap.yaml"
+            ],
+            "exit_code": 0
+          }
+        },
+        {
+          "ruleId": "pending_run_replaced_by_later_night",
+          "level": "note",
+          "message": {
+            "text": "GitHub keeps one pending run per concurrency group and replaces an older pending one, and the group is entered by every completed rehearsal, including green ones whose job the if: skips (assets-rehearsal-tickets.yml:13-17). A red night waiting behind a running ticket job can be replaced by a later green night's skipped run and never write its comment."
+          },
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reasoning from documented concurrency semantics, not an executed repro; the loss is one comment on an already open ticket.",
+            "failure_scenario": "A red night's commit is never named on the ticket if a later night replaces its pending run; the ticket stays open and the next red night updates it.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "agy ran without any permission bypass and could not review: it exited 0 with status SUCCESS, an empty response and no structured_output, and denied_actions lists the command tool. stderr: jetski: no output produced — a tool required the \"command\" permission that headless mode cannot prompt for, so it was auto-denied. Add an allow-rule under permissions.allow in settings.json (e.g. command(<target>)). Alternatively, re-run with --dangerously-skip-permissions to auto-approve all tools."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "agy",
+                  "-p",
+                  "<prompt file>",
+                  "--output-format",
+                  "json",
+                  "--json-schema",
+                  ".pr-review-schema.json",
+                  "--model",
+                  "gemini-3.1-pro-high",
+                  "--print-timeout",
+                  "20m",
+                  "--add-dir",
+                  "<disposable tree>"
+                ],
+                "exit_code": 0,
+                "stderr_sha256": "6f9b232ca1f3b43aa72e2ba63698c09b0796b612d5a17cf05efee31e6c79b713"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    }
+  ]
+}

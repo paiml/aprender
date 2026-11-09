@@ -10,7 +10,6 @@ clap = { workspace = true }
 colored = "2.1"
 walkdir = "2.4"
 regex = "1.10"
-bashrs = "6.35"
 
 [build-dependencies]
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version

@@ -699,7 +699,7 @@ impl Qwen35CudaModel<'_> {
             });
         }
         let hidden = self.dims.hidden_dim as usize;
-        let vocab_rows = self.model.base.token_embedding().len() / hidden;
+        let vocab_rows = self.model.embedding.rows();
         if let Some(bad) = tokens.iter().find(|&&t| t as usize >= vocab_rows) {
             return Err(RealizarError::InvalidShape {
                 reason: format!(
@@ -758,11 +758,9 @@ impl Qwen35CudaModel<'_> {
         // The previous chunk's kernels read `x` until its last layer; the host copy
         // below is not ordered with this model's (non-blocking) stream, so wait.
         self.executor.sync_stream().map_err(err)?;
-        let table = self.model.base.token_embedding();
-        let mut host = Vec::with_capacity(n * hidden);
-        for &t in chunk {
-            let start = t as usize * hidden;
-            host.extend_from_slice(&table[start..start + hidden]);
+        let mut host = vec![0.0f32; n * hidden];
+        for (&t, row) in chunk.iter().zip(host.chunks_exact_mut(hidden)) {
+            self.model.embedding.row_into(t as usize, row)?;
         }
         let mut x = View::at(bufs.x.as_ptr(), bufs.rows * hidden);
         x.0.copy_from_host_at(&host, 0).map_err(err)?;

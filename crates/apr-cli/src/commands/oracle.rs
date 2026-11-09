@@ -384,16 +384,18 @@ pub struct HuggingFaceData {
 
 /// Fetch a URL via ureq and return body as string.
 fn fetch_url(url: &str) -> Result<String, CliError> {
-    let agent = ureq::AgentBuilder::new()
-        .timeout(std::time::Duration::from_secs(30))
-        .build();
-    let response = agent
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(std::time::Duration::from_secs(30)))
+        .build()
+        .into();
+    let mut response = agent
         .get(url)
         .call()
         .map_err(|e| CliError::NetworkError(format!("Failed to fetch {url}: {e}")))?;
 
     response
-        .into_string()
+        .body_mut()
+        .read_to_string()
         .map_err(|e| CliError::NetworkError(format!("Failed to read response from {url}: {e}")))
 }
 

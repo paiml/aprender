@@ -90,6 +90,34 @@ rp_ticket_owner() {
     printf '%s\n' "$owner"
 }
 
+# rp_entries LIST STAGE -> sets RP_IDS to the space-separated entry ids the `release_entries` block of LIST
+# (contracts/release-ready-v1.yaml) names for STAGE. Strict: rc 2 + RP_WHY on an unknown STAGE, an
+# unreadable LIST or block, NO block (a stage with no list is not "no limit"), an id that is not RR-<X><N>,
+# or an id named twice in one stage. A check not on its stage's list cannot stop that stage.
+# Sets globals, not stdout, so RP_WHY survives: call it in the current shell.
+RP_STAGES="merge tag publish"
+rp_entries() {
+    local out rc id ids seen=" "
+    RP_WHY="" RP_IDS=""
+    case " $RP_STAGES " in *" $2 "*) ;; *) RP_WHY="unknown stage '$2' (stages: $RP_STAGES)"; return 2 ;; esac
+    [ -r "$1" ] || { RP_WHY="cannot read the entry list $1"; return 2; }
+    out=$(awk -v block=release_entries -v keys="$RP_STAGES" -f "$RP_AWK_DIR/release_policy_block.awk" "$1" 2>&1)
+    rc=$?
+    if [ "$rc" != 0 ]; then
+        RP_WHY=$(printf '%s\n' "$out" | awk -F '\t' '$1 == "ERR" { print $2; exit }')
+        [ -n "$RP_WHY" ] || RP_WHY="the entry list $1 could not be read"
+        return 2
+    fi
+    [ -n "$out" ] || { RP_WHY="$1 has no release_entries block"; return 2; }
+    read -r -a ids <<< "$(printf '%s\n' "$out" | awk -F '\t' -v k="$2" '$1 == k { print $2; exit }')"
+    for id in "${ids[@]}"; do
+        [[ "$id" =~ ^RR-[A-Z][0-9]+$ ]] || { RP_WHY="release_entries.$2: '$id' is not an entry id RR-<X><N>"; return 2; }
+        case "$seen" in *" $id "*) RP_WHY="release_entries.$2 names $id twice"; return 2 ;; esac
+        seen="$seen$id "
+    done
+    RP_IDS="${seen# }"; RP_IDS="${RP_IDS% }"
+}
+
 release_policy_ladder() {
     local ladder="$1" version="$2" blk since core copy
     RP_APPLIES=0 RP_WHY=""

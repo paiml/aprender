@@ -1,5 +1,23 @@
+# ADDITIVE EDIT, plan 05-04 T2 (D-07): two multiclass equations were appended to the
+# `equations` block -- `expected_calibration_error_top_label` and `brier_score_multiclass`.
+# No existing equation, obligation, falsification test or gate was modified, so every
+# Phase 1-4 gate that binds to this contract keeps its exact meaning.
+#
+#   git show HEAD~1:contracts/calibration-v1.yaml > /tmp/calibration-v1-old.yaml
+#   pv diff /tmp/calibration-v1-old.yaml contracts/calibration-v1.yaml
+#   -> suggested bump: MINOR (1.0.0 -> 1.1.0); recorded below.
+#
+# (`pv diff` takes TWO FILESYSTEM PATHS, never a git revision -- hence the `git show`.)
+#
+# WHY THE BRIER CODOMAIN IS [0, 2] AND NOT [0, 1]
+# ----------------------------------------------
+# `brier_score_multiclass` is the ORIGINAL (Brier 1950) unnormalised definition:
+# the class sum is NOT divided by K. A confidently-wrong one-hot row contributes
+# (0-1)^2 + (1-0)^2 = 2, so the supremum is 2 for every K >= 2. Any [0, 1] bound
+# asserted over this equation would be false, and the `sharp_wrong` reference fixture
+# (BS = 1.8479) is the standing counterexample.
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-02-19'
   author: PAIML Engineering
   description: Calibration metrics — evaluation and correction of probabilistic predictions
@@ -20,6 +38,32 @@ equations:
     - input.len() > 0
     - input.iter().all(|v| v.is_finite())
     lean_theorem: Theorems.Expected_Calibration_Error
+  expected_calibration_error_top_label:
+    formula: 'conf_i = max_k p_ik; pred_i = argmax_k p_ik; ECE_top = Σ_b (|B_b|/N) |acc(B_b) - conf(B_b)|'
+    domain: probabilities ∈ [0,1]^(N×K) row-stochastic (row-major, N rows of K), labels ∈ {0..K-1}^N, K ≥ 2, n_bins ≥ 1
+    codomain: ECE_top ∈ [0, 1]
+    invariants:
+    - ECE_top ∈ [0, 1] (weighted average of absolute differences, each in [0,1])
+    - ECE_top = 0 when every bin's mean top confidence equals that bin's accuracy
+    - ECE_top is invariant under permutation of the samples
+    - 'Bins are equal-width over [0,1] with index min(floor(conf·n_bins), n_bins-1); the clamp is what makes conf = 1 representable'
+    - 'Multiclass generalisation of expected_calibration_error, NOT a reduction of it: the binary form bins by the positive-class probability, this one by the maximum'
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
+  brier_score_multiclass:
+    formula: BS = (1/N) Σ_i Σ_k (p_ik - y_ik)² with one-hot y
+    domain: probabilities ∈ [0,1]^(N×K) row-stochastic (row-major, N rows of K), labels ∈ {0..K-1}^N, K ≥ 2
+    codomain: BS ∈ [0, 2]
+    invariants:
+    - 'UNNORMALISED over classes: the class sum is NOT divided by K, so the codomain is [0, 2] for every K ≥ 2 — never [0, 1]'
+    - 'At K = 2 with p_i = [1-p_i, p_i]: BS = 2 · brier_score(p, y) EXACTLY. The class sum is (p-y)² + ((1-p)-(1-y))² = 2(p-y)², so the two are equal only at BS = 0 and equality in general is mathematically impossible'
+    - BS = 0 if and only if every row is an exact one-hot prediction of its label
+    - 'One-vs-rest identity: BS = Σ_k binary_brier(labels == k, p_·k), verified numerically against scikit-learn 1.9.0 brier_score_loss'
+    - BS is invariant under permutation of the samples
+    preconditions:
+    - input.len() > 0
+    - input.iter().all(|v| v.is_finite())
   maximum_calibration_error:
     formula: MCE = max_b |acc(B_b) - conf(B_b)|
     domain: probabilities ∈ [0,1]ⁿ, labels ∈ {0,1}ⁿ, n_bins ≥ 1

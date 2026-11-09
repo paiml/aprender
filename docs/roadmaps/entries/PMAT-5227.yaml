@@ -1,0 +1,18 @@
+- id: PMAT-5227
+  github_issue: 5227
+  item_type: task
+  title: apr-cli lib.rs include!d fns exceed complexity thresholds
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-12T16:33:54Z
+  updated: 2026-10-12T16:33:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863

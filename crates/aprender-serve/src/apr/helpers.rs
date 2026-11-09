@@ -91,7 +91,7 @@ pub(crate) fn transpose_matrix(m: &[f32], rows: usize, cols: usize) -> Vec<f32> 
 pub fn simd_dot(a: &[f32], b: &[f32]) -> f32 {
     #[cfg(target_arch = "x86_64")]
     {
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: AVX2 feature is runtime-checked above, simd_dot_avx2 requires AVX2
             return unsafe { simd_dot_avx2(a, b) };
         }

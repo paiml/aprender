@@ -101,6 +101,14 @@ exclude = [
 # (registry/wgpu_probe.rs entry, 603) and merged, because no required job runs
 # `pmat comply`; it was split into four graded tables in the pin-bump PR, back to 602.
 baseline = 599
+# CB-200 defect count, measured 2026-10-23 on b4bbf8c781 + #6144 with
+#   pmat comply check --path . --checks CB-200 --format json
+# pmat 3.41.1: "602 definition(s) below minimum grade B - 3 OVER the recorded baseline of 599"
+# pmat 3.42.0: "602 definition(s) below minimum grade B - 3 OVER the recorded baseline of 599"
+# The instrument moved, the count did not; the 3 over the floor are tree debt that predates the
+# pin (CB-200 is not a required job). The floor stays 599. (docs/audits receipts record 622 on main (00052c0128) with the
+# baseline zeroed: another tree.) scripts/complexity_baseline.txt counts a
+# different quantity (functions over the hook thresholds).
 # 599 re-measured 2026-09-18 under pmat 3.41.1 (the fleet pin, infra#692) from a cold index at
 # 3409b29d2. Instrument vs tree, separated: 3.41.1 reads 602 on 5d95ed54e, the tree that banked
 # 601 under 3.40.2 (+1 from the instrument on that tree, definition not identified), and 599

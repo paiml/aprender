@@ -66,3 +66,14 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-GRADIENT-SCALING-ZERO-ALLOC-001
+    description: "C-SCALE-GRAD-001/002: in-place scale_grad by 2.0 doubles the norm returned by compute_grad_norm"
+    test: "cargo test -p aprender-train --lib test_cov_scale_grads"
+    prediction: "After scale_all_gradients(2.0), compute_grad_norm returns twice the pre-scale norm (when that norm is non-zero)"
+    if_fails: "Tensor::scale_grad does not mutate the stored gradient in place, or compute_grad_norm skips parameters"
+  - id: FALSIFY-GRADIENT-SCALING-ZERO-ALLOC-002
+    description: "C-SCALE-GRAD-001: scaling by 0 zeroes every gradient"
+    test: "cargo test -p aprender-train --lib test_cov4_scale_all_gradients_zero"
+    prediction: "After scale_all_gradients(0.0), compute_grad_norm is below 1e-8"
+    if_fails: "In-place scaling misses some trainable parameter (LoRA A/B or classifier), or the norm reads a stale copy"

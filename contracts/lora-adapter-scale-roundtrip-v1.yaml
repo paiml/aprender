@@ -42,3 +42,10 @@ falsification:
     description: "rsLoRA scale (alpha/sqrt(rank)) survives the adapter round-trip. Discharges C-LORA-SCALE-001/002."
     test: "test_rslora_scale_survives_roundtrip — rank=16, alpha=16: rsLoRA scale = 4.0; RED pre-fix reloaded.scale()=1.0 (alpha/rank), GREEN post-fix 4.0."
     evidence: "cargo test -p aprender-train --lib test_rslora_scale_survives_roundtrip"
+
+falsification_tests:
+  - id: FALSIFY-LORA_ADAPTER_SCALE_ROUNDTRIP-001
+    description: "C-LORA-SCALE-001/002: rsLoRA scale alpha/sqrt(rank)=4.0 survives from_layer -> to_layer (Standard recompute would give 1.0)"
+    test: "cargo test -p aprender-train --lib test_rslora_scale_survives_roundtrip"
+    prediction: "reloaded.scale() == 4.0 within 1e-6"
+    if_fails: "to_layer recomputes Standard alpha/rank, silently rescaling rsLoRA by sqrt(rank)"

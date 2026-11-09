@@ -29,7 +29,7 @@ echo "=== cascade clean-room gate (check_cascade_clean_room_gate.sh) ==="
 
 WORK=$(mktemp -d)
 case "$WORK" in
-  /tmp/*|/var/folders/*) : ;;
+  /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
   *) echo "FAIL: mktemp -d returned an unexpected path '$WORK'; refusing to clean up"; exit 1 ;;
 esac
 trap 'rm -rf "${WORK:?}"' EXIT
@@ -246,7 +246,7 @@ row structured_sha_assert_failed_refuses  1 "step is completed/failure"         
 row structured_sha_assert_absent_refuses  1 "step is absent"                           s_struct_assert_absent
 
 # ── PINNED to the recorded run (PMAT-4687, the one door to publish) ──
-# publish_strict.sh passes the run id it recorded. Only that run is judged, by the
+# A caller passes the run id it recorded. Only that run is judged, by the
 # same loop; a green run elsewhere in the list never stands in for it.
 # pinned RUN STATUS CONCL [CREATED] [PATH] -- what `gh api .../runs/RUN --jq ...` prints
 pinned() { printf '%s\n[%s]\n' "${5:-.github/workflows/clean-room.yml}" "$(run_obj "$1" "$2" "$3" "${4:-2026-09-02T00:00:00Z}")" > "$S/run-$1.txt"; }

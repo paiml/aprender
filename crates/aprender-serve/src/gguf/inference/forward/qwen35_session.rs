@@ -241,6 +241,26 @@ impl crate::session::Session<Qwen35Forward> {
         Ok(Self::new(Qwen35Forward::load(mapped, no_gpu)?))
     }
 
+    /// Test-only [`Self::load`] on the one host model this process caches for
+    /// `path` ([`Qwen35Forward::cached_host`]). `load` leaks a host build per
+    /// call, which is right for `apr serve` (one per process) and wrong for a
+    /// test binary: the `--lib` binary held one ~1.75 GB copy per test until a
+    /// host OOM killed it (#4988).
+    ///
+    /// # Errors
+    /// As [`Self::load`].
+    #[cfg(test)]
+    pub(crate) fn load_cached(
+        path: &std::path::Path,
+        mapped: &MappedGGUFModel,
+        no_gpu: bool,
+    ) -> Result<Self> {
+        let qwen = Qwen35Forward::cached_host(path, mapped)?;
+        Ok(Self::new(Qwen35Forward::from_host(
+            qwen, mapped, no_gpu, None,
+        )?))
+    }
+
     /// `apr run`'s load: one call of at most `positions` positions, on the
     /// host model `qwen` (see [`Qwen35Forward::leak_host`]). The device memory
     /// is planned for `positions` before the upload and a context that cannot
@@ -268,6 +288,36 @@ impl crate::session::Session<Qwen35Forward> {
     #[must_use]
     pub fn num_layers(&self) -> usize {
         self.engine().qwen.layers.len()
+    }
+
+    /// #5279 P2 (#5293): the device model, for a batch engine that decodes
+    /// sequences of its own beside the session's. The F2 guard judges the GPU
+    /// on `probe` first, as it would before the session's first turn, and a
+    /// rejection moves the session to the CPU, loudly. `None` when the session
+    /// serves from the CPU. The session's own state, and the prefix it holds
+    /// for its next turn, are not touched.
+    ///
+    /// # Errors
+    /// The move to the CPU after a rejection failed.
+    #[cfg(feature = "cuda")]
+    pub(crate) fn batch_device_model(
+        &mut self,
+        probe: &[u32],
+    ) -> Result<Option<&mut crate::gguf::cuda::Qwen35CudaModel<'static>>> {
+        let forward = self.engine_mut();
+        crate::session::ArchForward::validate(forward, probe)?;
+        Ok(match &mut forward.backend {
+            Backend::Gpu(gpu) => Some(&mut gpu.model),
+            Backend::Cpu(_) => None,
+        })
+    }
+
+    /// #5279 P7: where a batched slot copies its state while prefilling
+    /// `prompt`, as this session's own turn would
+    /// ([`crate::session::ArchForward::checkpoint_at`]).
+    #[cfg(feature = "cuda")]
+    pub(crate) fn batch_checkpoint_at(&self, prompt: &[u32]) -> Option<usize> {
+        crate::session::ArchForward::checkpoint_at(self.engine(), prompt)
     }
 }
 
@@ -332,15 +382,33 @@ impl Qwen35Forward {
     /// it got, rather than leaking a copy per call.
     ///
     /// # Errors
-    /// The base or a hybrid layer would not load.
+    /// [`RealizarError::HostRamRefused`] when this host's RAM, as read before the
+    /// file was mapped, cannot hold the build (#4947), or the base or a hybrid
+    /// layer would not load.
     pub fn leak_host(mapped: &MappedGGUFModel) -> Result<&'static Qwen35Model<'static>> {
+        Self::leak_host_within(mapped, mapped.host_memory_before_map())
+    }
+
+    /// [`Self::leak_host`] against a given measurement of host RAM: the admission
+    /// check runs first, so a build that would be OOM-killed is refused with its
+    /// arithmetic before a byte of it is allocated (#4947).
+    ///
+    /// # Errors
+    /// As [`Self::leak_host`].
+    pub fn leak_host_within(
+        mapped: &MappedGGUFModel,
+        memory: crate::host_capacity::HostMemory,
+    ) -> Result<&'static Qwen35Model<'static>> {
+        crate::host_capacity::admit_qwen35_host_build(
+            &mapped.model,
+            mapped.data().len() as u64,
+            memory,
+        )?;
         let base = Qwen35Model::create_base_model(&mapped.model, mapped.data())?;
         let base: &'static OwnedQuantizedModel = Box::leak(Box::new(base));
-        Ok(Box::leak(Box::new(Qwen35Model::from_model_and_layers(
-            base,
-            &mapped.model,
-            mapped.data(),
-        )?)))
+        // #4991: drop the pages each copy came from, so the build never holds
+        // the file twice.
+        Ok(Box::leak(Box::new(Qwen35Model::from_mapped(base, mapped)?)))
     }
 
     /// [`Self::leak_host`] once per file per process: `apr qa`/`eval` call
@@ -795,6 +863,30 @@ impl crate::session::ArchForward for Qwen35Forward {
                 },
                 Err(Step::Fatal(e)) => return Err(e),
             }
+        }
+    }
+
+    /// The device decode times its layers (APR-OBS-001 OBS-09); the CPU
+    /// forward does not, and says so.
+    fn set_layer_timing(&mut self, on: bool) -> bool {
+        match &mut self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(gpu) => {
+                gpu.model.set_layer_timing(on);
+                true
+            },
+            Backend::Cpu(_) => {
+                let _ = on;
+                false
+            },
+        }
+    }
+
+    fn take_layer_timings(&mut self) -> Option<Vec<crate::session::LayerTiming>> {
+        match &mut self.backend {
+            #[cfg(feature = "cuda")]
+            Backend::Gpu(gpu) => gpu.model.take_layer_timings(),
+            Backend::Cpu(_) => None,
         }
     }
 }

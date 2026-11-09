@@ -987,3 +987,7 @@ mod tests {
 // #3341 load-time contract tests (see the module doc in the included file).
 #[cfg(test)]
 include!("qwen3_moe_load_contract_tests.rs");
+
+// #5699 moe_ffn_forward_layer input guards + routed path.
+#[cfg(test)]
+include!("qwen3_moe_ffn_layer_5699_tests.rs");

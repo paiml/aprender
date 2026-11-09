@@ -428,4 +428,9 @@ fn render_status_bar(canvas: &mut DirectTerminalCanvas<'_>, width: u16, height: 
 }
 
 #[cfg(test)]
+mod scrollbar_tests;
+#[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod source_pane_tests;

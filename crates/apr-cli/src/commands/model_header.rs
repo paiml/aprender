@@ -45,6 +45,29 @@ pub(crate) fn gguf_header(path: &Path) -> Result<GgufReader, String> {
 /// [`gguf_header`] with its two limits as parameters, so the case table can exercise the
 /// growth and the cap on small files.
 fn gguf_header_within(path: &Path, first: usize, cap: usize) -> Result<GgufReader, String> {
+    grow_until_parsed(path, first, cap, |prefix| {
+        GgufReader::from_bytes(prefix).map_err(|e| e.to_string())
+    })
+}
+
+/// The header as realizar parses it (`GGUFModel`), from the same growing prefix as
+/// [`gguf_header`]. APR-EMBED-001 EG-5: the model-kind refusals read the kind this way, so a
+/// verb that opens a model by path refuses an embedding file without reading its tensors.
+#[cfg(feature = "inference")]
+pub(crate) fn gguf_model_header(path: &Path) -> Result<realizar::gguf::GGUFModel, String> {
+    grow_until_parsed(path, GGUF_HEADER_FIRST, HEADER_CAP, |prefix| {
+        realizar::gguf::GGUFModel::from_bytes(&prefix).map_err(|e| e.to_string())
+    })
+}
+
+/// Read a prefix of `path` (`first` bytes, doubling, never more than `cap`) until `parse`
+/// accepts it.
+fn grow_until_parsed<T>(
+    path: &Path,
+    first: usize,
+    cap: usize,
+    parse: impl Fn(Vec<u8>) -> Result<T, String>,
+) -> Result<T, String> {
     let len = std::fs::metadata(path)
         .map_err(|e| format!("cannot stat {}: {e}", path.display()))?
         .len();
@@ -53,8 +76,8 @@ fn gguf_header_within(path: &Path, first: usize, cap: usize) -> Result<GgufReade
         let prefix =
             read_prefix(path, n).map_err(|e| format!("cannot read {}: {e}", path.display()))?;
         let whole_file = prefix.len() as u64 >= len;
-        match GgufReader::from_bytes(prefix) {
-            Ok(reader) => return Ok(reader),
+        match parse(prefix) {
+            Ok(header) => return Ok(header),
             Err(e) if whole_file => return Err(format!("GGUF header parse failed: {e}")),
             Err(e) if n >= cap => {
                 return Err(format!(

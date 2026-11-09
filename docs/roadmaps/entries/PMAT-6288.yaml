@@ -1,0 +1,20 @@
+- id: PMAT-6288
+  github_issue: 6288
+  item_type: task
+  title: 'ci: version bump regenerates the roadmap aggregate (part 1 of PMAT-6270)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T18:00:00Z
+  updated: 2026-10-24T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/bump-version.sh regenerates docs/roadmaps/roadmap.yaml from entries/ (make roadmap-aggregate) and carries it in the bump commit; its self-test covers it'
+  - 'the change adds 0 lines of Python (C301): the shape check and the newline-safe read_fragments move to the Rust port ticket'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Part 1 of the split of #6271, narrowed by opus-ruling-newpython-conflict-2220Z (C301): shape moves to a Rust subcommand in aprender-rollup (own ticket). The guard check_roadmap_fragment_required.sh is part 2, PMAT-6270.'
+  epic: null

@@ -82,6 +82,7 @@ pub fn parse_contract_str(yaml: &str) -> Result<Contract, ContractError> {
     contract.unknown_top_level_keys = unknown_top_level_keys(yaml);
     contract.kind_declared = kind_is_declared(yaml);
     contract.strict_yaml_error = strict_yaml_error(yaml);
+    contract.falsification_tests_declared = top_level_key_written(yaml, "falsification_tests");
     contract.kaizen_record = kaizen_record(yaml, contract.kind())?;
     Ok(contract)
 }
@@ -163,6 +164,20 @@ fn kind_is_declared(yaml: &str) -> bool {
     }
 
     serde_yaml::from_str::<KindProbe>(yaml).is_ok_and(|probe| probe.metadata.contains_key("kind"))
+}
+
+/// Was the top-level `key:` written in the document? (#5291)
+///
+/// Same probe shape as [`unknown_top_level_keys`], for the same reason: values
+/// are drained into `IgnoredAny`, so a duplicate key nested anywhere below
+/// cannot derail it. A document that is not a mapping answers `false`; that
+/// case is already a hard parse error in the caller.
+fn top_level_key_written(yaml: &str, key: &str) -> bool {
+    use serde::de::IgnoredAny;
+    use std::collections::BTreeMap;
+
+    serde_yaml::from_str::<BTreeMap<String, IgnoredAny>>(yaml)
+        .is_ok_and(|map| map.contains_key(key))
 }
 
 /// The error a STRICT reader gets on YAML the contract schema accepted.

@@ -37,7 +37,7 @@ MODELS_DIR="${MODELS_DIR:-$HOME/models}"
 PMAT_HUNT="${PMAT_HUNT:-1}"  # 1 = run pmat full audit per beat
 TMPDIR_STORY="${TMPDIR_STORY:-/tmp/qwen-story-$$}"
 mkdir -p "$TMPDIR_STORY"
-trap '[ -n "$TMPDIR_STORY" ] && [ "$TMPDIR_STORY" != "/" ] && rm -rf "$TMPDIR_STORY" 2>/dev/null; pkill -P $$ 2>/dev/null || true' EXIT
+trap '[ -n "$TMPDIR_STORY" ] && [ "$TMPDIR_STORY" != "/" ] && rm -rf "$TMPDIR_STORY" 2>/dev/null; for j in $(jobs -p); do kill "$j" 2>/dev/null; done; true' EXIT
 
 # -- Model registry ------------------------------------------------------------
 M_05B_ST="$MODELS_DIR/qwen2.5-coder-0.5b-instruct-safetensors/model.safetensors"

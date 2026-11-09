@@ -34,10 +34,10 @@ default = ["native", "apr-tools"]
 # dependency: serve_stream/run_stdio return std::io::Result (PMAT-3954).
 native = []
 # apr's OWN tools: the apr-binary wrappers, their link-time registry (inventory),
-# subprocess signals (nix) and the contract-driven schema codegen (serde_yaml, build.rs).
+# subprocess signals (nix) and the contract-driven schema codegen (serde-saphyr, build.rs).
 # A caller serving its own tools (ToolIndex::from_entries + AprMcpServer::with_tools)
 # builds with default-features = false, features = ["native"]: serde + serde_json only.
-apr-tools = ["dep:inventory", "dep:nix", "dep:serde_yaml"]
+apr-tools = ["dep:inventory", "dep:nix", "dep:serde-saphyr"]
 # M5 scaffold: enables the pmcp v2.3 dispatcher path alongside the hand-rolled
 # stdio loop. Off by default — PR 1 wires the dep, PR 2 lands the parity test
 # (FALSIFY-MCP-009), PR 3 extends cancellation, PR 4/5 add SSE/WebSocket
@@ -66,8 +66,8 @@ nix = { version = "0.29", default-features = false, features = ["signal"], optio
 [build-dependencies]
 # FALSIFY-MCP-008: build.rs reads contracts/apr-mcp-tool-schemas-v1.yaml at
 # compile time and codegens per-tool JSON Schema string constants. Using the
-# same workspace serde_yaml 0.9 the contracts crate uses (already in lockfile).
-serde_yaml = { workspace = true, optional = true }
+# workspace serde-saphyr (RUSTSEC-2024-0449: serde_yaml pulls unsafe-libyaml).
+serde-saphyr = { workspace = true, optional = true }
 serde_json = { workspace = true }
 serde = { workspace = true }
 
@@ -78,7 +78,7 @@ serde_json = { workspace = true }
 jsonschema = "0.28"
 # FALSIFY-MCP-008 harness reads the YAML contract directly to assert byte
 # identity between codegen output and live tools/list schemas.
-serde_yaml = { workspace = true }
+serde-saphyr = { workspace = true }
 # NOTE: no `assert_cmd`. FALSIFY-MCP-DOGFOOD-001 and -MCP-010/-011 drive the
 # real `apr` binary, and this used to locate it with
 # `assert_cmd::cargo::cargo_bin("apr")`. That reads `CARGO_BIN_EXE_apr`, which

@@ -111,11 +111,33 @@ const KV_TOL: f32 = TOL;
 /// **-0.246**, so the assertion discriminates rather than decorates.
 const COSINE_FLOOR: f32 = 0.996;
 
-/// The measured end-to-end logit L∞ — 6.721e-2 relative, at position 0 —
-/// rounded UP to one significant figure. A budget on the accumulated
-/// CPU-reference activation quantization through 24 layers and the `lm_head`,
-/// not a tolerance anyone should read as accuracy: see [`COSINE_FLOOR`].
+/// The measured end-to-end logit L∞, rounded UP to one significant figure. A
+/// budget on the accumulated CPU-reference activation quantization through 24
+/// layers and the `lm_head`, not a tolerance anyone should read as accuracy:
+/// see [`COSINE_FLOOR`].
+///
+/// It is keyed on the HOST CPU architecture, not the GPU, because the reference
+/// is what moves (aprender#4523). Measured at position 0 on the same GGUF
+/// (sha256 `bd258782e35f7f45…`), dumps diffed across hosts:
+///
+/// | pair | relative L∞ | cosine |
+/// |---|---|---|
+/// | GPU sm_89 (4090) vs GPU sm_121 (GB10) | **6.5e-7** | 1.000000 |
+/// | CPU x86_64 AVX2 vs CPU aarch64 NEON | **2.6e-2** | 0.999743 |
+/// | GPU vs CPU, x86_64 host | 6.721e-2 | 0.998348 |
+/// | GPU vs CPU, aarch64 host | 7.105e-2 | 0.998316 |
+///
+/// The two GPUs agree to f32 rounding; the two CPU references do not, because
+/// their Q8_K activation-quant dot products take different SIMD paths. So the
+/// budget follows the reference: x86_64 worst 6.721e-2 -> **7e-2**; aarch64
+/// worst 7.105e-2 (positions 1..5: 2.226e-2, 3.643e-2, 2.659e-2, 2.524e-2,
+/// 2.158e-2) -> **8e-2**. Re-derive with `QWEN35_E2E_DUMP=<dir>`, which prints
+/// every position's reading and then fails, so it can never pass as a verdict.
+#[cfg(not(target_arch = "aarch64"))]
 const LOGITS_BUDGET: f32 = 7e-2;
+/// See the x86_64 [`LOGITS_BUDGET`]: the aarch64 CPU reference, measured on GB10.
+#[cfg(target_arch = "aarch64")]
+const LOGITS_BUDGET: f32 = 8e-2;
 
 /// The same, for one whole attention layer's output hidden state: measured
 /// 4.867e-2 relative (layer 15, position 0), rounded up to one significant
@@ -312,9 +334,7 @@ fn qwen35_cuda_deltanet_layers_match_cpu_on_the_real_file() {
     let mut compared = 0usize;
 
     for (pos, &token) in PROMPT.iter().enumerate() {
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
 
         for (il, layer) in qwen.layers.iter().enumerate() {
             match layer {
@@ -442,9 +462,7 @@ fn qwen35_cuda_gdn_ops_match_cpu_given_the_same_inputs() {
             "pos {pos}: the recurrent state must be non-zero after the first token"
         );
 
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
         gpu.upload_layer(il, &conv0, &ssm0).expect("seed");
         let dev =
             GpuBuffer::from_host(gpu.executor_mut().context(), &hidden).expect("upload hidden");
@@ -669,9 +687,7 @@ fn qwen35_cuda_attention_layers_match_cpu_on_the_real_file() {
     let mut worst_linf = 0.0f32;
 
     for (pos, &token) in PROMPT.iter().enumerate() {
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
 
         for (il, layer) in qwen.layers.iter().enumerate() {
             match layer {
@@ -852,9 +868,7 @@ fn qwen35_cuda_attention_ops_match_cpu_given_the_same_inputs() {
     for (pos, &token) in PROMPT.iter().enumerate() {
         let k_before = cpu_state.kv_cache.get_k(il).to_vec();
         let v_before = cpu_state.kv_cache.get_v(il).to_vec();
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
         gpu.upload_attention_kv(il, &k_before, &v_before)
             .expect("seed");
         let dev =
@@ -1035,6 +1049,7 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
     let mut cpu_state = qwen.new_state(LONG_PROMPT.len() + 1);
     let mut worst_cos = 1.0f32;
     let mut worst_linf = 0.0f32;
+    let mut dumped = false;
 
     for (pos, &token) in LONG_PROMPT.iter().enumerate() {
         let want = qwen
@@ -1048,6 +1063,19 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
             .forward_single(token, &mut gpu_state, pos)
             .expect("gpu forward");
         let gpu_ms = t0.elapsed().as_secs_f64() * 1e3;
+        if let Ok(dir) = std::env::var("QWEN35_E2E_DUMP") {
+            for (side, v) in [("gpu", &got), ("cpu", &want)] {
+                let bytes: Vec<u8> = v.iter().flat_map(|x| x.to_le_bytes()).collect();
+                std::fs::write(format!("{dir}/{side}_pos{pos}.f32"), bytes).expect("dump");
+            }
+            eprintln!(
+                "[e2e-dump] pos {pos}: cosine {:.6} relative L-inf {:.3e}",
+                cosine(&got, &want),
+                rel_linf(&got, &want)
+            );
+            dumped = true;
+            continue;
+        }
         let (cos, linf) =
             assert_forward_parity(&got, &want, LOGITS_BUDGET, &format!("pos {pos} logits"));
         eprintln!(
@@ -1063,6 +1091,11 @@ fn qwen35_cuda_forward_single_matches_cpu_logits_end_to_end() {
             "pos {pos}: the device KV cache must have advanced"
         );
     }
+    assert!(
+        !dumped,
+        "QWEN35_E2E_DUMP is a measurement run: the readings are printed above and nothing \
+         was asserted, so it must not read as a pass"
+    );
     eprintln!(
         "[e2e] worst over {} positions: cosine {worst_cos:.6} relative L-inf {worst_linf:.3e}",
         LONG_PROMPT.len(),
@@ -1421,9 +1454,7 @@ fn qwen35_cuda_4b_deltanet_layers_match_cpu_on_the_real_file() {
     let mut worst_where = String::new();
 
     for (pos, &token) in tokens.iter().enumerate() {
-        let mut hidden = qwen.base.token_embedding()
-            [(token as usize) * hidden_dim..(token as usize + 1) * hidden_dim]
-            .to_vec();
+        let mut hidden = qwen.embedding.row(token as usize).expect("embedding row");
 
         for (il, layer) in qwen.layers.iter().enumerate() {
             match layer {

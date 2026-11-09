@@ -23,7 +23,9 @@ case "${1:-}" in -h|--help) printf 'usage: bash scripts/check_crux_serve_code.sh
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd) || exit 2
 PROG=check_crux_serve_code
-command -v python3 > /dev/null 2>&1 || { printf '%s: ENV - python3 is missing\n' "$PROG" >&2; exit 2; }
+for tool in python3 flock; do
+  command -v "$tool" > /dev/null 2>&1 || { printf '%s: ENV - %s is missing\n' "$PROG" "$tool" >&2; exit 2; }
+done
 ROUTES_PY="$ROOT/scripts/lib/crux_serve_routes.py"
 CODE_PY="$ROOT/scripts/lib/crux_apr_code.py"
 FAKE="$ROOT/scripts/lib/crux_fake_serve.py"
@@ -34,13 +36,33 @@ done
 TMP=$(mktemp -d) || exit 2
 SRV=""
 _cleanup() {
+  # Only the guard's own shell cleans up (#5012). A child forked for `cmd &` keeps this trap
+  # until it execs, and bash runs the EXIT trap when a TERM kills it. T3 TERMs its server the
+  # moment the pid is written; on a loaded merge queue that TERM landed before the exec, so
+  # _cleanup ran IN THE CHILD and removed $TMP under T3 and T4. In a forked child $$ is still
+  # the guard's pid and BASHPID is the child's own. A bash without BASHPID (3.2) falls back to
+  # cleaning up everywhere, as before.
+  [ "${BASHPID:-$$}" = "$$" ] || return 0
   [ -n "$SRV" ] && kill "$SRV" 2> /dev/null
+  # A stubborn() server that a row left running dies with the guard, however the guard ends (#5019).
+  if declare -F stub_reap > /dev/null; then
+    for f in ${STUBS:-}; do stub_reap "$f"; done
+  fi
   case "${TMP:-}" in
-    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
   esac
 }
 trap _cleanup EXIT
+# guard_server <pid>: kill that server when this harness dies by ANY signal, SIGKILL included (a runner
+# cancelling a job kills the tree with KILL, which no trap sees; the servers then lived 2-3 days at ppid 1).
+# The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.
+guard_server() {
+  local srv="$1" par=$$
+  # the id is read after the fork has exec'd, so a recycled pid (another cmdline) is left alone
+  ( trap - EXIT INT TERM; sleep 1; id=$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null); while kill -0 "$par" 2> /dev/null && [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ]; do sleep 2; done
+    [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ] && kill "$srv" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
+}
 
 FAILS=0
 ROWS=0
@@ -53,7 +75,7 @@ start() { # start <index> <fault>: (re)start the fixture server; sets URL
   local port i
   port=$(free_port)
   python3 "$FAKE" --port "$port" --index "$1" --fault "$2" > /dev/null 2>&1 &
-  SRV=$!
+  SRV=$!; guard_server "$SRV"
   URL="http://127.0.0.1:$port"
   for i in $(seq 1 50); do curl -sf "$URL/health" > /dev/null 2>&1 && return 0; sleep 0.1; done
   printf '%s: ENV - fixture server did not come up\n' "$PROG" >&2
@@ -146,6 +168,10 @@ O3='R.GENERATION.update({"POST /v1/brand-new": {"kind": "brand_new", "modes": ("
 if oracle_assert "$ROUTES_PY" "$O1"; then ok "O1 every generation route maps to an oracle route whose wire has its modes"; else bad "O1 oracle map"; fi
 if oracle_assert "$ROUTES_PY" "$O2"; then ok "O2 oracle-routes prints exactly the mapped set"; else bad "O2 oracle-routes"; fi
 if oracle_assert "$ROUTES_PY" "$O3"; then ok "O3 MUST-RED a route of an unmapped kind has no oracle"; else bad "O3 unmapped kind"; fi
+# A mounted route that returns ids and no text is classified, so the nightly sweep does not emit a RED
+# unclassified_route cell for it (models-crux went red on POST /v1/chat/prompt-ids after abf66f9086).
+P4='"POST /v1/chat/prompt-ids" in R.NOT_GENERATION and "POST /v1/chat/prompt-ids" not in R.GENERATION'
+if oracle_assert "$ROUTES_PY" "$P4"; then ok "P4 POST /v1/chat/prompt-ids is classified not-generation"; else bad "P4 prompt-ids classification"; fi
 
 sweep_rows() { # <index> <out dir> [cell-why]: sweep + rows into $TMP/<dir>/manifest.jsonl
   start "$1" ok
@@ -273,22 +299,107 @@ stubborn() { # a server that ignores SIGTERM; its pid goes to $1
   # Publish the pid only once the trap is IN: on a loaded runner a TERM sent before the child ran
   # `trap` killed it outright, and M10 (no KILL escalation) "survived" against a server that was
   # never stubborn (#4312 guard-tree).
+  # It must neither pin what the guard's caller holds nor outlive the guard (#5019). Under
+  # `flock <lock> bash <guard>` it inherited the lock fd, M10's teardown (TERM, never KILL) left
+  # it running, and the lock stayed held after the guard exited. So its subshell closes every fd
+  # above 2 before the exec, and the server quits once the shell that started it is gone, or
+  # after 120 s.
   local ready="$1.ready" i=0
   rm -f "$ready"
-  READY="$ready" bash -c 'trap "" TERM; : > "$READY"; while :; do sleep 0.2; done' > /dev/null 2>&1 &
+  (
+    for f in /dev/fd/*; do
+      n=${f##*/}
+      case "$n" in 0|1|2|*[!0-9]*) ;; *) exec {n}>&- ;; esac
+    done
+    READY="$ready" exec bash -c 'trap "" TERM; : > "$READY"; i=0; while kill -0 "$PPID" 2> /dev/null && [ "$i" -lt 600 ]; do sleep 0.2; i=$((i + 1)); done'
+  ) < /dev/null > /dev/null 2>&1 &
   while [ ! -e "$ready" ] && [ "$i" -lt 100 ]; do
     sleep 0.05
     i=$((i + 1))
   done
   if [ ! -e "$ready" ]; then
     printf 'stubborn: server never installed its TERM trap\n' >&2
+    kill -KILL "$!" 2> /dev/null
+    wait "$!" 2> /dev/null
     return 1
   fi
   printf '%s\n' "$!" > "$1"
+  STUBS="${STUBS:-} $1"
 }
+stub_reap() { # <pid file>: KILL and wait the stubborn() server or T3 sleep it names, if that pid is still one
+  local p
+  p=$(cat "$1" 2> /dev/null) || return 0
+  case "$p" in '' | *[!0-9]*) return 0 ;; esac
+  case "$(ps -o args= -p "$p" 2> /dev/null)" in
+    *'trap "" TERM; : > "$READY"'* | "sleep 30") kill -KILL "$p" 2> /dev/null && wait "$p" 2> /dev/null ;;
+  esac
+  return 0
+}
+# T0 (#5012): this guard's EXIT trap cleans up in the guard's own shell and nowhere else. A child
+# forked for `cmd &` keeps the trap until it execs, and a TERM that lands first runs it there
+# (the T3/T4 merge-queue flake). No row may race the scheduler, so T0 neither forks nor TERMs:
+# t0_case loads _cleanup from <guard> into a fresh shell whose $TMP is a scratch dir under /tmp
+# (where _cleanup acts), calls it in a subshell, where $$ is still that shell's pid exactly as in
+# the forked child, and needs the dir kept; then calls it in that shell and needs the dir gone.
+# Exit 1: the subshell removed it. 2: the shell's own call left it. 3: <guard> has no _cleanup.
+GUARD="$ROOT/scripts/check_crux_serve_code.sh"
+t0_case() { # <guard file>
+  local d rc
+  d=$(mktemp -d /tmp/crux-t0.XXXXXX) || return 1
+  TMP="$d" SRV="" bash -c '. <(sed -n "/^_cleanup() {/,/^}/p" "$1"); declare -F _cleanup > /dev/null || exit 3
+    ( _cleanup ); [ -d "$TMP" ] || exit 1; _cleanup; [ ! -d "$TMP" ] || exit 2' t0 "$1" > /dev/null 2>&1
+  rc=$?
+  case "$d" in /tmp/crux-t0.?*) rm -rf -- "${d:?}" ;; esac
+  return "$rc"
+}
+if t0_case "$GUARD"; then ok "T0 the guard's EXIT trap cleans up in its own shell and never in a child (#5012)"
+else bad "T0 the guard's EXIT trap ran in a child, or did not clean up in its own shell (#5012)"; fi
 : > "$TMP/smi-pids"
 stubborn "$TMP/srv1.pid"
 tdrow "T1 a server that ignores TERM is KILLed, then proven gone" 0 clean "$TD" "$TMP/srv1.pid" "$TMP/absent.pid"
+stub_reap "$TMP/srv1.pid"
+# T1b (#5019): a stubborn() server neither pins its caller's lock nor outlives the case that
+# started it. t1b_case loads stubborn, stub_reap, td_case and m_t1 from <guard> into a fresh shell
+# that holds a lock on fd 8. A: start a server, close fd 8, and the lock must be free while the
+# server lives. B: run m_t1 against <teardown>, M10's mutant (TERM, never KILL), close fd 8, and
+# the server must be gone and the lock free. Each probe follows the act it checks; nothing races.
+# Exit 1: a live server held the lock. 2: a server outlived m_t1, or the lock stayed held after it.
+# 3: <guard> lacks one of the functions. 4: the fixture failed (no lock, or no server).
+t1b_case() { # <guard file> <teardown that never KILLs>
+  local d rc=0
+  d=$(mktemp -d /tmp/crux-t1b.XXXXXX) || return 1
+  TMP="$d" FAKE_SMI="$FAKE_SMI" bash -c 'for f in stubborn stub_reap td_case m_t1; do
+      . <(sed -n "/^$f() {/,/^}/p" "$1"); declare -F "$f" > /dev/null || exit 3
+    done
+    hold() { exec 8> "$TMP/lock" && flock -x 8; }
+    free() { flock -n -x "$TMP/lock" true; }
+    { hold && stubborn "$TMP/a.pid" && p=$(cat "$TMP/a.pid"); } || exit 4
+    exec 8>&-
+    free || { kill -KILL "$p"; wait "$p"; exit 1; }
+    kill -0 "$p" || exit 4
+    stub_reap "$TMP/a.pid"
+    hold || exit 4
+    m_t1 "$2"
+    exec 8>&-
+    p=$(cat "$TMP/srv1.pid") || exit 4
+    if kill -0 "$p"; then kill -KILL "$p"; wait "$p"; exit 2; fi
+    free || exit 2' t1b "$1" "$2" > /dev/null 2>&1 || rc=$?
+  case "$d" in /tmp/crux-t1b.?*) rm -rf -- "${d:?}" ;; esac
+  return "$rc"
+}
+# TD_NOKILL is M10's mutant with its two wait loops cut to one poll. A server that ignores TERM
+# outlives any number of polls, so it meets the same fate, and T1b, M22 and M23 take about a second
+# each instead of 25 (this guard runs serially).
+M10_ANCHOR='    sig -KILL $left 2> /dev/null'
+TD_NOKILL="$TMP/td-nokill.sh"
+if awk -v a="$M10_ANCHOR" '$0 == a {print "    :"; n++; next}
+    /^ *for _ in \$\(seq 1 [0-9]+\); do$/ {sub(/seq 1 [0-9]+/, "seq 1 1")}
+    {print} END {exit n != 1}' "$TD" > "$TD_NOKILL"; then
+  T1B_RC=0
+  t1b_case "$GUARD" "$TD_NOKILL" || T1B_RC=$?
+  if [ "$T1B_RC" = 0 ]; then ok "T1b a stubborn server holds none of its caller's fds and does not outlive M10's teardown (#5019)"
+  else bad "T1b a stubborn server held its caller's lock or outlived M10's teardown (#5019; exit $T1B_RC)"; fi
+else bad "T1b M10's anchor is gone from the teardown (re-anchor M10_ANCHOR: T1b runs M10's mutant)"; fi
 # T2 used to write `1` here: init as the server that survives TERM and KILL. On a dev box
 # that is EPERM; in a CI runner's container pid 1 IS the runner, and the row's
 # `kill -TERM 1` / `kill -KILL 1` shut the runner down mid guard-tree (#4120). A survivor
@@ -314,8 +425,10 @@ if m_t2b "$TD"; then ok "T2b MUST-RED a pid file naming pid 1 (init; the runner 
 else bad "T2b MUST-RED a pid file naming pid 1 is refused and never signalled (state: $(cat "$TMP/td.state" 2> /dev/null); signals: $(tr '\n' ';' < "$TMP/kill.log"))"; fi
 sleep 30 > /dev/null 2>&1 &
 printf '%s\n' "$!" > "$TMP/srv3.pid"
+STUBS="${STUBS:-} $TMP/srv3.pid"
 printf '%s\n' "$(cat "$TMP/srv3.pid")" > "$TMP/smi-pids"
 tdrow "T3 MUST-RED a pid still in nvidia-smi compute-apps fails the cell" 1 "FAILED: pid" "$TD" "$TMP/srv3.pid"
+stub_reap "$TMP/srv3.pid"
 : > "$TMP/smi-pids"
 mkdir -p "$TMP/tdrows"
 : > "$TMP/tdrows/manifest.jsonl"
@@ -391,11 +504,32 @@ mutant "M7 C2 vs no is_error check" "$CODE_PY" 'if env.get("is_error") or env.ge
 mutant "M8 C5 vs no empty-result check" "$CODE_PY" 'if not env.get("result"):' 'if False:' m_c5
 m_c7() { code_case x "$1" ok p1 4 - --backend cpu; }
 mutant "M9 C7 vs the cpu lane run on an apr code that cannot honour it" "$CODE_PY" '    if a.backend == "cpu" and not ctl:' '    if False:' m_c7
-m_t1() { stubborn "$TMP/srv1.pid"; td_case x 0 clean "$1" "$TMP/srv1.pid"; }
-mutant "M10 T1 vs no KILL escalation" "$TD" '    sig -KILL $left 2> /dev/null' '    :' m_t1
+# M17 sits above m_t1: bashrs 7.4.1 reads the quoted `continue` in its anchor as SC2242 when it
+# follows the multi-line m_t1 (#5019).
 mutant "M17 T2b vs pid 1 not refused" "$TD" '    case "$p" in 1) refused="$refused$f "; continue ;; esac' '' m_t2b
-m_t3() { sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid"; }
+m_t1() { # <teardown>: T1's case. The server is reaped whatever the teardown did (#5019)
+  local rc=0
+  stubborn "$TMP/srv1.pid" || return 0 # no server, no case: the mutant must not count as killed
+  td_case x 0 clean "$1" "$TMP/srv1.pid" || rc=1
+  stub_reap "$TMP/srv1.pid"
+  return "$rc"
+}
+mutant "M10 T1 vs no KILL escalation" "$TD" "$M10_ANCHOR" '    :' m_t1
+m_t3() { STUBS="${STUBS:-} $TMP/srv3.pid"; sleep 30 > /dev/null 2>&1 & printf '%s\n' "$!" > "$TMP/srv3.pid"; cp "$TMP/srv3.pid" "$TMP/smi-pids"; local rc=0; td_case x 1 "FAILED: pid" "$1" "$TMP/srv3.pid" || rc=1; stub_reap "$TMP/srv3.pid"; return "$rc"; }
 mutant "M11 T3 vs no nvidia-smi check" "$TD" 'if [ "${#pids[@]}" -gt 0 ] && command -v "$SMI" > /dev/null 2>&1; then' 'if false; then' m_t3
+# M20 plants T0's bug in a copy of THIS guard: _cleanup without its main-shell check. The anchor
+# is assembled from T0_ANCHOR so that this line does not match it too (the planter refuses an
+# anchor it finds twice).
+T0_ANCHOR='[ "${BASHPID:-$$}" = "$$" ]'
+mutant "M20 T0 vs an EXIT trap that also runs in a forked child" "$GUARD" "  $T0_ANCHOR || return 0" '  :' t0_case
+mutant "M21 T0 vs an EXIT trap that never cleans up" "$GUARD" "  $T0_ANCHOR || return 0" '  return 0' t0_case
+# M22/M23 plant #5019's two halves in a copy of THIS guard, their anchors assembled like M20's: a
+# server that keeps its caller's fds (the lock), and an m_t1 that leaves its server running.
+FD_CLOSE='exec {n}>&-'
+T1_REAP='stub_reap "$TMP/srv1.pid"'
+m_t1b() { t1b_case "$1" "$TD_NOKILL"; }
+mutant "M22 T1b vs a stubborn server that keeps its caller's fds" "$GUARD" "*) $FD_CLOSE ;;" '*) : ;;' m_t1b
+mutant "M23 T1b vs an m_t1 that leaves its server running" "$GUARD" "  $T1_REAP" '  :' m_t1b
 m_t4() { : > "$TMP/tdrows/manifest.jsonl"; python3 "$1" rows --out-dir "$TMP/ok" --prompt-list "$TMP/list.jsonl" --manifest "$TMP/tdrows/manifest.jsonl" --engine apr --sha abc --host h --backend gpu --cell-fault "cell teardown FAILED: x" > /dev/null 2>&1; python3 -c 'import json,sys; g=[json.loads(l) for l in open(sys.argv[1]) if l.strip()]; g=[r for r in g if r["kind"]=="gen"]; assert g and all(r["refused"] for r in g)' "$TMP/tdrows/manifest.jsonl" 2> /dev/null; }
 mutant "M12 T4 vs a teardown fault that does not reach the rows" "$ROUTES_PY" '        if a.cell_fault:' '        if False:' m_t4
 mutant "M18 R5 vs plan.json written only at the end" "$ROUTES_PY" '                save_plan(a.out_dir, p, cells, not_applicable)

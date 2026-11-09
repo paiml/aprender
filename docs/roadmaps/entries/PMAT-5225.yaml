@@ -1,0 +1,18 @@
+- id: PMAT-5225
+  github_issue: 5225
+  item_type: task
+  title: 'PY-PORT-2f: port model_ladder_cells_produce.py to aprender-ci-tools (C301), carries #4986'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-12T16:14:45Z
+  updated: 2026-10-12T16:14:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741

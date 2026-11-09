@@ -1,0 +1,54 @@
+{
+  "build_identity": "cd871fed3eae3bb3f2c3e411645e72b854c7dfa7",
+  "fp32_activations": {
+    "max_abs_err": 4.672283846041125e-6,
+    "max_rel_err": 1.7907737210025388e-7
+  },
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "apr_format_decode_f64",
+    "row_sha256": "4ecd26724c7c6ea1b9e567c776857641b106e52dc90a9d64ef94d495c942c089",
+    "source_sha256": "c9834f19787a10943c8906006d7c3d40a590e0046047946056597e590ff795ed",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "9d7e39a93171e115b6f7d786f0ec7ba74fc4904c1fd7f671f341196cacb39d7d",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.matvec.apr_q8",
+  "margin": {
+    "acc": "f32",
+    "error_model": "EM-DOT",
+    "max_margin": 0.00012515389607685497,
+    "nmse": 2.972424902752491e-14,
+    "p999_margin": 0.00012515389607685497,
+    "verdict": "pass"
+  },
+  "oracle": "apr_format_decode_f64",
+  "oracle_independent": true,
+  "quantized_activation_oracle": null,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 4.672283846041125e-6,
+    "max_rel_err": 1.7907737210025388e-7
+  },
+  "source_fn": "dequantize_apr_q8",
+  "tolerance_rel": 4e-7,
+  "ts": "2026-09-29T03:39:56Z",
+  "workload": {
+    "in_dim": 2048,
+    "out_dim": 256,
+    "seed": 4539,
+    "trials": 4
+  }
+}

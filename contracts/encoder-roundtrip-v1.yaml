@@ -55,3 +55,10 @@ falsification:
     description: "SafeTensors save→load roundtrip preserves all metadata key-value pairs"
     test: "Save with custom metadata map; load back; assert map equality"
     evidence: "cargo test -p aprender-core --lib encoder_roundtrip"
+
+falsification_tests:
+  - id: FALSIFY-ENCODER_ROUNDTRIP-001
+    description: "data, shape and metadata preservation (APR): write -> read -> write is bit-identical"
+    test: "cargo test -p aprender-core --lib falsify_ckpt_018_roundtrip_bit_identical"
+    prediction: "the rewritten APR bytes equal the original bytes"
+    if_fails: "APR encode/decode loses or alters tensor data, shapes or metadata"

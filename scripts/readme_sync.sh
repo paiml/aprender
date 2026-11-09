@@ -70,7 +70,7 @@ USAGE
 # scripts/check_readme_claims.sh's, and held to `pv census` by `make contracts`.
 contract_files_only() {
   grep -E '\.yaml$' \
-    | grep -Ev '(^|/)(kaizen|legacy|pipelines|publish-manifests|quarantine)/' \
+    | grep -Ev '(^|/)(legacy|pipelines|publish-manifests|quarantine)/' \
     | grep -Ev '(^|/)(binding\.yaml|binding\.yml|external-corpora\.yaml|ontology\.yaml)$' \
     | grep -Ev '(^|/)\.[^/]*$'
 }

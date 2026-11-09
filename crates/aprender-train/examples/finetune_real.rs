@@ -924,7 +924,7 @@ fn load_qwen2_tokenizer() -> Option<HfTokenizer> {
         }
     }
 
-    println!("   ⚠ Tokenizer not found in HF cache");
+    println!("   ⚠ No tokenizer found in HF cache");
     println!("   → Please download with: huggingface-cli download Qwen/Qwen2-0.5B-Instruct tokenizer.json");
     None
 }

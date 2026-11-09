@@ -9,8 +9,9 @@
 #   prints their run IDs.
 #
 # A NIGHT is a UTC date: schedule the producer well away from 00:00 UTC, since a run created after midnight counts for
-#   the next night. Only rows with branch `main` and event `schedule` count: a push, a pull request, a manual dispatch
-#   or a run on another branch never does. Rows dated after --as-of are not counted, so a replay over a longer history
+#   the next night. Only rows with branch `main` and event `schedule` or `workflow_dispatch` count (operator, relayed
+#   verbatim 2026-10-11: "\"tonight\" is a concept we control"): a push, a pull request or a run on another branch
+#   never does. Rows dated after --as-of are not counted, so a replay over a longer history
 #   gives the same answer. A night is
 #     red      a run ended failure, timed_out or startup_failure, or succeeded only at attempt 2 or later (a retried
 #              green is not a green: docs/specifications/FLOW-003-queue-and-release-cycle-model.md, G4, plans CI
@@ -32,6 +33,9 @@
 #   streak, the stricter reading, until the operator answers.
 #   NEED IS A CONSTANT, not an option and not an environment value: a threshold a caller can lower is theater.
 #   Changing it is a reviewed commit, and --selftest pins it.
+#   ONE CHECK IS ONE NIGHT. release-rehearsal, the streak rehearse.sh --streak reads before a release pass starts,
+#   needs REHEARSAL_NEED = 1 green night, not three (operator C355 item 6, 2026-10-10: the 3-night check goes to one
+#   night; the count is lowered, the check stays). Every other check keeps NEED. Also a constant, pinned the same way.
 #
 # HISTORY. A TSV file. Its first line is exactly these six tab-separated names; then one run per line:
 #     run_id  created_at (YYYY-MM-DDTHH:MM:SSZ, UTC)  branch  event  conclusion (empty while running)  attempt
@@ -50,12 +54,16 @@ PROG="${0##*/}"
 SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"
 # C280 item 12: "three times". A constant: never an option, never taken from the environment.
 NEED=3
+# C355 item 6: the release-rehearsal check needs one night. A constant, keyed on the check's name, never an option.
+# An exact string compare, never a glob: no near-miss spelling inherits the one night.
+REHEARSAL_NEED=1
+need_of() { if [ "$1" = release-rehearsal ]; then printf '%s\n' "$REHEARSAL_NEED"; else printf '%s\n' "$NEED"; fi; }
 
 caller_error() { printf 'FAIL  NIGHTLY %s: caller error: %s\n' "$PROG" "$*"; exit 3; }
 
 # judge check history as-of -> the verdict line and one context line on stdout; exits 0/1/2/3 as above
 judge() {
-    awk -v check="$1" -v asof="$3" -v need="$NEED" '
+    awk -v check="$1" -v asof="$3" -v need="$(need_of "$1")" '
     function days(y, m, d,    era, yoe, doy, doe, mp) {    # civil date -> days since 1970-01-01 (H. Hinnant)
         y -= (m <= 2)
         era = int(y / 400)
@@ -108,7 +116,7 @@ judge() {
         else if (co == "failure" || co == "timed_out" || co == "startup_failure") s = "red"
         else if (co == "cancelled" || co == "skipped" || co == "neutral" || co == "stale" || co == "action_required") s = "void"
         else { bad = "line " NR " conclusion \"" co "\""; exit }
-        if ($3 != "main" || $4 != "schedule") { other++; next }
+        if ($3 != "main" || ($4 != "schedule" && $4 != "workflow_dispatch")) { other++; next }
         n = dayno(ts)
         if (n > asof_n) { later++; next }
         runs++
@@ -127,7 +135,7 @@ judge() {
             if (st[k] == "green") total++
             if ((st[k] == "green" || st[k] == "red" || st[k] == "retried") && (last == "" || k > last)) last = k
         }
-        info = sprintf("      NIGHTLY %s counted %d scheduled run(s) on main up to %s; not counted: %d other row(s), %d after --as-of", check, runs, asof, other, later)
+        info = sprintf("      NIGHTLY %s counted %d scheduled or dispatched run(s) on main up to %s; not counted: %d other row(s), %d after --as-of", check, runs, asof, other, later)
         npend = 0; pmax = 0
         for (k in st) if (st[k] == "pending" && (last == "" || k + 0 > last)) { npend++; if (k + 0 > pmax) pmax = k + 0 }
         if (npend > 0) info = info sprintf("; still running: %d night(s), newest %s", npend, civil(pmax))
@@ -218,7 +226,7 @@ selftest() {
 
     fx three "104 $D-04 success" "105 $D-05 success" "106 $D-06 success"
     j three_green_nights_are_ready                     0 "ok    NIGHTLY R7 ready: 3 green nights in a row on main, newest $D-06: runs 106 105 104 (streak=3 total=3 need=3)" three
-    j the_context_line_counts_what_was_read            0 "NIGHTLY R7 counted 3 scheduled run(s) on main up to $D-06; not counted: 0 other row(s), 0 after --as-of" three
+    j the_context_line_counts_what_was_read            0 "NIGHTLY R7 counted 3 scheduled or dispatched run(s) on main up to $D-06; not counted: 0 other row(s), 0 after --as-of" three
     fx shuffled "105 $D-05 success" "106 $D-06 success" "104 $D-04 success"
     j row_order_does_not_matter                        0 "runs 106 105 104 (streak=3" shuffled
     fx red_then_two "104 $D-04 failure" "105 $D-05 success" "106 $D-06 success"
@@ -239,7 +247,12 @@ selftest() {
     j a_green_on_another_branch_does_not_count         2 "night $D-04 has no completed run on main (no run)" branch
     j the_branch_row_is_reported_as_not_counted        2 "not counted: 1 other row(s), 0 after --as-of" branch
     fx dispatch "103 $D-03 success" "104 $D-04 success 1 main workflow_dispatch" "105 $D-05 success" "106 $D-06 success"
-    j a_manual_dispatch_does_not_count                 2 "night $D-04 has no completed run on main (no run)" dispatch
+    j a_manual_dispatch_on_main_counts                 0 "runs 106 105 104 (streak=4 total=4 need=3)" dispatch
+    fx dispatch_branch "103 $D-03 success" "104 $D-04 success 1 feature workflow_dispatch" "105 $D-05 success" "106 $D-06 success"
+    j a_dispatch_on_another_branch_does_not_count      2 "night $D-04 has no completed run on main (no run)" dispatch_branch
+    fx push "103 $D-03 success" "104 $D-04 success 1 main push" "105 $D-05 success" "106 $D-06 success"
+    j a_push_on_main_does_not_count                    2 "night $D-04 has no completed run on main (no run)" push
+    j the_push_row_is_reported_as_not_counted          2 "not counted: 1 other row(s), 0 after --as-of" push
     fx red_last "103 $D-03 success" "104 $D-04 success" "105 $D-05 success" "106 $D-06 failure"
     j a_red_newest_night_is_not_ready                  1 "not ready: night $D-06 was red (run 106, failure) (streak=0 total=3 need=3)" red_last
     j rows_after_as_of_are_not_counted                 0 "runs 105 104 103 (streak=3 total=3 need=3)" red_last "$D-05"
@@ -290,6 +303,37 @@ selftest() {
     else
         printf '  BROKE %-50s NEED=%s, the ruling says three\n' committed_need_is_three "$NEED"; fail=$((fail + 1))
     fi
+    # C355 item 6: release-rehearsal needs one night; every other check still needs three
+    jr() { row "$1" "$2" "$3" -- --check release-rehearsal --history "$tmp/$4" --as-of "${5:-$D-06}"; }
+    fx one "106 $D-06 success"
+    jr rehearsal_one_green_night_is_ready              0 "ok    NIGHTLY release-rehearsal ready: 1 green nights in a row on main, newest $D-06: runs 106 (streak=1 total=1 need=1)" one
+    jr rehearsal_a_red_newest_night_is_not_ready       1 "not ready: night $D-06 was red (run 106, failure) (streak=0 total=3 need=1)" red_last
+    jr rehearsal_no_night_is_not_measured              2 "(streak=0 total=0 need=1)" none
+    j  other_checks_still_need_three_after_one_night   1 "(streak=1 total=1 need=3)" one
+    # The one-night need is keyed on the exact name: a sibling check or a near-miss name still needs three.
+    jn() { row "$1" "$2" "$3" -- --check "$4" --history "$tmp/one" --as-of "$D-06"; }
+    jn nightly_train_still_needs_three_after_one_night  1 "(streak=1 total=1 need=3)" nightly-train
+    jn near_miss_release_lanes_needs_three              1 "(streak=1 total=1 need=3)" release-lanes
+    jn near_miss_rehearsal_suffix_needs_three           1 "(streak=1 total=1 need=3)" release-rehearsal-old
+    jn near_miss_other_prefix_rehearsal_needs_three     1 "(streak=1 total=1 need=3)" x-rehearsal
+    jn near_miss_capital_release_rehearsal_needs_three  1 "(streak=1 total=1 need=3)" Release-rehearsal
+    jn near_miss_last_letter_needs_three                1 "(streak=1 total=1 need=3)" release-rehearsaX
+    # Nor does a name the compare would only match after rewriting it (a stripped prefix or suffix, a deleted letter).
+    jn near_miss_x_prefixed_needs_three                 1 "(streak=1 total=1 need=3)" x-release-rehearsal
+    jn near_miss_q_prefixed_needs_three                 1 "(streak=1 total=1 need=3)" q-release-rehearsal
+    jn near_miss_dot_suffixed_needs_three               1 "(streak=1 total=1 need=3)" release-rehearsal.old
+    jn near_miss_digit_suffixed_needs_three             1 "(streak=1 total=1 need=3)" release-rehearsal7
+    jn near_miss_letter_suffixed_needs_three            1 "(streak=1 total=1 need=3)" release-rehearsalZ
+    jn near_miss_nightly_dot_train_needs_three          1 "(streak=1 total=1 need=3)" nightly.train
+    # A space or a slash never reaches need_of: the name check refuses it first, so those strip spellings are closed there.
+    jn near_miss_dash_suffixed_needs_three              1 "(streak=1 total=1 need=3)" release-rehearsal-
+    jn near_miss_space_suffixed_is_refused              3 "must be a name" "release-rehearsal x"
+    jn near_miss_slash_suffixed_is_refused              3 "must be a name" release-rehearsal/old
+    if [ "$REHEARSAL_NEED" = 1 ]; then
+        printf '  ok    %-50s REHEARSAL_NEED=1\n' committed_rehearsal_need_is_one; pass=$((pass + 1))
+    else
+        printf '  BROKE %-50s REHEARSAL_NEED=%s, C355 item 6 says one\n' committed_rehearsal_need_is_one "$REHEARSAL_NEED"; fail=$((fail + 1))
+    fi
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
@@ -322,13 +366,35 @@ mutants() {
     done <<'MUTANTS'
 need_is_two                 /^NEED=3/s/^NEED=3/NEED=2/
 need_from_env               /^NEED=3/s/^NEED=3/NEED=${NEED:-3}/
+rehearsal_need_is_three     /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEED=3/
+rehearsal_need_is_zero      /^REHEARSAL_NEED=1/s/^REHEARSAL_NEED=1/REHEARSAL_NEED=0/
+rehearsal_name_not_keyed    /^need_of() /s/= release-rehearsal ]/= rehearsal ]/
+rehearsal_and_train_keyed   /^need_of() /s/\[ "\$1" = release-rehearsal \]/{ [ "$1" = release-rehearsal ] || [ "$1" = nightly-train ]; }/
+any_release_check_keyed     /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-* ]]/
+rehearsal_prefix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-rehearsal* ]]/
+rehearsal_suffix_keyed      /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == *rehearsal ]]/
+one_letter_glob_keyed       /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == release-rehearsa? ]]/
+case_glob_keyed             /^need_of() /s/\[ "\$1" = release-rehearsal \]/[[ $1 == [rR]elease-rehearsal ]]/
+x_prefix_stripped           /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1#x-}" = release-rehearsal ]|
+any_prefix_stripped         /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1#?-}" = release-rehearsal ]|
+dot_suffix_stripped         /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%.*}" = release-rehearsal ]|
+digit_suffix_stripped       /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%[0-9]}" = release-rehearsal ]|
+letter_deleted              /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1//Z/}" = release-rehearsal ]|
+nightly_dot_train_keyed     /^need_of() /s|\[ "\$1" = release-rehearsal \]|{ [ "$1" = release-rehearsal ] \|\| [ "$1" = nightly.train ]; }|
+dash_suffix_stripped        /^need_of() /s|\[ "\$1" = release-rehearsal \]|[ "${1%-}" = release-rehearsal ]|
+name_check_allows_space     /must be a name of letters/s|\[!A-Za-z0-9._-\]|[!A-Za-z0-9._[:blank:]-]|
+name_check_allows_slash     /must be a name of letters/s|\[!A-Za-z0-9._-\]|[!A-Za-z0-9._/-]|
+one_night_for_every_check   /^need_of() /s/"\$NEED"/"$REHEARSAL_NEED"/
 retried_counts_as_green     /^judge() {$/,/^}$/s/? "green" : "retried"/? "green" : "green"/
 failure_is_not_red          /^judge() {$/,/^}$/s/co == "failure" || co == "timed_out"/co == "never" || co == "timed_out"/
 void_counts_as_green        /^judge() {$/,/^}$/s/) s = "void"/) s = "green"/
 red_ranks_below_green       /^judge() {$/,/^}$/s/rank\["red"\] = 4/rank["red"] = 0/
 pending_ranks_below_green   /^judge() {$/,/^}$/s/rank\["pending"\] = 3/rank["pending"] = 0/
 tie_keeps_the_older_run     /^judge() {$/,/^}$/s/ts > tsof\[n\]/ts < tsof[n]/
-every_branch_counts         /^judge() {$/,/^}$/s/if (\$3 != "main" || \$4 != "schedule")/if (0)/
+every_branch_counts         /^judge() {$/,/^}$/s/if (\$3 != "main" || (\$4 != "schedule" && \$4 != "workflow_dispatch"))/if (0)/
+dispatch_never_counts       /^judge() {$/,/^}$/s/ && \$4 != "workflow_dispatch"))/))/
+every_event_counts          /^judge() {$/,/^}$/s/(\$4 != "schedule" && \$4 != "workflow_dispatch")/0/
+any_branch_dispatch_counts  /^judge() {$/,/^}$/s/if (\$3 != "main" || (/if (\$4 != "workflow_dispatch" && (\$3 != "main" || /
 later_rows_count            /^judge() {$/,/^}$/s/if (n > asof_n)/if (0)/
 newest_red_is_skipped       /^judge() {$/,/^}$/s/st\[k\] == "green" || st\[k\] == "red" || st\[k\] == "retried"/st[k] == "green"/
 no_staleness_bound          /^judge() {$/,/^}$/s/if (last < asof_n - 1)/if (0)/

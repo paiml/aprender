@@ -115,7 +115,9 @@ pub fn validate_artifact(path: &Path) -> Result<(ArtifactKind, Vec<Violation>), 
     match classify_artifact(&content) {
         ArtifactKind::Contract => {
             let contract = parse_contract_str(&content)?;
-            Ok((ArtifactKind::Contract, validate_contract(&contract)))
+            let mut violations = validate_contract(&contract);
+            violations.extend(super::no_test_debt::check(path, &contract));
+            Ok((ArtifactKind::Contract, violations))
         }
         ArtifactKind::Binding => {
             let registry = crate::binding::parse_binding_str(&content)?;

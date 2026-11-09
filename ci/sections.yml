@@ -18,22 +18,34 @@
 # The old `ci:` job, verbatim: `uses:` is the pin ci/vendor/sovereign-ci.yml was
 # copied from (scripts/check_ci_reusable_workflow_pinned.sh checks both agree).
 sovereign-ci:
-  uses: paiml/.github/.github/workflows/sovereign-ci.yml@f713290c86fcd70d6f26a0faab14e67e6713586f
+  uses: paiml/.github/.github/workflows/sovereign-ci.yml@dbd0488efe2463161b34b2f75002baee5e308d2a
   with:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
     use_nextest: true
     coverage_on: 'tag'
+    # PMAT-5792: the guard-cargo diff gate is the scanner of record (check_sov_advisories_off.sh)
+    advisories_diff_only: true
 
 # A matrix job becomes one section per pinned combination. workspace-test-shard
-# runs as THREE shards, each its own ci.yml job on its own runner: as one shard
-# it took 5358 s of x86-main and was the release critical path. nextest's hash
-# partition N/3 and the explicit runner's round-robin N/3 each cover their list
+# runs as FOUR shards on pull_request and THREE on merge_group (AC-1520-SHARD3: three online mq seats until -4 returns; the `workspace-test-shard-merge_group` pins) (PMAT-6420; EMG-001 C1 had collapsed twelve to one, the 85-min MQ shard) (ONE count: the `shards:` pins below; ci.yml's matrix lists must match, check_shard_count_single_source.sh), each its own ci.yml job on its own runner: as one shard
+# it took 5358 s of x86-main (2026-09) and was the release critical path; the one-shard
+# merge-queue run took 83+ min (2026-10-26, PMAT-6420). nextest's hash
+# partition N/4 and the explicit runner's round-robin N/4 each cover their list
 # exactly once between the shards; the cross-shard Σ fan-in in the workspace-test
 # verdict job checks that by id. determinism keeps both arches; x86-main runs
 # [X64], the determinism fat job runs [ARM64] + the compare.
 matrix-pins:
   workspace-test-shard:
+    - {shard: 1, shards: 4}
+    - {shard: 2, shards: 4}
+    - {shard: 3, shards: 4}
+    - {shard: 4, shards: 4}
+  guard-cargo-shard:
+    - {shard: 1, shards: 3}
+    - {shard: 2, shards: 3}
+    - {shard: 3, shards: 3}
+  workspace-test-shard-merge_group:
     - {shard: 1, shards: 3}
     - {shard: 2, shards: 3}
     - {shard: 3, shards: 3}
@@ -58,14 +70,17 @@ jobs:
   # integration list were ONE serial job, so five gx10 + three yoga clean-room
   # runners sat idle while a merge-queue entry waited on a single box (measured
   # over 24 h: intel 15 / gx10 6 / yoga 5 of 27 workspace-tests; gx10 mean 16 min,
-  # intel 18, intel worst 51 under contention). This job is now a 3-way matrix:
-  # nextest `--partition hash:N/3` splits the lib tests by stable hash, and the
-  # explicit-command runner takes every 3rd fragment (`--shard N/3`). The once-only
-  # steps (GPU crates, compute, quick tier, guards) run on shard 1. Each shard
+  # intel 18, intel worst 51 under contention). This job is now a 12-way matrix (was 3; shard 2 hit the 3600 s cap, 2026-10-20):
+  # nextest `--partition hash:N/12` splits the lib tests by stable hash, and the
+  # explicit-command runner takes every 12th fragment (`--shard N/12`). The once-only
+  # steps are spread so the shards finish together (#5486): compute and the universe
+  # listing on shard 1, the over-the-cap check on the last shard; the GPU crates (with their own Σ
+  # check) and the two guards on shard 2; the examples build on shard 3. The placement
+  # follows the measured per-step costs in ci/shard-step-costs.tsv. Each shard
   # owns its cargo state (registry + target parent keyed by PR_OR_REF-sN, see the
   # env below): the test-binary compile is therefore repeated per shard, and it is
   # cheap because codegen comes from the shared sccache (measured ~1 min on a warm
-  # cache vs 13 min of test execution, which is the part that now runs 3-wide).
+  # cache vs 13 min of test execution, which is the part that now runs 12-wide).
   # The check-run every consumer reads -- branch protection, `gate`, the BSE-17
   # reuse lookup by check_name -- is the fan-in job `workspace-test` below, which
   # fails unless every shard passed.
@@ -74,8 +89,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
-        shards: [3]
+        # NOTE: the matrix-pins above override this matrix (fat_driver.py); the guard checks the pins and ci.yml only
+        shard: [1, 2, 3, 4]
+        shards: [4]
     # PMAT-3138 (#3138): arch-neutral -- intel, yoga OR gx10. Measured 2026-09-12 on
     # gx10 with this image and env, --no-fail-fast: step 1 (59k tests) 10.6 min vs
     # 34.5 on intel, step 2 (102 tree readers) 6.7 vs 27.4, the over-the-cap
@@ -135,8 +151,8 @@ jobs:
         # registry-outage-tolerant).
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+            docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R "$OWNER" /workspace || echo "::warning::ownership restore of /workspace to $OWNER failed (rc=$?)"'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
@@ -277,6 +293,7 @@ jobs:
       - name: Create this run's target dir and registry on the host (before any bind mount)
         run: |
           set -euo pipefail
+          echo "thread cap: ${RUNNER_THREAD_CAP:-4}"
           # heal_path ROOT PATH: on a merge_group event PR_OR_REF is the queue
           # ref (gh-readonly-queue/main/pr-N-<sha>), so the per-ref dir is NESTED
           # and an ancestor may already be root-owned from a build whose bind
@@ -333,21 +350,22 @@ jobs:
         #      the previous run's belated chown fixed the now-stale dir.
         # Fix (this step): docker run as root, chown the per-RUN target
         # dir + cargo registry to noah:1000 BEFORE the cargo step.
-        # Idempotent — `|| true` tolerates dirs that are already
-        # noah-owned (e.g. a rerun of the same run-id).
+        # Idempotent — a dir that is already noah-owned chowns cleanly (e.g. a
+        # rerun of the same run-id); a real failure is a ::warning::, not hidden.
         run: |
-          docker run --rm \
+          docker run --rm -e OWNER="$(id -u):$(id -g)" \
             -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             "$IMAGE" \
-            bash -c 'chown -R 1000:1000 /workspace/target /usr/local/cargo/registry 2>/dev/null || true'
+            bash -c 'chown -R "$OWNER" /workspace/target /usr/local/cargo/registry || echo "::warning::pre-build chown to $OWNER failed (rc=$?)"'
       # BSE-17 (PMAT-1077): which tier this run owes. quick on pull_request —
       # the touched crates + direct reverse dependents (BSE-16's selection, cap
       # -> full) plus EVERY test target that reads the tree, derived and
       # registry-checked (drift is ENV, never a quick tier over a stale list);
-      # full on push/schedule/dispatch and on a merge_group whose tree is not
-      # the tree a green PR head already ran; reuse on a merge_group whose
-      # HEAD^{tree} equals the PR head's and whose workspace-test succeeded.
+      # full on schedule/dispatch/tags; merge_group runs the quick tier over the whole
+      # group diff (operator 2026-10-17: full gates only tags/release);
+      # a push to main reuses the queue's workspace-test green (T36; quick or full, per the queue's own tier -- never on a tag push) or, when it cannot, measures
+      # the landed diff.
       # The touched set is the TIP diff against the base (shallow checkout: no
       # merge-base; tip-vs-tip is a superset, the safe direction) and the diff
       # command itself must succeed — an empty diff from a failed git would
@@ -357,46 +375,60 @@ jobs:
         id: tier
         env:
           GH_TOKEN: ${{ github.token }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
         run: |
           set -euo pipefail
           args=(--event "${GITHUB_EVENT_NAME}")
           # PMAT-1098 67-E2: the queue and a push to main re-derive their own
-          # diff from HEAD's FIRST PARENT (HEAD^1..HEAD is the PR's diff on the
-          # new base). actions/checkout is shallow, so that parent is not in the
-          # object store until we deepen -- and without it ci_test_tier.sh falls
-          # closed to `full` every single time, which would make the whole
-          # optimisation inert while looking like it worked. Best effort by
-          # design: if the deepen fails the decision still falls closed, and the
-          # warning below says so instead of the run silently paying the hour.
+          # diff. actions/checkout is shallow, so the base commit of that diff is
+          # not in the object store until we fetch it -- and without it
+          # ci_test_tier.sh falls closed to `full` every single time, which would
+          # make the whole optimisation inert while looking like it worked. Best
+          # effort by design: if the fetch fails the decision still falls closed,
+          # and the warning below says so instead of the run silently paying the hour.
+          # merge_group: MG_BASE_SHA..HEAD. push: PUSH_BEFORE..HEAD (the queue
+          # rebase-merges, so one push carries N commits).
           case "${GITHUB_EVENT_NAME}" in
-            merge_group|push)
-              git fetch --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
-                || git fetch --no-tags --deepen=1 origin 2>/dev/null \
+            merge_group)
+              # Operator 2026-10-17: the queue runs the quick tier over the entry's diff (base_sha = prior entry's head),
+              # MG_BASE_SHA..HEAD. Fetch the base; if that fails the tier falls closed to full.
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${GITHUB_SHA}" "${MG_BASE_SHA}" 2>/dev/null \
+                || bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${MG_BASE_SHA}" 2>/dev/null \
                 || true
-              if git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1; then
-                printf 'first parent available: %s\n' "$(git rev-parse HEAD^1)"
+              git cat-file -e "${MG_BASE_SHA}^{commit}" 2>/dev/null \
+                || printf '::warning::merge_group base sha unavailable -- the tier falls closed to full\n'
+              ;;
+            push)
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}" 2>/dev/null \
+                || bash scripts/ci/fetch_p6.sh --no-tags --deepen=1 origin 2>/dev/null \
+                || true
+              # The queue rebase-merges: a push carries N commits, so the diff is
+              # github.event.before..after. Fetch `before` (best effort); a missing,
+              # all-zero or non-commit before leaves the tier falling closed to full.
+              case "${PUSH_BEFORE:-}" in
+                ''|0000000000000000000000000000000000000000) ;;
+                *) bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "${PUSH_BEFORE}" 2>/dev/null || true ;;
+              esac
+              if [ -n "${PUSH_BEFORE:-}" ] && git cat-file -e "${PUSH_BEFORE}^{commit}" 2>/dev/null; then
+                printf 'push range base available: %s\n' "${PUSH_BEFORE}"
               else
-                printf '::warning::first parent unavailable after deepen -- the tier falls closed to full\n'
+                printf '::warning::github.event.before unavailable -- the tier falls closed to full\n'
               fi
               ;;
           esac
           case "${GITHUB_EVENT_NAME}" in
             pull_request)
-              git fetch --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-              # --no-renames (#3664): a rename must list BOTH paths, or a source
-              # moved into docs/ reads as docs-only and runs zero tests.
-              git diff --no-renames --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
-              printf 'touched (tip vs tip): %s path(s)\n' "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
+              # #5391: the PR's change is the diff from merge-base(base, HEAD), not the
+              # base tip -- main's later commits are not the PR's. --no-renames (#3664)
+              # lives in the helper.
+              bash scripts/ci/pr_touched_paths.sh "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
               args+=(--diff-from "$RUNNER_TEMP/touched.txt")
               ;;
             merge_group)
-              pr=$(printf '%s' "${GITHUB_REF_NAME}" | sed -n 's|^gh-readonly-queue/[^/]*/pr-\([0-9]*\)-.*|\1|p')
-              if [ -n "$pr" ]; then
-                head=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .head.sha)
-                git fetch --no-tags --depth=1 origin "$head"
-                concl=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${head}/check-runs?check_name=workspace-test&per_page=20" --jq '[.check_runs[]|select(.status=="completed")]|sort_by(.completed_at)|last|.conclusion // "none"')
-                args+=(--pr-head "$head" --pr-head-conclusion "${concl:-none}")
-              fi
+              # Operator 2026-10-17 (cop window), verbatim: "only gating on tags/release".
+              # ci_test_tier.sh diffs MG_BASE_SHA..HEAD (env above) and selects like a PR.
               ;;
             push)
               # T36: the merge queue already tested this very sha. Hand its
@@ -421,7 +453,8 @@ jobs:
       # workflow_dispatch / merge_group / push shard had no base and the test panicked
       # "the refinement gate declined". Operator ruling (2026-09-28 09:41): compare HEAD
       # with the EVENT's base commit -- pull_request.base.sha, merge_group.base_sha,
-      # push's `before` -- and fall back to the origin/main tip only for
+      # push's `before` (a tag push: the tagged commit's first parent, #5172) -- and
+      # fall back to the origin/main tip only for
       # workflow_dispatch. That commit is pinned as refs/remotes/origin/main, so at
       # depth 1 (no merge-base) the gate's tip fallback compares against exactly it.
       # AFTER the tier step: its pull_request arm fetches main's CURRENT tip into
@@ -437,9 +470,25 @@ jobs:
           case "${GITHUB_EVENT_NAME}" in
             pull_request) base="${PR_BASE_SHA:-}" ;;
             merge_group) base="${MG_BASE_SHA:-}" ;;
-            push) base="${PUSH_BEFORE:-}" ;;
+            push)
+              base="${PUSH_BEFORE:-}"
+              # #5172: a push that CREATES a ref carries before=0000..., and a release tag
+              # push always does, so v0.71.0's tag run failed here. A tag push's base is
+              # ALWAYS the tagged commit's first parent, never `before` (on a moved tag that
+              # is the old target, not this commit's base). The tier step's merge_group|push
+              # arm deepened to depth 2, best effort; if that missed, fetch it here. A
+              # branch push with a zero `before` still fails below.
+              case "${GITHUB_REF:-}" in
+                refs/tags/*)
+                  git rev-parse -q --verify 'HEAD^1' >/dev/null 2>&1 \
+                    || bash scripts/ci/fetch_p6.sh --no-tags --depth=2 origin "${GITHUB_SHA}"
+                  base="$(git rev-parse -q --verify 'HEAD^1^{commit}' || true)"
+                  printf 'refinement base: tag push %s (before %s); using its first parent %s\n' "${GITHUB_REF#refs/tags/}" "${PUSH_BEFORE:-<none>}" "${base:-<none>}"
+                  ;;
+              esac
+              ;;
             workflow_dispatch)
-              git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
+              bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
               printf 'refinement base: origin/main tip %s (workflow_dispatch has no event base)\n' "$(git rev-parse origin/main)"
               exit 0
               ;;
@@ -449,7 +498,7 @@ jobs:
             printf '::error::refinement base: %s event carries no base sha (got "%s")\n' "${GITHUB_EVENT_NAME}" "$base"
             exit 1
           fi
-          git fetch --no-tags --depth=1 origin "$base"
+          bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "$base"
           git update-ref refs/remotes/origin/main "$base"
           printf 'refinement base: %s base %s pinned as origin/main\n' "${GITHUB_EVENT_NAME}" "$(git rev-parse 'origin/main^{commit}')"
       - name: Workspace lib tests (25,300+)
@@ -506,12 +555,12 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e SHARD -e SHARDS \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
-            cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"
+            bash -c 'cargo nextest run --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --partition "hash:${SHARD}/${SHARDS}"; rc=$?; echo "::group::sccache stats"; sccache --show-stats || true; echo "::endgroup::"; exit "$rc"'
       - name: "Σ-executed: keep the workspace lib junit (the next nextest run overwrites it)"
         if: steps.tier.outputs.tier == 'full'
         # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
@@ -522,7 +571,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/lib.junit.xml"
       - name: "GPU crates on their default features (per-package resolve, no device needed)"
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 2 || matrix.shards == 1)
         # aprender-gpu + aprender-cuda-edge, un-darked from the required check (T0 of the
         # NVIDIA CUDA Rust spec, #3062). A per-package resolve keeps `cuda` OFF (see the
         # comment on the workspace line above); the `driver`/`kernels`/`memory`/`ptx` tests
@@ -540,13 +589,13 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
             cargo nextest run --profile ci -p aprender-gpu -p aprender-cuda-edge --lib
       - name: "Σ-executed: keep the GPU crates junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 2 || matrix.shards == 1)
         # #4433: nextest writes <target>/nextest/ci/junit.xml and every invocation
         # overwrites it, so each run's report is copied out before the next one.
         shell: bash
@@ -554,6 +603,35 @@ jobs:
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/gpu.junit.xml"
+      # #5486: the GPU crates run on shard 2 (shard 1 was the long pole by ~3 min), so
+      # their Σ check runs here, on the shard that built and ran them. The universe is
+      # listed here with the filters written out again, as in the shard-1 Σ step below.
+      - name: "Σ-executed: the GPU crates ran exactly the tests they owe (#4433)"
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 2 || matrix.shards == 1)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sig="$RUNNER_TEMP/sigma"
+          docker run --rm \
+            -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -v "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}:/workspace/target" \
+            -v "${SCCACHE_HOST_DIR}:/sccache" \
+            -v "${sig}:/sigma" \
+            -w /workspace \
+            -e CARGO_TARGET_DIR=/workspace/target \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
+            -e SCCACHE_DIR=/sccache \
+            -e CARGO_INCREMENTAL=0 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" \
+            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
+            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            "$IMAGE" \
+            cargo nextest list --profile ci -p aprender-gpu -p aprender-cuda-edge --lib --message-format json > "$sig/gpu.list.json"
+          python3 scripts/ci/sigma_executed.py nextest --kind "nextest gpu" --junit "$sig/gpu.junit.xml" --list-json "$sig/gpu.list.json"
+      # #5048: the pass rule needs at least one passing test. A run of 0 tests prints "test result: ok. 0 passed",
+      # which the old rule accepted. cargo's status stays unread on purpose: the step name says why (SIGSEGV at harness exit).
+      # Case table: scripts/tests/compute_row_zero_tests_test.sh.
       - name: Compute tests (tolerate SIGSEGV at exit — all tests pass but harness crashes on cleanup)
         if: steps.tier.outputs.tier == 'full' && matrix.shard == 1
         run: |
@@ -569,9 +647,9 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             "$IMAGE" \
-            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -q "test result: ok\." /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
+            bash -c 'cargo test -p aprender-compute --lib 2>&1 | tee /tmp/compute-test.log; grep -Eq "test result: ok\. [1-9][0-9]* passed" /tmp/compute-test.log && ! grep -q "test result: FAILED" /tmp/compute-test.log'
       - name: Integration tests
         if: steps.tier.outputs.tier == 'full'
         # #2465: the four FALSIFY-AUTH targets were appended here because they
@@ -641,7 +719,7 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash scripts/ci_run_explicit_test_commands.sh --run ci/explicit-test-commands.d --shard "${SHARD}/${SHARDS}"
@@ -654,14 +732,16 @@ jobs:
         # step that ran the tests -- so an added --exclude, a --partition or a
         # dropped fragment in a run step cannot narrow its own yardstick.
         # Sharded, a shard owes a partition, not the set: this step (shard 1)
-        # lists the universes and checks the shard-1-only GPU and compute steps;
+        # lists the universes and checks the shard-1-only compute step (the GPU
+        # crates run and are checked on shard 2, #5486);
         # the lib and explicit universes go to the workspace-test verdict job,
-        # which compares them with the UNION of the three shards' executed ids.
+        # which compares them with the UNION of the shards' executed ids.
         shell: bash
         run: |
           set -euo pipefail
           sig="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
+          bash scripts/ci/quick_tier_shard.sh --self-test
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -673,13 +753,12 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             "$IMAGE" \
             bash -c 'set -euo pipefail
               cargo nextest list --profile ci --workspace --lib --exclude aprender-gpu --exclude aprender-cuda-edge --exclude aprender-compute --message-format json > /sigma/lib.list.json
-              cargo nextest list --profile ci -p aprender-gpu -p aprender-cuda-edge --lib --message-format json > /sigma/gpu.list.json
               cargo test -p aprender-compute --lib -- --list > /sigma/compute.list.txt
               cargo test -p aprender-compute --lib -- --list --ignored > /sigma/compute.ignored.txt'
           bash scripts/ci_run_explicit_test_commands.sh --list ci/explicit-test-commands.d > "$sig/explicit.list.txt"
@@ -688,14 +767,12 @@ jobs:
             python3 scripts/ci/sigma_executed.py nextest --kind "nextest lib" --junit "$sig/lib.junit.xml" --list-json "$sig/lib.list.json" || rc=1
             python3 scripts/ci/sigma_executed.py explicit --kind "explicit" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Integration tests" --list "$sig/explicit.list.txt" || rc=1
           fi
-          python3 scripts/ci/sigma_executed.py nextest --kind "nextest gpu" --junit "$sig/gpu.junit.xml" --list-json "$sig/gpu.list.json" || rc=1
           python3 scripts/ci/sigma_executed.py cargo --kind "compute" --log "${FAT_SECTION_LOG:?the fat driver sets FAT_SECTION_LOG}" --step "Compute tests" --list "$sig/compute.list.txt" --ignored "$sig/compute.ignored.txt" || rc=1
           exit "$rc"
       # The shard's half of the cross-shard Σ (#4433). The tier file is written
       # on every tier, so the verdict job can tell "not a full run" from "a
       # shard's ids never arrived" -- a missing file there is RED, not a skip.
       - name: "Σ-executed: stage this shard's executed ids for the fan-in (#4433)"
-        if: matrix.shards != 1
         shell: bash
         env:
           TIER: ${{ steps.tier.outputs.tier }}
@@ -712,7 +789,6 @@ jobs:
             fi
           fi
       - uses: actions/upload-artifact@v7
-        if: matrix.shards != 1
         with:
           name: sigma-shard-${{ matrix.shard }}
           path: sigma-shard/
@@ -722,11 +798,11 @@ jobs:
       # on yoga): 489 s of that shard's 794 s integration phase was this ONE
       # command, so round-robin sharding could never balance it -- a shard that
       # drew it was the long pole regardless. It is its own step on shard 3
-      # (whose fragment share is the lightest), so the three shards finish
+      # (fragment share not re-measured at 12 shards), so the shards finish
       # together. Not a fragment because it is a build, not a test target, and
       # no wiring reader (check_model_tests_wired, check_beats_gated) names it.
       - name: Build every example (workspace, keep-going)
-        if: steps.tier.outputs.tier == 'full' && matrix.shard == 3
+        if: steps.tier.outputs.tier == 'full' && (matrix.shard == 3 || matrix.shards == 1)
         timeout-minutes: 40
         run: |
           set -euo pipefail
@@ -742,15 +818,26 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
             -e SHARD -e SHARDS \
             "$IMAGE" \
             cargo build --examples --workspace --keep-going
       # BSE-17 quick tier, part 1: the selected crates' unit and integration
       # targets (default features) under the same image and mounts as the full
       # tier. Empty selection (a scripts/docs PR) skips this step; part 2 still runs.
+      #
+      # #5210 — "default features" was not true. Cargo unifies features across
+      # every -p of one call, and this step ran the whole selection as one call:
+      # on #5188 aprender-test-cli (default = ["browser"]) switched on
+      # aprender-test-lib's `browser`, which compiled its two chromium falsifiers,
+      # and 11 tests failed "Browser not found" on a host with no Chromium (run
+      # 38241534849). scripts/ci/quick_tier_groups.sh now splits the selection into
+      # as few calls as keep every crate away from one that raises its features
+      # (its own --self-test is the case table). Nothing is filtered: every
+      # selected crate still runs, each call writes its own junit, and the
+      # Σ-executed step below re-derives the same split from CRATES.
       - name: "Quick tier: lib + integration tests of the selected crates (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # 20, not 60 (PMAT-1098, #3084). A quick tier that is ALLOWED an hour is
         # not a quick tier, and 60 is the number that let part 2 burn 55 minutes
         # (run 34449608126) before dying at the cap under fleet load on #3063
@@ -768,8 +855,25 @@ jobs:
         run: |
           set -euo pipefail
           read -ra crates <<< "$CRATES"
-          pkgs=""; for c in "${crates[@]}"; do pkgs="$pkgs -p $c"; done
           printf 'quick tier crates: %s\n' "$CRATES"
+          docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" \
+            -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+            -w /workspace "$IMAGE" cargo metadata --no-deps --format-version 1 > "$RUNNER_TEMP/quick-meta.json"
+          bash scripts/ci/quick_tier_groups.sh --metadata "$RUNNER_TEMP/quick-meta.json" "${crates[@]}" > "$RUNNER_TEMP/quick-calls-all.txt"
+          # CRATES is set here (the step's if:), so zero calls would run zero tests green
+          [ -s "$RUNNER_TEMP/quick-calls-all.txt" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
+          # this shard's share of the calls: every crate on exactly one shard (quick_tier_shard.sh)
+          bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$RUNNER_TEMP/quick-calls-all.txt" > "$RUNNER_TEMP/quick-calls.txt"
+          mapfile -t calls < "$RUNNER_TEMP/quick-calls.txt"
+          printf 'nextest calls: %s\n' "${#calls[@]}"
+          mkdir -p "$RUNNER_TEMP/quick-sel"
+          tgt="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
+          rc=0
+          for i in "${!calls[@]}"; do
+          read -ra group <<< "${calls[$i]}"
+          pkgs=""; for c in "${group[@]}"; do pkgs="$pkgs -p $c"; done
+          printf 'call %s:%s\n' "$i" "$pkgs"
+          touch "$RUNNER_TEMP/quick-sel/stamp"
           docker run --rm \
           -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
@@ -783,12 +887,19 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests$pkgs"
+            bash -c "cargo nextest run --profile ci --lib --tests$pkgs" || rc=1
+          # each call overwrites nextest/ci/junit.xml; keep this one under its index, and
+          # only if this call wrote it (a stale file from the call before is not this one)
+          if [ "${tgt}/nextest/ci/junit.xml" -nt "$RUNNER_TEMP/quick-sel/stamp" ]; then
+            cp "${tgt}/nextest/ci/junit.xml" "$RUNNER_TEMP/quick-sel/$i.junit.xml"
+          else printf '::error::call %s left no junit of its own\n' "$i"; rc=1; fi
+          done
+          exit "$rc"
       # BSE-17 quick tier, part 2: every test target that reads the tree, from
       # scripts/tree_reader_tests.txt (derived; the guard has already proved the
       # registry equals the sources in this run).
@@ -818,16 +929,19 @@ jobs:
       # reads this exclude list out of this file and drops their targets), so the
       # exclusion removes nothing the filterset asks for.
       - name: "Σ-executed: keep the quick selected-crates junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1 && steps.tier.outputs.crates != ''
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.crates != ''
         # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
         # PR head's reuses that result), so the quick tier's own runs are checked too.
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/sigma"
-          cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-sel.junit.xml"
+          mkdir -p "$RUNNER_TEMP/sigma/quick-sel"
+          shopt -s nullglob
+          files=("$RUNNER_TEMP"/quick-sel/*.junit.xml)
+          # a shard whose share is empty has no junit; one that owes a call and has none fails in the Σ step
+          [ "${#files[@]}" -eq 0 ] || cp "${files[@]}" "$RUNNER_TEMP/sigma/quick-sel/"
       - name: "Quick tier: every test target that reads the tree (BSE-17)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick'
         # 45, not 20. Measured 2026-09-11 under train load, this PR's own runs never fit 20: run 34542045481 on
         # yoga-build2 compiled 811 crates in ~9 min (cold per-run target dir, warm shared sccache) and was part way
         # through 65,266 tests at the cap; attempt 2 on intel-clean-room-15 timed out at 20 min too. The ~6 min
@@ -852,6 +966,10 @@ jobs:
                   | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
           printf 'packages built: %s\n' "$(printf '%s' "$pkgs" | grep -o -- '-p ' | wc -l)"
           EXPR="$(bash scripts/ci_test_tier.sh --filterset "$TARGETS")"
+          # build ONLY the named binaries (was `$pkgs --lib --tests`: 605 linked, 93 run)
+          # the GPU/SIMD crates stay out of a clean-room build even if the registry drifts (same filter as $pkgs above)
+          BUILD_FLAGS="$(printf '%s\n' "${targets[@]}" | grep -vE '^aprender-(gpu|cuda-edge|compute):' | tr '\n' ' ' | bash scripts/ci_test_tier.sh --build-flags)"
+          printf 'build flags: %s\n' "$BUILD_FLAGS"
           printf 'nextest filterset (%s clause(s)):\n' "$(printf '%s' "$EXPR" | tr '|' '\n' | wc -l)"
           printf '%s\n' "$EXPR" | tr '|' '\n' | sed 's/^ *//; s/ *$//; s/^/  + /'
           docker run --rm \
@@ -867,12 +985,12 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            cargo nextest run --profile ci $pkgs --lib --tests -E "$EXPR"
+            cargo nextest run --profile ci $BUILD_FLAGS -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}"
       # BSE-17 quick tier, part 3 (PMAT-1098 67-E2, #3084 — rule (i)): the
       # selection was OVER THE CAP (touched crates + their direct reverse
       # dependents exceed gate_touched_crates.sh's CAP=3). That used to escalate
@@ -889,7 +1007,7 @@ jobs:
       # --locked: a quick tier that silently rewrites Cargo.lock would be a
       # different dependency graph from the one the PR is proposing.
       - name: "Σ-executed: keep the quick tree-reader junit (the next nextest run overwrites it)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick'
         # #4433: a PR merges on its QUICK tier (a merge_group whose tree equals the
         # PR head's reuses that result), so the quick tier's own runs are checked too.
         shell: bash
@@ -898,7 +1016,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/sigma"
           cp "/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}/nextest/ci/junit.xml" "$RUNNER_TEMP/sigma/quick-tree.junit.xml"
       - name: "Σ-executed (quick tier): the tests this job ran are exactly the tests it owes (#4433)"
-        if: steps.tier.outputs.tier == 'quick' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick'
         # The quick tier's universe is its SELECTION (BSE-17): the tier step's crates
         # and tree-reader targets. The filters are written out again HERE from those
         # outputs, never read back from the run steps -- an added --exclude or a
@@ -913,7 +1031,18 @@ jobs:
           mkdir -p "$sig"
           python3 scripts/ci/sigma_executed.py --self-test
           read -ra crates <<< "$CRATES"
-          sel=""; for c in "${crates[@]}"; do sel="$sel -p $c"; done
+          # #5210: the same split as the run step, derived again here from CRATES
+          # (one list per call, so each call's junit is held to its own universe).
+          mkdir -p "$sig/quick-sel"
+          : > "$sig/quick-sel.calls"
+          if [ -n "$CRATES" ]; then
+            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" \
+              -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
+              -w /workspace "$IMAGE" cargo metadata --no-deps --format-version 1 > "$sig/quick-meta.json"
+            bash scripts/ci/quick_tier_groups.sh --metadata "$sig/quick-meta.json" "${crates[@]}" > "$sig/quick-sel.all"
+            [ -s "$sig/quick-sel.all" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
+            bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
+          fi
           read -ra targets <<< "$TARGETS"
           tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
                   | grep -vxE 'aprender-(gpu|cuda-edge|compute)' | sed 's/^/-p /' | tr '\n' ' ')"
@@ -929,22 +1058,28 @@ jobs:
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \
             -e SCCACHE_DIR=/sccache \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
-            -e SEL="$sel" -e TREE="$tree" -e EXPR="$EXPR" \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
+            -e TREE="$tree" -e EXPR="$EXPR" \
+            -e SHARD -e SHARDS \
             "$IMAGE" \
             bash -c 'set -euo pipefail
-              if [ -n "$SEL" ]; then cargo nextest list --profile ci --lib --tests $SEL --message-format json > /sigma/quick-sel.list.json; fi
-              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --message-format json > /sigma/quick-tree.list.json'
+              i=0; while read -r g; do p=""; for c in $g; do p="$p -p $c"; done
+                cargo nextest list --profile ci --lib --tests $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
+              done < /sigma/quick-sel.calls
+              cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}" --message-format json > /sigma/quick-tree.list.json'
           rc=0
           if [ -n "$CRATES" ]; then
-            python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates" --junit "$sig/quick-sel.junit.xml" --list-json "$sig/quick-sel.list.json" || rc=1
+            n="$(wc -l < "$sig/quick-sel.calls")"
+            for ((i = 0; i < n; i++)); do
+              python3 scripts/ci/sigma_executed.py nextest --kind "quick selected crates, call $i" --junit "$sig/quick-sel/$i.junit.xml" --list-json "$sig/quick-sel/$i.list.json" || rc=1
+            done
           fi
           python3 scripts/ci/sigma_executed.py nextest --kind "quick tree readers" --junit "$sig/quick-tree.junit.xml" --list-json "$sig/quick-tree.list.json" || rc=1
           exit "$rc"
       - name: "Quick tier: cargo check --workspace (over-the-cap integration, BSE-17 rule (i))"
-        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == 1
+        if: steps.tier.outputs.tier == 'quick' && steps.tier.outputs.check_workspace == '1' && matrix.shard == matrix.shards
         timeout-minutes: 20
         env:
           REASON: ${{ steps.tier.outputs.reason }}
@@ -963,9 +1098,9 @@ jobs:
             -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
             -e CARGO_INCREMENTAL=0 \
-            -e CARGO_BUILD_JOBS=8 \
-            -e CARGO_PROFILE_TEST_DEBUG=line-tables-only \
-            -e CARGO_PROFILE_DEV_DEBUG=line-tables-only \
+            -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
+            -e CARGO_PROFILE_TEST_DEBUG=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
             cargo check --workspace --all-targets --locked
@@ -995,7 +1130,7 @@ jobs:
         run: |
           printf 'workspace-test NOT RUN: %s\n' "$REASON"
       - name: Build.rs crate-root escape check (v0.31.1 yank guard)
-        if: matrix.shard == 1
+        if: (matrix.shard == 2 || matrix.shards == 1)
         # Static Poka-Yoke: flags build.rs files that panic on files outside
         # CARGO_MANIFEST_DIR, which break `cargo install` from crates.io.
         # See scripts/check_build_rs_paths.sh for the full rationale.
@@ -1007,7 +1142,7 @@ jobs:
             "$IMAGE" \
             setsid --wait bash scripts/check_build_rs_paths.sh
       - name: apr-format leaf sovereignty guard (#2231)
-        if: matrix.shard == 1
+        if: (matrix.shard == 2 || matrix.shards == 1)
         # Poka-Yoke: prove the extracted `apr-format` leaf pulls no ML/GPU/
         # tokenizer/framework crate (so consumers `cargo add apr-format` without
         # aprender-core + trueno/wgpu). Discriminating: PASSES on apr-format +
@@ -1033,13 +1168,13 @@ jobs:
           unit="/mnt/nvme-raid0/targets/aprender-ci/${PR_OR_REF}/run-${GITHUB_RUN_ID}"
           target_mount=()
           if [ -d "$unit" ]; then target_mount=(-v "${unit}:/workspace/target"); fi
-          docker run --rm \
+          docker run --rm -e OWNER="$(id -u):$(id -g)" \
           -e CI -e GITHUB_ACTIONS -e GITHUB_REF -e GITHUB_SHA -e GITHUB_REPOSITORY -e GITHUB_RUN_ID -e GITHUB_EVENT_NAME -e GITHUB_WORKFLOW \
             -v "${GITHUB_WORKSPACE}:/workspace" \
             -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
             "${target_mount[@]}" \
             "$IMAGE" \
-            bash -c 'chown -R 1000:1000 /workspace || true; chown -R 1000:1000 /usr/local/cargo/registry || true; chown -R 1000:1000 /workspace/target || true'
+            bash -c 'for d in /workspace /usr/local/cargo/registry /workspace/target; do [ -e "$d" ] || continue; chown -R "$OWNER" "$d" || echo "::warning::post-job chown of $d to $OWNER failed (rc=$?)"; done'
 
   # PACK-001: the check-run named `workspace-test`. Branch protection requires
   # this context, `gate` needs it, and the BSE-17 reuse lookup reads it by
@@ -1124,8 +1259,8 @@ jobs:
         # safe (and keeps this step tolerant of a registry outage).
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+            docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R "$OWNER" /workspace || echo "::warning::ownership restore of /workspace to $OWNER failed (rc=$?)"'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
@@ -1147,18 +1282,34 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
+      # #4861 + #4983: origin/main is pinned to the commit this tree was BUILT
+      # on, not fetched at its tip. fetch-depth is 1 here, so the merge-base is
+      # usually unavailable and the ratchets read origin/main as it stands.
+      # Fetched at the tip, a run that started after main shrank a baseline or
+      # fixed a function judged a merge commit built before that change against
+      # it: #4813 went red (pipe_grep_q_baseline.txt 62 vs 60, a file it never
+      # touched), and #4970's re-run went red on m17 complexity (checkout at
+      # 60a59031, compared against acd599e52), while a re-run rebuilds the SAME
+      # merge commit. Pinned per event (scripts/ci/pin_build_base.sh):
+      #   pull_request  the merge commit's first parent, checked against the PR head
+      #   merge_group   merge_group.base_sha, as the refinement-gate pin does
+      #   otherwise     the tip, deepened by one on push (resolve_base.sh judges a
+      #                 push against HEAD's first parent: HEAD vs HEAD would pass
+      #                 vacuously, the G-10 quorum's finding)
+      # The shared ratchet library takes the same first parent on its own
+      # (scripts/lib_baseline_ratchet.sh FIRSTPARENT), so a lib ratchet and a
+      # script that reads origin/main directly cannot disagree. A PR that adds
+      # back an entry main has since deleted is still refused by its
+      # merge_group run, which builds on main as it merges. The pin refuses,
+      # and every guard below is skipped red, when the event names no build base.
       - id: guard-setup
-        name: Fetch origin/main as the comparand for every ratchet in this job
+        name: Pin origin/main to this run's build base, the comparand for every ratchet in this job (#4861)
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: |
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
-          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
-          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
-          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
-          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+          bash scripts/ci/pin_build_base.sh --self-test
+          bash scripts/ci/pin_build_base.sh
       # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-tree-steps
       # below, keeps going past a red one, and reports every failure. GitHub would
       # stop this job at its first red step, and the others would never be seen.
@@ -1348,6 +1499,7 @@ jobs:
           python3 scripts/lib/roadmap_merge.py --selftest
           python3 scripts/nightly_manifest.py --self-test   # #4189 nightly gate/manifest/publish plan
           bash scripts/nightly_prune_release.sh --self-test   # nightly publish overflowed page one (422)
+          bash scripts/nightly_gate_retry.sh --self-test   # #5053 ci-pending retries, then RED never green
       # The baseline printer holds its OWN output to the same pairing rule and
       # re-derives every number the contract quotes.
       - name: Dogfood baselines must re-derive from the ledger
@@ -1370,8 +1522,8 @@ jobs:
         run: setsid --wait bash scripts/check_mutants_memory_cap.sh
       - name: memory-cap guard can still go RED (C137)
         run: setsid --wait bash scripts/check_mutants_memory_cap.sh --self-test
-      # The nightly full mutation job runs on the mutants pool, never the
-      # clean-room pool (C108). Same reason, same place: text only.
+      # The nightly full mutation job runs on the yoga clean-room pool, never the
+      # intel clean-room pool (C108). Same reason, same place: text only.
       - name: The nightly mutation job runs on the mutants pool (C108)
         run: setsid --wait bash scripts/check_mutants_pool.sh
       - name: mutants-pool guard can still go RED (C108)
@@ -1610,7 +1762,18 @@ jobs:
   #
   # No `needs:` — running these AFTER workspace-test would serialise ~40
   # minutes onto every green run for no ordering that anything requires.
-  guard-cargo:
+  guard-cargo-shard:
+    name: guard-cargo-shard (${{ matrix.shard }}/${{ matrix.shards }})
+    # #6255: the 77 guard-cargo items ran serially in ONE container, 1192 s of the 1286 s merge-queue `guards` job
+    # (run 10:09Z 2026-10-23: sum of items 1190.8 s; warm target dir saves 61 s of it). Three shards run in
+    # parallel; shard I runs the steps with m<N> where N mod 3 = I-1 (scripts/ci_guards.sh --shard I/K).
+    # The verdict job `guard-cargo` below keeps the name the gate reads. Per-shard sums computed from the serial run's item times (an estimate, not a sharded run): 452 s max; m69 (cargo-deny install, writes GITHUB_PATH) runs in every shard.
+    strategy:
+      fail-fast: false
+      matrix:
+        # NOTE: the matrix-pins above override this matrix (fat_driver.py)
+        shard: [1]
+        shards: [1]
     runs-on: [self-hosted, Linux, clean-room]   # arch-neutral: intel, yoga or gx10 (#3100)
     # 20: the operator's hard PR budget (rule E, 2026-09-10), and it OVERRIDES
     # the BSE-05 formula rather than being derived from it.
@@ -1636,7 +1799,7 @@ jobs:
       # This job's OWN per-run target dir. The `-guards` suffix is the whole
       # point: workspace-test mounts `run-<RUN_ID>` and this job must never
       # resolve to the same path. Reaped by the same `run-*` sweep on intel.
-      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards
+      GUARD_TARGET_DIR: /mnt/nvme-raid0/targets/aprender-ci/${{ github.event.pull_request.number || github.ref_name }}/run-${{ github.run_id }}-guards-${{ matrix.shard }}
       # PMAT-238 (paiml/infra#435): the CARGO_HOME mount is the WHOLE cargo
       # home, not `registry/` alone. `.package-cache` and
       # `.package-cache-mutate` are cargo's flock files and they live beside
@@ -1662,8 +1825,8 @@ jobs:
         # safe (and keeps this step tolerant of a registry outage).
         run: |
           if docker image inspect "$IMAGE" > /dev/null 2>&1; then
-            docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
-              bash -c 'chown -R 1000:1000 /workspace 2>/dev/null || true'
+            docker run --rm -e OWNER="$(id -u):$(id -g)" -v "${GITHUB_WORKSPACE}:/workspace" "$IMAGE" \
+              bash -c 'chown -R "$OWNER" /workspace || echo "::warning::ownership restore of /workspace to $OWNER failed (rc=$?)"'
           else
             echo "Image not cached — no prior docker job on this runner, nothing to restore"
           fi
@@ -1685,17 +1848,16 @@ jobs:
       # never as "no growth", so the mistake would have been loud rather than
       # silent. It is still a mistake. One fetch, before all of them.
       #
-      # fetch-depth is 1 here, so the merge-base is usually unavailable and the
-      # ratchets fall back to the origin/main TIP. That is the STRICTER
-      # comparand, and it means the CI path is the tip path: a local run that
-      # passes on the merge-base can still red here, and CI is authoritative.
-      - name: Fetch origin/main as the comparand for every ratchet in this job
-        run: |
-          git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main
-          # push shape: HEAD IS the origin/main tip, so every differential ratchet judges it against
-          # its FIRST PARENT (scripts/lib/resolve_base.sh: HEAD vs HEAD would pass vacuously, the
-          # G-10 quorum's finding), and a depth-1 checkout has not fetched that parent. Deepen by one.
-          if [ "${GITHUB_EVENT_NAME:-}" = push ]; then git fetch --no-tags --deepen=1 origin +refs/heads/main:refs/remotes/origin/main; fi
+      # #4861 + #4983: origin/main is pinned to the commit this tree was BUILT
+      # on, not fetched at its tip -- the same pin, for the same reason, as
+      # guard-tree's guard-setup (which also runs the pin's self-test; this job
+      # only pins). m17's complexity ratchet is the #4983 case: a re-run of an
+      # unchanged PR judged against main's moved tip went red.
+      - name: Pin origin/main to this run's build base, the comparand for every ratchet in this job (#4861)
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+        run: bash scripts/ci/pin_build_base.sh
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
       # container that mounts it and drops to the runner's uid cannot write
@@ -1738,7 +1900,7 @@ jobs:
           # without the gate skip; gx10 exports CI_TARGET_ADMIT_REQUIRED=1, so a missing
           # gate there is red, never a silent skip.
           if command -v ci-target-admit >/dev/null 2>&1; then
-            CI_TARGET_ADMIT_WAIT_S=300 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 5 min, not 20: the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
+            CI_TARGET_ADMIT_WAIT_S=600 ci-target-admit "$GUARD_TARGET_DIR" || exit 1   # 10 min: 3 sibling shards meet the live<2 cap, the 3rd waits ~452 s (#6286); the 30 min job budget is rule E and is never widened; gx10 guard-cargo max 23 min (46 runs, 2026-09-24)
           elif [ "${CI_TARGET_ADMIT_REQUIRED:-0}" = 1 ]; then
             echo "::error::infra#1059: ci-target-admit is required on ${RUNNER_NAME:-this runner} and is missing"; exit 1
           fi
@@ -1756,7 +1918,27 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           GH_TOKEN: ${{ github.token }}
-        run: bash scripts/ci_guards.sh guard-cargo
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          GUARD_SHARD: ${{ matrix.shard }}/${{ matrix.shards }}
+        run: bash scripts/ci_guards.sh --shard "$GUARD_SHARD" guard-cargo
+
+  # #6255: the check-run the gate reads is still named `guard-cargo`: ONE job that fans the shards in, exactly as
+  # `workspace-test` fans in workspace-test-shard. `if: always()` so a red shard is a red check, never a skipped one.
+  guard-cargo:
+    needs: [guard-cargo-shard]
+    if: always()
+    runs-on: [self-hosted, Linux, clean-room]
+    timeout-minutes: 10
+    steps:
+      # #6255: the verdict runs scripts/ci_guards.sh, so the job needs the script on disk; a sparse checkout of scripts/ is enough.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+          sparse-checkout: scripts
+      - name: Every shard passed
+        env:
+          SHARD_RESULT: ${{ needs.guard-cargo-shard.result }}
+        run: bash scripts/ci_guards.sh guard-cargo --verdict "${SHARD_RESULT:-}"
 
   guard-cargo-steps:
     # MANIFEST, never run by GitHub (`if: false`). These are guard-cargo's guard steps,
@@ -1813,8 +1995,64 @@ jobs:
       # pv/pmat/apr AND exercises both pins against a poisoned PATH -- presence
       # of `PMAT_BIN` proves nothing about which binary the gate ends up running.
       # It found `pmat analyze reachability` bare in BOTH copies on its first run.
+      # A2 (pace quorums 2026-10-19 23:51Z and 00:10Z, option c, the split): m5 is 1267-1517 s on
+      # x86-main (#5544, #5449 killed at 3563-3567 s) because its pv cargo build ran on the HOST,
+      # outside the sccache the workspace-test containers share. The build moves into the CI image
+      # here; the guard itself (its python3 rows need an interpreter the image lacks) stays on the
+      # host; its own `cargo build -q` then equals a host-only second build (12 compile
+      # commands), and the step FAILs above 12. Same-path mounts: the
+      # workspace and CARGO_HOME are mounted at their HOST paths, so cargo's fingerprints and the
+      # `src_path` that pv.d checks (#2745) are identical inside and outside. rustc stays 1.93.0
+      # (rust-toolchain.toml): the host toolchain is mounted read-only ahead of the image's 1.95.
+      # Cargo.lock is snapshotted BEFORE the container build, so Row 5 cannot pass vacuously, and
+      # a build that moves it fails here. No --locked, no PV_BIN, no prebuilt pv, verifier_pin.sh
+      # untouched. sccache is never installed on the host (it hangs there).
       - name: The release runner must not resolve a verifier through PATH
-        run: setsid --wait bash scripts/check_verifier_pinning.sh
+        run: |
+          set -euo pipefail
+          root=$(git rev-parse --show-toplevel)
+          ru=${RUSTUP_HOME:-$HOME/.rustup}; ca=$HOME/.cargo; tc=$(readlink -f "$(dirname "$(dirname "$(rustup which rustc --toolchain 1.93.0)")")")
+          ch=${CARGO_HOME:-$HOME/.cargo}
+          sc=${SCCACHE_HOST_DIR:-$HOME/.cache/sccache}
+          # pinned by digest, never :stable (pace condition 7); bump with the image
+          img=localhost:5000/sovereign-ci@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36
+          # the digest is the amd64 manifest; any other arch keeps the host build it had before
+          if [ "$(uname -m)" != x86_64 ]; then
+            echo "m5: $(uname -m) runner, no pinned image for it; pv builds on the host"
+            exec setsid --wait bash scripts/check_verifier_pinning.sh
+          fi
+          printf "host build env: RUSTFLAGS=[%s] CARGO_INCREMENTAL=[%s] CARGO_PROFILE=[%s]\n" "${RUSTFLAGS:-}" "${CARGO_INCREMENTAL:-}" "$(env | grep -c ^CARGO_PROFILE_ || true)"
+          mkdir -p "$ch" "$sc"
+          # one mount when CARGO_HOME is ~/.cargo (a second -v of the same target is a docker error)
+          if [ "$ch" = "$ca" ]; then mounts=(-v "$ca:$ca"); else mounts=(-v "$ca:$ca:ro" -v "$ch:$ch"); fi
+          # a toolchain outside RUSTUP_HOME (linked, or a symlink target) is invisible in the container unless mounted: rustc then falls through to the rustup proxy
+          case "$tc" in "$ru"/*) tcm=() ;; *) tcm=(-v "$tc:$tc:ro") ;; esac
+          snap=$(mktemp)
+          cp "$root/Cargo.lock" "$snap"
+          printf 'host rustc: %s\n' "$("$tc/bin/rustc" -vV | sed -n 1p)"
+          # toolchain bin first in PATH: the rustup proxy writes settings.toml, and RUSTUP_HOME is mounted read-only
+          docker run --rm --user "$(id -u):$(id -g)" \
+            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" ${tcm[@]+"${tcm[@]}"} "${mounts[@]}" -v "$sc:/sccache" -e TC="$tc" \
+            -e HOME="$HOME" -e CARGO_HOME="$ch" -e RUSTUP_HOME="$ru" -e RUSTUP_TOOLCHAIN=1.93.0 -e RUSTFLAGS= -e CARGO_INCREMENTAL= \
+            -e PATH="$tc/bin:$ca/bin:/usr/local/cargo/bin:/usr/bin:/bin" \
+            -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache -e SCCACHE_DIR=/sccache \
+            -e SCCACHE_CACHE_SIZE=50G \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0="$root" \
+            "$img" bash -c 'set -e; printf "container build env: RUSTFLAGS=[%s] CARGO_INCREMENTAL=[%s]\n" "${RUSTFLAGS:-}" "${CARGO_INCREMENTAL:-}"; [ "$(command -v rustc)" = "$TC/bin/rustc" ] || { echo "FAIL(ENV) the container resolves rustc to $(command -v rustc), not the pinned $TC/bin/rustc: the toolchain is not visible in the container"; exit 1; }; printf "container rustc: %s\n" "$(rustc -vV | sed -n 1p)"; t0=$(date +%s); cargo build -q -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha; printf "container pv build: %s s\n" "$(( $(date +%s) - t0 ))"; sccache --show-stats'
+          if ! cmp -s "$snap" "$root/Cargo.lock"; then
+            cp "$snap" "$root/Cargo.lock"
+            echo "FAIL  the container build moved Cargo.lock (restored); run scripts/check_lockfile_current.sh"
+            exit 1
+          fi
+          # the proof that the split costs the guard nothing: the host build equals a host-only second build (12)
+          t0=$(date +%s)
+          n=$(cargo build -v -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha 2>&1 | grep -c ' Running `' || true)
+          printf 'host cargo build after the container build: %s compile commands, %s s\n' "$n" "$(( $(date +%s) - t0 ))"
+          if [ "$n" -gt 12 ]; then
+            echo "FAIL  the host rebuilt $n units after the container build (host-only second build is 12): env/toolchain mismatch"
+            exit 1
+          fi
+          setsid --wait bash scripts/check_verifier_pinning.sh
       # One runner, one prose, and the user-scope copy stays a <=70-line shim
       # that fails CLOSED. The cap lives here, in the repo on protected main;
       # the file it caps lives at user scope, where it could otherwise raise its
@@ -1835,7 +2073,7 @@ jobs:
       # `ci / security` from the reusable workflow runs `cargo audit`, which does
       # NOT read deny.toml -- so this covers licences, bans and sources, which
       # nothing else does.
-      - name: cargo-deny (licences, bans, sources, advisories)
+      - name: cargo-deny (licences, bans, sources)
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
@@ -1855,7 +2093,7 @@ jobs:
             -e GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
             -e "GIT_CONFIG_VALUE_0=AUTHORIZATION: basic $B64" \
             "$IMAGE" \
-            cargo deny check
+            cargo deny check licenses bans sources
       # check_apr_bin_pinned asserts CALLERS pin the binary; it says nothing
       # about which binary the resolver hands them. apr_bin.sh returned
       # target/release/apr whenever it existed, so a stale release build beside
@@ -1931,19 +2169,18 @@ jobs:
         run: |
           setsid --wait bash scripts/check_bashrs_gate.sh --self-test
           setsid --wait bash scripts/check_bashrs_gate.sh
-      # PMAT-746. The ONLY complexity gate in this repository was the LOCAL pmat
-      # pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only);
-      # this workflow ran none. So the merge queue LANDS the debt and the
-      # individual developer pays it, on unrelated work, at the moment they try
-      # to commit: serve/handlers.rs sits at cognitive 69, tokenize.rs at 34/89.
-      # 715 offenders are recorded, shrink-only against origin/main, and the
-      # numbers may only fall. Case table FIRST, per the convention above: the
-      # 9s scan is only worth its cost if the comparator it feeds can still turn
-      # RED. Reads no clock and compiles nothing.
-      - name: Per-function complexity may only fall (shrink-only)
+      # #5182 (GATE/LAB). The per-function complexity ratchet (PMAT-746) and the
+      # shrink-only comparison of check_baseline_ratchets.sh left the PR path:
+      # a ratchet may not sit on a PR, merge-queue or release job. Both run
+      # nightly in guards-nightly.yml against main as it was 24 h earlier, and a
+      # red there opens or updates one ticket with one owner. What stays here is
+      # a fixed bound: every scripts/*.txt is classified (an unclassified
+      # baseline fails), plus the guard's own case table. Reads no clock, compares
+      # nothing, 0.1 s.
+      - name: Every baseline in scripts/ is classified (fixed bound; the ratchet runs nightly)
         run: |
-          setsid --wait bash scripts/check_complexity_ratchet.sh --selftest
-          setsid --wait bash scripts/check_complexity_ratchet.sh
+          setsid --wait bash scripts/check_baseline_ratchets.sh --self-test
+          setsid --wait bash scripts/check_baseline_ratchets.sh --classify-only
       # BSE-03 phase C (PMAT-1068): a ratchet verdict is a function of the
       # (comparand SHA, merge SHA) pair and of nothing else -- not of a file a
       # PR can rewrite, not of which pmat happened to be on PATH. The case
@@ -2072,9 +2309,11 @@ jobs:
       # runs first so a bad resolver is named as such rather than surfacing as a
       # mysterious verdict from the gate underneath it.
       #
-      # Cost: it sources pv_bin.sh, which cargo-builds pv -- already paid for by
-      # check_contract_test_binding.sh on the next line, which `cargo run`s the
-      # same binary. Nothing extra is compiled by placing it here.
+      # Cost: it sources pv_bin.sh, which cargo-builds pv -- the build the contracts
+      # gate and check_contract_test_binding.sh below resolve through the same
+      # pv_bin.sh, so the job compiles pv once. (#4974: the binding check used to
+      # `cargo run` pv WITHOUT pv_bin.sh's features, a second compile on every run
+      # that this comment said did not happen.)
       - name: pv_bin.sh must resolve the HEAD-built pv and refuse a stale one
         run: setsid --wait bash scripts/check_pv_bin_resolution.sh
       # #4475: the contract gate, blocking. `make contracts` stopped after its first step (an
@@ -2344,7 +2583,7 @@ jobs:
               -e SCCACHE_DIR=/sccache \
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
-              -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RAYON_NUM_THREADS="${RUNNER_THREAD_CAP:-4}" -e NEXTEST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" \
               -e CARGO_TERM_COLOR=never \
               "${DR_ENV[@]}" \
               "$IMAGE" "$@"
@@ -2491,7 +2730,33 @@ jobs:
           export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=http.https://github.com/.extraheader
           GIT_CONFIG_VALUE_0="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 | tr -d '\n')"
           export GIT_CONFIG_VALUE_0
-          cargo deny check advisories
+          # MG_BASE_SHA comes from the process env of the outer guard-cargo step (the manifest runner resolves no merge_group context).
+          # The gate SCRIPTS run from the BASE ref copy (PMAT-5792); the workflow yaml and cargo config still come from the PR tree, so this is gate-content-reviewed, not self-judging-proof.
+          # Bootstrap only: the merge that introduces the scripts has no base copy, so it uses its own.
+          S="${RUNNER_TEMP:-${TMPDIR:-/tmp}}/advgate-scripts-$$"
+          # merge_group: the base copy is taken only from the ref the merge queue named; a ref the PR tree re-pointed is refused, never used.
+          if [ -n "${MG_BASE_SHA:-}" ] && [ "$(git rev-parse -q --verify "refs/remotes/origin/main^{commit}" || true)" != "$MG_BASE_SHA" ]; then
+            echo "COULD-NOT-CHECK: refs/remotes/origin/main is not merge_group.base_sha $MG_BASE_SHA; the base gate is not taken from it" >&2
+            exit 75
+          fi
+          if git cat-file -e refs/remotes/origin/main:scripts/ci/advisory_gate.sh 2>/dev/null; then
+            mkdir -p "$S"
+            git archive refs/remotes/origin/main scripts/ci | tar -x -C "$S"
+            G="$S/scripts/ci"
+          else
+            G=scripts/ci
+          fi
+          # One command per line under -e: the first non-zero exit ends the step with that status (no && chain, no saved rc).
+          trap 'rm -rf -- "${S:?}"' EXIT
+          set -e
+          # The base gate runs FIRST: a PR-tree self-test below can write into $S, so none may run before it.
+          bash "$G/advisory_gate.sh"
+          bash "$G/advisory_diff.sh" --self-test
+          bash scripts/ci/check_sov_advisories_off.sh --self-test
+          bash scripts/ci/check_sov_advisories_off.sh
+          bash scripts/ci/advisory_gate_selftest.sh "$G/advisory_gate.sh"
+          bash scripts/ci/advisory_step_selftest.sh
+          bash scripts/ci/advisory_positive_control.sh
       # Separate from the check above on purpose: a newly-FIXED upstream must
       # never fail anyone's build. It fails only this guard, whose remedy is
       # deleting a line.
@@ -2659,9 +2924,10 @@ jobs:
   #     derived universe (`git ls-files 'scripts/check_*.sh'`, BSE-001 PR-A) runs
   #     them in `guard-tree`, which `gate` needs. Adding a guard never edits this
   #     file, and removing this job does not un-wire them.
-  #   * the PR's own receipt is judged from the BASE by pr-review-quorum.yml
-  #     (`pull_request_target` + `merge_group`), which invokes
-  #     check_pr_review_arm4.sh itself and consumed nothing from this job.
+  #   * the receipts of merged PRs are judged once a night from the BASE by
+  #     pr-review-quorum.yml (`schedule`; #4602 took it off the PR and the
+  #     queue), which invokes check_pr_review_arm4.sh through
+  #     review_receipts_nightly.sh and consumed nothing from this job.
   #
   # WHAT NO LONGER RUNS IN CI, stated rather than discovered later: the two
   # mutation sweeps `scripts/mutate-guard.sh` (Arm 3) and
@@ -2964,12 +3230,23 @@ jobs:
   # judged a PR's own receipt was editable by that PR. `pull_request_target`
   # runs the base's definition. `gate` below no longer waits on it; the
   # ruleset decides whether `pr-review-quorum / present` is required (recorded
-  # in the C0-5 PR body, never applied by the session that wrote this).
+  # in the C0-5 PR body, never applied by the session that wrote this). It is
+  # not required, so since #4602 it runs on no PR at all: once a night, on
+  # `schedule`, over the PRs that merged.
 
   # ==========================================================================
-  # ADVISORY GPU JOBS AT PR TIME
+  # GPU LAB SECTIONS (were: ADVISORY GPU JOBS AT PR TIME)
   # spec docs/specifications/06x-release-schedule.md §2 row 67-C1 (`gpu-quick`,
   # gx10) and §2 row 67-D1 (`cuda-unit`, yoga).
+  #
+  # Q6 quorum, C324 (DELETE-TO-LAB 3/3): a check that cannot block a merge or a
+  # release is LAB, and LAB never runs in a PR, merge-queue or release job. These
+  # three sections no longer run in ci.yml at all. Their one home is
+  # .github/workflows/gpu-lab-nightly.yml (schedule + workflow_dispatch, gx10 in
+  # perf-gx10, yoga in perf-yoga). On those events gpu-touched does not select:
+  # there is no PR diff, so it answers the whole GPU set (gpu_touched=1,
+  # cuda_lint=1). The paragraphs below are the PR-time history, kept for why
+  # the shapes are what they are.
   #
   # WHY THEY ARE NOT IN `gate.needs`.
   #   They are ADVISORY in 0.67, deliberately. Each becomes a REQUIRED check
@@ -3011,7 +3288,8 @@ jobs:
     # whole point of splitting it out.
     runs-on: [self-hosted, X64, Linux, clean-room]
     timeout-minutes: 10
-    if: github.event_name == 'pull_request'
+    # Q6 quorum, C324: LAB, nightly only (gpu-lab-nightly.yml).
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     outputs:
       gpu_touched: ${{ steps.decide.outputs.gpu_touched }}
       gpu_crates: ${{ steps.decide.outputs.gpu_crates }}
@@ -3026,33 +3304,22 @@ jobs:
       # governs — a stale selector is caught on the same PR that broke it.
       - name: The GPU selector can still go RED (case table, no GPU, no cargo)
         run: bash scripts/ci_gpu_touched.sh --self-test
-      - name: Does this PR touch the GPU set? (rows 67-C1 / 67-D1)
+      # Q6 quorum, C324: the PR-diff selection (`ci_gpu_touched.sh --diff-from`
+      # against GITHUB_BASE_REF) left with the PR rows. A nightly has no PR
+      # diff and owes the whole GPU set, so the answer is the full set, stated.
+      - name: The nightly owes the whole GPU set (rows 67-C1 / 67-D1)
         id: decide
         run: |
           set -euo pipefail
-          # Shallow checkout: no merge-base. Tip-vs-tip is a SUPERSET of the
-          # PR's diff, which is the safe direction for a selector — it can only
-          # run the GPU jobs when they were not needed, never skip them when
-          # they were.
-          git fetch --no-tags --depth=1 origin \
-            "+refs/heads/${GITHUB_BASE_REF}:refs/remotes/origin/${GITHUB_BASE_REF}"
-          git diff --name-only "origin/${GITHUB_BASE_REF}" HEAD > "$RUNNER_TEMP/touched.txt"
-          printf 'touched (tip vs tip): %s path(s)\n' \
-            "$(wc -l < "$RUNNER_TEMP/touched.txt" | tr -d ' ')"
-          # No `|| true` and no pipe-swallowed status: the script exits 2 when
-          # the diff is undecidable, and an undecidable selection must fail the
-          # decision job rather than answer a green 0 that skips both GPU jobs
-          # forever.
-          bash scripts/ci_gpu_touched.sh --diff-from "$RUNNER_TEMP/touched.txt" \
-            > "$RUNNER_TEMP/gpu.txt"
-          cat "$RUNNER_TEMP/gpu.txt"
-          grep -E '^(gpu_touched|gpu_crates|cuda_lint|reason)=' "$RUNNER_TEMP/gpu.txt" >> "$GITHUB_OUTPUT"
+          printf 'gpu_touched=1\ncuda_lint=1\nreason=%s: no PR diff to select from; the whole GPU set is owed\n' \
+            "$GITHUB_EVENT_NAME" | tee -a "$GITHUB_OUTPUT"
 
   # ROW 67-C1 — `gpu-quick` on gx10 (GB10, sm_121, aarch64).
   # Promotion to required: row 68-C3, after 5 consecutive green gx10 nightlies.
   gpu-quick:
     needs: [gpu-touched]
-    if: github.event_name == 'pull_request' && needs.gpu-touched.outputs.gpu_touched == '1'
+    # Q6 quorum, C324: LAB, nightly only (gpu-lab-nightly.yml, perf-gx10).
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && needs.gpu-touched.outputs.gpu_touched == '1'
     # LITERAL, not an expression: a guard can only check labels it can see, and
     # `runs-on: ${{ fromJSON(...) }}` hides them from check_runner_labels.sh.
     # `ephemeral, docker` is the DISPOSABLE gx10 runner (operator rule): its
@@ -3107,7 +3374,7 @@ jobs:
           procs=${procs:-0}
           echo "gx10: GPU memory.used=${used} MiB, existing compute procs=${procs}"
           if [ "${used:-0}" -gt 2000 ] || [ "${procs:-0}" -gt 0 ]; then
-            echo "::notice::gpu-quick: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping the GPU leg on this PR"
+            echo "::notice::gpu-quick: GPU busy (${used:-?} MiB, ${procs:-?} procs) — yielding to training, skipping the GPU leg this run"
             echo "proceed=false" >> "$GITHUB_OUTPUT"; exit 0
           fi
           echo "proceed=true" >> "$GITHUB_OUTPUT"
@@ -3145,7 +3412,8 @@ jobs:
     # gpu_touched=1 runs every step. cuda_lint=1 alone (an apr-cli-only diff,
     # #4336) runs ONLY the clippy step: the test steps carry their own
     # gpu_touched `if:`, so yoga is held for a check build, not the test builds.
-    if: github.event_name == 'pull_request' && (needs.gpu-touched.outputs.gpu_touched == '1' || needs.gpu-touched.outputs.cuda_lint == '1')
+    # Q6 quorum, C324: LAB, nightly only (gpu-lab-nightly.yml, perf-yoga).
+    if: (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && (needs.gpu-touched.outputs.gpu_touched == '1' || needs.gpu-touched.outputs.cuda_lint == '1')
     runs-on: [self-hosted, Linux, X64, cuda, yoga, ephemeral, docker]
     # 15 -> 35 (#3810): the derived cuda-only set needs a second, default-feature
     # test build of aprender-serve to list against. MEASURED on this PR's own run
@@ -3513,7 +3781,7 @@ jobs:
           [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
           key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
           cache=$LEAN_CACHE_ROOT/$key
-          mkdir -p "$cache"
+          mkdir -p "$cache" 2>/dev/null && [ -w "$cache" ] || decline "$cache is not writable by $(id -un) on $(hostname) (proof-toolchain, infra)"
           # elan >= 4 exits 1 on `toolchain install` of a toolchain that is already installed
           # ("error: '...' is already installed"), so a warm runner failed this step every time
           # after the first (#4502 row 13). Install only when it is missing, and decide that

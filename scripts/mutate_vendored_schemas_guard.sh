@@ -55,19 +55,40 @@ rehash() {
     ( cd "$dir" && jq --arg h "$h" '(.schemas[] | select(.path=="'"$INTOTO"'") | .sha256) = $h' schemas/sources.json > s.tmp && mv s.tmp schemas/sources.json )
 }
 
-# run <name> <expected-exit> <dir>
+# run_guard <name> <expected-exit> <dir>
+# Each guard run is ~110s of check-jsonschema start-ups, and the runs are independent
+# (own staged dir, own .out), so they are LAUNCHED here and JUDGED in order by
+# report_guards. Serial, the nine-run harness took the whole 1649s CI step budget on a
+# loaded runner (#5470 x86-main); parallel it costs about one run. MUTANT_JOBS caps it.
+JOBS="${MUTANT_JOBS:-4}"
+launched=()
 run_guard() {
-    local name="$1" want="$2" dir="$3" rc=0
-    ( cd "$dir" && ./scripts/check_vendored_schemas.sh ) > "$WORK/$name.out" 2>&1 || rc=$?
-    if [ "$rc" -eq "$want" ]; then
-        printf '  %-34s exit=%s  as required\n' "$name" "$rc"
-        killed=$((killed + 1))
-        return 0
-    fi
-    printf '  %-34s exit=%s  WANTED %s  <-- SURVIVED\n' "$name" "$rc" "$want"
-    sed 's/^/      /' "$WORK/$name.out" | head -25
-    survived=$((survived + 1))
-    return 1
+    local name="$1" want="$2" dir="$3"
+    while [ "$(jobs -rp | wc -l)" -ge "$JOBS" ]; do wait -n || true; done
+    (
+        rc=0
+        ( cd "$dir" && ./scripts/check_vendored_schemas.sh ) > "$WORK/$name.out" 2>&1 || rc=$?
+        printf '%s\n' "$rc" > "$WORK/$name.rc"
+    ) &
+    launched+=("$name:$want")
+    return 0
+}
+
+report_guards() {
+    local entry name want rc
+    wait
+    for entry in "${launched[@]}"; do
+        name="${entry%%:*}"; want="${entry##*:}"
+        rc="$(cat "$WORK/$name.rc")"
+        if [ "$rc" -eq "$want" ]; then
+            printf '  %-34s exit=%s  as required\n' "$name" "$rc"
+            killed=$((killed + 1))
+            continue
+        fi
+        printf '  %-34s exit=%s  WANTED %s  <-- SURVIVED\n' "$name" "$rc" "$want"
+        sed 's/^/      /' "$WORK/$name.out" | head -25
+        survived=$((survived + 1))
+    done
 }
 
 # engaged <name> <predicate-command...> - the mutation must be observable.
@@ -166,6 +187,7 @@ if engaged M8 file_content_is "$d/$INTOTO" true; then
     run_guard "M8-schema-accepts-everything" 1 "$d" || true
 fi
 
+report_guards
 printf '\nmutants: %s as-required, %s survived, %s never engaged\n' "$killed" "$survived" "$notengaged"
 if [ "$survived" -ne 0 ] || [ "$notengaged" -ne 0 ]; then
     printf 'FAIL: check_vendored_schemas.sh is not proved to turn RED for every defect it names.\n'

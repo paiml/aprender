@@ -106,3 +106,10 @@ falsification:
       GREEN (fixed coefficient sqrt(2*n1*n2/(n1+n2))*centroid_dist): partition
            {1,4,5} | {0,2,3} → all assertions pass, matches scipy labels
            [1,2,1,1,2,2] and sklearn ward.
+
+falsification_tests:
+  - id: FALSIFY-WARD_LINKAGE-001
+    description: "C-WARD-003 / WL-EQ-005: Ward(k=2) on the reference X induces the scipy/sklearn partition {1,4,5} | {0,2,3} (C-WARD-001 coefficient sqrt(2|A||B|/(|A|+|B|)))"
+    test: "cargo test -p aprender-core --lib falsify_hc_004_ward_matches_scipy"
+    prediction: "labels[1]==labels[4]==labels[5], labels[0]==labels[2]==labels[3], labels[1]!=labels[0]"
+    if_fails: "the Ward merge coefficient regressed (e.g. PMAT-849's |A||B|/(|A|+|B|) form), flipping the merge order away from scipy"

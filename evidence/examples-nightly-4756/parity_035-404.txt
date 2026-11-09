@@ -1,0 +1,46 @@
+# parity_035 against a listener on 127.0.0.1:11434 that reads each request and answers HTTP/1.1 404 Not Found with
+# Content-Type text/plain and the body `404 page not found` (what Ollama sends for a route it does not have), in a
+# private network namespace with loopback up. First `cargo run` of the example, then the unchanged
+# scripts/dogfood_examples.sh on the same one row. The listener's log and the script's TSV follow.
+09:32:29Z
+22954be7ab1f63b168ee6f6ae2843b70903570a2
+
+╔════════════════════════════════════════════════════════════════╗
+║         PARITY-035: M4 Parity Verification Benchmark          ║
+║                     RTX 4090 vs Ollama                         ║
+╚════════════════════════════════════════════════════════════════╝
+
+Configuration:
+  Prompt: "Write a function that calculates the factorial of "
+  Max tokens: 50
+  Warmup: 2 iterations
+  Measurement: 5 iterations
+
+[1/3] Benchmarking Ollama phi2:2.7b...
+  Warming up Ollama (2 iterations)...
+  Measuring Ollama (5 iterations)...
+Error: reqwest::Error { kind: Decode, source: Error("invalid type: integer `404`, expected struct OllamaResponse", line: 1, column: 3) }
+END cargo-run rc=1 secs=1
+=== every example builds and runs (dogfood_examples.sh) ===
+1 example target(s), version 0.70.3, timeout 180s
+fail           aprender-serve::parity_035_m4_verification -- run: ╔════════════════════════════════════════════════════════════════╗
+wrote examples-p404-4756r15.tsv
+summary pass=0 fail=1 timeout=0 needs-args=0 needs-hardware=0 needs-data=0
+FAIL: 1 example(s) failed, 0 timed out.
+END dogfood rc=1
+# listener log
+p404: (no request) len=0
+p404: POST /api/show HTTP/1.1 len=21
+p404: POST /api/generate HTTP/1.1 len=146
+p404: POST /api/generate HTTP/1.1 len=146
+p404: POST /api/generate HTTP/1.1 len=146
+p404: (no request) len=0
+p404: POST /api/show HTTP/1.1 len=21
+p404: POST /api/generate HTTP/1.1 len=146
+p404: POST /api/generate HTTP/1.1 len=146
+p404: POST /api/generate HTTP/1.1 len=146
+# examples-p404-4756r15.tsv
+# dogfood_examples.sh version=0.70.3 examples=1 timeout_secs=180
+# pkg	example	class	rc	secs	cite
+aprender-serve	parity_035_m4_verification	fail	1	1	run: ╔════════════════════════════════════════════════════════════════╗
+# summary pass=0 fail=1 timeout=0 needs-args=0 needs-hardware=0 needs-data=0

@@ -348,6 +348,17 @@ fn validate_supported_architecture(arch_name: &str) -> std::result::Result<(), M
     if is_gemma2_supported(arch_name) {
         return Ok(());
     }
+    // APR-EMBED-001 EG-1: an embedding model is admitted by its own exact match, BEFORE the
+    // `gemma` prefix gate, and refused here by kind (I-3): it has no language-model head.
+    if crate::model_kind::is_embedding_gemma2(arch_name) {
+        return Err(ModelLoadError {
+            gate: "model_kind",
+            reason: format!(
+                "'{arch_name}' is an embedding model (ModelKind::Embedding): it has no \
+                 language-model head and does not generate text. Use `apr embed`."
+            ),
+        });
+    }
     if is_gemma_family(arch_name) {
         return Err(ModelLoadError {
             gate: "architecture_supported",
@@ -908,6 +919,30 @@ mod tests {
                 "'{name}' error must name the refused architecture: {}",
                 err.reason
             );
+        }
+    }
+
+    /// FALSIFY-EG2L-004 (APR-EMBED-001 EG-1): an EmbeddingGemma 2 file is refused on the
+    /// generative load path BY KIND, naming the verb that serves it (I-3) -- never with the
+    /// Gemma3 message, which named the wrong architecture and the wrong ticket.
+    #[test]
+    fn falsify_eg2l_004_embedding_refused_by_kind_on_generative_path() {
+        for name in ["gemma-embedding2", "Gemma-Embedding2"] {
+            let mut config = valid_config();
+            config.architecture = name.to_string();
+            let err = validate_model_load(&config).expect_err(&format!(
+                "embedding arch '{name}' must not load as generative"
+            ));
+            assert_eq!(err.gate, "model_kind", "'{name}': {}", err.reason);
+            assert!(err.reason.contains("apr embed"), "'{name}': {}", err.reason);
+            assert!(!err.reason.contains("Gemma3"), "'{name}': {}", err.reason);
+        }
+        // The gemma prefix match is not widened: near-misses still reach the Gemma3 refusal.
+        for name in ["gemma-embedding3", "gemma-embedding"] {
+            let mut config = valid_config();
+            config.architecture = name.to_string();
+            let err = validate_model_load(&config).expect_err(name);
+            assert_eq!(err.gate, "architecture_supported", "'{name}'");
         }
     }
 

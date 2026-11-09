@@ -35,11 +35,16 @@
 #   dies       exits mid-load                  -> died, BEFORE the stall window
 #   forever    advancing but never binds                                  -> ceiling
 #
+#   cleanup    this guard's own EXIT trap, called in a subshell -> leaves $TMP; called
+#              in its own shell -> removes it (#5017)
+#
 # --self-test plants the regression (the parentage tree is discarded, which is the old
-# port-only behaviour) and requires `loading` to turn this RED.
+# port-only behaviour) and requires `loading` to turn this RED. It also plants a cleanup
+# with no own-shell check and one that never cleans up; the cleanup row must turn RED on
+# each.
 #
 # Exit: 0 all cases as expected · 1 a case landed wrong · 2 could not check.
-#       --self-test: 0 when the planted regression turns this RED, 1 otherwise.
+#       --self-test: 0 when every planted regression turns this RED, 1 otherwise.
 set -euo pipefail
 
 SCRIPT="scripts/model_ladder.sh"
@@ -70,7 +75,22 @@ extract_teardown() {
 }
 
 TMP=$(mktemp -d)
-cleanup() { pkill -f "$TMP/fake_server.py" 2>/dev/null || true; rm -rf "$TMP"; }
+# Every fake process writes its own pid at start (*.pid under $TMP); cleanup signals those pids and nothing found by
+# name (#5108). A pid is signalled only while its args still name this run's fake, so a recycled pid is left alone.
+reap_pidfile() { # reap_pidfile <file>
+  local p; p=$(cat "$1" 2>/dev/null) || return 0
+  case "$p" in ''|*[!0-9]*) return 0 ;; esac
+  case "$(ps -o args= -p "$p" 2>/dev/null)" in *"$TMP/fake_"*) kill -9 "$p" 2>/dev/null || true ;; esac
+}
+# The EXIT trap acts in this guard's own shell and nowhere else (#5017). A child forked for
+# `cmd &` keeps the trap until it execs, and `foreign` TERMs its `sleep 30 &` at once: a TERM
+# that lands before the exec would run cleanup in the child, killing the foreign listener and
+# removing $TMP under the cases still running (the #5012 race). In that child $$ is still this
+# shell's pid and BASHPID is the child's own; a bash without BASHPID keeps the old behaviour.
+cleanup() {
+  [ "${BASHPID:-$$}" = "$$" ] || return 0
+  local f; for f in "$TMP"/*.pid; do [ -f "$f" ] && reap_pidfile "$f"; done; rm -rf "$TMP"
+}
 trap cleanup EXIT
 
 cat > "$TMP/fake_server.py" <<'PY'
@@ -89,7 +109,8 @@ PY
 
 cat > "$TMP/fake_loader.py" <<'PY'
 import http.server, os, socketserver, sys, time
-port, mode, secs = int(sys.argv[1]), sys.argv[2], float(sys.argv[3])
+port, mode, secs, pidfile = int(sys.argv[1]), sys.argv[2], float(sys.argv[3]), sys.argv[4]
+open(pidfile, "w").write(str(os.getpid()))
 t0 = time.time()
 while time.time() - t0 < secs or mode == "forever":
     if mode in ("slow-log", "forever"):
@@ -167,6 +188,30 @@ run_cases() { # <teardown-function-body> -> 0 if every case lands, 1 otherwise
   return "$fails"
 }
 
+extract_cleanup() { # <guard file> -> its cleanup(), so the row below runs the shipped trap
+  local body
+  body=$(awk '/^cleanup\(\) \{/{f=1} f{print} f && /^\}$/{exit}' "$1")
+  if ! grep -qE 'rm +-rf +"\$TMP"' <<< "$body"; then
+    echo "  the extracted cleanup removes nothing — this check no longer knows what it is running" >&2
+    return 2
+  fi
+  printf '%s\n' "$body"
+}
+
+# THE CLEANUP ROW (#5017) neither forks nor TERMs, so it cannot race the scheduler. It loads
+# cleanup into a fresh shell whose $TMP is a scratch dir under /tmp, calls it in a subshell,
+# where $$ is still that shell's pid exactly as in the forked child, and needs the dir kept;
+# then calls it in that shell and needs the dir gone. Exit 1: the subshell removed it.
+# 2: the shell's own call left it. 3: the body defined no cleanup.
+cleanup_case() { # <cleanup-function-body> -> 0 if it acts in its own shell only
+  local d rc=0
+  d=$(mktemp -d /tmp/ladder-cleanup.XXXXXX) || return 1
+  TMP="$d" bash -c '. <(printf "%s\n" "$1"); declare -F cleanup > /dev/null || exit 3
+    ( cleanup ); [ -d "$TMP" ] || exit 1; cleanup; [ ! -d "$TMP" ] || exit 2' cleanup-case "$1" > /dev/null 2>&1 || rc=$?
+  case "$d" in /tmp/ladder-cleanup.?*) rm -rf -- "${d:?}" ;; esac
+  return "$rc"
+}
+
 extract_wait() {
   local src="$1" body
   body=$(awk '/^ladder_tree_jiffies\(\) \{/{f=1} /^ladder_serve_wait_health\(\) \{/{f=1} f{print} f && /^\}$/{f=0}' "$src")
@@ -177,15 +222,20 @@ extract_wait() {
   printf '%s\n' "$body"
 }
 
-wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-seconds>
-  local name="$1" mode="$2" secs="$3" stall="$4" ceil="$5" want="$6" maxs="$7" port pid out verdict took
+# <took> is the health wait's own tick count (one tick per loop turn), not wall time. For `hung` it is NOT
+# a fixed number: the quiet counter restarts on any CPU-jiffy the tree burns, and a loaded host burns a few
+# (python start-up, scheduler wake-ups), so 3 quiet ticks took 3..7 turns (9 of 40 runs read 4 under load, #5798).
+# The contract is the EVENT: verdict `stalled` (not ceiling, not ready, not died) after at least <stall> quiet
+# ticks (never early) and before the ceiling. The bound for `hung` is therefore the ceiling, not stall+3.
+wait_case() { # <name> <mode> <secs> <stall> <ceiling> <want-verdict> <max-ticks> [<min-ticks>]
+  local name="$1" mode="$2" secs="$3" stall="$4" ceil="$5" want="$6" maxs="$7" mins="${8:-0}" port pid out verdict took
   port=$(( 20000 + (RANDOM % 20000) ))
-  flock -w 5 "$LOCK" python3 "$TMP/fake_loader.py" "$port" "$mode" "$secs" > "$TMP/$name.log" 2>&1 & pid=$!
+  flock -w 5 "$LOCK" python3 "$TMP/fake_loader.py" "$port" "$mode" "$secs" "$TMP/$name.loader.pid" > "$TMP/$name.log" 2>&1 & pid=$!
   out=$(ladder_serve_wait_health "$pid" "$port" "$TMP/$name.log" "$stall" "$ceil") || true
   verdict=${out%% *}; took=${out##* }
-  pkill -9 -f "$TMP/fake_loader.py $port " 2>/dev/null || true; kill -9 "$pid" 2>/dev/null || true
-  if [ "$verdict" != "$want" ] || [ "$took" -gt "$maxs" ]; then
-    echo "  FAIL $name: '$out' — want '$want' within ${maxs}s"; return 1
+  reap_pidfile "$TMP/$name.loader.pid"; kill -9 "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+  if [ "$verdict" != "$want" ] || [ "$took" -gt "$maxs" ] || [ "$took" -lt "$mins" ]; then
+    echo "  FAIL $name: '$out' — want '$want' in ${mins}..${maxs} ticks"; return 1
   fi
   echo "  ok   $name: '$out'"
 }
@@ -197,7 +247,7 @@ run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
   eval "$body"
   wait_case slow-log slow-log 6 3 30 ready 10    || fails=1
   wait_case slow-cpu slow-cpu 6 3 30 ready 10    || fails=1
-  wait_case hung     hung     60 3 30 stalled 6  || fails=1
+  wait_case hung     hung     60 3 30 stalled 29 3 || fails=1
   wait_case dies     dies     2 5 30 died 4      || fails=1
   wait_case forever  forever  0 3 6 ceiling 9    || fails=1
   return "$fails"
@@ -205,8 +255,20 @@ run_wait_cases() { # <wait-function-bodies> -> 0 if every case lands
 
 body=$(extract_teardown "$SCRIPT") || exit 2
 wbody=$(extract_wait "$SCRIPT") || exit 2
+cbody=$(extract_cleanup "${BASH_SOURCE[0]}") || exit 2
 
 if [ "$SELF_TEST" -eq 1 ]; then
+  # Plant the cleanup regressions (#5017): no own-shell check (the race), and a cleanup that
+  # never cleans up (the over-fix). The cleanup row must catch both.
+  CLEANUP_ANCHOR='  [ "${BASHPID:-$$}" = "$$" ] || return 0'
+  for plant in '  :  # PLANTED: cleans up in a forked child too' '  return 0  # PLANTED: never cleans up'; do
+    cplanted=$(awk -v a="$CLEANUP_ANCHOR" -v p="$plant" '$0 == a {print p; next} {print}' <<< "$cbody")
+    grep -q 'PLANTED' <<< "$cplanted" || { echo "  self-test: could not plant the cleanup regression — the anchor moved" >&2; exit 2; }
+    bash -n <(printf '%s\n' "$cplanted") || { echo "  self-test: the planted cleanup does not parse — a syntax error is not a regression" >&2; exit 2; }
+    if cleanup_case "$cplanted"; then
+      echo "SELF-TEST FAIL: the cleanup row passed '${plant#  }' — this check cannot see the defect"; exit 1
+    fi
+  done
   # Plant the regression: discard the tree right after it is resolved, which is the old
   # port-only behaviour. The `loading` case must catch it.
   planted=$(awk '{print} /^    frontier=\("\$pid"\)$/{p=1} p && /^    done$/ && !d{print "    tree=()  # PLANTED: self-test regression"; d=1}' <<< "$body")
@@ -226,11 +288,21 @@ if [ "$SELF_TEST" -eq 1 ]; then
   if ! grep -q "FAIL slow-cpu" <<< "$wout" || [ "$(grep -c '^  FAIL' <<< "$wout")" -ne 1 ]; then
     echo "SELF-TEST FAIL: the log-only plant must turn EXACTLY slow-cpu red — anything else means the check is not measuring the CPU leg"; exit 1
   fi
-  echo "SELF-TEST OK: both planted regressions turned this RED"; exit 0
+  echo "SELF-TEST OK: all four planted regressions turned this RED"; exit 0
 fi
 
 rc=0
+if cleanup_case "$cbody"; then echo "  ok   cleanup: the EXIT trap cleans up in this guard's own shell and never in a child"
+else echo "  FAIL cleanup: the EXIT trap ran in a child, or did not clean up in this guard's own shell (#5017)"; rc=1; fi
 run_cases "$body" || rc=1
 run_wait_cases "$wbody" || rc=1
+# #5108: each case ends what it started, by the pid that process recorded; none outlives its case.
+sleep 0.5; left=""
+for f in "$TMP"/*.pid; do
+  [ -f "$f" ] || continue; p=$(cat "$f")
+  case "$(ps -o stat= -p "$p" 2>/dev/null)" in ''|Z*) ;; *) left="$left ${f##*/}=$p" ;; esac
+done
+if [ -n "$left" ]; then echo "  FAIL leftover: a fake process outlived its case:$left"; rc=1
+else echo "  ok   leftover: no fake process outlives its case (each ended by its recorded pid)"; fi
 if [ "$rc" -eq 0 ]; then echo "PASS: teardown never reports clean while a launched process lives; the health wait ends on the server's state, not a clock"; exit 0; fi
 echo "FAIL"; exit 1

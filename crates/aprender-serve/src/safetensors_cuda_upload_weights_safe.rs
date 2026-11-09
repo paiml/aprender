@@ -157,6 +157,19 @@ impl SafeTensorsCudaModel {
         max_tokens: usize,
         eos_id: u32,
     ) -> Result<Vec<u32>> {
+        self.generate_until(input_ids, max_tokens, &[eos_id])
+    }
+
+    /// [`Self::generate`], stopping on any id in `stop_ids` (aprender#4345).
+    ///
+    /// llama-server ends a turn on every end-of-generation marker, not only the
+    /// one EOS a config names; a route passes the whole set here.
+    pub fn generate_until(
+        &mut self,
+        input_ids: &[u32],
+        max_tokens: usize,
+        stop_ids: &[u32],
+    ) -> Result<Vec<u32>> {
         let mut tokens = input_ids.to_vec();
 
         // PMAT-120 FIX: Prefill processes all input tokens, keeping logits from last one.
@@ -174,7 +187,7 @@ impl SafeTensorsCudaModel {
             .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
             .map_or(0, |(i, _)| i as u32);
 
-        if first_next == eos_id {
+        if stop_ids.contains(&first_next) {
             return Ok(tokens);
         }
         tokens.push(first_next);
@@ -191,7 +204,7 @@ impl SafeTensorsCudaModel {
                 .max_by(|a, b| a.1.partial_cmp(b.1).unwrap_or(std::cmp::Ordering::Equal))
                 .map_or(0, |(i, _)| i as u32);
 
-            if next_token == eos_id {
+            if stop_ids.contains(&next_token) {
                 break;
             }
 

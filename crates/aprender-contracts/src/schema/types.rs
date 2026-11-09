@@ -152,6 +152,21 @@ pub struct Contract {
     /// Not serialized: it is a parse artifact, not contract content.
     #[serde(skip)]
     pub strict_yaml_error: Option<String>,
+    /// Was a top-level `falsification_tests:` key WRITTEN in the source YAML?
+    /// (#5291)
+    ///
+    /// `falsification_tests` carries `#[serde(default)]`, so an absent key and
+    /// `falsification_tests: []` deserialize to the same empty `Vec`. They are
+    /// not the same claim. Absent is legitimate on a registry or schema
+    /// contract, and on a kernel contract PROVABILITY-001 already refuses it.
+    /// Written-and-empty declares a test block with nothing in it. On a
+    /// contract whose kind exempts it from PROVABILITY-001 (the #5290 shape:
+    /// `kind: kernel` plus the legacy `registry: true`), nothing refused it.
+    /// SCHEMA-024 reads this to tell the two apart.
+    ///
+    /// Not serialized: like `unknown_top_level_keys`, it is a parse artifact.
+    #[serde(skip)]
+    pub falsification_tests_declared: bool,
 }
 
 /// One row of the CRUX master registry's `stories:` list.

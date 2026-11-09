@@ -1501,4 +1501,110 @@ mod tests {
         let card = DataCard::default();
         assert_eq!(card.background, Color::WHITE);
     }
+
+    // ===== paint (Refs #5538) =====
+
+    #[derive(Default)]
+    struct Rec {
+        texts: Vec<String>,
+        fills: usize,
+        strokes: usize,
+    }
+
+    impl Canvas for Rec {
+        fn fill_rect(&mut self, _r: Rect, _c: Color) {
+            self.fills += 1;
+        }
+        fn stroke_rect(&mut self, _r: Rect, _c: Color, _w: f32) {
+            self.strokes += 1;
+        }
+        fn draw_text(&mut self, t: &str, _p: Point, _s: &TextStyle) {
+            self.texts.push(t.to_string());
+        }
+        fn draw_line(&mut self, _a: Point, _b: Point, _c: Color, _w: f32) {}
+        fn fill_circle(&mut self, _c: Point, _r: f32, _col: Color) {}
+        fn stroke_circle(&mut self, _c: Point, _r: f32, _col: Color, _w: f32) {}
+        fn fill_arc(&mut self, _c: Point, _r: f32, _a: f32, _b: f32, _col: Color) {}
+        fn draw_path(&mut self, _p: &[Point], _c: Color, _w: f32) {}
+        fn fill_polygon(&mut self, _p: &[Point], _c: Color) {}
+        fn push_clip(&mut self, _r: Rect) {}
+        fn pop_clip(&mut self) {}
+        fn push_transform(&mut self, _t: presentar_core::Transform2D) {}
+        fn pop_transform(&mut self) {}
+    }
+
+    fn painted(card: &DataCard) -> Rec {
+        let mut rec = Rec::default();
+        card.paint(&mut rec);
+        rec
+    }
+
+    #[test]
+    fn paint_minimal_card_draws_chrome_title_and_bare_version() {
+        let rec = painted(&DataCard::new("plain"));
+        assert_eq!(rec.fills, 1 + 1, "background + quality badge");
+        assert_eq!(rec.strokes, 1);
+        assert_eq!(rec.texts, ["Unknown", "plain", "v1.0.0"]);
+    }
+
+    #[test]
+    fn paint_version_line_includes_format_when_set() {
+        let rec = painted(&DataCard::new("d").format("Parquet"));
+        assert!(rec.texts.contains(&"v1.0.0 • Parquet".to_string()));
+    }
+
+    #[test]
+    fn paint_draws_description_stats_labels_and_values_in_order() {
+        let card = DataCard::new("d").description("about").stats(
+            DataStats::new()
+                .rows(2_500)
+                .columns(7)
+                .size_bytes(3_000_000),
+        );
+        let t = painted(&card).texts;
+        assert_eq!(
+            t[3..],
+            [
+                "about",
+                "Rows",
+                "2.5K rows",
+                "Columns",
+                "7",
+                "Size",
+                "3.0 MB"
+            ]
+        );
+    }
+
+    #[test]
+    fn paint_skips_stat_blocks_that_are_unset() {
+        let t = painted(&DataCard::new("d").stats(DataStats::new().columns(3))).texts;
+        assert_eq!(t[3..], ["Columns", "3"]);
+    }
+
+    #[test]
+    fn paint_schema_truncates_to_four_columns_with_more_marker() {
+        let cols = (0..6).map(|i| DataColumn::new(format!("c{i}"), "int"));
+        let t = painted(&DataCard::new("d").columns(cols)).texts;
+        assert_eq!(t[3], "Schema:");
+        assert_eq!(t[4..8], ["c0: int", "c1: int", "c2: int", "c3: int"]);
+        assert_eq!(t[8], "... +2 more");
+        assert_eq!(t.len(), 9);
+    }
+
+    #[test]
+    fn paint_schema_hidden_when_show_schema_false_or_empty() {
+        let col = DataColumn::new("id", "int");
+        let hidden = painted(&DataCard::new("d").column(col).show_schema(false));
+        assert!(!hidden.texts.iter().any(|t| t == "Schema:"));
+        let empty = painted(&DataCard::new("d"));
+        assert!(!empty.texts.iter().any(|t| t == "Schema:"));
+    }
+
+    #[test]
+    fn paint_draws_at_most_five_tag_chips() {
+        let rec = painted(&DataCard::new("d").tags(["a", "b", "c", "d", "e", "f", "g"]));
+        assert_eq!(rec.fills, 2 + 5, "chrome fills + one chip per shown tag");
+        assert_eq!(rec.texts[3..], ["a", "b", "c", "d", "e"]);
+    }
 }

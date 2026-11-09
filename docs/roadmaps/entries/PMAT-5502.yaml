@@ -1,0 +1,19 @@
+- id: PMAT-5502
+  github_issue: 5502
+  item_type: task
+  title: Wire parity_receipt_denominator.sh verify mode into CI (#5502)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-18T10:18:08Z
+  updated: 2026-10-18T10:18:08Z
+  spec: null
+  acceptance_criteria:
+  - 'Slice of #5309 (debt ratchet)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3997

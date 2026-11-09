@@ -764,16 +764,20 @@ falsification_tests:
       covered/total truncated to two decimals, and pct >= COV_FLOOR from the
       Makefile at C. H is a version-only parent (#4735) when H is an ancestor
       of C and every path between them is a MODIFIED Cargo manifest or lock
-      or CHANGELOG.md, or an ADDED evidence/dogfood/models/V/*.json with V the
+      or CHANGELOG.md, an ADDED evidence/dogfood/models/V/*.json, or an ADDED
+      evidence/crux/V/prompt-certification.json or
+      prompt-certification-inventory.json (P7 D3), with V the
       workspace version at C, and the Cargo diff is equal once version values
-      are blanked. Any other path, a modified ladder receipt, another
+      are blanked. Any other path, a modified ladder receipt or certification,
+      another file name in evidence/crux/V, another
       version's directory, a missing receipt, a receipt for another commit,
       no figure, 0 tests, no COV_FLOOR, or gh failing refuses. The same
       judgement runs before the tag (--resolve C) in the autopilot's tag step
       and again in the preflight on the tag (#4691).
     prediction: >
       scripts/release/tag_coverage_gate.sh --self-test passes 12 judge rows,
-      18 end-to-end rows, 6 version-surface rows and 5 --resolve rows over a
+      18 end-to-end rows, 6 version-surface rows, 5 carried-certification
+      rows and 5 --resolve rows over a
       real git history and a stubbed gh, including the plants: a missing
       receipt, a receipt for another sha, one with no %, one with 0 tests and
       gh failing refuse; a receipt for C and for a version-only bump of C
@@ -797,7 +801,7 @@ falsification_tests:
     ship_blocking: true  # autopilot dies on its rc before the tag and before T-4
     discharge_status: PARTIAL_ALGORITHM_LEVEL
     evidence_discharged_by:
-      - 'scripts/release/tag_coverage_gate.sh (41 self-test rows)'
+      - 'scripts/release/tag_coverage_gate.sh (46 self-test rows)'
       - 'scripts/check_tag_coverage_gated.sh (wiring rows; 17 mutants)'
       - 'scripts/check_tag_step_gated.sh (--resolve before the tag)'
       - 'scripts/release/autopilot.sh (tag step and preflight calls)'

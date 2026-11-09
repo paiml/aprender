@@ -41,10 +41,10 @@ name: Fleet Toolset
 
 on:
   schedule:
-    # 04:47 UTC — an off-minute, and clear of cuda-nightly (01:30) and
+    # 04:35 UTC — an off-minute, and clear of cuda-nightly (01:30) and
     # silicon-nightly (03:30) so the probe never queues behind a 90-minute
     # measurement it would otherwise appear to have slowed down.
-    - cron: "47 4 * * *"
+    - cron: "35 4 * * *"
   workflow_dispatch:
 
 permissions:

@@ -108,56 +108,59 @@ impl ShardedIndex {
             })?;
 
         let obj_content = &after_key[obj_start..];
-        let mut weight_map = std::collections::HashMap::new();
-        let mut depth = 0;
-        let mut obj_end = 0;
+        let obj_end = Self::object_end(obj_content);
+        let weight_map = Self::parse_pairs(&obj_content[1..obj_end]);
+        let total_size = Self::parse_total_size(json);
 
+        Ok(Self {
+            weight_map,
+            total_size,
+        })
+    }
+
+    /// Byte index of the `}` closing the object that opens `obj_content`
+    /// (0 when it never closes).
+    fn object_end(obj_content: &str) -> usize {
+        let mut depth = 0;
         for (i, c) in obj_content.char_indices() {
             match c {
                 '{' => depth += 1,
                 '}' => {
                     depth -= 1;
                     if depth == 0 {
-                        obj_end = i;
-                        break;
+                        return i;
                     }
                 }
                 _ => {}
             }
         }
+        0
+    }
 
-        let inner = &obj_content[1..obj_end];
-
-        // Parse key-value pairs: "tensor_name": "shard_file"
+    /// Parse key-value pairs: "tensor_name": "shard_file"
+    fn parse_pairs(inner: &str) -> std::collections::HashMap<String, String> {
+        let mut weight_map = std::collections::HashMap::new();
         for pair in inner.split(',') {
-            let pair = pair.trim();
-            if pair.is_empty() {
+            let Some((key, val)) = pair.trim().split_once(':') else {
                 continue;
-            }
-
-            let parts: Vec<&str> = pair.splitn(2, ':').collect();
-            if parts.len() == 2 {
-                let key = parts[0].trim().trim_matches('"');
-                let val = parts[1].trim().trim_matches('"');
-                if !key.is_empty() && !val.is_empty() {
-                    weight_map.insert(key.to_string(), val.to_string());
-                }
+            };
+            let key = key.trim().trim_matches('"');
+            let val = val.trim().trim_matches('"');
+            if !key.is_empty() && !val.is_empty() {
+                weight_map.insert(key.to_string(), val.to_string());
             }
         }
+        weight_map
+    }
 
-        // Parse optional total_size from metadata
-        let total_size = json.find("\"total_size\"").and_then(|pos| {
-            let after = &json[pos + 12..];
-            let colon = after.find(':')?;
-            let after_colon = after[colon + 1..].trim_start();
-            let end = after_colon.find(|c: char| !c.is_ascii_digit())?;
-            after_colon[..end].parse::<u64>().ok()
-        });
-
-        Ok(Self {
-            weight_map,
-            total_size,
-        })
+    /// Parse optional total_size from metadata
+    fn parse_total_size(json: &str) -> Option<u64> {
+        let pos = json.find("\"total_size\"")?;
+        let after = &json[pos + 12..];
+        let colon = after.find(':')?;
+        let after_colon = after[colon + 1..].trim_start();
+        let end = after_colon.find(|c: char| !c.is_ascii_digit())?;
+        after_colon[..end].parse::<u64>().ok()
     }
 
     /// Number of unique shard files

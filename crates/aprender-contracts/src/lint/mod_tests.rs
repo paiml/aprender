@@ -42,7 +42,7 @@ fn lint_passes_on_real_contracts() {
     // challenge-fresh (PVL-001 EV-7a; MEASURED here, not skipped: the repo's Lean base and its committed Challenge/
     // files are real, so `report.passed` requires them fresh), ont-consistency (ONT-5), refines (ONT-4e), bindings (ONT-3a),
     // refinement (ONT-3b), evidence (ONT-8).
-    assert_eq!(report.gates.len(), 22);
+    assert_eq!(report.gates.len(), 23);
 }
 
 /// #4502: this test is where CI runs the head-vs-base refinement gate (the workspace-test shards run
@@ -276,7 +276,7 @@ fn lint_validation_failure_skips_audit_and_score() {
     let report = run_lint(&config);
     assert!(!report.passed);
     // validate should fail, all subsequent gates should be skipped
-    assert_eq!(report.gates.len(), 22);
+    assert_eq!(report.gates.len(), 23);
     assert!(!report.gates[0].passed); // validate failed
     assert!(report.gates[1].skipped); // audit skipped
     assert!(report.gates[2].skipped); // score skipped
@@ -496,6 +496,8 @@ fn every_gate_verdict_agrees_with_passed_and_skipped_on_the_real_corpus(report: 
             "depends-on-present".to_string(),
             // PVL-001 EV-8a: born armed in the repo's own baseline, not in the default set.
             "proved-is-derived".to_string(),
+            // aprender#6397: dead `metadata.references` ratchet, same R-8 shape.
+            "references-resolve".to_string(),
             "challenge-fresh".to_string(),
             // ONT-5: computed everywhere (R-8), armed by nobody until its quorum passes.
             "ont-consistency".to_string(),
@@ -681,4 +683,80 @@ fn challenge_fresh_counts_stale_plus_unrestated() {
     let g = challenge_result(&t.path().join("contracts"));
     assert!(!g.skipped && !g.passed, "{g:?}");
     assert_eq!(challenge_errors(&g), 2, "{g:?}");
+}
+
+/// The PV-VER-002 findings of a report, as (file, message) pairs in order.
+fn ver002(report: &LintReport) -> Vec<(String, String)> {
+    report
+        .findings
+        .iter()
+        .filter(|f| f.rule_id == "PV-VER-002")
+        .map(|f| (f.file.clone(), f.message.clone()))
+        .collect()
+}
+
+/// aprender#4974: `strict_test_binding_only` runs validate and the strict test-binding gate and
+/// nothing else, and that gate's answer is the full run's: same verdict, same detail, same
+/// PV-VER-002 findings. It caches nothing, and the armed default set reads `NotRun`, never `Pass`.
+#[test]
+fn strict_test_binding_only_answers_as_the_full_run_does() {
+    let (_tmp, dir) = knob_corpus();
+    let mut full = LintConfig::new(&dir, None, 0.0);
+    full.strict_test_binding = true;
+    full.no_cache = true;
+    let full = run_lint(&full);
+    let mut only = LintConfig::new(&dir, None, 0.0);
+    only.strict_test_binding = true;
+    only.strict_test_binding_only = true;
+    let only = run_lint(&only);
+
+    let names: Vec<&str> = only.gates.iter().map(|g| g.name.as_str()).collect();
+    assert_eq!(names, ["validate", "strict-test-binding"]);
+    let gate = |r: &LintReport| {
+        let g = r
+            .gates
+            .iter()
+            .find(|g| g.name == "strict-test-binding")
+            .expect("the gate ran")
+            .clone();
+        (
+            g.passed,
+            g.skipped,
+            g.verdict,
+            serde_json::to_value(&g.detail).unwrap(),
+        )
+    };
+    assert_eq!(gate(&only), gate(&full));
+    assert!(
+        !gate(&only).1,
+        "the gate was skipped, so nothing was compared"
+    );
+    // The fixture sits outside the source tree, so every cited test is missing: a non-empty set.
+    assert!(
+        !ver002(&full).is_empty(),
+        "no PV-VER-002 findings to compare"
+    );
+    assert_eq!(ver002(&only), ver002(&full));
+    assert_eq!(only.cache_stats.total, 0, "a scoped run must not cache");
+    assert_eq!(
+        only.verdict,
+        Verdict::Unknown(crate::ontology::verdict::Reason::NotRun)
+    );
+}
+
+/// The precondition holds in the scoped run: a corpus that fails validate skips the gate.
+#[test]
+fn strict_test_binding_only_skips_the_gate_when_validate_fails() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().join("contracts");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("bad.yaml"), "not: valid: yaml: {{{{").unwrap();
+    let mut config = LintConfig::new(&dir, None, 0.0);
+    config.strict_test_binding = true;
+    config.strict_test_binding_only = true;
+    let report = run_lint(&config);
+    assert_eq!(report.gates.len(), 2);
+    assert!(!report.gates[0].passed, "validate must fail on bad.yaml");
+    assert!(report.gates[1].skipped, "{:?}", report.gates[1]);
+    assert!(!report.passed);
 }

@@ -16,10 +16,10 @@
 - [License](#license)
 
 <p align="center">
-  <a href="https://github.com/paiml/trueno-viz/actions"><img src="https://github.com/paiml/trueno-viz/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://crates.io/crates/trueno-viz"><img src="https://img.shields.io/crates/v/trueno-viz.svg" alt="Crates.io"></a>
-  <a href="https://crates.io/crates/ttop"><img src="https://img.shields.io/crates/v/ttop.svg?label=ttop" alt="ttop"></a>
-  <a href="https://docs.rs/trueno-viz"><img src="https://docs.rs/trueno-viz/badge.svg" alt="docs.rs"></a>
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/aprender-viz"><img src="https://img.shields.io/crates/v/aprender-viz.svg" alt="Crates.io"></a>
+  <a href="https://crates.io/crates/aprender-viz-ttop"><img src="https://img.shields.io/crates/v/aprender-viz-ttop.svg?label=ttop" alt="ttop"></a>
+  <a href="https://docs.rs/aprender-viz"><img src="https://docs.rs/aprender-viz/badge.svg" alt="docs.rs"></a>
 </p>
 
 <p align="center">
@@ -90,7 +90,7 @@ File Treemap:    Pareto-style large file visualization
 | macOS Intel | ✓ | ✓ | ✓ | ✓ | AMD Radeon |
 | macOS Apple Silicon | ✓ | ✓ | ✓ | ✓ | Apple GPU |
 
-[Full ttop documentation →](crates/ttop/README.md)
+[Full ttop documentation →](../aprender-viz-ttop/README.md)
 
 ---
 
@@ -100,13 +100,13 @@ File Treemap:    Pareto-style large file visualization
 
 ```toml
 [dependencies]
-trueno-viz = "0.2"
+aprender-viz = "0.71"
 
 # With GPU acceleration
-trueno-viz = { version = "0.2", features = ["gpu"] }
+aprender-viz = { version = "0.71", features = ["gpu"] }
 
 # With system monitoring (powers ttop)
-trueno-viz = { version = "0.2", features = ["monitor"] }
+aprender-viz = { version = "0.71", features = ["monitor"] }
 ```
 
 ### Quick Start
@@ -240,9 +240,9 @@ Property-based tests cover framebuffer operations, SIMD kernel correctness, and 
 
 ## Documentation
 
-- [API Documentation](https://docs.rs/trueno-viz) - Complete API reference
-- [The Visualization Guide](https://paiml.github.io/trueno-viz/) - mdBook with tutorials
-- [ttop README](crates/ttop/README.md) - System monitor documentation
+- [API Documentation](https://docs.rs/aprender-viz) - Complete API reference
+- [The Visualization Guide](https://github.com/paiml/aprender/tree/main/crates/aprender-viz/book) - mdBook with tutorials
+- [ttop README](../aprender-viz-ttop/README.md) - System monitor documentation
 - [Examples](examples/) - Runnable code samples
 
 ---

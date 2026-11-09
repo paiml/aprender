@@ -24,7 +24,7 @@ pub use fused_gate_up_swiglu_hw_dp4a::FusedGateUpSwigluHwDp4aQ4KGemvKernel;
 pub use fused_qkv_hw_dp4a::FusedQKVHwDp4aQ4KGemvKernel;
 pub use hw_dp4a::HalfWarpDp4aQ4KGemvKernel;
 pub use inline_q8_dp4a::InlineQ8Dp4aQ4KGemvKernel;
-pub use multi_warp_vectorized::MultiWarpVectorizedQ4KGemvKernel;
+pub use multi_warp_vectorized::{BatchedMwvQ4KGemvKernel, MultiWarpVectorizedQ4KGemvKernel};
 pub use mwv_dp4a::MwvDp4aQ4KGemvKernel;
 pub use vectorized_kernel::VectorizedQ4KGemvKernel;
 pub use wide_kernel::WideQ4KGemvKernel;

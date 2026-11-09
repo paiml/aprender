@@ -5,12 +5,12 @@ version.workspace = true
 edition = "2021"
 authors = ["Pragmatic AI Labs Research Division"]
 description = "A scientific experiment into realistic provability with Rust - asymptotic test effectiveness framework"
-repository = "https://github.com/paiml/certeza"
+repository = "https://github.com/paiml/aprender"
 license = "MIT"
 keywords = ["testing", "property-based", "mutation", "formal-verification", "quality"]
 categories = ["development-tools::testing", "development-tools::profiling"]
 readme = "README.md"
-documentation = "https://docs.rs/certeza"
+documentation = "https://docs.rs/aprender-verify"
 
 [features]
 # Chaos engineering features (renacer pattern from Sprint 29)

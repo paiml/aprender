@@ -389,7 +389,11 @@ check_file() {
         # CLASS 3 --------------------------------------------------------
         # apr_bin.sh probes `type -aP apr` on purpose, to NAME the shadows;
         # it is exempted wholesale above.
-        probe_pv="$(demessage_pv "$trimmed")"
+        # BARE_PV and PATHRES_PV each need the literal `pv`, and demessage_pv only deletes text
+        # (or lifts a fragment of the same line), so a line without `pv` cannot match either:
+        # skip its 4 forks. Most scanned lines are `apr` lines.
+        probe_pv=""
+        case "$trimmed" in *pv*) probe_pv="$(demessage_pv "$trimmed")" ;; esac
         if [[ $probe_pv =~ $BARE_PV ]]; then
             report "$f" "$lineno" "BARE-PV" "$trimmed"
         fi

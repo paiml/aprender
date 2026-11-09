@@ -2,7 +2,7 @@ name: Nightly Train
 
 on:
   schedule:
-    - cron: '45 4 * * *'   # 04:45Z, after the last producer (mutants 01:00Z)
+    - cron: '30 4 * * *'   # 04:30Z, after the last producer (mutants 01:00Z)
   workflow_dispatch: {}    # drills only; a dispatched run never counts toward the streak
 
 permissions:
@@ -24,16 +24,27 @@ jobs:
         run: |
           bash scripts/release/nightly_train.sh --self-test
           bash scripts/release/nightly_train.sh --mutants
+          # the gate/LAB test reads the workflows with yq; the clean-room image has none, so fetch the pinned one
+          curl -sSfL -o "$RUNNER_TEMP/yq" https://github.com/mikefarah/yq/releases/download/v4.52.2/yq_linux_amd64
+          echo "a74bd266990339e0c48a2103534aef692abf99f19390d12c2b0ce6830385c459  $RUNNER_TEMP/yq" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/yq"
+          PATH="$RUNNER_TEMP:$PATH" bash scripts/tests/models_gate_lab_test.sh
+          PATH="$RUNNER_TEMP:$PATH" bash scripts/tests/models_gate_lab_test.sh --mutants
           bash scripts/tests/models_lane_row_test.sh
           bash scripts/tests/models_lane_row_test.sh --mutants
           bash scripts/tests/nightly_lanes_rows_test.sh
           bash scripts/tests/nightly_lanes_rows_test.sh --mutants
+          bash scripts/release/nightly_train_andon.sh --self-test
+          bash scripts/release/nightly_train_andon.sh --mutants
       - name: RELEASABLE or NOT RELEASABLE for main's head
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
           bash scripts/release/nightly_train.sh --out "$RUNNER_TEMP/nt" --exit-verdict | tee "$RUNNER_TEMP/line"
+      - name: Every registered lane names a producer workflow on this commit (existence only)
+        if: always()
+        run: bash scripts/release/nightly_train.sh --producers
       - name: Summary
         if: always()
         run: |
@@ -45,3 +56,30 @@ jobs:
           name: nightly-train
           path: ${{ runner.temp }}/nt
           retention-days: 30
+
+  # #5081 (B1 P2, C324 item 5): a red or not_measured night opens or updates ONE ticket with ONE owner. Its own job, so
+  # it runs whatever the train's result (failed part-way, timed out, cancelled) and the train keeps a read-only token.
+  # Green only when the train job succeeded AND its line is RELEASABLE. A workflow_dispatch drill prints, never writes.
+  andon:
+    needs: train
+    if: always()
+    runs-on: [self-hosted, Linux, X64, clean-room]   # check_runner_labels.sh: a bare X64 job is refused
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+      - uses: actions/download-artifact@v7   # same major as the upload-artifact@v7 above
+        continue-on-error: true   # a missing artifact is the andon's "no verdict line" case, never a skip
+        with:
+          name: nightly-train
+          path: ${{ runner.temp }}/nt
+      - name: A red or not_measured night opens or updates the nightly-train-red ticket
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RESULT: ${{ needs.train.result }}
+          EVENT: ${{ github.event_name }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: bash scripts/release/nightly_train_andon.sh --nt "$RUNNER_TEMP/nt" --result "$RESULT" --event "$EVENT" --run-url "$RUN_URL"

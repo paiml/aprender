@@ -450,11 +450,22 @@ mod tests {
         // Note: CI/debug/release builds may have high variance due to system load
         let pages = generate_test_pages(50, DataPattern::Text);
 
-        let result1 = run_benchmark(Algorithm::Lz4, &pages).unwrap();
-        let result2 = run_benchmark(Algorithm::Lz4, &pages).unwrap();
-
-        let throughput1 = result1.compress_throughput();
-        let throughput2 = result2.compress_throughput();
+        // Each measurement is the best (minimum compress time) of several
+        // runs after a warm-up. A single ~50-page run lasts tens of
+        // microseconds, so one scheduler preemption on a loaded host made it
+        // 30x slower than its twin (clean-room run 41093384425: ratio 0.03).
+        // The minimum discards preemption spikes, while a real slowdown
+        // raises the minimum and still trips the bounds below.
+        let best_throughput = || {
+            let _warmup = run_benchmark(Algorithm::Lz4, &pages).unwrap();
+            (0..9)
+                .map(|_| run_benchmark(Algorithm::Lz4, &pages).unwrap())
+                .min_by_key(|r| r.compress_time)
+                .unwrap()
+                .compress_throughput()
+        };
+        let throughput1 = best_throughput();
+        let throughput2 = best_throughput();
 
         // Both runs should produce valid results
         assert!(throughput1 > 0.0, "First run had zero throughput");

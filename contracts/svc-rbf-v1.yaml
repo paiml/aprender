@@ -119,6 +119,12 @@ falsification_tests:
   prediction: Estimator-trait predict matches sklearn grid parity >= 90%
   test: cargo test -p aprender-core --lib falsify_svc_rbf_007_estimator_trait_parity
   if_fails: f32 label round-trip breaks generic cross_validate / grid_search
+- id: FALSIFY-SVC-RBF-008
+  rule: Kernel values and MultiClassSVC one-vs-one behaviour
+  prediction: Kernel::eval matches the closed forms (RBF exp(-g*d2), Poly (g*dot+c0)^d); MultiClassSVC separates 3 clusters with non-contiguous labels, is deterministic, and errors on unfitted, mismatched, single-class and empty input
+  test: cargo test -p aprender-core --test svc_multiclass_kernel_edges
+  if_fails: a kernel formula drifted or the pairwise vote mislabels classes
+  mutation: "flip + coef0 to - coef0 in Kernel::eval Poly; kernel_eval_rbf_and_poly_values turns RED (measured 2026-10-18)"
 enforcement:
   sklearn_parity:
     description: RBF SVC predictions must match scikit-learn SVC(kernel='rbf') within tolerance
@@ -174,5 +180,5 @@ qa_gate:
   - non_linear_separation
   - prediction_deterministic
   - label_subset
-  pass_criteria: All 7 falsification tests pass + sklearn grid parity >= 90%
+  pass_criteria: All 8 falsification tests pass + sklearn grid parity >= 90%
   falsification: Use a linear kernel (a.b) instead of exp(-gamma||a-b||^2) — collapses XOR parity

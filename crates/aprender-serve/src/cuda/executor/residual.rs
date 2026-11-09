@@ -484,3 +484,4 @@ impl CudaExecutor {
 include!("tiled_gemv.rs");
 include!("q4k_q8_gemv.rs");
 include!("layer_norm_gpu.rs");
+include!("rmsnorm_rows.rs");

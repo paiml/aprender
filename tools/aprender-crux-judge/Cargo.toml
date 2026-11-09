@@ -1,0 +1,18 @@
+[package]
+name = "aprender-crux-judge"
+version = "0.1.0"
+edition = "2021"
+description = "Rust port of the CRUX inference judge: reads a CRUX run manifest and writes the receipt JSON and Markdown, byte-identical to the Python judge it replaces."
+publish = false
+
+[[bin]]
+name = "aprender-crux-judge"
+path = "src/main.rs"
+
+[dependencies]
+regex = "1.12"
+sha2 = "0.10"
+
+# Standalone dev tool — intentionally NOT a workspace member (see root
+# Cargo.toml `exclude`). Build directly: `cargo build --release` inside this dir.
+[workspace]

@@ -170,18 +170,32 @@ fn mut_workspace_root() -> std::path::PathBuf {
         );
     }
 }
-
-/// ci.yml followed by ci/sections.yml. Since #4433 ci.yml's job BODIES live in
-/// ci/sections.yml and run as sections of ci.yml's fat jobs, so the mutants job
-/// is text there; ci.yml alone no longer names it.
-fn mut_ci_text() -> String {
+/// The PR path: ci.yml followed by ci/sections.yml. Since #4433 ci.yml's job
+/// BODIES live in ci/sections.yml and run as sections of ci.yml's fat jobs.
+/// Both files must exist: a missing one would make the "absent from the PR
+/// path" assertions below pass on nothing.
+fn mut_pr_path_text() -> String {
     let root = mut_workspace_root();
     let ci = std::fs::read_to_string(root.join(".github/workflows/ci.yml")).expect("read ci.yml");
-    let sections = std::fs::read_to_string(root.join("ci/sections.yml")).unwrap_or_default();
+    let sections =
+        std::fs::read_to_string(root.join("ci/sections.yml")).expect("read ci/sections.yml");
     format!("{ci}\n{sections}")
 }
 
-/// MUT-05: CI mutation testing workflow exists
+/// Where mutation testing runs since #4912: a nightly workflow, off the PR
+/// path (a check that cannot block a merge never runs on one). The workflow
+/// runs scripts/mutants_diff_gate.sh, which holds the `cargo mutants` command
+/// line, so the two are read together.
+fn mut_nightly_text() -> String {
+    let root = mut_workspace_root();
+    let wf = std::fs::read_to_string(root.join(".github/workflows/mutants-nightly.yml"))
+        .expect("read mutants-nightly.yml");
+    let gate = std::fs::read_to_string(root.join("scripts/mutants_diff_gate.sh"))
+        .expect("read scripts/mutants_diff_gate.sh");
+    format!("{wf}\n{gate}")
+}
+
+/// MUT-05: CI mutation testing workflow exists, nightly and off the PR path
 #[test]
 fn mut05_ci_mutation_workflow_exists() {
     let ci_path = &mut_workspace_root().join(".github/workflows/ci.yml");
@@ -190,7 +204,7 @@ fn mut05_ci_mutation_workflow_exists() {
         "MUT-05 FALSIFIED: No CI configuration found"
     );
 
-    let ci_content = mut_ci_text();
+    let ci_content = mut_nightly_text();
 
     let has_mutants_job = ci_content.contains("mutants:");
     assert!(has_mutants_job, "MUT-05 FALSIFIED: No mutants job in CI");
@@ -206,12 +220,25 @@ fn mut05_ci_mutation_workflow_exists() {
         runs_mutants,
         "MUT-05 FALSIFIED: cargo mutants not executed in CI"
     );
+
+    assert!(
+        ci_content.contains("schedule:") && ci_content.contains("bash scripts/mutants_diff_gate.sh"),
+        "MUT-05 FALSIFIED: the mutants workflow is not a scheduled run of scripts/mutants_diff_gate.sh"
+    );
+
+    let pr_path = mut_pr_path_text();
+    for on_pr in ["mutants:", "cargo mutants", "mutants_diff_gate"] {
+        assert!(
+            !pr_path.contains(on_pr),
+            "MUT-05 FALSIFIED: `{on_pr}` is back on the PR path (ci.yml / ci/sections.yml); mutation testing runs nightly (#4912)"
+        );
+    }
 }
 
 /// MUT-06: Mutation results are captured as artifacts
 #[test]
 fn mut06_mutation_artifacts_captured() {
-    let ci_content = mut_ci_text();
+    let ci_content = mut_nightly_text();
 
     let has_upload = ci_content.contains("upload-artifact");
     let has_mutants_results =
@@ -221,17 +248,31 @@ fn mut06_mutation_artifacts_captured() {
         has_upload && has_mutants_results,
         "MUT-06 FALSIFIED: Mutation results not captured as artifacts"
     );
+
+    // The uploaded directory is the one the gate writes mutants.out into.
+    assert!(
+        ci_content.contains("--out mutants-gate") && ci_content.contains("path: mutants-gate/"),
+        "MUT-06 FALSIFIED: the uploaded path is not the gate's --out directory"
+    );
 }
 
 /// MUT-07: Mutation timeout configured appropriately
 #[test]
 fn mut07_mutation_timeout_configured() {
-    let ci_content = mut_ci_text();
+    let ci_content = mut_nightly_text();
 
     let has_timeout = ci_content.contains("--timeout");
 
     assert!(
         has_timeout,
         "MUT-07 FALSIFIED: No mutation timeout configured"
+    );
+
+    // On the command line that runs the mutants, not only in a usage comment.
+    assert!(
+        ci_content
+            .lines()
+            .any(|l| l.contains("mutants --workspace") && l.contains("--timeout")),
+        "MUT-07 FALSIFIED: the cargo mutants command line carries no --timeout"
     );
 }

@@ -111,3 +111,20 @@ status_history:
       branches corrected (precision, recall, f1_score, jaccard_score,
       fbeta_score). Micro and Weighted unchanged. Four falsification unit
       tests added in tests_macro_present_labels.
+
+falsification_tests:
+  - id: FALSIFY-METRICS_MACRO_AVERAGE-001
+    description: "Macro averages over present labels only: perfect classifier on {0,2} scores precision/recall/f1 = 1.0, swapped scores precision 0.5"
+    test: "cargo test -p aprender-core --lib macro_average_noncontiguous_labels"
+    prediction: "1.0/1.0/1.0 and 0.5 (buggy divisor max+1 gives 0.6667 and 0.3333)"
+    if_fails: "absent class indices add spurious 0.0 terms to the macro mean"
+  - id: FALSIFY-METRICS_MACRO_AVERAGE-002
+    description: "jaccard_score and fbeta_score share the present-label divisor and reach 1.0 on perfect {0,2}"
+    test: "cargo test -p aprender-core --lib macro_average_noncontiguous_jaccard_fbeta"
+    prediction: "jaccard, fbeta(1.0), fbeta(0.5) all == 1.0"
+    if_fails: "sibling metrics still divide by n_classes"
+  - id: FALSIFY-METRICS_MACRO_AVERAGE-003
+    description: "Contiguous labels {0,1,2} are unchanged by the fix"
+    test: "cargo test -p aprender-core --lib macro_average_contiguous_labels_unchanged"
+    prediction: "perfect dense case 1.0; imperfect case macro precision == (2/3)/3"
+    if_fails: "the fix changed the divisor when every class is present"

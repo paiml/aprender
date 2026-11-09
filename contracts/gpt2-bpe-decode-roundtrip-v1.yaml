@@ -37,3 +37,10 @@ falsification:
     description: "GPT-2 byte-level decode round-trips a non-ASCII char. Discharges C-GPT2BPE-001/002."
     test: "falsify_gpt2_decode_non_ascii_roundtrip — vocab ['ä','¸','Ń'] (bytes 0xE4,0xB8,0xAD) decodes to 中: RED pre-fix 'ä¸Ń' (mojibake), GREEN post-fix '中'."
     evidence: "cargo test -p aprender-serve --lib falsify_gpt2_decode_non_ascii_roundtrip"
+
+falsification_tests:
+  - id: FALSIFY-GPT2_BPE_DECODE_ROUNDTRIP-001
+    description: "C-GPT2BPE-002 (and C-GPT2BPE-001 for the Latin-1 and staircase bytes): byte-level glyphs 'ä','¸','Ń' decode to the real char 中, not mojibake"
+    test: "cargo test -p aprender-serve --lib falsify_gpt2_decode_non_ascii_roundtrip"
+    prediction: "BPETokenizer::decode([1,2,3]) == \"中\""
+    if_fails: "gpt2_char_to_byte returns None for Latin-1 / staircase glyphs and decode emits mojibake"

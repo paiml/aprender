@@ -1,0 +1,5 @@
+[Unit]
+Description=mq-feeder hourly summary line (PMAT-5843)
+[Service]
+Type=oneshot
+ExecStart=%h/.local/libexec/mq-feeder/mq_feeder.sh --summary

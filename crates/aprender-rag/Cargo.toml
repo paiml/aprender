@@ -5,7 +5,7 @@ edition = "2021"
 authors = ["Pragmatic AI Labs"]
 description = "Pure-Rust Retrieval-Augmented Generation pipeline built on Trueno"
 license = "MIT"
-repository = "https://github.com/paiml/trueno-rag"
+repository = "https://github.com/paiml/aprender"
 keywords = ["rag", "retrieval", "embeddings", "nlp", "vector-search"]
 categories = ["text-processing", "science"]
 readme = "README.md"
@@ -51,19 +51,19 @@ async-trait = "0.1"
 # Compression for index storage (GH-2) - via batuta-common shared module
 batuta-common = { workspace = true }
 lz4_flex = { version = "0.11", optional = true }
-zstd = { version = "0.13", optional = true }
-bincode = { version = "1.3", optional = true }  # Binary serialization for indices
+zstd = { version = "0.14", optional = true }
+aprender-legacy-codec = { path = "../aprender-legacy-codec", version = "0.72.4", optional = true }  # Binary serialization for indices
 
 # SQLite+FTS5 persistent index (sqlite-rag-integration spec)
 # FTS5 is included in bundled SQLite by default (SQLITE_ENABLE_FTS5)
-rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+rusqlite = { version = "0.41", features = ["bundled"], optional = true }
 
 # Real embeddings via fastembed (GH-1) - optional, adds ONNX Runtime dependency
 fastembed = { version = "5", optional = true }
 
 # NVIDIA Embed Nemotron 8B via realizar GGUF infrastructure (GH-3)
 # Large model (~4-32GB depending on quantization), requires GGUF file
-realizar = { version = "0.70.2", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
+realizar = { version = "0.72.4", path = "../aprender-serve", package = "aprender-serve", default-features = false, optional = true }
 
 
 # Eval: LLM-as-judge via Anthropic API (PMAT-015)
@@ -74,7 +74,7 @@ rand = { version = "0.9", optional = true }
 [build-dependencies]
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { version = "1", features = ["derive"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -96,7 +96,7 @@ default = ["sqlite"]
 # SQLite+FTS5 persistent BM25 index (sqlite-rag-integration spec)
 sqlite = ["dep:rusqlite"]
 # Compressed index serialization (GH-2)
-compression = ["dep:lz4_flex", "dep:zstd", "dep:bincode"]
+compression = ["dep:lz4_flex", "dep:zstd", "dep:aprender-legacy-codec"]
 # Real semantic embeddings via fastembed (GH-1)
 # Adds ONNX Runtime dependency for production-quality embeddings
 embeddings = ["dep:fastembed"]

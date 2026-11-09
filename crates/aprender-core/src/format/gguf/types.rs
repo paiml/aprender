@@ -60,7 +60,7 @@ pub enum GgufValueType {
 pub use trueno_quant::GgmlType;
 
 /// GGUF metadata value
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum GgufValue {
     Uint8(u8),
     Int8(i8),
@@ -78,6 +78,9 @@ pub enum GgufValue {
     ArrayInt32(Vec<i32>),
     ArrayFloat32(Vec<f32>),
     ArrayString(Vec<String>),
+    /// APR-EMBED-001 EG-6: GGUF bool arrays (element type 7), e.g.
+    /// `gemma-embedding2.attention.sliding_window_pattern`.
+    ArrayBool(Vec<bool>),
 }
 
 impl GgufValue {
@@ -100,7 +103,8 @@ impl GgufValue {
             Self::ArrayUint32(_)
             | Self::ArrayInt32(_)
             | Self::ArrayFloat32(_)
-            | Self::ArrayString(_) => GgufValueType::Array,
+            | Self::ArrayString(_)
+            | Self::ArrayBool(_) => GgufValueType::Array,
         }
     }
 }
@@ -266,6 +270,7 @@ fn write_value<W: Write>(writer: &mut W, value: &GgufValue) -> Result<()> {
         GgufValue::ArrayInt32(arr) => write_array_i32(writer, arr),
         GgufValue::ArrayFloat32(arr) => write_array_f32(writer, arr),
         GgufValue::ArrayString(arr) => write_array_string(writer, arr),
+        GgufValue::ArrayBool(arr) => write_array_bool(writer, arr),
     }
 }
 
@@ -294,6 +299,13 @@ fn write_array_f32<W: Write>(writer: &mut W, arr: &[f32]) -> Result<()> {
         write_bytes(writer, &v.to_le_bytes())?;
     }
     Ok(())
+}
+
+/// Write bool array.
+fn write_array_bool<W: Write>(writer: &mut W, arr: &[bool]) -> Result<()> {
+    write_array_header(writer, GgufValueType::Bool, arr.len())?;
+    let bytes: Vec<u8> = arr.iter().map(|&b| u8::from(b)).collect();
+    write_bytes(writer, &bytes)
 }
 
 /// Write string array.

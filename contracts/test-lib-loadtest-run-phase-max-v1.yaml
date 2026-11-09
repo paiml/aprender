@@ -1,0 +1,47 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  description: "aprender-test-lib LoadTest::run_phase_max (#5626) — closed-loop phase: every worker sends back-to-back requests until the deadline and the records carry the server's token counts; a dead server yields failed records, a zero-length phase sends nothing."
+  kind: pattern
+  references:
+    - "crates/aprender-test-lib/src/llm/loadtest.rs — run_phase_max"
+    - "aprender#5626 — coverage ticket"
+
+equations:
+  closed_loop_phase:
+    formula: "records(run_phase_max(d)) = [] when d = 0; otherwise >= concurrency records; success iff the server answered 2xx with a parseable body; tokens = usage.completion_tokens"
+    domain: "LoadTest with Max rate, a duration, and an HTTP endpoint"
+    codomain: "Vec<RequestRecord>"
+    invariants:
+      - "response content is not captured unless validation needs it"
+      - "an unreachable server never yields a successful record"
+
+proof_obligations:
+  - id: LOADTEST-MAX-INV-001
+    type: invariant
+    property: "Records carry the server's token counts and finish reason"
+    formal: "∀ run: cargo test -p aprender-test-lib --features llm --lib test_run_phase_max_records_server_token_counts exits 0"
+    applies_to: closed_loop_phase
+  - id: LOADTEST-MAX-INV-002
+    type: invariant
+    property: "Zero-length phase sends nothing"
+    formal: "∀ run: cargo test -p aprender-test-lib --features llm --lib test_run_phase_max_zero_duration_sends_nothing exits 0"
+    applies_to: closed_loop_phase
+
+falsification_tests:
+  - id: FALSIFY-LOADTEST-MAX-001
+    rule: "deadline loop disabled"
+    prediction: "replacing the while condition with false turns test_run_phase_max_records_server_token_counts RED"
+    test: "cargo test -p aprender-test-lib --features llm --lib test_run_phase_max_records_server_token_counts"
+    if_fails: "worker loop is unguarded"
+  - id: FALSIFY-LOADTEST-MAX-002
+    rule: "workers not spawned"
+    prediction: "spawning 0 workers turns test_run_phase_max_unreachable_server_yields_failed_records RED"
+    test: "cargo test -p aprender-test-lib --features llm --lib test_run_phase_max_unreachable_server_yields_failed_records"
+    if_fails: "worker spawn count is unguarded"
+  - id: FALSIFY-LOADTEST-MAX-003
+    rule: "content capture forced on"
+    prediction: "capture_content = true turns test_run_phase_max_records_server_token_counts RED"
+    test: "cargo test -p aprender-test-lib --features llm --lib test_run_phase_max_records_server_token_counts"
+    if_fails: "content capture gating is unguarded"

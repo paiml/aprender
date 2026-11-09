@@ -1,0 +1,43 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  description: "DataCard paint — the widget draws chrome, title, version line, optional description and stats, a schema preview capped at four columns and at most five tag chips, in a fixed order."
+  kind: pattern
+  references:
+    - "aprender#5538 — coverage-gap ticket for DataCard::paint"
+    - "crates/aprender-present-widgets/src/data_card.rs — paint and the paint_* tests"
+
+equations:
+  data_card_paint_caps_and_order:
+    formula: "paint emits texts [quality, name, version-line] first; schema rows <= 4 then '... +N more'; tag chips <= 5"
+    domain: "a DataCard painted onto a recording Canvas"
+    codomain: "the ordered list of draw_text strings and the fill_rect count"
+    invariants:
+      - "A set format is joined into the version line; an unset one leaves the bare version"
+      - "An unset stat (rows, columns, size) draws neither its label nor its value"
+      - "Schema is hidden when show_schema is false or the schema is empty"
+
+proof_obligations:
+  - id: PWDC-INV-001
+    type: invariant
+    property: "Schema preview shows at most 4 columns plus a '+N more' marker"
+    formal: "∀ t ∈ {paint_schema_truncates_to_four_columns_with_more_marker}: exit(t) = 0"
+    applies_to: data_card_paint_caps_and_order
+  - id: PWDC-INV-002
+    type: invariant
+    property: "At most 5 tag chips are drawn"
+    formal: "∀ t ∈ {paint_draws_at_most_five_tag_chips}: exit(t) = 0"
+    applies_to: data_card_paint_caps_and_order
+
+falsification_tests:
+  - id: FALSIFY-PWDC-001
+    rule: "schema cap raised"
+    prediction: "changing take(4) to take(5) turns the schema truncation test RED"
+    test: "cargo test -p aprender-present-widgets --lib paint_schema_truncates_to_four_columns_with_more_marker"
+    if_fails: "the schema preview cap is not enforced by any test"
+  - id: FALSIFY-PWDC-002
+    rule: "tag cap raised"
+    prediction: "changing take(5) to take(6) turns the tag chip test RED"
+    test: "cargo test -p aprender-present-widgets --lib paint_draws_at_most_five_tag_chips"
+    if_fails: "the tag chip cap is not enforced by any test"

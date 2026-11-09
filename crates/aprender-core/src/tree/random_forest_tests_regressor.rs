@@ -425,3 +425,16 @@
         let sum: f32 = importances.iter().sum();
         assert!((sum - 1.0).abs() < 1e-5, "importances must sum to 1: {sum}");
     }
+
+    // FALSIFY-RF-007: non-finite labels are rejected, not silently fitted.
+    #[test]
+    fn falsify_rf_007_regressor_fit_rejects_non_finite_labels() {
+        let x = Matrix::from_vec(4, 1, vec![1.0, 2.0, 3.0, 4.0]).expect("matrix creation");
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let y = Vector::from_vec(vec![1.0, bad, 3.0, 4.0]);
+            let mut rf = RandomForestRegressor::new(3).with_random_state(1);
+            assert!(rf.fit(&x, &y).is_err(), "forest fit must reject label {bad}");
+            let mut dt = DecisionTreeRegressor::new();
+            assert!(dt.fit(&x, &y).is_err(), "tree fit must reject label {bad}");
+        }
+    }

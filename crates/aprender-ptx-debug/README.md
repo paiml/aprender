@@ -21,7 +21,7 @@ Following Popper's falsificationism: we cannot prove PTX correct, but we can sys
 ## Installation
 
 ```bash
-cargo install --path trueno-ptx-debug
+cargo install --path aprender-ptx-debug
 ```
 
 ## Usage

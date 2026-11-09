@@ -461,8 +461,7 @@ policy:
 
     // Second run with override
     let mut overrides = HashMap::new();
-    overrides
-        .insert("greeting".to_string(), serde_yaml_ng::Value::String("overridden".to_string()));
+    overrides.insert("greeting".to_string(), serde_json::Value::String("overridden".to_string()));
     let config2 = RunConfig {
         playbook_path: yaml_path.clone(),
         stage_filter: None,

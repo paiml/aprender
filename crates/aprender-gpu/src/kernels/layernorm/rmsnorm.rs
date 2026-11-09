@@ -5,7 +5,7 @@
 
 use crate::kernels::Kernel;
 use crate::ptx::builder::{PtxArithmetic, PtxComparison, PtxControl, PtxMemory};
-use crate::ptx::{PtxKernel, PtxReg, PtxType};
+use crate::ptx::{KernelBuilder, PtxKernel, PtxReg, PtxType, VirtualReg};
 
 /// RMSNorm kernel (Root Mean Square Layer Normalization)
 ///
@@ -49,13 +49,17 @@ impl Kernel for RmsNormKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        let hidden_size = self.hidden_size;
-        let epsilon = self.epsilon;
+        build_rmsnorm("rmsnorm", self.hidden_size, self.epsilon, false)
+    }
+}
 
-        // RMSNorm for single row (batch=1) using warp shuffle
-        // Grid: 1 block, Block: 32 threads (one warp)
-        // Each thread handles hidden_size/32 elements
-        PtxKernel::new("rmsnorm")
+/// The single-warp RMSNorm. With `row_on_grid_y` the input and output rows are
+/// picked by `%ctaid.y`; the arithmetic is the single-row kernel's.
+fn build_rmsnorm(name: &str, hidden_size: u32, epsilon: f32, row_on_grid_y: bool) -> PtxKernel {
+    // RMSNorm for single row (batch=1) using warp shuffle
+    // Grid: 1 block, Block: 32 threads (one warp)
+    // Each thread handles hidden_size/32 elements
+    PtxKernel::new(name)
             .param(PtxType::U64, "input_ptr") // Input vector
             .param(PtxType::U64, "output_ptr") // Output vector (can be same as input)
             .param(PtxType::U64, "gamma_ptr") // Scale weights
@@ -64,9 +68,12 @@ impl Kernel for RmsNormKernel {
                 let tid = ctx.special_reg(PtxReg::TidX);
 
                 // Load parameters
-                let input_ptr = ctx.load_param_u64("input_ptr");
-                let output_ptr = ctx.load_param_u64("output_ptr");
+                let mut input_ptr = ctx.load_param_u64("input_ptr");
+                let mut output_ptr = ctx.load_param_u64("output_ptr");
                 let gamma_ptr = ctx.load_param_u64("gamma_ptr");
+                if row_on_grid_y {
+                    (input_ptr, output_ptr) = row_ptrs(ctx, input_ptr, output_ptr, hidden_size);
+                }
 
                 // Constants
                 let hidden_u32 = ctx.mov_u32_imm(hidden_size);
@@ -147,12 +154,11 @@ impl Kernel for RmsNormKernel {
                 ctx.label("exit");
                 ctx.ret();
             })
-    }
 }
 
 /// PAR-081: Vectorized RMSNorm kernel with 256 threads
 ///
-/// Achieves ~10x speedup over single-warp RmsNormKernel by:
+/// Differs from the single-warp RmsNormKernel by:
 /// 1. Using 256 threads (8 warps) instead of 32
 /// 2. Shared memory for cross-warp reduction
 /// 3. Better memory coalescing
@@ -190,19 +196,28 @@ impl Kernel for VectorizedRmsNormKernel {
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        let hidden_size = self.hidden_size;
-        let epsilon = self.epsilon;
+        build_vectorized_rmsnorm("rmsnorm_vectorized", self.hidden_size, self.epsilon, false)
+    }
+}
 
-        // Strategy:
-        // - Block: 256 threads (8 warps)
-        // - Each thread handles ceil(hidden_size / 256) elements
-        // - Pass 1: Compute sum of squares using shared memory for warp reduction
-        // - Pass 2: Normalize with the computed RMS inverse
-        //
-        // Shared memory layout:
-        // - warp_sums[8] - partial sums from each warp
+/// The 256-thread RMSNorm. With `row_on_grid_y` the input and output rows are
+/// picked by `%ctaid.y`; the arithmetic is the single-row kernel's.
+fn build_vectorized_rmsnorm(
+    name: &str,
+    hidden_size: u32,
+    epsilon: f32,
+    row_on_grid_y: bool,
+) -> PtxKernel {
+    // Strategy:
+    // - Block: 256 threads (8 warps)
+    // - Each thread handles ceil(hidden_size / 256) elements
+    // - Pass 1: Compute sum of squares using shared memory for warp reduction
+    // - Pass 2: Normalize with the computed RMS inverse
+    //
+    // Shared memory layout:
+    // - warp_sums[8] - partial sums from each warp
 
-        PtxKernel::new("rmsnorm_vectorized")
+    PtxKernel::new(name)
             .param(PtxType::U64, "input_ptr")
             .param(PtxType::U64, "output_ptr")
             .param(PtxType::U64, "gamma_ptr")
@@ -213,9 +228,12 @@ impl Kernel for VectorizedRmsNormKernel {
                 let lane_id = ctx.rem_u32(tid, 32);
 
                 // Load parameters
-                let input_ptr = ctx.load_param_u64("input_ptr");
-                let output_ptr = ctx.load_param_u64("output_ptr");
+                let mut input_ptr = ctx.load_param_u64("input_ptr");
+                let mut output_ptr = ctx.load_param_u64("output_ptr");
                 let gamma_ptr = ctx.load_param_u64("gamma_ptr");
+                if row_on_grid_y {
+                    (input_ptr, output_ptr) = row_ptrs(ctx, input_ptr, output_ptr, hidden_size);
+                }
 
                 // Constants
                 let hidden_u32 = ctx.mov_u32_imm(hidden_size);
@@ -349,5 +367,94 @@ impl Kernel for VectorizedRmsNormKernel {
                 ctx.label("exit");
                 ctx.ret();
             })
+}
+
+/// #5279: [`RmsNormKernel`] or [`VectorizedRmsNormKernel`] over `m` rows, row
+/// `r` of the output bitwise equal to that kernel run on `input[r]` alone.
+///
+/// Layout: `input` and `output` are `m × hidden_size`, row-major f32; `gamma`
+/// is shared. Launch it on a `1 × m` grid of the single kernel's block (32
+/// threads, or 256 when `vectorized`).
+#[derive(Debug, Clone)]
+pub struct RowsRmsNormKernel {
+    /// Hidden dimension size
+    pub hidden_size: u32,
+    /// Epsilon for numerical stability
+    pub epsilon: f32,
+    /// The 256-thread kernel's arithmetic instead of the single warp's
+    pub vectorized: bool,
+}
+
+impl Kernel for RowsRmsNormKernel {
+    fn name(&self) -> &str {
+        if self.vectorized {
+            "rmsnorm_vectorized_rows"
+        } else {
+            "rmsnorm_rows"
+        }
+    }
+
+    fn build_ptx(&self) -> PtxKernel {
+        let build = if self.vectorized {
+            build_vectorized_rmsnorm
+        } else {
+            build_rmsnorm
+        };
+        build(self.name(), self.hidden_size, self.epsilon, true)
+    }
+}
+
+/// Moves `input` and `output` to row `%ctaid.y` of `hidden_size` floats.
+fn row_ptrs(
+    ctx: &mut KernelBuilder<'_>,
+    input: VirtualReg,
+    output: VirtualReg,
+    hidden_size: u32,
+) -> (VirtualReg, VirtualReg) {
+    let row = ctx.special_reg(PtxReg::CtaIdY);
+    let row_bytes = ctx.mul_wide_u32(row, hidden_size * 4);
+    (
+        ctx.add_u64(input, row_bytes),
+        ctx.add_u64(output, row_bytes),
+    )
+}
+
+#[cfg(test)]
+mod rows_tests {
+    use super::*;
+
+    /// The arithmetic of a PTX listing: every float instruction in order.
+    fn float_ops(ptx: &str) -> Vec<String> {
+        ptx.lines()
+            .map(str::trim)
+            .filter(|l| l.contains(".f32") && !l.starts_with("ld.") && !l.starts_with("st."))
+            .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+            .collect()
+    }
+
+    #[test]
+    fn rows_rmsnorm_has_the_single_kernels_arithmetic() {
+        for vectorized in [false, true] {
+            let one = if vectorized {
+                VectorizedRmsNormKernel::new(2560)
+                    .with_epsilon(1e-6)
+                    .emit_ptx()
+            } else {
+                RmsNormKernel::new(2560).with_epsilon(1e-6).emit_ptx()
+            };
+            let kernel = RowsRmsNormKernel {
+                hidden_size: 2560,
+                epsilon: 1e-6,
+                vectorized,
+            };
+            let rows = kernel.emit_ptx();
+            assert!(!one.contains("%ctaid.y"), "{one}");
+            assert!(rows.contains("%ctaid.y"), "{rows}");
+            assert!(
+                rows.contains(&format!(".entry {}", kernel.name())),
+                "{rows}"
+            );
+            assert_eq!(float_ops(&one), float_ops(&rows));
+        }
     }
 }

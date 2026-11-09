@@ -1,0 +1,8 @@
+@prefix ex: <http://ex.org/> .
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+# FALSIFY-CRUXSHACL-026: a well-formed shape graph; the harness's copy sets sh:minCount to the string "one".
+ex:S a sh:NodeShape ;
+  sh:targetClass ex:C ;
+  sh:property ex:S-p .
+ex:S-p sh:path ex:p ;
+  sh:minCount 1 .

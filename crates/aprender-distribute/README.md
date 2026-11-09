@@ -1,5 +1,5 @@
 <div align="center">
-[![CI](https://github.com/paiml/repartir/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/repartir/actions/workflows/ci.yml)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
 <h1 align="center">Repartir: Sovereign AI-Grade Distributed Computing</h1>
 
@@ -45,12 +45,12 @@
 
 ```bash
 # From crates.io
-cargo add repartir
+cargo add aprender-distribute
 
 # From source
-git clone https://github.com/paiml/repartir
-cd repartir
-cargo install --path .
+git clone https://github.com/paiml/aprender
+cd aprender/crates/aprender-distribute
+cargo build --release   # library crate; no binary
 ```
 
 ## Quick Start
@@ -59,7 +59,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-repartir = "2.0.3"
+aprender-distribute = "0.71"
 tokio = { version = "1.35", features = ["rt-multi-thread", "macros"] }
 ```
 
@@ -262,25 +262,25 @@ Repartir supports multiple execution backends via feature flags:
 ```toml
 [dependencies]
 # CPU only (default)
-repartir = "2.0.3"
+aprender-distribute = "0.71"
 
 # With GPU support (v1.1+)
-repartir = { version = "2.0.3", features = ["gpu"] }
+aprender-distribute = { version = "0.71", features = ["gpu"] }
 
 # With remote execution (v1.1+)
-repartir = { version = "2.0.3", features = ["remote"] }
+aprender-distribute = { version = "0.71", features = ["remote"] }
 
 # With TLS encryption (v1.1+)
-repartir = { version = "2.0.3", features = ["remote-tls"] }
+aprender-distribute = { version = "0.71", features = ["remote-tls"] }
 
 # With Parquet checkpointing (v2.0+)
-repartir = { version = "2.0.3", features = ["checkpoint"] }
+aprender-distribute = { version = "0.71", features = ["checkpoint"] }
 
 # With SIMD tensor operations (v2.0+)
-repartir = { version = "2.0.3", features = ["tensor"] }
+aprender-distribute = { version = "0.71", features = ["tensor"] }
 
 # All features
-repartir = { version = "2.0.3", features = ["full"] }
+aprender-distribute = { version = "0.71", features = ["full"] }
 ```
 
 ### GPU Executor (v1.1+)
@@ -701,7 +701,7 @@ See [Iron Lotus Code Review Framework](docs/specifications/repartir-distributed-
 ## Documentation
 
 - [Full Specification](docs/specifications/repartir-distributed-cpu-gpu-data-hpc-spec.md) (1,500 lines, 10+ academic citations)
-- [API Documentation](https://docs.rs/repartir) (run `cargo doc --open`)
+- [API Documentation](https://docs.rs/aprender-distribute) (run `cargo doc --open`)
 - [Examples](examples/) - Hands-on demonstrations
 
 ## Academic Foundations

@@ -10,7 +10,7 @@ struct ChatSession;
 
 #[cfg(not(feature = "inference"))]
 impl ChatSession {
-    fn new(_path: &Path) -> Result<Self, CliError> {
+    fn new(_path: &Path, _force_cpu: bool) -> Result<Self, CliError> {
         Err(CliError::ValidationFailed(
             "Chat requires the 'inference' feature (realizar). Rebuild with: \
              cargo install --path crates/apr-cli --features inference"

@@ -126,3 +126,9 @@ falsification_tests:
     test_harness: "cargo test -p aprender-core --lib groupnorm_backward_flows_grad_to_input"
     expected_output: "test result: ok"
     if_fails: "GroupNorm dL/dx is LayerNorm-like WITHIN each group: std_inv*(g' - mean_grp(g') - x_hat*mean_grp(g'*x_hat))."
+  - id: FALSIFY-RMSNORM-BATCHED-BACKWARD-GRAD-FLOW-001
+    name: batched_input_gradient_matches_finite_difference
+    prediction: "aprender-train RMSNorm::forward_batched input x grad matches the central finite difference of sum(go*y), and chains into the op that produced x"
+    test_harness: "cargo test -p aprender-train --lib batched_backward_tests"
+    expected_output: "test result: ok"
+    if_fails: "RMSNormBatchedBackward dL/dx dropped the -x*c coupling term (c = sum(go*w*x)/(n*rms^2)) or stopped chaining into x.backward_op() (#5531)."

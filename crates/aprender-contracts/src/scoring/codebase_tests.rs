@@ -337,3 +337,115 @@ kani_harnesses:
     let d = super::compute_proof_depth(&contracts, &bound);
     assert!((d - 0.9).abs() < 1e-9, "depth={d}");
 }
+
+fn kb(contract: &str, function: Option<&str>, status: ImplStatus) -> crate::binding::KernelBinding {
+    crate::binding::KernelBinding {
+        contract: contract.into(),
+        equation: "f".into(),
+        status,
+        module_path: None,
+        function: function.map(Into::into),
+        signature: None,
+        notes: None,
+        kernel: false,
+    }
+}
+
+const BARE_CONTRACT: &str = r#"
+metadata:
+  version: "1.0.0"
+  description: "Test"
+equations:
+  f:
+    formula: "f(x) = x"
+"#;
+
+#[test]
+fn critical_path_declared_scores_matched_fraction() {
+    let contract = crate::schema::parse_contract_str(BARE_CONTRACT).expect("parses");
+    let contracts = vec![("a-v1.yaml".to_string(), &contract)];
+    let binding = BindingRegistry {
+        version: "1.0.0".into(),
+        target_crate: "t".into(),
+        critical_path: vec!["fast_path".into(), "slow_path".into()],
+        bindings: vec![
+            kb(
+                "a-v1.yaml",
+                Some("t::fast_path_impl"),
+                ImplStatus::Implemented,
+            ),
+            kb("missing-v1.yaml", None, ImplStatus::Partial),
+        ],
+    };
+    let s = score_codebase_full(&contracts, &binding, None, None);
+    // Only `fast_path` matches a binding function: 1 of 2 declared.
+    assert!((s.binding_completeness - 0.5).abs() < 1e-12);
+    // 1 of 2 declared contracts resolves to a loaded contract.
+    assert!((s.contract_coverage - 0.5).abs() < 1e-12);
+    assert!((s.drift - 1.0).abs() < 1e-12, "no override => no drift");
+    let expected = s.contract_coverage * 0.25
+        + s.binding_completeness * 0.20
+        + s.mean_contract_score * 0.20
+        + s.proof_depth_dist * 0.15
+        + s.drift * 0.20;
+    assert!((s.composite - expected).abs() < 1e-12);
+}
+
+#[test]
+fn empty_critical_path_falls_back_to_binding_completeness() {
+    let contract = crate::schema::parse_contract_str(BARE_CONTRACT).expect("parses");
+    let contracts = vec![("a-v1.yaml".to_string(), &contract)];
+    let binding = BindingRegistry {
+        version: "1.0.0".into(),
+        target_crate: "t".into(),
+        critical_path: vec![],
+        bindings: vec![
+            kb("a-v1.yaml", None, ImplStatus::Implemented),
+            kb("a-v1.yaml", None, ImplStatus::Partial),
+        ],
+    };
+    let s = score_codebase_full(&contracts, &binding, None, None);
+    // (1.0 + 0.5) / 2 bindings; two bindings on one contract count once for CD1.
+    assert!((s.binding_completeness - 0.75).abs() < 1e-12);
+    assert!((s.contract_coverage - 1.0).abs() < 1e-12);
+    assert!(s.proof_depth_dist.abs() < 1e-12, "no obligations => 0");
+}
+
+#[test]
+fn compute_gaps_sorted_by_impact_and_truncated_to_ten() {
+    let yaml = r#"
+metadata:
+  version: "1.0.0"
+  description: "Test"
+equations:
+  f:
+    formula: "f(x) = x"
+proof_obligations:
+  - type: invariant
+    property: "p"
+"#;
+    let contract = crate::schema::parse_contract_str(yaml).expect("parses");
+    let stems: Vec<String> = (0..8).map(|i| format!("c{i}-v1.yaml")).collect();
+    let contracts: Vec<_> = stems.iter().map(|s| (s.clone(), &contract)).collect();
+    let binding = BindingRegistry {
+        version: "1.0.0".into(),
+        target_crate: "t".into(),
+        critical_path: vec![],
+        bindings: stems
+            .iter()
+            .map(|s| kb(s, None, ImplStatus::Implemented))
+            .collect(),
+    };
+    let bound: BTreeSet<&str> = stems.iter().map(String::as_str).collect();
+    let mut pr = HashMap::new();
+    for (i, s) in stems.iter().enumerate() {
+        pr.insert(s.clone(), i as f64);
+    }
+    // 8 contracts x (kani + falsification) = 16 gaps, capped at 10.
+    let gaps = super::compute_gaps(&contracts, &binding, &bound, Some(&pr));
+    assert_eq!(gaps.len(), 10);
+    assert!(gaps.windows(2).all(|w| w[0].impact >= w[1].impact));
+    // Highest pagerank (c7) => fanout 10.0, coverage 0 => impact 10.0.
+    assert_eq!(gaps[0].contract, "c7-v1.yaml");
+    assert!((gaps[0].impact - 10.0).abs() < 1e-9);
+}

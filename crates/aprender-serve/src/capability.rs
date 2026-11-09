@@ -63,6 +63,24 @@ pub enum RequiredOp {
     /// support this op; a model requiring it is routed to CPU at the capability
     /// layer.
     PostAttnFfnNorm,
+    // APR-EMBED-001 EG-0 (e): the embedding kind's ops. Declared so the contract
+    // and this enum stay one set; nothing derives or implements them yet (EG-1/2).
+    /// Bidirectional attention mask (embedding kind; `attention.causal = false`)
+    BidirectionalMask,
+    /// Sliding-window local attention with its own RoPE base (window read from the file)
+    SlidingWindowAttn,
+    /// Gated GELU FFN: GELU_tanh(gate) ⊙ up → down. Not SwiGLU
+    GatedGeluMlp,
+    /// Per-layer input gating (`inp_gate`, `proj`, `per_layer_model_proj`)
+    PerLayerInput,
+    /// Per-block output scale (`layer_output_scale`)
+    LayerOutputScale,
+    /// Mean pool over real tokens
+    MeanPool,
+    /// Dense projection of the pooled state to the declared output width
+    DenseProjection,
+    /// L2 normalisation of the response vector
+    L2Normalize,
 }
 
 /// Every `RequiredOp` variant, in declaration order.
@@ -73,7 +91,7 @@ pub enum RequiredOp {
 /// variant added here without a contract row fails a test rather than becoming a
 /// silent hole — the op-shaped form of #3850's "an unknown quant is decoded as
 /// Q4_K".
-pub const ALL_REQUIRED_OPS: [RequiredOp; 13] = [
+pub const ALL_REQUIRED_OPS: [RequiredOp; 21] = [
     RequiredOp::RoPE,
     RequiredOp::GQA,
     RequiredOp::MHA,
@@ -87,6 +105,14 @@ pub const ALL_REQUIRED_OPS: [RequiredOp; 13] = [
     RequiredOp::CausalMask,
     RequiredOp::AttnFinalSoftcap,
     RequiredOp::PostAttnFfnNorm,
+    RequiredOp::BidirectionalMask,
+    RequiredOp::SlidingWindowAttn,
+    RequiredOp::GatedGeluMlp,
+    RequiredOp::PerLayerInput,
+    RequiredOp::LayerOutputScale,
+    RequiredOp::MeanPool,
+    RequiredOp::DenseProjection,
+    RequiredOp::L2Normalize,
 ];
 
 impl std::fmt::Display for RequiredOp {
@@ -105,6 +131,14 @@ impl std::fmt::Display for RequiredOp {
             Self::CausalMask => write!(f, "CausalMask"),
             Self::AttnFinalSoftcap => write!(f, "AttnFinalSoftcap"),
             Self::PostAttnFfnNorm => write!(f, "PostAttnFfnNorm"),
+            Self::BidirectionalMask => write!(f, "BidirectionalMask"),
+            Self::SlidingWindowAttn => write!(f, "SlidingWindowAttn"),
+            Self::GatedGeluMlp => write!(f, "GatedGeluMlp"),
+            Self::PerLayerInput => write!(f, "PerLayerInput"),
+            Self::LayerOutputScale => write!(f, "LayerOutputScale"),
+            Self::MeanPool => write!(f, "MeanPool"),
+            Self::DenseProjection => write!(f, "DenseProjection"),
+            Self::L2Normalize => write!(f, "L2Normalize"),
         }
     }
 }
@@ -689,10 +723,10 @@ mod gpu_support_doc {
             .join("../../contracts/apr-model-capability-v1.yaml");
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-        let doc: serde_yaml_ng::Value =
-            serde_yaml_ng::from_str(&text).unwrap_or_else(|e| panic!("contract is not YAML: {e}"));
+        let doc: serde_json::Value =
+            serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap_or_else(|e| panic!("contract is not YAML: {e}"));
         doc.get("quant_types")
-            .and_then(|v| v.as_sequence())
+            .and_then(|v| v.as_array())
             .expect("contract has no `quant_types`")
             .iter()
             .map(|r| {
@@ -702,11 +736,11 @@ mod gpu_support_doc {
                     .expect("quant row has no name");
                 let id = r
                     .get("ggml_type")
-                    .and_then(serde_yaml_ng::Value::as_u64)
+                    .and_then(serde_json::Value::as_u64)
                     .expect("quant row has no ggml_type");
                 let ok = r
                     .get("gpu_supported")
-                    .and_then(serde_yaml_ng::Value::as_bool)
+                    .and_then(serde_json::Value::as_bool)
                     .unwrap_or(false);
                 let note = r
                     .get("reason")
@@ -866,18 +900,18 @@ mod capability_contract {
     /// The contract, resolved from this crate's manifest dir rather than the CWD —
     /// `cargo test` runs from the crate, `cargo nextest` may not, and a path that
     /// depends on the caller's directory is a test that passes for the wrong reason.
-    fn contract() -> serde_yaml_ng::Value {
+    fn contract() -> serde_json::Value {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("../../contracts/apr-model-capability-v1.yaml");
         let text = std::fs::read_to_string(&path)
             .unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
-        serde_yaml_ng::from_str(&text)
+        serde_saphyr::from_str_with_options(&text, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
             .unwrap_or_else(|e| panic!("{} is not valid YAML: {e}", path.display()))
     }
 
-    fn rows(doc: &serde_yaml_ng::Value, key: &str) -> Vec<serde_yaml_ng::Value> {
+    fn rows(doc: &serde_json::Value, key: &str) -> Vec<serde_json::Value> {
         doc.get(key)
-            .and_then(|v| v.as_sequence())
+            .and_then(|v| v.as_array())
             .unwrap_or_else(|| panic!("contract has no `{key}` sequence"))
             .clone()
     }
@@ -979,13 +1013,13 @@ mod capability_contract {
                 .unwrap_or("<unnamed>");
             let id = u32::try_from(
                 r.get("ggml_type")
-                    .and_then(serde_yaml_ng::Value::as_u64)
+                    .and_then(serde_json::Value::as_u64)
                     .unwrap_or_else(|| panic!("quant {name} has no ggml_type")),
             )
             .unwrap_or_else(|_| panic!("quant {name} has an out-of-range ggml_type"));
             let declared = r
                 .get("gpu_supported")
-                .and_then(serde_yaml_ng::Value::as_bool)
+                .and_then(serde_json::Value::as_bool)
                 .unwrap_or_else(|| panic!("quant {name} has no gpu_supported"));
             assert_eq!(
                 declared,
@@ -1047,7 +1081,7 @@ mod capability_contract {
             .map(|r| {
                 (
                     r.get("ggml_type")
-                        .and_then(serde_yaml_ng::Value::as_u64)
+                        .and_then(serde_json::Value::as_u64)
                         .expect("quant row has no ggml_type"),
                     r.get("name")
                         .and_then(|v| v.as_str())

@@ -34,6 +34,9 @@ pub(crate) mod check_finite_classifier;
 pub(crate) mod check_finite_lint;
 pub mod compare_hf;
 pub(crate) mod compile;
+/// #3793: `apr run --json-schema` / `--grammar`.
+#[cfg(feature = "inference")]
+pub(crate) mod constrained_run;
 pub(crate) mod convert;
 pub(crate) mod copy_tag;
 pub(crate) mod ddp_metrics_classifier;
@@ -55,6 +58,7 @@ pub(crate) mod devices;
 pub(crate) mod dry_sampling_classifier;
 pub(crate) mod dry_sampling_lint;
 pub(crate) mod embed;
+pub(crate) mod embed_gguf;
 pub(crate) mod embed_viz;
 pub(crate) mod embed_viz_classifier;
 pub(crate) mod embed_viz_lint;
@@ -107,6 +111,7 @@ pub(crate) mod mcp;
 pub(crate) mod merge;
 #[cfg(feature = "training")]
 pub(crate) mod model_config;
+pub(crate) mod model_kind_gate;
 // #3661: a model parse failure names the format its magic bytes identify.
 #[cfg(test)]
 mod model_file_error_tests_3661;
@@ -155,6 +160,14 @@ pub(crate) mod test_llm;
 // `test_llm.rs`'s complexity is untouched by it -- the PMAT pre-commit gate
 // blocks a FILE with any pre-existing violation, not a function.
 pub(crate) mod test_llm_band;
+// #4954: `apr test llm ttft-verdict`, the TTFT ratio row as an exit code.
+pub(crate) mod test_llm_ttft;
+// #4971 V3-d: `apr test llm shape-check`, the CLI over perf_gate::v3_shape.
+pub(crate) mod test_llm_shape;
+// #4971 V3-d: `apr test llm parity`, the CLI over the perf041 probe's Rust
+// port (apr_test::llm::parity). It drives a server through tokio.
+#[cfg(feature = "inference")]
+pub(crate) mod test_llm_parity;
 // #2399: gated on the crate it actually needs (aprender-explain, aliased
 // `trueno-explain`) rather than on `full`, so `--features ptx` is enough and a
 // user does not have to pull CUDA + training to analyze a .ptx file.

@@ -75,11 +75,11 @@ mod tests {
         // through a YAML parser and carry the plan's fields.
         let spec = scratch_spec("yaml");
         let manifest = pretrain_plan_manifest(std::path::Path::new("c.yaml"), &spec);
-        let rendered = serde_yaml::to_string(&manifest).expect("manifest must serialize to YAML");
-        let parsed: serde_yaml::Value =
-            serde_yaml::from_str(&rendered).expect("--format yaml must emit parseable YAML");
-        assert_eq!(parsed["task"], serde_yaml::Value::String("pretrain".into()));
-        assert_eq!(parsed["verdict"], serde_yaml::Value::String("ready".into()));
+        let rendered = serde_saphyr::to_string(&manifest).expect("manifest must serialize to YAML");
+        let parsed: serde_json::Value =
+            yaml_from_str(&rendered).expect("--format yaml must emit parseable YAML");
+        assert_eq!(parsed["task"], serde_json::Value::String("pretrain".into()));
+        assert_eq!(parsed["verdict"], serde_json::Value::String("ready".into()));
         assert!(
             !rendered.contains("Pre-training Plan"),
             "yaml must not be the human table: {rendered}"
@@ -90,10 +90,9 @@ mod tests {
     fn plan_json_and_yaml_carry_the_same_manifest() {
         let spec = scratch_spec("same");
         let manifest = pretrain_plan_manifest(std::path::Path::new("c.yaml"), &spec);
-        let from_yaml: serde_json::Value = serde_yaml::from_str(
-            &serde_yaml::to_string(&manifest).expect("yaml render"),
-        )
-        .expect("yaml re-parse");
+        let from_yaml: serde_json::Value =
+            yaml_from_str(&serde_saphyr::to_string(&manifest).expect("yaml render"))
+                .expect("yaml re-parse");
         assert_eq!(from_yaml["config"], manifest["config"]);
         assert_eq!(from_yaml["model"]["path"], manifest["model"]["path"]);
     }
@@ -370,8 +369,7 @@ mod tests {
 
     #[test]
     fn set_yaml_f64_sets_existing_nested_key() {
-        let mut root: serde_yaml::Value =
-            serde_yaml::from_str("optimizer:\n  lr: 0.1\n").unwrap();
+        let mut root: serde_json::Value = yaml_from_str("optimizer:\n  lr: 0.1\n").unwrap();
         set_yaml_f64(&mut root, &["optimizer", "lr"], 3e-4);
         let got = root["optimizer"]["lr"].as_f64().unwrap();
         assert!((got - 3e-4).abs() < 1e-12);
@@ -379,14 +377,14 @@ mod tests {
 
     #[test]
     fn set_yaml_f64_creates_missing_intermediate_maps() {
-        let mut root = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        let mut root = serde_json::Value::Object(serde_json::Map::new());
         set_yaml_f64(&mut root, &["optimizer", "weight_decay"], 0.05);
         assert!((root["optimizer"]["weight_decay"].as_f64().unwrap() - 0.05).abs() < 1e-12);
     }
 
     #[test]
     fn set_yaml_u64_sets_and_creates() {
-        let mut root = serde_yaml::Value::Mapping(serde_yaml::Mapping::new());
+        let mut root = serde_json::Value::Object(serde_json::Map::new());
         set_yaml_u64(&mut root, &["data", "batch_size"], 16);
         assert_eq!(root["data"]["batch_size"].as_u64(), Some(16));
         // Overwrite existing value.
@@ -438,7 +436,7 @@ mod tests {
         let out = patch_yaml_config(&cfg, None, true, Some(2), Some(0), Some("a:1"), true, Some(123))
             .expect("patch should succeed");
         let patched = std::fs::read_to_string(&out).unwrap();
-        let yaml: serde_yaml::Value = serde_yaml::from_str(&patched).unwrap();
+        let yaml: serde_json::Value = yaml_from_str(&patched).unwrap();
         assert_eq!(yaml["training"]["distributed"]["world_size"].as_u64(), Some(2));
         assert_eq!(yaml["training"]["deterministic"].as_bool(), Some(true));
         assert_eq!(yaml["training"]["seed"].as_u64(), Some(123));
@@ -464,8 +462,8 @@ mod tests {
         let flag = std::path::Path::new("/tmp/FROM_FLAG");
         let out = patch_yaml_config(&cfg, Some(flag), false, None, None, None, false, None)
             .expect("patch should succeed");
-        let yaml: serde_yaml::Value =
-            serde_yaml::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        let yaml: serde_json::Value =
+            yaml_from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
         assert_eq!(
             yaml["training"]["output_dir"].as_str(),
             Some("/tmp/FROM_FLAG"),
@@ -485,8 +483,8 @@ mod tests {
 
         let out = patch_yaml_config(&cfg, None, false, None, None, None, true, None)
             .expect("patch should succeed");
-        let yaml: serde_yaml::Value =
-            serde_yaml::from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
+        let yaml: serde_json::Value =
+            yaml_from_str(&std::fs::read_to_string(&out).unwrap()).unwrap();
         assert_eq!(yaml["training"]["output_dir"].as_str(), Some("/tmp/FROM_YAML"));
 
         let _ = std::fs::remove_file(&out);
@@ -525,14 +523,14 @@ mod tests {
 
     #[test]
     fn generate_grid_configs_respects_max_cap() {
-        let base: serde_yaml::Value = serde_yaml::from_str("model:\n  path: m\n").unwrap();
+        let base: serde_json::Value = yaml_from_str("model:\n  path: m\n").unwrap();
         let configs = generate_grid_configs(&base, 7);
         assert_eq!(configs.len(), 7, "should stop at max_configs");
     }
 
     #[test]
     fn generate_grid_configs_sets_distinct_hyperparams() {
-        let base: serde_yaml::Value = serde_yaml::from_str("model:\n  path: m\n").unwrap();
+        let base: serde_json::Value = yaml_from_str("model:\n  path: m\n").unwrap();
         let configs = generate_grid_configs(&base, 3);
         // The grid varies weight_decay fastest, so the first three differ in wd.
         let wds: Vec<f64> = configs
@@ -549,7 +547,7 @@ mod tests {
 
     #[test]
     fn generate_grid_configs_full_grid_is_45() {
-        let base: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let base: serde_json::Value = yaml_from_str("{}").unwrap();
         // 5 lr × 3 bs × 3 wd = 45 combinations.
         let configs = generate_grid_configs(&base, 1000);
         assert_eq!(configs.len(), 45);
@@ -561,7 +559,7 @@ mod tests {
 
     #[test]
     fn generate_random_configs_count_and_ranges() {
-        let base: serde_yaml::Value = serde_yaml::from_str("model:\n  path: m\n").unwrap();
+        let base: serde_json::Value = yaml_from_str("model:\n  path: m\n").unwrap();
         let configs = generate_random_configs(&base, 20, 1234);
         assert_eq!(configs.len(), 20);
         for c in &configs {
@@ -576,7 +574,7 @@ mod tests {
 
     #[test]
     fn generate_random_configs_is_seed_deterministic() {
-        let base: serde_yaml::Value = serde_yaml::from_str("{}").unwrap();
+        let base: serde_json::Value = yaml_from_str("{}").unwrap();
         let a = generate_random_configs(&base, 5, 77);
         let b = generate_random_configs(&base, 5, 77);
         for (ca, cb) in a.iter().zip(b.iter()) {
@@ -1052,5 +1050,67 @@ mod tests {
             select_halving_winner(&results, &[0, 1]).expect("a scored survivor exists"),
             1
         );
+    }
+
+    // ========================================================================
+    // serde_yaml_ng -> serde-saphyr (#5209): pin the write-path and non-finite-float deltas, and the integer-key read delta
+    // ========================================================================
+
+    #[test]
+    fn set_yaml_f64_non_finite_writes_null() {
+        // serde_json::Number cannot hold NaN or an infinity, so the setter stores Null and the
+        // written config says `lr: null` instead of a non-finite float.
+        for bad in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut root = serde_json::Value::Object(serde_json::Map::new());
+            set_yaml_f64(&mut root, &["optimizer", "lr"], bad);
+            assert!(root["optimizer"]["lr"].is_null(), "{bad} must store Null");
+            let out = serde_saphyr::to_string(&root).expect("serialises");
+            assert!(out.contains("lr: null"), "written config was: {out}");
+        }
+    }
+
+    #[test]
+    fn patched_config_does_not_keep_a_non_finite_float() {
+        // Behaviour delta vs serde_yaml_ng (#5209), measured on the PR head by a seat: the read path of
+        // `patch_yaml_config` (train.rs) reads `lr: .inf` as the STRING ".inf", and the patched config
+        // writes it back quoted. It is neither a number, null nor an error. (`set_yaml_f64` is the
+        // setter path and stores null; see the test above.)
+        for lit in [".inf", ".nan", "-.inf"] {
+            let src = format!("lr: {lit}\n");
+            let v: serde_json::Value = yaml_from_str(&src).expect("non-finite float reads");
+            assert_eq!(
+                v["lr"],
+                serde_json::json!(lit),
+                "{src} reads as a string: {v}"
+            );
+            let out = serde_saphyr::to_string(&v).expect("serialises");
+            assert!(
+                out.contains(&format!("lr: \"{lit}\"")),
+                "written config was: {out}"
+            );
+        }
+    }
+
+    #[test]
+    fn written_config_follows_the_value_map_order() {
+        // A config is written in `serde_json::Map` order: sorted, or insertion order when some
+        // crate in the build turns on `preserve_order`. Pin that the writer follows the map.
+        let root: serde_json::Value = yaml_from_str("zeta: 1\nalpha: 2\n").expect("parses");
+        let want_zeta_first =
+            root.as_object().expect("map").keys().next().map(String::as_str) == Some("zeta");
+        let out = serde_saphyr::to_string(&root).expect("serialises");
+        let zeta = out.find("zeta").expect("zeta written");
+        let alpha = out.find("alpha").expect("alpha written");
+        assert_eq!(zeta < alpha, want_zeta_first, "writer must follow the Map order: {out}");
+        // And the written text reads back to the same value.
+        let back: serde_json::Value = yaml_from_str(&out).expect("round-trips");
+        assert_eq!(back, root);
+    }
+
+    #[test]
+    fn integer_mapping_key_reads_as_text() {
+        // serde-saphyr into serde_json::Value coerces an integer key to its text (measured by CI).
+        let v: serde_json::Value = yaml_from_str("0: x\n").expect("integer key reads as text");
+        assert_eq!(v["0"], serde_json::json!("x"));
     }
 }

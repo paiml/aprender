@@ -214,4 +214,4 @@ See `CLAUDE.md` for development guidelines.
 
 **Last Updated**: 2026-01-25
 **Version**: v0.14.1
-**Contact**: [GitHub Issues](https://github.com/paiml/trueno/issues)
+**Contact**: [GitHub Issues](https://github.com/paiml/aprender/issues)

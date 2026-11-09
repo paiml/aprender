@@ -168,6 +168,27 @@ index_path() {
     grep -qx 'curl https://index.crates.io/ap/re/aprender' "$TMP/path-$1/log" || { printf 'looked up: %s\n' "$(grep '^curl ' "$TMP/path-$1/log")"; return 1; }
     return 0
 }
+# #4672 --phase nightly: the version row asks of the train target (DOGFOOD_TARGET_VERSION), and passes only
+# when it is strictly above the highest stable version the index carries (the absent fixture's max is 9.9.8)
+nightly_above() {
+    run_section "$2" "nab-$1" nightly FX_INDEX=absent DOGFOOD_TARGET_VERSION=9.9.9 || return 2
+    expect "nab-$1" version-unpublished PASS "above crates.io max 9.9.8" || return 1
+    ! grep -q '^dry-run ' "$TMP/nab-$1/log" || { printf 'the nightly phase ran a publish dry-run\n'; return 1; }
+    return 0
+}
+nightly_below()  { run_section "$2" "nbe-$1" nightly FX_INDEX=absent DOGFOOD_TARGET_VERSION=9.9.7 || return 2; expect "nbe-$1" version-unpublished FAIL "is not above crates.io max 9.9.8"; }
+nightly_semver() { run_section "$2" "nse-$1" nightly FX_INDEX=absent DOGFOOD_TARGET_VERSION=9.9.10 || return 2; expect "nse-$1" version-unpublished PASS "9.9.10 is above crates.io max 9.9.8"; }
+nightly_taken()  { run_section "$2" "nta-$1" nightly FX_INDEX=present DOGFOOD_TARGET_VERSION=9.9.9 || return 2; expect "nta-$1" version-unpublished FAIL "the train target, is ALREADY"; }
+nightly_unset()  { run_section "$2" "nun-$1" nightly FX_INDEX=absent || return 2; expect "nun-$1" version-unpublished FAIL "NOT_MEASURED: the train target <unset>"; }
+nightly_down()   { run_section "$2" "ndo-$1" nightly FX_INDEX=down DOGFOOD_TARGET_VERSION=9.9.9 || return 2; expect "ndo-$1" version-unpublished FAIL "cannot be compared with crates.io"; }
+# the override is nightly's alone: every release-day phase refuses it before it reads the tree
+override_refused() {
+    local out rc
+    out=$(DOGFOOD_TARGET_VERSION=9.9.9 bash "$2" --phase pre-publish "$TMP" 2>&1); rc=$?
+    [ "$rc" = 2 ] && grep -qF 'DOGFOOD_TARGET_VERSION is honoured by --phase nightly only' <<< "$out" \
+        || { printf 'pre-publish with DOGFOOD_TARGET_VERSION set: rc=%s %s\n' "$rc" "$(head -n 1 <<< "$out")"; return 1; }
+    return 0
+}
 
 fails=0; rows=0
 row() { # row NAME RC MESSAGE
@@ -180,7 +201,9 @@ row() { # row NAME RC MESSAGE
 for spec in "pre-present pre_present" "pre-absent pre_absent" "pre-404 pre_404" "pre-down pre_down" \
             "post-present post_present" "post-absent post_absent" "post-404 post_404" "post-html post_html" \
             "post-install-fails post_install_fails" "post-install-wrongver post_install_wrongver" "post-install-nobin post_install_nobin" \
-            "post-dry-run post_dry_run" "full-unchanged full_unchanged" "banner banner" "index-path index_path"; do
+            "post-dry-run post_dry_run" "full-unchanged full_unchanged" "banner banner" "index-path index_path" \
+            "nightly-above nightly_above" "nightly-below nightly_below" "nightly-semver nightly_semver" "nightly-taken nightly_taken" \
+            "nightly-unset nightly_unset" "nightly-down nightly_down" "override-refused override_refused"; do
     set -- $spec
     msg=$($2 real "$SUBJECT"); row "$1" "$?" "$msg"
 done
@@ -221,8 +244,16 @@ mutant version-unchecked '    case "$v" in *"$2"*) ;; *) bad="$bad $(basename "$
 mutant nobin-ok          '  [ "$n" -gt 0 ] || { printf' '  true || { printf' post_install_nobin
 mutant install-on-absent '  if [ "$1" = post-publish ] && [ "$state" = present ]; then' '  if [ "$1" = post-publish ]; then' post_absent
 mutant unlocked          'install "$1" --version "=$2" --locked --root' 'install "$1" --version "=$2" --root' post_present
+mutant nightly-below-pass '        elif [ "$ver" != "$max" ] && [ "$(printf' '        elif true || [ "$(printf' nightly_below
+mutant nightly-lexical   '"$max" "$ver" | sort -V | tail -n 1)' '"$max" "$ver" | sort | tail -n 1)' nightly_semver
+mutant nightly-tree-ver  '  [ "$1" = nightly ] && ver="${DOGFOOD_TARGET_VERSION:-}"' '  :' nightly_below
+mutant nightly-unset-ok  "printf 'version-unpublished FAIL NOT_MEASURED: the train target" "printf 'version-unpublished PASS NOT_MEASURED: the train target" nightly_unset
+mutant nightly-dry-run   'if [ "$DOGFOOD_PHASE" = pre-publish ] || [ "$DOGFOOD_PHASE" = nightly ]; then
+  # Before the cascade' 'if [ "$DOGFOOD_PHASE" = pre-publish ]; then
+  # Before the cascade' nightly_above
+mutant override-allowed  'if [ -n "${DOGFOOD_TARGET_VERSION:-}" ] && [ "$DOGFOOD_PHASE" != nightly ]; then' 'if false; then' override_refused
 
 # VACUITY FLOOR: a table that ran fewer rows than it declares is not a pass.
-[ "$rows" -ge 33 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 33 declared\n' "$rows" >&2; exit 1; }
+[ "$rows" -ge 46 ] || { printf 'VACUOUS %s row(s) ran, fewer than the 46 declared\n' "$rows" >&2; exit 1; }
 [ "$fails" -eq 0 ] || { printf 'RED   %s of %s row(s) failed\n' "$fails" "$rows" >&2; exit 1; }
-printf 'PASS  %s row(s): the dogfood version row is phase-aware and the banner names the phase (#3543)\n' "$rows"
+printf 'PASS  %s row(s): the dogfood version row is phase-aware, nightly asks it of the train target (#4672), and the banner names the phase (#3543)\n' "$rows"

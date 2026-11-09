@@ -85,10 +85,31 @@ run_check() {
 SELF="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/${BASH_SOURCE[0]##*/}"   # absolute: the case table cds into a scratch repo before sourcing it
 if [ "${1:-}" = "--lib-only" ]; then return 0 2>/dev/null || exit 0; fi
 if [ "${1:-}" = "--self-test" ]; then
+    unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH   # hermetic: rows set the event inline where they test it
     TD=$(mktemp -d) || { printf 'FAIL mktemp -d\n'; exit 2; }
     trap 'rm -rf -- "${TD:?}"' EXIT
     row=0
     fails=0
+    not_measured=0
+    # The case table has exactly this many rows; a run that reaches fewer, or more, is RED, never "n/n"
+    # (#5047). Raise it with every row added. The two summary rows at the end are not counted.
+    SELFTEST_MIN_ROWS=32
+
+    # selftest_verdict ROWS FAILS NOT_MEASURED MIN -> prints the summary; rc 0 all rows ran and
+    # passed, 1 a row failed or other than MIN ran, 2 every row that ran passed but one was not measured.
+    selftest_verdict() {
+        if [ "$2" -ne 0 ]; then printf '\nSELF-TEST FAILED (%s rows ran)\n' "$1"; return 1; fi
+        if [ "$1" -lt "$4" ]; then
+            printf '\nSELF-TEST FAILED: %s rows ran, below the floor of %s; a row was lost\n' "$1" "$4"; return 1
+        fi
+        if [ "$1" -gt "$4" ]; then
+            printf '\nSELF-TEST FAILED: %s rows ran, above the floor of %s; raise SELFTEST_MIN_ROWS with the row\n' "$1" "$4"; return 1
+        fi
+        if [ "$3" -ne 0 ]; then
+            printf '\nnot_measured: %s of %s rows were not measured on this box; not a pass\n' "$3" "$1"; return 2
+        fi
+        printf '\n%s/%s rows\n' "$1" "$1"
+    }
 
     write_base() {
         cat >"$TD/base.yaml" <<'EOF'
@@ -269,11 +290,14 @@ EOF
     # Row 9: the real history, if this checkout's object store can reach it.
     # `git cat-file -e` never MUTATES the repo, so this is safe to run
     # unconditionally; a shallow clone that never fetched the commit reports
-    # it absent, and that is reported as SKIP, not silently counted as a
-    # pass or a fail.
+    # it absent. That row is NOT_MEASURED and the whole self-test exits 2 (the
+    # box cannot answer), never 0: a SKIP that exits 0 is a third state (C324
+    # rule 6, #5047). ROADMAP_DIFF_HIST_SHA exists only so the case table can
+    # point the row at an absent commit; any other commit fails the row.
+    HIST="${ROADMAP_DIFF_HIST_SHA:-6d9ba274a}"
     row=$((row + 1))
-    if git -C "$REPO_ROOT" cat-file -e 6d9ba274a^{commit} 2>/dev/null; then
-        hist_out=$(run_check 6d9ba274a~1 6d9ba274a 2>&1)
+    if git -C "$REPO_ROOT" cat-file -e "$HIST^{commit}" 2>/dev/null; then
+        hist_out=$(run_check "$HIST~1" "$HIST" 2>&1)
         hist_rc=$?
         hist_reserial=$(printf '%s\n' "$hist_out" | grep -oE 'reserialised=[0-9]+' | tail -1 | cut -d= -f2)
         if [ "$hist_rc" -eq 1 ] && [ -n "$hist_reserial" ] && [ "$hist_reserial" -ge 100 ]; then
@@ -284,29 +308,30 @@ EOF
             # worktree, removed again below. Read-only w.r.t. repo history:
             # it only checks out an existing commit.
             hist_wt="$TD/hist-wt"
-            if git -C "$REPO_ROOT" worktree add --detach "$hist_wt" 6d9ba274a -q \
+            if git -C "$REPO_ROOT" worktree add --detach "$hist_wt" "$HIST" -q \
                     >"$TD/hist.err" 2>&1 \
-                && (cd "$hist_wt" && python3 "$PY_LIB" trim --base 6d9ba274a~1 --write) \
+                && (cd "$hist_wt" && python3 "$PY_LIB" trim --base "$HIST~1" --write) \
                     >"$TD/hist_trim.out" 2>&1 \
-                && (cd "$hist_wt" && python3 "$PY_LIB" check --base 6d9ba274a~1 --head "$ROADMAP_FILE") \
+                && (cd "$hist_wt" && python3 "$PY_LIB" check --base "$HIST~1" --head "$ROADMAP_FILE") \
                     >"$TD/hist_check.out" 2>&1
             then
-                printf 'ok    row %-2s the real 6d9ba274a re-serialisation (reserialised=%s), trimmed -> PASS\n' \
-                    "$row" "$hist_reserial"
+                printf 'ok    row %-2s the real %s re-serialisation (reserialised=%s), trimmed -> PASS\n' \
+                    "$row" "$HIST" "$hist_reserial"
             else
-                printf 'FAIL  row %-2s the trimmed 6d9ba274a result did not re-check clean\n' "$row"
+                printf 'FAIL  row %-2s the trimmed %s result did not re-check clean\n' "$row" "$HIST"
                 cat "$TD/hist.err" "$TD/hist_trim.out" "$TD/hist_check.out" 2>/dev/null | sed 's|^|             |'
                 fails=1
             fi
             git -C "$REPO_ROOT" worktree remove --force "$hist_wt" >/dev/null 2>&1 || true
         else
-            printf 'FAIL  row %-2s 6d9ba274a: wanted FAIL reserialised>=100, got rc=%s reserialised=%s\n' \
-                "$row" "$hist_rc" "${hist_reserial:-<none>}"
+            printf 'FAIL  row %-2s %s: wanted FAIL reserialised>=100, got rc=%s reserialised=%s\n' \
+                "$row" "$HIST" "$hist_rc" "${hist_reserial:-<none>}"
             fails=1
         fi
     else
-        printf 'SKIP  row %-2s history row (6d9ba274a unreachable in this object store)\n' "$row"
-        row=$((row - 1))
+        printf 'NOT_MEASURED  row %-2s history row: %s is not in this object store, so the real re-serialisation was not re-checked\n' \
+            "$row" "$HIST"
+        not_measured=$((not_measured + 1))
     fi
 
     # Rows 10-12: a duplicate id already in BASE is baselined, not this PR's
@@ -419,6 +444,92 @@ EOF
         *"is not a merge commit nor a commit on the origin/main tip"*) printf 'ok    row %-2s stacked entry with deepening disabled (mutation): refused by name\n' "$row" ;;
         *) printf 'FAIL  row %-2s stacked entry with deepening disabled: refused for the wrong reason (rc=%s): %s\n' "$row" "$rc7" "$err7"; fails=1 ;;
     esac
+    # Rows: a REBASE-replayed 3-commit pull request (#5855). The queue replays the PR as c2,c3,c4 on the
+    # main tip c1; the head's single parent is c3, so every parent rule above names c3 and judges ONLY the
+    # last commit. The event names the real base (merge_group.base_sha = c1); with the event base ignored
+    # (the mutation) the stacked rule answers c3, which is the defect.
+    row=$((row + 1))
+    QR="$TD/rebase-src"; rm -rf "${QR:?}"; ( git init -q -b main "$QR" && cd "$QR" && git config user.email t@t && git config user.name t \
+        && cp "$TD/base.yaml" r.yaml && git add r.yaml && git commit -qm c1 && git branch -q queue-base \
+        && printf 'a\n' > a.txt && git add a.txt && git commit -qm c2 \
+        && printf 'b\n' > b.txt && git add b.txt && git commit -qm c3 \
+        && printf 'c\n' > c.txt && git add c.txt && git commit -qm c4 ) 2>/dev/null
+    rm -rf "${QR:?}.clone"; git clone -q --depth=1 -b main "file://$QR" "$QR.clone" 2>/dev/null; git -C "$QR.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    git -C "$QR" config uploadpack.allowReachableSHA1InWant true
+    wantr=$( git -C "$QR" rev-parse queue-base )
+    printf '{"merge_group":{"base_sha":"%s"}}\n' "$wantr" > "$TD/rebase-event.json"
+    gotr=$( GITHUB_EVENT_NAME=merge_group GITHUB_EVENT_PATH="$TD/rebase-event.json" bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$QR.clone" "$QR.clone" 2>/dev/null ) || true
+    case "$gotr" in "$wantr|merge_group.base_sha"*) printf 'ok    row %-2s REBASE-replayed 3-commit entry -> base = merge_group.base_sha, not the previous commit\n' "$row" ;;
+        *) printf 'FAIL  row %-2s REBASE-replayed entry: wanted %s|merge_group.base_sha..., got %s\n' "$row" "$wantr" "$gotr"; fails=1 ;; esac
+    row=$((row + 1))
+    gotr=$( GITHUB_EVENT_NAME=merge_group GITHUB_EVENT_PATH="$TD/rebase-event.json" ROADMAP_DIFF_NO_EVENT_BASE=1 bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$QR.clone" "$QR.clone" 2>/dev/null ) || true
+    case "$gotr" in "$wantr|"*) printf 'FAIL  row %-2s REBASE-replayed entry with the event base ignored: still named the real base — the mutation did not bite\n' "$row"; fails=1 ;;
+        *) printf 'ok    row %-2s REBASE-replayed entry with the event base ignored (mutation): base is the previous commit, not %s\n' "$row" "${wantr:0:9}" ;; esac
+    # #4936 (P6): the same stacked entry with the deepen's first read dead (curl 92). fetch_p6.sh reads the
+    # The pull_request fallback on a REAL payload shape (#5859): base is {label, ref, repo{...}, sha, user{...}},
+    # so a sed that stops at the first `}` returned nothing. Head's sha comes first and must not be taken.
+    row=$((row + 1))
+    rm -rf "${QR:?}.clone"; git clone -q --depth=1 -b main "file://$QR" "$QR.clone" 2>/dev/null; git -C "$QR.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    printf '{"action":"synchronize","pull_request":{"head":{"label":"o:b","ref":"b","sha":"%s","user":{"login":"a"},"repo":{"id":3,"owner":{"login":"o"}}},"base":{"label":"o:main","ref":"main","repo":{"id":3,"owner":{"login":"o"},"license":{"key":"mit"}},"sha":"%s","user":{"login":"o"}}}}\n' "$(git -C "$QR" rev-parse HEAD)" "$wantr" > "$TD/pr-event.json"
+    gotr=$( GITHUB_EVENT_NAME=pull_request GITHUB_EVENT_PATH="$TD/pr-event.json" bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$QR.clone" "$QR.clone" 2>/dev/null ) || true
+    case "$gotr" in "$wantr|pull_request.base.sha"*) printf 'ok    row %-2s pull_request fallback on a real nested payload -> base = base.sha, not head.sha\n' "$row" ;;
+        *) printf 'FAIL  row %-2s pull_request fallback: wanted %s|pull_request.base.sha..., got %s\n' "$row" "$wantr" "$gotr"; fails=1 ;; esac
+    # The event NAMES a base that cannot be fetched: resolve_base refuses (rc 1, "cannot be fetched") instead of
+    # falling to a weaker rule -- for a merge_group payload and for a pull_request payload alike.
+    ghost=$(printf 'c%.0s' $(seq 1 40))
+    printf '{"merge_group":{"base_sha":"%s"}}\n' "$ghost" > "$TD/ghost-event.json"
+    printf '{"pull_request":{"head":{"sha":"%s"},"base":{"ref":"main","sha":"%s"}}}\n' "$(git -C "$QR.clone" rev-parse HEAD)" "$ghost" > "$TD/ghost-pr-event.json"
+    for gev in merge_group:ghost-event.json pull_request:ghost-pr-event.json; do
+        row=$((row + 1)); gname=${gev%%:*}
+        rcg=0; errg=$( GITHUB_EVENT_NAME="$gname" GITHUB_EVENT_PATH="$TD/${gev#*:}" bash -c 'cd "$2" || exit 2; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD' "$SELF" "$QR.clone" "$QR.clone" 2>&1 >/dev/null ) || rcg=$?
+        case "$rcg:$errg" in
+            1:*"cannot be fetched"*) printf 'ok    row %-2s %s event names an unfetchable base -> resolve_base refuses (rc 1, "cannot be fetched")\n' "$row" "$gname" ;;
+            *) printf 'FAIL  row %-2s %s event names an unfetchable base: wanted rc 1 + "cannot be fetched", got rc %s: %s\n' "$row" "$gname" "$rcg" "$errg"; fails=1 ;;
+        esac
+    done
+    # deepen again and the base still resolves. A planted git logs every fetch read; both must be the
+    # deepen, so a deepen that is one bare read (it dies, and the by-sha fetch after it answers) is RED.
+    # It runs from a cwd outside REPO_ROOT (the shim's own dir), as check_ont_ratchet.sh may (it never cds),
+    # and git finds no repository above that cwd: a deepen read that lost its -C "$REPO_ROOT" fails, the row is
+    # RED. The deepen answers on its second read, so the by-sha read never runs here; the next row covers it.
+    row=$((row + 1))
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    S="$TD/p6-shim"; rm -rf "${S:?}"; mkdir -p "$S"
+    printf '%s\n' '#!/usr/bin/env bash' \
+        'case " $* " in *" fetch "*)' \
+        '    printf "%s\n" "$*" >> "$P6_SHIM_LOG"' \
+        '    if [ "$(wc -l < "$P6_SHIM_LOG")" -eq 1 ]; then' \
+        "        printf '%s\\n' 'error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly: CANCEL (err 8)' 'fatal: early EOF' >&2; exit 128" \
+        '    fi ;;' \
+        'esac' \
+        'exec "$P6_SHIM_REAL" "$@"' > "$S/git"
+    printf '%s\n' '#!/usr/bin/env bash' 'exit 0' > "$S/sleep"; chmod +x "$S/git" "$S/sleep"; : > "$S/reads"
+    got8=$( PATH="$S:$PATH" P6_SHIM_REAL="$(command -v git)" P6_SHIM_LOG="$S/reads" GITHUB_EVENT_NAME=merge_group GIT_CEILING_DIRECTORIES="$TD" bash -c 'cd "$2" || exit 2; if git rev-parse --git-dir >/dev/null 2>&1; then printf "cwd is a repo|"; else printf "no repo|"; fi; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$S" 2>/dev/null ) || true
+    reads8="$(grep -c -e '--deepen=1' "$S/reads") of $(wc -l < "$S/reads" | tr -d ' ')"
+    case "$reads8|$got8" in "2 of 2|no repo|$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked entry, the deepen read dead once (curl 92), from a cwd that is no repo: read again under P6 in REPO_ROOT, base = the previous entry squash\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked entry, deepen read dead once: wanted 2 of 2 deepen reads, a cwd that is no repo and base %s; got %s deepen reads, %s\n' "$row" "$want6" "$reads8" "$got8"; fails=1 ;; esac
+    # #4936 (P6): the same entry with all 3 deepen reads dead, then the by-sha read dead once. P6 reads the by-sha
+    # fetch again and the base still resolves. Same cwd and ceiling as the row above: a by-sha read that lost its
+    # -C "$REPO_ROOT" runs in no repo, and one that skips P6 is never read again; either way the row is RED.
+    # Wanted: 3 deepen reads, then 2 by-sha reads.
+    row=$((row + 1))
+    rm -rf "${Q:?}.clone"; git clone -q --depth=1 -b main "file://$Q" "$Q.clone" 2>/dev/null; git -C "$Q.clone" fetch -q --depth=1 origin '+queue-base:refs/remotes/origin/main' 2>/dev/null
+    printf '%s\n' '#!/usr/bin/env bash' \
+        'case " $* " in *" fetch "*)' \
+        '    printf "%s\n" "$*" >> "$P6_SHIM_LOG"' \
+        '    dead=; case " $* " in *" --deepen=1 "*) dead=1 ;; *) [ "$(grep -vc -e --deepen=1 "$P6_SHIM_LOG")" -eq 1 ] && dead=1 ;; esac' \
+        '    if [ -n "$dead" ]; then' \
+        "        printf '%s\\n' 'error: RPC failed; curl 92 HTTP/2 stream 5 was not closed cleanly: CANCEL (err 8)' 'fatal: early EOF' >&2; exit 128" \
+        '    fi ;;' \
+        'esac' \
+        'exec "$P6_SHIM_REAL" "$@"' > "$S/git"
+    : > "$S/reads"
+    got9=$( PATH="$S:$PATH" P6_SHIM_REAL="$(command -v git)" P6_SHIM_LOG="$S/reads" GITHUB_EVENT_NAME=merge_group GIT_CEILING_DIRECTORIES="$TD" bash -c 'cd "$2" || exit 2; if git rev-parse --git-dir >/dev/null 2>&1; then printf "cwd is a repo|"; else printf "no repo|"; fi; . "$0" --lib-only; REPO_ROOT="$1"; resolve_base HEAD && printf "%s|%s" "$BASE_REF" "$BASE_HOW"' "$SELF" "$Q.clone" "$S" 2>/dev/null ) || true
+    reads9="$(grep -c -e '--deepen=1' "$S/reads") of $(wc -l < "$S/reads" | tr -d ' ')"
+    case "$reads9|$got9" in "3 of 5|no repo|$want6|single parent (stacked merge_group entry"*) printf 'ok    row %-2s stacked entry, all 3 deepen reads dead and the by-sha read dead once, from a cwd that is no repo: by-sha read again under P6 in REPO_ROOT, base = the previous entry squash\n' "$row" ;;
+        *) printf 'FAIL  row %-2s stacked entry, all 3 deepen reads dead and the by-sha read dead once: wanted 3 of 5 deepen reads, a cwd that is no repo and base %s; got %s deepen reads, %s\n' "$row" "$want6" "$reads9" "$got9"; fails=1 ;; esac
+    rm -rf "${S:?}"
+
     rm -rf "${Q:?}" "${Q:?}.clone"
 
     # Rows 19-22: --staged, the pre-commit entry point (B4, #3047). A scratch
@@ -483,12 +594,31 @@ EOF
         *) printf 'FAIL  row %-2s --staged: wanted rc=0 with base=%s, got rc=%s\n%s\n' "$row" "$tip" "$rc" "$out" | sed 's|^|             |'; fails=1 ;;
     esac
 
-    if [ "$fails" -ne 0 ]; then
-        printf '\nSELF-TEST FAILED (%s/%s rows)\n' "$((row - fails + fails))" "$row"
-        exit 1
+    # The summary's own rows (#5047). A nested run, which the second row starts, skips both.
+    if [ -z "${ROADMAP_DIFF_SELFTEST_NESTED:-}" ]; then
+        got=""
+        for c in "27 0 0 27:0" "26 0 0 27:1" "27 0 1 27:2" "27 1 1 27:1" "28 0 0 27:1"; do
+            # shellcheck disable=SC2086 # the four numbers are meant to split
+            rc=0; selftest_verdict ${c%%:*} >/dev/null || rc=$?
+            got="$got${got:+ }$rc"
+        done
+        if [ "$got" = "0 1 2 1 1" ]; then
+            printf 'ok    sum S1 verdict: all ran -> 0; one row short of the floor -> 1; a row not measured -> 2; a failure beats not_measured -> 1; one row above the floor -> 1\n'
+        else
+            printf 'FAIL  sum S1 verdict: wanted rc "0 1 2 1 1", got "%s"\n' "$got"; fails=1
+        fi
+        rc=0; out=$( ROADMAP_DIFF_SELFTEST_NESTED=1 ROADMAP_DIFF_HIST_SHA=0000000000000000000000000000000000000001 \
+            bash "$SELF" --self-test 2>&1 ) || rc=$?
+        case "$rc:$out" in
+            2:*"NOT_MEASURED  row"*"not_measured: 1 of"*)
+                printf 'ok    sum S2 an absent history commit -> NOT_MEASURED and the self-test exits 2, never 0\n' ;;
+            *) printf 'FAIL  sum S2 absent history commit: wanted rc=2 and not_measured, got rc=%s\n%s\n' "$rc" "$out" \
+                | tail -6 | sed 's|^|             |'; fails=1 ;;
+        esac
     fi
-    printf '\n%s/%s rows\n' "$row" "$row"
-    exit 0
+
+    selftest_verdict "$row" "$fails" "$not_measured" "$SELFTEST_MIN_ROWS"
+    exit $?
 fi
 
 # ---------------------------------------------------------------------------

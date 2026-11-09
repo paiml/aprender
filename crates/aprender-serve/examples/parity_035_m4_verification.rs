@@ -8,6 +8,7 @@
 //!
 //! Run with: cargo run --release --example parity_035_m4_verification
 
+use std::io::IsTerminal;
 use std::time::Instant;
 
 const OLLAMA_ENDPOINT: &str = "http://localhost:11434/api/generate";
@@ -202,6 +203,48 @@ fn benchmark_realizar_gpu_attention() -> Result<BenchmarkResult, Box<dyn std::er
     })
 }
 
+/// Exits with status 1 when nothing listens on `localhost:11434`, or when the
+/// server there says phi2:2.7b is missing. Any other answer returns.
+fn probe_ollama() {
+    // The benchmark asks for `localhost`, so every address it resolves to is tried.
+    let listening =
+        std::net::ToSocketAddrs::to_socket_addrs(&("localhost", 11434)).is_ok_and(|mut addrs| {
+            addrs.any(|addr| {
+                std::net::TcpStream::connect_timeout(&addr, std::time::Duration::from_secs(2))
+                    .is_ok()
+            })
+        });
+    if !listening {
+        eprintln!("Ollama server not found at http://localhost:11434 (run `ollama serve` and `ollama pull phi2:2.7b`)");
+        std::process::exit(1);
+    }
+    // A running server without the model answers /api/generate with an error
+    // object, which the response decoder cannot read. Ollama answers /api/show
+    // for a missing model with 404 and {"error":"model '<name>' not found"}; a
+    // 404 for a route it does not have is plain text. Only the first means the
+    // model is missing. Any other answer, or a failed request, falls through to
+    // the benchmark, which runs or fails as it did before this probe.
+    let model_missing = reqwest::blocking::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .and_then(|client| {
+            client
+                .post("http://localhost:11434/api/show")
+                .json(&serde_json::json!({ "model": "phi2:2.7b" }))
+                .send()
+        })
+        .ok()
+        .filter(|show| show.status() == reqwest::StatusCode::NOT_FOUND)
+        .and_then(|show| show.text().ok())
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .and_then(|v| v.get("error")?.as_str().map(str::to_owned))
+        .is_some_and(|e| e.contains("phi2:2.7b") && e.contains("not found"));
+    if model_missing {
+        eprintln!("Model not found: phi2:2.7b on the Ollama server (run `ollama pull phi2:2.7b`)");
+        std::process::exit(1);
+    }
+}
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("\n╔════════════════════════════════════════════════════════════════╗");
     println!("║         PARITY-035: M4 Parity Verification Benchmark          ║");
@@ -214,6 +257,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Warmup: {} iterations", WARMUP_ITERATIONS);
     println!("  Measurement: {} iterations", MEASUREMENT_ITERATIONS);
     println!();
+
+    // The baseline is a live Ollama server. A debug build, or a run without a
+    // terminal, probes it first, so a host without one says so instead of failing
+    // inside the HTTP client. A release run at a terminal goes straight to the
+    // benchmark, as it did before this probe.
+    if cfg!(debug_assertions) || !std::io::stdout().is_terminal() {
+        probe_ollama();
+    }
 
     // Benchmark Ollama
     println!("[1/3] Benchmarking Ollama phi2:2.7b...");

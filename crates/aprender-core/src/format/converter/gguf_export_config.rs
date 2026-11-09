@@ -510,6 +510,10 @@ fn export_to_gguf(
     use std::fs::File;
     use std::io::BufWriter;
 
+    if super::qwen35_gguf::is_qwen35_tensor_set(tensors) {
+        return export_qwen35_to_gguf(tensors, output, input, quantize);
+    }
+
     let tokenizer = super::import::load_tokenizer_from_json(input);
 
     let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
@@ -582,6 +586,178 @@ fn export_to_gguf(
     export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
 }
 
+/// Qwen3.5 hybrid export (#4418): the generic mapper has no `qwen35` table,
+/// so these checkpoints take their own name map, value transforms, metadata
+/// and Q4_K_M policy (see `qwen35_gguf.rs`).
+fn export_qwen35_to_gguf(
+    tensors: &BTreeMap<String, (Vec<f32>, Vec<usize>)>,
+    output: &Path,
+    input: &Path,
+    quantize: Option<&QuantizationType>,
+) -> Result<()> {
+    use super::qwen35_gguf as q35;
+    use crate::format::v2::AprV2Reader;
+
+    let apr_metadata = if input.extension().and_then(|e| e.to_str()) == Some("apr") {
+        fs::read(input)
+            .ok()
+            .and_then(|d| AprV2Reader::from_bytes(&d).ok())
+            .map(|r| r.metadata().clone())
+    } else {
+        None
+    };
+    let json_cfg = super::import::load_model_config_from_json(input);
+    let base = qwen35_base(apr_metadata.as_ref(), json_cfg.as_ref());
+    let hparams = apr_metadata
+        .as_ref()
+        .and_then(|m| m.custom.get("linear_attn_hparams"))
+        .and_then(|v| v.as_object().cloned())
+        .or_else(|| {
+            json_cfg
+                .as_ref()
+                .and_then(|c| c.linear_attn_hparams.clone())
+        })
+        .ok_or_else(|| AprenderError::FormatError {
+            message: "[#4418] qwen35 export: no linear_attn_hparams in the APR metadata and no \
+                      config.json next to the input; re-import with this apr"
+                .to_string(),
+        })?;
+    let hp = q35::resolve_qwen35_hparams(&base, &hparams, tensors)?;
+    let use_q4k = matches!(
+        quantize,
+        Some(QuantizationType::Q4K | QuantizationType::Int4)
+    );
+    let name = apr_metadata
+        .as_ref()
+        .and_then(|m| m.name.clone())
+        .unwrap_or_else(|| "model".to_string());
+
+    let mut metadata = q35::qwen35_config_metadata(&hp, &name, use_q4k);
+    let vocab = tensors
+        .iter()
+        .find(|(k, _)| k.ends_with("embed_tokens.weight"))
+        .and_then(|(_, (_, s))| s.first().copied())
+        .unwrap_or(0);
+    let tokenizer = super::import::load_tokenizer_from_json(input);
+    append_qwen35_tokenizer_metadata(
+        &mut metadata,
+        tokenizer.as_ref(),
+        apr_metadata.as_ref(),
+        &name,
+        vocab,
+        input,
+    );
+
+    let gguf_tensors = q35::build_qwen35_tensors(tensors, hp.dims, hp.n_layer, use_q4k)?;
+    eprintln!(
+        "[#4418] qwen35 GGUF: {} tensors, {} layers, ssm nk={} nv={} dk={} dv={}, {}",
+        gguf_tensors.len(),
+        hp.n_layer,
+        hp.dims.nk,
+        hp.dims.nv,
+        hp.dims.dk,
+        hp.dims.dv,
+        if use_q4k { "Q4_K_M" } else { "F32" }
+    );
+    let file = fs::File::create(output).map_err(|e| AprenderError::FormatError {
+        message: format!("Failed to create output file: {e}"),
+    })?;
+    let mut writer = std::io::BufWriter::new(file);
+    crate::format::gguf::export_tensors_to_gguf(&mut writer, &gguf_tensors, &metadata)
+}
+
+/// Standard dims: APR metadata first, then the config.json beside the input.
+fn qwen35_base(
+    apr: Option<&crate::format::v2::AprV2Metadata>,
+    cfg: Option<&crate::format::gguf::GgufModelConfig>,
+) -> super::qwen35_gguf::Qwen35Base {
+    super::qwen35_gguf::Qwen35Base {
+        n_layer: apr
+            .and_then(|m| m.num_layers)
+            .or_else(|| cfg.and_then(|c| c.num_layers)),
+        hidden: apr
+            .and_then(|m| m.hidden_size)
+            .or_else(|| cfg.and_then(|c| c.hidden_size)),
+        ffn: apr
+            .and_then(|m| m.intermediate_size)
+            .or_else(|| cfg.and_then(|c| c.intermediate_size)),
+        n_head: apr
+            .and_then(|m| m.num_heads)
+            .or_else(|| cfg.and_then(|c| c.num_heads)),
+        n_head_kv: apr
+            .and_then(|m| m.num_kv_heads)
+            .or_else(|| cfg.and_then(|c| c.num_kv_heads)),
+        head_dim: apr
+            .and_then(|m| m.head_dim)
+            .or_else(|| cfg.and_then(|c| c.head_dim)),
+        ctx: apr
+            .and_then(|m| m.max_position_embeddings)
+            .or_else(|| cfg.and_then(|c| c.max_position_embeddings)),
+        rope_theta: apr
+            .and_then(|m| m.rope_theta)
+            .or_else(|| cfg.and_then(|c| c.rope_theta)),
+        eps: apr
+            .and_then(|m| m.rms_norm_eps)
+            .or_else(|| cfg.and_then(|c| c.rms_norm_eps)),
+    }
+}
+
+/// `added_tokens_decoder` of the `tokenizer_config.json` beside the input.
+fn qwen35_added_tokens(input: &Path) -> Vec<super::qwen35_gguf::AddedToken> {
+    let Ok(text) = fs::read_to_string(input.with_file_name("tokenizer_config.json")) else {
+        return Vec::new();
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&text) else {
+        return Vec::new();
+    };
+    json.get("added_tokens_decoder")
+        .and_then(serde_json::Value::as_object)
+        .map(|m| {
+            m.iter()
+                .filter_map(|(id, v)| {
+                    Some(super::qwen35_gguf::AddedToken {
+                        id: id.parse().ok()?,
+                        content: v.get("content")?.as_str()?.to_string(),
+                        special: v
+                            .get("special")
+                            .and_then(serde_json::Value::as_bool)
+                            .unwrap_or(false),
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// Tokenizer metadata for a qwen35 GGUF, with `tokenizer.chat_template`
+/// written exactly once (#5254). `append_tokenizer_to_metadata` writes it on
+/// the tokenizer.json path and, from APR metadata, on the fallback path; the
+/// qwen35 block used to push it a second time. Only when neither wrote it is
+/// the template looked up here (`chat_template.jinja` beside the input).
+fn append_qwen35_tokenizer_metadata(
+    metadata: &mut Vec<(String, crate::format::gguf::GgufValue)>,
+    tokenizer: Option<&crate::format::gguf::GgufTokenizer>,
+    apr: Option<&crate::format::v2::AprV2Metadata>,
+    name: &str,
+    vocab: usize,
+    input: &Path,
+) {
+    use super::qwen35_gguf as q35;
+
+    append_tokenizer_to_metadata(metadata, tokenizer, apr, "qwen35", name, vocab, input);
+    let added = qwen35_added_tokens(input);
+    q35::fill_added_token_holes(metadata, &added);
+    q35::fix_qwen35_tokenizer_metadata(metadata);
+    q35::apply_added_token_types(metadata, &added);
+    if !metadata.iter().any(|(k, _)| k == "tokenizer.chat_template") {
+        if let Some(tpl) = export_chat_template(apr, input) {
+            metadata.push((
+                "tokenizer.chat_template".to_string(),
+                crate::format::gguf::GgufValue::String(tpl),
+            ));
+        }
+    }
+}
 
 #[cfg(test)]
 mod q4k_divisibility_tests {

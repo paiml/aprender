@@ -1,0 +1,64 @@
+metadata:
+  id: C-RUCHY-SESSION-METRICS
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins the accumulation and summary semantics of `SessionMetrics`
+    (crates/aprender-train/src/ecosystem/ruchy/metrics.rs), the history record
+    exported with a Ruchy training session: best_* is the extreme of the history
+    (not the last value), final_* is the last value, an empty history has neither,
+    and lr / grad-norm series are diagnostics that never count as steps or content.
+  references:
+    - 'crates/aprender-train/src/ecosystem/ruchy/metrics.rs'
+    - 'crates/aprender-train/src/ecosystem/ruchy/tests.rs'
+
+equations:
+  session_metrics_summary:
+    formula: |
+      best_loss = min(loss_history), best_accuracy = max(accuracy_history)
+      final_x = last(x_history); both None on an empty history
+      total_steps = len(loss_history)
+      is_empty = loss, accuracy and custom all empty (lr / grad_norm ignored)
+    domain: SessionMetrics after any sequence of add_* calls
+    invariants:
+    - 'best_loss <= final_loss whenever both exist'
+    - 'add_lr and add_grad_norm never change total_steps or is_empty'
+
+proof_obligations:
+- id: RSM-INV-001
+  type: invariant
+  property: best/final summaries follow the history, empty history yields None
+  formal: 'best_loss = min(loss_history) ∧ final_loss = last(loss_history) ∧ loss_history = ∅ ⇒ best_loss = None'
+  applies_to: session_metrics_summary
+- id: RSM-INV-002
+  type: invariant
+  property: diagnostic series do not count as session content
+  formal: 'add_lr ∧ add_grad_norm preserves total_steps ∧ is_empty'
+  applies_to: session_metrics_summary
+
+falsification_tests:
+- id: FALSIFY-RUCHY-SESSION-METRICS-001
+  rule: best_* is the extreme of the history, final_* is the last value
+  prediction: 'losses [0.9,0.2,0.5] give best 0.2 and final 0.5; accuracies [0.6,0.95,0.7] give best 0.95 and final 0.7; empty gives None'
+  test: cargo test -p aprender-train --features ruchy-sessions --lib test_session_metrics_best_picks_extremes_not_last
+  if_fails: best_loss/best_accuracy return the last value or the wrong extreme, so a regressing run is reported as its best
+  ship_blocking: false
+  mutation: 'swap f64::min for f64::max in best_loss; must turn RED'
+- id: FALSIFY-RUCHY-SESSION-METRICS-002
+  rule: lr and grad-norm series are diagnostics only
+  prediction: 'after add_lr / add_grad_norm alone, total_steps() == 0 and is_empty() is true; accuracy-only or custom-only is not empty'
+  test: cargo test -p aprender-train --features ruchy-sessions --lib test_session_metrics_lr_and_grad_norm
+  if_fails: a diagnostics-only session is exported as if it trained
+  ship_blocking: false
+
+qa_gate:
+  id: QA-RUCHY-SESSION-METRICS-001
+  name: Ruchy SessionMetrics summary gate
+  description: best/final/empty/diagnostic semantics of SessionMetrics hold
+  checks:
+  - session_metrics_summary
+  pass_criteria: FALSIFY-RUCHY-SESSION-METRICS-001 and -002 pass
+  falsification: Any failure fails the gate

@@ -189,6 +189,23 @@ hosts:
       taken here is comparable to anything (YOGA-NIGHTLY-001 §7, R-7, N-4).
     decided_by: spec-owner
     date: '2026-09-09'
+  # #5254: an 8 GB unified-memory ARM64 CUDA edge device (Orin, sm_87). Declared
+  # so its LAB nightly can name a valid `perf-jetson` group (PP-19).
+  # The comparator is ollama because llama.cpp is not installed there. NO
+  # PERFORMANCE CELL: its tok/s go on the #5254 gap list as data, never against
+  # a floor keyed on another machine.
+  jetson:
+    accelerator: orin
+    compute_class: cuda
+    comparator: ollama
+    reachable_by: [cuda]
+    ci_runner: self-hosted
+    status: NA
+    reason: >-
+      LAB-only edge host. Its numbers feed the #5254 gap list and no gate; no
+      SILICON_FLOORS entry exists for sm_87.
+    decided_by: spec-owner
+    date: '2026-10-13'
 workloads: [W1, W2]
 
 arms:
@@ -231,6 +248,15 @@ arms:
     delta: {dec_ratio: 0.0, prefill_ratio: 0.0, agg_ratio: 0.0}
     # Written by the first PASS: armed_by.<host>.<wl>.c<c>.<metric> = {receipt, commit}
     armed_by: {}
+    # V1 (#4954). TTFT ratio = reference TTFT / apr TTFT. A host is GREEN iff
+    # each of its >= protocol.replicates_min receipts has ratios.ttft.lcb95 >=
+    # ttft_floor in a band whose comparator_status is MEASURED and whose status
+    # is MEASURED or NONCONFORMANT-VALID; the host figure is the minimum. Fewer
+    # receipts, or a band that does not count, is NOT MEASURED -- never GREEN.
+    # Read by `apr test llm ttft-verdict` (aprender-test-lib perf_gate::ttft_verdict).
+    v1:
+      ttft_floor: 0.5
+      hosts: [lambda, gx10]
     rising_decode_trap: >-
       decode_ratio RISING while agg_ratio FALLS is the serialization signature,
       not a win: each request owns the whole device in turn. The measurement

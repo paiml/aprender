@@ -211,7 +211,7 @@ impl InvariantId {
 ///
 /// Returns an error if the embedded YAML fails to parse.
 pub fn load_format_contract() -> crate::error::Result<FormatContract> {
-    serde_yaml::from_str(CONTRACT_YAML).map_err(crate::error::Error::from)
+    serde_saphyr::from_str_with_options(CONTRACT_YAML, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(crate::error::Error::from)
 }
 
 // ============================================================================

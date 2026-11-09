@@ -191,7 +191,7 @@ impl LoadTestScenario {
 
     /// Load from YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self, String> {
-        serde_yaml_ng::from_str(yaml).map_err(|e| format!("Failed to parse YAML: {}", e))
+        serde_saphyr::from_str_with_options(yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(|e| format!("Failed to parse YAML: {}", e))
     }
 
     /// Load from file
@@ -203,7 +203,7 @@ impl LoadTestScenario {
 
     /// Save to file
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
-        let content = serde_yaml_ng::to_string(self)
+        let content = serde_saphyr::to_string(self)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
         std::fs::write(path, content)
     }
@@ -736,7 +736,9 @@ impl LatencyHistogram {
             self.buckets[bucket] += 1;
         } else {
             // Overflow bucket (last)
-            *self.buckets.last_mut().unwrap() += 1;
+            if let Some(last) = self.buckets.last_mut() {
+                *last += 1;
+            }
         }
         self.count += 1;
         self.sum += latency_ms;
@@ -765,11 +767,7 @@ impl LatencyHistogram {
 
     /// Get mean latency
     pub fn mean(&self) -> u64 {
-        if self.count == 0 {
-            0
-        } else {
-            self.sum / self.count
-        }
+        self.sum.checked_div(self.count).unwrap_or(0)
     }
 
     /// Get sample count
@@ -1142,8 +1140,8 @@ mod tests {
         scenario.add_stage(LoadTestStage::steady("warmup", 10, 5));
         scenario.add_request(LoadTestRequest::get("home", "/"));
 
-        let yaml = serde_yaml_ng::to_string(&scenario).unwrap();
-        let parsed: LoadTestScenario = serde_yaml_ng::from_str(&yaml).unwrap();
+        let yaml = serde_saphyr::to_string(&scenario).unwrap();
+        let parsed: LoadTestScenario = serde_saphyr::from_str_with_options(&yaml, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).unwrap();
 
         assert_eq!(parsed.name, "YAML Test");
         assert_eq!(parsed.stages.len(), 1);

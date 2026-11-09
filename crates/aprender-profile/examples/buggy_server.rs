@@ -4,7 +4,7 @@
 //! to demonstrate renacer's anomaly detection capabilities.
 
 use std::fs::{File, OpenOptions};
-use std::io::{Read, Write};
+use std::io::{IsTerminal, Read, Write};
 use std::thread;
 use std::time::Duration;
 
@@ -12,9 +12,21 @@ fn main() {
     println!("Buggy Server v0.1 - Simulating production workload...");
     println!("Watch for anomalies in the TUI!");
 
+    // Unbounded on a terminal, where it is watched from the profiler TUI. Without
+    // one (CI, a pipe) stop after 400 iterations: both anomaly paths (every 50
+    // and every 200) have fired twice by then.
+    let max_iterations: Option<u64> = std::env::args()
+        .nth(1)
+        .and_then(|n| n.parse().ok())
+        .or_else(|| (!std::io::stdout().is_terminal()).then_some(400));
+
     let mut iteration = 0u64;
 
     loop {
+        if max_iterations.is_some_and(|max| iteration >= max) {
+            println!("Done after {iteration} iterations.");
+            return;
+        }
         iteration += 1;
 
         // Normal fast operations (99% of the time)

@@ -325,6 +325,7 @@ fn test_format_chat_messages_empty() {
 fn test_embedding_request_serde() {
     use crate::api::realize_handlers::EmbeddingInput;
     let req = EmbeddingRequest {
+        dimensions: None,
         input: "Hello world".to_string().into(),
         model: Some("test-model".to_string()),
     };

@@ -86,6 +86,9 @@ impl DecisionTreeRegressor {
         if n_rows == 0 {
             return Err("Cannot fit with zero samples".into());
         }
+        if y.as_slice().iter().any(|v| !v.is_finite()) {
+            return Err("Labels must be finite (no NaN or infinity)".into());
+        }
 
         self.tree = Some(build_regression_tree(
             x,

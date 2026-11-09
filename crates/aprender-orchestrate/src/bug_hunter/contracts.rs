@@ -152,7 +152,7 @@ fn analyze_binding_file(
     let Ok(content) = std::fs::read_to_string(path) else {
         return;
     };
-    let Ok(registry) = serde_yaml_ng::from_str::<BindingRegistry>(&content) else {
+    let Ok(registry) = crate::yaml::from_str::<BindingRegistry>(&content) else {
         return;
     };
 
@@ -217,7 +217,7 @@ fn analyze_obligation_coverage(
     let Ok(content) = std::fs::read_to_string(path) else {
         return;
     };
-    let Ok(contract) = serde_yaml_ng::from_str::<ContractFile>(&content) else {
+    let Ok(contract) = crate::yaml::from_str::<ContractFile>(&content) else {
         return;
     };
 
@@ -283,7 +283,7 @@ bindings:
     notes: "No public function"
 "#;
         let registry: BindingRegistry =
-            serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+            crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(registry.target_crate, "aprender");
         assert_eq!(registry.bindings.len(), 2);
         assert_eq!(registry.bindings[0].status, "implemented");

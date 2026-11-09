@@ -92,6 +92,7 @@ PROG=${0##*/}
 REPO_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 PY_LIB="$REPO_ROOT/scripts/lib/roadmap_fragments.py"
 ROADMAP_FILE="docs/roadmaps/roadmap.yaml"
+BASE_FILE="docs/roadmaps/roadmap-base.yaml"
 ENTRIES_DIR="docs/roadmaps/entries"
 
 # shellcheck source=scripts/lib/resolve_base.sh
@@ -128,6 +129,21 @@ remedy() {
     printf '    fragment path: it stays in the base and is immutable (RMFR-OB-005).\n'
 }
 
+# intro_regenerates REPO BASE TD -- the introduced base is right when it regenerates the base
+# ref's aggregate from the base ref's own fragments. Exact equality with the base ref's
+# roadmap.yaml would refuse a correct snapshot whenever another roadmap PR lands first.
+intro_regenerates() {
+    local repo=$1 base=$2 td=$3 name
+    mkdir -p "$td/intro/entries" || return 1
+    cp "$td/base.yaml" "$td/intro/roadmap.yaml" || return 1
+    cp "$td/roadmap-base.yaml" "$td/intro/roadmap-base.yaml" || return 1
+    while IFS= read -r name; do
+        case "$name" in *.yaml) ;; *) continue ;; esac
+        git -C "$repo" show "$base:$name" >"$td/intro/entries/${name##*/}" || return 1
+    done < <(git -C "$repo" ls-tree -r --name-only "$base" -- "$ENTRIES_DIR" 2>/dev/null)
+    python3 "$PY_LIB" aggregate --check --roadmap "$td/intro/roadmap.yaml" --entries "$td/intro/entries" >/dev/null 2>&1
+}
+
 # ---------------------------------------------------------------------------
 # judge <repo> <base-ref> <head-ref> -> 0 clean · 1 violation · 2 cannot judge
 # ---------------------------------------------------------------------------
@@ -151,8 +167,9 @@ judge() {
         roadmap_changed=1
     fi
     frag_paths=$(git -C "$repo" diff --name-only "$base" "$head" -- "$ENTRIES_DIR")
+    base_changed=$(git -C "$repo" diff --name-only "$base" "$head" -- "$BASE_FILE")
 
-    if [ "$roadmap_changed" = 0 ] && [ -z "$frag_paths" ]; then
+    if [ "$roadmap_changed" = 0 ] && [ -z "$frag_paths" ] && [ -z "$base_changed" ]; then
         rm -rf -- "${td:?}"
         printf 'PASS  %s: this diff touches neither %s nor %s/ — nothing to judge\n' \
             "$PROG" "$ROADMAP_FILE" "$ENTRIES_DIR"
@@ -173,6 +190,14 @@ judge() {
     # the aggregate is just the base.
     git -C "$repo" show "$base:$ROADMAP_FILE" >"$td/base.yaml" 2>/dev/null || : >"$td/base.yaml"
     git -C "$repo" show "$head:$ROADMAP_FILE" >"$td/head.yaml" 2>/dev/null || : >"$td/head.yaml"
+    # The frozen base the head aggregate grows from (#6185). Absent at head (a pre-S1
+    # commit), head.yaml is its own base: said out loud below, never a silent skip.
+    have_base=0
+    if git -C "$repo" show "$head:$BASE_FILE" >"$td/roadmap-base.yaml" 2>/dev/null; then
+        have_base=1
+    else
+        rm -f -- "${td:?}/roadmap-base.yaml"
+    fi
     mkdir -p "$td/entries"
     names=$(git -C "$repo" ls-tree -r --name-only "$head" -- "$ENTRIES_DIR" 2>/dev/null) || names=""
     while IFS= read -r name; do
@@ -213,6 +238,25 @@ judge() {
                 "$verdict" "$eid" "$ROADMAP_FILE"
         fi
     done < <(printf '%s\n' "$out")
+
+    # --- RULE 3: the frozen base never changes (#6185) -----------------------
+    # A change to a legacy entry is a fragment that supersedes its id; editing the base
+    # would make it the new hotspot and a way round rule 1. The one allowed change is its
+    # introduction, as a snapshot that regenerates the base ref's aggregate.
+    if [ -n "$base_changed" ]; then
+        if git -C "$repo" cat-file -e "$base:$BASE_FILE" 2>/dev/null; then
+            violations=$((violations + 1))
+            printf 'FAIL  FROZEN: %s changed. It is frozen: supersede an entry with a fragment in %s/ instead\n' \
+                "$BASE_FILE" "$ENTRIES_DIR"
+        elif intro_regenerates "$repo" "$base" "$td"; then
+            printf 'ok    %s introduced: aggregate(it, entries/ at the base ref) == %s at the base ref\n' "$BASE_FILE" "$ROADMAP_FILE"
+        else
+            violations=$((violations + 1))
+            printf 'FAIL  FROZEN: %s introduced but aggregate(it, entries/ at the base ref) != %s at the base ref\n' \
+                "$BASE_FILE" "$ROADMAP_FILE"
+        fi
+    fi
+    [ "$have_base" = 1 ] || printf 'note  %s absent at head: the aggregate is judged against itself (pre-S1 shape)\n' "$BASE_FILE"
 
     # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
     out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
@@ -401,6 +445,44 @@ PY
         commit_all "$1"
     }
 
+    # ---- frozen base (#6185) ---------------------------------------------
+    snapshot_base() { cp "$1/$ROADMAP_FILE" "$1/$BASE_FILE" && commit_all "$1"; }
+    # The base introduced as a snapshot of the base ref's roadmap.yaml.
+    b_base_snapshot() { snapshot_base "$1"; }
+    # ... or as something else: a way to smuggle an entry past rule 1.
+    b_base_not_snapshot() {
+        cp "$1/$ROADMAP_FILE" "$1/$BASE_FILE"
+        printf -- '- id: PMAT-999\n  title: smuggled into the base\n  status: planned\n' >>"$1/$BASE_FILE"
+        commit_all "$1"
+    }
+    # Once the base exists, any edit to it is refused.
+    b_base_edited() {
+        snapshot_base "$1" || return 1
+        printf -- '- id: PMAT-999\n  title: edited the frozen base\n  status: planned\n' >>"$1/$BASE_FILE"
+        commit_all "$1"
+    }
+    # LIVENESS: another roadmap PR (a fragment and its regenerated aggregate) lands after the
+    # snapshot was cut. The stale-but-correct snapshot must still be accepted.
+    b_base_snapshot_stale() {
+        cp "$1/$ROADMAP_FILE" "$1/old.yaml"
+        printf -- '- id: PMAT-200\n  title: landed first\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        git -C "$1" add -A && git -C "$1" commit -qm landed-first || return 1
+        mv "$1/old.yaml" "$1/$BASE_FILE" && commit_all "$1"
+    }
+    # PARITY: the header is not entry content, so rule 1 lets it change freely. Only a head
+    # aggregate grown from the frozen base (not from itself) can see a hand-edited header.
+    b_tampered_header() {
+        snapshot_base "$1" || return 1
+        python3 - "$1/$ROADMAP_FILE" <<'PY' || return 1
+import sys
+p = sys.argv[1]
+t = open(p, encoding="utf-8").read()
+open(p, "w", encoding="utf-8").write(t.replace("github_enabled: true\n", "github_enabled: false\n"))
+PY
+        commit_all "$1"
+    }
+
     # ---- the case table --------------------------------------------------
     row 'MEASURED SHAPE: entry added to roadmap.yaml only (what pmat work add writes) -> REFUSE' \
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
@@ -424,6 +506,16 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_wrong_fragment
     row 'supersession through the fragment, regenerated -> PASS' \
         0 'ok    CHANGED  PMAT-100 — docs/roadmaps/entries/PMAT-100.yaml changes in the same diff' b_supersede
+    row 'frozen base introduced as a snapshot -> PASS' \
+        0 'introduced: aggregate(it' b_base_snapshot
+    row 'LIVENESS: a stale snapshot, another roadmap PR landed first -> PASS' \
+        0 'introduced: aggregate(it' b_base_snapshot_stale
+    row 'frozen base introduced as something other than the snapshot -> REFUSE' \
+        1 'FROZEN: docs/roadmaps/roadmap-base.yaml introduced but' b_base_not_snapshot
+    row 'frozen base edited after it exists -> REFUSE' \
+        1 'FROZEN: docs/roadmaps/roadmap-base.yaml changed' b_base_edited
+    row 'PARITY: header of roadmap.yaml hand-edited away from the frozen base -> REFUSE' \
+        1 'FAIL  DRIFT' b_tampered_header
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
@@ -490,7 +582,7 @@ PY
 
 # ---------------------------------------------------------------------------
 case "${1:-}" in
-    --self-test|--selftest) self_test; exit $? ;;
+    --self-test|--selftest) unset GITHUB_EVENT_NAME GITHUB_EVENT_PATH; self_test; exit $? ;;
     --help|-h) usage ;;
     --*) usage ;;
 esac

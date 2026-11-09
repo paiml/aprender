@@ -116,6 +116,12 @@ pub struct GgufModelConfig {
     pub num_experts_per_tok: Option<usize>,
     /// MoE expert intermediate/FFN dimension
     pub moe_intermediate_size: Option<usize>,
+    /// Hybrid linear-attention hyperparameters (Qwen3.5 Gated DeltaNet) copied
+    /// verbatim from `config.json` (`text_config` merged): `linear_*`,
+    /// `full_attention_interval`, `partial_rotary_factor`, `mrope_section`,
+    /// `mtp_num_hidden_layers`. Stored as APR custom `linear_attn_hparams` so
+    /// `apr export --format gguf` can write the `qwen35.ssm.*` keys (#4418).
+    pub linear_attn_hparams: Option<serde_json::Map<String, serde_json::Value>>,
 }
 
 impl GgufModelConfig {
@@ -241,6 +247,7 @@ pub fn load_gguf_with_tokenizer<P: AsRef<Path>>(path: P) -> Result<GgufLoadResul
         num_experts: None,
         num_experts_per_tok: None,
         moe_intermediate_size: None,
+        linear_attn_hparams: None,
     };
 
     Ok(GgufLoadResult {
@@ -274,11 +281,13 @@ pub struct GgufRawLoadResult {
     /// Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
     /// Keys are on-disk GGUF names (e.g., qwen2.embedding_length) — never fabricated.
     pub raw_metadata: BTreeMap<String, String>,
+    /// Every GGUF header key with its typed value (APR-EMBED-001 EG-6b), so
+    /// an import can record the header for a verbatim GGUF export.
+    pub typed_metadata: BTreeMap<String, super::types::GgufValue>,
 }
 
 /// Load GGUF with raw quantized tensors (preserves Q4K for GPU inference)
 ///
-/// This is essential for APR format to achieve 2x Ollama performance.
 /// The Q4K bytes are stored directly in APR and used by GPU kernels.
 pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
     let reader = GgufReader::from_file(path)?;
@@ -334,6 +343,7 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         num_experts: None,
         num_experts_per_tok: None,
         moe_intermediate_size: None,
+        linear_attn_hparams: None,
     };
 
     // Contract: apr-inspect-metadata-propagation-v1 F-INSPECT-META-001 (paiml/aprender#622).
@@ -346,12 +356,19 @@ pub fn load_gguf_raw<P: AsRef<Path>>(path: P) -> Result<GgufRawLoadResult> {
         .chain(&reader.display_only_metadata)
         .map(|(k, v)| (k.clone(), gguf_value_display(v)))
         .collect();
+    let typed_metadata: BTreeMap<String, super::types::GgufValue> = reader
+        .metadata
+        .iter()
+        .chain(&reader.display_only_metadata)
+        .map(|(k, v)| (k.clone(), v.clone()))
+        .collect();
 
     Ok(GgufRawLoadResult {
         tensors,
         tokenizer,
         model_config,
         raw_metadata,
+        typed_metadata,
     })
 }
 
@@ -377,6 +394,7 @@ fn gguf_value_display(v: &crate::format::gguf::types::GgufValue) -> String {
         GgufValue::ArrayInt32(a) => format!("[len={}]", a.len()),
         GgufValue::ArrayFloat32(a) => format!("[len={}]", a.len()),
         GgufValue::ArrayString(a) => format!("[len={}]", a.len()),
+        GgufValue::ArrayBool(a) => format!("[len={}]", a.len()),
     }
 }
 

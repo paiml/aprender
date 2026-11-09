@@ -57,3 +57,15 @@ falsification:
     description: "Q5_K dequant reads the 5th bit from qh[l] bit (2*it)/(2*it+1). Discharges C-Q5K-002."
     test: "test_q5k_dequant_fifth_bit_placement — qh[0]=0x03 (bits 0,1 set), qs[0]=0x21: RED pre-fix out[32]=0.0; GREEN post-fix out[0]=17.0 (1+16) / out[32]=18.0 (2+16)."
     evidence: "cargo test -p aprender-compute --lib q5k_dequant_tests::test_q5k_dequant_fifth_bit_placement"
+
+falsification_tests:
+  - id: FALSIFY-Q5K_DEQUANT_CORRECTNESS-001
+    description: "C-Q5K-001: low and high nibble of the same qs byte land 32 outputs apart (GGML stride-32 layout)"
+    test: "cargo test -p aprender-compute --lib test_q5k_dequant_stride32_nibble_layout"
+    prediction: "qs[0]=0x21 gives out[0]=1.0, out[1]=0.0, out[32]=2.0"
+    if_fails: "nibbles are written to adjacent indices (out[1]=2.0, out[32]=0.0)"
+  - id: FALSIFY-Q5K_DEQUANT_CORRECTNESS-002
+    description: "C-Q5K-002: the 5th bit comes from qh[l] bit (2*it) for the low nibble and bit (2*it+1) for the high nibble"
+    test: "cargo test -p aprender-compute --lib test_q5k_dequant_fifth_bit_placement"
+    prediction: "qh[0]=0x03 with qs[0]=0x21 gives out[0]=17.0 and out[32]=18.0"
+    if_fails: "the high bit is read from the wrong qh byte/bit, corrupting every Q5_K weight"

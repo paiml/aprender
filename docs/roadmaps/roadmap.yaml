@@ -18462,6 +18462,25 @@ roadmap:
   labels:
   - ont-0.70
   notes: The PVL-001 EV-10 probe greps .github/workflows/ci.yml and uses repo-root tests/ paths; aprender wires integration tests via ci/explicit-test-commands.d fragments and the test lives under crates/aprender-contracts-cli/tests/. Reported to the PVL-001 owner (infra) as a stale probe. The src/ fixture files end .rs.txt because ten aprender gates scan tracked .rs files.
+- id: GH-4377
+  github_issue: 4377
+  item_type: task
+  title: Adopt dogfood-receipt-v1 in apr-dogfood, and remove python3 from it (ARB-SELF-001 ASL-05)
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-10T13:24:25.785855612+00:00
+  updated: 2026-10-10T13:24:25.785855612+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - P0
+  - size:M
+  - owner:aprender-a7
+  notes: null
 - id: GH-4688
   github_issue: 4688
   item_type: task
@@ -18536,6 +18555,39 @@ roadmap:
   - 'the models nightly opens or updates one ticket per red row, naming release_policy.ticket_owner; a search it cannot trust opens nothing (NOT-MEASURED)'
   - 'the release notes of a covered release list known failures: ladder known_red rungs and open models-nightly red-row tickets'
   - 'out of scope: the #4033 levers'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-5081
+  github_issue: 5081
+  item_type: task
+  title: 'nightly train: a red night opens a ticket with an owner within 60 min'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-10T17:56:26.522678124+00:00
+  updated: 2026-10-10T17:56:26.522678124+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: GH-5426
+  github_issue: 5426
+  item_type: task
+  kind: code
+  title: 'pr-review: update stale agy/Claude model ids to current quorum lanes (gemini-4-argon-high, claude-sonnet-5-5, claude-haiku-5-5)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-16T10:38:47.453979621+00:00
+  updated: 2026-10-16T10:38:47.453979621+00:00
+  spec: null
+  acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
@@ -19931,18 +19983,19 @@ roadmap:
   github_issue: 3568
   item_type: task
   title: Schema-constrained decoding in apr (--json-schema or grammar) — thre
-  status: planned
+  status: in_progress
   priority: medium
   assigned_to: null
   created: 2026-09-20T10:27:59Z
-  updated: 2026-09-20T10:27:59Z
+  updated: 2026-10-10T00:55:00Z
   spec: null
   acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
+  labels:
+  - kind:code
+  notes: 'Refs #3568, #3826. Schema-constrained decoding (--json-schema, --grammar, response_format) runs through one engine: Session::generate_constrained masks host logits before the repetition penalty and the sampler, so the constraint applies identically on the CPU and on CUDA. A constrained run takes CUDA where an unconstrained one does (dense and hybrid), and reports gpu_attempted, used_gpu and fell_back as an unconstrained run does (#3826). apr serve''s /v1/chat/completions response_format (json_schema, json_object) goes through the same engine on the GGUF CPU and CUDA routes; every other route refuses it by name (ASOC-INV-020, FALSIFY-RESPONSE-FORMAT-3568). Evidence (tests, plants, RTX 4090 and GB10 runs) is in the pull request.'
 - id: PMAT-3569
   github_issue: 3569
   item_type: task
@@ -21050,6 +21103,22 @@ roadmap:
   labels:
   - kind:code
   notes: 'SCOPE. The three done_when rows quoted above. `prefill_ms` is deliberately NOT emitted by this row. The cop''s lane message asked for it, but it is not in #3718''s done_when, and it is owned elsewhere: aprender-a8 and aprender-3e agreed one definition (wall-clock over the forward passes on the post-template prompt, up to the first token''s logits; load, h2d, the F2 validate and tokenization excluded; null, never 0, where a path does not split prefill). It rides #3606''s StageTimings and 3e''s #3596 timer (`run_qwen35_generate_dispatch_timed`, not on main). Wiring it into this JSON is a follow-up once those land. RUN (done_when 1, 3). New `realizar::infer::run_inference_report(config) -> (InferenceResult, RunReport)`; `run_inference` is a thin wrapper over it. It is a separate entry point so that none of the ~75 `InferenceResult` literals change. `RunReport { finish_reason, context_length }` is None on a path that does not report it (APR, SafeTensors), never a default. The GGUF path computes it where the stop set and the budget are known. `FinishReason::from_decode(generated, stop, budget)`: a last token in the stop set is Stop; otherwise a run that filled its budget is Length; a shorter run ended on a stop token its loop consumed. This rule holds for both loop shapes, traced: the qwen35 CPU/GPU, MoE and wgpu loops PUSH the stop token, the dense CPU (`generate_with_cache`) and CUDA (`decode_blocking`) loops break BEFORE pushing, and every loop''s only other non-error exit is its budget. `decode_budget` clamps to `context_length - prompt` only on the dense CPU loop, the one loop that does (`effective_max_tokens`). `FinishReason` is declared once, in `infer::run_report` (not behind the `server` feature); `api::types::FinishReason` is now a re-export. apr-cli: `RunUsage { prompt_tokens, completion_tokens, finish_reason, context_length }` on `RunResult`, emitted by `build_final_json`, so it appears in both `--json` and the `--stream` final event. `prompt_tokens` = `input_token_count`, the post-chat-template count including BOS that `prepare_tokens` fed the model. `completion_tokens` is the engine count, never the word-count stand-in `tokens_generated` falls back to. No path truncates a prompt (traced: `prepare_tokens` has no truncation). An over-long prompt is REFUSED (ContextLimitExceeded -> error exit), which is done_when 3''s "or an error"; the completion-side cut is now `finish_reason: length`, where before it was silent. SERVE (done_when 2, 3). `/v1/chat/completions` `usage` was already OpenAI-shaped with the post-template count on the realizar backends (`tokenize_chat_prompt`: template, encode, `len`). Three silent cuts are fixed. (a) The dense CPU backend (`try_quantized_backend`) judged finish against the REQUESTED max_tokens after `effective_max_tokens` had clamped the loop to the context room, so a context-clamped cut said "stop"; it is now judged against the budget the loop ran with, both streaming and not. (b) A prompt that cannot fit was a 500 (non-stream) or a 200 SSE carrying an error event that still ended "stop". It is now a 400 before generation on both, via the existing `generation_error_status`, whose doc already said callers map it to 400. (c) The APR CPU fallback (apr-cli handler_apr_cpu_completion.rs) hardcoded "stop" while capping max_tokens at 4096. It now uses `from_decode` against that cap with the loop''s real stop set (token 0, pushed; `is_eos_token`). Its `run_apr_cpu_inference` also returned the PROMPT as the completion when nothing was generated (`else { &output_tokens[..] }`); that now yields empty. MEASURED on lambda, CPU, Qwen3.5-0.8B-Q4_K_M, pinned `apr 0.69.0 (3fadee114)` via scripts/apr_bin.sh. `apr run -i <"What is 2+2? Answer with one number."> --chat --json`: prompt_tokens 24, context_length 262144. The same templated string through llama.cpp 41fc758 `llama-tokenize --ids` gives 24 ids, identical id-for-id to apr''s `--verbose` encode (with and without llama.cpp''s BOS policy). That is done_when 1''s case row against an independent tokenizer. max-tokens 4 and 1024: completion 2, finish stop (the model ends on EOS). A 20-line-poem prompt at max-tokens 6: completion 6, finish length. DONE_WHEN 1 CASE ROW, automated (added after the round-2 quorum FAIL, which correctly said a manual measurement is not a case row): infer::run_report::a_fixed_text_prompt_counts_the_tokens_the_tokenizer_feeds builds the pygmy GGUF with a SentencePiece vocabulary (`<unk> <s> </s> ▁Hello ▁world !` + filler; bos 1, eos 2) through the new `test_factory::build_executable_pygmy_gguf_with` metadata hook, runs the TEXT prompt "Hello world!" through `run_inference_report` (the `apr run --prompt` path: prepare_tokens_gguf, the GGUF tokenizer, BOS policy) and asserts the fed ids are [1, 3, 4, 5] and input_token_count (which becomes prompt_tokens) is 4. The expectation is derived by hand from the vocabulary, not from apr''s encoder. Mutant: prepare_tokens_gguf reports tokens.len()-1 -> the row goes RED. The post-template count on a real model is the llama.cpp row above (24 == 24, id for id). TESTS. infer::run_report: a case table over both loop shapes, the clamped-cut pin, budget arithmetic, and four rows through `run_inference_report` on the pygmy GGUF (context 32): a context-clamped cut is Length with 28 = 32 - 4 tokens, a max_tokens cut is Length, a stop token under budget is Stop (0 tokens, dense loop consumed it), and an over-long prompt is refused naming both lengths. api::tests::usage_finish_3718 runs through the real router on a quantized AppState: clamped cut -> length with usage prompt+completion == context, clamped stream -> terminal chunk length, prompt > context -> 400 on stream and non-stream, stop under budget -> stop (both), unclamped -> cut at the request budget. apr-cli run_tests_usage_3718: JSON carries the four fields, null (not 0 or "stop") when unreported, stream final event carries them. MUTANTS, each run and each RED: serve clamp reverted (2 red), 400 reverted to the old path (1), run-report clamp off (1), from_generation always Length (4), never Length (7). SUITES at 3fadee114 + rustfmt: `cargo test -p aprender-serve --lib` 15913 passed; `cargo test -p apr-cli --lib` 7301 passed; `cargo test -p aprender-contracts --lib` 1684 passed; clippy -D warnings on aprender-serve and apr-cli clean; fmt clean. KNOWN, NOT CHANGED. completion_tokens counts the pushed stop token on the qwen35/MoE/wgpu loops and not on the dense loops, because that is what each loop returns (measured: qwen35 `tokens: [17, 248046]`, completion 2). The CUDA backends were not exercised on hardware in this row: the report logic is backend-agnostic and clamps only on the dense CPU loop. Streaming chat does not apply stop STRINGS on the true-streaming path; that is pre-existing and not a length cut. Found while measuring and routed separately: `--prompt P --chat` double-templates (24 -> 56 prompt_tokens), which is #3743 = #3672 in batch-1.'
+- id: PMAT-3720
+  github_issue: 3720
+  item_type: task
+  title: 'apr response contract for consumers: weights digest, empty completion = error, refused vs did-not-run (run --json, serve)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T12:30:00Z
+  updated: 2026-10-23T12:30:00Z
+  spec: null
+  acceptance_criteria:
+  - apr run --json carries status, error, model_digest
+  - an empty completion exits non-zero with kind empty_completion
+  labels:
+  - kind:code
+  notes: null
 - id: PMAT-3724
   github_issue: 3724
   item_type: task
@@ -21514,6 +21583,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'SCOPE, as the cop ruled: the FIX already landed as #3672 in batch-1 #3707 (a9502d992). run_prompt_and_chat hands realizar the RAW prompt and `force_chat_template`, and prepare_tokens applies the model''s template once. This row does not re-fix dispatch_run.rs. It adds only what #3672 lacked: the three-shape equality test and the dogfood check. MEASURED (done_when 1) on lambda, CPU, Qwen3.5-0.8B-Q4_K_M, --verbose `[DEBUG] formatted_prompt` + `encoded N tokens`, same text "What is 2+2? Answer with one number.". `apr 0.69.0 (52f43da71)`: `--prompt P --chat` 56 tokens, positional `P --chat` 56, `-i file --chat` 24; the two 56s carry the zero-width escape and their formatted-prompt sha (cbbfe515524c) differs from the file shape (fe8052ef3bac). `apr 0.69.0 (a9502d992)` (batch-1): 24 == 24 == 24, identical formatted-prompt sha fe8052ef3bac on all three, no zero-width. TEST (done_when 1): lib_execute_export_convert.rs test_3743_three_prompt_shapes_build_the_same_realizar_config parses the three argv spellings with clap (on a 16 MB thread), feeds each through run_prompt_and_chat exactly as dispatch_run does, and builds realizar''s config through the new `commands::run::realizar_config` (execute_with_realizar''s config building, extracted unchanged). It asserts every shape reaches realizar as the raw text with force_chat_template set, so the formatted prompt, a pure function of that config and the model, is byte-identical. RED at 0.69.0, whose shape was the CLI-side ChatML wrap. The wrap-restored mutant (run_prompt_and_chat wrapping when chat_template) turns it RED: `left: Some("<|im_start|>user\nWhat is 2+2? ...")`. THINKING TOGGLE (done_when 2): on main neither `apr run` nor realizar''s InferenceConfig has an `enable_thinking`/thinking flag yet (#3723, aprender-fd). The apr-cli side no longer wraps anything, so nothing can re-wrap or drop it. `realizar_config()` is now the single place a thinking flag must be forwarded, and fd was told the seam. This criterion cannot be closed until #3723 adds the flag, so the PR says Refs, not Closes. DOGFOOD (done_when 3): scripts/model_ladder.sh''s per-backend run cell adds --verbose and sets `escaped_special` when realizar''s `formatted_prompt=` line carries `\u{200b}` (Debug-escaped) or the raw U+200B. The rung is then not green, and scripts/check_model_ladder.sh (the [package.metadata.dogfood] gate) fails it: "templated twice (#3743)". Old receipts without the field read as not escaped. New case scripts/lib/model_ladder_cases/red-escaped-special; `check_model_ladder.sh --self-test` 19 cases, 0 bad. Mutant: judge rule removed -> "FAIL case red-escaped-special rc=0 want=1". The ladder''s exact cell and grep on qwen2.5-coder-0.5b-instruct-q4_k_m.gguf (instruct-named, so 0.69.0''s name heuristic wrapped it): 52f43da71 -> escaped_special=true (`<\u{200b}|im_start|>user` visible); a9502d992 -> false. CRUX: this repo holds no CRUX run cell that feeds `apr run` a prompt; the CRUX probes live in the nightly-ux-crux skill, and that check is named for its owner. SUITES at this commit: `cargo test -p apr-cli --lib` 7301 passed; `-p aprender-contracts --lib` 1689 passed; clippy -D warnings apr-cli clean; fmt clean; bashrs lint findings unchanged vs main (model_ladder.sh 45=45, check_model_ladder.sh 18=18).'
+- id: PMAT-3745
+  github_issue: 3745
+  item_type: task
+  title: '#3745 S3: hand-list guard (LAB nightly) + hand-list migration'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-12T16:14:06Z
+  updated: 2026-10-12T16:14:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'done_when evidence on main: (1) surface emitter: hidden `apr surface --json` (crates/apr-cli/src/surface.rs, surface_tests.rs dummy-flag test); (2) mutants 1 and 2: ont_release_readiness.rs issue_mutant_1_* and issue_mutant_2_* are RED naming the owed cell; (3) mutant 3: marker guard tests in surface_guard_tests.rs; mutant 4: hand_list_guard.rs, run nightly as LAB by guards-nightly.yml; (4) release_readiness.sh refuses a Pass over zero derived cells and prints cells=N in the ENFORCE PASS line; autopilot.sh and readiness-nightly.yml run it'
+  epic: 3863
 - id: PMAT-3747
   github_issue: 3747
   item_type: task
@@ -21875,6 +21962,33 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'The cop (aprender-04) requested this, verbatim: "Please land a pure-refactor commit on a branch OFF release/0.69.1-batch-1 (not your old branch) that brings it under threshold with no behaviour change. Proof: `bash scripts/check_complexity_ratchet.sh` rc 0, `cargo test -p aprender-contracts --lib` green, and `pv lint contracts --gate shapes` 8/8 controls fired." SCOPE: this ticket IS the refactor. It is NOT #3715''s feature, which was already folded at ded8a932a; the diff against ded8a932a is only this refactor plus this fragment and receipt. The ratchet was RED on release/0.69.1-batch-1 (ded8a932a) vs main a9502d992: run_shapes_gate_with cyclomatic 13 cognitive 28 (the limit is 25). The fix moves the preamble (collect -> empty -> arming -> family, same order), the family ordering, the verdict rule and the two report maps into prepare / order_by_family / needs_receipts / verdict_of / by_shape / by_entity_type. MEASURED at 2a40dda85: the ratchet no longer lists run_shapes_gate_with (rc stays 1 only for crates/aprender-serve/src/constrain/tests.rs::generate_intent, not in this diff and not this ticket''s); cargo test -p aprender-contracts --lib 1701 passed; pv lint contracts --gate shapes Pass, 8/8 pc_extract fired; ont_release_readiness / ont4b / ont4c1 / ont4c3 CLI targets 34/11/12/10 passed; clippy -D warnings clean. A prior round under PMAT-3715 had a lane FAIL on SCOPE because it judged this delta against the #3715 feature ticket; the cop ruled that this refactor gets its own ticket.'
+- id: PMAT-3793
+  github_issue: 3793
+  item_type: task
+  title: '#3568 PR 2/4: apr run --json-schema / --grammar on the CPU paths (dense GGUF + Qwen3.5) — the named refusals, a second-reader validator, finish_reason + prompt_tokens'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-09-21T23:26:26Z
+  updated: 2026-10-09T12:42:18Z
+  spec: null
+  acceptance_criteria:
+  - 'THIS PR IS #3568 PR 2 of 4 (#3793), per the design note https://github.com/paiml/aprender/issues/3568#issuecomment-5763921678, split item 2 verbatim: "`apr run` on the CPU paths (dense and Qwen3.5), with the flags, the refusals, the second reader and the `--json` fields." CUDA is PR 3; `apr serve` is PR 4.'
+  - 'Issue #3793 done_when 1, verbatim: **Flags:** "`apr run --json-schema <inline JSON | @path>` and `--grammar <inline | @path>` (Lark). Both are validated **before the first token**. `--format json` is not overloaded."'
+  - 'Issue #3793 done_when 2, verbatim: **The CPU loops:** "**Dense GGUF, CPU:** apply it in the per-step sampler of `generate_with_cache`." and "**Qwen3.5 hybrid:** apply it in `run_qwen35_generate` on CPU". The mask only removes candidates: "Greedy / temperature 0 stays deterministic".'
+  - 'Issue #3793 done_when 3, verbatim: **Every path not wired is refused:** "Every other generation path **refuses** the flag by name until it is wired. A constraint that is silently ignored is decoration." In this PR that includes the CUDA paths (PR 3), with the refusal `SchemaUnsupportedPath{path}` and "an exit code and a `removed_by`".'
+  - 'Issue #3793 done_when 4, verbatim: **The refusals**, "each one line on stderr with a non-zero exit code": `SchemaInvalid`, `SchemaUnsupported{keyword, path}` with a `removed_by`, `SchemaUnsupportedPath{path}`, `SchemaWithThinking`, `SchemaViolation`, `Truncated`. "Per rmedia, a cut or empty completion is an error, never an empty success."'
+  - 'Issue #3793 done_when 5, verbatim: **Thinking:** the ruling (2): "`--json-schema` + a thinking template: refused by name (SchemaWithThinking) in 0.69.1." The 0.70 follow-up is #3735.'
+  - 'Issue #3793 done_when 6, verbatim: **A second reader:** "The final text is validated against the schema by a validator independent of the engine … before exit 0. Masking is one reader; this is the other."'
+  - 'Issue #3793 done_when 7, verbatim: **`--json` fields:** "`apr run --json` gains `finish_reason` (`stop | length | constraint_complete | dead_end`) and `prompt_tokens`."'
+  - 'Issue #3793 done_when 8, verbatim: **Positive controls:** "A malformed schema gives `SchemaInvalid` and a non-zero exit **before generation**, with no tokens emitted." "A valid schema with a violating prompt still gives conforming output." "A **mutant** that makes the constraint a no-op turns the corpus test RED."'
+  - 'Issue #3793 done_when 9, verbatim (amended by the author before review): **The corpus is the real consumer schemas:** a review tool''s output schema, and rmedia''s quiz, outline and key-terms schemas from #3716. The prompts include ones that ask the model to violate the schema, run here on the CPU paths. Every sample that exits 0 validates with the second reader, and every sample the budget cuts is refused (`Truncated`, non-zero), never reported as a success. *(Amended by the author before review, 2026-09-22: the design note''s "every sample validates" cannot hold for a sample that never completes. A greedy model can loop inside an unbounded string or number, and no budget completes that document. This was measured: the review schema''s `summary` and rmedia''s `seconds`, details in the comment below. The guarantee that holds, and that this PR tests, is that nothing non-conforming is ever reported as a success.)*'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs #3568 (PR 2 of 4), #3793. apr run --json-schema / --grammar on the CPU paths (dense GGUF and Qwen3.5) through the one engine (#4263): Session::generate_constrained is Session::generate with the constraint masking host logits, never the greedy fast path. The named refusals (SchemaInvalid, SchemaUnsupported, SchemaUnsupportedPath, SchemaWithThinking, SchemaViolation, Truncated) exit non-zero with one stderr line; a second, independent validator checks the final text before exit 0; apr run --json gains finish_reason and prompt_tokens. Evidence is in the pull request.'
 - id: PMAT-3795
   github_issue: 3795
   item_type: task
@@ -23675,6 +23789,24 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'DPO x3 by pvl-b; NF4 x3 and f16 by aprender-57. The old dpo_gradient_formula axiom was false for beta < 0; now a HasDerivAt theorem plus dpo_gradient_scale_nonpos (0 <= beta).'
+- id: PMAT-4354
+  github_issue: 4354
+  item_type: task
+  kind: code
+  title: 'PRM-L: land PRM-001 v3 (PROMETHEUS) + rex/001 to main'
+  status: in_progress
+  priority: high
+  assigned_to: worker
+  created: 2026-09-25T18:38:33Z
+  updated: 2026-09-25T18:38:33Z
+  spec: docs/specifications/PRM-001-prometheus.md
+  acceptance_criteria:
+  - Refs paiml/aprender#4354. Spec PRM-001 v3 byte-exact, rex-prereg-v2 lock, v1 lock frozen, superseded banners, v3 figure.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4369
   github_issue: 4369
   item_type: task
@@ -23809,6 +23941,38 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels: []
   notes: 'Adopted from aprender-ea orphan fix/4445-bench-fresh-prefill @65fd973170 (09-25, never PRed). The bug exists only with the #4214 checkpoint, i.e. car/0.70.0 (#4429); main before #4429 does not reuse an identical prompt. Cop ruling 2026-09-27: not folded into the car; own PR on main the moment #4429 merges, before the rc.1 tag. Superseded 2026-09-27 ~14:00Z by operator "make it faster" (via cop): open on main NOW, in parallel with the car. Until the car lands this change is inert on main (an identical prompt already prefills whole there); it pre-lands the bench wiring and the API so the car merge needs only the checkpoint line, which the exhaustive destructure forces.'
+- id: PMAT-4446
+  github_issue: 4446
+  item_type: task
+  title: PRA-001 T12 terms/provider tagging (P-TERMS)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T17:08:31Z
+  updated: 2026-09-25T17:08:31Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
+- id: PMAT-4447
+  github_issue: 4447
+  item_type: task
+  title: PRM-S1 review-replay-v1 benchmark + runner
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-09-25T17:46:46Z
+  updated: 2026-09-25T17:46:46Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-4453
   github_issue: 4453
   item_type: task
@@ -23829,6 +23993,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'pr-review-quorum run 36177378373 (merge_group, 00058476c = #4426 queue squash) failed on receipt-reviews-ancestor, legacy-exempt-in-window, legacy-exempt-not-ancestor, legacy-two-last-stale. Parent PMAT-4421.'
+- id: PMAT-4455
+  github_issue: 4455
+  item_type: task
+  title: 'APR-EPIC-001 A8: findings-ledger-v1 — a findings line is under contract, written and checked by pv'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-09T00:00:00Z
+  updated: 2026-10-09T00:00:00Z
+  spec: docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md
+  acceptance_criteria:
+  - 'Spec row A8, verbatim: "Findings schema and contract `findings-ledger-v1`."'
+  - 'Spec rule 17 fields, verbatim: "`{id, title, evidence, repro, suspected_epic, severity, found_at_sha}`".'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'SCOPE: contracts/findings-ledger-v1.yaml (new, kind pattern, closed shape over the seven rule-17 fields), scripts/findings_ledger.sh (new: add and check, both judged by pv lint --gate shapes on the real contract), tests/fixtures/ont/findings-ledger/*.jsonl and crates/aprender-contracts-cli/tests/ont_findings_ledger.rs (the case table, both arms), ci/explicit-test-commands.d (one .cmd), CLAUDE.md (the "surface defects" line). NOT BUILT, with reasons recorded on the issue: the rule-17 author check (every session files as one account), rule 18 (the existing closes-issue guard already covers a cited-but-unclosed ref), rule 19 (a ratchet; C324 rule 6). The contract binds lines written after it lands; the lines already in docs/findings/ are not rewritten, and no PR or release step reads docs/findings/.'
 - id: PMAT-4469
   github_issue: 4469
   item_type: task
@@ -23968,6 +24151,47 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   estimated_effort: null
   labels: []
   notes: null
+- id: PMAT-4524
+  github_issue: 4524
+  item_type: task
+  title: 'PRM-L land rex/001 C6+C11+C14 on main: merge main, reconcile with #4655 crate snapshot'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-08T12:49:26Z
+  updated: 2026-10-08T12:49:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4354
+- id: PMAT-4539
+  github_issue: 4539
+  item_type: task
+  title: 'KREG-001: SHACL kernel registry, selector refuses unregistered kernels (aprender#4539)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-09-27T11:28:55Z
+  updated: 2026-09-27T11:28:55Z
+  spec: null
+  acceptance_criteria:
+  - 'Phase 1: registry rows + shape contract + runtime admit gate + coverage test. Refs #4539'
+  - 'AC-1 (key): the admission key includes arch, isa_features and backend; admit() matches on them (issue #4539 body)'
+  - 'AC-2 (arch-generic): no field or enum is valid for only one of x86 or CUDA; aarch64, Metal and wgpu rows validate with no schema change (issue #4539 body)'
+  - 'AC-3 (receipt-gated admission): a row without a parity receipt from a host of its arch is a violation. Every cpu row carries a receipt, and every receipt names its row, once, from a host of its arch, at the row''s tolerance path (FALSIFY-KREG-008, no allowance count). GPU rows may be unmeasured: their receipt coverage is a LAB check, off the merge path (#4574) (issue #4539 body)'
+  - 'AC-4 (stable id): every row has a stable kernel_id plus shape_class and precision, for OBS-15 kernel_path (issue #4539 body)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3994
 - id: PMAT-4594
   github_issue: 4594
   item_type: task
@@ -24179,6 +24403,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'SCOPE: scripts/release/publish_strict.sh, scripts/cascade-publish.sh (clean_room_gate gains an optional third argument, a pinned run id), scripts/check_cascade_clean_room_gate.sh (10 pinned rows), scripts/check_publish_strict_cleanroom.sh (new), contracts/publish-workspace-v1.yaml (PW-DOOR-005, FALSIFY-PUB-008). HOW IT IS MET: publish_strict.sh reads the recorded run id and loads clean_room_gate from the cascade script (the same extraction the existing guard uses), then calls it pinned to that one run. Pinned mode reads exactly that run through the runs API, refuses a run of another workflow, and never lists runs, so a green run elsewhere cannot stand in for a red recorded one. A missing, empty, non-numeric, unreadable, red or other-commit id stops the cascade before any upload. --plan is unchanged. MEASURED: check_publish_strict_cleanroom.sh runs the real publish_strict.sh against a fixture tag checkout and a stub gh and cargo. BEFORE (origin/main 645dc34101): 8 of 9 checks FAIL; the non-numeric, red, other-commit and unreadable ids all pass the door and stop later, on the B2-gpu id. AFTER: 9 of 9 hold; check_cascade_clean_room_gate.sh holds every row, including the 10 pinned ones.'
+- id: PMAT-4709
+  github_issue: 4709
+  item_type: task
+  title: 'CENSUS-RATCHET: entity-bound contracts never drop and rise every release'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T08:00:00Z
+  updated: 2026-10-27T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'Run bash scripts/census_ratchet.sh: it prints GREEN (rc 0), bound never below the base and the unbound share never above it'
+  - 'Run pv lint contracts: Result: PASS; run pv census --format json contracts and read by_anchoring.class + instance as the bound count'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
 - id: PMAT-4715
   github_issue: 4715
   item_type: task
@@ -24237,6 +24481,28 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 4678
+- id: PMAT-4741
+  github_issue: 4741
+  item_type: task
+  title: 'PY-PORT-2: port publishable_crates / package_include_diff / coverage_report_scope to Rust (C301)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-w4664
+  created: 2026-10-04T17:05:00Z
+  updated: 2026-10-04T17:05:00Z
+  spec: null
+  acceptance_criteria:
+  - crates/aprender-ci-tools builds with publish = false. It has one clap-derive bin with subcommands publishable-crates, package-include-diff and coverage-report-scope, ported from scripts/lib/publishable_crates.py, scripts/lib/package_include_diff.py and scripts/coverage_report_scope.py
+  - scripts/tests/ci_tools_py_parity_test.sh runs every case through the .py original (as external validator) and the Rust bin. stdout is byte-identical and success or failure agrees, including on live `cargo metadata`. The argv forms where clap deliberately differs (--help/--version exit 0, --exclude=NAME accepted, extra positionals refused) are listed in the crate README and are out of parity scope. A planted mismatch must be detected, and a run of fewer cases than declared fails
+  - contracts/binary-debt-v1.yaml has a KEEP row for the bin. The crate has a README linking paiml/aprender, and readme_contract and check_binary_debt.sh are green
+  - 'FALSIFY-MONO-011: aprender-ci-tools is added to the [[bin]] allowlist with ALLOWLIST_BASELINE 27 -> 28, in its own commit (sign-off row 38: loosens a shrink-only list, so it waits for operator sign-off and can be reverted alone)'
+  - Out of scope - switching any caller (Makefile, scripts/*.sh) to the bin; CI behaviour is unchanged by this ticket
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:tooling
+  notes: 'Ruled by aprender-a7 (PY-PORT decision; MONO-011 option A as sign-off row 38). Branch-only, no PR.'
 - id: PMAT-4748
   github_issue: 4748
   item_type: task
@@ -24256,6 +24522,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 4678
+- id: PMAT-4756
+  github_issue: 4756
+  item_type: task
+  title: 'examples-nightly: 29 examples fail and 7 time out on main (run 37169058144)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wmainred
+  created: 2026-10-04T17:55:00Z
+  updated: 2026-10-10T07:32:00Z
+  spec: null
+  acceptance_criteria:
+  - The 36 rows that were fail or timeout in run 37169058144 are pass or a skip class (needs-args, needs-hardware, needs-data, needs-feature), with fail 0 and timeout 0, under scripts/dogfood_examples.sh --timeout-secs 180
+  - scripts/dogfood_examples.sh and its classifier are unchanged
+  - Release-build workloads are unchanged, except GPU-018 (#4756), which still runs but reports its own tok/s as an informational line outside the pass counts, and the every-build bug fixes in the receipts README (the Q4_0 and Q8_0 buffer sizes); only debug builds or non-terminal runs take a shorter path
+  - Out of scope, on build-kaizen/examples-nightly-queue - the workflow's runs-on, concurrency and runner label
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Receipts: evidence/examples-nightly-4756/. Before (CI run 37169058144): fail 29, timeout 7. After (one debug run of the 36 rows on 22954be7ab, libcuda hidden; the later GPU-018 and include-fmt commits are not in that run): pass 9, needs-args 11, needs-hardware 10, needs-data 5, needs-feature 1, fail 0, timeout 0. Receipt of record: the re-enabled nightly. qa_verify''s own gate failures (every section rc 1, 0 tests from the root facade) are #5026, outside this ticket.'
 - id: PMAT-4769
   github_issue: 4769
   item_type: task
@@ -24275,6 +24562,181 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: vec![vec![0; n]; layers] clones layer 0 into every layer, writing every byte, so construction commits 8.6 / 17.2 / 34.4 GB; nextest KILLed the tests on a 30 GB runner (run 37241931271, workspace-test shard 1).'
+- id: PMAT-4786
+  github_issue: 4786
+  item_type: task
+  title: 'PY-PORT R1: port scripts/lib/dag_status.py to aprender-ci-tools dag-status'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T12:18:07Z
+  updated: 2026-10-05T12:18:07Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4678
+- id: PMAT-4787
+  github_issue: 4787
+  item_type: task
+  title: 'PY-PORT-2c: switch coverage_report_scope callers to aprender-ci-tools, delete the .py (C301)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-0d
+  created: 2026-10-05T12:18:37Z
+  updated: 2026-10-05T12:18:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
+- id: PMAT-4788
+  github_issue: 4788
+  item_type: task
+  title: 'PY-PORT-2b: port tarball_shrink_report.py to aprender-ci-tools'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-a7f
+  created: 2026-10-05T12:25:13Z
+  updated: 2026-10-05T12:25:13Z
+  spec: null
+  acceptance_criteria:
+  - crates/aprender-ci-tools has a tarball-shrink-report subcommand ported from scripts/lib/tarball_shrink_report.py
+  - scripts/tests/ci_tools_py_parity_test.sh runs every case through the original (the in-tree .py, as external validator) and the Rust bin. stdout is byte-identical and the exit code agrees, covering empty inputs, a full fixture, missing inputs (exit 2), one bad input (a directory named x.rs, exit 1) and the live crates/ tree. A planted defect in the port turns it red
+  - 'scripts/package_tarball_build.sh, the only caller, stays on the .py: it runs on a CI gate path (check_package_includes.sh --self-test), and gate tools must already be released. The switch and the delete are a follow-up once a released aprender-ci-tools carries the port'
+  - The crate README lists the deliberate differences (usage error exit 1 under clap; Unicode Other_Alphabetic characters as word characters)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Branch-only, no PR. Base is the PMAT-4741 branch.'
+  epic: 4741
+- id: PMAT-4789
+  github_issue: 4789
+  item_type: task
+  title: 'PY-PORT: port tarball_workspace.py to aprender-ci-tools tarball-workspace (C301)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-05T12:25:43Z
+  updated: 2026-10-05T12:25:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
+- id: PMAT-4797
+  github_issue: 4797
+  item_type: task
+  title: 'PY-PORT-2d: port tarball_build_errors.py to aprender-ci-tools tarball-build-errors (C301)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-0d
+  created: 2026-10-05T13:47:26Z
+  updated: 2026-10-05T13:47:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
+- id: PMAT-4799
+  github_issue: 4799
+  item_type: task
+  title: 'PY-PORT-2e: port llama_fit_verdict.py to aprender-ci-tools llama-fit-verdict (C301)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-0d
+  created: 2026-10-05T14:32:33Z
+  updated: 2026-10-05T14:32:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
+- id: PMAT-4800
+  github_issue: 4800
+  item_type: task
+  title: 'PY-PORT: git_patch_id.py -> aprender-ci-tools git-patch-id'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-05T14:32:57Z
+  updated: 2026-10-05T14:32:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
+- id: PMAT-4802
+  github_issue: 4802
+  item_type: task
+  title: 'PY-PORT: crux-judge — retire the Python CRUX judge, oracles and certifier for tools/aprender-crux-judge'
+  status: inprogress
+  priority: medium
+  assigned_to: aprender-wprodmodels
+  created: 2026-10-05T14:52:00Z
+  updated: 2026-10-05T14:52:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The binary''s collect, eval, extract, lint, certify and check subcommands replace crux_inference_judge.py, crux_oracles.py and crux_prompt_certify.py, which are deleted; every caller resolves the binary through scripts/lib/crux_judge_bin.sh'
+  - 'All 11 golden receipts are byte-identical (receipt JSON, Markdown, exit code); scripts/check_crux_oracles.sh and scripts/check_crux_inference_judge.sh are green against the binary, and every F6 mutant is rebuilt from mutated Rust sources and killed'
+  - 'run_python_cell is the one python3 seam: only the model reply plus the asserts, under unshare -rn, rlimits, python3 -I, a scrubbed env and a sentinel; each property has a planted-failure row; a missing sandbox is sandbox_unavailable, never correct'
+  - 'Checklist row, done: the crate''s tests carried 48 .unwrap() calls (certify 5, collect 3, judge 20, oracles 9, pyjson 4, pyval 7); the crate is outside the workspace, so the disallowed-methods lint never runs on it; each is now an expect with its reason, and the crate''s clippy.toml carries the disallowed-methods ban, which a planted unwrap proves fires'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Branch-only, no PR, until a PR slot. Follow-ups: port the python3 fixture harness in the two case tables; the prompt set''s note at the next recertification; stale comments in four Python drivers; remove the run_python_cell seam.'
+  epic: 4741
+- id: PMAT-4806
+  github_issue: 4806
+  item_type: task
+  title: '0702-P3a: nightly assets rehearsal for RR-P03/P04 — build every release asset at main''s head on a schedule, never upload, no secrets (child of #4678)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-wprodmodels
+  created: 2026-10-05T15:10:00Z
+  updated: "2026-10-05T17:45:00Z"
+  spec: null
+  acceptance_criteria:
+    - '`.github/workflows/assets-rehearsal-nightly.yml` is generated from `binary-release.yml` by one script (no hand copy). The build steps are the release''s own; only the trigger, the permissions, the tag source, the checkout ref and the upload steps differ. A drift check (`--check`) regenerates and diffs, and runs first in every rehearsal run, so a release-workflow edit without a regen makes the rehearsal red rather than stale.'
+    - 'It cannot upload: workflow `permissions: contents: read`, no `secrets.` reference, no `environment:`, no upload or release step. Every job starts with a guard that refuses to run when a registry token (env or cargo credentials file) is present. Each property has a planted row in the case table.'
+    - 'The `verify` job runs `check_release_assets.sh <tag> --assets-from <list of built files>` over the union of what the build jobs produced. The tag is `v<workspace version>-rc.0` at the run commit, so the rc stamp runs as on a real rc; a missing asset is red; a build job that could not run reads not_measured, never green.'
+    - 'Fleet-hours per night are stated from measured job durations.'
+    - 'Red/green proof: a planted upload step, a planted `secrets.` reference, a planted token and a hand edit of the generated file each go red; the clean tree is green.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+    - kind:code
+  notes: 'Fleet-hours per night (AC 4), measured: the GitHub jobs API durations of the successful build jobs of the last 15 binary-release.yml runs, the same jobs the rehearsal runs. Mean (max) minutes: pv 4 lanes 0.8+1.4+0.9+1.2 (max 2.5 each); all [[bin]]s aarch64 3.9 (5.2), x86_64 4.9 (6.7); apr cpu aarch64 2.9 (5.3), x86_64 4.5 (6.4), darwin 4.5 (4.5); apr cuda aarch64 2.7 (5.4), x86_64 3.8 (5.4). Sum about 32 runner-min mean, about 49 max (the sum of the per-lane maxima), plus about 3 min for the drift check and verify: about 0.6 fleet-hours per night, about 0.87 worst case, on warm caches; a cold-cache night runs longer. The first scheduled nights re-measure it. Split from the assets lane of #4720. Wiring the rehearsal into the train lane table is a gate change and is not part of this ticket: it follows three green scheduled nights. Lands as three stacked parts, each reviewed against its own planted defect: part 1 the verdict (verify, tag); part 2 the no-upload guard and lint, tested on a fixture built from the real step bodies; part 3 the generator, --check and the generated workflow.'
+  epic: 4678
 - id: PMAT-4862
   github_issue: 4862
   item_type: task
@@ -24294,6 +24756,208 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   labels:
   - kind:code
   notes: 'Cause: the test writes a script then execs it while sibling test threads fork; a child forked in that window holds the write fd, so exec fails with ETXTBSY (run 37403017673, workspace-test shard 3). Passed on the same PR head in run 37408602581.'
+- id: PMAT-4899
+  github_issue: 4899
+  item_type: task
+  title: 'EG-0: Measure — probe, oracle, contracts, corpus (no engine code)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:53:52Z
+  updated: 2026-10-07T17:53:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:measurement
+  notes: null
+  epic: 4898
+- id: PMAT-4900
+  github_issue: 4900
+  item_type: task
+  title: 'EG-1: Load — GGUF, tokenizer, kind'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:53:58Z
+  updated: 2026-10-07T17:53:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4901
+  github_issue: 4901
+  item_type: task
+  title: 'EG-2: Embed on CPU'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:04Z
+  updated: 2026-10-07T17:54:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4902
+  github_issue: 4902
+  item_type: task
+  title: 'EG-3: Serve'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:09Z
+  updated: 2026-10-07T17:54:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4903
+  github_issue: 4903
+  item_type: task
+  title: 'EG-4: CUDA on sm_89 and sm_121'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:14Z
+  updated: 2026-10-07T17:54:14Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4904
+  github_issue: 4904
+  item_type: task
+  title: 'EG-5: Refusals, apr qa, the ladder'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:19Z
+  updated: 2026-10-07T17:54:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4905
+  github_issue: 4905
+  item_type: task
+  title: 'EG-6: Model ops round trip'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:23Z
+  updated: 2026-10-07T17:54:23Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4906
+  github_issue: 4906
+  item_type: task
+  title: 'EG-7: Fine-tune'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:28Z
+  updated: 2026-10-07T17:54:28Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4907
+  github_issue: 4907
+  item_type: task
+  title: 'EG-8: Prune, then distill'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:33Z
+  updated: 2026-10-07T17:54:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4908
+  github_issue: 4908
+  item_type: task
+  title: 'EG-9: Evaluate, measure, dogfood'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:38Z
+  updated: 2026-10-07T17:54:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898
+- id: PMAT-4918
+  github_issue: 4918
+  item_type: task
+  title: streaming chat emits tool_calls (A3)
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-08T13:32:24Z
+  updated: 2026-10-08T14:00:00Z
+  spec: contracts/serve-stream-tool-calls-v1.yaml
+  acceptance_criteria:
+  - With tools declared, a streamed reply that holds a tool call ends with one delta.tool_calls chunk and finish_reason tool_calls, on the live and the replayed SSE builder (T1, T2)
+  - The streamed calls equal the non-streaming calls for the same text, under any split of the deltas (T3)
+  - With no tools or tool_choice none, the stream is byte-identical to the v0.70.2 golden (T5)
+  - FALSIFY-SSTC-001..012 pass, each with its mutant recorded red
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4926
 - id: PMAT-4930
   github_issue: 4930
   item_type: task
@@ -24315,3 +24979,2606 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3998
+- id: PMAT-4936
+  github_issue: 4936
+  item_type: task
+  title: 'x86-main: fence the fat_driver case-table annotations; section git fetch reads up to 3 times (P6)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-10-08T14:17:11Z
+  updated: 2026-10-08T14:17:16.352731207+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-4941
+  github_issue: 4941
+  item_type: task
+  title: '#4941 feat(decide): the Laya ModernBERT encoder and decision library (carry)'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-10T08:24:58Z
+  updated: 2026-10-10T08:24:58Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4381
+- id: PMAT-4948
+  github_issue: 4948
+  item_type: task
+  title: '#4948 ci: fat-job section containers outlive cancelled runs'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-09T08:14:39Z
+  updated: 2026-10-09T08:14:39Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-4955
+  github_issue: 4955
+  item_type: task
+  title: 'Q6: non-blocking PR-path rows to nightly LAB'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-09T09:05:55Z
+  updated: 2026-10-09T09:05:55Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-4971
+  github_issue: 4971
+  item_type: task
+  title: 'V3 serving-shape parity: lambda perf041 witness for Qwen3.5-4B at c in {1,4,8,16}'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-10T01:35:02Z
+  updated: 2026-10-10T01:35:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3597
+- id: PMAT-4984
+  github_issue: 4984
+  item_type: task
+  title: APR wgpu path leaks the EOS id into text and reports no finish_reason
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-09T18:43:36Z
+  updated: 2026-10-09T18:43:36Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3597
+- id: PMAT-5025
+  github_issue: 5025
+  item_type: task
+  title: 'guard: refuse a shallow fetch into the shared common git dir (#5025)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:32:41Z
+  updated: 2026-10-12T12:32:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5034
+  github_issue: 5034
+  item_type: task
+  title: 'fleet_cells_gate: wildcard waiver covers only data faults; non-date until expires'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:33:33Z
+  updated: 2026-10-12T12:33:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5047
+  github_issue: 5047
+  item_type: task
+  title: 'check_roadmap_diff_additive: history row not_measured, self-test row floor (#5047)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:47:51Z
+  updated: 2026-10-12T12:47:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5053
+  github_issue: 5053
+  item_type: task
+  title: Nightly ci-pending retry same night, else red
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-10T11:53:27Z
+  updated: 2026-10-10T11:53:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5064
+  github_issue: 5064
+  item_type: task
+  title: 'fleet_cells_gate: self-test rows for DEL, locale, day guards; run --self-test nightly'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:40:21Z
+  updated: 2026-10-12T12:40:21Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5080
+  github_issue: 5080
+  item_type: task
+  title: nightly_train --producers refuses a registered lane with no producer workflow on the commit
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-10T17:55:34Z
+  updated: 2026-10-10T17:55:34Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5108
+  github_issue: 5108
+  item_type: task
+  title: Scripts kill by name pattern; kill only the pid recorded at spawn
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-11T02:30:22Z
+  updated: 2026-10-11T02:30:29.175357598+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5170
+  github_issue: 5170
+  item_type: task
+  title: 'surface ledger: aprender-ci-tools row (0.71.1 P1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T02:38:04Z
+  updated: 2026-10-12T02:38:04Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5174
+  github_issue: 5174
+  item_type: task
+  title: 'Release: decide where the R5 dogfood receipt belongs on the publish path'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T02:43:24Z
+  updated: 2026-10-12T02:43:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5225
+  github_issue: 5225
+  item_type: task
+  title: 'PY-PORT-2f: port model_ladder_cells_produce.py to aprender-ci-tools (C301), carries #4986'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-12T16:14:45Z
+  updated: 2026-10-12T16:14:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741
+- id: PMAT-5227
+  github_issue: 5227
+  item_type: task
+  title: apr-cli lib.rs include!d fns exceed complexity thresholds
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-12T16:33:54Z
+  updated: 2026-10-12T16:33:54Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5256
+  github_issue: 5256
+  item_type: task
+  title: 'apr --version short sha: one fixed length (9) for build and comparators'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-13T19:42:15Z
+  updated: 2026-10-13T19:42:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5282
+  github_issue: 5282
+  item_type: task
+  title: 'apr code eval E1: ontology contracts + spec'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-14T09:10:41Z
+  updated: 2026-10-14T09:10:41Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 5281
+- id: PMAT-5305
+  github_issue: 5305
+  item_type: task
+  title: 'PP-LLAMA-001 D6 unjam: time-boxed re-date of expired section-12 rows 13,15-17,19-21 + dated re-measure ticket'
+  status: planned
+  priority: critical
+  assigned_to: aprender-w5018
+  created: 2026-11-07T08:25:11Z
+  updated: 2026-11-07T08:25:11Z
+  spec: null
+  acceptance_criteria:
+  - main RED since 2026-11-06 expiry; rows need hardware cells; re-date to 2026-11-27 under quorum, first measurement cells due 2026-11-20
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  epic: 6570
+  notes: >-
+    Owner aprender-w5018, first measurement cells due 2026-11-20 (hard stop; no evidence file by then goes to a retire/re-scope/LAB quorum, never re-dated; quorum 2026-11-07, docs/audits/quorum-PMAT-5305.ruling.json). Per-row plan, all non-lambda (lambda builds banned). Row 13 cargo bench batched Q4_K GEMV on intel. Row 15 gx10 shakedown W1 n>=5 interleaved, new LEDGER row (row 18 derives from it). Rows 16 and 17 (W3 open-loop, W4 token sweep) re-scoped from lambda to gx10. Rows 19, 20, 21 gx10 CUDA profile (per-token host work, prefill sync copies, KV-scatter on Blackwell). Row 18 (reference cell, derived from 15) runs after 15 is clean; its host is chosen at the 2026-11-20 checkpoint and is never a lambda build (prebuilt binary, measurement only).
+- id: PMAT-5306
+  github_issue: 5306
+  item_type: task
+  title: 'N26 promote-nightly adapter: receipt-gated promote_nightly.sh'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-29T18:00:36Z
+  updated: 2026-10-29T18:00:36Z
+  spec: null
+  acceptance_criteria:
+  - 'FLOW-008/N26: scripts/release/promote_nightly.sh verifies on-main sha, version/tag, sha-bound clean-room+models+coverage+publish-dry-run receipts; dry-run by default; --execute does what autopilot cut_tag does. Falsify: scripts/release/falsify_promote_nightly.sh'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5326
+  github_issue: 5326
+  item_type: task
+  title: 'aprender-train build.rs: move serde_yaml_ng to serde-saphyr (RUSTSEC-2024-0449 slice of #5326)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-31T06:42:18Z
+  updated: 2026-10-31T06:42:18Z
+  spec: null
+  acceptance_criteria:
+  - 'Slice of #5326. build.rs parses binding.yaml with serde-saphyr; serde_yaml_ng leaves Cargo.lock; 2 lib tests guard it.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5374
+  github_issue: 5374
+  item_type: task
+  title: 'FLAKE-0: check_hardcoded_paths self-test pipe into grep -q (GH #5374)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-15T06:51:19Z
+  updated: 2026-10-15T06:51:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4780
+- id: PMAT-5463
+  github_issue: 5463
+  item_type: task
+  title: refactor 5 apr-cli files under pre-commit complexity limits
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-17T03:17:59Z
+  updated: 2026-10-17T03:17:59Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998
+- id: PMAT-5502
+  github_issue: 5502
+  item_type: task
+  title: Wire parity_receipt_denominator.sh verify mode into CI (#5502)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-18T10:18:08Z
+  updated: 2026-10-18T10:18:08Z
+  spec: null
+  acceptance_criteria:
+  - 'Slice of #5309 (debt ratchet)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3997
+- id: PMAT-5737
+  github_issue: 5737
+  item_type: task
+  title: 'T-rollup: rollup bot (aprender-rollup crate + gh layer + bin)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-19T07:13:22Z
+  updated: 2026-10-19T07:13:22Z
+  spec: null
+  acceptance_criteria:
+  - 'INTAKE refs #5394; step 1 on feat/rollup-bot @138d94c28f'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5792
+  github_issue: 5792
+  item_type: task
+  title: 'Advisory gate: PR fails only on advisories it introduces; main-resident advisory = andon, not a block (0h stop)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-20T12:27:03Z
+  updated: 2026-10-20T12:27:03Z
+  spec: null
+  acceptance_criteria:
+  - 'Contract contracts/advisory-gate-diff-v1.yaml. Refs #5791. Gate-accept: solo + non-author sign-off + Noah''s yes; workflows edits go to quorum first.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5817
+  github_issue: 5817
+  item_type: task
+  title: 'check_release_models_t1: measure_bogus fixture is hermetic (own CARGO_TARGET_DIR)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-20T23:55:53Z
+  updated: 2026-10-20T23:55:53Z
+  spec: null
+  acceptance_criteria:
+  - measure_bogus runs models_t1.sh directly; the stub cargo build writes apr 9.9.9 into an inherited CARGO_TARGET_DIR. Own target dir per fixture.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5843
+  github_issue: 5843
+  item_type: task
+  title: 'MQ feeder: every 5 min enqueue the oldest green non-draft PR when the merge queue is empty'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T10:55:00Z
+  updated: 2026-10-21T10:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/mq_feeder.sh --self-test green; timer live; kicked PRs re-read at 30s and skipped'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5846
+  github_issue: 5846
+  item_type: task
+  title: 'arm_pr_automerge.sh: stale guard-tree check name (default must be x86-main)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T10:13:29Z
+  updated: 2026-10-21T10:13:29Z
+  spec: null
+  acceptance_criteria:
+  - 'default GUARD_CHECK_NAME names a check run that exists on PR heads; --self-test fixtures updated'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5847
+  github_issue: 5847
+  item_type: task
+  title: 'LAB nightlies: timeout-minutes on every job and end by 05:00Z (falsifier scripts/lab/lab_timeouts_audit.sh)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T11:30:00Z
+  updated: 2026-10-22T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/lab/lab_timeouts_audit.sh is RED on the pre-fix tree (22 findings on the merge-base) and GREEN after; --self-test 11 rows'
+  - 'release-rehearsal-nightly.yml (cron 20 5, 455 min lower bound) is RED in the audit with no exemption by default; one owner, this ticket. Exempting it is pending quorum.'
+  - 'reaper catching queued + schedule runs is a separate change to the deployed pr-run-reaper.sh'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5873
+  github_issue: 5873
+  item_type: task
+  title: 'LAB: check_harness_server_cleanup apr-stub row races; quarantine to guards-nightly, then fix'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-21T15:20:00Z
+  updated: 2026-10-21T15:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the check runs in guards-nightly (LAB), not in ci/explicit-test-commands.d'
+  - 'the apr-stub row no longer races (second PR)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5879
+  github_issue: 5879
+  item_type: task
+  title: 'intake: coverage scan updates the #5875 report, never one ticket per function'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-21T16:00:00Z
+  updated: 2026-10-21T16:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'LAB check goes RED on an open "test: cover" issue not named in epic #5875, GREEN today'
+  - 'it runs in guards-nightly, never in a PR or merge-queue job'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: coverage-nightly.yml already edits one tracking issue by title; the per-function filer is outside the repo, this guard catches it.
+  epic: 5875
+- id: PMAT-5884
+  github_issue: 5884
+  item_type: task
+  title: 'mg-reuse: merge_group skips workspace-test-shard when its tree == a green PR run''s tree (Noah 16:28Z #3)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T17:05:00Z
+  updated: 2026-10-21T17:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'merge_group skips workspace-test-shard only when K1-K5 hold and the PR head run workspace-test succeeded; any difference runs the full shards'
+  - 'ci_mg_reuse.sh --self-test falsifier: changed main/tree -> wt=0, identical tree -> wt=1, override carries wt only when exactly 1'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5888
+  github_issue: 5888
+  item_type: task
+  title: aprender-rollup --version (nightly version-failed)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T17:43:16Z
+  updated: 2026-10-21T17:43:16Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5889
+  github_issue: 5889
+  item_type: task
+  title: 'LAB kfocus-shadow-lab.yml: dispatch-only x86-main shadow on kfocus (OP 17:15Z parity)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-21T17:44:17Z
+  updated: 2026-10-21T17:44:17Z
+  spec: null
+  acceptance_criteria:
+  - 'Dispatch-only LAB workflow (C324) running x86-main at a given sha on kfocus, to compare verdicts with intel. PR #5887.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:measurement
+  notes: null
+  epic: 5510
+- id: PMAT-5914
+  github_issue: 5914
+  item_type: task
+  title: 'pv debug-build CPU: tests lint whole contracts tree with debug pv'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T07:04:44Z
+  updated: 2026-10-22T07:04:44Z
+  spec: null
+  acceptance_criteria:
+  - See handoff/pv-debug-cpu-20261022.md; PV_BIN override + shared release pv
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5920
+  github_issue: 5920
+  item_type: task
+  title: 'guard-cargo: parallel cargo-free lane in ci_guards.sh (merge-queue x86-main 29.3 min)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:40:00Z
+  updated: 2026-10-22T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - See ci/guard-lane-steps.txt; the lane is off by default (CI_GUARDS_LANE=1 opts in; C324)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5924
+  github_issue: 5924
+  item_type: task
+  title: 'EMG-001 C1: workspace-test-shard single shard, threads 4 to 16'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T10:55:00Z
+  updated: 2026-10-22T10:55:00Z
+  spec: null
+  acceptance_criteria:
+  - handoff/emg-001/EMG-001.md C1+C2; EMG-9 proof in PR body
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5952
+  github_issue: 5952
+  item_type: task
+  title: 'ci: push-to-main tier runs only HEAD^1..HEAD; use the PUSH_BEFORE range'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T15:15:00Z
+  updated: 2026-10-22T15:15:00Z
+  spec: null
+  acceptance_criteria:
+  - ci_test_tier.sh push arm diffs github.event.before..HEAD with an all-zero-before guard; self-test rows plus a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-5955
+  github_issue: 5955
+  item_type: task
+  title: 'ci: heavy X64 jobs run only in merge_group/push; PR runs stay light (Noah 15:09Z)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:20:00Z
+  updated: 2026-10-22T16:20:00Z
+  spec: null
+  acceptance_criteria:
+  - on pull_request x86-main, x86-main-advisories and workspace-test-shard do not run; pr-light does; ci / gate, gate and workspace-test pass when pr-light passes
+  - on merge_group, push, an empty or an unknown event the same aggregators fail when a heavy job is skipped; ci_mg_reuse.sh --self-test runs both directions plus mutants that delete the event check
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-5971
+  github_issue: 5971
+  item_type: task
+  title: 'ci: move guard-cargo, guard-tree, vendored-schemas out of x86-main into an MQ "guards" job on the existing mq lane'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T16:30:00Z
+  updated: 2026-10-22T16:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'merge_group runs a required "guards" job on the existing [self-hosted, Linux, X64, mq] label (no new runner label) holding guard-tree, guard-cargo, vendored-schemas; x86-main drops them on merge_group'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-5974
+  github_issue: 5974
+  item_type: task
+  title: 'ci: silicon-coverage scores a consistently empty workflow listing MISSING instead of NOT_MEASURED'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T16:49:18Z
+  updated: 2026-10-22T16:49:18Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-5978
+  github_issue: 5978
+  item_type: task
+  title: 'check_silicon_coverage: re-read an all-empty listing once, print request ids'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-22T17:32:38Z
+  updated: 2026-10-22T17:32:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-6041
+  github_issue: 6041
+  item_type: task
+  title: 'ci: guard-cargo#m5 mounts a toolchain that lives outside RUSTUP_HOME and fails loud when the container does not run the pinned rustc'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T00:55:00Z
+  updated: 2026-10-23T00:55:00Z
+  spec: null
+  acceptance_criteria:
+  - 'm5 resolves the pinned toolchain with readlink -f, mounts it when outside RUSTUP_HOME, and the container step fails with FAIL(ENV) naming the resolved rustc if it is not the pinned one'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6042
+  github_issue: 6042
+  item_type: task
+  title: 'gate: affected_set.sh narrows docs/contracts/*.md to READERS-only (split out of #6035)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:00:00Z
+  updated: 2026-10-23T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - docs, contracts, root *.md and .claude/ paths select READERS only, not ALL
+  - nothing on a PR, merge-queue or release path calls affected_set.sh (dormant)
+  - the readers case table and self-test run as a nightly LAB step with one owner
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6068
+  github_issue: 6068
+  item_type: task
+  title: repo_flow binding_station is the argmin of the station bounds (flow model eq 2/3/5/6)
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T03:15:38Z
+  updated: 2026-10-23T03:15:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6102
+  github_issue: 6102
+  item_type: task
+  title: 'ci: one PR per ticket, enforced (check refuses a duplicate PR per PMAT ticket)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T07:18:45Z
+  updated: 2026-10-23T07:18:45Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6123
+  github_issue: 6123
+  item_type: task
+  title: 'guard_lane_stop.sh: no date(1), clock injected (DET002; child of PMAT-5920)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T09:30:00Z
+  updated: 2026-10-23T09:30:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/guard_lane_stop.sh has no date invocation and no bashrs disable-line; bashrs lint --no-ignore reports no DET002
+  - the self-test fails when ACTIVE_SINCE_EPOCH and ACTIVE_SINCE disagree
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6126
+  github_issue: 6126
+  item_type: task
+  title: 'deep-nightly: disk-floor guard so runner ENOSPC is an INFRA fault, not a red'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:45:19Z
+  updated: 2026-11-03T07:45:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5306
+- id: PMAT-6131
+  github_issue: 6131
+  item_type: task
+  title: 'pmat_bin.sh reads its pin from tools.toml, one source (m36 FAIL ENV; child of PMAT-1059)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:20:00Z
+  updated: 2026-10-23T10:20:00Z
+  spec: null
+  acceptance_criteria:
+  - scripts/pmat_bin.sh holds no version literal; PMAT_PIN is tools.toml [pmat] version
+  - an unreadable pin returns 1, never a default
+  - check_hardcoded_paths.sh --self-test reads the pin from tools.toml
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6133
+  github_issue: 6133
+  item_type: task
+  title: 'move the pmat pin to 3.42.0; re-stamp CB-200 and complexity baselines (child of PMAT-6131)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:40:00Z
+  updated: 2026-10-23T10:40:00Z
+  spec: null
+  acceptance_criteria:
+  - tools.toml [pmat] version is 3.42.0 and check_tool_versions.sh reports no pmat header mismatch
+  - instrument vs tree separated by measuring 3.41.1 and 3.42.0 on the same tree
+  - complexity_baseline.txt and cb200_baseline.txt carry tool_version=pmat 3.42.0; no count rises for tree debt
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6134
+  github_issue: 6134
+  item_type: task
+  title: 'EMF G3: receipts keyed by patch-id; a push re-reviews only changed patch-ids'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T10:45:00Z
+  updated: 2026-10-23T10:45:00Z
+  spec: docs/specifications/EMF-G3-patch-id-receipts.md
+  acceptance_criteria:
+  - scripts/pr_patch_ids.sh is the one producer of per-commit patch-ids; an unreadable range or an empty set is a refusal
+  - mq_feeder.sh needs_seats arms a gate PR only when every head patch-id has 2 distinct seats and a 3/3 receipt, with no request-changes naming a head id
+  - a no-op rebase and a merge of main void 0 receipts; an amended commit voids only its own id
+  - the head-sha rules stay accepted; arm_pr_automerge.sh keeps its head_sha rule
+  - case table F1-F9 in mq_feeder.sh --self-test, each with a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6135
+  github_issue: 6135
+  item_type: task
+  title: 'mq-feeder: gate auto-arm with non-author seats + fresh_derived byte-compare (split from #6112)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T10:35:00Z
+  updated: 2026-10-23T10:35:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The mq-feeder arms a gate PR only when every head patch-id has 2 distinct non-author seats and a 3/3 fresh_derived byte-compare receipt (as #6134 needs_seats); a no-op rebase or merge of main voids 0 receipts and an amended commit voids only its own id; a falsifier test shows an author-only seat or a stale byte-compare does not arm'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6151
+  github_issue: 6151
+  item_type: task
+  title: 'ci: thread caps come from RUNNER_THREAD_CAP, no literal thread count in workflows (supersedes EMG-001 C1(d))'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T11:45:00Z
+  updated: 2026-10-23T11:45:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6159
+  github_issue: 6159
+  item_type: task
+  title: 'pr-light body guard: retry PR-vs-issue resolution on transient API errors, fail fast on 404'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T12:50:00Z
+  updated: 2026-10-23T12:50:00Z
+  spec: null
+  acceptance_criteria:
+  - ref_kind retries transient gh errors (3 calls) and fails fast on HTTP 404/410; unknown is judged as an issue
+  - self-test rows gh-transient-error-retried and gh-404-fails-fast; mutants go red
+  - re-run on body edit is NOT automated (ci.yml edited would re-run everything; a non-required job is LAB); use gh run rerun --failed
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6169
+  github_issue: 6169
+  item_type: task
+  title: 'ci: pr-light takes the pr-x64 runner pool on pull_request (never merge_group, never release)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T14:05:00Z
+  updated: 2026-10-23T14:05:00Z
+  spec: null
+  acceptance_criteria:
+  - pr-light runs-on selects [self-hosted, Linux, X64, pr-x64] when repo variable PR_LIGHT_POOL is pr-x64, and [self-hosted, Linux, X64, clean-room] otherwise (the default, so merging changes nothing)
+  - scripts/ci_mg_reuse.sh asserts both arms and that no mq label sits on pr-light
+  - no merge_group, release or clean-room-only job changes its runs-on
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+- id: PMAT-6175
+  github_issue: 6175
+  item_type: task
+  title: "mq_feeder: the check it requires must be a job a PR head runs (checked at runtime)"
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T15:10:00Z
+  updated: 2026-10-23T15:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'The feeder refuses to act (exit 2, one inbox line an hour) when main''s ci.yml is unreadable, or when the required check is absent under jobs:, or is a job a pull_request event cannot run (no pull_request trigger, every || branch merge-queue-only, or a needs: chain reaching such a job)'
+  - 'main''s ci.yml is read only when the feeder is about to act (after the rate-limit and QUEUE_BUSY checks), with If-None-Match, from one cached copy in the state dir and no temp file per tick'
+  - 'scripts/check_mq_feeder_required_set.sh, wired as a nightly LAB step in guards-nightly.yml (never on the PR or merge-queue path), runs the feeder --self-test (real ci.yml: x86-main is merge-queue-only, pr-light is not) and its planted bad workflows (merge-queue-only required check, hyphenated needs chain, always() child) each turn the feeder self-test red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6185
+  github_issue: 6185
+  item_type: task
+  title: 'roadmap: frozen roadmap-base.yaml, generator reads it (S1 of removing the tracked aggregate)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-23T17:20:00Z
+  updated: 2026-10-23T17:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'S1a (this change, scripts only): roadmap_fragments.py aggregate reads roadmap-base.yaml when it sits beside roadmap.yaml, check_roadmap_fragment_required.sh freezes it and judges roadmap.yaml against aggregate(roadmap-base.yaml, entries/); a scratch dir without roadmap-base.yaml behaves as before. S1b (the data-only follow-up PR, stacked on this one) adds docs/roadmaps/roadmap-base.yaml, a snapshot that equals roadmap.yaml, and rule 3 verifies it on introduction. This change deliberately contains no roadmap-base.yaml'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'GATE CHANGE (S1b, PR carrying docs/roadmaps/roadmap-base.yaml): S1b is NOT data-only and OVERRIDES the S1a/S1b wording in acceptance_criteria, which cannot be edited in place. It adds rule R7 to scripts/check_comparator_pin_citations.sh, loosening R1 for the one pair roadmap.yaml -> roadmap-base.yaml: the base passes unledgered only if its citing lines carry EXACTLY the pin of the historical roadmap.yaml ledger row and every line is a byte-copy of one of them. Self-test C20-C25; mutants drop-copy-rule, any-copy-line, drop-class-filter, widen-scope, membership-only. Scope and A/B ruling: docs/audits/quorum-PMAT-6185-R1-pin-cites.md. SECOND GATE CHANGE in the same PR: scripts/check_roadmap_completion_is_cited.sh does not count the completed entries of roadmap-base.yaml while docs/roadmaps/roadmap.yaml is in scope and holds EVERY id the base holds (content-bound, not a path waiver); if roadmap.yaml is removed or the base holds an id it lacks, the base is judged like any roadmap file. Self-test rows: ids all present (no records), extra id (judged), roadmap.yaml removed (judged); mutants path-waiver and drop-subset-test are killed. Follow-ups for the step removing the tracked roadmap.yaml: move the ledger row onto roadmap-base.yaml (C24) and let the completion-citation guard judge the base (it does so automatically).'
+  epic: null
+- id: PMAT-6190
+  github_issue: 6190
+  item_type: task
+  title: 'kfocus-shadow-lab: run the workspace-test-shard sections and upload sigma-shard junit (G7 comparator input)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T17:50:00Z
+  updated: 2026-10-23T17:50:00Z
+  spec: null
+  acceptance_criteria:
+  - kfocus-shadow-lab.yml runs the workspace-test-shard sections and uploads sigma-shard-*/lib.junit.xml with if-no-files-found error
+  - the workflow stays workflow_dispatch only (LAB), no pull_request, push, merge_group or schedule trigger
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510
+- id: PMAT-6199
+  github_issue: 6199
+  item_type: task
+  title: "LAB twin: mg-reuse-lab-nightly runs the reuse-key and fat-wait self-tests nightly (infra#2327)"
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-23T18:00:00Z
+  updated: 2026-10-23T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'mg-reuse-lab-nightly.yml triggers only on schedule and workflow_dispatch, has one job, and is in no PR, merge-queue or release path'
+  - 'its header names owner aprender-w5382 and the ticket; a red opens or updates the one ticket via scripts/lab_ticket.sh'
+  - 'ci_mg_reuse.sh --self-test and check_ci_wait_cancel.sh (self-test and bare) pass locally at the head, and the workflow steps run exactly those commands'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Post-merge obligation, not an AC of this PR: one workflow_dispatch on main, green, run URL recorded in #6194. It is a merge condition of #6194 (the retirement), not of this twin.'
+  epic: null
+- id: PMAT-6200
+  github_issue: 6200
+  item_type: task
+  title: 'CI: pin ci/gate, gate, mg-reuse-self-test to X64 runners'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-23T19:02:47Z
+  updated: 2026-10-23T19:02:47Z
+  spec: null
+  acceptance_criteria:
+  - 'ci.yml jobs mg-reuse-self-test, ci-gate (ci / gate) and gate carry the X64 label in runs-on, so no gx10 aarch64 runner can take them; a guard fails if any of the three loses it'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6206
+  github_issue: 6206
+  item_type: task
+  title: 'CI: fat_driver depth-1 checkout fetches tags first and surfaces git stderr'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-24T00:17:40Z
+  updated: 2026-10-24T00:17:40Z
+  spec: null
+  acceptance_criteria:
+  - 'fat_driver.py uses_checkout (fetch-depth 1) runs git fetch -q origin +refs/tags/*:refs/tags/* (tags only, the + forces a moved tag; no --force flag, no bare --tags) under a 600s timeout before git tag -l, and a failing git tag -l or git tag -d fails the checkout with git stderr and rc in the section log; the self-test rows (missing tag object fetched, unfetchable tag fails with stderr, moved tag does not fail the fetch, undeletable tag fails with why) each turn red under the mutants that drop the fetch, the + of the refspec, the tags-only refspec (bare --tags or a wide refspec), the failure check, the stderr, the rc, the timeout or its 600'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6208
+  github_issue: 6208
+  item_type: bug
+  title: 'PP-29 D6: PP-LLAMA-001 §12 rows 16, 17, 20 expired 2026-10-23, main RED'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5382
+  created: 2026-10-24T00:45:00Z
+  updated: 2026-10-24T00:45:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/spec_conformance.sh passes on the branch; rows 16, 17, 20 carry 2026-11-06 (the 0.73.0 milestone date rows 13, 15, 19, 21 already use) with the was-date shown; a changelog row names the quorum round, says none of the three has evidence, and carries the NO SPEED DELIVERED consequence for the 0.72 notes; with SPEC_CONFORMANCE_TODAY=2026-11-07 the andon is RED again for exactly these rows; derived_expiries.json is regenerated by --write'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-date is renewal, not discharge; it ships only on a quorum AGREED at the final head. Real discharge needs lambda/CUDA hardware cells.'
+  epic: 5510
+- id: PMAT-6211
+  github_issue: 6211
+  item_type: task
+  title: 'model-ladder: per-cell memory admission so large cells do not swap the host'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T01:00:00Z
+  updated: 2026-10-24T01:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'with --admit (LADDER_ADMIT=1 in model_ladder.sh), each cell is checked against free memory, swap in use and live runner jobs; a cell the host cannot take is recorded not_measured with the reason and never run; an unreadable host admits nothing'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6212
+  github_issue: 6212
+  item_type: task
+  title: 'corpus-ingest: civil_from_days and now_utc_iso8601 tests + FALSIFY-006 (the #5590 delta not on main)'
+  status: in_progress
+  priority: low
+  assigned_to: aprender-w5382
+  created: 2026-10-24T01:20:00Z
+  updated: 2026-10-24T01:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo test -p apr-cli --bin aprender-corpus-ingest -- civil_from_days now_utc format_utc passes (3 tests); changing the 719_468 epoch offset by one turns civil_from_days_epoch_and_leap_boundaries RED; contracts/bin-apr-cli--aprender-corpus-ingest-v1.yaml carries FALSIFY-BIN-APR_CORPUS_INGEST-006 and pv validate passes'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Re-cut from the EMG-001 return of #5590; its step-profiler half already landed (a743e8c23d).'
+  epic: 5510
+- id: PMAT-6235
+  github_issue: 6235
+  item_type: task
+  title: 'ci/sections.yml: pre-checkout ownership restore chowns to the runner uid, not 1000:1000'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T04:30:00Z
+  updated: 2026-10-24T04:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the three Pre-checkout ownership restore steps chown /workspace to the invoking runner uid:gid passed into the container, never a hardcoded 1000:1000'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6239
+  github_issue: 6239
+  item_type: task
+  title: 'ci: pr-light runs on an X64 clean-room runner, not gx10-build'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T05:05:00Z
+  updated: 2026-10-24T05:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'pr-light runs-on is [self-hosted, Linux, X64, clean-room] and the mg-reuse wiring check pins that exact line'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6251
+  github_issue: 6251
+  item_type: task
+  title: 'FLOW-011 T2: review tiers by changed paths (tools/review-tiers.yaml, MT-13)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T08:40:00Z
+  updated: 2026-10-24T08:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/review_tier.sh derives light|standard|sensitive from the changed paths, highest wins, comment-only checked mechanically, table read from the base, no author-set tier'
+  - 'scripts/check_review_tier.sh --self-test: the case table passes and every planted mutant turns it red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6255
+  github_issue: 6255
+  item_type: task
+  title: 'guard-cargo: split the 77 serial guard items into 3 parallel shards (merge-queue guards critical path)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T09:24:00Z
+  updated: 2026-10-24T11:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'guard-cargo runs as guard-cargo-shard (1..3 of 3), step m<N> in shard (N mod 3)+1, except a step that appends to GITHUB_PATH/GITHUB_ENV, which runs in every shard so later steps keep its state; the union of the three shards lists exactly the items `ci_guards.sh --list guard-cargo` lists on main, each once (state writers once per shard), with the same per-item condition; the check `guard-cargo` the gate reads is a fan-in verdict job that is red unless every shard is green'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6256
+  github_issue: 6256
+  item_type: task
+  title: 'ci: ownership restores chown to the runner uid and report failure (follow-up to #6235)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T10:05:00Z
+  updated: 2026-10-24T10:05:00Z
+  spec: null
+  acceptance_criteria:
+  - 'no chown in ci/sections.yml names 1000:1000, discards stderr or swallows its exit status'
+  - 'scripts/check_chown_loud.sh is red on the old file and its three planted mutants turn it red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6262
+  github_issue: 6262
+  item_type: task
+  title: 'deps: tokio 1.52.3 trips RUSTSEC-2026-0386, main red on guard-cargo#m70'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-24T11:10:00Z
+  updated: 2026-10-24T11:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo deny check advisories passes with no new exemption'
+  - 'Cargo.lock changes only tokio version 1.52.3 -> 1.53.3 and its checksum (2 lines); no deny.toml change'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Measured at 509a74b498 (tokio 1.53.3): cargo deny check advisories -> advisories ok; cargo metadata --locked -> exit 0. The same entry appears in roadmap.yaml because that file is the generated aggregate of entries/ (scripts/lib/roadmap_fragments.py aggregate --write); the fragment is the source.'
+  epic: null
+- id: PMAT-6267
+  github_issue: 6267
+  item_type: task
+  title: 'ci: one-PR-per-ticket R1 allowance for EMR-001 squash integration PRs'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T14:30:00Z
+  updated: 2026-10-24T14:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a commit carrying "EMR: 001" and "Squashed-From: #N" on the same commit exempts open PR #N from R1, and only #N'
+  - 'planted rows: exempt, other PR still RED, two sources, no EMR marker, wrong EMR id, split commits, unnamed PR; three mutants turn the table red'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Refs EMR-001 E-1. EMR-001 forbids closing a source PR, so the source stays open while the integration PR is judged. Sensitive tier (scripts/*): quorum before seats.'
+  epic: null
+- id: PMAT-6278
+  github_issue: 6278
+  item_type: task
+  title: 'nightly LAB lane: cargo semver-checks vs 0.71.4 heavy-lane receipt'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-10-24T15:31:39Z
+  updated: 2026-10-24T15:31:39Z
+  spec: null
+  acceptance_criteria:
+  - 'Nightly LAB receipt, never on a PR or merge-queue path (C324). Per-crate CLEAN/BREAKING/not_measured; see #6273.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6281
+  github_issue: 6281
+  item_type: task
+  title: 'ci(mq): merge_group hang caps -- no-output watchdog on the shard, 2x p95 walls on x86-main and guards'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-24T17:30:00Z
+  updated: 2026-10-24T17:30:00Z
+  spec: null
+  acceptance_criteria:
+  - on merge_group the workspace-test-shard job keeps its 180-minute wall and sets FAT_IDLE_LIMIT_S=1200 so fat_driver kills a step whose section log is silent for 20 minutes
+  - on merge_group x86-main is capped at 40 minutes and guards at 65 (2 x p95 of 30 green queue runs plus the 20-minute cold image pull); pull_request and push timeouts are unchanged
+  - fat_driver self-test has rows for the idle watchdog and a watchdog-off mutant turns one RED
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6282
+  github_issue: 6282
+  item_type: task
+  title: 'cbtop pcie collector: ignore unknown-width sentinels (63/255), fixture tests'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-24T17:02:58Z
+  updated: 2026-10-24T17:02:58Z
+  spec: null
+  acceptance_criteria:
+  - kfocus current_link_width=63 broke test_pcie_collector.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6288
+  github_issue: 6288
+  item_type: task
+  title: 'ci: version bump regenerates the roadmap aggregate (part 1 of PMAT-6270)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T18:00:00Z
+  updated: 2026-10-24T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/bump-version.sh regenerates docs/roadmaps/roadmap.yaml from entries/ (make roadmap-aggregate) and carries it in the bump commit; its self-test covers it'
+  - 'the change adds 0 lines of Python (C301): the shape check and the newline-safe read_fragments move to the Rust port ticket'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Part 1 of the split of #6271, narrowed by opus-ruling-newpython-conflict-2220Z (C301): shape moves to a Rust subcommand in aprender-rollup (own ticket). The guard check_roadmap_fragment_required.sh is part 2, PMAT-6270.'
+  epic: null
+- id: PMAT-6304
+  github_issue: 6304
+  item_type: task
+  title: 'ci(mq): replace the fat_driver.py idle watchdog (landed Python, #6285) with scripts/ci/idle_watchdog.sh'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T23:30:00Z
+  updated: 2026-10-25T23:30:00Z
+  spec: null
+  acceptance_criteria:
+  - fat_driver.py is byte-identical to its content before #6285 (StepIdle, idle_limit_seconds, wait_or_idle, _st_idle gone; 0 net Python lines)
+  - scripts/ci/idle_watchdog.sh kills a command whose section logs stop growing for FAT_IDLE_LIMIT_S and exits 124
+  - 'parity rows in its --self-test: a stalled log fires, a growing log never does, a timeout still ends the run and leaves no orphan, the limit parses (unset, 1500, decimal, garbage, negative)'
+  - the merge-queue shard runs fat_driver.py run under the watchdog; PR/push runs are unchanged (limit unset = exec passthrough)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Quorum verdict A on landed Python (handoff/triage-quorum-6285-landedpython-2307Z.lane1.md). Behaviour change to name for the sign-off:
+    the Python watchdog watched one step's log; this one watches the sum of all section logs of the driver run, so on a shard with several
+    live sections one busy section hides another's hang. The shard runs a single section (workspace-test-shard), so no loss there.
+    Added .py lines vs origin/main: 2, both pre-#6285 lines restored verbatim (p.wait(timeout=timeout) and the self-test section tuple); removed: 91.
+    MT-2 (every line of scripts/ci/idle_watchdog.sh deleted in turn, unique per-run process tags): the survivors are named below; none is a behaviour line except the one marked inherent.
+    A TERM to the watchdog now escalates TERM, FAT_IDLE_GRACE, KILL and exits 143 deterministically (stop_group, shared with the idle path); a row
+    sends TERM to a watchdog over a TERM-ignoring step. The old spin guard (L55-56) is gone. Rows exist for hang-after-print, TERM grace, KILL, octal parse,
+    missing command. Remaining survivors: comments and blanks; `set -u`; the `local` declarations; the EXIT cleanup trap; and the self-test's
+    `exit 1` at L168 (was a survivor of the exit status alone: deleting it, with a failing row, exits 0; now caught because 849-idle-watchdog.cmd also fails when a `FAIL ` row appears in the output or the `all rows pass` line is missing; re-mutated: L168 `exit 1` deleted plus one broken row -> exit status 0, the .cmd line rc 1). `kill "$sp"` (two sites) and `kill "$gp"` were survivors (a leftover sleep holds a caller's pipe open: 8 s against 6 ms) and are now caught by three pipe-close rows that time the run through a command substitution; and the self-test's own `t0=`, `rc=$?`, `sleep` settle lines and `row` lines, each caught when paired
+    with the production line it checks.
+- id: PMAT-6306
+  github_issue: 6306
+  item_type: task
+  title: 'comparator-pin R7: anchor the frozen roadmap-base.yaml pool to the base-intro commit'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-24T23:20:00Z
+  updated: 2026-10-24T23:20:00Z
+  spec: null
+  acceptance_criteria:
+  - 'roadmap.yaml re-indented and re-pinned with an untouched roadmap-base.yaml stays green; a novel or re-cut base line is R1; the live-row pool and the class filter each have a killed mutant'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Quorum 6303-R7 2/2: neither re-freezing the base (a waiver of rule 3) nor main-pinned lines. Pool = roadmap.yaml at 9e8f8ad8c7; base 18 lines == anchor 18 == main 18 (38afc7a5fac9). Lands before #6303.'
+  epic: null
+- id: PMAT-6313
+  github_issue: 6313
+  item_type: task
+  title: 'ci: aprender-rollup fold, the Rust roadmap aggregate (C301 port, part of PMAT-6270)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T00:50:00Z
+  updated: 2026-10-25T00:50:00Z
+  spec: null
+  acceptance_criteria:
+  - '`aprender-rollup fold <base.yaml> <entries-dir>` prints base plus fragments on stdout, each fragment at the sorted slot of its id prefix (numerals compared as integers of any width, legacy ids last), exit 0; exit 2 with `not measured` when the base or a fragment cannot be read or is not UTF-8'
+  - 'a fragment supersedes a base entry of the same id, two fragments of one id are refused, the output is idempotent and independent of fragment order, and no byte of the base is normalised'
+  - 'the committed docs/roadmaps/roadmap.yaml equals fold(roadmap-base.yaml, entries/), as a test'
+  - '0 added Python lines, 0 added python3 calls, no new dependency'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Port of aggregate() from scripts/lib/roadmap_fragments.py, split from PMAT-6300 (#6301, shape only) per RULING B. Blocks #6271. main.rs is new on main; #6301 also adds it, whichever lands second merges the two dispatches.'
+  epic: null
+- id: PMAT-6360
+  github_issue: 6360
+  item_type: task
+  title: 'examples: replay prints a Usage: line on a bare run so the sweep reads needs-args, not fail'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-25T17:40:00Z
+  updated: 2026-10-25T17:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a bare run of the replay example prints a stderr line opening "Usage: replay" and exits 2'
+  - no change to scripts/dogfood_examples.sh or its needs-args pattern (no allow-list)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    examples-nightly run 40213290024 @45aa358732 read pass=605 fail=1; the one fail was this example. rex.rs already opens its usage line with Usage:.
+    MT-2: the const and the match arm are compile-checked; the eprintln line in the example is read only by the sweep itself, so deleting it is a named survivor.
+- id: PMAT-6383
+  github_issue: 6383
+  item_type: task
+  title: 'crux: classify POST /v1/chat/prompt-ids as a not-generation route'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-25T22:40:00Z
+  updated: 2026-10-25T22:40:00Z
+  spec: null
+  acceptance_criteria:
+  - 'crux_serve_routes.py plan on an index listing POST /v1/chat/prompt-ids has no unclassified route'
+  - an unlisted new route is still RED unclassified_route (check row P2 unchanged)
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    models-crux/dad8bf7a9b: 16 red cells per host, all this route, rc 3 unclassified_route. The route returns ids, no text, like /tokenize.
+    MT-2: the table entry and check row P4 are asserted by check_crux_serve_code.sh (78 rows pass).
+- id: PMAT-6386
+  github_issue: 6386
+  item_type: task
+  title: 'release: infra_gh names the path and HTTP status of a refused read (rehearsal pick not_measured)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T05:10:00Z
+  updated: 2026-10-26T05:10:00Z
+  spec: null
+  acceptance_criteria:
+  - 'a refused infra read prints "infra_gh: GET <path> -> HTTP <status>" on stderr and still exits 2 (not_measured)'
+  - 'no check is waived or softened, a failed read stays not_measured'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    release-rehearsal-nightly pick: not_measured every night since 10-15; the reason was swallowed (gh stderr to /dev/null).
+    MT-2: row measured_cpu_a_refused_read_names_its_status, mutant m53.
+- id: PMAT-6390
+  github_issue: 6390
+  item_type: epic
+  title: 'release train 0.72.0'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T08:00:00Z
+  updated: 2026-10-26T12:50:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:release
+  notes: null
+  epic: null
+- id: PMAT-6394
+  github_issue: 6394
+  item_type: task
+  title: 'pv readme: render README.md and SHACL-validate against pv extract shapes.ttl (#6394)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T08:55:20Z
+  updated: 2026-10-26T08:55:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 2870
+- id: PMAT-6401
+  github_issue: 6401
+  item_type: task
+  title: 'CAP-001: test_mega_long_context_memory_bound checks arithmetic without 31 GiB eager allocation'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T09:27:06Z
+  updated: 2026-10-26T09:27:06Z
+  spec: null
+  acceptance_criteria:
+  - 'memory-bound tests assert on StreamingKVCache[Fp16]::estimate_memory_bytes (no large allocation), tied to real 4 MiB / 2 MiB caches by literal byte counts'
+  - 'the two #[ignore]s on the 100 GB / 34 GB tests are removed; no nightly lane is added (the tests are fixed, not moved)'
+  - 'estimate_memory_bytes is pub const fn because the FP16 doctest, outside the crate, calls it; memory_bytes() uses it so one formula serves both'
+  - 'test_streaming_kv_cache_32768_positions and test_mega_long_context_fill_performance keep their original dimensions (unchanged)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5923
+- id: PMAT-6405
+  github_issue: 6405
+  item_type: task
+  title: 't2_preflight.sh: ignore parent checkout .cargo/config.toml patch (voided 4 rows)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T10:41:57Z
+  updated: 2026-10-26T10:41:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6407
+  github_issue: 6407
+  item_type: task
+  title: REV 2.0 step 6 nightly-bench runs-on perf-solo
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T11:03:41Z
+  updated: 2026-10-26T11:03:41Z
+  spec: null
+  acceptance_criteria:
+  - nightly-bench measure job selects [self-hosted, X64, Linux, intel, perf-solo] and lands on intel-clean-room-16
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6410
+  github_issue: 6410
+  item_type: task
+  title: model_ladder.sh fit-refused rungs skip ladder_append, T-1 models receipt not written (P0 0.72.0)
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-26T11:26:29Z
+  updated: 2026-10-26T11:26:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6416
+  github_issue: 6416
+  item_type: task
+  title: 'advisories: zstd 0.14.3 + parquet/arrow 60 (RUSTSEC-2026-0391/0398/0403/0410)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-a3
+  created: 2026-10-26T15:45:02Z
+  updated: 2026-10-26T18:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'cargo deny check advisories = 0 (RUSTSEC-2026-0391/0398/0403/0410 cleared)'
+  - 'cargo tree --workspace --all-features --target all -i zstd --locked shows only zstd 0.14.3 (wasmtime cache feature dropped)'
+  - 'aprender-graph parquet round-trip, ZSTD-read and Snappy-read tests are green under --features storage'
+  - 'default features of aprender-common and aprender-simulate keep Compression::Zstd and checkpointing'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6418
+  github_issue: 6418
+  item_type: task
+  title: workspace-test-shard timeout-minutes 119 on merge_group (max(2x p95, 1.25x max), measured)
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T16:44:11Z
+  updated: 2026-10-26T16:44:11Z
+  spec: null
+  acceptance_criteria:
+  - ci.yml workspace-test-shard timeout-minutes is 119 for merge_group and 180 for pull_request and push
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: 'Measured 2026-10-26 ~17:4xZ by handoff/shard-timeout-measure-strict.sh (aborts on any gh error after 3 tries, checks the run list is complete), 14 d of green merge_group workspace-test-shard jobs, clean output handoff/shard-timeout-strict.out: runs=247 n=656 p95=50.0 max=94.5; ceil(max(2x50.0=100, 1.25x94.5=118.1)) = 119. The first measurement (n=655 max=89.2, 112) had a 502 and lost data (L23); superseded.'
+- id: PMAT-6420
+  github_issue: 6420
+  item_type: task
+  title: shard merge-queue tests N=4; target MQ test p95 < 15 min
+  status: in_progress
+  priority: critical
+  assigned_to: aprender-pace
+  created: 2026-10-26T17:02:29Z
+  updated: 2026-10-26T17:02:29Z
+  spec: null
+  acceptance_criteria:
+  - workspace-test-shard runs as 4 shards (pins, ci.yml matrix, sections.yml jobs matrix) with check names unchanged
+  - check_shard_union.sh proves union of the 4 shard lists equals the pre-split list (134 explicit commands)
+  - merge-queue test p95 under 15 min measured over the first 20 green merge_group runs after merge; falsifier is p95 above 15
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5961
+- id: PMAT-6422
+  github_issue: 6422
+  item_type: task
+  title: 'aprender-serve .crate compiles its lib tests: ship upstream-reference-v1.json inside the crate'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-w5404
+  created: 2026-10-26T18:30:00Z
+  updated: 2026-10-26T18:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'crates/aprender-serve/data/upstream-reference-v1.json is listed by cargo package -p aprender-serve --list'
+  - 'both include_str! sites (matmul_fused.rs, kernel_registry.rs) read the crate copy'
+  - 'docs/kernel-registry/upstream-reference-v1.json is removed; the crate copy is the only one'
+  - 'package_tarball_build passes for aprender-serve'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6435
+  github_issue: 6435
+  item_type: task
+  title: 'pv readme A: README render and contract walk'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-wsweep
+  created: 2026-10-27T07:30:00Z
+  updated: 2026-10-27T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the CONTRACT_COUNT render, frontmatter line and contract walk land with tests (#6431)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6394
+- id: PMAT-6436
+  github_issue: 6436
+  item_type: task
+  title: 'pv readme B: SHACL validation driver and pv-readme bin'
+  status: in_progress
+  priority: medium
+  assigned_to: aprender-wsweep
+  created: 2026-10-27T07:30:00Z
+  updated: 2026-10-27T07:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the readme:Readme validation, a check/write driver that validates before it writes, and the pv-readme bin land with tests (#6432)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6394
+- id: PMAT-6437
+  github_issue: 6437
+  item_type: task
+  title: 'release: 0.72.1 (skip 0.72.0; zstd advisories cleared)'
+  status: in_progress
+  priority: high
+  assigned_to: aprender-a3
+  created: 2026-10-27T08:00:00Z
+  updated: 2026-10-27T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - 'scripts/bump-version.sh --check prints root workspace 0.72.1 and facade pins 0.72.1'
+  - 'cargo deny check advisories = 0 on the tagged commit'
+  - 'Clean-Room CI green on tag v0.72.1 before cargo publish'
+  - 'crates.io aprender max_version == 0.72.1 read back after publish'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6444
+  github_issue: 6444
+  item_type: task
+  title: 'MQ: remove the merge_group fail-fast (gh run cancel) steps from ci.yml'
+  status: in_progress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T11:30:00Z
+  updated: 2026-10-27T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ci.yml has no step that runs gh run cancel on its own run, and scripts/lab/ci_failfast_audit.sh fails if one returns'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5965
+- id: PMAT-6449
+  github_issue: 6449
+  item_type: task
+  title: 'ci(mq): merge_group lanes take the plain clean-room seats, not uncertified mq (A-C4)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:30:00Z
+  updated: 2026-10-27T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'the four merge_group runs-on lists in ci.yml (mg-reuse-wt, x86-main, guards, workspace-test-shard); determinism (ARM64) is untouched read exactly [self-hosted, Linux, X64, clean-room]; the PR path is unchanged'
+  - 'ci_mg_reuse.sh --self-test pins the plain lane and kills the mutants that put mq back (x86-main, guards, shard, mg-reuse-wt) or add a third label'
+  - 'no runner label, runner group or ruleset change'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Operator order 2026-10-27: merge_group shards ran on kfocus-mq/-mq-2, which carry only the mq label and are not certified clean-room (A-C4).
+    Operator order (AC-1352-SEL): the lane is exactly [self-hosted, Linux, X64, clean-room]; the build label is dropped so any certified clean-room seat can take a queue entry.
+- id: PMAT-6450
+  github_issue: 6450
+  item_type: task
+  title: 'PVB-S: land PVB-001 v1.3 spec (proof-code bridge)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-27T11:45:00Z
+  updated: 2026-10-27T11:45:00Z
+  spec: docs/specifications/PVB-001-proof-code-bridge.md
+  acceptance_criteria:
+  - 'docs/specifications/PVB-001-proof-code-bridge.md is byte-identical to the handoff file (sha256 f127e2d95108f8ac5da455921d2c96696e79f67cee87164cc51057f7f8ee389c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: null
+- id: PMAT-6453
+  github_issue: 6453
+  item_type: task
+  title: 'PVB-0: preflight — PVL gate landed, public probe library, Float32 probe'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:43Z
+  updated: 2026-10-27T11:35:43Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6454
+  github_issue: 6454
+  item_type: task
+  title: 'PVB-1: pv bridge census'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:48Z
+  updated: 2026-10-27T11:35:48Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6455
+  github_issue: 6455
+  item_type: task
+  title: 'PVB-2: proof.bridge schema + typed rust: predicates'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:52Z
+  updated: 2026-10-27T11:35:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6456
+  github_issue: 6456
+  item_type: task
+  title: 'PVB-3a: pilot — five existing computable exact models bound'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:35:57Z
+  updated: 2026-10-27T11:35:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6457
+  github_issue: 6457
+  item_type: task
+  title: 'PVB-3b: author computable Q4_K scale/min unpacker model + theorem'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:02Z
+  updated: 2026-10-27T11:36:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6458
+  github_issue: 6458
+  item_type: task
+  title: 'PVB-4: Lean reference executable pv-ref'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:06Z
+  updated: 2026-10-27T11:36:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6459
+  github_issue: 6459
+  item_type: task
+  title: 'PVB-5: pv bridge diff — B3 + tracked bridge-summary.json'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:11Z
+  updated: 2026-10-27T11:36:11Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6460
+  github_issue: 6460
+  item_type: task
+  title: 'PVB-6: B2 — extend pv kani to generate from rust: predicates'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:15Z
+  updated: 2026-10-27T11:36:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6461
+  github_issue: 6461
+  item_type: task
+  title: 'PVB-7: L5 = B0∧B1∧B2∧B3, read from summaries'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:20Z
+  updated: 2026-10-27T11:36:20Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6462
+  github_issue: 6462
+  item_type: task
+  title: 'PVB-7b: pv bridge fresh — hash-only freshness for consumers'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:24Z
+  updated: 2026-10-27T11:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6463
+  github_issue: 6463
+  item_type: task
+  title: 'PVB-8: bridge step in provable-ladder (PVL EV-9), freshness + never-down'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:29Z
+  updated: 2026-10-27T11:36:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6464
+  github_issue: 6464
+  item_type: task
+  title: 'PVB-9: expand to D-3 (repeatable)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:33Z
+  updated: 2026-10-27T11:36:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6465
+  github_issue: 6465
+  item_type: task
+  title: 'PVB-10: spec-weakness sweep'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:38Z
+  updated: 2026-10-27T11:36:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452
+- id: PMAT-6471
+  github_issue: 6471
+  item_type: task
+  title: 'release-reconcile: milestones must reflect releases (design)'
+  status: inprogress
+  priority: critical
+  assigned_to: null
+  created: 2026-10-27T12:30:00Z
+  updated: 2026-10-27T12:30:00Z
+  spec: docs/specifications/release-reconcile.md
+  acceptance_criteria:
+  - 'Run grep -E "^## (Rules|Drift classes|GATE / LAB|Falsifiers)" docs/specifications/release-reconcile.md: 4 lines, one per named section'
+  - 'Run gh issue view 6471: the design PR cites it and the code follows only after a non-author sign-off'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: 3998
+- id: PMAT-6474
+  github_issue: 6474
+  item_type: task
+  title: 'ci(lab): kfocus-shadow-lab selector reaches the kfocus seats (AC-1430-SAT)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:30:00Z
+  updated: 2026-10-27T11:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'kfocus-shadow-lab.yml runs-on is [self-hosted, Linux, X64, mq], matching kfocus-mq and kfocus-mq-2'
+  - 'dispatch-only trigger unchanged; no runner label, group or ruleset change'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    The old selector named a kfocus label no runner carries, so the lab could never run (AC-1430-SAT).
+- id: PMAT-6477
+  github_issue: 6477
+  item_type: task
+  title: 'ci(mq): merge_group workspace-test-shard count 3 until the fourth mq seat is online (AC-1520-SHARD3)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T15:30:00Z
+  updated: 2026-10-27T15:30:00Z
+  spec: null
+  acceptance_criteria:
+  - 'ci/sections.yml workspace-test-shard-merge_group has 3 pins of 3; ci.yml merge_group arms are [1,2,3] and [3]; pull_request stays 4'
+  - 'check_shard_count_single_source.sh passes and goes red when either side drifts (self-test, 11 rows)'
+  - 'keep open: restore 4 when the fourth mq seat is online'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: |-
+    Operator order via arbiter-cop (NOAH-forjar-andon-1520Z): shard count follows the online mq seats.
+- id: PMAT-6491
+  github_issue: 6491
+  item_type: task
+  title: 'release: auto-open next-patch bump PR when clean-room goes red (ANDON T1)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-31T09:50:28Z
+  updated: 2026-10-31T09:50:28Z
+  spec: null
+  acceptance_criteria:
+  - cleanroom_red_bump.sh + autopilot hook
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5306
+- id: PMAT-6501
+  github_issue: 6501
+  item_type: task
+  title: 'release_lanes.sh measured_cpu: stop hiding gh api rate_limit stderr (pick not_measured)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-29T13:37:59Z
+  updated: 2026-10-29T13:37:59Z
+  spec: null
+  acceptance_criteria:
+  - 'Rehearsal pick fails; stderr of gh api rate_limit goes to /dev/null. Capture and print first 200 bytes. Release-path script: non-author quorum + 2 reviews.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390
+- id: PMAT-6510
+  github_issue: 6510
+  item_type: task
+  title: 'check_silicon_coverage: retry transport faults (HTTP/2 stream CANCEL) before NOT_MEASURED (L23)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-10-29T17:42:08Z
+  updated: 2026-10-29T17:42:08Z
+  spec: null
+  acceptance_criteria:
+  - gh_read retried only HTTP 5xx; stream CANCEL blocked MG 40918059806.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863
+- id: PMAT-6588
+  github_issue: 6588
+  item_type: task
+  title: 'apr run: zero CPU forward calls on a refused forced GPU run'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T07:10:21Z
+  updated: 2026-11-03T07:10:21Z
+  spec: null
+  acceptance_criteria:
+  - 'AGB-INV-006 test, see #6588'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3999
+- id: PMAT-6675
+  github_issue: 6675
+  item_type: task
+  title: 'C4: CI bot opens the version-bump PR from the green nightly (--to X.Y.Z, --workflow, CRB_NEXT)'
+  status: inprogress
+  priority: high
+  assigned_to: f20-a1
+  created: 2026-11-09T08:40:05Z
+  updated: 2026-11-09T08:40:05Z
+  spec: null
+  acceptance_criteria:
+  - nightly_green_bump.sh --to X.Y.Z opens a bump to an explicit version strictly above the latest tag, only on a green nightly; otherwise NIGHTLY-BUMP-BLOCKED rc 1 / usage rc 2.
+  - --workflow <file>.yml selects the nightly that decides green; default nightly-train.yml unchanged.
+  - cleanroom_red_bump.sh honours a validated CRB_NEXT in place of the next patch (#6491).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Hand-written fragment per SEAT-UNBLOCK-0842Z item 3 (roadmap.yaml unparseable, CB-2113).
+  epic: 5306
+- id: PMAT-6677
+  github_issue: 6677
+  item_type: task
+  title: promote_scheduler fallback past a red candidate is silent (C12)
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T00:40:56Z
+  updated: 2026-11-03T00:40:56Z
+  spec: null
+  acceptance_criteria:
+  - 'C12: fallback past a skipped newer candidate writes one RED inbox line. Issue 6677.'
+  - 'C12 r5/r6: a run killed (TERM, INT, HUP) after it skipped a newer candidate writes one RED line naming the skip; a SIGKILL leaves a breadcrumb that the next run reports once and removes.'
+  - 'C12 r5/r6: the already-promoted and dry-run fallback lines are written once per (promoted sha, newest red sha) pair; an identical second run writes none.'
+  - 'C12 r6: the pre-existing RED clean-room run and RED newest nightly crux lines are unchanged from origin/main; the fallback line is in addition to them.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6687
+  github_issue: 6687
+  item_type: task
+  title: 'Graph-ordered cargo package lane (package_lane.sh + falsify_package_lane.sh, #3892) (falsify_package_lane.sh carries no producer|grep -q pipe)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T00:41:08Z
+  updated: 2026-11-03T00:41:08Z
+  spec: null
+  acceptance_criteria:
+  - 'package_lane.sh derives publish order from cargo metadata and packages each crate in that order, writing a sha-bound receipt (aprender issue #3892)'
+  - 'falsify_package_lane.sh --mutants at 77e2c9761: 77 rows held, 11/11 mutants caught (receipt docs/audits/impl-PMAT-6687-receipt.md, TIERS[] table deleted mutant included, run output lines: "falsify_package_lane: 77 rows held, 0 failed"; "mutants: 11 of 11 caught"; the catching row of each is printed; unmutated control copy passes every row); the #3892 profile-before-db order is a refused fixture'
+  - 'no producer|grep -q pipe in falsify_package_lane.sh (this PR does not touch scripts/pipe_grep_q_baseline.txt; the 42>39 move landed on main in d468dccc4, so the baseline stays at 39)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3999
+- id: PMAT-6689
+  github_issue: 6689
+  item_type: task
+  title: 'LAB lint: reject bash -c / sh -c wrappers containing rm'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T06:37:51Z
+  updated: 2026-11-03T06:37:51Z
+  spec: null
+  acceptance_criteria:
+  - 'see #6689'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6715
+  github_issue: 6715
+  item_type: task
+  title: 'mq_feeder: C48 tiers (LOW 1 non-author PASS, HIGH 1 Opus PASS), refuse any FAIL at head (C61-2)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T17:26:26Z
+  updated: 2026-11-03T17:26:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6717
+  github_issue: 6717
+  item_type: task
+  title: C61-7 runner temp for four workflows
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T18:16:19Z
+  updated: 2026-11-03T18:16:19Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6719
+  github_issue: 6719
+  item_type: task
+  title: bump-version.sh --self-test accepts TMPDIR scratch dirs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T20:37:32Z
+  updated: 2026-11-03T20:37:32Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6721
+  github_issue: 6721
+  item_type: task
+  title: guards accept RS-5 per-runner TMPDIR scratch dirs
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T21:10:06Z
+  updated: 2026-11-03T21:10:06Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6723
+  github_issue: 6723
+  item_type: task
+  title: 35 scripts accept RS-5 per-runner TMPDIR scratch dirs
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-03T21:37:44Z
+  updated: 2026-11-03T21:37:44Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6729
+  github_issue: 6729
+  item_type: task
+  title: 'KZ-001 b: one-command release workflow'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-11-04T14:16:18Z
+  updated: 2026-11-04T14:16:25.581378253+00:00
+  spec: null
+  acceptance_criteria:
+  - 'release.yml workflow_dispatch + scripts/release/one_command.sh. Falsifier: 0.73.0 from one command <=90min, 0 cop steps.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5348
+- id: PMAT-6797
+  github_issue: 6797
+  item_type: task
+  title: 'deep_disk_guard measures the temp volume: self-test pins guard() call site'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T17:10:00Z
+  updated: 2026-11-08T17:10:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6798
+  github_issue: 6798
+  item_type: task
+  title: 'nightly dogfood step names failing gate on exit 1: test pins the NO-GO branch'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T17:10:00Z
+  updated: 2026-11-08T17:10:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6806
+  github_issue: 6806
+  item_type: task
+  title: 'release bump: edit workspace version without cargo-edit (Release Rehearsal 42478090078)'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T16:51:47Z
+  updated: 2026-11-08T16:51:56.901345061+00:00
+  spec: null
+  acceptance_criteria:
+  - cargo set-version is a cargo-edit subcommand; runner lacks it so stage bump exits 1. Edit versions with sed in bump-version.sh, no new dependency.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6728
+- id: PMAT-6810
+  github_issue: 6810
+  item_type: epic
+  title: 'Red nightlies deep/dogfood/conleche/provable-ladder: five-whys'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6811
+  github_issue: 6811
+  item_type: task
+  title: 'deep-nightly: TMPDIR on the checkout disk (RUNNER_TEMP)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
+- id: PMAT-6812
+  github_issue: 6812
+  item_type: task
+  title: 'conleche: control export under elan run TC'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
+- id: PMAT-6813
+  github_issue: 6813
+  item_type: task
+  title: 'provable-ladder: unwritable lean cache declines (exit 2)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810

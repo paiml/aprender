@@ -1,0 +1,6 @@
+[Unit]
+Description=mq-feeder summary at :45
+[Timer]
+OnCalendar=*:45:00
+[Install]
+WantedBy=timers.target

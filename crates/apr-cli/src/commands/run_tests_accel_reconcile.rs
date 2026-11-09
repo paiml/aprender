@@ -54,6 +54,7 @@
 #[test]
 fn a_forced_accelerator_that_ran_on_cpu_is_refused() {
     let result = RunResult {
+        logprobs: None,
         text: "Hello".to_string(),
         duration_secs: 33.646,
         cached: true,
@@ -64,6 +65,7 @@ fn a_forced_accelerator_that_ran_on_cpu_is_refused() {
         generated_tokens: Some(vec![9707]),
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     };
 
     let err = reconcile_accelerator(true, &result)
@@ -142,6 +144,7 @@ fn a_successful_gpu_run_is_not_labelled_a_fallback() {
 
 fn gpu_result(used_gpu: Option<bool>) -> RunResult {
     RunResult {
+        logprobs: None,
         text: "Hello".to_string(),
         duration_secs: 1.0,
         cached: true,
@@ -152,6 +155,7 @@ fn gpu_result(used_gpu: Option<bool>) -> RunResult {
         generated_tokens: Some(vec![9707]),
         token_texts: None,
         usage: Default::default(),
+        constraint_refusal: None,
     }
 }
 
@@ -197,7 +201,7 @@ fn json_plus_benchmark_is_not_a_machine_surface() {
 // #3817: --gpu on an architecture with no CUDA forward refuses BEFORE the load
 // =============================================================================
 
-#[cfg(test)]
+#[cfg(all(test, feature = "inference"))]
 mod forced_accelerator_refusal_tests {
     use crate::commands::run::forced_accelerator_refusal;
 
@@ -277,6 +281,29 @@ mod forced_accelerator_refusal_tests {
              normalizer folds it into qwen3_moe — so it would reach a forward that cannot run \
              its Gated-DeltaNet/SSM layers (#3714, #3817)."
         );
+    }
+}
+
+/// #4972: without `inference` there is no forward on any device, so a forced
+/// accelerator is refused for every architecture, an unread one included, and
+/// an unforced run is never refused.
+#[cfg(all(test, not(feature = "inference")))]
+mod forced_accelerator_refusal_without_inference_tests {
+    use crate::commands::run::forced_accelerator_refusal;
+
+    #[test]
+    fn a_forced_accelerator_is_refused_for_every_architecture() {
+        for arch in [Some("qwen2"), Some("llama"), Some("qwen35moe"), None] {
+            let reason = forced_accelerator_refusal(true, arch)
+                .expect("a build without inference has no forward to reach");
+            assert!(reason.contains("inference"), "{reason}");
+        }
+    }
+
+    #[test]
+    fn an_unforced_run_is_not_refused() {
+        assert!(forced_accelerator_refusal(false, Some("qwen2")).is_none());
+        assert!(forced_accelerator_refusal(false, None).is_none());
     }
 }
 
@@ -395,4 +422,139 @@ mod pmat3826_fell_back_names_a_real_fallback {
              defect, not a rounding difference."
         );
     }
+}
+
+/// FALSIFY-OPS-012: every output mode of `print_run_output` completes on a
+/// finished run, and the rate it reports is derived exactly as documented.
+#[test]
+fn print_run_output_serves_every_mode_and_derives_the_rate() {
+    let mut r = gpu_result(Some(true));
+    // stream, json, benchmark (text and json), plain text (cached, then downloaded)
+    for (fmt, bench, stream) in [
+        ("text", false, true),
+        ("json", false, false),
+        ("text", true, false),
+        ("json", true, false),
+        ("text", false, false),
+    ] {
+        assert!(print_run_output(&r, "model.gguf", fmt, 8, bench, stream, false).is_ok());
+    }
+    r.cached = false;
+    assert!(print_run_output(&r, "model.gguf", "text", 8, false, false, true).is_ok());
+
+    // reported rate wins; otherwise tokens / duration; zero duration gives 0.0
+    r.tok_per_sec = Some(7.5);
+    assert!((effective_tok_per_sec(&r, 4) - 7.5).abs() < f64::EPSILON);
+    r.tok_per_sec = None;
+    r.duration_secs = 2.0;
+    assert!((effective_tok_per_sec(&r, 4) - 2.0).abs() < f64::EPSILON);
+    r.duration_secs = 0.0;
+    assert!(effective_tok_per_sec(&r, 4).abs() < f64::EPSILON);
+}
+
+// #4977 — a dense GGUF whose CUDA init fails must say so in text mode, not only in `--json`.
+
+fn attempted(used_gpu: Option<bool>, gpu_attempted: Option<bool>) -> RunResult {
+    RunResult {
+        gpu_attempted,
+        ..gpu_result(used_gpu)
+    }
+}
+
+/// The defect: a default run that entered a GPU backend and ran on CPU printed nothing.
+#[test]
+fn a_default_run_that_attempted_gpu_and_ran_on_cpu_gets_one_notice() {
+    let r = attempted(Some(false), Some(true));
+    assert_eq!(cpu_fallback_notice(&r, false), Some(CPU_FALLBACK_NOTICE));
+    assert!(CPU_FALLBACK_NOTICE.contains("CPU"));
+}
+
+/// Both directions: a deliberate CPU run, a GPU run and a non-reporting backend stay silent.
+#[test]
+fn no_notice_without_a_fallback() {
+    assert_eq!(cpu_fallback_notice(&attempted(Some(false), None), false), None);
+    assert_eq!(cpu_fallback_notice(&attempted(Some(false), Some(false)), false), None);
+    assert_eq!(cpu_fallback_notice(&attempted(Some(true), Some(true)), false), None);
+    assert_eq!(cpu_fallback_notice(&attempted(None, Some(true)), false), None);
+}
+
+/// The text notice and the JSON `fell_back` are the same predicate over every input.
+#[test]
+fn notice_and_json_fell_back_agree() {
+    for used in [None, Some(false), Some(true)] {
+        for tried in [None, Some(false), Some(true)] {
+            for forced in [false, true] {
+                let r = attempted(used, tried);
+                assert_eq!(
+                    cpu_fallback_notice(&r, forced).is_some(),
+                    backend_json(&r, forced)["fell_back"] == true,
+                    "{used:?} {tried:?} {forced}"
+                );
+            }
+        }
+    }
+}
+
+// #6590 — what `print_run_output` actually WRITES, on which stream, how many times. libtest's capture cannot
+// be read in-process, so the test re-runs itself as a child (env `APR_FALLBACK_CHILD=<mode>`) and reads the
+// child's real stdout and stderr. The child arm calls `print_run_output`; the parent arm counts.
+
+fn child_print(mode: &str) {
+    let r = attempted(Some(false), Some(true));
+    let (format, accel) = match mode {
+        "text" => ("text", false),
+        "json" => ("json", false),
+        "cpu_ok" => ("text", false),
+        _ => panic!("unknown child mode {mode}"),
+    };
+    let r = if mode == "cpu_ok" { attempted(Some(false), None) } else { r };
+    print_run_output(&r, "m.gguf", format, 1, false, false, accel).expect("print_run_output");
+}
+
+fn run_child(mode: &str) -> (String, String) {
+    let exe = std::env::current_exe().expect("test exe");
+    let out = std::process::Command::new(exe)
+        .args([
+            "--exact",
+            "--nocapture",
+            "--test-threads=1",
+            "commands::run::tests::fallback_child_entry",
+        ])
+        .env("APR_FALLBACK_CHILD", mode)
+        .output()
+        .expect("spawn child");
+    assert!(out.status.success(), "child failed: {}", String::from_utf8_lossy(&out.stderr));
+    (
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        String::from_utf8_lossy(&out.stderr).into_owned(),
+    )
+}
+
+/// Child entry: a no-op unless the parent set the mode, so a normal run passes it trivially.
+#[test]
+fn fallback_child_entry() {
+    if let Ok(mode) = std::env::var("APR_FALLBACK_CHILD") {
+        child_print(&mode);
+    }
+}
+
+#[test]
+fn text_mode_fallback_line_is_on_stderr_exactly_once_and_never_on_stdout() {
+    let (out, err) = run_child("text");
+    assert_eq!(err.matches(CPU_FALLBACK_NOTICE).count(), 1, "stderr: {err}");
+    assert_eq!(out.matches(CPU_FALLBACK_NOTICE).count(), 0, "stdout: {out}");
+}
+
+#[test]
+fn json_mode_never_prints_the_fallback_line_but_reports_fell_back() {
+    let (out, err) = run_child("json");
+    assert_eq!(err.matches(CPU_FALLBACK_NOTICE).count(), 0, "stderr: {err}");
+    assert_eq!(out.matches(CPU_FALLBACK_NOTICE).count(), 0, "stdout: {out}");
+    assert!(out.contains("\"fell_back\": true"), "stdout: {out}");
+}
+
+#[test]
+fn a_cpu_run_that_attempted_no_gpu_prints_no_line() {
+    let (out, err) = run_child("cpu_ok");
+    assert_eq!(err.matches(CPU_FALLBACK_NOTICE).count() + out.matches(CPU_FALLBACK_NOTICE).count(), 0);
 }

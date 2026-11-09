@@ -82,3 +82,15 @@ falsification:
     description: "BF16 adapter tensors decoded by real dtype. Discharges F-LORA-MERGE-ADAPTER-DTYPE-001."
     test: "cargo test -p aprender-train --lib test_lora_merge_bf16_adapter_dtype_pmat897"
     evidence: "RED on main: index out of bounds (BF16 read as f32); GREEN: merged=6.5 = base+scale*(B@A)."
+
+falsification_tests:
+  - id: FALSIFY-LORA_ADAPTER_MERGE_CLI-001
+    description: "C-LORA-MERGE-RSLORA-001: use_rslora=true with r=16, alpha=16 merges with scale 4.0 (alpha/sqrt(rank)), not 1.0"
+    test: "cargo test -p aprender-train --lib test_lora_merge_rslora_scaling_pmat897"
+    prediction: "merged weight cell == 4.0 for a zero base and (B@A)=1"
+    if_fails: "merge hardcodes alpha/rank and is 4x too small for rsLoRA adapters"
+  - id: FALSIFY-LORA_ADAPTER_MERGE_CLI-002
+    description: "C-LORA-MERGE-DTYPE-001: BF16 adapter factors are decoded as BF16, not reinterpreted as f32"
+    test: "cargo test -p aprender-train --lib test_lora_merge_bf16_adapter_dtype_pmat897"
+    prediction: "merged = 0.5 + 1.0*6.0 = 6.5"
+    if_fails: "adapter bytes read as hardcoded Dtype::F32, giving garbage or a length mismatch"

@@ -584,6 +584,14 @@ raw = [l.strip() for l in src.splitlines() if '"$LLAMA_FIT"' in l and "--model" 
 if raw: print(f"FAIL  fit: a raw llama-fit-params model probe outside fit_locked: {raw[0]}"); bad = 1
 if not re.search(r'^fit_locked\(\) \{ flock -E "\$LOCK_BUSY" -w "\$LOCK_WAIT" "\$GPU_LOCK" choom -n 1000 -- "\$LLAMA_FIT"', src, re.M):
     print("FAIL  fit: fit_locked does not run the probe under the bounded fleet lock + choom"); bad = 1
+# #6410: a row written straight to $ROWS (not through ladder_append) must count itself, else the receipt's
+# `rungs == appended` assertion kills every sweep that fit-refuses a model. 10 lines after the write is the window.
+lines = src.splitlines()
+for i, l in enumerate(lines):
+    if '>> "$ROWS"' in l and not l.lstrip().startswith("#") and "ladder_append" not in l:
+        blk = "\n".join(lines[i:i + 10])
+        if "LADDER_APPENDS_ROWS=" not in blk:
+            print(f"FAIL  rows: a direct write to $ROWS at line {i + 1} does not bump LADDER_APPENDS_ROWS (#6410)"); bad = 1
 sys.exit(bad)
 PY
 }

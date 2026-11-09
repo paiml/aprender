@@ -1,0 +1,18 @@
+- id: PMAT-4905
+  github_issue: 4905
+  item_type: task
+  title: 'EG-6: Model ops round trip'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:23Z
+  updated: 2026-10-07T17:54:23Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898

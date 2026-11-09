@@ -25,7 +25,15 @@ row() {
         fail=$((fail + 1)); return 0
     fi
     if [ "$rc" = 0 ]; then
-        if [ ! -f "$out" ] || ! grep -qE -- "$pat" "$out"; then
+        # When the policy applies, match only the synthesized entry (the first one under the top-level
+        # emergency_scopes:). Older per-release entries carry the same lines, so a whole-file match
+        # would pass even if the policy's value never reached the entry.
+        local hay="$out"
+        if [ "$wapp" = 1 ] && [ -f "$out" ]; then
+            hay="$tmp/entry.$n"
+            awk '/^  emergency_scopes:[ ]*$/ { f = 1; next } f && /^    - / && ++e > 1 { exit } f { print }' "$out" > "$hay"
+        fi
+        if [ ! -f "$out" ] || ! grep -qE -- "$pat" "$hay"; then
             printf 'FAIL %s: effective ladder %s has no line /%s/\n' "$name" "$out" "$pat"
             fail=$((fail + 1)); return 0
         fi
@@ -52,6 +60,7 @@ row real-0.71.0           0 1 "$ladder" 0.71.0      '^      release: "0\.71\.0"$
 row real-0.71.0-rc.1      0 1 "$ladder" 0.71.0-rc.1 '^      release: "0\.71\.0-rc\.1"$'
 row real-0.72.3-name      0 1 "$ladder" 0.72.3      '^    - name: crux-smoke$'
 row real-thinking         0 1 "$ladder" 0.72.3      '^      thinking: \["off", "on"\]$'
+row real-hosts            0 1 "$ladder" 0.72.3      '^      hosts: \[lambda, gx10\]$'
 row real-quote-verbatim   0 1 "$ladder" 0.71.0      '^      quote: .*"from 0\.71 on, a release ships on CRUX smoke on lambda and gx10 GPU\.'
 row real-1.0.0            0 1 "$ladder" 1.0.0       '^      release: "1\.0\.0"$'
 row real-0.70.2-uncovered 0 0 "$ladder" 0.70.2      '^  release_policy:$'
@@ -82,6 +91,15 @@ row missing-key           2 0 "$(plant miss '/^    red_row_needs: ticket$/d')" 0
 row missing-owner         2 0 "$(plant miso '/^    ticket_owner: /d')" 0.71.0 'release_policy has no ticket_owner'
 row duplicate-key         2 0 "$(plant dkey 's/^    larger_rows: nightly$/    larger_rows: nightly\n    larger_rows: release/')" 0.71.0 'duplicate key in release_policy: larger_rows'
 row empty-value           2 0 "$(plant empty 's/^    hosts: .*$/    hosts: /')" 0.71.0 'empty value for release_policy\.hosts'
+row unquoted-hash         2 0 "$(plant uqh 's/^    ticket_owner: .*$/    ticket_owner: #3598/')" 0.71.0 'unquoted # in release_policy\.ticket_owner'
+row trailing-comment      2 0 "$(plant tc 's/^    larger_rows: nightly$/    larger_rows: nightly # was release/')" 0.71.0 'unquoted # in release_policy\.larger_rows'
+row quoted-hash-kept      0 1 "$(plant qh 's/^    quote: .*$/    quote: "a #1 b"/')" 0.71.0 '^      quote: "a #1 b"$'
+row tab-hash              2 0 "$(plant th 's/^    larger_rows: nightly$/    larger_rows: nightly\t# was release/')" 0.71.0 'unquoted # in release_policy\.larger_rows'
+row comment-after-quoted  2 0 "$(plant caq 's/^    ticket_owner: .*$/    ticket_owner: "#3598" # owner/')" 0.71.0 'quoted release_policy\.ticket_owner does not close'
+row single-quoted-hash    0 1 "$(plant sqh "s/^    quote: .*\$/    quote: 'see #5'/")" 0.71.0 "^      quote: 'see #5'\$"
+row unclosed-quote        2 0 "$(plant ucq 's/^    ticket_owner: .*$/    ticket_owner: "#3598/')" 0.71.0 'quoted release_policy\.ticket_owner does not close'
+row early-close-quote     2 0 "$(plant ecq 's/^    quote: .*$/    quote: "a"b"/')" 0.71.0 'quoted release_policy\.quote does not close'
+row quoted-trailing-blank 0 1 "$(plant qtb 's/^    quote: .*$/    quote: "x y"  \t/')" 0.71.0 '^      quote: "x y"$'
 row unreadable-line       2 0 "$(plant unread 's/^    hosts: .*$/    - hosts: [lambda]/')" 0.71.0 'unreadable line in release_policy'
 row two-blocks            2 0 "$two" 0.71.0 '2 release_policy blocks'
 row header-comment        2 0 "$(plant hc 's/^  release_policy:$/  release_policy: # note/')" 0.71.0 'unreadable release_policy header'

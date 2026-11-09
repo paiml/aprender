@@ -66,3 +66,14 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-DATA-PARALLEL-ZERO-COPY-001
+    description: "C-DP-SYNC-001: after sync, every replica LoRA layer and the classifier equal the primary"
+    test: "cargo test -p aprender-train --lib falsify_dp_001_weight_sync_all_layers_and_classifier"
+    prediction: "After perturbing all LoRA A/B and classifier weight/bias on replica 1, sync_lora_weights_from_primary makes every one bit-identical to the primary"
+    if_fails: "The split_at_mut/assign sync skips a layer or the classifier, or copies the wrong direction; replicas drift apart"
+  - id: FALSIFY-DATA-PARALLEL-ZERO-COPY-002
+    description: "C-DP-SYNC-001: weight sync makes replicas identical to the primary"
+    test: "cargo test -p aprender-train --lib falsify_dp_001_weight_sync_makes_replicas_identical"
+    prediction: "Replica LoRA weights differ before sync and are identical to the primary after sync"
+    if_fails: "Zero-copy weight synchronization no longer propagates primary weights to replicas"

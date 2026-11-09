@@ -1,7 +1,7 @@
 # verificar
 
-[![Crates.io](https://img.shields.io/crates/v/verificar.svg)](https://crates.io/crates/verificar)
-[![Documentation](https://docs.rs/verificar/badge.svg)](https://docs.rs/verificar)
+[![Crates.io](https://img.shields.io/crates/v/aprender-verify-ml.svg)](https://crates.io/crates/aprender-verify-ml)
+[![Documentation](https://docs.rs/aprender-verify-ml/badge.svg)](https://docs.rs/aprender-verify-ml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 **Synthetic Data Factory for Domain-Specific Code Intelligence**
@@ -34,14 +34,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-verificar = "0.3"
+aprender-verify-ml = "0.71"
 ```
 
 Or with optional features:
 
 ```toml
 [dependencies]
-verificar = { version = "0.3", features = ["parquet", "ml"] }
+aprender-verify-ml = { version = "0.71", features = ["parquet", "ml"] }
 ```
 
 ## Quick Start

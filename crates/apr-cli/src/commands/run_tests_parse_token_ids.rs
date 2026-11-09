@@ -60,6 +60,7 @@
     #[test]
     fn run_result_tokens_generated_none_vs_zero() {
         let result_none = RunResult {
+            logprobs: None,
             text: String::new(),
             duration_secs: 0.0,
             cached: false,
@@ -70,8 +71,10 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         let result_zero = RunResult {
+            logprobs: None,
             text: String::new(),
             duration_secs: 0.0,
             cached: false,
@@ -82,6 +85,7 @@
             generated_tokens: None,
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         assert_ne!(
             result_none.tokens_generated, result_zero.tokens_generated,
@@ -94,6 +98,7 @@
     #[test]
     fn run_result_field_independence() {
         let result = RunResult {
+            logprobs: None,
             text: "output".to_string(),
             duration_secs: 1.234,
             cached: true,
@@ -104,6 +109,7 @@
             generated_tokens: Some(vec![10, 20, 30]),
             token_texts: None,
             usage: Default::default(),
+            constraint_refusal: None,
         };
         assert_eq!(result.text, "output");
         assert!((result.duration_secs - 1.234).abs() < f64::EPSILON);

@@ -172,3 +172,15 @@ falsification:
     description: "GGUF vocabulary extraction matches tokenizer.json"
     test: "GGUF tokenizer loader tests"
     evidence: "cargo test -p aprender-core --lib gguf_tokenizer"
+
+falsification_tests:
+  - id: FALSIFY-TOKENIZER-001
+    description: "encode_decode_roundtrip: BPE, WordPiece and Unigram decode(encode(text)) recovers the text"
+    test: "cargo test -p aprender-core --lib test_all_tokenizers_roundtrip"
+    prediction: "each trained tokenizer decodes the encoding of 'hello' back to exactly 'hello'"
+    if_fails: "a tokenizer's encode and decode are no longer inverses"
+  - id: FALSIFY-TOKENIZER-002
+    description: "encode_decode_roundtrip: GPT-2 byte-level BPE preserves every printable ASCII character"
+    test: "cargo test -p aprender-core --lib falsify_bpe_002_roundtrip_preserves_all_ascii_printable"
+    prediction: "decode(encode(c)) contains c for every printable ASCII byte 33..126"
+    if_fails: "the byte-level BPE roundtrip loses ASCII content"

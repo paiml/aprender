@@ -10,7 +10,7 @@
 //!   2. `.cargo_vcs_info.json` `git.sha1` — written by `cargo package` into every published
 //!      tarball, so a crates.io install knows its commit (#4110). Ahead of `git rev-parse`
 //!      because an unpacked crate may sit inside SOME OTHER repository whose HEAD is not ours
-//!   3. `git rev-parse --short HEAD` (dev builds from worktree or primary checkout; retried with
+//!   3. `git rev-parse --short=9 HEAD` (dev builds from worktree or primary checkout; retried with
 //!      the enclosing checkout marked safe.directory when git refuses a checkout owned by another
 //!      user — binary-release.yml builds as root in a container over the runner's checkout)
 //!      then, with no git binary that answers, HEAD read straight from `.git` (#4254: the
@@ -21,6 +21,17 @@
 //! This logic was moved out of `crates/apr-cli/build.rs`; the pure resolution
 //! order is factored into [`resolve`] so it can be tested without running git,
 //! and `emit_tests` compiles this file as a build script and runs it for real.
+//!
+//! Every rung stamps [`SHORT_SHA_LEN`] hex digits (#5256). A bare `--short` lets git pick the
+//! length from the object count: it printed 10 at 0.71.2 while the release comparators
+//! (`scripts/release/models_t1.sh`, the release workflows) ask for `--short=9`, so a correct
+//! binary read as NOT-THE-RELEASE. Git may still lengthen `--short=9` to keep it unique; a
+//! comparator that asks the same repository for `--short=9` lengthens with it.
+
+/// The one length every rung stamps, and the one every comparator asks git for.
+pub const SHORT_SHA_LEN: usize = 9;
+/// `git rev-parse` flag for [`SHORT_SHA_LEN`]; `emit_tests` pins the two together.
+const SHORT_ARG: &str = "--short=9";
 
 /// Resolve `APR_GIT_SHA`, print it as `cargo:rustc-env`, and register the
 /// rerun-if-changed triggers. Call once from `build.rs`.
@@ -123,7 +134,7 @@ fn resolve_git_sha() -> String {
     }
     // `trusted_git_retry`: the release binaries are built as root in a container over the
     // runner-owned checkout, where git refuses the repo as "dubious ownership" (#4110)
-    let head = ["rev-parse", "--short", "HEAD"];
+    let head = ["rev-parse", SHORT_ARG, "HEAD"];
     // #4254: and when no git binary answers at all (the sibling build container over a
     // bind-mounted checkout), read HEAD straight from the checkout's own `.git`.
     let git_head = run_git(&head)
@@ -199,11 +210,11 @@ fn read_head_sha_from_dot_git() -> Option<String> {
         }
     };
     let is_sha = full.len() >= 40 && full.bytes().all(|b| b.is_ascii_hexdigit());
-    is_sha.then(|| full[..9].to_string())
+    is_sha.then(|| full[..SHORT_SHA_LEN].to_string())
 }
 
-/// `git.sha1` from `.cargo_vcs_info.json`, shortened to 9 hex digits (what `git rev-parse
-/// --short` prints in this repository), with `-dirty` when cargo packaged a dirty tree.
+/// `git.sha1` from `.cargo_vcs_info.json`, shortened to [`SHORT_SHA_LEN`] hex digits (what
+/// `git rev-parse --short=9` prints), with `-dirty` when cargo packaged a dirty tree.
 /// Parsed by hand: this crate has no dependencies, and the file is cargo's own fixed shape.
 fn vcs_info_sha() -> Option<String> {
     let dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
@@ -218,7 +229,7 @@ fn vcs_info_sha() -> Option<String> {
     let dirty = text.contains("\"dirty\": true") || text.contains("\"dirty\":true");
     Some(format!(
         "{}{}",
-        &sha[..9],
+        &sha[..SHORT_SHA_LEN],
         if dirty { "-dirty" } else { "" }
     ))
 }

@@ -352,7 +352,7 @@ cargo test gradient_check_swiglu
 - **LLaMA Paper**: [Touvron et al., 2023](https://arxiv.org/abs/2302.13971)
 - **LoRA Paper**: [Hu et al., 2021](https://arxiv.org/abs/2106.09685)
 - **QLoRA Paper**: [Dettmers et al., 2023](https://arxiv.org/abs/2305.14314)
-- **Entrenar Book**: [https://docs.rs/entrenar](https://docs.rs/entrenar)
+- **Entrenar Book**: [https://docs.rs/aprender-train](https://docs.rs/aprender-train)
 - **LLaMA Integration Spec**:
   [docs/specifications/llama-ideas-inclusion-spec.md](../../docs/specifications/llama-ideas-inclusion-spec.md)
 

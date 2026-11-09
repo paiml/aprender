@@ -115,6 +115,35 @@ mod tests {
         }
     }
 
+    /// Two full 64-block chunks plus a ragged tail of 5, every block distinct,
+    /// so the chunked AVX2 path and the per-block path must both put each
+    /// super-block in its own slot of the preallocated output (#4990).
+    #[test]
+    fn test_dequantize_q4_k_chunked_paths_keep_block_order() {
+        const BLOCKS: usize = 64 * 2 + 5;
+        let mut data = vec![0u8; BLOCKS * 144];
+        for (sb, block) in data.chunks_exact_mut(144).enumerate() {
+            block[0..2].copy_from_slice(&0x3C00u16.to_le_bytes()); // d = 1.0
+            block[2..4].copy_from_slice(&0x3800u16.to_le_bytes()); // dmin = 0.5
+            for (i, b) in block[4..].iter_mut().enumerate() {
+                *b = (sb * 31 + i * 7) as u8;
+            }
+        }
+
+        let expected: Vec<f32> = data
+            .chunks_exact(144)
+            .flat_map(dequantize_q4_k_superblock)
+            .collect();
+        let parallel = dequantize_q4_k_parallel(&data).expect("parallel");
+        let simd = dequantize_q4_k_simd(&data).expect("simd");
+
+        assert_eq!(parallel, expected);
+        assert_eq!(simd.len(), expected.len());
+        for (i, (s, e)) in simd.iter().zip(&expected).enumerate() {
+            assert!((s - e).abs() < 1e-4, "value {i}: simd={s} expected={e}");
+        }
+    }
+
     // ============= Q8_0 parallel tests =============
 
     #[test]

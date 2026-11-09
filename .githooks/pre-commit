@@ -37,7 +37,8 @@ esac
 
 echo "── Tier 1: Format + Lint ──"
 cargo fmt -- --check
-cargo clippy -- -D warnings
+# C52-3: clippy takes minutes and lints only the root facade; CI (ci / gate) is the blocking owner. Warn here, never block.
+cargo clippy -- -D warnings || echo "WARN: clippy reported findings (not blocking locally; ci / gate will)" >&2
 
 echo "── JA-02: Sovereignty Linting ──"
 pmat comply check --failures-only 2>/dev/null || true

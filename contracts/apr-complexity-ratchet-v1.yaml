@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-09-03'
   author: PAIML Engineering
   description: "PMAT-746 — per-function complexity may only fall. The only complexity gate in this repository was the LOCAL pmat pre-commit hook (cyclomatic <= 30, cognitive <= 25, staged files only); .github/workflows/ci.yml ran none, so the merge queue LANDS the debt and the individual developer pays it on unrelated work. This contract owns the CI-side ratchet (scripts/check_complexity_ratchet.sh): its universe, its three findings NEW/GROWN/STALE, its shrink-only baseline, and the case table that proves each finding can still turn RED."
@@ -9,7 +9,7 @@ metadata:
     - "scripts/lib/complexity_rows.py — the pmat-JSON reader that emits the rows"
     - "scripts/complexity_baseline.txt — the shrink-only ratchet (keyed2, scripts/lib_baseline_ratchet.sh)"
     - "scripts/check_baseline_ratchets.sh — classifies the baseline and carries the keyed2 case table"
-    - ".github/workflows/ci.yml — wired per-PR in guard-runner-labels (gate depends on it)"
+    - ".github/workflows/guards-nightly.yml — wired NIGHTLY against main as it was 24 h earlier (#5182: a ratchet may not sit on a PR, merge-queue or release job; it was per-PR in guard-runner-labels until then)"
     - ".git/hooks/pre-commit — the LOCAL gate whose two thresholds this guard reproduces"
 
 five_whys:
@@ -84,8 +84,8 @@ proof_obligations:
     applies_to: baseline_is_shrink_only
   - id: ACR-INV-006
     type: invariant
-    property: "The guard is enforced per-PR, not merely present in the tree"
-    formal: "ci.yml invokes it in guard-runner-labels, which `gate` lists in its needs"
+    property: "The guard is executed nightly, not merely present in the tree, and is not on the PR path"
+    formal: "guards-nightly.yml invokes both the case table and the check; ci.yml and ci/sections.yml invoke neither (#5182, GATE/LAB)"
     applies_to: complexity_may_only_fall
 
 falsification_tests:
@@ -138,9 +138,9 @@ falsification_tests:
     if_fails: "The pair is being ratcheted by one number. A cognitive regression under a falling cyclomatic would then be recordable, and cognitive is the metric every named offender in this contract fails."
 
   - id: FALSIFY-CX-RATCHET-009
-    rule: "The guard is wired into the per-PR gate, not merely present in the tree"
-    prediction: "ci.yml names the guard in guard-runner-labels, both the case table and the check"
-    test: "[ \"$(cat .github/workflows/ci.yml ci/sections.yml | grep -c 'check_complexity_ratchet.sh')\" -ge 2 ]"
+    rule: "The guard is executed nightly, not merely present in the tree, and no PR-path job runs it"
+    prediction: "guards-nightly.yml names the guard twice (the case table and the check); ci.yml and ci/sections.yml name it zero times"
+    test: "[ \"$(grep -c 'check_complexity_ratchet.sh' .github/workflows/guards-nightly.yml)\" -ge 2 ] && [ \"$(cat .github/workflows/ci.yml ci/sections.yml | grep -c 'check_complexity_ratchet.sh')\" -eq 0 ]"
     if_fails: "A reference is not an execution — the guard would sit unexecuted while being counted as enforcement (the #2327 defect class)."
 
   - id: FALSIFY-CX-RATCHET-010

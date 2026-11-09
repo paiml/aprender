@@ -100,6 +100,16 @@ proof_obligations:
   property: Split search is sub-quadratic
   formal: '∀ n: T_split(2·n) ≤ 3 · T_split(n) ∧ T_split(200000) ≤ 60'
   applies_to: all
+- id: DT-INV-010
+  type: invariant
+  property: Regression split search scores the rescan partitions
+  formal: '∀ x ∀ y: gainRescan(splitFast(x, y)) ≥ max gainRescan − tol ∧ |gainFast − gainRescan(splitFast(x, y))| ≤ tol, tol = 4(n+4)ε·Var(y)'
+  applies_to: all
+- id: DT-BND-011
+  type: bound
+  property: Regression split search is sub-quadratic
+  formal: T_regsplit(200000) ≤ 60
+  applies_to: all
 falsification_tests:
 - id: FALSIFY-DT-001
   rule: Gini bounded
@@ -155,6 +165,23 @@ falsification_tests:
     both sides of the budget measured, 0.25s single-pass against ~1713s rescan
   if_fails: Each candidate threshold rescans all n samples again — quadratic in rows,
     which is what blocked fitting past ~100k
+- id: FALSIFY-DT-010
+  rule: Regression split search scores the rescan partitions
+  test_harness: cargo test -p aprender-core --lib -- tree::classifier::tests_dt_contract::falsify_dt_010_regression_split_matches_rescan --exact
+  prediction: the threshold find_best_regression_split_for_feature picks scores, under the
+    pre-#3859 rescan, within tol of the rescan best, and its reported gain is within tol of that score
+  test: tree::classifier::tests_dt_contract::falsify_dt_010_regression_split_matches_rescan
+    — 513 structured and randomised columns (ties, NaN, signed zeros, infinities, a row on
+    the threshold) judged by find_best_regression_split_for_feature_rescan, the retained previous implementation
+  if_fails: The cursor, its prefix sums or its candidate set diverged from the rescan partitions
+    — the fitted regressor is a different model, not a faster one
+- id: FALSIFY-DT-011
+  rule: Regression split search is sub-quadratic
+  test_harness: cargo test -p aprender-core --lib -- tree::classifier::tests_dt_contract::falsify_dt_011_regression_root_split_is_subquadratic --exact
+  prediction: one regression root split over 200k rows completes far inside 60s
+  test: tree::classifier::tests_dt_contract::falsify_dt_011_regression_root_split_is_subquadratic
+    — max_depth=1 DecisionTreeRegressor fit on a 200k-row continuous column with the wall clock asserted
+  if_fails: Each candidate threshold rescans all n rows again — quadratic in rows
 enforcement:
   bounded:
     description: Gini impurity must be in [0, 1)
@@ -228,5 +255,5 @@ qa_gate:
   - fit_predict_class_range
   - split_search_rescan_equivalent
   - split_search_subquadratic
-  pass_criteria: All 9 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 11 falsification tests pass + Kani harnesses verify
   falsification: Use entropy instead of Gini or omit class count normalization

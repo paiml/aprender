@@ -44,3 +44,10 @@ falsification:
     description: "clip_and_step actually clips an oversized gradient to max_grad_norm. Discharges C-GRADCLIP-001/002."
     test: "falsify_clip_and_step_actually_clips_gradients — inject grad norm ~4420 with max_grad_norm=1.0; RED pre-fix post-step norm 4420 (unclipped), GREEN post-fix <= 1.0."
     evidence: "cargo test -p aprender-train --lib falsify_clip_and_step_actually_clips_gradients"
+
+falsification_tests:
+  - id: FALSIFY-TRAINER_GRAD_CLIP-001
+    description: "C-GRADCLIP-001/002: an injected oversized gradient (global norm >> 1.0) is scaled in place to <= max_grad_norm by clip_and_step"
+    test: "cargo test -p aprender-train --lib falsify_clip_and_step_actually_clips_gradients"
+    prediction: "global grad L2 norm after clip_and_step <= 1.0 + 1e-2"
+    if_fails: "clip coefficient is computed and discarded; --grad-clip is a silent no-op on the CPU trainer"

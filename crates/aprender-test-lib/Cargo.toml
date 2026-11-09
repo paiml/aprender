@@ -65,7 +65,7 @@ sha2 = { workspace = true }
 # its tests must RUN) under default features, because CI is
 # `cargo nextest run --profile ci --workspace --lib` with no --features.
 flate2 = "1"
-serde_yaml_ng = { workspace = true }
+serde-saphyr = { workspace = true }
 
 # Tracing and UUID (available on all targets)
 tracing = { workspace = true }
@@ -95,7 +95,7 @@ syn = { workspace = true }
 proc-macro2 = { version = "1.0", features = ["span-locations"] }
 
 # Binary serialization for mock fidelity (PROBAR-WASM-003)
-bincode = { workspace = true }
+aprender-legacy-codec = { path = "../aprender-legacy-codec", version = "0.72.4" }
 
 # Native-only dependencies (not available on WASM)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

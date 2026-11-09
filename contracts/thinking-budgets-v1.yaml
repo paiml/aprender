@@ -106,3 +106,15 @@ equations:
     invariants:
       - "a listed model never inherits the default"
       - "a budget without a basis is not a budget"
+
+falsification_tests:
+  - id: FALSIFY-THINKING_BUDGETS-001
+    description: "budget_resolution: a listed model with no budget is refused and never inherits the default"
+    test: "cargo test -p apr-cli --lib a_listed_model_without_a_budget_is_refused_not_defaulted"
+    prediction: "the lookup returns Err containing 'no measured thinking budget' and 'Refusing rather than inheriting'"
+    if_fails: "a listed model silently inherits the default budget measured on another model"
+  - id: FALSIFY-THINKING_BUDGETS-002
+    description: "budget_resolution: an unlisted model takes default.budget and its basis says so"
+    test: "cargo test -p apr-cli --lib an_unlisted_model_takes_the_default_and_says_so"
+    prediction: "budget == 2048 and the basis starts with 'default:'"
+    if_fails: "the default budget or its basis is lost, so an inherited number reads as a measured one"

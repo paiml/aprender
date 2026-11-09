@@ -1,0 +1,17 @@
+[package]
+name = "aprender-rollup"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+description = "Rollup bot core: picks small green PRs to land as one merge-queue entry (T-rollup, #5394)"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/paiml/aprender"
+authors = ["PAIML Engineering"]
+# Build tooling, never installed or published.
+publish = false
+
+[dependencies]
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

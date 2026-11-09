@@ -288,6 +288,10 @@ falsification_tests: []
     #[path = "validator_tests_na.rs"]
     mod na;
 
+    /// #5291: SCHEMA-024/025, a test block that cannot run a test.
+    #[path = "validator_tests_runs.rs"]
+    mod runs;
+
     // ── PMAT-741 BeatBenchmark validator (BEAT-001..007) ──────────────────────
 
     /// Wrap a `beat:` block body in a valid beat-benchmark metadata envelope so

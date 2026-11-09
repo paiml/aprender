@@ -4,7 +4,15 @@ use super::*;
 use crate::agent::capability::Capability;
 
 fn doc(result: Option<&AgentLoopResult>, outcome: Option<&CodeOutcome>) -> serde_json::Value {
-    serde_json::from_str(&envelope(result, outcome, std::time::Duration::from_millis(7)))
+    doc_on(result, outcome, None)
+}
+
+fn doc_on(
+    result: Option<&AgentLoopResult>,
+    outcome: Option<&CodeOutcome>,
+    backend: Option<&BackendReport>,
+) -> serde_json::Value {
+    serde_json::from_str(&envelope(result, outcome, backend, std::time::Duration::from_millis(7)))
         .expect("the envelope is one JSON object")
 }
 
@@ -96,4 +104,38 @@ fn a_bailed_outcome_survives_as_a_downcastable_error() {
     let o = err.downcast_ref::<CodeOutcome>().expect("the outcome is recoverable by downcast");
     assert_eq!((o.status, o.kind), ("refused", "invalid_input"));
     assert_eq!(err.to_string(), "--project: not a directory: x", "stderr text is unchanged");
+}
+
+/// #3719: a forced-GPU run that fell back to the CPU used to print the same
+/// document as one that stayed on the GPU. The document now carries what the
+/// serve child reported, and a fallback says so even when the run succeeded.
+#[test]
+fn a_run_reports_the_device_its_completions_ran_on() {
+    let fell = BackendReport { requested: "gpu", ran: Some("cpu"), fell_back: Some(true) };
+    let d = doc_on(Some(&loop_result("done")), None, Some(&fell));
+    assert_eq!(d["status"], "ok");
+    assert_eq!(
+        d["backend"],
+        serde_json::json!({"requested": "gpu", "ran": "cpu", "fell_back": true})
+    );
+
+    let stayed = BackendReport { requested: "gpu", ran: Some("gpu"), fell_back: Some(false) };
+    let d = doc_on(Some(&loop_result("done")), None, Some(&stayed));
+    assert_eq!(d["backend"]["ran"], "gpu");
+    assert_eq!(d["backend"]["fell_back"], false);
+
+    // A failed turn still says what the completions before it ran on.
+    let e = AgentError::Driver(DriverError::Network("apr serve HTTP 500: x".into()));
+    let d = doc_on(None, Some(&CodeOutcome::from_agent_error(&e, 1)), Some(&fell));
+    assert_eq!(d["backend"]["fell_back"], true);
+}
+
+/// No driver ran (an early refusal), or the driver cannot say: the key is
+/// present and `null`, which a consumer reads as not measured, never as a pass.
+#[test]
+fn a_document_with_no_backend_report_says_null() {
+    let d = doc(None, Some(&CodeOutcome::refused("no_model", "no model", 3)));
+    assert!(d.get("backend").is_some_and(serde_json::Value::is_null), "{d}");
+    let d = doc(Some(&loop_result("done")), None);
+    assert!(d.get("backend").is_some_and(serde_json::Value::is_null), "{d}");
 }

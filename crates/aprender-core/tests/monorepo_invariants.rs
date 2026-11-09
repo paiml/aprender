@@ -269,6 +269,7 @@ fn test_no_unauthorized_binaries() {
         // Build/dev tooling, never user-facing ML surface.
         "aprender-compute-xtask", // aprender-compute-xtask
         "aprender-ptx-debug",     // aprender-ptx-debug
+        "aprender-ci-tools",      // aprender-ci-tools (C301 Python ports; sign-off row 38)
         "aprender-qa-certify",    // aprender-qa-readme-sync
         // Pre-consolidation names still carrying the only access to their
         // capability. These are the migration targets.
@@ -363,7 +364,7 @@ fn test_no_unauthorized_binaries() {
     // migrate, never grow. Deleting a [[bin]] before its capability is reachable
     // through apr removes the capability rather than relocating it, so the
     // ordering is: expose via apr, then drop the bin, then drop the entry here.
-    const ALLOWLIST_BASELINE: usize = 27;
+    const ALLOWLIST_BASELINE: usize = 28;
     assert!(
         allowed_bins.len() <= ALLOWLIST_BASELINE,
         "FALSIFY-MONO-011: the [[bin]] allowlist grew to {} (baseline {ALLOWLIST_BASELINE}). \
@@ -664,7 +665,7 @@ fn falsify_pub_006_gate5_stage_claim_matches_graph() {
 }
 
 /// FALSIFY-PUB-007: the two crates the amended Gate 5 relies on must actually
-/// differ. `apr-format` is the stage-independent substitute precisely because it
+/// differ. `aprender-legacy-codec` is the stage-independent substitute precisely because it
 /// resolves nothing from the workspace; `apr-cli` is the worst case in the tree.
 /// If either fact changes, the gate's advice is wrong and must be rewritten.
 #[test]
@@ -672,15 +673,15 @@ fn falsify_pub_007_gate5_leaf_and_hub_differ() {
     let counts = workspace_sibling_counts();
 
     let leaf = *counts
-        .get("apr-format")
-        .expect("apr-format must be a workspace member");
+        .get("aprender-legacy-codec")
+        .expect("aprender-legacy-codec must be a workspace member");
     let hub = *counts
         .get("apr-cli")
         .expect("apr-cli must be a workspace member");
 
     assert_eq!(
         leaf, 0,
-        "FALSIFY-PUB-007 (#2543): apr-format now has {leaf} workspace-sibling dep(s). It is the \
+        "FALSIFY-PUB-007 (#2543): aprender-legacy-codec now has {leaf} workspace-sibling dep(s). It is the \
          stage-independent Gate 5 substitute *because* it has none. Pick another leaf crate and \
          update the pre-release skill."
     );
@@ -1022,4 +1023,284 @@ fn falsify_ggml_003_extractor_case_table_passes() {
         .and_then(|n| n.trim().parse::<u32>().ok())
         .unwrap_or_else(|| panic!("the self-test did not report a case count:\n{stdout}"));
     assert!(ran >= 7, "the extractor case table ran only {ran} case(s)");
+}
+
+/// Whether a path dependency's version requirement `req` still names the crate
+/// it points at, `target` (that crate's own version), the way
+/// `scripts/release/stamp_rc_version.sh` reads it: one optional `=`/`^`/`~`, then
+/// one to three numeric components that equal `target`'s leading components.
+/// `*` (a path-only dependency, no requirement) has nothing to drift.
+///
+/// The rc stamp rewrites only a pin that matches this rule. A pin that does not,
+/// like aprender-decide's `"0.70.2"` under a 0.70.3 workspace, is left alone, and
+/// cargo then refuses the stamped tree (`^0.70.2` cannot match `0.70.3-rc.0`).
+/// That failed every build in assets rehearsal 38117742405.
+fn path_pin_names_target(req: &str, target: &str) -> bool {
+    if req == "*" {
+        return true;
+    }
+    let num = req.strip_prefix(['=', '^', '~']).unwrap_or(req);
+    let pin: Vec<&str> = num.split('.').collect();
+    let have: Vec<&str> = target.split('.').collect();
+    (1..=3).contains(&pin.len())
+        && pin.len() <= have.len()
+        && pin.iter().zip(&have).all(|(p, h)| p == h)
+}
+
+/// The rule's case table. Each row is (req, target, names it?).
+#[test]
+fn falsify_mono_014_path_pin_rule_case_table() {
+    let rows = [
+        ("^0.70.3", "0.70.3", true),
+        ("=0.70.3", "0.70.3", true),
+        ("~0.70.3", "0.70.3", true),
+        ("^0.70", "0.70.3", true),
+        ("^0", "0.70.3", true),
+        ("*", "0.70.3", true),
+        // The defect: a pin one patch behind.
+        ("^0.70.2", "0.70.3", false),
+        ("^0.69", "0.70.3", false),
+        ("^1", "0.70.3", false),
+        ("^0.70.30", "0.70.3", false),
+        ("^0.7", "0.70.3", false),
+        ("^0.70.3.1", "0.70.3", false),
+        (">=0.70.3", "0.70.3", false),
+        ("^0.70.3, <0.71", "0.70.3", false),
+        ("^0..3", "0.70.3", false),
+    ];
+    let wrong: Vec<String> = rows
+        .iter()
+        .filter(|(req, target, want)| path_pin_names_target(req, target) != *want)
+        .map(|(req, target, want)| format!("{req:?} vs {target}: want {want}"))
+        .collect();
+    assert!(wrong.is_empty(), "path pin rule rows wrong: {wrong:?}");
+}
+
+/// FALSIFY-MONO-014: every in-workspace path dependency pins the version of the
+/// crate it points at, so the rc stamp can carry it to X.Y.Z-rc.N.
+#[test]
+fn falsify_mono_014_path_pins_name_their_target_version() {
+    let output = Command::new("cargo")
+        .args(["metadata", "--format-version", "1", "--no-deps"])
+        .current_dir(workspace_root())
+        .output()
+        .expect("cargo metadata failed");
+    assert!(output.status.success(), "cargo metadata failed");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout))
+            .expect("failed to parse cargo metadata");
+    let packages = metadata["packages"].as_array().expect("no packages");
+    let version_at: std::collections::HashMap<&str, &str> = packages
+        .iter()
+        .filter_map(|p| {
+            let dir = p["manifest_path"].as_str()?.strip_suffix("/Cargo.toml")?;
+            Some((dir, p["version"].as_str()?))
+        })
+        .collect();
+
+    let mut checked = 0usize;
+    let mut stale = Vec::new();
+    for pkg in packages {
+        let name = pkg["name"].as_str().unwrap_or("?");
+        for dep in pkg["dependencies"].as_array().into_iter().flatten() {
+            let Some(target) = dep["path"].as_str().and_then(|p| version_at.get(p)) else {
+                continue;
+            };
+            let req = dep["req"].as_str().unwrap_or("");
+            checked += 1;
+            if !path_pin_names_target(req, target) {
+                let dn = dep["name"].as_str().unwrap_or("?");
+                stale.push(format!("{name} -> {dn} pins {req:?}, {dn} is {target}"));
+            }
+        }
+    }
+    // Zero edges checked would pass vacuously (a metadata shape change, say).
+    assert!(
+        checked >= 100,
+        "only {checked} in-workspace path deps checked"
+    );
+    assert!(
+        stale.is_empty(),
+        "path pins that the rc stamp cannot carry (inherit the root \
+         [workspace.dependencies] entry instead): {stale:#?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// D1 (FLOW-010 runner-wait, #5801): a DRAFT pull request takes no runner slot.
+//
+// Parsed, not grepped: three rounds of shell patterns over ci.yml each accepted a padded guard.
+// The workflow is read with the workspace YAML reader (`serde-saphyr`, the dev-dependency the
+// contract tests use; `serde_yaml` is frozen to the modernbert test, #5208) and compared by
+// equality: each job's `if:` scalar equals ONE canonical string, the job set equals JOBS, and
+// `on.pull_request.types` equals the canonical list. A new job is RED until added here on purpose.
+// The three aggregators stay `always()` so the required check names exist and FAIL on a draft
+// (a skipped required check counts as passing on GitHub).
+// ---------------------------------------------------------------------------
+
+/// The one draft form the PR-only jobs use (main already has it on `x86-main` and the shard).
+const DF: &str = "github.event.pull_request.draft != true";
+const NOT_PR: &str = "github.event_name != 'pull_request'";
+const G_ALL: &str =
+    "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
+const CI_TYPES: [&str; 4] = ["opened", "synchronize", "reopened", "ready_for_review"];
+
+/// (job, canonical `if:` scalar)
+fn draft_gate_canon() -> Vec<(&'static str, String)> {
+    vec![
+        ("mg-reuse", "github.event_name == 'push' && github.ref == 'refs/heads/main'".into()),
+        ("mg-reuse-self-test", G_ALL.into()),
+        ("pr-light", format!("${{{{ github.event_name == 'pull_request' && {DF} }}}}")),
+        ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}")),
+        ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} && {NOT_PR} }}}}")),
+        ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
+        // merge_group-only: a draft never reaches the queue, so there is nothing to skip.
+        ("mg-reuse-wt", "github.event_name == 'merge_group'".into()),
+        ("guards", "${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}".into()),
+        ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && {DF} && {NOT_PR} }}}}")),
+        ("workspace-test-ran", format!("${{{{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && {DF} }}}}")),
+        ("workspace-test", "always()".into()),
+        ("ci-gate", "always()".into()),
+        ("gate", "always()".into()),
+    ]
+}
+
+/// Every violation of the draft-gate rule in `ci_yml` (empty = the rule holds).
+fn draft_gate_violations(ci_yml: &str) -> Vec<String> {
+    let doc: serde_json::Value = match serde_saphyr::from_str_with_options(
+        ci_yml,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    ) {
+        Ok(d) => d,
+        Err(e) => return vec![format!("ci.yml does not parse: {e}")],
+    };
+    let mut bad = Vec::new();
+    let types: Vec<&str> = doc["on"]["pull_request"]["types"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|t| t.as_str()).collect())
+        .unwrap_or_default();
+    if types != CI_TYPES {
+        bad.push(format!(
+            "on.pull_request.types is {types:?}, want {CI_TYPES:?}"
+        ));
+    }
+    let canon = draft_gate_canon();
+    let Some(jobs) = doc["jobs"].as_object() else {
+        bad.push("no `jobs:` mapping".into());
+        return bad;
+    };
+    for name in jobs.keys() {
+        if !canon.iter().any(|(j, _)| j == name) {
+            bad.push(format!(
+                "job `{name}` is not in the CANON list (add it with its draft behaviour)"
+            ));
+        }
+    }
+    for (job, want) in &canon {
+        match jobs.get(*job) {
+            None => bad.push(format!("listed job `{job}` is missing")),
+            Some(j) => match j["if"].as_str() {
+                Some(got) if got == want => {}
+                got => bad.push(format!("job `{job}`: if: {got:?} != canonical {want:?}")),
+            },
+        }
+    }
+    bad
+}
+
+fn ci_yml_text() -> String {
+    std::fs::read_to_string(workspace_root().join(".github/workflows/ci.yml")).expect("read ci.yml")
+}
+
+/// `from` -> `to`, every occurrence; the mutant must differ from the source or the fixture is dead.
+fn mutate(src: &str, from: &str, to: &str) -> String {
+    assert!(
+        src.contains(from),
+        "fixture anchor not found in ci.yml: {from:?}"
+    );
+    src.replace(from, to)
+}
+
+/// The `    if:` line of `job` replaced by `new` (None deletes it).
+fn rewrite_if(src: &str, job: &str, new: Option<&str>) -> String {
+    let header = format!("  {job}:");
+    let mut out = Vec::new();
+    let (mut in_job, mut done) = (false, false);
+    for line in src.lines() {
+        if line.starts_with("  ") && !line.starts_with("   ") && line.trim_end().ends_with(':') {
+            in_job = line.trim_end() == header;
+        }
+        if in_job && !done && line.starts_with("    if:") {
+            done = true;
+            if let Some(n) = new {
+                out.push(n.to_string());
+            }
+            continue;
+        }
+        out.push(line.to_string());
+    }
+    assert!(done, "no `if:` found for job {job}");
+    out.join("\n") + "\n"
+}
+
+/// The 18 planted mutants: (label, mutated ci.yml). Each must be RED.
+fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
+    let x86_if = format!(
+        "    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}"
+    );
+    let gate_tail = src.split_once("\n  gate:\n").expect("gate job").1;
+    let gate_mut = src.replacen(
+        gate_tail,
+        &gate_tail.replacen("    if: always()", "    if: success()", 1),
+        1,
+    );
+    vec![
+        ("m1 draft guard dropped", mutate(src, &format!(" && {DF}"), "")),
+        ("m2 ready_for_review dropped", mutate(src, ", ready_for_review", "")),
+        ("m3 guard unscoped", mutate(src, DF, "true")),
+        ("m4 guard polarity flipped", mutate(src, &format!(" && {DF}"), " && github.event.pull_request.draft == true")),
+        ("m5 aggregator not always()", gate_mut),
+        ("m6 empty parse", "on:\n  pull_request:\n    types: [ready_for_review]\njobs:\n".to_string()),
+        ("m7 DF guard padded with || true", mutate(src, "draft != true }}", "draft != true || true }}")),
+        ("m7b G_ALL padded with || true", mutate(src, "!github.event.pull_request.draft }}", "!github.event.pull_request.draft || true }}")),
+        ("m8 shard if = push || true", rewrite_if(src, "workspace-test-shard", Some("    if: ${{ github.event_name == 'push' || true }}"))),
+        ("m9 ready_for_review_x", mutate(src, "ready_for_review]", "ready_for_review_x]")),
+        ("m11 && true == DF", mutate(src, &format!(" && {DF}"), &format!(" && true == {DF}"))),
+        ("m12 && !DF", mutate(src, &format!(" && {DF}"), &format!(" && !{DF}"))),
+        ("m13 comment-suffixed header, no if", mutate(&rewrite_if(src, "workspace-test-shard", None), "  workspace-test-shard:\n", "  workspace-test-shard: # no guard\n")),
+        ("m14 new job outside CANON", mutate(src, "\njobs:\n", "\njobs:\n  extra-job: # unguarded\n    runs-on: [self-hosted, Linux, clean-room]\n    steps: []\n")),
+        ("m15 || true then a comment", mutate(src, "draft != true }}\n", "draft != true || true }} # fine\n")),
+        ("m16 more-indented || true line folds into the scalar", mutate(src, &format!("{x86_if}\n"), &format!("{x86_if}\n      || true\n"))),
+        ("m17 decoy types line, real list lacks ready_for_review", mutate(src, "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened]") + "# types: [ready_for_review]\n"),
+        ("m18 G_ALL polarity flipped", mutate(src, "|| !github.event.pull_request.draft", "|| github.event.pull_request.draft")),
+    ]
+}
+
+/// D1 / #5801: the real workflow satisfies the draft-gate rule.
+#[test]
+fn falsify_ci_draft_gate_real_workflow_holds() {
+    let bad = draft_gate_violations(&ci_yml_text());
+    assert!(
+        bad.is_empty(),
+        "ci.yml breaks the D1 draft-gate rule:\n{}",
+        bad.join("\n")
+    );
+}
+
+/// D1 / #5801: each of the 18 planted mutants is RED, so the rule cannot pass vacuously.
+#[test]
+fn falsify_ci_draft_gate_every_planted_mutant_is_red() {
+    let src = ci_yml_text();
+    let mutants = draft_gate_mutants(&src);
+    assert_eq!(mutants.len(), 18, "the fixture table lost a mutant");
+    for (label, text) in &mutants {
+        assert_ne!(
+            text, &src,
+            "mutant `{label}` is identical to ci.yml (dead fixture)"
+        );
+        assert!(
+            !draft_gate_violations(text).is_empty(),
+            "mutant `{label}` stayed GREEN"
+        );
+    }
 }

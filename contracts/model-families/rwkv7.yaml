@@ -79,3 +79,25 @@ shape_template:
 quantizations:
   - f16
   - f32
+
+falsification_tests:
+  - id: FALSIFY-MF-RWKV7-001
+    description: "every rwkv7 size variant declares nonzero dimensions"
+    test: "cargo test -p aprender-core --lib falsify_mf_001_positive_dimensions"
+    prediction: "load_all_families loads rwkv7.yaml and none of its size variants has a zero hidden_dim, num_layers, num_heads, num_kv_heads, intermediate_dim, vocab_size or head_dim"
+    if_fails: "a rwkv7 size variant declares a zero dimension"
+  - id: FALSIFY-MF-RWKV7-002
+    description: "every rwkv7 size variant divides its query heads evenly into KV groups"
+    test: "cargo test -p aprender-core --lib falsify_mf_002_gqa_divisibility"
+    prediction: "for every rwkv7 size variant, num_heads % num_kv_heads == 0"
+    if_fails: "a rwkv7 size variant has a head count the GQA kernel cannot group"
+  - id: FALSIFY-MF-RWKV7-003
+    description: "rwkv7.yaml loads through the family loader with every required field"
+    test: "cargo test -p aprender-core --lib falsify_mf_004_schema_completeness"
+    prediction: "load_family_yaml parses rwkv7.yaml without error and the result has a family, vendor, architectures and at least one size variant"
+    if_fails: "rwkv7.yaml is missing a required field or no longer parses"
+  - id: FALSIFY-MF-RWKV7-004
+    description: "no rwkv7 size variant has more KV heads than query heads"
+    test: "cargo test -p aprender-core --lib falsify_mf_008_kv_heads_le_q_heads"
+    prediction: "for every rwkv7 size variant, num_kv_heads <= num_heads"
+    if_fails: "a rwkv7 size variant declares more KV heads than query heads"

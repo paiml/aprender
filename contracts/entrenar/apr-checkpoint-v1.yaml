@@ -303,6 +303,12 @@ falsification_tests:
     \        .any(|t| t.name.starts_with(\"__training__\"));\n    assert!(has_training,\
     \ \"Test setup: ckpt should have training tensors\");\n}\n"
   if_fails: AprReader crashes on __training__.* tensors
+- id: FALSIFY-CKPT-006
+  rule: F-CKPT-017 ClassifyTrainer save_checkpoint writes the full HF-compatible directory
+  prediction: save_checkpoint emits metadata.json, model.safetensors (head + LoRA tensors), config.json and adapter_config.json, and surfaces directory-creation failures as errors
+  test: test_save_checkpoint_safetensors_carries_head_and_lora_tensors
+  test_harness: "cargo test -p aprender-train --lib test_save_checkpoint_"
+  if_fails: save_checkpoint drops an artifact or swallows an I/O error
 toyota_way_principles:
   jidoka: 'Training halts on checkpoint write failure (no silent data loss).
 

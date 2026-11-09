@@ -620,6 +620,14 @@ PY
 # quotes, was RUN by the release and never SCANNED for unpinned verifiers —
 # a guard universe strictly smaller than the surface it guards, which is the
 # failure class this guard exists to catch (#2644 audit, CI-3 / VP-05 / F2).
+# The path is the WHOLE rest of a GATE line, as dogfood.sh reads it
+# (`read -r dg_kind dg_path`): a path with a space in it runs in full, so it
+# must be scanned in full (awk $2 kept only its first word), and, like read,
+# without trailing blanks. A bare GATE names no path, so it yields none.
+gate_paths() {
+    awk '$1=="GATE" && NF>1 {sub(/^[ \t]*GATE[ \t]+/, ""); sub(/[ \t]+$/, ""); print}'
+}
+
 resolve_scope() {
     local declared meta crate rc
     meta=$(mktemp) || { printf 'SCOPE_ERROR'; return 1; }
@@ -628,9 +636,10 @@ resolve_scope() {
         rm -f "$meta"; printf 'SCOPE_ERROR'; return 1
     fi
     crate=$(sed -n 's/^name = "\(.*\)"/\1/p' "$REPO_ROOT/Cargo.toml" | head -1)
-    declared=$(CRATE="$crate" python3 "$REPO_ROOT/scripts/lib/dogfood_gates.py" "$meta" \
-        | awk '$1=="GATE"{print $2}')
+    # rc is jq's own status, read before any filter: through a pipe it would be awk's.
+    declared=$(jq -r --arg crate "$crate" -f "$REPO_ROOT/scripts/lib/dogfood_gates.jq" "$meta")
     rc=$?
+    declared=$(printf '%s\n' "$declared" | gate_paths)
     rm -f "$meta"
     # NOPKG/NODECL/EMPTY/BADSHAPE all yield no GATE lines: the declaration
     # verifies nothing, and a scan over an empty universe would report clean.
@@ -903,6 +912,41 @@ EOF
     else
         printf 'FAIL  CLASSIFIER    cargo_classify.sh case table is red here\n'; fails=1
     fi
+
+    # The scope must name every declared gate exactly as dogfood.sh runs it:
+    # whole, without trailing blanks, and nothing for a bare GATE.
+    local gp gp_want='scripts/a.sh|scripts/a b.sh' gp_src gp_mut gp_def m
+    gate_paths_case() {
+        printf 'GATE scripts/a.sh \nNODECL\nGATE\nGATE  \nGATE scripts/a b.sh\n' | gate_paths | paste -sd'|' -
+    }
+    gp=$(gate_paths_case)
+    if [ "$gp" = "$gp_want" ]; then
+        printf 'ok    GATE-PATHS    a declared path with a space is scoped whole\n'
+    else
+        printf 'FAIL  GATE-PATHS    got [%s], want [%s]\n' "$gp" "$gp_want"; fails=1
+    fi
+    # Shipped mutants of gate_paths, each rewritten from its own definition:
+    # GATE-PATHS must go RED under every one, or it proves nothing.
+    gp_src=$(declare -f gate_paths)
+    for m in 'print-$2|{sub(/^[ \t]*GATE[ \t]+/, ""); sub(/[ \t]+$/, ""); print}|{print $2}' \
+             'no-trim| sub(/[ \t]+$/, "");|' \
+             'bare-gate| && NF>1 |'; do
+        gp_mut=${m#*|}
+        if [ "$(grep -cF -- "${gp_mut%%|*}" <<< "$gp_src")" != 1 ]; then
+            printf 'FAIL  GATE-PATHS    mutant %s: anchor not found once in gate_paths\n' "${m%%|*}"; fails=1
+            continue
+        fi
+        gp_def=$(mktemp) || { printf 'FAIL  GATE-PATHS    mktemp failed\n'; fails=1; continue; }
+        printf '%s\n' "${gp_src/"${gp_mut%%|*}"/"${gp_mut#*|}"}" > "$gp_def"
+        # shellcheck disable=SC1090
+        gp=$( . "$gp_def"; gate_paths_case )
+        rm -f "${gp_def:?}"
+        if [ "$gp" = "$gp_want" ]; then
+            printf 'FAIL  GATE-PATHS    mutant %s survived\n' "${m%%|*}"; fails=1
+        else
+            printf 'ok    GATE-PATHS    mutant %s turns RED\n' "${m%%|*}"
+        fi
+    done
 
     # The two logs. The ENV one is from the #3212 job; the CODE one is a real
     # rustc diagnostic, present so the ENV arm cannot be widened into something

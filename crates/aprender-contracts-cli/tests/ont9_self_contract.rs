@@ -46,10 +46,11 @@ fn s(p: &Path) -> &str {
 const CONTRACT: &str = "contracts/ont-self-v1.yaml";
 const WITNESS_RS: &str = "crates/aprender-contracts/src/ontology/witness.rs";
 
-fn contract() -> serde_yaml::Value {
+fn contract() -> serde_json::Value {
     let text = std::fs::read_to_string(repo().join(CONTRACT))
         .unwrap_or_else(|e| panic!("{CONTRACT} is readable: {e}"));
-    serde_yaml::from_str(&text).unwrap_or_else(|e| panic!("{CONTRACT} parses: {e}"))
+    aprender_contracts_cli::yaml::from_str(&text)
+        .unwrap_or_else(|e| panic!("{CONTRACT} parses: {e}"))
 }
 
 fn text(rel: &str) -> String {
@@ -96,10 +97,10 @@ fn the_contract_is_anchored_on_the_corpus_and_depends_on_what_it_governs() {
     assert_eq!(c["entity"]["type"].as_str(), Some("pv-contract"));
     assert_eq!(c["entity"]["ref"].as_str(), Some("contracts/"));
     let deps: Vec<&str> = c["relations"]["depends_on"]
-        .as_sequence()
+        .as_array()
         .expect("relations.depends_on is a list")
         .iter()
-        .filter_map(serde_yaml::Value::as_str)
+        .filter_map(serde_json::Value::as_str)
         .collect();
     for d in [
         "ont-consistency-v1",
@@ -120,7 +121,7 @@ fn the_contract_is_anchored_on_the_corpus_and_depends_on_what_it_governs() {
 fn every_falsifier_names_a_test_function_that_exists() {
     let c = contract();
     let tests = c["falsification_tests"]
-        .as_sequence()
+        .as_array()
         .expect("falsification_tests is a list");
     assert!(tests.len() >= 7, "one falsifier per obligation at least");
     let src = crate_sources();
@@ -183,7 +184,7 @@ fn crate_sources() -> Vec<(String, String)> {
 fn the_kani_rung_is_declared_not_claimed() {
     let c = contract();
     let h = c["kani_harnesses"]
-        .as_sequence()
+        .as_array()
         .expect("kani_harnesses is a list");
     assert!(
         h.iter().any(|x| x["id"].as_str() == Some("KANI-ONT-9-1")

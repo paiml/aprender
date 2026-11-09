@@ -1,0 +1,18 @@
+- id: PMAT-4899
+  github_issue: 4899
+  item_type: task
+  title: 'EG-0: Measure — probe, oracle, contracts, corpus (no engine code)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:53:52Z
+  updated: 2026-10-07T17:53:52Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:measurement
+  notes: null
+  epic: 4898

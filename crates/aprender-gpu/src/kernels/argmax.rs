@@ -51,13 +51,27 @@ fn other_wins(
 pub struct ArgMaxKernel {
     /// Total vector length (vocab_size)
     pub length: u32,
+    /// #5279: one row of `length` values per `%ctaid.y`; see [`Self::rows`].
+    pub rows: bool,
 }
 
 impl ArgMaxKernel {
     /// Create a new argmax kernel for the given vector length
     #[must_use]
     pub fn new(length: u32) -> Self {
-        Self { length }
+        Self {
+            length,
+            rows: false,
+        }
+    }
+
+    /// #5279: reduce `m` rows in one launch on a `num_blocks × m` grid. Row
+    /// `r = %ctaid.y` reads `input[r * length ..]` and writes its block results
+    /// at `r * num_blocks`; each row's arithmetic is the single-row kernel's.
+    #[must_use]
+    pub const fn rows(mut self) -> Self {
+        self.rows = true;
+        self
     }
 
     /// Get recommended block size for this kernel
@@ -77,7 +91,11 @@ impl ArgMaxKernel {
 
 impl Kernel for ArgMaxKernel {
     fn name(&self) -> &str {
-        "argmax_block_reduce"
+        if self.rows {
+            "argmax_block_reduce_rows"
+        } else {
+            "argmax_block_reduce"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
@@ -89,7 +107,9 @@ impl Kernel for ArgMaxKernel {
         //
         // A second pass (or CPU reduction) finds global max from block results.
 
-        PtxKernel::new("argmax_block_reduce")
+        let (rows, length_bytes, blocks_bytes) =
+            (self.rows, self.length * 4, self.num_blocks() * 4);
+        PtxKernel::new(self.name())
             .param(PtxType::U64, "input_ptr") // f32* input values
             .param(PtxType::U64, "block_max_vals") // f32* per-block max values
             .param(PtxType::U64, "block_max_idxs") // u32* per-block max indices
@@ -102,9 +122,17 @@ impl Kernel for ArgMaxKernel {
                 let block_dim = ctx.special_reg(crate::ptx::PtxReg::NtidX);
 
                 // Load parameters
-                let input_ptr = ctx.load_param_u64("input_ptr");
-                let block_max_vals = ctx.load_param_u64("block_max_vals");
-                let block_max_idxs = ctx.load_param_u64("block_max_idxs");
+                let mut input_ptr = ctx.load_param_u64("input_ptr");
+                let mut block_max_vals = ctx.load_param_u64("block_max_vals");
+                let mut block_max_idxs = ctx.load_param_u64("block_max_idxs");
+                if rows {
+                    let row = ctx.special_reg(crate::ptx::PtxReg::CtaIdY);
+                    let in_off = ctx.mul_wide_u32(row, length_bytes);
+                    input_ptr = ctx.add_u64(input_ptr, in_off);
+                    let blk_off = ctx.mul_wide_u32(row, blocks_bytes);
+                    block_max_vals = ctx.add_u64(block_max_vals, blk_off);
+                    block_max_idxs = ctx.add_u64(block_max_idxs, blk_off);
+                }
                 let length = ctx.load_param_u32("length");
 
                 // Shared memory layout: [max_vals (256 f32), max_idxs (256 u32)]
@@ -263,23 +291,42 @@ impl Kernel for ArgMaxKernel {
 pub struct ArgMaxFinalKernel {
     /// Number of blocks from first pass
     pub num_blocks: u32,
+    /// #5279: one row per `%ctaid.y`; see [`Self::rows`].
+    pub rows: bool,
 }
 
 impl ArgMaxFinalKernel {
     /// Create kernel for final reduction
     #[must_use]
     pub fn new(num_blocks: u32) -> Self {
-        Self { num_blocks }
+        Self {
+            num_blocks,
+            rows: false,
+        }
+    }
+
+    /// #5279: reduce `m` rows of block results in one launch on a `1 × m`
+    /// grid. Row `r = %ctaid.y` reads its results at `r * num_blocks` and
+    /// writes `output_idx[r]`; each row's arithmetic is the single-row kernel's.
+    #[must_use]
+    pub const fn rows(mut self) -> Self {
+        self.rows = true;
+        self
     }
 }
 
 impl Kernel for ArgMaxFinalKernel {
     fn name(&self) -> &str {
-        "argmax_final_reduce"
+        if self.rows {
+            "argmax_final_reduce_rows"
+        } else {
+            "argmax_final_reduce"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
-        PtxKernel::new("argmax_final_reduce")
+        let (rows, blocks_bytes) = (self.rows, self.num_blocks * 4);
+        PtxKernel::new(self.name())
             .param(PtxType::U64, "block_max_vals") // f32* from first pass
             .param(PtxType::U64, "block_max_idxs") // u32* from first pass
             .param(PtxType::U64, "output_idx") // u32* single output index
@@ -288,9 +335,17 @@ impl Kernel for ArgMaxFinalKernel {
             .build(|ctx| {
                 let tid = ctx.special_reg(crate::ptx::PtxReg::TidX);
 
-                let block_max_vals = ctx.load_param_u64("block_max_vals");
-                let block_max_idxs = ctx.load_param_u64("block_max_idxs");
-                let output_idx = ctx.load_param_u64("output_idx");
+                let mut block_max_vals = ctx.load_param_u64("block_max_vals");
+                let mut block_max_idxs = ctx.load_param_u64("block_max_idxs");
+                let mut output_idx = ctx.load_param_u64("output_idx");
+                if rows {
+                    let row = ctx.special_reg(crate::ptx::PtxReg::CtaIdY);
+                    let blk_off = ctx.mul_wide_u32(row, blocks_bytes);
+                    block_max_vals = ctx.add_u64(block_max_vals, blk_off);
+                    block_max_idxs = ctx.add_u64(block_max_idxs, blk_off);
+                    let out_off = ctx.mul_wide_u32(row, 4);
+                    output_idx = ctx.add_u64(output_idx, out_off);
+                }
                 let num_blocks = ctx.load_param_u32("num_blocks");
 
                 let shared_base = ctx.shared_ptr();
@@ -398,5 +453,151 @@ mod tests {
         let kernel = ArgMaxKernel::new(152064);
         // 152064 / (256 * 4) = 148.5 -> 149 blocks
         assert_eq!(kernel.num_blocks(), 149);
+    }
+}
+
+#[cfg(test)]
+mod rows_tests {
+    use super::*;
+
+    #[test]
+    fn argmax_rows_have_the_single_kernels_instructions_plus_the_row_offset() {
+        for (one, rows) in [
+            (
+                ArgMaxKernel::new(248_320).emit_ptx(),
+                ArgMaxKernel::new(248_320).rows().emit_ptx(),
+            ),
+            (
+                ArgMaxFinalKernel::new(243).emit_ptx(),
+                ArgMaxFinalKernel::new(243).rows().emit_ptx(),
+            ),
+        ] {
+            assert!(!one.contains("%ctaid.y"), "{one}");
+            assert!(rows.contains("%ctaid.y"), "{rows}");
+            assert!(rows.contains("_rows"), "{rows}");
+            let body = |p: &str| -> Vec<String> {
+                p.lines()
+                    .map(str::trim)
+                    .filter(|l| l.contains(".f32") || l.starts_with("setp") || l.starts_with("bar"))
+                    .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+                    .collect()
+            };
+            assert_eq!(body(&one), body(&rows));
+        }
+    }
+}
+
+/// FALSIFY (#5279): row `r` of the rows argmax is the single-row argmax of
+/// `logits[r]`, ties to the earlier index included.
+#[cfg(test)]
+#[cfg(feature = "cuda")]
+mod rows_device_tests {
+    use super::{ArgMaxFinalKernel, ArgMaxKernel};
+    use crate::driver::{CudaContext, CudaModule, CudaStream, GpuBuffer, LaunchConfig};
+    use crate::kernels::Kernel;
+
+    fn launch<K: Kernel>(
+        ctx: &CudaContext,
+        stream: &CudaStream,
+        kernel: &K,
+        grid: (u32, u32, u32),
+        ptrs: [u64; 3],
+        n: u32,
+    ) {
+        let ptx = kernel.emit_ptx();
+        let mut module = CudaModule::from_ptx(ctx, &ptx).expect("module from ptx");
+        let config = LaunchConfig {
+            grid,
+            block: (256, 1, 1),
+            shared_mem: 0,
+        };
+        let [mut a, mut b, mut c] = ptrs;
+        let mut n = n;
+        let mut raw: [*mut std::ffi::c_void; 4] = [
+            std::ptr::from_mut(&mut a).cast(),
+            std::ptr::from_mut(&mut b).cast(),
+            std::ptr::from_mut(&mut c).cast(),
+            std::ptr::from_mut(&mut n).cast(),
+        ];
+        // SAFETY: the three pointers are live device buffers sized for the grid,
+        // and `n` is the kernel's u32 length parameter.
+        unsafe {
+            stream
+                .launch_kernel(&mut module, kernel.name(), &config, &mut raw)
+                .expect("kernel launch");
+        }
+        stream.synchronize().expect("stream synchronize");
+    }
+
+    #[test]
+    fn argmax_rows_equal_each_row_reduced_alone() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!("argmax_rows: no CUDA device — SKIPPED.");
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+        let vocab = 5_000u32;
+        let one = ArgMaxKernel::new(vocab);
+        let blocks = one.num_blocks();
+        let m = 4usize;
+        let mut seed = 0x5279_0003u32;
+        let mut logits: Vec<f32> = (0..m * vocab as usize)
+            .map(|_| {
+                seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                // Coarse values, so rows hold exact ties across blocks.
+                f32::from((seed >> 24) as u8 % 50)
+            })
+            .collect();
+        // Row 2: a tie between two far-apart indices; the earlier must win.
+        logits[2 * vocab as usize + 4_000] = 100.0;
+        logits[2 * vocab as usize + 30] = 100.0;
+        let input = GpuBuffer::from_host(&ctx, &logits).expect("logits");
+        let vals = GpuBuffer::<f32>::new(&ctx, m * blocks as usize).expect("vals");
+        let idxs = GpuBuffer::<u32>::new(&ctx, m * blocks as usize).expect("idxs");
+        let out = GpuBuffer::<u32>::new(&ctx, m).expect("out");
+        launch(
+            &ctx,
+            &stream,
+            &one.clone().rows(),
+            (blocks, m as u32, 1),
+            [input.as_ptr(), vals.as_ptr(), idxs.as_ptr()],
+            vocab,
+        );
+        let fin = ArgMaxFinalKernel::new(blocks);
+        launch(
+            &ctx,
+            &stream,
+            &fin.clone().rows(),
+            (1, m as u32, 1),
+            [vals.as_ptr(), idxs.as_ptr(), out.as_ptr()],
+            blocks,
+        );
+        let mut got = vec![0u32; m];
+        out.copy_to_host(&mut got).expect("download");
+        for (r, &got_r) in got.iter().enumerate() {
+            let row = &logits[r * vocab as usize..(r + 1) * vocab as usize];
+            let alone = GpuBuffer::from_host(&ctx, row).expect("row");
+            let one_out = GpuBuffer::<u32>::new(&ctx, 1).expect("out");
+            launch(
+                &ctx,
+                &stream,
+                &one,
+                (blocks, 1, 1),
+                [alone.as_ptr(), vals.as_ptr(), idxs.as_ptr()],
+                vocab,
+            );
+            launch(
+                &ctx,
+                &stream,
+                &fin,
+                (1, 1, 1),
+                [vals.as_ptr(), idxs.as_ptr(), one_out.as_ptr()],
+                blocks,
+            );
+            let mut want = [0u32];
+            one_out.copy_to_host(&mut want).expect("download");
+            assert_eq!(got_r, want[0], "row {r}");
+        }
+        assert_eq!(got[2], 30, "the tie goes to the earlier index");
     }
 }

@@ -1,0 +1,227 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-10-08'
+  author: PAIML Engineering
+  description: >
+    Streaming tool calls on POST /v1/chat/completions (aprender#4918). With
+    "stream": true, a turn that makes a tool call carries the call as an OpenAI
+    streaming delta.tool_calls chunk and ends with finish_reason "tool_calls",
+    as the non-streaming body does. Before this contract both SSE builders
+    (the live true_streaming_sse_response and the replayed
+    pregenerated_sse_response) wrote the <tool_call> markup into delta.content
+    and ended "stop", so a streaming agent client showed the call and never ran
+    it. Detection runs after ChatStopFilter, only when the request declares
+    tools and tool_choice is not "none". Text streams live; a tail that could
+    still grow into a marker (<tool_call> or <function=) is held, at most 10
+    bytes; from the first marker on the rest of the output is captured and, at
+    the end of the stream, parsed by the same build_tool_calling_message the
+    non-streaming path uses. A capture that parses to no call is sent as
+    content. Known differences from the non-streaming body, fixed by the spec
+    for 0.70.3: (D-a) text before a marker has already streamed as content and
+    stays, where the non-streaming body returns empty content beside its calls,
+    so parity is asserted on calls and finish reason only; (D-b) arguments
+    arrive whole in one delta.tool_calls chunk at the end of the stream, not
+    incrementally; (D-c) a bare JSON call with no marker streams as content,
+    where the non-streaming parser reads it as a call; (D-d) the terminal
+    reason is a FinishReason::ToolCalls variant, not a string. The non-standard
+    /v1/chat/completions/stream route calls the same handler and is covered.
+    The Ollama /api/chat stream (aprender#4182) is not.
+  references:
+  - 'aprender#4918 — streaming /v1/chat/completions sends tool calls as content'
+  - 'crates/aprender-serve/src/api/stream_tool_calls.rs — ToolCallDetector, StreamTools, detect_all, finish_reason'
+  - 'crates/aprender-serve/src/api/openai_handlers.rs — true_streaming_sse_response, pregenerated_sse_response, build_tool_calling_message'
+  - 'crates/aprender-serve/src/api/mod_create_demo.rs — ChatDelta.tool_calls, ChatDeltaToolCall, FinishReason::ToolCalls'
+  - 'crates/aprender-serve/src/api/tests/stream_tool_calls_4918.rs — FALSIFY-SSTC-001..012'
+  - 'scripts/gen_stream_golden_4918.sh — writes the FALSIFY-SSTC-005 golden from a clean v0.70.2 checkout'
+equations:
+  stream_tool_call_split:
+    formula: >
+      detect(d_1..d_n) = (content, calls) where t = d_1 ++ .. ++ d_n,
+      m = first index of a marker in t, calls = parse(t[m..]),
+      content = t[..m] if calls ≠ [] else t
+    domain: the deltas left after ChatStopFilter, for a request with tools and tool_choice ≠ none
+    codomain: content deltas and a list of tool calls
+    invariants:
+    - The calls do not depend on how t is split into deltas
+    - No content delta carries a byte of t[m..] when calls is non-empty
+    - A capture that parses to no call is sent as content; no byte of t is lost
+    - The hold-back never exceeds 10 bytes (the longest marker, 11 bytes, minus 1)
+    - A held tail that can no longer become a marker is released in the same delta
+    - A bare JSON object is not a marker
+    preconditions:
+    - request.tools is non-empty and tool_choice is not "none"
+    postconditions:
+    - calls ≠ [] ⟹ one delta.tool_calls chunk before the terminal chunk, finish_reason "tool_calls"
+    - calls = [] ⟹ finish_reason is what from_generation returns (stop or length)
+  stream_nonstream_parity:
+    formula: calls_stream(t) = calls_body(t[m..]) ∧ finish_stream(t) = finish_body(t[m..])
+    domain: a generation t with a marker at m
+    codomain: tool calls (id, type, name, arguments) and finish reason
+    invariants:
+    - Both paths parse with the same build_tool_calling_message
+    - Content may differ (D-a); calls and finish reason may not
+    preconditions:
+    - the same request and the same generated text
+    postconditions:
+    - streamed calls, minus their index, equal the non-streaming message.tool_calls
+  stream_no_tools_passthrough:
+    formula: tools = none ∨ tool_choice = "none" ⟹ sse(tokens) = sse_v0.70.2(tokens)
+    domain: any token sequence through either SSE builder
+    codomain: SSE body bytes, created masked to 0
+    invariants:
+    - The detector is not constructed
+    - delta.tool_calls is never serialized when absent or empty
+    preconditions:
+    - the request declares no tools, or tool_choice is "none"
+    postconditions:
+    - the body is byte-identical to the v0.70.2 golden
+proof_obligations:
+- id: SSTC-INV-001
+  type: invariant
+  property: A parsed call never reaches delta.content
+  formal: calls ≠ [] ⟹ ∀ c ∈ content, c ∩ t[m..] = ∅
+  applies_to: stream_tool_call_split
+- id: SSTC-EQ-002
+  type: equivalence
+  property: Streamed calls and finish reason equal the non-streaming body's
+  formal: calls_stream(t) = calls_body(t[m..]) ∧ finish_stream = finish_body
+  applies_to: stream_nonstream_parity
+- id: SSTC-INV-003
+  type: invariant
+  property: Split independence
+  formal: ∀ partitions P, Q of t, detect(P).calls = detect(Q).calls
+  applies_to: stream_tool_call_split
+- id: SSTC-INV-004
+  type: invariant
+  property: No text is lost when no call parses
+  formal: calls = [] ⟹ concat(content) = t
+  applies_to: stream_tool_call_split
+- id: SSTC-BOUND-005
+  type: bound
+  property: The hold-back is bounded
+  formal: held_len ≤ MAX_HELD_BYTES = max(|marker|) − 1 = 10
+  applies_to: stream_tool_call_split
+- id: SSTC-EQ-006
+  type: equivalence
+  property: No tools or tool_choice none leaves the stream byte-identical to v0.70.2
+  formal: tools = ∅ ∨ tool_choice = none ⟹ sse(tokens) ≡ golden_v0.70.2(tokens)
+  applies_to: stream_no_tools_passthrough
+enforcement:
+  call_not_content:
+    description: A streamed tool call arrives as delta.tool_calls with finish_reason tool_calls, on both SSE builders
+    check: contract_tests::FALSIFY-SSTC-001
+    severity: ERROR
+  split_independence:
+    description: Any split of the generation into deltas yields the non-streaming body's calls
+    check: contract_tests::FALSIFY-SSTC-003
+    severity: ERROR
+  plain_text_streams_live:
+    description: With tools declared, a plain answer streams delta by delta and ends stop
+    check: contract_tests::FALSIFY-SSTC-004
+    severity: ERROR
+  no_tools_byte_identical:
+    description: No tools or tool_choice none is byte-identical to the v0.70.2 stream
+    check: contract_tests::FALSIFY-SSTC-005
+    severity: ERROR
+  nothing_lost:
+    description: A capture that parses to no call is sent as content
+    check: contract_tests::FALSIFY-SSTC-006
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SSTC-001
+  rule: T1 — the live builder streams the issue's call as delta.tool_calls
+  prediction: the issue's delta sequence through true_streaming_sse_response gives no content, one delta.tool_calls frame (bash, {"command":"ls -la ~/tmp/"}) before the terminal frame, finish tool_calls, equal to the non-streaming body's call
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t1_live_builder_streams_the_issue_call_as_tool_calls'
+  red_state: the detector passes text through — the markup reaches delta.content and the stream ends stop
+  green_state: one call on one frame, no content, finish tool_calls (PASS)
+  if_fails: streaming agent clients show the raw call and never run it
+- id: FALSIFY-SSTC-002
+  rule: T2 — the replayed builder streams the issue's call as delta.tool_calls
+  prediction: the same tokens through pregenerated_sse_response give the same frames
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t2_replayed_builder_streams_the_issue_call_as_tool_calls'
+  red_state: the detector is wired to one builder only — the replayed arms (GPU, cached, APR, registry) still send content
+  green_state: the replayed builder emits the same call and finish reason (PASS)
+  if_fails: half the backend arms keep the defect
+- id: FALSIFY-SSTC-003
+  rule: T3 — any split of a generation yields the calls of the captured text
+  prediction: for random partitions of seven generations, detect_all's calls and finish reason equal build_tool_calling_message on t[m..], and content is t[..m] or t
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t3_any_split_emits_the_calls_of_the_captured_text'
+  red_state: parsing runs per delta — a call split across deltas is missed or truncated
+  green_state: calls are split-independent and equal the non-streaming parse (PASS)
+  if_fails: whether a call is seen depends on the tokenizer's split points
+- id: FALSIFY-SSTC-004
+  rule: T4 — with tools declared, a plain answer streams delta by delta and ends stop
+  prediction: content frames equal the token pieces one for one, no delta.tool_calls, finish stop, on both builders
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t4_tools_declared_plain_answer_streams_delta_by_delta_and_ends_stop'
+  red_state: all content is held to the end — the frames arrive as one block
+  green_state: one content frame per token (PASS)
+  if_fails: declaring tools turns streaming into a buffered response
+- id: FALSIFY-SSTC-005
+  rule: T5 — no tools, or tool_choice none, is byte-identical to v0.70.2
+  prediction: with created masked, both builders' SSE output for a fixed token sequence (text, a split marker, a whole call) equals golden/stream_no_tools_v0702.sse, generated from a clean v0.70.2 checkout by scripts/gen_stream_golden_4918.sh
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t5_no_tools_or_tool_choice_none_matches_the_v0702_golden'
+  red_state: the detector runs unconditionally — the call in the fixed sequence becomes delta.tool_calls
+  green_state: the bytes match the v0.70.2 golden (PASS)
+  if_fails: requests without tools, or that refuse tools, change on the wire
+- id: FALSIFY-SSTC-006
+  rule: T6 — a capture that parses to no call is sent as content
+  prediction: an undeclared tool and a mention of the tag stream as content whose concatenation is the whole text, finish stop
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t6_capture_that_parses_to_no_call_is_flushed_as_content'
+  red_state: captured text is dropped — the content stops at the marker
+  green_state: every byte arrives as content (PASS)
+  if_fails: a model that talks about <tool_call> loses the rest of its answer
+- id: FALSIFY-SSTC-007
+  rule: T7 — the hold-back is bounded and a dead prefix is released at once
+  prediction: every proper prefix of each marker is held exactly, released in the next delta when it cannot continue, and held_len never exceeds MAX_HELD_BYTES
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t7_hold_back_is_bounded_and_releases_a_dead_prefix_at_once'
+  red_state: the hold-back never releases — a held "<" waits for the end of the stream
+  green_state: held bytes ≤ 10 and released in the same delta (PASS)
+  if_fails: text containing "<" stalls until the stream ends
+- id: FALSIFY-SSTC-008
+  rule: T8 — a call completed by the end-of-stream flush is a call
+  prediction: 'when ChatStopFilter holds the closing </tool_call> (a request stop) or a trailing newline (the \nHuman: prefix) until the flush, the call still arrives as delta.tool_calls and no content leaks'
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t8_call_completed_by_the_end_of_stream_flush_is_a_call'
+  red_state: the flush path writes straight to content — the held tail leaks as a content delta
+  green_state: the flushed tail goes through the detector (PASS)
+  if_fails: the last bytes of a call reach the client as text
+- id: FALSIFY-SSTC-009
+  rule: T9 — POST /v1/chat/completions/stream returns the same delta.tool_calls
+  prediction: the same request to /v1/chat/completions and /v1/chat/completions/stream, on a quantized test model whose every token decodes to a call, returns the same delta.tool_calls and finish tool_calls
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t9_chat_completions_stream_route_returns_the_same_tool_calls'
+  red_state: the route bypasses the detector — no delta.tool_calls frame
+  green_state: both routes stream the same call (PASS)
+  if_fails: the non-standard stream route keeps the defect
+- id: FALSIFY-SSTC-010
+  rule: T10 — live receipt on CUDA
+  prediction: the issue's request with "stream" true against Qwen3.5-4B-Q4_K_M.gguf on a CUDA build of apr serve returns delta.tool_calls and finish_reason tool_calls
+  test: 'live measurement, not a unit test: apr serve run Qwen3.5-4B-Q4_K_M.gguf --gpu, then POST the issue request with "stream": true; the receipt is in the release PR body'
+  red_state: not applicable — this is the measurement
+  green_state: one delta.tool_calls frame and finish tool_calls on the wire
+  if_fails: the unit tests pass but the shipped binary does not
+- id: FALSIFY-SSTC-011
+  rule: T11 — delta.tool_calls is omitted when absent or empty
+  prediction: a ChatDelta with tool_calls None or [] serializes without the key; the tool-calls chunk carries index 0, no content, no role and a null finish_reason
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t11_delta_tool_calls_is_omitted_when_empty'
+  red_state: the field always serializes — every content delta grows a tool_calls key
+  green_state: the key appears only on the tool-calls chunk (PASS)
+  if_fails: clients that treat any tool_calls key as a call misread content deltas
+- id: FALSIFY-SSTC-012
+  rule: T12 — a bare JSON call with no marker still streams as content (D-c)
+  prediction: a bare {"name","arguments"} object streams as content and ends stop on both builders, while the non-streaming parser reads it as a call
+  test: 'cargo test -p aprender-serve --lib stream_tool_calls_4918::t12_bare_json_call_without_a_marker_streams_as_content'
+  red_state: "{ is treated as a marker — every JSON answer is held and captured"
+  green_state: bare JSON streams live as content (PASS); the known D-c difference is pinned
+  if_fails: any answer containing JSON stops streaming
+qa_gate:
+  id: F-SSTC-001
+  name: Streaming Tool Calls Contract
+  description: Streamed /v1/chat/completions turns carry tool calls as delta.tool_calls and finish tool_calls (aprender#4918)
+  checks:
+  - call_not_content
+  - split_independence
+  - plain_text_streams_live
+  - no_tools_byte_identical
+  - nothing_lost
+  pass_criteria: FALSIFY-SSTC-001..009, 011 and 012 PASS; FALSIFY-SSTC-010's live receipt is in the release PR body
+  falsification: Make the detector a pass-through — FALSIFY-SSTC-001/002/003/008/009 FAIL

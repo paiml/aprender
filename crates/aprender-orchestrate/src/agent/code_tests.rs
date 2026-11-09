@@ -880,7 +880,7 @@ mod non_interactive_format_tests {
         // contract for any tool downstream (e.g. CCPA differ) that parses
         // this envelope.
         let r = synth_result("the answer is 4");
-        let s = envelope(Some(&r), None, std::time::Duration::from_millis(123));
+        let s = envelope(Some(&r), None, None, std::time::Duration::from_millis(123));
         let v: serde_json::Value = serde_json::from_str(&s).expect("envelope is valid JSON");
         assert_eq!(v["type"], "result");
         assert_eq!(v["subtype"], "success");
@@ -898,7 +898,7 @@ mod non_interactive_format_tests {
     fn json_output_envelope_marks_error_subtype_on_empty_response() {
         let r = synth_result("");
         let outcome = CodeOutcome::empty_completion(r.iterations, r.tool_calls);
-        let s = envelope(Some(&r), Some(&outcome), std::time::Duration::from_millis(1));
+        let s = envelope(Some(&r), Some(&outcome), None, std::time::Duration::from_millis(1));
         let v: serde_json::Value = serde_json::from_str(&s).expect("valid JSON");
         assert_eq!(v["subtype"], "error");
         assert_eq!(v["is_error"], true);

@@ -36,8 +36,18 @@
 # WHAT IT DOES NOT DO. It does not decide whether a finding is real; the owning
 # guard does that. It decides only whether the recorded set grew.
 #
-#   bash scripts/check_baseline_ratchets.sh              # check
-#   bash scripts/check_baseline_ratchets.sh --self-test  # case table
+#   bash scripts/check_baseline_ratchets.sh --classify-only  # classification only (PR path)
+#   bash scripts/check_baseline_ratchets.sh --ratchet        # classify + compare (nightly)
+#   bash scripts/check_baseline_ratchets.sh                  # same as --ratchet
+#   bash scripts/check_baseline_ratchets.sh --self-test      # case table
+#
+# TWO MODES, ONE PER PATH (#5182, GATE/LAB). The classification rows are a
+# fixed bound -- every scripts/*.txt is classified, and there are 10+ of them --
+# and run on every PR (`--classify-only`). The shrink-only COMPARISON is a
+# ratchet, and a ratchet may not sit on a PR, merge-queue or release path, so it
+# runs nightly in guards-nightly.yml (`--ratchet`), where a red opens or updates
+# one ticket with one owner. Both CI invocations carry an argument, so
+# guard_tree.sh skips its bare run of this guard (wired-with-args).
 #
 # Refs: paiml/aprender#2706 (APR-PERF-GATE-001), PERF-008, PERF-028.
 
@@ -232,6 +242,7 @@ universe() {
 if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
     TD=$(mktemp -d) || exit 1
     trap 'rm -rf "${TD:?}"' EXIT
+    cd -- "$TD" || exit 1; export GIT_CEILING_DIRECTORIES="${TD%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
     bad=0
     rows=0
 
@@ -371,6 +382,107 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
                 printf '      be built, and the CI path is the tip path. Not a skip.\n'
                 bad=1
             fi
+
+            # FIRSTPARENT (#4983): a pull_request re-run. CI checks out GitHub's
+            # merge commit at depth 1, so there is no merge-base, and the re-run
+            # fetches origin/main fresh. Here main moved on and SHRANK the
+            # baseline (b deleted). Against the tip, the PR "appends" b, an
+            # entry it never touched; against the first parent, it changed
+            # nothing. The shallow clone is its own repository under $TD.
+            SC="$TD/shallow"
+            if git -C "$SR" checkout -q -b fp-pr "$SR_BASE" >/dev/null 2>&1 \
+               && printf 'pr edit\n' > "$SR/scripts/unrelated.txt" \
+               && git -C "$SR" -c commit.gpgsign=false commit -qam 'pr: unrelated edit' >/dev/null 2>&1 \
+               && SR_X=$(git -C "$SR" rev-parse HEAD) \
+               && git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1 \
+               && git -C "$SR" -c commit.gpgsign=false merge -q --no-ff --no-edit "$SR_X" >/dev/null 2>&1 \
+               && SR_M=$(git -C "$SR" rev-parse HEAD) \
+               && git -C "$SR" update-ref refs/pull/1/merge "$SR_M" \
+               && git -C "$SR" checkout -q --detach "$SR_NOBASE" >/dev/null 2>&1 \
+               && git -C "$SR" -c commit.gpgsign=false merge -q --no-ff --no-edit "$SR_BASE" >/dev/null 2>&1 \
+               && SR_M2=$(git -C "$SR" rev-parse HEAD) \
+               && git -C "$SR" update-ref refs/pull/2/merge "$SR_M2" \
+               && git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1 \
+               && printf '# header\na\n' > "$SR/$P" \
+               && git -C "$SR" -c commit.gpgsign=false commit -qam 'main: shrink the baseline' >/dev/null 2>&1 \
+               && git -C "$SR" update-ref refs/heads/fp-main "$(git -C "$SR" rev-parse HEAD)" \
+               && git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1 \
+               && git -C "$SR" config uploadpack.allowAnySHA1InWant true \
+               && git init -q "$SC" >/dev/null 2>&1 \
+               && [ "$(git -C "$SC" rev-parse --absolute-git-dir 2>/dev/null)" = "$SC/.git" ] \
+               && git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" '+refs/pull/1/merge:refs/remotes/pull/1/merge' >/dev/null 2>&1 \
+               && git -C "$SC" checkout -q --detach refs/remotes/pull/1/merge >/dev/null 2>&1 \
+               && git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" '+refs/heads/fp-main:refs/remotes/origin/main' >/dev/null 2>&1 \
+               && [ -z "$(git -C "$SC" merge-base HEAD origin/main 2>/dev/null)" ] \
+               && ! git -C "$SC" cat-file -e "${SR_BASE}^{commit}" 2>/dev/null; then
+
+                fp_row() { # fp_row <label> <want-mode> <want-ref|-> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+                    local got ref
+                    got=$(GITHUB_EVENT_NAME="$4" GITHUB_SHA="$5" baseline_ratchet_resolve "$SC" origin/main "$P")
+                    ref=${got##*$'\t'}
+                    got=${got%%$'\t'*}
+                    rows=$((rows + 1))
+                    if [ "$got" != "$2" ] || { [ "$3" != - ] && [ "$ref" != "$3" ]; }; then
+                        printf 'FAIL  %-46s want %s %s got %s %s\n' "$1" "$2" "$3" "$got" "$ref"
+                        bad=1
+                    fi
+                }
+                fp_e2e() { # fp_e2e <label> <want-rc> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+                    local got
+                    ( GITHUB_EVENT_NAME="$3" GITHUB_SHA="$4" BASELINE_RATCHET_BASE_REF=origin/main \
+                      baseline_ratchet_check "$SC" "$P" set ) >/dev/null 2>&1
+                    got=$?
+                    rows=$((rows + 1))
+                    if [ "$got" != "$2" ]; then
+                        printf 'FAIL  %-46s want rc=%s got rc=%s\n' "$1" "$2" "$got"
+                        bad=1
+                    fi
+                }
+                # Controls: the tip path is unchanged off the event, and it
+                # carries the false red this fix removes.
+                fp_row 'firstparent: push event keeps TIP'        TIP          origin/main push         "$SR_M"
+                fp_e2e 'firstparent: tip blames PR for main shrink' 1                      push         "$SR_M"
+                # A head that is not the event's own merge commit is never read.
+                fp_row 'firstparent: HEAD != GITHUB_SHA keeps TIP' TIP         origin/main pull_request "$SR_X"
+                # Fail-closed: the parent not fetched is UNRESOLVABLE, never TIP.
+                fp_row 'firstparent: parent unfetched -> UNRESOLVABLE' UNRESOLVABLE "$SR_BASE" pull_request "$SR_M"
+                fp_e2e 'firstparent: parent unfetched -> rc 1'    1                      pull_request "$SR_M"
+                if git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" "$SR_BASE" >/dev/null 2>&1 \
+                   && [ -z "$(git -C "$SC" merge-base HEAD origin/main 2>/dev/null)" ]; then
+                    fp_row 'firstparent: parent fetched -> FIRSTPARENT' FIRSTPARENT "$SR_BASE" pull_request "$SR_M"
+                    fp_e2e 'firstparent: re-run after main moved'  0                      pull_request "$SR_M"
+                else
+                    printf 'FAIL  firstparent: the first parent could not be fetched, or it made a\n'
+                    printf '      merge-base resolve. FIRSTPARENT is UNTESTED. Not a skip.\n'
+                    bad=1
+                fi
+                # A single-parent head (a merge_group squash) has no first
+                # parent to trust: it keeps TIP.
+                if git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" "$SR_X" >/dev/null 2>&1 \
+                   && git -C "$SC" checkout -q --detach "$SR_X" >/dev/null 2>&1; then
+                    fp_row 'firstparent: single-parent head keeps TIP' TIP     origin/main pull_request "$SR_X"
+                else
+                    printf 'FAIL  firstparent: the single-parent head could not be checked out. UNTESTED.\n'
+                    bad=1
+                fi
+                # The base the PR was merged onto has no baseline: the PR
+                # introduces it. The tip, which has one, is NOT consulted.
+                if git -C "$SC" fetch -q --no-tags --depth=1 "file://$SR" '+refs/pull/2/merge:refs/remotes/pull/2/merge' "$SR_NOBASE" >/dev/null 2>&1 \
+                   && git -C "$SC" checkout -q --detach refs/remotes/pull/2/merge >/dev/null 2>&1; then
+                    fp_row 'firstparent: parent lacks file -> BOOTSTRAP' BOOTSTRAP "$SR_NOBASE" pull_request "$SR_M2"
+                    mv "$SC/$P" "$SC/$P.hidden"
+                    fp_row 'firstparent: not in tree either -> ABSENT' ABSENT    "$SR_NOBASE" pull_request "$SR_M2"
+                    mv "$SC/$P.hidden" "$SC/$P"
+                else
+                    printf 'FAIL  firstparent: the second merge commit could not be checked out. UNTESTED.\n'
+                    bad=1
+                fi
+            else
+                printf 'FAIL  resolve FIRSTPARENT UNTESTED — the shallow re-run clone could\n'
+                printf '      not be built, and a pull_request re-run is that shape. Not a skip.\n'
+                bad=1
+            fi
+            git -C "$SR" checkout -q --detach "$SR_BASE" >/dev/null 2>&1
 
             # END TO END, through the public entry point, on a real repository:
             # append -> RED, delete -> GREEN, unchanged -> GREEN.
@@ -682,6 +794,30 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
         fi
     done
 
+    # --classify-only (#5182), through the public entry point, on a copy of
+    # this tree's baselines in a repository with NO comparand. A mode that
+    # compared anything would fail to resolve origin/main and exit 1, so rc 0
+    # here is the proof it compared nothing; an unclassified file must still
+    # fail it, or the PR path would keep no gate at all.
+    CO="$TD/classify_only"
+    if mkdir -p "$CO/scripts" \
+       && cp "$REPO_ROOT"/scripts/*.txt "$REPO_ROOT/scripts/${BASH_SOURCE[0]##*/}" "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" "$CO/scripts/" \
+       && git -C "$CO" init -q >/dev/null 2>&1; then
+        co_self="$CO/scripts/${BASH_SOURCE[0]##*/}"
+        ( GIT_CEILING_DIRECTORIES="$TD" bash "$co_self" --classify-only ) >/dev/null 2>&1
+        say_row 'classify-only: no comparand, every file classified' 0 $?
+        printf 'x\n' > "$CO/scripts/zz_unclassified_baseline.txt"
+        ( GIT_CEILING_DIRECTORIES="$TD" bash "$co_self" --classify-only ) >/dev/null 2>&1
+        say_row 'classify-only: an unclassified baseline still fails' 1 $?
+        rm -f "$CO/scripts/zz_unclassified_baseline.txt"
+        ( GIT_CEILING_DIRECTORIES="$TD" bash "$co_self" --no-such-mode ) >/dev/null 2>&1
+        say_row 'unknown argument is a usage error' 2 $?
+    else
+        printf 'FAIL  classify-only: the scratch tree could not be built, so the PR-path\n'
+        printf '      mode is UNTESTED. Not a skip.\n'
+        bad=1
+    fi
+
     if [ "$bad" -ne 0 ]; then
         printf '\nSELF-TEST FAILED\n'
         exit 1
@@ -693,7 +829,21 @@ if [ "${1:-}" = "--self-test" ] || [ "${1:-}" = "--selftest" ]; then
 fi
 
 # ---------------------------------------------------------------------------
-printf '=== every baseline in scripts/ is classified and ratcheted (check_baseline_ratchets.sh) ===\n'
+case "${1:-}" in
+    -h|--help)
+        printf 'usage: bash scripts/check_baseline_ratchets.sh [--classify-only|--ratchet|--self-test]\n'
+        exit 0 ;;
+    --classify-only) MODE=classify ;;
+    --ratchet|'')    MODE=ratchet ;;
+    *)  printf 'check_baseline_ratchets.sh: unknown argument %s (want --classify-only, --ratchet or --self-test)\n' "$1" >&2
+        exit 2 ;;
+esac
+
+if [ "$MODE" = classify ]; then
+    printf '=== every baseline in scripts/ is classified; nothing compared (check_baseline_ratchets.sh --classify-only) ===\n'
+else
+    printf '=== every baseline in scripts/ is classified and ratcheted (check_baseline_ratchets.sh) ===\n'
+fi
 
 rc=0
 n_total=0
@@ -728,6 +878,10 @@ while IFS= read -r f; do
         continue
     fi
     n_ratchet=$((n_ratchet + 1))
+    if [ "$MODE" = classify ]; then # CLASSIFY-ONLY-MUTATION-POINT
+        printf 'ok    %-8s %s\n' "$kind" "scripts/$f"
+        continue
+    fi
     # THE INSTRUMENT, BEFORE THE COMPARISON. lib_baseline_ratchet.sh has shipped
     # baseline_require_tool_version since BSE-10a and NOTHING has ever called it
     # (aprender#3217) -- a facility with a self-test and no caller. It is in
@@ -759,6 +913,17 @@ if [ "$n_total" -lt 10 ]; then
     printf '\nFAIL (vacuity): only %s baseline file(s) found under scripts/, expected 10+.\n' "$n_total"
     printf 'The universe is broken, not the tree. Fix the scan rather than this number.\n'
     exit 1
+fi
+
+if [ "$MODE" = classify ]; then
+    printf '\n%s baseline file(s): %s classified shrink-only, %s exempt with a stated reason\n' \
+        "$n_total" "$n_ratchet" "$n_none"
+    if [ "$rc" -ne 0 ]; then
+        printf 'FAIL  see rows above: a baseline is unclassified.\n'
+    else
+        printf 'PASS  every baseline is classified. The shrink-only comparison runs nightly (--ratchet).\n'
+    fi
+    exit "$rc"
 fi
 
 printf '\n%s baseline file(s): %s ratcheted, %s exempt with a stated reason\n' \

@@ -19,6 +19,7 @@ fn test_chat_delta_debug_clone_cov() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
         content: Some("Hello".to_string()),
+        tool_calls: None,
     };
     let debug = format!("{:?}", delta);
     assert!(debug.contains("ChatDelta"));
@@ -32,6 +33,7 @@ fn test_chat_delta_empty_cov() {
     let delta = ChatDelta {
         role: None,
         content: None,
+        tool_calls: None,
     };
     let json = serde_json::to_string(&delta).expect("serialize");
     // Empty delta should have null fields
@@ -146,6 +148,7 @@ fn test_chat_chunk_choice_debug_clone_cov() {
         delta: ChatDelta {
             role: Some("assistant".to_string()),
             content: Some("Test".to_string()),
+            tool_calls: None,
         },
         finish_reason: Some("stop".to_string()),
     };

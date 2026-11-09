@@ -58,3 +58,14 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-CPU-FORWARD-ZERO-ALLOC-001
+    description: "C-FWD-CPU-001: CPU forward_backward_single on borrowed token_ids yields a finite training loss"
+    test: "cargo test -p aprender-train --lib test_ssc025_train_batch_finite_loss"
+    prediction: "train_batch on the CPU path (no GPU training state) returns a finite loss and the borrowed-slice forward produces valid hidden states"
+    if_fails: "The CPU branch of forward_backward_single no longer forwards token_ids correctly (wrong slice, truncation or padding leaking into the CPU path)"
+  - id: FALSIFY-CPU-FORWARD-ZERO-ALLOC-002
+    description: "C-FWD-CPU-001: forward_only_tokenized on the CPU path returns a finite loss and an in-range prediction for every label"
+    test: "cargo test -p aprender-train --lib test_cov4_forward_only_all_labels_tokenized"
+    prediction: "For every label 0..num_classes, forward_only_tokenized returns a finite loss and a predicted class < num_classes"
+    if_fails: "The borrowed-token CPU forward in forward_only_tokenized is broken; the zero-alloc change altered forward semantics"

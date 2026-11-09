@@ -44,6 +44,7 @@
 //! ```
 
 use std::collections::HashMap;
+use std::ops::ControlFlow;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -1073,6 +1074,46 @@ pub struct SyscallStream {
     trace: ProcessTrace,
 }
 
+/// What `SyscallStream::next` returns once a step settles it: `Break(item)`.
+type StreamStep = ControlFlow<Option<Result<SyscallEvent, TracerError>>>;
+
+/// Entry/exit bookkeeping for the syscall currently being traced.
+struct SyscallState {
+    in_syscall: bool,
+    start: Instant,
+    nr: i64,
+}
+
+/// Resume the tracee to its next syscall stop, optionally delivering `sig`.
+fn resume_to_syscall(pid: Pid, sig: Option<nix::sys::signal::Signal>) -> StreamStep {
+    match ptrace::syscall(pid, sig) {
+        Ok(()) => ControlFlow::Continue(()),
+        Err(e) => ControlFlow::Break(Some(Err(TracerError::PtraceError(e)))),
+    }
+}
+
+/// Handle a syscall stop: on entry record it and resume; on exit yield the event.
+fn on_syscall_stop(pid: Pid, state: &mut SyscallState) -> StreamStep {
+    let duration = state.start.elapsed();
+    let regs = match crate::arch::PtraceRegs::get_nix(pid) {
+        Ok(r) => r,
+        Err(e) => return ControlFlow::Break(Some(Err(TracerError::PtraceError(e)))),
+    };
+    if state.in_syscall {
+        return ControlFlow::Break(Some(Ok(SyscallEvent {
+            syscall: syscall_name(state.nr).to_string(),
+            syscall_nr: state.nr,
+            duration,
+            result: regs.syscall_return(),
+            timestamp: state.start,
+        })));
+    }
+    state.nr = regs.syscall_number();
+    state.start = Instant::now();
+    state.in_syscall = true;
+    resume_to_syscall(pid, None)
+}
+
 impl Iterator for SyscallStream {
     type Item = Result<SyscallEvent, TracerError>;
 
@@ -1082,9 +1123,7 @@ impl Iterator for SyscallStream {
         }
 
         let nix_pid = Pid::from_raw(self.trace.pid as i32);
-        let mut in_syscall = false;
-        let mut syscall_start = Instant::now();
-        let mut current_syscall_nr: i64 = 0;
+        let mut state = SyscallState { in_syscall: false, start: Instant::now(), nr: 0 };
 
         // Continue to next syscall
         if let Err(e) = ptrace::syscall(nix_pid, None) {
@@ -1093,61 +1132,19 @@ impl Iterator for SyscallStream {
         }
 
         loop {
-            match waitpid(nix_pid, None) {
-                Ok(WaitStatus::PtraceSyscall(_)) => {
-                    if in_syscall {
-                        // Syscall exit - return event
-                        let duration = syscall_start.elapsed();
-                        let regs = match crate::arch::PtraceRegs::get_nix(nix_pid) {
-                            Ok(r) => r,
-                            Err(e) => return Some(Err(TracerError::PtraceError(e))),
-                        };
-                        let result = regs.syscall_return();
-
-                        return Some(Ok(SyscallEvent {
-                            syscall: syscall_name(current_syscall_nr).to_string(),
-                            syscall_nr: current_syscall_nr,
-                            duration,
-                            result,
-                            timestamp: syscall_start,
-                        }));
-                    } else {
-                        // Syscall entry
-                        let regs = match crate::arch::PtraceRegs::get_nix(nix_pid) {
-                            Ok(r) => r,
-                            Err(e) => return Some(Err(TracerError::PtraceError(e))),
-                        };
-                        current_syscall_nr = regs.syscall_number();
-                        syscall_start = Instant::now();
-                        in_syscall = true;
-
-                        // Continue to syscall exit
-                        if let Err(e) = ptrace::syscall(nix_pid, None) {
-                            return Some(Err(TracerError::PtraceError(e)));
-                        }
-                    }
-                }
-                Ok(WaitStatus::Exited(_, _) | WaitStatus::Signaled(_, _, _)) => {
+            let step = match waitpid(nix_pid, None) {
+                Ok(WaitStatus::PtraceSyscall(_)) => on_syscall_stop(nix_pid, &mut state),
+                Ok(WaitStatus::Exited(_, _) | WaitStatus::Signaled(_, _, _))
+                | Err(nix::Error::ECHILD) => {
                     self.trace.attached = false;
-                    return None;
+                    ControlFlow::Break(None)
                 }
-                Ok(WaitStatus::Stopped(_, sig)) => {
-                    if let Err(e) = ptrace::syscall(nix_pid, Some(sig)) {
-                        return Some(Err(TracerError::PtraceError(e)));
-                    }
-                }
-                Ok(_) => {
-                    if let Err(e) = ptrace::syscall(nix_pid, None) {
-                        return Some(Err(TracerError::PtraceError(e)));
-                    }
-                }
-                Err(nix::Error::ECHILD) => {
-                    self.trace.attached = false;
-                    return None;
-                }
-                Err(e) => {
-                    return Some(Err(TracerError::PtraceError(e)));
-                }
+                Ok(WaitStatus::Stopped(_, sig)) => resume_to_syscall(nix_pid, Some(sig)),
+                Ok(_) => resume_to_syscall(nix_pid, None),
+                Err(e) => ControlFlow::Break(Some(Err(TracerError::PtraceError(e)))),
+            };
+            if let ControlFlow::Break(item) = step {
+                return item;
             }
         }
     }

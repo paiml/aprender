@@ -163,12 +163,21 @@ fn resolve_embed_backend(
 /// return the same numbers for the same text on the same server.
 ///
 /// Returns the embeddings in request order plus the total prompt-token count.
+///
+/// APR-EMBED-001 EG-3: media inputs are refused first, whatever is loaded (I-7). An
+/// EmbeddingGemma 2 server answers from its encoder, truncated to `dimensions`; a
+/// generative server accepts only `dimensions` == its hidden size.
 pub(super) fn embed_inputs(
     state: &AppState,
     model_id: Option<&str>,
     inputs: &EmbeddingInput,
+    dimensions: Option<usize>,
     route: &str,
 ) -> Result<(Vec<Vec<f32>>, usize), RErr> {
+    refuse_unsupported_input(inputs, route)?;
+    if let Some(served) = state.embedding_model() {
+        return embed_with_gemma2(&served, inputs, dimensions);
+    }
     let (backend, tokenizer) = resolve_embed_backend(state, model_id, route)?;
 
     // PMAT-802 × PMAT-803 (stacked): `input` may be a single string OR an array of
@@ -176,6 +185,7 @@ pub(super) fn embed_inputs(
     // hidden states → mean-pool over non-special tokens → L2-normalize — NOT a
     // positional token-hash. Dimension is the model's hidden size, never a constant.
     let hidden_dim = backend.hidden_dim();
+    check_generative_dimensions(dimensions, hidden_dim)?;
 
     let mut out = Vec::with_capacity(inputs.len());
     let mut prompt_tokens = 0usize;
@@ -249,7 +259,7 @@ pub(super) fn embed_for_route(
     route: &str,
 ) -> Result<Json<EmbeddingResponse>, (StatusCode, Json<ErrorResponse>)> {
     let (embeddings, prompt_tokens) =
-        embed_inputs(&state, request.model.as_deref(), &request.input, route)?;
+        embed_inputs(&state, request.model.as_deref(), &request.input, request.dimensions, route)?;
 
     let data = embeddings
         .into_iter()
@@ -814,6 +824,15 @@ async fn try_cached_completions(
     )))
 }
 
+/// End-of-generation markers a decode stops on when the vocabulary has them.
+const EOG_MARKERS: [&str; 5] = [
+    "<|im_end|>",
+    "<|endoftext|>",
+    "<|eot_id|>",
+    "<|end_of_text|>",
+    "<end_of_turn>",
+];
+
 /// aprender#4339: token ids a raw `/v1/completions` decode stops on.
 ///
 /// Both CPU GGUF completion backends passed `stop_tokens: Vec::new()`, so a raw
@@ -829,14 +848,19 @@ pub(crate) fn completion_stop_tokens(
     tokenizer: &crate::tokenizer::BPETokenizer,
     model_eos: Option<u32>,
 ) -> Vec<u32> {
-    const EOG_MARKERS: [&str; 5] = [
-        "<|im_end|>",
-        "<|endoftext|>",
-        "<|eot_id|>",
-        "<|end_of_text|>",
-        "<end_of_turn>",
-    ];
-    let mut ids: Vec<u32> = model_eos.into_iter().collect();
+    eos_ids_with_eog(tokenizer, model_eos.into_iter().collect())
+}
+
+/// aprender#4345: `eos_ids` followed by every EOG marker of
+/// [`completion_stop_tokens`] the vocabulary has and the list lacks.
+///
+/// For a route whose EOS list is not a single id, such as the APR Q4K
+/// `model_eos_ids()` with its `[0, 2]` fallback.
+pub(crate) fn eos_ids_with_eog(
+    tokenizer: &crate::tokenizer::BPETokenizer,
+    eos_ids: Vec<u32>,
+) -> Vec<u32> {
+    let mut ids = eos_ids;
     for id in EOG_MARKERS.iter().filter_map(|m| tokenizer.get_token_id(m)) {
         if !ids.contains(&id) {
             ids.push(id);

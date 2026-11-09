@@ -316,6 +316,28 @@ pub fn extract(
         receipts::read_dir(&subject.model_dir(&root), &root).map_err(ReleaseError::Receipt)?;
     let kernel_receipts = inputs::read_kernel_receipts(&subject.kernel_dir(&root), &root)?;
     let tok_receipts = inputs::read_tokenizer_receipts(&subject.tokenizer_dir(&root), &root)?;
+    let host_arch: Vec<(&str, &str)> = ladder
+        .hosts
+        .iter()
+        .map(|h| (h.id.as_str(), h.cc.as_str()))
+        .collect();
+    let v2 = subject
+        .v2_dir
+        .as_deref()
+        .map(|d| {
+            super::kernel_cells::read_v2(
+                &root,
+                d,
+                &host_arch,
+                subject.measured_commit(),
+                subject.v2_gate_utc.as_deref(),
+            )
+        })
+        .transpose()
+        .map_err(|e| ReleaseError::Input {
+            file: e.file,
+            what: e.what,
+        })?;
     let dogfood = subject
         .dogfood_receipt
         .as_deref()
@@ -348,6 +370,7 @@ pub fn extract(
             ratchet,
             crux_mapping: crux_mapping.as_ref(),
             crux_rows: &crux_rows,
+            v2: v2.as_ref(),
         },
     ))
 }
@@ -368,6 +391,8 @@ pub struct Inputs<'a> {
     /// S2.4: the CRUX correspondence file and the `:CruxCell` rows (#3739).
     pub crux_mapping: Option<&'a release_crux::Mapping>,
     pub crux_rows: &'a [release_crux::CruxRow],
+    /// aprender#3715 v2 kernel-cell evidence; `None` → no v2 cells.
+    pub v2: Option<&'a super::kernel_cells::V2Evidence>,
 }
 
 /// The release graph from parsed inputs: pure, no filesystem (R-15).
@@ -407,6 +432,9 @@ pub fn build(g: &mut Graph, subject: &Subject, i: &Inputs<'_>) -> ReleaseStats {
     }
     emit_kernels(g, subject, &views, &mut stats);
     emit_tokenizer(g, subject, &views, i.tok_receipts, &mut stats);
+    if let Some(v2) = i.v2 {
+        emit_v2(g, &views, v2);
+    }
     stats
 }
 
@@ -556,6 +584,38 @@ fn dominating_secs(label: &str) -> u64 {
         .unwrap_or(0)
 }
 
+/// aprender#3715 v2: one `CellHost` per required host, over the same universe v1 grades. A model's tensor
+/// types come from any of the host's inventory rows with its hash; a ladder-only model has none and is RED.
+/// Sanitizer runs are attributed through their own `kernel_path` (`read_host_sanitizers`); a cuda kernel
+/// no run checked with every tool is RED on S-SAN.
+fn emit_v2(g: &mut Graph, views: &[HostView<'_>], v2: &super::kernel_cells::V2Evidence) {
+    let hosts: Vec<super::kernel_cells::CellHost> = views
+        .iter()
+        .map(|v| {
+            let types = super::kernel_cells::models_from_inventory(
+                &v.receipts
+                    .iter()
+                    .flat_map(|r| r.inventory.iter().cloned())
+                    .collect::<Vec<_>>(),
+            );
+            super::kernel_cells::CellHost {
+                id: v.decl.id.clone(),
+                backend: "cuda".to_string(),
+                arch: v.decl.cc.clone(),
+                models: v
+                    .models
+                    .keys()
+                    .map(|sha| (sha.clone(), types.get(sha).cloned().flatten()))
+                    .collect(),
+                kernels: v2.kernels.get(&v.decl.id).cloned().unwrap_or_default(),
+                smokes: v2.smokes.get(&v.decl.id).cloned().unwrap_or_default(),
+                sanitized: v2.sanitized.get(&v.decl.id).cloned().unwrap_or_default(),
+            }
+        })
+        .collect();
+    super::kernel_cells::build_cells(g, &v2.rows, &hosts);
+}
+
 /// The positive control (R-3, PMAT-3704): drawn on EVERY gate run, with or without a release subject. One
 /// required host holds one model that owes one cell; the SAMPLE receipt carries that cell's fresh Pass row, the
 /// PLANTED one omits it. Fires iff the sample's cell has exactly one fresh row AND the planted cell still exists
@@ -620,6 +680,7 @@ pub fn positive_control() -> bool {
                 ratchet: None,
                 crux_mapping: None,
                 crux_rows: &[],
+                v2: None,
             },
         );
         let is_cell = g

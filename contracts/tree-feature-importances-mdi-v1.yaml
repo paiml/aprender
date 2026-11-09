@@ -141,3 +141,15 @@ falsification:
       cargo test -p aprender-core --lib test_fitted_regressor_feature_importances_mdi_ranking
       GREEN: importances[1] > importances[0] and sum(importances) ≈ 1.0.
       (Under the count-only bug this fitted-path ranking flips to feature 0.)
+
+falsification_tests:
+  - id: FALSIFY-TREE_FEATURE_IMPORTANCES_MDI-001
+    description: "C-MDI-001 / C-MDI-003: regression MDI is the per-split weighted variance decrease, so a high-variance split outranks a larger-count split"
+    test: "cargo test -p aprender-core --lib test_regression_mdi_outranks_by_variance_decrease_not_count"
+    prediction: "importances[1] > importances[0], and each equals n*parent_var - sum(n_child*child_var) within 0.1"
+    if_fails: "importances count split samples instead of impurity decrease (old [20,10] ranking)"
+  - id: FALSIFY-TREE_FEATURE_IMPORTANCES_MDI-002
+    description: "C-MDI-001 (classification analog): MDI uses weighted gini decrease, not raw count"
+    test: "cargo test -p aprender-core --lib test_classification_mdi_uses_gini_decrease_not_count"
+    prediction: "both features get importance 3.0 (12*0.5-6*0.5 and 6*0.5) within 1e-6"
+    if_fails: "classification MDI attributes whole-subtree sample counts (12 vs 6) instead of gini decrease"

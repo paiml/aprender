@@ -44,3 +44,10 @@ falsification:
   - condition: "assert!() failure in example"
     severity: P0
     action: reject_chapter
+
+falsification_tests:
+  - id: FALSIFY-BOOK-CH07-001
+    description: "Chapter 07's example ch07_model_selection builds and runs to exit 0, with its 4 assertion(s) holding"
+    test: "cargo run -p aprender-core --example ch07_model_selection"
+    prediction: "Exit 0. book-contracts 'Chapter Examples Run' runs the same command for all 27 chapters"
+    if_fails: "An API the chapter teaches changed or regressed, so the example panics on an assertion or no longer compiles"

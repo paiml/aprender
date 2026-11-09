@@ -138,3 +138,25 @@ falsification:
     green: "predict([0,0]) = 1 and predict_proba([0,0]) = [0.0, 1.0] — only the zero-distance neighbor of label 1 votes (infinite weight); the non-zero query [0.1,0.1] still predicts 1 via 1/d weighting"
     sklearn_reference: "KNeighborsClassifier(weights='distance'): _get_weights gives 1/d => inf at d=0; predict([[0,0]])=[1], predict_proba([[0,0]])=[[0,1]] for X=[[0,0],[1,0],[0,1],[1,1]], y=[1,0,0,0], k=3"
     evidence: "cargo test -p aprender-core --lib falsify_knn_weighted"
+
+falsification_tests:
+  - id: FALSIFY-KNN_TIE_SMALLEST_LABEL-001
+    description: "C-KNN-TIE-001 / C-KNN-TIE-003: unweighted majority vote on a {0,2} count tie returns 0 regardless of neighbor order"
+    test: "cargo test -p aprender-core --lib falsify_knn_tie_001_majority_vote_smallest_label"
+    prediction: "majority_vote returns 0 for both neighbor orders across repeated calls"
+    if_fails: "tie-break depends on HashMap iteration order / max_by_key last-max semantics again"
+  - id: FALSIFY-KNN_TIE_SMALLEST_LABEL-002
+    description: "C-KNN-TIE-002: weighted (inverse-distance) vote on an equal-weight tie returns the smallest label"
+    test: "cargo test -p aprender-core --lib falsify_knn_tie_002_weighted_vote_smallest_label"
+    prediction: "weighted_vote returns 0 for both neighbor orders"
+    if_fails: "weighted tie-break is non-deterministic or picks the largest label"
+  - id: FALSIFY-KNN_TIE_SMALLEST_LABEL-003
+    description: "C-KNN-TIE-004: three-way mode tie resolves to the smallest label"
+    test: "cargo test -p aprender-core --lib falsify_knn_tie_004_three_way_tie_smallest_label"
+    prediction: "majority_vote over one neighbor each of labels 1,2,0 returns 0"
+    if_fails: "smallest-label rule does not generalise beyond the 2-way tie"
+  - id: FALSIFY-KNN_TIE_SMALLEST_LABEL-004
+    description: "C-KNN-WEIGHTED-ZERO-DISTANCE-001/002: a zero-distance neighbor gets infinite weight; predict and predict_proba follow only it (sklearn oracle)"
+    test: "cargo test -p aprender-core --lib falsify_knn_weighted_zero_distance_dominates"
+    prediction: "predict([[0,0]]) == 1 and predict_proba == [0, 1]"
+    if_fails: "weighted path lets non-zero-distance neighbors outvote an exact match, diverging from sklearn"

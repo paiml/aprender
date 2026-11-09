@@ -400,6 +400,50 @@ fn upload_to_hub(
     Ok(())
 }
 
+/// Repo-id / directory checks the manifest path skips in `validate_publish_inputs`.
+fn validate_repo_and_dir(repo_id: &str, directory: &Path) -> Result<(), CliError> {
+    if !repo_id.contains('/') || repo_id.split('/').count() != 2 {
+        return Err(CliError::ValidationFailed(format!(
+            "Invalid repo ID '{}'. Expected format: org/repo-name",
+            repo_id
+        )));
+    }
+    if !directory.exists() {
+        return Err(CliError::FileNotFound(directory.to_path_buf()));
+    }
+    Ok(())
+}
+
+/// `--verbose` listing of what the publish will upload.
+fn print_verbose_plan(
+    files: &[std::path::PathBuf],
+    companion_files: &[std::path::PathBuf],
+    user_readme: Option<&std::path::PathBuf>,
+) {
+    println!("Uploading {} primary artifact(s):", files.len());
+    for f in files {
+        println!("  - {}", f.display());
+    }
+    if !companion_files.is_empty() {
+        println!("Plus {} companion file(s):", companion_files.len());
+        for f in companion_files {
+            println!("  - {}", f.display());
+        }
+    }
+    if let Some(p) = user_readme {
+        println!(
+            "User-provided README.md detected at {} — will replace auto-generated card",
+            p.display()
+        );
+    }
+}
+
+/// Size of one file, 0 when unreadable (matches the old inline `unwrap_or(0)`).
+#[cfg(feature = "hf-hub")]
+fn file_len(f: &Path) -> u64 {
+    fs::metadata(f).map(|m| m.len()).unwrap_or(0)
+}
+
 /// Execute the publish command
 ///
 /// F-PUBLISH-EXTRA-001 (contracts/apr-cli-publish-extra-v1.yaml):
@@ -450,15 +494,7 @@ pub fn execute(
     // When a manifest is absent the guard above doesn't run; repo_id still
     // needs validation and directory existence must be checked.
     if manifest.is_some() {
-        if !repo_id.contains('/') || repo_id.split('/').count() != 2 {
-            return Err(CliError::ValidationFailed(format!(
-                "Invalid repo ID '{}'. Expected format: org/repo-name",
-                repo_id
-            )));
-        }
-        if !directory.exists() {
-            return Err(CliError::FileNotFound(directory.to_path_buf()));
-        }
+        validate_repo_and_dir(repo_id, directory)?;
     }
 
     // PMAT-690 P3-C-prep defect 6 (2026-05-18): discover companion files
@@ -481,28 +517,11 @@ pub fn execute(
         .cloned();
 
     if verbose {
-        println!("Uploading {} primary artifact(s):", files.len());
-        for f in &files {
-            println!("  - {}", f.display());
-        }
-        if !companion_files.is_empty() {
-            println!("Plus {} companion file(s):", companion_files.len());
-            for f in &companion_files {
-                println!("  - {}", f.display());
-            }
-        }
-        if let Some(p) = &user_readme {
-            println!(
-                "User-provided README.md detected at {} — will replace auto-generated card",
-                p.display()
-            );
-        }
+        print_verbose_plan(&files, &companion_files, user_readme.as_ref());
     }
 
-    for ef in extra_files {
-        if !ef.exists() {
-            return Err(CliError::FileNotFound(ef.clone()));
-        }
+    if let Some(missing) = extra_files.iter().find(|ef| !ef.exists()) {
+        return Err(CliError::FileNotFound(missing.clone()));
     }
 
     let (model_card, file_names) = generate_model_card(
@@ -556,24 +575,17 @@ pub fn execute(
         let commit_msg = commit_message.unwrap_or("Upload via apr-cli publish");
 
         println!("Publishing to https://huggingface.co/{}", repo_id);
-        let extras_size: u64 = extra_files
-            .iter()
-            .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
-            .sum();
-        let manifest_size: u64 = manifest
-            .map(|m| fs::metadata(m).map(|meta| meta.len()).unwrap_or(0))
-            .unwrap_or(0);
-        let total_size: u64 = files
-            .iter()
-            .map(|f| fs::metadata(f).map(|m| m.len()).unwrap_or(0))
-            .sum::<u64>()
+        let extras_size: u64 = extra_files.iter().map(|f| file_len(f)).sum();
+        let manifest_size: u64 = manifest.map_or(0, file_len);
+        let readme_size = if manifest.is_some() {
+            0
+        } else {
+            readme_content.len() as u64
+        };
+        let total_size: u64 = files.iter().map(|f| file_len(f)).sum::<u64>()
             + extras_size
             + manifest_size
-            + if manifest.is_some() {
-                0
-            } else {
-                readme_content.len() as u64
-            };
+            + readme_size;
         println!(
             "Total upload size: {:.1} MB",
             total_size as f64 / 1_000_000.0
@@ -614,7 +626,10 @@ fn preflight_manifest_guard(
         ))
     })?;
 
-    let parsed: serde_yaml::Value = serde_yaml::from_str(&manifest_src)
+    let parsed: serde_json::Value = serde_saphyr::from_str_with_options(
+        &manifest_src,
+        serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+    )
         .map_err(|e| CliError::ValidationFailed(format!("Manifest YAML parse error: {e}")))?;
 
     let declared_sha = parsed
@@ -629,7 +644,7 @@ fn preflight_manifest_guard(
         .ok_or_else(|| {
             CliError::ValidationFailed("Manifest missing required field: artifact_url".into())
         })?;
-    let declared_size = parsed.get("size_bytes").and_then(serde_yaml::Value::as_u64);
+    let declared_size = parsed.get("size_bytes").and_then(serde_json::Value::as_u64);
 
     let artifact_basename = artifact_url
         .rsplit('/')

@@ -322,7 +322,7 @@ cargo run --example mem_test --release
 ## QA / Falsification
 
 ```bash
-cargo run --example qa_verify --release
+cargo run --example qa_verify --release -- --all
 cargo run --example qa_falsify --release
 cargo run --example qa_run --release
 cargo run --example qa_chat --release

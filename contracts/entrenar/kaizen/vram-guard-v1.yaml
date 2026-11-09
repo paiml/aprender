@@ -32,7 +32,6 @@ metadata:
 equations:
   budget_check:
     formula: "can_allocate := ledger.total_reserved() + budget_mb <= total_mb × reserve_factor"
-    lean_theorem: Theorems.Budget_Check
     domain: "budget_mb > 0, total_mb from cuMemGetInfo, ledger from VramLedger"
     codomain: "bool"
     invariants:
@@ -42,7 +41,6 @@ equations:
 
   actual_measurement:
     formula: "actual_mb = (total_before - free_after) where (free_after, total) = cuMemGetInfo()"
-    lean_theorem: Theorems.Actual_Measurement
     domain: "Called after all GPU allocations complete (blocks uploaded, scratch allocated)"
     codomain: "actual_mb ∈ [0, total_mb]"
     invariants:
@@ -51,7 +49,6 @@ equations:
 
   budget_overshoot:
     formula: "overshoot_pct = (actual_mb / budget_mb - 1.0) × 100"
-    lean_theorem: Theorems.Budget_Overshoot
     domain: "actual_mb > budget_mb"
     codomain: "overshoot_pct ∈ [0, ∞)"
     invariants:
@@ -64,7 +61,6 @@ equations:
                 + scratch_per_layer × num_layers
                 + lora_params × sizeof(f16)
                 + cublas_workspace_mb
-    lean_theorem: Theorems.Auto_Budget_Estimate
     domain: "model_bytes from .apr metadata, num_layers from config"
     invariants:
       - "Conservative: overestimates by ~15% to absorb driver overhead"
@@ -80,7 +76,7 @@ proof_obligations:
   - id: VG-INV-002
     type: invariant
     property: "Post-init actual tracking"
-    formal: "After CudaTrainer::new() succeeds, ledger contains actual_mb measured via cuMemGetInfo"
+    formal: "CudaTrainer::new() succeeds ⇒ ledger contains actual_mb measured via cuMemGetInfo"
     applies_to: all
 
   - id: VG-BND-003
@@ -92,7 +88,7 @@ proof_obligations:
   - id: VG-INV-004
     type: invariant
     property: "Guard is checked before first GPU allocation"
-    formal: "No cuMemAlloc call occurs before budget_check returns true"
+    formal: "∀ cuMemAlloc call: budget_check returned true before it"
     applies_to: all
 
   - id: VG-INV-005

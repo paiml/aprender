@@ -9,11 +9,11 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/pacha"><img src="https://img.shields.io/crates/v/pacha.svg" alt="Crates.io"></a>
-  <a href="https://docs.rs/pacha"><img src="https://docs.rs/pacha/badge.svg" alt="Documentation"></a>
-  <a href="https://github.com/paiml/pacha/actions/workflows/ci.yml"><img src="https://github.com/paiml/pacha/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://crates.io/crates/aprender-registry"><img src="https://img.shields.io/crates/v/aprender-registry.svg" alt="Crates.io"></a>
+  <a href="https://docs.rs/aprender-registry"><img src="https://docs.rs/aprender-registry/badge.svg" alt="Documentation"></a>
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
-  <a href="https://github.com/paiml/pacha"><img src="https://img.shields.io/badge/MSRV-1.75-blue.svg" alt="MSRV"></a>
+  <a href="https://github.com/paiml/aprender/tree/main/crates/aprender-registry"><img src="https://img.shields.io/badge/MSRV-1.75-blue.svg" alt="MSRV"></a>
 </p>
 
 ---
@@ -76,13 +76,13 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-pacha = "0.2.5"
+aprender-registry = "0.71"
 ```
 
 Or install the CLI:
 
 ```bash
-cargo install pacha
+cargo install aprender   # installs `apr`; this crate ships no binary of its own
 ```
 
 ## Usage
@@ -188,7 +188,7 @@ Enable all features:
 
 ```toml
 [dependencies]
-pacha = { version = "0.2.5", features = ["full"] }
+aprender-registry = { version = "0.71", features = ["full"] }
 ```
 
 ## Benchmarks

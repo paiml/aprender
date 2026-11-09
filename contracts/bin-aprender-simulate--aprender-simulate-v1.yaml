@@ -69,14 +69,17 @@ shapes:
       # G0.1 — a violation since batch/ont-10 2026-09-27 (build.rs embeds APR_GIT_SHA); was a warning while RED
       - {path: "bin:versionString", minCount: 1, maxCount: 1, pattern: "[0-9a-f]{9}"}
       - path: bin:command
-        minCount: 9
-        maxCount: 9
+        minCount: 12
+        maxCount: 12
         in:
+          - "course-flow"
           - "emc-check"
           - "emc-validate"
           - "help"
           - "list-emc"
+          - "pr-flow"
           - "render"
+          - "repo-flow"
           - "run"
           - "validate"
           - "verify"

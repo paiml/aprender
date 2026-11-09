@@ -547,7 +547,7 @@ pub(crate) fn harvest_test_fns(content: &str, tests: &mut HashSet<String>) {
     // doesn't require a real parser.
     let mut last_was_test_attr = false;
     for line in content.lines() {
-        let t = line.trim();
+        let t = strip_attribute_comment(line.trim());
         if t.is_empty() || t.starts_with("//") {
             continue;
         }
@@ -568,6 +568,21 @@ pub(crate) fn harvest_test_fns(content: &str, tests: &mut HashSet<String>) {
         // A fn line, or any other non-attribute line, resets the flag.
         last_was_test_attr = false;
     }
+}
+
+/// `#[test] // why` is still `#[test]`. Without the cut, the line fails both
+/// the attribute match and `ends_with(']')`, so it resets the flag and the
+/// real test below it reads as dangling. Cut at the first `]` that only a
+/// comment follows. An attribute holding `]//` inside a string is cut early,
+/// but it still starts with `#[` and ends with `]`, so it keeps the flag.
+fn strip_attribute_comment(t: &str) -> &str {
+    if !t.starts_with("#[") {
+        return t;
+    }
+    t.match_indices(']')
+        .map(|(i, _)| i + 1)
+        .find(|&end| t[end..].trim_start().starts_with("//"))
+        .map_or(t, |end| &t[..end])
 }
 
 /// Two harvest paths:
@@ -900,6 +915,24 @@ struct NotAMod;
         let (gate, findings) = run_strict_test_binding_gate(&contracts, dir.path(), true);
         assert_eq!(findings.len(), 1, "got: {findings:?}");
         assert!(!gate.passed);
+    }
+
+    #[test]
+    fn harvest_attribute_with_trailing_comment() {
+        let src = "
+#[test] // a note on the test
+fn commented_test_attr() {}
+#[test]
+#[allow(clippy::disallowed_methods)] // json! unwraps [internally]
+fn commented_intervening_attr() {}
+#[doc = \"see http://x\"]
+fn not_a_test() {}
+";
+        let mut found = HashSet::new();
+        harvest_test_fns(src, &mut found);
+        assert!(found.contains("commented_test_attr"));
+        assert!(found.contains("commented_intervening_attr"));
+        assert!(!found.contains("not_a_test"));
     }
 
     #[test]

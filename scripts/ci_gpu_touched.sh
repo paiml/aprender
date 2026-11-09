@@ -108,12 +108,12 @@ decide() {
     fi
 
     for crate in $GPU_CRATES; do
-        if printf '%s\n' "$diff" | grep -q "^crates/${crate}/"; then
+        if grep -q "^crates/${crate}/" <<<"$diff"; then
             hit_crates="${hit_crates}${crate} "
         fi
     done
     for f in $GPU_WORKFLOWS; do
-        if printf '%s\n' "$diff" | grep -qx "$f"; then
+        if grep -qx "$f" <<<"$diff"; then
             hit_wf="${hit_wf}${f} "
         fi
     done
@@ -159,7 +159,7 @@ self_test() {
         n=$((n + 1))
         rc=0
         out=$("$@" 2>&1) || rc=$?
-        if [ "$rc" = "$want" ] && printf '%s\n' "$out" | grep -qE -- "$pat"; then
+        if [ "$rc" = "$want" ] && grep -qE -- "$pat" <<<"$out"; then
             printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc" "$label"
         else
             printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc" "$want" "$pat" "$label"
@@ -235,7 +235,7 @@ self_test() {
     sed 's/aprender-serve //' "$T" > "$td/mutant.sh"
     row 0 "MUTANT without aprender-serve answers 0 on the serve diff — row 1 discriminates" \
         '^MUTANT-BLIND$' bash -c "
-            if bash '$td/mutant.sh' --diff-from '$td/serve.txt' 2>/dev/null | grep -q '^gpu_touched=1'; then
+            if grep -q '^gpu_touched=1' < <(bash '$td/mutant.sh' --diff-from '$td/serve.txt' 2>/dev/null); then
                 echo MUTANT-STILL-SEES-IT
             else
                 echo MUTANT-BLIND
@@ -245,7 +245,7 @@ self_test() {
     row 0 "MUTANT that answers 0 on an empty diff is caught by the ENV rows" \
         '^MUTANT-CAUGHT$' bash -c "
             sed 's/^    if \[ -z \"\$diff\" \]; then/    if false; then/' '$T' > '$td/mutant2.sh'
-            if bash '$td/mutant2.sh' --diff-from '$td/empty.txt' 2>/dev/null | grep -q '^gpu_touched=0'; then
+            if grep -q '^gpu_touched=0' < <(bash '$td/mutant2.sh' --diff-from '$td/empty.txt' 2>/dev/null); then
                 echo MUTANT-CAUGHT
             else
                 echo MUTANT-NOT-REPRODUCED

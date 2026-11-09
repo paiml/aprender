@@ -1,0 +1,20 @@
+error[E0599]: no function or associated item named `new` found for struct `Decider` in the current scope
+ --> tests/ui/decider_no_constructor.rs:9:28
+  |
+9 |     let _forged = Decider::new();
+  |                            ^^^ function or associated item not found in `Decider`
+  |
+note: if you're trying to build a new `Decider` consider using one of the following associated functions:
+      Decider::load_bytes
+      Decider::load_hashed
+      Decider::load_path
+ --> src/lib.rs
+  |
+  |     pub fn load_bytes(bytes: &[u8]) -> Result<Self, ArtifactError> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+  |     pub fn load_hashed(hashed: &artifact::HashedArtifact<'_>) -> Result<Self, ArtifactError> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+  |     pub fn load_path(path: impl AsRef<std::path::Path>) -> Result<Self, ArtifactError> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -368,6 +368,7 @@
             false,
             false, // skip_capability
             false, // assert_classifier_head
+            false, // ollama_from_file
         );
         assert!(result.is_err());
     }
@@ -402,6 +403,7 @@
             false,
             false, // skip_capability
             false, // assert_classifier_head
+            false, // ollama_from_file
         );
         // Should fail (invalid GGUF)
         assert!(result.is_err());
@@ -437,6 +439,7 @@
             false,
             false, // skip_capability
             false, // assert_classifier_head
+            false, // ollama_from_file
         );
         // Should fail (invalid file)
         assert!(result.is_err());
@@ -472,6 +475,7 @@
             true, // skip_metadata
             true, // skip_capability
             false, // assert_classifier_head
+            false, // ollama_from_file
         );
         // When all gates are skipped, the QA passes (skipped gates don't fail)
         assert!(result.is_ok());

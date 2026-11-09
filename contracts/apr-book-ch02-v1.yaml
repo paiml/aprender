@@ -37,3 +37,10 @@ falsification:
   - condition: "assert!() failure in example"
     severity: P0
     action: reject_chapter
+
+falsification_tests:
+  - id: FALSIFY-BOOK-CH02-001
+    description: "Chapter 02's example ch02_tensors builds and runs to exit 0, with its 5 assertion(s) holding"
+    test: "cargo run -p aprender-core --example ch02_tensors"
+    prediction: "Exit 0. book-contracts 'Chapter Examples Run' runs the same command for all 27 chapters"
+    if_fails: "An API the chapter teaches changed or regressed, so the example panics on an assertion or no longer compiles"

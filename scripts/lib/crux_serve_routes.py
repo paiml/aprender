@@ -132,6 +132,7 @@ NOT_GENERATION = {
     "GET /api/version": "ollama version",
     "POST /v1/logprobs": "per-token logprobs of GIVEN text, no generation",
     "POST /v1/perplexity": "perplexity of GIVEN text, no generation",
+    "POST /v1/chat/prompt-ids": "rendered chat prompt and its token ids, no generation (PRM-S1 v2, #4354)",
 }
 RAW_KINDS = ("text_prompt", "raw_generate", "raw_sse", "raw_batch")
 # Wires that carry ONE prompt and no conversation: ollama /api/generate takes `prompt` (apr accepts no

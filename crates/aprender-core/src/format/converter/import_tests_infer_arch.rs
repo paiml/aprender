@@ -490,3 +490,42 @@
         let result = infer_architecture_from_names(&tensors);
         assert_eq!(result, Some("rwkv".to_string()));
     }
+
+    // =========================================================================
+    // APR-EMBED-001 EG-6: EmbeddingGemma 2 keeps its names through import
+    // =========================================================================
+
+    #[test]
+    fn eg6_gemma_embedding2_metadata_maps_to_its_own_arch() {
+        let arch = infer_architecture(&Architecture::Auto, Some("gemma-embedding2"));
+        assert_eq!(arch, Architecture::EmbeddingGemma2);
+    }
+
+    #[test]
+    fn eg6_qk_norm_does_not_turn_embedding_gemma2_into_qwen3() {
+        // EmbeddingGemma 2 has QK norm; the exact arch string must win.
+        let names = vec![
+            "blk.0.attn_q.weight",
+            "blk.0.attn_q_norm.weight",
+            "blk.0.attn_k_norm.weight",
+        ];
+        let result = verify_architecture_from_tensor_evidence(
+            Architecture::EmbeddingGemma2,
+            names.into_iter(),
+            false,
+        );
+        assert_eq!(result, Architecture::EmbeddingGemma2);
+    }
+
+    #[test]
+    fn eg6_embedding_gemma2_names_pass_through_unchanged() {
+        for name in [
+            "token_embd.weight",
+            "blk.3.attn_q_norm.weight",
+            "blk.3.inp_gate.weight",
+            "per_layer_token_embd.weight",
+            "output.weight",
+        ] {
+            assert_eq!(Architecture::EmbeddingGemma2.map_name(name), name);
+        }
+    }

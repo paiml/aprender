@@ -557,10 +557,14 @@ fn test_fused_matmul_unsupported_type() {
     };
     let input = vec![1.0f32; 64];
 
-    let result = model.fused_matmul(&input, &weight);
-    assert!(result.is_err());
-    if let Err(RealizarError::UnsupportedOperation { operation, .. }) = result {
-        assert_eq!(operation, "owned_fused_matmul");
+    // KREG-001 (aprender#4539): an unregistered type is refused by the kernel registry
+    // before any arm runs — strictly, not under an `if let` that passes on any other variant.
+    match model.fused_matmul(&input, &weight) {
+        Err(RealizarError::UnsupportedOperation { operation, reason }) => {
+            assert_eq!(operation, "kernel_registry::admit");
+            assert!(reason.contains("ggml_type=99"), "got: {reason}");
+        },
+        other => panic!("expected the registry refusal, got {other:?}"),
     }
 }
 

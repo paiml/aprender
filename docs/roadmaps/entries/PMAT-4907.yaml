@@ -1,0 +1,18 @@
+- id: PMAT-4907
+  github_issue: 4907
+  item_type: task
+  title: 'EG-8: Prune, then distill'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-07T17:54:33Z
+  updated: 2026-10-07T17:54:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4898

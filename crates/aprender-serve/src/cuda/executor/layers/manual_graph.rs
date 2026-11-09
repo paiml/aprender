@@ -122,6 +122,59 @@ impl CudaExecutor {
         }
     }
 
+    /// #5279: forget the cached Q8 activation, so a capture that follows records
+    /// every quantize its GEMVs need instead of skipping one the cache served
+    /// on the host side only.
+    pub(crate) fn forget_q8_activation(&mut self) {
+        self.q8_activation_valid = false;
+    }
+
+    /// #5279: the device address of every scratch buffer the executor owns
+    /// and may grow (0 for one not yet allocated). A recorded launch bakes
+    /// these addresses in, and another path (prefill, the single-slot step)
+    /// can reallocate any of them, so a graph is only valid while they all
+    /// stay where they were at capture.
+    pub(crate) fn graph_scratch_ptrs(&self) -> Vec<u64> {
+        fn p<T>(b: Option<&GpuBuffer<T>>) -> u64 {
+            b.map_or(0, GpuBuffer::as_ptr)
+        }
+        let w = &self.workspace;
+        vec![
+            p(w.hidden_buf1.as_ref()),
+            p(w.hidden_buf2.as_ref()),
+            p(w.input_staging.as_ref()),
+            p(w.q_buf.as_ref()),
+            p(w.k_buf.as_ref()),
+            p(w.v_buf.as_ref()),
+            p(w.ffn_gate_buf.as_ref()),
+            p(w.ffn_up_buf.as_ref()),
+            p(w.ffn_act_buf.as_ref()),
+            p(w.attn_out_buf.as_ref()),
+            p(w.logits_buf.as_ref()),
+            p(w.normed_hidden_buf.as_ref()),
+            p(w.positions_buf.as_ref()),
+            p(w.q8_activation_buf.as_ref()),
+            p(w.batched_q8_buf.as_ref()),
+            p(self.gemv_input_buffer.as_ref()),
+            p(self.gemv_output_buffer.as_ref()),
+            p(self.gemv_output_buffer_b.as_ref()),
+            p(self.gemv_output_buffer_c.as_ref()),
+            p(self.decode_attn_partials.as_ref()),
+            p(self.argmax_block_vals.as_ref()),
+            p(self.argmax_block_idxs.as_ref()),
+            p(self.argmax_result.as_ref()),
+            p(self.cublas_workspace.as_ref()),
+            p(self.dequant_scratch.as_ref()),
+            p(self.fp16_activation_scratch.as_ref()),
+            p(self.fp16_dequant_temp.as_ref()),
+            p(self.fp8_activation_scratch.as_ref()),
+            p(self.fp8_act_scale_buf.as_ref()),
+            p(self.fp8_act_row_absmax.as_ref()),
+            p(self.wmma_scratch.as_ref()),
+            p(self.dp4a_q8_scratch.as_ref()),
+        ]
+    }
+
     /// aprender#4233: hand the graph [`Self::end_graph_recording`] just built to
     /// a caller that owns its own replay (the Qwen3.5 decode step), instead of
     /// leaving it in the dense path's `decode_graph` slot.

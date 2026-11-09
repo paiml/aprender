@@ -76,6 +76,58 @@ fn parse_metadata_section(
     AprV2Metadata::from_json(slice)
 }
 
+/// The smallest encodable tensor-index entry, in bytes, as `TensorIndexEntry::from_bytes`
+/// reads it: u16 name length + u8 dtype + u8 ndim + u64 offset + u64 size (an empty
+/// name and zero dimensions). Public: a caller bounding the index extent BEFORE any
+/// reader runs (aprender-decide's rung 2) uses this one definition.
+pub const MIN_INDEX_ENTRY_BYTES: usize = 20;
+
+/// The unit the index reservation is counted in: the LARGER of an entry's on-disk
+/// minimum and its in-memory size. A parsed `TensorIndexEntry` holds a `String` and a
+/// `Vec` besides its scalars, so it is several times the 20-byte on-disk minimum;
+/// counting capacity in on-disk units let a forged count reserve ~3.6x the file size
+/// (V2-b, plan 08-20).
+pub(super) const INDEX_RESERVE_UNIT_BYTES: usize = {
+    let in_memory = std::mem::size_of::<TensorIndexEntry>();
+    if in_memory > MIN_INDEX_ENTRY_BYTES {
+        in_memory
+    } else {
+        MIN_INDEX_ENTRY_BYTES
+    }
+};
+
+/// The tensor-index vector's initial capacity: the declared `tensor_count`, but never
+/// more entries than would occupy, IN MEMORY, the `remaining` index bytes the file
+/// actually holds.
+///
+/// `tensor_count` comes from the header, and the header CRC covers only the header, so
+/// a small file with a valid CRC can declare `u32::MAX` entries. Reserving that many
+/// up front would request hundreds of GB before the first entry is parsed. Bounding in
+/// on-disk units is not enough either: that still reserves `size_of::<TensorIndexEntry>()
+/// / 20` times the index bytes. With the in-memory unit the up-front reservation never
+/// exceeds the bytes the file supplies; a valid index that holds more entries than that
+/// simply grows the vector as it parses. The parse loop still iterates `tensor_count`
+/// times and fails on the first entry the bytes cannot hold, so a valid file behaves
+/// exactly as before.
+pub(super) fn index_capacity(tensor_count: u32, remaining: usize) -> usize {
+    (tensor_count as usize).min(remaining / INDEX_RESERVE_UNIT_BYTES)
+}
+
+#[cfg(test)]
+thread_local! {
+    /// The capacity the most recent `parse_tensor_index_section` on this thread actually
+    /// reserved, read back from `Vec::capacity` AFTER the allocation — so a change to how
+    /// the reservation is computed cannot slip past the test that watches it. A counting
+    /// global allocator is not available (`unsafe_code = "forbid"`).
+    static LAST_INDEX_RESERVE: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Test hook: the index capacity (in entries) the last parse on this thread reserved.
+#[cfg(test)]
+pub(super) fn last_index_reserve() -> usize {
+    LAST_INDEX_RESERVE.with(std::cell::Cell::get)
+}
+
 /// Parse and bounds-check the tensor index section (FALSIFY-PARSE-001).
 ///
 /// `tensor_index_offset` is attacker-controllable; previously it was used
@@ -92,7 +144,10 @@ fn parse_tensor_index_section(
         V2FormatError::InvalidTensorIndex("tensor_index_offset exceeds usize".to_string())
     })?;
 
-    let mut tensor_index = Vec::with_capacity(tensor_count as usize);
+    let remaining_index_bytes = data.len().saturating_sub(pos);
+    let mut tensor_index = Vec::with_capacity(index_capacity(tensor_count, remaining_index_bytes));
+    #[cfg(test)]
+    LAST_INDEX_RESERVE.with(|c| c.set(tensor_index.capacity()));
     for _ in 0..tensor_count {
         // `data.get(pos..)` returns None only when pos > data.len(); pos == len
         // yields an empty slice, which TensorIndexEntry::from_bytes rejects
@@ -107,12 +162,21 @@ fn parse_tensor_index_section(
         })?;
     }
 
-    // Verify tensor names are sorted
-    for i in 1..tensor_index.len() {
-        if tensor_index[i].name < tensor_index[i - 1].name {
-            return Err(V2FormatError::InvalidTensorIndex(
-                "tensor index not sorted".to_string(),
-            ));
+    // Verify tensor names are STRICTLY increasing (WR-01 / AL5, plan 08-20). Every
+    // lookup (`get_tensor`, `get_tensor_data`) takes the first match, so an index that
+    // names a tensor twice would let a second, never-validated entry ride behind the
+    // first. Equal adjacent names are therefore refused, not merely out-of-order ones.
+    for pair in tensor_index.windows(2) {
+        let (prev, cur) = (&pair[0].name, &pair[1].name);
+        if cur == prev {
+            return Err(V2FormatError::InvalidTensorIndex(format!(
+                "duplicate tensor name {cur:?} in tensor index"
+            )));
+        }
+        if cur < prev {
+            return Err(V2FormatError::InvalidTensorIndex(format!(
+                "tensor index not sorted: {cur:?} follows {prev:?}"
+            )));
         }
     }
 

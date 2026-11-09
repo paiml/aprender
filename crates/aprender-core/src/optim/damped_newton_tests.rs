@@ -378,3 +378,60 @@ fn test_damped_newton_hessian_3d() {
     assert!((hessian.get(1, 1) - 4.0).abs() < 0.1);
     assert!((hessian.get(2, 2) - 6.0).abs() < 0.1);
 }
+
+#[test]
+fn test_damped_newton_indefinite_hessian_falls_back_to_steepest_descent() {
+    // f(x) = x^4/4 - x^2 has H(0.5) = 3x^2 - 2 < 0, so Cholesky fails and the
+    // step is -grad. The minimum is at sqrt(2).
+    let mut optimizer = DampedNewton::new(200, 1e-3);
+    let f = |x: &Vector<f32>| x[0].powi(4) / 4.0 - x[0] * x[0];
+    let grad = |x: &Vector<f32>| Vector::from_slice(&[x[0].powi(3) - 2.0 * x[0]]);
+
+    let result = optimizer.minimize(f, grad, Vector::from_slice(&[0.5]));
+
+    assert_eq!(result.status, ConvergenceStatus::Converged);
+    assert!((result.solution[0] - 2.0_f32.sqrt()).abs() < 1e-2);
+    assert!(result.objective_value < -0.99, "f(sqrt 2) = -1");
+}
+
+#[test]
+fn test_damped_newton_stalls_when_no_step_satisfies_armijo() {
+    // Constant objective with a non-zero gradient: no step ever decreases f, so
+    // backtracking shrinks alpha below 1e-12 and minimize reports Stalled at x0.
+    let mut optimizer = DampedNewton::new(10, 1e-6);
+    let f = |_: &Vector<f32>| 0.0;
+    let grad = |_: &Vector<f32>| Vector::from_slice(&[1.0]);
+
+    let result = optimizer.minimize(f, grad, Vector::from_slice(&[3.0]));
+
+    assert_eq!(result.status, ConvergenceStatus::Stalled);
+    assert_eq!(result.iterations, 0);
+    assert_eq!(result.solution[0], 3.0);
+    assert_eq!(result.gradient_norm, 1.0);
+}
+
+#[test]
+fn test_damped_newton_reports_numerical_error_and_keeps_last_finite_point() {
+    // The objective turns NaN after the line search has accepted a step, so the
+    // post-step check fires and returns the previous (finite) iterate.
+    use std::cell::Cell;
+    let calls = Cell::new(0_u32);
+    let mut optimizer = DampedNewton::new(50, 1e-6);
+    let f = |x: &Vector<f32>| {
+        calls.set(calls.get() + 1);
+        // Calls: 1 initial, 2 line-search fx, 3 line-search trial, 4 post-step.
+        if calls.get() >= 4 {
+            f32::NAN
+        } else {
+            x[0] * x[0]
+        }
+    };
+    let grad = |x: &Vector<f32>| Vector::from_slice(&[2.0 * x[0]]);
+
+    let result = optimizer.minimize(f, grad, Vector::from_slice(&[2.0]));
+
+    assert_eq!(result.status, ConvergenceStatus::NumericalError);
+    assert_eq!(result.solution[0], 2.0);
+    assert_eq!(result.objective_value, 4.0);
+    assert_eq!(result.iterations, 0);
+}

@@ -222,7 +222,7 @@ pub fn load_contract_from<P: AsRef<Path>>(path: P) -> Result<TensorLayoutContrac
         ))
     })?;
 
-    serde_yaml::from_str(&content).map_err(|e| {
+    serde_saphyr::from_str_with_options(&content, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false }).map_err(|e| {
         Error::Execution(format!(
             "Failed to parse tensor layout contract from {}: {e}",
             path.display()

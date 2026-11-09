@@ -119,6 +119,12 @@ pub struct BandRatios {
     pub dec: Option<Ratio>,
     /// Server-reported prefill ratio. Gated at c=1 (§7.2).
     pub prefill: Option<Ratio>,
+    /// APR-071 V1 — comparator TTFT p50 ÷ subject TTFT p50, so above 1 means
+    /// the subject answers first. Inverted against the other three because TTFT
+    /// is lower-is-better. `None` without a live stream on both lanes; absent
+    /// in receipts written before V1.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ttft: Option<Ratio>,
 }
 
 /// PP-22 — the fourteen fields two bands must agree on before their numbers may

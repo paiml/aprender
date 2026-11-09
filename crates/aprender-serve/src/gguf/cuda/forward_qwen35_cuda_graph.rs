@@ -103,8 +103,9 @@ impl Qwen35CudaModel<'_> {
             Some(g) => g,
             None => self.new_decode_graph()?,
         };
-        let result = self.graph_step(&mut graph, row, state, position);
+        let result = self.graph_step(&mut graph, &row, state, position);
         self.decode_graph = Some(graph);
+        self.embed_row = row;
         let logits = result?;
         state.kv_len = state.kv_len.max(position + 1);
         Ok(logits)

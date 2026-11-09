@@ -63,6 +63,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: None,
             cached_serving_context: None,
             verbose: false,
@@ -123,6 +124,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: None,
             cached_serving_context: None,
             verbose: false,
@@ -191,6 +193,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: None,
             cached_serving_context: None,
             verbose: false,
@@ -269,6 +272,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: eos,
             cached_serving_context: Some(serving_context),
             verbose: false,
@@ -335,6 +339,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: eos,
             cached_serving_context: Some(serving_context),
             verbose: false,
@@ -400,6 +405,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: None,
             cached_serving_context: None,
             verbose: false,
@@ -438,6 +444,8 @@ impl AppState {
             || self.apr_transformer.is_some()
             // #3571: the Qwen3.5 hybrid has no dense model at all; its session IS the model.
             || self.qwen35_session.is_some()
+            // APR-EMBED-001 EG-3: an EmbeddingGemma 2 encoder is the whole model too.
+            || self.embedding_model.is_some()
         {
             return true;
         }
@@ -634,6 +642,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: eos_id,
             cached_serving_context: None,
             verbose: false,
@@ -697,6 +706,7 @@ impl AppState {
             mapped_gguf_model: None,
             moe_no_gpu: true,
             qwen35_session: None,
+            embedding_model: None,
             cached_eos_token_id: None,
             cached_serving_context: None,
             verbose: false,

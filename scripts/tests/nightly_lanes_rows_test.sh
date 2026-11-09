@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# nightly_lanes_rows_test.sh — the nightly train reads 8 verdict lanes from their producers on main, and only as meant (#4678)
+# nightly_lanes_rows_test.sh — the nightly train reads 8 lanes (5 verdict, 3 lab) from their producers on main, and only as meant (#4678)
 #
 # THE ROWS. The nightly train (scripts/release/nightly_train.sh) judges each lane from the newest completed run of the
 #   lane's producer workflow on main's head C. These are eight rows of its lane table; the test pins each byte for byte
@@ -12,7 +12,10 @@
 #     release-lanes-nightly.yml  schedule      cleanroom-cpu, cleanroom-gpu, publish-dryrun: `measure: <lane>` does the
 #                                              work; `<lane>` succeeds on green, fails on red and is SKIPPED on
 #                                              not_measured. The `measure: <lane>` sibling must never be matched.
-#   A workflow_dispatch of any of them is not a night, so it never reaches the verdict.
+#   A workflow_dispatch run on C is a night too (#5142): the newest completed run on C, scheduled or dispatched, is
+#   the one judged. A push run never is. Six lanes are kind lab (#5158): deep-bins-smoke, cleanroom-cpu and
+#   publish-dryrun among these eight (LAB #5148, #5151, #5153, owner aprender-cd). A lab lane is read like the others
+#   but never votes: its red is in the bundle and never in the NOT RELEASABLE line.
 #   readiness is NOT wired: readiness-nightly.yml runs on workflow_run, and such a run is recorded on main's head at
 #   trigger time while its job measures the triggering run's head_sha, so a green of an older commit could be read as
 #   C's. Its row stays producer '-' (not_measured) until the run records the commit it measured.
@@ -21,18 +24,20 @@
 #   normalize() writes them) are replayed through `nightly_train.sh --from`, and the lane's row of the bundle is
 #   checked. Per lane:
 #     the night's run on C, lane job success at attempt 1     green, that run
-#     lane job failure                                         red, and the train's line names the lane
+#     lane job failure                                         red; the line names a verdict lane, never a lab lane
 #     lane job skipped                                         not_measured, never green
-#     a workflow_dispatch red on C, newer than the green       green: a dispatch never reaches the verdict
-#     only a workflow_dispatch run on C                        not_measured
+#     a workflow_dispatch red on C, newer than the green       red, that run: the newest run on C is the night
+#     only a workflow_dispatch run on C                        green, that run
+#     only a push run on C                                     not_measured: a push is not a night
 #     the night's run is on another commit                     not_measured
 #     green only at attempt 2                                  red (the train's retry rule)
 #     a look-alike job ('x: <lane> (copy)') fails              green: only the job named exactly the lane votes
 #     the real sibling fails, the lane job succeeds            green (release lanes: 'measure: <lane>')
 #   plus: the producer is in this tree (file, trigger, a job whose check-run name is the lane) and the row is pinned.
 #
-# MUTANTS. --mutants plants five wrong rows per lane into a copy of the train (job pattern unanchored, event widened
-#   to workflow_dispatch, wrong producer, verdict -> info, producer back to none) and runs that lane's rows without
+# MUTANTS. --mutants plants six wrong rows per lane into a copy of the train (job pattern unanchored, event widened
+#   to push, wrong producer, kind flipped (verdict -> info, lab -> verdict), producer back to none, event narrowed
+#   back to schedule) and runs that lane's rows without
 #   the byte pin. A mutant is killed only when a behaviour row breaks.
 #
 # USAGE  nightly_lanes_rows_test.sh [--train FILE]             the case table (default: this tree's nightly_train.sh)
@@ -42,15 +47,15 @@
 set -uo pipefail
 HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd -- "$HERE/../.." && pwd)"
-# lane|row|workflow|event|job|sibling ('-': none)
-LANES='deep-doctests|deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;.github/workflows/deep-nightly.yml;^schedule$;^deep-doctests$|.github/workflows/deep-nightly.yml|schedule|deep-doctests|-
-deep-nodefault|deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;.github/workflows/deep-nightly.yml;^schedule$;^deep-nodefault$|.github/workflows/deep-nightly.yml|schedule|deep-nodefault|-
-deep-bins-smoke|deep-bins-smoke;verdict;autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^schedule$;^deep-bins-smoke$|.github/workflows/deep-nightly.yml|schedule|deep-bins-smoke|-
-milestone|milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$|.github/workflows/release-gates-nightly.yml|schedule|milestone|-
-cleanroom-cpu|cleanroom-cpu;verdict;clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-cpu$|.github/workflows/release-lanes-nightly.yml|schedule|cleanroom-cpu|measure: cleanroom-cpu
-cleanroom-gpu|cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^schedule$;^cleanroom-gpu$|.github/workflows/release-lanes-nightly.yml|schedule|cleanroom-gpu|measure: cleanroom-gpu
-preflight|preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^schedule$;^preflight$|.github/workflows/release-gates-nightly.yml|schedule|preflight|-
-publish-dryrun|publish-dryrun;verdict;rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^schedule$;^publish-dryrun$|.github/workflows/release-lanes-nightly.yml|schedule|publish-dryrun|measure: publish-dryrun'
+# lane@row@workflow@event@job@sibling ('-': none; '@', since a row's event pattern carries '|')
+LANES='deep-doctests@deep-doctests;verdict;autopilot deep: cargo test --doc --workspace;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-doctests$@.github/workflows/deep-nightly.yml@schedule@deep-doctests@-
+deep-nodefault@deep-nodefault;verdict;autopilot deep: cargo check --workspace --no-default-features;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-nodefault$@.github/workflows/deep-nightly.yml@schedule@deep-nodefault@-
+deep-bins-smoke@deep-bins-smoke;lab;LAB #5148, owner aprender-cd: autopilot deep: nightly_manifest.py smoke;.github/workflows/deep-nightly.yml;^(schedule|workflow_dispatch)$;^deep-bins-smoke$@.github/workflows/deep-nightly.yml@schedule@deep-bins-smoke@-
+milestone@milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^milestone$@.github/workflows/release-gates-nightly.yml@schedule@milestone@-
+cleanroom-cpu@cleanroom-cpu;lab;LAB #5151, owner aprender-cd: clean-room (aprender) on the tag;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-cpu$@.github/workflows/release-lanes-nightly.yml@schedule@cleanroom-cpu@measure: cleanroom-cpu
+cleanroom-gpu@cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^cleanroom-gpu$@.github/workflows/release-lanes-nightly.yml@schedule@cleanroom-gpu@measure: cleanroom-gpu
+preflight@preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^preflight$@.github/workflows/release-gates-nightly.yml@schedule@preflight@-
+publish-dryrun@publish-dryrun;lab;LAB #5153, owner aprender-cd: rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^publish-dryrun$@.github/workflows/release-lanes-nightly.yml@schedule@publish-dryrun@measure: publish-dryrun'
 C=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
 X=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 T=cccccccccccccccccccccccccccccccccccccccc
@@ -138,10 +143,10 @@ cases() {
         if [ -n "$forbid" ]; then case "$o" in *"$forbid"*) printf '  BROKE %-56s said: %s\n%s\n' "$name" "$forbid" "$o"; BROKE=$((BROKE + 1)); return 0 ;; esac; fi
         printf '  ok    %s\n' "$name"; PASS=$((PASS + 1))
     }
-    while IFS='|' read -r LN ROW WF EV JOB SIB; do
+    while IFS='@' read -r LN ROW WF EV JOB SIB; do
         [ -n "$LN" ] || continue
         [ -z "$only" ] || [ "$only" = "$LN" ] || continue
-        d="$base/$LN"
+        d="$base/$LN"; KIND="${ROW#*;}"; KIND="${KIND%%;*}"
         if [ "$pin" = 1 ]; then
             row row_is_pinned "row pinned" "" -- pinned "$train"
             row producer_is_in_this_tree "producer ok" "" -- producer
@@ -150,15 +155,21 @@ cases() {
         row night_green_is_green "lane=green run=501 " "" -- lane "$train" "$d/c1" "$LN"
         fresh "$d/c2"; run "$d/c2" 501 "$EV" 2026-10-05T23:40:00Z "$C" FAILURE
         row night_red_is_red "lane=red run=501 " "" -- lane "$train" "$d/c2" "$LN"
-        row red_lane_is_named_in_the_line "line=NOT RELEASABLE: $LN, 501 (+" "" -- lane "$train" "$d/c2" "$LN"
+        if [ "$KIND" = verdict ]; then
+            row red_lane_is_named_in_the_line "line=NOT RELEASABLE: $LN, 501 (+" "" -- lane "$train" "$d/c2" "$LN"
+        else
+            row red_lab_lane_never_makes_the_line "lane=red run=501 " "NOT RELEASABLE: $LN," -- lane "$train" "$d/c2" "$LN"
+        fi
         fresh "$d/c3"; run "$d/c3" 501 "$EV" 2026-10-05T23:40:00Z "$C" SKIPPED
         row skipped_lane_job_is_not_measured "lane=not_measured run=not_measured reason=run 501: matched job(s) skipped" "lane=green" -- lane "$train" "$d/c3" "$LN"
         fresh "$d/c4"
         run "$d/c4" 501 "$EV" 2026-10-05T23:40:00Z "$C" SUCCESS
         run "$d/c4" 503 workflow_dispatch 2026-10-06T03:10:00Z "$C" FAILURE
-        row planted_dispatch_never_reaches_verdict "lane=green run=501 " "lane=red" -- lane "$train" "$d/c4" "$LN"
+        row newer_dispatch_on_c_is_the_night "lane=red run=503 " "lane=green" -- lane "$train" "$d/c4" "$LN"
         fresh "$d/c5"; run "$d/c5" 503 workflow_dispatch 2026-10-06T03:10:00Z "$C" SUCCESS
-        row dispatch_alone_is_not_measured "lane=not_measured " "lane=green" -- lane "$train" "$d/c5" "$LN"
+        row dispatch_alone_is_the_night "lane=green run=503 " "lane=not_measured" -- lane "$train" "$d/c5" "$LN"
+        fresh "$d/c10"; run "$d/c10" 505 push 2026-10-06T03:10:00Z "$C" SUCCESS
+        row push_run_is_not_a_night "lane=not_measured run=not_measured " "lane=green" -- lane "$train" "$d/c10" "$LN"
         fresh "$d/c6"; run "$d/c6" 501 "$EV" 2026-10-05T23:40:00Z "$X" SUCCESS
         row other_commit_is_not_measured "newest run 501 on bbbbbbbbbb" "lane=green" -- lane "$train" "$d/c6" "$LN"
         fresh "$d/c7"; run "$d/c7" 501 "$EV" 2026-10-05T23:40:00Z "$C" SUCCESS 2
@@ -176,10 +187,13 @@ cases() {
 
 # mutants TRAIN -> each wrong row, planted into a copy of TRAIN, must break a behaviour row of its lane
 mutants() {
-    local train="$1" ln row wf trig jb sib name expr mt killed=0 total=0 q
-    while IFS='|' read -r ln row wf trig jb sib; do
+    local train="$1" ln row wf trig jb sib name expr mt killed=0 total=0 q kind flip
+    while IFS='@' read -r ln row wf trig jb sib; do
         [ -n "$ln" ] || continue
         q="$(printf '%s' "$ln" | sed 's/[.-]/[&]/g')"
+        kind="${row#*;}"; kind="${kind%%;*}"
+        # m4 flips the kind: a verdict lane that stops voting, or a lab lane that starts to
+        flip=info; [ "$kind" = verdict ] || flip=verdict
         while IFS=$'\t' read -r name expr; do
             [ -n "$name" ] || continue
             total=$((total + 1)); mt="$tmp/m.$ln.$name/nightly_train.sh"
@@ -192,10 +206,11 @@ mutants() {
             else printf '  BROKE %-52s survived\n' "$ln/$name"; show "${mt%/*}.log"; fi
         done <<EOF
 m1_job_pattern_unanchored	s/^(${q};.*;)\\^${q}\\\$\$/\\1${ln}/
-m2_dispatch_counts_as_a_night	s/^(${q};.*;)\\^${trig}\\\$(;\\^${q}\\\$)\$/\\1^(${trig}|workflow_dispatch)\$\\2/
+m2_push_counts_as_a_night	s/^(${q};.*;)\\^[(]${trig}[|]workflow_dispatch[)]\\\$(;\\^${q}\\\$)\$/\\1^(${trig}|workflow_dispatch|push)\$\\2/
 m3_wrong_producer	s#^(${q};[^;]*;[^;]*;)[^;]*#\\1.github/workflows/nightly.yml#
-m4_info_lane_does_not_vote	s/^${q};verdict;/${ln};info;/
-m5_no_producer	s/^(${q};verdict;[^;]*;).*\$/\\1-;-;-/
+m4_kind_flipped_to_${flip}	s/^${q};${kind};/${ln};${flip};/
+m5_no_producer	s/^(${q};${kind};[^;]*;).*\$/\\1-;-;-/
+m6_dispatch_is_not_a_night	s/^(${q};.*;)\\^[(]${trig}[|]workflow_dispatch[)]\\\$(;\\^${q}\\\$)\$/\\1^${trig}\$\\2/
 EOF
     done <<< "$LANES"
     printf -- '--- %s/%s mutants killed ---\n' "$killed" "$total"

@@ -7,16 +7,6 @@ critical_path:
 - recommend_transpiler
 - cmd_transpile
 bindings:
-- contract: builder-pattern-v1.yaml
-  equation: transpile
-  function: build_transpiler_args
-  module_path: batuta::src::cli::mod::build_transpiler_args
-  status: implemented
-- contract: configuration-v1.yaml
-  equation: transpile
-  function: cmd_transpile
-  module_path: batuta::src::cli::pipeline_cmds_transpile::cmd_transpile
-  status: implemented
 - contract: configuration-v1.yaml
   equation: transpile
   function: recommend_transpiler
@@ -81,11 +71,6 @@ bindings:
   equation: analyze
   function: analyze_optimizations
   module_path: batuta::pipeline::stages::optimization::analyze_optimizations
-  status: implemented
-- contract: configuration-v1.yaml
-  equation: analyze
-  function: cmd_analyze
-  module_path: batuta::src::cli::pipeline_cmds::cmd_analyze
   status: implemented
 - contract: gpu-decode-profiling-v1.yaml
   equation: analyze
@@ -271,12 +256,6 @@ bindings:
   status: implemented
   notes: JSONL append-only persistence
 - contract: session-v1.yaml
-  equation: manifest_serde
-  function: new
-  module_path: batuta::src::agent::session::Session::new
-  status: implemented
-  notes: Session manifest serialization
-- contract: session-v1.yaml
   equation: age_filter
   function: find_recent_for_cwd
   module_path: batuta::agent::session::find_recent_for_cwd
@@ -285,15 +264,15 @@ bindings:
 # --- Tokenizer contracts (2026-04-04, PMAT-189) ---
 - contract: tokenizer-v1.yaml
   equation: deterministic_encode
-  function: encode
-  module_path: batuta::src::agent::driver::validate::tokenizer_encode
+  function: encode_prompt
+  module_path: batuta::serve::banco::inference
   status: implemented
   notes: Tokenizer used for context window management
 - contract: tokenizer-v1.yaml
   equation: vocab_size_bound
-  function: encode
-  module_path: batuta::src::agent::driver::validate::tokenizer_encode
-  status: implemented
+  function: encode_prompt
+  module_path: batuta::serve::banco::inference
+  status: partial
   notes: Token IDs must be within vocabulary bounds
 # --- Model discovery contracts (2026-04-04, PMAT-188) ---
 - contract: apr-model-discovery-v1.yaml

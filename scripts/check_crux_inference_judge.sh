@@ -41,7 +41,7 @@ done
 TMP=$(mktemp -d) || exit 2
 _rm_tmp() {
   case "${TMP:-}" in
-    /tmp/?*|/var/folders/?*) rm -rf -- "$TMP" || : ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) rm -rf -- "$TMP" || : ;;
     *) : ;;
   esac
 }
@@ -92,9 +92,18 @@ broke(){ printf '  BROKE %s\n' "$1"; FAIL=$((FAIL + 1)); }
 
 # ---- fixture writers: one engine's raw output, in the shape it really prints ---
 SHA=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+# jstr <text>: the JSON string json.dumps would print. Plain printable ASCII with no quote or
+# backslash needs no escaping, so it is printed here; anything else goes to python3 as before.
+# (A fixture writer is called hundreds of times per run: one python3 start each was the bill.)
+jstr() {
+  case "$1" in
+    *[!\ -~]*|*\\*|*\"*) python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.argv[1]))' "$1" ;;
+    *) printf '"%s"' "$1" ;;
+  esac
+}
 apr_out() { # apr_out <dir> <pid> <text> <ran> <fell_back> [ids]
   printf '{"text": %s, "tokens_generated": 3, "tok_per_sec": 9.5, "backend": {"requested": "gpu", "ran": "%s", "fell_back": %s}}\n' \
-    "$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$3")" "$4" "$5" > "$1/apr-$2.out"
+    "$(jstr "$3")" "$4" "$5" > "$1/apr-$2.out"
   printf '[DEBUG] formatted_prompt="%s"\n[DEBUG] add_bos=false, encoded %s tokens: [%s]\n' "${APR_RENDER:-<|im_start|>user\\nq<|im_end|>\\n}" \
     "$(printf '%s' "${6:-1,2,3}" | tr ',' '\n' | grep -c .)" "${6:-1,2,3}" > "$1/apr-$2.err"
 }
@@ -115,6 +124,23 @@ ollama_out() { # ollama_out <dir> <pid> <answer>
   printf 'total duration:       1.2s\nprompt %s count:    30 token(s)\n%s count:           8 token(s)\n%s rate:            90.00 tokens/s\n' "$ev" "$ev" "$ev" > "$1/ollama-$2.err"
 }
 row() { # row <manifest> <engine> <pid> <rc> <stdout> <stderr> [refused]
+  # Fast path: the common row (a plain integer or empty rc) is printed here, byte for byte what
+  # json.dumps wrote; any other rc takes the python3 writer (row_py) unchanged.
+  case "${4-}" in
+    *[!0-9]*) row_py "$@" ;;
+    ''|0|[1-9]*)
+      [ "$#" -ge 6 ] || { row_py "$@"; return; }
+      local _rc _o _e _r
+      _rc=null; [ -n "$4" ] && _rc=$4
+      _o=null; [ -n "$5" ] && _o=$(jstr "$5")
+      _e=null; [ -n "$6" ] && _e=$(jstr "$6")
+      _r=null; [ -n "${7-}" ] && _r=$(jstr "$7")
+      printf '{"kind": "gen", "engine": %s, "prompt_id": %s, "rc": %s, "stdout": %s, "stderr": %s, "refused": %s, "model_sha256": "%%s", "host": "fixture", "verb": %s, "thinking": %s, "backend": "gpu"}\n' \
+        "$(jstr "$2")" "$(jstr "$3")" "$_rc" "$_o" "$_e" "$_r" "$(jstr "${ROW_VERB-run}")" "$(jstr "${ROW_THINKING-off}")" >> "$1" ;;
+    *) row_py "$@" ;;
+  esac
+}
+row_py() {
   python3 - "$@" <<'PY'
 import json, os, sys
 m, eng, pid, rc, o, e = sys.argv[1:7]
@@ -683,6 +709,11 @@ detrow "$d/manifest.jsonl" greedy apr golden-paris "$d/apr-g.json"; detrow "$d/m
 run_judge "$d"; GOT_RC=$?
 got=$(python3 -c 'import json,sys; g=json.load(open(sys.argv[1]))["greedy"][0]["hf"]; print(g.get("first_divergence"), round(g.get("logit_cosine_at_divergence") or -9, 4))' "$d/receipt.json" 2>/dev/null)
 [ "$GOT_RC" = 0 ] && [ "$got" = "2 0.7071" ] && ok "greedy divergence at step 2 is reported with its logit cosine (0.7071), not judged" || broke "greedy: rc $GOT_RC, '$got'"
+# T1 (#3739). ollama's own prompt-eval, load and total durations are TRANSCRIBED to ms (prefill_ms, load_ms,
+# total_ms), never computed; an absent line stays null. The fixture takes the word `eval` as an argument (SEC001).
+ev='eval'
+got=$(python3 -I -c 'import sys; sys.path.insert(0, sys.argv[2]); import crux_inference_judge as j; ev=sys.argv[1]; r=j.parse_ollama("hi","prompt %s duration: 12.5ms\nload duration: 1m2.5s\ntotal duration: 1.2s\n" % ev)["reported"]; n=j.parse_ollama("hi","")["reported"]; print(r["prefill_ms"], r["load_ms"], r["total_ms"], n["prefill_ms"], n["load_ms"])' "$ev" "$ROOT/scripts/lib" 2>/dev/null)
+[ "$got" = "12.5 62500.0 1200.0 None None" ] && ok "ollama durations are transcribed to ms (12.5 62500.0 1200.0); absent stays null" || broke "ollama durations: '$got'"
 # R1b (#3957 F9). The receipt carries each engine's RAW greedy record, keyed by thinking, so the
 # ladder judge compares the id lists itself; an engine that refused carries its refusal, never ids.
 d=$(newcase greedy_raw_carried); control_green "$d"

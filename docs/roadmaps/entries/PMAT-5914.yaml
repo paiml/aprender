@@ -1,0 +1,19 @@
+- id: PMAT-5914
+  github_issue: 5914
+  item_type: task
+  title: 'pv debug-build CPU: tests lint whole contracts tree with debug pv'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T07:04:44Z
+  updated: 2026-10-22T07:04:44Z
+  spec: null
+  acceptance_criteria:
+  - See handoff/pv-debug-cpu-20261022.md; PV_BIN override + shared release pv
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5510

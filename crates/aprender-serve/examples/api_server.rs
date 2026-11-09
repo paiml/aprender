@@ -11,6 +11,7 @@
 //!
 //! Run with: cargo run --example api_server --features server
 
+use std::io::{IsTerminal, Read, Write};
 use std::net::SocketAddr;
 
 use anyhow::Result;
@@ -96,11 +97,48 @@ async fn main() -> Result<()> {
     println!("  -H 'Content-Type: application/json' \\");
     println!("  -d '{{\"model\": \"new-model\"}}'\n");
 
+    // With no terminal on stdin or stdout (CI, a pipe) nobody can press Ctrl+C:
+    // serve on an ephemeral port, GET /health once, report it and exit. Pass
+    // --serve to keep serving anyway.
+    let interactive = std::io::stdin().is_terminal() || std::io::stdout().is_terminal();
+    if !interactive && !std::env::args().any(|a| a == "--serve") {
+        return smoke_health(app).await;
+    }
+
     println!("Server running... (Press Ctrl+C to stop)\n");
 
     // Create listener and serve
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
 
+    Ok(())
+}
+
+/// Serve on 127.0.0.1:0, issue one `GET /health`, and fail unless it is 200.
+async fn smoke_health(app: axum::Router) -> Result<()> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    let addr = listener.local_addr()?;
+    println!("No terminal: smoke-testing GET /health on http://{addr} (--serve to keep serving)");
+    let server = tokio::spawn(async move { axum::serve(listener, app).await });
+
+    let status_line = tokio::task::spawn_blocking(move || -> std::io::Result<String> {
+        let mut stream = std::net::TcpStream::connect(addr)?;
+        stream.set_read_timeout(Some(std::time::Duration::from_secs(10)))?;
+        write!(
+            stream,
+            "GET /health HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n\r\n"
+        )?;
+        let mut response = String::new();
+        stream.read_to_string(&mut response)?;
+        Ok(response.lines().next().unwrap_or_default().to_string())
+    })
+    .await??;
+    server.abort();
+
+    println!("GET /health -> {status_line}");
+    anyhow::ensure!(
+        status_line.contains(" 200 "),
+        "health check failed: {status_line}"
+    );
     Ok(())
 }

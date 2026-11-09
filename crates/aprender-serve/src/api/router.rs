@@ -134,6 +134,11 @@ fn metrics_routes() -> Vec<Route> {
 pub struct RouteCapabilities {
     /// `cached_model` is present, so `/v1/batch/completions` can answer.
     pub gpu_batch: bool,
+    /// A Qwen3.5 hybrid session is resident, so `/v1/chat/prompt-ids` can answer (#4354).
+    pub qwen35_prompt_ids: bool,
+    /// APR-EMBED-001 EG-3: the state serves an EmbeddingGemma 2 encoder, so the
+    /// generative routes answer a 4xx that names the kind instead of generating.
+    pub embedding_kind: bool,
 }
 
 impl RouteCapabilities {
@@ -148,13 +153,21 @@ impl RouteCapabilities {
             let _ = state;
             false
         };
-        Self { gpu_batch }
+        Self {
+            gpu_batch,
+            qwen35_prompt_ids: state.qwen35_session().is_some(),
+            embedding_kind: state.embedding_model().is_some(),
+        }
     }
 
     /// Every capability present: the largest surface any state can mount.
     #[must_use]
     pub fn all() -> Self {
-        Self { gpu_batch: true }
+        Self {
+            gpu_batch: true,
+            qwen35_prompt_ids: true,
+            embedding_kind: false,
+        }
     }
 }
 
@@ -212,6 +225,11 @@ fn openai_routes(caps: RouteCapabilities) -> Vec<Route> {
             post(gpu_batch_completions_handler),
         ));
     }
+    // PRM-S1 v2 (#4354): the chat path's own prompt ids, for cross-engine replay.
+    // Only the Qwen3.5 hybrid path reports them, so only there is the route mounted.
+    if caps.qwen35_prompt_ids {
+        routes.push(("POST", "/v1/chat/prompt-ids", post(chat_prompt_ids_handler)));
+    }
     routes
 }
 
@@ -222,6 +240,40 @@ fn cuda_routes() -> Vec<Route> {
         ("POST", "/v1/logprobs", post(logprobs_handler)),
         ("POST", "/v1/perplexity", post(perplexity_handler)),
     ]
+}
+
+/// The routes that decode tokens from a language-model head (EG-3).
+///
+/// An embedding model has no such head. With one loaded these paths stay mounted and
+/// listed, so a client gets an answer that names the kind rather than the 404 index.
+const GENERATIVE_PATHS: [&str; 11] = [
+    "/generate",
+    "/batch/generate",
+    "/stream/generate",
+    "/realize/generate",
+    "/realize/batch",
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v1/chat/completions/stream",
+    "/v1/batch/completions",
+    "/api/chat",
+    "/api/generate",
+];
+
+/// EG-3 (I-3 on the wire): a generative route on a server that loaded an embedding
+/// model refuses by kind and names the routes that serve it.
+async fn embedding_kind_refusal(State(state): State<AppState>) -> (StatusCode, Json<ErrorResponse>) {
+    let architecture = state.cached_architecture.clone().unwrap_or_default();
+    (
+        StatusCode::BAD_REQUEST,
+        Json(ErrorResponse {
+            error: format!(
+                "'{architecture}' is an embedding model (ModelKind::Embedding): it has no \
+                 language-model head, so this route cannot generate. Use POST /v1/embeddings, \
+                 /api/embeddings or /realize/embed."
+            ),
+        }),
+    )
 }
 
 /// Every route this configuration mounts for a state with `caps`, in advertised order.
@@ -235,6 +287,13 @@ fn route_table(config: &RouterConfig, caps: RouteCapabilities) -> Vec<Route> {
     }
     #[cfg(feature = "cuda")]
     table.extend(cuda_routes());
+    if caps.embedding_kind {
+        for (_, path, handler) in &mut table {
+            if GENERATIVE_PATHS.contains(path) {
+                *handler = post(embedding_kind_refusal);
+            }
+        }
+    }
     table
 }
 
@@ -651,10 +710,34 @@ fn health_status_code(body: &HealthResponse) -> StatusCode {
     }
 }
 
+/// SHA-256 (lowercase hex) of the running executable, computed once (#5348 R-8:
+/// one gateway per host, pinned by binary sha; consumers refuse a mismatch).
+/// `None` when the executable cannot be read: the field is then omitted, never faked.
+fn binary_sha256() -> Option<&'static str> {
+    static SHA: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    SHA.get_or_init(|| {
+        use sha2::{Digest, Sha256};
+        let bytes = std::fs::read(std::env::current_exe().ok()?).ok()?;
+        Some(format!("{:x}", Sha256::digest(&bytes)))
+    })
+    .as_deref()
+}
+
+/// `/health` body: the contract fields plus the R-8 binary pin.
+#[derive(Serialize)]
+struct PinnedHealthResponse {
+    #[serde(flatten)]
+    health: HealthResponse,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    binary_sha256: Option<&'static str>,
+}
+
 /// `GET /health` — vLLM / llama.cpp-parity liveness probe.
 ///
 /// Discharges FALSIFY-CRUX-C-34-001/002/003.
-async fn health_handler(State(state): State<AppState>) -> (StatusCode, Json<HealthResponse>) {
+async fn health_handler(
+    State(state): State<AppState>,
+) -> (StatusCode, Json<PinnedHealthResponse>) {
     if state.is_verbose() {
         eprintln!("[VERBOSE] GET /health");
     }
@@ -663,7 +746,14 @@ async fn health_handler(State(state): State<AppState>) -> (StatusCode, Json<Heal
     if state.is_verbose() {
         eprintln!("[VERBOSE] GET /health -> {} status={}", code, body.status);
     }
-    (code, Json(body))
+    let binary_sha256 = binary_sha256();
+    (
+        code,
+        Json(PinnedHealthResponse {
+            health: body,
+            binary_sha256,
+        }),
+    )
 }
 
 /// `GET /health/live` — k8s liveness probe.

@@ -87,7 +87,7 @@ proof_obligations:
   type: invariant
 
 falsification_tests:
-- id: FALSIFY-BEAT-STRUCT-FAIL-CLOSED
+- id: FALSIFY-BEAT-STRUCT-FAIL-001
   description: >
     FALSE if apr ACCEPTS any cross-tensor-inconsistent model (vocab mismatch or
     hidden-dim mismatch) — the structural garbage the incumbents load silently —

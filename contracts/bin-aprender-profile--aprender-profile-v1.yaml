@@ -133,3 +133,9 @@ falsification_tests:
     test: 'cargo test -p aprender-profile --test cli_surface_gate unusable_input_is_rejected'
     if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 2 ("Baseline not found", the documented code) with no panic, GREEN; an existing FILE is also reported "not found" because a baseline is a directory'
     mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'
+  - id: FALSIFY-BIN-APRENDER-PROFILE-007
+    rule: 'run rejects bad configuration before tracing, naming the flag'
+    prediction: '`--ml-clusters 1`, a missing or malformed `--transpiler-map`, an unknown `--chaos` preset and an unparsable `--chaos-memory-limit` each exit 1 with a stderr message naming the offending value'
+    test: 'cargo test -p aprender-profile --test run_config_errors_5713'
+    if_fails: 'a bad flag is silently accepted and a trace starts with a default (#5713)'
+    mutation: 'change the ml_clusters guard from < 2 to < 1; ml_clusters_below_two_is_rejected_with_the_value must turn RED'

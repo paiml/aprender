@@ -2,8 +2,10 @@
 //!
 //! Implements softmax(x)_i = exp(x_i - max(x)) / sum(exp(x - max(x)))
 
+mod band;
 mod long_row;
 
+pub use band::{BandSoftmaxKernel, BAND_UNBOUNDED};
 pub use long_row::LongRowSoftmaxKernel;
 
 use super::Kernel;

@@ -347,6 +347,54 @@ def _census_rows():
         "filename-safety is load-bearing, not defensive")
 
 
+def _base_rows():
+    # 9. THE FROZEN BASE (#6185). roadmap-base.yaml beside roadmap.yaml is what the
+    #    aggregate grows from; roadmap.yaml is only the thing being judged.
+    import tempfile
+    import types
+    extra = BASE + "- id: PMAT-400\n  title: only in base\n"
+    with tempfile.TemporaryDirectory() as d:
+        (rm, bs) = (os.path.join(d, "roadmap.yaml"), os.path.join(d, "roadmap-base.yaml"))
+        os.makedirs(os.path.join(d, "entries"))
+        ns = types.SimpleNamespace(check=True, write=False)
+        quiet = open(os.devnull, "w")
+        err, sys.stderr = sys.stderr, quiet
+        try:
+            def verdict():
+                return _cmd_aggregate(ns, rm, os.path.join(d, "entries"))
+            open(rm, "w").write(BASE)
+            no_base = verdict()                 # no roadmap-base.yaml: roadmap is its own base
+            open(bs, "w").write(extra)
+            stale = verdict()                   # base has PMAT-400, roadmap does not
+            open(rm, "w").write(extra)
+            fresh = verdict()                   # roadmap == aggregate(base)
+        finally:
+            sys.stderr = err
+            quiet.close()
+    row("no roadmap-base.yaml: roadmap.yaml is its own base (scratch-dir callers)", no_base == 0)
+    row("roadmap-base.yaml entry missing from roadmap.yaml is DRIFT", stale == 1, "rc=%d" % stale)
+    row("roadmap.yaml == aggregate(roadmap-base.yaml, entries/) passes", fresh == 0, "rc=%d" % fresh)
+
+    # 9m. MUTATION: if base_path ignored base.yaml, the stale row must go RED.
+    saved = globals()["base_path"]
+    globals()["base_path"] = lambda roadmap: os.path.join(os.devnull, "nope")
+    with tempfile.TemporaryDirectory() as d:
+        os.makedirs(os.path.join(d, "entries"))
+        open(os.path.join(d, "roadmap.yaml"), "w").write(BASE)
+        open(os.path.join(d, "roadmap-base.yaml"), "w").write(extra)
+        err, sys.stderr = sys.stderr, open(os.devnull, "w")
+        try:
+            diverges = _cmd_aggregate(types.SimpleNamespace(check=True, write=False),
+                                      os.path.join(d, "roadmap.yaml"),
+                                      os.path.join(d, "entries")) == 0
+        finally:
+            sys.stderr.close()
+            sys.stderr = err
+            globals()["base_path"] = saved
+    row("mutation: ignoring roadmap-base.yaml is CAUGHT", diverges,
+        "" if diverges else "mutant survived -- row 9 proves nothing")
+
+
 def selftest():
     # 1. THE LOSSLESS ROW: no fragments must reproduce the base byte for byte.
     out = aggregate(BASE, [])
@@ -419,6 +467,7 @@ def selftest():
     row("mutation: append-only placement is CAUGHT", caught,
         "" if caught else "mutant survived -- row 2 proves nothing")
 
+    _base_rows()
     _census_rows()
 
     bad = sum(1 for _, ok, _ in ROWS if not ok)
@@ -444,10 +493,11 @@ def _check(base, out, frags):
     return 0
 
 
-def _emit(a, base, out, frags, roadmap):
-    """The three terminal arms of `aggregate`: verify, write, or print."""
+def _emit(a, current, out, frags, roadmap, base):
+    """The three terminal arms of `aggregate`: verify, write, or print.
+    `current` is the roadmap.yaml as it stands; `base` is what `out` grew from."""
     if a.check:
-        return _check(base, out, frags)
+        return _check(current, out, frags)
     if a.write:
         with open(roadmap, "w", encoding="utf-8") as fh:
             fh.write(out)
@@ -480,17 +530,29 @@ def _read(path, what):
         return None
 
 
+def base_path(roadmap):
+    """The frozen roadmap-base.yaml next to `roadmap` (#6185). Absent, roadmap.yaml is its own
+    base -- the fixed point every scratch-dir caller (base/head extracted for a
+    guard) and the selftest still rely on."""
+    return os.path.join(os.path.dirname(os.path.abspath(roadmap)), "roadmap-base.yaml")
+
+
 def _cmd_aggregate(a, roadmap, entries_dir):
-    base = _read(roadmap, roadmap)
-    if base is None:
+    current = _read(roadmap, roadmap)
+    if current is None:
         return 2
+    base = current
+    if os.path.exists(base_path(roadmap)):
+        base = _read(base_path(roadmap), base_path(roadmap))
+        if base is None:
+            return 2
     frags = read_fragments(entries_dir)
     try:
         out = aggregate(base, frags)
     except ValueError as e:
         sys.stderr.write("FAIL %s\n" % e)
         return 1
-    return _emit(a, base, out, frags, roadmap)
+    return _emit(a, current, out, frags, roadmap, base)
 
 
 def _cmd_changed(a):

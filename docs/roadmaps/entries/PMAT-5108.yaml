@@ -1,0 +1,18 @@
+- id: PMAT-5108
+  github_issue: 5108
+  item_type: task
+  title: Scripts kill by name pattern; kill only the pid recorded at spawn
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-11T02:30:22Z
+  updated: 2026-10-11T02:30:29.175357598+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3863

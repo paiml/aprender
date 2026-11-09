@@ -1,0 +1,2 @@
+{"id":"FND-20261009-ledger-had-six-key-sets","title":"docs/findings had six key sets and one conforming line","evidence":"10 files and 60 lines at 4e27b64015; one line carries the seven rule-17 fields","repro":"jq -c keys docs/findings/*.jsonl | sort -u","suspected_epic":"#4645","severity":"P2","found_at_sha":"4e27b64015549396d729f1b688e456b5772a1365"}
+{"id":"FND-20261009-no-epic-yet","title":"a finding with no epic says so with the sentinel","evidence":"suspected_epic is required and this finding has no epic yet","repro":"none","suspected_epic":"unknown","severity":"P3"}

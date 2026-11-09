@@ -1,6 +1,6 @@
 <div align="center">
-[![Crates.io](https://img.shields.io/crates/v/certeza.svg)](https://crates.io/crates/certeza)
-[![Documentation](https://docs.rs/certeza/badge.svg)](https://docs.rs/certeza)
+[![Crates.io](https://img.shields.io/crates/v/aprender-verify.svg)](https://crates.io/crates/aprender-verify)
+[![Documentation](https://docs.rs/aprender-verify/badge.svg)](https://docs.rs/aprender-verify)
 
 <p align="center">
   <img src=".github/certeza-hero.svg" alt="certeza" width="800">
@@ -13,7 +13,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/paiml/certeza/actions/workflows/ci.yml"><img src="https://github.com/paiml/certeza/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml"><img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <a href="https://www.rust-lang.org"><img src="https://img.shields.io/badge/MSRV-1.75-blue.svg" alt="Minimum Supported Rust Version"></a>
 </p>
@@ -90,14 +90,14 @@ The framework implements three-tiered verification that balances rigor with deve
 
 ```bash
 # Clone the repository
-git clone https://github.com/paiml/certeza.git
-cd certeza
+git clone https://github.com/paiml/aprender.git
+cd aprender/crates/aprender-verify
 
-# Run quick checks (Tier 1)
-make tier1
+# Quick lint
+cargo clippy --lib -- -D warnings
 
-# Run full test suite with coverage (Tier 2)
-make tier2
+# Unit tests
+cargo test --lib
 
 # Build the project
 cargo build
@@ -115,7 +115,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-certeza = "0.1.0"
+aprender-verify = "0.71"
 ```
 
 ## Usage Example
@@ -312,7 +312,7 @@ Benchmarks demonstrate competitive performance with `std::Vec`:
 
 ## Chaos Engineering & Fuzz Testing
 
-**certeza** includes chaos engineering and fuzz testing capabilities adapted from [**renacer v0.4.1**](https://github.com/paiml/renacer) (Sprint 29).
+**certeza** includes chaos engineering and fuzz testing capabilities adapted from [**renacer v0.4.1**](https://github.com/paiml/aprender/tree/main/crates/aprender-profile) (Sprint 29).
 
 ### Chaos Engineering
 
@@ -427,11 +427,11 @@ make install-hooks      # Install PMAT git hooks
 
 ```bash
 # Tier 1: Quick checks (unit tests)
-make tier1
+cargo clippy --lib -- -D warnings
 cargo test --lib
 
 # Tier 2: Full test suite (unit + property + integration + doc tests)
-make tier2
+cargo test --lib
 cargo test --all
 
 # Integration tests
@@ -550,7 +550,7 @@ This project implements research findings from the certeza specification, incorp
 
 ## Acknowledgments
 
-- **trueno project** (https://github.com/paiml/trueno) - Reference implementation
+- **trueno project** (https://github.com/paiml/aprender/tree/main/crates/aprender-compute) - Reference implementation
 - **PMAT** (https://github.com/paiml/paiml-mcp-agent-toolkit) - Test orchestration toolkit
 - Pragmatic AI Labs Research Division
 

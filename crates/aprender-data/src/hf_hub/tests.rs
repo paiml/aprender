@@ -1326,8 +1326,10 @@ task_categories: [
 ---
 ";
     let errors = DatasetCardValidator::validate_readme(readme);
-    // Should not crash, just return empty errors (YAML parse fails gracefully)
-    assert!(errors.is_empty());
+    // #5500: unparseable front matter is reported, not silently accepted.
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].field, "front matter");
+    assert!(DatasetCardValidator::validate_readme_strict(readme).is_err());
 }
 
 #[test]
@@ -1670,6 +1672,24 @@ size_categories:
     let errors = DatasetCardValidator::validate_readme(readme);
     // Should have 3 errors: 2 invalid tasks + 1 invalid size
     assert_eq!(errors.len(), 3);
+}
+
+#[test]
+fn test_validate_readme_non_string_key_does_not_skip_checks() {
+    // A refused frontmatter parse returns no errors, so a card with non-string keys must
+    // still parse: serde-saphyr hands serde_json::Value scalar keys as strings.
+    let readme = r"---
+7: seven
+configs:
+  - {1: one, true: yes}
+task_categories:
+  - invalid-task-1
+size_categories:
+  - invalid-size
+---
+";
+    let errors = DatasetCardValidator::validate_readme(readme);
+    assert_eq!(errors.len(), 2, "both bad categories reported: {errors:?}");
 }
 
 #[test]

@@ -1,0 +1,36 @@
+metadata:
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  description: "config::train::loader try_load_apr — loading a transformer from an APR file or checkpoint directory: unreadable or absent input is None, the checkpoint step comes from the checkpoint_step metadata and otherwise from the model-step-N file name, a directory resolves to its newest step, and the weights round-trip."
+  kind: pattern
+  references:
+    - "crates/aprender-train/src/config/train/loader/data.rs — try_load_apr, try_load_apr_for_inference, find_latest_apr_checkpoint"
+
+equations:
+  try_load_apr_step_and_weights:
+    formula: "step == metadata.checkpoint_step if present else parse(file name model-step-N.apr) else 0; a directory picks max N; absent, corrupt or empty-dir input yields None"
+    domain: "a path (APR file or directory) and a TransformerConfig"
+    codomain: "Option<(Option<Transformer>, usize)>"
+    invariants:
+      - "Metadata step takes precedence over the file-name step"
+      - "Loaded embedding weights equal the saved ones"
+
+proof_obligations:
+  - id: TLA-INV-001
+    type: invariant
+    property: "Metadata checkpoint_step wins over the file-name step"
+    formal: "∀ t ∈ {test_try_load_apr_reads_step_from_metadata_over_filename}: exit(t) = 0"
+    applies_to: try_load_apr_step_and_weights
+  - id: TLA-INV-002
+    type: invariant
+    property: "A directory resolves to its newest model-step-N.apr"
+    formal: "∀ t ∈ {test_try_load_apr_directory_picks_latest_step_from_filename}: exit(t) = 0"
+    applies_to: try_load_apr_step_and_weights
+
+falsification_tests:
+  - id: FALSIFY-TLA-001
+    rule: "metadata key ignored"
+    prediction: "reading a different metadata key makes the step fall back to the file name and turns the metadata test RED"
+    test: "cargo test -p aprender-train --lib test_try_load_apr_reads_step_from_metadata_over_filename"
+    if_fails: "the checkpoint_step metadata path is unguarded"

@@ -78,6 +78,12 @@ include!("chat_generate_safetensors.rs");
         use super::*;
         include!("chat_engine_identity_4263.rs");
     }
+
+    #[cfg(test)]
+    mod model_kind_eg1 {
+        use super::*;
+        include!("chat_model_kind_eg1_tests.rs");
+    }
 }
 
 

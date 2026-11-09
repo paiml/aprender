@@ -1,12 +1,12 @@
-# jugar-probar
+# aprender-test-lib
 
-[![Crates.io](https://img.shields.io/crates/v/jugar-probar.svg)](https://crates.io/crates/jugar-probar)
-[![Documentation](https://docs.rs/jugar-probar/badge.svg)](https://docs.rs/jugar-probar)
-[![CI](https://github.com/paiml/probar/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/probar/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/aprender-test-lib.svg)](https://crates.io/crates/aprender-test-lib)
+[![Documentation](https://docs.rs/aprender-test-lib/badge.svg)](https://docs.rs/aprender-test-lib)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
 
-**jugar-probar** is the Rust library for [Probar](https://github.com/paiml/probar) - a Playwright-compatible testing framework for WASM games and applications.
+**aprender-test-lib** is the Rust library for [Probar](https://github.com/paiml/aprender/tree/main/crates/aprender-test) - a Playwright-compatible testing framework for WASM games and applications.
 
-> **Note:** The CLI tool is published separately as [probador](https://crates.io/crates/probador).
+> **Note:** The CLI tool is published separately as [aprender-test-cli](https://crates.io/crates/aprender-test-cli).
 
 ## Installation
 
@@ -14,14 +14,14 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-jugar-probar = "0.3"
+aprender-test-lib = "0.71"
 ```
 
 With specific features:
 
 ```toml
 [dev-dependencies]
-jugar-probar = { version = "0.3", features = ["browser", "runtime", "derive"] }
+aprender-test-lib = { version = "0.71", features = ["browser", "runtime", "derive"] }
 ```
 
 ## Quick Start
@@ -66,22 +66,22 @@ fn test_game_starts() {
 |---------|-------------|
 | `browser` | CDP browser automation (chromiumoxide, tokio) |
 | `runtime` | WASM runtime testing (wasmtime) |
-| `derive` | Type-safe derive macros (probar-derive) |
+| `derive` | Type-safe derive macros (aprender-test-derive) |
 
 ## Examples
 
 ```bash
 # Deterministic simulation with replay verification
-cargo run --example pong_simulation -p jugar-probar
+cargo run --example pong_simulation -p aprender-test-lib
 
 # Playwright-style locator API demo
-cargo run --example locator_demo -p jugar-probar
+cargo run --example locator_demo -p aprender-test-lib
 
 # WCAG accessibility checking
-cargo run --example accessibility_demo -p jugar-probar
+cargo run --example accessibility_demo -p aprender-test-lib
 
 # GUI coverage tracking
-cargo run --example gui_coverage -p jugar-probar
+cargo run --example gui_coverage -p aprender-test-lib
 ```
 
 ## API Overview
@@ -142,25 +142,25 @@ assert!(replay.determinism_verified);
 For command-line usage, install the CLI separately:
 
 ```bash
-cargo install probador
+cargo install aprender-test-cli
 ```
 
 ```bash
 # Validate playbook state machines
-probador playbook login.yaml --validate
+aprender-test-cli playbook login.yaml --validate
 
 # Run mutation testing
-probador playbook login.yaml --mutate
+aprender-test-cli playbook login.yaml --mutate
 
 # Export state diagrams
-probador playbook login.yaml --export svg -o diagram.svg
+aprender-test-cli playbook login.yaml --export svg -o diagram.svg
 ```
 
 ## Documentation
 
-- [Book](https://paiml.github.io/probar/) - Comprehensive guide
-- [API Docs](https://docs.rs/jugar-probar) - Rust documentation
-- [Examples](https://github.com/paiml/probar/tree/main/crates/probar/examples) - 20+ runnable examples
+- [Book](https://github.com/paiml/aprender/tree/main/crates/aprender-test/book) - Comprehensive guide
+- [API Docs](https://docs.rs/aprender-test-lib) - Rust documentation
+- [Examples](https://github.com/paiml/aprender/tree/main/crates/aprender-test-lib/examples) - 20+ runnable examples
 
 ## License
 

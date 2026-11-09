@@ -408,6 +408,8 @@ mod tests {
         assert!(matches!(map_gguf_dtype(1, "test"), Ok(TensorDType::F16)));
         assert!(matches!(map_gguf_dtype(12, "test"), Ok(TensorDType::Q4K)));
         assert!(matches!(map_gguf_dtype(14, "test"), Ok(TensorDType::Q6K)));
+        // APR-EMBED-001 EG-6: EmbeddingGemma 2 ships BF16 GGUFs.
+        assert!(matches!(map_gguf_dtype(30, "test"), Ok(TensorDType::BF16)));
     }
 
     #[test]

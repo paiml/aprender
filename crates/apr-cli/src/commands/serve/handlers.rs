@@ -357,6 +357,15 @@ async fn wgpu_chat_completion(
     state: Arc<WgpuInferenceState>,
     axum::Json(body): axum::Json<serde_json::Value>,
 ) -> axum::response::Response {
+    // #3568 PR 4: this loop applies no constraint; one asked for is refused, never dropped
+    if let Some(refusal) =
+        super::response_format::refuse_response_format(&body, super::response_format::GGUF_WGPU)
+    {
+        return refusal;
+    }
+    if let Some(refused) = logprobs_refusal_response(&body, "WGPU") {
+        return refused;
+    }
     // GH-665: Cap max_tokens to prevent hangs on large values
     let max_tokens = body["max_tokens"].as_u64().unwrap_or(64).min(4096) as usize;
     let stream = body["stream"].as_bool().unwrap_or(false);
@@ -769,6 +778,7 @@ fn serve_wgpu_backend(
     );
     // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
     fwd.set_rms_norm_eps(quantized.config().eps);
+    fwd.set_rope_theta(f64::from(quantized.config().rope_theta));
 
     upload_wgpu_weights(&mut fwd, quantized, weights, num_layers);
 
@@ -1505,9 +1515,11 @@ fn start_apr_server(model_path: &Path, config: &ServerConfig) -> Result<()> {
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create runtime: {e}")))?;
 
     let bind_addr = config.bind_addr();
+    let gate = super::auth::AuthGate::try_from_env()
+        .map_err(|reason| CliError::InferenceFailed(format!("{reason}; refusing to start")))?;
 
     runtime.block_on(async move {
-        let app = build_apr_cpu_router(state, super::auth::AuthGate::from_env());
+        let app = build_apr_cpu_router(state, gate);
 
         let listener = tokio::net::TcpListener::bind(&bind_addr)
             .await
@@ -1749,3 +1761,4 @@ pub fn build_demo_streaming_apr_cpu_router_for_test() -> axum::Router {
 include!("handler_apr_cpu_completion.rs");
 include!("handler_gpu_completion.rs");
 include!("server.rs");
+include!("server_embedding.rs");

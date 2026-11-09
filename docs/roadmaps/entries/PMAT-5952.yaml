@@ -1,0 +1,18 @@
+- id: PMAT-5952
+  github_issue: 5952
+  item_type: task
+  title: 'ci: push-to-main tier runs only HEAD^1..HEAD; use the PUSH_BEFORE range'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-22T15:15:00Z
+  updated: 2026-10-22T15:15:00Z
+  spec: null
+  acceptance_criteria:
+  - ci_test_tier.sh push arm diffs github.event.before..HEAD with an all-zero-before guard; self-test rows plus a planted mutant
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null

@@ -98,6 +98,7 @@ fn test_chat_chunk_choice_serialization() {
         delta: ChatDelta {
             role: Some("user".to_string()),
             content: Some("test content".to_string()),
+            tool_calls: None,
         },
         finish_reason: None,
     };
@@ -119,6 +120,7 @@ fn test_chat_chunk_choice_with_finish_reason() {
         delta: ChatDelta {
             role: None,
             content: None,
+            tool_calls: None,
         },
         finish_reason: Some("length".to_string()),
     };
@@ -135,6 +137,7 @@ fn test_chat_delta_empty() {
     let delta = ChatDelta {
         role: None,
         content: None,
+        tool_calls: None,
     };
 
     let json = serde_json::to_string(&delta).expect("serialize");
@@ -149,6 +152,7 @@ fn test_chat_delta_clone_debug() {
     let delta = ChatDelta {
         role: Some("assistant".to_string()),
         content: Some("response".to_string()),
+        tool_calls: None,
     };
     let cloned = delta.clone();
     assert_eq!(cloned.role, delta.role);

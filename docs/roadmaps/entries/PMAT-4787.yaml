@@ -1,0 +1,18 @@
+- id: PMAT-4787
+  github_issue: 4787
+  item_type: task
+  title: 'PY-PORT-2c: switch coverage_report_scope callers to aprender-ci-tools, delete the .py (C301)'
+  status: inprogress
+  priority: high
+  assigned_to: aprender-0d
+  created: 2026-10-05T12:18:37Z
+  updated: 2026-10-05T12:18:37Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 4741

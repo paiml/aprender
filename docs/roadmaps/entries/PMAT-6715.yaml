@@ -1,0 +1,18 @@
+- id: PMAT-6715
+  github_issue: 6715
+  item_type: task
+  title: 'mq_feeder: C48 tiers (LOW 1 non-author PASS, HIGH 1 Opus PASS), refuse any FAIL at head (C61-2)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-03T17:26:26Z
+  updated: 2026-11-03T17:26:26Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519

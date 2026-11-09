@@ -6,6 +6,8 @@
 mod batched;
 mod cublas_prefill;
 mod ffn;
+/// #4971: the prefill's first token with the logits its argmax read.
+mod first_token_logits;
 mod forward;
 mod graph_decode;
 mod graphed;

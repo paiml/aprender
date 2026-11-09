@@ -90,93 +90,78 @@ pub fn classify_preservation(
     ref_path: String,
     req_path: String,
 ) -> PreservationReport {
-    let mut general_diverged = Vec::new();
-    let mut general_missing = Vec::new();
-    let mut general_added = Vec::new();
-    let mut tokenizer_diverged = Vec::new();
-    let mut tokenizer_missing = Vec::new();
-    let mut tokenizer_added = Vec::new();
-    let mut general_checked = 0usize;
-    let mut tokenizer_checked = 0usize;
+    let mut groups = [KeyGroup::default(), KeyGroup::default()];
 
     for (key, ref_val) in reference {
-        let prefix_general = key.starts_with("general.");
-        let prefix_tokenizer = key.starts_with("tokenizer.");
-        if !prefix_general && !prefix_tokenizer {
-            continue;
-        }
-        if prefix_general && QUANT_VOLATILE_KEYS.contains(&key.as_str()) {
-            continue;
-        }
+        let Some(g) = key_group(key) else { continue };
+        let group = &mut groups[g];
         match requant.get(key) {
             Some(req_val) => {
-                if prefix_general {
-                    general_checked += 1;
-                } else {
-                    tokenizer_checked += 1;
-                }
+                group.checked += 1;
                 if !values_equal(ref_val, req_val) {
-                    let entry = DiffEntry {
+                    group.diverged.push(DiffEntry {
                         key: key.clone(),
                         reference: render_value_bounded(ref_val),
                         requant: render_value_bounded(req_val),
                         first_difference: describe_first_difference(ref_val, req_val),
-                    };
-                    if prefix_general {
-                        general_diverged.push(entry);
-                    } else {
-                        tokenizer_diverged.push(entry);
-                    }
+                    });
                 }
             }
-            None => {
-                if prefix_general {
-                    general_missing.push(key.clone());
-                } else {
-                    tokenizer_missing.push(key.clone());
-                }
-            }
+            None => group.missing.push(key.clone()),
         }
     }
 
     // Keys that appear in requant but not reference (excluding volatile).
     for key in requant.keys() {
-        let prefix_general = key.starts_with("general.");
-        let prefix_tokenizer = key.starts_with("tokenizer.");
-        if !prefix_general && !prefix_tokenizer {
-            continue;
-        }
-        if prefix_general && QUANT_VOLATILE_KEYS.contains(&key.as_str()) {
-            continue;
-        }
-        if !reference.contains_key(key) {
-            if prefix_general {
-                general_added.push(key.clone());
-            } else {
-                tokenizer_added.push(key.clone());
+        if let Some(g) = key_group(key) {
+            if !reference.contains_key(key) {
+                groups[g].added.push(key.clone());
             }
         }
     }
 
-    let passed = general_diverged.is_empty()
-        && general_missing.is_empty()
-        && general_added.is_empty()
-        && tokenizer_diverged.is_empty()
-        && tokenizer_missing.is_empty()
-        && tokenizer_added.is_empty();
+    let passed = groups.iter().all(KeyGroup::is_clean);
+    let [general, tokenizer] = groups;
 
     PreservationReport {
         reference: ref_path,
         requant: req_path,
-        general_keys_checked: general_checked,
-        general_keys_diverged: general_diverged,
-        general_keys_missing_in_requant: general_missing,
-        general_keys_added_in_requant: general_added,
-        tokenizer_keys_checked: tokenizer_checked,
-        tokenizer_keys_diverged: tokenizer_diverged,
-        tokenizer_keys_missing_in_requant: tokenizer_missing,
-        tokenizer_keys_added_in_requant: tokenizer_added,
+        general_keys_checked: general.checked,
+        general_keys_diverged: general.diverged,
+        general_keys_missing_in_requant: general.missing,
+        general_keys_added_in_requant: general.added,
+        tokenizer_keys_checked: tokenizer.checked,
+        tokenizer_keys_diverged: tokenizer.diverged,
+        tokenizer_keys_missing_in_requant: tokenizer.missing,
+        tokenizer_keys_added_in_requant: tokenizer.added,
         passed,
+    }
+}
+
+/// Per-prefix tallies for [`classify_preservation`].
+#[derive(Default)]
+struct KeyGroup {
+    checked: usize,
+    diverged: Vec<DiffEntry>,
+    missing: Vec<String>,
+    added: Vec<String>,
+}
+
+impl KeyGroup {
+    fn is_clean(&self) -> bool {
+        self.diverged.is_empty() && self.missing.is_empty() && self.added.is_empty()
+    }
+}
+
+/// Which group a key is checked in: 0 for `general.*` (volatile quantization
+/// keys excluded), 1 for `tokenizer.*`, `None` for any other key.
+fn key_group(key: &str) -> Option<usize> {
+    if key.starts_with("general.") {
+        (!QUANT_VOLATILE_KEYS.contains(&key)).then_some(0)
+    } else if key.starts_with("tokenizer.") {
+        Some(1)
+    } else {
+        None
     }
 }
 
@@ -207,6 +192,7 @@ fn value_kind(v: &GgufValue) -> &'static str {
         GgufValue::ArrayInt32(_) => "ArrayInt32",
         GgufValue::ArrayFloat32(_) => "ArrayFloat32",
         GgufValue::ArrayString(_) => "ArrayString",
+        GgufValue::ArrayBool(_) => "ArrayBool",
     }
 }
 
@@ -217,6 +203,7 @@ fn array_len(v: &GgufValue) -> Option<usize> {
         GgufValue::ArrayInt32(a) => Some(a.len()),
         GgufValue::ArrayFloat32(a) => Some(a.len()),
         GgufValue::ArrayString(a) => Some(a.len()),
+        GgufValue::ArrayBool(a) => Some(a.len()),
         _ => None,
     }
 }

@@ -286,11 +286,20 @@ _cleanup() {
   [ "$KEEP_WORK" = 1 ] && { printf 'work kept: %s\n' "$WORK" >&2; return 0; }
   local v="${WORK:-}"
   case "$v" in
-    /tmp/?*|/var/folders/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
+    /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) if [ -n "$v" ] && [ "$v" != "/" ]; then rm -rf -- "$v" || :; fi ;;
     *) return 0 ;;
   esac
 }
 trap _cleanup EXIT
+# guard_server <pid>: kill that server when this harness dies by ANY signal, SIGKILL included (a runner
+# cancelling a job kills the tree with KILL, which no trap sees; the servers then lived 2-3 days at ppid 1).
+# The watcher is its own process, off the harness's fds so it never holds a CI step's output pipe open.
+guard_server() {
+  local srv="$1" par=$$
+  # the id is read after the fork has exec'd, so a recycled pid (another cmdline) is left alone
+  ( trap - EXIT INT TERM; sleep 1; id=$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null); while kill -0 "$par" 2> /dev/null && [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ]; do sleep 2; done
+    [ "$(tr "\0" " " < "/proc/$srv/cmdline" 2> /dev/null)" = "$id" ] && kill "$srv" 2> /dev/null ) < /dev/null > /dev/null 2>&1 &
+}
 MANIFEST="$WORK/manifest.jsonl"; : > "$MANIFEST"
 # The plugin engines append their own rows here (row contract v1).
 export CRUX_MANIFEST="$MANIFEST" CRUX_WORK="$WORK"
@@ -470,7 +479,7 @@ llama_tokenize_prompts() { # sets THINKING_CAPABLE; writes tok rows
   # CUDA context. -ngl 0 alone still initialises the device and shows in nvidia-smi.
   choom -n 1000 -- "$LLAMA_SERVER" -m "$M" -ngl 0 -dev none -c 512 --no-warmup --host 127.0.0.1 --port "$port" \
     > "$d/server.log" 2>&1 < /dev/null &
-  SRV_PID=$!
+  SRV_PID=$!; guard_server "$SRV_PID"
   for i in $(seq 1 180); do
     curl -sf "http://127.0.0.1:$port/health" > /dev/null 2>&1 && { ok=1; break; }
     kill -0 "$SRV_PID" 2>/dev/null || break
@@ -592,11 +601,33 @@ PY
       "$OLLAMA" show "$OL_NAME" --modelfile > "$WORK/$SHA12/ollama-modelfile.txt" 2>/dev/null
       OL_BLOB=$(sed -n 's/^FROM .*sha256[-:]\([0-9a-f]\{64\}\).*/\1/p' "$WORK/$SHA12/ollama-modelfile.txt" | head -1)
       OL_TEMPLATE_SHA=$(sha256sum "$WORK/$SHA12/ollama-template.txt" | cut -d' ' -f1)
-      # ollama 0.5.7 imports a GGUF with TEMPLATE {{ .Prompt }}: no chat template
-      # at all, so it would complete the raw prompt while the others chat. That is
-      # not an answer to the same question, and it is refused by name.
+      # ollama (0.5.7, and 0.17.6 on a Qwen3.5 GGUF) imports with TEMPLATE
+      # {{ .Prompt }}: it could not translate the file's Jinja, so it would
+      # complete the raw prompt while the others chat. Build the template from
+      # the GGUF's OWN tokenizer.chat_template and import again (#5254); a
+      # template of a shape the translation does not know stays refused by name.
       if [ "$(tr -d ' \n' < "$WORK/$SHA12/ollama-template.txt")" = "{{.Prompt}}" ]; then
         OL_REFUSED="ollama $OLLAMA_SERVER imported the GGUF with no chat template (TEMPLATE {{ .Prompt }}), so it would complete the raw text rather than chat"
+        "$APR" inspect "$M" --json > "$WORK/$SHA12/apr-inspect.json" 2>/dev/null
+        if jq -j --arg think "$THINKING_CAPABLE" -f "$ROOT/scripts/lib/ollama_template_from_chatml.jq" \
+            "$WORK/$SHA12/apr-inspect.json" > "$WORK/$SHA12/ollama-template-built.txt" 2>/dev/null \
+          && [ -s "$WORK/$SHA12/ollama-template-built.txt" ]; then
+          {
+            printf 'TEMPLATE """%s"""\n' "$(cat "$WORK/$SHA12/ollama-template-built.txt")"
+            printf 'PARAMETER stop "<|im_end|>"\n'
+          } >> "$WORK/$SHA12/Modelfile"
+          "$OLLAMA" create "$OL_NAME" -f "$WORK/$SHA12/Modelfile" >> "$WORK/$SHA12/ollama-create.log" 2>&1
+          rc=$?
+          "$OLLAMA" show "$OL_NAME" --template > "$WORK/$SHA12/ollama-template.txt" 2>/dev/null
+          OL_TEMPLATE_SHA=$(sha256sum "$WORK/$SHA12/ollama-template.txt" | cut -d' ' -f1)
+          if [ "$rc" -eq 0 ] && cmp -s "$WORK/$SHA12/ollama-template.txt" "$WORK/$SHA12/ollama-template-built.txt"; then
+            OL_REFUSED=""
+          else
+            OL_REFUSED="ollama $OLLAMA_SERVER did not keep the chat template built from the GGUF's own tokenizer.chat_template (create rc $rc; see ollama-create.log)"
+          fi
+        else
+          OL_REFUSED="$OL_REFUSED; the GGUF's own tokenizer.chat_template is not a ChatML shape scripts/lib/ollama_template_from_chatml.jq translates"
+        fi
       fi
     fi
   fi
@@ -799,7 +830,7 @@ meta = {
         *(["apr chat's backend is unverified: apr chat reports none (#3794)"] if "chat" in verbs.split(",") else []),
         "thinking ON until #3723 adds an apr toggle",
         "consumer-brief context rungs (#3716) and each engine's max accepted context",
-        "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
+        "TTFT (run verb: only ollama reports a prefill_ms, which is a lower bound; llama-cli and apr print none) and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment",
     ],
 }
 json.dump(meta, open(out, "w"), indent=2)

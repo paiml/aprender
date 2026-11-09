@@ -58,6 +58,9 @@
 # named, not quietly dropped.
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 2
+# The comparand's first-parent step and its fetch hint (#4983) are shared with
+# every baseline ratchet: one definition, so a fix to one cannot miss the other.
+. scripts/lib_baseline_ratchet.sh || exit 2
 
 # ---------------------------------------------------------------------------
 # MODES, AND WHY AN UNKNOWN ARGUMENT IS FATAL.
@@ -549,6 +552,12 @@ ledger_verdict() { # ledger_verdict <ledger-file> <hits-file>  -> rc 0 iff clean
 #     shrunk the ledger; the remedy is `git rebase origin/main`, and the FAIL
 #     text says so. A green local run can therefore red in CI. CI is the
 #     authoritative one.
+#   * FIRSTPARENT comes before the tip on a pull_request run whose HEAD is the
+#     event's own merge commit (#4983): its first parent is the main this run
+#     merged the PR onto, and a re-run keeps that commit while fetching a newer
+#     tip. Against the tip, main's own shrink read as growth in the PR; against
+#     the first parent, a re-run gives the first run's verdict. Not fetched, it
+#     is UNRESOLVABLE; fetched without the ledger, ABSENT. Never the tip.
 #   * If NEITHER resolves, this is a hard failure. It never degrades to comparing
 #     the branch against itself: that would disarm the ratchet permanently and
 #     silently, which is the failure mode this whole guard is about.
@@ -559,13 +568,25 @@ ledger_verdict() { # ledger_verdict <ledger-file> <hits-file>  -> rc 0 iff clean
 BASE_REF="${FABBASE_BASE_REF:-origin/main}"
 
 resolve_base_ref() { # resolve_base_ref <root> <ref> -> "<MODE>\t<commit-ish>"
-    local root="$1" ref="$2" mb
+    local root="$1" ref="$2" mb p1
     if ! git -C "$root" rev-parse --verify --quiet "${ref}^{commit}" >/dev/null 2>&1; then
         printf 'UNRESOLVABLE\t%s\n' "$ref"; return 0
     fi
     mb=$(git -C "$root" merge-base HEAD "$ref" 2>/dev/null) || mb=""
     if [ -n "$mb" ] && git -C "$root" cat-file -e "${mb}:${RUST_LEDGER}" 2>/dev/null; then
         printf 'MERGEBASE\t%s\n' "$mb"; return 0
+    fi
+    if [ -z "$mb" ] && [ "$ref" = "origin/main" ]; then
+        p1=$(_br_event_merge_first_parent "$root") # FABBASE-FIRSTPARENT-MUTATION-POINT
+        if [ -n "$p1" ]; then
+            if ! git -C "$root" cat-file -e "${p1}^{commit}" 2>/dev/null; then
+                printf 'UNRESOLVABLE\t%s\n' "$p1"; return 0
+            fi
+            if git -C "$root" cat-file -e "${p1}:${RUST_LEDGER}" 2>/dev/null; then
+                printf 'FIRSTPARENT\t%s\n' "$p1"; return 0
+            fi
+            printf 'ABSENT\t%s\n' "$p1"; return 0
+        fi
     fi
     if git -C "$root" cat-file -e "${ref}:${RUST_LEDGER}" 2>/dev/null; then
         printf 'TIP\t%s\n' "$ref"; return 0
@@ -627,7 +648,7 @@ rust_ledger_sweep() {
             printf 'FAIL  ledger   cannot resolve the comparand ref <%s>, so shrink-only is\n' "$ref"
             printf '               UNMEASURED. It is NOT degraded to comparing this branch\n'
             printf '               against itself — that disarms the ratchet silently. In CI:\n'
-            printf '               git fetch --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main\n'
+            printf '               %s\n' "$(baseline_ratchet_fetch_hint "$ref")"
             rc=1
             return ;;
         ABSENT)
@@ -652,6 +673,7 @@ rust_ledger_sweep() {
     case "$mode" in
         MERGEBASE) how="merge-base with $BASE_REF" ;;
         TIP)       how="tip of $BASE_REF (no merge-base available; stricter)" ;;
+        FIRSTPARENT) how="first parent of this pull request's merge commit (the main it was merged onto; the same on every re-run)" ;;
         *)         how="$mode" ;;
     esac
     note="protected; a pull request cannot rewrite it"
@@ -894,6 +916,113 @@ if mkdir -p "$sr/scripts" \
         sr_case 'ref does not exist'   UNRESOLVABLE 'refs/heads/no-such-branch-xyzzy'
         sr_case 'ref predates ledger'  ABSENT       "$sr_noledger"
         sr_case 'ref carries ledger'   MERGEBASE    HEAD
+        # FIRSTPARENT (#4983): a pull_request re-run. CI checks out GitHub's
+        # merge commit at depth 1 (no merge-base) and fetches origin/main fresh.
+        # Here main moved on and SHRANK the ledger: against the tip, the PR
+        # "adds" crates/a.rs:1, an entry it never touched; against the first
+        # parent it changed nothing. The shallow clone is its own repository.
+        sr_base=$(git -C "$sr" rev-parse HEAD)
+        sc="$TMPD/shallow"
+        if git -C "$sr" checkout -q -b fp-pr "$sr_base" >/dev/null 2>&1 \
+           && printf 'pr edit\n' > "$sr/scripts/unrelated.txt" \
+           && git -C "$sr" -c commit.gpgsign=false commit -qam 'pr: unrelated edit' >/dev/null 2>&1 \
+           && sr_x=$(git -C "$sr" rev-parse HEAD) \
+           && git -C "$sr" checkout -q --detach "$sr_base" >/dev/null 2>&1 \
+           && git -C "$sr" -c commit.gpgsign=false merge -q --no-ff --no-edit "$sr_x" >/dev/null 2>&1 \
+           && sr_m=$(git -C "$sr" rev-parse HEAD) \
+           && git -C "$sr" update-ref refs/pull/1/merge "$sr_m" \
+           && git -C "$sr" checkout -q --detach "$sr_noledger" >/dev/null 2>&1 \
+           && git -C "$sr" -c commit.gpgsign=false merge -q --no-ff --no-edit "$sr_base" >/dev/null 2>&1 \
+           && sr_m2=$(git -C "$sr" rev-parse HEAD) \
+           && git -C "$sr" update-ref refs/pull/2/merge "$sr_m2" \
+           && git -C "$sr" checkout -q --detach "$sr_base" >/dev/null 2>&1 \
+           && printf '# header\n' > "$sr/$RUST_LEDGER" \
+           && git -C "$sr" -c commit.gpgsign=false commit -qam 'main: shrink the ledger' >/dev/null 2>&1 \
+           && git -C "$sr" update-ref refs/heads/fp-main "$(git -C "$sr" rev-parse HEAD)" \
+           && git -C "$sr" config uploadpack.allowAnySHA1InWant true \
+           && git init -q "$sc" >/dev/null 2>&1 \
+           && [ "$(git -C "$sc" rev-parse --absolute-git-dir 2>/dev/null)" = "$sc/.git" ] \
+           && git -C "$sc" fetch -q --no-tags --depth=1 "file://$sr" '+refs/pull/1/merge:refs/remotes/pull/1/merge' >/dev/null 2>&1 \
+           && git -C "$sc" checkout -q --detach refs/remotes/pull/1/merge >/dev/null 2>&1 \
+           && git -C "$sc" fetch -q --no-tags --depth=1 "file://$sr" '+refs/heads/fp-main:refs/remotes/origin/main' >/dev/null 2>&1 \
+           && [ -z "$(git -C "$sc" merge-base HEAD origin/main 2>/dev/null)" ] \
+           && ! git -C "$sc" cat-file -e "${sr_base}^{commit}" 2>/dev/null; then
+            fp_case() { # fp_case <label> <want-mode> <want-ref|-> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+                local got ref
+                got=$(GITHUB_EVENT_NAME="$4" GITHUB_SHA="$5" resolve_base_ref "$sc" origin/main)
+                ref=${got##*$'\t'}
+                got=${got%%$'\t'*}
+                sr_rows=$((sr_rows + 1))
+                if [ "$got" != "$2" ] || { [ "$3" != - ] && [ "$ref" != "$3" ]; }; then
+                    printf 'FAIL  comparand %-40s want %s %s got %s %s\n' "$1" "$2" "$3" "$got" "$ref"
+                    tbl_bad=1
+                fi
+            }
+            fp_verdict() { # fp_verdict <label> <want-rc> <GITHUB_EVENT_NAME> <GITHUB_SHA>
+                # The sweep's own decision on that comparand: UNRESOLVABLE and
+                # ABSENT fail, any other mode is the shrink-only comparison.
+                local got mode ref
+                got=$(GITHUB_EVENT_NAME="$3" GITHUB_SHA="$4" resolve_base_ref "$sc" origin/main)
+                mode=${got%%$'\t'*}
+                ref=${got##*$'\t'}
+                case "$mode" in
+                    UNRESOLVABLE|ABSENT) got=1 ;;
+                    *)
+                        if git -C "$sc" show "${ref}:${RUST_LEDGER}" > "$TMPD/fp_base" 2>/dev/null; then
+                            ledger_entries_of "$TMPD/fp_base" > "$TMPD/fp_base_entries"
+                            ledger_entries_of "$sc/$RUST_LEDGER" > "$TMPD/fp_cur_entries"
+                            ledger_shrink_only "$TMPD/fp_base_entries" "$TMPD/fp_cur_entries" >/dev/null
+                            got=$?
+                        else
+                            got=1
+                        fi ;;
+                esac
+                sr_rows=$((sr_rows + 1))
+                if [ "$got" != "$2" ]; then
+                    printf 'FAIL  comparand %-40s want rc=%s got rc=%s\n' "$1" "$2" "$got"
+                    tbl_bad=1
+                fi
+            }
+            # Controls: the tip path is unchanged off the event, and it carries
+            # the false red this fix removes.
+            fp_case    'push event keeps TIP'             TIP          origin/main push         "$sr_m"
+            fp_verdict 'tip blames PR for main shrink'    1                        push         "$sr_m"
+            # A head that is not the event's own merge commit is never read.
+            fp_case    'HEAD != GITHUB_SHA keeps TIP'     TIP          origin/main pull_request "$sr_x"
+            # Fail-closed: the parent not fetched is UNRESOLVABLE, never TIP.
+            fp_case    'parent unfetched -> UNRESOLVABLE' UNRESOLVABLE "$sr_base"  pull_request "$sr_m"
+            fp_verdict 'parent unfetched -> rc 1'         1                        pull_request "$sr_m"
+            if git -C "$sc" fetch -q --no-tags --depth=1 "file://$sr" "$sr_base" >/dev/null 2>&1 \
+               && [ -z "$(git -C "$sc" merge-base HEAD origin/main 2>/dev/null)" ]; then
+                fp_case    'parent fetched -> FIRSTPARENT' FIRSTPARENT "$sr_base"  pull_request "$sr_m"
+                fp_verdict 're-run after main moved'       0                       pull_request "$sr_m"
+            else
+                printf 'FAIL  comparand: the first parent could not be fetched, or it made a\n'
+                printf '      merge-base resolve. FIRSTPARENT is UNTESTED. Not a skip.\n'
+                tbl_bad=1
+            fi
+            # A single-parent head (a merge_group squash) keeps TIP.
+            if git -C "$sc" fetch -q --no-tags --depth=1 "file://$sr" "$sr_x" >/dev/null 2>&1 \
+               && git -C "$sc" checkout -q --detach "$sr_x" >/dev/null 2>&1; then
+                fp_case    'single-parent head keeps TIP'  TIP         origin/main pull_request "$sr_x"
+            else
+                printf 'FAIL  comparand: the single-parent head could not be checked out. UNTESTED.\n'
+                tbl_bad=1
+            fi
+            # The main the PR was merged onto has no ledger. There is no
+            # bootstrap here, and the tip, which has one, is NOT consulted.
+            if git -C "$sc" fetch -q --no-tags --depth=1 "file://$sr" '+refs/pull/2/merge:refs/remotes/pull/2/merge' "$sr_noledger" >/dev/null 2>&1 \
+               && git -C "$sc" checkout -q --detach refs/remotes/pull/2/merge >/dev/null 2>&1; then
+                fp_case    'parent lacks ledger -> ABSENT' ABSENT      "$sr_noledger" pull_request "$sr_m2"
+            else
+                printf 'FAIL  comparand: the second merge commit could not be checked out. UNTESTED.\n'
+                tbl_bad=1
+            fi
+        else
+            printf 'FAIL  comparand FIRSTPARENT UNTESTED — the shallow re-run clone could\n'
+            printf '      not be built, and a pull_request re-run is that shape. Not a skip.\n'
+            tbl_bad=1
+        fi
     else
         printf 'FAIL  comparand table: could not commit in the scratch repo, so the\n'
         printf '      UNRESOLVABLE/ABSENT branches are UNTESTED. That is not a skip.\n'

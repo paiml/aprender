@@ -1,0 +1,18 @@
+- id: PMAT-5047
+  github_issue: 5047
+  item_type: task
+  title: 'check_roadmap_diff_additive: history row not_measured, self-test row floor (#5047)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-12T12:47:51Z
+  updated: 2026-10-12T12:47:51Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 3998

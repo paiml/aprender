@@ -70,6 +70,7 @@ pub use types::{
 // - executor/graph.rs: CUDA graph capture and replay
 // - executor/kv_cache.rs: KV cache management
 mod executor;
+pub(crate) use executor::embedding_gemma2_ops::EG2_F16_REFUSAL;
 #[cfg(test)]
 pub(crate) use executor::gdn_prefill_ops::QWEN35_PREFILL_GEMM_OVERRIDE;
 pub(crate) use executor::gdn_prefill_ops::{qwen35_prefill_gemm_mode, Qwen35PrefillGemm};

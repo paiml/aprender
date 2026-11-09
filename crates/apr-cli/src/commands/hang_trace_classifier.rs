@@ -316,4 +316,30 @@ mod tests {
             }
         );
     }
+
+    #[test]
+    fn from_pairs_keeps_names_and_sizes_parallel_and_in_order() {
+        let pairs = [("rank1.py.txt", 7u64), ("rank0.py.txt", 0u64)];
+        let l = TraceDirListing::from_pairs(&pairs);
+        assert_eq!(l.names, vec!["rank1.py.txt", "rank0.py.txt"]);
+        assert_eq!(l.sizes, vec![7, 0]);
+    }
+
+    #[test]
+    fn from_pairs_empty_yields_empty_listing() {
+        let l = TraceDirListing::from_pairs(&[]);
+        assert!(l.names.is_empty() && l.sizes.is_empty());
+        assert_eq!(classify_timeout_dump(&l, 1), HangTimeoutOutcome::DirEmpty);
+    }
+
+    #[test]
+    fn from_pairs_sizes_drive_the_empty_file_verdict() {
+        // rank0 is zero bytes, rank1 is not: the zero must land on rank0.
+        let pairs = [("rank0.py.txt", 0u64), ("rank1.py.txt", 9u64)];
+        let l = TraceDirListing::from_pairs(&pairs);
+        assert_eq!(
+            classify_timeout_dump(&l, 2),
+            HangTimeoutOutcome::EmptyFile { rank: 0 }
+        );
+    }
 }

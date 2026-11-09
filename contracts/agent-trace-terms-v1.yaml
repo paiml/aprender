@@ -1,0 +1,48 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    Provider-terms tagging for agent-trace-v1 rows (PRA-001 T12, spec §2.10, §9 P-TERMS;
+    agent-trace ruling 2026-09-25 items 1 and 7). Every row carries provider
+    {anthropic, google, local}, an exact model_id (never a family alias; a local model is
+    its weights sha256), access_channel {anthropic-api, claude-code-cli, antigravity,
+    gemini-api, vertex, apr-serve} consistent with the provider, and terms_ref {https url,
+    YYYY-MM-DD effective_date, RFC 3339 UTC fetched_at}. Any pool can be rebuilt without
+    a provider or channel through the first-class --exclude-provider / --exclude-channel
+    arguments. A row with a missing or inconsistent tag is REFUSED by every rebuild, since
+    an untagged row cannot be shown not to come from an excluded source. The public-release
+    default keeps local rows only (§2.11). This records the governing terms. It is not
+    legal advice; S-6 governs. Implementation: crates/aprender-review-experiment/src/terms.rs.
+  references:
+    - "docs/specifications/research-design-pr-agent-qwen-3.5.md"
+    - "contracts/training-pool-admission-v1.yaml"
+
+equations:
+  rebuild:
+    formula: "kept(R, X) = { r in R : gaps(r) = {} and provider(r) not in X.providers and channel(r) not in X.channels }"
+
+falsification_tests:
+  - id: FALSIFY-TERMS-001
+    name: pool_rebuild_excluding_a_provider
+    prediction: "P-TERMS: a rebuild of a six-channel batch with --exclude-provider google succeeds, keeps 0 google rows, and passes the rest through byte-identical"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_terms_001"
+    expected_output: "exit 0"
+    if_fails: "A pool cannot be rebuilt without a provider, so provider terms cannot be honoured later."
+  - id: FALSIFY-TERMS-002
+    name: channel_exclusion_is_narrower_than_provider
+    prediction: "--exclude-channel antigravity drops only antigravity rows; gemini-api and vertex rows of the same provider stay"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_terms_002"
+    expected_output: "exit 0"
+    if_fails: "Terms that differ by channel (App. A.7) cannot be applied separately."
+  - id: FALSIFY-TERMS-003
+    name: identity_case_table
+    prediction: "rows with a family alias, unknown or empty model_id, unknown provider or channel, a channel of another provider, a non-sha local model, or a missing/non-https/ill-dated terms_ref all have gaps; well-formed rows do not"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_terms_003"
+    expected_output: "exit 0"
+    if_fails: "A row with unknown or aliased identity (G-ID) is accepted as tagged."
+  - id: FALSIFY-TERMS-004
+    name: untagged_row_is_refused_never_kept
+    prediction: "a row with gaps, or a non-JSON line, is refused by every rebuild, including one that excludes nothing, and is never in kept"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_terms_004"
+    expected_output: "exit 0"
+    if_fails: "An untagged row slips past an exclusion filter it cannot be checked against."

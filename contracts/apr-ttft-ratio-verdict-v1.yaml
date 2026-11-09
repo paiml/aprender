@@ -1,0 +1,223 @@
+metadata:
+  version: 1.3.0
+  created: '2026-10-09'
+  author: PAIML Engineering
+  description: "The time-to-first-token row of the 0.71.1 train, as a verdict. TTFT ratio = reference TTFT / apr TTFT, per GPU host, and the row is green when the lower bound of its 95% interval is at least the floor in scripts/perf-matrix.yaml. The receipts already carry the ratio; this contract owns the reader that turns them into GREEN, RED or NOT MEASURED, and the rule that a receipt which cannot be read, or a host that was not measured, is never GREEN and never RED."
+  kind: pattern
+  references:
+    - "crates/aprender-test-lib/src/perf_gate/ttft_verdict.rs — the verdict, a pure function of the receipts and the matrix"
+    - "crates/aprender-test-lib/src/perf_gate/receipt.rs — Receipt, ReceiptBand, BandRatios.ttft, Ratio"
+    - "crates/aprender-test-lib/src/perf_gate/drain.rs — BandStatus and its wire tokens"
+    - "scripts/perf-matrix.yaml — arms.L3.v1 (ttft_floor, hosts) and protocol.replicates_min"
+    - "crates/apr-cli/src/commands/test_llm_ttft.rs — `apr test llm ttft-verdict --run <dir>...`, exit 0 GREEN, 1 RED, 2 NOT MEASURED"
+    - "contracts/pp-llama-001-perf-gate-v1.yaml — no reader carries a threshold"
+    - "crates/aprender-serve/src/api/mod_create_demo.rs — Timings.load_ms and Timings.first_token_ms; PhaseTimings::from_marks and to_timings_at (the TTFT split by phase)"
+    - "crates/aprender-serve/src/session.rs — Turn.prefill_started and Turn.prefill_ended, the marks the split is taken on"
+
+five_whys:
+  symptom: "The TTFT row was measured on both GPU hosts as five replicate receipts each, and nothing read them into a verdict: the row's pass or fail was whatever a person computed from the JSON by hand."
+  why_1: "The receipt grew a ratios.ttft field before any reader of it existed."
+  why_2: "scripts/perf_gate.sh reports ttft and gates nothing on it, by design: TTFT is not a merge-phase metric."
+  why_3: "The row names a floor (0.5) and an interval method, and no code held either, so the floor lived only in the row's prose."
+  why_4: "A band that is NONCONFORMANT-VALID (prefill timings missing) and a band that is INVALID-CORRECTNESS both carry a ratio, and nothing said which of them counts."
+  why_5: "Without a third outcome, a missing field would read as RED and stop the train on a measurement that never happened, or as GREEN and ship on one."
+  root_cause: "A row with a number and no reader. The remedy is one pure function over the receipts and the matrix, with three outcomes, and a case table that proves each outcome is reachable and each missing input lands on NOT MEASURED."
+
+equations:
+  ttft_ratio_meets_the_floor:
+    formula: "GREEN iff for every host H in arms.L3.v1.hosts: |receipts(H)| >= protocol.replicates_min and every receipt R of H is readable and min over R of R.ttft_band.ratios.ttft.lcb95 >= arms.L3.v1.ttft_floor; RED iff every receipt is readable and some host's minimum is below the floor; NOT MEASURED otherwise"
+    domain: "the receipts of each host named by arms.L3.v1.hosts, the v1 provenance file, and scripts/perf-matrix.yaml"
+    codomain: "{GREEN: exit 0, RED: exit 1, NOT MEASURED: exit 2}"
+    invariants:
+      - "The floor, the host list and the replicate minimum are read from the matrix; the reader carries no threshold literal"
+      - "The boundary is inclusive: lcb95 equal to the floor is GREEN"
+      - "A host's figure is the minimum lcb95 over its replicate receipts, never the mean and never the point estimate"
+      - "NOT MEASURED outranks RED: one unreadable receipt on any host makes the verdict NOT MEASURED, because a RED computed from part of the evidence is a guess"
+
+  a_band_counts_only_when_both_sides_were_measured:
+    formula: "countable(band) iff band.comparator_status == MEASURED and band.status in {MEASURED, NONCONFORMANT-VALID} and band.errors == 0 and band.baseline.errors == 0"
+    domain: "the band of each receipt that carries ratios.ttft"
+    codomain: "readable or NOT MEASURED, with the reason"
+    invariants:
+      - "INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED and NA bands give NOT MEASURED and name the status"
+      - "A NONCONFORMANT-VALID band counts, and the verdict prints its status and its stated reasons beside its number, so the condition the row does not state is visible in the output"
+      - "A missing ratios.ttft, or a ratios.ttft with no lcb95, gives NOT MEASURED, never RED"
+      - "A band where either lane lost a request gives NOT MEASURED and names the count: its ratio is formed on the survivors, while ratios.ttft.n counts every request sent"
+
+  the_receipt_names_what_was_measured:
+    formula: "readable(run) requires the provenance to name the host, the GGUF sha256, the comparator pin, the subject commit and sha256 and n, and requires ratios.ttft to name its interval method and n"
+    domain: "v1-provenance.json and each receipt's ratios.ttft"
+    codomain: "readable or NOT MEASURED, naming the missing field"
+    invariants:
+      - "Each field is checked on its own; the output names the first one missing per receipt"
+      - "A provenance host that differs from the host the receipts are filed under is NOT MEASURED"
+      - "The provenance n is band.replicates, the number of replicate receipts the run states; more readable receipts than it states is NOT MEASURED"
+      - "A receipt counts once: a duplicate replicate, a host claimed by two runs, a receipt whose run_id does not re-derive from its own provenance, a receipt measured against a comparator build other than the provenance pin (commit or sha256), and a receipt from a subject build other than the provenance subject (commit or sha256) are each NOT MEASURED"
+
+  the_ttft_splits_by_phase:
+    formula: "server TTFT = load_ms + prompt_ms + first_token_ms, with load_ms = prefill_started - handler start, prompt_ms = prefill_ended - prefill_started, first_token_ms = first content chunk - prefill_ended; predicted_ms = decode end - prefill_ended"
+    domain: "one /v1/chat/completions request served through a Session (streamed, or not streamed with no first_token_ms)"
+    codomain: "the timings block of the response, in llama.cpp key names plus load_ms and first_token_ms"
+    invariants:
+      - "A delay planted in one phase moves that phase's field by the delay and leaves the other three unchanged"
+      - "prefill_started follows the reserve and precedes the first prompt forward; prefill_ended follows the last prompt forward, the checkpoint suffix included, and precedes the first on_token call and the first decode forward"
+      - "An edge with a missing or out-of-order mark is absent, never 0; prompt_ms and predicted_ms appear only when both phases were measured"
+
+  the_gap_is_read_by_phase:
+    formula: "per side, the p50 over completed samples of ttft, prefill and outside prefill = ttft - prefill; for apr also of load, first token and transfer = ttft - load - prefill - first token"
+    domain: "one receipt band with a reference baseline; samples carry the server's prompt_ms, load_ms and first_token_ms when it reported them"
+    codomain: "one line printed under the band's reading, apr beside the reference with the gap for each phase"
+    invariants:
+      - "A delay planted in one part of apr's TTFT moves that part's p50 and the ttft p50 by the delay, and no other part"
+      - "A part no completed sample reports is printed as absent, never 0, and a timed-out sample adds to no part"
+      - "The line never changes the outcome; receipts written before the phase keys parse and print absent parts"
+
+proof_obligations:
+  - id: APR-TTFT-INV-001
+    type: invariant
+    property: "The floor decides, from the matrix"
+    formal: "ttft_floor = 0.5 ⇒ (min lcb95 = 0.49 ⇒ RED) ∧ (min lcb95 = 0.50 ⇒ GREEN); ttft_floor = 0.3 ⇒ (min lcb95 = 0.49 ⇒ GREEN)"
+    applies_to: ttft_ratio_meets_the_floor
+  - id: APR-TTFT-INV-002
+    type: invariant
+    property: "The host figure is the minimum over replicates"
+    formal: "lcb95 = (1.2, 1.2, 1.2, 1.2, 0.4) ⇒ host reading = min lcb95 = 0.4 < ttft_floor ⇒ RED"
+    applies_to: ttft_ratio_meets_the_floor
+  - id: APR-TTFT-INV-003
+    type: invariant
+    property: "Missing evidence is NOT MEASURED, never RED and never GREEN"
+    formal: "host ∉ run ∨ |receipts| < replicates_min ∨ ratios.ttft = ⊥ ∨ lcb95 = ⊥ ∨ (∃ f ∈ provenance: f = ⊥) ⇒ exit 2"
+    applies_to: the_receipt_names_what_was_measured
+  - id: APR-TTFT-INV-004
+    type: invariant
+    property: "Only a band measured on both sides, with no failed request, counts"
+    formal: "status ∈ {INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED, NA} ∨ comparator_status ≠ MEASURED ∨ errors > 0 ∨ baseline.errors > 0 ⇒ exit 2; status = NONCONFORMANT-VALID ⇒ counted ∧ reasons printed"
+    applies_to: a_band_counts_only_when_both_sides_were_measured
+  - id: APR-TTFT-INV-005
+    type: invariant
+    property: "The CLI exit code is the verdict's"
+    formal: "∀ run: exit(apr test llm ttft-verdict) = exit(library verdict) ∈ {0, 1, 2}; NOT MEASURED ⇒ exit = 2 ∧ exit ∉ apr error codes"
+    applies_to: ttft_ratio_meets_the_floor
+  - id: APR-TTFT-INV-006
+    type: invariant
+    property: "A planted delay moves only its own phase"
+    formal: "edges = (10, 50, 55, 250) ms after the handler start; ∀ phase ∈ {load, prefill, first token, decode}: phase + 100 ms ⇒ its field ∈ {load_ms, prompt_ms, first_token_ms, predicted_ms} + 100 ms ∧ ∀ other field: unchanged"
+    applies_to: the_ttft_splits_by_phase
+  - id: APR-TTFT-INV-007
+    type: invariant
+    property: "The prefill marks bracket every prompt forward and nothing else"
+    formal: "prompt prefilled in two calls (to its checkpoint, then the rest) ⇒ ∀ call: [start, end] ⊆ [prefill_started, prefill_ended] ∧ reserve.end ≤ prefill_started ∧ first on_token.start ≥ prefill_ended ∧ ∀ decode forward: start ≥ prefill_ended"
+    applies_to: the_ttft_splits_by_phase
+  - id: APR-TTFT-INV-008
+    type: invariant
+    property: "The reader charges a planted delay to its own part of the gap"
+    formal: "apr p50 (load, prefill, first token, transfer) = (6, 41, 6, 11) ms; ∀ part: part + 100 ms in every sample ⇒ p50(part) + 100 ∧ p50(ttft) + 100 ∧ (p50(outside prefill) + 100 ⟺ part ≠ prefill) ∧ ∀ other part: p50 unchanged; outcome(with phase keys) = outcome(without)"
+    applies_to: the_gap_is_read_by_phase
+
+falsification_tests:
+  - id: FALSIFY-APR-TTFT-001
+    rule: "The floor is inclusive and decides"
+    prediction: "Fixture hosts with minimum lcb95 0.50 are GREEN (exit 0); one host at 0.49 is RED (exit 1)"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::floor_"
+    if_fails: "The comparison is strict, inverted, or reads a different number than the row"
+
+  - id: FALSIFY-APR-TTFT-002
+    rule: "The floor comes from the matrix, not the reader"
+    prediction: "The same 0.49 fixture is GREEN against a matrix whose arms.L3.v1.ttft_floor is 0.3, and RED against the shipped matrix"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::floor_from_matrix"
+    if_fails: "A matrix edit cannot move the verdict: the floor is a literal in the reader"
+
+  - id: FALSIFY-APR-TTFT-003
+    rule: "The host figure is the minimum over replicates"
+    prediction: "Four receipts at lcb95 1.2 and one at 0.4 on one host give RED and name the 0.4 receipt"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::min_over_replicates"
+    if_fails: "A mean or a point estimate hides one replicate below the floor"
+
+  - id: FALSIFY-APR-TTFT-004
+    rule: "A host named by the matrix and absent from the input is NOT MEASURED"
+    prediction: "Receipts for lambda only, with hosts [lambda, gx10], exit 2 and name gx10"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::missing_host"
+    if_fails: "The row goes green on one host while the other was never measured"
+
+  - id: FALSIFY-APR-TTFT-005
+    rule: "Fewer receipts than protocol.replicates_min is NOT MEASURED"
+    prediction: "Four receipts on a host exit 2, even when all four clear the floor"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::too_few_replicates"
+    if_fails: "One lucky replicate passes the row"
+
+  - id: FALSIFY-APR-TTFT-006
+    rule: "Each missing anti-vacuity field is NOT MEASURED, by name"
+    prediction: "Removing the host, the GGUF sha256, the comparator pin or n from the provenance, or the interval method or n from ratios.ttft, each exits 2 and names that field"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::missing_field_"
+    if_fails: "A receipt that does not say what it measured decides the row"
+
+  - id: FALSIFY-APR-TTFT-007
+    rule: "A missing ratio or a missing interval is NOT MEASURED, never RED"
+    prediction: "A band with no ratios.ttft, and a ratios.ttft with lcb95 null, each exit 2"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::no_interval"
+    if_fails: "An absent measurement stops the train as if it had failed, or passes it as if it had succeeded"
+
+  - id: FALSIFY-APR-TTFT-008
+    rule: "Only MEASURED and NONCONFORMANT-VALID bands with a MEASURED comparator and no failed request count"
+    prediction: "INVALID-CORRECTNESS, COMPARATOR_STALE, UNMEASURED and NA bands each exit 2 naming the status; comparator_status COMPARATOR_STALE exits 2; a failed request on the apr lane or on the comparator lane exits 2 naming the count; a NONCONFORMANT-VALID band counts and its status and reasons are printed beside its number"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::band_status_"
+    if_fails: "A ratio from a band whose answers were wrong, or whose comparator was stale, decides the row"
+
+  - id: FALSIFY-APR-TTFT-009
+    rule: "NOT MEASURED outranks RED"
+    prediction: "One host RED and the other host's receipt unreadable exits 2 and prints both reasons"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::not_measured_outranks_red"
+    if_fails: "A RED is reported from half the evidence"
+
+  - id: FALSIFY-APR-TTFT-010
+    rule: "The CLI exits with the verdict"
+    prediction: "`apr test llm ttft-verdict` exits with the library verdict's code: a run directory that does not exist and a matrix without the arms.L3.v1 row each exit 2, the binary reads the row it was built with, and the command refuses to run without at least one --run"
+    test: "cargo test -p apr-cli --lib commands::test_llm_ttft::tests::ttft_verdict_exit_"
+    if_fails: "NOT MEASURED leaves the CLI as one of apr's error codes, and a caller cannot tell it from a crash"
+
+  - id: FALSIFY-APR-TTFT-011
+    rule: "A receipt is counted once, for the host, run and builds it was measured on"
+    prediction: "A lambda receipt filed under gx10, a replicate that appears twice, a host claimed by two runs, a sixth receipt where the provenance states 5, a receipt whose provenance was edited after its run_id was derived, a receipt whose comparator commit or sha256 is not the provenance pin, and a receipt whose subject commit or sha256 is not the provenance subject each exit 2 and name the cause; scripts/v1_ttft_baseline.sh --dry-run exits 2 before it starts a server when --host is not the host the pin was resolved for, when --out already holds a file, when a port already answers, when a port is not a number, or when both servers are given one port; and its health check fails when the server it started has exited, even while the port answers, and gives every probe a time limit"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::anti_copy_"
+    if_fails: "One host's receipts, or one good replicate copied five times, make the row GREEN for a host that was never measured"
+
+  - id: FALSIFY-APR-TTFT-012
+    rule: "A run directory is read the way the baseline script writes it"
+    prediction: "GREEN, RED and NOT MEASURED run directories give exit codes 0, 1 and 2; a directory that cannot be read is NOT MEASURED and names v1-provenance.json; receipt.r<N>.json files are read in replicate order (r2 before r10) and every other file in the directory is ignored"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::dirs_"
+    if_fails: "A directory listing order, or a stray .sig or notes file, changes which receipts decide the row"
+
+  - id: FALSIFY-APR-TTFT-013
+    rule: "A delay planted in one phase moves that phase's field and only that field"
+    prediction: "Each of four plants of 100 ms (load, prefill, first token, decode) moves its own field by 100 ms and no other; a missing or out-of-order mark gives an absent field, never 0; the two new keys are omitted when unmeasured and a block without them parses; a stream whose first token is held back 30 ms reports first_token_ms of at least 30"
+    test: "cargo test -p aprender-serve --lib ttft_phases_4954"
+    if_fails: "The TTFT gap is charged to the wrong phase, and the lever chosen to close it works on a phase that does not hold the time"
+
+  - id: FALSIFY-APR-TTFT-014
+    rule: "Prefill is measured from the first prompt forward to the first token chosen"
+    prediction: "A two-call prefill (checkpoint, then suffix) lies inside the marks with the reserve before them; time spent in on_token and every decode forward lies after prefill_ended"
+    test: "cargo test -p aprender-serve --lib session::tests::prefill_marks_"
+    if_fails: "The reserve, the caller's channel send or a decode step is reported as prefill, or the checkpoint suffix call is left out of it"
+
+  - id: FALSIFY-APR-TTFT-015
+    rule: "The receipt reader charges a planted delay to the part that holds it"
+    prediction: "Each of four plants of 100 ms (load, prefill, first token, transfer) in apr's samples moves its own p50 and the ttft p50 by 100 ms and no other part; a part no sample reports is absent, a timed-out sample is left out, and the printed line never changes GREEN or RED"
+    test: "cargo test -p aprender-test-lib --lib perf_gate::ttft_verdict::tests::phases_"
+    if_fails: "The Pareto of the gap names a phase that does not hold the time, or a missing part reads as 0 ms and hides where the gap is"
+
+  - id: FALSIFY-APR-TTFT-016
+    rule: "The server's phase keys reach the band's samples"
+    prediction: "A streamed terminal timings block with prompt_ms 40, load_ms 5 and first_token_ms 7 gives every completed sample prefill 40, load 5 and first token 7; a llama.cpp block without the keys reads them as absent"
+    test: "cargo test -p aprender-test-lib --lib llm::band::tests::the_band_records_what_the_server_declared"
+    if_fails: "The server measures its phases and the receipt drops them, so the reader prints every apr part as absent"
+
+qa_gate:
+  id: F-APR-TTFT-001
+  name: "TTFT ratio verdict — three outcomes, a floor in one file, and no verdict from missing evidence"
+  description: "Runs the verdict's case table: the inclusive floor, the floor read from the matrix, the minimum over replicates, every missing input on NOT MEASURED, the band statuses that count, and the CLI exit code. This is a measurement reader for a train row; it adds no entry to the merge or release gate list."
+  checks:
+    - "ttft_ratio_meets_the_floor"
+    - "a_band_counts_only_when_both_sides_were_measured"
+    - "the_receipt_names_what_was_measured"
+    - "the_ttft_splits_by_phase"
+    - "the_gap_is_read_by_phase"

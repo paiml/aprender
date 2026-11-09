@@ -70,7 +70,7 @@ impl PmatTicket {
         let content =
             fs::read_to_string(path).map_err(|e| format!("Failed to read ticket: {}", e))?;
 
-        serde_yaml_ng::from_str(&content).map_err(|e| format!("Failed to parse YAML ticket: {}", e))
+        crate::yaml::from_str(&content).map_err(|e| format!("Failed to parse YAML ticket: {}", e))
     }
 
     /// Parse from Markdown file.

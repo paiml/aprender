@@ -8,6 +8,11 @@
 
 Last measured: 2025-12-12 (Updated after M28 completion - Metrics & Health Monitoring!)
 
+> **Correction (2026-10-10, #4756).** The GPU-018 / M15 "20.93% parity" figure is withdrawn. It
+> divided our measured throughput by `llama_cpp_reference = 50.0`, a constant llama.cpp was never
+> run to produce (a fabricated comparator baseline, PERF-008 F12). GPU-018 now reports only its own
+> measured tok/s, as an informational line outside the results table and the pass counts. A parity figure needs llama.cpp measured on the same config and model.
+
 ### Benchmark Results Summary
 
 | Benchmark | Metric | Current | Target | Status |
@@ -47,7 +52,7 @@ Last measured: 2025-12-12 (Updated after M28 completion - Metrics & Health Monit
 | GPU-015: Ultra-Mega FP16 | Context Len | **65536 pos** | 65536 pos | ✅ Pass |
 | GPU-016: GGUF Loading | Init Time | **1141 ms** | 5000 ms | ✅ Pass |
 | GPU-017: E2E Generation | Throughput | **16.81 tok/s** | 10 tok/s | ✅ Pass |
-| GPU-018: Apples-to-Apples | Parity | **20.93%** | 15% | ✅ Pass |
+| GPU-018: Generate Throughput | own tok/s, informational | ~~20.93% parity~~ withdrawn, see correction | none | parity not measured (own tok/s only) |
 | GPU-019: KV-Cached Gen | Speedup | **1.10x** | 1.0x | ✅ Pass |
 | GPU-020: Optimized Gen | Speedup | **1.0x** | 0.9x | ✅ Pass |
 | GPU-021: Fused Kernels | Speedup | **1.1x** | 0.9x | ✅ Pass |
@@ -79,7 +84,7 @@ Last measured: 2025-12-12 (Updated after M28 completion - Metrics & Health Monit
 | M11: Mega-Long Context | 32768 positions | **32768 pos** | ✅ **COMPLETE** |
 | M12: FP16 Ultra-Mega | 65536 positions | **65536 pos** | ✅ **COMPLETE** |
 
-### Real-World Comparison (M13-M28) - ALL COMPLETE! 🎉
+### Real-World Comparison (M13-M28) - ALL COMPLETE! 🎉 (except M15 parity, withdrawn 2026-10-10, see correction)
 
 **Note:** M1-M12 are test benchmarks. M13-M28 are what users actually care about.
 
@@ -87,7 +92,7 @@ Last measured: 2025-12-12 (Updated after M28 completion - Metrics & Health Monit
 |-----------|--------|---------|--------|
 | M13: Real Model Loading | Load GGUF weights to GPU | **IMP-026 DONE** | ✅ **COMPLETE** |
 | M14: E2E Inference | Generate text from model | **IMP-027 DONE, 19.20 tok/s** | ✅ **COMPLETE** |
-| M15: Apples-to-Apples | Framework validation (≥15%) | **20.93% parity** | ✅ **COMPLETE** |
+| M15: Generate Throughput | own tok/s, informational (no target; the ≥15% parity goal is withdrawn) | ~~20.93% parity~~ withdrawn, see correction | parity not measured (own tok/s only) |
 | M16: KV Cache Integration | Incremental decoding | **1.10x speedup** | ✅ **COMPLETE** |
 | M17: Optimized Decoding | Pre-allocated attention buffers | **IMP-034/035/036 DONE** | ✅ **COMPLETE** |
 | M18: Fused Kernels | Fused QKV + SIMD softmax | **IMP-037/038/039 DONE** | ✅ **COMPLETE** |
@@ -134,7 +139,7 @@ Last measured: 2025-12-12 (Updated after M28 completion - Metrics & Health Monit
 12. **PERF-013**: ✅ RESOLVED - M12 COMPLETE - FP16 ultra-mega context at 65536 positions (half memory!)
 13. **PERF-014**: ✅ RESOLVED - M13 COMPLETE - Real GGUF model loading to GPU (IMP-026)
 14. **PERF-015**: ✅ RESOLVED - M14 COMPLETE - End-to-end text generation at 16.81 tok/s (IMP-027)
-15. **PERF-016**: ✅ RESOLVED - M15 COMPLETE - Apples-to-apples benchmark framework at 20.93% parity (IMP-028/029/030)
+15. **PERF-016**: M15 - generate-throughput benchmark, GPU-018 (IMP-028/029/030); the 20.93% parity figure is withdrawn and M15 parity is not measured, see correction
 16. **PERF-017**: ✅ RESOLVED - M16 COMPLETE - KV cache integration with incremental decoding (IMP-031/032/033)
 17. **PERF-018**: ✅ RESOLVED - M17 COMPLETE - Optimized incremental decoding with pre-allocated buffers (IMP-034/035/036)
 18. **PERF-019**: ✅ RESOLVED - M18 COMPLETE - Fused kernels with SIMD softmax (IMP-037/038/039)
@@ -152,8 +157,8 @@ Last measured: 2025-12-12 (Updated after M28 completion - Metrics & Health Monit
 - **GPU Tests**: 34/34 (100%) - including 25 StreamingKVCache tests (6 for M12 FP16)
 - **Total Tests**: 1825 passed
 - **CPU Benchmarks**: 8/8 passed (100%)
-- **GPU Benchmarks**: 27/27 passed (100%) - Added GPU-027 for M24
-- **Total Benchmarks**: 35/35 passed (100%)
+- **GPU Benchmarks**: 27/27 passed (100%) - Added GPU-027 for M24. That count included GPU-018, whose pass is withdrawn (see correction); GPU-018 is now informational and not counted
+- **Total Benchmarks**: 35/35 passed (100%), a count that included GPU-018 (see correction)
 
 ## Next Actions
 
@@ -211,12 +216,12 @@ cargo test --lib --features gpu
 | 2025-12-11 | 7941 tok/s | **874 tok/s** | 1.37 GB/s | **21/21** | **M10 COMPLETE! (16384 context)** |
 | 2025-12-11 | 7803 tok/s | **807 tok/s** | 1.41 GB/s | **22/22** | **M11 COMPLETE! (32768 context)** |
 | 2025-12-11 | 7822 tok/s | **691 tok/s** | 1.45 GB/s | **23/23** | **M12 COMPLETE! (65536 FP16 context)** |
-| 2025-12-11 | 6976 tok/s | **808 tok/s** | 1.50 GB/s | **26/26** | **M13-M15 COMPLETE! (All milestones achieved!)** |
+| 2025-12-11 | 6976 tok/s | **808 tok/s** | 1.50 GB/s | **26/26** | **M13-M15 COMPLETE! (All milestones achieved!)** (M15 parity withdrawn 2026-10-10 and its pass with it, see correction) |
 | 2025-12-11 | 7666 tok/s | **904 tok/s** | 1.61 GB/s | **27/27** | **M16 COMPLETE! (KV cache integration)** |
 
 ## Summary
 
-**All milestones M1-M16 achieved! 🎉**
+**All milestones M1-M16 achieved! 🎉** (except M15 parity, withdrawn 2026-10-10, see correction)
 
 | Milestone | Status | Achievement |
 |-----------|--------|-------------|
@@ -234,7 +239,7 @@ cargo test --lib --features gpu
 | M12: FP16 Ultra-Mega | ✅ Complete | 65536 positions (FP16 half memory!) |
 | M13: Real Model Loading | ✅ Complete | GGUF to GPU in 1036ms |
 | M14: E2E Inference | ✅ Complete | 19.20 tok/s text generation |
-| M15: Apples-to-Apples | ✅ Complete | 20.93% parity (framework validated) |
+| M15: Generate Throughput | parity not measured (own tok/s only) | 20.93% parity withdrawn, see correction |
 | M16: KV Cache Integration | ✅ Complete | 1.10x speedup with generate_with_cache() |
 
 Key optimizations:
@@ -255,10 +260,10 @@ Key optimizations:
 15. **65536 ultra-mega FP16 context support (half memory via FP16 KV cache!)**
 16. **Real GGUF model loading to GPU buffers (M13)**
 17. **End-to-end text generation pipeline (M14)**
-18. **Apples-to-apples benchmark framework with llama.cpp comparison baseline (M15)**
+18. **Generate-throughput benchmark (M15)**: measures our own tok/s only; the llama.cpp comparison baseline was an asserted constant and is withdrawn (see correction)
 19. **KV cache integration: forward_gpu_with_cache(), forward_gpu_incremental(), generate_with_cache() (M16)**
 
-**All performance parity targets achieved through M16! 🏆**
+**Performance parity targets met through M16, except M15: its parity figure is withdrawn and not measured (see correction).**
 
 ### Future Optimization Opportunities (for ≥80% llama.cpp parity)
 

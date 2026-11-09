@@ -295,6 +295,22 @@ EOF
     log_pass "Environment configured"
 }
 
+# The trueno-ublk daemon's pid is recorded at spawn (setup_trueno_zram runs in a command substitution, so a file,
+# not a variable). Teardown kills that pid, never every trueno-ublk on the host (#5108).
+kill_recorded_daemon() {
+    local f="$RESULTS_DIR/trueno-ublk.pid" pid
+    [ -f "$f" ] || return 0
+    pid=$(cat "$f")
+    # A pid file a crashed earlier run left behind may name a pid the kernel has since reused:
+    # signal it only while its args are still a trueno-ublk daemon.
+    case "$pid" in ''|*[!0-9]*) ;; *)
+        case "$(ps -o args= -p "$pid" 2>/dev/null)" in
+            *trueno-ublk\ create*) kill -9 "$pid" 2>/dev/null || true ;;
+        esac ;;
+    esac
+    rm -f -- "$f"
+}
+
 cleanup_environment() {
     log_info "Cleaning up..."
 
@@ -309,8 +325,8 @@ cleanup_environment() {
         echo 1 > /sys/block/zram0/reset 2>/dev/null || true
         rmmod zram 2>/dev/null || true
 
-        # Stop trueno-ublk
-        pkill -9 trueno-ublk 2>/dev/null || true
+        # Stop the trueno-ublk this run started
+        kill_recorded_daemon
         sleep 1
 
         # Clean up ublk devices
@@ -489,8 +505,8 @@ setup_kernel_zram() {
 setup_trueno_zram() {
     log_info "Setting up trueno-zram (${SWAP_SIZE_GB}GB)..." >&2
 
-    # Pre-cleanup: kill any existing daemon
-    pkill -9 trueno-ublk 2>/dev/null || true
+    # Pre-cleanup: the daemon this run started for an earlier configuration, if it is still up
+    kill_recorded_daemon
     sleep 1
 
     # Find a free device ID (skip orphaned 0, 1, 33)
@@ -507,6 +523,7 @@ setup_trueno_zram() {
     # Start daemon (new CLI: create subcommand with --foreground)
     "${PROJECT_ROOT}/target/release/trueno-ublk" create --size "${SWAP_SIZE_GB}G" --dev-id "$dev_id" --foreground &
     local daemon_pid=$!
+    mkdir -p "$RESULTS_DIR" && printf '%s\n' "$daemon_pid" > "$RESULTS_DIR/trueno-ublk.pid"
 
     # Wait for any ublkb device to appear
     local retries=15
@@ -559,7 +576,7 @@ teardown_swap() {
         /dev/ublkb*)
             # Extract device ID and reset
             local dev_id="${device##/dev/ublkb}"
-            pkill -9 trueno-ublk 2>/dev/null || true
+            kill_recorded_daemon
             sleep 1
             # Reset the specific device
             "${PROJECT_ROOT}/target/release/trueno-ublk" reset "$dev_id" 2>/dev/null || true

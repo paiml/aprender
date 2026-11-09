@@ -257,8 +257,8 @@ fn test_read_metadata_value_array_other_type_float64() {
 }
 
 #[test]
-fn test_read_metadata_value_array_other_type_bool() {
-    // Array of Bool (elem_type=7) -> 1-byte elements
+fn test_read_metadata_value_array_bool() {
+    // APR-EMBED-001 EG-6: Array of Bool (elem_type=7) keeps its values
     let mut bytes = Vec::new();
     bytes.extend_from_slice(&7u32.to_le_bytes()); // elem_type = 7 (Bool)
     bytes.extend_from_slice(&4u64.to_le_bytes()); // count = 4
@@ -266,8 +266,8 @@ fn test_read_metadata_value_array_other_type_bool() {
     let (result, consumed) = read_metadata_value(&bytes, 0, 9).expect("read array bool");
     assert_eq!(consumed, 16); // 12 + 4*1
     match result {
-        GgufValue::ArrayUint32(v) => assert!(v.is_empty()),
-        other => panic!("Expected empty ArrayUint32, got {other:?}"),
+        GgufValue::ArrayBool(v) => assert_eq!(v, vec![true, false, true, false]),
+        other => panic!("Expected ArrayBool, got {other:?}"),
     }
 }
 

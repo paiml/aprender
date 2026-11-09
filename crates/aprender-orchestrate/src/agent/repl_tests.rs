@@ -272,3 +272,132 @@ fn test_auto_compact_triggers_at_80_pct() {
         let _ = std::fs::remove_dir_all(&store.dir);
     }
 }
+
+// =========================================================================
+// handle_slash_command (Refs #5540)
+// =========================================================================
+
+fn hermetic_session(window: usize) -> ReplSession {
+    let mut session = ReplSession::new("slash-test", window);
+    session.store = None; // no ~/.apr/sessions side effects
+    session
+}
+
+fn sample_history(pairs: usize) -> Vec<Message> {
+    let mut history = Vec::new();
+    for i in 0..pairs {
+        history.push(Message::User(format!("question {i}")));
+        history.push(Message::Assistant(format!("answer {i}")));
+    }
+    history
+}
+
+#[test]
+fn test_handle_slash_clear_empties_history() {
+    let session = hermetic_session(4096);
+    let mut history = sample_history(3);
+    handle_slash_command(&SlashCommand::Clear, &session, 1.0, &mut history);
+    assert!(history.is_empty());
+}
+
+fn tool_history(rounds: usize) -> Vec<Message> {
+    use crate::agent::driver::{ToolCall, ToolResultMsg};
+    let mut history = Vec::new();
+    for i in 0..rounds {
+        history.push(Message::User(format!("question {i}")));
+        history.push(Message::AssistantToolUse(ToolCall {
+            id: format!("c{i}"),
+            name: "shell".into(),
+            input: serde_json::json!({"command": "ls"}),
+        }));
+        history.push(Message::ToolResult(ToolResultMsg {
+            tool_use_id: format!("c{i}"),
+            content: "file1".into(),
+            is_error: false,
+        }));
+        history.push(Message::Assistant(format!("answer {i}")));
+    }
+    history
+}
+
+#[test]
+fn test_handle_slash_compact_strips_old_tool_messages() {
+    let session = hermetic_session(4096);
+    let mut history = tool_history(6); // 24 messages
+    let mut expected = history.clone();
+    compact_history(&mut expected);
+    assert!(expected.len() < history.len(), "fixture must be compactable");
+    handle_slash_command(&SlashCommand::Compact, &session, 1.0, &mut history);
+    assert_eq!(history.len(), expected.len());
+    // the last 10 messages are kept verbatim, older tool traffic is gone
+    let old = &history[..history.len() - 10];
+    assert!(old
+        .iter()
+        .all(|m| !matches!(m, Message::AssistantToolUse(_) | Message::ToolResult(_))));
+}
+
+#[test]
+fn test_handle_slash_context_counts_tool_messages() {
+    let session = hermetic_session(4096);
+    let mut history = tool_history(2);
+    handle_slash_command(&SlashCommand::Context, &session, 1.0, &mut history);
+    assert_eq!(history.len(), 8);
+}
+
+#[test]
+fn test_handle_slash_read_only_commands_leave_history_untouched() {
+    let mut session = hermetic_session(100);
+    session.turn_count = 2;
+    let history = sample_history(5);
+    let read_only = [
+        SlashCommand::Help,
+        SlashCommand::Quit,
+        SlashCommand::Cost,
+        SlashCommand::Context,
+        SlashCommand::Model,
+        SlashCommand::Session,
+        SlashCommand::Sessions,
+        SlashCommand::Mcp,
+        SlashCommand::Config,
+        SlashCommand::Review,
+        SlashCommand::Memory,
+        SlashCommand::Permissions,
+        SlashCommand::Hooks,
+        SlashCommand::Init,
+        SlashCommand::Resume,
+        SlashCommand::AddDir,
+        SlashCommand::Agents,
+        SlashCommand::Debug,
+        SlashCommand::Rename,
+        SlashCommand::Upgrade,
+        SlashCommand::Unknown("nope".to_string()),
+    ];
+    for cmd in &read_only {
+        let mut h = history.clone();
+        handle_slash_command(cmd, &session, 1.0, &mut h);
+        assert_eq!(h.len(), history.len(), "{cmd:?} must not mutate history");
+    }
+}
+
+#[test]
+fn test_handle_slash_cost_paid_branch_and_zero_budget_do_not_panic() {
+    let mut session = hermetic_session(4096);
+    session.estimated_cost_usd = 0.5;
+    session.total_input_tokens = 10;
+    session.total_output_tokens = 20;
+    let mut history = Vec::new();
+    handle_slash_command(&SlashCommand::Cost, &session, 2.0, &mut history);
+    // budget 0 divides by zero in the percentage; it must be clamped, not panic
+    handle_slash_command(&SlashCommand::Cost, &session, 0.0, &mut history);
+    assert!(history.is_empty());
+}
+
+#[test]
+fn test_handle_slash_context_near_limit_warning_branch() {
+    // Tiny window so the history exceeds 80% of it.
+    let session = hermetic_session(10);
+    let mut history = sample_history(10);
+    assert!(session.context_usage(&history) >= 0.8);
+    handle_slash_command(&SlashCommand::Context, &session, 1.0, &mut history);
+    assert_eq!(history.len(), 20);
+}

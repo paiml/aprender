@@ -1,0 +1,46 @@
+{
+  "build_identity": "ffc183d1e5c50c55bd06dcc25e261e2285a45f48",
+  "host": "mac-server",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:gelu_tanh:0.5x(1+tanh(sqrt(2/pi)(x+0.044715x^3)))",
+    "row_sha256": "95ff3763275c5de29147b9932ab35df984104b8c90ee062fbcde36883a64cb97",
+    "source_sha256": "85824a73a4917c2292772990345e1e459bc1170e6037a8eaf5b3c22608e680f5",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "beab8e3caf431ebc007c5ea07b4a95af5a124365e48e38e4b0658ee5e90c1c2e",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "kernel_id": "cpu.gelu.f32",
+  "margin": {
+    "error_model": "EM-ELEM",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "gelu_tanh:0.5x(1+tanh(sqrt(2/pi)(x+0.044715x^3)))",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 4.292985087417378e-7,
+    "max_rel_err": 7.161595527409195e-8
+  },
+  "source_fn": "gelu",
+  "tolerance_rel": 2e-7,
+  "ts": "2026-09-29T04:11:19Z",
+  "workload": {
+    "n": 896,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}

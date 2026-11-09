@@ -112,10 +112,38 @@ pub struct WgslForwardPass {
     /// [`DEFAULT_RMS_NORM_EPS`]; callers set the model's value with
     /// [`WgslForwardPass::set_rms_norm_eps`] (#4056: Llama-family models use 1e-5).
     rms_norm_eps: f32,
+    /// RoPE base for the CPU-side rotation; set with [`WgslForwardPass::set_rope_theta`] (#5503).
+    rope_theta: f64,
 }
 
 /// Default RMSNorm epsilon: the constant the shader hardcoded before #4056.
 pub const DEFAULT_RMS_NORM_EPS: f32 = 1e-6;
+
+/// RoPE base used until the model's configured `rope_theta` is set (Qwen2: 1e6; Llama: 1e4).
+pub const DEFAULT_ROPE_THETA: f64 = 1_000_000.0;
+
+/// Rotate `heads` consecutive `head_dim` rows of `data` (NeoX half-split) for `position`.
+fn rope_rotate_heads(
+    data: &mut [f32],
+    heads: usize,
+    head_dim: usize,
+    position: usize,
+    rope_theta: f64,
+) {
+    let half = head_dim / 2;
+    for h in 0..heads {
+        let offset = h * head_dim;
+        for i in 0..half {
+            let theta = rope_theta.powf(-((2 * i) as f64) / head_dim as f64);
+            let angle = position as f64 * theta;
+            let (sin_a, cos_a) = (angle.sin() as f32, angle.cos() as f32);
+            let x0 = data[offset + i];
+            let x1 = data[offset + i + half];
+            data[offset + i] = x0 * cos_a - x1 * sin_a;
+            data[offset + i + half] = x0 * sin_a + x1 * cos_a;
+        }
+    }
+}
 
 /// Uniform params for the RMSNorm shader: `(dim, eps as f32 bits, 0, 0)`.
 fn rmsnorm_params(dim: u32, eps: f32) -> [u32; 4] {
@@ -562,6 +590,7 @@ impl WgslForwardPass {
             head_dim: head_dim as u32,
             intermediate_dim: intermediate_dim as u32,
             rms_norm_eps: DEFAULT_RMS_NORM_EPS,
+            rope_theta: DEFAULT_ROPE_THETA,
         }
     }
 
@@ -569,6 +598,12 @@ impl WgslForwardPass {
     /// model's configured `rms_norm_eps`. Default: [`DEFAULT_RMS_NORM_EPS`].
     pub fn set_rms_norm_eps(&mut self, eps: f32) {
         self.rms_norm_eps = eps;
+    }
+
+    /// Set the RoPE base the position>0 rotation uses — pass the model's configured
+    /// `rope_theta`. Default: [`DEFAULT_ROPE_THETA`].
+    pub fn set_rope_theta(&mut self, theta: f64) {
+        self.rope_theta = theta;
     }
 
     /// The RMSNorm epsilon this forward pass uses.
@@ -967,39 +1002,20 @@ impl WgslForwardPass {
         // PMAT-343: Apply RoPE (NeoX-style interleaved) to Q and K
         let head_dim = self.head_dim as usize;
         let position = _position; // Use the position parameter
-        let rope_theta = 1_000_000.0f64; // Qwen2 rope_theta
-
-        // RoPE on Q (num_heads × head_dim)
-        for h in 0..(self.num_heads as usize) {
-            let offset = h * head_dim;
-            let half = head_dim / 2;
-            for i in 0..half {
-                let theta = rope_theta.powf(-((2 * i) as f64) / head_dim as f64);
-                let angle = position as f64 * theta;
-                let cos_a = angle.cos() as f32;
-                let sin_a = angle.sin() as f32;
-                let x0 = q_data[offset + i];
-                let x1 = q_data[offset + i + half];
-                q_data[offset + i] = x0 * cos_a - x1 * sin_a;
-                q_data[offset + i + half] = x0 * sin_a + x1 * cos_a;
-            }
-        }
-
-        // RoPE on K (num_kv_heads × head_dim)
-        for h in 0..(self.num_kv_heads as usize) {
-            let offset = h * head_dim;
-            let half = head_dim / 2;
-            for i in 0..half {
-                let theta = rope_theta.powf(-((2 * i) as f64) / head_dim as f64);
-                let angle = position as f64 * theta;
-                let cos_a = angle.cos() as f32;
-                let sin_a = angle.sin() as f32;
-                let x0 = k_data[offset + i];
-                let x1 = k_data[offset + i + half];
-                k_data[offset + i] = x0 * cos_a - x1 * sin_a;
-                k_data[offset + i + half] = x0 * sin_a + x1 * cos_a;
-            }
-        }
+        rope_rotate_heads(
+            &mut q_data,
+            self.num_heads as usize,
+            head_dim,
+            position,
+            self.rope_theta,
+        );
+        rope_rotate_heads(
+            &mut k_data,
+            self.num_kv_heads as usize,
+            head_dim,
+            position,
+            self.rope_theta,
+        );
 
         // PMAT-344: Append K,V to cache and compute full attention
         let head_dim = self.head_dim as usize;
@@ -2212,5 +2228,35 @@ mod rmsnorm_eps_tests {
         });
         let err = pollster::block_on(gpu.device.pop_error_scope());
         assert!(err.is_none(), "RMSNORM_SHADER failed validation: {err:?}");
+    }
+}
+
+#[cfg(test)]
+mod rope_theta_tests {
+    use super::{rope_rotate_heads, DEFAULT_ROPE_THETA};
+
+    fn rotated(theta: f64, position: usize) -> Vec<f32> {
+        let mut v = vec![1.0, 0.5, 0.25, 2.0, -1.0, 0.75, 0.1, 0.9];
+        rope_rotate_heads(&mut v, 1, 8, position, theta);
+        v
+    }
+
+    /// #5503: the rotation follows the configured base — Llama 1e4 differs from Qwen 1e6
+    /// at position > 0, and the two agree at position 0 (angle 0).
+    #[test]
+    fn rope_follows_the_configured_theta() {
+        assert_eq!(rotated(1e4, 0), rotated(1e6, 0));
+        assert_ne!(rotated(1e4, 5), rotated(1e6, 5));
+        assert_eq!(rotated(DEFAULT_ROPE_THETA, 5), rotated(1e6, 5));
+    }
+
+    /// Pair i rotates by position * theta^(-2i/d): checked against the closed form.
+    #[test]
+    fn rope_matches_the_closed_form() {
+        let mut v = vec![1.0, 0.0, 0.0, 0.0];
+        rope_rotate_heads(&mut v, 1, 4, 3, 1e4);
+        let a = 3.0f64; // i = 0: theta^0 = 1
+        assert!((f64::from(v[0]) - a.cos()).abs() < 1e-6);
+        assert!((f64::from(v[2]) - a.sin()).abs() < 1e-6);
     }
 }

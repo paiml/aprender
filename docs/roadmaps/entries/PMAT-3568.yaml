@@ -2,15 +2,16 @@
   github_issue: 3568
   item_type: task
   title: Schema-constrained decoding in apr (--json-schema or grammar) — thre
-  status: planned
+  status: in_progress
   priority: medium
   assigned_to: null
   created: 2026-09-20T10:27:59Z
-  updated: 2026-09-20T10:27:59Z
+  updated: 2026-10-10T00:55:00Z
   spec: null
   acceptance_criteria: []
   phases: []
   subtasks: []
   estimated_effort: null
-  labels: []
-  notes: null
+  labels:
+  - kind:code
+  notes: 'Refs #3568, #3826. Schema-constrained decoding (--json-schema, --grammar, response_format) runs through one engine: Session::generate_constrained masks host logits before the repetition penalty and the sampler, so the constraint applies identically on the CPU and on CUDA. A constrained run takes CUDA where an unconstrained one does (dense and hybrid), and reports gpu_attempted, used_gpu and fell_back as an unconstrained run does (#3826). apr serve''s /v1/chat/completions response_format (json_schema, json_object) goes through the same engine on the GGUF CPU and CUDA routes; every other route refuses it by name (ASOC-INV-020, FALSIFY-RESPONSE-FORMAT-3568). Evidence (tests, plants, RTX 4090 and GB10 runs) is in the pull request.'

@@ -113,3 +113,25 @@ falsification:
     description: "Wide sweep (normals, subnormals, ties, overflow, signs) matches half::f16::from_f32 bit-for-bit. Discharges C-F16-001 (oracle parity)."
     test: "cargo test -p aprender-core --lib --features format-quantize test_f16_parity_with_half_crate"
     evidence: "every sample's F16 bits equal half::f16::from_f32(v).to_bits()"
+
+falsification_tests:
+  - id: FALSIFY-SAFETENSORS_F16_ROUND-001
+    description: "C-F16-001: f32 -> F16 is round-to-nearest-even on normals (0x476A_7E00 rounds up, not truncated)"
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_round_to_nearest_even_falsifier"
+    prediction: "the encoded F16 bits equal half::f16::from_f32 for the above-halfway input"
+    if_fails: "the encoder truncates the discarded 13 mantissa bits instead of rounding"
+  - id: FALSIFY-SAFETENSORS_F16_ROUND-002
+    description: "C-F16-002: subnormal magnitudes in [2^-24, 2^-14) are not flushed to zero"
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_subnormal_not_flushed_to_zero"
+    prediction: "2^-24 encodes to 0x0001, not 0x0000"
+    if_fails: "subnormal f16 range is flushed to zero, losing small weights"
+  - id: FALSIFY-SAFETENSORS_F16_ROUND-003
+    description: "C-F16-003: rounding carry at 65520.0 overflows to +Inf"
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_overflow_to_infinity"
+    prediction: "65520.0 encodes to 0x7C00 (+Inf)"
+    if_fails: "mantissa carry into the exponent is mishandled near the overflow threshold"
+  - id: FALSIFY-SAFETENSORS_F16_ROUND-004
+    description: "C-F16-001 oracle parity: wide sweep (normals, subnormals, ties, overflow, signs) matches half::f16::from_f32 bit-for-bit"
+    test: "cargo test -p aprender-core --lib --features format-quantize test_f16_parity_with_half_crate"
+    prediction: "every swept input encodes to the same bits as half::f16::from_f32"
+    if_fails: "the hand-written F16 encoder diverges from the reference half crate"

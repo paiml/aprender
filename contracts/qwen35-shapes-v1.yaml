@@ -128,6 +128,11 @@ falsification_tests:
   prediction: SIMD shapes match scalar shapes
   test: 'proptest: compare scalar vs SIMD projection shapes'
   if_fails: SIMD implementation uses different dimensions
+- id: FALSIFY-Q35-008
+  rule: Layer loader fails closed
+  prediction: 'load_qwen35_layers errors naming {arch}.block_count when the key is absent, returns 0 layers for block_count = 0, and errors (not a truncated model) when a declared layer lacks its tensors'
+  test: 'aprender-serve --test qwen35_load_failclosed_5678 (4 tests, header-only GGUF)'
+  if_fails: 'A missing depth is guessed or a missing tensor is skipped, yielding a silently truncated Qwen3.5. MUTANT: missing block_count falling back to unwrap_or(0) turns missing_block_count_is_refused_not_guessed RED.'
 kani_harnesses:
 - id: KANI-Q35-001
   obligation: Q35-INV-001
@@ -181,5 +186,5 @@ qa_gate:
   - swiglu_ratio
   - o_projection
   - rope_frequencies
-  pass_criteria: All 7 falsification tests pass
+  pass_criteria: All 8 falsification tests pass
   falsification: Change n_kv from 4 to 3 to break GQA divisibility

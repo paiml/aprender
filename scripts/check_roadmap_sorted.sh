@@ -161,7 +161,8 @@ self_test() {
         local want=$1 label=$2 pat=$3 f=$4 rc2=0 out
         n=$((n + 1))
         out=$(scan_file "$f" 2>&1); rc2=$?
-        if [ "$rc2" = "$want" ] && printf '%s' "$out" | grep -qE -- "$pat"; then
+        # Here-string: `printf | grep -q` under pipefail can read a match as a miss (#4780).
+        if [ "$rc2" = "$want" ] && grep -qE -- "$pat" <<<"$out"; then
             printf 'ok    row %-2s rc=%s  %s\n' "$n" "$rc2" "$label"
         else
             printf 'FAIL  row %-2s rc=%s (wanted %s, must match /%s/)  %s\n' "$n" "$rc2" "$want" "$pat" "$label"

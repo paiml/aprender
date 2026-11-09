@@ -126,7 +126,7 @@ PY
 judge() { # judge mode root version commit receipts dogfood out
     local mode="$1" root="$2" version="$3" commit="$4" receipts="$5" dogfood="$6" out="$7" surface="${8:-}"
     local scope="${9:-}"
-    local pv pvv rc rx sum label crux cf e
+    local pv pvv rc rx sum label crux cf e ncells nref
     local -a args
     pv="${RELEASE_READINESS_PV:-}"
     if [ -z "$pv" ]; then
@@ -162,12 +162,18 @@ judge() { # judge mode root version commit receipts dogfood out
     ( cd "$root" && "$pv" "${args[@]}" ) > "$out" 2>&1; rc=$?
     label="$SHAPE for $version at ${commit:0:12}${scope}"
     case "$rc" in
-        0) echo "ok    R8 $label: Pass"
+        0) # #3745: the cells pv derived from the surface and judged. A Pass over zero derived cells judged
+           # nothing, so it is not a pass; the count goes on the verdict line for the tag and the publish.
+           ncells="$(derived_cells "$out" cells)"; nref="$(derived_cells "$out" refusal_cells)"
+           case "$ncells" in
+               ""|0) echo "FAIL  R8 $label: pv passed with ${ncells:-no} derived release cells, so no cell was judged (#3745)"; return 2 ;;
+           esac
+           echo "ok    R8 $label: Pass, $ncells derived cells (${nref:-0} owed as a typed refusal)"
            # #3715 B1 (operator 2026-09-28): the ONE line autopilot cut_tag() requires before `git tag`.
            # Printed only for an enforced Pass, so a weakened run, a skipped step or an absent log
            # all leave the tag refused. out_sha256 is pv's verdict output, for the receipt.
            if [ "$mode" = enforce ]; then
-               echo "ok    R8 #3715 ENFORCE PASS version=$version commit=$commit pv=${pvv:-unknown} out_sha256=$(sha256sum < "$out" | cut -c1-64)"
+               echo "ok    R8 #3715 ENFORCE PASS version=$version commit=$commit pv=${pvv:-unknown} out_sha256=$(sha256sum < "$out" | cut -c1-64) cells=$ncells refusals=${nref:-0}"
            fi
            return 0 ;;
         1)
@@ -179,6 +185,12 @@ judge() { # judge mode root version commit receipts dogfood out
         3) echo "FAIL  R8 $label: pv refused the call (rc 3, caller error): $(tail -n 1 "$out")"; return 3 ;;
         *) echo "FAIL  R8 $label: pv exited $rc, which is outside its 0/1/2/3 contract: $(tail -n 1 "$out")"; return 2 ;;
     esac
+}
+
+# derived_cells out key -> prints release.<key> from pv's shapes-gate JSON (ReleaseStats, #3745), empty when absent.
+# The key sits before any nested object of the release stats, so the first match after "release" is its own.
+derived_cells() {
+    perl -0ne 'print $1 if /"release"\s*:\s*\{[^{}]*?"\Q'"$2"'\E"\s*:\s*(\d+)/s' -- "$1"
 }
 
 # policy_scope root version -> rc 0 and RR_SCOPE (the verdict-line suffix; empty when the policy does not
@@ -262,7 +274,9 @@ selftest() {
 printf '%s\n' "$*" > "${FX_ARGS:?}"
 case "${FX_PV_BODY:-fail}" in
     fail) printf '{"gate":"shapes","verdict":"Fail","extra":{"violations":3,"by_shape":["release-readiness-v1.kernel=0","release-readiness-v1=3"]}}\nreject: lint failed\n' ;;
-    pass) printf '{"gate":"shapes","verdict":"Pass","extra":{"violations":0,"by_shape":[]}}\n' ;;
+    pass) printf '{"gate":"shapes","verdict":"Pass","extra":{"violations":0,"by_shape":[],"release":{"models":2,"cells":12,"refusal_cells":3,"surface":{"commands":4}}}}\n' ;;
+    passnocells) printf '{"gate":"shapes","verdict":"Pass","extra":{"violations":0,"by_shape":[],"release":{"models":0,"cells":0,"refusal_cells":0}}}\n' ;;
+    passnorelease) printf '{"gate":"shapes","verdict":"Pass","extra":{"violations":0,"by_shape":[]}}\n' ;;
     junk) printf 'thread main panicked\n' ;;
 esac
 exit "${FX_PV_RC:-1}"
@@ -306,6 +320,11 @@ STUB
     d="$tmp/r"; mk "$d"; x="$(git -C "$d" rev-parse HEAD~1)"; c="$(git -C "$d" rev-parse HEAD)"
     row pass_is_ok                               0 "ok    R8 release-readiness-v1 for 1.2.3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
     row pass_prints_the_enforce_line             0 "ok    R8 #3715 ENFORCE PASS version=1.2.3 commit=$(git -C "$d" rev-parse HEAD) pv=pv_9.9.9-stub out_sha256=" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row pass_line_counts_cells_and_refusals      0 "Pass, 12 derived cells (3 owed as a typed refusal)" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row enforce_line_carries_cells               0 " cells=12 refusals=3" "$d" FX_PV_RC=0 FX_PV_BODY=pass
+    row pass_over_zero_cells_declines            2 "pv passed with 0 derived release cells" "$d" FX_PV_RC=0 FX_PV_BODY=passnocells
+    row pass_without_release_stats_declines      2 "pv passed with no derived release cells" "$d" FX_PV_RC=0 FX_PV_BODY=passnorelease
+    row pass_over_zero_cells_has_no_enforce_line 2 "!ENFORCE PASS" "$d" FX_PV_RC=0 FX_PV_BODY=passnocells
     argrow pass_asks_the_shape                   "--gate shapes --shape release-readiness-v1 --release-version 1.2.3 --release-commit $c"
     argrow receipts_commit_earned_is_passed      "--receipts-commit $x"
     argrow no_surface_is_not_invented            "!--surface"

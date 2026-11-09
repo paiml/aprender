@@ -59,6 +59,8 @@ pub struct DecodeAttentionSplitKernel {
     pub head_dim: u32,
     /// Positions per split; one pass, so also the shared scores buffer.
     pub split_len: u32,
+    /// #5279: run `m` decode slots in one launch; see [`Self::slots`].
+    pub slots: bool,
 }
 
 impl DecodeAttentionSplitKernel {
@@ -86,6 +88,7 @@ impl DecodeAttentionSplitKernel {
             num_kv_heads,
             head_dim,
             split_len: DEFAULT_SPLIT_LEN,
+            slots: false,
         }
     }
 
@@ -97,6 +100,19 @@ impl DecodeAttentionSplitKernel {
     pub const fn with_split_len(mut self, split_len: u32) -> Self {
         assert!(split_len > 0, "split_len must be positive");
         self.split_len = split_len;
+        self
+    }
+
+    /// #5279: the pair for `m` decode slots. `k_cache_ptr` and `v_cache_ptr`
+    /// then point at `[m]` tables of cache pointers, a `pos_ptr` `[m]` of
+    /// positions replaces `seq_len` (slot `r` attends `pos_ptr[r] + 1`
+    /// positions), and `max_splits` (at least every slot's splits) strides the
+    /// partials, `[m][num_heads][max_splits]` rows. Launch the split on a
+    /// `num_heads × max_splits × m` grid and the reduce on `num_heads × m`;
+    /// slot `r`'s output is the single pair's arithmetic on its row of `q`.
+    #[must_use]
+    pub const fn slots(mut self) -> Self {
+        self.slots = true;
         self
     }
 
@@ -138,19 +154,62 @@ impl DecodeAttentionSplitKernel {
             num_heads: self.num_heads,
             head_dim: self.head_dim,
             split_len: self.split_len,
+            slots: self.slots,
         }
     }
 }
 
+/// #5279: the pair's scalar parameters: `seq_len`, or for slots the
+/// positions table and the partials' split stride.
+fn tail_params(kernel: PtxKernel, slots: bool) -> PtxKernel {
+    if slots {
+        kernel
+            .param(PtxType::U64, "pos_ptr") // [m] positions
+            .param(PtxType::U32, "max_splits") // partial rows per slot and head
+    } else {
+        kernel.param(PtxType::U32, "seq_len") // valid positions, = position + 1
+    }
+}
+
+/// #5279: slot `row`'s `seq_len = pos_ptr[row] + 1`, and the partials
+/// advanced past the `row × max_splits × num_heads` rows of the slots before it.
+fn emit_slot(
+    ctx: &mut KernelBuilder<'_>,
+    row: VirtualReg,
+    num_heads: u32,
+    head_dim: u32,
+    acc_ptr: VirtualReg,
+    ml_ptr: VirtualReg,
+) -> (VirtualReg, VirtualReg, VirtualReg) {
+    let pos_ptr = ctx.load_param_u64("pos_ptr");
+    let pos_off = ctx.mul_wide_u32(row, 4);
+    let pos_addr = ctx.add_u64(pos_ptr, pos_off);
+    let pos = ctx.ld_global_u32(pos_addr);
+    let seq_len = ctx.add_u32(pos, 1);
+    let max_splits = ctx.load_param_u32("max_splits");
+    let slot_splits = ctx.mul_u32_reg(row, max_splits);
+    let rows_before = ctx.mul_u32(slot_splits, num_heads);
+    let acc_off = ctx.mul_wide_u32(rows_before, head_dim * 4);
+    let ml_off = ctx.mul_wide_u32(rows_before, 8);
+    let acc_ptr = ctx.add_u64(acc_ptr, acc_off);
+    let ml_ptr = ctx.add_u64(ml_ptr, ml_off);
+    (seq_len, acc_ptr, ml_ptr)
+}
+
 impl Kernel for DecodeAttentionSplitKernel {
     fn name(&self) -> &str {
-        "gdn_decode_attention_split"
+        if self.slots {
+            "gdn_decode_attention_split_slots"
+        } else {
+            "gdn_decode_attention_split"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
         let head_dim = self.head_dim;
         let group_size = self.num_heads / self.num_kv_heads;
         let split_len = self.split_len;
+        let (num_heads, slots) = (self.num_heads, self.slots);
         let shape = PassShape {
             head_dim,
             cap: split_len,
@@ -158,13 +217,13 @@ impl Kernel for DecodeAttentionSplitKernel {
             warp_dot: true,
         };
 
-        PtxKernel::new(self.name())
+        let kernel = PtxKernel::new(self.name())
             .param(PtxType::U64, "q_ptr") // [num_heads * head_dim]
             .param(PtxType::U64, "k_cache_ptr") // [max_len][num_kv_heads * head_dim]
             .param(PtxType::U64, "v_cache_ptr") // [max_len][num_kv_heads * head_dim]
             .param(PtxType::U64, "part_acc_ptr") // [num_heads][n_splits][head_dim]
-            .param(PtxType::U64, "part_ml_ptr") // [num_heads][n_splits][2]
-            .param(PtxType::U32, "seq_len") // valid positions, = position + 1
+            .param(PtxType::U64, "part_ml_ptr"); // [num_heads][n_splits][2]
+        tail_params(kernel, slots)
             .shared_memory(self.shared_bytes())
             .build(|ctx| {
                 let tid = ctx.special_reg(PtxReg::TidX);
@@ -178,7 +237,23 @@ impl Kernel for DecodeAttentionSplitKernel {
                 let v_ptr = ctx.load_param_u64("v_cache_ptr");
                 let acc_ptr = ctx.load_param_u64("part_acc_ptr");
                 let ml_ptr = ctx.load_param_u64("part_ml_ptr");
-                let seq_len = ctx.load_param_u32("seq_len");
+                let (q_ptr, k_ptr, v_ptr, acc_ptr, ml_ptr, seq_len) = if slots {
+                    // Slot `row`: its own caches, its row of `q`, its partials.
+                    let row = ctx.special_reg(PtxReg::CtaIdZ);
+                    let entry_off = ctx.mul_wide_u32(row, 8);
+                    let k_entry = ctx.add_u64(k_ptr, entry_off);
+                    let v_entry = ctx.add_u64(v_ptr, entry_off);
+                    let k_ptr = ctx.ld_global_u64(k_entry);
+                    let v_ptr = ctx.ld_global_u64(v_entry);
+                    let q_off = ctx.mul_wide_u32(row, num_heads * head_dim * 4);
+                    let q_ptr = ctx.add_u64(q_ptr, q_off);
+                    let (seq_len, acc_ptr, ml_ptr) =
+                        emit_slot(ctx, row, num_heads, head_dim, acc_ptr, ml_ptr);
+                    (q_ptr, k_ptr, v_ptr, acc_ptr, ml_ptr, seq_len)
+                } else {
+                    let seq_len = ctx.load_param_u32("seq_len");
+                    (q_ptr, k_ptr, v_ptr, acc_ptr, ml_ptr, seq_len)
+                };
 
                 // This block's slice; a block past the end has nothing to store.
                 let begin = ctx.mul_u32(split, split_len);
@@ -197,7 +272,16 @@ impl Kernel for DecodeAttentionSplitKernel {
                 let st = emit_passes(
                     ctx,
                     shape,
-                    PassRegs { tid, lane, warp, q_base, k_head, v_head, begin, end },
+                    PassRegs {
+                        tid,
+                        lane,
+                        warp,
+                        q_base,
+                        k_head,
+                        v_head,
+                        begin,
+                        end,
+                    },
                 );
 
                 // row = h * n_splits + split
@@ -240,6 +324,8 @@ pub struct DecodeAttentionReduceKernel {
     pub head_dim: u32,
     /// Positions per split — must equal the split kernel's.
     pub split_len: u32,
+    /// #5279: `m` decode slots; see [`DecodeAttentionSplitKernel::slots`].
+    pub slots: bool,
 }
 
 impl DecodeAttentionReduceKernel {
@@ -258,95 +344,110 @@ impl DecodeAttentionReduceKernel {
 
 impl Kernel for DecodeAttentionReduceKernel {
     fn name(&self) -> &str {
-        "gdn_decode_attention_reduce"
+        if self.slots {
+            "gdn_decode_attention_reduce_slots"
+        } else {
+            "gdn_decode_attention_reduce"
+        }
     }
 
     fn build_ptx(&self) -> PtxKernel {
         let head_dim = self.head_dim;
         let split_len = self.split_len;
+        let (num_heads, slots) = (self.num_heads, self.slots);
 
-        PtxKernel::new(self.name())
+        let kernel = PtxKernel::new(self.name())
             .param(PtxType::U64, "part_acc_ptr") // [num_heads][n_splits][head_dim]
             .param(PtxType::U64, "part_ml_ptr") // [num_heads][n_splits][2]
-            .param(PtxType::U64, "out_ptr") // [num_heads * head_dim]
-            .param(PtxType::U32, "seq_len")
-            .build(|ctx| {
-                let tid = ctx.special_reg(PtxReg::TidX);
-                let h = ctx.special_reg(PtxReg::CtaIdX);
+            .param(PtxType::U64, "out_ptr"); // [num_heads * head_dim]
+        tail_params(kernel, slots).build(|ctx| {
+            let tid = ctx.special_reg(PtxReg::TidX);
+            let h = ctx.special_reg(PtxReg::CtaIdX);
 
-                let acc_ptr = ctx.load_param_u64("part_acc_ptr");
-                let ml_ptr = ctx.load_param_u64("part_ml_ptr");
-                let out_ptr = ctx.load_param_u64("out_ptr");
+            let acc_ptr = ctx.load_param_u64("part_acc_ptr");
+            let ml_ptr = ctx.load_param_u64("part_ml_ptr");
+            let out_ptr = ctx.load_param_u64("out_ptr");
+            let (acc_ptr, ml_ptr, out_ptr, seq_len) = if slots {
+                // Slot `row`: its partials and its row of the output.
+                let row = ctx.special_reg(PtxReg::CtaIdY);
+                let out_off = ctx.mul_wide_u32(row, num_heads * head_dim * 4);
+                let out_ptr = ctx.add_u64(out_ptr, out_off);
+                let (seq_len, acc_ptr, ml_ptr) =
+                    emit_slot(ctx, row, num_heads, head_dim, acc_ptr, ml_ptr);
+                (acc_ptr, ml_ptr, out_ptr, seq_len)
+            } else {
                 let seq_len = ctx.load_param_u32("seq_len");
+                (acc_ptr, ml_ptr, out_ptr, seq_len)
+            };
 
-                // An empty cache has no softmax: leave the output alone, as the
-                // unsplit kernel does.
-                let zero = ctx.mov_u32_imm(0);
-                let has_positions = ctx.setp_lt_u32(zero, seq_len);
-                ctx.branch_if_not(has_positions, "gdn_attn_reduce_exit");
-                let head_dim_r = ctx.mov_u32_imm(head_dim);
-                let in_head = ctx.setp_lt_u32(tid, head_dim_r);
-                ctx.branch_if_not(in_head, "gdn_attn_reduce_exit");
+            // An empty cache has no softmax: leave the output alone, as the
+            // unsplit kernel does.
+            let zero = ctx.mov_u32_imm(0);
+            let has_positions = ctx.setp_lt_u32(zero, seq_len);
+            ctx.branch_if_not(has_positions, "gdn_attn_reduce_exit");
+            let head_dim_r = ctx.mov_u32_imm(head_dim);
+            let in_head = ctx.setp_lt_u32(tid, head_dim_r);
+            ctx.branch_if_not(in_head, "gdn_attn_reduce_exit");
 
-                let n_splits = emit_n_splits(ctx, seq_len, split_len);
-                let first_row = ctx.mul_u32_reg(h, n_splits);
-                let ml_off = ctx.mul_wide_u32(first_row, 8);
-                let ml_head = ctx.add_u64(ml_ptr, ml_off);
-                let acc_off = ctx.mul_wide_u32(first_row, head_dim * 4);
-                let acc_head = ctx.add_u64(acc_ptr, acc_off);
-                let four = ctx.mov_u32_imm(4);
-                let elem_off = ctx.mul_wide_u32_reg(tid, four);
-                let four64 = ctx.cvt_u64_u32(four);
-                let acc_elem = ctx.add_u64(acc_head, elem_off);
+            let n_splits = emit_n_splits(ctx, seq_len, split_len);
+            let first_row = ctx.mul_u32_reg(h, n_splits);
+            let ml_off = ctx.mul_wide_u32(first_row, 8);
+            let ml_head = ctx.add_u64(ml_ptr, ml_off);
+            let acc_off = ctx.mul_wide_u32(first_row, head_dim * 4);
+            let acc_head = ctx.add_u64(acc_ptr, acc_off);
+            let four = ctx.mov_u32_imm(4);
+            let elem_off = ctx.mul_wide_u32_reg(tid, four);
+            let four64 = ctx.cvt_u64_u32(four);
+            let acc_elem = ctx.add_u64(acc_head, elem_off);
 
-                // M = max_s m_s
-                let global_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
-                let s = ctx.mov_u32_imm(0);
-                ctx.label("gdn_attn_reduce_max_loop");
-                let max_go = ctx.setp_lt_u32(s, n_splits);
-                ctx.branch_if_not(max_go, "gdn_attn_reduce_max_end");
-                let m_off = ctx.mul_wide_u32(s, 8);
-                let m_addr = ctx.add_u64(ml_head, m_off);
-                let m_s = ctx.ld_global_f32(m_addr);
-                ctx.max_f32_inplace(global_max, m_s);
-                ctx.add_u32_inplace(s, 1);
-                ctx.branch("gdn_attn_reduce_max_loop");
-                ctx.label("gdn_attn_reduce_max_end");
+            // M = max_s m_s
+            let global_max = ctx.mov_f32_imm(f32::NEG_INFINITY);
+            let s = ctx.mov_u32_imm(0);
+            ctx.label("gdn_attn_reduce_max_loop");
+            let max_go = ctx.setp_lt_u32(s, n_splits);
+            ctx.branch_if_not(max_go, "gdn_attn_reduce_max_end");
+            let m_off = ctx.mul_wide_u32(s, 8);
+            let m_addr = ctx.add_u64(ml_head, m_off);
+            let m_s = ctx.ld_global_f32(m_addr);
+            ctx.max_f32_inplace(global_max, m_s);
+            ctx.add_u32_inplace(s, 1);
+            ctx.branch("gdn_attn_reduce_max_loop");
+            ctx.label("gdn_attn_reduce_max_end");
 
-                // splits ascending: sum += l_s * f_s; acc += acc_s * f_s
-                let sum = ctx.mov_f32_imm(0.0);
-                let acc = ctx.mov_f32_imm(0.0);
-                let t = ctx.mov_u32_imm(0);
-                ctx.label("gdn_attn_reduce_loop");
-                let go = ctx.setp_lt_u32(t, n_splits);
-                ctx.branch_if_not(go, "gdn_attn_reduce_end");
-                let t_ml_off = ctx.mul_wide_u32(t, 8);
-                let t_ml = ctx.add_u64(ml_head, t_ml_off);
-                let m_t = ctx.ld_global_f32(t_ml);
-                let l_addr = ctx.add_u64(t_ml, four64);
-                let l_t = ctx.ld_global_f32(l_addr);
-                let delta = ctx.sub_f32(m_t, global_max);
-                let factor = emit_exp_f32(ctx, delta);
-                let l_scaled = ctx.mul_f32(l_t, factor);
-                ctx.add_f32_inplace(sum, l_scaled);
-                let t_acc_off = ctx.mul_wide_u32(t, head_dim * 4);
-                let t_acc = ctx.add_u64(acc_elem, t_acc_off);
-                let a_t = ctx.ld_global_f32(t_acc);
-                let a_scaled = ctx.mul_f32(a_t, factor);
-                ctx.add_f32_inplace(acc, a_scaled);
-                ctx.add_u32_inplace(t, 1);
-                ctx.branch("gdn_attn_reduce_loop");
-                ctx.label("gdn_attn_reduce_end");
+            // splits ascending: sum += l_s * f_s; acc += acc_s * f_s
+            let sum = ctx.mov_f32_imm(0.0);
+            let acc = ctx.mov_f32_imm(0.0);
+            let t = ctx.mov_u32_imm(0);
+            ctx.label("gdn_attn_reduce_loop");
+            let go = ctx.setp_lt_u32(t, n_splits);
+            ctx.branch_if_not(go, "gdn_attn_reduce_end");
+            let t_ml_off = ctx.mul_wide_u32(t, 8);
+            let t_ml = ctx.add_u64(ml_head, t_ml_off);
+            let m_t = ctx.ld_global_f32(t_ml);
+            let l_addr = ctx.add_u64(t_ml, four64);
+            let l_t = ctx.ld_global_f32(l_addr);
+            let delta = ctx.sub_f32(m_t, global_max);
+            let factor = emit_exp_f32(ctx, delta);
+            let l_scaled = ctx.mul_f32(l_t, factor);
+            ctx.add_f32_inplace(sum, l_scaled);
+            let t_acc_off = ctx.mul_wide_u32(t, head_dim * 4);
+            let t_acc = ctx.add_u64(acc_elem, t_acc_off);
+            let a_t = ctx.ld_global_f32(t_acc);
+            let a_scaled = ctx.mul_f32(a_t, factor);
+            ctx.add_f32_inplace(acc, a_scaled);
+            ctx.add_u32_inplace(t, 1);
+            ctx.branch("gdn_attn_reduce_loop");
+            ctx.label("gdn_attn_reduce_end");
 
-                let head_off = ctx.mul_wide_u32(h, head_dim * 4);
-                let out_head = ctx.add_u64(out_ptr, head_off);
-                let out_addr = ctx.add_u64(out_head, elem_off);
-                let result = ctx.div_f32(acc, sum);
-                ctx.st_global_f32(out_addr, result);
+            let head_off = ctx.mul_wide_u32(h, head_dim * 4);
+            let out_head = ctx.add_u64(out_ptr, head_off);
+            let out_addr = ctx.add_u64(out_head, elem_off);
+            let result = ctx.div_f32(acc, sum);
+            ctx.st_global_f32(out_addr, result);
 
-                ctx.label("gdn_attn_reduce_exit");
-                ctx.ret();
-            })
+            ctx.label("gdn_attn_reduce_exit");
+            ctx.ret();
+        })
     }
 }
 
@@ -554,6 +655,81 @@ mod gdn_decode_attention_split_device_tests {
         }
     }
 
+    /// FALSIFY (#5279): the slots pair over m ragged slots, spanning 1 to 8
+    /// splits each, is bitwise the single pair run on every slot alone.
+    #[test]
+    fn gdn_decode_attention_slots_bitwise_each_slot_alone() {
+        let Ok(ctx) = CudaContext::new(0) else {
+            println!("gdn_decode_attention_slots: no CUDA device — SKIPPED.");
+            return;
+        };
+        let stream = CudaStream::new(&ctx).expect("stream");
+        let seq_lens = [1u32, 9, 37, 64];
+        let m = seq_lens.len();
+        let fixtures: Vec<Fixture> = (0..m)
+            .map(|i| Fixture::new(&ctx, 64, 8, 0x5279_0001 + i as u32))
+            .collect();
+        let mut paths = Paths::new(&ctx, 8);
+        let width = (NUM_HEADS * HEAD_DIM) as usize;
+        let mut want = Vec::with_capacity(m * width);
+        let mut q_rows = Vec::with_capacity(m * width);
+        for (f, &seq_len) in fixtures.iter().zip(&seq_lens) {
+            paths.run_split(&stream, f, seq_len);
+            stream.synchronize().expect("sync");
+            want.extend(f.download());
+            let mut q = vec![0.0f32; width];
+            f.q.copy_to_host(&mut q).expect("q");
+            q_rows.extend(q);
+        }
+
+        let kernel = DecodeAttentionSplitKernel::new(NUM_HEADS, NUM_KV_HEADS, HEAD_DIM)
+            .with_split_len(8)
+            .slots();
+        let max_splits = kernel.n_splits(64);
+        let rows = m * (NUM_HEADS * max_splits) as usize;
+        let k_ptrs: Vec<u64> = fixtures.iter().map(|f| f.k.as_ptr()).collect();
+        let v_ptrs: Vec<u64> = fixtures.iter().map(|f| f.v.as_ptr()).collect();
+        let positions: Vec<u32> = seq_lens.iter().map(|n| n - 1).collect();
+        let q = GpuBuffer::from_host(&ctx, &q_rows).expect("q");
+        let k_table = GpuBuffer::from_host(&ctx, &k_ptrs).expect("k table");
+        let v_table = GpuBuffer::from_host(&ctx, &v_ptrs).expect("v table");
+        let pos = GpuBuffer::from_host(&ctx, &positions).expect("positions");
+        let acc = GpuBuffer::<f32>::new(&ctx, rows * HEAD_DIM as usize).expect("acc");
+        let ml = GpuBuffer::<f32>::new(&ctx, rows * 2).expect("ml");
+        let out = GpuBuffer::<f32>::new(&ctx, m * width).expect("out");
+        let mut split = Loaded::new(&ctx, &kernel);
+        let mut reduce = Loaded::new(&ctx, &kernel.reduce());
+        let mut a = [
+            q.as_ptr(),
+            k_table.as_ptr(),
+            v_table.as_ptr(),
+            acc.as_ptr(),
+            ml.as_ptr(),
+            pos.as_ptr(),
+            u64::from(max_splits),
+        ];
+        split.launch(&stream, (NUM_HEADS, max_splits, m as u32), &mut a);
+        let mut b = [
+            acc.as_ptr(),
+            ml.as_ptr(),
+            out.as_ptr(),
+            pos.as_ptr(),
+            u64::from(max_splits),
+        ];
+        reduce.launch(&stream, (NUM_HEADS, m as u32, 1), &mut b);
+        stream.synchronize().expect("sync");
+        let mut got = vec![0.0f32; m * width];
+        out.copy_to_host(&mut got).expect("download");
+        for (r, (g, w)) in got.chunks(width).zip(want.chunks(width)).enumerate() {
+            let same = g.iter().zip(w).all(|(a, b)| a.to_bits() == b.to_bits());
+            assert!(
+                same,
+                "slot {r} (seq_len {}) differs from its single pair",
+                seq_lens[r]
+            );
+        }
+    }
+
     /// Wall time per call: the median of seven trials of `n` calls each, after
     /// warm-up, fully synchronised. One trial swung 0.62 to 0.94 ms between runs.
     fn time_ms(stream: &CudaStream, n: u32, mut f: impl FnMut()) -> f64 {
@@ -698,5 +874,39 @@ mod gdn_decode_attention_split_device_tests {
             let bw = 2.0 * kv_row_bytes * f64::from(long) / ms / 1e6;
             println!("sweep group=1 split_len={split_len}: {ms:.4} ms  {bw:.0} GB/s");
         }
+    }
+}
+
+#[cfg(test)]
+mod slots_tests {
+    use super::*;
+
+    /// The arithmetic of a PTX listing: every float instruction in order.
+    fn float_ops(ptx: &str) -> Vec<String> {
+        ptx.lines()
+            .map(str::trim)
+            .filter(|l| l.contains(".f32") && !l.starts_with("ld.") && !l.starts_with("st."))
+            .map(|l| l.split_whitespace().next().unwrap_or("").to_string())
+            .collect()
+    }
+
+    #[test]
+    fn attention_slots_have_the_single_pairs_arithmetic() {
+        let one = DecodeAttentionSplitKernel::new(16, 4, 256);
+        let slots = one.slots();
+        let (split, split_slots) = (one.emit_ptx(), slots.emit_ptx());
+        assert!(split_slots.contains("%ctaid.z"), "{split_slots}");
+        assert!(
+            split_slots.contains(".entry gdn_decode_attention_split_slots"),
+            "{split_slots}"
+        );
+        assert_eq!(float_ops(&split), float_ops(&split_slots));
+        let (reduce, reduce_slots) = (one.reduce().emit_ptx(), slots.reduce().emit_ptx());
+        assert!(reduce_slots.contains("%ctaid.y"), "{reduce_slots}");
+        assert!(
+            reduce_slots.contains(".entry gdn_decode_attention_reduce_slots"),
+            "{reduce_slots}"
+        );
+        assert_eq!(float_ops(&reduce), float_ops(&reduce_slots));
     }
 }

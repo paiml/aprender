@@ -1523,12 +1523,12 @@ The alternative is a live path that queries GitHub and a test path that re-imple
 1. The pr-review skill runs (§9 step 5) and records a PASS receipt with an autonomy block.
 2. agy runs, cross-vendor, and records PASS with refusal: null.
 3. scripts/pr_review_quorum_arm.sh --pr <N> evaluates §13.2 and prints PERMIT or REFUSE [Qn].
-4. On PERMIT, and only outside --explain, it runs `gh pr merge <N> --squash --auto`.
+4. On PERMIT, and only outside --explain, it runs plain `gh pr merge <N>` (no method flag: the queue owns the method, #5794).
 ```
 
 Four lines, and §13.0 explains why they come after two thousand words of failure paths.
 
-Step 4 is **idempotent**: an already-armed PR reports `ALREADY-ARMED` and calls nothing. `gh pr merge --auto` is safe to repeat, but a second call is a second audit-log entry and a second chance to fail for an unrelated reason.
+Step 4 is **idempotent**: an already-armed PR reports `ALREADY-ARMED` and calls nothing. a plain `gh pr merge` is safe to repeat, but a second call is a second audit-log entry and a second chance to fail for an unrelated reason.
 
 ### §13.8 `MECHANISM_PATHS`
 

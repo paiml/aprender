@@ -53,8 +53,8 @@ fn parse_param(s: &str) -> Result<(String, String), String> {
 pub fn cmd_playbook(command: PlaybookCommand) -> Result<()> {
     match command {
         PlaybookCommand::Run { playbook_path, stages, force, params } => {
-            let param_overrides: std::collections::HashMap<String, serde_yaml_ng::Value> =
-                params.into_iter().map(|(k, v)| (k, serde_yaml_ng::Value::String(v))).collect();
+            let param_overrides: std::collections::HashMap<String, serde_json::Value> =
+                params.into_iter().map(|(k, v)| (k, serde_json::Value::String(v))).collect();
 
             let config = playbook::RunConfig {
                 playbook_path: playbook_path.clone(),
@@ -102,7 +102,7 @@ pub fn cmd_playbook(command: PlaybookCommand) -> Result<()> {
             let lock = playbook::cache::load_lock_file(&playbook_path)?;
             match lock {
                 Some(l) => {
-                    let yaml = serde_yaml_ng::to_string(&l)?;
+                    let yaml = serde_saphyr::to_string(&l)?;
                     println!("{}", yaml);
                 }
                 None => {

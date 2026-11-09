@@ -1,0 +1,19 @@
+- id: PMAT-6450
+  github_issue: 6450
+  item_type: task
+  title: 'PVB-S: land PVB-001 v1.3 spec (proof-code bridge)'
+  status: in_progress
+  priority: medium
+  assigned_to: null
+  created: 2026-10-27T11:45:00Z
+  updated: 2026-10-27T11:45:00Z
+  spec: docs/specifications/PVB-001-proof-code-bridge.md
+  acceptance_criteria:
+  - 'docs/specifications/PVB-001-proof-code-bridge.md is byte-identical to the handoff file (sha256 f127e2d95108f8ac5da455921d2c96696e79f67cee87164cc51057f7f8ee389c)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:docs
+  notes: null
+  epic: null

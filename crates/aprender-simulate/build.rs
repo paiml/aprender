@@ -116,7 +116,7 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
     let Ok(content) = std::fs::read_to_string(path) else {
         return;
     };
-    let Ok(contract) = serde_yaml::from_str::<ContractYaml>(&content) else {
+    let Ok(contract) = serde_saphyr::from_str::<ContractYaml>(&content) else {
         return;
     };
     for (eq_name, equation) in &contract.equations {
@@ -161,7 +161,7 @@ fn enforce_provable_binding() {
     let Ok(yaml) = std::fs::read_to_string(&binding_path) else {
         return;
     };
-    let Ok(bf) = serde_yaml::from_str::<BindingFile>(&yaml) else {
+    let Ok(bf) = serde_saphyr::from_str::<BindingFile>(&yaml) else {
         return;
     };
 

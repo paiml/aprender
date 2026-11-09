@@ -100,12 +100,20 @@ run_table() { # <script> -> 0 when every case lands
 
 if [ "$SELF_TEST" -eq 1 ]; then
   old="$TMP/ship-006-prefix.sh"
-  # A CI checkout is shallow and may not hold the pre-fix commit: fetch it by its FULL sha
-  # first (GitHub serves a reachable sha on request), then read it. Missing afterwards is still
-  # the loud ENV refusal below, never a pass (#4046).
-  git cat-file -e 22658163dafd150291347efd0116b5332898c371^{commit} 2>/dev/null \
-    || git fetch -q --no-tags --depth=1 origin 22658163dafd150291347efd0116b5332898c371 2>/dev/null || true
-  git show 22658163d:scripts/ship-discharges/ship-006-discharge.sh > "$old" 2>/dev/null \
+  # A CI checkout is shallow and may not hold the pre-fix commit. Read it from the caller's repo when
+  # it is there; otherwise fetch it by its FULL sha (GitHub serves a reachable sha on request) into a
+  # SCRATCH repo, never the caller's: a depth fetch there writes `shallow` into a common git dir every
+  # linked worktree shares (#5025). Missing afterwards is still the loud ENV refusal below, never a
+  # pass (#4046).
+  pre=22658163dafd150291347efd0116b5332898c371
+  src=$(git rev-parse --show-toplevel 2>/dev/null) || src=""
+  url=$( [ -n "$src" ] && git -C "$src" remote get-url origin 2>/dev/null ) || url=""
+  cd -- "$TMP" || exit 2; export GIT_CEILING_DIRECTORIES="${TMP%/*}"
+  if [ -z "$src" ] || ! git -C "$src" cat-file -e "$pre^{commit}" 2>/dev/null; then
+    src="$TMP/pre"
+    { git init -q "$src" && [ -n "$url" ] && git -C "$src" fetch -q --no-tags --depth=1 "$url" "$pre"; } 2>/dev/null || true
+  fi
+  git -C "$src" show "$pre:scripts/ship-discharges/ship-006-discharge.sh" > "$old" 2>/dev/null \
     || { echo "  self-test: cannot read the pre-fix script at 22658163d" >&2; exit 2; }
   got=$(run_case "$old" full)
   if [ "$got" = "FAIL" ]; then

@@ -474,6 +474,22 @@ const CASES: &[Case] = &[
             f.obligations = format!("{OBLIGATION_OK}    na_reason: \"why\"\n");
         },
     },
+    // SCHEMA-024/025 (#5291) — a test block that names no runnable test.
+    Case {
+        // `falsification_tests:` written and empty. The one obligation is now
+        // unmatched, so PROVABILITY-001 reports beside it; this row asserts
+        // only that SCHEMA-024 is reached, at ERROR.
+        rule: "SCHEMA-024",
+        sev: Sev::Error,
+        build: |f| f.ftests = "  []".to_string(),
+    },
+    Case {
+        // One test whose `test:` is written but blank; the ftest/obligation
+        // ratio is untouched.
+        rule: "SCHEMA-025",
+        sev: Sev::Error,
+        build: |f| f.ftests = format!("{FTEST_OK}    test: \"  \"\n"),
+    },
     Case {
         rule: "PROVABILITY-001",
         sev: Sev::Error,

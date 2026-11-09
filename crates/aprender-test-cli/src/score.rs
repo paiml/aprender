@@ -113,7 +113,10 @@ impl Grade {
     /// Get grade from score
     #[must_use]
     pub const fn from_score(score: u32, max: u32) -> Self {
-        let percentage = if max > 0 { (score * 100) / max } else { 0 };
+        let percentage = match (score * 100).checked_div(max) {
+            Some(p) => p,
+            None => 0,
+        };
 
         match percentage {
             90..=100 => Self::A,
@@ -1207,7 +1210,7 @@ impl ScoreCalculator {
         }
 
         // Sort by potential points (descending)
-        recommendations.sort_by(|a, b| b.potential_points.cmp(&a.potential_points));
+        recommendations.sort_by_key(|a| std::cmp::Reverse(a.potential_points));
 
         // Assign priorities
         for (i, rec) in recommendations.iter_mut().enumerate() {
@@ -1222,10 +1225,9 @@ impl ScoreCalculator {
 
 /// Format a percentage
 fn format_percentage(score: u32, max: u32) -> String {
-    if max == 0 {
-        "0%".to_string()
-    } else {
-        format!("{}%", (score * 100) / max)
+    match (score * 100).checked_div(max) {
+        Some(p) => format!("{p}%"),
+        None => "0%".to_string(),
     }
 }
 

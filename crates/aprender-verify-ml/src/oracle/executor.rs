@@ -321,13 +321,9 @@ mod tests {
     use super::*;
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_python_executor_simple() {
         let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let result = executor
             .execute("print('hello')", "", 5000)
             .expect("execution should succeed");
@@ -337,13 +333,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_python_executor_with_input() {
         let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let code = "x = input()\nprint(f'got: {x}')";
         let result = executor
             .execute(code, "test", 5000)
@@ -353,13 +345,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_python_executor_error() {
         let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let result = executor
             .execute("raise ValueError('oops')", "", 5000)
             .expect("execution should succeed");
@@ -369,13 +357,9 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_python_executor_arithmetic() {
         let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let code = "print(1 + 2 * 3)";
         let result = executor
             .execute(code, "", 5000)
@@ -519,13 +503,9 @@ fn main() {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_python_executor_timeout() {
         let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         // Code that takes too long
         let code = "import time; time.sleep(10)";
         let result = executor.execute(code, "", 100); // 100ms timeout
@@ -537,13 +517,9 @@ fn main() {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_python_executor_multiple_lines_output() {
         let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let code = "for i in range(3): print(i)";
         let result = executor
             .execute(code, "", 5000)
@@ -555,13 +531,9 @@ fn main() {
     }
 
     #[test]
+    #[ignore = "needs python3, absent from the CI test image; see #5373"]
     fn test_python_executor_syntax_error() {
         let executor = PythonExecutor::new();
-        if !executor.is_available() {
-            eprintln!("Python not available, skipping test");
-            return;
-        }
-
         let code = "def f(: pass"; // syntax error
         let result = executor
             .execute(code, "", 5000)

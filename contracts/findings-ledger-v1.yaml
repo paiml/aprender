@@ -1,0 +1,143 @@
+# ──────────────────────────────────────────────
+# findings-ledger-v1 — one line of docs/findings/<session>.jsonl, under contract (#4455, APR-EPIC-001 row A8)
+#
+# THE DEFECT THIS CLOSES. APR-EPIC-001 rule 17 says a session that surfaces a defect appends one line
+# `{id, title, evidence, repro, suspected_epic, severity, found_at_sha}` to docs/findings/<session>.jsonl.
+# Nothing said what a line is. Measured on main at 4e27b64015: 10 ledger files, 60 lines, SIX distinct key
+# sets, and ONE line of the 60 carries the seven fields. No contract named the ledger and no script read it,
+# so the ledger was a convention, and every writer had invented its own.
+#
+# KIND: pattern, through the `extract:json` path (ONT-001 §3.7) that already reads JSONL as one focus node per
+# line. pv's closed shape IS the validator: no second reader, and no shell script re-implementing pv. The case
+# table is crates/aprender-contracts-cli/tests/ont_findings_ledger.rs over tests/fixtures/ont/findings-ledger/,
+# and the writer is scripts/findings_ledger.sh, which appends a line only after pv passed it on this contract.
+#
+# ── NO `entity:` HERE, ON PURPOSE ───────────────────────────────────────────────────────────────────────────
+#
+# The ledger is many files, one per session, and `entity.ref` names one. More to the point: this contract binds
+# lines written AFTER it lands. The 60 lines already in docs/findings/ predate it and are not rewritten, so a
+# corpus gate pointed at them would be red on history nobody can fix by writing a better line, and no PR or
+# release step reads docs/findings/. The shape therefore grades zero focus nodes in the corpus; it is not in
+# `armed_shapes`, so that zero never feeds a verdict. It is graded where a line is written:
+#
+#     bash scripts/findings_ledger.sh check docs/findings/<session>.jsonl   # pv on the real contract
+#     bash scripts/findings_ledger.sh add --session <s> --id ... ...        # check first, then append
+#
+# Both copy THIS file into a scratch corpus, add `entity: {type: json, ref: <the ledger>}`, and run
+# `pv lint <scratch> --gate shapes --shape findings-ledger-v1`, which arms the shape whatever `armed_shapes` says.
+# Neither an empty ledger nor a torn line is a pass: pv refuses an empty file as not JSON (exit 3), and a line
+# it cannot read leaves the verdict Unknown (exit 2).
+#
+# ── THE FORCED-BINDING TRAP, AGAIN ──────────────────────────────────────────────────────────────────────────
+#
+# `suspected_epic` is required, and a finding often has no epic yet. A required field with no escape
+# manufactures false data (refusal-receipt-v1 records the precedents), so it takes an epic `#<n>` or the one
+# declared sentinel `unknown`. `tbd`, `none`, a bare `4433` and an epic's title are refused.
+#
+# `found_at_sha` is the full 40-hex commit. A short sha is ambiguous as the tree grows, and the lines that
+# predate this contract show both forms; a shape that permits two spellings gets both.
+# ──────────────────────────────────────────────
+name: findings-ledger
+version: "1.0.0"
+scope: >
+  What one line of docs/findings/<session>.jsonl must state, written after this contract lands: the seven
+  fields of APR-EPIC-001 rule 17 and nothing else. Out of scope: who may mint an issue from a finding, the
+  author check on issue intake, and any gate on a pull request or release. The lines already in
+  docs/findings/ predate it and are not bound.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-10-09'
+  last_modified: '2026-10-09'
+  author: PAIML Engineering
+  description: >
+    A finding is a defect recorded instead of an issue minted. Each line names the defect, the evidence and
+    repro a reader needs to act, the commit it was seen at, a severity from a closed set, and the epic it
+    probably belongs to or the declared sentinel `unknown`.
+  references:
+    - 'aprender#4455 (this row); docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md rule 17 and row A8'
+    - 'contracts/refusal-receipt-v1.yaml — the closed-sentinel precedent this shape follows'
+    - 'tests/fixtures/ont/findings-ledger/ — the case table, both arms'
+
+vocabulary:
+  prefix: finding
+  root_class: finding:Finding
+
+shape:
+  targetClass: finding:Finding
+  closed: true
+  properties:
+    # FND-<yyyymmdd>-<slug>: the date a reader sorts on, and a slug that names the defect.
+    - {path: finding:id, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^FND-[0-9]{8}-[a-z0-9]+(-[a-z0-9]+)*$"}
+    # One line a reader can triage from. Short titles were the "broken" class in refusal-receipt-v1.
+    - {path: finding:title, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 12}
+    # What was measured: a command and its output, a file:line, a run id.
+    - {path: finding:evidence, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 12}
+    # How to see it again; `none` is sayable when nothing reproduces it.
+    - {path: finding:repro, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 4}
+    # The closed escape: an epic, or the declared sentinel `unknown`.
+    - {path: finding:suspected_epic, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^(#[0-9]+|unknown)$"}
+    - {path: finding:severity, minCount: 1, maxCount: 1, in: [P0, P1, P2, P3]}
+    - {path: finding:found_at_sha, minCount: 1, maxCount: 1, datatype: xsd:string,
+       pattern: "^[0-9a-f]{40}$"}
+
+equations:
+  conforms:
+    formula: "∀ l ∈ lines(L): keys(l) = {id, title, evidence, repro, suspected_epic, severity, found_at_sha} ∧ each value in its declared set"
+    domain: "L, one docs/findings/<session>.jsonl ledger, lines written after this contract"
+    codomain: "conforms, or a violation naming the line and the field"
+    invariants:
+      - "a line carrying a key outside the seven is refused (closed shape)"
+      - "a line missing any of the seven is refused"
+      - "suspected_epic is `#<n>` or `unknown`; a plausible but undeclared sentinel is refused"
+      - "found_at_sha is 40 hex; a short sha is refused"
+    preconditions:
+      - "the ledger is JSONL: one JSON object per line"
+    postconditions:
+      - "every line names its defect, its evidence, its repro, its commit and its severity"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: FL-INV-001
+    property: a line carries the seven fields of rule 17 and no other
+    formal: 'keys(l) ≠ {id, title, evidence, repro, suspected_epic, severity, found_at_sha} ⇒ Fail(findings-ledger-v1, l)'
+    prose: false
+  - id: FL-INV-002
+    property: the epic escape is closed
+    formal: 'suspected_epic(l) ∉ {#<n>} ∪ {unknown} ⇒ Fail(findings-ledger-v1, l)'
+    prose: false
+  - id: FL-INV-003
+    property: a line names the full commit it was found at
+    formal: 'found_at_sha(l) ∉ [0-9a-f]{40} ⇒ Fail(findings-ledger-v1, l)'
+    prose: false
+  - id: FL-INV-004
+    property: severity is one of P0..P3
+    formal: 'severity(l) ∉ {P0, P1, P2, P3} ⇒ Fail(findings-ledger-v1, l)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-FL-001
+    rule: both arms of the seven fields
+    prediction: >
+      a ledger whose lines carry the seven fields conforms, including one whose suspected_epic is `unknown`;
+      a line missing found_at_sha, or carrying an eighth key, is refused naming the line
+    test: cargo test -p aprender-contracts-cli --test ont_findings_ledger
+    if_fails: the ledger is a convention again, and every writer invents its own key set
+  - id: FALSIFY-FL-002
+    rule: the closed escape and the closed sets
+    prediction: >
+      suspected_epic `tbd` or a bare `4433`, severity `high`, a 9-hex found_at_sha and an id without the
+      FND-<yyyymmdd>- prefix are each refused
+    test: cargo test -p aprender-contracts-cli --test ont_findings_ledger
+    if_fails: a required field starts manufacturing plausible values, or a sha stops naming one commit
+  - id: FALSIFY-FL-003
+    rule: the writer appends only what pv passed, and nothing is vacuous
+    prediction: >
+      `findings_ledger.sh add` appends a conforming line and refuses a non-conforming one, leaving the ledger
+      byte-identical; `findings_ledger.sh check` on an empty ledger or a torn line is not a pass
+    test: cargo test -p aprender-contracts-cli --test ont_findings_ledger
+    if_fails: the writer is a second validator, or an empty ledger reads as a conforming one

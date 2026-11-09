@@ -29,6 +29,9 @@
 # and fails closed if a line here names a step nothing runs), and it is also
 # what keeps scripts/check_guards_are_wired.sh finding these guards wired --
 # that guard greps every file under .github/workflows/, not ci.yml alone.
+#
+# The last two lines are the hand-list guard tree scan (#3745 S3) and the ladder-gap requirement (#5231), LAB checks. Their seconds are a
+# warm local run, 2026-10-12, not a CI run; the build is shared with the steps above.
 586	Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV
 405	Perf gate can still discriminate (APR-PERF-GATE-001, case table)
 256	model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
@@ -37,3 +40,21 @@
 135	No test may assert about the fd 0 it inherited
 130	Publish safety (binary/oversize files in published packages)
 94	aprender-core builds for wasm32
+1	Release surfaces may not hand-list apr verbs or flags (#3745 S3)
+1	The model ladder owes cells to every model-cell command (#5231)
+# #5182 (GATE/LAB): two ratchets that may not sit on a PR path. Seconds are a
+# local wall-clock sample (2026-10-12, not a CI run); the first nightly replaces them.
+19	Per-function complexity may only fall (shrink-only)
+2	No shrink-only baseline in scripts/ grew (check_baseline_ratchets --ratchet)
+# #4709 (C303): the pv census ratchet, LAB from its first night (never on a PR path, C324).
+# Seconds are a local wall-clock sample (2026-10-14, pv prebuilt); the first nightly replaces them.
+6	The pv census bound share may only rise (#4709)
+# #5502: parity-receipt count vs EXPECTED_RECEIPTS (verify mode), LAB, nightly only (C324); seconds are a guess until the first night.
+5	Parity-receipt count equals EXPECTED_RECEIPTS (verify mode, #5502, LAB)
+# #5873: the harness fixture-server cleanup check, quarantined from ci/explicit-test-commands.d/817 (its apr-stub row races); LAB, never on a PR path (C324).
+60	Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
+1	affected_set.sh case table and mutants (FLOW-010 E5, LAB)
+# #5879: LAB, nightly only (C324); seconds are a guess until the first night.
+5	Coverage scan files no per-function ticket (LAB, #5879)
+# #5809 (FLOW-010 E5): affected-set tool case tables, LAB from the first night (never on a PR path, C324). Seconds are a local sample.
+40	Affected-set tool and readers guards (FLOW-010 E5, #5809)

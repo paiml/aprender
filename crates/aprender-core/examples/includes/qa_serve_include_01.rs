@@ -346,7 +346,7 @@ fn main() {
     let model = match model {
         Some(m) => m,
         None => {
-            println!("{}ERROR: No model found.{}", RED, NC);
+            println!("{}ERROR: Model not found: pass --model PATH or cache a default model.{}", RED, NC);
             std::process::exit(2);
         }
     };

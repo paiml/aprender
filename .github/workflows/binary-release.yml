@@ -337,6 +337,7 @@ jobs:
           git fetch --no-tags --depth 1 origin "$GITHUB_WORKFLOW_SHA"
           git show "FETCH_HEAD:scripts/release/asset_version_check.sh" > "$RUNNER_TEMP/asset_version_check.sh"
           git show "FETCH_HEAD:scripts/nightly_manifest.py" > "$RUNNER_TEMP/nightly_manifest.py"
+          git show "FETCH_HEAD:scripts/release/release_bin_filter.sh" > "$RUNNER_TEMP/release_bin_filter.sh"
           case "$TAG" in *-rc.*) ;; *) echo "final tag $TAG: nothing to stamp"; exit 0 ;; esac
           git show "FETCH_HEAD:scripts/release/stamp_rc_version.sh" > "$RUNNER_TEMP/stamp_rc_version.sh"
           bash "$RUNNER_TEMP/stamp_rc_version.sh" "$GITHUB_WORKSPACE" "$TAG"
@@ -356,7 +357,9 @@ jobs:
             -v "$CACHE/registry:/usr/local/cargo/registry" \
             -w /workspace \
             rust:1.93.0-bullseye \
-            cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/metadata.json"
+            cargo metadata --locked --no-deps --format-version 1 > "$RUNNER_TEMP/metadata.raw.json"
+          # #6502: publish=false and *-ci-tools packages are never shipped
+          bash "$RUNNER_TEMP/release_bin_filter.sh" "$RUNNER_TEMP/metadata.raw.json" > "$RUNNER_TEMP/metadata.json"
           ALL=$(python3 "$RUNNER_TEMP/nightly_manifest.py" bins --metadata "$RUNNER_TEMP/metadata.json")
           BINS=$(echo "$ALL" | tr ',' '\n' | grep -vxE 'apr|pv' | paste -sd, -)
           if [ -z "$BINS" ]; then echo "::error::no [[bin]] derived from the tag tree"; exit 1; fi

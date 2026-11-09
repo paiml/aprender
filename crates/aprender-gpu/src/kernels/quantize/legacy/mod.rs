@@ -18,7 +18,7 @@ mod q8_0;
 pub use q4_0::Q4_0GemvKernel;
 pub use q4_1::Q4_1GemvKernel;
 pub use q5_0::Q5_0GemvKernel;
-pub use q8_0::Q8_0GemvKernel;
+pub use q8_0::{BatchedQ8_0GemvKernel, Q8_0GemvKernel};
 
 // Re-export parent constants for use by submodules via `super::`
 use super::{Q5_0_BLOCK_BYTES, Q5_0_BLOCK_SIZE, Q8_0_BLOCK_BYTES, Q8_0_BLOCK_SIZE};

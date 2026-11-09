@@ -407,4 +407,75 @@ mod tests {
         #[cfg(not(feature = "timing-gate"))]
         let _ = elapsed;
     }
+
+    // ===== collect_checks (FALSIFY-CGP-DOCTOR-001..004) =====
+
+    fn by_name<'a>(checks: &'a [ToolCheck], name: &str) -> &'a ToolCheck {
+        checks
+            .iter()
+            .find(|c| c.name == name)
+            .unwrap_or_else(|| panic!("missing check {name}"))
+    }
+
+    #[test]
+    fn test_collect_checks_names_and_order() {
+        let names: Vec<String> = collect_checks().into_iter().map(|c| c.name).collect();
+        let expected = [
+            "nvidia-smi",
+            "CUDA Runtime",
+            "ncu",
+            "nsys",
+            "CUPTI",
+            "perf",
+            "valgrind",
+            "renacer",
+            "trueno-explain",
+            "GPU",
+            "CPU",
+        ];
+        assert_eq!(names, expected);
+    }
+
+    #[test]
+    fn test_collect_checks_cuda_runtime_renamed_from_nvcc() {
+        let checks = collect_checks();
+        assert!(checks.iter().all(|c| c.name != "nvcc"));
+        let cuda = by_name(&checks, "CUDA Runtime");
+        // Present iff nvcc is on PATH.
+        assert_eq!(cuda.status == ToolStatus::Ok, which::which("nvcc").is_ok());
+    }
+
+    #[test]
+    fn test_collect_checks_cupti_status_tracks_path() {
+        let checks = collect_checks();
+        let cupti = by_name(&checks, "CUPTI");
+        match &cupti.path {
+            Some(p) => {
+                assert_eq!(cupti.status, ToolStatus::Ok);
+                assert_eq!(cupti.version.as_deref(), Some(p.as_str()));
+                assert!(std::path::Path::new(p).exists());
+            }
+            None => {
+                assert_eq!(cupti.status, ToolStatus::Missing);
+                assert!(cupti.version.is_none());
+            }
+        }
+    }
+
+    #[test]
+    fn test_collect_checks_status_matches_path_presence() {
+        for c in collect_checks() {
+            if c.name == "GPU" || c.name == "CPU" {
+                continue;
+            }
+            assert_eq!(
+                c.status == ToolStatus::Ok,
+                c.path.is_some(),
+                "{}: status {:?} vs path {:?}",
+                c.name,
+                c.status,
+                c.path
+            );
+        }
+    }
 }

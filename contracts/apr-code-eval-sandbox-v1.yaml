@@ -1,0 +1,143 @@
+# apr-code-eval-sandbox-v1 — the SANDBOX node of the apr code eval ontology (APR-CODE-EVAL-001).
+#
+# The sandbox is where a candidate edit and the hidden tests meet. If it leaks (network,
+# host files, a floating image) the same answer can score differently on two nights, and a
+# pass can come from outside the model. SWE-bench moved to per-instance container images
+# for exactly this reason; Terminal-Bench judges only the container's final state.
+metadata:
+  version: "1.0.0"
+  created: "2026-10-14"
+  author: PAIML Engineering
+  kind: kernel
+  registry: true
+  description: |
+    Hermetic execution of one (task, candidate edit, seed) for the `apr code` eval
+    (epic #5281, ticket #5284). Isolation, pinning, limits and determinism are stated as
+    equations so each one has a planted-failure test.
+  references:
+    - "docs/specifications/apr-code-eval-v1.md §4 (sandbox)"
+    - "SWE-bench harness (2024) — per-instance Docker images: base, environment, instance layers"
+    - "Terminal-Bench (2025) — task container + post-state test script"
+    - "Reproducible Builds — SOURCE_DATE_EPOCH specification"
+name: apr-code-eval-sandbox
+version: "1.0.0"
+status: PROPOSED
+scope: "sandbox runner of the apr code eval harness (ticket #5284)"
+description: |
+  run(t, e, s) executes candidate edit e for task t with seed s inside a container built
+  from image digest d(t). It returns a SandboxReport { status, exit_code, killed_by,
+  tests_executed, tests_passed, tests_failed, per_test, stdout_sha256, wall_ms }.
+  Test counts come from the test runner's structured report (JUnit XML, cargo/nextest
+  JSON, pytest junit), never from the process exit code alone.
+
+equations:
+  ACE-SBX-001:
+    description: "No network: every outbound connection attempt fails"
+    formula: "network_mode = none  ⇒  ∀ addr ≠ loopback. connect(addr) = Err"
+  ACE-SBX-002:
+    description: "The image is pinned by content digest; a tag alone is refused"
+    formula: "image_ref(t) matches '^[^@]+@sha256:[0-9a-f]{64}$'  ∧  digest_pulled = digest_declared"
+  ACE-SBX-003:
+    description: "Every resource is bounded"
+    formula: "wall_s < ∞ ∧ cpus < ∞ ∧ mem_bytes < ∞ ∧ pids < ∞ ∧ disk_bytes < ∞  ∧  (killed_by ≠ ⊥ ⇒ status ≠ ok)  ∧  (status = ok ⇒ killed_by = ⊥)"
+    note: "A breach ends the run with killed_by ∈ {timeout, oom, pids, disk}; it is a status, never a pass."
+  ACE-SBX-004:
+    description: "Filesystem isolation: only the task dir (read-only) and a tmpfs workdir are mounted"
+    formula: "mounts(run) = { task_dir:ro, /work:tmpfs }  ∧  docker.sock ∉ mounts  ∧  $HOME_host ∉ mounts"
+  ACE-SBX-005:
+    description: "Fixed environment and seed"
+    formula: "env ⊇ { SEED=s, TZ=UTC, LANG=C.UTF-8, SOURCE_DATE_EPOCH=t.release_epoch, PYTHONHASHSEED=s }  ∧  env ∩ host_secrets = ∅"
+  ACE-SBX-006:
+    description: "Determinism: the same inputs give the same verdict"
+    formula: "∀ i, j ∈ 1..N.  π(run_i(t, e, s, d)) = π(run_j(t, e, s, d)),  π = (status, tests_passed, tests_failed, per_test), run_i = the i-th independent execution in a fresh container"
+    note: "A test that differs across N repeats is a flake. It is reported, and the task is quarantined, not retried until green."
+  ACE-SBX-007:
+    description: "Executed-test count is measured, not inferred"
+    formula: "tests_executed = |parse(runner_report)|  ∧  (runner_report absent ⇒ status = sandbox_error)"
+  ACE-SBX-008:
+    description: "Clean slate: no state survives between runs"
+    formula: "∀ runs r₁ ≺ r₂. container(r₁) ≠ container(r₂)  ∧  workdir(r₂) = snapshot(t) ⊕ e"
+
+proof_obligations:
+  - id: ACE-SBX-PO-001
+    type: invariant
+    property: "A planted outbound call (DNS + TCP to a public address) fails inside the sandbox (ACE-SBX-001)"
+    formal: "∀ run. net_probe(run) = refused"
+  - id: ACE-SBX-PO-002
+    type: precondition
+    property: "A tag-only or mismatched-digest image is refused before any run (ACE-SBX-002)"
+    formal: "¬pinned(image_ref) ∨ digest_pulled ≠ digest_declared ⇒ run = Err"
+  - id: ACE-SBX-PO-003
+    type: bound
+    property: "A runaway candidate is killed and reported as a status (ACE-SBX-003)"
+    formal: "wall > wall_s ⇒ killed_by = timeout ∧ status ≠ ok"
+  - id: ACE-SBX-PO-004
+    type: invariant
+    property: "The candidate cannot read host files or the container socket (ACE-SBX-004)"
+    formal: "read(/var/run/docker.sock) = Err ∧ read($HOME_host) = Err"
+  - id: ACE-SBX-PO-005
+    type: invariant
+    property: "Seeded env is set and no host secret is passed through (ACE-SBX-005)"
+    formal: "env(run).SEED = s ∧ ∀ k ∈ {GH_TOKEN, GITHUB_TOKEN, HF_TOKEN, AWS_*}. k ∉ env(run)"
+  - id: ACE-SBX-PO-006
+    type: equivalence
+    property: "Two runs of the same (t, e, s, d) agree (ACE-SBX-006)"
+    formal: "report(run₁) ≡ report(run₂) modulo wall_ms"
+  - id: ACE-SBX-PO-007
+    type: invariant
+    property: "A run with no parseable test report is a sandbox error, never ok (ACE-SBX-007)"
+    formal: "runner_report = ⊥ ⇒ status = sandbox_error"
+  - id: ACE-SBX-PO-008
+    type: invariant
+    property: "A file written by run 1 is absent in run 2 (ACE-SBX-008)"
+    formal: "write(r₁, p) ⇒ ¬exists(r₂, p)"
+
+falsification_tests:
+  - id: FALSIFY-ACE-SBX-001
+    name: network_probe_refused
+    prediction: "A candidate that resolves and connects to a public host gets a connection error; the probe test reports refused."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_001_network_refused in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "The sandbox has network; a candidate could fetch an answer."
+  - id: FALSIFY-ACE-SBX-002
+    name: tag_only_image_refused
+    prediction: "image 'rust:1.89' (no digest) and a digest that does not match the pulled image are both refused before start."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_002_unpinned_image_refused in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "A floating tag lets the environment drift between nights."
+  - id: FALSIFY-ACE-SBX-003
+    name: runaway_killed
+    prediction: "A candidate with an infinite loop is killed at wall_s and reported killed_by=timeout; a 2 GiB allocation under a 512 MiB cap is reported killed_by=oom."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_003_limits_enforced in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "A runaway candidate hangs the night or is mis-scored."
+  - id: FALSIFY-ACE-SBX-004
+    name: host_paths_unreadable
+    prediction: "Reading the container socket path and a planted host file from inside the run fails."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_004_host_isolated in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "A candidate can escape to the host or read other tasks."
+  - id: FALSIFY-ACE-SBX-005
+    name: env_seeded_and_scrubbed
+    prediction: "Inside the run SEED equals the requested seed and GH_TOKEN/HF_TOKEN are unset even when set on the host."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_005_env in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "Runs are not reproducible, or a credential is exposed to model-written code."
+  - id: FALSIFY-ACE-SBX-006
+    name: repeat_run_identical
+    prediction: "Three runs of the gold edit on the smoke task give identical reports apart from wall_ms."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_006_deterministic in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "Scores move without the model changing."
+  - id: FALSIFY-ACE-SBX-007
+    name: missing_report_is_error
+    prediction: "A test command that exits 0 without writing a report gives status=sandbox_error and tests_executed=0."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_007_no_report_is_error in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "exit 0 with zero tests reads as a pass."
+  - id: FALSIFY-ACE-SBX-008
+    name: no_state_between_runs
+    prediction: "A marker file written in run 1 is absent in run 2 of the same task."
+    test_harness: "PLANNED (#5284, crate not yet built): unit test falsify_ace_sbx_008_clean_slate in the sandbox module"
+    expected_output: "test result: ok"
+    if_fails: "One task's run can poison the next."

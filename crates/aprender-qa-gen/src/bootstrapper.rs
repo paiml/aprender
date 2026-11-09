@@ -358,7 +358,7 @@ pub fn to_yaml(playbook: &BootstrappedPlaybook) -> Result<String, String> {
     yaml.push('\n');
 
     let body =
-        serde_yaml::to_string(playbook).map_err(|e| format!("YAML serialization error: {e}"))?;
+        serde_saphyr::to_string(playbook).map_err(|e| format!("YAML serialization error: {e}"))?;
     yaml.push_str(&body);
 
     Ok(yaml)

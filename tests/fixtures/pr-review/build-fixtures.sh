@@ -133,7 +133,7 @@ AG_USAGE='"usage":{"input_tokens":20836,"output_tokens":904,"thinking_tokens":75
 # family reviewing itself while every field a reader checks still reads `antigravity`.
 # That is S5's self-preference case with a cross-vendor label on it, and it is this
 # repository's standing rule against labelling a run by intent.
-AGY_MODEL='gemini-3.1-pro-high'
+AGY_MODEL='gemini-4-argon-high'
 AG_IDENT="\"agy_version\":\"$AGY_VERSION\",\"binary_path\":\"$AGY_PATH\",\"model_id\":\"$AGY_MODEL\",\"model_family\":\"google/gemini\""
 
 # The ordinary shape: agy ran, agreed with the primary about everything, raised nothing.

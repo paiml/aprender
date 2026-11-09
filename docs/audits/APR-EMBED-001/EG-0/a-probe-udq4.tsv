@@ -1,0 +1,52 @@
+# apr=apr 0.70.1 (f745e7abc) model_sha256=ea905fd08e8061db77a0031cbb5096d459d7cfd2bdd0ad2ba66e483f16719493 timeout_s=120
+verb	exit	first_line
+run	8	=== APR Run ===
+serve	0	━━━ Inference Plan: embeddinggemma-2-UD-Q4_K_XL (Q4_K) on CUDA GPU (unknown) ━━━
+chat	0	=== Model Chat (GGUF Format) ===
+code	1	Launched apr serve on port 42191 (pid 3047862, --gpu)
+inspect	0	  Rosetta Stone Inspection
+debug	0	  embeddinggemma-2-UD-Q4_K_XL.gguf: GGUF gemma-embedding2 (413)
+validate	0	Validating <models>/unsloth/embeddinggemma-2-UD-Q4_K_XL.gguf...
+lint	0	  Model Lint
+tensors	0	  Tensors: <models>/unsloth/embeddinggemma-2-UD-Q4_K_XL.gguf
+trace	0	  Layer Trace: <models>/unsloth/embeddinggemma-2-UD-Q4_K_XL.gguf
+diff	0	  Model Diff
+hex	0	  GGUF Binary Forensics: <models>/unsloth/embeddinggemma-2-UD-Q4_K_XL.gguf
+tree	0	embeddinggemma-2-UD-Q4_K_XL.gguf (413 tensors, 152.5 MB)
+flow	0	Model: embeddinggemma-2-UD-Q4_K_XL.gguf (decoder-only (LLaMA/Qwen2), GGUF)
+export	5	  APR Export
+convert	0	  APR Convert
+stamp	5	Reading <models>/unsloth/embeddinggemma-2-UD-Q4_K_XL.gguf
+compile	4	error: Invalid APR format: Only APR v2 format (APR\0) is supported for compilation. Convert with `apr import` first.
+merge	0	  APR Merge — Plan
+quantize	0	  APR Quantize — Plan
+rosetta	0	  Rosetta Stone Inspection
+publish	0	=== DRY RUN: Would publish to example/embeddinggemma-2 ===
+finetune	0	=== apr finetune (GH-244: LoRA/QLoRA Fine-tuning) ===
+prune	0	  APR Prune — Plan
+distill	0	  APR Distill — Plan
+tune	0	=== apr tune (GH-176: ML Tuning via entrenar-lora) ===
+bench	5	=== APR Benchmark ===
+eval	5	=== APR Evaluation ===
+check	5	=== Model Self-Test (PMAT-112: Real Validation) ===
+qa	5	  APR Quality Assurance
+qualify	5	  Qualify
+compare-hf	5	Loading local model: <models>/unsloth/embeddinggemma-2-UD-Q4_K_XL.gguf (Gguf)
+parity	9	error: Feature not enabled: cuda feature required for parity check
+profile	5	=== apr profile (Real Per-Operation Telemetry) ===
+ptx-map	0	Scope: PTX kernel DISPATCH map — verifies kernel launch configuration
+showcase	5	╔═══════════════════════════════════════════════════════════════╗
+diagnose	0	  SSC Training Diagnosis (Five Whys)
+rerank	5	error: Validation failed: Failed to read vocab <scratch>/rerank/vocab.txt: No such file or directory (os error 2)
+embed	5	error: Validation failed: Failed to parse APR v2 at <models>/unsloth/embeddinggemma-2-UD-Q4_K_XL.gguf: InvalidMagic([71, 71, 85, 70])
+shard	5	error: Validation failed: apr shard failed: safetensors error: HeaderTooLarge
+encrypt	5	Enter passphrase (or set ALBOR_ENCRYPT_KEY env var):
+decrypt	5	Enter passphrase (or set ALBOR_ENCRYPT_KEY env var):
+pull	0	=== APR Pull ===
+import	5	  APR Import Pipeline
+list	0	=== Cached Models ===
+rm	3	=== APR Remove ===
+unshard	5	error: Validation failed: apr unshard failed: input is not a directory: <scratch>/unshard/shards
+tokenize	0	29104
+capability	0	GPU-supported operations
+rag	0	Trueno-RAG Pipeline

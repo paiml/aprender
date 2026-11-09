@@ -436,4 +436,38 @@ impl InferenceTracer {
     pub fn error_count(&self) -> usize {
         self.error_count
     }
+
+    /// Record a step whose duration the CALLER measured (APR-OBS-001 OBS-09):
+    /// the serve path times a whole forward or one layer outside the tracer, and
+    /// this files it as an exit event. A disabled tracer, or one not tracing
+    /// `step`, records nothing, so its [`Self::events`] stay empty and no reply
+    /// built from them can claim a measurement.
+    pub fn record_timed(
+        &mut self,
+        step: TraceStep,
+        iteration: usize,
+        layer: Option<usize>,
+        duration_us: u64,
+    ) {
+        if !self.config.should_trace(step) {
+            return;
+        }
+        let event = TraceEvent {
+            id: self.next_id(),
+            timestamp: Self::timestamp(),
+            event_type: AwsEventType::TaskStateExited,
+            previous_event_id: None,
+            step,
+            iteration,
+            layer,
+            input_shape: vec![],
+            output_shape: vec![],
+            stats: TensorStats::default(),
+            duration_us,
+            error: None,
+            cause: None,
+            details: TraceDetails::default(),
+        };
+        self.events.push(event);
+    }
 }

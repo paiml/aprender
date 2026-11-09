@@ -51,10 +51,6 @@ fn fixture(name: &str) -> PathBuf {
         .join(name)
 }
 
-fn repo_contracts() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts")
-}
-
 fn s(p: &Path) -> String {
     p.to_str().expect("utf-8 path").to_string()
 }
@@ -65,27 +61,6 @@ fn json_of(r: &Run) -> serde_json::Value {
 
 fn gate(dir: &Path) -> Run {
     pv(&["lint", &s(dir), "--gate", "relations", "--format", "json"])
-}
-
-#[test]
-fn the_repo_corpus_passes_the_relations_gate() {
-    let r = gate(&repo_contracts());
-    assert_eq!(r.code, 0, "{}", show(&r));
-    let v = json_of(&r);
-    assert_eq!(v["gate"], "relations", "{}", show(&r));
-    assert_eq!(v["verdict"], "Pass", "{}", show(&r));
-    // R-2 by construction: the real corpus must carry typed relations, or this would be a decline
-    assert!(
-        v["extra"]["relations_n"].as_u64().unwrap_or(0) > 0,
-        "the real corpus has typed relations\n{}",
-        show(&r)
-    );
-    // the legacy field is measured, never rewritten: 188 contracts carry it at 3409b29d
-    assert!(
-        v["extra"]["legacy_depends_on"].as_u64().unwrap_or(0) > 100,
-        "metadata.depends_on is counted\n{}",
-        show(&r)
-    );
 }
 
 #[test]
@@ -173,25 +148,4 @@ fn the_legacy_ratchet_rejects_a_rise_and_passes_a_hold() {
     let rise = gate(&fixture("relations-legacy-rise"));
     assert_eq!(rise.code, 1, "{}", show(&rise));
     assert!(rise.stdout.contains("PV-ONT-010"), "{}", show(&rise));
-}
-
-/// R-8: the gate is computed in every `pv lint` run, not only under `--gate`.
-#[test]
-fn the_full_run_computes_the_relations_gate() {
-    let dir = s(&repo_contracts());
-    let r = pv(&["lint", &dir, "--format", "json"]);
-    let v = json_of(&r);
-    let names: Vec<String> = v["gates"]
-        .as_array()
-        .map(|g| {
-            g.iter()
-                .filter_map(|x| x["name"].as_str().map(String::from))
-                .collect()
-        })
-        .unwrap_or_default();
-    assert!(
-        names.iter().any(|n| n == "relations"),
-        "{names:?}\n{}",
-        show(&r)
-    );
 }

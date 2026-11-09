@@ -191,6 +191,8 @@ pub struct QaConfig {
     pub skip_capability: bool,
     /// Assert classifier head presence and shape (F-CLASS-004)
     pub assert_classifier_head: bool,
+    /// Ollama parity runs ollama on this GGUF, not a size-matched tag (#5254)
+    pub ollama_from_file: bool,
 }
 
 impl Default for QaConfig {
@@ -219,6 +221,7 @@ impl Default for QaConfig {
             skip_metadata: false,
             skip_capability: false,
             assert_classifier_head: false,
+            ollama_from_file: false,
         }
     }
 }
@@ -306,12 +309,13 @@ impl GateResult {
 /// drift from the pipeline silently. It is published in the report as
 /// `gates_registered`, so a JSON consumer derives what to expect from the binary
 /// it ran instead of from a number it once counted.
-pub(crate) const QA_GATES: [&str; 12] = [
+pub(crate) const QA_GATES: [&str; 13] = [
     "capability_match",
     "tensor_contract",
     "metadata_plausibility",
     "classifier_head",
     "golden_output",
+    "golden_embedding",
     "throughput",
     "ollama_parity",
     "gpu_speedup",
@@ -477,6 +481,7 @@ pub fn run(
     skip_metadata: bool,
     skip_capability: bool,
     assert_classifier_head: bool,
+    ollama_from_file: bool,
 ) -> Result<()> {
     contract_pre_qa_gate_composition!();
     // GH-2391: every QA gate is `observed >= asserted`. A NaN or negative
@@ -520,6 +525,7 @@ pub fn run(
         skip_metadata,
         skip_capability,
         assert_classifier_head,
+        ollama_from_file,
     };
 
     // `run_qa(...)?` used to propagate straight past the `if json` block below, so
@@ -707,6 +713,7 @@ fn gate_display_name(name: &str) -> &str {
         "capability_match" => "Capability Match",
         "tensor_contract" => "Tensor Contract",
         "golden_output" => "Golden Output",
+        "golden_embedding" => "Golden Embedding",
         "throughput" => "Throughput",
         "ollama_parity" => "Ollama Parity",
         "gpu_speedup" => "GPU Speedup",
@@ -773,6 +780,7 @@ include!("qa_gguf.rs");
 include!("output_verification.rs");
 include!("gpu_correct_subject.rs");
 include!("golden_output.rs");
+include!("qa_golden_embedding.rs");
 include!("speedup.rs");
 include!("forward_error.rs");
 include!("gpu_isolation_result.rs");

@@ -14,6 +14,13 @@ pub(crate) fn workspace_contract_or_skip(test: &str, rel: &str) -> Option<String
     provable_contracts::workspace_file_or_skip!(test, &format!("contracts/{rel}"))
 }
 
+/// Any workspace file outside this crate (a fixture under `scripts/`, …), read at RUN time by the same
+/// rule as [`workspace_contract_or_skip`]. A plain fn, so the tarball shrink report counts its call sites
+/// (`scripts/lib/tarball_shrink_report.py` matches `*_or_skip(`, not the macro form) (#5171).
+pub(crate) fn workspace_fixture_or_skip(test: &str, rel: &str) -> Option<String> {
+    provable_contracts::workspace_file_or_skip!(test, rel)
+}
+
 #[cfg(test)]
 mod tests {
     /// The real workspace resolves: this build IS in tree, so the helper must find the contract.

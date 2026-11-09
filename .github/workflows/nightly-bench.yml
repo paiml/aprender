@@ -60,7 +60,7 @@ jobs:
     concurrency:
       group: perf-intel
       cancel-in-progress: false
-    runs-on: [self-hosted, X64, Linux, clean-room, intel]   # perf: the SAME box as the recorded baselines — clean-room now spans intel + yoga + gx10 (#3100)
+    runs-on: [self-hosted, X64, Linux, intel, perf-solo]   # REV 2.0 step 6: same selector as beat-speed-nightly.yml:68; perf-solo = one runner, so two timings can never overlap
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
@@ -94,8 +94,8 @@ jobs:
         run: |
           set -o pipefail
           cargo test -p aprender-compute --lib issue_2567_measure --release \
-            -- --ignored --nocapture 2>&1 | tee /tmp/bench.log
-          grep -q '^speedup' /tmp/bench.log || {
+            -- --ignored --nocapture 2>&1 | tee "$RUNNER_TEMP"/bench.log
+          grep -q '^speedup' "$RUNNER_TEMP"/bench.log || {
             echo "::error::the measurement produced no speedup line — silence is red"
             exit 1
           }

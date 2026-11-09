@@ -1,5 +1,5 @@
 metadata:
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-04-02'
   author: PAIML Engineering
   description: >
@@ -219,6 +219,11 @@ falsification_tests:
   prediction: Diff writes fewer bytes than full render when <50% cells changed
   test: Change 10% of cells; measure diff output size vs full output size
   if_fails: Diff is not minimal — no performance benefit over full redraw
+- id: FALSIFY-TR-009
+  rule: ModelCard paint emits exactly the declared draw commands
+  prediction: paint on a RecordingCanvas draws background, border and status badge, then one text per populated field; metrics and tags are capped at 4 and 5
+  test: cargo test -p aprender-present-widgets --lib model_card
+  if_fails: ModelCard::paint dropped, duplicated or mis-anchored a draw command
 
 kani_harnesses:
 - id: KANI-TR-001

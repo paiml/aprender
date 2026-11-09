@@ -19,7 +19,11 @@ impl OwnedQuantizedModel {
     /// [`RealizarError::ContextLimitExceeded`] when the PROMPT alone exceeds the
     /// context window (GH-167) — that one is unsatisfiable, and callers map it to
     /// HTTP 400 because it is determined entirely by the request.
-    pub(crate) fn effective_max_tokens(&self, prompt_len: usize, requested: usize) -> Result<usize> {
+    pub(crate) fn effective_max_tokens(
+        &self,
+        prompt_len: usize,
+        requested: usize,
+    ) -> Result<usize> {
         if prompt_len > self.config.context_length {
             return Err(RealizarError::ContextLimitExceeded {
                 provided: prompt_len,
@@ -105,7 +109,13 @@ impl OwnedQuantizedModel {
                 Self::argmax(&logits)
             } else {
                 // Temperature + top-k sampling (seeded for reproducibility)
-                Self::sample_topk_seeded(&logits, config.temperature, config.top_k, config.top_p, &mut rng)
+                Self::sample_topk_seeded(
+                    &logits,
+                    config.temperature,
+                    config.top_k,
+                    config.top_p,
+                    &mut rng,
+                )
             };
 
             // Check stop condition
@@ -135,11 +145,14 @@ impl OwnedQuantizedModel {
 
     /// Apply a repetition penalty to `logits` in place (PMAT-814).
     ///
-    /// Mirrors the live MoE path (`infer/qwen3_moe_generate.rs::sample_from_logits`)
-    /// and Candle's `apply_repeat_penalty`: every token in the recency window has its
+    /// The one implementation: the MoE path (`infer/qwen3_moe_generate.rs::sample_from_logits`)
+    /// calls it too. As Candle's `apply_repeat_penalty`, every token in the recency window has its
     /// logit divided by `penalty` when positive and multiplied by `penalty` when
     /// non-positive, so a larger `penalty` always shrinks the chance of repeating a
     /// recently-seen token regardless of its logit sign.
+    ///
+    /// Each distinct token in the window is penalised ONCE, however often it recurs — the
+    /// convention of llama.cpp, Candle and HF `RepetitionPenaltyLogitsProcessor`.
     ///
     /// The window is the last `last_n` entries of `recent_tokens` (the full decoded
     /// context — prompt + generated — exactly as `repeat_last_n` is interpreted on the
@@ -161,9 +174,13 @@ impl OwnedQuantizedModel {
             return;
         }
         let start = recent_tokens.len().saturating_sub(last_n);
+        // Once per DISTINCT token in the window: a token seen k times is penalised once, not
+        // `penalty^k` (llama.cpp's penalties sampler counts tokens then applies the repeat
+        // penalty once per counted token; Candle's `apply_repeat_penalty` skips seen ones).
+        let mut seen = std::collections::HashSet::with_capacity(recent_tokens.len() - start);
         for &token in &recent_tokens[start..] {
             let idx = token as usize;
-            if idx < logits.len() {
+            if idx < logits.len() && seen.insert(token) {
                 if logits[idx] <= 0.0 {
                     logits[idx] *= penalty;
                 } else {
@@ -257,51 +274,13 @@ impl OwnedQuantizedModel {
         let mut rng = StdRng::seed_from_u64(config.seed);
 
         // GH-104: BrickProfiler for per-operation timing in autoregressive path
-        let mut profiler = if config.trace {
-            BrickProfiler::new()
-        } else {
-            BrickProfiler::disabled()
-        };
-        if config.trace {
-            profiler.set_num_layers(self.config.num_layers);
-        }
-
-        // PMAT-TRACE-GGUF-001: Trace config info
-        if config.trace {
-            eprintln!(
-                "[TRACE-CACHE] GGUF model: {} layers, hidden_dim={}, vocab={}",
-                self.config.num_layers, self.config.hidden_dim, self.config.vocab_size
-            );
-            eprintln!(
-                "[TRACE-CACHE] Prefill: {} tokens, max_gen={}",
-                prompt.len(),
-                max_tokens
-            );
-        }
+        let mut profiler = self.cache_profiler(config.trace);
+        self.trace_cache_setup(config.trace, "model", prompt.len(), max_tokens);
 
         // Process prompt tokens (prefill), keeping the logits from the last position
         // The logits from processing token[n-1] at position n-1 predict token[n]
-        let prefill_start = std::time::Instant::now();
-        let mut logits = Vec::new();
-        if config.trace {
-            profiler.start_inference();
-            for (pos, &token_id) in prompt.iter().enumerate() {
-                logits = self.forward_single_with_cache_profiled(
-                    token_id, &mut cache, pos, &mut profiler,
-                )?;
-            }
-        } else {
-            for (pos, &token_id) in prompt.iter().enumerate() {
-                logits = self.forward_single_with_cache(token_id, &mut cache, pos)?;
-            }
-        }
-        if config.trace {
-            eprintln!(
-                "[TRACE-CACHE] Prefill complete: {} tokens in {:?}",
-                prompt.len(),
-                prefill_start.elapsed()
-            );
-        }
+        let mut logits =
+            self.prefill_with_cache(prompt, &mut cache, &mut profiler, config.trace)?;
 
         // Generate new tokens
         // First iteration uses logits from prefill, subsequent use logits from forward pass
@@ -312,63 +291,12 @@ impl OwnedQuantizedModel {
                 break;
             }
             let token_start = std::time::Instant::now();
-            // DEBUG: Print logits info for first generated token
-            if gen_idx == 0 && std::env::var("REALIZAR_DEBUG_LOGITS").is_ok() {
-                let sum: f32 = logits.iter().sum();
-                let max_val = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                let min_val = logits.iter().copied().fold(f32::INFINITY, f32::min);
-                let top_5: Vec<(usize, f32)> = {
-                    let mut indexed: Vec<_> =
-                        logits.iter().enumerate().map(|(i, &v)| (i, v)).collect();
-                    indexed.sort_by(|(_, a), (_, b)| {
-                        b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                    indexed.into_iter().take(5).collect()
-                };
-                eprintln!(
-                    "[DEBUG-LOGITS] len={}, sum={:.4}, min={:.4}, max={:.4}",
-                    logits.len(),
-                    sum,
-                    min_val,
-                    max_val
-                );
-                eprintln!("[DEBUG-LOGITS] top 5 token ids and logits: {:?}", top_5);
-                eprintln!(
-                    "[DEBUG-LOGITS] logits[0..5]: {:?}",
-                    &logits[..5.min(logits.len())]
-                );
-            }
-
-            // PMAT-814: apply repetition penalty in place over the recent context
-            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
-            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
-                &mut logits,
-                &tokens,
-                config.repeat_penalty,
-                config.repeat_last_n,
-            );
-
-            // Sample next token (PMAT-819: seeded for OpenAI `seed` determinism)
-            let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                ops::argmax(&logits)
+            // DEBUG: logits info, then the selected token, for the first generated token
+            let next_token = if gen_idx == 0 && std::env::var("REALIZAR_DEBUG_LOGITS").is_ok() {
+                Self::choose_next_token_logged(&mut logits, &tokens, config, &mut rng)
             } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk_seeded(
-                    &logits,
-                    config.temperature,
-                    config.top_k,
-                    config.top_p,
-                    &mut rng,
-                )
+                Self::choose_next_token(&mut logits, &tokens, config, &mut rng)
             };
-
-            // DEBUG: Print selected token
-            if gen_idx == 0 && std::env::var("REALIZAR_DEBUG_LOGITS").is_ok() {
-                eprintln!(
-                    "[DEBUG-LOGITS] selected token: {} (logit={:.4})",
-                    next_token,
-                    logits.get(next_token as usize).copied().unwrap_or(f32::NAN)
-                );
-            }
 
             // Check stop condition
             if config.stop_tokens.contains(&next_token) {
@@ -385,52 +313,19 @@ impl OwnedQuantizedModel {
             // Get logits for next iteration by forwarding the newly sampled token
             // Position is prompt.len() + gen_idx (where token was just added)
             let position = prompt.len() + gen_idx;
-            if config.trace {
-                logits = self.forward_single_with_cache_profiled(
-                    next_token, &mut cache, position, &mut profiler,
-                )?;
-            } else {
-                logits = self.forward_single_with_cache(next_token, &mut cache, position)?;
-            }
-
-            // PMAT-TRACE-GGUF-001: Per-token timing
-            if config.trace {
-                eprintln!(
-                    "[TRACE-CACHE] pos={}: {} layers took {:?}",
-                    position,
-                    self.config.num_layers,
-                    token_start.elapsed()
-                );
-            }
+            logits = self.forward_cache_step(
+                next_token,
+                &mut cache,
+                position,
+                &mut profiler,
+                config.trace,
+            )?;
+            self.trace_cache_token(config.trace, position, token_start);
         }
 
         // GH-104: Print BrickProfiler report when tracing is enabled
         if config.trace {
-            profiler.stop_inference();
-            let generated = tokens.len().saturating_sub(prompt.len());
-            profiler.set_tokens(prompt.len() + generated);
-            let report = profiler.report();
-            eprintln!("[BRICK-PROFILE] === Autoregressive Path Profile ===");
-            eprintln!(
-                "[BRICK-PROFILE] Total: {:.2}ms, {} tokens ({} prefill + {} decode), {:.1} tok/s",
-                report.total_inference_us / 1000.0,
-                report.tokens_processed,
-                prompt.len(),
-                generated,
-                report.throughput_tok_s,
-            );
-            let breakdown = report.percentage_breakdown();
-            for (name, stats) in report.sorted_by_time() {
-                let pct = breakdown.get(name).copied().unwrap_or(0.0);
-                eprintln!(
-                    "[BRICK-PROFILE]   {:<20} {:>8.2}ms ({:>5.1}%)  avg={:.1}us  count={}",
-                    name,
-                    stats.total_us / 1000.0,
-                    pct,
-                    stats.avg_us,
-                    stats.count,
-                );
-            }
+            Self::print_brick_profile(&mut profiler, "Autoregressive", prompt.len(), tokens.len());
         }
 
         Ok(tokens)
@@ -477,50 +372,12 @@ impl OwnedQuantizedModel {
         let mut rng = StdRng::seed_from_u64(config.seed);
 
         // GH-104: BrickProfiler for per-operation timing in streaming path
-        let mut profiler = if config.trace {
-            BrickProfiler::new()
-        } else {
-            BrickProfiler::disabled()
-        };
-        if config.trace {
-            profiler.set_num_layers(self.config.num_layers);
-        }
-
-        // PMAT-TRACE-GGUF-001: Trace config info
-        if config.trace {
-            eprintln!(
-                "[TRACE-CACHE] GGUF streaming: {} layers, hidden_dim={}, vocab={}",
-                self.config.num_layers, self.config.hidden_dim, self.config.vocab_size
-            );
-            eprintln!(
-                "[TRACE-CACHE] Prefill: {} tokens, max_gen={}",
-                prompt.len(),
-                max_tokens
-            );
-        }
+        let mut profiler = self.cache_profiler(config.trace);
+        self.trace_cache_setup(config.trace, "streaming", prompt.len(), max_tokens);
 
         // Process prompt tokens (prefill)
-        let prefill_start = std::time::Instant::now();
-        let mut logits = Vec::new();
-        if config.trace {
-            profiler.start_inference();
-            for (pos, &token_id) in prompt.iter().enumerate() {
-                logits = self.forward_single_with_cache_profiled(
-                    token_id, &mut cache, pos, &mut profiler,
-                )?;
-            }
-        } else {
-            for (pos, &token_id) in prompt.iter().enumerate() {
-                logits = self.forward_single_with_cache(token_id, &mut cache, pos)?;
-            }
-        }
-        if config.trace {
-            eprintln!(
-                "[TRACE-CACHE] Prefill complete: {} tokens in {:?}",
-                prompt.len(),
-                prefill_start.elapsed()
-            );
-        }
+        let mut logits =
+            self.prefill_with_cache(prompt, &mut cache, &mut profiler, config.trace)?;
 
         // Generate new tokens with streaming
         for gen_idx in 0..max_tokens {
@@ -530,26 +387,7 @@ impl OwnedQuantizedModel {
                 break;
             }
             let token_start = std::time::Instant::now();
-            // PMAT-814: apply repetition penalty in place over the recent context
-            // BEFORE both greedy argmax and sampling (no-op when repeat_penalty == 1.0).
-            crate::gguf::OwnedQuantizedModel::apply_repeat_penalty(
-                &mut logits,
-                &tokens,
-                config.repeat_penalty,
-                config.repeat_last_n,
-            );
-            // Sample next token (PMAT-819: seeded for OpenAI `seed` determinism)
-            let next_token = if config.temperature == 0.0 || config.top_k == 1 {
-                ops::argmax(&logits)
-            } else {
-                crate::gguf::OwnedQuantizedModel::sample_topk_seeded(
-                    &logits,
-                    config.temperature,
-                    config.top_k,
-                    config.top_p,
-                    &mut rng,
-                )
-            };
+            let next_token = Self::choose_next_token(&mut logits, &tokens, config, &mut rng);
 
             // Check stop condition
             if config.stop_tokens.contains(&next_token) {
@@ -570,54 +408,195 @@ impl OwnedQuantizedModel {
 
             // Get logits for next iteration
             let position = prompt.len() + gen_idx;
-            if config.trace {
-                logits = self.forward_single_with_cache_profiled(
-                    next_token, &mut cache, position, &mut profiler,
-                )?;
-            } else {
-                logits = self.forward_single_with_cache(next_token, &mut cache, position)?;
-            }
-
-            // PMAT-TRACE-GGUF-001: Per-token timing
-            if config.trace {
-                eprintln!(
-                    "[TRACE-CACHE] pos={}: {} layers took {:?}",
-                    position,
-                    self.config.num_layers,
-                    token_start.elapsed()
-                );
-            }
+            logits = self.forward_cache_step(
+                next_token,
+                &mut cache,
+                position,
+                &mut profiler,
+                config.trace,
+            )?;
+            self.trace_cache_token(config.trace, position, token_start);
         }
 
         // GH-104: Print BrickProfiler report when tracing is enabled
         if config.trace {
-            profiler.stop_inference();
-            let generated = tokens.len().saturating_sub(prompt.len());
-            profiler.set_tokens(prompt.len() + generated);
-            let report = profiler.report();
-            eprintln!("[BRICK-PROFILE] === Streaming Path Profile ===");
-            eprintln!(
-                "[BRICK-PROFILE] Total: {:.2}ms, {} tokens ({} prefill + {} decode), {:.1} tok/s",
-                report.total_inference_us / 1000.0,
-                report.tokens_processed,
-                prompt.len(),
-                generated,
-                report.throughput_tok_s,
-            );
-            let breakdown = report.percentage_breakdown();
-            for (name, stats) in report.sorted_by_time() {
-                let pct = breakdown.get(name).copied().unwrap_or(0.0);
-                eprintln!(
-                    "[BRICK-PROFILE]   {:<20} {:>8.2}ms ({:>5.1}%)  avg={:.1}us  count={}",
-                    name,
-                    stats.total_us / 1000.0,
-                    pct,
-                    stats.avg_us,
-                    stats.count,
-                );
-            }
+            Self::print_brick_profile(&mut profiler, "Streaming", prompt.len(), tokens.len());
         }
 
         Ok(tokens)
+    }
+
+    /// GH-104: the [`BrickProfiler`] of a cached generate path; live only when `trace`.
+    fn cache_profiler(&self, trace: bool) -> BrickProfiler {
+        if !trace {
+            return BrickProfiler::disabled();
+        }
+        let mut profiler = BrickProfiler::new();
+        profiler.set_num_layers(self.config.num_layers);
+        profiler
+    }
+
+    /// PMAT-TRACE-GGUF-001: the config lines a traced cached generate opens with.
+    fn trace_cache_setup(&self, trace: bool, path: &str, prompt_len: usize, max_tokens: usize) {
+        if !trace {
+            return;
+        }
+        eprintln!(
+            "[TRACE-CACHE] GGUF {}: {} layers, hidden_dim={}, vocab={}",
+            path, self.config.num_layers, self.config.hidden_dim, self.config.vocab_size
+        );
+        eprintln!(
+            "[TRACE-CACHE] Prefill: {} tokens, max_gen={}",
+            prompt_len, max_tokens
+        );
+    }
+
+    /// PMAT-TRACE-GGUF-001: per-token timing of a traced cached generate.
+    fn trace_cache_token(&self, trace: bool, position: usize, token_start: std::time::Instant) {
+        if trace {
+            eprintln!(
+                "[TRACE-CACHE] pos={}: {} layers took {:?}",
+                position,
+                self.config.num_layers,
+                token_start.elapsed()
+            );
+        }
+    }
+
+    /// One cached forward step; through the profiled forward when `trace`.
+    fn forward_cache_step(
+        &self,
+        token_id: u32,
+        cache: &mut OwnedQuantizedKVCache,
+        position: usize,
+        profiler: &mut BrickProfiler,
+        trace: bool,
+    ) -> Result<Vec<f32>> {
+        if trace {
+            self.forward_single_with_cache_profiled(token_id, cache, position, profiler)
+        } else {
+            self.forward_single_with_cache(token_id, cache, position)
+        }
+    }
+
+    /// Prefill `cache` with `prompt` and return the logits of its last position, which
+    /// predict the first generated token. A traced prefill starts `profiler` first.
+    fn prefill_with_cache(
+        &self,
+        prompt: &[u32],
+        cache: &mut OwnedQuantizedKVCache,
+        profiler: &mut BrickProfiler,
+        trace: bool,
+    ) -> Result<Vec<f32>> {
+        let prefill_start = std::time::Instant::now();
+        if trace {
+            profiler.start_inference();
+        }
+        let mut logits = Vec::new();
+        for (pos, &token_id) in prompt.iter().enumerate() {
+            logits = self.forward_cache_step(token_id, cache, pos, profiler, trace)?;
+        }
+        if trace {
+            eprintln!(
+                "[TRACE-CACHE] Prefill complete: {} tokens in {:?}",
+                prompt.len(),
+                prefill_start.elapsed()
+            );
+        }
+        Ok(logits)
+    }
+
+    /// The next token of a cached generate. PMAT-814: the repetition penalty is applied
+    /// in place over the recent context BEFORE both greedy argmax and sampling (no-op
+    /// when repeat_penalty == 1.0). PMAT-819: sampling is seeded, for OpenAI `seed`
+    /// determinism.
+    fn choose_next_token(
+        logits: &mut [f32],
+        tokens: &[u32],
+        config: &QuantizedGenerateConfig,
+        rng: &mut StdRng,
+    ) -> u32 {
+        Self::apply_repeat_penalty(logits, tokens, config.repeat_penalty, config.repeat_last_n);
+        if config.temperature == 0.0 || config.top_k == 1 {
+            ops::argmax(logits)
+        } else {
+            Self::sample_topk_seeded(logits, config.temperature, config.top_k, config.top_p, rng)
+        }
+    }
+
+    /// [`Self::choose_next_token`] under `REALIZAR_DEBUG_LOGITS`: prints the logits the
+    /// token is chosen from, then the token and its logit after the penalty.
+    fn choose_next_token_logged(
+        logits: &mut [f32],
+        tokens: &[u32],
+        config: &QuantizedGenerateConfig,
+        rng: &mut StdRng,
+    ) -> u32 {
+        Self::debug_print_logits(logits);
+        let next_token = Self::choose_next_token(logits, tokens, config, rng);
+        eprintln!(
+            "[DEBUG-LOGITS] selected token: {} (logit={:.4})",
+            next_token,
+            logits.get(next_token as usize).copied().unwrap_or(f32::NAN)
+        );
+        next_token
+    }
+
+    /// DEBUG (`REALIZAR_DEBUG_LOGITS`): the logits the first generated token is chosen from.
+    fn debug_print_logits(logits: &[f32]) {
+        let sum: f32 = logits.iter().sum();
+        let max_val = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+        let min_val = logits.iter().copied().fold(f32::INFINITY, f32::min);
+        let top_5: Vec<(usize, f32)> = {
+            let mut indexed: Vec<_> = logits.iter().enumerate().map(|(i, &v)| (i, v)).collect();
+            indexed.sort_by(|(_, a), (_, b)| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+            indexed.into_iter().take(5).collect()
+        };
+        eprintln!(
+            "[DEBUG-LOGITS] len={}, sum={:.4}, min={:.4}, max={:.4}",
+            logits.len(),
+            sum,
+            min_val,
+            max_val
+        );
+        eprintln!("[DEBUG-LOGITS] top 5 token ids and logits: {:?}", top_5);
+        eprintln!(
+            "[DEBUG-LOGITS] logits[0..5]: {:?}",
+            &logits[..5.min(logits.len())]
+        );
+    }
+
+    /// GH-104: the BrickProfiler report a traced cached generate ends with.
+    fn print_brick_profile(
+        profiler: &mut BrickProfiler,
+        path: &str,
+        prompt_len: usize,
+        total_len: usize,
+    ) {
+        profiler.stop_inference();
+        let generated = total_len.saturating_sub(prompt_len);
+        profiler.set_tokens(prompt_len + generated);
+        let report = profiler.report();
+        eprintln!("[BRICK-PROFILE] === {path} Path Profile ===");
+        eprintln!(
+            "[BRICK-PROFILE] Total: {:.2}ms, {} tokens ({} prefill + {} decode), {:.1} tok/s",
+            report.total_inference_us / 1000.0,
+            report.tokens_processed,
+            prompt_len,
+            generated,
+            report.throughput_tok_s,
+        );
+        let breakdown = report.percentage_breakdown();
+        for (name, stats) in report.sorted_by_time() {
+            let pct = breakdown.get(name).copied().unwrap_or(0.0);
+            eprintln!(
+                "[BRICK-PROFILE]   {:<20} {:>8.2}ms ({:>5.1}%)  avg={:.1}us  count={}",
+                name,
+                stats.total_us / 1000.0,
+                pct,
+                stats.avg_us,
+                stats.count,
+            );
+        }
     }
 }

@@ -9,14 +9,14 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/realizar">
-    <img src="https://img.shields.io/crates/v/realizar.svg" alt="crates.io">
+  <a href="https://crates.io/crates/aprender-serve">
+    <img src="https://img.shields.io/crates/v/aprender-serve.svg" alt="crates.io">
   </a>
-  <a href="https://docs.rs/realizar">
-    <img src="https://docs.rs/realizar/badge.svg" alt="docs.rs">
+  <a href="https://docs.rs/aprender-serve">
+    <img src="https://docs.rs/aprender-serve/badge.svg" alt="docs.rs">
   </a>
-  <a href="https://github.com/paiml/realizar/actions">
-    <img src="https://github.com/paiml/realizar/actions/workflows/ci.yml/badge.svg" alt="CI">
+  <a href="https://github.com/paiml/aprender/actions/workflows/ci.yml">
+    <img src="https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg" alt="CI">
   </a>
   <a href="LICENSE">
     <img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT License">
@@ -73,7 +73,7 @@ Key design decisions:
 ### CLI
 
 ```bash
-cargo install realizar
+cargo install aprender   # installs `apr`; this crate ships no binary of its own
 ```
 
 ### Library
@@ -82,7 +82,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-realizar = "0.8"
+aprender-serve = "0.71"
 ```
 
 ## Usage
@@ -242,19 +242,19 @@ realizar is the inference layer of the PAIML Sovereign AI Stack:
 
 | Layer | Crate | Purpose |
 |-------|-------|---------|
-| Compute | [trueno](https://crates.io/crates/trueno) | SIMD/GPU primitives (AVX2/AVX-512/NEON, wgpu) |
+| Compute | [trueno](https://crates.io/crates/aprender-compute) | SIMD/GPU primitives (AVX2/AVX-512/NEON, wgpu) |
 | ML | [aprender](https://crates.io/crates/aprender) | ML algorithms, APR v2 format |
-| Training | [entrenar](https://crates.io/crates/entrenar) | Autograd, LoRA/QLoRA, quantization |
+| Training | [entrenar](https://crates.io/crates/aprender-train) | Autograd, LoRA/QLoRA, quantization |
 | Inference | **realizar** | LLM inference, GPU kernels, model serving |
 | Speech | [whisper-apr](https://crates.io/crates/whisper-apr) | Pure Rust Whisper ASR |
-| Distribution | [repartir](https://crates.io/crates/repartir) | Distributed compute (CPU/GPU/Remote) |
-| Registry | [pacha](https://crates.io/crates/pacha) | Model registry with Ed25519 signatures |
-| Orchestration | [batuta](https://crates.io/crates/batuta) | Stack coordination and CLI |
+| Distribution | [repartir](https://crates.io/crates/aprender-distribute) | Distributed compute (CPU/GPU/Remote) |
+| Registry | [pacha](https://crates.io/crates/aprender-registry) | Model registry with Ed25519 signatures |
+| Orchestration | [batuta](https://crates.io/crates/aprender-orchestrate) | Stack coordination and CLI |
 
 ## Documentation
 
-- **API docs**: [docs.rs/realizar](https://docs.rs/realizar)
-- **Repository**: [github.com/paiml/realizar](https://github.com/paiml/realizar)
+- **API docs**: [docs.rs/aprender-serve](https://docs.rs/aprender-serve)
+- **Repository**: [https://github.com/paiml/aprender/tree/main/crates/aprender-serve](https://github.com/paiml/aprender/tree/main/crates/aprender-serve)
 - **Cookbook**: [github.com/paiml/apr-cookbook](https://github.com/paiml/apr-cookbook)
 
 ## Contributing

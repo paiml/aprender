@@ -19,9 +19,9 @@
 
 **GPU-First Embedded Analytics with SIMD Fallback**
 
-[![CI](https://github.com/paiml/trueno-db/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/trueno-db/actions)
-[![Crates.io](https://img.shields.io/crates/v/trueno-db.svg)](https://crates.io/crates/trueno-db)
-[![Documentation](https://docs.rs/trueno-db/badge.svg)](https://docs.rs/trueno-db)
+[![CI](https://github.com/paiml/aprender/actions/workflows/ci.yml/badge.svg)](https://github.com/paiml/aprender/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/aprender-db.svg)](https://crates.io/crates/aprender-db)
+[![Documentation](https://docs.rs/aprender-db/badge.svg)](https://docs.rs/aprender-db)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)]()
 
 </div>
@@ -43,10 +43,10 @@ GPU-first embedded analytics database with graceful degradation: **GPU → SIMD 
 
 ```toml
 [dependencies]
-trueno-db = "0.3"
+aprender-db = "0.71"
 
 # Optional: GPU acceleration
-trueno-db = { version = "0.3", features = ["gpu"] }
+aprender-db = { version = "0.71", features = ["gpu"] }
 ```
 
 ## Quick Start

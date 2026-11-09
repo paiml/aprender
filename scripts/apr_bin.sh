@@ -287,7 +287,7 @@ apr_bin_origin() {
 
 apr_bin_is_fresh() {
     local bin="$1" head
-    head=$(git rev-parse --short HEAD 2>/dev/null) || head=""
+    head=$(git rev-parse --short=9 HEAD 2>/dev/null) || head=""
     if [ -z "$head" ]; then
         return 1
     fi
@@ -417,7 +417,7 @@ apr_bin_report_path_shadows() {
 # useless here, so the two must never share a message.
 apr_bin_report_wrong_tree() {
     local head
-    head=$(git rev-parse --short HEAD 2>/dev/null) || head="<unknown>"
+    head=$(git rev-parse --short=9 HEAD 2>/dev/null) || head="<unknown>"
     {
         printf 'WRONG-TREE apr BINARY\n'
         printf '  this checkout : %s\n' "$APR_BIN_WS_ROOT"
@@ -499,18 +499,18 @@ apr_bin_assert_fresh() {
     # as long as you ran it from the wrong directory - a fail-OPEN hole in a
     # script whose entire job is to refuse unproven binaries. Release and
     # dogfood surfaces set APR_BIN_STRICT=1 so "cannot prove" means "refuse".
-    if [ "${APR_BIN_STRICT:-0}" = "1" ] && ! git rev-parse --short HEAD >/dev/null 2>&1; then
+    if [ "${APR_BIN_STRICT:-0}" = "1" ] && ! git rev-parse --short=9 HEAD >/dev/null 2>&1; then
         printf 'apr_bin: STRICT mode and this is not a git checkout - cannot prove %s\n' "$bin" >&2
         printf '         was built from the code under test, so it is refused.\n' >&2
         return 1
     fi
 
-    if ! git rev-parse --short HEAD >/dev/null 2>&1; then
+    if ! git rev-parse --short=9 HEAD >/dev/null 2>&1; then
         printf 'apr_bin: %s (%s) - not a git checkout, freshness not asserted\n' \
             "$bin" "$reported" >&2
         return 0
     fi
-    head=$(git rev-parse --short HEAD)
+    head=$(git rev-parse --short=9 HEAD)
 
     case "$reported" in
         *"$head"*) return 0 ;;

@@ -1,0 +1,289 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "selftest-survivor-unclosed-quote",
+          "level": "note",
+          "message": {
+            "text": "Mutant: drop the check that the last character equals the opening quote. The self-test still passes (64 rows, 0 failed), so no row pins it. An unclosed value such as ticket_owner: \"bob is accepted by the reader."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 25
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A later edit loosens the closing-quote test and nothing turns red; a policy line with an unclosed quote then reaches the YAML parser as a syntax error instead of being refused here.",
+            "precision_class": "advisory",
+            "command": [
+              "env",
+              "RP_AWK_DIR=/tmp/claude-1000/-mnt-nvme-raid0-la-71/7705b2a4-f00a-4190-9eb8-5feffc6cba66/scratchpad/mu_n2",
+              "bash",
+              "scripts/check_release_policy_selftest.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "0983401bae5508c00a42c00b0c3867e49812c68b024d47f039544752e8a042d3"
+          }
+        },
+        {
+          "ruleId": "selftest-survivor-inner-quote",
+          "level": "note",
+          "message": {
+            "text": "Mutant: drop the inner-quote check. The self-test still passes, so no row has a value like \"a\"b\" (closing quote in the middle). With the check the reader refuses it; without, it is accepted."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 25
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A value with text after an early closing quote, then a # comment, is accepted if the inner-quote check regresses.",
+            "precision_class": "advisory",
+            "command": [
+              "env",
+              "RP_AWK_DIR=/tmp/claude-1000/-mnt-nvme-raid0-la-71/7705b2a4-f00a-4190-9eb8-5feffc6cba66/scratchpad/mu_n3",
+              "bash",
+              "scripts/check_release_policy_selftest.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "882d02bdca8aec5da46ba1f0a8d3b7a78c41d0e749a300bc702be273d4d48586"
+          }
+        },
+        {
+          "ruleId": "selftest-survivor-trailing-space",
+          "level": "note",
+          "message": {
+            "text": "Mutant: drop the trailing-whitespace trim. The self-test still passes: no row has trailing blanks after a quoted value. The effect would be a false refusal of a legitimate line, not a missed comment."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A quoted value with trailing blanks is refused after a regression and the self-test stays green.",
+            "precision_class": "advisory",
+            "command": [
+              "env",
+              "RP_AWK_DIR=/tmp/claude-1000/-mnt-nvme-raid0-la-71/7705b2a4-f00a-4190-9eb8-5feffc6cba66/scratchpad/mu_n1",
+              "bash",
+              "scripts/check_release_policy_selftest.sh"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f04db095b265018a4082d728b6417921cb37e25febb43db0c28f99dad176fad4"
+          }
+        },
+        {
+          "ruleId": "conservative-refusal-escaped-quotes",
+          "level": "note",
+          "message": {
+            "text": "A double-quoted value holding an escaped quote, or a single-quoted value holding a doubled quote (it''s), is refused as not closing. Valid YAML, refused with a message that does not say why. Nothing in the real block (ladder lines 102-112) has either."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 25
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "failure_scenario": "A maintainer writes a quote with an escaped quote and the ladder becomes unreadable until it is reworded.",
+            "precision_class": "advisory",
+            "rationale": "A double-quoted value holding an escaped quote, or a single-quoted value holding a doubled quote (it''s), is refused as not closing. Valid YAML, refused with a message that does not say why. Nothing in the real block (ladder lines 102-112) has either."
+          }
+        },
+        {
+          "ruleId": "prior-findings-resolved",
+          "level": "note",
+          "message": {
+            "text": "The three earlier findings are fixed and measured: tab before # now refused, a comment after a double or single closing quote refused, and 'see #5' kept. Real block still accepted (real-* rows pass); 64 rows 0 failed; models_nightly self-test 84/84."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 22
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "failure_scenario": "none",
+            "precision_class": "advisory",
+            "rationale": "The three earlier findings are fixed and measured: tab before # now refused, a comment after a double or single closing quote refused, and 'see #5' kept. Real block still accepted (real-* rows pass); 64 rows 0 failed; models_nightly self-test 84/84."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants",
+          "version": "bash-sed-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity",
+          "version": "1.3.1"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "agy-legitimate-values",
+          "level": "note",
+          "message": {
+            "text": "The awk rule accepts all existing legitimate values in the model-capability-ladder-v1.yaml release_policy block without error."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If the rule incorrectly refused a legitimate value (such as the single-quoted `quote` containing double quotes, or the `thinking: [\"off\", \"on\"]` list which contains spaces), it would falsely fail the CI gate and block valid policies.",
+            "command": [
+              "awk",
+              "-v",
+              "keys=name since date quote hosts thinking larger_rows red_row_needs ticket_owner release_notes",
+              "-f",
+              "scripts/lib/release_policy_block.awk",
+              "contracts/model-capability-ladder-v1.yaml"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        },
+        {
+          "ruleId": "agy-yaml-comments",
+          "level": "note",
+          "message": {
+            "text": "The rule strictly rejects all YAML comment forms. Unquoted comments are caught by `/[ \\\\t]#/`, and comments trailing a quoted value are caught by the closing quote validation."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/lib/release_policy_block.awk"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "precision_class": "advisory",
+            "failure_scenario": "If the awk script accepted a YAML comment form, it would extract the comment as part of the string value while a standard YAML parser would ignore it. This divergence would allow policies to pass the gate under one interpretation but run in production under another.",
+            "rationale": "The rule strictly rejects all YAML comment forms. Unquoted comments are caught by `/[ \\\\t]#/`, and comments trailing a quoted value are caught by the closing quote validation."
+          }
+        },
+        {
+          "ruleId": "agy-mutant-killing",
+          "level": "note",
+          "message": {
+            "text": "The new self-test rows successfully kill mutants of the awk rule, catching regressions such as dropping tab-hash support or single-quote validation."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/check_release_policy_selftest.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "failure_scenario": "If the self-tests were vacuous, a developer could remove `\\t` from the space-hash regex, drop support for single quotes, or drop the strict closing quote check, and the tests would still pass, permitting unquoted hashes or trailing junk to bypass the policy reader.",
+            "command": [
+              "bash",
+              "-c",
+              "sed -i 's/\\[ \\\\t\\]#/ #/' scripts/lib/release_policy_block.awk && bash scripts/check_release_policy_selftest.sh"
+            ],
+            "measured_by": "agy",
+            "note": "agy returned the command but no exit code or stdout digest; reverified_by_primary is false"
+          }
+        }
+      ]
+    }
+  ]
+}

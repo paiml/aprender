@@ -151,3 +151,20 @@ status_history:
       verified RED-on-bug (rand::rng reinjected) / GREEN-on-fix.
       The qwen3_moe MoE path was already seeded (qwen3-moe-sampling-v1
       v1.1.0); this brings the dense path to parity.
+
+falsification_tests:
+  - id: FALSIFY-OPENAI_SERVE_SAMPLING_DETERMINISM-001
+    description: "Same seed produces the same sampled token and the same 16-token stream from sample_topk_seeded"
+    test: "cargo test -p aprender-serve --lib test_sample_topk_seeded_same_seed_is_deterministic"
+    prediction: "two StdRng(12345) streams are equal token-for-token"
+    if_fails: "the categorical draw is not a pure function of (logits, temperature, top_k, rng)"
+  - id: FALSIFY-OPENAI_SERVE_SAMPLING_DETERMINISM-002
+    description: "Different seeds can diverge, so the sampler really consumes the RNG and is not secretly greedy"
+    test: "cargo test -p aprender-serve --lib test_sample_topk_seeded_different_seeds_can_diverge"
+    prediction: "stream(42) != stream(43)"
+    if_fails: "seed is ignored; temperature sampling collapses to a fixed choice"
+  - id: FALSIFY-OPENAI_SERVE_SAMPLING_DETERMINISM-003
+    description: "End to end, generate_with_cache (the HTTP dense path) is reproducible for the same prompt+seed+temperature"
+    test: "cargo test -p aprender-serve --lib test_generate_with_cache_is_seed_deterministic"
+    prediction: "two runs with seed=777, temperature=1.2, top_k=40 return identical tokens"
+    if_fails: "the serve path seeds from entropy or ignores config.seed"

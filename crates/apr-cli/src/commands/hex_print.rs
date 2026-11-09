@@ -70,6 +70,19 @@ fn output_json_v2(
     limit: usize,
     show_stats: bool,
 ) -> Result<(), CliError> {
+    if let Some(json) = json_v2_string(reader, filtered, limit, show_stats) {
+        println!("{json}");
+    }
+    Ok(())
+}
+
+/// The `hex --json` payload for an APR v2 file (None only if serialisation fails).
+fn json_v2_string(
+    reader: &AprV2Reader,
+    filtered: &[&str],
+    limit: usize,
+    show_stats: bool,
+) -> Option<String> {
     use serde::Serialize;
 
     #[derive(Serialize)]
@@ -129,9 +142,5 @@ fn output_json_v2(
         }
     }
 
-    if let Ok(json) = serde_json::to_string_pretty(&results) {
-        println!("{json}");
-    }
-
-    Ok(())
+    serde_json::to_string_pretty(&results).ok()
 }

@@ -284,3 +284,84 @@ bindings:
     assert_eq!(g_binding.status, "unbound");
     assert!(g_binding.module_path.is_none());
 }
+
+fn entry_at(path: &str) -> types::ContractEntry {
+    let mut e = test_entry("diff-info", vec![], 0, 0);
+    e.path = path.into();
+    e
+}
+
+/// Hermetic fixture: a throwaway git repo with one committed file, so the
+/// tests do not depend on the source tree having `.git` (the clean-room copy
+/// is made with `tar --exclude=.git`, PMAT-6487).
+fn committed_fixture() -> (tempfile::TempDir, String) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let git = |args: &[&str]| {
+        let st = std::process::Command::new("git")
+            .arg("-C")
+            .arg(dir.path())
+            .args(args)
+            .env_remove("GIT_DIR")
+            .env_remove("GIT_WORK_TREE")
+            .env_remove("GIT_INDEX_FILE")
+            .status()
+            .expect("git is runnable");
+        assert!(st.success(), "git {args:?} failed");
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.name", "fixture"]);
+    git(&["config", "user.email", "fixture@example.invalid"]);
+    git(&["config", "commit.gpgsign", "false"]);
+    // A user-global hooksPath must not fire inside the throwaway repo.
+    git(&["config", "core.hooksPath", ".no-hooks"]);
+    let file = dir.path().join("contract.yaml");
+    std::fs::write(&file, "metadata: {}\n").expect("write fixture");
+    git(&["add", "contract.yaml"]);
+    git(&["commit", "-q", "-m", "fixture"]);
+    let path = file.to_str().expect("utf8 path").to_string();
+    (dir, path)
+}
+
+#[test]
+fn build_diff_info_reports_the_last_commit_of_a_tracked_file() {
+    let (_dir, path) = committed_fixture();
+    let info = build_diff_info(&entry_at(&path)).expect("fixture file is tracked");
+    assert_eq!(info.commit_hash.len(), 40, "full sha: {}", info.commit_hash);
+    assert!(info.commit_hash.bytes().all(|b| b.is_ascii_hexdigit()));
+    let parts: Vec<&str> = info.last_modified.split('-').collect();
+    assert_eq!(parts.len(), 3, "date part is Y-M-D: {}", info.last_modified);
+    assert_eq!(parts[0].len(), 4);
+    assert_eq!(info.last_modified.len(), 10, "time part is stripped");
+    assert!(info.days_ago < 36_500, "days_ago is relative to now");
+}
+
+#[test]
+fn build_diff_info_days_ago_matches_parse_iso_days_ago() {
+    let (_dir, path) = committed_fixture();
+    let info = build_diff_info(&entry_at(&path)).expect("tracked");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let expect = parse_iso_days_ago(&info.last_modified, now);
+    assert!(
+        info.days_ago.abs_diff(expect) <= 1,
+        "{} vs {expect}",
+        info.days_ago
+    );
+}
+
+#[test]
+fn build_diff_info_is_none_for_a_file_outside_any_repo() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let file = dir.path().join("loose.yaml");
+    std::fs::write(&file, "x: 1\n").expect("write");
+    let path = file.to_str().expect("utf8 path");
+    assert!(build_diff_info(&entry_at(path)).is_none());
+}
+
+#[test]
+fn build_diff_info_is_none_for_a_path_git_has_no_history_for() {
+    let missing = concat!(env!("CARGO_MANIFEST_DIR"), "/no-such-file-5580.yaml");
+    assert!(build_diff_info(&entry_at(missing)).is_none());
+}

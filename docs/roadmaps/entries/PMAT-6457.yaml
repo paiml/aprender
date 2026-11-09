@@ -1,0 +1,18 @@
+- id: PMAT-6457
+  github_issue: 6457
+  item_type: task
+  title: 'PVB-3b: author computable Q4_K scale/min unpacker model + theorem'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:02Z
+  updated: 2026-10-27T11:36:02Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452

@@ -1,0 +1,893 @@
+contract: decide-apr
+metadata:
+  version: 3.0.0
+  created: '2026-09-25'
+  author: PAIML Engineering
+  kind: kernel
+  # ONT-7 (plan 08-33): the artifact schema and its load ladder hold in the committed tree; no
+  # backend, host or feature qualifies the claim.
+  valid_under:
+    world: committed
+  description: >
+    The `decide-apr-v1` ARTIFACT SCHEMA (D-17) and the single declaration of the D-05 task schema:
+    what a decision-model .apr contains, where each item lives, what a loader must check — in
+    order — before it may classify, how the artifact is identified (D-11), which bytes are
+    deterministic, and what makes an artifact DEPLOYABLE. Implemented by `aprender-decide`
+    (`task`, `artifact`, `verify`) and read by both decision MCP servers; the Python trainer
+    writes the task and training rows to the same schema. One schema, written down once, BEFORE
+    the code that implements it (the setfit-apr-v1 lesson: three plans describing an artifact
+    three ways because no plan wrote it down).
+
+    WHY F16 ON DISK, F32 IN COMPUTE. The artifact stores the checkpoint's F16 weights as the raw
+    little-endian bytes copied from the safetensors file — never re-rounded through f32 — and the
+    loader widens them to f32 at load (`AprV2DequantExt::get_tensor_as_f32`). That is exactly the
+    widening the parity oracle performs (laya-parity-v1), so parity is a statement about
+    computation, not about storage precision.
+
+    THE LABEL INDEX IS DOCUMENT ORDER (D-05), AND THAT IS A PARSING RULE, NOT A HOPE. pmcp 2.19.3
+    enables `serde_json/preserve_order` for every binary that links it, while a library tested
+    alone gets key-sorted maps (RESEARCH Pitfall 2). A task parsed through `serde_json::Value` or
+    `Map` therefore has a build-graph-dependent label order. Criteria are read from the raw bytes
+    with an order-preserving map visitor, and the manifest stores labels as an ARRAY, so the order
+    holds in every build shape.
+
+    PROBES DO NOT DEPEND ON THE USER'S TASK OR ON THE PACKING MACHINE. Probes run through a
+    contract-resident SYNTHETIC PROBE TASK (K = 2), so their cost is bounded by construction
+    (`probe_max_row_tokens`, which prices decide-tool-boundary-v1 `probe_budget_ms`); a stance task's
+    own prefix is ~55 built tokens before any state (spike-025 fixture markers at 17/32/43), so a
+    task-bound probe could not meet a 48-token bound. The stored expectations are the ones Laya's
+    OWN predict path computed on the F16 reload (`probes.json`), never the packer's Rust values, so
+    the artifact bytes do not depend on the packing machine's floating-point kernels.
+
+    PROVABILITY HONESTY. `cargo-kani` is not installed in this repository and there is not one
+    `#[kani::proof]` harness anywhere under `crates/`. The `kani_harnesses:` entries are DECLARED and
+    NOT EXECUTED; each names the runnable test that is the actual evidence.
+
+    ANNOTATION HONESTY. `#[contract]` is METADATA-ONLY in this repository (see setfit-apr-v1). The
+    enforcement mechanism for everything below is the named test, never the annotation.
+
+    BINDING HONESTY, AND STAGED TEST REFERENCES. Every equation is registered `status: pending` in
+    `contracts/aprender/binding.yaml` because `aprender-decide` does not exist yet; each binding is
+    flipped by the plan that lands its code. No falsification test cites a test that does not exist
+    yet (CI's strict-binding gate starts a new contract at zero): each carries a prose
+    `implemented_by:`, and the implementing plan adds its `test:` line in the same commit as the test.
+  references:
+    - 'contracts/setfit-apr-v1.yaml — the APR artifact-schema precedent: one custom metadata key, head as tensors, bounded read, load ladder, probe replay.'
+    - 'crates/apr-format/src/v2/ — the APR v2 container: 64-byte header whose CRC covers ONLY the header (header_impl.rs compute_checksum), flattened `custom` metadata map, TensorDType F16 = 1 / F32 = 0 / U8 = 7 (tensor_index_impl.rs), and the index parser (reader_impl.rs:95) that reserved Vec::with_capacity(tensor_count) straight from the header.'
+    - '.claude/skills/spike-findings-aprender/references/laya-rust-inference.md — the builder (option shrink, markers, max_len 512, head_max_len 192) and the four published Laya files.'
+    - '.claude/skills/spike-findings-aprender/sources/026-laya-mcp-default-lambda/src/lib.rs — render_options and the marker-count refusal (markers.len() != opts.len(), lib.rs:233).'
+    - 'contracts/laya-finetune-gate-v1.yaml — the run dir this artifact is packed from, recipe_id, gate report and probes.json schemas.'
+    - 'contracts/laya-parity-v1.yaml — pack_rescore_probs_abs, the full-eval parity run at pack and verify time.'
+    - 'contracts/tensor-layout-v1.yaml — row-major for every tensor written here.'
+  depends_on:
+    - laya-finetune-gate-v1
+    - laya-parity-v1
+
+# FLAT scalars only (the decide-tool-boundary-v1 rule). The schemas, manifest map, blob set,
+# load ladder, probe task/inputs and deploy_eligibility are TOP-LEVEL keys below.
+constants:
+  # 1.25 GiB. Derivation: ~421M parameters x 2 bytes F16 = ~843 MB + 3.4 MB tokenizer +
+  # configs / task / recipe / gate blobs + index ~= 0.85 GB measured on Laya-en. The setfit-apr-v1
+  # 1 GiB cap would leave only ~1.26x headroom and is NOT inherited silently.
+  max_artifact_bytes: 1342177280
+  # Laya-en has a few hundred weight tensors (205 in the published checkpoint) plus six blobs. The
+  # bound is generous and exists so a header cannot demand an arbitrary index allocation.
+  max_tensor_count: 4096
+  # The metadata section is the manifest (~2.4 KB on Laya-en). The container reader parses the
+  # header-declared section into a JSON tree at 40-50x its size, so rung 2 bounds the declared
+  # length before the reader runs: 1 MiB is ~400x headroom and caps that parse near 50 MB.
+  max_metadata_bytes: 1048576
+  # A probe row longer than this is refused at pack: it would break decide-tool-boundary-v1
+  # probe_budget_ms (2 x 48 x 11 ms = 1056 -> 1100).
+  probe_max_row_tokens: 48
+  probe_probabilities_abs: 1.0e-5
+  # The smallest encodable tensor-index entry: u16 name length + u8 dtype + u8 ndim + u64 offset
+  # + u64 size = 20 bytes. Rung 2 bounds tensor_count x this by the index extent.
+  min_index_entry_bytes: 20
+  # The most criteria a task.json may declare (task::MAX_CRITERIA; refused while the criteria
+  # object is read, before the entry is stored or compared: V1-b). Derivation, from the builder
+  # (laya::builder, Laya common.py build_sequence): every option's [MASK] marker occupies its OWN
+  # row position; position 0 is [CLS] and the head's closing [SEP] sits at position >= 1, so the
+  # first marker is at >= 2; only markers below max_len survive. A task with K > max_len - 2
+  # therefore loses a marker under ANY tokenizer, and is refused at load anyway (marker_rule).
+  # Over Laya-en's max_len 512 (the only served agent config): 512 - 2 = 510.
+  # NOT max_len / 4: the shrink cuts each option to max(4, (head_max_len - 16) / K) tokens but
+  # never lengthens a shorter one, so an option can keep 2 tokens ([MASK] + a one-token name).
+  # Measured on Laya-en's tokenizer (snapshot 55cf4c4e, max_len 512, head_max_len 192, plan
+  # 08-26): one-token names keep every marker up to K = 253 and lose one from K = 254; options
+  # of >= 4 tokens keep every marker up to K = 127. A bound of 128 would refuse K = 129..253
+  # tasks Laya serves. An artifact whose agent declares a larger max_len does not raise this
+  # bound: it is a constant on the task blob.
+  max_criteria: 510
+  schema_version: 1
+
+# ---------------------------------------------------------------------------------------------
+# D-05: the task schema, declared once, shared by trainer, artifact and server.
+# ---------------------------------------------------------------------------------------------
+task_json_schema:
+  shape: '{type: "choice", instructions: string, criteria: object}, deny_unknown_fields'
+  criteria: 'object whose DOCUMENT ORDER is the label index; names unique (found with a set: the duplicate scan is linear); at least 2 and at most max_criteria; each value a string or null (null or empty = name only)'
+  parse_rule: 'criteria are read from the raw bytes with an order-preserving map visitor, NEVER via serde_json::Value / Map (pmcp 2.19.3 enables serde_json/preserve_order for every binary linking it while a library tested alone gets key-sorted maps — RESEARCH Pitfall 2). This is how "order is the label index" holds in every build shape'
+  refusals:
+    - 'type other than "choice"'
+    - 'fewer than 2 criteria'
+    - 'more than max_criteria criteria (refused while reading: the entry that would exceed the bound is refused before it is stored or compared, and the parse stops; TaskError::TooManyCriteria)'
+    - 'a duplicate criterion name'
+    - 'MARKER LOSS: the built row keeps FEWER [MASK] markers than the task has criteria'
+  marker_rule: 'Laya''s builder first SHRINKS option token sequences to fit head_max_len (common.py build_sequence: when the option budget falls below 16 each option is cut to max(4, (head_max_len - 16) / K) tokens) and keeps only markers below max_len. A task is refused ONLY when the built row keeps fewer markers than criteria — the exact spike-026 rule (markers.len() != opts.len(), lib.rs:233). Options that are merely longer than head_max_len are SHRUNK exactly as Laya does and SERVED, never refused: refusing on raw option length would reject tasks the reference serves, changing observable inference semantics'
+  when_checked: 'once, when the task is loaded, by building the row with an EMPTY state: markers precede the state, so marker loss does not depend on the caller''s text and is never re-checked per request'
+
+train_row_schema:
+  shape: '{text: string, label: string}, one JSON object per line of train.jsonl / eval.jsonl, deny_unknown_fields'
+  label: 'a criterion NAME, never an index (RESEARCH Open Q3: an index silently re-means under a criteria reorder, contradicting the order-as-index rule); an unknown name is refused'
+
+# ---------------------------------------------------------------------------------------------
+# The artifact.
+# ---------------------------------------------------------------------------------------------
+manifest:
+  storage: 'the STRING value of EXACTLY ONE custom metadata key `decide`; the string is the JSON serialization of typed Rust structs (arrays, never maps keyed by label), so its bytes do not depend on the serde_json map backing'
+  model_type: decide
+  fields:
+    schema: 'string: "decide-apr-v1"'
+    schema_version: 'integer: 1'
+    method: 'string: "laya" (the only method this version knows)'
+    variant: 'string: the recipe variant ("production" | "synthetic-fixture"), copied from recipe.json so every reader sees it; deployability is deploy_eligibility (08-09 verify), never this field'
+    base: 'object {family, checkpoint, repo, revision, sha256} — D-04 declared base'
+    labels: 'ARRAY of criterion names in task.json document order'
+    agent: 'object {head_layers, max_len, head_max_len}'
+    blobs: 'array of {name, sha256} in blob_tensors order — an ARRAY, not a map keyed by blob name, so the manifest bytes do not depend on the serde_json map backing'
+    recipe_id: 'string: sha256 hex of the decide.recipe_json blob bytes'
+    calibration: 'object {bucket, t_fitted, t_applied, clamp_hit, slice_ids_sha256}'
+    gate: 'object {pass, margin, ece_post, report_sha256}'
+    inputs_sha256: 'object {task_json, train_jsonl, eval_jsonl, base_model, tokenizer_json}'
+    device_used: string
+    probes: 'array of {input_index, tokens, label, probabilities_f32_hex[]} — copied from probes.json (Python values)'
+  no_timestamp: 'no timestamp or host field anywhere: two packs of the same inputs are byte-identical'
+  # CLASS A (provenance binding, LOAD side; plan 08-19). Every manifest leaf equals a value
+  # derived from a sha-bound source, checked by the load ladder on EVERY door (load_bytes,
+  # load_hashed = the Lambda cold start, load_path = the stdio server), with no verify step.
+  # Key: the leaf as a JSON pointer, array indices generalised to [*]. `rung`: the rung that
+  # refuses a manifest whose leaf disagrees with its source. `sources`: each comparison the
+  # leaf takes part in — `recipe:<ptr>` a field of the decide.recipe_json blob, `report:<ptr>`
+  # a field of the decide.gate_report_json blob, `sha256:<blob>` the digest of that blob,
+  # `derived:<what>` a value computed from sha-bound inputs. `source`: the same, in prose.
+  bindings:
+    '/schema':
+      rung: 3
+      sources: ['derived:the rung-3 constant schema == decide-apr-v1']
+      source: 'rung-3 constant ARTIFACT_SCHEMA'
+    '/schema_version':
+      rung: 3
+      sources: ['derived:the rung-3 constant schema_version == 1']
+      source: 'rung-3 constant ARTIFACT_SCHEMA_VERSION'
+    '/method':
+      rung: 3
+      sources: ['derived:the rung-3 constant method in {laya}']
+      source: 'rung-3 constant METHOD_LAYA'
+    '/variant':
+      rung: 4
+      sources: ['recipe:/variant']
+      source: 'decide.recipe_json blob variant'
+    '/base/family':
+      rung: 4
+      sources: ['recipe:/base/family']
+      source: 'decide.recipe_json blob base.family'
+    '/base/checkpoint':
+      rung: 4
+      sources: ['recipe:/base/checkpoint']
+      source: 'decide.recipe_json blob base.checkpoint'
+    '/base/repo':
+      rung: 4
+      sources: ['recipe:/base/repo']
+      source: 'decide.recipe_json blob base.repo'
+    '/base/revision':
+      rung: 4
+      sources: ['recipe:/base/revision']
+      source: 'decide.recipe_json blob base.revision'
+    '/base/sha256':
+      rung: 4
+      sources: ['recipe:/base/sha256', 'report:/inputs_sha256/base_model']
+      source: 'decide.recipe_json blob base.sha256 AND decide.gate_report_json inputs_sha256.base_model'
+    '/labels/[*]':
+      rung: 4
+      sources: ['derived:the decide.task_json blob criteria in document order']
+      source: 'labels parsed from the decide.task_json blob (D-05)'
+    '/agent/head_layers':
+      rung: 4
+      sources: ['derived:the decide.agent_config blob head_layers']
+      source: 'decide.agent_config blob'
+    '/agent/max_len':
+      rung: 4
+      sources: ['derived:the decide.agent_config blob max_len']
+      source: 'decide.agent_config blob'
+    '/agent/head_max_len':
+      rung: 4
+      sources: ['derived:the decide.agent_config blob head_max_len']
+      source: 'decide.agent_config blob'
+    '/blobs/[*]/name':
+      rung: 4
+      sources: ['derived:blob_tensors, in order']
+      source: 'the contract blob_tensors list'
+    '/blobs/[*]/sha256':
+      rung: 4
+      sources: ['derived:the sha256 of the blob tensor the entry names']
+      source: 'sha256 of the named blob tensor''s bytes'
+    '/recipe_id':
+      rung: 4
+      sources: ['sha256:decide.recipe_json', 'report:/recipe_id']
+      source: 'sha256 of the decide.recipe_json blob AND decide.gate_report_json recipe_id'
+    '/calibration/bucket':
+      rung: 4
+      sources: ['report:/calibration/bucket', 'derived:bucket_key(choice, K of the decide.task_json blob)']
+      source: 'decide.gate_report_json calibration.bucket AND the task''s own bucket key'
+    '/calibration/t_fitted':
+      rung: 4
+      sources: ['report:/calibration/t_fitted']
+      source: 'decide.gate_report_json calibration.t_fitted'
+    '/calibration/t_applied':
+      rung: 4
+      sources: ['report:/calibration/t_applied', 'derived:applied_temperature_f64(the decide.agent_config blob, choice, K of the decide.task_json blob)']
+      source: 'decide.gate_report_json calibration.t_applied AND applied temperature of the agent config blob for the task bucket (bit for bit: the temperature the loaded model applies)'
+    '/calibration/clamp_hit':
+      rung: 4
+      sources: ['report:/calibration/clamp_hit']
+      source: 'decide.gate_report_json calibration.clamp_hit'
+    '/calibration/slice_ids_sha256':
+      rung: 4
+      sources: ['report:/calibration/slice_ids_sha256']
+      source: 'decide.gate_report_json calibration.slice_ids_sha256'
+    '/gate/pass':
+      rung: 4
+      sources: ['report:/pass']
+      source: 'decide.gate_report_json pass'
+    '/gate/margin':
+      rung: 4
+      sources: ['report:/margin']
+      source: 'decide.gate_report_json margin (f64 bits)'
+    '/gate/ece_post':
+      rung: 4
+      sources: ['report:/fine_tuned/ece_post']
+      source: 'decide.gate_report_json fine_tuned.ece_post (f64 bits)'
+    '/gate/report_sha256':
+      rung: 4
+      sources: ['sha256:decide.gate_report_json']
+      source: 'sha256 of the decide.gate_report_json blob'
+    '/inputs_sha256/task_json':
+      rung: 4
+      sources: ['sha256:decide.task_json', 'report:/inputs_sha256/task_json']
+      source: 'sha256 of the decide.task_json blob AND decide.gate_report_json inputs_sha256.task_json'
+    '/inputs_sha256/train_jsonl':
+      rung: 4
+      sources: ['report:/inputs_sha256/train_jsonl']
+      source: 'decide.gate_report_json inputs_sha256.train_jsonl'
+    '/inputs_sha256/eval_jsonl':
+      rung: 4
+      sources: ['report:/inputs_sha256/eval_jsonl']
+      source: 'decide.gate_report_json inputs_sha256.eval_jsonl'
+    '/inputs_sha256/base_model':
+      rung: 4
+      sources: ['report:/inputs_sha256/base_model']
+      source: 'decide.gate_report_json inputs_sha256.base_model'
+    '/inputs_sha256/tokenizer_json':
+      rung: 4
+      sources: ['sha256:tokenizer.blob', 'report:/inputs_sha256/tokenizer_json']
+      source: 'sha256 of the tokenizer.blob blob AND decide.gate_report_json inputs_sha256.tokenizer_json'
+    '/device_used':
+      rung: 4
+      sources: ['report:/device_used']
+      source: 'decide.gate_report_json device_used'
+    '/probes/[*]/input_index':
+      rung: 7
+      sources: ['derived:rung-7 replay against the rebuilt model']
+      source: 'rung-7 probe replay (input order)'
+    '/probes/[*]/tokens':
+      rung: 7
+      sources: ['derived:rung-7 replay against the rebuilt model']
+      source: 'rung-7 probe replay (built-row length)'
+    '/probes/[*]/label':
+      rung: 7
+      sources: ['derived:rung-7 replay against the rebuilt model']
+      source: 'rung-7 probe replay (label exact)'
+    '/probes/[*]/probabilities_f32_hex/[*]':
+      rung: 7
+      sources: ['derived:rung-7 replay against the rebuilt model']
+      source: 'rung-7 probe replay within probe_probabilities_abs'
+
+blob_tensors:
+  # U8 tensors, raw bytes, sha256 recorded in manifest.blobs, verified BEFORE any weight is installed.
+  - tokenizer.blob
+  - decide.task_json
+  - decide.encoder_config
+  - decide.agent_config
+  - decide.recipe_json
+  - decide.gate_report_json
+
+weight_tensors:
+  names: 'every checkpoint tensor under its VERBATIM Laya name'
+  dtype: 'F16 raw little-endian bytes copied from model.safetensors (never re-rounded through f32); the `temperature` buffer stays F32'
+  act_head: 'act_head.* tensors are stored so the tensor set is a bijection with the checkpoint, and are unused at inference'
+  layout: 'row-major ([out, in]) per contracts/tensor-layout-v1.yaml'
+
+identity:
+  # D-11
+  artifact_sha256: 'sha256 of the WHOLE .apr file bytes'
+  recipe_id: 'sha256 of the decide.recipe_json blob bytes (== the run dir recipe.json bytes)'
+  note: 'the APR v2 header CRC covers ONLY the 64-byte header, so payload integrity comes from the whole-file sha256 plus the per-blob hashes, never from the CRC'
+
+load_ladder:
+  # In order. Each rung is a typed refusal naming the rung. The verified decider is minted only
+  # at the end.
+  rungs:
+    - rung: 1
+      name: bounded_read
+      rule: 'declared length checked against max_artifact_bytes before the reader is touched; the read is capped at max_artifact_bytes + 1 bytes'
+    - rung: 2
+      name: header_and_index_extent
+      rule: 'AprV2Header::from_bytes on the first 64 bytes BEFORE any index parser runs: magic, CRC, version == APR v2 (apr-format VERSION_V2 = 2.0; the container reader parses any version with the v2 layout, so rung 2 checks it: V9-d), row-major flag; metadata_size <= max_metadata_bytes (the reader parses the declared section into a JSON tree); then tensor_count <= max_tensor_count AND, with checked arithmetic, tensor_count x min_index_entry_bytes <= data_offset - tensor_index_offset <= file length. Review finding verified at crates/apr-format/src/v2/reader_impl.rs:95: the reader reserved the index vector at the header''s declared count, so a small file with a valid header CRC could request a multi-hundred-GB allocation before any structural rung ran. Plan 08-05 also caps the reader''s capacity at what the index bytes can hold, for every APR consumer; this rung stays as the decide-specific bound'
+    - rung: 3
+      name: manifest
+      rule: 'model_type == "decide"; exactly one custom key; the manifest string parsed with deny_unknown_fields; schema_version == 1; method known'
+    - rung: 4
+      name: structural
+      rule: 'every tensor-index name unique, checked with a set BEFORE any lookup by name (DuplicateTensor, WR-01 decide side; the apr-format reader also refuses a repeat at rung 3, plan 08-20); tensor set derived from the encoder config + agent config (names, dtype, per-entry byte size == product(shape) x dtype width); every blob sha256 matches manifest.blobs; task.json re-parsed and its labels equal manifest.labels; and every manifest field equals the value of the sha-bound source manifest.bindings names (base and variant: the recipe blob), refused as ManifestDisagreesWithBlob naming the field'
+    - rung: 5
+      name: non_finite_scan
+      rule: 'every widened weight is finite'
+    - rung: 6
+      name: rebuild
+      rule: 'F16 widened to f32 through AprV2DequantExt::get_tensor_as_f32; the model is built'
+    - rung: 7
+      name: probe_replay
+      rule: 'every stored probe replayed; probabilities within probe_probabilities_abs (NaN-visible within), label exact; a classify failure DURING replay (the rebuilt model''s first forward pass) is a rung-7 refusal (ProbeReplay), never rung 6''s (V9-b)'
+    - rung: 8
+      name: mint
+      rule: 'the verified decider is minted by a private constructor reachable ONLY through this ladder; a trybuild compile-fail test proves no second minting path'
+
+  reader: 'the zero-copy AprV2ReaderRef; AprV2Reader::from_bytes copies and would hold a second ~0.85 GB'
+
+probe_policy:
+  probe_task:
+    type: choice
+    instructions: "probe"
+    criteria: {"yes": null, "no": null}
+    k: 2
+    bucket: 'choice:2'
+  probe_task_literal: '{type: "choice", instructions: "probe", criteria: {"yes": null, "no": null}}'
+  inputs:
+    # Exactly two, contract-resident, SYNTHETIC — never sampled from any dataset, so no tweet text
+    # reaches any artifact.
+    - 'the quick brown fox jumps over the lazy dog'
+    - 'Stance check: I firmly support this position!!! #debate @user123'
+  expectations: 'the probabilities Laya''s OWN predict path computed on the F16 reload (run dir probes.json, laya-finetune-gate-v1 probes_json_schema), recorded as f32 bit-pattern hex'
+  pack_rule: 'the packer runs its Rust probe, checks it against probes.json within probe_probabilities_abs (label exact), refuses a probe row longer than probe_max_row_tokens, and stores the PYTHON values, never its own — the artifact bytes do not depend on the packing machine''s floating-point kernels (NEON on the dev box and AVX on x86 CI can differ in the last bits)'
+  load_rule: 'every load replays both probes and compares the Rust result to the stored Python values within probe_probabilities_abs with the NaN-visible within idiom; label exact'
+  full_eval: 'full-eval parity runs at PACK and VERIFY time (laya-parity-v1 pack_rescore_probs_abs), not at every load'
+
+deploy_eligibility:
+  rule: 'an artifact is deployable ONLY when `pack_laya verify <apr> --run <dir> --data <dir> --base <dir>` (plan 08-09) accepts that exact file'
+  verify_checks:
+    - 'the full load ladder'
+    - 'recipe variant == production (laya-finetune-gate-v1 synthetic_not_deployable)'
+    - '(load, every door) the manifest''s base equals the embedded recipe blob''s base, field by field (rung 4, manifest.bindings); (verify, check_base, plan 08-21) the recipe''s base equals the laya-finetune-gate-v1 base block field by field (family, checkpoint, repo, revision, then sha256) and the base dir''s model.safetensors hashes to that sha256; (verify, the zero-shot load) the base dir''s encoder/config.json, rl_agent_config.json and tokenizer/tokenizer.json hash to that block''s pins on the exact bytes the baseline is built from, and the tokenizer also to inputs_sha256.tokenizer_json'
+    - 'data-dir hashes equal to the manifest''s inputs_sha256'
+    - 'split re-verification (laya-finetune-gate-v1 split_disjointness)'
+    - 'Rust re-score of every eval row — fine-tuned from the artifact, zero-shot from the base — within the noise-referenced bound(c, s) of laya-parity-v1 pack_rescore_probs_abs (floor 1.0e-5 when the run carries no rescore-noise.json record)'
+    - 'the gate recomputed from those verified probabilities (laya-finetune-gate-v1 gate_pass)'
+    - 'the seed-selection rule re-derived from the per-seed probability files (laya-finetune-gate-v1 seed_policy, 1.4.0)'
+  inspect: '`inspect` reports identity only; embedded report fields alone NEVER make an artifact eligible'
+
+# ---------------------------------------------------------------------------------------------
+# CLASS B (untrusted-input bounds), ARTIFACT HALF (plan 08-26). Every size, count or config value a
+# decide-apr-v1 artifact supplies that sizes an allocation, a loop, a scan or a forward pass, with
+# the bound that is checked BEFORE it does. Enumerated by inspection of the ladder (artifact.rs),
+# core's ModernBERT config / loader / layer, the task parser (task.rs) and the row builder
+# (laya/builder.rs). `disposition`: enforced (a hostile case is refused, or the value is
+# overridden) or accepted (with the reason and the behaviour the sweep asserts). `owner_crate`: the
+# crate whose code enforces it; rows owned by aprender-decide are swept, by id, by
+# artifact::ladder::artifact_bounds_table_is_swept (a hostile case built from the packed tiny
+# artifact, refused with `refusal` at `rung`); rows owned by another crate name a test that must
+# exist in that crate (plan 08-31's ledger proves it runs).
+# ---------------------------------------------------------------------------------------------
+untrusted_input_bounds:
+  see_also: 'decide-tool-boundary-v1 untrusted_input_bounds: the REQUEST half (frame, argument shape, text count, text bytes, built-token budget), plans 08-23 / 08-24. This table is the ARTIFACT half: what a .apr file supplies.'
+  rows:
+    - id: file_length
+      bound: max_artifact_bytes
+      disposition: enforced
+      rung: 1
+      checked_by: 'artifact::read_bounded_within (declared length before the reader is touched; the read capped at cap + 1) and open_within (in-memory input_bytes)'
+      refusal: [ArtifactTooLarge]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::declared_length_over_cap && cargo test -p aprender-decide --lib artifact::ladder::read_over_cap && cargo test -p aprender-decide --lib artifact::ladder::in_memory_over_cap'
+    - id: header_version
+      bound: 'APR v2 (apr-format VERSION_V2 = 2.0)'
+      disposition: enforced
+      rung: 2
+      checked_by: 'artifact::rung2_header (the container reader parses any version with the v2 layout; V9-d)'
+      refusal: [Header]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::header_version_refused'
+    - id: metadata_size
+      bound: max_metadata_bytes
+      disposition: enforced
+      rung: 2
+      checked_by: 'artifact::rung2_header, before the reader parses the declared section into a JSON tree (40-50x its size); it therefore bounds every manifest array (labels, blobs, probes) the rung-3 parse builds'
+      refusal: [MetadataOverCap]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::metadata_over_cap'
+    - id: tensor_count
+      bound: max_tensor_count
+      disposition: enforced
+      rung: 2
+      checked_by: 'artifact::check_index_extent, before any index parser'
+      refusal: [TensorCountOverCap]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::tensor_count_over_cap'
+    - id: index_extent
+      bound: 'tensor_count x min_index_entry_bytes <= data_offset - tensor_index_offset <= file length (checked arithmetic)'
+      disposition: enforced
+      rung: 2
+      checked_by: 'artifact::check_index_extent'
+      refusal: [IndexExtentTooSmall, IndexPastEnd]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::index_extent_too_small && cargo test -p aprender-decide --lib artifact::ladder::index_past_end && cargo test -p aprender-decide --lib artifact::ladder::rung2_predicate_exhaustive'
+    - id: index_reservation
+      bound: 'min(tensor_count, index bytes / INDEX_RESERVE_UNIT_BYTES) in-memory entries'
+      disposition: enforced
+      rung: 3
+      checked_by: 'apr-format parse_tensor_index_section index_capacity (every APR consumer; plan 08-20)'
+      owner_crate: apr-format
+      test: 'cargo test -p apr-format --lib v2::tests::forged_tensor_count_reserves_nothing_proportional && cargo test -p apr-format --lib v2::tests::index_capacity_is_bounded_by_the_index_bytes'
+    - id: duplicate_names_reader
+      bound: 'tensor index names strictly increasing'
+      disposition: enforced
+      rung: 3
+      checked_by: 'apr-format parse_tensor_index_section (both readers; WR-01, plan 08-20). This is what refuses a repeated name at load today'
+      owner_crate: apr-format
+      test: 'cargo test -p apr-format --lib v2::tests::duplicate_tensor_names_are_refused_by_both_readers'
+    - id: duplicate_names_ladder
+      bound: 'every tensor index name unique (a set walk, independent of sort order)'
+      disposition: enforced
+      rung: 4
+      checked_by: 'artifact::first_repeated_tensor_name, called at the start of rung4_structure before any lookup by name (WR-01, decide side)'
+      refusal: [DuplicateTensor]
+      reachable_via_load: false
+      reachable_note: 'false while duplicate_names_reader holds: a hostile artifact is refused at rung 3 by the reader first, so a sweep case that loaded one would pass whether or not this check exists. The case calls the helper directly; duplicate_tensor_name_is_refused_at_load proves the load refusal names the tensor whichever rung gives it'
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::repeated_name_walk_names_the_first_repeat && cargo test -p aprender-decide --lib artifact::ladder::duplicate_tensor_name_is_refused_at_load'
+    - id: num_hidden_layers
+      bound: 1024
+      disposition: enforced
+      rung: 4
+      checked_by: 'aprender-core ModernBertConfig::from_json_bytes (MAX_NUM_HIDDEN_LAYERS), reached at rung 4 (b) through artifact::parse_encoder_config, BEFORE the per-layer tensor names are derived (ea940faec)'
+      refusal: [ConfigBlob]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::untrusted_layer_counts_are_bounded_before_derivation && cargo test -p aprender-core --lib models::modernbert::config::tests::layer_count_is_capped_before_allocation'
+    - id: head_layers
+      bound: 64
+      disposition: enforced
+      rung: 4
+      checked_by: 'laya::AgentConfig::from_json_bytes (MAX_HEAD_LAYERS), reached at rung 4 (b) through artifact::parse_agent_config, before the head tensor names are derived (ea940faec)'
+      refusal: [ConfigBlob]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::untrusted_layer_counts_are_bounded_before_derivation'
+    - id: activation_and_rope
+      bound: 'hidden_activation gelu; rope_type default; rope_scaling absent or null'
+      disposition: enforced
+      rung: 4
+      checked_by: 'aprender-core ModernBertConfig::from_json_bytes (UnsupportedActivation / UnsupportedRope), reached at rung 4 (b) (ea940faec)'
+      refusal: [ConfigBlob]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept && cargo test -p aprender-core --lib models::modernbert::config::tests::unsupported_forward_semantics_are_refused'
+    - id: encoder_dims
+      bound: 'vocab_size, hidden_size, intermediate_size, heads > 0; the products vocab x d, 3 x d x d and 2 x intermediate x d fit usize; every weight stored at EXACTLY its config shape'
+      disposition: enforced
+      rung: 6
+      checked_by: 'aprender-core ModernBertConfig::from_json_bytes (ZeroDimension / DimensionOverflow) and load_tensor (shape compared, then size, BEFORE any widening allocation); rung 4 (c) already bounds every stored entry by the file, so a config dimension cannot size an allocation the file does not hold'
+      owner_crate: aprender-core
+      test: 'cargo test -p aprender-core --lib models::modernbert::config::tests::config_domain && cargo test -p aprender-core --lib models::modernbert::load::tests::refuses_shape_mismatch'
+    - id: tensor_dtype
+      bound: 'F16 weights, F32 temperature, U8 blobs'
+      disposition: enforced
+      rung: 4
+      checked_by: 'artifact::rung4_structure (c) check_dtype against the architecture-derived set'
+      refusal: [DtypeMismatch]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: load_tensor_dtype
+      bound: 'F16 / F32 only, payload EXACTLY product(shape) x width bytes'
+      disposition: enforced
+      rung: 6
+      checked_by: 'aprender-core modernbert::load_tensor (ea940faec): defence in depth behind tensor_dtype for every caller of core''s loader'
+      owner_crate: aprender-core
+      test: 'cargo test -p aprender-core --lib models::modernbert::load::tests::refuses_foreign_dtype_and_truncated_payload'
+    - id: tensor_entry_size
+      bound: 'entry size == product(shape) x dtype width (checked arithmetic)'
+      disposition: enforced
+      rung: 4
+      checked_by: 'artifact::check_size in rung4_structure (c)'
+      refusal: [SizeMismatch]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::size_mismatch && cargo test -p aprender-decide --lib artifact::ladder::size_rule_exhaustive'
+    - id: tensor_data_range
+      bound: 'data_offset + entry offset + entry size inside the file (checked arithmetic)'
+      disposition: enforced
+      rung: 4
+      checked_by: 'artifact::rung4_structure (a) and (c): get_tensor_data None -> DataOutOfBounds (the reader does not check data ranges at parse)'
+      refusal: [DataOutOfBounds]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: tensor_name_set
+      bound: 'the index name set == the architecture-derived set; the scan is O(expected x observed) with expected <= 6 x 1024 + 12 x 64 + 20 names (6 per encoder layer minus layer 0''s attn_norm, 12 per head layer, 3 embedding / final norms, 11 type_emb / scorer / act_head, temperature, 6 blobs; bounded by num_hidden_layers and head_layers) and observed <= max_tensor_count'
+      disposition: enforced
+      rung: 4
+      checked_by: 'artifact::check_name_set in rung4_structure (b), after both layer counts are bounded'
+      refusal: [MissingTensor, UnexpectedTensor]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::missing_tensor && cargo test -p aprender-decide --lib artifact::ladder::extra_tensor'
+    - id: non_finite
+      bound: 'every F16 / F32 weight finite'
+      disposition: enforced
+      rung: 5
+      checked_by: 'artifact::rung5_finite on the raw bit patterns (no widening, no allocation)'
+      refusal: [NonFiniteWeight]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::nan_weight'
+    - id: criteria_count
+      bound: max_criteria
+      disposition: enforced
+      rung: 4
+      checked_by: 'task::OrderedCriteria visit_map (MAX_CRITERIA), while the criteria object is read and before the entry is stored or compared; duplicates found with a set (V1-b)'
+      refusal: ['Task(TooManyCriteria']
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib task::tests::too_many_criteria_refused_while_reading && cargo test -p aprender-decide --lib task::tests::max_criteria_matches_contract'
+    - id: probe_row_tokens
+      bound: probe_max_row_tokens
+      disposition: enforced
+      rung: 7
+      checked_by: 'artifact::run_probes: every probe row is BUILT and checked before any forward pass (plan 08-26), so the load-time replay, the only forward a load runs, is bounded whatever max_len or the tokenizer say; pack refuses the same row as ProbeRowOverBudget'
+      refusal: [ProbeMismatch]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::probe_row_budget_checked_before_replay_forward && cargo test -p aprender-decide --lib artifact::ladder::probe_row_over_budget'
+    - id: tokenizer_truncation_padding
+      bound: 'none honoured: the tokenizer file''s truncation and padding blocks are disabled per call'
+      disposition: enforced
+      rung: 6
+      checked_by: 'laya::builder::Builder::from_bytes (with_truncation(None), with_padding(None)); the builder is the only thing that truncates, and it reports it (D-12, V9-a)'
+      refusal: none
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib laya::tests::tokenizer_truncation_and_padding_are_disabled && cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: inspect_read
+      bound: max_artifact_bytes
+      disposition: enforced
+      rung: 'pack_laya inspect'
+      checked_by: 'examples/pack_laya.rs cmd_inspect: read_decide_apr_bytes_bounded(file, Some(metadata length)), then inspect_manifest (rungs 1-4) (IN-02)'
+      refusal: [ArtifactTooLarge]
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::declared_length_over_cap && cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: agent_max_len
+      bound: 'max_len >= 1 (AgentConfig); no upper bound'
+      disposition: accepted
+      rung: 4
+      checked_by: 'laya::AgentConfig::from_json_bytes (max_len > 0)'
+      reason: 'max_len sizes no allocation and no forward before another bound applies. The builder uses it only in saturating arithmetic, take() and truncate(); every forward row is bounded first: the load-time replay by probe_max_row_tokens (probe_row_tokens, checked before the forward), served rows by decide-tool-boundary-v1 built_tokens_total (checked after one tokenization, before any forward). A larger max_len serves longer rows only inside those budgets'
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: agent_head_max_len
+      bound: 'none'
+      disposition: accepted
+      rung: 4
+      checked_by: 'laya::builder::Builder::prefix (saturating isize arithmetic)'
+      reason: 'head_max_len only decides the option shrink and the head keep length: saturating arithmetic (to_isize), then take(); options are capped at 48 tokens each and K at max_criteria, so the prefix it shapes is bounded by those, not by head_max_len'
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: encoder_row_length
+      bound: 'the caller''s row (core public API)'
+      disposition: accepted
+      rung: 7
+      checked_by: 'aprender-core ModernBertEncoder::forward / ModernBertLayer::forward size by the caller''s ids (layer_row_length refuses empty and mis-sized rows)'
+      reason: 'core''s public forward has no row cap of its own: the caller bounds the row. On the decide path every row is bounded before the forward: replay rows by probe_max_row_tokens (probe_row_tokens), served rows by decide-tool-boundary-v1 built_tokens_total, and every built row by the builder''s max_len truncate'
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: layer_row_length
+      bound: 'l >= 1 and x.len() == l x d (checked multiply), before RopeTable::new'
+      disposition: enforced
+      rung: 7
+      checked_by: 'aprender-core ModernBertLayer::forward / forward_with_rope (WR-04 / V10-b, plan 08-20)'
+      owner_crate: aprender-core
+      test: 'cargo test -p aprender-core --lib models::modernbert::layer::tests::layer_forward_empty_row_is_refused && cargo test -p aprender-core --lib models::modernbert::layer::tests::layer_forward_huge_l_is_refused_before_rope && cargo test -p aprender-core --lib models::modernbert::layer::tests::layer_forward_with_rope_empty_row_is_refused'
+    - id: token_ids
+      bound: 'every id < vocab_size'
+      disposition: enforced
+      rung: 7
+      checked_by: 'aprender-core ModernBertEmbeddings::forward (OutOfVocab, never an index panic); at load the replay''s refusal is ProbeReplay at rung 7 (probe_replay_failure_is_rung_7)'
+      owner_crate: aprender-core
+      test: 'cargo test -p aprender-core --lib models::modernbert::tests::forward_refuses_out_of_vocab_and_empty && cargo test -p aprender-decide --lib artifact::ladder::probe_replay_failure_is_rung_7'
+    - id: config_blob_parse
+      bound: 'the blob''s bytes (<= max_artifact_bytes); nesting <= serde_json''s recursion limit (128)'
+      disposition: accepted
+      rung: 4
+      checked_by: 'serde_json::from_slice for the encoder / agent config, task, recipe and gate-report blobs'
+      reason: 'each JSON blob is parsed in time and memory linear in its bytes, which the file cap bounds; serde_json refuses nesting past its recursion limit as an error, not a stack overflow. No count inside them sizes further work except the rows above (layer counts, criteria, max_len / head_max_len)'
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: tokenizer_pipeline
+      bound: 'the blob''s bytes (<= max_artifact_bytes); the pipeline itself unbounded by the ladder'
+      disposition: accepted
+      rung: 6
+      checked_by: 'none in the ladder (HF tokenizers executes the blob''s normalizer / pre-tokenizer / model / added-token config); verify binds the blob to the pinned base tokenizer'
+      reason: 'a tokenizer.json is configuration the tokenizers crate executes: a normalizer can declare an expanding replacement, and bounding that needs an allowlist of pipeline components the ladder does not have. Accepted because deployability binds it: verify requires the base dir''s tokenizer/tokenizer.json to hash to laya-finetune-gate-v1 base.tokenizer_json_sha256 and to inputs_sha256.tokenizer_json, which rung 4 binds to the tokenizer.blob digest, so a DEPLOYED artifact runs exactly Laya-en''s pinned tokenizer. An artifact that was never verified runs whatever tokenizer it carries'
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+    - id: run_dir_files
+      bound: 'none on the inputs; the packed product <= max_artifact_bytes'
+      disposition: accepted
+      rung: pack
+      checked_by: 'pack::PackInputs::from_run_dir reads the operator''s run and data dirs; write_decide_apr refuses a packed artifact over the cap'
+      reason: 'back office: the run dir, data dir and base dir are the operator''s own files on the operator''s machine (pack_laya pack / verify), never bytes a server receives. What pack WRITES is capped, so no artifact it produces can exceed what the load ladder accepts'
+      owner_crate: aprender-decide
+      test: 'cargo test -p aprender-decide --lib artifact::ladder::artifact_bounds_table_is_swept'
+
+equations:
+
+  task_order_is_label_index:
+    formula: 'labels(parse_task(bytes)) == criteria names in document order of bytes, independent of the serde_json map backing'
+    domain: 'task.json bytes (data dir, decide.task_json blob)'
+    codomain: 'an ordered label list, or a typed refusal'
+    invariants:
+      - 'read with an order-preserving map visitor, never serde_json::Value / Map (Pitfall 2)'
+      - 'refuses type != "choice", fewer than 2 criteria, more than max_criteria criteria (while reading), duplicate names, unknown fields'
+
+  marker_preservation:
+    formula: 'accept(task) iff len(markers(build_row(task, state = ""))) == K, where build_row applies Laya''s option shrink'
+    domain: 'a parsed task and the artifact''s agent config (max_len, head_max_len)'
+    codomain: 'a servable task, or a typed refusal naming the lost markers'
+    invariants:
+      - 'options longer than head_max_len are shrunk exactly as Laya does and served; only marker LOSS is refused (spike-026 lib.rs:233)'
+      - 'checked once at task load; markers precede the state, so the caller''s text cannot change the outcome'
+
+  single_manifest_key:
+    formula: 'custom_keys(apr) == {"decide"} AND parse(custom["decide"]) under deny_unknown_fields AND schema_version == 1 AND method in {"laya"} AND model_type == "decide"'
+    domain: 'the APR v2 metadata section'
+    codomain: 'a typed manifest, or a rung-3 refusal'
+
+  blob_integrity:
+    formula: 'forall b in blob_tensors: sha256(bytes(b)) == manifest.blobs[b] AND dtype(b) == U8 AND forall leaf f in manifest.bindings: manifest[f] == source(f)'
+    domain: 'the six blob tensors'
+    codomain: 'verified blobs, before any weight is installed, and a manifest every leaf of which equals its sha-bound source; or a rung-4 refusal naming the blob or the manifest field (ManifestDisagreesWithBlob)'
+
+  tensor_set_derived:
+    formula: 'names(index) == expected_names(encoder_config, agent_config) ∪ blob_tensors AND forall e: e.size == product(e.shape) * width(e.dtype)'
+    domain: 'the tensor index, after rung 3'
+    codomain: 'a structurally valid index, or a rung-4 refusal naming the entry'
+    invariants:
+      - 'weights F16 except `temperature` (F32); blobs U8; act_head.* present though unused (bijection with the checkpoint)'
+
+  bounded_read_and_index_extent:
+    formula: 'declared_len <= max_artifact_bytes AND bytes_read <= max_artifact_bytes + 1 AND tensor_count <= max_tensor_count AND tensor_count * min_index_entry_bytes <= data_offset - tensor_index_offset <= file_len (checked arithmetic)'
+    domain: 'any byte stream presented as a decide-apr-v1 artifact, including a hostile one'
+    codomain: 'a bounded buffer and a header whose index extent is consistent, or a rung-1 / rung-2 refusal'
+    invariants:
+      - 'no allocation proportional to a header-declared count happens before this bound (reader_impl.rs:95 review finding)'
+      - 'the + 1 distinguishes a legal artifact of exactly the cap from a truncated larger stream'
+
+  probe_replay:
+    formula: 'forall probe p in manifest.probes: within(|p_rust(probe_task, input_p) - p.stored|, probe_probabilities_abs) AND label_rust == p.label AND tokens_rust == p.tokens <= probe_max_row_tokens'
+    domain: 'a rebuilt model at every load (rung 7) and at pack'
+    codomain: 'agreement, or a typed ProbeMismatch naming the probe and component'
+    invariants:
+      - 'stored values are Python''s (probes.json), never the packer''s Rust values'
+      - 'NaN-visible comparison: matches!(delta.partial_cmp(&bound), Some(Less | Equal))'
+
+  artifact_identity:
+    formula: 'artifact_sha256 = sha256(whole .apr bytes) AND recipe_id = sha256(decide.recipe_json blob bytes)'
+    domain: 'a loaded artifact'
+    codomain: 'the D-11 identity reported in every classify response'
+    invariants:
+      - 'the header CRC covers only the 64-byte header and is never used as an identity'
+
+  determinism:
+    formula: 'pack(inputs) in process A == pack(inputs) in process B, byte for byte, under both serde_json map backings'
+    domain: 'the same run dir, data dir and base'
+    codomain: 'byte-identical .apr files'
+    invariants:
+      - 'no timestamp, host or map-ordered field anywhere'
+      - 'probe expectations are Python values, so the packing machine''s float kernels cannot move the bytes'
+
+  size_cap:
+    formula: 'len(apr) <= max_artifact_bytes, refused at cap + 1'
+    domain: 'the packed file and any file presented to the loader'
+    codomain: 'accept or a typed TooLarge refusal'
+    invariants:
+      - 'derived from the Laya-en tensor set (~0.85 GB), not inherited from setfit-apr-v1''s 1 GiB'
+
+  private_mint:
+    formula: 'the only path to a Decider value (aprender_decide::Decider, the verified decider) is load_verified (rungs 1..8), reached through Decider::load_bytes / Decider::load_path'
+    domain: 'the aprender-decide public API'
+    codomain: 'a compile-time guarantee'
+    invariants:
+      - 'a trybuild compile-fail test proves no second minting path'
+
+  deploy_eligible:
+    formula: 'deployable(apr) iff pack_laya_verify(apr, run, data, base) accepts that exact file'
+    domain: 'a packed artifact plus its run dir, data dir and declared base'
+    codomain: 'DeployEligible, or a typed refusal naming the failed check'
+    invariants:
+      - 'embedded report fields alone never make an artifact eligible; `inspect` reports identity only'
+      - 'the check list is deploy_eligibility.verify_checks'
+
+proof_obligations:
+
+  - type: ordering
+    property: 'Task criteria document order is the label index in every build shape'
+    formal: '∀ bytes, backing in {preserve_order, sorted}: labels(parse_task_backing(bytes)) == document_order(bytes)'
+    applies_to: all
+
+  - type: bound
+    property: 'No index allocation exceeds what the header''s index extent can hold'
+    formal: '∀ header h accepted at rung 2: h.tensor_count ≤ max_tensor_count ∧ h.tensor_count * 20 ≤ h.data_offset - h.tensor_index_offset'
+    applies_to: all
+
+  - type: bound
+    property: 'An artifact larger than max_artifact_bytes is refused before the reader allocates it'
+    formal: '∀ stream: bytes_read ≤ max_artifact_bytes + 1'
+    applies_to: all
+
+  - type: determinism
+    property: 'Packing is byte-deterministic across processes and map backings'
+    formal: '∀ inputs: pack_A(inputs) == pack_B(inputs)'
+    applies_to: all
+
+  - type: roundtrip
+    property: 'Pack then load recovers every tensor and blob exactly'
+    formal: '∀ run: unpack(pack(run)).tensors == run.tensors ∧ unpack(pack(run)).blobs == run.blobs'
+    applies_to: all
+
+  - type: soundness
+    property: 'A verified decider exists only after every rung passed'
+    formal: '∀ d: VerifiedDecider ⇒ rungs_1_to_7_passed(d)'
+    applies_to: all
+
+falsification_tests:
+
+  - id: FALSIFY-DECIDE-APR-001
+    rule: 'Each load-ladder rung refuses its own induced negative, naming the rung'
+    prediction: 'Header CRC flip, wrong model_type, two custom keys, an unknown manifest key, schema_version 2, an unknown method, a blob hash mismatch, a wrong tensor size, a NaN weight and a perturbed probe are each refused at their own rung.'
+    implemented_by: 'plan 08-05 (aprender_decide::artifact ladder tests); the test: line is added in that plan''s commit'
+    test: 'cargo test -p aprender-decide --lib artifact::ladder::header_crc_flip && cargo test -p aprender-decide --lib artifact::ladder::wrong_model_type && cargo test -p aprender-decide --lib artifact::ladder::two_custom_keys && cargo test -p aprender-decide --lib artifact::ladder::unknown_manifest_key && cargo test -p aprender-decide --lib artifact::ladder::schema_version_2 && cargo test -p aprender-decide --lib artifact::ladder::unknown_method && cargo test -p aprender-decide --lib artifact::ladder::tokenizer_blob_hash && cargo test -p aprender-decide --lib artifact::ladder::size_mismatch && cargo test -p aprender-decide --lib artifact::ladder::nan_weight && cargo test -p aprender-decide --lib artifact::ladder::probe_mismatch'
+    if_fails: 'A rung does not bite, so an artifact inconsistent in that respect reaches classification.'
+
+  - id: FALSIFY-DECIDE-APR-002
+    rule: 'Packing is byte-deterministic across processes'
+    prediction: 'Two separate processes packing the same inputs produce files with the same sha256.'
+    implemented_by: 'plan 08-05 (pack determinism test)'
+    test: 'cargo test -p aprender-decide --lib artifact::determinism::golden_sha && cargo test -p aprender-decide --lib artifact::determinism::same_process_twice'
+    if_fails: 'A timestamp, host field or map-ordered field entered the artifact; identity (D-11) is no longer a function of the inputs.'
+
+  - id: FALSIFY-DECIDE-APR-003
+    rule: 'Packing is byte-deterministic across serde_json map backings'
+    prediction: 'The pack built with serde_json/preserve_order and the one built without produce identical bytes.'
+    implemented_by: 'plan 08-05 (dual-backing determinism test): the same golden_sha run standalone (preserve_order=OFF) and with the test-only serde-preserve-order feature (preserve_order=ON), each run printing its backing via artifact::determinism::backing_canary. Plan 08-12 moved the ON leg off `-p aprender-mcp-setfit` feature unification onto the explicit feature, as FALSIFY-DECIDE-APR-007 does'
+    test: 'cargo test -p aprender-decide --lib artifact::determinism::golden_sha && cargo test -p aprender-decide --features serde-preserve-order --lib artifact::determinism::golden_sha'
+    if_fails: 'The manifest serialises a map, so its bytes depend on the build graph (Pitfall 2).'
+
+  - id: FALSIFY-DECIDE-APR-004
+    rule: 'Pack then load recovers every tensor and blob exactly'
+    prediction: 'Every F16 weight''s bytes, the F32 temperature and each blob round-trip byte-identical against the run dir.'
+    implemented_by: 'plan 08-05 (pack-unpack closure test)'
+    test: 'cargo test -p aprender-decide --lib artifact::tests::pack_unpack_closure'
+    if_fails: 'Weights were re-rounded through f32, or a blob was re-serialised instead of copied.'
+
+  - id: FALSIFY-DECIDE-APR-005
+    rule: 'artifact_sha256 equals the whole-file sha256 and recipe_id the recipe blob sha256'
+    prediction: 'The loader''s reported identity equals shasum -a 256 of the file and of the run dir recipe.json.'
+    implemented_by: 'plan 08-05 (identity test)'
+    test: 'cargo test -p aprender-decide --lib artifact::tests::tiny_roundtrip && cargo test -p aprender-decide --lib artifact::tests::load_path_door'
+    if_fails: 'The identity reported to callers is not the identity of the served bytes (D-11).'
+
+  - id: FALSIFY-DECIDE-APR-006
+    rule: 'The verified decider has no second minting path'
+    prediction: 'A trybuild compile-fail case constructing VerifiedDecider outside the ladder fails to compile.'
+    implemented_by: 'plan 08-05 (trybuild compile-fail test): tests/ui/decider_struct_literal.rs tries a struct literal and a Decider::new; dark in CI until plan 08-12 adds --test ui for this package'
+    test: 'cargo test -p aprender-decide --test ui decider_has_no_second_minting_path'
+    if_fails: 'Some consumer can classify with an unverified model.'
+
+  - id: FALSIFY-DECIDE-APR-007
+    rule: 'Task criteria order survives both serde_json backings'
+    prediction: 'A task with criteria (none, against, favor) parses to labels [none, against, favor] with preserve_order on and off.'
+    implemented_by: 'plan 08-04 (aprender_decide::task order tests); run standalone (preserve_order=OFF) and with the test-only serde-preserve-order feature (preserve_order=ON), each leg printing its backing via task::tests::serde_backing_canary'
+    test: 'cargo test -p aprender-decide --lib task::tests::serde_backing_canary -- --nocapture && cargo test -p aprender-decide --lib task::tests::stance_order_none_against_favor && cargo test -p aprender-decide --features serde-preserve-order --lib task::tests::serde_backing_canary -- --nocapture && cargo test -p aprender-decide --features serde-preserve-order --lib task::tests::stance_order_none_against_favor'
+    if_fails: 'Labels are attributed by map iteration order: every probability can be attributed to the wrong label.'
+
+  - id: FALSIFY-DECIDE-APR-008
+    rule: 'The size cap refuses cap + 1 before allocation'
+    prediction: 'A declared length of max_artifact_bytes + 1 is refused with zero bytes read; a lying stream is cut at cap + 1 (limit-injected helper, no 1.25 GiB allocation).'
+    implemented_by: 'plan 08-05 (bounded read tests)'
+    test: 'cargo test -p aprender-decide --lib artifact::ladder::declared_length_over_cap && cargo test -p aprender-decide --lib artifact::ladder::read_over_cap && cargo test -p aprender-decide --lib artifact::ladder::in_memory_over_cap'
+    if_fails: 'A hostile file can exhaust memory before any rung runs.'
+
+  - id: FALSIFY-DECIDE-APR-009
+    rule: 'A forged header whose tensor_count exceeds the index extent is refused before any index allocation'
+    prediction: 'A small file with a valid header CRC and tensor_count = u32::MAX (or 4097) is refused at rung 2, and the reader allocates nothing proportional to the declared count.'
+    implemented_by: 'plan 08-05 (index extent tests, incl. the apr-format with_capacity fix)'
+    test: 'cargo test -p aprender-decide --lib artifact::ladder::tensor_count_over_cap && cargo test -p aprender-decide --lib artifact::ladder::index_extent_too_small && cargo test -p apr-format --lib v2::tests::forged_tensor_count_is_refused_by_both_readers && cargo test -p apr-format --lib v2::tests::index_capacity_is_bounded_by_the_index_bytes'
+    if_fails: 'A tiny file can demand a multi-hundred-GB allocation (reader_impl.rs:95).'
+
+  - id: FALSIFY-DECIDE-APR-010
+    rule: 'Marker loss is refused while a merely shrunk task is served'
+    prediction: 'A task whose options exceed head_max_len but keep all K markers after Laya''s shrink is served; a task that loses a marker is refused at load naming the lost markers.'
+    implemented_by: 'plan 08-04 (aprender_decide::laya marker tests: laya::tests::shrunk_task_is_served and laya::tests::marker_loss_is_refused_at_load)'
+    test: 'cargo test -p aprender-decide --lib laya::tests::shrunk_task_is_served && cargo test -p aprender-decide --lib laya::tests::marker_loss_is_refused_at_load'
+    if_fails: 'Either a task the reference serves is refused (inference semantics changed), or a task with a missing marker scores the wrong positions.'
+
+  - id: FALSIFY-DECIDE-APR-011
+    rule: 'Probe expectations are Python values and every load replays them'
+    prediction: 'The stored probe bits equal probes.json; perturbing one stored probability by 2e-5 makes load refuse at rung 7; a probe row over 48 tokens is refused at pack.'
+    implemented_by: 'plans 08-05 (pack / replay) and 08-09 (probes.json from the trainer)'
+    test: 'cargo test -p aprender-decide --lib artifact::determinism::no_rust_floats_in_manifest && cargo test -p aprender-decide --lib artifact::ladder::probe_mismatch && cargo test -p aprender-decide --lib artifact::ladder::probe_row_over_budget && cargo test -p aprender-decide --lib artifact::ladder::probe_disagrees_with_oracle'
+    if_fails: 'Artifact bytes depend on the packing machine, or a corrupted model loads silently.'
+
+  - id: FALSIFY-DECIDE-APR-012
+    rule: 'Only pack_laya verify on the exact file makes an artifact deployable'
+    prediction: 'An artifact whose embedded gate says pass but whose eval-probs were edited, or whose base sha differs, or whose recipe is synthetic-fixture, is refused by verify; inspect reports identity only.'
+    implemented_by: 'plan 08-09 (aprender_decide::verify verify_run tests)'
+    test: 'cargo test -p aprender-decide --lib verify::tests::synthetic_refused && cargo test -p aprender-decide --lib verify::tests::base_mismatch_contract && cargo test -p aprender-decide --lib verify::tests::forged_report'
+    if_fails: 'A structurally valid artifact with plausible embedded metrics can be deployed without its gate ever being re-derived.'
+
+  - id: FALSIFY-DECIDE-APR-013
+    rule: 'Every manifest leaf is bound at load to a sha-bound source, on every load door'
+    prediction: 'For every leaf of the packed manifest and every source manifest.bindings names for it, a coherent forgery (all author-controlled hashes re-pinned) that breaks exactly that one binding is refused at the rung the table names; the table''s leaf set equals the manifest''s; a forged base is refused by load_bytes, load_hashed (the Lambda door) and load_path (the stdio door) alike.'
+    implemented_by: 'plan 08-19 (aprender_decide::artifact::check_manifest_bindings, rung 4 (e); the leaf sweep driven by manifest.bindings)'
+    test: 'cargo test -p aprender-decide --lib artifact::ladder::every_manifest_leaf_is_bound && cargo test -p aprender-decide --lib artifact::ladder::manifest_bindings_table_matches_manifest_leaves && cargo test -p aprender-decide --lib artifact::ladder::manifest_bound_at_every_load_door'
+    if_fails: 'A crafted .apr serves a manifest field (model.base in every classify response, the gate or calibration record a reader sees) that its own embedded blobs contradict.'
+
+kani_harnesses:
+
+  # DECLARED, NOT EXECUTED. cargo-kani is not installed in this repository and no
+  # #[kani::proof] harness exists anywhere under crates/.
+  - id: KANI-DECIDE-APR-001
+    obligation: 'No index allocation exceeds what the header''s index extent can hold'
+    property: 'forall tensor_count, tensor_index_offset, data_offset, file_len (u32 / u64, checked arithmetic): rung2_accepts implies tensor_count <= 4096 AND tensor_count * 20 <= data_offset - tensor_index_offset <= file_len'
+    bound: 16
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is artifact::ladder::rung2_predicate_exhaustive (plan 08-05): check_index_extent over every combination of 9 counts x 10 offsets^3 edge values, incl. u32::MAX / u64::MAX overflow edges, against a u128 reference'
+
+  - id: KANI-DECIDE-APR-002
+    obligation: 'An artifact larger than max_artifact_bytes is refused before the reader allocates it'
+    property: 'forall declared_len and stream length: bytes_read <= cap + 1'
+    bound: 16
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is artifact::ladder::read_over_cap and artifact::ladder::declared_length_over_cap (plan 08-05): limit-injected, incl. an endless stream cut at cap + 1, as in setfit-apr-v1 KANI-APR-002'
+
+  - id: KANI-DECIDE-APR-003
+    obligation: 'Every tensor index entry size equals product(shape) * dtype width'
+    property: 'forall shapes of length <= 4 with bounded dims and dtype in {F16, F32, U8}: structural check accepts iff size matches'
+    bound: 4
+    strategy: bounded_int
+    harness: 'NOT EXECUTED — the evidence is artifact::ladder::size_rule_exhaustive (plan 08-05): every shape of rank <= 4 over 7 edge dims (incl. 0, 2^32, usize::MAX) x {F16, F32, U8} against an exact u128 reference'
+
+qa_gate:
+  id: F-DECIDE-APR-001
+  name: 'Decision-model APR artifact schema gate'
+  description: >
+    The blocking gate for the decide-apr-v1 artifact and the D-05 task schema. Every check must be
+    observed RED under an in-band negative before it is trusted. Wired into tier3 through
+    contract-validate (schema) and contract-audit-phase8 (binding coverage), and into the test
+    suites named by the falsification tests as plans 08-04, 08-05 and 08-09 land them.
+  checks:
+    - 'contract schema validity (pv validate, zero errors) and non-zero pv status counts'
+    - 'task order is the label index under both serde_json backings'
+    - 'marker loss refused, shrunk tasks served'
+    - 'bounded read and index-extent bound before any allocation'
+    - 'every ladder rung refuses its induced negative'
+    - 'every manifest leaf bound at load to its sha-bound source (manifest.bindings)'
+    - 'byte determinism across processes and backings'
+    - 'pack-unpack closure; identity equals whole-file sha256'
+    - 'probe replay against stored Python values, NaN-visible'
+    - 'private mint (trybuild compile-fail)'
+    - 'deployability only through pack_laya verify on the exact file'
+  pass_criteria: 'FALSIFY-DECIDE-APR-001..013 pass, each observed RED under its own induced negative.'
+  falsification: >
+    Forge a 64-byte header with a valid CRC and tensor_count = 4097: rung 2 must refuse it before
+    the index parser runs. Flip one byte of the decide.recipe_json blob: rung 4 must refuse naming
+    the blob, and recipe_id must no longer match the run dir.

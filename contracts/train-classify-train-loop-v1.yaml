@@ -1,0 +1,47 @@
+metadata:
+  id: C-TRAIN-CLASSIFY-TRAIN-LOOP
+  version: 1.0.0
+  created: '2026-10-19'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins ClassifyTrainer::train on the single-process path (#5686): early
+    stopping fires when epochs without improvement reach the patience, best
+    epoch tracks the lowest validation loss, best and periodic checkpoints are
+    written, and an attached monitor writer receives the run.
+  references:
+    - 'crates/aprender-train/src/finetune/classify_trainer.rs (train)'
+
+equations:
+  classify_train_loop:
+    formula: |
+      stop after epoch e iff epochs_without_improvement(e) >= patience; checkpoint epoch-e iff (e + 1) mod save_every == 0 (save_every is 1 when epochs <= save_every); best/ is written on every new lowest val_loss
+    domain: single-process ClassifyTrainer runs
+    invariants:
+    - 'epoch_metrics are recorded in epoch order'
+
+proof_obligations:
+- id: TCT-INV-001
+  type: invariant
+  property: patience bounds the run and best_epoch is the lowest val_loss
+  formal: 'stopped ⇒ without_improvement ≡ patience'
+  applies_to: classify_train_loop
+
+falsification_tests:
+- id: FALSIFY-TRAIN-CLASSIFY-TRAIN-LOOP-001
+  rule: train stops at the patience, tracks the best epoch and writes checkpoints
+  prediction: 'patience 0 gives one epoch and stopped_early; patience 100 runs every epoch with best_epoch at the lowest val_loss; best, epoch-0 and epoch-1 checkpoints exist'
+  test: cargo test -p aprender-train --lib _5686
+  if_fails: training overruns its patience, reports the wrong best epoch, or leaves no checkpoint to resume from
+  ship_blocking: false
+  mutation: 'change >= to > in the early-stopping check, or disable the periodic checkpoint branch; each must turn RED'
+
+qa_gate:
+  id: QA-TRAIN-CLASSIFY-TRAIN-LOOP-001
+  name: Classify train loop gate
+  description: early stopping, best epoch, checkpoints and monitor hold
+  checks:
+  - classify_train_loop
+  pass_criteria: FALSIFY-TRAIN-CLASSIFY-TRAIN-LOOP-001 passes
+  falsification: Any failure fails the gate

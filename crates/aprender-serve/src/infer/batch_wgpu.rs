@@ -159,6 +159,7 @@ fn try_init_wgpu_batch(
     );
     // #4056: the WGSL RMSNorm takes the model's eps (it hardcoded 1e-6).
     fwd.set_rms_norm_eps(cfg.eps);
+    fwd.set_rope_theta(f64::from(cfg.rope_theta));
 
     // C-WGPU-Q4K-001: Upload raw Q4K bytes for projection weights (7x less VRAM).
     let raw_q4k = wgpu_adapter::raw_q4k_weights(model);

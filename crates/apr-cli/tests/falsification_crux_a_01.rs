@@ -39,7 +39,10 @@ use std::process::Command;
 fn load_aliases(test: &str) -> Option<BTreeMap<String, String>> {
     let text = provable_contracts::workspace_file_or_skip!(test, "configs/aliases.yaml")?;
     Some(
-        serde_yaml::from_str::<BTreeMap<String, String>>(&text).unwrap_or_else(|e| {
+        serde_saphyr::from_str_with_options::<BTreeMap<String, String>>(
+            &text,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        ).unwrap_or_else(|e| {
             panic!("FALSIFY-CRUX-A-01-002: aliases.yaml not a str→str map: {e}")
         }),
     )

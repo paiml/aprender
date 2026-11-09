@@ -427,3 +427,35 @@ fn test_active_pygmy_transformer_layers() {
     assert!(layer.ffn_up_weight.num_elements > 0);
     assert!(layer.ffn_down_weight.num_elements > 0);
 }
+
+/// `Rss` of the mapping that starts at `start`, from `/proc/self/smaps`, in kB.
+#[cfg(target_os = "linux")]
+fn mapping_rss_kb(start: *const u8) -> u64 {
+    let smaps = std::fs::read_to_string("/proc/self/smaps").expect("read smaps");
+    let want = format!("{:x}-", start as usize);
+    let mut lines = smaps.lines().skip_while(|l| !l.starts_with(&want));
+    assert!(lines.next().is_some(), "no mapping starts at {want}");
+    lines
+        .find_map(|l| l.strip_prefix("Rss:"))
+        .and_then(|v| v.trim().trim_end_matches("kB").trim().parse().ok())
+        .expect("Rss line")
+}
+
+/// #4991: a release drops the populated, locked map's resident pages, and every
+/// byte still reads back the same (the pages fault in again from the file).
+#[cfg(target_os = "linux")]
+#[test]
+fn test_release_resident_pages_drops_rss_and_keeps_bytes() {
+    let (temp_file, gguf_data) = create_pygmy_temp_file();
+    let mapped = MappedGGUFModel::from_path(temp_file.path()).expect("Should load MappedGGUFModel");
+    let start = mapped.data().as_ptr();
+    assert!(mapping_rss_kb(start) > 0, "the map is populated at open");
+    mapped.release_resident_pages().expect("release");
+    assert_eq!(mapping_rss_kb(start), 0, "the release left pages resident");
+    assert_eq!(
+        mapped.data(),
+        &gguf_data[..],
+        "a byte changed across the release"
+    );
+    mapped.release_resident_pages().expect("a second release");
+}

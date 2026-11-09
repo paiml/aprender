@@ -2,7 +2,7 @@
 
 # apr embed
 
-Produce sentence embeddings from a BERT bi-encoder (GH-326 Phase 6).
+Produce sentence embeddings from a BERT APR file (GH-326 Phase 6) or an EmbeddingGemma 2 GGUF file (APR-EMBED-001).
 
 **Category**: Other
 

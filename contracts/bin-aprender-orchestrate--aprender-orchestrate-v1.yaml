@@ -329,3 +329,9 @@ falsification_tests:
     test: 'scripts/check_surface_audit_bins.sh (aprender#4476)'
     if_fails: '4 MCP tools unledgered 2026-09-26, ledgered 2026-09-27. STILL LIVE RED: 6 mcp:* rows are not stdio tools/list tools. 3 declare banco POST /api/v1/mcp (clears when extract:binary honours the declared transport); 3 (agent registry) no transport serves, recorded as finding c1-ont10-orchestrate-agent-mcp-tools-unserved'
     mutation: 'delete every aprender-orchestrate row; must turn RED naming aprender-orchestrate'
+  - id: FALSIFY-BIN-APRENDER-ORCHESTRATE-006
+    rule: 'Language::from_str maps every documented alias, case-insensitively, exact-match only'
+    prediction: '`"golang"`->Go, `"TS"`->TypeScript, `"c++"`/`"cpp"`->Cpp; unknown or near-miss input (" python", "pyth") becomes Other(<lowercased input>), never a known variant'
+    test: 'cargo test -p aprender-orchestrate --lib types::tests::test_language_from_str_every_known_alias'
+    if_fails: 'a language alias silently falls into Other, so the transpiler and stack detection treat a supported language as unsupported'
+    mutation: 'drop the "golang" arm and the to_lowercase() call; 4 of 5 new tests turn RED'

@@ -319,6 +319,8 @@ pub mod grammar;
 /// Pillar-5 "prompt parity on either harness"
 /// (`contracts/apr-code-harness-ir-v1.yaml`).
 pub mod harness_ir;
+/// #4947: will the Qwen3.5 host build fit in host RAM — decided before building it.
+pub mod host_capacity;
 /// HTTP client for real model server benchmarking
 ///
 /// Implements actual HTTP calls to external servers (vLLM, Ollama, llama.cpp).
@@ -356,10 +358,23 @@ pub mod inference;
 /// - SAMPLE: Token sampling
 /// - DECODE: Token to text decoding with garbage detection (APR-TOK-001)
 pub mod inference_trace;
+/// KTEST-04: `APR_FORCE_ISA` — force any runtime CPU ISA path the binary contains.
+pub mod isa;
+/// KTEST-02: the std-only f64 oracle and margin harness the kernel parity tests are judged by.
+#[cfg(test)]
+mod kernel_oracle;
+/// KTEST-02 §0.3: the source scan that keeps `kernel_oracle` std-only, kept outside the directory it scans.
+#[cfg(test)]
+mod kernel_oracle_scan;
+/// KREG-001: the kernel registry — a selector dispatches only a registered combination.
+pub mod kernel_registry;
 pub mod layers;
 pub mod memory;
 #[cfg(feature = "server")]
 pub mod metrics;
+/// APR-EMBED-001 EG-1: model kind (generative or embedding) and the per-layer facts an embedding
+/// model reads from its file (KV heads, local/global attention).
+pub mod model_kind;
 /// Unified model loader for APR, GGUF, and SafeTensors
 ///
 /// Per spec §3.2 and §5: Combines format detection with model loading.

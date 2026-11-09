@@ -114,11 +114,19 @@ done
 
 HITS=$(printf '%s\n' "$OUT" | grep -c "disallowed method" || true)
 
+# Only reached when clippy exited NONZERO: the exit-0 case failed above. So clippy failed for
+# a reason other than the bans, and its output is the only record of that reason. Say which
+# of the two cases this is, and print what clippy said (#4960).
 if ! grep -q "error: use of a disallowed method" <<<"$OUT"; then
-  printf 'libm-ban-live: FAIL — the bans fired as WARNINGS, not errors.\n' >&2
-  printf '  `#![deny(clippy::disallowed_methods)]` is missing from %s, so clippy\n' "$LIB" >&2
-  printf '  reports every violation and still exits 0. The list reads correctly and\n' >&2
-  printf '  enforces nothing.\n' >&2
+  if [ "$HITS" -gt 0 ]; then
+    printf 'libm-ban-live: FAIL — the bans fired as WARNINGS, not errors, and clippy exited %s for another reason.\n' "$RC" >&2
+    printf '  `#![deny(clippy::disallowed_methods)]` in %s is missing or overridden, so the\n' "$LIB" >&2
+    printf '  list reads correctly and enforces nothing.\n' >&2
+  else
+    printf 'libm-ban-live: FAIL — clippy exited %s before any ban fired, so no ban was measured.\n' "$RC" >&2
+    printf '  The cause is in the clippy output below (a compile error, the toolchain, the disk).\n' >&2
+  fi
+  printf '  clippy output was:\n%s\n' "$OUT" >&2
   exit 1
 fi
 
@@ -134,8 +142,13 @@ touch "$LIB"
 
 # And the tree as committed must still be clean, or the ban is red for a reason that is not
 # the plant.
-if ! cargo clippy -p aprender-viz --lib >/dev/null 2>&1; then
-  printf 'libm-ban-live: FAIL — the unplanted tree does not pass clippy.\n' >&2
+set +e
+CLEAN_OUT=$(cargo clippy -p aprender-viz --lib 2>&1)
+CLEAN_RC=$?
+set -e
+if [ "$CLEAN_RC" -ne 0 ]; then
+  printf 'libm-ban-live: FAIL — the unplanted tree does not pass clippy (exit %s).\n' "$CLEAN_RC" >&2
+  printf '  clippy output was:\n%s\n' "$CLEAN_OUT" >&2
   exit 1
 fi
 

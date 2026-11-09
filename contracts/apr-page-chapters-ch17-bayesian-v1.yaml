@@ -33,3 +33,10 @@ falsification:
   - condition: "Legacy name in page text"
     severity: P0
     action: delete_from_summary
+
+falsification_tests:
+  - id: FALSIFY-PAGE-CHAPTERS_CH17_BAYESIAN-001
+    description: "book/src/chapters/ch17-bayesian.md exists, is enforced, carries PCU frontmatter and no placeholders, and its example ch17_bayesian compiles and runs; the contract declares no section headings, so G9 is a SKIP and does not check sections"
+    test: "bash scripts/book-gate.sh chapters-ch17-bayesian --strict"
+    prediction: "book-gate exits 0 with G2 (enforced), G3 (page exists), G4 (frontmatter), G5 (example compiles), G6 (example runs) and G8 (no placeholders) PASS, G9 SKIP"
+    if_fails: "The example ch17_bayesian stopped compiling or exits non-zero, the page moved off its declared path, lost its PCU frontmatter, or a placeholder crept in"

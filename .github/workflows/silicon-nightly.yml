@@ -219,6 +219,7 @@ jobs:
     needs: [coverage, x86_64-cpu, aarch64-cuda-sm121]
     if: always()
     runs-on: [self-hosted, clean-room, intel]
+    timeout-minutes: 60
     steps:
       - name: Report per silicon
         run: |

@@ -66,6 +66,10 @@ permissions:
 jobs:
   guards-nightly:
     runs-on: [self-hosted, Linux, X64, clean-room]
+    permissions:
+      contents: read
+      issues: write   # #5182: a red ratchet night opens or updates the one LAB ticket
+      actions: read   # #5920: guard_lane_stop.sh reads this workflow's finished runs and their steps
     # 60: BSE-05 formula T = max(15, ceil(1.5*p99), p99+20) over the measured
     # cost of the steps this job carries -- 26.8 min of guard-cargo's own
     # 43.8-min run 34449608126, plus checkout and the cargo-home heal. With
@@ -74,6 +78,13 @@ jobs:
     # a nightly on a shared 32-core host pays contention a PR job does not and
     # nothing is blocked while it waits.
     timeout-minutes: 60
+    # PP-19: this job runs `--ignored` tests on the shared X64 clean-room host,
+    # so it joins the repo-wide `perf-intel` group (the one nightly-bench's
+    # `measure` and beat-speed-nightly declare) and serialises against them.
+    # Enforced by scripts/check_perf_concurrency_groups.sh.
+    concurrency:
+      group: perf-intel
+      cancel-in-progress: false
     env:
       IMAGE: localhost:5000/sovereign-ci:stable
       # Same shape as guard-cargo (ci.yml). On a schedule/dispatch run there is
@@ -164,6 +175,66 @@ jobs:
       # ─────────────────────────────────────────────────────────────────────
       - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
         run: bash scripts/ci_test_tier.sh --self-test
+      - name: flake_kpi case table (#6446, LAB)
+        run: bash scripts/flake_kpi.sh --self-test
+      - name: Fleet-cells gate case table and mutants (#5064, LAB)
+        run: setsid --wait bash scripts/release/fleet_cells_gate.sh --self-test
+      - name: compute row zero-tests case table and mutants (#5048, LAB)
+        run: setsid --wait bash scripts/tests/compute_row_zero_tests_test.sh --mutants
+      - name: shared-checkout shallow lock case table and mutants (#5025, LAB)
+        run: setsid --wait bash scripts/shared_checkout_no_shallow.sh --mutants
+      - name: Parity-receipt count equals EXPECTED_RECEIPTS (verify mode, #5502, LAB)
+        id: lab_parity_receipts
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/parity-receipts.log") 2>&1
+          setsid --wait bash scripts/parity_receipt_denominator.sh
+      - name: nextest list-wrapper case table (#5298, LAB)
+        run: setsid --wait bash scripts/ci/nextest_list_wrapper.sh --self-test
+      - name: affected_set.sh case table and mutants (FLOW-010 E5, LAB)
+        id: lab_affected_set
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/affected-set.log") 2>&1
+          setsid --wait bash scripts/affected_set.sh --self-test
+      - name: MQ feeder required-set check (#6175, LAB)
+        id: lab_mq_feeder
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/mq-feeder.log") 2>&1
+          setsid --wait bash scripts/check_mq_feeder_required_set.sh
+      # C324 item 5: red or unmeasured for 7 days, this check stops running until its owner dispatches the workflow
+      # (scripts/guard_lane_stop.sh: per STEP, because this job carries many guards; its case table runs first).
+      # The stop reads Actions history with conditional GETs (GH-1); the 304s need last night's ETags, so the cache
+      # dir persists across nights. A cache miss only costs the full reads; nothing depends on it.
+      - name: Guard-lane stop history cache (#5920, GH-1)
+        if: ${{ !cancelled() }}
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ runner.temp }}/guard-lane-stop-cache
+          key: guard-lane-stop-${{ github.run_id }}
+          restore-keys: guard-lane-stop-
+      - name: Guard-lane stop decision (#5920, C324 item 5)
+        id: lab_guard_lane_stop
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GUARD_LANE_STOP_CACHE: ${{ runner.temp }}/guard-lane-stop-cache
+        run: |
+          # the log is the LAB ticket's evidence: a stop step that dies (unmeasured) opens the same ticket as a red lane
+          exec > >(tee -a "$RUNNER_TEMP/guard-lane.log") 2>&1
+          bash scripts/guard_lane_stop.sh --self-test
+          bash scripts/guard_lane_stop.sh --run
+      - name: ci_guards cargo-free lane self-test (#5920, LAB)
+        id: lab_guard_lane
+        if: ${{ !cancelled() && steps.lab_guard_lane_stop.outputs.decision == 'run' }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/guard-lane.log") 2>&1
+          setsid --wait bash scripts/check_guard_lane.sh
       - name: aprender-core builds for wasm32
         run: setsid --wait bash scripts/check_wasm32_core_builds.sh
       - name: No test may assert about the fd 0 it inherited
@@ -174,9 +245,21 @@ jobs:
         run: bash scripts/perf_gate.sh --selftest
       - name: Book rust examples compile
         run: setsid --wait bash scripts/check_book_examples_compile.sh
+      - name: Harness fixture servers die with their harness (LAB, quarantined from the merge path, #5873)
+        run: setsid --wait bash scripts/check_harness_server_cleanup.sh
+      - name: Coverage scan files no per-function ticket (LAB, #5879)
+        id: lab_cov_scan
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          { setsid --wait bash scripts/check_coverage_single_report.sh --self-test && setsid --wait bash scripts/check_coverage_single_report.sh; } 2>&1 | tee "$RUNNER_TEMP/cov-scan.log"
       - name: aprender-profile lib tests (was gated by nothing)
+        if: ${{ !cancelled() }}
         run: cargo test -p aprender-profile --lib
       - name: model-tests falsification suites (was gated by nothing, aprender#2522) -- SATD ceiling measured on the comparand (BSE-03)
+        if: ${{ !cancelled() }}
         run: |
           set -euo pipefail
           # The warm sccache lives under the runner user's data dir on the persistent intel
@@ -202,7 +285,7 @@ jobs:
               -e SCCACHE_DIR=/sccache \
               -e SCCACHE_CACHE_SIZE=50G \
               -e CARGO_INCREMENTAL=0 \
-              -e CARGO_BUILD_JOBS=8 \
+              -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" \
               -e CARGO_TERM_COLOR=never \
               "${DR_ENV[@]}" \
               "$IMAGE" "$@"
@@ -218,7 +301,7 @@ jobs:
           # export-ignore, so an ignored source file would vanish from the
           # comparand and lower the measured count (review m2-prb-review, 4/5 lanes).
           comparand="$RUNNER_TEMP/comparand"; git worktree remove --force "$comparand" 2>/dev/null || rm -rf "$comparand"
-          git worktree add --detach "$comparand" origin/main
+          git worktree prune && git worktree add --detach "$comparand" origin/main
           trap 'git worktree remove --force "$comparand" 2>/dev/null || true' EXIT
           DR_ENV=(-e SATD_BASELINE=0)
           set +e
@@ -237,6 +320,196 @@ jobs:
           # 4. the satd class of the ratchet-semantics case table (rebuilds nothing)
           DR_ENV=()
           dr "$GITHUB_WORKSPACE" bash scripts/tests/ratchet_semantics_test.sh --class satd
+      # The hand-list guard (#3745 S3) and the ladder gap (#5231). LAB, not GATE: they run
+      # here, never on a PR, merge-queue or release path. Their case tables run with the
+      # apr-cli lib tests; these two steps run the #[ignore]d tree scan and ladder-gap
+      # requirement. Each red reaches ONE ticket with ONE owner through its own opener
+      # below (its label; a ticket already carrying it is commented, never duplicated).
+      - name: Release surfaces may not hand-list apr verbs or flags (#3745 S3)
+        id: lab_hand_list
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/hand-list.log") 2>&1
+          cargo test -p apr-cli --lib -- --ignored --exact hand_list_guard::tests::no_release_surface_hand_lists_apr_verbs_or_flags
+      - name: The model ladder owes cells to every model-cell command (#5231)
+        id: lab_ladder_gap
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ladder-gap.log") 2>&1
+          cargo test -p apr-cli --lib -- --ignored --exact hand_list_guard::tests::the_ladder_owes_every_model_cell_command
+      - name: A red hand-list night opens or updates its one LAB ticket (#3745)
+        if: failure() && steps.lab_hand_list.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-hand-list --title "LAB: a release surface hand-lists apr verbs or flags (#3745)" \
+            --owner rex --log "$RUNNER_TEMP/hand-list.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red ladder-gap night opens or updates its one LAB ticket (#5231)
+        if: failure() && steps.lab_ladder_gap.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-ladder-gap --title "LAB: the model ladder owes cells to model-cell commands (ladder-gap, #3745)" \
+            --owner aprender-a7 --log "$RUNNER_TEMP/ladder-gap.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red coverage-scan night opens or updates its one LAB ticket (#5879)
+        if: failure() && steps.lab_cov_scan.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-cov-scan --title "LAB: an open per-function coverage ticket is not rolled into epic #5875 (#5879)" \
+            --owner aprender-flow --log "$RUNNER_TEMP/cov-scan.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      # #5182 (GATE/LAB). The two ratchets that left the PR path. On a schedule
+      # run HEAD *is* origin/main, so merge-base(HEAD, origin/main) is HEAD and a
+      # shrink-only comparison against it can never fail. The comparand is
+      # therefore main as it was 24 h earlier: what grew on main since the last
+      # nightly turns this red. Fetched shallow (3 days), resolved, printed.
+      - name: Main as it was 24 h earlier, the comparand for the nightly ratchets (#5182)
+        id: ratchet_base
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the ratchets unmeasured
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ratchets.log") 2>&1
+          git fetch --no-tags --shallow-since='3 days ago' origin +refs/heads/main:refs/remotes/origin/main
+          base=$(git rev-list -1 --before='24 hours ago' origin/main)
+          if [ -z "$base" ]; then
+            base=$(git rev-list origin/main | tail -1)
+            echo "no main commit older than 24 h in the fetched window; comparand = oldest fetched"
+          fi
+          printf 'comparand %s  %s\n' "$base" "$(git log -1 --format=%cI "$base")"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+      # The comparand reaches the two ratchets as a declared step output. When the step
+      # above did not finish green it is empty, and `:?` turns that into a red ratchet
+      # night instead of a comparison against nothing.
+      - name: Per-function complexity may only fall (shrink-only)
+        id: ratchet_cx
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the ratchets unmeasured
+        env:
+          RATCHET_24H_BASE: ${{ steps.ratchet_base.outputs.base }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ratchets.log") 2>&1
+          setsid --wait bash scripts/check_complexity_ratchet.sh --selftest
+          BASELINE_RATCHET_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/check_complexity_ratchet.sh
+      - name: No shrink-only baseline in scripts/ grew (check_baseline_ratchets --ratchet)
+        id: ratchet_br
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the ratchets unmeasured
+        env:
+          RATCHET_24H_BASE: ${{ steps.ratchet_base.outputs.base }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/ratchets.log") 2>&1
+          BASELINE_RATCHET_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/check_baseline_ratchets.sh --ratchet
+      # #4709 (C303): the pv census ratchet. LAB, never on a PR path (C324): the bound
+      # count never falls, the unbound share and the contracts with no falsification
+      # tests never rise, measured by one pv on main 24 h ago and on main now. Its case
+      # table (the real pv on fixture trees, stub pvs for every NOT_MEASURED) runs first.
+      - name: The pv census bound share may only rise (#4709)
+        id: ratchet_census
+        if: ${{ !cancelled() }}   # a red elsewhere in this job must not leave the census unmeasured
+        env:
+          RATCHET_24H_BASE: ${{ steps.ratchet_base.outputs.base }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/census.log") 2>&1
+          setsid --wait bash scripts/census_ratchet.sh --self-test
+          CENSUS_BASE_REF="${RATCHET_24H_BASE:?no 24 h comparand (#5182)}" setsid --wait bash scripts/census_ratchet.sh
+      # #5809 (FLOW-010 E5): the affected-set tool's case tables. LAB, never on a PR path (C324 rules 5/7):
+      # the tool is not consumed by any gate yet; a red opens or updates the one LAB ticket below, never a block.
+      - name: Affected-set tool and readers guards (FLOW-010 E5, #5809)
+        id: affected_set
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/affected.log") 2>&1
+          setsid --wait bash scripts/check_affected_set.sh
+          setsid --wait bash scripts/check_affected_readers.sh --self-test
+          setsid --wait bash scripts/check_affected_readers.sh
+      - name: A red affected-set night opens or updates the one LAB ticket (#5809)
+        if: failure() && steps.affected_set.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-affected-readers --title "LAB: nightly affected-set guards red (#5809)" \
+            --owner aprender-w5018 --log "$RUNNER_TEMP/affected.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red parity-receipt night opens or updates its one LAB ticket (#5502)
+        if: failure() && steps.lab_parity_receipts.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-parity-receipts --title "LAB: parity-receipt count differs from EXPECTED_RECEIPTS (#5502)" \
+            --owner aprender-w5018 --log "$RUNNER_TEMP/parity-receipts.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red census night opens or updates the one LAB ticket (#4709)
+        if: failure() && steps.ratchet_census.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-census-ratchet --title "LAB: nightly pv census ratchet red (#4709)" \
+            --owner la-0.72 --log "$RUNNER_TEMP/census.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      # The GATE/LAB rule: a red opens or updates ONE ticket with ONE owner, then stays
+      # silent. Only a red ratchet step calls this (a green night never does);
+      # a red elsewhere in this job is not a ratchet red and writes nothing here.
+      # The opener's case table (a planted red included) runs first.
+      - name: A red ratchet night opens or updates the one LAB ticket (#5182)
+        if: failure() && (steps.ratchet_base.outcome == 'failure' || steps.ratchet_cx.outcome == 'failure' || steps.ratchet_br.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --self-test
+          bash scripts/lab_ticket.sh --label lab-nightly-ratchets --title "LAB: nightly shrink-only ratchets red (#5182)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/ratchets.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red affected_set night opens or updates its one LAB ticket (FLOW-010 E5)
+        if: failure() && steps.lab_affected_set.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-affected-set --title "LAB: affected_set.sh case table red (FLOW-010 E5)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/affected-set.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red MQ feeder night opens or updates its one LAB ticket (#6175)
+        if: failure() && steps.lab_mq_feeder.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-mq-feeder --title "LAB: MQ feeder required-set check red (#6175)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/mq-feeder.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red guard-lane night opens or updates its one LAB ticket (#5920)
+        if: failure() && (steps.lab_guard_lane.outcome == 'failure' || steps.lab_guard_lane_stop.outcome == 'failure')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-guard-lane --title "LAB: ci_guards cargo-free lane self-test red (#5920)" \
+            --owner aprender-cd --log "$RUNNER_TEMP/guard-lane.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: Summary
         if: always()
         run: |

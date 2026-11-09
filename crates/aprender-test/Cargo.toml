@@ -13,8 +13,8 @@ version = "1.0.3"
 edition = "2021"
 rust-version = "1.75.0"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/paiml/probar"
-homepage = "https://github.com/paiml/probar"
+repository = "https://github.com/paiml/aprender"
+homepage = "https://github.com/paiml/aprender"
 authors = ["PAIML Team"]
 keywords = ["testing", "wasm", "games", "browser", "e2e"]
 categories = ["development-tools::testing", "wasm", "game-development"]
@@ -76,7 +76,6 @@ tempfile = "3"
 syn = { version = "2.0", features = ["full", "visit", "parsing", "extra-traits"] }
 
 # Serialization for mock fidelity
-bincode = "1.3"
 
 # GPU compute (trueno - SIMD-accelerated tensor operations)
 # APR-MONO: in-tree sibling, not crates.io (package aprender-compute, [lib] name = "trueno")
@@ -91,7 +90,6 @@ presentar-terminal = { path = "../aprender-present-terminal", package = "aprende
 presentar-core = { path = "../aprender-present-core", package = "aprender-present-core" }
 
 # Deterministic replay
-serde_yaml_ng = "0.10"
 sha2 = "0.10"
 regex = "1.11"
 

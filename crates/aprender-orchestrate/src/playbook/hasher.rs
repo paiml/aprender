@@ -124,7 +124,7 @@ pub fn hash_dep(path: &Path) -> Result<DirHashResult> {
 /// Uses the union of declared param keys and template-extracted refs.
 /// Sorted by key for determinism.
 pub fn hash_params(
-    global_params: &HashMap<String, serde_yaml_ng::Value>,
+    global_params: &HashMap<String, serde_json::Value>,
     referenced_keys: &[String],
 ) -> Result<String> {
     let mut pairs: Vec<(String, String)> = Vec::new();
@@ -226,10 +226,10 @@ pub fn combine_deps_hashes(hashes: &[String]) -> String {
 mod tests {
     use super::*;
 
-    fn make_params(pairs: &[(&str, &str)]) -> HashMap<String, serde_yaml_ng::Value> {
+    fn make_params(pairs: &[(&str, &str)]) -> HashMap<String, serde_json::Value> {
         pairs
             .iter()
-            .map(|(k, v)| (k.to_string(), serde_yaml_ng::Value::String(v.to_string())))
+            .map(|(k, v)| (k.to_string(), serde_json::Value::String(v.to_string())))
             .collect()
     }
 

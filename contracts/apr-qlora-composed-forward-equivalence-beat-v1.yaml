@@ -45,3 +45,10 @@ beat:
   baseline_sourced_date: "2026-07-03"
   approved_compute: CPU
   ci_gate_name: "beat_qlora_composed_forward_equivalence"
+
+falsification_tests:
+  - id: FALSIFY-APR_QLORA_COMPOSED_FORWARD_EQUIVALENCE_BEAT-001
+    description: "Beat gate: composed forward_with_lora (base + scale*B@A + bias) equals the LoRA-merged forward, with nonzero LoRA and Q/K/V biases"
+    test: "cargo test -p aprender-train --lib beat_qlora_composed_forward_equivalence"
+    prediction: "max|composed - merged| < 1e-4 (beat_threshold)"
+    if_fails: "a dropped bias, wrong LoRA scale or transpose in the composition"

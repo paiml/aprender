@@ -80,7 +80,7 @@ falsification_gates:
         },
     );
 
-    let lock_yaml = serde_yaml::to_string(&lock_file).expect("serialize");
+    let lock_yaml = serde_saphyr::to_string(&lock_file).expect("serialize");
     println!("playbook.lock.yaml:");
     println!("---");
     for line in lock_yaml.lines().take(20) {

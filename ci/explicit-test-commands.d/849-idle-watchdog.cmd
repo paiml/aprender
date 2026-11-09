@@ -1,0 +1,2 @@
+# The merge-queue shard hang watchdog (replaces the fat_driver.py Python one, #6304): stalled log fires, growing log never, timeout still works, limit parses; the command fails on a FAIL row or a missing "all rows pass" line as well as on the exit status, so a deleted exit 1 cannot hide a red row
+out=$(bash scripts/ci/idle_watchdog.sh --self-test 2>&1); rc=$?; printf '%s\n' "$out"; [ "$rc" -eq 0 ] && ! printf '%s\n' "$out" | grep -q '^FAIL ' && printf '%s\n' "$out" | grep -q 'all rows pass$'

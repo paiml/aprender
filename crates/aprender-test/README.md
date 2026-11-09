@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/paiml/probar/main/docs/assets/probar-hero.svg?v=2" alt="Probar - Playwright-Compatible Testing for WASM + TUI" width="800"/>
+  <img src="https://raw.githubusercontent.com/paiml/aprender/main/crates/aprender-test/docs/assets/probar-hero.svg" alt="Probar - Playwright-Compatible Testing for WASM + TUI" width="800"/>
 </p>
 
 <h1 align="center">Probar</h1>
@@ -10,8 +10,8 @@
 </p>
 
 <p align="center">
-  <a href="https://crates.io/crates/jugar-probar">
-    <img src="https://img.shields.io/crates/v/jugar-probar.svg" alt="Crates.io">
+  <a href="https://crates.io/crates/aprender-test-lib">
+    <img src="https://img.shields.io/crates/v/aprender-test-lib.svg" alt="Crates.io">
   </a>
 </p>
 
@@ -23,40 +23,40 @@
 
 | Crate | Purpose | Install |
 |-------|---------|---------|
-| **[jugar-probar](https://crates.io/crates/jugar-probar)** | Library for writing tests | `cargo add jugar-probar --dev` |
-| **[probador](https://crates.io/crates/probador)** | CLI tool for running tests | `cargo install probador` |
+| **[aprender-test-lib](https://crates.io/crates/aprender-test-lib)** | Library for writing tests | `cargo add aprender-test-lib --dev` |
+| **[aprender-test-cli](https://crates.io/crates/aprender-test-cli)** | CLI tool for running tests | `cargo install aprender-test-cli` |
 
-### Library (jugar-probar)
+### Library (aprender-test-lib)
 
 Add to your `Cargo.toml`:
 
 ```toml
 [dev-dependencies]
-jugar-probar = "1.0"
+aprender-test-lib = "0.71"
 ```
 
 ```rust
 use jugar_probar::prelude::*;
 ```
 
-### CLI (probador)
+### CLI (aprender-test-cli)
 
 ```bash
-cargo install probador
+cargo install aprender-test-cli
 ```
 
 ```bash
 # Validate a playbook state machine
-probador playbook login.yaml --validate
+aprender-test-cli playbook login.yaml --validate
 
 # Run with mutation testing (M1-M5 falsification)
-probador playbook login.yaml --mutate
+aprender-test-cli playbook login.yaml --mutate
 
 # Export state diagram
-probador playbook login.yaml --export svg -o diagram.svg
+aprender-test-cli playbook login.yaml --export svg -o diagram.svg
 
 # Start dev server for WASM
-probador serve --port 8080
+aprender-test-cli serve --port 8080
 ```
 
 ---
@@ -166,7 +166,7 @@ fn test_calculator_gui() {
 | `tui` | TUI testing support (default) | ratatui, crossterm |
 | `browser` | CDP browser automation | chromiumoxide, tokio |
 | `runtime` | WASM runtime testing | wasmtime |
-| `derive` | Type-safe derive macros | probar-derive |
+| `derive` | Type-safe derive macros | aprender-test-derive |
 | `docker` | Docker cross-browser testing | bollard, tokio |
 | `gpu` | GPU compute support | trueno |
 | `brick` | Brick Architecture for widget testing | — |
@@ -267,7 +267,7 @@ dispatcher.dispatch_with_detail(EventDetail::json(&transcript_data))?;
 ### Run the Brick Example
 
 ```bash
-cargo run --example brick_demo -p jugar-probar
+cargo run --example brick_demo -p aprender-test-lib
 ```
 
 ## Visual Regression Testing
@@ -324,7 +324,7 @@ let diff = perceptual_diff(pixel_a, pixel_b);
 ### Run the Visual Regression Example
 
 ```bash
-cargo run --example visual_regression_demo -p jugar-probar
+cargo run --example visual_regression_demo -p aprender-test-lib
 ```
 
 ## Usage
@@ -342,27 +342,27 @@ cargo llvm-cov --html
 cargo watch -x test
 ```
 
-### Using probador CLI
+### Using aprender-test-cli
 
 ```bash
-# Run tests with probador
-probador test
+# Run tests with aprender-test-cli
+aprender-test-cli test
 
 # Generate coverage reports
-probador coverage --html
+aprender-test-cli coverage --html
 
 # Watch mode with hot reload
-probador watch tests/
+aprender-test-cli watch tests/
 
 # Serve WASM application
-probador serve --port 8080 --cors
+aprender-test-cli serve --port 8080 --cors
 ```
 
 ### GUI Coverage Example
 
 ```bash
 # Run the GUI coverage example
-cargo run --example gui_coverage -p jugar-probar
+cargo run --example gui_coverage -p aprender-test-lib
 ```
 
 Output:
@@ -386,13 +386,13 @@ The repository includes a full showcase calculator demonstrating 100% test cover
 
 ```bash
 # Run GUI coverage report
-cargo run -p showcase-calculator --example gui_coverage_report
+cargo run -p aprender-test-showcase --example gui_coverage_report
 
 # Run TUI version
-cargo run -p showcase-calculator --example calculator_tui
+cargo run -p aprender-test-showcase --example calculator_tui
 
 # View WASM version
-cd crates/showcase-calculator/www && python3 -m http.server 8080
+cd crates/aprender-test-showcase/www && python3 -m http.server 8080
 # Open http://localhost:8080
 ```
 
@@ -410,10 +410,10 @@ Probar is built on pragmatic testing principles:
 
 ## Documentation
 
-- **[Book](https://paiml.github.io/probar/)** - Comprehensive guide
-- **[API Docs](https://docs.rs/jugar-probar)** - Rust documentation
+- **[Book](https://github.com/paiml/aprender/tree/main/crates/aprender-test/book)** - Comprehensive guide
+- **[API Docs](https://docs.rs/aprender-test-lib)** - Rust documentation
 - **[GUI Coverage Guide](book/src/probar/ux-coverage.md)** - GUI coverage tutorial
-- **[Examples](crates/probar/examples/)** - 20+ runnable examples
+- **[Examples](../aprender-test-lib/examples/)** - 20+ runnable examples
 - 🤖 [Coursera Hugging Face AI Development Specialization](https://www.coursera.org/specializations/hugging-face-ai-development) - Build Production AI systems with Hugging Face in Pure Rust
 
 ## Examples
@@ -436,20 +436,19 @@ Probar is built on pragmatic testing principles:
 
 Run any example:
 ```bash
-cargo run --example <name> -p jugar-probar
+cargo run --example <name> -p aprender-test-lib
 ```
 
 ## Project Structure
 
 ```
-probar/
-├── crates/
-│   ├── probar/              # jugar-probar library
-│   ├── probar-cli/          # probador CLI
-│   ├── probar-derive/       # Derive macros
-│   └── showcase-calculator/ # 100% coverage demo
-├── book/                    # mdBook documentation
-└── docs/                    # Specifications
+crates/
+├── aprender-test/            # Probar project docs, book, examples
+├── aprender-test-lib/        # library (lib name jugar_probar)
+├── aprender-test-cli/        # CLI
+├── aprender-test-derive/     # derive macros
+├── aprender-test-js-gen/     # JS generation
+└── aprender-test-showcase/   # 100% coverage demo
 ```
 
 ## Contributing
@@ -466,8 +465,8 @@ Contributions are welcome! Please follow these guidelines:
 ### Development Setup
 
 ```bash
-git clone https://github.com/paiml/probar.git
-cd probar
+git clone https://github.com/paiml/aprender.git
+cd aprender/crates/aprender-test
 cargo build
 cargo test
 ```

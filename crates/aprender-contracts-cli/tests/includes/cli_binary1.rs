@@ -203,7 +203,9 @@
 
     #[test]
     fn pv_validate_with_warnings() {
-        // Use a contract that has no qa_gate (generates SCHEMA-013 warning)
+        // Use a contract that has no qa_gate (generates SCHEMA-013 warning).
+        // No `falsification_tests:` key: written empty it is SCHEMA-024, an
+        // error since #5291.
         let dir = tempfile::tempdir().expect("temp dir is creatable");
         let path = dir.path().join("warn.yaml");
         std::fs::write(
@@ -217,7 +219,6 @@ metadata:
 equations:
   f:
     formula: "f(x) = x"
-falsification_tests: []
 "#,
         )
         .expect("the test fixture is well-formed");

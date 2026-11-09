@@ -1,0 +1,2 @@
+# ANDON T1 next-patch bump (#6491): version arithmetic, idempotence on an EXACT tag match (v0.72.20 must not hide v0.72.2), gh-failure fail-closed, and autopilot wiring; fails on a FAIL row or a missing PASS line as well as the exit status
+out=$(bash scripts/release/cleanroom_red_bump.sh --self-test 2>&1); rc=$?; printf '%s\n' "$out"; [ "$rc" -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'FAIL' && printf '%s\n' "$out" | grep -q 'self-test: PASS$'

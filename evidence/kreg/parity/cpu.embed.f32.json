@@ -1,0 +1,47 @@
+{
+  "build_identity": "cdba226891ac07a7f35aa1d1f2475bc9d353d3e5",
+  "host": "noah-Lambda-Vector",
+  "host_arch": "x86_64",
+  "input_set": {
+    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "driver": "none",
+    "oracle": "f64_definition:embed:E[token*n..(token+1)*n]",
+    "row_sha256": "20297cf8e023d329d88f45714d9b06fd9e313fcef2b0b0f4aa9be47cb75b6f55",
+    "source_sha256": "693f29c7284a582f069a49d9c239186922c9b916ef233fe82d8d4f2af4cc6d35",
+    "toolchain": "1.93.0"
+  },
+  "input_set_hash": "4aeca65e026399f96f8f401d9d5afb8499cdeff2021038533db4dbe8a190487d",
+  "isa_detected": [
+    "sse4.2",
+    "avx",
+    "avx2",
+    "fma",
+    "avx512f",
+    "avx512bw",
+    "avx512vnni"
+  ],
+  "isa_forced": "native",
+  "kernel_id": "cpu.embed.f32",
+  "margin": {
+    "error_model": "EM-ELEM",
+    "verdict": "not_modelled",
+    "why": "aprender-kernel-oracle has no bound for this error model yet; tolerance_rel decides"
+  },
+  "oracle": "f64_definition",
+  "oracle_formula": "embed:E[token*n..(token+1)*n]",
+  "oracle_independent": true,
+  "registry_precision": "f32",
+  "schema": "kernel-parity-receipt/v1",
+  "served": {
+    "max_abs_err": 0.0,
+    "max_rel_err": 0.0
+  },
+  "source_fn": "embed_into",
+  "tolerance_rel": 2.9999999999999997e-308,
+  "ts": "2026-10-27T00:48:41Z",
+  "workload": {
+    "n": 896,
+    "seed": 1161367296,
+    "trials": 8
+  }
+}

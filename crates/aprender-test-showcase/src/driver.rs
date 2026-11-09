@@ -260,7 +260,7 @@ pub fn verify_jidoka_status<D: CalculatorDriver>(driver: &mut D) {
     let status = driver.get_jidoka_status();
 
     // Should have positive status messages
-    assert!(!status.is_empty());
+    assert_ne!(status, Vec::<String>::new());
     assert!(status
         .iter()
         .any(|s| s.contains('✓') || s.contains("satisfied")));

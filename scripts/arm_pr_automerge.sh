@@ -42,7 +42,7 @@
 # Exit codes
 #   0  armed (or --dry-run would arm)
 #   2  ENV: bad usage, gh missing, the pull request or its checks unreadable
-#   3  REFUSED: guard-tree is not green on the current head
+#   3  REFUSED: guard-tree is not green on the current head, or the base is not main
 set -uo pipefail
 
 REPO_DEFAULT="paiml/aprender"
@@ -130,6 +130,14 @@ refusal_line() {
     local sha="${1:-}" verdict="${2:-}" state
     state="$( printf '%s' "$verdict" | cut -d' ' -f2 )"
     printf 'refuse: %s is %s on %s\n' "$GUARD_CHECK_NAME" "$state" "$sha"
+}
+
+# base_verdict BASE -> "ARM" only for main. A PR into any other branch (a stacked PR) merges the
+# instant it is armed -- no queue, no CI -- and lands in the other PR's branch (#5823 into #5815's
+# at 02:37Z, 2026-10-21). An unreadable base is a refusal too: not known to be main is not main.
+base_verdict() {
+    if [ "${1:-}" = main ]; then printf 'ARM base is main\n'
+    else printf 'REFUSE base %s: arming is for PRs into main only\n' "'${1:-<unreadable>}'"; fi
 }
 
 # fetch_check_runs REPO SHA OUTFILE -> 0 on success. The endpoint is keyed on the
@@ -226,12 +234,55 @@ self_test() {
     _eq 'A11 the refusal line names the state AND the sha' \
         "refuse: guard-tree is failure on $sha_new" \
         "$( refusal_line "$sha_new" "$( guard_tree_verdict "$sha_new" "$td/failure.json" )" )"
+    _eq 'A13 base main -> arm (positive control)' 'ARM' "$( base_verdict main | cut -d' ' -f1 )"
+    _eq 'A14 a stacked PR (base is another PR branch) -> refuse' \
+        'REFUSE' "$( base_verdict batch-cand/affected-set-noread | cut -d' ' -f1 )"
+    _eq 'A15 an unreadable base -> refuse' 'REFUSE' "$( base_verdict '' | cut -d' ' -f1 )"
+    _eq 'A16 a base that only starts with main is not main' 'REFUSE' "$( base_verdict main-2 | cut -d' ' -f1 )"
     # A12: the fetch normalises `--paginate -q` NDJSON back into one document. The
     # predicate is fed that shape and nothing else, so the shape is a row.
     printf '%s\n' '{"name":"guard-tree","status":"completed","conclusion":"success","head_sha":"'"$sha_new"'","completed_at":"2026-09-16T14:40:00Z"}' > "$td/pages.ndjson"
     jq -s '{check_runs: .}' "$td/pages.ndjson" > "$td/slurped.json"
     _eq 'A12 the paginated NDJSON, slurped, is the document the predicate reads' \
         'ARM' "$( guard_tree_verdict "$sha_new" "$td/slurped.json" | head -1 | cut -d' ' -f1 )"
+
+    # A17-A19: arm() itself, with a stub gh first on PATH. base_verdict alone cannot show that
+    # arm() CALLS it; these rows drive the real call site and count the merges the stub saw.
+    mkdir -p "$td/bin"
+    cat > "$td/bin/gh" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >> "$STUB_LOG"
+case "$1 $2" in
+    "pr view") case "$*" in
+                   *baseRefName*) [ -n "${STUB_BASE-x}" ] && printf '%s\n' "$STUB_BASE" ;;
+                   *) printf '%s\n' "$STUB_SHA" ;;
+               esac ;;
+    "api repos/"*) printf '{"name":"guard-tree","status":"completed","conclusion":"success","head_sha":"%s","completed_at":"2026-10-21T02:00:00Z"}\n' "$STUB_SHA" ;;
+    "pr "*) echo ARMCALL >> "$STUB_LOG"; echo merged ;;   # any pr verb but view is the arming call
+esac
+STUB
+    chmod +x "$td/bin/gh"
+    _arm_run() { # _arm_run BASE -> "rc=N merges=M"
+        local rc
+        : > "$td/gh.log"
+        PATH="$td/bin:$PATH" STUB_LOG="$td/gh.log" STUB_SHA="$sha_new" STUB_BASE="$1" \
+            arm paiml/aprender 1 0 > /dev/null 2>&1
+        rc=$?
+        printf 'rc=%s merges=%s' "$rc" "$( grep -c '^ARMCALL$' "$td/gh.log" )"
+    }
+    _eq 'A17 arm(): base main, guard-tree green -> armed (1 merge)' 'rc=0 merges=1' "$( _arm_run main )"
+    _eq 'A18 arm(): stacked base -> rc 3, 0 merges' 'rc=3 merges=0' "$( _arm_run batch-cand/affected-set-noread )"
+    _eq 'A19 arm(): unreadable base -> rc 3, 0 merges' 'rc=3 merges=0' "$( _arm_run '' )"
+    # A20: --dry-run must refuse a stacked base too, or a dry run reports WOULD-ARM for a PR the live run refuses.
+    _dry_run() { # _dry_run BASE -> "rc=N would_arm=M"
+        local out rc
+        : > "$td/gh.log"
+        out=$(PATH="$td/bin:$PATH" STUB_LOG="$td/gh.log" STUB_SHA="$sha_new" STUB_BASE="$1" arm paiml/aprender 1 1 2>&1)
+        rc=$?
+        printf 'rc=%s would_arm=%s' "$rc" "$( printf '%s\n' "$out" | grep -c '^WOULD-ARM' )"
+    }
+    _eq 'A20 arm() --dry-run, stacked base -> rc 3, no WOULD-ARM' 'rc=3 would_arm=0' "$( _dry_run batch-cand/affected-set-noread )"
+    _eq 'A20b arm() --dry-run, base main -> rc 0, WOULD-ARM (positive control)' 'rc=0 would_arm=1' "$( _dry_run main )"
 
     rm -rf "${td:?}"
     printf '\n%s row(s), %s\n' "$rows" \
@@ -240,11 +291,11 @@ self_test() {
 }
 
 arm() {
-    local repo="$1" pr="$2" dry="$3" tmp sha verdict out rc
+    local repo="$1" pr="$2" dry="$3" tmp sha base verdict out rc
     command -v gh > /dev/null 2>&1 || { printf 'ENV: gh is not on PATH\n' >&2; return 2; }
     command -v jq > /dev/null 2>&1 || { printf 'ENV: jq is not on PATH\n' >&2; return 2; }
     tmp="$(mktemp -d)" || return 2
-    trap 'rm -rf "${tmp:?}"' RETURN
+    trap 'rm -rf "${tmp:?}"; trap - RETURN' RETURN
 
     # THE HEAD SHA IS READ FIRST, AND EVERYTHING AFTER IT IS ABOUT THAT SHA.
     sha=$(gh pr view "$pr" --repo "$repo" --json headRefOid -q '.headRefOid' 2>/dev/null) || sha=""
@@ -252,6 +303,11 @@ arm() {
         printf 'ENV: could not read the current head of %s#%s\n' "$repo" "$pr" >&2
         return 2
     fi
+    base=$(gh pr view "$pr" --repo "$repo" --json baseRefName -q '.baseRefName' 2>/dev/null) || base=""
+    verdict="$( base_verdict "$base" )"
+    case "$verdict" in
+        REFUSE*) printf 'refuse: %s#%s %s\n' "$repo" "$pr" "${verdict#REFUSE }"; return 3 ;;
+    esac
     if ! fetch_check_runs "$repo" "$sha" "$tmp/checks.json"; then
         printf 'ENV: could not read the check runs for %s\n' "$sha" >&2
         return 2
@@ -267,7 +323,9 @@ arm() {
         printf 'WOULD-ARM %s#%s on %s -- %s\n' "$repo" "$pr" "$sha" "${verdict#ARM }"
         return 0
     fi
-    out=$(gh pr merge "$pr" --repo "$repo" --squash --auto 2>&1)
+    # PLAIN `gh pr merge`: on a merge-queue repo a method flag (--squash/--merge/--rebase) with --auto arms
+    # auto-merge by a method the queue does not use, and the PR never queues (#5789, 2026-10-20). The queue owns the method.
+    out=$(gh pr merge "$pr" --repo "$repo" 2>&1)
     rc=$?
     if [ "$rc" -ne 0 ]; then
         printf 'ENV: arming failed (exit %s): %s\n' \

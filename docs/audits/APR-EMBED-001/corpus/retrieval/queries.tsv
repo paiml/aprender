@@ -1,0 +1,16 @@
+q001	How Mutation Testing Works
+q002	Core Design Principles
+q003	What it prints
+q004	Ant Colony Optimization
+q005	Phase 1: RED - Write Failing Tests
+q006	Key Design Decisions
+q007	Step 1: Standardizing Features
+q008	Step 3: Explained Variance Analysis
+q009	Step 4: Transformed Data
+q010	Step 5: Reconstruction (2D → 4D)
+q011	Step 6: Principal Component Loadings
+q012	Memory Paging for Large Histories
+q013	Performance: Sub-10ms Verification
+q014	Example 1: Sentiment Classification with Bag of Words
+q015	Example 2: Topic Classification with TF-IDF
+q016	Example 3: Full Preprocessing Pipeline

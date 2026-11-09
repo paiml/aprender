@@ -141,3 +141,24 @@ qa_gate:
   checks:
   - validation
   - falsification
+falsification_tests:
+  - id: FALSIFY-STEP-PROFILER-001
+    description: "C-STEPPROF-001: a disabled profiler is a no-op"
+    test: "cargo test -p aprender-train --lib test_disabled_profiler_is_noop"
+    prediction: "Calling begin/end/begin_step/finish_step on StepProfiler::disabled() records nothing and step_count stays 0"
+    if_fails: "The early-return guard on disabled profilers is gone, so the disabled path does timing work"
+  - id: FALSIFY-STEP-PROFILER-002
+    description: "C-STEPPROF-002: the profiler covers all 11 training phases"
+    test: "cargo test -p aprender-train --lib test_phase_names_count"
+    prediction: "The phase name table has exactly 11 entries"
+    if_fails: "A training phase was added or removed without updating the profiler, so its report misses a phase"
+  - id: FALSIFY-STEP-PROFILER-003
+    description: "C-STEPPROF-002: phase durations accumulate across steps and step_count increments per finish_step"
+    test: "cargo test -p aprender-train --lib test_multiple_steps_accumulate"
+    prediction: "After several profiled steps, step_count equals the number of finish_step calls and phase totals accumulate"
+    if_fails: "Phase timings are overwritten per step instead of accumulated, or step_count is miscounted"
+  - id: FALSIFY-STEP-PROFILER-004
+    description: "C-STEPPROF-002: the 'other' category captures unaccounted time"
+    test: "cargo test -p aprender-train --lib test_unaccounted_time_captured"
+    prediction: "Time spent inside a step but outside any phase is recorded in the unaccounted/other bucket"
+    if_fails: "Overhead outside named phases is silently dropped, so phase totals no longer sum to step wall time"

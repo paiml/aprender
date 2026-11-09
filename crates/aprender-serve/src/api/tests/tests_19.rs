@@ -171,6 +171,7 @@ fn test_chat_completion_chunk_serde() {
             delta: crate::api::ChatDelta {
                 role: Some("assistant".to_string()),
                 content: None,
+                tool_calls: None,
             },
             finish_reason: None,
         }],
@@ -196,6 +197,7 @@ fn test_chat_delta_with_content() {
     let delta = crate::api::ChatDelta {
         role: None,
         content: Some("Hello ".to_string()),
+        tool_calls: None,
     };
     let json = serde_json::to_string(&delta).expect("JSON serialization failed");
     // role is None → should be skipped in serialization
@@ -212,6 +214,7 @@ fn test_chat_chunk_choice_with_finish_reason() {
         delta: crate::api::ChatDelta {
             role: None,
             content: None,
+            tool_calls: None,
         },
         finish_reason: Some("stop".to_string()),
     };

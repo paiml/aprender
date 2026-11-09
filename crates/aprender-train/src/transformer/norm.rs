@@ -98,82 +98,7 @@ impl RMSNorm {
         let mut result = Tensor::from_vec(output, requires_grad);
 
         if requires_grad {
-            use crate::autograd::BackwardOp;
-            use ndarray::Array1;
-            use std::cell::RefCell;
-            use std::rc::Rc;
-
-            struct RMSNormBatchedBackward {
-                x: Tensor,
-                weight: Tensor,
-                rms_values: Vec<f32>,
-                seq_len: usize,
-                hidden_size: usize,
-                result_grad: Rc<RefCell<Option<Array1<f32>>>>,
-            }
-
-            impl BackwardOp for RMSNormBatchedBackward {
-                fn backward(&self) {
-                    if let Some(grad_output) = self.result_grad.borrow().as_ref() {
-                        let h = self.hidden_size;
-                        let x_data = self.x.data();
-                        let x_sl = x_data.as_slice().expect("x contiguous");
-                        let w_data = self.weight.data();
-                        let w_sl = w_data.as_slice().expect("weight contiguous");
-                        let go = grad_output.as_slice().expect("grad contiguous");
-
-                        if self.x.requires_grad() {
-                            // dx[s,j] = (go[s,j]*w[j] - x[s,j]*c_s) / rms_s
-                            // c_s = sum_i(go[s,i]*w[i]*x[s,i]) / (n * rms_s^2)
-                            let mut grad_x = vec![0.0_f32; self.seq_len * h];
-                            let n = h as f32;
-
-                            for s in 0..self.seq_len {
-                                let off = s * h;
-                                let rms = self.rms_values[s];
-
-                                let mut dot = 0.0_f32;
-                                for i in 0..h {
-                                    dot += go[off + i] * w_sl[i] * x_sl[off + i];
-                                }
-                                let c = dot / (n * rms * rms);
-
-                                for j in 0..h {
-                                    grad_x[off + j] =
-                                        (go[off + j] * w_sl[j] - x_sl[off + j] * c) / rms;
-                                }
-                            }
-
-                            self.x.accumulate_grad(Array1::from(grad_x));
-                        }
-
-                        if self.weight.requires_grad() {
-                            // dw[i] = sum_s(go[s,i] * x[s,i] / rms_s)
-                            let mut grad_w = vec![0.0_f32; h];
-
-                            for s in 0..self.seq_len {
-                                let off = s * h;
-                                let rms = self.rms_values[s];
-                                for i in 0..h {
-                                    grad_w[i] += go[off + i] * x_sl[off + i] / rms;
-                                }
-                            }
-
-                            self.weight.accumulate_grad(Array1::from(grad_w));
-                        }
-
-                        // Continue backward propagation through inputs
-                        if let Some(op) = self.x.backward_op() {
-                            op.backward();
-                        }
-                        if let Some(op) = self.weight.backward_op() {
-                            op.backward();
-                        }
-                    }
-                }
-            }
-
-            let backward_op = Rc::new(RMSNormBatchedBackward {
+            let backward_op = std::rc::Rc::new(RMSNormBatchedBackward {
                 x: x.clone(),
                 weight: self.weight.clone(),
                 rms_values,
@@ -186,6 +111,79 @@ impl RMSNorm {
 
         contract_post_rmsnorm!(result.data().as_slice().unwrap_or(&[]));
         result
+    }
+}
+
+/// Backward op for [`RMSNorm::forward_batched`] (exact RMSNorm gradient, including d(rms)/d(x)).
+struct RMSNormBatchedBackward {
+    x: Tensor,
+    weight: Tensor,
+    rms_values: Vec<f32>,
+    seq_len: usize,
+    hidden_size: usize,
+    result_grad: std::rc::Rc<std::cell::RefCell<Option<ndarray::Array1<f32>>>>,
+}
+
+impl RMSNormBatchedBackward {
+    /// dx[s,j] = (go[s,j]*w[j] - x[s,j]*c_s) / rms_s,
+    /// c_s = sum_i(go[s,i]*w[i]*x[s,i]) / (n * rms_s^2)
+    fn grad_x(&self, go: &[f32], x_sl: &[f32], w_sl: &[f32]) -> Vec<f32> {
+        let h = self.hidden_size;
+        let n = h as f32;
+        let mut grad_x = vec![0.0_f32; self.seq_len * h];
+        for s in 0..self.seq_len {
+            let off = s * h;
+            let rms = self.rms_values[s];
+            let dot: f32 = (0..h).map(|i| go[off + i] * w_sl[i] * x_sl[off + i]).sum();
+            let c = dot / (n * rms * rms);
+            for j in 0..h {
+                grad_x[off + j] = (go[off + j] * w_sl[j] - x_sl[off + j] * c) / rms;
+            }
+        }
+        grad_x
+    }
+
+    /// dw[i] = sum_s(go[s,i] * x[s,i] / rms_s)
+    fn grad_w(&self, go: &[f32], x_sl: &[f32]) -> Vec<f32> {
+        let h = self.hidden_size;
+        let mut grad_w = vec![0.0_f32; h];
+        for s in 0..self.seq_len {
+            let off = s * h;
+            let rms = self.rms_values[s];
+            for i in 0..h {
+                grad_w[i] += go[off + i] * x_sl[off + i] / rms;
+            }
+        }
+        grad_w
+    }
+}
+
+impl crate::autograd::BackwardOp for RMSNormBatchedBackward {
+    fn backward(&self) {
+        let grad_cell = self.result_grad.borrow();
+        let Some(grad_output) = grad_cell.as_ref() else {
+            return;
+        };
+        let x_data = self.x.data();
+        let x_sl = x_data.as_slice().expect("x contiguous");
+        let w_data = self.weight.data();
+        let w_sl = w_data.as_slice().expect("weight contiguous");
+        let go = grad_output.as_slice().expect("grad contiguous");
+
+        if self.x.requires_grad() {
+            self.x.accumulate_grad(ndarray::Array1::from(self.grad_x(go, x_sl, w_sl)));
+        }
+        if self.weight.requires_grad() {
+            self.weight.accumulate_grad(ndarray::Array1::from(self.grad_w(go, x_sl)));
+        }
+
+        // Continue backward propagation through inputs
+        if let Some(op) = self.x.backward_op() {
+            op.backward();
+        }
+        if let Some(op) = self.weight.backward_op() {
+            op.backward();
+        }
     }
 }
 
@@ -774,5 +772,103 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+/// #5531: the batched RMSNorm backward and the LayerNorm accessors that the
+/// original tests left unexecuted. Each test asserts a value, not just no-panic.
+#[cfg(test)]
+mod batched_backward_tests {
+    use super::*;
+
+    const EPS: f32 = 1e-6;
+
+    fn loss(norm: &RMSNorm, data: &[f32], seq: usize, h: usize, go: &[f32]) -> f32 {
+        let x = Tensor::from_vec(data.to_vec(), false);
+        let y = norm.forward_batched(&x, seq, h);
+        y.data().iter().zip(go).map(|(a, b)| a * b).sum()
+    }
+
+    /// dL/dx from the batched backward equals a central finite difference of L = sum(go * y).
+    #[test]
+    fn batched_input_gradient_matches_finite_difference() {
+        let (seq, h) = (2, 4);
+        let data = vec![1.0_f32, -2.0, 3.0, -0.5, 0.25, 1.5, -1.0, 2.0];
+        let go = vec![0.5_f32, -1.0, 2.0, 0.1, 1.0, 0.3, -0.7, 0.9];
+        let norm = RMSNorm::new(h, EPS);
+        let x = Tensor::from_vec(data.clone(), true);
+        let mut y = norm.forward_batched(&x, seq, h);
+        crate::autograd::backward(&mut y, Some(ndarray::Array1::from(go.clone())));
+        let gx = x.grad().expect("input gradient");
+        for i in 0..data.len() {
+            let step = 1e-2_f32;
+            let (mut hi, mut lo) = (data.clone(), data.clone());
+            hi[i] += step;
+            lo[i] -= step;
+            let fd = (loss(&norm, &hi, seq, h, &go) - loss(&norm, &lo, seq, h, &go)) / (2.0 * step);
+            assert!((gx[i] - fd).abs() < 2e-2, "dx[{i}] analytic={} fd={fd}", gx[i]);
+        }
+    }
+
+    /// With a constant input only the weight learns: no input gradient is produced,
+    /// and the weight gradient is go * x / rms per position, summed over positions.
+    #[test]
+    fn batched_weight_only_gradient_leaves_input_without_grad() {
+        let (seq, h) = (2, 2);
+        let norm = RMSNorm::new(h, EPS);
+        let x = Tensor::from_vec(vec![3.0, 4.0, 3.0, 4.0], false);
+        let mut y = norm.forward_batched(&x, seq, h);
+        assert!(y.requires_grad(), "a trainable weight makes the output trainable");
+        crate::autograd::backward(&mut y, Some(ndarray::Array1::ones(seq * h)));
+        assert!(x.grad().is_none(), "a constant input must not receive a gradient");
+        let rms = ((9.0_f32 + 16.0) / 2.0 + EPS).sqrt();
+        let gw = norm.weight.grad().expect("weight gradient");
+        assert!((gw[0] - 2.0 * 3.0 / rms).abs() < 1e-5, "gw0={}", gw[0]);
+        assert!((gw[1] - 2.0 * 4.0 / rms).abs() < 1e-5, "gw1={}", gw[1]);
+    }
+
+    /// Neither input nor weight trainable: the output carries no autograd graph.
+    #[test]
+    fn batched_frozen_weight_and_constant_input_is_not_trainable() {
+        let mut norm = RMSNorm::new(2, EPS);
+        norm.weight.set_requires_grad(false);
+        let x = Tensor::from_vec(vec![1.0, 2.0], false);
+        let y = norm.forward_batched(&x, 1, 2);
+        assert!(!y.requires_grad());
+    }
+
+    /// The backward op continues into the op that produced its input, so an upstream
+    /// norm's weight learns through a downstream one.
+    #[test]
+    fn batched_backward_chains_into_the_producing_op() {
+        let (seq, h) = (1, 4);
+        let first = RMSNorm::new(h, EPS);
+        let second = RMSNorm::new(h, EPS);
+        let x = Tensor::from_vec(vec![1.0, -2.0, 3.0, 0.5], true);
+        let mid = first.forward_batched(&x, seq, h);
+        let mut out = second.forward_batched(&mid, seq, h);
+        crate::autograd::backward(&mut out, Some(ndarray::Array1::from(vec![1.0, 2.0, -1.0, 0.5])));
+        let g1 = first.weight.grad().expect("upstream weight gradient");
+        assert!(g1.iter().all(|v| v.is_finite()) && g1.iter().any(|v| v.abs() > 1e-6));
+        assert!(second.weight.grad().is_some());
+    }
+
+    #[test]
+    fn layernorm_from_params_rejects_missing_weight_or_bias() {
+        let h = 4;
+        let mut only_weight = HashMap::new();
+        only_weight.insert("n.weight".to_string(), Tensor::ones(h, true));
+        assert!(LayerNorm::from_params(&only_weight, "n", EPS, h).is_none());
+        let mut only_bias = HashMap::new();
+        only_bias.insert("n.bias".to_string(), Tensor::from_vec(vec![0.0; h], true));
+        assert!(LayerNorm::from_params(&only_bias, "n", EPS, h).is_none());
+    }
+
+    #[test]
+    fn layernorm_reports_hidden_size_and_trainability_follows_inputs() {
+        let ln = LayerNorm::new(3, EPS);
+        assert_eq!(ln.hidden_size(), 3);
+        let y = ln.forward_batched(&Tensor::from_vec(vec![1.0, 2.0, 3.0], false), 1, 3);
+        assert!(y.requires_grad(), "trainable weight makes the output trainable");
     }
 }

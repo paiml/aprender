@@ -343,13 +343,13 @@ pub fn fused_q4k_q8k_dot_simd(
     #[cfg(target_arch = "x86_64")]
     {
         // PAR-126: Use V2 optimized AVX-512 VNNI kernel (deferred horizontal sums)
-        if is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512vnni") {
+        if crate::isa::cpu_feature!("avx512f") && crate::isa::cpu_feature!("avx512vnni") {
             // SAFETY: Memory safety ensured by bounds checking and alignment
             return unsafe { fused_q4k_q8k_dot_avx512vnni_v2(q4k_data, q8k_scales, q8k_quants) };
         }
         // pmat-ignore: hardware-path (AVX2 fallback never reached when AVX-512 VNNI available)
         // Fallback to AVX2 (layout issue resolved)
-        if is_x86_feature_detected!("avx2") {
+        if crate::isa::cpu_feature!("avx2") {
             // SAFETY: Memory safety ensured by bounds checking and alignment
             return unsafe { fused_q4k_q8k_dot_avx2(q4k_data, q8k_scales, q8k_quants) };
         }

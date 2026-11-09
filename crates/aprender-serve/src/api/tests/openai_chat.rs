@@ -360,6 +360,7 @@ fn test_chat_completion_chunk_serialize_more_cov() {
             delta: ChatDelta {
                 role: None,
                 content: Some("world".to_string()),
+                tool_calls: None,
             },
             finish_reason: None,
         }],

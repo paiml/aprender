@@ -237,6 +237,21 @@ mod tests {
         assert!((logits[0] - 1.5).abs() < 1e-6, "logits[0]={}", logits[0]);
     }
 
+    /// A token repeated k times in the window is penalised ONCE, not `penalty^k`: llama.cpp's
+    /// penalties sampler and Candle's `apply_repeat_penalty` both work per distinct token, and
+    /// `contracts/qwen3-moe-repetition-penalty-v1.yaml` FALSIFY-…-002 halves [2, 2, 2] once.
+    /// Compounding made a chat preset of 1.3 over a 64-token window a 1.3^k hammer on any token
+    /// the prompt repeats — both signs checked, and a token outside the window untouched.
+    #[test]
+    fn test_repeat_penalty_applies_once_per_distinct_token() {
+        let mut logits = vec![10.0_f32, -4.0, 6.0, 1.0];
+        let recent = vec![3_u32, 0, 0, 0, 1, 1, 0];
+        OwnedQuantizedModel::apply_repeat_penalty(&mut logits, &recent, 2.0, 6);
+        // Window = [0, 0, 0, 1, 1, 0]: token 0 once (10 / 2), token 1 once (-4 * 2); token 3 is
+        // outside the window and token 2 never occurred.
+        assert_eq!(logits, vec![5.0, -8.0, 6.0, 1.0], "penalised logits={logits:?}");
+    }
+
     /// No-regression: penalty == 1.0 (the default) is a byte-identical no-op —
     /// logits are untouched and greedy argmax is unchanged.
     #[test]

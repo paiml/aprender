@@ -1,0 +1,45 @@
+# mg-reuse-lab-nightly.yml -- LAB twin of the retired gate job mg-reuse-self-test (infra#2327, #6193).
+# LAB (C324 items 4-5): it never runs in a PR, merge-queue or release job and cannot block a merge. A red
+# opens or updates ONE ticket (owner aprender-w5382, via scripts/lab_ticket.sh) and stays silent; red or
+# unmeasured for 7 days, it stops until its owner brings it back.
+name: mg-reuse LAB nightly
+
+on:
+  schedule:
+    - cron: '40 3 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: mg-reuse-lab-nightly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  mg-reuse-self-test:
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: The reuse key's case table and the fat-wait cancel check (hermetic)
+        id: lab
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/mg-reuse.log") 2>&1
+          bash scripts/ci_mg_reuse.sh --self-test
+          setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
+          setsid --wait bash scripts/check_ci_wait_cancel.sh
+      - name: A red night opens or updates the one LAB ticket (#6193)
+        if: failure() && steps.lab.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-mg-reuse --title "LAB: ci_mg_reuse / ci_wait_cancel self-tests red (#6193)" \
+            --owner aprender-w5382 --log "$RUNNER_TEMP/mg-reuse.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"

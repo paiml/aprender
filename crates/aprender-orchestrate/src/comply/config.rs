@@ -55,7 +55,7 @@ impl ComplyConfig {
     /// Load configuration from a YAML file
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)?;
-        let config: Self = serde_yaml_ng::from_str(&content)?;
+        let config: Self = crate::yaml::from_str(&content)?;
         Ok(config)
     }
 
@@ -71,7 +71,7 @@ impl ComplyConfig {
 
     /// Save configuration to a YAML file
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
-        let content = serde_yaml_ng::to_string(self)?;
+        let content = serde_saphyr::to_string(self)?;
         std::fs::write(path, content)?;
         Ok(())
     }
@@ -374,7 +374,7 @@ mod tests {
     #[test]
     fn test_config_serialization() {
         let config = ComplyConfig::default();
-        let yaml = serde_yaml_ng::to_string(&config).expect("yaml serialize failed");
+        let yaml = serde_saphyr::to_string(&config).expect("yaml serialize failed");
         assert!(yaml.contains("makefile"));
         assert!(yaml.contains("cargo_toml"));
     }
@@ -585,9 +585,9 @@ enabled_rules:
     #[test]
     fn test_duplication_config_serialization_roundtrip() {
         let config = DuplicationConfig::default();
-        let yaml = serde_yaml_ng::to_string(&config).expect("yaml serialize failed");
+        let yaml = serde_saphyr::to_string(&config).expect("yaml serialize failed");
         let parsed: DuplicationConfig =
-            serde_yaml_ng::from_str(&yaml).expect("yaml deserialize failed");
+            crate::yaml::from_str(&yaml).expect("yaml deserialize failed");
 
         assert!((parsed.similarity_threshold - config.similarity_threshold).abs() < f64::EPSILON);
         assert_eq!(parsed.min_fragment_size, config.min_fragment_size);
@@ -656,7 +656,7 @@ enabled_rules:
 pattern: "cargo test"
 description: "Test"
 "#;
-        let target: TargetConfig = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let target: TargetConfig = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         // required should default to true
         assert!(target.required);
     }

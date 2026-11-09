@@ -303,3 +303,148 @@ impl BottleneckAnalysis {
         report
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(workload: &str, size: usize, gflops: f64, efficiency: f64, cv: f64) -> BaselineEntry {
+        BaselineEntry {
+            workload: workload.to_string(),
+            size,
+            backend: "simd".to_string(),
+            gflops,
+            efficiency,
+            cv_percent: cv,
+            score: 50,
+        }
+    }
+
+    fn report(entries: Vec<BaselineEntry>) -> BaselineReport {
+        BaselineReport {
+            version: "test".to_string(),
+            timestamp: "0".to_string(),
+            entries,
+            system: "test".to_string(),
+        }
+    }
+
+    #[test]
+    fn empty_baseline_has_zero_average_and_no_bottlenecks() {
+        let a = OptimizationSuite::standard().analyze_bottlenecks(&report(vec![]));
+        assert_eq!(a.summary.total_configs, 0);
+        assert_eq!(a.summary.avg_efficiency, 0.0);
+        assert!(a.summary.min_efficiency.is_infinite() && a.summary.min_efficiency > 0.0);
+        assert!(a.critical.is_empty() && a.severe.is_empty() && a.moderate.is_empty());
+    }
+
+    #[test]
+    fn efficiency_bands_split_at_25_50_75_percent() {
+        let a = OptimizationSuite::standard().analyze_bottlenecks(&report(vec![
+            entry("dot_product", 1000, 5.0, 0.24, 1.0),
+            entry("dot_product", 1000, 5.0, 0.25, 1.0),
+            entry("dot_product", 1000, 5.0, 0.49, 1.0),
+            entry("dot_product", 1000, 5.0, 0.50, 1.0),
+            entry("dot_product", 1000, 5.0, 0.74, 1.0),
+            entry("dot_product", 1000, 5.0, 0.75, 1.0),
+        ]));
+        assert_eq!(
+            (a.critical.len(), a.severe.len(), a.moderate.len()),
+            (1, 2, 2)
+        );
+        assert_eq!(a.critical[0].severity, BottleneckSeverity::Critical);
+        assert_eq!(a.severe[0].efficiency, 0.25);
+        assert_eq!(a.moderate[1].efficiency, 0.74);
+        let s = &a.summary;
+        assert_eq!(
+            (
+                s.total_configs,
+                s.critical_count,
+                s.severe_count,
+                s.moderate_count
+            ),
+            (6, 1, 2, 2)
+        );
+        assert_eq!((s.min_efficiency, s.max_efficiency), (0.24, 0.75));
+        assert!((s.avg_efficiency - 0.495).abs() < 1e-12);
+    }
+
+    #[test]
+    fn critical_recommendations_by_throughput_and_size() {
+        let suite = OptimizationSuite::standard();
+        let a = suite.analyze_bottlenecks(&report(vec![
+            entry("elementwise_mul", 5_000_000, 0.5, 0.1, 1.0),
+            entry("elementwise_mul", 5_000_000, 2.0, 0.1, 1.0),
+            entry("dot_product", 5_000_000, 2.0, 0.1, 1.0),
+        ]));
+        assert!(a.critical[0]
+            .recommendation
+            .contains("Near-zero throughput"));
+        assert!(a.critical[1].recommendation.contains("cache-aware tiling"));
+        assert!(a.critical[2].recommendation.contains("perf record"));
+    }
+
+    #[test]
+    fn severe_recommendations_memory_variance_and_default() {
+        let a = OptimizationSuite::standard().analyze_bottlenecks(&report(vec![
+            entry("elementwise_mul", 2_000_000, 3.0, 0.4, 1.0),
+            entry("dot_product", 1000, 3.0, 0.4, 12.0),
+            entry("dot_product", 1000, 3.0, 0.4, 1.0),
+        ]));
+        assert!(a.severe[0].recommendation.contains("cache-aware tiling"));
+        assert!(a.severe[1].recommendation.contains("CV=12.0%"));
+        assert!(a.severe[2].recommendation.contains("perf stat"));
+    }
+
+    #[test]
+    fn moderate_recommendations_and_unknown_workload_is_not_memory_bound() {
+        let a = OptimizationSuite::standard().analyze_bottlenecks(&report(vec![
+            entry("elementwise_mul", 1000, 3.0, 0.6, 1.0),
+            entry("dot_product", 1000, 3.0, 0.6, 1.0),
+            entry("no_such_workload", 1000, 3.0, 0.6, 1.0),
+        ]));
+        assert!(a.moderate[0]
+            .recommendation
+            .contains("memory access pattern"));
+        assert!(a.moderate[1].recommendation.contains("Near optimal"));
+        assert!(a.moderate[2].recommendation.contains("Near optimal"));
+    }
+
+    #[test]
+    fn unstable_flagged_above_15_percent_cv_even_when_efficient() {
+        let a = OptimizationSuite::standard().analyze_bottlenecks(&report(vec![
+            entry("dot_product", 1000, 9.0, 0.9, 15.0),
+            entry("dot_product", 1000, 9.0, 0.9, 15.1),
+        ]));
+        assert_eq!(a.unstable.len(), 1);
+        assert_eq!(a.summary.unstable_count, 1);
+        assert_eq!(a.unstable[0].severity, BottleneckSeverity::Unstable);
+        assert!(a.unstable[0].recommendation.contains("CV=15.1%"));
+        let text = a.format_report();
+        assert!(text.contains("## Unstable Operations"));
+        assert!(!text.contains("All operations performing"));
+    }
+
+    #[test]
+    fn format_report_clean_run_and_sections() {
+        let clean = OptimizationSuite::standard().analyze_bottlenecks(&report(vec![entry(
+            "dot_product",
+            1000,
+            9.0,
+            0.9,
+            1.0,
+        )]));
+        assert!(clean
+            .format_report()
+            .contains("All operations performing at >= 75%"));
+        let bad = OptimizationSuite::standard().analyze_bottlenecks(&report(vec![
+            entry("dot_product", 1000, 0.5, 0.1, 1.0),
+            entry("dot_product", 1000, 3.0, 0.4, 1.0),
+            entry("dot_product", 1000, 3.0, 0.6, 1.0),
+        ]));
+        let text = bad.format_report();
+        for h in ["## Critical", "## Severe", "## Moderate"] {
+            assert!(text.contains(h), "missing {h}");
+        }
+    }
+}

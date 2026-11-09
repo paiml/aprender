@@ -64,6 +64,27 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # #6796: the pool's container runners carry no elan ("no elan in /home/runner/.elan", run 42425971175), and
+      # the section declines on that. Provision the SAME pinned, sha256-checked elan conleche-nightly uses, in the
+      # job's own directory, and hand the section its ELAN_HOME. A host that already has elan is left alone.
+      - name: Pinned elan when the host has none (sha256-checked, job-local)
+        env:
+          ELAN_VERSION: v4.2.4
+          ELAN_SHA256: 42b94d4244e8353142c456ec0e4ca6528fd898a6c604d4059f494e706e431f63
+        run: |
+          set -euo pipefail
+          if command -v elan >/dev/null 2>&1 || [ -x "${ELAN_HOME:-$HOME/.elan}/bin/elan" ]; then
+            echo "elan already on this host; not installing"; exit 0
+          fi
+          export ELAN_HOME="$(cd "$GITHUB_WORKSPACE/../.." && pwd)/cache-ladder/elan"
+          mkdir -p "$ELAN_HOME"
+          tgz="$RUNNER_TEMP/elan.tgz"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$tgz" "https://github.com/leanprover/elan/releases/download/$ELAN_VERSION/elan-x86_64-unknown-linux-gnu.tar.gz"
+          echo "$ELAN_SHA256  $tgz" | sha256sum -c -
+          tar xzf "$tgz" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/elan-init" -y --no-modify-path --default-toolchain none
+          echo "ELAN_HOME=$ELAN_HOME" >> "$GITHUB_ENV"
+          echo "$ELAN_HOME/bin" >> "$GITHUB_PATH"
       - name: The event split's case table (stubs, seconds)
         run: bash scripts/ci/ladder_pr_skips_leanchecker.sh
       - name: provable-ladder, full run (the leanchecker's replay included)

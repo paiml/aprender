@@ -1,0 +1,8 @@
+[Unit]
+Description=mq-feeder tick, every 5 min (PMAT-5843)
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=10s
+[Install]
+WantedBy=timers.target

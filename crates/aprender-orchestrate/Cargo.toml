@@ -45,7 +45,7 @@ chrono = { version = "0.4", features = ["serde"] }
 async-trait = "0.1"
 # CLI and configuration (native-only)
 clap = { version = "4.5", features = ["derive", "env"], optional = true }
-serde_yaml_ng = { version = "0.10", optional = true }
+serde-saphyr = { workspace = true, optional = true }
 toml = { version = "0.9", optional = true }
 
 # Async runtime (different for WASM vs native)
@@ -132,7 +132,7 @@ pacha = { workspace = true, optional = true }
 realizar = { workspace = true, optional = true }
 
 # ML algorithms and training (native-only)
-aprender = { path = "../aprender-core", version = "0.70.2", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.72.4", package = "aprender-core", optional = true }
 entrenar = { workspace = true, optional = true }
 alimentar = { workspace = true, optional = true }
 
@@ -155,7 +155,7 @@ simular = { workspace = true, optional = true }
 
 # Transpilers (native-only)
 # depyler = { version = "3.20", optional = true }  # blocked: serde version conflict (1.0.200-1.0.219)
-bashrs = { version = "6.65", optional = true }
+# bashrs: dropped (#5205). Nothing here calls into it; batuta runs the bashrs binary found on PATH.
 
 # Testing and quality (native-only).
 # NOTE: the `probar = { workspace = true, optional = true }` alias that used to
@@ -201,7 +201,7 @@ default = ["native", "rag", "agents", "inference"]
 # Native build with core features (lean: ~249 deps)
 native = [
     "clap",
-    "serde_yaml_ng",
+    "serde-saphyr",
     "toml",
     "tokio",
     "tracing",
@@ -274,7 +274,9 @@ simulation = ["simular", "native"]
 
 # Transpilers (native-only)
 # depyler blocked until serde versions aligned
-transpilers = ["bashrs", "native"]
+# #5205: the bashrs crate was never called (tools are discovered on PATH), and it pulled
+# unsafe-libyaml (RUSTSEC-2024-0449) into the lock. The feature name stays for its users.
+transpilers = ["native"]
 
 # Testing and quality (see the dependency note: `probar` -> `jugar-probar`,
 # the same in-tree package under its other alias)
@@ -318,7 +320,7 @@ sovereign-stack = [
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
 serde = { version = "1", features = ["derive"] }
-serde_yaml_ng = "0.10"
+serde-saphyr = { workspace = true }
 
 [dev-dependencies]
 provable-contracts = { workspace = true }  # #4175: the shared in-tree rule (tree.rs) for tests; versioned, so it survives `cargo package`

@@ -264,39 +264,44 @@ impl Downscaler {
 
         for y in 0..new_height {
             for x in 0..new_width {
-                // Simple box filter (average of factor x factor pixels)
-                let mut r_sum = 0u32;
-                let mut g_sum = 0u32;
-                let mut b_sum = 0u32;
-                let mut count = 0u32;
-
-                for dy in 0..self.factor {
-                    for dx in 0..self.factor {
-                        let src_x = x * self.factor + dx;
-                        let src_y = y * self.factor + dy;
-                        if src_x < width && src_y < height {
-                            let idx = (src_y * width + src_x) as usize;
-                            if idx < image.len() {
-                                r_sum += image[idx].r as u32;
-                                g_sum += image[idx].g as u32;
-                                b_sum += image[idx].b as u32;
-                                count += 1;
-                            }
-                        }
-                    }
-                }
-
-                if count > 0 {
-                    result.push(Rgb::new(
-                        (r_sum / count) as u8,
-                        (g_sum / count) as u8,
-                        (b_sum / count) as u8,
-                    ));
+                if let Some(pixel) = self.box_average(image, width, height, x, y) {
+                    result.push(pixel);
                 }
             }
         }
 
         (result, new_width, new_height)
+    }
+
+    /// Simple box filter: average of the factor x factor source pixels at (x, y).
+    fn box_average(&self, image: &[Rgb], width: u32, height: u32, x: u32, y: u32) -> Option<Rgb> {
+        let mut r_sum = 0u32;
+        let mut g_sum = 0u32;
+        let mut b_sum = 0u32;
+        let mut count = 0u32;
+
+        for dy in 0..self.factor {
+            for dx in 0..self.factor {
+                let src_x = x * self.factor + dx;
+                let src_y = y * self.factor + dy;
+                if src_x < width && src_y < height {
+                    let idx = (src_y * width + src_x) as usize;
+                    if idx < image.len() {
+                        r_sum += image[idx].r as u32;
+                        g_sum += image[idx].g as u32;
+                        b_sum += image[idx].b as u32;
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        let (r, g, b) = (
+            r_sum.checked_div(count)?,
+            g_sum.checked_div(count)?,
+            b_sum.checked_div(count)?,
+        );
+        Some(Rgb::new(r as u8, g as u8, b as u8))
     }
 }
 

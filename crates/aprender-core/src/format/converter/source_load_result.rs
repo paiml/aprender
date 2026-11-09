@@ -284,7 +284,8 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
 
     let content = fs::read_to_string(&config_path).ok()?;
     let sanitized = sanitize_hf_json(&content);
-    let json: serde_json::Value = serde_json::from_str(&sanitized).ok()?;
+    let raw: serde_json::Value = serde_json::from_str(&sanitized).ok()?;
+    let json = merge_text_config(&raw);
 
     // Parse HuggingFace config.json format using alias lookup tables
     let hidden_size = json_usize_with_aliases(&json, CONFIG_ALIASES_HIDDEN_SIZE);
@@ -300,7 +301,13 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
 
     let max_position_embeddings = json_usize_with_aliases(&json, CONFIG_ALIASES_MAX_POS);
 
-    let rope_theta = json_f64_with_aliases(&json, &["rope_theta"], 10000.0);
+    // Qwen3.5 moved rope_theta under `rope_parameters` (#4418).
+    let rope_theta = json
+        .get("rope_parameters")
+        .and_then(|r| r.get("rope_theta"))
+        .and_then(serde_json::Value::as_f64)
+        .filter(|_| json.get("rope_theta").is_none())
+        .unwrap_or_else(|| json_f64_with_aliases(&json, &["rope_theta"], 10000.0));
     let rms_norm_eps = json_f64_with_aliases(&json, CONFIG_ALIASES_NORM_EPS, 1e-6);
 
     // MoE + explicit head_dim — these are present in HF config.json but were previously
@@ -362,7 +369,72 @@ pub(crate) fn load_model_config_from_json(model_path: &Path) -> Option<GgufModel
         num_experts,
         num_experts_per_tok,
         moe_intermediate_size,
+        linear_attn_hparams: linear_attn_hparams_from_config(&json),
     })
+}
+
+/// Multimodal HF configs (Qwen3.5 `Qwen3_5ForConditionalGeneration`) nest the
+/// language model's dimensions under `text_config`. Merge it in as the base so
+/// the alias lookups see them; top-level keys win, so `model_type` stays the
+/// outer family name (`qwen3_5`). Without this the import recorded no
+/// hidden_size / num_heads at all (#4418).
+fn merge_text_config(raw: &serde_json::Value) -> serde_json::Value {
+    let (Some(top), Some(text)) = (
+        raw.as_object(),
+        raw.get("text_config")
+            .and_then(serde_json::Value::as_object),
+    ) else {
+        return raw.clone();
+    };
+    let mut merged = text.clone();
+    for (k, v) in top {
+        merged.insert(k.clone(), v.clone());
+    }
+    serde_json::Value::Object(merged)
+}
+
+/// Keys of the Qwen3.5 hybrid (Gated DeltaNet + full attention) block that
+/// `GgufModelConfig` does not model. The GGUF exporter needs every one of them
+/// to write `qwen35.ssm.*`, `full_attention_interval` and the rope sections.
+const LINEAR_ATTN_HPARAM_KEYS: &[&str] = &[
+    "linear_conv_kernel_dim",
+    "linear_key_head_dim",
+    "linear_num_key_heads",
+    "linear_num_value_heads",
+    "linear_value_head_dim",
+    "full_attention_interval",
+    "layer_types",
+    "mtp_num_hidden_layers",
+];
+
+/// Collect the hybrid linear-attention hyperparameters, or `None` for a model
+/// that has none (every non-hybrid architecture).
+pub(crate) fn linear_attn_hparams_from_config(
+    json: &serde_json::Value,
+) -> Option<serde_json::Map<String, serde_json::Value>> {
+    json.get("linear_num_value_heads")?;
+    let mut out = serde_json::Map::new();
+    for &k in LINEAR_ATTN_HPARAM_KEYS {
+        if let Some(v) = json.get(k) {
+            out.insert(k.to_string(), v.clone());
+        }
+    }
+    // partial_rotary_factor and mrope_section live under rope_parameters in
+    // Qwen3.5 (older configs put them at the top level or in rope_scaling).
+    for src in ["rope_parameters", "rope_scaling"] {
+        if let Some(r) = json.get(src).and_then(serde_json::Value::as_object) {
+            for k in ["partial_rotary_factor", "mrope_section"] {
+                if let Some(v) = r.get(k) {
+                    out.entry(k.to_string()).or_insert_with(|| v.clone());
+                }
+            }
+        }
+    }
+    if let Some(v) = json.get("partial_rotary_factor") {
+        out.entry("partial_rotary_factor".to_string())
+            .or_insert_with(|| v.clone());
+    }
+    Some(out)
 }
 
 /// Parse tokenizer from already-loaded JSON content.

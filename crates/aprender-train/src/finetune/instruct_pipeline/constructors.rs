@@ -87,29 +87,7 @@ impl InstructPipeline {
         let model = Transformer::from_safetensors(model_dir, model_config)?;
         let mut lora_layers = Self::build_lora_layers(&model, model_config, &instruct_config);
 
-        // ENT-269: Auto-load trained LoRA adapter if present in model directory.
-        let adapter_path = model_dir.join("adapter_model.safetensors");
-        if adapter_path.exists() {
-            match crate::lora::load_adapter_peft(model_dir) {
-                Ok((_config, weights)) => {
-                    Self::inject_adapter_weights(
-                        &mut lora_layers,
-                        &weights,
-                        model_config.num_hidden_layers,
-                    );
-                    eprintln!(
-                        "[adapter] Loaded trained LoRA adapter ({} tensors) from {}",
-                        weights.len(),
-                        model_dir.display()
-                    );
-                }
-                Err(e) => {
-                    eprintln!(
-                        "[adapter] Warning: adapter_model.safetensors found but failed to load: {e}"
-                    );
-                }
-            }
-        }
+        Self::load_trained_adapter(model_dir, &mut lora_layers, model_config.num_hidden_layers)?;
 
         for lora in &mut lora_layers {
             for param in lora.trainable_params() {
@@ -406,6 +384,38 @@ impl InstructPipeline {
         lora_layers
     }
 
+    /// ENT-269: load the trained LoRA adapter in `model_dir`, if there is one (#4698).
+    ///
+    /// No `adapter_model.safetensors` means fresh adapters. One that is there but cannot
+    /// be read refuses the load: training fresh adapters over a trained one the caller
+    /// asked for would silently throw it away.
+    ///
+    /// # Errors
+    /// Returns `Error::ConfigError` naming the file when it cannot be read.
+    fn load_trained_adapter(
+        model_dir: &Path,
+        lora_layers: &mut [LoRALayer],
+        num_layers: usize,
+    ) -> crate::Result<()> {
+        let adapter_path = model_dir.join("adapter_model.safetensors");
+        if !adapter_path.exists() {
+            return Ok(());
+        }
+        let (_config, weights) = crate::lora::load_adapter_peft(model_dir).map_err(|e| {
+            crate::Error::ConfigError(format!(
+                "trained adapter '{}' could not be read: {e}",
+                adapter_path.display()
+            ))
+        })?;
+        Self::inject_adapter_weights(lora_layers, &weights, num_layers);
+        eprintln!(
+            "[adapter] Loaded trained LoRA adapter ({} tensors) from {}",
+            weights.len(),
+            model_dir.display()
+        );
+        Ok(())
+    }
+
     /// Inject trained adapter weights from PEFT format into LoRA layers (ENT-269).
     ///
     /// Maps PEFT tensor names (e.g., `base_model.model.model.layers.0.self_attn.q_proj.lora_A.weight`)
@@ -449,3 +459,7 @@ impl InstructPipeline {
         eprintln!("[adapter] Injected {loaded}/{} weight tensors", weights.len());
     }
 }
+
+#[cfg(test)]
+#[path = "constructors_adapter_tests.rs"]
+mod adapter_tests;

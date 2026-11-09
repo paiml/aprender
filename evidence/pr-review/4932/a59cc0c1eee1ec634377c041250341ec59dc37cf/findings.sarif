@@ -1,0 +1,183 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://docs.oasis-open.org/sarif/sarif/v2.1.0/errata01/os/schemas/sarif-schema-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4932-ADVISORY-PLUS-IN-ERE",
+          "level": "warning",
+          "message": {
+            "text": "tag_coverage_gate.sh:98 interpolates the version into an ERE with only \".\" escaped, but the line-95 allowlist admits \"+\" (SemVer build metadata). Measured with v=1.0.0+b.1: the literal path evidence/crux/1.0.0+b.1/prompt-certification.json is REFUSED and evidence/crux/1.0.00b.1/prompt-certification.json is ADMITTED. Inherited from the sibling ev regex at line 97; this PR copies the pattern. The release line is 0.70.2 (no +), so it is latent."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/tag_coverage_gate.sh"
+                },
+                "region": {
+                  "startLine": 98
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "-c",
+              "v=1.0.0+b.1; ec=\"^evidence/crux/${v//./\\\\.}/prompt-certification(-inventory)?\\\\.json$\"; [[ $p =~ $ec ]]"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "9a7e5ec41685612e8f36386ee047d2a164ffe8c0cec2eaa3902667df4b398a9a",
+            "failure_scenario": "A release whose workspace version carries +build metadata cannot carry its CRUX prompt certification through version_only (fails closed: --resolve refuses, autopilot stops before the tag); and a directory named with the + replaced by a repeat of the previous char is admitted for that version.",
+            "rationale_for_class": "Real but latent and fail-closed on the realistic side; not one of the mechanical B1-B6 classes."
+          }
+        },
+        {
+          "ruleId": "PRREV-4932-PMAT-NO-SEMANTIC-INDEX",
+          "level": "note",
+          "message": {
+            "text": "No semantic index was built: git archive of the PR head (the only route to a disposable index tree inside the write allowlist) was refused by the lane hook, and an empty-directory probe of pmat query indexed 0 functions. pmat query --raw (no index) over the checked-out head DID run: it found the carried-certification text only in the contract this PR edits, the release notes and the roadmap, no competing implementation. The diff has no Rust, so the Rust-only semantic index would not have reached it anyway."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/tag_coverage_gate.sh"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "prompt-certification",
+              "--raw",
+              "--limit",
+              "15",
+              "--project-path",
+              "."
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "e19fd94eb4ec2a9f1264e7ff4d51a6638ef46108394d117c378521820dcf0919",
+            "failure_scenario": "A semantic duplicate of version_only elsewhere in Rust would go unseen; the diff adds no Rust symbol, so the exposure is nil here.",
+            "precision_class": "advisory",
+            "rationale_for_class": "Coverage disclosure, not a defect."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4932-MUTATION-NOTE",
+          "level": "note",
+          "message": {
+            "text": "Guard-scope mutation: scripts/check_tag_coverage_gated.sh --self-test killed 17/17 wiring mutants (rc 0); tag_coverage_gate.sh --self-test PASS 46/46 rows (rc 0). Four extra hand mutants of version_only (drop the ec branch, widen the file name, accept any status, accept any version) each turned the self-test red (4/4)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/tag_coverage_gate.sh"
+                },
+                "region": {
+                  "startLine": 90
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "precision_class": "advisory",
+            "command": [
+              "bash",
+              "scripts/release/tag_coverage_gate.sh",
+              "--self-test"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f3f176ba65648b5b954fb91baa6535ef9cb6a5a1cf6b62016a98acb13214d9e1",
+            "failure_scenario": "If the new carried-certification rows did not discriminate, a modified, deleted, other-version or other-name certification would ride a version-only bump and let a nightly receipt for the parent cover a release commit that changed evidence; measured: each of the four mutants is caught.",
+            "rationale_for_class": "Informational: all mutants killed."
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "PRREV-4932-AGY-find-unescaped-plus-in-regex",
+          "level": "warning",
+          "message": {
+            "text": "agy (gemini-3.1-pro-high): The regex `ec` for validating added prompt certification files fails to match valid SemVer paths containing a `+` character because the `+` is not escaped. Reverified by primary: yes, same subject as the pmat-run advisory finding (agreed)."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "scripts/release/tag_coverage_gate.sh"
+                },
+                "region": {
+                  "startLine": 98
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "agy",
+              "-p",
+              "<review prompt>",
+              "--model",
+              "gemini-3.1-pro-high"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "57313d82cb6226c7376e07033d7bac1e8a1be9f82d9800cc0da7ad93d81f514f",
+            "failure_scenario": "If the version string `v` extracted from `Cargo.toml` contains a `+` for SemVer build metadata (e.g., `1.0.0+build.1`), which is explicitly permitted by the prior validation `[[ $v =~ ^[0-9A-Za-z.+-]+$ ]]`, the unescaped `+` in the interpolated regex string `ec=\"^evidence/crux/${v//./\\\\.}/...$\"` behaves as an ERE quantifier ('one or more of the preceding character') instead of a literal `+` character. Consequently, the coverage gate will incorrectly reject a valid release bump that adds `evidence/crux/1.0.0+build.1/prompt-certification.json`, as the regex will fail to match the literal `+` in the path. Conversely, it will mistakenly permit adding invalid paths like `evidence/crux/1.0.00build.1/prompt-certification.json`.",
+            "precision_class": "advisory",
+            "rationale_for_class": "S3.E is advisory-only (SS7)."
+          }
+        }
+      ]
+    }
+  ]
+}

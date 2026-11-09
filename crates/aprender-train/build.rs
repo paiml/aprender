@@ -115,7 +115,7 @@ fn load_binding_file(binding_path: &Path) -> Option<BindingFile> {
         }
     };
 
-    match serde_yaml_ng::from_str::<BindingFile>(&yaml_content) {
+    match serde_saphyr::from_str::<BindingFile>(&yaml_content) {
         Ok(b) => Some(b),
         Err(e) => {
             println!(
@@ -256,7 +256,7 @@ fn emit_contract_file(path: &Path, total_pre: &mut usize, total_post: &mut usize
     let Ok(contents) = std::fs::read_to_string(path) else {
         return;
     };
-    let Ok(parsed) = serde_yaml_ng::from_str::<ContractYaml>(&contents) else {
+    let Ok(parsed) = serde_saphyr::from_str::<ContractYaml>(&contents) else {
         return;
     };
     for (eq_name, eq) in &parsed.equations {

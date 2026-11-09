@@ -12,7 +12,11 @@ use crate::receipt::{
 };
 use crate::stats::SplitMix64;
 use serde_json::{json, Value};
+use std::io::Read;
 use std::time::{Duration, Instant};
+
+/// Largest reply body read, in bytes (ureq's `into_string` stops at 10 MB).
+const MAX_BODY: u64 = 256 << 20;
 
 /// Fixed decoding (§2.1 `[A]`): greedy, seed = the epic number, 512 tokens
 /// (the prompt asks for a verdict line and ≤ 5 short bullets).
@@ -23,7 +27,7 @@ pub const DECODING: Decoding = Decoding {
 };
 
 /// Per-request timeout. A review that takes longer is a `ServeError`.
-pub const TIMEOUT: Duration = Duration::from_secs(900);
+pub const TIMEOUT: Duration = Duration::from_mins(15);
 
 /// The user message: the prompt file verbatim, a blank line, then the diff
 /// in a fenced block. Fixed; its sha is part of `request_sha256`.
@@ -102,19 +106,53 @@ pub struct Reply {
 /// # Errors
 /// The serve could not be reached or the body could not be read.
 pub fn post(url: &str, body: &Value) -> Result<Reply, String> {
-    let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).build();
+    // HTTP error statuses are a `Reply`, not a transport error: keep ureq 2 behaviour.
+    let agent: ureq::Agent = ureq::Agent::config_builder()
+        .timeout_global(Some(TIMEOUT))
+        .http_status_as_error(false)
+        .build()
+        .into();
     let t = Instant::now();
-    let (status, resp) = match agent.post(url).send_json(body) {
-        Ok(r) => (r.status(), r),
-        Err(ureq::Error::Status(code, r)) => (code, r),
-        Err(e) => return Err(e.to_string()),
-    };
-    let body = resp.into_string().map_err(|e| e.to_string())?;
+    // ureq 3 `send_json` pretty-prints; send the compact body ureq 2 sent.
+    let payload = serde_json::to_string(body).map_err(|e| e.to_string())?;
+    let resp = agent
+        .post(url)
+        .header("Content-Type", "application/json")
+        .send(payload.as_str())
+        .map_err(|e| e.to_string())?;
+    let status = resp.status().as_u16();
+    // `into_string` refuses bodies over 10 MB; the /tokenize reply for a large
+    // candidate diff exceeds that. Read bounded at MAX_BODY instead.
+    let body = read_bounded(resp.into_body().into_reader(), MAX_BODY)?;
     Ok(Reply {
         status,
         body,
         wall_ms: t.elapsed().as_secs_f64() * 1e3,
     })
+}
+
+/// Read `r` to a string of at most `cap` bytes.
+///
+/// # Errors
+/// The read failed, or the body ran past `cap`.
+pub fn read_bounded(r: impl Read, cap: u64) -> Result<String, String> {
+    let mut limited = r.take(cap);
+    let mut bytes = Vec::new();
+    limited.read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    // Probe the reader itself, not a cap + 1 limit: Ok means it hit EOF, for
+    // every cap, u64::MAX included.
+    let mut probe = [0u8; 1];
+    let more = loop {
+        match limited.get_mut().read(&mut probe) {
+            Ok(n) => break n > 0,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(e) => return Err(e.to_string()),
+        }
+    };
+    if more {
+        return Err(format!("reply body ran past the {cap}-byte cap"));
+    }
+    String::from_utf8(bytes).map_err(|e| e.to_string())
 }
 
 /// The reply's text, token counts, server timings — or why none.

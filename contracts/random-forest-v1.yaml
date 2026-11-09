@@ -125,6 +125,15 @@ falsification_tests:
     — 9-tree 3-class forest; every row cross-checked against single-row predictions
   if_fails: The per-tree prediction vectors are indexed on the wrong axis, or one tree
     is counted twice and another dropped
+- id: FALSIFY-RF-007
+  rule: Non-finite labels are rejected
+  test_harness: cargo test -p aprender-core --lib -- tree::random_forest::tests::falsify_rf_007_regressor_fit_rejects_non_finite_labels --exact
+  prediction: RandomForestRegressor::fit and DecisionTreeRegressor::fit return Err when
+    any label is NaN or +-inf
+  test: tree::random_forest::tests::falsify_rf_007_regressor_fit_rejects_non_finite_labels
+    — 4-sample fit with one NaN, +inf or -inf label; forest and tree must both return Err
+  if_fails: A NaN/inf label reaches the split search and silently poisons the fitted
+    trees
 enforcement:
   label_range:
     description: Predictions must be in the training label set
@@ -180,5 +189,5 @@ qa_gate:
   - prediction_length
   - parallel_fit_seed_binding
   - batched_votes_match_per_sample
-  pass_criteria: All 6 falsification tests pass + Kani harnesses verify
+  pass_criteria: All 7 falsification tests pass + Kani harnesses verify
   falsification: Majority vote produces label not in training set due to uninitialized leaf node

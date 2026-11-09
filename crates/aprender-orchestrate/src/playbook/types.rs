@@ -30,7 +30,7 @@ pub struct Playbook {
 
     /// Global parameters (key-value pairs, supports strings and numbers)
     #[serde(default)]
-    pub params: HashMap<String, serde_yaml_ng::Value>,
+    pub params: HashMap<String, serde_json::Value>,
 
     /// Named execution targets (machines)
     #[serde(default)]
@@ -639,13 +639,13 @@ impl fmt::Display for ValidationWarning {
 // Helpers
 // ============================================================================
 
-/// Convert a serde_yaml_ng::Value to a string for template resolution
-pub fn yaml_value_to_string(val: &serde_yaml_ng::Value) -> String {
+/// Convert a serde_json::Value to a string for template resolution
+pub fn yaml_value_to_string(val: &serde_json::Value) -> String {
     match val {
-        serde_yaml_ng::Value::String(s) => s.clone(),
-        serde_yaml_ng::Value::Number(n) => n.to_string(),
-        serde_yaml_ng::Value::Bool(b) => b.to_string(),
-        serde_yaml_ng::Value::Null => String::new(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => String::new(),
         other => format!("{:?}", other),
     }
 }
@@ -679,7 +679,7 @@ policy:
   validation: checksum
   lock_file: true
 "#;
-        let pb: Playbook = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let pb: Playbook = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(pb.version, "1.0");
         assert_eq!(pb.name, "test-pipeline");
         assert_eq!(yaml_value_to_string(pb.params.get("model").expect("key not found")), "base");
@@ -712,7 +712,7 @@ policy:
   validation: checksum
   lock_file: true
 "#;
-        let pb: Playbook = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let pb: Playbook = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(
             yaml_value_to_string(pb.params.get("chunk_size").expect("key not found")),
             "512"
@@ -731,7 +731,7 @@ cmd: "echo test"
 deps: []
 outs: []
 "#;
-        let stage: Stage = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let stage: Stage = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert!(stage.description.is_none());
         assert!(stage.target.is_none());
         assert!(stage.after.is_empty());
@@ -753,7 +753,7 @@ params:
   - model
   - chunk_size
 "#;
-        let stage: Stage = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let stage: Stage = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         let params = stage.params.expect("unexpected failure");
         assert_eq!(params, vec!["model", "chunk_size"]);
     }
@@ -774,7 +774,7 @@ failure: stop_on_first
 validation: checksum
 lock_file: true
 "#;
-        let policy: Policy = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let policy: Policy = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(policy.failure, FailurePolicy::StopOnFirst);
 
         let yaml2 = r#"
@@ -782,7 +782,7 @@ failure: continue_independent
 validation: none
 lock_file: false
 "#;
-        let policy2: Policy = serde_yaml_ng::from_str(yaml2).expect("yaml deserialize failed");
+        let policy2: Policy = crate::yaml::from_str(yaml2).expect("yaml deserialize failed");
         assert_eq!(policy2.failure, FailurePolicy::ContinueIndependent);
         assert_eq!(policy2.validation, ValidationPolicy::None);
         assert!(!policy2.lock_file);
@@ -807,7 +807,7 @@ resources:
   gpu: 2
   timeout: 3600
 "#;
-        let stage: Stage = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let stage: Stage = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         let par = stage.parallel.expect("unexpected failure");
         assert_eq!(par.strategy, "per_file");
         assert_eq!(par.glob.expect("unexpected failure"), "*.txt");
@@ -860,8 +860,8 @@ resources:
             )]),
         };
 
-        let yaml = serde_yaml_ng::to_string(&lock).expect("yaml serialize failed");
-        let lock2: LockFile = serde_yaml_ng::from_str(&yaml).expect("yaml deserialize failed");
+        let yaml = serde_saphyr::to_string(&lock).expect("yaml serialize failed");
+        let lock2: LockFile = crate::yaml::from_str(&yaml).expect("yaml deserialize failed");
         assert_eq!(lock2.playbook, "test");
         assert_eq!(lock2.stages["hello"].status, StageStatus::Completed);
     }
@@ -948,8 +948,7 @@ post_flight:
   - type: coverage
     min: 85.0
 "#;
-        let compliance: Compliance =
-            serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let compliance: Compliance = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(compliance.pre_flight.len(), 1);
         assert_eq!(compliance.pre_flight[0].check_type, "tdg");
         assert_eq!(compliance.post_flight.len(), 1);
@@ -981,7 +980,7 @@ policy:
   validation: checksum
   lock_file: true
 "#;
-        let pb: Playbook = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let pb: Playbook = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         let keys: Vec<&String> = pb.stages.keys().collect();
         assert_eq!(keys, vec!["alpha", "beta", "gamma"]);
     }
@@ -997,7 +996,7 @@ workdir: "/data/pipeline"
 env:
   CUDA_VISIBLE_DEVICES: "0,1"
 "#;
-        let target: Target = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let target: Target = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(target.host.as_deref(), Some("gpu-box.local"));
         assert_eq!(target.ssh_user.as_deref(), Some("noah"));
         assert_eq!(target.cores, Some(32));
@@ -1010,7 +1009,7 @@ env:
 path: /data/input.wav
 type: file
 "#;
-        let dep: Dependency = serde_yaml_ng::from_str(yaml).expect("yaml deserialize failed");
+        let dep: Dependency = crate::yaml::from_str(yaml).expect("yaml deserialize failed");
         assert_eq!(dep.path, "/data/input.wav");
         assert_eq!(dep.dep_type.as_deref(), Some("file"));
 
@@ -1019,7 +1018,7 @@ path: /data/output/
 type: directory
 remote: intel
 "#;
-        let out: Output = serde_yaml_ng::from_str(yaml2).expect("yaml deserialize failed");
+        let out: Output = crate::yaml::from_str(yaml2).expect("yaml deserialize failed");
         assert_eq!(out.path, "/data/output/");
         assert_eq!(out.remote.as_deref(), Some("intel"));
     }

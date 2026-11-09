@@ -1,0 +1,145 @@
+# apr-code-eval-metric-v1 — the METRIC node of the apr code eval ontology (APR-CODE-EVAL-001).
+#
+# A metric turns verdicts into one number with an interval and a receipt. It refuses to
+# print a number it cannot stand behind: 0 tasks, 0 executed tests or 0 model output gives
+# an error, never 0% and never 100%.
+metadata:
+  version: "1.0.0"
+  created: "2026-10-14"
+  author: PAIML Engineering
+  kind: kernel
+  registry: true
+  description: |
+    Aggregate metrics and the run receipt for the `apr code` eval (epic #5281, ticket
+    #5285 metric, #5288 receipt). pass@1 over all tasks, the unbiased pass@k estimator
+    of Chen et al. (2021), a Wilson 95% interval, edit-format conformance (Aider), the
+    post-cutoff split (LiveCodeBench), and the refusals.
+  references:
+    - "docs/specifications/apr-code-eval-v1.md §6 (metric) and §7 (receipt)"
+    - "Chen et al. (2021) Evaluating Large Language Models Trained on Code — unbiased pass@k = 1 - C(n-c,k)/C(n,k)"
+    - "Wilson (1927) Probable inference, the law of succession, and statistical inference — score interval"
+    - "Jain et al. (2024) LiveCodeBench — score by problem release date"
+    - "contracts/eval-passk-single-sample-v1.yaml — single sample ⇒ pass@k = pass@1"
+    - "contracts/apr-code-eval-verdict-v1.yaml (label set V)"
+name: apr-code-eval-metric
+version: "1.0.0"
+status: PROPOSED
+scope: "metric engine and receipt writer of the apr code eval harness (tickets #5285, #5288)"
+description: |
+  Input: for each task t ∈ T, n samples with verdicts v_{t,1..n}. c_t = |{ j : v_{t,j} =
+  RESOLVED }|. Output: Metrics { pass_at_1, pass_at_k, wilson95, format_conformance,
+  post_cutoff_pass_at_1, counts_by_label } bound to a Receipt, or a refusal.
+
+equations:
+  ACE-MET-001:
+    description: "pass@1 counts every task in the denominator, errors and timeouts included"
+    formula: "pass@1 = (1/|T|) · Σ_{t ∈ T} c_t / n"
+    note: "Dropping SANDBOX_ERROR or TIMEOUT from |T| raises the score by hiding failures; it is forbidden."
+  ACE-MET-002:
+    description: "Unbiased pass@k (Chen et al. 2021), defined only for k ≤ n"
+    formula: "pass@k = (1/|T|) · Σ_t [ 1 − C(n − c_t, k) / C(n, k) ],  k ≤ n;  k > n ⇒ Err"
+    note: "Computed as 1 − Π_{i=n−c+1}^{n} (1 − k/i) for numerical stability, and as 1 when n − c < k. n = 1 ⇒ pass@k = pass@1 (eval-passk-single-sample-v1)."
+  ACE-MET-003:
+    description: "Wilson 95% score interval on pass@1, over every sample of every task"
+    formula: "N = |T| · n, x = Σ_t c_t (so p_hat = x/N = pass@1 of ACE-MET-001), z = 1.959964;  (p_hat + z²/2N ± z·√(p_hat(1−p_hat)/N + z²/4N²)) / (1 + z²/N)"
+    note: "With n > 1 the samples of one task are correlated, so the interval is narrower than the task-level truth; the receipt prints n beside it. The headline is n = 1."
+  ACE-MET-004:
+    description: "Refusal: no number without evidence"
+    formula: "|T| = 0 ∨ Σ_t tests_executed(t) = 0 ∨ |{ t : v_t ≠ EMPTY }| = 0  ⇒  metrics = Err(Refused)"
+    note: "Every model output EMPTY is a broken driver, not a 0% model; the run is refused, not scored."
+  ACE-MET-005:
+    description: "Edit-format conformance (Aider practice)"
+    formula: "format_conformance = 1 − |{ (t, s) : v_{t,s} = FORMAT_ERROR }| / (|T| · n),  over all n samples of every task"
+  ACE-MET-006:
+    description: "Contamination split (LiveCodeBench practice)"
+    formula: "T_post = { t : release_date(t) > cutoff(model) };  post_cutoff_pass@1 = pass@1 over T_post, reported with |T_post|;  |T_post| = 0 ⇒ field = null, not 0"
+  ACE-MET-007:
+    description: "A metric exists only inside a complete receipt"
+    formula: "emit(metrics) ⇒ receipt ⊇ { task_set_digest, model_sha256, apr_version, apr_git_sha, image_digests, seed, sampling, per_task_verdicts, counts_by_label, harness_git_sha }"
+  ACE-MET-008:
+    description: "Counts reconcile"
+    formula: "Σ_{v ∈ V} counts_by_label[v] = |T| · n"
+
+proof_obligations:
+  - id: ACE-MET-PO-001
+    type: invariant
+    property: "Denominator is |T|·n, never the count of non-error tasks (ACE-MET-001)"
+    formal: "denominator(pass@1) = |T| · n"
+  - id: ACE-MET-PO-002
+    type: equivalence
+    property: "The stable product form equals the binomial form, and k > n is refused (ACE-MET-002)"
+    formal: "∀ n c k. k ≤ n ⇒ 1 − Π(1 − k/i) = 1 − C(n−c,k)/C(n,k)"
+  - id: ACE-MET-PO-003
+    type: bound
+    property: "The Wilson interval contains p_hat and lies in [0, 1] (ACE-MET-003)"
+    formal: "0 ≤ lo ≤ p_hat ≤ hi ≤ 1"
+  - id: ACE-MET-PO-004
+    type: precondition
+    property: "0 tasks, 0 executed tests or all-empty output is refused (ACE-MET-004)"
+    formal: "refusal_condition ⇒ metrics = Err(Refused) ∧ no number printed"
+  - id: ACE-MET-PO-005
+    type: bound
+    property: "format_conformance ∈ [0, 1] (ACE-MET-005)"
+    formal: "0 ≤ format_conformance ≤ 1"
+  - id: ACE-MET-PO-006
+    type: invariant
+    property: "An empty post-cutoff set reports null, not 0 (ACE-MET-006)"
+    formal: "|T_post| = 0 ⇒ post_cutoff_pass_at_1 = null"
+  - id: ACE-MET-PO-007
+    type: completeness
+    property: "No metric is written without every receipt field (ACE-MET-007)"
+    formal: "∃ missing field ⇒ emit = Err"
+  - id: ACE-MET-PO-008
+    type: invariant
+    property: "Label counts sum to |T|·n (ACE-MET-008)"
+    formal: "Σ counts_by_label = |T| · n"
+
+falsification_tests:
+  - id: FALSIFY-ACE-MET-001
+    name: errors_stay_in_denominator
+    prediction: "10 tasks, 5 RESOLVED, 3 SANDBOX_ERROR, 2 FAILED gives pass@1 = 0.5, not 5/7."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_met_001_denominator in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "Errors are being dropped and the score is inflated."
+  - id: FALSIFY-ACE-MET-002
+    name: pass_at_k_matches_reference
+    prediction: "Against the Chen et al. reference values (n=10, c ∈ {0,1,5,10}, k ∈ {1,5,10}) to 1e-12, k=11 with n=10 is Err, and n=1 gives pass@k = pass@1."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_met_002_pass_at_k in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "pass@k is biased or computed with the problem count in the n slot."
+  - id: FALSIFY-ACE-MET-003
+    name: wilson_reference
+    prediction: "x=50, N=164 gives the reference interval to 1e-9; x=0 and x=N stay inside [0, 1] (proptest)."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_met_003_wilson in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "The interval is wrong at the edges, where small suites live."
+  - id: FALSIFY-ACE-MET-004
+    name: refusals
+    prediction: "Three planted runs (0 tasks; 10 tasks with 0 executed tests; 10 tasks all EMPTY) each return Err(Refused) and print no percentage."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_met_004_refusals in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "The harness prints 0% or 100% for a run that measured nothing."
+  - id: FALSIFY-ACE-MET-005
+    name: format_conformance
+    prediction: "4 FORMAT_ERROR of 20 tasks (n = 1) gives format_conformance = 0.8."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_met_005_format_conformance in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "Edit-format failures are hidden inside FAILED."
+  - id: FALSIFY-ACE-MET-006
+    name: post_cutoff_null_when_empty
+    prediction: "A suite whose tasks all predate the cutoff reports post_cutoff_pass_at_1 = null, with count 0."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_met_006_post_cutoff in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "A contaminated-only run claims a contamination-free 0%."
+  - id: FALSIFY-ACE-MET-007
+    name: receipt_complete
+    prediction: "Removing any one required receipt field makes emit() return Err naming that field (one row per field)."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test falsify_ace_met_007_receipt_fields in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "A score can be published without saying what model, tasks or harness produced it."
+  - id: FALSIFY-ACE-MET-008
+    name: counts_reconcile
+    prediction: "proptest: for any verdict vector, Σ counts_by_label = |T|·n."
+    test_harness: "PLANNED (#5285, crate not yet built): unit test prop_ace_met_008_counts in the metric module"
+    expected_output: "test result: ok"
+    if_fails: "A verdict was lost or double counted."

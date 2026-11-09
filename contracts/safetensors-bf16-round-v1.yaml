@@ -96,3 +96,20 @@ falsification:
     description: "2048-sample sweep over mixed exponent/mantissa bit patterns matches half::bf16::from_f32 bit-for-bit. Discharges C-BF16-001 (oracle parity)."
     test: "test_bf16_parity_with_half_crate (feature = format-quantize) — every sample's BF16 bits equal half::bf16::from_f32(v).to_bits()."
     evidence: "cargo test -p aprender-core --lib --features format-quantize test_bf16_parity_with_half_crate"
+
+falsification_tests:
+  - id: FALSIFY-SAFETENSORS_BF16_ROUND-001
+    description: "C-BF16-001: f32 -> BF16 is round-to-nearest-even (0x3F81_C000 -> 0x3F82, not truncated 0x3F81)"
+    test: "cargo test -p aprender-core --lib test_bf16_round_to_nearest_even_falsifier"
+    prediction: "the encoded BF16 bits are 0x3F82"
+    if_fails: "the BF16 encoder truncates the low 16 bits instead of rounding"
+  - id: FALSIFY-SAFETENSORS_BF16_ROUND-002
+    description: "C-BF16-002: ties (low half == 0x8000) round to the even kept value"
+    test: "cargo test -p aprender-core --lib test_bf16_round_to_nearest_even_halfway_to_even"
+    prediction: "0x3F80_8000 -> 0x3F80 and 0x3F81_8000 -> 0x3F82"
+    if_fails: "ties round away from zero or always up, biasing every halfway value"
+  - id: FALSIFY-SAFETENSORS_BF16_ROUND-003
+    description: "C-BF16-003: NaN with payload only in the low 16 bits stays NaN, never Inf"
+    test: "cargo test -p aprender-core --lib test_bf16_preserves_nan_not_inf"
+    prediction: "f32 0x7F80_0001 encodes to a BF16 NaN"
+    if_fails: "rounding or truncation turns NaN into Inf"

@@ -1,0 +1,65 @@
+metadata:
+  id: C-BLIS-ELEMENTWISE-INPLACE
+  version: 1.0.0
+  created: '2026-10-18'
+  author: PAIML Engineering
+  kind: pattern
+  status: ACTIVE_ALGORITHM_LEVEL
+  description: |
+    Pins relu_inplace and mul_scalar_alloc in aprender-compute's BLIS elementwise
+    module (#5582): relu_inplace equals the out-of-place relu for every length
+    (including SIMD tail lengths), and mul_scalar_alloc returns a fresh vector of
+    the same length with every element scaled and the input untouched.
+  references:
+    - 'crates/aprender-compute/src/blis/elementwise.rs (relu_inplace, mul_scalar_alloc)'
+
+equations:
+  relu_inplace_equals_relu:
+    formula: |
+      relu_inplace(x) == relu(x) elementwise, for any length incl. 0 and non-multiples of the SIMD width
+      relu(v) = max(v, 0)
+    domain: f32 slices
+    invariants:
+    - 'negatives and -0.0 map to 0.0; zero and positives are unchanged'
+  mul_scalar_alloc_scales:
+    formula: 'mul_scalar_alloc(x, s)[i] == x[i] * s; len preserved; x not mutated'
+    domain: f32 slices, finite scalar
+    invariants:
+    - 's == 1.0 is the identity'
+
+proof_obligations:
+- id: BEI-INV-001
+  type: invariant
+  property: in-place ReLU equals out-of-place ReLU
+  formal: '∀ x: relu_inplace(x) ≡ relu(x)'
+  applies_to: relu_inplace_equals_relu
+- id: BEI-INV-002
+  type: invariant
+  property: mul_scalar_alloc scales each element and keeps length
+  formal: 'out[i] == x[i] * s and len(out) == len(x)'
+  applies_to: mul_scalar_alloc_scales
+
+falsification_tests:
+- id: FALSIFY-BLIS-ELEMENTWISE-INPLACE-001
+  rule: relu_inplace clamps negatives and matches relu across tail lengths
+  prediction: 'n in {0,1,7,8,9,31,33} match relu; [-2,-0,0,0.5,3,-1e-9,f32::MIN] -> [0,0,0,0.5,3,0,0]'
+  test: cargo test -p aprender-compute --lib blis::elementwise::tests::relu_inplace
+  if_fails: in-place ReLU diverges from the out-of-place kernel (negative activations leak through)
+  ship_blocking: false
+  mutation: 'replace x.max(0.0) with x.min(0.0) in relu_inplace; must turn RED'
+- id: FALSIFY-BLIS-ELEMENTWISE-INPLACE-002
+  rule: mul_scalar_alloc scales every element, preserves length, leaves input untouched
+  prediction: '19-element ramp times 2.5 matches exactly; scalar 1.0 returns the input unchanged'
+  test: cargo test -p aprender-compute --lib blis::elementwise::tests::mul_scalar_alloc
+  if_fails: allocating scalar multiply drops, mis-scales or mutates elements
+  ship_blocking: false
+
+qa_gate:
+  id: QA-BLIS-ELEMENTWISE-INPLACE-001
+  name: BLIS elementwise in-place/alloc gate
+  description: relu_inplace and mul_scalar_alloc semantics hold
+  checks:
+  - relu_inplace_equals_relu
+  - mul_scalar_alloc_scales
+  pass_criteria: FALSIFY-BLIS-ELEMENTWISE-INPLACE-001 and -002 pass
+  falsification: Any failure fails the gate

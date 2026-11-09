@@ -57,3 +57,10 @@ falsification:
   - condition: "Legacy name in chapter text"
     severity: P0
     action: reject_chapter
+
+falsification_tests:
+  - id: FALSIFY-BOOK-CH25-001
+    description: "Chapter 25's example ch25_switch_ollama builds and runs to exit 0, with its 2 assertion(s) holding"
+    test: "cargo run -p aprender-core --example ch25_switch_ollama"
+    prediction: "Exit 0. book-contracts 'Chapter Examples Run' runs the same command for all 27 chapters"
+    if_fails: "An API the chapter teaches changed or regressed, so the example panics on an assertion or no longer compiles"

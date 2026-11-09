@@ -146,3 +146,164 @@ impl CbtopApp {
         }
     }
 }
+
+#[cfg(test)]
+mod handle_key_tests {
+    use super::*;
+    use crate::config::Config;
+
+    fn app() -> CbtopApp {
+        CbtopApp::with_size(Config::default(), 80, 24)
+    }
+
+    fn press(app: &mut CbtopApp, keys: &str) {
+        for c in keys.chars() {
+            app.handle_key(KeyCode::Char(c));
+        }
+    }
+
+    #[test]
+    fn quit_keys_set_should_quit() {
+        let mut a = app();
+        a.handle_key(KeyCode::Char('x'));
+        assert!(!a.should_quit);
+        a.handle_key(KeyCode::Char('q'));
+        assert!(a.should_quit);
+        let mut b = app();
+        b.handle_key(KeyCode::Esc);
+        assert!(b.should_quit);
+    }
+
+    #[test]
+    fn space_toggles_running_and_generator() {
+        let mut a = app();
+        assert!(!a.is_running);
+        press(&mut a, " ");
+        assert!(a.is_running);
+        assert!(a.simd_generator.is_running());
+        press(&mut a, " ");
+        assert!(!a.is_running);
+        assert!(!a.simd_generator.is_running());
+    }
+
+    #[test]
+    fn intensity_clamps_to_unit_interval_and_reaches_generator() {
+        let mut a = app();
+        press(&mut a, "++++++++++++");
+        assert!((a.intensity - 1.0).abs() < f64::EPSILON);
+        assert!((a.simd_generator.intensity() - 1.0).abs() < f64::EPSILON);
+        press(&mut a, "=");
+        assert!((a.intensity - 1.0).abs() < f64::EPSILON);
+        press(&mut a, "------------");
+        assert!(a.intensity.abs() < f64::EPSILON);
+        assert!(a.simd_generator.intensity().abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn backend_cycles_through_all_four_and_wraps() {
+        let mut a = app();
+        a.backend = ComputeBackend::Simd;
+        let mut seen = Vec::new();
+        for _ in 0..4 {
+            press(&mut a, "b");
+            seen.push(a.backend);
+        }
+        assert_eq!(
+            seen,
+            [
+                ComputeBackend::Wgpu,
+                ComputeBackend::Cuda,
+                ComputeBackend::All,
+                ComputeBackend::Simd
+            ]
+        );
+    }
+
+    #[test]
+    fn workload_cycles_through_all_seven_and_wraps() {
+        let mut a = app();
+        a.workload = WorkloadType::Gemm;
+        let mut seen = Vec::new();
+        for _ in 0..7 {
+            press(&mut a, "w");
+            seen.push(a.workload);
+        }
+        assert_eq!(
+            seen,
+            [
+                WorkloadType::Conv2d,
+                WorkloadType::Attention,
+                WorkloadType::Bandwidth,
+                WorkloadType::Elementwise,
+                WorkloadType::Reduction,
+                WorkloadType::All,
+                WorkloadType::Gemm
+            ]
+        );
+    }
+
+    #[test]
+    fn problem_size_halves_doubles_and_floors_at_1024() {
+        let mut a = app();
+        a.problem_size = 4096;
+        press(&mut a, "[");
+        assert_eq!(a.problem_size, 2048);
+        press(&mut a, "[[[");
+        assert_eq!(a.problem_size, 1024);
+        press(&mut a, "]");
+        assert_eq!(a.problem_size, 2048);
+    }
+
+    #[test]
+    fn resize_rebuilds_generator_and_keeps_running_state() {
+        let mut a = app();
+        a.problem_size = 4096;
+        a.intensity = 0.5;
+        press(&mut a, "[");
+        assert!(!a.simd_generator.is_running());
+        assert!((a.simd_generator.intensity() - 0.5).abs() < f64::EPSILON);
+        press(&mut a, " ");
+        press(&mut a, "]");
+        assert!(a.simd_generator.is_running());
+    }
+
+    #[test]
+    fn reset_clears_histories_and_metrics() {
+        let mut a = app();
+        a.cpu_history.push(1.0);
+        a.bricks_history.push(2.0);
+        a.frame_times.push(3.0);
+        a.frame_count = 9;
+        a.load_metrics.total_bricks = 7;
+        press(&mut a, "r");
+        assert_eq!(a.frame_count, 0);
+        assert_eq!(a.load_metrics.total_bricks, 0);
+        assert_eq!(a.cpu_history.len(), 0);
+        assert_eq!(a.bricks_history.len(), 0);
+        assert_eq!(a.frame_times.len(), 0);
+    }
+
+    #[test]
+    fn digits_select_panels_and_zero_or_unknown_keys_do_nothing() {
+        let mut a = app();
+        for (key, panel) in [
+            ('1', ActivePanel::Overview),
+            ('2', ActivePanel::Cpu),
+            ('3', ActivePanel::Gpu),
+            ('4', ActivePanel::Pcie),
+            ('5', ActivePanel::Memory),
+            ('6', ActivePanel::Thermal),
+            ('7', ActivePanel::Load),
+            ('8', ActivePanel::Config),
+            ('9', ActivePanel::Help),
+        ] {
+            a.handle_key(KeyCode::Char(key));
+            assert_eq!(a.active_panel, panel, "key {key}");
+        }
+        a.handle_key(KeyCode::Char('0'));
+        a.handle_key(KeyCode::Char('z'));
+        a.handle_key(KeyCode::Tab);
+        assert_eq!(a.active_panel, ActivePanel::Help);
+        assert!(!a.should_quit);
+    }
+}

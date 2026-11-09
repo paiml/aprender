@@ -1043,6 +1043,28 @@ pub struct StreamingValidationResult {
     pub total_frames: usize,
 }
 
+/// Turn the raw `[timestamp, text]` rows of `window.__probar_partials` into
+/// results; malformed rows are dropped and the last survivor is marked final.
+#[cfg(feature = "browser")]
+pub(crate) fn partials_from_raw(rows: Vec<Vec<serde_json::Value>>) -> Vec<PartialResult> {
+    let mut partials: Vec<PartialResult> = rows
+        .into_iter()
+        .filter_map(|arr| {
+            let ts = arr.first()?.as_f64()?;
+            let text = arr.get(1)?.as_str()?.to_string();
+            Some(PartialResult {
+                timestamp_ms: ts,
+                text,
+                is_final: false,
+            })
+        })
+        .collect();
+    if let Some(last) = partials.last_mut() {
+        last.is_final = true;
+    }
+    partials
+}
+
 // CDP-based streaming UX tracking (PROBAR-SPEC-011)
 #[cfg(feature = "browser")]
 impl StreamingUxValidator {
@@ -1313,29 +1335,7 @@ impl StreamingUxValidator {
             .into_value()
             .map_err(|_| StreamingValidationError::EndedInError)?;
 
-        let partials: Vec<PartialResult> = result
-            .into_iter()
-            .filter_map(|arr| {
-                let ts = arr.first()?.as_f64()?;
-                let text = arr.get(1)?.as_str()?.to_string();
-                Some(PartialResult {
-                    timestamp_ms: ts,
-                    text,
-                    is_final: false,
-                })
-            })
-            .collect();
-
-        // Mark the last one as final if present
-        if partials.is_empty() {
-            return Ok(partials);
-        }
-
-        let mut result = partials;
-        if let Some(last) = result.last_mut() {
-            last.is_final = true;
-        }
-        Ok(result)
+        Ok(partials_from_raw(result))
     }
 
     /// Assert state sequence occurred in order

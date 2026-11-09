@@ -25,7 +25,7 @@ provable-contracts-macros = { workspace = true }
 [build-dependencies]
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 serde = { workspace = true }
-serde_yaml_ng = { workspace = true }
+serde-saphyr = { workspace = true }
 
 [features]
 # PROBAR-SPEC-009: Brick Architecture is MANDATORY, not optional

@@ -1,0 +1,9 @@
+[Unit]
+Description=N26 nightly promotion ticks, hourly 06:30Z-12:30Z (first fire 2026-10-31 06:30Z)
+
+[Timer]
+OnCalendar=*-*-* 06..12:30:00 UTC
+Persistent=false
+
+[Install]
+WantedBy=timers.target

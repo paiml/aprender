@@ -4,7 +4,7 @@ version.workspace = true
 edition = "2021"
 authors = ["Pragmatic AI Labs <info@paiml.com>"]
 license = "MIT"
-repository = "https://github.com/paiml/renacer"
+repository = "https://github.com/paiml/aprender"
 description = "Core tracing primitives for renacer — zero-dep span/event types for CPU-GPU pipelining instrumentation"
 rust-version = "1.75"
 

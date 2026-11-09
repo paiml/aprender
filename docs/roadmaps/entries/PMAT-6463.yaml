@@ -1,0 +1,18 @@
+- id: PMAT-6463
+  github_issue: 6463
+  item_type: task
+  title: 'PVB-8: bridge step in provable-ladder (PVL EV-9), freshness + never-down'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:29Z
+  updated: 2026-10-27T11:36:29Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452

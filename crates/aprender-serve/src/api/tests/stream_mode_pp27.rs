@@ -296,6 +296,7 @@ async fn nonstream_response_carries_timings_when_measured() {
     let measured = PhaseTimings {
         prefill_ms: Some(40.0),
         decode_ms: Some(200.0),
+        ..PhaseTimings::default()
     };
     let timings = measured
         .to_timings(512, 128)
@@ -314,6 +315,7 @@ async fn nonstream_response_carries_timings_when_measured() {
         None,
         None,
         Some(timings),
+        None,
         None,
     );
     let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
@@ -367,12 +369,14 @@ mod phase_timings_rules {
         assert!(PhaseTimings {
             prefill_ms: Some(40.0),
             decode_ms: None,
+            ..PhaseTimings::default()
         }
         .to_timings(512, 128)
         .is_none());
         assert!(PhaseTimings {
             prefill_ms: None,
             decode_ms: Some(200.0),
+            ..PhaseTimings::default()
         }
         .to_timings(512, 128)
         .is_none());
@@ -380,6 +384,7 @@ mod phase_timings_rules {
         assert!(PhaseTimings {
             prefill_ms: Some(40.0),
             decode_ms: Some(200.0),
+            ..PhaseTimings::default()
         }
         .to_timings(512, 128)
         .is_some());

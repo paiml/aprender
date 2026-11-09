@@ -14,6 +14,7 @@ pub mod realizar;
 pub mod remote;
 #[cfg(feature = "native")]
 pub mod router;
+pub mod served_backend;
 pub mod validate;
 
 use async_trait::async_trait;
@@ -200,6 +201,14 @@ pub trait LlmDriver: Send + Sync {
     /// Remote drivers override with their pricing model.
     fn estimate_cost(&self, _usage: &TokenUsage) -> f64 {
         0.0
+    }
+
+    /// The device this driver's completions ran on, as its server reported it (#3719).
+    ///
+    /// Default: `None`, the driver cannot say (the embedded driver, a remote API).
+    /// The `apr code` document then prints `"backend": null`: not measured, never a pass.
+    fn backend_observed(&self) -> Option<served_backend::BackendReport> {
+        None
     }
 }
 

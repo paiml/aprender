@@ -511,3 +511,85 @@ fn print_ticket_line(ticket: &aprender_qa_report::ticket::UpstreamTicket) {
         println!("    Fixture: {fixture}");
     }
 }
+
+#[cfg(test)]
+mod profiling_assertion_tests {
+    use super::*;
+    use aprender_qa_runner::{Playbook, SixColumnProfile};
+
+    fn playbook(assertions: &str) -> Playbook {
+        let yaml = format!(
+            "name: pa\nversion: \"1.0.0\"\nmodel:\n  hf_repo: \"t/m\"\ntest_matrix:\n  modalities: [run]\n  backends: [cpu]\n  scenario_count: 1\nprofile_ci:\n  enabled: true\n  assertions:\n{assertions}\n"
+        );
+        Playbook::from_yaml(&yaml).expect("playbook yaml parses")
+    }
+
+    fn profile(cpu: f64, gpu: f64) -> SixColumnProfile {
+        SixColumnProfile {
+            tps_gguf_cpu: Some(cpu),
+            tps_gguf_gpu: Some(gpu),
+            ..SixColumnProfile::default()
+        }
+    }
+
+    fn failures(p: &SixColumnProfile) -> Vec<(String, String, f64)> {
+        p.failed_assertions
+            .iter()
+            .map(|a| (a.format.clone(), a.backend.clone(), a.min_threshold))
+            .collect()
+    }
+
+    #[test]
+    fn no_profile_ci_records_nothing() {
+        let mut pb = playbook("    max_p99_ms: 1.0");
+        pb.profile_ci = None;
+        let mut p = profile(0.1, 0.1);
+        check_profiling_assertions(&mut p, &pb);
+        assert!(p.failed_assertions.is_empty());
+    }
+
+    #[test]
+    fn defaults_are_5_cpu_and_50_gpu() {
+        let pb = playbook("    max_p99_ms: 1.0");
+        let mut p = profile(4.9, 49.9);
+        check_profiling_assertions(&mut p, &pb);
+        assert_eq!(
+            failures(&p),
+            vec![
+                ("gguf".to_string(), "cpu".to_string(), 5.0),
+                ("gguf".to_string(), "gpu".to_string(), 50.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn throughput_at_default_threshold_passes() {
+        let pb = playbook("    max_p99_ms: 1.0");
+        let mut p = profile(5.0, 50.0);
+        check_profiling_assertions(&mut p, &pb);
+        assert!(p.failed_assertions.is_empty());
+    }
+
+    #[test]
+    fn legacy_min_throughput_applies_to_both_backends() {
+        let pb = playbook("    min_throughput: 10.0");
+        let mut p = profile(8.0, 8.0);
+        check_profiling_assertions(&mut p, &pb);
+        assert_eq!(
+            failures(&p),
+            vec![
+                ("gguf".to_string(), "cpu".to_string(), 10.0),
+                ("gguf".to_string(), "gpu".to_string(), 10.0),
+            ]
+        );
+    }
+
+    #[test]
+    fn per_backend_minimum_overrides_legacy_minimum() {
+        let pb = playbook("    min_throughput: 10.0\n    min_throughput_cpu: 1.0\n    min_throughput_gpu: 100.0");
+        let mut p = profile(8.0, 8.0);
+        check_profiling_assertions(&mut p, &pb);
+        assert_eq!(failures(&p), vec![("gguf".to_string(), "gpu".to_string(), 100.0)]);
+        assert_eq!(p.failed_assertions[0].actual_tps, 8.0);
+    }
+}

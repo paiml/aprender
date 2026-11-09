@@ -33,3 +33,10 @@ falsification:
     description: "same hardware → same kernel selected"
     test: "Related tests in crates/aprender-compute/src/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-CODEGEN_DISPATCH-001
+    description: "dispatch_determinism: the same hardware selects the same backend"
+    test: "cargo test -p aprender-compute --lib test_backend_selection_is_deterministic"
+    prediction: "select_best_available_backend() called twice returns equal Backend values"
+    if_fails: "runtime SIMD backend selection is non-deterministic"

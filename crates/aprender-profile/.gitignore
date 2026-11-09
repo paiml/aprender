@@ -42,4 +42,3 @@ benches/fixtures/syscall_heavy
 
 # Machine-specific cargo config (contains local target-dir paths)
 .cargo/config.toml
-src/generated_contracts.rs

@@ -1,0 +1,45 @@
+metadata:
+  version: 1.0.0
+  kind: schema
+  description: |
+    PROMETHEUS (PRM-001, was REX-001) REX-10 perf ratchet, spec §5.1: review p95 on the
+    primary cell may never rise after 3 recorded tags. Each tag reruns the perf arm on the
+    primary cell over one fixed item set (full dev split + 30 fixed test items, timing
+    only) with the new apr tag and with llama.cpp. `rex ratchet record` turns the tag's
+    warm, non-rerun, admissible receipts into one `review-lane-perf-ratchet-v1` entry
+    (per-item wall ms, nearest-rank p95 and its bootstrap CI, llama.cpp p95, receipts
+    sha); `rex ratchet check` compares every tag after the third with the best earlier
+    tag by a paired bootstrap of the Harrell–Davis p95 ratio and exits 10 on RED.
+    Unpaired CI overlap (§4 tie rule) and a paired nearest-rank p95 both miss a +10 %
+    rise at the pilot's n; the only level used is the prereg's ALPHA (R-7). A tag with
+    no timings did not run and is not a recorded tag (R-6). A growing gap to llama.cpp
+    is a note to file (§9.1), not an andon.
+  references:
+    - "docs/specifications/review-experiment-protocol.md"
+    - "https://github.com/paiml/aprender/issues/4365"
+
+equations:
+  ratchet:
+    formula: "RED ⇔ ∃ i ≥ 3: lo_{1-α/2}( boot_paired( HD95(t_i) / HD95(t_best(<i)) ) ) > 1  ∨  violations ≠ ∅"
+  state:
+    formula: "|tags| ≤ 3 ⇒ arming;  |tags| > 3 ∧ ¬RED ⇒ green"
+
+falsification_tests:
+  - id: FALSIFY-RXR-001
+    name: a_planted_ten_percent_p95_regression_is_red
+    prediction: "3 tags arm; an unchanged 4th tag is green; the same tag × 1.10 is RED in 10/10 independent runs with ≤ 1/10 false alarms; giving back a gain to the best tag is RED"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxr_001"
+    expected_output: "exit 0"
+    if_fails: "A release could slow review p95 by 10 % and the ratchet would stay green."
+  - id: FALSIFY-RXR-002
+    name: the_unpaired_overlap_rule_misses_ten_percent
+    prediction: "the two unpaired p95 CIs of a +10 % tag overlap at n = 130, so the overlap rule cannot be the ratchet's rule"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxr_002"
+    expected_output: "exit 0"
+    if_fails: "The finding that forced the paired rule no longer holds; re-derive the rule."
+  - id: FALSIFY-RXR-003
+    name: the_ratchet_fails_closed
+    prediction: "a duplicate tag, a foreign cell, or no common items is RED; record refuses an empty tag, two apr binaries under one tag, and a non-finite timing; a growing llama.cpp gap is noted"
+    test_harness: "cargo test -p aprender-review-experiment --lib falsify_rxr_003"
+    expected_output: "exit 0"
+    if_fails: "A malformed ratchet file or a tag that never ran would read as green."

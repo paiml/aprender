@@ -97,8 +97,9 @@ if [ "${1:-}" = "--self-test" ]; then
     row 0 "an assignment in a COMMENT is documentation -> clean (R2 skips comments)" $'# V=0.68.2 was the old literal\n'
     row 0 "lowercase locals and names that merely end in V/T -> clean"  $'local v=$1 t=$2\nENV=prod\nPLOT=1\n'
     row 0 "/dev/null, /tmp and \$HOME paths are not operator-box literals -> clean" $'x > /dev/null\nmktemp -p /tmp\nls "$HOME/.cargo/bin"\n'
-    # R3 (#3657): the planted literal is 0.68.2's own line from publish_strict.sh, verbatim
-    row 1 "PLANTED: publish_strict.sh's 0.68.2 universe-size assertion -> RED (R3)" \
+    # R3 (#3657): the planted literal is 0.68.2's own universe-size line, verbatim (from the strict
+    # publish script #4688 deleted)
+    row 1 "PLANTED: the 0.68.2 universe-size assertion -> RED (R3)" \
         $'[ "${#ORDER[@]}" -eq 74 ] && [ "${#EXPECT[@]}" -eq 74 ] || die "order=${#ORDER[@]} universe=${#EXPECT[@]}, expected 74/74"\n'
     row 1 "a wc -l count against a literal -> RED (R3)"                  $'[ "$(sort -u order.txt | wc -l)" -eq 74 ] || die dup\n'
     row 1 "a counter against a literal, unquoted -> RED (R3)"            $'[ $n -eq 74 ] || die "final verification"\n'

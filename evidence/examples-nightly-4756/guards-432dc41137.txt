@@ -1,0 +1,23 @@
+head 432dc41137, run locally 2026-10-10T17:09Z
+== scripts/check_no_fabricated_baselines.sh
+--- no fabricated comparator baselines (F12) [mode: full] -------------
+ok    shell    472 file(s), no asserted competitor baseline
+ok    config   302 file(s), no asserted competitor baseline
+ok    rust     35 ledgered site(s) = 35 ledger entr(ies), 0 new, 0 stale
+ok    ledger   35 entr(ies), 0 added, 1 removed vs e37e6dec56
+               comparand: merge-base with origin/main (protected; a pull request cannot rewrite it)
+ok    sigpipe: hit found though upstream emits 165811 bytes (>64KB buffer)
+ok    case table: 16 shell must-match, 13 must-not-match, 13 cfg, 10 rust,
+               7 ledger, 8 shrink-only, 3 comparand — all correct
+
+PASS  no comparator baseline is asserted rather than measured.
+rc=0
+== scripts/include_fmt_ratchet.sh
+REPORT 8 baseline entr(ies) are now clean or no longer include!d: run --update to lock the gain in
+ok    ratchet  scripts/include_fmt_baseline.txt did not grow (0 removed) vs e37e6dec56
+               comparand: merge-base with origin/main (protected; a pull request cannot rewrite it)
+PASS
+rc=0
+== rustfmt --check crates/aprender-serve/examples/performance_parity.rs rc=0
+== rustfmt --check crates/aprender-core/examples/includes/qa_chat_include_01.rs rc=0
+ok  roadmap.yaml == aggregate(311 fragment(s)), idempotent

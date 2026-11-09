@@ -125,7 +125,12 @@ def load_minimal(path):
             if bare.count('"') % 2 or bare.count("'") % 2:
                 raise ValueError("line %d: unterminated string" % n)
             if cur is None:
-                raise ValueError("line %d: top-level key %r is outside this reader's scope" % (n, key))
+                # Only nextest's own top-level keys are skipped: neither can reach
+                # [profile.ci]. Any other top-level key raises: `profile` can reach it as
+                # an inline table, and skipping an unknown key would be a guess.
+                if key not in ("experimental", "nextest-version"):
+                    raise ValueError("line %d: top-level key %r is outside this reader's scope" % (n, key))
+                continue
             if cur != "profile.ci":
                 continue
             v = bare.split("#", 1)[0].strip() if not val.lstrip().startswith(('"', "'")) else val.strip()
@@ -216,6 +221,16 @@ if [ "${1:-}" = "--self-test" ]; then
             $'[profile.ci]\nretries = 2\nfail-fast = false\nslow-timeout = { period = "60s", terminate-after = 20 }\nstatus-level = "slow"\n[profile.ci.junit]\npath = "junit.xml"\n'
         row 2 "[[profile.ci]] (an array of tables, not the profile) -> ENV rc=2, never a pass" $'[[profile.ci]]\nfail-fast = false\n'
         row 2 "unparseable TOML -> ENV rc=2, never a pass"                $'[profile.ci\nfail-fast = false\n'
+        row 0 "a top-level nextest key before [profile.ci] -> PASS (EXT-02's experimental = setup-scripts)" \
+            $'experimental = ["setup-scripts"]\n[profile.ci]\nretries = 2\nfail-fast = false\n'
+        row 0 "the other top-level nextest key before [profile.ci] -> PASS (nextest-version)" \
+            $'nextest-version = "0.9.50"\n[profile.ci]\nfail-fast = false\n'
+        row 2 "an inline top-level profile that redefines [profile.ci] -> ENV rc=2, never a pass" \
+            $'profile = { ci = { "fail-fast" = true } }\n[profile.ci]\nfail-fast = false\n'
+        row 2 "the same inline profile with its key QUOTED -> ENV rc=2, never a pass" \
+            $'"profile" = { ci = { "fail-fast" = true } }\n[profile.ci]\nfail-fast = false\n'
+        row 2 "a DOTTED top-level profile.ci.fail-fast before [profile.ci] -> ENV rc=2, never a pass" \
+            $'profile.ci.fail-fast = true\n[profile.ci]\nfail-fast = false\n'
         # and the real config, so a red tree cannot hide behind green fixtures
         n=$((n + 1)); rc=0; judge "$CONF" > /dev/null 2>&1 || rc=$?
         [ "$rc" -eq 0 ] && printf 'ok    row %-2s rc=0  [%s] the real %s is GREEN\n' "$n" "$READER" "${CONF#"$ROOT/"}" \
@@ -235,6 +250,10 @@ if [ "${1:-}" = "--self-test" ]; then
             $'[profile.ci]\nfail-fast = false\nslow-timeout = { period = "60s",\n  terminate-after = 20 }\n'
         NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "fail-fast = fals (not a value it can type) -> ENV, never a guess" \
             $'[profile.ci]\nfail-fast = fals\n'
+        NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "an unknown top-level key (not nextest's own) -> ENV, never a guess" \
+            $'experimentl = ["setup-scripts"]\n[profile.ci]\nfail-fast = false\n'
+        NEXTEST_GUARD_FORCE_FALLBACK=1 row 2 "a skipped top-level key whose value continues past its line -> ENV, never a guess" \
+            $'experimental = [\n  "setup-scripts",\n]\n[profile.ci]\nfail-fast = false\n'
     elif [ "$pyrc" -eq 3 ]; then
         cat "$d/py.state"
         printf 'UNMEASURED runner=%s reason=no-interpreter -- the reader case table (both readers) needs python3 and did not run here (#3697)\n' "${RUNNER_NAME:-unknown}"

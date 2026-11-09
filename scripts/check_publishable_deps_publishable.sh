@@ -88,7 +88,7 @@ for n,dn in sorted(set(bad)):
 if [ "${1:-}" = "--self-test" ]; then
     fails=0
     TD="$(mktemp -d)" || exit 1
-    case "$TD" in /tmp/*|/var/folders/*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
+    case "$TD" in /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/?*) : ;; *) printf 'bad tmp\n'; exit 1 ;; esac
     trap 'rm -rf "${TD:?}"' EXIT
 
     mk() { # dir name publish_false dep

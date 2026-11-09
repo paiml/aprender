@@ -1,0 +1,448 @@
+{
+  "version": "2.1.0",
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "pmat",
+          "version": "3.42.0"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "prompt-certification-carried",
+          "level": "note",
+          "message": {
+            "text": "evidence/crux/0.70.3/prompt-certification.json and its inventory are byte copies of the evidence/crux/0.70.2 files (sha256 pairs equal). The certification apr_commit is the pre-0.70.2 commit, so the CRUX smoke at the 0.70.3 commit relies on a certification not re-run for this tag; the release notes disclose it. Carried from the receipt at bfdab9d30d and re-measured at this head."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "evidence/crux/0.70.3/prompt-certification.json"
+                },
+                "region": {
+                  "startLine": 1
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "sha256sum",
+              "evidence/crux/0.70.2/prompt-certification.json",
+              "evidence/crux/0.70.3/prompt-certification.json",
+              "evidence/crux/0.70.2/prompt-certification-inventory.json",
+              "evidence/crux/0.70.3/prompt-certification-inventory.json"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "65e583e3b59c6f74055639aa1a3a505e17cd0759d66d8e7b56eace609db47364",
+            "failure_scenario": "If a certified model file or prompt changed between 0.70.2 and 0.70.3, the smoke would run against prompts certified for different bytes; the carried copy cannot detect that, only the pinned sha256 inside it can.",
+            "precision_class": "advisory",
+            "carried_from": "4715d5e1c4d3957b06a8381880a525dabd2117ed (diff patch-id unchanged, 167b82dd43a33f3e0838c9e6ff59b1cba3266afd)"
+          }
+        },
+        {
+          "ruleId": "tdg-grade-restored",
+          "level": "note",
+          "message": {
+            "text": "pmat index built at this head reports true_streaming_sse_response TDG B and the new live_tail_events TDG A+ (complexity 2, 24 lines), which is the grade the commit message claims. The base-side function grade was not measured here (no base index), so the B- to B movement itself is the author claim and is not reproduced; the head grade is."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/openai_handlers.rs"
+                },
+                "region": {
+                  "startLine": 963
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "pmat",
+              "query",
+              "live_tail_events end-of-stream tail flush tool call detector finish",
+              "--limit",
+              "10"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "adab600c09eb0579c38d753af3846bf8e509a46632776982f237528a86a9ca7c",
+            "failure_scenario": "If the head grade were below B, the pre-publish CB-200 head-vs-base row would still read one definition below B and the release gate the commit exists to satisfy would stay red.",
+            "precision_class": "advisory",
+            "carried_from": "4715d5e1c4d3957b06a8381880a525dabd2117ed (diff patch-id unchanged, 167b82dd43a33f3e0838c9e6ff59b1cba3266afd)"
+          }
+        },
+        {
+          "ruleId": "clippy-clean-at-head",
+          "level": "note",
+          "message": {
+            "text": "cargo clippy -p aprender-serve --lib -- -D warnings finished with exit 0 at this head, so the new helper compiles (ToolCallDetector is visible to openai_handlers, the detector move into the async_stream is accepted) and adds no lint. rustfmt --check on openai_handlers.rs also exits 0."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/openai_handlers.rs"
+                },
+                "region": {
+                  "startLine": 963
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "command": [
+              "cargo",
+              "clippy",
+              "-p",
+              "aprender-serve",
+              "--lib",
+              "--",
+              "-D",
+              "warnings"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "f866af50a416b83ab3979837ac31a58df153f685b048875abe21f34c7281a2db",
+            "failure_scenario": "A borrow or visibility error in the extraction would stop aprender-serve compiling and with it apr-cli and the facade; clippy exit 0 shows it does not.",
+            "precision_class": "advisory",
+            "carried_from": "4715d5e1c4d3957b06a8381880a525dabd2117ed (diff patch-id unchanged, 167b82dd43a33f3e0838c9e6ff59b1cba3266afd)"
+          }
+        },
+        {
+          "ruleId": "tail-flush-order-preserved",
+          "level": "note",
+          "message": {
+            "text": "Reading the diff of 95f64ba144 against its parent: the old inline block ran tail_deltas, detect over each tail delta, finish(detector), content events for tail then end.content, finish_reason(calls, from_generation(filter.stopped(), ...)), then one tool_calls chunk. live_tail_events does the same detect, finish, extend-with-held-text, finish_reason, content events, tool_calls chunk, and returns the events for the caller to yield in that order. from_generation is still read after tail_deltas has run filter.finish(), so the stopped flag is read at the same point. tail Vec is built before the stop flag read, as before. The tests that drive this path (stream_tool_calls_4918.rs, sse_stream_stop_markers_4340.rs, sse_stream_whitespace.rs, openai_compat_2375.rs) were not run on this box."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/api/openai_handlers.rs"
+                },
+                "region": {
+                  "startLine": 1068
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reviewer comparison of the removed and added lines of the commit; no test was run (cargo test is not permitted here), so behavioural equality rests on the reading and on clippy exit 0.",
+            "failure_scenario": "If the order differed, a client would see the tool_calls chunk after the terminal finish chunk or content after the tool call; the commit keeps the same sequence, so this is a no-defect note.",
+            "precision_class": "advisory",
+            "carried_from": "4715d5e1c4d3957b06a8381880a525dabd2117ed (diff patch-id unchanged, 167b82dd43a33f3e0838c9e6ff59b1cba3266afd)"
+          }
+        },
+        {
+          "ruleId": "contract-names-old-function",
+          "level": "note",
+          "message": {
+            "text": "contracts/serve-stream-tool-calls-v1.yaml line 33 and the falsifier at lines 185-186 locate the flush-through-detector behaviour in true_streaming_sse_response; after this commit that flush lives in live_tail_events (same file). Behaviour tests still bind it, so nothing breaks, but a reader following the contract to the named function finds only a call."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/serve-stream-tool-calls-v1.yaml"
+                },
+                "region": {
+                  "startLine": 33
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reviewer reading of the contract text against the moved code; no tool enforces function-level names in that contract.",
+            "failure_scenario": "A later change to live_tail_events is judged against a contract that does not name it, so the falsifier at lines 185-186 is read as covering code it no longer contains.",
+            "precision_class": "advisory",
+            "carried_from": "4715d5e1c4d3957b06a8381880a525dabd2117ed (diff patch-id unchanged, 167b82dd43a33f3e0838c9e6ff59b1cba3266afd)"
+          }
+        },
+        {
+          "ruleId": "public-enum-variant-in-patch-release",
+          "level": "warning",
+          "message": {
+            "text": "Carried from the receipt at bfdab9d30d; run_report.rs is untouched by the later commits. FinishReason is a pub enum reachable as realizar::infer::run_report::FinishReason and is not #[non_exhaustive]. The ToolCalls variant breaks any downstream exhaustive match in a 0.70.x patch release. No in-repo exhaustive match exists, so the workspace builds, but crates.io consumers are not covered by that search."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-serve/src/infer/run_report.rs"
+                },
+                "region": {
+                  "startLine": 37
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reviewer judgement from the enum definition and module visibility; no semver-check tool was run.",
+            "failure_scenario": "A downstream crate that matches FinishReason with Stop and Length arms and no wildcard stops compiling when it takes 0.70.3.",
+            "precision_class": "advisory",
+            "carried_from": "4715d5e1c4d3957b06a8381880a525dabd2117ed (diff patch-id unchanged, 167b82dd43a33f3e0838c9e6ff59b1cba3266afd)"
+          }
+        },
+        {
+          "ruleId": "release-scope-claim-contradicted",
+          "level": "warning",
+          "message": {
+            "text": "evidence/release/0.70.3/RELEASE-NOTES-0.70.3.md lines 3-5 say the published-path diff against v0.70.2 is the #4918 fix files plus the version bump, and nothing else. At this head git diff --name-only v0.70.2 HEAD -- crates src lists 68 files (65 at 4715d5e1c4); the 3 new ones are crates/aprender-gpu/src/kernels/gdn/{decode_attention,decode_attention_split,delta_rule_scan}.rs from d78c30c9cc (six #[ignore] attributes, test-only code, flake #4956). The notes were not updated and do not mention aprender-gpu or #4956."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "evidence/release/0.70.3/RELEASE-NOTES-0.70.3.md"
+                },
+                "region": {
+                  "startLine": 3
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "A reader or a release-scope check that trusts the sentence believes aprender-gpu is byte-identical to v0.70.2; the packaged 0.70.3 aprender-gpu source differs (test attributes only, no runtime change) and six of its lib tests stop running on the PR path.",
+            "precision_class": "advisory",
+            "command": [
+              "git",
+              "diff",
+              "--name-only",
+              "v0.70.2",
+              "HEAD",
+              "--",
+              "crates",
+              "src"
+            ],
+            "exit_code": 0,
+            "stdout_sha256": "b71a05ae0faf58cbb1d6216f8de11c6bee6b4776385cddf2def49d3dc9b6a6af"
+          }
+        },
+        {
+          "ruleId": "ignored-gdn-tests-move-to-nightly-only",
+          "level": "note",
+          "message": {
+            "text": "The six kernels::gdn device tests lose PR-path coverage (cuda-unit runs plain cargo test, which skips #[ignore]d tests) and run only in the cuda-nightly ada-yoga job. The names in the new step were checked against the sources: all six exist, each is a #[test] with the new #[ignore], they sit in #[cfg(feature = cuda)] modules under kernels::gdn::{decode_attention,decode_attention_split,delta_rule_scan} (mods declared in gdn/mod.rs), and the two timing probes in decode_attention_split.rs already carry their own #[ignore], which --exact keeps out. No other workflow or ci/sections.yml step runs these with --include-ignored (grep), and the Sigma lists in sections.yml run without the cuda feature, so no count gate sees the six as unexecuted. The new step is the only executor; the commit message discloses this and #4956 owns it."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/cuda-nightly.yml"
+                },
+                "region": {
+                  "startLine": 855
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "measured",
+            "failure_scenario": "If the ada-yoga job is skipped or red earlier in the night, the six GDN bit-identity tests run nowhere; a real GDN regression merged meanwhile is caught a night late.",
+            "precision_class": "advisory",
+            "command": [
+              "git",
+              "grep",
+              "-n",
+              "-E",
+              "include-ignored|--ignored",
+              "--",
+              ".github/workflows",
+              "ci/sections.yml"
+            ],
+            "exit_code": 0
+          }
+        },
+        {
+          "ruleId": "new-step-shell-semantics",
+          "level": "note",
+          "message": {
+            "text": "Read, not executed (cargo test is forbidden on this box). Under set -euo pipefail, cmd > log 2>&1 || rc=$? captures the status and does not trip -e; tail runs on every path; RUNNER_TEMP is defined by the runner and ci/sections.yml uses it the same way; $g::decode_attention::x expands $g then the literal text (a colon is not a name character); the unquoted words split into six test filters. libtest prints a line starting test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; N filtered out with --ignored --exact, so the anchored grep -q holds, and 16 passed would not match. if: always() makes the step run after an earlier step failed or the job was cancelled, which suits an independent nightly signal and can only add a red, never hide one. Residual: the tests print SKIPPED and return when CudaContext::new(0) fails, which libtest counts as passed, so six passes do not prove the device was used; the preflight step in the job (sm_89, GPU lock) is what covers that. timeout-minutes 30 to 45 is not measured here (no run). No defect found."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/cuda-nightly.yml"
+                },
+                "region": {
+                  "startLine": 855
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "failure_scenario": "On a runner whose device vanished mid-job the step would print SKIPPED six times, pass, and report 6 passed; a driver fault that makes CudaContext::new fail turns the nightly green without running a kernel.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cuda-docs/claim-not-grounded",
+          "level": "note",
+          "message": {
+            "text": "Claim 1: concurrent multi-thread context or stream use can crash libcuda. The CUDA documentation returned (driver API contexts, current context per thread) is silent on crashes under concurrent use; no excerpt supports it. The cause stays an empirical hypothesis."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "crates/aprender-gpu/src/kernels/gdn/delta_rule_scan.rs"
+                },
+                "region": {
+                  "startLine": 516
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "failure_scenario": "If the crash is not concurrency-related (a driver or kernel defect), keeping default test threads in the nightly step reproduces it but explains nothing.",
+            "precision_class": "advisory"
+          }
+        },
+        {
+          "ruleId": "cuda-docs/claim-not-grounded",
+          "level": "note",
+          "message": {
+            "text": "Claim 2: no documentation found that test-thread concurrency reproduces a driver crash; the queries returned no-authority-found. Root cause is owned by #4956, not by this PR."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": ".github/workflows/cuda-nightly.yml"
+                },
+                "region": {
+                  "startLine": 855
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "failure_scenario": "A reader taking the step comment (the concurrency that crashed is kept) as established mechanism would stop looking at other causes.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "crux"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": [
+        {
+          "ruleId": "crux-I-08-gap-narrowed",
+          "level": "note",
+          "message": {
+            "text": "Carried from the receipt at bfdab9d30d; the new commit changes no surface. POST /v1/chat/completions with stream:true and tools emits delta.tool_calls and finish_reason tool_calls, which crux-I-08 (competitor vllm) requires. Arguments arrive whole in one chunk (D-b of serve-stream-tool-calls-v1.yaml), so the gap narrows and is not closed."
+          },
+          "locations": [
+            {
+              "physicalLocation": {
+                "artifactLocation": {
+                  "uri": "contracts/crux-I-08-v1.yaml"
+                },
+                "region": {
+                  "startLine": 32
+                }
+              }
+            }
+          ],
+          "properties": {
+            "grounding": "asserted",
+            "rationale": "Reviewer comparison of crux-I-08 streaming_tool_call_delta_schema with the PR contract; no vLLM comparator was run.",
+            "failure_scenario": "A client that expects the first delta to carry only id/type/name and later deltas the arguments would see all fields in one delta.",
+            "precision_class": "advisory"
+          }
+        }
+      ]
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "nvidia-cuda-docs"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "cargo-mutants"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": false,
+          "toolExecutionNotifications": [
+            {
+              "level": "error",
+              "message": {
+                "text": "S3.D is triggered (Rust source and two contracts/*.yaml files changed, including openai_handlers.rs in the new commit) but nothing was attempted: cargo mutants runs the test suite, and the review brief for this lane forbids cargo test on this box, so no mutant could be killed or survive."
+              },
+              "properties": {
+                "grounding": "measured",
+                "command": [
+                  "bash",
+                  "scripts/check_pr_review_receipt.sh",
+                  "--match-mutation-trigger",
+                  "crates/aprender-serve/src/api/openai_handlers.rs"
+                ],
+                "exit_code": 0,
+                "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            }
+          ]
+        }
+      ],
+      "results": []
+    },
+    {
+      "tool": {
+        "driver": {
+          "name": "antigravity"
+        }
+      },
+      "invocations": [
+        {
+          "executionSuccessful": true,
+          "toolExecutionNotifications": []
+        }
+      ],
+      "results": []
+    }
+  ]
+}

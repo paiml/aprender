@@ -43,6 +43,15 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 3. Open PR: `gh pr create`
 4. CI must pass before merge — enforced by GitHub
 
+## Intake and Pull Signal (RAX-INTERIM, operator, 2026-11-04)
+
+- **Intake:** workers and seats never run `gh issue create`. Record a finding as one line in
+  `docs/findings/<session>.jsonl` or in the cop inbox. Only cops mint tickets, under an epic with a budget.
+- **Pull signal:** when the repo is over its cap (open PRs > 15 or open issues > 100), its cop opens no new
+  feature PRs and spawns no new feature workers there. Only fixes, expedite and triage folds proceed.
+- **Closes:** every new PR body carries `Closes #N` or `no-issue: <reason>`.
+- Cops report created vs closed (24 h) per repo.
+
 ## Autonomous Operation Mode (DEFAULT)
 
 **Operate autonomously by default. Ship PRs, don't ask permission for routine work.**
@@ -58,7 +67,9 @@ and `src/format/…` paths this file still advertised. Counts it cannot check, y
 - Capture evidence into `evidence/section-NN-*/findings.json`
 - Update memory files (`memory/*.md`) with new lessons
 - Continue cascades — when one PR lands, automatically start the next prioritized item per §80-class queues
-- Surface defects as new spec sections rather than asking "should I file this?"
+- Record a defect as one line in `docs/findings/<session>.jsonl` (schema `contracts/findings-ledger-v1.yaml`,
+  appended by `scripts/findings_ledger.sh add`) or in the cop inbox, not as a new spec section, rather than
+  asking "should I file this?"
 - Pivot strategies (e.g. when P0-A blocks, immediately try P0-B; when P0-B blocks, surface §81-class amendment and continue to next prereq)
 
 ### Check in BEFORE acting (real escalations only)
@@ -582,66 +593,20 @@ verify-bindings, migrate`.
 
 ## CRITICAL: Code Search Policy
 
-**NEVER use grep/glob for code search. ALWAYS use pmat query.**
-
-### Decision Tree
-
-| Task | Command |
-|------|---------|
-| Find functions by intent | `pmat query "error handling" --limit 10` |
-| Find important functions | `pmat query "mcp" --rank-by pagerank --limit 5` |
-| Find most-called utilities | `pmat query "format" --rank-by indegree --limit 5` |
-| Find in specific path | `pmat query "validate" --path src/api/` |
-| Find high-quality code only | `pmat query "parse" --min-grade B --max-complexity 15` |
-
-### Examples
+**NEVER use grep/glob for code search. ALWAYS use `pmat query`.** The full decision tree, enrichment flags
+(`-G`, `--churn`, `--duplicates`, `--entropy`, `--faults`), search modes (`--regex`, `--literal`) and coverage-gap
+workflow are in the author-local `~/.claude/CLAUDE.md`; the commands every contributor needs are kept here, plus the coverage + contracts rule below.
 
 ```text
-# BAD - Raw text search returns 500+ noisy matches with no context
-# GOOD - Semantic search returns 10 ranked functions with quality metrics
-pmat query "error handling" --limit 10
-```
-
-### Cross-Project Search
-
-The index automatically includes sibling projects (aprender, trueno, realizar).
-Query from any project to search 60k+ functions across all three codebases.
-
-```text
-# Build index in each project first (one-time setup)
-cd ~/src/aprender && pmat query "init" --rebuild-index --limit 1
-cd ~/src/trueno && pmat query "init" --rebuild-index --limit 1
-cd ~/src/realizar && pmat query "init" --rebuild-index --limit 1
-
-# Now query from any project - siblings auto-merge
-pmat query "matrix multiplication" --limit 5
-```
-
-### Output Formats
-
-- Default (text): Human-readable with signatures and metrics
-- `--format json`: For parsing/scripting
-- `--format markdown`: For documentation
-- `--include-source`: Include full source code in results
-
-### Quick Reference
-
-```text
-pmat query "<intent>"                    # Basic search
-pmat query "<intent>" --rank-by pagerank # Most important functions
-pmat query "<intent>" --format json      # Machine-readable
-pmat query "<intent>" --include-source   # Include full source code
-pmat query "<intent>" --exclude-tests    # Skip test functions
-
-# Git history search (find code by commit intent via RRF fusion)
-pmat query "fix serialization" -G
-pmat query "apr format" --git-history
-
-# Enrichment flags (combine freely)
-pmat query "ml algorithm" --churn                  # git volatility (commit count, churn score)
-pmat query "tensor operation" --duplicates          # code clone detection (MinHash+LSH)
-pmat query "loss function" --entropy                # pattern diversity (repetitive vs unique)
-pmat query "model training" --churn --duplicates --entropy --faults -G  # full audit
+pmat query "<intent>" --limit 10 --include-source   # semantic search with quality annotations
+pmat query "<intent>" --rank-by pagerank            # most important functions
+pmat query "<intent>" --rank-by indegree          # most-called utilities
+pmat query "<intent>" --path src/api/            # restrict to a path
+pmat query "<intent>" --format json              # or markdown; default is text
+pmat query "<intent>" --min-grade B --max-complexity 15 --exclude-tests
+pmat query "<intent>" -G                         # fuse git-history intent (also --churn --duplicates --entropy --faults)
+# Siblings (aprender, trueno, realizar; 60k+ functions) auto-merge into the index; build once per project:
+pmat query "init" --rebuild-index --limit 1
 ```
 
 ### Coverage-Guided Search (pmat 3.0.0+)
@@ -685,15 +650,7 @@ batuta oracle --rag-index                   # Reindex (the command prints the do
 
 Use proactively for trueno SIMD patterns, cross-language equivalents, and stack best practices.
 
+
 ## SSC Training Infrastructure Status (snapshot 2026-03-22 — STALE, re-verify before acting)
 
-This block has not been re-measured in ~5 months and one of its premises no longer
-holds: it points at "trueno 0.4.36" as an external crate, but since APR-MONO trueno is
-in-tree as `crates/aprender-compute` and has no independent version to wait on.
-
-- **SSC canary eval**: 90% accuracy, SHIP gate PASS — classifier ready to ship
-- **entrenar cuBLAS integration**: GEMM parity verified between CPU and GPU paths
-- **Blackwell (GB10) training**: Blocked by JIT pre-warming bug in custom PTX kernels. Must use fused NF4 kernel path until trueno 0.4.36 ships with pre-compiled kernels
-- **apr-cli inference NOT affected**: `apr run` / `apr serve` use cuBLAS (GPU) or trueno SIMD (CPU) — pre-compiled, no custom PTX involved
-- **Trained model (LoRA adapter)**: Architecture-independent safetensors — works on any GPU or CPU via standard PEFT loading
-- **Key tickets**: trueno#200 (Blackwell JIT), trueno#203 (pre-compiled kernels), entrenar#300 (cuBLAS backward)
+Moved to `docs/ssc-training-status-2026-03-22.md` (a 2026-03-22 snapshot, stale; re-verify before acting).

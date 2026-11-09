@@ -117,7 +117,7 @@ async fn main() -> anyhow::Result<()> {
 
     let config_str = std::fs::read_to_string(&cli.config)
         .map_err(|e| anyhow::anyhow!("cannot read config {}: {}", cli.config.display(), e))?;
-    let config: ServerConfig = serde_yaml_ng::from_str(&config_str)
+    let config: ServerConfig = serde_saphyr::from_str_with_options(&config_str, serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false })
         .map_err(|e| anyhow::anyhow!("invalid config: {}", e))?;
 
     info!(

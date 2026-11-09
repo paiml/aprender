@@ -1,0 +1,18 @@
+- id: PMAT-6464
+  github_issue: 6464
+  item_type: task
+  title: 'PVB-9: expand to D-3 (repeatable)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-27T11:36:33Z
+  updated: 2026-10-27T11:36:33Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6452

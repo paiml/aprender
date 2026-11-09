@@ -254,11 +254,11 @@ fn a_non_string_proved_type_is_named_where_a_bound_fn_reaches_it() {
     assert_eq!(run.code, 1, "{}", run.stderr);
 }
 
-/// A document `serde_yaml` refuses and PyYAML reads (a duplicate key, an integer beyond 64
+/// A document the YAML reader refuses and PyYAML reads (a duplicate key, an integer beyond 64
 /// bits) cannot be checked for 2 and 3 here. Check 1 (`pv validate`, the same parser) fails
 /// on it on both sides, and pv adds no parse line of its own, so the report is the script's.
 #[test]
-fn a_document_serde_yaml_refuses_fails_validate_so_the_verdict_agrees() {
+fn a_document_the_yaml_reader_refuses_fails_validate_so_the_verdict_agrees() {
     let valid = std::fs::read_to_string(fixtures().join("edge/contracts/g-unused-type-v1.yaml"))
         .expect("g-unused-type-v1.yaml");
     for (name, planted) in [

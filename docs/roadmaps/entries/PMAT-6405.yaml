@@ -1,0 +1,18 @@
+- id: PMAT-6405
+  github_issue: 6405
+  item_type: task
+  title: 't2_preflight.sh: ignore parent checkout .cargo/config.toml patch (voided 4 rows)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-10-26T10:41:57Z
+  updated: 2026-10-26T10:41:57Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6390

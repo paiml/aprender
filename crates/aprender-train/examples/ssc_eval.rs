@@ -16,8 +16,13 @@ use std::path::PathBuf;
 fn main() {
     let args: Vec<String> = std::env::args().collect();
 
-    let model_dir = get_arg(&args, "--model-dir").map(PathBuf::from).expect("--model-dir required");
-    let data_path = get_arg(&args, "--data").map(PathBuf::from).expect("--data required");
+    let (Some(model_dir), Some(data_path)) = (
+        get_arg(&args, "--model-dir").map(PathBuf::from),
+        get_arg(&args, "--data").map(PathBuf::from),
+    ) else {
+        eprintln!("Usage: ssc_eval --model-dir <dir> --data <conversations.jsonl> [--samples N]");
+        std::process::exit(2);
+    };
     let num_samples: usize = get_arg(&args, "--samples").and_then(|s| s.parse().ok()).unwrap_or(50);
 
     // Load config.json from model directory

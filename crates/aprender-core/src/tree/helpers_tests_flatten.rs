@@ -301,8 +301,7 @@
     fn test_find_best_regression_split_for_feature_single_unique_value() {
         let x = Matrix::from_vec(3, 1, vec![2.0, 2.0, 2.0]).expect("matrix creation");
         let y = vec![1.0, 2.0, 3.0];
-        let current_var = variance_f32(&y);
-        let result = find_best_regression_split_for_feature(&x, &y, 0, 3, current_var);
+        let result = find_best_regression_split_for_feature(&x, &y, 0, 3);
         assert!(result.is_none());
     }
 

@@ -21,6 +21,7 @@ use entrenar::{
 };
 use serde::Deserialize;
 use std::fs;
+use std::io::IsTerminal;
 
 /// Training configuration from TOML
 #[derive(Debug, Deserialize)]
@@ -227,10 +228,16 @@ fn main() {
 
     // Parse command-line arguments
     let args: Vec<String> = std::env::args().collect();
+    // A release build on a terminal keeps the crate-relative default. A debug build or a
+    // run with no terminal (CI, a pipe) has no default: from the workspace root that path
+    // does not resolve, and where it does a bare run starts a full training run.
     let config_path = if args.len() > 2 && args[1] == "--config" {
         &args[2]
-    } else {
+    } else if !cfg!(debug_assertions) && std::io::stdout().is_terminal() {
         "examples/llama2/configs/124m.toml"
+    } else {
+        eprintln!("Usage: llama2-train --config <path.toml>   (e.g. crates/aprender-train/examples/llama2/configs/124m.toml)");
+        std::process::exit(2);
     };
 
     println!("📋 Loading config from {config_path}");

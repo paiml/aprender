@@ -54,3 +54,15 @@ beat:
   baseline_sourced_date: "2026-06-15"
   approved_compute: CPU
   ci_gate_name: "beat_lora_gguf_lossless_deploy_pmat712"
+
+falsification_tests:
+  - id: FALSIFY-BEAT_LORA_GGUF_LOSSLESS_DEPLOY-001
+    description: "Beat gate: merge LoRA -> merged.apr -> F32 GGUF; forward y = W·x on the merged q_proj from apr and from GGUF agree within 1e-4, with a transpose control"
+    test: "cargo test -p apr-cli --lib beat_lora_gguf_lossless_deploy_pmat712"
+    prediction: "max|y_apr - y_gguf| <= 1e-4 and the transposed-weight gap is > 100x that"
+    if_fails: "GGUF export loses, garbles or transposes the merged weight"
+  - id: FALSIFY-BEAT_LORA_GGUF_LOSSLESS_DEPLOY-002
+    description: "Structural half: exported GGUF parses, keeps arch/dims, contains q_proj, and the merged q_proj differs from base"
+    test: "cargo test -p apr-cli --lib test_lora_to_gguf_export_roundtrip_pmat712"
+    prediction: "GGUF version >= 2, architecture qwen2, dims match, merged q_proj != base"
+    if_fails: "merge or export drops the adapter delta or corrupts the GGUF metadata"

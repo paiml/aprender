@@ -39,3 +39,20 @@ falsification:
     description: "Zstd roundtrip is lossless"
     test: "compression roundtrip tests"
     evidence: "cargo test -p aprender-core --lib compression"
+
+falsification_tests:
+  - id: FALSIFY-COMPRESSION_ROUNDTRIP-001
+    description: "lossless_roundtrip: LZ4 decompress(compress(data)) == data, smaller on compressible data"
+    test: "cargo test -p aprender-core --lib --features format-compression test_lz4_compression_roundtrip"
+    prediction: "decompressed bytes equal the original and compressed.len() < original.len()"
+    if_fails: "the LZ4 payload codec is lossy or does not compress"
+  - id: FALSIFY-COMPRESSION_ROUNDTRIP-002
+    description: "lossless_roundtrip: an LZ4-compressed APR model saves and loads without loss"
+    test: "cargo test -p aprender-core --lib --features format-compression test_lz4_compression_model_roundtrip"
+    prediction: "the loaded model equals the saved model and the file is smaller"
+    if_fails: "LZ4 APR save/load corrupts tensor data"
+  - id: FALSIFY-COMPRESSION_ROUNDTRIP-003
+    description: "lossless_roundtrip: a Zstd-compressed APR model saves and loads without loss"
+    test: "cargo test -p aprender-core --lib --features format-compression test_zstd_compression_roundtrip"
+    prediction: "the loaded model equals the saved model and the file is smaller"
+    if_fails: "Zstd APR save/load corrupts tensor data"

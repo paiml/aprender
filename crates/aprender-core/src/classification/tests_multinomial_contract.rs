@@ -688,3 +688,6 @@ fn falsify_multinomial_001_fixture_fit_fails_loudly_without_budget() {
         "expected NotConverged, got {err:?}"
     );
 }
+
+#[path = "tests_multinomial_head_edges.rs"]
+mod tests_multinomial_head_edges;
