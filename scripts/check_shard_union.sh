@@ -20,8 +20,17 @@ MG="$(pins_m workspace-test-shard-merge_group)"
 
 fragments() { # $1 = fragment dir  $2 = shard count M  $3 = event label
   local d="$1" M="$2" ev="$3" full un i
-  full="$(bash "$RUN" --list "$d" | sort)"
-  un="$(for i in $(seq 1 "$M"); do EXPLICIT_LIST_SHARD=1 bash "$RUN" --run "$d" --shard "$i/$M" | grep -v '^shard '; done | sort)"
+  # The runner's exit code is a verdict: it exits 2 on an empty dir ("zero commands is broken wiring"). A
+  # pipeline in $( ) hides it, so capture the raw output first and fail closed (FLAKE-001 C3, paiml/infra#3479).
+  full="$(bash "$RUN" --list "$d")" || { echo "FAIL fragments: runner --list failed on $d (UNMEASURED)"; return 1; }
+  [ -n "$full" ] || { echo "FAIL fragments: runner --list printed no commands for $d (UNMEASURED)"; return 1; }
+  full="$(printf '%s\n' "$full" | sort)"
+  un=""
+  for i in $(seq 1 "$M"); do
+    sh_out="$(EXPLICIT_LIST_SHARD=1 bash "$RUN" --run "$d" --shard "$i/$M")" || { echo "FAIL fragments: runner --run shard $i/$M failed (UNMEASURED)"; return 1; }
+    un+="$(printf '%s\n' "$sh_out" | grep -v '^shard ' || true)"$'\n'
+  done
+  un="$(printf '%s' "$un" | sed '/^$/d' | sort)"
   [ "$(printf '%s\n' "$full" | wc -l)" = "$(printf '%s\n' "$un" | wc -l)" ] || { echo "FAIL fragments: count pre-split=$(printf '%s\n' "$full" | wc -l) union=$(printf '%s\n' "$un" | wc -l)"; return 1; }
   [ "$full" = "$un" ] || { echo "FAIL fragments: union != pre-split list"; diff <(printf '%s\n' "$full") <(printf '%s\n' "$un") | head -5; return 1; }
   echo "ok    fragments ($ev): union of $M shards == pre-split list ($(printf '%s\n' "$full" | wc -l) commands)"
@@ -46,6 +55,11 @@ case "${1:-}" in
     case "$out" in *"FAIL fragments: count pre-split="*) ;; *) echo "self-test: dropped command must print the count-mismatch FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
     fragments_all ci/explicit-test-commands.d >/dev/null || { echo "self-test: clean must pass"; exit 1; }
     [ "$MG" -ge 1 ] && { out="$(fragments_all ci/explicit-test-commands.d)"; case "$out" in *"(merge_group)"*) ;; *) echo "self-test: merge_group pins exist but its union was not checked"; exit 1 ;; esac; }
-    echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED" ;;
+    # known-bad (FLAKE-001 C3): an EMPTY fragment dir must be RED. The runner exits 2 ("zero commands is
+    # broken wiring"), and a guard that swallows that exit code reports `ok ... (1 commands)` -- a vacuous pass.
+    mkdir "$t/empty"; rc=0; out="$(fragments "$t/empty" "$M" pull_request 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || { echo "self-test: empty fragment dir must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
+    case "$out" in *"FAIL fragments: runner"*) ;; *) echo "self-test: empty dir must print the runner FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
+    echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED, empty dir RED" ;;
   *) echo "usage: $0 [--fragments|--self-test]" >&2; exit 2 ;;
 esac
