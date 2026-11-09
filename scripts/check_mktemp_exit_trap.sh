@@ -30,14 +30,14 @@ check_file() {
     local f=$1 vars v rc=0
     [ -r "$f" ] || { printf 'ENV   %s: unreadable\n' "$f"; return 2; }
     vars=$(grep -vE '^[[:space:]]*#' "$f" \
-        | grep -oE '[A-Za-z_][A-Za-z0-9_]*="?\$\(mktemp' \
-        | sed -E 's/="?\$\(mktemp$//' | sort -u)
+        | grep -oE '(^|[[:space:];&|({])[A-Za-z_][A-Za-z0-9_]*="?\$\(mktemp' \
+        | sed -E 's/^[[:space:];&|({]//; s/="?\$\(mktemp$//' | sort -u)
     if [ -z "$vars" ]; then printf 'ok    %s: no mktemp assignment\n' "$f"; return 0; fi
-    if ! grep -qE '^[[:space:]]*trap .*"\$\{SCRATCH\[@\]\}".* EXIT[[:space:]]*$' "$f"; then
+    if ! grep -qE '(^|;)[[:space:]]*trap .*"\$\{SCRATCH\[@\]\}".* EXIT([[:space:]]+#.*)?[[:space:]]*$' "$f"; then
         printf 'FAIL  %s: mktemp with no top-level EXIT trap over "${SCRATCH[@]}"\n' "$f"; rc=1
     fi
     for v in $vars; do
-        grep -qE "SCRATCH\+=\(\"\\$\{?$v\}?\"\)" "$f" \
+        grep -qE "SCRATCH\+=\([^)]*\"\\$\{?$v\}?\"" "$f" \
             || { printf 'FAIL  %s: %s=$(mktemp) is never registered (SCRATCH+=("$%s"))\n' "$f" "$v" "$v"; rc=1; }
     done
     [ "$rc" -ne 0 ] || printf 'ok    %s: %s registered, EXIT trap present\n' "$f" "$(printf '%s' "$vars" | tr '\n' ' ')"
@@ -64,8 +64,11 @@ self_test() {
     row G1-good 0 "$good"
     row G2-no-mktemp 0 'echo hi\n'
     row G3-quoted-assign 0 'SCRATCH=(); trap '\''rm -rf -- "${SCRATCH[@]}"'\'' EXIT\nx="$(mktemp)"; SCRATCH+=("${x}")\n'
-    row G4-comment-only 0 '# t=$(mktemp) in a comment is not an assignment\n'
-    row B1-no-trap 1 'f() { d=$(mktemp -d); SCRATCH+=("$d"); rm -rf "$d"; }\n'
+    row G5-trailing-comment 0 'SCRATCH=(); trap '\''rm -rf -- "${SCRATCH[@]}"'\'' EXIT  # why\nd=$(mktemp); SCRATCH+=("$d")\n'
+    row G6-two-in-one-list 0 'SCRATCH=(); trap '\''rm -rf -- "${SCRATCH[@]}"'\'' EXIT\na=$(mktemp) && b=$(mktemp); SCRATCH+=("$a" "$b")\n'
+    row B7-trap-then-word 1 'trap '\''rm -rf -- "${SCRATCH[@]}"'\'' EXITX\nd=$(mktemp); SCRATCH+=("$d")\n'
+    row G4-comment-only 0 '  # \x74=$(mktemp) in a comment is not an assignment\n'
+    row B1-no-trap 1 'f() { d=$(mktemp -d); SCRATCH+=("$d"); rm -rf "${d:?}"; }\n'
     row B2-unregistered 1 'SCRATCH=(); trap '\''rm -rf -- "${SCRATCH[@]}"'\'' EXIT\nd=$(mktemp -d); rm -rf "$d"\n'
     row B3-return-trap-only 1 'f() { td=$(mktemp -d); SCRATCH+=("$td"); trap '\''rm -rf "${SCRATCH[@]}"'\'' RETURN; }\n'
     row B4-one-of-two 1 'SCRATCH=(); trap '\''rm -rf -- "${SCRATCH[@]}"'\'' EXIT\na=$(mktemp); SCRATCH+=("$a")\nb=$(mktemp)\n'
@@ -75,7 +78,7 @@ self_test() {
     # Behaviour, not just shape: a GOOD script killed by set -e mid-function leaves no file.
     mkdir "$T/tmp"
     printf '%s\n' 'set -e' 'SCRATCH=(); trap '\''rm -rf -- "${SCRATCH[@]}"'\'' EXIT' \
-        'f() { d=$(mktemp -d "$TMPDIR/x.XXXXXX"); SCRATCH+=("$d"); false; rm -rf "$d"; }' 'f' > "$T/kill.sh"
+        'f() { d=$(mktemp -d "$TMPDIR/x.XXXXXX"); SCRATCH+=("$d"); false; rm -rf "${d:?}"; }' 'f' > "$T/kill.sh"
     TMPDIR="$T/tmp" bash "$T/kill.sh" 2>/dev/null
     if [ -z "$(ls -A "$T/tmp")" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo 'self-test row K1-set-e-mid-function: scratch leaked'; fi
     echo "check_mktemp_exit_trap self-test: $pass passed, $fail failed"
