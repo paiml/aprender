@@ -226,6 +226,10 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          IMAGE: localhost:5000/sovereign-ci:stable
+          PR_OR_REF: ${{ github.event.pull_request.number || github.ref_name }}
         run: setsid --wait bash scripts/ci/pr_light_fast.sh
       - name: fat_driver case table must still turn RED
         run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test

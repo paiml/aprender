@@ -120,10 +120,19 @@ drop_worktrees() { # drop_worktrees <scratch>
     rm -rf "${1:?}"
 }
 
+# require_event_env: pin_build_base reads PR_HEAD_SHA (pull_request) / MG_BASE_SHA (merge_group); an unset one is a RED, never a skipped pin.
+require_event_env() {
+    case "${GITHUB_EVENT_NAME:-}" in
+        pull_request) [[ ${PR_HEAD_SHA:-} =~ ^[0-9a-f]{40}$ ]] || { echo "::error::pr_light_fast: pull_request without PR_HEAD_SHA (set it from github.event.pull_request.head.sha)" >&2; return 1; } ;;
+        merge_group) [[ ${MG_BASE_SHA:-} =~ ^[0-9a-f]{40}$ ]] || { echo "::error::pr_light_fast: merge_group without MG_BASE_SHA" >&2; return 1; } ;;
+    esac
+}
+
 main_run() {
     cd "$REPO_ROOT" || exit 2
     command -v jq > /dev/null 2>&1 || { echo "::error::pr_light_fast: jq is not provisioned on this runner (forjar machines/*/forjar.yaml pins jq 1.8.x); this gate does not download it" >&2; exit 2; }
     local scratch rc
+    require_event_env || exit 1
     scratch="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/pr-light-fast.XXXXXX")" || exit 2
     trap 'drop_worktrees "$scratch"' EXIT
     # the guard-tree section's step 2: the comparand every ratchet reads. Serial and first, like the section ran it.
@@ -157,6 +166,12 @@ self_test() {
     row "the lane table has every old cheap check plus the offline falsifier and the self-tests (19 lanes)" "$(cheap_lanes | grep -c '|')" 19
     row "shard lanes partition 1..K" "$(PR_LIGHT_SHARDS=3 shard_lanes | cut -d'|' -f1 | paste -sd,)" 'guard-tree-shard-1-of-3,guard-tree-shard-2-of-3,guard-tree-shard-3-of-3'
     row "a bad shard count is refused" "$(PR_LIGHT_SHARDS=0 shard_lanes 2> /dev/null; echo $?)" 2
+    local sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    row "pull_request without PR_HEAD_SHA is RED" "$(GITHUB_EVENT_NAME=pull_request PR_HEAD_SHA= require_event_env 2>/dev/null; echo $?)" 1
+    row "pull_request with a non-sha PR_HEAD_SHA is RED" "$(GITHUB_EVENT_NAME=pull_request PR_HEAD_SHA=main require_event_env 2>/dev/null; echo $?)" 1
+    row "pull_request with PR_HEAD_SHA passes" "$(GITHUB_EVENT_NAME=pull_request PR_HEAD_SHA=$sha require_event_env; echo $?)" 0
+    row "merge_group without MG_BASE_SHA is RED" "$(GITHUB_EVENT_NAME=merge_group MG_BASE_SHA= require_event_env 2>/dev/null; echo $?)" 1
+    row "a local run needs neither" "$(GITHUB_EVENT_NAME=local require_event_env; echo $?)" 0
     for w in "$d"/*/wt-*; do [ -e "$w" ] && git -C "$REPO_ROOT" worktree remove --force "$w" > /dev/null 2>&1; done
     rm -rf "${d:?}"
     git -C "$REPO_ROOT" worktree prune > /dev/null 2>&1
