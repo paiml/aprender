@@ -18,7 +18,7 @@ scan() { # repo-root -> RED lines; prints "SCANNED n" on the last line
     grep -qE "$BEAT" "$f" || continue
     n=$((n + 1))
     for t in $(triggers "$f"); do
-      if printf '%s' "$t" | grep -qE "^($BAD_TRIGGERS)$"; then echo "RED $(basename "$f"): speed beat in a $t workflow"; bad=1; fi
+      if grep -qE "^($BAD_TRIGGERS)$" <<<"$t"; then echo "RED $(basename "$f"): speed beat in a $t workflow"; bad=1; fi
     done
   done
   if [ -d "$root/ci/explicit-test-commands.d" ]; then

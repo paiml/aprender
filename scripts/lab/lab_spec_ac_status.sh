@@ -16,7 +16,7 @@ check() { # spec-file -> RED lines, "CHECKED n" last
     lab=$(grep -m1 -E "^\| \*\*AC-SHIP2-$ac\*\* \(" "$f" | sed -E 's/^\| \*\*AC-SHIP2-[0-9]+\*\* \(([^)]*)\).*/\1/' || true)
     if [ -z "$def" ] || [ -z "$lab" ]; then echo "RED AC-SHIP2-$ac: definition or status row missing"; bad=1; continue; fi
     n=$((n + 1))
-    if ! printf '%s' "$def" | grep -qiF -- "$lab"; then
+    if ! grep -qiF -- "$lab" <<<"$def"; then
       echo "RED AC-SHIP2-$ac: status row names '$lab' but the definition is a different check"; bad=1
     fi
   done
