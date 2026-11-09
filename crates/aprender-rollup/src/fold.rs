@@ -168,5 +168,73 @@ pub fn parse_args(args: &[String]) -> Result<(std::path::PathBuf, std::path::Pat
     }
 }
 
+/// The frozen `roadmap-base.yaml` next to `roadmap` (#6185); absent, `roadmap` is its own base.
+fn base_path(roadmap: &Path) -> std::path::PathBuf {
+    roadmap.with_file_name("roadmap-base.yaml")
+}
+
+fn read(p: &Path) -> Result<String, String> {
+    std::fs::read_to_string(p).map_err(|e| format!("cannot read {} ({e})", p.display()))
+}
+
+/// `check <roadmap> <entries>`: `roadmap` is what the fold produces, and re-folding is a no-op.
+/// Port of `roadmap_fragments.py aggregate --check` (`_check`), same messages.
+///
+/// # Errors
+/// Unreadable input, a refused fragment, a non-idempotent fold, or a roadmap that drifted.
+pub fn check(roadmap: &Path, entries: &Path) -> Result<String, String> {
+    let current = read(roadmap)?;
+    let bp = base_path(roadmap);
+    let base = if bp.exists() {
+        read(&bp)?
+    } else {
+        current.clone()
+    };
+    let frags = read_fragments(entries)?;
+    let out = aggregate(&base, &frags)?;
+    if aggregate(&out, &frags)? != out {
+        return Err("aggregate is not idempotent on this input".into());
+    }
+    if out != current {
+        return Err(format!(
+            "{} is not what the aggregator produces from {} -- run `make roadmap-aggregate`",
+            roadmap.display(),
+            entries.display()
+        ));
+    }
+    Ok(format!(
+        "roadmap.yaml == aggregate({} fragment(s)), idempotent",
+        frags.len()
+    ))
+}
+
+/// A parsed command line.
+#[derive(Debug, PartialEq, Eq)]
+pub enum Cmd {
+    /// `fold <base.yaml> <entries-dir>`: print the aggregate.
+    Fold(std::path::PathBuf, std::path::PathBuf),
+    /// `check <roadmap.yaml> <entries-dir>`: verify it.
+    Check(std::path::PathBuf, std::path::PathBuf),
+}
+
+/// `fold|check <path> <entries-dir>` -> the command.
+///
+/// # Errors
+/// Any other argument shape.
+pub fn parse_cmd(args: &[String]) -> Result<Cmd, String> {
+    match args
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        ["fold", base, entries] => Ok(Cmd::Fold(base.into(), entries.into())),
+        ["check", roadmap, entries] => Ok(Cmd::Check(roadmap.into(), entries.into())),
+        _ => Err(
+            "expected: fold <base.yaml> <entries-dir> | check <roadmap.yaml> <entries-dir>".into(),
+        ),
+    }
+}
+
 #[cfg(test)]
 mod tests;
