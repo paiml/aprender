@@ -26,7 +26,8 @@ deep_ok() {
 # conleche_ok <file>: no control export runs the exporter outside elan run "$TC"
 conleche_ok() {
     grep -qE 'elan run "\$TC" "\$EXPORTER" "\$m"' "$1" || return 1
-    if grep -E '^[^#]*"\$EXPORTER" "\$m"' "$1" | grep -qvE 'elan run "\$TC"'; then return 1; fi
+    # one awk, no pipe into grep -q (check_no_pipe_into_grep_q.sh)
+    if awk '/^[^#]*"\$EXPORTER" "\$m"/ && !/elan run "\$TC"/ { bad = 1 } END { exit !bad }' "$1"; then return 1; fi
 }
 
 # ladder_ok <file>: the cache mkdir declines on failure and the cache must be writable
@@ -55,6 +56,8 @@ mutants() {
     done
     sed -E 's#elan run "\$TC" "\$EXPORTER"#"$EXPORTER"#' "$CL" > "$d/m"
     if conleche_ok "$d/m"; then echo "MUTANT SURVIVED: conleche bare exporter"; rc=1; fi
+    { cat "$CL"; printf '%s\n' '"$EXPORTER" "$m" > "$d/$m.ndjson"'; } > "$d/m"
+    if conleche_ok "$d/m"; then echo "MUTANT SURVIVED: conleche one bare exporter beside elan run"; rc=1; fi
     sed -E 's#mkdir -p "\$cache" 2>/dev/null && \[ -w "\$cache" \] \|\| decline .*#mkdir -p "$cache"#' "$SEC" > "$d/m"
     if ladder_ok "$d/m"; then echo "MUTANT SURVIVED: ladder bare mkdir"; rc=1; fi
     echo "mutants: $([ "$rc" = 0 ] && echo killed || echo SURVIVED)"
