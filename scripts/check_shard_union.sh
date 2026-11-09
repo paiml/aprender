@@ -19,12 +19,14 @@ M="$(pins_m workspace-test-shard)"
 MG="$(pins_m workspace-test-shard-merge_group)"
 
 fragments() { # $1 = fragment dir  $2 = shard count M  $3 = event label
-  local d="$1" M="$2" ev="$3" full un i
-  full="$(bash "$RUN" --list "$d" | sort)"
+  local d="$1" M="$2" ev="$3" raw full un i
+  # fail closed: a refused parse (e.g. a shared ordinal) or an empty list is RED, never "0 == 0"
+  raw="$(bash "$RUN" --list "$d")" || raw=""; [ -n "$raw" ] || { echo "FAIL fragments: the runner refused to list (or listed zero commands in) $d"; return 1; }
+  full="$(printf "%s\n" "$raw" | sort)"
   un="$(for i in $(seq 1 "$M"); do EXPLICIT_LIST_SHARD=1 bash "$RUN" --run "$d" --shard "$i/$M" | grep -v '^shard '; done | sort)"
-  [ "$(printf '%s\n' "$full" | wc -l)" = "$(printf '%s\n' "$un" | wc -l)" ] || { echo "FAIL fragments: count pre-split=$(printf '%s\n' "$full" | wc -l) union=$(printf '%s\n' "$un" | wc -l)"; return 1; }
+  [ "$(printf "%s\n" "$full" | grep -c .)" = "$(printf "%s\n" "$un" | grep -c .)" ] || { echo "FAIL fragments: count pre-split=$(printf "%s\n" "$full" | grep -c .) union=$(printf "%s\n" "$un" | grep -c .)"; return 1; }
   [ "$full" = "$un" ] || { echo "FAIL fragments: union != pre-split list"; diff <(printf '%s\n' "$full") <(printf '%s\n' "$un") | head -5; return 1; }
-  echo "ok    fragments ($ev): union of $M shards == pre-split list ($(printf '%s\n' "$full" | wc -l) commands)"
+  echo "ok    fragments ($ev): union of $M shards == pre-split list ($(printf "%s\n" "$full" | grep -c .) commands)"
 }
 
 
@@ -34,7 +36,7 @@ fragments_all() { # $1 = fragment dir: every event that has pins
 }
 
 case "${1:-}" in
-  --fragments|"") fragments_all ci/explicit-test-commands.d ;;
+  --fragments|"") fragments_all "${SHARD_UNION_DIR:-ci/explicit-test-commands.d}" ;;
   --self-test)
     t="$(mktemp -d)"; trap 'rm -rf "${t:?}"' EXIT
     # mutant: the selector drops the last command of the round-robin (a test goes missing)
@@ -46,6 +48,19 @@ case "${1:-}" in
     case "$out" in *"FAIL fragments: count pre-split="*) ;; *) echo "self-test: dropped command must print the count-mismatch FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
     fragments_all ci/explicit-test-commands.d >/dev/null || { echo "self-test: clean must pass"; exit 1; }
     [ "$MG" -ge 1 ] && { out="$(fragments_all ci/explicit-test-commands.d)"; case "$out" in *"(merge_group)"*) ;; *) echo "self-test: merge_group pins exist but its union was not checked"; exit 1 ;; esac; }
+    # case table: the mutant must drop exactly one command at ANY count; a refused parse must be RED.
+    for c in 1 2 146 147 148; do
+      fx="$t/fx$c"; mkdir -p "$fx"
+      for i in $(seq 1 "$c"); do printf 'echo fx%s\n' "$i" > "$fx/$(printf '%03d' "$i")-fx.cmd"; done
+      rc=0; out="$(SHARD_UNION_DIR="$fx" SHARD_UNION_RUNNER="$t/mut.sh" bash "$0" --fragments 2>&1)" || rc=$?
+      [ "$rc" = 1 ] || { echo "self-test: count $c: dropped command must exit 1, got $rc"; exit 1; }
+      case "$out" in *"FAIL fragments: count pre-split=$c union=$((c - 1))"*) ;; *) echo "self-test: count $c: mutant must drop exactly one command, got: $out" | head -c 300; echo; exit 1 ;; esac
+      SHARD_UNION_DIR="$fx" bash "$0" --fragments >/dev/null || { echo "self-test: count $c: clean fixture must pass"; exit 1; }
+    done
+    mkdir -p "$t/dup"; echo "echo a" > "$t/dup/001-a.cmd"; echo "echo b" > "$t/dup/001-b.cmd"
+    rc=0; out="$(SHARD_UNION_DIR="$t/dup" bash "$0" --fragments 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || { echo "self-test: a refused (shared-ordinal) parse must exit 1, got $rc"; exit 1; }
+    case "$out" in *"FAIL fragments: the runner refused to list"*) ;; *) echo "self-test: refused parse must print the refusal FAIL line"; exit 1 ;; esac
     echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED" ;;
   *) echo "usage: $0 [--fragments|--self-test]" >&2; exit 2 ;;
 esac
