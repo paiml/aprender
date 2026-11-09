@@ -232,6 +232,8 @@ jobs:
           echo "$d" >> "$GITHUB_PATH"
       - uses: actions/checkout@v7
         with:
+      - name: no pull-request-target guard (P0; every push, a dependency of the required gate)
+        run: sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
           fetch-depth: 0
       - name: Cheap checks (fmt, falsification-ID order, guard case tables)
         run: |
@@ -352,6 +354,8 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: no pull-request-target guard (P0; every push, a dependency of the required gate)
+        run: sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
       # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before
       # any section starts. rustfmt runs in the image sov.lint uses (same digest,
       # so the same verdict); the ID-order rule is contract_data_integrity's,

@@ -1,0 +1,1 @@
+fork-pr-closer.yml  # NO-FORK-1: closes fork PRs; metadata only, no checkout (guard enforces)
