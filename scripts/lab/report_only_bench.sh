@@ -15,7 +15,7 @@ check() {
     wf="${RO_PR_WORKFLOWS:-.github/workflows/ci.yml .github/workflows/pr-gate.yml}"
     [ -r "$spec" ] || { echo "cannot measure: $spec unreadable"; return 2; }
     for id in PMAT-728 PMAT-715; do
-        if grep -E "$id" "$spec" | grep -q 'REPORT-ONLY'; then echo "ok   $id marked REPORT-ONLY in spec"
+        if grep -E "$id.*REPORT-ONLY" "$spec" >/dev/null; then echo "ok   $id marked REPORT-ONLY in spec"
         else echo "RED  $id not marked REPORT-ONLY in $spec"; rc=1; fi
     done
     for f in $wf; do
