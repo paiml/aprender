@@ -85,8 +85,13 @@ run() {
 selftest() {
   local t rc fail=0
   t=$(mktemp -d)
+  _rm() {
+    local v="${t:-}"
+    case "$v" in /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) ;; *) return 0 ;; esac
+    [ -n "$v" ] && [ "$v" != "/" ] && rm -rf -- "$v" || :
+  }
   mk() {
-    rm -rf "$t"; mkdir -p "$t/scripts" "$t/docs/specifications" "$t/.github/workflows"
+    _rm; mkdir -p "$t/scripts" "$t/docs/specifications" "$t/.github/workflows"
     printf 'arms:\n  A:\n    phase: release\n    comparator_required: false\n  L3:\n    phase: release\n    comparator_required: true\n' > "$t/$PM"
     printf '| A: P₀ bp | ≥ 9,364 (x) |\n' > "$t/$EP74"
     printf 'With `B = 8819`, gap = 681\n' > "$t/$DR"
