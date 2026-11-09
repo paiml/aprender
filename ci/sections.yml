@@ -3781,7 +3781,7 @@ jobs:
           [ -d "$LEAN_CACHE_ROOT" ] || decline "no $LEAN_CACHE_ROOT on $(hostname) (proof-toolchain, infra)"
           key=$(cat "$LEAN/lean-toolchain" "$LEAN/lake-manifest.json" | sha256sum | cut -c1-16)
           cache=$LEAN_CACHE_ROOT/$key
-          mkdir -p "$cache"
+          mkdir -p "$cache" 2>/dev/null && [ -w "$cache" ] || decline "$cache is not writable by $(id -un) on $(hostname) (proof-toolchain, infra)"
           # elan >= 4 exits 1 on `toolchain install` of a toolchain that is already installed
           # ("error: '...' is already installed"), so a warm runner failed this step every time
           # after the first (#4502 row 13). Install only when it is missing, and decide that
