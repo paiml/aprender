@@ -17,6 +17,7 @@
 #   name expr             sed -e "$expr" on the script itself
 #   name expr (m: tags)   sed -E "/# (m:..)*m:NAME( |$)/EXPR" on the script itself (anchored rows)
 #   name file expr        sed -e "$expr" on scripts/release/<file>
+#   name|expr             sed -e "$expr" on the script itself (next_dev_bump.sh)
 #   label~must~old~new    <old> occurs exactly once in the code above the self-test block
 # A table whose format is none of these is a FAIL (fail closed), never a skip.
 #
@@ -40,6 +41,7 @@ fmt() {
     body="$(awk -v n="$n" 'NR <= n' "$f" | tac | awk '/while .*read -r/ { print; exit }')"
     case "$body" in
         *"IFS='~' read -r label must old new"*) echo tilde ;;
+        *"IFS='|' read -r m e"*) echo pipe ;;
         *"read -r name file expr"*) echo file3 ;;
         *"read -r name expr"*)
             if awk -v n="$n" 'NR <= n' "$f" | tail -n 40 | grep -qF 'm:${name}( |'; then echo anchored; else echo self2; fi ;;
@@ -71,6 +73,14 @@ check_file() {
                     else
                         printf 'FAIL  %s %s: its old text does not occur exactly once in the code\n' "${f##*/}" "$label"; bad=1
                     fi
+                done < <(rows "$n" "$f" "$term") ;;
+            pipe)
+                while IFS='|' read -r name expr; do
+                    [ -n "$name" ] || continue
+                    sed -e "$expr" "$f" > "$tmp" 2>/dev/null
+                    if cmp -s "$f" "$tmp"; then
+                        printf 'FAIL  %s %s: changed nothing (its pattern no longer matches)\n' "${f##*/}" "$name"; bad=1
+                    else printf 'ok    %s %s\n' "${f##*/}" "$name"; fi
                 done < <(rows "$n" "$f" "$term") ;;
             *)
                 while read -r name rest; do
@@ -125,7 +135,7 @@ selftest() {
         if [ "$rc" != "$2" ]; then echo "  BROKE $1: rc $rc (want $2): $(printf '%s' "$out" | tail -n 3 | tr '\n' '|')"; fail=1; return; fi
         case "$out" in *"$3"*) echo "  ok    $1" ;; *) echo "  BROKE $1: output lacks '$3'"; fail=1 ;; esac
     }
-    mkdir -p "$t/good" "$t/stale" "$t/file3" "$t/tilde" "$t/unknown" "$t/none" "$t/missing"
+    mkdir -p "$t/pipe" "$t/good" "$t/stale" "$t/file3" "$t/tilde" "$t/unknown" "$t/none" "$t/missing"
     # self2: a row that applies, and its stale twin
     printf '%s\n' 'LIMIT=86400' 'm() {' '    while read -r name expr; do :; done <<'"'"'MUTANTS'"'"'' \
         'limit_is_48h   /^LIMIT=86400/s/^LIMIT=86400/LIMIT=172800/' 'MUTANTS' '}' > "$t/good/a.sh"
@@ -140,6 +150,9 @@ selftest() {
     expect file3 1 "rehearse.sh old_text: changed nothing in lib.sh"
     rc=0; out="$(run "$t/file3")" || rc=$?
     case "$out" in *"ok    rehearse.sh b_as_text"*) echo "  ok    file3 line-addressed row applies" ;; *) echo "  BROKE file3: b_as_text did not apply"; fail=1 ;; esac
+    # pipe: name|expr rows on the script itself (next_dev_bump.sh), one of which drifted
+    printf '%s\n' 'X=1' 'm() {' "    while IFS='|' read -r m e; do :; done <<'MUT'" 'ok_row|s/^X=1/X=2/' 'gone_row|s/^Y=1/Y=2/' 'MUT' '}' > "$t/pipe/p.sh"
+    expect pipe 1 "p.sh gone_row: changed nothing"
     # tilde: old text must occur once in the code above the self-test block
     printf '%s\n' 'if [ "$u" != 0 ]; then echo red; fi' 'if [ "$SELF_TEST" = 1 ]; then' \
         "    while IFS='~' read -r label must old new; do :; done <<'MUT'" \
@@ -169,6 +182,6 @@ case "${1:-}" in
     '') run "$ROOT/scripts/release" ;;
     --dir) [ -n "${2:-}" ] || { echo "usage: $0 --dir DIR" >&2; exit 2; }; run "$2" ;;
     --self-test) selftest ;;
-    -h|--help) sed -n '2,26p' "$0" ;;
+    -h|--help) sed -n '2,27p' "$0" ;;
     *) echo "usage: $0 [--dir DIR | --self-test | --help]" >&2; exit 2 ;;
 esac
