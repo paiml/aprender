@@ -20,7 +20,7 @@ jobs:
   no-pull-request-target:
     # P0 guard: a workflow that reintroduces the pull_request_target trigger fails here.
     if: github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, gate-light]
+    runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 5
     permissions:
       contents: read
