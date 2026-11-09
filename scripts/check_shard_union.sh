@@ -19,7 +19,7 @@ M="$(pins_m workspace-test-shard)"
 MG="$(pins_m workspace-test-shard-merge_group)"
 
 fragments() { # $1 = fragment dir  $2 = shard count M  $3 = event label
-  local d="$1" M="$2" ev="$3" full un i
+  local d="$1" M="$2" ev="$3" full un i sh_out
   # The runner's exit code is a verdict: it exits 2 on an empty dir ("zero commands is broken wiring"). A
   # pipeline in $( ) hides it, so capture the raw output first and fail closed (FLAKE-001 C3, paiml/infra#3479).
   full="$(bash "$RUN" --list "$d")" || { echo "FAIL fragments: runner --list failed on $d (UNMEASURED)"; return 1; }
@@ -60,6 +60,14 @@ case "${1:-}" in
     mkdir "$t/empty"; rc=0; out="$(fragments "$t/empty" "$M" pull_request 2>&1)" || rc=$?
     [ "$rc" = 1 ] || { echo "self-test: empty fragment dir must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
     case "$out" in *"FAIL fragments: runner"*) ;; *) echo "self-test: empty dir must print the runner FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
-    echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED, empty dir RED" ;;
+    # each fail-closed branch ALONE (lane f20-a6): a stub runner fails exactly one call, so neither branch can mask the other
+    printf '#!/usr/bin/env bash\ncase "$1" in --list) exit 2 ;; *) exit 0 ;; esac\n' > "$t/stub-list.sh"
+    printf '#!/usr/bin/env bash\ncase "$1" in --list) echo cmd1 ;; *) exit 2 ;; esac\n' > "$t/stub-run.sh"
+    for pair in "stub-list.sh:runner --list failed" "stub-run.sh:runner --run shard"; do
+      rc=0; out="$( RUN="$t/${pair%%:*}"; fragments "$t/empty" 2 pull_request 2>&1 )" || rc=$?
+      [ "$rc" = 1 ] || { echo "self-test: ${pair%%:*} must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
+      case "$out" in *"FAIL fragments: ${pair#*:}"*) ;; *) echo "self-test: ${pair%%:*} must print '${pair#*:}', got: $out" | head -c 400; echo; exit 1 ;; esac
+    done
+    echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED, empty dir RED, each fail-closed branch RED alone" ;;
   *) echo "usage: $0 [--fragments|--self-test]" >&2; exit 2 ;;
 esac
