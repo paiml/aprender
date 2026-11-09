@@ -19,9 +19,21 @@ M="$(pins_m workspace-test-shard)"
 MG="$(pins_m workspace-test-shard-merge_group)"
 
 fragments() { # $1 = fragment dir  $2 = shard count M  $3 = event label
-  local d="$1" M="$2" ev="$3" full un i
-  full="$(bash "$RUN" --list "$d" | sort)"
-  un="$(for i in $(seq 1 "$M"); do EXPLICIT_LIST_SHARD=1 bash "$RUN" --run "$d" --shard "$i/$M" | grep -v '^shard '; done | sort)"
+  # Called under `|| return 1`, so set -e is OFF here: every runner status is checked by hand,
+  # and never read through a pipe. A runner that fails lists nothing, and empty == empty is
+  # not a pass (#3863).
+  local d="$1" M="$2" ev="$3" full un i out rc
+  rc=0; out="$(bash "$RUN" --list "$d")" || rc=$?
+  [ "$rc" = 0 ] || { echo "FAIL fragments: runner --list exited $rc"; return 1; }
+  [ -n "$out" ] || { echo "FAIL fragments: runner --list printed no commands"; return 1; }
+  full="$(printf '%s\n' "$out" | sort)"
+  un=""
+  for i in $(seq 1 "$M"); do
+    rc=0; out="$(EXPLICIT_LIST_SHARD=1 bash "$RUN" --run "$d" --shard "$i/$M")" || rc=$?
+    [ "$rc" = 0 ] || { echo "FAIL fragments: runner shard $i/$M exited $rc"; return 1; }
+    un+="$(printf '%s\n' "$out" | grep -v '^shard ' || true)"$'\n'
+  done
+  un="$(printf '%s' "$un" | grep -v '^$' | sort || true)"
   [ "$(printf '%s\n' "$full" | wc -l)" = "$(printf '%s\n' "$un" | wc -l)" ] || { echo "FAIL fragments: count pre-split=$(printf '%s\n' "$full" | wc -l) union=$(printf '%s\n' "$un" | wc -l)"; return 1; }
   [ "$full" = "$un" ] || { echo "FAIL fragments: union != pre-split list"; diff <(printf '%s\n' "$full") <(printf '%s\n' "$un") | head -5; return 1; }
   echo "ok    fragments ($ev): union of $M shards == pre-split list ($(printf '%s\n' "$full" | wc -l) commands)"
@@ -44,6 +56,11 @@ case "${1:-}" in
     rc=0; out="$(SHARD_UNION_RUNNER="$t/mut.sh" bash "$0" --fragments 2>&1)" || rc=$?
     [ "$rc" = 1 ] || { echo "self-test: dropped command must exit 1, got $rc"; exit 1; }
     case "$out" in *"FAIL fragments: count pre-split="*) ;; *) echo "self-test: dropped command must print the count-mismatch FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
+    # mutant 2: a runner that fails (crash, missing tool, full disk) lists nothing; empty == empty
+    # must not read as "union holds" (#3863: the yoga-build self-test went vacuous this way)
+    printf 'exit 3\n' > "$t/dead.sh"
+    rc=0; out="$(SHARD_UNION_RUNNER="$t/dead.sh" bash "$0" --fragments 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || { echo "self-test: failing runner must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
     fragments_all ci/explicit-test-commands.d >/dev/null || { echo "self-test: clean must pass"; exit 1; }
     [ "$MG" -ge 1 ] && { out="$(fragments_all ci/explicit-test-commands.d)"; case "$out" in *"(merge_group)"*) ;; *) echo "self-test: merge_group pins exist but its union was not checked"; exit 1 ;; esac; }
     echo "PASS  check_shard_union self-test: clean ok, dropped-command mutant RED" ;;
