@@ -86,16 +86,51 @@ fn insertion_index(entries: &[(String, &str)], id: &str) -> usize {
         .unwrap_or(entries.len())
 }
 
+/// A fragment must parse ALONE as one entry whose id is its filename. `roadmap.yaml` is regenerated
+/// post-merge on main, so a fragment that is not YAML (#6800: an unquoted `: ` in a title), holds
+/// two entries, or names another id would break main, not the PR that added it.
+fn refuse_unparseable(id: &str, block: &str) -> Result<(), String> {
+    let got: serde_json::Value = serde_saphyr::from_str(block).map_err(|e| {
+        let first = e.to_string();
+        format!(
+            "fragment {id}.yaml is not YAML: {}",
+            first.lines().next().unwrap_or_default()
+        )
+    })?;
+    let entry = match got.as_array().map(Vec::as_slice) {
+        Some([one]) if one.is_object() => one,
+        _ => {
+            return Err(format!(
+                "fragment {id}.yaml must hold exactly one entry mapping"
+            ))
+        }
+    };
+    let named = match entry.get("id") {
+        Some(serde_json::Value::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+        None => "None".into(),
+    };
+    if named != id {
+        return Err(format!(
+            "fragment {id}.yaml carries id {named}, not its filename"
+        ));
+    }
+    Ok(())
+}
+
 /// `base` with every fragment folded in. A fragment supersedes a base entry of the same id.
 ///
 /// # Errors
-/// Two fragments claiming one id.
+/// Two fragments claiming one id, or a fragment [`refuse_unparseable`] refuses.
 pub fn aggregate(base: &str, fragments: &[(String, String)]) -> Result<String, String> {
     let mut seen = std::collections::HashSet::new();
     for (id, _) in fragments {
         if !seen.insert(id.as_str()) {
             return Err(format!("duplicate id among fragments: {id}"));
         }
+    }
+    for (id, block) in fragments {
+        refuse_unparseable(id, block)?;
     }
     let (preamble, mut entries) = split_entries(base);
     entries.retain(|(id, _)| !seen.contains(id.as_str()));
