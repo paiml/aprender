@@ -86,36 +86,27 @@ fn insertion_index(entries: &[(String, &str)], id: &str) -> usize {
         .unwrap_or(entries.len())
 }
 
-/// A fragment is ONE column-0 entry whose id is its filename, with nothing but blank or comment
-/// lines above it. The structural half of `_refuse_unparseable_fragment` in roadmap_fragments.py:
-/// the YAML-validity half (#6800: an unquoted `: ` in a title) stays with the Python guard, because
-/// serde-saphyr 1.3 misreads valid YAML in a real fragment (`''#` inside a single-quoted
-/// scalar, PMAT-3699.yaml) and no parser here matches PyYAML yet.
+/// A fragment is ONE `- id:` entry whose id is its filename, with only blank or comment lines
+/// above it: the structural half of `_refuse_unparseable_fragment` in roadmap_fragments.py.
+///
+/// Two halves stay with the Python guard, because only a YAML parser can judge them and none here
+/// matches PyYAML yet: validity (#6800, an unquoted `: ` in a title; serde-saphyr 1.3 misreads the
+/// valid `''#` in PMAT-3699.yaml) and a second item (PMAT-3731.yaml carries column-0 `- ` lines
+/// inside multi-line quoted scalars).
 fn refuse_malformed(id: &str, block: &str) -> Result<(), String> {
     let (preamble, entries) = split_entries(block);
     let stray = preamble
         .lines()
         .any(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'));
-    let items = block
-        .lines()
-        .filter(|l| l.starts_with("- ") || *l == "-")
-        .count();
-    let [(named, _)] = entries.as_slice() else {
-        return Err(format!(
-            "fragment {id}.yaml must hold exactly one entry mapping"
-        ));
-    };
-    if stray || items != 1 {
-        return Err(format!(
-            "fragment {id}.yaml must hold exactly one entry mapping"
-        ));
-    }
-    if named != id {
-        return Err(format!(
+    match entries.as_slice() {
+        [(named, _)] if !stray && named == id => Ok(()),
+        [(named, _)] if !stray => Err(format!(
             "fragment {id}.yaml carries id {named}, not its filename"
-        ));
+        )),
+        _ => Err(format!(
+            "fragment {id}.yaml must hold exactly one entry mapping"
+        )),
     }
-    Ok(())
 }
 
 /// `base` with every fragment folded in. A fragment supersedes a base entry of the same id.
