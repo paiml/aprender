@@ -25,7 +25,7 @@ scan() {
   n=$(head -n 12 "$f" | grep -c -E "$HDR" || true)
   if [ "$n" -ne 1 ]; then echo "RED $f: $n Status headers in first 12 lines (want exactly 1)"; return; fi
   state=$(head -n 12 "$f" | grep -E "$HDR" | sed -E "s/${HDR}[[:space:]]*//" | sed -E 's/^([A-Za-z]+).*/\1/' | tr '[:lower:]' '[:upper:]')
-  if ! printf '%s\n' "$state" | grep -q -E "^($VOCAB)\$"; then echo "RED $f: Status '$state' not in {$VOCAB}"; fi
+  if [[ ! "$state" =~ ^($VOCAB)$ ]]; then echo "RED $f: Status '$state' not in {$VOCAB}"; fi
 }
 run() {
   local root=$1 f out="" reds=0
