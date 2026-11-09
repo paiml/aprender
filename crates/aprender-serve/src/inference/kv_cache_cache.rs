@@ -464,4 +464,31 @@ mod tests {
             assert!((v - 1.0).abs() < 1e-5);
         }
     }
+
+    /// #4783: every layer is its own zeroed allocation (not a `Clone` of layer 0),
+    /// with the right shape, and the two cache types agree with the helper.
+    #[test]
+    fn test_zeroed_layers_each_layer_separate_and_zero() {
+        let layers = zeroed_layers(4, 6);
+        assert_eq!(layers.len(), 4);
+        for layer in &layers {
+            assert_eq!(layer.len(), 6);
+            assert!(layer.iter().all(|&x| x == 0.0));
+        }
+        let ptrs: std::collections::HashSet<_> = layers.iter().map(|l| l.as_ptr()).collect();
+        assert_eq!(ptrs.len(), 4, "layers must be distinct allocations");
+        assert!(zeroed_layers(0, 8).is_empty());
+        assert!(zeroed_layers(3, 0).iter().all(Vec::is_empty));
+    }
+
+    #[test]
+    fn test_kv_cache_new_layer_shapes_4783() {
+        let ok = |l: &Vec<f32>| l.len() == 20 && l.iter().all(|&x| x == 0.0);
+        let c = KVCache::new(3, 4, 5);
+        assert_eq!(c.k_cache.len(), 3);
+        assert!(c.k_cache.iter().chain(&c.v_cache).all(ok));
+        let o = OptimizedKVCache::new(3, 4, 5);
+        assert_eq!(o.v_cache.len(), 3);
+        assert!(o.k_cache.iter().chain(&o.v_cache).all(ok));
+    }
 }
