@@ -12,6 +12,7 @@ cd "$(dirname "$0")/../.."
 DEEP=.github/workflows/deep-nightly.yml
 CL=crates/aprender-contracts-staging/lean/conleche.sh
 SEC=ci/sections.yml
+PL=.github/workflows/provable-ladder-nightly.yml
 
 # deep_ok <file>: each job's TMPDIR export comes before its disk-guard step, one per job
 deep_ok() {
@@ -36,12 +37,20 @@ ladder_ok() {
     if grep -qE '^[[:space:]]*mkdir -p "\$cache"$' "$1"; then return 1; fi
 }
 
+# elan_ok <file>: the ladder nightly installs a sha256-checked elan BEFORE fat_driver runs the section (#6796)
+elan_ok() {
+    grep -qE "elan-init.* --default-toolchain none" "$1" || return 1
+    grep -qE "sha256sum -c" "$1" || return 1
+    awk '/elan-init/ && !s { e = NR } /fat_driver\.py run/ && !s { f = NR; s = 1 } END { exit !(e && f && e < f) }' "$1"
+}
+
 check() {
     local rc=0
     deep_ok "$DEEP" || { echo "FAIL deep: a deep-nightly job runs its disk guard without TMPDIR=\$RUNNER_TEMP first"; rc=1; }
     conleche_ok "$CL" || { echo "FAIL conleche: a control exports outside elan run \"\$TC\""; rc=1; }
     ladder_ok "$SEC" || { echo "FAIL ladder: an unwritable lean cache does not decline"; rc=1; }
-    [ "$rc" = 0 ] && echo "PASS: deep TMPDIR, conleche elan run, ladder cache decline"
+    elan_ok "$PL" || { echo "FAIL ladder-elan: the ladder nightly does not provision elan before the section"; rc=1; }
+    [ "$rc" = 0 ] && echo "PASS: deep TMPDIR, conleche elan run, ladder cache decline, ladder elan provision"
     return "$rc"
 }
 
@@ -60,6 +69,10 @@ mutants() {
     if conleche_ok "$d/m"; then echo "MUTANT SURVIVED: conleche one bare exporter beside elan run"; rc=1; fi
     sed -E 's#mkdir -p "\$cache" 2>/dev/null && \[ -w "\$cache" \] \|\| decline .*#mkdir -p "$cache"#' "$SEC" > "$d/m"
     if ladder_ok "$d/m"; then echo "MUTANT SURVIVED: ladder bare mkdir"; rc=1; fi
+    sed -E "/elan-init/d" "$PL" > "$d/m"
+    if elan_ok "$d/m"; then echo "MUTANT SURVIVED: ladder nightly no elan install"; rc=1; fi
+    sed -E "/sha256sum -c/d" "$PL" > "$d/m"
+    if elan_ok "$d/m"; then echo "MUTANT SURVIVED: ladder nightly unchecked elan"; rc=1; fi
     echo "mutants: $([ "$rc" = 0 ] && echo killed || echo SURVIVED)"
     return "$rc"
 }
