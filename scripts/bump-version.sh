@@ -306,9 +306,26 @@ if [ "${1:-}" = "--self-test" ]; then
     if ! grep -qE '^[[:space:]]*(if ! )?cargo set-version' "$0"; then
         printf 'ok    row 22 the bump does not invoke cargo set-version (cargo-edit)\n'
     else printf 'FAIL  row 22 the bump still invokes cargo set-version\n'; fails=1; fi
+    # Rows 23-25 (APR-RELEASE-TRAIN T3): the 0.73.0 release bump on a fixture workspace, re-run idempotent, offline.
+    mkdir -p "$TD/t3/crates/m1"
+    printf '[workspace.package]\nversion = "0.72.4"\n[workspace.dependencies]\nm1 = { path = "crates/m1", version = "0.72.4" }\n' > "$TD/t3/Cargo.toml"
+    printf '[package]\nname = "m1"\nversion = "0.72.4"\n' > "$TD/t3/crates/m1/Cargo.toml"
+    set_workspace_version "$TD/t3" 0.73.0 >/dev/null 2>&1
+    if [ "$(root_version "$TD/t3")" = 0.73.0 ] && grep -q 'path = "crates/m1", version = "0.73.0"' "$TD/t3/Cargo.toml" \
+       && grep -q '^version = "0.73.0"' "$TD/t3/crates/m1/Cargo.toml"; then
+        printf 'ok    row 23 0.72.4 -> 0.73.0 bumps the workspace, the member and the path pin\n'
+    else printf 'FAIL  row 23 the 0.73.0 bump missed a version field\n'; fails=1; fi
+    t3a="$(cat "$TD/t3/Cargo.toml" "$TD/t3/crates/m1/Cargo.toml")"
+    set_workspace_version "$TD/t3" 0.73.0 >/dev/null 2>&1
+    if [ "$t3a" = "$(cat "$TD/t3/Cargo.toml" "$TD/t3/crates/m1/Cargo.toml")" ]; then
+        printf 'ok    row 24 re-running the 0.73.0 bump is byte-identical\n'
+    else printf 'FAIL  row 24 re-running the 0.73.0 bump changed the files\n'; fails=1; fi
+    if grep -qE '^if ! \( cd "\$REPO_ROOT" && cargo update --workspace --offline \)' "$0"; then
+        printf 'ok    row 25 the lockfile refresh is offline (no fetch, no tool install at release time)\n'
+    else printf 'FAIL  row 25 the lockfile refresh is not cargo update --workspace --offline\n'; fails=1; fi
 
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (22/22)\n'
+    printf '\nSELF-TEST PASSED (25/25)\n'
     exit 0
 fi
 

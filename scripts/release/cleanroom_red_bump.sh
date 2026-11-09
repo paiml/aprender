@@ -62,6 +62,18 @@ STUB
     rm -f "${d:?}/calls"
     CRB_REFS='[{"ref":"refs/tags/v0.72.2"},{"ref":"refs/tags/v0.72.20"}]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.1 > /dev/null 2>&1
     chk "exact v0.72.2 exists -> prepare_bump not called" "$([ -e "$d/calls" ] && echo called || echo none)" none
+    # CRB_NEXT (#6675 --to): an explicit next version, strictly above the base, replaces the next patch
+    rm -f "${d:?}/calls"
+    CRB_NEXT=0.73.0 CRB_REFS='[]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.4 > /dev/null 2>&1
+    chk "CRB_NEXT=0.73.0 on v0.72.4 -> 0.73.0 drafted then shipped" "$(tr '\n' '|' < "$d/calls" 2>/dev/null)" "0.73.0|0.73.0 --ship|"
+    rm -f "${d:?}/calls"
+    CRB_NEXT=0.72.4 CRB_REFS='[]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.4 > /dev/null 2>&1; rc=$?
+    chk "CRB_NEXT equal to the base -> usage rc 2, nothing drafted" "$rc:$([ -e "$d/calls" ] && echo called || echo none)" "2:none"
+    CRB_NEXT=0.72.3 CRB_REFS='[]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.4 > /dev/null 2>&1; rc=$?
+    chk "CRB_NEXT below the base -> usage rc 2" "$rc" 2
+    CRB_NEXT=0.73 CRB_REFS='[]' CRB_GH="$d/gh" CRB_PREPARE="$d/prep" CRB_NO_EDIT=1 bash "$0" v0.72.4 > /dev/null 2>&1; rc=$?
+    chk "CRB_NEXT not X.Y.Z -> usage rc 2" "$rc" 2
+    chk "--next ignores CRB_NEXT (prints the patch only)" "$(CRB_NEXT=0.73.0 bash "$0" --next v0.72.4)" 0.72.5
     # wiring: autopilot.sh calls this script on a non-success clean-room, before its die
     w=$(awk '/cleanroom_red_bump.sh/ {c = NR} /die "clean-room \(aprender\) on/ {d = NR} END {print (c && d && c < d) ? "wired" : "unwired"}' "$HERE/autopilot.sh")
     chk "autopilot calls the bump before the clean-room die" "$w" wired
@@ -73,6 +85,18 @@ if [ "${1:-}" = --next ]; then crb_next_patch "${2:-}" || { echo "not a release 
 
 failed=${1:-}; run=${2:-unknown}
 next=$(crb_next_patch "$failed") || { echo "usage: cleanroom_red_bump.sh <failed-version> [<run-id>]" >&2; exit 2; }
+# CRB_NEXT (nightly_green_bump.sh --to, #6675): an explicit next version, e.g. a minor train 0.73.0 after v0.72.4.
+# It must be X.Y.Z and strictly above the base; anything else is a usage error and nothing is drafted.
+if [ -n "${CRB_NEXT:-}" ]; then
+    [[ "$CRB_NEXT" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]] || { echo "CRB_NEXT must be X.Y.Z, got '$CRB_NEXT'" >&2; exit 2; }
+    read -r n1 n2 n3 <<< "${BASH_REMATCH[1]} ${BASH_REMATCH[2]} ${BASH_REMATCH[3]}"
+    IFS=. read -r b1 b2 b3 <<< "${failed#v}"
+    if [ "$n1" -gt "$b1" ] || { [ "$n1" -eq "$b1" ] && { [ "$n2" -gt "$b2" ] || { [ "$n2" -eq "$b2" ] && [ "$n3" -gt "$b3" ]; }; }; }; then
+        next="$CRB_NEXT"
+    else
+        echo "CRB_NEXT $CRB_NEXT is not above the base ${failed#v}" >&2; exit 2
+    fi
+fi
 blocked() { printf 'ANDON-BUMP-BLOCKED %s\n' "$*"; exit 1; }
 
 tags=$($GH api "repos/$REPO/git/matching-refs/tags/v$next" --jq "[.[] | select(.ref == \"refs/tags/v$next\")] | length") || blocked "cannot read tags for v$next (not_measured)"
