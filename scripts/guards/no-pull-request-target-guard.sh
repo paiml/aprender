@@ -27,7 +27,7 @@ allow="${2:-.github/pull-request-target-allowlist.txt}"
 command -v yq >/dev/null 2>&1 || { echo "guard: yq not found; cannot read workflow triggers" >&2; exit 2; }
 
 # Event names of one document: `.on` (or YAML 1.1's boolean `true` key) as string, list or map.
-EXPR='explode(.) | select(tag == "!!map") | .[] | select((key | downcase) == "on" or key == "true") | [ (select(tag == "!!str") | .), (select(tag == "!!seq") | .[]), (select(tag == "!!map") | keys | .[]) ] | .[] | downcase'
+EXPR='explode(.) | select(kind == "map") | .[] | select((key | downcase) == "on" or key == "true") | [ (select(kind == "scalar") | .), (select(kind == "seq") | .[] | select(kind == "scalar") | .), (select(kind == "seq") | .[] | select(kind == "map") | keys | .[]), (select(kind == "map") | keys | .[]) ] | .[] | downcase'
 
 list=$(mktemp)
 [ -n "$list" ] && [ -f "$list" ] || exit 2

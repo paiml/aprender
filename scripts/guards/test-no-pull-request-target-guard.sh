@@ -45,6 +45,12 @@ printf '\357\273\277on:\n  pull_request_target:\n' | put bom a.yml
 printf 'on:\r\n  pull_request_target:\r\n' | put crlf a.yml
 printf 'name: x\n---\non:\n  pull_request_target:\n' | put multidoc a.yml
 printf 'on:\n  PULL_request_target:\n' | put upper a.yml
+printf 'on: !x {pull_request_target: {}}\n' | put tagmap a.yml
+printf 'on: !foo [push, pull_request_target]\n' | put tagseq a.yml
+printf 'on: !!set {pull_request_target: }\n' | put tagset a.yml
+printf 'on: !!omap [pull_request_target: {}]\n' | put tagomap a.yml
+printf '!root\non:\n  pull_request_target:\n' | put tagroot a.yml
+printf 'on: !s pull_request_target\n' | put tagscalar a.yml
 printf 'ON:\n  pull_request_target:\n' | put upperkey a.yml
 printf 'true:\n  pull_request_target:\n' | put truekey a.yml
 printf 'on:\n  pull_request_target:\n' | put dotfile .hidden.yml
@@ -75,6 +81,7 @@ expect bom-fails                 1 "$tmp/bom"
 expect crlf-fails                1 "$tmp/crlf"
 expect multi-doc-fails           1 "$tmp/multidoc"
 expect uppercase-event-fails     1 "$tmp/upper"
+for t in tagmap tagseq tagset tagomap tagroot tagscalar; do expect "yaml-tag-$t-fails" 1 "$tmp/$t"; done
 expect uppercase-on-fails        1 "$tmp/upperkey"
 expect true-key-fails            1 "$tmp/truekey"
 expect dotfile-fails             1 "$tmp/dotfile"
