@@ -1,4 +1,4 @@
-# measured 2026-11-09T01:55:56Z
+# measured 2026-11-09T04:56:00Z
 lambda-labs	apr	GREEN	ok (installed nightly@880b9b1, target nightly@880b9b1)
 lambda-labs	pv	GREEN	ok (installed v0.72.4@4cedc26, target v0.72.4@4cedc26)
 lambda-labs	forjar	GREEN	no-sha (installed nightly@269e180, target nightly@269e180)
