@@ -57,7 +57,7 @@ t5() {
     [ -f "$f" ] || continue
     if grep -q 'check_reconcile.sh' "$f"; then
       hit=$((hit + 1))
-      grep 'check_reconcile.sh' "$f" | grep -q -E '\|\|[[:space:]]*true|continue-on-error' && echo "RED T-5: $(basename "$f") masks check_reconcile.sh"
+      grep -q -E '\|\|[[:space:]]*true|continue-on-error' <<<"$(grep 'check_reconcile.sh' "$f")" && echo "RED T-5: $(basename "$f") masks check_reconcile.sh"
     fi
   done
   [ "$hit" -gt 0 ] || echo "RED T-5: no release workflow runs scripts/check_reconcile.sh"
@@ -68,8 +68,8 @@ pq() {
   need "$1" "$AE" || return 0
   local l; l=$(grep -E '^[0-9]+\. \*\*Plan quorum\.\*\*' "$1/$AE" | head -n 1)
   [ -n "$l" ] || { echo "RED plan-quorum: rule line missing"; return 0; }
-  printf '%s' "$l" | grep -q 'apr lane is advisory' || echo "RED plan-quorum: apr lane not stated advisory"
-  printf '%s' "$l" | grep -q 'do-not-implement' || echo "RED plan-quorum: no do-not-implement STOP"
+  grep -q 'apr lane is advisory' <<<"$l" || echo "RED plan-quorum: apr lane not stated advisory"
+  grep -q 'do-not-implement' <<<"$l" || echo "RED plan-quorum: no do-not-implement STOP"
 }
 
 run() {
