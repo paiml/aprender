@@ -86,30 +86,30 @@ fn insertion_index(entries: &[(String, &str)], id: &str) -> usize {
         .unwrap_or(entries.len())
 }
 
-/// A fragment must parse ALONE as one entry whose id is its filename. `roadmap.yaml` is regenerated
-/// post-merge on main, so a fragment that is not YAML (#6800: an unquoted `: ` in a title), holds
-/// two entries, or names another id would break main, not the PR that added it.
-fn refuse_unparseable(id: &str, block: &str) -> Result<(), String> {
-    let got: serde_json::Value = serde_saphyr::from_str(block).map_err(|e| {
-        let first = e.to_string();
-        format!(
-            "fragment {id}.yaml is not YAML: {}",
-            first.lines().next().unwrap_or_default()
-        )
-    })?;
-    let entry = match got.as_array().map(Vec::as_slice) {
-        Some([one]) if one.is_object() => one,
-        _ => {
-            return Err(format!(
-                "fragment {id}.yaml must hold exactly one entry mapping"
-            ))
-        }
+/// A fragment is ONE column-0 entry whose id is its filename, with nothing but blank or comment
+/// lines above it. The structural half of `_refuse_unparseable_fragment` in roadmap_fragments.py:
+/// the YAML-validity half (#6800: an unquoted `: ` in a title) stays with the Python guard, because
+/// serde-saphyr 1.3 misreads valid YAML in a real fragment (`''#` inside a single-quoted
+/// scalar, PMAT-3699.yaml) and no parser here matches PyYAML yet.
+fn refuse_malformed(id: &str, block: &str) -> Result<(), String> {
+    let (preamble, entries) = split_entries(block);
+    let stray = preamble
+        .lines()
+        .any(|l| !l.trim().is_empty() && !l.trim_start().starts_with('#'));
+    let items = block
+        .lines()
+        .filter(|l| l.starts_with("- ") || *l == "-")
+        .count();
+    let [(named, _)] = entries.as_slice() else {
+        return Err(format!(
+            "fragment {id}.yaml must hold exactly one entry mapping"
+        ));
     };
-    let named = match entry.get("id") {
-        Some(serde_json::Value::String(s)) => s.clone(),
-        Some(other) => other.to_string(),
-        None => "None".into(),
-    };
+    if stray || items != 1 {
+        return Err(format!(
+            "fragment {id}.yaml must hold exactly one entry mapping"
+        ));
+    }
     if named != id {
         return Err(format!(
             "fragment {id}.yaml carries id {named}, not its filename"
@@ -121,7 +121,7 @@ fn refuse_unparseable(id: &str, block: &str) -> Result<(), String> {
 /// `base` with every fragment folded in. A fragment supersedes a base entry of the same id.
 ///
 /// # Errors
-/// Two fragments claiming one id, or a fragment [`refuse_unparseable`] refuses.
+/// Two fragments claiming one id, or a fragment [`refuse_malformed`] refuses.
 pub fn aggregate(base: &str, fragments: &[(String, String)]) -> Result<String, String> {
     let mut seen = std::collections::HashSet::new();
     for (id, _) in fragments {
@@ -130,7 +130,7 @@ pub fn aggregate(base: &str, fragments: &[(String, String)]) -> Result<String, S
         }
     }
     for (id, block) in fragments {
-        refuse_unparseable(id, block)?;
+        refuse_malformed(id, block)?;
     }
     let (preamble, mut entries) = split_entries(base);
     entries.retain(|(id, _)| !seen.contains(id.as_str()));

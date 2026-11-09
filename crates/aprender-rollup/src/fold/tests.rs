@@ -214,26 +214,36 @@ fn id_value_undoes_each_quoting_shape() {
     }
 }
 
-// ---- T1: a fragment must parse ALONE as one entry whose id is its filename ----------------
+// ---- T1: a fragment is ONE entry whose id is its filename (YAML validity: the Python guard) ----
 
 #[test]
-fn a_fragment_that_is_not_yaml_is_refused() {
+fn a_fragment_with_text_above_its_entry_is_refused() {
     let bad = (
         "PMAT-200".to_string(),
-        "- id: PMAT-200\n  title: [unclosed\n".to_string(),
+        "title: stray\n- id: PMAT-200\n".to_string(),
     );
-    let e = aggregate(BASE, &[bad]).unwrap_err();
-    assert!(e.contains("PMAT-200.yaml is not YAML"), "{e}");
+    assert!(aggregate(BASE, &[bad])
+        .unwrap_err()
+        .contains("exactly one entry mapping"));
+    let ok = (
+        "PMAT-200".to_string(),
+        "# a comment\n\n- id: PMAT-200\n".to_string(),
+    );
+    assert!(aggregate(BASE, &[ok]).is_ok());
 }
 
 #[test]
-fn a_fragment_with_an_unquoted_colon_in_its_title_is_refused() {
-    // The measured shape: #6800's PMAT-6797.yaml.
-    let bad = (
-        "PMAT-6797".to_string(),
-        "- id: PMAT-6797\n  title: guard measures the volume: self-test pins it\n".to_string(),
-    );
-    assert!(aggregate(BASE, &[bad]).unwrap_err().contains("is not YAML"));
+fn a_crlf_or_quoted_fragment_id_still_matches_its_filename() {
+    for t in [
+        "- id: PMAT-200\r\n  title: a\r\n",
+        "- id: 'PMAT-200'\n",
+        "- id: \"PMAT-200\"\n",
+    ] {
+        assert!(
+            aggregate(BASE, &[("PMAT-200".into(), t.into())]).is_ok(),
+            "{t:?}"
+        );
+    }
 }
 
 #[test]
