@@ -1825,7 +1825,7 @@ cascade_odd_policy_bare      rehearse.sh         s/^        0) bash scripts\/cas
 cascade_policy_not_about_v   rehearse.sh         s/ap_policy_applies "\$V" ) \\$/ap_policy_applies ) \\/
 cascade_policy_rc_ignored    rehearse.sh         s/ap_policy_applies "\$V" ) \\$/ap_policy_applies "$V"; : ) \\/
 cascade_stage_from_clone     rehearse.sh         s/^cascade|ap:preflight|stage_cascade$/cascade|ap:preflight|bash scripts\/cascade-publish.sh --rehearse/
-cascade_stage_as_text        rehearse.sh         /case \$cmd in stage_[a-z0-9_|]*) "\$cmd" ;;/s/stage_cascade|//
+cascade_stage_as_text        rehearse.sh         s/stage_summary|stage_cascade|stage_t2) "\$cmd" ;;/stage_summary|stage_t2) "$cmd" ;;/
 ap_policy_fn_renamed         autopilot.sh        s/^ap_policy_applies() {$/ap_policy_judge() {/
 ap_cascade_other_receipts    autopilot.sh        /^if run_step cascade; then$/,/^fi$/s/models-t1/models-x/
 after_c_mc_is_c              rehearse.sh         s|printf 'export RELEASE_REHEARSAL_MC=%q\\n' "\$h" >> "\$env"|printf 'export RELEASE_REHEARSAL_MC=%q\\n' "$c" >> "$env"|
