@@ -143,10 +143,12 @@ fi
 # meta as-is left the judge knowing ONE model's format: every other model's cells went RED "a format-unknown file"
 # (measured on the freeze sweep, lambda: 2B and 4B-UD all RED in the merge, 30/34 GREEN in their own shards).
 MERGED_META="$OUT/$HOST-$BACKEND.meta.json"
-python3 - "$META" "$MERGED_META" "$OUT/shards.tsv" <<'PY' || die "could not merge the shard metas"
-import json, os, sys
-first, out, tsv = sys.argv[1:4]
+python3 - "$META" "$MERGED_META" "$OUT/shards.tsv" "$APR_BIN" <<'PY' || die "could not merge the shard metas"
+import hashlib, json, os, sys
+first, out, tsv, apr = sys.argv[1:5]
 meta = json.load(open(first))
+# R7 preflight (scripts/release/r7_binary_sha_check.sh, #6679) judges this field: the sha256 of the binary that ran.
+meta["apr_binary_sha256"] = hashlib.sha256(open(apr, "rb").read()).hexdigest()
 models, seen = [], set()
 for line in open(tsv):
     name, rc, work = (line.rstrip("\n").split("\t") + ["", "", ""])[:3]
