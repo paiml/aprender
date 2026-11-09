@@ -124,6 +124,7 @@ fn run_cpu_server(
         .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
         .with_model_source(model_source);
     if let Some(mapped) = mapped_model {
+        state = attach_gguf_merges(state, &mapped)?; // #4979
         state = state.with_mapped_gguf_model(mapped);
     }
     let mut state = state.with_verbose(config.verbose); // GH-152: Pass verbose flag to handlers
@@ -229,8 +230,9 @@ fn build_qwen35_state(
         Some(q) => model_source.with_quantization(q),
         None => model_source,
     };
-    let state = AppState::with_qwen35_session(session, mapped_model, vocab)
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+    let state = AppState::with_qwen35_session(session, mapped_model.clone(), vocab)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
+    let state = attach_gguf_merges(state, &mapped_model)? // #4979
         .with_model_source(model_source)
         .with_verbose(config.verbose)
         .with_offload_report(offload);
@@ -693,7 +695,8 @@ fn start_gguf_server_gpu_batched(
     // aprender#1789 Option B: attach mapped GGUF so qwen3_moe chat dispatch
     // via `try_qwen3_moe_backend` can borrow per-expert tensors.
     let state = AppState::with_cached_model_and_vocab(cached_model, vocab)
-        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to create app state: {e}")))?;
+    let state = attach_gguf_merges(state, &mapped_model)? // #4979
         .with_mapped_gguf_model(mapped_model)
         .with_verbose(config.verbose); // GH-152: Pass verbose flag
 

@@ -555,6 +555,21 @@ fn extract_gguf_vocab(mapped_model: &realizar::gguf::MappedGGUFModel) -> Result<
         .ok_or_else(|| no_vocabulary("the GGUF (no tokenizer.ggml.tokens)"))
 }
 
+/// #4979: give a GGUF serve state the model's `tokenizer.ggml.merges`, so `/tokenize` and
+/// chat encode by merge rank exactly as `apr run` does. Built from the vocabulary alone the
+/// tokenizer falls back to greedy longest-match ("ĠTA NG ER INE" for "TANGERINE"), a split
+/// the model never saw in training. A GGUF with no merges is left as it was.
+#[cfg(feature = "inference")]
+fn attach_gguf_merges(
+    state: realizar::api::AppState,
+    mapped_model: &realizar::gguf::MappedGGUFModel,
+) -> Result<realizar::api::AppState> {
+    let merges = mapped_model.model.merge_rules().unwrap_or_default();
+    state
+        .with_gguf_merges(merges)
+        .map_err(|e| CliError::InferenceFailed(format!("Failed to build BPE tokenizer: {e}")))
+}
+
 /// #3609: the refusal every serve path gives for a model with no vocabulary.
 fn no_vocabulary(what: &str) -> CliError {
     CliError::ModelLoadFailed(format!(
@@ -634,7 +649,8 @@ fn start_gguf_server_cuda(
         );
         let model_source = measured_model_source(&quantized_model, Some(&mapped_model), config);
         let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
-            .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+            .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?;
+        let state = attach_gguf_merges(state, &mapped_model)?
             .with_model_source(model_source)
             .with_mapped_gguf_model(mapped_model)
             .with_moe_gpu()
@@ -674,7 +690,8 @@ fn start_gguf_server_cuda(
             println!("{}", "CUDA optimized model ready".green());
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
-                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+                .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?;
+            let state = attach_gguf_merges(state, &mapped_model)?
                 .with_mapped_gguf_model(mapped_model.clone())
                 .with_model_source(model_source)
                 // PP-14/PP-15/§9 #8: the resolved offload AND this binary's

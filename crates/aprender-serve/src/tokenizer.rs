@@ -244,7 +244,17 @@ impl BPETokenizer {
         merges: Vec<(String, String)>,
         unk_token: impl Into<Option<&'a str>>,
     ) -> Result<Self> {
-        let mut tokenizer = Self::new(vocab, vec![], unk_token)?;
+        Self::new(vocab, vec![], unk_token)?.apply_merges(merges)
+    }
+
+    /// #4979: rebuild this tokenizer with BPE merge rules, keeping its vocabulary and
+    /// unknown token.
+    ///
+    /// # Errors
+    ///
+    /// As [`Self::with_merges`].
+    pub fn apply_merges(self, merges: Vec<(String, String)>) -> Result<Self> {
+        let mut tokenizer = self;
         // #3609: the merge path (`bpe_encode`) maps each byte to its byte-level glyph and
         // nothing else, so with no unknown token every glyph must be in the vocabulary,
         // or that byte would be dropped from the input.

@@ -767,6 +767,26 @@ impl AppState {
         self
     }
 
+    /// #4979: give the state's tokenizer the model's BPE merge rules
+    /// (`tokenizer.ggml.merges`), so `encode` ranks merges as `apr run` does instead of
+    /// falling back to greedy longest-match. Empty `merges` is a no-op.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the merge-based tokenizer cannot be built.
+    pub fn with_gguf_merges(
+        mut self,
+        merges: Vec<(String, String)>,
+    ) -> Result<Self, RealizarError> {
+        if merges.is_empty() {
+            return Ok(self);
+        }
+        if let Some(tok) = self.tokenizer.take() {
+            self.tokenizer = Some(Arc::new((*tok).clone().apply_merges(merges)?));
+        }
+        Ok(self)
+    }
+
     /// aprender#1789 Option B: accessor for the retained
     /// `MappedGGUFModel`. Used by the chat-completions handler to route
     /// qwen3_moe inference through `run_qwen3_moe_generate`.
