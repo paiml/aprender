@@ -23,6 +23,13 @@ HOT_PATH=(
     scripts/ci_test_tier.sh
     scripts/ci_mg_reuse.sh
     scripts/ci_self_hosted_preflight.sh
+    # per-PR ci.yml helpers that made scratch with no EXIT trap (#6647 slice C)
+    scripts/check_ci_fat_secrets_plumbed.sh
+    scripts/check_determinism_wait.sh
+    scripts/ci/check_sov_advisories_off.sh
+    scripts/ci/fetch_p6.sh
+    scripts/ci/free_own_target_dir.sh
+    scripts/ci/install_pinned_toolchain.sh
 )
 
 # check_file FILE -- prints one verdict line per finding; returns 0 clean, 1 dirty, 2 unreadable.
