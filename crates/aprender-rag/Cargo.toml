@@ -52,7 +52,7 @@ async-trait = "0.1"
 batuta-common = { workspace = true }
 lz4_flex = { version = "0.11", optional = true }
 zstd = { version = "0.14", optional = true }
-aprender-legacy-codec = { path = "../aprender-legacy-codec", version = "0.72.3", optional = true }  # Binary serialization for indices
+aprender-legacy-codec = { workspace = true, optional = true }  # Binary serialization for indices
 
 # SQLite+FTS5 persistent index (sqlite-rag-integration spec)
 # FTS5 is included in bundled SQLite by default (SQLITE_ENABLE_FTS5)
