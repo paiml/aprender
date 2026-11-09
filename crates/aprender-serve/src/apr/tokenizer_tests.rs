@@ -313,6 +313,29 @@ mod tests {
     }
 
     #[test]
+    fn test_special_token_after_sentence_punctuation_is_atomic_gh2815() {
+        // #2815: `<|im_end|>` preceded by `.` or `?` must stay ONE token (the ChatML turn
+        // delimiter), never 4 literal pieces. Every row ends the text with the special.
+        let mut vocab = HashMap::new();
+        vocab.insert("<|im_end|>".to_string(), 101);
+        for (c, id) in [(".", 10u32), ("?", 11), ("2", 12), ("a", 13)] {
+            vocab.insert(c.to_string(), id);
+        }
+        let mut special = HashMap::new();
+        special.insert("<|im_end|>".to_string(), 101);
+        for (text, want) in [
+            ("a.<|im_end|>", vec![13, 10, 101]),
+            ("2?<|im_end|>", vec![12, 11, 101]),
+            (".<|im_end|>", vec![10, 101]),
+            ("a<|im_end|>", vec![13, 101]),
+            ("<|im_end|>", vec![101]),
+            ("a.<|im_end|>a?<|im_end|>", vec![13, 10, 101, 13, 11, 101]),
+        ] {
+            assert_eq!(bpe_encode(text, &vocab, &[], &special), want, "{text:?}");
+        }
+    }
+
+    #[test]
     fn test_bpe_encode_with_special_tokens() {
         // GH-189: Test bpe_encode directly with special tokens
         let mut vocab = HashMap::new();
