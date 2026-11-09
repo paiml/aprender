@@ -232,9 +232,9 @@ jobs:
           echo "$d" >> "$GITHUB_PATH"
       - uses: actions/checkout@v7
         with:
+          fetch-depth: 0
       - name: no pull-request-target guard (P0; every push, a dependency of the required gate)
         run: sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
-          fetch-depth: 0
       - name: Cheap checks (fmt, falsification-ID order, guard case tables)
         run: |
           set -euo pipefail

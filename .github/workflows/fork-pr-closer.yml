@@ -11,4 +11,4 @@ jobs:
   close:
     permissions:
       pull-requests: write
-    uses: paiml/.github/.github/workflows/fork-pr-closer.yml@main
+    uses: paiml/.github/.github/workflows/fork-pr-closer.yml@830147e62523b292823e3134943de10265c4569e # main at pin time

@@ -21,12 +21,18 @@ bad=0
 for f in "$dir"/*.yml "$dir"/*.yaml; do
   [ -f "$f" ] || continue
   scanned=$((scanned + 1))
-  # strip full-line and trailing comments, then look for the trigger name
-  hits=$(sed -e 's/[[:space:]]*#.*$//' "$f" | grep -c 'pull_request_target' || true)
+  # strip WHOLE-LINE comments only: a " #" inside a quoted string must not hide a later match
+  hits=$(grep -v "^[[:space:]]*#" "$f" | grep -c "pull_request_target" || true)
+  # YAML double-quoted scalars decode \uXXXX and \xXX, so a name can be spelled without the literal text
+  esc=$(grep -v "^[[:space:]]*#" "$f" | grep -cE '\\[ux][0-9A-Fa-f]' || true)
+  if [ "$esc" -gt 0 ]; then
+    echo "FAIL $f: \\u or \\x escape in a workflow file (can spell the trigger without its name)" >&2
+    bad=$((bad + 1))
+  fi
   [ "$hits" -gt 0 ] || continue
   base=$(basename "$f")
   if [ -f "$allow" ] && sed -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//' "$allow" | grep -qx "$base"; then
-    if sed -e 's/[[:space:]]*#.*$//' "$f" | grep -q 'actions/checkout'; then
+    if grep -v '^[[:space:]]*#' "$f" | grep -q 'actions/checkout'; then
       echo "FAIL $f: allowlisted pull_request_target workflow contains actions/checkout" >&2
       bad=$((bad + 1))
     fi
