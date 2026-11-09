@@ -77,6 +77,8 @@ if [ "${1:-}" = --mutants ]; then
     mut dedupe-marker-never-written 's/\[ "\$nskip" -eq 0 \] || : > "\$mk"/:/'
     mut dedupe-ignores-newest-sha 's/fallback-reported-\${cands\[0\]:0:12}/fallback-reported/'
     mut single-candidate-text-changed 's/^\[ "\$nskip" -gt 0 \] || fail "no candidate passed every gate: .*$/:/'
+    mut r7-check-dropped 's/^    bash "\$R7CHECK" .*$/    r7rc=0/'
+    mut r7-red-ignored 's/if \[ "\$r7rc" != 0 \]; then notes/if false; then notes/'
     mut fail-prefixes-notes-again 's/inbox_line "RED promote: \$\* (state \$state)"/inbox_line "RED promote: ${notes:-}$* (state $state)"/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
@@ -184,9 +186,14 @@ case " ${FX_TRAIN_RED_SHA:-none} " in *" $sha "*) echo "NOT RELEASABLE: attempt 
 mkdir -p "$out"; echo "RELEASABLE"
 SH
 chmod +x "$TMP/train"; mkdir -p "$TMP/h/.cargo"; : > "$TMP/h/.cargo/credentials.toml"  # a FAKE file in the sandbox test home
-chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate" "$TMP/models" "$TMP/pt"
+cat > "$TMP/r7" <<'SH'
+#!/usr/bin/env bash
+echo "R7 $*" >> "$FX_CALLS"
+[ "${FX_R7_RC:-0}" = 0 ] || { echo "RED   R7 binary sha: stub"; exit 1; }
+SH
+chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate" "$TMP/models" "$TMP/pt" "$TMP/r7"
 cat > "$BIN/.promote-test-seams" <<EOF
-GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
+GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"; R7CHECK="$TMP/r7"
 MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"; DISPATCH_WAIT=0
 SANDBOX=(env "HOME=$TMP/h" FX_HIDDEN=1)
 TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
@@ -218,6 +225,9 @@ grep -q "PT --install" "$TMP/calls" && ok || bad "pushtags --install not run"
 FX_PT_OK=0 FX_PT_INSTALL_FAILS=1 sched pushtags-cannot-install 1 1 0 --execute; inbox_has pushtags-cannot-install RED
 FX_PROMOTE_RC=1 sched promote-dry-refuses 1 1 0 --execute; inbox_has promote-dry-refuses RED
 FX_GATE_RC=1 sched publish-dryrun-red 1 0 0 --execute; inbox_has publish-dryrun-red RED
+# aprender#6679: an R7 binary-sha RED starts NO promotion; the call is made on the candidate (--build of the worktree)
+FX_R7_RC=1 sched r7-binary-sha-red-blocks-promote 1 0 0 --execute
+grep -q "^R7 --receipts .*models-crux/$R2 --build " "$TMP/calls" && ok || bad "r7-binary-sha: checker not called on the candidate with --build"
 FX_MODELS=red sched models-not-green 1 0 0 --execute; inbox_has models-not-green RED
 FX_MODELS=not_measured sched models-not-measured 1 0 0 --execute
 FX_REAL_MODELS=1 sched real-models-nightly-weak-bundle 1 0 0 --execute
@@ -453,6 +463,24 @@ ge add -A; ge commit -q -m ev-long; ge push -q origin nightly-evidence
 FX_TRAIN_RED_SHA="$LONG" FX_SHA=$R2 sched long-skip-list-fallback 0 2 1 --execute
 for L in $LONG; do inbox_has "long-skip-list-names-${L:0:9}" "${L:0:9}"; done
 expect "long-skip-list RED line count" 1 "$(red_n)"
+# aprender#6679: the checker itself -- case table (match, mismatch, missing sha, no receipts, invalid sha)
+R7="$HERE/r7_binary_sha_check.sh"; H1=$(printf '1%.0s' $(seq 64)); H2=$(printf '2%.0s' $(seq 64))
+r7case() { # name want_rc fresh-sha meta-json-or-empty
+    local d="$TMP/r7-$1"; mkdir -p "$d"; [ -z "$4" ] || printf '%s' "$4" > "$d/lambda-gpu.meta.json"
+    bash "$R7" --receipts "$d" --fresh-sha "$3" > "$d.out" 2>&1; expect "r7 $1 rc" "$2" "$?"
+}
+r7case match 0 "$H1" "{\"apr_binary_sha256\":\"$H1\"}"
+grep -q "^ok " "$TMP/r7-match.out" && ok || bad "r7 match: no ok line"
+r7case mismatch 1 "$H1" "{\"apr_binary_sha256\":\"$H2\"}"
+grep -q "^RED " "$TMP/r7-mismatch.out" && ok || bad "r7 mismatch: no RED line"
+r7case missing-sha 1 "$H1" '{"models":[]}'
+grep -q "^RED " "$TMP/r7-missing-sha.out" && ok || bad "r7 missing-sha: no RED line"
+r7case invalid-sha 1 "$H1" '{"apr_binary_sha256":"zz"}'
+r7case no-receipts 1 "$H1" ""
+mkdir -p "$TMP/r7-two"; printf '{"apr_binary_sha256":"%s"}' "$H1" > "$TMP/r7-two/lambda-gpu.meta.json"; printf '{"apr_binary_sha256":"%s"}' "$H2" > "$TMP/r7-two/gx10-gpu.meta.json"
+bash "$R7" --receipts "$TMP/r7-two" --fresh-sha "$H1" > /dev/null 2>&1; expect "r7 one-of-two-hosts-differs rc" 1 "$?"
+bash "$R7" --receipts "$TMP/r7-two" > /dev/null 2>&1; expect "r7 no-fresh caller error rc" 2 "$?"
+
 # lock: a second run while the first holds it does nothing
 mkdir -p "$ST"; : > "$TMP/calls"
 ( exec 8> "$ST/.lock"; flock -n 8; FX_CALLS="$TMP/calls" bash "$BIN/promote_scheduler.sh" --repo "$W" --state "$ST" --inbox "$INB" --rate-floor 1000 --execute > "$TMP/out-lock" 2>&1; echo $? > "$TMP/lock-rc" )

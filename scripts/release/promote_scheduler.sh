@@ -97,6 +97,7 @@ G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&
 S="$work/gate/scripts/release"
 PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
 MODELS_NIGHTLY="$S/models_nightly.sh"; TRAIN="$S/nightly_train.sh"
+R7CHECK="$S/r7_binary_sha_check.sh"
 # the train refuses to start while a registry token is reachable (its no-token step), and a build host has ~/.cargo/credentials.toml:
 # so the train call, and ONLY that call (never the tag push, never the gates), runs in the train's own installer sandbox --
 # a user namespace with an empty read-only tmpfs over ~/.cargo and an empty CARGO_HOME. Credentials are never read here.
@@ -234,7 +235,10 @@ for sha in "${cands[@]}"; do
     w=$(mktemp -d) && G worktree add -q --detach "$w/wt" "$sha" > /dev/null 2>&1 || { notes+="${sha:0:9} no worktree; "; continue; }
     wsha=$(git -C "$w/wt" rev-parse HEAD)
     bash "$DRYRUN_GATE" --verify "$w/wt" > "$d/publish-dryrun.log" 2>&1; drc=$?
+    # aprender#6679: R7 receipts must name the binary a fresh build of this exact sha produces (RED, never not_measured)
+    bash "$R7CHECK" --receipts "$ev/models-crux/$sha" --build "$w/wt" > "$d/r7-binary-sha.log" 2>&1; r7rc=$?
     G worktree remove --force "$w/wt" > /dev/null 2>&1; rm -rf -- "${w:?}"
+    if [ "$r7rc" != 0 ]; then notes+="${sha:0:9} R7 binary sha RED ($(head -n 1 "$d/r7-binary-sha.log" | cut -c1-90)); "; continue; fi
     rcpt="$work/receipts-$sha"; rm -rf -- "${rcpt:?}"
     bash "$RECEIPTS" --sha "$sha" --out "$rcpt" --models-dir "$ev/models-crux/$sha" --cleanroom-json "$d/cleanroom.json" \
         --dryrun-rc "$drc" --dryrun-commit "$wsha" > "$d/receipts.log" 2>&1 || { notes+="${sha:0:9} receipts incomplete ($(tr '\n' ' ' < "$d/receipts.log" | cut -c1-80)); "; continue; }

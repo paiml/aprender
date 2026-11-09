@@ -1,0 +1,20 @@
+- id: PMAT-6679
+  github_issue: 6679
+  item_type: task
+  title: 'promote preflight: R7 receipt binary sha must equal a fresh build of the candidate'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:00:00Z
+  updated: 2026-11-09T08:00:00Z
+  spec: null
+  acceptance_criteria:
+  - r7_binary_sha_check.sh builds apr fresh and compares its sha256 with every R7 receipt; mismatch, missing sha and no receipt are RED
+  - promote_scheduler.sh runs it before any tag; falsify_promote_scheduler.sh has the match, mismatch and missing-sha rows
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6728
