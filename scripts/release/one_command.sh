@@ -10,6 +10,11 @@ V="${1:?usage: one_command.sh <X.Y.Z> [dry_run 0|1]}"; DRY="${2:-0}"
 INFRA="${ONE_CMD_INFRA:-paiml/infra}"; POLL="${ONE_CMD_POLL:-300}"; T="v$V"; BR="release/$V"
 BUMP="${ONE_CMD_BUMP:-bash scripts/bump-version.sh}"; PUBLISH="${ONE_CMD_PUBLISH:-bash scripts/cascade-publish.sh}"
 ARM="${ONE_CMD_ARM:-bash scripts/hooks/pre-push-tags.sh --arm-release}"
+# PMAT-5306 seams: CERT carries the CRUX certification, MODELS measures CRUX smoke, REACH proves both hosts first.
+CERT="${ONE_CMD_CERT:-bash scripts/release/prepare_bump.sh --carry-cert}"; MODELS="${ONE_CMD_MODELS:-bash scripts/release/models_t1.sh}"
+oc_reach() { hostname -s | grep -qi lambda && ssh -o BatchMode=yes -o ConnectTimeout=10 gx10 true; }
+REACH="${ONE_CMD_REACH:-oc_reach}"
+MOUT="${ONE_CMD_MODELS_OUT:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/models-t1-$V}"; CC="$PWD/evidence/crux/$V/prompt-certification.json"
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }  # bashrs disable-line=DET002
 die() { say "STOP $*"; exit 1; }
 # APR-RELEASE-TRAIN T5: the release builds from the green nightly sha it is handed (arg 3), never main HEAD, so
@@ -19,13 +24,26 @@ BASE="${3:-}"; NEXTDEV="${ONE_CMD_NEXTDEV:-bash scripts/release/next_dev_bump.sh
 git merge-base --is-ancestor "$BASE" origin/main || die "$BASE is not on origin/main"
 git checkout -q -b "$BR" "$BASE" || die "cannot create $BR at $BASE"
 $BUMP "$V" || die "bump $V failed"
+# PMAT-5306: R7 (check_publish_preflight.sh) judges CRUX smoke against evidence/crux/<V>/prompt-certification.json at
+# the tagged tree, so the certification is carried into the bump commit (prepare_bump's pb_carry_cert), never after.
+$CERT "$PWD" "$V" "$BASE" || die "the CRUX prompt certification for $V could not be carried; no tag"
+git add -- "evidence/crux/$V" || die "cannot stage evidence/crux/$V"
 git commit -q -am "chore(release): bump to $V" || die "bump commit failed"
 SHA=$(git rev-parse HEAD) || die "no sha"
+git cat-file -e "$SHA:evidence/crux/$V/prompt-certification.json" || die "bump commit $SHA holds no evidence/crux/$V/prompt-certification.json; no tag"
 say "BUMP $V at $SHA on $BR"
 if [ "$DRY" = 1 ]; then
-  say "WOULD push $BR; clean-room ref=$SHA; git tag -a $T $SHA; push $T; $PUBLISH; carry PR to main"; exit 0
+  say "WOULD push $BR; models_t1 crux at $SHA; clean-room ref=$SHA; git tag -a $T $SHA; push $T; MODEL_LADDER_CRUX_DIR=$MOUT CRUX_CERT=$CC $PUBLISH; carry PR to main"; exit 0
 fi
 git push -q origin "$BR" || die "push $BR failed"
+# PMAT-5306: the CRUX smoke at THIS sha on lambda and gx10 before any tag; R7 re-judges these receipts at publish.
+# A host that cannot be reached is not_measured, and not_measured is a stop: nothing is skipped or stood in for.
+$REACH || die "not_measured: CRUX smoke needs this runner to be lambda and gx10 reachable over SSH; no tag"
+MODELS_T1_MEASURE=crux $MODELS "$V" "$SHA" "$MOUT" > "$MOUT.log" 2>&1; mrc=$?
+grep -E '^MODELS ' "$MOUT.log"
+[ "$mrc" = 0 ] && grep -q '^MODELS GO (CRUX smoke) ' "$MOUT.log" \
+  || die "CRUX smoke at $SHA is not GO (models_t1 rc $mrc; rc 2 = not_measured, a stop); no tag ($MOUT.log)"
+say "MODELS GO (CRUX smoke) at $SHA"
 t0=$(date -u +%s)  # bashrs disable-line=DET002
 gh workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$SHA" || die "clean-room dispatch failed"
 sleep "$POLL"; id=""
@@ -49,6 +67,6 @@ $ARM "$T" 120 || die "arming $T failed"
 git push origin "$T" || die "tag push failed"
 say "TAG $T at $SHA"
 late=0; $NEXTDEV "$V" || { say "ANDON next-dev bump after $T failed; publish continues"; late=1; }
-$PUBLISH || die "publish failed after tag $T (tag stays; crates.io is the truth)"
+MODEL_LADDER_CRUX_DIR="$MOUT" CRUX_CERT="$CC" $PUBLISH || die "publish failed after tag $T (tag stays; crates.io is the truth)"
 say "PUBLISHED $T"
 [ "$late" = 0 ] || die "published $T, but the next-dev bump PR was not opened"

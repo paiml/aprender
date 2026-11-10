@@ -245,6 +245,8 @@ pb_self_test() {
     return "$fail"
 }
 if [ "${1:-}" = --self-test ]; then pb_self_test; exit $?; fi
+# --carry-cert ROOT VERSION BASE: pb_carry_cert alone, for scripts/release/one_command.sh (release.yml), rc as pb_carry_cert
+if [ "${1:-}" = --carry-cert ]; then [ $# -eq 4 ] || die "usage: prepare_bump.sh --carry-cert <root> <version> <base>"; pb_carry_cert "$2" "$3" "$4"; exit $?; fi
 # D4/D5/D6/D7 (PMAT-3459): $0-derived root and CARGO_HOME-relative cargo. Root resolved
 # BEFORE any cd. NOT `git rev-parse --show-toplevel` — refused on a bind-mounted tree (#3586).
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)" || die "cannot resolve the repo root from $0"

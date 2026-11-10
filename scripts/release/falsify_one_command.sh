@@ -22,6 +22,16 @@ if [ "${1:-}" = --mutants ]; then
   mut next-dev-skipped 's/^late=0; \$NEXTDEV "\$V" || /late=0; : || /'
   mut next-dev-red-swallowed 's/^\[ "\$late" = 0 \] || die .*$/:/'
   mut next-dev-before-tag 's/^\$ARM "\$T" 120 || die/$NEXTDEV "$V"; &/'
+  # PMAT-5306: R7 refuses a tag whose tree has no CRUX certification and a publish handed no CRUX receipts
+  mut cert-not-carried 's/^\$CERT "\$PWD" .*$/:/'
+  mut cert-not-staged 's/^git add -- "evidence\/crux\/\$V".*$/:/'
+  mut cert-commit-unchecked 's/^git cat-file -e .*$/:/'
+  mut models-skipped 's/^MODELS_T1_MEASURE=crux \$MODELS .*$/mrc=0; echo "MODELS GO (CRUX smoke) x" > "$MOUT.log"/'
+  mut models-not-crux 's/^MODELS_T1_MEASURE=crux /MODELS_T1_MEASURE=ladder /'
+  mut crux-line-unchecked "s/grep -q '^MODELS GO (CRUX smoke) ' \"\$MOUT.log\"/true/"
+  mut models-rc-unchecked 's/^\[ "\$mrc" = 0 \] \&\& /true \&\& /'
+  mut reach-skipped 's/^\$REACH || die .*$/:/'
+  mut publish-env-dropped 's/^MODEL_LADDER_CRUX_DIR="\$MOUT" CRUX_CERT="\$CC" \$PUBLISH/$PUBLISH/'
   [ "$miss" = 0 ] && { echo "all mutants caught"; exit 0; }; exit 1
 fi
 [ -f "$SRC" ] || { echo "FAIL one_command.sh missing at $SRC"; exit 1; }
@@ -34,13 +44,17 @@ fails=0
 row() { # name want_rc want_calls_regex forbid_calls_regex dry cr_conclusion cr_sha
   local name=$1 wrc=$2 want=$3 forbid=$4 dry=$5 concl=$6 crsha=$7
   export CALLS=$T/calls; : > "$CALLS"
-  mkstub git 'case "$1" in rev-parse) echo '$SHA';; merge-base) [ -z "${NOTMAIN:-}" ] || exit 1;; esac; exit 0'
+  mkstub git 'case "$1" in rev-parse) echo '$SHA';; merge-base) [ -z "${NOTMAIN:-}" ] || exit 1;; cat-file) [ -z "${NOCOMMITCERT:-}" ] || exit 1;; esac; exit 0'
+  mkstub cert '[ -z "${CERT_FAIL:-}" ] || exit 1; exit 0'
+  mkstub reach '[ -z "${REACH_FAIL:-}" ] || exit 1; exit 0'
+  mkstub models 'echo "models ${MODELS_T1_MEASURE:-unset} $*" >> "$CALLS"; echo "${MODELS_LINE:-MODELS GO (CRUX smoke) on lambda and gx10 at 111111111: ok}"; exit ${MODELS_RC:-0}'
   mkstub nextdev '[ -z "${NEXTDEV_FAIL:-}" ] || exit 1; exit 0'
   mkstub bump 'exit 0'
-  mkstub publish 'exit 0'
+  mkstub publish 'echo "publish MODEL_LADDER_CRUX_DIR=${MODEL_LADDER_CRUX_DIR:-} CRUX_CERT=${CRUX_CERT:-}" >> "$CALLS"; exit 0'
   mkstub gh 'case "$*" in *"run list"*) echo 42;; *"--log"*) [ -z "${DECOY:-}" ] || echo "2026-11-05T00:00:00Z   claim step summary carries \"tested-sha: <40hex>\""; echo "2026-11-05T00:00:01Z     tested-sha: '"$crsha"'";; *"run view"*) echo "'"$concl"'";; esac; exit 0'
   local a=(0.73.0 "$dry"); [ -n "${NOBASE:-}" ] || a+=("${BASEARG:-$BASE}")
-  PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_NEXTDEV=nextdev ONE_CMD_POLL=0 ONE_CMD_ARM=true bash "$SRC" "${a[@]}" > "$T/out" 2>&1
+  PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_NEXTDEV=nextdev ONE_CMD_POLL=0 ONE_CMD_ARM=true \
+    ONE_CMD_CERT=cert ONE_CMD_MODELS=models ONE_CMD_REACH=reach ONE_CMD_MODELS_OUT=$T/mout bash "$SRC" "${a[@]}" > "$T/out" 2>&1
   local rc=$?; [ -n "${DBG:-}" ] && cat "$T/out"
   [ "$rc" = "$wrc" ] || { echo "FAIL $name: rc=$rc want $wrc"; fails=$((fails+1)); return; }
   [ -z "$want" ] || grep -Eq -- "$want" "$CALLS" || { echo "FAIL $name: no call /$want/"; fails=$((fails+1)); return; }
@@ -48,7 +62,8 @@ row() { # name want_rc want_calls_regex forbid_calls_regex dry cr_conclusion cr_
   echo "ok   $name"
 }
 row green-tags-then-publishes  0 '^git tag .*v0\.73\.0 '$SHA 'ZZZ'          0 success $SHA
-row dry-run-never-tags         0 '^bump'                      '^(git tag|publish|nextdev)' 1 success $SHA
+row dry-run-never-tags         0 '^bump'                      '^(git tag|publish|nextdev|models|reach|git push)' 1 success $SHA
+row dry-run-still-carries-cert 0 '^git add -- evidence/crux/0\.73\.0$' '^(git tag|publish)' 1 success $SHA
 row red-cleanroom-no-tag       1 ''                           '^(git tag|publish|nextdev)' 0 failure $SHA
 # T5 (APR-RELEASE-TRAIN): the release branch starts at the green nightly sha, never main HEAD
 row builds-from-nightly-sha    0 '^git checkout -q -b release/0\.73\.0 '$BASE'$' 'ZZZ'  0 success $SHA
@@ -62,6 +77,24 @@ if [ -n "$tag_at" ] && [ -n "$dev_at" ] && [ "$dev_at" -gt "$tag_at" ]; then ech
 else echo "FAIL next-dev-after-tag-push: tag push line ${tag_at:-none}, nextdev line ${dev_at:-none}"; fails=$((fails+1)); fi
 NEXTDEV_FAIL=1 row next-dev-red-still-publishes 1 '^publish' 'ZZZ'                 0 success $SHA
 DECOY=1 row decoy-line-first-still-tags 0 '^git tag .*v0\.73\.0 '$SHA 'ZZZ' 0 success $SHA
+# PMAT-5306 (0.72.4 R7 refusal): the certification is in the tagged tree, CRUX smoke is GO before any tag, and the
+# publish is handed the receipts and the certification R7 judges
+row cert-carried-from-base     0 '^cert .* 0\.73\.0 '$BASE'$'    'ZZZ'              0 success $SHA
+add_at=$(grep -nE '^git add -- evidence/crux/0\.73\.0$' "$CALLS" | cut -d: -f1); ci_at=$(grep -nE '^git commit ' "$CALLS" | cut -d: -f1)
+if [ -n "$add_at" ] && [ -n "$ci_at" ] && [ "$add_at" -lt "$ci_at" ]; then echo "ok   cert-staged-before-bump-commit"
+else echo "FAIL cert-staged-before-bump-commit: add line ${add_at:-none}, commit line ${ci_at:-none}"; fails=$((fails+1)); fi
+row models-crux-at-bump-sha    0 '^models crux 0\.73\.0 '$SHA' '    'ZZZ'              0 success $SHA
+mo_at=$(grep -nE '^models ' "$CALLS" | head -n 1 | cut -d: -f1); cr_at=$(grep -nE '^gh workflow run clean-room' "$CALLS" | cut -d: -f1)
+if [ -n "$mo_at" ] && [ -n "$cr_at" ] && [ "$mo_at" -lt "$cr_at" ]; then echo "ok   models-before-clean-room"
+else echo "FAIL models-before-clean-room: models line ${mo_at:-none}, clean-room line ${cr_at:-none}"; fails=$((fails+1)); fi
+row publish-gets-crux-env      0 '^publish MODEL_LADDER_CRUX_DIR='"$T"'/mout CRUX_CERT=/.+/evidence/crux/0\.73\.0/prompt-certification\.json$' 'ZZZ' 0 success $SHA
+CERT_FAIL=1 row cert-refused-no-commit 1 ''                    '^(git commit|models|gh workflow|git tag|publish)' 0 success $SHA
+NOCOMMITCERT=1 row cert-absent-from-commit 1 ''                '^(models|gh workflow|git tag|publish)' 0 success $SHA
+REACH_FAIL=1 row host-unreachable-not-measured 1 ''            '^(models|gh workflow|git tag|publish)' 0 success $SHA
+MODELS_RC=1 MODELS_LINE='MODELS NO-GO: red cell' row models-nogo-no-tag 1 '' '^(gh workflow|git tag|publish)' 0 success $SHA
+MODELS_RC=2 MODELS_LINE='MODELS NO-GO: gx10 unreachable' row models-env-no-tag 1 '' '^(gh workflow|git tag|publish)' 0 success $SHA
+MODELS_RC=2 row go-line-with-nonzero-rc-no-tag 1 ''          '^(gh workflow|git tag|publish)' 0 success $SHA
+MODELS_LINE='MODELS GO on lambda and gx10 at 111111111' row ladder-go-is-not-crux 1 '' '^(gh workflow|git tag|publish)' 0 success $SHA
 row wrong-sha-no-tag           1 ''                           '^(git tag|publish)' 0 success deadbeef
 row absent-verdict-no-tag      1 ''                           '^(git tag|publish)' 0 "" ""
 [ "$fails" = 0 ] && { echo "all rows held"; exit 0; }
