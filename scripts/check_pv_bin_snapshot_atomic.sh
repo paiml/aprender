@@ -4,11 +4,18 @@
 # builders race to make it; the reader must never find the dir without a runnable pv that
 # prints its version, and every builder must end up with the same whole dir.
 #
-# pv_bin.sh resolves (cargo build) when sourced, so the snapshot functions are cut out of
+# pv_bin.sh resolves (builds pv) when sourced, so the snapshot functions are cut out of
 # the file by name and loaded alone; no cargo, no pv from this tree is needed.
 #
 # Falsifier: FALSIFY=1 builds the dir in place the pre-#5388 way and this check must go RED.
 set -euo pipefail
+
+case "${1:-}" in
+    --help | -h)
+        echo "usage: bash scripts/check_pv_bin_snapshot_atomic.sh   (FALSIFY=1 must go RED)"
+        exit 0
+        ;;
+esac
 
 cd "$(dirname "$0")/.."
 SRC=scripts/pv_bin.sh
