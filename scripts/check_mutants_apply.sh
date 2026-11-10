@@ -37,14 +37,15 @@ tables() {
 
 # fmt FILE LINE -> the table format, read from the loop above the table's `done`
 fmt() {
-    local f="$1" n="$2" body
+    local f="$1" n="$2" body tail40
     body="$(awk -v n="$n" 'NR <= n' "$f" | tac | awk '/while .*read -r/ { print; exit }')"
     case "$body" in
         *"IFS='~' read -r label must old new"*) echo tilde ;;
         *"IFS='|' read -r m e"*) echo pipe ;;
         *"read -r name file expr"*) echo file3 ;;
         *"read -r name expr"*)
-            if awk -v n="$n" 'NR <= n' "$f" | tail -n 40 | grep -qF 'm:${name}( |'; then echo anchored; else echo self2; fi ;;
+            tail40="$(awk -v n="$n" 'NR <= n' "$f" | tail -n 40)"
+            case "$tail40" in *'m:${name}( |'*) echo anchored ;; *) echo self2 ;; esac ;;
         *) echo unknown ;;
     esac
 }
