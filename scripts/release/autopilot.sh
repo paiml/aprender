@@ -395,6 +395,36 @@ cut_tag() {
     bash "$REPO_ROOT/scripts/hooks/pre-push-tags.sh" --arm-release "$t" 120 >> "$LOG" 2>&1 || die "arming $t for the pre-push tag guard failed -- tag not pushed"
     git push origin "$t" >> "$LOG" 2>&1 || die "tag push failed"
 }
+# #6500: clean-room on the COMMIT before the tag, not after. paiml/infra clean-room.yml takes a full sha as
+# `ref`; dispatch it on the release commit, wait for the `clean-room (aprender)` job, and require green with
+# every tested-sha equal to exactly <commit>. Any other outcome stops the train with no tag cut. The
+# tag-time clean-room (cleanroom step) and the cascade's re-check stay as they are. Run id: $AP/pretag-cleanroom-run-id.
+# scripts/check_pretag_cleanroom.sh runs this function against stubs.
+pretag_cleanroom() {
+    local mc=$1 t0 crun="" jc jid shas
+    t0=$(date -u +%s)  # bashrs disable-line=DET002
+    gh workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$mc" >> "$LOG" 2>&1 || die "pre-tag clean-room dispatch on $mc failed -- no tag"
+    say "PRETAG-CLEANROOM dispatched on $mc"
+    sleep "$AP_SETTLE"
+    for _ in 1 2 3; do
+        crun=$(gh run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+        [ -n "$crun" ] && break; sleep "$AP_POLL"
+    done
+    [ -n "$crun" ] || die "no pre-tag clean-room run appeared after the dispatch on $mc -- no tag"
+    say "PRETAG-CLEANROOM RUN $crun"
+    jc=""; jid=""
+    for _ in $(seq 1 48); do
+        jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | "\(.conclusion) \(.databaseId)"' | head -1)
+        [ -n "$jc" ] && break
+        sleep "$AP_POLL"
+    done
+    jid=${jc#* }; jc=${jc%% *}
+    [ "$jc" = success ] || die "pre-tag clean-room (aprender) on $mc concluded '${jc:-absent}' (run $crun) -- no tag"
+    shas=$(gh run view --job "$jid" --repo "$INFRA" --log 2>> "$LOG" | grep -oE 'tested-sha: [0-9a-f]{40}' | sort -u)
+    [ "$shas" = "tested-sha: $mc" ] || die "pre-tag clean-room run $crun tested '${shas//$'\n'/ }', not exactly $mc -- no tag"
+    printf '%s\n' "$crun" > "$AP/pretag-cleanroom-run-id" || die "cannot write $AP/pretag-cleanroom-run-id -- no tag"
+    say "PRETAG-CLEANROOM GREEN on $mc (infra run $crun): tagging"
+}
 # Rehearsal (H10: no tag): every gate above ran as on release day; the tag and its push are WOULD
 # lines, and $AP/would-tag records "<tag> <commit>" for the steps that read the tag on release day.
 cut_tag_rehearsal() {
@@ -427,6 +457,7 @@ if run_step tag; then
     say "WOULD gh workflow run binary-release.yml --repo $REPO --ref $T -f tag=$T"
     say "REHEARSED the tag step for $T at $MC: WOULD lines only, nothing tagged, drafted or dispatched"
   else
+  pretag_cleanroom "$MC"
   cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
   gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"
