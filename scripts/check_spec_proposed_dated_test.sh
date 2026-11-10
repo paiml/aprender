@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Falsifier: planted undated PROPOSED spec must be RED, dated one GREEN, empty dir rc 2, real tree GREEN.
 set -u
-S="$(dirname "$0")/check_spec_proposed_dated.sh"; t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+S="$(dirname "$0")/check_spec_proposed_dated.sh"; t=$(mktemp -d); trap 'rm -rf "${t:?}"' EXIT
 printf '# X\n**Status:** PROPOSED\n' >"$t/a.md"
 bash "$S" "$t" >/dev/null; [ $? -eq 1 ] || { echo "FAIL planted violation not RED"; exit 1; }
 printf '# X\n**Status:** Proposed\n**Date:** 2026-05-01\n' >"$t/a.md"
