@@ -12,7 +12,7 @@ BUMP="${ONE_CMD_BUMP:-bash scripts/bump-version.sh}"; PUBLISH="${ONE_CMD_PUBLISH
 ARM="${ONE_CMD_ARM:-bash scripts/hooks/pre-push-tags.sh --arm-release}"
 # PMAT-5306 seams: CERT carries the CRUX certification, MODELS measures CRUX smoke, REACH proves both hosts first.
 CERT="${ONE_CMD_CERT:-bash scripts/release/prepare_bump.sh --carry-cert}"; MODELS="${ONE_CMD_MODELS:-bash scripts/release/models_t1.sh}"
-oc_reach() { hostname -s | grep -qi lambda && ssh -o BatchMode=yes -o ConnectTimeout=10 gx10 true; }
+oc_reach() { local h; h=$(hostname -s) || return 1; [[ ${h,,} == *lambda* ]] && ssh -o BatchMode=yes -o ConnectTimeout=10 gx10 true; }
 REACH="${ONE_CMD_REACH:-oc_reach}"
 MOUT="${ONE_CMD_MODELS_OUT:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/models-t1-$V}"; CC="$PWD/evidence/crux/$V/prompt-certification.json"
 say() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }  # bashrs disable-line=DET002
@@ -35,10 +35,11 @@ say "BUMP $V at $SHA on $BR"
 if [ "$DRY" = 1 ]; then
   say "WOULD push $BR; models_t1 crux at $SHA; clean-room ref=$SHA; git tag -a $T $SHA; push $T; MODEL_LADDER_CRUX_DIR=$MOUT CRUX_CERT=$CC $PUBLISH; carry PR to main"; exit 0
 fi
-git push -q origin "$BR" || die "push $BR failed"
 # PMAT-5306: the CRUX smoke at THIS sha on lambda and gx10 before any tag; R7 re-judges these receipts at publish.
 # A host that cannot be reached is not_measured, and not_measured is a stop: nothing is skipped or stood in for.
+# Reachability is proven before the release branch is pushed, so an unreachable host leaves no release/V behind.
 $REACH || die "not_measured: CRUX smoke needs this runner to be lambda and gx10 reachable over SSH; no tag"
+git push -q origin "$BR" || die "push $BR failed"
 MODELS_T1_MEASURE=crux $MODELS "$V" "$SHA" "$MOUT" > "$MOUT.log" 2>&1; mrc=$?
 grep -E '^MODELS ' "$MOUT.log"
 [ "$mrc" = 0 ] && grep -q '^MODELS GO (CRUX smoke) ' "$MOUT.log" \

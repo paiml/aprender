@@ -31,6 +31,10 @@ if [ "${1:-}" = --mutants ]; then
   mut crux-line-unchecked "s/grep -q '^MODELS GO (CRUX smoke) ' \"\$MOUT.log\"/true/"
   mut models-rc-unchecked 's/^\[ "\$mrc" = 0 \] \&\& /true \&\& /'
   mut reach-skipped 's/^\$REACH || die .*$/:/'
+  mut reach-after-push 's/^\$REACH || die .*$/:/; s/^git push -q origin "\$BR" || die .*$/&; $REACH || die x/'
+  mut host-check-dropped 's/\*lambda\*/*/'
+  mut host-check-case-sensitive 's/\${h,,}/$h/'
+  mut host-check-not-closed 's/h=\$(hostname -s) || return 1/h=lambda/'
   mut publish-env-dropped 's/^MODEL_LADDER_CRUX_DIR="\$MOUT" CRUX_CERT="\$CC" \$PUBLISH/$PUBLISH/'
   [ "$miss" = 0 ] && { echo "all mutants caught"; exit 0; }; exit 1
 fi
@@ -47,14 +51,17 @@ row() { # name want_rc want_calls_regex forbid_calls_regex dry cr_conclusion cr_
   mkstub git 'case "$1" in rev-parse) echo '$SHA';; merge-base) [ -z "${NOTMAIN:-}" ] || exit 1;; cat-file) [ -z "${NOCOMMITCERT:-}" ] || exit 1;; esac; exit 0'
   mkstub cert '[ -z "${CERT_FAIL:-}" ] || exit 1; exit 0'
   mkstub reach '[ -z "${REACH_FAIL:-}" ] || exit 1; exit 0'
+  mkstub hostname '[ -z "${HOST_FAIL:-}" ] || exit 1; echo "${HOST_STUB:-lambda-vector}"'
+  mkstub ssh '[ -z "${SSH_FAIL:-}" ] || exit 255; exit 0'
   mkstub models 'echo "models ${MODELS_T1_MEASURE:-unset} $*" >> "$CALLS"; echo "${MODELS_LINE:-MODELS GO (CRUX smoke) on lambda and gx10 at 111111111: ok}"; exit ${MODELS_RC:-0}'
   mkstub nextdev '[ -z "${NEXTDEV_FAIL:-}" ] || exit 1; exit 0'
   mkstub bump 'exit 0'
   mkstub publish 'echo "publish MODEL_LADDER_CRUX_DIR=${MODEL_LADDER_CRUX_DIR:-} CRUX_CERT=${CRUX_CERT:-}" >> "$CALLS"; exit 0'
   mkstub gh 'case "$*" in *"run list"*) echo 42;; *"--log"*) [ -z "${DECOY:-}" ] || echo "2026-11-05T00:00:00Z   claim step summary carries \"tested-sha: <40hex>\""; echo "2026-11-05T00:00:01Z     tested-sha: '"$crsha"'";; *"run view"*) echo "'"$concl"'";; esac; exit 0'
+  local rs=reach; [ -z "${REAL_REACH:-}" ] || rs=""   # REAL_REACH=1: empty seam, so the real oc_reach runs
   local a=(0.73.0 "$dry"); [ -n "${NOBASE:-}" ] || a+=("${BASEARG:-$BASE}")
   PATH=$BIN:$PATH ONE_CMD_BUMP=bump ONE_CMD_PUBLISH=publish ONE_CMD_NEXTDEV=nextdev ONE_CMD_POLL=0 ONE_CMD_ARM=true \
-    ONE_CMD_CERT=cert ONE_CMD_MODELS=models ONE_CMD_REACH=reach ONE_CMD_MODELS_OUT=$T/mout bash "$SRC" "${a[@]}" > "$T/out" 2>&1
+    ONE_CMD_CERT=cert ONE_CMD_MODELS=models ONE_CMD_REACH="$rs" ONE_CMD_MODELS_OUT=$T/mout bash "$SRC" "${a[@]}" > "$T/out" 2>&1
   local rc=$?; [ -n "${DBG:-}" ] && cat "$T/out"
   [ "$rc" = "$wrc" ] || { echo "FAIL $name: rc=$rc want $wrc"; fails=$((fails+1)); return; }
   [ -z "$want" ] || grep -Eq -- "$want" "$CALLS" || { echo "FAIL $name: no call /$want/"; fails=$((fails+1)); return; }
@@ -90,7 +97,13 @@ else echo "FAIL models-before-clean-room: models line ${mo_at:-none}, clean-room
 row publish-gets-crux-env      0 '^publish MODEL_LADDER_CRUX_DIR='"$T"'/mout CRUX_CERT=/.+/evidence/crux/0\.73\.0/prompt-certification\.json$' 'ZZZ' 0 success $SHA
 CERT_FAIL=1 row cert-refused-no-commit 1 ''                    '^(git commit|models|gh workflow|git tag|publish)' 0 success $SHA
 NOCOMMITCERT=1 row cert-absent-from-commit 1 ''                '^(models|gh workflow|git tag|publish)' 0 success $SHA
-REACH_FAIL=1 row host-unreachable-not-measured 1 ''            '^(models|gh workflow|git tag|publish)' 0 success $SHA
+REACH_FAIL=1 row host-unreachable-not-measured 1 ''            '^(git push|models|gh workflow|git tag|publish)' 0 success $SHA
+# oc_reach itself, against the hostname/ssh stubs
+REAL_REACH=1 row reach-lambda-probes-gx10 0 '^ssh .* gx10 true$' 'ZZZ'                0 success $SHA
+REAL_REACH=1 HOST_STUB=LAMBDA-Vector row reach-host-case-insensitive 0 '^ssh .* gx10 true$' 'ZZZ' 0 success $SHA
+REAL_REACH=1 HOST_STUB=gx10 row reach-not-lambda-stops 1 ''     '^(ssh|git push|models|gh workflow|git tag|publish)' 0 success $SHA
+REAL_REACH=1 HOST_FAIL=1 row reach-no-hostname-stops 1 ''       '^(ssh|git push|models|gh workflow|git tag|publish)' 0 success $SHA
+REAL_REACH=1 SSH_FAIL=1 row reach-gx10-down-stops 1 '^ssh '      '^(git push|models|gh workflow|git tag|publish)' 0 success $SHA
 MODELS_RC=1 MODELS_LINE='MODELS NO-GO: red cell' row models-nogo-no-tag 1 '' '^(gh workflow|git tag|publish)' 0 success $SHA
 MODELS_RC=2 MODELS_LINE='MODELS NO-GO: gx10 unreachable' row models-env-no-tag 1 '' '^(gh workflow|git tag|publish)' 0 success $SHA
 MODELS_RC=2 row go-line-with-nonzero-rc-no-tag 1 ''          '^(gh workflow|git tag|publish)' 0 success $SHA
