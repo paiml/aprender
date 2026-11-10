@@ -79,7 +79,7 @@ serde-saphyr = { workspace = true }
 # (the competitive_benchmarks bench `required-features` gates it). Run with:
 #   cargo bench -p aprender-db --features competitive-benchmarks --bench competitive_benchmarks
 duckdb = { version = "1.10506", features = ["bundled"], optional = true }
-rusqlite = { version = "0.32", optional = true }
+rusqlite = { version = "0.41", optional = true }
 
 [dev-dependencies]
 # Testing

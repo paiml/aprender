@@ -33,13 +33,18 @@
 #      changes no field still counts as changed — check_roadmap_diff_additive.sh
 #      already refuses that shape, so this gate must not be the one place it
 #      reads as "nothing happened".
-#   2. THE AGGREGATE MUST BE REGENERATED. Whenever either side of the pair
-#      changes, head's roadmap.yaml must equal aggregate(head's entries/).
+#   2. A TOUCHED AGGREGATE MUST BE REGENERATED. When the diff changes
+#      roadmap.yaml, head's roadmap.yaml must equal aggregate(head's entries/).
 #      That placement rule is NOT restated here: it is
 #      `roadmap_fragments.py aggregate --check`, the same function `make
 #      roadmap-aggregate` writes with, so the guard and the generator cannot
-#      drift. A fragment landed without `make roadmap-aggregate` is drift and is
-#      named as such.
+#      drift. A hand-edited or half-regenerated aggregate is drift and is named
+#      as such. When the diff leaves roadmap.yaml byte-identical (a fragment-only
+#      PR), the fragments need only AGGREGATE (parse, unique ids, same mapping):
+#      roadmap.yaml is regenerated post-merge on main, as
+#      contracts/apr-roadmap-fragments-v1.yaml states. Requiring every PR to
+#      commit the regenerated monolith made it a hot file again — 4 of 4 open
+#      PRs red on DRIFT at once, 2026-11-09 (apr-roadmap-drift-0630Z).
 #
 # WHAT IS STILL ALLOWED: the aggregate changing AS AN AGGREGATE — every entry
 # that moved has its fragment in the same diff and the file equals
@@ -122,9 +127,9 @@ remedy() {
     printf '        python3 scripts/lib/roadmap_fragments.py adopt <ID>\n'
     printf '  * an EXISTING entry — adopt it once, then edit %s/<ID>.yaml\n' "$ENTRIES_DIR"
     printf '    (a fragment SUPERSEDES the base entry of the same id).\n'
-    printf '  * then regenerate and stage BOTH sides:\n'
-    printf '        make roadmap-aggregate\n'
-    printf '        git add %s/<ID>.yaml %s\n' "$ENTRIES_DIR" "$ROADMAP_FILE"
+    printf '  * then stage the FRAGMENT only; %s is regenerated post-merge on main:\n' "$ROADMAP_FILE"
+    printf '        git add %s/<ID>.yaml\n' "$ENTRIES_DIR"
+    printf '    (if this diff does touch %s, it must be `make roadmap-aggregate` output)\n' "$ROADMAP_FILE"
     printf '  * an id that is not filename-safe (prose, or carrying a path separator) has NO\n'
     printf '    fragment path: it stays in the base and is immutable (RMFR-OB-005).\n'
 }
@@ -149,7 +154,7 @@ intro_regenerates() {
 # ---------------------------------------------------------------------------
 judge() {
     local repo=$1 base=$2 head=$3
-    local td roadmap_changed=0 frag_paths names name verdict eid line
+    local td roadmap_changed=0 frag_paths names name verdict eid line touched mode
     local violations=0 checked=0 out rc
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
@@ -258,12 +263,29 @@ judge() {
     fi
     [ "$have_base" = 1 ] || printf 'note  %s absent at head: the aggregate is judged against itself (pre-S1 shape)\n' "$BASE_FILE"
 
-    # --- RULE 2: the aggregate at head is REGENERATED, not drifting ----------
-    out=$(python3 "$PY_LIB" aggregate --check --roadmap "$td/head.yaml" --entries "$td/entries" 2>&1)
+    # --- RULE 2: a touched aggregate is REGENERATED; fragments always aggregate --
+    # Untouched roadmap.yaml: run the same aggregate WITHOUT --check (output discarded), so a
+    # fragment that cannot aggregate still fails, but main's post-merge regeneration is not
+    # demanded of this PR. One call site either way (no new python3 line, #5902 condition 3).
+    touched=$roadmap_changed
+    mode=(--check)
+    [ "$touched" = 1 ] || mode=()
+    python3 "$PY_LIB" aggregate ${mode[@]+"${mode[@]}"} --roadmap "$td/head.yaml" --entries "$td/entries" \
+        >"$td/agg.out" 2>"$td/agg.err"
     rc=$?
+    out=$(cat -- "$td/agg.err")
+    [ "$touched" = 0 ] || out=$(cat -- "$td/agg.out" "$td/agg.err")
     rm -rf -- "${td:?}"
-    if [ "$rc" = 0 ]; then
+    if [ "$rc" = 0 ] && [ "$touched" = 0 ]; then
+        printf 'ok    %s untouched by this diff; head fragments aggregate cleanly (regenerated post-merge on main)\n' "$ROADMAP_FILE"
+    elif [ "$rc" = 0 ]; then
         printf 'ok    %s == aggregate(%s/) at head\n' "$ROADMAP_FILE" "$ENTRIES_DIR"
+    elif [ "$touched" = 0 ]; then
+        violations=$((violations + 1))
+        printf 'FAIL  FRAGMENT: the fragments at head do not aggregate\n'
+        while IFS= read -r line; do
+            [ -n "$line" ] && printf '      %s\n' "$line"
+        done < <(printf '%s\n' "$out")
     else
         violations=$((violations + 1))
         printf 'FAIL  DRIFT: at head, %s is NOT aggregate(%s/) — a fragment changed and the aggregate was not regenerated (run `make roadmap-aggregate`)\n' \
@@ -278,7 +300,7 @@ judge() {
         remedy
         return 1
     fi
-    printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is regenerated\n' "$PROG" "$checked"
+    printf 'PASS  %s: %s changed entry/entries, each with its fragment; the aggregate is consistent\n' "$PROG" "$checked"
     return 0
 }
 
@@ -368,9 +390,25 @@ self_test() {
         python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
         commit_all "$1"
     }
-    # A fragment with no `make roadmap-aggregate`.
+    # A fragment with no `make roadmap-aggregate`: the fragment-only PR shape (regen is post-merge).
     b_fragment_no_regen() {
         printf -- '- id: PMAT-200\n  title: fragment only\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # Fragment-only, but the fragment names another id than its filename: cannot aggregate.
+    b_fragment_wrong_id() {
+        printf -- '- id: PMAT-201\n  title: misfiled\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # Fragment-only, but the fragment is not YAML at all.
+    b_fragment_not_yaml() {
+        printf -- '- id: PMAT-200\n  title: [unclosed\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        commit_all "$1"
+    }
+    # The aggregate IS touched, but by hand: the fragment's entry plus a stray edit.
+    b_fragment_hand_aggregate() {
+        printf -- '- id: PMAT-200\n  title: by hand\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        printf -- '- id: PMAT-200\n  title: by hand, differently\n  status: planned\n' >>"$1/$ROADMAP_FILE"
         commit_all "$1"
     }
     b_unrelated() {
@@ -488,8 +526,14 @@ PY
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
     row 'fragment + regenerated aggregate, in sync -> PASS' \
         0 'ok    ADDED    PMAT-200 — docs/roadmaps/entries/PMAT-200.yaml changes in the same diff' b_fragment_and_aggregate
-    row 'fragment added, aggregate NOT regenerated -> REFUSE, naming the drift' \
-        1 'FAIL  DRIFT' b_fragment_no_regen
+    row 'fragment-only PR, aggregate untouched -> PASS (regenerated post-merge on main)' \
+        0 'untouched by this diff; head fragments aggregate cleanly' b_fragment_no_regen
+    row 'fragment-only PR, fragment id is not its filename -> REFUSE' \
+        1 'carries id' b_fragment_wrong_id
+    row 'fragment-only PR, fragment is not YAML -> REFUSE' \
+        1 'is not YAML' b_fragment_not_yaml
+    row 'aggregate touched but not regenerated (hand-edited) -> REFUSE, naming the drift' \
+        1 'FAIL  DRIFT' b_fragment_hand_aggregate
     row 'a docs-only diff touching neither side -> PASS (no false positive)' \
         0 'nothing to judge' b_unrelated
     row 'the aggregate RE-SERIALISED with no content change -> REFUSE' \

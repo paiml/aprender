@@ -111,7 +111,7 @@ tower = { version = "0.5", optional = true }  # Tower service utilities
 tower-http = { version = "0.6", features = ["trace", "cors"], optional = true }  # HTTP middleware
 safetensors = "0.7"  # SafeTensors format parsing
 half = "2.4"  # bf16/f16 to f32 conversion for weight loading
-rusqlite = { version = "0.32", features = ["bundled"] }  # SQLite experiment store
+rusqlite = { version = "0.41", features = ["bundled"] }  # SQLite experiment store
 sha2 = "0.10"  # SHA256 hashing for artifact CAS
 hex = "0.4"  # Hex encoding for hashes
 regex = "1.10"  # ORCID/ROR validation

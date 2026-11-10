@@ -105,6 +105,7 @@
 #          When the quick tier falls closed the FULL suite runs and no filterset
 #          is emitted.
 set -euo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 # Internal mode flags are set ONLY by their own option, never read from the
 # environment. An exported SELF_TEST=1 used to reach the dispatch below, and
@@ -344,7 +345,7 @@ decide() {
             fi
             base="$pb"; how="the push's own range, github.event.before..after (${pb:0:9}..HEAD)"
             [ -z "$why" ] || how="$how; merge_group not reused: $why"
-            df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
+            df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX"); SCRATCH+=("$df")
             if ! diff_into "$df" "$base"; then rm -f "$df"; printf 'tier=full\nreason=push: git diff %s..HEAD failed -- the pushed diff cannot be derived, so this falls closed to full\n' "$base"; return 0; fi
             if [ ! -s "$df" ]; then rm -f "${df:?}"; printf 'tier=full\nreason=push: diff %s..HEAD is empty -- fail closed to full, never none\n' "$base"; return 0; fi # R-PUSHEMPTY
             selection "push: $how" "$df" || rc=$?
@@ -361,7 +362,7 @@ decide() {
             if [ -z "$mgb" ] || ! git -C "$ROOT" cat-file -e "$mgb^{commit}" 2>/dev/null; then
                 printf 'tier=full\nreason=merge_group: base sha "%s" unavailable, so the group diff cannot be derived -- fail closed to full\n' "${mgb:-unset}"; return
             fi
-            df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX")
+            df=$(mktemp "${TMPDIR:-/tmp}/ci-tier-diff.XXXXXX"); SCRATCH+=("$df")
             if ! diff_into "$df" "$mgb"; then rm -f "${df:?}"; printf 'tier=full\nreason=merge_group: git diff %s..HEAD failed -- fail closed to full\n' "$mgb"; return; fi
             # The queue never answers none for an EMPTY diff (an empty group lands no path to prove
             # it is docs-only; sign-off r1 of #5468): only a non-empty docs-only diff is none.
@@ -422,7 +423,7 @@ self_test() {
     # #5172: a tag-push run's own GITHUB_REF would turn every push row below full.
     unset GITHUB_REF
     export CI_TEST_TIER_SELF_TEST_PID=$$
-    td=$(mktemp -d "${TMPDIR:-/tmp}/ci-tier.XXXXXX"); trap 'rm -rf "${td:?}"' RETURN
+    td=$(mktemp -d "${TMPDIR:-/tmp}/ci-tier.XXXXXX"); SCRATCH+=("$td"); trap 'rm -rf "${td:?}"' RETURN
     # One decision, many rows. Each full decision re-runs check_tree_reader_tests.sh
     # (~23s, it re-derives the registry from the sources), so a fixture is DECIDED
     # once into a file and every assertion about it replays that file with its exit
