@@ -1,0 +1,21 @@
+# #6620 APR-RELEASE-001 P3 coverage-ratchet target -- first-green receipt
+# origin/main: f9654514648406c418cf28f0bb5b67c0e039a275   measured: 2026-11-09T17:01:41Z
+# lab check, run by hand; not wired into any PR, merge-queue or release job
+
+## REAL TREE (expect GREEN, rc 0)
+baseline=89 next_target=91 end_target=95 (report-only)
+rc=0
+
+## PLANTED VIOLATION: ci.yml runs coverage (expect RED, rc 1)
+baseline=89 next_target=91 end_target=95 (report-only)
+RED  /tmp/cr.byuqwD/ci.yml runs coverage on a PR/queue/release path (1 lines); it is nightly only
+rc=1
+
+## PLANTED VIOLATION: baseline above end target (expect RED, rc 1)
+RED  baseline 96 > end target 95
+baseline=96 next_target=95 end_target=95 (report-only)
+rc=1
+
+## SELF-TEST
+self-test ok: clean, floor>target, PR-path coverage, cap and not-measured all behave
+rc=0

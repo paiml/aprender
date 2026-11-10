@@ -31,6 +31,7 @@
 # Pmat-Ticket: PMAT-4475
 
 set -u
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 STEPS=(lint shapes consistency census regen readme provenance diff)
 # contracts/census.json is NOT here: it is a release-train snapshot with one writer (`make census`) and is
@@ -40,6 +41,7 @@ GENERATED=(contracts/contracts.nt contracts/shapes.ttl)
 step_lint() {
     local log rc
     log=$(mktemp "${TMPDIR:-/tmp}/pv-lint-contracts.XXXXXX") || return 1
+    SCRATCH+=("$log")
     "$PV" lint contracts/ >"$log" 2>&1
     rc=$?
     tail -5 "$log"
@@ -78,6 +80,7 @@ JQ
 step_shapes() {
     local json err rc
     json=$(mktemp "${TMPDIR:-/tmp}/pv-shapes.XXXXXX") && err=$(mktemp "${TMPDIR:-/tmp}/pv-shapes-err.XXXXXX") || return 3
+    SCRATCH+=("$json" "$err")
     "$PV" lint contracts/ --gate shapes >"$json" 2>"$err"
     rc=$?
     shapes_verdict "$rc" "$json" "$err"
@@ -110,6 +113,7 @@ step_regen() {
 step_census() {
     local t rc
     t=$(mktemp "${TMPDIR:-/tmp}/pv-census.XXXXXX") || return 1
+    SCRATCH+=("$t")
     if "$PV" census contracts --format json >"$t"; then
         bash scripts/check_census_derived.sh --census "$t" && CENSUS_JSON="$t" bash scripts/readme_sync.sh --check
         rc=$?
@@ -153,6 +157,7 @@ run_gate() {
 self_test() {
     local d stub rc out pass=0 fail=0 mutant
     d=$(mktemp -d "${TMPDIR:-/tmp}/contracts-gate-st.XXXXXX") || return 2
+    SCRATCH+=("$d")
     stub="$d/pv"
     # The stub pv: census counts contracts/*.yaml, extract writes that count into both graph files, so a
     # contract added without regenerating really does move all three. STUB_FAIL=<subcommand> makes one fail;

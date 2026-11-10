@@ -36,6 +36,7 @@ guard-tree-case-table|bash scripts/tests/guard_tree_test.sh
 bump-version-self-test|bash scripts/bump-version.sh --self-test
 falsify-scratch-tmpdir|bash scripts/release/falsify_scratch_tmpdir.sh --mutants
 falsify-bump-tmpdir|bash scripts/release/falsify_bump_tmpdir.sh --mutants
+no-pull-request-target-guard|sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
 exec-bit-guard|bash scripts/release/exec_bit_guard.sh
 falsify-exec-bit-guard|bash scripts/release/falsify_exec_bit_guard.sh --mutants
 falsify-one-command|bash scripts/release/falsify_one_command.sh
@@ -163,7 +164,7 @@ self_test() {
     row "lanes print in input order, not finish order" "$(printf '%s\n' "$out1" | head -n 1)" 'ok    slow'
     out1="$(printf 'x|exit 7\n' | run_lanes "$d/6" 2> /dev/null)"
     row "a lane's own rc is reported" "$(printf '%s\n' "$out1" | grep -c 'rc=7')" 2
-    row "the lane table has every old cheap check plus the offline falsifier and the self-tests (19 lanes)" "$(cheap_lanes | grep -c '|')" 19
+    row "the lane table has every old cheap check plus the offline falsifier and the self-tests (20 lanes)" "$(cheap_lanes | grep -c '|')" 20
     row "shard lanes partition 1..K" "$(PR_LIGHT_SHARDS=3 shard_lanes | cut -d'|' -f1 | paste -sd,)" 'guard-tree-shard-1-of-3,guard-tree-shard-2-of-3,guard-tree-shard-3-of-3'
     row "a bad shard count is refused" "$(PR_LIGHT_SHARDS=0 shard_lanes 2> /dev/null; echo $?)" 2
     local sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

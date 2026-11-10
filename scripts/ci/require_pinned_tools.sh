@@ -4,6 +4,7 @@
 # Provisioning lives where it is pinned (forjar machines/*/forjar.yaml; pre-job.sh asserts rustup/cargo/forjar). A
 # missing tool is a RED step naming the resource, not a download at gate time:
 #   jq 1.8.x                         guard_tree_test needs 1.8 (it replaces the old fetch of jq-1.8.2)
+#   yq v4.52.2                       the pull_request_target guard reads workflow triggers with it (replaces a curl of the binary)
 #   the rust-toolchain.toml release  (it replaces the old toolchain install); only an exact release is checked
 #   the sovereign-ci image digest    (cargo fmt runs in it; a missing image would be a pull, so it is refused here)
 #
@@ -26,6 +27,10 @@ check() {
         v="$(jq --version)"
         jq_ok "$v" || { echo "::error::jq is '$v', pr-light needs 1.8.x from forjar; pr-light does not fetch it"; bad=1; }
     fi
+    command -v yq > /dev/null 2>&1 || { echo "::error::yq is not provisioned on this runner (pinned v4.52.2 in forjar); pr-light does not download it"; bad=1; }
+    if command -v yq > /dev/null 2>&1; then
+        case "$(yq --version 2>&1)" in *" v4.52.2"*) ;; *) echo "::error::yq is '$(yq --version 2>&1)', pr-light needs v4.52.2 from forjar; pr-light does not fetch it"; bad=1 ;; esac
+    fi
     if [ -f "$ws/rust-toolchain.toml" ]; then
         pin="$(pin_of "$ws/rust-toolchain.toml")"
         if [ -n "$pin" ]; then
@@ -39,7 +44,7 @@ check() {
     if [ -n "$img" ]; then
         docker image inspect "$img" > /dev/null 2>&1 || { echo "::error::image $img is not in this runner's local cache; pr-light does not fetch it"; bad=1; }
     fi
-    [ "$bad" = 0 ] && echo "ok    jq, the pinned toolchain and the fmt image are provisioned"
+    [ "$bad" = 0 ] && echo "ok    jq, yq, the pinned toolchain and the fmt image are provisioned"
     return "$bad"
 }
 
