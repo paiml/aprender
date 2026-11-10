@@ -1,0 +1,14 @@
+# NO-FORK-1: close pull requests opened from forks (paiml accepts none).
+# This is the ONE allowlisted pull_request_target caller (see .github/pull-request-target-allowlist.txt):
+# closing a fork PR needs the write token. It calls the org reusable workflow, which checks out
+# nothing and reads only event metadata. The guard fails if this file ever gains a checkout.
+name: Fork PR Closer
+on:
+  pull_request_target:
+    types: [opened, reopened]
+permissions: {}
+jobs:
+  close:
+    permissions:
+      pull-requests: write
+    uses: paiml/.github/.github/workflows/fork-pr-closer.yml@830147e62523b292823e3134943de10265c4569e # main at pin time

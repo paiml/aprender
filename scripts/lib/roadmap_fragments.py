@@ -88,6 +88,23 @@ def insertion_index(base_entries, eid):
     return len(base_entries)
 
 
+def _refuse_unparseable_fragment(eid, block):
+    """A fragment must parse ALONE as one entry whose id is its filename. The
+    aggregate is regenerated post-merge on main, so a PR that only adds a
+    fragment is judged on this alone: a block that is not YAML, holds two
+    entries, or names another id would break main's regeneration, not the PR."""
+    import yaml
+    try:
+        got = yaml.safe_load(block)
+    except yaml.YAMLError as e:
+        raise ValueError("fragment %s.yaml is not YAML: %s" % (eid, str(e).splitlines()[0]))
+    if not (isinstance(got, list) and len(got) == 1 and isinstance(got[0], dict)):
+        raise ValueError("fragment %s.yaml must hold exactly one entry mapping" % eid)
+    if str(got[0].get("id")) != eid:
+        raise ValueError("fragment %s.yaml carries id %r, not its filename"
+                         % (eid, got[0].get("id")))
+
+
 def aggregate(base_text, fragments):
     """base + fragments, each at its sorted slot.
 
@@ -110,6 +127,8 @@ def aggregate(base_text, fragments):
         if eid in seen:
             raise ValueError("duplicate id among fragments: %s" % eid)
         seen.add(eid)
+    for eid, block in fragments:
+        _refuse_unparseable_fragment(eid, block)
     entries = [(e, b) for e, b in entries if e not in seen]
     for eid, block in fragments:
         entries.insert(insertion_index(entries, eid), (eid, block))

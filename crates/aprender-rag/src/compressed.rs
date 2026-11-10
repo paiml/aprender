@@ -18,7 +18,7 @@ pub use batuta_common::compression::Compression;
 /// # Errors
 /// Returns error if serialization or compression fails
 pub fn serialize_compressed<T: Serialize>(index: &T, compression: Compression) -> Result<Vec<u8>> {
-    let bytes = bincode::serialize(index).map_err(|e| {
+    let bytes = aprender_legacy_codec::serialize(index).map_err(|e| {
         crate::Error::SerializationError(format!("Bincode serialization failed: {e}"))
     })?;
     Ok(compression.compress(&bytes)?)
@@ -33,7 +33,7 @@ pub fn deserialize_compressed<T: DeserializeOwned>(
     compression: Compression,
 ) -> Result<T> {
     let decompressed = compression.decompress(data)?;
-    bincode::deserialize(&decompressed).map_err(|e| {
+    aprender_legacy_codec::deserialize(&decompressed).map_err(|e| {
         crate::Error::SerializationError(format!("Bincode deserialization failed: {e}"))
     })
 }
@@ -170,7 +170,7 @@ mod tests {
             )));
         }
 
-        let uncompressed = bincode::serialize(&index).unwrap();
+        let uncompressed = aprender_legacy_codec::serialize(&index).unwrap();
         let lz4_compressed = index.to_compressed_bytes(Compression::Lz4).unwrap();
         let zstd_compressed = index.to_compressed_bytes(Compression::Zstd).unwrap();
 

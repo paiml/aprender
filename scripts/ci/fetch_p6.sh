@@ -24,6 +24,7 @@
 #   bash scripts/ci/fetch_p6.sh --check-wiring          # no bare `git fetch` in ci/sections.yml
 #   bash scripts/ci/fetch_p6.sh --self-test
 set -uo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 SECTIONS_REL="ci/sections.yml"
@@ -55,6 +56,7 @@ p6_fetch() {
     at=(-C "$2"); shift 2
   fi
   err="$(mktemp)" || return 2
+  SCRATCH+=("$err")
   for ((n = 1; n <= P6_READS; n++)); do
     LC_ALL=C git "${at[@]}" -c "http.lowSpeedLimit=$LOW_SPEED_LIMIT" -c "http.lowSpeedTime=$LOW_SPEED_TIME" \
       fetch "$@" 2> "$err"
@@ -103,6 +105,7 @@ self_test() {
   printf '=== case table: fetch_p6.sh ===\n'
   local tmp fails=0 rc real_git
   tmp="$(mktemp -d)" || return 1
+  SCRATCH+=("$tmp")
   trap 'rm -rf "${tmp:?}"' RETURN
   # #4936: git finds no repository above tmp, so a read that lost its -C never reaches a checkout.
   export GIT_CEILING_DIRECTORIES="$tmp"

@@ -31,6 +31,7 @@
 #   check_determinism_wait.sh --selftest   case table (planted ci.yml copies + planted receipts)
 #   check_determinism_wait.sh --mutants    each mutant of this checker must turn the table RED
 set -uo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 SELF="$ROOT/scripts/check_determinism_wait.sh"
@@ -151,7 +152,7 @@ receipt() {   # receipt <dir> <arch> <svg-hex-char>
 selftest() {
     local d rc
     command -v jq > /dev/null || { printf 'ENV   jq is required\n'; exit 2; }
-    d=$(mktemp -d); trap 'rm -rf "${d:?}"' RETURN
+    d=$(mktemp -d); SCRATCH+=("$d"); trap 'rm -rf "${d:?}"' RETURN
     CI="$ROOT/.github/workflows/ci.yml"
 
     check "$CI" > "$d/out" 2>&1; rc=$?
@@ -236,7 +237,7 @@ MUTANTS=(noneeds noif nowait noexpect nocompare nostepwait nodriver nogate nocoe
 
 mutants() {
     local d m name killed=0 total=0 s
-    d=$(mktemp -d); trap 'rm -rf "${d:?}"' RETURN
+    d=$(mktemp -d); SCRATCH+=("$d"); trap 'rm -rf "${d:?}"' RETURN
     for name in "${MUTANTS[@]}"; do
         total=$((total + 1)); s="$d/$name.sh"
         if [ "$name" = cmpnosvg ]; then
