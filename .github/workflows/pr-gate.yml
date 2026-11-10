@@ -26,12 +26,23 @@ jobs:
       contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # G5 (infra#3828): a PR gate makes 0 network fetches. yq v4.52.2 is provisioned on the runner;
-      # this step asserts it and never downloads. A missing or wrong yq is RED, never fetched.
-      - name: yq v4.52.2 is provisioned for the pull_request_target guard (no download; fail closed)
+      - name: Pin yq v4.52.2 for the pull_request_target guard (sha256-verified, fail closed)
+        env:
+          YQ_BASE: https://github.com/mikefarah/yq/releases/download/v4.52.2
+          YQ_SHA256_AMD64: a74bd266990339e0c48a2103534aef692abf99f19390d12c2b0ce6830385c459
+          YQ_SHA256_ARM64: c82856ac30da522f50dcdd4f53065487b5a2927e9b87ff637956900986f1f7c2
         run: |
           set -euo pipefail
-          command -v yq > /dev/null 2>&1 || { echo "::error::yq is not provisioned on this runner (pinned v4.52.2); the gate does not download it"; exit 1; }
-          case "$(yq --version 2>&1)" in *" v4.52.2") ;; *) echo "::error::yq is '$(yq --version 2>&1)', not v4.52.2 (provision it; the gate does not download it)"; exit 1 ;; esac
+          case "$(uname -m)" in
+            x86_64) YQ_URL="$YQ_BASE/yq_linux_amd64"; YQ_SHA256="$YQ_SHA256_AMD64" ;;
+            aarch64 | arm64) YQ_URL="$YQ_BASE/yq_linux_arm64"; YQ_SHA256="$YQ_SHA256_ARM64" ;;
+            *) echo "::error::no pinned yq for arch $(uname -m)"; exit 1 ;;
+          esac
+          d="$RUNNER_TEMP/yq-4.52.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/yq" "$YQ_URL"
+          printf '%s  %s\n' "$YQ_SHA256" "$d/yq" | sha256sum -c -
+          chmod +x "$d/yq"
+          echo "$d" >> "$GITHUB_PATH"
       - name: guard and its fixture test
         run: sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
