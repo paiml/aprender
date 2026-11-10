@@ -27263,6 +27263,25 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3999
+- id: PMAT-6647
+  github_issue: 6647
+  item_type: task
+  title: 'ci: mktemp without EXIT trap leaks scratch files on per-PR/MQ scripts (fills runner /tmp inodes)'
+  status: inprogress
+  priority: medium
+  assigned_to: f20-a6
+  created: 2026-11-09T08:30:00Z
+  updated: 2026-11-09T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - contracts_gate.sh, ci_test_tier.sh, ci_mg_reuse.sh and ci_self_hosted_preflight.sh register every mktemp path in SCRATCH and remove it from a top-level EXIT trap; scripts/check_mktemp_exit_trap.sh is red on main and green on the branch, and its self-test includes a set -e mid-function kill that leaves no scratch.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Guard is not wired into a PR/MQ job; making it blocking is a gate addition (quorum/ruling).
+  epic: null
 - id: PMAT-6675
   github_issue: 6675
   item_type: task
