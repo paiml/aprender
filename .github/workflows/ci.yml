@@ -345,28 +345,51 @@ jobs:
       # section with a job container gets the image's PATH, and none of those calls jq).
       # Fail closed: a checksum, version or behaviour mismatch stops the job. The sha256 is
       # the one in the upstream release's sha256sum.txt for jq-linux-amd64.
-      # G5 (infra#3828): a merge-path gate makes 0 network fetches. jq 1.8.2 is provisioned on the runner (forjar
-      # stack-tool-jq); this step asserts it and never downloads. A missing or wrong jq is RED, never fetched.
-      - name: jq 1.8.2 is provisioned (no download; fail closed)
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
         run: |
           set -euo pipefail
-          command -v jq > /dev/null 2>&1 || { echo "::error::jq is not provisioned on this runner (forjar stack-tool-jq 1.8.2); the gate does not download it"; exit 1; }
-          command -v jq
-          v=$(jq --version)
-          [ "$v" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports '$v', not jq-1.8.2 (provision it; the gate does not download it)"; exit 1; }
-          rc=0; jq -e . < /dev/null > /dev/null || rc=$?
-          [ "$rc" = 4 ] || { echo "::error::the provisioned jq exits $rc on empty input with -e, not 4"; exit 1; }
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
+          [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
+      - name: jq on PATH is the pinned one
+        run: |
+          set -euo pipefail
+          command -v jq; jq --version
+          [ "$(command -v jq)" = "$RUNNER_TEMP/jq-1.8.2/jq" ] || { echo "::error::jq on PATH is $(command -v jq), not the pinned one"; exit 1; }
+          [ "$(jq --version)" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports $(jq --version)"; exit 1; }
       # Full history: a section whose own checkout asked for depth 1 (the default)
       # is cut back to exactly that by the driver; one asking for 0 needs it all.
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      # G5 (infra#3828): yq v4.52.2 is provisioned on the runner; asserted, never downloaded.
-      - name: yq v4.52.2 is provisioned for the pull_request_target guard (no download; fail closed)
+      - name: Pin yq v4.52.2 for the pull_request_target guard (sha256-verified, fail closed)
+        env:
+          YQ_BASE: https://github.com/mikefarah/yq/releases/download/v4.52.2
+          YQ_SHA256_AMD64: a74bd266990339e0c48a2103534aef692abf99f19390d12c2b0ce6830385c459
+          YQ_SHA256_ARM64: c82856ac30da522f50dcdd4f53065487b5a2927e9b87ff637956900986f1f7c2
         run: |
           set -euo pipefail
-          command -v yq > /dev/null 2>&1 || { echo "::error::yq is not provisioned on this runner (pinned v4.52.2); the gate does not download it"; exit 1; }
-          case "$(yq --version 2>&1)" in *" v4.52.2") ;; *) echo "::error::yq is '$(yq --version 2>&1)', not v4.52.2 (provision it; the gate does not download it)"; exit 1 ;; esac
+          case "$(uname -m)" in
+            x86_64) YQ_URL="$YQ_BASE/yq_linux_amd64"; YQ_SHA256="$YQ_SHA256_AMD64" ;;
+            aarch64 | arm64) YQ_URL="$YQ_BASE/yq_linux_arm64"; YQ_SHA256="$YQ_SHA256_ARM64" ;;
+            *) echo "::error::no pinned yq for arch $(uname -m)"; exit 1 ;;
+          esac
+          d="$RUNNER_TEMP/yq-4.52.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/yq" "$YQ_URL"
+          printf '%s  %s\n' "$YQ_SHA256" "$d/yq" | sha256sum -c -
+          chmod +x "$d/yq"
+          echo "$d" >> "$GITHUB_PATH"
       - name: no pull-request-target guard (P0; every push, a dependency of the required gate)
         run: sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
       # Fail fast: the reds car#4429 took four fat runs to see, in ~2 min, before
@@ -510,13 +533,20 @@ jobs:
       FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
     steps:
       # The same pinned jq as x86-main: guard-tree turns RED on jq 1.6 (tag_coverage_gate.sh --self-test).
-      # G5 (infra#3828): asserted, never downloaded (see x86-main).
-      - name: jq 1.8.2 is provisioned (no download; fail closed)
+      - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        env:
+          JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-amd64
+          JQ_SHA256: b1c22172dd303f3be49e935aa56aa48a8b7a46e0bc838b4997d3bb451495870f
         run: |
           set -euo pipefail
-          command -v jq > /dev/null 2>&1 || { echo "::error::jq is not provisioned on this runner (forjar stack-tool-jq 1.8.2); the gate does not download it"; exit 1; }
-          v=$(jq --version)
-          [ "$v" = "jq-1.8.2" ] || { echo "::error::jq on PATH reports '$v', not jq-1.8.2 (provision it; the gate does not download it)"; exit 1; }
+          d="$RUNNER_TEMP/jq-1.8.2"
+          mkdir -p "$d"
+          curl -fsSL --retry 3 --retry-delay 5 -o "$d/jq" "$JQ_URL"
+          printf '%s  %s\n' "$JQ_SHA256" "$d/jq" | sha256sum -c -
+          chmod +x "$d/jq"
+          v=$("$d/jq" --version)
+          [ "$v" = "jq-1.8.2" ] || { echo "::error::the pinned jq reports '$v', not jq-1.8.2"; exit 1; }
+          echo "$d" >> "$GITHUB_PATH"
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -570,11 +600,15 @@ jobs:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
         run: bash scripts/ci/pin_build_base.sh
-      # G5 (infra#3828): cargo-deny is provisioned (forjar stack-tool-cargo-deny); asserted, never installed.
-      - name: cargo-deny is provisioned (no install; fail closed)
+      - name: Install cargo-deny (if absent)
+        env:
+          CARGO_INSTALL_ROOT: ${{ runner.temp }}/cargo-deny
         run: |
-          set -euo pipefail
-          command -v cargo-deny > /dev/null 2>&1 || { echo "::error::cargo-deny is not provisioned on this runner (forjar stack-tool-cargo-deny); the gate does not install it"; exit 1; }
+          if ! command -v cargo-deny > /dev/null 2>&1; then
+            cargo install cargo-deny --locked
+            echo "$CARGO_INSTALL_ROOT/bin" >> "$GITHUB_PATH"
+            export PATH="$CARGO_INSTALL_ROOT/bin:$PATH"
+          fi
           cargo deny --version
       - name: Advisories must pass, with deny.toml exemptions honoured
         env:

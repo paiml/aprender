@@ -1,5 +1,5 @@
 # #3073 (operator rule 2026-09-10: no GitHub-hosted runners): every job runs on the
-# clean-room pool. G5 (infra#3828): no job here downloads a tool; the pinned toolchain is asserted.
+# clean-room pool; X64 because the mdBook/tool installs below fetch x86_64 builds.
 name: Book Contract Enforcement
 
 on:
@@ -56,7 +56,6 @@ permissions:
 env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
-  RUSTUP_AUTO_INSTALL: "0"
   # RS-06 (infra#3828): no debug info, no incremental cache (measured 66G build tree vs 5.5G).
   CARGO_PROFILE_DEV_DEBUG: 0
   CARGO_PROFILE_TEST_DEBUG: 0
@@ -71,17 +70,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      # G5 (infra#3828): no toolchain download on a PR. The rust-toolchain.toml pin is provisioned on the
-      # runner (forjar); RUSTUP_AUTO_INSTALL=0 (workflow env) makes a missing pin RED instead of a fetch.
-      - name: the pinned toolchain is provisioned (no install; fail closed)
-        run: |
-          set -euo pipefail
-          pin=$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' rust-toolchain.toml | head -n 1)
-          [ -n "$pin" ] || { echo "::error::rust-toolchain.toml carries no exact release to assert"; exit 1; }
-          if [ -d "$HOME/.cargo/bin" ]; then echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"; export PATH="$HOME/.cargo/bin:$PATH"; fi
-          command -v rustup > /dev/null 2>&1 || { echo "::error::rustup is not provisioned on this runner"; exit 1; }
-          RUSTUP_AUTO_INSTALL=0 rustc +"$pin" --version || { echo "::error::toolchain $pin (rust-toolchain.toml) is not on this runner; provision it, this job does not fetch it"; exit 1; }
-          cargo --version
+      - uses: dtolnay/rust-toolchain@stable
       # NO rust-cache: cache-bin false was never the fix.
       #
       # It skips cleanBin and NOTHING else. rust-cache's save step also runs
@@ -126,17 +115,7 @@ jobs:
     needs: chapter-examples-compile
     steps:
       - uses: actions/checkout@v7
-      # G5 (infra#3828): no toolchain download on a PR. The rust-toolchain.toml pin is provisioned on the
-      # runner (forjar); RUSTUP_AUTO_INSTALL=0 (workflow env) makes a missing pin RED instead of a fetch.
-      - name: the pinned toolchain is provisioned (no install; fail closed)
-        run: |
-          set -euo pipefail
-          pin=$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' rust-toolchain.toml | head -n 1)
-          [ -n "$pin" ] || { echo "::error::rust-toolchain.toml carries no exact release to assert"; exit 1; }
-          if [ -d "$HOME/.cargo/bin" ]; then echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"; export PATH="$HOME/.cargo/bin:$PATH"; fi
-          command -v rustup > /dev/null 2>&1 || { echo "::error::rustup is not provisioned on this runner"; exit 1; }
-          RUSTUP_AUTO_INSTALL=0 rustc +"$pin" --version || { echo "::error::toolchain $pin (rust-toolchain.toml) is not on this runner; provision it, this job does not fetch it"; exit 1; }
-          cargo --version
+      - uses: dtolnay/rust-toolchain@stable
       # NO rust-cache: cache-bin false was never the fix.
       #
       # It skips cleanBin and NOTHING else. rust-cache's save step also runs
@@ -189,17 +168,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
-      # G5 (infra#3828): no toolchain download on a PR. The rust-toolchain.toml pin is provisioned on the
-      # runner (forjar); RUSTUP_AUTO_INSTALL=0 (workflow env) makes a missing pin RED instead of a fetch.
-      - name: the pinned toolchain is provisioned (no install; fail closed)
-        run: |
-          set -euo pipefail
-          pin=$(sed -n 's/^[[:space:]]*channel[[:space:]]*=[[:space:]]*"\([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\)".*/\1/p' rust-toolchain.toml | head -n 1)
-          [ -n "$pin" ] || { echo "::error::rust-toolchain.toml carries no exact release to assert"; exit 1; }
-          if [ -d "$HOME/.cargo/bin" ]; then echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"; export PATH="$HOME/.cargo/bin:$PATH"; fi
-          command -v rustup > /dev/null 2>&1 || { echo "::error::rustup is not provisioned on this runner"; exit 1; }
-          RUSTUP_AUTO_INSTALL=0 rustc +"$pin" --version || { echo "::error::toolchain $pin (rust-toolchain.toml) is not on this runner; provision it, this job does not fetch it"; exit 1; }
-          cargo --version
+      - uses: dtolnay/rust-toolchain@stable
       # NO rust-cache: cache-bin false was never the fix.
       #
       # It skips cleanBin and NOTHING else. rust-cache's save step also runs
