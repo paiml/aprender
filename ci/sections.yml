@@ -18,12 +18,15 @@
 # The old `ci:` job, verbatim: `uses:` is the pin ci/vendor/sovereign-ci.yml was
 # copied from (scripts/check_ci_reusable_workflow_pinned.sh checks both agree).
 sovereign-ci:
-  uses: paiml/.github/.github/workflows/sovereign-ci.yml@dbd0488efe2463161b34b2f75002baee5e308d2a
+  uses: paiml/.github/.github/workflows/sovereign-ci.yml@fbee3788a0ed92d09974ac21ea9bc97d373af6f0
   with:
     repo: ${{ github.event.repository.name }}
     enable_sccache: true
     use_nextest: true
     coverage_on: 'tag'
+    # infra#3828: test + coverage run once per train (train/*, batch/*, full-ci label,
+    # and every non-PR event incl. merge_group), not on every PR push.
+    heavy_on: 'train'
     # PMAT-5792: the guard-cargo diff gate is the scanner of record (check_sov_advisories_off.sh)
     advisories_diff_only: true
 

@@ -155,7 +155,7 @@ intro_regenerates() {
 judge() {
     local repo=$1 base=$2 head=$3
     local td roadmap_changed=0 frag_paths names name verdict eid line touched mode
-    local violations=0 checked=0 out rc
+    local violations=0 checked=0 catchup=0 out rc
 
     git -C "$repo" rev-parse --verify -q "$base^{commit}" >/dev/null || {
         printf 'ENV   %s: base ref %s is not a commit here — refusing to judge (never a pass)\n' "$PROG" "$base" >&2
@@ -234,6 +234,20 @@ judge() {
             printf 'ok    %-8s %s — %s/%s.yaml changes in the same diff\n' "$verdict" "$eid" "$ENTRIES_DIR" "$eid"
             continue
         fi
+        # CATCH-UP: the fragment is already on the base ref, unchanged by this diff, and the
+        # aggregate is being brought up to it. A fragment-only PR leaves roadmap.yaml stale
+        # by design (rule 2), so the regeneration that follows changes entries whose
+        # fragments it does not touch. Its bytes are not free: the entry exists only as
+        # fragment output, and rule 2 runs with --check whenever roadmap.yaml is touched
+        # (the only way an entry changes), so anything other than aggregate(entries/) is
+        # DRIFT. Without this, `make roadmap-aggregate` on main was refused (v0.74.0 B2).
+        if filename_safe "$eid" && [ -f "$td/entries/$eid.yaml" ] \
+            && git -C "$repo" cat-file -e "$base:$ENTRIES_DIR/$eid.yaml" 2>/dev/null; then
+            catchup=$((catchup + 1))
+            printf 'ok    %-8s %s — CATCH-UP: %s/%s.yaml is already on the base, unchanged; the aggregate must equal its fold (rule 2)\n' \
+                "$verdict" "$eid" "$ENTRIES_DIR" "$eid"
+            continue
+        fi
         violations=$((violations + 1))
         if filename_safe "$eid"; then
             printf 'FAIL  %-8s %s in %s with NO change to %s/%s.yaml — a roadmap edit without its fragment\n' \
@@ -268,6 +282,11 @@ judge() {
     # fragment that cannot aggregate still fails, but main's post-merge regeneration is not
     # demanded of this PR. One call site either way (no new python3 line, #5902 condition 3).
     touched=$roadmap_changed
+    if [ "$catchup" != 0 ] && [ "$touched" != 1 ]; then
+        rm -rf -- "${td:?}"
+        printf 'ENV   %s: %s catch-up entr(y/ies) with roadmap.yaml untouched — refusing to judge\n' "$PROG" "$catchup" >&2
+        return 2
+    fi
     mode=(--check)
     [ "$touched" = 1 ] || mode=()
     python3 "$PY_LIB" aggregate ${mode[@]+"${mode[@]}"} --roadmap "$td/head.yaml" --entries "$td/entries" \
@@ -521,6 +540,33 @@ PY
         commit_all "$1"
     }
 
+    # ---- catch-up regeneration (v0.74.0 clean-room B2) --------------------
+    # A fragment-only PR lands first (roadmap.yaml stale by design); the next diff is
+    # `make roadmap-aggregate` and touches no fragment.
+    land_fragment_only() {
+        printf -- '- id: PMAT-200\n  title: fragment only, landed\n  status: planned\n' >"$1/$ENTRIES_DIR/PMAT-200.yaml"
+        git -C "$1" add -A && git -C "$1" commit -qm fragment-only-landed
+    }
+    b_catchup_regen() {
+        land_fragment_only "$1" || return 1
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        commit_all "$1"
+    }
+    # Same shape, but the entry is written by hand and differs from the fragment.
+    b_catchup_hand() {
+        land_fragment_only "$1" || return 1
+        printf -- '- id: PMAT-200\n  title: fragment only, landed, then hand-edited\n  status: planned\n' >>"$1/$ROADMAP_FILE"
+        commit_all "$1"
+    }
+    # A fragment that exists at head but NOT on the base gives no catch-up licence to a
+    # second, unrelated entry; here PMAT-201 has no fragment at all.
+    b_catchup_unlanded() {
+        land_fragment_only "$1" || return 1
+        python3 "$PY_LIB" aggregate --write --roadmap "$1/$ROADMAP_FILE" >/dev/null 2>&1 || return 1
+        printf -- '- id: PMAT-201\n  title: no fragment\n  status: planned\n' >>"$1/$ROADMAP_FILE"
+        commit_all "$1"
+    }
+
     # ---- the case table --------------------------------------------------
     row 'MEASURED SHAPE: entry added to roadmap.yaml only (what pmat work add writes) -> REFUSE' \
         1 'ADDED    PMAT-200 in docs/roadmaps/roadmap.yaml with NO change' b_monolith_only
@@ -560,6 +606,12 @@ PY
         1 'FROZEN: docs/roadmaps/roadmap-base.yaml changed' b_base_edited
     row 'PARITY: header of roadmap.yaml hand-edited away from the frozen base -> REFUSE' \
         1 'FAIL  DRIFT' b_tampered_header
+    row 'CATCH-UP: regenerate after a fragment-only PR already landed -> PASS (v0.74.0 B2)' \
+        0 'CATCH-UP: docs/roadmaps/entries/PMAT-200.yaml is already on the base' b_catchup_regen
+    row 'CATCH-UP shape, but the entry is hand-written, not the fold of its fragment -> REFUSE' \
+        1 'FAIL  DRIFT' b_catchup_hand
+    row 'CATCH-UP licenses only the fragment-backed entry; an extra hand-added one -> REFUSE' \
+        1 'ADDED    PMAT-201 in docs/roadmaps/roadmap.yaml with NO change' b_catchup_unlanded
 
     # An unresolvable ref is ENV (rc 2), never a pass.
     n=$((n + 1))
