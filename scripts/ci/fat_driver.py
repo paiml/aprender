@@ -40,6 +40,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import traceback
@@ -393,6 +394,34 @@ def resolve_vendored(text: str, host_dir: str) -> str:
         raise SystemExit(f"fat_driver: {SOV_FILE.relative_to(ROOT)} body sha256 {got} != upstream "
                          f"{m.group(1)} -- re-vendor from the pin; do not edit it by hand")
     return body
+
+
+def runner_externals(env=None):
+    """The host dir an Actions job container sees as /__e: the runner's externals,
+    `<runner>/externals`, beside `<runner>/_work` (the host RUNNER_TEMP is
+    `<runner>/_work/_temp`). sovereign-ci @fbee378 (infra#2349) stats /__e to learn the
+    runner user's uid:gid and refuses to run without it, so a section container that
+    lacks the mount fails its ownership-restore step. None when absent: no fallback,
+    the step then fails closed exactly as upstream intends."""
+    rt = (env if env is not None else os.environ).get("RUNNER_TEMP", "")
+    if not rt:
+        return None
+    ext = Path(rt).parent.parent / "externals"
+    return ext if ext.is_dir() else None
+
+
+def host_mounts(env=None) -> list:
+    """The read-only host mounts every section container gets: the event payload
+    (at its own path) and the runner externals at /__e (runner_externals)."""
+    env = env if env is not None else os.environ
+    args = []
+    evp = env.get("GITHUB_EVENT_PATH")
+    if evp and os.path.exists(evp):
+        args += ["-v", f"{evp}:{evp}:ro"]
+    ext = runner_externals(env)
+    if ext is not None:
+        args += ["-v", f"{ext}:/__e:ro"]
+    return args
 
 
 def secret_wiring_gaps(ci_text: str, section_texts) -> list:
@@ -762,9 +791,7 @@ class Section:
         cmd = ["docker", "run", "-d", "--name", name, "--entrypoint", "tail",
                "-v", f"{self.dir}:{self.dir}", "-w", str(self.workspace),
                "-e", f"HOME={self.dir / 'home'}"]
-        evp = os.environ.get("GITHUB_EVENT_PATH")
-        if evp and os.path.exists(evp):
-            cmd += ["-v", f"{evp}:{evp}:ro"]
+        cmd += host_mounts()
         for vol in spec.get("volumes") or []:
             cmd += ["-v", vol]
         opts = spec.get("options") or ""
@@ -1565,6 +1592,15 @@ def _st_vendored(row):
         vend_rc(real.replace(f"- {SOV_TOKEN}:", "- /elsewhere:", 1)), 1)
     row("vendored sov: MUTANT header without sha256 is refused",
         vend_rc(real.replace("# sha256 of the upstream file:", "# sha:", 1)), 1)
+    with tempfile.TemporaryDirectory() as t:
+        (Path(t) / "_work" / "_temp").mkdir(parents=True)
+        rt = {"RUNNER_TEMP": str(Path(t) / "_work" / "_temp")}
+        row("runner externals: absent dir gives no /__e mount (fails closed)", runner_externals(rt), None)
+        (Path(t) / "externals").mkdir()
+        row("runner externals: <runner>/externals is the /__e source", runner_externals(rt), Path(t) / "externals")
+        row("runner externals: no RUNNER_TEMP gives no mount", runner_externals({}), None)
+        row("host mounts: section containers get <runner>/externals at /__e read-only",
+            host_mounts(rt), ["-v", f"{Path(t) / 'externals'}:/__e:ro"])
 
 
 def _st_expressions(row):
