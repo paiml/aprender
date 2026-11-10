@@ -14,11 +14,14 @@ name: CUDA Nightly (GPU QLoRA falsifiers)
 #      work, each leg checks its GPU; if a training (or any) job is already
 #      using it, the leg skips for the night (green no-op) so it never contends
 #      with overnight training. A manual dispatch can force-override.
-#   3. NEVER ON A PULL REQUEST (G5, infra#3828). There is no `push` and no
-#      `pull_request` trigger. The opt-in `cuda-check` label path is gone: its
-#      PP-26 step curls the previous witness artifact, and a PR path makes 0
-#      network fetches. This is LAB (C324). To run it against a PR's head,
-#      `workflow_dispatch` it on that branch.
+#   3. NEVER ON *REGULAR* PULL REQUESTS — opt-in only. There is no `push` trigger
+#      and no unconditional `pull_request` trigger, so an ordinary PR never fires
+#      this lane. The ONLY PR path is explicit targeting: a maintainer adds the
+#      `cuda-check` label to a training-path PR, and the job gate below runs the
+#      falsifiers against that PR's head exactly once (any other label is a
+#      green no-op). This lets us build the green track record needed to later
+#      promote the lane to a required gate on training-path PRs, without
+#      auto-firing on every PR. It is NOT a required check — labeling is manual.
 #
 # SINGLE-SILICON, BY POLICY (paiml/infra#359).
 #   - blackwell-gb10: gx10, GB10, sm_121, aarch64, CUDA 13.0
@@ -62,6 +65,12 @@ on:
         description: "Run even if the GPU is busy with training (bypass the yield)"
         required: false
         default: "false"
+  # OPT-IN PR path: fires only when a label is added, and the job gate below
+  # runs ONLY for the `cuda-check` label. A regular PR (no label / any other
+  # label) is a green no-op — this never auto-fires on PRs. Yield-to-training
+  # still applies, so a labeled run defers if the GPU is busy.
+  pull_request:
+    types: [labeled]
 
 permissions:
   contents: read
@@ -82,8 +91,11 @@ jobs:
     concurrency:
       group: perf-gx10
       cancel-in-progress: false
-    # Schedule and manual dispatch only (no PR trigger, G5).
-    if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
+    # Run on schedule/manual-dispatch as before; on a PR run ONLY when the
+    # triggering label is exactly `cuda-check` (explicit opt-in targeting).
+    if: >-
+      ${{ vars.CUDA_RUNNER_READY == 'true' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
     strategy:
       fail-fast: false
       matrix:
@@ -787,7 +799,9 @@ jobs:
   # is the only GPU box in the fleet with nothing else on it.
   ada-yoga:
     name: ada-yoga (x86_64, sm_89)
-    if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
+    if: >-
+      ${{ vars.CUDA_RUNNER_READY == 'true' &&
+      (github.event_name != 'pull_request' || github.event.label.name == 'cuda-check') }}
     # PP-19 HOST ISOLATION. scripts/check_perf_concurrency_groups.sh found this
     # job ungrouped the hour it was written: a GPU job with no job-level group
     # serialises against nothing, and yoga now has two consumers in this repo
