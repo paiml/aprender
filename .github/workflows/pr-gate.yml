@@ -6,6 +6,11 @@ on:
   pull_request:
     types: [opened, reopened]
 
+# RS-01 (infra#3828): one run per PR; a reopen supersedes the run it replaces.
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 

@@ -63,6 +63,7 @@ jobs:
         run: bash scripts/release/assets_rehearsal.sh tag | tee -a "$GITHUB_OUTPUT"
   build:
     name: pv ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
@@ -394,6 +395,7 @@ jobs:
           retention-days: 5
   build-apr-cuda:
     name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
@@ -546,6 +548,7 @@ jobs:
           retention-days: 5
   build-apr-cpu:
     name: apr (cpu) ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120
     needs: assets
     runs-on: ${{ fromJSON(matrix.labels) }}
     strategy:
@@ -711,6 +714,7 @@ jobs:
           retention-days: 5
   build-apr-darwin:
     name: apr (cpu) aarch64-apple-darwin on mini
+    timeout-minutes: 120
     needs: assets
     runs-on: [self-hosted, macOS, ARM64, mini-builder]
     env:

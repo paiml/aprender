@@ -122,6 +122,7 @@ jobs:
   # well, so no floor rises), musl targets inside rust:1.93.0-bookworm (static). Asset names unchanged.
   build:
     name: pv ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: assets
     if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
@@ -463,6 +464,7 @@ jobs:
 
   build-apr-cuda:
     name: apr (cuda) ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: assets
     if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
@@ -634,6 +636,7 @@ jobs:
   # same step, so the merge moves both or neither.
   build-apr-cpu:
     name: apr (cpu) ${{ matrix.target }} on ${{ matrix.host }}
+    timeout-minutes: 120 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: assets
     if: needs.assets.outputs.present == 'false'
     runs-on: ${{ fromJSON(matrix.labels) }}
@@ -813,6 +816,7 @@ jobs:
   # before anything is uploaded.
   build-apr-darwin:
     name: apr (cpu) aarch64-apple-darwin on mini
+    timeout-minutes: 120 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: assets
     if: needs.assets.outputs.present == 'false'
     # mini-builder (#4292, infra#1042): the mini's dedicated repo-level release runner, used
@@ -916,6 +920,7 @@ jobs:
   # mutation (RED) that this job cannot demonstrate on a real release.
   verify-apr-assets:
     name: All four apr assets are on the release
+    timeout-minutes: 30 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: [build, build-apr-cuda, build-apr-cpu, build-apr-darwin]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()
@@ -948,6 +953,7 @@ jobs:
   # architecture (host proof; the feature proof is the loader-string step above).
   smoke-cuda:
     name: smoke apr (cuda) on ${{ matrix.host }}
+    timeout-minutes: 60 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: verify-apr-assets
     # verify runs under always(); a skipped build two levels up must not skip this
     if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
@@ -1021,6 +1027,7 @@ jobs:
   # hosts for their own architecture (an aarch64 asset is only proven on aarch64).
   smoke-cpu:
     name: smoke apr (cpu) on ${{ matrix.host }}
+    timeout-minutes: 60 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: verify-apr-assets
     # verify runs under always(); a skipped build two levels up must not skip this
     if: ${{ !cancelled() && needs.verify-apr-assets.result == 'success' }}
@@ -1104,6 +1111,7 @@ jobs:
 
   summary:
     name: Summary
+    timeout-minutes: 10 # RS-02 (infra#3828): a hung job frees its runner; build-all-bins already carries 120
     needs: [assets, build, build-all-bins, build-apr-cuda, build-apr-cpu, build-apr-darwin, verify-apr-assets, smoke-cuda, smoke-cpu]
     runs-on: [self-hosted, Linux, X64, clean-room]
     if: always()

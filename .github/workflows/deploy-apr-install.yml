@@ -44,6 +44,7 @@ concurrency:
 jobs:
   deploy:
     name: publish install.sh
+    timeout-minutes: 30 # RS-02 (infra#3828): a hung deploy frees its runner
     runs-on: [self-hosted, Linux, X64, clean-room]
     environment: paiml-apr-deploy
     steps:
