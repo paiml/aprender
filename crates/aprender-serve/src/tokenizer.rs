@@ -147,6 +147,9 @@ pub struct BPETokenizer {
     merge_rules: Vec<(String, String)>,
     /// GH-88: Special tokens for atomic tokenization (not split by BPE).
     special_tokens: HashMap<String, u32>,
+    /// #4979: the GGUF model's own byte-level BPE (special tokens, pre-tokenizer, ranked
+    /// merges), the encoder `apr run` uses. When present, `encode` defers to it.
+    gguf_encoder: Option<std::sync::Arc<crate::gguf::byte_level_bpe::ByteLevelBpe>>,
 }
 
 impl BPETokenizer {
@@ -231,6 +234,7 @@ impl BPETokenizer {
             max_token_id,
             merge_rules: Vec::new(),
             special_tokens: HashMap::new(),
+            gguf_encoder: None,
         })
     }
 
@@ -279,6 +283,16 @@ impl BPETokenizer {
         Ok(tokenizer)
     }
 
+    /// #4979: attach the GGUF model's byte-level BPE so `encode` matches `apr run`.
+    #[must_use]
+    pub fn with_gguf_encoder(
+        mut self,
+        encoder: std::sync::Arc<crate::gguf::byte_level_bpe::ByteLevelBpe>,
+    ) -> Self {
+        self.gguf_encoder = Some(encoder);
+        self
+    }
+
     /// Get maximum token ID (cached, O(1))
     ///
     /// PMAT-805: Returns pre-computed max token ID for fast access
@@ -306,6 +320,11 @@ impl BPETokenizer {
         contract_pre_encode!();
         if text.is_empty() {
             return Vec::new();
+        }
+
+        // #4979: the model's own BPE wins over every fallback.
+        if let Some(enc) = &self.gguf_encoder {
+            return enc.encode(text);
         }
 
         // GH-88: Use proper BPE when merge rules are available

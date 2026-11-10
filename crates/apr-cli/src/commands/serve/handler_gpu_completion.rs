@@ -635,6 +635,7 @@ fn start_gguf_server_cuda(
         let model_source = measured_model_source(&quantized_model, Some(&mapped_model), config);
         let state = AppState::with_quantized_model_and_vocab(quantized_model, vocab)
             .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+            .with_gguf_tokenizer(&mapped_model.model)
             .with_model_source(model_source)
             .with_mapped_gguf_model(mapped_model)
             .with_moe_gpu()
@@ -675,6 +676,7 @@ fn start_gguf_server_cuda(
 
             let state = AppState::with_cuda_model_and_vocab(cuda_model, vocab)
                 .map_err(|e| CliError::InferenceFailed(format!("Failed to create state: {e}")))?
+                .with_gguf_tokenizer(&mapped_model.model)
                 .with_mapped_gguf_model(mapped_model.clone())
                 .with_model_source(model_source)
                 // PP-14/PP-15/§9 #8: the resolved offload AND this binary's

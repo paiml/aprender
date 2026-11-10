@@ -849,6 +849,16 @@ impl AppState {
         }
     }
 
+    /// #4979: encode with the GGUF model's own byte-level BPE (as `apr run` does) instead of
+    /// the vocabulary-only greedy longest-match. No-op when the file is not byte-level.
+    #[must_use]
+    pub fn with_gguf_tokenizer(mut self, model: &crate::gguf::GGUFModel) -> Self {
+        if let (Some(enc), Some(tok)) = (model.byte_level_encoder(), self.tokenizer.as_ref()) {
+            self.tokenizer = Some(Arc::new(tok.as_ref().clone().with_gguf_encoder(enc)));
+        }
+        self
+    }
+
     /// GH-152: Enable verbose request/response logging
     #[must_use]
     pub fn with_verbose(mut self, verbose: bool) -> Self {

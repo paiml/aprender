@@ -157,6 +157,24 @@ impl GGUFModel {
         }
     }
 
+    /// #4979: the model's byte-level BPE encoder (what `apr run` encodes with), or `None` when
+    /// the file is not byte-level, has no vocabulary, or its pre-tokenizer is not implemented.
+    /// Serve attaches this to its tokenizer so `/tokenize` and chat match `apr run`.
+    #[must_use]
+    pub fn byte_level_encoder(&self) -> Option<std::sync::Arc<crate::gguf::byte_level_bpe::ByteLevelBpe>> {
+        let vocab = self.vocabulary()?;
+        let byte_level = self
+            .metadata
+            .get("tokenizer.ggml.model")
+            .is_some_and(|v| matches!(v, GGUFValue::String(s) if s == "gpt2" || s == "bpe"));
+        if !byte_level {
+            return None;
+        }
+        crate::gguf::byte_level_bpe::ByteLevelBpe::from_gguf(&self.metadata, &vocab)
+            .map_err(|refusal| warn_greedy_tokenizer_fallback_once("byte-level BPE", &refusal))
+            .ok()
+    }
+
     /// #3726: the canonical encoding of a byte-level (`gpt2`) vocabulary, or `None` when the
     /// file is not byte-level or its pre-tokenizer is not implemented (said once on stderr).
     /// Greedy longest-match gave these vocabularies ids the model never saw in training
