@@ -27263,6 +27263,109 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3999
+- id: PMAT-6608
+  github_issue: 6608
+  item_type: task
+  title: 'spec-sweep: speed beats are nightly, non-blocking (LAB falsifier scripts/lab/lab_speed_beats_nightly_only.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:30:00Z
+  updated: 2026-11-09T17:30:00Z
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_speed_beats_nightly_only.sh --self-test PASS (6 rows: nightly-only GREEN; push, pull_request, merge_group and per-PR fragment planted violations RED; empty root cannot measure)'
+  - 'Real tree: RED on cuda-nightly.yml (pull_request: types [labeled] opt-in runs beat_ollama_decode_throughput_speed); one owner is this ticket, fix is a separate change'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6631
+  github_issue: 6631
+  item_type: task
+  title: 'spec-sweep: AC-SHIP2-006 status row matches its definition (LAB falsifier scripts/lab/lab_spec_ac_status.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:45:00Z
+  updated: 2026-11-09T17:45:00Z
+  spec: docs/specifications/aprender-train/ship-model-2-spec.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_spec_ac_status.sh --self-test PASS (5 rows: consistent GREEN; label drift, missing status row, missing definition planted RED; empty spec cannot measure)'
+  - 'Real tree: GREEN for AC-SHIP2-006 (status label apr qa matches the definition)'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6632
+  github_issue: 6632
+  item_type: task
+  title: 'spec-sweep: AC-SHIP2-009 status row matches its definition (LAB falsifier scripts/lab/lab_spec_ac_status.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:45:00Z
+  updated: 2026-11-09T17:45:00Z
+  spec: docs/specifications/aprender-train/ship-model-2-spec.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_spec_ac_status.sh --self-test PASS (5 rows: consistent GREEN; label drift, missing status row, missing definition planted RED; empty spec cannot measure)'
+  - 'Real tree: RED for AC-SHIP2-009 (status table calls it apr bench; definition is GGUF/llama.cpp export). Spec fix is a separate change'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6633
+  github_issue: 6633
+  item_type: task
+  title: 'spec-sweep: AC-SHIP2-010 status row matches its definition (LAB falsifier scripts/lab/lab_spec_ac_status.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:45:00Z
+  updated: 2026-11-09T17:45:00Z
+  spec: docs/specifications/aprender-train/ship-model-2-spec.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_spec_ac_status.sh --self-test PASS (5 rows: consistent GREEN; label drift, missing status row, missing definition planted RED; empty spec cannot measure)'
+  - 'Real tree: RED for AC-SHIP2-010 (status table calls it llama-cli interop; definition is apr bench >=100 tok/s). Spec fix is a separate change'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6647
+  github_issue: 6647
+  item_type: task
+  title: 'ci: mktemp without EXIT trap leaks scratch files on per-PR/MQ scripts (fills runner /tmp inodes)'
+  status: completed
+  priority: medium
+  assigned_to: f20-a6
+  created: 2026-11-09T08:30:00Z
+  updated: 2026-11-10T08:50:43Z
+  spec: null
+  acceptance_criteria:
+  - contracts_gate.sh, ci_test_tier.sh, ci_mg_reuse.sh and ci_self_hosted_preflight.sh register every mktemp path in SCRATCH and remove it from a top-level EXIT trap; scripts/check_mktemp_exit_trap.sh is red on main and green on the branch, and its self-test includes a set -e mid-function kill that leaves no scratch.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Landed proof:PR#6852. Guard is not wired into a PR/MQ job; making it blocking is a gate addition (quorum/ruling).
+  epic: null
 - id: PMAT-6675
   github_issue: 6675
   item_type: task

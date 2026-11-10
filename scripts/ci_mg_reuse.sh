@@ -45,6 +45,7 @@
 # Each refusal line carries `# R:<id>`: the mutation harness drops it, and the
 # case table must then go RED.
 set -uo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 CI_WORKFLOW_PATH=".github/workflows/ci.yml"
 PRH=""
@@ -179,6 +180,7 @@ resolve() {
   git -C "$root" cat-file -e "$h^{commit}" 2> /dev/null \
     || git -C "$root" fetch --quiet --no-tags origin "+refs/pull/$n/head" > /dev/null 2>&1 || true
   w=$(mktemp -d "${TMPDIR:-/tmp}/mg-reuse.XXXXXX") || { refuse "lookup failed: no temp dir"; return 0; }
+  SCRATCH+=("$w")
   if ! gh api "repos/$repo/actions/runs?head_sha=$h&event=pull_request&per_page=100" > "$w/runs.json" 2> /dev/null; then
     refuse "lookup failed: the PR head's runs"; rm -rf "${w:?}"; return 0
   fi
@@ -286,6 +288,7 @@ resolve_push() {
   # A failing call can still print a body, so only its exit status says it failed.
   local w rid rc
   w=$(mktemp -d "${TMPDIR:-/tmp}/mg-reuse.XXXXXX") || { refuse "lookup failed: no temp dir"; return 0; }
+  SCRATCH+=("$w")
   gh api "repos/$repo/actions/runs?head_sha=$s&event=merge_group&per_page=100" > "$w/runs.json" 2> /dev/null; rc=$?
   [ "$rc" -eq 0 ] || { refuse "lookup failed: the merge_group runs on ${s:0:10}"; rm -rf "${w:?}"; return 0; } # R-PUSHRUNSAPI
   IFS=$'\t' read -r rid _ _ _ <<< "$(pick_mg_run "$w/runs.json" "$s")"
@@ -328,6 +331,7 @@ self_test() {
   [ "${1-}" = --workflow ] && wf="${2-}"
   local T pass=0 fail=0
   T=$(mktemp -d "${TMPDIR:-/tmp}/mg-reuse-st.XXXXXX") || return 1
+  SCRATCH+=("$T")
   local R="$T/r"
   git init -q "$R" || return 1
   gc() { git -C "$R" -c core.hooksPath=/dev/null -c user.name=t -c user.email=t@example.invalid "$@"; }

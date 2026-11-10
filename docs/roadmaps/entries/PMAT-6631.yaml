@@ -1,0 +1,21 @@
+- id: PMAT-6631
+  github_issue: 6631
+  item_type: task
+  title: 'spec-sweep: AC-SHIP2-006 status row matches its definition (LAB falsifier scripts/lab/lab_spec_ac_status.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:45:00Z
+  updated: 2026-11-09T17:45:00Z
+  spec: docs/specifications/aprender-train/ship-model-2-spec.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_spec_ac_status.sh --self-test PASS (5 rows: consistent GREEN; label drift, missing status row, missing definition planted RED; empty spec cannot measure)'
+  - 'Real tree: GREEN for AC-SHIP2-006 (status label apr qa matches the definition)'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
