@@ -1,0 +1,8 @@
+# first-green: report_only_bench.sh (aprender#6618, #6619). Run by hand 2026-11-09T17:03:52Z at origin/main f96545146. Not wired into any PR, merge-queue or release job (LAB, C324).
+## real tree
+ok   PMAT-728 marked REPORT-ONLY in spec
+ok   PMAT-715 marked REPORT-ONLY in spec
+rc=0
+## self-test (plants spec drift + PR-path bench)
+self-test ok: clean, spec drift, PR-path bench and not-measured all behave
+rc=0
