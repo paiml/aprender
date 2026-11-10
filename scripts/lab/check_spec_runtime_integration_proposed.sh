@@ -19,9 +19,11 @@ spec_default="docs/specifications/aprender-contracts-staging/sub/asset-contracts
 symbols=(execute_with_contract load_model_verified)
 
 has_fn() { # root symbol
-    grep -rIl -E "fn[[:space:]]+$2[[:space:]]*[<(]" --include='*.rs' \
+    local out
+    out=$(grep -rIl -E "fn[[:space:]]+$2[[:space:]]*[<(]" --include='*.rs' \
         --exclude-dir=target --exclude-dir=tests --exclude-dir=benches --exclude-dir=.git --exclude-dir=aprender-contracts-staging \
-        "$1" 2>/dev/null | grep -q .
+        "$1" 2>/dev/null) || true
+    [[ -n "$out" ]]
 }
 
 check() {
