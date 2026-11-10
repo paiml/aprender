@@ -1151,6 +1151,8 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
         ("mg-reuse", "github.event_name == 'push' && github.ref == 'refs/heads/main'".into()),
         ("mg-reuse-self-test", G_ALL.into()),
         ("pr-light", format!("${{{{ github.event_name == 'pull_request' && {DF} }}}}")),
+        // Reusable-workflow caller (paiml/.github runner-smells); same-repo PRs only, a draft is skipped.
+        ("runner-smells", format!("{DF} && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)")),
         ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}")),
         ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} && {NOT_PR} }}}}")),
         ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),
