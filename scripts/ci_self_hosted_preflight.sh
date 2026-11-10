@@ -54,6 +54,7 @@
 # Refs: PMAT-1098, row 67-C2, #3083, #3074, run 34448908554.
 
 set -uo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 # Pure parameter expansion, no `dirname`/`basename`: the first step of a job on a
 # box with a broken PATH is exactly where an external call must not be needed.
@@ -272,6 +273,7 @@ preflight_main() {
 self_test() {
     local td rows=0 fails=0 out rc bin
     td="$(mktemp -d)" || { printf 'ENV: cannot create a temp dir\n' >&2; return 2; }
+    SCRATCH+=("$td")
 
     local helper
     for helper in uname tr head date mkdir ldd sh; do

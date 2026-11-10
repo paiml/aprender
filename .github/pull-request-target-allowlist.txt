@@ -1,0 +1,1 @@
+fork-pr-closer.yml sha256:3f9715007ec6e26986f52c8124ac4005e9a36e66d8a6b99f16eabdefd72a1c0e  # NO-FORK-1: closes fork PRs; metadata only, no checkout. Any edit fails until re-reviewed and re-pinned.

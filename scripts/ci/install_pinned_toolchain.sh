@@ -16,6 +16,7 @@
 # EXIT 0 installed or nothing to install; 1 the pinned install failed (--self-test: 1 on a failed row).
 
 set -euo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 install_pin() {
     local ws=${1:-.} f ch comps args=() c
@@ -42,6 +43,7 @@ install_pin() {
 self_test() {
     local t fails=0 ws out
     t=$(mktemp -d) || return 2
+    SCRATCH+=("$t")
     mkdir -p "$t/bin" "$t/ws"
     printf '#!/bin/sh\necho "rustup $*" >> "%s/calls"\n[ -z "${STUB_FAIL:-}" ]\n' "$t" >"$t/bin/rustup"
     chmod +x "$t/bin/rustup"

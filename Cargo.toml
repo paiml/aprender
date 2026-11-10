@@ -4,7 +4,6 @@ members = [
     "crates/aprender-core",
     # --- APR-2231: sovereign `.apr` container leaf crate ---
     "crates/apr-format",
-    "crates/aprender-legacy-codec",
     # --- #4219: shared build.rs helper that stamps APR_GIT_SHA into every [[bin]] ---
     "crates/aprender-build-sha",
     # --- Pre-existing aprender crates ---
@@ -41,6 +40,9 @@ members = [
     "crates/aprender-contracts-cli",
     # EPIC #4232: shared update check + `<bin> update` for every sovereign binary.
     "crates/aprender-update",
+    # Explicit member (was implicit via path dep): clean-room GATE A0 strips path deps, so an
+    # implicit member gets no [patch] overlay and A1 fails "no matching package".
+    "crates/aprender-legacy-codec",
     # --- APR-MONO Phase 2c: was realizar (inference server) ---
     "crates/aprender-serve",
     # --- APR-MONO Phase 2d: was entrenar (training) ---

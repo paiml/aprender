@@ -27285,6 +27285,130 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'PR #6595 commits carry PMAT-Ticket PMAT-6593 (#6593 is the PR number, not an issue, so pmat could not mint it); the tracking issue is #6592.'
   epic: 6519
+- id: PMAT-6608
+  github_issue: 6608
+  item_type: task
+  title: 'spec-sweep: speed beats are nightly, non-blocking (LAB falsifier scripts/lab/lab_speed_beats_nightly_only.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:30:00Z
+  updated: 2026-11-09T17:30:00Z
+  spec: docs/specifications/fable-architectural-review.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_speed_beats_nightly_only.sh --self-test PASS (6 rows: nightly-only GREEN; push, pull_request, merge_group and per-PR fragment planted violations RED; empty root cannot measure)'
+  - 'Real tree: RED on cuda-nightly.yml (pull_request: types [labeled] opt-in runs beat_ollama_decode_throughput_speed); one owner is this ticket, fix is a separate change'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6631
+  github_issue: 6631
+  item_type: task
+  title: 'spec-sweep: AC-SHIP2-006 status row matches its definition (LAB falsifier scripts/lab/lab_spec_ac_status.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:45:00Z
+  updated: 2026-11-09T17:45:00Z
+  spec: docs/specifications/aprender-train/ship-model-2-spec.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_spec_ac_status.sh --self-test PASS (5 rows: consistent GREEN; label drift, missing status row, missing definition planted RED; empty spec cannot measure)'
+  - 'Real tree: GREEN for AC-SHIP2-006 (status label apr qa matches the definition)'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6632
+  github_issue: 6632
+  item_type: task
+  title: 'spec-sweep: AC-SHIP2-009 status row matches its definition (LAB falsifier scripts/lab/lab_spec_ac_status.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:45:00Z
+  updated: 2026-11-09T17:45:00Z
+  spec: docs/specifications/aprender-train/ship-model-2-spec.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_spec_ac_status.sh --self-test PASS (5 rows: consistent GREEN; label drift, missing status row, missing definition planted RED; empty spec cannot measure)'
+  - 'Real tree: RED for AC-SHIP2-009 (status table calls it apr bench; definition is GGUF/llama.cpp export). Spec fix is a separate change'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6633
+  github_issue: 6633
+  item_type: task
+  title: 'spec-sweep: AC-SHIP2-010 status row matches its definition (LAB falsifier scripts/lab/lab_spec_ac_status.sh)'
+  status: in_progress
+  priority: medium
+  assigned_to: infra-e3
+  created: 2026-11-09T17:45:00Z
+  updated: 2026-11-09T17:45:00Z
+  spec: docs/specifications/aprender-train/ship-model-2-spec.md
+  acceptance_criteria:
+  - 'scripts/lab/lab_spec_ac_status.sh --self-test PASS (5 rows: consistent GREEN; label drift, missing status row, missing definition planted RED; empty spec cannot measure)'
+  - 'Real tree: RED for AC-SHIP2-010 (status table calls it llama-cli interop; definition is apr bench >=100 tok/s). Spec fix is a separate change'
+  - 'LAB only: never in a PR, merge-queue or release job. Promotion to blocking needs Noah quorum receipt, 3 green nights on main and one gate retired (C324 rule 7)'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6809
+- id: PMAT-6647
+  github_issue: 6647
+  item_type: task
+  title: 'ci: mktemp without EXIT trap leaks scratch files on per-PR/MQ scripts (fills runner /tmp inodes)'
+  status: inprogress
+  priority: medium
+  assigned_to: f20-a6
+  created: 2026-11-09T08:30:00Z
+  updated: 2026-11-09T09:00:00Z
+  spec: null
+  acceptance_criteria:
+  - contracts_gate.sh, ci_test_tier.sh, ci_mg_reuse.sh and ci_self_hosted_preflight.sh register every mktemp path in SCRATCH and remove it from a top-level EXIT trap; scripts/check_mktemp_exit_trap.sh is red on main and green on the branch, and its self-test includes a set -e mid-function kill that leaves no scratch.
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Guard is not wired into a PR/MQ job; making it blocking is a gate addition (quorum/ruling).
+  epic: null
+- id: PMAT-6675
+  github_issue: 6675
+  item_type: task
+  title: 'C4: CI bot opens the version-bump PR from the green nightly (--to X.Y.Z, --workflow, CRB_NEXT)'
+  status: inprogress
+  priority: high
+  assigned_to: f20-a1
+  created: 2026-11-09T08:40:05Z
+  updated: 2026-11-09T08:40:05Z
+  spec: null
+  acceptance_criteria:
+  - nightly_green_bump.sh --to X.Y.Z opens a bump to an explicit version strictly above the latest tag, only on a green nightly; otherwise NIGHTLY-BUMP-BLOCKED rc 1 / usage rc 2.
+  - --workflow <file>.yml selects the nightly that decides green; default nightly-train.yml unchanged.
+  - cleanroom_red_bump.sh honours a validated CRB_NEXT in place of the next patch (#6491).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Hand-written fragment per SEAT-UNBLOCK-0842Z item 3 (roadmap.yaml unparseable, CB-2113).
+  epic: 5306
 - id: PMAT-6677
   github_issue: 6677
   item_type: task
@@ -27437,6 +27561,61 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6519
+- id: PMAT-6729
+  github_issue: 6729
+  item_type: task
+  title: 'KZ-001 b: one-command release workflow'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-11-04T14:16:18Z
+  updated: 2026-11-04T14:16:25.581378253+00:00
+  spec: null
+  acceptance_criteria:
+  - 'release.yml workflow_dispatch + scripts/release/one_command.sh. Falsifier: 0.73.0 from one command <=90min, 0 cop steps.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5348
+- id: PMAT-6797
+  github_issue: 6797
+  item_type: task
+  title: 'deep_disk_guard measures the temp volume: self-test pins guard() call site'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T17:10:00Z
+  updated: 2026-11-08T17:10:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6798
+  github_issue: 6798
+  item_type: task
+  title: 'nightly dogfood step names failing gate on exit 1: test pins the NO-GO branch'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T17:10:00Z
+  updated: 2026-11-08T17:10:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
 - id: PMAT-6806
   github_issue: 6806
   item_type: task
@@ -27456,3 +27635,75 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6728
+- id: PMAT-6810
+  github_issue: 6810
+  item_type: epic
+  title: 'Red nightlies deep/dogfood/conleche/provable-ladder: five-whys'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6811
+  github_issue: 6811
+  item_type: task
+  title: 'deep-nightly: TMPDIR on the checkout disk (RUNNER_TEMP)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
+- id: PMAT-6812
+  github_issue: 6812
+  item_type: task
+  title: 'conleche: control export under elan run TC'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
+- id: PMAT-6813
+  github_issue: 6813
+  item_type: task
+  title: 'provable-ladder: unwritable lean cache declines (exit 2)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
