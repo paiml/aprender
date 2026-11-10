@@ -17,6 +17,8 @@ on:
       - ".github/workflows/book-contracts.yml"
   pull_request:
     branches: [main]
+    # RS-09 (infra#3828): drafts skip every job; ready_for_review starts the full run.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "book/**"
       - "contracts/apr-book-*"
@@ -55,11 +57,16 @@ env:
   CARGO_TERM_COLOR: always
   RUSTFLAGS: -D warnings
   RUSTUP_AUTO_INSTALL: "0"
+  # RS-06 (infra#3828): no debug info, no incremental cache (measured 66G build tree vs 5.5G).
+  CARGO_PROFILE_DEV_DEBUG: 0
+  CARGO_PROFILE_TEST_DEBUG: 0
+  CARGO_INCREMENTAL: 0
 
 jobs:
   # Job 1: All chapter examples compile
   chapter-examples-compile:
     name: Chapter Examples Compile
+    if: github.event.pull_request.draft != true # RS-09 (infra#3828): drafts wait for ready_for_review
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:
@@ -177,6 +184,7 @@ jobs:
   # Job 3: Integration tests
   book-integration-tests:
     name: Book Integration Tests
+    if: github.event.pull_request.draft != true # RS-09 (infra#3828): drafts wait for ready_for_review
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:
@@ -220,6 +228,7 @@ jobs:
   # Job 4: Contract enforcement (no files without contracts)
   contract-enforcement:
     name: Contract Enforcement
+    if: github.event.pull_request.draft != true # RS-09 (infra#3828): drafts wait for ready_for_review
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:
@@ -281,6 +290,7 @@ jobs:
   # Job 5: Namespace discipline
   namespace-discipline:
     name: Namespace Discipline
+    if: github.event.pull_request.draft != true # RS-09 (infra#3828): drafts wait for ready_for_review
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:
@@ -323,6 +333,7 @@ jobs:
   # Job 6: SUMMARY.md integrity
   summary-integrity:
     name: SUMMARY.md Integrity
+    if: github.event.pull_request.draft != true # RS-09 (infra#3828): drafts wait for ready_for_review
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:

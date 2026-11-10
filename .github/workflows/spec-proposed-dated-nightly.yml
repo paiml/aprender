@@ -8,6 +8,7 @@ on:
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 15 # RS-02 (infra#3828)
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/check_spec_proposed_dated_test.sh

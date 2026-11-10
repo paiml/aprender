@@ -540,6 +540,20 @@ jobs:
         if: always()
         run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}" "$GITHUB_RUN_ID"; fi
 
+  # RUNNER-SMELLS (paiml/infra#3828): static scan of .github/workflows for the runner and gate
+  # defects RS-01..RS-11, ratcheted against .github/runner-smells.baseline (a rule's count may
+  # only fall). The callee and the scanner it checks out are pinned to the same paiml/.github
+  # commit; re-pin both together. Text only: no build, no tool download. Not in `gate`'s needs:
+  # it joins the required set by its own ruling once it has three green nights (C324 rule 7).
+  runner-smells:
+    if: github.event.pull_request.draft != true && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    permissions:
+      contents: read
+    uses: paiml/.github/.github/workflows/runner-smells.yml@d0ac85f159e8840129439833f57d6cb5a927b279 # main at pin time (#113)
+    with:
+      runs_on: '["self-hosted","Linux","X64","clean-room"]'
+      scanner_ref: d0ac85f159e8840129439833f57d6cb5a927b279
+
   x86-main-advisories:
     needs: [mg-reuse]
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
