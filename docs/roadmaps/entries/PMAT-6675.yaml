@@ -1,0 +1,21 @@
+- id: PMAT-6675
+  github_issue: 6675
+  item_type: task
+  title: 'C4: CI bot opens the version-bump PR from the green nightly (--to X.Y.Z, --workflow, CRB_NEXT)'
+  status: inprogress
+  priority: high
+  assigned_to: f20-a1
+  created: 2026-11-09T08:40:05Z
+  updated: 2026-11-09T08:40:05Z
+  spec: null
+  acceptance_criteria:
+  - nightly_green_bump.sh --to X.Y.Z opens a bump to an explicit version strictly above the latest tag, only on a green nightly; otherwise NIGHTLY-BUMP-BLOCKED rc 1 / usage rc 2.
+  - --workflow <file>.yml selects the nightly that decides green; default nightly-train.yml unchanged.
+  - cleanroom_red_bump.sh honours a validated CRB_NEXT in place of the next patch (#6491).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Hand-written fragment per SEAT-UNBLOCK-0842Z item 3 (roadmap.yaml unparseable, CB-2113).
+  epic: 5306

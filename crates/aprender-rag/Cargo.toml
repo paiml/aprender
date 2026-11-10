@@ -56,7 +56,7 @@ aprender-legacy-codec = { path = "../aprender-legacy-codec", version = "0.72.4",
 
 # SQLite+FTS5 persistent index (sqlite-rag-integration spec)
 # FTS5 is included in bundled SQLite by default (SQLITE_ENABLE_FTS5)
-rusqlite = { version = "0.32", features = ["bundled"], optional = true }
+rusqlite = { version = "0.41", features = ["bundled"], optional = true }
 
 # Real embeddings via fastembed (GH-1) - optional, adds ONNX Runtime dependency
 fastembed = { version = "5", optional = true }

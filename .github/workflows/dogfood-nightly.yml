@@ -157,6 +157,7 @@ jobs:
           bash scripts/dogfood.sh --phase nightly > "$RUNNER_TEMP/dogfood/dogfood-nightly.log" 2>&1; rc=$?
           if [ -f ".dogfood/receipt-$ts.json" ]; then cp ".dogfood/receipt-$ts.json" "$RUNNER_TEMP/dogfood/receipt-$ts.json"; else echo "::error::dogfood wrote no receipt-$ts.json tonight (rc=$rc)"; norcpt=1; fi
           tail -n 40 "$RUNNER_TEMP/dogfood/dogfood-nightly.log"
+          [ "$rc" -eq 0 ] || bash scripts/dogfood_nightly_explain.sh "$RUNNER_TEMP/dogfood/dogfood-nightly.log" "$rc"
           dirty=$(git status --porcelain)
           [ -z "$dirty" ] || { echo "::error::tree dirty after dogfood: $(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"; exit 1; }
           # Negative control, run whatever the verdict: a nightly receipt is never a release receipt.

@@ -64,6 +64,12 @@ jobs:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
+      - name: Host-cause falsifier (deep TMPDIR, conleche elan run, ladder decline; #6810)
+        run: bash scripts/release/falsify_red_nightlies.sh && bash scripts/release/falsify_red_nightlies.sh --mutants
+
+      - name: TMPDIR on the checkout disk, not the host /tmp (framework16 /tmp is 28 GiB; falsify_red_nightlies.sh)
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: "Disk floor (label infra: disk, not a code failure; #6126)"
         run: bash scripts/release/deep_disk_guard.sh
 
@@ -98,6 +104,9 @@ jobs:
         env:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
+
+      - name: TMPDIR on the checkout disk, not the host /tmp (framework16 /tmp is 28 GiB; falsify_red_nightlies.sh)
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: "Disk floor (label infra: disk, not a code failure; #6126)"
         run: bash scripts/release/deep_disk_guard.sh
@@ -138,6 +147,9 @@ jobs:
         env:
           REF: ${{ inputs.ref || github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
+
+      - name: TMPDIR on the checkout disk, not the host /tmp (framework16 /tmp is 28 GiB; falsify_red_nightlies.sh)
+        run: echo "TMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
 
       - name: "Disk floor (label infra: disk, not a code failure; #6126)"
         run: bash scripts/release/deep_disk_guard.sh

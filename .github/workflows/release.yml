@@ -17,11 +17,16 @@ on:
         description: 'Stop after the bump; no push, tag or publish'
         default: true
         type: boolean
+      sha:
+        description: 'The green nightly sha to release (40 hex, on main). The release never builds from main HEAD (T5)'
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write   # Trusted Publishing: OIDC exchange for a short-lived crates.io token
   actions: write    # gh workflow run binary-release.yml
+  pull-requests: write   # T5: next_dev_bump.sh opens the X.(Y+1).0-dev bump PR on main after the tag
 
 concurrency:
   group: release
@@ -49,7 +54,9 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
           VERSION: ${{ inputs.version }}
           DRY: ${{ inputs.dry_run && '1' || '0' }}
-        run: bash scripts/release/one_command.sh "$VERSION" "$DRY"
+          SHA: ${{ inputs.sha }}
+          NDB_GH_TOKEN: ${{ github.token }}   # GH_TOKEN above reads paiml/infra only
+        run: bash scripts/release/one_command.sh "$VERSION" "$DRY" "$SHA"
       - name: binary assets
         if: ${{ !inputs.dry_run }}
         env:

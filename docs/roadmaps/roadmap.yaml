@@ -27263,6 +27263,27 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 3999
+- id: PMAT-6675
+  github_issue: 6675
+  item_type: task
+  title: 'C4: CI bot opens the version-bump PR from the green nightly (--to X.Y.Z, --workflow, CRB_NEXT)'
+  status: inprogress
+  priority: high
+  assigned_to: f20-a1
+  created: 2026-11-09T08:40:05Z
+  updated: 2026-11-09T08:40:05Z
+  spec: null
+  acceptance_criteria:
+  - nightly_green_bump.sh --to X.Y.Z opens a bump to an explicit version strictly above the latest tag, only on a green nightly; otherwise NIGHTLY-BUMP-BLOCKED rc 1 / usage rc 2.
+  - --workflow <file>.yml selects the nightly that decides green; default nightly-train.yml unchanged.
+  - cleanroom_red_bump.sh honours a validated CRB_NEXT in place of the next patch (#6491).
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: Hand-written fragment per SEAT-UNBLOCK-0842Z item 3 (roadmap.yaml unparseable, CB-2113).
+  epic: 5306
 - id: PMAT-6677
   github_issue: 6677
   item_type: task
@@ -27415,10 +27436,47 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6519
+- id: PMAT-6729
+  github_issue: 6729
+  item_type: task
+  title: 'KZ-001 b: one-command release workflow'
+  status: inprogress
+  priority: high
+  assigned_to: null
+  created: 2026-11-04T14:16:18Z
+  updated: 2026-11-04T14:16:25.581378253+00:00
+  spec: null
+  acceptance_criteria:
+  - 'release.yml workflow_dispatch + scripts/release/one_command.sh. Falsifier: 0.73.0 from one command <=90min, 0 cop steps.'
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5348
 - id: PMAT-6797
   github_issue: 6797
   item_type: task
   title: 'deep_disk_guard measures the temp volume: self-test pins guard() call site'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T17:10:00Z
+  updated: 2026-11-08T17:10:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
+- id: PMAT-6798
+  github_issue: 6798
+  item_type: task
+  title: 'nightly dogfood step names failing gate on exit 1: test pins the NO-GO branch'
   status: planned
   priority: high
   assigned_to: null
@@ -27452,3 +27510,75 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6728
+- id: PMAT-6810
+  github_issue: 6810
+  item_type: epic
+  title: 'Red nightlies deep/dogfood/conleche/provable-ladder: five-whys'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: null
+- id: PMAT-6811
+  github_issue: 6811
+  item_type: task
+  title: 'deep-nightly: TMPDIR on the checkout disk (RUNNER_TEMP)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
+- id: PMAT-6812
+  github_issue: 6812
+  item_type: task
+  title: 'conleche: control export under elan run TC'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
+- id: PMAT-6813
+  github_issue: 6813
+  item_type: task
+  title: 'provable-ladder: unwritable lean cache declines (exit 2)'
+  status: in_progress
+  priority: high
+  assigned_to: null
+  created: 2026-11-09T08:24:03Z
+  updated: 2026-11-09T08:24:03Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6810
