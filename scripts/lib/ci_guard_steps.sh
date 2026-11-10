@@ -405,6 +405,8 @@ cmd_run() {
                 ek+=("$k"); ev+=("$v")
             done
             if [ -n "$only" ] && ! [[ $name =~ $only ]]; then continue; fi
+            # CI_GUARDS_SKIP (pr-light on a product-code diff, Noah 10:38Z): gate proofs (case tables, mutants) run when a gate script changed and nightly
+            if [ -n "${CI_GUARDS_SKIP:-}" ] && [[ $name =~ $CI_GUARDS_SKIP ]]; then echo "PROOF-SKIP $job#$idx  $name (gate proof: runs when a gate script changes, and nightly)"; continue; fi
             # --shard I/K (#6255): step idx n runs in shard (n mod K)+1, so the K shards partition the manifest exactly once
             # A step that appends to GITHUB_PATH/GITHUB_ENV hands state to the steps after it, so it runs in EVERY shard:
             # the serial run carried that state forward, and a shard without it would lose it (m69 -> m70/m71 cargo-deny).

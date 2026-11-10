@@ -331,7 +331,9 @@ worker_run_one() {
         fi
     }
 
-    if advertises_self_test "$w_guard"; then
+    # GUARD_TREE_SELF_TESTS=0 (pr-light on a product-code diff, Noah 10:38Z): a guard's own --self-test is the proof the gate
+    # works, not the gate; it runs when a gate script changed and nightly (unset = run them, as before). The [run] row always runs.
+    if [ "${GUARD_TREE_SELF_TESTS:-1}" != 0 ] && advertises_self_test "$w_guard"; then
         worker_row "$w_guard [self-test]" bash "$w_guard" --self-test
         worker_row "$w_guard [run]" bash "$w_guard"
     else

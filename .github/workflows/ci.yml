@@ -209,6 +209,8 @@ jobs:
       GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       FAT_VARS_JSON: ${{ toJSON(vars) }}
       FAT_SECRET_PR_REVIEW_SIGNING_KEY_B64: ${{ secrets.PR_REVIEW_SIGNING_KEY_B64 }}
+      # 0 network fetches: a missing toolchain/component is a RED, never a rustup download (the docker fmt pulled 1.93.0 each run).
+      RUSTUP_AUTO_INSTALL: '0'
     steps:
       # GATE-JUNK-001 C6 (infra#3711): pr-light fetches and installs nothing. jq 1.8.x, the rust-toolchain.toml release and the
       # sovereign-ci image are asserted present (forjar provisions them); a missing one is a RED step naming the resource.

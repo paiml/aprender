@@ -24,20 +24,38 @@
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-FMT_IMAGE='localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36'
+# fmt runs on the host's pinned toolchain (rust-toolchain.toml, asserted by require_pinned_tools.sh) with RUSTUP_AUTO_INSTALL=0:
+# the sovereign-ci image carries 1.95.0 only, so `cargo fmt` in it made rustup download 1.93.0 (5 components, ~24 s) every run.
+
+# GATE PROOFS (Noah 10:38Z): a self-test / case table / mutant suite OF A GATE runs only when a gate's own script or recipe
+# changed (gate_surface_changed), and nightly; never because product code changed. Product-code PRs run the gates, not their proofs.
+GATE_SURFACE_ERE='^(scripts/|ci/|\.github/|Makefile$|[^/]*\.mk$)'
+PROOF_STEP_ERE='(case table|can still (go RED|refuse)|self-test|RED proof|mutated|[Mm]utants?[ )]|[Ff]alsif)'
 
 # name|command -- the same command lines the old "Cheap checks" step ran, one lane each.
-cheap_lanes() {
-    cat << LANES
-fail-fast-self-test|python3 scripts/ci/fail_fast.py self-test
+cheap_lanes() { gate_lanes; proof_lanes; }
+
+# the gates themselves: O(1)/O(diff), run on every PR.
+gate_lanes() {
+    cat << 'LANES'
 falsification-ids|python3 scripts/ci/fail_fast.py ids --base origin/main
-fmt|docker run --rm -v "\$PWD:/w:ro" -w /w $FMT_IMAGE cargo fmt --all -- --check
+fmt|RUSTUP_AUTO_INSTALL=0 cargo fmt --all -- --check
+no-pull-request-target-guard|sh scripts/guards/no-pull-request-target-guard.sh
+exec-bit-guard|bash scripts/release/exec_bit_guard.sh
+fetch-p6-wiring|setsid --wait bash scripts/ci/fetch_p6.sh --check-wiring
+pr-light-offline|setsid --wait bash scripts/check_pr_light_offline.sh
+LANES
+}
+
+# the proofs of the gates (self-tests, case tables, mutant suites): run only when gate_surface_changed, and nightly.
+proof_lanes() {
+    cat << 'LANES'
+fail-fast-self-test|python3 scripts/ci/fail_fast.py self-test
 guard-tree-case-table|bash scripts/tests/guard_tree_test.sh
 bump-version-self-test|bash scripts/bump-version.sh --self-test
 falsify-scratch-tmpdir|bash scripts/release/falsify_scratch_tmpdir.sh --mutants
 falsify-bump-tmpdir|bash scripts/release/falsify_bump_tmpdir.sh --mutants
-no-pull-request-target-guard|sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
-exec-bit-guard|bash scripts/release/exec_bit_guard.sh
+no-pull-request-target-guard-test|sh scripts/guards/test-no-pull-request-target-guard.sh
 falsify-exec-bit-guard|bash scripts/release/falsify_exec_bit_guard.sh --mutants
 falsify-one-command|bash scripts/release/falsify_one_command.sh
 pr-light-self-test|bash scripts/pr_light.sh --self-test
@@ -46,8 +64,7 @@ hardcoded-paths|setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
 pr-review-wiring|setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
 fixture-quiet|setsid --wait bash scripts/ci/fixture_quiet.sh --self-test
 fetch-p6-self-test|setsid --wait bash scripts/ci/fetch_p6.sh --self-test
-fetch-p6-wiring|setsid --wait bash scripts/ci/fetch_p6.sh --check-wiring
-pr-light-offline|setsid --wait bash scripts/check_pr_light_offline.sh && setsid --wait bash scripts/check_pr_light_offline.sh --self-test
+pr-light-offline-self-test|setsid --wait bash scripts/check_pr_light_offline.sh --self-test
 pr-light-fast-self-test|bash scripts/ci/pr_light_fast.sh --self-test && bash scripts/ci/require_pinned_tools.sh --self-test
 LANES
 }
@@ -129,6 +146,20 @@ require_event_env() {
     esac
 }
 
+# gate_surface_changed <changed-paths file>: 0 iff a gate's own script or recipe is among them.
+gate_surface_changed() { grep -qE "$GATE_SURFACE_ERE" "$1"; }
+
+# proofs_due: prints 1 (run the gate proofs) or 0. PR_LIGHT_PROOFS=all forces 1 (nightly); an unreadable diff is an error, never 0.
+proofs_due() {
+    local f rc=0
+    [ "${PR_LIGHT_PROOFS:-}" = all ] && { echo 1; return 0; }
+    f="$(mktemp "${TMPDIR:-/tmp}/prlf-changed.XXXXXX")" || return 2
+    git -C "$REPO_ROOT" diff --name-only "${PR_LIGHT_BASE:-origin/main}...HEAD" > "$f" || rc=2
+    if [ "$rc" = 0 ]; then if gate_surface_changed "$f"; then echo 1; else echo 0; fi; fi
+    rm -f "${f:?}"
+    return "$rc"
+}
+
 main_run() {
     cd "$REPO_ROOT" || exit 2
     command -v jq > /dev/null 2>&1 || { echo "::error::pr_light_fast: jq is not provisioned on this runner (forjar machines/*/forjar.yaml pins jq 1.8.x); this gate does not download it" >&2; exit 2; }
@@ -136,12 +167,17 @@ main_run() {
     require_event_env || exit 1
     scratch="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/pr-light-fast.XXXXXX")" || exit 2
     trap 'drop_worktrees "$scratch"' EXIT
+    local proofs t0=$SECONDS
+    proofs="$(proofs_due)" || { echo "::error::pr_light_fast: cannot list this PR's changed paths vs ${PR_LIGHT_BASE:-origin/main}; that is not a pass" >&2; exit 2; }
+    echo "pr_light_fast: gate proofs ${proofs} (1 = a gate script/recipe changed, or PR_LIGHT_PROOFS=all)"
+    export GUARD_TREE_SELF_TESTS="$proofs"
+    [ "$proofs" = 1 ] || export CI_GUARDS_SKIP="$PROOF_STEP_ERE"
     # the guard-tree section's step 2: the comparand every ratchet reads. Serial and first, like the section ran it.
-    bash scripts/ci/pin_build_base.sh --self-test || { echo "::error::pin_build_base self-test failed"; exit 1; }
+    if [ "$proofs" = 1 ]; then bash scripts/ci/pin_build_base.sh --self-test || { echo "::error::pin_build_base self-test failed"; exit 1; }; fi
     bash scripts/ci/pin_build_base.sh || { echo "::error::pin_build_base failed"; exit 1; }
-    { cheap_lanes; pr_body_lanes; shard_lanes; } | run_lanes "$scratch"
+    { gate_lanes; if [ "$proofs" = 1 ]; then proof_lanes; fi; pr_body_lanes; shard_lanes; } | run_lanes "$scratch"
     rc=$?
-    echo "pr_light_fast: lanes done, rc=$rc"
+    echo "pr_light_fast: lanes done, rc=$rc, wall ${SECONDS}s total, $((SECONDS - t0))s in lanes"
     return "$rc"
 }
 
@@ -164,7 +200,17 @@ self_test() {
     row "lanes print in input order, not finish order" "$(printf '%s\n' "$out1" | head -n 1)" 'ok    slow'
     out1="$(printf 'x|exit 7\n' | run_lanes "$d/6" 2> /dev/null)"
     row "a lane's own rc is reported" "$(printf '%s\n' "$out1" | grep -c 'rc=7')" 2
-    row "the lane table has every old cheap check plus the offline falsifier and the self-tests (20 lanes)" "$(cheap_lanes | grep -c '|')" 20
+    row "the lane table has every old cheap check plus the offline falsifier and the self-tests (22 lanes)" "$(cheap_lanes | grep -c '|')" 22
+    row "no proof lane is a gate lane" "$(gate_lanes | grep -cE -- '--self-test|--mutants|--selftest|_test\.sh|test-no-')" 0
+    printf 'crates/aprender-core/src/lib.rs\ndocs/x.md\n' > "$d/prod"; printf 'crates/a.rs\nscripts/check_x.sh\n' > "$d/gate"
+    row "a product-code diff does not run the gate proofs" "$(gate_surface_changed "$d/prod" && echo y || echo n)" n
+    row "a diff touching a gate script runs them" "$(gate_surface_changed "$d/gate" && echo y || echo n)" y
+    printf '.github/workflows/ci.yml\n' > "$d/wf"; printf 'Makefile\n' > "$d/mk"
+    row "a workflow change runs them" "$(gate_surface_changed "$d/wf" && echo y || echo n)" y
+    row "a Makefile change runs them" "$(gate_surface_changed "$d/mk" && echo y || echo n)" y
+    row "PR_LIGHT_PROOFS=all forces them (nightly)" "$(PR_LIGHT_PROOFS=all proofs_due)" 1
+    row "a case-table manifest step is a proof" "$([[ 'Fixture-path guard case table' =~ $PROOF_STEP_ERE ]] && echo y || echo n)" y
+    row "a guard manifest step is not a proof" "$([[ 'Every cargo-free guard runs, and every failure is reported' =~ $PROOF_STEP_ERE ]] && echo y || echo n)" n
     row "shard lanes partition 1..K" "$(PR_LIGHT_SHARDS=3 shard_lanes | cut -d'|' -f1 | paste -sd,)" 'guard-tree-shard-1-of-3,guard-tree-shard-2-of-3,guard-tree-shard-3-of-3'
     row "a bad shard count is refused" "$(PR_LIGHT_SHARDS=0 shard_lanes 2> /dev/null; echo $?)" 2
     local sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
