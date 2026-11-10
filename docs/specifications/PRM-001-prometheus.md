@@ -60,7 +60,7 @@
 | G8 | TTFT at 0.68.2 on a 4090 | slower than llama.cpp, TTFT and end-to-end (figures in #3596) | [V] | #3596 |
 | G9 | Epic speed targets | E2 TTFT target ≤ 2× llama.cpp · E6 target ≥ 1.0× llama.cpp for decode, prefill and TTFT across the certified matrix | [O] | APR-EPIC-001 §2 |
 | G10 | Executors | apr pin on arm64, devbox, laptop; no `apr serve` unit, weights or review label anywhere | [V] | infra#1088 |
-| G11 | paiml-implement | v1.8.1 has no advisory lane; #420 unreleased | [V] | PRM report |
+| G11 | paiml-implement | v1.8.1 had no advisory lane (PRM report, 2026-09); `paiml-implement#420` (merge `3aba747a`, 2026-09-25) shipped in v1.8.2 (2026-10-31) and v1.8.3 — checked with `git merge-base --is-ancestor 3aba747a v1.8.2` | [V 2026-11-09] | `gh release list --repo paiml/paiml-implement`, `git merge-base --is-ancestor` |
 | G12 | Ledger | findings stored as a count; `weights_sha256: None` hardcoded; free-text `LaneUnavailable` | [V] | `crates/aprender-review-experiment/src/ledger.rs` |
 | G13 | Sealed corpus | `review-corpus-v1@787d2026256cc08b`: test = 35 P (size S, mutants) + 35 R + 35 G | [V] | REX-02 receipt |
 | G14 | Corpus diffs | single copy on a 94%-full raid (`items-v1.tar`, sha `70dffe56…8bba`) | [V] | REX-02 receipt |
