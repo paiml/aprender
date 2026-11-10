@@ -354,4 +354,4 @@ qa_gate:
   checks:
   - validation
   - falsification
-  pass_criteria: All falsification tests pass
+  pass_criteria: All 13 falsification tests pass

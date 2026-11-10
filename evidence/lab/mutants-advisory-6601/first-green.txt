@@ -1,0 +1,13 @@
+  ok    row    Rust-source mutation: --in-diff, MUTANT_BUDGET=40, advisory
+  ok    guard  bash-guard mutation row stays blocking
+  ok    scope  only mutants-nightly.yml invokes cargo mutants
+GREEN mutants-advisory scope
+rc=0
+  pass  real skill + clean workflows is GREEN (rc=0)
+  pass  Rust row promoted to blocking is RED (rc=1)
+  pass  budget changed is RED (rc=1)
+  pass  guard row demoted is RED (rc=1)
+  pass  cargo mutants in ci.yml is RED (rc=1)
+  pass  empty SKILL is NO-MEASURE (rc=2)
+  pass  missing workflows dir is NO-MEASURE (rc=2)
+rc=0

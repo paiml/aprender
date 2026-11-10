@@ -1,0 +1,18 @@
+- id: PMAT-6798
+  github_issue: 6798
+  item_type: task
+  title: 'nightly dogfood step names failing gate on exit 1: test pins the NO-GO branch'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-08T17:10:00Z
+  updated: 2026-11-08T17:10:00Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6519
