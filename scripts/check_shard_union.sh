@@ -53,6 +53,11 @@ case "${1:-}" in
     rc=0; out="$(SHARD_UNION_RUNNER="$t/mut.sh" bash "$0" --fragments 2>&1)" || rc=$?
     [ "$rc" = 1 ] || { echo "self-test: dropped command must exit 1, got $rc"; exit 1; }
     case "$out" in *"FAIL fragments: count pre-split="*) ;; *) echo "self-test: dropped command must print the count-mismatch FAIL line, got: $out" | head -c 400; echo; exit 1 ;; esac
+    # mutant 2: a runner that fails (crash, missing tool, full disk) lists nothing; empty == empty
+    # must not read as "union holds" (#3863: the yoga-build self-test went vacuous this way)
+    printf 'exit 3\n' > "$t/dead.sh"
+    rc=0; out="$(SHARD_UNION_RUNNER="$t/dead.sh" bash "$0" --fragments 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || { echo "self-test: failing runner must exit 1, got $rc: $out" | head -c 400; echo; exit 1; }
     fragments_all ci/explicit-test-commands.d >/dev/null || { echo "self-test: clean must pass"; exit 1; }
     [ "$MG" -ge 1 ] && { out="$(fragments_all ci/explicit-test-commands.d)"; case "$out" in *"(merge_group)"*) ;; *) echo "self-test: merge_group pins exist but its union was not checked"; exit 1 ;; esac; }
     # known-bad (FLAKE-001 C3): an EMPTY fragment dir must be RED. The runner exits 2 ("zero commands is
