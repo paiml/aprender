@@ -88,7 +88,11 @@ jobs:
     needs: pick
     # LITERAL list with discriminating labels (scripts/check_runner_labels.sh).
     runs-on: [self-hosted, Linux, X64, clean-room]
-    timeout-minutes: 10
+    # 20 = 2 x the measured max. release_lanes.sh --mutants took 3m12s, 6m14s, 9m00s on the last
+    # three green nights (runs 42552519574, 42331483944, 42439014255) and 9m15s+ on run
+    # 42655077366, which the old 10 min cap cancelled; that skipped cleanroom-cpu, cleanroom-gpu
+    # and publish-dryrun. Still a hard cap: no continue-on-error, a timeout is red.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
