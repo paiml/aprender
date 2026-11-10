@@ -549,10 +549,10 @@ jobs:
     if: github.event.pull_request.draft != true && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     permissions:
       contents: read
-    uses: paiml/.github/.github/workflows/runner-smells.yml@d0ac85f159e8840129439833f57d6cb5a927b279 # main at pin time (#113)
+    uses: paiml/.github/.github/workflows/runner-smells.yml@d768b8ac5abfa7d0038470fd38023a15323ac0aa # main at pin time (#114)
     with:
       runs_on: '["self-hosted","Linux","X64","clean-room"]'
-      scanner_ref: d0ac85f159e8840129439833f57d6cb5a927b279
+      scanner_ref: d768b8ac5abfa7d0038470fd38023a15323ac0aa
 
   x86-main-advisories:
     needs: [mg-reuse]
