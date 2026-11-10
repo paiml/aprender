@@ -35,9 +35,9 @@ pr_path_workflows() {
 scan() { # root -> RED lines on stdout
     local root=$1 f
     [ -f "$root/$SPEC" ] && [ -f "$root/$SKILL" ] || { echo "CANNOT-MEASURE: $SPEC or $SKILL missing under $root" >&2; return 2; }
-    grep -E '^\|[[:space:]]*`FINDINGS`' "$root/$SPEC" | grep -q '\*\*proceeds\*\*' \
+    awk '/^\|[[:space:]]*`FINDINGS`/ && /\*\*proceeds\*\*/ {ok=1} END{exit !ok}' "$root/$SPEC" \
         || echo "RED S6 $SPEC: the FINDINGS row no longer says **proceeds**"
-    grep -E '^\|[[:space:]]*Rust source[[:space:]]*\|' "$root/$SKILL" | grep -qE '\|[[:space:]]*advisory[[:space:]]*\|[[:space:]]*$' \
+    awk '/^\|[[:space:]]*Rust source[[:space:]]*\|/ && /\|[[:space:]]*advisory[[:space:]]*\|[[:space:]]*$/ {ok=1} END{exit !ok}' "$root/$SKILL" \
         || echo "RED M1 $SKILL: the Rust source (cargo mutants) row no longer ends in advisory"
     while read -r f; do
         [ -n "$f" ] || continue
