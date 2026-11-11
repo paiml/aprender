@@ -29,6 +29,7 @@ pub mod text_input;
 pub mod toggle;
 pub mod tooltip;
 pub mod video;
+pub mod waveform;
 
 pub use button::Button;
 pub use chart::{Axis, Chart, ChartType, DataSeries, LegendPosition};
@@ -61,6 +62,7 @@ pub use text_input::{TextChanged, TextInput, TextSubmitted};
 pub use toggle::{Toggle, ToggleChanged};
 pub use tooltip::{Tooltip, TooltipPlacement};
 pub use video::{Video, VideoState, VideoToggled};
+pub use waveform::{waveform_points, Waveform};
 
 // File format conversions
 pub use formats::{load_ald_as_card, load_apr_as_card, AldDatasetExt, AprModelExt};

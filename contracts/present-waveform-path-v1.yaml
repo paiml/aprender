@@ -1,0 +1,98 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6891 — Waveform widget, sample-to-path mapping"
+    - "crates/aprender-present-widgets/src/waveform.rs — the widget and pure mapping this pins"
+  description: >
+    waveform_points turns an audio sample buffer into canvas points. It is the
+    pure half of a realtime audio display: any input, including NaN, infinity,
+    out-of-range values, empty buffers and degenerate bounds, must yield a
+    polyline that stays inside the widget rectangle and that never loses a
+    peak when it is downsampled. A mapping that draws outside its rectangle
+    corrupts neighbouring widgets, and no other test looks at the point stream.
+
+name: present-waveform-path
+version: "1.0.0"
+scope: >
+  `waveform_points(samples, bounds, max_points)` and the path `Waveform::paint`
+  draws from it. Out of scope: capturing samples (microphone, Web Audio),
+  which is a later ticket.
+status: active
+
+contract: |
+  (1) EVERY POINT LIES INSIDE THE WIDGET RECT (edges inclusive), for any
+      samples, any bounds and any max_points.
+  (2) SILENCE DRAWS THE CENTRE LINE. No samples give two points, left-centre
+      and right-centre; all-zero samples give points that all lie on the
+      centre line.
+  (3) THE POINT COUNT IS BOUNDED: at least 2 and at most max(max_points, 2).
+      max_points of 0 or 1 never panics.
+  (4) PEAKS SURVIVE DOWNSAMPLING. Each bucket keeps its sample of largest
+      magnitude, so a single spike is still drawn.
+  (5) NON-FINITE SAMPLES ARE SILENCE and out-of-range samples are clamped to
+      [-1, 1].
+equations:
+  sample_to_y:
+    description: "Vertical position of a clamped sample"
+    formula: "y = (bounds.y + height/2) - clamp(sample, -1, 1) * (height/2)"
+    domain: "finite bounds, height >= 0; NaN and infinite samples count as 0"
+    codomain: "[bounds.y, bounds.y + height]"
+    invariants:
+      - "+1 maps to the top edge, -1 to the bottom edge, 0 to the centre line"
+      - "x runs from bounds.x (first point) to bounds.x + width (last point), non-decreasing"
+falsification:
+  - id: FALSIFY-PRESENT-WAVEFORM-PATH-V1-001
+    description: "Mapping, bounds, silence and downsampling hold for every input class"
+    test: "cargo test -p aprender-present-widgets --lib waveform"
+    evidence: "pending first run on the build host"
+falsification_tests:
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-001
+    description: "every point is inside the bounds for arbitrary samples, bounds and max_points"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::prop_points_inside_bounds"
+    prediction: "no generated input yields a point outside the rect"
+    if_fails: "the waveform draws over neighbouring widgets"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-002
+    description: "no samples draw the centre line, left-centre to right-centre"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::points_empty_is_centre_line"
+    prediction: "two points (10,40) and (110,40) for bounds (10,20,100,40)"
+    if_fails: "silence is drawn as nothing or as a diagonal"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-003
+    description: "silence of any length and bounds lies on the centre line"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::prop_silence_is_centre_line"
+    prediction: "every y equals bounds.y + height/2"
+    if_fails: "zero samples drift off the centre line"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-004
+    description: "the point count never exceeds max(max_points, 2) and is at least 2"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::prop_points_len_bounded"
+    prediction: "2 <= len <= max(max_points, 2) for every input"
+    if_fails: "an unbounded path reaches the canvas every frame"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-005
+    description: "a single spike survives downsampling"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::points_downsample_keeps_peaks"
+    prediction: "100 samples to 10 points keeps the -0.9 spike at y=19 in bucket 3"
+    if_fails: "downsampling averages or skips peaks and a level meter under-reads"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-006
+    description: "+1 maps to the top edge, 0 to the centre, -1 to the bottom edge"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::points_map_extremes_to_edges"
+    prediction: "y = 20, 40, 60 for bounds (10,20,100,40)"
+    if_fails: "the waveform is inverted or mis-scaled"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-007
+    description: "x spans the bounds from the left edge to the right edge"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::points_x_spans_bounds"
+    prediction: "first x = 10, middle x = 60, last x = 110"
+    if_fails: "the trace does not fill the widget width"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-008
+    description: "x is non-decreasing for any samples and bounds"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::prop_points_x_non_decreasing"
+    prediction: "no generated input yields a point left of its predecessor"
+    if_fails: "the polyline doubles back over itself"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-009
+    description: "a waveform without an accessible name fails Brick::verify"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::brick_verify_fails_without_accessible_name"
+    prediction: "failed holds one ElementPresent assertion; a named waveform verifies"
+    if_fails: "an unlabeled canvas reaches screen-reader users"
