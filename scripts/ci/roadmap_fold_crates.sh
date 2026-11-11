@@ -24,7 +24,7 @@
 # EXIT   0 ok · 1 the table broke (or a mutant survived) / --touches found nothing · 3 caller error
 set -euo pipefail
 
-RE='^$NO-FOLD-INPUT-IS-SELECTED-YET'
+RE='^docs/roadmaps/(entries/.+|roadmap-base\.yaml|roadmap\.yaml)$'
 CRATES='aprender-rollup aprender-ci-tools'
 
 touches() { # touches <diff file> -> rc 0 iff a path matches RE
@@ -149,6 +149,8 @@ self_test() {
     if [ "$got" = 3 ]; then echo "ok    unreadable_diff_is_caller_error"; else echo "BROKE unreadable_diff_is_caller_error (rc $got)"; fails=$((fails + 1)); fi
     rows=$((rows + 1)); bash "$0" --union "$T/nope.txt" apr-cli > /dev/null 2>&1 && got=0 || got=$?
     if [ "$got" = 3 ]; then echo "ok    union_of_unreadable_diff_is_caller_error"; else echo "BROKE union_of_unreadable_diff_is_caller_error (rc $got)"; fails=$((fails + 1)); fi
+    rows=$((rows + 1)); printf "docs/roadmaps/roadmap.yaml\n" > "$T/g.txt"; RFC_MUTANT_RE="(" bash "$0" --touches "$T/g.txt" > /dev/null 2>&1 && got=0 || got=$?
+    if [ "$got" = 3 ]; then echo "ok    a_failing_grep_is_caller_error_not_no"; else echo "BROKE a_failing_grep_is_caller_error_not_no (rc $got)"; fails=$((fails + 1)); fi
     echo "roadmap_fold_crates self-test: $((rows - fails)) ok, $fails broke"
     [ "$fails" = 0 ]
 }
