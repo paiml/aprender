@@ -201,7 +201,9 @@ case "$st" in other-sha) st=green; h=$FX_R0 ;; bundle-other) st=green; c=$FX_R0 
 } > "$out/2026-01-01/bundle.tsv"
 SH
 # a cargo that only records: the scheduler must never start one (aprender#6882)
-mkdir -p "$TMP/nocargo"; printf '#!/usr/bin/%s\necho "CARGO $*" >> "$FX_CALLS"\nexit 97\n' env\ bash > "$TMP/nocargo/cargo"; chmod +x "$TMP/nocargo/cargo"; PATH="$TMP/nocargo:$PATH"; export PATH
+mkdir -p "$TMP/nocargo"
+printf '#!/usr/bin/%s\necho "CARGO $*" >> "$FX_CALLS"\nexit 97\n' env\ bash > "$TMP/nocargo/cargo"
+chmod +x "$TMP/nocargo/cargo"; PATH="$TMP/nocargo:$PATH"; export PATH
 chmod +x "$TMP/train"; mkdir -p "$TMP/h/.cargo"; : > "$TMP/h/.cargo/credentials.toml"  # a FAKE file in the sandbox test home
 chmod +x "$TMP/gh" "$TMP/promote" "$TMP/models" "$TMP/pt"
 cat > "$BIN/.promote-test-seams" <<EOF
