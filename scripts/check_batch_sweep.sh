@@ -68,6 +68,10 @@ bs6() {
 }
 selftest() {
   local fail=0; t="$(mktemp -d)" || exit 2; trap 'rm -rf -- "${t:?}"' EXIT
+  # Every fixture repo commits with this identity and reads no host git config, so the self-test answers the same
+  # on a host with no ~/.gitconfig as on a developer box (the $t/rd commits had no identity and broke 2 rows there).
+  export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+  export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
   g() { git -C "$t/r" -c user.name=t -c user.email=t@t "$@" > /dev/null 2>&1; }
   expect() { # label want cmd...
     local label="$1" want="$2" rc; shift 2; "$@" > "$t/out" 2>&1; rc=$?
