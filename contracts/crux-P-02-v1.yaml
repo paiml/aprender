@@ -1,0 +1,60 @@
+# CRUX-P-02 — Server-side reasoning parser splits think blocks into reasoning_content
+# CRUX category P: Edge MoE serving vs FreeToken. Story FX-00 (aprender#6649), epic aprender#6648, row 4.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §15.
+# Evidence: evidence/crux/freetoken/ (FlashML-org/FreeToken @ ee43b2a, read 2026-11-11).
+# Work: FX-15 (aprender#6655), folded into checklist aprender#6742 on 2026-11-05.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-P-02
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "P — Edge MoE serving vs FreeToken"
+  competitor: freetoken
+  demand_score: 4  # 1..5; basis below
+  intake_status: missing
+  github_issue: 6648
+  description: >-
+    Server-side reasoning parser splits think blocks into reasoning_content. FreeToken: ft serve --reasoning-parser auto|off (docs/cli.md:107 (--reasoning-parser, auto-inferred per family; off disables)). apr at 0a5da37ea: No server-side parser: reasoning_content appears in no serve crate (git grep at 0a5da37ea). apr chat --thinking only toggles the chat template.
+    Every thinking model emits think blocks and agents render them apart from the answer. Demand 4.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category P)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §15'
+  - 'evidence: evidence/crux/freetoken/'
+  - 'epic: https://github.com/paiml/aprender/issues/6648 (row 4)'
+  - 'work: FX-15, folded into https://github.com/paiml/aprender/issues/6742'
+  - 'competitor: https://github.com/FlashML-org/FreeToken (ee43b2a11345d056ba349d22ee073c6828b1364b)'
+
+equations:
+  parity:
+    formula: >-
+      a reply's think span is returned in reasoning_content, not in content
+    domain: "apr serve on the fixture named in the prediction"
+    codomain: "PASS iff the prediction holds"
+    invariants:
+    - "a run that cannot measure the prediction reports NOT MEASURED, never PASS"
+
+falsification_tests:
+- id: FALSIFY-CRUX-P-02-001
+  rule: >-
+    a reply's think span is returned in reasoning_content, not in content
+  prediction: >-
+    for a reasoning-family model, /v1/chat/completions returns message.reasoning_content holding the think span and message.content with no think tag; --reasoning-parser off returns the raw text
+  test: >-
+    LIVE-PENDING - no test surface exists because apr does not implement this (FX-15, intake_status missing). PROMOTE by authoring a test named think_span_moves_to_reasoning_content; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED, NOT satisfied.
+  if_fails: >-
+    the freetoken parity claim for CRUX-P-02 is FALSE; re-measure against FreeToken at the pinned sha before changing the status
+
+proof_obligations:
+- id: CP02-INV-001
+  type: invariant
+  property: >-
+    a reply's think span is returned in reasoning_content, not in content

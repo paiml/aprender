@@ -178,6 +178,10 @@ fn unknown_competitor_is_an_error() {
         "Jena",
         "apache-jena",
         "riot",
+        // Category P: the project name as spelt, its CLI and a hyphenated form.
+        "FreeToken",
+        "ft",
+        "free-token",
     ] {
         let yaml = crux_contract(&format!("'{}'", bad.trim_matches('\'')), "3", "missing");
         let errors = crux_errors(&yaml);
@@ -226,6 +230,9 @@ fn competitor_registry_covers_the_corpus_vocabulary() {
         // Category R — SHACL ontologies vs Apache Jena (aprender#3598,
         // 2026-10-09). 4 contracts, one per cell.
         "jena",
+        // Category P — Edge MoE serving vs FreeToken (aprender#6649,
+        // 2026-11-11). 16 contracts.
+        "freetoken",
     ] {
         assert!(
             CRUX_COMPETITORS.contains(&required),
@@ -272,6 +279,8 @@ fn beat_incumbents_cannot_name_the_crux_corpus() {
         "autogluon",
         // Apache Jena: a second SHACL engine, not a model framework at all.
         "jena",
+        // FreeToken: an MoE serving engine; ollama and llama.cpp stay the pillars.
+        "freetoken",
     ] {
         assert!(!beat_accepts(c), "BEAT_INCUMBENTS unexpectedly accepts {c}");
     }

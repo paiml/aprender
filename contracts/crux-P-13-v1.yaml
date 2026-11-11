@@ -1,0 +1,60 @@
+# CRUX-P-13 — Hybrid CPU/GPU MoE decode: cache misses split between PCIe fetch and CPU compute
+# CRUX category P: Edge MoE serving vs FreeToken. Story FX-00 (aprender#6649), epic aprender#6648, row 16.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §15.
+# Evidence: evidence/crux/freetoken/ (FlashML-org/FreeToken @ ee43b2a, read 2026-11-11).
+# Work: FX-31 (aprender#6666, 6667), folded into checklist aprender#6742 on 2026-11-05.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-P-13
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "P — Edge MoE serving vs FreeToken"
+  competitor: freetoken
+  demand_score: 4  # 1..5; basis below
+  intake_status: missing
+  github_issue: 6648
+  description: >-
+    Hybrid CPU/GPU MoE decode: cache misses split between PCIe fetch and CPU compute. FreeToken: ft serve --moe-strategy hybrid [--moe-hybrid-max-fetch N] (docs/cli.md:85, :94; README.md:20 (bandwidth-adaptive CPU-GPU co-execution, the q* policy)). apr at 0a5da37ea: Not found: no serve path computes an expert on the CPU while others run on the GPU.
+    The paper's central claim (arXiv:2608.16157). Demand 4.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category P)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §15'
+  - 'evidence: evidence/crux/freetoken/'
+  - 'epic: https://github.com/paiml/aprender/issues/6648 (row 16)'
+  - 'work: FX-31, folded into https://github.com/paiml/aprender/issues/6742'
+  - 'competitor: https://github.com/FlashML-org/FreeToken (ee43b2a11345d056ba349d22ee073c6828b1364b)'
+
+equations:
+  parity:
+    formula: >-
+      per layer-step, experts fetched plus experts computed on CPU equal the misses, fetched stays within the cap, and greedy decode equals the all-GPU run
+    domain: "apr serve on the fixture named in the prediction"
+    codomain: "PASS iff the prediction holds"
+    invariants:
+    - "a run that cannot measure the prediction reports NOT MEASURED, never PASS"
+
+falsification_tests:
+- id: FALSIFY-CRUX-P-13-001
+  rule: >-
+    per layer-step, experts fetched plus experts computed on CPU equal the misses, fetched stays within the cap, and greedy decode equals the all-GPU run
+  prediction: >-
+    with --moe-hybrid-max-fetch 2, every logged layer-step has fetched at most 2 and fetched plus CPU-computed equal to misses, and the greedy tokens equal the all-resident run
+  test: >-
+    LIVE-PENDING - no test surface exists because apr does not implement this (FX-31, intake_status missing). PROMOTE by authoring a test named hybrid_split_sums_to_misses; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED, NOT satisfied.
+  if_fails: >-
+    the freetoken parity claim for CRUX-P-13 is FALSE; re-measure against FreeToken at the pinned sha before changing the status
+
+proof_obligations:
+- id: CP13-INV-001
+  type: invariant
+  property: >-
+    per layer-step, experts fetched plus experts computed on CPU equal the misses, fetched stays within the cap, and greedy decode equals the all-GPU run

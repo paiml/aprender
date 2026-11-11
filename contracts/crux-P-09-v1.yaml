@@ -1,0 +1,60 @@
+# CRUX-P-09 — Diagnose why a checkpoint fails to load: missing and renamed tensors, config fixes
+# CRUX category P: Edge MoE serving vs FreeToken. Story FX-00 (aprender#6649), epic aprender#6648, row 12.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §15.
+# Evidence: evidence/crux/freetoken/ (FlashML-org/FreeToken @ ee43b2a, read 2026-11-11).
+# Work: FX-26 (aprender#6662), folded into checklist aprender#6742 on 2026-11-05.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-P-09
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "P — Edge MoE serving vs FreeToken"
+  competitor: freetoken
+  demand_score: 3  # 1..5; basis below
+  intake_status: partial
+  github_issue: 6648
+  description: >-
+    Diagnose why a checkpoint fails to load: missing and renamed tensors, config fixes. FreeToken: scripts/checkpoint_diagnose/ (README: Diagnosing a checkpoint that fails to load) (README.md:59). apr at 0a5da37ea: apr validate, apr check, apr lint and apr oracle exist. None names the missing or renamed tensor that stops a load.
+    Documented power-user path. Partial because validation exists. Demand 3.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category P)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §15'
+  - 'evidence: evidence/crux/freetoken/'
+  - 'epic: https://github.com/paiml/aprender/issues/6648 (row 12)'
+  - 'work: FX-26, folded into https://github.com/paiml/aprender/issues/6742'
+  - 'competitor: https://github.com/FlashML-org/FreeToken (ee43b2a11345d056ba349d22ee073c6828b1364b)'
+
+equations:
+  parity:
+    formula: >-
+      for a checkpoint with one tensor renamed, the diagnosis names both the expected and the found tensor name
+    domain: "apr serve on the fixture named in the prediction"
+    codomain: "PASS iff the prediction holds"
+    invariants:
+    - "a run that cannot measure the prediction reports NOT MEASURED, never PASS"
+
+falsification_tests:
+- id: FALSIFY-CRUX-P-09-001
+  rule: >-
+    for a checkpoint with one tensor renamed, the diagnosis names both the expected and the found tensor name
+  prediction: >-
+    renaming one tensor in a fixture checkpoint makes the diagnosis print both names and exit non-zero, and the unrenamed fixture exits 0
+  test: >-
+    LIVE-PENDING - no test surface exists because apr does not implement this (FX-26, intake_status partial). PROMOTE by authoring a test named why_not_load_names_the_renamed_tensor; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED, NOT satisfied.
+  if_fails: >-
+    the freetoken parity claim for CRUX-P-09 is FALSE; re-measure against FreeToken at the pinned sha before changing the status
+
+proof_obligations:
+- id: CP09-INV-001
+  type: invariant
+  property: >-
+    for a checkpoint with one tensor renamed, the diagnosis names both the expected and the found tensor name

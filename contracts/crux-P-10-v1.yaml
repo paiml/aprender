@@ -1,0 +1,60 @@
+# CRUX-P-10 — --hf-overrides JSON merged into the checkpoint config at load (YaRN rope extension)
+# CRUX category P: Edge MoE serving vs FreeToken. Story FX-00 (aprender#6649), epic aprender#6648, row 13.
+# Spec: docs/specifications/crux-competitive-research-ux-workflows.md §15.
+# Evidence: evidence/crux/freetoken/ (FlashML-org/FreeToken @ ee43b2a, read 2026-11-11).
+# Work: FX-27 (aprender#6663), folded into checklist aprender#6742 on 2026-11-05.
+# registry: false — this contract carries real falsification gates and claims no
+# exemption.
+
+metadata:
+  id: CRUX-P-10
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  status: draft
+  parent_contracts:
+  - crux-competitive-research-ux-v1
+  category: "P — Edge MoE serving vs FreeToken"
+  competitor: freetoken
+  demand_score: 2  # 1..5; basis below
+  intake_status: missing
+  github_issue: 6648
+  description: >-
+    --hf-overrides JSON merged into the checkpoint config at load (YaRN rope extension). FreeToken: ft serve --hf-overrides JSON (docs/cli.md:36 (nested sections merge key by key; a YaRN rope_parameters override serves original_max_position_embeddings * factor positions)). apr at 0a5da37ea: hf_overrides and --hf-overrides appear in no crate (git grep at 0a5da37ea).
+    Niche but real: context extension on a pinned checkpoint. Demand 2.
+  references:
+  - 'master: contracts/crux-competitive-research-ux-v1.yaml (stories[], Category P)'
+  - 'spec: docs/specifications/crux-competitive-research-ux-workflows.md §15'
+  - 'evidence: evidence/crux/freetoken/'
+  - 'epic: https://github.com/paiml/aprender/issues/6648 (row 13)'
+  - 'work: FX-27, folded into https://github.com/paiml/aprender/issues/6742'
+  - 'competitor: https://github.com/FlashML-org/FreeToken (ee43b2a11345d056ba349d22ee073c6828b1364b)'
+
+equations:
+  parity:
+    formula: >-
+      a nested override updates only the keys it names, and a YaRN override raises the served maximum positions to original times factor
+    domain: "apr serve on the fixture named in the prediction"
+    codomain: "PASS iff the prediction holds"
+    invariants:
+    - "a run that cannot measure the prediction reports NOT MEASURED, never PASS"
+
+falsification_tests:
+- id: FALSIFY-CRUX-P-10-001
+  rule: >-
+    a nested override updates only the keys it names, and a YaRN override raises the served maximum positions to original times factor
+  prediction: >-
+    a YaRN override with factor 4 on a 32768-position checkpoint reports 131072 maximum positions and leaves every other config key unchanged
+  test: >-
+    LIVE-PENDING - no test surface exists because apr does not implement this (FX-27, intake_status missing). PROMOTE by authoring a test named hf_overrides_merge_key_by_key; this gate then binds to it and the contract moves from draft to active. Until then the obligation is RECORDED, NOT satisfied.
+  if_fails: >-
+    the freetoken parity claim for CRUX-P-10 is FALSE; re-measure against FreeToken at the pinned sha before changing the status
+
+proof_obligations:
+- id: CP10-INV-001
+  type: invariant
+  property: >-
+    a nested override updates only the keys it names, and a YaRN override raises the served maximum positions to original times factor

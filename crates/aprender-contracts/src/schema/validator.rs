@@ -156,11 +156,14 @@ fn explain_kind_default(caused: &mut [Violation]) {
 /// first source that is a second implementation of a format pv already speaks
 /// (SHACL) rather than a model or training framework.
 ///
+/// Extended 2026-11-11 (aprender#6649): category P adds `freetoken` (16
+/// stories), an edge MoE serving engine. Not a BEAT pillar.
+///
 /// So this registry is the corpus vocabulary, exactly. Every member is
 /// exercised by at least one contract in `contracts/`; adding a competitor is a
 /// deliberate one-line edit here plus a test, which is the point — an open
 /// domain is what let `THIS-COMPETITOR-DOES-NOT-EXIST` validate.
-pub(crate) const CRUX_COMPETITORS: [&str; 16] = [
+pub(crate) const CRUX_COMPETITORS: [&str; 17] = [
     "apr-qa-playbook",
     // AutoGluon (autogluon/autogluon) — the AutoML library, 1.6.3 at admission
     // (../autogluon @ 77946149). Added 2026-09-16 with 24 category-O stories
@@ -181,6 +184,15 @@ pub(crate) const CRUX_COMPETITORS: [&str; 16] = [
     // source, which is exactly the distinction this registry exists to keep.
     "burn",
     "ecosystem",
+    // FreeToken (FlashML-org/FreeToken) — the edge-native MoE serving engine
+    // (Python + CUDA, `ft` CLI, arXiv:2608.16157), read at ee43b2a on 2026-11-11
+    // through the GitHub API, never executed. Added with 16 category-P stories
+    // from its CLI and routes: the Responses API, the reasoning parser, the
+    // `ft launch` / `ft shell` / `ft ctl` journey, zero-flag serve, and the
+    // offloaded-expert runtime (LRU expert cache, hybrid CPU/GPU decode, live
+    // pool resize). NOT a BEAT pillar: aprender claims no pinned benchmark win
+    // over FreeToken; this is a capability/UX source. Epic aprender#6648.
+    "freetoken",
     "hf-kernels-community",
     "huggingface",
     // Apache Jena (apache/jena) — the Java RDF toolkit, 5.6.0 at admission

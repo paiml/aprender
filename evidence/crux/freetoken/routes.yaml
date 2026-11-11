@@ -1,0 +1,39 @@
+# FreeToken HTTP routes, read from the server sources at FlashML-org/FreeToken
+# ee43b2a11345d056ba349d22ee073c6828b1364b (captured 2026-11-11 through the GitHub
+# API; read as text, never executed). Each `at:` is file:line of the route
+# decorator at that sha. sha256 of each source file is under `sources:`.
+# Used by CRUX category P (contracts/crux-P-*-v1.yaml).
+
+competitor: freetoken
+repo: https://github.com/FlashML-org/FreeToken
+sha: ee43b2a11345d056ba349d22ee073c6828b1364b
+captured: "2026-11-11"
+default_bind: "127.0.0.1:1919"   # docs/cli.md:42-43
+auth: "--api-key: every route except /health needs `Authorization: Bearer <key>` or `x-api-key: <key>` (docs/cli.md:44; api_server.py:452-454)"
+
+sources:
+  docs/cli.md: dfd7d5fcfdc5b09d559b687f131a966a7a6627f7c2ef5560f320fc4bc52e8113
+  README.md: f8e4db7b3aba88b5feb88c664e14f83cfd396fb7a958fe5936935d7e5c60d81d
+  python/freetoken/server/api_server.py: 0128b4581dd99e802cbbd7c633c56f353ee74806bedeaed0f5a9e3c71743a645
+  python/freetoken/server/control_api.py: 8340d55e2cb149534bc560669fddefdd0532859ff8b4a80a79563bf6aacfdc60
+  python/freetoken/server/openai_api.py: 1334ab665e77f44c89dc2673e304bc6e264feb92edfec667d7af24cec305e9b7
+  python/freetoken/server/anthropic_api.py: 47cb0ff3c79a1fbe901a0141fc783518cc53d4dcc0e3cb2eed34a061e78f59da
+  python/freetoken/server/responses_api.py: ced89c3e7463fee5f32bb2a2e756d3ef81639cb128136600f254a86df3325d27
+
+routes:
+  - { method: GET,  path: /health,                            at: "python/freetoken/server/control_api.py:57",   crux: CRUX-P-05 }
+  - { method: GET,  path: /v1/requests,                       at: "python/freetoken/server/control_api.py:63",   crux: CRUX-P-05 }
+  - { method: GET,  path: /v1/stats,                          at: "python/freetoken/server/control_api.py:71",   crux: CRUX-P-05 }
+  - { method: POST, path: /v1/cache/rebuild,                  at: "python/freetoken/server/api_server.py:651",   crux: CRUX-P-15 }
+  - { method: "GET|POST", path: /v1/cache/flush,              at: "python/freetoken/server/api_server.py:686" }
+  - { method: GET,  path: /v1/cache/status,                   at: "python/freetoken/server/api_server.py:904",   crux: CRUX-P-15 }
+  - { method: POST, path: /generate,                          at: "python/freetoken/server/api_server.py:914",   crux: CRUX-P-05 }
+  - { method: "GET|POST|HEAD|OPTIONS", path: /v1,             at: "python/freetoken/server/openai_api.py:116" }
+  - { method: POST, path: /v1/chat/completions,               at: "python/freetoken/server/openai_api.py:120" }
+  - { method: POST, path: /v1/completions,                    at: "python/freetoken/server/openai_api.py:128" }
+  - { method: GET,  path: /v1/models,                         at: "python/freetoken/server/openai_api.py:136" }
+  - { method: POST, path: /v1/messages,                       at: "python/freetoken/server/anthropic_api.py:83",  covered_by: "aprender#5348 R-1 / E-2" }
+  - { method: POST, path: /v1/messages/count_tokens,          at: "python/freetoken/server/anthropic_api.py:93",  covered_by: "aprender#5348 R-1 / E-2" }
+  - { method: POST, path: /v1/responses,                      at: "python/freetoken/server/responses_api.py:116", crux: CRUX-P-01 }
+  - { method: GET,  path: "/v1/responses/{response_id}",      at: "python/freetoken/server/responses_api.py:134", crux: CRUX-P-01 }
+  - { method: POST, path: "/v1/responses/{response_id}/cancel", at: "python/freetoken/server/responses_api.py:138", crux: CRUX-P-01 }

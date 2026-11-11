@@ -40,6 +40,7 @@ metadata:
     - "https://github.com/vllm-project/vllm"
     - "https://github.com/mlfoundations/open_clip"
     - "https://github.com/autogluon/autogluon"
+    - "https://github.com/FlashML-org/FreeToken"
 
 # ─────────────────────────────────────────────────────────────
 # Demand scoring rubric (see subspec §4)
@@ -106,6 +107,11 @@ evidence_sources:
     canonical_flow: "evidence/crux/autogluon/hello.sh"
     api_surface: "evidence/crux/autogluon/api-surface.md"
     interpretation_note: "AutoGluon 1.6.3 (../autogluon @ 77946149), surveyed 2026-09-16. Category O = AutoML parity (tabular + forecasting). MultiModalPredictor CUT on epic #3370."
+  freetoken:
+    readme_verbs: "evidence/crux/freetoken/readme-verbs.txt"
+    help_transcript: "evidence/crux/freetoken/help.txt"
+    routes: "evidence/crux/freetoken/routes.yaml"
+    interpretation_note: "FlashML-org/FreeToken @ ee43b2a (Apache-2.0), read 2026-11-11 via the GitHub API, never executed. Category P = edge MoE serving parity. Epic #6648."
   openclip:
     readme_verbs: "evidence/crux/openclip/readme-verbs.txt"
     top_issues: "evidence/crux/openclip/top-issues.json"
@@ -508,15 +514,37 @@ stories:
   - { id: CRUX-R-03, title: "Validate SHACL Core to the same verdict as Jena and W3C",   competitor: jena, demand_score: 4, status: partial,  contract: crux-R-03-v1.yaml }
   - { id: CRUX-R-04, title: "Report SHACL results as a W3C sh:ValidationReport",         competitor: jena, demand_score: 4, status: missing,  contract: crux-R-04-v1.yaml }
 
+  # Category P — Edge MoE serving vs FreeToken (16) — FlashML-org/FreeToken @ ee43b2a
+  # (aprender#6649, epic #6648, 2026-11-11). One story per epic-table row 2, 4, 6-18
+  # and 25. The rows the epic marks as owned elsewhere (1, 3, 5, 19, 20) stay with
+  # their owners; 21-23 are deferred or out of scope; 24 is have (APR v2 = FTW).
+  # Evidence: evidence/crux/freetoken/. Not a BEAT pillar. Registry edit: CRUX_COMPETITORS.
+  - { id: CRUX-P-01, title: "OpenAI Responses API that Codex drives unmodified", competitor: freetoken, demand_score: 4, status: missing,  contract: crux-P-01-v1.yaml }
+  - { id: CRUX-P-02, title: "Server-side reasoning parser splits think blocks into reasoning_content", competitor: freetoken, demand_score: 4, status: missing,  contract: crux-P-02-v1.yaml }
+  - { id: CRUX-P-03, title: "Launch a third-party coding agent against the local server, with dry-run and config-only modes", competitor: freetoken, demand_score: 4, status: missing,  contract: crux-P-03-v1.yaml }
+  - { id: CRUX-P-04, title: "Terminal chat attaches to an already running server", competitor: freetoken, demand_score: 4, status: partial,  contract: crux-P-04-v1.yaml }
+  - { id: CRUX-P-05, title: "CLI client for a running server: health, stats, cache and recent requests", competitor: freetoken, demand_score: 4, status: partial,  contract: crux-P-05-v1.yaml }
+  - { id: CRUX-P-06, title: "Zero-flag serve: --model alone resolves every runtime value and prints them", competitor: freetoken, demand_score: 5, status: partial,  contract: crux-P-06-v1.yaml }
+  - { id: CRUX-P-07, title: "Sampling defaults come from the checkpoint's generation_config.json", competitor: freetoken, demand_score: 3, status: missing,  contract: crux-P-07-v1.yaml }
+  - { id: CRUX-P-08, title: "Prefix-cache hits reported in the usage block (cached_tokens)", competitor: freetoken, demand_score: 3, status: missing,  contract: crux-P-08-v1.yaml }
+  - { id: CRUX-P-09, title: "Diagnose why a checkpoint fails to load: missing and renamed tensors, config fixes", competitor: freetoken, demand_score: 3, status: partial,  contract: crux-P-09-v1.yaml }
+  - { id: CRUX-P-10, title: "--hf-overrides JSON merged into the checkpoint config at load (YaRN rope extension)", competitor: freetoken, demand_score: 2, status: missing,  contract: crux-P-10-v1.yaml }
+  - { id: CRUX-P-11, title: "Bandwidth profile: host RAM vs PCIe per expert shape, one profile per GPU", competitor: freetoken, demand_score: 2, status: missing,  contract: crux-P-11-v1.yaml }
+  - { id: CRUX-P-12, title: "Bounded GPU expert LRU cache for offloaded MoE weights", competitor: freetoken, demand_score: 4, status: missing,  contract: crux-P-12-v1.yaml }
+  - { id: CRUX-P-13, title: "Hybrid CPU/GPU MoE decode: cache misses split between PCIe fetch and CPU compute", competitor: freetoken, demand_score: 4, status: missing,  contract: crux-P-13-v1.yaml }
+  - { id: CRUX-P-14, title: "MoE decode stats: hit rate, misses, experts fetched and computed on CPU", competitor: freetoken, demand_score: 2, status: missing,  contract: crux-P-14-v1.yaml }
+  - { id: CRUX-P-15, title: "Resize the expert-cache and KV pools live, without reloading weights", competitor: freetoken, demand_score: 3, status: missing,  contract: crux-P-15-v1.yaml }
+  - { id: CRUX-P-16, title: "Token-embedding table in pinned host RAM to free VRAM", competitor: freetoken, demand_score: 2, status: missing,  contract: crux-P-16-v1.yaml }
+
 # ─────────────────────────────────────────────────────────────
 # Coverage — intake v2.0.0 (verified by awk over §5 of subspec)
 # ─────────────────────────────────────────────────────────────
 coverage_intake:
   supported: 43
-  partial:   79
-  missing:   173
+  partial:   83
+  missing:   185
   unclear:    0
-  total:    295
+  total:    311
   notes: |
     ID gaps at C-14, F-10, H-04, I-05, K-06 are intentional — those
     five stories were dropped pre-v1.0.0 as duplicative (see inline
@@ -533,6 +561,12 @@ coverage_intake:
     pv is compared against on its own ontologies; the statuses come from
     the first harness run (tests/oracle/jena/receipt.json). Same registry
     edit.
+    Category P (16 rows, aprender#6649, epic #6648) was added 2026-11-11:
+    12 missing, 4 partial. Competitor freetoken (FlashML-org/FreeToken @
+    ee43b2a): edge MoE serving: agent protocols, the ft launch/shell/ctl
+    journey, and the offloaded-expert runtime. Statuses were checked on main
+    0a5da37ea; the FX tickets were folded into #6742, not shipped. Same
+    registry edit.
 
 # ─────────────────────────────────────────────────────────────
 # Falsification conditions

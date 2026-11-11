@@ -2,8 +2,8 @@
 
 **Subspec ID**: `CRUX-001`
 **Status**: DRAFT
-**Version**: 2.4 (2026-10-09 — Category R [SHACL ontologies vs Apache Jena, 4 stories] registered, epic aprender#3598, §14; story total in the master registry 291 → 295). 2.3 (2026-09-16 — Category O [AutoGluon AutoML parity, 24 stories] added, epic aprender#3370; Category N [linfa + burn, 17 stories, aprender#3146, 2026-09-12] exists in the master contract and is recorded here in §3 for the first time; story total in the master registry 267 → 291)
-**Date**: 2026-10-09
+**Version**: 2.5 (2026-11-11 — Category P [Edge MoE serving vs FreeToken, 16 stories] registered, aprender#6649, epic #6648, §15; story total in the master registry 295 → 311). 2.4 (2026-10-09 — Category R [SHACL ontologies vs Apache Jena, 4 stories] registered, epic aprender#3598, §14; story total in the master registry 291 → 295). 2.3 (2026-09-16 — Category O [AutoGluon AutoML parity, 24 stories] added, epic aprender#3370; Category N [linfa + burn, 17 stories, aprender#3146, 2026-09-12] exists in the master contract and is recorded here in §3 for the first time; story total in the master registry 267 → 291)
+**Date**: 2026-11-11
 **Author**: PAIML Engineering
 **Parent**: [aprender-spec.md](aprender-spec.md), [aprender-monorepo-consolidation.md](aprender-monorepo-consolidation.md)
 **Master contract**: [`contracts/crux-competitive-research-ux-v1.yaml`](../../contracts/crux-competitive-research-ux-v1.yaml)
@@ -96,8 +96,9 @@ larger workflow surface area (HF Transformers covers training + data + hub).
 | 10 | **linfa + Burn** | `linfa::traits::Fit` / `burn::module::Module` | 17 | Rust-native ML frameworks; substrates (SVD, spatial index, rank-typed tensor) + breadth (Category N, 2026-09-12, aprender#3146) |
 | 11 | **AutoGluon** | `TabularPredictor(label).fit()` / `TimeSeriesPredictor.fit()` | 24 | AutoML: one-call tabular fit, presets, leaderboard, bagging/stacking/weighted ensemble, panel forecasting with quantiles (Category O, v2.3, aprender#3370) |
 | 12 | **Apache Jena** | `riot` / `shacl validate` | 4 | a second engine for a format pv already speaks: read, write back, validate and report SHACL ontologies, one story per cell of §14.2 (Category R, v2.4, aprender#3598) |
+| 13 | **FreeToken** | `ft serve --model` / `ft launch` / `ft ctl` | 16 | edge-native MoE serving on one consumer GPU: agent protocols, the serve/launch/shell/ctl journey, offloaded experts with an LRU cache and hybrid CPU/GPU decode (Category P, v2.5, aprender#6649) |
 
-Total = 275 stories in this document's §5 as of v2.2; the master registry carries 295 (Categories L and M are contract-only, see §6 note). See §5 for the full registry.
+Total = 275 stories in this document's §5 as of v2.2; the master registry carries 311 (Categories L and M are contract-only, see §6 note). See §5 for the full registry.
 (Counts derived from `yq '[.stories[] | .competitor] | ...'` on master contract; drift between
 this table and the YAML is falsified by FALSIFY-CRUX-010.)
 
@@ -546,7 +547,30 @@ always `contracts/crux-{ID}-v1.yaml` unless noted.
 | CRUX-R-03 | Validate SHACL Core to the same verdict as Jena, with W3C's expected report deciding on the W3C suite (corpus RED: the `sh:closed` defect #4837) | `shacl validate --shapes S.ttl --data D.ttl` | 🔨 | 4 |
 | CRUX-R-04 | Report SHACL results as a W3C `sh:ValidationReport` with the full tuple (focus, path, value, source shape, component, severity) and a message | `shacl validate` (the report it prints) | ❌ | 4 |
 
-**Total: 275 stories in §5 (v2.2) + 24 in Category O + 4 in Category R = 303 documented rows; the master registry holds 295** (Categories L and M have contracts but no registry rows — pre-existing drift recorded on aprender#3146) across 16 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
+### Category P — Edge MoE serving vs FreeToken (16 stories)
+
+> Added v2.5 (2026-11-11). Competitor: [FreeToken](https://github.com/FlashML-org/FreeToken) (Apache-2.0, Python + CUDA, `ft` CLI, arXiv:2608.16157), read at `ee43b2a` through the GitHub API and never executed; evidence in `evidence/crux/freetoken/`. One story per row 2, 4, 6–18 and 25 of the epic aprender#6648 table; §15 is the design. Each status was checked on aprender `main` at `0a5da37ea`. Epic aprender#6648, story aprender#6649. Not a BEAT pillar.
+
+| ID | Story | Competitor verb | S | D |
+|----|-------|----------------|---|---|
+| CRUX-P-01 | OpenAI Responses API that Codex drives unmodified (FX-13; epic row 2) | `POST /v1/responses` | ❌ | 4 |
+| CRUX-P-02 | Server-side reasoning parser splits think blocks into reasoning_content (FX-15; epic row 4) | `ft serve --reasoning-parser auto\|off` | ❌ | 4 |
+| CRUX-P-03 | Launch a third-party coding agent against the local server, with dry-run and config-only modes (FX-20; epic row 6) | `ft launch {claude,codex,dsh,hermes,openclaw,opencode} [--dry-run\|--config\|-y]` | ❌ | 4 |
+| CRUX-P-04 | Terminal chat attaches to an already running server (FX-21; epic row 7) | `ft shell [--server URL] [--api-key KEY]` | 🔨 | 4 |
+| CRUX-P-05 | CLI client for a running server: health, stats, cache and recent requests (FX-22; epic row 8) | `ft ctl health\|stats\|cache\|requests\|generate` | 🔨 | 4 |
+| CRUX-P-06 | Zero-flag serve: --model alone resolves every runtime value and prints them (FX-23; epic row 9) | `ft serve --model PATH-OR-HF-ID` | 🔨 | 5 |
+| CRUX-P-07 | Sampling defaults come from the checkpoint's generation_config.json (FX-24; epic row 10) | `ft serve --sampling-defaults model\|none` | ❌ | 3 |
+| CRUX-P-08 | Prefix-cache hits reported in the usage block (cached_tokens) (FX-25; epic row 11) | `ft serve --enable-cache-report` | ❌ | 3 |
+| CRUX-P-09 | Diagnose why a checkpoint fails to load: missing and renamed tensors, config fixes (FX-26; epic row 12) | `scripts/checkpoint_diagnose/ (README: Diagnosing a checkpoint that fails to load)` | 🔨 | 3 |
+| CRUX-P-10 | --hf-overrides JSON merged into the checkpoint config at load (YaRN rope extension) (FX-27; epic row 13) | `ft serve --hf-overrides JSON` | ❌ | 2 |
+| CRUX-P-11 | Bandwidth profile: host RAM vs PCIe per expert shape, one profile per GPU (FX-30; epic row 14) | `ft bench bw [--model M] [--gpu G]` | ❌ | 2 |
+| CRUX-P-12 | Bounded GPU expert LRU cache for offloaded MoE weights (FX-29; epic row 15) | `ft serve --moe-cache-size\|--moe-cache-rate\|--moe-cache-mem\|--moe-cache-auto` | ❌ | 4 |
+| CRUX-P-13 | Hybrid CPU/GPU MoE decode: cache misses split between PCIe fetch and CPU compute (FX-31; epic row 16) | `ft serve --moe-strategy hybrid [--moe-hybrid-max-fetch N]` | ❌ | 4 |
+| CRUX-P-14 | MoE decode stats: hit rate, misses, experts fetched and computed on CPU (FX-32; epic row 17) | `ft serve --moe-collect-stats` | ❌ | 2 |
+| CRUX-P-15 | Resize the expert-cache and KV pools live, without reloading weights (FX-33; epic row 18) | `ft ctl cache --moe N \| --kv N (POST /v1/cache/rebuild)` | ❌ | 3 |
+| CRUX-P-16 | Token-embedding table in pinned host RAM to free VRAM (FX-34; epic row 25) | `ft serve --embed-weights gpu\|host` | ❌ | 2 |
+
+**Total: 275 stories in §5 (v2.2) + 24 in Category O + 4 in Category R + 16 in Category P = 319 documented rows; the master registry holds 311** (Categories L and M have contracts but no registry rows — pre-existing drift recorded on aprender#3146) across 17 categories; 5 ID gaps (`C-14`, `F-10`, `H-04`, `I-05`, `K-06`) intentional and documented.
 
 ---
 
@@ -565,6 +589,8 @@ Counts verified from §5 table (via `awk` emoji extraction). Δ columns show v2.
 > **v2.3 note (2026-09-16):** the master contract's `coverage_intake` is now asserted from `stories[]` by the aprender-contracts test-suite and reads supported 43 / partial 77 / missing 171 / total 291 after Category O (+5 partial, +19 missing). This table is the v2.2 intake and is left as history; the YAML is the source of truth.
 
 > **v2.4 note (2026-10-09):** after Category R (+2 partial, +2 missing) the master contract's `coverage_intake` reads supported 43 / partial 79 / missing 173 / total 295, recounted from `stories[]` by status. No test asserts it: a search of `crates/`, `scripts/` and the `Makefile` on 2026-10-09 found no reader of `coverage_intake`, so the v2.3 note's claim that the test-suite asserts it does not hold today, and the count is kept by hand.
+
+> **v2.5 note (2026-11-11):** after Category P (+4 partial, +12 missing) the master contract's `coverage_intake` reads supported 43 / partial 83 / missing 185 / total 311, recounted from `stories[]` by status.
 
 Demand-weighted view — **high-demand (D≥4)** stories still ❌ missing are
 the fast path to adoption parity and become the first `pmat work` items
@@ -1336,3 +1362,52 @@ What the run taught the harness, each now handled in code:
   manifests as §14.3 asks.
 - The graph comparison is the harness's own (`tests/oracle/jena/src/nt.rs`:
   colour refinement, then individualisation), not Jena's `rdfcompare`.
+
+---
+
+## 15. Category P — Edge MoE serving vs FreeToken (registered v2.5)
+
+> **Status: registered 2026-11-11 (v2.5).** Story FX-00, aprender#6649, epic
+> aprender#6648 (quorum 3/3 PASS on the epic text). This commit registers the 16
+> stories CRUX-P-01..16 in §5 and in the master contract, per §12.7, and admits
+> `freetoken` to `CRUX_COMPETITORS`.
+> - Story contracts: `contracts/crux-P-01-v1.yaml` .. `contracts/crux-P-16-v1.yaml`
+> - Evidence: `evidence/crux/freetoken/` (`help.txt`, `readme-verbs.txt`, `routes.yaml`)
+> - Competitor sources read at `FlashML-org/FreeToken@ee43b2a11345d056ba349d22ee073c6828b1364b`
+>   through the GitHub API, as text. Nothing was installed or run.
+
+### 15.1 The competitor
+
+FreeToken is an edge-native Mixture-of-Experts serving engine: it runs large
+open-weight MoE models on one consumer GPU by keeping the experts in host RAM,
+caching the hot ones on the GPU (an LRU pool) and splitting each step's cache
+misses between a PCIe fetch and CPU compute. It speaks OpenAI `/v1/*`, Anthropic
+`/v1/messages` and the OpenAI Responses API, so Claude Code and Codex run against
+it unmodified. Its user journey is four commands, each with one required argument:
+
+| Step | FreeToken | apr at `0a5da37ea` | Story |
+|---|---|---|---|
+| serve | `ft serve --model <id>`; everything else resolves from the checkpoint and the GPU | `apr serve run`; context length defaults to the constant 4096 | CRUX-P-06 🔨 |
+| launch | `ft launch claude\|codex\|opencode [--dry-run]` | none (`apr code` is apr's own agent) | CRUX-P-03 ❌ |
+| shell | `ft shell` attaches to a running server | `apr chat FILE` loads the model in-process | CRUX-P-04 🔨 |
+| ctl | `ft ctl health\|stats\|cache\|requests` | the routes exist in part; no CLI client | CRUX-P-05 🔨 |
+
+### 15.2 Which epic rows became stories
+
+The epic table has 25 rows. 16 became stories: rows 2, 4, 6–18 and 25. The rest:
+
+- Rows 1, 3, 5, 19 and 20 are owned by open work elsewhere (aprender#5348 R-1/E-2,
+  FX-14 with #5478, #6571 AG-10..13, CRUX C-08 with #6570 SP-11, CRUX C-09).
+  They get no second row here.
+- Rows 21–23 (semantic anchor checkpoints, image input, desktop GUI) are deferred
+  or out of scope on the epic.
+- Row 24 (FTW fast-load format) is have: APR v2 fills that role.
+
+### 15.3 Status and work
+
+12 stories are `missing` and 4 are `partial` (P-04, P-05, P-06, P-09). The work
+tickets FX-13..FX-34 (aprender#6652..#6670) were folded into the checklist
+aprender#6742 on 2026-11-05 under GHC-001 R1, closed `not_planned`. They were
+folded, not shipped: each status above was checked against `main` at `0a5da37ea`
+on 2026-11-11. Every falsifier is LIVE-PENDING and names the test that promotes
+it. A story moves to `supported` only when that test exists and passes.
