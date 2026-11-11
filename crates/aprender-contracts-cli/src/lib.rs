@@ -131,6 +131,11 @@ pub fn dispatch(command: Commands) -> Result<(), Box<dyn std::error::Error>> {
             let as_json = json || matches!(format, cli::CensusFormat::Json);
             commands::census::run(&contract_dir, as_json)
         }
+        Commands::Crux { action } => match action {
+            cli::CruxAction::Gaps { contract_dir, json } => {
+                commands::crux_gaps::run(&contract_dir, json)
+            }
+        },
         Commands::Extract {
             contract_dir,
             check,

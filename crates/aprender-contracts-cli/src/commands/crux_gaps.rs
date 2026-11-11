@@ -110,15 +110,29 @@ pub struct Counts {
 /// whitespace is ignored; the marker in the middle of the text does not count.
 #[must_use]
 pub fn is_pending(test: &str) -> bool {
-    let _ = test; // RED stub: not implemented yet
-    false
+    test.trim_start().starts_with(PENDING_MARKER)
 }
 
 /// The verdict and its reason from the pending and total test counts. Pure.
 #[must_use]
 pub fn derive(pending: usize, total: usize) -> (Verdict, String) {
-    let _ = (pending, total); // RED stub: not implemented yet
-    (Verdict::NotMeasured, String::new())
+    if total == 0 {
+        return (
+            Verdict::Missing,
+            "no falsification tests (0/0 pending)".to_string(),
+        );
+    }
+    let counts = format!("{pending}/{total} falsification tests pending");
+    if pending == total {
+        (Verdict::Missing, counts)
+    } else if pending > 0 {
+        (Verdict::Partial, counts)
+    } else {
+        (
+            Verdict::NotMeasured,
+            format!("{counts}; no LIVE-PENDING test; surface and bound tests not measured (sibling tickets)"),
+        )
+    }
 }
 
 /// Does the stated `intake_status` disagree with the derived verdict? Absent is
@@ -127,8 +141,9 @@ pub fn derive(pending: usize, total: usize) -> (Verdict, String) {
 /// against `missing` or `partial` it is.
 #[must_use]
 pub fn disagrees(stated: Option<&str>, derived: Verdict) -> bool {
-    let _ = (stated, derived); // RED stub: not implemented yet
-    false
+    stated.is_some_and(|s| {
+        s != derived.as_str() && !(s == "supported" && derived == Verdict::NotMeasured)
+    })
 }
 
 fn is_cat(s: &str) -> bool {

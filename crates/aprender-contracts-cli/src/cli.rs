@@ -108,6 +108,11 @@ pub enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// CRUX competitive-research stories: what the story contracts' falsification tests say (PMAT-6734)
+    Crux {
+        #[command(subcommand)]
+        action: CruxAction,
+    },
     /// Extract the corpus as RDF: contracts.nt (sorted N-Triples, no blank nodes) and shapes.ttl (ONT-001 ONT-4b, R-15, R-18)
     Extract {
         /// Directory containing contract YAML files
@@ -651,6 +656,21 @@ pub enum ChallengeAction {
     Check {
         contracts: PathBuf,
         lean_dir: PathBuf,
+    },
+}
+
+/// `pv crux` actions (PMAT-6734).
+#[derive(Subcommand, Clone, Debug)]
+pub enum CruxAction {
+    /// Derive each story's verdict (missing / partial / not_measured) from the LIVE-PENDING markers in its
+    /// falsification tests, beside the intake_status its metadata states. Exits non-zero on an unusable story file
+    Gaps {
+        /// Directory containing the crux-<CAT>-<NN>-v1.yaml story contracts
+        #[arg(default_value = "contracts")]
+        contract_dir: PathBuf,
+        /// Print one JSON object instead of the table
+        #[arg(long)]
+        json: bool,
     },
 }
 

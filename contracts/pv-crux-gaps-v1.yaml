@@ -1,0 +1,146 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6734 — pv crux gaps, slice 1 (verdict from LIVE-PENDING markers)"
+    - "paiml/aprender#6728 — the epic"
+    - "crates/aprender-contracts-cli/src/commands/crux_gaps.rs — the verb this pins"
+    - "contracts/crux-N-01-v1.yaml — the shape of a story contract it reads"
+  description: >
+    `pv crux gaps` reads the CRUX story contracts and derives one verdict per
+    story from a single input: the LIVE-PENDING markers in its falsification
+    tests. A story states an `intake_status` in its metadata, and that is a
+    claim someone typed; nothing re-derived it. This verb derives the verdict
+    and prints it beside the stated one, so a story that says `supported` while
+    every one of its tests is a placeholder shows up as a disagreement. The
+    verb must never say `supported`, because nothing in this slice proves a test
+    passes, and it must never skip a story file it cannot read.
+
+name: pv-crux-gaps
+version: "1.0.0"
+scope: >
+  `pv crux gaps [--json] [CONTRACT_DIR]` over `<dir>/crux-<CAT>-<NN>-v1.yaml`:
+  `is_pending`, `derive`, `disagrees`, `story_from_yaml`, `gaps_of`,
+  `render_table`, `render_json`. Out of scope: surface resolution, bound-test
+  reachability, the nightly LAB lane (see open_obligations).
+status: active
+
+contract: |
+  (1) A TEST IS PENDING WHEN ITS `test:` TEXT STARTS WITH `LIVE-PENDING` AFTER
+      LEADING WHITESPACE. The marker anywhere else in the text does not count.
+  (2) THE VERDICT IS A PURE FUNCTION OF (pending, total): `missing` when the
+      story has no falsification tests or all are pending, `partial` when some
+      are pending, `not_measured` when none are. There is no `supported`.
+  (3) DISAGREEMENT IS A STATED `intake_status` THAT DIFFERS FROM THE DERIVED
+      VERDICT. Absent is no claim. A stated `supported` against `not_measured`
+      is not a disagreement; against `missing` or `partial` it is.
+  (4) ROWS ARE SORTED by `demand_score` descending (absent counts as 0), then
+      `metadata.id` ascending.
+  (5) FAIL CLOSED. A file named like a story that is unreadable, does not
+      parse, or has no `metadata.id` of the form `CRUX-<CAT>-<NN>` is an error
+      listed by path and the verb exits non-zero. A directory with no matching
+      file is an error (exit 2). Files that do not match the name are ignored.
+  (6) THE OUTPUT IS DETERMINISTIC. `--json` prints one object
+      `{stories, counts, disagreements}` that parses back, and two runs over the
+      same files give the same bytes.
+  (7) MOVING A STORY UP NEEDS A REAL TEST. Replacing a LIVE-PENDING test by a
+      real one moves the story missing, then partial, then not_measured.
+equations:
+  crux_verdict:
+    description: "The derived verdict of one story"
+    formula: "verdict(p, n) = missing if n = 0 ∨ p = n; partial if 0 < p < n; not_measured if p = 0 ∧ n > 0"
+    domain: "p = number of falsification tests whose text starts with LIVE-PENDING after whitespace, n = number of falsification tests, 0 <= p <= n"
+    codomain: "{missing, partial, not_measured}, never supported"
+    invariants:
+      - "the verdict depends on nothing but p and n"
+      - "p = n = 0 is missing, with a reason that says there are no falsification tests"
+      - "the not_measured reason says the surface and bound tests are not measured"
+      - "disagrees = stated is present ∧ stated != verdict ∧ ¬(stated = supported ∧ verdict = not_measured)"
+falsification:
+  - id: FALSIFY-PV-CRUX-GAPS-V1-001
+    description: "The verdict, the disagreement rule, the ordering, the refusals and the JSON hold for every input class"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps"
+    evidence: "run on the build host (t2fw13) with the commit that adds the verb; the RED commit failed 11 of 22 tests"
+falsification_tests:
+  - id: FALSIFY-PV_CRUX_GAPS-001
+    description: "a story whose tests are all pending is missing"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::all_pending_is_missing"
+    prediction: "3 of 3 pending gives missing and the reason carries 3/3"
+    if_fails: "a story made only of placeholders reads as covered"
+  - id: FALSIFY-PV_CRUX_GAPS-002
+    description: "a story with some pending tests is partial"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::mixed_is_partial"
+    prediction: "2 of 3 pending gives partial"
+    if_fails: "a half-built story reads as missing or as done"
+  - id: FALSIFY-PV_CRUX_GAPS-003
+    description: "no pending test is not_measured and the verb never says supported"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::none_pending_is_not_measured_and_never_supported"
+    prediction: "the verdict is not_measured, the reason says surface and bound tests are not measured, and neither table nor JSON contains the word supported"
+    if_fails: "the verb claims a pass that nothing in this slice measured"
+  - id: FALSIFY-PV_CRUX_GAPS-004
+    description: "a story with no falsification tests is missing"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::zero_tests_is_missing"
+    prediction: "an absent key, an empty list and a null all give missing with the no-tests reason"
+    if_fails: "a story with nothing to falsify it reads as covered"
+  - id: FALSIFY-PV_CRUX_GAPS-005
+    description: "leading whitespace before LIVE-PENDING still marks a test pending"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::leading_whitespace_before_the_marker_is_pending"
+    prediction: "spaces, tabs and newlines before the marker are ignored"
+    if_fails: "an indented placeholder passes as a real test"
+  - id: FALSIFY-PV_CRUX_GAPS-006
+    description: "the marker in the middle of a test text is not pending"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::marker_in_the_middle_is_not_pending"
+    prediction: "a command that merely mentions LIVE-PENDING after other text, and a lower-case marker, are not pending"
+    if_fails: "a real test that mentions the marker in a comment is counted as a placeholder"
+  - id: FALSIFY-PV_CRUX_GAPS-007
+    description: "every stated by derived combination of the disagreement rule"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::disagreement_table_matches_the_rule"
+    prediction: "supported against missing or partial disagrees, supported against not_measured does not, absent never disagrees"
+    if_fails: "the disagreement count mislabels stories"
+  - id: FALSIFY-PV_CRUX_GAPS-008
+    description: "rows sort by demand descending then id ascending, absent demand as 0"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::stories_sort_by_demand_descending_then_id_ascending"
+    prediction: "5, 3 (A before B), then the absent and explicit 0 stories by id"
+    if_fails: "the work list is not ordered by demand"
+  - id: FALSIFY-PV_CRUX_GAPS-009
+    description: "an unparsable story file is an error naming its path"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::an_unparsable_file_is_an_error_naming_the_path"
+    prediction: "the error names the bad file and not the good one, and the exit code is 1"
+    if_fails: "a broken story is skipped and the table looks complete"
+  - id: FALSIFY-PV_CRUX_GAPS-010
+    description: "a file without a usable metadata.id is an error"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::a_file_without_a_usable_metadata_id_is_an_error"
+    prediction: "a missing, non-string or malformed id is refused and named by path"
+    if_fails: "an anonymous story enters the table"
+  - id: FALSIFY-PV_CRUX_GAPS-011
+    description: "an empty or missing directory is an error, not an empty table"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::an_empty_or_missing_dir_is_zero_contracts"
+    prediction: "ZeroContracts at exit 2 for both"
+    if_fails: "a typo in the directory prints a green empty report"
+  - id: FALSIFY-PV_CRUX_GAPS-012
+    description: "files that do not match crux-<CAT>-<NN>-v1.yaml are ignored"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::non_crux_yaml_files_are_ignored"
+    prediction: "the master contract, other versions, lower-case categories, backups and a directory by that name are not read"
+    if_fails: "a sibling contract breaks the verb or inflates the count"
+  - id: FALSIFY-PV_CRUX_GAPS-013
+    description: "the JSON parses back and is byte-identical across two runs"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::json_parses_back_and_is_byte_identical_across_runs"
+    prediction: "same bytes twice; stories, counts and disagreements read back with the right values"
+    if_fails: "the output cannot be diffed or consumed by a ratchet"
+  - id: FALSIFY-PV_CRUX_GAPS-014
+    description: "replacing a pending test by a real one moves the story missing, partial, not_measured"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::replacing_a_pending_test_by_a_real_one_moves_the_story_up"
+    prediction: "the verdict follows the file content at each of the three steps"
+    if_fails: "the verdict does not respond to the tests it is derived from"
+open_obligations:
+  - |
+    Not in this slice (PMAT-6734 is slice 1 of epic #6728): surface
+    resolution (does the command or API a story names exist), bound-test
+    reachability (does the test a contract binds to run and pass), the
+    nightly LAB lane that runs `pv crux gaps` over the corpus, and the planted
+    "flag removed" fixture that proves a removed surface flips a story. Until
+    the first two land the verb cannot say `supported`.
