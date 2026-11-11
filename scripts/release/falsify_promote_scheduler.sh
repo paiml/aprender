@@ -180,7 +180,9 @@ SH
 cat > "$TMP/train" <<'SH'
 #!/usr/bin/env bash
 echo "TRAIN $*" >> "$FX_CALLS"
-[ ! -e "$HOME/.cargo/credentials.toml" ] || [ -n "${FX_HIDDEN:-}" ] || { echo "no-token: a credentials file is reachable" >&2; exit 2; }
+# FX_HIDDEN is set only by the SANDBOX seam, so a train started outside the sandbox is refused on every host (the old test
+# asked for a credentials file in the real HOME: on a host without one, mutant sandbox-dropped survived, measured on framework16)
+[ -n "${FX_HIDDEN:-}" ] || { echo "no-token: the train ran outside the sandbox" >&2; exit 2; }
 sha=""; out=""; ev=0
 for ((i=1;i<=$#;i++)); do case "${!i}" in --commit) j=$((i+1)); sha=${!j} ;; --out) j=$((i+1)); out=${!j} ;; --exit-verdict) ev=1 ;; esac; done
 [ -n "$out" ] && [ "$ev" = 1 ] && [[ $sha =~ ^[0-9a-f]{40}$ ]] || { echo "train: bad args" >&2; exit 3; }
