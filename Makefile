@@ -578,7 +578,9 @@ COV_CARGO_ENV := $(if $(COV_TARGET_DIR),CARGO_TARGET_DIR=$(COV_TARGET_DIR))
 # Before this, three literals in three prose sites were maintained by hand and
 # `--regen` only PRINTED the numbers for a human to copy; they sat two behind
 # the filesystem (1812 vs 1814) and were GREEN, because the guard lets the
-# README lag. scripts/check_readme_claims.sh judges the generated block by
+# README lag. GEN-001 (#4526): scripts/check_readme_derived.sh refuses a PR that edits the block and
+# scripts/check_readme_claims.sh judges it by the ratchet on a PR (lag ok, never overstate); on the
+# release train it was, and stays, judged by
 # EQUALITY against the MERGE TREE, with origin/main as the comparand.
 .PHONY: readme-sync readme-sync-check
 readme-sync: ## Regenerate the README's derived contract count (BSE-03)

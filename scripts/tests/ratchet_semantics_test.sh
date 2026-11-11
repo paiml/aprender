@@ -166,7 +166,7 @@ fixture() { # fixture <dir> <n contracts> <readme body>
   # The guard and the generator are copied IN, so REPO_ROOT resolves to the
   # fixture (they derive it from their own location) and the mutant copy below
   # sits beside them with the same resolution.
-  cp "$GUARD" "$SYNC" "$ROOT/scripts/cargo_classify.sh" "$ROOT/scripts/lib_baseline_ratchet.sh" "$dir/scripts/" || return 1
+  cp "$GUARD" "$SYNC" "$ROOT/scripts/cargo_classify.sh" "$ROOT/scripts/lib_baseline_ratchet.sh" "$ROOT/scripts/lib_release_train.sh" "$dir/scripts/" || return 1
   cp -R "$ROOT/scripts/lib" "$dir/scripts/lib" || return 1
   GIT_TERMINAL_PROMPT=0 git init -q --template="$WORK/empty-template" "$dir" >/dev/null 2>&1 || return 1
   git_fx "$dir" add -A -f contracts README.md >/dev/null 2>&1 || return 1
@@ -183,7 +183,8 @@ readme_derived()      { printf '# fixture\n\nThe contract count is derived; this
 
 run_guard() { # run_guard <fixture dir> <script name> [env assignments...]
   local dir="$1" script="$2"; shift 2
-  ( cd "$dir" && env "$@" bash "$dir/scripts/$script" --claim contract_count ) 2>&1
+  # The runner's own branch / event / writer env must not decide a row (GEN-001: the train is read from it).
+  ( cd "$dir" && env -u GITHUB_HEAD_REF -u GITHUB_REF_NAME -u GITHUB_EVENT_PATH -u GITHUB_EVENT_NAME -u CENSUS_WRITER -u README_EXACT "$@" bash "$dir/scripts/$script" --claim contract_count ) 2>&1
 }
 
 # ===========================================================================
@@ -909,6 +910,58 @@ if [ "$mrc3" -eq 0 ]; then
 else
   bad "row 8  mutation NOT demonstrated on row 3: the mutant still exits $mrc3"$'\n'"$(printf '%s' "$m3" | sed 's/^/        /')"
 fi
+
+# ---------------------------------------------------------------------------
+# Rows 9-11 (GEN-001, #4526) — the block has ONE writer, the release train. On a PR it may
+# LAG the merge tree (a contract-adding PR no longer bumps it); it may never overstate (row 2,
+# kept). On the train, and under README_EXACT=1, the same lag is RED: equality lives where the
+# writer runs. Rows 2 and 7 are unchanged; the old "lag is RED" case moved to rows 10a/10b.
+F9="$WORK/f9"
+fixture "$F9" 3 "$(readme_with_block 2)" || die "row 9 fixture could not be built"
+out9="$(run_guard "$F9" check_readme_claims.sh)"; rc=$?
+if [ "$rc" -eq 0 ] && grep -q 'lags at 2' <<<"$out9"; then
+  ok "row 9  a PR that adds a contract and leaves the block at 2 over 3 files: GREEN, lag reported"
+else
+  bad "row 9  PR lag: rc=$rc, wanted 0 and 'lags at 2'"$'\n'"$(printf '%s' "$out9" | sed 's/^/        /')"
+fi
+out10a="$(run_guard "$F9" check_readme_claims.sh CENSUS_WRITER=train)"; rc=$?
+if [ "$rc" -eq 1 ] && grep -q 'EQUALITY' <<<"$out10a" && grep -q 'block states 2' <<<"$out10a"; then
+  ok "row 10a the same lag under CENSUS_WRITER=train: RED (equality on the release path)"
+else
+  bad "row 10a train lag: rc=$rc, wanted 1 and EQUALITY"$'\n'"$(printf '%s' "$out10a" | sed 's/^/        /')"
+fi
+out10b="$(run_guard "$F9" check_readme_claims.sh GITHUB_HEAD_REF=release/0.70.0)"; rc=$?
+if [ "$rc" -eq 1 ] && grep -q 'EQUALITY' <<<"$out10b"; then
+  ok "row 10b the same lag on branch release/0.70.0: RED"
+else
+  bad "row 10b release branch lag: rc=$rc, wanted 1 and EQUALITY"$'\n'"$(printf '%s' "$out10b" | sed 's/^/        /')"
+fi
+out10c="$(run_guard "$F9" check_readme_claims.sh README_EXACT=1)"; rc=$?
+if [ "$rc" -eq 1 ] && grep -q 'EQUALITY' <<<"$out10c"; then
+  ok "row 10c the same lag under README_EXACT=1: RED"
+else
+  bad "row 10c exact lag: rc=$rc, wanted 1 and EQUALITY"$'\n'"$(printf '%s' "$out10c" | sed 's/^/        /')"
+fi
+
+# Row 11 — the registered mutations of the new rule, on COPIES of the guard.
+#   11a: the lag allowance removed (equality everywhere)  -> row 9 must go RED.
+#   11b: the equality-on-train arm removed (lag always ok) -> row 10a must go GREEN.
+MUT_A="check_readme_claims_mut_a.sh"; MUT_B="check_readme_claims_mut_b.sh"
+sed 's/if \[ "\$EXACT" = 1 \] || is_train "\$(current_branch "\$REPO_ROOT")"; then/if true; then/' \
+    "$F9/scripts/check_readme_claims.sh" > "$F9/scripts/$MUT_A"
+sed 's/if \[ "\$EXACT" = 1 \] || is_train "\$(current_branch "\$REPO_ROOT")"; then/if false; then/' \
+    "$F9/scripts/check_readme_claims.sh" > "$F9/scripts/$MUT_B"
+if ! cmp -s "$F9/scripts/$MUT_A" "$F9/scripts/check_readme_claims.sh" && ! cmp -s "$F9/scripts/$MUT_B" "$F9/scripts/check_readme_claims.sh"; then
+  ok "row 11 the equality-arm condition is present in the shipped guard and both mutants differ from it"
+else
+  bad "row 11 the mutation could not be derived: the 'is_train' equality arm is not in scripts/check_readme_claims.sh"
+fi
+run_guard "$F9" "$MUT_A" >/dev/null; mrc=$?
+if [ "$mrc" -eq 1 ]; then ok "row 11a mutation caught: equality everywhere turns row 9 (PR lag) RED, so row 9's GREEN is load-bearing"
+else bad "row 11a mutation NOT demonstrated: the equality-everywhere mutant exits $mrc on the PR-lag fixture"; fi
+run_guard "$F9" "$MUT_B" CENSUS_WRITER=train >/dev/null; mrc=$?
+if [ "$mrc" -eq 0 ]; then ok "row 11b mutation caught: dropping the equality arm turns row 10a (train lag) GREEN, so row 10a's RED is load-bearing"
+else bad "row 11b mutation NOT demonstrated: the no-equality mutant exits $mrc on the train-lag fixture"; fi
 
 printf '\n%s checks, %s failed\n' "$CHECKS" "$FAILED"
 [ "$FAILED" -eq 0 ]

@@ -48,6 +48,8 @@ cargo_classify_selftest --quiet || exit 1
 # is shared with every baseline ratchet in the tree and its case table lives in
 # scripts/check_baseline_ratchets.sh.
 . "$REPO_ROOT/scripts/lib_baseline_ratchet.sh" || exit 1
+# The release-train predicate, shared with check_census_derived.sh / check_readme_derived.sh (GEN-001 #4526).
+. "$REPO_ROOT/scripts/lib_release_train.sh" || exit 1
 
 # BSE-03 phase A: the README's contract count is DERIVED. scripts/readme_sync.sh
 # writes the text between these markers and a human writes neither the markers
@@ -453,10 +455,27 @@ check_contract_count() {
       return 1
     fi
     target=$(pick_target "$block")
-    if [ "$block" != "$target" ]; then
-      printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the merge tree carries %s — the block is GENERATED, not authored, so this is an EQUALITY and not a ratchet (a generated number cannot legitimately lag). Run: make readme-sync\n' \
+    # GEN-001 (#4526): the block has ONE writer, the release train (scripts/check_readme_derived.sh
+    # refuses a PR that edits it). So on a PR the block LAGS by design and the verdict is the
+    # ratchet of readme_contract.rs: never OVERSTATE. A PR that adds a contract no longer bumps it
+    # (that bump was the conflict source: six hand edits in 14 days). EQUALITY stays where the
+    # writer runs: the train (release/X.Y.Z, CENSUS_WRITER=train) after `make census`, and under
+    # README_EXACT=1 (the docs commit). BSE-03's "a generated number cannot legitimately lag" holds
+    # for the writer's output, not for a PR that has not been through the writer yet.
+    if [ "$block" -gt "$target" ]; then
+      printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the merge tree carries %s — the block is GENERATED and may lag, never OVERSTATE. Run: make readme-sync\n' \
         "$block" "$merge_count" >&2
       return 1
+    fi
+    if [ "$block" != "$target" ]; then
+      if [ "$EXACT" = 1 ] || is_train "$(current_branch "$REPO_ROOT")"; then
+        printf 'FAIL FALSIFY-README-002 contract_count: the CONTRACT_COUNT block states %s, the merge tree carries %s — on the release train (the block'"'"'s one writer) this is an EQUALITY, not a ratchet. Run: make census\n' \
+          "$block" "$merge_count" >&2
+        return 1
+      fi
+      printf 'PASS FALSIFY-README-002 contract_count: %s (CONTRACT_COUNT block lags at %s; a PR never edits it, the release train rewrites it)\n' \
+        "$merge_count" "$block"
+      return 0
     fi
     check_contract_literals "$literals" || return 1
     printf 'PASS FALSIFY-README-002 contract_count: %s (CONTRACT_COUNT block, derived by scripts/readme_sync.sh; %s block(s) agree with the merge tree %s)\n' \

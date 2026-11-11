@@ -2285,6 +2285,11 @@ jobs:
           # verifies with --exact. Case table both polarities FIRST, then the live check.
           setsid --wait bash scripts/check_readme_claims.sh --self-test
           setsid --wait bash scripts/check_readme_claims.sh
+          # GEN-001 (#4526): the CONTRACT_COUNT block has one writer, the release train. A PR that
+          # edits it is refused (case table with each RED row planted first). On a PR the block
+          # may lag the tree and never overstate; equality is judged on release/X.Y.Z only.
+          setsid --wait bash scripts/check_readme_derived.sh --self-test
+          setsid --wait bash scripts/check_readme_derived.sh
 
       # Three guards that existed and could not block a merge. The publish-safety
       # one is the gate credited with keeping a 28 MB test.apr out of a published
