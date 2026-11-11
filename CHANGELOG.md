@@ -7,6 +7,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.72.5] - 2026-11-11
+
+Patch release, and the first 0.72.x meant for crates.io since 0.72.3: 0.72.4 was tagged but never published. It carries the changes merged since v0.72.4 (list below): the GPU serve routers behind AuthGate, bincode 1.x replaced by the in-tree aprender-legacy-codec, rusqlite 0.41.1 for RUSTSEC-2026-0459, a tokenizer fix for chat markers, and release-path fixes.
+
+### Added
+
+- feat(release): one-command release workflow (KZ-001 b, PMAT-6729) (#6735)
+- feat(release): T5 build from the green nightly sha, open X.(Y+1).0-dev at tag; fix minor-bump cargo update (PMAT-6822) (#6823)
+- feat(lab): spec Status-header LAB check for 8 specs (spec-sweep S1) (#6832)
+- feat(lab): spec-sweep rules LAB check (PP-6, slice-5 floor, FT-12, T-5, plan quorum) (#6836)
+
+### Fixed
+
+- fix(release): run bump/publish via bash (KZ-001 b, PMAT-6729) (#6774)
+- fix(dogfood): nightly step names the failing gate and reason on exit 1 (#6798) (#6799)
+- fix(ci): deep_disk_guard measures the temp volume the job writes to (#6797) (#6800)
+- fix(guards): dogfood.sh and albor publish readiness clean up TMPDIR scratch dirs (PMAT-6723) (#6801)
+- fix(lint-ratchet): prune_set refuses a multi-line or unreadable set instead of writing invalid JSON (#6707) (#6802)
+- fix(serve): GPU-batched, CUDA and APR/SafeTensors GPU routers behind AuthGate (#5478) (#6803)
+- fix(contracts): F-GPU-GATE criteria states its count again, bound to the falsifier list (#6588) (#6804)
+- fix(release): bump-version.sh edits versions without cargo-edit (PMAT-6806) (#6807)
+- fix(release): rehearsal t2 gets the CRUX receipts the models job relayed (D2) (#6808)
+- fix(nightly): deep/conleche/provable-ladder red on host state, not code (#6810) (#6815)
+- fix(ci): check_shard_union fails closed when the runner fails (FLAKE-001 C3) (#6817)
+- fix(lock): refresh Cargo.lock after 0.72.4 bump (main red andon) (#6818)
+- fix(release): rehearsal mutant cascade_stage_as_text tracks stage_t2 arm (rehearsal red 4 nights) (#6821)
+- fix(release): green main after #6814 (legacy-codec README, Gate 5 leaf, witness, cascade tier) (#6826)
+- fix(deps): rusqlite 0.32 -> 0.41.1 (RUSTSEC-2026-0459, libsqlite3-sys 0.39.1) (#6827)
+- fix(deny): drop dead RUSTSEC-2025-0141 exemption (main red) (#6829)
+- fix(ci): main red - dead bincode deny exemption + apr-format dry-run needs legacy-codec (PMAT-6825) (#6830)
+- fix(nightly): provable-ladder provisions pinned elan; T05 red nightlies (#6796) (#6831)
+- fix(readme): CONTRACT_COUNT 2010 -> 2011, main red (PMAT-6825) (#6833)
+- fix(tokenizer): a chat marker after a merging byte is one token (#2817) (#6844)
+- fix(guards): check_shard_union fails closed when the runner fails (#3863) (#6847)
+- fix(roadmap): fragment-only PRs need not commit the aggregate; aggregate() parses fragments (#6850)
+- fix(roadmap): regenerate roadmap.yaml as fold(base, entries/) (v0.74.0 clean-room B2) (#6860)
+- fix(roadmap): regenerate roadmap.yaml after #6857; fragment guard accepts catch-up regen (v0.74.0 B2) (#6867)
+- fix(docs): regenerate roadmap.yaml + contracts.nt (main red at 9178ae56f) (#6873)
+- fix(ci): main red at ca185857 — runner-smells CANON + contracts.nt (#6874)
+- fix(ci): main red at 9dec672e — clippy semicolon + bare-apr fixture strings (#6875)
+- fix(release): publish gate empties <target>/package before the walk (PMAT-6878) (#6881)
+
+### Changed
+
+- docs(pp-llama): time-boxed re-date of expired section-12 rows to 2026-11-27, last re-date (PMAT-5305) (#6781)
+- train(aprender): #6783  (#6787)
+- train(aprender): #6727  (#6793)
+- chore(deps): replace bincode 1.x with in-tree aprender-legacy-codec (PMAT-6592) (#6814)
+- release train: nightly_green_bump --to/--workflow (T4), bump 0.73.0 rows (T3) (#6816)
+- lab: mutants-advisory + reconcile LAB-scope checks (spec-sweep, epic #6809) (#6834)
+- lab: coverage-ratchet + report-only bench checks (spec-sweep P2, master #6809) (#6835)
+- lab: plan-review lanes must be labeled ADVISORY when single-family (#6837)
+- LAB: Status PROPOSED specs carry a date, nightly (7 spec-sweep children of #6809) (#6839)
+- security(P0): PR Gate on pull_request, not pull_request_target (#6840)
+- refactor: drop bincode 1.x from core, distribute, present-lib and simulate onto aprender-legacy-codec (PMAT-6594) (#6849)
+- Merge remote-tracking branch 'origin/main' into f20-a6/6647 (#6852)
+- Merge remote-tracking branch 'origin/main' into fix/mutants-apply-pr-light-t2 (#6854)
+- train(aprender): #6846  (#6855)
+- Merge remote-tracking branch 'origin/main' into kz-release/a5388 (#6856)
+- batch/aprender-catchup (#6857)
+- build: list aprender-legacy-codec as explicit workspace member (#6858)
+- lab: four spec-sweep status checks (shell, nightly-only) (#6862)
+- train: aprender batch 1 (#6851 #6853) (#6863)
+- ci: pin paiml/.github fbee378 + heavy_on: train (infra#3828) (#6865)
+- ci: PR and merge-queue workflows make 0 network installs (gate epic G5) (#6866)
+- ci: runner-smells RS-01..RS-11 ratchet + cheap fixes (159 -> 142) (#6869)
+- ci(spec-proposed-nightly): self-hosted runner + setsid guard step + checkout pin + timeout (#6870)
+- revert: #6866 breaks x86-main (jq 1.7 on runner) — NOAH-ANDON (#6871)
+- ci: mutation runs only in the scheduled nightly (infra#3828) (#6872)
+
 ### Known gaps
 
 - NO SPEED DELIVERED: PP-LLAMA-001 rows 13, 15, 16, 17, 18, 19, 20, 21 (re-dated to 2026-11-27 by the 2026-11-07 quorum, `docs/audits/quorum-PMAT-5305.ruling.json`, PMAT-5305). Carry this line into the 0.75 and 0.76 release notes.
