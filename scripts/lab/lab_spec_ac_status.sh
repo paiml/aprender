@@ -27,9 +27,9 @@ check() { # spec-file -> RED lines, "CHECKED n" last
 if [ "${1:-}" = --self-test ]; then
   t=$(mktemp -d); trap 'rm -rf -- "${t:?}"' EXIT; fail=0; s="$t/s.md"
   good() { printf '%s\n' '| AC-SHIP2-006  | `apr qa` all PASS | F |' '| AC-SHIP2-009  | `apr bench` fast | F |' '| AC-SHIP2-010  | llama-cli interop | F |' \
-    '| **AC-SHIP2-006** (apr qa) | PROPOSED |' '| **AC-SHIP2-009** (apr bench) | OK |' '| **AC-SHIP2-010** (llama-cli) | OK |' > "$s"; }
+    '| **AC-SHIP2-006** (qa) | PROPOSED |' '| **AC-SHIP2-009** (bench) | OK |' '| **AC-SHIP2-010** (llama-cli) | OK |' > "$s"; }
   good; check "$s" > /dev/null || { echo "FAIL consistent spec is RED"; fail=1; }
-  good; sed -i 's/(apr bench)/(llama-cli interop)/' "$s"; check "$s" > /dev/null && { echo "FAIL label drift passes (mutant)"; fail=1; }
+  good; sed -i 's/(bench)/(llama-cli interop)/' "$s"; check "$s" > /dev/null && { echo "FAIL label drift passes (mutant)"; fail=1; }
   good; sed -i '/AC-SHIP2-010\*\*/d' "$s"; check "$s" > /dev/null && { echo "FAIL missing status row passes (mutant)"; fail=1; }
   good; sed -i '/^| AC-SHIP2-006/d' "$s"; check "$s" > /dev/null && { echo "FAIL missing definition passes (mutant)"; fail=1; }
   : > "$s"; check "$s" > /dev/null 2>&1 && { echo "FAIL empty spec passes"; fail=1; }

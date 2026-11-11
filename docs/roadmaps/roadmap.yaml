@@ -27285,6 +27285,22 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: 'PR #6595 commits carry PMAT-Ticket PMAT-6593 (#6593 is the PR number, not an issue, so pmat could not mint it); the tracking issue is #6592.'
   epic: 6519
+- id: PMAT-6594
+  github_issue: 6594
+  item_type: task
+  title: 'refactor: bring 5 functions under the complexity hook so bincode 1.x can be dropped from core, distribute, present-lib, simulate'
+  status: inprogress
+  priority: medium
+  assigned_to: null
+  created: 2026-11-01T17:16:37.585852112+00:00
+  updated: 2026-11-01T17:16:37.585852112+00:00
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels: []
+  notes: null
 - id: PMAT-6604
   github_issue: 6604
   item_type: task
