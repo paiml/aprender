@@ -110,7 +110,7 @@ if [ "${1:-}" = "--self-test" ]; then
   # from deleting the tree it was meant to clean up after.
   _rm() {
     local v="${TD:-}"
-    case "$v" in /tmp/?*|/var/folders/?*) ;; *) return 0 ;; esac
+    case "$v" in /tmp/?*|/var/folders/?*|"${TMPDIR:-/tmp}"/?*) ;; *) return 0 ;; esac
     [ -n "$v" ] && [ "$v" != "/" ] && rm -rf -- "$v" || :
   }
   trap _rm EXIT

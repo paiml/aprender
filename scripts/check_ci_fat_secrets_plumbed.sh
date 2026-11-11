@@ -22,6 +22,7 @@
 #   bash scripts/check_ci_fat_secrets_plumbed.sh
 #   bash scripts/check_ci_fat_secrets_plumbed.sh --self-test
 set -uo pipefail
+SCRATCH=(); trap 'rm -rf -- "${SCRATCH[@]}"' EXIT  # PMAT-6647: scratch dies with the script
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SECTIONS_REL="ci/sections.yml"
@@ -64,7 +65,7 @@ check_pair() {
 
 self_test() {
   printf '=== case table: check_ci_fat_secrets_plumbed.sh ===\n'
-  tmp="$(mktemp -d)"
+  tmp="$(mktemp -d)"; SCRATCH+=("$tmp")
   trap 'rm -rf "${tmp:?}"' RETURN
   fails=0
   assert() {  # assert <label> <expected_rc> <actual_rc>

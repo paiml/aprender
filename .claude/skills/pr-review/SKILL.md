@@ -32,7 +32,7 @@ its own positive controls, and its mutation set (`scripts/mutate-guard.sh`) repo
 - Files in the diff: !`B=$(git merge-base origin/main HEAD 2>/dev/null) && git diff --name-only "$B" HEAD | wc -l || echo "UNKNOWN — no merge base"`
 - pmat index present: !`test -f .pmat/context.db && echo yes || echo "no — see §3.A precondition"`
 - Guard present: !`test -x scripts/check_pr_review_receipt.sh && echo yes || echo NO`
-- Tools: !`for t in git jq sha256sum check-jsonschema minisign pmat cargo-mutants; do command -v "$t" >/dev/null 2>&1 || printf 'MISSING:%s ' "$t"; done; echo ok`
+- Tools: !`for t in git jq sha256sum check-jsonschema minisign pmat; do command -v "$t" >/dev/null 2>&1 || printf 'MISSING:%s ' "$t"; done; echo ok`
 
 A `MISSING:` above is not a licence to skip a consultation. The guard treats an absent
 tool as a **rejection, never a skip** — "a gate that cannot execute its own checks must
@@ -431,7 +431,7 @@ on GB10 turned out to be a bimodal median whose honest value was 1.21× (#2567).
 | the diff touches | requirement | blocking |
 |---|---|---|
 | `scripts/check_*.sh`, `dogfood.sh`, `ci.yml` gate logic, or a `contracts/*.yaml` falsifier | **100% kill** on that guard's committed mutation set | **yes** |
-| Rust source | `cargo mutants --in-diff <diff> --timeout 120 --jobs 4`, capped at `MUTANT_BUDGET=40` | advisory |
+| Rust source | not run on a PR: Rust-source mutation runs only in the scheduled `.github/workflows/mutants-nightly.yml` (infra#3828), which reports it | — |
 | docs / non-code | not triggered | — |
 
 Bash guards are exercised with `bats-core` fixtures. For the receipt guard itself the

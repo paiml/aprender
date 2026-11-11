@@ -613,7 +613,7 @@ fn start_gguf_server_cuda(
     config: &ServerConfig,
     offload: realizar::api::OffloadReport,
 ) -> Result<()> {
-    use realizar::api::{create_router_with_config, AppState, BatchConfig};
+    use realizar::api::{AppState, BatchConfig};
     use realizar::gguf::{OwnedQuantizedModel, OwnedQuantizedModelCuda};
 
     // #3987: a qwen3moe file has no DENSE FFN, only per-expert tensors, so the dense
@@ -750,7 +750,7 @@ fn start_gguf_server_cuda(
             #[cfg(not(feature = "cuda"))]
             let state = state.with_verbose(config.verbose);
 
-            let app = create_router_with_config(state, config.router_config());
+            let app = build_gguf_router(state, config, super::auth::AuthGate::from_env()); // #5478
             run_server_async(app, &config.bind_addr(), "CUDA-optimized")
         }
         Err(e) => {

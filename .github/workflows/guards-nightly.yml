@@ -175,6 +175,8 @@ jobs:
       # ─────────────────────────────────────────────────────────────────────
       - name: "Test-tier decision case table (BSE-17): quick/full/reuse, drift is ENV"
         run: bash scripts/ci_test_tier.sh --self-test
+      - name: flake_kpi case table (#6446, LAB)
+        run: bash scripts/flake_kpi.sh --self-test
       - name: Fleet-cells gate case table and mutants (#5064, LAB)
         run: setsid --wait bash scripts/release/fleet_cells_gate.sh --self-test
       - name: compute row zero-tests case table and mutants (#5048, LAB)
@@ -197,6 +199,16 @@ jobs:
           set -euo pipefail
           exec > >(tee -a "$RUNNER_TEMP/affected-set.log") 2>&1
           setsid --wait bash scripts/affected_set.sh --self-test
+      - name: Mutation runs only on schedule (infra#3828, LAB)
+        id: lab_mutation_nightly_only
+        if: ${{ !cancelled() }}
+        run: |
+          set -euo pipefail
+          exec > >(tee -a "$RUNNER_TEMP/mutation-nightly-only.log") 2>&1
+          bash scripts/lab/mutation_nightly_only.sh --self-test
+          bash scripts/lab/check_pr_skill_advisory.sh --self-test
+          bash scripts/lab/mutation_nightly_only.sh
+          bash scripts/lab/check_pr_skill_advisory.sh
       - name: MQ feeder required-set check (#6175, LAB)
         id: lab_mq_feeder
         if: ${{ !cancelled() }}
@@ -443,6 +455,16 @@ jobs:
           set -euo pipefail
           bash scripts/lab_ticket.sh --label lab-affected-readers --title "LAB: nightly affected-set guards red (#5809)" \
             --owner aprender-w5018 --log "$RUNNER_TEMP/affected.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
+      - name: A red mutation-nightly-only night opens or updates its one LAB ticket (infra#3828)
+        if: failure() && steps.lab_mutation_nightly_only.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-mutation-nightly-only --title "LAB: mutation runs outside the nightly (infra#3828)" \
+            --owner aprender-cop --log "$RUNNER_TEMP/mutation-nightly-only.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
       - name: A red parity-receipt night opens or updates its one LAB ticket (#5502)
         if: failure() && steps.lab_parity_receipts.outcome == 'failure'
         env:

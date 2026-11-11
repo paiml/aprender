@@ -25,6 +25,8 @@ on:
       - ".github/workflows/binary-release.yml"
       - ".github/workflows/nightly.yml"
   pull_request:
+    # RS-09 (infra#3828): a draft skips the job; ready_for_review starts it.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - "scripts/install.sh"
       - "scripts/tests/install_test.sh"
@@ -49,6 +51,7 @@ permissions:
 jobs:
   test:
     name: install_test.sh
+    if: github.event.pull_request.draft != true # RS-09 (infra#3828)
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 60
     steps:

@@ -1166,28 +1166,20 @@ examples-list: ## List all available examples
 # MUTATION TESTING TARGETS
 # ============================================================================
 
-mutants: ## Run mutation testing (full, ~30-60 min)
-	@echo "🧬 Running mutation testing (full suite)..."
-	@echo "⚠️  This may take 30-60 minutes for full coverage"
-	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
-	@cargo mutants --no-times --timeout 300 -- --all-features
-	@echo "✅ Mutation testing complete"
+# infra#3828 (operator ruling, Noah 2026-11-10 16:50Z, verbatim): "NO build can do mutation outside of nightly;
+# the end. FOREVER". A local seat never runs `cargo mutants`: these targets refuse, and
+# .github/workflows/mutants-nightly.yml (schedule only) is the one mutation run. It reports the score; no PR or merge
+# waits on it. Guard: scripts/lab/mutation_nightly_only.sh (MN4 reads this file).
+MUTATION_NIGHTLY_ONLY = echo "REFUSED: mutation testing runs only in the scheduled .github/workflows/mutants-nightly.yml (infra\#3828). Read its report there." >&2; exit 1
 
-mutants-fast: ## Run mutation testing on a sample (quick feedback, ~5 min)
-	@echo "⚡ Running mutation testing (fast sample)..."
-	@which cargo-mutants > /dev/null 2>&1 || (echo "📦 Installing cargo-mutants..." && cargo install cargo-mutants --locked)
-	@cargo mutants --no-times --timeout 120 --shard 1/10 -- --lib
-	@echo "✅ Mutation sample complete"
+mutants: ## REFUSED: mutation testing runs only in the scheduled mutants-nightly.yml (infra#3828)
+	@$(MUTATION_NIGHTLY_ONLY)
 
-mutants-file: ## Run mutation testing on specific file (usage: make mutants-file FILE=src/metrics/mod.rs)
-	@echo "🧬 Running mutation testing on $(FILE)..."
-	@if [ -z "$(FILE)" ]; then \
-		echo "❌ Usage: make mutants-file FILE=src/path/to/file.rs"; \
-		exit 1; \
-	fi
-	@which cargo-mutants > /dev/null 2>&1 || { cargo install cargo-mutants --locked || exit 1; }
-	@cargo mutants --no-times --timeout 120 --file "$(FILE)" -- --all-features
-	@echo "✅ Mutation testing on $(FILE) complete"
+mutants-fast: ## REFUSED: mutation testing runs only in the scheduled mutants-nightly.yml (infra#3828)
+	@$(MUTATION_NIGHTLY_ONLY)
+
+mutants-file: ## REFUSED: mutation testing runs only in the scheduled mutants-nightly.yml (infra#3828)
+	@$(MUTATION_NIGHTLY_ONLY)
 
 mutants-list: ## List mutants without running tests
 	@echo "📋 Listing potential mutants..."

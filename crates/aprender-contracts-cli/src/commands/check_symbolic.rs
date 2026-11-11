@@ -285,42 +285,53 @@ fn eval_at(e: &Expr, env: &Env, defs: &[Clause], depth: usize) -> Option<f64> {
         Expr::Neg(a) => -eval_at(a, env, defs, depth)?,
         Expr::Bin(o, a, b) => {
             let (x, y) = (eval_at(a, env, defs, depth)?, eval_at(b, env, defs, depth)?);
-            match o {
-                '+' => x + y,
-                '-' => x - y,
-                '*' => x * y,
-                '/' => x / y,
-                _ => x.powf(y),
-            }
+            apply_bin(*o, x, y)
         }
         Expr::Call(n, args) => {
             let v: Vec<f64> = args
                 .iter()
                 .map(|a| eval_at(a, env, defs, depth))
                 .collect::<Option<_>>()?;
-            match (n.as_str(), v.as_slice()) {
-                ("sin", [x]) => x.sin(),
-                ("cos", [x]) => x.cos(),
-                ("exp", [x]) => x.exp(),
-                ("sqrt", [x]) => x.sqrt(),
-                ("abs", [x]) => x.abs(),
-                _ => {
-                    let amb: Env = env.clone();
-                    defs.iter()
-                        .filter(|c| c.name == *n && c.pats.len() == v.len())
-                        .find_map(|c| {
-                            let mut benv = amb.clone();
-                            c.pats
-                                .iter()
-                                .zip(&v)
-                                .try_for_each(|(p, x)| match_pat(p, *x, &mut benv))?;
-                            eval_at(&c.body, &benv, defs, depth + 1)
-                        })?
-                }
-            }
+            builtin_call(n, &v).or_else(|| eval_user_call(n, &v, env, defs, depth))?
         }
     };
     r.is_finite().then_some(r)
+}
+
+fn apply_bin(o: char, x: f64, y: f64) -> f64 {
+    match o {
+        '+' => x + y,
+        '-' => x - y,
+        '*' => x * y,
+        '/' => x / y,
+        _ => x.powf(y),
+    }
+}
+
+/// The five built-in unary functions; `None` = `n` is not a built-in applied to one argument.
+fn builtin_call(n: &str, v: &[f64]) -> Option<f64> {
+    match (n, v) {
+        ("sin", [x]) => Some(x.sin()),
+        ("cos", [x]) => Some(x.cos()),
+        ("exp", [x]) => Some(x.exp()),
+        ("sqrt", [x]) => Some(x.sqrt()),
+        ("abs", [x]) => Some(x.abs()),
+        _ => None,
+    }
+}
+
+/// First clause of `n` whose patterns match the concrete arguments `v`, evaluated one level deeper.
+fn eval_user_call(n: &str, v: &[f64], env: &Env, defs: &[Clause], depth: usize) -> Option<f64> {
+    defs.iter()
+        .filter(|c| c.name == n && c.pats.len() == v.len())
+        .find_map(|c| {
+            let mut benv = env.clone();
+            c.pats
+                .iter()
+                .zip(v)
+                .try_for_each(|(p, x)| match_pat(p, *x, &mut benv))?;
+            eval_at(&c.body, &benv, defs, depth + 1)
+        })
 }
 
 fn parse_defs(formula: &str) -> Vec<Clause> {

@@ -665,7 +665,7 @@ fn falsify_pub_006_gate5_stage_claim_matches_graph() {
 }
 
 /// FALSIFY-PUB-007: the two crates the amended Gate 5 relies on must actually
-/// differ. `apr-format` is the stage-independent substitute precisely because it
+/// differ. `aprender-legacy-codec` is the stage-independent substitute precisely because it
 /// resolves nothing from the workspace; `apr-cli` is the worst case in the tree.
 /// If either fact changes, the gate's advice is wrong and must be rewritten.
 #[test]
@@ -673,15 +673,15 @@ fn falsify_pub_007_gate5_leaf_and_hub_differ() {
     let counts = workspace_sibling_counts();
 
     let leaf = *counts
-        .get("apr-format")
-        .expect("apr-format must be a workspace member");
+        .get("aprender-legacy-codec")
+        .expect("aprender-legacy-codec must be a workspace member");
     let hub = *counts
         .get("apr-cli")
         .expect("apr-cli must be a workspace member");
 
     assert_eq!(
         leaf, 0,
-        "FALSIFY-PUB-007 (#2543): apr-format now has {leaf} workspace-sibling dep(s). It is the \
+        "FALSIFY-PUB-007 (#2543): aprender-legacy-codec now has {leaf} workspace-sibling dep(s). It is the \
          stage-independent Gate 5 substitute *because* it has none. Pick another leaf crate and \
          update the pre-release skill."
     );
@@ -1151,6 +1151,8 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
         ("mg-reuse", "github.event_name == 'push' && github.ref == 'refs/heads/main'".into()),
         ("mg-reuse-self-test", G_ALL.into()),
         ("pr-light", format!("${{{{ github.event_name == 'pull_request' && {DF} }}}}")),
+        // Reusable-workflow caller (paiml/.github runner-smells); same-repo PRs only, a draft is skipped.
+        ("runner-smells", format!("{DF} && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)")),
         ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} && {NOT_PR} }}}}")),
         ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} && {NOT_PR} }}}}")),
         ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}".into()),

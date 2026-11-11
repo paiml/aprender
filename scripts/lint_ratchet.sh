@@ -105,12 +105,24 @@ prune_set() {
     local file="$1" live="$2" old new added
     old="$(grep -E '^  "dead_reference_set"[[:space:]]*:' "$file" | head -1 | sed -E 's/^[^:]*:[[:space:]]*//; s/,[[:space:]]*$//' || true)"
     [ -n "$old" ] || return 0
-    added="$(jq -rn --argjson o "$old" --argjson l "$live" '[$l[] | select(. as $x | $o | index($x) | not)] | length')"
+    # The set is read line by line, so it must be a one-line JSON array; so must the live list (#6707).
+    # Every jq result is checked: an unchecked failure here once wrote `"dead_reference_set": ` and returned 0.
+    if ! jq -en --argjson o "$old" '$o | type == "array"' >/dev/null 2>&1; then
+        printf 'NO-GO: dead_reference_set in %s is not a one-line JSON array; refusing to rewrite it\n' "$file" >&2
+        return 2
+    fi
+    if ! jq -en --argjson l "$live" '$l | type == "array"' >/dev/null 2>&1; then
+        printf 'NO-GO: the measured dead list is not a JSON array; refusing to prune\n' >&2
+        return 2
+    fi
+    added="$(jq -rn --argjson o "$old" --argjson l "$live" '[$l[] | select(. as $x | $o | index($x) | not)] | length')" || return 2
+    case "$added" in ''|*[!0-9]*) printf 'NO-GO: could not count new dead references\n' >&2; return 2 ;; esac
     if [ "$added" -gt 0 ]; then
         printf '  REFUSED   %-30s %s new dead reference(s) not in the set: it only shrinks\n' dead_reference_set "$added"
         return 1
     fi
-    new="$(jq -cn --argjson o "$old" --argjson l "$live" '[$o[] | select(. as $x | $l | index($x))]')"
+    new="$(jq -cn --argjson o "$old" --argjson l "$live" '[$o[] | select(. as $x | $l | index($x))]')" || return 2
+    case "$new" in '['*']') : ;; *) printf 'NO-GO: the pruned set is not a JSON array\n' >&2; return 2 ;; esac
     # jq -c writes `["a","b"]`; the file's own style is `["a", "b"]`.
     new="$(printf '%s' "$new" | sed -E 's/","/", "/g')"
     if [ "$new" = "$old" ]; then
@@ -136,7 +148,7 @@ measure_dead() {
 self_test() {
     local t pass=0 fail=0
     t="$(mktemp -d)"
-    case "$t" in /tmp/*|/var/tmp/*) : ;; *) printf 'NO-GO: odd mktemp path %s\n' "$t" >&2; return 2 ;; esac
+    case "$t" in /tmp/*|"${TMPDIR:-/tmp}"/?*|/var/tmp/*) : ;; *) printf 'NO-GO: odd mktemp path %s\n' "$t" >&2; return 2 ;; esac
     row() { # row NAME GOT WANT
         if [ "$2" = "$3" ]; then pass=$((pass+1)); printf '  ok    %-52s %s\n' "$1" "$3"
         else fail=$((fail+1)); printf '  FAIL  %-52s want=%s got=%s\n' "$1" "$3" "$2"; fi
@@ -178,6 +190,16 @@ self_test() {
     row "a refused rise leaves the set"                  "$(grep -c '"dead_reference_set": \["a: x.rs", "c: z.rs"\],' "$t/d.json")" 1
     cp "$t/d.json" "$t/e.json"; prune_set "$t/e.json" '["a: x.rs","c: z.rs"]' >/dev/null
     row "an unchanged set leaves the file byte-identical" "$(md5sum < "$t/e.json" | cut -c1-8)" "$(md5sum < "$t/d.json" | cut -c1-8)"
+    # #6707: a set spread over several lines is not readable line by line: refuse (2), never write `"dead_reference_set": `.
+    printf '{\n  "dead_references": 2,\n  "dead_reference_set": [\n    "a: x.rs",\n    "b: y.rs"\n  ],\n  "ont": {\n    "x": 1\n  }\n}\n' > "$t/m.json"
+    cp "$t/m.json" "$t/m0.json"
+    set +e; prune_set "$t/m.json" '["a: x.rs"]' >/dev/null 2>&1; rc=$?; set -e
+    row "a multi-line set is refused, not rewritten"     "$rc" 2
+    row "a refused multi-line set leaves the file"       "$(md5sum < "$t/m.json" | cut -c1-8)" "$(md5sum < "$t/m0.json" | cut -c1-8)"
+    cp "$t/d.json" "$t/f.json"
+    set +e; prune_set "$t/f.json" 'not-json' >/dev/null 2>&1; rc=$?; set -e
+    row "an unreadable live list is refused"             "$rc" 2
+    row "a refused live list leaves the file"            "$(md5sum < "$t/f.json" | cut -c1-8)" "$(md5sum < "$t/d.json" | cut -c1-8)"
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$t" ] && [ -d "$t" ] && rm -rf "$t"
     [ "$fail" -eq 0 ]

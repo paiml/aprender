@@ -21,7 +21,7 @@ anyhow = "1"
 blake3 = "1"
 
 # Database
-rusqlite = { version = "0.32", features = ["bundled"] }
+rusqlite = { version = "0.41", features = ["bundled"] }
 
 # Serialization
 serde = { version = "1", features = ["derive"] }
@@ -42,7 +42,7 @@ zstd = { version = "0.14", optional = true }
 clap = { version = "4", features = ["derive"], optional = true }
 
 # Ecosystem integration
-aprender = { path = "../aprender-core", version = "0.72.3", package = "aprender-core", optional = true }
+aprender = { path = "../aprender-core", version = "0.72.4", package = "aprender-core", optional = true }
 alimentar = { workspace = true, optional = true }
 
 # HTTP client (optional)

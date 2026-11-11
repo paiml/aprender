@@ -200,7 +200,7 @@ safe_tmpdir() {
     local dir
     dir="$(mktemp -d)" || return 1
     case "$dir" in
-        /tmp/*|/var/folders/*) printf '%s\n' "$dir" ;;
+        /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) printf '%s\n' "$dir" ;;
         *) return 1 ;;
     esac
 }

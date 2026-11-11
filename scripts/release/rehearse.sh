@@ -106,7 +106,7 @@ PICK_DEPTH=200
 stages_table() {
     cat <<'STAGES'
 lanes|-|env -u INBOX bash scripts/release/nightly_train.sh --out "$RELEASE_REHEARSAL_TRAIN" --commit "$RELEASE_REHEARSAL_C" ${RELEASE_REHEARSAL_IN_RUN:+--in-run "$RELEASE_REHEARSAL_IN_RUN"}
-t2|-|bash scripts/release/t2_preflight.sh "$V" --commit "$RELEASE_REHEARSAL_C"
+t2|-|stage_t2
 bump|-|bash scripts/release/prepare_bump.sh "$V"
 summary|bump|stage_summary
 ship|summary|bash scripts/release/prepare_bump.sh "$V" --ship
@@ -186,6 +186,22 @@ stage_summary() {
 
 # ap_policy_fn AUTOPILOT -> the text of its ap_policy_applies function, empty when it has none
 ap_policy_fn() { awk '/^ap_policy_applies\(\) \{/,/^\}/' "$1" 2>/dev/null; }
+
+# stage_t2: t2_preflight.sh on C, handed the CRUX receipts the night's models job relayed for C (D2). The
+# models job uploads its verified bundle and the workflow hands its directory down as
+# RELEASE_REHEARSAL_CRUX_DIR; the certification is C's own, as models_t1.sh reads it. Without a directory the
+# call is bare, as a local run has none. A directory that is not one, or a C with no certification, stops.
+stage_t2() {
+    local d=${RELEASE_REHEARSAL_CRUX_DIR:-} ver
+    if [ -n "$d" ]; then
+        [ -d "$d" ] || { echo "STOP rehearsal: RELEASE_REHEARSAL_CRUX_DIR $d is not a directory"; return 1; }
+        ver=$(sed -n '/^\[workspace.package\]/,/^\[/s/^version *= *"\([^"]*\)".*/\1/p' Cargo.toml | head -1)
+        [ -f "evidence/crux/$ver/prompt-certification.json" ] \
+            || { echo "STOP rehearsal: C has no evidence/crux/${ver:-?}/prompt-certification.json"; return 1; }
+        export MODEL_LADDER_CRUX_DIR="$d" CRUX_CERT="$PWD/evidence/crux/$ver/prompt-certification.json"
+    fi
+    bash scripts/release/t2_preflight.sh "$V" --commit "$RELEASE_REHEARSAL_C"
+}
 
 # stage_cascade: cascade-publish.sh --rehearse, run as release day's cascade step runs the drain
 # (autopilot.sh step 6). It runs from the release worktree at the bump commit, where the preflight
@@ -304,7 +320,7 @@ run_stage() {
       # shellcheck disable=SC1090
       . "$env" || exit 2
       export WG_STAGE=$name V=$v
-      case $cmd in stage_summary|stage_cascade) "$cmd" ;; *) bash -c -- "$cmd" ;; esac ) > "$log" 2>&1 < /dev/null
+      case $cmd in stage_summary|stage_cascade|stage_t2) "$cmd" ;; *) bash -c -- "$cmd" ;; esac ) > "$log" 2>&1 < /dev/null
     rc=$?
     {
         while IFS= read -r f; do
@@ -759,6 +775,9 @@ wiring() {
         { grep -qx pick <<< "$found" && grep -qxF "$lk" <<< "$found" && grep -qxF "$mk" <<< "$found"; } || bad="$bad $rk(needs)"
         grep -qxF "      C: $at" <<< "$b" || bad="$bad $rk(C)"
         grep -qE '^ +bash scripts/release/rehearse\.sh --run .*--commit "\$C" --in-run "\$GITHUB_RUN_ID"( |$)' <<< "$b" || bad="$bad $rk(in-run)"
+        # D2: the models job uploads its bundle, the night downloads it and hands the directory to t2
+        grep -qxF '          name: models-crux-relayed' <<< "$(job_block "$wf" "$lk"; job_block "$wf" "$mk"; printf '%s\n' "$b")" || bad="$bad $rk(crux-bundle)"
+        grep -qE '^          RELEASE_REHEARSAL_CRUX_DIR: .*models-crux-relayed' <<< "$b" || bad="$bad $rk(crux-dir)"
     else bad="$bad night(run)"; fi
     if [ -n "$bad" ]; then printf 'miswired:%s' "$bad"; return 1; fi
     printf '"%s / <job>" of %s and "%s", on C by "%s<C>" and "%s<C>"' "$caller" "$wfl" "$models" "${caps[0]}" "${caps[1]}"
@@ -911,6 +930,7 @@ selftest() {
     selftest_stub
     selftest_seams
     selftest_cascade
+    selftest_t2
     selftest_judge
     selftest_streak
     selftest_pick
@@ -1053,6 +1073,33 @@ selftest_seams() {
         else printf '  BROKE %-44s %s\n' "${lib%.sh}_option_neutral" "${hits:-missing $SCRIPT_DIR/$lib}"; fail=$((fail + 1)); fi
     done
     printf '  %s seam rows\n' "$((n + 7))"
+}
+
+# The t2 stage (D2): its command from the stage table, through run_stage, over a clone at a C that
+# carries a certification. The fixture t2_preflight.sh prints what the gate would be handed: the receipts
+# the models job relayed for C and C's own certification. The bare call is the defect.
+selftest_t2() {
+    local s="$tmp/t2" n=0 cmd st rc o
+    cmd=$(stages_table | awk -F'|' '$1 == "t2" { print $3 }')
+    tt() { # tt NAME WANT_RC WANT_OUT SETUP -- @C@ in WANT_OUT is the clone
+        local name=$1 wrc=$2 wout=$3
+        n=$((n + 1)); st="$s/t$n"; wout=${wout//@C@/$st/clone}; wout=${wout//@S@/$st}
+        mkdir -p "$st/clone/scripts/release" "$st/clone/evidence/crux/7.7.7" "$st/logs" "$st/recv" || return 2
+        printf '[workspace.package]\nversion = "7.7.7"\n' > "$st/clone/Cargo.toml"
+        : > "$st/clone/evidence/crux/7.7.7/prompt-certification.json"
+        printf '#!/usr/bin/env bash\nprintf "T2 dir=%%s cert=%%s\\n" "${MODEL_LADDER_CRUX_DIR:-}" "${CRUX_CERT:-}"\n' > "$st/clone/scripts/release/t2_preflight.sh"
+        printf 'export RELEASE_REHEARSAL_C=abc\n' > "$st/env"
+        snip_run "$4"
+        rc=0; run_stage "$st" "$st/env" t2 "$cmd" 0.71.0 || rc=$?
+        o=$(cat -- "$st/logs/t2.log" 2>&1)
+        if [ "$rc" = "$wrc" ] && [[ $o == *"$wout"* ]]; then pass=$((pass + 1))
+        else printf '  BROKE %-44s rc=%s (want %s) log=%s\n' "$name" "$rc" "$wrc" "$(printf '%s' "$o" | tr '\n' '|' | cut -c1-200)"; fail=$((fail + 1)); fi
+    }
+    tt t2_hands_the_relayed_receipts 0 "T2 dir=@S@/recv cert=@C@/evidence/crux/7.7.7/prompt-certification.json" 'printf "export RELEASE_REHEARSAL_CRUX_DIR=%q\n" "$st/recv" >> "$st/env"'
+    tt t2_without_a_dir_is_bare 0 "T2 dir= cert=" ':'
+    tt t2_dir_that_is_not_one_stops 1 "is not a directory" 'printf "export RELEASE_REHEARSAL_CRUX_DIR=%q\n" "$st/none" >> "$st/env"'
+    tt t2_c_without_a_certification_stops 1 "C has no evidence/crux/7.7.7/prompt-certification.json" 'printf "export RELEASE_REHEARSAL_CRUX_DIR=%q\n" "$st/recv" >> "$st/env"; rm -f "${st:?}/clone/evidence/crux/7.7.7/prompt-certification.json"'
+    printf '  %s t2 rows\n' "$n"
 }
 
 # The cascade stage (D4): its command from the stage table, through run_stage, over a release worktree
@@ -1552,6 +1599,8 @@ selftest_wiring() {
     wrow a_models_checkout_of_another_commit_is_refused wf 'models(checkout-at-C)' "${mb}"'s/^          ref: \${{ needs\.pick\.outputs\.c }}$/          ref: ${{ github.sha }}/'
     wrow a_night_that_does_not_wait_for_models_is_refused wf 'rehearse(needs)' 's/^    needs: \[pick, lanes, models\]$/    needs: [pick, lanes]/'
     wrow a_night_on_another_c_is_refused wf 'rehearse(C)' '/^  rehearse:$/,$s/^      C: \${{ needs\.pick\.outputs\.c }}$/      C: ${{ github.sha }}/'
+    wrow a_night_without_the_crux_dir_is_refused wf 'rehearse(crux-dir)' 's/^          RELEASE_REHEARSAL_CRUX_DIR: /          RELEASE_REHEARSAL_X: /'
+    wrow a_models_job_not_handing_its_bundle_is_refused wf 'rehearse(crux-bundle)' 's/name: models-crux-relayed/name: models-crux-other/'
     wrow a_night_without_its_own_run_is_refused wf 'rehearse(in-run)' 's/ --in-run "\$GITHUB_RUN_ID"//'
     wrow a_train_reading_another_workflow_is_refused train 'train(INRUN_FROM=' 's#^INRUN_FROM="\.github/workflows/release-rehearsal-nightly\.yml"$#INRUN_FROM=".github/workflows/x.yml"#'
     wrow a_train_reading_another_caller_is_refused train 'lane(name)' 's/^INRUN_CALLER="lanes"$/INRUN_CALLER="lane"/'
@@ -1731,6 +1780,8 @@ pick_wrong_evidence_branch   rehearse.sh         s/^EVIDENCE_BRANCH=nightly-evid
 pick_receipt_depth_wrong     rehearse.sh         s/"\$sha" "\$k" "\${models\[\$sha\]}"/"$sha" 0 "${models[$sha]}"/
 lanes_stage_no_commit        rehearse.sh         s/ --commit "\$RELEASE_REHEARSAL_C" \${RELEASE/ ${RELEASE/
 t2_stage_no_commit           rehearse.sh         s/t2_preflight.sh "\$V" --commit "\$RELEASE_REHEARSAL_C"$/t2_preflight.sh "$V"/
+t2_stage_bare                rehearse.sh         s/^t2|-|stage_t2$/t2|-|bash scripts\/release\/t2_preflight.sh "$V" --commit "$RELEASE_REHEARSAL_C"/
+t2_crux_dir_unexported       rehearse.sh         s/export MODEL_LADDER_CRUX_DIR="$d" CRUX_CERT=/export CRUX_CERT=/
 lanes_stage_in_run_dropped   rehearse.sh         s/ \${RELEASE_REHEARSAL_IN_RUN:+--in-run "\$RELEASE_REHEARSAL_IN_RUN"}//
 lanes_stage_in_run_always    rehearse.sh         s/\${RELEASE_REHEARSAL_IN_RUN:+--in-run "\$RELEASE_REHEARSAL_IN_RUN"}/--in-run "$RELEASE_REHEARSAL_IN_RUN"/
 guard_env_drops_in_run       rehearse.sh         s/ RELEASE_REHEARSAL_IN_RUN=%q\\n' "\$c" "\$st\/train" "\$run"/\\n' "$c" "$st\/train"/
@@ -1774,7 +1825,7 @@ cascade_odd_policy_bare      rehearse.sh         s/^        0) bash scripts\/cas
 cascade_policy_not_about_v   rehearse.sh         s/ap_policy_applies "\$V" ) \\$/ap_policy_applies ) \\/
 cascade_policy_rc_ignored    rehearse.sh         s/ap_policy_applies "\$V" ) \\$/ap_policy_applies "$V"; : ) \\/
 cascade_stage_from_clone     rehearse.sh         s/^cascade|ap:preflight|stage_cascade$/cascade|ap:preflight|bash scripts\/cascade-publish.sh --rehearse/
-cascade_stage_as_text        rehearse.sh         s/stage_summary|stage_cascade) "\$cmd" ;;/stage_summary) "$cmd" ;;/
+cascade_stage_as_text        rehearse.sh         s/stage_summary|stage_cascade|stage_t2) "\$cmd" ;;/stage_summary|stage_t2) "$cmd" ;;/
 ap_policy_fn_renamed         autopilot.sh        s/^ap_policy_applies() {$/ap_policy_judge() {/
 ap_cascade_other_receipts    autopilot.sh        /^if run_step cascade; then$/,/^fi$/s/models-t1/models-x/
 after_c_mc_is_c              rehearse.sh         s|printf 'export RELEASE_REHEARSAL_MC=%q\\n' "\$h" >> "\$env"|printf 'export RELEASE_REHEARSAL_MC=%q\\n' "$c" >> "$env"|

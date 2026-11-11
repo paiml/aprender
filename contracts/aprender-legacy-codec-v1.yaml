@@ -1,0 +1,81 @@
+# APRENDER-LEGACY-CODEC — bincode 1.x byte layout without the bincode crate
+#
+# aprender#6592. RUSTSEC-2025-0141 marks the whole `bincode` package unmaintained with
+# no patched version (bincode 2 is covered too), and consumers running
+# `cargo deny check advisories` cannot tag green while we depend on it. `.apr` payloads,
+# model files and cached indexes already on disk were written by bincode 1.x, so the
+# replacement must be byte-identical, not merely round-trip-compatible.
+
+metadata:
+  id: APRENDER-LEGACY-CODEC
+  version: "1.0.0"
+  created: "2026-10-31"
+  updated: "2026-10-31"
+  author: PAIML Engineering
+  status: partial
+  kind: pattern
+  description: >
+    `aprender-legacy-codec` is a serde Serializer/Deserializer for the bincode 1.3
+    `serialize`/`deserialize` layout (fixed-width little-endian integers, u64 length
+    prefixes, u8 Option tag, u32 enum variant index). It replaces `bincode` in
+    apr-format, aprender-core, aprender-rag, aprender-simulate, aprender-distribute,
+    aprender-present-lib and aprender-test-lib. Status is partial: bincode 1.3.3 is
+    still pulled into Cargo.lock by syntect 5.3.0 (aprender-orchestrate `highlighting`
+    feature, dump-load), so the root deny.toml ignore stays until that is ruled on.
+  references:
+  - 'aprender#6592 — migrate off bincode 1.x'
+  - 'RUSTSEC-2025-0141'
+  - 'crates/aprender-legacy-codec/src/lib.rs'
+  - 'crates/aprender-legacy-codec/tests/byte_compat.rs'
+  - 'crates/aprender-core/tests/legacy_codec_model_files.rs'
+  - 'crates/apr-format/tests/golden_fixtures.rs'
+
+equations:
+  byte_identity:
+    formula: |
+      serialize(v) = bincode_1_3_3::serialize(v)   for every serde shape the workspace uses
+      deserialize(serialize_1x(v)) = v
+    domain: "serde-derivable values without self-describing requests"
+    codomain: "Vec<u8>"
+    invariants:
+    - "bool/Option tags other than 0/1 are errors, never coerced"
+    - "a corrupt length prefix on short input is an error without allocating the claimed size"
+    - "deserialize_from consumes exactly the bytes of one value"
+
+falsification_tests:
+- id: FALSIFY-LEGACY-CODEC-001
+  rule: "writes the bytes bincode 1.3.3 wrote"
+  prediction: "serialize(sample) equals the hex fixture produced by bincode =1.3.3"
+  test: |
+    cargo test -p aprender-legacy-codec --test byte_compat writes_the_exact_bytes_bincode_1_3_3_wrote
+  if_fails: "on-disk files written by the new build differ from every existing one"
+- id: FALSIFY-LEGACY-CODEC-002
+  rule: "reads bincode 1.3.3 bytes"
+  prediction: "deserialize(fixture) equals the original value, including i128/u128/char/enums/maps"
+  test: |
+    cargo test -p aprender-legacy-codec --test byte_compat reads_the_bincode_1_3_3_fixture_back_to_the_same_value
+  if_fails: "existing files stop loading"
+- id: FALSIFY-LEGACY-CODEC-003
+  rule: "corrupt input fails cleanly"
+  prediction: "bad bool/Option tag, bad UTF-8, truncated input and a 2^60 length prefix return Err"
+  test: |
+    cargo test -p aprender-legacy-codec --test byte_compat corrupt_input_is_an_error_not_a_panic_or_a_huge_allocation
+  if_fails: "a corrupt cache file can crash or exhaust memory"
+- id: FALSIFY-LEGACY-CODEC-004
+  rule: "stream API matches slice API"
+  prediction: "serialize_into equals serialize; deserialize_from leaves trailing bytes unread"
+  test: |
+    cargo test -p aprender-legacy-codec --test byte_compat stream_api_matches_slice_api_and_consumes_only_what_it_needs
+  if_fails: "replay/trajectory streams misparse"
+- id: FALSIFY-LEGACY-CODEC-005
+  rule: "real model files written by 1.x load and re-save identically"
+  prediction: "LinearRegression and KMeans fixtures from origin/main reload and re-save byte-for-byte"
+  test: |
+    cargo test -p aprender-core --test legacy_codec_model_files
+  if_fails: "users' saved models become unreadable or silently change on re-save"
+- id: FALSIFY-LEGACY-CODEC-006
+  rule: ".apr containers written by 1.x still read"
+  prediction: "apr-format golden v1/v2 fixtures pass"
+  test: |
+    cargo test -p apr-format --test golden_fixtures
+  if_fails: "published .apr models stop opening"

@@ -32,7 +32,7 @@ WORK=$(mktemp -d)
 # a failing mktemp, but the cleanup must be safe on its own terms rather than
 # relying on that.
 case "$WORK" in
-  /tmp/*|/var/folders/*) : ;;
+  /tmp/*|/var/folders/*|"${TMPDIR:-/tmp}"/*) : ;;
   *) echo "FAIL: mktemp -d returned an unexpected path '$WORK'; refusing to clean up"; exit 1 ;;
 esac
 trap 'rm -rf "${WORK:?}"' EXIT
