@@ -1041,7 +1041,7 @@ jobs:
           # #5210: the same split as the run step, derived again here from CRATES
           # (one list per call, so each call's junit is held to its own universe).
           mkdir -p "$sig/quick-sel"
-          : > "$sig/quick-sel.calls"
+          : > "$sig/quick-sel.calls"; : > "$sig/quick-sel.flags"   # both exist with no crate selected (#6898)
           if [ -n "$CRATES" ]; then
             docker run --rm -v "${GITHUB_WORKSPACE}:/workspace" \
               -v "/mnt/nvme-raid0/cargo-ci/registry/${PR_OR_REF}:/usr/local/cargo/registry" \
@@ -1050,10 +1050,11 @@ jobs:
             [ -s "$sig/quick-sel.all" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
             bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
             # #6898: the same per-call flags as the run step, derived again here from the metadata
-            : > "$sig/quick-sel.flags"
             while read -ra g; do
               bash scripts/ci/quick_tier_targets.sh --metadata "$sig/quick-meta.json" "${g[@]}" >> "$sig/quick-sel.flags"
             done < "$sig/quick-sel.calls"
+            # one flag line per call, or the list below would pair a call with another call's flags
+            [ "$(wc -l < "$sig/quick-sel.flags")" = "$(wc -l < "$sig/quick-sel.calls")" ] || { echo "::error::quick tier: flags and calls differ in line count"; exit 1; }
           fi
           read -ra targets <<< "$TARGETS"
           tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \

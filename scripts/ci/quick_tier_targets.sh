@@ -50,6 +50,7 @@ mutants() { # each mutant of the rule must turn --self-test red
         'else "--tests" end@@else "--lib --tests" end'
         'then "--lib --tests" else@@then "--tests" else'
         'select(.name as $n | $sel | index([$n]))@@select(true)'
+        'select(.name as $n | $sel | index([$n]))@@select(.name as $n | $sel | any(. as $s | $n | startswith($s)))'
         '"rlib", @@'
         '"dylib", @@'
         '"cdylib", @@'
@@ -82,9 +83,10 @@ self_test() {
         for k in "$@"; do out="$out{\"kind\":[\"${k//+/\",\"}\"]},"; done
         printf '{"name":"%s","targets":[%s]}' "$name" "${out%,}"
     }
-    printf '{"packages":[%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s]}' \
+    printf '{"packages":[%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s]}' \
         "$(pkg libonly lib)" \
         "$(pkg binonly bin)" \
+        "$(pkg binonly-lib lib)" \
         "$(pkg bintests bin test test)" \
         "$(pkg binfirst bin lib test)" \
         "$(pkg macros proc-macro)" \
@@ -104,6 +106,7 @@ self_test() {
     }
     check lib_only_keeps_both_flags          0 "$T/m.json" "--lib --tests" libonly
     check bin_only_drops_lib                 0 "$T/m.json" "--tests"       binonly
+    check a_name_is_matched_whole_not_prefix 0 "$T/m.json" "--tests"       binonly
     check bin_with_integration_tests_drops   0 "$T/m.json" "--tests"       bintests
     check lib_after_a_bin_target_is_seen     0 "$T/m.json" "--lib --tests" binfirst
     check proc_macro_is_a_library            0 "$T/m.json" "--lib --tests" macros
