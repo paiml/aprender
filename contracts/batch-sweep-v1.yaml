@@ -30,39 +30,27 @@ equations:
 proof_obligations:
 - id: BS-1
   type: invariant
-  property: every absorbed PR's tree diff is on main after the merge
-  formal: >-
-    for each absorbed PR, `git diff merge-base head` reverse-applies cleanly on main
+  property: "every absorbed PR's tree diff is on main after the merge; checked as: for each absorbed PR, `git diff merge-base head` reverse-applies cleanly on main"
   applies_to: all
 - id: BS-2
   type: invariant
-  property: "N ticket commits plus 1 trailing `batch: regenerate`, no merge commits"
-  formal: >-
-    rev-list --count base..head == N + 1 and rev-list --merges --count == 0 and last subject starts with "batch: regenerate"
+  property: "N ticket commits plus 1 trailing `batch: regenerate`, no merge commits; checked as: rev-list --count base..head == N + 1 and rev-list --merges --count == 0 and last subject starts with \"batch: regenerate\""
   applies_to: all
 - id: BS-3
   type: invariant
-  property: no PR is closed before its merge sha exists on main
-  formal: >-
-    for each closed PR, merge-base --is-ancestor sha main
+  property: "no PR is closed before its merge sha exists on main; checked as: for each closed PR, merge-base --is-ancestor sha main"
   applies_to: all
 - id: BS-4
   type: invariant
-  property: no external-author PR or gate-file PR is ever absorbed
-  formal: >-
-    author not in deny-authors and no changed path matches the gate-path deny-list
+  property: "no external-author PR or gate-file PR is ever absorbed; checked as: author not in deny-authors and no changed path matches the gate-path deny-list"
   applies_to: all
 - id: BS-5
   type: invariant
-  property: no closing keyword before #N in a batch PR body
-  formal: >-
-    body has no match of (close|fix|resolve)(s|d|es)? followed by an issue or PR number
+  property: "no closing keyword before #N in a batch PR body; checked as: body has no match of (close|fix|resolve)(s|d|es)? followed by an issue or PR number"
   applies_to: all
 - id: BS-6
   type: equivalence
-  property: generated artifacts equal their regenerated output
-  formal: >-
-    running the regeneration command leaves `git status --porcelain` empty
+  property: "generated artifacts equal their regenerated output; checked as: running the regeneration command leaves `git status --porcelain` empty"
   applies_to: all
 falsification_tests:
 - id: FALSIFY-BS-001
