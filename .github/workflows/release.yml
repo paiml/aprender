@@ -1,6 +1,10 @@
 name: Release
 
 # One command: gh workflow run release.yml -f version=0.73.0 [-f dry_run=true]
+# Publish only (aprender#6886): gh workflow run release.yml -f version=0.72.5 -f publish_only=true -f dry_run=false
+#   for a version the promote timer already tagged: no bump, no tag, no push. scripts/release/publish_tagged.sh takes the
+#   night's CRUX receipts for the tag commit from nightly-evidence and runs that commit's cascade-publish.sh, which asks
+#   clean-room on the exact tag commit and the publish preflight. Case table: falsify_publish_tagged.sh.
 # bump on release/X.Y.Z -> infra clean-room on THAT sha -> tag -> cascade publish -> binary-release.
 # KZ-001 item b, aprender#6729. Logic and case table: scripts/release/one_command.sh, falsify_one_command.sh.
 # dry_run=true stops after the bump (WOULD lines): no push, no tag, no publish. Needs no crates.io token.
@@ -18,9 +22,14 @@ on:
         default: true
         type: boolean
       sha:
-        description: 'The green nightly sha to release (40 hex, on main). The release never builds from main HEAD (T5)'
-        required: true
+        description: 'The green nightly sha to release (40 hex, on main). The release never builds from main HEAD (T5). Unused with publish_only'
+        required: false   # one_command.sh still refuses a missing or malformed sha (exit 2); publish_only reads the tag
+        default: ''
         type: string
+      publish_only:
+        description: 'Publish a version that is ALREADY TAGGED (by the promote timer). No bump, no tag, no push'
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -56,9 +65,16 @@ jobs:
           DRY: ${{ inputs.dry_run && '1' || '0' }}
           SHA: ${{ inputs.sha }}
           NDB_GH_TOKEN: ${{ github.token }}   # GH_TOKEN above reads paiml/infra only
-        run: bash scripts/release/one_command.sh "$VERSION" "$DRY" "$SHA"
+          PUBLISH_ONLY: ${{ inputs.publish_only && '1' || '0' }}
+        run: |
+          if [ "$PUBLISH_ONLY" = 1 ]; then
+            bash scripts/release/publish_tagged.sh "$VERSION" "$DRY"
+          else
+            bash scripts/release/one_command.sh "$VERSION" "$DRY" "$SHA"
+          fi
       - name: binary assets
-        if: ${{ !inputs.dry_run }}
+        # publish_only: the promote timer's own printed step dispatches Binary Release for its tag; not repeated here
+        if: ${{ !inputs.dry_run && !inputs.publish_only }}
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ inputs.version }}
