@@ -55,9 +55,11 @@ impl Button {
     pub fn new(label: impl Into<String>) -> Self {
         Self {
             label: label.into(),
-            background: Color::from_hex("#6366f1").unwrap_or(Color::BLACK),
-            background_hover: Color::from_hex("#4f46e5").unwrap_or(Color::BLACK),
-            background_pressed: Color::from_hex("#4338ca").unwrap_or(Color::BLACK),
+            // White text needs 4.5:1 (WCAG AA) in every state. The old default, #6366f1, did
+            // not reach it, so a default button failed its own verification (aprender#6893).
+            background: Color::from_hex("#4f46e5").unwrap_or(Color::BLACK),
+            background_hover: Color::from_hex("#4338ca").unwrap_or(Color::BLACK),
+            background_pressed: Color::from_hex("#3730a3").unwrap_or(Color::BLACK),
             text_color: Color::WHITE,
             corner_radius: CornerRadius::uniform(4.0),
             padding: 12.0,
@@ -388,6 +390,25 @@ impl Brick for Button {
 #[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
     use super::*;
+
+    /// aprender#6893: a default button passes its own verification in every state. With the
+    /// old default background (#6366f1) this fails on the contrast assertion.
+    #[test]
+    fn a_default_button_passes_its_own_verification_in_every_state() {
+        let mut button = Button::new("+");
+        assert!(button.verify().failed.is_empty(), "idle");
+        button.hovered = true;
+        assert!(button.verify().failed.is_empty(), "hovered");
+        button.pressed = true;
+        assert!(button.verify().failed.is_empty(), "pressed");
+        for background in [
+            button.background,
+            button.background_hover,
+            button.background_pressed,
+        ] {
+            assert!(background.contrast_ratio(&button.text_color) >= 4.5);
+        }
+    }
     use presentar_core::draw::DrawCommand;
     use presentar_core::{RecordingCanvas, Widget};
 

@@ -34,9 +34,9 @@ let button = Button::new("Submit")
 |--------|-------------|---------|
 | `padding(f32)` | Inner padding around text | `12.0` |
 | `font_size(f32)` | Text size in pixels | `14.0` |
-| `background(Color)` | Normal state background | `#6366f1` |
-| `background_hover(Color)` | Hover state background | `#4f46e5` |
-| `background_pressed(Color)` | Pressed state background | `#4338ca` |
+| `background(Color)` | Normal state background | `#4f46e5` |
+| `background_hover(Color)` | Hover state background | `#4338ca` |
+| `background_pressed(Color)` | Pressed state background | `#3730a3` |
 | `text_color(Color)` | Label text color | `WHITE` |
 | `corner_radius(CornerRadius)` | Rounded corners | `uniform(4.0)` |
 | `disabled(bool)` | Disable interaction | `false` |

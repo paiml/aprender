@@ -33,18 +33,22 @@ contract: |
       without emitting a message, so an event with no message still repaints.
   (3) A MOUNTED TREE IS LAID OUT BEFORE ITS FIRST EVENT AND AFTER EVERY SWAP,
       so a click lands on the widget the user sees.
-  (4) A BRICK THAT FAILS VERIFICATION IS NEVER PAINTED, and the loop does not
-      spin on it.
+  (4) A BRICK THAT FAILS VERIFICATION IS NEVER PAINTED, WHEREVER IT SITS IN THE
+      TREE, and the loop does not spin on it. Every brick, the root and all
+      its descendants, is verified before a frame is painted. A blocked tree
+      is not ticked by an animation; it is verified again only after a change
+      (an event, a swap, a repaint request).
   (5) A WIDGET MESSAGE IS DELIVERED ONCE, in the order emitted.
 equations:
   frame_action:
     description: "What one tick does"
-    formula: "action(dirty, animating) = Repaint if (dirty or animating) else Stop"
-    domain: "dirty, animating in {false, true}"
+    formula: "action(dirty, ticking) = Repaint if (dirty or ticking) else Stop, where ticking = animating and not blocked"
+    domain: "dirty, animating, blocked in {false, true}"
     codomain: "{Repaint, Stop}"
     invariants:
       - "action(false, false) = Stop; the other three inputs give Repaint"
       - "after a Repaint tick with animating = false and no new event, the next tick is Stop"
+      - "after a Blocked tick with no new change, the next tick is Stop whatever animating is"
 falsification:
   - id: FALSIFY-PRESENT-MOUNT-FRAME-V1-001
     description: "The mount core behaves as the contract says for every case"
@@ -93,3 +97,13 @@ falsification_tests:
     test: "cargo test -p aprender-present-lib --lib browser::mount::tests::set_root_swaps_the_tree_and_owes_a_repaint"
     prediction: "Idle before the swap, Painted after it, with different commands"
     if_fails: "a state change never reaches the screen"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-008
+    description: "a bad brick inside a container blocks the frame"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::a_bad_brick_inside_a_container_blocks_the_frame"
+    prediction: "Blocked naming the failed assertion of a button two levels down; zero frames painted"
+    if_fails: "an invalid brick is painted because its container verifies clean"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-009
+    description: "a blocked tree does not spin under an animation, and resumes after a fix"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::an_animating_tree_that_is_blocked_does_not_spin browser::mount::tests::a_blocked_tree_is_verified_again_after_a_change_and_the_animation_resumes"
+    prediction: "one Blocked, then Idle on every tick; after set_root with a good tree, Painted on every tick"
+    if_fails: "a blocked animating page logs and requests frames at 60 Hz for ever, or never recovers"
