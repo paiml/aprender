@@ -216,7 +216,11 @@ filterset_from_targets() { # <space list of crate:--lib|crate:--bins|crate:--tes
 # the queue and main must not answer a different question about the same diff
 # than the PR did, and one code path is how that stays true.
 docs_only() { # $1 = diff file -> 0 iff every non-empty path is docs/roadmaps/** or docs/audits/** AND exists at HEAD of $ROOT
-    local p any=0
+    local p any=0 frc=0
+    # #6902: a fold input (entries/, roadmap-base.yaml, roadmap.yaml) is read by the two fold tests, so such a
+    # diff is never docs-only. rc 0 = touched, 3 = unreadable: neither is docs-only.
+    bash "$TREE/scripts/ci/roadmap_fold_crates.sh" --touches "$1" || frc=$?
+    [ "$frc" = 1 ] || return 1
     while IFS= read -r p; do
         [ -n "$p" ] || continue
         any=1
@@ -224,6 +228,15 @@ docs_only() { # $1 = diff file -> 0 iff every non-empty path is docs/roadmaps/**
         git -C "$ROOT" cat-file -e "HEAD:$p" 2>/dev/null || return 1
     done < "$1"
     [ "$any" = 1 ]
+}
+
+# #6902: the crates a diff already selects, plus aprender-rollup and aprender-ci-tools when it touches a roadmap-fold
+# input (scripts/ci/roadmap_fold_crates.sh owns the rule), so the two fold tests run on the PR and not only on main.
+with_fold_crates() { # $1 = diff file ("" -> none), $2 = current space list of crates -> the list to run
+    if [ -n "$1" ] && [ -f "$1" ]; then
+        # shellcheck disable=SC2086  # $2 is a space list
+        bash "$TREE/scripts/ci/roadmap_fold_crates.sh" --union "$1" $2
+    else printf '%s\n' "$2"; fi
 }
 
 selection() { # $1 = reason prefix (names the event and how the diff was derived), $2 = diff file ("" -> gate_touched_crates' own git diff)
@@ -252,6 +265,7 @@ selection() { # $1 = reason prefix (names the event and how the diff was derived
     if ! chk=$(bash "$TREE/scripts/check_tree_reader_tests.sh" 2>&1); then printf 'ENV: %s\n' "$chk" >&2; return 2; fi
     sel=$(bash "$TREE/scripts/gate_touched_crates.sh" --print-selection ${COMPARAND:+--comparand "$COMPARAND"} ${diff:+--diff-from "$diff"} 2>/dev/null | tail -1)
     crates=$(printf '%s' "$sel" | sed -n 's/^selection=[a-z]* crates=\(.*\) rule=.*$/\1/p'); rule=${sel#*rule=}
+    crates=$(with_fold_crates "$diff" "$crates") || { printf 'ENV: roadmap_fold_crates.sh --union failed\n' >&2; return 2; }
     # Tokens, not lines: since PMAT-3120 a crate's module rows can collapse into
     # one whole-lib token, so a line count would over-report what actually runs.
     nreg=$(targets_from_registry "$TREE/$REGISTRY" | wc -w | tr -d ' ')
@@ -271,6 +285,7 @@ selection() { # $1 = reason prefix (names the event and how the diff was derived
                     # whole workspace in one `cargo check` step.
                     touched=$(bash "$TREE/scripts/gate_touched_crates.sh" --dry-run ${diff:+--diff-from "$diff"} 2>/dev/null | sed -n 's/^gate_touched_crates: touched crate(s): //p')
                     if [ "$touched" = "(none)" ]; then touched=""; fi
+                    touched=$(with_fold_crates "$diff" "$touched") || { printf 'ENV: roadmap_fold_crates.sh --union failed\n' >&2; return 2; }
                     printf 'tier=quick\ncrates=%s\ntargets=%s\ncheck_workspace=1\nreason=%s: %s -- rule (i): the touched crate(s) run their tests and ONE cargo check --workspace --all-targets covers every reverse dependent at compile level; plus %s tree-reader target(s) from %s\n' \
                         "$touched" "$(targets_from_registry "$TREE/$REGISTRY")" "$prefix" "$rule" "$nreg" "$REGISTRY" ;;
                 # Rule (ii): a ROOT manifest stays full at the PR, in the queue and
@@ -635,7 +650,8 @@ self_test() {
           && git checkout -q main && git merge -q --squash pr && git commit -q -m "queue squash" )
     }
     mksquash "$td/s-leaf" "crates/$leaf/src/lib.rs"
-    mksquash "$td/s-docs" "docs/roadmaps/entries/PMAT-9999.yaml"
+    # #6902: not a roadmap fold input, which is no longer docs-only
+    mksquash "$td/s-docs" "docs/audits/pp-066-plan-quorum.md"
     row 0 "  (fixture) the squash queue ref really has ONE parent" '^ONE-PARENT$' bash -c "if git -C '$td/s-leaf' rev-parse -q --verify 'HEAD^2' >/dev/null; then echo TWO; else echo ONE-PARENT; fi"
     cap sq-leaf mgrun "$(git -C "$td/s-leaf" rev-parse HEAD~1)" --repo-root "$td/s-leaf"
     row 0 "merge_group on a SQUASH queue ref, leaf crate -> tier=quick with that crate ($leaf)" "^crates=.*$leaf" bash -c "$(replay sq-leaf)"
@@ -651,12 +667,30 @@ self_test() {
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-tagreuse.sh'; then echo SAME; else echo DIFFERS; fi"
     row 0 "MUTANT: a push arm that does not special-case tags reuses the quick MG green on a tag -> the row above goes RED" '^MUTANT-REUSE$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$td/mutant-tagreuse.sh' --event push --repo-root '$td/s-leaf' $MGARGS); if grep -q '^tier=reuse$' <<< \"\$o\"; then echo MUTANT-REUSE; else echo SURVIVED; fi"
     # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
-    printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
-    row 0 "pull_request, roadmap + audit only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"
-    printf 'docs/roadmaps/roadmap.yaml\ndocs/roadmaps/entries/PMAT-DELETED-3658.yaml\n' > "$td/d-docs-del.txt"
+    printf 'docs/roadmaps/README.md\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
+    row 0 "pull_request, roadmaps README + audit only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"
+    printf 'docs/roadmaps/README.md\ndocs/roadmaps/PMAT-DELETED-3658.md\n' > "$td/d-docs-del.txt"
     row 0 "  ...but a DELETED docs path falls through to quick (a tree reader asserts cited paths exist)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-docs-del.txt"
     printf 'docs/roadmaps/roadmap.yaml\nscripts/foo.sh\n' > "$td/d-docs-mixed.txt"
     row 0 "  ...and roadmap + ANY non-docs path is not docs-only -> quick" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-docs-mixed.txt"
+    # #6902: a roadmap-fold input is read by two tests (aprender-rollup lib, aprender-ci-tools rollup_fold): never docs-only, and it owes both crates.
+    printf 'docs/roadmaps/entries/PMAT-9999.yaml\n' > "$td/d-fold-frag.txt"
+    row 0 "pull_request, a roadmap fragment alone is NOT docs-only -> quick (#6902)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-fold-frag.txt"
+    row 0 "  ...and a fragment alone owes exactly aprender-rollup and aprender-ci-tools" '^crates=aprender-rollup aprender-ci-tools$' bash "$T" --event pull_request --diff-from "$td/d-fold-frag.txt"
+    printf 'docs/roadmaps/roadmap-base.yaml\n' > "$td/d-fold-base.txt"
+    row 0 "  ...roadmap-base.yaml alone owes both crates" '^crates=aprender-rollup aprender-ci-tools$' bash "$T" --event pull_request --diff-from "$td/d-fold-base.txt"
+    printf 'docs/roadmaps/roadmap.yaml\n' > "$td/d-fold-agg.txt"
+    row 0 "  ...roadmap.yaml alone owes both crates" '^crates=aprender-rollup aprender-ci-tools$' bash "$T" --event pull_request --diff-from "$td/d-fold-agg.txt"
+    printf 'docs/roadmaps/entries/PMAT-9999.yaml\nscripts/foo.sh\n' > "$td/d-fold-mixed.txt"
+    row 0 "  ...a fragment plus a scripts-only path keeps both crates" '^crates=aprender-rollup aprender-ci-tools$' bash "$T" --event pull_request --diff-from "$td/d-fold-mixed.txt"
+    printf 'docs/roadmaps/entries/PMAT-9999.yaml\ncrates/aprender-rollup/src/lib.rs\n' > "$td/d-fold-dup.txt"
+    row 0 "  ...a fragment plus an aprender-rollup change lists each fold crate exactly once" '^ONCE$' bash -c "o=\$(bash '$T' --event pull_request --diff-from '$td/d-fold-dup.txt' | grep -E '^(crates|touched)=' | head -n1); [ \"\$(printf '%s' \"\$o\" | tr ' =' '\\n\\n' | grep -cx aprender-rollup)\" = 1 ] && [ \"\$(printf '%s' \"\$o\" | tr ' =' '\\n\\n' | grep -cx aprender-ci-tools)\" = 1 ] && echo ONCE"
+    printf 'crates/x/docs/roadmaps/entries/a.yaml\n' > "$td/d-fold-nested.txt"
+    row 0 "  ...a crate path that merely contains docs/roadmaps/entries/ owes neither fold crate" '^NEITHER$' bash -c "o=\$(bash '$T' --event pull_request --diff-from '$td/d-fold-nested.txt'); if grep -E '^crates=.*aprender-(rollup|ci-tools)' <<< \"\$o\"; then echo SELECTED; else echo NEITHER; fi"
+    mksquash "$td/s-frag" "docs/roadmaps/entries/PMAT-9999.yaml"
+    cap sq-frag mgrun "$(git -C "$td/s-frag" rev-parse HEAD~1)" --repo-root "$td/s-frag"
+    row 0 "merge_group, a fragment-only group is quick with both fold crates, not none (#6902)" '^crates=aprender-rollup aprender-ci-tools$' bash -c "$(replay sq-frag)"
+    row 0 "push landing a fragment-only commit -> quick with both fold crates, not none (#6902)" '^crates=aprender-rollup aprender-ci-tools$' env PUSH_BEFORE="$(git -C "$td/s-frag" rev-parse HEAD^1)" bash "$T" --event push --repo-root "$td/s-frag"
     printf 'docs/specifications/aprender-monorepo-consolidation.md\n' > "$td/d-spec.txt"
     row 0 "  ...and docs/specifications/ is NOT docs-only (falsification_spec_v10_tests reads it)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-spec.txt"
     # #3664 RENAME: a source file moved INTO docs/audits/ removes the source.
