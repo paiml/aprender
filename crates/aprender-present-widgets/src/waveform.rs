@@ -526,13 +526,7 @@ mod tests {
             Rect::new(f32::NAN, f32::INFINITY, f32::NAN, f32::INFINITY),
         ] {
             let pts = waveform_points(&[1.0, -1.0, 0.3], b, 8);
-            let eff = Rect::new(
-                finite_or_zero(b.x),
-                finite_or_zero(b.y),
-                finite_or_zero(b.width).max(0.0),
-                finite_or_zero(b.height).max(0.0),
-            );
-            assert!(pts.iter().all(|p| inside(p, eff)), "{b:?}");
+            assert!(finite_and_inside(&pts, b), "{b:?}");
         }
     }
 
@@ -579,19 +573,24 @@ mod tests {
         }
     }
 
+    /// Ordinary coordinates mixed with every f32, NaN and infinities included.
+    fn bound_coord() -> impl Strategy<Value = f32> {
+        prop_oneof![-1.0e6_f32..1.0e6, proptest::num::f32::ANY]
+    }
+
     proptest! {
         #[test]
         fn prop_points_inside_bounds(
             samples in proptest::collection::vec(proptest::num::f32::ANY, 0..200),
-            x in -1.0e6_f32..1.0e6,
-            y in -1.0e6_f32..1.0e6,
-            w in 0.0_f32..1.0e6,
-            h in 0.0_f32..1.0e6,
+            x in bound_coord(),
+            y in bound_coord(),
+            w in bound_coord(),
+            h in bound_coord(),
             max in 0_usize..300,
         ) {
             let b = Rect::new(x, y, w, h);
             let pts = waveform_points(&samples, b, max);
-            prop_assert!(pts.iter().all(|p| inside(p, b)));
+            prop_assert!(finite_and_inside(&pts, b), "{:?} -> {:?}", b, pts);
         }
 
         #[test]
@@ -627,6 +626,181 @@ mod tests {
             let c = y + h / 2.0;
             prop_assert!(pts.iter().all(|p| p.y == c));
         }
+    }
+
+    // ===== Overflow-proof bounds (APR-6897 review, defect 2) =====
+
+    /// Documented coordinate limit: independent of the implementation's constant.
+    const LIMIT: f32 = 1.0e15;
+
+    fn oracle_coord(value: f32) -> f32 {
+        if value.is_finite() {
+            value.clamp(-LIMIT, LIMIT)
+        } else {
+            0.0
+        }
+    }
+
+    /// The rectangle the contract promises the points stay in.
+    fn oracle_bounds(b: Rect) -> Rect {
+        Rect::new(
+            oracle_coord(b.x),
+            oracle_coord(b.y),
+            oracle_coord(b.width).max(0.0),
+            oracle_coord(b.height).max(0.0),
+        )
+    }
+
+    fn finite_and_inside(pts: &[Point], b: Rect) -> bool {
+        let eff = oracle_bounds(b);
+        pts.iter()
+            .all(|p| p.x.is_finite() && p.y.is_finite() && inside(p, eff))
+    }
+
+    #[test]
+    fn points_reviewer_repro_f32_max_bounds_are_finite_and_inside() {
+        let b = Rect::new(f32::MAX, f32::MAX, f32::MAX, f32::MAX);
+        let pts = waveform_points(&[0.0, 1.0, -1.0], b, 4);
+        assert_eq!(pts.len(), 3);
+        assert!(finite_and_inside(&pts, b), "{pts:?}");
+        // The clamped rectangle is [1e15, 2e15] on both axes (f32 ulp there is
+        // about 1e8, so compare with a tolerance).
+        let near = |actual: f32, want: f32| (actual - want).abs() <= 4.0e8;
+        assert!(near(pts[0].x, LIMIT) && near(pts[0].y, 1.5 * LIMIT));
+        assert!(near(pts[1].x, 1.5 * LIMIT) && near(pts[1].y, LIMIT));
+        assert!(near(pts[2].x, 2.0 * LIMIT) && near(pts[2].y, 2.0 * LIMIT));
+    }
+
+    #[test]
+    fn points_extreme_bounds_table_stays_finite_and_inside() {
+        let extremes = [
+            f32::MAX,
+            f32::MIN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::MIN_POSITIVE,
+            -0.0,
+            LIMIT,
+            -LIMIT,
+            3.0e15,
+        ];
+        for &x in &extremes {
+            for &w in &extremes {
+                let b = Rect::new(x, f32::MAX, w, w);
+                let pts = waveform_points(&[1.0, -1.0, 0.25, f32::NAN], b, 8);
+                assert!(finite_and_inside(&pts, b), "{b:?} -> {pts:?}");
+                let b = Rect::new(f32::MIN, x, w, f32::MAX);
+                let pts = waveform_points(&[1.0, -1.0, 0.25, f32::NAN], b, 8);
+                assert!(finite_and_inside(&pts, b), "{b:?} -> {pts:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn points_negative_extents_collapse_to_the_origin_point() {
+        let b = Rect::new(10.0, 20.0, -50.0, -40.0);
+        let pts = waveform_points(&[1.0, -1.0, 0.5], b, 8);
+        assert!(pts.iter().all(|p| *p == Point::new(10.0, 20.0)), "{pts:?}");
+    }
+
+    proptest! {
+        #[test]
+        fn prop_points_finite_and_inside_any_f32_bounds(
+            samples in proptest::collection::vec(proptest::num::f32::ANY, 0..100),
+            x in proptest::num::f32::ANY,
+            y in proptest::num::f32::ANY,
+            w in proptest::num::f32::ANY,
+            h in proptest::num::f32::ANY,
+            max in 0_usize..100,
+        ) {
+            let b = Rect::new(x, y, w, h);
+            let pts = waveform_points(&samples, b, max);
+            prop_assert!(finite_and_inside(&pts, b), "{:?} -> {:?}", b, pts);
+        }
+    }
+
+    // ===== Non-finite preferred sizes and constraints =====
+
+    #[test]
+    fn non_finite_preferred_size_counts_as_absent() {
+        let unbounded = Constraints::unbounded();
+        for bad in [f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            let w = Waveform::new().size(bad, bad);
+            assert_eq!(w.measure(unbounded), Size::new(200.0, 80.0), "{bad}");
+        }
+    }
+
+    #[test]
+    fn huge_preferred_size_is_clamped_to_the_coordinate_limit() {
+        let w = Waveform::new().size(f32::MAX, f32::MAX);
+        assert_eq!(w.measure(Constraints::unbounded()), Size::new(LIMIT, LIMIT));
+    }
+
+    #[test]
+    fn measure_is_finite_for_degenerate_constraints() {
+        let w = Waveform::new().size(f32::MAX, 10.0);
+        for c in [
+            Constraints::unbounded(),
+            Constraints::new(f32::INFINITY, f32::INFINITY, 0.0, 5.0),
+            Constraints::new(0.0, f32::NAN, f32::NAN, f32::INFINITY),
+            Constraints::new(9.0, 3.0, 9.0, 3.0),
+        ] {
+            let s = w.measure(c);
+            assert!(
+                s.width.is_finite() && s.height.is_finite(),
+                "{c:?} -> {s:?}"
+            );
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn prop_measure_finite_for_any_constraints(
+            a in proptest::num::f32::ANY,
+            b in proptest::num::f32::ANY,
+            c in proptest::num::f32::ANY,
+            d in proptest::num::f32::ANY,
+        ) {
+            let s = Waveform::new().measure(Constraints::new(a, b, c, d));
+            prop_assert!(s.width.is_finite() && s.height.is_finite());
+        }
+    }
+
+    // ===== verify: valid bounds =====
+
+    #[test]
+    fn brick_verify_flags_invalid_bounds() {
+        for b in [
+            Rect::new(f32::NAN, 0.0, 10.0, 10.0),
+            Rect::new(0.0, f32::INFINITY, 10.0, 10.0),
+            Rect::new(0.0, 0.0, -1.0, 10.0),
+            Rect::new(0.0, 0.0, 10.0, -1.0),
+            Rect::new(0.0, 0.0, f32::NAN, 10.0),
+            Rect::new(0.0, 0.0, 10.0, f32::NEG_INFINITY),
+        ] {
+            let mut w = Waveform::new().accessible_name("Mic level");
+            w.layout(b);
+            let v = w.verify();
+            assert!(!v.is_valid(), "{b:?}");
+            assert_eq!(v.failed.len(), 1, "{b:?}");
+            assert_eq!(
+                v.failed[0].0,
+                BrickAssertion::ElementPresent("valid-bounds".to_string())
+            );
+            assert!(v.failed[0].1.contains("bounds"));
+        }
+    }
+
+    #[test]
+    fn brick_verify_accepts_valid_laid_out_bounds() {
+        let mut w = Waveform::new().accessible_name("Mic level");
+        w.layout(B);
+        let v = w.verify();
+        assert!(v.is_valid());
+        assert!(v
+            .passed
+            .contains(&BrickAssertion::ElementPresent("valid-bounds".to_string())));
     }
 
     // ===== peak / rms =====

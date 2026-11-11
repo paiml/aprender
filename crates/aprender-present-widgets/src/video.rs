@@ -1038,6 +1038,236 @@ mod tests {
         assert!((centre.y - frame.center().y).abs() < 0.5);
     }
 
+    // ===== Overflow-proof size and bounds (APR-6897 review, defect 3) =====
+
+    /// Documented coordinate limit: independent of the implementation's constant.
+    const LIMIT: f32 = 1.0e15;
+
+    fn oracle_coord(value: f32) -> f32 {
+        if value.is_finite() {
+            value.clamp(-LIMIT, LIMIT)
+        } else {
+            0.0
+        }
+    }
+
+    /// The rectangle every emitted draw must stay in.
+    fn oracle_bounds(b: Rect) -> Rect {
+        Rect::new(
+            oracle_coord(b.x),
+            oracle_coord(b.y),
+            oracle_coord(b.width).max(0.0),
+            oracle_coord(b.height).max(0.0),
+        )
+    }
+
+    fn point_finite_inside(p: &Point, outer: &Rect) -> bool {
+        p.x.is_finite() && p.y.is_finite() && contains(outer, p, 0.0)
+    }
+
+    fn rect_finite_inside(r: &Rect, outer: &Rect) -> bool {
+        [r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite()) && rect_inside(outer, r, 0.0)
+    }
+
+    /// Every rect and every glyph vertex in `cmds` is finite and inside `outer`.
+    fn commands_finite_inside(cmds: &[DrawCommand], outer: &Rect) -> bool {
+        cmds.iter().all(|cmd| match cmd {
+            DrawCommand::Rect { bounds, .. } => rect_finite_inside(bounds, outer),
+            DrawCommand::Path { points, .. } => {
+                !points.is_empty() && points.iter().all(|p| point_finite_inside(p, outer))
+            }
+            _ => false,
+        })
+    }
+
+    /// Lay `bounds` out, then check the glyph and the paint in both states.
+    fn layout_paint_is_finite_inside(bounds: Rect) -> bool {
+        let expected = oracle_bounds(bounds);
+        let mut v = named("a");
+        let result = v.layout(bounds);
+        let mut ok = result.size.width.is_finite()
+            && result.size.height.is_finite()
+            && v.play_glyph()
+                .iter()
+                .all(|p| point_finite_inside(p, &expected));
+        ok &= commands_finite_inside(&paint_commands(&v), &expected);
+        v.play();
+        ok &= commands_finite_inside(&paint_commands(&v), &expected);
+        ok
+    }
+
+    #[test]
+    fn video_reviewer_repro_f32_max_bounds_paint_finite_and_inside() {
+        let bounds = Rect::new(f32::MAX, f32::MAX, f32::MAX, f32::MAX);
+        let mut v = named("a");
+        v.layout(bounds);
+        let expected = oracle_bounds(bounds);
+        assert_eq!(Widget::bounds(&v), expected);
+        assert!(v
+            .play_glyph()
+            .iter()
+            .all(|p| point_finite_inside(p, &expected)));
+        let cmds = paint_commands(&v);
+        assert_eq!(cmds.len(), 2);
+        assert!(commands_finite_inside(&cmds, &expected), "{cmds:?}");
+    }
+
+    #[test]
+    fn video_reviewer_repro_negative_extents_collapse_inside_the_origin() {
+        let mut v = named("a");
+        let result = v.layout(Rect::new(10.0, 20.0, -50.0, -40.0));
+        let zero = Rect::new(10.0, 20.0, 0.0, 0.0);
+        assert_eq!(result.size, Size::new(0.0, 0.0));
+        assert_eq!(Widget::bounds(&v), zero);
+        for p in v.play_glyph() {
+            assert_eq!(p, Point::new(10.0, 20.0));
+        }
+        let cmds = paint_commands(&v);
+        assert!(matches!(
+            &cmds[0],
+            DrawCommand::Rect { bounds, .. } if *bounds == zero
+        ));
+        assert!(commands_finite_inside(&cmds, &zero));
+    }
+
+    #[test]
+    fn video_layout_extreme_bounds_table_paints_finite_and_inside() {
+        let extremes = [
+            f32::MAX,
+            f32::MIN,
+            f32::INFINITY,
+            f32::NEG_INFINITY,
+            f32::NAN,
+            f32::MIN_POSITIVE,
+            -0.0,
+            LIMIT,
+            -LIMIT,
+            3.0e15,
+            -50.0,
+        ];
+        for &a in &extremes {
+            for &b in &extremes {
+                for bounds in [
+                    Rect::new(a, a, b, b),
+                    Rect::new(a, b, b, a),
+                    Rect::new(10.0, 20.0, a, b),
+                    Rect::new(a, b, 100.0, 50.0),
+                ] {
+                    assert!(layout_paint_is_finite_inside(bounds), "{bounds:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn video_layout_keeps_ordinary_bounds_untouched() {
+        assert!(layout_paint_is_finite_inside(BOUNDS));
+        let mut v = named("a");
+        assert_eq!(v.layout(BOUNDS).size, BOUNDS.size());
+        assert_eq!(Widget::bounds(&v), BOUNDS);
+    }
+
+    #[test]
+    fn video_non_finite_size_counts_as_absent() {
+        for bad in [f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            let v = Video::new("a").size(bad, bad);
+            assert_eq!(v.get_width(), None, "{bad}");
+            assert_eq!(v.get_height(), None, "{bad}");
+            assert_eq!(
+                v.measure(Constraints::unbounded()),
+                Size::new(320.0, 180.0),
+                "{bad}"
+            );
+        }
+    }
+
+    #[test]
+    fn video_huge_size_is_clamped_to_the_coordinate_limit() {
+        let v = Video::new("a").size(f32::MAX, 1.0e30);
+        assert_eq!(v.get_width(), Some(LIMIT));
+        assert_eq!(v.get_height(), Some(LIMIT));
+        assert_eq!(v.measure(Constraints::unbounded()), Size::new(LIMIT, LIMIT));
+    }
+
+    #[test]
+    fn video_measure_is_finite_for_degenerate_constraints() {
+        let v = Video::new("a").size(f32::MAX, 10.0);
+        for c in [
+            Constraints::unbounded(),
+            Constraints::new(f32::INFINITY, f32::INFINITY, 0.0, 5.0),
+            Constraints::new(0.0, f32::NAN, f32::NAN, f32::INFINITY),
+            Constraints::new(9.0, 3.0, 9.0, 3.0),
+        ] {
+            let s = v.measure(c);
+            assert!(
+                s.width.is_finite() && s.height.is_finite(),
+                "{c:?} -> {s:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn video_verify_flags_invalid_bounds() {
+        for bad in [
+            Rect::new(f32::NAN, 0.0, 10.0, 10.0),
+            Rect::new(0.0, f32::INFINITY, 10.0, 10.0),
+            Rect::new(0.0, 0.0, -1.0, 10.0),
+            Rect::new(0.0, 0.0, 10.0, -1.0),
+            Rect::new(0.0, 0.0, f32::NAN, 10.0),
+            Rect::new(0.0, 0.0, 10.0, f32::NEG_INFINITY),
+        ] {
+            let mut v = named("a.mp4");
+            v.bounds = bad;
+            let result = v.verify();
+            assert!(!result.is_valid(), "{bad:?}");
+            assert_eq!(result.failed.len(), 1, "{bad:?}");
+            assert_eq!(
+                result.failed[0].0,
+                BrickAssertion::ElementPresent("valid-bounds".into())
+            );
+            assert!(result.failed[0].1.contains("bounds"));
+        }
+    }
+
+    #[test]
+    fn video_verify_accepts_laid_out_bounds_even_when_the_input_was_wild() {
+        let mut v = named("a.mp4");
+        v.layout(BOUNDS);
+        let result = v.verify();
+        assert!(result.is_valid());
+        assert!(result
+            .passed
+            .contains(&BrickAssertion::ElementPresent("valid-bounds".into())));
+        // layout sanitises, so wild input still ends in valid bounds.
+        v.layout(Rect::new(f32::NAN, f32::MAX, -1.0, f32::INFINITY));
+        assert!(v.verify().is_valid());
+    }
+
+    proptest! {
+        #[test]
+        fn video_layout_paint_finite_and_inside_any_f32_bounds(
+            x in proptest::num::f32::ANY,
+            y in proptest::num::f32::ANY,
+            w in proptest::num::f32::ANY,
+            h in proptest::num::f32::ANY,
+        ) {
+            prop_assert!(layout_paint_is_finite_inside(Rect::new(x, y, w, h)));
+        }
+
+        #[test]
+        fn video_measure_finite_for_any_size_and_constraints(
+            w in proptest::num::f32::ANY,
+            h in proptest::num::f32::ANY,
+            a in proptest::num::f32::ANY,
+            b in proptest::num::f32::ANY,
+            c in proptest::num::f32::ANY,
+            d in proptest::num::f32::ANY,
+        ) {
+            let s = Video::new("a").size(w, h).measure(Constraints::new(a, b, c, d));
+            prop_assert!(s.width.is_finite() && s.height.is_finite());
+        }
+    }
+
     // ===== Properties =====
 
     proptest! {
