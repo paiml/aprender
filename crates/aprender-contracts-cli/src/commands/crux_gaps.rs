@@ -431,6 +431,19 @@ pub fn render_json(stories: &[Story]) -> Result<String, serde_json::Error> {
     Ok(format!("{}\n", serde_json::to_string_pretty(&doc)?))
 }
 
+/// The report in the requested form: JSON when `json`, else the plain table.
+///
+/// # Errors
+///
+/// The `serde_json` error from [`render_json`].
+pub fn render(stories: &[Story], json: bool) -> Result<String, serde_json::Error> {
+    if json {
+        render_json(stories)
+    } else {
+        Ok(render_table(stories))
+    }
+}
+
 /// `pv crux gaps [--json] [DIR]`.
 ///
 /// # Errors
@@ -438,11 +451,7 @@ pub fn render_json(stories: &[Story]) -> Result<String, serde_json::Error> {
 /// See [`gaps_of`].
 pub fn run(contract_dir: &Path, json: bool) -> Result<(), Box<dyn std::error::Error>> {
     let stories = gaps_of(contract_dir)?;
-    if json {
-        print!("{}", render_json(&stories)?);
-    } else {
-        print!("{}", render_table(&stories));
-    }
+    print!("{}", render(&stories, json)?);
     Ok(())
 }
 
@@ -899,6 +908,80 @@ mod tests {
             "{text}"
         );
         assert!(text.contains("crux-A-01-v1.yaml: x") && text.contains("crux-A-02-v1.yaml: y"));
+    }
+
+    /// A writer that accepts `budget` writes and then fails every one after.
+    struct FailAfter {
+        budget: usize,
+    }
+
+    impl fmt::Write for FailAfter {
+        fn write_str(&mut self, _s: &str) -> fmt::Result {
+            if self.budget == 0 {
+                return Err(fmt::Error);
+            }
+            self.budget -= 1;
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn story_errors_display_propagates_a_writer_failure() {
+        use std::fmt::Write as _;
+        let err = StoryErrors {
+            path: PathBuf::from("contracts"),
+            errors: vec![(
+                PathBuf::from("contracts/crux-A-01-v1.yaml"),
+                "x".to_string(),
+            )],
+        };
+        // Every budget short of the full write count fails: the header's
+        // writes and the per-file line's writes each propagate the error.
+        let full = (0..64)
+            .find(|&b| write!(FailAfter { budget: b }, "{err}").is_ok())
+            .expect("some budget is enough");
+        assert!(
+            full >= 8,
+            "header plus one file line is at least 8 writes: {full}"
+        );
+        for b in 0..full {
+            assert!(write!(FailAfter { budget: b }, "{err}").is_err(), "{b}");
+        }
+    }
+
+    #[test]
+    fn absent_optional_fields_are_a_dash_cell_and_present_ones_are_verbatim() {
+        let bare = story_from_yaml("metadata:\n  id: CRUX-A-01\n").expect("a bare story");
+        let cells = row_cells(&bare);
+        assert_eq!(cells[0], "CRUX-A-01");
+        assert_eq!(cells[1], "missing");
+        assert_eq!(
+            [&cells[2], &cells[3], &cells[4], &cells[5], &cells[6]],
+            ["-", "-", "-", "-", "no"]
+        );
+        let full = story(
+            "  demand_score: 7\n  github_issue: 42\n  intake_status: partial\n",
+            &[PENDING, REAL],
+        );
+        let cells = row_cells(&full);
+        assert_eq!(
+            [&cells[2], &cells[3], &cells[4], &cells[5], &cells[6]],
+            ["7", "burn", "42", "partial", "no"]
+        );
+    }
+
+    #[test]
+    fn render_picks_json_or_table_by_the_flag() {
+        let stories = [story("", &[PENDING])];
+        let json = render(&stories, true).expect("renders");
+        assert!(
+            serde_json::from_str::<Value>(&json).is_ok(),
+            "json flag gives JSON: {json}"
+        );
+        assert_eq!(json, render_json(&stories).expect("renders"));
+        let table = render(&stories, false).expect("renders");
+        assert!(serde_json::from_str::<Value>(&table).is_err());
+        assert_eq!(table, render_table(&stories));
     }
 
     #[test]
