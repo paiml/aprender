@@ -136,6 +136,16 @@ falsification_tests:
     test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::replacing_a_pending_test_by_a_real_one_moves_the_story_up"
     prediction: "the verdict follows the file content at each of the three steps"
     if_fails: "the verdict does not respond to the tests it is derived from"
+  - id: FALSIFY-PV_CRUX_GAPS-015
+    description: "an absent optional field is a dash cell and a present one is printed verbatim"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::absent_optional_fields_are_a_dash_cell_and_present_ones_are_verbatim"
+    prediction: "demand, competitor, issue and stated status print `-` when absent and their value when present"
+    if_fails: "a story with no demand score or competitor prints a different placeholder, or a blank, and the table misaligns"
+  - id: FALSIFY-PV_CRUX_GAPS-016
+    description: "the --json flag selects the JSON report and its absence the table"
+    test: "cargo test -p aprender-contracts-cli --lib commands::crux_gaps::tests::render_picks_json_or_table_by_the_flag"
+    prediction: "render(stories, true) equals render_json and parses as JSON; render(stories, false) equals render_table and does not"
+    if_fails: "pv crux gaps --json prints the table, or the default prints JSON"
 open_obligations:
   - |
     Not in this slice (PMAT-6734 is slice 1 of epic #6728): surface
