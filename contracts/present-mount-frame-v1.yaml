@@ -84,7 +84,7 @@ falsification_tests:
     if_fails: "hover and pressed state go stale on screen"
   - id: FALSIFY-PRESENT_MOUNT_FRAME-005
     description: "the tree is laid out before the first frame and after a swap"
-    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::the_tree_is_laid_out_before_the_first_frame browser::mount::tests::a_swapped_tree_is_laid_out_before_its_first_event"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::the_tree_is_laid_out_before_the_first_frame && cargo test -p aprender-present-lib --lib browser::mount::tests::a_swapped_tree_is_laid_out_before_its_first_event"
     prediction: "a click before any frame, and one right after set_root, both reach the button"
     if_fails: "the first click after load or after a state change misses"
   - id: FALSIFY-PRESENT_MOUNT_FRAME-006
@@ -104,6 +104,6 @@ falsification_tests:
     if_fails: "an invalid brick is painted because its container verifies clean"
   - id: FALSIFY-PRESENT_MOUNT_FRAME-009
     description: "a blocked tree does not spin under an animation, and resumes after a fix"
-    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::an_animating_tree_that_is_blocked_does_not_spin browser::mount::tests::a_blocked_tree_is_verified_again_after_a_change_and_the_animation_resumes"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::an_animating_tree_that_is_blocked_does_not_spin && cargo test -p aprender-present-lib --lib browser::mount::tests::a_blocked_tree_is_verified_again_after_a_change_and_the_animation_resumes"
     prediction: "one Blocked, then Idle on every tick; after set_root with a good tree, Painted on every tick"
     if_fails: "a blocked animating page logs and requests frames at 60 Hz for ever, or never recovers"
