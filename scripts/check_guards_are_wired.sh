@@ -121,6 +121,31 @@ dispatcher_wired() {
     done | LC_ALL=C sort -u
 }
 
+# lane_wired ROOT -- the guards pr-light runs as LANES (C6, #6859).
+#
+# pr-light's cheap checks left ci.yml for the lane table of scripts/ci/pr_light_fast.sh, so a
+# guard run there is named by no workflow and came back as unwired (3 -> 5 on #6859). A lane
+# counts only when BOTH hold: a workflow step INVOKES pr_light_fast.sh (same invocation test
+# as below: a comment or a `name:` line is not a run), and the driver's own --list-commands
+# prints a lane command that invokes the guard. The lane list is asked of the driver, never
+# grepped out of its source, so a comment there wires nothing. A driver that cannot answer
+# is forwarded as a `!` line, like a failed guard_tree.sh --dry-run.
+lane_wired() {
+    local root="$1" lines out
+    local surf; mapfile -t surf < <(_surfaces "$root")
+    [ -f "$root/scripts/ci/pr_light_fast.sh" ] || return 0
+    lines=$(grep -rh --include='*.yml' --include='*.yaml' -- 'pr_light_fast.sh' \
+                "${surf[@]}" 2>/dev/null | sed 's/#.*$//' | _not_a_name_line) || lines=''
+    grep -qE "(^|[[:space:];&|(])((ba)?sh[[:space:]]+|\\./)?[^[:space:]]*pr_light_fast\\.sh([[:space:]]|$|['\"])" \
+        <<< "$lines" || return 0
+    if ! out=$( cd "$root" && bash scripts/ci/pr_light_fast.sh --list-commands 2>/dev/null ); then
+        printf '!dispatcher-failed: pr_light_fast.sh --list-commands\n'
+        return 0
+    fi
+    { grep -oE "(^|[[:space:];&|(])(ba)?sh[[:space:]]+scripts/[A-Za-z0-9_./-]+\\.sh" <<< "$out" || true; } \
+        | sed 's|.*/||' | LC_ALL=C sort -u
+}
+
 # dogfood_declared ROOT -- the gates the RELEASE runs, derived from Cargo.toml.
 #
 # #4005, cop ruling (C) 2026-09-23: a host-bound release gate (it needs model files, a
@@ -149,7 +174,7 @@ dogfood_declared_missing() {
 # Guards named by no workflow, one per line, sorted.
 unwired_in() {
     local root="$1" g base seen="" dispatched declared
-    dispatched="$(dispatcher_wired "$root")"
+    dispatched="$(dispatcher_wired "$root"; lane_wired "$root")"
     # a failed dispatcher is reported, never folded into the unwired set (#4108 ph9)
     # ...and nothing else is listed: with the dispatch list unknown, "unwired" is unknown too
     grep '^!dispatcher-failed:' <<< "$dispatched" && return 0
@@ -423,8 +448,47 @@ if [ "${1:-}" = "--self-test" ]; then
         printf 'FAIL  row 14 got [%s], expected [!dispatcher-failed: guard_tree.sh --dry-run --no-cargo ]\n' "$got14"; fails=1
     fi
 
+    # ── Rows 15-18: A GUARD RUN AS A pr-light LANE IS WIRED; A LANE NOBODY RUNS IS NOT (C6, #6859)
+    TD4="$TD/r15"; mkdir -p "$TD4/scripts/ci" "$TD4/.github/workflows"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$TD4/scripts/check_lane.sh"
+    printf '#!/usr/bin/env bash\nexit 0\n' > "$TD4/scripts/check_dark.sh"
+    lane_driver() { # lane_driver LANE_COMMAND -> a pr_light_fast.sh whose one lane runs it
+        printf '#!/usr/bin/env bash\n# bash scripts/check_dark.sh\ncase "${1:-}" in --list-commands) printf "%%s\\n" "%s" ;; *) exit 2 ;; esac\n' "$1" \
+            > "$TD4/scripts/ci/pr_light_fast.sh"
+    }
+    lane_driver 'setsid --wait bash scripts/check_lane.sh --self-test'
+    printf 'jobs:\n  pr-light:\n    steps:\n      - run: setsid --wait bash scripts/ci/pr_light_fast.sh\n' > "$TD4/.github/workflows/ci.yml"
+    got15=$(unwired_in "$TD4" | tr '\n' ' ')
+    if [ "$got15" = "check_dark.sh " ]; then
+        printf 'ok    row 15 a guard run by a pr_light_fast.sh lane counts as wired; a comment in the driver wires nothing\n'
+    else
+        printf 'FAIL  row 15 got [%s], expected [check_dark.sh ]\n' "$got15"; fails=1
+    fi
+    printf 'jobs:\n  pr-light:\n    steps:\n      - name: bash scripts/ci/pr_light_fast.sh\n        run: echo skipped # bash scripts/ci/pr_light_fast.sh\n' > "$TD4/.github/workflows/ci.yml"
+    got16=$(unwired_in "$TD4" | tr '\n' ' ')
+    if [ "$got16" = "check_dark.sh check_lane.sh " ]; then
+        printf 'ok    row 16 a driver no workflow runs wires nothing (the control for row 15)\n'
+    else
+        printf 'FAIL  row 16 got [%s], expected [check_dark.sh check_lane.sh ]\n' "$got16"; fails=1
+    fi
+    printf 'jobs:\n  pr-light:\n    steps:\n      - run: setsid --wait bash scripts/ci/pr_light_fast.sh\n' > "$TD4/.github/workflows/ci.yml"
+    lane_driver 'echo scripts/check_lane.sh is documented here'
+    got17=$(unwired_in "$TD4" | tr '\n' ' ')
+    if [ "$got17" = "check_dark.sh check_lane.sh " ]; then
+        printf 'ok    row 17 a lane that mentions a guard without running it wires nothing\n'
+    else
+        printf 'FAIL  row 17 got [%s], expected [check_dark.sh check_lane.sh ]\n' "$got17"; fails=1
+    fi
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$TD4/scripts/ci/pr_light_fast.sh"
+    got18=$(unwired_in "$TD4" | tr '\n' ' ')
+    if [ "$got18" = "!dispatcher-failed: pr_light_fast.sh --list-commands " ]; then
+        printf 'ok    row 18 a lane driver that cannot list its lanes is reported as failed, not as unwired guards\n'
+    else
+        printf 'FAIL  row 18 got [%s], expected [!dispatcher-failed: pr_light_fast.sh --list-commands ]\n' "$got18"; fails=1
+    fi
+
     [ "$fails" -eq 0 ] || { printf '\nSELF-TEST FAILED\n'; exit 1; }
-    printf '\nSELF-TEST PASSED (14/14)\n'
+    printf '\nSELF-TEST PASSED (18/18)\n'
     exit 0
 fi
 

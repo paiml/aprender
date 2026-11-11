@@ -35,10 +35,10 @@ check() {
         pin="$(pin_of "$ws/rust-toolchain.toml")"
         if [ -n "$pin" ]; then
             command -v rustup > /dev/null 2>&1 || { echo "::error::rustup is not provisioned (forjar rust-toolchain)"; bad=1; }
-            if [ "$bad" = 0 ] && ! rustup toolchain list | grep -q "^${pin}-"; then
+            if [ "$bad" = 0 ] && ! grep -q "^${pin}-" <<< "$(rustup toolchain list 2> /dev/null)"; then
                 echo "::error::toolchain $pin (rust-toolchain.toml) is not on this runner; provision it in forjar machines/*/forjar.yaml. pr-light does not fetch it"; bad=1
             fi
-            if [ "$bad" = 0 ] && ! rustup component list --toolchain "$pin" --installed 2> /dev/null | grep -q '^rustfmt'; then
+            if [ "$bad" = 0 ] && ! grep -q '^rustfmt' <<< "$(rustup component list --toolchain "$pin" --installed 2> /dev/null)"; then
                 echo "::error::rustfmt for $pin is not on this runner (pr-light's fmt lane runs it with RUSTUP_AUTO_INSTALL=0); pr-light does not fetch it"; bad=1
             fi
         fi

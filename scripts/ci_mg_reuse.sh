@@ -631,10 +631,34 @@ STUB
     fail=$((fail + 1)); echo "FAIL pr-light: runs-on carries a merge-queue label"; else pass=$((pass + 1)); fi
   # Opus-A on #5964: the sections that run only for a PR (guard-tree incl. R-2 / 11.1, pr-review-shadow, pr-review-sign)
   # ran inside x86-main, which a PR no longer runs. pr-light must run all three, and the feeder must judge pr-light.
+  # C6 (#6859): guard-tree may instead run as the shard lanes of scripts/ci/pr_light_fast.sh. That counts only when a
+  # step of pr-light runs that script (a comment does not count) and the script's lanes call `ci_guards.sh guard-tree`.
+  prl_fast="${PRL_FAST:-${BASH_SOURCE[0]%/*}/ci/pr_light_fast.sh}"
+  prl_runs() { # prl_runs SECTION -> 0 when the pr-light job runs it
+    grep -q -- "--sections '[^']*\b$1\b" <<<"$(job pr-light)" && return 0
+    [ "$1" = guard-tree ] || return 1
+    grep -qE '^ +(run: +)?(setsid --wait +)?bash scripts/ci/pr_light_fast\.sh( |$)' <<<"$(job pr-light)" || return 1
+    grep -qE "^[^#]*bash scripts/ci_guards\.sh guard-tree --shard" "$prl_fast" 2> /dev/null
+  }
   for sec in guard-tree pr-review-shadow pr-review-sign; do
-    if grep -q -- "--sections '[^']*\b$sec\b" <<<"$(job pr-light)"; then pass=$((pass + 1)); else
+    if prl_runs "$sec"; then pass=$((pass + 1)); else
       fail=$((fail + 1)); echo "FAIL pr-light: does not run the PR-only section $sec"; fi
   done
+  # case table for the lane form: each mutant must make prl_runs guard-tree answer NO.
+  prl_no() { # prl_no NAME: prl_runs guard-tree must fail in the state the caller set up
+    if prl_runs guard-tree; then fail=$((fail + 1)); echo "FAIL mutant $1: pr-light still counts as running guard-tree"; else pass=$((pass + 1)); fi
+  }
+  if grep -q -- "--sections '[^']*\bguard-tree\b" <<<"$(job pr-light)"; then :; else
+    wf_keep="$wf"; prl_keep="$prl_fast"
+    sed -E 's|^( +run: )(setsid --wait +)?bash scripts/ci/pr_light_fast\.sh.*$|\1true # bash scripts/ci/pr_light_fast.sh|' "$wf_keep" > "$T/prl-nolane.yml"
+    wf="$T/prl-nolane.yml"; prl_no lane-step-removed; wf="$wf_keep"
+    sed -E 's|^( *)- name: pr-light lanes.*$|\1# bash scripts/ci/pr_light_fast.sh|; s|^( +run: )(setsid --wait +)?bash scripts/ci/pr_light_fast\.sh.*$|\1true|' "$wf_keep" > "$T/prl-comment.yml"
+    wf="$T/prl-comment.yml"; prl_no lane-only-in-a-comment; wf="$wf_keep"
+    sed -E 's|bash scripts/ci_guards\.sh guard-tree --shard|bash scripts/ci_guards.sh nothing --shard|' "$prl_keep" > "$T/prl-fast-noshard.sh"
+    prl_fast="$T/prl-fast-noshard.sh"; prl_no lanes-drop-guard-tree
+    prl_fast="$T/prl-fast-absent.sh"; prl_no lane-script-absent
+    prl_fast="$prl_keep"
+  fi
   if grep -q '^export GUARD_CHECK_NAME="${GUARD_CHECK_NAME:-pr-light}"' "${BASH_SOURCE[0]%/*}/mq_feeder.sh"; then pass=$((pass + 1)); else
     fail=$((fail + 1)); echo "FAIL mq_feeder: GUARD_CHECK_NAME is not pr-light, so it judges a check a PR no longer runs"; fi
   prlrow() { # prlrow WF NAME JOB WANT(0|red) EVT PRL [extra env...]

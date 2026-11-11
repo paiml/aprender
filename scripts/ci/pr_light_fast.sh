@@ -19,6 +19,7 @@
 #
 #   bash scripts/ci/pr_light_fast.sh                  # all lanes (cheap + guard-tree shards + PR-body checks)
 #   bash scripts/ci/pr_light_fast.sh --list           # print the lane names
+#   bash scripts/ci/pr_light_fast.sh --list-commands  # print each lane's command (read by check_guards_are_wired.sh)
 #   bash scripts/ci/pr_light_fast.sh --self-test      # case table (can-fail, order-independence, determinism)
 #   PR_LIGHT_SHARDS=8   guard-tree shard count (default 8)
 set -uo pipefail
@@ -230,6 +231,8 @@ self_test() {
 case "${1:-}" in
     --self-test) self_test ;;
     --list) { cheap_lanes; GITHUB_EVENT_NAME=pull_request PR_NUMBER=0 pr_body_lanes; shard_lanes; } | cut -d'|' -f1 ;;
+    # the command of every lane, one per line: what check_guards_are_wired.sh reads to see which guards the lanes run.
+    --list-commands) { cheap_lanes; GITHUB_EVENT_NAME=pull_request PR_NUMBER=0 pr_body_lanes; shard_lanes; } | cut -d'|' -f2- ;;
     '') main_run ;;
-    *) echo "usage: $(basename "$0") [--list|--self-test]" >&2; exit 2 ;;
+    *) echo "usage: $(basename "$0") [--list|--list-commands|--self-test]" >&2; exit 2 ;;
 esac
