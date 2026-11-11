@@ -23,6 +23,60 @@ const GLYPH_ASPECT: f32 = 0.866;
 const DEFAULT_WIDTH: f32 = 320.0;
 /// Default intrinsic height when none is set (16:9).
 const DEFAULT_HEIGHT: f32 = 180.0;
+/// Largest magnitude accepted for any coordinate or extent. Larger finite
+/// values are clamped so that `x + width` can never overflow to infinity.
+const COORD_LIMIT: f32 = 1.0e15;
+
+/// A finite coordinate: NaN and infinities become 0, huge values are clamped.
+fn sane(value: f32) -> f32 {
+    if value.is_finite() {
+        value.clamp(-COORD_LIMIT, COORD_LIMIT)
+    } else {
+        0.0
+    }
+}
+
+/// `bounds` made safe to compute with: every component finite and within
+/// `COORD_LIMIT`, and the size not negative. Valid bounds in range pass through
+/// unchanged.
+fn sane_bounds(bounds: Rect) -> Rect {
+    Rect::new(
+        sane(bounds.x),
+        sane(bounds.y),
+        sane(bounds.width).max(0.0),
+        sane(bounds.height).max(0.0),
+    )
+}
+
+/// Whether `bounds` is finite with a size that is not negative.
+fn valid_bounds(bounds: Rect) -> bool {
+    [bounds.x, bounds.y, bounds.width, bounds.height]
+        .iter()
+        .all(|v| v.is_finite())
+        && bounds.width >= 0.0
+        && bounds.height >= 0.0
+}
+
+/// A usable intrinsic extent: finite values are clamped into
+/// `[0, COORD_LIMIT]`; NaN and infinities count as "not set".
+fn sane_extent(value: f32) -> Option<f32> {
+    value.is_finite().then(|| value.clamp(0.0, COORD_LIMIT))
+}
+
+/// Fit `value` between `min` and `max` and keep it finite. Unlike
+/// `f32::clamp` this never panics, whatever the constraints (NaN, infinite or
+/// `min > max`); a lower bound that exceeds the upper one loses.
+fn fit(value: f32, min: f32, max: f32) -> f32 {
+    sane(value.max(min).min(max))
+}
+
+/// `point` pulled onto `bounds` (NaN-safe; never panics).
+fn within(bounds: Rect, point: Point) -> Point {
+    Point::new(
+        point.x.max(bounds.x).min(bounds.x + bounds.width),
+        point.y.max(bounds.y).min(bounds.y + bounds.height),
+    )
+}
 
 /// Playback state of a [`Video`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -118,16 +172,20 @@ impl Video {
     }
 
     /// Set the intrinsic width.
+    ///
+    /// Negative values become 0 and values above 1e15 are clamped to it; NaN
+    /// and infinities count as "not set", so `measure` falls back to the
+    /// default width instead of reporting a non-finite size.
     #[must_use]
     pub fn width(mut self, width: f32) -> Self {
-        self.width = Some(width.max(0.0));
+        self.width = sane_extent(width);
         self
     }
 
-    /// Set the intrinsic height.
+    /// Set the intrinsic height (same rules as [`Video::width`]).
     #[must_use]
     pub fn height(mut self, height: f32) -> Self {
-        self.height = Some(height.max(0.0));
+        self.height = sane_extent(height);
         self
     }
 
@@ -253,16 +311,20 @@ impl Video {
     /// The three vertices of the play glyph, centred in the laid-out bounds.
     ///
     /// The bounding box of the triangle has the same centre as the bounds.
+    /// Every vertex is finite and inside the laid-out bounds (which `layout`
+    /// has sanitised), whatever rectangle was passed to `layout`.
     #[must_use]
     pub fn play_glyph(&self) -> [Point; 3] {
-        let centre = self.bounds.center();
-        let height = self.bounds.width.min(self.bounds.height).max(0.0) * GLYPH_SCALE;
+        let bounds = self.bounds;
+        let centre = bounds.center();
+        let height = bounds.width.min(bounds.height).max(0.0) * GLYPH_SCALE;
         let width = height * GLYPH_ASPECT;
         [
             Point::new(centre.x - width / 2.0, centre.y - height / 2.0),
             Point::new(centre.x - width / 2.0, centre.y + height / 2.0),
             Point::new(centre.x + width / 2.0, centre.y),
         ]
+        .map(|vertex| within(bounds, vertex))
     }
 
     /// Colour of the frame while playing.
@@ -327,17 +389,32 @@ impl Widget for Video {
     }
 
     fn measure(&self, constraints: Constraints) -> Size {
-        let preferred = Size::new(
-            self.width.unwrap_or(DEFAULT_WIDTH),
-            self.height.unwrap_or(DEFAULT_HEIGHT),
-        );
-        constraints.constrain(preferred)
+        // Not `Constraints::constrain`: its `f32::clamp` panics on NaN or
+        // inverted constraints and passes an infinite minimum through.
+        Size::new(
+            fit(
+                self.width.unwrap_or(DEFAULT_WIDTH),
+                constraints.min_width,
+                constraints.max_width,
+            ),
+            fit(
+                self.height.unwrap_or(DEFAULT_HEIGHT),
+                constraints.min_height,
+                constraints.max_height,
+            ),
+        )
     }
 
+    /// Lay the video out in `bounds`.
+    ///
+    /// The bounds are sanitised first (NaN and infinities become 0, components
+    /// are clamped to +-1e15, a negative size becomes 0), so every rect and
+    /// glyph vertex `paint` emits is finite and inside the stored bounds. Bounds
+    /// that are already finite, not negative and in range are kept exactly.
     fn layout(&mut self, bounds: Rect) -> LayoutResult {
-        self.bounds = bounds;
+        self.bounds = sane_bounds(bounds);
         LayoutResult {
-            size: bounds.size(),
+            size: self.bounds.size(),
         }
     }
 
@@ -451,6 +528,13 @@ impl Brick for Video {
             self.effective_name().is_some(),
             BrickAssertion::ElementPresent("accessible-name".into()),
             "Video has no accessible name",
+        );
+        record(
+            &mut passed,
+            &mut failed,
+            valid_bounds(self.bounds),
+            BrickAssertion::ElementPresent("valid-bounds".into()),
+            "Video bounds are not finite and >= 0",
         );
 
         BrickVerification {
@@ -1026,7 +1110,7 @@ mod tests {
                 DrawCommand::Rect { bounds, .. } => Some(bounds),
                 _ => None,
             })
-            .last()
+            .next_back()
             .expect("the video backdrop rect");
 
         assert!(rect_inside(&content, frame, 0.001));
@@ -1078,6 +1162,18 @@ mod tests {
             }
             _ => false,
         })
+    }
+
+    #[test]
+    fn commands_helper_rejects_anything_but_rects_and_paths() {
+        let circle = DrawCommand::filled_circle(Point::new(1.0, 1.0), 1.0, Color::WHITE);
+        assert!(!commands_finite_inside(&[circle], &BOUNDS));
+        let empty_path = DrawCommand::Path {
+            points: Vec::new(),
+            closed: true,
+            style: presentar_core::draw::StrokeStyle::default(),
+        };
+        assert!(!commands_finite_inside(&[empty_path], &BOUNDS));
     }
 
     /// Lay `bounds` out, then check the glyph and the paint in both states.

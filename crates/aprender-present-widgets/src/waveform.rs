@@ -29,13 +29,51 @@ fn sanitize(sample: f32) -> f32 {
     }
 }
 
-/// Replace a non-finite coordinate by 0.
-fn finite_or_zero(value: f32) -> f32 {
+/// Largest magnitude accepted for any coordinate or extent. Larger finite
+/// values are clamped so that `x + width` can never overflow to infinity.
+const COORD_LIMIT: f32 = 1.0e15;
+
+/// A finite coordinate: NaN and infinities become 0, huge values are clamped.
+fn sane(value: f32) -> f32 {
     if value.is_finite() {
-        value
+        value.clamp(-COORD_LIMIT, COORD_LIMIT)
     } else {
         0.0
     }
+}
+
+/// `bounds` made safe to compute with: every component finite and within
+/// `COORD_LIMIT`, and the size not negative. Valid bounds in range pass through
+/// unchanged.
+fn sane_bounds(bounds: Rect) -> Rect {
+    Rect::new(
+        sane(bounds.x),
+        sane(bounds.y),
+        sane(bounds.width).max(0.0),
+        sane(bounds.height).max(0.0),
+    )
+}
+
+/// Whether `bounds` is finite with a size that is not negative.
+fn valid_bounds(bounds: Rect) -> bool {
+    [bounds.x, bounds.y, bounds.width, bounds.height]
+        .iter()
+        .all(|v| v.is_finite())
+        && bounds.width >= 0.0
+        && bounds.height >= 0.0
+}
+
+/// A usable preferred extent: finite values are clamped into
+/// `[0, COORD_LIMIT]`; NaN and infinities count as "not set".
+fn sane_extent(value: f32) -> Option<f32> {
+    value.is_finite().then(|| value.clamp(0.0, COORD_LIMIT))
+}
+
+/// Fit `value` between `min` and `max` and keep it finite. Unlike
+/// `f32::clamp` this never panics, whatever the constraints (NaN, infinite or
+/// `min > max`); a lower bound that exceeds the upper one loses.
+fn fit(value: f32, min: f32, max: f32) -> f32 {
+    sane(value.max(min).min(max))
 }
 
 /// Keep whichever of the two samples has the larger magnitude (first wins ties).
@@ -91,15 +129,16 @@ fn reduce_levels(samples: &[f32], max_points: usize) -> Vec<f32> {
 ///   `max(max_points, 2)` points.
 /// * No samples (silence) gives the centre line: two points, left-centre and
 ///   right-centre. A lone sample gives a flat line at its level.
-/// * Every point lies inside `bounds` (edges inclusive), for any input.
-///   Negative width/height count as 0 and non-finite origins as 0.
+/// * Every point is finite and lies inside `bounds` (edges inclusive), for any
+///   input. Negative width/height count as 0, non-finite components as 0, and
+///   components beyond +-1e15 are clamped to it so that no sum overflows; the
+///   "inside" promise is then to those sanitized bounds, which equal `bounds`
+///   whenever it is finite, not negative and within +-1e15.
 #[must_use]
 pub fn waveform_points(samples: &[f32], bounds: Rect, max_points: usize) -> Vec<Point> {
     let levels = reduce_levels(samples, max_points);
-    let x0 = finite_or_zero(bounds.x);
-    let y0 = finite_or_zero(bounds.y);
-    let width = finite_or_zero(bounds.width).max(0.0);
-    let height = finite_or_zero(bounds.height).max(0.0);
+    let safe = sane_bounds(bounds);
+    let (x0, y0, width, height) = (safe.x, safe.y, safe.width, safe.height);
     let y1 = y0 + height;
     let half = height / 2.0;
     let centre = y0 + half;
@@ -207,16 +246,20 @@ impl Waveform {
     }
 
     /// Set the preferred width.
+    ///
+    /// Negative values become 0 and values above 1e15 are clamped to it; NaN
+    /// and infinities count as "not set", so `measure` falls back to the
+    /// default width instead of reporting a non-finite size.
     #[must_use]
     pub fn width(mut self, width: f32) -> Self {
-        self.width = Some(width.max(0.0));
+        self.width = sane_extent(width);
         self
     }
 
-    /// Set the preferred height.
+    /// Set the preferred height (same rules as [`Waveform::width`]).
     #[must_use]
     pub fn height(mut self, height: f32) -> Self {
-        self.height = Some(height.max(0.0));
+        self.height = sane_extent(height);
         self
     }
 
@@ -301,8 +344,20 @@ impl Widget for Waveform {
     }
 
     fn measure(&self, constraints: Constraints) -> Size {
-        let preferred = Size::new(self.width.unwrap_or(200.0), self.height.unwrap_or(80.0));
-        constraints.constrain(preferred)
+        // Not `Constraints::constrain`: its `f32::clamp` panics on NaN or
+        // inverted constraints and passes an infinite minimum through.
+        Size::new(
+            fit(
+                self.width.unwrap_or(200.0),
+                constraints.min_width,
+                constraints.max_width,
+            ),
+            fit(
+                self.height.unwrap_or(80.0),
+                constraints.min_height,
+                constraints.max_height,
+            ),
+        )
     }
 
     fn layout(&mut self, bounds: Rect) -> LayoutResult {
@@ -370,6 +425,17 @@ impl Brick for Waveform {
             passed.push(named);
         } else {
             failed.push((named, "Waveform has no accessible name".to_string()));
+        }
+
+        // The laid-out bounds must be finite and not negative.
+        let bounds_ok = BrickAssertion::ElementPresent("valid-bounds".to_string());
+        if valid_bounds(self.bounds) {
+            passed.push(bounds_ok);
+        } else {
+            failed.push((
+                bounds_ok,
+                "Waveform bounds are not finite and >= 0".to_string(),
+            ));
         }
 
         BrickVerification {
