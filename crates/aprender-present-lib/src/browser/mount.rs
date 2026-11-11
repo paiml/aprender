@@ -232,6 +232,12 @@ mod tests {
     }
 
     #[test]
+    fn the_button_probe_finds_nothing_on_a_tree_without_a_button() {
+        let mut mounted = Mounted::new(Box::new(Text::new("no button here")), 800.0, 600.0);
+        assert!(find_button(&mut mounted).is_none());
+    }
+
+    #[test]
     fn schedule_truth_table() {
         assert_eq!(schedule(false, false), FrameAction::Stop);
         assert_eq!(schedule(true, false), FrameAction::Repaint);
