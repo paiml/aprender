@@ -209,6 +209,14 @@ fn main() {
     }
 }
 
+/// The crate `wasm-pack` builds, relative to the workspace root. Until aprender#6888 this was
+/// `crates/presentar`, a path that stopped existing at the monorepo merge.
+const WASM_CRATE_DIR: &str = "crates/aprender-present-lib";
+
+/// Base name of the generated glue (`<name>.js`, `<name>_bg.wasm`). The page written by `new`
+/// imports `./pkg/presentar.js`, so the name is pinned here rather than derived from the crate.
+const WASM_OUT_NAME: &str = "presentar";
+
 #[cfg(feature = "dev-server")]
 /// Atomic counter for triggering hot reload
 static RELOAD_COUNTER: AtomicU64 = AtomicU64::new(0);
@@ -503,7 +511,9 @@ fn rebuild_wasm() {
     let status = Command::new("wasm-pack")
         .args([
             "build",
-            "crates/presentar",
+            WASM_CRATE_DIR,
+            "--out-name",
+            WASM_OUT_NAME,
             "--target",
             "web",
             "--out-dir",
@@ -526,7 +536,9 @@ fn bundle(output: PathBuf, no_optimize: bool) {
     let status = Command::new("wasm-pack")
         .args([
             "build",
-            "crates/presentar",
+            WASM_CRATE_DIR,
+            "--out-name",
+            WASM_OUT_NAME,
             "--target",
             "web",
             "--release",
@@ -1398,6 +1410,30 @@ fn get_cache_control(path: &PathBuf) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// aprender#6888: `bundle` and the `serve` watcher must name a crate that exists and that
+    /// can be built as a wasm module. Reverting `WASM_CRATE_DIR` to `crates/presentar` fails here.
+    #[test]
+    fn falsify_6888_wasm_crate_dir_is_a_real_cdylib_crate() {
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join(WASM_CRATE_DIR)
+            .join("Cargo.toml");
+        let text =
+            fs::read_to_string(&manifest).unwrap_or_else(|e| panic!("{}: {e}", manifest.display()));
+        assert!(
+            text.contains("\"cdylib\""),
+            "{} is not a cdylib crate",
+            manifest.display()
+        );
+    }
+
+    /// The page `new` writes imports the glue by this name.
+    #[test]
+    fn falsify_6888_generated_page_imports_the_pinned_glue_name() {
+        let page = include_str!("main.rs");
+        assert!(page.contains(&format!("from './pkg/{WASM_OUT_NAME}.js'")));
+    }
 
     #[test]
     fn test_grade_to_value() {
