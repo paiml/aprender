@@ -1,5 +1,5 @@
 {
-  "version": "0.71.1",
+  "version": "0.72.5",
   "host": "gx10",
   "backend": "gpu",
   "isa": "aarch64",
@@ -27,10 +27,10 @@
     "source": "scripts/llama_pin.toml [protocol]"
   },
   "apr": {
-    "version_line": "apr 0.71.1 (70f8c754d)"
+    "version_line": "apr 0.72.5 (6f0791988)"
   },
   "harness": {
-    "sha": "70f8c754d",
+    "sha": "6f0791988",
     "driver": "scripts/crux_inference_dogfood.sh",
     "gpu_lock": "gpu-q --prio 3 (GPUQ_WAIT bound)"
   },
@@ -108,11 +108,11 @@
     "apr chat's backend is unverified: apr chat reports none (#3794)",
     "thinking ON until #3723 adds an apr toggle",
     "consumer-brief context rungs (#3716) and each engine's max accepted context",
-    "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment"
+    "TTFT (run verb: only ollama reports a prefill_ms, which is a lower bound; llama-cli and apr print none) and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment"
   ],
   "merged_shards": 5,
   "schema": "crux-inference-receipt/v1",
-  "judged_at": "2026-10-12T21:59Z",
+  "judged_at": "2026-11-11T22:11Z",
   "cells": [
     {
       "key": {
@@ -151,7 +151,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -171,9 +171,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 16.3,
+            "decode_rate": 14.4,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 19198.13
+            "inference_ms": 20133.87
           },
           "backend": {
             "requested": "gpu",
@@ -215,7 +215,7 @@
           "prompt_token_count": 30,
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -224,8 +224,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 389.3,
-            "decode_rate": 62.6,
+            "prompt_rate": 156.3,
+            "decode_rate": 55.0,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -356,7 +356,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -378,9 +378,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 15.4,
+            "decode_rate": 12.4,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 12127.02
+            "inference_ms": 12262.56
           },
           "backend": {
             "requested": "gpu",
@@ -417,12 +417,24 @@
             264,
             3074,
             52451,
-            12305
+            12305,
+            1970,
+            2424,
+            13,
+            248046,
+            198,
+            248045,
+            74455,
+            198,
+            248068,
+            271,
+            248069,
+            271
           ],
           "prompt_token_count": 42,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -431,8 +443,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 511.4,
-            "decode_rate": 68.8,
+            "prompt_rate": 473.2,
+            "decode_rate": 61.5,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -520,9 +532,9 @@
         "measured": true,
         "apr_count": 42,
         "llama_cpp_count": 40,
-        "apr_ids_compared": 30,
-        "apr_ids_complete": false,
-        "first_divergence": null,
+        "apr_ids_compared": 42,
+        "apr_ids_complete": true,
+        "first_divergence": 39,
         "parity": false
       }
     },
@@ -563,7 +575,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -587,7 +599,7 @@
             "<answer>4</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -717,7 +729,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -742,7 +754,7 @@
             "<answer>7</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -874,7 +886,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -900,7 +912,7 @@
             "```python\ndef add(a, b):\n    return a + b\n```"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1033,7 +1045,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -1065,7 +1077,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1202,7 +1214,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -1234,7 +1246,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1371,7 +1383,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -1403,7 +1415,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1540,7 +1552,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -1572,7 +1584,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1709,7 +1721,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -1741,7 +1753,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1878,7 +1890,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -1910,7 +1922,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2046,7 +2058,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -2078,7 +2090,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2214,7 +2226,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -2244,7 +2256,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2378,7 +2390,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -2408,7 +2420,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2542,7 +2554,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -2572,7 +2584,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2707,7 +2719,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -2732,12 +2744,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2872,7 +2884,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -2902,7 +2914,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3037,7 +3049,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -3062,12 +3074,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3202,7 +3214,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -3232,7 +3244,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3367,7 +3379,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -3400,7 +3412,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3537,7 +3549,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -3570,7 +3582,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3707,7 +3719,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -3740,7 +3752,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3877,7 +3889,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -3910,7 +3922,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4047,7 +4059,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -4080,7 +4092,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4217,7 +4229,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -4250,7 +4262,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4386,7 +4398,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -4419,7 +4431,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4555,7 +4567,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -4585,7 +4597,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4718,7 +4730,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -4748,7 +4760,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4881,7 +4893,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -4911,7 +4923,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5045,7 +5057,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -5070,12 +5082,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5209,7 +5221,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -5239,7 +5251,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5370,7 +5382,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -5401,7 +5413,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5530,7 +5542,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -5550,9 +5562,9 @@
             "reported_by": "apr",
             "prompt_tokens": 28,
             "completion_tokens": 163,
-            "decode_rate": 31.4,
+            "decode_rate": 31.5,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 16395.7
+            "inference_ms": 18977.27
           },
           "backend": {
             "requested": "gpu",
@@ -5593,7 +5605,7 @@
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5602,8 +5614,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:** The user is asking for the sum of 2 and 2. They want the final answer enclosed in specific tags: `<answer></answer>`.\n\n2.  **Calculate the Answer:** 2 + 2 = 4.\n\n3.  **Format the Output:** The user explicitly requested the format `<answer>4</answer>`.\n\n4.  **Final Verification:** Does the output match the constraint? Yes. Is the math correct? Yes.\n\n5.  **Construct Final Response:**\n    <answer>4</answer>\n</think>\n\n<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 408.7,
-            "decode_rate": 66.1,
+            "prompt_rate": 411.5,
+            "decode_rate": 67.5,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -5730,7 +5742,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -5754,7 +5766,7 @@
             "completion_tokens": 347,
             "decode_rate": 33.2,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 22016.86
+            "inference_ms": 21269.86
           },
           "backend": {
             "requested": "gpu",
@@ -5791,13 +5803,23 @@
             264,
             3074,
             52451,
-            12305
+            12305,
+            1970,
+            2424,
+            13,
+            248046,
+            198,
+            248045,
+            74455,
+            198,
+            248068,
+            198
           ],
           "prompt_token_count": 40,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5806,8 +5828,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function named `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint: Put *only* the function in a single ```python code block.\n    *   Output format: Markdown code block with Python syntax highlighting.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a function? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single code block? Yes.\n    *   Are there any extra explanations outside the code block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies I should minimize or exclude any surrounding text, but typically a brief introduction is acceptable unless strictly forbidden. However, \"Put only the function...\" suggests I should avoid extra chatter. I will provide just the code block to be safe and precise.\n\n4.  **Final Polish:**\n    *   Ensure the code is valid Python.\n    *   Ensure the block language is `python`.\n\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n5.  **Final Output Generation:** (Matches the drafted code block).\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 555.2,
-            "decode_rate": 68.4,
+            "prompt_rate": 571.8,
+            "decode_rate": 68.7,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -5893,8 +5915,8 @@
         "measured": true,
         "apr_count": 40,
         "llama_cpp_count": 40,
-        "apr_ids_compared": 30,
-        "apr_ids_complete": false,
+        "apr_ids_compared": 40,
+        "apr_ids_complete": true,
         "first_divergence": null,
         "parity": true
       }
@@ -5936,7 +5958,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -5961,7 +5983,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6087,7 +6109,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -6114,7 +6136,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6240,7 +6262,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -6272,7 +6294,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6394,7 +6416,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -6426,7 +6448,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6548,7 +6570,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -6580,7 +6602,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6702,7 +6724,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -6734,7 +6756,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6856,7 +6878,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -6888,7 +6910,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7010,7 +7032,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -7042,7 +7064,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7163,7 +7185,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -7195,7 +7217,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7316,7 +7338,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -7346,7 +7368,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7467,7 +7489,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -7497,7 +7519,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7618,7 +7640,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -7648,7 +7670,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7770,7 +7792,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -7795,12 +7817,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7922,7 +7944,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -7952,7 +7974,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8074,7 +8096,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -8099,12 +8121,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8226,7 +8248,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -8256,7 +8278,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8375,7 +8397,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -8406,7 +8428,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8523,7 +8545,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -8543,9 +8565,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 36.4,
+            "decode_rate": 35.6,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 8407.58
+            "inference_ms": 9055.49
           },
           "backend": {
             "requested": "gpu",
@@ -8587,7 +8609,7 @@
           "prompt_token_count": 30,
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8596,8 +8618,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 721.0,
-            "decode_rate": 124.8,
+            "prompt_rate": 643.4,
+            "decode_rate": 121.8,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -8728,7 +8750,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -8750,9 +8772,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 26.7,
+            "decode_rate": 26.6,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 4493.38
+            "inference_ms": 5652.5
           },
           "backend": {
             "requested": "gpu",
@@ -8789,12 +8811,24 @@
             264,
             3074,
             52451,
-            12305
+            12305,
+            1970,
+            2424,
+            13,
+            248046,
+            198,
+            248045,
+            74455,
+            198,
+            248068,
+            271,
+            248069,
+            271
           ],
           "prompt_token_count": 42,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8803,8 +8837,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 1008.9,
-            "decode_rate": 123.3,
+            "prompt_rate": 898.9,
+            "decode_rate": 135.7,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -8892,9 +8926,9 @@
         "measured": true,
         "apr_count": 42,
         "llama_cpp_count": 40,
-        "apr_ids_compared": 30,
-        "apr_ids_complete": false,
-        "first_divergence": null,
+        "apr_ids_compared": 42,
+        "apr_ids_complete": true,
+        "first_divergence": 39,
         "parity": false
       }
     },
@@ -8935,7 +8969,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -8959,7 +8993,7 @@
             "<answer>4</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9089,7 +9123,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -9114,7 +9148,7 @@
             "You asked me to remember the number **7**.\n\n<answer>7</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9245,7 +9279,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -9271,7 +9305,7 @@
             "```python\ndef add(a, b):\n    return a + b\n```"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9404,7 +9438,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -9436,7 +9470,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9573,7 +9607,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -9605,7 +9639,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9742,7 +9776,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -9774,7 +9808,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9911,7 +9945,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -9943,7 +9977,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10080,7 +10114,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -10112,7 +10146,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10249,7 +10283,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -10281,7 +10315,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10417,7 +10451,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -10449,7 +10483,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10585,7 +10619,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -10615,7 +10649,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10749,7 +10783,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -10779,7 +10813,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10913,7 +10947,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -10943,7 +10977,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11078,7 +11112,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -11103,12 +11137,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11243,7 +11277,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -11273,7 +11307,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11408,7 +11442,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -11433,12 +11467,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11573,7 +11607,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -11603,7 +11637,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11738,7 +11772,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -11771,7 +11805,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11907,7 +11941,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -11940,7 +11974,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12076,7 +12110,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -12109,7 +12143,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12245,7 +12279,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -12278,7 +12312,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12414,7 +12448,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -12447,7 +12481,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12583,7 +12617,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -12616,7 +12650,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12751,7 +12785,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -12784,7 +12818,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12919,7 +12953,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -12949,7 +12983,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13081,7 +13115,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -13111,7 +13145,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13243,7 +13277,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -13273,7 +13307,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13406,7 +13440,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -13431,12 +13465,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13569,7 +13603,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -13599,7 +13633,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13729,7 +13763,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -13760,7 +13794,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13889,7 +13923,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -13909,9 +13943,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 15.7,
+            "decode_rate": 15.9,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 17876.38
+            "inference_ms": 16008.15
           },
           "backend": {
             "requested": "gpu",
@@ -13953,7 +13987,7 @@
           "prompt_token_count": 30,
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13962,8 +13996,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 186.1,
-            "decode_rate": 57.4,
+            "prompt_rate": 152.8,
+            "decode_rate": 58.0,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -14094,7 +14128,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -14116,9 +14150,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 15.9,
+            "decode_rate": 15.0,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 10837.96
+            "inference_ms": 9771.46
           },
           "backend": {
             "requested": "gpu",
@@ -14155,12 +14189,24 @@
             264,
             3074,
             52451,
-            12305
+            12305,
+            1970,
+            2424,
+            13,
+            248046,
+            198,
+            248045,
+            74455,
+            198,
+            248068,
+            271,
+            248069,
+            271
           ],
           "prompt_token_count": 42,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14169,8 +14215,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 318.0,
-            "decode_rate": 63.1,
+            "prompt_rate": 256.9,
+            "decode_rate": 62.1,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -14258,9 +14304,9 @@
         "measured": true,
         "apr_count": 42,
         "llama_cpp_count": 40,
-        "apr_ids_compared": 30,
-        "apr_ids_complete": false,
-        "first_divergence": null,
+        "apr_ids_compared": 42,
+        "apr_ids_complete": true,
+        "first_divergence": 39,
         "parity": false
       }
     },
@@ -14301,7 +14347,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -14325,7 +14371,7 @@
             "<answer>4</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14455,7 +14501,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -14480,7 +14526,7 @@
             "<answer>7</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14613,7 +14659,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -14639,7 +14685,7 @@
             "```python\ndef add(a, b):\n    return a + b\n```"
           ],
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14772,7 +14818,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -14804,7 +14850,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14941,7 +14987,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -14973,7 +15019,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15110,7 +15156,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -15142,7 +15188,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15279,7 +15325,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -15311,7 +15357,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15448,7 +15494,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -15480,7 +15526,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15617,7 +15663,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -15649,7 +15695,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15785,7 +15831,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -15817,7 +15863,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15953,7 +15999,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -15983,7 +16029,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16117,7 +16163,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -16147,7 +16193,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16281,7 +16327,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -16311,7 +16357,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16446,7 +16492,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -16471,12 +16517,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16611,7 +16657,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -16641,7 +16687,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16776,7 +16822,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -16801,12 +16847,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16941,7 +16987,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -16971,7 +17017,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17106,7 +17152,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -17139,7 +17185,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17277,7 +17323,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -17310,7 +17356,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17448,7 +17494,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -17481,7 +17527,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17619,7 +17665,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -17652,7 +17698,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17790,7 +17836,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -17823,7 +17869,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17961,7 +18007,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -17994,7 +18040,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18131,7 +18177,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -18164,7 +18210,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18301,7 +18347,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -18331,7 +18377,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18465,7 +18511,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -18495,7 +18541,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18629,7 +18675,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -18659,7 +18705,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18794,7 +18840,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -18819,12 +18865,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18959,7 +19005,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -18989,7 +19035,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19121,7 +19167,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -19152,7 +19198,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19281,7 +19327,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -19301,9 +19347,9 @@
             "reported_by": "apr",
             "prompt_tokens": 28,
             "completion_tokens": 213,
-            "decode_rate": 28.0,
+            "decode_rate": 27.3,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 16830.13
+            "inference_ms": 16592.62
           },
           "backend": {
             "requested": "gpu",
@@ -19344,7 +19390,7 @@
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19353,8 +19399,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:** The user is asking for the sum of 2 and 2 (\"What is 2+2?\"). They have specified a formatting constraint: \"Reply with the final answer inside <answer></answer>.\"\n\n2.  **Determine the Answer:** The mathematical sum of 2 and 2 is 4.\n\n3.  **Format the Output:** The user explicitly requested the final answer to be enclosed in specific tags: `<answer>` and `</answer>`.\n\n4.  **Construct the Final String:**\n    *   Content: 4\n    *   Tags: <answer>4</answer>\n\n5.  **Review Constraints:**\n    *   Did I answer the question? Yes (2+2=4).\n    *   Did I follow the formatting constraint? Yes (inside <answer></answer>).\n\n6.  **Final Output Generation:** <answer>4</answer>\n</think>\n\n<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 205.2,
-            "decode_rate": 65.6,
+            "prompt_rate": 180.1,
+            "decode_rate": 63.4,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -19483,7 +19529,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -19505,9 +19551,9 @@
             "reported_by": "apr",
             "prompt_tokens": 40,
             "completion_tokens": 356,
-            "decode_rate": 28.7,
+            "decode_rate": 28.4,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 21781.68
+            "inference_ms": 21292.74
           },
           "backend": {
             "requested": "gpu",
@@ -19544,13 +19590,23 @@
             264,
             3074,
             52451,
-            12305
+            12305,
+            1970,
+            2424,
+            13,
+            248046,
+            198,
+            248045,
+            74455,
+            198,
+            248068,
+            198
           ],
           "prompt_token_count": 40,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19559,7 +19615,7 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function named `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint: Put *only* the function in a single ```python code block.\n    *   Output Format: Markdown code block with Python syntax highlighting.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a Python function? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single code block? Yes.\n    *   Are there any extra explanations outside the block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies I should avoid conversational filler before or after the block, or at least keep it minimal. However, standard AI behavior often includes a brief intro. But the instruction \"Put only the function...\" suggests strict adherence. I will output just the code block to be safe and precise.\n\n4.  **Final Polish:**\n    *   Ensure the code is valid Python.\n    *   Ensure the block language is specified as `python`.\n\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n5.  **Final Decision:** Output the code block directly.cw\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 282.1,
+            "prompt_rate": 271.4,
             "decode_rate": 65.0,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
@@ -19644,8 +19700,8 @@
         "measured": true,
         "apr_count": 40,
         "llama_cpp_count": 40,
-        "apr_ids_compared": 30,
-        "apr_ids_complete": false,
+        "apr_ids_compared": 40,
+        "apr_ids_complete": true,
         "first_divergence": null,
         "parity": true
       }
@@ -19687,7 +19743,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -19712,7 +19768,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19838,7 +19894,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -19865,7 +19921,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19991,7 +20047,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -20023,7 +20079,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20147,7 +20203,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -20179,7 +20235,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20303,7 +20359,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -20335,7 +20391,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20459,7 +20515,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -20491,7 +20547,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20615,7 +20671,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -20647,7 +20703,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20771,7 +20827,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -20803,7 +20859,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20926,7 +20982,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -20958,7 +21014,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21081,7 +21137,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -21111,7 +21167,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21232,7 +21288,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -21262,7 +21318,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21383,7 +21439,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -21413,7 +21469,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21535,7 +21591,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -21560,12 +21616,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21687,7 +21743,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -21717,7 +21773,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21839,7 +21895,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -21864,12 +21920,12 @@
             "http": 200,
             "chunks": null,
             "terminal": null,
-            "finish_reason": null,
+            "finish_reason": "stop",
             "rendered_prompts": []
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21991,7 +22047,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -22021,7 +22077,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
@@ -22140,7 +22196,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.1 (70f8c754d)",
+        "apr_version": "apr 0.72.5 (6f0791988)",
         "under_development": false,
         "development_note": null
       },
@@ -22171,7 +22227,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.1 (70f8c754d)"
+          "version": "apr 0.72.5 (6f0791988)"
         },
         "llama.cpp": {
           "answered": true,
