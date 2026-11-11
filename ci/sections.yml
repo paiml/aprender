@@ -867,6 +867,8 @@ jobs:
           [ -s "$RUNNER_TEMP/quick-calls-all.txt" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
           # this shard's share of the calls: every crate on exactly one shard (quick_tier_shard.sh)
           bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$RUNNER_TEMP/quick-calls-all.txt" > "$RUNNER_TEMP/quick-calls.txt"
+          # #6898: the flag rule is proved on its case table before it picks a flag
+          bash scripts/ci/quick_tier_targets.sh --self-test > /dev/null || { echo "::error::quick_tier_targets.sh --self-test is red"; exit 1; }
           mapfile -t calls < "$RUNNER_TEMP/quick-calls.txt"
           printf 'nextest calls: %s\n' "${#calls[@]}"
           mkdir -p "$RUNNER_TEMP/quick-sel"
@@ -875,7 +877,9 @@ jobs:
           for i in "${!calls[@]}"; do
           read -ra group <<< "${calls[$i]}"
           pkgs=""; for c in "${group[@]}"; do pkgs="$pkgs -p $c"; done
-          printf 'call %s:%s\n' "$i" "$pkgs"
+          # #6898: --lib only when a package of this call has a library target (cargo refuses it otherwise)
+          flags="$(bash scripts/ci/quick_tier_targets.sh --metadata "$RUNNER_TEMP/quick-meta.json" "${group[@]}")"
+          printf 'call %s: %s%s\n' "$i" "$flags" "$pkgs"
           touch "$RUNNER_TEMP/quick-sel/stamp"
           docker run --rm \
           -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0=/workspace \
@@ -895,7 +899,7 @@ jobs:
             -e CARGO_PROFILE_DEV_DEBUG=0 \
             -e CARGO_TERM_COLOR=never \
             "$IMAGE" \
-            bash -c "cargo nextest run --profile ci --lib --tests$pkgs" || rc=1
+            bash -c "cargo nextest run --profile ci $flags$pkgs" || rc=1
           # each call overwrites nextest/ci/junit.xml; keep this one under its index, and
           # only if this call wrote it (a stale file from the call before is not this one)
           if [ "${tgt}/nextest/ci/junit.xml" -nt "$RUNNER_TEMP/quick-sel/stamp" ]; then
@@ -1045,6 +1049,11 @@ jobs:
             bash scripts/ci/quick_tier_groups.sh --metadata "$sig/quick-meta.json" "${crates[@]}" > "$sig/quick-sel.all"
             [ -s "$sig/quick-sel.all" ] || { echo "::error::quick tier: crates selected but the split printed no nextest call"; exit 1; }
             bash scripts/ci/quick_tier_shard.sh "$SHARD" "$SHARDS" < "$sig/quick-sel.all" > "$sig/quick-sel.calls"
+            # #6898: the same per-call flags as the run step, derived again here from the metadata
+            : > "$sig/quick-sel.flags"
+            while read -ra g; do
+              bash scripts/ci/quick_tier_targets.sh --metadata "$sig/quick-meta.json" "${g[@]}" >> "$sig/quick-sel.flags"
+            done < "$sig/quick-sel.calls"
           fi
           read -ra targets <<< "$TARGETS"
           tree="$(printf '%s\n' "${targets[@]}" | cut -d: -f1 | sort -u \
@@ -1068,9 +1077,9 @@ jobs:
             -e SHARD -e SHARDS \
             "$IMAGE" \
             bash -c 'set -euo pipefail
-              i=0; while read -r g; do p=""; for c in $g; do p="$p -p $c"; done
-                cargo nextest list --profile ci --lib --tests $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
-              done < /sigma/quick-sel.calls
+              i=0; while read -r g <&3 && read -r f <&4; do p=""; for c in $g; do p="$p -p $c"; done
+                cargo nextest list --profile ci $f $p --message-format json > "/sigma/quick-sel/$i.list.json"; i=$((i + 1))
+              done 3< /sigma/quick-sel.calls 4< /sigma/quick-sel.flags
               cargo nextest list --profile ci $TREE --lib --tests -E "$EXPR" --partition "hash:${SHARD}/${SHARDS}" --message-format json > /sigma/quick-tree.list.json'
           rc=0
           if [ -n "$CRATES" ]; then
