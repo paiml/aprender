@@ -20,6 +20,7 @@ if [ "${1:-}" = --mutants ]; then
         if cmp -s "$SRC" "$T/m.sh"; then printf 'MUTANT %s did not apply\n' "$1" >&2; miss=$((miss + 1)); return; fi
         if SCHED_SRC="$T/m.sh" bash "$0" > "$T/m.log" 2>&1; then printf 'MUTANT %s SURVIVED\n' "$1" >&2; miss=$((miss + 1)); fi
     }
+    mut fresh-build-check-dropped 's/^    if ! fb=$(bash "$FRESHBUILD".*$/    :/'
     mut dirty-check-dropped 's/^\[ -z "\$(G status --porcelain.*$/true/'
     mut not-at-main-dropped 's/^\[ "\$(G rev-parse HEAD.*$/true/'
     mut models-always-ok 's/^    \[ "\$(sed -n .s\/\^state=\/\/p. "\$go".*$/    true/'
@@ -184,9 +185,10 @@ case " ${FX_TRAIN_RED_SHA:-none} " in *" $sha "*) echo "NOT RELEASABLE: attempt 
 mkdir -p "$out"; echo "RELEASABLE"
 SH
 chmod +x "$TMP/train"; mkdir -p "$TMP/h/.cargo"; : > "$TMP/h/.cargo/credentials.toml"  # a FAKE file in the sandbox test home
+printf '#!/usr/bin/env bash\n[ "${FX_FRESH_RC:-0}" = 0 ] && exit 0\necho "RED fresh-build: stub mismatch"; exit 1\n' > "$TMP/fresh"; chmod +x "$TMP/fresh"
 chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate" "$TMP/models" "$TMP/pt"
 cat > "$BIN/.promote-test-seams" <<EOF
-GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
+FRESHBUILD="$TMP/fresh"; GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
 MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"; DISPATCH_WAIT=0
 SANDBOX=(env "HOME=$TMP/h" FX_HIDDEN=1)
 TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
@@ -217,6 +219,8 @@ FX_PT_OK=0 sched pushtags-installed-then-verified 0 2 1 --execute
 grep -q "PT --install" "$TMP/calls" && ok || bad "pushtags --install not run"
 FX_PT_OK=0 FX_PT_INSTALL_FAILS=1 sched pushtags-cannot-install 1 1 0 --execute; inbox_has pushtags-cannot-install RED
 FX_PROMOTE_RC=1 sched promote-dry-refuses 1 1 0 --execute; inbox_has promote-dry-refuses RED
+FX_FRESH_RC=1 sched fresh-build-red-no-promote 1 0 0 --execute; inbox_has fresh-build-red-no-promote "fresh-build: stub mismatch"
+FX_FRESH_RC=1 sched fresh-build-red-dry-run 1 0 0; inbox_has fresh-build-red-dry-run RED
 FX_GATE_RC=1 sched publish-dryrun-red 1 0 0 --execute; inbox_has publish-dryrun-red RED
 FX_MODELS=red sched models-not-green 1 0 0 --execute; inbox_has models-not-green RED
 FX_MODELS=not_measured sched models-not-measured 1 0 0 --execute

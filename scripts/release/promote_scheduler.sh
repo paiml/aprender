@@ -96,7 +96,7 @@ trap 'sig=HUP; exit 129' HUP
 G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&1 || fail "cannot make a gate worktree of origin/main"
 S="$work/gate/scripts/release"
 PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
-MODELS_NIGHTLY="$S/models_nightly.sh"; TRAIN="$S/nightly_train.sh"
+MODELS_NIGHTLY="$S/models_nightly.sh"; TRAIN="$S/nightly_train.sh"; FRESHBUILD="$S/fresh_build_sha_check.sh"
 # the train refuses to start while a registry token is reachable (its no-token step), and a build host has ~/.cargo/credentials.toml:
 # so the train call, and ONLY that call (never the tag push, never the gates), runs in the train's own installer sandbox --
 # a user namespace with an empty read-only tmpfs over ~/.cargo and an empty CARGO_HOME. Credentials are never read here.
@@ -231,6 +231,8 @@ for sha in "${cands[@]}"; do
         fi
     fi
     first=0
+    # #6679: the R7 receipts must name the binary a FRESH build of this exact sha produces; missing or mismatched = RED, never not_measured
+    if ! fb=$(bash "$FRESHBUILD" --sha "$sha" --repo "$repo" --receipts "$ev/models-crux/$sha" 2>&1); then FL="fresh-build sha check failed at" fail "$(printf %s "$fb" | grep -m1 RED | cut -c1-150)"; fi
     w=$(mktemp -d) && G worktree add -q --detach "$w/wt" "$sha" > /dev/null 2>&1 || { notes+="${sha:0:9} no worktree; "; continue; }
     wsha=$(git -C "$w/wt" rev-parse HEAD)
     bash "$DRYRUN_GATE" --verify "$w/wt" > "$d/publish-dryrun.log" 2>&1; drc=$?
