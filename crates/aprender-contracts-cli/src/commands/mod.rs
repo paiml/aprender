@@ -8,6 +8,7 @@ pub mod check_symbolic;
 pub mod codegen;
 pub mod coq;
 pub mod coverage;
+pub mod crux_gaps;
 pub mod diff;
 pub mod discharge;
 pub mod equations;
