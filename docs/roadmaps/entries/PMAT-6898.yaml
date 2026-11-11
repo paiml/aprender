@@ -1,0 +1,18 @@
+- id: PMAT-6898
+  github_issue: 6898
+  item_type: task
+  title: 'ci: quick tier flags per call, no --lib for a bin-only call (#6898)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-11T19:32:08Z
+  updated: 2026-11-11T19:32:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6728
