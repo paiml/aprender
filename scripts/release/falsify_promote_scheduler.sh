@@ -77,6 +77,13 @@ if [ "${1:-}" = --mutants ]; then
     mut dedupe-marker-never-written 's/\[ "\$nskip" -eq 0 \] || : > "\$mk"/:/'
     mut dedupe-ignores-newest-sha 's/fallback-reported-\${cands\[0\]:0:12}/fallback-reported/'
     mut single-candidate-text-changed 's/^\[ "\$nskip" -gt 0 \] || fail "no candidate passed every gate: .*$/:/'
+    mut dryrun-lane-state-ignored 's/if (st != "green") {/if (0) {/'
+    mut dryrun-lane-head-ignored 's/if (head != S) {/if (0) {/'
+    mut dryrun-bundle-commit-ignored 's/if (c != S) {/if (0) {/'
+    mut dryrun-read-ignored 's/if (rd != "ok") {/if (0) {/'
+    mut dryrun-row-count-ignored 's/if (n != 1) {/if (0) {/'
+    mut dryrun-verdict-ignored 's/^    \[ "\$drc" = 0 \] || { notes+="\${sha:0:9} publish dry-run lane: .*$/    drc=0/'
+    mut dryrun-compiles-again 's/^    if dry=\$(dryrun_lane "\$sha" "\$d"); then drc=0; else drc=1; fi$/    cargo package > \/dev\/null 2>\&1; if dry=$(dryrun_lane "$sha" "$d"); then drc=0; else drc=1; fi/'
     mut fail-prefixes-notes-again 's/inbox_line "RED promote: \$\* (state \$state)"/inbox_line "RED promote: ${notes:-}$* (state $state)"/'
     printf 'falsify_promote_scheduler --mutants: %d mutants, %d not caught\n' "$n" "$miss"
     [ "$miss" = 0 ]; exit
@@ -157,7 +164,6 @@ echo "PROMOTE $*" >> "$FX_CALLS"
 [ "$FX_PROMOTE_RC" = 0 ] || { echo "promote_nightly: REFUSE -- stub" >&2; exit 1; }
 case "$*" in *--execute*) [ "${FX_PROMOTE_EXEC_RC:-0}" = 0 ] || { echo "promote_nightly: exec failed -- stub" >&2; exit "$FX_PROMOTE_EXEC_RC"; } ;; esac
 SH
-printf '#!/usr/bin/%s\nexit "${FX_GATE_RC:-0}"\n' env\ bash > "$TMP/gate"
 cat > "$TMP/models" <<'SH'
 #!/usr/bin/env bash
 # stub verifier: state per sha
@@ -181,12 +187,23 @@ for ((i=1;i<=$#;i++)); do case "${!i}" in --commit) j=$((i+1)); sha=${!j} ;; --o
 [ "$FX_LANES" = none ] && { echo "NOT RELEASABLE: ci-main not_measured"; exit 1; }
 [ -z "${FX_RED_JOB:-}" ] || { echo "NOT RELEASABLE: $FX_RED_JOB red"; exit 1; }
 case " ${FX_TRAIN_RED_SHA:-none} " in *" $sha "*) echo "NOT RELEASABLE: attempt 2 ${FX_TRAIN_PAD:-}"; exit 1 ;; esac
-mkdir -p "$out"; echo "RELEASABLE"
+mkdir -p "$out/2026-01-01"; echo "RELEASABLE"
+# the bundle the scheduler reads its publish dry-run verdict from (aprender#6882): FX_DRY picks the lane's state
+st=${FX_DRY:-green}; c=$sha; h=$sha; rd=ok; pre=""
+case "$st" in other-sha) st=green; h=$FX_R0 ;; bundle-other) st=green; c=$FX_R0 ;; readfail) st=green; rd="failed: rate" ;; twice) st=green; pre=red ;; esac
+[ "$st" = nobundle ] || {
+    printf 'lane\tkind\tstate\tproducer\trun_id\trun_head\tconclusion\tattempt\tstarted\tended\treason\thours_lost\n'
+    [ -z "$pre" ] || printf 'publish-dryrun\tlab\t%s\tp\t76\t%s\tfailure\t1\ta\tb\t\t-\n' "$pre" "$h"
+    [ "$st" = absent ] || printf 'publish-dryrun\tlab\t%s\tp\t77\t%s\tsuccess\t1\ta\tb\t\t-\n' "$st" "$h"
+    printf '# C\t%s\n# read\t%s\n' "$c" "$rd"
+} > "$out/2026-01-01/bundle.tsv"
 SH
+# a cargo that only records: the scheduler must never start one (aprender#6882)
+mkdir -p "$TMP/nocargo"; printf '#!/usr/bin/%s\necho "CARGO $*" >> "$FX_CALLS"\nexit 97\n' env\ bash > "$TMP/nocargo/cargo"; chmod +x "$TMP/nocargo/cargo"; PATH="$TMP/nocargo:$PATH"; export PATH
 chmod +x "$TMP/train"; mkdir -p "$TMP/h/.cargo"; : > "$TMP/h/.cargo/credentials.toml"  # a FAKE file in the sandbox test home
-chmod +x "$TMP/gh" "$TMP/promote" "$TMP/gate" "$TMP/models" "$TMP/pt"
+chmod +x "$TMP/gh" "$TMP/promote" "$TMP/models" "$TMP/pt"
 cat > "$BIN/.promote-test-seams" <<EOF
-GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"; DRYRUN_GATE="$TMP/gate"
+GH="$TMP/gh"; PROMOTE="$TMP/promote"; RECEIPTS="$BIN/receipts_from_night.sh"
 MODELS_NIGHTLY="${FX_REAL_MODELS_PATH:-$TMP/models}"; PUSHTAGS="$TMP/pt"; EVIDENCE_DIR="$EV"; DISPATCH_WAIT=0
 SANDBOX=(env "HOME=$TMP/h" FX_HIDDEN=1)
 TRAIN="\${FX_TRAIN_PATH:-$TMP/train}"
@@ -209,7 +226,7 @@ sched() { # name want_rc want_promote want_exec [args...]   (FX_* in the environ
     expect "$n execute calls" "$we" "$(grep -c '^PROMOTE.*--execute' "$TMP/calls")"
 }
 inbox_has() { grep -q "$2" "$INB" && ok || bad "$1: inbox lacks '$2'"; }
-export FX_CR=green FX_PROMOTE_RC=0 FX_GATE_RC=0 FX_LANES=green FX_SHA=$R2 FX_RUN_STATE="completed success"
+export FX_CR=green FX_PROMOTE_RC=0 FX_DRY=green FX_LANES=green FX_SHA=$R2 FX_RUN_STATE="completed success"
 sched dry-run-all-green 0 1 0
 sched execute-all-green 0 2 1 --execute; inbox_has execute-all-green DONE
 grep -q "PT --verify" "$TMP/calls" && ok || bad "execute did not run pre-push-tags --verify"
@@ -217,7 +234,21 @@ FX_PT_OK=0 sched pushtags-installed-then-verified 0 2 1 --execute
 grep -q "PT --install" "$TMP/calls" && ok || bad "pushtags --install not run"
 FX_PT_OK=0 FX_PT_INSTALL_FAILS=1 sched pushtags-cannot-install 1 1 0 --execute; inbox_has pushtags-cannot-install RED
 FX_PROMOTE_RC=1 sched promote-dry-refuses 1 1 0 --execute; inbox_has promote-dry-refuses RED
-FX_GATE_RC=1 sched publish-dryrun-red 1 0 0 --execute; inbox_has publish-dryrun-red RED
+grep -q '^CARGO' "$TMP/calls" && bad "the scheduler started cargo: $(grep -m1 '^CARGO' "$TMP/calls")" || ok
+# (d) the publish dry-run verdict is the nightly lane's, on exactly the sha (aprender#6882): only green-on-this-sha passes
+dry_row() { # FX_DRY-value  text the run must give as its reason
+    FX_DRY=$1 sched "publish-dryrun-$1" 1 0 0 --execute; inbox_has "publish-dryrun-$1" RED
+    grep -q "publish dry-run lane: $2" "$TMP/out-publish-dryrun-$1" "$INB" && ok || bad "publish-dryrun-$1: no reason '$2'"
+    grep -q '^CARGO' "$TMP/calls" && bad "publish-dryrun-$1: the scheduler started cargo" || ok
+}
+dry_row red 'lane is red'
+dry_row not_measured 'lane is not_measured'
+dry_row absent '0 publish-dryrun rows'
+dry_row twice '2 publish-dryrun rows'
+dry_row other-sha 'lane is green on'
+dry_row bundle-other 'the bundle is of'
+dry_row readfail 'the lane read is not ok'
+dry_row nobundle 'the train left no bundle'
 FX_MODELS=red sched models-not-green 1 0 0 --execute; inbox_has models-not-green RED
 FX_MODELS=not_measured sched models-not-measured 1 0 0 --execute
 FX_REAL_MODELS=1 sched real-models-nightly-weak-bundle 1 0 0 --execute

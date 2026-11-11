@@ -9,11 +9,13 @@
 #   A candidate must pass, on that EXACT sha: (a) models_nightly.sh --relay --measure crux (the real verifier: SHA256SUMS,
 #   commit, measure, version, C's own models_t1.sh blob, replayed verdict) = green; (b) the release-day nightly lanes
 #   (deep-doctests deep-nodefault deep-examples deep-bins-build cleanroom-gpu preflight milestone) each succeeded on it;
-#   (c) a paiml/infra clean-room run whose log says tested-sha == exactly that sha; (d) rc_publish_gate.sh --verify.
+#   (c) a paiml/infra clean-room run whose log says tested-sha == exactly that sha; (d) the publish dry-run
+#   (rc_publish_gate.sh --verify) is green on exactly that sha in the `publish-dryrun` lane of release-lanes-nightly, as the
+#   train of (b) read it. The scheduler compiles nothing itself (aprender#6882): its host refuses a compile in this unit.
 #   The newest candidate that passes (a)+(b) is the one a clean-room is dispatched for. If the newest nightly is red the
 #   rule is "last candidate that passes all of the above"; none -> SKIP and a line to the cop inbox. Never silent.
 # GATES RUN FROM A CLEAN WORKTREE OF origin/main (never the checkout's own files); the checkout must be clean and AT
-# origin/main or the run refuses. No environment variable changes behaviour: GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR
+# origin/main or the run refuses. No environment variable changes behaviour: GH PROMOTE RECEIPTS EVIDENCE_DIR
 # MODELS_NIGHTLY are unset at start; the test seams are read only from a file named .promote-test-seams NEXT TO THIS
 # SCRIPT, which exists only in the falsifier's sandbox copy.
 # It never waives, never edits a receipt, never tags itself, never deletes a tag, never force-pushes: the one write to git
@@ -21,7 +23,7 @@
 # A fallback past ANY skipped newer candidate (not only a red nightly) writes one RED inbox line naming each skip (C12, aprender#6677).
 # exit: 0 promoted / would promote (dry-run) / too early - 1 nothing promoted (a line is in the cop inbox) - 3 clean-room running - 2 usage
 set -uo pipefail
-unset GH PROMOTE RECEIPTS DRYRUN_GATE EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
+unset GH PROMOTE RECEIPTS EVIDENCE_DIR MODELS_NIGHTLY PUSHTAGS
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd) || exit 2
 GH=gh; INFRA=paiml/infra; APR=paiml/aprender; MAX_AGE_DAYS=3; NCAND=5; EVIDENCE_DIR=""; DISPATCH_WAIT=5
 repo="" state="" nb="" disp=0 exe=0 inbox="" floor="" reds=0 notes="" snames="" nskip=0 cur="" crnote=""
@@ -95,7 +97,7 @@ trap 'sig=INT; exit 130' INT
 trap 'sig=HUP; exit 129' HUP
 G worktree add -q --detach "$work/gate" refs/remotes/origin/main > /dev/null 2>&1 || fail "cannot make a gate worktree of origin/main"
 S="$work/gate/scripts/release"
-PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"; DRYRUN_GATE="$S/rc_publish_gate.sh"
+PROMOTE="$S/promote_nightly.sh"; RECEIPTS="$S/receipts_from_night.sh"
 MODELS_NIGHTLY="$S/models_nightly.sh"; TRAIN="$S/nightly_train.sh"
 # the train refuses to start while a registry token is reachable (its no-token step), and a build host has ~/.cargo/credentials.toml:
 # so the train call, and ONLY that call (never the tag push, never the gates), runs in the train's own installer sandbox --
@@ -149,6 +151,27 @@ lanes_ok() {
     [ -f "$TRAIN" ] || { printf 'nightly_train.sh missing in the gate worktree (not_measured)'; return 1; }
     rm -rf -- "${d:?}/train"; install -d -- "$work/cargo"
     "${SANDBOX[@]}" bash "$TRAIN" --out "$d/train" --commit "$sha" --exit-verdict > "$d/train.log" 2>&1 || { printf 'train: %s' "$(grep -m1 -E 'RELEASABLE|trap|read=' "$d/train.log" | cut -c1-120)"; return 1; }
+}
+# dryrun_lane SHA DIR: the publish dry-run verdict for exactly SHA, taken from the bundle lanes_ok's train just wrote in DIR/train
+# (row `publish-dryrun`: the release-lanes-nightly job that runs rc_publish_gate.sh --verify on a worktree of C and asserts HEAD is C).
+# Green only when the read is ok, the bundle is of SHA, and the row is green with run head SHA. Anything else prints why and fails:
+# a red lane, a lane not measured, no row, no bundle, another commit, a failed read. Nothing is compiled here (aprender#6882).
+dryrun_lane() {
+    local sha=$1 b
+    b=$(find "$2/train" -mindepth 2 -maxdepth 2 -name bundle.tsv 2> /dev/null | sort | tail -n 1)
+    [ -n "$b" ] || { printf 'the train left no bundle (not_measured)'; return 1; }
+    awk -F '\t' -v S="$sha" '
+        $1 == "publish-dryrun" { n++; st = $3; run = $5; head = $6; why = $11 }
+        $1 == "# C" { c = $2 }
+        $1 == "# read" { rd = $2 }
+        END {
+            if (rd != "ok") { printf "the lane read is not ok (%s)", (rd == "" ? "no read row" : rd); exit 1 }
+            if (c != S) { printf "the bundle is of %s, not this sha", (c == "" ? "no commit" : substr(c, 1, 9)); exit 1 }
+            if (n != 1) { printf "%d publish-dryrun rows in the bundle (not_measured)", n; exit 1 }
+            if (st != "green") { printf "lane is %s%s", (st == "" ? "not_measured" : st), (why == "" ? "" : ": " substr(why, 1, 70)); exit 1 }
+            if (head != S) { printf "lane is green on %s, not this sha", substr(head, 1, 9); exit 1 }
+            printf "green in run %s", run
+        }' "$b"
 }
 # fallback_line LABEL SHA: C12 (aprender#6677) -- when a newer candidate was skipped, EVERY path that stops or promotes writes exactly ONE RED inbox line:
 # every skipped name first, then the prose; the whole line, cut marker included, fits inbox_line's 300 chars (prefix 41 + slack).
@@ -231,13 +254,12 @@ for sha in "${cands[@]}"; do
         fi
     fi
     first=0
-    w=$(mktemp -d) && G worktree add -q --detach "$w/wt" "$sha" > /dev/null 2>&1 || { notes+="${sha:0:9} no worktree; "; continue; }
-    wsha=$(git -C "$w/wt" rev-parse HEAD)
-    bash "$DRYRUN_GATE" --verify "$w/wt" > "$d/publish-dryrun.log" 2>&1; drc=$?
-    G worktree remove --force "$w/wt" > /dev/null 2>&1; rm -rf -- "${w:?}"
+    if dry=$(dryrun_lane "$sha" "$d"); then drc=0; else drc=1; fi
+    printf 'publish-dryrun lane for %s: rc=%s: %s\n' "$sha" "$drc" "$dry" > "$d/publish-dryrun.log"
+    [ "$drc" = 0 ] || { notes+="${sha:0:9} publish dry-run lane: $dry; "; continue; }
     rcpt="$work/receipts-$sha"; rm -rf -- "${rcpt:?}"
     bash "$RECEIPTS" --sha "$sha" --out "$rcpt" --models-dir "$ev/models-crux/$sha" --cleanroom-json "$d/cleanroom.json" \
-        --dryrun-rc "$drc" --dryrun-commit "$wsha" > "$d/receipts.log" 2>&1 || { notes+="${sha:0:9} receipts incomplete ($(tr '\n' ' ' < "$d/receipts.log" | cut -c1-80)); "; continue; }
+        --dryrun-rc "$drc" --dryrun-commit "$sha" > "$d/receipts.log" 2>&1 || { notes+="${sha:0:9} receipts incomplete ($(tr '\n' ' ' < "$d/receipts.log" | cut -c1-80)); "; continue; }
     if ! bash "$PROMOTE" --sha "$sha" --receipts "$rcpt" --repo "$repo" > "$d/promote-dry.log" 2>&1; then
         notes+="${sha:0:9} promote dry-run refused: $(grep -m1 REFUSE "$d/promote-dry.log" | cut -c1-100); "; continue
     fi
