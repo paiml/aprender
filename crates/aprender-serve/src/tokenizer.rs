@@ -335,7 +335,7 @@ impl BPETokenizer {
             match segment {
                 crate::apr::tokenizer::TextSegment::Special(id) => tokens.push(id),
                 crate::apr::tokenizer::TextSegment::Regular(s) => {
-                    self.greedy_encode(&s, &mut tokens)
+                    self.greedy_encode(&s, &mut tokens);
                 },
             }
         }
