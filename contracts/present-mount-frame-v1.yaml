@@ -1,0 +1,95 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6893 — Rust-side app entry, no hand-written script on the page"
+    - "paiml/aprender#6892 — requestAnimationFrame loop for the browser app"
+    - "crates/aprender-present-lib/src/browser/mount.rs — the decisions this pins"
+    - "crates/aprender-present-lib/src/browser/entry.rs — the wasm32 shell that only moves events in and commands out"
+  description: >
+    A page with no script of its own needs the app to own its input and its
+    frame loop. Mounted takes events, decides whether a repaint is owed and
+    produces one frame's draw commands. A loop that never stops burns a core;
+    a loop that stops while a repaint is owed shows stale state.
+
+name: present-mount-frame
+version: "1.0.0"
+scope: >
+  `schedule`, `Mounted::dispatch`, `Mounted::frame`, `Mounted::set_root` and
+  `Frame::wants_next` in `browser::mount`, observed natively. Out of scope:
+  the DOM listeners and `requestAnimationFrame` calls in `browser::entry`
+  (wasm32 only; they are type-checked by the wasm32 guard and owe a browser
+  run, see open_obligations).
+status: active
+
+contract: |
+  (1) THE LOOP RUNS EXACTLY WHILE WORK IS OWED. A tick repaints when the tree
+      is dirty or an animation is on, and otherwise stops.
+  (2) EVERY EVENT OWES ONE REPAINT. Widgets change hover and pressed state
+      without emitting a message, so an event with no message still repaints.
+  (3) A MOUNTED TREE IS LAID OUT BEFORE ITS FIRST EVENT AND AFTER EVERY SWAP,
+      so a click lands on the widget the user sees.
+  (4) A BRICK THAT FAILS VERIFICATION IS NEVER PAINTED, and the loop does not
+      spin on it.
+  (5) A WIDGET MESSAGE IS DELIVERED ONCE, in the order emitted.
+equations:
+  frame_action:
+    description: "What one tick does"
+    formula: "action(dirty, animating) = Repaint if (dirty or animating) else Stop"
+    domain: "dirty, animating in {false, true}"
+    codomain: "{Repaint, Stop}"
+    invariants:
+      - "action(false, false) = Stop; the other three inputs give Repaint"
+      - "after a Repaint tick with animating = false and no new event, the next tick is Stop"
+falsification:
+  - id: FALSIFY-PRESENT-MOUNT-FRAME-V1-001
+    description: "The mount core behaves as the contract says for every case"
+    test: "cargo test -p aprender-present-lib --lib browser::mount"
+    evidence: "see the PR that added this contract"
+open_obligations:
+  - |
+    browser::entry (listeners, requestAnimationFrame, the counter start
+    function) has no browser run yet: no wasm-bindgen tool is installed on any
+    build host (2026-11-11). It owes a probar end-to-end run that clicks "+"
+    on the counter page and reads data-count back (#6893) and counts frames
+    (#6892).
+falsification_tests:
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-001
+    description: "the scheduling decision matches its truth table"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::schedule_truth_table"
+    prediction: "Stop only for (false, false)"
+    if_fails: "the loop never stops, or stops with a repaint owed"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-002
+    description: "the first frame paints and the loop then stops"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::first_frame_paints_then_the_loop_stops"
+    prediction: "Painted with commands, then Idle; one frame counted"
+    if_fails: "a mounted page stays blank or burns a core while idle"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-003
+    description: "a click on the button emits its message once and owes a repaint"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::a_click_on_the_button_emits_its_message_and_owes_a_repaint"
+    prediction: "one ButtonClicked, none on the second take, then a Painted frame"
+    if_fails: "clicks are lost or delivered twice"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-004
+    description: "an event with no message still repaints"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::a_click_beside_the_button_emits_nothing_but_still_repaints"
+    prediction: "no message; a frame is owed"
+    if_fails: "hover and pressed state go stale on screen"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-005
+    description: "the tree is laid out before the first frame and after a swap"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::the_tree_is_laid_out_before_the_first_frame browser::mount::tests::a_swapped_tree_is_laid_out_before_its_first_event"
+    prediction: "a click before any frame, and one right after set_root, both reach the button"
+    if_fails: "the first click after load or after a state change misses"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-006
+    description: "a brick that fails verification is not painted and does not spin"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::a_brick_that_fails_verification_is_not_painted_and_does_not_spin"
+    prediction: "Blocked naming the failed assertion, zero frames painted, then Idle"
+    if_fails: "an invalid brick reaches the screen, or the loop spins on it"
+  - id: FALSIFY-PRESENT_MOUNT_FRAME-007
+    description: "swapping the tree owes one repaint with the new content"
+    test: "cargo test -p aprender-present-lib --lib browser::mount::tests::set_root_swaps_the_tree_and_owes_a_repaint"
+    prediction: "Idle before the swap, Painted after it, with different commands"
+    if_fails: "a state change never reaches the screen"
