@@ -27634,6 +27634,26 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 5348
+- id: PMAT-6734
+  github_issue: 6734
+  item_type: task
+  title: 'pv crux gaps: derive the per-story verdict from LIVE-PENDING falsifiers (slice 1)'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-11T19:14:38Z
+  updated: 2026-11-11T19:14:38Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+  epic: 6728
 - id: PMAT-6797
   github_issue: 6797
   item_type: task
