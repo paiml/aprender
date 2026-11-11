@@ -27781,3 +27781,39 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6810
+- id: PMAT-6898
+  github_issue: 6898
+  item_type: task
+  title: 'ci: quick tier flags per call, no --lib for a bin-only call (#6898)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-11T19:32:08Z
+  updated: 2026-11-11T19:32:08Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6728
+- id: PMAT-6900
+  github_issue: 6900
+  item_type: task
+  title: 'main red at 6f0791988: regenerate roadmap.yaml as fold(base, entries/) after #6899'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-11T21:10:23Z
+  updated: 2026-11-11T21:10:23Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6728
