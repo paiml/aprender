@@ -33,7 +33,7 @@ fi
 [ -f "$SRC" ] || { echo "FAIL publish_tagged.sh missing at $SRC"; exit 1; }
 T=$(mktemp -d) || exit 2; trap 'rm -rf -- "${T:?}"' EXIT
 G() { git -c user.name=t -c user.email=t@example.invalid -c init.defaultBranch=main -c advice.detachedHead=false "$@"; }
-V=1.2.3
+FXV=1.2.3
 # bundle DIR SHA VERSION STATE -> writes DIR/models-crux/<SHA>/, checksummed.
 bundle() {
   local d="$1/models-crux/$2"; mkdir -p "$d"
@@ -47,17 +47,17 @@ seed() {
   local r="$1" sha
   mkdir -p "$r/seed" && G init -q --bare "$r/origin.git" && G init -q "$r/seed" || return 1
   ( cd "$r/seed" || exit 1
-    mkdir -p "evidence/crux/$V"; echo tagged > marker; echo keep > "evidence/crux/$V/.keep"
-    [ -n "${NOCERT:-}" ] || echo '{"cert":1}' > "evidence/crux/$V/prompt-certification.json"
+    mkdir -p "evidence/crux/$FXV"; echo tagged > marker; echo keep > "evidence/crux/$FXV/.keep"
+    [ -n "${NOCERT:-}" ] || echo '{"cert":1}' > "evidence/crux/$FXV/prompt-certification.json"
     G add -A && G commit -q -m tagged || exit 1
     sha=$(git rev-parse HEAD)
-    [ -n "${NOTAG:-}" ] || G tag -a "v$V" -m "v$V" "$sha"
+    [ -n "${NOTAG:-}" ] || G tag -a "v$FXV" -m "v$FXV" "$sha"
     echo later > marker; G commit -q -am later || exit 1
     G checkout -q --orphan nightly-evidence && G rm -r -f -q . && mkdir -p models-crux || exit 1
-    [ -n "${NOBUNDLE:-}" ] || bundle "$PWD" "$sha" "${BVERSION:-$V}" "${BSTATE:-green}"
-    [ -z "${OTHERBUNDLE:-}" ] || bundle "$PWD" "$OTHERBUNDLE" "$V" green
+    [ -n "${NOBUNDLE:-}" ] || bundle "$PWD" "$sha" "${BVERSION:-$FXV}" "${BSTATE:-green}"
+    [ -z "${OTHERBUNDLE:-}" ] || bundle "$PWD" "$OTHERBUNDLE" "$FXV" green
     if [ -n "${RELABEL:-}" ]; then   # another commit's bundle under this sha's path: the path is right, the verdict is not
-      bundle "$PWD" "$RELABEL" "$V" green; rm -rf -- "models-crux/${sha:?}"; mv "models-crux/$RELABEL" "models-crux/$sha"; fi
+      bundle "$PWD" "$RELABEL" "$FXV" green; rm -rf -- "models-crux/${sha:?}"; mv "models-crux/$RELABEL" "models-crux/$sha"; fi
     [ -z "${TAMPER:-}" ] || echo '{"host":"other"}' > "models-crux/$sha/lambda-gpu.json"
     [ -z "${UNCOVERED:-}" ] || echo '{"host":"extra"}' > "models-crux/$sha/extra-gpu.json"
     if [ -n "${VERDICTPREFIX:-}" ]; then   # "state=green" only inside a longer line, checksummed honestly
@@ -72,9 +72,9 @@ row() { # name want_rc want_out_regex want_calls(0|1) dry
   local name=$1 wrc=$2 want=$3 wcalls=$4 dry=$5 r rc tagsha refs0 refs1
   n=$((n+1)); r="$T/$n"; mkdir -p "$r/tmp"
   seed "$r" > "$r/seed.log" 2>&1 || { echo "FAIL $name: fixture did not build: $(tail -n 1 "$r/seed.log")"; fails=$((fails+1)); return; }
-  tagsha=$(git -C "$r/origin.git" rev-parse --verify --quiet "refs/tags/v$V^{commit}" 2>/dev/null) || tagsha=none
+  tagsha=$(git -C "$r/origin.git" rev-parse --verify --quiet "refs/tags/v$FXV^{commit}" 2>/dev/null) || tagsha=none
   [ -z "${DIRTY:-}" ] || echo x > "$r/clone/untracked"
-  [ -z "${LOCALTAG:-}" ] || G -C "$r/clone" tag -f -a "v$V" -m moved origin/main > /dev/null 2>&1
+  [ -z "${LOCALTAG:-}" ] || G -C "$r/clone" tag -f -a "v$FXV" -m moved origin/main > /dev/null 2>&1
   refs0=$(git -C "$r/origin.git" for-each-ref | sort)
   cat > "$r/publish" <<STUB
 #!/usr/bin/env bash
@@ -83,7 +83,7 @@ row() { # name want_rc want_out_regex want_calls(0|1) dry
 exit ${PUBRC:-0}
 STUB
   chmod +x "$r/publish"
-  ( cd "$r/clone" && PUB_TAGGED_PUBLISH="$r/publish" PUB_TAGGED_TMP="$r/tmp" bash "$SRC" "${VERARG-$V}" "$dry" ) > "$r/out" 2>&1; rc=$?
+  ( cd "$r/clone" && PUB_TAGGED_PUBLISH="$r/publish" PUB_TAGGED_TMP="$r/tmp" bash "$SRC" "${VERARG-$FXV}" "$dry" ) > "$r/out" 2>&1; rc=$?
   [ -z "${DBG:-}" ] || cat "$r/out"
   refs1=$(git -C "$r/origin.git" for-each-ref | sort)
   [ "$rc" = "$wrc" ] || { echo "FAIL $name: rc=$rc want $wrc: $(tail -n 1 "$r/out")"; fails=$((fails+1)); return; }
@@ -95,7 +95,7 @@ STUB
   else
     grep -q -F -x -e "head=$tagsha" "$r/calls" && grep -q -F -x -e "marker=tagged" "$r/calls" \
       && grep -q -F -x -e "crux_commit=$tagsha" "$r/calls" && grep -q -F -x -e "cert_readable=1" "$r/calls" \
-      && grep -q -E -e "^cert=/.*/evidence/crux/$V/prompt-certification\.json$" "$r/calls" \
+      && grep -q -E -e "^cert=/.*/evidence/crux/$FXV/prompt-certification\.json$" "$r/calls" \
       || { echo "FAIL $name: publish was not handed the tag commit and its receipts: $(tr '\n' ' ' < "$r/calls" 2>/dev/null)"; fails=$((fails+1)); return; }
   fi
   echo "ok   $name"
