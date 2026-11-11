@@ -626,15 +626,6 @@ pub fn backend_loaded(state: &AppState) -> Vec<&'static str> {
     {
         loaded.push("cpu");
     }
-    // #4374: the Qwen3.5 hybrid holds no dense model, so every predicate above
-    // misses it; its session says where it serves, refreshed after each turn.
-    if let Some(served) = state.qwen35_session() {
-        let on_gpu = served.on_gpu.load(std::sync::atomic::Ordering::Relaxed);
-        let class = if on_gpu { "cuda" } else { "cpu" };
-        if !loaded.contains(&class) {
-            loaded.push(class);
-        }
-    }
     loaded
 }
 

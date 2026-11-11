@@ -1221,6 +1221,18 @@ fn falsify_4374_a_cpu_qwen35_session_reports_cpu_residency() {
     assert_eq!(body.backend_loaded, vec!["cpu"]);
     assert_eq!(body.compute_class, "cpu");
     assert_eq!(body.parity.status, "not-run");
+    // `not-run` alone cannot tell the session's answer from the dense fallback
+    // ("no GPU model loaded"), which has the same status. On a CUDA build the
+    // reason and the threshold must be the session's own, with no GPU needed.
+    #[cfg(feature = "cuda")]
+    {
+        assert!(
+            body.parity.basis.contains("qwen35 serves from the CPU"),
+            "the parity block is not the Qwen3.5 session's: {}",
+            body.parity.basis
+        );
+        assert_eq!(body.parity.threshold, crate::infer::F2_GATE_COSINE_MIN);
+    }
 }
 
 /// #4374 on the GPU: after one served prompt the F2 guard has run, and the
