@@ -166,12 +166,8 @@ mod tests {
     fn model_sanitize(v: f32) -> f32 {
         if v.is_nan() || v.is_infinite() {
             0.0
-        } else if v > 1.0 {
-            1.0
-        } else if v < -1.0 {
-            -1.0
         } else {
-            v
+            v.clamp(-1.0, 1.0)
         }
     }
 
