@@ -12,6 +12,7 @@ pub mod container;
 pub mod data_card;
 pub mod data_table;
 pub mod formats;
+pub mod grid;
 pub mod image;
 pub mod list;
 pub mod menu;
@@ -41,6 +42,7 @@ pub use data_table::{
     CellValue, DataTable, SortDirection, TableColumn, TableRow, TableRowSelected, TableSortChanged,
     TextAlign,
 };
+pub use grid::Grid;
 pub use image::{Image, ImageFit};
 pub use list::{
     List, ListDirection, ListItem, ListItemClicked, ListItemSelected, ListScrolled, SelectionMode,

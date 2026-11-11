@@ -1,0 +1,110 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6895 — Grid widget, N columns, gap, children in cells"
+    - "crates/aprender-present-widgets/src/grid.rs — the widget this pins"
+  description: >
+    Grid places its children left to right, top to bottom in equal-width
+    cells. A cell that leaves the grid bounds, two cells that overlap, a
+    non-finite coordinate, or a child that is not laid out in its own cell
+    corrupts every screen built from tiles, and no other test looks at the
+    cell geometry.
+
+name: present-grid-widget
+version: "1.0.0"
+scope: >
+  The pure cell arithmetic (`grid_cells`, `grid_cells_with`) and the `Grid`
+  widget built on it: layout of each child into its cell, paint, event
+  forwarding and `Brick::verify`. Out of scope: spanning cells, per-column
+  weights, and a CSS grid binding on wasm32.
+status: active
+
+contract: |
+  (1) EVERY CELL LIES INSIDE THE GRID BOUNDS AND NO TWO OVERLAP. For
+      well-formed bounds, every cell returned by `grid_cells` is within the
+      bounds, cells in one row share y and height, all widths are equal, and
+      no two cells overlap. A gap that does not fit is shrunk, never allowed
+      to push a cell out.
+  (2) NO PANIC, NO NON-FINITE COORDINATE. For any bounds (NaN, infinite,
+      negative, zero, huge), any column count, any gap and any child count,
+      the cell count equals the child count and every coordinate and extent
+      is finite and not negative.
+  (3) DEGENERATE GRIDS ARE VALID. An empty grid has no cells; one column
+      stacks the cells; more columns than children keeps the column width
+      and yields one cell per child. `columns(0)` is stored as 1. A gap that
+      is NaN, infinite or negative counts as 0.
+  (4) EACH CHILD IS LAID OUT IN ITS OWN CELL. After `Grid::layout`, child i
+      has the bounds of cell i.
+  (5) COMPOSES WITH MODAL. A grid of Video tiles used as the content of a
+      Modal paints every rect and glyph vertex inside the modal content
+      bounds, and the tiles do not overlap.
+  (6) EVENTS REACH THE CHILD UNDER THE POINTER. A click inside the second
+      cell toggles the second child and not the first.
+  (7) VERIFY REFUSES INVALID BOUNDS. A grid with finite, non-negative bounds
+      passes `Brick::verify`; NaN, infinite or negative bounds fail it.
+equations:
+  cell_geometry:
+    description: "Cell i of a grid with c columns, r rows, gap g inside bounds (x, y, w, h)"
+    formula: "g' = min(g, w / (c - 1)); cell_w = (w - g' * (c - 1)) / c; x_i = x + (i mod c) * (cell_w + g'); y_i = y + floor(i / c) * (cell_h + g''); cell_h = (h - g'' * (r - 1)) / r with g'' = min(g, h / (r - 1))"
+    domain: "finite bounds with w, h >= 0, c >= 1, g >= 0"
+    codomain: "Rect"
+    invariants:
+      - "every cell is contained in the bounds"
+      - "cells in a row share y and height; all cells share width"
+      - "no two cells overlap"
+falsification:
+  - id: FALSIFY-PRESENT-GRID-WIDGET-V1-001
+    description: "Cell geometry, layout, paint, event and verify output match the contract"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests"
+    evidence: "pending first green run on the build host, 2026-11-11"
+open_obligations:
+  - |
+    A fixed row height can make the cells extend below the grid bounds (the
+    caller chose a height larger than the space); the contract in (1) holds
+    for the equal-share rows only.
+falsification_tests:
+  - id: FALSIFY-PRESENT_GRID_WIDGET-001
+    description: "cells tile the bounds for any well-formed input"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_cells_well_formed_inputs_tile_the_bounds"
+    prediction: "every cell inside the bounds, equal widths, row cells share y and height, no overlap"
+    if_fails: "a cell leaves the grid or two cells overlap"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-002
+    description: "arbitrary inputs never panic and never yield a non-finite coordinate"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_cells_arbitrary_inputs_never_panic_or_go_non_finite && cargo test -p aprender-present-widgets --lib grid::tests::grid_cells_bad_inputs_never_panic_or_go_non_finite"
+    prediction: "cell count equals the child count; all coordinates finite; widths and heights not negative"
+    if_fails: "a NaN, infinite or negative input corrupts the layout"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-003
+    description: "empty, one-column and many-column grids have the right cell count"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_empty_and_degenerate_grids_lay_out_without_panic"
+    prediction: "no panic; one cell per child"
+    if_fails: "a degenerate grid panics or drops a child"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-004
+    description: "zero columns is stored as one"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_new_zero_columns_is_stored_as_one"
+    prediction: "get_columns() is 1 for Grid::new(0) and columns(0)"
+    if_fails: "a zero column count divides by zero"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-005
+    description: "each child is laid out in its own cell"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_layout_gives_each_child_its_cell"
+    prediction: "child i bounds equal grid_cells()[i]"
+    if_fails: "children are laid out in the wrong cell"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-006
+    description: "a grid of six videos inside a Modal paints inside the modal content bounds"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_of_six_videos_inside_modal_paints_inside_content_bounds"
+    prediction: "6 rects and 18 glyph vertices, all inside Modal::content_bounds, no two rects overlap"
+    if_fails: "the grid does not compose with Modal"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-007
+    description: "a click in the second cell reaches only the second child"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_click_in_second_cell_reaches_only_the_second_child"
+    prediction: "VideoToggled{playing:true}; the first tile still paused, the second playing"
+    if_fails: "events reach the wrong child"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-008
+    description: "verify passes with valid bounds and fails with invalid bounds"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_verify_passes_with_valid_bounds && cargo test -p aprender-present-widgets --lib grid::tests::grid_verify_fails_with_invalid_bounds"
+    prediction: "valid for finite non-negative bounds; one failed assertion for NaN, infinite or negative bounds"
+    if_fails: "a grid with corrupt bounds passes verification"
