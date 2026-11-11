@@ -159,3 +159,62 @@ fn claimed_huge_length_never_drives_preallocation() {
     assert!(deserialize::<BTreeMap<u64, u64>>(&huge).is_err());
     assert!(deserialize::<std::collections::VecDeque<u64>>(&huge).is_err());
 }
+
+/// The size hint the codec hands a visitor for a seq or a map, read before any element.
+/// The std collections cap an untrusted hint themselves, so only a visitor that reads the
+/// hint can see what `Counted::size_hint` returns.
+#[derive(Debug, PartialEq)]
+struct Hint(Option<usize>);
+struct HintVisitor;
+impl<'de> serde::de::Visitor<'de> for HintVisitor {
+    type Value = Hint;
+    fn expecting(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("a sequence or a map")
+    }
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(self, seq: A) -> Result<Hint, A::Error> {
+        Ok(Hint(seq.size_hint()))
+    }
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, map: A) -> Result<Hint, A::Error> {
+        Ok(Hint(map.size_hint()))
+    }
+}
+struct SeqHint(Hint);
+impl<'de> Deserialize<'de> for SeqHint {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_seq(HintVisitor).map(SeqHint)
+    }
+}
+struct MapHint(Hint);
+impl<'de> Deserialize<'de> for MapHint {
+    fn deserialize<D: serde::Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        d.deserialize_map(HintVisitor).map(MapHint)
+    }
+}
+
+#[test]
+fn claimed_huge_length_is_capped_in_the_size_hint() {
+    // FALSIFY: return `Some(self.left)` from either `Counted::size_hint` and this is RED.
+    let huge = (1u64 << 40).to_le_bytes();
+    let seq = deserialize::<SeqHint>(&huge).expect("the visitor reads no element");
+    let map = deserialize::<MapHint>(&huge).expect("the visitor reads no entry");
+    assert_eq!(
+        seq.0,
+        Hint(Some(4096)),
+        "seq hint is the cap, not the claimed 2^40"
+    );
+    assert_eq!(
+        map.0,
+        Hint(Some(4096)),
+        "map hint is the cap, not the claimed 2^40"
+    );
+    // an honest length below the cap passes through unchanged
+    let small = 3u64.to_le_bytes();
+    assert_eq!(
+        deserialize::<SeqHint>(&small).expect("seq").0,
+        Hint(Some(3))
+    );
+    assert_eq!(
+        deserialize::<MapHint>(&small).expect("map").0,
+        Hint(Some(3))
+    );
+}

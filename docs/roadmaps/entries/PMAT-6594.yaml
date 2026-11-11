@@ -1,7 +1,7 @@
 - id: PMAT-6594
-  github_issue: null
+  github_issue: 6594
   item_type: task
-  title: 'New task: PMAT-6594'
+  title: 'refactor: bring 5 functions under the complexity hook so bincode 1.x can be dropped from core, distribute, present-lib, simulate'
   status: inprogress
   priority: medium
   assigned_to: null
