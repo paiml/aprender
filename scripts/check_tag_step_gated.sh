@@ -32,12 +32,13 @@ SUBJECT="$ROOT/scripts/release/autopilot.sh"
 # it with stubs, print a transcript (SAY/DIE/GIT-TAG/GIT-PUSH lines, then the CALL order).
 # Returns 2 if the function is missing.
 run_cut_tag() {
-    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} jrc=${6:-0} pol=${7:-none} mdl=${8:-crux} arc=${9:-0} d fn pfn
+    local ap=$1 grc=$2 mrc=${3:-0} crc=${4:-0} rdy=${5:-pass} jrc=${6:-0} pol=${7:-none} mdl=${8:-crux} arc=${9:-0} pre=${10:-green} d fn pfn pcfn
     d=$(mktemp -d) || return 2
     fn=$(awk '/^cut_tag\(\) \{/,/^\}/' "$ap")
     [ -n "$fn" ] || { rmtree "$d"; return 2; }
     mkdir -p "$d/scripts/hooks" "$d/scripts/release" "$d/ap" "$d/scripts/lib" "$d/contracts"
     pfn=$(awk '/^ap_policy_applies\(\) \{/,/^\}/' "$ap")
+    pcfn=$(awk '/^pretag_cleanroom\(\) \{/,/^\}/' "$ap")
     # the standing release policy: the release worktree's own reader (this checkout's copy) and a ladder
     # with no policy (none), one covering 0.0.0 (covers) or one the reader refuses (bad)
     cp -- "$ROOT/scripts/lib/release_policy.sh" "$ROOT"/scripts/lib/release_policy_*.awk "$d/scripts/lib/" || { rmtree "$d"; return 2; }
@@ -69,18 +70,29 @@ run_cut_tag() {
     printf '#!/usr/bin/env bash\necho CALL-COVJOB >> %q\nexit %s\n' "$d/calls" "$jrc" > "$d/scripts/release/tag_coverage_gate.sh"
     # #4950 G1: the pre-push tag guard's --arm-release, for exactly the tag being cut
     printf '#!/usr/bin/env bash\n[ "$1 $2" = "--arm-release v0.0.0" ] && [ "$3" -le 300 ] 2>/dev/null && echo CALL-ARM >> %q\nexit %s\n' "$d/calls" "$arc" > "$d/scripts/hooks/pre-push-tags.sh"
+    # aprender#6500: the pre-tag clean-room run, as gh would report it: green (default), red, stale (another sha), pending, noruns
+    mkdir -p "$d/bin"
+    {   printf '#!/usr/bin/env bash\n'
+        printf 'case "$1 $2" in\n  "workflow run") echo CALL-PRETAG >> %q; echo "$*" >> %q ;;\n' "$d/calls" "$d/ghargs"
+        printf '  "run list") [ %q = noruns ] || echo 4242 ;;\n' "$pre"
+        printf '  "run view") case " $* " in *" --log "*) echo "tested-sha: %s" ;; *) case %q in pending) : ;; red) echo "failure 77" ;; *) echo "success 77" ;; esac ;; esac ;;\n' "$([ "$pre" = stale ] && echo cafef00d || echo deadbeef)" "$pre"
+        printf 'esac\n'
+    } > "$d/bin/gh"; chmod +x "$d/bin/gh"
     {
         printf 'set -uo pipefail\n'
         printf 'REPO_ROOT=%q\nLOG=%q\nAP=%q\n' "$d" "$d/log" "$d/ap"
+        printf 'AP_POLL=0 AP_SETTLE=0 INFRA=paiml/infra PATH=%q:$PATH\n' "$d/bin"
         printf 'say() { printf "SAY %%s\\n" "$*"; }\n'
         printf 'die() { printf "DIE %%s\\n" "$*"; exit 1; }\n'
         printf 'git() { printf "GIT-%%s %%s\\n" "$(printf %%s "$1" | tr "a-z" "A-Z")" "$*"; echo "CALL-GIT-$1" >> %q; }\n' "$d/calls"
         printf '%s\n' "$pfn"
+        printf '%s\n' "$pcfn"
         printf '%s\n' "$fn"
         printf 'cut_tag 0.0.0 v0.0.0 deadbeef\n'
     } > "$d/harness.sh"
     (cd "$d" && bash "$d/harness.sh" 2>&1)
     cat "$d/log" 2>/dev/null
+    printf 'GH-ARGS %s\n' "$(tr '\n' ';' 2>/dev/null < "$d/ghargs")"
     printf 'ORDER %s\n' "$(tr '\n' ' ' 2>/dev/null < "$d/calls")"
     rmtree "$d"
 }
@@ -178,7 +190,7 @@ judge() {
     if grep -q 'GIT-TAG' <<< "$out"; then printf 'ok    gate rc=0 -> the tag is cut\n'
     else printf 'FAIL  gate rc=0 -> NO tag was cut\n%s\n' "$out" >&2; bad=1; fi
     # #4950 G1: the tag, then its one-shot arm for the pre-push guard (for 300 s at most), then the push
-    if grep -q '^ORDER CALL-GIT-tag CALL-ARM CALL-GIT-push $' <<< "$out"; then printf 'ok    all clean -> the tag, arm it, push it\n'
+    if grep -q '^ORDER CALL-PRETAG CALL-GIT-tag CALL-ARM CALL-GIT-push $' <<< "$out"; then printf 'ok    all clean -> pre-tag clean-room, the tag, arm it, push it\n'
     else printf 'FAIL  all clean did not run tag -> arm -> push\n%s\n' "$out" >&2; bad=1; fi
 
     # #3715 B1: no ENFORCED readiness Pass for exactly this version+commit -> no tag, nothing carried
@@ -209,6 +221,17 @@ judge() {
     if grep -q 'GIT-PUSH' <<< "$out" || ! grep -q '^DIE arming v0.0.0 .*pre-push tag guard failed' <<< "$out"; then
         printf 'FAIL  arm rc=2 -> the tag was pushed unarmed, or the refusal named another cause\n%s\n' "$out" >&2; bad=1
     else printf 'ok    arm rc=2 -> tag not pushed\n'; fi
+    # aprender#6500: clean-room green on the COMMIT, dispatched on the sha, before the tag exists
+    out=$(run_cut_tag "$ap" 0) || true
+    if grep -q '^GH-ARGS .*workflow run clean-room.yml .*ref=deadbeef' <<< "$out" && grep -q '^ORDER CALL-PRETAG CALL-GIT-tag CALL-ARM CALL-GIT-push $' <<< "$out"; then
+        printf 'ok    pre-tag clean-room is dispatched on the commit sha, ahead of the tag\n'
+    else printf 'FAIL  no pre-tag clean-room dispatch on the sha ahead of the tag\n%s\n' "$out" >&2; bad=1; fi
+    for p in red stale pending noruns; do
+        out=$(run_cut_tag "$ap" 0 0 0 pass 0 none crux 0 "$p") || true
+        if grep -q 'GIT-TAG' <<< "$out" || grep -q 'GIT-PUSH' <<< "$out" || ! grep -q '^DIE .*no tag' <<< "$out"; then
+            printf 'FAIL  pre-tag clean-room %s -> a tag was cut, or the refusal named another cause\n%s\n' "$p" "$out" >&2; bad=1
+        else printf 'ok    pre-tag clean-room %s -> no tag\n' "$p"; fi
+    done
     # #4950 G2, over the WHOLE autopilot: GitHub polls share one hourly budget, so every wait is
     # AP_POLL (at least 300 s) or the one AP_SETTLE after a dispatch; the crates.io index settle is not a poll
     out=$(awk '/^[[:space:]]*#/ { next }
@@ -324,6 +347,20 @@ if [ "${1:-}" = "--self-test" ]; then
             nok "MUTANT $mu (cascade premise or ledger fold weakened) PASSED"
         else
             ok "mutant $mu: a #4950 check weakened -> RED"
+        fi
+    done
+    # M33-M36 (aprender#6500): the pre-tag clean-room gate weakened one way each.
+    sed 's/\[ "\$jc" = success \] || die "pre-tag clean-room/true || die "pre-tag clean-room/' "$SUBJECT" > "$d/m33.sh"
+    sed 's/\[ "\$shas" = "tested-sha: \$sha" \] || die "pre-tag/true || die "pre-tag/' "$SUBJECT" > "$d/m34.sh"
+    grep -v '^    pretag_cleanroom "\$mc"' "$SUBJECT" > "$d/m35.sh"
+    sed 's/-f ref="\$sha"/-f ref=main/' "$SUBJECT" > "$d/m36.sh"
+    for mu in 33 34 35 36; do
+        if cmp -s "$SUBJECT" "$d/m$mu.sh"; then
+            nok "MUTANT $mu could not be built -- its pre-tag line did not match; vacuous"
+        elif judge "$d/m$mu.sh" > "$d/m$mu.out" 2>&1; then
+            nok "MUTANT $mu (pre-tag clean-room gate weakened) PASSED"
+        else
+            ok "mutant $mu: pre-tag clean-room gate weakened -> RED"
         fi
     done
     # the carry script's own case table: it lives in scripts/release/, where guard_tree cannot see it

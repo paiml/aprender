@@ -362,6 +362,36 @@ fi
 #    from the TAG's workflow file) and uploads to the draft; every upload step finds the release by
 #    listing, which returns drafts. Publishing later fires `release: published` once more, and that
 #    run finds every asset present and rebuilds nothing (#4286).
+# aprender#6500: the release line wants clean-room green on the COMMIT before the tag exists. Dispatch
+# paiml/infra clean-room.yml on the bump commit's sha (or attach to a run already dispatched on it), wait
+# for the `clean-room (aprender)` JOB, and require success AND that every tested-sha it printed is exactly
+# this commit. Anything else -> no tag. The tag-time re-check (cleanroom step, cascade premise) stays.
+pretag_cleanroom() {
+    local sha=$1 crun t0 jc jid shas _
+    if [ -s "$AP/cleanroom-pretag-attach" ]; then
+        crun=$(cat "$AP/cleanroom-pretag-attach"); say "PRETAG-CLEANROOM attached to run $crun"
+    else
+        t0=$(date -u +%s)  # bashrs disable-line=DET002
+        gh workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" >> "$LOG" 2>&1 || die "pre-tag clean-room.yml dispatch on $sha failed -- no tag"
+        say "PRETAG-CLEANROOM dispatched on $sha"
+        sleep "$AP_SETTLE"; crun=""; for _ in 1 2 3; do
+            crun=$(gh run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+            [ -n "$crun" ] && break; sleep "$AP_POLL"
+        done
+        [ -n "$crun" ] || die "no pre-tag clean-room.yml run appeared after the dispatch on $sha -- no tag"
+    fi
+    jc=""; for _ in $(seq 1 48); do
+        jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | "\(.conclusion) \(.databaseId)"' | head -1)
+        [ -n "$jc" ] && break; sleep "$AP_POLL"
+    done
+    jid=${jc#* }; jc=${jc%% *}
+    [ "$jc" = success ] || die "pre-tag clean-room (aprender) run $crun concluded '${jc:-absent}' on $sha -- no tag"
+    shas=$(gh run view --job "$jid" --repo "$INFRA" --log 2>> "$LOG" | grep -oE 'tested-sha: [0-9a-f]+' | sort -u)
+    [ "$shas" = "tested-sha: $sha" ] || die "pre-tag clean-room run $crun tested '${shas//$'\n'/ }', not exactly $sha -- no tag"
+    printf '%s\n' "$crun" > "$AP/cleanroom-pretag-run-id"
+    say "PRETAG-CLEANROOM GREEN on $sha (infra run $crun)"
+}
+
 # cut_tag <version> <tag> <commit>: the release-policy or readiness gate, then `git tag`. The milestone
 # cut (PMAT-3459) and the coverage receipt (#4691) left the release path under #4688.
 # scripts/check_tag_step_gated.sh runs this function against stubs.
@@ -389,6 +419,7 @@ cut_tag() {
     say "READINESS-GATE $(grep -F "$need" "$AP/readiness-t1.log" | tail -n 1)"
     fi
     if rehearsal; then cut_tag_rehearsal "$t" "$mc"; return; fi
+    pretag_cleanroom "$mc"  # aprender#6500: clean-room green on this commit BEFORE the tag exists
     git tag -a "$t" -m "aprender $t" "$mc" >> "$LOG" 2>&1 || die "tag failed"
     # #4950 G1: the pre-push tag guard (#4944) refuses a release tag without its one-shot marker. Every
     # gate above has passed for exactly $mc, so arm that one tag for the next push, for 120 s, and push.
