@@ -327,6 +327,19 @@ mod tests {
     }
 
     #[test]
+    fn clear_of_a_part_filled_window_restarts_at_the_front() {
+        // The write position is 3 here, not 0: a clear that forgot it would
+        // put the next frame at the wrong end of the storage.
+        let mut w = SampleWindow::new(4);
+        w.push(&[0.1, 0.2, 0.3]);
+        w.clear();
+        w.push(&[0.5, 0.6]);
+        assert_eq!(w.samples(), vec![0.5, 0.6]);
+        w.push(&[0.7, 0.8, 0.9]);
+        assert_eq!(w.samples(), vec![0.6, 0.7, 0.8, 0.9]);
+    }
+
+    #[test]
     fn peak_and_rms_hand_computed() {
         let empty = SampleWindow::new(4);
         assert_eq!(empty.peak(), 0.0);
