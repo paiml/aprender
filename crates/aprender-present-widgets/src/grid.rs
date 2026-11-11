@@ -27,6 +27,23 @@ fn sane(value: f32) -> f32 {
     }
 }
 
+/// Fit `value` between `min` and `max`, finite and not negative. Unlike
+/// `f32::clamp` this never panics, whatever the constraints (NaN, infinite or
+/// `min > max`); a lower bound that exceeds the upper one loses.
+fn fit(value: f32, min: f32, max: f32) -> f32 {
+    sane(value.max(min).min(max)).max(0.0)
+}
+
+/// An upper bound a child can be measured against: NaN means "no bound",
+/// and a bound below 0 is 0.
+fn sane_upper(max: f32) -> f32 {
+    if max.is_nan() {
+        f32::INFINITY
+    } else {
+        max.max(0.0)
+    }
+}
+
 /// A usable gap: finite and not negative, otherwise 0.
 fn sane_gap(gap: f32) -> f32 {
     sane(gap).max(0.0)
@@ -239,7 +256,8 @@ impl Widget for Grid {
         } else {
             f32::INFINITY
         };
-        let child_constraints = Constraints::new(0.0, slot_width, 0.0, constraints.max_height);
+        let child_constraints =
+            Constraints::new(0.0, slot_width, 0.0, sane_upper(constraints.max_height));
 
         let mut cell_width = 0.0f32;
         let mut cell_height = 0.0f32;
@@ -252,7 +270,12 @@ impl Widget for Grid {
 
         let width = cell_width.mul_add(used_columns as f32, gap * (used_columns - 1) as f32);
         let height = cell_height.mul_add(rows as f32, gap * (rows - 1) as f32);
-        constraints.constrain(Size::new(width, height))
+        // Not `Constraints::constrain`: its `f32::clamp` panics on NaN or
+        // inverted constraints.
+        Size::new(
+            fit(width, constraints.min_width, constraints.max_width),
+            fit(height, constraints.min_height, constraints.max_height),
+        )
     }
 
     fn layout(&mut self, bounds: Rect) -> LayoutResult {
