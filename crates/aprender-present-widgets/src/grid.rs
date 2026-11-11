@@ -818,4 +818,47 @@ mod tests {
             }
         }
     }
+
+    // ----- measure under hostile constraints (review FAIL @08e8ce3) -----
+
+    fn finite_and_not_negative(size: Size) -> bool {
+        size.width.is_finite() && size.height.is_finite() && size.width >= 0.0 && size.height >= 0.0
+    }
+
+    #[test]
+    fn grid_measure_survives_inverted_constraints() {
+        // min > max: `f32::clamp` would panic here. The upper bound wins.
+        let size = grid_of(2, 1).measure(Constraints::new(10.0, 5.0, 8.0, 3.0));
+        assert!(finite_and_not_negative(size), "{size:?}");
+        assert!(size.width <= 5.0 + EPS, "{size:?}");
+        assert!(size.height <= 3.0 + EPS, "{size:?}");
+    }
+
+    #[test]
+    fn grid_measure_survives_non_finite_and_negative_constraints() {
+        let bad = [f32::NAN, f32::INFINITY, f32::NEG_INFINITY, f32::MAX, -1.0];
+        for &v in &bad {
+            for slot in 0..4 {
+                let mut c = [0.0, 300.0, 0.0, 300.0];
+                c[slot] = v;
+                let size = grid_of(3, 5).measure(Constraints::new(c[0], c[1], c[2], c[3]));
+                assert!(finite_and_not_negative(size), "slot {slot} = {v}: {size:?}");
+            }
+        }
+    }
+
+    proptest! {
+        #[test]
+        fn grid_measure_never_panics_and_stays_finite(
+            min_w in proptest::num::f32::ANY,
+            max_w in proptest::num::f32::ANY,
+            min_h in proptest::num::f32::ANY,
+            max_h in proptest::num::f32::ANY,
+            columns in 0usize..6,
+            tiles in 0usize..9,
+        ) {
+            let size = grid_of(columns, tiles).measure(Constraints::new(min_w, max_w, min_h, max_h));
+            prop_assert!(finite_and_not_negative(size), "{size:?}");
+        }
+    }
 }
