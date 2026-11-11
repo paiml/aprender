@@ -6,7 +6,7 @@
 #   jq 1.8.x                         guard_tree_test needs 1.8 (it replaces the old fetch of jq-1.8.2)
 #   yq v4.52.2                       the pull_request_target guard reads workflow triggers with it (replaces a curl of the binary)
 #   the rust-toolchain.toml release  (it replaces the old toolchain install); only an exact release is checked
-#   the sovereign-ci image digest    (cargo fmt runs in it; a missing image would be a pull, so it is refused here)
+#   the sovereign-ci image digest    (only when a caller names one; pr-light names none since cargo fmt moved to the host toolchain)
 #
 #   bash scripts/ci/require_pinned_tools.sh [workspace-dir]
 #   bash scripts/ci/require_pinned_tools.sh --self-test
@@ -47,7 +47,7 @@ check() {
     if [ -n "$img" ]; then
         docker image inspect "$img" > /dev/null 2>&1 || { echo "::error::image $img is not in this runner's local cache; pr-light does not fetch it"; bad=1; }
     fi
-    [ "$bad" = 0 ] && echo "ok    jq, yq, the pinned toolchain and the fmt image are provisioned"
+    [ "$bad" = 0 ] && echo "ok    jq, yq and the pinned toolchain are provisioned"
     return "$bad"
 }
 

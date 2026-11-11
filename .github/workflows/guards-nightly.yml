@@ -166,6 +166,13 @@ jobs:
         # The fleet pin is the only installer; this asserts the version on PATH
         # matches tools.toml and fails closed. Placed before the first use.
         run: setsid --wait bash scripts/check_tool_versions.sh
+      - name: pr-light lanes with every gate proof (PR_LIGHT_PROOFS=all)
+        # A product-code PR skips the guard-tree steps that only prove a gate
+        # (self-tests, case tables, mutant suites). This is where they run:
+        # once a night on main, all of them, with the same lane table the PR runs.
+        env:
+          PR_LIGHT_PROOFS: all
+        run: setsid --wait bash scripts/ci/pr_light_fast.sh
       # ─────────────────────────────────────────────────────────────────────
       # THE MOVED STEPS. Copied VERBATIM from ci.yml's guard-cargo job --
       # same `name:`, same `run:`, same docker/mount shape -- because the name

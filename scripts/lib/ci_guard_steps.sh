@@ -10,7 +10,7 @@
 # flow maps, duplicate keys, tab indentation -- is REFUSED with rc 2. A reader
 # that guessed would be a guard that checks something other than CI.
 #
-#   bash scripts/lib/ci_guard_steps.sh [--workflow F] list|sha|check-run-all|check-coverage|run [opts] [job...]
+#   bash scripts/lib/ci_guard_steps.sh [--workflow F] list|sha|check-run-all|check-coverage|run|proofs [opts] [job...]
 #     check-run-all  [--baseline F]  (default scripts/guard_fail_fast_baseline.txt)
 #     check-coverage [--ack F]       (default scripts/ci_guards_uncovered.txt)
 #     run [--only ERE] [--step-timeout S] [--stream|--no-stream]
@@ -229,6 +229,22 @@ cmd_coverage() {
 # ENV overrides; ORIG names what the process environment holds.
 declare -A ORIG=() ENV=()
 while IFS= read -r x; do ORIG[$x]=1; done < <(compgen -e)
+# step_is_proof <run block>: 0 iff EVERY command of the step is a proof of a gate (its self-test, case table or mutant
+# suite) and there is at least one. A step with one command that is not a proof is a gate and is never skipped: a mixed
+# step (`gate && gate --v15-red`), a guard run bare, any shell construct. Whole-line match, so nothing can ride behind a
+# proof on the same line (#6859 review: the step NAME said "mutants pool" / "RED proof" on two live gates).
+PROOF_CMD_ERE='^(setsid --wait )?((bash|sh|python3) [A-Za-z0-9_./-]+ --(self-test|selftest|mutants|v15-red)|(bash|sh) ([A-Za-z0-9_.-]+/)*([A-Za-z0-9_-]+_test|mutate_[A-Za-z0-9_-]+|test-[A-Za-z0-9_-]+|falsify_[A-Za-z0-9_-]+)\.sh( --mutants)?)$'
+step_is_proof() {
+    local line n=0
+    while IFS= read -r line; do
+        line="$(printf '%s' "$line" | sed -E 's/[[:space:]]+#.*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+        case "$line" in '' | '#'* | 'set -euo pipefail' | 'set -eu' | 'set -e') continue ;; esac
+        [[ $line =~ $PROOF_CMD_ERE ]] || return 1
+        n=$((n + 1))
+    done < <(printf '%s\n' "$1" | sed 's/ && /\n/g')
+    [ "$n" -gt 0 ]
+}
+
 getenv() { # getenv <name> -- ENV override, else the process environment
     if [ -n "${ENV[$1]+x}" ]; then printf '%s' "${ENV[$1]}"
     elif [ -n "${ORIG[$1]+x}" ]; then printf '%s' "${!1}"
@@ -405,8 +421,13 @@ cmd_run() {
                 ek+=("$k"); ev+=("$v")
             done
             if [ -n "$only" ] && ! [[ $name =~ $only ]]; then continue; fi
-            # CI_GUARDS_SKIP (pr-light on a product-code diff, Noah 10:38Z): gate proofs (case tables, mutants) run when a gate script changed and nightly
-            if [ -n "${CI_GUARDS_SKIP:-}" ] && [[ $name =~ $CI_GUARDS_SKIP ]]; then echo "PROOF-SKIP $job#$idx  $name (gate proof: runs when a gate script changes, and nightly)"; continue; fi
+            # CI_GUARDS_SKIP=proofs (pr-light on a product-code diff, Noah 10:38Z): a step that is ONLY a gate's proof is skipped; it
+            # runs when a gate script changed, and nightly (guards-nightly.yml). The step's commands decide, never its name.
+            case "${CI_GUARDS_SKIP:-}" in
+                '') ;;
+                proofs) if step_is_proof "$run"; then echo "PROOF-SKIP $job#$idx  $name (gate proof: runs when a gate script changes, and nightly)"; continue; fi ;;
+                *) die "CI_GUARDS_SKIP wants 'proofs' or nothing, got '$CI_GUARDS_SKIP'" ;;
+            esac
             # --shard I/K (#6255): step idx n runs in shard (n mod K)+1, so the K shards partition the manifest exactly once
             # A step that appends to GITHUB_PATH/GITHUB_ENV hands state to the steps after it, so it runs in EVERY shard:
             # the serial run carried that state forward, and a shard without it would lose it (m69 -> m70/m71 cargo-deny).
@@ -607,6 +628,23 @@ CLEAN=()
 cleanup() { local f; for f in "${CLEAN[@]}"; do rm -f -- "${f:?}"; done; }
 trap cleanup EXIT
 
+# cmd_proofs <job>...: how `run` with CI_GUARDS_SKIP=proofs sees every step: `proof|gate<TAB>idx<TAB>name<TAB>commands`.
+cmd_proofs() {
+    local job ci=false idx name run kind
+    in_ci && ci=true
+    load_jobs
+    [ "$#" -gt 0 ] || die "proofs wants a job"
+    for job in "$@"; do
+        [ "$ci" = true ] && [ "$(jqj --arg m "$job$MANIFEST_SUFFIX" 'has($m)')" = true ] || job_steps_ok "$job"
+        jqd -j --arg job "$job" --argjson ci "$ci" "$JQDEFS"'steps_for($job; $ci)[] | "\(.idx)\u0000\(.step | name_of | tostring)\u0000\(.step.run // "" | tostring)\u0000"' \
+            > "$TMPP" || die "cannot read the steps of $job in $WORKFLOW (jq rc=$?)"
+        while IFS= read -r -u 3 -d '' idx && IFS= read -r -u 3 -d '' name && IFS= read -r -u 3 -d '' run; do
+            if step_is_proof "$run"; then kind=proof; else kind=gate; fi
+            printf '%s\t%s\t%s\t%s\n' "$kind" "$idx" "$name" "$(printf '%s' "$run" | tr '\n\t' '; ')"
+        done 3< "$TMPP"
+    done
+}
+
 while [ "$#" -gt 0 ]; do
     case "$1" in
         --workflow) [ "$#" -ge 2 ] || die "--workflow needs a value"; WORKFLOW=$2; shift 2 ;;
@@ -622,5 +660,7 @@ case "$cmd" in
     check-run-all) cmd_check "$@" ;;
     check-coverage) cmd_coverage "$@" ;;
     run) cmd_run "$@" ;;
-    *) die "usage: ci_guard_steps.sh [--workflow F] list|sha|check-run-all|check-coverage|run [job...]" ;;
+    is-proof) step_is_proof "$(cat)" ;;  # the run block on stdin: rc 0 a proof, 1 a gate (read by pr_light_fast.sh --self-test)
+    proofs) TMPP="$(mktemp "${TMPDIR:-/tmp}/cgs-proofs.XXXXXX")" || die "mktemp"; CLEAN+=("$TMPP"); cmd_proofs "$@" ;;
+    *) die "usage: ci_guard_steps.sh [--workflow F] list|sha|check-run-all|check-coverage|run|proofs|is-proof [job...]" ;;
 esac

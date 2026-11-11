@@ -31,7 +31,9 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 # GATE PROOFS (Noah 10:38Z): a self-test / case table / mutant suite OF A GATE runs only when a gate's own script or recipe
 # changed (gate_surface_changed), and nightly; never because product code changed. Product-code PRs run the gates, not their proofs.
 GATE_SURFACE_ERE='^(scripts/|ci/|\.github/|Makefile$|[^/]*\.mk$)'
-PROOF_STEP_ERE='(case table|can still (go RED|refuse)|self-test|RED proof|mutated|[Mm]utants?[ )]|[Ff]alsif)'
+# Which guard-tree step is a proof is decided by the step's COMMANDS (ci_guard_steps.sh step_is_proof), never by its name: every
+# command must be a self-test, case table or mutant suite. A step with one live gate command in it always runs.
+# NIGHTLY: guards-nightly.yml runs this script with PR_LIGHT_PROOFS=all on main, so every proof a product-code PR skipped runs once a day.
 
 # name|command -- the same command lines the old "Cheap checks" step ran, one lane each.
 cheap_lanes() { gate_lanes; proof_lanes; }
@@ -172,7 +174,7 @@ main_run() {
     proofs="$(proofs_due)" || { echo "::error::pr_light_fast: cannot list this PR's changed paths vs ${PR_LIGHT_BASE:-origin/main}; that is not a pass" >&2; exit 2; }
     echo "pr_light_fast: gate proofs ${proofs} (1 = a gate script/recipe changed, or PR_LIGHT_PROOFS=all)"
     export GUARD_TREE_SELF_TESTS="$proofs"
-    [ "$proofs" = 1 ] || export CI_GUARDS_SKIP="$PROOF_STEP_ERE"
+    [ "$proofs" = 1 ] || export CI_GUARDS_SKIP=proofs
     # the guard-tree section's step 2: the comparand every ratchet reads. Serial and first, like the section ran it.
     if [ "$proofs" = 1 ]; then bash scripts/ci/pin_build_base.sh --self-test || { echo "::error::pin_build_base self-test failed"; exit 1; }; fi
     bash scripts/ci/pin_build_base.sh || { echo "::error::pin_build_base failed"; exit 1; }
@@ -210,8 +212,37 @@ self_test() {
     row "a workflow change runs them" "$(gate_surface_changed "$d/wf" && echo y || echo n)" y
     row "a Makefile change runs them" "$(gate_surface_changed "$d/mk" && echo y || echo n)" y
     row "PR_LIGHT_PROOFS=all forces them (nightly)" "$(PR_LIGHT_PROOFS=all proofs_due)" 1
-    row "a case-table manifest step is a proof" "$([[ 'Fixture-path guard case table' =~ $PROOF_STEP_ERE ]] && echo y || echo n)" y
-    row "a guard manifest step is not a proof" "$([[ 'Every cargo-free guard runs, and every failure is reported' =~ $PROOF_STEP_ERE ]] && echo y || echo n)" n
+    # proof or gate is read off the step's commands (#6859 review: two live gates were skipped by their NAME)
+    isp() { printf '%b' "$1" | bash "$REPO_ROOT/scripts/lib/ci_guard_steps.sh" is-proof > /dev/null 2>&1 && echo proof || echo gate; }
+    row "a --self-test command is a proof" "$(isp 'setsid --wait bash scripts/check_x.sh --self-test')" proof
+    row "a --selftest command is a proof" "$(isp 'bash scripts/x.sh --selftest')" proof
+    row "a python --self-test is a proof" "$(isp 'python3 scripts/x.py --self-test')" proof
+    row "a _test.sh case table is a proof" "$(isp 'bash scripts/tests/guard_tree_test.sh')" proof
+    row "a mutate_ suite is a proof" "$(isp 'bash scripts/mutate_x_guard.sh')" proof
+    row "a block of self-tests with comments is a proof" "$(isp 'set -euo pipefail\nbash scripts/a.sh --selftest\npython3 scripts/b.py --self-test   # why\n')" proof
+    row "two proofs joined by && are a proof" "$(isp 'bash scripts/a.sh --self-test && bash scripts/b.sh --self-test')" proof
+    row "a guard run bare is a gate" "$(isp 'setsid --wait bash scripts/check_mutants_pool.sh')" gate
+    row "a gate and its RED proof in one step is a gate" "$(isp 'bash tests/spec/pp066_v16_defects.sh && bash tests/spec/pp066_v16_defects.sh --v15-red')" gate
+    row "a gate after a proof on one line is a gate" "$(isp 'bash scripts/x.sh --self-test; bash scripts/x.sh')" gate
+    row "a gate on a second line is a gate" "$(isp 'bash scripts/x.sh --self-test\nbash scripts/x.sh\n')" gate
+    row "a proof with a tail is a gate" "$(isp 'bash scripts/x.sh --self-test || true')" gate
+    row "a --check is a gate" "$(isp 'bash scripts/bump-version.sh --check')" gate
+    row "a shell construct is a gate" "$(isp 'if true; then bash scripts/x.sh --self-test; fi')" gate
+    row "an empty step is a gate" "$(isp '')" gate
+    out1="$(bash "$REPO_ROOT/scripts/lib/ci_guard_steps.sh" proofs guard-tree 2> /dev/null)"
+    row "guard-tree: the mutants-pool gate is never skipped" "$(printf '%s\n' "$out1" | awk -F '\t' '$4 == "setsid --wait bash scripts/check_mutants_pool.sh" { print $1 }')" gate
+    row "guard-tree: the PP-066 defect table is never skipped" "$(printf '%s\n' "$out1" | awk -F '\t' '$4 ~ /^bash tests\/spec\/pp066_v16_defects\.sh / { print $1 }')" gate
+    row "guard-tree: the guard runner itself is never skipped" "$(printf '%s\n' "$out1" | awk -F '\t' '$4 == "bash scripts/guard_tree.sh --no-cargo" { print $1 }')" gate
+    row "guard-tree: some steps are proofs" "$([ "$(printf '%s\n' "$out1" | grep -c '^proof')" -ge 10 ] && echo y || echo n)" y
+    # every skipped step, command by command: none may be a command without a proof marker (a second, looser reading of the same steps)
+    row "guard-tree: no skipped step holds a command that is not a proof" "$(printf '%s\n' "$out1" | awk -F '\t' '$1 == "proof" { n = split($4, c, /;| && /); for (i = 1; i <= n; i++) { x = c[i]; sub(/[ ]+#.*$/, "", x); gsub(/^ +| +$/, "", x); if (x == "" || x == "set -euo pipefail") continue; if (x !~ /--self-test$|--selftest$|--mutants$|--v15-red$|_test\.sh$|\/mutate_[a-z_]+\.sh$/) bad++ } } END { print bad + 0 }')" 0
+    # the live skip, on the real manifest: of the mutants-pool pair, the gate (m11) runs and only its RED proof (m12) is skipped
+    out2="$(cd "$REPO_ROOT" && CI_GUARDS_SKIP=proofs bash scripts/lib/ci_guard_steps.sh run guard-tree --no-stream --only 'mutants pool \(C108\)|mutants-pool guard can still go RED' 2>&1)"
+    row "run: the mutants-pool proof is skipped" "$(printf '%s\n' "$out2" | grep -c '^PROOF-SKIP guard-tree#m12 ')" 1
+    row "run: the mutants-pool gate is not skipped" "$(printf '%s\n' "$out2" | grep -c '^PROOF-SKIP guard-tree#m11 ')" 0
+    row "run: exactly one step is skipped of the two" "$(printf '%s\n' "$out2" | grep -c '^PROOF-SKIP ')" 1
+    row "an unknown CI_GUARDS_SKIP is refused, not read as nothing" "$(CI_GUARDS_SKIP=all bash "$REPO_ROOT/scripts/lib/ci_guard_steps.sh" run guard-tree --shard 1/64 > /dev/null 2>&1; echo $?)" 2
+    row "the nightly runs every proof (guards-nightly.yml, PR_LIGHT_PROOFS=all)" "$(awk '/PR_LIGHT_PROOFS: all/ { e = 1 } e && /run: setsid --wait bash scripts\/ci\/pr_light_fast\.sh$/ { print "wired"; exit }' "$REPO_ROOT/.github/workflows/guards-nightly.yml")" wired
     row "shard lanes partition 1..K" "$(PR_LIGHT_SHARDS=3 shard_lanes | cut -d'|' -f1 | paste -sd,)" 'guard-tree-shard-1-of-3,guard-tree-shard-2-of-3,guard-tree-shard-3-of-3'
     row "a bad shard count is refused" "$(PR_LIGHT_SHARDS=0 shard_lanes 2> /dev/null; echo $?)" 2
     local sha=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
