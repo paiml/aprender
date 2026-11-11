@@ -1,0 +1,20 @@
+- id: PMAT-6896
+  github_issue: 6896
+  item_type: task
+  title: 'present-widgets: SampleWindow, fixed window of the newest audio samples'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-11T18:43:27Z
+  updated: 2026-11-11T18:43:27Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  - orch:fable
+  - orch-basis:state
+  notes: null
+  epic: 6728
