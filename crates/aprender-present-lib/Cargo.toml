@@ -31,9 +31,19 @@ shell-autocomplete = ["dep:zstd"]
 wasm-bindgen = { workspace = true }
 wasm-bindgen-futures = { workspace = true }
 js-sys = { workspace = true }
-web-sys = { workspace = true }
+# The root workspace entry carries no features (the pre-monorepo presentar manifest did), so
+# the browser module names every web-sys type it touches here. Without the list the crate
+# does not build for wasm32 (aprender#6888).
+web-sys = { workspace = true, features = [
+    "BinaryType", "CanvasRenderingContext2d", "CanvasWindingRule", "CloseEvent", "Document",
+    "Element", "ErrorEvent", "Event", "History", "HtmlCanvasElement", "ImageData",
+    "KeyboardEvent", "Location", "MessageEvent", "MouseEvent", "Performance", "PointerEvent",
+    "PopStateEvent", "Storage", "Touch", "TouchEvent", "TouchList", "Url", "WebSocket",
+    "WheelEvent", "Window", "console",
+] }
 console_error_panic_hook = { workspace = true }
-getrandom = { workspace = true }
+# getrandom 0.2 refuses wasm32-unknown-unknown without "js" (aprender#6888).
+getrandom = { workspace = true, features = ["js"] }
 
 [dev-dependencies]
 provable-contracts = { path = "../aprender-contracts", package = "aprender-contracts" }
