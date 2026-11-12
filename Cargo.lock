@@ -995,6 +995,7 @@ dependencies = [
  "aprender-build-sha",
  "aprender-contracts",
  "aprender-present-yaml",
+ "aprender-viz",
  "clap",
  "notify",
  "serde",

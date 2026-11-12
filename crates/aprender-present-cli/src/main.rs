@@ -151,12 +151,25 @@ enum Commands {
         #[arg(long)]
         skip_build: bool,
     },
+
+    /// Draw a plot from CSV data and a ggplot2-like spec (terminal or SVG)
+    Plot(plot::PlotArgs),
 }
+
+mod plot;
 
 fn main() {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Plot(args) => {
+            let env = plot::Env::from_process();
+            let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
+            if let Err(e) = plot::run(&args, &env, &mut out, &mut err) {
+                eprintln!("error: {e}");
+                std::process::exit(1);
+            }
+        }
         Commands::Serve { port, dir, watch } => {
             serve(port, dir, watch);
         }

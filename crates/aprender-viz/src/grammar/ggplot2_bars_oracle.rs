@@ -15,7 +15,10 @@
 use serde_json::Value;
 
 use super::stat_count::{bar_layout, BarSpec, BuiltBars, DiscreteAxis};
+use super::coord::Coord;
+use super::stat::Stat;
 use super::{Aes, DataFrame, Facet, GGPlot, Geom, Layer, Position, PositionScale, Preserve};
+use crate::error::Error;
 
 const REL_TOL: f64 = 1e-9;
 const ABS_TOL: f64 = 1e-12;
@@ -64,7 +67,8 @@ fn frame_from_csv(csv: &str) -> DataFrame {
             Some(vals) => {
                 let f: Vec<f32> = vals.iter().map(|v| *v as f32).collect();
                 for (v, g) in vals.iter().zip(&f) {
-                    assert_eq!(f64::from(*g), *v, "fixture value {v} is not exact in f32");
+                    let same = f64::from(*g) == *v || (v.is_nan() && g.is_nan());
+                    assert!(same, "fixture value {v} is not exact in f32");
                 }
                 df.add_column_f32(name.trim(), &f);
             }
@@ -445,20 +449,24 @@ fn ggplot2_bars_public_level_and_group_order_c_collation() {
 }
 
 #[test]
-fn bar_layer_over_numeric_x_keeps_the_continuous_path() {
-    // A bar layer whose x is numeric is not a discrete bar layer: no `bars`, positions as before.
-    let df = frame_from_csv("x,y\n1,2\n2,3\n");
-    let layout = GGPlot::new()
-        .data(df)
-        .aes(Aes::new().x("x").y("y"))
-        .geom(Geom::bar())
-        .build()
-        .expect("plot builds")
-        .layout()
-        .expect("layout builds");
-    assert!(layout.layers[0].bars.is_none());
-    assert!(layout.x_discrete.is_none());
-    assert_eq!(layout.layers[0].x, [1.0, 2.0]);
+fn bar_layer_over_a_numeric_empty_or_absent_x_is_refused() {
+    // ggplot2 bins a numeric x by its resolution (and draws bars there); layout() does not compute
+    // that, so it refuses with a typed error instead of returning the raw points.
+    let mut empty = DataFrame::new();
+    empty.add_column_str("x", &[]);
+    empty.add_column_f32("y", &[]);
+    for (df, aes, what) in [
+        (frame_from_csv("x,y\n1,2\n2,3\n"), Aes::new().x("x").y("y"), "numeric x"),
+        (empty, Aes::new().x("x").y("y"), "empty x"),
+        (frame_from_csv("x,y\na,2\n"), Aes::new().y("y"), "no x aesthetic"),
+        (frame_from_csv("x,y\na,2\n"), Aes::new().x("nope"), "absent x column"),
+    ] {
+        for geom in [Geom::bar(), Geom::col()] {
+            let got = GGPlot::new().data(df.clone()).aes(aes.clone()).geom(geom).build();
+            let err = got.expect("plot builds").layout().expect_err(what);
+            assert!(matches!(err, Error::UnsupportedLayer(m) if m.contains("text x")), "{what}");
+        }
+    }
 }
 
 #[test]
@@ -509,7 +517,7 @@ fn check_layout(layout: &super::BuiltLayout, want: &Value, name: &str) {
                 assert_close_slice(&format!("{name}[{i}].x"), &layout.layers[i].x, &nums(&fx["x"]));
                 assert_close_slice(&format!("{name}[{i}].y"), &layout.layers[i].y, &nums(&fx["y"]));
             }
-            (None, "GeomHline" | "GeomVline") => {}
+            (None, "GeomHline" | "GeomVline") => check_reference(&layout.layers[i], fx, geom, name),
             (b, g) => panic!("{name}[{i}]: layer is {g} in the fixture, bars = {}", b.is_some()),
         }
     }
@@ -518,6 +526,18 @@ fn check_layout(layout: &super::BuiltLayout, want: &Value, name: &str) {
     check_continuous(&layout.y, &want["panel"]["y"]);
     assert_eq!(layout.x.continuous_range, axis.continuous_range, "{name}: layout x range");
     assert_eq!(layout.x.breaks, axis.breaks, "{name}: layout x breaks");
+}
+
+/// A `geom_hline`/`geom_vline` layer: one row per panel, its intercept, PANEL and group -1.
+fn check_reference(got: &super::BuiltLayer, fx: &Value, geom: &str, name: &str) {
+    let path = got.path.as_ref().unwrap_or_else(|| panic!("{name}: {geom} has no path data"));
+    let r = path.reference.as_ref().unwrap_or_else(|| panic!("{name}: {geom} has no reference"));
+    let field = if geom == "GeomHline" { "yintercept" } else { "xintercept" };
+    assert_close_slice(&format!("{name}.{field}"), &r.intercept, &nums(&fx[field]));
+    let panels: Vec<String> = path.panel.iter().map(|p| (p + 1).to_string()).collect();
+    assert_eq!(panels, strs(&fx["PANEL"]), "{name}: {geom} PANEL");
+    let groups: Vec<f64> = path.group.iter().map(|g| *g as f64).collect();
+    assert_eq!(groups, nums(&fx["group"]), "{name}: {geom} group");
 }
 
 fn run_layers(fx: (&str, &str), aes: Aes, layers: Vec<Layer>, facet: Option<Facet>, name: &str) {
@@ -663,4 +683,263 @@ fn bars_on_a_discrete_x_are_not_drawn_yet_and_say_so() {
     assert!(fb.to_string().contains("bars on a discrete x are not drawn yet"), "{fb}");
     let svg = plot.to_svg().expect_err("svg renderer refuses text-x bars");
     assert!(svg.to_string().contains("bars on a discrete x are not drawn yet"), "{svg}");
+}
+
+// --- bars beside geom_hline / geom_vline / geom_point, and layer-level fill (bars_companions) -----
+// Each fixture is `ggplot_build()` of the plot named in its test. A bar layer over a text x routes
+// the whole plot to the bar layout; reference lines keep their own data (`grammar/path.rs`) and
+// widen the shared scales by their intercept.
+
+macro_rules! companions {
+    ($name:literal) => {
+        (
+            include_str!("../../fixtures/ggplot2/bars_companions/data.csv"),
+            include_str!(concat!("../../fixtures/ggplot2/bars_companions/expected_", $name, ".json")),
+        )
+    };
+}
+
+fn xy() -> Aes {
+    Aes::new().x("x").y("y")
+}
+
+fn col() -> Layer {
+    Layer::new(Geom::col())
+}
+
+fn hline(y: f32) -> Layer {
+    Layer::new(Geom::hline(y))
+}
+
+fn vline(x: f32) -> Layer {
+    Layer::new(Geom::vline(x))
+}
+
+#[test]
+fn ggplot2_bars_col_and_vline_right_of_the_bars_widen_x() {
+    // geom_col() + geom_vline(5): the continuous x range runs to 5, past the last bar's 3.45.
+    run_layers(companions!("col_vline_right"), xy(), vec![col(), vline(5.0)], None, "vline 5");
+}
+
+#[test]
+fn ggplot2_bars_col_and_vline_left_of_the_bars_widen_x() {
+    run_layers(companions!("col_vline_left"), xy(), vec![col(), vline(-1.5)], None, "vline -1.5");
+}
+
+#[test]
+fn ggplot2_bars_bar_with_hline_and_vline() {
+    let layers = vec![Layer::new(Geom::bar()), hline(4.0), vline(0.25)];
+    let aes = Aes::new().x("x");
+    run_layers(companions!("bar_hline_vline"), aes, layers, None, "bar + hline + vline");
+}
+
+#[test]
+fn ggplot2_bars_vline_inside_narrow_bars_leaves_x() {
+    // width = 0.5 bars span 0.75..3.25; a vline at 3.25 adds nothing beyond the bar edges.
+    let narrow = Layer::new(Geom::bar().stat(Stat::Identity).width(0.5));
+    let fx = companions!("col_width_vline_inside");
+    run_layers(fx, xy(), vec![narrow, vline(3.25)], None, "vline inside");
+}
+
+#[test]
+fn ggplot2_bars_col_with_two_hlines_spans_both() {
+    let layers = vec![col(), hline(-5.0), hline(7.0)];
+    run_layers(companions!("col_two_hlines"), xy(), layers, None, "two hlines");
+}
+
+#[test]
+fn ggplot2_bars_hline_before_the_bar_layer() {
+    // Layer order does not matter to the scales; the hline is layer 0 in the fixture.
+    run_layers(companions!("hline_then_col"), xy(), vec![hline(-5.0), col()], None, "hline first");
+}
+
+#[test]
+fn ggplot2_bars_point_with_new_levels_extends_the_discrete_x() {
+    // The point layer's text x (d, a, e, b) adds levels d and e: limits a..e, points at 4, 1, 5, 2.
+    let layers = vec![col(), point_layer(Aes::new().x("xl").y("z"))];
+    run_layers(companions!("col_point_new_level"), xy(), layers, None, "new levels");
+}
+
+#[test]
+fn ggplot2_bars_point_layer_before_the_bar_layer() {
+    let point = point_layer(Aes::new().x("xl").y("z"));
+    let bar = Layer::new(Geom::bar()).aes(Aes::new().x("x"));
+    run_layers(companions!("point_then_bar"), Aes::new(), vec![point, bar], None, "point first");
+}
+
+#[test]
+fn ggplot2_bars_col_point_and_vline() {
+    let layers = vec![col(), point_layer(Aes::new().x("xl").y("z")), vline(6.0)];
+    run_layers(companions!("col_point_vline"), xy(), layers, None, "col + point + vline");
+}
+
+#[test]
+fn ggplot2_bars_layer_fill_under_plot_x_ranks_fill_first() {
+    // aes(x) + geom_bar(aes(fill = g)) + geom_col(aes(y, fill = g), dodge): computed_mapping lists
+    // the layer's fill before the plot's x, so groups are ranked by (fill, x): (g1,b)=1 .. (g2,b)=4.
+    let bar = Layer::new(Geom::bar()).aes(Aes::new().fill("g"));
+    let dodged = col().aes(Aes::new().y("y").fill("g")).position(Position::dodge());
+    let fx = companions!("layer_fill_two_layers");
+    run_layers(fx, Aes::new().x("x"), vec![bar, dodged], None, "layer fill, two layers");
+}
+
+#[test]
+fn ggplot2_bars_layer_fill_dodge_ranks_fill_first() {
+    let l = col().aes(Aes::new().fill("g")).position(Position::dodge());
+    run_layers(companions!("layer_fill_dodge"), xy(), vec![l], None, "layer fill dodge");
+}
+
+#[test]
+fn ggplot2_bars_layer_fill_stack_ranks_fill_first() {
+    let l = col().aes(Aes::new().fill("g"));
+    run_layers(companions!("layer_fill_stack"), xy(), vec![l], None, "layer fill stack");
+}
+
+#[test]
+fn ggplot2_bars_plot_fill_with_layer_x_ranks_x_first() {
+    // aes(fill = g) + geom_bar(aes(x), dodge): the layer's x comes first in computed_mapping.
+    let l = Layer::new(Geom::bar()).aes(Aes::new().x("x")).position(Position::dodge());
+    let fx = companions!("plot_fill_layer_x");
+    run_layers(fx, Aes::new().fill("g"), vec![l], None, "plot fill, layer x");
+}
+
+#[test]
+fn ggplot2_bars_layer_x_and_fill_together_rank_x_first() {
+    let l = Layer::new(Geom::bar()).aes(xg()).position(Position::dodge());
+    run_layers(companions!("layer_x_and_fill"), Aes::new(), vec![l], None, "layer x and fill");
+}
+
+#[test]
+fn ggplot2_bars_position_fill_over_a_zero_total_keeps_zero_heights() {
+    let aes = Aes::new().x("x").y("y0").fill("g");
+    let l = col().position(Position::fill());
+    run_layers(companions!("fill_zero_sum"), aes, vec![l], None, "fill zero sum");
+}
+
+#[test]
+fn ggplot2_bars_position_fill_with_a_negative_bar() {
+    let aes = Aes::new().x("x").y("ys").fill("g");
+    let l = col().position(Position::fill());
+    run_layers(companions!("fill_signed"), aes, vec![l], None, "fill signed");
+}
+
+#[test]
+fn ggplot2_bars_facet_bar_and_hline_one_row_per_panel() {
+    let layers = vec![Layer::new(Geom::bar()), hline(2.0)];
+    let fx = companions!("facet_bar_hline");
+    run_layers(fx, xg(), layers, Some(facet_f()), "facet bar + hline");
+}
+
+#[test]
+fn ggplot2_bars_facet_dodge_and_vline() {
+    let layers = vec![col().position(Position::dodge()), vline(3.75)];
+    let fx = companions!("facet_col_vline");
+    run_layers(fx, xyg(), layers, Some(facet_f()), "facet dodge + vline");
+}
+
+#[test]
+fn ggplot2_bars_dodge_preserve_single_and_vline_at_zero() {
+    let single = Position::Dodge { width: None, preserve: Preserve::Single };
+    let layers = vec![col().position(single), vline(0.0)];
+    run_layers(companions!("dodge_single_vline"), xyg(), layers, None, "dodge single + vline");
+}
+
+#[test]
+fn ggplot2_bars_single_level_and_hline() {
+    let (csv, json) = companions!("single_level_hline");
+    let want: Value = serde_json::from_str(json).expect("fixture is valid JSON");
+    let df = frame_from_csv(&filter_csv(csv, 0, &["a"]));
+    let layout = layout_of_layers(&df, xy(), vec![col(), hline(1.0)], None).expect("one level");
+    check_layout(&layout, &want, "single level + hline");
+}
+
+#[test]
+fn ggplot2_bars_col_with_a_nan_y_is_a_typed_error() {
+    // ggplot2 keeps the NaN row with an NA x and NA edges (the fixture); layout() refuses it.
+    let (csv, json) = companions!("col_nan_y");
+    let want: Value = serde_json::from_str(json).expect("fixture is valid JSON");
+    assert!(want["layers"][0]["x"][1].is_null(), "R drops the x of the NaN row");
+    assert!(want["layers"][0]["ymin"][1].is_null(), "R drops the edges of the NaN row");
+    let aes = Aes::new().x("x").y("yn");
+    let err = layout_of_layers(&frame_from_csv(csv), aes, vec![col()], None).expect_err("NaN y");
+    assert!(err.to_string().contains("`yn` holds a NaN"), "{err}");
+}
+
+// --- what the bar layout refuses ------------------------------------------------------------------
+
+fn abcd() -> DataFrame {
+    frame_from_csv("x,y,z,f\na,2,1,p\nb,3,4,q\n")
+}
+
+#[test]
+fn bars_under_a_non_default_coord_are_refused() {
+    for coord in [
+        Coord::Cartesian { xlim: None, ylim: None, flip: true },
+        Coord::Cartesian { xlim: None, ylim: Some((0.0, 1.0)), flip: false },
+    ] {
+        let plot = GGPlot::new().data(abcd()).aes(xy()).layer(col()).coord(coord.clone());
+        let err = plot.build().expect("plot builds").layout().expect_err("coord refused");
+        assert!(matches!(err, Error::UnsupportedCoord(_)), "{coord:?}: {err}");
+    }
+}
+
+#[test]
+fn bars_beside_an_unsupported_companion_are_refused() {
+    let err = |l: Layer| layout_of_layers(&abcd(), xy(), vec![col(), l], None).expect_err("refused");
+    assert!(matches!(err(Layer::new(Geom::line())), Error::UnsupportedLayer(_)), "geom_line");
+    assert!(matches!(err(Layer::new(Geom::abline(1.0, 0.0))), Error::UnsupportedLayer(_)));
+    let smooth = Layer::new(Geom::point().stat(Stat::Smooth));
+    assert!(matches!(err(smooth), Error::UnsupportedStat(_)), "stat_smooth point");
+    let missing = point_layer(Aes::new().y("nope"));
+    assert!(matches!(err(missing), Error::UnknownColumn(c) if c == "nope"), "missing y");
+    let text_y = point_layer(Aes::new().y("f"));
+    assert!(err(text_y).to_string().contains("`f` is text"), "text y");
+}
+
+#[test]
+fn a_point_beside_bars_under_a_facet_is_refused() {
+    let layers = vec![col(), point_layer(Aes::new().y("z"))];
+    let err = layout_of_layers(&abcd(), xy(), layers, Some(facet_f())).expect_err("refused");
+    assert!(err.to_string().contains("does not assign point panels"), "{err}");
+}
+
+#[test]
+fn a_bar_stat_other_than_count_or_identity_is_refused() {
+    let l = Layer::new(Geom::bar().stat(Stat::Bin { bins: 3 }));
+    let err = layout_of_layers(&abcd(), xy(), vec![l], None).expect_err("stat_bin refused");
+    assert!(matches!(err, Error::UnsupportedStat(_)), "{err}");
+    let ok = Layer::new(Geom::bar().stat(Stat::Count));
+    assert!(layout_of_layers(&abcd(), Aes::new().x("x"), vec![ok], None).is_ok(), "stat_count");
+}
+
+#[test]
+fn a_short_column_is_refused_not_read_past() {
+    let mut df = DataFrame::new();
+    df.add_column_str("x", &["a", "b", "c"]);
+    df.add_column_f32("y", &[1.0, 2.0]);
+    df.add_column_str("g", &["u"]);
+    let err = layout_of_layers(&df, xy(), vec![col()], None).expect_err("short y");
+    assert!(err.to_string().contains("`y` has 2 values for 3 rows"), "{err}");
+    let fill = Layer::new(Geom::bar()).aes(Aes::new().fill("g"));
+    let err = layout_of_layers(&df, Aes::new().x("x"), vec![fill], None).expect_err("short fill");
+    assert!(err.to_string().contains("`g` has 1 values for 3 rows"), "{err}");
+}
+
+#[test]
+fn a_degenerate_y_range_beside_bars_is_refused() {
+    let df = frame_from_csv("x,y\na,0\nb,0\n");
+    let err = layout_of_layers(&df, xy(), vec![col()], None).expect_err("all-zero bars");
+    assert!(matches!(&err, Error::ScaleDomain(m) if m.contains("one value")), "{err}");
+    // A reference line that gives the range its second value makes it valid again.
+    assert!(layout_of_layers(&df, xy(), vec![col(), hline(1.0)], None).is_ok());
+}
+
+#[test]
+fn a_non_finite_bar_or_dodge_width_is_refused() {
+    let wide = Layer::new(Geom::col().width(f32::INFINITY));
+    let err = layout_of_layers(&abcd(), xy(), vec![wide], None).expect_err("infinite width");
+    assert!(err.to_string().contains("width must be a finite number"), "{err}");
+    let nan = Position::Dodge { width: Some(f64::NAN), preserve: Preserve::Total };
+    let err = layout_of_layers(&abcd(), xy(), vec![col().position(nan)], None).expect_err("NaN");
+    assert!(err.to_string().contains("width must be a finite number"), "{err}");
 }

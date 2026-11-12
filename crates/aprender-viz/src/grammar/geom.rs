@@ -84,11 +84,37 @@ pub enum GeomType {
         /// X intercept.
         xintercept: f32,
     },
+    /// Connected line segments in data order (`geom_path`).
+    Path,
+    /// Stair-step line (`geom_step`).
+    Step {
+        /// Which way the stair turns first.
+        direction: StepDirection,
+    },
+    /// Line `y = slope * x + intercept` (`geom_abline`); trains no scale.
+    Abline {
+        /// Slope.
+        slope: f32,
+        /// Intercept.
+        intercept: f32,
+    },
     /// Smooth curve (loess/lm).
     Smooth {
         /// Smoothing method.
         method: SmoothMethod,
     },
+}
+
+/// Direction of a `geom_step` (ggplot2 `direction`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum StepDirection {
+    /// Horizontal then vertical (`"hv"`, ggplot2's default).
+    #[default]
+    Hv,
+    /// Vertical then horizontal (`"vh"`).
+    Vh,
+    /// Steps change at the midpoint between x values (`"mid"`).
+    Mid,
 }
 
 /// Smoothing method.
@@ -200,6 +226,33 @@ impl Geom {
     #[must_use]
     pub fn vline(xintercept: f32) -> Self {
         Self { geom_type: GeomType::Vline { xintercept }, aes: None, stat: None }
+    }
+
+    /// Create a path geometry: points joined in data order.
+    #[must_use]
+    pub fn path() -> Self {
+        Self { geom_type: GeomType::Path, aes: None, stat: None }
+    }
+
+    /// Create a stair-step geometry, direction `hv`.
+    #[must_use]
+    pub fn step() -> Self {
+        Self { geom_type: GeomType::Step { direction: StepDirection::Hv }, aes: None, stat: None }
+    }
+
+    /// Create an abline: `y = slope * x + intercept`.
+    #[must_use]
+    pub fn abline(slope: f32, intercept: f32) -> Self {
+        Self { geom_type: GeomType::Abline { slope, intercept }, aes: None, stat: None }
+    }
+
+    /// Set the direction of a step geometry.
+    #[must_use]
+    pub fn direction(mut self, direction: StepDirection) -> Self {
+        if let GeomType::Step { direction: ref mut d } = self.geom_type {
+            *d = direction;
+        }
+        self
     }
 
     /// Create a smooth line.

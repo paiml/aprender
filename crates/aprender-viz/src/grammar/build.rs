@@ -10,6 +10,7 @@
 use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::color::Rgba;
 
+use super::path::BuiltPath;
 use super::stat_count::{BuiltBars, DiscreteAxis};
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
@@ -94,6 +95,9 @@ pub struct BuiltLayer {
     /// `stat_identity` and the position adjustment, with their trained scales. `x` and `y` above then
     /// hold each bar's centre and `y`.
     pub bars: Option<BuiltBars>,
+    /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
+    /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
+    pub path: Option<BuiltPath>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

@@ -1,7 +1,7 @@
 metadata:
   id: ggplot2-bars-stat-count-geom-bar-v1
   kind: pattern
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-11-12'
   author: PAIML Engineering
   description: >-
@@ -83,6 +83,14 @@ enforcement:
     description: text-x bars are refused by the renderers with a typed error
     check: grammar::ggplot2_bars_oracle::bars_on_a_discrete_x_are_not_drawn_yet_and_say_so
     severity: ERROR
+  bar_layer_fill_ranks_first:
+    description: a fill mapped on the bar layer under a plot-level x ranks fill before x in the group ids, as ggplot2's add_group does over computed_mapping
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_layer_fill_under_plot_x_ranks_fill_first
+    severity: ERROR
+  bar_scope_refusals:
+    description: a non-default coord, a stat other than count or identity, a short column, a degenerate y range and a non-finite width are typed errors
+    check: grammar::ggplot2_bars_oracle::bars_under_a_non_default_coord_are_refused
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGB1-001
   rule: Bar width is 0.9
@@ -119,6 +127,41 @@ falsification_tests:
   prediction: letting the renderers draw text-x bars (removing the Err) turns _bars_on_a_discrete_x_are_not_drawn_yet_and_say_so RED (measured with the message changed, 1 failed, 42 passed, rc=101); a bar layer with its own data under a facet returns an Err naming it (_bar_layer_with_its_own_data_under_a_facet_is_a_typed_error)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: A text-x bar plot renders without bars, silently
+- id: FALSIFY-GGB1-008
+  rule: Layer fill under a plot x ranks fill first
+  prediction: setting fill_first to false turns the 3 layer_fill tests RED (measured, mutation M1); replacing the condition with layer.aes.fill.is_some() alone turns _layer_x_and_fill_together_rank_x_first RED (measured, mutation M4)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_layer_fill_under_plot_x_ranks_fill_first
+  if_fails: The fixture's x and fill orders agree, so the rank order is invisible
+- id: FALSIFY-GGB1-009
+  rule: Bars under a non-default coord are refused
+  prediction: removing the coord check in layout_with_bars turns bars_under_a_non_default_coord_are_refused RED (measured, mutation M6)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::bars_under_a_non_default_coord_are_refused
+  if_fails: A flipped or limited coord is laid out as cartesian
+- id: FALSIFY-GGB1-010
+  rule: Only stat_count and stat_identity make bars
+  prediction: removing the stat guard in bar_spec turns a_bar_stat_other_than_count_or_identity_is_refused RED (measured, mutation M7)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_bar_stat_other_than_count_or_identity_is_refused
+  if_fails: stat_bin bars are counted as stat_count
+- id: FALSIFY-GGB1-011
+  rule: A column shorter than the frame is refused
+  prediction: removing the length check in stat_count full_column turns a_short_column_is_refused_not_read_past RED (measured, mutation M5)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_short_column_is_refused_not_read_past
+  if_fails: A ragged frame is padded or truncated silently
+- id: FALSIFY-GGB1-012
+  rule: A y range with one value is refused
+  prediction: removing the degenerate-range check in layout_with_bars turns a_degenerate_y_range_beside_bars_is_refused RED (measured, mutation M8)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_degenerate_y_range_beside_bars_is_refused
+  if_fails: A zero-height scale is trained
+- id: FALSIFY-GGB1-013
+  rule: Companion layers beside bars take the identity stat only
+  prediction: removing the stat check in require_bar_companion turns bars_beside_an_unsupported_companion_are_refused RED (measured, mutation M10)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::bars_beside_an_unsupported_companion_are_refused
+  if_fails: A smoothed companion is laid out as raw data
+- id: FALSIFY-GGB1-014
+  rule: A bar or dodge width must be finite
+  prediction: removing the finite-width check in bar_spec turns a_non_finite_bar_or_dodge_width_is_refused RED (measured, 1 failed, 70 passed, rc=101)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_non_finite_bar_or_dodge_width_is_refused
+  if_fails: An infinite width trains an infinite x range
 qa_gate:
   id: F-GGB1-001
   name: ggplot2 conformance bars row 1 (stat_count + geom_bar)
@@ -132,3 +175,5 @@ qa_gate:
   - facet_stat_matches
   - mixed_layers_match
   - unsupported_is_typed_error
+  - bar_layer_fill_ranks_first
+  - bar_scope_refusals

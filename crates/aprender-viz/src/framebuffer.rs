@@ -173,8 +173,8 @@ impl Framebuffer {
     pub fn fill_rect(&mut self, x: u32, y: u32, w: u32, h: u32, color: Rgba) {
         let x1 = x.min(self.width);
         let y1 = y.min(self.height);
-        let x2 = (x + w).min(self.width);
-        let y2 = (y + h).min(self.height);
+        let x2 = x.saturating_add(w).min(self.width);
+        let y2 = y.saturating_add(h).min(self.height);
 
         if x1 >= x2 || y1 >= y2 {
             return;

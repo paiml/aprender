@@ -18,9 +18,16 @@
 //!
 //! # Scope
 //!
-//! `x` and the optional `fill` are text columns (discrete); `x` numeric is not supported. Group
-//! ids follow `add_group()`: the dense rank of the (x, fill) combinations present over the WHOLE layer
-//! data (before any facet split), x varying slowest, both compared bytewise (`LC_COLLATE=C`).
+//! `x` and the optional `fill` are text columns (discrete); `x` numeric is not supported. Every column
+//! read must hold one value per row of the frame ([`BarError::ShortColumn`] otherwise), and an identity
+//! `y` must be finite ([`BarError::NonFinite`]: ggplot2 keeps a `NaN` row through `ggplot_build()` with an
+//! `NA` x and edges, which this crate does not reproduce). Group ids follow `add_group()`: the dense rank
+//! of the (x, fill) combinations present over the WHOLE layer data (before any facet split), both compared
+//! bytewise (`LC_COLLATE=C`). The first column ranked is the first discrete aesthetic of ggplot2's
+//! `computed_mapping`, the layer's own aesthetics before the plot's: x, unless `fill` is mapped on the
+//! layer and `x` only on the plot ([`BarSpec::fill_first`]). Within one `aes()` this crate assumes x is
+//! written before fill (the builder does not record the order), so `aes(fill = g, x = x)` on one level
+//! is out of scope.
 //! Weights, `orientation = "y"`, `just`, `na.rm`, `position_dodge(reverse =)` and `position_dodge2` are
 //! not implemented. `width =` is implemented (`geom_bar(width =)`).
 //!
@@ -47,6 +54,17 @@ pub enum BarError {
     MissingColumn(String),
     /// A column that must be discrete (text) holds numbers, or `y` holds text.
     WrongType(String),
+    /// A column holds fewer (or more) values than the frame has rows.
+    ShortColumn {
+        /// The column.
+        column: String,
+        /// Its length.
+        len: usize,
+        /// The frame's row count.
+        nrow: usize,
+    },
+    /// An identity `y` holds `NaN` or an infinity.
+    NonFinite(String),
 }
 
 impl std::fmt::Display for BarError {
@@ -56,6 +74,10 @@ impl std::fmt::Display for BarError {
             BarError::WrongType(c) => {
                 write!(f, "column `{c}` has the wrong type for this aesthetic")
             }
+            BarError::ShortColumn { column, len, nrow } => {
+                write!(f, "column `{column}` has {len} values for {nrow} rows")
+            }
+            BarError::NonFinite(c) => write!(f, "column `{c}` holds a NaN or infinite value"),
         }
     }
 }
@@ -86,6 +108,9 @@ pub struct BarSpec {
     pub position: Position,
     /// `geom_bar(width =)`: the bar width as a fraction of the x resolution (1 for a discrete x).
     pub width: f64,
+    /// Rank `fill` before `x` in the group ids: ggplot2 does when `fill` is a layer aesthetic and `x`
+    /// a plot aesthetic (`computed_mapping` lists the layer's aesthetics first).
+    pub fill_first: bool,
 }
 
 impl BarSpec {
@@ -99,6 +124,7 @@ impl BarSpec {
             stat: BarStat::Count,
             position: Position::stack(),
             width: DEFAULT_BAR_WIDTH,
+            fill_first: false,
         }
     }
 
@@ -135,6 +161,13 @@ impl BarSpec {
         self.width = width;
         self
     }
+
+    /// Rank `fill` before `x` in the group ids (see [`BarSpec::fill_first`]).
+    #[must_use]
+    pub fn fill_first(mut self, fill_first: bool) -> Self {
+        self.fill_first = fill_first;
+        self
+    }
 }
 
 /// A trained discrete position axis, as the panel sees it.
@@ -164,16 +197,26 @@ pub struct BuiltBars {
     pub y: PositionScale,
 }
 
-fn text_column<'a>(df: &'a DataFrame, name: &str) -> Result<Vec<&'a str>, BarError> {
+/// The column `name`, which must hold exactly one value per row of `df`.
+fn full_column<'a>(df: &'a DataFrame, name: &str) -> Result<&'a [DataValue], BarError> {
     let col = df.get(name).ok_or_else(|| BarError::MissingColumn(name.to_string()))?;
+    if col.len() != df.nrow() {
+        return Err(BarError::ShortColumn { column: name.to_string(), len: col.len(), nrow: df.nrow() });
+    }
+    Ok(col)
+}
+
+fn text_column<'a>(df: &'a DataFrame, name: &str) -> Result<Vec<&'a str>, BarError> {
+    let col = full_column(df, name)?;
     col.iter().map(|v| v.as_str().ok_or_else(|| BarError::WrongType(name.to_string()))).collect()
 }
 
 fn number_column(df: &DataFrame, name: &str) -> Result<Vec<f64>, BarError> {
-    let col = df.get(name).ok_or_else(|| BarError::MissingColumn(name.to_string()))?;
+    let col = full_column(df, name)?;
     col.iter()
         .map(|v| match v {
-            DataValue::Number(n) => Ok(f64::from(*n)),
+            DataValue::Number(n) if n.is_finite() => Ok(f64::from(*n)),
+            DataValue::Number(_) => Err(BarError::NonFinite(name.to_string())),
             DataValue::Text(_) | DataValue::Null => Err(BarError::WrongType(name.to_string())),
         })
         .collect()
@@ -198,12 +241,17 @@ pub fn level_positions(levels: &[String], values: &[&str]) -> Vec<f64> {
         .collect()
 }
 
-/// `add_group()`: dense rank of the (x, fill) combinations present, x slowest.
-fn group_ids(x: &[&str], fill: Option<&[&str]>, group_all: bool) -> Vec<u32> {
+/// `add_group()`: dense rank of the (x, fill) combinations present; the first column of the key
+/// varies slowest, and it is `fill` when `fill_first`.
+fn group_ids(x: &[&str], fill: Option<&[&str]>, group_all: bool, fill_first: bool) -> Vec<u32> {
     if group_all {
         return vec![1; x.len()];
     }
-    let key = |i: usize| (x[i], fill.map(|f| f[i]));
+    let key = |i: usize| match fill {
+        Some(f) if fill_first => (f[i], Some(x[i])),
+        Some(f) => (x[i], Some(f[i])),
+        None => (x[i], None),
+    };
     let mut keys: Vec<_> = (0..x.len()).map(key).collect();
     keys.sort_unstable();
     keys.dedup();
@@ -295,8 +343,8 @@ pub fn y_extent(rows: &[BarRow]) -> Option<(f64, f64)> {
 ///
 /// # Errors
 ///
-/// [`BarError`] if a named column is missing, `x`/`fill` is not text, or the identity `y` is not
-/// numeric.
+/// [`BarError`] if a named column is missing or does not hold one value per row, `x`/`fill` is not
+/// text, or the identity `y` is not a finite number.
 pub fn bar_layout(df: &DataFrame, spec: &BarSpec) -> Result<BuiltBars, BarError> {
     let x = text_column(df, &spec.x)?;
     let levels = sorted_levels(x.iter().copied());
@@ -326,7 +374,7 @@ pub fn bar_layout_in(
         BarStat::Identity(ycol) => Some(number_column(df, ycol)?),
     };
     let x_pos = level_positions(x_levels, &x);
-    let group = group_ids(&x, fill.as_deref(), spec.group_all);
+    let group = group_ids(&x, fill.as_deref(), spec.group_all, spec.fill_first);
 
     let mut per_panel: Vec<Vec<BarRow>> = panels
         .iter()

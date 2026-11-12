@@ -1,0 +1,57 @@
+{
+  "row": "bars_companions plot_fill_layer_x",
+  "spec": "aes(fill = g) + geom_bar(aes(x), dodge)",
+  "data_file": "data.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomBar",
+      "count": [1, 1, 1, 1],
+      "prop": [1, 1, 1, 1],
+      "x": [1, 1.7749999999999999, 2.2250000000000001, 3],
+      "flipped_aes": [false, false, false, false],
+      "fill": ["#00BFC4", "#F8766D", "#00BFC4", "#F8766D"],
+      "PANEL": ["1", "1", "1", "1"],
+      "group": [1, 2, 3, 4],
+      "y": [1, 1, 1, 1],
+      "ymin": [0, 0, 0, 0],
+      "ymax": [1, 1, 1, 1],
+      "xmin": [0.55000000000000004, 1.5499999999999998, 2, 2.5499999999999998],
+      "xmax": [1.45, 2, 2.4500000000000002, 3.4500000000000002],
+      "order": [1, 1, 2, 1],
+      "colour": [null, null, null, null],
+      "linewidth": [0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "width": [0.90000000000000002, 0.90000000000000002, 0.90000000000000002, 0.90000000000000002],
+      "colour_rgba": [
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": ["a", "b", "c"],
+      "continuous_range": [0.40000000000000002, 3.6000000000000001],
+      "breaks": [1, 2, 3],
+      "labels": ["a", "b", "c"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 1],
+      "continuous_range": [-0.050000000000000003, 1.05],
+      "breaks": [0, 0.25, 0.5, 0.75, 1],
+      "labels": ["0.00", "0.25", "0.50", "0.75", "1.00"],
+      "n_breaks_censored": 0
+    }
+  },
+  "collate": "C"
+}

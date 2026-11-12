@@ -41,10 +41,14 @@ mod ggplot;
 #[cfg(test)]
 mod ggplot2_bars_oracle;
 #[cfg(test)]
+mod ggplot2_lines_oracle;
+#[cfg(test)]
 mod ggplot2_oracle;
+mod path;
 mod position;
 mod stat;
 mod stat_count;
+mod term;
 mod theme;
 
 pub use aes::Aes;
@@ -55,11 +59,16 @@ pub use build::{
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
 pub use facet::{panels, Facet, Panel};
-pub use geom::Geom;
+pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
+pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use position::{apply as apply_position, apply_panels, BarRow, Position, Preserve};
 pub use stat::Stat;
 pub use stat_count::{
     bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,
+};
+pub use term::{
+    TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    POINT_GLYPH,
 };
 pub use theme::Theme;

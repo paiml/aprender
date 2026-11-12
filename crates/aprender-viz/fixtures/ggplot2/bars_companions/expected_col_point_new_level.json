@@ -1,0 +1,73 @@
+{
+  "row": "bars_companions col_point_new_level",
+  "spec": "geom_col() + geom_point(aes(x = xl, y = z))",
+  "data_file": "data.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomCol",
+      "x": [1, 2, 2, 3],
+      "y": [2, 3, 8, 0],
+      "PANEL": ["1", "1", "1", "1"],
+      "group": [1, 2, 2, 3],
+      "flipped_aes": [false, false, false, false],
+      "ymin": [0, 0, 3, -2],
+      "ymax": [2, 3, 8, 0],
+      "xmin": [0.55000000000000004, 1.55, 1.55, 2.5499999999999998],
+      "xmax": [1.45, 2.4500000000000002, 2.4500000000000002, 3.4500000000000002],
+      "colour": [null, null, null, null],
+      "fill": ["#595959FF", "#595959FF", "#595959FF", "#595959FF"],
+      "linewidth": [0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "width": [0.90000000000000002, 0.90000000000000002, 0.90000000000000002, 0.90000000000000002],
+      "colour_rgba": [
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0]
+      ]
+    },
+    {
+      "geom": "GeomPoint",
+      "x": [4, 1, 5, 2],
+      "y": [10, 20, 5, 0],
+      "PANEL": ["1", "1", "1", "1"],
+      "group": [3, 1, 4, 2],
+      "shape": [19, 19, 19, 19],
+      "colour": ["black", "black", "black", "black"],
+      "fill": [null, null, null, null],
+      "size": [1.5, 1.5, 1.5, 1.5],
+      "alpha": [null, null, null, null],
+      "stroke": [0.5, 0.5, 0.5, 0.5],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": ["a", "b", "c", "d", "e"],
+      "continuous_range": [0.40000000000000002, 5.5999999999999996],
+      "breaks": [1, 2, 3, 4, 5],
+      "labels": ["a", "b", "c", "d", "e"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [-2, 20],
+      "continuous_range": [-3.1000000000000001, 21.100000000000001],
+      "breaks": [0, 5, 10, 15, 20],
+      "labels": ["0", "5", "10", "15", "20"],
+      "n_breaks_censored": 1
+    }
+  },
+  "collate": "C"
+}

@@ -1,0 +1,105 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6890 — Video widget, pure state + draw"
+    - "crates/aprender-present-widgets/src/video.rs — the widget this pins"
+  description: >
+    Video holds playback state and turns it into draw commands. A widget that
+    paints outside its bounds, shows the play glyph while playing, toggles on a
+    click outside itself, or verifies without a source or an accessible name
+    misleads the user, and no other test looks at the command stream.
+
+name: present-video-widget
+version: "1.0.0"
+scope: >
+  The pure half of `Video`: the playback state machine, the draw commands
+  emitted by `Video::paint` (backdrop or frame rect, play glyph), click and
+  key handling in `Video::event`, and `Brick::verify`. Out of scope: the real
+  `<video>` element on wasm32, which is a later ticket.
+status: active
+
+contract: |
+  (1) EVERY DRAW LIES INSIDE THE LAID-OUT BOUNDS. Each rect and each glyph
+      vertex that `Video::paint` emits is within the rectangle passed to
+      `Video::layout`.
+  (2) THE PLAY GLYPH IS CENTRED AND SHOWN IFF NOT PLAYING. The bounding box of
+      the glyph has its centre on the centre of the bounds (within 0.5 px). It
+      is drawn when the state is Paused or Ended and is absent when Playing.
+  (3) A CLICK INSIDE TOGGLES, A CLICK OUTSIDE DOES NOT. Mouse down and mouse
+      up both inside the bounds toggle playback and emit `VideoToggled`; a
+      press or a release outside does nothing. Space and Enter (key up) toggle.
+  (4) VERIFY REFUSES AN EMPTY SRC AND A MISSING ACCESSIBLE NAME. A widget with
+      a src and a name passes `Brick::verify` in every playback state.
+  (5) EVERY ENTRY POINT IS TOTAL FOR ANY f32. For any f32 input no pub fn
+      panics, `measure` and `layout` return finite non-negative sizes (negative
+      upper limits count as 0), every draw command has finite coordinates and
+      finite non-negative widths, and `layout` keeps the raw bounds so
+      `Brick::verify` fails on NaN, infinite or negative bounds.
+equations:
+  glyph_centre:
+    description: "Centre of the play glyph bounding box"
+    formula: "centre(glyph) = bounds.centre, glyph height = 0.25 * min(w, h), width = 0.866 * height"
+    domain: "any laid-out bounds with w, h >= 0"
+    codomain: "Point"
+    invariants:
+      - "the glyph bounding box is contained in the bounds"
+falsification:
+  - id: FALSIFY-PRESENT-VIDEO-WIDGET-V1-001
+    description: "Paint, event and verify output match the contract for every state"
+    test: "cargo test -p aprender-present-widgets --lib video::tests"
+    evidence: "pending first green run on the build host, 2026-11-11"
+open_obligations:
+  - |
+    The wasm32 `<video>` element binding (web-sys) is a separate ticket and
+    must keep `VideoState` as the single source of truth.
+falsification_tests:
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-001
+    description: "paint stays inside any bounds with a centred glyph"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_paint_stays_inside_any_bounds"
+    prediction: "for any bounds every rect and glyph vertex is inside; glyph centre within 0.5 px of the bounds centre; playing draws one rect"
+    if_fails: "the widget paints outside its layout box or the glyph drifts off centre"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-002
+    description: "the glyph is shown while paused and absent while playing"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_paint_playing_draws_frame_and_no_glyph"
+    prediction: "playing paints exactly one rect and no path; paused paints a rect then a glyph path"
+    if_fails: "a playing video still shows the play glyph"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-003
+    description: "a click inside toggles playback and emits VideoToggled"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_click_inside_toggles_and_emits"
+    prediction: "first click emits playing=true, second emits playing=false"
+    if_fails: "clicking the video does not toggle playback"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-004
+    description: "a click outside does nothing"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_click_outside_does_nothing"
+    prediction: "no message and the state stays Paused"
+    if_fails: "a click outside the widget toggles it"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-005
+    description: "verify refuses an empty src"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_verify_fails_on_empty_src"
+    prediction: "one failed assertion naming src"
+    if_fails: "a video without a source passes verification"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-006
+    description: "verify refuses a missing accessible name"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_verify_fails_without_accessible_name"
+    prediction: "one failed assertion naming the accessible name; an empty name also fails"
+    if_fails: "an unnamed video passes verification"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-007
+    description: "a named video with a src verifies in every playback state"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_verify_passes_in_every_state"
+    prediction: "valid when Paused, Playing, Ended"
+    if_fails: "verification depends on playback state"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-008
+    description: "a Video inside a Modal lays out and paints inside the modal content bounds"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::video_inside_modal_lays_out_and_paints_inside_bounds"
+    prediction: "backdrop rect inside Modal::content_bounds, glyph inside the backdrop and centred"
+    if_fails: "the widget does not compose with Modal"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-009
+    description: "every Video entry point is total and sane for any f32 input"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::class_video && cargo test -p aprender-present-widgets --lib video::tests::reviewer_repro_video"
+    prediction: "no panic; finite non-negative sizes; finite draw commands; verify fails on bad raw bounds"
+    if_fails: "some f32 input still yields a panic, a negative size, a non-finite draw command or an unreachable valid-bounds check"

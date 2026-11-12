@@ -1,7 +1,7 @@
 metadata:
   id: ggplot2-bars-stat-identity-geom-col-v1
   kind: pattern
-  version: 1.0.0
+  version: 1.1.0
   created: '2026-11-12'
   author: PAIML Engineering
   description: >-
@@ -56,6 +56,14 @@ enforcement:
     description: geom_col next to geom_hline widens y to the intercept
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_hline_extend_y
     severity: ERROR
+  col_companions_match:
+    description: geom_col beside geom_vline, geom_hline and geom_point (bars_companions fixtures) trains both position scales over every layer as ggplot2 does
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_col_point_and_vline
+    severity: ERROR
+  col_non_finite_y_refused:
+    description: a NaN or infinite y in a geom_col layer is a typed error, not a bar
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_col_with_a_nan_y_is_a_typed_error
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGC1-001
   rule: Negative bars are recognised after setup_data
@@ -72,6 +80,21 @@ falsification_tests:
   prediction: dropping the y of non-bar layers from the scale training (layout_with_bars) turns _mixed_col_and_point_share_the_y_scale and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 41 passed, rc=101); dropping an hline intercept turns _mixed_col_and_hline_extend_y RED (measured, 1 failed, 42 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The y range of geom_col + geom_point(aes(y = z)) is the same as the bars' alone
+- id: FALSIFY-GGC1-004
+  rule: A vline beside bars widens the x range on the discrete axis
+  prediction: dropping the vline intercept from the x range in layout_with_bars turns 6 bars_companions tests RED, _col_and_vline_right_of_the_bars_widen_x among them (measured, mutation M2)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_col_and_vline_right_of_the_bars_widen_x
+  if_fails: The vline fixture does not lie outside the bars' x range
+- id: FALSIFY-GGC1-005
+  rule: Point levels the bars lack extend the discrete x
+  prediction: training the discrete levels from the bar layers only turns 3 tests RED, _point_with_new_levels_extends_the_discrete_x among them (measured, mutation M3)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_point_with_new_levels_extends_the_discrete_x
+  if_fails: The fixture's point levels are all bar levels
+- id: FALSIFY-GGC1-006
+  rule: A non-finite y is refused
+  prediction: removing the finite check in stat_count number_column turns _col_with_a_nan_y_is_a_typed_error RED (measured, mutation M9)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_col_with_a_nan_y_is_a_typed_error
+  if_fails: NaN rows are dropped or drawn silently
 qa_gate:
   id: F-GGC1-001
   name: ggplot2 conformance bars row 2 (stat_identity + geom_col)
@@ -81,3 +104,5 @@ qa_gate:
   - col_plain_matches
   - col_mixed_layers_match
   - col_hline_matches
+  - col_companions_match
+  - col_non_finite_y_refused
