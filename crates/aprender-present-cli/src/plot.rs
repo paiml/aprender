@@ -308,13 +308,26 @@ fn check(what: &str, got: Option<&str>, supported: &[&str]) -> Result<(), String
     }
 }
 
-/// Validate the spec against what the engine draws, then build and render the plot.
-fn render(
-    spec: &Spec,
-    args: &PlotArgs,
-    env: &Env,
-    stderr: &mut dyn Write,
-) -> Result<String, String> {
+/// Refuse a facet the engine does not draw (only `null` is).
+fn check_facet(facet: Option<&FacetSpec>) -> Result<(), String> {
+    match facet {
+        None => Ok(()),
+        Some(FacetSpec::Name(f)) if FACETS.contains(&f.as_str()) => Ok(()),
+        Some(other) => {
+            let got = match other {
+                FacetSpec::Name(f) => format!("'{f}'"),
+                FacetSpec::Other(_) => "a mapping or a list".into(),
+            };
+            Err(format!(
+                "facets are not supported yet (got {got}); supported: {}",
+                FACETS.join(", ")
+            ))
+        }
+    }
+}
+
+/// Validate the spec against what the engine draws, before any data is read.
+fn check_spec(spec: &Spec) -> Result<(), String> {
     if spec.layers.is_empty() {
         return Err("the plot has no layers; add one, e.g. geom: point".into());
     }
@@ -327,68 +340,50 @@ fn render(
         check("scale aesthetic", Some(aes), AESTHETICS)?;
         check("scale", Some(scale), SCALES)?;
     }
-    match &spec.facet {
-        None => {}
-        Some(FacetSpec::Name(f)) if FACETS.contains(&f.as_str()) => {}
-        Some(other) => {
-            let got = match other {
-                FacetSpec::Name(f) => format!("'{f}'"),
-                FacetSpec::Other(_) => "a mapping or a list".into(),
-            };
-            return Err(format!(
-                "facets are not supported yet (got {got}); supported: {}",
-                FACETS.join(", ")
-            ));
-        }
-    }
+    check_facet(spec.facet.as_ref())?;
     check("theme", spec.theme.as_deref(), THEMES)?;
     for aes in spec.aes.keys() {
         check("aesthetic", Some(aes), AESTHETICS)?;
     }
-    let col = |a: &str| {
-        spec.aes
-            .get(a)
-            .ok_or_else(|| format!("aes needs a mapping for '{a}' (e.g. {a}=column)"))
-    };
-    let (xcol, ycol) = (col("x")?, col("y")?);
-    let size = match args.output {
+    Ok(())
+}
+
+/// The column mapped to aesthetic `a`.
+fn mapped_col<'a>(spec: &'a Spec, a: &str) -> Result<&'a String, String> {
+    spec.aes
+        .get(a)
+        .ok_or_else(|| format!("aes needs a mapping for '{a}' (e.g. {a}=column)"))
+}
+
+/// The requested size of the output.
+fn output_size(args: &PlotArgs, env: &Env) -> (u32, u32) {
+    match args.output {
         Output::Term => term_size(args, env),
         Output::Svg => (
             args.width.unwrap_or(DEFAULT_SVG_SIZE.0),
             args.height.unwrap_or(DEFAULT_SVG_SIZE.1),
         ),
+    }
+}
+
+/// Apply the spec's `coord:` to the plot.
+fn apply_coord(plot: GGPlot, spec: &Spec) -> Result<GGPlot, String> {
+    let Some(c) = &spec.coord else {
+        return Ok(plot);
     };
-    // Before the data is read: a size the engine cannot allocate must not cost a read first.
-    check_size(args.output, size)?;
+    check("coord", Some(&c.kind), COORDS)?;
+    let mut coord = Coord::cartesian();
+    if let Some([lo, hi]) = c.xlim {
+        coord = coord.xlim(lo, hi);
+    }
+    if let Some([lo, hi]) = c.ylim {
+        coord = coord.ylim(lo, hi);
+    }
+    Ok(plot.coord(coord))
+}
 
-    let table = read_csv(&spec.data)?;
-    let (xs, ys, dropped) = numeric_xy(&table, xcol, ycol)?;
-    if dropped > 0 {
-        // ggplot2's wording for the same event.
-        let _ = writeln!(stderr, "warning: Removed {dropped} rows containing missing values or values outside the scale range (geom_point).");
-    }
-    let mut df = DataFrame::new();
-    // numeric_xy refused every value outside f32's normal range, so this narrowing keeps the
-    // magnitude and loses only digits past f32's 24-bit mantissa.
-    let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
-    df.add_column_f32(xcol, &narrow(&xs));
-    df.add_column_f32(ycol, &narrow(&ys));
-
-    let mut plot = GGPlot::new().data(df).aes(Aes::new().x(xcol).y(ycol));
-    for _ in &spec.layers {
-        plot = plot.geom(Geom::point());
-    }
-    if let Some(c) = &spec.coord {
-        check("coord", Some(&c.kind), COORDS)?;
-        let mut coord = Coord::cartesian();
-        if let Some([lo, hi]) = c.xlim {
-            coord = coord.xlim(lo, hi);
-        }
-        if let Some([lo, hi]) = c.ylim {
-            coord = coord.ylim(lo, hi);
-        }
-        plot = plot.coord(coord);
-    }
+/// Apply title and axis labels; a flag wins over the spec's `labs:`.
+fn apply_labs(mut plot: GGPlot, spec: &Spec, args: &PlotArgs) -> GGPlot {
     let labs = [
         (&args.title, &spec.labs.title),
         (&args.xlab, &spec.labs.x),
@@ -405,8 +400,38 @@ fn render(
     if let Some(t) = ylab {
         plot = plot.ylab(&t);
     }
+    plot
+}
 
-    let (width, height) = size;
+/// Build the plot from the data and the spec.
+fn build_plot(
+    spec: &Spec,
+    (xcol, ycol): (&str, &str),
+    (xs, ys): (&[f64], &[f64]),
+    args: &PlotArgs,
+) -> Result<GGPlot, String> {
+    let mut df = DataFrame::new();
+    // numeric_xy refused every value outside f32's normal range, so this narrowing keeps the
+    // magnitude and loses only digits past f32's 24-bit mantissa.
+    let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
+    df.add_column_f32(xcol, &narrow(xs));
+    df.add_column_f32(ycol, &narrow(ys));
+
+    let mut plot = GGPlot::new().data(df).aes(Aes::new().x(xcol).y(ycol));
+    for _ in &spec.layers {
+        plot = plot.geom(Geom::point());
+    }
+    let plot = apply_coord(plot, spec)?;
+    Ok(apply_labs(plot, spec, args))
+}
+
+/// Render the built plot to the requested target.
+fn draw(
+    plot: GGPlot,
+    args: &PlotArgs,
+    env: &Env,
+    (width, height): (u32, u32),
+) -> Result<String, String> {
     match args.output {
         Output::Term => {
             let color = !args.no_color && !env.no_color && env.stdout_is_tty && args.out.is_none();
@@ -423,6 +448,29 @@ fn render(
             .and_then(|b| b.to_svg()),
     }
     .map_err(|e| e.to_string())
+}
+
+/// Validate the spec against what the engine draws, then build and render the plot.
+fn render(
+    spec: &Spec,
+    args: &PlotArgs,
+    env: &Env,
+    stderr: &mut dyn Write,
+) -> Result<String, String> {
+    check_spec(spec)?;
+    let (xcol, ycol) = (mapped_col(spec, "x")?, mapped_col(spec, "y")?);
+    let size = output_size(args, env);
+    // Before the data is read: a size the engine cannot allocate must not cost a read first.
+    check_size(args.output, size)?;
+
+    let table = read_csv(&spec.data)?;
+    let (xs, ys, dropped) = numeric_xy(&table, xcol, ycol)?;
+    if dropped > 0 {
+        // ggplot2's wording for the same event.
+        let _ = writeln!(stderr, "warning: Removed {dropped} rows containing missing values or values outside the scale range (geom_point).");
+    }
+    let plot = build_plot(spec, (xcol, ycol), (&xs, &ys), args)?;
+    draw(plot, args, env, size)
 }
 
 /// Check a requested size against the target's bounds: 20x8 to 1000x1000 cells for a terminal,
@@ -1293,5 +1341,120 @@ mod tests {
             parse(&["--spec", spec.to_str().expect("utf8"), "--output", "svg"]).expect("parses");
         let e = go(&args, &Env::default()).0.expect_err("degenerate zoom");
         assert!(e.contains("Domain min and max cannot be equal"), "{e}");
+    }
+
+    fn points() -> GGPlot {
+        GGPlot::new()
+            .data_xy(&[1.0, 2.0, 3.0], &[1.0, 4.0, 9.0])
+            .geom(Geom::point())
+    }
+
+    fn term_text(plot: GGPlot) -> String {
+        let target = TerminalPlot {
+            width: 40,
+            height: 12,
+            color: false,
+        };
+        plot.build()
+            .and_then(|b| b.to_terminal(target))
+            .expect("renders")
+    }
+
+    #[test]
+    fn check_facet_accepts_null_and_refuses_the_rest() {
+        assert!(check_facet(None).is_ok());
+        assert!(check_facet(Some(&FacetSpec::Name("null".into()))).is_ok());
+        let named = check_facet(Some(&FacetSpec::Name("wrap".into()))).expect_err("named");
+        assert!(
+            named.contains("(got 'wrap')") && named.contains("supported: null"),
+            "{named}"
+        );
+        let other = FacetSpec::Other(serde::de::IgnoredAny);
+        let mapping = check_facet(Some(&other)).expect_err("mapping");
+        assert!(mapping.contains("a mapping or a list"), "{mapping}");
+    }
+
+    #[test]
+    fn check_spec_refuses_no_layers_and_bad_theme() {
+        let e = check_spec(&Spec::default()).expect_err("no layers");
+        assert!(e.contains("no layers"), "{e}");
+        let spec = Spec {
+            layers: vec![LayerSpec {
+                geom: "point".into(),
+                stat: None,
+                position: None,
+            }],
+            theme: Some("dark".into()),
+            ..Spec::default()
+        };
+        let e = check_spec(&spec).expect_err("theme");
+        assert!(e.contains("unsupported theme 'dark'"), "{e}");
+    }
+
+    #[test]
+    fn mapped_col_names_the_missing_aesthetic() {
+        let mut spec = Spec::default();
+        spec.aes.insert("x".into(), "a".into());
+        assert_eq!(mapped_col(&spec, "x"), Ok(&"a".to_string()));
+        let e = mapped_col(&spec, "y").expect_err("unmapped");
+        assert_eq!(e, "aes needs a mapping for 'y' (e.g. y=column)");
+    }
+
+    #[test]
+    fn output_size_is_per_target() {
+        let csv = tmp("size.csv", ROW1);
+        let term = flags(&csv, &[]);
+        assert_eq!(output_size(&term, &Env::default()), DEFAULT_TERM_SIZE);
+        let svg = flags(&csv, &["--output", "svg"]);
+        assert_eq!(output_size(&svg, &Env::default()), DEFAULT_SVG_SIZE);
+        let sized = flags(
+            &csv,
+            &["--output", "svg", "--width", "300", "--height", "200"],
+        );
+        assert_eq!(output_size(&sized, &Env::default()), (300, 200));
+    }
+
+    #[test]
+    fn apply_coord_passes_without_coord_and_refuses_unknown() {
+        let none = Spec::default();
+        assert!(apply_coord(points(), &none).is_ok());
+        let coord = |kind: &str| CoordSpec {
+            kind: kind.into(),
+            xlim: Some([0.0, 2.0]),
+            ylim: Some([0.0, 5.0]),
+        };
+        let polar = Spec {
+            coord: Some(coord("polar")),
+            ..Spec::default()
+        };
+        let e = apply_coord(points(), &polar).expect_err("polar");
+        assert!(e.contains("unsupported coord 'polar'"), "{e}");
+        let zoom = Spec {
+            coord: Some(coord("cartesian")),
+            ..Spec::default()
+        };
+        let out = term_text(apply_coord(points(), &zoom).expect("cartesian"));
+        assert_eq!(out.matches('●').count(), 2, "{out}");
+    }
+
+    #[test]
+    fn apply_labs_flag_wins_over_the_spec() {
+        let csv = tmp("labs.csv", ROW1);
+        let args = flags(&csv, &["--title", "FlagTitle", "--xlab", "FlagX"]);
+        let spec = Spec {
+            labs: Labs {
+                title: Some("SpecTitle".into()),
+                x: Some("SpecX".into()),
+                y: Some("SpecY".into()),
+            },
+            ..Spec::default()
+        };
+        let out = term_text(apply_labs(points(), &spec, &args));
+        assert!(out.contains("FlagTitle") && out.contains("FlagX"), "{out}");
+        assert!(out.contains("SpecY"), "{out}");
+        assert!(
+            !out.contains("SpecTitle") && !out.contains("SpecX"),
+            "{out}"
+        );
     }
 }
