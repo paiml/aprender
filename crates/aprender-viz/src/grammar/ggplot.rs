@@ -10,6 +10,9 @@ use crate::render::{draw_circle, draw_line_aa, draw_rect, draw_rect_outline, i32
 use crate::scale::{LinearScale, Scale};
 
 use super::aes::Aes;
+use super::build::{
+    point_defaults, point_diameter_px, BuiltLayer, BuiltLayout, PointAes, PositionScale,
+};
 use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
 use super::facet::{panels, Facet, Panel};
@@ -325,12 +328,9 @@ impl BuiltGGPlot {
         draw_rect(fb, i32_px(plot_x), i32_px(plot_y), plot_w, plot_h, self.theme.panel_background);
 
         // Panels share one domain, so marks stay comparable between them.
-        let (dx_min, dx_max, dy_min, dy_max) = self.compute_data_ranges();
-        let ((x_min, x_max), (y_min, y_max)) = apply_limits(
-            &self.coord,
-            (f64::from(dx_min), f64::from(dx_max)),
-            (f64::from(dy_min), f64::from(dy_max)),
-        )?;
+        let (xs, ys) = self.position_scales();
+        let ((x_min, x_max), (y_min, y_max)) =
+            apply_limits(&self.coord, xs.continuous_range, ys.continuous_range)?;
 
         // The scale pipeline below is still f32; the coordinate surface above is f64 (APEX-2c).
         let x_scale = LinearScale::new(
@@ -420,15 +420,8 @@ impl BuiltGGPlot {
         values.iter().filter(|v| v.is_finite()).fold(acc, |(lo, hi), &v| (lo.min(v), hi.max(v)))
     }
 
-    /// Give an empty or single-point span a width, then pad it by 5%.
-    fn padded(min: f32, max: f32) -> (f32, f32) {
-        let (min, max) = if min >= max { (min - 1.0, max + 1.0) } else { (min, max) };
-        let pad = (max - min) * 0.05;
-        (min - pad, max + pad)
-    }
-
-    /// Compute data ranges across all layers.
-    fn compute_data_ranges(&self) -> (f32, f32, f32, f32) {
+    /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
+    fn position_scales(&self) -> (PositionScale, PositionScale) {
         let mut x = (f32::MAX, f32::MIN);
         let mut y = (f32::MAX, f32::MIN);
 
@@ -439,9 +432,50 @@ impl BuiltGGPlot {
             y = Self::extend_range(y, data, layer_aes.y.as_ref());
         }
 
-        let (x_min, x_max) = Self::padded(x.0, x.1);
-        let (y_min, y_max) = Self::padded(y.0, y.1);
-        (x_min, x_max, y_min, y_max)
+        let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
+        (PositionScale::continuous(wide(x)), PositionScale::continuous(wide(y)))
+    }
+
+    /// The resolved plot, as ggplot2's `ggplot_build()` computes it: each layer's positions and
+    /// aesthetics, and the trained, expanded x/y scales with breaks and labels. The renderer draws
+    /// from these same scales.
+    ///
+    /// # Errors
+    ///
+    /// None today; the signature leaves room for stats that can fail.
+    pub fn layout(&self) -> Result<BuiltLayout> {
+        let (x, y) = self.position_scales();
+        let layers = self.layers.iter().map(|l| self.build_layer(l)).collect();
+        Ok(BuiltLayout { layers, x, y })
+    }
+
+    /// One layer's built data: rows where both positions are numeric, plus point aesthetics.
+    fn build_layer(&self, layer: &Layer) -> BuiltLayer {
+        let data = layer.data.as_ref().unwrap_or(&self.data);
+        let aes = self.aes.merge(&layer.aes);
+        let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
+        let ys = data.get_f32(aes.y.as_deref().unwrap_or("y")).unwrap_or_default();
+        let (x, y): (Vec<f64>, Vec<f64>) = xs
+            .iter()
+            .zip(&ys)
+            .filter_map(|(a, b)| Some((f64::from((*a)?), f64::from((*b)?))))
+            .unzip();
+
+        let points = match layer.geom.geom_type {
+            GeomType::Point { shape } => {
+                let p = PointAes {
+                    shape: shape.pch(),
+                    colour: aes.color_value.unwrap_or(point_defaults::COLOUR),
+                    fill: None,
+                    size: aes.size_value.map_or(point_defaults::SIZE_MM, f64::from),
+                    alpha: aes.alpha_value.map(f64::from),
+                    stroke: point_defaults::STROKE_MM,
+                };
+                Some(vec![p; x.len()])
+            }
+            _ => None,
+        };
+        BuiltLayer { x, y, points }
     }
 
     /// Draw grid lines.
@@ -524,11 +558,16 @@ impl BuiltGGPlot {
 
         // Get style from aesthetics
         let color = aes.color_value.unwrap_or(Rgba::new(66, 133, 244, 255));
-        let size = aes.size_value.unwrap_or(5.0);
 
         match &layer.geom.geom_type {
             GeomType::Point { shape } => {
-                Self::render_points(fb, &x_data, &y_data, x_scale, y_scale, color, size, *shape);
+                // ggplot2's GeomPoint defaults: black, size 1.5 mm, stroke 0.5 mm.
+                let colour = aes.color_value.unwrap_or(point_defaults::COLOUR);
+                let size_mm = aes.size_value.map_or(point_defaults::SIZE_MM, f64::from);
+                let diameter = point_diameter_px(size_mm, point_defaults::STROKE_MM) as f32;
+                Self::render_points(
+                    fb, &x_data, &y_data, x_scale, y_scale, colour, diameter, *shape,
+                );
             }
             GeomType::Line { width } => {
                 Self::render_line(fb, &x_data, &y_data, x_scale, y_scale, color, *width);

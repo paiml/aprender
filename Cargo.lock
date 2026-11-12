@@ -1955,6 +1955,7 @@ dependencies = [
  "resvg 0.45.1",
  "roxmltree 0.20.0",
  "serde",
+ "serde_json",
  "sha2 0.10.9",
  "skrifa",
  "tempfile",

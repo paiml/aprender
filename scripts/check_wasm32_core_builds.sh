@@ -37,6 +37,10 @@ PKG="aprender-core"
 # presentar page is built from; it did not build for wasm32 from the monorepo merge until
 # aprender#6888 and nothing noticed, because this guard only named aprender-core.
 BROWSER_PKG="aprender-present-lib"
+# aprender-viz needs its `wasm` feature for the wasm-bindgen deps. It did not build for wasm32
+# until aprender#6911 (the deps sat under a linux-only target table). Checked with --features wasm.
+VIZ_PKG="aprender-viz"
+PKG_FEATURES=""
 # One of the two MMIX constants from #2310. Kept as data so the self-test and
 # the comment above cannot drift apart.
 DEFECT_LITERAL="6364136223846793005"
@@ -119,7 +123,7 @@ main_check() {
 
     # Never read the status through a pipe - redirect, then read rc.
     set +e
-    cargo check --locked -p "${PKG}" --no-default-features --target "${TARGET}" \
+    cargo check --locked -p "${PKG}" --no-default-features ${PKG_FEATURES:+--features "${PKG_FEATURES}"} --target "${TARGET}" \
         > "${CHECK_LOG}" 2>&1
     rc=$?
     set -e
@@ -149,7 +153,7 @@ main_check() {
 
 usage() {
     echo "usage: $0 [--self-test]"
-    echo "  (no args)    self-test, then type-check ${PKG} and ${BROWSER_PKG} for ${TARGET}"
+    echo "  (no args)    self-test, then type-check ${PKG}, ${BROWSER_PKG} and ${VIZ_PKG} (wasm) for ${TARGET}"
     echo "  --self-test  only prove the toolchain still rejects the #2310 literal"
 }
 
@@ -179,6 +183,9 @@ case "${1:-}" in
         self_test || exit 1
         main_check || exit 1
         PKG="${BROWSER_PKG}"
+        main_check || exit 1
+        PKG="${VIZ_PKG}"
+        PKG_FEATURES="wasm"
         main_check || exit 1
         ;;
     *)
