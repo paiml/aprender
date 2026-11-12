@@ -11,7 +11,7 @@
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// File name of the generated loader inside `pkg/`.
 pub const BOOT_FILE: &str = "boot.js";
@@ -261,10 +261,24 @@ pub fn finish_bundle(
     Ok(source)
 }
 
+/// The directory the glue is generated into, absolute, so it names the same place whatever
+/// directory the build tool resolves a relative path against.
+pub fn glue_dir(output: &Path, cwd: &Path) -> PathBuf {
+    cwd.join(output).join("pkg")
+}
+
+/// The generated glue a page cannot load without that is not in the bundle (empty = all there).
+pub fn missing_glue(output: &Path, out_name: &str) -> Vec<String> {
+    [format!("{out_name}.js"), format!("{out_name}_bg.wasm")]
+        .into_iter()
+        .filter(|file| !output.join("pkg").join(file).is_file())
+        .map(|file| format!("pkg/{file} is missing from the bundle"))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("present-page-{name}-{}", std::process::id()));
@@ -462,6 +476,42 @@ mod tests {
         assert!(reasons[0].contains("other than"), "{reasons:?}");
         assert!(!out.join("index.html").exists());
         assert!(!out.join("pkg").exists());
+        let _ = fs::remove_dir_all(&out);
+    }
+
+    /// A relative output is anchored at the working directory; an absolute one is kept as
+    /// given (it used to be prefixed with `../../` and land under `crates/`).
+    #[test]
+    fn the_glue_directory_is_absolute_for_relative_and_absolute_outputs() {
+        let cwd = Path::new("/work/repo");
+        assert_eq!(
+            glue_dir(Path::new("dist"), cwd),
+            PathBuf::from("/work/repo/dist/pkg")
+        );
+        assert_eq!(
+            glue_dir(Path::new("/srv/out"), cwd),
+            PathBuf::from("/srv/out/pkg")
+        );
+    }
+
+    #[test]
+    fn a_bundle_without_its_glue_names_each_missing_file() {
+        let out = scratch("glue");
+        assert_eq!(
+            missing_glue(&out, "presentar"),
+            vec![
+                "pkg/presentar.js is missing from the bundle".to_string(),
+                "pkg/presentar_bg.wasm is missing from the bundle".to_string(),
+            ]
+        );
+        fs::create_dir_all(out.join("pkg")).expect("pkg");
+        fs::write(out.join("pkg/presentar.js"), "export default 0;").expect("js");
+        assert_eq!(
+            missing_glue(&out, "presentar"),
+            vec!["pkg/presentar_bg.wasm is missing from the bundle".to_string()]
+        );
+        fs::write(out.join("pkg/presentar_bg.wasm"), [0_u8]).expect("wasm");
+        assert!(missing_glue(&out, "presentar").is_empty());
         let _ = fs::remove_dir_all(&out);
     }
 

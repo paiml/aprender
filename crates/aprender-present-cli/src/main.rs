@@ -534,6 +534,7 @@ fn rebuild_wasm() {
 
 fn bundle(output: PathBuf, no_optimize: bool) {
     println!("Building Presentar WASM bundle...");
+    let cwd = std::env::current_dir().expect("current directory");
 
     // Build with wasm-pack
     let status = Command::new("wasm-pack")
@@ -547,12 +548,25 @@ fn bundle(output: PathBuf, no_optimize: bool) {
             "--release",
             "--out-dir",
         ])
-        .arg(format!("../../{}", output.join("pkg").display()))
+        .arg(page::glue_dir(&output, &cwd))
         .status()
         .expect("wasm-pack failed");
 
     if !status.success() {
         eprintln!("wasm-pack build failed");
+        std::process::exit(1);
+    }
+
+    // A page without its glue cannot load: say so instead of shipping it.
+    let missing = page::missing_glue(&output, WASM_OUT_NAME);
+    if !missing.is_empty() {
+        eprintln!(
+            "bundle refused: the generated glue is not in {}",
+            output.display()
+        );
+        for file in &missing {
+            eprintln!("  - {file}");
+        }
         std::process::exit(1);
     }
 

@@ -103,3 +103,13 @@ falsification_tests:
     test: "cargo test -p aprender-present-cli falsify_6893_new_project_page_runs_only_the_generated_loader"
     prediction: "www/index.html accepted; www/pkg/boot.js equals boot_module"
     if_fails: "a new project starts with a page the bundle step refuses, or with no loader"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-009
+    description: "the glue directory handed to the build tool is absolute for relative and absolute outputs"
+    test: "cargo test -p aprender-present-cli the_glue_directory_is_absolute_for_relative_and_absolute_outputs"
+    prediction: "dist -> <cwd>/dist/pkg; /srv/out -> /srv/out/pkg"
+    if_fails: "an absolute -o sends the glue under crates/ and the bundle ships without it"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-010
+    description: "a bundle whose glue is absent names each missing file"
+    test: "cargo test -p aprender-present-cli a_bundle_without_its_glue_names_each_missing_file"
+    prediction: "both files named when absent; one when one is absent; none when both exist"
+    if_fails: "bundle exits 0 with a page that cannot load"
