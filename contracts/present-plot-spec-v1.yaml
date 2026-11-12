@@ -1,0 +1,102 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-12"
+  updated: "2026-11-12"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6918 — ggplot2 text-syntax parser (PlotSpec)"
+    - "paiml/aprender#6917 — plot verb; this contract pins the CSV reader half"
+    - "paiml/aprender#6915 — epic: ggplot2-style plots from the CLI (0.72.6)"
+    - "crates/aprender-present-cli/src/plot/spec.rs — the parser this pins"
+    - "crates/aprender-present-cli/src/plot/csv.rs — the table reader this pins"
+  description: >
+    The plot verb takes a ggplot2-syntax spec and a CSV. A parser that quietly
+    ignores a call it does not know draws a different chart than the one that
+    was asked for, and a smoother that silently falls back to something other
+    than the requested method misreports the data. Both inputs must be total
+    (never panic) and must refuse, by name and position, whatever 0.72.6 does
+    not draw.
+
+name: present-plot-spec
+version: "1.0.0"
+scope: >
+  `plot::spec::parse`, `PlotSpec`'s `Display`, `SpecError`, and
+  `plot::csv::read_table` with `CsvError`, observed natively through the
+  bin-only crate's unit tests (`cargo test -p aprender-present-cli --bins`).
+  Out of scope: rendering, the `plot` subcommand wiring, and anything under
+  `aprender-viz` (later phases of the same epic).
+status: active
+
+contract: |
+  (1) ROUND TRIP. For every spec the parser can produce, parsing its canonical
+      text (`Display`) gives back an equal spec.
+  (2) UNSUPPORTED IS A NAMED ERROR WITH A POSITION. A call outside the 0.72.6
+      table, an argument a known call does not take, or a value outside the
+      supported set is a `SpecError` that names the call (or argument) and the
+      1-based line and column. Nothing is ignored silently.
+  (3) NO SILENT SMOOTHER. `geom_smooth` is accepted only with `method = "lm"`
+      and `se = FALSE`. A missing method, `loess` or any other method, and a
+      missing or TRUE `se` are errors whose text says loess and the
+      confidence band are not supported in 0.72.6.
+  (4) THE CSV READER SKIPS `#` LINES AND TYPES COLUMNS BY ONE RULE. A line whose
+      first character is `#` is skipped before and after the header. A column
+      is numeric iff every non-empty cell parses as a finite number; otherwise
+      it is text. An empty cell in a numeric column is `None`.
+  (5) A BAD TABLE IS A NAMED ERROR WITH A LINE. Empty or comment-only input, a
+      ragged row, a duplicate column name, an unterminated quote and text
+      after a closing quote are `CsvError`s carrying the 1-based source line.
+  (6) TOTAL. `parse` and `read_table` return a value or an error for every
+      input, including arbitrary bytes and deeply nested text, and never panic.
+equations:
+  csv_column_type:
+    description: "Type of one CSV column"
+    formula: "numeric(col) = all(cell == '' or finite(parse_f64(cell)) for cell in col)"
+    domain: "a column of cells read from a record-aligned table"
+    codomain: "{Numeric, Text}"
+    invariants:
+      - "cells are not trimmed: ' 3' is text"
+      - "NaN, inf and 1e999 are not finite, so they make the column text"
+      - "a header-only table has empty Numeric columns"
+falsification:
+  - id: FALSIFY-PRESENT-PLOT-SPEC-V1-001
+    description: "The parser and the table reader behave as the contract says for every case"
+    test: "cargo test -p aprender-present-cli --bins -- plot::"
+    evidence: "see the PR that added this contract"
+open_obligations:
+  - |
+    Nothing renders yet: the `plot` subcommand, the aprender-viz dependency and
+    the end-to-end byte-exact render are later phases (#6917, #6919). This
+    contract grows a clause per phase.
+falsification_tests:
+  - id: FALSIFY-PRESENT_PLOT_SPEC-001
+    description: "parse(spec.to_string()) == spec for the worked example and for generated specs"
+    test: "cargo test -p aprender-present-cli --bins -- plot::spec::tests::full_example_round_trips_through_display plot::spec::tests::every_supported_call_round_trips plot::spec::tests::round_trip_parse_of_display_is_identity"
+    prediction: "the re-parsed spec equals the original for 256 generated specs and the two fixed ones"
+    if_fails: "the canonical text drops or reorders something the parser reads"
+  - id: FALSIFY-PRESENT_PLOT_SPEC-002
+    description: "unsupported calls and arguments are named with line and column"
+    test: "cargo test -p aprender-present-cli --bins -- plot::spec::tests::unsupported_calls_are_named_with_line_and_column plot::spec::tests::unknown_arguments_name_call_argument_and_position plot::spec::tests::bad_values_name_the_argument_and_the_expectation"
+    prediction: "geom_histogram, geom_boxplot, scale_x_log10, theme_bw and unknown arguments each give a SpecError naming them at the exact line and column"
+    if_fails: "a chart the user asked for is drawn without the part that is not implemented"
+  - id: FALSIFY-PRESENT_PLOT_SPEC-003
+    description: "geom_smooth other than lm with se = FALSE is an explicit error"
+    test: "cargo test -p aprender-present-cli --bins -- plot::spec::tests::geom_smooth_other_than_lm_with_se_false_is_rejected_in_words"
+    prediction: "seven non-conforming forms each fail with text naming loess, the confidence band and 0.72.6"
+    if_fails: "a smoother other than the requested one is drawn silently"
+  - id: FALSIFY-PRESENT_PLOT_SPEC-004
+    description: "the CSV reader skips # lines and types columns by the numeric rule"
+    test: "cargo test -p aprender-present-cli --bins -- plot::csv::tests::hash_lines_are_skipped_before_and_after_the_header plot::csv::tests::a_column_is_numeric_iff_every_nonempty_cell_is_a_finite_number plot::csv::tests::non_finite_and_untrimmed_cells_are_text"
+    prediction: "comment lines vanish before and after the header; one non-number makes a column text; NaN and inf are text"
+    if_fails: "comment text leaks into the data, or a numeric column is misclassified"
+  - id: FALSIFY-PRESENT_PLOT_SPEC-005
+    description: "table errors name the cause and the 1-based line"
+    test: "cargo test -p aprender-present-cli --bins -- plot::csv::tests::no_header_reports_the_line_the_input_ended_on plot::csv::tests::ragged_rows_name_the_line_and_both_counts plot::csv::tests::duplicate_column_names_name_the_header_line plot::csv::tests::unterminated_quotes_name_the_opening_line plot::csv::tests::text_after_a_closing_quote_is_a_stray_quote"
+    prediction: "each bad table gives the matching CsvError at the line the cause starts on"
+    if_fails: "a malformed table is read as a different table, or the error points at the wrong line"
+  - id: FALSIFY-PRESENT_PLOT_SPEC-006
+    description: "no input panics the parser or the reader"
+    test: "cargo test -p aprender-present-cli --bins -- plot::spec::tests::parse_never_panics_on_arbitrary_strings plot::spec::tests::parse_never_panics_on_arbitrary_bytes plot::spec::tests::parse_never_panics_on_token_soup plot::spec::tests::deep_nesting_is_an_error_not_a_stack_overflow plot::csv::tests::read_table_never_panics_on_arbitrary_strings plot::csv::tests::read_table_never_panics_on_arbitrary_bytes plot::csv::tests::read_table_never_panics_on_csv_soup"
+    prediction: "256 cases per property return Ok or Err; 200-deep nesting is a Syntax error"
+    if_fails: "a user-supplied spec or CSV can crash the CLI"
