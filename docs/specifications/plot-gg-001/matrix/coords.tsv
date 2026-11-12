@@ -1,0 +1,13 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+coords	coord_cartesian	partial	crates/aprender-viz/src/grammar/coord.rs:104 Coord::cartesian (+xlim :122, ylim :131, apply_limits :79)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_coord_limits	expand=TRUE 5% pad not applied to xlim/ylim (used raw); no clip/reverse/ratio; tuple args not xlim=c()
+coords	coord_equal	partial	crates/aprender-viz/src/grammar/coord.rs:116 Coord::fixed	crates/aprender-viz/tests/facet_coord_render.rs::unimplemented_coords_refuse_rather_than_no_op	Constructor exists but apply() refuses (UnsupportedCoord); ratio never applied; R default ratio=1, here required
+coords	coord_fixed	partial	crates/aprender-viz/src/grammar/coord.rs:116 Coord::fixed	crates/aprender-viz/tests/facet_coord_render.rs::unimplemented_coords_refuse_rather_than_no_op	Constructor exists but apply() refuses (UnsupportedCoord); ratio never applied; R default ratio=1, here required
+coords	coord_flip	partial	crates/aprender-viz/src/grammar/coord.rs:140 Coord::flip (apply :64, apply_limits :79)	crates/aprender-viz/tests/facet_coord_render.rs::coord_flip_swaps_the_axes	flip is a method not coord_flip(xlim,ylim,expand,clip); expand=TRUE padding on limits absent; bar orientation unverified
+coords	coord_map	absent	-	-	no map projections (mercator default, mapproj)
+coords	coord_munch	absent	-	-	no path munching into segments (segment_length 0.01)
+coords	coord_polar	partial	crates/aprender-viz/src/grammar/coord.rs:110 Coord::polar (start_angle :149, direction :158)	crates/aprender-viz/tests/facet_coord_render.rs::unimplemented_coords_refuse_rather_than_no_op	Builder only; apply() refuses polar; no theta param (R default theta="x"); start=0 direction=1 match R
+coords	coord_quickmap	absent	-	-	no aspect from latitude cos correction
+coords	coord_radial	absent	-	-	no radial coord (start/end/inner.radius/expand=TRUE, clip off)
+coords	coord_sf	absent	-	-	no sf/crs support
+coords	coord_trans	absent	-	-	no coordinate transform (x/y identity default); deprecated alias of coord_transform
+coords	coord_transform	absent	-	-	no x/y transform (sqrt/log10 etc, default identity)

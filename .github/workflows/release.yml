@@ -10,6 +10,8 @@ name: Release
 # dry_run=true stops after the bump (WOULD lines): no push, no tag, no publish. Needs no crates.io token.
 # Real run publishes via crates.io Trusted Publishing (OIDC, no stored CARGO_REGISTRY_TOKEN secret) and needs secret
 # INFRA_ACTIONS_READ (clean-room dispatch on paiml/infra; name kept: release_lanes.sh and its falsifier rows reference it).
+# token_auth=true (operator ruling 2026-11-12 07:50Z, until crates.io has a Trusted Publisher for every crate): skip the
+#   OIDC exchange and publish with the stored repo secret CARGO_REGISTRY_TOKEN, the way 0.72.3 went out. Default false.
 on:
   workflow_dispatch:
     inputs:
@@ -26,6 +28,10 @@ on:
         required: false   # one_command.sh still refuses a missing or malformed sha (exit 2); publish_only reads the tag
         default: ''
         type: string
+      token_auth:
+        description: 'Publish with the stored CARGO_REGISTRY_TOKEN secret instead of Trusted Publishing (OIDC)'
+        default: false
+        type: boolean
       publish_only:
         description: 'Publish a version that is ALREADY TAGGED (by the promote timer). No bump, no tag, no push'
         default: false
@@ -44,6 +50,7 @@ concurrency:
 jobs:
   release:
     runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: infra-read   # holds the INFRA_ACTIONS_READ the nightly release lanes read paiml/infra with; only main may use it (#6907)
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
@@ -55,12 +62,12 @@ jobs:
           git config user.name "aprender-release"
           git config user.email "noreply@paiml.com"
       - id: auth
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && !inputs.token_auth }}
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
       - name: release
         env:
           GH_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
-          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ (inputs.token_auth && !inputs.dry_run) && secrets.CARGO_REGISTRY_TOKEN || steps.auth.outputs.token }}
           VERSION: ${{ inputs.version }}
           DRY: ${{ inputs.dry_run && '1' || '0' }}
           SHA: ${{ inputs.sha }}
