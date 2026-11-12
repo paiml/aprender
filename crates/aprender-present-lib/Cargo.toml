@@ -36,7 +36,7 @@ js-sys = { workspace = true }
 # does not build for wasm32 (aprender#6888).
 web-sys = { workspace = true, features = [
     "BinaryType", "CanvasRenderingContext2d", "CanvasWindingRule", "CloseEvent", "Document",
-    "Element", "ErrorEvent", "Event", "History", "HtmlCanvasElement", "ImageData",
+    "Element", "ErrorEvent", "Event", "EventTarget", "History", "HtmlCanvasElement", "ImageData",
     "KeyboardEvent", "Location", "MessageEvent", "MouseEvent", "Performance", "PointerEvent",
     "PopStateEvent", "Storage", "Touch", "TouchEvent", "TouchList", "Url", "WebSocket",
     "WheelEvent", "Window", "console",
