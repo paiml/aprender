@@ -101,6 +101,9 @@ pub enum SmoothMethod {
     Linear,
 }
 
+/// `GeomBar`'s default width as stored by [`GeomType::Bar`]: 0.9 (`stat_count::DEFAULT_BAR_WIDTH`).
+const DEFAULT_BAR_WIDTH_F32: f32 = 0.9;
+
 /// A geometry layer.
 #[derive(Debug, Clone)]
 pub struct Geom {
@@ -131,10 +134,26 @@ impl Geom {
         Self { geom_type: GeomType::Area { alpha: 0.3 }, aes: None, stat: None }
     }
 
-    /// Create a bar geometry.
+    /// Create a bar geometry (`geom_bar()`: `stat_count`).
+    ///
+    /// The width is ggplot2's `GeomBar` default, 0.9 of the x resolution (it was 0.8 before PLOT-GG-001).
     #[must_use]
     pub fn bar() -> Self {
-        Self { geom_type: GeomType::Bar { width: 0.8 }, aes: None, stat: Some(Stat::Count) }
+        Self {
+            geom_type: GeomType::Bar { width: DEFAULT_BAR_WIDTH_F32 },
+            aes: None,
+            stat: Some(Stat::Count),
+        }
+    }
+
+    /// Create a column geometry (`geom_col()`: `stat_identity`, bar height from the `y` aesthetic).
+    #[must_use]
+    pub fn col() -> Self {
+        Self {
+            geom_type: GeomType::Bar { width: DEFAULT_BAR_WIDTH_F32 },
+            aes: None,
+            stat: Some(Stat::Identity),
+        }
     }
 
     /// Create a histogram geometry.
@@ -321,7 +340,9 @@ mod tests {
     fn test_geom_bar() {
         let g = Geom::bar();
         match g.geom_type {
-            GeomType::Bar { width } => assert!((width - 0.8).abs() < 0.01),
+            GeomType::Bar { width } => {
+                assert!((width - 0.9).abs() < 0.001, "ggplot2 GeomBar default is 0.9")
+            }
             _ => panic!("Expected bar geom"),
         }
         assert!(g.stat.is_some());

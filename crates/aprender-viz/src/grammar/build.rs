@@ -10,6 +10,8 @@
 use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::color::Rgba;
 
+use super::stat_count::{BuiltBars, DiscreteAxis};
+
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
 pub const CONTINUOUS_EXPAND_MULT: f64 = 0.05;
@@ -88,6 +90,10 @@ pub struct BuiltLayer {
     pub y: Vec<f64>,
     /// Per-row point aesthetics; `None` for geoms whose aesthetics are not resolved yet.
     pub points: Option<Vec<PointAes>>,
+    /// For a bar layer over a discrete `x` (`geom_bar()`, `geom_col()`): the bars after `stat_count` /
+    /// `stat_identity` and the position adjustment, with their trained scales. `x` and `y` above then
+    /// hold each bar's centre and `y`.
+    pub bars: Option<BuiltBars>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).
@@ -143,6 +149,8 @@ pub struct BuiltLayout {
     pub x: PositionScale,
     /// The y position scale.
     pub y: PositionScale,
+    /// The discrete x axis when a bar layer over a text `x` is present.
+    pub x_discrete: Option<DiscreteAxis>,
 }
 
 /// Significant digits R's `format()` uses by default (`getOption("digits")`).

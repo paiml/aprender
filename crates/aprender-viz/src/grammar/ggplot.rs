@@ -17,6 +17,9 @@ use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
+use super::position::Position;
+use super::stat::Stat;
+use super::stat_count::{bar_layout, BarSpec, BuiltBars, DiscreteAxis};
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -28,13 +31,26 @@ pub struct Layer {
     pub data: Option<DataFrame>,
     /// Layer-specific aesthetics.
     pub aes: Aes,
+    /// The position adjustment (`position =`): stack for a bar or column layer, identity otherwise.
+    pub position: Position,
 }
 
 impl Layer {
     /// Create a new layer from a geometry.
     #[must_use]
     pub fn new(geom: Geom) -> Self {
-        Self { aes: geom.aes.clone().unwrap_or_default(), geom, data: None }
+        let position = match geom.geom_type {
+            GeomType::Bar { .. } => Position::stack(),
+            _ => Position::Identity,
+        };
+        Self { aes: geom.aes.clone().unwrap_or_default(), geom, data: None, position }
+    }
+
+    /// Set the position adjustment (`position_stack()`, `position_dodge()`, ...).
+    #[must_use]
+    pub fn position(mut self, position: Position) -> Self {
+        self.position = position;
+        self
     }
 
     /// Set layer-specific data.
@@ -267,6 +283,28 @@ impl PanelGrid {
     }
 }
 
+/// The scale for a discrete bar axis. Level `i` sits at `i + 1`; the range is the expanded levels
+/// unioned with the bars. This is the ONE place the grammar maps a [`DiscreteAxis`] onto a
+/// [`PositionScale`]; PR #6916 (`feat/plot-gg-001-scales-discrete-log`) owns the discrete position
+/// scale, so on its merge this function and the `bar_layout` call in `build_bars` are the only
+/// sites to change.
+fn bar_x_scale(axis: &DiscreteAxis) -> PositionScale {
+    PositionScale {
+        limits: (1.0, axis.limits.len() as f64),
+        continuous_range: axis.continuous_range,
+        breaks: axis.breaks.clone(),
+        labels: axis.labels.clone(),
+        n_breaks_censored: 0,
+    }
+}
+
+/// `GeomType::Bar` stores its width as `f32`; widen it through its shortest decimal form so that
+/// 0.9 becomes 0.9 and not 0.8999999761581421 (which would miss ggplot2 by 2.6e-8, over the 1e-9
+/// oracle tolerance).
+fn width_f64(width: f32) -> f64 {
+    width.to_string().parse().unwrap_or_else(|_| f64::from(width))
+}
+
 impl BuiltGGPlot {
     /// Render to framebuffer, one sub-plot per facet panel.
     ///
@@ -444,15 +482,61 @@ impl BuiltGGPlot {
     ///
     /// None today; the signature leaves room for stats that can fail.
     pub fn layout(&self) -> Result<BuiltLayout> {
-        let (x, y) = self.position_scales();
-        let layers = self.layers.iter().map(|l| self.build_layer(l)).collect();
-        Ok(BuiltLayout { layers, x, y })
+        let (mut x, mut y) = self.position_scales();
+        let mut layers = Vec::with_capacity(self.layers.len());
+        for l in &self.layers {
+            layers.push(self.build_layer(l)?);
+        }
+        // The first bar layer over a discrete x supplies the scales (mixing it with continuous
+        // layers on one axis is not supported).
+        let mut x_discrete = None;
+        if let Some(bars) = layers.iter().find_map(|l| l.bars.as_ref()) {
+            x = bar_x_scale(&bars.x);
+            y = bars.y.clone();
+            x_discrete = Some(bars.x.clone());
+        }
+        Ok(BuiltLayout { layers, x, y, x_discrete })
+    }
+
+    /// A bar or column layer over a text `x`, built by [`bar_layout`]; `None` for every other
+    /// layer (a bar layer over a numeric `x` keeps the continuous path).
+    fn build_bars(layer: &Layer, data: &DataFrame, aes: &Aes) -> Option<Result<BuiltBars>> {
+        let GeomType::Bar { width } = layer.geom.geom_type else { return None };
+        let xname = aes.x.as_deref()?;
+        let column = data.get(xname)?;
+        if column.is_empty() || column.iter().any(|v| v.as_str().is_none()) {
+            return None;
+        }
+        let unsupported = |what: &str| Error::Rendering(format!("bar layer: {what}"));
+        let mut spec = match layer.geom.stat {
+            Some(Stat::Identity) => match aes.y.as_deref() {
+                Some(y) => BarSpec::col(xname, y),
+                None => return Some(Err(unsupported("geom_col() needs a y aesthetic"))),
+            },
+            _ => BarSpec::bar(xname),
+        };
+        if aes.group.is_some() {
+            return Some(Err(unsupported(
+                "a group aesthetic is not supported (fill sets the groups)",
+            )));
+        }
+        if let Some(fill) = aes.fill.as_deref() {
+            spec = spec.fill(fill);
+        }
+        spec = spec.position(layer.position).width(width_f64(width));
+        // The ONE call into the bar code (see `bar_x_scale` for the #6916 reconciliation).
+        Some(bar_layout(data, &spec).map_err(|e| unsupported(&e.to_string())))
     }
 
     /// One layer's built data: rows where both positions are numeric, plus point aesthetics.
-    fn build_layer(&self, layer: &Layer) -> BuiltLayer {
+    fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
+        if let Some(bars) = Self::build_bars(layer, data, &aes) {
+            let bars = bars?;
+            let (x, y) = bars.rows.iter().map(|r| (r.x, r.y)).unzip();
+            return Ok(BuiltLayer { x, y, points: None, bars: Some(bars) });
+        }
         let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
         let ys = data.get_f32(aes.y.as_deref().unwrap_or("y")).unwrap_or_default();
         let (x, y): (Vec<f64>, Vec<f64>) = xs
@@ -475,7 +559,7 @@ impl BuiltGGPlot {
             }
             _ => None,
         };
-        BuiltLayer { x, y, points }
+        Ok(BuiltLayer { x, y, points, bars: None })
     }
 
     /// Draw grid lines.

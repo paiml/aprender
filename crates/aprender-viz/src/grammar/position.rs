@@ -183,28 +183,41 @@ fn pos_stack(rows: &mut [BarRow], column: &[usize], vjust: f64, fill: bool) {
     }
 }
 
-/// `PositionDodge`: bars sharing an `xmin` split the bar width between them, in group order.
+/// Distinct groups among `column`'s rows, ascending (ggplot2's `vec_unique_count(df$group)` set).
+fn distinct_groups(rows: &[BarRow], column: &[usize]) -> Vec<u32> {
+    let mut g: Vec<u32> = column.iter().map(|i| rows[*i].group).collect();
+    g.sort_unstable();
+    g.dedup();
+    g
+}
+
+/// `PositionDodge`: the groups at an `xmin` split the bar width between them, in group order.
+///
+/// ggplot2 counts DISTINCT GROUPS, not rows: `n <- vec_unique_count(df$group)` and
+/// `groupidx <- df$order`, where `order` is the dense rank of the row's group among the groups at
+/// its x (`PositionDodge$setup_data`). Two rows of one group at one x (a `geom_col()` with a
+/// repeated x/fill pair) therefore share a slot. With `preserve = "single"`, `n` is the largest
+/// number of distinct groups at any one `xmin`.
 fn dodge(rows: &mut [BarRow], width: Option<f64>, preserve: Preserve) {
     let all: Vec<usize> = (0..rows.len()).collect();
     let columns = by_xmin(rows, &all);
-    // preserve = "single": n is the largest number of groups at any one xmin.
-    let n_single = columns.iter().map(Vec::len).max().unwrap_or(1);
+    let n_single = columns.iter().map(|c| distinct_groups(rows, c).len()).max().unwrap_or(1);
     // collide(): without `width`, the first bar's own width (xmax - xmin).
     let width = width.unwrap_or_else(|| rows.first().map_or(0.0, |r| r.xmax - r.xmin));
-    for mut column in columns {
+    for column in columns {
+        let groups = distinct_groups(rows, &column);
         let n = match preserve {
-            Preserve::Total => column.len(),
+            Preserve::Total => groups.len(),
             Preserve::Single => n_single,
         };
         if n == 1 {
             continue; // pos_dodge(): `if (n == 1) return(df)`
         }
-        // `order` is the rank of the row's group among the groups at this x.
-        column.sort_by_key(|i| rows[*i].group);
         let d_width = column.iter().map(|i| rows[*i].xmax - rows[*i].xmin).fold(0.0, f64::max);
-        for (rank, i) in column.iter().enumerate() {
-            let idx = (rank + 1) as f64;
-            let x = rows[*i].x + width * ((idx - 0.5) / n as f64 - 0.5);
+        for i in &column {
+            // `order`: dense rank of this row's group among the distinct groups at this x.
+            let rank = groups.binary_search(&rows[*i].group).map_or(0, |p| p + 1);
+            let x = rows[*i].x + width * ((rank as f64 - 0.5) / n as f64 - 0.5);
             rows[*i].x = x;
             rows[*i].xmin = x - d_width / n as f64 / 2.0;
             rows[*i].xmax = x + d_width / n as f64 / 2.0;

@@ -9,16 +9,18 @@
 //!
 //! # Reconciliation note (discrete scales)
 //!
-//! The discrete x axis here is the minimum this row needs: levels sorted bytewise, mapped to
+//! The discrete x axis here is the minimum this row needs: levels sorted bytewise (`LC_COLLATE=C`, the pinned oracle locale), mapped to
 //! `1..=n`, expanded by [`DISCRETE_EXPAND_ADD`], and unioned with the bars' unexpanded extent. A
-//! scales lane is adding discrete position scales to `build.rs`; when it lands, [`DiscreteAxis`]
-//! should be replaced by its type and `level_positions` by its mapping.
+//! scales lane (PR #6916, `feat/plot-gg-001-scales-discrete-log`) owns the discrete position
+//! scale and is changing in parallel; when it lands, [`DiscreteAxis`] should be replaced by its
+//! type and `level_positions` by its mapping. The grammar reaches this code through ONE call,
+//! [`bar_layout`], from `GGPlot::layout()`, so that merge is one call site.
 //!
 //! # Scope
 //!
 //! `x` and the optional `fill` are text columns (discrete); `x` numeric is not supported. Group
 //! ids follow `add_group()`: the dense rank of the (x, fill) combinations present, x varying
-//! slowest. Weights, `orientation = "y"`, `just`, `width =` and `na.rm` are not implemented.
+//! slowest, both compared bytewise (`LC_COLLATE=C`). Weights, `orientation = "y"`, `just`, `width =` and `na.rm` are not implemented.
 
 use std::collections::BTreeMap;
 
@@ -77,6 +79,8 @@ pub struct BarSpec {
     pub stat: BarStat,
     /// The position adjustment (ggplot2's default for bars is [`Position::stack`]).
     pub position: Position,
+    /// `geom_bar(width =)`: the bar width as a fraction of the x resolution (1 for a discrete x).
+    pub width: f64,
 }
 
 impl BarSpec {
@@ -89,6 +93,7 @@ impl BarSpec {
             group_all: false,
             stat: BarStat::Count,
             position: Position::stack(),
+            width: DEFAULT_BAR_WIDTH,
         }
     }
 
@@ -116,6 +121,13 @@ impl BarSpec {
     #[must_use]
     pub fn position(mut self, position: Position) -> Self {
         self.position = position;
+        self
+    }
+
+    /// `geom_bar(width =)`.
+    #[must_use]
+    pub fn width(mut self, width: f64) -> Self {
+        self.width = width;
         self
     }
 }
@@ -160,7 +172,10 @@ fn number_column(df: &DataFrame, name: &str) -> Result<Vec<f64>, BarError> {
         .collect()
 }
 
-/// Sorted distinct values (ggplot2 sorts factor levels; ASCII levels sort the same in any locale).
+/// Sorted distinct values, in BYTEWISE order (`LC_COLLATE=C`). ggplot2 builds factor levels with
+/// R's `sort()`, which collates by the locale: `en_US.UTF-8` gives a, B, c where C gives B, a, c.
+/// The oracle is therefore pinned to `LC_COLLATE=C` (each `generate.R` sets it and records it in
+/// the fixture as `collate`); other locales are out of scope.
 fn levels<'a>(values: &[&'a str]) -> Vec<&'a str> {
     let mut v = values.to_vec();
     v.sort_unstable();
@@ -189,15 +204,22 @@ fn group_ids(x: &[&str], fill: Option<&[&str]>, group_all: bool) -> Vec<u32> {
 }
 
 /// `GeomBar$setup_data`: edges from `y` and `width`.
-fn bar_row(x: f64, y: f64, group: u32, count: Option<f64>, prop: Option<f64>) -> BarRow {
+fn bar_row(
+    x: f64,
+    y: f64,
+    width: f64,
+    group: u32,
+    count: Option<f64>,
+    prop: Option<f64>,
+) -> BarRow {
     BarRow {
         x,
         y,
         ymin: y.min(0.0),
         ymax: y.max(0.0),
-        xmin: x - DEFAULT_BAR_WIDTH * BAR_JUST,
-        xmax: x + DEFAULT_BAR_WIDTH * (1.0 - BAR_JUST),
-        width: DEFAULT_BAR_WIDTH,
+        xmin: x - width * BAR_JUST,
+        xmax: x + width * (1.0 - BAR_JUST),
+        width,
         group,
         count,
         prop,
@@ -206,7 +228,7 @@ fn bar_row(x: f64, y: f64, group: u32, count: Option<f64>, prop: Option<f64>) ->
 
 /// `StatCount$compute_group`, per group in group order: `count` per distinct x and
 /// `prop = count / sum(abs(count))` within the group.
-fn stat_count(x_pos: &[f64], group: &[u32]) -> Vec<BarRow> {
+fn stat_count(x_pos: &[f64], group: &[u32], width: f64) -> Vec<BarRow> {
     let mut by_group: BTreeMap<u32, BTreeMap<u64, (f64, f64)>> = BTreeMap::new();
     for (x, g) in x_pos.iter().zip(group) {
         // x positions are small positive integers: their bit patterns order like the values.
@@ -216,7 +238,7 @@ fn stat_count(x_pos: &[f64], group: &[u32]) -> Vec<BarRow> {
     for (g, bars) in by_group {
         let total: f64 = bars.values().map(|(_, c)| c.abs()).sum();
         for (x, count) in bars.values() {
-            rows.push(bar_row(*x, *count, g, Some(*count), Some(count / total)));
+            rows.push(bar_row(*x, *count, width, g, Some(*count), Some(count / total)));
         }
     }
     rows
@@ -252,10 +274,12 @@ pub fn bar_layout(df: &DataFrame, spec: &BarSpec) -> Result<BuiltBars, BarError>
     let group = group_ids(&x, fill.as_deref(), spec.group_all);
 
     let mut rows = match &spec.stat {
-        BarStat::Count => stat_count(&x_pos, &group),
+        BarStat::Count => stat_count(&x_pos, &group, spec.width),
         BarStat::Identity(ycol) => {
             let y = number_column(df, ycol)?;
-            (0..x.len()).map(|i| bar_row(x_pos[i], y[i], group[i], None, None)).collect()
+            (0..x.len())
+                .map(|i| bar_row(x_pos[i], y[i], spec.width, group[i], None, None))
+                .collect()
         }
     };
     apply(&mut rows, spec.position);
