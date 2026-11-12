@@ -40,13 +40,13 @@ enforcement:
     severity: ERROR
 falsification_tests:
 - id: FALSIFY-PLOTLINES-001
-  rule: line draws one polyline through the data, sorted by x, at the axis pixels
-  prediction: dropping the sort or moving a vertex turns line_is_a_polyline_through_the_data_at_the_axis_pixels and plot_line_svg_draws_the_data_at_axis_pixels RED
+  rule: line draws one polyline through the data at the axis pixels
+  prediction: moving every SVG vertex one pixel turns line_is_a_polyline_through_the_data_at_the_axis_pixels and plot_line_svg_draws_the_data_at_axis_pixels RED (measured)
   test: cargo test -p aprender-viz --test stroke_render -- --exact line_is_a_polyline_through_the_data_at_the_axis_pixels
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-002
-  rule: path keeps the data order
-  prediction: sorting a path by x turns line_sorts_by_x_and_path_keeps_the_data_order and plot_path_keeps_row_order_and_line_sorts_by_x RED
+  rule: line sorts by x and path keeps the data order
+  prediction: sorting a path by x turns line_sorts_by_x_and_path_keeps_the_data_order and plot_path_keeps_row_order_and_line_sorts_by_x RED (measured); not sorting a line turns line_sorts_by_x_and_path_keeps_the_data_order RED (measured)
   test: cargo test -p aprender-viz --test stroke_render -- --exact line_sorts_by_x_and_path_keeps_the_data_order
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-003
@@ -76,7 +76,7 @@ falsification_tests:
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-008
   rule: hline trains the scale and abline does not
-  prediction: training the scale with an abline turns plot_hline_widens_the_axis_but_abline_does_not RED
+  prediction: training the scale with an abline turns plot_hline_widens_the_axis_but_abline_does_not RED (measured)
   test: cargo test -p aprender-present-cli --test present_cli_surface_gate -- --exact plot_hline_widens_the_axis_but_abline_does_not
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-009
@@ -96,7 +96,7 @@ falsification_tests:
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-012
   rule: the terminal refuses a flipped coord for strokes
-  prediction: drawing strokes under a flip turns terminal_refuses_a_flipped_coord_for_strokes RED
+  prediction: drawing strokes under a flip turns terminal_refuses_a_flipped_coord_for_strokes RED (measured)
   test: cargo test -p aprender-viz --test stroke_render -- --exact terminal_refuses_a_flipped_coord_for_strokes
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-013
@@ -116,12 +116,12 @@ falsification_tests:
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-016
   rule: a plot of reference lines alone is a ScaleDomain error, not a picture
-  prediction: drawing a default panel turns a_plot_of_reference_lines_alone_is_a_typed_error_not_a_picture RED
+  prediction: drawing a default panel turns a_plot_of_reference_lines_alone_is_a_typed_error_not_a_picture RED (measured)
   test: cargo test -p aprender-viz --test stroke_render -- --exact a_plot_of_reference_lines_alone_is_a_typed_error_not_a_picture
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-017
   rule: axis titles and the plot title are still drawn with lines
-  prediction: dropping labs when strokes are present turns axis_titles_and_the_title_are_still_drawn_with_lines RED
+  prediction: dropping labs when strokes are present turns axis_titles_and_the_title_are_still_drawn_with_lines RED (measured: x label dropped)
   test: cargo test -p aprender-viz --test stroke_render -- --exact axis_titles_and_the_title_are_still_drawn_with_lines
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-018
@@ -131,12 +131,12 @@ falsification_tests:
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-019
   rule: extreme inputs neither panic nor hang
-  prediction: a panic on f32::MAX, NaN, inf or 5000 vertices turns extreme_inputs_neither_panic_nor_hang RED
+  prediction: a panic on f32::MAX, NaN, inf or 5000 vertices turns extreme_inputs_neither_panic_nor_hang RED (measured with an injected assert on |x| >= 1e30)
   test: cargo test -p aprender-viz --test stroke_render -- --exact extreme_inputs_neither_panic_nor_hang
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-020
   rule: the CLI never panics on extreme values
-  prediction: a panic on an extreme CLI value turns plot_extreme_inputs_never_panic RED
+  prediction: a panic on an extreme CLI value turns plot_extreme_inputs_never_panic RED (measured with an injected assert on |value| >= 1e30)
   test: cargo test -p aprender-present-cli --test present_cli_surface_gate -- --exact plot_extreme_inputs_never_panic
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 qa_gate:
