@@ -1889,3 +1889,7 @@ mod tests {
 #[cfg(test)]
 #[path = "kernel_registry_v1_tests.rs"]
 mod kernel_registry_v1_tests;
+
+#[cfg(test)]
+#[path = "shapes_gate_ggplot2_tests.rs"]
+mod ggplot2_tests;
