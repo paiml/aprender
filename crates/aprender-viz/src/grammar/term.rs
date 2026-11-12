@@ -8,7 +8,7 @@
 //! The output is a pure function of the plot and [`TerminalPlot`]: the same input and size give
 //! byte-identical text. Without colour the text carries no escape sequences at all.
 //!
-//! Supported today: point layers, `coord_cartesian()` (with limits, without flip), no facets.
+//! Supported today: point, line, path, step and reference layers, `coord_cartesian()` (with limits, without flip), no facets.
 //! Anything else is refused with an error naming what is missing; nothing falls back silently.
 
 use crate::error::{Error, Result};
@@ -17,6 +17,7 @@ use super::build::BuiltLayout;
 use super::coord::{apply_limits, Coord};
 use super::facet::Facet;
 use super::ggplot::BuiltGGPlot;
+use super::stroke;
 
 /// Smallest canvas, in character cells, the terminal target draws on.
 pub const MIN_TERMINAL_WIDTH: u32 = 20;
@@ -29,6 +30,8 @@ pub const MAX_TERMINAL_WIDTH: u32 = 1000;
 pub const MAX_TERMINAL_HEIGHT: u32 = 1000;
 /// The glyph a point is drawn with (ggplot2's default `shape = 19`, a solid circle).
 pub const POINT_GLYPH: char = '●';
+/// The glyph a line, path, step or reference line is drawn with, one per cell it crosses.
+pub const LINE_GLYPH: char = '·';
 /// Fewest columns the panel may have; a narrower one is refused.
 pub const MIN_PANEL_WIDTH: usize = 8;
 
@@ -245,8 +248,11 @@ impl BuiltGGPlot {
         let layout = self.layout()?;
         let (xd, yd) =
             apply_limits(self.coord(), layout.x.continuous_range, layout.y.continuous_range)?;
-        if layout.layers.iter().any(|l| l.points.is_none()) {
-            return Err(Error::Rendering("the terminal target draws point layers only".into()));
+        if layout.layers.iter().any(|l| l.points.is_none() && l.path.is_none()) {
+            return Err(Error::Rendering(
+                "the terminal target draws point, line, path, step and reference layers only"
+                    .into(),
+            ));
         }
 
         let (w, h) = (opts.width as usize, opts.height as usize);
@@ -258,7 +264,7 @@ impl BuiltGGPlot {
 
         draw_y_axis(&mut c, &frame, &ticks);
         self.draw_x_axis(&mut c, &frame, &layout);
-        draw_points(&mut c, &frame, &layout);
+        draw_layers(&mut c, &frame, &layout);
         Ok(c.render(opts.color))
     }
 
@@ -327,9 +333,23 @@ fn draw_y_axis(c: &mut Canvas, f: &Frame, ticks: &[(f64, &str)]) {
     }
 }
 
-/// Points last, so they sit on top of nothing but the panel.
-fn draw_points(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
+/// Every layer in order: a point layer one glyph per point, a stroke layer one glyph per cell
+/// its clipped segments cross.
+fn draw_layers(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
     for layer in &layout.layers {
+        if let Some(path) = &layer.path {
+            let ink = Ink::Point(path.aes.colour.r, path.aes.colour.g, path.aes.colour.b);
+            for line in stroke::polylines(layer, 0, (f.xd, f.yd)) {
+                let cells: Vec<(usize, usize)> =
+                    line.iter().map(|&(x, y)| (f.col_of(x), f.row_of(y))).collect();
+                for w in cells.windows(2) {
+                    for (col, row) in stroke::cells_between(w[0], w[1]) {
+                        c.put(col, row, LINE_GLYPH, ink);
+                    }
+                }
+            }
+            continue;
+        }
         let aes = layer.points.as_deref().unwrap_or_default();
         for ((x, y), p) in layer.x.iter().zip(&layer.y).zip(aes) {
             if in_domain(*x, f.xd) && in_domain(*y, f.yd) {
@@ -452,7 +472,7 @@ mod tests {
         assert!(err(row1().facet(Facet::wrap("g", 2)), plain(80, 24)).contains("facets"));
         assert!(err(row1().coord(Coord::cartesian().flip()), plain(80, 24)).contains("coord_flip"));
         assert!(err(row1().coord(Coord::polar()), plain(80, 24)).contains("polar"));
-        assert!(err(row1().geom(Geom::line()), plain(80, 24)).contains("point layers only"));
+        assert!(err(row1().geom(Geom::bar()), plain(80, 24)).contains("reference layers only"));
         let wide =
             GGPlot::new().data_xy(&[0.0, 1.0], &[0.0, 123_456_789_012_345.0]).geom(Geom::point());
         assert!(err(wide, plain(20, 8)).contains("no room for the panel"));

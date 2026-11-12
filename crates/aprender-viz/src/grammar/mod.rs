@@ -44,6 +44,7 @@ mod ggplot2_lines_oracle;
 mod ggplot2_oracle;
 mod path;
 mod stat;
+mod stroke;
 mod term;
 mod theme;
 
@@ -60,7 +61,7 @@ pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use stat::Stat;
 pub use term::{
-    TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
-    POINT_GLYPH,
+    TerminalPlot, LINE_GLYPH, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT,
+    MIN_TERMINAL_WIDTH, POINT_GLYPH,
 };
 pub use theme::Theme;
