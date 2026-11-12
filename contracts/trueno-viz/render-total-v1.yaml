@@ -122,7 +122,7 @@ falsification_tests:
   if_fails: A NaN or infinite row reaches a rasteriser; the totality property cannot see it
 - id: FALSIFY-RT-002
   rule: An antialiased segment is clipped before it is walked
-  prediction: making canvas_segment return its input unclipped turns wu_line_stays_on_the_ideal_segment_far_off_the_canvas RED, and every_geom_renders_total and point_line_area_bar_layers_stack_total RED (they run past 60 s); line_coordlim_outside and area_coordlim_outside stay green, because draw_line no longer clips (RT-EQV-001)
+  prediction: making canvas_segment return its input unclipped turns wu_line_stays_on_the_ideal_segment_far_off_the_canvas RED, and every_geom_renders_total and point_line_area_bar_layers_stack_total RED (they run past 60 s); line_coordlim_outside and area_coordlim_outside stay green, because under xlim/ylim(0,1) the 1e38 rows map to an inf pixel and pixel() skips the segment before it reaches the clip (geom_line renders through draw_line_aa)
   test: cargo test -p aprender-viz --test render_total wu_line_stays_on_the_ideal_segment_far_off_the_canvas
   if_fails: No test draws an antialiased segment with an end far off the canvas
 - id: FALSIFY-RT-003
@@ -167,7 +167,7 @@ falsification_tests:
   if_fails: The radius property draws 1..=4096 uniformly and hits the threshold with probability 1/4096
 - id: FALSIFY-RT-011
   rule: The antialiased guard-crossing deviation is bounded against the ideal segment
-  prediction: lowering WU_DRAWN_BOUND below the measured 1.3117 px, or WU_COVER_BOUND below 0.5 px, turns wu_line_stays_on_the_ideal_segment_far_off_the_canvas RED; so does a clip that moves the cut end off the segment
+  prediction: a clip that moves the cut end off the ideal segment by more than WU_DRAWN_BOUND (2.0 px) or WU_COVER_BOUND (1.0 px) turns wu_line_stays_on_the_ideal_segment_far_off_the_canvas RED (the constants are test thresholds, not code, so lowering them only checks the test is sharp)
   test: cargo test -p aprender-viz --test render_total wu_line_stays_on_the_ideal_segment_far_off_the_canvas
   if_fails: The bound in RT-DEV-001 is not measured on the segments the test draws, or the edge-hugging family is missing
 - id: FALSIFY-RT-012
