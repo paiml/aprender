@@ -21,3 +21,5 @@ w("fill_two_groups", ggplot(df, aes(x, fill = g)) + geom_density(alpha = 0.5),
   "ggplot(df, aes(x, fill = g)) + geom_density(alpha = 0.5)")
 w("na_x", ggplot(dna, aes(x)) + geom_density(), "ggplot(dna, aes(x)) + geom_density()")
 w("trim", ggplot(df, aes(x)) + geom_density(trim = TRUE), "ggplot(df, aes(x)) + geom_density(trim = TRUE)")
+w("trim_two_groups", ggplot(df, aes(x, fill = g)) + geom_density(trim = TRUE),
+  "ggplot(df, aes(x, fill = g)) + geom_density(trim = TRUE)")

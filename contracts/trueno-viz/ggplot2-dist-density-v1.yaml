@@ -50,8 +50,8 @@ falsification_tests:
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-DENS-002
   rule: trim
-  prediction: inverting trim turns dens_fill_two_groups RED
-  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::dens_fill_two_groups
+  prediction: inverting trim turns dens_trim_two_groups RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::dens_trim_two_groups
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-DENS-003
   rule: Grid scaling

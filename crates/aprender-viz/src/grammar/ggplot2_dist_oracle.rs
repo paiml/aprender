@@ -597,6 +597,19 @@ fn dens_na_x() {
     );
 }
 #[test]
+fn dens_trim_two_groups() {
+    run(
+        fixture!("geom_density", "trim_two_groups"),
+        "geom_density",
+        "trim_two_groups",
+        "GeomDensity",
+        &[],
+        csv!("geom_density", "data"),
+        ax().fill("g"),
+        Geom::gg_density().trim(true),
+    );
+}
+#[test]
 fn dens_trim() {
     run(
         fixture!("geom_density", "trim"),
