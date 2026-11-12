@@ -14,6 +14,7 @@ metadata:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), geom_vline'
   - 'crates/aprender-viz/fixtures/ggplot2/geom_vline/generate.R'
+entity: {type: ggplot2-row, ref: geom_vline}
 equations:
   vline_training:
     formula: 'x limits = range(data x U xintercept)'

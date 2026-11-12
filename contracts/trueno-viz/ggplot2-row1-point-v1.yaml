@@ -16,6 +16,7 @@ metadata:
   - 'Talbot, Lin & Hanrahan (2010) An Extension of Wilkinson''s Algorithm for Positioning Tick Labels on Axes'
   - 'ggplot2 4.0.3: ggplot_build(), default_expansion(), GeomPoint$default_aes'
   - 'crates/aprender-viz/fixtures/ggplot2/geom_point/generate.R'
+entity: {type: ggplot2-row, ref: geom_point}
 equations:
   continuous_expansion:
     formula: 'continuous_range = (lo - 0.05 * (hi - lo), hi + 0.05 * (hi - lo)) where (lo, hi) = range(data)'

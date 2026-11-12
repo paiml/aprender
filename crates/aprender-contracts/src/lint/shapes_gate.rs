@@ -38,8 +38,8 @@ use crate::ontology::arming::ArmedShapes;
 use crate::ontology::capability_cells;
 use crate::ontology::extract::release_inputs::Subject;
 use crate::ontology::extract::{
-    self, apr_model, binary, cli_surface, code, csv, example, gguf, json, kernel, lean,
-    llm_context, parity_receipt, pv_contract, readme, release_evidence, ExtractFailure,
+    self, apr_model, binary, cli_surface, code, csv, example, ggplot2_core, gguf, json, kernel,
+    lean, llm_context, parity_receipt, pv_contract, readme, release_evidence, ExtractFailure,
 };
 use crate::ontology::measured_sets;
 use crate::ontology::rdf::{iri, Graph, Term, RDF_TYPE};
@@ -50,6 +50,7 @@ use crate::ontology::w3c;
 
 use super::capability_cells_gate as cells_gate;
 use super::finding::LintFinding;
+use super::ggplot2_core_gate as ggplot2_gate;
 use super::rules::RuleSeverity;
 use super::{GateDetail, GateExtra, GateResult, Verdict};
 
@@ -310,6 +311,7 @@ fn run_or_answer(
         &report,
         &extraction.gguf.rungs,
         cells.as_ref(),
+        (&extraction.ggplot2, opts.only.is_some()),
     )?;
     let unmeasured = needs_receipts(&shapes) && extraction.receipts.is_empty();
     // Every shape in scope empty is the global vacuity — unless every one of them declared it (#3610 quorum).
@@ -399,6 +401,8 @@ fn run_or_answer(
                 pc_extract,
                 pc_shapes,
                 capability_cells: cells.as_ref().map(cells_gate::CapabilityCellsReport::from),
+                ggplot2_core: ggplot2_gate::declared(&shapes)
+                    .then(|| ggplot2_gate::Ggplot2CoreReport::from(&extraction.ggplot2)),
             }),
             receipts: extraction.resolve.receipts,
             witnesses: extraction.resolve.witnesses,
@@ -471,14 +475,21 @@ fn cells_corpus(
 
 /// ONT-4c5, after validation: every per-shape positive control fired, and the corpus went through `apply` (the
 /// rungs the shape flagged are the rungs owning a NotRun cell). Either miss is a decline, never a verdict.
+/// PLOT-GG-001: the same for `ggplot2-core` — its plant fired, and the rows it flagged are the rows counted not
+/// proven. `ggplot2` carries whether the run is scoped to one family (`--shape`).
 fn cells_controls(
     shapes: &[NodeShape],
     arming: &ArmedShapes,
     report: &Report,
     rungs: &[extract::gguf::Rung],
     cells: Option<&capability_cells::CapabilityCells>,
+    ggplot2: (&ggplot2_core::Ggplot2Stats, bool),
 ) -> Result<BTreeMap<String, String>, ShapesOutcome> {
-    let pc_shapes = cells_gate::pc_shapes(shapes, arming);
+    let mut pc_shapes = cells_gate::pc_shapes(shapes, arming);
+    let (gg, scoped) = ggplot2;
+    if let Some(v) = ggplot2_gate::control(shapes, gg, scoped) {
+        pc_shapes.insert(ggplot2_gate::SHAPE.to_string(), v);
+    }
     if let Some((which, _)) = pc_shapes.iter().find(|(_, v)| v.as_str() != "fired") {
         return Err(ShapesOutcome::PositiveControlFailed {
             shapes_n: shapes.len(),
@@ -499,6 +510,18 @@ fn cells_controls(
                 )],
             });
         }
+    }
+    if ggplot2_gate::declared(shapes) && !ggplot2_gate::wiring_holds(report, gg) {
+        return Err(ShapesOutcome::Differential {
+            shapes_n: shapes.len(),
+            focus_nodes_n: report.focus_nodes_n,
+            passed: 0,
+            n: 1,
+            failed: vec![format!(
+                "ggplot2-core wiring: the rows the shape flagged differ from the {} row(s) counted not proven",
+                gg.not_proven.len()
+            )],
+        });
     }
     Ok(pc_shapes)
 }
@@ -630,6 +653,8 @@ const COUNTED_ENTITY_TYPES: &[&str] = &[
     "llm-context",
     "csv",
     "kernel",
+    "ggplot2-core",
+    "ggplot2-row",
 ];
 
 /// Focus nodes each extractor produced, for one Σ entity type. `None` is "this build has no counting arm for the
@@ -667,6 +692,9 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
         "csv" => extraction.csv.files_read,
         // ONT-4c4: the bound `#[kernel]` symbols typed `ont:KernelSymbol`
         "kernel" => extraction.kernel.kernels,
+        // PLOT-GG-001: the core rows typed `ont:PlotRow`, and the row contracts bound to one
+        "ggplot2-core" => extraction.ggplot2.domain.len(),
+        "ggplot2-row" => extraction.ggplot2.bound,
         // ONT-4f: the Σ snapshot types (repo, issue, pull-request, milestone). The extractor seeds every
         // declared type at 0, so a declared type is never absent here.
         _ => return extraction.github.by_type.get(name).copied(),
@@ -814,6 +842,9 @@ fn extract_controls() -> BTreeMap<String, String> {
         ("readme", readme::positive_control()),
         ("llm-context", llm_context::positive_control()),
         ("csv", csv::positive_control()),
+        // PLOT-GG-001: a core row typed with the concept its name does not give is refused
+        ("ggplot2-core", ggplot2_core::positive_control()),
+        ("ggplot2-row", ggplot2_core::positive_control()),
         // aprender#3745 S2: a model arg read from its ROLE, never its name — drawn every run
         ("cli-surface", cli_surface::positive_control()),
     ]
@@ -1026,6 +1057,7 @@ fn findings_of(
         .chain(&extraction.readme.errors)
         .chain(&extraction.llm_context.errors)
         .chain(&extraction.csv.errors)
+        .chain(&extraction.ggplot2.errors)
         .chain(&extraction.binary.errors);
     for e in refusals {
         c.violations += 1;

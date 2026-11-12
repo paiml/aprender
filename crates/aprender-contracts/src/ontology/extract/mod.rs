@@ -22,6 +22,7 @@ pub mod code;
 pub mod covering;
 pub mod csv;
 pub mod example;
+pub mod ggplot2_core;
 pub mod gguf;
 pub mod json;
 pub mod kernel;
@@ -72,6 +73,8 @@ pub struct Extraction {
     pub llm_context: claims::DocStats,
     /// ONT-4c: CSV datasets read, and the files refused.
     pub csv: claims::DocStats,
+    /// PLOT-GG-001: the ggplot2 core rows, the row contracts bound to them, and which rows are proven.
+    pub ggplot2: ggplot2_core::Ggplot2Stats,
     /// aprender#3715: the release evidence — `None` unless a release subject was given (an ordinary PR has none).
     pub release: Option<release_evidence::ReleaseStats>,
     /// ONT-4d: how many `rdf:type` triples the Σ closure added.
@@ -201,6 +204,7 @@ pub fn all_with(
     out.readme = readme::extract(contract_dir, &mut out.graph, &ci);
     out.llm_context = llm_context::extract(contract_dir, &mut out.graph, &ci);
     out.csv = csv::extract(contract_dir, &mut out.graph);
+    out.ggplot2 = ggplot2_core::extract(contract_dir, &mut out.graph);
     // ONT-4d (R-19): the rdf:type closure over Σ's `subsumes`, materialized AFTER every extractor has run, so a
     // focus node an extractor typed with a sub-concept is also an instance of every super-concept. This is
     // how a shape on a super-concept reaches it (shapes.rs selects focus nodes by rdf:type).
