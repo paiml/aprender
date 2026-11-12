@@ -1,0 +1,18 @@
+- id: PMAT-6918
+  github_issue: 6918
+  item_type: task
+  title: 'present-cli: ggplot spec text parser, unsupported layer is a named error (#6918)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-12T10:36:24Z
+  updated: 2026-11-12T10:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6915

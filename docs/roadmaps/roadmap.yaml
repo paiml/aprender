@@ -27797,3 +27797,57 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6728
+- id: PMAT-6917
+  github_issue: 6917
+  item_type: task
+  title: 'present-cli: plot verb, CSV + ggplot spec to terminal (#6917)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-12T10:36:24Z
+  updated: 2026-11-12T10:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6915
+- id: PMAT-6918
+  github_issue: 6918
+  item_type: task
+  title: 'present-cli: ggplot spec text parser, unsupported layer is a named error (#6918)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-12T10:36:24Z
+  updated: 2026-11-12T10:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6915
+- id: PMAT-6919
+  github_issue: 6919
+  item_type: task
+  title: 'present-cli: terminal axis text for plot, tick labels, titles, facet strips (#6919)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-12T10:36:24Z
+  updated: 2026-11-12T10:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6915

@@ -1,0 +1,18 @@
+- id: PMAT-6919
+  github_issue: 6919
+  item_type: task
+  title: 'present-cli: terminal axis text for plot, tick labels, titles, facet strips (#6919)'
+  status: planned
+  priority: critical
+  assigned_to: null
+  created: 2026-11-12T10:36:24Z
+  updated: 2026-11-12T10:36:24Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 6915
