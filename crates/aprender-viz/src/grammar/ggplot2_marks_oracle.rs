@@ -239,10 +239,6 @@ fn check_case(json: &str, geom_class: &str, row: &str, got: &BuiltLayout) {
     check_axis("y", &got.y, &want["panel"]["y"]);
 }
 
-fn styled(g: Geom) -> (Geom, Aes) {
-    (g, Aes::new())
-}
-
 fn steelblue_red(a: Aes) -> Aes {
     a.fill_value(Rgba::rgb(70, 130, 180)).color_value(Rgba::rgb(255, 0, 0)).alpha_value(0.5)
 }
@@ -284,110 +280,484 @@ fn run_case(row: &str, csv: &str, json: &str, style: bool) {
             steelblue_red(aes)
         };
     }
-    let _ = styled;
     let got = layout_of(csv, aes, geom);
     check_case(json, class, row, &got);
 }
 
-macro_rules! cases {
-    ($row:literal, [$($name:ident),+ $(,)?]) => {
-        $(
-            #[test]
-            #[allow(non_snake_case)]
-            fn $name() {
-                const CSV: &str = include_str!(concat!("../../fixtures/ggplot2/", $row, "/", stringify!($name), ".csv"));
-                const JSON: &str = include_str!(concat!("../../fixtures/ggplot2/", $row, "/expected_", stringify!($name), ".json"));
-                run_case($row, CSV, JSON, stringify!($name) == "style");
-            }
-        )+
-    };
-}
-
 mod area {
-    use super::*;
-    cases!(
-        "geom_area",
-        [
-            groups_text,
-            groups_num,
-            single_unsorted,
-            single_dup_x,
-            na_rows,
-            two_row_groups,
-            zero_y,
-            style,
-            dup_in_group_multi,
-            tiny_gap
-        ]
-    );
+    use super::run_case;
+
+    #[test]
+    fn groups_text() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/groups_text.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_groups_text.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn groups_num() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/groups_num.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_groups_num.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn single_unsorted() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/single_unsorted.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_single_unsorted.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn single_dup_x() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/single_dup_x.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_single_dup_x.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn na_rows() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/na_rows.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_na_rows.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn two_row_groups() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/two_row_groups.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_two_row_groups.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn zero_y() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/zero_y.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_zero_y.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn style() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/style.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_style.json"),
+            true,
+        );
+    }
+
+    #[test]
+    fn dup_in_group_multi() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/dup_in_group_multi.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_dup_in_group_multi.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn tiny_gap() {
+        run_case(
+            "geom_area",
+            include_str!("../../fixtures/ggplot2/geom_area/tiny_gap.csv"),
+            include_str!("../../fixtures/ggplot2/geom_area/expected_tiny_gap.json"),
+            false,
+        );
+    }
 }
 mod ribbon {
-    use super::*;
-    cases!(
-        "geom_ribbon",
-        [
-            basic_unsorted,
-            groups_text,
-            groups_num,
-            na_ymin,
-            na_x,
-            dup_x,
-            reversed,
-            two_row_groups,
-            style
-        ]
-    );
+    use super::run_case;
+
+    #[test]
+    fn basic_unsorted() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/basic_unsorted.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_basic_unsorted.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn groups_text() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/groups_text.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_groups_text.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn groups_num() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/groups_num.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_groups_num.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn na_ymin() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/na_ymin.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_na_ymin.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn na_x() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/na_x.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_na_x.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn dup_x() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/dup_x.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_dup_x.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn reversed() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/reversed.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_reversed.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn two_row_groups() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/two_row_groups.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_two_row_groups.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn style() {
+        run_case(
+            "geom_ribbon",
+            include_str!("../../fixtures/ggplot2/geom_ribbon/style.csv"),
+            include_str!("../../fixtures/ggplot2/geom_ribbon/expected_style.json"),
+            true,
+        );
+    }
 }
 mod tile {
-    use super::*;
-    cases!(
-        "geom_tile",
-        [
-            grid_regular,
-            fractional_res,
-            unsorted_dup,
-            na_cells,
-            single_cell,
-            same_x,
-            groups_text,
-            style,
-            wide_gaps
-        ]
-    );
+    use super::run_case;
+
+    #[test]
+    fn grid_regular() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/grid_regular.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_grid_regular.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn fractional_res() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/fractional_res.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_fractional_res.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn unsorted_dup() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/unsorted_dup.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_unsorted_dup.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn na_cells() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/na_cells.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_na_cells.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn single_cell() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/single_cell.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_single_cell.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn same_x() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/same_x.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_same_x.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn groups_text() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/groups_text.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_groups_text.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn style() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/style.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_style.json"),
+            true,
+        );
+    }
+
+    #[test]
+    fn wide_gaps() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/wide_gaps.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_wide_gaps.json"),
+            false,
+        );
+    }
 }
 mod rect {
-    use super::*;
-    cases!(
-        "geom_rect",
-        [
-            basic,
-            reversed,
-            na_edge,
-            duplicate_rows,
-            groups_text,
-            zero_width,
-            negative,
-            style,
-            single_row
-        ]
-    );
+    use super::run_case;
+
+    #[test]
+    fn basic() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/basic.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_basic.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn reversed() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/reversed.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_reversed.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn na_edge() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/na_edge.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_na_edge.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn duplicate_rows() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/duplicate_rows.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_duplicate_rows.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn groups_text() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/groups_text.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_groups_text.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn zero_width() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/zero_width.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_zero_width.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn negative() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/negative.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_negative.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn style() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/style.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_style.json"),
+            true,
+        );
+    }
+
+    #[test]
+    fn single_row() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/single_row.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_single_row.json"),
+            false,
+        );
+    }
 }
 mod text {
-    use super::*;
-    cases!(
-        "geom_text",
-        [
-            basic,
-            unsorted_dup,
-            na_xy,
-            groups_text,
-            style,
-            odd_labels,
-            single_row,
-            negative,
-            na_label
-        ]
-    );
+    use super::run_case;
+
+    #[test]
+    fn basic() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/basic.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_basic.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn unsorted_dup() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/unsorted_dup.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_unsorted_dup.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn na_xy() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/na_xy.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_na_xy.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn groups_text() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/groups_text.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_groups_text.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn style() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/style.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_style.json"),
+            true,
+        );
+    }
+
+    #[test]
+    fn odd_labels() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/odd_labels.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_odd_labels.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn single_row() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/single_row.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_single_row.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn negative() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/negative.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_negative.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn na_label() {
+        run_case(
+            "geom_text",
+            include_str!("../../fixtures/ggplot2/geom_text/na_label.csv"),
+            include_str!("../../fixtures/ggplot2/geom_text/expected_na_label.json"),
+            false,
+        );
+    }
 }
 
 // --- refusals: out-of-scope input is a typed error, never a plausible wrong answer ---------------
