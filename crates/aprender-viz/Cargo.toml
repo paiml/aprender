@@ -79,14 +79,15 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 # only remaining consumers were monitor-gated tests/examples that imported the deleted
 # module, so the feature, its sub-features, those deps, and the gated code were all removed.
 
-# Dynamic library loading for AMD GPU (ROCm SMI)
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
-
-# Optional: WASM support
+# Optional: WASM support. Declared target-independent: a cfg(target_os = "linux") table
+# hides these from wasm32-unknown-unknown (#6911). Optional, so non-wasm builds never pull them.
 wasm-bindgen = { version = "0.2", optional = true }
 js-sys = { version = "0.3", optional = true }
 web-sys = { version = "0.3", optional = true, features = ["console"] }
+
+# Dynamic library loading for AMD GPU (ROCm SMI)
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 [dev-dependencies]
 # Testing
