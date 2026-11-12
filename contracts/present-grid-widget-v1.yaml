@@ -47,6 +47,9 @@ contract: |
       cell toggles the second child and not the first.
   (7) VERIFY REFUSES INVALID BOUNDS. A grid with finite, non-negative bounds
       passes `Brick::verify`; NaN, infinite or negative bounds fail it.
+  (8) MEASURE NEVER PANICS. `Grid::measure` returns a finite, non-negative
+      size for any constraints, including min greater than max, NaN,
+      infinite and negative limits. An unusable upper limit counts as 0.
 equations:
   cell_geometry:
     description: "Cell i of a grid with c columns, r rows, gap g inside bounds (x, y, w, h)"
@@ -108,3 +111,13 @@ falsification_tests:
     test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_verify_passes_with_valid_bounds && cargo test -p aprender-present-widgets --lib grid::tests::grid_verify_fails_with_invalid_bounds"
     prediction: "valid for finite non-negative bounds; one failed assertion for NaN, infinite or negative bounds"
     if_fails: "a grid with corrupt bounds passes verification"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-009
+    description: "measure survives inverted, NaN, infinite and negative constraints"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_measure_survives"
+    prediction: "no panic; a finite, non-negative size for every case in both tables"
+    if_fails: "a parent that passes min greater than max, or NaN, crashes the page"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-010
+    description: "measure never panics and stays finite for any f32 constraints"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_measure_never_panics_and_stays_finite"
+    prediction: "the property holds over proptest::num::f32::ANY for all four limits"
+    if_fails: "some constraint value outside the tables still reaches f32::clamp"
