@@ -9,9 +9,7 @@ fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
     let (qab, qap, qam) = (a + b, a + 1.0, a - 1.0);
     let mut c = 1.0;
     let mut d = 1.0 - qab * x / qap;
-    if d.abs() < TINY {
-        d = TINY;
-    }
+    d = d.abs().max(TINY).copysign(d);
     d = 1.0 / d;
     let mut h = d;
     for m in 1..2000 {
@@ -19,24 +17,16 @@ fn beta_cf(a: f64, b: f64, x: f64) -> f64 {
         let m2 = 2.0 * m;
         let aa = m * (b - m) * x / ((qam + m2) * (a + m2));
         d = 1.0 + aa * d;
-        if d.abs() < TINY {
-            d = TINY;
-        }
+        d = d.abs().max(TINY).copysign(d);
         c = 1.0 + aa / c;
-        if c.abs() < TINY {
-            c = TINY;
-        }
+        c = c.abs().max(TINY).copysign(c);
         d = 1.0 / d;
         h *= d * c;
         let aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2));
         d = 1.0 + aa * d;
-        if d.abs() < TINY {
-            d = TINY;
-        }
+        d = d.abs().max(TINY).copysign(d);
         c = 1.0 + aa / c;
-        if c.abs() < TINY {
-            c = TINY;
-        }
+        c = c.abs().max(TINY).copysign(c);
         d = 1.0 / d;
         let del = d * c;
         h *= del;
@@ -76,12 +66,13 @@ pub(super) fn qt_upper(tail: f64, df: f64) -> Option<f64> {
         return None;
     }
     let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
-    while upper_tail(hi, df) > tail {
+    // `t^2` overflows past about 1e154, so the bracket stops well short of it.
+    while upper_tail(hi, df) > tail && hi < 1e150 {
         lo = hi;
         hi *= 2.0;
-        if hi > 1e300 {
-            return None;
-        }
+    }
+    if upper_tail(hi, df) > tail {
+        return None;
     }
     for _ in 0..200 {
         let mid = 0.5 * (lo + hi);
@@ -100,6 +91,14 @@ pub(super) fn qt_upper(tail: f64, df: f64) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_tail_no_finite_t_reaches_is_none() {
+        // P(T > t) for df = 1 is about 1 / (pi t): the smallest subnormal needs t beyond 1e150.
+        assert_eq!(qt_upper(5e-324, 1.0), None);
+        assert_eq!(qt_upper(f64::NAN, 1.0), None);
+        assert_eq!(qt_upper(0.025, 0.5), None);
+    }
 
     #[test]
     fn df_one_is_the_cauchy_closed_form() {

@@ -283,16 +283,16 @@ fn position(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
             data.nrow()
         )));
     }
-    (0..data.nrow())
-        .map(|i| match col.get(i) {
-            Some(DataValue::Number(v)) if v.is_infinite() => {
+    col.iter()
+        .map(|cell| match cell {
+            DataValue::Number(v) if v.is_infinite() => {
                 Err(refuse(format!("{what} column {name:?} holds an infinite value")))
             }
-            Some(DataValue::Number(v)) => Ok(f64::from(*v)),
-            Some(DataValue::Null) | None => Ok(f64::NAN),
-            Some(DataValue::Text(_)) => {
+            DataValue::Text(_) => {
                 Err(refuse(format!("{what} column {name:?} is text; only continuous positions")))
             }
+            // A number (NaN included) or a missing cell: a missing cell is NaN, as in R.
+            other => Ok(other.as_f32().map_or(f64::NAN, f64::from)),
         })
         .collect()
 }

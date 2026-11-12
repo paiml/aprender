@@ -824,7 +824,11 @@ mod violin {
             vec![layer(Geom::violin())],
             Facet::None,
         );
-        assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+        // The message names the geom and the missing stat, not a generic catch-all.
+        assert!(
+            matches!(&r, Err(Error::Rendering(m)) if m.contains("geom_violin") && m.contains("stat_ydensity")),
+            "{r:?}"
+        );
     }
 }
 
@@ -886,6 +890,18 @@ mod robustness {
     }
 
     /// A short column is a typed error, never an `Ok` padded with `NA`.
+    #[test]
+    fn a_geom_the_shape_builder_does_not_own_is_a_typed_error() {
+        let plot_aes = Aes::new().x("x").y("y");
+        let r = super::super::shapes::build_layer(
+            &layer(Geom::point()),
+            &plot_aes,
+            &ok_df(),
+            &Facet::None,
+        );
+        assert!(is_rendering(&r), "{r:?}");
+    }
+
     #[test]
     fn a_short_column_is_a_typed_error_never_padded() {
         for g in all_shape_geoms() {
