@@ -338,14 +338,9 @@ fn circle_off_canvas(fb: &Framebuffer, cx: i64, cy: i64, r: i64) -> bool {
 
 /// Largest `s` with `s * s <= n` (`n >= 0`).
 fn isqrt(n: i64) -> i64 {
-    let mut s = (n as f64).sqrt() as i64;
-    while s * s > n {
-        s -= 1;
-    }
-    while (s + 1) * (s + 1) <= n {
-        s += 1;
-    }
-    s
+    // The f64 root is off by at most one for n <= 2^62, in either direction.
+    let s = (n as f64).sqrt() as i64;
+    (s - 1..=s + 1).rev().find(|c| c * c <= n).unwrap_or(0)
 }
 
 /// The canvas rows a circle of radius `r` reaches, each with its half-width.
@@ -689,5 +684,11 @@ mod tests {
         assert_eq!(isqrt(0), 0);
         assert_eq!(isqrt(15), 3);
         assert_eq!(isqrt(16), 4);
+        // Near 2^62 the f64 square root is off by one in either direction; both are corrected.
+        for k in ((1_i64 << 31) - 2000)..(1_i64 << 31) {
+            assert_eq!(isqrt(k * k), k);
+            assert_eq!(isqrt(k * k + 2 * k), k);
+            assert_eq!(isqrt(k * k - 1), k - 1);
+        }
     }
 }

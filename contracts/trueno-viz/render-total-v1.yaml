@@ -81,7 +81,7 @@ enforcement:
 falsification_tests:
 - id: FALSIFY-RT-001
   rule: Non-finite rows are dropped
-  prediction: removing the is_finite filter in BuiltGGPlot::panel_points turns line_mixed, area_mixed and non_finite_rows_are_dropped_not_drawn_at_pixel_zero RED
+  prediction: removing the is_finite filter in BuiltGGPlot::build_layer turns non_finite_rows_are_dropped_not_drawn_at_pixel_zero RED; removing the finite check in BuiltGGPlot::pixel turns three more tests RED (panel_points keeps a second, redundant filter)
   test: cargo test -p aprender-viz --test render_total
   if_fails: A NaN or infinite row reaches a rasteriser; the totality property cannot see it
 - id: FALSIFY-RT-002
