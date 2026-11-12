@@ -12,14 +12,19 @@
 //!
 //! The CSV reader is local on purpose. The one in-tree CSV path is arrow-csv inside
 //! aprender-data, which would pull Arrow into a CLI that needs a header row, comma splitting with
-//! RFC 4180 quotes, and `#` comment lines. Values must fit in `f32` (the engine's column type).
+//! RFC 4180 quotes, `#` comment lines and an optional UTF-8 BOM. Values are read as `f64`, as
+//! ggplot2 reads them; the engine stores `f32`, so a value outside f32's normal range (nonzero
+//! magnitudes 1.2e-38 to 3.4e38) is refused by name rather than turned into infinity or zero.
 
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
-use trueno_viz::grammar::{Aes, Coord, DataFrame, GGPlot, Geom, TerminalPlot};
+use trueno_viz::grammar::{
+    Aes, Coord, DataFrame, GGPlot, Geom, TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH,
+    MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+};
 
 /// Geoms the plot verb draws end to end.
 pub const GEOMS: &[&str] = &["point"];
@@ -41,6 +46,11 @@ pub const AESTHETICS: &[&str] = &["x", "y"];
 pub const DEFAULT_TERM_SIZE: (u32, u32) = (80, 24);
 /// SVG size in pixels when none is given (ggplot2's 800x600 preview in aprender-viz).
 pub const DEFAULT_SVG_SIZE: (u32, u32) = (800, 600);
+/// Smallest SVG side in pixels.
+pub const MIN_SVG_SIZE: u32 = 1;
+/// Largest SVG side in pixels. The engine rasterises points into a width x height pixel
+/// buffer, so an unbounded size is an unbounded allocation.
+pub const MAX_SVG_SIZE: u32 = 4096;
 
 /// Where the plot goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
@@ -124,7 +134,7 @@ impl Env {
             stdout_is_tty: std::io::stdout().is_terminal(),
             columns: std::env::var("COLUMNS").ok(),
             lines: std::env::var("LINES").ok(),
-            no_color: std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty()),
+            no_color: !std::env::var_os("NO_COLOR").unwrap_or_default().is_empty(),
         }
     }
 }
@@ -145,15 +155,26 @@ pub struct Spec {
     /// Coordinate system.
     #[serde(default)]
     pub coord: Option<CoordSpec>,
-    /// Facet (only `null`).
+    /// Facet (only `null`). Any other value, a name or a mapping, is read so that it can be
+    /// refused as "not supported yet" instead of as a YAML type error.
     #[serde(default)]
-    pub facet: Option<String>,
+    pub facet: Option<FacetSpec>,
     /// Labels.
     #[serde(default)]
     pub labs: Labs,
     /// Theme name.
     #[serde(default)]
     pub theme: Option<String>,
+}
+
+/// `facet:` of the spec: a name, or anything else (`{wrap: g}`, a list), kept only to refuse it.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum FacetSpec {
+    /// A facet name such as `null` or `wrap`.
+    Name(String),
+    /// A mapping or a sequence.
+    Other(serde::de::IgnoredAny),
 }
 
 /// One layer of the spec.
@@ -229,11 +250,10 @@ fn load_spec(path: &Path) -> Result<Spec, String> {
         .map_err(|e| format!("cannot read spec {}: {e}", path.display()))?;
     let mut spec: Spec = serde_saphyr::from_str(&text)
         .map_err(|e| format!("invalid plot spec {}: {e}", path.display()))?;
-    if spec.data.is_relative() {
-        if let Some(dir) = path.parent() {
-            spec.data = dir.join(&spec.data);
-        }
-    }
+    // A relative `data:` is relative to the spec file. `parent()` is `Some` for any file path
+    // (`Some("")` for a bare name), and joining an absolute `data:` keeps it as it is.
+    let dir = path.parent().unwrap_or(Path::new(""));
+    spec.data = dir.join(&spec.data);
     Ok(spec)
 }
 
@@ -307,7 +327,20 @@ fn render(
         check("scale aesthetic", Some(aes), AESTHETICS)?;
         check("scale", Some(scale), SCALES)?;
     }
-    check("facet", spec.facet.as_deref(), FACETS)?;
+    match &spec.facet {
+        None => {}
+        Some(FacetSpec::Name(f)) if FACETS.contains(&f.as_str()) => {}
+        Some(other) => {
+            let got = match other {
+                FacetSpec::Name(f) => format!("'{f}'"),
+                FacetSpec::Other(_) => "a mapping or a list".into(),
+            };
+            return Err(format!(
+                "facets are not supported yet (got {got}); supported: {}",
+                FACETS.join(", ")
+            ));
+        }
+    }
     check("theme", spec.theme.as_deref(), THEMES)?;
     for aes in spec.aes.keys() {
         check("aesthetic", Some(aes), AESTHETICS)?;
@@ -318,6 +351,15 @@ fn render(
             .ok_or_else(|| format!("aes needs a mapping for '{a}' (e.g. {a}=column)"))
     };
     let (xcol, ycol) = (col("x")?, col("y")?);
+    let size = match args.output {
+        Output::Term => term_size(args, env),
+        Output::Svg => (
+            args.width.unwrap_or(DEFAULT_SVG_SIZE.0),
+            args.height.unwrap_or(DEFAULT_SVG_SIZE.1),
+        ),
+    };
+    // Before the data is read: a size the engine cannot allocate must not cost a read first.
+    check_size(args.output, size)?;
 
     let table = read_csv(&spec.data)?;
     let (xs, ys, dropped) = numeric_xy(&table, xcol, ycol)?;
@@ -326,8 +368,11 @@ fn render(
         let _ = writeln!(stderr, "warning: Removed {dropped} rows containing missing values or values outside the scale range (geom_point).");
     }
     let mut df = DataFrame::new();
-    df.add_column_f32(xcol, &xs);
-    df.add_column_f32(ycol, &ys);
+    // numeric_xy refused every value outside f32's normal range, so this narrowing keeps the
+    // magnitude and loses only digits past f32's 24-bit mantissa.
+    let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
+    df.add_column_f32(xcol, &narrow(&xs));
+    df.add_column_f32(ycol, &narrow(&ys));
 
     let mut plot = GGPlot::new().data(df).aes(Aes::new().x(xcol).y(ycol));
     for _ in &spec.layers {
@@ -361,26 +406,53 @@ fn render(
         plot = plot.ylab(&t);
     }
 
+    let (width, height) = size;
     match args.output {
         Output::Term => {
-            let (w, h) = term_size(args, env);
             let color = !args.no_color && !env.no_color && env.stdout_is_tty && args.out.is_none();
-            let built = plot.build().map_err(|e| e.to_string())?;
-            built
-                .to_terminal(TerminalPlot {
-                    width: w,
-                    height: h,
-                    color,
-                })
-                .map_err(|e| e.to_string())
+            let target = TerminalPlot {
+                width,
+                height,
+                color,
+            };
+            plot.build().and_then(|b| b.to_terminal(target))
         }
-        Output::Svg => {
-            let w = args.width.unwrap_or(DEFAULT_SVG_SIZE.0);
-            let h = args.height.unwrap_or(DEFAULT_SVG_SIZE.1);
-            let built = plot.dimensions(w, h).build().map_err(|e| e.to_string())?;
-            built.to_svg().map_err(|e| e.to_string())
-        }
+        Output::Svg => plot
+            .dimensions(width, height)
+            .build()
+            .and_then(|b| b.to_svg()),
     }
+    .map_err(|e| e.to_string())
+}
+
+/// Check a requested size against the target's bounds: 20x8 to 1000x1000 cells for a terminal,
+/// 1x1 to 4096x4096 pixels for SVG.
+///
+/// # Errors
+///
+/// The size and the bounds, when either side is outside them.
+pub fn check_size(output: Output, (w, h): (u32, u32)) -> Result<(), String> {
+    let (kind, unit, min, max) = match output {
+        Output::Term => (
+            "terminal",
+            "cells",
+            (MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT),
+            (MAX_TERMINAL_WIDTH, MAX_TERMINAL_HEIGHT),
+        ),
+        Output::Svg => (
+            "svg",
+            "pixels",
+            (MIN_SVG_SIZE, MIN_SVG_SIZE),
+            (MAX_SVG_SIZE, MAX_SVG_SIZE),
+        ),
+    };
+    if (min.0..=max.0).contains(&w) && (min.1..=max.1).contains(&h) {
+        return Ok(());
+    }
+    Err(format!(
+        "{kind} plot size must be {}x{} to {}x{} {unit}, got {w}x{h}",
+        min.0, min.1, max.0, max.1
+    ))
 }
 
 /// Terminal size: flags, then `$COLUMNS`/`$LINES` when stdout is a terminal, then 80x24.
@@ -423,6 +495,7 @@ fn read_csv(path: &Path) -> Result<Table, String> {
 ///
 /// No header, an unterminated quote, or a row whose field count differs from the header's.
 pub fn parse_csv(text: &str) -> Result<Table, String> {
+    let text = text.strip_prefix('\u{feff}').unwrap_or(text);
     let mut lines = text
         .lines()
         .enumerate()
@@ -472,23 +545,31 @@ fn split_fields(line: &str) -> Result<Vec<String>, String> {
     Ok(fields)
 }
 
+/// Zero, or a magnitude in f32's normal range: what `as f32` keeps without overflowing to
+/// infinity or underflowing to zero (or to a subnormal with a few bits left).
+fn fits_f32(v: f64) -> bool {
+    let m = v.abs();
+    m == 0.0 || (f64::from(f32::MIN_POSITIVE)..=f64::from(f32::MAX)).contains(&m)
+}
+
 /// A cell ggplot2 would read as missing.
 fn is_missing(s: &str) -> bool {
     matches!(s, "" | "NA" | "NaN" | "nan" | "null" | "NULL")
 }
 
-/// The mapped x and y columns as `f32`, rows with a missing value in either dropped; also the
+/// The mapped x and y columns as `f64`, rows with a missing value in either dropped; also the
 /// number dropped.
 ///
 /// # Errors
 ///
-/// A column not in the header (the message lists the columns), or a value that is neither a
-/// number nor missing (the column is not numeric).
+/// A column not in the header (the message lists the columns), a value that is neither a
+/// number nor missing (the column is not numeric), or a number the engine's `f32` cannot hold
+/// (a nonzero magnitude below 1.2e-38 or above 3.4e38).
 pub fn numeric_xy(
     table: &Table,
     xcol: &str,
     ycol: &str,
-) -> Result<(Vec<f32>, Vec<f32>, usize), String> {
+) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
     let index = |name: &str| {
         table.columns.iter().position(|c| c == name).ok_or_else(|| {
             format!(
@@ -500,12 +581,16 @@ pub fn numeric_xy(
     let (xi, yi) = (index(xcol)?, index(ycol)?);
     let (mut xs, mut ys, mut dropped) = (Vec::new(), Vec::new(), 0);
     for (line, fields) in &table.rows {
-        let value = |i: usize, name: &str| -> Result<Option<f32>, String> {
+        let value = |i: usize, name: &str| -> Result<Option<f64>, String> {
             let s = fields[i].as_str();
             if is_missing(s) {
                 return Ok(None);
             }
-            match s.parse::<f32>() {
+            match s.parse::<f64>() {
+                Ok(v) if v.is_finite() && !fits_f32(v) => Err(format!(
+                    "column '{name}' line {line} has '{s}', outside what the plot engine stores \
+                     (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
+                )),
                 Ok(v) if v.is_finite() => Ok(Some(v)),
                 Ok(_) => Ok(None),
                 Err(_) => Err(format!(
@@ -814,7 +899,7 @@ mod tests {
             ),
             (
                 "layers: [{geom: point}]\nfacet: wrap",
-                "unsupported facet 'wrap'; supported: null",
+                "facets are not supported yet (got 'wrap'); supported: null",
             ),
             (
                 "layers: [{geom: point}]\ntheme: bw",
@@ -899,7 +984,7 @@ mod tests {
         assert!(go(&tiny, &env)
             .0
             .expect_err("size")
-            .contains("at least 20x8"));
+            .ends_with("must be 20x8 to 1000x1000 cells, got 10x24"));
         let unwritable = flags(&csv, &["--out", "/nonexistent/dir/o.txt"]);
         assert!(go(&unwritable, &env)
             .0
@@ -939,7 +1024,7 @@ mod tests {
         assert_eq!(r, Ok(()));
         assert!(stdout.is_empty());
         let svg = std::fs::read_to_string(&out_path).expect("svg written");
-        assert!(svg.starts_with("<svg") || svg.starts_with("<?xml"));
+        assert!(svg.starts_with("<svg"));
         for label in ["5", "10", "-2.5", "0.0", "2.5", "5.0", "7.5"] {
             assert!(
                 svg.contains(&format!(">{label}</text>")),
@@ -973,9 +1058,240 @@ mod tests {
     #[test]
     fn env_from_process_reads_without_panicking() {
         let e = Env::from_process();
+        let set = std::env::var_os("NO_COLOR").unwrap_or_default();
+        assert_eq!(e.no_color, !set.is_empty());
+    }
+
+    /// Sizes are checked against the target's documented bounds before any data is read or any
+    /// canvas allocated: 100000x100000 used to abort the process on an 80 GB allocation.
+    #[test]
+    fn sizes_are_bounded_per_target() {
+        let (tw, th) = (MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT);
+        let (mw, mh) = (MAX_TERMINAL_WIDTH, MAX_TERMINAL_HEIGHT);
+        for (w, h, ok) in [
+            (0, th, false),
+            (1, th, false),
+            (tw, th, true),
+            (mw, th, true),
+            (mw + 1, th, false),
+            (u32::MAX, th, false),
+            (tw, 0, false),
+            (tw, 1, false),
+            (tw, mh, true),
+            (tw, mh + 1, false),
+            (tw, u32::MAX, false),
+        ] {
+            let r = check_size(Output::Term, (w, h));
+            assert_eq!(r.is_ok(), ok, "term {w}x{h}: {r:?}");
+            if let Err(e) = r {
+                assert_eq!(
+                    e,
+                    format!("terminal plot size must be 20x8 to 1000x1000 cells, got {w}x{h}")
+                );
+            }
+        }
+        let (s, m) = (MIN_SVG_SIZE, MAX_SVG_SIZE);
+        for (w, h, ok) in [
+            (0, s, false),
+            (1, s, true),
+            (m, s, true),
+            (m + 1, s, false),
+            (u32::MAX, s, false),
+            (s, 0, false),
+            (s, 1, true),
+            (s, m, true),
+            (s, m + 1, false),
+            (s, u32::MAX, false),
+        ] {
+            let r = check_size(Output::Svg, (w, h));
+            assert_eq!(r.is_ok(), ok, "svg {w}x{h}: {r:?}");
+            if let Err(e) = r {
+                assert_eq!(
+                    e,
+                    format!("svg plot size must be 1x1 to 4096x4096 pixels, got {w}x{h}")
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn oversized_requests_fail_before_reading_the_data() {
+        let env = Env::default();
+        // The data path does not exist: the size error must come first, so nothing was read.
+        let absent = Path::new("/nonexistent/d.csv");
+        for (output, w, h) in [
+            ("term", "100000", "100000"),
+            ("term", "4294967295", "24"),
+            ("svg", "100000", "100000"),
+            ("svg", "4294967295", "4294967295"),
+        ] {
+            let args = flags(absent, &["--output", output, "--width", w, "--height", h]);
+            let e = go(&args, &env).0.expect_err("refused");
+            assert!(e.contains(&format!("got {w}x{h}")), "{e}");
+        }
+        // The terminal size from $COLUMNS/$LINES is bounded too.
+        let tty = Env {
+            stdout_is_tty: true,
+            columns: Some("100000".into()),
+            lines: Some("100000".into()),
+            no_color: true,
+        };
+        let e = go(&flags(absent, &[]), &tty).0.expect_err("refused");
+        assert!(e.ends_with("got 100000x100000"), "{e}");
+    }
+
+    #[test]
+    fn the_extreme_sizes_inside_the_bounds_render() {
+        let csv = tmp("row1x.csv", ROW1);
+        let w = MAX_TERMINAL_WIDTH.to_string();
+        let out = go(&flags(&csv, &["--width", &w]), &Env::default());
+        assert_eq!(out.0, Ok(()));
+        assert_eq!(out.1.matches('●').count(), 10);
+        for (w, h) in [(MAX_SVG_SIZE, MIN_SVG_SIZE), (MIN_SVG_SIZE, MAX_SVG_SIZE)] {
+            let (w, h) = (w.to_string(), h.to_string());
+            let args = flags(&csv, &["--output", "svg", "--width", &w, "--height", &h]);
+            let (r, svg, _) = go(&args, &Env::default());
+            assert_eq!(r, Ok(()), "{w}x{h}");
+            assert!(svg.contains(&format!("width=\"{w}\"")), "{w}x{h}");
+        }
+    }
+
+    #[test]
+    fn malformed_aes_through_run_is_an_error() {
+        let csv = tmp("row1a.csv", ROW1);
+        let args = parse(&["--data", csv.to_str().expect("utf8"), "--aes", "xy"]).expect("parses");
         assert_eq!(
-            e.no_color,
-            std::env::var_os("NO_COLOR").is_some_and(|v| !v.is_empty())
+            go(&args, &Env::default()).0.err().as_deref(),
+            Some("--aes: expected aesthetic=column, got 'xy'")
         );
+        let no_x = parse(&["--data", csv.to_str().expect("utf8"), "--aes", "y=y"]).expect("parses");
+        assert_eq!(
+            go(&no_x, &Env::default()).0.err().as_deref(),
+            Some("aes needs a mapping for 'x' (e.g. x=column)")
+        );
+    }
+
+    #[test]
+    fn the_y_column_is_checked_like_the_x_column() {
+        let t = parse_csv("x,y,name\n1,2,a\n").expect("parses");
+        assert_eq!(
+            numeric_xy(&t, "nope", "y").expect_err("unknown x"),
+            "unknown column 'nope'; columns: x, y, name"
+        );
+        assert_eq!(
+            numeric_xy(&t, "x", "nope").expect_err("unknown y"),
+            "unknown column 'nope'; columns: x, y, name"
+        );
+        let e = numeric_xy(&t, "x", "name").expect_err("text y");
+        assert!(
+            e.contains("column 'name' is not numeric: line 2 has 'a'"),
+            "{e}"
+        );
+    }
+
+    /// ggplot2 reads numbers as doubles. Every value is parsed as f64; one the engine's f32
+    /// columns cannot hold is refused with that reason, never turned into infinity or zero (or
+    /// reported as "not numeric" / "no rows", which is what an f32 parse said about 1e308).
+    #[test]
+    fn values_are_parsed_as_f64_and_out_of_range_ones_are_named() {
+        let t = parse_csv("x,y\n0.1,1e-300\n1e38,-3\n").expect("parses");
+        assert_eq!(
+            numeric_xy(&t, "x", "y").expect_err("1e-300 underflows f32"),
+            "column 'y' line 2 has '1e-300', outside what the plot engine stores \
+             (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
+        );
+        let t = parse_csv("x,y\n0.1,2\n123456789.125,-3\n").expect("parses");
+        let (xs, ys, dropped) = numeric_xy(&t, "x", "y").expect("f64");
+        assert_eq!(xs, [0.1_f64, 123_456_789.125]);
+        assert_eq!((ys, dropped), (vec![2.0, -3.0], 0));
+        let csv = tmp("big.csv", "x,y\n1,2\n1e308,3\n");
+        let e = go(&flags(&csv, &[]), &Env::default())
+            .0
+            .expect_err("refused");
+        assert_eq!(
+            e,
+            "column 'x' line 3 has '1e308', outside what the plot engine stores \
+             (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
+        );
+        let csv = tmp("tiny.csv", "x,y\n1,2\n2,-1e-300\n");
+        let e = go(&flags(&csv, &[]), &Env::default())
+            .0
+            .expect_err("refused");
+        assert!(
+            e.starts_with("column 'y' line 3 has '-1e-300', outside"),
+            "{e}"
+        );
+        // Zero, -0 and f32's extremes are accepted; a value that only loses digits still plots.
+        let t = parse_csv("x,y\n0,3.4e38\n-3.4e38,1.2e-38\n-0,-1.2e-38\n").expect("parses");
+        let (xs, ys, _) = numeric_xy(&t, "x", "y").expect("in range");
+        assert_eq!(xs, [0.0, -3.4e38, 0.0]);
+        assert_eq!(ys, [3.4e38, 1.2e-38, -1.2e-38]);
+        let csv = tmp("digits.csv", "x,y\n1,2\n16777217,3\n");
+        let (r, out, _) = go(&flags(&csv, &[]), &Env::default());
+        assert_eq!(r, Ok(()));
+        assert_eq!(out.matches('●').count(), 2, "{out}");
+    }
+
+    #[test]
+    fn a_utf8_bom_is_not_part_of_the_first_column_name() {
+        let t = parse_csv("\u{feff}x,y\n1,2\n").expect("parses");
+        assert_eq!(t.columns, ["x", "y"]);
+        let csv = tmp("bom.csv", &format!("\u{feff}{ROW1}"));
+        let (r, out, _) = go(&flags(&csv, &[]), &Env::default());
+        assert_eq!(r, Ok(()));
+        assert_eq!(out.matches('●').count(), 10);
+    }
+
+    #[test]
+    fn a_facet_in_the_spec_says_facets_are_not_supported_yet() {
+        let csv = tmp("row1f.csv", ROW1);
+        for (facet, got) in [
+            ("{wrap: g}", "a mapping or a list"),
+            ("[g]", "a mapping or a list"),
+            ("wrap", "'wrap'"),
+        ] {
+            let spec = tmp(
+                "facet.yaml",
+                &format!(
+                    "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}]\nfacet: {facet}\n",
+                    csv.display()
+                ),
+            );
+            let args = parse(&["--spec", spec.to_str().expect("utf8")]).expect("parses");
+            assert_eq!(
+                go(&args, &Env::default()).0.err(),
+                Some(format!(
+                    "facets are not supported yet (got {got}); supported: null"
+                )),
+                "{facet}"
+            );
+        }
+    }
+
+    /// An error from the engine itself (not from validation) reaches the user as a message:
+    /// labels too wide for the smallest terminal, and a zero-width zoom for SVG.
+    #[test]
+    fn engine_errors_are_messages() {
+        let wide = tmp("wide.csv", "x,y\n0,0\n1,123456789012345\n");
+        let e = go(
+            &flags(&wide, &["--width", "20", "--height", "8"]),
+            &Env::default(),
+        )
+        .0
+        .expect_err("no room");
+        assert!(e.contains("no room for the panel"), "{e}");
+        let csv = tmp("row1z.csv", ROW1);
+        let spec = tmp(
+            "zoom.yaml",
+            &format!(
+                "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}]\n\
+                 coord: {{type: cartesian, ylim: [3, 3]}}\n",
+                csv.display()
+            ),
+        );
+        let args =
+            parse(&["--spec", spec.to_str().expect("utf8"), "--output", "svg"]).expect("parses");
+        let e = go(&args, &Env::default()).0.expect_err("degenerate zoom");
+        assert!(e.contains("Domain min and max cannot be equal"), "{e}");
     }
 }
