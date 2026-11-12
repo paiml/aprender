@@ -25,7 +25,7 @@
 )]
 
 #[allow(dead_code)]
-mod plot;
+mod ggtext;
 
 use clap::{Parser, Subcommand};
 use std::fs;
