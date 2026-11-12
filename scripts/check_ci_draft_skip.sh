@@ -13,6 +13,11 @@
 # Wired:  ci/explicit-test-commands.d/840-ci-draft-skip.cmd (--self-test) and guard_tree.sh (no args).
 set -euo pipefail
 
+# has PATTERN -> rc 0 when stdin has a matching line. It reads ALL of stdin: `grep -q` stops at the first match, the
+# writer (bash prints one line per write) then dies of SIGPIPE, and under pipefail a present line reads as absent
+# (main red at e5c9b77b, 2026-11-12: "verdict job ci-gate does not read the draft flag" on an unchanged workflow).
+has() { /usr/bin/grep "$@" > /dev/null; }
+
 # job_block FILE JOB -> the lines of `  JOB:` up to the next two-space-indented key
 job_block() {
     awk -v j="$2" '
@@ -24,26 +29,26 @@ job_block() {
 check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
     local f="$1" bad=0 j blk
     if ! awk '/^  pull_request:/{p=1;next} p&&/^  [a-z_]+:/{exit} p&&/types:/{print}' "$f" \
-        | /usr/bin/grep -q 'opened.*synchronize.*reopened.*ready_for_review'; then
+        | has 'opened.*synchronize.*reopened.*ready_for_review'; then
         echo "FAIL  on.pull_request.types lacks opened, synchronize, reopened, ready_for_review"; bad=1
     fi
     for j in x86-main workspace-test-shard; do
         blk="$(job_block "$f" "$j")"
         if [ -z "$blk" ]; then echo "FAIL  job $j not found"; bad=1; continue; fi
-        if ! printf '%s\n' "$blk" | /usr/bin/grep -E '^    if:' | /usr/bin/grep -q 'github.event.pull_request.draft != true'; then
+        if ! printf '%s\n' "$blk" | /usr/bin/grep -E '^    if:' | has 'github.event.pull_request.draft != true'; then
             echo "FAIL  job $j has no draft guard in its if:"; bad=1
         fi
     done
     for j in workspace-test ci-gate gate; do
         blk="$(job_block "$f" "$j")"
         if [ -z "$blk" ]; then echo "FAIL  job $j not found"; bad=1; continue; fi
-        if ! printf '%s\n' "$blk" | /usr/bin/grep -q 'DRAFT: ${{ github.event.pull_request.draft }}'; then
+        if ! printf '%s\n' "$blk" | has 'DRAFT: ${{ github.event.pull_request.draft }}'; then
             echo "FAIL  verdict job $j does not read the draft flag"; bad=1
         fi
-        if ! printf '%s\n' "$blk" | /usr/bin/grep -q '\[ "${DRAFT:-}" != true \] || {.*exit 0'; then
+        if ! printf '%s\n' "$blk" | has '\[ "${DRAFT:-}" != true \] || {.*exit 0'; then
             echo "FAIL  verdict job $j does not report green on a draft"; bad=1
         fi
-        if printf '%s\n' "$blk" | /usr/bin/grep -q 'continue-on-error'; then
+        if printf '%s\n' "$blk" | has 'continue-on-error'; then
             echo "FAIL  verdict job $j uses continue-on-error (no third state)"; bad=1
         fi
     done
@@ -63,6 +68,9 @@ self_test() {
         if cmp -s "$src" "$td/m.yml"; then echo "FAIL  mutant $name changed nothing"; fails=1; return; fi
         if got="$(check "$td/m.yml")"; then echo "FAIL  mutant $name stayed GREEN"; fails=1; else echo "ok    red   mutant $name"; fi
     }
+    # a long job block (past one pipe buffer, 64 KiB) must stay GREEN: the reader may not stop before the writer ends
+    awk '{print} /^  ci-gate:[[:space:]]*$/{on=1} on && /DRAFT: [$]/{for(i=0;i<20000;i++) print "      # pad pad pad pad pad pad"; on=0}' "$src" > "$td/long.yml"
+    if got="$(check "$td/long.yml")"; then echo "ok    green a job block longer than one pipe buffer"; else echo "FAIL  green: a long job block is RED: $got"; fails=1; fi
     mutant no-ready-for-review 's/, ready_for_review\]/]/'
     mutant x86-main-unguarded 's/ && github\.event\.pull_request\.draft != true( && github\.event_name != .pull_request.)? \}\}/ }}/'
     mutant shard-unguarded '/^  workspace-test-shard:$/,/runs-on:/{/draft != true/d;}'
