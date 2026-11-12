@@ -1,0 +1,79 @@
+metadata:
+  id: ggplot2-row10-line-sort-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 10 (PLOT-GG-001, paiml/aprender#6909) - geom_line. Rows are stably ordered by panel, then group, then x (NA x last); ties keep data order; NA y is kept.
+    The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation;
+    R is never run at test time. Every case goes through the public builder and layout().
+    Scope: stated in the fixtures: facet_wrap per panel as R; other facets, data-mapped colour, size, shape, alpha, fill or label, a non-default Geom width, text or infinite positions, group columns with gaps or mixed types, and layer data whose facet levels are absent from the plot data return Err(Rendering). Continuous x and y, numeric data; any coordinate system but the default coord_cartesian (coord_flip, limits, polar, fixed) returns Err(UnsupportedCoord) because layout() applies none. Anything outside the scope returns a typed
+    Err (Rendering, UnknownColumn, ScaleDomain or UnsupportedCoord), never a panic. Tick labels are claimed exact only for non-zero data magnitude from 2^-8 (0.0039) to 10^4, with the edges proven in row 10 (line::tick_labels_match_r_at_the_edges_of_the_claimed_magnitude_range); beyond that range the shared label formatter differs from R's fixed-versus-scientific choice (paiml/aprender#6958) and no label is claimed.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_line'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_line/generate.R'
+equations:
+  line_order:
+    formula: 'rows = stable sort by (PANEL, group, x), NA x last'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: BuiltLayer.path and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; labels (for non-zero data magnitude from 2^-8 to 10^4), colours, groups, panels and counts exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+proof_obligations:
+- id: GG10-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact labels, colours, groups, panels)'
+  applies_to: line_order
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_lines_oracle::line::plain_sorts_by_x_with_ties_in_data_order
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and facet fixtures are reproduced
+    check: grammar::ggplot2_lines_oracle::line::numeric_group_ids_rank_sorted_values
+    severity: ERROR
+  edge_cases:
+    description: edge fixtures are reproduced or refused with a typed Err
+    check: grammar::ggplot2_lines_oracle::line::a_single_row_is_a_typed_error_not_a_panic
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG10-001
+  rule: Rows sorted by x
+  prediction: removing the sort in path.rs build_layer turns line::plain_sorts_by_x_with_ties_in_data_order RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_lines_oracle::line::plain_sorts_by_x_with_ties_in_data_order
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG10-002
+  rule: Group ids rank sorted levels
+  prediction: off-by-one group rank turns line::numeric_group_ids_rank_sorted_values and line::text_group_ids_rank_sorted_levels RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_lines_oracle::line::numeric_group_ids_rank_sorted_values grammar::ggplot2_lines_oracle::line::text_group_ids_rank_sorted_levels
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG10-003
+  rule: Panel sorts before x
+  prediction: ignoring the facet panel in the sort turns line::facet_wrap_orders_rows_by_panel_first RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_lines_oracle::line::facet_wrap_orders_rows_by_panel_first
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG10-004
+  rule: Non-default coordinate systems are refused
+  prediction: removing the require_default_coord call in GGPlot::layout turns robustness::every_non_default_coord_is_refused_for_every_geom RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_lines_oracle::robustness::every_non_default_coord_is_refused_for_every_geom
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG10-005
+  rule: Label range edges equal R
+  prediction: changing the break-label formatter turns line::tick_labels_match_r_at_the_edges_of_the_claimed_magnitude_range RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_lines_oracle::line::tick_labels_match_r_at_the_edges_of_the_claimed_magnitude_range
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GG10-001
+  name: ggplot2 conformance row 10 (geom_line)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-10 fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases
