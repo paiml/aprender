@@ -1,0 +1,66 @@
+metadata:
+  id: ggplot2-bars-stat-identity-geom-col-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, bars train, rows stat_identity + geom_col (PLOT-GG-001, paiml/aprender#6909). bar_layout() with BarStat::Identity takes each row's y as the bar height, keeps ggplot2's row order, and stacks (including negative values) as geom_col() does by default. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/stat_identity_geom_col/generate.R); R is
+    never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
+    levels and labels compare exactly.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
+  - 'crates/aprender-viz/fixtures/ggplot2/stat_identity_geom_col/generate.R'
+equations:
+  stat_identity:
+    formula: 'bar height y = the given y of each row; no count or prop; rows keep input order'
+    domain: text x, optional text fill, numeric y
+    codomain: Vec<BarRow>
+    invariants:
+    - count and prop are absent
+    - group ids are the dense rank of the (x, fill) pairs present, whatever the row order
+  negative_stack:
+    formula: 'a bar with ymax == 0 gets ymax := ymin before the sign test; bars with ymax < 0 stack downward from 0 separately from the rest'
+    domain: y of either sign
+    codomain: ymin, ymax, y
+    invariants:
+    - negative and non-negative bars never share a stack
+proof_obligations:
+- id: GGC1-INV-001
+  type: invariant
+  property: Identity bars match GeomCol, including the negative stack
+  formal: 'for each row: (x, y, ymin, ymax, xmin, xmax, width, group) ~ ggplot2 row; y axis range, breaks, labels equal'
+  applies_to: stat_identity
+- id: GGC1-INV-002
+  type: invariant
+  property: One bar per x needs no stacking
+  formal: 'unfilled geom_col: ymin = min(y, 0), ymax = max(y, 0)'
+  applies_to: negative_stack
+enforcement:
+  col_stack_matches:
+    description: filled geom_col with a negative value equals ggplot2's stacked output
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col
+    severity: ERROR
+  col_plain_matches:
+    description: unfilled geom_col equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col_plain
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGC1-001
+  rule: Negative bars are recognised after setup_data
+  prediction: mutating the ymax == 0 test in position::stack to never match turns ggplot2_bars_stat_identity_geom_col RED and only that test (measured, 1 failed, 10 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The negative value in the fixture is not exercised
+- id: FALSIFY-GGC1-002
+  rule: geom_col width is 0.9
+  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns ggplot2_bars_stat_identity_geom_col and ggplot2_bars_stat_identity_geom_col_plain RED (measured with all 11 ggplot2_bars tests red, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: Edges of identity bars are not compared
+qa_gate:
+  id: F-GGC1-001
+  name: ggplot2 conformance bars row 2 (stat_identity + geom_col)
+  description: aprender-viz bar_layout equals ggplot2 4.0.3 ggplot_build() for the geom_col fixtures
+  checks:
+  - col_stack_matches
+  - col_plain_matches

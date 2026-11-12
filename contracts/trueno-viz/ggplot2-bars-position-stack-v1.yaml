@@ -1,0 +1,65 @@
+metadata:
+  id: ggplot2-bars-position-stack-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, bars train, row position_stack (PLOT-GG-001, paiml/aprender#6909). position::apply(Position::stack()) stacks the bars of each x from the highest group id at the bottom to group 1 on top, with vjust = 1 and reverse = FALSE, as PositionStack and pos_stack() do. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/position_stack/generate.R); R is
+    never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
+    levels and labels compare exactly.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
+  - 'crates/aprender-viz/fixtures/ggplot2/position_stack/generate.R'
+equations:
+  pos_stack:
+    formula: 'per xmin, bars ordered by descending group (ascending when reverse): heights = cumsum(y); ymin = min(h[i], h[i+1]); ymax = max(h[i], h[i+1]); y = (1 - vjust) * ymin + vjust * ymax'
+    domain: bars of one x; negative bars (ymax < 0) stacked separately
+    codomain: ymin, ymax, y
+    invariants:
+    - group 1 is on top of its stack by default
+    - defaults are vjust 1 and reverse FALSE
+proof_obligations:
+- id: GGS1-INV-001
+  type: invariant
+  property: Stack order and heights match PositionStack
+  formal: 'for each bar: (y, ymin, ymax) ~ ggplot2 row (1e-9 rel + 1e-12 abs) for default, reverse = TRUE and vjust = 0.5'
+  applies_to: pos_stack
+enforcement:
+  stack_default_matches:
+    description: default stack equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack
+    severity: ERROR
+  stack_reverse_matches:
+    description: reverse = TRUE equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack_reverse
+    severity: ERROR
+  stack_vjust_matches:
+    description: vjust = 0.5 equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack_vjust
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGS1-001
+  rule: Default stacking order is group 1 on top
+  prediction: flipping the order in position::stack (descending <-> ascending group) turns ggplot2_bars_position_stack, _position_fill, _position_stack_vjust, _position_stack_reverse and _stat_identity_geom_col RED (measured, 5 failed, 6 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: Stack order is not observable in the fixture; use a fill with several groups per x
+- id: FALSIFY-GGS1-002
+  rule: STACK_REVERSE defaults to FALSE
+  prediction: mutating STACK_REVERSE false -> true turns ggplot2_bars_position_stack, _position_fill and _stat_identity_geom_col RED (measured, 3 failed, 8 passed, rc=101); the explicit reverse test stays green
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The default stack does not read the constant
+- id: FALSIFY-GGS1-003
+  rule: STACK_VJUST defaults to 1
+  prediction: mutating STACK_VJUST 1.0 -> 0.5 turns 5 tests RED (_position_stack, _stat_count_geom_bar, _stat_count_group1_prop, _stat_identity_geom_col, _stat_identity_geom_col_plain) (measured, 5 failed, 6 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: y of a bar is not compared
+qa_gate:
+  id: F-GGS1-001
+  name: ggplot2 conformance bars row 3 (position_stack)
+  description: aprender-viz stacked bars equal ggplot2 4.0.3 ggplot_build()
+  checks:
+  - stack_default_matches
+  - stack_reverse_matches
+  - stack_vjust_matches

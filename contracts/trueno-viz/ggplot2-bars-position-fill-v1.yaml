@@ -1,0 +1,44 @@
+metadata:
+  id: ggplot2-bars-position-fill-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, bars train, row position_fill (PLOT-GG-001, paiml/aprender#6909). position::apply(Position::fill()) stacks like position_stack and divides every height by the stack's total, so each x spans 0..1. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/position_fill/generate.R); R is
+    never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
+    levels and labels compare exactly.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
+  - 'crates/aprender-viz/fixtures/ggplot2/position_fill/generate.R'
+equations:
+  pos_fill:
+    formula: 'pos_stack with heights := heights / abs(total) when abs(total) > sqrt(eps); y = (1 - vjust) * ymin + vjust * ymax with vjust = 1'
+    domain: bars of one x
+    codomain: ymin, ymax, y in [0, 1]
+    invariants:
+    - the top of every non-empty stack is 1
+proof_obligations:
+- id: GGF1-INV-001
+  type: invariant
+  property: Normalised stack matches PositionFill
+  formal: 'for each bar: (y, ymin, ymax) ~ ggplot2 row (1e-9 rel + 1e-12 abs); y axis limits (0, 1)'
+  applies_to: pos_fill
+enforcement:
+  fill_matches:
+    description: position_fill equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_fill
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGF1-001
+  rule: position_fill vjust defaults to 1
+  prediction: mutating FILL_VJUST 1.0 -> 0.5 turns ggplot2_bars_position_fill RED and only that test (measured, 1 failed, 10 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: y of a filled bar is not compared
+qa_gate:
+  id: F-GGF1-001
+  name: ggplot2 conformance bars row 5 (position_fill)
+  description: aprender-viz filled bars equal ggplot2 4.0.3 ggplot_build()
+  checks:
+  - fill_matches

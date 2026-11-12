@@ -1,0 +1,77 @@
+metadata:
+  id: ggplot2-bars-stat-count-geom-bar-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, bars train, rows stat_count + geom_bar (PLOT-GG-001, paiml/aprender#6909). bar_layout() counts rows per discrete x and group as StatCount does (count, prop = count / sum(abs(count)) within the group), applies GeomBar's setup_data edges (width 0.9, just 0.5) and trains the discrete x axis (expansion add 0.6) and the continuous y axis. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/stat_count_geom_bar/generate.R); R is
+    never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
+    levels and labels compare exactly.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
+  - 'crates/aprender-viz/fixtures/ggplot2/stat_count_geom_bar/generate.R'
+equations:
+  stat_count:
+    formula: 'count = number of rows per (group, x); prop = count / sum(abs(count)) within the group; y = count'
+    domain: a text x column, optionally a text fill column (groups = dense rank of the (x, fill) pairs present)
+    codomain: Vec<BarRow>
+    invariants:
+    - one bar per (group, x), rows in group order
+    - prop is 1 when a group holds one x, and count / total when aes(group = 1) merges the x levels
+  bar_edges:
+    formula: 'ymin = min(y, 0); ymax = max(y, 0); xmin = x - 0.9 * 0.5; xmax = x + 0.9 * 0.5'
+    domain: one bar
+    codomain: edges in data space
+    invariants:
+    - the default bar width is 0.9 of the unit resolution
+  discrete_x_axis:
+    formula: 'continuous_range = range((1 - 0.6, n + 0.6), (min xmin, max xmax)); level i sits at i'
+    domain: n >= 1 text levels sorted bytewise
+    codomain: DiscreteAxis
+    invariants:
+    - break positions are 1..n and labels are the level names
+proof_obligations:
+- id: GGB1-INV-001
+  type: invariant
+  property: Counts, props and group ids match StatCount
+  formal: 'for each bar: count = ggplot2.count and prop ~ ggplot2.prop (1e-9 rel) and group = ggplot2.group'
+  applies_to: stat_count
+- id: GGB1-INV-002
+  type: invariant
+  property: Bar edges and width match GeomBar
+  formal: 'for each bar: (x, y, ymin, ymax, xmin, xmax, width) ~ ggplot2 row (1e-9 rel + 1e-12 abs)'
+  applies_to: bar_edges
+- id: GGB1-INV-003
+  type: invariant
+  property: Discrete x axis and count y axis match ggplot2
+  formal: 'x.limits = levels, x.continuous_range ~ ggplot2, breaks and labels equal; y limits, range, breaks, labels, n_censored equal'
+  applies_to: discrete_x_axis
+enforcement:
+  counts_match:
+    description: counts, props and groups equal ggplot2's for the default and the group = 1 plots
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_stat_count_geom_bar
+    severity: ERROR
+  prop_merged_group_matches:
+    description: prop = count / total when the x levels share one group
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_stat_count_group1_prop
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGB1-001
+  rule: Bar width is 0.9
+  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns all 11 ggplot2_bars tests RED (measured, 11 failed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: A 10% narrower bar is invisible to the oracle; the edges are not compared
+- id: FALSIFY-GGB1-002
+  rule: Discrete expansion is add 0.6
+  prediction: mutating DISCRETE_EXPAND_ADD 0.6 -> 0.5 turns all 11 ggplot2_bars tests RED (measured, 11 failed, rc=101; every bar plot shares the discrete x axis)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The x continuous_range is not compared
+qa_gate:
+  id: F-GGB1-001
+  name: ggplot2 conformance bars row 1 (stat_count + geom_bar)
+  description: aprender-viz bar_layout equals ggplot2 4.0.3 ggplot_build() for the stat_count fixtures
+  checks:
+  - counts_match
+  - prop_merged_group_matches

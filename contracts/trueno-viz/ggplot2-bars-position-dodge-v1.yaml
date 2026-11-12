@@ -1,0 +1,65 @@
+metadata:
+  id: ggplot2-bars-position-dodge-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, bars train, row position_dodge (PLOT-GG-001, paiml/aprender#6909). position::apply(Position::dodge()) splits each x's bar width between its groups in group order (preserve = total, width = NULL), as PositionDodge and pos_dodge() do; preserve = single and width = 0.5 are also covered. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/position_dodge/generate.R); R is
+    never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
+    levels and labels compare exactly.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
+  - 'crates/aprender-viz/fixtures/ggplot2/position_dodge/generate.R'
+equations:
+  pos_dodge:
+    formula: 'per xmin with n bars (n = max bars at any xmin when preserve = single): x := x + width * ((idx - 0.5) / n - 0.5); xmin := x - d_width / n / 2; xmax := x + d_width / n / 2; width = NULL means the bar width, d_width = max(xmax - xmin); n = 1 leaves the bar alone'
+    domain: bars with xmin and xmax, idx = rank of the group among the groups at that x
+    codomain: x, xmin, xmax
+    invariants:
+    - a lone bar at an x keeps its full width under preserve = total
+    - y, ymin and ymax are untouched
+proof_obligations:
+- id: GGD1-INV-001
+  type: invariant
+  property: Dodged positions match PositionDodge
+  formal: 'for each bar: (x, xmin, xmax) ~ ggplot2 row (1e-9 rel + 1e-12 abs) for default, preserve = single and width = 0.5'
+  applies_to: pos_dodge
+enforcement:
+  dodge_default_matches:
+    description: default dodge equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_dodge
+    severity: ERROR
+  dodge_single_matches:
+    description: preserve = single equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_dodge_preserve_single
+    severity: ERROR
+  dodge_width_matches:
+    description: width = 0.5 equals ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_dodge_width
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGD1-001
+  rule: preserve defaults to total
+  prediction: mutating DODGE_PRESERVE Total -> Single turns ggplot2_bars_position_dodge RED and only that test (measured, 1 failed, 10 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The fixture has the same number of groups at every x; the busiest x must differ from the others
+- id: FALSIFY-GGD1-002
+  rule: Bar centres are spaced by the dodge width
+  prediction: scaling the spacing term (x + 0.8 * width * ...) turns ggplot2_bars_position_dodge, _position_dodge_preserve_single and _position_dodge_width RED (measured, 3 failed, 8 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: x of a dodged bar is not compared
+- id: FALSIFY-GGD1-003
+  rule: Each dodged bar is d_width / n wide
+  prediction: dropping the /2 in xmin (x - d_width / n) turns the same three dodge tests RED (measured, 3 failed, 8 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: xmin and xmax of a dodged bar are not compared
+qa_gate:
+  id: F-GGD1-001
+  name: ggplot2 conformance bars row 4 (position_dodge)
+  description: aprender-viz dodged bars equal ggplot2 4.0.3 ggplot_build()
+  checks:
+  - dodge_default_matches
+  - dodge_single_matches
+  - dodge_width_matches
