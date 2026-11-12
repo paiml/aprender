@@ -82,7 +82,7 @@ fn plant_fires(shapes: &[NodeShape], version: Option<&str>) -> bool {
         return false;
     };
     let bare = run(shape, version, &Evidence::default());
-    let refused = bare.results.len() == 1
+    let refused = !bare.results.is_empty()
         && bare.results.iter().all(|r| {
             r.severity == Severity::Violation
                 && r.focus == iri("plot", PLANT_ROW)

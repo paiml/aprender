@@ -323,3 +323,17 @@ fn the_tracked_table_is_the_49_row_usable_core() {
 fn the_positive_control_fires() {
     assert!(positive_control());
 }
+
+#[test]
+fn a_receipt_proves_its_row_only_when_it_passed_at_the_pinned_version() {
+    let domain = BTreeSet::from(["geom_point".to_string()]);
+    let at = |v: &str, passed: bool| serde_json::json!({"schema": RECEIPT_SCHEMA, "row": "geom_point", "ggplot2": v, "passed": passed});
+    let row =
+        |j: serde_json::Value| receipt_row("r.json", &j, "4.0.3", &domain).expect("not refused");
+    assert_eq!(row(at("4.0.3", true)), Some("geom_point".to_string()));
+    assert_eq!(row(at("4.0.3", false)), None);
+    assert_eq!(row(at("3.5.1", true)), None);
+    let mut no_flag = at("4.0.3", true);
+    no_flag.as_object_mut().expect("object").remove("passed");
+    assert_eq!(row(no_flag), None);
+}
