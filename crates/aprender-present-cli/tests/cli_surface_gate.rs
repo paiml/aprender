@@ -171,8 +171,12 @@ const ORACLE_Y_LABELS: &[&str] = &["-2.5", "0.0", "2.5", "5.0", "7.5"];
 /// `aprender-present plot --data data.csv --aes x=x,y=y` at 80x24 with stdout not a terminal.
 const ROW1_GOLDEN: &str = include_str!("golden/plot-row1-point-80x24.txt");
 
-fn row1_csv() -> String {
-    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("aprender-present-plot");
+/// Write row 1 under a directory named for the calling test. Tests run in parallel, and one
+/// shared path let a test read the file while another truncated it ("no header row").
+fn row1_csv(test: &str) -> String {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("aprender-present-plot")
+        .join(test);
     std::fs::create_dir_all(&dir).expect("create fixture dir");
     let path = dir.join("row1.csv");
     std::fs::write(&path, format!("# ggplot2 row 1 fixture\n{ROW1_CSV}")).expect("write csv");
@@ -195,7 +199,7 @@ fn oracle_labels_are_the_fixture_labels() {
 
 #[test]
 fn plot_row1_matches_the_golden_render() {
-    let csv = row1_csv();
+    let csv = row1_csv("golden");
     let out = Command::new(BIN)
         .args([
             "plot", "--data", &csv, "--aes", "x=x,y=y", "--geom", "point",
@@ -231,7 +235,7 @@ fn plot_row1_matches_the_golden_render() {
 
 #[test]
 fn plot_svg_carries_the_oracle_break_labels() {
-    let csv = row1_csv();
+    let csv = row1_csv("svg");
     let out = run(&[
         "plot", "--data", &csv, "--aes", "x=x,y=y", "--output", "svg",
     ]);
@@ -251,11 +255,22 @@ fn plot_svg_carries_the_oracle_break_labels() {
 
 #[test]
 fn plot_refuses_what_it_cannot_draw() {
-    let csv = row1_csv();
+    let csv = row1_csv("refuses");
     for (args, want) in [
         (
             vec!["--aes", "x=x,y=y", "--geom", "line"],
             "unsupported geom 'line'; supported: point",
+        ),
+        // Exit 1 with the bounds, where it used to abort (exit 134) on an 80 GB allocation.
+        (
+            vec![
+                "--aes", "x=x,y=y", "--width", "100000", "--height", "100000",
+            ],
+            "terminal plot size must be 20x8 to 1000x1000 cells, got 100000x100000",
+        ),
+        (
+            vec!["--aes", "x=x,y=y", "--output", "svg", "--width", "100000"],
+            "svg plot size must be 1x1 to 4096x4096 pixels, got 100000x600",
         ),
         (
             vec!["--aes", "x=x,y=nope"],
