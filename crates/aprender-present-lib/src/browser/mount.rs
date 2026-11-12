@@ -133,13 +133,15 @@ impl Mounted {
             return Frame::Idle;
         }
         self.dirty = false;
+        // Lay out first: containers (List) materialize children in layout, so verification
+        // must walk the exact tree about to be painted.
+        self.relayout();
         let mut failed = Vec::new();
         failed_assertions(self.root.as_ref(), &mut failed);
         self.halted = !failed.is_empty();
         if self.halted {
             return Frame::Blocked(format!("failed verification: {}", failed.join("; ")));
         }
-        self.relayout();
         let mut canvas = RecordingCanvas::new();
         self.root.paint(&mut canvas);
         self.painted += 1;
@@ -472,6 +474,35 @@ mod tests {
             .items(vec![presentar_widgets::ListItem::new("a")])
             .render_with(|_, _| Box::new(Button::new("")));
         assert_blocked(Box::new(list), "List");
+    }
+
+    #[test]
+    fn list_blocks_a_bad_child_materialized_by_keyboard_scroll() {
+        let items: Vec<presentar_widgets::ListItem> = (0..20)
+            .map(|i| presentar_widgets::ListItem::new(format!("item-{i}")))
+            .collect();
+        let list = presentar_widgets::List::new()
+            .item_height(50.0)
+            .items(items)
+            .render_with(|i, _| {
+                if i == 19 {
+                    Box::new(Button::new(""))
+                } else {
+                    Box::new(Button::new("ok"))
+                }
+            });
+        let mut mounted = Mounted::new(Box::new(list), 200.0, 100.0);
+        assert!(matches!(mounted.frame(), Frame::Painted(_)));
+        let _ = mounted.dispatch(&Event::MouseDown {
+            position: presentar_core::Point::new(10.0, 10.0),
+            button: presentar_core::MouseButton::Left,
+        });
+        assert!(matches!(mounted.frame(), Frame::Painted(_)));
+        let _ = mounted.dispatch(&Event::key_down(presentar_core::Key::End));
+        assert!(
+            matches!(mounted.frame(), Frame::Blocked(_)),
+            "scrolled-in bad child was painted"
+        );
     }
 
     #[test]

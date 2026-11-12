@@ -26,7 +26,7 @@ use batuta_common::display::WithDimensions;
 use wasm_bindgen::prelude::*;
 
 use crate::color::Rgba;
-use crate::grammar::{Aes, Coord, GGPlot, Geom, Theme};
+use crate::grammar::{point_size_mm_for_diameter_px, Aes, Coord, GGPlot, Geom, Theme};
 use crate::output::PngEncoder;
 use crate::plots::{BinStrategy, Heatmap, Histogram, LineChart, LineSeries, ScatterPlot};
 use crate::prompt;
@@ -326,7 +326,11 @@ pub fn ggplot(
     let color = parse_hex_color(&opts.color);
 
     let geom_layer = match geom {
-        "point" => Geom::point().aes(Aes::new().color_value(color).size_value(opts.point_size)),
+        "point" => Geom::point().aes(
+            Aes::new()
+                .color_value(color)
+                .size_value(point_size_mm_for_diameter_px(f64::from(opts.point_size)) as f32),
+        ),
         "line" => Geom::line(),
         "bar" => Geom::bar().aes(Aes::new().color_value(color)),
         "area" => Geom::area().aes(Aes::new().color_value(color)),

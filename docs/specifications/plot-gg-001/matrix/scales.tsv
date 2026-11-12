@@ -1,0 +1,141 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+scales-helper	derive	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
+scales-helper	dup_axis	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
+scales-helper	expand_limits	absent	-	-	absent; no way to extend range to include values
+scales-helper	expand_scale	partial	crates/aprender-viz/src/grammar/build.rs:15 CONTINUOUS_EXPAND_MULT	-	deprecated alias of expansion; same hard-coded continuous default, no constructor
+scales-helper	expansion	partial	crates/aprender-viz/src/grammar/build.rs:15 CONTINUOUS_EXPAND_MULT	-	continuous mult 0.05, add 0 hard-coded; no expansion() constructor or discrete default
+scales-helper	lims	partial	crates/aprender-viz/src/grammar/coord.rs:122 Coord::xlim (ylim :131)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_coord_limits	maps to Coord::xlim/ylim zoom, not scale limits; no oob censoring, no lims() call
+scales	scale_alpha	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_binned	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_continuous	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_date	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_datetime	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_discrete	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_identity	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_manual	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_alpha_ordinal	absent	-	-	no data-to-alpha scale; per-layer constant alpha_value is a different feature
+scales	scale_color_binned	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned scale: continuous ColorScale ramp (RGB lerp) only; no binning, no colour mapping
+scales	scale_color_brewer	absent	-	-	no discrete class palette; continuous ColorScale::blues/red_blue ramps are a different feature
+scales	scale_color_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; no default #132B43 to #56B1F7; colour column not mapped
+scales	scale_color_date	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_datetime	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_discrete	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_color_distiller	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues	-	Blues-9 stops 1,3,5,7,9, forward; ggplot2 default is Blues-7 reversed (#084594 to #EFF3FF); no mapping
+scales	scale_color_fermenter	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues (red_blue :198)	-	binned distiller: Blues-9 and RdBu ramps only; no class palette, no binning, no colour mapping
+scales	scale_color_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; no default #132B43 to #56B1F7; colour column not mapped
+scales	scale_color_gradient2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	diverging RdBu ramp exists; no midpoint arg, colours differ from muted red/blue, no mapping
+scales	scale_color_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	multi-stop colours ok but RGB lerp not Lab, no values= positions; not wired to aes
+scales	scale_color_grey	absent	-	-	no discrete grey_pal (start 0.2, end 0.8); ColorScale::greyscale ramp is a different feature
+scales	scale_color_hue	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_color_identity	absent	-	-	no value-to-colour mapping; per-layer constant color_value is a different feature
+scales	scale_color_manual	absent	-	-	no value-to-colour mapping; per-layer constant color_value is a different feature
+scales	scale_color_ordinal	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_color_steps	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned gradient: two-colour ramp exists; no binning, default #132B43-#56B1F7 absent, no colour mapping
+scales	scale_color_steps2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	binned gradient2: RdBu ramp exists; no midpoint, no binning, no colour mapping
+scales	scale_color_stepsn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned gradientn: multi-stop ramp exists; no binning, no values= positions, no colour mapping
+scales	scale_color_viridis_b	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	binned viridis: 5-stop continuous ramp only; no binning, no option/direction, no colour mapping
+scales	scale_color_viridis_c	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	5 stops vs viridisLite 256; no option/begin/end/direction; default option D
+scales	scale_color_viridis_d	absent	-	-	no discrete viridis palette; continuous ColorScale::viridis ramp is a different feature
+scales	scale_colour_binned	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned scale: continuous ColorScale ramp (RGB lerp) only; no binning, no colour mapping
+scales	scale_colour_brewer	absent	-	-	no discrete class palette; continuous ColorScale::blues/red_blue ramps are a different feature
+scales	scale_colour_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; no default #132B43 to #56B1F7; colour column not mapped
+scales	scale_colour_date	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_datetime	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_discrete	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_colour_distiller	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues	-	Blues-9 stops 1,3,5,7,9, forward; ggplot2 default is Blues-7 reversed (#084594 to #EFF3FF); no mapping
+scales	scale_colour_fermenter	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues (red_blue :198)	-	binned distiller: Blues-9 and RdBu ramps only; no class palette, no binning, no colour mapping
+scales	scale_colour_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; no default #132B43 to #56B1F7; colour column not mapped
+scales	scale_colour_gradient2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	diverging RdBu ramp exists; no midpoint arg, colours differ from muted red/blue, no mapping
+scales	scale_colour_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	multi-stop colours ok but RGB lerp not Lab, no values= positions; not wired to aes
+scales	scale_colour_grey	absent	-	-	no discrete grey_pal (start 0.2, end 0.8); ColorScale::greyscale ramp is a different feature
+scales	scale_colour_hue	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_colour_identity	absent	-	-	no value-to-colour mapping; per-layer constant color_value is a different feature
+scales	scale_colour_manual	absent	-	-	no value-to-colour mapping; per-layer constant color_value is a different feature
+scales	scale_colour_ordinal	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_colour_steps	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned gradient: two-colour ramp exists; no binning, default #132B43-#56B1F7 absent, no colour mapping
+scales	scale_colour_steps2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	binned gradient2: RdBu ramp exists; no midpoint, no binning, no colour mapping
+scales	scale_colour_stepsn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned gradientn: multi-stop ramp exists; no binning, no values= positions, no colour mapping
+scales	scale_colour_viridis_b	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	binned viridis: 5-stop continuous ramp only; no binning, no option/direction, no colour mapping
+scales	scale_colour_viridis_c	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	5 stops vs viridisLite 256; no option/begin/end/direction; default option D
+scales	scale_colour_viridis_d	absent	-	-	no discrete viridis palette; continuous ColorScale::viridis ramp is a different feature
+scales	scale_continuous_identity	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_discrete_identity	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_discrete_manual	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_fill_binned	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned scale: continuous ColorScale ramp (RGB lerp) only; no binning, no fill mapping
+scales	scale_fill_brewer	absent	-	-	no discrete class palette; continuous ColorScale::blues/red_blue ramps are a different feature
+scales	scale_fill_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
+scales	scale_fill_date	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_datetime	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_discrete	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
+scales	scale_fill_distiller	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues	-	Blues-9 stops 1,3,5,7,9, forward; ggplot2 default is Blues-7 reversed (#084594 to #EFF3FF); no fill mapping
+scales	scale_fill_fermenter	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues (red_blue :198)	-	binned distiller: Blues-9 and RdBu ramps only; no class palette, no binning, no fill mapping
+scales	scale_fill_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
+scales	scale_fill_gradient2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	diverging RdBu ramp exists; no midpoint arg, colours differ from muted red/blue, no fill mapping
+scales	scale_fill_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
+scales	scale_fill_grey	absent	-	-	no discrete grey_pal (start 0.2, end 0.8); ColorScale::greyscale ramp is a different feature
+scales	scale_fill_hue	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
+scales	scale_fill_identity	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_manual	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_ordinal	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
+scales	scale_fill_steps	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned gradient: two-colour ramp exists; no binning, default #132B43-#56B1F7 absent, no fill mapping
+scales	scale_fill_steps2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	binned gradient2: RdBu ramp exists; no midpoint, no binning, no fill mapping
+scales	scale_fill_stepsn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	binned gradientn: multi-stop ramp exists; no binning, no values= positions, no fill mapping
+scales	scale_fill_viridis_b	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	binned viridis: 5-stop continuous ramp only; no binning, no option/direction, no fill mapping
+scales	scale_fill_viridis_c	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	5 stops vs 256; no option/direction; aes.fill column not mapped
+scales	scale_fill_viridis_d	absent	-	-	no discrete viridis palette; continuous ColorScale::viridis ramp is a different feature
+scales	scale_linetype	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linetype_binned	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linetype_continuous	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linetype_discrete	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linetype_identity	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linetype_manual	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_binned	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_continuous	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_date	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_datetime	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_discrete	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_identity	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_manual	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_linewidth_ordinal	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_radius	absent	-	-	no such aesthetic mapping; constant per-geom widths are a different feature
+scales	scale_shape	absent	-	-	no shape palette (16,17,15,3,7,8); per-layer PointShape constant is a different feature
+scales	scale_shape_binned	absent	-	-	no shape palette (16,17,15,3,7,8); per-layer PointShape constant is a different feature
+scales	scale_shape_continuous	absent	-	-	no shape palette (16,17,15,3,7,8); per-layer PointShape constant is a different feature
+scales	scale_shape_discrete	absent	-	-	no shape palette (16,17,15,3,7,8); per-layer PointShape constant is a different feature
+scales	scale_shape_identity	absent	-	-	no shape palette (16,17,15,3,7,8); per-layer PointShape constant is a different feature
+scales	scale_shape_manual	absent	-	-	no shape palette (16,17,15,3,7,8); per-layer PointShape constant is a different feature
+scales	scale_shape_ordinal	absent	-	-	no shape palette (16,17,15,3,7,8); per-layer PointShape constant is a different feature
+scales	scale_size	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_area	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_binned	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_binned_area	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_continuous	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_date	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_datetime	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_discrete	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_identity	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_manual	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_size_ordinal	absent	-	-	no data-to-size scale; per-layer constant size_value is a different feature
+scales	scale_type	absent	-	-	no scale_type() dispatch from data class
+scales	scale_x_binned	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_x_continuous	implemented	crates/aprender-viz/src/grammar/build.rs:95 PositionScale (extended breaks, 5% expansion)	crates/aprender-viz/src/grammar/ggplot2_oracle.rs::ggplot2_row1_scale_x_continuous	default call only; no limits/breaks/labels/n.breaks args. [drawn: terminal=oracle svg=oracle framebuffer=smoke wasm=untested]
+scales	scale_x_date	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_x_datetime	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_x_discrete	absent	-	-	no discrete/categorical position scale; ggplot2 default expansion add 0.6 unmapped
+scales	scale_x_log10	partial	crates/aprender-viz/src/scale.rs:87 LogScale	crates/aprender-viz/src/scale.rs::test_log_scale	LogScale not wired into GGPlot; no log breaks (1,10,100); ggplot2 expands in log space
+scales	scale_x_reverse	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_x_sqrt	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_x_time	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_binned	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_continuous	implemented	crates/aprender-viz/src/grammar/build.rs:95 PositionScale (extended breaks, 5% expansion)	crates/aprender-viz/src/grammar/ggplot2_oracle.rs::ggplot2_row1_scale_y_continuous	default call only; no limits/breaks/labels/n.breaks args. [drawn: terminal=oracle svg=oracle framebuffer=smoke wasm=untested]
+scales	scale_y_date	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_datetime	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_discrete	absent	-	-	no discrete/categorical position scale; ggplot2 default expansion add 0.6 unmapped
+scales	scale_y_log10	partial	crates/aprender-viz/src/scale.rs:87 LogScale	crates/aprender-viz/src/scale.rs::test_log_scale	LogScale not wired into GGPlot; no log breaks (1,10,100); ggplot2 expands in log space
+scales	scale_y_reverse	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_y_sqrt	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_y_time	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales-helper	sec_axis	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
+scales-helper	xlim	partial	crates/aprender-viz/src/grammar/coord.rs:122 Coord::xlim	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_coord_limits	coord_cartesian-style zoom only; scale limits (oob to NA, 2 args, Inf) absent; test asserts width>0
+scales-helper	ylim	partial	crates/aprender-viz/src/grammar/coord.rs:131 Coord::ylim	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_coord_limits	coord_cartesian-style zoom only; scale limits (oob to NA, 2 args, Inf) absent; test asserts width>0

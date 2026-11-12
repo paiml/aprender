@@ -1,0 +1,12 @@
+as_labeller
+facet_grid
+facet_null
+facet_wrap
+label_both
+label_bquote
+label_context
+label_parsed
+label_value
+label_wrap_gen
+labeller
+vars
