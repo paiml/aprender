@@ -23,7 +23,7 @@ proof_obligations:
 - id: PLOTLINES-INV-001
   type: invariant
   property: Each stroke geom is drawn at the pixel the scales give its data value
-  formal: 'forall case: svg polyline points == tick-interpolated pixels of the data (tolerance 0.01 px)'
+  formal: '∀ case: svg_point(case) ≈ tick_pixel(case.value), tolerance 0.01 px'
   applies_to: stroke_polyline
 enforcement:
   svg_cases:
