@@ -14,9 +14,9 @@
 
 use serde_json::Value;
 
-use super::stat_count::{bar_layout, BarSpec, BuiltBars, DiscreteAxis};
 use super::coord::Coord;
 use super::stat::Stat;
+use super::stat_count::{bar_layout, BarSpec, BuiltBars, DiscreteAxis};
 use super::{Aes, DataFrame, Facet, GGPlot, Geom, Layer, Position, PositionScale, Preserve};
 use crate::error::Error;
 
@@ -694,7 +694,11 @@ macro_rules! companions {
     ($name:literal) => {
         (
             include_str!("../../fixtures/ggplot2/bars_companions/data.csv"),
-            include_str!(concat!("../../fixtures/ggplot2/bars_companions/expected_", $name, ".json")),
+            include_str!(concat!(
+                "../../fixtures/ggplot2/bars_companions/expected_",
+                $name,
+                ".json"
+            )),
         )
     };
 }
@@ -885,7 +889,8 @@ fn bars_under_a_non_default_coord_are_refused() {
 
 #[test]
 fn bars_beside_an_unsupported_companion_are_refused() {
-    let err = |l: Layer| layout_of_layers(&abcd(), xy(), vec![col(), l], None).expect_err("refused");
+    let err =
+        |l: Layer| layout_of_layers(&abcd(), xy(), vec![col(), l], None).expect_err("refused");
     assert!(matches!(err(Layer::new(Geom::line())), Error::UnsupportedLayer(_)), "geom_line");
     assert!(matches!(err(Layer::new(Geom::abline(1.0, 0.0))), Error::UnsupportedLayer(_)));
     let smooth = Layer::new(Geom::point().stat(Stat::Smooth));

@@ -201,7 +201,11 @@ pub struct BuiltBars {
 fn full_column<'a>(df: &'a DataFrame, name: &str) -> Result<&'a [DataValue], BarError> {
     let col = df.get(name).ok_or_else(|| BarError::MissingColumn(name.to_string()))?;
     if col.len() != df.nrow() {
-        return Err(BarError::ShortColumn { column: name.to_string(), len: col.len(), nrow: df.nrow() });
+        return Err(BarError::ShortColumn {
+            column: name.to_string(),
+            len: col.len(),
+            nrow: df.nrow(),
+        });
     }
     Ok(col)
 }
