@@ -7,10 +7,8 @@ here <- (function() {
 })()
 source(file.path(here, "..", "oracle.R"))
 source(file.path(here, "..", "oracle_scales.R"))
-# Level order is the sort order of the locale: pin it so the oracle does not depend on the host.
+# Level order is the sort order of the locale; oracle.R pins LC_COLLATE to C (every fixture records it).
 # The contract states the Rust side matches the C locale (byte order); other orders need limits=.
-invisible(Sys.setlocale("LC_COLLATE", "C"))
-stopifnot(Sys.getlocale("LC_COLLATE") == "C")
 suppressPackageStartupMessages(library(ggplot2))
 df <- utils::read.csv(file.path(here, "data.csv"), stringsAsFactors = FALSE)
 

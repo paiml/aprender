@@ -54,8 +54,34 @@ cases <- list(
   list(name = "single_point_add_expand",
        spec = "ggplot(df[3, ], aes(x, y)) + geom_point() + scale_x_continuous(expand = expansion(mult = 0.1, add = 2))",
        plot = ggplot(df[3, ], aes(x, y)) + geom_point() +
-         scale_x_continuous(expand = expansion(mult = 0.1, add = 2)), rows = 3)
+         scale_x_continuous(expand = expansion(mult = 0.1, add = 2)), rows = 3),
 
+  # --- Single value 0: zero_range() must treat lo == hi as zero-width even at 0 (relative tolerance is
+  # undefined there); width 1 gives 0 +- 0.05.
+  list(name = "single_zero",
+       spec = "ggplot(df[1, ], aes(z, y)) + geom_point()",
+       plot = ggplot(df[1, ], aes(z, y)) + geom_point(), rows = 1),
+  list(name = "single_zero_add_expand",
+       spec = "ggplot(df[1, ], aes(z, y)) + geom_point() + scale_x_continuous(expand = expansion(mult = 0.1, add = 2))",
+       plot = ggplot(df[1, ], aes(z, y)) + geom_point() +
+         scale_x_continuous(expand = expansion(mult = 0.1, add = 2)), rows = 1),
+  list(name = "limits_zero_zero",
+       spec = "ggplot(df[1:3, ], aes(z, y)) + geom_point() + scale_x_continuous(limits = c(0, 0))",
+       plot = ggplot(df[1:3, ], aes(z, y)) + geom_point() + scale_x_continuous(limits = c(0, 0)), rows = 1:3),
+  # --- Infinite data (review of #6916): training ignores them; censor(only.finite = TRUE) keeps them.
+  list(name = "inf_mixed_x",
+       spec = "ggplot(df, aes(f, y)) + geom_point()",
+       plot = ggplot(df, aes(f, y)) + geom_point()),
+  list(name = "inf_limits_x",
+       spec = "ggplot(df, aes(f, y)) + geom_point() + scale_x_continuous(limits = c(0, 3))",
+       plot = ggplot(df, aes(f, y)) + geom_point() + scale_x_continuous(limits = c(0, 3))),
+  list(name = "inf_only_limits_x",
+       spec = "ggplot(df[c(1, 3), ], aes(f, y)) + geom_point() + scale_x_continuous(limits = c(0, 3))",
+       plot = ggplot(df[c(1, 3), ], aes(f, y)) + geom_point() + scale_x_continuous(limits = c(0, 3)),
+       rows = c(1, 3)),
+  list(name = "inf_mixed_y_limits",
+       spec = "ggplot(df, aes(z, f)) + geom_point() + scale_y_continuous(limits = c(-1, 4))",
+       plot = ggplot(df, aes(z, f)) + geom_point() + scale_y_continuous(limits = c(-1, 4)))
 )
 
 write_cases_fixture(cases, row = "scale_continuous_args", data_file = "data.csv",

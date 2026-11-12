@@ -41,7 +41,7 @@ axis_scale_json <- function(view) {
 
 # `cases` is a list of list(name=, spec=, plot=, rows=). `rows` (optional, 1-based, repeats allowed)
 # names the rows of data.csv the plot was built from; it is recorded so the Rust side builds the same
-# frame. Writes one JSON document. `collate` records LC_COLLATE: discrete level order depends on it.
+# frame. Writes one JSON document. The versions block records LC_COLLATE (pinned to C in oracle.R).
 write_cases_fixture <- function(cases, row, data_file, out_file) {
   out <- lapply(cases, function(cs) {
     b <- ggplot2::ggplot_build(cs$plot)
@@ -58,7 +58,7 @@ write_cases_fixture <- function(cases, row, data_file, out_file) {
   fixture <- list(
     row = row,
     data_file = data_file,
-    versions = c(versions_json(), list(collate = Sys.getlocale("LC_COLLATE"))),
+    versions = versions_json(),
     cases = out
   )
   writeLines(to_json(fixture), out_file, useBytes = TRUE)

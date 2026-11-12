@@ -6,12 +6,21 @@
 //! limits, the 5% expansion, the breaks and the layer positions are `log10` values; only the
 //! labels come from data space (`format(10^break)`).
 //!
-//! Rows a scale cannot place (outside explicit limits, non-positive on `log10`, text outside the
-//! levels) stay in the layer with an `NA` position (`f64::NAN`), as `ggplot_build()` returns
-//! them; ggplot2 drops them (with a warning) only when drawing. `oob =` is fixed to `censor`.
+//! Rows a scale cannot place stay in the layer with an `NA` position (`f64::NAN`), as
+//! `ggplot_build()` returns them; ggplot2 drops them (with a warning) only when drawing. `oob =`
+//! is fixed to `censor`, which (`only.finite = TRUE`) leaves infinite values alone. Exactly:
 //!
-//! Where ggplot2 errors, so does this: text in a continuous scale, and (deliberately, where
-//! ggplot2 returns an infinite range) a continuous axis with no finite value to train on.
+//! - a negative value on `log10` is `NA`; `0` is `-Inf`, and `+-Inf` data stay `+-Inf` (except
+//!   `-Inf` on `log10`, which is `NA`, as R's `log10(-Inf)`);
+//! - a finite value outside explicit `limits` is `NA`; an infinite value is kept;
+//! - text outside the levels of a discrete scale is `NA`.
+//!
+//! Training ignores non-finite values. Where ggplot2 errors, so does this: text in a continuous
+//! scale. Deliberate divergences, each returning `Err(ScaleDomain)`: a continuous axis with no
+//! limits and no finite value to train on (ggplot2 returns an infinite range); and explicit
+//! `limits` that are not finite after the transform (`limits = c(0, 100)` on `log10` errors in
+//! ggplot2; a negative limit, or an infinite one, makes it silently substitute the data range or
+//! return unusable breaks).
 //!
 //! Not implemented: label functions, `n.breaks`, `minor_breaks =`, other `oob =` functions,
 //! `position =`, secondary axes, and the `expand = c(a, b, c, d)` shorthand (use [`Expansion`]).
@@ -293,7 +302,9 @@ impl ResolvedAxis {
     /// [`Error::ScaleDomain`] where ggplot2 errors (text in a continuous scale), and where it
     /// would return an infinite range: a continuous axis with no limits whose data has no finite
     /// value after the transform (all non-positive on `log10`, all missing). This crate refuses
-    /// rather than return an `(inf, -inf)` panel.
+    /// rather than return an `(inf, -inf)` panel. Explicit limits that are not finite after the transform
+    /// (`limits = c(0, 100)` on `log10`, where R errors with "'from' must be a finite number") are the
+    /// same error.
     pub(crate) fn resolve(
         spec: Option<&PositionScaleSpec>,
         columns: &[&[DataValue]],
@@ -331,13 +342,20 @@ impl ResolvedAxis {
                 if spec.log10 { " log10" } else { "" }
             )));
         }
+        if let Some((a, b)) = spec.limits {
+            if !(t.forward(a).is_finite() && t.forward(b).is_finite()) {
+                return Err(Error::ScaleDomain(format!(
+                    "scale limits ({a}, {b}) are not finite after the transform"
+                )));
+            }
+        }
         let scale = resolve_continuous(trained, spec);
         let limits = spec.limits.map(|(a, b)| (t.forward(a), t.forward(b)));
         Ok(Self { scale, map: AxisMap::Continuous { transform: t, limits } })
     }
 
     /// A data value's position, or `None` where ggplot2 would have `NA` (text outside the levels,
-    /// a non-positive value on a log axis, a value outside explicit limits).
+    /// a negative value on a log axis, a finite value outside explicit limits).
     pub(crate) fn map_value(&self, v: &DataValue) -> Option<f64> {
         match (&self.map, v) {
             (AxisMap::Discrete { levels }, DataValue::Text(s)) => position(levels, s),
@@ -347,8 +365,9 @@ impl ResolvedAxis {
                 if p.is_nan() && *transform != Transform::Identity {
                     return None;
                 }
+                // ggplot2's `censor(only.finite = TRUE)`: an infinite value is never censored.
                 match limits {
-                    Some((lo, hi)) if p < *lo || p > *hi => None,
+                    Some((lo, hi)) if p.is_finite() && (p < *lo || p > *hi) => None,
                     _ => Some(p),
                 }
             }

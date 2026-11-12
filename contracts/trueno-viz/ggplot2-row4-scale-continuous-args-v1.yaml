@@ -25,8 +25,10 @@ equations:
     - default is mult 0.05, add 0 on both sides
     - 'a zero-width range (one point, all-equal data, limits = c(v, v)) is expanded as width 1: v +- (mult + add), 4.95..5.05 for v = 5 (scales::expand_range zero_width = 1)'
     - 'reversed limits c(10, 0) are sorted to (0, 10)'
-    - 'values outside the limits, or non-positive on a log scale, map to NA: the row is kept as NaN'
-    - 'text under a continuous scale, or no limits and no finite data, is Err(ScaleDomain) (R errors on text; on no finite data R yields an infinite range, which aprender rejects deliberately)'
+    - 'a finite value outside explicit limits, or a negative value on a log scale, maps to NA: the row is kept as NaN; +-Inf data is NOT censored by limits (censor(only.finite = TRUE)) and is kept, while training ignores it; log10(0) is -Inf and is kept'
+    - 'a zero-width range at 0 (one point at 0, limits = c(0, 0)) is zero-width too, so it spans 0 +- 0.05; scales::zero_range compares relative to the smaller magnitude, which is undefined at 0, so equality is tested first'
+    - 'text under a continuous scale, no limits and no finite data, or explicit limits that are not finite after the transform (log10 limits = c(0, 100)) are Err(ScaleDomain): R errors on text and on non-finite limits; on no finite data it yields an infinite range, which aprender rejects deliberately. Explicit limits with no data need no training and are not an error'
+    - 'the renderers do not honour a scale spec and return Err(Rendering) when scale_x / scale_y is set (see row 3), so layout() and to_svg() cannot disagree silently'
   explicit_breaks:
     formula: 'breaks = { b in breaks_arg : lo_c <= b <= hi_c }; labels_i = labels_arg[i] for kept i; minor = regular_minor_breaks(n = 2) inside [lo_c, hi_c]'
     domain: continuous_range, optional breaks and labels
@@ -76,6 +78,16 @@ falsification_tests:
   prediction: "mapping a y value outside the limits to 0.0 instead of NA turns ggplot2_row4_scale_continuous_args (limits_oob_na_y) RED (measured rc=101; survived before that case existed)"
   test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
   if_fails: No fixture case puts a y value outside the limits
+- id: FALSIFY-GG4-006
+  rule: A zero-width range at 0 is zero-width (0 +- 0.05)
+  prediction: "removing the lo == hi test from zero_range in scale_spec.rs turns ggplot2_row4_scale_continuous_args (single_zero, single_zero_add_expand, limits_zero_zero) RED (measured rc=101, 1 FAILED; this mutant survived before those cases existed because every earlier zero-width case was away from 0)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case has a zero-width range at 0
+- id: FALSIFY-GG4-007
+  rule: Explicit limits that are not finite after the transform are an error
+  prediction: "removing the non-finite-limits Err in ResolvedAxis::continuous turns ggplot2_row3_row4_non_finite_explicit_limits_are_an_error RED (measured rc=101, 1 FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: limits = c(0, 100) on log10 yields an infinite panel instead of Err
 qa_gate:
   id: F-GG4-001
   name: ggplot2 conformance row 4 (continuous limits, breaks, labels, expand)

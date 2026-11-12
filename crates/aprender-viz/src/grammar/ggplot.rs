@@ -296,8 +296,17 @@ impl BuiltGGPlot {
     /// # Errors
     ///
     /// Propagates [`Error::UnknownColumn`] if the facet names a column the data lacks, and
-    /// [`Error::UnsupportedCoord`] for a `Polar` or `Fixed` coordinate system.
+    /// [`Error::UnsupportedCoord`] for a `Polar` or `Fixed` coordinate system, and
+    /// [`Error::Rendering`] when `scale_x`/`scale_y` was set: the renderer draws from its own linear
+    /// scales and does not yet honour a position-scale spec (log10, limits, discrete levels), so it
+    /// refuses instead of drawing a plot that disagrees with [`Self::layout`]. Use `layout()` for the
+    /// scaled view.
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
+        if self.x_scale.is_some() || self.y_scale.is_some() {
+            return Err(Error::Rendering(
+                "scale_x/scale_y are not honoured by the renderer yet; use layout()".into(),
+            ));
+        }
         let mut fb = Framebuffer::new(self.width, self.height)?;
 
         // Fill background
@@ -426,6 +435,12 @@ impl BuiltGGPlot {
                 continue;
             };
             let (tx, ty) = apply(&self.coord, f64::from(x), f64::from(y))?;
+            // ggplot2 draws a non-finite position at the panel edge or drops it; this renderer has
+            // no such edge, and an infinite coordinate overflows the circle rasteriser (#6916), so
+            // the point is skipped.
+            if !tx.is_finite() || !ty.is_finite() {
+                continue;
+            }
             xo.push(tx as f32);
             yo.push(ty as f32);
         }

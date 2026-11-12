@@ -22,6 +22,9 @@ fn close(a: f64, b: f64) -> bool {
     if a.is_nan() || b.is_nan() {
         return a.is_nan() && b.is_nan(); // NA matches NA only
     }
+    if a.is_infinite() || b.is_infinite() {
+        return a == b; // an infinity matches the same infinity only, never a finite number
+    }
     (a - b).abs() <= REL_TOL * a.abs().max(b.abs()) + ABS_TOL
 }
 
@@ -36,15 +39,13 @@ fn nums(v: &Value) -> Vec<f64> {
     v.as_array()
         .expect("fixture field is an array")
         .iter()
-        .map(
-            |e| {
-                if e.is_null() {
-                    f64::NAN
-                } else {
-                    e.as_f64().expect("fixture array holds numbers")
-                }
-            },
-        )
+        .map(|e| match e {
+            Value::Null => f64::NAN,
+            // oracle.R writes +-Inf as these two strings (JSON has no infinity).
+            Value::String(s) if s == "Inf" => f64::INFINITY,
+            Value::String(s) if s == "-Inf" => f64::NEG_INFINITY,
+            other => other.as_f64().expect("fixture array holds numbers"),
+        })
         .collect()
 }
 
@@ -217,6 +218,19 @@ fn ggplot2_row3_scale_log10() {
                         .labels(["one", "ten", "hundred", "thousand"]),
                 )
                 .scale_y(scale_log10()),
+            // R: log10(0) is -Inf and censor(only.finite = TRUE) keeps it (review of #6916).
+            "zero_x" => point(df, "z", "y").scale_x(scale_log10()),
+            "zero_x_limits" | "zero_only_limits" => {
+                point(df, "z", "y").scale_x(scale_log10().limits(1.0, 100.0))
+            }
+            "inf_mixed_x" => point(df, "i", "y").scale_x(scale_log10()),
+            "inf_mixed_x_limits" => point(df, "i", "y").scale_x(scale_log10().limits(1.0, 100.0)),
+            "tiny_zero_negative_x" | "tiny_single_x" => point(df, "t", "y").scale_x(scale_log10()),
+            "single_one_log" => point(df, "x", "y").scale_x(scale_log10()),
+            "all_negative_limits" => point(df, "w", "y").scale_x(scale_log10().limits(1.0, 100.0)),
+            "break_at_zero" => {
+                point(df, "x", "y").scale_x(scale_log10().breaks([0.0, 1.0, 10.0, 100.0]))
+            }
             other => panic!("unknown case {other}"),
         },
     );
@@ -253,6 +267,18 @@ fn ggplot2_row4_scale_continuous_args() {
                 .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
             "add_expansion_y" => {
                 point(df, "x", "y").scale_y(scale_continuous().expand(Expansion::add(2.0)))
+            }
+            "single_zero" => point(df, "z", "y"),
+            "single_zero_add_expand" => point(df, "z", "y")
+                .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
+            "limits_zero_zero" => point(df, "z", "y").scale_x(scale_continuous().limits(0.0, 0.0)),
+            // +-Inf data: ignored by training, kept by the limits censor.
+            "inf_mixed_x" => point(df, "f", "y"),
+            "inf_limits_x" | "inf_only_limits_x" => {
+                point(df, "f", "y").scale_x(scale_continuous().limits(0.0, 3.0))
+            }
+            "inf_mixed_y_limits" => {
+                point(df, "z", "f").scale_y(scale_continuous().limits(-1.0, 4.0))
             }
             other => panic!("unknown case {other}"),
         },
@@ -320,8 +346,9 @@ fn ggplot2_row3_log_axis_without_positive_data_is_an_error() {
     assert!(matches!(plot.layout(), Err(crate::error::Error::ScaleDomain(_))));
 }
 
-/// With explicit limits there is nothing to train on, so all-NA data is not an error: every row
-/// is NA and the panel is the limits (ggplot2: `limits = c(100, 200)` with data 1, 5, 20).
+/// Explicit limits entirely outside the data: every row is NA and the panel is the limits (ggplot2:
+/// `limits = c(100, 200)` with data 1, 5, 20). This still trains a finite range first; the branch
+/// with nothing at all to train on is `ggplot2_row3_all_negative_with_limits_needs_no_training`.
 #[test]
 fn ggplot2_row4_explicit_limits_need_no_finite_data() {
     let mut df = DataFrame::new();
@@ -340,4 +367,131 @@ fn ggplot2_row4_explicit_limits_need_no_finite_data() {
         &[layout.x.continuous_range.0, layout.x.continuous_range.1],
         &[95.0, 205.0],
     );
+}
+
+/// Nothing finite to train on (all negative on `log10`) is an error only without limits: with
+/// `limits = c(1, 100)` ggplot2 gives layer `NA NA`, limits `0 2` (the `all_negative_limits`
+/// fixture case), and the Err guard must not fire.
+#[test]
+fn ggplot2_row3_all_negative_with_limits_needs_no_training() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[-4.0, -500.0]);
+    df.add_column_f32("y", &[1.0, 2.0]);
+    let layout = point(df, "x", "y")
+        .scale_x(scale_log10().limits(1.0, 100.0))
+        .build()
+        .expect("plot builds")
+        .layout()
+        .expect("limits make training unnecessary");
+    assert!(layout.layers[0].x.iter().all(|v| v.is_nan()));
+    assert_close_slice("limits", &[layout.x.limits.0, layout.x.limits.1], &[0.0, 2.0]);
+}
+
+/// R: `log10(0)` is `-Inf` (the row stays), `log10(-4)` is `NA`.
+#[test]
+fn ggplot2_row3_zero_is_neg_inf_negative_is_na() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[-4.0, 0.0, 1.0, 10.0]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0, 4.0]);
+    let layout = point(df, "x", "y").scale_x(scale_log10()).build().expect("builds").layout();
+    let x = layout.expect("layout resolves").layers[0].x.clone();
+    assert!(x[0].is_nan());
+    assert_eq!(x[1], f64::NEG_INFINITY);
+    assert_close_slice("rest", &x[2..], &[0.0, 1.0]);
+}
+
+/// Explicit limits that are not finite after the transform are refused (a deliberate divergence):
+/// ggplot2 errors for `limits = c(0, 100)` on log10 and silently substitutes the data range for a
+/// negative or infinite limit.
+#[test]
+fn ggplot2_row3_row4_non_finite_explicit_limits_are_an_error() {
+    let frame = || {
+        let mut df = DataFrame::new();
+        df.add_column_f32("x", &[1.0, 10.0]);
+        df.add_column_f32("y", &[1.0, 2.0]);
+        df
+    };
+    for spec in [
+        scale_log10().limits(0.0, 100.0),
+        scale_log10().limits(-1.0, 100.0),
+        scale_continuous().limits(f64::NEG_INFINITY, 3.0),
+        scale_continuous().limits(0.0, f64::INFINITY),
+    ] {
+        let plot = point(frame(), "x", "y").scale_x(spec).build().expect("plot builds");
+        assert!(matches!(plot.layout(), Err(crate::error::Error::ScaleDomain(_))));
+    }
+}
+
+/// A log axis whose only data are zeros has nothing finite to train on: Err without limits
+/// (ggplot2: an infinite range).
+#[test]
+fn ggplot2_row3_only_zero_without_limits_is_an_error() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[0.0, 0.0]);
+    df.add_column_f32("y", &[1.0, 2.0]);
+    let plot = point(df, "x", "y").scale_x(scale_log10()).build().expect("plot builds");
+    assert!(matches!(plot.layout(), Err(crate::error::Error::ScaleDomain(_))));
+}
+
+/// `close` treats an infinity as equal only to the same infinity, so an `Inf` that should be a
+/// number cannot slip through the comparison.
+#[test]
+fn oracle_comparison_separates_infinities() {
+    assert!(close(f64::INFINITY, f64::INFINITY));
+    assert!(close(f64::NEG_INFINITY, f64::NEG_INFINITY));
+    assert!(!close(f64::INFINITY, f64::NEG_INFINITY));
+    assert!(!close(f64::INFINITY, 1e300));
+    assert!(!close(f64::NEG_INFINITY, f64::NAN));
+}
+
+// --- Renderer guard (review of #6916) ----------------------------------------------------------
+
+fn render_both(plot: &super::BuiltGGPlot) -> (crate::error::Result<String>, bool) {
+    // Neither render may panic whatever the data hold; report the SVG result and the framebuffer's.
+    (plot.to_svg(), plot.to_framebuffer().is_ok())
+}
+
+/// The renderer draws from its own linear scales, so a plot with a position-scale spec is refused
+/// (the same refusal for every spec) rather than drawn unscaled: a 0 on a log axis, a row outside
+/// the limits and an all-negative log axis give an Err from `to_svg` and `to_framebuffer`, never a
+/// panic and never NaN or Inf coordinates.
+#[test]
+fn renderer_refuses_scaled_plots_instead_of_drawing_them_linearly() {
+    let frame = |x: &[f32]| {
+        let mut df = DataFrame::new();
+        df.add_column_f32("x", x);
+        df.add_column_f32("y", &vec![1.0; x.len()]);
+        df
+    };
+    let plots = [
+        // 0 on a log axis (-Inf in scale space) and a row outside the explicit limits.
+        point(frame(&[0.0, 1.0, 10.0, 500.0]), "x", "y")
+            .scale_x(scale_log10().limits(1.0, 100.0))
+            .build(),
+        point(frame(&[0.0, 1.0, 10.0]), "x", "y").scale_x(scale_log10()).build(),
+        point(frame(&[-4.0, -500.0]), "x", "y").scale_x(scale_log10()).build(),
+        point(frame(&[1.0, 5.0, 20.0]), "x", "y")
+            .scale_y(scale_continuous().limits(2.0, 3.0))
+            .build(),
+    ];
+    for plot in plots {
+        let plot = plot.expect("plot builds");
+        let (svg, fb_ok) = render_both(&plot);
+        assert!(matches!(svg, Err(crate::error::Error::Rendering(_))), "{svg:?}");
+        assert!(!fb_ok);
+    }
+}
+
+/// With no scale spec, infinite and missing values in the data must not panic or hang a render
+/// and must not put `NaN`/`inf` into the SVG.
+#[test]
+fn renderer_survives_infinite_and_missing_data() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[f32::NEG_INFINITY, 1.0, f32::INFINITY, f32::NAN, 5.0]);
+    df.add_column_f32("y", &[2.0, f32::INFINITY, 3.0, 4.0, f32::NEG_INFINITY]);
+    let plot = point(df, "x", "y").build().expect("plot builds");
+    let (svg, fb_ok) = render_both(&plot);
+    let svg = svg.expect("renders");
+    assert!(fb_ok);
+    assert!(!svg.contains("NaN") && !svg.to_lowercase().contains("inf"), "non-finite in SVG");
 }

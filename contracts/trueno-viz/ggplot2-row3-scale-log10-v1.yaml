@@ -19,11 +19,15 @@ metadata:
 equations:
   log_space_expansion:
     formula: 'limits = (log10 lo, log10 hi); continuous_range = (l - 0.05*(h-l), h + 0.05*(h-l)) in log10 space'
-    domain: 'data > 0 (non-positive values map to NA: the row is kept as NaN, as in ggplot_build layer data); zero-width log range v spans log10(v) +- 0.05; no positive data and no limits is Err(ScaleDomain), a deliberate divergence from R''s (Inf, -Inf) range'
+    domain: 'data > 0 maps to log10(v); 0 maps to -Inf and is KEPT (R: log10(0) is -Inf, and censor(only.finite = TRUE) leaves infinite values alone, with or without limits); a negative value maps to NA (the row is kept as NaN); a finite value outside explicit limits maps to NA; +-Inf data is kept (log10(-Inf) is NA); training ignores every non-finite value, so the range comes from the finite ones; a zero-width log range v spans log10(v) +- 0.05. Deliberate divergences, both Err(ScaleDomain): no limits and no finite trained value (R yields an (Inf, -Inf) range), and explicit limits that are not finite after the transform such as limits = c(0, 100) (R errors with a from-must-be-finite message). limits = c(-1, 100), which R silently replaces with the data range, is the same Err here'
     codomain: (f64, f64)
     invariants:
     - the expansion is applied in transformed space, never to the raw data range
     - positions, limits and breaks are log10 values
+    - log10(0) is -Inf in layer data (Rust f64::NEG_INFINITY, JSON "-Inf") and the row is not censored; the oracle encodes +-Inf as the strings "Inf" / "-Inf" and NA as null, and the Rust test decodes both
+    - all-negative data with explicit limits needs no training and is not an error; the same data with no limits is Err(ScaleDomain)
+    - the renderers (to_framebuffer, to_svg) draw from linear scales and do not honour a scale spec, so they return Err(Rendering) whenever scale_x / scale_y is set instead of drawing a plot that disagrees with layout()
+    - a non-finite coordinate is never rasterised, it is skipped, so no NaN or Inf reaches draw_circle
   log_breaks:
     formula: 'breaks = breaks_log(n = 5, base = 10)(10^range); kept = { b : lo_c <= b <= hi_c }; label = format(10^b)'
     domain: continuous_range in log10 space
@@ -69,6 +73,31 @@ falsification_tests:
   prediction: "mutating ZERO_RANGE_WIDTH 1.0 -> 0.5 turns ggplot2_row3_scale_log10 (single_point_log, all_equal_log, limits_equal_log) RED (measured rc=101: row3, row4 and build::tests::zero_width_range_spans_five_hundredths_each_side FAILED)"
   test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
   if_fails: No fixture case has a zero-width log range
+- id: FALSIFY-GG3-005
+  rule: log10(0) is -Inf and is kept, not NA
+  prediction: "mutating Transform::Log10 so that 0 maps to NaN instead of -inf turns ggplot2_row3_scale_log10 (zero_x, zero_x_limits) and ggplot2_row3_zero_is_neg_inf_negative_is_na RED (measured rc=101, both FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case has a 0 on a log axis
+- id: FALSIFY-GG3-006
+  rule: Explicit limits need no finite data
+  prediction: "dropping spec.limits.is_none() from the no-finite-data Err in scale_spec.rs turns ggplot2_row3_all_negative_with_limits_needs_no_training, ggplot2_row3_scale_log10 and ggplot2_row4_scale_continuous_args (all_negative_limits) RED (measured rc=101, 3 FAILED; this mutant survived before the case existed)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case has all-negative data on log10 with explicit limits
+- id: FALSIFY-GG3-007
+  rule: Only finite values are censored by explicit limits (infinite values are kept)
+  prediction: "removing the p.is_finite() guard in the limits censor of scale_spec.rs turns ggplot2_row3_scale_log10 (zero_x_limits, inf_mixed_x_limits) and ggplot2_row4_scale_continuous_args (inf_limits_x) RED (measured rc=101, 2 FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case keeps an infinite value under explicit limits
+- id: FALSIFY-GG3-008
+  rule: The renderers refuse a scaled plot instead of drawing it linearly
+  prediction: "removing the scale_x/scale_y guard in to_framebuffer turns renderer_refuses_scaled_plots_instead_of_drawing_them_linearly RED (measured rc=101, 1 FAILED); the test renders a 0 on a log axis, an out-of-limits row, all-negative log data and a limited continuous axis through to_svg and to_framebuffer"
+  test: cargo test -p aprender-viz --lib renderer_ (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: A scaled plot renders without the scale, or renders while layout() errs
+- id: FALSIFY-GG3-009
+  rule: No non-finite coordinate reaches the rasteriser
+  prediction: "removing the is_finite() skip in panel_points turns renderer_survives_infinite_and_missing_data RED (measured rc=101: attempt to subtract with overflow in draw_circle; the test also asserts the SVG holds no NaN or inf)"
+  test: cargo test -p aprender-viz --lib renderer_ (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: Infinite data panics the renderer
 qa_gate:
   id: F-GG3-001
   name: ggplot2 conformance row 3 (scale_x/y_log10)

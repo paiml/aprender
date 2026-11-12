@@ -19,7 +19,8 @@ pub enum Transform {
 }
 
 impl Transform {
-    /// Data space to scale space. A non-positive input to `Log10` gives `NaN`.
+    /// Data space to scale space, as R's `log10()`: `0` gives `-Inf`, a negative (or `-Inf`, or
+    /// `NaN`) gives `NaN`, `+Inf` stays `+Inf`.
     #[must_use]
     pub fn forward(self, x: f64) -> f64 {
         match self {
@@ -27,6 +28,8 @@ impl Transform {
             Self::Log10 => {
                 if x > 0.0 {
                     libm::log10(x)
+                } else if x == 0.0 {
+                    f64::NEG_INFINITY
                 } else {
                     f64::NAN
                 }
@@ -172,6 +175,10 @@ mod tests {
         assert!((Transform::Log10.forward(1000.0) - 3.0).abs() < 1e-15);
         assert!((Transform::Log10.inverse(2.0) - 100.0).abs() < 1e-12);
         assert!(Transform::Log10.forward(-1.0).is_nan());
+        assert_eq!(Transform::Log10.forward(0.0), f64::NEG_INFINITY);
+        assert_eq!(Transform::Log10.forward(f64::INFINITY), f64::INFINITY);
+        assert!(Transform::Log10.forward(f64::NEG_INFINITY).is_nan());
+        assert!(Transform::Log10.forward(f64::NAN).is_nan());
     }
 
     #[test]
