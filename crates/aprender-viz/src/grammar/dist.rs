@@ -541,6 +541,45 @@ fn stat_bin(inp: &Input<'_>, range: (f64, f64), freqpoly: bool) -> Result<(Table
     Ok((t, out_groups))
 }
 
+/// One group's density curve appended to `t`; returns the row count.
+fn density_group(
+    spec: &DistSpec,
+    gx: &[f64],
+    g: i64,
+    range: (f64, f64),
+    t: &mut Table,
+) -> Result<usize> {
+    if gx.len() < 2 {
+        return Err(refuse(format!(
+            "group {g} has fewer than 2 points: ggplot2 returns an NA row, which is not supported"
+        )));
+    }
+    let raw = match spec.bw {
+        Bandwidth::Nrd0 => bw_nrd0(gx),
+        Bandwidth::Value(v) => v,
+    };
+    let bw = raw * spec.adjust;
+    if !bw.is_finite() || bw <= 0.0 {
+        return Err(refuse("the bandwidth must be a positive finite number"));
+    }
+    let (from, to) = if spec.trim { finite_range(gx).unwrap_or(range) } else { range };
+    let (grid, y) = density(gx, bw, from, to, spec.n);
+    let nx = gx.len() as f64;
+    let ymax = y.iter().copied().filter(|v| v.is_finite()).fold(f64::NEG_INFINITY, f64::max);
+    let scaled: Vec<f64> = y.iter().map(|v| v / ymax).collect();
+    let count: Vec<f64> = y.iter().map(|v| v * nx).collect();
+    t.extend("x", &grid);
+    t.extend("density", &y);
+    t.extend("scaled", &scaled);
+    t.extend("ndensity", &scaled);
+    t.extend("count", &count);
+    t.extend("wdensity", &count);
+    t.extend("n", &vec![nx; y.len()]);
+    t.extend("y", &y);
+    t.extend("ymax", &y);
+    Ok(y.len())
+}
+
 fn stat_density(inp: &Input<'_>, range: (f64, f64)) -> Result<(Table, Vec<i64>)> {
     let spec = inp.spec;
     if spec.n == 0 || spec.n > MAX_DENSITY_N {
@@ -562,35 +601,8 @@ fn stat_density(inp: &Input<'_>, range: (f64, f64)) -> Result<(Table, Vec<i64>)>
     let mut out_groups = Vec::new();
     for g in &groups {
         let gx = pick(&xs, &rows_in(&inp.gid, &rows, *g));
-        if gx.len() < 2 {
-            return Err(refuse(format!(
-                "group {g} has fewer than 2 points: ggplot2 returns an NA row, which is not supported"
-            )));
-        }
-        let raw = match spec.bw {
-            Bandwidth::Nrd0 => bw_nrd0(&gx),
-            Bandwidth::Value(v) => v,
-        };
-        let bw = raw * spec.adjust;
-        if !bw.is_finite() || bw <= 0.0 {
-            return Err(refuse("the bandwidth must be a positive finite number"));
-        }
-        let (from, to) = if spec.trim { finite_range(&gx).unwrap_or(range) } else { range };
-        let (grid, y) = density(&gx, bw, from, to, spec.n);
-        let nx = gx.len() as f64;
-        let ymax = y.iter().copied().filter(|v| v.is_finite()).fold(f64::NEG_INFINITY, f64::max);
-        let scaled: Vec<f64> = y.iter().map(|v| v / ymax).collect();
-        let count: Vec<f64> = y.iter().map(|v| v * nx).collect();
-        t.extend("x", &grid);
-        t.extend("density", &y);
-        t.extend("scaled", &scaled);
-        t.extend("ndensity", &scaled);
-        t.extend("count", &count);
-        t.extend("wdensity", &count);
-        t.extend("n", &vec![nx; y.len()]);
-        t.extend("y", &y);
-        t.extend("ymax", &y);
-        out_groups.extend(std::iter::repeat(*g).take(y.len()));
+        let len = density_group(spec, &gx, *g, range, &mut t)?;
+        out_groups.extend(std::iter::repeat(*g).take(len));
     }
     let n = out_groups.len();
     t.constant("ymin", 0.0, n);
@@ -608,92 +620,52 @@ struct BoxStat {
     group: i64,
 }
 
-fn stat_boxplot(inp: &Input<'_>) -> Result<(Table, Vec<i64>, Vec<Vec<f64>>)> {
-    let spec = inp.spec;
-    if !spec.coef.is_finite() || spec.coef < 0.0 {
-        return Err(refuse("`coef` must be a non-negative finite number"));
+/// One group's box statistics, centre x and width.
+fn box_stat(gy: &[f64], gx: &[f64], g: i64, spec: &DistSpec, width: f64) -> (BoxStat, f64, f64) {
+    let mut sorted = gy.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let mut q = [0.0; 5];
+    for (slot, p) in q.iter_mut().zip([0.0, 0.25, 0.5, 0.75, 1.0]) {
+        *slot = quantile7(&sorted, p);
     }
-    let y_name = inp.aes.y.clone().ok_or_else(|| {
-        refuse("geom_boxplot needs a `y` mapping (an x-only box plot is flipped and not supported)")
-    })?;
-    let ys = numeric(inp.data, &y_name)?;
-    let xs = match &inp.aes.x {
-        Some(n) => numeric(inp.data, n)?,
-        None => vec![0.0; ys.len()],
+    let iqr = q[3] - q[1];
+    let (lo_fence, hi_fence) = (q[1] - spec.coef * iqr, q[3] + spec.coef * iqr);
+    let outside = |y: &f64| *y < lo_fence || *y > hi_fence;
+    let outliers: Vec<f64> = gy.iter().copied().filter(outside).collect();
+    if !outliers.is_empty() {
+        let kept = [q[1], q[2], q[3]].into_iter().chain(gy.iter().copied().filter(|y| !outside(y)));
+        let (lo, hi) = finite_range(&kept.collect::<Vec<_>>()).unwrap_or((q[0], q[4]));
+        q[0] = lo;
+        q[4] = hi;
+    }
+    let half = 1.58 * iqr / (gy.len() as f64).sqrt();
+    let (xlo, xhi) = finite_range(gx).unwrap_or((0.0, 0.0));
+    let mut u = gx.to_vec();
+    u.sort_by(f64::total_cmp);
+    u.dedup();
+    let w = if u.len() > 1 { (xhi - xlo) * 0.9 } else { width };
+    let ymin_final = outliers.iter().copied().fold(q[0], f64::min);
+    let ymax_final = outliers.iter().copied().fold(q[4], f64::max);
+    let stat = BoxStat {
+        q,
+        notch: (q[2] + half, q[2] - half),
+        outliers,
+        ymin_final,
+        ymax_final,
+        group: g,
     };
-    let width = spec.width.unwrap_or_else(|| resolution(&xs, true) * 0.75);
-    let rows: Vec<usize> =
-        (0..ys.len()).filter(|i| ys[*i].is_finite() && xs[*i].is_finite()).collect();
-    if rows.is_empty() {
-        return Err(Error::EmptyData);
-    }
-    let mut stats: Vec<(BoxStat, f64, f64)> = Vec::new();
-    for g in groups_of(&inp.gid, &rows) {
-        let grows = rows_in(&inp.gid, &rows, g);
-        let gy = pick(&ys, &grows);
-        let gx = pick(&xs, &grows);
-        let mut sorted = gy.clone();
-        sorted.sort_by(f64::total_cmp);
-        let mut q = [0.0; 5];
-        for (slot, p) in q.iter_mut().zip([0.0, 0.25, 0.5, 0.75, 1.0]) {
-            *slot = quantile7(&sorted, p);
-        }
-        let iqr = q[3] - q[1];
-        let (lo_fence, hi_fence) = (q[1] - spec.coef * iqr, q[3] + spec.coef * iqr);
-        let outliers: Vec<f64> =
-            gy.iter().copied().filter(|y| *y < lo_fence || *y > hi_fence).collect();
-        if !outliers.is_empty() {
-            let kept = [q[1], q[2], q[3]]
-                .into_iter()
-                .chain(gy.iter().copied().filter(|y| !(*y < lo_fence || *y > hi_fence)));
-            let (lo, hi) = finite_range(&kept.collect::<Vec<_>>()).unwrap_or((q[0], q[4]));
-            q[0] = lo;
-            q[4] = hi;
-        }
-        let half = 1.58 * iqr / (gy.len() as f64).sqrt();
-        let (xlo, xhi) = finite_range(&gx).unwrap_or((0.0, 0.0));
-        let uniq_x = {
-            let mut u = gx.clone();
-            u.sort_by(f64::total_cmp);
-            u.dedup();
-            u.len()
-        };
-        let w = if uniq_x > 1 { (xhi - xlo) * 0.9 } else { width };
-        let ymin_final = outliers.iter().copied().fold(q[0], f64::min);
-        let ymax_final = outliers.iter().copied().fold(q[4], f64::max);
-        stats.push((
-            BoxStat {
-                q,
-                notch: (q[2] + half, q[2] - half),
-                outliers,
-                ymin_final,
-                ymax_final,
-                group: g,
-            },
-            (xlo + xhi) / 2.0,
-            w,
-        ));
-    }
-    let boxes: Vec<Box2> = stats
-        .iter()
-        .enumerate()
-        .map(|(idx, (s, x, w))| Box2 {
-            idx,
-            x: *x,
-            xmin: x - w / 2.0,
-            xmax: x + w / 2.0,
-            group: s.group,
-            order: 0.0,
-            xid: 0,
-            newx: 0.0,
-            new_width: 0.0,
-        })
-        .collect();
-    let (boxes, padded) = dodge2(boxes, 0.1)?;
+    (stat, (xlo + xhi) / 2.0, w)
+}
+
+fn box_table(
+    boxes: &[Box2],
+    stats: &[(BoxStat, f64, f64)],
+    padded: bool,
+) -> (Table, Vec<i64>, Vec<Vec<f64>>) {
     let mut t = Table::default();
     let mut groups = Vec::new();
     let mut outliers = Vec::new();
-    for b in &boxes {
+    for b in boxes {
         let Some((s, _, _)) = stats.get(b.idx) else { continue };
         for (name, v) in [
             ("ymin", s.q[0]),
@@ -720,6 +692,52 @@ fn stat_boxplot(inp: &Input<'_>) -> Result<(Table, Vec<i64>, Vec<Vec<f64>>)> {
         groups.push(s.group);
         outliers.push(s.outliers.clone());
     }
+    (t, groups, outliers)
+}
+
+fn stat_boxplot(inp: &Input<'_>) -> Result<(Table, Vec<i64>, Vec<Vec<f64>>)> {
+    let spec = inp.spec;
+    if !spec.coef.is_finite() || spec.coef < 0.0 {
+        return Err(refuse("`coef` must be a non-negative finite number"));
+    }
+    let y_name = inp.aes.y.clone().ok_or_else(|| {
+        refuse("geom_boxplot needs a `y` mapping (an x-only box plot is flipped and not supported)")
+    })?;
+    let ys = numeric(inp.data, &y_name)?;
+    let xs = match &inp.aes.x {
+        Some(n) => numeric(inp.data, n)?,
+        None => vec![0.0; ys.len()],
+    };
+    let width = spec.width.unwrap_or_else(|| resolution(&xs, true) * 0.75);
+    let rows: Vec<usize> =
+        (0..ys.len()).filter(|i| ys[*i].is_finite() && xs[*i].is_finite()).collect();
+    if rows.is_empty() {
+        return Err(Error::EmptyData);
+    }
+    let mut stats: Vec<(BoxStat, f64, f64)> = Vec::new();
+    for g in groups_of(&inp.gid, &rows) {
+        let grows = rows_in(&inp.gid, &rows, g);
+        let gy = pick(&ys, &grows);
+        let gx = pick(&xs, &grows);
+        stats.push(box_stat(&gy, &gx, g, spec, width));
+    }
+    let boxes: Vec<Box2> = stats
+        .iter()
+        .enumerate()
+        .map(|(idx, (s, x, w))| Box2 {
+            idx,
+            x: *x,
+            xmin: x - w / 2.0,
+            xmax: x + w / 2.0,
+            group: s.group,
+            order: 0.0,
+            xid: 0,
+            newx: 0.0,
+            new_width: 0.0,
+        })
+        .collect();
+    let (boxes, padded) = dodge2(boxes, 0.1)?;
+    let (mut t, groups, outliers) = box_table(&boxes, &stats, padded);
     let n = groups.len();
     t.constant("weight", 1.0, n);
     t.constant("size", 1.5, n);
@@ -778,23 +796,7 @@ fn train(layers: &[BuiltDist], names: &[&str], axis: &str) -> Result<PositionSca
     Ok(PositionScale::continuous((lo, hi)))
 }
 
-/// Build a plot made only of distribution layers.
-///
-/// # Errors
-///
-/// [`Error::UnsupportedCoord`] for any coordinate system but plain Cartesian,
-/// [`Error::Rendering`] for out-of-scope input (see the module docs), [`Error::UnknownColumn`],
-/// [`Error::EmptyData`] when no row survives, [`Error::ScaleDomain`] for a degenerate scale.
-pub(super) fn layout(
-    plot_data: &DataFrame,
-    plot_aes: &Aes,
-    layers: &[Layer],
-    coord: &Coord,
-    facet: &Facet,
-) -> Result<BuiltLayout> {
-    if !layers.iter().all(is_dist) {
-        return Err(refuse("distribution layers cannot be combined with other geoms yet"));
-    }
+fn check_scope(coord: &Coord, facet: &Facet) -> Result<()> {
     match coord {
         Coord::Cartesian { xlim: None, ylim: None, flip: false } => {}
         Coord::Cartesian { flip: true, .. } => {
@@ -813,6 +815,27 @@ pub(super) fn layout(
     if !matches!(facet, Facet::None) {
         return Err(refuse("facets with distribution layers are not supported"));
     }
+    Ok(())
+}
+
+/// Build a plot made only of distribution layers.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedCoord`] for any coordinate system but plain Cartesian,
+/// [`Error::Rendering`] for out-of-scope input (see the module docs), [`Error::UnknownColumn`],
+/// [`Error::EmptyData`] when no row survives, [`Error::ScaleDomain`] for a degenerate scale.
+pub(super) fn layout(
+    plot_data: &DataFrame,
+    plot_aes: &Aes,
+    layers: &[Layer],
+    coord: &Coord,
+    facet: &Facet,
+) -> Result<BuiltLayout> {
+    if !layers.iter().all(is_dist) {
+        return Err(refuse("distribution layers cannot be combined with other geoms yet"));
+    }
+    check_scope(coord, facet)?;
     let mut inputs = Vec::new();
     for layer in layers {
         let GeomType::Dist(spec) = &layer.geom.geom_type else { continue };
