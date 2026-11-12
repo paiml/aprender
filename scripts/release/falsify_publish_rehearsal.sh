@@ -64,7 +64,7 @@ MARK="TOK-MARKER-7f3a9c1e-do-not-print"
 mkrepo() {
   local d=$1 tagged=$2 c
   mkdir -p "$d/scripts/release" "$d/ci" && G init -q "$d" || return 1
-  cp -R "$CRATE_SRC" "$d/ci/publish-rehearsal" && rm -rf -- "$d/ci/publish-rehearsal/target" "$d/ci/publish-rehearsal/Cargo.lock" || return 1
+  cp -R "$CRATE_SRC" "$d/ci/publish-rehearsal" && rm -rf -- "${d:?}/ci/publish-rehearsal/target" "${d:?}/ci/publish-rehearsal/Cargo.lock" || return 1
   cp "$SRC" "$d/scripts/release/publish_rehearsal.sh" || return 1
   for c in 1 2 3; do
     echo "c$c" > "$d/marker"; G -C "$d" add -A
@@ -126,7 +126,8 @@ STUB
   envs=(RUNNER_TEMP="$r/tmp" PUB_REH_TRIES=3 PUB_REH_WAIT=0 PUB_REH_PUBLISH="$r/publish" PUB_REH_INDEX="$r/index" PUBOUT_TEXT="${PUBOUT-}")
   [ "${USEGATE-1}" = 1 ] && envs+=(PUB_REH_GATE="$r/gate")
   [ -z "${CASCADE_FX:-}" ] || envs+=(PUB_REH_CASCADE="$CASCADE_FX")
-  [ "$tok" = UNSET ] || envs+=(CARGO_REGISTRY_TOKEN="$tok")   # TOKEN= is an empty token, TOKEN=UNSET is none at all
+  [ "$tok" != EMPTY ] || tok=""                                 # TOKEN=EMPTY is an empty token, TOKEN=UNSET is none at all
+  [ "$tok" = UNSET ] || envs+=(CARGO_REGISTRY_TOKEN="$tok")
   if [ -n "${BADCRATE:-}" ]; then   # a committed placeholder other than 0.0.0: nothing to set the run version on
     sed -i 's/^version = "0\.0\.0"$/version = "0.3.0"/' "$r/repo/ci/publish-rehearsal/Cargo.toml" && G -C "$r/repo" commit -q -am badcrate; fi
   head0=$(G -C "$r/repo" rev-parse HEAD); tags0=$(G -C "$r/repo" tag | sort | tr '\n' ' ')
@@ -170,7 +171,7 @@ row bad_dry_run_flag_refuses                          2 'STOP bad dry_run' 0 0 2
 TPL=tpl-untagged row no_release_tag_refuses           1 'STOP clean-room read: no release tag vX\.Y\.Z' 0 0 0
 GATERC=1 row clean_room_read_refused                  1 'STOP clean-room read: gate refused v1\.2\.3: CLEAN-ROOM REFUSE: fixture says no for v1\.2\.3' 1 0 0
 TOKEN=UNSET row unset_token_refuses                   1 'STOP upload: CARGO_REGISTRY_TOKEN is empty' 1 0 0
-TOKEN= row empty_token_refuses                        1 'STOP upload: CARGO_REGISTRY_TOKEN is empty' 1 0 0
+TOKEN=EMPTY row empty_token_refuses                     1 'STOP upload: CARGO_REGISTRY_TOKEN is empty' 1 0 0
 BADCRATE=1 row placeholder_version_missing_refuses    1 'STOP upload: the committed Cargo\.toml has no version = "0\.0\.0" placeholder' 1 0 0
 PUBRC=1 PUBOUT='error: 403 forbidden' row upload_refused  1 'STOP upload: refused or failed' 1 1 0
 PUBRC=1 PUBOUT="error: bad token $MARK" row upload_refusal_output_is_scrubbed 1 'upload output: .*bad token \*\*\*' 1 1 0
@@ -215,7 +216,7 @@ if [ -z "${PUB_REH_SCRIPT_ROWS_ONLY:-}" ]; then   # rows about the crate itself,
     elif [ "$before" != "$after" ]; then fail crate_is_not_a_workspace_member "reading the crate wrote into the tree"
     else echo "ok   crate_is_not_a_workspace_member"; fi
     # tests and packages offline from a scratch copy at a run version (no dependencies, no network)
-    C="$T/crate"; mkdir -p "$C" && cp -R "$CRATE_SRC/." "$C/" && rm -rf -- "$C/target" "$C/Cargo.lock"
+    C="$T/crate"; mkdir -p "$C" && cp -R "$CRATE_SRC/." "$C/" && rm -rf -- "${C:?}/target" "${C:?}/Cargo.lock"
     sed -i 's/^version = "0\.0\.0"$/version = "0.0.42"/' "$C/Cargo.toml"
     if ! ( cd "$C" && export CARGO_TARGET_DIR="$C/target" && cargo generate-lockfile --offline && cargo test --offline --locked && cargo package --offline --locked ) > "$T/crate.log" 2>&1; then
       fail crate_tests_and_packages_offline "cargo failed: $(tail -n 3 "$T/crate.log" | tr '\n' ' ')"
