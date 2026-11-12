@@ -1,0 +1,56 @@
+{
+  "row": "geom_area",
+  "case": "single_unsorted",
+  "spec": "ggplot(df, aes(x, y)) + geom_area()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomArea",
+      "columns": ["x", "y", "group", "flipped_aes", "ymin", "ymax", "colour", "fill", "linewidth", "linetype", "alpha"],
+      "x": [1, 2, 3, 4],
+      "y": [1, 3, 2, 4],
+      "group": [-1, -1, -1, -1],
+      "flipped_aes": [false, false, false, false],
+      "ymin": [0, 0, 0, 0],
+      "ymax": [1, 3, 2, 4],
+      "colour_rgba": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ],
+      "linewidth": [0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "panel": [1, 1, 1, 1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 4],
+      "continuous_range": [0.84999999999999998, 4.1500000000000004],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["1", "2", "3", "4"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 4],
+      "continuous_range": [-0.20000000000000001, 4.2000000000000002],
+      "breaks": [0, 1, 2, 3, 4],
+      "labels": ["0", "1", "2", "3", "4"],
+      "n_breaks_censored": 0
+    }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "row": "geom_text",
+  "case": "basic",
+  "spec": "ggplot(df, aes(x, y, label = lab)) + geom_text()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomText",
+      "columns": ["x", "y", "label", "group", "nudge_x", "nudge_y", "colour", "family", "size", "angle", "hjust", "vjust", "alpha", "fontface", "lineheight"],
+      "x": [1, 2, 3],
+      "y": [1, 3, 2],
+      "label": ["a", "b", "c"],
+      "group": [-1, -1, -1],
+      "nudge_x": [0, 0, 0],
+      "nudge_y": [0, 0, 0],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ],
+      "family": ["", "", ""],
+      "size": [3.8660578386605779, 3.8660578386605779, 3.8660578386605779],
+      "angle": [0, 0, 0],
+      "hjust": [0.5, 0.5, 0.5],
+      "vjust": [0.5, 0.5, 0.5],
+      "alpha": [null, null, null],
+      "fontface": [1, 1, 1],
+      "lineheight": [1.2, 1.2, 1.2],
+      "panel": [1, 1, 1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 3],
+      "continuous_range": [0.90000000000000002, 3.1000000000000001],
+      "breaks": [1, 1.5, 2, 2.5, 3],
+      "labels": ["1.0", "1.5", "2.0", "2.5", "3.0"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [1, 3],
+      "continuous_range": [0.90000000000000002, 3.1000000000000001],
+      "breaks": [1, 1.5, 2, 2.5, 3],
+      "labels": ["1.0", "1.5", "2.0", "2.5", "3.0"],
+      "n_breaks_censored": 0
+    }
+  }
+}

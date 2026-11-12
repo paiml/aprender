@@ -1,0 +1,89 @@
+metadata:
+  id: ggplot2-ribbon-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    geom_ribbon with aes(x, ymin, ymax). layout() must reproduce ggplot_build() in ggplot2 4.0.3:
+    rows ordered by (group, x) with NA x last, y = ymin, NA kept,
+    fill/colour/linewidth/linetype/alpha defaults, and the scales trained on x, ymin and ymax.
+    Scope: the default Cartesian panel with the default continuous scales, no facets, no data-mapped
+    colour, fill, size, shape or alpha; a non-default coord or a facet is refused with a typed
+    error. Tick labels are compared for data magnitudes that format() prints without exponent
+    notation. The oracle is a committed JSON fixture produced by R; R is never run at test time.
+    Layout only: this contract does not claim that the renderer draws the layer as ggplot2 does.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), GeomRibbon'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_ribbon/generate.R'
+equations:
+  setup_data:
+    formula: "order(PANEL, group, x) is stable and places NA x last; y is ymin; flipped_aes is FALSE; NA ymin/ymax rows are kept"
+    domain: x/ymin/ymax numeric or NA
+    codomain: built layer data frame
+    invariants:
+    - the built column set and every value equal ggplot2 4.0.3's
+    preconditions:
+    - input inside the stated scope
+  scale_training:
+    formula: "Position scales train on the built x, ymin, ymax, y (ymin may exceed ymax: reversed bounds both count)"
+    domain: one panel
+    codomain: built layer data frame
+    invariants:
+    - the built column set and every value equal ggplot2 4.0.3's
+    preconditions:
+    - input inside the stated scope
+proof_obligations:
+- id: GR-INV-001
+  type: invariant
+  property: setup_data matches ggplot2
+  formal: 'forall case in setup_data: columns(layout) = columns(ggplot_build) and values within 1e-9 rel + 1e-12 abs (labels, colours, groups exact)'
+  applies_to: setup_data
+- id: GR-INV-002
+  type: invariant
+  property: scale_training matches ggplot2
+  formal: 'forall case in scale_training: columns(layout) = columns(ggplot_build) and values within 1e-9 rel + 1e-12 abs (labels, colours, groups exact)'
+  applies_to: scale_training
+enforcement:
+  oracle_cases:
+    description: All nine committed cases (unsorted, text and numeric groups, NA ymin, NA x, duplicate x, reversed bounds, 2-row groups, style) equal ggplot2 column for column
+    check: grammar::ggplot2_marks_oracle::ribbon::groups_text
+    severity: ERROR
+  refuse_missing:
+    description: "A ribbon without ymin or ymax, and the flipped xmin/xmax form, are refused with Error::Rendering"
+    check: grammar::ggplot2_marks_oracle::refuses_missing_required_aesthetics
+    severity: ERROR
+  refuse_coord:
+    description: "A non-default coord (coord_cartesian limits, coord_flip, polar) or any facet is refused with Error::UnsupportedCoord, never laid out as the default panel"
+    check: grammar::ggplot2_marks_oracle::refuses_non_default_coord
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GR-001
+  rule: NA x sorts last
+  prediction: "mutating (true, false) => Greater -> Less in na_last turns ribbon::na_x RED (only na_x RED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::ribbon::na_x -- --exact
+  if_fails: No fixture has an NA x
+- id: FALSIFY-GR-002
+  rule: Rows sort by group before x
+  prediction: "mutating dropping the group key from the sort turns ribbon::groups_text RED (3 cases RED (groups_num, groups_text, two_row_groups))"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::ribbon::groups_text -- --exact
+  if_fails: No fixture interleaves groups in the data
+- id: FALSIFY-GR-003
+  rule: y column equals ymin
+  prediction: "mutating num.insert(y, pick(&ymin)) -> pick(&ymax) turns ribbon::basic_unsorted RED (9 of 9 cases RED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::ribbon::basic_unsorted -- --exact
+  if_fails: The y column is not compared
+- id: FALSIFY-GR-004
+  rule: Non-default coord and facets are refused
+  prediction: "a Coord with limits, coord_flip, polar, or a facet makes layout() return Error::UnsupportedCoord instead of laying out the default panel"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::refuses_non_default_coord -- --exact
+  if_fails: layout() silently ignores the coord, and this contract's scope claim is false
+qa_gate:
+  id: F-GR-001
+  name: ggplot2 conformance (geom_ribbon)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for every geom_ribbon fixture, and out-of-scope input is a typed error
+  checks:
+  - oracle_cases
+  - refuse_missing
+  - refuse_coord

@@ -94,6 +94,13 @@ impl DataFrame {
         self.columns.insert(name.to_string(), values);
     }
 
+    /// Add a column of arbitrary cells, so a frame can carry missing values ([`DataValue::Null`])
+    /// in a text column.
+    pub fn add_column_values(&mut self, name: &str, values: Vec<DataValue>) {
+        self.n_rows = self.n_rows.max(values.len());
+        self.columns.insert(name.to_string(), values);
+    }
+
     /// Add a text column.
     pub fn add_column_str(&mut self, name: &str, data: &[&str]) {
         let values: Vec<DataValue> = data.iter().map(|&s| DataValue::Text(s.to_string())).collect();

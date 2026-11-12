@@ -72,6 +72,10 @@ pub enum GeomType {
     Violin,
     /// Tile/rectangle (for heatmaps).
     Tile,
+    /// Ribbon between `ymin` and `ymax` (ggplot2 `geom_ribbon`).
+    Ribbon,
+    /// Rectangle from `xmin`/`xmax`/`ymin`/`ymax` (ggplot2 `geom_rect`).
+    Rect,
     /// Text labels.
     Text,
     /// Horizontal line.
@@ -163,6 +167,18 @@ impl Geom {
     #[must_use]
     pub fn tile() -> Self {
         Self { geom_type: GeomType::Tile, aes: None, stat: None }
+    }
+
+    /// Create a ribbon geometry (`geom_ribbon`).
+    #[must_use]
+    pub fn ribbon() -> Self {
+        Self { geom_type: GeomType::Ribbon, aes: None, stat: None }
+    }
+
+    /// Create a rectangle geometry (`geom_rect`).
+    #[must_use]
+    pub fn rect() -> Self {
+        Self { geom_type: GeomType::Rect, aes: None, stat: None }
     }
 
     /// Create a text geometry.

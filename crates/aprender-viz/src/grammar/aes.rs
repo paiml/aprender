@@ -27,6 +27,14 @@ pub struct Aes {
     pub group: Option<String>,
     /// Label mapping (column name).
     pub label: Option<String>,
+    /// Lower y bound mapping (column name): `geom_ribbon`, `geom_rect`.
+    pub ymin: Option<String>,
+    /// Upper y bound mapping (column name): `geom_ribbon`, `geom_rect`.
+    pub ymax: Option<String>,
+    /// Lower x bound mapping (column name): `geom_rect`.
+    pub xmin: Option<String>,
+    /// Upper x bound mapping (column name): `geom_rect`.
+    pub xmax: Option<String>,
 
     // Fixed values (not data-mapped)
     /// Fixed color value.
@@ -35,6 +43,8 @@ pub struct Aes {
     pub size_value: Option<f32>,
     /// Fixed alpha value.
     pub alpha_value: Option<f32>,
+    /// Fixed fill colour (ggplot2's `fill = "steelblue"` outside `aes()`).
+    pub fill_value: Option<Rgba>,
 }
 
 impl Aes {
@@ -107,6 +117,41 @@ impl Aes {
         self
     }
 
+    /// Map the lower y bound to a column.
+    #[must_use]
+    pub fn ymin(mut self, column: &str) -> Self {
+        self.ymin = Some(column.to_string());
+        self
+    }
+
+    /// Map the upper y bound to a column.
+    #[must_use]
+    pub fn ymax(mut self, column: &str) -> Self {
+        self.ymax = Some(column.to_string());
+        self
+    }
+
+    /// Map the lower x bound to a column.
+    #[must_use]
+    pub fn xmin(mut self, column: &str) -> Self {
+        self.xmin = Some(column.to_string());
+        self
+    }
+
+    /// Map the upper x bound to a column.
+    #[must_use]
+    pub fn xmax(mut self, column: &str) -> Self {
+        self.xmax = Some(column.to_string());
+        self
+    }
+
+    /// Set a fixed fill colour.
+    #[must_use]
+    pub fn fill_value(mut self, fill: Rgba) -> Self {
+        self.fill_value = Some(fill);
+        self
+    }
+
     /// Set a fixed color value.
     #[must_use]
     pub fn color_value(mut self, color: Rgba) -> Self {
@@ -141,9 +186,14 @@ impl Aes {
             fill: other.fill.clone().or_else(|| self.fill.clone()),
             group: other.group.clone().or_else(|| self.group.clone()),
             label: other.label.clone().or_else(|| self.label.clone()),
+            ymin: other.ymin.clone().or_else(|| self.ymin.clone()),
+            ymax: other.ymax.clone().or_else(|| self.ymax.clone()),
+            xmin: other.xmin.clone().or_else(|| self.xmin.clone()),
+            xmax: other.xmax.clone().or_else(|| self.xmax.clone()),
             color_value: other.color_value.or(self.color_value),
             size_value: other.size_value.or(self.size_value),
             alpha_value: other.alpha_value.or(self.alpha_value),
+            fill_value: other.fill_value.or(self.fill_value),
         }
     }
 }

@@ -1,0 +1,103 @@
+metadata:
+  id: ggplot2-tile-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    geom_tile with aes(x, y). layout() must reproduce ggplot_build() in ggplot2 4.0.3: data order
+    kept, NA rows kept, width and height = resolution(zero = FALSE, discrete = TRUE) of x and y,
+    xmin/xmax = x -/+ width/2 (ditto y), the constant width/height columns, and
+    fill/colour/linewidth/linetype/alpha defaults. Scope: the default Cartesian panel with the
+    default continuous scales, no facets, no data-mapped colour, fill, size, shape or alpha; a non-
+    default coord or a facet is refused with a typed error. Tick labels are compared for data
+    magnitudes that format() prints without exponent notation. The oracle is a committed JSON
+    fixture produced by R; R is never run at test time. Layout only: this contract does not claim
+    that the renderer draws the layer as ggplot2 does.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), GeomTile'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_tile/generate.R'
+equations:
+  resolution:
+    formula: "resolution(v) = smallest gap above sqrt(eps) between the sorted distinct finite values; 1 when the range is zero-width (or empty)"
+    domain: finite v
+    codomain: built layer data frame
+    invariants:
+    - the built column set and every value equal ggplot2 4.0.3's
+    preconditions:
+    - input inside the stated scope
+  bounds:
+    formula: "xmin = x - w/2, xmax = x + w/2, ymin = y - h/2, ymax = y + h/2 with w, h the resolutions of x and y"
+    domain: one layer
+    codomain: built layer data frame
+    invariants:
+    - the built column set and every value equal ggplot2 4.0.3's
+    preconditions:
+    - input inside the stated scope
+  scale_training:
+    formula: "Position scales train on the built bounds (xmin, xmax, ymin, ymax) and x, y"
+    domain: one panel
+    codomain: built layer data frame
+    invariants:
+    - the built column set and every value equal ggplot2 4.0.3's
+    preconditions:
+    - input inside the stated scope
+proof_obligations:
+- id: GT-INV-001
+  type: invariant
+  property: resolution matches ggplot2
+  formal: 'forall case in resolution: columns(layout) = columns(ggplot_build) and values within 1e-9 rel + 1e-12 abs (labels, colours, groups exact)'
+  applies_to: resolution
+- id: GT-INV-002
+  type: invariant
+  property: bounds matches ggplot2
+  formal: 'forall case in bounds: columns(layout) = columns(ggplot_build) and values within 1e-9 rel + 1e-12 abs (labels, colours, groups exact)'
+  applies_to: bounds
+- id: GT-INV-003
+  type: invariant
+  property: scale_training matches ggplot2
+  formal: 'forall case in scale_training: columns(layout) = columns(ggplot_build) and values within 1e-9 rel + 1e-12 abs (labels, colours, groups exact)'
+  applies_to: scale_training
+enforcement:
+  oracle_cases:
+    description: All nine committed cases (regular grid, fractional resolution, unsorted duplicates, NA cells, one cell, one x, groups, style, uneven gaps) equal ggplot2 column for column
+    check: grammar::ggplot2_marks_oracle::tile::grid_regular
+    severity: ERROR
+  refuse_discrete:
+    description: Text positions are refused (a discrete scale is not modelled), as are infinite positions
+    check: grammar::ggplot2_marks_oracle::refuses_infinite_and_text_positions_and_numeric_labels
+    severity: ERROR
+  refuse_coord:
+    description: "A non-default coord (coord_cartesian limits, coord_flip, polar) or any facet is refused with Error::UnsupportedCoord, never laid out as the default panel"
+    check: grammar::ggplot2_marks_oracle::refuses_non_default_coord
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GT-001
+  rule: Bounds are x -/+ width/2
+  prediction: "mutating xmin = x - w/2 -> x - w turns tile::grid_regular RED (9 of 9 cases RED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::tile::grid_regular -- --exact
+  if_fails: The half-width is not compared
+- id: FALSIFY-GT-002
+  rule: Resolution is the smallest gap
+  prediction: "mutating fold(INFINITY, f64::min) -> f64::max turns tile::wide_gaps RED (3 cases RED (fractional_res, same_x, wide_gaps))"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::tile::wide_gaps -- --exact
+  if_fails: No fixture has uneven gaps
+- id: FALSIFY-GT-003
+  rule: A zero-width range has resolution 1
+  prediction: "mutating return 1.0 -> return 2.0 in resolution() turns tile::single_cell RED (2 cases RED (same_x, single_cell))"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::tile::single_cell -- --exact
+  if_fails: No fixture has a single distinct x or y
+- id: FALSIFY-GT-004
+  rule: Non-default coord and facets are refused
+  prediction: "a Coord with limits, coord_flip, polar, or a facet makes layout() return Error::UnsupportedCoord instead of laying out the default panel"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::refuses_non_default_coord -- --exact
+  if_fails: layout() silently ignores the coord, and this contract's scope claim is false
+qa_gate:
+  id: F-GT-001
+  name: ggplot2 conformance (geom_tile)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for every geom_tile fixture, and out-of-scope input is a typed error
+  checks:
+  - oracle_cases
+  - refuse_discrete
+  - refuse_coord

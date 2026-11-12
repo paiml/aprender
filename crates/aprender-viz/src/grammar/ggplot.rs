@@ -411,7 +411,7 @@ impl BuiltGGPlot {
         let (x, y, w, h) = grid.rect(p);
 
         // Panels share one domain, so marks stay comparable between them.
-        let (xs, ys) = self.position_scales();
+        let (xs, ys) = self.position_scales(&[]);
         let ((x_min, x_max), (y_min, y_max)) =
             apply_limits(&self.coord, xs.continuous_range, ys.continuous_range)?;
 
@@ -531,19 +531,29 @@ impl BuiltGGPlot {
     }
 
     /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
-    fn position_scales(&self) -> (PositionScale, PositionScale) {
-        let mut x = (f32::MAX, f32::MIN);
-        let mut y = (f32::MAX, f32::MIN);
+    ///
+    /// A layer whose built data is in `built` (filled marks and text) trains on that built data,
+    /// as ggplot2 retrains after the stat and position; every other layer trains on its raw
+    /// columns.
+    fn position_scales(&self, built: &[BuiltLayer]) -> (PositionScale, PositionScale) {
+        let mut x = (f64::MAX, f64::MIN);
+        let mut y = (f64::MAX, f64::MIN);
+        let widen =
+            |acc: (f64, f64), r: (f32, f32)| (acc.0.min(f64::from(r.0)), acc.1.max(f64::from(r.1)));
+        let widen64 = |acc: (f64, f64), r: (f64, f64)| (acc.0.min(r.0), acc.1.max(r.1));
 
-        for layer in &self.layers {
+        for (i, layer) in self.layers.iter().enumerate() {
+            if let Some(m) = built.get(i).and_then(|b| b.marks.as_ref()) {
+                x = m.x_extent().map_or(x, |r| widen64(x, r));
+                y = m.y_extent().map_or(y, |r| widen64(y, r));
+                continue;
+            }
             let data = layer.data.as_ref().unwrap_or(&self.data);
             let layer_aes = self.aes.merge(&layer.aes);
-            x = Self::extend_range(x, data, layer_aes.x.as_ref());
-            y = Self::extend_range(y, data, layer_aes.y.as_ref());
+            x = widen(x, Self::extend_range((f32::MAX, f32::MIN), data, layer_aes.x.as_ref()));
+            y = widen(y, Self::extend_range((f32::MAX, f32::MIN), data, layer_aes.y.as_ref()));
         }
-
-        let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
-        (PositionScale::continuous(wide(x)), PositionScale::continuous(wide(y)))
+        (PositionScale::continuous(x), PositionScale::continuous(y))
     }
 
     /// The resolved plot, as ggplot2's `ggplot_build()` computes it: each layer's positions and
@@ -552,17 +562,45 @@ impl BuiltGGPlot {
     ///
     /// # Errors
     ///
-    /// None today; the signature leaves room for stats that can fail.
+    /// [`Error::UnsupportedCoord`] for a non-default coord or any facet on a plot with an
+    /// area/ribbon/tile/rect/text layer; [`Error::EmptyData`], [`Error::UnknownColumn`],
+    /// [`Error::ScaleDomain`] or [`Error::Rendering`] for input those layers do not model (see
+    /// `marks`); [`Error::ScaleDomain`] when a scale trains on nothing.
     pub fn layout(&self) -> Result<BuiltLayout> {
-        let (x, y) = self.position_scales();
-        let layers = self.layers.iter().map(|l| self.build_layer(l)).collect();
+        let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
+        if layers.iter().any(|l| l.marks.is_some()) {
+            self.require_default_coord_and_facet()?;
+        }
+        let (x, y) = self.position_scales(&layers);
+        if layers.iter().any(|l| l.marks.is_some())
+            && (x.limits.0 > x.limits.1 || y.limits.0 > y.limits.1)
+        {
+            return Err(Error::ScaleDomain(
+                "a position scale trained on no finite value".to_string(),
+            ));
+        }
         Ok(BuiltLayout { layers, x, y })
     }
 
-    /// One layer's built data: rows where both positions are numeric, plus point aesthetics.
-    fn build_layer(&self, layer: &Layer) -> BuiltLayer {
+    /// Marks layers are built for the default panel only.
+    fn require_default_coord_and_facet(&self) -> Result<()> {
+        if !matches!(self.coord, Coord::Cartesian { xlim: None, ylim: None, flip: false }) {
+            return Err(Error::UnsupportedCoord(
+                "non-default coord with area/ribbon/tile/rect/text",
+            ));
+        }
+        if !matches!(self.facet, Facet::None) {
+            return Err(Error::UnsupportedCoord("facets with area/ribbon/tile/rect/text"));
+        }
+        Ok(())
+    }
+
+    /// One layer's built data: rows where both positions are numeric, plus point aesthetics, or
+    /// the marks data frame for area, ribbon, tile, rect and text.
+    fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
+        let marks = super::marks::build(&layer.geom.geom_type, data, &aes)?;
         let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
         let ys = data.get_f32(aes.y.as_deref().unwrap_or("y")).unwrap_or_default();
         let (x, y): (Vec<f64>, Vec<f64>) = xs
@@ -585,7 +623,7 @@ impl BuiltGGPlot {
             }
             _ => None,
         };
-        BuiltLayer { x, y, points }
+        Ok(BuiltLayer { x, y, points, marks })
     }
 
     /// Draw the major grid lines, one per break of each position scale (ggplot2's

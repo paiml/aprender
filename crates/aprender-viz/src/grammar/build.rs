@@ -10,6 +10,8 @@
 use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::color::Rgba;
 
+use super::marks::BuiltMarks;
+
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
 pub const CONTINUOUS_EXPAND_MULT: f64 = 0.05;
@@ -88,6 +90,8 @@ pub struct BuiltLayer {
     pub y: Vec<f64>,
     /// Per-row point aesthetics; `None` for geoms whose aesthetics are not resolved yet.
     pub points: Option<Vec<PointAes>>,
+    /// The resolved columns of an area, ribbon, tile, rect or text layer; `None` for other geoms.
+    pub marks: Option<BuiltMarks>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).
@@ -123,10 +127,17 @@ impl PositionScale {
     }
 }
 
-/// `expand_range4(limits, expansion(mult = 0.05))` for a non-degenerate range.
+/// `expand_range4(limits, expansion(mult = 0.05))`. A zero-width range (one distinct value)
+/// pads by `mult * 1` each side, as ggplot2 4.0.3 does (measured: limits `[5, 5]` give
+/// `[4.95, 5.05]`); a range that trained on nothing (`lo > hi`) widens by one on each side first.
 fn expand_continuous((lo, hi): (f64, f64)) -> (f64, f64) {
-    let (lo, hi) = if lo < hi { (lo, hi) } else { (lo - 1.0, hi + 1.0) };
-    let pad = (hi - lo) * CONTINUOUS_EXPAND_MULT + CONTINUOUS_EXPAND_ADD;
+    if lo > hi {
+        let (lo, hi) = (lo - 1.0, hi + 1.0);
+        let pad = (hi - lo) * CONTINUOUS_EXPAND_MULT + CONTINUOUS_EXPAND_ADD;
+        return (lo - pad, hi + pad);
+    }
+    let width = if lo == hi { 1.0 } else { hi - lo };
+    let pad = width * CONTINUOUS_EXPAND_MULT + CONTINUOUS_EXPAND_ADD;
     (lo - pad, hi + pad)
 }
 
@@ -212,10 +223,11 @@ mod tests {
     }
 
     #[test]
-    fn degenerate_range_is_widened_then_expanded() {
+    fn zero_width_range_pads_by_five_percent_of_one() {
+        // Measured against ggplot2 4.0.3: limits [5, 5] -> [4.95, 5.05] (geom_text single_row).
         let s = PositionScale::continuous((5.0, 5.0));
-        assert!((s.continuous_range.0 - 3.9).abs() < 1e-12);
-        assert!((s.continuous_range.1 - 6.1).abs() < 1e-12);
+        assert!((s.continuous_range.0 - 4.95).abs() < 1e-12);
+        assert!((s.continuous_range.1 - 5.05).abs() < 1e-12);
     }
 
     #[test]

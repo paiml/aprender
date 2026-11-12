@@ -1,0 +1,56 @@
+{
+  "row": "geom_ribbon",
+  "case": "basic_unsorted",
+  "spec": "ggplot(df, aes(x, ymin = lo, ymax = hi)) + geom_ribbon()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRibbon",
+      "columns": ["x", "ymin", "ymax", "group", "flipped_aes", "y", "colour", "fill", "linewidth", "linetype", "alpha"],
+      "x": [1, 2, 3, 4],
+      "ymin": [0, 1, 1, 2],
+      "ymax": [2, 3, 4, 5],
+      "group": [-1, -1, -1, -1],
+      "flipped_aes": [false, false, false, false],
+      "y": [0, 1, 1, 2],
+      "colour_rgba": [
+        null,
+        null,
+        null,
+        null
+      ],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ],
+      "linewidth": [0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "panel": [1, 1, 1, 1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 4],
+      "continuous_range": [0.84999999999999998, 4.1500000000000004],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["1", "2", "3", "4"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 5],
+      "continuous_range": [-0.25, 5.25],
+      "breaks": [0, 1, 2, 3, 4, 5],
+      "labels": ["0", "1", "2", "3", "4", "5"],
+      "n_breaks_censored": 0
+    }
+  }
+}

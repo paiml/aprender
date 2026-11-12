@@ -1,0 +1,51 @@
+{
+  "row": "geom_rect",
+  "case": "negative",
+  "spec": "ggplot(df, aes(xmin = x0, xmax = x1, ymin = y0, ymax = y1)) + geom_rect()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRect",
+      "columns": ["xmin", "xmax", "ymin", "ymax", "group", "colour", "fill", "linewidth", "linetype", "alpha"],
+      "xmin": [-3, -1],
+      "xmax": [-1, 2],
+      "ymin": [-2, -1],
+      "ymax": [-0.5, 4],
+      "group": [-1, -1],
+      "colour_rgba": [
+        null,
+        null
+      ],
+      "fill_rgba": [
+        [89, 89, 89, 255],
+        [89, 89, 89, 255]
+      ],
+      "linewidth": [0.5, 0.5],
+      "linetype": [1, 1],
+      "alpha": [null, null],
+      "panel": [1, 1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-3, 2],
+      "continuous_range": [-3.25, 2.25],
+      "breaks": [-3, -2, -1, 0, 1, 2],
+      "labels": ["-3", "-2", "-1", "0", "1", "2"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [-2, 4],
+      "continuous_range": [-2.2999999999999998, 4.2999999999999998],
+      "breaks": [-2, 0, 2, 4],
+      "labels": ["-2", "0", "2", "4"],
+      "n_breaks_censored": 0
+    }
+  }
+}
