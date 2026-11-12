@@ -504,6 +504,11 @@ impl BuiltGGPlot {
     /// infinite row is dropped, for every geom), and pushes each
     /// surviving pair through [`apply`] — so the coordinate transform happens before any geom sees
     /// a point, and `x[i]`/`y[i]` are guaranteed to come from the same record.
+    ///
+    /// The finite filter is load-bearing, not a second guard: [`BuiltGGPlot::pixel`] would skip a
+    /// non-finite mark, but a bar's width is `range / n`, a polyline joins its neighbours and an
+    /// area needs two points, all counted on the rows kept here. Removing it changes the bars
+    /// (test `dropped_rows_change_nothing_for_every_geom`).
     fn panel_points(
         &self,
         data: &DataFrame,
@@ -1126,6 +1131,67 @@ mod tests {
 
         let fb = plot.to_framebuffer().expect("operation should succeed");
         assert!(fb.width() > 0);
+    }
+
+    /// Bars drawn through `render_bars` on a 400x300 canvas, with the picture each must make
+    /// computed from the scale alone (paiml/aprender#6949, F1).
+    ///
+    /// The x scale maps `x = 1 ..= n` onto pixels 40..371 and the y scale maps `0 ..= 4` onto
+    /// pixels 280..20 (65 px per unit), so every pixel below is exactly representable in `f32`.
+    /// A bar is its slot (`331 / n` px) times the bar width, cut to whole pixels, centred on the
+    /// pixel of its x; it runs from the baseline (`y = 0`, pixel 280) to the pixel of its y.
+    /// A bar that starts left of the canvas is clipped there: its far edge stays where the scale
+    /// puts it, and it is not shifted right onto the canvas.
+    fn check_bars(ys: &[f32], width: f32) {
+        let n = ys.len();
+        let xs: Vec<f32> = (1..=n).map(|i| i as f32).collect();
+        let x_scale = LinearScale::new((1.0, n as f32), (40.0, 371.0)).expect("scale");
+        let y_scale = LinearScale::new((0.0, 4.0), (280.0, 20.0)).expect("scale");
+        let mut fb = Framebuffer::new(400, 300).expect("fb");
+        fb.clear(Rgba::WHITE);
+        let ink = Rgba::new(10, 20, 30, 255);
+        BuiltGGPlot::render_bars(&mut fb, &xs, ys, &x_scale, &y_scale, ink, width);
+
+        let slot = 331.0_f64 / n as f64;
+        let bar_w = (slot * f64::from(width)).max(1.0).floor() as i64;
+        let mut rects = Vec::new();
+        for (i, &y) in ys.iter().enumerate() {
+            let centre = 40.0 + 331.0 * i as f64 / (n - 1) as f64;
+            let left = (centre - bar_w as f64 / 2.0).trunc() as i64;
+            let (top_px, bottom_px) = (280.0 - 65.0 * f64::from(y), 280.0);
+            let top = top_px.min(bottom_px).trunc() as i64;
+            let height = ((top_px - bottom_px).abs().trunc() as i64).max(1);
+            rects.push((left, left + bar_w, top, top + height));
+        }
+        // The case is built to start left of the canvas, which is what the bug was about.
+        assert!(rects[0].0 < 0, "case does not put the first bar's left edge off canvas");
+
+        for y in 0..300_i64 {
+            for x in 0..400_i64 {
+                let want =
+                    rects.iter().any(|&(l, r, t, b)| (l..r).contains(&x) && (t..b).contains(&y));
+                let got = fb.get_pixel(x as u32, y as u32) == Some(ink);
+                assert_eq!(got, want, "n={n} width={width}: pixel ({x}, {y}); bars {rects:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn two_bars_keep_their_far_edge_when_the_left_edge_is_off_canvas() {
+        // 331 / 2 * 0.9 = 148 px wide, centred on 40: columns -34..114 clip to 0..114.
+        check_bars(&[4.0, 3.0], 0.9);
+    }
+
+    #[test]
+    fn three_bars_keep_their_far_edge_when_the_left_edge_is_off_canvas() {
+        // 331 / 3 * 0.9 = 99 px wide, centred on 40: columns -9..90 clip to 0..90.
+        check_bars(&[4.0, 2.0, 3.0], 0.9);
+    }
+
+    #[test]
+    fn wide_bars_keep_their_far_edge_when_the_left_edge_is_off_canvas() {
+        // Width 2.0: 331 px wide, centred on 40: columns -125..206 clip to 0..206.
+        check_bars(&[4.0, 3.0], 2.0);
     }
 
     #[test]

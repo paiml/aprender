@@ -5,12 +5,19 @@ metadata:
   created: '2026-11-12'
   author: PAIML Engineering
   description: >-
-    Totality of the aprender-viz renderers (paiml/aprender#6941, Refs #6909). For every f32 input
-    (NaN, infinities, f32::MAX, subnormals), every coordinate limit and every canvas from 1x1 to
-    512x512, a plot built through GGPlot renders through to_framebuffer(), to_svg() and
-    to_terminal() without panicking and in work bounded by the canvas, not by the data. Rows with a
-    non-finite position are dropped for every geom. Segments are clipped to the canvas, in f64,
-    before any rasteriser loop, and clipping changes nothing for a segment already near the canvas.
+    Totality of the aprender-viz GGPlot grammar renderers and the draw primitives (paiml/aprender#6941,
+    Refs #6909). For every f32 input (NaN, infinities, f32::MAX, subnormals), every coordinate
+    limit and every canvas from 1x1 to 512x512, a plot built through GGPlot renders through
+    to_framebuffer(), to_svg() and to_terminal() without panicking and in work bounded by the
+    canvas, not by the data. Rows with a non-finite position are dropped for every geom. Segments
+    are clipped to the canvas, in f64, before any rasteriser loop, and clipping changes nothing for
+    a segment with both ends inside the 1024 px guard. NOT covered: the plots/ module renderers
+    (ScatterPlot, LineChart, Histogram, from_prompt and the others) and the wasm entry points that
+    call them; they still panic or run unbounded for extreme input (paiml/aprender#6952). Three
+    stated deviations from the old output: draw_rect no longer shifts a rectangle that starts off
+    canvas (an intended fix, RT-EQV-003); segments that cross the guard move by a bounded number of
+    pixels (RT-DEV-001); the circle changes path at radius 4096 within one pixel of the edge
+    (RT-DEV-002).
   references:
   - 'Liang & Barsky (1984) Another Efficient Line Clipping Algorithm, CACM 27(2)'
   - 'Bresenham (1965) Algorithm for computer control of a digital plotter, IBM Systems Journal 4(1)'
@@ -33,17 +40,18 @@ equations:
     - the rasteriser's loop length is at most the diagonal of B
     - a segment with both ends in B is returned bit for bit
   bounded_primitives:
-    formula: 'draw_circle, draw_rect and fill_rect compute in i64 or saturate; a circle above radius 4096 is filled over the canvas rows only; an area slice walks canvas rows only'
+    formula: 'draw_circle, draw_rect and fill_rect compute in i64 or saturate; a circle above radius 4096 is filled over the canvas rows only; an area slice walks canvas rows only; draw_rect(x, w) covers [x, x + w) ∩ canvas'
     domain: any i32 centre, radius, origin and any u32 extent
     codomain: framebuffer mutation
     invariants:
     - no integer overflow for any argument
     - work is at most (canvas height) rows or (2 * 4096 + 1) midpoint steps
+    - a rectangle that starts left of or above the canvas keeps its far edge at origin + extent
 proof_obligations:
 - id: RT-INV-001
   type: invariant
-  property: No public plotting path panics or runs unbounded
-  formal: '∀ data ∈ f32^n, coord limits, (w, h) ∈ [1,512]²: to_framebuffer ∧ to_svg ∧ to_terminal terminate without panic'
+  property: No GGPlot grammar renderer (framebuffer, SVG, terminal) and no draw primitive panics or runs unbounded; the plots/ renderers and the wasm entry points are not covered (paiml/aprender#6952)
+  formal: '∀ data ∈ f32^n, coord limits, (w, h) ∈ [1,512]²: GGPlot.to_framebuffer ∧ GGPlot.to_svg ∧ GGPlot.to_terminal terminate without panic'
   applies_to: bounded_primitives
 - id: RT-INV-002
   type: invariant
@@ -60,10 +68,25 @@ proof_obligations:
   property: Clipping is invisible for segments near the canvas
   formal: '∀ segment with both ends in B: rasterise(clip(s, B)) = rasterise(s) pixel for pixel (Bresenham and Wu)'
   applies_to: segment_clip
+- id: RT-DEV-001
+  type: bound
+  property: A segment that crosses the guard box differs from the unclipped line by at most 2 px (Bresenham) and 3 px (Wu)
+  formal: '∀ segment with an end outside B: every lit pixel of rasterise(clip(s, B)) has a lit pixel of rasterise(s) within Chebyshev distance 2 (aliased) or 3 (antialiased), and the converse; measured on 1000 segments by the reviewer (one end on a 512x512 canvas, the other 2000 to 20000 px away), 300 of each kind drawn by the test'
+  applies_to: segment_clip
 - id: RT-EQV-002
   type: equivalence
   property: Circles up to radius 4096 are the midpoint circle
   formal: '∀ centre, radius ≤ 4096: draw_circle = midpoint_circle_reference'
+  applies_to: bounded_primitives
+- id: RT-EQV-003
+  type: equivalence
+  property: A rectangle is clipped to the canvas without moving its far edge (an intended fix of a defect on main)
+  formal: '∀ origin x ∈ i32, extent w ∈ u32, canvas: columns painted by draw_rect(x, ·, w, ·) = [max(x, 0), min(x + w, width)); the same for rows. Main shifted a rectangle with x < 0 to start at 0 and kept its width, so a geom_bar whose left edge was off canvas was drawn too wide: the default 2-bar chart changed by 38,056 px'
+  applies_to: bounded_primitives
+- id: RT-DEV-002
+  type: bound
+  property: The filled circle changes path at radius 4096; the two paths differ only within one pixel of the edge
+  formal: '∀ centre: the pixels where the midpoint circle of radius 4096 and the exact integer disc of radius 4096 differ satisfy (r - 1)² < dx² + dy² < (r + 1)²; draw_circle(4097) differs from draw_circle(4096) only where (r - 1)² < dx² + dy² < (r + 2)². The outline above 4096 draws the two end points of each canvas row, so it has gaps near the top and bottom of the circle that the midpoint outline does not'
   applies_to: bounded_primitives
 enforcement:
   repros_are_bounded:
@@ -78,10 +101,14 @@ enforcement:
     description: the clipped rasterisers equal reference copies of the unclipped ones
     check: render_total::wu_line_equals_the_unclipped_line_near_the_canvas
     severity: ERROR
+  pinned_geometry:
+    description: bar and rectangle edges, the circle threshold and the guard-crossing bound are pinned by fixed cases
+    check: render_total::filled_circle_uses_the_midpoint_up_to_4096_and_the_exact_rows_above
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-RT-001
   rule: Non-finite rows are dropped
-  prediction: removing the is_finite filter in BuiltGGPlot::build_layer turns non_finite_rows_are_dropped_not_drawn_at_pixel_zero RED; removing the finite check in BuiltGGPlot::pixel turns three more tests RED (panel_points keeps a second, redundant filter)
+  prediction: removing the is_finite filter in BuiltGGPlot::build_layer turns non_finite_rows_are_dropped_not_drawn_at_pixel_zero RED; removing the finite check in BuiltGGPlot::pixel turns three more tests RED (the filter in panel_points is load-bearing, see FALSIFY-RT-008)
   test: cargo test -p aprender-viz --test render_total
   if_fails: A NaN or infinite row reaches a rasteriser; the totality property cannot see it
 - id: FALSIFY-RT-002
@@ -114,11 +141,32 @@ falsification_tests:
   prediction: clipping every segment (no guard box shortcut) turns wu_line_equals_the_unclipped_line_near_the_canvas RED
   test: cargo test -p aprender-viz --test render_total
   if_fails: The reference copy and the shipped rasteriser share a bug, or the property never leaves the canvas
+- id: FALSIFY-RT-008
+  rule: Dropped rows leave no trace in any geom
+  prediction: removing the finite filter in GGPlot::panel_points turns dropped_rows_change_nothing_for_every_geom RED (a bar's width is range / n over the rows kept)
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: The kept NaN rows are counted by a geom, or the test no longer renders a bar
+- id: FALSIFY-RT-009
+  rule: draw_rect keeps the far edge of a rectangle that starts off canvas
+  prediction: restoring the shift (start.max(0) + extent in draw_rect) turns three bar-geometry tests in grammar::ggplot and two draw_rect tests in render::primitives RED; the expected rectangles are computed from the scale, not from the output
+  test: cargo test -p aprender-viz --lib
+  if_fails: A bar with a negative left edge is drawn wider than its slot
+- id: FALSIFY-RT-010
+  rule: The circle changes path exactly above radius 4096
+  prediction: changing the threshold comparison to >= or the constant to 4095 turns filled_circle_uses_the_midpoint_up_to_4096_and_the_exact_rows_above and circle_outline_uses_the_midpoint_up_to_4096_and_the_row_ends_above RED
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: The radius property draws 1..=4096 uniformly and hits the threshold with probability 1/4096
+- id: FALSIFY-RT-011
+  rule: The guard-crossing deviation is bounded
+  prediction: a clip that moves the cut end by more than 2 px (aliased) or 3 px (antialiased) turns guard_crossing_segments_stay_within_the_stated_bound RED
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: The bound in RT-DEV-001 is not measured on the segments the test draws
 qa_gate:
   id: F-RT-001
-  name: aprender-viz renderers are total
-  description: no public plotting path panics or runs unbounded for any f32 input
+  name: aprender-viz GGPlot renderers and draw primitives are total
+  description: the GGPlot grammar renderers (framebuffer, SVG, terminal) and the draw primitives neither panic nor run unbounded for any f32 input; the plots/ renderers and the wasm entry points are not covered (paiml/aprender#6952)
   checks:
   - repros_are_bounded
   - totality_property
   - clipping_equivalence
+  - pinned_geometry

@@ -254,6 +254,10 @@ impl Drawable for Line {
 // ============================================================================
 
 /// Draw a filled rectangle.
+///
+/// A rectangle that starts left of or above the canvas is clipped there: its far edge stays at
+/// `origin + extent`. (Before paiml/aprender#6949 it was shifted onto the canvas with its full
+/// width, so a bar whose left edge was off canvas was drawn too wide.)
 pub fn draw_rect(fb: &mut Framebuffer, x: i32, y: i32, width: u32, height: u32, color: Rgba) {
     // Contract: display-format-v1.yaml precondition (pv codegen)
     contract_pre_display_format!(fb.pixels());
@@ -360,6 +364,10 @@ fn circle_rows(fb: &Framebuffer, cy: i64, r: i64) -> impl Iterator<Item = (i64, 
 /// canvas draws nothing, and a radius above [`MAX_MIDPOINT_RADIUS`] is filled over the canvas rows
 /// only. Output for a radius up to that limit is the midpoint algorithm's, unchanged.
 ///
+/// The two paths are not pixel-identical at the threshold: the row path is the exact integer disc,
+/// the midpoint circle differs from it on pixels within one pixel of the edge (measured: about 300
+/// pixels on a 400x300 canvas at radius 4096). Contract `render-total-v1`, RT-DEV-002.
+///
 /// # Arguments
 ///
 /// * `fb` - Target framebuffer
@@ -411,7 +419,8 @@ pub fn draw_circle(fb: &mut Framebuffer, cx: i32, cy: i32, radius: i32, color: R
 /// Draw a circle outline.
 ///
 /// Total like [`draw_circle`]. A radius above the midpoint limit is drawn as the two end points of
-/// each canvas row it crosses.
+/// each canvas row it crosses, so near the top and bottom of such a circle the outline has gaps
+/// that the midpoint outline does not (RT-DEV-002).
 pub fn draw_circle_outline(fb: &mut Framebuffer, cx: i32, cy: i32, radius: i32, color: Rgba) {
     // Contract: display-format-v1.yaml precondition (pv codegen)
     contract_pre_display_format!(fb.pixels());
@@ -674,6 +683,42 @@ mod tests {
 
         // Zero radius should just draw a single point
         assert_eq!(fb.get_pixel(50, 50), Some(Rgba::RED));
+    }
+
+    #[test]
+    fn draw_rect_clips_a_negative_origin_and_keeps_the_far_edge() {
+        // Columns -100..200 on a 300x100 canvas: 0..200 are ink, 200.. are not. Main shifted the
+        // rectangle to start at 0, which painted 0..300 (the far edge moved right by 100).
+        let mut fb = Framebuffer::new(300, 100).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        draw_rect(&mut fb, -100, 10, 300, 20, Rgba::BLACK);
+        for x in 0..300 {
+            for y in 0..100 {
+                let want = x < 200 && (10..30).contains(&y);
+                assert_eq!(fb.get_pixel(x, y) == Some(Rgba::BLACK), want, "({x}, {y})");
+            }
+        }
+        // The same along y: rows -5..15 clip to 0..15.
+        let mut fb = Framebuffer::new(50, 50).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        draw_rect(&mut fb, 5, -5, 10, 20, Rgba::BLACK);
+        for y in 0..50 {
+            assert_eq!(fb.get_pixel(7, y) == Some(Rgba::BLACK), y < 15, "row {y}");
+        }
+    }
+
+    #[test]
+    fn draw_rect_extreme_extents_cover_what_they_reach() {
+        let mut fb = Framebuffer::new(20, 20).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        // i32::MIN + u32::MAX = i32::MAX: the rectangle spans the whole canvas.
+        draw_rect(&mut fb, i32::MIN, i32::MIN, u32::MAX, u32::MAX, Rgba::BLACK);
+        assert!((0..20).all(|x| (0..20).all(|y| fb.get_pixel(x, y) == Some(Rgba::BLACK))));
+        // Ends exactly at the canvas edge (-1 + 1 = 0): nothing is drawn.
+        let mut fb = Framebuffer::new(20, 20).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        draw_rect(&mut fb, -1, -1, 1, 1, Rgba::BLACK);
+        assert!((0..20).all(|x| (0..20).all(|y| fb.get_pixel(x, y) == Some(Rgba::WHITE))));
     }
 
     #[test]

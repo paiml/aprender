@@ -6,6 +6,13 @@
 //! [`CLIP_GUARD`] pixels on every side (Liang-Barsky) before any loop runs. A segment that
 //! already lies inside that box is returned untouched, bit for bit, so output for ordinary data
 //! is the same as without clipping.
+//!
+//! A segment that crosses the guard is not bit-exact: the cut end is rounded to an integer (so
+//! Bresenham restarts its error term) or the f32 walk restarts at the cut (Wu). Measured against
+//! the unclipped line, the drawn pixels move by at most 2 px (aliased) and 3 px (antialiased);
+//! contract `render-total-v1`, RT-DEV-001, bounded by
+//! `guard_crossing_segments_stay_within_the_stated_bound`. Only data with an end more than
+//! 1024 px off the canvas is affected.
 
 use crate::framebuffer::Framebuffer;
 
@@ -29,6 +36,21 @@ fn point_in(x: f64, y: f64, (xmin, ymin, xmax, ymax): Segment) -> bool {
     x >= xmin && x <= xmax && y >= ymin && y <= ymax
 }
 
+/// One Liang-Barsky edge: narrow the parameter interval `(t0, t1)` by the edge `p * t <= q`, or
+/// `None` when nothing of the segment is left.
+fn clip_edge(p: f64, q: f64, (t0, t1): (f64, f64)) -> Option<(f64, f64)> {
+    if p == 0.0 {
+        // Parallel to the edge: wholly outside it, or untouched by it.
+        return (q >= 0.0).then_some((t0, t1));
+    }
+    let r = q / p;
+    if p < 0.0 {
+        (r <= t1).then(|| (t0.max(r), t1))
+    } else {
+        (r >= t0).then(|| (t0, t1.min(r)))
+    }
+}
+
 /// Liang-Barsky: the part of `s` inside `bounds`, or `None` when none of it is.
 ///
 /// Every input must be finite; the caller checks.
@@ -36,27 +58,11 @@ pub(crate) fn clip_segment(s: Segment, bounds: Segment) -> Option<Segment> {
     let (x0, y0, x1, y1) = s;
     let (xmin, ymin, xmax, ymax) = bounds;
     let (dx, dy) = (x1 - x0, y1 - y0);
-    let (mut t0, mut t1) = (0.0_f64, 1.0_f64);
+    let mut t = (0.0_f64, 1.0_f64);
     for (p, q) in [(-dx, x0 - xmin), (dx, xmax - x0), (-dy, y0 - ymin), (dy, ymax - y0)] {
-        if p == 0.0 {
-            if q < 0.0 {
-                return None;
-            }
-            continue;
-        }
-        let r = q / p;
-        if p < 0.0 {
-            if r > t1 {
-                return None;
-            }
-            t0 = t0.max(r);
-        } else {
-            if r < t0 {
-                return None;
-            }
-            t1 = t1.min(r);
-        }
+        t = clip_edge(p, q, t)?;
     }
+    let (t0, t1) = t;
     // The interpolation can land a few ulps (of the *input* magnitude) outside the box when an
     // endpoint is huge, so the result is clamped back into it.
     let (px, py) =
