@@ -1,6 +1,6 @@
 # PLOT-GG-001 conformance matrix data
 
-Spec: `docs/specifications/PLOT-GG-001.md`. Reference: ggplot2 4.0.3 on R 4.6.2. These files are the matrix as read at origin/main `53fa483e0` on 2026-11-12; 21 rows were re-read at `54555d69b` after PR #6910 and PR #6913 (see the spec, section 6). `LINE` numbers in `aprender_symbol` are valid at the commit the row was read; the symbol name is the key.
+Spec: `docs/specifications/PLOT-GG-001.md`. Reference: ggplot2 4.0.3 on R 4.6.2. Statuses read at main `a554d2f66`: every row was re-read at that commit, and each symbol, line and test of the `implemented` and `partial` rows was checked against the tree there (see the spec, section 6). `LINE` numbers in `aprender_symbol` are valid at `a554d2f66`; the symbol name is the key.
 
 ## Files
 
@@ -22,7 +22,7 @@ Not rows: `ggproto-classes.txt` (the 128 exported ggproto classes, left out on p
 | `status` | `implemented`, `partial` or `absent` (definitions in the spec, section 6; `implemented` needs fixture + test + contract + falsifier + the public `layout()` path). |
 | `aprender_symbol` | `crates/aprender-viz/src/...:LINE Symbol` or `-`. |
 | `proving_test` | `path::test_fn` that checks the computed values, or `-`. |
-| `notes` | The main gap, at most 15 words. The optional `[drawn: framebuffer=... svg=... wasm=...]` tag is not counted in the 15 words: the separate drawn state per target (`smoke` = render test checking success only, `-` = not drawn). A row without the tag claims nothing about drawing. Only the 3 implemented rows carry it. |
+| `notes` | The main gap, at most 15 words. The optional `[drawn: terminal=... svg=... framebuffer=... wasm=...]` tag is not counted in the 15 words: the separate drawn state per target (`oracle` = drawn output checked against fixture values, `checked` = drawn output checked but not against the fixture, `smoke` = render test checking success only, `untested` = the target draws it but no test renders it, `-` = not drawn; definitions in the spec, section 6). A row without the tag claims nothing about drawing. Only the 3 implemented rows carry it. |
 
 ## Deriving each export list (R 4.6.2, ggplot2 4.0.3)
 
@@ -36,7 +36,7 @@ Change the pattern per family. Prefix-only families: `^geom_` (geoms, 53), `^sta
 | facets | `^facet_` plus `as_labeller`, `label_*`, `labeller`, `vars` |
 | themes | `^theme_` and `^element_` plus `%+replace%`, `margin`, `margin_auto`, `margin_part`, `rel`, `theme` |
 | guides | `^guide_` and `^draw_key_` plus `guides` |
-| core | the named top-level functions (the other top-level functions are in other-exports.txt): `aes*`, `after_scale`, `after_stat`, `annotate`, `annotation_*`, `autolayer`, `autoplot`, `borders`, `fortify`, `ggplot*`, `ggsave`, `ggtitle`, `labs`, `last_plot`, `layer`, `qplot`, `quickplot`, `stage`, `xlab`, `ylab` |
+| core | these 29 named top-level functions (the other top-level functions, including `aes_all`, `aes_auto`, `ggplotGrob` and `ggplot_add`, are in other-exports.txt): `aes`, `aes_`, `aes_q`, `aes_string`, `after_scale`, `after_stat`, `annotate`, `annotation_borders`, `annotation_custom`, `annotation_logticks`, `annotation_map`, `annotation_raster`, `autolayer`, `autoplot`, `borders`, `fortify`, `ggplot`, `ggplot_build`, `ggplot_gtable`, `ggsave`, `ggtitle`, `labs`, `last_plot`, `layer`, `qplot`, `quickplot`, `stage`, `xlab`, `ylab` |
 
 The theme-elements family is the element tree:
 

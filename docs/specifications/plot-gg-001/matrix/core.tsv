@@ -4,7 +4,7 @@ core	aes_	absent	-	-	deprecated quoted-aes form; not present
 core	aes_q	absent	-	-	deprecated quoted-aes form; not present
 core	aes_string	partial	crates/aprender-viz/src/grammar/aes.rs:11 Aes (x/y/color by column-name string)	crates/aprender-viz/src/grammar/aes.rs::test_aes_builder	Builder takes strings like aes_string but only 9 fixed aesthetics; no parse of expressions
 core	after_scale	absent	-	-	no post-scale evaluation of aesthetics
-core	after_stat	absent	-	-	no computed stat variables (count/density); Stat has no after_stat mapping
+core	after_stat	absent	-	-	no computed stat variables (count/density) to map
 core	annotate	absent	-	-	no annotate(geom, x, y, ...) for literal-data layers
 core	annotation_borders	absent	-	-	no map borders
 core	annotation_custom	absent	-	-	no grob annotation
@@ -14,17 +14,17 @@ core	annotation_raster	absent	-	-	no raster annotation
 core	autolayer	absent	-	-	no S3 autolayer generic
 core	autoplot	absent	-	-	no S3 autoplot generic
 core	borders	absent	-	-	no map borders layer
-core	fortify	absent	-	-	no fortify; DataFrame built manually (data.rs:58)
-core	ggplot	partial	crates/aprender-viz/src/grammar/ggplot.rs:54 GGPlot (new :88, data :106, aes :121)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_basic	Builder not ggplot(data,mapping); f32 columns; no + operator; test checks render success not values
-core	ggplot_build	partial	crates/aprender-viz/src/grammar/ggplot.rs:195 GGPlot::build	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_error_no_layers	Validates layers only; returns no computed per-layer data (stats/scales not materialised)
-core	ggplot_gtable	partial	crates/aprender-viz/src/grammar/ggplot.rs:274 BuiltGGPlot::to_framebuffer (to_svg :296)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	No gtable; renders direct to pixels; no legend/guides layout
+core	fortify	absent	-	-	no fortify; the DataFrame builder (data.rs:58) is a different feature, no object-to-data conversion
+core	ggplot	partial	crates/aprender-viz/src/grammar/ggplot.rs:57 GGPlot (new :91, data :109, aes :124)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_basic	Builder not ggplot(data,mapping); f32 columns; no + operator; test checks render success not values
+core	ggplot_build	partial	crates/aprender-viz/src/grammar/ggplot.rs:556 BuiltGGPlot::layout (GGPlot::build :198)	crates/aprender-viz/src/grammar/ggplot2_oracle.rs::ggplot2_row1_scale_x_continuous	layout() returns layer positions and trained x/y scales; stats and position adjustments not computed
+core	ggplot_gtable	partial	crates/aprender-viz/src/grammar/ggplot.rs:320 BuiltGGPlot::to_framebuffer (to_svg :342)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	No gtable; renders direct to pixels; no legend/guides layout
 core	ggsave	partial	crates/aprender-viz/src/raster.rs:80 svg_to_png (not wired to GGPlot)	-	No ggsave(filename,width,height,units,dpi=300); no file writer for a plot object
-core	ggtitle	partial	crates/aprender-viz/src/grammar/ggplot.rs:171 GGPlot::title	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	No subtitle; title centred 16px (ggplot2 left-aligned 13.2pt); test checks text present only
-core	labs	partial	crates/aprender-viz/src/grammar/ggplot.rs:171 title, :178 xlab, :185 ylab	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_title_labels	No labs(): no caption/tag/subtitle/alt or per-aesthetic labels (colour=) or legend titles
+core	ggtitle	partial	crates/aprender-viz/src/grammar/ggplot.rs:174 GGPlot::title	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	No subtitle; title centred 16px (ggplot2 left-aligned 13.2pt); test checks text present only
+core	labs	partial	crates/aprender-viz/src/grammar/ggplot.rs:174 title, :181 xlab, :188 ylab	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_title_labels	No labs(): no caption/tag/subtitle/alt or per-aesthetic labels (colour=) or legend titles
 core	last_plot	absent	-	-	no global last-plot state
-core	layer	partial	crates/aprender-viz/src/grammar/ggplot.rs:21 Layer (new :33; GGPlot::layer :135)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_layer	Layer takes Geom only; no stat/position/params/show.legend args; stat in stat.rs unconnected
-core	qplot	absent	-	-	deprecated; only GGPlot::data_xy :113 loosely similar
-core	quickplot	absent	-	-	alias of qplot; absent
+core	layer	partial	crates/aprender-viz/src/grammar/ggplot.rs:24 Layer (new :36; GGPlot::layer :138)	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_layer	Layer takes Geom only; no stat/position/params/show.legend args; stat in stat.rs unconnected
+core	qplot	partial	crates/aprender-viz/src/grammar/ggplot.rs:116 GGPlot::data_xy; crates/aprender-viz/src/wasm.rs:318 ggplot	-	x/y vectors plus a geom name build a plot; no qplot() call, no geom guessing
+core	quickplot	partial	crates/aprender-viz/src/grammar/ggplot.rs:116 GGPlot::data_xy; crates/aprender-viz/src/wasm.rs:318 ggplot	-	alias of qplot; same gap
 core	stage	absent	-	-	no stage(start, after_stat, after_scale)
-core	xlab	partial	crates/aprender-viz/src/grammar/ggplot.rs:178 GGPlot::xlab	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	Drawn only in SVG output (not framebuffer); fixed 12px position; test checks presence
-core	ylab	partial	crates/aprender-viz/src/grammar/ggplot.rs:185 GGPlot::ylab	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	Drawn at top-left horizontally, not rotated on axis; SVG output only
+core	xlab	partial	crates/aprender-viz/src/grammar/ggplot.rs:181 GGPlot::xlab	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	Drawn in SVG and terminal, not framebuffer; fixed position; tests check presence and row
+core	ylab	partial	crates/aprender-viz/src/grammar/ggplot.rs:188 GGPlot::ylab	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_svg_draws_title_and_axis_labels	Drawn horizontally at top-left in SVG and terminal; ggplot2 rotates it on the axis

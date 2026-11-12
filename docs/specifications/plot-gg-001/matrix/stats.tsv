@@ -1,11 +1,11 @@
 family	ggplot2_name	status	aprender_symbol	proving_test	notes
 stats	stat_align	absent	-	-	no area alignment for stacked areas
-stats	stat_bin	partial	crates/aprender-viz/src/plots/histogram.rs:84 Histogram::bin_count	crates/aprender-viz/src/plots/histogram.rs::tests::test_histogram_sturges	default Sturges not bins=30 (Stat::Bin{bins:30} geom.rs:131 inert); closed=right,pad,boundary absent; reusable: -
+stats	stat_bin	partial	crates/aprender-viz/src/plots/histogram.rs:86 Histogram::bin_count	crates/aprender-viz/src/plots/histogram.rs::tests::test_histogram_sturges	default Sturges not bins=30 (Stat::Bin{bins:30} geom.rs:146 inert); closed=right,pad,boundary absent; reusable: -
 stats	stat_bin_2d	partial	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_bin2d	enum tag only, no 2D binning; ggplot2 bins=30 drop=TRUE; heatmap.rs not wired
 stats	stat_bin_hex	absent	-	-	no hexagonal binning; bins=30
 stats	stat_bin2d	partial	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_bin2d	enum tag only, no 2D binning; ggplot2 bins=30 drop=TRUE; heatmap.rs not wired
 stats	stat_binhex	absent	-	-	no hexagonal binning; bins=30
-stats	stat_boxplot	partial	crates/aprender-viz/src/plots/boxplot.rs:30 BoxStats::from_data	crates/aprender-viz/src/plots/boxplot.rs::tests::test_box_stats_basic	coef 1.5 hardcoded, quantile.type 7 unverified, tol 0.5 in test; no notch/relvarwidth/weights
+stats	stat_boxplot	partial	crates/aprender-viz/src/plots/boxplot.rs:34 BoxStats::from_data	crates/aprender-viz/src/plots/boxplot.rs::tests::test_box_stats_basic	coef 1.5 hardcoded, quantile.type 7 unverified, tol 0.5 in test; no notch/relvarwidth/weights
 stats	stat_connect	absent	-	-	no step connection; connection hv
 stats	stat_contour	absent	-	-	no isoline/marching squares; bins/binwidth/breaks NULL
 stats	stat_contour_filled	absent	-	-	no isoline/marching squares; bins/binwidth/breaks NULL

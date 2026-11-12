@@ -1,161 +1,161 @@
 family	ggplot2_name	status	aprender_symbol	proving_test	notes
-theme-elements	aspect.ratio	absent	-	-	Coord::fixed exists but rendering refuses UnsupportedCoord (coord.rs:69)
-theme-elements	axis.line	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:482 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	Rust draws left+bottom axis by default; ggplot2 theme_gray axis.line blank; axis_width unused
+theme-elements	aspect.ratio	partial	crates/aprender-viz/src/grammar/coord.rs:116 Coord::fixed	crates/aprender-viz/src/grammar/coord.rs::tests::test_coord_fixed	ratio lives on the coord; renderers refuse it, so nothing draws at a fixed ratio
+theme-elements	axis.line	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:609 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	left and bottom axis lines drawn by default; ggplot2 theme_gray axis.line blank; axis_width unused
 theme-elements	axis.line.r	absent	-	-	polar axes not drawn; coord polar unsupported for axes
 theme-elements	axis.line.theta	absent	-	-	polar axes not drawn; coord polar unsupported for axes
-theme-elements	axis.line.x	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:482 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	Rust draws left+bottom axis by default; ggplot2 theme_gray axis.line blank; axis_width unused
-theme-elements	axis.line.x.bottom	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:482 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	Rust draws left+bottom axis by default; ggplot2 theme_gray axis.line blank; axis_width unused
+theme-elements	axis.line.x	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:609 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	left and bottom axis lines drawn by default; ggplot2 theme_gray axis.line blank; axis_width unused
+theme-elements	axis.line.x.bottom	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:609 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	left and bottom axis lines drawn by default; ggplot2 theme_gray axis.line blank; axis_width unused
 theme-elements	axis.line.x.top	absent	-	-	no top/right axis lines
-theme-elements	axis.line.y	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:482 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	Rust draws left+bottom axis by default; ggplot2 theme_gray axis.line blank; axis_width unused
-theme-elements	axis.line.y.left	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:482 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	Rust draws left+bottom axis by default; ggplot2 theme_gray axis.line blank; axis_width unused
+theme-elements	axis.line.y	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:609 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	left and bottom axis lines drawn by default; ggplot2 theme_gray axis.line blank; axis_width unused
+theme-elements	axis.line.y.left	partial	crates/aprender-viz/src/grammar/theme.rs:17 Theme.axis_color/show_axis (crates/aprender-viz/src/grammar/ggplot.rs:609 draw_axes)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_axis	left and bottom axis lines drawn by default; ggplot2 theme_gray axis.line blank; axis_width unused
 theme-elements	axis.line.y.right	absent	-	-	no top/right axis lines
-theme-elements	axis.minor.ticks.length	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.r	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.theta	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.x	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.x.bottom	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.x.top	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.y	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.y.left	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.length.y.right	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.r	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.theta	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.x.bottom	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.x.top	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.y.left	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.minor.ticks.y.right	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.text	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.r	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.theta	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.x	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.x.bottom	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.x.top	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.y	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.y.left	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.text.y.right	absent	-	-	no tick labels; framebuffer has no font; svg/wasm only; ggplot2 rel(0.8) colour #4D4D4D
-theme-elements	axis.ticks	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.r	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.theta	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.x	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.x.bottom	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.x.top	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.y	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.y.left	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.length.y.right	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.r	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.theta	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.x	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.x.bottom	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.x.top	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.y	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.y.left	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.ticks.y.right	absent	-	-	no tick marks drawn; ggplot2 length half_line/2, colour #333333
-theme-elements	axis.title	partial	crates/aprender-viz/src/grammar/ggplot.rs:305 GGPlot::xlab via to_svg	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	svg only; fixed 12px centred; ggplot2 base 11pt vjust 1; no theme control
-theme-elements	axis.title.x	partial	crates/aprender-viz/src/grammar/ggplot.rs:305 GGPlot::xlab via to_svg	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	svg only; fixed 12px centred; ggplot2 base 11pt vjust 1; no theme control
-theme-elements	axis.title.x.bottom	partial	crates/aprender-viz/src/grammar/ggplot.rs:305 GGPlot::xlab via to_svg	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	svg only; fixed 12px centred; ggplot2 base 11pt vjust 1; no theme control
-theme-elements	axis.title.x.top	absent	-	-	no top/right axis titles or secondary axes; svg/wasm only
-theme-elements	axis.title.y	partial	crates/aprender-viz/src/grammar/ggplot.rs:315 GGPlot::ylab via to_svg	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	svg only; horizontal at top-left; ggplot2 rotated 90 deg
-theme-elements	axis.title.y.left	partial	crates/aprender-viz/src/grammar/ggplot.rs:315 GGPlot::ylab via to_svg	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	svg only; horizontal at top-left; ggplot2 rotated 90 deg
-theme-elements	axis.title.y.right	absent	-	-	no top/right axis titles or secondary axes; svg/wasm only
-theme-elements	geom	absent	-	-	no base element; line/grid/axis widths fields unused; ggplot2 4.0 geom uses ink/paper
-theme-elements	legend.axis.line	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.background	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.box	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.box.background	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.box.just	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.box.margin	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.box.spacing	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.byrow	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.direction	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.frame	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.justification	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.justification.bottom	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.justification.inside	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.justification.left	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.justification.right	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.justification.top	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.key	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.key.height	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.key.justification	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.key.size	absent	-	-	no legend; ggplot2 default 1.2 lines; svg/wasm only
-theme-elements	legend.key.spacing	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.key.spacing.x	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.key.spacing.y	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.key.width	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.location	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.margin	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.position	absent	-	-	no legend at all; ggplot2 default "right"; svg/wasm only
-theme-elements	legend.position.inside	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.spacing	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.spacing.x	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.spacing.y	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.text	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.text.position	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.ticks	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.ticks.length	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.title	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	legend.title.position	absent	-	-	no legend rendering; svg/wasm only
-theme-elements	line	absent	-	-	no base element; line/grid/axis widths fields unused; ggplot2 4.0 geom uses ink/paper
+theme-elements	axis.minor.ticks.length	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.r	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.theta	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.x	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.x.bottom	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.x.top	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.y	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.y.left	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.length.y.right	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.r	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.theta	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.x.bottom	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.x.top	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.y.left	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.minor.ticks.y.right	absent	-	-	minor ticks are not drawn; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.text	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	10px break labels in SVG, text in terminal, none in framebuffer; ggplot2 rel(0.8) #4D4D4D
+theme-elements	axis.text.r	absent	-	-	no top, right or polar axes; ggplot2 rel(0.8) colour #4D4D4D
+theme-elements	axis.text.theta	absent	-	-	no top, right or polar axes; ggplot2 rel(0.8) colour #4D4D4D
+theme-elements	axis.text.x	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	10px break labels in SVG, text in terminal, none in framebuffer; ggplot2 rel(0.8) #4D4D4D
+theme-elements	axis.text.x.bottom	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	10px break labels in SVG, text in terminal, none in framebuffer; ggplot2 rel(0.8) #4D4D4D
+theme-elements	axis.text.x.top	absent	-	-	no top, right or polar axes; ggplot2 rel(0.8) colour #4D4D4D
+theme-elements	axis.text.y	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	10px break labels in SVG, text in terminal, none in framebuffer; ggplot2 rel(0.8) #4D4D4D
+theme-elements	axis.text.y.left	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	10px break labels in SVG, text in terminal, none in framebuffer; ggplot2 rel(0.8) #4D4D4D
+theme-elements	axis.text.y.right	absent	-	-	no top, right or polar axes; ggplot2 rel(0.8) colour #4D4D4D
+theme-elements	axis.ticks	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	4px ticks per break in SVG, ┬/┤ in terminal, none in framebuffer; ggplot2 #333333
+theme-elements	axis.ticks.length	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text (TICK_PX :373)	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	fixed 4px in SVG, not settable; ggplot2 half_line/2 = 2.75pt
+theme-elements	axis.ticks.length.r	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.ticks.length.theta	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.ticks.length.x	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text (TICK_PX :373)	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	fixed 4px in SVG, not settable; ggplot2 half_line/2 = 2.75pt
+theme-elements	axis.ticks.length.x.bottom	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text (TICK_PX :373)	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	fixed 4px in SVG, not settable; ggplot2 half_line/2 = 2.75pt
+theme-elements	axis.ticks.length.x.top	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.ticks.length.y	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text (TICK_PX :373)	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	fixed 4px in SVG, not settable; ggplot2 half_line/2 = 2.75pt
+theme-elements	axis.ticks.length.y.left	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text (TICK_PX :373)	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	fixed 4px in SVG, not settable; ggplot2 half_line/2 = 2.75pt
+theme-elements	axis.ticks.length.y.right	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.ticks.r	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.ticks.theta	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.ticks.x	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	4px ticks per break in SVG, ┬/┤ in terminal, none in framebuffer; ggplot2 #333333
+theme-elements	axis.ticks.x.bottom	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	4px ticks per break in SVG, ┬/┤ in terminal, none in framebuffer; ggplot2 #333333
+theme-elements	axis.ticks.x.top	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.ticks.y	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	4px ticks per break in SVG, ┬/┤ in terminal, none in framebuffer; ggplot2 #333333
+theme-elements	axis.ticks.y.left	partial	crates/aprender-viz/src/grammar/ggplot.rs:372 svg_axis_text; crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_break_labels_from_the_layout	4px ticks per break in SVG, ┬/┤ in terminal, none in framebuffer; ggplot2 #333333
+theme-elements	axis.ticks.y.right	absent	-	-	no top, right or polar axes; ggplot2 length half_line/2, colour #333333
+theme-elements	axis.title	partial	crates/aprender-viz/src/grammar/ggplot.rs:342 to_svg (xlab :351); crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	SVG and terminal only; fixed 12px centred; ggplot2 base 11pt vjust 1
+theme-elements	axis.title.x	partial	crates/aprender-viz/src/grammar/ggplot.rs:342 to_svg (xlab :351); crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	SVG and terminal only; fixed 12px centred; ggplot2 base 11pt vjust 1
+theme-elements	axis.title.x.bottom	partial	crates/aprender-viz/src/grammar/ggplot.rs:342 to_svg (xlab :351); crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	SVG and terminal only; fixed 12px centred; ggplot2 base 11pt vjust 1
+theme-elements	axis.title.x.top	absent	-	-	no top/right axis titles or secondary axes
+theme-elements	axis.title.y	partial	crates/aprender-viz/src/grammar/ggplot.rs:342 to_svg (ylab :361); crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	SVG and terminal only; horizontal at top-left; ggplot2 rotated 90 deg
+theme-elements	axis.title.y.left	partial	crates/aprender-viz/src/grammar/ggplot.rs:342 to_svg (ylab :361); crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	SVG and terminal only; horizontal at top-left; ggplot2 rotated 90 deg
+theme-elements	axis.title.y.right	absent	-	-	no top/right axis titles or secondary axes
+theme-elements	geom	absent	-	-	no base elements or inheritance; the flat Theme struct is a different feature
+theme-elements	legend.axis.line	absent	-	-	no legend rendering
+theme-elements	legend.background	absent	-	-	no legend rendering
+theme-elements	legend.box	absent	-	-	no legend rendering
+theme-elements	legend.box.background	absent	-	-	no legend rendering
+theme-elements	legend.box.just	absent	-	-	no legend rendering
+theme-elements	legend.box.margin	absent	-	-	no legend rendering
+theme-elements	legend.box.spacing	absent	-	-	no legend rendering
+theme-elements	legend.byrow	absent	-	-	no legend rendering
+theme-elements	legend.direction	absent	-	-	no legend rendering
+theme-elements	legend.frame	absent	-	-	no legend rendering
+theme-elements	legend.justification	absent	-	-	no legend rendering
+theme-elements	legend.justification.bottom	absent	-	-	no legend rendering
+theme-elements	legend.justification.inside	absent	-	-	no legend rendering
+theme-elements	legend.justification.left	absent	-	-	no legend rendering
+theme-elements	legend.justification.right	absent	-	-	no legend rendering
+theme-elements	legend.justification.top	absent	-	-	no legend rendering
+theme-elements	legend.key	absent	-	-	no legend rendering
+theme-elements	legend.key.height	absent	-	-	no legend rendering
+theme-elements	legend.key.justification	absent	-	-	no legend rendering
+theme-elements	legend.key.size	absent	-	-	no legend; ggplot2 default 1.2 lines
+theme-elements	legend.key.spacing	absent	-	-	no legend rendering
+theme-elements	legend.key.spacing.x	absent	-	-	no legend rendering
+theme-elements	legend.key.spacing.y	absent	-	-	no legend rendering
+theme-elements	legend.key.width	absent	-	-	no legend rendering
+theme-elements	legend.location	absent	-	-	no legend rendering
+theme-elements	legend.margin	absent	-	-	no legend rendering
+theme-elements	legend.position	absent	-	-	no legend at all; ggplot2 default "right"
+theme-elements	legend.position.inside	absent	-	-	no legend rendering
+theme-elements	legend.spacing	absent	-	-	no legend rendering
+theme-elements	legend.spacing.x	absent	-	-	no legend rendering
+theme-elements	legend.spacing.y	absent	-	-	no legend rendering
+theme-elements	legend.text	absent	-	-	no legend rendering
+theme-elements	legend.text.position	absent	-	-	no legend rendering
+theme-elements	legend.ticks	absent	-	-	no legend rendering
+theme-elements	legend.ticks.length	absent	-	-	no legend rendering
+theme-elements	legend.title	absent	-	-	no legend rendering
+theme-elements	legend.title.position	absent	-	-	no legend rendering
+theme-elements	line	absent	-	-	no base elements or inheritance; the flat Theme struct is a different feature
 theme-elements	margins	absent	-	-	no base spacing/margins; ggplot2 half_line 5.5pt
-theme-elements	palette.alpha.continuous	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.alpha.discrete	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.colour.continuous	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.colour.discrete	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.fill.continuous	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.fill.discrete	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.linetype.continuous	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.linetype.discrete	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.linewidth.continuous	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.linewidth.discrete	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.shape.continuous	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.shape.discrete	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.size.continuous	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	palette.size.discrete	absent	-	-	no theme palettes; scale lane covers colour mapping
-theme-elements	panel.background	partial	crates/aprender-viz/src/grammar/theme.rs:13 Theme.panel_background (drawn crates/aprender-viz/src/grammar/ggplot.rs:325)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_panel_background	default 235 = grey92 ok; test is setter-only, no pixel check
-theme-elements	panel.border	partial	crates/aprender-viz/src/grammar/theme.rs:25 Theme.show_panel_border (crates/aprender-viz/src/grammar/ggplot.rs:357)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_bw	bool, colour=axis_color 1px; ggplot2 default element_blank, fill NA
-theme-elements	panel.grid	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:459)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; 6 fixed lines/axis not breaks; grid_width unused
-theme-elements	panel.grid.major	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:459)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; 6 fixed lines/axis not breaks; grid_width unused
-theme-elements	panel.grid.major.x	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:459)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; 6 fixed lines/axis not breaks; grid_width unused
-theme-elements	panel.grid.major.y	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:459)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; 6 fixed lines/axis not breaks; grid_width unused
+theme-elements	palette.alpha.continuous	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.alpha.discrete	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.colour.continuous	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.colour.discrete	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.fill.continuous	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.fill.discrete	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.linetype.continuous	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.linetype.discrete	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.linewidth.continuous	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.linewidth.discrete	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.shape.continuous	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.shape.discrete	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.size.continuous	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	palette.size.discrete	absent	-	-	no theme palettes; colour mapping belongs to the scale rows
+theme-elements	panel.background	partial	crates/aprender-viz/src/grammar/theme.rs:13 Theme.panel_background (drawn crates/aprender-viz/src/grammar/ggplot.rs:453)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_panel_background	default 235 = grey92 ok; test is setter-only, no pixel check
+theme-elements	panel.border	partial	crates/aprender-viz/src/grammar/theme.rs:25 Theme.show_panel_border (crates/aprender-viz/src/grammar/ggplot.rs:467)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_bw	bool, colour=axis_color 1px; ggplot2 default element_blank, fill NA
+theme-elements	panel.grid	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:593 draw_grid)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; one line per break, framebuffer only; grid_width unused; no pixel test
+theme-elements	panel.grid.major	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:593 draw_grid)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; one line per break, framebuffer only; grid_width unused; no pixel test
+theme-elements	panel.grid.major.x	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:593 draw_grid)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; one line per break, framebuffer only; grid_width unused; no pixel test
+theme-elements	panel.grid.major.y	partial	crates/aprender-viz/src/grammar/theme.rs:15 Theme.grid_color/show_grid (crates/aprender-viz/src/grammar/ggplot.rs:593 draw_grid)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grid_color	white ok; one line per break, framebuffer only; grid_width unused; no pixel test
 theme-elements	panel.grid.minor	absent	-	-	no minor grid; ggplot2 minor = rel(0.5) width
 theme-elements	panel.grid.minor.x	absent	-	-	no minor grid; ggplot2 minor = rel(0.5) width
 theme-elements	panel.grid.minor.y	absent	-	-	no minor grid; ggplot2 minor = rel(0.5) width
-theme-elements	panel.heights	absent	-	-	PanelGrid (crates/aprender-viz/src/grammar/ggplot.rs:237) cells abut; ggplot2 spacing 5.5pt
+theme-elements	panel.heights	partial	crates/aprender-viz/src/grammar/ggplot.rs:240 PanelGrid	crates/aprender-viz/tests/facet_coord_render.rs::facet_wrap_over_three_lineages_renders_three_panels	equal cells only (width/ncol, height/nrow); sizes not settable
 theme-elements	panel.ontop	absent	-	-	layers always drawn over panel; no ontop flag
-theme-elements	panel.spacing	absent	-	-	PanelGrid (crates/aprender-viz/src/grammar/ggplot.rs:237) cells abut; ggplot2 spacing 5.5pt
-theme-elements	panel.spacing.x	absent	-	-	PanelGrid (crates/aprender-viz/src/grammar/ggplot.rs:237) cells abut; ggplot2 spacing 5.5pt
-theme-elements	panel.spacing.y	absent	-	-	PanelGrid (crates/aprender-viz/src/grammar/ggplot.rs:237) cells abut; ggplot2 spacing 5.5pt
-theme-elements	panel.widths	absent	-	-	PanelGrid (crates/aprender-viz/src/grammar/ggplot.rs:237) cells abut; ggplot2 spacing 5.5pt
-theme-elements	plot.background	partial	crates/aprender-viz/src/grammar/theme.rs:11 Theme.background (crates/aprender-viz/src/grammar/ggplot.rs:278)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_dark	fb.clear fill only; no border colour/linewidth; ggplot2 colour white
-theme-elements	plot.caption	absent	-	-	no subtitle/caption/tag; svg/wasm only
-theme-elements	plot.caption.position	absent	-	-	no subtitle/caption/tag; svg/wasm only
+theme-elements	panel.spacing	partial	crates/aprender-viz/src/grammar/ggplot.rs:240 PanelGrid	crates/aprender-viz/tests/facet_coord_render.rs::facet_wrap_over_three_lineages_renders_three_panels	gap is 2 x theme margin (80px default), not settable alone; ggplot2 5.5pt
+theme-elements	panel.spacing.x	partial	crates/aprender-viz/src/grammar/ggplot.rs:240 PanelGrid	crates/aprender-viz/tests/facet_coord_render.rs::facet_wrap_over_three_lineages_renders_three_panels	gap is 2 x theme margin (80px default), not settable alone; ggplot2 5.5pt
+theme-elements	panel.spacing.y	partial	crates/aprender-viz/src/grammar/ggplot.rs:240 PanelGrid	crates/aprender-viz/tests/facet_coord_render.rs::facet_wrap_over_three_lineages_renders_three_panels	gap is 2 x theme margin (80px default), not settable alone; ggplot2 5.5pt
+theme-elements	panel.widths	partial	crates/aprender-viz/src/grammar/ggplot.rs:240 PanelGrid	crates/aprender-viz/tests/facet_coord_render.rs::facet_wrap_over_three_lineages_renders_three_panels	equal cells only (width/ncol, height/nrow); sizes not settable
+theme-elements	plot.background	partial	crates/aprender-viz/src/grammar/theme.rs:11 Theme.background (crates/aprender-viz/src/grammar/ggplot.rs:324 fb.clear)	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_dark	fill only; no border colour/linewidth; ggplot2 colour white
+theme-elements	plot.caption	absent	-	-	no subtitle/caption/tag
+theme-elements	plot.caption.position	absent	-	-	no subtitle/caption/tag
 theme-elements	plot.margin	partial	crates/aprender-viz/src/grammar/theme.rs:31 Theme.margin	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_customization	one u32 px all sides (40); ggplot2 5.5pt per side
-theme-elements	plot.subtitle	absent	-	-	no subtitle/caption/tag; svg/wasm only
-theme-elements	plot.tag	absent	-	-	no subtitle/caption/tag; svg/wasm only
-theme-elements	plot.tag.location	absent	-	-	no subtitle/caption/tag; svg/wasm only
-theme-elements	plot.tag.position	absent	-	-	no subtitle/caption/tag; svg/wasm only
-theme-elements	plot.title	partial	crates/aprender-viz/src/grammar/ggplot.rs:302 GGPlot::title via to_svg	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	svg only; fixed 16px centred; ggplot2 rel(1.2) hjust 0 left; test checks presence not position
+theme-elements	plot.subtitle	absent	-	-	no subtitle/caption/tag
+theme-elements	plot.tag	absent	-	-	no subtitle/caption/tag
+theme-elements	plot.tag.location	absent	-	-	no subtitle/caption/tag
+theme-elements	plot.tag.position	absent	-	-	no subtitle/caption/tag
+theme-elements	plot.title	partial	crates/aprender-viz/src/grammar/ggplot.rs:342 to_svg (title :348); crates/aprender-viz/src/grammar/term.rs:139 to_terminal	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_svg_draws_title_and_axis_labels	SVG and terminal only; fixed 16px centred; ggplot2 rel(1.2) left-aligned; position untested
 theme-elements	plot.title.position	absent	-	-	title always centred on image; ggplot2 default "panel"
-theme-elements	point	absent	-	-	no base element; line/grid/axis widths fields unused; ggplot2 4.0 geom uses ink/paper
-theme-elements	polygon	absent	-	-	no base element; line/grid/axis widths fields unused; ggplot2 4.0 geom uses ink/paper
-theme-elements	rect	absent	-	-	no base element; line/grid/axis widths fields unused; ggplot2 4.0 geom uses ink/paper
+theme-elements	point	absent	-	-	no base elements or inheritance; the flat Theme struct is a different feature
+theme-elements	polygon	absent	-	-	no base elements or inheritance; the flat Theme struct is a different feature
+theme-elements	rect	absent	-	-	no base elements or inheritance; the flat Theme struct is a different feature
 theme-elements	spacing	absent	-	-	no base spacing/margins; ggplot2 half_line 5.5pt
-theme-elements	strip.background	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.background.x	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.background.y	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.clip	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.placement	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.placement.x	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.placement.y	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.switch.pad.grid	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.switch.pad.wrap	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.text	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.text.x	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.text.x.bottom	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.text.x.top	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.text.y	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.text.y.left	absent	-	-	facet panels have no strip labels; svg/wasm only
-theme-elements	strip.text.y.right	absent	-	-	facet panels have no strip labels; svg/wasm only
+theme-elements	strip.background	absent	-	-	facet panels have no strip labels
+theme-elements	strip.background.x	absent	-	-	facet panels have no strip labels
+theme-elements	strip.background.y	absent	-	-	facet panels have no strip labels
+theme-elements	strip.clip	absent	-	-	facet panels have no strip labels
+theme-elements	strip.placement	absent	-	-	facet panels have no strip labels
+theme-elements	strip.placement.x	absent	-	-	facet panels have no strip labels
+theme-elements	strip.placement.y	absent	-	-	facet panels have no strip labels
+theme-elements	strip.switch.pad.grid	absent	-	-	facet panels have no strip labels
+theme-elements	strip.switch.pad.wrap	absent	-	-	facet panels have no strip labels
+theme-elements	strip.text	absent	-	-	facet panels have no strip labels
+theme-elements	strip.text.x	absent	-	-	facet panels have no strip labels
+theme-elements	strip.text.x.bottom	absent	-	-	facet panels have no strip labels
+theme-elements	strip.text.x.top	absent	-	-	facet panels have no strip labels
+theme-elements	strip.text.y	absent	-	-	facet panels have no strip labels
+theme-elements	strip.text.y.left	absent	-	-	facet panels have no strip labels
+theme-elements	strip.text.y.right	absent	-	-	facet panels have no strip labels
 theme-elements	text	partial	crates/aprender-viz/src/grammar/theme.rs:19 Theme.text_color	-	text_color never read in render (svg uses axis_color); no base_size 11, family, face
-theme-elements	title	absent	-	-	no base element; line/grid/axis widths fields unused; ggplot2 4.0 geom uses ink/paper
+theme-elements	title	absent	-	-	no base elements or inheritance; the flat Theme struct is a different feature
