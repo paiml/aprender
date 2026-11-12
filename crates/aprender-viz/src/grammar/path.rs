@@ -22,6 +22,10 @@
 //! * Reference lines train a scale like ggplot2: `geom_hline` trains y with its intercept,
 //!   `geom_vline` trains x, `geom_abline` trains neither. None of them inherits the plot's
 //!   aesthetics (`inherit.aes = FALSE`). Each is replicated once per panel.
+//! * Coordinate systems. Only the default `coord_cartesian()` (no limits, no flip) is supported:
+//!   `layout()` applies no coordinate system, so `coord_flip`, `coord_cartesian(xlim, ylim)`,
+//!   `coord_polar` and `coord_fixed` are an [`Error::UnsupportedCoord`] while one of these layers
+//!   is present (`require_default_coord`).
 //! * Degenerate scales (no finite value on an axis, or a single distinct value) are an
 //!   [`Error::ScaleDomain`] while a path or reference layer is present: ggplot2 widens those
 //!   ranges in a way the shared scale code does not yet reproduce.
@@ -36,6 +40,7 @@ use crate::error::{Error, Result};
 
 use super::aes::Aes;
 use super::build::{BuiltLayer, PositionScale};
+use super::coord::Coord;
 use super::data::{DataFrame, DataValue};
 use super::facet::{panels, Facet, Panel};
 use super::geom::{GeomType, StepDirection};
@@ -125,6 +130,31 @@ fn is_reference(g: &GeomType) -> bool {
 
 fn refuse(msg: impl Into<String>) -> Error {
     Error::Rendering(msg.into())
+}
+
+/// Refuse any coordinate system but the default `coord_cartesian()` while a path-family or
+/// reference layer is present. `layout()` applies no coordinate system (limits, flip, polar and
+/// fixed all change ggplot2's `panel_params`), so answering with the default numbers would be
+/// silently wrong.
+pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<()> {
+    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+        return Ok(());
+    }
+    match coord {
+        Coord::Cartesian { xlim: None, ylim: None, flip: false } => Ok(()),
+        Coord::Cartesian { flip: true, .. } => Err(Error::UnsupportedCoord(
+            "coord_flip with line, path, step or reference layers: layout() does not flip",
+        )),
+        Coord::Cartesian { .. } => Err(Error::UnsupportedCoord(
+            "coord_cartesian limits with line, path, step or reference layers: layout() does not apply them",
+        )),
+        Coord::Polar { .. } => Err(Error::UnsupportedCoord(
+            "coord_polar with line, path, step or reference layers",
+        )),
+        Coord::Fixed { .. } => Err(Error::UnsupportedCoord(
+            "coord_fixed with line, path, step or reference layers",
+        )),
+    }
 }
 
 /// Refuse a scale that ggplot2 would widen differently from the shared scale code.

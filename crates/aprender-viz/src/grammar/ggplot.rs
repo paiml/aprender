@@ -572,8 +572,10 @@ impl BuiltGGPlot {
     /// Returns an error for a path, step or reference layer (`geom_line`, `geom_path`, `geom_step`, `geom_hline`,
     /// `geom_vline`, `geom_abline`) whose input is outside what `grammar/path.rs` documents:
     /// text or infinite positions, a missing column, a data-mapped colour, an unsupported facet, or
-    /// a degenerate axis range.
+    /// a degenerate axis range; and [`Error::UnsupportedCoord`] for such a layer under any
+    /// coordinate system but the default `coord_cartesian()` (`layout()` applies none).
     pub fn layout(&self) -> Result<BuiltLayout> {
+        path::require_default_coord(&self.layers, &self.coord)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
         let (x, y) = self.position_scales();
         path::require_trained(&self.layers, &x, &y)?;

@@ -11,6 +11,7 @@
 
 use serde_json::Value;
 
+use super::coord::Coord;
 use super::{
     Aes, BuiltLayer, BuiltLayout, DataFrame, Facet, GGPlot, Geom, Layer, PositionScale,
     ReferenceKind, StepDirection,
@@ -265,6 +266,20 @@ mod line {
     #[test]
     fn plain_sorts_by_x_with_ties_in_data_order() {
         run("plain", fixture!("geom_line", "plain"), csv!("geom_line", "data"), xy(), Facet::None);
+    }
+
+    /// The edges of the label range the contracts claim (non-zero data magnitude from 2^-8 to
+    /// 10^4): the tick labels equal R's. Beyond it the shared formatter is known to differ from R's
+    /// fixed-versus-scientific choice (`1e+05`, `1e-04`); that is a separate ticket, not claimed.
+    #[test]
+    fn tick_labels_match_r_at_the_edges_of_the_claimed_magnitude_range() {
+        for (case, json, file) in [
+            ("label_lo", fixture!("geom_line", "label_lo"), csv!("geom_line", "data_label_lo")),
+            ("label_hi", fixture!("geom_line", "label_hi"), csv!("geom_line", "data_label_hi")),
+            ("label_neg", fixture!("geom_line", "label_neg"), csv!("geom_line", "data_label_neg")),
+        ] {
+            run(case, json, file, xy(), Facet::None);
+        }
     }
 
     #[test]
@@ -532,6 +547,34 @@ mod step {
         )
         .expect("layout resolves");
         check(&got, &w, &[G]);
+    }
+
+    /// A group of exactly two rows has stairs (3 vertices for hv, 4 for mid); only a one-row group
+    /// has none. The fixture mixes a 2-row group with a 3-row group.
+    fn two_row_group(case: &str, json: &str, geom: Geom) {
+        let w = want(json, ROW, case);
+        let got = build(
+            csv!("geom_step", "data_two_row_group"),
+            xy().group("gn"),
+            vec![layer(geom)],
+            Facet::None,
+        )
+        .expect("layout resolves");
+        check(&got, &w, &[G]);
+    }
+
+    #[test]
+    fn a_two_row_group_has_stairs_hv() {
+        two_row_group("two_row_group_hv", fixture!("geom_step", "two_row_group_hv"), Geom::step());
+    }
+
+    #[test]
+    fn a_two_row_group_has_stairs_mid() {
+        two_row_group(
+            "two_row_group_mid",
+            fixture!("geom_step", "two_row_group_mid"),
+            Geom::step().direction(StepDirection::Mid),
+        );
     }
 
     #[test]
@@ -824,6 +867,30 @@ mod abline {
         );
     }
 
+    /// An abline trains no scale, so a plot whose only layer is a reference line has no range on
+    /// either axis. The plot's own data and aesthetics must not train it behind the layer's back
+    /// (ggplot2: `inherit.aes = FALSE`); the typed error is the contract.
+    #[test]
+    fn only_a_reference_line_trains_nothing_and_the_axes_are_refused() {
+        let r = build(
+            csv!("geom_abline", "data"),
+            xy(),
+            vec![layer(Geom::abline(1.5, 0.5))],
+            Facet::None,
+        );
+        assert!(matches!(r, Err(Error::ScaleDomain(_))), "{r:?}");
+    }
+
+    #[test]
+    fn an_abline_with_its_own_data_still_trains_nothing() {
+        let mut far = DataFrame::new();
+        far.add_column_f32("x", &[1000.0, 2000.0]);
+        far.add_column_f32("y", &[-500.0, 500.0]);
+        let l = Layer::new(Geom::abline(1.0, 1.0)).data(far);
+        let r = build(DataFrame::new(), xy(), vec![l], Facet::None);
+        assert!(matches!(r, Err(Error::ScaleDomain(_))), "{r:?}");
+    }
+
     #[test]
     fn facet_wrap_replicates_the_line_per_panel() {
         run("facet", fixture!("geom_abline", "facet"), Geom::abline(1.0, 0.0), wrap_f());
@@ -1060,6 +1127,77 @@ mod robustness {
         df.add_column_f32("f", &[1.0, 2.0, 3.0]);
         let r = build(df, xy(), vec![layer(Geom::line())], wrap_f());
         assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    }
+
+    fn non_default_coords() -> Vec<(&'static str, Coord)> {
+        vec![
+            ("flip", Coord::cartesian().flip()),
+            ("xlim", Coord::cartesian().xlim(0.0, 10.0)),
+            ("ylim", Coord::cartesian().ylim(0.0, 10.0)),
+            ("xlim+flip", Coord::cartesian().xlim(0.0, 10.0).flip()),
+            ("polar", Coord::polar()),
+            ("fixed", Coord::fixed(1.0)),
+        ]
+    }
+
+    fn with_coord(g: Geom, coord: Coord) -> crate::error::Result<BuiltLayout> {
+        GGPlot::new()
+            .data(ok_df())
+            .aes(xy())
+            .layer(layer(Geom::point()))
+            .layer(layer(g))
+            .coord(coord)
+            .build()?
+            .layout()
+    }
+
+    /// `layout()` applies no coordinate system, so a coordinate system it would silently ignore is
+    /// refused for every geom of these rows (R gives different panel ranges and breaks for each).
+    #[test]
+    fn every_non_default_coord_is_refused_for_every_geom() {
+        for g in all_path_geoms() {
+            for (name, coord) in non_default_coords() {
+                let r = with_coord(g.clone(), coord);
+                assert!(
+                    matches!(r, Err(Error::UnsupportedCoord(_))),
+                    "{:?} under {name} returned {r:?}",
+                    g.geom_type
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_refusal_names_the_coord() {
+        let msg = |c: Coord| match with_coord(Geom::line(), c) {
+            Err(Error::UnsupportedCoord(m)) => m,
+            other => panic!("expected UnsupportedCoord, got {other:?}"),
+        };
+        assert!(msg(Coord::cartesian().flip()).contains("coord_flip"));
+        assert!(msg(Coord::cartesian().xlim(0.0, 1.0)).contains("limits"));
+        assert!(msg(Coord::polar()).contains("coord_polar"));
+        assert!(msg(Coord::fixed(2.0)).contains("coord_fixed"));
+    }
+
+    #[test]
+    fn the_default_coord_is_accepted_for_every_geom() {
+        for g in all_path_geoms() {
+            let r = with_coord(g.clone(), Coord::cartesian());
+            assert!(r.is_ok(), "{:?} under the default coord returned {r:?}", g.geom_type);
+        }
+    }
+
+    /// The refusal is scoped to these geoms: a plot with only a point layer keeps its behaviour.
+    #[test]
+    fn a_point_only_plot_is_not_refused_by_a_coord() {
+        let r = GGPlot::new()
+            .data(ok_df())
+            .aes(xy())
+            .layer(layer(Geom::point()))
+            .coord(Coord::cartesian().flip())
+            .build()
+            .and_then(|p| p.layout());
+        assert!(r.is_ok(), "{r:?}");
     }
 
     #[test]
