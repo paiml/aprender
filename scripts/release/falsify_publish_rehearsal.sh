@@ -20,33 +20,37 @@ if [ "${1:-}" = --mutants ]; then
     total=$((total+1)); sed "$2" "$HERE/publish_rehearsal.sh" > "$M/m.sh"
     cmp -s "$HERE/publish_rehearsal.sh" "$M/m.sh" && { echo "MUTANT $1 did not apply"; miss=$((miss+1)); return; }
     PUB_REH_SRC="$M/m.sh" PUB_REH_SCRIPT_ROWS_ONLY=1 bash "$0" > /dev/null 2>&1 && { echo "MUTANT $1 SURVIVED"; miss=$((miss+1)); }; return 0; }
-  mut run-number-unchecked        's/^  \[\[ \$N =~ \^\[1-9\]\[0-9\]\*\$ \]\] || .*$/  :/'
-  mut run-number-leading-zero     's/\^\[1-9\]\[0-9\]\*\$ \]\] || { echo "STOP bad run-number/^[0-9][0-9]*$ ]] || { echo "STOP bad run-number/'
-  mut dry-arg-unchecked           's/^  case "\$DRY" in 0|1) ;; \*) .*$/  :/'
+  mut run-number-unchecked        's/^  \[\[ \$N =~ .*$/  :/'
+  mut run-number-leading-zero     's/\^\[1-9\]\[0-9\]\*\$ \]\] || { echo/^[0-9][0-9]*$ ]] || { echo/'
+  mut dry-arg-unchecked           's/^  case "\$DRY" in 0|1) ;; .*$/  :/'
   mut version-prefix-wrong        's/V="0\.0\.\$N"/V="0.1.$N"/'
-  mut tag-filter-removed          's/ | grep -E .\^v\[0-9\]+\\\.\[0-9\]+\\\.\[0-9\]+\$. / /'
+  mut tag-filter-removed          "s/ | grep -E '[^']*'//"
   mut oldest-tag-picked           's/--sort=-creatordate/--sort=creatordate/'
   mut no-tag-allowed              's/^  \[ -n "\$TAG" \] || die .*$/  :/'
   mut gate-refusal-swallowed      's/^  \[ "\$grc" = 0 \] || die .*$/  :/'
-  mut gate-skipped                's/^  run_gate "\$ROOT" "\$TAG" > "\$TMP\/gate.out" 2>&1; grc=\$?$/  grc=0/'
-  mut gate-sees-the-token         's/^    unset CARGO_REGISTRY_TOKEN$/    :/'
-  mut gate-function-unchecked     's/^    grep -q "\^\${fn}() {" "\$FNS" || .*$/    :/'
+  mut gate-skipped                's/^  ( unset CARGO_REGISTRY_TOKEN; run_gate .*$/  grc=0/'
+  mut gate-sees-the-token         's/unset CARGO_REGISTRY_TOKEN; //'
+  mut gate-function-unchecked     's/^    grep -q .*fns.*$/    :/'
   mut gate-gets-wrong-tag         's/clean_room_gate "\$1" "\$2"/clean_room_gate "$1" "v0.0.0"/'
+  mut cascade-top-level-run       's/^    \. "\$fns" || exit 1$/    . "$cascade" || exit 1/'
   mut dry-run-ignored             's/^  if \[ "\$DRY" = 1 \]; then$/  if false; then/'
   mut empty-token-allowed         's/^  \[ -n "\${CARGO_REGISTRY_TOKEN:-}" \] || die .*$/  :/'
-  mut version-not-set             's/^  sed -i "s\/.*$/  :/'
-  mut version-set-unchecked       's/^  grep -q -F -x -e "version = \\"\$V\\"" .*$/  :/'
-  mut publish-runs-in-the-tree    's/cd "\$TMP\/crate" \&\& publish_cmd/cd "$CRATE_DIR" \&\& publish_cmd/'
+  mut version-not-set             's/^  sed -i .*$/  :/'
+  mut version-set-unchecked       's/^  grep -q -F -x -e "version = .*$/  :/'
+  mut version-set-in-the-tree     's/"\$TMP\/crate\/Cargo.toml"/"$CRATE_DIR\/Cargo.toml"/g'
+  mut publish-runs-in-the-tree    's/( cd "\$TMP\/crate" \&\& publish_cmd )/( cd "$CRATE_DIR" \&\& publish_cmd )/'
   mut upload-refusal-swallowed    's/^    die "upload: refused or failed.*$/    :/'
-  mut already-uploaded-not-green  's/^  if \[ "\$prc" != 0 \] \&\& already_uploaded; then$/  if false; then/'
-  mut any-failure-is-uploaded     's/^  if \[ "\$prc" != 0 \] \&\& already_uploaded; then$/  if [ "$prc" != 0 ]; then/'
-  mut other-version-is-uploaded   's/grep -q -E -e "(\^|\[\^0-9.\])\${V\/\/\.\/\\\\.}(\[\^0-9\]|\$)"/grep -q -E -e "0"/'
-  mut index-unchecked             's/^  \$INDEX "\$CRATE" "\$V" > .dev.null 2>&1 \&\& break$/  break/'
-  mut index-wait-unbounded        's/\[ "\$i" -lt "\$TRIES" \]/true/'
+  mut already-uploaded-not-green  's/^  if \[ "\$prc" != 0 \] \&\& already_uploaded .*; then$/  if false; then/'
+  mut any-failure-is-uploaded     's/^  if \[ "\$prc" != 0 \] \&\& already_uploaded .*; then$/  if [ "$prc" != 0 ]; then/'
+  mut other-version-is-uploaded   's/^    \&\& grep -q -E -e "(.*$/    \&\& true/'
+  mut longer-version-is-uploaded  's/(\[^0-9\]|\\\$)" "\$1"$/" "$1"/'
+  mut index-unchecked             's/^    \$INDEX "\$CRATE" "\$V" > .dev.null 2>&1 \&\& { seen=1; break; }$/    seen=1; break/'
+  mut index-asked-for-wrong-version 's/\$INDEX "\$CRATE" "\$V"/$INDEX "$CRATE" "0.0.0"/'
   mut index-retry-off-by-five     's/^  while \[ "\$i" -lt "\$TRIES" \]; do$/  while [ "$i" -lt $((TRIES+5)) ]; do/'
+  mut index-never-retried         's/^    \[ "\$i" -lt "\$TRIES" \] \&\& sleep.*$/    break/'
   mut index-miss-swallowed        's/^  \[ "\$seen" = 1 \] || die .*$/  :/'
-  mut output-not-scrubbed         's/^    printf .%s\\n. "\${line\/\/"\$tok"\/\*\*\*}"$/    printf "%s\\n" "$line"/'
-  mut scratch-left-behind         "s/^  trap '.*rm -rf.*EXIT$/  :/"
+  mut output-not-scrubbed         's/^    \[ -z "\$tok" \] || line=.*$/    :/'
+  mut scratch-left-behind         's/^  trap .*EXIT$/  :/'
   [ "$miss" = 0 ] && { echo "mutants: $total of $total killed"; exit 0; }
   echo "mutants: $((total-miss)) of $total killed"; exit 1
 fi
@@ -123,6 +127,8 @@ STUB
   [ "${USEGATE-1}" = 1 ] && envs+=(PUB_REH_GATE="$r/gate")
   [ -z "${CASCADE_FX:-}" ] || envs+=(PUB_REH_CASCADE="$CASCADE_FX")
   [ "$tok" = UNSET ] || envs+=(CARGO_REGISTRY_TOKEN="$tok")   # TOKEN= is an empty token, TOKEN=UNSET is none at all
+  if [ -n "${BADCRATE:-}" ]; then   # a committed placeholder other than 0.0.0: nothing to set the run version on
+    sed -i 's/^version = "0\.0\.0"$/version = "0.3.0"/' "$r/repo/ci/publish-rehearsal/Cargo.toml" && G -C "$r/repo" commit -q -am badcrate; fi
   head0=$(G -C "$r/repo" rev-parse HEAD); tags0=$(G -C "$r/repo" tag | sort | tr '\n' ' ')
   ( cd "$r/repo" && env -u GH_TOKEN -u GITHUB_TOKEN "${envs[@]}" PATH="$r/bin:$PATH" bash scripts/release/publish_rehearsal.sh "$run" "$dry" ) > "$r/out" 2>&1; rc=$?
   [ -z "${DBG:-}" ] || cat "$r/out"
@@ -165,6 +171,7 @@ TPL=tpl-untagged row no_release_tag_refuses           1 'STOP clean-room read: n
 GATERC=1 row clean_room_read_refused                  1 'STOP clean-room read: gate refused v1\.2\.3: CLEAN-ROOM REFUSE: fixture says no for v1\.2\.3' 1 0 0
 TOKEN=UNSET row unset_token_refuses                   1 'STOP upload: CARGO_REGISTRY_TOKEN is empty' 1 0 0
 TOKEN= row empty_token_refuses                        1 'STOP upload: CARGO_REGISTRY_TOKEN is empty' 1 0 0
+BADCRATE=1 row placeholder_version_missing_refuses    1 'STOP upload: the committed Cargo\.toml has no version = "0\.0\.0" placeholder' 1 0 0
 PUBRC=1 PUBOUT='error: 403 forbidden' row upload_refused  1 'STOP upload: refused or failed' 1 1 0
 PUBRC=1 PUBOUT="error: bad token $MARK" row upload_refusal_output_is_scrubbed 1 'upload output: .*bad token \*\*\*' 1 1 0
 PUBRC=101 PUBOUT='error: crate aprender-publish-rehearsal@0.0.42 already exists on crates.io index' \
@@ -186,9 +193,9 @@ USEGATE=0 CASCADE_FX="$FX/ok.sh" row loaded_gate_is_asked_for_root_and_tag \
 USEGATE=0 CASCADE_FX="$FX/refuse.sh" row loaded_gate_refusal_is_red \
                                                       1 'STOP clean-room read: gate refused v1\.2\.3: CLEAN-ROOM REFUSE: fixture says no' x 0 0
 USEGATE=0 CASCADE_FX="$FX/missing.sh" row missing_gate_function_refuses \
-                                                      1 'STOP clean-room read: cascade-publish.sh does not define clean_room_tested_shas' x 0 0
+                                                      1 'STOP clean-room read: gate refused v1\.2\.3: cascade-publish\.sh does not define clean_room_tested_shas' x 0 0
 USEGATE=0 CASCADE_FX="$FX/nowhere.sh" row absent_cascade_file_refuses \
-                                                      1 'STOP clean-room read: cannot read' x 0 0
+                                                      1 'STOP clean-room read: gate refused v1\.2\.3: cannot read ' x 0 0
 USEGATE=0 CASCADE_FX="$CASCADE_REAL" GHRC=1 row real_gate_refuses_when_gh_is_logged_out \
                                                       1 'STOP clean-room read: gate refused v1\.2\.3: CLEAN-ROOM REFUSE: looked for [0-9a-f]{40} \(tag v1\.2\.3\); gh is unauthenticated' x 0 0
 # the script itself holds no ref-moving, tagging, forcing or hook-skipping command
