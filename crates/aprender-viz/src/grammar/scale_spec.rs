@@ -6,9 +6,15 @@
 //! limits, the 5% expansion, the breaks and the layer positions are `log10` values; only the
 //! labels come from data space (`format(10^break)`).
 //!
-//! Not implemented: label functions, `n.breaks`, `minor_breaks =`, `oob =` (rows outside explicit
-//! limits are dropped from the layer rather than set to `NA`), `position =`, secondary axes, and
-//! the `expand = c(a, b, c, d)` shorthand (use [`Expansion`]).
+//! Rows a scale cannot place (outside explicit limits, non-positive on `log10`, text outside the
+//! levels) stay in the layer with an `NA` position (`f64::NAN`), as `ggplot_build()` returns
+//! them; ggplot2 drops them (with a warning) only when drawing. `oob =` is fixed to `censor`.
+//!
+//! Where ggplot2 errors, so does this: text in a continuous scale, and (deliberately, where
+//! ggplot2 returns an infinite range) a continuous axis with no finite value to train on.
+//!
+//! Not implemented: label functions, `n.breaks`, `minor_breaks =`, other `oob =` functions,
+//! `position =`, secondary axes, and the `expand = c(a, b, c, d)` shorthand (use [`Expansion`]).
 
 use super::build::{
     censor_breaks, PositionScale, CONTINUOUS_EXPAND_ADD, CONTINUOUS_EXPAND_MULT, DEFAULT_N_BREAKS,
@@ -18,6 +24,7 @@ use super::r_format::format_labels;
 use super::scale_discrete::{position, resolve_discrete, train_levels, DiscreteSpec};
 use super::scale_trans::{log_breaks, regular_minor_breaks, Transform};
 use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
+use crate::error::{Error, Result};
 
 /// `ggplot2::expansion(mult, add)`: how far the panel extends past the limits, per side
 /// (lower, upper). A side grows by `span * mult + add`.
@@ -69,12 +76,33 @@ impl Expansion {
         Self::add(super::scale_discrete::DISCRETE_EXPAND_ADD)
     }
 
-    /// `expand_range4(limits, expansion)`: `c(lo - (span * mult_l + add_l), hi + (span * mult_u + add_u))`.
+    /// `expand_range4(limits, expansion)` = `scales::expand_range(limits, mul, add, zero_width = 1)`:
+    /// `c(lo - (w * mult_l + add_l), hi + (w * mult_u + add_u))`, where `w` is the span, or 1 when
+    /// the range has zero width (`scales::zero_range`). A single value `v` on a default axis
+    /// therefore spans `v +- 0.05`, measured on ggplot2 4.0.3.
     #[must_use]
     pub fn apply(self, (lo, hi): (f64, f64)) -> (f64, f64) {
-        let span = hi - lo;
-        (lo - (span * self.mult.0 + self.add.0), hi + (span * self.mult.1 + self.add.1))
+        let width = if zero_range(lo, hi) { ZERO_RANGE_WIDTH } else { hi - lo };
+        (lo - (width * self.mult.0 + self.add.0), hi + (width * self.mult.1 + self.add.1))
     }
+}
+
+/// `scales::expand_range(zero_width = 1)`: the width a zero-width range is given when the
+/// multiplicative expansion is applied.
+pub const ZERO_RANGE_WIDTH: f64 = 1.0;
+
+/// `scales::zero_range(c(lo, hi))` with its default `tol = 1000 * .Machine$double.eps`: equal, or
+/// closer than `tol` relative to the smaller magnitude.
+#[must_use]
+pub fn zero_range(lo: f64, hi: f64) -> bool {
+    if lo == hi {
+        return true;
+    }
+    if !lo.is_finite() || !hi.is_finite() {
+        return false;
+    }
+    let m = lo.abs().min(hi.abs());
+    m != 0.0 && ((lo - hi) / m).abs() < 1000.0 * f64::EPSILON
 }
 
 /// The arguments of `scale_x_continuous()` / `scale_y_continuous()` / `scale_*_log10()`.
@@ -179,13 +207,19 @@ impl From<DiscreteSpec> for PositionScaleSpec {
     }
 }
 
+/// The limits of an axis that was never trained: ggplot2 gives an empty continuous scale 0..1.
+pub const EMPTY_AXIS_LIMITS: (f64, f64) = (0.0, 1.0);
+
 /// Resolve a continuous axis. `trained` is the data range in scale space; an explicit
 /// `spec.limits` replaces it.
 #[must_use]
 pub fn resolve_continuous(trained: (f64, f64), spec: &ContinuousSpec) -> PositionScale {
     let t = spec.transform();
     let limits = spec.limits.map_or(trained, |(a, b)| (t.forward(a), t.forward(b)));
-    let (lo, hi) = if limits.0 < limits.1 { limits } else { (limits.0 - 1.0, limits.1 + 1.0) };
+    // A zero-width range is kept as is: `Expansion::apply` gives it ggplot2's width of 1. An
+    // inverted range only arises from an untrained axis (no data at all); ggplot2's empty
+    // continuous scale spans 0..1, and so does this.
+    let (lo, hi) = if limits.0 <= limits.1 { limits } else { EMPTY_AXIS_LIMITS };
     let continuous_range = spec.expand.unwrap_or(Expansion::continuous_default()).apply((lo, hi));
     let (rlo, rhi) = continuous_range;
 
@@ -217,7 +251,7 @@ pub fn resolve_continuous(trained: (f64, f64), spec: &ContinuousSpec) -> Positio
         .collect();
 
     PositionScale {
-        limits,
+        limits: (lo, hi),
         continuous_range,
         breaks,
         labels,
@@ -227,10 +261,15 @@ pub fn resolve_continuous(trained: (f64, f64), spec: &ContinuousSpec) -> Positio
     }
 }
 
+/// ggplot2's message when text reaches a continuous scale.
+fn text_in_continuous() -> Error {
+    Error::ScaleDomain("Discrete value supplied to a continuous scale".into())
+}
+
 /// How a data value becomes a position on one axis.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) enum AxisMap {
-    /// Numbers pass through (after the transform, and outside-limits rows are dropped).
+    /// Numbers pass through (after the transform; a value outside the limits is `NA`).
     Continuous { transform: Transform, limits: Option<(f64, f64)> },
     /// Text becomes its level position; numbers pass through.
     Discrete { levels: Vec<String> },
@@ -248,11 +287,22 @@ impl ResolvedAxis {
     ///
     /// With no spec, a column holding any text makes the axis discrete (ggplot2's default scale
     /// for character data); otherwise it is continuous.
-    pub(crate) fn resolve(spec: Option<&PositionScaleSpec>, columns: &[&[DataValue]]) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ScaleDomain`] where ggplot2 errors (text in a continuous scale), and where it
+    /// would return an infinite range: a continuous axis with no limits whose data has no finite
+    /// value after the transform (all non-positive on `log10`, all missing). This crate refuses
+    /// rather than return an `(inf, -inf)` panel.
+    pub(crate) fn resolve(
+        spec: Option<&PositionScaleSpec>,
+        columns: &[&[DataValue]],
+    ) -> Result<Self> {
         let has_text = columns.iter().flat_map(|c| c.iter()).any(|v| v.as_str().is_some());
         match spec {
-            Some(PositionScaleSpec::Discrete(d)) => Self::discrete(d, columns),
-            None if has_text => Self::discrete(&DiscreteSpec::new(), columns),
+            Some(PositionScaleSpec::Discrete(d)) => Ok(Self::discrete(d, columns)),
+            None if has_text => Ok(Self::discrete(&DiscreteSpec::new(), columns)),
+            Some(PositionScaleSpec::Continuous(_)) if has_text => Err(text_in_continuous()),
             Some(PositionScaleSpec::Continuous(c)) => Self::continuous(c, columns),
             None => Self::continuous(&ContinuousSpec::new(), columns),
         }
@@ -266,7 +316,7 @@ impl ResolvedAxis {
         Self { scale, map: AxisMap::Discrete { levels } }
     }
 
-    fn continuous(spec: &ContinuousSpec, columns: &[&[DataValue]]) -> Self {
+    fn continuous(spec: &ContinuousSpec, columns: &[&[DataValue]]) -> Result<Self> {
         let t = spec.transform();
         let trained = columns
             .iter()
@@ -275,9 +325,15 @@ impl ResolvedAxis {
             .map(|v| t.forward(f64::from(v)))
             .filter(|v| v.is_finite())
             .fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
+        if spec.limits.is_none() && trained.0 > trained.1 {
+            return Err(Error::ScaleDomain(format!(
+                "continuous{} scale has no finite value to train on",
+                if spec.log10 { " log10" } else { "" }
+            )));
+        }
         let scale = resolve_continuous(trained, spec);
         let limits = spec.limits.map(|(a, b)| (t.forward(a), t.forward(b)));
-        Self { scale, map: AxisMap::Continuous { transform: t, limits } }
+        Ok(Self { scale, map: AxisMap::Continuous { transform: t, limits } })
     }
 
     /// A data value's position, or `None` where ggplot2 would have `NA` (text outside the levels,

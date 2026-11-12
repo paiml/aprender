@@ -19,6 +19,9 @@ const REL_TOL: f64 = 1e-9;
 const ABS_TOL: f64 = 1e-12;
 
 fn close(a: f64, b: f64) -> bool {
+    if a.is_nan() || b.is_nan() {
+        return a.is_nan() && b.is_nan(); // NA matches NA only
+    }
     (a - b).abs() <= REL_TOL * a.abs().max(b.abs()) + ABS_TOL
 }
 
@@ -33,7 +36,15 @@ fn nums(v: &Value) -> Vec<f64> {
     v.as_array()
         .expect("fixture field is an array")
         .iter()
-        .map(|e| e.as_f64().expect("fixture array holds numbers"))
+        .map(
+            |e| {
+                if e.is_null() {
+                    f64::NAN
+                } else {
+                    e.as_f64().expect("fixture array holds numbers")
+                }
+            },
+        )
         .collect()
 }
 
@@ -45,16 +56,20 @@ fn strs(v: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Parse a CSV with a header. A cell that parses as a number must be exact in f32 and becomes a
+/// Parse a CSV with a header, optionally keeping only the given 1-based rows. A cell that parses as a number must be exact in f32 and becomes a
 /// number; any other cell is text, and a column is text when any of its cells is.
-fn frame_from_csv(csv: &str, keep: impl Fn(&[&str]) -> bool) -> DataFrame {
+fn frame_from_csv(csv: &str, only_rows: Option<&[usize]>) -> DataFrame {
     let mut lines = csv.lines();
     let header: Vec<&str> = lines.next().expect("csv has a header").split(',').collect();
     let rows: Vec<Vec<&str>> = lines
         .filter(|l| !l.trim().is_empty())
         .map(|l| l.split(',').map(str::trim).collect::<Vec<_>>())
-        .filter(|r| keep(r))
         .collect();
+    // `rows` in the fixture are 1-based indices into the data (repeats allowed), as in R's `df[rows, ]`.
+    let rows: Vec<Vec<&str>> = match only_rows {
+        Some(idx) => idx.iter().map(|i| rows[*i - 1].clone()).collect(),
+        None => rows,
+    };
     let mut df = DataFrame::new();
     for (c, name) in header.iter().enumerate() {
         let cells: Vec<&str> = rows.iter().map(|r| r[c]).collect();
@@ -125,8 +140,10 @@ fn run_fixture(json: &str, csv: &str, build: impl Fn(&str, DataFrame) -> GGPlot)
     assert!(!cases.is_empty());
     for case in cases {
         let name = case["name"].as_str().expect("case name");
-        let keep = |r: &[&str]| name != "x_single_level" || r[0] == "low";
-        let layout = build(name, frame_from_csv(csv, keep))
+        let rows: Option<Vec<usize>> = case["rows"]
+            .is_array()
+            .then(|| nums(&case["rows"]).iter().map(|r| *r as usize).collect());
+        let layout = build(name, frame_from_csv(csv, rows.as_deref()))
             .build()
             .expect("plot builds")
             .layout()
@@ -160,6 +177,7 @@ fn ggplot2_row2_scale_discrete() {
         include_str!("../../fixtures/ggplot2/scale_discrete/data.csv"),
         |name, df| match name {
             "x_default" | "x_single_level" => point(df, "g", "y"),
+            "x_mixed_case_levels" => point(df, "m", "y"),
             "y_default" => point(df, "x", "g"),
             "x_limits_extra_level" => point(df, "g", "y")
                 .scale_x(scale_discrete().limits(["mid", "low", "high", "extra"])),
@@ -184,6 +202,11 @@ fn ggplot2_row3_scale_log10() {
         |name, df| match name {
             "wide_default" => point(df, "x", "y").scale_x(scale_log10()).scale_y(scale_log10()),
             "narrow_x_sci_y" => point(df, "u", "v").scale_x(scale_log10()).scale_y(scale_log10()),
+            "nonpositive_x_na" => point(df, "w", "y").scale_x(scale_log10()).scale_y(scale_log10()),
+            "single_point_log" | "all_equal_log" => {
+                point(df, "x", "y").scale_x(scale_log10()).scale_y(scale_log10())
+            }
+            "limits_equal_log" => point(df, "x", "y").scale_x(scale_log10().limits(10.0, 10.0)),
             "limits_no_expand" => point(df, "x", "y")
                 .scale_x(scale_log10().limits(1.0, 10000.0).expand(Expansion::none()))
                 .scale_y(scale_log10()),
@@ -219,10 +242,102 @@ fn ggplot2_row4_scale_continuous_args() {
             ),
             "limits_breaks_y" => point(df, "x", "y")
                 .scale_y(scale_continuous().limits(-3.0, 8.0).breaks([0.0, 4.0, 8.0])),
+            "limits_reversed_x" => {
+                point(df, "x", "y").scale_x(scale_continuous().limits(10.0, 0.0))
+            }
+            "limits_oob_na_y" => point(df, "x", "y").scale_y(scale_continuous().limits(0.0, 4.0)),
+            "limits_oob_na_x" => point(df, "x", "y").scale_x(scale_continuous().limits(2.0, 8.0)),
+            "single_point" | "all_equal" => point(df, "x", "y"),
+            "limits_equal_x" => point(df, "x", "y").scale_x(scale_continuous().limits(3.0, 3.0)),
+            "single_point_add_expand" => point(df, "x", "y")
+                .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
             "add_expansion_y" => {
                 point(df, "x", "y").scale_y(scale_continuous().expand(Expansion::add(2.0)))
             }
             other => panic!("unknown case {other}"),
         },
+    );
+}
+
+// --- Level order, NA rows and refusals (review of #6916) --------------------------------------
+
+/// The oracle's level order is `LC_COLLATE=C`; the fixture says so, and the test refuses a
+/// fixture generated under another locale (the order would differ and the comparison mean nothing).
+#[test]
+fn ggplot2_row2_oracle_is_pinned_to_c_collation() {
+    let want: Value =
+        serde_json::from_str(include_str!("../../fixtures/ggplot2/scale_discrete/expected.json"))
+            .expect("fixture is valid JSON");
+    assert_eq!(want["versions"]["collate"], "C");
+    let case = want["cases"]
+        .as_array()
+        .expect("cases")
+        .iter()
+        .find(|c| c["name"] == "x_mixed_case_levels")
+        .expect("mixed-case level case is in the fixture");
+    // R's own C-locale order, not ours: upper case, then digits are before lower case.
+    assert_eq!(
+        strs(&case["panel"]["x"]["limits"]),
+        ["10", "9", "A", "B", "Zeta", "a", "alpha", "b"]
+    );
+}
+
+/// A row the scale cannot place stays in the layer as NA (ggplot2 drops it only when drawing),
+/// so the layer has one entry per data row.
+#[test]
+fn ggplot2_row4_unplaceable_rows_stay_as_na() {
+    let df =
+        frame_from_csv(include_str!("../../fixtures/ggplot2/scale_continuous_args/data.csv"), None);
+    let n = 8;
+    let layout = point(df, "x", "y")
+        .scale_x(scale_continuous().limits(2.0, 8.0))
+        .build()
+        .expect("plot builds")
+        .layout()
+        .expect("layout resolves");
+    assert_eq!(layout.layers[0].x.len(), n);
+    assert_eq!(layout.layers[0].y.len(), n);
+    assert_eq!(layout.layers[0].x.iter().filter(|v| v.is_nan()).count(), 4);
+}
+
+/// ggplot2 errors on text under a continuous scale ("Discrete value supplied to a continuous
+/// scale"); so does this.
+#[test]
+fn ggplot2_row4_text_in_continuous_scale_is_an_error() {
+    let df = frame_from_csv(include_str!("../../fixtures/ggplot2/scale_discrete/data.csv"), None);
+    let plot = point(df, "g", "y").scale_x(scale_continuous()).build().expect("plot builds");
+    assert!(matches!(plot.layout(), Err(crate::error::Error::ScaleDomain(_))));
+}
+
+/// ggplot2 returns an infinite range (`Inf, -Inf`) for a log axis whose data are all non-positive,
+/// which no panel can use; this crate refuses instead of returning it.
+#[test]
+fn ggplot2_row3_log_axis_without_positive_data_is_an_error() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[-1.0, -5.0, -2.0]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    let plot = point(df, "x", "y").scale_x(scale_log10()).build().expect("plot builds");
+    assert!(matches!(plot.layout(), Err(crate::error::Error::ScaleDomain(_))));
+}
+
+/// With explicit limits there is nothing to train on, so all-NA data is not an error: every row
+/// is NA and the panel is the limits (ggplot2: `limits = c(100, 200)` with data 1, 5, 20).
+#[test]
+fn ggplot2_row4_explicit_limits_need_no_finite_data() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[1.0, 5.0, 20.0]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    let layout = point(df, "x", "y")
+        .scale_x(scale_continuous().limits(100.0, 200.0))
+        .build()
+        .expect("plot builds")
+        .layout()
+        .expect("layout resolves");
+    assert!(layout.layers[0].x.iter().all(|v| v.is_nan()));
+    assert_eq!(layout.x.limits, (100.0, 200.0));
+    assert_close_slice(
+        "continuous_range",
+        &[layout.x.continuous_range.0, layout.x.continuous_range.1],
+        &[95.0, 205.0],
     );
 }

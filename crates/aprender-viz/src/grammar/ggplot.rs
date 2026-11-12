@@ -473,11 +473,11 @@ impl BuiltGGPlot {
     }
 
     /// The resolved x and y axes, trained on every layer's data and shaped by `scale_x`/`scale_y`.
-    fn resolved_axes(&self) -> (ResolvedAxis, ResolvedAxis) {
-        (
-            ResolvedAxis::resolve(self.x_scale.as_ref(), &self.axis_columns(true)),
-            ResolvedAxis::resolve(self.y_scale.as_ref(), &self.axis_columns(false)),
-        )
+    fn resolved_axes(&self) -> Result<(ResolvedAxis, ResolvedAxis)> {
+        Ok((
+            ResolvedAxis::resolve(self.x_scale.as_ref(), &self.axis_columns(true))?,
+            ResolvedAxis::resolve(self.y_scale.as_ref(), &self.axis_columns(false))?,
+        ))
     }
 
     /// The resolved plot, as ggplot2's `ggplot_build()` computes it: each layer's positions and
@@ -489,14 +489,16 @@ impl BuiltGGPlot {
     ///
     /// # Errors
     ///
-    /// None today; the signature leaves room for stats that can fail.
+    /// [`Error::ScaleDomain`] for text in a continuous scale, or a continuous axis with no finite
+    /// value to train on (ggplot2 would return an infinite range there).
     pub fn layout(&self) -> Result<BuiltLayout> {
-        let (x_axis, y_axis) = self.resolved_axes();
+        let (x_axis, y_axis) = self.resolved_axes()?;
         let layers = self.layers.iter().map(|l| self.build_layer(l, &x_axis, &y_axis)).collect();
         Ok(BuiltLayout { layers, x: x_axis.scale, y: y_axis.scale })
     }
 
-    /// One layer's built data: rows where both positions resolve, plus point aesthetics.
+    /// One layer's built data: every row (a position the scale cannot place is `NaN`, ggplot2's `NA`),
+    /// plus point aesthetics.
     fn build_layer(
         &self,
         layer: &Layer,
@@ -511,7 +513,9 @@ impl BuiltGGPlot {
         let (x, y): (Vec<f64>, Vec<f64>) = xs
             .iter()
             .zip(ys)
-            .filter_map(|(a, b)| Some((x_axis.map_value(a)?, y_axis.map_value(b)?)))
+            .map(|(a, b)| {
+                (x_axis.map_value(a).unwrap_or(f64::NAN), y_axis.map_value(b).unwrap_or(f64::NAN))
+            })
             .unzip();
 
         let points = match layer.geom.geom_type {

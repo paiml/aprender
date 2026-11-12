@@ -23,6 +23,10 @@ equations:
     invariants:
     - expansion(0) makes the panel exactly the limits
     - default is mult 0.05, add 0 on both sides
+    - 'a zero-width range (one point, all-equal data, limits = c(v, v)) is expanded as width 1: v +- (mult + add), 4.95..5.05 for v = 5 (scales::expand_range zero_width = 1)'
+    - 'reversed limits c(10, 0) are sorted to (0, 10)'
+    - 'values outside the limits, or non-positive on a log scale, map to NA: the row is kept as NaN'
+    - 'text under a continuous scale, or no limits and no finite data, is Err(ScaleDomain) (R errors on text; on no finite data R yields an infinite range, which aprender rejects deliberately)'
   explicit_breaks:
     formula: 'breaks = { b in breaks_arg : lo_c <= b <= hi_c }; labels_i = labels_arg[i] for kept i; minor = regular_minor_breaks(n = 2) inside [lo_c, hi_c]'
     domain: continuous_range, optional breaks and labels
@@ -57,6 +61,21 @@ falsification_tests:
   prediction: "mutating the censor test '<= hi' to '<= hi - 0.2' turns ggplot2_row4_scale_continuous_args RED (limits_no_expand_x puts a break at 10, the upper limit; measured: rows 3 and 4 FAILED)"
   test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
   if_fails: No fixture case has a break exactly on a limit
+- id: FALSIFY-GG4-003
+  rule: A zero-width range is expanded by width 1
+  prediction: "mutating ZERO_RANGE_WIDTH 1.0 -> 0.5 turns ggplot2_row4_scale_continuous_args (single_point, all_equal, limits_equal_x) RED (measured rc=101)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case has a zero-width range
+- id: FALSIFY-GG4-004
+  rule: Reversed limits are sorted
+  prediction: "mutating Some((lo.min(hi), lo.max(hi))) to Some((lo, hi)) in scale_spec.rs turns ggplot2_row4_scale_continuous_args (limits_reversed_x) RED (measured rc=101; this mutant survived before the case existed)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case has limits given high-to-low
+- id: FALSIFY-GG4-005
+  rule: Unplaceable rows stay as NA, on y as well as x
+  prediction: "mapping a y value outside the limits to 0.0 instead of NA turns ggplot2_row4_scale_continuous_args (limits_oob_na_y) RED (measured rc=101; survived before that case existed)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case puts a y value outside the limits
 qa_gate:
   id: F-GG4-001
   name: ggplot2 conformance row 4 (continuous limits, breaks, labels, expand)

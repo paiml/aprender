@@ -123,8 +123,9 @@ impl PositionScale {
     /// Train a continuous scale on `limits` and apply ggplot2's defaults: 5% expansion,
     /// `extended_breaks(n = 5)` over the expanded range, censored to it, labelled by `format()`.
     ///
-    /// A zero-width or empty range keeps this crate's earlier rule (widen by 1 each side, then
-    /// expand). ggplot2 widens a zero-width range by 0.5 instead; that case has no oracle row yet.
+    /// A zero-width range is expanded with width 1 for the multiplicative part (`scales::expand_range`,
+    /// `zero_width = 1`): a single value `v` spans `v +- 0.05`. Measured on ggplot2 4.0.3 and covered by
+    /// the row 2-4 fixtures. An empty (untrained) range spans 0..1, as ggplot2's empty scale does.
     #[must_use]
     pub fn continuous(limits: (f64, f64)) -> Self {
         resolve_continuous(limits, &ContinuousSpec::new())
@@ -151,10 +152,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn degenerate_range_is_widened_then_expanded() {
+    fn zero_width_range_spans_five_hundredths_each_side() {
         let s = PositionScale::continuous((5.0, 5.0));
-        assert!((s.continuous_range.0 - 3.9).abs() < 1e-12);
-        assert!((s.continuous_range.1 - 6.1).abs() < 1e-12);
+        assert!((s.continuous_range.0 - 4.95).abs() < 1e-12);
+        assert!((s.continuous_range.1 - 5.05).abs() < 1e-12);
+        assert_eq!(s.labels, ["4.950", "4.975", "5.000", "5.025", "5.050"]);
+    }
+
+    #[test]
+    fn empty_range_spans_zero_to_one() {
+        let s = PositionScale::continuous((f64::MAX, f64::MIN));
+        assert_eq!(s.limits, (0.0, 1.0));
+        assert!((s.continuous_range.0 + 0.05).abs() < 1e-12);
     }
 
     #[test]

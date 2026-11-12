@@ -27,7 +27,35 @@ cases <- list(
        plot = pt + scale_y_continuous(limits = c(-3, 8), breaks = c(0, 4, 8))),
   list(name = "add_expansion_y",
        spec = "ggplot(df, aes(x, y)) + geom_point() + scale_y_continuous(expand = expansion(add = 2))",
-       plot = pt + scale_y_continuous(expand = expansion(add = 2)))
+       plot = pt + scale_y_continuous(expand = expansion(add = 2))),
+  # Reversed limits: ggplot2 sorts them (limits = c(10, 0) is limits 0..10).
+  list(name = "limits_reversed_x",
+       spec = "ggplot(df, aes(x, y)) + geom_point() + scale_x_continuous(limits = c(10, 0))",
+       plot = pt + scale_x_continuous(limits = c(10, 0))),
+  # Values outside explicit limits become NA but the row stays in the layer data.
+  list(name = "limits_oob_na_x",
+       spec = "ggplot(df, aes(x, y)) + geom_point() + scale_x_continuous(limits = c(2, 8))",
+       plot = pt + scale_x_continuous(limits = c(2, 8))),
+  list(name = "limits_oob_na_y",
+       spec = "ggplot(df, aes(x, y)) + geom_point() + scale_y_continuous(limits = c(0, 4))",
+       plot = pt + scale_y_continuous(limits = c(0, 4))),
+  # Zero-width ranges: expand_range() uses a width of 1 for the multiplicative part, so the panel
+  # is value +- (1 * mult + add), i.e. 0.05 each side by default (not +-1 and not +-0.5).
+  list(name = "single_point",
+       spec = "ggplot(df[3, ], aes(x, y)) + geom_point()",
+       plot = ggplot(df[3, ], aes(x, y)) + geom_point(), rows = 3),
+  list(name = "all_equal",
+       spec = "ggplot(df[c(3, 3, 3), ], aes(x, y)) + geom_point()",
+       plot = ggplot(df[c(3, 3, 3), ], aes(x, y)) + geom_point(), rows = c(3, 3, 3)),
+  list(name = "limits_equal_x",
+       spec = "ggplot(df[1:3, ], aes(x, y)) + geom_point() + scale_x_continuous(limits = c(3, 3))",
+       plot = ggplot(df[1:3, ], aes(x, y)) + geom_point() + scale_x_continuous(limits = c(3, 3)),
+       rows = 1:3),
+  list(name = "single_point_add_expand",
+       spec = "ggplot(df[3, ], aes(x, y)) + geom_point() + scale_x_continuous(expand = expansion(mult = 0.1, add = 2))",
+       plot = ggplot(df[3, ], aes(x, y)) + geom_point() +
+         scale_x_continuous(expand = expansion(mult = 0.1, add = 2)), rows = 3)
+
 )
 
 write_cases_fixture(cases, row = "scale_continuous_args", data_file = "data.csv",

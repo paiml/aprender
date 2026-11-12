@@ -10,8 +10,11 @@
 //! level is a break, and labels are the level names. A single level spans `(0.4, 1.6)`: the
 //! same expansion applied to the zero-width range `(1, 1)` (measured, ggplot2 4.0.3).
 //!
-//! Levels sort by byte order. R sorts by locale collation, which agrees for ASCII lower-case names;
-//! mixed-case names may order differently from R on a non-C locale.
+//! Level order is collation order, and R's depends on the locale. The oracle is pinned to
+//! `LC_COLLATE=C` (`generate.R` sets it and the fixture records it), and the default order here is
+//! that one: byte order of the UTF-8 strings (`b, B, a, A, 10, 9, Zeta, alpha` sorts to
+//! `10, 9, A, B, Zeta, a, alpha, b`). Under `en_US.UTF-8` R orders such names differently
+//! (`10 9 a A alpha b B Zeta`); to get that, or any other order, give `limits` explicitly.
 
 use super::build::PositionScale;
 use super::scale_spec::Expansion;
@@ -68,7 +71,8 @@ impl DiscreteSpec {
     }
 }
 
-/// The sorted distinct values: the levels ggplot2 trains on a character column.
+/// The sorted distinct values: the levels ggplot2 trains on a character column, in R's `C`-locale
+/// order (byte order). Not case-insensitive: `"B"` sorts before `"a"`.
 #[must_use]
 pub fn train_levels<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut levels: Vec<String> = values.into_iter().map(str::to_owned).collect();
@@ -129,6 +133,15 @@ pub fn resolve_discrete(trained: Vec<String>, spec: &DiscreteSpec) -> PositionSc
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn levels_follow_c_locale_byte_order_not_case_insensitive() {
+        // ggplot2 4.0.3 under LC_COLLATE=C (fixture `x_mixed_case_levels`).
+        assert_eq!(
+            train_levels(["b", "B", "a", "A", "10", "9", "Zeta", "alpha"]),
+            ["10", "9", "A", "B", "Zeta", "a", "alpha", "b"]
+        );
+    }
 
     #[test]
     fn levels_sorted_and_distinct() {

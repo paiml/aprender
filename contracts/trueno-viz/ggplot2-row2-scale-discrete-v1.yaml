@@ -17,14 +17,15 @@ metadata:
   - 'crates/aprender-viz/fixtures/ggplot2/scale_discrete/generate.R'
 equations:
   discrete_range:
-    formula: 'continuous_range = (1 - (s*m_l + a_l), n + (s*m_u + a_u)), s = n - 1, default m = 0, a = 0.6'
+    formula: 'continuous_range = (1 - (s*m_l + a_l), n + (s*m_u + a_u)), s = n - 1 (width 1 when n = 1, scales::expand_range zero_width), default m = 0, a = 0.6'
     domain: n >= 1 levels
     codomain: (f64, f64)
     invariants:
     - the default panel of 3 levels spans (0.4, 3.6)
     - one level spans (0.4, 1.6), the expansion applied to the zero-width range (1, 1)
+    - 'default level order equals R''s under LC_COLLATE=C (byte order: B before a, 10 before 9, Zeta before alpha); the oracle is pinned to C and records collate in the fixture; any other order is given by explicit limits'
     preconditions:
-    - levels are the sorted distinct values unless limits are given
+    - levels are the distinct values sorted by byte order (the C locale), unless limits are given
   discrete_breaks:
     formula: 'breaks = intersect(breaks_arg or limits, limits); position(b) = 1 + index of b in limits; label_i = labels_arg[i] or b_i'
     domain: levels, optional breaks and labels
@@ -45,7 +46,7 @@ proof_obligations:
   applies_to: discrete_breaks
 enforcement:
   discrete_matches:
-    description: all seven discrete cases (defaults, limits, breaks, labels, expand, single level) equal ggplot2's
+    description: all discrete cases (defaults, limits, breaks, labels, expand, single level, mixed-case and digit levels under the C collation) equal ggplot2's
     check: grammar::ggplot2_oracle_scales::ggplot2_row2_scale_discrete
     severity: ERROR
 falsification_tests:
@@ -59,6 +60,11 @@ falsification_tests:
   prediction: "mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row2_scale_discrete RED (its continuous y axis) as well as rows 1, 3, 4 (measured: all five tests FAILED)"
   test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
   if_fails: Mixed discrete/continuous plots are not checking the continuous axis
+- id: FALSIFY-GG2-004
+  rule: Default level order is byte order (LC_COLLATE=C), not case-insensitive
+  prediction: "making the level sort case-insensitive (sort_by_key to_lowercase) turns ggplot2_row2_scale_discrete (x_mixed_case_levels) and scale_discrete::tests::levels_follow_c_locale_byte_order_not_case_insensitive RED (measured rc=101, both FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row2 (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: The fixture does not pin the collation, so en_US and C orders are indistinguishable
 qa_gate:
   id: F-GG2-001
   name: ggplot2 conformance row 2 (scale_x/y_discrete)
