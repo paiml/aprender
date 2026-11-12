@@ -1,0 +1,29 @@
+{
+  "row": "geom_violin",
+  "case": "layer_data",
+  "spec": "geom_point() + geom_violin(data = dl)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layer": {
+    "geom": "GeomViolin",
+    "n_rows": 515,
+    "n_groups": 1,
+    "rows_per_group": [515],
+    "columns": ["x", "density", "scaled", "ndensity", "count", "wdensity", "n", "y", "quantile", "PANEL", "group", "violinwidth", "flipped_aes", "width", "xmin", "xmax", "order", "ymax", "weight", "colour", "fill", "linewidth", "linetype", "alpha"],
+    "has_density": true
+  },
+  "panel": {
+    "y": {
+      "limits": [1, 15],
+      "continuous_range": [0.29999999999999993, 15.699999999999999],
+      "breaks": [4, 8, 12],
+      "labels": ["4", "8", "12"],
+      "n_breaks_censored": 2
+    }
+  }
+}

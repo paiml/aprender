@@ -42,8 +42,12 @@ mod ggplot;
 mod ggplot2_lines_oracle;
 #[cfg(test)]
 mod ggplot2_oracle;
+#[cfg(test)]
+mod ggplot2_shapes_oracle;
 mod path;
+mod shapes;
 mod stat;
+mod tdist;
 mod term;
 mod theme;
 
@@ -58,6 +62,7 @@ pub use facet::{panels, Facet, Panel};
 pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
+pub use shapes::{BuiltShape, ShapeKind};
 pub use stat::Stat;
 pub use term::{
     TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,

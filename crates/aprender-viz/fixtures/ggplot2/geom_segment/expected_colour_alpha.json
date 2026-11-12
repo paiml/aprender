@@ -1,0 +1,44 @@
+{
+  "row": "geom_segment",
+  "case": "colour_alpha",
+  "spec": "geom_segment(colour = 'red', alpha = 0.5)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomSegment",
+      "x": [1, 2, 3, 4, 6, 5],
+      "y": [2, 1, 4, 3, 5, 0.5],
+      "xend": [2, 3, 5, 4, 8, 0.25],
+      "yend": [3, 1, 2, 6, 4, 7],
+      "panel": [1, 1, 1, 1, 1, 1],
+      "group": [-1, -1, -1, -1, -1, -1],
+      "colour_rgba": [255, 0, 0, 255],
+      "linewidth": 0.5,
+      "linetype": 1,
+      "alpha": 0.5,
+      "n_rows": 6
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.25, 8],
+      "continuous_range": [-0.13750000000000001, 8.3874999999999993],
+      "breaks": [0, 2, 4, 6, 8],
+      "labels": ["0", "2", "4", "6", "8"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0.5, 7],
+      "continuous_range": [0.17499999999999999, 7.3250000000000002],
+      "breaks": [2, 4, 6],
+      "labels": ["2", "4", "6"],
+      "n_breaks_censored": 2
+    }
+  }
+}

@@ -27,6 +27,10 @@ pub struct Aes {
     pub group: Option<String>,
     /// Label mapping (column name).
     pub label: Option<String>,
+    /// Segment end x mapping (column name; `geom_segment`).
+    pub xend: Option<String>,
+    /// Segment end y mapping (column name; `geom_segment`).
+    pub yend: Option<String>,
 
     // Fixed values (not data-mapped)
     /// Fixed color value.
@@ -38,6 +42,20 @@ pub struct Aes {
 }
 
 impl Aes {
+    /// Map the segment end x to a column.
+    #[must_use]
+    pub fn xend(mut self, column: &str) -> Self {
+        self.xend = Some(column.to_string());
+        self
+    }
+
+    /// Map the segment end y to a column.
+    #[must_use]
+    pub fn yend(mut self, column: &str) -> Self {
+        self.yend = Some(column.to_string());
+        self
+    }
+
     /// Create a new aesthetic mapping.
     #[must_use]
     pub fn new() -> Self {
@@ -141,6 +159,8 @@ impl Aes {
             fill: other.fill.clone().or_else(|| self.fill.clone()),
             group: other.group.clone().or_else(|| self.group.clone()),
             label: other.label.clone().or_else(|| self.label.clone()),
+            xend: other.xend.clone().or_else(|| self.xend.clone()),
+            yend: other.yend.clone().or_else(|| self.yend.clone()),
             color_value: other.color_value.or(self.color_value),
             size_value: other.size_value.or(self.size_value),
             alpha_value: other.alpha_value.or(self.alpha_value),

@@ -18,6 +18,7 @@ use super::data::DataFrame;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
 use super::path;
+use super::shapes;
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -412,7 +413,9 @@ impl BuiltGGPlot {
         let (x, y, w, h) = grid.rect(p);
 
         // Panels share one domain, so marks stay comparable between them.
-        let (xs, ys) = self.position_scales();
+        let built: Vec<Option<BuiltLayer>> =
+            self.layers.iter().map(|l| self.build_layer(l).ok()).collect();
+        let (xs, ys) = self.position_scales(&built);
         let ((x_min, x_max), (y_min, y_max)) =
             apply_limits(&self.coord, xs.continuous_range, ys.continuous_range)?;
 
@@ -525,42 +528,58 @@ impl BuiltGGPlot {
     /// A column that is unmapped or absent leaves the accumulator untouched, which is how a layer
     /// that sets only `x` contributes nothing to the `y` range. Alignment is irrelevant here — only
     /// the extremes matter — so this reads the compacting accessor deliberately.
-    fn extend_range(acc: (f32, f32), data: &DataFrame, col: Option<&String>) -> (f32, f32) {
+    fn extend_range(acc: (f64, f64), data: &DataFrame, col: Option<&String>) -> (f64, f64) {
         let Some(col) = col else { return acc };
         let Some(values) = data.get_f32_present(col) else { return acc };
-        values.iter().filter(|v| v.is_finite()).fold(acc, |(lo, hi), &v| (lo.min(v), hi.max(v)))
+        values
+            .iter()
+            .filter(|v| v.is_finite())
+            .fold(acc, |(lo, hi), &v| (lo.min(f64::from(v)), hi.max(f64::from(v))))
+    }
+
+    /// What one layer contributes to the x and y scales, as `(lo, hi)` pairs; an empty range is
+    /// `(f64::MAX, f64::MIN)`, which merging with min/max leaves untouched.
+    fn layer_ranges(&self, layer: &Layer, built: Option<&BuiltLayer>) -> [(f64, f64); 2] {
+        const EMPTY: (f64, f64) = (f64::MAX, f64::MIN);
+        // Segment, polygon, raster and smooth layers train with what the stat and geom
+        // produced (a smooth layer trains with its fitted curve and band, never its points).
+        if let Some([bx, by]) = built.and_then(shapes::training_ranges) {
+            return [bx.unwrap_or(EMPTY), by.unwrap_or(EMPTY)];
+        }
+        // Reference lines do not inherit x/y; hline trains y and vline trains x with the
+        // intercept, abline trains neither (ggplot2: `inherit.aes = FALSE`).
+        match &layer.geom.geom_type {
+            GeomType::Hline { yintercept } if yintercept.is_finite() => {
+                let v = f64::from(*yintercept);
+                [EMPTY, (v, v)]
+            }
+            GeomType::Vline { xintercept } if xintercept.is_finite() => {
+                let v = f64::from(*xintercept);
+                [(v, v), EMPTY]
+            }
+            GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. } => {
+                [EMPTY, EMPTY]
+            }
+            _ => {
+                let data = layer.data.as_ref().unwrap_or(&self.data);
+                let layer_aes = self.aes.merge(&layer.aes);
+                [
+                    Self::extend_range(EMPTY, data, layer_aes.x.as_ref()),
+                    Self::extend_range(EMPTY, data, layer_aes.y.as_ref()),
+                ]
+            }
+        }
     }
 
     /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
-    fn position_scales(&self) -> (PositionScale, PositionScale) {
-        let mut x = (f32::MAX, f32::MIN);
-        let mut y = (f32::MAX, f32::MIN);
-
-        for layer in &self.layers {
-            // Reference lines do not inherit x/y; hline trains y and vline trains x with the
-            // intercept, abline trains neither (ggplot2: `inherit.aes = FALSE`).
-            match &layer.geom.geom_type {
-                GeomType::Hline { yintercept } if yintercept.is_finite() => {
-                    y = (y.0.min(*yintercept), y.1.max(*yintercept));
-                    continue;
-                }
-                GeomType::Vline { xintercept } if xintercept.is_finite() => {
-                    x = (x.0.min(*xintercept), x.1.max(*xintercept));
-                    continue;
-                }
-                GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. } => {
-                    continue
-                }
-                _ => {}
+    fn position_scales(&self, built: &[Option<BuiltLayer>]) -> (PositionScale, PositionScale) {
+        let mut acc = [(f64::MAX, f64::MIN); 2];
+        for (layer, built) in self.layers.iter().zip(built) {
+            for (a, r) in acc.iter_mut().zip(self.layer_ranges(layer, built.as_ref())) {
+                *a = (a.0.min(r.0), a.1.max(r.1));
             }
-            let data = layer.data.as_ref().unwrap_or(&self.data);
-            let layer_aes = self.aes.merge(&layer.aes);
-            x = Self::extend_range(x, data, layer_aes.x.as_ref());
-            y = Self::extend_range(y, data, layer_aes.y.as_ref());
         }
-
-        let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
-        (PositionScale::continuous(wide(x)), PositionScale::continuous(wide(y)))
+        (PositionScale::continuous(acc[0]), PositionScale::continuous(acc[1]))
     }
 
     /// The resolved plot, as ggplot2's `ggplot_build()` computes it: each layer's positions and
@@ -577,7 +596,8 @@ impl BuiltGGPlot {
     pub fn layout(&self) -> Result<BuiltLayout> {
         path::require_default_coord(&self.layers, &self.coord)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
-        let (x, y) = self.position_scales();
+        let trained: Vec<Option<BuiltLayer>> = layers.iter().cloned().map(Some).collect();
+        let (x, y) = self.position_scales(&trained);
         path::require_trained(&self.layers, &x, &y)?;
         Ok(BuiltLayout { layers, x, y })
     }
@@ -586,6 +606,9 @@ impl BuiltGGPlot {
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
+        if shapes::is_shape_geom(&layer.geom.geom_type) {
+            return shapes::build_layer(layer, &self.aes, &self.data, &self.facet);
         }
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
@@ -611,7 +634,7 @@ impl BuiltGGPlot {
             }
             _ => None,
         };
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, shape: None })
     }
 
     /// Draw the major grid lines, one per break of each position scale (ggplot2's

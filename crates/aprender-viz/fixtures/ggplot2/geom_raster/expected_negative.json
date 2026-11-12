@@ -1,0 +1,44 @@
+{
+  "row": "geom_raster",
+  "case": "negative",
+  "spec": "ggplot(dneg, aes(x, y)) + geom_raster()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRaster",
+      "x": [-4, -2, 0, 2],
+      "y": [-3, -3, -1, -1],
+      "xmin": [-5, -3, -1, 1],
+      "xmax": [-3, -1, 1, 3],
+      "ymin": [-4, -4, -2, -2],
+      "ymax": [-2, -2, 0, 0],
+      "panel": [1, 1, 1, 1],
+      "group": [-1, -1, -1, -1],
+      "fill_rgba": [51, 51, 51, 255],
+      "alpha": null,
+      "n_rows": 4
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-5, 3],
+      "continuous_range": [-5.4000000000000004, 3.3999999999999999],
+      "breaks": [-4, -2, 0, 2],
+      "labels": ["-4", "-2", "0", "2"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [-4, 0],
+      "continuous_range": [-4.2000000000000002, 0.20000000000000001],
+      "breaks": [-4, -3, -2, -1, 0],
+      "labels": ["-4", "-3", "-2", "-1", "0"],
+      "n_breaks_censored": 0
+    }
+  }
+}

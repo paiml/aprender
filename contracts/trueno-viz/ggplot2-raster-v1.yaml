@@ -1,0 +1,72 @@
+metadata:
+  id: ggplot2-raster-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row raster (PLOT-GG-001, paiml/aprender#6909, ticket #6982) - geom_raster. xmin/xmax and ymin/ymax come from the sorted distinct x and y values (even spacing, gaps allowed; one distinct value gives 1); default fill #333333FF.
+    Every case goes through the public builder and layout(); R is never run at test time. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation. Anything outside the scope returns a typed Err (Rendering, UnknownColumn, ScaleDomain or UnsupportedCoord), never a panic; a column shorter than its siblings is a typed error, never an NA-padded Ok. Any coordinate system but the default coord_cartesian (coord_flip, limits, polar, fixed) returns Err(UnsupportedCoord) because layout() applies none; any stat but the geom default, facets other than facet_wrap over a text column, data-mapped colour, size, shape, alpha, fill or label, and a fixed size return Err(Rendering). Tick labels are claimed exact only for non-zero data magnitude from 2^-8 (0.0039) to 10^4 (paiml/aprender#6958).
+    Scope: continuous numeric x and y; an explicit all-number or all-text group column; facet_wrap over a text column; fixed alpha. Unevenly spaced x or y is Err(Rendering) because ggplot2 warns and shifts those pixels. NA cells are kept in place.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_raster'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_raster/generate.R'
+equations:
+  raster_build:
+    formula: 'xmin = x - w/2, xmax = x + w/2 with w the even spacing of sorted distinct x (likewise y)'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: BuiltLayer.shape and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; labels (for non-zero data magnitude from 2^-8 to 10^4), colours, groups, panels and counts exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+proof_obligations:
+- id: GGRAS-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact labels, colours, groups, panels)'
+  applies_to: raster_build
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::raster::plain_derives_pixel_edges_from_even_spacing_with_gaps
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and facet fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::raster::numeric_group_ids_rank_sorted_values
+    severity: ERROR
+  edge_cases:
+    description: edge fixtures are reproduced or refused with a typed Err
+    check: grammar::ggplot2_shapes_oracle::raster::uneven_spacing_is_refused_and_the_fixture_proves_it_is_uneven
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGRAS-001
+  rule: Pixel edges are half a pixel either side
+  prediction: using a full pixel instead of half turns raster::plain_derives_pixel_edges_from_even_spacing_with_gaps RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::raster::plain_derives_pixel_edges_from_even_spacing_with_gaps
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRAS-002
+  rule: Uneven spacing is refused
+  prediction: accepting uneven spacing turns raster::uneven_spacing_is_refused_and_the_fixture_proves_it_is_uneven RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::raster::uneven_spacing_is_refused_and_the_fixture_proves_it_is_uneven
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRAS-003
+  rule: One distinct value gives a unit pixel
+  prediction: a zero pixel size turns raster::one_distinct_value_gives_a_unit_pixel RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::raster::one_distinct_value_gives_a_unit_pixel
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRAS-004
+  rule: Non-default coordinate systems are refused
+  prediction: removing the require_default_coord call in GGPlot::layout turns robustness::every_non_default_coord_is_refused_for_every_geom RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::robustness::every_non_default_coord_is_refused_for_every_geom
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGRAS
+  name: ggplot2 conformance row raster
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the raster fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

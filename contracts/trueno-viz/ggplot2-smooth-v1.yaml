@@ -1,0 +1,82 @@
+metadata:
+  id: ggplot2-smooth-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row smooth (PLOT-GG-001, paiml/aprender#6909, ticket #6983) - geom_smooth(method = lm). stat_smooth with formula y ~ x, n = 80, level = 0.95: per panel and group (panels, then groups, ascending) an 80-point grid seq(min x, max x), the least-squares fit, and with se = TRUE ymin/ymax = fit -/+ qt(0.975, n - 2) * se and the column se. Scales train on the fitted curve and band, never the raw points. NA rows are removed before the fit.
+    Every case goes through the public builder and layout(); R is never run at test time. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation. Anything outside the scope returns a typed Err (Rendering, UnknownColumn, ScaleDomain or UnsupportedCoord), never a panic; a column shorter than its siblings is a typed error, never an NA-padded Ok. Any coordinate system but the default coord_cartesian (coord_flip, limits, polar, fixed) returns Err(UnsupportedCoord) because layout() applies none; any stat but the geom default, facets other than facet_wrap over a text column, data-mapped colour, size, shape, alpha, fill or label, and a fixed size return Err(Rendering). Tick labels are claimed exact only for non-zero data magnitude from 2^-8 (0.0039) to 10^4 (paiml/aprender#6958).
+    Scope: method = lm only (formula y ~ x), continuous double x. Loess (R's auto) and other methods, a group with fewer than two distinct x (R drops it silently) and se = TRUE with fewer than three rows in a group (R returns NaN) are Err(Rendering); the Student-t quantile is implemented in-tree and compared with R's qt across df 1 to 100000.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_smooth'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_smooth/generate.R'
+equations:
+  smooth_lm:
+    formula: 'fit = ybar + b (x - xbar); band = fit -/+ qt(0.975, n - 2) sqrt(s2 (1/n + (x - xbar)^2 / Sxx))'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: BuiltLayer.shape and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; labels (for non-zero data magnitude from 2^-8 to 10^4), colours, groups, panels and counts exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+proof_obligations:
+- id: GGSMO-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact labels, colours, groups, panels)'
+  applies_to: smooth_lm
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::smooth::se_true_adds_the_t_band_and_trains_the_scale_with_it
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and facet fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::smooth::groups_fit_separately_in_ascending_order
+    severity: ERROR
+  edge_cases:
+    description: edge fixtures are reproduced or refused with a typed Err
+    check: grammar::ggplot2_shapes_oracle::smooth::groups_ggplot2_drops_or_nans_are_refused
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGSMO-001
+  rule: The band uses the Student-t quantile
+  prediction: using the normal quantile 1.96 turns smooth::se_true_adds_the_t_band_and_trains_the_scale_with_it and smooth::student_t_quantile_matches_r_across_degrees_of_freedom RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::smooth::se_true_adds_the_t_band_and_trains_the_scale_with_it grammar::ggplot2_shapes_oracle::smooth::student_t_quantile_matches_r_across_degrees_of_freedom
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSMO-002
+  rule: The grid has 80 points
+  prediction: changing the grid size turns smooth::se_false_is_the_fitted_line_on_an_80_point_grid RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::smooth::se_false_is_the_fitted_line_on_an_80_point_grid
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSMO-003
+  rule: NA rows are removed before the fit
+  prediction: keeping NA rows in the fit turns smooth::na_rows_are_removed_before_the_fit RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::smooth::na_rows_are_removed_before_the_fit
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSMO-004
+  rule: Loess is refused
+  prediction: accepting loess turns smooth::loess_and_other_methods_are_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::smooth::loess_and_other_methods_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSMO-005
+  rule: Scales train on the band
+  prediction: training only the fitted line turns smooth::se_true_adds_the_t_band_and_trains_the_scale_with_it RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::smooth::se_true_adds_the_t_band_and_trains_the_scale_with_it
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSMO-006
+  rule: Non-default coordinate systems are refused
+  prediction: removing the require_default_coord call in GGPlot::layout turns robustness::every_non_default_coord_is_refused_for_every_geom RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::robustness::every_non_default_coord_is_refused_for_every_geom
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGSMO
+  name: ggplot2 conformance row smooth
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the smooth fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

@@ -1,0 +1,44 @@
+{
+  "row": "geom_raster",
+  "case": "fractional",
+  "spec": "ggplot(dfr, aes(x, y)) + geom_raster()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRaster",
+      "x": [0.5, 1, 1.5, 2],
+      "y": [0.25, 0.25, 0.5, 0.75],
+      "xmin": [0.25, 0.75, 1.25, 1.75],
+      "xmax": [0.75, 1.25, 1.75, 2.25],
+      "ymin": [0.125, 0.125, 0.375, 0.625],
+      "ymax": [0.375, 0.375, 0.625, 0.875],
+      "panel": [1, 1, 1, 1],
+      "group": [-1, -1, -1, -1],
+      "fill_rgba": [51, 51, 51, 255],
+      "alpha": null,
+      "n_rows": 4
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.25, 2.25],
+      "continuous_range": [0.14999999999999999, 2.3500000000000001],
+      "breaks": [0.5, 1, 1.5, 2],
+      "labels": ["0.5", "1.0", "1.5", "2.0"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [0.125, 0.875],
+      "continuous_range": [0.087499999999999994, 0.91249999999999998],
+      "breaks": [0.25, 0.5, 0.75],
+      "labels": ["0.25", "0.50", "0.75"],
+      "n_breaks_censored": 2
+    }
+  }
+}

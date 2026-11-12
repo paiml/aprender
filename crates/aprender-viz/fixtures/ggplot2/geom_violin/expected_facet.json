@@ -1,0 +1,29 @@
+{
+  "row": "geom_violin",
+  "case": "facet",
+  "spec": "ggplot(df, aes(g, y)) + geom_violin() + facet_wrap(~f)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layer": {
+    "geom": "GeomViolin",
+    "n_rows": 3090,
+    "n_groups": 3,
+    "rows_per_group": [1030, 1030, 1030],
+    "columns": ["x", "density", "scaled", "ndensity", "count", "wdensity", "n", "y", "quantile", "PANEL", "group", "violinwidth", "flipped_aes", "width", "xmin", "xmax", "order", "ymax", "weight", "colour", "fill", "linewidth", "linetype", "alpha"],
+    "has_density": true
+  },
+  "panel": {
+    "y": {
+      "limits": [1, 9],
+      "continuous_range": [0.59999999999999998, 9.4000000000000004],
+      "breaks": [2.5, 5, 7.5],
+      "labels": ["2.5", "5.0", "7.5"],
+      "n_breaks_censored": 2
+    }
+  }
+}

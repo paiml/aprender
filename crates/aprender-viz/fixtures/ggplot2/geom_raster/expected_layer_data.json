@@ -1,0 +1,57 @@
+{
+  "row": "geom_raster",
+  "case": "layer_data",
+  "spec": "geom_point() + geom_raster(data = dl)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomPoint",
+      "x": [0, 4],
+      "y": [0, 60],
+      "shape": [19, 19],
+      "size": [1.5, 1.5],
+      "stroke": [0.5, 0.5],
+      "panel": [1, 1],
+      "group": [-1, -1],
+      "colour_rgba": [0, 0, 0, 255],
+      "alpha": null,
+      "n_rows": 2
+    },
+    {
+      "geom": "GeomRaster",
+      "x": [5, 6],
+      "y": [40, 50],
+      "xmin": [4.5, 5.5],
+      "xmax": [5.5, 6.5],
+      "ymin": [35, 45],
+      "ymax": [45, 55],
+      "panel": [1, 1],
+      "group": [-1, -1],
+      "fill_rgba": [51, 51, 51, 255],
+      "alpha": null,
+      "n_rows": 2
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0, 6.5],
+      "continuous_range": [-0.32500000000000001, 6.8250000000000002],
+      "breaks": [0, 2, 4, 6],
+      "labels": ["0", "2", "4", "6"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 60],
+      "continuous_range": [-3, 63],
+      "breaks": [0, 20, 40, 60],
+      "labels": ["0", "20", "40", "60"],
+      "n_breaks_censored": 0
+    }
+  }
+}

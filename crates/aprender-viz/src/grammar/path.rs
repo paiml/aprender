@@ -128,7 +128,7 @@ fn is_reference(g: &GeomType) -> bool {
     matches!(g, GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. })
 }
 
-fn refuse(msg: impl Into<String>) -> Error {
+pub(super) fn refuse(msg: impl Into<String>) -> Error {
     Error::Rendering(msg.into())
 }
 
@@ -137,22 +137,24 @@ fn refuse(msg: impl Into<String>) -> Error {
 /// fixed all change ggplot2's `panel_params`), so answering with the default numbers would be
 /// silently wrong.
 pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| {
+        is_path_family(&l.geom.geom_type) || super::shapes::is_shape_geom(&l.geom.geom_type)
+    }) {
         return Ok(());
     }
     match coord {
         Coord::Cartesian { xlim: None, ylim: None, flip: false } => Ok(()),
         Coord::Cartesian { flip: true, .. } => Err(Error::UnsupportedCoord(
-            "coord_flip with line, path, step or reference layers: layout() does not flip",
+            "coord_flip with line, path, step, reference, segment, polygon, raster, smooth or violin layers: layout() does not flip",
         )),
         Coord::Cartesian { .. } => Err(Error::UnsupportedCoord(
-            "coord_cartesian limits with line, path, step or reference layers: layout() does not apply them",
+            "coord_cartesian limits with line, path, step, reference, segment, polygon, raster, smooth or violin layers: layout() does not apply them",
         )),
         Coord::Polar { .. } => Err(Error::UnsupportedCoord(
-            "coord_polar with line, path, step or reference layers",
+            "coord_polar with line, path, step, reference, segment, polygon, raster, smooth or violin layers",
         )),
         Coord::Fixed { .. } => Err(Error::UnsupportedCoord(
-            "coord_fixed with line, path, step or reference layers",
+            "coord_fixed with line, path, step, reference, segment, polygon, raster, smooth or violin layers",
         )),
     }
 }
@@ -163,7 +165,9 @@ pub(super) fn require_trained(
     x: &PositionScale,
     y: &PositionScale,
 ) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| {
+        is_path_family(&l.geom.geom_type) || super::shapes::is_shape_geom(&l.geom.geom_type)
+    }) {
         return Ok(());
     }
     for (axis, s) in [("x", x), ("y", y)] {
@@ -210,7 +214,13 @@ pub(super) fn build_layer(
                 slope: slope.map_or_else(Vec::new, |s| vec![s; n]),
             }),
         };
-        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path) });
+        return Ok(BuiltLayer {
+            x: vec![],
+            y: vec![],
+            points: None,
+            path: Some(path),
+            shape: None,
+        });
     }
 
     let own = layer.data.is_some();
@@ -245,7 +255,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path) })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), shape: None })
 }
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {
@@ -293,7 +303,7 @@ fn require_text_facet(data: &DataFrame, var: &str) -> Result<()> {
     Ok(())
 }
 
-fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
+pub(super) fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
     match facet {
         Facet::None => Ok(vec![Panel { levels: vec![], row: 0, col: 0, rows: vec![] }]),
         Facet::Wrap { var, .. } => {
@@ -305,7 +315,12 @@ fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
 }
 
 /// The 0-based panel index of every row of `data`.
-fn row_panels(facet: &Facet, global: &[Panel], data: &DataFrame, own: bool) -> Result<Vec<usize>> {
+pub(super) fn row_panels(
+    facet: &Facet,
+    global: &[Panel],
+    data: &DataFrame,
+    own: bool,
+) -> Result<Vec<usize>> {
     let mut out = vec![0; data.nrow()];
     let Facet::Wrap { var, .. } = facet else { return Ok(out) };
     let mine;
@@ -346,7 +361,7 @@ fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
 }
 
 /// ggplot2's group ids: 1-based rank of the sorted distinct value, or -1 when unmapped.
-fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
+pub(super) fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
     let n = data.nrow();
     let Some(name) = aes.group.as_deref() else { return Ok(vec![-1; n]) };
     let col =

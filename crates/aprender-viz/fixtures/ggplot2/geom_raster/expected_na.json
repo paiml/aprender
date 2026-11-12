@@ -1,0 +1,44 @@
+{
+  "row": "geom_raster",
+  "case": "na",
+  "spec": "ggplot(dna, aes(x, y)) + geom_raster()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRaster",
+      "x": [1, 2, null, 3, 4],
+      "y": [10, null, 20, 20, 30],
+      "xmin": [0.5, 1.5, null, 2.5, 3.5],
+      "xmax": [1.5, 2.5, null, 3.5, 4.5],
+      "ymin": [5, null, 15, 15, 25],
+      "ymax": [15, null, 25, 25, 35],
+      "panel": [1, 1, 1, 1, 1],
+      "group": [-1, -1, -1, -1, -1],
+      "fill_rgba": [51, 51, 51, 255],
+      "alpha": null,
+      "n_rows": 5
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.5, 4.5],
+      "continuous_range": [0.29999999999999999, 4.7000000000000002],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["1", "2", "3", "4"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [5, 35],
+      "continuous_range": [3.5, 36.5],
+      "breaks": [10, 20, 30],
+      "labels": ["10", "20", "30"],
+      "n_breaks_censored": 2
+    }
+  }
+}

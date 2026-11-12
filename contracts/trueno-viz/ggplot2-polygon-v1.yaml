@@ -1,0 +1,72 @@
+metadata:
+  id: ggplot2-polygon-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row polygon (PLOT-GG-001, paiml/aprender#6909, ticket #6981) - geom_polygon. Rows keep data order (ggplot2 does not sort them); default fill #333333FF, colour NA, linewidth 0.5.
+    Every case goes through the public builder and layout(); R is never run at test time. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation. Anything outside the scope returns a typed Err (Rendering, UnknownColumn, ScaleDomain or UnsupportedCoord), never a panic; a column shorter than its siblings is a typed error, never an NA-padded Ok. Any coordinate system but the default coord_cartesian (coord_flip, limits, polar, fixed) returns Err(UnsupportedCoord) because layout() applies none; any stat but the geom default, facets other than facet_wrap over a text column, data-mapped colour, size, shape, alpha, fill or label, and a fixed size return Err(Rendering). Tick labels are claimed exact only for non-zero data magnitude from 2^-8 (0.0039) to 10^4 (paiml/aprender#6958).
+    Scope: continuous numeric x and y; an explicit all-number or all-text group column (two-row groups included); facet_wrap over a text column; fixed colour and alpha. NA cells are kept in place as ggplot_build() keeps them. Text or infinite positions and a column shorter than its siblings are Err(Rendering).
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_polygon'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_polygon/generate.R'
+equations:
+  polygon_build:
+    formula: 'rows = data order; default fill grey20'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: BuiltLayer.shape and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; labels (for non-zero data magnitude from 2^-8 to 10^4), colours, groups, panels and counts exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+proof_obligations:
+- id: GGPOLY-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact labels, colours, groups, panels)'
+  applies_to: polygon_build
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::polygon::plain_keeps_data_order_and_default_fill
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and facet fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::polygon::two_row_groups
+    severity: ERROR
+  edge_cases:
+    description: edge fixtures are reproduced or refused with a typed Err
+    check: grammar::ggplot2_shapes_oracle::polygon::na_rows_are_kept_in_place
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGPOLY-001
+  rule: Default fill is grey20
+  prediction: changing the default fill turns polygon::plain_keeps_data_order_and_default_fill RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::polygon::plain_keeps_data_order_and_default_fill
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGPOLY-002
+  rule: NA rows are kept
+  prediction: dropping NA rows turns polygon::na_rows_are_kept_in_place RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::polygon::na_rows_are_kept_in_place
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGPOLY-003
+  rule: Non-default coordinate systems are refused
+  prediction: removing the require_default_coord call in GGPlot::layout turns robustness::every_non_default_coord_is_refused_for_every_geom RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::robustness::every_non_default_coord_is_refused_for_every_geom
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGPOLY-004
+  rule: A non-default stat is refused
+  prediction: accepting any stat turns robustness::a_non_default_stat_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::robustness::a_non_default_stat_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGPOLY
+  name: ggplot2 conformance row polygon
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the polygon fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

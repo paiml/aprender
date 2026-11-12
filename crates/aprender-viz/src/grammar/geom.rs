@@ -98,10 +98,18 @@ pub enum GeomType {
         /// Intercept.
         intercept: f32,
     },
+    /// Line segments from `(x, y)` to `(xend, yend)` (`geom_segment`).
+    Segment,
+    /// Filled polygons (`geom_polygon`).
+    Polygon,
+    /// Raster of equally sized cells (`geom_raster`).
+    Raster,
     /// Smooth curve (loess/lm).
     Smooth {
         /// Smoothing method.
         method: SmoothMethod,
+        /// Draw the confidence band (`se = TRUE`, ggplot2's default).
+        se: bool,
     },
 }
 
@@ -240,10 +248,46 @@ impl Geom {
     #[must_use]
     pub fn smooth() -> Self {
         Self {
-            geom_type: GeomType::Smooth { method: SmoothMethod::Loess },
+            geom_type: GeomType::Smooth { method: SmoothMethod::Loess, se: true },
             aes: None,
             stat: Some(Stat::Smooth),
         }
+    }
+
+    /// Create a segment geometry (`geom_segment`; maps `xend` and `yend`).
+    #[must_use]
+    pub fn segment() -> Self {
+        Self { geom_type: GeomType::Segment, aes: None, stat: None }
+    }
+
+    /// Create a polygon geometry (`geom_polygon`).
+    #[must_use]
+    pub fn polygon() -> Self {
+        Self { geom_type: GeomType::Polygon, aes: None, stat: None }
+    }
+
+    /// Create a raster geometry (`geom_raster`).
+    #[must_use]
+    pub fn raster() -> Self {
+        Self { geom_type: GeomType::Raster, aes: None, stat: None }
+    }
+
+    /// Set the smoothing method of a smooth geometry.
+    #[must_use]
+    pub fn method(mut self, method: SmoothMethod) -> Self {
+        if let GeomType::Smooth { method: ref mut m, .. } = self.geom_type {
+            *m = method;
+        }
+        self
+    }
+
+    /// Show (`true`, the default) or hide the confidence band of a smooth geometry.
+    #[must_use]
+    pub fn se(mut self, se: bool) -> Self {
+        if let GeomType::Smooth { se: ref mut s, .. } = self.geom_type {
+            *s = se;
+        }
+        self
     }
 
     /// Set the point shape.
@@ -438,7 +482,7 @@ mod tests {
     fn test_geom_smooth() {
         let g = Geom::smooth();
         match g.geom_type {
-            GeomType::Smooth { method } => assert_eq!(method, SmoothMethod::Loess),
+            GeomType::Smooth { method, .. } => assert_eq!(method, SmoothMethod::Loess),
             _ => panic!("Expected smooth geom"),
         }
         assert!(g.stat.is_some());
@@ -562,8 +606,8 @@ mod tests {
             GeomType::Text,
             GeomType::Hline { yintercept: 0.0 },
             GeomType::Vline { xintercept: 0.0 },
-            GeomType::Smooth { method: SmoothMethod::Loess },
-            GeomType::Smooth { method: SmoothMethod::Linear },
+            GeomType::Smooth { method: SmoothMethod::Loess, se: true },
+            GeomType::Smooth { method: SmoothMethod::Linear, se: true },
         ];
         for t in types {
             let debug = format!("{t:?}");

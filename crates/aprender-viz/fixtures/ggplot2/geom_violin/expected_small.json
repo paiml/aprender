@@ -1,0 +1,29 @@
+{
+  "row": "geom_violin",
+  "case": "small",
+  "spec": "ggplot(dsm, aes(g, y)) + geom_violin()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layer": {
+    "geom": "GeomViolin",
+    "n_rows": 1030,
+    "n_groups": 2,
+    "rows_per_group": [515, 515],
+    "columns": ["x", "density", "scaled", "ndensity", "count", "wdensity", "n", "y", "quantile", "PANEL", "group", "violinwidth", "flipped_aes", "width", "xmin", "xmax", "order", "ymax", "weight", "colour", "fill", "linewidth", "linetype", "alpha"],
+    "has_density": true
+  },
+  "panel": {
+    "y": {
+      "limits": [1, 5],
+      "continuous_range": [0.80000000000000004, 5.2000000000000002],
+      "breaks": [1, 2, 3, 4, 5],
+      "labels": ["1", "2", "3", "4", "5"],
+      "n_breaks_censored": 0
+    }
+  }
+}

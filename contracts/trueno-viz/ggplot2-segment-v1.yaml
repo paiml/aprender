@@ -1,0 +1,72 @@
+metadata:
+  id: ggplot2-segment-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row segment (PLOT-GG-001, paiml/aprender#6909, ticket #6980) - geom_segment. Rows keep data order (ggplot2 does not sort them); xend and yend, like x and y, train the position scales.
+    Every case goes through the public builder and layout(); R is never run at test time. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation. Anything outside the scope returns a typed Err (Rendering, UnknownColumn, ScaleDomain or UnsupportedCoord), never a panic; a column shorter than its siblings is a typed error, never an NA-padded Ok. Any coordinate system but the default coord_cartesian (coord_flip, limits, polar, fixed) returns Err(UnsupportedCoord) because layout() applies none; any stat but the geom default, facets other than facet_wrap over a text column, data-mapped colour, size, shape, alpha, fill or label, and a fixed size return Err(Rendering). Tick labels are claimed exact only for non-zero data magnitude from 2^-8 (0.0039) to 10^4 (paiml/aprender#6958).
+    Scope: continuous numeric x, y, xend, yend; an explicit all-number or all-text group column; facet_wrap over a text column; fixed colour and alpha. A missing xend or yend column is Err(UnknownColumn); text or infinite positions and a column shorter than its siblings are Err(Rendering). NA cells are kept in place as ggplot_build() keeps them.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_segment'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_segment/generate.R'
+equations:
+  segment_build:
+    formula: 'rows = data order; x/xend/y/yend train the scales'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: BuiltLayer.shape and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; labels (for non-zero data magnitude from 2^-8 to 10^4), colours, groups, panels and counts exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+proof_obligations:
+- id: GGSEG-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact labels, colours, groups, panels)'
+  applies_to: segment_build
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::segment::plain_keeps_data_order_and_trains_the_end_positions
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and facet fixtures are reproduced
+    check: grammar::ggplot2_shapes_oracle::segment::numeric_group_ids_rank_sorted_values
+    severity: ERROR
+  edge_cases:
+    description: edge fixtures are reproduced or refused with a typed Err
+    check: grammar::ggplot2_shapes_oracle::segment::a_missing_end_column_is_a_typed_error
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGSEG-001
+  rule: xend and yend train the scales
+  prediction: not training the scales with xend and yend turns segment::plain_keeps_data_order_and_trains_the_end_positions RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::segment::plain_keeps_data_order_and_trains_the_end_positions
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSEG-002
+  rule: Group ids rank the sorted values
+  prediction: numbering groups in first-seen order turns segment::numeric_group_ids_rank_sorted_values RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::segment::numeric_group_ids_rank_sorted_values
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSEG-003
+  rule: Non-default coordinate systems are refused
+  prediction: removing the require_default_coord call in GGPlot::layout turns robustness::every_non_default_coord_is_refused_for_every_geom RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::robustness::every_non_default_coord_is_refused_for_every_geom
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGSEG-004
+  rule: A short column is a typed error
+  prediction: padding a short column with NA turns robustness::a_short_column_is_a_typed_error_never_padded RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_shapes_oracle::robustness::a_short_column_is_a_typed_error_never_padded
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGSEG
+  name: ggplot2 conformance row segment
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the segment fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

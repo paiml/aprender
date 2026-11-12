@@ -1,0 +1,57 @@
+{
+  "row": "geom_segment",
+  "case": "layer_data",
+  "spec": "geom_point() + geom_segment(data = dl)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomPoint",
+      "x": [1, 5],
+      "y": [2, 6],
+      "shape": [19, 19],
+      "size": [1.5, 1.5],
+      "stroke": [0.5, 0.5],
+      "panel": [1, 1],
+      "group": [-1, -1],
+      "colour_rgba": [0, 0, 0, 255],
+      "alpha": null,
+      "n_rows": 2
+    },
+    {
+      "geom": "GeomSegment",
+      "x": [-4, 8],
+      "y": [10, -3],
+      "xend": [-2, 9],
+      "yend": [12.5, 0],
+      "panel": [1, 1],
+      "group": [-1, -1],
+      "colour_rgba": [0, 0, 0, 255],
+      "linewidth": 0.5,
+      "linetype": 1,
+      "alpha": null,
+      "n_rows": 2
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-4, 9],
+      "continuous_range": [-4.6500000000000004, 9.6500000000000004],
+      "breaks": [0, 5],
+      "labels": ["0", "5"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [-3, 12.5],
+      "continuous_range": [-3.7749999999999999, 13.275],
+      "breaks": [0, 5, 10],
+      "labels": ["0", "5", "10"],
+      "n_breaks_censored": 2
+    }
+  }
+}

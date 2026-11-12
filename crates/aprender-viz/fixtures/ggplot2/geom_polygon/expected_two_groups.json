@@ -1,0 +1,42 @@
+{
+  "row": "geom_polygon",
+  "case": "two_groups",
+  "spec": "ggplot(dtwo, aes(x, y, group = gn)) + geom_polygon()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomPolygon",
+      "x": [1, 3, 3, 1, 5, 7, 6],
+      "y": [1, 1, 3, 3, 5, 5, 7],
+      "panel": [1, 1, 1, 1, 1, 1, 1],
+      "group": [1, 1, 1, 1, 2, 2, 2],
+      "fill_rgba": [51, 51, 51, 255],
+      "linewidth": 0.5,
+      "linetype": 1,
+      "alpha": null,
+      "n_rows": 7
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 7],
+      "continuous_range": [0.69999999999999996, 7.2999999999999998],
+      "breaks": [2, 4, 6],
+      "labels": ["2", "4", "6"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [1, 7],
+      "continuous_range": [0.69999999999999996, 7.2999999999999998],
+      "breaks": [2, 4, 6],
+      "labels": ["2", "4", "6"],
+      "n_breaks_censored": 2
+    }
+  }
+}

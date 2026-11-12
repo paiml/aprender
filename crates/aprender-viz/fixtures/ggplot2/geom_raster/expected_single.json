@@ -1,0 +1,44 @@
+{
+  "row": "geom_raster",
+  "case": "single",
+  "spec": "ggplot(dsi, aes(x, y)) + geom_raster()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRaster",
+      "x": [3],
+      "y": [7],
+      "xmin": [2.5],
+      "xmax": [3.5],
+      "ymin": [6.5],
+      "ymax": [7.5],
+      "panel": [1],
+      "group": [-1],
+      "fill_rgba": [51, 51, 51, 255],
+      "alpha": null,
+      "n_rows": 1
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [2.5, 3.5],
+      "continuous_range": [2.4500000000000002, 3.5499999999999998],
+      "breaks": [2.5, 2.75, 3, 3.25, 3.5],
+      "labels": ["2.50", "2.75", "3.00", "3.25", "3.50"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [6.5, 7.5],
+      "continuous_range": [6.4500000000000002, 7.5499999999999998],
+      "breaks": [6.5, 6.75, 7, 7.25, 7.5],
+      "labels": ["6.50", "6.75", "7.00", "7.25", "7.50"],
+      "n_breaks_censored": 0
+    }
+  }
+}

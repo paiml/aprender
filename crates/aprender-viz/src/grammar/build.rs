@@ -11,6 +11,7 @@ use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::color::Rgba;
 
 use super::path::BuiltPath;
+use super::shapes::BuiltShape;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
@@ -93,6 +94,9 @@ pub struct BuiltLayer {
     /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
     /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
     pub path: Option<BuiltPath>,
+    /// Resolved segment, polygon, raster or smooth data; `None` for other geoms. For these layers
+    /// `x`/`y` hold the layer's `x`/`y` columns (a smooth layer's are the fitted curve).
+    pub shape: Option<BuiltShape>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).
