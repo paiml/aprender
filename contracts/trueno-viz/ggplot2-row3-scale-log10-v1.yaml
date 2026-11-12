@@ -1,0 +1,72 @@
+metadata:
+  id: ggplot2-row3-scale-log10-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 3 (PLOT-GG-001, paiml/aprender#6909) - scale_x_log10 and
+    scale_y_log10. aprender-viz's BuiltGGPlot::layout() must reproduce what ggplot_build() in
+    ggplot2 4.0.3 computes: layer positions, limits, the 5% expansion and the breaks all in
+    log10 space, scales::breaks_log breaks (decades, or 1-2-5 style sub-breaks for a narrow
+    range), R format() labels in data space (fixed or scientific, whichever is narrower), and
+    minor breaks. The oracle is a committed JSON fixture produced by R; R is never run at test time.
+  references:
+  - 'ggplot2 4.0.3: scale_x_log10(), transform_log10(), expand_range4()'
+  - 'scales 1.4.0: breaks_log(), log_sub_breaks(), regular_minor_breaks()'
+  - 'R 4.6.2: format() / formatReal'
+  - 'crates/aprender-viz/fixtures/ggplot2/scale_log10/generate.R'
+equations:
+  log_space_expansion:
+    formula: 'limits = (log10 lo, log10 hi); continuous_range = (l - 0.05*(h-l), h + 0.05*(h-l)) in log10 space'
+    domain: data > 0 (non-positive values are dropped)
+    codomain: (f64, f64)
+    invariants:
+    - the expansion is applied in transformed space, never to the raw data range
+    - positions, limits and breaks are log10 values
+  log_breaks:
+    formula: 'breaks = breaks_log(n = 5, base = 10)(10^range); kept = { b : lo_c <= b <= hi_c }; label = format(10^b)'
+    domain: continuous_range in log10 space
+    codomain: (Vec<f64>, Vec<String>)
+    invariants:
+    - a break exactly on a panel limit is kept (inclusive censoring)
+    - a range under a few decades gets sub-breaks (2, 3, 5 multiples)
+    - labels switch to scientific notation (1e+02) when narrower than fixed
+proof_obligations:
+- id: GG3-INV-001
+  type: invariant
+  property: Log-space limits and expanded range match ggplot2
+  formal: '∀ axis: limits ≈ ggplot2.limits ∧ continuous_range ≈ ggplot2.continuous_range (1e-9 rel + 1e-12 abs)'
+  applies_to: log_space_expansion
+- id: GG3-INV-002
+  type: invariant
+  property: Log breaks, labels, censored count and minor breaks match ggplot2
+  formal: '∀ axis: breaks ≈ ggplot2.breaks ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored ∧ minor_breaks ≈ ggplot2.minor_breaks'
+  applies_to: log_breaks
+enforcement:
+  log10_matches:
+    description: wide, narrow, explicit-limit and explicit-break log10 cases equal ggplot2's
+    check: grammar::ggplot2_oracle_scales::ggplot2_row3_scale_log10
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG3-001
+  rule: The transform is base 10
+  prediction: "mutating Transform::Log10 to the natural log (log and exp) turns ggplot2_row3_scale_log10 RED and leaves rows 1, 2, 4 green (measured rc=101, only row3 FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: The log fixture cannot tell log10 from ln
+- id: FALSIFY-GG3-002
+  rule: Expansion is 5% in transformed space
+  prediction: "mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row3_scale_log10 RED (measured: rows 1, 2, 3, 4 all FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: The log fixture does not check the expanded range in log space
+- id: FALSIFY-GG3-003
+  rule: A break on a panel limit is kept
+  prediction: "mutating the censor test '<= hi' to '<= hi - 0.2' turns ggplot2_row3_scale_log10 RED (limits_no_expand puts a break on 4 = log10(10000), the upper limit; measured: rows 3 and 4 FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case has a break exactly on a limit
+qa_gate:
+  id: F-GG3-001
+  name: ggplot2 conformance row 3 (scale_x/y_log10)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-3 fixture
+  checks:
+  - log10_matches

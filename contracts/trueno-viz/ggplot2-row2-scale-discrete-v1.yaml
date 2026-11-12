@@ -1,0 +1,67 @@
+metadata:
+  id: ggplot2-row2-scale-discrete-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 2 (PLOT-GG-001, paiml/aprender#6909) - scale_x_discrete and
+    scale_y_discrete. aprender-viz's BuiltGGPlot::layout() must reproduce what ggplot_build() in
+    ggplot2 4.0.3 computes for a character column: sorted levels, positions 1..n, the default
+    additive expansion of 0.6 on c(1, n), expand = expansion(mult, add), explicit limits (an
+    unseen level keeps its position), breaks (intersected with the limits) and positional labels.
+    The oracle is a committed JSON fixture produced by R; R is never run at test time.
+  references:
+  - 'ggplot2 4.0.3: scale_x_discrete(), default_expansion(discrete = expansion(add = 0.6)), expand_range4()'
+  - 'scales 1.4.0: DiscreteRange'
+  - 'crates/aprender-viz/fixtures/ggplot2/scale_discrete/generate.R'
+equations:
+  discrete_range:
+    formula: 'continuous_range = (1 - (s*m_l + a_l), n + (s*m_u + a_u)), s = n - 1, default m = 0, a = 0.6'
+    domain: n >= 1 levels
+    codomain: (f64, f64)
+    invariants:
+    - the default panel of 3 levels spans (0.4, 3.6)
+    - one level spans (0.4, 1.6), the expansion applied to the zero-width range (1, 1)
+    preconditions:
+    - levels are the sorted distinct values unless limits are given
+  discrete_breaks:
+    formula: 'breaks = intersect(breaks_arg or limits, limits); position(b) = 1 + index of b in limits; label_i = labels_arg[i] or b_i'
+    domain: levels, optional breaks and labels
+    codomain: (Vec<f64>, Vec<String>)
+    invariants:
+    - a break that is not a level is dropped with its label
+    - a level absent from the data but present in limits keeps position index+1
+proof_obligations:
+- id: GG2-INV-001
+  type: invariant
+  property: Discrete panel range matches ggplot2
+  formal: '∀ axis: |continuous_range - ggplot2.continuous_range| <= 1e-9 rel + 1e-12 abs'
+  applies_to: discrete_range
+- id: GG2-INV-002
+  type: invariant
+  property: Levels, break positions and labels match ggplot2
+  formal: '∀ axis: levels = ggplot2.limits ∧ break_positions ≈ ggplot2.break_positions ∧ labels = ggplot2.labels'
+  applies_to: discrete_breaks
+enforcement:
+  discrete_matches:
+    description: all seven discrete cases (defaults, limits, breaks, labels, expand, single level) equal ggplot2's
+    check: grammar::ggplot2_oracle_scales::ggplot2_row2_scale_discrete
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG2-001
+  rule: Default discrete expansion is add 0.6
+  prediction: "mutating DISCRETE_EXPAND_ADD 0.6 -> 0.5 turns ggplot2_row2_scale_discrete RED and leaves rows 1, 3, 4 green (measured rc=101, only row2 FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: The discrete fixture cannot see a 0.1 change of the additive expansion
+- id: FALSIFY-GG2-002
+  rule: Continuous expansion is mult 0.05 (the other axis of the discrete cases)
+  prediction: "mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row2_scale_discrete RED (its continuous y axis) as well as rows 1, 3, 4 (measured: all five tests FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: Mixed discrete/continuous plots are not checking the continuous axis
+qa_gate:
+  id: F-GG2-001
+  name: ggplot2 conformance row 2 (scale_x/y_discrete)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-2 fixture
+  checks:
+  - discrete_matches

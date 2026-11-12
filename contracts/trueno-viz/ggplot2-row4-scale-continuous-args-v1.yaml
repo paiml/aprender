@@ -1,0 +1,65 @@
+metadata:
+  id: ggplot2-row4-scale-continuous-args-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 4 (PLOT-GG-001, paiml/aprender#6909) - the continuous-scale arguments
+    limits, breaks, labels and expand = expansion(mult, add) on scale_x_continuous and
+    scale_y_continuous. aprender-viz's BuiltGGPlot::layout() must reproduce ggplot_build() in
+    ggplot2 4.0.3: expanded range with asymmetric mult/add, explicit breaks (those outside the
+    panel censored together with their labels), minor breaks, and limits that put breaks exactly on
+    the panel edge. The oracle is a committed JSON fixture produced by R; R is never run at test time.
+  references:
+  - 'ggplot2 4.0.3: scale_x_continuous(), expansion(), expand_range4()'
+  - 'scales 1.4.0: regular_minor_breaks()'
+  - 'crates/aprender-viz/fixtures/ggplot2/scale_continuous_args/generate.R'
+equations:
+  expand_range4:
+    formula: 'continuous_range = (lo - (s*m_l + a_l), hi + (s*m_u + a_u)), s = hi - lo, (lo, hi) = limits arg or data range'
+    domain: lo < hi
+    codomain: (f64, f64)
+    invariants:
+    - expansion(0) makes the panel exactly the limits
+    - default is mult 0.05, add 0 on both sides
+  explicit_breaks:
+    formula: 'breaks = { b in breaks_arg : lo_c <= b <= hi_c }; labels_i = labels_arg[i] for kept i; minor = regular_minor_breaks(n = 2) inside [lo_c, hi_c]'
+    domain: continuous_range, optional breaks and labels
+    codomain: (Vec<f64>, Vec<String>, Vec<f64>)
+    invariants:
+    - a break exactly on a panel limit is kept (inclusive censoring)
+    - a censored break takes its label with it and is counted in n_breaks_censored
+proof_obligations:
+- id: GG4-INV-001
+  type: invariant
+  property: Expanded range with limits and expansion matches ggplot2
+  formal: '∀ axis: limits ≈ ggplot2.limits ∧ continuous_range ≈ ggplot2.continuous_range (1e-9 rel + 1e-12 abs)'
+  applies_to: expand_range4
+- id: GG4-INV-002
+  type: invariant
+  property: Explicit breaks, labels, censored count and minor breaks match ggplot2
+  formal: '∀ axis: breaks ≈ ggplot2.breaks ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored ∧ minor_breaks ≈ ggplot2.minor_breaks'
+  applies_to: explicit_breaks
+enforcement:
+  continuous_args_match:
+    description: limits, breaks, labels and expand cases equal ggplot2's
+    check: grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG4-001
+  rule: Default expansion is mult 0.05
+  prediction: "mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row4_scale_continuous_args RED (measured: rows 1, 2, 3, 4 all FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: The fixture's default-expansion axes are not compared
+- id: FALSIFY-GG4-002
+  rule: A break on a panel limit is kept
+  prediction: "mutating the censor test '<= hi' to '<= hi - 0.2' turns ggplot2_row4_scale_continuous_args RED (limits_no_expand_x puts a break at 10, the upper limit; measured: rows 3 and 4 FAILED)"
+  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  if_fails: No fixture case has a break exactly on a limit
+qa_gate:
+  id: F-GG4-001
+  name: ggplot2 conformance row 4 (continuous limits, breaks, labels, expand)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-4 fixture
+  checks:
+  - continuous_args_match
