@@ -38,6 +38,11 @@ contract: |
       its descendants, is verified before a frame is painted. A blocked tree
       is not ticked by an animation; it is verified again only after a change
       (an event, a swap, a repaint request).
+      A widget that owns and paints a boxed child (Menu trigger, Modal content
+      and footer, Column, Row, Stack, Container, List) exposes it through
+      Widget::children(), or the walk cannot see it. A disabled Button is an
+      inactive component, exempt from the 4.5:1 text contrast check (WCAG 2.1
+      SC 1.4.3); the idle, hovered and pressed states are still held to it.
   (5) A WIDGET MESSAGE IS DELIVERED ONCE, in the order emitted.
 equations:
   frame_action:

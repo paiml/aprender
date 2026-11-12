@@ -107,7 +107,7 @@ harness.find("[data-testid='submit-btn']").click();
 ```yaml
 - Button:
     label: "Click me"
-    background: "#6366f1"
+    background: "#4f46e5"
     padding: 12
     on_click: submit_form
 ```

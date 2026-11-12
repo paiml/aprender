@@ -322,7 +322,10 @@ impl Brick for Button {
         // Verify text contrast
         let bg = self.current_background();
         let contrast = bg.contrast_ratio(&self.text_color);
-        if contrast >= 4.5 {
+        // WCAG 2.1 SC 1.4.3: text of an inactive user interface component (a disabled
+        // button) has no contrast requirement, so a disabled button is exempt. The other
+        // three states are held to 4.5:1.
+        if self.disabled || contrast >= 4.5 {
             passed.push(BrickAssertion::ContrastRatio(4.5));
         } else {
             failed.push((
