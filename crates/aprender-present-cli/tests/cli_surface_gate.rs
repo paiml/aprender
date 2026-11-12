@@ -15,7 +15,9 @@ const UNKNOWN_SUB: &[&str] = &["no-such-subcommand"];
 
 /// The pinned surface. Adding or removing a subcommand edits this list and the
 /// contract's FALSIFY-BIN-*-004 prediction together.
-const SUBCOMMANDS: &[&str] = &["serve", "bundle", "new", "check", "score", "gate", "deploy"];
+const SUBCOMMANDS: &[&str] = &[
+    "serve", "bundle", "new", "check", "score", "gate", "deploy", "plot",
+];
 
 fn run(args: &[&str]) -> Output {
     Command::new(BIN)
@@ -133,6 +135,18 @@ fn malformed_arguments_are_usage_errors() {
     let bad = unusable_inputs();
     let b = &bad[0];
     assert_usage_error(&["score", b.as_str(), "--no-such-flag"]);
+    assert_usage_error(&["plot"]);
+    assert_usage_error(&["plot", "--data", b.as_str()]);
+    assert_usage_error(&["plot", "--spec", b.as_str(), "--data", b.as_str()]);
+    assert_usage_error(&[
+        "plot",
+        "--data",
+        b.as_str(),
+        "--aes",
+        "x=x,y=y",
+        "--output",
+        "png",
+    ]);
 }
 
 #[test]
@@ -141,5 +155,132 @@ fn unusable_input_is_rejected() {
         assert_rejected(&["check", b.as_str()]);
         assert_rejected(&["score", b.as_str()]);
         assert_rejected(&["gate", b.as_str()]);
+        assert_rejected(&["plot", "--data", b.as_str(), "--aes", "x=x,y=y"]);
+        assert_rejected(&["plot", "--spec", b.as_str()]);
+    }
+}
+
+// ── plot (PLOT-GG-001, aprender#6909) ────────────────────────────────────────────
+
+/// Row 1's ggplot2 fixture data and the break labels ggplot2 4.0.3 computed for it.
+const ROW1_CSV: &str = include_str!("../../aprender-viz/fixtures/ggplot2/geom_point/data.csv");
+const ROW1_EXPECTED: &str =
+    include_str!("../../aprender-viz/fixtures/ggplot2/geom_point/expected.json");
+const ORACLE_X_LABELS: &[&str] = &["5", "10"];
+const ORACLE_Y_LABELS: &[&str] = &["-2.5", "0.0", "2.5", "5.0", "7.5"];
+/// `aprender-present plot --data data.csv --aes x=x,y=y` at 80x24 with stdout not a terminal.
+const ROW1_GOLDEN: &str = include_str!("golden/plot-row1-point-80x24.txt");
+
+/// Write row 1 under a directory named for the calling test. Tests run in parallel, and one
+/// shared path let a test read the file while another truncated it ("no header row").
+fn row1_csv(test: &str) -> String {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("aprender-present-plot")
+        .join(test);
+    std::fs::create_dir_all(&dir).expect("create fixture dir");
+    let path = dir.join("row1.csv");
+    std::fs::write(&path, format!("# ggplot2 row 1 fixture\n{ROW1_CSV}")).expect("write csv");
+    path.display().to_string()
+}
+
+#[test]
+fn oracle_labels_are_the_fixture_labels() {
+    let quoted = |ls: &[&str]| {
+        ls.iter()
+            .map(|l| format!("\"{l}\""))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    for labels in [ORACLE_X_LABELS, ORACLE_Y_LABELS] {
+        let want = format!("\"labels\": [{}]", quoted(labels));
+        assert!(ROW1_EXPECTED.contains(&want), "expected.json lacks {want}");
+    }
+}
+
+#[test]
+fn plot_row1_matches_the_golden_render() {
+    let csv = row1_csv("golden");
+    let out = Command::new(BIN)
+        .args([
+            "plot", "--data", &csv, "--aes", "x=x,y=y", "--geom", "point",
+        ])
+        .env_remove("NO_COLOR")
+        .output()
+        .expect("spawn");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(stdout, ROW1_GOLDEN);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 24);
+    assert!(
+        !stdout.contains('\x1b'),
+        "piped output must carry no colour"
+    );
+    assert_eq!(
+        lines[23].split_whitespace().collect::<Vec<_>>(),
+        ORACLE_X_LABELS
+    );
+    let mut y: Vec<&str> = lines
+        .iter()
+        .filter_map(|l| l.split_once('┤').map(|(label, _)| label.trim()))
+        .collect();
+    y.reverse();
+    assert_eq!(y, ORACLE_Y_LABELS);
+    assert_eq!(stdout.matches('●').count(), 10);
+}
+
+#[test]
+fn plot_svg_carries_the_oracle_break_labels() {
+    let csv = row1_csv("svg");
+    let out = run(&[
+        "plot", "--data", &csv, "--aes", "x=x,y=y", "--output", "svg",
+    ]);
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let svg = String::from_utf8_lossy(&out.stdout);
+    for label in ORACLE_X_LABELS.iter().chain(ORACLE_Y_LABELS) {
+        assert!(
+            svg.contains(&format!(">{label}</text>")),
+            "SVG lacks break label {label}"
+        );
+    }
+}
+
+#[test]
+fn plot_refuses_what_it_cannot_draw() {
+    let csv = row1_csv("refuses");
+    for (args, want) in [
+        (
+            vec!["--aes", "x=x,y=y", "--geom", "line"],
+            "unsupported geom 'line'; supported: point",
+        ),
+        // Exit 1 with the bounds, where it used to abort (exit 134) on an 80 GB allocation.
+        (
+            vec![
+                "--aes", "x=x,y=y", "--width", "100000", "--height", "100000",
+            ],
+            "terminal plot size must be 20x8 to 1000x1000 cells, got 100000x100000",
+        ),
+        (
+            vec!["--aes", "x=x,y=y", "--output", "svg", "--width", "100000"],
+            "svg plot size must be 1x1 to 4096x4096 pixels, got 100000x600",
+        ),
+        (
+            vec!["--aes", "x=x,y=nope"],
+            "unknown column 'nope'; columns: x, y",
+        ),
+    ] {
+        let mut argv = vec!["plot", "--data", csv.as_str()];
+        argv.extend(args);
+        assert_rejected(&argv);
+        let stderr = String::from_utf8_lossy(&run(&argv).stderr).into_owned();
+        assert!(stderr.contains(want), "stderr {stderr:?} lacks {want:?}");
     }
 }

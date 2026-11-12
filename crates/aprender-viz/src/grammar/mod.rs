@@ -41,6 +41,7 @@ mod ggplot;
 #[cfg(test)]
 mod ggplot2_oracle;
 mod stat;
+mod term;
 mod theme;
 
 pub use aes::Aes;
@@ -54,4 +55,8 @@ pub use facet::{panels, Facet, Panel};
 pub use geom::Geom;
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use stat::Stat;
+pub use term::{
+    TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    POINT_GLYPH,
+};
 pub use theme::Theme;
