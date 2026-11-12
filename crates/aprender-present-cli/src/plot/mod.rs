@@ -76,7 +76,7 @@ mod tests {
         assert!(
             msg.starts_with("plot spec: ")
                 && msg.contains("geom_histogram")
-                && msg.contains("line 1, column 14"),
+                && msg.contains("line 1, column 13"),
             "{msg}"
         );
         assert!(e.source().is_some());

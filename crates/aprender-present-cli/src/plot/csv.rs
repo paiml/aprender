@@ -127,7 +127,7 @@ impl Reader {
     }
 
     /// Skip comment lines and blank lines; true when a record starts here.
-    fn to_record(&mut self) -> bool {
+    fn seek_record(&mut self) -> bool {
         loop {
             if self.at_eol() {
                 self.eat_eol();
@@ -220,9 +220,50 @@ fn typed(name: String, cells: Vec<String>) -> Column {
 }
 
 /// Read a table from CSV text. See the module docs for the exact rules.
-pub fn read_table(_text: &str) -> Result<Table, CsvError> {
+pub fn read_table(text: &str) -> Result<Table, CsvError> {
+    let mut r = Reader {
+        cs: text
+            .strip_prefix('\u{feff}')
+            .unwrap_or(text)
+            .chars()
+            .collect(),
+        i: 0,
+        line: 1,
+    };
+    if !r.seek_record() {
+        return Err(CsvError::NoHeader { line: r.line });
+    }
+    let header_line = r.line;
+    let header = r.record()?;
+    for (i, name) in header.iter().enumerate() {
+        if header[..i].contains(name) {
+            return Err(CsvError::DuplicateColumn {
+                line: header_line,
+                name: name.clone(),
+            });
+        }
+    }
+    let mut cells: Vec<Vec<String>> = vec![Vec::new(); header.len()];
+    while r.seek_record() {
+        let line = r.line;
+        let row = r.record()?;
+        if row.len() != header.len() {
+            return Err(CsvError::Ragged {
+                line,
+                expected: header.len(),
+                got: row.len(),
+            });
+        }
+        for (col, cell) in cells.iter_mut().zip(row) {
+            col.push(cell);
+        }
+    }
     Ok(Table {
-        columns: Vec::new(),
+        columns: header
+            .into_iter()
+            .zip(cells)
+            .map(|(n, c)| typed(n, c))
+            .collect(),
     })
 }
 
@@ -232,17 +273,11 @@ mod tests {
     use proptest::prelude::*;
 
     fn ok(text: &str) -> Table {
-        match read_table(text) {
-            Ok(t) => t,
-            Err(e) => panic!("expected Ok for {text:?}, got {e}"),
-        }
+        read_table(text).expect("the table reads")
     }
 
     fn err(text: &str) -> CsvError {
-        match read_table(text) {
-            Ok(t) => panic!("expected Err for {text:?}, got {t:?}"),
-            Err(e) => e,
-        }
+        read_table(text).expect_err("the table is rejected")
     }
 
     fn num(v: &[Option<f64>]) -> Values {
@@ -543,7 +578,7 @@ mod tests {
             let header: Vec<String> = (0..ncols).map(|i| format!("c{i}")).collect();
             let rows: Vec<Vec<String>> = raw.iter().map(|r| r[..ncols].to_vec()).collect();
             let src = write_table(&header, &rows, if crlf { "\r\n" } else { "\n" });
-            let t = read_table(&src).map_err(|e| TestCaseError::fail(format!("{e}\n{src:?}")))?;
+            let t = read_table(&src).expect("a written table reads back");
             prop_assert_eq!(t.row_count(), rows.len());
             for (j, col) in t.columns.iter().enumerate() {
                 prop_assert_eq!(&col.name, &header[j]);

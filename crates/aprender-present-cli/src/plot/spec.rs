@@ -395,11 +395,10 @@ impl Lexer {
     }
 
     fn starts_number(&self) -> bool {
-        match self.peek_at(0) {
-            Some('-') => self.digit_at(1) || (self.peek_at(1) == Some('.') && self.digit_at(2)),
-            Some('.') => self.digit_at(1),
-            Some(c) => c.is_ascii_digit(),
-            None => false,
+        match self.peek_at(0).unwrap_or('\0') {
+            '-' => self.digit_at(1) || (self.peek_at(1) == Some('.') && self.digit_at(2)),
+            '.' => self.digit_at(1),
+            c => c.is_ascii_digit(),
         }
     }
 
@@ -1102,8 +1101,29 @@ fn h_scale_y(s: &mut PlotSpec, c: &Call) -> Done {
 /// Parse ggplot2 text syntax into a [`PlotSpec`].
 ///
 /// Total: every input returns `Ok` or a [`SpecError`]; none panics.
-pub fn parse(_src: &str) -> Result<PlotSpec, SpecError> {
-    Ok(PlotSpec::default())
+pub fn parse(src: &str) -> Result<PlotSpec, SpecError> {
+    let calls = Parser {
+        toks: lex(src)?,
+        i: 0,
+    }
+    .calls()?;
+    let mut spec = PlotSpec::default();
+    for (i, call) in calls.iter().enumerate() {
+        let Some((_, handler)) = CALLS.iter().find(|(n, _)| *n == call.name) else {
+            return Err(SpecError::UnknownCall {
+                name: call.name.clone(),
+                at: call.at,
+            });
+        };
+        if (i == 0) != (call.name == "ggplot") {
+            return Err(syntax(
+                call.at,
+                "ggplot(...) must appear exactly once, as the first call",
+            ));
+        }
+        handler(&mut spec, call)?;
+    }
+    Ok(spec)
 }
 
 // ───────────────────────────── canonical text ─────────────────────────────
@@ -1280,7 +1300,7 @@ impl PlotSpec {
 /// Canonical text: `parse(spec.to_string()) == spec` for every spec [`parse`] can produce.
 impl fmt::Display for PlotSpec {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("")
+        f.write_str(&self.parts().join(" +\n  "))
     }
 }
 
@@ -1303,17 +1323,11 @@ ggplot(df, aes(x = week, y = score, colour = team)) +   # trailing
 ";
 
     fn ok(src: &str) -> PlotSpec {
-        match parse(src) {
-            Ok(s) => s,
-            Err(e) => panic!("expected Ok for {src:?}, got {e}"),
-        }
+        parse(src).expect("the spec parses")
     }
 
     fn err(src: &str) -> SpecError {
-        match parse(src) {
-            Ok(s) => panic!("expected Err for {src:?}, got {s:?}"),
-            Err(e) => e,
-        }
+        parse(src).expect_err("the spec is rejected")
     }
 
     fn at(line: usize, col: usize) -> Pos {
@@ -1449,20 +1463,19 @@ ggplot(df, aes(x = week, y = score, colour = team)) +   # trailing
 
     #[test]
     fn numbers_cover_sign_decimal_and_exponent_forms() {
-        let n =
-            |lit: &str| match ok(&format!("ggplot() + geom_hline(yintercept = {lit})")).layers[0] {
-                Layer::Hline { yintercept } => yintercept,
-                _ => f64::NAN,
-            };
-        assert_eq!(n("7"), 7.0);
-        assert_eq!(n("-7"), -7.0);
-        assert_eq!(n("2.5"), 2.5);
-        assert_eq!(n("-2.5"), -2.5);
-        assert_eq!(n(".5"), 0.5);
-        assert_eq!(n("-.5"), -0.5);
-        assert_eq!(n("1e3"), 1000.0);
-        assert_eq!(n("1E+2"), 100.0);
-        assert_eq!(n("25e-1"), 2.5);
+        let n = |lit: &str, want: f64| {
+            let p = ok(&format!("ggplot() + geom_hline(yintercept = {lit})"));
+            assert_eq!(p.layers, vec![Layer::Hline { yintercept: want }], "{lit}");
+        };
+        n("7", 7.0);
+        n("-7", -7.0);
+        n("2.5", 2.5);
+        n("-2.5", -2.5);
+        n(".5", 0.5);
+        n("-.5", -0.5);
+        n("1e3", 1000.0);
+        n("1E+2", 100.0);
+        n("25e-1", 2.5);
     }
 
     #[test]
@@ -1904,18 +1917,11 @@ ggplot(df, aes(x = week, y = score, colour = team)) +   # trailing
         ];
         for (src, call, arg, pos) in cases {
             let e = err(src);
-            match &e {
-                SpecError::BadValue {
-                    call: c,
-                    arg: a,
-                    expected,
-                    at: p,
-                } => {
-                    assert_eq!((c.as_str(), a.as_str(), *p), (call, arg, pos), "{src}: {e}");
-                    assert!(!expected.is_empty());
-                }
-                other => panic!("{src}: expected BadValue, got {other}"),
-            }
+            assert!(
+                matches!(&e, SpecError::BadValue { call: c, arg: a, expected, at: p }
+                    if (c.as_str(), a.as_str(), *p) == (call, arg, pos) && !expected.is_empty()),
+                "{src}: {e}"
+            );
             assert!(
                 e.to_string().contains(call) && e.to_string().contains(arg),
                 "{e}"
@@ -2037,11 +2043,9 @@ ggplot(df, aes(x = week, y = score, colour = team)) +   # trailing
         ];
         for &(src, pos, needle) in cases {
             let e = err(src);
-            let SpecError::Syntax { msg, at: p } = &e else {
-                panic!("{src}: expected Syntax, got {e}");
-            };
-            assert_eq!(*p, pos, "{src}: {e}");
-            assert!(msg.contains(needle), "{src}: {e}");
+            assert!(matches!(e, SpecError::Syntax { .. }), "{src}: {e}");
+            assert_eq!(e.at(), pos, "{src}: {e}");
+            assert!(e.to_string().contains(needle), "{src}: {e}");
             assert!(
                 e.to_string()
                     .contains(&format!("line {}, column {}", pos.line, pos.col)),
