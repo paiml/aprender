@@ -103,8 +103,21 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             aprender_contracts_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
         ),
+        #[cfg(feature = "visualization")]
+        Commands::Plot(args) => Some(plot_result(args)),
         _ => None,
     }
+}
+
+/// `apr plot` (#6991): the verb `aprender-present plot` runs, from the same library function, so
+/// the two cannot drift apart. The plot goes to stdout (or `--out`); a refusal names what is not
+/// proven and exits non-zero.
+#[cfg(feature = "visualization")]
+fn plot_result(args: &trueno_viz::plot_cli::PlotArgs) -> Result<(), CliError> {
+    let env = trueno_viz::plot_cli::Env::from_process();
+    let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
+    trueno_viz::plot_cli::run(args, &env, &mut out, &mut err)
+        .map_err(|e| CliError::ValidationFailed(format!("plot: {e}")))
 }
 
 /// #3604: `--revalidate` reaches the F2 hybrid guard through the same env seam the guard already

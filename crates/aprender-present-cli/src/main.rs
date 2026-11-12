@@ -156,7 +156,8 @@ enum Commands {
     Plot(plot::PlotArgs),
 }
 
-mod plot;
+// PLOT-GG-001 (#6991): the verb lives in aprender-viz, shared with `apr plot`.
+use trueno_viz::plot_cli as plot;
 
 fn main() {
     let cli = Cli::parse();

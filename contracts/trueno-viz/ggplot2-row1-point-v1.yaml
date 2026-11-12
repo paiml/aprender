@@ -92,3 +92,21 @@ qa_gate:
   - expansion_matches
   - breaks_match
   - point_defaults_match
+# The grammar this row proves, as generate.R builds it: ggplot(df, aes(x, y)) + geom_point(),
+# with ggplot2's defaults for everything else. `apr plot` and `aprender-present plot` draw only
+# what such a block names: crates/aprender-viz/build.rs derives the verb's supported set from
+# every ggplot2_row block (#6991). Flat scalars only, so the block can become the properties
+# of a pv ontology entity of type ggplot2-row once that entity type is declared in Σ; until then
+# it stays a top-level block, because PV-ONT-001 refuses an undeclared entity type.
+ggplot2_row:
+  ref: geom_point
+  geom: point
+  stat: identity
+  position: identity
+  scale_x: continuous
+  scale_y: continuous
+  coord: cartesian
+  facet: 'null'
+  theme: grey
+  aes: x y
+  oracle: crates/aprender-viz/fixtures/ggplot2/geom_point

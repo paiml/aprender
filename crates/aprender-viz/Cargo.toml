@@ -64,8 +64,12 @@ trueno-db = { workspace = true, optional = true }
 # depends on viz (train plots via viz), so viz→entrenar closed a train↔viz cycle. The
 # entrenar inference-path interop module was dropped (re-home in aprender-train if needed).
 
-# Optional: Serialization (for ML integration)
+# Optional: Serialization (for ML integration, and the plot verb's YAML spec)
 serde = { version = "1.0", features = ["derive"], optional = true }
+
+# Optional: the plot verb (`plot-cli`), shared by `apr plot` and `aprender-present plot` (#6991).
+clap = { version = "4.5", features = ["derive"], optional = true }
+serde-saphyr = { workspace = true, optional = true }
 
 # NOTE: realizar (=aprender-serve) + repartir (=aprender-distribute) removed (APR-MONO
 # self-containment): both were unused in viz src, and serve→viz is the correct direction
@@ -88,6 +92,11 @@ web-sys = { version = "0.3", optional = true, features = ["console"] }
 # Dynamic library loading for AMD GPU (ROCm SMI)
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
+
+# build.rs derives the plot verb's proven set from the ggplot2 row contracts (#6991).
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde-saphyr = { workspace = true }
 
 [dev-dependencies]
 # Testing
@@ -128,6 +137,10 @@ db = ["dep:trueno-db"]
 
 # Terminal output support
 terminal = []
+
+# The plot verb: CSV + ggplot2-like spec to terminal or SVG, limited to the proven rows (#6991).
+# cli-roles: each argument carries its role type, which `apr surface` reads (#3745).
+plot-cli = ["dep:clap", "dep:serde", "dep:serde-saphyr", "batuta-common/cli-roles"]
 
 # SVG output support
 svg = []

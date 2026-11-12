@@ -152,6 +152,8 @@ fn registered_commands() -> Vec<&'static str> {
         "sim",
         "cgp",
         "pv",
+        // #6991: aprender-present's plot verb, through the same library function
+        "plot",
     ]
 }
 
@@ -1379,4 +1381,115 @@ fn kind_totality_guard_case_table() {
             "case `{case}` must be RED with `{expect}`; got {bad:?}"
         );
     }
+}
+
+/// The row-1 fixture R generated the ggplot2 oracle from.
+const ROW1_CSV: &str = include_str!("../../aprender-viz/fixtures/ggplot2/geom_point/data.csv");
+
+fn row1_csv() -> (tempfile::TempDir, std::path::PathBuf) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let csv = dir.path().join("row1.csv");
+    std::fs::write(&csv, ROW1_CSV).expect("write csv");
+    (dir, csv)
+}
+
+fn apr_plot(args: &[&str]) -> std::process::Output {
+    apr_binary()
+        .arg("plot")
+        .args(args)
+        .output()
+        .expect("failed to run apr plot")
+}
+
+/// #6991: `apr plot` draws row 1 (geom_point, continuous x/y) on stdout with the x break
+/// labels the R oracle has (`expected.json`: 5, 10), one glyph per data row.
+#[test]
+fn apr_plot_draws_row1_on_stdout_with_the_oracle_breaks() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_plot(&["--data", csv.to_str().expect("utf8"), "--aes", "x=x,y=y"]);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 24, "{stdout}");
+    assert_eq!(
+        lines[23].split_whitespace().collect::<Vec<_>>(),
+        ["5", "10"]
+    );
+    let rows = ROW1_CSV.lines().filter(|l| !l.starts_with('#')).count() - 1;
+    assert_eq!(stdout.matches('●').count(), rows, "{stdout}");
+}
+
+/// #6991: the SVG target carries every x and y break label of the oracle.
+#[test]
+fn apr_plot_writes_svg_with_the_oracle_break_labels() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_plot(&[
+        "--data",
+        csv.to_str().expect("utf8"),
+        "--aes",
+        "x=x,y=y",
+        "--output",
+        "svg",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let svg = String::from_utf8_lossy(&out.stdout);
+    assert!(svg.starts_with("<svg"), "{svg}");
+    for label in ["5", "10", "-2.5", "0.0", "2.5", "5.0", "7.5"] {
+        assert!(
+            svg.contains(&format!(">{label}</text>")),
+            "missing break label {label}"
+        );
+    }
+}
+
+/// #6991: a geom no conformance row proves is refused by name, with the proven set listed,
+/// and nothing is drawn.
+#[test]
+fn apr_plot_refuses_geom_line_by_name() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_plot(&[
+        "--data",
+        csv.to_str().expect("utf8"),
+        "--aes",
+        "x=x,y=y",
+        "--geom",
+        "line",
+    ]);
+    assert!(!out.status.success(), "geom line must be refused");
+    assert!(out.stdout.is_empty(), "nothing is drawn");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported geom 'line'; supported: point"),
+        "{stderr}"
+    );
+}
+
+/// #6991: a scale no row proves is refused by name too.
+#[test]
+fn apr_plot_refuses_an_unproven_scale_by_name() {
+    let (dir, csv) = row1_csv();
+    let spec = dir.path().join("log.yaml");
+    std::fs::write(
+        &spec,
+        format!(
+            "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}]\nscales: {{x: log10}}\n",
+            csv.display()
+        ),
+    )
+    .expect("write spec");
+    let out = apr_plot(&["--spec", spec.to_str().expect("utf8")]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("unsupported scale 'log10'; supported: continuous"),
+        "{stderr}"
+    );
 }

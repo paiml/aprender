@@ -219,6 +219,10 @@ mod coord_grid_tests {
 // ============================================================================
 /// Grammar of Graphics implementation.
 pub mod grammar;
+/// The `plot` verb of `apr` and `aprender-present`: CSV + ggplot2-like spec to terminal or SVG,
+/// limited to the grammar the ggplot2 conformance rows prove (#6991).
+#[cfg(feature = "plot-cli")]
+pub mod plot_cli;
 /// High-level plot types (scatter, heatmap, histogram, etc.).
 pub mod plots;
 // ============================================================================

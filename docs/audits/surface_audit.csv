@@ -247,6 +247,7 @@ apr,apr pipeline apply,6,x86_64-linux,huggingface-transformers,no,10,apr-core-co
 apr,apr pipeline plan,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/pipeline_commands.rs:9,low
 apr,apr pipeline status,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/pipeline_commands.rs:51,low
 apr,apr pipeline validate,6,x86_64-linux,huggingface-transformers,no,10,apr-core-commands,crates/apr-cli/src/pipeline_commands.rs:58,low
+apr,apr plot,6,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/apr-cli/src/commands_enum.rs:1028,high
 apr,apr ppl,9,x86_64-linux,llama.cpp,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:1223,medium
 apr,apr pretrain,6,x86_64-linux,pytorch,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:745,high
 apr,apr profile,3,x86_64-linux;nvidia-cuda,llama.cpp,yes,9,profiling,crates/apr-cli/src/extended_commands.rs:186,high

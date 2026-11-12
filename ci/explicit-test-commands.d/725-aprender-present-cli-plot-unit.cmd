@@ -1,1 +1,1 @@
-cargo test -p aprender-present-cli --bin aprender-present plot::
+cargo test -p aprender-viz --lib --features plot-cli plot_cli::
