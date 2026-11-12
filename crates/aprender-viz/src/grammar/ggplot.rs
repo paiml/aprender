@@ -704,32 +704,45 @@ impl BuiltGGPlot {
     fn scaled_layout(&self) -> Result<BuiltLayout> {
         require_scale_scope(&self.layers, &self.coord, &self.facet)?;
         let (x_axis, y_axis) = self.resolved_axes()?;
-        let layers = self.layers.iter().map(|l| self.scaled_layer(l, &x_axis, &y_axis)).collect();
+        let layers = self
+            .layers
+            .iter()
+            .map(|l| self.scaled_layer(l, &x_axis, &y_axis))
+            .collect::<Result<_>>()?;
         Ok(BuiltLayout { layers, x: x_axis.scale, y: y_axis.scale })
     }
 
-    /// One `geom_point` layer through the resolved scales: every row, a position the scale cannot
-    /// place is `NaN` (ggplot2's `NA`).
+    /// One `geom_point` layer through the resolved scales: one entry per row of its data (a cell
+    /// past the end of a short column is missing), a position the scale cannot place is `NaN`
+    /// (ggplot2's `NA`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnknownColumn`] when a position column is absent (R: "object not found"), and the
+    /// axis's own error for a value it cannot hold ([`ResolvedAxis::position`]).
     fn scaled_layer(
         &self,
         layer: &Layer,
         x_axis: &ResolvedAxis,
         y_axis: &ResolvedAxis,
-    ) -> BuiltLayer {
+    ) -> Result<BuiltLayer> {
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
-        let nothing: &[DataValue] = &[];
-        let xs = data.get(aes.x.as_deref().unwrap_or("x")).unwrap_or(nothing);
-        let ys = data.get(aes.y.as_deref().unwrap_or("y")).unwrap_or(nothing);
-        let (x, y): (Vec<f64>, Vec<f64>) = xs
-            .iter()
-            .zip(ys)
-            .map(|(a, b)| {
-                (x_axis.map_value(a).unwrap_or(f64::NAN), y_axis.map_value(b).unwrap_or(f64::NAN))
-            })
-            .unzip();
+        let column = |name: Option<&str>, default: &str| {
+            let name = name.unwrap_or(default);
+            data.get(name)
+                .ok_or_else(|| Error::UnknownColumn(format!("no position column {name:?}")))
+        };
+        let (xs, ys) = (column(aes.x.as_deref(), "x")?, column(aes.y.as_deref(), "y")?);
+        const MISSING: DataValue = DataValue::Null;
+        let mut x = Vec::with_capacity(data.nrow());
+        let mut y = Vec::with_capacity(data.nrow());
+        for i in 0..data.nrow() {
+            x.push(x_axis.position(xs.get(i).unwrap_or(&MISSING))?);
+            y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
+        }
         let points = Self::point_aes(layer, &aes, x.len());
-        BuiltLayer { x, y, points, path: None }
+        Ok(BuiltLayer { x, y, points, path: None })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.

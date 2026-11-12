@@ -363,20 +363,27 @@ impl ResolvedAxis {
     ) -> Result<Self> {
         let has_text = columns.iter().flat_map(|c| c.iter()).any(|v| v.as_str().is_some());
         match spec {
-            Some(PositionScaleSpec::Discrete(d)) => Ok(Self::discrete(d, columns)),
-            None if has_text => Ok(Self::discrete(&DiscreteSpec::new(), columns)),
+            Some(PositionScaleSpec::Discrete(d)) => Self::discrete(d, columns),
+            None if has_text => Self::discrete(&DiscreteSpec::new(), columns),
             Some(PositionScaleSpec::Continuous(_)) if has_text => Err(text_in_continuous()),
             Some(PositionScaleSpec::Continuous(c)) => Self::continuous(c, columns),
             None => Self::continuous(&ContinuousSpec::new(), columns),
         }
     }
 
-    fn discrete(spec: &DiscreteSpec, columns: &[&[DataValue]]) -> Self {
+    fn discrete(spec: &DiscreteSpec, columns: &[&[DataValue]]) -> Result<Self> {
         let trained =
             train_levels(columns.iter().flat_map(|c| c.iter()).filter_map(DataValue::as_str));
         let scale = resolve_discrete(trained, spec);
         let levels = scale.levels.clone().unwrap_or_default();
-        Self { scale, map: AxisMap::Discrete { levels } }
+        if levels.is_empty() {
+            // R: `scale_x_discrete(limits = character(0))`, or no text to train on, gives the
+            // panel `c(-Inf, Inf)`; refused like a continuous axis with nothing to train on.
+            return Err(Error::ScaleDomain(
+                "discrete scale has no levels (no text values and no limits)".into(),
+            ));
+        }
+        Ok(Self { scale, map: AxisMap::Discrete { levels } })
     }
 
     fn continuous(spec: &ContinuousSpec, columns: &[&[DataValue]]) -> Result<Self> {
@@ -406,24 +413,39 @@ impl ResolvedAxis {
         Ok(Self { scale, map: AxisMap::Continuous { transform: t, limits } })
     }
 
-    /// A data value's position, or `None` where ggplot2 would have `NA` (text outside the levels,
-    /// a negative value on a log axis, a finite value outside explicit limits).
-    pub(crate) fn map_value(&self, v: &DataValue) -> Option<f64> {
+    /// A data value's position, `NaN` where ggplot2 would have `NA` (text outside the levels, a
+    /// missing value on a continuous axis, a negative value on a log axis, a finite value outside
+    /// explicit limits).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ScaleDomain`] for a number or a missing value on a discrete axis. ggplot2 places
+    /// numbers on a continuous range beside the levels and turns a missing value into an `NA`
+    /// level; neither is reproduced, so neither is returned as a position.
+    pub(crate) fn position(&self, v: &DataValue) -> Result<f64> {
         match (&self.map, v) {
-            (AxisMap::Discrete { levels }, DataValue::Text(s)) => position(levels, s),
-            (AxisMap::Discrete { .. }, DataValue::Number(n)) => Some(f64::from(*n)),
+            (AxisMap::Discrete { levels }, DataValue::Text(s)) => {
+                Ok(position(levels, s).unwrap_or(f64::NAN))
+            }
+            (AxisMap::Discrete { .. }, DataValue::Number(n)) => Err(Error::ScaleDomain(format!(
+                "a discrete axis holds the number {n}: ggplot2 places numbers on a continuous \
+                 range beside the levels, which is not supported"
+            ))),
+            (AxisMap::Discrete { .. }, DataValue::Null) => Err(Error::ScaleDomain(
+                "a discrete axis holds a missing value: ggplot2 makes it an NA level, which is not \
+                 supported"
+                    .into(),
+            )),
             (AxisMap::Continuous { transform, limits }, DataValue::Number(n)) => {
                 let p = transform.forward(f64::from(*n));
-                if p.is_nan() && *transform != Transform::Identity {
-                    return None;
-                }
                 // ggplot2's `censor(only.finite = TRUE)`: an infinite value is never censored.
-                match limits {
-                    Some((lo, hi)) if p.is_finite() && (p < *lo || p > *hi) => None,
-                    _ => Some(p),
-                }
+                Ok(match limits {
+                    Some((lo, hi)) if p.is_finite() && (p < *lo || p > *hi) => f64::NAN,
+                    _ => p,
+                })
             }
-            _ => None,
+            // A missing value is NA. Text cannot reach here: `resolve` refuses it.
+            (AxisMap::Continuous { .. }, _) => Ok(f64::NAN),
         }
     }
 }

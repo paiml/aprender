@@ -15,6 +15,7 @@ metadata:
   - 'ggplot2 4.0.3: scale_x_discrete(), default_expansion(discrete = expansion(add = 0.6)), expand_range4()'
   - 'scales 1.4.0: DiscreteRange'
   - 'crates/aprender-viz/fixtures/ggplot2/scale_discrete/generate.R'
+  - 'crates/aprender-viz/fixtures/ggplot2/scale_mixed/generate.R'
 equations:
   discrete_range:
     formula: 'continuous_range = (1 - (s*m_l + a_l), n + (s*m_u + a_u)), s = n - 1 (width 1 when n = 1, scales::expand_range zero_width), default m = 0, a = 0.6'
@@ -41,6 +42,8 @@ equations:
     - 'a text position in a line, path, step or reference layer does not select the scaled layout; it stays that layer''s own typed error (Err(Rendering)), as on main'
     - 'the renderers (to_framebuffer, to_svg, to_terminal) return Err(Rendering) for a scaled plot, text axis included: they draw from linear scales and have no discrete axis'
     - 'the scaled layout covers geom_point layers with the identity stat, coord_cartesian() without limits or flip and no facet; everything else is refused with a typed error (see row 4, scaled_scope)'
+    - 'a text level outside explicit limits is NA (NaN, the row is kept), as in R'
+    - 'three discrete inputs ggplot2 accepts are refused with Err(ScaleDomain) instead of being laid out differently: a number on a discrete axis (R places it on a continuous range beside the levels), a missing value (R makes it an NA level, placed last) and a discrete axis with no levels (R gives the panel c(-Inf, Inf)); each refusal is tested'
 proof_obligations:
 - id: GG2-INV-001
   type: invariant
@@ -60,6 +63,14 @@ enforcement:
   discrete_default_and_refusals:
     description: a text position with no spec resolves as the default discrete scale and every renderer refuses it
     check: grammar::ggplot2_oracle_scales::a_text_position_without_a_spec_is_discrete_and_not_drawn
+    severity: ERROR
+  discrete_unsupported_refused:
+    description: a number, a missing value or no levels on a discrete axis is Err(ScaleDomain)
+    check: grammar::ggplot2_oracle_scales::a_discrete_axis_refuses_numbers_missing_values_and_no_levels
+    severity: ERROR
+  mixed_scales_match:
+    description: 23 mixed discrete, continuous and log10 cases on one frame (two wider than sqrt(f64::MAX)) equal ggplot2's
+    check: grammar::ggplot2_oracle_scales::ggplot2_rows_2_to_4_mixed_scales
     severity: ERROR
 falsification_tests:
 - id: FALSIFY-GG2-001
@@ -92,6 +103,26 @@ falsification_tests:
   prediction: "dropping the geom_point restriction from the text test in uses_position_scales turns ggplot2_lines_oracle::robustness::infinite_and_text_positions_are_typed_errors RED (measured rc=101, 1 FAILED: UnsupportedLayer instead of Rendering)"
   test: cargo test -p aprender-viz --lib grammar::ggplot2_lines_oracle::robustness::infinite_and_text_positions_are_typed_errors -- --exact
   if_fails: The scales change what main's line, path and step layers return for text
+- id: FALSIFY-GG2-007
+  rule: A number on a discrete axis is refused
+  prediction: "making the (Discrete, Number) arm of ResolvedAxis::position return Ok(NaN) turns a_discrete_axis_refuses_numbers_missing_values_and_no_levels RED (measured rc=101, 1 FAILED: the 1.5 row is laid out)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::a_discrete_axis_refuses_numbers_missing_values_and_no_levels -- --exact
+  if_fails: A numeric row on a discrete axis is silently dropped where R draws it
+- id: FALSIFY-GG2-008
+  rule: A missing value on a discrete axis is refused
+  prediction: "making the (Discrete, Null) arm of ResolvedAxis::position return Ok(NaN) turns a_discrete_axis_refuses_numbers_missing_values_and_no_levels RED (measured rc=101, 1 FAILED: the ragged row is laid out as NaN)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::a_discrete_axis_refuses_numbers_missing_values_and_no_levels -- --exact
+  if_fails: An NA row is dropped where R adds an NA level
+- id: FALSIFY-GG2-009
+  rule: A discrete axis with no levels is refused
+  prediction: "disabling the levels.is_empty() check in ResolvedAxis::discrete turns a_discrete_axis_refuses_numbers_missing_values_and_no_levels RED (measured rc=101, 1 FAILED: another error is returned instead of the no-levels one)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::a_discrete_axis_refuses_numbers_missing_values_and_no_levels -- --exact
+  if_fails: An empty discrete axis gets a finite (0, 1) panel where R gives c(-Inf, Inf)
+- id: FALSIFY-GG2-010
+  rule: A level outside explicit limits is NA, not position 0
+  prediction: "mapping an unknown level to 0.0 instead of NaN in ResolvedAxis::position turns ggplot2_rows_2_to_4_mixed_scales RED (disc_limits_subset; measured rc=101, 1 FAILED: got 0.0 want NaN)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_rows_2_to_4_mixed_scales -- --exact
+  if_fails: Rows whose level was left out of the limits are drawn at the panel edge
 qa_gate:
   id: F-GG2-001
   name: ggplot2 conformance row 2 (scale_x/y_discrete)
@@ -99,3 +130,5 @@ qa_gate:
   checks:
   - discrete_matches
   - discrete_default_and_refusals
+  - discrete_unsupported_refused
+  - mixed_scales_match

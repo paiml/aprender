@@ -6,3 +6,4 @@
 # everyone who runs the test benefits from these saved cases.
 cc 11da4f3bb2a0ae4a0a273a2aa02a56e6ff91535b7a90bd89847c2d90f8234d3e # shrinks to w = 3, h = 23, a = (1029, -153), b = (-714, 109)
 cc a2aef03eb4eecb8d46df880b5904ff6cb723ef67475d3e7370f4bdffe68a2419 # shrinks to w = 1, h = 1, f = [0.0, -4.2991666e30, 0.0, 5.093174e37], i = [0, 0, 0, 0], r = 0, rect = (0, 0, 0, 0)
+cc 7527865d135f60fde0f0fd2e40b5d157eb7cada7eb0e38b0e62c10b501803e2f # shrinks to rows = [(131815660000000.0, 0.0)], geom = Geom { geom_type: Point { shape: Circle }, aes: None, stat: None }, xlim = None, ylim = None, flip = false, w = 1, h = 1

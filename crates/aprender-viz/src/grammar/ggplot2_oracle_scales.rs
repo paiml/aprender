@@ -8,6 +8,8 @@
 //! Positions, limits, ranges and breaks: `|a - b| <= 1e-9 * max(|a|, |b|) + 1e-12`. Labels exact.
 //! On a log axis every number is in `log10` space, as `ggplot_build()` reports it.
 
+use std::panic::AssertUnwindSafe;
+
 use serde_json::Value;
 
 use super::{
@@ -139,6 +141,9 @@ fn run_fixture(json: &str, csv: &str, build: impl Fn(&str, DataFrame) -> GGPlot)
     );
     let cases = want["cases"].as_array().expect("fixture has cases");
     assert!(!cases.is_empty());
+    // A case name the builder does not know must fail, never fall through to a default plot.
+    let unknown = std::panic::catch_unwind(AssertUnwindSafe(|| build("", DataFrame::new())));
+    assert!(unknown.is_err(), "the case builder accepted an unknown case name");
     for case in cases {
         let name = case["name"].as_str().expect("case name");
         let rows: Option<Vec<usize>> = case["rows"]
@@ -281,6 +286,66 @@ fn ggplot2_row4_scale_continuous_args() {
             }
             "inf_mixed_y_limits" => {
                 point(df, "z", "f").scale_y(scale_continuous().limits(-1.0, 4.0))
+            }
+            other => panic!("unknown case {other}"),
+        },
+    );
+}
+
+// --- Rows 2-4 together: mixed scales on fresh data (second pass on #6916) ----------------------
+
+/// 23 cases on one frame: discrete on either axis with and without a spec, continuous defaults on
+/// wide, tiny and negative data, log10 on wide and sub-decade data (the `log_sub_breaks` path),
+/// and a log axis beside a discrete or limited one, plus two ranges wider than `sqrt(f64::MAX)`.
+#[test]
+fn ggplot2_rows_2_to_4_mixed_scales() {
+    run_fixture(
+        include_str!("../../fixtures/ggplot2/scale_mixed/expected.json"),
+        include_str!("../../fixtures/ggplot2/scale_mixed/data.csv"),
+        |name, df| match name {
+            "disc_x_nospec" => point(df, "g", "y"),
+            "disc_y_nospec" => point(df, "x", "g"),
+            "disc_x_default" => point(df, "g", "y").scale_x(scale_discrete()),
+            "disc_limits_reversed" => {
+                point(df, "g", "y").scale_x(scale_discrete().limits(["d", "c", "b", "a"]))
+            }
+            "disc_expand_add1" => {
+                point(df, "g", "y").scale_x(scale_discrete().expand(Expansion::add(1.0)))
+            }
+            "disc_breaks_labels" => {
+                point(df, "g", "y").scale_x(scale_discrete().breaks(["d", "a"]).labels(["D", "A"]))
+            }
+            "disc_y_limits_extra" => {
+                point(df, "x", "g").scale_y(scale_discrete().limits(["a", "b", "c", "d", "e"]))
+            }
+            "disc_limits_subset" => {
+                point(df, "g", "y").scale_x(scale_discrete().limits(["b", "a"]))
+            }
+            "cont_big_default" => point(df, "big", "y").scale_x(scale_continuous()),
+            "cont_small_default" => point(df, "small", "y").scale_x(scale_continuous()),
+            "cont_neg_default" => point(df, "n", "y").scale_x(scale_continuous()),
+            "cont_breaks_outside" => {
+                point(df, "x", "y").scale_x(scale_continuous().breaks([-100.0, 0.0, 5.0, 100.0]))
+            }
+            "cont_expand_asym" => point(df, "x", "y")
+                .scale_y(scale_continuous().expand(Expansion::new((0.0, 0.2), (0.0, 0.0)))),
+            "cont_y_labels" => point(df, "x", "y")
+                .scale_y(scale_continuous().breaks([0.0, 2.5, 5.0]).labels(["lo", "mid", "hi"])),
+            "cont_small_limits_none" => point(df, "x", "small")
+                .scale_y(scale_continuous().limits(2e-05, 4e-05).expand(Expansion::none())),
+            "log_wide" => point(df, "p", "y").scale_x(scale_log10()),
+            "log_narrow" => point(df, "q", "y").scale_x(scale_log10()),
+            "log_y" => point(df, "x", "p").scale_y(scale_log10()),
+            "log_limits_breaks" => point(df, "p", "y")
+                .scale_x(scale_log10().limits(1.0, 10000.0).breaks([1.0, 100.0, 10000.0])),
+            "log_x_cont_y_limits" => point(df, "q", "x")
+                .scale_x(scale_log10())
+                .scale_y(scale_continuous().limits(0.0, 10.0)),
+            "disc_x_log_y" => point(df, "g", "big").scale_y(scale_log10()),
+            // Wider than sqrt(f64::MAX): labeling::extended returns seq(dmin, dmax, length.out = 5).
+            "log_limits_huge" => point(df, "p", "y").scale_x(scale_log10().limits(1e300, 1e300)),
+            "cont_limits_huge" => {
+                point(df, "x", "y").scale_x(scale_continuous().limits(-1e300, 1e300))
             }
             other => panic!("unknown case {other}"),
         },
@@ -535,12 +600,12 @@ fn scaled_layout_refuses_every_non_default_coord() {
             point(scope_frame(), "g", "y").coord(coord.clone()),
         ];
         for p in plots {
-            match scoped(p) {
-                Err(crate::error::Error::UnsupportedCoord(m)) => {
-                    assert!(m.contains(want) && m.contains("position scales"), "{m}");
-                }
-                other => panic!("{want}: {other:?}"),
-            }
+            let got = scoped(p);
+            assert!(
+                matches!(&got, Err(crate::error::Error::UnsupportedCoord(m))
+                    if m.contains(want) && m.contains("position scales")),
+                "{want}: {got:?}"
+            );
         }
     }
     assert!(scoped(log_x().coord(Coord::cartesian())).is_ok());
@@ -553,12 +618,11 @@ fn scaled_layout_refuses_every_facet() {
     for facet in [Facet::wrap("g", 2), Facet::grid("g", "g"), Facet::row("g"), Facet::col("g")] {
         for p in [log_x().facet(facet.clone()), point(scope_frame(), "g", "y").facet(facet.clone())]
         {
-            match scoped(p) {
-                Err(crate::error::Error::UnsupportedLayer(m)) => {
-                    assert!(m.contains("facet"), "{m}")
-                }
-                other => panic!("{other:?}"),
-            }
+            let got = scoped(p);
+            assert!(
+                matches!(&got, Err(crate::error::Error::UnsupportedLayer(m)) if m.contains("facet")),
+                "{got:?}"
+            );
         }
     }
     assert!(scoped(log_x().facet(Facet::none())).is_ok());
@@ -570,12 +634,12 @@ fn scaled_layout_refuses_any_non_point_layer() {
     use super::Layer;
     for geom in [Geom::line(), Geom::bar(), Geom::text(), Geom::area(), Geom::histogram()] {
         let p = log_x().layer(Layer::new(geom.clone()));
-        match scoped(p) {
-            Err(crate::error::Error::UnsupportedLayer(m)) => {
-                assert!(m.contains("geom_point only"), "{m}");
-            }
-            other => panic!("{:?}: {other:?}", geom.geom_type),
-        }
+        let got = scoped(p);
+        assert!(
+            matches!(&got, Err(crate::error::Error::UnsupportedLayer(m)) if m.contains("geom_point only")),
+            "{:?}: {got:?}",
+            geom.geom_type
+        );
     }
     let two_points = log_x().layer(Layer::new(Geom::point()));
     assert_eq!(scoped(two_points).expect("two point layers resolve").layers.len(), 2);
@@ -634,4 +698,67 @@ fn no_spec_layout_drops_infinite_rows() {
     let kept = scoped(point(df, "f", "y").scale_x(scale_continuous())).expect("resolves");
     assert_eq!(kept.layers[0].x.len(), 8);
     assert_eq!(kept.layers[0].x.iter().filter(|v| v.is_infinite()).count(), 2);
+}
+
+/// A discrete axis takes text only. ggplot2 places numbers on a continuous range beside the
+/// levels, turns a missing value into an `NA` level placed last, and gives an axis with no
+/// levels the panel `c(-Inf, Inf)` (all measured in ggplot2 4.0.3); none is reproduced, so each
+/// is a typed refusal, never a position.
+#[test]
+fn a_discrete_axis_refuses_numbers_missing_values_and_no_levels() {
+    use super::Layer;
+    let refused = |p: GGPlot, want: &str| {
+        let got = scoped(p);
+        assert!(
+            matches!(&got, Err(crate::error::Error::ScaleDomain(m)) if m.contains(want)),
+            "{want}: {got:?}"
+        );
+    };
+    // A second layer puts numbers on the text axis of the first.
+    let mut numbers = DataFrame::new();
+    numbers.add_column_f32("g", &[1.5]);
+    numbers.add_column_f32("y", &[2.0]);
+    refused(
+        point(scope_frame(), "g", "y").layer(Layer::new(Geom::point()).data(numbers)),
+        "holds the number 1.5",
+    );
+    // A text column shorter than the frame: its last row is missing (R: NA).
+    let mut ragged = DataFrame::new();
+    ragged.add_column_str("g", &["a", "b"]);
+    ragged.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    refused(point(ragged, "g", "y"), "missing value");
+    refused(point(scope_frame(), "x", "y").scale_x(scale_discrete()), "no levels");
+    refused(
+        point(scope_frame(), "g", "y").scale_x(scale_discrete().limits(Vec::<&str>::new())),
+        "no levels",
+    );
+}
+
+/// Every row of the frame is laid out: a cell missing from a short numeric column is `NaN`
+/// (ggplot2 keeps the `NA` row in the layer data), and an absent position column is an error
+/// (R: "object not found"), never an empty layer.
+#[test]
+fn every_row_is_laid_out_and_an_absent_column_is_an_error() {
+    let mut ragged = DataFrame::new();
+    ragged.add_column_f32("x", &[1.0, 2.0, 3.0]);
+    ragged.add_column_f32("y", &[4.0, 5.0]);
+    let layout = scoped(point(ragged, "x", "y").scale_x(scale_continuous())).expect("resolves");
+    assert_eq!(layout.layers[0].x, [1.0, 2.0, 3.0]);
+    assert_eq!(layout.layers[0].y[..2], [4.0, 5.0]);
+    assert!(layout.layers[0].y[2].is_nan());
+    let absent =
+        scoped(point(scope_frame(), "nope", "y").scale_x(scale_continuous().limits(0.0, 1.0)));
+    assert!(
+        matches!(&absent, Err(crate::error::Error::UnknownColumn(m)) if m.contains("nope")),
+        "{absent:?}"
+    );
+}
+
+/// `expansion(mult = 0.1)` on `c(0, 10)` is `c(-1, 11)` (`ggplot2:::expand_range4`), and
+/// `scales::zero_range(c(1, Inf))` is `FALSE`.
+#[test]
+fn expansion_mult_and_zero_range_match_r() {
+    assert_eq!(Expansion::mult(0.1).apply((0.0, 10.0)), (-1.0, 11.0));
+    assert!(!super::scale_spec::zero_range(1.0, f64::INFINITY));
+    assert!(!super::scale_spec::zero_range(f64::NEG_INFINITY, f64::INFINITY));
 }

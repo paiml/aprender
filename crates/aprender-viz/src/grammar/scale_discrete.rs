@@ -156,6 +156,12 @@ mod tests {
         assert_eq!(s.breaks, [1.0, 2.0, 3.0]);
     }
 
+    /// No levels: the panel is `(0, 1)`. `layout()` refuses such an axis before it gets here.
+    #[test]
+    fn no_levels_spans_zero_to_one() {
+        assert_eq!(discrete_range(0, Expansion::discrete_default()), (0.0, 1.0));
+    }
+
     #[test]
     fn position_is_one_based() {
         let l = train_levels(["b", "a"]);

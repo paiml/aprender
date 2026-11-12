@@ -63,23 +63,17 @@ pub fn log_breaks(lo: f64, hi: f64, n: usize) -> Vec<f64> {
     if max == min {
         return vec![libm::pow(10.0, min)];
     }
-    let n_f = n as f64;
-    let mut by = libm::floor((max - min) / n_f) + 1.0;
+    // R tries `by = floor((max - min) / n) + 1`, then `by - 1`, ... down to 1, and keeps the first
+    // step whose powers put at least `n - 2` breaks inside the data range.
+    let first_by = libm::floor((max - min) / n as f64) as usize + 1;
     let (rng_lo, rng_hi) = (libm::pow(10.0, rlo), libm::pow(10.0, rhi));
     let relevant =
         |breaks: &[f64]| breaks.iter().filter(|b| rng_lo <= **b && **b <= rng_hi).count();
-    let mut breaks = power_seq(min, max, by);
-    if relevant(&breaks) + 2 >= n {
-        return breaks;
-    }
-    while by > 1.0 {
-        by -= 1.0;
-        breaks = power_seq(min, max, by);
-        if relevant(&breaks) + 2 >= n {
-            return breaks;
-        }
-    }
-    log_sub_breaks((rlo, rhi), n)
+    (1..=first_by)
+        .rev()
+        .map(|by| power_seq(min, max, by as f64))
+        .find(|breaks| relevant(breaks) + 2 >= n)
+        .unwrap_or_else(|| log_sub_breaks((rlo, rhi), n))
 }
 
 /// `base^seq(min, max, by = by)` for base 10 (R's `seq(by=)`: `floor((to-from)/by + 1e-10)` steps).
@@ -184,6 +178,32 @@ mod tests {
     #[test]
     fn wide_range_gives_decades() {
         assert_eq!(log_breaks(0.7, 2900.0, 5), [0.1, 1.0, 10.0, 100.0, 1000.0, 10000.0]);
+    }
+
+    /// `scales::breaks_log()(c(3, 9.9e4))` in scales 1.4.0: `by = 2` leaves only 2 of 3 powers in
+    /// range, so R steps down to `by = 1`.
+    #[test]
+    fn steps_down_to_by_one_like_r() {
+        assert_eq!(log_breaks(3.0, 9.9e4, 5), [1.0, 10.0, 100.0, 1000.0, 10000.0, 100_000.0]);
+    }
+
+    /// `scales::breaks_log()(c(1.5, 120))` is `1 3 10 30 100 300`: no power step keeps 3 breaks
+    /// in range, so R falls through to `log_sub_breaks`.
+    #[test]
+    fn falls_through_to_sub_breaks_like_r() {
+        let got = log_breaks(1.5, 120.0, 5);
+        let want = [1.0, 3.0, 10.0, 30.0, 100.0, 300.0];
+        assert_eq!(got.len(), want.len(), "{got:?}");
+        assert!(got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 1e-9 * w), "{got:?}");
+    }
+
+    /// A range with no positive finite end has no log breaks (`breaks_log` would see NaN).
+    #[test]
+    fn no_breaks_without_a_positive_finite_range() {
+        assert!(log_breaks(0.0, 10.0, 5).is_empty());
+        assert!(log_breaks(-1.0, 10.0, 5).is_empty());
+        assert!(log_breaks(1.0, f64::INFINITY, 5).is_empty());
+        assert!(log_breaks(f64::NAN, 10.0, 5).is_empty());
     }
 
     #[test]

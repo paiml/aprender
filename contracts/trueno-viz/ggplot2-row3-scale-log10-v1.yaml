@@ -35,6 +35,7 @@ equations:
     invariants:
     - a break exactly on a panel limit is kept (inclusive censoring)
     - a range under a few decades gets sub-breaks (2, 3, 5 multiples)
+    - 'the power step starts at by = floor((max - min) / n) + 1 and steps down to 1, keeping the first step with at least n - 2 powers inside the data range; only when none qualifies does it fall through to log_sub_breaks (scales 1.4.0 breaks_log)'
     - labels switch to scientific notation (1e+02) when narrower than fixed
 proof_obligations:
 - id: GG3-INV-001
@@ -98,6 +99,16 @@ falsification_tests:
   prediction: "removing the position-scale refusal in check_drawable (term.rs) turns grammar::term::tests::refuses_what_it_cannot_draw RED (measured rc=101, 1 FAILED: it draws scale_log10 and scale_y_continuous plots linearly). The old GG3-009 (removing the is_finite() skip in panel_points) was re-measured after the merge of main and no longer goes red (rc=0): main drops non-finite rows earlier, in build_layer and pixel(), so render-total-v1 owns that obligation"
   test: cargo test -p aprender-viz --lib grammar::term::tests::refuses_what_it_cannot_draw -- --exact
   if_fails: The terminal draws log or limited axes as if they were linear
+- id: FALSIFY-GG3-010
+  rule: breaks_log steps the power step down to 1
+  prediction: "accepting the first power step without the n - 2 relevance test in log_breaks turns grammar::scale_trans::tests::steps_down_to_by_one_like_r RED (measured rc=101, 1 FAILED: by = 2 gives 1, 100, 10000 where R gives every decade)"
+  test: cargo test -p aprender-viz --lib grammar::scale_trans::tests::steps_down_to_by_one_like_r -- --exact
+  if_fails: A wide log axis skips decades that R labels
+- id: FALSIFY-GG3-011
+  rule: breaks_log falls through to log_sub_breaks when no power step qualifies
+  prediction: "replacing the log_sub_breaks fall-through with plain decades in log_breaks turns grammar::scale_trans::tests::falls_through_to_sub_breaks_like_r RED (measured rc=101, 1 FAILED: 1, 10, 100, 1000 instead of 1, 3, 10, 30, 100, 300)"
+  test: cargo test -p aprender-viz --lib grammar::scale_trans::tests::falls_through_to_sub_breaks_like_r -- --exact
+  if_fails: A two-decade log axis gets only decade breaks where R adds 3x sub-breaks
 qa_gate:
   id: F-GG3-001
   name: ggplot2 conformance row 3 (scale_x/y_log10)

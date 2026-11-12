@@ -164,6 +164,17 @@ mod tests {
         assert_eq!(s.labels, ["4.950", "4.975", "5.000", "5.025", "5.050"]);
     }
 
+    /// ggplot2 4.0.3 on one point at x = 131815660000000: the x range is v +- 0.05, the only break
+    /// is v - 0.05 and its label is "1.318157e+14". This range never finished before.
+    #[test]
+    fn one_value_far_from_zero_has_one_break_like_r() {
+        let v = 131_815_660_000_000.0_f64;
+        let s = PositionScale::continuous((v, v));
+        assert_eq!(s.continuous_range, (v - 0.05, v + 0.05));
+        assert_eq!(s.breaks, [v - 0.05]);
+        assert_eq!(s.labels, ["1.318157e+14"]);
+    }
+
     #[test]
     fn empty_range_spans_zero_to_one() {
         let s = PositionScale::continuous((f64::MAX, f64::MIN));
