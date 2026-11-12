@@ -1137,3 +1137,73 @@ fn bin_count_is_bounded_for_extreme_ranges() {
         assert!(matches!(layout_of(d.clone(), ax(), g), Err(Error::Rendering(_))));
     }
 }
+
+// --- more refusals and edge inputs ------------------------------------------------------------
+
+#[test]
+fn missing_x_mapping_is_refused_not_empty() {
+    for g in [Geom::gg_histogram(), Geom::gg_freqpoly(), Geom::gg_density()] {
+        let r = layout_of(small(), Aes::new().y("y"), g.clone());
+        assert!(matches!(r, Err(Error::Rendering(_))), "y only: {r:?}");
+        let r = layout_of(small(), Aes::new(), g);
+        assert!(matches!(r, Err(Error::Rendering(_))), "no mapping: {r:?}");
+    }
+}
+
+#[test]
+fn errorbar_needs_its_mappings_and_a_sane_width() {
+    let no_x = layout_of(small(), Aes::new().ymin("x").ymax("y"), Geom::gg_errorbar());
+    assert!(matches!(no_x, Err(Error::Rendering(_))), "{no_x:?}");
+    let a = Aes::new().x("x").ymin("x").ymax("y");
+    for w in [-1.0_f32, f32::NAN, f32::INFINITY] {
+        let r = layout_of(small(), a.clone(), Geom::gg_errorbar().width(w));
+        assert!(matches!(r, Err(Error::Rendering(_))), "width {w}: {r:?}");
+    }
+}
+
+#[test]
+fn mapped_alpha_and_bad_linewidth_are_refused() {
+    let r = layout_of(small(), ax().alpha("y"), Geom::gg_histogram());
+    assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    for lw in [-1.0, f64::NAN] {
+        let r = layout_of(small(), ax(), Geom::gg_histogram().linewidth(lw));
+        assert!(matches!(r, Err(Error::Rendering(_))), "linewidth {lw}: {r:?}");
+    }
+}
+
+#[test]
+fn a_layer_with_no_finite_x_is_empty_even_beside_a_good_one() {
+    let na = DataFrame::from_xy(&[f32::NAN, f32::NAN], &[1.0, 2.0]);
+    for g in [Geom::gg_histogram(), Geom::gg_freqpoly(), Geom::gg_density()] {
+        let p = plot_with(g.clone(), ax(), small()).layer(Layer::new(g).data(na.clone()));
+        let r = p.build().and_then(|p| p.layout());
+        assert!(matches!(r, Err(Error::EmptyData)), "{r:?}");
+    }
+}
+
+#[test]
+fn output_row_count_is_capped_before_it_is_built() {
+    let mut d = DataFrame::from_xy(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0], &[1.0; 6]);
+    d.add_column_str("g", &["a", "b", "c", "d", "e", "f"]);
+    let r = layout_of(d.clone(), ax().fill("g"), Geom::gg_histogram().bins(999_999));
+    assert!(matches!(r, Err(Error::Rendering(_))), "hist: {r:?}");
+    let r = layout_of(d, ax().fill("g"), Geom::gg_density().n(1 << 20));
+    assert!(matches!(r, Err(Error::Rendering(_))), "dens: {r:?}");
+}
+
+#[test]
+fn short_columns_pad_with_missing_and_numeric_groups_sort_before_na() {
+    // `z` is shorter than `x`: the frame pads it with missing cells, which the stat drops.
+    let mut d = DataFrame::new();
+    d.add_column_f32("x", &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    d.add_column_f32("z", &[1.0, 2.0, 3.0]);
+    let b = layout_of(d, Aes::new().x("z"), Geom::gg_histogram()).expect("builds");
+    assert!(!b.layers.is_empty());
+    // A numeric `group` column: numbers form their own groups and NA another, last.
+    let mut g = DataFrame::from_xy(&[1.0, 2.0, 3.0, 4.0, 5.0], &[1.0; 5]);
+    g.add_column_f32("k", &[1.0, 2.0, f32::NAN, 1.0, 2.0]);
+    let b = layout_of(g, ax().group("k"), Geom::gg_histogram().bins(2)).expect("builds");
+    let mut seen: Vec<i64> = b.layers[0].dist.as_ref().expect("dist").group.clone();
+    seen.dedup();
+    assert_eq!(seen, vec![1, 2, 3], "1, 2 then NA last");
+}

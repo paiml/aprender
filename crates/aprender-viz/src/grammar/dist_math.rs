@@ -329,10 +329,10 @@ pub(super) fn bw_nrd0(x: &[f64]) -> f64 {
     if lo == 0.0 || lo.is_nan() {
         lo = hi;
         if lo == 0.0 || lo.is_nan() {
-            lo = x.first().map_or(1.0, |v| v.abs());
-            if lo == 0.0 {
-                lo = 1.0;
-            }
+            lo = match x.first().map(|v| v.abs()) {
+                Some(v) if v != 0.0 => v,
+                _ => 1.0,
+            };
         }
     }
     0.9 * lo * libm::pow(x.len() as f64, -0.2)
@@ -670,4 +670,142 @@ pub(super) fn dodge2(mut boxes: Vec<Box2>, padding: f64) -> Result<(Vec<Box2>, b
         }
     }
     Ok((boxes, duplicated))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn r_mod_and_zero_range_edges() {
+        assert!(r_mod(1.0, 0.0).is_nan());
+        assert!((r_mod(-1.0, 3.0) - 2.0).abs() < 1e-15);
+        assert!(!zero_range(f64::NAN, 1.0));
+        assert!(zero_range(2.0, 2.0));
+        assert!(!zero_range(1.0, f64::INFINITY));
+        assert!(!zero_range(0.0, 1.0));
+        assert!(zero_range(1.0, 1.0 + 1e-15));
+    }
+
+    #[test]
+    fn seq_by_edges() {
+        assert_eq!(seq_by(0.0, 0.0, 1.0).expect("ok"), vec![0.0]);
+        assert!(seq_by(0.0, 1.0, 1e-12).is_err());
+        assert!(seq_by(1.0, 0.0, 1.0).is_err());
+        assert_eq!(seq_by(1.0, 1.0 + 1e-15, 1.0).expect("ok"), vec![1.0]);
+        assert_eq!(seq_by(0.0, 2.0, 1.0).expect("ok"), vec![0.0, 1.0, 2.0]);
+    }
+
+    #[test]
+    fn bin_breaks_edges() {
+        assert!(median_of_sorted(&[]).is_nan());
+        assert_eq!(median_of_sorted(&[1.0, 3.0]), 2.0);
+        assert!(bin_breaks(vec![f64::NAN, 1.0], Closed::Right).is_err());
+        let too_many: Vec<f64> = (0..1_000_002).map(f64::from).collect();
+        assert!(bin_breaks(too_many, Closed::Right).is_err());
+        // One break has no spacing to take a median of: the fuzz falls back to a constant.
+        let b = bin_breaks(vec![1.0], Closed::Right).expect("ok");
+        assert_eq!(b.breaks, vec![1.0]);
+    }
+
+    #[test]
+    fn centred_bins_have_no_boundary_to_dodge() {
+        let b = bin_breaks_bins((0.0, 10.0), 5, Some(0.0), None, Closed::Right).expect("ok");
+        assert!(b.breaks.len() >= 6);
+    }
+
+    #[test]
+    fn bins_move_off_a_boundary_that_lands_on_the_data() {
+        // 11 bins over (0, 10) would give width 1 and a break on both ends: ggplot2 widens to 10/11.
+        let b = bin_breaks_bins((0.0, 10.0), 11, None, Some(0.0), Closed::Right).expect("ok");
+        assert_eq!(b.breaks.len(), 12);
+        assert!((b.breaks[1] - 10.0 / 11.0).abs() < 1e-12, "{:?}", b.breaks);
+        assert!(bin_breaks_bins((0.0, 10.0), 0, None, None, Closed::Right).is_err());
+        assert!(bin_breaks_bins((0.0, 10.0), 2_000_000, None, None, Closed::Right).is_err());
+    }
+
+    #[test]
+    fn quantile_sd_and_bandwidth_edges() {
+        assert!(quantile7(&[], 0.5).is_nan());
+        assert_eq!(quantile7(&[1.0, 2.0, 3.0, 4.0, 5.0], 0.25), 2.0);
+        assert!(sd(&[1.0]).is_nan());
+        // A single zero has no spread to scale from: the bandwidth falls back to 0.9 * 1.
+        assert!((bw_nrd0(&[0.0]) - 0.9).abs() < 1e-15);
+        assert!((bw_nrd0(&[4.0]) - 0.9 * 4.0).abs() < 1e-15);
+        assert!(bw_nrd0(&[1.0, 2.0, 3.0, 4.0]) > 0.0);
+        // A zero IQR falls back to the standard deviation.
+        assert!(bw_nrd0(&[1.0, 1.0, 1.0, 1.0, 2.0]) > 0.0);
+    }
+
+    #[test]
+    fn dnorm_tails() {
+        assert_eq!(dnorm(1e200, 1.0), 0.0);
+        assert_eq!(dnorm(40.0, 1.0), 0.0);
+        let mid = dnorm(6.0, 1.0);
+        assert!(mid > 0.0 && mid < 1e-8);
+        assert!((dnorm(0.0, 1.0) - 0.398_942_280_401_432_7).abs() < 1e-15);
+    }
+
+    #[test]
+    fn seq_len_and_fft_edges() {
+        assert!(seq_len(0.0, 1.0, 0).is_empty());
+        assert_eq!(seq_len(3.0, 9.0, 1), vec![3.0]);
+        let (mut re, mut im) = (vec![1.0], vec![0.0]);
+        fft(&mut re, &mut im, false);
+        assert_eq!(re, vec![1.0]);
+        let (mut re, mut im) = (vec![1.0, 2.0, 3.0], vec![0.0; 3]);
+        fft(&mut re, &mut im, false);
+        assert_eq!(re, vec![1.0, 2.0, 3.0], "not a power of two: left alone");
+    }
+
+    #[test]
+    fn bin_dist_spills_at_both_ends() {
+        let y = bin_dist(&[-0.5], 1.0, 0.0, 10.0, 6);
+        assert!((y[0] - 0.75).abs() < 1e-12, "{y:?}");
+        let y = bin_dist(&[10.5], 1.0, 0.0, 10.0, 6);
+        assert!((y[5] - 0.75).abs() < 1e-12, "{y:?}");
+        assert_eq!(bin_dist(&[f64::NAN, 100.0], 1.0, 0.0, 10.0, 6).iter().sum::<f64>(), 0.0);
+    }
+
+    #[test]
+    fn approx_outside_and_empty() {
+        assert!(approx(&[], &[], &[1.0])[0].is_nan());
+        assert!(approx(&[0.0, 1.0], &[0.0, 1.0], &[2.0])[0].is_nan());
+        assert!(approx(&[0.0, 1.0], &[0.0, 1.0], &[f64::NAN])[0].is_nan());
+        assert!((approx(&[0.0, 1.0], &[0.0, 2.0], &[0.25])[0] - 0.5).abs() < 1e-15);
+    }
+
+    #[test]
+    fn density_on_a_large_grid_integrates_to_one() {
+        let x = [0.0, 1.0, 2.0, 3.5];
+        let (grid, y) = density(&x, 0.8, 0.0, 3.5, 1000);
+        assert_eq!((grid.len(), y.len()), (1000, 1000));
+        let step = (grid[999] - grid[0]) / 999.0;
+        let area: f64 = y.windows(2).map(|w| (w[0] + w[1]) / 2.0 * step).sum();
+        assert!(area > 0.5 && area < 1.0, "area {area}");
+    }
+
+    #[test]
+    fn na_last_ordering() {
+        assert_eq!(cmp_na_last(f64::NAN, f64::NAN), Ordering::Equal);
+        assert_eq!(cmp_na_last(f64::NAN, 1.0), Ordering::Greater);
+        assert_eq!(cmp_na_last(1.0, f64::NAN), Ordering::Less);
+        assert_eq!(cmp_na_last(1.0, 2.0), Ordering::Less);
+    }
+
+    #[test]
+    fn dodge2_refuses_boxes_with_no_orderable_centre() {
+        let b = Box2 {
+            idx: 0,
+            x: f64::NAN,
+            xmin: f64::NAN,
+            xmax: f64::NAN,
+            group: 1,
+            order: 0.0,
+            xid: 0,
+            newx: 0.0,
+            new_width: 0.0,
+        };
+        assert!(dodge2(vec![b], 0.1).is_err());
+    }
 }

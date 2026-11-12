@@ -331,36 +331,21 @@ fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
         .collect()
 }
 
-#[derive(Debug, Clone, PartialEq)]
-enum Key {
-    Num(f64),
-    Text(String),
-    Na,
-}
+/// A grouping key `(class, number, text)`: class 0 is a number, 1 text, 2 missing, so values sort
+/// before `NA` (R's `order()`), numbers by value and text byte-wise.
+type Key = (u8, f64, String);
 
 fn key_order(a: &Key, b: &Key) -> std::cmp::Ordering {
-    use std::cmp::Ordering::{Equal, Greater, Less};
-    match (a, b) {
-        (Key::Na, Key::Na) => Equal,
-        (Key::Na, _) => Greater,
-        (_, Key::Na) => Less,
-        (Key::Num(x), Key::Num(y)) => cmp_na_last(*x, *y),
-        (Key::Text(x), Key::Text(y)) => x.as_bytes().cmp(y.as_bytes()),
-        (Key::Num(_), Key::Text(_)) => Less,
-        (Key::Text(_), Key::Num(_)) => Greater,
-    }
+    a.0.cmp(&b.0).then(cmp_na_last(a.1, b.1)).then_with(|| a.2.as_bytes().cmp(b.2.as_bytes()))
 }
 
 fn keys(data: &DataFrame, name: &str) -> Result<Vec<Key>> {
     let cells = column(data, name)?;
-    let text = cells.iter().any(|c| matches!(c, DataValue::Text(_)));
     Ok((0..data.nrow())
         .map(|i| match cells.get(i) {
-            Some(DataValue::Text(s)) => Key::Text(s.clone()),
-            Some(DataValue::Number(v)) if v.is_nan() => Key::Na,
-            Some(DataValue::Number(v)) if text => Key::Text(format!("{v}")),
-            Some(DataValue::Number(v)) => Key::Num(f64::from(*v)),
-            Some(DataValue::Null) | None => Key::Na,
+            Some(DataValue::Text(s)) => (1, 0.0, s.clone()),
+            Some(DataValue::Number(v)) if !v.is_nan() => (0, f64::from(*v), String::new()),
+            _ => (2, 0.0, String::new()),
         })
         .collect())
 }
@@ -525,13 +510,9 @@ fn stat_bin(inp: &Input<'_>, range: (f64, f64), freqpoly: bool) -> Result<(Table
             let mut cum = 0.0;
             for gi in (0..groups.len()).rev() {
                 let idx = gi * per + b;
-                if let (Some(lo), Some(hi), Some(c)) =
-                    (ymin.get_mut(idx), ymax.get_mut(idx), count.get(idx))
-                {
-                    *lo = cum;
-                    cum += c;
-                    *hi = cum;
-                }
+                ymin[idx] = cum;
+                cum += count[idx];
+                ymax[idx] = cum;
             }
         }
         t.set("y", ymax.clone());
@@ -665,8 +646,7 @@ fn box_table(
     let mut t = Table::default();
     let mut groups = Vec::new();
     let mut outliers = Vec::new();
-    for b in boxes {
-        let Some((s, _, _)) = stats.get(b.idx) else { continue };
+    for (b, (s, _, _)) in boxes.iter().filter_map(|b| stats.get(b.idx).map(|st| (b, st))) {
         for (name, v) in [
             ("ymin", s.q[0]),
             ("lower", s.q[1]),
@@ -877,6 +857,9 @@ pub(super) fn layout(
 fn build_one(inp: &Input<'_>, range: Option<(f64, f64)>, all_x: &[f64]) -> Result<BuiltDist> {
     let spec = inp.spec;
     let need_range = || range.ok_or(Error::EmptyData);
+    if matches!(spec.kind, DistKind::Histogram | DistKind::Freqpoly | DistKind::Density) {
+        x_name(inp)?;
+    }
     let (mut t, group, outliers) = match spec.kind {
         DistKind::Histogram => {
             let (t, g) = stat_bin(inp, need_range()?, false)?;
