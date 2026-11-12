@@ -306,6 +306,7 @@ mod tests {
         assert!(out.contains("\x1b[38;2;200;10;20m●"), "{out:?}");
         assert!(out.contains("\x1b[1mT\x1b[0m"), "{out:?}");
         assert!(out.contains("\x1b[90m"), "{out:?}");
+        assert_eq!(Ink::Plain.sgr(), "");
         let black = render(row1(), TerminalPlot { width: 60, height: 16, color: true });
         assert!(black.contains("\x1b[1m●"), "{black:?}");
     }

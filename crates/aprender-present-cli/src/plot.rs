@@ -939,11 +939,7 @@ mod tests {
         assert_eq!(r, Ok(()));
         assert!(stdout.is_empty());
         let svg = std::fs::read_to_string(&out_path).expect("svg written");
-        assert!(
-            svg.starts_with("<svg") || svg.starts_with("<?xml"),
-            "{}",
-            &svg[..40.min(svg.len())]
-        );
+        assert!(svg.starts_with("<svg") || svg.starts_with("<?xml"));
         for label in ["5", "10", "-2.5", "0.0", "2.5", "5.0", "7.5"] {
             assert!(
                 svg.contains(&format!(">{label}</text>")),
@@ -971,6 +967,7 @@ mod tests {
             &mut Vec::new(),
         );
         assert_eq!(r, Err("cannot write stdout: closed".into()));
+        assert!(Broken.flush().is_ok());
     }
 
     #[test]
