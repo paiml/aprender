@@ -1,0 +1,94 @@
+metadata:
+  id: ggplot2-row1-point-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 1 (PLOT-GG-001, paiml/aprender#6909) — geom_point with the default
+    scale_x_continuous / scale_y_continuous. aprender-viz's BuiltGGPlot::layout() must reproduce
+    what ggplot_build() in ggplot2 4.0.3 computes for the same data and spec: layer positions,
+    GeomPoint default aesthetics, trained limits, 5% expansion, extended breaks censored to the
+    panel, and format() labels. The oracle is a committed JSON fixture produced by R; R is never
+    run at test time.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'Talbot, Lin & Hanrahan (2010) An Extension of Wilkinson''s Algorithm for Positioning Tick Labels on Axes'
+  - 'ggplot2 4.0.3: ggplot_build(), default_expansion(), GeomPoint$default_aes'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_point/generate.R'
+equations:
+  continuous_expansion:
+    formula: 'continuous_range = (lo - 0.05 * (hi - lo), hi + 0.05 * (hi - lo)) where (lo, hi) = range(data)'
+    domain: finite data with lo < hi
+    codomain: (f64, f64)
+    invariants:
+    - continuous_range strictly contains the trained limits
+    - each side grows by exactly 5% of the data span (additive expansion 0)
+    preconditions:
+    - at least two distinct finite values
+  extended_breaks:
+    formula: 'breaks = { b ∈ labeling::extended(continuous_range, m = 5) : lo_c <= b <= hi_c }'
+    domain: continuous_range = (lo_c, hi_c), lo_c < hi_c
+    codomain: Vec<f64>
+    invariants:
+    - every break lies inside continuous_range
+    - proposed breaks outside the range are censored and counted, not drawn
+  point_default_aes:
+    formula: 'GeomPoint default_aes = { shape: 19, colour: black, size: 1.5 mm, fill: NA, alpha: NA, stroke: 0.5 mm }'
+    domain: a point layer with no aesthetic set
+    codomain: per-row PointAes
+    invariants:
+    - every unset aesthetic takes ggplot2 4.0.3's default
+proof_obligations:
+- id: GG1-INV-001
+  type: invariant
+  property: Expanded range matches ggplot2
+  formal: '∀ axis: |continuous_range - ggplot2.continuous_range| <= 1e-9 rel + 1e-12 abs'
+  applies_to: continuous_expansion
+- id: GG1-INV-002
+  type: invariant
+  property: Breaks and labels match ggplot2
+  formal: '∀ axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored'
+  applies_to: extended_breaks
+- id: GG1-INV-003
+  type: invariant
+  property: Point defaults match GeomPoint$default_aes
+  formal: '∀ row: (shape, colour_rgba, size, stroke, is_na(fill), is_na(alpha)) = ggplot2 row'
+  applies_to: point_default_aes
+enforcement:
+  expansion_matches:
+    description: 5% continuous expansion equals ggplot2's continuous_range
+    check: grammar::ggplot2_oracle::ggplot2_row1_scale_x_continuous
+    severity: ERROR
+  breaks_match:
+    description: extended breaks, censoring and labels equal ggplot2's
+    check: grammar::ggplot2_oracle::ggplot2_row1_scale_y_continuous
+    severity: ERROR
+  point_defaults_match:
+    description: GeomPoint default aesthetics equal ggplot2's
+    check: grammar::ggplot2_oracle::ggplot2_row1_point_default_aesthetics
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG1-001
+  rule: Expansion is 5%
+  prediction: mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row1_scale_x_continuous and ggplot2_row1_scale_y_continuous RED
+  test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
+  if_fails: The oracle tolerance or fixture cannot see a 1% expansion change; the row proves nothing about expansion
+- id: FALSIFY-GG1-002
+  rule: Five breaks are asked for
+  prediction: mutating DEFAULT_N_BREAKS 5 -> 4 turns ggplot2_row1_scale_x_continuous and ggplot2_row1_scale_y_continuous RED
+  test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
+  if_fails: The fixture's breaks are insensitive to the requested count; pick data whose labeling changes with m
+- id: FALSIFY-GG1-003
+  rule: Default point size is 1.5 mm
+  prediction: mutating point_defaults::SIZE_MM 1.5 -> 2.0 turns ggplot2_row1_point_default_aesthetics RED
+  test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
+  if_fails: The aesthetic comparison does not read size from the fixture
+qa_gate:
+  id: F-GG1-001
+  name: ggplot2 conformance row 1 (geom_point + continuous scales)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-1 fixture
+  checks:
+  - expansion_matches
+  - breaks_match
+  - point_defaults_match

@@ -97,6 +97,9 @@ criterion = { version = "0.6", features = ["html_reports"] }
 tempfile = "3.10"
 approx = "0.5"
 
+# ggplot2 conformance fixtures (src/grammar/ggplot2_oracle.rs) are JSON.
+serde_json = { workspace = true }
+
 
 [features]
 default = []
