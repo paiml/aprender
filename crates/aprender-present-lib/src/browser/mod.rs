@@ -9,6 +9,8 @@ pub mod app;
 #[cfg(target_arch = "wasm32")]
 pub mod canvas2d;
 #[cfg(target_arch = "wasm32")]
+pub mod entry;
+#[cfg(target_arch = "wasm32")]
 pub mod events;
 #[cfg(target_arch = "wasm32")]
 pub mod showcase;
@@ -16,6 +18,7 @@ pub mod showcase;
 pub mod websocket;
 
 // Cross-platform modules (work on native for testing)
+pub mod mount;
 pub mod notebook;
 pub mod router;
 pub mod shell_autocomplete;
@@ -25,6 +28,9 @@ pub mod storage;
 pub use app::App;
 #[cfg(target_arch = "wasm32")]
 pub use canvas2d::Canvas2DRenderer;
+#[cfg(target_arch = "wasm32")]
+pub use entry::{mount, MessageHandler, MountHandle};
+pub use mount::{schedule, Frame, FrameAction, Mounted};
 pub use router::{BrowserRouter, RouteMatch, RouteMatcher};
 pub use shell_autocomplete::ShellAutocomplete;
 #[cfg(target_arch = "wasm32")]
