@@ -28,7 +28,7 @@ equations:
     - the default bar width is 0.9 of the unit resolution
   discrete_x_axis:
     formula: 'continuous_range = range((1 - 0.6, n + 0.6), (min xmin, max xmax)); level i sits at i'
-    domain: n >= 1 text levels sorted bytewise
+    domain: n >= 1 text levels sorted bytewise (under LC_COLLATE=C, B sorts before a); the oracle pins LC_COLLATE=C in every generate.R and records it as "collate" in each fixture, so R's locale-dependent sort() is never the reference
     codomain: DiscreteAxis
     invariants:
     - break positions are 1..n and labels are the level names
@@ -57,17 +57,39 @@ enforcement:
     description: prop = count / total when the x levels share one group
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_stat_count_group1_prop
     severity: ERROR
+  level_order_c_collation:
+    description: levels (x = a, B, B, c) and groups sort bytewise, as under LC_COLLATE=C
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_level_order_is_bytewise_c_collation
+    severity: ERROR
+  public_default_width_matches:
+    description: GGPlot::layout() over geom_bar reaches bar_layout with width 0.9 and the stat_count output
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_bar_default_width_and_stat_count
+    severity: ERROR
+  public_geom_col_matches:
+    description: GGPlot::layout() over geom_col uses stat identity
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_col
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGB1-001
   rule: Bar width is 0.9
-  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns all 11 ggplot2_bars tests RED (measured, 11 failed, rc=101)
+  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns 17 of the 30 ggplot2_bars tests RED (measured, 17 failed, 13 passed, rc=101); mutating the geom default (Geom::bar() width 0.9 -> 0.8) turns the 10 public-path tests RED (measured, 10 failed, 20 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: A 10% narrower bar is invisible to the oracle; the edges are not compared
 - id: FALSIFY-GGB1-002
   rule: Discrete expansion is add 0.6
-  prediction: mutating DISCRETE_EXPAND_ADD 0.6 -> 0.5 turns all 11 ggplot2_bars tests RED (measured, 11 failed, rc=101; every bar plot shares the discrete x axis)
+  prediction: mutating DISCRETE_EXPAND_ADD 0.6 -> 0.5 turns 27 of the 30 ggplot2_bars tests RED (measured, 27 failed, 3 passed, rc=101; every bar plot shares the discrete x axis)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The x continuous_range is not compared
+- id: FALSIFY-GGB1-003
+  rule: Levels sort bytewise (LC_COLLATE=C), not case-insensitively
+  prediction: sorting levels case-insensitively turns exactly _level_order_is_bytewise_c_collation, _group_order_is_bytewise_c_collation and _public_level_and_group_order_c_collation RED (measured for both the level sort and the group-key sort, 3 failed, 27 passed, rc=101; the fixture is x = a, B, B, c, whose C-locale limits are B, a, c)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The mixed-case fixture is not in the suite; an all-lowercase x cannot tell the two orders apart
+- id: FALSIFY-GGB1-004
+  rule: The public builder reaches the bar code
+  prediction: dropping .width(..) at the single call site (GGPlot::build_bars) turns ggplot2_bars_public_geom_bar_width RED and nothing else (measured on the 11 public tests, 1 failed, 10 passed, rc=101); replacing the Identity stat branch with Count turns all 11 public tests RED (measured, 11 failed, rc=101); dropping .position(..) turns the 4 public stack, fill and dodge position tests RED (measured, 4 failed, 7 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars_public (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: layout() is not compared with the same fixtures as bar_layout()
 qa_gate:
   id: F-GGB1-001
   name: ggplot2 conformance bars row 1 (stat_count + geom_bar)
@@ -75,3 +97,6 @@ qa_gate:
   checks:
   - counts_match
   - prop_merged_group_matches
+  - level_order_c_collation
+  - public_default_width_matches
+  - public_geom_col_matches

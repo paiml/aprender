@@ -15,7 +15,7 @@ metadata:
 equations:
   pos_stack:
     formula: 'per xmin, bars ordered by descending group (ascending when reverse): heights = cumsum(y); ymin = min(h[i], h[i+1]); ymax = max(h[i], h[i+1]); y = (1 - vjust) * ymin + vjust * ymax'
-    domain: bars of one x; negative bars (ymax < 0) stacked separately
+    domain: bars of one x; negative bars (ymax < 0) stacked separately; a zero-height bar (ymax = 0, ymin = 0) belongs to the positive stack
     codomain: ymin, ymax, y
     invariants:
     - group 1 is on top of its stack by default
@@ -39,22 +39,35 @@ enforcement:
     description: vjust = 0.5 equals ggplot2's
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack_vjust
     severity: ERROR
+  stack_zero_height_matches:
+    description: zero-height and negative bars stack as ggplot2 does
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack_zero_height_bar
+    severity: ERROR
+  stack_public_matches:
+    description: GGPlot::layout() with the default bar position equals ggplot2 (stack is the default)
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_stack_is_the_default_for_bars
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGS1-001
   rule: Default stacking order is group 1 on top
-  prediction: flipping the order in position::stack (descending <-> ascending group) turns ggplot2_bars_position_stack, _position_fill, _position_stack_vjust, _position_stack_reverse and _stat_identity_geom_col RED (measured, 5 failed, 6 passed, rc=101)
+  prediction: flipping the order in position::stack (descending <-> ascending group) turns 13 of the 30 ggplot2_bars tests RED, the stack, fill, vjust, reverse, zero-height, identity and collation tests and their public twins (measured, 13 failed, 17 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: Stack order is not observable in the fixture; use a fill with several groups per x
 - id: FALSIFY-GGS1-002
   rule: STACK_REVERSE defaults to FALSE
-  prediction: mutating STACK_REVERSE false -> true turns ggplot2_bars_position_stack, _position_fill and _stat_identity_geom_col RED (measured, 3 failed, 8 passed, rc=101); the explicit reverse test stays green
+  prediction: mutating STACK_REVERSE false -> true turns 11 of the 30 ggplot2_bars tests RED, among them the default stack, fill and identity tests and their public twins (measured, 11 failed, 19 passed, rc=101); the explicit reverse test stays green
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The default stack does not read the constant
 - id: FALSIFY-GGS1-003
   rule: STACK_VJUST defaults to 1
-  prediction: mutating STACK_VJUST 1.0 -> 0.5 turns 5 tests RED (_position_stack, _stat_count_geom_bar, _stat_count_group1_prop, _stat_identity_geom_col, _stat_identity_geom_col_plain) (measured, 5 failed, 6 passed, rc=101)
+  prediction: mutating STACK_VJUST 1.0 -> 0.5 turns 16 of the 30 tests RED (stack, count, group1 prop, identity, plain identity, level/group order, zero-height and their public twins; measured, 16 failed, 14 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: y of a bar is not compared
+- id: FALSIFY-GGS1-004
+  rule: A zero-height bar is not negative
+  prediction: mutating `ymax < 0.0` to `ymax <= 0.0` in position::stack turns exactly _position_stack_zero_height_bar and _public_position_stack_zero_height_bar RED (measured, 2 failed, 28 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: No fixture has a zero-height bar next to positive ones
 qa_gate:
   id: F-GGS1-001
   name: ggplot2 conformance bars row 3 (position_stack)
@@ -63,3 +76,5 @@ qa_gate:
   - stack_default_matches
   - stack_reverse_matches
   - stack_vjust_matches
+  - stack_zero_height_matches
+  - stack_public_matches

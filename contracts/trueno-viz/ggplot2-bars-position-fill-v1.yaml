@@ -33,7 +33,7 @@ enforcement:
 falsification_tests:
 - id: FALSIFY-GGF1-001
   rule: position_fill vjust defaults to 1
-  prediction: mutating FILL_VJUST 1.0 -> 0.5 turns ggplot2_bars_position_fill RED and only that test (measured, 1 failed, 10 passed, rc=101)
+  prediction: mutating FILL_VJUST 1.0 -> 0.5 turns exactly ggplot2_bars_position_fill and ggplot2_bars_public_position_fill RED (measured, 2 failed, 28 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: y of a filled bar is not compared
 qa_gate:
