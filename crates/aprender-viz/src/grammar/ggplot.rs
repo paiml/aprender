@@ -14,9 +14,10 @@ use super::build::{
     point_defaults, point_diameter_px, BuiltLayer, BuiltLayout, PointAes, PositionScale,
 };
 use super::coord::{apply, apply_limits, Coord};
-use super::data::DataFrame;
+use super::data::{DataFrame, DataValue};
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
+use super::scale_spec::{PositionScaleSpec, ResolvedAxis};
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -77,6 +78,8 @@ pub struct GGPlot {
     xlab: Option<String>,
     /// Y-axis label.
     ylab: Option<String>,
+    x_scale: Option<PositionScaleSpec>,
+    y_scale: Option<PositionScaleSpec>,
 }
 
 impl Default for GGPlot {
@@ -101,6 +104,8 @@ impl GGPlot {
             title: None,
             xlab: None,
             ylab: None,
+            x_scale: None,
+            y_scale: None,
         }
     }
 
@@ -176,6 +181,20 @@ impl GGPlot {
         self
     }
 
+    /// `scale_x_*()`: shape the x position scale (continuous, log10 or discrete).
+    #[must_use]
+    pub fn scale_x(mut self, spec: impl Into<PositionScaleSpec>) -> Self {
+        self.x_scale = Some(spec.into());
+        self
+    }
+
+    /// `scale_y_*()`: shape the y position scale (continuous, log10 or discrete).
+    #[must_use]
+    pub fn scale_y(mut self, spec: impl Into<PositionScaleSpec>) -> Self {
+        self.y_scale = Some(spec.into());
+        self
+    }
+
     /// Set x-axis label.
     #[must_use]
     pub fn xlab(mut self, label: impl Into<String>) -> Self {
@@ -213,6 +232,8 @@ impl GGPlot {
             title: self.title,
             xlab: self.xlab,
             ylab: self.ylab,
+            x_scale: self.x_scale,
+            y_scale: self.y_scale,
         })
     }
 }
@@ -231,6 +252,8 @@ pub struct BuiltGGPlot {
     title: Option<String>,
     xlab: Option<String>,
     ylab: Option<String>,
+    x_scale: Option<PositionScaleSpec>,
+    y_scale: Option<PositionScaleSpec>,
 }
 
 /// Where each panel sits in the figure.
@@ -436,29 +459,59 @@ impl BuiltGGPlot {
         (PositionScale::continuous(wide(x)), PositionScale::continuous(wide(y)))
     }
 
+    /// The columns that feed one axis, one per layer (`x_axis` selects x or y).
+    fn axis_columns(&self, x_axis: bool) -> Vec<&[DataValue]> {
+        self.layers
+            .iter()
+            .filter_map(|layer| {
+                let data = layer.data.as_ref().unwrap_or(&self.data);
+                let aes = self.aes.merge(&layer.aes);
+                let name = if x_axis { aes.x } else { aes.y };
+                data.get(name.as_deref().unwrap_or(if x_axis { "x" } else { "y" }))
+            })
+            .collect()
+    }
+
+    /// The resolved x and y axes, trained on every layer's data and shaped by `scale_x`/`scale_y`.
+    fn resolved_axes(&self) -> (ResolvedAxis, ResolvedAxis) {
+        (
+            ResolvedAxis::resolve(self.x_scale.as_ref(), &self.axis_columns(true)),
+            ResolvedAxis::resolve(self.y_scale.as_ref(), &self.axis_columns(false)),
+        )
+    }
+
     /// The resolved plot, as ggplot2's `ggplot_build()` computes it: each layer's positions and
-    /// aesthetics, and the trained, expanded x/y scales with breaks and labels. The renderer draws
-    /// from these same scales.
+    /// aesthetics, and the trained, expanded x/y scales with breaks and labels. Layer positions are
+    /// in scale space (`log10` values on a log axis, level positions on a discrete one).
+    ///
+    /// The renderer (`to_framebuffer`, `to_svg`) still draws from its own linear scales and does
+    /// not yet honour `scale_x`/`scale_y`.
     ///
     /// # Errors
     ///
     /// None today; the signature leaves room for stats that can fail.
     pub fn layout(&self) -> Result<BuiltLayout> {
-        let (x, y) = self.position_scales();
-        let layers = self.layers.iter().map(|l| self.build_layer(l)).collect();
-        Ok(BuiltLayout { layers, x, y })
+        let (x_axis, y_axis) = self.resolved_axes();
+        let layers = self.layers.iter().map(|l| self.build_layer(l, &x_axis, &y_axis)).collect();
+        Ok(BuiltLayout { layers, x: x_axis.scale, y: y_axis.scale })
     }
 
-    /// One layer's built data: rows where both positions are numeric, plus point aesthetics.
-    fn build_layer(&self, layer: &Layer) -> BuiltLayer {
+    /// One layer's built data: rows where both positions resolve, plus point aesthetics.
+    fn build_layer(
+        &self,
+        layer: &Layer,
+        x_axis: &ResolvedAxis,
+        y_axis: &ResolvedAxis,
+    ) -> BuiltLayer {
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
-        let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
-        let ys = data.get_f32(aes.y.as_deref().unwrap_or("y")).unwrap_or_default();
+        let nothing: &[DataValue] = &[];
+        let xs = data.get(aes.x.as_deref().unwrap_or("x")).unwrap_or(nothing);
+        let ys = data.get(aes.y.as_deref().unwrap_or("y")).unwrap_or(nothing);
         let (x, y): (Vec<f64>, Vec<f64>) = xs
             .iter()
-            .zip(&ys)
-            .filter_map(|(a, b)| Some((f64::from((*a)?), f64::from((*b)?))))
+            .zip(ys)
+            .filter_map(|(a, b)| Some((x_axis.map_value(a)?, y_axis.map_value(b)?)))
             .unzip();
 
         let points = match layer.geom.geom_type {

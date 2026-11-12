@@ -1,0 +1,201 @@
+{
+  "row": "scale_x_discrete+scale_y_discrete",
+  "data_file": "data.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "cases": [
+    {
+      "name": "x_default",
+      "spec": "ggplot(df, aes(g, y)) + geom_point()",
+      "layer": {
+        "x": [3, 2, 1, 2, 3, 1, 2, 3],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["high", "low", "mid"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["high", "low", "mid"],
+          "break_positions": [1, 2, 3],
+          "labels": ["high", "low", "mid"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-2.25, 5.5],
+          "continuous_range": [-2.6375000000000002, 5.8875000000000002],
+          "breaks": [-2, 0, 2, 4],
+          "labels": ["-2", "0", "2", "4"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-2, -1, 0, 1, 2, 3, 4, 5]
+        }
+      }
+    },
+    {
+      "name": "y_default",
+      "spec": "ggplot(df, aes(x, g)) + geom_point()",
+      "layer": {
+        "x": [1, 2, 3, 4, 5, 6, 7, 8],
+        "y": [3, 2, 1, 2, 3, 1, 2, 3]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1, 8],
+          "continuous_range": [0.64999999999999991, 8.3499999999999996],
+          "breaks": [2, 4, 6, 8],
+          "labels": ["2", "4", "6", "8"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1, 2, 3, 4, 5, 6, 7, 8]
+        },
+        "y": {
+          "kind": "discrete",
+          "limits": ["high", "low", "mid"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["high", "low", "mid"],
+          "break_positions": [1, 2, 3],
+          "labels": ["high", "low", "mid"]
+        }
+      }
+    },
+    {
+      "name": "x_limits_extra_level",
+      "spec": "ggplot(df, aes(g, y)) + geom_point() + scale_x_discrete(limits = c('mid', 'low', 'high', 'extra'))",
+      "layer": {
+        "x": [1, 2, 3, 2, 1, 3, 2, 1],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["mid", "low", "high", "extra"],
+          "continuous_range": [0.40000000000000002, 4.5999999999999996],
+          "breaks": ["mid", "low", "high", "extra"],
+          "break_positions": [1, 2, 3, 4],
+          "labels": ["mid", "low", "high", "extra"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-2.25, 5.5],
+          "continuous_range": [-2.6375000000000002, 5.8875000000000002],
+          "breaks": [-2, 0, 2, 4],
+          "labels": ["-2", "0", "2", "4"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-2, -1, 0, 1, 2, 3, 4, 5]
+        }
+      }
+    },
+    {
+      "name": "x_breaks_labels",
+      "spec": "ggplot(df, aes(g, y)) + geom_point() + scale_x_discrete(breaks = c('high', 'mid'), labels = c('H', 'M'))",
+      "layer": {
+        "x": [3, 2, 1, 2, 3, 1, 2, 3],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["high", "low", "mid"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["high", "mid"],
+          "break_positions": [1, 3],
+          "labels": ["H", "M"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-2.25, 5.5],
+          "continuous_range": [-2.6375000000000002, 5.8875000000000002],
+          "breaks": [-2, 0, 2, 4],
+          "labels": ["-2", "0", "2", "4"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-2, -1, 0, 1, 2, 3, 4, 5]
+        }
+      }
+    },
+    {
+      "name": "x_expand",
+      "spec": "ggplot(df, aes(g, y)) + geom_point() + scale_x_discrete(expand = expansion(mult = c(0, 0.1), add = c(0.2, 1)))",
+      "layer": {
+        "x": [3, 2, 1, 2, 3, 1, 2, 3],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["high", "low", "mid"],
+          "continuous_range": [0.80000000000000004, 4.2000000000000002],
+          "breaks": ["high", "low", "mid"],
+          "break_positions": [1, 2, 3],
+          "labels": ["high", "low", "mid"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-2.25, 5.5],
+          "continuous_range": [-2.6375000000000002, 5.8875000000000002],
+          "breaks": [-2, 0, 2, 4],
+          "labels": ["-2", "0", "2", "4"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-2, -1, 0, 1, 2, 3, 4, 5]
+        }
+      }
+    },
+    {
+      "name": "x_single_level",
+      "spec": "ggplot(df[df$g == 'low', ], aes(g, y)) + geom_point()",
+      "layer": {
+        "x": [1, 1, 1],
+        "y": [0.5, 3, 5.5]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["low"],
+          "continuous_range": [0.40000000000000002, 1.6000000000000001],
+          "breaks": ["low"],
+          "break_positions": [1],
+          "labels": ["low"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [0.5, 5.5],
+          "continuous_range": [0.25, 5.75],
+          "breaks": [1, 2, 3, 4, 5],
+          "labels": ["1", "2", "3", "4", "5"],
+          "n_breaks_censored": 2,
+          "minor_breaks": [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5]
+        }
+      }
+    },
+    {
+      "name": "y_limits_labels",
+      "spec": "ggplot(df, aes(x, g)) + geom_point() + scale_y_discrete(limits = c('mid', 'low', 'high'), labels = c('M', 'L', 'H'))",
+      "layer": {
+        "x": [1, 2, 3, 4, 5, 6, 7, 8],
+        "y": [1, 2, 3, 2, 1, 3, 2, 1]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1, 8],
+          "continuous_range": [0.64999999999999991, 8.3499999999999996],
+          "breaks": [2, 4, 6, 8],
+          "labels": ["2", "4", "6", "8"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1, 2, 3, 4, 5, 6, 7, 8]
+        },
+        "y": {
+          "kind": "discrete",
+          "limits": ["mid", "low", "high"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["mid", "low", "high"],
+          "break_positions": [1, 2, 3],
+          "labels": ["M", "L", "H"]
+        }
+      }
+    }
+  ]
+}

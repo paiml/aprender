@@ -1,0 +1,152 @@
+{
+  "row": "scale_continuous_args",
+  "data_file": "data.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "cases": [
+    {
+      "name": "limits_no_expand_x",
+      "spec": "ggplot(df, aes(x, y)) + geom_point() + scale_x_continuous(limits = c(0, 10), expand = expansion(0))",
+      "layer": {
+        "x": [1.5, 2.25, 3, 4.75, 6.5, 8.125, 9.5, 9.75],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [0, 10],
+          "continuous_range": [0, 10],
+          "breaks": [0, 2.5, 5, 7.5, 10],
+          "labels": ["0.0", "2.5", "5.0", "7.5", "10.0"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75, 10]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-2.25, 5.5],
+          "continuous_range": [-2.6375000000000002, 5.8875000000000002],
+          "breaks": [-2, 0, 2, 4],
+          "labels": ["-2", "0", "2", "4"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-2, -1, 0, 1, 2, 3, 4, 5]
+        }
+      }
+    },
+    {
+      "name": "limits_no_expand_y",
+      "spec": "ggplot(df, aes(x, y)) + geom_point() + scale_y_continuous(limits = c(-4, 8), expand = expansion(0))",
+      "layer": {
+        "x": [1.5, 2.25, 3, 4.75, 6.5, 8.125, 9.5, 9.75],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.5, 9.75],
+          "continuous_range": [1.0874999999999999, 10.1625],
+          "breaks": [2.5, 5, 7.5, 10],
+          "labels": ["2.5", "5.0", "7.5", "10.0"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75, 10]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-4, 8],
+          "continuous_range": [-4, 8],
+          "breaks": [-4, -2, 0, 2, 4, 6, 8],
+          "labels": ["-4", "-2", "0", "2", "4", "6", "8"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [-4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+        }
+      }
+    },
+    {
+      "name": "breaks_labels_expansion",
+      "spec": "ggplot(df, aes(x, y)) + geom_point() + scale_x_continuous(breaks = c(2, 5, 8, 20), labels = c('two', 'five', 'eight', 'twenty'), expand = expansion(mult = c(0.02, 0.1), add = c(1, 0)))",
+      "layer": {
+        "x": [1.5, 2.25, 3, 4.75, 6.5, 8.125, 9.5, 9.75],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.5, 9.75],
+          "continuous_range": [0.33499999999999996, 10.574999999999999],
+          "breaks": [2, 5, 8],
+          "labels": ["two", "five", "eight"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [0.5, 2, 3.5, 5, 6.5, 8, 9.5]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-2.25, 5.5],
+          "continuous_range": [-2.6375000000000002, 5.8875000000000002],
+          "breaks": [-2, 0, 2, 4],
+          "labels": ["-2", "0", "2", "4"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-2, -1, 0, 1, 2, 3, 4, 5]
+        }
+      }
+    },
+    {
+      "name": "limits_breaks_y",
+      "spec": "ggplot(df, aes(x, y)) + geom_point() + scale_y_continuous(limits = c(-3, 8), breaks = c(0, 4, 8))",
+      "layer": {
+        "x": [1.5, 2.25, 3, 4.75, 6.5, 8.125, 9.5, 9.75],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.5, 9.75],
+          "continuous_range": [1.0874999999999999, 10.1625],
+          "breaks": [2.5, 5, 7.5, 10],
+          "labels": ["2.5", "5.0", "7.5", "10.0"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75, 10]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-3, 8],
+          "continuous_range": [-3.5499999999999998, 8.5500000000000007],
+          "breaks": [0, 4, 8],
+          "labels": ["0", "4", "8"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [-2, 0, 2, 4, 6, 8]
+        }
+      }
+    },
+    {
+      "name": "add_expansion_y",
+      "spec": "ggplot(df, aes(x, y)) + geom_point() + scale_y_continuous(expand = expansion(add = 2))",
+      "layer": {
+        "x": [1.5, 2.25, 3, 4.75, 6.5, 8.125, 9.5, 9.75],
+        "y": [-2.25, 0.5, 1.75, 3, 2.5, 4.125, 5.5, 4.75]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.5, 9.75],
+          "continuous_range": [1.0874999999999999, 10.1625],
+          "breaks": [2.5, 5, 7.5, 10],
+          "labels": ["2.5", "5.0", "7.5", "10.0"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75, 10]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-2.25, 5.5],
+          "continuous_range": [-4.25, 7.5],
+          "breaks": [-2.5, 0, 2.5, 5, 7.5],
+          "labels": ["-2.5", "0.0", "2.5", "5.0", "7.5"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-3.75, -2.5, -1.25, 0, 1.25, 2.5, 3.75, 5, 6.25, 7.5]
+        }
+      }
+    }
+  ]
+}

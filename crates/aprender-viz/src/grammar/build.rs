@@ -7,7 +7,8 @@
 //!
 //! Every default in this file is ggplot2 4.0.3's, and each names where ggplot2 defines it.
 
-use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
+pub use super::r_format::format_labels;
+use super::scale_spec::{resolve_continuous, ContinuousSpec};
 use crate::color::Rgba;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
@@ -103,6 +104,19 @@ pub struct PositionScale {
     pub labels: Vec<String>,
     /// Breaks the algorithm proposed outside `continuous_range` (ggplot2 keeps these as `NA`).
     pub n_breaks_censored: usize,
+    /// Minor breaks inside `continuous_range` (continuous axes; empty for discrete).
+    pub minor_breaks: Vec<f64>,
+    /// The level names of a discrete axis, in position order; `None` for a continuous axis.
+    pub levels: Option<Vec<String>>,
+}
+
+/// Indices of the `proposed` breaks that lie inside the panel range `[lo, hi]`, ends included.
+///
+/// ggplot2 censors breaks with `oob_censor_any` on the continuous range; a break exactly on a
+/// limit is kept.
+#[must_use]
+pub fn censor_breaks(proposed: &[f64], lo: f64, hi: f64) -> Vec<usize> {
+    proposed.iter().enumerate().filter(|(_, b)| **b >= lo && **b <= hi).map(|(i, _)| i).collect()
 }
 
 impl PositionScale {
@@ -113,21 +127,8 @@ impl PositionScale {
     /// expand). ggplot2 widens a zero-width range by 0.5 instead; that case has no oracle row yet.
     #[must_use]
     pub fn continuous(limits: (f64, f64)) -> Self {
-        let continuous_range = expand_continuous(limits);
-        let (lo, hi) = continuous_range;
-        let proposed = extended(lo, hi, DEFAULT_N_BREAKS, &Q_DEFAULT, &W_DEFAULT);
-        let breaks: Vec<f64> = proposed.iter().copied().filter(|b| *b >= lo && *b <= hi).collect();
-        let n_breaks_censored = proposed.len() - breaks.len();
-        let labels = format_labels(&breaks);
-        Self { limits, continuous_range, breaks, labels, n_breaks_censored }
+        resolve_continuous(limits, &ContinuousSpec::new())
     }
-}
-
-/// `expand_range4(limits, expansion(mult = 0.05))` for a non-degenerate range.
-fn expand_continuous((lo, hi): (f64, f64)) -> (f64, f64) {
-    let (lo, hi) = if lo < hi { (lo, hi) } else { (lo - 1.0, hi + 1.0) };
-    let pad = (hi - lo) * CONTINUOUS_EXPAND_MULT + CONTINUOUS_EXPAND_ADD;
-    (lo - pad, hi + pad)
 }
 
 /// The resolved plot: layers plus the shared x/y position scales (one panel's view; facets share
@@ -145,71 +146,9 @@ pub struct BuiltLayout {
     pub y: PositionScale,
 }
 
-/// Significant digits R's `format()` uses by default (`getOption("digits")`).
-const R_DIGITS: i32 = 7;
-
-/// Digits needed right of the decimal point to print `v` to `R_DIGITS` significant digits with no
-/// trailing zeros (the `rgt` of R's `formatReal`).
-fn decimals_needed(v: f64) -> usize {
-    if v == 0.0 || !v.is_finite() {
-        return 0;
-    }
-    let a = v.abs();
-    let mut e = libm::floor(libm::log10(a)) as i32;
-    // Mantissa scaled to R_DIGITS integer digits, rounded as R rounds it.
-    let mut m = libm::round(a / libm::pow(10.0, f64::from(e - (R_DIGITS - 1))));
-    let full = libm::pow(10.0, f64::from(R_DIGITS));
-    if m >= full {
-        m /= 10.0;
-        e += 1;
-    }
-    let mut sig = R_DIGITS;
-    let mut mi = m as u64;
-    while sig > 1 && mi % 10 == 0 {
-        mi /= 10;
-        sig -= 1;
-    }
-    usize::try_from(sig - e - 1).unwrap_or(0)
-}
-
-/// Label breaks as R's `format(x, trim = TRUE)` does: every label carries the same number of
-/// decimals, the fewest that show each value to 7 significant digits.
-///
-/// Fixed notation only. R switches to scientific notation when it is narrower (e.g. `1e+06`);
-/// that branch has no oracle row yet and is not implemented.
-#[must_use]
-pub fn format_labels(values: &[f64]) -> Vec<String> {
-    let d = values.iter().map(|v| decimals_needed(*v)).max().unwrap_or(0);
-    values
-        .iter()
-        .map(|v| {
-            // R never prints a negative zero.
-            let v = if *v == 0.0 { 0.0 } else { *v };
-            format!("{v:.d$}")
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn labels_share_decimals() {
-        assert_eq!(format_labels(&[-2.5, 0.0, 2.5, 5.0]), ["-2.5", "0.0", "2.5", "5.0"]);
-        assert_eq!(format_labels(&[5.0, 10.0]), ["5", "10"]);
-        assert_eq!(format_labels(&[0.25, 0.5]), ["0.25", "0.50"]);
-        assert_eq!(format_labels(&[-0.0]), ["0"]);
-        assert!(format_labels(&[]).is_empty());
-    }
-
-    #[test]
-    fn decimals_round_to_seven_significant_digits() {
-        // 1/3 prints as 0.3333333 in R: 7 significant digits.
-        assert_eq!(decimals_needed(1.0 / 3.0), 7);
-        assert_eq!(decimals_needed(1234.5), 1);
-        assert_eq!(decimals_needed(9_999_999.6), 0);
-    }
 
     #[test]
     fn degenerate_range_is_widened_then_expanded() {
