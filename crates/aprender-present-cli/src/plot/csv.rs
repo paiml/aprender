@@ -426,6 +426,23 @@ mod tests {
     }
 
     #[test]
+    fn crlf_line_endings_count_each_line_once() {
+        assert_eq!(
+            err("a,b\r\n1,2\r\n3\r\n"),
+            CsvError::Ragged {
+                line: 3,
+                expected: 2,
+                got: 1
+            }
+        );
+        assert_eq!(
+            err("# c\r\na,b\r\n1,2\r\n3,\"x\r\ny\r\n"),
+            CsvError::UnterminatedQuote { line: 4 }
+        );
+        assert_eq!(err("\r\n# c\r\n"), CsvError::NoHeader { line: 3 });
+    }
+
+    #[test]
     fn ragged_rows_name_the_line_and_both_counts() {
         let e = err("a,b\n1,2\n3\n");
         assert_eq!(
