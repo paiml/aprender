@@ -76,7 +76,7 @@ falsification_tests:
   if_fails: The oracle tolerance or fixture cannot see a 1% expansion change; the row proves nothing about expansion
 - id: FALSIFY-GG1-002
   rule: Five breaks are asked for
-  prediction: mutating DEFAULT_N_BREAKS 5 -> 4 turns ggplot2_row1_scale_x_continuous and ggplot2_row1_scale_y_continuous RED
+  prediction: mutating DEFAULT_N_BREAKS 5 -> 4 turns ggplot2_row1_scale_y_continuous RED (y breaks become 0, 4; x keeps 5, 10, so only y detects it)
   test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
   if_fails: The fixture's breaks are insensitive to the requested count; pick data whose labeling changes with m
 - id: FALSIFY-GG1-003
