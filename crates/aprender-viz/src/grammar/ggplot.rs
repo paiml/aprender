@@ -258,13 +258,13 @@ impl PanelGrid {
 
     /// The drawable rectangle of one panel: `(x, y, w, h)`.
     fn rect(&self, p: &Panel) -> (u32, u32, u32, u32) {
-        let cx = u32::try_from(p.col).unwrap_or(0) * self.cell_w;
-        let cy = u32::try_from(p.row).unwrap_or(0) * self.cell_h;
+        let cx = u32::try_from(p.col).unwrap_or(0).saturating_mul(self.cell_w);
+        let cy = u32::try_from(p.row).unwrap_or(0).saturating_mul(self.cell_h);
         (
-            cx + self.margin,
-            cy + self.margin,
-            self.cell_w.saturating_sub(2 * self.margin),
-            self.cell_h.saturating_sub(2 * self.margin),
+            cx.saturating_add(self.margin),
+            cy.saturating_add(self.margin),
+            self.cell_w.saturating_sub(self.margin.saturating_mul(2)),
+            self.cell_h.saturating_sub(self.margin.saturating_mul(2)),
         )
     }
 }
@@ -423,8 +423,10 @@ impl BuiltGGPlot {
             let f = self.panel_frame(p, &grid)?;
             let bottom = (f.y + f.h) as f32;
             let left = f.x as f32;
+            // A tick whose pixel is not finite (a domain wider than f32) is not written: SVG
+            // attributes never carry NaN or inf.
             for (v, label) in &f.x_ticks {
-                let px = f.x_scale.scale(*v as f32);
+                let Some(px) = Self::pixel(&f.x_scale, *v as f32) else { continue };
                 svg = svg.line(px, bottom, px, bottom + TICK_PX, ink, 1.0).text_anchored(
                     px,
                     bottom + TICK_PX + AXIS_TEXT_PX,
@@ -435,7 +437,7 @@ impl BuiltGGPlot {
                 );
             }
             for (v, label) in &f.y_ticks {
-                let py = f.y_scale.scale(*v as f32);
+                let Some(py) = Self::pixel(&f.y_scale, *v as f32) else { continue };
                 svg = svg.line(left - TICK_PX, py, left, py, ink, 1.0).text_anchored(
                     left - TICK_PX - 2.0,
                     py + AXIS_TEXT_PX * 0.35,
@@ -460,10 +462,14 @@ impl BuiltGGPlot {
             apply_limits(&self.coord, xs.continuous_range, ys.continuous_range)?;
 
         // The scale pipeline below is still f32; the coordinate surface above is f64 (APEX-2c).
-        let x_scale = LinearScale::new((x_min as f32, x_max as f32), (x as f32, (x + w) as f32))?;
+        // A domain that is not finite as f32 (no data, a NaN or infinite limit, or one past
+        // f32::MAX) maps no value to a finite pixel: [`Self::pixel`] then yields `None` and every
+        // mark and tick is skipped, so nothing non-finite is drawn or written.
+        let (right, bottom) = (x as f32 + w as f32, y as f32 + h as f32);
+        let x_scale = LinearScale::new((x_min as f32, x_max as f32), (x as f32, right))?;
         let y_scale = LinearScale::new(
             (y_min as f32, y_max as f32),
-            ((y + h) as f32, y as f32), // Inverted for screen coords
+            (bottom, y as f32), // Inverted for screen coords
         )?;
 
         let flip = matches!(self.coord, Coord::Cartesian { flip: true, .. });
@@ -553,9 +559,15 @@ impl BuiltGGPlot {
 
     /// The panel's points, in coordinate space.
     ///
-    /// Reads both columns row-aligned, keeps only rows where *both* are numeric, and pushes each
+    /// Reads both columns row-aligned, keeps only rows where *both* are finite numbers (a NaN or
+    /// infinite row is dropped, for every geom), and pushes each
     /// surviving pair through [`apply`] — so the coordinate transform happens before any geom sees
     /// a point, and `x[i]`/`y[i]` are guaranteed to come from the same record.
+    ///
+    /// The finite filter is load-bearing, not a second guard: [`BuiltGGPlot::pixel`] would skip a
+    /// non-finite mark, but a bar's width is `range / n`, a polyline joins its neighbours and an
+    /// area needs two points, all counted on the rows kept here. Removing it changes the bars
+    /// (test `dropped_rows_change_nothing_for_every_geom`).
     fn panel_points(
         &self,
         data: &DataFrame,
@@ -571,6 +583,11 @@ impl BuiltGGPlot {
             let (Some(Some(x)), Some(Some(y))) = (xs.get(i).copied(), ys.get(i).copied()) else {
                 continue;
             };
+            // A NaN or infinite coordinate has no pixel: the row is dropped for every geom
+            // (ggplot2 drops it too, "Removed n rows containing non-finite values").
+            if !(x.is_finite() && y.is_finite()) {
+                continue;
+            }
             let (tx, ty) = apply(&self.coord, f64::from(x), f64::from(y))?;
             xo.push(tx as f32);
             yo.push(ty as f32);
@@ -630,15 +647,21 @@ impl BuiltGGPlot {
     /// Returns an error for a path, step or reference layer (`geom_line`, `geom_path`, `geom_step`, `geom_hline`,
     /// `geom_vline`, `geom_abline`) whose input is outside what `grammar/path.rs` documents:
     /// text or infinite positions, a missing column, a data-mapped colour, an unsupported facet, or
-    /// a degenerate axis range.
+    /// a degenerate axis range; and [`Error::UnsupportedCoord`] for such a layer under any
+    /// coordinate system but the default `coord_cartesian()` (`layout()` applies none). While such
+    /// a layer is present, any layer with a stat other than identity is an
+    /// [`Error::UnsupportedStat`] (`layout()` computes none), and any other geom than these six
+    /// and `geom_point` is an [`Error::UnsupportedLayer`].
     pub fn layout(&self) -> Result<BuiltLayout> {
+        path::require_default_coord(&self.layers, &self.coord)?;
+        path::require_identity_stats(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
         let (x, y) = self.position_scales();
         path::require_trained(&self.layers, &x, &y)?;
         Ok(BuiltLayout { layers, x, y })
     }
 
-    /// One layer's built data: rows where both positions are numeric, plus point aesthetics.
+    /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
@@ -651,6 +674,7 @@ impl BuiltGGPlot {
             .iter()
             .zip(&ys)
             .filter_map(|(a, b)| Some((f64::from((*a)?), f64::from((*b)?))))
+            .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
 
         let points = match layer.geom.geom_type {
@@ -695,9 +719,9 @@ impl BuiltGGPlot {
         draw_line_aa(
             fb,
             plot_x as f32,
-            (plot_y + plot_h) as f32,
-            (plot_x + plot_w) as f32,
-            (plot_y + plot_h) as f32,
+            plot_y as f32 + plot_h as f32,
+            plot_x as f32 + plot_w as f32,
+            plot_y as f32 + plot_h as f32,
             color,
         );
 
@@ -707,7 +731,7 @@ impl BuiltGGPlot {
             plot_x as f32,
             plot_y as f32,
             plot_x as f32,
-            (plot_y + plot_h) as f32,
+            plot_y as f32 + plot_h as f32,
             color,
         );
     }
@@ -758,6 +782,14 @@ impl BuiltGGPlot {
         Ok(())
     }
 
+    /// The pixel `v` maps to, or `None` when the scale gives no finite pixel (the domain is
+    /// wider than `f32`, or `v` overflows it). A mark with no pixel is skipped, never drawn at an
+    /// arbitrary one.
+    fn pixel(scale: &LinearScale, v: f32) -> Option<f32> {
+        let p = scale.scale(v);
+        p.is_finite().then_some(p)
+    }
+
     /// Render point geometry.
     #[allow(clippy::too_many_arguments)]
     fn render_points(
@@ -771,8 +803,11 @@ impl BuiltGGPlot {
         shape: PointShape,
     ) {
         for i in 0..x_data.len().min(y_data.len()) {
-            let x = x_scale.scale(x_data[i]);
-            let y = y_scale.scale(y_data[i]);
+            let (Some(x), Some(y)) =
+                (Self::pixel(x_scale, x_data[i]), Self::pixel(y_scale, y_data[i]))
+            else {
+                continue;
+            };
             let r = (size / 2.0) as i32;
 
             match shape {
@@ -780,12 +815,14 @@ impl BuiltGGPlot {
                     draw_circle(fb, x as i32, y as i32, r, color);
                 }
                 PointShape::Square => {
+                    // Saturating: `x as i32 - r` and `2 * r` overflow for an extreme size.
+                    let side = (r.max(0) as u32).saturating_mul(2);
                     draw_rect(
                         fb,
-                        x as i32 - r,
-                        y as i32 - r,
-                        (r * 2) as u32,
-                        (r * 2) as u32,
+                        (x as i32).saturating_sub(r),
+                        (y as i32).saturating_sub(r),
+                        side,
+                        side,
                         color,
                     );
                 }
@@ -814,11 +851,16 @@ impl BuiltGGPlot {
         }
 
         for i in 0..(n - 1) {
-            let x0 = x_scale.scale(x_data[i]);
-            let y0 = y_scale.scale(y_data[i]);
-            let x1 = x_scale.scale(x_data[i + 1]);
-            let y1 = y_scale.scale(y_data[i + 1]);
+            let (Some(x0), Some(y0), Some(x1), Some(y1)) = (
+                Self::pixel(x_scale, x_data[i]),
+                Self::pixel(y_scale, y_data[i]),
+                Self::pixel(x_scale, x_data[i + 1]),
+                Self::pixel(y_scale, y_data[i + 1]),
+            ) else {
+                continue;
+            };
 
+            // `draw_line_aa` clips the segment to the canvas before it walks a pixel.
             draw_line_aa(fb, x0, y0, x1, y1, color);
         }
     }
@@ -842,16 +884,22 @@ impl BuiltGGPlot {
         // Calculate bar width in pixels
         let x_range = x_scale.range().1 - x_scale.range().0;
         let bar_px_width = (x_range / n as f32 * bar_width).max(1.0) as u32;
-        let baseline = y_scale.scale(0.0);
+        let Some(baseline) = Self::pixel(y_scale, 0.0) else {
+            return;
+        };
 
         for i in 0..n {
-            let x = x_scale.scale(x_data[i]);
-            let y = y_scale.scale(y_data[i]);
+            let (Some(x), Some(y)) =
+                (Self::pixel(x_scale, x_data[i]), Self::pixel(y_scale, y_data[i]))
+            else {
+                continue;
+            };
 
             let left = (x - bar_px_width as f32 / 2.0) as i32;
             let top = y.min(baseline) as i32;
             let height = (y - baseline).abs() as u32;
 
+            // `draw_rect` clips in i64, so an extreme `left`/`top`/`height` cannot overflow.
             draw_rect(fb, left, top, bar_px_width, height.max(1), color);
         }
     }
@@ -871,19 +919,28 @@ impl BuiltGGPlot {
             return;
         }
 
-        let baseline = y_scale.scale(0.0);
+        let Some(baseline) = Self::pixel(y_scale, 0.0) else {
+            return;
+        };
+        let last_row = i32_px(fb.height()) - 1;
 
         // Draw vertical slices for area fill
         for i in 0..n {
-            let x = x_scale.scale(x_data[i]) as i32;
-            let y = y_scale.scale(y_data[i]);
-            let y_top = y.min(baseline) as i32;
-            let y_bot = y.max(baseline) as i32;
+            let (Some(xp), Some(y)) =
+                (Self::pixel(x_scale, x_data[i]), Self::pixel(y_scale, y_data[i]))
+            else {
+                continue;
+            };
+            let x = xp as i32;
+            if x < 0 || (x as u32) >= fb.width() {
+                continue;
+            }
+            // Only the rows on the canvas are walked: the slice's own extent can be 2^31 rows.
+            let y_top = (y.min(baseline) as i32).max(0);
+            let y_bot = (y.max(baseline) as i32).min(last_row);
 
             for py in y_top..=y_bot {
-                if x >= 0 && (x as u32) < fb.width() && py >= 0 && (py as u32) < fb.height() {
-                    fb.blend_pixel(x as u32, py as u32, color);
-                }
+                fb.blend_pixel(x as u32, py as u32, color);
             }
         }
 
@@ -1151,6 +1208,67 @@ mod tests {
 
         let fb = plot.to_framebuffer().expect("operation should succeed");
         assert!(fb.width() > 0);
+    }
+
+    /// Bars drawn through `render_bars` on a 400x300 canvas, with the picture each must make
+    /// computed from the scale alone (paiml/aprender#6949, F1).
+    ///
+    /// The x scale maps `x = 1 ..= n` onto pixels 40..371 and the y scale maps `0 ..= 4` onto
+    /// pixels 280..20 (65 px per unit), so every pixel below is exactly representable in `f32`.
+    /// A bar is its slot (`331 / n` px) times the bar width, cut to whole pixels, centred on the
+    /// pixel of its x; it runs from the baseline (`y = 0`, pixel 280) to the pixel of its y.
+    /// A bar that starts left of the canvas is clipped there: its far edge stays where the scale
+    /// puts it, and it is not shifted right onto the canvas.
+    fn check_bars(ys: &[f32], width: f32) {
+        let n = ys.len();
+        let xs: Vec<f32> = (1..=n).map(|i| i as f32).collect();
+        let x_scale = LinearScale::new((1.0, n as f32), (40.0, 371.0)).expect("scale");
+        let y_scale = LinearScale::new((0.0, 4.0), (280.0, 20.0)).expect("scale");
+        let mut fb = Framebuffer::new(400, 300).expect("fb");
+        fb.clear(Rgba::WHITE);
+        let ink = Rgba::new(10, 20, 30, 255);
+        BuiltGGPlot::render_bars(&mut fb, &xs, ys, &x_scale, &y_scale, ink, width);
+
+        let slot = 331.0_f64 / n as f64;
+        let bar_w = (slot * f64::from(width)).max(1.0).floor() as i64;
+        let mut rects = Vec::new();
+        for (i, &y) in ys.iter().enumerate() {
+            let centre = 40.0 + 331.0 * i as f64 / (n - 1) as f64;
+            let left = (centre - bar_w as f64 / 2.0).trunc() as i64;
+            let (top_px, bottom_px) = (280.0 - 65.0 * f64::from(y), 280.0);
+            let top = top_px.min(bottom_px).trunc() as i64;
+            let height = ((top_px - bottom_px).abs().trunc() as i64).max(1);
+            rects.push((left, left + bar_w, top, top + height));
+        }
+        // The case is built to start left of the canvas, which is what the bug was about.
+        assert!(rects[0].0 < 0, "case does not put the first bar's left edge off canvas");
+
+        for y in 0..300_i64 {
+            for x in 0..400_i64 {
+                let want =
+                    rects.iter().any(|&(l, r, t, b)| (l..r).contains(&x) && (t..b).contains(&y));
+                let got = fb.get_pixel(x as u32, y as u32) == Some(ink);
+                assert_eq!(got, want, "n={n} width={width}: pixel ({x}, {y}); bars {rects:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn two_bars_keep_their_far_edge_when_the_left_edge_is_off_canvas() {
+        // 331 / 2 * 0.9 = 148 px wide, centred on 40: columns -34..114 clip to 0..114.
+        check_bars(&[4.0, 3.0], 0.9);
+    }
+
+    #[test]
+    fn three_bars_keep_their_far_edge_when_the_left_edge_is_off_canvas() {
+        // 331 / 3 * 0.9 = 99 px wide, centred on 40: columns -9..90 clip to 0..90.
+        check_bars(&[4.0, 2.0, 3.0], 0.9);
+    }
+
+    #[test]
+    fn wide_bars_keep_their_far_edge_when_the_left_edge_is_off_canvas() {
+        // Width 2.0: 331 px wide, centred on 40: columns -125..206 clip to 0..206.
+        check_bars(&[4.0, 3.0], 2.0);
     }
 
     #[test]

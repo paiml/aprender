@@ -11,6 +11,8 @@
 
 use serde_json::Value;
 
+use super::coord::Coord;
+use super::stat::Stat;
 use super::{
     Aes, BuiltLayer, BuiltLayout, DataFrame, Facet, GGPlot, Geom, Layer, PositionScale,
     ReferenceKind, StepDirection,
@@ -265,6 +267,20 @@ mod line {
     #[test]
     fn plain_sorts_by_x_with_ties_in_data_order() {
         run("plain", fixture!("geom_line", "plain"), csv!("geom_line", "data"), xy(), Facet::None);
+    }
+
+    /// The edges of the label range the contracts claim (non-zero data magnitude from 2^-8 to
+    /// 10^4): the tick labels equal R's. Beyond it the shared formatter is known to differ from R's
+    /// fixed-versus-scientific choice (`1e+05`, `1e-04`); that is a separate ticket, not claimed.
+    #[test]
+    fn tick_labels_match_r_at_the_edges_of_the_claimed_magnitude_range() {
+        for (case, json, file) in [
+            ("label_lo", fixture!("geom_line", "label_lo"), csv!("geom_line", "data_label_lo")),
+            ("label_hi", fixture!("geom_line", "label_hi"), csv!("geom_line", "data_label_hi")),
+            ("label_neg", fixture!("geom_line", "label_neg"), csv!("geom_line", "data_label_neg")),
+        ] {
+            run(case, json, file, xy(), Facet::None);
+        }
     }
 
     #[test]
@@ -532,6 +548,34 @@ mod step {
         )
         .expect("layout resolves");
         check(&got, &w, &[G]);
+    }
+
+    /// A group of exactly two rows has stairs (3 vertices for hv, 4 for mid); only a one-row group
+    /// has none. The fixture mixes a 2-row group with a 3-row group.
+    fn two_row_group(case: &str, json: &str, geom: Geom) {
+        let w = want(json, ROW, case);
+        let got = build(
+            csv!("geom_step", "data_two_row_group"),
+            xy().group("gn"),
+            vec![layer(geom)],
+            Facet::None,
+        )
+        .expect("layout resolves");
+        check(&got, &w, &[G]);
+    }
+
+    #[test]
+    fn a_two_row_group_has_stairs_hv() {
+        two_row_group("two_row_group_hv", fixture!("geom_step", "two_row_group_hv"), Geom::step());
+    }
+
+    #[test]
+    fn a_two_row_group_has_stairs_mid() {
+        two_row_group(
+            "two_row_group_mid",
+            fixture!("geom_step", "two_row_group_mid"),
+            Geom::step().direction(StepDirection::Mid),
+        );
     }
 
     #[test]
@@ -824,6 +868,30 @@ mod abline {
         );
     }
 
+    /// An abline trains no scale, so a plot whose only layer is a reference line has no range on
+    /// either axis. The plot's own data and aesthetics must not train it behind the layer's back
+    /// (ggplot2: `inherit.aes = FALSE`); the typed error is the contract.
+    #[test]
+    fn only_a_reference_line_trains_nothing_and_the_axes_are_refused() {
+        let r = build(
+            csv!("geom_abline", "data"),
+            xy(),
+            vec![layer(Geom::abline(1.5, 0.5))],
+            Facet::None,
+        );
+        assert!(matches!(r, Err(Error::ScaleDomain(_))), "{r:?}");
+    }
+
+    #[test]
+    fn an_abline_with_its_own_data_still_trains_nothing() {
+        let mut far = DataFrame::new();
+        far.add_column_f32("x", &[1000.0, 2000.0]);
+        far.add_column_f32("y", &[-500.0, 500.0]);
+        let l = Layer::new(Geom::abline(1.0, 1.0)).data(far);
+        let r = build(DataFrame::new(), xy(), vec![l], Facet::None);
+        assert!(matches!(r, Err(Error::ScaleDomain(_))), "{r:?}");
+    }
+
     #[test]
     fn facet_wrap_replicates_the_line_per_panel() {
         run("facet", fixture!("geom_abline", "facet"), Geom::abline(1.0, 0.0), wrap_f());
@@ -1060,6 +1128,249 @@ mod robustness {
         df.add_column_f32("f", &[1.0, 2.0, 3.0]);
         let r = build(df, xy(), vec![layer(Geom::line())], wrap_f());
         assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    }
+
+    fn non_default_coords() -> Vec<(&'static str, Coord)> {
+        vec![
+            ("flip", Coord::cartesian().flip()),
+            ("xlim", Coord::cartesian().xlim(0.0, 10.0)),
+            ("ylim", Coord::cartesian().ylim(0.0, 10.0)),
+            ("xlim+flip", Coord::cartesian().xlim(0.0, 10.0).flip()),
+            ("polar", Coord::polar()),
+            ("fixed", Coord::fixed(1.0)),
+        ]
+    }
+
+    fn with_coord(g: Geom, coord: Coord) -> crate::error::Result<BuiltLayout> {
+        GGPlot::new()
+            .data(ok_df())
+            .aes(xy())
+            .layer(layer(Geom::point()))
+            .layer(layer(g))
+            .coord(coord)
+            .build()?
+            .layout()
+    }
+
+    /// `layout()` applies no coordinate system, so a coordinate system it would silently ignore is
+    /// refused for every geom of these rows (R gives different panel ranges and breaks for each).
+    #[test]
+    fn every_non_default_coord_is_refused_for_every_geom() {
+        for g in all_path_geoms() {
+            for (name, coord) in non_default_coords() {
+                let r = with_coord(g.clone(), coord);
+                assert!(
+                    matches!(r, Err(Error::UnsupportedCoord(_))),
+                    "{:?} under {name} returned {r:?}",
+                    g.geom_type
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_refusal_names_the_coord() {
+        let msg = |c: Coord| match with_coord(Geom::line(), c) {
+            Err(Error::UnsupportedCoord(m)) => m,
+            other => panic!("expected UnsupportedCoord, got {other:?}"),
+        };
+        assert!(msg(Coord::cartesian().flip()).contains("coord_flip"));
+        assert!(msg(Coord::cartesian().xlim(0.0, 1.0)).contains("limits"));
+        assert!(msg(Coord::polar()).contains("coord_polar"));
+        assert!(msg(Coord::fixed(2.0)).contains("coord_fixed"));
+    }
+
+    #[test]
+    fn the_default_coord_is_accepted_for_every_geom() {
+        for g in all_path_geoms() {
+            let r = with_coord(g.clone(), Coord::cartesian());
+            assert!(r.is_ok(), "{:?} under the default coord returned {r:?}", g.geom_type);
+        }
+    }
+
+    /// The refusal is scoped to these geoms: a plot with only a point layer keeps its behaviour.
+    #[test]
+    fn a_point_only_plot_is_not_refused_by_a_coord() {
+        let r = GGPlot::new()
+            .data(ok_df())
+            .aes(xy())
+            .layer(layer(Geom::point()))
+            .coord(Coord::cartesian().flip())
+            .build()
+            .and_then(|p| p.layout());
+        assert!(r.is_ok(), "{r:?}");
+    }
+
+    // --- stats and companion layers (paiml/aprender#6978) ---------------------------------------
+
+    /// Every stat but identity, with the parameters the review measured against R
+    /// (`geom_line(stat = "smooth")` is 80 rows, `stat = "bin", bins = 3` is 3 rows).
+    fn non_identity_stats() -> Vec<Stat> {
+        vec![
+            Stat::Count,
+            Stat::Bin { bins: 3 },
+            Stat::Bin { bins: 30 },
+            Stat::Density,
+            Stat::Boxplot,
+            Stat::Smooth,
+            Stat::Bin2d { bins_x: 3, bins_y: 3 },
+            Stat::Sum,
+            Stat::Mean,
+        ]
+    }
+
+    /// `geom` alone, and after a point layer (so the check is not on the first layer only).
+    fn with_layers(geom: &Geom, lead_point: bool) -> crate::error::Result<BuiltLayout> {
+        let mut p = GGPlot::new().data(ok_df()).aes(xy());
+        if lead_point {
+            p = p.layer(layer(Geom::point()));
+        }
+        p.layer(layer(geom.clone())).build()?.layout()
+    }
+
+    /// `layout()` computes no stat, so each stat it would silently skip is refused.
+    fn assert_every_stat_refused(geoms: &[Geom]) {
+        for g in geoms {
+            for s in non_identity_stats() {
+                for lead in [false, true] {
+                    let r = with_layers(&g.clone().stat(s.clone()), lead);
+                    assert!(
+                        matches!(r, Err(Error::UnsupportedStat(_))),
+                        "{:?} with {s:?} (after a point layer: {lead}) returned {r:?}",
+                        g.geom_type
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn every_non_identity_stat_is_refused_on_line() {
+        assert_every_stat_refused(&[Geom::line()]);
+    }
+
+    #[test]
+    fn every_non_identity_stat_is_refused_on_path() {
+        assert_every_stat_refused(&[Geom::path()]);
+    }
+
+    #[test]
+    fn every_non_identity_stat_is_refused_on_step() {
+        assert_every_stat_refused(&[
+            Geom::step(),
+            Geom::step().direction(StepDirection::Vh),
+            Geom::step().direction(StepDirection::Mid),
+        ]);
+    }
+
+    #[test]
+    fn every_non_identity_stat_is_refused_on_hline() {
+        assert_every_stat_refused(&[Geom::hline(1.0)]);
+    }
+
+    #[test]
+    fn every_non_identity_stat_is_refused_on_vline() {
+        assert_every_stat_refused(&[Geom::vline(1.0)]);
+    }
+
+    #[test]
+    fn every_non_identity_stat_is_refused_on_abline() {
+        assert_every_stat_refused(&[Geom::abline(1.0, 0.0)]);
+    }
+
+    /// `stat = "identity"` is ggplot2's default for these geoms: stated explicitly, it changes
+    /// nothing, so the layout equals the one without a stat.
+    #[test]
+    fn the_identity_stat_is_accepted_and_changes_nothing() {
+        for g in all_path_geoms() {
+            for lead in [false, true] {
+                let plain = with_layers(&g, lead);
+                let ident = with_layers(&g.clone().stat(Stat::Identity), lead);
+                match (plain, ident) {
+                    (Ok(a), Ok(b)) => assert_eq!(format!("{a:?}"), format!("{b:?}")),
+                    // A reference line alone is refused for its degenerate axes, with or without
+                    // the identity stat.
+                    (Err(Error::ScaleDomain(_)), Err(Error::ScaleDomain(_))) if !lead => {}
+                    (a, b) => panic!("{:?}: without stat {a:?}, identity {b:?}", g.geom_type),
+                }
+            }
+        }
+    }
+
+    /// A stat on the point layer would change the shared scales too, so it is refused while one
+    /// of these layers is present, whichever layer comes first.
+    #[test]
+    fn a_stat_on_a_companion_point_layer_is_refused() {
+        for g in all_path_geoms() {
+            for s in non_identity_stats() {
+                let pt = layer(Geom::point().stat(s.clone()));
+                for layers in [vec![pt.clone(), layer(g.clone())], vec![layer(g.clone()), pt]] {
+                    let r = build(ok_df(), xy(), layers, Facet::None);
+                    assert!(
+                        matches!(r, Err(Error::UnsupportedStat(_))),
+                        "point with {s:?} beside {:?} returned {r:?}",
+                        g.geom_type
+                    );
+                }
+            }
+        }
+    }
+
+    /// R trains different scales for a line plus `geom_bar`/`geom_col`, `geom_histogram`,
+    /// `geom_area` or `geom_tile` (bar and tile widths, a zero baseline, `stat_align`), and
+    /// different layer data for the stat geoms; `layout()` would train raw x/y. Refused.
+    #[test]
+    fn every_companion_geom_but_point_is_refused() {
+        let companions = [
+            Geom::area(),
+            Geom::bar(),
+            Geom::bar().stat(Stat::Identity),
+            Geom::histogram(),
+            Geom::boxplot(),
+            Geom::violin(),
+            Geom::tile(),
+            Geom::text(),
+            Geom::smooth(),
+        ];
+        for g in all_path_geoms() {
+            for c in &companions {
+                for layers in [
+                    vec![layer(c.clone()), layer(g.clone())],
+                    vec![layer(g.clone()), layer(c.clone())],
+                ] {
+                    let r = build(ok_df(), xy(), layers, Facet::None);
+                    assert!(
+                        matches!(r, Err(Error::UnsupportedLayer(_))),
+                        "{:?} beside {:?} returned {r:?}",
+                        c.geom_type,
+                        g.geom_type
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_stat_refusal_names_the_stat() {
+        let msg = |s: Stat| match with_layers(&Geom::line().stat(s), true) {
+            Err(Error::UnsupportedStat(m)) => m,
+            other => panic!("expected UnsupportedStat, got {other:?}"),
+        };
+        assert!(msg(Stat::Smooth).starts_with("stat_smooth "));
+        assert!(msg(Stat::Bin { bins: 3 }).starts_with("stat_bin "));
+        assert!(msg(Stat::Count).starts_with("stat_count "));
+        assert!(msg(Stat::Density).starts_with("stat_density "));
+        assert!(msg(Stat::Boxplot).starts_with("stat_boxplot "));
+        assert!(msg(Stat::Bin2d { bins_x: 2, bins_y: 2 }).starts_with("stat_bin_2d "));
+        assert!(msg(Stat::Sum).starts_with("stat_summary(fun = sum) "));
+        assert!(msg(Stat::Mean).starts_with("stat_summary(fun = mean) "));
+    }
+
+    /// The refusals are scoped to plots with these geoms: other plots keep their behaviour.
+    #[test]
+    fn a_plot_without_these_geoms_is_not_refused_for_a_stat_or_companion() {
+        let layers = vec![layer(Geom::point().stat(Stat::Smooth)), layer(Geom::bar())];
+        assert!(build(ok_df(), xy(), layers, Facet::None).is_ok());
     }
 
     #[test]

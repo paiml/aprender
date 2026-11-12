@@ -10,6 +10,7 @@ suppressPackageStartupMessages(library(ggplot2))
 
 df <- read_case(here, "data.csv")
 dsg <- read_case(here, "data_single_group.csv")
+dtr <- read_case(here, "data_two_row_group.csv")
 row <- "geom_step"
 out <- function(case) file.path(here, paste0("expected_", case, ".json"))
 w <- function(case, plot, spec, dir) write_lines_fixture(plot, row, case, spec, out(case), step_direction = dir)
@@ -22,3 +23,5 @@ w("group_mid", ggplot(df, aes(x, y, group = g)) + geom_step(direction = "mid"), 
 w("facet_vh", ggplot(df, aes(x, y)) + geom_step(direction = "vh") + facet_wrap(~f), "ggplot(df, aes(x, y)) + geom_step(direction = 'vh') + facet_wrap(~f)", "vh")
 w("single_row_group", ggplot(dsg, aes(x, y, group = gn)) + geom_step(), "ggplot(dsg, aes(x, y, group = gn)) + geom_step()", "hv")
 w("colour_alpha", ggplot(df, aes(x, y)) + geom_step(colour = "blue", alpha = 0.25), "ggplot(df, aes(x, y)) + geom_step(colour = 'blue', alpha = 0.25)", "hv")
+w("two_row_group_hv", ggplot(dtr, aes(x, y, group = gn)) + geom_step(), "ggplot(dtr, aes(x, y, group = gn)) + geom_step()", "hv")
+w("two_row_group_mid", ggplot(dtr, aes(x, y, group = gn)) + geom_step(direction = "mid"), "ggplot(dtr, aes(x, y, group = gn)) + geom_step(direction = 'mid')", "mid")

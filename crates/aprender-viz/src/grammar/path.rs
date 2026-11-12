@@ -22,6 +22,22 @@
 //! * Reference lines train a scale like ggplot2: `geom_hline` trains y with its intercept,
 //!   `geom_vline` trains x, `geom_abline` trains neither. None of them inherits the plot's
 //!   aesthetics (`inherit.aes = FALSE`). Each is replicated once per panel.
+//! * Coordinate systems. Only the default `coord_cartesian()` (no limits, no flip) is supported:
+//!   `layout()` applies no coordinate system, so `coord_flip`, `coord_cartesian(xlim, ylim)`,
+//!   `coord_polar` and `coord_fixed` are an [`Error::UnsupportedCoord`] while one of these layers
+//!   is present (`require_default_coord`).
+//! * Stats. Only the identity stat (`stat = None` or `Stat::Identity`) is supported, on every
+//!   layer of a plot that has one of these layers: `layout()` computes no stat, and ggplot2 would
+//!   (`stat_smooth`, `stat_bin`, `stat_count`, `stat_density`, `stat_boxplot`, `stat_bin_2d`,
+//!   `stat_summary`). Any other stat is an [`Error::UnsupportedStat`] (`require_identity_stats`).
+//! * Companion layers. Besides these six geoms only `geom_point` is supported in the same plot.
+//!   Any other geom is an [`Error::UnsupportedLayer`]: `geom_bar`, `geom_histogram`,
+//!   `geom_area`, `geom_tile`, `geom_boxplot`, `geom_violin` and `geom_smooth` change ggplot2's
+//!   trained scales or layer data through their stat or setup (`stat_align`, bar/tile widths, a
+//!   zero baseline), and `geom_text` is not proven here.
+//! * Position adjustments, `na.rm` and `orientation` have no field in the builder, so every
+//!   layer is `position = "identity"`, `na.rm = FALSE` and `orientation = NA` as in ggplot2's
+//!   defaults; `ggplot_build()` keeps `NA` rows either way (they are removed only when drawn).
 //! * Degenerate scales (no finite value on an axis, or a single distinct value) are an
 //!   [`Error::ScaleDomain`] while a path or reference layer is present: ggplot2 widens those
 //!   ranges in a way the shared scale code does not yet reproduce.
@@ -36,10 +52,12 @@ use crate::error::{Error, Result};
 
 use super::aes::Aes;
 use super::build::{BuiltLayer, PositionScale};
+use super::coord::Coord;
 use super::data::{DataFrame, DataValue};
 use super::facet::{panels, Facet, Panel};
 use super::geom::{GeomType, StepDirection};
 use super::ggplot::Layer;
+use super::stat::Stat;
 
 /// `GeomPath$default_aes` / `GeomHline$default_aes` in ggplot2 4.0.3 (the stroke columns).
 #[derive(Debug, Clone, PartialEq)]
@@ -125,6 +143,82 @@ fn is_reference(g: &GeomType) -> bool {
 
 fn refuse(msg: impl Into<String>) -> Error {
     Error::Rendering(msg.into())
+}
+
+/// Refuse any coordinate system but the default `coord_cartesian()` while a path-family or
+/// reference layer is present. `layout()` applies no coordinate system (limits, flip, polar and
+/// fixed all change ggplot2's `panel_params`), so answering with the default numbers would be
+/// silently wrong.
+pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<()> {
+    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+        return Ok(());
+    }
+    match coord {
+        Coord::Cartesian { xlim: None, ylim: None, flip: false } => Ok(()),
+        Coord::Cartesian { flip: true, .. } => Err(Error::UnsupportedCoord(
+            "coord_flip with line, path, step or reference layers: layout() does not flip",
+        )),
+        Coord::Cartesian { .. } => Err(Error::UnsupportedCoord(
+            "coord_cartesian limits with line, path, step or reference layers: layout() does not apply them",
+        )),
+        Coord::Polar { .. } => Err(Error::UnsupportedCoord(
+            "coord_polar with line, path, step or reference layers",
+        )),
+        Coord::Fixed { .. } => Err(Error::UnsupportedCoord(
+            "coord_fixed with line, path, step or reference layers",
+        )),
+    }
+}
+
+/// Refuse, while a path-family or reference layer is present, every layer whose stat `layout()`
+/// would silently skip, and every companion layer other than `geom_point` (its ggplot2 stat or
+/// setup changes the shared scales). Answering with the raw data would be silently wrong.
+pub(super) fn require_identity_stats(layers: &[Layer]) -> Result<()> {
+    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+        return Ok(());
+    }
+    for l in layers {
+        let g = &l.geom.geom_type;
+        if !is_path_family(g) && !matches!(g, GeomType::Point { .. }) {
+            return Err(Error::UnsupportedLayer(
+                "only geom_point may share a plot with line, path, step or reference layers: \
+                 layout() does not resolve other geoms with them (their ggplot2 stat or setup \
+                 can change the shared scales)",
+            ));
+        }
+        if let Some(msg) = l.geom.stat.as_ref().and_then(unsupported_stat) {
+            return Err(Error::UnsupportedStat(msg));
+        }
+    }
+    Ok(())
+}
+
+/// The refusal for a stat `layout()` does not compute; `None` for the identity stat.
+fn unsupported_stat(s: &Stat) -> Option<&'static str> {
+    let msg = match s {
+        Stat::Identity => return None,
+        Stat::Count => "stat_count with line, path, step or reference layers: layout() computes no stat",
+        Stat::Bin { .. } => "stat_bin with line, path, step or reference layers: layout() computes no stat",
+        Stat::Density => {
+            "stat_density with line, path, step or reference layers: layout() computes no stat"
+        }
+        Stat::Boxplot => {
+            "stat_boxplot with line, path, step or reference layers: layout() computes no stat"
+        }
+        Stat::Smooth => {
+            "stat_smooth with line, path, step or reference layers: layout() computes no stat"
+        }
+        Stat::Bin2d { .. } => {
+            "stat_bin_2d with line, path, step or reference layers: layout() computes no stat"
+        }
+        Stat::Sum => {
+            "stat_summary(fun = sum) with line, path, step or reference layers: layout() computes no stat"
+        }
+        Stat::Mean => {
+            "stat_summary(fun = mean) with line, path, step or reference layers: layout() computes no stat"
+        }
+    };
+    Some(msg)
 }
 
 /// Refuse a scale that ggplot2 would widen differently from the shared scale code.
