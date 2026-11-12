@@ -24,14 +24,24 @@
 //!
 //! Not implemented: label functions, `n.breaks`, `minor_breaks =`, other `oob =` functions,
 //! `position =`, secondary axes, and the `expand = c(a, b, c, d)` shorthand (use [`Expansion`]).
+//!
+//! Scope: these scales are resolved for `geom_point` layers with the identity stat, under the
+//! default `coord_cartesian()` and no facet. Any other geom, stat, coord or a facet in a plot that
+//! uses a position scale is refused by [`require_scale_scope`] with a typed error, never laid out
+//! as if it were absent.
 
 use super::build::{
     censor_breaks, PositionScale, CONTINUOUS_EXPAND_ADD, CONTINUOUS_EXPAND_MULT, DEFAULT_N_BREAKS,
 };
+use super::coord::Coord;
 use super::data::DataValue;
+use super::facet::Facet;
+use super::geom::GeomType;
+use super::ggplot::Layer;
 use super::r_format::format_labels;
 use super::scale_discrete::{position, resolve_discrete, train_levels, DiscreteSpec};
 use super::scale_trans::{log_breaks, regular_minor_breaks, Transform};
+use super::stat::Stat;
 use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::error::{Error, Result};
 
@@ -267,6 +277,48 @@ pub fn resolve_continuous(trained: (f64, f64), spec: &ContinuousSpec) -> Positio
         n_breaks_censored,
         minor_breaks,
         levels: None,
+    }
+}
+
+/// Refuse what a plot with a position scale (`scale_x`/`scale_y`, or a text position column) may
+/// not contain: `layout()` resolves these scales for `geom_point` layers with the identity stat,
+/// under the default `coord_cartesian()` and no facet, and applies no other geom's setup, no stat,
+/// no coord and no facet. Every layer is checked, not just the first.
+///
+/// # Errors
+///
+/// [`Error::UnsupportedLayer`] for a geom other than `geom_point` or for any facet,
+/// [`Error::UnsupportedStat`] for a stat other than identity, and [`Error::UnsupportedCoord`] for
+/// `coord_flip()`, `coord_cartesian()` limits, `coord_polar()` or `coord_fixed()`.
+pub(crate) fn require_scale_scope(layers: &[Layer], coord: &Coord, facet: &Facet) -> Result<()> {
+    for l in layers {
+        if !matches!(l.geom.geom_type, GeomType::Point { .. }) {
+            return Err(Error::UnsupportedLayer(
+                "position scales (scale_x/scale_y or a text position) are resolved for geom_point \
+                 only: layout() does not lay out other geoms under them",
+            ));
+        }
+        if !matches!(l.geom.stat, None | Some(Stat::Identity)) {
+            return Err(Error::UnsupportedStat(
+                "a stat other than identity with position scales: layout() computes none",
+            ));
+        }
+    }
+    if !matches!(facet, Facet::None) {
+        return Err(Error::UnsupportedLayer(
+            "a facet with position scales: layout() does not split the panels",
+        ));
+    }
+    match coord {
+        Coord::Cartesian { xlim: None, ylim: None, flip: false } => Ok(()),
+        Coord::Cartesian { flip: true, .. } => {
+            Err(Error::UnsupportedCoord("coord_flip with position scales: layout() does not flip"))
+        }
+        Coord::Cartesian { .. } => Err(Error::UnsupportedCoord(
+            "coord_cartesian limits with position scales: layout() does not apply them",
+        )),
+        Coord::Polar { .. } => Err(Error::UnsupportedCoord("coord_polar with position scales")),
+        Coord::Fixed { .. } => Err(Error::UnsupportedCoord("coord_fixed with position scales")),
     }
 }
 

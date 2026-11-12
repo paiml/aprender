@@ -13,6 +13,7 @@
 //! - Wu, X. (1991). "An Efficient Antialiasing Technique." SIGGRAPH '91.
 //! - Bresenham, J. E. (1965). "Algorithm for computer control of a digital plotter."
 
+mod clip;
 mod primitives;
 
 pub use primitives::{

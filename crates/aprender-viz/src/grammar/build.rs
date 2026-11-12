@@ -11,6 +11,8 @@ pub use super::r_format::format_labels;
 use super::scale_spec::{resolve_continuous, ContinuousSpec};
 use crate::color::Rgba;
 
+use super::path::BuiltPath;
+
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
 pub const CONTINUOUS_EXPAND_MULT: f64 = 0.05;
@@ -89,6 +91,9 @@ pub struct BuiltLayer {
     pub y: Vec<f64>,
     /// Per-row point aesthetics; `None` for geoms whose aesthetics are not resolved yet.
     pub points: Option<Vec<PointAes>>,
+    /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
+    /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
+    pub path: Option<BuiltPath>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

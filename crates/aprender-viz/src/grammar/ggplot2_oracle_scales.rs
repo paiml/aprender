@@ -272,8 +272,10 @@ fn ggplot2_row4_scale_continuous_args() {
             "single_zero_add_expand" => point(df, "z", "y")
                 .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
             "limits_zero_zero" => point(df, "z", "y").scale_x(scale_continuous().limits(0.0, 0.0)),
-            // +-Inf data: ignored by training, kept by the limits censor.
-            "inf_mixed_x" => point(df, "f", "y"),
+            // +-Inf data: ignored by training, kept by the limits censor. R's plot has no scale
+            // call, and ggplot2's default x scale IS scale_x_continuous(); the explicit default
+            // spec is what keeps the rows here (see `no_spec_layout_drops_infinite_rows`).
+            "inf_mixed_x" => point(df, "f", "y").scale_x(scale_continuous()),
             "inf_limits_x" | "inf_only_limits_x" => {
                 point(df, "f", "y").scale_x(scale_continuous().limits(0.0, 3.0))
             }
@@ -494,4 +496,142 @@ fn renderer_survives_infinite_and_missing_data() {
     let svg = svg.expect("renders");
     assert!(fb_ok);
     assert!(!svg.contains("NaN") && !svg.to_lowercase().contains("inf"), "non-finite in SVG");
+}
+
+// --- Scope of the scaled layout: what it refuses instead of answering wrongly ------------------
+
+fn scope_frame() -> DataFrame {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[1.0, 10.0, 100.0]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    df.add_column_str("g", &["a", "b", "a"]);
+    df
+}
+
+fn scoped(p: GGPlot) -> crate::error::Result<super::BuiltLayout> {
+    p.build().expect("plot builds").layout()
+}
+
+fn log_x() -> GGPlot {
+    point(scope_frame(), "x", "y").scale_x(scale_log10())
+}
+
+/// `layout()` lays out no coord transform under a position scale, so every non-default coord is
+/// refused with its own message, for a spec on either axis and for a text position alone.
+#[test]
+fn scaled_layout_refuses_every_non_default_coord() {
+    use super::Coord;
+    let cases = [
+        (Coord::cartesian().flip(), "coord_flip"),
+        (Coord::cartesian().xlim(0.0, 1.0), "coord_cartesian limits"),
+        (Coord::cartesian().ylim(0.0, 1.0), "coord_cartesian limits"),
+        (Coord::polar(), "coord_polar"),
+        (Coord::fixed(1.0), "coord_fixed"),
+    ];
+    for (coord, want) in cases {
+        let plots = [
+            log_x().coord(coord.clone()),
+            point(scope_frame(), "x", "y").scale_y(scale_continuous()).coord(coord.clone()),
+            point(scope_frame(), "g", "y").coord(coord.clone()),
+        ];
+        for p in plots {
+            match scoped(p) {
+                Err(crate::error::Error::UnsupportedCoord(m)) => {
+                    assert!(m.contains(want) && m.contains("position scales"), "{m}");
+                }
+                other => panic!("{want}: {other:?}"),
+            }
+        }
+    }
+    assert!(scoped(log_x().coord(Coord::cartesian())).is_ok());
+}
+
+/// A facet would split the panels, which the scaled layout does not do.
+#[test]
+fn scaled_layout_refuses_every_facet() {
+    use super::Facet;
+    for facet in [Facet::wrap("g", 2), Facet::grid("g", "g"), Facet::row("g"), Facet::col("g")] {
+        for p in [log_x().facet(facet.clone()), point(scope_frame(), "g", "y").facet(facet.clone())]
+        {
+            match scoped(p) {
+                Err(crate::error::Error::UnsupportedLayer(m)) => {
+                    assert!(m.contains("facet"), "{m}")
+                }
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+    assert!(scoped(log_x().facet(Facet::none())).is_ok());
+}
+
+/// Every layer is checked, not only the first: a second, non-point layer is refused.
+#[test]
+fn scaled_layout_refuses_any_non_point_layer() {
+    use super::Layer;
+    for geom in [Geom::line(), Geom::bar(), Geom::text(), Geom::area(), Geom::histogram()] {
+        let p = log_x().layer(Layer::new(geom.clone()));
+        match scoped(p) {
+            Err(crate::error::Error::UnsupportedLayer(m)) => {
+                assert!(m.contains("geom_point only"), "{m}");
+            }
+            other => panic!("{:?}: {other:?}", geom.geom_type),
+        }
+    }
+    let two_points = log_x().layer(Layer::new(Geom::point()));
+    assert_eq!(scoped(two_points).expect("two point layers resolve").layers.len(), 2);
+}
+
+/// `layout()` computes no stat; a point layer with any stat but identity is refused, on any layer.
+#[test]
+fn scaled_layout_refuses_every_non_identity_stat() {
+    use super::{Layer, Stat};
+    let stats = [
+        Stat::count(),
+        Stat::bin(5),
+        Stat::density(),
+        Stat::boxplot(),
+        Stat::smooth(),
+        Stat::bin2d(2, 2),
+        Stat::sum(),
+        Stat::mean(),
+    ];
+    for stat in stats {
+        let p = log_x().layer(Layer::new(Geom::point().stat(stat.clone())));
+        assert!(
+            matches!(scoped(p), Err(crate::error::Error::UnsupportedStat(_))),
+            "{stat:?} on the second layer"
+        );
+    }
+    let identity = log_x().layer(Layer::new(Geom::point().stat(Stat::identity())));
+    assert!(scoped(identity).is_ok());
+}
+
+/// A text position with no spec is ggplot2's default discrete scale: the plot takes the scaled
+/// path (level positions 1..n), and both renderers refuse it rather than drawing it linearly.
+#[test]
+fn a_text_position_without_a_spec_is_discrete_and_not_drawn() {
+    let layout = scoped(point(scope_frame(), "g", "y")).expect("discrete default resolves");
+    assert_eq!(layout.layers[0].x, [1.0, 2.0, 1.0]);
+    assert_eq!(layout.x.levels.as_deref(), Some(&["a".to_string(), "b".to_string()][..]));
+    for p in [point(scope_frame(), "g", "y"), point(scope_frame(), "y", "g")] {
+        let plot = p.build().expect("plot builds");
+        let (svg, fb_ok) = render_both(&plot);
+        assert!(matches!(svg, Err(crate::error::Error::Rendering(_))), "{svg:?}");
+        assert!(!fb_ok);
+    }
+}
+
+/// The divergence from ggplot2 this crate keeps: with NO scale spec and numeric positions,
+/// `layout()` drops the rows with a non-finite position (render-total-v1), while ggplot2's
+/// `ggplot_build()` keeps +-Inf rows. The explicit default spec keeps them, as R does.
+#[test]
+fn no_spec_layout_drops_infinite_rows() {
+    let df =
+        frame_from_csv(include_str!("../../fixtures/ggplot2/scale_continuous_args/data.csv"), None);
+    let dropped = scoped(point(df.clone(), "f", "y")).expect("resolves");
+    assert_eq!(dropped.layers[0].x.len(), 6);
+    assert!(dropped.layers[0].x.iter().all(|v| v.is_finite()));
+    let kept = scoped(point(df, "f", "y").scale_x(scale_continuous())).expect("resolves");
+    assert_eq!(kept.layers[0].x.len(), 8);
+    assert_eq!(kept.layers[0].x.iter().filter(|v| v.is_infinite()).count(), 2);
 }

@@ -1,0 +1,130 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6896 — SampleWindow, the newest audio samples for the waveform"
+    - "crates/aprender-present-widgets/src/sample_window.rs — the window this pins"
+    - "contracts/present-waveform-path-v1.yaml — the widget that paints what this window holds"
+  description: >
+    SampleWindow keeps the newest `capacity` audio samples, oldest first. It is
+    the step before the Waveform widget in a live meter: capture code pushes
+    frames as they arrive and every paint reads the window. The ring buffer is
+    the classic place for an off-by-one at the wrap, for a frame longer than the
+    buffer, and for a hidden allocation on the audio path; a window that
+    reorders samples draws a scrambled trace and nothing else looks at it.
+
+name: present-sample-window
+version: "1.0.0"
+scope: >
+  `SampleWindow::{new, push, len, is_empty, capacity, clear, samples,
+  copy_into, peak, rms}`. Out of scope: capturing samples (microphone, Web
+  Audio) and painting them, which `Waveform` does.
+status: active
+
+contract: |
+  (1) THE WINDOW IS THE LAST `capacity` SANITIZED SAMPLES OF EVERYTHING PUSHED,
+      oldest first, in arrival order, for any capacity and any frame sequence.
+      `len() == min(total pushed, capacity)`.
+  (2) A FRAME LONGER THAN THE CAPACITY KEEPS ITS TAIL. An empty frame changes
+      nothing.
+  (3) CAPACITY 0 IS ALLOWED AND HOLDS NOTHING. Every method is total on it:
+      push never panics, the window stays empty, peak and rms are 0.0.
+  (4) NON-FINITE SAMPLES ARE STORED AS 0.0 and finite samples are clamped to
+      [-1, 1], the same rule as `waveform_points`.
+  (5) PUSH DOES NOT ALLOCATE. The ring storage is allocated once in `new`; its
+      address and capacity are unchanged by any number of pushes and by clear.
+  (6) `copy_into` EQUALS `samples()` and reuses the caller's buffer: the buffer
+      is cleared and refilled, and its capacity does not shrink.
+  (7) `peak()` IS THE LARGEST MAGNITUDE AND `rms()` THE ROOT MEAN SQUARE of the
+      window only (dropped samples do not count); both are 0.0 when empty.
+  (8) THE WAVEFORM PAINTS THE SAME PATH from `window.samples()` as from the
+      equal plain slice.
+  (9) EVERY ENTRY POINT IS TOTAL FOR ANY f32. For any f32 frame no pub fn
+      panics, every stored sample is in [-1, 1], `peak()` is in [0, 1], `rms()`
+      is finite and not above 1 (within 1e-3), and the window paints finite
+      coordinates and finite non-negative widths through a Waveform.
+equations:
+  window_content:
+    description: "What the window holds after a sequence of pushes"
+    formula: "samples() = last(capacity, concat(sanitize(frame_1), ..., sanitize(frame_n)))"
+    domain: "any capacity >= 0; frames of any length with any f32 values"
+    codomain: "Vec<f32> of length min(total, capacity), every value in [-1, 1]"
+    invariants:
+      - "oldest sample first, arrival order preserved across the ring wrap"
+      - "NaN and infinite samples are 0.0; finite samples are clamped to [-1, 1]"
+      - "while not full the next write index equals len; when full the oldest sample is at the next write index"
+falsification:
+  - id: FALSIFY-PRESENT-SAMPLE-WINDOW-V1-001
+    description: "Window content, order, wrap, sanitizing, allocation and paint hold for every input class"
+    test: "cargo test -p aprender-present-widgets --lib sample_window"
+    evidence: "13 passed on the build host (t2fw13), 2026-11-11; the red run on a stub failed 10 of 1470 lib tests"
+falsification_tests:
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-001
+    description: "the window equals the last capacity sanitized samples of a plain Vec model for any capacity 0..64 and frames of 0..200 samples"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::prop_window_equals_model"
+    prediction: "samples() and len() match the model after every push, including NaN, infinity and out-of-range values"
+    if_fails: "the meter shows stale, reordered or unclamped samples"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-002
+    description: "a frame longer than the capacity keeps its tail"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::frame_larger_than_capacity_keeps_tail"
+    prediction: "capacity 3 after pushing 5 samples holds the last 3"
+    if_fails: "a long audio frame shows its head instead of the newest samples"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-003
+    description: "an empty frame changes nothing"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::empty_frame_changes_nothing"
+    prediction: "the window is equal before and after pushing an empty frame"
+    if_fails: "a silent callback corrupts the window"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-004
+    description: "capacity 0 never panics and stays empty"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::capacity_zero_never_panics_and_stays_empty"
+    prediction: "push, copy_into, clear, peak and rms are total on capacity 0"
+    if_fails: "a zero-sized meter panics on the audio thread"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-005
+    description: "order is right across the ring wrap"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::wrap_around_keeps_arrival_order"
+    prediction: "capacity 4, push 3 then 3 gives [0.3, 0.4, 0.5, 0.6]; a push landing exactly on index 0 keeps order"
+    if_fails: "the trace is rotated at the wrap point"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-006
+    description: "non-finite samples are stored as 0.0 and finite ones clamped to [-1, 1]"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::non_finite_is_zero_and_finite_is_clamped"
+    prediction: "NaN, +inf, -inf give 0.0; 5.0, -5.0 and f32::MAX clamp to the edges"
+    if_fails: "a bad sample poisons peak and rms for the whole window"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-007
+    description: "copy_into equals samples() and reuses the buffer"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::copy_into_equals_samples_and_reuses_buffer"
+    prediction: "same content, same pointer, capacity not shrunk, old content replaced"
+    if_fails: "every paint allocates a fresh vector"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-008
+    description: "clear empties the window and a later push works"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::clear_empties_and_later_push_works"
+    prediction: "len 0 after clear; pushes after clear fill and wrap correctly"
+    if_fails: "clear leaves a stale write index that scrambles later pushes"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-009
+    description: "peak and rms match hand-computed values, and are 0.0 when empty"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::peak_and_rms_hand_computed"
+    prediction: "peak 0.7 for [0.2,-0.7,0.5]; rms 1.0 for a full-scale square; dropped samples do not count"
+    if_fails: "the level meter reads the wrong amplitude"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-010
+    description: "push never reallocates the ring storage"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::push_never_reallocates"
+    prediction: "buffer address and capacity are unchanged after thousands of pushes and a clear"
+    if_fails: "the audio path allocates and can glitch"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-011
+    description: "equality compares content and capacity, not ring rotation"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::partial_eq_compares_content_not_rotation"
+    prediction: "windows with the same samples and different rotation are equal; different capacity or content is not"
+    if_fails: "two identical windows compare unequal depending on push history"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-012
+    description: "the Waveform paints the same path from the window as from the plain slice"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::waveform_paints_the_same_path_from_the_window"
+    prediction: "RecordingCanvas commands are equal for window.samples() and the equal slice, and for the empty window"
+    if_fails: "the window and the widget disagree and the live meter draws a different trace"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-013
+    description: "every SampleWindow entry point is total and sane for any f32 frame"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::class_window"
+    prediction: "no panic; samples in [-1, 1]; peak in [0, 1]; rms finite; painted path and stroke finite"
+    if_fails: "some f32 frame still stores a non-finite sample or paints a non-finite coordinate"

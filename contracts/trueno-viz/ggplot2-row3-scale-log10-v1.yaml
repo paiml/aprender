@@ -26,8 +26,8 @@ equations:
     - positions, limits and breaks are log10 values
     - log10(0) is -Inf in layer data (Rust f64::NEG_INFINITY, JSON "-Inf") and the row is not censored; the oracle encodes +-Inf as the strings "Inf" / "-Inf" and NA as null, and the Rust test decodes both
     - all-negative data with explicit limits needs no training and is not an error; the same data with no limits is Err(ScaleDomain)
-    - the renderers (to_framebuffer, to_svg) draw from linear scales and do not honour a scale spec, so they return Err(Rendering) whenever scale_x / scale_y is set instead of drawing a plot that disagrees with layout()
-    - a non-finite coordinate is never rasterised, it is skipped, so no NaN or Inf reaches draw_circle
+    - the renderers (to_framebuffer, to_svg, to_terminal) draw from linear scales and do not honour a scale spec, so they return Err(Rendering) whenever scale_x / scale_y is set instead of drawing a plot that disagrees with layout()
+    - totality of the renderers on non-finite data (no NaN or Inf reaches a rasteriser) is render-total-v1, not this row; this row only refuses scaled plots before any rasteriser runs
   log_breaks:
     formula: 'breaks = breaks_log(n = 5, base = 10)(10^range); kept = { b : lo_c <= b <= hi_c }; label = format(10^b)'
     domain: continuous_range in log10 space
@@ -56,48 +56,48 @@ falsification_tests:
 - id: FALSIFY-GG3-001
   rule: The transform is base 10
   prediction: "mutating Transform::Log10 to the natural log (log and exp) turns ggplot2_row3_scale_log10 RED and leaves rows 1, 2, 4 green (measured rc=101, only row3 FAILED)"
-  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_scale_log10 -- --exact
   if_fails: The log fixture cannot tell log10 from ln
 - id: FALSIFY-GG3-002
   rule: Expansion is 5% in transformed space
   prediction: "mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row3_scale_log10 RED (measured: rows 1, 2, 3, 4 all FAILED)"
-  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_scale_log10 -- --exact
   if_fails: The log fixture does not check the expanded range in log space
 - id: FALSIFY-GG3-003
   rule: A break on a panel limit is kept
   prediction: "mutating the censor test '<= hi' to '<= hi - 0.2' turns ggplot2_row3_scale_log10 RED (limits_no_expand puts a break on 4 = log10(10000), the upper limit; measured: rows 3 and 4 FAILED)"
-  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_scale_log10 -- --exact
   if_fails: No fixture case has a break exactly on a limit
 - id: FALSIFY-GG3-004
   rule: A zero-width range is expanded by width 1 (v +- 0.05)
   prediction: "mutating ZERO_RANGE_WIDTH 1.0 -> 0.5 turns ggplot2_row3_scale_log10 (single_point_log, all_equal_log, limits_equal_log) RED (measured rc=101: row3, row4 and build::tests::zero_width_range_spans_five_hundredths_each_side FAILED)"
-  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_scale_log10 -- --exact
   if_fails: No fixture case has a zero-width log range
 - id: FALSIFY-GG3-005
   rule: log10(0) is -Inf and is kept, not NA
   prediction: "mutating Transform::Log10 so that 0 maps to NaN instead of -inf turns ggplot2_row3_scale_log10 (zero_x, zero_x_limits) and ggplot2_row3_zero_is_neg_inf_negative_is_na RED (measured rc=101, both FAILED)"
-  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_scale_log10 -- --exact
   if_fails: No fixture case has a 0 on a log axis
 - id: FALSIFY-GG3-006
   rule: Explicit limits need no finite data
   prediction: "dropping spec.limits.is_none() from the no-finite-data Err in scale_spec.rs turns ggplot2_row3_all_negative_with_limits_needs_no_training, ggplot2_row3_scale_log10 and ggplot2_row4_scale_continuous_args (all_negative_limits) RED (measured rc=101, 3 FAILED; this mutant survived before the case existed)"
-  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_all_negative_with_limits_needs_no_training -- --exact
   if_fails: No fixture case has all-negative data on log10 with explicit limits
 - id: FALSIFY-GG3-007
   rule: Only finite values are censored by explicit limits (infinite values are kept)
   prediction: "removing the p.is_finite() guard in the limits censor of scale_spec.rs turns ggplot2_row3_scale_log10 (zero_x_limits, inf_mixed_x_limits) and ggplot2_row4_scale_continuous_args (inf_limits_x) RED (measured rc=101, 2 FAILED)"
-  test: cargo test -p aprender-viz --lib ggplot2_row (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_scale_log10 -- --exact
   if_fails: No fixture case keeps an infinite value under explicit limits
 - id: FALSIFY-GG3-008
   rule: The renderers refuse a scaled plot instead of drawing it linearly
-  prediction: "removing the scale_x/scale_y guard in to_framebuffer turns renderer_refuses_scaled_plots_instead_of_drawing_them_linearly RED (measured rc=101, 1 FAILED); the test renders a 0 on a log axis, an out-of-limits row, all-negative log data and a limited continuous axis through to_svg and to_framebuffer"
-  test: cargo test -p aprender-viz --lib renderer_ (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
+  prediction: "removing the position-scale guard in to_framebuffer (to_svg draws through it) turns renderer_refuses_scaled_plots_instead_of_drawing_them_linearly RED (re-measured after the merge of main: rc=101, 1 FAILED); the test renders a 0 on a log axis, an out-of-limits row, all-negative log data and a limited continuous axis through to_svg and to_framebuffer"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::renderer_refuses_scaled_plots_instead_of_drawing_them_linearly -- --exact
   if_fails: A scaled plot renders without the scale, or renders while layout() errs
 - id: FALSIFY-GG3-009
-  rule: No non-finite coordinate reaches the rasteriser
-  prediction: "removing the is_finite() skip in panel_points turns renderer_survives_infinite_and_missing_data RED (measured rc=101: attempt to subtract with overflow in draw_circle; the test also asserts the SVG holds no NaN or inf)"
-  test: cargo test -p aprender-viz --lib renderer_ (crates/aprender-viz/src/grammar/ggplot2_oracle_scales.rs)
-  if_fails: Infinite data panics the renderer
+  rule: The terminal renderer refuses a scaled plot too
+  prediction: "removing the position-scale refusal in check_drawable (term.rs) turns grammar::term::tests::refuses_what_it_cannot_draw RED (measured rc=101, 1 FAILED: it draws scale_log10 and scale_y_continuous plots linearly). The old GG3-009 (removing the is_finite() skip in panel_points) was re-measured after the merge of main and no longer goes red (rc=0): main drops non-finite rows earlier, in build_layer and pixel(), so render-total-v1 owns that obligation"
+  test: cargo test -p aprender-viz --lib grammar::term::tests::refuses_what_it_cannot_draw -- --exact
+  if_fails: The terminal draws log or limited axes as if they were linear
 qa_gate:
   id: F-GG3-001
   name: ggplot2 conformance row 3 (scale_x/y_log10)

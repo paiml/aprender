@@ -39,14 +39,18 @@ mod facet;
 mod geom;
 mod ggplot;
 #[cfg(test)]
+mod ggplot2_lines_oracle;
+#[cfg(test)]
 mod ggplot2_oracle;
 #[cfg(test)]
 mod ggplot2_oracle_scales;
+mod path;
 mod r_format;
 mod scale_discrete;
 mod scale_spec;
 mod scale_trans;
 mod stat;
+mod term;
 mod theme;
 
 pub use aes::Aes;
@@ -57,11 +61,16 @@ pub use build::{
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
 pub use facet::{panels, Facet, Panel};
-pub use geom::Geom;
+pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
+pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use scale_discrete::{DiscreteSpec, DISCRETE_EXPAND_ADD};
 pub use scale_spec::{
     scale_continuous, scale_discrete, scale_log10, ContinuousSpec, Expansion, PositionScaleSpec,
 };
 pub use stat::Stat;
+pub use term::{
+    TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    POINT_GLYPH,
+};
 pub use theme::Theme;

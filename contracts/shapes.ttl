@@ -552,9 +552,9 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/command> ;
-        sh:minCount 7 ;
-        sh:maxCount 7 ;
-        sh:in ( "bundle" "check" "deploy" "gate" "new" "score" "serve" ) ;
+        sh:minCount 8 ;
+        sh:maxCount 8 ;
+        sh:in ( "bundle" "check" "deploy" "gate" "new" "plot" "score" "serve" ) ;
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> ;
