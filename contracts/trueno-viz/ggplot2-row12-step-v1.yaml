@@ -1,0 +1,68 @@
+metadata:
+  id: ggplot2-row12-step-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 12 (PLOT-GG-001, paiml/aprender#6909) - geom_step. Stairs are built per panel then per group with direction hv, vh or mid; a one-row group has none. NA positions are Err(Rendering).
+    The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation;
+    R is never run at test time. Every case goes through the public builder and layout().
+    Scope: stated in the fixtures: facet_wrap per panel as R; other facets, data-mapped colour, size, shape, alpha, fill or label, a non-default Geom width, text or infinite positions, group columns with gaps or mixed types, and layer data whose facet levels are absent from the plot data return Err(Rendering). Continuous x and y, numeric data. Anything outside the scope returns a typed
+    Err (Rendering, UnknownColumn or ScaleDomain), never a panic and never a silently wrong value.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_step'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_step/generate.R'
+equations:
+  stairs:
+    formula: 'stairstep(data, direction) per (PANEL, group)'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: BuiltLayer.path and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; labels, colours, groups, panels and counts exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+proof_obligations:
+- id: GG12-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact labels, colours, groups, panels)'
+  applies_to: stairs
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_lines_oracle::step::hv
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and facet fixtures are reproduced
+    check: grammar::ggplot2_lines_oracle::step::mid
+    severity: ERROR
+  edge_cases:
+    description: edge fixtures are reproduced or refused with a typed Err
+    check: grammar::ggplot2_lines_oracle::step::facet_wrap_makes_stairs_per_panel
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG12-001
+  rule: hv runs horizontal then vertical
+  prediction: swapping the hv index formula turns step::hv RED
+  test: cargo test -p aprender-viz --lib ggplot2_lines_oracle::step
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG12-002
+  rule: mid steps at the x midpoint
+  prediction: using the vh formula for mid turns step::mid RED
+  test: cargo test -p aprender-viz --lib ggplot2_lines_oracle::step
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG12-003
+  rule: Stairs are per group
+  prediction: building stairs over the whole panel turns step::numeric_groups_get_their_own_stairs RED
+  test: cargo test -p aprender-viz --lib ggplot2_lines_oracle::step
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GG12-001
+  name: ggplot2 conformance row 12 (geom_step)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-12 fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases
