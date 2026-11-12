@@ -30,12 +30,12 @@ proof_obligations:
 - id: GGC1-INV-001
   type: invariant
   property: Identity bars match GeomCol, including the negative stack
-  formal: 'for each row: (x, y, ymin, ymax, xmin, xmax, width, group) ~ ggplot2 row; y axis range, breaks, labels equal'
+  formal: '∀ row: (x, y, ymin, ymax, xmin, xmax, width, group) ≈ ggplot2 row; y axis range, breaks, labels equal'
   applies_to: stat_identity
 - id: GGC1-INV-002
   type: invariant
   property: One bar per x needs no stacking
-  formal: 'unfilled geom_col: ymin = min(y, 0), ymax = max(y, 0)'
+  formal: '∀ row: unfilled geom_col: ymin = min(y, 0), ymax = max(y, 0)'
   applies_to: negative_stack
 enforcement:
   col_stack_matches:

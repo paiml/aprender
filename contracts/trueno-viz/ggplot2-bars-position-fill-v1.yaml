@@ -23,7 +23,7 @@ proof_obligations:
 - id: GGF1-INV-001
   type: invariant
   property: Normalised stack matches PositionFill
-  formal: 'for each bar: (y, ymin, ymax) ~ ggplot2 row (1e-9 rel + 1e-12 abs); y axis limits (0, 1)'
+  formal: '∀ bar: (y, ymin, ymax) ≈ ggplot2 row (1e-9 rel + 1e-12 abs); y axis limits (0, 1)'
   applies_to: pos_fill
 enforcement:
   fill_matches:
