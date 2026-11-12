@@ -24,6 +24,9 @@
     clippy::needless_raw_string_hashes
 )]
 
+#[allow(dead_code)]
+mod plot;
+
 use clap::{Parser, Subcommand};
 use std::fs;
 use std::io::Read;

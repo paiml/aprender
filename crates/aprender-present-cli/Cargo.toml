@@ -21,6 +21,9 @@ notify = { version = "7.0", optional = true }
 tiny_http = "0.12"
 tungstenite = { version = "0.26", optional = true }
 
+[dev-dependencies]
+proptest = { workspace = true }
+
 [build-dependencies]
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version
