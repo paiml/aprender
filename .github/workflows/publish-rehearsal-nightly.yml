@@ -1,0 +1,73 @@
+# publish-rehearsal-nightly.yml — one throwaway crate goes through the TRUE publish path every night (#6914).
+#
+# WHY. 0.72.5 went red three times on release day at steps no nightly had ever run: the crates.io auth exchange
+# (run 43174968584), the paiml/infra run list (43181571403) and a job log read (43186762927).
+# release-rehearsal-nightly.yml runs everything EXCEPT the uploads, with no credentials, by design (H10). This lane
+# is its complement: the same runner labels, the same environment, the same auth action and the same clean-room read
+# as the `release` job of release.yml, then a real `cargo publish` of aprender-publish-rehearsal (ci/publish-rehearsal,
+# outside the workspace, never a dependency) at version 0.0.<run number>, then a read-back from the sparse index.
+#
+# LAB, not GATE: schedule only (and a dispatch that uploads nothing). It is on no PR, merge-queue or release path and
+# can block nothing. A red scheduled night opens or updates ONE ticket with ONE owner (scripts/lab_ticket.sh).
+#
+# LIMIT, stated: this proves the runner, the environment, the secret, the OIDC exchange and one upload. It does not
+# prove that each real crate has its own Trusted Publisher entry on crates.io.
+name: Publish Rehearsal Nightly
+
+on:
+  schedule:
+    - cron: '50 5 * * *'   # 05:50Z: after release-rehearsal-nightly (05:20Z) has taken the clean-room runner
+  workflow_dispatch: {}    # drill: dry run only, uploads nothing
+
+permissions:
+  contents: read
+  id-token: write   # Trusted Publishing: OIDC exchange for a short-lived crates.io token, as on release day
+  issues: write     # the one LAB ticket of a red night
+
+concurrency:
+  group: publish-rehearsal-nightly
+  cancel-in-progress: false
+
+jobs:
+  rehearse:
+    name: rehearse
+    # LITERAL list, the release job's own labels (scripts/check_runner_labels.sh).
+    runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: infra-read   # holds INFRA_ACTIONS_READ; only main may use it (#6907)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0   # the clean-room read resolves the newest release tag
+      - name: The rehearsal's case table (a red table uploads nothing)
+        run: |
+          set -uo pipefail
+          bash scripts/release/falsify_publish_rehearsal.sh > "$RUNNER_TEMP/publish-rehearsal.log" 2>&1; rc=$?
+          tail -n 5 "$RUNNER_TEMP/publish-rehearsal.log"
+          exit "$rc"
+      - id: auth
+        if: ${{ github.event_name == 'schedule' }}
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Clean-room read, upload, index read-back
+        id: rehearse
+        env:
+          GH_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          RUN_NUMBER: ${{ github.run_number }}
+          DRY: ${{ github.event_name == 'schedule' && '0' || '1' }}
+        run: |
+          set -uo pipefail
+          bash scripts/release/publish_rehearsal.sh "$RUN_NUMBER" "$DRY" >> "$RUNNER_TEMP/publish-rehearsal.log" 2>&1; rc=$?
+          tail -n 20 "$RUNNER_TEMP/publish-rehearsal.log"
+          exit "$rc"
+      - name: A red night opens or updates its one LAB ticket
+        if: ${{ failure() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          bash scripts/lab_ticket.sh --label lab-publish-rehearsal --title "LAB: the nightly publish rehearsal is red (#6914)" \
+            --owner aprender-cop --log "$RUNNER_TEMP/publish-rehearsal.log" --event "$GITHUB_EVENT_NAME" --run-url "$RUN_URL"
