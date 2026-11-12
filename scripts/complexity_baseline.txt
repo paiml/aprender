@@ -2,7 +2,7 @@
 # (cyclomatic > 30 or cognitive > 25), as "<path>::<function> <cyclomatic> <cognitive>".
 # SHRINK-ONLY. Regenerate with: bash scripts/check_complexity_ratchet.sh --update
 # Owner: scripts/check_complexity_ratchet.sh (PMAT-746).
-# tool_version=pmat 3.42.0
+# tool_version=pmat 3.44.0
 # Instrument comparison (#6133). Measured on one tree (b4bbf8c781 + this PR): `bash
 # scripts/check_complexity_ratchet.sh --update` under pmat 3.41.1 and under pmat 3.42.0 writes the
 # SAME 602 rows (diff of the two row sets is empty). The instrument change loses no function.
@@ -12,6 +12,8 @@
 # submodules (simulate two_opt, check_triangle_inequality, validate_schema), 52 name functions
 # present but now under the thresholds (e.g. davies_bouldin_score, split by a33de0cc08, #5111).
 # Re-stamped; no row was added or raised.
+# 3.44.0 re-stamp (pin follows the box, fleet-sup 16:21Z): --update on this tree under pmat 3.44.0 writes 593 rows,
+# 9 fewer than the 602 above; none added or raised. Dropped: read_pcie, linear_model fit x2, start_test_worker, suggest, size validate, to_csv, downscale, find_gaps.
 crates/apr-cli/examples/gpu_chat_inference.rs::run_chat_completion 11 33
 crates/apr-cli/src/commands/attn_parity_lint.rs::run 13 26
 crates/apr-cli/src/commands/attn_viz_classifier.rs::classify_causal_mask 8 29
@@ -55,7 +57,6 @@ crates/apr-format/src/v2/writer.rs::add_q4_tensor 12 27
 crates/aprender-cbtop/src/adversarial/validators.rs::validate_floats 9 26
 crates/aprender-cbtop/src/app/metrics.rs::read_cpu_usage 10 41
 crates/aprender-cbtop/src/app/metrics.rs::read_disks 12 60
-crates/aprender-cbtop/src/bricks/collectors/pcie.rs::read_pcie 10 35
 crates/aprender-cbtop/src/bricks/collectors/thermal.rs::read_thermal 10 37
 crates/aprender-cbtop/src/bricks/generators/simd.rs::run_iteration 15 31
 crates/aprender-cbtop/src/incremental_snapshot/store.rs::query 8 29
@@ -151,8 +152,6 @@ crates/aprender-core/src/graph/examples.rs::dijkstra 12 30
 crates/aprender-core/src/graph/graph_core.rs::louvain 12 37
 crates/aprender-core/src/graph/nodes.rs::strongly_connected_components 11 26
 crates/aprender-core/src/index/hnsw.rs::search_layer 10 33
-crates/aprender-core/src/linear_model/input.rs::fit 22 58
-crates/aprender-core/src/linear_model/lasso_impl.rs::fit 22 58
 crates/aprender-core/src/metaheuristics/constructive.rs::optimize 13 26
 crates/aprender-core/src/metaheuristics/tabu_search_impl.rs::optimize 14 28
 crates/aprender-core/src/monte_carlo/engine/variance.rs::generate_uniforms 11 26
@@ -223,7 +222,6 @@ crates/aprender-data/src/sketch.rs::add_dataset 10 56
 crates/aprender-data/src/sketch.rs::merge 9 27
 crates/aprender-db/tests/backend_equivalence_tests.rs::prop_avg_equivalence_f32 14 40
 crates/aprender-distribute/src/checkpoint/mod.rs::cleanup 9 33
-crates/aprender-distribute/src/executor/remote.rs::start_test_worker 10 61
 crates/aprender-distribute/src/executor/simd.rs::validate 8 33
 crates/aprender-explain/src/ptx/bugs/analyzer/detectors/control_flow.rs::detect_dead_code 10 29
 crates/aprender-explain/src/ptx/bugs/analyzer/detectors/control_flow.rs::detect_loop_branch_to_end 12 27
@@ -287,7 +285,6 @@ crates/aprender-present-core/src/validation.rs::matches 23 75
 crates/aprender-present-lib/examples/cht_sparkline.rs::render_ascii 18 48
 crates/aprender-present-lib/src/browser/notebook.rs::analyze_dependencies 14 40
 crates/aprender-present-lib/src/browser/notebook.rs::topological_order 12 27
-crates/aprender-present-lib/src/browser/shell_autocomplete.rs::suggest 19 41
 crates/aprender-present-lib/src/browser/websocket.rs::setup_close_handler 19 47
 crates/aprender-present-terminal/src/app.rs::run_loop 13 40
 crates/aprender-present-terminal/src/direct/direct_canvas.rs::draw_line 15 41
@@ -477,14 +474,12 @@ crates/aprender-serve/tests/ffn_gguf_real_teacher_28_layer_chain.rs::falsify_ffn
 crates/aprender-shell/src/history.rs::has_corrupted_tokens 8 26
 crates/aprender-shell/src/history.rs::strip_inline_comment 15 38
 crates/aprender-shell/src/model_train_markov.rs::suggest 18 43
-crates/aprender-shell/src/size.rs::validate 10 29
 crates/aprender-simulate/src/demos/tsp_grasp/mod.rs::compute_mst_excluding 10 26
 crates/aprender-simulate/src/domains/monte_carlo.rs::execute 11 56
 crates/aprender-simulate/src/engine/jidoka.rs::check_finite 9 32
 crates/aprender-simulate/src/engine/mod.rs::new 4 35
 crates/aprender-simulate/src/orbit/jidoka.rs::check_close_encounters 6 26
 crates/aprender-simulate/src/scenarios/portfolio.rs::cholesky_decomposition 9 28
-crates/aprender-simulate/src/visualization/mod.rs::to_csv 13 32
 crates/aprender-sparse/src/bsr.rs::from_dense 9 29
 crates/aprender-sparse/src/bsr.rs::spmm 11 42
 crates/aprender-sparse/src/bsr.rs::spmv 10 31
@@ -507,8 +502,6 @@ crates/aprender-test-lib/src/llm/score.rs::compute_scorecard 19 56
 crates/aprender-test-lib/src/media/svg_exporter.rs::render_shape 29 55
 crates/aprender-test-lib/src/performance.rs::check 11 30
 crates/aprender-test-lib/src/pixel_coverage/heatmap.rs::export 49 176
-crates/aprender-test-lib/src/pixel_coverage/parallel.rs::downscale 11 33
-crates/aprender-test-lib/src/pixel_coverage/terminal.rs::find_gaps 15 63
 crates/aprender-test-lib/src/playbook/chromium_executor.rs::wait 11 49
 crates/aprender-test-lib/src/playbook/schema.rs::validate 10 29
 crates/aprender-test-lib/src/runtime.rs::test_wasm_circular_import_detection 10 31
