@@ -2,17 +2,17 @@ family	ggplot2_name	status	aprender_symbol	proving_test	notes
 geoms	geom_abline	absent	-	-	no abline; only hline/vline
 geoms	geom_area	partial	crates/aprender-viz/src/grammar/geom.rs:115 Geom::area	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_area	render smoke only; alpha param (ggplot2 NA), no stat_align, no stacking
 geoms	geom_bar	partial	crates/aprender-viz/src/grammar/geom.rs:121 Geom::bar	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_bar	Stat::Count never applied; width 0.8 vs 0.9; no stack/dodge; terminal widget only
-geoms	geom_bin_2d	absent	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	-	Stat::Bin2d enum only, never computed or rendered
-geoms	geom_bin2d	absent	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	-	alias of geom_bin_2d; same gap
+geoms	geom_bin_2d	partial	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	-	Stat::Bin2d enum only, never computed or rendered
+geoms	geom_bin2d	partial	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	-	alias of geom_bin_2d; same gap
 geoms	geom_blank	absent	-	-	no blank layer
 geoms	geom_boxplot	partial	crates/aprender-viz/src/plots/boxplot.rs:13 BoxStats	crates/aprender-viz/src/plots/boxplot.rs::test_box_stats_basic	standalone BoxPlot; Geom::boxplot (geom.rs:137) not rendered; loose 0.5 tolerance; terminal widget only
 geoms	geom_col	partial	crates/aprender-viz/src/grammar/ggplot.rs:624 render_bars	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_bar	bars from given y work but no geom_col name; no stacking
 geoms	geom_contour	absent	-	-	no contour stat or geom
 geoms	geom_contour_filled	absent	-	-	no filled contour
-geoms	geom_count	absent	crates/aprender-viz/src/grammar/stat.rs:31 Stat::Sum	-	Stat::Sum enum only; no size-by-count rendering
+geoms	geom_count	partial	crates/aprender-viz/src/grammar/stat.rs:31 Stat::Sum	-	Stat::Sum enum only; no size-by-count rendering
 geoms	geom_crossbar	absent	-	-	none
 geoms	geom_curve	absent	-	-	none
-geoms	geom_density	absent	crates/aprender-viz/src/plots/boxplot.rs:586 compute_kde	crates/aprender-viz/src/plots/boxplot.rs::test_kde_basic	Stat::Density enum unused; private KDE in violin; no density geom
+geoms	geom_density	partial	crates/aprender-viz/src/plots/boxplot.rs:586 compute_kde	crates/aprender-viz/src/plots/boxplot.rs::test_kde_basic	private KDE used by violin; Silverman bw; no density geom; Stat::Density unused
 geoms	geom_density_2d	absent	-	-	no 2d KDE
 geoms	geom_density_2d_filled	absent	-	-	no 2d KDE
 geoms	geom_density2d	absent	-	-	alias; no 2d KDE
@@ -31,7 +31,7 @@ geoms	geom_line	partial	crates/aprender-viz/src/grammar/geom.rs:109 Geom::line	c
 geoms	geom_linerange	absent	-	-	none
 geoms	geom_map	absent	-	-	none
 geoms	geom_path	partial	crates/aprender-viz/src/grammar/ggplot.rs:598 render_line	-	line renderer is data-order path; no geom_path name or group
-geoms	geom_point	partial	crates/aprender-viz/src/grammar/geom.rs:103 Geom::point	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_basic	render smoke only; 6 shapes vs R 26; size 5.0 default unverified; terminal widget only
+geoms	geom_point	implemented	crates/aprender-viz/src/grammar/geom.rs:118 Geom::point; crates/aprender-viz/src/grammar/ggplot.rs:446 GGPlot::layout	crates/aprender-viz/src/grammar/ggplot2_oracle.rs::ggplot2_row1_point_layer_positions; crates/aprender-viz/src/grammar/ggplot2_oracle.rs::ggplot2_row1_point_default_aesthetics	layout() matches oracle: x,y,shape,size,colour. [drawn: framebuffer=smoke svg=- wasm=-]
 geoms	geom_pointrange	absent	-	-	none
 geoms	geom_polygon	absent	-	-	none
 geoms	geom_qq	absent	-	-	no quantile-quantile stat

@@ -55,12 +55,17 @@ Each piece is a row in the conformance matrix (section 6). The layer pipeline fo
 
 Parity is numeric, not pixels. For a fixture set, R runs `ggplot_build()` and the result is exported to JSON. aprender computes the same plot and its values are compared with the JSON.
 
-Exported per fixture:
+Exported per fixture today (`crates/aprender-viz/fixtures/ggplot2/oracle.R`, `write_fixture`):
 
-- layer data (one record per computed row, with every aesthetic column),
-- scale breaks, labels and limits for each position scale,
-- facet layout (panel table),
+- layer data from `ggplot_build()` (`b$data`, one record per computed row, with every aesthetic column and colours resolved to RGBA),
+- the first panel's x and y position scales from `b$layout$panel_params[[1]]`: limits, continuous_range (limits after expansion), breaks, labels and the count of censored breaks,
 - the R, ggplot2, scales and labeling versions.
+
+Required extensions, NOT yet in the oracle (each lands with the first row that needs it):
+
+- the facet layout table (`b$layout$layout`, one record per panel) and `panel_params` for every panel, for the facet rows (`facet_wrap`, `facet_grid`, labellers);
+- a non-finite encoding: `Inf`, `-Inf` and `NA` as the strings `"Inf"`, `"-Inf"` and `"NA"`. Today `json_scalar` writes `NA` as `null` and stops with an error on `Inf`/`-Inf`, so rows that produce infinite values (`stat_ecdf` with `pad = TRUE`, `annotate("rect", xmin = -Inf, ...)`, `geom_rect` with infinite bounds) cannot have a fixture yet;
+- discrete and binned scale parameters, for the discrete, binned and date scale rows.
 
 Layout of a row (from the first row, PR #6910):
 
@@ -74,6 +79,8 @@ Layout of a row (from the first row, PR #6910):
 Tests live under `src/` so that `cargo test -p aprender-viz --lib`, which CI runs, picks them up.
 
 Tolerance. Continuous values must satisfy `|a-b| <= 1e-9*max(|a|,|b|) + 1e-12`. Inputs are f32-exact, so honest differences are a few ulp, and 1e-9 is still orders below the effect of any default mutation. Labels, shapes, colours (RGBA from `col2rgb`) and counts must match exactly. A row that needs a looser bound (for example `stat_smooth` or density) states the reason in its module docs and its contract.
+
+Collation. Every fixture is generated with `LC_ALL=C` (so `LC_COLLATE=C`), for example `LC_ALL=C Rscript generate.R`. Under C collation, R sorts strings by byte value, so the default level order of a discrete scale (and of a factor made from a character column) is byte order: all upper-case letters before all lower-case ones. aprender sorts discrete levels the same way (byte order). Any other order is specified only by explicit `limits`/`levels` in the row's spec, never by locale.
 
 Fixture regeneration. Run the row's `generate.R` with `Rscript` on the oracle host, which has the pinned R and ggplot2. Then run `git diff --exit-code crates/aprender-viz/fixtures/`. The diff must be empty when the script is only re-run. Fixtures are committed JSON, so CI never needs R.
 
@@ -89,7 +96,7 @@ One plot spec renders to three targets. Pure Rust, no R at runtime.
 | WASM | Browser and board/booth use. |
 | SVG / PNG | Web demos and documents. |
 
-Today `aprender-viz --features wasm` does not build for wasm32 (see section 8), so the WASM target starts with that fix.
+`aprender-viz --features wasm` builds for wasm32 since PR #6913 (see section 8); nothing is drawn through it yet.
 
 Front ends:
 
@@ -100,32 +107,46 @@ Both front ends produce the same plot spec value, so they cannot differ in resul
 
 ## 6. Conformance matrix
 
-Rows are the exported ggplot2 4.0.3 names (theme elements come from the element tree). The aprender side was read at origin/main `53fa483e0` on 2026-11-12, 09:45Z. For every family the row count equals the export count, the name diff is empty, every row has six columns and no name repeats.
+Scope. ggplot2 4.0.3 exports 643 names (`getNamespaceExports("ggplot2")`). The matrix has 525 rows:
+
+| Part | Count | Where |
+|---|---|---|
+| Exported names that are rows | 365 | the nine export families (`<family>.exports.txt`) |
+| Theme elements (from `get_element_tree()`, not exports) | 160 | `theme-elements` |
+| **Rows** | **525** | `*.tsv` |
+| Exported ggproto classes, left out on purpose (`GeomPoint`, `StatBin`, `Facet`, ...) | 128 | `ggproto-classes.txt` |
+| Exported functions not yet in the matrix (`continuous_scale`, `discrete_scale`, `binned_scale`, `cut_width`, `cut_interval`, `cut_number`, `mean_se`, `mean_cl_boot`, `mean_cl_normal`, `mean_sdl`, `median_hilow`, `layer_data`, `get_theme`, `set_theme`, `update_theme`, `replace_theme`, `update_geom_defaults`, `arrow`, `unit`, `alpha`, ...) | 150 | `other-exports.txt` |
+| **Exports** | **643** | 365 + 128 + 150 |
+
+The selection rule: a row exists for every export whose name starts with a family prefix or is a named helper (README, "Deriving each export list"), plus every theme element. The ggproto classes are implementation objects behind the constructors that are rows. The 150 other exports (some are user-facing: the scale constructors, the `mean_se` family used as `stat_summary` defaults, theme setters, `layer_data`) are listed but have no status yet: they are the next family to add, and until they are rows the matrix understates the work. The README gives the command that recounts all four numbers.
+
+The aprender side of each row was read at origin/main `53fa483e0` on 2026-11-12, 09:45Z, except the 21 rows re-read at `54555d69b` in the fix round that followed PR #6910 (the three row-1 rows, and the rows whose status changed after a re-audit against the definition below). The `LINE` in `aprender_symbol` is valid at the commit its row was read; the symbol name is the key. For every family the row count equals the export count (theme-elements: the element-tree count), the name diff is empty, every row has six columns and no name repeats.
 
 | Family | Rows | Implemented | Partial | Absent |
 |---|---|---|---|---|
-| geoms | 53 | 0 | 15 | 38 |
+| geoms | 53 | 1 | 18 | 34 |
 | stats | 36 | 0 | 11 | 25 |
 | positions | 8 | 0 | 0 | 8 |
-| scales (+9 helpers) | 140 | 0 | 18 | 122 |
+| scales (131) + scales-helper (9) | 140 | 2 | 24 | 114 |
 | coords | 12 | 0 | 5 | 7 |
 | facets + labellers | 12 | 0 | 3 | 9 |
 | core (ggplot, aes, labs, annotate, ggsave ...) | 29 | 0 | 11 | 18 |
 | themes + element_* | 40 | 0 | 9 | 31 |
 | theme elements | 160 | 0 | 20 | 140 |
 | guides + draw_key_* | 35 | 0 | 0 | 35 |
-| **Total** | **525** | **0** | **92** | **433** |
+| **Total** | **525** | **3** | **101** | **421** |
 
 Status definitions.
 
-- `implemented`: the same name and defaults exist in aprender-viz AND a test checks the computed values against the R oracle fixture. No row met this at the read commit, because no oracle existed on main.
-- `partial`: related code exists (the symbol is named, with file and line) but the defaults or arguments differ, or no test proves the computed values. When in doubt between implemented and partial, a row is partial.
-- `absent`: no code.
+- `implemented`: ALL of the following hold for the row's default call. (1) The same name and defaults exist in aprender-viz. (2) An R fixture (committed `ggplot_build()` JSON) exists. (3) A Rust test compares the computed values with that fixture at the stated tolerance (section 4). (4) A contract under `contracts/` states the row and carries a falsifier whose mutant was measured to turn the row red (section 4). (5) The code is reachable from the public grammar path: `GGPlot::layout()` (builder API today, the `plot` verb later), not only from a private helper. Arguments the fixture does not exercise are listed in the notes; they are new fixtures, not a different status.
+- `partial`: related code exists (the symbol is named, with file and line) that computes or draws part of the row's own behaviour, but the defaults or arguments differ, or no test proves the computed values. A symbol that is only a declared enum variant or constructor counts, as it always has in the stats and geoms families; a code path for a different feature (for example `Coord::flip` for `scale_x_reverse`) does not. When in doubt between implemented and partial, a row is partial.
+- `absent`: no related code. A note that names code means the row is `partial`, unless the note says that code is a different feature.
 
-PR #6910 (row 1: `geom_point`, `scale_x_continuous`, `scale_y_continuous`, with oracle, contract and falsifier) turns 3 rows green when it merges: 3 of 525, 0.6%.
+`drawn` is a separate state, per target (SVG, framebuffer/terminal, WASM). `implemented` says the numbers `layout()` computes match ggplot2; it does not say anything is drawn. A row is drawn on a target only when a test renders that target from the built layout and checks it. No row is drawn on any target against an oracle yet. The three `implemented` rows carry a `[drawn: framebuffer=... svg=... wasm=...]` tag at the end of the notes (`smoke` = a render test that checks success only, `-` = not drawn); rows without the tag claim nothing about drawing. The tag is a notes convention, not a seventh column, so every TSV keeps six columns.
 
-The rows are committed as data in `docs/specifications/plot-gg-001/matrix/` (columns and derivation commands in the README there).
+Row 1 (PR #6910) made `geom_point`, `scale_x_continuous` and `scale_y_continuous` `implemented`: 3 of 525, 0.6%. All three are drawn only as framebuffer render smoke.
 
+The rows are committed as data in `docs/specifications/plot-gg-001/matrix/` (columns, derivation and recount commands in the README there).
 ## 7. Release phases
 
 1. 0.72.6, demo set only. The `plot` subcommand exists, with the layers the demo set uses, at oracle parity, terminal target first. It does not wait for the full matrix.
@@ -133,16 +154,16 @@ The rows are committed as data in `docs/specifications/plot-gg-001/matrix/` (col
 
 The matrix work does not wait for 0.72.6, and 0.72.6 does not wait for the matrix.
 
-Demo set. Evidence grades matter here. Reads of existing demo source code (R, Julia and Kotlin plotting code in the data-science course demos) support: `geom_point`, a fitted line (`geom_smooth(method="lm", se=FALSE)`, `geom_abline` or `geom_line`), `facet_wrap`, `coord_cartesian` limits, `labs`, `theme_minimal(base_size=18)`, continuous scales and discrete or manual colour scales. The 25 agile-practices demos name only a plot subject in words (14 of 25 have one); the mapping to `geom_col`, `geom_line`, `geom_step`, `geom_hline`/`geom_vline`, `coord_flip`, `position_dodge`/`position_stack`, `scale_x_date` and `scale_fill_manual` is INFERRED, a proposal to confirm with the demo owner. There is no evidence in any demo for log scales, histogram, boxplot, density, violin or text geoms. The brief expected histogram, boxplot and log scales; they stay in the matrix and ship when their rows go green. The exact 0.72.6 layer list is fixed after the demo owner names the plot for each demo.
+Demo set. Evidence grades matter here. Reads of existing demo source code (R, Julia and Kotlin plotting code in existing teaching demos) support: `geom_point`, a fitted line (`geom_smooth(method="lm", se=FALSE)`, `geom_abline` or `geom_line`), `facet_wrap`, `coord_cartesian` limits, `labs`, `theme_minimal(base_size=18)`, continuous scales and discrete or manual colour scales. A further set of 25 demos names only a plot subject in words (14 of 25 have one); the mapping to `geom_col`, `geom_line`, `geom_step`, `geom_hline`/`geom_vline`, `coord_flip`, `position_dodge`/`position_stack`, `scale_x_date` and `scale_fill_manual` is INFERRED, a proposal to confirm with the demo authors. There is no evidence in any demo for log scales, histogram, boxplot, density, violin or text geoms. The brief expected histogram, boxplot and log scales; they stay in the matrix and ship when their rows go green. The exact 0.72.6 layer list is fixed after the demo authors name the plot for each demo.
 
-The rmedia consumer pins the 0.64.0 family of aprender and has no presentar dependency, so the 0.72.6 consumer proof needs a version-bump PR in that repository. It is part of the estimate below.
+A downstream consumer pins the 0.64.0 family of aprender and has no presentar dependency, so the 0.72.6 consumer proof needs a version-bump PR there. It is part of the estimate below.
 
 ## 8. Findings from the matrix lanes (source reads)
 
 - The `Stat` enum values are never computed and no position adjustment exists; `render_layer` draws 6 geoms only.
-- Extended breaks existed but the grammar did not call them (fixed 6 grid lines). PR #6910 wires them into `layout()`.
+- Extended breaks existed but the grammar did not call them. PR #6910 wires them into `layout()` (`PositionScale`); the framebuffer renderer still draws a fixed 6 grid lines.
 - There are no discrete scales, no aesthetic-to-colour mapping, no legends or guides, and no axis text on the framebuffer path.
-- `aprender-viz --features wasm` does not build for wasm32: the wasm dependencies sit under the linux target table (exit 101).
+- `aprender-viz --features wasm` did not build for wasm32 at the matrix read commit (the wasm dependencies sat under the linux target table); PR #6913 fixed that, so the WASM target now builds. No plot is drawn through it yet.
 
 ## 9. Estimate for 100% (dated 2026-11-12; a basis, not a promise)
 
@@ -151,7 +172,7 @@ Basis.
 - 525 rows collapse to about 210 work units (spelling aliases such as colour/color and bin2d/bin_2d, scale families, the theme element tree).
 - Measured so far: 1 unit (row 1), 19 minutes of author time and 9 minutes of review, before CI.
 - Assumed: an average unit costs 3 times that (stats, text and legends are harder), about 1.5 lane-hours.
-- Capacity: 4 author lanes and 1 review lane (the measured subagent cap is 5), about 40 lane-hours a day, giving about 8 days.
+- Capacity: 4 author lanes and 1 review lane, about 40 lane-hours a day, giving about 8 days.
 - Multiplier of 1.5 for the hard tail (sf/map coords and geoms, hex, contour, exact loess, legends on 3 targets) and merge-flow waits, giving 12 days.
 
 Date: **2026-11-26**, range 2026-11-24 to 2026-12-03.

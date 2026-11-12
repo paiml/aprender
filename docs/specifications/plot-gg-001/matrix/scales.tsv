@@ -2,8 +2,8 @@ family	ggplot2_name	status	aprender_symbol	proving_test	notes
 scales-helper	derive	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
 scales-helper	dup_axis	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
 scales-helper	expand_limits	absent	-	-	absent; no way to extend range to include values
-scales-helper	expand_scale	absent	-	-	deprecated alias of expansion; absent, mult/add hard-coded
-scales-helper	expansion	absent	-	-	expansion(mult,add) absent; ggplot.rs:424 hard-codes mult 0.05 (default continuous c(.05,0,.05,0))
+scales-helper	expand_scale	partial	crates/aprender-viz/src/grammar/build.rs:15 CONTINUOUS_EXPAND_MULT	-	deprecated alias of expansion; same hard-coded continuous default, no constructor
+scales-helper	expansion	partial	crates/aprender-viz/src/grammar/build.rs:15 CONTINUOUS_EXPAND_MULT	-	continuous default mult 0.05, add 0 hard-coded; no expansion() constructor, no discrete default, not oracle-tested directly
 scales-helper	lims	absent	-	-	lims() absent; only Coord xlim/ylim
 scales	scale_alpha	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
 scales	scale_alpha_binned	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
@@ -15,15 +15,15 @@ scales	scale_alpha_identity	absent	-	-	aesthetic only constant per layer (size_v
 scales	scale_alpha_manual	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
 scales	scale_alpha_ordinal	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
 scales	scale_color_binned	absent	-	-	no binned/steps/date colour scale
-scales	scale_color_brewer	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_color_brewer	absent	-	-	two ColorBrewer ramps (Blues, RdBu) exist as continuous ColorScale only; no class palette, no discrete mapping
 scales	scale_color_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
 scales	scale_color_date	absent	-	-	no binned/steps/date colour scale
 scales	scale_color_datetime	absent	-	-	no binned/steps/date colour scale
 scales	scale_color_discrete	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
-scales	scale_color_distiller	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
-scales	scale_color_fermenter	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_color_distiller	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues	-	Blues-9 stops 1,3,5,7,9, forward; ggplot2 default is Blues-7 reversed (#084594 to #EFF3FF); no mapping
+scales	scale_color_fermenter	absent	-	-	two ColorBrewer ramps exist as continuous ColorScale only; no binned class palette or mapping
 scales	scale_color_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
-scales	scale_color_gradient2	absent	-	-	no diverging midpoint scale (mid=0, low muted red, high muted blue); related ColorScale::red_blue
+scales	scale_color_gradient2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	diverging RdBu ramp exists; no midpoint arg, colours differ from muted red/blue, no mapping
 scales	scale_color_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	multi-stop colours ok but RGB lerp not Lab, no values= positions; not wired to aes
 scales	scale_color_grey	absent	-	-	no discrete grey palette (start .2 end .8); ColorScale::greyscale is black-white ramp
 scales	scale_color_hue	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
@@ -37,15 +37,15 @@ scales	scale_color_viridis_b	absent	-	-	no discrete/binned viridis; ColorScale::
 scales	scale_color_viridis_c	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	5 stops vs viridisLite 256; no option/begin/end/direction; default option D
 scales	scale_color_viridis_d	absent	-	-	no discrete/binned viridis; ColorScale::viridis is continuous only
 scales	scale_colour_binned	absent	-	-	no binned/steps/date colour scale
-scales	scale_colour_brewer	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_colour_brewer	absent	-	-	two ColorBrewer ramps (Blues, RdBu) exist as continuous ColorScale only; no class palette, no discrete mapping
 scales	scale_colour_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
 scales	scale_colour_date	absent	-	-	no binned/steps/date colour scale
 scales	scale_colour_datetime	absent	-	-	no binned/steps/date colour scale
 scales	scale_colour_discrete	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
-scales	scale_colour_distiller	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
-scales	scale_colour_fermenter	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_colour_distiller	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues	-	Blues-9 stops 1,3,5,7,9, forward; ggplot2 default is Blues-7 reversed (#084594 to #EFF3FF); no mapping
+scales	scale_colour_fermenter	absent	-	-	two ColorBrewer ramps exist as continuous ColorScale only; no binned class palette or mapping
 scales	scale_colour_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
-scales	scale_colour_gradient2	absent	-	-	no diverging midpoint scale (mid=0, low muted red, high muted blue); related ColorScale::red_blue
+scales	scale_colour_gradient2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	diverging RdBu ramp exists; no midpoint arg, colours differ from muted red/blue, no mapping
 scales	scale_colour_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	multi-stop colours ok but RGB lerp not Lab, no values= positions; not wired to aes
 scales	scale_colour_grey	absent	-	-	no discrete grey palette (start .2 end .8); ColorScale::greyscale is black-white ramp
 scales	scale_colour_hue	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
@@ -62,15 +62,15 @@ scales	scale_continuous_identity	absent	-	-	no such aesthetic mapping; geoms tak
 scales	scale_discrete_identity	absent	-	-	no such aesthetic mapping; geoms take constant width only
 scales	scale_discrete_manual	absent	-	-	no such aesthetic mapping; geoms take constant width only
 scales	scale_fill_binned	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
-scales	scale_fill_brewer	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_brewer	absent	-	-	two ColorBrewer ramps exist as continuous ColorScale only; no class palette, no discrete fill mapping
 scales	scale_fill_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
 scales	scale_fill_date	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
 scales	scale_fill_datetime	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
 scales	scale_fill_discrete	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
-scales	scale_fill_distiller	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
-scales	scale_fill_fermenter	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_distiller	partial	crates/aprender-viz/src/scale.rs:182 ColorScale::blues	-	Blues-9 stops 1,3,5,7,9, forward; ggplot2 default is Blues-7 reversed (#084594 to #EFF3FF); no fill mapping
+scales	scale_fill_fermenter	absent	-	-	two ColorBrewer ramps exist as continuous ColorScale only; no binned class palette, no fill mapping
 scales	scale_fill_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
-scales	scale_fill_gradient2	absent	-	-	no diverging midpoint fill scale
+scales	scale_fill_gradient2	partial	crates/aprender-viz/src/scale.rs:198 ColorScale::red_blue	-	diverging RdBu ramp exists; no midpoint arg, colours differ from muted red/blue, no fill mapping
 scales	scale_fill_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
 scales	scale_fill_grey	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
 scales	scale_fill_hue	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
@@ -119,7 +119,7 @@ scales	scale_size_manual	absent	-	-	aesthetic only constant per layer (size_valu
 scales	scale_size_ordinal	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
 scales	scale_type	absent	-	-	no scale_type() dispatch from data class
 scales	scale_x_binned	absent	-	-	no binned/date/datetime/time position scale or date breaks
-scales	scale_x_continuous	partial	crates/aprender-viz/src/scale.rs:23 LinearScale; crates/aprender-viz/src/grammar/ggplot.rs:424 padded	crates/aprender-viz/src/scale.rs::test_linear_scale	linear map + 5% pad ok; breaks.rs extended not wired (grid fixed 6 lines); no labels/limits/n.breaks=NULL
+scales	scale_x_continuous	implemented	crates/aprender-viz/src/grammar/build.rs:95 PositionScale (extended breaks, 5% expansion)	crates/aprender-viz/src/grammar/ggplot2_oracle.rs::ggplot2_row1_scale_x_continuous	default call only; no limits/breaks/labels/n.breaks args. [drawn: framebuffer=fixed 6 grid lines, no axis text; svg=- wasm=-]
 scales	scale_x_date	absent	-	-	no binned/date/datetime/time position scale or date breaks
 scales	scale_x_datetime	absent	-	-	no binned/date/datetime/time position scale or date breaks
 scales	scale_x_discrete	absent	-	-	no discrete/categorical position scale; ggplot2 default expansion add 0.6 unmapped
@@ -128,7 +128,7 @@ scales	scale_x_reverse	absent	-	-	no sqrt/reverse transform; Coord::flip is a di
 scales	scale_x_sqrt	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
 scales	scale_x_time	absent	-	-	no binned/date/datetime/time position scale or date breaks
 scales	scale_y_binned	absent	-	-	no binned/date/datetime/time position scale or date breaks
-scales	scale_y_continuous	partial	crates/aprender-viz/src/scale.rs:23 LinearScale; crates/aprender-viz/src/grammar/ggplot.rs:424 padded	crates/aprender-viz/src/scale.rs::test_linear_scale	linear map + 5% pad ok; breaks.rs extended not wired (grid fixed 6 lines); no labels/limits/n.breaks=NULL
+scales	scale_y_continuous	implemented	crates/aprender-viz/src/grammar/build.rs:95 PositionScale (extended breaks, 5% expansion)	crates/aprender-viz/src/grammar/ggplot2_oracle.rs::ggplot2_row1_scale_y_continuous	default call only; no limits/breaks/labels/n.breaks args. [drawn: framebuffer=fixed 6 grid lines, no axis text; svg=- wasm=-]
 scales	scale_y_date	absent	-	-	no binned/date/datetime/time position scale or date breaks
 scales	scale_y_datetime	absent	-	-	no binned/date/datetime/time position scale or date breaks
 scales	scale_y_discrete	absent	-	-	no discrete/categorical position scale; ggplot2 default expansion add 0.6 unmapped
