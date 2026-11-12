@@ -9,7 +9,7 @@ metadata:
     Refs #6909). For every f32 input (NaN, infinities, f32::MAX, subnormals), every coordinate
     limit and every canvas from 1x1 to 512x512, a plot built through GGPlot renders through
     to_framebuffer(), to_svg() and to_terminal() without panicking and in work bounded by the
-    canvas, not by the data. Rows with a non-finite position are dropped for every geom. The
+    canvas, not by the data. Rows with a non-finite position are dropped for every geom except the stroke layers (line, path, step, hline, vline, abline), which refuse a non-finite or out-of-limit position with a typed error from layout() (plot-lines-render-v1) and so never reach a renderer. The
     aliased line computes Bresenham's minor offset in closed form and visits only the steps that
     land on the canvas, so it equals the unclipped walk for every i32 endpoint. The antialiased
     line is clipped, in f64, to the canvas grown by 1024 px before its loop, and clipping changes
@@ -28,7 +28,7 @@ metadata:
   - 'crates/aprender-viz/tests/render_total.rs'
 equations:
   non_finite_rows_dropped:
-    formula: 'rows(layer) = { i : isfinite(x[i]) ∧ isfinite(y[i]) }; every geom reads only rows(layer)'
+    formula: 'rows(layer) = { i : isfinite(x[i]) ∧ isfinite(y[i]) }; every geom except a stroke layer reads only rows(layer); a stroke layer with an infinite position or under coord xlim/ylim is refused by layout()'
     domain: any f32 columns, including NaN, +Inf, -Inf
     codomain: Vec<(f32, f32)> of finite pairs
     invariants:
@@ -64,8 +64,8 @@ proof_obligations:
   applies_to: bounded_primitives
 - id: RT-INV-002
   type: invariant
-  property: Non-finite rows are dropped for every geom
-  formal: '∀ row i: ¬(isfinite(x[i]) ∧ isfinite(y[i])) ⇒ row i contributes no mark and no SVG attribute'
+  property: Non-finite rows are dropped for every non-stroke geom; a stroke layer refuses them
+  formal: '∀ row i, ∀ non-stroke layer: ¬(isfinite(x[i]) ∧ isfinite(y[i])) ⇒ row i contributes no mark and no SVG attribute; ∀ stroke layer with an infinite position: build() succeeds and to_framebuffer() and to_svg() return Err, never a panic'
   applies_to: non_finite_rows_dropped
 - id: RT-INV-003
   type: invariant
@@ -122,7 +122,7 @@ falsification_tests:
   if_fails: A NaN or infinite row reaches a rasteriser; the totality property cannot see it
 - id: FALSIFY-RT-002
   rule: An antialiased segment is clipped before it is walked
-  prediction: making canvas_segment return its input unclipped turns wu_line_stays_on_the_ideal_segment_far_off_the_canvas RED, and every_geom_renders_total and point_line_area_bar_layers_stack_total RED (they run past 60 s); line_coordlim_outside and area_coordlim_outside stay green, because under xlim/ylim(0,1) the 1e38 rows map to an inf pixel and pixel() skips the segment before it reaches the clip (geom_line renders through draw_line_aa)
+  prediction: making canvas_segment return its input unclipped turns wu_line_stays_on_the_ideal_segment_far_off_the_canvas RED, and point_line_area_bar_layers_stack_total and rasterisers_return_for_any_f32_and_i32 hang (measured, both run past 60 s and the run hit its 400 s timeout); every_geom_renders_total, line_coordlim_outside and area_coordlim_outside stay green (stroke layers clip in grammar/stroke.rs, and under xlim/ylim a stroke layer is refused before any segment is drawn)
   test: cargo test -p aprender-viz --test render_total wu_line_stays_on_the_ideal_segment_far_off_the_canvas
   if_fails: No test draws an antialiased segment with an end far off the canvas
 - id: FALSIFY-RT-003

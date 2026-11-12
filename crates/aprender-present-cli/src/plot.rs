@@ -527,6 +527,9 @@ fn check_spec(spec: &Spec) -> Result<(), String> {
     }
     if let Some(c) = &spec.coord {
         check("coord", Some(&c.kind), COORDS)?;
+        if (c.xlim.is_some() || c.ylim.is_some()) && spec.layers.iter().any(|l| l.geom != "point") {
+            return Err("coord xlim/ylim zooms the panel, which the line, path, step and reference layers do not support; drop the limits or use only point layers".into());
+        }
     }
     for (aes, scale) in &spec.scales {
         check("scale aesthetic", Some(aes), SCALE_AESTHETICS)?;
@@ -1683,6 +1686,26 @@ mod tests {
         let other = FacetSpec::Other(serde::de::IgnoredAny);
         let mapping = check_facet(Some(&other)).expect_err("mapping");
         assert!(mapping.contains("a mapping or a list"), "{mapping}");
+    }
+
+    #[test]
+    fn check_spec_refuses_coord_limits_with_a_stroke_layer() {
+        let mut spec = Spec {
+            layers: vec![LayerSpec {
+                geom: "line".into(),
+                ..LayerSpec::default()
+            }],
+            coord: Some(CoordSpec {
+                kind: "cartesian".into(),
+                xlim: Some([0.0, 2.0]),
+                ylim: None,
+            }),
+            ..Spec::default()
+        };
+        let e = check_spec(&spec).expect_err("stroke plus limits");
+        assert!(e.contains("xlim/ylim"), "{e}");
+        spec.layers[0].geom = "point".into();
+        assert_eq!(check_spec(&spec), Ok(()));
     }
 
     #[test]

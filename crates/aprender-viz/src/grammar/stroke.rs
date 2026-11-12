@@ -211,7 +211,7 @@ pub(super) fn draw_raster(
     let colour = colour(path);
     for line in polylines(layer, panel, domain) {
         for w in line.windows(2) {
-            let (a, b) = (px(w[0], xs, ys), px(w[1], xs, ys));
+            let (Some(a), Some(b)) = (px(w[0], xs, ys), px(w[1], xs, ys)) else { continue };
             draw_line_aa(fb, a.0, a.1, b.0, b.1, colour);
         }
     }
@@ -228,15 +228,20 @@ pub(super) fn add_svg(
     let Some(path) = &layer.path else { return svg };
     let (colour, width) = (colour(path), width_px(path) as f32);
     for line in polylines(layer, panel, domain) {
-        let points: Vec<(f32, f32)> = line.iter().map(|&p| px(p, xs, ys)).collect();
+        // A vertex that maps to no finite pixel (a canvas with no room) drops its polyline: an
+        // attribute is never NaN or infinite.
+        let Some(points) = line.iter().map(|&p| px(p, xs, ys)).collect::<Option<Vec<_>>>() else {
+            continue;
+        };
         svg = svg.polyline(&points, colour, width);
     }
     svg
 }
 
-/// A data-space point in pixels.
-fn px((x, y): (f64, f64), xs: &LinearScale, ys: &LinearScale) -> (f32, f32) {
-    (xs.scale(x as f32), ys.scale(y as f32))
+/// A data-space point in pixels; `None` when either coordinate maps to no finite pixel.
+fn px((x, y): (f64, f64), xs: &LinearScale, ys: &LinearScale) -> Option<(f32, f32)> {
+    let (a, b) = (xs.scale(x as f32), ys.scale(y as f32));
+    (a.is_finite() && b.is_finite()).then_some((a, b))
 }
 
 #[cfg(test)]
@@ -368,6 +373,26 @@ mod tests {
         assert_eq!(cells_between((0, 3), (3, 0)), vec![(0, 3), (1, 2), (2, 1), (3, 0)]);
         let c = cells_between((0, 0), (6, 2));
         assert_eq!((c.first(), c.last(), c.len()), (Some(&(0, 0)), Some(&(6, 2)), 7));
+        // Ties between the two error terms (2 * err == dy or == dx): both steps are taken.
+        assert_eq!(cells_between((0, 0), (1, 2)), vec![(0, 0), (1, 1), (1, 2)]);
+        assert_eq!(cells_between((0, 0), (2, 1)), vec![(0, 0), (1, 1), (2, 1)]);
+        assert_eq!(cells_between((1, 2), (0, 0)), vec![(1, 2), (0, 1), (0, 0)]);
+    }
+
+    #[test]
+    fn an_unmappable_vertex_draws_nothing_and_writes_no_non_finite_attribute() {
+        // An infinite range maps 0 to NaN (0 * inf): no finite pixel exists for that vertex.
+        let xs = LinearScale::new((0.0, 10.0), (0.0, f32::INFINITY)).expect("x");
+        let ys = LinearScale::new((0.0, 10.0), (100.0, 0.0)).expect("y");
+        assert_eq!(px((0.0, 5.0), &xs, &ys), None);
+        assert_eq!(px((10.0, 5.0), &xs, &ys), None);
+        let l = layer(&[0.0, 10.0], &[5.0, 5.0], Some(path(None, 2, None)));
+        let mut fb = Framebuffer::new(100, 100).expect("fb");
+        let before = fb.pixels().to_vec();
+        draw_raster(&mut fb, &l, 0, DOM, (&xs, &ys));
+        assert_eq!(fb.pixels(), &before[..]);
+        let svg = add_svg(SvgEncoder::new(100, 100), &l, 0, DOM, (&xs, &ys)).render();
+        assert!(!svg.contains("<polyline") && !svg.contains("NaN"), "{svg}");
     }
 
     #[test]
