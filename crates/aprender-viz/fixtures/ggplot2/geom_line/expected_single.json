@@ -1,0 +1,43 @@
+{
+  "row": "geom_line",
+  "case": "single",
+  "spec": "ggplot(dsingle, aes(x, y)) + geom_line()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomLine",
+      "x": [2.5],
+      "y": [4],
+      "linewidth": [0.5],
+      "linetype": [1],
+      "alpha": [null],
+      "panel": [1],
+      "group": [-1],
+      "colour_rgba": [
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [2.5, 2.5],
+      "continuous_range": [2.4500000000000002, 2.5499999999999998],
+      "breaks": [2.4500000000000002, 2.4750000000000001, 2.5, 2.5250000000000004],
+      "labels": ["2.450", "2.475", "2.500", "2.525"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [4, 4],
+      "continuous_range": [3.9500000000000002, 4.0499999999999998],
+      "breaks": [3.9500000000000002, 3.9750000000000001, 4, 4.0250000000000004, 4.0499999999999998],
+      "labels": ["3.950", "3.975", "4.000", "4.025", "4.050"],
+      "n_breaks_censored": 0
+    }
+  }
+}
