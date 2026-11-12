@@ -573,9 +573,13 @@ impl BuiltGGPlot {
     /// `geom_vline`, `geom_abline`) whose input is outside what `grammar/path.rs` documents:
     /// text or infinite positions, a missing column, a data-mapped colour, an unsupported facet, or
     /// a degenerate axis range; and [`Error::UnsupportedCoord`] for such a layer under any
-    /// coordinate system but the default `coord_cartesian()` (`layout()` applies none).
+    /// coordinate system but the default `coord_cartesian()` (`layout()` applies none). While such
+    /// a layer is present, any layer with a stat other than identity is an
+    /// [`Error::UnsupportedStat`] (`layout()` computes none), and any other geom than these six
+    /// and `geom_point` is an [`Error::UnsupportedLayer`].
     pub fn layout(&self) -> Result<BuiltLayout> {
         path::require_default_coord(&self.layers, &self.coord)?;
+        path::require_identity_stats(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
         let (x, y) = self.position_scales();
         path::require_trained(&self.layers, &x, &y)?;
