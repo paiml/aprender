@@ -180,7 +180,7 @@ impl Grid {
     /// the rows share the available height equally.
     #[must_use]
     pub fn row_height(mut self, height: f32) -> Self {
-        self.row_height = (height.is_finite() && height >= 0.0).then_some(height);
+        self.row_height = (height.is_finite() && height >= 0.0).then(|| height.min(COORD_LIMIT));
         self
     }
 
@@ -199,8 +199,8 @@ impl Grid {
 
     /// Number of columns.
     #[must_use]
-    pub const fn get_columns(&self) -> usize {
-        self.columns
+    pub fn get_columns(&self) -> usize {
+        self.columns.max(1)
     }
 
     /// The gap in use (0 when the stored gap is not finite or is negative).
@@ -211,8 +211,9 @@ impl Grid {
 
     /// The fixed row height, if one is set.
     #[must_use]
-    pub const fn get_row_height(&self) -> Option<f32> {
+    pub fn get_row_height(&self) -> Option<f32> {
         self.row_height
+            .and_then(|h| (h.is_finite() && h >= 0.0).then(|| h.min(COORD_LIMIT)))
     }
 
     /// Number of rows needed for the current children.
@@ -226,9 +227,9 @@ impl Grid {
     pub fn cells(&self, bounds: Rect) -> Vec<Rect> {
         grid_cells_with(
             bounds,
-            self.columns,
+            self.get_columns(),
             self.gap,
-            self.row_height,
+            self.get_row_height(),
             self.children.len(),
         )
     }
@@ -251,8 +252,9 @@ impl Widget for Grid {
 
         // Width offered to each child: the available width minus the gaps,
         // split between the columns (unbounded stays unbounded).
-        let slot_width = if constraints.max_width.is_finite() {
-            ((constraints.max_width - gap * (columns - 1) as f32) / columns as f32).max(0.0)
+        let max_w = sane_upper(constraints.max_width);
+        let slot_width = if max_w.is_finite() {
+            ((max_w - gap * (columns - 1) as f32) / columns as f32).max(0.0)
         } else {
             f32::INFINITY
         };
@@ -263,13 +265,18 @@ impl Widget for Grid {
         let mut cell_height = 0.0f32;
         for child in &self.children {
             let size = child.measure(child_constraints);
-            cell_width = cell_width.max(size.width);
-            cell_height = cell_height.max(size.height);
+            cell_width = cell_width.max(sane(size.width).max(0.0));
+            cell_height = cell_height.max(sane(size.height).max(0.0));
         }
-        let cell_height = self.row_height.unwrap_or(cell_height);
+        let cell_height = self.get_row_height().unwrap_or(cell_height);
 
-        let width = cell_width.mul_add(used_columns as f32, gap * (used_columns - 1) as f32);
-        let height = cell_height.mul_add(rows as f32, gap * (rows - 1) as f32);
+        // Products can overflow to infinity; saturate rather than collapse to 0.
+        let width = cell_width
+            .mul_add(used_columns as f32, gap * (used_columns - 1) as f32)
+            .min(COORD_LIMIT);
+        let height = cell_height
+            .mul_add(rows as f32, gap * (rows - 1) as f32)
+            .min(COORD_LIMIT);
         // Not `Constraints::constrain`: its `f32::clamp` panics on NaN or
         // inverted constraints.
         Size::new(
@@ -1152,5 +1159,44 @@ mod tests {
             let _ = click(&mut g, Point::new(px, py));
             prop_assert!(g.event(&Event::MouseLeave).is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod review_6897_tests {
+    use super::*;
+    use crate::{Text, Video};
+
+    #[test]
+    fn neg_inf_max_width_counts_as_zero() {
+        let g = Grid::new(1).child(Text::new("hello").max_width(200.0));
+        let c = |w| Constraints::new(0.0, w, 0.0, f32::INFINITY);
+        assert_eq!(g.measure(c(f32::NEG_INFINITY)), g.measure(c(-1.0)));
+        assert_eq!(
+            g.measure(c(f32::NEG_INFINITY)).height,
+            g.measure(c(0.0)).height
+        );
+    }
+
+    #[test]
+    fn huge_row_height_saturates_not_collapses() {
+        let one = Grid::new(1).row_height(f32::MAX).child(Video::new("a"));
+        let two = Grid::new(1)
+            .row_height(f32::MAX)
+            .child(Video::new("a"))
+            .child(Video::new("b"));
+        let h1 = one.measure(Constraints::unbounded()).height;
+        let h2 = two.measure(Constraints::unbounded()).height;
+        assert!(h1 > 0.0 && h2 >= h1);
+    }
+
+    #[test]
+    fn deserialized_invariants_are_sanitized() {
+        let g: Grid = serde_json::from_str(
+            r#"{"columns":0,"gap":-5.0,"row_height":-10.0,"test_id_value":null}"#,
+        )
+        .unwrap();
+        assert_eq!(g.get_columns(), 1);
+        assert_eq!(g.get_row_height(), None);
     }
 }

@@ -85,6 +85,13 @@ fn larger_magnitude(best: f32, candidate: f32) -> f32 {
     }
 }
 
+/// Start index of `bucket` out of `target`, computed in `u128` so that
+/// 32-bit `usize` (wasm32) cannot saturate the product.
+fn bucket_edge(bucket: usize, len: usize, target: usize) -> usize {
+    let edge = (bucket as u128 * len as u128) / target as u128;
+    usize::try_from(edge).map_or(len, |e| e.min(len))
+}
+
 /// Reduce `samples` to between 2 and `max(max_points, 2)` sanitized levels.
 ///
 /// With more samples than the target, each bucket keeps its sample of largest
@@ -98,8 +105,8 @@ fn reduce_levels(samples: &[f32], max_points: usize) -> Vec<f32> {
     } else {
         (0..target)
             .map(|bucket| {
-                let start = (bucket.saturating_mul(len) / target).min(len);
-                let end = (bucket.saturating_add(1).saturating_mul(len) / target).min(len);
+                let start = bucket_edge(bucket, len, target);
+                let end = bucket_edge(bucket + 1, len, target);
                 samples
                     .get(start..end)
                     .unwrap_or_default()
@@ -298,8 +305,8 @@ impl Waveform {
 
     /// The line width.
     #[must_use]
-    pub const fn get_line_width(&self) -> f32 {
-        self.line_width
+    pub fn get_line_width(&self) -> f32 {
+        sane(self.line_width).max(0.0)
     }
 
     /// The upper bound on drawn points.
@@ -370,7 +377,7 @@ impl Widget for Waveform {
 
     fn paint(&self, canvas: &mut dyn Canvas) {
         let points = waveform_points(&self.samples, self.bounds, self.max_points);
-        canvas.draw_path(&points, self.color, self.line_width);
+        canvas.draw_path(&points, self.color, self.get_line_width());
     }
 
     fn event(&mut self, _event: &Event) -> Option<Box<dyn Any + Send>> {
@@ -1303,5 +1310,21 @@ mod tests {
             let reply = wf.event(&Event::MouseMove { position: at });
             prop_assert!(reply.is_none());
         }
+    }
+}
+
+#[cfg(test)]
+mod review_6897_tests {
+    use super::*;
+
+    #[test]
+    fn bucket_edge_does_not_saturate_at_32_bit_limits() {
+        let len = 5_000_000usize;
+        assert_eq!(
+            bucket_edge(1023, len, 1024),
+            len / 1024 * 1023 + (len % 1024) * 1023 / 1024
+        );
+        assert_eq!(bucket_edge(1024, len, 1024), len);
+        assert_eq!(bucket_edge(usize::MAX, 4, 2), 4);
     }
 }

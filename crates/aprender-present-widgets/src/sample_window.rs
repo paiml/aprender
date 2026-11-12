@@ -132,8 +132,11 @@ impl SampleWindow {
     /// Root mean square of the window; 0.0 when empty.
     #[must_use]
     pub fn rms(&self) -> f32 {
-        let sum: f32 = self.iter().map(|v| v * v).sum();
-        (sum / self.len.max(1) as f32).sqrt()
+        if self.is_empty() {
+            return 0.0;
+        }
+        let sum: f64 = self.iter().map(|v| f64::from(v) * f64::from(v)).sum();
+        (sum / self.len as f64).sqrt() as f32
     }
 
     /// The window, oldest first, without allocating.
@@ -505,5 +508,16 @@ mod tests {
                 prop_assert!(points.iter().all(|p| p.x.is_finite() && p.y.is_finite()));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod review_6897_tests {
+    use super::*;
+
+    #[test]
+    fn empty_rms_is_positive_zero() {
+        let w = SampleWindow::new(4);
+        assert!(w.rms() == 0.0 && w.rms().is_sign_positive());
     }
 }

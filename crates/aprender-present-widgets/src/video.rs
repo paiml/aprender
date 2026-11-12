@@ -248,14 +248,14 @@ impl Video {
 
     /// Get the intrinsic width.
     #[must_use]
-    pub const fn get_width(&self) -> Option<f32> {
-        self.width
+    pub fn get_width(&self) -> Option<f32> {
+        self.width.and_then(sane_extent)
     }
 
     /// Get the intrinsic height.
     #[must_use]
-    pub const fn get_height(&self) -> Option<f32> {
-        self.height
+    pub fn get_height(&self) -> Option<f32> {
+        self.height.and_then(sane_extent)
     }
 
     /// Whether autoplay is set.
@@ -393,12 +393,12 @@ impl Widget for Video {
         // inverted constraints and passes an infinite minimum through.
         Size::new(
             fit(
-                self.width.unwrap_or(DEFAULT_WIDTH),
+                self.get_width().unwrap_or(DEFAULT_WIDTH),
                 constraints.min_width,
                 constraints.max_width,
             ),
             fit(
-                self.height.unwrap_or(DEFAULT_HEIGHT),
+                self.get_height().unwrap_or(DEFAULT_HEIGHT),
                 constraints.min_height,
                 constraints.max_height,
             ),
