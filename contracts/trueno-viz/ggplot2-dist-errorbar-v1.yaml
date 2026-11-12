@@ -1,0 +1,78 @@
+metadata:
+  id: ggplot2-dist-errorbar-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, distribution rows (PLOT-GG-001, paiml/aprender#6909, ticket paiml/aprender#6966) - geom_errorbar: geom_errorbar: identity stat, width = 0.9 * resolution(x) (or the width parameter), ymin and ymax trained on y, NA bounds kept.
+    The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation;
+    R is never run at test time. Every case goes through the public builder and layout().
+    Scope: continuous numeric data, one panel, no facets, plain coord_cartesian. Non-default coordinates (coord_flip, limits, polar, fixed) return Err(UnsupportedCoord) because layout() applies none; facets, mixing with other geoms, text or infinite positions, a continuous colour or fill mapping, two discrete mappings without a group, a fixed fill, a mapped alpha, a flipped orientation and invalid parameters return a typed Err (Rendering, UnknownColumn, ScaleDomain, EmptyData or UnsupportedCoord), never a panic. Mapped colours and fills carry the key but the palette is not resolved (the fixture holds the real palette). The layout path is fuzzed on extreme and non-finite f32 and on empty data: it never panics or hangs and builds a bounded number of bins and rows.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_errorbar'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_errorbar/generate.R'
+equations:
+  errorbar_identity:
+    formula: 'geom_errorbar layer = ggplot_build() data'
+    domain: numeric columns, continuous scales, one panel, no facet
+    codomain: BuiltLayer.dist and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; groups, panels, counts and column sets exact
+    preconditions:
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+proof_obligations:
+- id: ERRO-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact groups, panels, counts, column sets)'
+  applies_to: errorbar_identity
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_dist_oracle::err_default
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and fill fixtures are reproduced
+    check: grammar::ggplot2_dist_oracle::err_colour_groups
+    severity: ERROR
+  edge_cases:
+    description: NA and edge fixtures are reproduced
+    check: grammar::ggplot2_dist_oracle::err_na_bounds
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-ERRO-001
+  rule: Default width
+  prediction: changing 0.9 * resolution to 0.8 turns err_default RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::err_default
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-ERRO-002
+  rule: xmin and xmax
+  prediction: using x - width instead of x - width / 2 turns err_default RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::err_default
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-ERRO-003
+  rule: width parameter and column
+  prediction: emitting the default width column when width is given turns err_width_param RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::err_width_param
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-ERRO-004
+  rule: NA bounds are kept as NA
+  prediction: replacing an NA ymin by 0 turns err_na_bounds RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::err_na_bounds
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-ERRO-005
+  rule: Non-default coordinate systems are refused
+  prediction: accepting any Cartesian coord turns non_default_coord_is_a_typed_error RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::non_default_coord_is_a_typed_error
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-ERRO-001
+  name: ggplot2 conformance (geom_errorbar)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the geom_errorbar fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

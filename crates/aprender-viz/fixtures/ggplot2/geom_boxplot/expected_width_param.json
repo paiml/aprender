@@ -1,0 +1,67 @@
+{
+  "row": "geom_boxplot",
+  "case": "width_param",
+  "spec": "ggplot(df, aes(y = v)) + geom_boxplot(width = 0.4)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomBoxplot",
+      "ymin": [1],
+      "lower": [3],
+      "middle": [5],
+      "upper": [8],
+      "ymax": [11],
+      "notchupper": [6.9160314377870309],
+      "notchlower": [3.0839685622129691],
+      "x": [0],
+      "ymin_final": [-20],
+      "ymax_final": [30],
+      "xmin": [-0.20000000000000001],
+      "xmax": [0.20000000000000001],
+      "order": [1],
+      "xid": [1],
+      "newx": [0],
+      "new_width": [0.40000000000000002],
+      "weight": [1],
+      "size": [1.5],
+      "alpha": [null],
+      "shape": [19],
+      "linetype": [1],
+      "linewidth": [0.5],
+      "width": [0.40000000000000002],
+      "panel": [1],
+      "group": [-1],
+      "outliers": [
+        [30, -20]
+      ],
+      "colour_rgba": [
+        [51, 51, 51, 255]
+      ],
+      "fill_rgba": [
+        [255, 255, 255, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-0.20000000000000001, 0.20000000000000001],
+      "continuous_range": [-0.22000000000000003, 0.22000000000000003],
+      "breaks": [-0.20000000000000001, -0.10000000000000001, 0, 0.10000000000000003, 0.20000000000000001],
+      "labels": ["-0.2", "-0.1", "0.0", "0.1", "0.2"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [-20, 30],
+      "continuous_range": [-22.5, 32.5],
+      "breaks": [-20, -10, 0, 10, 20, 30],
+      "labels": ["-20", "-10", "0", "10", "20", "30"],
+      "n_breaks_censored": 0
+    }
+  }
+}

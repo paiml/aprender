@@ -84,6 +84,8 @@ pub enum GeomType {
         /// X intercept.
         xintercept: f32,
     },
+    /// A ggplot2 4.0.3 distribution layer built by `layout()` (see `dist.rs`).
+    Dist(super::dist::DistSpec),
     /// Smooth curve (loess/lm).
     Smooth {
         /// Smoothing method.
@@ -207,6 +209,7 @@ impl Geom {
     pub fn width(mut self, width: f32) -> Self {
         match &mut self.geom_type {
             GeomType::Line { width: ref mut w } | GeomType::Bar { width: ref mut w } => *w = width,
+            GeomType::Dist(spec) => spec.width = format!("{width}").parse().ok(),
             _ => {}
         }
         self
@@ -218,6 +221,8 @@ impl Geom {
         if let GeomType::Histogram { bins: ref mut b } = self.geom_type {
             *b = bins;
             self.stat = Some(Stat::Bin { bins });
+        } else if let GeomType::Dist(spec) = &mut self.geom_type {
+            spec.bins = bins;
         }
         self
     }

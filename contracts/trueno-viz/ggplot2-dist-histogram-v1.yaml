@@ -1,0 +1,83 @@
+metadata:
+  id: ggplot2-dist-histogram-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, distribution rows (PLOT-GG-001, paiml/aprender#6909, ticket paiml/aprender#6962) - geom_histogram: stat_bin (bins, binwidth, breaks, boundary, center, closed) stacked as bars; counts, density, ncount, ndensity and the stacking order (the highest group id at the bottom).
+    The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation;
+    R is never run at test time. Every case goes through the public builder and layout().
+    Scope: continuous numeric data, one panel, no facets, plain coord_cartesian. Non-default coordinates (coord_flip, limits, polar, fixed) return Err(UnsupportedCoord) because layout() applies none; facets, mixing with other geoms, text or infinite positions, a continuous colour or fill mapping, two discrete mappings without a group, a fixed fill, a mapped alpha, a flipped orientation and invalid parameters return a typed Err (Rendering, UnknownColumn, ScaleDomain, EmptyData or UnsupportedCoord), never a panic. Mapped colours and fills carry the key but the palette is not resolved (the fixture holds the real palette). The layout path is fuzzed on extreme and non-finite f32 and on empty data: it never panics or hangs and builds a bounded number of bins and rows.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_histogram'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_histogram/generate.R'
+equations:
+  histogram_stat_bin:
+    formula: 'geom_histogram layer = ggplot_build() data'
+    domain: numeric columns, continuous scales, one panel, no facet
+    codomain: BuiltLayer.dist and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; groups, panels, counts and column sets exact
+    preconditions:
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+proof_obligations:
+- id: HIST-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact groups, panels, counts, column sets)'
+  applies_to: histogram_stat_bin
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_dist_oracle::hist_default
+    severity: ERROR
+  group_or_style_cases:
+    description: group, colour and fill fixtures are reproduced
+    check: grammar::ggplot2_dist_oracle::hist_fill_two_groups
+    severity: ERROR
+  edge_cases:
+    description: NA and edge fixtures are reproduced
+    check: grammar::ggplot2_dist_oracle::hist_na_x
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-HIST-001
+  rule: Break fuzz toward the closed side
+  prediction: flipping the fuzz direction of closed = right turns hist_binwidth_boundary RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::hist_binwidth_boundary
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-HIST-002
+  rule: Stack order
+  prediction: stacking groups lowest-id-first turns hist_fill_two_groups RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::hist_fill_two_groups
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-HIST-003
+  rule: closed = left
+  prediction: flipping the fuzz direction of closed = left turns hist_closed_left RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::hist_closed_left
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-HIST-004
+  rule: Density column
+  prediction: dropping the total from density = count / width / total turns hist_default RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::hist_default
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-HIST-005
+  rule: Non-default coordinate systems are refused
+  prediction: accepting any Cartesian coord turns non_default_coord_is_a_typed_error RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::non_default_coord_is_a_typed_error
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-HIST-006
+  rule: Non-finite input and bounded layout
+  prediction: letting an infinite value through turns text_and_infinite_and_unknown_columns_are_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::text_and_infinite_and_unknown_columns_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-HIST-001
+  name: ggplot2 conformance (geom_histogram)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the geom_histogram fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases

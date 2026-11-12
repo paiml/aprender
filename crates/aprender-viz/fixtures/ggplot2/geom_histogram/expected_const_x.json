@@ -1,0 +1,52 @@
+{
+  "row": "geom_histogram",
+  "case": "const_x",
+  "spec": "ggplot(dc, aes(x)) + geom_histogram()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomBar",
+      "count": [3],
+      "x": [5],
+      "xmin": [4.9500000000000002],
+      "xmax": [5.0499999999999998],
+      "density": [10.000000000000036],
+      "ncount": [1],
+      "ndensity": [1],
+      "y": [3],
+      "ymin": [0],
+      "ymax": [3],
+      "linewidth": [0.5],
+      "linetype": [1],
+      "alpha": [null],
+      "width": [0.90000000000000002],
+      "panel": [1],
+      "group": [-1],
+      "fill_rgba": [
+        [89, 89, 89, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [4.9500000000000002, 5.0499999999999998],
+      "continuous_range": [4.9450000000000003, 5.0549999999999997],
+      "breaks": [4.9500000000000002, 4.9750000000000005, 5, 5.0250000000000004, 5.0499999999999998],
+      "labels": ["4.950", "4.975", "5.000", "5.025", "5.050"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 3],
+      "continuous_range": [-0.15000000000000002, 3.1499999999999999],
+      "breaks": [0, 1, 2, 3],
+      "labels": ["0", "1", "2", "3"],
+      "n_breaks_censored": 0
+    }
+  }
+}

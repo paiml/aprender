@@ -15,6 +15,7 @@ use super::build::{
 };
 use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
+use super::dist;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
 use super::theme::Theme;
@@ -554,6 +555,9 @@ impl BuiltGGPlot {
     ///
     /// None today; the signature leaves room for stats that can fail.
     pub fn layout(&self) -> Result<BuiltLayout> {
+        if self.layers.iter().any(dist::is_dist) {
+            return dist::layout(&self.data, &self.aes, &self.layers, &self.coord, &self.facet);
+        }
         let (x, y) = self.position_scales();
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect();
         Ok(BuiltLayout { layers, x, y })
@@ -585,7 +589,7 @@ impl BuiltGGPlot {
             }
             _ => None,
         };
-        BuiltLayer { x, y, points }
+        BuiltLayer { x, y, points, dist: None }
     }
 
     /// Draw the major grid lines, one per break of each position scale (ggplot2's

@@ -10,6 +10,8 @@
 use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::color::Rgba;
 
+use super::dist::BuiltDist;
+
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
 pub const CONTINUOUS_EXPAND_MULT: f64 = 0.05;
@@ -88,6 +90,8 @@ pub struct BuiltLayer {
     pub y: Vec<f64>,
     /// Per-row point aesthetics; `None` for geoms whose aesthetics are not resolved yet.
     pub points: Option<Vec<PointAes>>,
+    /// The built columns of a distribution layer (`Geom::gg_histogram` and friends).
+    pub dist: Option<BuiltDist>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

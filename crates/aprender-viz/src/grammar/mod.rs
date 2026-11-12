@@ -35,9 +35,13 @@ mod aes;
 mod build;
 mod coord;
 mod data;
+mod dist;
+mod dist_math;
 mod facet;
 mod geom;
 mod ggplot;
+#[cfg(test)]
+mod ggplot2_dist_oracle;
 #[cfg(test)]
 mod ggplot2_oracle;
 mod stat;
@@ -51,6 +55,7 @@ pub use build::{
 };
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
+pub use dist::{Bandwidth, BuiltDist, Closed, DistKind, DistSpec, Paint};
 pub use facet::{panels, Facet, Panel};
 pub use geom::Geom;
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
