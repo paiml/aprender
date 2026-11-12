@@ -339,26 +339,23 @@ fn ref_wu(fb: &mut Framebuffer, x0: f32, y0: f32, x1: f32, y1: f32, color: Rgba)
 fn ref_bresenham(fb: &mut Framebuffer, x0: i32, y0: i32, x1: i32, y1: i32, color: Rgba) {
     let dx = (x1 - x0).abs();
     let dy = -(y1 - y0).abs();
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let sy = if y0 < y1 { 1 } else { -1 };
+    let (sx, sy) = (if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 });
     let (mut x, mut y, mut err) = (x0, y0, dx + dy);
     loop {
         if x >= 0 && y >= 0 {
             fb.set_pixel(x as u32, y as u32, color);
         }
-        if x == x1 && y == y1 {
-            break;
-        }
         let e2 = 2 * err;
-        // Either axis reaching its end stops the walk before the step is taken.
-        if (e2 >= dy && x == x1) || (e2 <= dx && y == y1) {
+        let (step_x, step_y) = (e2 >= dy, e2 <= dx);
+        // Reaching the end point on either axis stops the walk before the step is taken.
+        if (x == x1 && (y == y1 || step_x)) || (y == y1 && step_y) {
             break;
         }
-        if e2 >= dy {
+        if step_x {
             err += dy;
             x += sx;
         }
-        if e2 <= dx {
+        if step_y {
             err += dx;
             y += sy;
         }
@@ -715,29 +712,30 @@ impl Lcg {
 /// Farthest Chebyshev distance from a lit pixel of one picture to the nearest lit pixel of the
 /// other, taken both ways.
 fn worst_gap(a: &Framebuffer, b: &Framebuffer, search: i64) -> i64 {
-    let gap = |p: &Framebuffer, q: &Framebuffer| -> i64 {
-        let (w, h) = (i64::from(p.width()), i64::from(p.height()));
-        let mut worst = 0;
-        for y in 0..h {
-            for x in 0..w {
-                if !is_lit_any(p, x, y) {
-                    continue;
-                }
-                let mut best = search + 1;
-                for dy in -search..=search {
-                    for dx in -search..=search {
-                        let (qx, qy) = (x + dx, y + dy);
-                        if qx >= 0 && qy >= 0 && qx < w && qy < h && is_lit_any(q, qx, qy) {
-                            best = best.min(dx.abs().max(dy.abs()));
-                        }
-                    }
-                }
-                worst = worst.max(best);
-            }
-        }
-        worst
-    };
-    gap(a, b).max(gap(b, a))
+    one_way_gap(a, b, search).max(one_way_gap(b, a, search))
+}
+
+/// Chebyshev distance from the farthest lit pixel of `p` to the nearest lit pixel of `q`.
+fn one_way_gap(p: &Framebuffer, q: &Framebuffer, search: i64) -> i64 {
+    let (w, h) = (i64::from(p.width()), i64::from(p.height()));
+    let lit = (0..h).flat_map(|y| (0..w).map(move |x| (x, y)));
+    lit.filter(|&(x, y)| is_lit_any(p, x, y))
+        .map(|(x, y)| nearest_lit(q, x, y, search))
+        .max()
+        .unwrap_or(0)
+}
+
+fn nearest_lit(q: &Framebuffer, x: i64, y: i64, search: i64) -> i64 {
+    let (w, h) = (i64::from(q.width()), i64::from(q.height()));
+    let offsets = (-search..=search).flat_map(|dy| (-search..=search).map(move |dx| (dx, dy)));
+    offsets
+        .filter(|&(dx, dy)| {
+            let (qx, qy) = (x + dx, y + dy);
+            qx >= 0 && qy >= 0 && qx < w && qy < h && is_lit_any(q, qx, qy)
+        })
+        .map(|(dx, dy)| dx.abs().max(dy.abs()))
+        .min()
+        .map_or(search + 1, |d| d.min(search + 1))
 }
 
 fn is_lit_any(fb: &Framebuffer, x: i64, y: i64) -> bool {
