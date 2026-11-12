@@ -401,6 +401,10 @@ mod tests {
         assert!(button.verify().failed.is_empty(), "hovered");
         button.pressed = true;
         assert!(button.verify().failed.is_empty(), "pressed");
+        let mut disabled = Button::new("+").disabled(true);
+        assert!(disabled.verify().failed.is_empty(), "disabled");
+        disabled.hovered = true;
+        assert!(disabled.verify().failed.is_empty(), "disabled+hovered");
         for background in [
             button.background,
             button.background_hover,

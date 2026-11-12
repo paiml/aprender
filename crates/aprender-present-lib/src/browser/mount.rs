@@ -418,4 +418,96 @@ mod tests {
         }
         assert_eq!(mounted.frames_painted(), 3);
     }
+
+    // aprender#6893 clause 4: a failing brick is never painted, wherever it sits. Every widget
+    // that owns a boxed child and paints it must expose it through `children()`.
+    fn bad() -> Button {
+        Button::new("")
+    }
+
+    fn assert_blocked(root: Box<dyn Widget>, what: &str) {
+        let mut mounted = Mounted::new(root, 800.0, 600.0);
+        assert!(
+            matches!(mounted.frame(), Frame::Blocked(_)),
+            "{what}: bad child was painted"
+        );
+        assert_eq!(mounted.frames_painted(), 0, "{what}");
+    }
+
+    #[test]
+    fn a_default_disabled_button_does_not_block_the_frame() {
+        let mut mounted = Mounted::new(Box::new(Button::new("+").disabled(true)), 800.0, 600.0);
+        assert!(matches!(mounted.frame(), Frame::Painted(_)));
+    }
+
+    #[test]
+    fn column_blocks_a_bad_child() {
+        assert_blocked(Box::new(Column::new().child(bad())), "Column");
+    }
+
+    #[test]
+    fn row_blocks_a_bad_child() {
+        assert_blocked(Box::new(presentar_widgets::Row::new().child(bad())), "Row");
+    }
+
+    #[test]
+    fn stack_blocks_a_bad_child() {
+        assert_blocked(
+            Box::new(presentar_widgets::Stack::new().child(bad())),
+            "Stack",
+        );
+    }
+
+    #[test]
+    fn container_blocks_a_bad_child() {
+        assert_blocked(
+            Box::new(presentar_widgets::Container::new().child(bad())),
+            "Container",
+        );
+    }
+
+    #[test]
+    fn list_blocks_a_bad_child() {
+        let list = presentar_widgets::List::new()
+            .items(vec![presentar_widgets::ListItem::new("a")])
+            .render_with(|_, _| Box::new(Button::new("")));
+        assert_blocked(Box::new(list), "List");
+    }
+
+    #[test]
+    fn menu_blocks_a_bad_trigger_widget() {
+        assert_blocked(
+            Box::new(presentar_widgets::Menu::new().trigger_widget(bad())),
+            "Menu",
+        );
+    }
+
+    #[test]
+    fn modal_blocks_a_bad_content() {
+        assert_blocked(
+            Box::new(presentar_widgets::Modal::new().open(true).content(bad())),
+            "Modal content",
+        );
+    }
+
+    #[test]
+    fn modal_blocks_a_bad_footer() {
+        assert_blocked(
+            Box::new(presentar_widgets::Modal::new().open(true).footer(bad())),
+            "Modal footer",
+        );
+    }
+
+    #[test]
+    fn modal_blocks_when_only_the_footer_is_bad_and_content_is_good() {
+        assert_blocked(
+            Box::new(
+                presentar_widgets::Modal::new()
+                    .open(true)
+                    .content(Button::new("ok"))
+                    .footer(bad()),
+            ),
+            "Modal content+footer",
+        );
+    }
 }
