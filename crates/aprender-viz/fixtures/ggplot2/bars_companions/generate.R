@@ -69,3 +69,7 @@ emit(ggplot(df[df$x == "a", ], aes(x, y)) + geom_col() + geom_hline(yintercept =
 # A NaN y: stat_identity keeps the row in ggplot_build().
 emit(ggplot(df, aes(x, yn)) + geom_col(),
      "geom_col() with a NaN y", "col_nan_y")
+# A numeric x beside bars over a text x: the discrete scale keeps a continuous range, so the point
+# sits at its own value and widens x (ScaleDiscretePosition$range_c).
+emit(ggplot(df, aes(x, y)) + geom_col() + geom_point(aes(x = xn, y = z)),
+     "geom_col() + geom_point(aes(xn, z)) with a numeric x", "col_point_numeric_x")

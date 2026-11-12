@@ -95,6 +95,11 @@ falsification_tests:
   prediction: removing the finite check in stat_count number_column turns _col_with_a_nan_y_is_a_typed_error RED (measured, mutation M9)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_col_with_a_nan_y_is_a_typed_error
   if_fails: NaN rows are dropped or drawn silently
+- id: FALSIFY-GGC1-007
+  rule: A numeric x beside bars sits at its own value on the discrete axis
+  prediction: dropping the companion x from the x range in layout_with_bars turns _point_with_a_numeric_x_sits_at_its_value and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 72 passed, rc=101)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_point_with_a_numeric_x_sits_at_its_value
+  if_fails: The numeric x is mapped onto a level or dropped
 qa_gate:
   id: F-GGC1-001
   name: ggplot2 conformance bars row 2 (stat_identity + geom_col)

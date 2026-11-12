@@ -765,6 +765,14 @@ fn ggplot2_bars_point_with_new_levels_extends_the_discrete_x() {
 }
 
 #[test]
+fn ggplot2_bars_point_with_a_numeric_x_sits_at_its_value() {
+    // A numeric x on the discrete scale adds no level: each point sits at its own value (-1 .. 4.5)
+    // and widens the continuous range (ScaleDiscretePosition$range_c).
+    let layers = vec![col(), point_layer(Aes::new().x("xn").y("z"))];
+    run_layers(companions!("col_point_numeric_x"), xy(), layers, None, "numeric x");
+}
+
+#[test]
 fn ggplot2_bars_point_layer_before_the_bar_layer() {
     let point = point_layer(Aes::new().x("xl").y("z"));
     let bar = Layer::new(Geom::bar()).aes(Aes::new().x("x"));
@@ -928,6 +936,50 @@ fn a_short_column_is_refused_not_read_past() {
     let fill = Layer::new(Geom::bar()).aes(Aes::new().fill("g"));
     let err = layout_of_layers(&df, Aes::new().x("x"), vec![fill], None).expect_err("short fill");
     assert!(err.to_string().contains("`g` has 1 values for 3 rows"), "{err}");
+}
+
+#[test]
+fn a_text_y_on_a_col_layer_is_refused() {
+    let mut df = DataFrame::new();
+    df.add_column_str("x", &["a", "b"]);
+    df.add_column_str("y", &["u", "v"]);
+    let err = layout_of_layers(&df, xy(), vec![col()], None).expect_err("text y");
+    assert!(err.to_string().contains("column `y` has the wrong type"), "{err}");
+}
+
+#[test]
+fn position_apply_matches_one_panel_and_leaves_identity_alone() {
+    use super::position::{apply, apply_panels, BarRow};
+    let row = |x: f64, y: f64, group: u32| BarRow {
+        x,
+        y,
+        ymin: 0.0,
+        ymax: y,
+        xmin: x - 0.45,
+        xmax: x + 0.45,
+        width: 0.9,
+        group,
+        count: None,
+        prop: None,
+    };
+    let rows = vec![row(1.0, 2.0, 1), row(1.0, 3.0, 2), row(2.0, 4.0, 1)];
+    let mut same = rows.clone();
+    apply(&mut same, Position::Identity);
+    assert_eq!(same, rows);
+    for position in [Position::dodge(), Position::Dodge { width: None, preserve: Preserve::Single }]
+    {
+        let mut flat = rows.clone();
+        apply(&mut flat, position);
+        let mut panels = vec![rows.clone()];
+        apply_panels(&mut panels, position);
+        assert_eq!(flat, panels[0], "{position:?}");
+        // Two groups at x = 1 split its 0.9 width; the lone bar at x = 2 keeps it under "total".
+        assert_close_slice(
+            "dodged x",
+            &flat.iter().map(|r| r.x).collect::<Vec<_>>()[..2],
+            &[0.775, 1.225],
+        );
+    }
 }
 
 #[test]

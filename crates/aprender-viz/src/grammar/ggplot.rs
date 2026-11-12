@@ -733,9 +733,6 @@ impl BuiltGGPlot {
 
     /// `layout()` when at least one layer is a bar layer over a text `x`.
     fn layout_with_bars(&self, specs: &[Option<BarSpec>]) -> Result<BuiltLayout> {
-        fn data_of<'a>(l: &'a Layer, d: &'a DataFrame) -> &'a DataFrame {
-            l.data.as_ref().unwrap_or(d)
-        }
         if !matches!(self.coord, Coord::Cartesian { xlim: None, ylim: None, flip: false }) {
             return Err(Error::UnsupportedCoord(
                 "a coordinate system other than the default with a bar layer: layout() applies none",
@@ -746,70 +743,22 @@ impl BuiltGGPlot {
                 self.require_bar_companion(l)?;
             }
         }
-        // The discrete x scale is trained on every layer's text x (hline/vline carry no x aesthetic).
-        let mut seen: Vec<&str> = Vec::new();
-        for l in &self.layers {
-            if matches!(l.geom.geom_type, GeomType::Hline { .. } | GeomType::Vline { .. }) {
-                continue;
-            }
-            let aes = self.aes.merge(&l.aes);
-            if let Some(col) = aes.x.as_deref().and_then(|n| data_of(l, &self.data).get(n)) {
-                if !col.is_empty() && col.iter().all(|v| v.as_str().is_some()) {
-                    seen.extend(col.iter().filter_map(DataValue::as_str));
-                }
-            }
-        }
-        let levels = sorted_levels(seen);
+        let levels = self.bar_levels();
         let facet_rows: Option<Vec<Vec<usize>>> = match self.facet {
             Facet::None => None,
             _ => Some(panels(&self.facet, &self.data)?.into_iter().map(|p| p.rows).collect()),
         };
-
         let mut layers = Vec::with_capacity(self.layers.len());
-        let mut x_range: Option<(f64, f64)> = None;
-        let mut y_range: Option<(f64, f64)> = None;
+        let mut ranges: (Option<(f64, f64)>, Option<(f64, f64)>) = (None, None);
         for (layer, spec) in self.layers.iter().zip(specs) {
-            let data = data_of(layer, &self.data);
-            let Some(spec) = spec else {
-                let built = self.build_layer(layer, Some(&levels))?;
-                match layer.geom.geom_type {
-                    GeomType::Hline { yintercept } => {
-                        y_range = widen(y_range, f64::from(yintercept), f64::from(yintercept));
-                    }
-                    GeomType::Vline { xintercept } => {
-                        x_range = widen(x_range, f64::from(xintercept), f64::from(xintercept));
-                    }
-                    _ => {
-                        let aes = self.aes.merge(&layer.aes);
-                        y_range = Self::extend_f64(y_range, data, aes.y.as_ref());
-                        x_range = Self::extend_f64(x_range, data, aes.x.as_ref());
-                    }
+            layers.push(match spec {
+                Some(spec) => {
+                    self.build_bar_layer(layer, spec, &levels, facet_rows.as_ref(), &mut ranges)?
                 }
-                layers.push(built);
-                continue;
-            };
-            let rows = match (&facet_rows, layer.data.is_some()) {
-                (Some(_), true) => {
-                    return Err(Error::Rendering(
-                        "bar layer: a bar layer with its own data under a facet is not supported"
-                            .to_string(),
-                    ));
-                }
-                (Some(rows), false) => rows.clone(),
-                (None, _) => vec![(0..data.nrow()).collect()],
-            };
-            let bars = bar_layout_in(data, spec, &levels, &rows)
-                .map_err(|e| Error::Rendering(format!("bar layer: {e}")))?;
-            if let Some((lo, hi)) = x_extent(&bars.rows) {
-                x_range = widen(x_range, lo, hi);
-            }
-            if let Some((lo, hi)) = y_extent(&bars.rows) {
-                y_range = widen(y_range, lo, hi);
-            }
-            let (x, y) = bars.rows.iter().map(|r| (r.x, r.y)).unzip();
-            layers.push(BuiltLayer { x, y, points: None, bars: Some(bars), path: None });
+                None => self.build_bar_companion(layer, &levels, &mut ranges)?,
+            });
         }
-        let y_range = match y_range {
+        let y_range = match ranges.1 {
             Some((lo, hi)) if lo < hi => (lo, hi),
             other => {
                 return Err(Error::ScaleDomain(format!(
@@ -818,10 +767,90 @@ impl BuiltGGPlot {
                 )))
             }
         };
-        let axis = discrete_axis(&levels, x_range);
+        let axis = discrete_axis(&levels, ranges.0);
         let x = bar_x_scale(&axis);
         let y = PositionScale::continuous(y_range);
         Ok(BuiltLayout { layers, x, y, x_discrete: Some(axis) })
+    }
+
+    /// The layer's own data, or the plot's.
+    fn data_of<'a>(&'a self, l: &'a Layer) -> &'a DataFrame {
+        l.data.as_ref().unwrap_or(&self.data)
+    }
+
+    /// The discrete x levels beside a bar layer: every bar and point layer's text x (hline/vline
+    /// carry no x aesthetic). Every bar and point layer here has its x column (bar_spec and
+    /// require_bar_companion refused the rest); a numeric x adds no level, it keeps its value.
+    fn bar_levels(&self) -> Vec<String> {
+        let mut seen: Vec<&str> = Vec::new();
+        for l in &self.layers {
+            if matches!(l.geom.geom_type, GeomType::Hline { .. } | GeomType::Vline { .. }) {
+                continue;
+            }
+            let aes = self.aes.merge(&l.aes);
+            let col = aes.x.as_deref().and_then(|n| self.data_of(l).get(n)).unwrap_or(&[]);
+            if col.iter().all(|v| v.as_str().is_some()) {
+                seen.extend(col.iter().filter_map(DataValue::as_str));
+            }
+        }
+        sorted_levels(seen)
+    }
+
+    /// A point, hline or vline layer beside bars; widens `ranges` (x, y) by its positions or
+    /// intercept.
+    fn build_bar_companion(
+        &self,
+        layer: &Layer,
+        levels: &[String],
+        ranges: &mut (Option<(f64, f64)>, Option<(f64, f64)>),
+    ) -> Result<BuiltLayer> {
+        let built = self.build_layer(layer, Some(levels))?;
+        match layer.geom.geom_type {
+            GeomType::Hline { yintercept } => {
+                ranges.1 = widen(ranges.1, f64::from(yintercept), f64::from(yintercept));
+            }
+            GeomType::Vline { xintercept } => {
+                ranges.0 = widen(ranges.0, f64::from(xintercept), f64::from(xintercept));
+            }
+            _ => {
+                let (data, aes) = (self.data_of(layer), self.aes.merge(&layer.aes));
+                ranges.1 = Self::extend_f64(ranges.1, data, aes.y.as_ref());
+                ranges.0 = Self::extend_f64(ranges.0, data, aes.x.as_ref());
+            }
+        }
+        Ok(built)
+    }
+
+    /// A bar layer: the stat and position per panel; widens `ranges` (x, y) by the bars' edges.
+    fn build_bar_layer(
+        &self,
+        layer: &Layer,
+        spec: &BarSpec,
+        levels: &[String],
+        facet_rows: Option<&Vec<Vec<usize>>>,
+        ranges: &mut (Option<(f64, f64)>, Option<(f64, f64)>),
+    ) -> Result<BuiltLayer> {
+        let data = self.data_of(layer);
+        let rows = match (facet_rows, layer.data.is_some()) {
+            (Some(_), true) => {
+                return Err(Error::Rendering(
+                    "bar layer: a bar layer with its own data under a facet is not supported"
+                        .to_string(),
+                ));
+            }
+            (Some(rows), false) => rows.clone(),
+            (None, _) => vec![(0..data.nrow()).collect()],
+        };
+        let bars = bar_layout_in(data, spec, levels, &rows)
+            .map_err(|e| Error::Rendering(format!("bar layer: {e}")))?;
+        if let Some((lo, hi)) = x_extent(&bars.rows) {
+            ranges.0 = widen(ranges.0, lo, hi);
+        }
+        if let Some((lo, hi)) = y_extent(&bars.rows) {
+            ranges.1 = widen(ranges.1, lo, hi);
+        }
+        let (x, y) = bars.rows.iter().map(|r| (r.x, r.y)).unzip();
+        Ok(BuiltLayer { x, y, points: None, bars: Some(bars), path: None })
     }
 
     /// The numeric range of `col` widened onto `acc`; a text or absent column adds nothing.
