@@ -7,13 +7,17 @@ here <- (function() {
 })()
 source(file.path(here, "..", "oracle.R"))
 suppressPackageStartupMessages(library(ggplot2))
+invisible(Sys.setlocale("LC_COLLATE", "C"))
+stopifnot(Sys.getlocale("LC_COLLATE") == "C")
 # Every numeric value is exactly representable in binary32 (aprender-viz stores f32).
-# Discrete levels are lowercase ASCII so R's locale-dependent sort and a byte sort agree.
+# The oracle is pinned to LC_COLLATE=C: R sorts factor levels by the locale, and C is bytewise
+# (uppercase before lowercase), the order aprender-viz implements. The value is recorded in each JSON.
 df <- utils::read.csv(file.path(here, "data.csv"), stringsAsFactors = FALSE)
 # Group and PANEL are kept: stacking and dodging order by group.
-emit <- function(plot, row, spec, file) {
-  write_fixture(plot, row = row, spec = spec, data_file = "data.csv",
-                out_file = file.path(here, file), drop = character())
+emit <- function(plot, row, spec, file, data_file = "data.csv") {
+  write_fixture(plot, row = row, spec = spec, data_file = data_file,
+                out_file = file.path(here, file), drop = character(),
+                collate = Sys.getlocale("LC_COLLATE"))
 }
 # Default position is stack; negative values stack downward from 0 separately.
 emit(ggplot(df, aes(x, y, fill = g)) + geom_col(),
@@ -21,4 +25,5 @@ emit(ggplot(df, aes(x, y, fill = g)) + geom_col(),
 # One row per x: no fill, nothing to stack.
 one <- df[df$g == "g1", ]
 emit(ggplot(one, aes(x, y)) + geom_col(),
-     "stat_identity+geom_col plain", "ggplot(df[df$g == \"g1\", ], aes(x, y)) + geom_col()", "expected_plain.json")
+     "stat_identity+geom_col plain", "ggplot(df[df$g == \"g1\", ], aes(x, y)) + geom_col()", "expected_plain.json",
+     data_file = "data.csv (rows with g == \"g1\")")

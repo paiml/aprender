@@ -1,0 +1,56 @@
+{
+  "row": "stat_count+geom_bar width=0.5",
+  "spec": "ggplot(df, aes(x)) + geom_bar(width = 0.5)",
+  "data_file": "data.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomBar",
+      "count": [3, 5, 2, 4],
+      "prop": [1, 1, 1, 1],
+      "x": [1, 2, 3, 4],
+      "flipped_aes": [false, false, false, false],
+      "PANEL": ["1", "1", "1", "1"],
+      "group": [1, 2, 3, 4],
+      "y": [3, 5, 2, 4],
+      "ymin": [0, 0, 0, 0],
+      "ymax": [3, 5, 2, 4],
+      "xmin": [0.75, 1.75, 2.75, 3.75],
+      "xmax": [1.25, 2.25, 3.25, 4.25],
+      "colour": [null, null, null, null],
+      "fill": ["#595959FF", "#595959FF", "#595959FF", "#595959FF"],
+      "linewidth": [0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "width": [0.5, 0.5, 0.5, 0.5],
+      "colour_rgba": [
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": ["a", "b", "c", "d"],
+      "continuous_range": [0.40000000000000002, 4.5999999999999996],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["a", "b", "c", "d"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 5],
+      "continuous_range": [-0.25, 5.25],
+      "breaks": [0, 1, 2, 3, 4, 5],
+      "labels": ["0", "1", "2", "3", "4", "5"],
+      "n_breaks_censored": 0
+    }
+  },
+  "collate": "C"
+}

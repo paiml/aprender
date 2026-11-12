@@ -106,7 +106,7 @@ versions_json <- function() {
 }
 
 # Build `plot`, extract layer data + panel 1's x/y scales, write the fixture.
-write_fixture <- function(plot, row, spec, data_file, out_file, drop = c("PANEL", "group")) {
+write_fixture <- function(plot, row, spec, data_file, out_file, drop = c("PANEL", "group"), collate = NULL) {
   b <- ggplot2::ggplot_build(plot)
   pp <- b$layout$panel_params[[1]]
   geoms <- vapply(plot$layers, function(l) class(l$geom)[1], character(1))
@@ -118,6 +118,8 @@ write_fixture <- function(plot, row, spec, data_file, out_file, drop = c("PANEL"
     layers = lapply(seq_along(b$data), function(i) layer_json(b$data[[i]], geoms[i], drop)),
     panel = list(x = axis_json(pp$x), y = axis_json(pp$y))
   )
+  # LC_COLLATE the oracle ran under: level and group order of a discrete aesthetic follow it.
+  if (!is.null(collate)) fixture$collate <- collate
   writeLines(to_json(fixture), out_file, useBytes = TRUE)
   invisible(fixture)
 }

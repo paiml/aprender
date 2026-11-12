@@ -56,5 +56,6 @@
       "labels": ["0", "1", "2", "3", "4", "5"],
       "n_breaks_censored": 0
     }
-  }
+  },
+  "collate": "C"
 }

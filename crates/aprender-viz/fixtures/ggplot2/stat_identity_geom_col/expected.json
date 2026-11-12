@@ -53,5 +53,6 @@
       "labels": ["0.0", "2.5", "5.0"],
       "n_breaks_censored": 2
     }
-  }
+  },
+  "collate": "C"
 }

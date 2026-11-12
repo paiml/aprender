@@ -1,7 +1,7 @@
 {
   "row": "stat_identity+geom_col plain",
   "spec": "ggplot(df[df$g == \"g1\", ], aes(x, y)) + geom_col()",
-  "data_file": "data.csv",
+  "data_file": "data.csv (rows with g == \"g1\")",
   "versions": {
     "R": "R version 4.6.2 (2026-10-29)",
     "ggplot2": "4.0.3",
@@ -48,5 +48,6 @@
       "labels": ["0", "1", "2", "3"],
       "n_breaks_censored": 0
     }
-  }
+  },
+  "collate": "C"
 }
