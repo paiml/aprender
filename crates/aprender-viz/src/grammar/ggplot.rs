@@ -1055,6 +1055,21 @@ mod tests {
         assert!(svg.contains(">-2.5</text>") && svg.contains(">10</text>"), "{svg}");
     }
 
+    /// A zero-width zoom on either axis has no pixel scale: `panel_frame` returns the scale's
+    /// error for x and for y instead of dividing by zero.
+    #[test]
+    fn test_ggplot_degenerate_limits_are_scale_errors() {
+        for coord in [Coord::cartesian().xlim(3.0, 3.0), Coord::cartesian().ylim(3.0, 3.0)] {
+            let built = GGPlot::new()
+                .data_xy(&[1.5, 13.75], &[-2.25, 7.5])
+                .geom(Geom::point())
+                .coord(coord.clone())
+                .build()
+                .expect("plot builds");
+            assert!(matches!(built.to_svg(), Err(Error::ScaleDomain(_))), "{coord:?}");
+        }
+    }
+
     #[test]
     fn test_ggplot_bar() {
         let plot = GGPlot::new()

@@ -21,6 +21,11 @@ use super::ggplot::BuiltGGPlot;
 pub const MIN_TERMINAL_WIDTH: u32 = 20;
 /// Smallest canvas height, in lines.
 pub const MIN_TERMINAL_HEIGHT: u32 = 8;
+/// Largest canvas, in character cells. The canvas holds one cell per column and line, so the
+/// size is bounded before anything is allocated (100000x100000 was an 80 GB allocation).
+pub const MAX_TERMINAL_WIDTH: u32 = 1000;
+/// Largest canvas height, in lines.
+pub const MAX_TERMINAL_HEIGHT: u32 = 1000;
 /// The glyph a point is drawn with (ggplot2's default `shape = 19`, a solid circle).
 pub const POINT_GLYPH: char = '●';
 /// Fewest columns the panel may have; a narrower one is refused.
@@ -128,12 +133,19 @@ impl BuiltGGPlot {
     /// # Errors
     ///
     /// [`Error::Rendering`] for a canvas below [`MIN_TERMINAL_WIDTH`] x [`MIN_TERMINAL_HEIGHT`]
-    /// (or too narrow for the y labels), a facet, `coord_flip()`, or a layer that is not a point
+    /// or above [`MAX_TERMINAL_WIDTH`] x [`MAX_TERMINAL_HEIGHT`] (or too narrow for the y
+    /// labels), a facet, `coord_flip()`, or a layer that is not a point
     /// layer; [`Error::UnsupportedCoord`] for polar or fixed coordinates.
     pub fn to_terminal(&self, opts: TerminalPlot) -> Result<String> {
         if opts.width < MIN_TERMINAL_WIDTH || opts.height < MIN_TERMINAL_HEIGHT {
             return Err(Error::Rendering(format!(
                 "terminal plot needs at least {MIN_TERMINAL_WIDTH}x{MIN_TERMINAL_HEIGHT} cells, got {}x{}",
+                opts.width, opts.height
+            )));
+        }
+        if opts.width > MAX_TERMINAL_WIDTH || opts.height > MAX_TERMINAL_HEIGHT {
+            return Err(Error::Rendering(format!(
+                "terminal plot is at most {MAX_TERMINAL_WIDTH}x{MAX_TERMINAL_HEIGHT} cells, got {}x{}",
                 opts.width, opts.height
             )));
         }
@@ -348,6 +360,11 @@ mod tests {
         };
         assert!(err(row1(), plain(19, 24)).contains("at least 20x8"));
         assert!(err(row1(), plain(80, 7)).contains("at least 20x8"));
+        // The canvas is width x height cells, so an unbounded size is an unbounded allocation:
+        // refused before a single cell exists.
+        for (w, h) in [(1001, 24), (80, 1001), (u32::MAX, u32::MAX)] {
+            assert!(err(row1(), plain(w, h)).contains("at most 1000x1000"), "{w}x{h}");
+        }
         assert!(err(row1().facet(Facet::wrap("g", 2)), plain(80, 24)).contains("facets"));
         assert!(err(row1().coord(Coord::cartesian().flip()), plain(80, 24)).contains("coord_flip"));
         assert!(err(row1().coord(Coord::polar()), plain(80, 24)).contains("polar"));
@@ -355,6 +372,21 @@ mod tests {
         let wide =
             GGPlot::new().data_xy(&[0.0, 1.0], &[0.0, 123_456_789_012_345.0]).geom(Geom::point());
         assert!(err(wide, plain(20, 8)).contains("no room for the panel"));
+    }
+
+    #[test]
+    fn text_longer_than_the_width_is_clipped_at_the_edge() {
+        let title = "abcdefghijklmnopqrstuvwxyz0123";
+        let out = render(row1().title(title), plain(20, 8));
+        assert_eq!(out.lines().next(), Some("abcdefghijklmnopqrst"));
+        assert!(out.lines().all(|l| l.chars().count() <= 20));
+    }
+
+    #[test]
+    fn draws_at_the_largest_canvas() {
+        let out = render(row1(), plain(MAX_TERMINAL_WIDTH, MAX_TERMINAL_HEIGHT));
+        assert_eq!(out.lines().count(), MAX_TERMINAL_HEIGHT as usize);
+        assert_eq!(out.matches(POINT_GLYPH).count(), X.len());
     }
 
     #[test]
