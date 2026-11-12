@@ -23,6 +23,21 @@ pub enum PointShape {
     X,
 }
 
+impl PointShape {
+    /// The R `pch` code ggplot2 uses for this shape (`Circle` is ggplot2's default, 19).
+    #[must_use]
+    pub const fn pch(self) -> u8 {
+        match self {
+            PointShape::Circle => 19,
+            PointShape::Square => 15,
+            PointShape::Triangle => 17,
+            PointShape::Diamond => 18,
+            PointShape::Cross => 3,
+            PointShape::X => 4,
+        }
+    }
+}
+
 /// Geometry type specification.
 #[derive(Debug, Clone)]
 pub enum GeomType {

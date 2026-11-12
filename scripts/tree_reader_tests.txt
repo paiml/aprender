@@ -192,6 +192,7 @@ aprender-orchestrate	--lib	stack::hero_image
 aprender-orchestrate	--lib	stack::quality_checker
 aprender-orchestrate	--lib	stack::quality_format
 aprender-present-cli	--bins
+aprender-present-cli	--test	present_cli_surface_gate
 aprender-present-lib	--lib	browser::shell_autocomplete
 aprender-present-terminal	--lib	<root>
 aprender-present-terminal	--lib	ptop
@@ -231,5 +232,6 @@ aprender-test-lib	--lib	perf_gate::witness
 aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m
 aprender-train	--lib	research::archive::tests
+aprender-viz	--lib	grammar::ggplot2_oracle
 aprender-viz	--test	raster_determinism
 aprender-viz	--test	render_determinism

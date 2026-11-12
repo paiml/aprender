@@ -32,19 +32,31 @@
 //!   and Graphical Statistics.
 
 mod aes;
+mod build;
 mod coord;
 mod data;
 mod facet;
 mod geom;
 mod ggplot;
+#[cfg(test)]
+mod ggplot2_oracle;
 mod stat;
+mod term;
 mod theme;
 
 pub use aes::Aes;
+pub use build::{
+    format_labels, point_defaults, point_diameter_px, point_size_mm_for_diameter_px, BuiltLayer,
+    BuiltLayout, PointAes, PositionScale,
+};
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
 pub use facet::{panels, Facet, Panel};
 pub use geom::Geom;
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use stat::Stat;
+pub use term::{
+    TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    POINT_GLYPH,
+};
 pub use theme::Theme;
