@@ -55,6 +55,7 @@ to_json <- function(x, indent = 0L) {
 #                      that falls outside the panel as NA; those are dropped here and counted in
 #                      `n_breaks_censored`, so a renderer compares only what is drawn.
 axis_json <- function(view) {
+  if (isTRUE(view$is_discrete())) return(discrete_axis_json(view))
   br <- view$get_breaks()
   lab <- view$get_labels()
   keep <- !is.na(br)
@@ -67,11 +68,24 @@ axis_json <- function(view) {
   )
 }
 
+# A discrete position axis: the levels, the continuous range the panel spans (levels sit at 1..n),
+# and the position of each break. `labels` are the level names.
+discrete_axis_json <- function(view) {
+  br <- view$get_breaks()
+  list(
+    limits = I(as.character(view$limits)),
+    continuous_range = I(as.numeric(view$continuous_range)),
+    breaks = I(as.numeric(attr(br, "pos"))),
+    labels = I(as.character(view$get_labels())),
+    n_breaks_censored = sum(is.na(br))
+  )
+}
+
 # Layer data as ggplot_build() returns it, plus every colour resolved to 0..255 RGBA so the Rust
 # side compares numbers, not R colour names.
-layer_json <- function(ld, geom) {
+layer_json <- function(ld, geom, drop = c("PANEL", "group")) {
   out <- list(geom = geom)
-  for (col in setdiff(names(ld), c("PANEL", "group"))) {
+  for (col in setdiff(names(ld), drop)) {
     v <- ld[[col]]
     out[[col]] <- I(if (is.factor(v)) as.character(v) else v)
   }
@@ -92,7 +106,7 @@ versions_json <- function() {
 }
 
 # Build `plot`, extract layer data + panel 1's x/y scales, write the fixture.
-write_fixture <- function(plot, row, spec, data_file, out_file) {
+write_fixture <- function(plot, row, spec, data_file, out_file, drop = c("PANEL", "group")) {
   b <- ggplot2::ggplot_build(plot)
   pp <- b$layout$panel_params[[1]]
   geoms <- vapply(plot$layers, function(l) class(l$geom)[1], character(1))
@@ -101,7 +115,7 @@ write_fixture <- function(plot, row, spec, data_file, out_file) {
     spec = spec,
     data_file = data_file,
     versions = versions_json(),
-    layers = lapply(seq_along(b$data), function(i) layer_json(b$data[[i]], geoms[i])),
+    layers = lapply(seq_along(b$data), function(i) layer_json(b$data[[i]], geoms[i], drop)),
     panel = list(x = axis_json(pp$x), y = axis_json(pp$y))
   )
   writeLines(to_json(fixture), out_file, useBytes = TRUE)
