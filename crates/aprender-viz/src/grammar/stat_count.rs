@@ -14,19 +14,24 @@
 //! scales lane (PR #6916, `feat/plot-gg-001-scales-discrete-log`) owns the discrete position
 //! scale and is changing in parallel; when it lands, [`DiscreteAxis`] should be replaced by its
 //! type and `level_positions` by its mapping. The grammar reaches this code through ONE call,
-//! [`bar_layout`], from `GGPlot::layout()`, so that merge is one call site.
+//! [`bar_layout_in`], from `GGPlot::layout()`, so that merge is one call site.
 //!
 //! # Scope
 //!
 //! `x` and the optional `fill` are text columns (discrete); `x` numeric is not supported. Group
-//! ids follow `add_group()`: the dense rank of the (x, fill) combinations present, x varying
-//! slowest, both compared bytewise (`LC_COLLATE=C`). Weights, `orientation = "y"`, `just`, `width =` and `na.rm` are not implemented.
+//! ids follow `add_group()`: the dense rank of the (x, fill) combinations present over the WHOLE layer
+//! data (before any facet split), x varying slowest, both compared bytewise (`LC_COLLATE=C`).
+//! Weights, `orientation = "y"`, `just`, `na.rm`, `position_dodge(reverse =)` and `position_dodge2` are
+//! not implemented. `width =` is implemented (`geom_bar(width =)`).
+//!
+//! Facets: [`bar_layout_in`] computes stat and position PER PANEL, as ggplot2 does, over x levels
+//! shared by all panels (fixed scales).
 
 use std::collections::BTreeMap;
 
 use super::build::PositionScale;
 use super::data::{DataFrame, DataValue};
-use super::position::{apply, BarRow, Position};
+use super::position::{apply_panels, BarRow, Position};
 
 /// `GeomBar$default_aes$width` / `StatCount$setup_params`: a bar fills 90% of its resolution.
 pub const DEFAULT_BAR_WIDTH: f64 = 0.9;
@@ -149,8 +154,10 @@ pub struct DiscreteAxis {
 /// A built bar layer: rows in ggplot2's row order, and the two scales.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuiltBars {
-    /// One entry per bar.
+    /// One entry per bar, panel by panel (ggplot2 orders the layer data by `PANEL`).
     pub rows: Vec<BarRow>,
+    /// The panel (0-based, in panel order) of each row in `rows`.
+    pub panel: Vec<usize>,
     /// The discrete x axis.
     pub x: DiscreteAxis,
     /// The continuous y axis, trained on `y`, `ymin` and `ymax` after the position adjustment.
@@ -176,15 +183,15 @@ fn number_column(df: &DataFrame, name: &str) -> Result<Vec<f64>, BarError> {
 /// R's `sort()`, which collates by the locale: `en_US.UTF-8` gives a, B, c where C gives B, a, c.
 /// The oracle is therefore pinned to `LC_COLLATE=C` (each `generate.R` sets it and records it in
 /// the fixture as `collate`); other locales are out of scope.
-fn levels<'a>(values: &[&'a str]) -> Vec<&'a str> {
-    let mut v = values.to_vec();
+pub fn sorted_levels<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<String> {
+    let mut v: Vec<String> = values.into_iter().map(ToString::to_string).collect();
     v.sort_unstable();
     v.dedup();
     v
 }
 
 /// Level `i` of `levels` sits at position `i + 1` on a discrete axis (`mapped_discrete`).
-fn level_positions(levels: &[&str], values: &[&str]) -> Vec<f64> {
+pub fn level_positions(levels: &[String], values: &[&str]) -> Vec<f64> {
     values
         .iter()
         .map(|v| levels.iter().position(|l| l == v).map_or(f64::NAN, |p| (p + 1) as f64))
@@ -244,23 +251,47 @@ fn stat_count(x_pos: &[f64], group: &[u32], width: f64) -> Vec<BarRow> {
     rows
 }
 
-/// The discrete x axis for `levels` given the bars' extent.
-fn discrete_axis(levels: &[&str], rows: &[BarRow]) -> DiscreteAxis {
+/// The discrete x axis for `levels`: the levels' `1..=n` expanded by [`DISCRETE_EXPAND_ADD`],
+/// unioned with `extent`, the UNEXPANDED continuous range that layers contribute (`range_c`: bar
+/// edges, numeric x of other layers).
+#[must_use]
+pub fn discrete_axis(levels: &[String], extent: Option<(f64, f64)>) -> DiscreteAxis {
     let n = levels.len() as f64;
     let (mut lo, mut hi) = (1.0 - DISCRETE_EXPAND_ADD, n + DISCRETE_EXPAND_ADD);
-    for r in rows {
-        lo = lo.min(r.xmin);
-        hi = hi.max(r.xmax);
+    if let Some((a, b)) = extent {
+        lo = lo.min(a);
+        hi = hi.max(b);
     }
     DiscreteAxis {
-        limits: levels.iter().map(ToString::to_string).collect(),
+        limits: levels.to_vec(),
         continuous_range: (lo, hi),
         breaks: (1..=levels.len()).map(|i| i as f64).collect(),
-        labels: levels.iter().map(ToString::to_string).collect(),
+        labels: levels.to_vec(),
     }
 }
 
-/// Build a bar layer.
+/// The `(min, max)` of the x edges of `rows`, if any.
+#[must_use]
+pub fn x_extent(rows: &[BarRow]) -> Option<(f64, f64)> {
+    rows.iter().fold(None, |acc, r| match acc {
+        None => Some((r.xmin, r.xmax)),
+        Some((lo, hi)) => Some((lo.min(r.xmin), hi.max(r.xmax))),
+    })
+}
+
+/// The `(min, max)` of `y`, `ymin` and `ymax` over `rows`, if any.
+#[must_use]
+pub fn y_extent(rows: &[BarRow]) -> Option<(f64, f64)> {
+    let mut acc: Option<(f64, f64)> = None;
+    for r in rows {
+        for v in [r.y, r.ymin, r.ymax] {
+            acc = Some(acc.map_or((v, v), |(lo, hi)| (lo.min(v), hi.max(v))));
+        }
+    }
+    acc
+}
+
+/// Build a bar layer on one panel holding every row, with x levels taken from this data.
 ///
 /// # Errors
 ///
@@ -268,30 +299,58 @@ fn discrete_axis(levels: &[&str], rows: &[BarRow]) -> DiscreteAxis {
 /// numeric.
 pub fn bar_layout(df: &DataFrame, spec: &BarSpec) -> Result<BuiltBars, BarError> {
     let x = text_column(df, &spec.x)?;
+    let levels = sorted_levels(x.iter().copied());
+    bar_layout_in(df, spec, &levels, &[(0..df.nrow()).collect()])
+}
+
+/// Build a bar layer with `x_levels` as the shared discrete scale and `panels` as the row indices
+/// of each panel.
+///
+/// Group ids come from the whole frame (`add_group()` runs before the facet split); the statistic
+/// and the position adjustment run per panel, in panel order; the y scale and the x extent are
+/// trained over all panels (fixed scales). `BuiltBars::panel` gives each row's panel index.
+///
+/// # Errors
+///
+/// As [`bar_layout`].
+pub fn bar_layout_in(
+    df: &DataFrame,
+    spec: &BarSpec,
+    x_levels: &[String],
+    panels: &[Vec<usize>],
+) -> Result<BuiltBars, BarError> {
+    let x = text_column(df, &spec.x)?;
     let fill = spec.fill.as_deref().map(|f| text_column(df, f)).transpose()?;
-    let x_levels = levels(&x);
-    let x_pos = level_positions(&x_levels, &x);
+    let ycol = match &spec.stat {
+        BarStat::Count => None,
+        BarStat::Identity(ycol) => Some(number_column(df, ycol)?),
+    };
+    let x_pos = level_positions(x_levels, &x);
     let group = group_ids(&x, fill.as_deref(), spec.group_all);
 
-    let mut rows = match &spec.stat {
-        BarStat::Count => stat_count(&x_pos, &group, spec.width),
-        BarStat::Identity(ycol) => {
-            let y = number_column(df, ycol)?;
-            (0..x.len())
-                .map(|i| bar_row(x_pos[i], y[i], spec.width, group[i], None, None))
-                .collect()
-        }
-    };
-    apply(&mut rows, spec.position);
+    let mut per_panel: Vec<Vec<BarRow>> = panels
+        .iter()
+        .map(|idx| match &ycol {
+            None => {
+                let xp: Vec<f64> = idx.iter().map(|i| x_pos[*i]).collect();
+                let g: Vec<u32> = idx.iter().map(|i| group[*i]).collect();
+                stat_count(&xp, &g, spec.width)
+            }
+            Some(y) => idx
+                .iter()
+                .map(|i| bar_row(x_pos[*i], y[*i], spec.width, group[*i], None, None))
+                .collect(),
+        })
+        .collect();
+    apply_panels(&mut per_panel, spec.position);
 
-    let axis = discrete_axis(&x_levels, &rows);
-    let (mut lo, mut hi) = (f64::MAX, f64::MIN);
-    for r in &rows {
-        for v in [r.y, r.ymin, r.ymax] {
-            lo = lo.min(v);
-            hi = hi.max(v);
-        }
+    let mut rows = Vec::new();
+    let mut panel = Vec::new();
+    for (p, panel_rows) in per_panel.into_iter().enumerate() {
+        panel.extend(std::iter::repeat(p).take(panel_rows.len()));
+        rows.extend(panel_rows);
     }
-    let y = PositionScale::continuous((lo, hi));
-    Ok(BuiltBars { rows, x: axis, y })
+    let axis = discrete_axis(x_levels, x_extent(&rows));
+    let y = PositionScale::continuous(y_extent(&rows).unwrap_or((f64::MAX, f64::MIN)));
+    Ok(BuiltBars { rows, panel, x: axis, y })
 }

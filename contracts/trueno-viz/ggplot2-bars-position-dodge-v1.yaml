@@ -8,6 +8,7 @@ metadata:
     ggplot2 conformance, bars train, row position_dodge (PLOT-GG-001, paiml/aprender#6909). position::apply(Position::dodge()) splits each x's bar width between its groups in group order (preserve = total, width = NULL), as PositionDodge and pos_dodge() do; preserve = single, width = 0.5 and width = 2 (wider than the bars) are also covered, and a group with several rows at one x (dup fixture) is counted once. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/position_dodge/generate.R); R is
     never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
     levels and labels compare exactly. Level and group order is bytewise (LC_COLLATE=C); every generate.R pins it and records it as "collate" in the fixture.
+    Scope: vertical bars over a text x. Under a facet the stat and the position run per panel (group ids stay global, and position_dodge(preserve = single) takes its n from the busiest x of any panel) while the scales are trained across panels; position scales are trained over every layer of the plot (a point, hline or vline layer next to the bars widens them), as the facet_bars, facet_bars_single and mixed_layers fixtures record. Typed errors, not drawn and not guessed: a bar layer with its own data under a facet, and the framebuffer and SVG renderers on bars over a text x ("bars on a discrete x are not drawn yet").
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
@@ -55,32 +56,60 @@ enforcement:
     description: GGPlot::layout() with geom_bar and Layer::position(dodge) equals the same fixtures
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_dodge_repeated_group
     severity: ERROR
+  dodge_facet_matches:
+    description: under a facet, dodge runs per panel (total) and preserve = single takes its n over all panels
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_preserve_single_is_global
+    severity: ERROR
+  dodge_facet_total_matches:
+    description: a lone bar in a panel keeps its full width and x (total is per panel)
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_total_is_per_panel
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGD1-001
   rule: preserve defaults to total
-  prediction: mutating DODGE_PRESERVE Total -> Single turns ggplot2_bars_position_dodge, _position_dodge_repeated_group and the two public dodge tests RED (measured, 4 failed, 26 passed, rc=101)
+  prediction: mutating DODGE_PRESERVE Total -> Single turns 7 of the 43 ggplot2_bars tests RED (position_dodge, _position_dodge_repeated_group, the two public dodge tests, _facet_position_dodge_per_panel, _facet_dodge_total_is_per_panel and _mixed_two_bar_layers_union_their_levels; measured, 7 failed, 36 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The fixture has the same number of groups at every x; the busiest x must differ from the others
 - id: FALSIFY-GGD1-002
   rule: Bar centres are spaced by the dodge width
-  prediction: scaling the spacing term (x + 0.8 * width * ...) turns 8 dodge tests RED, six bar_layout tests and two public (measured, 8 failed, 22 passed, rc=101)
+  prediction: scaling the spacing term (x + 0.8 * width * ...) turns 12 of the 43 tests RED, every dodge test on the bar_layout, public, facet and two-layer paths (measured, 12 failed, 31 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: x of a dodged bar is not compared
 - id: FALSIFY-GGD1-003
   rule: Each dodged bar is d_width / n wide
-  prediction: dropping the /2 in xmin (x - d_width / n) turns the same 8 dodge tests RED (measured, 8 failed, 22 passed, rc=101)
+  prediction: dropping the /2 in xmin (x - d_width / n) turns the same 12 dodge tests RED (measured, 12 failed, 31 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: xmin and xmax of a dodged bar are not compared
 - id: FALSIFY-GGD1-004
-  rule: n counts distinct groups per x, idx is the dense group rank
-  prediction: counting rows instead of groups (Preserve::Total => column.len()) turns _position_dodge_repeated_group RED (measured rc=101); ranking by row instead of dense group rank turns _position_dodge_repeated_group and _position_dodge_repeated_group_preserve_single RED (measured rc=101); on the public path the same mutation set also turns ggplot2_bars_public_position_dodge_repeated_group RED
+  rule: n counts distinct groups per x
+  prediction: counting rows instead of groups (Preserve::Total => column.len()) turns _position_dodge_repeated_group, _public_position_dodge_repeated_group and _facet_dodge_total_is_per_panel RED (measured, 3 failed, 40 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The fixture has no x with a repeated group (a, g1, g1, g2); every group has one row per x
 - id: FALSIFY-GGD1-005
-  rule: The discrete range is unioned with the bars
-  prediction: removing the discrete range union in stat_count turns _position_dodge_width_wider_than_bars RED (measured rc=101); the preserve default Total -> Single turns 4 tests RED (position_dodge, _repeated_group, and their two public twins; measured, 4 failed, 26 passed, rc=101); dropping the position from the layer (public path) turns 4 public position tests RED (measured rc=101)
+  rule: idx is the dense group rank, not the row number
+  prediction: ranking by row position within the x instead of the dense group rank turns _position_dodge_repeated_group, _position_dodge_repeated_group_preserve_single, _public_position_dodge_repeated_group, _facet_position_dodge_per_panel and _facet_dodge_preserve_single_is_global RED (measured, 5 failed, 38 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
-  if_fails: No fixture has bars that reach past the expanded levels
+  if_fails: No fixture has a group that is absent from an x it shares with other groups
+- id: FALSIFY-GGD1-006
+  rule: The discrete range is unioned with the bars
+  prediction: removing the range union in discrete_axis (stat_count.rs) turns _position_dodge_width_wider_than_bars, _public_position_dodge and _mixed_point_outside_the_bar_x_range RED (measured, 3 failed, 40 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: No fixture has bars or points that reach past the expanded levels
+- id: FALSIFY-GGD1-007
+  rule: The public builder passes the layer's position to the bars
+  prediction: dropping .position(layer.position) in GGPlot::bar_spec turns 9 of the 43 tests RED, the public stack, fill and dodge tests, the facet fill, dodge total and dodge single tests, the facet dodge test and the two-layer test (measured, 9 failed, 34 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: A public-path position test compares only fixtures whose position is the default
+- id: FALSIFY-GGD1-008
+  rule: preserve = single takes its n from the busiest x of ANY panel
+  prediction: computing n per panel instead of over all panels (apply_panels) turns exactly _facet_dodge_preserve_single_is_global RED (measured, 1 failed, 42 passed, rc=101; panel q's bars are 1/3 wide in the fixture, 1/2 wide with a per-panel n)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: No fixture has panels whose busiest x differs; the single-preserve n cannot be told apart from a per-panel n
+- id: FALSIFY-GGD1-009
+  rule: Stat and position run inside each panel
+  prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED (measured, 7 failed, 36 passed, rc=101; ggplot2 puts the lone b,g1 bar of panel 1 at x = 2.0 and a pooled build puts it elsewhere, which the test catches)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The facet fixtures do not give a panel a different bar count than the pooled data would
 qa_gate:
   id: F-GGD1-001
   name: ggplot2 conformance bars row 4 (position_dodge)
@@ -93,3 +122,5 @@ qa_gate:
   - dodge_repeated_group_single_matches
   - dodge_width_wider_matches
   - dodge_public_matches
+  - dodge_facet_matches
+  - dodge_facet_total_matches

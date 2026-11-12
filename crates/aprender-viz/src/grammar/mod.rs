@@ -57,7 +57,9 @@ pub use data::{DataFrame, DataValue};
 pub use facet::{panels, Facet, Panel};
 pub use geom::Geom;
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
-pub use position::{apply as apply_position, BarRow, Position, Preserve};
+pub use position::{apply as apply_position, apply_panels, BarRow, Position, Preserve};
 pub use stat::Stat;
-pub use stat_count::{bar_layout, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis};
+pub use stat_count::{
+    bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,
+};
 pub use theme::Theme;

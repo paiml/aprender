@@ -8,6 +8,8 @@ metadata:
     ggplot2 conformance, bars train, rows stat_count + geom_bar (PLOT-GG-001, paiml/aprender#6909). bar_layout() counts rows per discrete x and group as StatCount does (count, prop = count / sum(abs(count)) within the group), applies GeomBar's setup_data edges (width 0.9, just 0.5) and trains the discrete x axis (expansion add 0.6) and the continuous y axis. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/stat_count_geom_bar/generate.R); R is
     never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
     levels and labels compare exactly.
+    Level and group order is bytewise (LC_COLLATE=C): every generate.R pins it with Sys.setlocale and records it as "collate" in the fixture, and each oracle test asserts it, so R's locale-dependent sort() is never the reference.
+    Scope: vertical bars over a text x. Under a facet the stat and the position run per panel (group ids stay global, and position_dodge(preserve = single) takes its n from the busiest x of any panel) while the scales are trained across panels; position scales are trained over every layer of the plot (a point, hline or vline layer next to the bars widens them), as the facet_bars, facet_bars_single and mixed_layers fixtures record. Typed errors, not drawn and not guessed: a bar layer with its own data under a facet, and the framebuffer and SVG renderers on bars over a text x ("bars on a discrete x are not drawn yet").
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
@@ -69,27 +71,54 @@ enforcement:
     description: GGPlot::layout() over geom_col uses stat identity
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_col
     severity: ERROR
+  facet_stat_matches:
+    description: under a facet counts, props and groups are computed per panel (global group ids)
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_facet_stat_count_per_panel
+    severity: ERROR
+  mixed_layers_match:
+    description: scales are trained over every layer (col + point, point outside the bars, two bar layers)
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_two_bar_layers_union_their_levels
+    severity: ERROR
+  unsupported_is_typed_error:
+    description: text-x bars are refused by the renderers with a typed error
+    check: grammar::ggplot2_bars_oracle::bars_on_a_discrete_x_are_not_drawn_yet_and_say_so
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGB1-001
   rule: Bar width is 0.9
-  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns 17 of the 30 ggplot2_bars tests RED (measured, 17 failed, 13 passed, rc=101); mutating the geom default (Geom::bar() width 0.9 -> 0.8) turns the 10 public-path tests RED (measured, 10 failed, 20 passed, rc=101)
+  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns 17 of the 43 ggplot2_bars tests RED (measured, 17 failed, 26 passed, rc=101); mutating the geom default (geom.rs DEFAULT_BAR_WIDTH_F32 0.9 -> 0.8) turns 21 RED (measured, 21 failed, 22 passed, rc=101). The default moved from 0.8 to 0.9 with this row, so a numeric-x geom_bar() caller (wasm.rs, examples/grammar_of_graphics.rs) draws 12% wider bars
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: A 10% narrower bar is invisible to the oracle; the edges are not compared
 - id: FALSIFY-GGB1-002
   rule: Discrete expansion is add 0.6
-  prediction: mutating DISCRETE_EXPAND_ADD 0.6 -> 0.5 turns 27 of the 30 ggplot2_bars tests RED (measured, 27 failed, 3 passed, rc=101; every bar plot shares the discrete x axis)
+  prediction: mutating DISCRETE_EXPAND_ADD 0.6 -> 0.5 turns 37 of the 43 ggplot2_bars tests RED (measured, 37 failed, 6 passed, rc=101; every bar plot shares the discrete x axis)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The x continuous_range is not compared
 - id: FALSIFY-GGB1-003
   rule: Levels sort bytewise (LC_COLLATE=C), not case-insensitively
-  prediction: sorting levels case-insensitively turns exactly _level_order_is_bytewise_c_collation, _group_order_is_bytewise_c_collation and _public_level_and_group_order_c_collation RED (measured for both the level sort and the group-key sort, 3 failed, 27 passed, rc=101; the fixture is x = a, B, B, c, whose C-locale limits are B, a, c)
+  prediction: sorting levels case-insensitively turns exactly _level_order_is_bytewise_c_collation, _group_order_is_bytewise_c_collation and _public_level_and_group_order_c_collation RED (measured on the level sort, 3 failed, 40 passed, rc=101; the fixture is x = a, B, B, c, whose C-locale limits are B, a, c)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The mixed-case fixture is not in the suite; an all-lowercase x cannot tell the two orders apart
 - id: FALSIFY-GGB1-004
   rule: The public builder reaches the bar code
-  prediction: dropping .width(..) at the single call site (GGPlot::build_bars) turns ggplot2_bars_public_geom_bar_width RED and nothing else (measured on the 11 public tests, 1 failed, 10 passed, rc=101); replacing the Identity stat branch with Count turns all 11 public tests RED (measured, 11 failed, rc=101); dropping .position(..) turns the 4 public stack, fill and dodge position tests RED (measured, 4 failed, 7 passed, rc=101)
+  prediction: dropping .width(..) at the single call site (GGPlot::bar_spec) turns ggplot2_bars_public_geom_bar_width RED and nothing else (measured, 1 failed, 42 passed, rc=101); making the Identity stat branch unreachable turns 13 tests RED (measured, 13 failed, 30 passed, rc=101); dropping .position(..) turns 9 tests RED (measured, 9 failed, 34 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars_public (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: layout() is not compared with the same fixtures as bar_layout()
+- id: FALSIFY-GGB1-005
+  rule: Facets split the stat and the position, not the scales
+  prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED (measured, 7 failed, 36 passed, rc=101); counts, props and group ids per panel come from facet_bars and facet_bars_single (6 rows for geom_bar(fill) + facet_wrap, y range (-0.1, 2.1))
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The facet fixtures do not count differently per panel than pooled
+- id: FALSIFY-GGB1-006
+  rule: Position scales are trained over every layer
+  prediction: dropping the y and x of non-bar layers from the scale training in layout_with_bars turns _mixed_col_and_point_share_the_y_scale and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 41 passed, rc=101); dropping an hline intercept turns _mixed_col_and_hline_extend_y RED (measured, 1 failed, 42 passed, rc=101); the levels of two bar layers are unioned (_mixed_two_bar_layers_union_their_levels)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: A later layer can overwrite or ignore the shared scale
+- id: FALSIFY-GGB1-007
+  rule: Unsupported shapes are typed errors
+  prediction: letting the renderers draw text-x bars (removing the Err) turns _bars_on_a_discrete_x_are_not_drawn_yet_and_say_so RED (measured with the message changed, 1 failed, 42 passed, rc=101); a bar layer with its own data under a facet returns an Err naming it (_bar_layer_with_its_own_data_under_a_facet_is_a_typed_error)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: A text-x bar plot renders without bars, silently
 qa_gate:
   id: F-GGB1-001
   name: ggplot2 conformance bars row 1 (stat_count + geom_bar)
@@ -100,3 +129,6 @@ qa_gate:
   - level_order_c_collation
   - public_default_width_matches
   - public_geom_col_matches
+  - facet_stat_matches
+  - mixed_layers_match
+  - unsupported_is_typed_error

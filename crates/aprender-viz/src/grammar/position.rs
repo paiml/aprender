@@ -5,7 +5,7 @@
 //! to bar rows in data space. Every default is ggplot2's, taken from `formals()` on the reference
 //! host rather than from memory, and is a named constant here.
 //!
-//! Scope: vertical bars only (`orientation = "x"`, no `flipped_aes`), one panel, and for
+//! Scope: vertical bars only (`orientation = "x"`, no `flipped_aes`), and for
 //! `position_dodge` neither `reverse = TRUE` nor `position_dodge2`. Those branches are not
 //! implemented and have no oracle row.
 
@@ -110,8 +110,39 @@ pub fn apply(rows: &mut [BarRow], position: Position) {
         Position::Identity => {}
         Position::Stack { vjust, reverse } => stack(rows, vjust, reverse, false),
         Position::Fill { vjust, reverse } => stack(rows, vjust, reverse, true),
-        Position::Dodge { width, preserve } => dodge(rows, width, preserve),
+        Position::Dodge { width, preserve } => {
+            let n_single = max_groups_per_column(rows);
+            dodge(rows, width, preserve, n_single);
+        }
     }
+}
+
+/// Apply `position` to a layer whose rows are split by panel, as ggplot2 does: stacking, filling and
+/// dodging happen inside each panel (`Position$compute_layer` splits by `PANEL`).
+///
+/// The one quantity shared across panels is `position_dodge(preserve = "single")`'s `n`: it is set
+/// once from the whole layer (`PositionDodge$setup_params`, over unique `(PANEL, xmin)` cells), so it
+/// is the largest group count at any x in ANY panel.
+pub fn apply_panels(panels: &mut [Vec<BarRow>], position: Position) {
+    match position {
+        Position::Dodge { width, preserve } => {
+            let n_single = panels.iter().map(|p| max_groups_per_column(p)).max().unwrap_or(1);
+            for rows in panels.iter_mut() {
+                dodge(rows, width, preserve, n_single);
+            }
+        }
+        _ => {
+            for rows in panels.iter_mut() {
+                apply(rows, position);
+            }
+        }
+    }
+}
+
+/// The largest number of distinct groups at any one `xmin`.
+fn max_groups_per_column(rows: &[BarRow]) -> usize {
+    let all: Vec<usize> = (0..rows.len()).collect();
+    by_xmin(rows, &all).iter().map(|c| distinct_groups(rows, c).len()).max().unwrap_or(1)
 }
 
 /// Row indices grouped by identical `xmin`, in ascending `xmin` (ggplot2's `dapply(data, "xmin")`).
@@ -198,10 +229,9 @@ fn distinct_groups(rows: &[BarRow], column: &[usize]) -> Vec<u32> {
 /// its x (`PositionDodge$setup_data`). Two rows of one group at one x (a `geom_col()` with a
 /// repeated x/fill pair) therefore share a slot. With `preserve = "single"`, `n` is the largest
 /// number of distinct groups at any one `xmin`.
-fn dodge(rows: &mut [BarRow], width: Option<f64>, preserve: Preserve) {
+fn dodge(rows: &mut [BarRow], width: Option<f64>, preserve: Preserve, n_single: usize) {
     let all: Vec<usize> = (0..rows.len()).collect();
     let columns = by_xmin(rows, &all);
-    let n_single = columns.iter().map(|c| distinct_groups(rows, c).len()).max().unwrap_or(1);
     // collide(): without `width`, the first bar's own width (xmax - xmin).
     let width = width.unwrap_or_else(|| rows.first().map_or(0.0, |r| r.xmax - r.xmin));
     for column in columns {

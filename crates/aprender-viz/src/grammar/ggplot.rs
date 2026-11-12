@@ -14,12 +14,15 @@ use super::build::{
     point_defaults, point_diameter_px, BuiltLayer, BuiltLayout, PointAes, PositionScale,
 };
 use super::coord::{apply, apply_limits, Coord};
-use super::data::DataFrame;
+use super::data::{DataFrame, DataValue};
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
 use super::position::Position;
 use super::stat::Stat;
-use super::stat_count::{bar_layout, BarSpec, BuiltBars, DiscreteAxis};
+use super::stat_count::{
+    bar_layout_in, discrete_axis, level_positions, sorted_levels, x_extent, y_extent, BarSpec,
+    DiscreteAxis,
+};
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -286,7 +289,7 @@ impl PanelGrid {
 /// The scale for a discrete bar axis. Level `i` sits at `i + 1`; the range is the expanded levels
 /// unioned with the bars. This is the ONE place the grammar maps a [`DiscreteAxis`] onto a
 /// [`PositionScale`]; PR #6916 (`feat/plot-gg-001-scales-discrete-log`) owns the discrete position
-/// scale, so on its merge this function and the `bar_layout` call in `build_bars` are the only
+/// scale, so on its merge this function and the `bar_layout_in` call in `layout_with_bars` are the only
 /// sites to change.
 fn bar_x_scale(axis: &DiscreteAxis) -> PositionScale {
     PositionScale {
@@ -305,14 +308,29 @@ fn width_f64(width: f32) -> f64 {
     width.to_string().parse().unwrap_or_else(|_| f64::from(width))
 }
 
+/// `acc` widened to include `[lo, hi]`.
+fn widen(acc: Option<(f64, f64)>, lo: f64, hi: f64) -> Option<(f64, f64)> {
+    Some(acc.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))))
+}
+
 impl BuiltGGPlot {
     /// Render to framebuffer, one sub-plot per facet panel.
     ///
     /// # Errors
     ///
     /// Propagates [`Error::UnknownColumn`] if the facet names a column the data lacks, and
-    /// [`Error::UnsupportedCoord`] for a `Polar` or `Fixed` coordinate system.
+    /// [`Error::UnsupportedCoord`] for a `Polar` or `Fixed` coordinate system, and [`Error::Rendering`]
+    /// ("bars on a discrete x are not drawn yet") for a bar layer over a text `x`: its layout is
+    /// computed by [`Self::layout`], the renderer does not draw it.
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
+        // Bars over a text x are laid out (see `layout()`) but not drawn yet: say so instead of
+        // returning an empty plot.
+        for l in &self.layers {
+            let data = l.data.as_ref().unwrap_or(&self.data);
+            if Self::bar_spec(l, data, &self.aes.merge(&l.aes)).is_some() {
+                return Err(Error::Rendering("bars on a discrete x are not drawn yet".to_string()));
+            }
+        }
         let mut fb = Framebuffer::new(self.width, self.height)?;
 
         // Fill background
@@ -478,29 +496,126 @@ impl BuiltGGPlot {
     /// aesthetics, and the trained, expanded x/y scales with breaks and labels. The renderer draws
     /// from these same scales.
     ///
+    /// With a bar layer over a text `x` (`geom_bar()`, `geom_col()`), the scales are trained over
+    /// ALL layers, as ggplot2 does: x is the union of every layer's levels (a layer with text x maps
+    /// onto them) plus the continuous range that layers contribute (bar edges, numeric x, a
+    /// `geom_vline` intercept); y is the range of every layer's y, the bars' `y`/`ymin`/`ymax` after
+    /// the position adjustment, and a `geom_hline` intercept. Under a facet the bar statistic and
+    /// position are computed PER PANEL (scales fixed across panels).
+    ///
     /// # Errors
     ///
-    /// None today; the signature leaves room for stats that can fail.
+    /// [`Error::Rendering`] for a bar layer ggplot2 would draw but this crate cannot yet lay out:
+    /// `geom_col()` without `y`, a `group` aesthetic, a missing or non-text `fill` column, a bar
+    /// layer with its own `data` under a facet, or a layer other than a bar whose `x` is text mixed
+    /// with a numeric `x`. [`Error::UnknownColumn`] if the facet names a column the data lacks.
     pub fn layout(&self) -> Result<BuiltLayout> {
-        let (mut x, mut y) = self.position_scales();
-        let mut layers = Vec::with_capacity(self.layers.len());
-        for l in &self.layers {
-            layers.push(self.build_layer(l)?);
+        let specs = self
+            .layers
+            .iter()
+            .map(|l| {
+                let data = l.data.as_ref().unwrap_or(&self.data);
+                Self::bar_spec(l, data, &self.aes.merge(&l.aes)).transpose()
+            })
+            .collect::<Result<Vec<Option<BarSpec>>>>()?;
+        if specs.iter().all(Option::is_none) {
+            let (x, y) = self.position_scales();
+            let layers = self.layers.iter().map(|l| self.build_layer(l, None)).collect();
+            return Ok(BuiltLayout { layers, x, y, x_discrete: None });
         }
-        // The first bar layer over a discrete x supplies the scales (mixing it with continuous
-        // layers on one axis is not supported).
-        let mut x_discrete = None;
-        if let Some(bars) = layers.iter().find_map(|l| l.bars.as_ref()) {
-            x = bar_x_scale(&bars.x);
-            y = bars.y.clone();
-            x_discrete = Some(bars.x.clone());
-        }
-        Ok(BuiltLayout { layers, x, y, x_discrete })
+        self.layout_with_bars(&specs)
     }
 
-    /// A bar or column layer over a text `x`, built by [`bar_layout`]; `None` for every other
+    /// `layout()` when at least one layer is a bar layer over a text `x`.
+    fn layout_with_bars(&self, specs: &[Option<BarSpec>]) -> Result<BuiltLayout> {
+        fn data_of<'a>(l: &'a Layer, d: &'a DataFrame) -> &'a DataFrame {
+            l.data.as_ref().unwrap_or(d)
+        }
+        // The discrete x scale is trained on every layer's text x (hline/vline carry no x aesthetic).
+        let mut seen: Vec<&str> = Vec::new();
+        for l in &self.layers {
+            if matches!(l.geom.geom_type, GeomType::Hline { .. } | GeomType::Vline { .. }) {
+                continue;
+            }
+            let aes = self.aes.merge(&l.aes);
+            if let Some(col) = aes.x.as_deref().and_then(|n| data_of(l, &self.data).get(n)) {
+                if !col.is_empty() && col.iter().all(|v| v.as_str().is_some()) {
+                    seen.extend(col.iter().filter_map(DataValue::as_str));
+                }
+            }
+        }
+        let levels = sorted_levels(seen);
+        let facet_rows: Option<Vec<Vec<usize>>> = match self.facet {
+            Facet::None => None,
+            _ => Some(panels(&self.facet, &self.data)?.into_iter().map(|p| p.rows).collect()),
+        };
+
+        let mut layers = Vec::with_capacity(self.layers.len());
+        let mut x_range: Option<(f64, f64)> = None;
+        let mut y_range: Option<(f64, f64)> = None;
+        for (layer, spec) in self.layers.iter().zip(specs) {
+            let data = data_of(layer, &self.data);
+            let Some(spec) = spec else {
+                let built = self.build_layer(layer, Some(&levels));
+                match layer.geom.geom_type {
+                    GeomType::Hline { yintercept } => {
+                        y_range = widen(y_range, f64::from(yintercept), f64::from(yintercept));
+                    }
+                    GeomType::Vline { xintercept } => {
+                        x_range = widen(x_range, f64::from(xintercept), f64::from(xintercept));
+                    }
+                    _ => {
+                        let aes = self.aes.merge(&layer.aes);
+                        y_range = Self::extend_f64(y_range, data, aes.y.as_ref());
+                        x_range = Self::extend_f64(x_range, data, aes.x.as_ref());
+                    }
+                }
+                layers.push(built);
+                continue;
+            };
+            let rows = match (&facet_rows, layer.data.is_some()) {
+                (Some(_), true) => {
+                    return Err(Error::Rendering(
+                        "bar layer: a bar layer with its own data under a facet is not supported"
+                            .to_string(),
+                    ));
+                }
+                (Some(rows), false) => rows.clone(),
+                (None, _) => vec![(0..data.nrow()).collect()],
+            };
+            let bars = bar_layout_in(data, spec, &levels, &rows)
+                .map_err(|e| Error::Rendering(format!("bar layer: {e}")))?;
+            if let Some((lo, hi)) = x_extent(&bars.rows) {
+                x_range = widen(x_range, lo, hi);
+            }
+            if let Some((lo, hi)) = y_extent(&bars.rows) {
+                y_range = widen(y_range, lo, hi);
+            }
+            let (x, y) = bars.rows.iter().map(|r| (r.x, r.y)).unzip();
+            layers.push(BuiltLayer { x, y, points: None, bars: Some(bars) });
+        }
+        let axis = discrete_axis(&levels, x_range);
+        let x = bar_x_scale(&axis);
+        let y = PositionScale::continuous(y_range.unwrap_or((0.0, 0.0)));
+        Ok(BuiltLayout { layers, x, y, x_discrete: Some(axis) })
+    }
+
+    /// The numeric range of `col` widened onto `acc`; a text or absent column adds nothing.
+    fn extend_f64(
+        acc: Option<(f64, f64)>,
+        data: &DataFrame,
+        col: Option<&String>,
+    ) -> Option<(f64, f64)> {
+        let values = col.and_then(|c| data.get_f32_present(c)).unwrap_or_default();
+        values
+            .iter()
+            .filter(|v| v.is_finite())
+            .fold(acc, |a, v| widen(a, f64::from(*v), f64::from(*v)))
+    }
+
+    /// The bar specification of a bar or column layer over a text `x`; `None` for every other
     /// layer (a bar layer over a numeric `x` keeps the continuous path).
-    fn build_bars(layer: &Layer, data: &DataFrame, aes: &Aes) -> Option<Result<BuiltBars>> {
+    fn bar_spec(layer: &Layer, data: &DataFrame, aes: &Aes) -> Option<Result<BarSpec>> {
         let GeomType::Bar { width } = layer.geom.geom_type else { return None };
         let xname = aes.x.as_deref()?;
         let column = data.get(xname)?;
@@ -523,21 +638,25 @@ impl BuiltGGPlot {
         if let Some(fill) = aes.fill.as_deref() {
             spec = spec.fill(fill);
         }
-        spec = spec.position(layer.position).width(width_f64(width));
-        // The ONE call into the bar code (see `bar_x_scale` for the #6916 reconciliation).
-        Some(bar_layout(data, &spec).map_err(|e| unsupported(&e.to_string())))
+        Some(Ok(spec.position(layer.position).width(width_f64(width))))
     }
 
-    /// One layer's built data: rows where both positions are numeric, plus point aesthetics.
-    fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
+    /// One layer's built data: rows where both positions are numeric, plus point aesthetics. With
+    /// `levels` (a plot that has a discrete x scale), a text `x` maps onto its level positions.
+    fn build_layer(&self, layer: &Layer, levels: Option<&[String]>) -> BuiltLayer {
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
-        if let Some(bars) = Self::build_bars(layer, data, &aes) {
-            let bars = bars?;
-            let (x, y) = bars.rows.iter().map(|r| (r.x, r.y)).unzip();
-            return Ok(BuiltLayer { x, y, points: None, bars: Some(bars) });
-        }
-        let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
+        let xname = aes.x.as_deref().unwrap_or("x");
+        let text_x: Option<Vec<&str>> = levels.and(data.get(xname)).and_then(|col| {
+            let all: Option<Vec<&str>> = col.iter().map(DataValue::as_str).collect();
+            all.filter(|v| !v.is_empty())
+        });
+        let xs: Vec<Option<f32>> = match (levels, text_x) {
+            (Some(lv), Some(strs)) => {
+                level_positions(lv, &strs).into_iter().map(|p| Some(p as f32)).collect()
+            }
+            _ => data.get_f32(xname).unwrap_or_default(),
+        };
         let ys = data.get_f32(aes.y.as_deref().unwrap_or("y")).unwrap_or_default();
         let (x, y): (Vec<f64>, Vec<f64>) = xs
             .iter()
@@ -559,7 +678,7 @@ impl BuiltGGPlot {
             }
             _ => None,
         };
-        Ok(BuiltLayer { x, y, points, bars: None })
+        BuiltLayer { x, y, points, bars: None }
     }
 
     /// Draw grid lines.

@@ -8,6 +8,8 @@ metadata:
     ggplot2 conformance, bars train, row position_stack (PLOT-GG-001, paiml/aprender#6909). position::apply(Position::stack()) stacks the bars of each x from the highest group id at the bottom to group 1 on top, with vjust = 1 and reverse = FALSE, as PositionStack and pos_stack() do. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/position_stack/generate.R); R is
     never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
     levels and labels compare exactly.
+    Level and group order is bytewise (LC_COLLATE=C): every generate.R pins it with Sys.setlocale and records it as "collate" in the fixture, and each oracle test asserts it, so R's locale-dependent sort() is never the reference.
+    Scope: vertical bars over a text x. Under a facet the stat and the position run per panel (group ids stay global, and position_dodge(preserve = single) takes its n from the busiest x of any panel) while the scales are trained across panels; position scales are trained over every layer of the plot (a point, hline or vline layer next to the bars widens them), as the facet_bars, facet_bars_single and mixed_layers fixtures record. Typed errors, not drawn and not guessed: a bar layer with its own data under a facet, and the framebuffer and SVG renderers on bars over a text x ("bars on a discrete x are not drawn yet").
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
@@ -47,27 +49,36 @@ enforcement:
     description: GGPlot::layout() with the default bar position equals ggplot2 (stack is the default)
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_stack_is_the_default_for_bars
     severity: ERROR
+  stack_facet_matches:
+    description: under a facet each panel is stacked on its own, group ids global
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGS1-001
   rule: Default stacking order is group 1 on top
-  prediction: flipping the order in position::stack (descending <-> ascending group) turns 13 of the 30 ggplot2_bars tests RED, the stack, fill, vjust, reverse, zero-height, identity and collation tests and their public twins (measured, 13 failed, 17 passed, rc=101)
+  prediction: flipping the order in position::stack (descending <-> ascending group) turns 17 of the 43 ggplot2_bars tests RED, the stack, fill, vjust, reverse, zero-height, identity and collation tests and their public and facet twins (measured, 17 failed, 26 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: Stack order is not observable in the fixture; use a fill with several groups per x
 - id: FALSIFY-GGS1-002
   rule: STACK_REVERSE defaults to FALSE
-  prediction: mutating STACK_REVERSE false -> true turns 11 of the 30 ggplot2_bars tests RED, among them the default stack, fill and identity tests and their public twins (measured, 11 failed, 19 passed, rc=101); the explicit reverse test stays green
+  prediction: mutating STACK_REVERSE false -> true turns 15 of the 43 tests RED, among them the default stack, fill and identity tests and their public and facet twins (measured, 15 failed, 28 passed, rc=101); the explicit reverse test stays green
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The default stack does not read the constant
 - id: FALSIFY-GGS1-003
   rule: STACK_VJUST defaults to 1
-  prediction: mutating STACK_VJUST 1.0 -> 0.5 turns 16 of the 30 tests RED (stack, count, group1 prop, identity, plain identity, level/group order, zero-height and their public twins; measured, 16 failed, 14 passed, rc=101)
+  prediction: mutating STACK_VJUST 1.0 -> 0.5 turns 23 of the 43 tests RED (stack, count, group1 prop, identity, plain identity, level/group order, zero-height, the mixed-layer tests and their public and facet twins; measured, 23 failed, 20 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: y of a bar is not compared
 - id: FALSIFY-GGS1-004
   rule: A zero-height bar is not negative
-  prediction: mutating `ymax < 0.0` to `ymax <= 0.0` in position::stack turns exactly _position_stack_zero_height_bar and _public_position_stack_zero_height_bar RED (measured, 2 failed, 28 passed, rc=101)
+  prediction: mutating `ymax < 0.0` to `ymax <= 0.0` in position::stack turns exactly _position_stack_zero_height_bar and _public_position_stack_zero_height_bar RED (measured, 2 failed, 41 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: No fixture has a zero-height bar next to positive ones
+- id: FALSIFY-GGS1-005
+  rule: Each panel is stacked on its own
+  prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED, among them _facet_position_stack_per_panel (measured, 7 failed, 36 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: No facet fixture stacks bars at the same x in two panels
 qa_gate:
   id: F-GGS1-001
   name: ggplot2 conformance bars row 3 (position_stack)
@@ -78,3 +89,4 @@ qa_gate:
   - stack_vjust_matches
   - stack_zero_height_matches
   - stack_public_matches
+  - stack_facet_matches

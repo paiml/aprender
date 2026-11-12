@@ -8,6 +8,8 @@ metadata:
     ggplot2 conformance, bars train, rows stat_identity + geom_col (PLOT-GG-001, paiml/aprender#6909). bar_layout() with BarStat::Identity takes each row's y as the bar height, keeps ggplot2's row order, and stacks (including negative values) as geom_col() does by default. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/stat_identity_geom_col/generate.R); R is
     never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
     levels and labels compare exactly.
+    Level and group order is bytewise (LC_COLLATE=C): every generate.R pins it with Sys.setlocale and records it as "collate" in the fixture, and each oracle test asserts it, so R's locale-dependent sort() is never the reference.
+    Scope: vertical bars over a text x. Under a facet the stat and the position run per panel (group ids stay global, and position_dodge(preserve = single) takes its n from the busiest x of any panel) while the scales are trained across panels; position scales are trained over every layer of the plot (a point, hline or vline layer next to the bars widens them), as the facet_bars, facet_bars_single and mixed_layers fixtures record. Typed errors, not drawn and not guessed: a bar layer with its own data under a facet, and the framebuffer and SVG renderers on bars over a text x ("bars on a discrete x are not drawn yet").
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
@@ -46,17 +48,30 @@ enforcement:
     description: unfilled geom_col equals ggplot2's
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col_plain
     severity: ERROR
+  col_mixed_layers_match:
+    description: geom_col next to a point layer trains one y scale over both (R range (-2.05, 21.05))
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_point_share_the_y_scale
+    severity: ERROR
+  col_hline_matches:
+    description: geom_col next to geom_hline widens y to the intercept
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_hline_extend_y
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGC1-001
   rule: Negative bars are recognised after setup_data
-  prediction: mutating the ymax == 0 test in position::stack to never match turns 4 tests RED (_stat_identity_geom_col, _public_geom_col and the two zero_height_bar tests; measured, 4 failed, 26 passed, rc=101)
+  prediction: mutating the ymax == 0 test in position::stack to never match turns 4 tests RED (_stat_identity_geom_col, _public_geom_col and the two zero_height_bar tests; measured, 4 failed, 39 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: The negative value in the fixture is not exercised
 - id: FALSIFY-GGC1-002
   rule: geom_col width is 0.9
-  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns both identity tests and their public twins RED, among 17 of 30 failing (measured, 17 failed, 13 passed, rc=101)
+  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns 17 of the 43 tests RED, both identity tests among them (measured, 17 failed, 26 passed, rc=101); mutating the geom default (geom.rs DEFAULT_BAR_WIDTH_F32 0.9 -> 0.8) turns 21 RED, the public, facet and mixed-layer tests (measured, 21 failed, 22 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: Edges of identity bars are not compared
+- id: FALSIFY-GGC1-003
+  rule: An identity layer over several layers shares one y scale
+  prediction: dropping the y of non-bar layers from the scale training (layout_with_bars) turns _mixed_col_and_point_share_the_y_scale and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 41 passed, rc=101); dropping an hline intercept turns _mixed_col_and_hline_extend_y RED (measured, 1 failed, 42 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The y range of geom_col + geom_point(aes(y = z)) is the same as the bars' alone
 qa_gate:
   id: F-GGC1-001
   name: ggplot2 conformance bars row 2 (stat_identity + geom_col)
@@ -64,3 +79,5 @@ qa_gate:
   checks:
   - col_stack_matches
   - col_plain_matches
+  - col_mixed_layers_match
+  - col_hline_matches

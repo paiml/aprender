@@ -8,6 +8,8 @@ metadata:
     ggplot2 conformance, bars train, row position_fill (PLOT-GG-001, paiml/aprender#6909). position::apply(Position::fill()) stacks like position_stack and divides every height by the stack's total, so each x spans 0..1. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (fixtures/ggplot2/position_fill/generate.R); R is
     never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
     levels and labels compare exactly.
+    Level and group order is bytewise (LC_COLLATE=C): every generate.R pins it with Sys.setlocale and records it as "collate" in the fixture, and each oracle test asserts it, so R's locale-dependent sort() is never the reference.
+    Scope: vertical bars over a text x. Under a facet the stat and the position run per panel (group ids stay global, and position_dodge(preserve = single) takes its n from the busiest x of any panel) while the scales are trained across panels; position scales are trained over every layer of the plot (a point, hline or vline layer next to the bars widens them), as the facet_bars, facet_bars_single and mixed_layers fixtures record. Typed errors, not drawn and not guessed: a bar layer with its own data under a facet, and the framebuffer and SVG renderers on bars over a text x ("bars on a discrete x are not drawn yet").
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
@@ -26,6 +28,10 @@ proof_obligations:
   formal: '∀ bar: (y, ymin, ymax) ≈ ggplot2 row (1e-9 rel + 1e-12 abs); y axis limits (0, 1)'
   applies_to: pos_fill
 enforcement:
+  fill_facet_matches:
+    description: under a facet every panel is normalised to 0..1 on its own
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_fill_per_panel
+    severity: ERROR
   fill_matches:
     description: position_fill equals ggplot2's
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_position_fill
@@ -33,12 +39,18 @@ enforcement:
 falsification_tests:
 - id: FALSIFY-GGF1-001
   rule: position_fill vjust defaults to 1
-  prediction: mutating FILL_VJUST 1.0 -> 0.5 turns exactly ggplot2_bars_position_fill and ggplot2_bars_public_position_fill RED (measured, 2 failed, 28 passed, rc=101)
+  prediction: mutating FILL_VJUST 1.0 -> 0.5 turns exactly ggplot2_bars_position_fill, ggplot2_bars_public_position_fill and ggplot2_bars_facet_position_fill_per_panel RED (measured, 3 failed, 40 passed, rc=101)
   test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
   if_fails: y of a filled bar is not compared
+- id: FALSIFY-GGF1-002
+  rule: Each panel is normalised on its own
+  prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED, among them ggplot2_bars_facet_position_fill_per_panel (measured, 7 failed, 36 passed, rc=101)
+  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The facet fixture has no x whose stack total differs between panels
 qa_gate:
   id: F-GGF1-001
   name: ggplot2 conformance bars row 5 (position_fill)
   description: aprender-viz filled bars equal ggplot2 4.0.3 ggplot_build()
   checks:
   - fill_matches
+  - fill_facet_matches
