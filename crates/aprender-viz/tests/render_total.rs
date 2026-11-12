@@ -9,7 +9,9 @@
 //! (NaN, +/-Inf, +/-MAX, subnormals), arbitrary coord limits and canvas sizes 1x1..512x512 across
 //! every geom, through `to_framebuffer`, `to_svg` and `to_terminal`. The last group proves the
 //! clipping changes nothing for data on or near the canvas: the clipped rasterisers are compared
-//! pixel for pixel with reference copies of the unclipped algorithms.
+//! pixel for pixel with reference copies of the unclipped algorithms. Far off the canvas the
+//! aliased line is still pixel-identical to the unclipped walk (it is exact in closed form, no
+//! clipping), and the antialiased line is bounded against the ideal segment (RT-DEV-001).
 
 use std::sync::mpsc;
 use std::time::Duration;
@@ -78,8 +80,10 @@ fn limits() -> Coord {
     Coord::cartesian().xlim(0.0, 1.0).ylim(0.0, 1.0)
 }
 
+// Each repro is written as `#[test] fn name() = (geom, x, y, coord);` so the test name is
+// spelled out in the source, where a contract's `cargo test <name>` citation can resolve it.
 macro_rules! repro {
-    ($name:ident, $geom:expr, $x:expr, $y:expr, $coord:expr) => {
+    ($(#[test] fn $name:ident() = ($geom:expr, $x:expr, $y:expr, $coord:expr $(,)?);)+) => {$(
         #[test]
         fn $name() {
             bounded(stringify!($name), || {
@@ -92,50 +96,65 @@ macro_rules! repro {
                 assert!(!markup.contains("NaN") && !markup.to_lowercase().contains("inf"));
             });
         }
-    };
+    )+};
 }
 
-// 1. draw_circle: `cx + x` overflowed i32.
-repro!(
-    point_coordlim_outside,
-    Geom::point(),
-    vec![0.5, 1e38, -1e38],
-    vec![0.5, 1e38, -1e38],
-    limits()
-);
-// 2. fill_rect: `x + w` overflowed u32.
-repro!(bar_coordlim_outside, Geom::bar(), vec![0.5, 1e38, -1e38], vec![0.5, 1e38, -1e38], limits());
-// 3. and 4. line and area with finite points far off the canvas walked billions of pixels.
-repro!(
-    line_coordlim_outside,
-    Geom::line(),
-    vec![0.5, 1e38, -1e38],
-    vec![0.5, 1e38, -1e38],
-    limits()
-);
-repro!(
-    area_coordlim_outside,
-    Geom::area(),
-    vec![0.5, 1e38, -1e38],
-    vec![0.5, 1e38, -1e38],
-    limits()
-);
-// 5. the y = 0 baseline of this area maps to an extreme pixel: the fill looped about 2^31 rows.
-repro!(
-    area_huge_y_close,
-    Geom::area(),
-    vec![1.0, 2.0, 3.0],
-    vec![3.0e38, 3.0000002e38, 3.0000004e38],
-    Coord::cartesian()
-);
-// 6. to 12. non-finite rows, with and without coord_flip().
-repro!(point_mixed, Geom::point(), mixed().0, mixed().1, Coord::cartesian());
-repro!(line_mixed, Geom::line(), mixed().0, mixed().1, Coord::cartesian());
-repro!(area_mixed, Geom::area(), mixed().0, mixed().1, Coord::cartesian());
-repro!(point_flip_inf, Geom::point(), mixed().0, mixed().1, Coord::cartesian().flip());
-repro!(bar_flip_inf, Geom::bar(), mixed().0, mixed().1, Coord::cartesian().flip());
-repro!(line_flip_inf, Geom::line(), mixed().0, mixed().1, Coord::cartesian().flip());
-repro!(area_flip_inf, Geom::area(), mixed().0, mixed().1, Coord::cartesian().flip());
+repro! {
+    // 1. draw_circle: `cx + x` overflowed i32.
+    #[test]
+    fn point_coordlim_outside() = (
+        Geom::point(),
+        vec![0.5, 1e38, -1e38],
+        vec![0.5, 1e38, -1e38],
+        limits(),
+    );
+    // 2. fill_rect: `x + w` overflowed u32.
+    #[test]
+    fn bar_coordlim_outside() = (
+        Geom::bar(),
+        vec![0.5, 1e38, -1e38],
+        vec![0.5, 1e38, -1e38],
+        limits(),
+    );
+    // 3. and 4. line and area with finite points far off the canvas walked billions of pixels.
+    #[test]
+    fn line_coordlim_outside() = (
+        Geom::line(),
+        vec![0.5, 1e38, -1e38],
+        vec![0.5, 1e38, -1e38],
+        limits(),
+    );
+    #[test]
+    fn area_coordlim_outside() = (
+        Geom::area(),
+        vec![0.5, 1e38, -1e38],
+        vec![0.5, 1e38, -1e38],
+        limits(),
+    );
+    // 5. the y = 0 baseline of this area maps to an extreme pixel: the fill looped about 2^31 rows.
+    #[test]
+    fn area_huge_y_close() = (
+        Geom::area(),
+        vec![1.0, 2.0, 3.0],
+        vec![3.0e38, 3.0000002e38, 3.0000004e38],
+        Coord::cartesian(),
+    );
+    // 6. to 12. non-finite rows, with and without coord_flip().
+    #[test]
+    fn point_mixed() = (Geom::point(), mixed().0, mixed().1, Coord::cartesian());
+    #[test]
+    fn line_mixed() = (Geom::line(), mixed().0, mixed().1, Coord::cartesian());
+    #[test]
+    fn area_mixed() = (Geom::area(), mixed().0, mixed().1, Coord::cartesian());
+    #[test]
+    fn point_flip_inf() = (Geom::point(), mixed().0, mixed().1, Coord::cartesian().flip());
+    #[test]
+    fn bar_flip_inf() = (Geom::bar(), mixed().0, mixed().1, Coord::cartesian().flip());
+    #[test]
+    fn line_flip_inf() = (Geom::line(), mixed().0, mixed().1, Coord::cartesian().flip());
+    #[test]
+    fn area_flip_inf() = (Geom::area(), mixed().0, mixed().1, Coord::cartesian().flip());
+}
 
 #[test]
 fn non_finite_rows_are_dropped_not_drawn_at_pixel_zero() {
@@ -694,9 +713,9 @@ fn the_two_filled_circle_paths_agree_within_one_pixel_of_the_edge() {
         }
     }
 }
-
 // ---------------------------------------------------------------------------
-// Segments that cross the 1024 px guard are not bit-exact (RT-DEV-001).
+// Segments far off the canvas. Bresenham is exact for every i32 (RT-EQV-001); Wu, clipped at the
+// 1024 px guard, stays on the ideal segment (RT-DEV-001).
 // ---------------------------------------------------------------------------
 
 /// A deterministic stream in `[0, 1)`.
@@ -709,67 +728,269 @@ impl Lcg {
     }
 }
 
-/// Farthest Chebyshev distance from a lit pixel of one picture to the nearest lit pixel of the
-/// other, taken both ways.
-fn worst_gap(a: &Framebuffer, b: &Framebuffer, search: i64) -> i64 {
-    one_way_gap(a, b, search).max(one_way_gap(b, a, search))
+type Seg = (f64, f64, f64, f64);
+
+/// One end on a `w` x `h` canvas, the other `near..far` px away in any direction (the family
+/// the round-2 review drew).
+fn one_end_on(rng: &mut Lcg, w: f64, h: f64, near: f64, far: f64) -> Seg {
+    let (ax, ay) = (rng.next() * w, rng.next() * h);
+    let (angle, dist) = (rng.next() * std::f64::consts::TAU, near + rng.next() * (far - near));
+    (ax, ay, ax + dist * angle.cos(), ay + dist * angle.sin())
 }
 
-/// Chebyshev distance from the farthest lit pixel of `p` to the nearest lit pixel of `q`.
-fn one_way_gap(p: &Framebuffer, q: &Framebuffer, search: i64) -> i64 {
-    let (w, h) = (i64::from(p.width()), i64::from(p.height()));
-    let lit = (0..h).flat_map(|y| (0..w).map(move |x| (x, y)));
-    lit.filter(|&(x, y)| is_lit_any(p, x, y))
-        .map(|(x, y)| nearest_lit(q, x, y, search))
-        .max()
-        .unwrap_or(0)
+/// A segment that hugs edge `edge` (0 right, 1 left, 2 bottom, 3 top) of a `w` x `h` canvas: it
+/// starts within 8 px of the edge and runs within 0.1 rad of parallel to it, out to 2000..20000 px.
+/// This is where the old guard clip moved Bresenham's step phase by tens of rows.
+fn edge_hugging(rng: &mut Lcg, w: f64, h: f64, edge: u32) -> Seg {
+    let inset = rng.next() * 8.0;
+    let along = rng.next();
+    let (ax, ay, base) = match edge {
+        0 => (w - inset, along * h, std::f64::consts::FRAC_PI_2),
+        1 => (inset, along * h, std::f64::consts::FRAC_PI_2),
+        2 => (along * w, h - inset, 0.0),
+        _ => (along * w, inset, 0.0),
+    };
+    let flip = if rng.next() < 0.5 { 0.0 } else { std::f64::consts::PI };
+    let angle = base + flip + (rng.next() - 0.5) * 0.2;
+    let dist = 2000.0 + rng.next() * 18000.0;
+    (ax, ay, ax + dist * angle.cos(), ay + dist * angle.sin())
 }
 
-fn nearest_lit(q: &Framebuffer, x: i64, y: i64, search: i64) -> i64 {
-    let (w, h) = (i64::from(q.width()), i64::from(q.height()));
-    let offsets = (-search..=search).flat_map(|dy| (-search..=search).map(move |dx| (dx, dy)));
-    offsets
-        .filter(|&(dx, dy)| {
-            let (qx, qy) = (x + dx, y + dy);
-            qx >= 0 && qy >= 0 && qx < w && qy < h && is_lit_any(q, qx, qy)
-        })
-        .map(|(dx, dy)| dx.abs().max(dy.abs()))
-        .min()
-        .map_or(search + 1, |d| d.min(search + 1))
+/// Both ends `near..far` px off a `w` x `h` canvas on opposite sides, through a canvas point.
+fn through(rng: &mut Lcg, w: f64, h: f64, near: f64, far: f64) -> Seg {
+    let (cx, cy) = (rng.next() * w, rng.next() * h);
+    let angle = rng.next() * std::f64::consts::TAU;
+    let (d0, d1) = (near + rng.next() * (far - near), near + rng.next() * (far - near));
+    let (c, s) = (angle.cos(), angle.sin());
+    (cx - d0 * c, cy - d0 * s, cx + d1 * c, cy + d1 * s)
 }
 
-fn is_lit_any(fb: &Framebuffer, x: i64, y: i64) -> bool {
-    fb.get_pixel(x as u32, y as u32) != Some(Rgba::WHITE)
-}
-
-/// 300 segments with one end on a 512x512 canvas and the other 2000 to 20000 px away, so every
-/// one crosses the guard. The clipped rasterisers against the unclipped reference copies.
-fn guard_crossing_gaps(aa: bool) -> i64 {
-    let mut rng = Lcg(if aa { 0x9E37_79B9 } else { 0x1234_5678 });
-    let mut worst = 0;
-    for _ in 0..300 {
-        let (ax, ay) = (rng.next() * 512.0, rng.next() * 512.0);
-        let (angle, dist) = (rng.next() * std::f64::consts::TAU, 2000.0 + rng.next() * 18000.0);
-        let (bx, by) = (ax + dist * angle.cos(), ay + dist * angle.sin());
-        let (mut got, mut want) = (blank(512, 512), blank(512, 512));
-        if aa {
-            draw_line_aa(&mut got, ax as f32, ay as f32, bx as f32, by as f32, Rgba::BLACK);
-            ref_wu(&mut want, ax as f32, ay as f32, bx as f32, by as f32, Rgba::BLACK);
-        } else {
-            let r = |v: f64| v.round() as i32;
-            draw_line(&mut got, r(ax), r(ay), r(bx), r(by), Rgba::BLACK);
-            ref_bresenham(&mut want, r(ax), r(ay), r(bx), r(by), Rgba::BLACK);
-        }
-        worst = worst.max(worst_gap(&got, &want, 4));
+/// The three segments the round-2 review found, then 1000 of its family, 500 hugging each edge,
+/// and 500 passing through, on 512x512 unless stated.
+fn far_segments() -> Vec<(u32, u32, Seg)> {
+    let mut out = vec![
+        (512, 512, (503.0, 483.0, 606.0, -4592.0)),
+        (800, 600, (792.0, 286.0, 1231.0, -15902.0)),
+        (
+            512,
+            512,
+            (
+                511.100_590_923_432_55,
+                301.022_343_328_706_4,
+                940.659_806_548_316_5,
+                -12_009.057_765_658_255,
+            ),
+        ),
+    ];
+    let mut rng = Lcg(0xA5A5_0001);
+    out.extend((0..1000).map(|_| (512, 512, one_end_on(&mut rng, 512.0, 512.0, 2000.0, 20000.0))));
+    let mut rng = Lcg(0xA5A5_0003);
+    out.extend((0..300).map(|_| (800, 600, one_end_on(&mut rng, 800.0, 600.0, 2000.0, 20000.0))));
+    let mut rng = Lcg(0xED6E);
+    for edge in 0..4 {
+        out.extend((0..500).map(|_| (512, 512, edge_hugging(&mut rng, 512.0, 512.0, edge))));
     }
-    worst
+    let mut rng = Lcg(0x7480_0001);
+    out.extend((0..500).map(|_| (512, 512, through(&mut rng, 512.0, 512.0, 1100.0, 20000.0))));
+    out
 }
 
 #[test]
-fn guard_crossing_segments_stay_within_the_stated_bound() {
-    // Clipping rounds the cut end to an integer (Bresenham restarts its error term) or restarts
-    // the f32 walk (Wu), so a segment that crosses the guard is not bit-exact. Measured over
-    // thousands of segments: up to 2 px aliased and 3 px antialiased from the unclipped line.
-    assert!(guard_crossing_gaps(false) <= 2, "Bresenham deviates by more than 2 px");
-    assert!(guard_crossing_gaps(true) <= 3, "Wu deviates by more than 3 px");
+fn bresenham_line_equals_the_unclipped_line_far_off_the_canvas() {
+    // Every segment above against main's walk, unclipped: pixel for pixel, the three review
+    // repros and the edge-hugging lines included.
+    let r = |v: f64| v.round() as i32;
+    let mut fail = Vec::new();
+    for (w, h, (ax, ay, bx, by)) in far_segments() {
+        let (mut got, mut want) = (blank(w, h), blank(w, h));
+        draw_line(&mut got, r(ax), r(ay), r(bx), r(by), Rgba::BLACK);
+        ref_bresenham(&mut want, r(ax), r(ay), r(bx), r(by), Rgba::BLACK);
+        if got.pixels() != want.pixels() {
+            fail.push((w, h, (r(ax), r(ay), r(bx), r(by))));
+        }
+    }
+    assert!(
+        fail.is_empty(),
+        "{} segments differ from the unclipped walk, first {:?}",
+        fail.len(),
+        fail.first()
+    );
+}
+
+/// For each major-axis line of the canvas, the pixel the ideal line of `(x0, y0) -> (x1, y1)`
+/// rounds to there (a tie away from the start), if it is on the canvas. Brute force over the
+/// canvas in `i128`, sharing no code with `draw_line`.
+fn nearest_pixels(w: u32, h: u32, x0: i32, y0: i32, x1: i32, y1: i32) -> Framebuffer {
+    let mut fb = blank(w, h);
+    let (x0, y0, x1, y1) = (i128::from(x0), i128::from(y0), i128::from(x1), i128::from(y1));
+    let (dx, dy) = ((x1 - x0).abs(), (y1 - y0).abs());
+    let x_major = dx >= dy;
+    let (u0, v0, du, dv, ulen, vlen) =
+        if x_major { (x0, y0, x1 - x0, y1 - y0, w, h) } else { (y0, x0, y1 - y0, x1 - x0, h, w) };
+    let n = du.abs();
+    for u in 0..i128::from(ulen) {
+        // Steps from the start to this line; a single point (n = 0) has only u0.
+        let k = if n == 0 { u - u0 } else { (u - u0) * du.signum() };
+        if !(0..=n).contains(&k) {
+            continue;
+        }
+        // minor offset = round(|dv| k / n), ties away from the start; 0 for a single point.
+        let j = if n == 0 { 0 } else { (2 * dv.abs() * k + n).div_euclid(2 * n) };
+        let v = v0 + if dv < 0 { -j } else { j };
+        if (0..i128::from(vlen)).contains(&v) {
+            let (x, y) = if x_major { (u, v) } else { (v, u) };
+            fb.set_pixel(x as u32, y as u32, Rgba::BLACK);
+        }
+    }
+    fb
+}
+
+proptest! {
+    #![proptest_config(ProptestConfig::with_cases(2000))]
+
+    // Any i32 at all, where main's walk would overflow or take 2^32 steps: the shipped line is
+    // the nearest pixel on every canvas column (row, for a steep line) the segment spans.
+    #[test]
+    fn bresenham_line_is_the_nearest_pixel_per_column_for_any_i32(
+        w in 1_u32..=48, h in 1_u32..=48,
+        a in (any::<i32>(), any::<i32>()), b in (any::<i32>(), any::<i32>()),
+        near in (-60_i32..110, -60_i32..110),
+        pick in 0_u8..3,
+    ) {
+        // Mix wholly random ends with one end near the canvas, so the canvas is often crossed.
+        let (x0, y0) = if pick == 0 { a } else { near };
+        let (x1, y1) = b;
+        let mut got = blank(w, h);
+        draw_line(&mut got, x0, y0, x1, y1, Rgba::BLACK);
+        let want = nearest_pixels(w, h, x0, y0, x1, y1);
+        prop_assert_eq!(got.pixels(), want.pixels());
+    }
+
+    #[test]
+    fn nearest_pixels_equals_the_walk_near_the_canvas(
+        w in 1_u32..=64, h in 1_u32..=64,
+        a in (-200_i32..260, -200_i32..260), b in (-200_i32..260, -200_i32..260),
+    ) {
+        // Ties the brute-force reference above to main's walk where the walk can run.
+        let mut want = blank(w, h);
+        ref_bresenham(&mut want, a.0, a.1, b.0, b.1, Rgba::BLACK);
+        let got = nearest_pixels(w, h, a.0, a.1, b.0, b.1);
+        prop_assert_eq!(got.pixels(), want.pixels());
+    }
+}
+
+/// Distance from the pixel centre `(px, py)` to the segment `s` (Wu's pixels sit on integers).
+fn seg_dist(px: f64, py: f64, (x0, y0, x1, y1): Seg) -> f64 {
+    let (dx, dy) = (x1 - x0, y1 - y0);
+    let len2 = dx * dx + dy * dy;
+    let t =
+        if len2 == 0.0 { 0.0 } else { (((px - x0) * dx + (py - y0) * dy) / len2).clamp(0.0, 1.0) };
+    (px - (x0 + t * dx)).hypot(py - (y0 + t * dy))
+}
+
+/// The lit pixels of `fb`, grouped by major-axis line: `lines[u]` holds the minor coordinates.
+fn lit_by_line(fb: &Framebuffer, steep: bool) -> Vec<Vec<u32>> {
+    let (w, h) = (fb.width(), fb.height());
+    let mut lines = vec![Vec::new(); if steep { h } else { w } as usize];
+    for (i, px) in fb.pixels().chunks_exact(4).enumerate() {
+        if px != [255, 255, 255, 255] {
+            let (x, y) = ((i as u32) % w, (i as u32) / w);
+            let (u, v) = if steep { (y, x) } else { (x, y) };
+            lines[u as usize].push(v);
+        }
+    }
+    lines
+}
+
+/// How far the antialiased line on `fb` strays from the ideal segment `s`: the largest distance
+/// from a drawn pixel to `s` (`.0`), and the largest distance from `s` to the nearest drawn
+/// pixel on the same major-axis line (`.1`), over every line where `s` is at least 2 px inside
+/// the canvas and 2 px from its ends.
+fn wu_stray(fb: &Framebuffer, s: Seg) -> (f64, f64) {
+    let (x0, y0, x1, y1) = s;
+    let steep = (y1 - y0).abs() > (x1 - x0).abs();
+    let lines = lit_by_line(fb, steep);
+    let (u0, v0, u1, v1, vlen) =
+        if steep { (y0, x0, y1, x1, fb.width()) } else { (x0, y0, x1, y1, fb.height()) };
+    let at =
+        |u: usize, v: u32| if steep { (f64::from(v), u as f64) } else { (u as f64, f64::from(v)) };
+    let mut off = 0.0_f64;
+    for (u, vs) in lines.iter().enumerate() {
+        for &v in vs {
+            let (px, py) = at(u, v);
+            off = off.max(seg_dist(px, py, s));
+        }
+    }
+    let (umin, umax) = (u0.min(u1) + 2.0, u0.max(u1) - 2.0);
+    let mut gap = 0.0_f64;
+    for (u, vs) in lines.iter().enumerate() {
+        let uf = u as f64;
+        if uf < umin || uf > umax {
+            continue;
+        }
+        let v = v0 + (uf - u0) * (v1 - v0) / (u1 - u0);
+        if v < 2.0 || v > f64::from(vlen) - 3.0 {
+            continue;
+        }
+        gap = gap.max(vs.iter().map(|&p| (f64::from(p) - v).abs()).fold(f64::INFINITY, f64::min));
+    }
+    (off, gap)
+}
+
+/// RT-DEV-001, drawn-to-ideal: Wu lights the two pixels around the line on each major-axis line
+/// (each within 1 px of it), and at an end point the line's own end-pixel rule can put one
+/// pixel up to sqrt(0.5^2 + 1.5^2) = 1.58 px from the segment. Measured: 1.31 px.
+const WU_DRAWN_BOUND: f64 = 2.0;
+
+/// RT-DEV-001, ideal-to-drawn: one of the two pixels has at least half the intensity, so the
+/// nearest drawn pixel is within 0.5 px of the line on every major-axis line. Measured: 0.50 px.
+const WU_COVER_BOUND: f64 = 1.0;
+
+/// The worst of each [`wu_stray`] measure of `draw` over `segs`, each with the segment that set it.
+fn worst_wu_stray(
+    segs: &[(u32, u32, Seg)],
+    draw: fn(&mut Framebuffer, f32, f32, f32, f32, Rgba),
+) -> ((f64, Seg), (f64, Seg)) {
+    let none = (0.0, 0.0, 0.0, 0.0);
+    let (mut off, mut gap) = ((0.0_f64, none), (0.0_f64, none));
+    for &(w, h, s) in segs {
+        let f = (s.0 as f32, s.1 as f32, s.2 as f32, s.3 as f32);
+        let mut fb = blank(w, h);
+        draw(&mut fb, f.0, f.1, f.2, f.3, Rgba::BLACK);
+        let (o, g) =
+            wu_stray(&fb, (f64::from(f.0), f64::from(f.1), f64::from(f.2), f64::from(f.3)));
+        if o > off.0 {
+            off = (o, s);
+        }
+        if g > gap.0 {
+            gap = (g, s);
+        }
+    }
+    (off, gap)
+}
+
+#[test]
+fn wu_line_stays_on_the_ideal_segment_far_off_the_canvas() {
+    // The f32 walk restarts at the guard cut, so a segment that crosses the guard is not
+    // bit-exact with main's walk from the far end. What is bounded is the drawing against the
+    // true segment, both ways: no drawn pixel farther than the bound from it, and no stretch of
+    // it on the canvas without a drawn pixel within the bound.
+    let mut segs = far_segments();
+    // And ends far beyond anything main could walk.
+    let mut rng = Lcg(0x7480_0002);
+    segs.extend((0..300).map(|_| (512, 512, through(&mut rng, 512.0, 512.0, 1e6, 1e30))));
+    let ((off, off_at), (gap, gap_at)) = worst_wu_stray(&segs, draw_line_aa);
+    println!(
+        "RT-DEV-001 measured on {} segments: drawn-to-ideal {off:.4} px at {off_at:?}, \
+         ideal-to-drawn {gap:.4} px at {gap_at:?}",
+        segs.len()
+    );
+    assert!(
+        off <= WU_DRAWN_BOUND,
+        "a drawn pixel is {off:.3} px from the ideal segment {off_at:?}"
+    );
+    assert!(
+        gap <= WU_COVER_BOUND,
+        "the ideal segment is {gap:.3} px from any drawn pixel {gap_at:?}"
+    );
 }

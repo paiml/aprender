@@ -31,6 +31,12 @@ pub trait Drawable {
 
 /// Draw a line using Bresenham's algorithm (non-antialiased).
 ///
+/// Exact for every `i32` endpoint (contract `render-total-v1`, RT-EQV-001): the pixels lit on the
+/// canvas are exactly the ones the unclipped Bresenham walk lights, and the work is at most
+/// `max(width, height)` steps however far off the canvas the endpoints are. Pixel `k` of the walk
+/// is computed in closed form, in exact integer arithmetic ([`BresenhamLine`]), and only the steps
+/// whose pixel lies on the canvas are visited.
+///
 /// # Arguments
 ///
 /// * `fb` - Target framebuffer
@@ -42,85 +48,124 @@ pub fn draw_line(fb: &mut Framebuffer, x0: i32, y0: i32, x1: i32, y1: i32, color
     contract_pre_display_format!(fb.pixels());
     contract_post_display_format!(&"ok");
 
-    // Clip to the canvas (plus a guard) first: a segment that starts or ends far off the canvas
-    // would otherwise walk up to 2^32 invisible pixels, and `x1 - x0` could overflow `i32`.
-    let Some((cx0, cy0, cx1, cy1)) =
-        canvas_segment(fb, (f64::from(x0), f64::from(y0), f64::from(x1), f64::from(y1)))
-    else {
+    let line = BresenhamLine::new(x0, y0, x1, y1);
+    let Some((first, last)) = line.visible_steps(fb.width(), fb.height()) else {
         return;
     };
-    // The clipped ends are within the guard box, so the casts below are exact (an unclipped
-    // segment round-trips through `f64` unchanged).
-    let mut cursor = BresenhamCursor::new(
-        cx0.round() as i32,
-        cy0.round() as i32,
-        cx1.round() as i32,
-        cy1.round() as i32,
-    );
-    loop {
-        plot_pixel_if_visible(fb, cursor.x, cursor.y, color);
-        if cursor.finished() {
-            break;
-        }
-        if cursor.step() {
-            break;
-        }
+    for k in first..=last {
+        let (x, y) = line.pixel(k);
+        plot_pixel_if_visible(fb, x, y, color);
     }
 }
 
-/// Plot one integer pixel into the framebuffer, skipping negative
-/// coordinates (off-screen on the top/left).
-fn plot_pixel_if_visible(fb: &mut Framebuffer, x: i32, y: i32, color: Rgba) {
-    if x >= 0 && y >= 0 {
-        fb.set_pixel(x as u32, y as u32, color);
+/// Plot one integer pixel into the framebuffer, skipping coordinates off the canvas.
+fn plot_pixel_if_visible(fb: &mut Framebuffer, x: i64, y: i64, color: Rgba) {
+    if let (Ok(x), Ok(y)) = (u32::try_from(x), u32::try_from(y)) {
+        fb.set_pixel(x, y, color);
     }
 }
 
-/// State for one run of Bresenham's line algorithm.
-struct BresenhamCursor {
-    x: i32,
-    y: i32,
-    x1: i32,
-    y1: i32,
-    dx: i32,
-    dy: i32,
-    sx: i32,
-    sy: i32,
-    err: i32,
+/// Bresenham's line in closed form.
+///
+/// The classic walk (`err = dx - |dy|`; a step in x when `2 err >= -|dy|`, a step in y when
+/// `2 err <= dx`; stop at the end point) takes `n = max(dx, |dy|)` steps along the major axis, and
+/// after `k` of them it has moved `floor((2 m k + n) / (2 n))` along the minor axis, where
+/// `m = min(dx, |dy|)`: the minor coordinate nearest the ideal line, a tie rounded away from the
+/// start. The products need 66 bits, so they are taken in `i128`.
+struct BresenhamLine {
+    x0: i64,
+    y0: i64,
+    sx: i64,
+    sy: i64,
+    /// Steps along the major axis.
+    n: i64,
+    /// Total movement along the minor axis.
+    m: i64,
+    x_major: bool,
 }
 
-impl BresenhamCursor {
+impl BresenhamLine {
     fn new(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
-        let dx = (x1 - x0).abs();
-        let dy = -(y1 - y0).abs();
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
-        Self { x: x0, y: y0, x1, y1, dx, dy, sx, sy, err: dx + dy }
+        let (x0, y0, x1, y1) = (i64::from(x0), i64::from(y0), i64::from(x1), i64::from(y1));
+        let (dx, dy) = ((x1 - x0).abs(), (y1 - y0).abs());
+        let sign = |from: i64, to: i64| if from < to { 1 } else { -1 };
+        Self {
+            x0,
+            y0,
+            sx: sign(x0, x1),
+            sy: sign(y0, y1),
+            n: dx.max(dy),
+            m: dx.min(dy),
+            x_major: dx >= dy,
+        }
     }
 
-    fn finished(&self) -> bool {
-        self.x == self.x1 && self.y == self.y1
+    /// Movement along the minor axis after `k` major steps (`0 <= k <= n`).
+    fn minor(&self, k: i64) -> i64 {
+        if self.n == 0 {
+            return 0;
+        }
+        let (n, m, k) = (i128::from(self.n), i128::from(self.m), i128::from(k));
+        // 0 <= quotient <= m < 2^33, so the narrowing is exact.
+        ((2 * m * k + n) / (2 * n)) as i64
     }
 
-    /// Advance one Bresenham step. Returns `true` when the step would
-    /// have moved past the endpoint — caller should stop plotting.
-    fn step(&mut self) -> bool {
-        let e2 = 2 * self.err;
-        if e2 >= self.dy {
-            if self.x == self.x1 {
-                return true;
-            }
-            self.err += self.dy;
-            self.x += self.sx;
+    /// The pixel after `k` major steps.
+    fn pixel(&self, k: i64) -> (i64, i64) {
+        let j = self.minor(k);
+        if self.x_major {
+            (self.x0 + self.sx * k, self.y0 + self.sy * j)
+        } else {
+            (self.x0 + self.sx * j, self.y0 + self.sy * k)
         }
-        if e2 <= self.dx {
-            if self.y == self.y1 {
-                return true;
-            }
-            self.err += self.dx;
-            self.y += self.sy;
+    }
+
+    /// The steps `first..=last` whose pixel is on a `width` x `height` canvas, or `None` when no
+    /// pixel of the line is. Both coordinates are monotone in `k`, so the steps form one range.
+    fn visible_steps(&self, width: u32, height: u32) -> Option<(i64, i64)> {
+        let (major, minor) = if self.x_major {
+            (
+                offsets_on_canvas(self.x0, self.sx, width),
+                offsets_on_canvas(self.y0, self.sy, height),
+            )
+        } else {
+            (
+                offsets_on_canvas(self.y0, self.sy, height),
+                offsets_on_canvas(self.x0, self.sx, width),
+            )
+        };
+        let (j_lo, j_hi) = (minor.0.max(0), minor.1.min(self.m));
+        if j_lo > j_hi {
+            return None;
         }
-        false
+        let first = major.0.max(0).max(self.first_step_reaching(j_lo));
+        let last = major.1.min(self.n).min(self.first_step_reaching(j_hi + 1) - 1);
+        (first <= last).then_some((first, last))
+    }
+
+    /// The first step `k` in `0..=n` with `minor(k) >= j`, or `n + 1` when there is none.
+    fn first_step_reaching(&self, j: i64) -> i64 {
+        let (mut lo, mut hi) = (0, self.n + 1);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.minor(mid) >= j {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        lo
+    }
+}
+
+/// The offsets `t` with `0 <= p0 + s * t < len` (for `s = ±1`), as an inclusive `(lo, hi)`;
+/// empty when `lo > hi`.
+fn offsets_on_canvas(p0: i64, s: i64, len: u32) -> (i64, i64) {
+    let last = i64::from(len) - 1;
+    if s > 0 {
+        (-p0, last - p0)
+    } else {
+        (p0 - last, p0)
     }
 }
 

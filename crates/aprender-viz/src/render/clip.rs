@@ -1,18 +1,21 @@
-//! Segment clipping shared by the line rasterisers.
+//! Segment clipping for the antialiased (Wu) line rasteriser.
 //!
-//! The rasterisers walk one pixel per step along the major axis, so a segment whose endpoints
-//! are far off the canvas (a finite point at `1e38` under `xlim(0, 1)`) would walk billions of
-//! pixels that are never visible. A segment is therefore clipped, in `f64`, to the canvas grown by
-//! [`CLIP_GUARD`] pixels on every side (Liang-Barsky) before any loop runs. A segment that
-//! already lies inside that box is returned untouched, bit for bit, so output for ordinary data
-//! is the same as without clipping.
+//! Wu walks one pixel column (or row) per step along the major axis, so a segment whose
+//! endpoints are far off the canvas (a finite point at `1e38` under `xlim(0, 1)`) would walk
+//! billions of pixels that are never visible. The segment is therefore clipped, in `f64`, to the
+//! canvas grown by [`CLIP_GUARD`] pixels on every side (Liang-Barsky) before any loop runs. A
+//! segment that already lies inside that box is returned untouched, bit for bit, so output for
+//! ordinary data is the same as without clipping.
 //!
-//! A segment that crosses the guard is not bit-exact: the cut end is rounded to an integer (so
-//! Bresenham restarts its error term) or the f32 walk restarts at the cut (Wu). Measured against
-//! the unclipped line, the drawn pixels move by at most 2 px (aliased) and 3 px (antialiased);
-//! contract `render-total-v1`, RT-DEV-001, bounded by
-//! `guard_crossing_segments_stay_within_the_stated_bound`. Only data with an end more than
-//! 1024 px off the canvas is affected.
+//! The aliased line (`draw_line`) does not clip: it computes Bresenham's minor offset in closed
+//! form and visits only the steps that land on the canvas, so it is pixel-identical to the
+//! unclipped walk for every `i32` (contract `render-total-v1`, RT-EQV-001).
+//!
+//! A Wu segment that crosses the guard restarts its f32 walk at the cut, so it is not bit-exact
+//! against the unclipped walk. Measured against the ideal segment instead, a drawn pixel lies at
+//! most 2 px from it and every interior column (row) has a lit pixel within 1 px of it
+//! (RT-DEV-001, bounded by `wu_line_stays_on_the_ideal_segment_far_off_the_canvas`). Only data
+//! with an end more than 1024 px off the canvas is affected.
 
 use crate::framebuffer::Framebuffer;
 
