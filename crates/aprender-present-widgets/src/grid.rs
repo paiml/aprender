@@ -285,7 +285,7 @@ impl Widget for Grid {
             child.layout(cell);
         }
         LayoutResult {
-            size: bounds.size(),
+            size: Size::new(sane(bounds.width).max(0.0), sane(bounds.height).max(0.0)),
         }
     }
 

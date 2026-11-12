@@ -67,7 +67,7 @@ fn sane_extent(value: f32) -> Option<f32> {
 /// `f32::clamp` this never panics, whatever the constraints (NaN, infinite or
 /// `min > max`); a lower bound that exceeds the upper one loses.
 fn fit(value: f32, min: f32, max: f32) -> f32 {
-    sane(value.max(min).min(max))
+    sane(value.max(min).min(max)).max(0.0)
 }
 
 /// `point` pulled onto `bounds` (NaN-safe; never panics).
@@ -311,11 +311,11 @@ impl Video {
     /// The three vertices of the play glyph, centred in the laid-out bounds.
     ///
     /// The bounding box of the triangle has the same centre as the bounds.
-    /// Every vertex is finite and inside the laid-out bounds (which `layout`
-    /// has sanitised), whatever rectangle was passed to `layout`.
+    /// Every vertex is finite and inside the sanitised laid-out bounds, whatever
+    /// rectangle was passed to `layout`.
     #[must_use]
     pub fn play_glyph(&self) -> [Point; 3] {
-        let bounds = self.bounds;
+        let bounds = sane_bounds(self.bounds);
         let centre = bounds.center();
         let height = bounds.width.min(bounds.height).max(0.0) * GLYPH_SCALE;
         let width = height * GLYPH_ASPECT;
@@ -407,20 +407,22 @@ impl Widget for Video {
 
     /// Lay the video out in `bounds`.
     ///
-    /// The bounds are sanitised first (NaN and infinities become 0, components
-    /// are clamped to +-1e15, a negative size becomes 0), so every rect and
-    /// glyph vertex `paint` emits is finite and inside the stored bounds. Bounds
-    /// that are already finite, not negative and in range are kept exactly.
+    /// The bounds are stored as given, so `verify` can judge them (like `Grid`
+    /// and `Waveform`). They are sanitised where they are used (NaN and
+    /// infinities become 0, components are clamped to +-1e15, a negative size
+    /// becomes 0), so every rect and glyph vertex `paint` emits is finite and
+    /// the returned size is finite and not negative.
     fn layout(&mut self, bounds: Rect) -> LayoutResult {
-        self.bounds = sane_bounds(bounds);
+        self.bounds = bounds;
         LayoutResult {
-            size: self.bounds.size(),
+            size: sane_bounds(bounds).size(),
         }
     }
 
     fn paint(&self, canvas: &mut dyn Canvas) {
+        let bounds = sane_bounds(self.bounds);
         if self.is_playing() {
-            canvas.fill_rect(self.bounds, Self::frame_color());
+            canvas.fill_rect(bounds, Self::frame_color());
             return;
         }
         let backdrop = if self.poster.is_some() {
@@ -428,17 +430,18 @@ impl Widget for Video {
         } else {
             Self::placeholder_color()
         };
-        canvas.fill_rect(self.bounds, backdrop);
+        canvas.fill_rect(bounds, backdrop);
         canvas.fill_polygon(&self.play_glyph(), Color::WHITE);
     }
 
     fn event(&mut self, event: &Event) -> Option<Box<dyn Any + Send>> {
+        let bounds = sane_bounds(self.bounds);
         match event {
             Event::MouseDown {
                 position,
                 button: MouseButton::Left,
             } => {
-                self.pressed = self.bounds.contains_point(position);
+                self.pressed = bounds.contains_point(position);
                 None
             }
             Event::MouseUp {
@@ -446,7 +449,7 @@ impl Widget for Video {
                 button: MouseButton::Left,
             } => {
                 let was_pressed = std::mem::take(&mut self.pressed);
-                if was_pressed && self.bounds.contains_point(position) {
+                if was_pressed && bounds.contains_point(position) {
                     self.toggled_message()
                 } else {
                     None
@@ -1198,7 +1201,8 @@ mod tests {
         let mut v = named("a");
         v.layout(bounds);
         let expected = oracle_bounds(bounds);
-        assert_eq!(Widget::bounds(&v), expected);
+        // `bounds()` reports the raw laid-out rectangle so `verify` can judge it.
+        assert_eq!(Widget::bounds(&v), bounds);
         assert!(v
             .play_glyph()
             .iter()
@@ -1214,7 +1218,7 @@ mod tests {
         let result = v.layout(Rect::new(10.0, 20.0, -50.0, -40.0));
         let zero = Rect::new(10.0, 20.0, 0.0, 0.0);
         assert_eq!(result.size, Size::new(0.0, 0.0));
-        assert_eq!(Widget::bounds(&v), zero);
+        assert_eq!(Widget::bounds(&v), Rect::new(10.0, 20.0, -50.0, -40.0));
         for p in v.play_glyph() {
             assert_eq!(p, Point::new(10.0, 20.0));
         }
@@ -1326,7 +1330,7 @@ mod tests {
     }
 
     #[test]
-    fn video_verify_accepts_laid_out_bounds_even_when_the_input_was_wild() {
+    fn video_verify_accepts_good_bounds_and_rejects_wild_ones() {
         let mut v = named("a.mp4");
         v.layout(BOUNDS);
         let result = v.verify();
@@ -1334,9 +1338,15 @@ mod tests {
         assert!(result
             .passed
             .contains(&BrickAssertion::ElementPresent("valid-bounds".into())));
-        // layout sanitises, so wild input still ends in valid bounds.
+        // layout keeps the raw bounds, so verify catches wild input; paint stays
+        // finite because it sanitises where it uses them.
         v.layout(Rect::new(f32::NAN, f32::MAX, -1.0, f32::INFINITY));
-        assert!(v.verify().is_valid());
+        let result = v.verify();
+        assert!(!result.is_valid());
+        assert!(result
+            .failed
+            .iter()
+            .any(|(a, _)| *a == BrickAssertion::ElementPresent("valid-bounds".into())));
     }
 
     proptest! {

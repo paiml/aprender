@@ -36,6 +36,10 @@ contract: |
       magnitude, so a single spike is still drawn.
   (5) NON-FINITE SAMPLES ARE SILENCE and out-of-range samples are clamped to
       [-1, 1].
+  (6) EVERY ENTRY POINT IS TOTAL FOR ANY f32. For any f32 input no pub fn
+      panics, `measure` and `layout` return finite non-negative sizes (negative
+      upper limits count as 0), `line_width` is finite and not negative, and
+      every draw command has finite coordinates and finite non-negative widths.
 equations:
   sample_to_y:
     description: "Vertical position of a clamped sample"
@@ -96,3 +100,8 @@ falsification_tests:
     test: "cargo test -p aprender-present-widgets --lib waveform::tests::brick_verify_fails_without_accessible_name"
     prediction: "failed holds one ElementPresent assertion; a named waveform verifies"
     if_fails: "an unlabeled canvas reaches screen-reader users"
+  - id: FALSIFY-PRESENT_WAVEFORM_PATH-010
+    description: "every Waveform entry point is total and sane for any f32 input"
+    test: "cargo test -p aprender-present-widgets --lib waveform::tests::class_waveform && cargo test -p aprender-present-widgets --lib waveform::tests::reviewer_repro_waveform"
+    prediction: "no panic; finite non-negative sizes; finite stroke width; finite path coordinates"
+    if_fails: "some f32 input still yields a panic, a negative size or a non-finite stroke or point"

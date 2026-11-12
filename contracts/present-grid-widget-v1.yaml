@@ -49,7 +49,12 @@ contract: |
       passes `Brick::verify`; NaN, infinite or negative bounds fail it.
   (8) MEASURE NEVER PANICS. `Grid::measure` returns a finite, non-negative
       size for any constraints, including min greater than max, NaN,
-      infinite and negative limits. An unusable upper limit counts as 0.
+      infinite and negative limits. A NaN or +inf upper limit imposes no limit
+      (the same size as unbounded); a negative or -inf upper limit counts as 0.
+  (9) EVERY ENTRY POINT IS TOTAL FOR ANY f32. For any f32 input (NaN, infinite,
+      negative, huge) no pub fn panics, `measure` and `layout` return finite
+      non-negative sizes, `cells` are finite non-negative rects, and every
+      draw command has finite coordinates and finite non-negative widths.
 equations:
   cell_geometry:
     description: "Cell i of a grid with c columns, r rows, gap g inside bounds (x, y, w, h)"
@@ -121,3 +126,8 @@ falsification_tests:
     test: "cargo test -p aprender-present-widgets --lib grid::tests::grid_measure_never_panics_and_stays_finite"
     prediction: "the property holds over proptest::num::f32::ANY for all four limits"
     if_fails: "some constraint value outside the tables still reaches f32::clamp"
+  - id: FALSIFY-PRESENT_GRID_WIDGET-011
+    description: "every Grid entry point is total and sane for any f32 input"
+    test: "cargo test -p aprender-present-widgets --lib grid::tests::class_grid"
+    prediction: "no panic; finite non-negative sizes and rects; finite draw commands with finite non-negative widths over proptest::num::f32::ANY"
+    if_fails: "some f32 input still yields a panic, a negative size or a non-finite draw command"

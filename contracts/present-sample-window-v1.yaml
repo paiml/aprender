@@ -43,6 +43,10 @@ contract: |
       window only (dropped samples do not count); both are 0.0 when empty.
   (8) THE WAVEFORM PAINTS THE SAME PATH from `window.samples()` as from the
       equal plain slice.
+  (9) EVERY ENTRY POINT IS TOTAL FOR ANY f32. For any f32 frame no pub fn
+      panics, every stored sample is in [-1, 1], `peak()` is in [0, 1], `rms()`
+      is finite and not above 1 (within 1e-3), and the window paints finite
+      coordinates and finite non-negative widths through a Waveform.
 equations:
   window_content:
     description: "What the window holds after a sequence of pushes"
@@ -119,3 +123,8 @@ falsification_tests:
     test: "cargo test -p aprender-present-widgets --lib sample_window::tests::waveform_paints_the_same_path_from_the_window"
     prediction: "RecordingCanvas commands are equal for window.samples() and the equal slice, and for the empty window"
     if_fails: "the window and the widget disagree and the live meter draws a different trace"
+  - id: FALSIFY-PRESENT_SAMPLE_WINDOW-013
+    description: "every SampleWindow entry point is total and sane for any f32 frame"
+    test: "cargo test -p aprender-present-widgets --lib sample_window::tests::class_window"
+    prediction: "no panic; samples in [-1, 1]; peak in [0, 1]; rms finite; painted path and stroke finite"
+    if_fails: "some f32 frame still stores a non-finite sample or paints a non-finite coordinate"

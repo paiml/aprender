@@ -73,7 +73,7 @@ fn sane_extent(value: f32) -> Option<f32> {
 /// `f32::clamp` this never panics, whatever the constraints (NaN, infinite or
 /// `min > max`); a lower bound that exceeds the upper one loses.
 fn fit(value: f32, min: f32, max: f32) -> f32 {
-    sane(value.max(min).min(max))
+    sane(value.max(min).min(max)).max(0.0)
 }
 
 /// Keep whichever of the two samples has the larger magnitude (first wins ties).
@@ -231,10 +231,11 @@ impl Waveform {
         self
     }
 
-    /// Set the line width (negative values become 0).
+    /// Set the line width (negative values become 0; NaN and infinities become
+    /// 0 and huge values are clamped to +-1e15, so the stroke is always finite).
     #[must_use]
     pub fn line_width(mut self, width: f32) -> Self {
-        self.line_width = width.max(0.0);
+        self.line_width = sane(width).max(0.0);
         self
     }
 
@@ -363,7 +364,7 @@ impl Widget for Waveform {
     fn layout(&mut self, bounds: Rect) -> LayoutResult {
         self.bounds = bounds;
         LayoutResult {
-            size: bounds.size(),
+            size: sane_bounds(bounds).size(),
         }
     }
 

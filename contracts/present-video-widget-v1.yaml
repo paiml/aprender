@@ -35,6 +35,11 @@ contract: |
       press or a release outside does nothing. Space and Enter (key up) toggle.
   (4) VERIFY REFUSES AN EMPTY SRC AND A MISSING ACCESSIBLE NAME. A widget with
       a src and a name passes `Brick::verify` in every playback state.
+  (5) EVERY ENTRY POINT IS TOTAL FOR ANY f32. For any f32 input no pub fn
+      panics, `measure` and `layout` return finite non-negative sizes (negative
+      upper limits count as 0), every draw command has finite coordinates and
+      finite non-negative widths, and `layout` keeps the raw bounds so
+      `Brick::verify` fails on NaN, infinite or negative bounds.
 equations:
   glyph_centre:
     description: "Centre of the play glyph bounding box"
@@ -93,3 +98,8 @@ falsification_tests:
     test: "cargo test -p aprender-present-widgets --lib video::tests::video_inside_modal_lays_out_and_paints_inside_bounds"
     prediction: "backdrop rect inside Modal::content_bounds, glyph inside the backdrop and centred"
     if_fails: "the widget does not compose with Modal"
+  - id: FALSIFY-PRESENT_VIDEO_WIDGET-009
+    description: "every Video entry point is total and sane for any f32 input"
+    test: "cargo test -p aprender-present-widgets --lib video::tests::class_video && cargo test -p aprender-present-widgets --lib video::tests::reviewer_repro_video"
+    prediction: "no panic; finite non-negative sizes; finite draw commands; verify fails on bad raw bounds"
+    if_fails: "some f32 input still yields a panic, a negative size, a non-finite draw command or an unreachable valid-bounds check"
