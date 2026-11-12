@@ -17,6 +17,7 @@ use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
+use super::path;
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -536,6 +537,22 @@ impl BuiltGGPlot {
         let mut y = (f32::MAX, f32::MIN);
 
         for layer in &self.layers {
+            // Reference lines do not inherit x/y; hline trains y and vline trains x with the
+            // intercept, abline trains neither (ggplot2: `inherit.aes = FALSE`).
+            match &layer.geom.geom_type {
+                GeomType::Hline { yintercept } if yintercept.is_finite() => {
+                    y = (y.0.min(*yintercept), y.1.max(*yintercept));
+                    continue;
+                }
+                GeomType::Vline { xintercept } if xintercept.is_finite() => {
+                    x = (x.0.min(*xintercept), x.1.max(*xintercept));
+                    continue;
+                }
+                GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. } => {
+                    continue
+                }
+                _ => {}
+            }
             let data = layer.data.as_ref().unwrap_or(&self.data);
             let layer_aes = self.aes.merge(&layer.aes);
             x = Self::extend_range(x, data, layer_aes.x.as_ref());
@@ -552,15 +569,24 @@ impl BuiltGGPlot {
     ///
     /// # Errors
     ///
-    /// None today; the signature leaves room for stats that can fail.
+    /// Returns an error for a path, step or reference layer (`geom_line`, `geom_path`, `geom_step`, `geom_hline`,
+    /// `geom_vline`, `geom_abline`) whose input is outside what `grammar/path.rs` documents:
+    /// text or infinite positions, a missing column, a data-mapped colour, an unsupported facet, or
+    /// a degenerate axis range; and [`Error::UnsupportedCoord`] for such a layer under any
+    /// coordinate system but the default `coord_cartesian()` (`layout()` applies none).
     pub fn layout(&self) -> Result<BuiltLayout> {
+        path::require_default_coord(&self.layers, &self.coord)?;
+        let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
         let (x, y) = self.position_scales();
-        let layers = self.layers.iter().map(|l| self.build_layer(l)).collect();
+        path::require_trained(&self.layers, &x, &y)?;
         Ok(BuiltLayout { layers, x, y })
     }
 
     /// One layer's built data: rows where both positions are numeric, plus point aesthetics.
-    fn build_layer(&self, layer: &Layer) -> BuiltLayer {
+    fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
+        if path::is_path_family(&layer.geom.geom_type) {
+            return path::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
         let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
@@ -585,7 +611,7 @@ impl BuiltGGPlot {
             }
             _ => None,
         };
-        BuiltLayer { x, y, points }
+        Ok(BuiltLayer { x, y, points, path: None })
     }
 
     /// Draw the major grid lines, one per break of each position scale (ggplot2's
