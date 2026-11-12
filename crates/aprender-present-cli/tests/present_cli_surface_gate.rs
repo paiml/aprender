@@ -755,7 +755,7 @@ fn plot_extreme_inputs_never_panic() {
             let out = run(&argv);
             let stderr = String::from_utf8_lossy(&out.stderr);
             assert!(
-                matches!(out.status.code(), Some(0 | 1 | 2)) && !stderr.contains("panicked"),
+                matches!(out.status.code(), Some(0..=2)) && !stderr.contains("panicked"),
                 "{argv:?}: {:?} {stderr}",
                 out.status.code()
             );

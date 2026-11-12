@@ -107,10 +107,8 @@ fn split_runs(
     for (i, (&xv, &yv)) in x.iter().zip(y).enumerate() {
         let (p, g) = (panel.get(i).copied(), group.get(i).copied());
         let usable = p == Some(want) && xv.is_finite() && yv.is_finite();
-        if !usable || last_group != g {
-            if !cur.is_empty() {
-                runs.push(std::mem::take(&mut cur));
-            }
+        if (!usable || last_group != g) && !cur.is_empty() {
+            runs.push(std::mem::take(&mut cur));
         }
         if usable {
             last_group = g;

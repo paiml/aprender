@@ -13,10 +13,11 @@
 
 use crate::error::{Error, Result};
 
-use super::build::BuiltLayout;
+use super::build::{BuiltLayer, BuiltLayout};
 use super::coord::{apply_limits, Coord};
 use super::facet::Facet;
 use super::ggplot::BuiltGGPlot;
+use super::path::BuiltPath;
 use super::stroke;
 
 /// Smallest canvas, in character cells, the terminal target draws on.
@@ -337,25 +338,34 @@ fn draw_y_axis(c: &mut Canvas, f: &Frame, ticks: &[(f64, &str)]) {
 /// its clipped segments cross.
 fn draw_layers(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
     for layer in &layout.layers {
-        if let Some(path) = &layer.path {
-            let ink = Ink::Point(path.aes.colour.r, path.aes.colour.g, path.aes.colour.b);
-            for line in stroke::polylines(layer, 0, (f.xd, f.yd)) {
-                let cells: Vec<(usize, usize)> =
-                    line.iter().map(|&(x, y)| (f.col_of(x), f.row_of(y))).collect();
-                for w in cells.windows(2) {
-                    for (col, row) in stroke::cells_between(w[0], w[1]) {
-                        c.put(col, row, LINE_GLYPH, ink);
-                    }
-                }
-            }
-            continue;
+        match &layer.path {
+            Some(path) => draw_stroke_layer(c, f, layer, path),
+            None => draw_point_layer(c, f, layer),
         }
-        let aes = layer.points.as_deref().unwrap_or_default();
-        for ((x, y), p) in layer.x.iter().zip(&layer.y).zip(aes) {
-            if in_domain(*x, f.xd) && in_domain(*y, f.yd) {
-                let ink = Ink::Point(p.colour.r, p.colour.g, p.colour.b);
-                c.put(f.col_of(*x), f.row_of(*y), POINT_GLYPH, ink);
+    }
+}
+
+/// One stroke layer: a glyph in every cell its clipped segments cross.
+fn draw_stroke_layer(c: &mut Canvas, f: &Frame, layer: &BuiltLayer, path: &BuiltPath) {
+    let ink = Ink::Point(path.aes.colour.r, path.aes.colour.g, path.aes.colour.b);
+    for line in stroke::polylines(layer, 0, (f.xd, f.yd)) {
+        let cells: Vec<(usize, usize)> =
+            line.iter().map(|&(x, y)| (f.col_of(x), f.row_of(y))).collect();
+        for w in cells.windows(2) {
+            for (col, row) in stroke::cells_between(w[0], w[1]) {
+                c.put(col, row, LINE_GLYPH, ink);
             }
+        }
+    }
+}
+
+/// One point layer: one glyph per point inside the domain.
+fn draw_point_layer(c: &mut Canvas, f: &Frame, layer: &BuiltLayer) {
+    let aes = layer.points.as_deref().unwrap_or_default();
+    for ((x, y), p) in layer.x.iter().zip(&layer.y).zip(aes) {
+        if in_domain(*x, f.xd) && in_domain(*y, f.yd) {
+            let ink = Ink::Point(p.colour.r, p.colour.g, p.colour.b);
+            c.put(f.col_of(*x), f.row_of(*y), POINT_GLYPH, ink);
         }
     }
 }

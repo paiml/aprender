@@ -920,23 +920,7 @@ pub fn numeric_cols(
     };
     let mut complete = 0;
     for (line, fields) in &table.rows {
-        let value = |i: usize, name: &str| -> Result<Option<f64>, String> {
-            let s = fields[i].as_str();
-            if is_missing(s) {
-                return Ok(None);
-            }
-            match s.parse::<f64>() {
-                Ok(v) if v.is_finite() && !fits_f32(v) => Err(format!(
-                    "column '{name}' line {line} has '{s}', outside what the plot engine stores \
-                     (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
-                )),
-                Ok(v) if v.is_finite() => Ok(Some(v)),
-                Ok(_) => Ok(None),
-                Err(_) => Err(format!(
-                    "column '{name}' is not numeric: line {line} has '{s}' (a plot needs a continuous x and y)"
-                )),
-            }
-        };
+        let value = |i: usize, name: &str| cell_value(fields[i].as_str(), name, *line);
         let (x, y) = (value(xi, xcol)?, value(yi, ycol)?);
         let both = x.is_some() && y.is_some();
         if both {
@@ -963,6 +947,24 @@ pub fn numeric_cols(
         ));
     }
     Ok(out)
+}
+
+/// One numeric cell: `None` for a missing or non-finite value.
+fn cell_value(s: &str, name: &str, line: usize) -> Result<Option<f64>, String> {
+    if is_missing(s) {
+        return Ok(None);
+    }
+    match s.parse::<f64>() {
+        Ok(v) if v.is_finite() && !fits_f32(v) => Err(format!(
+            "column '{name}' line {line} has '{s}', outside what the plot engine stores \
+             (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
+        )),
+        Ok(v) if v.is_finite() => Ok(Some(v)),
+        Ok(_) => Ok(None),
+        Err(_) => Err(format!(
+            "column '{name}' is not numeric: line {line} has '{s}' (a plot needs a continuous x and y)"
+        )),
+    }
 }
 
 #[cfg(test)]
