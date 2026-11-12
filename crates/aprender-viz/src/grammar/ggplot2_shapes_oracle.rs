@@ -980,7 +980,7 @@ mod robustness {
                 }
                 let r = one(&g, df, aes_for(&g), Facet::None);
                 if let Ok(l) = r {
-                    assert_eq!(l.x.continuous_range.0.is_nan(), false, "{:?}", g.geom_type);
+                    assert!(!l.x.continuous_range.0.is_nan(), "{:?}", g.geom_type);
                 }
             }
         }
