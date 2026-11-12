@@ -1,0 +1,37 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+stats	stat_align	absent	-	-	no area alignment for stacked areas
+stats	stat_bin	partial	crates/aprender-viz/src/plots/histogram.rs:84 Histogram::bin_count	crates/aprender-viz/src/plots/histogram.rs::tests::test_histogram_sturges	default Sturges not bins=30 (Stat::Bin{bins:30} geom.rs:131 inert); closed=right,pad,boundary absent; reusable: -
+stats	stat_bin_2d	partial	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_bin2d	enum tag only, no 2D binning; ggplot2 bins=30 drop=TRUE; heatmap.rs not wired
+stats	stat_bin_hex	absent	-	-	no hexagonal binning; bins=30
+stats	stat_bin2d	partial	crates/aprender-viz/src/grammar/stat.rs:24 Stat::Bin2d	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_bin2d	enum tag only, no 2D binning; ggplot2 bins=30 drop=TRUE; heatmap.rs not wired
+stats	stat_binhex	absent	-	-	no hexagonal binning; bins=30
+stats	stat_boxplot	partial	crates/aprender-viz/src/plots/boxplot.rs:30 BoxStats::from_data	crates/aprender-viz/src/plots/boxplot.rs::tests::test_box_stats_basic	coef 1.5 hardcoded, quantile.type 7 unverified, tol 0.5 in test; no notch/relvarwidth/weights
+stats	stat_connect	absent	-	-	no step connection; connection hv
+stats	stat_contour	absent	-	-	no isoline/marching squares; bins/binwidth/breaks NULL
+stats	stat_contour_filled	absent	-	-	no isoline/marching squares; bins/binwidth/breaks NULL
+stats	stat_count	partial	crates/aprender-viz/src/grammar/stat.rs:11 Stat::Count	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_count	enum tag only, no counting code; orientation arg absent
+stats	stat_density	partial	crates/aprender-viz/src/plots/boxplot.rs:586 compute_kde	crates/aprender-viz/src/plots/boxplot.rs::tests::test_kde_basic	Silverman 1.06*sd*n^-0.2 not bw.nrd0 (0.9*min(sd,IQR/1.34)); n=512, adjust, kernel, bounds absent; max-normalised not density
+stats	stat_density_2d	absent	-	-	no 2D KDE or contour; n=100 adjust=c(1,1) contour_var density
+stats	stat_density_2d_filled	absent	-	-	no 2D KDE or contour; n=100 adjust=c(1,1) contour_var density
+stats	stat_density2d	absent	-	-	no 2D KDE or contour; n=100 adjust=c(1,1) contour_var density
+stats	stat_density2d_filled	absent	-	-	no 2D KDE or contour; n=100 adjust=c(1,1) contour_var density
+stats	stat_ecdf	absent	-	-	no ECDF step; ggplot2 pad=TRUE adds -Inf/Inf
+stats	stat_ellipse	absent	-	-	no ellipse; type t, level 0.95, segments 51
+stats	stat_function	absent	-	-	no function curve; n=101
+stats	stat_identity	partial	crates/aprender-viz/src/grammar/stat.rs:9 Stat::Identity	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_identity	enum variant only, no compute; test checks variant not data passthrough
+stats	stat_manual	absent	-	-	no user fun per group
+stats	stat_qq	absent	-	-	no quantile-quantile; default qnorm, ppoints needed
+stats	stat_qq_line	absent	-	-	no qq line; line.p=c(0.25,0.75)
+stats	stat_quantile	absent	-	-	no quantile regression; quantiles=c(.25,.5,.75) method rq
+stats	stat_sf	absent	-	-	no sf geometry support; out of scope for raster engine
+stats	stat_sf_coordinates	absent	-	-	no sf geometry support; out of scope for raster engine
+stats	stat_smooth	partial	crates/aprender-viz/src/grammar/stat.rs:22 Stat::Smooth	-	enum tag only; no loess span=0.75 n=80, no lm/se level=0.95; reusable: crates/aprender-core/src/linear_model (LinearRegression)
+stats	stat_spoke	absent	-	-	no spoke angle/radius to xend/yend
+stats	stat_sum	partial	crates/aprender-viz/src/grammar/stat.rs:31 Stat::Sum	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_sum	enum tag; ggplot2 stat_sum counts overlapping points (n, prop), not sums
+stats	stat_summary	partial	crates/aprender-viz/src/grammar/stat.rs:33 Stat::Mean	crates/aprender-viz/src/grammar/stat.rs::tests::test_stat_mean	enum tag only; fun.data mean_se default, fun/fun.min/fun.max absent
+stats	stat_summary_2d	absent	-	-	no 2D summary binning; bins=30 fun mean
+stats	stat_summary_bin	absent	-	-	no binned summary; bins=30
+stats	stat_summary_hex	absent	-	-	no hexagonal binning; bins=30
+stats	stat_summary2d	absent	-	-	no 2D summary binning; bins=30 fun mean
+stats	stat_unique	absent	-	-	no duplicate removal
+stats	stat_ydensity	partial	crates/aprender-viz/src/plots/boxplot.rs:586 compute_kde	crates/aprender-viz/src/plots/boxplot.rs::tests::test_kde_basic	violin KDE only; bw nrd0 vs Silverman, scale=area, trim=TRUE, quantiles absent

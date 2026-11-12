@@ -1,0 +1,41 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+themes	%+replace%	absent	-	-	no theme merge operators
+themes	element_blank	absent	-	-	no element type; flags show_grid/show_axis stand in
+themes	element_geom	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	element_grob	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	element_line	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	element_point	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	element_polygon	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	element_rect	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	element_render	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	element_text	absent	-	-	no element objects; Theme is a flat struct of colours and widths
+themes	margin	partial	crates/aprender-viz/src/grammar/theme.rs:172 Theme::margin	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_customization	one u32 pixel value; ggplot2 margin(t,r,b,l,unit) 4 sides in pt
+themes	margin_auto	absent	-	-	no margin object
+themes	margin_part	absent	-	-	no margin object
+themes	rel	absent	-	-	no relative sizing
+themes	theme	partial	crates/aprender-viz/src/grammar/ggplot.rs:156 GGPlot::theme	crates/aprender-viz/src/grammar/ggplot.rs::tests::test_ggplot_with_theme	takes a whole Theme; no named element overrides or merging
+themes	theme_bw	partial	crates/aprender-viz/src/grammar/theme.rs:79 Theme::bw	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_bw	grid 200 vs #EBEBEB; border black not #333333; Rust draws axis lines
+themes	theme_classic	partial	crates/aprender-viz/src/grammar/theme.rs:97 Theme::classic	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_classic	no grid + axis lines match; ggplot2 keeps black ticks, Rust has none
+themes	theme_dark	partial	crates/aprender-viz/src/grammar/theme.rs:115 Theme::dark	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_dark	different design: Rust dark-mode bg 30/40; ggplot2 grey50 panel #7F7F7F, grid #6B6B6B
+themes	theme_get	absent	-	-	no global theme state; Theme only passed per plot via GGPlot::theme
+themes	theme_gray	partial	crates/aprender-viz/src/grammar/theme.rs:43 Theme::grey	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grey	panel 235 matches grey92; Rust draws axis lines (ggplot2 blank), text 50 vs 77
+themes	theme_grey	partial	crates/aprender-viz/src/grammar/theme.rs:43 Theme::grey	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_grey	panel 235 matches grey92; Rust draws axis lines (ggplot2 blank), text 50 vs 77
+themes	theme_light	absent	-	-	panel white, border/ticks #B3B3B3, grid #DEDEDE not implemented
+themes	theme_linedraw	absent	-	-	black borders/ticks, black grid not implemented
+themes	theme_minimal	partial	crates/aprender-viz/src/grammar/theme.rs:61 Theme::minimal	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_minimal	grid 220 vs #EBEBEB; ggplot2 has no axis line or ticks, Rust draws axes
+themes	theme_replace	absent	-	-	no global theme state; Theme only passed per plot via GGPlot::theme
+themes	theme_set	absent	-	-	no global theme state; Theme only passed per plot via GGPlot::theme
+themes	theme_sub_axis	absent	-	-	no per-component theme setters
+themes	theme_sub_axis_bottom	absent	-	-	no per-component theme setters
+themes	theme_sub_axis_left	absent	-	-	no per-component theme setters
+themes	theme_sub_axis_right	absent	-	-	no per-component theme setters
+themes	theme_sub_axis_top	absent	-	-	no per-component theme setters
+themes	theme_sub_axis_x	absent	-	-	no per-component theme setters
+themes	theme_sub_axis_y	absent	-	-	no per-component theme setters
+themes	theme_sub_legend	absent	-	-	no per-component theme setters
+themes	theme_sub_panel	absent	-	-	no per-component theme setters
+themes	theme_sub_plot	absent	-	-	no per-component theme setters
+themes	theme_sub_strip	absent	-	-	no per-component theme setters
+themes	theme_test	absent	-	-	panel border #333333, no grid; not implemented
+themes	theme_update	absent	-	-	no global theme state; Theme only passed per plot via GGPlot::theme
+themes	theme_void	partial	crates/aprender-viz/src/grammar/theme.rs:133 Theme::void	crates/aprender-viz/src/grammar/theme.rs::tests::test_theme_void	Rust white-on-white axes hidden by flags; ggplot2 keeps legend, margin 10 px unitless

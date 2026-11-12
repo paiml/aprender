@@ -1,0 +1,13 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+facets	as_labeller	absent	-	-	no labeller construction from lookup or function
+facets	facet_grid	partial	crates/aprender-viz/src/grammar/facet.rs:226 Facet::grid (panels_grid :108)	crates/aprender-viz/tests/facet_coord_render.rs::facet_grid_is_the_full_cross_product	One var per side, no vars()/formula; no scales/space/margins/switch; no strips; shared domain only
+facets	facet_null	partial	crates/aprender-viz/src/grammar/facet.rs:208 Facet::none (variant :178)	crates/aprender-viz/tests/facet_coord_render.rs::a_non_numeric_cell_does_not_shift_the_rows_after_it	Single panel with all rows; no shrink arg (R TRUE); no dedicated test of facet_null defaults
+facets	facet_wrap	partial	crates/aprender-viz/src/grammar/facet.rs:232 Facet::wrap (panels :158; PanelGrid ggplot.rs:243)	crates/aprender-viz/tests/facet_coord_render.rs::facet_wrap_over_three_lineages_renders_three_panels	ncol required, no nrow/wrap_dims auto layout (R 3 panels -> 1x3); scales fixed only (R default fixed); no dir/as.table/strips
+facets	label_both	absent	-	-	no strip labels drawn at all; sep ": " default
+facets	label_bquote	absent	-	-	no strip labelling
+facets	label_context	absent	-	-	no strip labelling
+facets	label_parsed	absent	-	-	no strip labelling
+facets	label_value	absent	-	-	no strip drawn; default labeller in R is label_value multi_line=TRUE
+facets	label_wrap_gen	absent	-	-	no strip text wrapping; R default width=25
+facets	labeller	absent	-	-	no labeller object; R default .multi_line=TRUE .default=label_value
+facets	vars	absent	-	-	no vars(); facets given as bare column-name strings

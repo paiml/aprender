@@ -1,0 +1,141 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+scales-helper	derive	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
+scales-helper	dup_axis	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
+scales-helper	expand_limits	absent	-	-	absent; no way to extend range to include values
+scales-helper	expand_scale	absent	-	-	deprecated alias of expansion; absent, mult/add hard-coded
+scales-helper	expansion	absent	-	-	expansion(mult,add) absent; ggplot.rs:424 hard-codes mult 0.05 (default continuous c(.05,0,.05,0))
+scales-helper	lims	absent	-	-	lims() absent; only Coord xlim/ylim
+scales	scale_alpha	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_binned	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_continuous	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_date	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_datetime	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_discrete	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_identity	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_manual	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_alpha_ordinal	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_color_binned	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_brewer	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_color_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
+scales	scale_color_date	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_datetime	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_discrete	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_color_distiller	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_color_fermenter	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_color_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
+scales	scale_color_gradient2	absent	-	-	no diverging midpoint scale (mid=0, low muted red, high muted blue); related ColorScale::red_blue
+scales	scale_color_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	multi-stop colours ok but RGB lerp not Lab, no values= positions; not wired to aes
+scales	scale_color_grey	absent	-	-	no discrete grey palette (start .2 end .8); ColorScale::greyscale is black-white ramp
+scales	scale_color_hue	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_color_identity	absent	-	-	only per-layer constant color_value; no value-to-colour mapping
+scales	scale_color_manual	absent	-	-	only per-layer constant color_value; no value-to-colour mapping
+scales	scale_color_ordinal	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_color_steps	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_steps2	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_stepsn	absent	-	-	no binned/steps/date colour scale
+scales	scale_color_viridis_b	absent	-	-	no discrete/binned viridis; ColorScale::viridis is continuous only
+scales	scale_color_viridis_c	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	5 stops vs viridisLite 256; no option/begin/end/direction; default option D
+scales	scale_color_viridis_d	absent	-	-	no discrete/binned viridis; ColorScale::viridis is continuous only
+scales	scale_colour_binned	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_brewer	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_colour_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
+scales	scale_colour_date	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_datetime	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_discrete	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_colour_distiller	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_colour_fermenter	absent	-	-	no ColorBrewer palettes; ColorScale::blues/red_blue are ad hoc 5-stop ramps
+scales	scale_colour_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	RGB lerp not Lab; default low #132B43 high #56B1F7 absent; aes.color column not mapped to scale
+scales	scale_colour_gradient2	absent	-	-	no diverging midpoint scale (mid=0, low muted red, high muted blue); related ColorScale::red_blue
+scales	scale_colour_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	multi-stop colours ok but RGB lerp not Lab, no values= positions; not wired to aes
+scales	scale_colour_grey	absent	-	-	no discrete grey palette (start .2 end .8); ColorScale::greyscale is black-white ramp
+scales	scale_colour_hue	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_colour_identity	absent	-	-	only per-layer constant color_value; no value-to-colour mapping
+scales	scale_colour_manual	absent	-	-	only per-layer constant color_value; no value-to-colour mapping
+scales	scale_colour_ordinal	absent	-	-	no discrete palette; ggplot2 default hue_pal h=15..375 c=100 l=65 (#F8766D,#00BA38,#619CFF)
+scales	scale_colour_steps	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_steps2	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_stepsn	absent	-	-	no binned/steps/date colour scale
+scales	scale_colour_viridis_b	absent	-	-	no discrete/binned viridis; ColorScale::viridis is continuous only
+scales	scale_colour_viridis_c	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	5 stops vs viridisLite 256; no option/begin/end/direction; default option D
+scales	scale_colour_viridis_d	absent	-	-	no discrete/binned viridis; ColorScale::viridis is continuous only
+scales	scale_continuous_identity	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_discrete_identity	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_discrete_manual	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_fill_binned	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_brewer	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_continuous	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
+scales	scale_fill_date	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_datetime	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_discrete	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
+scales	scale_fill_distiller	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_fermenter	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_gradient	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
+scales	scale_fill_gradient2	absent	-	-	no diverging midpoint fill scale
+scales	scale_fill_gradientn	partial	crates/aprender-viz/src/scale.rs:168 ColorScale::new	crates/aprender-viz/src/scale.rs::test_color_scale_multi_segment	ColorScale exists (RGB lerp not Lab); aes.fill column not mapped to scale
+scales	scale_fill_grey	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_hue	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
+scales	scale_fill_identity	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_manual	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_ordinal	absent	-	-	no discrete fill palette; default hue_pal (#F8766D,#00BA38,#619CFF) absent
+scales	scale_fill_steps	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_steps2	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_stepsn	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_viridis_b	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_fill_viridis_c	partial	crates/aprender-viz/src/scale.rs:214 ColorScale::viridis	crates/aprender-viz/src/scale.rs::test_color_scale_viridis	5 stops vs 256; no option/direction; aes.fill column not mapped
+scales	scale_fill_viridis_d	absent	-	-	fill aesthetic mapped to scale not implemented; see colour twin
+scales	scale_linetype	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linetype_binned	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linetype_continuous	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linetype_discrete	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linetype_identity	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linetype_manual	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_binned	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_continuous	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_date	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_datetime	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_discrete	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_identity	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_manual	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_linewidth_ordinal	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_radius	absent	-	-	no such aesthetic mapping; geoms take constant width only
+scales	scale_shape	absent	-	-	shape is a per-layer constant; no shape palette (16,17,15,3,7,8)
+scales	scale_shape_binned	absent	-	-	shape is a per-layer constant; no shape palette (16,17,15,3,7,8)
+scales	scale_shape_continuous	absent	-	-	shape is a per-layer constant; no shape palette (16,17,15,3,7,8)
+scales	scale_shape_discrete	absent	-	-	shape is a per-layer constant; no shape palette (16,17,15,3,7,8)
+scales	scale_shape_identity	absent	-	-	shape is a per-layer constant; no shape palette (16,17,15,3,7,8)
+scales	scale_shape_manual	absent	-	-	shape is a per-layer constant; no shape palette (16,17,15,3,7,8)
+scales	scale_shape_ordinal	absent	-	-	shape is a per-layer constant; no shape palette (16,17,15,3,7,8)
+scales	scale_size	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_area	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_binned	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_binned_area	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_continuous	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_date	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_datetime	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_discrete	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_identity	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_manual	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_size_ordinal	absent	-	-	aesthetic only constant per layer (size_value/alpha_value); no data-to-aesthetic scale
+scales	scale_type	absent	-	-	no scale_type() dispatch from data class
+scales	scale_x_binned	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_x_continuous	partial	crates/aprender-viz/src/scale.rs:23 LinearScale; crates/aprender-viz/src/grammar/ggplot.rs:424 padded	crates/aprender-viz/src/scale.rs::test_linear_scale	linear map + 5% pad ok; breaks.rs extended not wired (grid fixed 6 lines); no labels/limits/n.breaks=NULL
+scales	scale_x_date	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_x_datetime	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_x_discrete	absent	-	-	no discrete/categorical position scale; ggplot2 default expansion add 0.6 unmapped
+scales	scale_x_log10	partial	crates/aprender-viz/src/scale.rs:87 LogScale	crates/aprender-viz/src/scale.rs::test_log_scale	LogScale not wired into GGPlot; no log breaks (1,10,100) or minor; ggplot2 expands in log space 0.05
+scales	scale_x_reverse	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_x_sqrt	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_x_time	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_binned	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_continuous	partial	crates/aprender-viz/src/scale.rs:23 LinearScale; crates/aprender-viz/src/grammar/ggplot.rs:424 padded	crates/aprender-viz/src/scale.rs::test_linear_scale	linear map + 5% pad ok; breaks.rs extended not wired (grid fixed 6 lines); no labels/limits/n.breaks=NULL
+scales	scale_y_date	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_datetime	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales	scale_y_discrete	absent	-	-	no discrete/categorical position scale; ggplot2 default expansion add 0.6 unmapped
+scales	scale_y_log10	partial	crates/aprender-viz/src/scale.rs:87 LogScale	crates/aprender-viz/src/scale.rs::test_log_scale	LogScale not wired into GGPlot; no log breaks (1,10,100) or minor; ggplot2 expands in log space 0.05
+scales	scale_y_reverse	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_y_sqrt	absent	-	-	no sqrt/reverse transform; Coord::flip is a different feature
+scales	scale_y_time	absent	-	-	no binned/date/datetime/time position scale or date breaks
+scales-helper	sec_axis	absent	-	-	no secondary axis; no transform/name/breaks/labels spec
+scales-helper	xlim	partial	crates/aprender-viz/src/grammar/coord.rs:122 Coord::xlim	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_coord_limits	coord_cartesian-style zoom only; scale limits (oob to NA, 2 args, Inf) absent; test asserts width>0
+scales-helper	ylim	partial	crates/aprender-viz/src/grammar/coord.rs:131 Coord::ylim	crates/aprender-viz/src/grammar/ggplot.rs::test_ggplot_coord_limits	coord_cartesian-style zoom only; scale limits (oob to NA, 2 args, Inf) absent; test asserts width>0
