@@ -419,4 +419,91 @@ mod tests {
         let none = SampleWindow::new(4);
         assert_eq!(paint_commands(none.samples()), paint_commands(Vec::new()));
     }
+
+    // ===== Class property: every public entry point, any f32 (PR #6897, round 3) =====
+    //
+    // Entry point                       covered by
+    // new / capacity / len / is_empty   class_window_every_entry_point_is_total_for_any_f32
+    // push                              class_window_every_entry_point_is_total_for_any_f32
+    // samples / copy_into               class_window_every_entry_point_is_total_for_any_f32
+    // peak / rms                        class_window_every_entry_point_is_total_for_any_f32
+    // clear                             class_window_every_entry_point_is_total_for_any_f32
+    // (feeds Waveform::paint)           class_window_samples_paint_finite_through_a_waveform
+
+    /// Any f32, with the awkward ones over-represented.
+    fn wild() -> impl Strategy<Value = f32> {
+        prop_oneof![
+            proptest::num::f32::ANY,
+            Just(f32::NAN),
+            Just(f32::INFINITY),
+            Just(f32::NEG_INFINITY),
+            Just(f32::MAX),
+            Just(f32::MIN),
+            Just(f32::MIN_POSITIVE),
+            Just(1.0e-40_f32),
+            Just(-0.0_f32),
+            -1000.0_f32..1000.0,
+        ]
+    }
+
+    fn unit_interval(v: f32) -> bool {
+        v.is_finite() && (-1.0..=1.0).contains(&v)
+    }
+
+    proptest! {
+        #[test]
+        fn class_window_every_entry_point_is_total_for_any_f32(
+            capacity in 0_usize..48,
+            frames in proptest::collection::vec(
+                proptest::collection::vec(wild(), 0..120),
+                0..6,
+            ),
+        ) {
+            let mut window = SampleWindow::new(capacity);
+            for frame in &frames {
+                window.push(frame);
+                let held = window.samples();
+                prop_assert_eq!(held.len(), window.len());
+                prop_assert!(window.len() <= window.capacity());
+                prop_assert!(held.iter().copied().all(unit_interval), "{held:?}");
+                let peak = window.peak();
+                let rms = window.rms();
+                prop_assert!(peak.is_finite() && (0.0..=1.0).contains(&peak), "{peak}");
+                prop_assert!(rms.is_finite() && (0.0..=1.0 + 1.0e-3).contains(&rms), "{rms}");
+                prop_assert!(rms <= peak + 1.0e-3);
+                let mut out = vec![f32::NAN; 3];
+                window.copy_into(&mut out);
+                prop_assert_eq!(out, held);
+            }
+            window.clear();
+            prop_assert!(window.is_empty());
+            prop_assert!(window.peak() == 0.0);
+            prop_assert!(window.rms() == 0.0); // -0.0 is allowed: an empty f32 sum is -0.0
+            prop_assert_eq!(window.capacity(), capacity);
+        }
+
+        #[test]
+        fn class_window_samples_paint_finite_through_a_waveform(
+            capacity in 0_usize..48,
+            frame in proptest::collection::vec(wild(), 0..120),
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+        ) {
+            let mut window = SampleWindow::new(capacity);
+            window.push(&frame);
+            let mut widget = Waveform::new().samples(window.samples());
+            widget.layout(Rect::new(x, y, w, h));
+            let mut canvas = RecordingCanvas::new();
+            widget.paint(&mut canvas);
+            for cmd in canvas.commands() {
+                let presentar_core::draw::DrawCommand::Path { points, style, .. } = cmd else {
+                    return Err(TestCaseError::fail("not a path"));
+                };
+                prop_assert!(style.width.is_finite() && style.width >= 0.0);
+                prop_assert!(points.iter().all(|p| p.x.is_finite() && p.y.is_finite()));
+            }
+        }
+    }
 }

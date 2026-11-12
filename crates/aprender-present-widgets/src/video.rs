@@ -1410,4 +1410,315 @@ mod tests {
             }
         }
     }
+
+    // ===== Class property: every public entry point, any f32 (PR #6897, round 3) =====
+    //
+    // Entry point                       covered by
+    // new / poster / alt / accessible_name / test_id / autoplay / controls
+    //                                   class_video_builders_and_entry_points_total
+    // width / height / size             class_video_size_builders_clamp_any_f32
+    // get_* / is_* / state / play / pause / toggle / ended
+    //                                   class_video_builders_and_entry_points_total
+    // measure                           class_video_measure_is_finite_and_not_negative
+    // layout / bounds / verify          class_video_layout_size_is_sane_and_verify_judges_raw_bounds
+    // play_glyph / paint                class_video_paint_and_glyph_are_sane_for_any_bounds
+    // event                             class_video_event_is_total_and_hits_only_inside
+    // Deserialize (out-of-range size)   class_video_deserialized_sizes_measure_sane
+
+    /// Any f32, with the awkward ones over-represented.
+    fn wild() -> impl Strategy<Value = f32> {
+        prop_oneof![
+            proptest::num::f32::ANY,
+            Just(f32::NAN),
+            Just(f32::INFINITY),
+            Just(f32::NEG_INFINITY),
+            Just(f32::MAX),
+            Just(f32::MIN),
+            Just(f32::MIN_POSITIVE),
+            Just(1.0e-40_f32),
+            Just(-0.0_f32),
+            Just(-10.0_f32),
+            -1000.0_f32..1000.0,
+        ]
+    }
+
+    fn finite_non_negative(v: f32) -> bool {
+        v.is_finite() && v >= 0.0
+    }
+
+    fn size_sane(s: Size) -> bool {
+        finite_non_negative(s.width) && finite_non_negative(s.height)
+    }
+
+    fn rect_sane(r: &Rect) -> bool {
+        r.x.is_finite()
+            && r.y.is_finite()
+            && finite_non_negative(r.width)
+            && finite_non_negative(r.height)
+    }
+
+    /// Every coordinate finite; every width, radius and blur finite and not negative.
+    fn command_widths_sane(cmd: &DrawCommand) -> bool {
+        match cmd {
+            DrawCommand::Rect {
+                bounds,
+                radius,
+                style,
+            } => {
+                rect_sane(bounds)
+                    && [
+                        radius.top_left,
+                        radius.top_right,
+                        radius.bottom_right,
+                        radius.bottom_left,
+                    ]
+                    .into_iter()
+                    .all(finite_non_negative)
+                    && style
+                        .stroke
+                        .as_ref()
+                        .is_none_or(|s| finite_non_negative(s.width))
+                    && style.shadow.as_ref().is_none_or(|s| {
+                        s.offset_x.is_finite()
+                            && s.offset_y.is_finite()
+                            && finite_non_negative(s.blur)
+                    })
+            }
+            DrawCommand::Path { points, style, .. } => {
+                finite_non_negative(style.width)
+                    && style.dash.iter().copied().all(finite_non_negative)
+                    && points.iter().all(|p| p.x.is_finite() && p.y.is_finite())
+            }
+            _ => false,
+        }
+    }
+
+    /// What `Brick::verify` must judge a laid-out rectangle by: the raw values.
+    fn raw_bounds_valid(b: Rect) -> bool {
+        [b.x, b.y, b.width, b.height].iter().all(|v| v.is_finite())
+            && b.width >= 0.0
+            && b.height >= 0.0
+    }
+
+    fn bits(r: Rect) -> [u32; 4] {
+        [
+            r.x.to_bits(),
+            r.y.to_bits(),
+            r.width.to_bits(),
+            r.height.to_bits(),
+        ]
+    }
+
+    #[test]
+    fn reviewer_repro_video_measure_negative_upper_limits_is_not_negative() {
+        let size = Video::new("demo.mp4").measure(Constraints::new(0.0, -10.0, 0.0, -10.0));
+        assert!(size_sane(size), "{size:?}");
+        assert_eq!(size, Size::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn reviewer_repro_video_verify_fails_after_layout_with_bad_bounds() {
+        let mut v = named("a.mp4");
+        v.layout(Rect::new(f32::NAN, 0.0, -5.0, -5.0));
+        let result = v.verify();
+        assert!(!result.is_valid());
+        assert_eq!(result.failed.len(), 1);
+        assert_eq!(
+            result.failed[0].0,
+            BrickAssertion::ElementPresent("valid-bounds".into())
+        );
+        // The paint is still safe: the bad rectangle collapses to a point.
+        let cmds = paint_commands(&v);
+        assert!(cmds.iter().all(command_widths_sane), "{cmds:?}");
+    }
+
+    #[test]
+    fn class_video_helpers_reject_what_they_should() {
+        let bad_radius = DrawCommand::rounded_rect(BOUNDS, -1.0, Color::WHITE);
+        assert!(!command_widths_sane(&bad_radius));
+        let nan_radius = DrawCommand::rounded_rect(BOUNDS, f32::NAN, Color::WHITE);
+        assert!(!command_widths_sane(&nan_radius));
+        let negative = DrawCommand::filled_rect(Rect::new(0.0, 0.0, -1.0, 1.0), Color::WHITE);
+        assert!(!command_widths_sane(&negative));
+        let wide = DrawCommand::Path {
+            points: vec![Point::new(0.0, 0.0)],
+            closed: false,
+            style: presentar_core::draw::StrokeStyle {
+                width: f32::INFINITY,
+                ..presentar_core::draw::StrokeStyle::default()
+            },
+        };
+        assert!(!command_widths_sane(&wide));
+        assert!(!raw_bounds_valid(Rect::new(0.0, 0.0, -1.0, 1.0)));
+        assert!(raw_bounds_valid(BOUNDS));
+    }
+
+    proptest! {
+        #[test]
+        fn class_video_builders_and_entry_points_total(
+            src in ".{0,8}",
+            alt in ".{0,8}",
+            autoplay in any::<bool>(),
+            controls in any::<bool>(),
+        ) {
+            let mut v = Video::new(src.clone())
+                .poster("p.png")
+                .alt(alt)
+                .accessible_name("name")
+                .test_id("id")
+                .autoplay(autoplay)
+                .controls(controls);
+            prop_assert_eq!(v.get_src(), src.as_str());
+            prop_assert_eq!(v.is_autoplay(), autoplay);
+            prop_assert_eq!(v.has_controls(), controls);
+            prop_assert_eq!(v.is_playing(), autoplay);
+            prop_assert!(v.get_poster().is_some());
+            let _ = v.get_alt();
+            v.play();
+            prop_assert!(v.is_playing());
+            v.pause();
+            v.toggle();
+            v.ended();
+            prop_assert_eq!(v.state(), VideoState::Ended);
+            prop_assert!(!v.to_html().is_empty());
+            prop_assert!(!v.to_css().is_empty());
+        }
+
+        #[test]
+        fn class_video_size_builders_clamp_any_f32(w in wild(), h in wild()) {
+            for v in [
+                Video::new("a").size(w, h),
+                Video::new("a").width(w).height(h),
+            ] {
+                for got in [v.get_width(), v.get_height()].into_iter().flatten() {
+                    prop_assert!(finite_non_negative(got) && got <= LIMIT, "{got}");
+                }
+                prop_assert_eq!(v.get_width().is_some(), w.is_finite());
+                prop_assert_eq!(v.get_height().is_some(), h.is_finite());
+            }
+        }
+
+        #[test]
+        fn class_video_measure_is_finite_and_not_negative(
+            w in wild(),
+            h in wild(),
+            a in wild(),
+            b in wild(),
+            c in wild(),
+            d in wild(),
+        ) {
+            let constraints = Constraints::new(a, b, c, d);
+            for v in [
+                Video::new("a"),
+                Video::new("a").size(w, h),
+                Video::new("a").width(w),
+                Video::new("a").height(h),
+            ] {
+                let s = v.measure(constraints);
+                prop_assert!(size_sane(s), "{constraints:?} -> {s:?}");
+            }
+        }
+
+        #[test]
+        fn class_video_layout_size_is_sane_and_verify_judges_raw_bounds(
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+        ) {
+            let bounds = Rect::new(x, y, w, h);
+            let mut v = named("a.mp4");
+            let result = v.layout(bounds);
+            prop_assert!(size_sane(result.size), "{:?}", result.size);
+            prop_assert_eq!(result.size, oracle_bounds(bounds).size());
+            // bounds() reports what was laid out, so verify() can see it.
+            prop_assert_eq!(bits(Widget::bounds(&v)), bits(bounds));
+            let verdict = v.verify();
+            prop_assert_eq!(verdict.is_valid(), raw_bounds_valid(bounds));
+            if !raw_bounds_valid(bounds) {
+                prop_assert_eq!(
+                    &verdict.failed[0].0,
+                    &BrickAssertion::ElementPresent("valid-bounds".into())
+                );
+            }
+        }
+
+        #[test]
+        fn class_video_paint_and_glyph_are_sane_for_any_bounds(
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+            playing in any::<bool>(),
+            poster in any::<bool>(),
+        ) {
+            let bounds = Rect::new(x, y, w, h);
+            let expected = oracle_bounds(bounds);
+            let mut v = if poster { named("a").poster("p.png") } else { named("a") };
+            v.layout(bounds);
+            if playing {
+                v.play();
+            }
+            for p in v.play_glyph() {
+                prop_assert!(point_finite_inside(&p, &expected), "{p:?} outside {expected:?}");
+            }
+            let cmds = paint_commands(&v);
+            prop_assert_eq!(cmds.len(), if playing { 1 } else { 2 });
+            prop_assert!(cmds.iter().all(command_widths_sane), "{cmds:?}");
+            prop_assert!(commands_finite_inside(&cmds, &expected), "{cmds:?}");
+        }
+
+        #[test]
+        fn class_video_event_is_total_and_hits_only_inside(
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+            px in wild(),
+            py in wild(),
+        ) {
+            let bounds = Rect::new(x, y, w, h);
+            let expected = oracle_bounds(bounds);
+            let mut v = named("a");
+            v.layout(bounds);
+            let at = Point::new(px, py);
+            let hit = click(&mut v, at).is_some();
+            prop_assert_eq!(hit, contains(&expected, &at, 0.0));
+            // Keys and leave never panic and never depend on the bounds.
+            prop_assert!(v.event(&Event::MouseLeave).is_none());
+            prop_assert!(v.event(&Event::key_up(Key::Space)).is_some());
+        }
+    }
+
+    #[test]
+    fn class_video_event_hits_the_sanitised_rectangle_not_the_raw_one() {
+        // Raw bounds are NaN-wide: the sanitised rectangle is the point (10, 20).
+        let mut v = named("a");
+        v.layout(Rect::new(10.0, 20.0, f32::NAN, f32::NAN));
+        assert!(click(&mut v, Point::new(10.0, 20.0)).is_some());
+        assert!(click(&mut v, Point::new(11.0, 20.0)).is_none());
+    }
+
+    #[test]
+    fn class_video_deserialized_sizes_measure_sane() {
+        for (w, h) in [
+            (-5.0, 1.0e30),
+            (1.0e30, -5.0),
+            (3.4e38, 3.4e38),
+            (-1.0, -1.0),
+        ] {
+            let mut json = serde_json::to_value(Video::new("a")).unwrap();
+            json["width"] = serde_json::json!(w);
+            json["height"] = serde_json::json!(h);
+            let v: Video = serde_json::from_value(json).unwrap();
+            for c in [
+                Constraints::unbounded(),
+                Constraints::new(0.0, -10.0, 0.0, -10.0),
+                Constraints::new(f32::NAN, f32::NAN, f32::NAN, f32::NAN),
+            ] {
+                let s = v.measure(c);
+                assert!(size_sane(s), "{w} {h} {c:?} -> {s:?}");
+            }
+        }
+    }
 }

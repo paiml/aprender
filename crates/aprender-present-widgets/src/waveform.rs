@@ -1069,4 +1069,238 @@ mod tests {
         assert!(Waveform::new().to_html().contains(r#"aria-label="""#));
         assert!(w.to_css().contains(".brick-waveform"));
     }
+
+    // ===== Class property: every public entry point, any f32 (PR #6897, round 3) =====
+    //
+    // Entry point                       covered by
+    // waveform_points                   class_waveform_points_are_finite_inside_and_bounded
+    // new / samples / set_samples / color / max_points / test_id / accessible_name
+    //                                   class_waveform_builders_and_getters_are_sane
+    // line_width / get_line_width       class_waveform_builders_and_getters_are_sane,
+    //                                   class_waveform_paint_is_sane_for_any_input
+    // width / height / size             class_waveform_measure_is_finite_and_not_negative
+    // peak / rms                        class_waveform_builders_and_getters_are_sane
+    // measure                           class_waveform_measure_is_finite_and_not_negative
+    // layout / bounds / verify          class_waveform_layout_size_is_sane_and_verify_judges_raw_bounds
+    // paint                             class_waveform_paint_is_sane_for_any_input
+    // event                             class_waveform_event_is_total
+
+    /// Any f32, with the awkward ones over-represented.
+    fn wild() -> impl Strategy<Value = f32> {
+        prop_oneof![
+            proptest::num::f32::ANY,
+            Just(f32::NAN),
+            Just(f32::INFINITY),
+            Just(f32::NEG_INFINITY),
+            Just(f32::MAX),
+            Just(f32::MIN),
+            Just(f32::MIN_POSITIVE),
+            Just(1.0e-40_f32),
+            Just(-0.0_f32),
+            Just(-10.0_f32),
+            -1000.0_f32..1000.0,
+        ]
+    }
+
+    fn any_max_points() -> impl Strategy<Value = usize> {
+        prop_oneof![0_usize..300, Just(usize::MAX), any::<usize>()]
+    }
+
+    fn finite_non_negative(v: f32) -> bool {
+        v.is_finite() && v >= 0.0
+    }
+
+    fn size_sane(s: Size) -> bool {
+        finite_non_negative(s.width) && finite_non_negative(s.height)
+    }
+
+    /// Every coordinate finite; every width, radius and blur finite and not negative.
+    fn command_widths_sane(cmd: &DrawCommand) -> bool {
+        match cmd {
+            DrawCommand::Path { points, style, .. } => {
+                finite_non_negative(style.width)
+                    && style.dash.iter().copied().all(finite_non_negative)
+                    && points.iter().all(|p| p.x.is_finite() && p.y.is_finite())
+            }
+            _ => false,
+        }
+    }
+
+    fn raw_bounds_valid(b: Rect) -> bool {
+        [b.x, b.y, b.width, b.height].iter().all(|v| v.is_finite())
+            && b.width >= 0.0
+            && b.height >= 0.0
+    }
+
+    fn bits(r: Rect) -> [u32; 4] {
+        [
+            r.x.to_bits(),
+            r.y.to_bits(),
+            r.width.to_bits(),
+            r.height.to_bits(),
+        ]
+    }
+
+    fn painted(w: &Waveform) -> Vec<DrawCommand> {
+        let mut canvas = RecordingCanvas::new();
+        w.paint(&mut canvas);
+        canvas.take_commands()
+    }
+
+    #[test]
+    fn reviewer_repro_waveform_measure_negative_upper_limits_is_not_negative() {
+        let size = Waveform::new().measure(Constraints::new(0.0, -10.0, 0.0, -10.0));
+        assert!(size_sane(size), "{size:?}");
+        assert_eq!(size, Size::new(0.0, 0.0));
+    }
+
+    #[test]
+    fn reviewer_repro_waveform_infinite_line_width_paints_a_finite_stroke() {
+        for width in [f32::INFINITY, f32::MAX, 3.0e15, f32::NAN, f32::NEG_INFINITY] {
+            let mut wf = Waveform::new().samples(vec![0.5, -0.5]).line_width(width);
+            assert!(finite_non_negative(wf.get_line_width()), "{width}");
+            wf.layout(Rect::new(0.0, 0.0, 100.0, 50.0));
+            let cmds = painted(&wf);
+            assert_eq!(cmds.len(), 1);
+            assert!(cmds.iter().all(command_widths_sane), "{width}: {cmds:?}");
+        }
+        // An ordinary width is kept exactly.
+        assert_eq!(Waveform::new().line_width(2.5).get_line_width(), 2.5);
+    }
+
+    #[test]
+    fn class_waveform_helpers_reject_what_they_should() {
+        let wide = DrawCommand::Path {
+            points: vec![Point::new(0.0, 0.0)],
+            closed: false,
+            style: presentar_core::draw::StrokeStyle {
+                width: f32::INFINITY,
+                ..presentar_core::draw::StrokeStyle::default()
+            },
+        };
+        assert!(!command_widths_sane(&wide));
+        let rect = DrawCommand::filled_rect(B, Color::WHITE);
+        assert!(!command_widths_sane(&rect));
+        assert!(!raw_bounds_valid(Rect::new(0.0, 0.0, -1.0, 1.0)));
+        assert!(raw_bounds_valid(B));
+    }
+
+    proptest! {
+        #[test]
+        fn class_waveform_points_are_finite_inside_and_bounded(
+            samples in proptest::collection::vec(wild(), 0..120),
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+            max in any_max_points(),
+        ) {
+            let b = Rect::new(x, y, w, h);
+            let pts = waveform_points(&samples, b, max);
+            prop_assert!(finite_and_inside(&pts, b), "{:?} -> {:?}", b, pts);
+            prop_assert!(pts.len() >= 2 && pts.len() <= max.max(2));
+            prop_assert!(pts.windows(2).all(|p| p[0].x <= p[1].x));
+        }
+
+        #[test]
+        fn class_waveform_builders_and_getters_are_sane(
+            samples in proptest::collection::vec(wild(), 0..80),
+            line in wild(),
+            w in wild(),
+            h in wild(),
+            max in any_max_points(),
+        ) {
+            let wf = Waveform::new()
+                .samples(samples.clone())
+                .color(Color::new(0.1, 0.2, 0.3, 1.0))
+                .line_width(line)
+                .max_points(max)
+                .width(w)
+                .height(h)
+                .accessible_name("Mic")
+                .test_id("wave");
+            prop_assert!(finite_non_negative(wf.get_line_width()), "{}", wf.get_line_width());
+            prop_assert_eq!(wf.get_max_points(), max);
+            prop_assert_eq!(wf.get_samples().len(), samples.len());
+            prop_assert!(finite_non_negative(wf.peak()) && wf.peak() <= 1.0);
+            prop_assert!(finite_non_negative(wf.rms()) && wf.rms() <= 1.0 + 1.0e-3);
+            let mut in_place = Waveform::new();
+            in_place.set_samples(&samples);
+            prop_assert_eq!(in_place.peak().to_bits(), wf.peak().to_bits());
+            prop_assert_eq!(in_place.rms().to_bits(), wf.rms().to_bits());
+            prop_assert!(!wf.to_html().is_empty());
+        }
+
+        #[test]
+        fn class_waveform_measure_is_finite_and_not_negative(
+            w in wild(),
+            h in wild(),
+            a in wild(),
+            b in wild(),
+            c in wild(),
+            d in wild(),
+        ) {
+            let constraints = Constraints::new(a, b, c, d);
+            for wf in [
+                Waveform::new(),
+                Waveform::new().size(w, h),
+                Waveform::new().width(w),
+                Waveform::new().height(h),
+            ] {
+                let s = wf.measure(constraints);
+                prop_assert!(size_sane(s), "{constraints:?} -> {s:?}");
+            }
+        }
+
+        #[test]
+        fn class_waveform_layout_size_is_sane_and_verify_judges_raw_bounds(
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+        ) {
+            let bounds = Rect::new(x, y, w, h);
+            let mut wf = Waveform::new().accessible_name("Mic level");
+            let result = wf.layout(bounds);
+            prop_assert!(size_sane(result.size), "{:?}", result.size);
+            prop_assert_eq!(result.size, oracle_bounds(bounds).size());
+            prop_assert_eq!(bits(Widget::bounds(&wf)), bits(bounds));
+            prop_assert_eq!(wf.verify().is_valid(), raw_bounds_valid(bounds));
+        }
+
+        #[test]
+        fn class_waveform_paint_is_sane_for_any_input(
+            samples in proptest::collection::vec(wild(), 0..120),
+            line in wild(),
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+            max in any_max_points(),
+        ) {
+            let bounds = Rect::new(x, y, w, h);
+            let mut wf = Waveform::new().samples(samples).line_width(line).max_points(max);
+            wf.layout(bounds);
+            let cmds = painted(&wf);
+            prop_assert_eq!(cmds.len(), 1);
+            prop_assert!(cmds.iter().all(command_widths_sane), "{cmds:?}");
+            let expected = oracle_bounds(bounds);
+            for cmd in &cmds {
+                let DrawCommand::Path { points, .. } = cmd else {
+                    return Err(TestCaseError::fail("not a path"));
+                };
+                prop_assert!(points.len() >= 2 && points.len() <= max.max(2));
+                prop_assert!(points.iter().all(|p| inside(p, expected)));
+            }
+        }
+
+        #[test]
+        fn class_waveform_event_is_total(px in wild(), py in wild()) {
+            let mut wf = Waveform::new();
+            wf.layout(B);
+            let at = Point::new(px, py);
+            let reply = wf.event(&Event::MouseMove { position: at });
+            prop_assert!(reply.is_none());
+        }
+    }
 }

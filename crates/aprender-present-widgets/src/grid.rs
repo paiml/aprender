@@ -884,4 +884,273 @@ mod tests {
             prop_assert!(finite_and_not_negative(size), "{size:?}");
         }
     }
+
+    // ===== Class property: every public entry point, any f32 (PR #6897, round 3) =====
+    //
+    // Entry point                       covered by
+    // grid_cells                        class_grid_free_functions_are_total_and_sane
+    // grid_cells_with                   class_grid_free_functions_are_total_and_sane
+    // new / columns / gap / row_height / child / with_test_id
+    //                                   class_grid_builders_getters_and_cells_are_sane
+    // get_columns / get_gap / get_row_height / row_count / cells
+    //                                   class_grid_builders_getters_and_cells_are_sane
+    // measure                           class_grid_measure_is_finite_and_not_negative
+    // layout / bounds / verify          class_grid_layout_size_is_sane_and_verify_judges_raw_bounds
+    // paint                             class_grid_paint_is_sane_for_any_bounds
+    // event                             class_grid_event_is_total
+
+    /// Any f32, with the awkward ones over-represented.
+    fn wild() -> impl Strategy<Value = f32> {
+        prop_oneof![
+            proptest::num::f32::ANY,
+            Just(f32::NAN),
+            Just(f32::INFINITY),
+            Just(f32::NEG_INFINITY),
+            Just(f32::MAX),
+            Just(f32::MIN),
+            Just(f32::MIN_POSITIVE),
+            Just(1.0e-40_f32),
+            Just(-0.0_f32),
+            Just(-10.0_f32),
+            -1000.0_f32..1000.0,
+        ]
+    }
+
+    fn any_columns() -> impl Strategy<Value = usize> {
+        prop_oneof![0_usize..8, Just(usize::MAX), any::<usize>()]
+    }
+
+    fn finite_non_negative(v: f32) -> bool {
+        v.is_finite() && v >= 0.0
+    }
+
+    fn rect_sane(r: &Rect) -> bool {
+        r.x.is_finite()
+            && r.y.is_finite()
+            && finite_non_negative(r.width)
+            && finite_non_negative(r.height)
+    }
+
+    /// Every coordinate finite; every width, radius and blur finite and not negative.
+    fn command_widths_sane(cmd: &DrawCommand) -> bool {
+        match cmd {
+            DrawCommand::Rect {
+                bounds,
+                radius,
+                style,
+            } => {
+                rect_sane(bounds)
+                    && [
+                        radius.top_left,
+                        radius.top_right,
+                        radius.bottom_right,
+                        radius.bottom_left,
+                    ]
+                    .into_iter()
+                    .all(finite_non_negative)
+                    && style
+                        .stroke
+                        .as_ref()
+                        .is_none_or(|s| finite_non_negative(s.width))
+            }
+            DrawCommand::Path { points, style, .. } => {
+                finite_non_negative(style.width)
+                    && points.iter().all(|p| p.x.is_finite() && p.y.is_finite())
+            }
+            _ => false,
+        }
+    }
+
+    fn raw_bounds_valid(b: Rect) -> bool {
+        [b.x, b.y, b.width, b.height].iter().all(|v| v.is_finite())
+            && b.width >= 0.0
+            && b.height >= 0.0
+    }
+
+    fn bits(r: Rect) -> [u32; 4] {
+        [
+            r.x.to_bits(),
+            r.y.to_bits(),
+            r.width.to_bits(),
+            r.height.to_bits(),
+        ]
+    }
+
+    #[test]
+    fn reviewer_repro_grid_clause_8_upper_limits_mean_what_the_contract_says() {
+        let g = grid_of(2, 2);
+        let wide = |max_w: f32, max_h: f32| g.measure(Constraints::new(0.0, max_w, 0.0, max_h));
+        // NaN and +inf upper limits impose no limit: the same size as unbounded.
+        let unbounded = wide(f32::INFINITY, f32::INFINITY);
+        assert_eq!(wide(f32::NAN, f32::NAN), unbounded);
+        assert_eq!(unbounded, Size::new(640.0, 180.0));
+        // Negative and -inf upper limits count as 0.
+        for limit in [-1.0, -1.0e9, f32::NEG_INFINITY] {
+            assert_eq!(wide(limit, limit), Size::ZERO, "{limit}");
+        }
+    }
+
+    #[test]
+    fn reviewer_repro_grid_layout_with_bad_bounds_returns_a_sane_size() {
+        let mut g = grid_of(2, 2);
+        let result = g.layout(Rect::new(f32::NAN, 0.0, -5.0, f32::INFINITY));
+        assert_eq!(result.size, Size::ZERO);
+        assert!(!g.verify().is_valid());
+        let mut g = grid_of(2, 2);
+        assert_eq!(
+            g.layout(Rect::new(0.0, 0.0, 30.0, 20.0)).size,
+            Size::new(30.0, 20.0)
+        );
+    }
+
+    #[test]
+    fn class_grid_helpers_reject_what_they_should() {
+        assert!(!command_widths_sane(&DrawCommand::filled_rect(
+            Rect::new(0.0, 0.0, -1.0, 1.0),
+            presentar_core::Color::WHITE
+        )));
+        assert!(!command_widths_sane(&DrawCommand::rounded_rect(
+            Rect::new(0.0, 0.0, 1.0, 1.0),
+            f32::NAN,
+            presentar_core::Color::WHITE
+        )));
+        assert!(!raw_bounds_valid(Rect::new(f32::NAN, 0.0, 1.0, 1.0)));
+    }
+
+    proptest! {
+        #[test]
+        fn class_grid_free_functions_are_total_and_sane(
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+            columns in any_columns(),
+            gap in wild(),
+            row_height in proptest::option::of(wild()),
+            count in 0_usize..40,
+        ) {
+            let b = Rect::new(x, y, w, h);
+            let plain = grid_cells(b, columns, gap, count);
+            prop_assert_eq!(plain.len(), count);
+            prop_assert!(plain.iter().all(rect_sane), "{plain:?}");
+            let with = grid_cells_with(b, columns, gap, row_height, count);
+            prop_assert_eq!(with.len(), count);
+            prop_assert!(with.iter().all(rect_sane), "{with:?}");
+        }
+
+        #[test]
+        fn class_grid_builders_getters_and_cells_are_sane(
+            columns in any_columns(),
+            gap in wild(),
+            row_height in wild(),
+            tiles in 0_usize..9,
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+        ) {
+            let g = grid_of(columns, tiles)
+                .columns(columns)
+                .gap(gap)
+                .row_height(row_height)
+                .with_test_id("g");
+            prop_assert!(g.get_columns() >= 1);
+            prop_assert!(finite_non_negative(g.get_gap()), "{}", g.get_gap());
+            prop_assert!(g.get_row_height().is_none_or(finite_non_negative));
+            prop_assert_eq!(g.row_count(), tiles.div_ceil(g.get_columns()));
+            let css = g.to_css();
+            prop_assert!(!css.contains("NaN") && !css.contains("inf"), "{css}");
+            let cells = g.cells(Rect::new(x, y, w, h));
+            prop_assert_eq!(cells.len(), tiles);
+            prop_assert!(cells.iter().all(rect_sane), "{cells:?}");
+        }
+
+        #[test]
+        fn class_grid_measure_is_finite_and_not_negative(
+            columns in any_columns(),
+            gap in wild(),
+            row_height in proptest::option::of(wild()),
+            tiles in 0_usize..9,
+            a in wild(),
+            b in wild(),
+            c in wild(),
+            d in wild(),
+        ) {
+            let mut g = grid_of(columns, tiles).gap(gap);
+            if let Some(height) = row_height {
+                g = g.row_height(height);
+            }
+            let s = g.measure(Constraints::new(a, b, c, d));
+            prop_assert!(finite_non_negative(s.width) && finite_non_negative(s.height), "{s:?}");
+        }
+
+        #[test]
+        fn class_grid_layout_size_is_sane_and_verify_judges_raw_bounds(
+            columns in any_columns(),
+            gap in wild(),
+            tiles in 0_usize..9,
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+        ) {
+            let bounds = Rect::new(x, y, w, h);
+            let mut g = grid_of(columns, tiles).gap(gap);
+            let result = g.layout(bounds);
+            prop_assert!(
+                finite_non_negative(result.size.width) && finite_non_negative(result.size.height),
+                "{:?}", result.size
+            );
+            prop_assert_eq!(bits(Widget::bounds(&g)), bits(bounds));
+            prop_assert_eq!(g.verify().is_valid(), raw_bounds_valid(bounds));
+            let cells = g.cells(bounds);
+            for (child, cell) in g.children().iter().zip(&cells) {
+                prop_assert_eq!(bits(child.bounds()), bits(*cell));
+                prop_assert!(rect_sane(&child.bounds()));
+            }
+        }
+
+        #[test]
+        fn class_grid_paint_is_sane_for_any_bounds(
+            columns in any_columns(),
+            gap in wild(),
+            row_height in proptest::option::of(wild()),
+            tiles in 0_usize..9,
+            x in wild(),
+            y in wild(),
+            w in wild(),
+            h in wild(),
+            playing in any::<bool>(),
+        ) {
+            let mut g = grid_of(columns, tiles).gap(gap);
+            if let Some(height) = row_height {
+                g = g.row_height(height);
+            }
+            g.layout(Rect::new(x, y, w, h));
+            if playing {
+                for child in g.children_mut() {
+                    child.event(&Event::key_up(presentar_core::Key::Space));
+                }
+            }
+            let mut canvas = RecordingCanvas::new();
+            g.paint(&mut canvas);
+            prop_assert!(canvas.commands().iter().all(command_widths_sane));
+            prop_assert_eq!(canvas.commands().len(), tiles * if playing { 1 } else { 2 });
+        }
+
+        #[test]
+        fn class_grid_event_is_total(
+            columns in any_columns(),
+            tiles in 0_usize..9,
+            w in wild(),
+            h in wild(),
+            px in wild(),
+            py in wild(),
+        ) {
+            let mut g = grid_of(columns, tiles);
+            g.layout(Rect::new(0.0, 0.0, w, h));
+            let _ = click(&mut g, Point::new(px, py));
+            prop_assert!(g.event(&Event::MouseLeave).is_none());
+        }
+    }
 }
