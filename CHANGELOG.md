@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.72.6] - 2026-11-12
 
-Patch release cut as an emergency release. It carries the 15 PRs merged since v0.72.5: E1 presentar (wasm32 build of aprender-viz, the Rust-side mount and frame scheduler, and the Video, Waveform, Grid and SampleWindow widgets), E2 the terminal plot verb (`aprender-present plot`, PLOT-GG-001), E3 viz (ggplot2 parity rows 1 and 10-15), and release-path and main-red CI fixes.
+Patch release cut as an emergency release. It carries the 17 PRs merged since v0.72.5: E1 presentar (wasm32 build of aprender-viz, the Rust-side mount and frame scheduler, and the Video, Waveform, Grid and SampleWindow widgets), E2 the terminal plot verb (`aprender-present plot`, PLOT-GG-001), E3 viz (ggplot2 parity rows 1 and 10-15), and release-path and main-red CI fixes.
 
 ### Added
 
@@ -20,6 +20,8 @@ Patch release cut as an emergency release. It carries the 15 PRs merged since v0
 
 ### Fixed
 
+- fix(viz): refuse non-identity stats and non-point companion layers with line/path/step/reference layers (PLOT-GG-001) (#6979)
+- fix(viz): aprender-viz renderers are total for every f32 input (#6949)
 - fix(viz): aprender-viz --features wasm builds for wasm32 (#6911) (#6913)
 - fix(ci): register grammar::ggplot2_oracle in the tree-reader registry; main red at e3fe65aaf (PMAT-6909) (#6939)
 - fix(ci): register present-cli cli_surface_gate in the tree-reader registry; main red at a554d2f66 (PMAT-6909) (#6940)
