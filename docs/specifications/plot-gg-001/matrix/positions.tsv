@@ -1,0 +1,9 @@
+family	ggplot2_name	status	aprender_symbol	proving_test	notes
+positions	position_dodge	absent	-	-	no position adjustment layer in aprender-viz; width=NULL (box width), preserve total, reverse FALSE
+positions	position_dodge2	absent	-	-	no position adjustment layer in aprender-viz; padding 0.1, preserve total (boxplot default)
+positions	position_fill	absent	-	-	no position adjustment layer in aprender-viz; vjust 1, stack normalised to 1
+positions	position_identity	absent	-	-	no position adjustment layer in aprender-viz; default for point/line
+positions	position_jitter	absent	-	-	no position adjustment layer in aprender-viz; width/height 40% of resolution, seed NA
+positions	position_jitterdodge	absent	-	-	no position adjustment layer in aprender-viz; dodge.width 0.75, jitter.height 0
+positions	position_nudge	absent	-	-	no position adjustment layer in aprender-viz; x/y offsets NULL=0
+positions	position_stack	absent	-	-	no position adjustment layer in aprender-viz; vjust 1, default for bar/area, reverse FALSE

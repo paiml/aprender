@@ -91,20 +91,20 @@ invariants:
     prose: false
   - id: BIN-PRESENTAR-INV-002
     property: unusable input is a clean rejection, never a success and never a panic
-    formal: '∀ a ∈ rejection_rows(crates/aprender-present-cli/tests/cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
+    formal: '∀ a ∈ rejection_rows(crates/aprender-present-cli/tests/present_cli_surface_gate.rs): exit(a) ∉ {0, 101} ∧ "panicked" ∉ stderr(a)'
     prose: false
 
 falsification_tests:
   - id: FALSIFY-BIN-PRESENTAR-001
     rule: 'G1.2 help answers'
     prediction: '`aprender-present --help` exits 0 with non-empty stdout'
-    test: 'cargo test -p aprender-present-cli --test cli_surface_gate every_advertised_subcommand_is_reachable'
+    test: 'cargo test -p aprender-present-cli --test present_cli_surface_gate every_advertised_subcommand_is_reachable'
     if_fails: 'the binary cannot describe its own surface (observed 2026-09-27: exit 0, GREEN)'
     mutation: 'make the top-level --help return an error; must turn RED'
   - id: FALSIFY-BIN-PRESENTAR-002
     rule: 'G1.2 an unknown flag is a usage error'
     prediction: '`aprender-present --no-such-flag` exits 2'
-    test: 'cargo test -p aprender-present-cli --test cli_surface_gate unknown_'
+    test: 'cargo test -p aprender-present-cli --test present_cli_surface_gate unknown_'
     if_fails: 'a typo is silently ignored (observed 2026-09-27: exit 2, GREEN)'
     mutation: 'add #[arg(allow_hyphen_values)] catch-all at the top level; must turn RED'
   - id: FALSIFY-BIN-PRESENTAR-003
@@ -116,7 +116,7 @@ falsification_tests:
   - id: FALSIFY-BIN-PRESENTAR-004
     rule: 'G1.3/G1.4 the surface set equals the snapshot'
     prediction: 'the surface literals in the shape above = the snapshot''s, set-equal'
-    test: 'cargo test -p aprender-present-cli --test cli_surface_gate -- advertised_subcommands_are_the_pinned_surface'
+    test: 'cargo test -p aprender-present-cli --test present_cli_surface_gate -- advertised_subcommands_are_the_pinned_surface'
     if_fails: 'an added, dropped or renamed surface member ships with the ontology green (enumerated-value parsing not probed for this binary)'
     mutation: 'remove `bundle` from the snapshot; must turn RED on bin:command and bin:ledgerOrphan naming it'
   - id: FALSIFY-BIN-PRESENTAR-005
@@ -128,12 +128,12 @@ falsification_tests:
   - id: FALSIFY-BIN-PRESENTAR-006
     rule: 'unusable input is rejected cleanly'
     prediction: '`check`, `score` and `gate` on a missing, empty and garbage manifest: each exits non-zero, not 101, with no "panicked" on stderr'
-    test: 'cargo test -p aprender-present-cli --test cli_surface_gate unusable_input_is_rejected'
+    test: 'cargo test -p aprender-present-cli --test present_cli_surface_gate unusable_input_is_rejected'
     if_fails: 'MEASURED 2026-09-27 (aprender-01): each exits 1 with no panic, GREEN; no source mutation was run for this binary'
     mutation: 'make a rejection path return Ok(()) or unwrap the read; must turn RED on that row'
   - id: FALSIFY-BIN-PRESENTAR-007
     rule: 'plot draws the ggplot2 breaks and refuses what it cannot draw'
     prediction: '`aprender-present plot --data <row-1 fixture> --aes x=x,y=y` exits 0 and prints the committed 80x24 golden render whose break labels equal ggplot2 4.0.3 (x: 5, 10; y: -2.5, 0.0, 2.5, 5.0, 7.5); `--output svg` carries the same labels; `--geom line` and an unknown column each exit 1, not 101, naming the supported values or the columns'
-    test: 'cargo test -p aprender-present-cli --test cli_surface_gate plot_'
+    test: 'cargo test -p aprender-present-cli --test present_cli_surface_gate plot_'
     if_fails: 'the terminal or SVG plot drifts from the oracle breaks, or an unsupported request silently draws something else'
     mutation: 'make the terminal target skip the first y break label, or accept any geom as point; must turn RED on plot_row1_matches_the_golden_render or plot_refuses_what_it_cannot_draw'
