@@ -2,6 +2,7 @@
 //!
 //! Implements rasterization algorithms for basic geometric shapes.
 
+use super::clip::canvas_segment;
 use crate::color::Rgba;
 use crate::framebuffer::Framebuffer;
 use crate::geometry::{Line, Point, Rect};
@@ -30,6 +31,12 @@ pub trait Drawable {
 
 /// Draw a line using Bresenham's algorithm (non-antialiased).
 ///
+/// Exact for every `i32` endpoint (contract `render-total-v1`, RT-EQV-001): the pixels lit on the
+/// canvas are exactly the ones the unclipped Bresenham walk lights, and the work is at most
+/// `max(width, height)` steps however far off the canvas the endpoints are. Pixel `k` of the walk
+/// is computed in closed form, in exact integer arithmetic ([`BresenhamLine`]), and only the steps
+/// whose pixel lies on the canvas are visited.
+///
 /// # Arguments
 ///
 /// * `fb` - Target framebuffer
@@ -41,71 +48,124 @@ pub fn draw_line(fb: &mut Framebuffer, x0: i32, y0: i32, x1: i32, y1: i32, color
     contract_pre_display_format!(fb.pixels());
     contract_post_display_format!(&"ok");
 
-    let mut cursor = BresenhamCursor::new(x0, y0, x1, y1);
-    loop {
-        plot_pixel_if_visible(fb, cursor.x, cursor.y, color);
-        if cursor.finished() {
-            break;
-        }
-        if cursor.step() {
-            break;
-        }
+    let line = BresenhamLine::new(x0, y0, x1, y1);
+    let Some((first, last)) = line.visible_steps(fb.width(), fb.height()) else {
+        return;
+    };
+    for k in first..=last {
+        let (x, y) = line.pixel(k);
+        plot_pixel_if_visible(fb, x, y, color);
     }
 }
 
-/// Plot one integer pixel into the framebuffer, skipping negative
-/// coordinates (off-screen on the top/left).
-fn plot_pixel_if_visible(fb: &mut Framebuffer, x: i32, y: i32, color: Rgba) {
-    if x >= 0 && y >= 0 {
-        fb.set_pixel(x as u32, y as u32, color);
+/// Plot one integer pixel into the framebuffer, skipping coordinates off the canvas.
+fn plot_pixel_if_visible(fb: &mut Framebuffer, x: i64, y: i64, color: Rgba) {
+    if let (Ok(x), Ok(y)) = (u32::try_from(x), u32::try_from(y)) {
+        fb.set_pixel(x, y, color);
     }
 }
 
-/// State for one run of Bresenham's line algorithm.
-struct BresenhamCursor {
-    x: i32,
-    y: i32,
-    x1: i32,
-    y1: i32,
-    dx: i32,
-    dy: i32,
-    sx: i32,
-    sy: i32,
-    err: i32,
+/// Bresenham's line in closed form.
+///
+/// The classic walk (`err = dx - |dy|`; a step in x when `2 err >= -|dy|`, a step in y when
+/// `2 err <= dx`; stop at the end point) takes `n = max(dx, |dy|)` steps along the major axis, and
+/// after `k` of them it has moved `floor((2 m k + n) / (2 n))` along the minor axis, where
+/// `m = min(dx, |dy|)`: the minor coordinate nearest the ideal line, a tie rounded away from the
+/// start. The products need 66 bits, so they are taken in `i128`.
+struct BresenhamLine {
+    x0: i64,
+    y0: i64,
+    sx: i64,
+    sy: i64,
+    /// Steps along the major axis.
+    n: i64,
+    /// Total movement along the minor axis.
+    m: i64,
+    x_major: bool,
 }
 
-impl BresenhamCursor {
+impl BresenhamLine {
     fn new(x0: i32, y0: i32, x1: i32, y1: i32) -> Self {
-        let dx = (x1 - x0).abs();
-        let dy = -(y1 - y0).abs();
-        let sx = if x0 < x1 { 1 } else { -1 };
-        let sy = if y0 < y1 { 1 } else { -1 };
-        Self { x: x0, y: y0, x1, y1, dx, dy, sx, sy, err: dx + dy }
+        let (x0, y0, x1, y1) = (i64::from(x0), i64::from(y0), i64::from(x1), i64::from(y1));
+        let (dx, dy) = ((x1 - x0).abs(), (y1 - y0).abs());
+        let sign = |from: i64, to: i64| if from < to { 1 } else { -1 };
+        Self {
+            x0,
+            y0,
+            sx: sign(x0, x1),
+            sy: sign(y0, y1),
+            n: dx.max(dy),
+            m: dx.min(dy),
+            x_major: dx >= dy,
+        }
     }
 
-    fn finished(&self) -> bool {
-        self.x == self.x1 && self.y == self.y1
+    /// Movement along the minor axis after `k` major steps (`0 <= k <= n`).
+    fn minor(&self, k: i64) -> i64 {
+        if self.n == 0 {
+            return 0;
+        }
+        let (n, m, k) = (i128::from(self.n), i128::from(self.m), i128::from(k));
+        // 0 <= quotient <= m < 2^33, so the narrowing is exact.
+        ((2 * m * k + n) / (2 * n)) as i64
     }
 
-    /// Advance one Bresenham step. Returns `true` when the step would
-    /// have moved past the endpoint — caller should stop plotting.
-    fn step(&mut self) -> bool {
-        let e2 = 2 * self.err;
-        if e2 >= self.dy {
-            if self.x == self.x1 {
-                return true;
-            }
-            self.err += self.dy;
-            self.x += self.sx;
+    /// The pixel after `k` major steps.
+    fn pixel(&self, k: i64) -> (i64, i64) {
+        let j = self.minor(k);
+        if self.x_major {
+            (self.x0 + self.sx * k, self.y0 + self.sy * j)
+        } else {
+            (self.x0 + self.sx * j, self.y0 + self.sy * k)
         }
-        if e2 <= self.dx {
-            if self.y == self.y1 {
-                return true;
-            }
-            self.err += self.dx;
-            self.y += self.sy;
+    }
+
+    /// The steps `first..=last` whose pixel is on a `width` x `height` canvas, or `None` when no
+    /// pixel of the line is. Both coordinates are monotone in `k`, so the steps form one range.
+    fn visible_steps(&self, width: u32, height: u32) -> Option<(i64, i64)> {
+        let (major, minor) = if self.x_major {
+            (
+                offsets_on_canvas(self.x0, self.sx, width),
+                offsets_on_canvas(self.y0, self.sy, height),
+            )
+        } else {
+            (
+                offsets_on_canvas(self.y0, self.sy, height),
+                offsets_on_canvas(self.x0, self.sx, width),
+            )
+        };
+        let (j_lo, j_hi) = (minor.0.max(0), minor.1.min(self.m));
+        if j_lo > j_hi {
+            return None;
         }
-        false
+        let first = major.0.max(0).max(self.first_step_reaching(j_lo));
+        let last = major.1.min(self.n).min(self.first_step_reaching(j_hi + 1) - 1);
+        (first <= last).then_some((first, last))
+    }
+
+    /// The first step `k` in `0..=n` with `minor(k) >= j`, or `n + 1` when there is none.
+    fn first_step_reaching(&self, j: i64) -> i64 {
+        let (mut lo, mut hi) = (0, self.n + 1);
+        while lo < hi {
+            let mid = lo + (hi - lo) / 2;
+            if self.minor(mid) >= j {
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+        lo
+    }
+}
+
+/// The offsets `t` with `0 <= p0 + s * t < len` (for `s = ±1`), as an inclusive `(lo, hi)`;
+/// empty when `lo > hi`.
+fn offsets_on_canvas(p0: i64, s: i64, len: u32) -> (i64, i64) {
+    let last = i64::from(len) - 1;
+    if s > 0 {
+        (-p0, last - p0)
+    } else {
+        (p0 - last, p0)
     }
 }
 
@@ -127,6 +187,14 @@ pub fn draw_line_aa(fb: &mut Framebuffer, x0: f32, y0: f32, x1: f32, y1: f32, co
     // Contract: display-format-v1.yaml precondition (pv codegen)
     contract_pre_display_format!(fb.pixels());
     contract_post_display_format!(&"ok");
+    // Total for every f32: a non-finite end draws nothing, and a segment far off the canvas is
+    // clipped before any loop (see `clip`). A segment already near the canvas is unchanged.
+    let Some((x0, y0, x1, y1)) =
+        canvas_segment(fb, (f64::from(x0), f64::from(y0), f64::from(x1), f64::from(y1)))
+    else {
+        return;
+    };
+    let (x0, y0, x1, y1) = (x0 as f32, y0 as f32, x1 as f32, y1 as f32);
     let steep = (y1 - y0).abs() > (x1 - x0).abs();
 
     let (x0, y0, x1, y1) = if steep { (y0, x0, y1, x1) } else { (x0, y0, x1, y1) };
@@ -231,13 +299,25 @@ impl Drawable for Line {
 // ============================================================================
 
 /// Draw a filled rectangle.
+///
+/// A rectangle that starts left of or above the canvas is clipped there: its far edge stays at
+/// `origin + extent`. (Before paiml/aprender#6949 it was shifted onto the canvas with its full
+/// width, so a bar whose left edge was off canvas was drawn too wide.)
 pub fn draw_rect(fb: &mut Framebuffer, x: i32, y: i32, width: u32, height: u32, color: Rgba) {
     // Contract: display-format-v1.yaml precondition (pv codegen)
     contract_pre_display_format!(fb.pixels());
     contract_post_display_format!(&"ok");
-    let x = x.max(0) as u32;
-    let y = y.max(0) as u32;
-    fb.fill_rect(x, y, width, height, color);
+    // Clip in i64 so `x + width` cannot overflow, and so a rectangle that starts left of or
+    // above the canvas keeps its far edge where it is instead of being shifted onto the canvas.
+    let clip = |origin: i32, extent: u32| -> (u32, u32) {
+        let start = i64::from(origin);
+        let end = (start + i64::from(extent)).clamp(0, i64::from(u32::MAX));
+        let start = start.clamp(0, i64::from(u32::MAX));
+        (start as u32, (end - start) as u32)
+    };
+    let (x, w) = clip(x, width);
+    let (y, h) = clip(y, height);
+    fb.fill_rect(x, y, w, h, color);
 }
 
 /// Draw a rectangle outline.
@@ -256,24 +336,27 @@ pub fn draw_rect_outline(
     let thickness = thickness.max(1);
     let x = x.max(0) as u32;
     let y = y.max(0) as u32;
+    // Saturating throughout: `y + height` and `2 * thickness` can exceed `u32` for extreme
+    // sizes, and `fill_rect` clips whatever lands past the canvas.
+    let double = thickness.saturating_mul(2);
 
     // Top edge
     fb.fill_rect(x, y, width, thickness, color);
     // Bottom edge
     if height > thickness {
-        fb.fill_rect(x, y + height - thickness, width, thickness, color);
+        fb.fill_rect(x, y.saturating_add(height - thickness), width, thickness, color);
     }
     // Left edge
-    if height > 2 * thickness {
-        fb.fill_rect(x, y + thickness, thickness, height - 2 * thickness, color);
+    if height > double {
+        fb.fill_rect(x, y.saturating_add(thickness), thickness, height - double, color);
     }
     // Right edge
-    if width > thickness && height > 2 * thickness {
+    if width > thickness && height > double {
         fb.fill_rect(
-            x + width - thickness,
-            y + thickness,
+            x.saturating_add(width - thickness),
+            y.saturating_add(thickness),
             thickness,
-            height - 2 * thickness,
+            height - double,
             color,
         );
     }
@@ -289,7 +372,46 @@ impl Drawable for Rect {
 // Circle/Point Drawing
 // ============================================================================
 
+/// Radii up to this walk the midpoint algorithm (at most about 2 900 steps); a larger circle that
+/// reaches the canvas is filled row by row over the canvas rows only, so the work is bounded by
+/// the canvas height whatever the radius.
+const MAX_MIDPOINT_RADIUS: i32 = 4096;
+
+/// Whether the circle's bounding square misses the canvas entirely.
+fn circle_off_canvas(fb: &Framebuffer, cx: i64, cy: i64, r: i64) -> bool {
+    cx.saturating_add(r) < 0
+        || cx.saturating_sub(r) >= i64::from(fb.width())
+        || cy.saturating_add(r) < 0
+        || cy.saturating_sub(r) >= i64::from(fb.height())
+}
+
+/// Largest `s` with `s * s <= n` (`n >= 0`).
+fn isqrt(n: i64) -> i64 {
+    // The f64 root is off by at most one for n <= 2^62, in either direction.
+    let s = (n as f64).sqrt() as i64;
+    (s - 1..=s + 1).rev().find(|c| c * c <= n).unwrap_or(0)
+}
+
+/// The canvas rows a circle of radius `r` reaches, each with its half-width.
+fn circle_rows(fb: &Framebuffer, cy: i64, r: i64) -> impl Iterator<Item = (i64, i64)> {
+    let r2 = r * r;
+    let first = cy.saturating_sub(r).max(0);
+    let last = cy.saturating_add(r).min(i64::from(fb.height()) - 1);
+    (first..=last).map(move |py| {
+        let dy = py - cy;
+        (py, isqrt(r2 - dy * dy))
+    })
+}
+
 /// Draw a filled circle using the midpoint algorithm.
+///
+/// Total for every `i32` centre and radius: arithmetic is done in `i64`, a circle that misses the
+/// canvas draws nothing, and a radius above [`MAX_MIDPOINT_RADIUS`] is filled over the canvas rows
+/// only. Output for a radius up to that limit is the midpoint algorithm's, unchanged.
+///
+/// The two paths are not pixel-identical at the threshold: the row path is the exact integer disc,
+/// the midpoint circle differs from it on pixels within one pixel of the edge (measured: about 300
+/// pixels on a 400x300 canvas at radius 4096). Contract `render-total-v1`, RT-DEV-002.
 ///
 /// # Arguments
 ///
@@ -306,11 +428,21 @@ pub fn draw_circle(fb: &mut Framebuffer, cx: i32, cy: i32, radius: i32, color: R
         }
         return;
     }
+    let (cx, cy, r) = (i64::from(cx), i64::from(cy), i64::from(radius));
+    if circle_off_canvas(fb, cx, cy, r) {
+        return;
+    }
+    if radius > MAX_MIDPOINT_RADIUS {
+        for (py, half) in circle_rows(fb, cy, r) {
+            draw_horizontal_line(fb, cx - half, cx + half, py, color);
+        }
+        return;
+    }
 
     // Midpoint circle algorithm for filled circle
-    let mut x = radius;
-    let mut y = 0;
-    let mut err = 1 - radius;
+    let mut x = i64::from(radius);
+    let mut y = 0_i64;
+    let mut err = 1 - x;
 
     while x >= y {
         // Draw horizontal scan lines for each octant
@@ -330,6 +462,10 @@ pub fn draw_circle(fb: &mut Framebuffer, cx: i32, cy: i32, radius: i32, color: R
 }
 
 /// Draw a circle outline.
+///
+/// Total like [`draw_circle`]. A radius above the midpoint limit is drawn as the two end points of
+/// each canvas row it crosses, so near the top and bottom of such a circle the outline has gaps
+/// that the midpoint outline does not (RT-DEV-002).
 pub fn draw_circle_outline(fb: &mut Framebuffer, cx: i32, cy: i32, radius: i32, color: Rgba) {
     // Contract: display-format-v1.yaml precondition (pv codegen)
     contract_pre_display_format!(fb.pixels());
@@ -339,10 +475,21 @@ pub fn draw_circle_outline(fb: &mut Framebuffer, cx: i32, cy: i32, radius: i32, 
         }
         return;
     }
+    let (cx, cy, r) = (i64::from(cx), i64::from(cy), i64::from(radius));
+    if circle_off_canvas(fb, cx, cy, r) {
+        return;
+    }
+    if radius > MAX_MIDPOINT_RADIUS {
+        for (py, half) in circle_rows(fb, cy, r) {
+            plot_circle_point(fb, cx - half, py, color);
+            plot_circle_point(fb, cx + half, py, color);
+        }
+        return;
+    }
 
-    let mut x = radius;
-    let mut y = 0;
-    let mut err = 1 - radius;
+    let mut x = i64::from(radius);
+    let mut y = 0_i64;
+    let mut err = 1 - x;
 
     while x >= y {
         // Plot 8 octant points
@@ -366,6 +513,9 @@ pub fn draw_circle_outline(fb: &mut Framebuffer, cx: i32, cy: i32, radius: i32, 
 }
 
 /// Draw a point with variable size (rendered as filled circle).
+///
+/// A non-finite `x`, `y` or `size` casts to a finite `i32` (NaN to 0, infinities to the ends), so
+/// the circle is still total; callers that must not draw such a point drop it first.
 pub fn draw_point(fb: &mut Framebuffer, x: f32, y: f32, size: f32, color: Rgba) {
     // Contract: display-format-v1.yaml precondition (pv codegen)
     contract_pre_display_format!(fb.pixels());
@@ -373,26 +523,26 @@ pub fn draw_point(fb: &mut Framebuffer, x: f32, y: f32, size: f32, color: Rgba) 
     draw_circle(fb, x as i32, y as i32, radius, color);
 }
 
-/// Helper to draw a horizontal line (used by filled circle).
+/// Helper to draw a horizontal line (used by filled circle); `i64` so no sum can overflow.
 #[inline]
-fn draw_horizontal_line(fb: &mut Framebuffer, x1: i32, x2: i32, y: i32, color: Rgba) {
-    if y < 0 || y >= i32_px(fb.height()) {
+fn draw_horizontal_line(fb: &mut Framebuffer, x1: i64, x2: i64, y: i64, color: Rgba) {
+    if y < 0 || y >= i64::from(fb.height()) {
         return;
     }
 
-    let x_start = x1.max(0) as u32;
-    let x_end = (x2 + 1).max(0).min(i32_px(fb.width())) as u32;
+    let x_start = x1.max(0);
+    let x_end = (x2 + 1).max(0).min(i64::from(fb.width()));
 
     if x_start < x_end {
         let width = x_end - x_start;
-        fb.fill_rect(x_start, y as u32, width, 1, color);
+        fb.fill_rect(x_start as u32, y as u32, width as u32, 1, color);
     }
 }
 
 /// Helper to plot a single circle point with bounds checking.
 #[inline]
-fn plot_circle_point(fb: &mut Framebuffer, x: i32, y: i32, color: Rgba) {
-    if x >= 0 && y >= 0 && x < i32_px(fb.width()) && y < i32_px(fb.height()) {
+fn plot_circle_point(fb: &mut Framebuffer, x: i64, y: i64, color: Rgba) {
+    if x >= 0 && y >= 0 && x < i64::from(fb.width()) && y < i64::from(fb.height()) {
         fb.set_pixel(x as u32, y as u32, color);
     }
 }
@@ -578,5 +728,57 @@ mod tests {
 
         // Zero radius should just draw a single point
         assert_eq!(fb.get_pixel(50, 50), Some(Rgba::RED));
+    }
+
+    #[test]
+    fn draw_rect_clips_a_negative_origin_and_keeps_the_far_edge() {
+        // Columns -100..200 on a 300x100 canvas: 0..200 are ink, 200.. are not. Main shifted the
+        // rectangle to start at 0, which painted 0..300 (the far edge moved right by 100).
+        let mut fb = Framebuffer::new(300, 100).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        draw_rect(&mut fb, -100, 10, 300, 20, Rgba::BLACK);
+        for x in 0..300 {
+            for y in 0..100 {
+                let want = x < 200 && (10..30).contains(&y);
+                assert_eq!(fb.get_pixel(x, y) == Some(Rgba::BLACK), want, "({x}, {y})");
+            }
+        }
+        // The same along y: rows -5..15 clip to 0..15.
+        let mut fb = Framebuffer::new(50, 50).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        draw_rect(&mut fb, 5, -5, 10, 20, Rgba::BLACK);
+        for y in 0..50 {
+            assert_eq!(fb.get_pixel(7, y) == Some(Rgba::BLACK), y < 15, "row {y}");
+        }
+    }
+
+    #[test]
+    fn draw_rect_extreme_extents_cover_what_they_reach() {
+        let mut fb = Framebuffer::new(20, 20).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        // i32::MIN + u32::MAX = i32::MAX: the rectangle spans the whole canvas.
+        draw_rect(&mut fb, i32::MIN, i32::MIN, u32::MAX, u32::MAX, Rgba::BLACK);
+        assert!((0..20).all(|x| (0..20).all(|y| fb.get_pixel(x, y) == Some(Rgba::BLACK))));
+        // Ends exactly at the canvas edge (-1 + 1 = 0): nothing is drawn.
+        let mut fb = Framebuffer::new(20, 20).expect("framebuffer creation should succeed");
+        fb.clear(Rgba::WHITE);
+        draw_rect(&mut fb, -1, -1, 1, 1, Rgba::BLACK);
+        assert!((0..20).all(|x| (0..20).all(|y| fb.get_pixel(x, y) == Some(Rgba::WHITE))));
+    }
+
+    #[test]
+    fn isqrt_corrects_a_rounded_f64_square_root() {
+        // 2^62 - 1 rounds up to 2^62 as an f64, whose root is one too large.
+        assert_eq!(isqrt((1_i64 << 62) - 1), (1_i64 << 31) - 1);
+        assert_eq!(isqrt(1_i64 << 62), 1_i64 << 31);
+        assert_eq!(isqrt(0), 0);
+        assert_eq!(isqrt(15), 3);
+        assert_eq!(isqrt(16), 4);
+        // Near 2^62 the f64 square root is off by one in either direction; both are corrected.
+        for k in ((1_i64 << 31) - 2000)..(1_i64 << 31) {
+            assert_eq!(isqrt(k * k), k);
+            assert_eq!(isqrt(k * k + 2 * k), k);
+            assert_eq!(isqrt(k * k - 1), k - 1);
+        }
     }
 }
