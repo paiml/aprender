@@ -35,7 +35,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.2 (56cf12917)",
+        "apr_version": "apr 0.72.5 (f193ad6ed)",
         "under_development": false,
         "development_note": null
       },
@@ -66,7 +66,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.2 (56cf12917)"
+          "version": "apr 0.72.5 (f193ad6ed)"
         },
         "llama.cpp": {
           "answered": true,
