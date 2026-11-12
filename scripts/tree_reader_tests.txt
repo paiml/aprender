@@ -192,6 +192,7 @@ aprender-orchestrate	--lib	stack::hero_image
 aprender-orchestrate	--lib	stack::quality_checker
 aprender-orchestrate	--lib	stack::quality_format
 aprender-present-cli	--bins
+aprender-present-cli	--test	cli_surface_gate
 aprender-present-lib	--lib	browser::shell_autocomplete
 aprender-present-terminal	--lib	<root>
 aprender-present-terminal	--lib	ptop
