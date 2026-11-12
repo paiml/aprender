@@ -10,7 +10,7 @@ metadata:
     fill/colour/linewidth/linetype/alpha defaults, and the scales trained on x, ymin and ymax.
     Scope: the default Cartesian panel with the default continuous scales, no facets, no data-mapped
     colour, fill, size, shape or alpha; a non-default coord or a facet is refused with a typed
-    error. Tick labels are compared for data magnitudes that format() prints without exponent
+    error. Also refused with a typed error: a column shorter than the frame, an infinite or text position, a layer stat other than the geom's default, a geom alpha that layout does not read, and an aesthetic that ggplot2 keeps and trains a scale on but this layer would drop (a mapped x or y on rect, xmin, xmax, ymin or ymax on text, a fixed size on every geom but text). Tick labels are compared for data magnitudes that format() prints without exponent
     notation. The oracle is a committed JSON fixture produced by R; R is never run at test time.
     Layout only: this contract does not claim that the renderer draws the layer as ggplot2 does.
   references:
@@ -48,15 +48,27 @@ proof_obligations:
 enforcement:
   oracle_cases:
     description: All nine committed cases (unsorted, text and numeric groups, NA ymin, NA x, duplicate x, reversed bounds, 2-row groups, style) equal ggplot2 column for column
-    check: grammar::ggplot2_marks_oracle::ribbon::groups_text
+    check: grammar::ggplot2_marks_oracle::ribbon  # every test of the module, one per case
     severity: ERROR
   refuse_missing:
     description: "A ribbon without ymin or ymax, and the flipped xmin/xmax form, are refused with Error::Rendering"
     check: grammar::ggplot2_marks_oracle::refuses_missing_required_aesthetics
     severity: ERROR
   refuse_coord:
-    description: "A non-default coord (coord_cartesian limits, coord_flip, polar) or any facet is refused with Error::UnsupportedCoord, never laid out as the default panel"
-    check: grammar::ggplot2_marks_oracle::refuses_non_default_coord
+    description: "Every non-default coord (xlim, ylim, flip, polar, fixed) and every facet, on this geom and on every other marks geom, is refused with Error::UnsupportedCoord, never laid out as the default panel"
+    check: grammar::ggplot2_marks_oracle::refuses_every_non_default_coord_and_facet_for_every_geom
+    severity: ERROR
+  refuse_ragged:
+    description: "A mapped column shorter than the frame is refused with Error::Rendering, never NA-padded, for every geom"
+    check: grammar::ggplot2_marks_oracle::refuses_a_short_column_for_every_geom
+    severity: ERROR
+  refuse_nonfinite:
+    description: "An infinite position is refused with Error::ScaleDomain and a text position with Error::Rendering, for every geom and every position column"
+    check: grammar::ggplot2_marks_oracle::refuses_infinite_and_text_positions_for_every_geom
+    severity: ERROR
+  refuse_parameters:
+    description: "A layer stat other than the geom's default, a geom alpha layout does not read, and an aesthetic ggplot2 keeps but this layer would drop are refused; aesthetics ggplot2 overwrites equal the default layer"
+    check: grammar::ggplot2_marks_oracle::refuses_a_stat_the_layer_does_not_model
     severity: ERROR
 falsification_tests:
 - id: FALSIFY-GR-001
@@ -76,9 +88,19 @@ falsification_tests:
   if_fails: The y column is not compared
 - id: FALSIFY-GR-004
   rule: Non-default coord and facets are refused
-  prediction: "a Coord with limits, coord_flip, polar, or a facet makes layout() return Error::UnsupportedCoord instead of laying out the default panel"
-  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::refuses_non_default_coord -- --exact
+  prediction: "allowing ylim, or allowing coord_fixed, makes refuses_every_non_default_coord_and_facet_for_every_geom RED for all five geoms (mutations M19, M20 of the round-1 review)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::refuses_every_non_default_coord_and_facet_for_every_geom -- --exact
   if_fails: layout() silently ignores the coord, and this contract's scope claim is false
+- id: FALSIFY-GR-005
+  rule: A short column is a typed error
+  prediction: "replacing the ragged-column error in position_column by Ok(NaN) turns refuses_a_short_column_for_every_geom RED"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::refuses_a_short_column_for_every_geom -- --exact
+  if_fails: A ragged frame is NA-padded into numbers ggplot2 cannot produce
+- id: FALSIFY-GR-006
+  rule: A stat the layer does not model is refused
+  prediction: "dropping the stat refusal in refuse_layer_parameters turns refuses_a_stat_the_layer_does_not_model RED"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_marks_oracle::refuses_a_stat_the_layer_does_not_model -- --exact
+  if_fails: geom.stat(..) is silently ignored by layout()
 qa_gate:
   id: F-GR-001
   name: ggplot2 conformance (geom_ribbon)
@@ -87,3 +109,6 @@ qa_gate:
   - oracle_cases
   - refuse_missing
   - refuse_coord
+  - refuse_ragged
+  - refuse_nonfinite
+  - refuse_parameters

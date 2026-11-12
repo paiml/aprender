@@ -23,6 +23,9 @@ cases <- list(
   list(name = "style", spec = sub("geom_rect()", "geom_rect(fill = 'steelblue', colour = 'red', alpha = 0.5)", s, fixed = TRUE),
        plot = function(df) ggplot(df, aes(xmin = x0, xmax = x1, ymin = y0, ymax = y1)) +
          geom_rect(fill = "steelblue", colour = "red", alpha = 0.5)),
-  list(name = "single_row", spec = s, plot = plain)
+  list(name = "single_row", spec = s, plot = plain),
+  # Groups b, _, B, a, Z: C order is B < Z < _ < a < b, so a case-insensitive or locale sort differs.
+  list(name = "group_order_c", spec = sub("y1)", "y1, group = g)", s, fixed = TRUE),
+       plot = function(df) ggplot(df, aes(xmin = x0, xmax = x1, ymin = y0, ymax = y1, group = g)) + geom_rect())
 )
 run_cases(here, "geom_rect", cases)

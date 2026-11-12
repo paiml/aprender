@@ -20,7 +20,8 @@ use std::collections::BTreeMap;
 use super::aes::Aes;
 use super::build::PT_PER_MM;
 use super::data::{DataFrame, DataValue};
-use super::geom::GeomType;
+use super::geom::{Geom, GeomType};
+use super::stat::Stat;
 use crate::color::Rgba;
 use crate::error::{Error, Result};
 
@@ -163,9 +164,11 @@ struct Core {
 /// [`Error::EmptyData`] when no row survives; [`Error::UnknownColumn`] for a mapped column the
 /// frame lacks; [`Error::Rendering`] / [`Error::ScaleDomain`] for an input this module does not
 /// model (see the module docs).
-pub(super) fn build(geom: &GeomType, data: &DataFrame, aes: &Aes) -> Result<Option<BuiltMarks>> {
-    let Some(kind) = MarkKind::of(geom) else { return Ok(None) };
+pub(super) fn build(geom: &Geom, data: &DataFrame, aes: &Aes) -> Result<Option<BuiltMarks>> {
+    let Some(kind) = MarkKind::of(&geom.geom_type) else { return Ok(None) };
+    refuse_layer_parameters(kind, geom)?;
     refuse_mapped_style(kind, aes)?;
+    refuse_unmodelled_aesthetics(kind, aes)?;
     if data.nrow() == 0 {
         return Err(Error::EmptyData);
     }
@@ -179,6 +182,76 @@ pub(super) fn build(geom: &GeomType, data: &DataFrame, aes: &Aes) -> Result<Opti
         MarkKind::Text => text_parts(kind, data, aes, &group)?,
     };
     Ok(Some(finish(kind, core, texts, &style)))
+}
+
+/// Layer parameters that change ggplot2's numbers and that this module does not model. Measured on
+/// ggplot2 4.0.3: `geom_area(stat = "identity")` drops `stat_align`'s resampling and padding rows,
+/// and `geom_area(alpha = 0.5)` writes `alpha = 0.5`. Neither may be read as the default layer.
+///
+/// There is no position-adjustment parameter in the API (`position_stack` for `geom_area` is the
+/// only one applied, and it is the default), so there is nothing to refuse there. The `stat` of
+/// ribbon, tile, rect and text is `identity` by default, so an explicit identity is that default.
+fn refuse_layer_parameters(kind: MarkKind, geom: &Geom) -> Result<()> {
+    let class = kind.geom_class();
+    match (&geom.stat, kind) {
+        (None, _) => {}
+        (
+            Some(Stat::Identity),
+            MarkKind::Ribbon | MarkKind::Tile | MarkKind::Rect | MarkKind::Text,
+        ) => {}
+        (Some(stat), _) => {
+            return Err(Error::Rendering(format!(
+                "{class}: stat {stat:?} is not modelled (only the geom's default stat is)"
+            )))
+        }
+    }
+    if let GeomType::Area { alpha } = geom.geom_type {
+        // `Geom::area()` carries 0.3 as this crate's drawing default, which ggplot2 does not have
+        // (its alpha is NA); the built alpha column comes only from `Aes::alpha_value`.
+        if alpha.to_bits() != DRAWING_ALPHA_AREA.to_bits() {
+            return Err(Error::Rendering(format!(
+                "{class}: Geom::alpha({alpha}) is not read by layout; set Aes::alpha_value instead"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// The `alpha` `Geom::area()` starts with.
+const DRAWING_ALPHA_AREA: f32 = 0.3;
+
+/// Aesthetics ggplot2 keeps in the layer's data and trains scales on, or turns into another column,
+/// where this module would drop them. Measured on ggplot2 4.0.3:
+/// - `geom_rect(aes(x, y))` keeps `x` and `y` and trains both scales on them;
+/// - `geom_text(aes(ymin = ))` keeps the column and trains the y scale on it (xmin, xmax, ymax
+///   likewise);
+/// - `size` on area, ribbon, tile or rect is the deprecated spelling of `linewidth`.
+///
+/// Not refused because ggplot2 overwrites them, so the default result is right: `ymin`/`ymax` on
+/// area and tile, `xmin`/`xmax` on tile, `y` on ribbon. Tests `overwritten_aesthetics_equal_default` pin each.
+fn refuse_unmodelled_aesthetics(kind: MarkKind, aes: &Aes) -> Result<()> {
+    let class = kind.geom_class();
+    let extra: &[(&str, bool)] = match kind {
+        MarkKind::Rect => &[("x", aes.x.is_some()), ("y", aes.y.is_some())],
+        MarkKind::Text => &[
+            ("xmin", aes.xmin.is_some()),
+            ("xmax", aes.xmax.is_some()),
+            ("ymin", aes.ymin.is_some()),
+            ("ymax", aes.ymax.is_some()),
+        ],
+        _ => &[],
+    };
+    if let Some((name, _)) = extra.iter().find(|(_, set)| *set) {
+        return Err(Error::Rendering(format!(
+            "{class}: a mapped {name} aesthetic is kept by ggplot2 and trains a scale; not modelled"
+        )));
+    }
+    if kind != MarkKind::Text && aes.size_value.is_some() {
+        return Err(Error::Rendering(format!(
+            "{class}: a fixed size is ggplot2's deprecated linewidth here; not modelled"
+        )));
+    }
+    Ok(())
 }
 
 /// Data-mapped style aesthetics split groups and train more scales; not modelled.
@@ -214,9 +287,18 @@ fn position_column(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
             Some(DataValue::Text(_)) => Err(Error::Rendering(format!(
                 "column {name}: a text position needs a discrete scale, which is not modelled"
             ))),
-            Some(DataValue::Null) | None => Ok(f64::NAN),
+            Some(DataValue::Null) => Ok(f64::NAN),
+            None => Err(ragged(name, cells.len(), data.nrow())),
         })
         .collect()
+}
+
+/// A column shorter than the frame: R cannot build such a data frame, so there is no ggplot2
+/// answer to match, and padding it with `NA` would invent one.
+fn ragged(name: &str, len: usize, nrow: usize) -> Error {
+    Error::Rendering(format!(
+        "column {name} has {len} cells but the frame has {nrow} rows: ragged columns are not modelled"
+    ))
 }
 
 fn required<'a>(kind: MarkKind, slot: &'a Option<String>, role: &str) -> Result<&'a str> {
@@ -247,6 +329,7 @@ fn group_ids(data: &DataFrame, aes: &Aes) -> Result<Vec<i32>> {
         .map(|i| match cells.get(i) {
             Some(DataValue::Number(v)) if v.is_finite() => Ok(GroupKey::Num(f64::from(*v) + 0.0)),
             Some(DataValue::Text(s)) => Ok(GroupKey::Text(s.clone())),
+            None => Err(ragged(col, cells.len(), n)),
             _ => Err(Error::Rendering(format!(
                 "group column {col}: a missing group is not modelled"
             ))),
@@ -391,21 +474,13 @@ fn shift_duplicates(pts: &[(f64, f64)], adjust: f64) -> Vec<(f64, f64)> {
     out
 }
 
-/// `approxfun(ties = mean)`'s regularisation: sort by x, average the y of equal x.
+/// `approxfun`'s regularisation: sort by x. R also averages the y of equal x (`ties = mean`), but
+/// `shift_duplicates` has already left each x once: a repeated x keeps two rows, the first moved
+/// left by `adjust <= gap / 3`, so no two knots share an x and the averaging has nothing to do.
 fn regularize(pts: &[(f64, f64)]) -> Vec<(f64, f64)> {
     let mut sorted = pts.to_vec();
     sorted.sort_by(|a, b| a.0.total_cmp(&b.0));
-    let mut out: Vec<(f64, f64, usize)> = Vec::with_capacity(sorted.len());
-    for (x, y) in sorted {
-        match out.last_mut() {
-            Some(last) if last.0 == x => {
-                last.1 += y;
-                last.2 += 1;
-            }
-            _ => out.push((x, y, 1)),
-        }
-    }
-    out.into_iter().map(|(x, sum, n)| (x, sum / n as f64)).collect()
+    sorted
 }
 
 /// R's `approx1()` with `rule = 1`: linear interpolation, `None` (NA) outside the knots.
@@ -569,7 +644,8 @@ fn text_parts(
     let label: Vec<Option<String>> = (0..data.nrow())
         .map(|i| match cells.get(i) {
             Some(DataValue::Text(s)) => Ok(Some(s.clone())),
-            Some(DataValue::Null) | None => Ok(None),
+            Some(DataValue::Null) => Ok(None),
+            None => Err(ragged(name, cells.len(), data.nrow())),
             Some(DataValue::Number(_)) => Err(Error::Rendering(format!(
                 "label column {name}: a numeric label is not modelled (R keeps it numeric)"
             ))),

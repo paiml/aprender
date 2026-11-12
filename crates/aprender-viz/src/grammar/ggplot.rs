@@ -17,6 +17,7 @@ use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
+use super::path;
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -548,6 +549,24 @@ impl BuiltGGPlot {
                 y = m.y_extent().map_or(y, |r| widen64(y, r));
                 continue;
             }
+            // Reference lines do not inherit x/y; hline trains y and vline trains x with the
+            // intercept, abline trains neither (ggplot2: `inherit.aes = FALSE`).
+            match &layer.geom.geom_type {
+                GeomType::Hline { yintercept } if yintercept.is_finite() => {
+                    let v = f64::from(*yintercept);
+                    y = (y.0.min(v), y.1.max(v));
+                    continue;
+                }
+                GeomType::Vline { xintercept } if xintercept.is_finite() => {
+                    let v = f64::from(*xintercept);
+                    x = (x.0.min(v), x.1.max(v));
+                    continue;
+                }
+                GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. } => {
+                    continue
+                }
+                _ => {}
+            }
             let data = layer.data.as_ref().unwrap_or(&self.data);
             let layer_aes = self.aes.merge(&layer.aes);
             x = widen(x, Self::extend_range((f32::MAX, f32::MIN), data, layer_aes.x.as_ref()));
@@ -563,10 +582,13 @@ impl BuiltGGPlot {
     /// # Errors
     ///
     /// [`Error::UnsupportedCoord`] for a non-default coord or any facet on a plot with an
-    /// area/ribbon/tile/rect/text layer; [`Error::EmptyData`], [`Error::UnknownColumn`],
-    /// [`Error::ScaleDomain`] or [`Error::Rendering`] for input those layers do not model (see
-    /// `marks`); [`Error::ScaleDomain`] when a scale trains on nothing.
+    /// area/ribbon/tile/rect/text layer, and for a non-default coord with a path, step or
+    /// reference layer (`geom_line`, `geom_path`, `geom_step`, `geom_hline`, `geom_vline`,
+    /// `geom_abline`); [`Error::EmptyData`], [`Error::UnknownColumn`], [`Error::ScaleDomain`] or
+    /// [`Error::Rendering`] for input those layers do not model (see `marks` and
+    /// `grammar/path.rs`); [`Error::ScaleDomain`] when a scale trains on nothing.
     pub fn layout(&self) -> Result<BuiltLayout> {
+        path::require_default_coord(&self.layers, &self.coord)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
         if layers.iter().any(|l| l.marks.is_some()) {
             self.require_default_coord_and_facet()?;
@@ -579,6 +601,7 @@ impl BuiltGGPlot {
                 "a position scale trained on no finite value".to_string(),
             ));
         }
+        path::require_trained(&self.layers, &x, &y)?;
         Ok(BuiltLayout { layers, x, y })
     }
 
@@ -596,11 +619,15 @@ impl BuiltGGPlot {
     }
 
     /// One layer's built data: rows where both positions are numeric, plus point aesthetics, or
-    /// the marks data frame for area, ribbon, tile, rect and text.
+    /// the marks data frame for area, ribbon, tile, rect and text, or the path data of a path,
+    /// step or reference layer.
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
+        if path::is_path_family(&layer.geom.geom_type) {
+            return path::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
-        let marks = super::marks::build(&layer.geom.geom_type, data, &aes)?;
+        let marks = super::marks::build(&layer.geom, data, &aes)?;
         let xs = data.get_f32(aes.x.as_deref().unwrap_or("x")).unwrap_or_default();
         let ys = data.get_f32(aes.y.as_deref().unwrap_or("y")).unwrap_or_default();
         let (x, y): (Vec<f64>, Vec<f64>) = xs
@@ -623,7 +650,7 @@ impl BuiltGGPlot {
             }
             _ => None,
         };
-        Ok(BuiltLayer { x, y, points, marks })
+        Ok(BuiltLayer { x, y, points, marks, path: None })
     }
 
     /// Draw the major grid lines, one per break of each position scale (ggplot2's

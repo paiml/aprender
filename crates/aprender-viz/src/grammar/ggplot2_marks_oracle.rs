@@ -572,6 +572,16 @@ mod tile {
             false,
         );
     }
+
+    #[test]
+    fn subtol_gap() {
+        run_case(
+            "geom_tile",
+            include_str!("../../fixtures/ggplot2/geom_tile/subtol_gap.csv"),
+            include_str!("../../fixtures/ggplot2/geom_tile/expected_subtol_gap.json"),
+            false,
+        );
+    }
 }
 mod rect {
     use super::run_case;
@@ -662,6 +672,16 @@ mod rect {
             "geom_rect",
             include_str!("../../fixtures/ggplot2/geom_rect/single_row.csv"),
             include_str!("../../fixtures/ggplot2/geom_rect/expected_single_row.json"),
+            false,
+        );
+    }
+
+    #[test]
+    fn group_order_c() {
+        run_case(
+            "geom_rect",
+            include_str!("../../fixtures/ggplot2/geom_rect/group_order_c.csv"),
+            include_str!("../../fixtures/ggplot2/geom_rect/expected_group_order_c.json"),
             false,
         );
     }
@@ -778,32 +798,242 @@ fn xy() -> DataFrame {
     frame(&[("x", &[1.0, 2.0, 3.0]), ("y", &[1.0, 2.0, 3.0]), ("c", &[1.0, 2.0, 3.0])])
 }
 
+/// Every one of the five geoms with a frame and mapping that lays out cleanly under the default
+/// coord. The frame carries the columns of all five (`x y lo hi x0 x1 y0 y1 lab g`), three rows.
+fn five() -> Vec<(&'static str, Geom, Aes)> {
+    vec![
+        ("area", Geom::area(), Aes::new().x("x").y("y").group("g")),
+        ("ribbon", Geom::ribbon(), Aes::new().x("x").ymin("lo").ymax("hi").group("g")),
+        ("tile", Geom::tile(), Aes::new().x("x").y("y").group("g")),
+        ("rect", Geom::rect(), Aes::new().xmin("x0").xmax("x1").ymin("y0").ymax("y1").group("g")),
+        ("text", Geom::text(), Aes::new().x("x").y("y").label("lab").group("g")),
+    ]
+}
+
+fn wide() -> DataFrame {
+    let mut df = frame(&[
+        ("x", &[1.0, 2.0, 3.0]),
+        ("y", &[2.0, 5.0, 3.0]),
+        ("lo", &[1.0, 1.0, 1.0]),
+        ("hi", &[2.0, 3.0, 4.0]),
+        ("x0", &[0.0, 1.0, 2.0]),
+        ("x1", &[1.0, 2.0, 3.0]),
+        ("y0", &[1.0, 1.0, 1.0]),
+        ("y1", &[2.0, 3.0, 4.0]),
+        ("g", &[1.0, 1.0, 1.0]),
+    ]);
+    df.add_column_str("lab", &["p", "q", "r"]);
+    df
+}
+
+fn layout_with(
+    df: &DataFrame,
+    aes: Aes,
+    geom: Geom,
+    coord: super::Coord,
+    facet: super::Facet,
+) -> Result<BuiltLayout, Error> {
+    GGPlot::new().data(df.clone()).aes(aes).geom(geom).coord(coord).facet(facet).build()?.layout()
+}
+
 #[test]
-fn refuses_non_default_coord() {
-    use super::Coord;
-    for coord in [Coord::cartesian().xlim(0.0, 2.0), Coord::cartesian().flip(), Coord::polar()] {
-        let r = GGPlot::new()
-            .data(xy())
-            .aes(Aes::new().x("x").y("y"))
-            .geom(Geom::tile())
-            .coord(coord)
-            .build()
-            .and_then(|b| b.layout());
-        assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{r:?}");
+fn refuses_every_non_default_coord_and_facet_for_every_geom() {
+    use super::{Coord, Facet};
+    let coords = [
+        ("xlim", Coord::cartesian().xlim(0.0, 2.0)),
+        ("ylim", Coord::cartesian().ylim(0.0, 2.0)),
+        ("xlim+ylim", Coord::cartesian().xlim(0.0, 2.0).ylim(0.0, 2.0)),
+        ("flip", Coord::cartesian().flip()),
+        ("polar", Coord::polar()),
+        ("polar start", Coord::polar().start_angle(1.0).direction(-1)),
+        ("fixed 1", Coord::fixed(1.0)),
+        ("fixed 2", Coord::fixed(2.0)),
+    ];
+    let facets = [
+        ("wrap", Facet::wrap("g", 2)),
+        ("grid", Facet::grid("g", "g")),
+        ("row", Facet::row("g")),
+        ("col", Facet::col("g")),
+    ];
+    let df = wide();
+    for (name, geom, aes) in five() {
+        // The default coord and facet lay the same plot out, so each refusal below is the coord's.
+        let ok = layout_with(&df, aes.clone(), geom.clone(), Coord::cartesian(), Facet::none());
+        assert!(ok.is_ok(), "{name}: default coord and facet must lay out: {ok:?}");
+        for (what, coord) in &coords {
+            let r = layout_with(&df, aes.clone(), geom.clone(), coord.clone(), Facet::none());
+            assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{name} {what}: {r:?}");
+        }
+        for (what, facet) in &facets {
+            let r = layout_with(&df, aes.clone(), geom.clone(), Coord::cartesian(), facet.clone());
+            assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{name} {what}: {r:?}");
+        }
     }
 }
 
 #[test]
-fn refuses_facets() {
-    use super::Facet;
-    let r = GGPlot::new()
-        .data(xy())
-        .aes(Aes::new().x("x").y("y"))
-        .geom(Geom::area())
-        .facet(Facet::wrap("c", 2))
-        .build()
-        .and_then(|b| b.layout());
-    assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{r:?}");
+fn refuses_non_default_coord_when_a_marks_layer_is_not_the_only_layer() {
+    use super::{Coord, Layer};
+    let df = wide();
+    for (name, geom, aes) in five() {
+        let r = GGPlot::new()
+            .data(df.clone())
+            .layer(Layer::new(Geom::point()).aes(Aes::new().x("x").y("y")))
+            .layer(Layer::new(geom).aes(aes))
+            .coord(Coord::cartesian().flip())
+            .build()
+            .and_then(|b| b.layout());
+        assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{name}: {r:?}");
+    }
+}
+
+#[test]
+fn refuses_a_short_column_for_every_geom() {
+    // R cannot build a data frame with columns of different lengths; NA-padding one would invent
+    // numbers. Each mapped column of each geom is cut to two cells in a three-row frame.
+    let full = wide();
+    for (name, geom, aes) in five() {
+        let mapped: Vec<&str> =
+            [&aes.x, &aes.y, &aes.ymin, &aes.ymax, &aes.xmin, &aes.xmax, &aes.label, &aes.group]
+                .iter()
+                .filter_map(|s| s.as_deref())
+                .collect();
+        assert!(mapped.len() >= 3, "{name}: {mapped:?}");
+        for col in mapped {
+            let mut df = full.clone();
+            if col == "lab" {
+                df.add_column_str(col, &["p", "q"]);
+            } else {
+                df.add_column_f32(col, &[1.0, 2.0]);
+            }
+            assert_eq!(df.nrow(), 3, "{name} {col}: the frame keeps its longest column");
+            let r = run(df, aes.clone(), geom.clone());
+            assert!(matches!(r, Err(Error::Rendering(_))), "{name} {col}: {r:?}");
+        }
+    }
+}
+
+#[test]
+fn refuses_infinite_and_text_positions_for_every_geom() {
+    let full = wide();
+    for (name, geom, aes) in five() {
+        let positions: Vec<&str> = [&aes.x, &aes.y, &aes.ymin, &aes.ymax, &aes.xmin, &aes.xmax]
+            .iter()
+            .filter_map(|s| s.as_deref())
+            .collect();
+        for col in positions {
+            for inf in [f32::INFINITY, f32::NEG_INFINITY] {
+                let mut df = full.clone();
+                df.add_column_f32(col, &[1.0, inf, 3.0]);
+                let r = run(df, aes.clone(), geom.clone());
+                assert!(matches!(r, Err(Error::ScaleDomain(_))), "{name} {col} {inf}: {r:?}");
+            }
+            let mut df = full.clone();
+            df.add_column_str(col, &["a", "b", "c"]);
+            let r = run(df, aes.clone(), geom.clone());
+            assert!(matches!(r, Err(Error::Rendering(_))), "{name} {col} text: {r:?}");
+        }
+    }
+}
+
+#[test]
+fn refuses_a_stat_the_layer_does_not_model() {
+    use super::Stat;
+    let df = wide();
+    for (name, geom, aes) in five() {
+        for stat in [
+            Stat::count(),
+            Stat::bin(5),
+            Stat::density(),
+            Stat::boxplot(),
+            Stat::smooth(),
+            Stat::bin2d(2, 2),
+            Stat::sum(),
+            Stat::mean(),
+        ] {
+            let r = run(df.clone(), aes.clone(), geom.clone().stat(stat.clone()));
+            assert!(matches!(r, Err(Error::Rendering(_))), "{name} {stat:?}: {r:?}");
+        }
+        // stat = "identity" is the default of ribbon, tile, rect and text; geom_area's default is
+        // stat_align, so an explicit identity is a different layer (measured: no padding rows).
+        let r = run(df.clone(), aes.clone(), geom.clone().stat(Stat::identity()));
+        if name == "area" {
+            assert!(matches!(r, Err(Error::Rendering(_))), "{name} identity: {r:?}");
+        } else {
+            // Debug text, not ==: a built NaN (alpha NA) is not equal to itself.
+            let (a, b) =
+                (format!("{:?}", r.ok()), format!("{:?}", run(df.clone(), aes, geom).ok()));
+            assert_eq!(a, b, "{name} identity");
+        }
+    }
+}
+
+#[test]
+fn refuses_a_geom_alpha_that_layout_does_not_read() {
+    let df = wide();
+    let aes = Aes::new().x("x").y("y");
+    let r = run(df.clone(), aes.clone(), Geom::area().alpha(0.5));
+    assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    // 0.3 is what Geom::area() starts with: the same layer, so it is not refused.
+    assert!(run(df.clone(), aes.clone(), Geom::area().alpha(0.3)).is_ok());
+    // Aes::alpha_value is the supported route, and the built column carries it.
+    let ok = run(df, aes.alpha_value(0.5), Geom::area()).expect("alpha_value lays out");
+    let m = ok.layers[0].marks.as_ref().expect("marks");
+    assert!((m.scalars["alpha"] - 0.5).abs() < 1e-12);
+}
+
+#[test]
+fn refuses_aesthetics_ggplot2_keeps_and_this_layer_would_drop() {
+    let df = wide();
+    // geom_rect(aes(x, y)) keeps x and y and trains both scales on them (measured).
+    for aes in [
+        Aes::new().x("x").xmin("x0").xmax("x1").ymin("y0").ymax("y1"),
+        Aes::new().y("y").xmin("x0").xmax("x1").ymin("y0").ymax("y1"),
+    ] {
+        let r = run(df.clone(), aes, Geom::rect());
+        assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    }
+    // geom_text(aes(ymin = ...)) keeps the column and trains y on it (measured).
+    let base = Aes::new().x("x").y("y").label("lab");
+    for aes in
+        [base.clone().xmin("x0"), base.clone().xmax("x1"), base.clone().ymin("y0"), base.ymax("y1")]
+    {
+        let r = run(df.clone(), aes, Geom::text());
+        assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    }
+    // A fixed size is linewidth (deprecated) on every geom but text.
+    for (name, geom, aes) in five() {
+        let r = run(df.clone(), aes.clone().size_value(3.0), geom);
+        if name == "text" {
+            assert!(r.is_ok(), "{name}: {r:?}");
+        } else {
+            assert!(matches!(r, Err(Error::Rendering(_))), "{name}: {r:?}");
+        }
+    }
+}
+
+#[test]
+fn overwritten_aesthetics_equal_default() {
+    // Measured on ggplot2 4.0.3 (ggplot_build): setup_data overwrites these, so the built data and
+    // both scales equal the layer without them. Area: ymin, ymax. Tile: xmin, xmax, ymin, ymax.
+    // Ribbon: an inherited y.
+    let df = wide();
+    let same = |geom: fn() -> Geom, plain: Aes, extra: Aes| {
+        // Debug text, not ==: a built NaN (alpha NA) is not equal to itself.
+        let (a, b) = (run(df.clone(), plain, geom()), run(df.clone(), extra, geom()));
+        assert!(a.is_ok(), "{a:?}");
+        assert_eq!(
+            format!("{a:?}"),
+            format!("{b:?}"),
+            "an overwritten aesthetic changed the layout"
+        );
+    };
+    let xy = || Aes::new().x("x").y("y");
+    same(Geom::area, xy(), xy().ymin("lo").ymax("hi"));
+    same(Geom::tile, xy(), xy().xmin("x0").xmax("x1").ymin("lo").ymax("hi"));
+    let rib = || Aes::new().x("x").ymin("lo").ymax("hi");
+    same(Geom::ribbon, rib(), rib().y("y"));
+    assert!(run(df, xy(), Geom::area()).is_ok());
 }
 
 #[test]
@@ -932,4 +1162,71 @@ fn no_panic_on_empty_and_tiny_frames() {
         }
     }
     let _ = run(DataFrame::new(), Aes::new().x("a").y("b"), Geom::area());
+}
+
+#[test]
+fn a_null_position_cell_is_an_na_like_nan() {
+    // A missing cell and a NaN cell are both NA to ggplot2, so both lay out the same way.
+    let full = wide();
+    for (name, geom, aes) in five() {
+        let positions: Vec<&str> = [&aes.x, &aes.y, &aes.ymin, &aes.ymax, &aes.xmin, &aes.xmax]
+            .iter()
+            .filter_map(|s| s.as_deref())
+            .collect();
+        for col in positions {
+            let mut with_null = full.clone();
+            with_null.add_column_values(
+                col,
+                vec![DataValue::Number(1.0), DataValue::Null, DataValue::Number(3.0)],
+            );
+            let mut with_nan = full.clone();
+            with_nan.add_column_f32(col, &[1.0, f32::NAN, 3.0]);
+            let a = run(with_null, aes.clone(), geom.clone());
+            let b = run(with_nan, aes.clone(), geom.clone());
+            // The raw `x`/`y` copies of a layer are not the marks; compare the marks and scales.
+            let key = |r: &Result<BuiltLayout, Error>| match r {
+                Ok(l) => format!("{:?} {:?} {:?}", l.layers[0].marks, l.x, l.y),
+                Err(e) => format!("{e:?}"),
+            };
+            assert_eq!(key(&a), key(&b), "{name} {col}");
+        }
+    }
+}
+
+#[test]
+fn refuses_a_missing_group_for_every_geom() {
+    let full = wide();
+    for (name, geom, aes) in five() {
+        for bad in [DataValue::Null, DataValue::Number(f32::NAN), DataValue::Number(f32::INFINITY)]
+        {
+            let mut df = full.clone();
+            df.add_column_values(
+                "g",
+                vec![DataValue::Number(1.0), bad.clone(), DataValue::Number(1.0)],
+            );
+            let r = run(df, aes.clone(), geom.clone());
+            assert!(matches!(r, Err(Error::Rendering(_))), "{name} {bad:?}: {r:?}");
+        }
+    }
+}
+
+#[test]
+fn numbers_sort_before_text_in_a_mixed_group_column() {
+    // The cells are rows 1..3; the rank is of the sorted distinct value: 7, then "a", then "b".
+    let mut df = wide();
+    df.add_column_values(
+        "g",
+        vec![DataValue::Text("b".into()), DataValue::Number(7.0), DataValue::Text("a".into())],
+    );
+    let got =
+        run(df, Aes::new().x("x").y("y").label("lab").group("g"), Geom::text()).expect("lays out");
+    let m = got.layers[0].marks.as_ref().expect("marks");
+    // Text layout keeps the row order: "b" is rank 3, 7 is rank 1, "a" is rank 2.
+    assert_eq!(m.group, vec![3, 1, 2]);
+}
+
+#[test]
+fn ribbon_refuses_the_flipped_form() {
+    let r = run(wide(), Aes::new().y("y").xmin("x0").xmax("x1"), Geom::ribbon());
+    assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
 }

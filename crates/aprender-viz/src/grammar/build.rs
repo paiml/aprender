@@ -11,6 +11,7 @@ use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::color::Rgba;
 
 use super::marks::BuiltMarks;
+use super::path::BuiltPath;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
@@ -92,6 +93,9 @@ pub struct BuiltLayer {
     pub points: Option<Vec<PointAes>>,
     /// The resolved columns of an area, ribbon, tile, rect or text layer; `None` for other geoms.
     pub marks: Option<BuiltMarks>,
+    /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
+    /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
+    pub path: Option<BuiltPath>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).
@@ -113,8 +117,11 @@ impl PositionScale {
     /// Train a continuous scale on `limits` and apply ggplot2's defaults: 5% expansion,
     /// `extended_breaks(n = 5)` over the expanded range, censored to it, labelled by `format()`.
     ///
-    /// A zero-width or empty range keeps this crate's earlier rule (widen by 1 each side, then
-    /// expand). ggplot2 widens a zero-width range by 0.5 instead; that case has no oracle row yet.
+    /// A zero-width range (one distinct value) pads by `0.05` on each side, as ggplot2's
+    /// `expand_range4()` does (`build::tests::zero_width_range_pads_by_five_percent_of_one`). A
+    /// range that trained on nothing (`lo > hi`) keeps this crate's own rule (widen by 1 each
+    /// side, then expand); ggplot2 has no such scale, and `layout()` refuses it for the layers it
+    /// models.
     #[must_use]
     pub fn continuous(limits: (f64, f64)) -> Self {
         let continuous_range = expand_continuous(limits);

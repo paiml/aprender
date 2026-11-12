@@ -21,6 +21,9 @@ cases <- list(
        plot = function(df) ggplot(df, aes(x, y, group = g)) + geom_tile()),
   list(name = "style", spec = "ggplot(df, aes(x, y)) + geom_tile(fill = 'steelblue', colour = 'red', alpha = 0.5)",
        plot = function(df) ggplot(df, aes(x, y)) + geom_tile(fill = "steelblue", colour = "red", alpha = 0.5)),
-  list(name = "wide_gaps", spec = "ggplot(df, aes(x, y)) + geom_tile()", plot = plain)
+  list(name = "wide_gaps", spec = "ggplot(df, aes(x, y)) + geom_tile()", plot = plain),
+  # A gap of 2^-30 is under resolution()'s sqrt(.Machine$double.eps) tolerance, so it is not the
+  # resolution; the next gap is.
+  list(name = "subtol_gap", spec = "ggplot(df, aes(x, y)) + geom_tile()", plot = plain)
 )
 run_cases(here, "geom_tile", cases)
