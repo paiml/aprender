@@ -121,7 +121,7 @@ falsification_tests:
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-017
   rule: axis titles and the plot title are still drawn with lines
-  prediction: dropping labs when strokes are present turns axis_titles_and_the_title_are_still_drawn_with_lines RED (measured: x label dropped)
+  prediction: dropping labs when strokes are present turns axis_titles_and_the_title_are_still_drawn_with_lines RED (measured, x label dropped)
   test: cargo test -p aprender-viz --test stroke_render -- --exact axis_titles_and_the_title_are_still_drawn_with_lines
   if_fails: The test cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-PLOTLINES-018
