@@ -239,10 +239,14 @@ impl App {
     }
 }
 
-/// Initialize panic hook for better error messages.
+/// Start function: sets the panic hook and mounts the built-in counter when the page
+/// declares its canvas, so such a page needs no script of its own (aprender#6893).
 #[wasm_bindgen(start)]
 pub fn init() {
     console_error_panic_hook::set_once();
+    if let Err(e) = super::entry::mount_counter_if_declared() {
+        web_sys::console::error_1(&e);
+    }
 }
 
 /// Log to browser console.
