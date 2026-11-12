@@ -1,0 +1,105 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-11"
+  updated: "2026-11-11"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6893 — Rust-side app entry, no hand-written script on the page"
+    - "crates/aprender-present-cli/src/page.rs — the generator and the audit this pins"
+    - "contracts/present-mount-frame-v1.yaml — what the wasm module does once the loader starts it"
+  description: >
+    A bundled page runs one script: the loader the bundle step generates,
+    which imports the wasm-bindgen glue and starts the module. Input and the
+    frame loop are Rust. A page that carries any other script is refused at
+    bundle time, so hand-written script cannot come back unseen.
+
+name: present-page-no-script
+version: "1.0.0"
+scope: >
+  `boot_module`, `page_html`, `audit_page` and `finish_bundle` in
+  `aprender-present-cli` (`src/page.rs`), and their use by the `bundle` and
+  `new` verbs. Out of scope: the dev-server hot-reload snippet, which `serve
+  --watch` adds to responses in memory and which is never written to a bundle;
+  and whether the loader starts the module in a real browser (see
+  open_obligations).
+status: active
+
+contract: |
+  (1) THE LOADER DOES TWO THINGS: it imports the glue by its pinned name and
+      calls its init. It holds no app logic.
+  (2) A GENERATED PAGE PASSES THE AUDIT. It has one canvas and one script tag,
+      the loader tag.
+  (3) THE AUDIT REFUSES EVERY OTHER WAY TO RUN SCRIPT: a script tag that is not
+      the loader tag, a missing or repeated loader, an `on...` attribute, a
+      `javascript:` URL.
+  (4) A REFUSED PAGE IS NOT BUNDLED. No index.html and no loader are written,
+      and the verb exits non-zero with the reasons.
+  (5) TEXT IS NOT SCRIPT. The words "onclick" or "javascript:" in text or
+      inside another attribute's value do not refuse a page.
+equations:
+  script_budget:
+    description: "How many script tags a bundled page holds"
+    formula: "accept(page) implies script_tags(page) = loader_tags(page) = 1"
+    domain: "any HTML text"
+    codomain: "{accept, refuse}"
+    invariants:
+      - "script_tags(page) > loader_tags(page) implies refuse"
+      - "loader_tags(page) != 1 implies refuse"
+falsification:
+  - id: FALSIFY-PRESENT-PAGE-NO-SCRIPT-V1-001
+    description: "The generator and the audit behave as the contract says"
+    test: "cargo test -p aprender-present-cli page::"
+    evidence: "see the PR that added this contract"
+open_obligations:
+  - |
+    No browser run yet: no wasm-bindgen tool is installed on any build host
+    (2026-11-11), so `bundle` itself has not produced a pkg/ directory. Owed:
+    a probar end-to-end run that bundles, loads the generated page, clicks "+"
+    and reads data-count back (#6893).
+  - |
+    The example pages under crates/aprender-present/www still carry
+    hand-written script. They are not bundled by this verb today; moving them
+    to the generated page is separate work on #6893.
+falsification_tests:
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-001
+    description: "the loader only imports the glue and starts it"
+    test: "cargo test -p aprender-present-cli page::tests::the_loader_only_imports_the_glue_and_starts_it"
+    prediction: "two code lines: the import and init()"
+    if_fails: "app logic has moved into script"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-002
+    description: "the generated page passes its own audit"
+    test: "cargo test -p aprender-present-cli page::tests::the_generated_page_passes_its_own_audit"
+    prediction: "accepted; one script tag; the counter canvas"
+    if_fails: "`new` and `bundle` write a page the bundle step would refuse"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-003
+    description: "the audit case table: 14 pages refused, 6 accepted"
+    test: "cargo test -p aprender-present-cli page::tests::audit_case_table"
+    prediction: "every refused row names its reason; every accepted row passes"
+    if_fails: "script reaches a bundle, or a clean page is refused"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-004
+    description: "a refused project page writes nothing"
+    test: "cargo test -p aprender-present-cli page::tests::a_project_page_with_script_is_refused_and_nothing_is_written"
+    prediction: "Err with the reason; no index.html and no pkg directory"
+    if_fails: "a refused page still ships"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-005
+    description: "a bundle with no project page gets the generated page and the loader"
+    test: "cargo test -p aprender-present-cli page::tests::a_bundle_with_no_project_page_gets_the_counter_page_and_the_loader"
+    prediction: "index.html passes the audit; pkg/boot.js equals boot_module"
+    if_fails: "a bundle ships with no page or no loader"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-006
+    description: "the title and the canvas id cannot inject markup"
+    test: "cargo test -p aprender-present-cli page::tests::the_title_is_escaped && cargo test -p aprender-present-cli page::tests::a_canvas_id_that_could_break_out_of_the_attribute_is_refused"
+    prediction: "the title is escaped; an id outside A-Z a-z 0-9 - _ is an error"
+    if_fails: "a project name can put script on the page"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-007
+    description: "the CLI source holds no page script of its own"
+    test: "cargo test -p aprender-present-cli falsify_6893_main_rs_holds_no_page_script_but_hot_reload"
+    prediction: "one script literal in main.rs, the hot-reload snippet"
+    if_fails: "a hand-written page script is back in the CLI"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-008
+    description: "the page `new` writes passes the audit and its loader exists"
+    test: "cargo test -p aprender-present-cli falsify_6893_new_project_page_runs_only_the_generated_loader"
+    prediction: "www/index.html accepted; www/pkg/boot.js equals boot_module"
+    if_fails: "a new project starts with a page the bundle step refuses, or with no loader"
