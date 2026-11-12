@@ -888,6 +888,38 @@ fn refuses_non_default_coord_when_a_marks_layer_is_not_the_only_layer() {
 }
 
 #[test]
+fn path_guards_leave_marks_layouts_alone_and_refuse_mixes_with_typed_errors() {
+    use super::{Coord, Layer};
+    let df = wide();
+    for (name, geom, aes) in five() {
+        // A marks layer with a point layer is laid out (the path guards are inert without a
+        // path-family layer).
+        let ok = GGPlot::new()
+            .data(df.clone())
+            .layer(Layer::new(Geom::point()).aes(Aes::new().x("x").y("y")))
+            .layer(Layer::new(geom.clone()).aes(aes.clone()))
+            .build()
+            .and_then(|b| b.layout());
+        assert!(ok.is_ok(), "{name} + point: {ok:?}");
+        // Sharing a plot with a path-family layer is refused, never laid out as raw data.
+        let mixed = |coord: Coord| {
+            GGPlot::new()
+                .data(df.clone())
+                .layer(Layer::new(Geom::line()).aes(Aes::new().x("x").y("y")))
+                .layer(Layer::new(geom.clone()).aes(aes.clone()))
+                .coord(coord)
+                .build()
+                .and_then(|b| b.layout())
+        };
+        let r = mixed(Coord::cartesian());
+        assert!(matches!(r, Err(Error::UnsupportedLayer(_))), "{name} + line: {r:?}");
+        // The coord refusal is reported before the layer refusal, and is a coord error.
+        let r = mixed(Coord::cartesian().flip());
+        assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{name} + line + flip: {r:?}");
+    }
+}
+
+#[test]
 fn refuses_a_short_column_for_every_geom() {
     // R cannot build a data frame with columns of different lengths; NA-padding one would invent
     // numbers. Each mapped column of each geom is cut to two cells in a three-row frame.

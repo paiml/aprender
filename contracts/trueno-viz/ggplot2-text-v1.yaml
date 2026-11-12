@@ -68,9 +68,21 @@ enforcement:
     description: "An infinite position is refused with Error::ScaleDomain and a text position with Error::Rendering, for every geom and every position column"
     check: grammar::ggplot2_marks_oracle::refuses_infinite_and_text_positions_for_every_geom
     severity: ERROR
-  refuse_parameters:
-    description: "A layer stat other than the geom's default, a geom alpha layout does not read, and an aesthetic ggplot2 keeps but this layer would drop are refused; aesthetics ggplot2 overwrites equal the default layer"
+  refuse_stat:
+    description: "A layer stat other than the geom's default is refused with Error::UnsupportedStat"
     check: grammar::ggplot2_marks_oracle::refuses_a_stat_the_layer_does_not_model
+    severity: ERROR
+  refuse_alpha:
+    description: "A geom alpha that layout() does not read is refused"
+    check: grammar::ggplot2_marks_oracle::refuses_a_geom_alpha_that_layout_does_not_read
+    severity: ERROR
+  refuse_dropped_aesthetics:
+    description: "An aesthetic ggplot2 keeps but this layer would drop is refused"
+    check: grammar::ggplot2_marks_oracle::refuses_aesthetics_ggplot2_keeps_and_this_layer_would_drop
+    severity: ERROR
+  overwritten_aesthetics_equal_default:
+    description: "Aesthetics ggplot2 overwrites give a layer equal to the default layer"
+    check: grammar::ggplot2_marks_oracle::overwritten_aesthetics_equal_default
     severity: ERROR
 falsification_tests:
 - id: FALSIFY-GX-001
@@ -113,4 +125,7 @@ qa_gate:
   - refuse_coord
   - refuse_ragged
   - refuse_nonfinite
-  - refuse_parameters
+  - refuse_stat
+  - refuse_alpha
+  - refuse_dropped_aesthetics
+  - overwritten_aesthetics_equal_default
