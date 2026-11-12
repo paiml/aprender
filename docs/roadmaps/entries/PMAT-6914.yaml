@@ -1,0 +1,18 @@
+- id: PMAT-6914
+  github_issue: 6914
+  item_type: task
+  title: 'release: Trusted Publishing for every crate, and a nightly real publish rehearsal with a throwaway crate (#6914)'
+  status: planned
+  priority: high
+  assigned_to: null
+  created: 2026-11-12T11:12:15Z
+  updated: 2026-11-12T11:12:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 5306
