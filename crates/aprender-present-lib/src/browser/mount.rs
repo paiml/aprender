@@ -44,10 +44,11 @@ pub enum Frame {
 }
 
 impl Frame {
-    /// Whether the loop asks for another tick after this one.
+    /// Whether the loop asks for another tick after this one. Only a painted frame does: an
+    /// idle loop stops, and a blocked tree stays blocked until something changes it.
     #[must_use]
     pub const fn wants_next(&self) -> bool {
-        !matches!(self, Self::Idle)
+        matches!(self, Self::Painted(_))
     }
 }
 
@@ -57,8 +58,25 @@ pub struct Mounted {
     size: Size,
     dirty: bool,
     animating: bool,
+    /// The last frame was blocked. An animation does not tick a blocked tree; only a change
+    /// (an event, `set_root`, `request_repaint`) has it verified again.
+    halted: bool,
     messages: Vec<Box<dyn Any + Send>>,
     painted: u64,
+}
+
+/// Every failed assertion in `widget` and its descendants, depth first. Containers such as
+/// `Column` verify clean without looking at their children, so the walk is done here.
+fn failed_assertions(widget: &dyn Widget, found: &mut Vec<String>) {
+    for (assertion, reason) in &widget.verify().failed {
+        found.push(format!(
+            "brick '{}' {assertion:?}: {reason}",
+            widget.brick_name()
+        ));
+    }
+    for child in widget.children() {
+        failed_assertions(child.as_ref(), found);
+    }
 }
 
 impl Mounted {
@@ -71,6 +89,7 @@ impl Mounted {
             size: Size::new(width, height),
             dirty: true,
             animating: false,
+            halted: false,
             messages: Vec::new(),
             painted: 0,
         };
@@ -102,27 +121,27 @@ impl Mounted {
         }
     }
 
-    /// Run one frame tick.
+    /// Whether an animation tick is owed: an animation is on and the tree is not blocked.
+    const fn ticking(&self) -> bool {
+        self.animating && !self.halted
+    }
+
+    /// Run one frame tick. Every brick in the tree is verified before anything is painted;
+    /// one failure anywhere blocks the whole frame (PROBAR-SPEC-009).
     pub fn frame(&mut self) -> Frame {
-        if schedule(self.dirty, self.animating) == FrameAction::Stop {
+        if schedule(self.dirty, self.ticking()) == FrameAction::Stop {
             return Frame::Idle;
         }
         self.dirty = false;
-        if !self.root.can_render() {
-            let reasons: Vec<String> = self
-                .root
-                .verify()
-                .failed
-                .iter()
-                .map(|(assertion, reason)| format!("{assertion:?}: {reason}"))
-                .collect();
-            return Frame::Blocked(format!(
-                "brick '{}' failed verification: {}",
-                self.root.brick_name(),
-                reasons.join(", ")
-            ));
-        }
+        // Lay out first: containers (List) materialize children in layout, so verification
+        // must walk the exact tree about to be painted.
         self.relayout();
+        let mut failed = Vec::new();
+        failed_assertions(self.root.as_ref(), &mut failed);
+        self.halted = !failed.is_empty();
+        if self.halted {
+            return Frame::Blocked(format!("failed verification: {}", failed.join("; ")));
+        }
         let mut canvas = RecordingCanvas::new();
         self.root.paint(&mut canvas);
         self.painted += 1;
@@ -142,7 +161,7 @@ impl Mounted {
     /// Whether the next tick would paint.
     #[must_use]
     pub const fn needs_frame(&self) -> bool {
-        matches!(schedule(self.dirty, self.animating), FrameAction::Repaint)
+        matches!(schedule(self.dirty, self.ticking()), FrameAction::Repaint)
     }
 
     /// Messages emitted by widgets since the last call, oldest first.
@@ -252,6 +271,7 @@ mod tests {
         let first = mounted.frame();
         assert!(matches!(&first, Frame::Painted(commands) if !commands.is_empty()));
         assert!(first.wants_next());
+        assert!(!Frame::Blocked(String::new()).wants_next());
         assert_eq!(mounted.frame(), Frame::Idle);
         assert!(!Frame::Idle.wants_next());
         assert!(!mounted.needs_frame());
@@ -354,8 +374,171 @@ mod tests {
             matches!(&blocked, Frame::Blocked(why) if why.contains("no label")),
             "{blocked:?}"
         );
-        assert!(blocked.wants_next());
+        assert!(!blocked.wants_next());
         assert_eq!(mounted.frames_painted(), 0);
         assert_eq!(mounted.frame(), Frame::Idle);
+    }
+
+    #[test]
+    fn a_bad_brick_inside_a_container_blocks_the_frame() {
+        let nested = Column::new()
+            .child(Text::new("fine"))
+            .child(Column::new().child(Button::new("")));
+        let mut mounted = Mounted::new(Box::new(nested), 800.0, 600.0);
+        let blocked = mounted.frame();
+        assert!(
+            matches!(&blocked, Frame::Blocked(why) if why.contains("no label")),
+            "{blocked:?}"
+        );
+        assert_eq!(mounted.frames_painted(), 0);
+    }
+
+    #[test]
+    fn an_animating_tree_that_is_blocked_does_not_spin() {
+        let mut mounted = Mounted::new(Box::new(Button::new("")), 800.0, 600.0);
+        mounted.set_animating(true);
+        assert!(matches!(mounted.frame(), Frame::Blocked(_)));
+        assert!(!mounted.needs_frame());
+        for _ in 0..3 {
+            assert_eq!(mounted.frame(), Frame::Idle);
+        }
+    }
+
+    #[test]
+    fn a_blocked_tree_is_verified_again_after_a_change_and_the_animation_resumes() {
+        let mut mounted = Mounted::new(Box::new(Button::new("")), 800.0, 600.0);
+        mounted.set_animating(true);
+        assert!(matches!(mounted.frame(), Frame::Blocked(_)));
+        // An event on a tree that is still bad: one more verification, then quiet again.
+        mounted.request_repaint();
+        assert!(matches!(mounted.frame(), Frame::Blocked(_)));
+        assert_eq!(mounted.frame(), Frame::Idle);
+        // A good tree: painted, and the animation ticks again.
+        mounted.set_root(tree());
+        for _ in 0..3 {
+            assert!(matches!(mounted.frame(), Frame::Painted(_)));
+        }
+        assert_eq!(mounted.frames_painted(), 3);
+    }
+
+    // aprender#6893 clause 4: a failing brick is never painted, wherever it sits. Every widget
+    // that owns a boxed child and paints it must expose it through `children()`.
+    fn bad() -> Button {
+        Button::new("")
+    }
+
+    fn assert_blocked(root: Box<dyn Widget>, what: &str) {
+        let mut mounted = Mounted::new(root, 800.0, 600.0);
+        assert!(
+            matches!(mounted.frame(), Frame::Blocked(_)),
+            "{what}: bad child was painted"
+        );
+        assert_eq!(mounted.frames_painted(), 0, "{what}");
+    }
+
+    #[test]
+    fn a_default_disabled_button_does_not_block_the_frame() {
+        let mut mounted = Mounted::new(Box::new(Button::new("+").disabled(true)), 800.0, 600.0);
+        assert!(matches!(mounted.frame(), Frame::Painted(_)));
+    }
+
+    #[test]
+    fn column_blocks_a_bad_child() {
+        assert_blocked(Box::new(Column::new().child(bad())), "Column");
+    }
+
+    #[test]
+    fn row_blocks_a_bad_child() {
+        assert_blocked(Box::new(presentar_widgets::Row::new().child(bad())), "Row");
+    }
+
+    #[test]
+    fn stack_blocks_a_bad_child() {
+        assert_blocked(
+            Box::new(presentar_widgets::Stack::new().child(bad())),
+            "Stack",
+        );
+    }
+
+    #[test]
+    fn container_blocks_a_bad_child() {
+        assert_blocked(
+            Box::new(presentar_widgets::Container::new().child(bad())),
+            "Container",
+        );
+    }
+
+    #[test]
+    fn list_blocks_a_bad_child() {
+        let list = presentar_widgets::List::new()
+            .items(vec![presentar_widgets::ListItem::new("a")])
+            .render_with(|_, _| Box::new(Button::new("")));
+        assert_blocked(Box::new(list), "List");
+    }
+
+    #[test]
+    fn list_blocks_a_bad_child_materialized_by_keyboard_scroll() {
+        let items: Vec<presentar_widgets::ListItem> = (0..20)
+            .map(|i| presentar_widgets::ListItem::new(format!("item-{i}")))
+            .collect();
+        let list = presentar_widgets::List::new()
+            .item_height(50.0)
+            .items(items)
+            .render_with(|i, _| {
+                if i == 19 {
+                    Box::new(Button::new(""))
+                } else {
+                    Box::new(Button::new("ok"))
+                }
+            });
+        let mut mounted = Mounted::new(Box::new(list), 200.0, 100.0);
+        assert!(matches!(mounted.frame(), Frame::Painted(_)));
+        let _ = mounted.dispatch(&Event::MouseDown {
+            position: presentar_core::Point::new(10.0, 10.0),
+            button: presentar_core::MouseButton::Left,
+        });
+        assert!(matches!(mounted.frame(), Frame::Painted(_)));
+        let _ = mounted.dispatch(&Event::key_down(presentar_core::Key::End));
+        assert!(
+            matches!(mounted.frame(), Frame::Blocked(_)),
+            "scrolled-in bad child was painted"
+        );
+    }
+
+    #[test]
+    fn menu_blocks_a_bad_trigger_widget() {
+        assert_blocked(
+            Box::new(presentar_widgets::Menu::new().trigger_widget(bad())),
+            "Menu",
+        );
+    }
+
+    #[test]
+    fn modal_blocks_a_bad_content() {
+        assert_blocked(
+            Box::new(presentar_widgets::Modal::new().open(true).content(bad())),
+            "Modal content",
+        );
+    }
+
+    #[test]
+    fn modal_blocks_a_bad_footer() {
+        assert_blocked(
+            Box::new(presentar_widgets::Modal::new().open(true).footer(bad())),
+            "Modal footer",
+        );
+    }
+
+    #[test]
+    fn modal_blocks_when_only_the_footer_is_bad_and_content_is_good() {
+        assert_blocked(
+            Box::new(
+                presentar_widgets::Modal::new()
+                    .open(true)
+                    .content(Button::new("ok"))
+                    .footer(bad()),
+            ),
+            "Modal content+footer",
+        );
     }
 }

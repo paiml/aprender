@@ -114,8 +114,13 @@ impl MountHandle {
     }
 
     /// Change the mounted tree from outside an event (a timer, a socket), then repaint.
+    /// A repaint is always requested, so an in-place `root_mut()` change cannot be dropped.
     pub fn update(&self, change: impl FnOnce(&mut Mounted)) {
-        change(&mut self.shared.mounted.borrow_mut());
+        {
+            let mut mounted = self.shared.mounted.borrow_mut();
+            change(&mut mounted);
+            mounted.request_repaint();
+        }
         self.shared.kick();
     }
 }
