@@ -39,8 +39,12 @@ mod facet;
 mod geom;
 mod ggplot;
 #[cfg(test)]
+mod ggplot2_bars_oracle;
+#[cfg(test)]
 mod ggplot2_oracle;
+mod position;
 mod stat;
+mod stat_count;
 mod theme;
 
 pub use aes::Aes;
@@ -53,5 +57,7 @@ pub use data::{DataFrame, DataValue};
 pub use facet::{panels, Facet, Panel};
 pub use geom::Geom;
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
+pub use position::{apply as apply_position, BarRow, Position, Preserve};
 pub use stat::Stat;
+pub use stat_count::{bar_layout, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis};
 pub use theme::Theme;
