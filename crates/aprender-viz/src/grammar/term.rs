@@ -13,6 +13,7 @@
 
 use crate::error::{Error, Result};
 
+use super::build::BuiltLayout;
 use super::coord::{apply_limits, Coord};
 use super::facet::Facet;
 use super::ggplot::BuiltGGPlot;
@@ -127,6 +128,108 @@ fn in_domain(v: f64, (lo, hi): (f64, f64)) -> bool {
     v >= lo && v <= hi
 }
 
+/// Refuse a canvas outside [`MIN_TERMINAL_WIDTH`] x [`MIN_TERMINAL_HEIGHT`] ..
+/// [`MAX_TERMINAL_WIDTH`] x [`MAX_TERMINAL_HEIGHT`], before anything is allocated.
+fn check_canvas(opts: TerminalPlot) -> Result<()> {
+    if opts.width < MIN_TERMINAL_WIDTH || opts.height < MIN_TERMINAL_HEIGHT {
+        return Err(Error::Rendering(format!(
+            "terminal plot needs at least {MIN_TERMINAL_WIDTH}x{MIN_TERMINAL_HEIGHT} cells, got {}x{}",
+            opts.width, opts.height
+        )));
+    }
+    if opts.width > MAX_TERMINAL_WIDTH || opts.height > MAX_TERMINAL_HEIGHT {
+        return Err(Error::Rendering(format!(
+            "terminal plot is at most {MAX_TERMINAL_WIDTH}x{MAX_TERMINAL_HEIGHT} cells, got {}x{}",
+            opts.width, opts.height
+        )));
+    }
+    Ok(())
+}
+
+/// Where the panel sits on the canvas and the data domains it maps onto.
+struct Frame {
+    /// First panel row.
+    top: usize,
+    /// Panel height in rows.
+    plot_h: usize,
+    /// Column of the y axis line.
+    axis_col: usize,
+    /// First panel column.
+    plot_left: usize,
+    /// Panel width in columns.
+    plot_w: usize,
+    /// Width of the y break labels.
+    gutter: usize,
+    /// Visible x domain.
+    xd: (f64, f64),
+    /// Visible y domain.
+    yd: (f64, f64),
+}
+
+impl Frame {
+    /// Size the panel under `top` header rows and `below` footer rows of a `w` x `h` canvas.
+    fn new(
+        (w, h): (usize, usize),
+        (top, below): (usize, usize),
+        gutter: usize,
+        (xd, yd): ((f64, f64), (f64, f64)),
+    ) -> Result<Self> {
+        let axis_col = gutter + 1;
+        let plot_left = axis_col + 1;
+        if plot_left + MIN_PANEL_WIDTH > w {
+            return Err(Error::Rendering(format!(
+                "terminal plot is {w} cells wide; its y labels need {gutter}, leaving no room for the panel"
+            )));
+        }
+        Ok(Self {
+            top,
+            plot_h: h - top - below,
+            axis_col,
+            plot_left,
+            plot_w: w - plot_left,
+            gutter,
+            xd,
+            yd,
+        })
+    }
+
+    fn row_of(&self, y: f64) -> usize {
+        self.top + self.plot_h - 1 - cell(y, self.yd, self.plot_h)
+    }
+
+    fn col_of(&self, x: f64) -> usize {
+        self.plot_left + cell(x, self.xd, self.plot_w)
+    }
+}
+
+/// The y breaks and labels inside the visible domain `yd`.
+fn y_ticks(layout: &BuiltLayout, yd: (f64, f64)) -> Vec<(f64, &str)> {
+    layout
+        .y
+        .breaks
+        .iter()
+        .zip(&layout.y.labels)
+        .filter(|(b, _)| in_domain(**b, yd))
+        .map(|(b, l)| (*b, l.as_str()))
+        .collect()
+}
+
+/// Width of the widest tick label.
+fn gutter_of(ticks: &[(f64, &str)]) -> usize {
+    ticks.iter().map(|(_, l)| l.chars().count()).max().unwrap_or(0)
+}
+
+/// Draw one x break label centred under `col`, unless it would touch the previous one;
+/// `free` is the first column not yet used.
+fn put_x_label(c: &mut Canvas, (col, row): (usize, usize), label: &str, free: &mut usize) {
+    let len = label.chars().count();
+    let start = col.saturating_sub(len / 2).min(c.w.saturating_sub(len));
+    if start >= *free {
+        c.text(start, row, label, Ink::Axis);
+        *free = start + len + 1;
+    }
+}
+
 impl BuiltGGPlot {
     /// Render to text for a terminal of `opts.width` x `opts.height` cells.
     ///
@@ -137,26 +240,8 @@ impl BuiltGGPlot {
     /// labels), a facet, `coord_flip()`, or a layer that is not a point
     /// layer; [`Error::UnsupportedCoord`] for polar or fixed coordinates.
     pub fn to_terminal(&self, opts: TerminalPlot) -> Result<String> {
-        if opts.width < MIN_TERMINAL_WIDTH || opts.height < MIN_TERMINAL_HEIGHT {
-            return Err(Error::Rendering(format!(
-                "terminal plot needs at least {MIN_TERMINAL_WIDTH}x{MIN_TERMINAL_HEIGHT} cells, got {}x{}",
-                opts.width, opts.height
-            )));
-        }
-        if opts.width > MAX_TERMINAL_WIDTH || opts.height > MAX_TERMINAL_HEIGHT {
-            return Err(Error::Rendering(format!(
-                "terminal plot is at most {MAX_TERMINAL_WIDTH}x{MAX_TERMINAL_HEIGHT} cells, got {}x{}",
-                opts.width, opts.height
-            )));
-        }
-        if !matches!(self.facet(), Facet::None) {
-            return Err(Error::Rendering("the terminal target does not draw facets yet".into()));
-        }
-        if matches!(self.coord(), Coord::Cartesian { flip: true, .. }) {
-            return Err(Error::Rendering(
-                "the terminal target does not draw coord_flip() yet".into(),
-            ));
-        }
+        check_canvas(opts)?;
+        self.check_drawable()?;
         let layout = self.layout()?;
         let (xd, yd) =
             apply_limits(self.coord(), layout.x.continuous_range, layout.y.continuous_range)?;
@@ -166,93 +251,92 @@ impl BuiltGGPlot {
 
         let (w, h) = (opts.width as usize, opts.height as usize);
         let mut c = Canvas::new(w, h);
+        let top = self.draw_header(&mut c);
+        let below = 2 + usize::from(self.xlab().is_some());
+        let ticks = y_ticks(&layout, yd);
+        let frame = Frame::new((w, h), (top, below), gutter_of(&ticks), (xd, yd))?;
 
-        // Rows from the top: title, y label, the panel; from the bottom: x label, x break
-        // labels, the x axis.
+        draw_y_axis(&mut c, &frame, &ticks);
+        self.draw_x_axis(&mut c, &frame, &layout);
+        draw_points(&mut c, &frame, &layout);
+        Ok(c.render(opts.color))
+    }
+
+    /// Refuse what the terminal target does not draw: facets and `coord_flip()`.
+    fn check_drawable(&self) -> Result<()> {
+        if !matches!(self.facet(), Facet::None) {
+            return Err(Error::Rendering("the terminal target does not draw facets yet".into()));
+        }
+        if matches!(self.coord(), Coord::Cartesian { flip: true, .. }) {
+            return Err(Error::Rendering(
+                "the terminal target does not draw coord_flip() yet".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// Title (centred) and y label (left) from the top; returns the first panel row.
+    fn draw_header(&self, c: &mut Canvas) -> usize {
         let mut top = 0;
         if let Some(t) = self.title() {
-            c.text(w.saturating_sub(t.chars().count()) / 2, top, t, Ink::Title);
+            c.text(c.w.saturating_sub(t.chars().count()) / 2, top, t, Ink::Title);
             top += 1;
         }
         if let Some(t) = self.ylab() {
             c.text(0, top, t, Ink::Plain);
             top += 1;
         }
-        let below = 2 + usize::from(self.xlab().is_some());
-        let plot_h = h - top - below;
+        top
+    }
 
-        let y_ticks: Vec<(f64, &str)> = layout
-            .y
-            .breaks
-            .iter()
-            .zip(&layout.y.labels)
-            .filter(|(b, _)| in_domain(**b, yd))
-            .map(|(b, l)| (*b, l.as_str()))
-            .collect();
-        let gutter = y_ticks.iter().map(|(_, l)| l.chars().count()).max().unwrap_or(0);
-        let axis_col = gutter + 1;
-        let plot_left = axis_col + 1;
-        if plot_left + MIN_PANEL_WIDTH > w {
-            return Err(Error::Rendering(format!(
-                "terminal plot is {w} cells wide; its y labels need {gutter}, leaving no room for the panel"
-            )));
-        }
-        let plot_w = w - plot_left;
-        let row_of = |y: f64| top + plot_h - 1 - cell(y, yd, plot_h);
-        let col_of = |x: f64| plot_left + cell(x, xd, plot_w);
-
-        // y axis, ticks and right-aligned break labels.
-        for r in top..top + plot_h {
-            c.put(axis_col, r, '│', Ink::Axis);
-        }
-        for (b, label) in &y_ticks {
-            let r = row_of(*b);
-            c.put(axis_col, r, '┤', Ink::Axis);
-            c.text(gutter - label.chars().count(), r, label, Ink::Axis);
-        }
-
-        // x axis, ticks and centred break labels; a label that would touch the previous one is
-        // skipped rather than overprinted.
-        let axis_row = top + plot_h;
-        c.put(axis_col, axis_row, '└', Ink::Axis);
-        for col in plot_left..w {
+    /// x axis, ticks and centred break labels, then the x label. A label that would touch the
+    /// previous one is skipped rather than overprinted.
+    fn draw_x_axis(&self, c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
+        let axis_row = f.top + f.plot_h;
+        c.put(f.axis_col, axis_row, '└', Ink::Axis);
+        for col in f.plot_left..c.w {
             c.put(col, axis_row, '─', Ink::Axis);
         }
         let mut free = 0;
-        for (b, label) in layout.x.breaks.iter().zip(&layout.x.labels) {
-            if !in_domain(*b, xd) {
-                continue;
-            }
-            let col = col_of(*b);
+        let breaks = layout.x.breaks.iter().zip(&layout.x.labels);
+        for (b, label) in breaks.filter(|(b, _)| in_domain(**b, f.xd)) {
+            let col = f.col_of(*b);
             c.put(col, axis_row, '┬', Ink::Axis);
-            let len = label.chars().count();
-            let start = col.saturating_sub(len / 2).min(w.saturating_sub(len));
-            if start >= free {
-                c.text(start, axis_row + 1, label, Ink::Axis);
-                free = start + len + 1;
-            }
+            put_x_label(c, (col, axis_row + 1), label, &mut free);
         }
         if let Some(t) = self.xlab() {
             c.text(
-                plot_left + plot_w.saturating_sub(t.chars().count()) / 2,
+                f.plot_left + f.plot_w.saturating_sub(t.chars().count()) / 2,
                 axis_row + 2,
                 t,
                 Ink::Plain,
             );
         }
+    }
+}
 
-        // Points last, so they sit on top of nothing but the panel.
-        for layer in &layout.layers {
-            let aes = layer.points.as_deref().unwrap_or_default();
-            for ((x, y), p) in layer.x.iter().zip(&layer.y).zip(aes) {
-                if in_domain(*x, xd) && in_domain(*y, yd) {
-                    let ink = Ink::Point(p.colour.r, p.colour.g, p.colour.b);
-                    c.put(col_of(*x), row_of(*y), POINT_GLYPH, ink);
-                }
+/// y axis line, ticks and right-aligned break labels.
+fn draw_y_axis(c: &mut Canvas, f: &Frame, ticks: &[(f64, &str)]) {
+    for r in f.top..f.top + f.plot_h {
+        c.put(f.axis_col, r, '│', Ink::Axis);
+    }
+    for (b, label) in ticks {
+        let r = f.row_of(*b);
+        c.put(f.axis_col, r, '┤', Ink::Axis);
+        c.text(f.gutter - label.chars().count(), r, label, Ink::Axis);
+    }
+}
+
+/// Points last, so they sit on top of nothing but the panel.
+fn draw_points(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
+    for layer in &layout.layers {
+        let aes = layer.points.as_deref().unwrap_or_default();
+        for ((x, y), p) in layer.x.iter().zip(&layer.y).zip(aes) {
+            if in_domain(*x, f.xd) && in_domain(*y, f.yd) {
+                let ink = Ink::Point(p.colour.r, p.colour.g, p.colour.b);
+                c.put(f.col_of(*x), f.row_of(*y), POINT_GLYPH, ink);
             }
         }
-
-        Ok(c.render(opts.color))
     }
 }
 
@@ -397,5 +481,81 @@ mod tests {
         let out = render(GGPlot::new().data(df).geom(Geom::point()), plain(30, 10));
         assert!(out.ends_with('\n'));
         assert_eq!(out.lines().count(), 10);
+    }
+
+    #[test]
+    fn check_canvas_bounds() {
+        assert!(check_canvas(plain(MIN_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT)).is_ok());
+        assert!(check_canvas(plain(MAX_TERMINAL_WIDTH, MAX_TERMINAL_HEIGHT)).is_ok());
+        let small = check_canvas(plain(19, 8)).expect_err("small").to_string();
+        assert!(small.contains("at least 20x8 cells, got 19x8"), "{small}");
+        let big = check_canvas(plain(80, 1001)).expect_err("big").to_string();
+        assert!(big.contains("at most 1000x1000 cells, got 80x1001"), "{big}");
+    }
+
+    #[test]
+    fn frame_maps_data_to_cells_and_refuses_a_squeezed_panel() {
+        let f = Frame::new((40, 12), (2, 3), 3, ((0.0, 10.0), (0.0, 4.0))).expect("fits");
+        assert_eq!((f.axis_col, f.plot_left, f.plot_w, f.plot_h), (4, 5, 35, 7));
+        assert_eq!((f.col_of(0.0), f.col_of(10.0)), (5, 39));
+        assert_eq!((f.row_of(0.0), f.row_of(4.0)), (8, 2));
+        let e = Frame::new((12, 12), (0, 2), 3, ((0.0, 1.0), (0.0, 1.0)));
+        let e = e.err().expect("too narrow").to_string();
+        assert!(e.contains("12 cells wide; its y labels need 3"), "{e}");
+    }
+
+    #[test]
+    fn y_ticks_keep_only_the_visible_domain_and_gutter_is_the_widest_label() {
+        let built = row1().build().expect("builds");
+        let layout = built.layout().expect("layout");
+        let all = y_ticks(&layout, (-100.0, 100.0));
+        assert_eq!(all.len(), layout.y.breaks.len());
+        let some = y_ticks(&layout, (0.0, 3.0));
+        assert!(some.len() < all.len() && some.iter().all(|(b, _)| (0.0..=3.0).contains(b)));
+        assert_eq!(gutter_of(&all), 4);
+        assert_eq!(gutter_of(&[]), 0);
+    }
+
+    #[test]
+    fn put_x_label_centres_clamps_and_skips_a_touching_label() {
+        let mut c = Canvas::new(10, 2);
+        let mut free = 0;
+        // Centred: starts one cell left of column 3, and the next free column follows it.
+        put_x_label(&mut c, (3, 1), "abc", &mut free);
+        assert_eq!(free, 6);
+        // Would start at column 4, before the free column: skipped, nothing moves.
+        put_x_label(&mut c, (5, 1), "abc", &mut free);
+        assert_eq!(free, 6);
+        // Too close to the right edge: pulled back so it ends on the last column.
+        let mut edge = 0;
+        put_x_label(&mut c, (9, 0), "wxyz", &mut edge);
+        assert_eq!(edge, 11);
+        assert_eq!(
+            c.render(false),
+            "      wxyz
+  abc
+"
+        );
+    }
+
+    #[test]
+    fn draw_header_returns_the_rows_it_used() {
+        let mut c = Canvas::new(20, 8);
+        let both = row1().title("T").ylab("y").build().expect("builds");
+        assert_eq!(both.draw_header(&mut c), 2);
+        let none = row1().build().expect("builds");
+        assert_eq!(none.draw_header(&mut c), 0);
+        let only_y = row1().ylab("y").build().expect("builds");
+        assert_eq!(only_y.draw_header(&mut c), 1);
+    }
+
+    #[test]
+    fn check_drawable_names_the_refusal() {
+        let ok = row1().build().expect("builds");
+        assert!(ok.check_drawable().is_ok());
+        let facet = row1().facet(Facet::wrap("g", 2)).build().expect("builds");
+        assert!(facet.check_drawable().expect_err("facet").to_string().contains("facets"));
+        let flip = row1().coord(Coord::cartesian().flip()).build().expect("builds");
+        assert!(flip.check_drawable().expect_err("flip").to_string().contains("coord_flip"));
     }
 }
