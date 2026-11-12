@@ -50,6 +50,7 @@ concurrency:
 jobs:
   release:
     runs-on: [self-hosted, Linux, X64, clean-room]
+    environment: infra-read   # holds the INFRA_ACTIONS_READ the nightly release lanes read paiml/infra with; only main may use it (#6907)
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
