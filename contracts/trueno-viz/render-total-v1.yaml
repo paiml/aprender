@@ -1,0 +1,124 @@
+metadata:
+  id: render-total-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    Totality of the aprender-viz renderers (paiml/aprender#6941, Refs #6909). For every f32 input
+    (NaN, infinities, f32::MAX, subnormals), every coordinate limit and every canvas from 1x1 to
+    512x512, a plot built through GGPlot renders through to_framebuffer(), to_svg() and
+    to_terminal() without panicking and in work bounded by the canvas, not by the data. Rows with a
+    non-finite position are dropped for every geom. Segments are clipped to the canvas, in f64,
+    before any rasteriser loop, and clipping changes nothing for a segment already near the canvas.
+  references:
+  - 'Liang & Barsky (1984) Another Efficient Line Clipping Algorithm, CACM 27(2)'
+  - 'Bresenham (1965) Algorithm for computer control of a digital plotter, IBM Systems Journal 4(1)'
+  - 'Wu (1991) An Efficient Antialiasing Technique, SIGGRAPH 91'
+  - 'ggplot2 4.0.3: rows with non-finite positions are removed with a warning'
+  - 'crates/aprender-viz/tests/render_total.rs'
+equations:
+  non_finite_rows_dropped:
+    formula: 'rows(layer) = { i : isfinite(x[i]) ∧ isfinite(y[i]) }; every geom reads only rows(layer)'
+    domain: any f32 columns, including NaN, +Inf, -Inf
+    codomain: Vec<(f32, f32)> of finite pairs
+    invariants:
+    - a dropped row never reaches a pixel, a polyline vertex, a bar or an SVG attribute
+    - a plot with only non-finite rows renders as an empty panel
+  segment_clip:
+    formula: 'clip(s, B) = s if s ⊂ B; else Liang-Barsky(s, B) in f64, clamped to B; None if s ∩ B = ∅ or any coordinate is non-finite; B = canvas grown by 1024 px'
+    domain: segment (x0, y0, x1, y1) of f64 from any f32
+    codomain: Option<segment inside B>
+    invariants:
+    - the rasteriser's loop length is at most the diagonal of B
+    - a segment with both ends in B is returned bit for bit
+  bounded_primitives:
+    formula: 'draw_circle, draw_rect and fill_rect compute in i64 or saturate; a circle above radius 4096 is filled over the canvas rows only; an area slice walks canvas rows only'
+    domain: any i32 centre, radius, origin and any u32 extent
+    codomain: framebuffer mutation
+    invariants:
+    - no integer overflow for any argument
+    - work is at most (canvas height) rows or (2 * 4096 + 1) midpoint steps
+proof_obligations:
+- id: RT-INV-001
+  type: invariant
+  property: No public plotting path panics or runs unbounded
+  formal: '∀ data ∈ f32^n, coord limits, (w, h) ∈ [1,512]²: to_framebuffer ∧ to_svg ∧ to_terminal terminate without panic'
+  applies_to: bounded_primitives
+- id: RT-INV-002
+  type: invariant
+  property: Non-finite rows are dropped for every geom
+  formal: '∀ row i: ¬(isfinite(x[i]) ∧ isfinite(y[i])) ⇒ row i contributes no mark and no SVG attribute'
+  applies_to: non_finite_rows_dropped
+- id: RT-INV-003
+  type: invariant
+  property: The SVG carries no NaN or infinity in any attribute or text
+  formal: '∀ svg = to_svg(plot): "NaN" ∉ markup(svg) ∧ "inf" ∉ lower(markup(svg))'
+  applies_to: non_finite_rows_dropped
+- id: RT-EQV-001
+  type: equivalence
+  property: Clipping is invisible for segments near the canvas
+  formal: '∀ segment with both ends in B: rasterise(clip(s, B)) = rasterise(s) pixel for pixel (Bresenham and Wu)'
+  applies_to: segment_clip
+- id: RT-EQV-002
+  type: equivalence
+  property: Circles up to radius 4096 are the midpoint circle
+  formal: '∀ centre, radius ≤ 4096: draw_circle = midpoint_circle_reference'
+  applies_to: bounded_primitives
+enforcement:
+  repros_are_bounded:
+    description: the twelve inputs that panicked or hung now return inside a hard time bound
+    check: cargo test -p aprender-viz --test render_total
+    severity: ERROR
+  totality_property:
+    description: arbitrary f32, limits and canvas sizes through every geom and output
+    check: render_total::every_geom_renders_total
+    severity: ERROR
+  clipping_equivalence:
+    description: the clipped rasterisers equal reference copies of the unclipped ones
+    check: render_total::wu_line_equals_the_unclipped_line_near_the_canvas
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-RT-001
+  rule: Non-finite rows are dropped
+  prediction: removing the is_finite filter in BuiltGGPlot::panel_points turns line_mixed, area_mixed and non_finite_rows_are_dropped_not_drawn_at_pixel_zero RED
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: A NaN or infinite row reaches a rasteriser; the totality property cannot see it
+- id: FALSIFY-RT-002
+  rule: A segment is clipped before it is walked
+  prediction: making canvas_segment return its input unclipped turns line_coordlim_outside and area_coordlim_outside RED (a hang, caught by the time bound)
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: The time bound is too long to see a billion-pixel walk, or no repro reaches an off-canvas segment
+- id: FALSIFY-RT-003
+  rule: Clipped output stays inside the guard box
+  prediction: removing the clamp at the end of clip_segment turns rasterisers_return_for_any_f32_and_i32 RED (an overflow in draw_line_aa)
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: The property never draws a segment with one huge and one small endpoint
+- id: FALSIFY-RT-004
+  rule: draw_circle does not overflow
+  prediction: replacing the i64 centre arithmetic in draw_circle with i32 turns point_coordlim_outside RED
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: No repro puts a circle centre near i32::MAX
+- id: FALSIFY-RT-005
+  rule: fill_rect does not overflow
+  prediction: replacing saturating_add in Framebuffer::fill_rect with + turns bar_coordlim_outside RED
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: No repro puts a rectangle origin near u32::MAX
+- id: FALSIFY-RT-006
+  rule: An area slice walks canvas rows only
+  prediction: removing the row clamp in render_area turns area_huge_y_close RED (a hang)
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: The baseline does not map to an extreme pixel in the repro
+- id: FALSIFY-RT-007
+  rule: Near-canvas output is unchanged by clipping
+  prediction: clipping every segment (no guard box shortcut) turns wu_line_equals_the_unclipped_line_near_the_canvas RED
+  test: cargo test -p aprender-viz --test render_total
+  if_fails: The reference copy and the shipped rasteriser share a bug, or the property never leaves the canvas
+qa_gate:
+  id: F-RT-001
+  name: aprender-viz renderers are total
+  description: no public plotting path panics or runs unbounded for any f32 input
+  checks:
+  - repros_are_bounded
+  - totality_property
+  - clipping_equivalence
