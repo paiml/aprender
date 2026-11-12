@@ -824,6 +824,7 @@ aprender-present,aprender-present check,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,c
 aprender-present,aprender-present deploy,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:125,high
 aprender-present,aprender-present gate,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:106,high
 aprender-present,aprender-present new,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:78,high
+aprender-present,aprender-present plot,6,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:156,high
 aprender-present,aprender-present score,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:91,high
 aprender-present,aprender-present serve,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:52,high
 aprender-ptop,aprender-ptop (interactive TUI system monitor),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:120-134,high

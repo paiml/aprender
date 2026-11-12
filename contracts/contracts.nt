@@ -1599,6 +1599,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-present deploy"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-present gate"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-present new"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-present plot"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-present score"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/auditRow> "aprender-present serve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/command> "bundle"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -1610,6 +1611,7 @@
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/command> "serve"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/gitSha> "47d198202ff793c91cb790beba358f531505cb51"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/helpSha256> "b098b9327edab97690a6feffa6c5b7aede7254125b922a59d135aeb2d23ea70a"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/ledgerOrphan> "plot"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/name> "aprender-present"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/package> "aprender-present-cli"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/binary/aprender-present-cli/aprender-present> <https://ont.paiml.dev/v1alpha1/bin/sha256> "5779553d8501238b97ccab98b2386ebac950a14de67b268f7e9000e30621a828"^^<http://www.w3.org/2001/XMLSchema#string> .
