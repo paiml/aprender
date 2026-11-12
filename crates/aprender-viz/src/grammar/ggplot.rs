@@ -267,7 +267,50 @@ impl PanelGrid {
     }
 }
 
+/// One panel as drawn: its pixel rectangle, its pixel scales, and the in-domain breaks of the
+/// bottom (`x_ticks`) and left (`y_ticks`) axes with their labels.
+struct PanelFrame {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+    x_scale: LinearScale,
+    y_scale: LinearScale,
+    x_ticks: Vec<(f64, String)>,
+    y_ticks: Vec<(f64, String)>,
+}
+
 impl BuiltGGPlot {
+    /// The plot title, if one was set.
+    #[must_use]
+    pub fn title(&self) -> Option<&str> {
+        self.title.as_deref()
+    }
+
+    /// The x-axis label, if one was set.
+    #[must_use]
+    pub fn xlab(&self) -> Option<&str> {
+        self.xlab.as_deref()
+    }
+
+    /// The y-axis label, if one was set.
+    #[must_use]
+    pub fn ylab(&self) -> Option<&str> {
+        self.ylab.as_deref()
+    }
+
+    /// The coordinate system.
+    #[must_use]
+    pub fn coord(&self) -> &Coord {
+        &self.coord
+    }
+
+    /// The faceting.
+    #[must_use]
+    pub fn facet(&self) -> &Facet {
+        &self.facet
+    }
+
     /// Render to framebuffer, one sub-plot per facet panel.
     ///
     /// # Errors
@@ -318,14 +361,54 @@ impl BuiltGGPlot {
         if let Some(y) = &self.ylab {
             svg = svg.text_anchored(m, (m * 0.9).max(12.0), y, 12.0, ink, TextAnchor::Start);
         }
+        if self.theme.show_axis {
+            svg = self.svg_axis_text(svg)?;
+        }
         Ok(svg.render())
     }
 
-    /// Draw one panel: background, scales, grid, layers, axes, border.
-    fn render_panel(&self, fb: &mut Framebuffer, p: &Panel, grid: &PanelGrid) -> Result<()> {
-        let (plot_x, plot_y, plot_w, plot_h) = grid.rect(p);
+    /// Tick marks and break labels of every panel, at the breaks of the layout's position
+    /// scales (ggplot2's `axis.ticks` + `axis.text`; PLOT-GG-001, #6909).
+    fn svg_axis_text(&self, mut svg: SvgEncoder) -> Result<SvgEncoder> {
+        const TICK_PX: f32 = 4.0;
+        const AXIS_TEXT_PX: f32 = 10.0;
+        let ink = self.theme.axis_color;
+        let ps = panels(&self.facet, &self.data)?;
+        let grid = PanelGrid::new(&ps, self.width, self.height, self.theme.margin);
+        for p in &ps {
+            let f = self.panel_frame(p, &grid)?;
+            let bottom = (f.y + f.h) as f32;
+            let left = f.x as f32;
+            for (v, label) in &f.x_ticks {
+                let px = f.x_scale.scale(*v as f32);
+                svg = svg.line(px, bottom, px, bottom + TICK_PX, ink, 1.0).text_anchored(
+                    px,
+                    bottom + TICK_PX + AXIS_TEXT_PX,
+                    label,
+                    AXIS_TEXT_PX,
+                    ink,
+                    TextAnchor::Middle,
+                );
+            }
+            for (v, label) in &f.y_ticks {
+                let py = f.y_scale.scale(*v as f32);
+                svg = svg.line(left - TICK_PX, py, left, py, ink, 1.0).text_anchored(
+                    left - TICK_PX - 2.0,
+                    py + AXIS_TEXT_PX * 0.35,
+                    label,
+                    AXIS_TEXT_PX,
+                    ink,
+                    TextAnchor::End,
+                );
+            }
+        }
+        Ok(svg)
+    }
 
-        draw_rect(fb, i32_px(plot_x), i32_px(plot_y), plot_w, plot_h, self.theme.panel_background);
+    /// One panel's pixel rectangle, its pixel scales, and the breaks (with labels) that fall
+    /// inside its domain. `coord_flip()` swaps the scales, so the bottom axis carries y's breaks.
+    fn panel_frame(&self, p: &Panel, grid: &PanelGrid) -> Result<PanelFrame> {
+        let (x, y, w, h) = grid.rect(p);
 
         // Panels share one domain, so marks stay comparable between them.
         let (xs, ys) = self.position_scales();
@@ -333,21 +416,48 @@ impl BuiltGGPlot {
             apply_limits(&self.coord, xs.continuous_range, ys.continuous_range)?;
 
         // The scale pipeline below is still f32; the coordinate surface above is f64 (APEX-2c).
-        let x_scale = LinearScale::new(
-            (x_min as f32, x_max as f32),
-            (plot_x as f32, (plot_x + plot_w) as f32),
-        )?;
+        let x_scale = LinearScale::new((x_min as f32, x_max as f32), (x as f32, (x + w) as f32))?;
         let y_scale = LinearScale::new(
             (y_min as f32, y_max as f32),
-            ((plot_y + plot_h) as f32, plot_y as f32), // Inverted for screen coords
+            ((y + h) as f32, y as f32), // Inverted for screen coords
         )?;
 
+        let flip = matches!(self.coord, Coord::Cartesian { flip: true, .. });
+        let (bx, by) = if flip { (&ys, &xs) } else { (&xs, &ys) };
+        let inside = |s: &PositionScale, (lo, hi): (f64, f64)| -> Vec<(f64, String)> {
+            s.breaks
+                .iter()
+                .zip(&s.labels)
+                .filter(|(b, _)| **b >= lo.min(hi) && **b <= lo.max(hi))
+                .map(|(b, l)| (*b, l.clone()))
+                .collect()
+        };
+        Ok(PanelFrame {
+            x,
+            y,
+            w,
+            h,
+            x_ticks: inside(bx, (x_min, x_max)),
+            y_ticks: inside(by, (y_min, y_max)),
+            x_scale,
+            y_scale,
+        })
+    }
+
+    /// Draw one panel: background, scales, grid, layers, axes, border.
+    fn render_panel(&self, fb: &mut Framebuffer, p: &Panel, grid: &PanelGrid) -> Result<()> {
+        let f = self.panel_frame(p, grid)?;
+        let (plot_x, plot_y, plot_w, plot_h) = (f.x, f.y, f.w, f.h);
+        let (x_scale, y_scale) = (&f.x_scale, &f.y_scale);
+
+        draw_rect(fb, i32_px(plot_x), i32_px(plot_y), plot_w, plot_h, self.theme.panel_background);
+
         if self.theme.show_grid {
-            self.draw_grid(fb, &x_scale, &y_scale, plot_x, plot_y, plot_w, plot_h);
+            self.draw_grid(fb, &f);
         }
 
         for layer in &self.layers {
-            self.render_layer(fb, layer, p, &x_scale, &y_scale)?;
+            self.render_layer(fb, layer, p, x_scale, y_scale)?;
         }
 
         if self.theme.show_axis {
@@ -478,36 +588,20 @@ impl BuiltGGPlot {
         BuiltLayer { x, y, points }
     }
 
-    /// Draw grid lines.
-    #[allow(clippy::too_many_arguments)]
-    fn draw_grid(
-        &self,
-        fb: &mut Framebuffer,
-        x_scale: &LinearScale,
-        y_scale: &LinearScale,
-        plot_x: u32,
-        plot_y: u32,
-        plot_w: u32,
-        plot_h: u32,
-    ) {
+    /// Draw the major grid lines, one per break of each position scale (ggplot2's
+    /// `panel.grid.major`), so the grid lines up with the break labels [`Self::to_svg`] draws.
+    fn draw_grid(&self, fb: &mut Framebuffer, f: &PanelFrame) {
         let color = self.theme.grid_color;
+        let (left, right) = (f.x as f32, (f.x + f.w) as f32);
+        let (top, bottom) = (f.y as f32, (f.y + f.h) as f32);
 
-        // Draw horizontal grid lines (5 lines)
-        for i in 0..=5 {
-            let t = i as f32 / 5.0;
-            let y_val = y_scale.domain().0 + t * (y_scale.domain().1 - y_scale.domain().0);
-            let y_px = y_scale.scale(y_val);
-
-            draw_line_aa(fb, plot_x as f32, y_px, (plot_x + plot_w) as f32, y_px, color);
+        for (v, _) in &f.y_ticks {
+            let y_px = f.y_scale.scale(*v as f32);
+            draw_line_aa(fb, left, y_px, right, y_px, color);
         }
-
-        // Draw vertical grid lines (5 lines)
-        for i in 0..=5 {
-            let t = i as f32 / 5.0;
-            let x_val = x_scale.domain().0 + t * (x_scale.domain().1 - x_scale.domain().0);
-            let x_px = x_scale.scale(x_val);
-
-            draw_line_aa(fb, x_px, plot_y as f32, x_px, (plot_y + plot_h) as f32, color);
+        for (v, _) in &f.x_ticks {
+            let x_px = f.x_scale.scale(*v as f32);
+            draw_line_aa(fb, x_px, top, x_px, bottom, color);
         }
     }
 
@@ -918,7 +1012,47 @@ mod tests {
         for label in ["My Plot", "X Axis", "Y Axis"] {
             assert!(svg.contains(&format!(">{label}</text>")), "{label} not drawn");
         }
-        assert!(!build(false).contains("</text>"), "an unlabelled plot drew text");
+        let bare = build(false);
+        for label in ["My Plot", "X Axis", "Y Axis"] {
+            assert!(!bare.contains(&format!(">{label}</text>")), "an unlabelled plot drew {label}");
+        }
+    }
+
+    /// PLOT-GG-001: the SVG carries one tick label per in-range break of each position scale,
+    /// the same strings as the layout (and so as ggplot2's oracle for row 1), and a theme
+    /// without axes carries none.
+    #[test]
+    fn test_ggplot_svg_draws_break_labels_from_the_layout() {
+        let plot = |theme: Theme| {
+            GGPlot::new()
+                .data_xy(&[1.5, 13.75], &[-2.25, 7.5])
+                .geom(Geom::point())
+                .theme(theme)
+                .build()
+                .expect("plot builds")
+        };
+        let built = plot(Theme::grey());
+        let layout = built.layout().expect("layout");
+        let svg = built.to_svg().expect("svg renders");
+        let texts = svg.matches("</text>").count();
+        assert_eq!(texts, layout.x.labels.len() + layout.y.labels.len(), "{svg}");
+        for label in layout.x.labels.iter().chain(&layout.y.labels) {
+            assert!(svg.contains(&format!(">{label}</text>")), "break label {label} missing");
+        }
+        assert_eq!(plot(Theme::void()).to_svg().expect("svg").matches("</text>").count(), 0);
+    }
+
+    /// `coord_flip()` puts y's breaks on the bottom axis.
+    #[test]
+    fn test_ggplot_svg_flip_swaps_break_labels() {
+        let built = GGPlot::new()
+            .data_xy(&[1.5, 13.75], &[-2.25, 7.5])
+            .geom(Geom::point())
+            .coord(Coord::cartesian().flip())
+            .build()
+            .expect("plot builds");
+        let svg = built.to_svg().expect("svg renders");
+        assert!(svg.contains(">-2.5</text>") && svg.contains(">10</text>"), "{svg}");
     }
 
     #[test]
