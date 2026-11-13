@@ -44,8 +44,14 @@ mod ggplot2_bars_oracle;
 mod ggplot2_lines_oracle;
 #[cfg(test)]
 mod ggplot2_oracle;
+#[cfg(test)]
+mod ggplot2_oracle_scales;
 mod path;
 mod position;
+mod r_format;
+mod scale_discrete;
+mod scale_spec;
+mod scale_trans;
 mod stat;
 mod stat_count;
 mod term;
@@ -63,6 +69,10 @@ pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use position::{apply as apply_position, apply_panels, BarRow, Position, Preserve};
+pub use scale_discrete::{DiscreteSpec, DISCRETE_EXPAND_ADD};
+pub use scale_spec::{
+    scale_continuous, scale_discrete, scale_log10, ContinuousSpec, Expansion, PositionScaleSpec,
+};
 pub use stat::Stat;
 pub use stat_count::{
     bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,

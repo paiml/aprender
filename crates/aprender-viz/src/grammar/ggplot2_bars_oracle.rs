@@ -1279,3 +1279,28 @@ fn level_positions_scale_to_many_levels_and_match_a_linear_scan() {
     let repeated = vec!["b".to_string(), "a".to_string(), "b".to_string()];
     assert_eq!(level_positions(&repeated, &["b", "a"]), vec![1.0, 2.0]);
 }
+
+/// A position-scale spec with a bar layer is a typed refusal: the bar layout trains its own scales,
+/// so honouring `scale_x_log10` silently would draw a different plot than R.
+#[test]
+fn bars_with_a_position_scale_spec_are_refused() {
+    use super::scale_log10;
+    let df = frame_from_csv(
+        "x
+a
+b
+",
+    );
+    let plot = GGPlot::new()
+        .data(df)
+        .aes(Aes::new().x("x"))
+        .geom(Geom::bar())
+        .scale_y(scale_log10())
+        .build()
+        .expect("plot builds");
+    let got = plot.layout();
+    assert!(
+        matches!(&got, Err(Error::UnsupportedLayer(m)) if m.contains("geom_point only")),
+        "{got:?}"
+    );
+}

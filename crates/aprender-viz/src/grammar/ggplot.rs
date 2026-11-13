@@ -19,6 +19,7 @@ use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
 use super::path;
 use super::position::Position;
+use super::scale_spec::{require_scale_scope, PositionScaleSpec, ResolvedAxis};
 use super::stat::Stat;
 use super::stat_count::{
     bar_layout_in, discrete_axis, level_positions, sorted_levels, x_extent, y_extent, BarSpec,
@@ -97,6 +98,8 @@ pub struct GGPlot {
     xlab: Option<String>,
     /// Y-axis label.
     ylab: Option<String>,
+    x_scale: Option<PositionScaleSpec>,
+    y_scale: Option<PositionScaleSpec>,
 }
 
 impl Default for GGPlot {
@@ -121,6 +124,8 @@ impl GGPlot {
             title: None,
             xlab: None,
             ylab: None,
+            x_scale: None,
+            y_scale: None,
         }
     }
 
@@ -196,6 +201,20 @@ impl GGPlot {
         self
     }
 
+    /// `scale_x_*()`: shape the x position scale (continuous, log10 or discrete).
+    #[must_use]
+    pub fn scale_x(mut self, spec: impl Into<PositionScaleSpec>) -> Self {
+        self.x_scale = Some(spec.into());
+        self
+    }
+
+    /// `scale_y_*()`: shape the y position scale (continuous, log10 or discrete).
+    #[must_use]
+    pub fn scale_y(mut self, spec: impl Into<PositionScaleSpec>) -> Self {
+        self.y_scale = Some(spec.into());
+        self
+    }
+
     /// Set x-axis label.
     #[must_use]
     pub fn xlab(mut self, label: impl Into<String>) -> Self {
@@ -233,6 +252,8 @@ impl GGPlot {
             title: self.title,
             xlab: self.xlab,
             ylab: self.ylab,
+            x_scale: self.x_scale,
+            y_scale: self.y_scale,
         })
     }
 }
@@ -251,6 +272,8 @@ pub struct BuiltGGPlot {
     title: Option<String>,
     xlab: Option<String>,
     ylab: Option<String>,
+    x_scale: Option<PositionScaleSpec>,
+    y_scale: Option<PositionScaleSpec>,
 }
 
 /// Where each panel sits in the figure.
@@ -299,6 +322,8 @@ fn bar_x_scale(axis: &DiscreteAxis) -> PositionScale {
         breaks: axis.breaks.clone(),
         labels: axis.labels.clone(),
         n_breaks_censored: 0,
+        minor_breaks: Vec::new(),
+        levels: Some(axis.limits.clone()),
     }
 }
 
@@ -367,6 +392,9 @@ impl BuiltGGPlot {
     /// ("bars on a discrete x are not drawn yet") for a bar layer over a text `x`: its layout is
     /// computed by [`Self::layout`], the renderer does not draw it. [`Error::Rendering`] also for a
     /// position adjustment the renderer would not apply (see `require_drawable_positions`).
+    ///
+    /// With a position scale in play (`scale_x`/`scale_y`, or a text position column on a point
+    /// layer) it refuses instead of drawing a plot that disagrees with `layout()`.
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
         // Bars over a text x are laid out (see `layout()`) but not drawn yet: say so instead of
         // returning an empty plot.
@@ -376,6 +404,13 @@ impl BuiltGGPlot {
             if is_bar && Self::text_x(data, &self.aes.merge(&l.aes)).is_some() {
                 return Err(Error::Rendering("bars on a discrete x are not drawn yet".to_string()));
             }
+        }
+        if self.uses_position_scales() {
+            return Err(Error::Rendering(
+                "scale_x/scale_y and text (discrete) positions are not drawn by the renderer yet; \
+                 use layout()"
+                    .into(),
+            ));
         }
         self.require_drawable_positions()?;
         let mut fb = Framebuffer::new(self.width, self.height)?;
@@ -650,6 +685,12 @@ impl BuiltGGPlot {
 
     /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
     fn position_scales(&self) -> (PositionScale, PositionScale) {
+        let (x, y) = self.trained_domains();
+        (PositionScale::continuous(x), PositionScale::continuous(y))
+    }
+
+    /// The finite x and y domains every layer trains (`lo > hi` on an axis nothing trained).
+    fn trained_domains(&self) -> ((f64, f64), (f64, f64)) {
         let mut x = (f32::MAX, f32::MIN);
         let mut y = (f32::MAX, f32::MIN);
 
@@ -677,12 +718,59 @@ impl BuiltGGPlot {
         }
 
         let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
-        (PositionScale::continuous(wide(x)), PositionScale::continuous(wide(y)))
+        (wide(x), wide(y))
+    }
+
+    /// The columns that feed one axis, one per layer (`x_axis` selects x or y).
+    fn axis_columns(&self, x_axis: bool) -> Vec<&[DataValue]> {
+        self.layers
+            .iter()
+            .filter_map(|layer| {
+                let data = layer.data.as_ref().unwrap_or(&self.data);
+                let aes = self.aes.merge(&layer.aes);
+                let name = if x_axis { aes.x } else { aes.y };
+                data.get(name.as_deref().unwrap_or(if x_axis { "x" } else { "y" }))
+            })
+            .collect()
+    }
+
+    /// The resolved x and y axes, trained on every layer's data and shaped by `scale_x`/`scale_y`.
+    fn resolved_axes(&self) -> Result<(ResolvedAxis, ResolvedAxis)> {
+        Ok((
+            ResolvedAxis::resolve(self.x_scale.as_ref(), &self.axis_columns(true))?,
+            ResolvedAxis::resolve(self.y_scale.as_ref(), &self.axis_columns(false))?,
+        ))
+    }
+
+    /// True when [`Self::layout`] resolves position scales (PLOT-GG-001 rows 2-4): `scale_x` or
+    /// `scale_y` was set, or a position column of a `geom_point` layer holds text (ggplot2's
+    /// default discrete scale). Otherwise `layout()` is row 1's linear path, where a text position
+    /// in a line, path, step or reference layer stays that path's typed error.
+    pub(super) fn uses_position_scales(&self) -> bool {
+        self.x_scale.is_some()
+            || self.y_scale.is_some()
+            || self.layers.iter().any(|layer| {
+                if !matches!(layer.geom.geom_type, GeomType::Point { .. }) {
+                    return false;
+                }
+                let data = layer.data.as_ref().unwrap_or(&self.data);
+                let aes = self.aes.merge(&layer.aes);
+                let holds_text = |name: Option<&str>, default: &str| {
+                    data.get(name.unwrap_or(default))
+                        .is_some_and(|c| c.iter().any(|v| v.as_str().is_some()))
+                };
+                holds_text(aes.x.as_deref(), "x") || holds_text(aes.y.as_deref(), "y")
+            })
     }
 
     /// The resolved plot, as ggplot2's `ggplot_build()` computes it: each layer's positions and
-    /// aesthetics, and the trained, expanded x/y scales with breaks and labels. The renderer draws
-    /// from these same scales.
+    /// aesthetics, and the trained, expanded x/y scales with breaks and labels.
+    ///
+    /// With a position scale (`scale_x`/`scale_y`, or a text position column), layer positions are
+    /// in scale space (`log10` values on a log axis, level positions on a discrete one) and every
+    /// row is kept (a position the scale cannot place is `NaN`, ggplot2's `NA`); the renderer does
+    /// not draw such a plot (see [`Self::to_framebuffer`]). Without one, rows with a non-finite
+    /// position are dropped and the renderer draws from these same scales.
     ///
     /// With a bar layer over a text `x` (`geom_bar()`, `geom_col()`), the scales are trained over
     /// ALL layers, as ggplot2 does: x is the union of every layer's levels (a layer with text x maps
@@ -712,7 +800,20 @@ impl BuiltGGPlot {
     /// (`layout()` computes none), and any other geom than these six and `geom_point` is an
     /// [`Error::UnsupportedLayer`]. [`Error::UnknownColumn`] if the facet names a column the data
     /// lacks.
+    ///
+    /// With a position scale (`scale_x`/`scale_y`, or a text position column on a point layer) and
+    /// no bar layer, the plot must be `geom_point` layers with the identity stat under the default
+    /// `coord_cartesian()` and no facet ([`Error::UnsupportedLayer`], [`Error::UnsupportedStat`],
+    /// [`Error::UnsupportedCoord`] otherwise); [`Error::ScaleDomain`] is returned for text in a
+    /// continuous scale, or a continuous axis with no finite value to train on. `scale_x`/`scale_y`
+    /// together with a bar layer is an [`Error::UnsupportedLayer`] (the bar layout trains its own scales).
     pub fn layout(&self) -> Result<BuiltLayout> {
+        if (self.x_scale.is_some() || self.y_scale.is_some())
+            && self.layers.iter().any(|l| matches!(l.geom.geom_type, GeomType::Bar { .. }))
+        {
+            // The bar layout trains its own scales; a position-scale spec is refused by scope.
+            require_scale_scope(&self.layers, &self.coord, &self.facet)?;
+        }
         let specs = self
             .layers
             .iter()
@@ -727,10 +828,14 @@ impl BuiltGGPlot {
         }
         path::require_default_coord(&self.layers, &self.coord)?;
         path::require_identity_stats(&self.layers)?;
+        if self.uses_position_scales() {
+            return self.scaled_layout();
+        }
         let layers =
             self.layers.iter().map(|l| self.build_layer(l, None)).collect::<Result<Vec<_>>>()?;
-        let (x, y) = self.position_scales();
-        path::require_trained(&self.layers, &x, &y)?;
+        let (xd, yd) = self.trained_domains();
+        path::require_trained(&self.layers, xd, yd)?;
+        let (x, y) = (PositionScale::continuous(xd), PositionScale::continuous(yd));
         Ok(BuiltLayout { layers, x, y, x_discrete: None })
     }
 
@@ -1034,6 +1139,51 @@ impl BuiltGGPlot {
         Some(Ok(spec.position(layer.position).width(width_f64(width)).fill_first(fill_first)))
     }
 
+    /// [`Self::layout`] through the resolved position scales (rows 2-4).
+    fn scaled_layout(&self) -> Result<BuiltLayout> {
+        require_scale_scope(&self.layers, &self.coord, &self.facet)?;
+        let (x_axis, y_axis) = self.resolved_axes()?;
+        let layers = self
+            .layers
+            .iter()
+            .map(|l| self.scaled_layer(l, &x_axis, &y_axis))
+            .collect::<Result<_>>()?;
+        Ok(BuiltLayout { layers, x: x_axis.scale, y: y_axis.scale, x_discrete: None })
+    }
+
+    /// One `geom_point` layer through the resolved scales: one entry per row of its data (a cell
+    /// past the end of a short column is missing), a position the scale cannot place is `NaN`
+    /// (ggplot2's `NA`).
+    ///
+    /// # Errors
+    ///
+    /// [`Error::UnknownColumn`] when a position column is absent (R: "object not found"), and the
+    /// axis's own error for a value it cannot hold ([`ResolvedAxis::position`]).
+    fn scaled_layer(
+        &self,
+        layer: &Layer,
+        x_axis: &ResolvedAxis,
+        y_axis: &ResolvedAxis,
+    ) -> Result<BuiltLayer> {
+        let data = layer.data.as_ref().unwrap_or(&self.data);
+        let aes = self.aes.merge(&layer.aes);
+        let column = |name: Option<&str>, default: &str| {
+            let name = name.unwrap_or(default);
+            data.get(name)
+                .ok_or_else(|| Error::UnknownColumn(format!("no position column {name:?}")))
+        };
+        let (xs, ys) = (column(aes.x.as_deref(), "x")?, column(aes.y.as_deref(), "y")?);
+        const MISSING: DataValue = DataValue::Null;
+        let mut x = Vec::with_capacity(data.nrow());
+        let mut y = Vec::with_capacity(data.nrow());
+        for i in 0..data.nrow() {
+            x.push(x_axis.position(xs.get(i).unwrap_or(&MISSING))?);
+            y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
+        }
+        let points = Self::point_aes(layer, &aes, x.len());
+        Ok(BuiltLayer { x, y, points, bars: None, path: None })
+    }
+
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
     /// A path-family or reference layer is built by `grammar/path.rs`. With `levels` (a plot that
     /// has a discrete x scale), a text `x` maps onto its level positions.
@@ -1061,8 +1211,13 @@ impl BuiltGGPlot {
             .filter_map(|(a, b)| Some((f64::from((*a)?), f64::from((*b)?))))
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
+        let points = Self::point_aes(layer, &aes, x.len());
+        Ok(BuiltLayer { x, y, points, bars: None, path: None })
+    }
 
-        let points = match layer.geom.geom_type {
+    /// `n` copies of a point layer's aesthetics (`None` for any other geom).
+    fn point_aes(layer: &Layer, aes: &Aes, n: usize) -> Option<Vec<PointAes>> {
+        match layer.geom.geom_type {
             GeomType::Point { shape } => {
                 let p = PointAes {
                     shape: shape.pch(),
@@ -1072,11 +1227,10 @@ impl BuiltGGPlot {
                     alpha: aes.alpha_value.map(f64::from),
                     stroke: point_defaults::STROKE_MM,
                 };
-                Some(vec![p; x.len()])
+                Some(vec![p; n])
             }
             _ => None,
-        };
-        Ok(BuiltLayer { x, y, points, bars: None, path: None })
+        }
     }
 
     /// Draw the major grid lines, one per break of each position scale (ggplot2's

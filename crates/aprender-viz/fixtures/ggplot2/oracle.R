@@ -8,6 +8,13 @@
 # should not depend on a serializer whose number formatting we do not control). The writer below
 # emits every double with 17 significant digits, which round-trips an IEEE-754 binary64 exactly.
 
+# Pin the collation locale. Discrete level order is `sort(unique(x))`, which depends on LC_COLLATE;
+# the committed fixtures are C order, whatever the shell has (LC_ALL=en_US.UTF-8 or C). Every
+# fixture records the value it was made under (`versions.collate`) and the Rust tests refuse a
+# fixture that does not say "C".
+invisible(Sys.setlocale("LC_COLLATE", "C"))
+stopifnot(identical(Sys.getlocale("LC_COLLATE"), "C"))
+
 json_str <- function(s) {
   s <- gsub("\\", "\\\\", s, fixed = TRUE)
   s <- gsub("\"", "\\\"", s, fixed = TRUE)
@@ -19,7 +26,10 @@ json_scalar <- function(v) {
   if (is.na(v)) return("null")
   if (is.logical(v)) return(if (v) "true" else "false")
   if (is.numeric(v)) {
-    if (!is.finite(v)) stop("non-finite number has no JSON form: ", v)
+    # JSON has no Inf. ggplot_build() keeps +-Inf (log10(0), censor(only.finite = TRUE)), so they are
+    # written as the strings "Inf" / "-Inf"; the Rust side decodes exactly those two. NA and NaN are
+    # `null` (above).
+    if (is.infinite(v)) return(if (v > 0) "\"Inf\"" else "\"-Inf\"")
     return(sprintf("%.17g", v))
   }
   json_str(as.character(v))
@@ -99,6 +109,7 @@ layer_json <- function(ld, geom, drop = c("PANEL", "group")) {
 versions_json <- function() {
   list(
     R = R.version.string,
+    collate = Sys.getlocale("LC_COLLATE"),
     ggplot2 = as.character(utils::packageVersion("ggplot2")),
     scales = as.character(utils::packageVersion("scales")),
     labeling = as.character(utils::packageVersion("labeling"))
