@@ -226,7 +226,7 @@ pub fn moe_forward_token(
 mod tests {
     use super::*;
 
-    // FALSIFY-MOE_ROUTER_V1_001/002/003: router probs sum to 1, exactly k
+    // FALSIFY-MOE-ROUTER-004 (FALSIFY-MOE_ROUTER_V1_001/002/003): router probs sum to 1, exactly k
     // distinct experts are selected, and their renormalized weights sum to 1.
     #[test]
     fn falsify_moe_router_v1_sums_and_topk() {
@@ -300,7 +300,7 @@ mod tests {
         assert!((sum - 1.0).abs() < 1e-6, "weights sum = {sum}");
     }
 
-    // FALSIFY-MOE-ROUTER-004: Zero gate weight → uniform routing
+    // FALSIFY-MOE-ROUTER-002: Zero gate weight → uniform routing
     #[test]
     fn test_zero_gate_uniform_routing() {
         let hidden_dim = 4;

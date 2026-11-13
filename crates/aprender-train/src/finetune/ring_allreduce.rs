@@ -305,7 +305,7 @@ mod tests {
         }
     }
 
-    /// distributed-training-v1 `loss_equivalence` (FALSIFY-DISTRIBUTED_TRAINING_V1_002):
+    /// distributed-training-v1 `loss_equivalence` (FALSIFY-DISTRIBUTED_TRAINING_V1_002, bound as FALSIFY-DIST-TRAIN-003):
     /// one data-parallel SGD step on a linear-regression MSE, with each of 2 workers
     /// holding half the rows and their gradients ring-all-reduced, gives the same
     /// parameters and loss as a single worker stepping on all rows.
