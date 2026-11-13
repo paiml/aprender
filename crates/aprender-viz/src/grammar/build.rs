@@ -11,6 +11,7 @@ use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
 use crate::color::Rgba;
 
 use super::dist::BuiltDist;
+use super::path::BuiltPath;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
@@ -92,6 +93,9 @@ pub struct BuiltLayer {
     pub points: Option<Vec<PointAes>>,
     /// The built columns of a distribution layer (`Geom::gg_histogram` and friends).
     pub dist: Option<BuiltDist>,
+    /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
+    /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
+    pub path: Option<BuiltPath>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

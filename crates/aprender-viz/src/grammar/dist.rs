@@ -845,6 +845,7 @@ pub(super) fn layout(
     let out = built
         .into_iter()
         .map(|d| BuiltLayer {
+            path: None,
             x: d.col("x").map(<[f64]>::to_vec).unwrap_or_default(),
             y: d.col("y").map(<[f64]>::to_vec).unwrap_or_default(),
             points: None,
