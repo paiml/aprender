@@ -1,0 +1,8 @@
+   Compiling openssl-sys v0.9.103
+error: failed to run custom build command for `openssl-sys v0.9.103`
+
+Caused by:
+  --- stderr
+  Could not find openssl via pkg-config:
+  The system library `openssl` required by crate `openssl-sys` was not found.
+error: failed to compile `aprender v0.75.0`, intermediate artifacts can be found at `/tmp/cargo-installAbC123`.

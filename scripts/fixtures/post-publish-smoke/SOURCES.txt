@@ -1,19 +1,19 @@
 Fixtures for scripts/post_publish_smoke.sh --case-table. The file name is
-<expected class>--<name>.log; the case table classifies each file and compares.
+<expected class>--<name>.txt (not .log: *.log is gitignored); the case table classifies each file and compares.
 
 REAL cargo output (cargo 1.95.0 f2d3ce0bd 2026-03-21, image
 localhost:5000/sovereign-ci:stable, `docker run --network none`, 2026-11-13,
 captured byte for byte, ANSI colour codes included):
-  build--rustc-error.log            cargo install --path <crate with a type error> --locked
-  build--build-script-panic.log     cargo install --path <crate whose build.rs panics> --locked
-  network--install-offline-registry.log  cargo install aprender --version 0.75.0 --locked (no network)
-  network--path-dep-registry.log    cargo install --path <crate with a crates.io dep> (no network)
-  resolver--offline-registry-dep.log     same, with --offline
-  resolver--select-version.log      path dep pinned to a version the path does not have, --offline
-  none--install-ok.log              a passing install
+  build--rustc-error.txt            cargo install --path <crate with a type error> --locked
+  build--build-script-panic.txt     cargo install --path <crate whose build.rs panics> --locked
+  network--install-offline-registry.txt  cargo install aprender --version 0.75.0 --locked (no network)
+  network--path-dep-registry.txt    cargo install --path <crate with a crates.io dep> (no network)
+  resolver--offline-registry-dep.txt     same, with --offline
+  resolver--select-version.txt      path dep pinned to a version the path does not have, --offline
+  none--install-ok.txt              a passing install
 
 SYNTHESIZED (cargo's message text, not produced here: no network, no
 registry outage, no OOM could be staged offline):
-  http--index-503.log, network--http-429.log, resolver--index-lag-not-found.log,
-  environment--openssl-missing.log, environment--rustc-oom-killed.log,
-  none--wrapper-only.log, build--locked-lockfile-stale.log
+  http--index-503.txt, network--http-429.txt, resolver--index-lag-not-found.txt,
+  environment--openssl-missing.txt, environment--rustc-oom-killed.txt,
+  none--wrapper-only.txt, build--locked-lockfile-stale.txt

@@ -713,7 +713,7 @@ case_table() {
     fi
   done < <(case_rows)
   if [ -d "$FIXTURES" ]; then
-    for f in "$FIXTURES"/*.log; do
+    for f in "$FIXTURES"/*--*.txt; do
       [ -f "$f" ] || continue
       base=${f##*/}; want=${base%%--*}
       got=$(classify_log "$f")
@@ -1268,7 +1268,7 @@ SMOKE_FAIL step=container rc=1"; }
     echo "PASS  cascade-drain.sh keeps the cascade rc, maps YANK->4 and NOT_MEASURED->5, does not count a yanked version"
   else echo "FAIL  cascade-drain.sh loses the rc / mis-maps a smoke verdict / counts a yanked version"; ST_FAIL=$((ST_FAIL + 1)); fi
   local nmk
-  nmk=$(grep -c 'mktemp' "$dr") || nmk=0
+  nmk=$(grep -cE '^[^#]*mktemp' "$dr") || nmk=0
   if [ "$nmk" = 1 ] && grep -qF 'drain_root=$(mktemp -d ' "$dr" \
      && grep -qF '| tail -c "$DRAIN_LOG_CAP" >"$cascade_log"' "$dr" \
      && grep -qF 'mv -f -- "$cascade_log" "$cascade_log.prev"' "$dr" \
