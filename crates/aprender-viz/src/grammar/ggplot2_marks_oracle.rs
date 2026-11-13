@@ -1608,3 +1608,28 @@ fn reports_a_companion_refusal_before_the_coord() {
         assert!(matches!(r, Err(Error::UnsupportedLayer(_))), "{name} + bar + flip: {r:?}");
     }
 }
+
+#[test]
+fn the_companion_guard_refuses_the_path_family_on_its_own() {
+    use super::Layer;
+    // layout() runs the path guards first, so check the companion guard alone: it must not rely on
+    // their order to refuse a path-family or reference layer.
+    let xy = Aes::new().x("x").y("y");
+    for (name, geom, aes) in five() {
+        for other in [
+            Layer::new(Geom::line()).aes(xy.clone()),
+            Layer::new(Geom::path()).aes(xy.clone()),
+            Layer::new(Geom::step()).aes(xy.clone()),
+            Layer::new(Geom::hline(1.0)),
+            Layer::new(Geom::vline(1.0)),
+            Layer::new(Geom::abline(1.0, 0.0)),
+        ] {
+            let layers = [Layer::new(geom.clone()).aes(aes.clone()), other];
+            let r = super::marks::require_modelled_companions(&layers, &Aes::new(), &wide());
+            match &r {
+                Err(Error::UnsupportedLayer(m)) => assert!(m.starts_with("a line, path"), "{m}"),
+                other => panic!("{name}: {other:?}"),
+            }
+        }
+    }
+}
