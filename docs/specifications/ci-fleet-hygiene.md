@@ -254,16 +254,32 @@ push) and the heavy tier (`x86-main`, `workspace-test-shard` 1-4, `determinism`)
 push to `main` (the backstop).
 
 - **TRAIN** = `pull_request` AND head repo == this repo AND head ref starts with `train/aprender-` AND the PR author is the
-  fleet login (`noahgift` today: the train opens its PRs as that login). The same four conjuncts sit in the `if:` of every
+  fleet App (`paiml-fleet[bot]`; infra's merge-train.sh opens the train PR with the App token, not a personal login). The same four conjuncts sit in the `if:` of every
   heavy job and in the `TRAIN` env of the three verdict jobs.
 - **Verdict jobs** `workspace-test`, `ci / gate` and `gate`: on a non-train `pull_request` they pass only through `pr-light`
   and then exit non-zero with `not mergeable alone: lands only via train/aprender-* (heavy tier runs once per train, #7001)`.
   On a train PR they additionally fail unless the train branch contains the current `main` tip at verdict time
   (`gh api compare` `behind_by` is 0; an unreadable tip is a failure), and a skipped or cancelled heavy job is a failure.
-  `pr-light` stays its own green/red result. A draft behaves as before. There is no `continue-on-error` and no third state.
+  `pr-light` stays its own green/red result. A draft is RED on all three (`draft: not mergeable; mark ready, then it lands only via train/aprender-*`): a green draft outlived the draft and let a ready PR merge with no tests. `workflow_dispatch` is evidence only on `refs/heads/main`; on any other ref the verdicts fail. There is no `continue-on-error` and no third state.
 - **Merge-queue legs** (`mg-reuse-wt`, `guards`, the `merge_group` matrix of 3) are kept unchanged: they are dead while the
   train is the only way to `main`, and removing them is a separate change.
 - **Falsifier**: `scripts/check_ci_train_only.sh --self-test` (registered as `ci/explicit-test-commands.d/847-ci-train-only.cmd`)
   runs each verdict block as shipped and mutates `ci.yml` per conjunct, per `needs` edge and per refusal.
 - **Consequences outside this repo** (rollout, not done by this change): the train must judge member candidacy on `pr-light`
   and keep one train in flight; stale-PR and arming rules must key on `pr-light` for member PRs; fork PRs cannot land.
+- **Train body shape (fix round 1, B4).** The PR-body lints of `guard-tree` (`check_pr_ont_delta.sh`, `check_pr_closes_issue.sh`) now
+  see a train body. The train aggregates its members' lines, copied verbatim:
+  `train-members: #7006 #7007` (one line, >= 1 PR number), then per member its own `ont-delta: <kind> <id>` line and its own
+  `Closes #N` / `keep-open: <reason>` lines. The ont-delta lint enters train mode only for head ref `train/aprender-*` AND author
+  `paiml-fleet[bot]` (`--head-ref`/`--author`, set from the event in `ci/sections.yml`); it then needs >= one ont-delta line per
+  named member and EVERY ont-delta line valid. The closes lint is unchanged: member PRs are PR refs, copied `Closes`/`keep-open`
+  lines are judged as in any body. A `train-members:` line in a non-train body buys nothing.
+- **One App login.** `BOT` in `scripts/check_ci_train_only.sh` is the single source; the guard asserts all 6 `user.login ==` uses
+  in `ci.yml` and the `TRAIN_BOT` pin in `check_pr_ont_delta.sh` equal it. The value `paiml-fleet[bot]` is inferred from the App
+  that merges train PRs (`merged_by` app/paiml-fleet on #6855); it is UNCONFIRMED against a live train PR's `user.login`.
+- **Cut-over (stale greens).** Open non-draft PRs whose rollup was green under the old rules stay mergeable alone until they
+  push again. At cut-over re-run or re-push each one (or label it) so the new verdicts grade it; arm nothing meanwhile.
+  Any run of the old workflow still in flight can post a green on its sha.
+- **Emergency path.** A revert is a change like any other and lands through a train (label `expedite` makes a train of one, still the
+  full heavy tier). There is no hand-made `train/aprender-*` branch: the author conjunct admits only the App. Restricting creation
+  of `refs/heads/train/aprender-*` to the App by ruleset is advised and is an infra/GitHub setting, not part of this change.

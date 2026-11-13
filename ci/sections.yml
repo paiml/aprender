@@ -1414,6 +1414,9 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
+          # #7001 B4: a train PR (fleet App, train/aprender-* ref) is judged on its aggregated member lines
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
           set -euo pipefail
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" \
@@ -1421,7 +1424,8 @@ jobs:
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
             --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
           setsid --wait bash scripts/check_pr_ont_delta.sh \
-            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt"
+            --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt" \
+            --head-ref "$HEAD_REF" --author "$PR_AUTHOR"
 
   guard-tree-steps:
     # MANIFEST, never run by GitHub (`if: false`). These are guard-tree's guard steps,

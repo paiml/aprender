@@ -286,6 +286,11 @@ STUB
     }
 
     run_case "closes" "$write_case_closes" 0
+    # #7001 B4: a merge-train body aggregates its members' lines (see check_pr_ont_delta.sh). Member PRs are PR refs (9001 is a
+    # PR in the stub), the members' Closes / keep-open lines are copied verbatim; the unchanged rules judge the aggregate.
+    run_case "train-aggregated-closes" $'train-members: #9001\nmember #9001\nont-delta: type ONT-x\nCloses #123' 0
+    run_case "train-aggregated-keepopen" $'train-members: #9001\nont-delta: none x\nrefs #9002\nkeep-open: tracked by the epic' 0
+    run_case "train-member-refs-only-no-keepopen" $'train-members: #9001\nont-delta: none x\nRefs #9002' 1
     run_case "refs-only" "$write_case_refs_only" 1
     run_case "refs-keepopen" "$write_case_refs_keepopen" 0
     run_case "keepopen-empty" "$write_case_keepopen_empty" 1

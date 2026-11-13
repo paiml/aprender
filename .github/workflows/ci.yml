@@ -319,7 +319,7 @@ jobs:
     needs: [mg-reuse]
     # Noah 15:09Z (#5955): heavy jobs run only in the merge queue and on push; a PR runs pr-light. `!= 'pull_request'` is
     # fail-closed: an empty or unknown event name owes the heavy job.
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'noahgift')) }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}
     # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
     runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
@@ -667,7 +667,7 @@ jobs:
     # PR heads on the same gx10 pool as the queue head (a PR-head determinism queued ahead of the MQ
     # head's), so it runs on merge_group / push / tag only. x86-main stays on PR heads. The gate skips
     # DET:determinism-compare on pull_request only (loop below; scripts/check_determinism_wait.sh W10).
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'noahgift')) }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
@@ -760,7 +760,7 @@ jobs:
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
     needs: [mg-reuse-wt]
-    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'noahgift')) }}
+    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}
     # same lane as x86-main: the plain clean-room seats on every event
     runs-on: [self-hosted, Linux, X64, clean-room]
     # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
@@ -828,12 +828,13 @@ jobs:
     timeout-minutes: 10
     needs: [workspace-test-shard, mg-reuse-wt, pr-light]
     if: always()
-    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet login (train PRs are opened by noahgift today).
+    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet App (paiml-fleet[bot]; infra's merge-train.sh opens train PRs with the App token).
     # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
     permissions:
       contents: read
     env:
-      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'noahgift') && '1' || '0' }}
+      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
+      REF: ${{ github.ref }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -849,7 +850,8 @@ jobs:
           PRL: ${{ needs.pr-light.result }}
         run: |
           set -euo pipefail
-          [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
+          [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
+          [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # #7001: the heavy tier runs ONCE PER TRAIN. A pull_request that is not a train PR (TRAIN != 1: same-repo head,
           # train/aprender- ref, fleet author) can never satisfy this check: pr-light must be green, then it is refused with
@@ -925,12 +927,13 @@ jobs:
     timeout-minutes: 10
     needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]
     if: always()
-    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet login (train PRs are opened by noahgift today).
+    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet App (paiml-fleet[bot]; infra's merge-train.sh opens train PRs with the App token).
     # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
     permissions:
       contents: read
     env:
-      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'noahgift') && '1' || '0' }}
+      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
+      REF: ${{ github.ref }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -949,7 +952,8 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
-          [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
+          [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
+          [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # #7001: the heavy tier runs ONCE PER TRAIN. A pull_request that is not a train PR (TRAIN != 1: same-repo head,
           # train/aprender- ref, fleet author) can never satisfy this check: pr-light must be green, then it is refused with
@@ -991,12 +995,13 @@ jobs:
     timeout-minutes: 22
     needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
     if: always()
-    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet login (train PRs are opened by noahgift today).
+    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet App (paiml-fleet[bot]; infra's merge-train.sh opens train PRs with the App token).
     # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
     permissions:
       contents: read
     env:
-      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'noahgift') && '1' || '0' }}
+      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
+      REF: ${{ github.ref }}
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       BASE_REF: ${{ github.event.pull_request.base.ref }}
@@ -1020,7 +1025,8 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
-          [ "${DRAFT:-}" != true ] || { echo "gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
+          [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
+          [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and

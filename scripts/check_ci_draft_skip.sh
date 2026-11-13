@@ -5,7 +5,9 @@
 #   1. `on.pull_request.types` is [opened, synchronize, reopened, ready_for_review], so marking a PR ready fires the full run.
 #   2. the heavy jobs x86-main and workspace-test-shard carry `github.event.pull_request.draft != true` in their `if:`.
 #   3. the three verdict jobs (workspace-test, ci-gate, gate) read `DRAFT: ${{ github.event.pull_request.draft }}` and
-#      exit 0 on `true`, so `workspace-test`, `ci / gate` and `gate` still REPORT (a draft cannot be queued or merged).
+#      exit 1 on `true` with "draft: not mergeable; mark ready, then it lands only via train/aprender-*" (#7001 fix round 1,
+#      ruling QUORUM-GATE-7001-1113 B1): the three checks REPORT, red, so a draft cannot be queued or merged and a rerun of a
+#      draft's frozen payload cannot turn green. Never exit 0 (a green draft was the bypass), never skipped.
 #   4. workspace-test's checkout / download-artifact / sigma steps are skipped on a draft (they would fail with no shards).
 # No third state: nothing here is continue-on-error; a non-draft PR, a merge_group entry and a push run exactly as before.
 #
@@ -45,8 +47,8 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
         if ! printf '%s\n' "$blk" | has 'DRAFT: ${{ github.event.pull_request.draft }}'; then
             echo "FAIL  verdict job $j does not read the draft flag"; bad=1
         fi
-        if ! printf '%s\n' "$blk" | has '\[ "${DRAFT:-}" != true \] || {.*exit 0'; then
-            echo "FAIL  verdict job $j does not report green on a draft"; bad=1
+        if ! printf '%s\n' "$blk" | has '\[ "${DRAFT:-}" != true \] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-\*"; exit 1; }'; then
+            echo "FAIL  verdict job $j does not report RED (exit 1, the draft message) on a draft"; bad=1
         fi
         if printf '%s\n' "$blk" | has 'continue-on-error'; then
             echo "FAIL  verdict job $j uses continue-on-error (no third state)"; bad=1
@@ -74,7 +76,11 @@ self_test() {
     mutant no-ready-for-review 's/, ready_for_review\]/]/'
     mutant x86-main-unguarded '/^  x86-main:$/,/runs-on:/{s/ && github\.event\.pull_request\.draft != true//}'
     mutant shard-unguarded '/^  workspace-test-shard:$/,/runs-on:/{/draft != true/d;}'
-    mutant gate-no-draft-exit '/echo "gate: draft PR/d'
+    for jb in workspace-test ci-gate gate; do
+        mutant "$jb-draft-exit-0"      "/^  $jb:\$/,/^  [a-z-]+:\$/{s/(draft: not mergeable; mark ready[^\"]*\"; )exit 1/\1exit 0/}"
+        mutant "$jb-draft-line-deleted" "/^  $jb:\$/,/^  [a-z-]+:\$/{/\\[ \"\\$\{DRAFT:-\}\" != true \\] \|\| \\{ echo \"::error::draft/d}"
+        mutant "$jb-draft-msg-changed"  "/^  $jb:\$/,/^  [a-z-]+:\$/{s/draft: not mergeable;/draft: fine;/}"
+    done
     mutant ci-gate-no-draft-flag '/^  ci-gate:/,/^  gate:/{/DRAFT: \$/d}'
     mutant sigma-step-runs-on-draft '/Σ-executed/{n;d}'
     mutant third-state 's/^  gate:$/  gate:\n    continue-on-error: true/'
