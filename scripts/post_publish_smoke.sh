@@ -202,9 +202,10 @@ INNER
 }
 
 # container_run <runtime> <version> <logfile> -> rc of the runtime (timeout: 124)
-container_run() {
+container_run() { real_container_run "$@"; } # the seam --self-test overrides
+real_container_run() {
   local rt=$1 v=$2 log=$3 rc name inner
-  name="pps-$$-$RANDOM"
+  name="pps-${log##*/}" # unique: the log name comes from mktemp
   inner=$(inner_script)
   timeout "$TIMEOUT_SECS" "$rt" run --rm --name "$name" -e SMOKE_V="$v" "$SMOKE_IMAGE" bash -c "$inner" >"$log" 2>&1
   rc=$?
@@ -545,8 +546,6 @@ self_test() {
     detect_container() { echo "$ST_DIR/rt"; }
     STUB_RT=$1; STUB_CURL=$2; STUB_CARGO=$3; STUB_APR=$4
     export STUB_RT STUB_CURL STUB_CARGO STUB_APR
-    st_cr_real=$(declare -f container_run)
-    eval "${st_cr_real/container_run/real_container_run}"
     container_run() { st_cr_calls; real_container_run "$@"; }
   }
   st_f_ok()      { st_fake none ok ok ok; }
