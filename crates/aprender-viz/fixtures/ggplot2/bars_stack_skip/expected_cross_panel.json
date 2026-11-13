@@ -1,0 +1,54 @@
+{
+  "row": "bars_stack_skip cross_panel",
+  "spec": "x repeats only across panels: stacks",
+  "data_file": "cross.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomCol",
+      "x": [1, 2, 1, 3],
+      "y": [0, 3, 0, 1],
+      "PANEL": ["1", "1", "2", "2"],
+      "group": [1, 2, 1, 3],
+      "flipped_aes": [false, false, false, false],
+      "ymin": [-2, 0, -4, 0],
+      "ymax": [0, 3, 0, 1],
+      "xmin": [0.55000000000000004, 1.55, 0.55000000000000004, 2.5499999999999998],
+      "xmax": [1.45, 2.4500000000000002, 1.45, 3.4500000000000002],
+      "colour": [null, null, null, null],
+      "fill": ["#595959FF", "#595959FF", "#595959FF", "#595959FF"],
+      "linewidth": [0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "width": [0.90000000000000002, 0.90000000000000002, 0.90000000000000002, 0.90000000000000002],
+      "colour_rgba": [
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": ["a", "b", "c"],
+      "continuous_range": [0.40000000000000002, 3.6000000000000001],
+      "breaks": [1, 2, 3],
+      "labels": ["a", "b", "c"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [-4, 3],
+      "continuous_range": [-4.3499999999999996, 3.3500000000000001],
+      "breaks": [-4, -2, 0, 2],
+      "labels": ["-4", "-2", "0", "2"],
+      "n_breaks_censored": 1
+    }
+  },
+  "collate": "C"
+}

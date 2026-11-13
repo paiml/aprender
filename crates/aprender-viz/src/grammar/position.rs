@@ -131,12 +131,23 @@ pub fn apply_panels(panels: &mut [Vec<BarRow>], position: Position) {
                 dodge(rows, width, preserve, n_single);
             }
         }
+        // PositionStack$setup_params: with no repeated x in the whole layer, fill off and vjust 1,
+        // `var` is NULL and neither setup_data nor compute_panel touches the data, so a negative
+        // bar over a unique x keeps y = value (stacking would set it to 0).
+        Position::Stack { vjust, .. } if vjust == 1.0 && !has_repeated_x(panels) => {}
         _ => {
             for rows in panels.iter_mut() {
                 apply(rows, position);
             }
         }
     }
+}
+
+/// `vec_duplicate_any(data$x)` over every panel of the layer.
+fn has_repeated_x(panels: &[Vec<BarRow>]) -> bool {
+    let mut seen = std::collections::HashSet::new();
+    // `+ 0.0` maps -0.0 to 0.0 so that equal values share a bit pattern, as vctrs compares them.
+    !panels.iter().flatten().all(|r| seen.insert((r.x + 0.0).to_bits()))
 }
 
 /// The largest number of distinct groups at any one `xmin`.

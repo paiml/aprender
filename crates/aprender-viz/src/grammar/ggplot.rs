@@ -365,7 +365,8 @@ impl BuiltGGPlot {
     /// Propagates [`Error::UnknownColumn`] if the facet names a column the data lacks, and
     /// [`Error::UnsupportedCoord`] for a `Polar` or `Fixed` coordinate system, and [`Error::Rendering`]
     /// ("bars on a discrete x are not drawn yet") for a bar layer over a text `x`: its layout is
-    /// computed by [`Self::layout`], the renderer does not draw it.
+    /// computed by [`Self::layout`], the renderer does not draw it. [`Error::Rendering`] also for a
+    /// position adjustment the renderer would not apply (see `require_drawable_positions`).
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
         // Bars over a text x are laid out (see `layout()`) but not drawn yet: say so instead of
         // returning an empty plot.
@@ -376,6 +377,7 @@ impl BuiltGGPlot {
                 return Err(Error::Rendering("bars on a discrete x are not drawn yet".to_string()));
             }
         }
+        self.require_drawable_positions()?;
         let mut fb = Framebuffer::new(self.width, self.height)?;
 
         // Fill background
@@ -388,6 +390,47 @@ impl BuiltGGPlot {
         }
 
         Ok(fb)
+    }
+
+    /// The renderer applies no position adjustment (stack, dodge and fill move a layer in ggplot2),
+    /// so refuse one rather than draw the unmoved layer: the same refusal as `layout()`.
+    ///
+    /// The one exception is a bar layer at the bar default, `position_stack(vjust = 1)`: ggplot2
+    /// leaves such a layer where it is when no `x` repeats (`PositionStack$setup_params`), so the
+    /// unmoved drawing is right exactly then.
+    fn require_drawable_positions(&self) -> Result<()> {
+        for l in &self.layers {
+            let unmoved = match (l.position, &l.geom.geom_type) {
+                (Position::Identity, _) => true,
+                (Position::Stack { vjust, .. }, GeomType::Bar { .. }) if vjust == 1.0 => {
+                    self.layer_x_is_unique(l)?
+                }
+                _ => false,
+            };
+            if !unmoved {
+                return Err(Error::Rendering(
+                    "a position adjustment other than identity: the renderer draws no stack, \
+                     dodge or fill"
+                        .to_string(),
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// True when no `x` value repeats in the layer's data, over every panel.
+    fn layer_x_is_unique(&self, layer: &Layer) -> Result<bool> {
+        let data = layer.data.as_ref().unwrap_or(&self.data);
+        let aes = self.aes.merge(&layer.aes);
+        let mut seen = std::collections::HashSet::new();
+        for p in &panels(&self.facet, &self.data)? {
+            let rows = self.panel_rows(data, p)?;
+            let (x, _) = self.panel_points(data, &aes, &rows)?;
+            if !x.iter().all(|v| seen.insert((v + 0.0).to_bits())) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     /// Render to SVG: the framebuffer as an embedded image, with the title, x label and y label

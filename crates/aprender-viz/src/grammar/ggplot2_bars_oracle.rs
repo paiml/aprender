@@ -1057,6 +1057,109 @@ fn a_fixed_colour_on_a_bar_is_still_laid_out() {
     assert!(layout_of_layers(&grouped(), aes, vec![Layer::new(Geom::bar())], None).is_ok());
 }
 
+// --- PositionStack skips stacking when no x repeats, fill is off and vjust is 1 (review NEW-2) ----
+
+macro_rules! stack_skip {
+    ($data:literal, $name:literal) => {
+        (
+            include_str!(concat!("../../fixtures/ggplot2/bars_stack_skip/", $data)),
+            include_str!(concat!(
+                "../../fixtures/ggplot2/bars_stack_skip/expected_",
+                $name,
+                ".json"
+            )),
+        )
+    };
+}
+
+#[test]
+fn ggplot2_bars_stack_skips_a_unique_x_so_a_negative_bar_keeps_its_value() {
+    // R: y = -2 3 -1. Stacking would set the negative bars' y to 0.
+    run_layers(stack_skip!("data.csv", "unique"), xy(), vec![col()], None, "unique x");
+    // N04: a single negative row.
+    run_layers(stack_skip!("one.csv", "one_row"), xy(), vec![col()], None, "one row");
+    // Panels do not change it while x stays unique over the layer.
+    run_layers(
+        stack_skip!("data.csv", "unique_facet"),
+        xy(),
+        vec![col()],
+        Some(Facet::wrap("f", 2)),
+        "unique x, facet",
+    );
+}
+
+#[test]
+fn ggplot2_bars_stack_still_stacks_when_a_skip_condition_fails() {
+    // vjust != 1 (U2) and fill (U3) stack even over a unique x.
+    let half = col().position(Position::Stack { vjust: 0.5, reverse: false });
+    run_layers(stack_skip!("data.csv", "vjust05"), xy(), vec![half], None, "vjust 0.5");
+    let fill = col().position(Position::fill());
+    run_layers(stack_skip!("data.csv", "fill"), xy(), vec![fill], None, "fill");
+    // x repeats only across panels: the layer's x has a duplicate, so it stacks (y = 0 3 0 1).
+    run_layers(
+        stack_skip!("cross.csv", "cross_panel"),
+        xy(),
+        vec![col()],
+        Some(Facet::wrap("f", 2)),
+        "x repeats across panels",
+    );
+}
+
+#[test]
+fn every_render_target_refuses_a_position_it_would_not_apply() {
+    // NEW-1: to_svg / to_framebuffer / to_terminal draw the unmoved layer unless they refuse, where
+    // ggplot2 stacks, dodges or fills. Point, line, hline and numeric-x col, each with a duplicate x.
+    use super::term::TerminalPlot;
+    let df = frame_from_csv("x,y\n1,2\n1,-3\n2,4\n");
+    let line = |p: Position| Layer::new(Geom::line()).position(p);
+    let layers: Vec<(&str, Box<dyn Fn(Position) -> Layer>)> = vec![
+        ("point", Box::new(|p| Layer::new(Geom::point()).position(p))),
+        ("line", Box::new(line)),
+        ("hline", Box::new(|p| Layer::new(Geom::hline(1.0)).position(p))),
+        ("numeric-x col", Box::new(|p| Layer::new(Geom::col()).position(p))),
+    ];
+    for (name, make) in &layers {
+        for p in [Position::stack(), Position::fill(), Position::dodge()] {
+            let plot =
+                GGPlot::new().data(df.clone()).aes(xy()).layer(make(p)).build().expect("plot");
+            let what = format!("{name} {p:?}");
+            assert!(plot.layout().is_err(), "{what}: layout");
+            assert!(plot.to_svg().is_err(), "{what}: to_svg");
+            assert!(plot.to_framebuffer().is_err(), "{what}: to_framebuffer");
+            let term = plot.to_terminal(TerminalPlot { width: 60, height: 20, color: false });
+            assert!(term.is_err(), "{what}: to_terminal");
+        }
+    }
+    // The refusal names the position, not an unrelated cause.
+    let plot = GGPlot::new()
+        .data(df.clone())
+        .aes(xy())
+        .layer(Layer::new(Geom::point()).position(Position::stack()))
+        .build()
+        .expect("plot");
+    let err = plot.to_svg().expect_err("svg");
+    assert!(matches!(&err, Error::Rendering(m) if m.contains("position adjustment")), "{err}");
+    // A default-stack bar layer is drawn only while no x repeats (ggplot2 skips the stack then).
+    let numeric_col = |df: &DataFrame, p: Position| {
+        GGPlot::new().data(df.clone()).aes(xy()).layer(col().position(p)).build().expect("plot")
+    };
+    let unique = frame_from_csv("x,y\n1,2\n2,-3\n3,4\n");
+    assert!(numeric_col(&unique, Position::stack()).to_framebuffer().is_ok(), "unique x");
+    assert!(numeric_col(&df, Position::stack()).to_framebuffer().is_err(), "repeated x");
+    let half = Position::Stack { vjust: 0.5, reverse: false };
+    assert!(numeric_col(&unique, half).to_framebuffer().is_err(), "vjust 0.5 stacks");
+    // Controls: identity on the same layers still renders on every target.
+    for (name, make) in &layers {
+        let plot = GGPlot::new()
+            .data(df.clone())
+            .aes(xy())
+            .layer(make(Position::Identity))
+            .build()
+            .expect("plot");
+        assert!(plot.to_framebuffer().is_ok(), "{name}: identity framebuffer");
+    }
+}
+
 #[test]
 fn a_position_other_than_identity_on_a_non_bar_layer_is_refused() {
     let positions = [Position::stack(), Position::fill(), Position::dodge()];
