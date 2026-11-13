@@ -1,0 +1,387 @@
+{
+  "row": "scale_edge",
+  "data_file": "data.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "cases": [
+    {
+      "name": "limits_na_lo",
+      "spec": "scale_x_continuous(limits = c(NA, 10))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2.5, 4, 6],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1, 10],
+          "continuous_range": [0.55000000000000004, 10.449999999999999],
+          "breaks": [2.5, 5, 7.5, 10],
+          "labels": ["2.5", "5.0", "7.5", "10.0"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1.25, 2.5, 3.75, 5, 6.25, 7.5, 8.75, 10]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_na_hi",
+      "spec": "scale_x_continuous(limits = c(0, NA))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2.5, 4, 6],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [0, 6],
+          "continuous_range": [-0.30000000000000004, 6.2999999999999998],
+          "breaks": [0, 2, 4, 6],
+          "labels": ["0", "2", "4", "6"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 1, 2, 3, 4, 5, 6]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_na_both",
+      "spec": "scale_x_continuous(limits = c(NA, NA))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2.5, 4, 6],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1, 6],
+          "continuous_range": [0.75, 6.25],
+          "breaks": [2, 4, 6],
+          "labels": ["2", "4", "6"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1, 2, 3, 4, 5, 6]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_na_lo_log",
+      "spec": "scale_x_log10(limits = c(NA, 100))",
+      "rows": null,
+      "layer": {
+        "x": [0, 0.3979400086720376, 0.6020599913279624, 0.77815125038364363],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [0, 2],
+          "continuous_range": [-0.10000000000000001, 2.1000000000000001],
+          "breaks": [0, 1, 2],
+          "labels": ["1", "10", "100"],
+          "n_breaks_censored": 2,
+          "minor_breaks": [0, 0.5, 1, 1.5, 2]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_pm_max",
+      "spec": "scale_x_continuous(limits = c(-M, M))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2.5, 4, 6],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [-1.7976931348623157e+308, 1.7976931348623157e+308],
+          "continuous_range": [-1.7976931348623157e+308, 1.7976931348623157e+308],
+          "breaks": [-1.7976931348623157e+308, -8.9884656743115785e+307, 0, 8.9884656743115775e+307, 1.7976931348623157e+308],
+          "labels": ["-1.797693e+308", "-8.988466e+307", "0.000000e+00", "8.988466e+307", "1.797693e+308"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [-1.7976931348623157e+308, -1.3482698511467367e+308, -8.9884656743115785e+307, -4.4942328371557893e+307, 0, 4.4942328371557888e+307, 8.9884656743115775e+307, 1.3482698511467367e+308, 1.7976931348623157e+308]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_zero_max",
+      "spec": "scale_x_continuous(limits = c(0, M))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2.5, 4, 6],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [0, 1.7976931348623157e+308],
+          "continuous_range": [-8.9884656743115788e+306, 1.7976931348623157e+308],
+          "breaks": [-8.9884656743115788e+306, 3.8200979115824207e+307, 8.5390423905959992e+307, 1.3257986869609577e+308, 1.7976931348623157e+308],
+          "labels": ["-8.988466e+306", "3.820098e+307", "8.539042e+307", "1.325799e+308", "1.797693e+308"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [-8.9884656743115788e+306, 1.4606256720756315e+307, 3.8200979115824207e+307, 6.1795701510892099e+307, 8.5390423905959992e+307, 1.0898514630102787e+308, 1.3257986869609577e+308, 1.5617459109116368e+308, 1.7976931348623157e+308]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_pm_max_no_expand",
+      "spec": "scale_x_continuous(limits = c(-M, M), expand = expansion(0))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2.5, 4, 6],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [-1.7976931348623157e+308, 1.7976931348623157e+308],
+          "continuous_range": [-1.7976931348623157e+308, 1.7976931348623157e+308],
+          "breaks": [-1.7976931348623157e+308, -8.9884656743115785e+307, 0, 8.9884656743115775e+307, 1.7976931348623157e+308],
+          "labels": ["-1.797693e+308", "-8.988466e+307", "0.000000e+00", "8.988466e+307", "1.797693e+308"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [-1.7976931348623157e+308, -1.3482698511467367e+308, -8.9884656743115785e+307, -4.4942328371557893e+307, 0, 4.4942328371557888e+307, 8.9884656743115775e+307, 1.3482698511467367e+308, 1.7976931348623157e+308]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "disc_dup_limits",
+      "spec": "scale_x_discrete(limits = c('a', 'a', 'b'))",
+      "rows": null,
+      "layer": {
+        "x": [1, 3, null, 3],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "a", "b"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["a", "b"],
+          "break_positions": [1, 3],
+          "labels": ["a", "b"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "disc_dup_breaks",
+      "spec": "scale_x_discrete(breaks = c('a', 'a'))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2, 3, 2],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b", "c"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["a"],
+          "break_positions": [1],
+          "labels": ["a"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "disc_dup_breaks_labels",
+      "spec": "scale_x_discrete(breaks = c('a', 'a', 'b'), labels = c('A', 'B', 'C'))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2, 3, 2],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b", "c"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["a", "b"],
+          "break_positions": [1, 2],
+          "labels": ["A", "C"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "breaks_unsorted",
+      "spec": "scale_x_continuous(breaks = c(5, 1, 3))",
+      "rows": null,
+      "layer": {
+        "x": [1, 2.5, 4, 6],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1, 6],
+          "continuous_range": [0.75, 6.25],
+          "breaks": [5, 1, 3],
+          "labels": ["5", "1", "3"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [5, 3, 1, 2, 3]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_subnormal",
+      "spec": "scale_x_continuous(limits = c(0, 5e-324))",
+      "rows": null,
+      "layer": {
+        "x": [null, null, null, null],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [0, 4.9406564584124654e-324],
+          "continuous_range": [0, 4.9406564584124654e-324],
+          "breaks": [0, 0, 0, 0, 4.9406564584124654e-324],
+          "labels": ["0.000000e+00", "0.000000e+00", "0.000000e+00", "0.000000e+00", "4.940656e-324"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 0, 0, 0, 0, 0, 0, 0, 4.9406564584124654e-324]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    },
+    {
+      "name": "limits_zero_range_tol",
+      "spec": "scale_x_continuous(limits = c(1, 1 + 1e-15))",
+      "rows": null,
+      "layer": {
+        "x": [1, null, null, null],
+        "y": [1, 2, 3, 4]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1, 1.0000000000000011],
+          "continuous_range": [0.94999999999999996, 1.0500000000000012],
+          "breaks": [0.95000000000000007, 0.97500000000000009, 1, 1.0250000000000001, 1.05],
+          "labels": ["0.950", "0.975", "1.000", "1.025", "1.050"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0.95000000000000007, 0.96250000000000013, 0.97500000000000009, 0.98750000000000004, 1, 1.0125000000000002, 1.0250000000000001, 1.0375000000000001, 1.05]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 4],
+          "continuous_range": [0.84999999999999998, 4.1500000000000004],
+          "breaks": [1, 2, 3, 4],
+          "labels": ["1", "2", "3", "4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [1, 1.5, 2, 2.5, 3, 3.5, 4]
+        }
+      }
+    }
+  ]
+}

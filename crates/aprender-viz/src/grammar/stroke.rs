@@ -350,6 +350,27 @@ mod tests {
     }
 
     #[test]
+    fn split_runs_keeps_data_order_inside_each_group() {
+        // R's order() is stable: inside a group the vertices stay in data order. 200 rows in
+        // 3 interleaved groups is far past the size below which an unstable sort happens to
+        // behave stably, so sort_unstable_by_key turns this RED.
+        let n = 200;
+        let x: Vec<f64> = (0..n).map(f64::from).collect();
+        let y = x.clone();
+        let panel = vec![0; n as usize];
+        let group: Vec<i64> = (0..n).map(|i| i64::from((i * 7 + i / 5) % 3)).collect();
+        let runs = split_runs(&x, &y, &panel, &group, 0);
+        assert_eq!(runs.len(), 3);
+        for (g, run) in runs.iter().enumerate() {
+            let want: Vec<(f64, f64)> = (0..n)
+                .filter(|&i| i64::from((i * 7 + i / 5) % 3) == g as i64)
+                .map(|i| (f64::from(i), f64::from(i)))
+                .collect();
+            assert_eq!(run, &want, "group {g}: vertex order is not data order");
+        }
+    }
+
+    #[test]
     fn reference_runs_span_the_domain() {
         let r = |kind, intercept: &[f64], slope: &[f64]| {
             Some(Reference { kind, intercept: intercept.to_vec(), slope: slope.to_vec() })

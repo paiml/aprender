@@ -126,8 +126,28 @@ fn degenerate(dmin: f64, dmax: f64, m: usize) -> Vec<f64> {
     if m <= 1 {
         return vec![dmin];
     }
-    let step = (dmax - dmin) / (m as f64 - 1.0);
-    (0..m).map(|i| dmin + i as f64 * step).collect()
+    let gaps = m as f64 - 1.0;
+    let mut step = (dmax - dmin) / gaps;
+    if !step.is_finite() {
+        // `dmax - dmin` overflowed (`c(-.Machine$double.xmax, .Machine$double.xmax)`): R's
+        // `seq(length.out =)` divides each end first.
+        step = dmax / gaps - dmin / gaps;
+    }
+    // `seq(from, to, length.out = m)` ends at `to` exactly (even when `step` underflows to 0, a
+    // subnormal span); a value that would overflow counting up from `from` is counted down from
+    // `to` instead.
+    (0..m)
+        .map(|i| {
+            let up = dmin + i as f64 * step;
+            if i + 1 == m {
+                dmax
+            } else if up.is_finite() {
+                up
+            } else {
+                dmax - (m - 1 - i) as f64 * step
+            }
+        })
+        .collect()
 }
 
 /// The best labeling seen so far.
@@ -170,10 +190,15 @@ impl Best {
 fn scan_starts(c: &Ctx<'_>, best: &mut Best, q: f64, j: f64, k: f64, step: f64) {
     let min_start = libm::floor(c.dmax / step) * j - (k - 1.0) * j;
     let max_start = libm::ceil(c.dmin / step) * j;
-    let mut start = min_start;
-    while start <= max_start {
-        best.offer(c, q, j, k, start * (step / j), step);
-        start += 1.0;
+    if min_start > max_start {
+        return;
+    }
+    // R's `min_start:max_start` has floor(max - min + 1 + FLT_EPSILON) elements, min_start + i.
+    // Counting them keeps the loop finite: stepping an f64 by 1.0 stalls once |start| >= 2^53,
+    // which a narrow range far from zero (a single value near 1e14) reaches.
+    let n = libm::floor(max_start - min_start + 1.0 + f64::from(f32::EPSILON)) as i64;
+    for i in 0..n {
+        best.offer(c, q, j, k, (min_start + i as f64) * (step / j), step);
     }
 }
 
@@ -209,10 +234,28 @@ fn scan_counts(c: &Ctx<'_>, best: &mut Best, q: f64, j: f64, sm: f64) {
     }
 }
 
+/// R's `seq(from, to, by)` for `by > 0` (`seq.default`): a span below 100 machine epsilons of the
+/// larger end is `from` alone; otherwise `from + (0:n) * by` with `n = floor((to - from) / by + 1e-10)`,
+/// each value capped at `to`.
+fn seq_by(from: f64, to: f64, by: f64) -> Vec<f64> {
+    let del = to - from;
+    if del.abs() / from.abs().max(to.abs()) < 100.0 * f64::EPSILON {
+        return vec![from];
+    }
+    let n = libm::floor(del / by + 1e-10) as i64;
+    (0..=n.max(0)).map(|i| (from + i as f64 * by).min(to)).collect()
+}
+
 fn search(dmin: f64, dmax: f64, m: usize, qs: &[f64], w: &[f64; 4], only_loose: bool) -> Vec<f64> {
     let (dmin, dmax) = if dmin > dmax { (dmax, dmin) } else { (dmin, dmax) };
     if m < 2 || qs.is_empty() || !dmin.is_finite() || !dmax.is_finite() || dmax - dmin < EPS {
         return degenerate(dmin, dmax, m.max(1));
+    }
+    // labeling::extended: a range wider than sqrt(.Machine$double.xmax) is returned as
+    // seq(dmin, dmax, length.out = m). Without it the coverage bound squares the span, overflows
+    // to inf/inf = NaN, never prunes, and the power loop runs forever.
+    if dmax - dmin > libm::sqrt(f64::MAX) {
+        return degenerate(dmin, dmax, m);
     }
 
     let c = Ctx { dmin, dmax, m: m as f64, qs, w, only_loose };
@@ -233,9 +276,61 @@ fn search(dmin: f64, dmax: f64, m: usize, qs: &[f64], w: &[f64; 4], only_loose: 
     }
 
     if best.lstep > 0.0 {
-        let n = ((best.lmax - best.lmin) / best.lstep).round() as i64 + 1;
-        (0..n.max(1)).map(|i| best.lmin + i as f64 * best.lstep).collect()
+        seq_by(best.lmin, best.lmax, best.lstep)
     } else {
         degenerate(dmin, dmax, m)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// `labeling::extended(0.89e200, 1.12e200, 5)` and `(-1e300, 1e300, 5)` in R: a range wider than
+    /// `sqrt(.Machine$double.xmax)` is `seq(dmin, dmax, length.out = m)`. Before the guard the
+    /// search never returned on these ranges.
+    #[test]
+    fn a_range_wider_than_sqrt_max_is_evenly_spaced_like_r() {
+        let got = extended(0.89e200, 1.12e200, 5, &Q_DEFAULT, &W_DEFAULT);
+        let want = [8.9e199, 9.475e199, 1.005e200, 1.0625e200, 1.12e200];
+        assert_eq!(got.len(), want.len(), "{got:?}");
+        assert!(got.iter().zip(want).all(|(g, w)| (g - w).abs() <= 1e-12 * w.abs()), "{got:?}");
+        assert_eq!(
+            extended(-1e300, 1e300, 5, &Q_DEFAULT, &W_DEFAULT),
+            [-1e300, -5e299, 0.0, 5e299, 1e300]
+        );
+    }
+
+    /// `labeling::extended(v - 0.05, v + 0.05, 5)` with `v = 131815660000000` returns the one break
+    /// `v - 0.05` in R: the start offsets pass 2^53 (stepping them by 1.0 never ended), and R's
+    /// `seq(lmin, lmax, by = 0.025)` returns `lmin` alone because the span is under 100 epsilons
+    /// of `lmax`.
+    #[test]
+    fn a_narrow_range_far_from_zero_ends_like_r() {
+        let v = 131_815_660_000_000.0_f64;
+        assert_eq!(extended(v - 0.05, v + 0.05, 5, &Q_DEFAULT, &W_DEFAULT), [v - 0.05]);
+    }
+}
+
+#[cfg(test)]
+mod degenerate_tests {
+    use super::*;
+
+    /// `seq(-xmax, xmax, length.out = 5)` in R: the span overflows, so each end is divided first.
+    #[test]
+    fn a_span_that_overflows_keeps_finite_steps() {
+        let m = f64::MAX;
+        let got = degenerate(-m, m, 5);
+        assert_eq!(got.len(), 5);
+        assert!(got.iter().all(|v| v.is_finite()), "{got:?}");
+        assert_eq!((got[0], got[2], got[4]), (-m, 0.0, m));
+        assert!((got[1] + m / 2.0).abs() <= m * 1e-15, "{got:?}");
+    }
+
+    /// `seq(0, 5e-324, length.out = 5)`: the step underflows to 0, the last value is still `to`.
+    #[test]
+    fn the_last_value_is_the_upper_end_even_when_the_step_underflows() {
+        assert_eq!(degenerate(0.0, 5e-324, 5), [0.0, 0.0, 0.0, 0.0, 5e-324]);
+        assert_eq!(degenerate(1.0, 2.0, 1), [1.0]);
     }
 }
