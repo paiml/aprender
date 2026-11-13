@@ -48,6 +48,22 @@ exec 9> "${state:?}/.lock"
 flock -n 9 || { say "another run holds the lock: nothing done"; exit 3; }
 G() { git -C "$repo" "$@"; }
 
+# SUPERSEDED_TAGS: tags that will never be published (named, dated, reasoned; exact match only). Entry = "tag|date|reason".
+# A new entry is an operator ruling. An entry lacking its tag, a YYYY-MM-DD date or a reason is refused (exit 2), never half-applied.
+SUPERSEDED_TAGS=(
+    'v0.72.4|2026-11-13|superseded by 0.72.5, not published; operator ruling 2026-11-13 06:57Z'
+)
+superseded_tag() { # superseded_tag TAG: rc 0 when TAG equals an exemption entry's tag, whole string (v0.72.40 and v0.72.4-rc never match)
+    local e t
+    for e in "${SUPERSEDED_TAGS[@]}"; do t=${e%%|*}; [ "$t" = "$1" ] && return 0; done
+    return 1
+}
+for e in "${SUPERSEDED_TAGS[@]}"; do
+    IFS='|' read -r e_tag e_date e_reason <<< "$e"
+    [[ $e_tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] && [[ $e_date =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] && date -u -d "$e_date" > /dev/null 2>&1 \
+        && [ -n "${e_reason// /}" ] || usage "bad exemption entry '$e': need tag|YYYY-MM-DD|reason"
+done
+
 # page_text: quotes, backticks, $, ! and backslashes stripped (tmux send-keys / echo safe), <= 240 chars (merge-drought precedent)
 page_text() { printf '%s' "$1" | tr -d "'\"\`\$!\\\\" | tr '\n' ' ' | cut -c1-240; }
 page() { # page LINE: rc 0 only when at least one --page-target accepted it. Each target is verified with tmux has-session first;
@@ -118,6 +134,7 @@ tag_time() { # tag_time TAG -> the epoch the tag is dated by (see above)
 }
 while IFS= read -r tag; do
     [[ $tag =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || continue
+    superseded_tag "$tag" && continue
     ts=$(tag_time "$tag")
     [[ $ts =~ ^[0-9]+$ ]] || { nm=1; inbox_line "NOT_MEASURED tag $tag: cannot date it (state dir unwritable or git read failed); no decision"; continue; }
     [ "$ts" -ge "$since_s" ] || continue
