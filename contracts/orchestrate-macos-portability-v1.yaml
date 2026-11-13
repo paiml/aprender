@@ -40,5 +40,5 @@ falsification:
 falsification_tests:
   - id: FALSIFY-ORCH-MACOS-PRCTL-GATE
     rule: "configure_parent_death_signal, the fn that calls prctl(PR_SET_PDEATHSIG), is gated #[cfg(target_os = \"linux\")]; cfg(unix) would break the macOS build"
-    prediction: "the grep finds cfg(target_os = \"linux\") in the 2 lines above the fn; it exits 1 when the gate is widened to cfg(unix)"
-    test: "grep -B2 -E '^fn configure_parent_death_signal' crates/aprender-orchestrate/src/agent/driver/apr_serve.rs | grep -q 'cfg(target_os = \"linux\")'"
+    prediction: "the exact line #[cfg(target_os = \"linux\")] sits in the 2 lines above the prctl fn (the `cmd:` one, not the `_cmd` stub, whose cfg(not(...)) contains the same substring); exits 1 when widened to cfg(unix)"
+    test: "grep -B2 -F 'fn configure_parent_death_signal(cmd:' crates/aprender-orchestrate/src/agent/driver/apr_serve.rs | grep -qxF '#[cfg(target_os = \"linux\")]'"
