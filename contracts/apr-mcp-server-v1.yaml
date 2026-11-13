@@ -292,3 +292,64 @@ toyota_way_principles:
     three-step process with compiler/test enforcement at each step: ship
     the test, append an entry here, update the spec. A missing step
     fails CI instead of silently degrading.
+
+# #5291 batch 2: the ENFORCED falsification_conditions above, bound as
+# falsification_tests (same ids, same tests) so pv and the no-test debt
+# census see them. Only conditions whose test fn exists are bound.
+falsification_tests:
+  - id: FALSIFY-MCP-001
+    rule: "`initialize` responds within 500ms with protocolVersion \"2024-11-05\" (spec budget 500ms; test budget 50ms for 10× CI headroom)."
+    prediction: "falsify_mcp_001_initialize_under_500ms passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_m1 falsify_mcp_001_initialize_under_500ms"
+  - id: FALSIFY-MCP-002
+    rule: "Every tool returned by `tools/list` exposes an `inputSchema` that compiles as a valid JSON Schema Draft 7 document (meta-validated via `jsonschema::validator_for`)."
+    prediction: "every_tool_input_schema_is_valid_jsonschema_draft_7 passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_schema every_tool_input_schema_is_valid_jsonschema_draft_7"
+  - id: FALSIFY-MCP-003
+    rule: "`apr.run` end-to-end MCP response shape: wraps `apr run <model> --json` and the returned ToolCallResult text payload parses as JSON carrying the exact CLI schema (model, text, tokens[], tokens_generated, max_tokens,..."
+    prediction: "falsify_mcp_003_apr_run_returns_tokens_array passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_mcp_003 falsify_mcp_003_apr_run_returns_tokens_array"
+  - id: FALSIFY-MCP-004
+    rule: "`apr.qa` end-to-end MCP response shape: wraps `apr qa <model> --json` and the returned ToolCallResult text payload parses as the QaReport schema (model, passed, gates[], gates_executed, gates_skipped,..."
+    prediction: "falsify_mcp_004_apr_qa_returns_eight_gates_with_pass_value_threshold passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_mcp_004 falsify_mcp_004_apr_qa_returns_eight_gates_with_pass_value_threshold"
+  - id: FALSIFY-MCP-005
+    rule: "A request whose `jsonrpc` field is not exactly \"2.0\" is rejected with JSON-RPC error code -32600 (Invalid Request) before method dispatch; the server must not crash and must not route to initialize / tools/list /..."
+    prediction: "falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600 passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_m1 falsify_mcp_005_invalid_jsonrpc_version_is_minus_32600"
+  - id: FALSIFY-MCP-006
+    rule: "`notifications/cancelled` during a long-running tool call stops the spawned subprocess within the configured grace window (SIGTERM then SIGKILL) and returns a partial result flagged `isError: true`."
+    prediction: "falsify_mcp_006_cancel_stops_subprocess_within_grace passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_mcp_006 falsify_mcp_006_cancel_stops_subprocess_within_grace"
+  - id: FALSIFY-MCP-007
+    rule: "An `initialize` whose `params.protocolVersion` differs from the server's is answered with a SUCCESS result carrying the version the server does support, never a JSON-RPC error."
+    prediction: "falsify_mcp_007_protocol_version_mismatch_negotiates_down passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_m1 falsify_mcp_007_protocol_version_mismatch_negotiates_down"
+  - id: FALSIFY-MCP-008
+    rule: "For every tool migrated to the build.rs codegen path, the live `inputSchema` from `tools/list` is byte-identical (after JSON canonicalization) to the schema derived from `contracts/apr-mcp-tool-schemas-v1.yaml` by..."
+    prediction: "migrated_tools_match_yaml_contract_byte_for_byte passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_mcp_008 migrated_tools_match_yaml_contract_byte_for_byte"
+  - id: FALSIFY-MCP-009
+    rule: "The `apr mcp` stdio server MUST NOT reply to a JSON-RPC 2.0 notification."
+    prediction: "falsify_mcp_009_no_reply_to_notification passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --test falsify_mcp_dogfood_001 falsify_mcp_009_no_reply_to_notification"
+  - id: FALSIFY-MCP-010
+    rule: "Every request carrying an `id` is answered BEFORE the read loop returns, including a `tools/call` still in flight when stdin reaches EOF."
+    prediction: "serve_stream_answers_tools_call_before_returning_on_eof passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --lib serve_stream_answers_tools_call_before_returning_on_eof"
+  - id: FALSIFY-MCP-011
+    rule: "A line that is not valid UTF-8 is a malformed MESSAGE: it is answered with -32700 and the session keeps serving, exactly as an already-correct malformed-JSON line is."
+    prediction: "serve_stream_survives_invalid_utf8_line passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --lib serve_stream_survives_invalid_utf8_line"
+  - id: FALSIFY-MCP-012
+    rule: "Valid JSON that is not a valid Request object is -32600 Invalid Request with the client's `id` echoed, NOT -32700 Parse error with `id: null`; genuinely malformed JSON stays -32700; and a JSON-RPC batch ARRAY is..."
+    prediction: "missing_required_field_is_invalid_request_with_id_echoed passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --lib missing_required_field_is_invalid_request_with_id_echoed"
+  - id: FALSIFY-MCP-013
+    rule: "`ping` is MCP base protocol, not an advertised capability: it is answered with an empty result at any point in the session."
+    prediction: "ping_returns_empty_result passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --lib ping_returns_empty_result"
+  - id: FALSIFY-MCP-014
+    rule: "A required `tools/call` argument supplied with the WRONG JSON TYPE is reported as a type error naming the received type, never as \"Missing required argument\"."
+    prediction: "wrong_type_names_the_type_and_never_says_missing passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-mcp --lib wrong_type_names_the_type_and_never_says_missing"

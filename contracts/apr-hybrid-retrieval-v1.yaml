@@ -194,3 +194,24 @@ toyota_way_principles:
     fixture/refactoring/perf prerequisites for gates 001/003/004
     land. Each phase = one PR ≈ one falsifier, per the project's
     falsifier-first cascade.
+
+# #5291 batch 2: the ENFORCED falsification_conditions above, bound as
+# falsification_tests (same ids, same tests) so pv and the no-test debt
+# census see them. Only conditions whose test fn exists are bound.
+falsification_tests:
+  - id: FALSIFY-HYBRID-002
+    rule: "`HybridRetriever::retrieve(query, k)` returns `Vec<RetrievalResult>` whose `(chunk.id, fused_score)` pairs match — for the same query, configured `FusionStrategy`, `candidates_per_source`, and `k` — what a caller..."
+    prediction: "trait_method_matches_explicit_combine passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-rag --test falsify_hybrid_002 trait_method_matches_explicit_combine"
+  - id: FALSIFY-HYBRID-004
+    rule: "`BM25Index::add_batch` over a deterministic 5k-doc fixture (each doc is a 10-word synthetic sentence drawn from a small vocabulary, ChaCha8Rng-seeded for reproducibility) completes within 10 s on commodity hardware."
+    prediction: "bm25_batch_index_within_budget passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-rag --test falsify_hybrid_004 bm25_batch_index_within_budget"
+  - id: FALSIFY-HYBRID-001
+    rule: "Hybrid retrieval recall@k beats max(dense recall@k, sparse recall@k) by ≥5 percentage points on a hand-crafted adversarial fixture where the dense and sparse legs cover disjoint subsets of the ground-truth set."
+    prediction: "hybrid_beats_max_of_legs_by_5pts passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-rag --test falsify_hybrid_001 hybrid_beats_max_of_legs_by_5pts"
+  - id: FALSIFY-HYBRID-003
+    rule: "`BM25Index` accepts an injected `Tokenizer` trait object via `with_tokenizer(Arc<dyn Tokenizer>)` and uses it for both indexing and search."
+    prediction: "bm25_uses_injected_tokenizer passes; it fails when the condition is violated"
+    test: "cargo test -p aprender-rag --test falsify_hybrid_003 bm25_uses_injected_tokenizer"

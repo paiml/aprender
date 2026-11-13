@@ -59,3 +59,10 @@ falsification:
       live RTX 4090 7B crash (B[16515072] expected 38535168). GREEN (guard in place): 32 sequences,
       each retaining its prompt tokens. Live GPU verification: 32-prompt /v1/batch/completions to a
       Qwen2.5-7B GGUF returns completions after the fix (was a GEMM size-mismatch 500 before).
+
+# #5291 batch 2: the row above, in the falsification_tests shape pv counts.
+falsification_tests:
+  - id: FALSIFY-SERVE-GQA-BATCH-NO-CRASH
+    rule: "batch_generate_gpu on a GQA model with >=32 prompts returns Ok with one sequence per prompt (the MHA-only batched path is not selected for GQA)"
+    prediction: "falsify_pmat841_batched_gpu_gqa_no_crash passes; it panics out of bounds when the MHA layout guard is removed"
+    test: "cargo test -p aprender-serve --lib falsify_pmat841_batched_gpu_gqa_no_crash"

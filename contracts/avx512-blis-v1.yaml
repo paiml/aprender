@@ -37,3 +37,12 @@ falsification:
     description: "BLIS GEMM matches naive for random matrices"
     test: "backend equivalence tests"
     evidence: "cargo test -p aprender-compute --lib blis"
+
+# #5291 batch 2: bound to the BLIS-vs-reference property test. Its tolerance is
+# an absolute 1e-3, looser than the 1e-5 relative bound in the formula above;
+# it covers non-tile-aligned shapes (13x17x19) and the degenerate M/N/K = 1 cases.
+falsification_tests:
+  - id: FALSIFY-AVX512-BLIS-001
+    rule: "gemm_blis matches gemm_reference within 1e-3 absolute for 8 shapes, including prime (non-tile-aligned) and M/N/K = 1 shapes"
+    prediction: "prop_blis_matches_reference passes; it fails when the blocked GEMM drops or misplaces a tile"
+    test: "cargo test -p aprender-compute --lib prop_blis_matches_reference"

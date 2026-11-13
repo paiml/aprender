@@ -33,3 +33,12 @@ falsification:
     description: "The PR_SET_PDEATHSIG path is Linux-gated (shape gate; behavioral proof is the macOS cross-build). Discharges C-ORCHPORT-001."
     test: "! grep -B2 'libc::prctl(libc::PR_SET_PDEATHSIG' crates/aprender-orchestrate/src/agent/driver/apr_serve.rs | grep -q 'cfg(unix)'  — the prctl fn must NOT be under cfg(unix); it is under cfg(target_os = \"linux\")."
     evidence: "grep -B2 'fn configure_parent_death_signal' apr_serve.rs shows #[cfg(target_os = \"linux\")] and #[cfg(not(target_os = \"linux\"))]; Linux falsify_1712 tests still pass."
+
+# #5291 batch 2: a shape gate that reads the attribute directly above the fn.
+# (The `test:` above greps 2 lines above the prctl CALL, which sits inside the
+# fn body, so it can never see the cfg and passes whatever the gate is.)
+falsification_tests:
+  - id: FALSIFY-ORCH-MACOS-PRCTL-GATE
+    rule: "configure_parent_death_signal, the fn that calls prctl(PR_SET_PDEATHSIG), is gated #[cfg(target_os = \"linux\")]; cfg(unix) would break the macOS build"
+    prediction: "the grep finds cfg(target_os = \"linux\") in the 2 lines above the fn; it exits 1 when the gate is widened to cfg(unix)"
+    test: "grep -B2 -E '^fn configure_parent_death_signal' crates/aprender-orchestrate/src/agent/driver/apr_serve.rs | grep -q 'cfg(target_os = \"linux\")'"

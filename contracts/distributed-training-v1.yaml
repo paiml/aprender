@@ -38,3 +38,20 @@ falsification:
     description: "run_worker clamps an out-of-range shard to the training split and fails closed on a bad coordinator (Shutdown mid-AllReduce, non-shard message, refused connect)"
     test: "crates/aprender-train/src/finetune/classify_trainer_tests.rs::run_worker_tests"
     evidence: "cargo test -p aprender-train --lib run_worker_tests"
+
+# #5291 batch 2: params_after_step identical across workers, bound to the ring
+# all-reduce tests (every worker ends with the same averaged buffer), and the
+# run_worker fail-closed row bound to its tests by fn name.
+falsification_tests:
+  - id: FALSIFY-DISTRIBUTED_TRAINING_V1_001
+    rule: "after one ring all-reduce over 2 workers with distinct gradients, both workers hold the identical element-wise mean"
+    prediction: "test_ring_allreduce_2_workers_distinct passes; it fails when a worker's buffer differs from the mean"
+    test: "cargo test -p aprender-train --lib test_ring_allreduce_2_workers_distinct"
+  - id: FALSIFY-DISTRIBUTED_TRAINING_V1_001B
+    rule: "the same holds for 3 workers: every rank ends with the identical mean"
+    prediction: "test_ring_allreduce_3_workers passes; it fails when any rank's buffer differs from the mean"
+    test: "cargo test -p aprender-train --lib test_ring_allreduce_3_workers"
+  - id: FALSIFY-DISTRIBUTED_TRAINING_V1_003
+    rule: "run_worker fails closed when the coordinator shuts down mid-AllReduce"
+    prediction: "shutdown_during_allreduce_is_an_averaged_receive_error passes; it fails when that shutdown is not reported as an error"
+    test: "cargo test -p aprender-train --lib shutdown_during_allreduce_is_an_averaged_receive_error"

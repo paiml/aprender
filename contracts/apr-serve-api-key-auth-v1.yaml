@@ -145,3 +145,20 @@ toyota_way_principles:
     contract. Multi-key, OAuth, and role-based access can extend this
     contract without breaking the v1 acceptance gate (each adds new
     gates rather than reinterpreting the existing ones).
+
+# #5291 batch 2: the ENFORCED falsification_conditions above, bound as
+# falsification_tests (same ids, same tests) so pv and the no-test debt
+# census see them. Only conditions whose test fn exists are bound.
+falsification_tests:
+  - id: FALSIFY-AUTH-001
+    rule: "Without an `Authorization: Bearer <key>` header, every protected route on every router builder returns HTTP 401 with a JSON envelope whose `error` field equals `\"unauthorized\"`."
+    prediction: "missing_bearer_returns_401_on_every_route passes; it fails when the condition is violated"
+    test: "cargo test -p apr-cli --test falsify_auth_001 missing_bearer_returns_401_on_every_route"
+  - id: FALSIFY-AUTH-002
+    rule: "A valid bearer token (one whose SHA-256 hash equals the configured hash) is accepted on every protected route."
+    prediction: "valid_bearer_passes_on_every_route passes; it fails when the condition is violated"
+    test: "cargo test -p apr-cli --test falsify_auth_002 valid_bearer_passes_on_every_route"
+  - id: FALSIFY-AUTH-003
+    rule: "Hash comparison uses `subtle::ConstantTimeEq::ct_eq`, not `==` or `[u8]::eq`."
+    prediction: "auth_module_imports_subtle_constanttimeeq passes; it fails when the condition is violated"
+    test: "cargo test -p apr-cli --test falsify_auth_003 auth_module_imports_subtle_constanttimeeq"
