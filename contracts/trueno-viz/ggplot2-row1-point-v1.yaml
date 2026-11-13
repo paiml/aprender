@@ -48,7 +48,7 @@ proof_obligations:
 - id: GG1-INV-002
   type: invariant
   property: Breaks and labels match ggplot2
-  formal: '∀ axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored'
+  formal: '∀ axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored (proven for data that is zero or has 1e-5 <= |v| < 1e16; apr plot refuses other magnitudes by name; fixture geom_point/labels_magnitude.tsv, 200 R 4.6.2 / ggplot2 4.0.3 label sets)'
   applies_to: extended_breaks
 - id: GG1-INV-003
   type: invariant

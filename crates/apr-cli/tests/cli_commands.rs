@@ -1561,6 +1561,36 @@ fn apr_plot_refuses_json_and_quiet() {
     }
 }
 
+/// L5 of the review of #6992: `apr -v plot --output svg > p.svg` must write a valid SVG; the
+/// verbose lines go to stderr, not into the file.
+#[test]
+fn apr_plot_keeps_verbose_lines_off_stdout() {
+    let (_dir, csv) = row1_csv();
+    let out = apr_binary()
+        .arg("-v")
+        .arg("plot")
+        .args([
+            "--data",
+            csv.to_str().expect("utf8"),
+            "--aes",
+            "x=x,y=y",
+            "--output",
+            "svg",
+        ])
+        .output()
+        .expect("failed to run apr plot");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.starts_with("<svg"), "{stdout:.200}");
+    assert!(!stdout.contains("verbose:"), "{stdout:.200}");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("verbose: apr "), "{stderr}");
+}
+
 /// L2 of the review of #6992: the help text is for users, so it carries no ticket number and
 /// no internal module path.
 #[test]

@@ -17,8 +17,11 @@
 //! The CSV reader is local on purpose. The one in-tree CSV path is arrow-csv inside
 //! aprender-data, which would pull Arrow into a CLI that needs a header row, comma splitting with
 //! RFC 4180 quotes, `#` comment lines and an optional UTF-8 BOM. Values are read as `f64`, as
-//! ggplot2 reads them; the engine stores `f32`, so a value outside f32's normal range (nonzero
-//! magnitudes 1.2e-38 to 3.4e38) is refused by name rather than turned into infinity or zero.
+//! ggplot2 reads them. The axis labels (ggplot2's `format()` at 7 significant digits, fixed or
+//! scientific as R chooses) were compared with ggplot2 4.0.3 on 188 ranges whose decades run from
+//! 1e-5 to 9.99e15, and all were identical; a value of zero, or of magnitude 1e-5 up to but
+//! excluding 1e16, is drawn, and any other is refused by name rather than drawn with labels nobody
+//! compared. That span is far inside the engine's `f32`, so no value is turned into infinity or zero.
 
 use std::collections::BTreeMap;
 use std::io::Write;
@@ -220,6 +223,22 @@ fn scale_for(aes: &str, kind: &str) -> Result<(), String> {
     }
 }
 
+/// The engine draws one panel (`facet_null()`); no other facet has a builder.
+fn facet_for(name: &str) -> Result<(), String> {
+    match name {
+        "null" => Ok(()),
+        other => Err(no_builder("facet", other)),
+    }
+}
+
+/// The engine maps `x` and `y` and no other aesthetic.
+fn aes_for(aes: &[&str]) -> Result<(), String> {
+    match aes {
+        ["x", "y"] => Ok(()),
+        other => Err(no_builder("aes", &other.join(" "))),
+    }
+}
+
 /// The engine coord for a proven coord name.
 fn coord_for(name: &str) -> Result<Coord, String> {
     match name {
@@ -277,7 +296,8 @@ pub struct PlotArgs {
     #[arg(long, conflicts_with_all = ["data", "aes", "geom"])]
     pub spec: Option<ConfigPath>,
 
-    /// CSV file with a header row (`#` lines are skipped)
+    /// CSV file with a header row (`#` lines are skipped). Values are zero or have a magnitude
+    /// from 1e-5 up to but excluding 1e16, the span whose axis labels were compared with ggplot2
     #[arg(long, required_unless_present = "spec")]
     pub data: Option<InputFile>,
 
@@ -601,6 +621,8 @@ fn build_plot(
     let plot = GGPlot::new().data(df).aes(Aes::new().x(xcol).y(ycol));
     let plot = plot.geom(geom_for(row.geom)?.stat(stat_for(row.stat)?));
     position_for(row.position)?;
+    facet_for(row.facet)?;
+    aes_for(row.aes)?;
     for (aes, kind) in row.scales {
         scale_for(aes, kind)?;
     }
@@ -759,11 +781,17 @@ fn split_fields(line: &str) -> Result<Vec<String>, String> {
     Ok(fields)
 }
 
-/// Zero, or a magnitude in f32's normal range: what `as f32` keeps without overflowing to
-/// infinity or underflowing to zero (or to a subnormal with a few bits left).
-fn fits_f32(v: f64) -> bool {
+/// Smallest nonzero magnitude the verb draws.
+pub const MIN_MAGNITUDE: f64 = 1e-5;
+/// Magnitudes at or above this are refused.
+pub const MAX_MAGNITUDE: f64 = 1e16;
+
+/// Zero, or a magnitude in the range whose axis labels were compared with ggplot2 4.0.3: 188
+/// ranges, decades 1e-5 to 9.99e15, fixed and scientific notation, all identical (see the
+/// contract). It is far inside f32's normal range, so `as f32` keeps the magnitude.
+fn in_proven_range(v: f64) -> bool {
     let m = v.abs();
-    m == 0.0 || (f64::from(f32::MIN_POSITIVE)..=f64::from(f32::MAX)).contains(&m)
+    m == 0.0 || (MIN_MAGNITUDE..MAX_MAGNITUDE).contains(&m)
 }
 
 /// A cell ggplot2 would read as missing.
@@ -777,8 +805,8 @@ fn is_missing(s: &str) -> bool {
 /// # Errors
 ///
 /// A column not in the header (the message lists the columns), a value that is neither a
-/// number nor missing (the column is not numeric), or a number the engine's `f32` cannot hold
-/// (a nonzero magnitude below 1.2e-38 or above 3.4e38).
+/// number nor missing (the column is not numeric), or a number outside the proven magnitudes
+/// (nonzero below 1e-5, or 1e16 and above).
 pub fn numeric_xy(
     table: &Table,
     xcol: &str,
@@ -798,9 +826,10 @@ pub fn numeric_xy(
                 return Ok(None);
             }
             match s.parse::<f64>() {
-                Ok(v) if v.is_finite() && !fits_f32(v) => Err(format!(
-                    "column '{name}' line {line} has '{s}', outside what the plot engine stores \
-                     (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
+                Ok(v) if v.is_finite() && !in_proven_range(v) => Err(format!(
+                    "column '{name}' line {line} has '{s}', outside the magnitudes whose axis \
+                     labels are proven against ggplot2 (zero, or {MIN_MAGNITUDE:e} up to but \
+                     excluding {MAX_MAGNITUDE:e})"
                 )),
                 Ok(v) if v.is_finite() => Ok(Some(v)),
                 Ok(_) => Ok(None),
@@ -1281,16 +1310,17 @@ mod tests {
         assert!(e.contains("column 'name' is not numeric: line 2 has 'a'"), "{e}");
     }
 
-    /// ggplot2 reads numbers as doubles. Every value is parsed as f64; one the engine's f32
-    /// columns cannot hold is refused with that reason, never turned into infinity or zero (or
-    /// reported as "not numeric" / "no rows", which is what an f32 parse said about 1e308).
+    /// ggplot2 reads numbers as doubles. Every value is parsed as f64; one outside the magnitudes
+    /// whose labels were compared with ggplot2 is refused with that reason, never drawn with
+    /// labels nobody compared (and never reported as "not numeric" / "no rows").
     #[test]
     fn values_are_parsed_as_f64_and_out_of_range_ones_are_named() {
+        let reason = "outside the magnitudes whose axis labels are proven against ggplot2 \
+                      (zero, or 1e-5 up to but excluding 1e16)";
         let t = parse_csv("x,y\n0.1,1e-300\n1e38,-3\n").expect("parses");
         assert_eq!(
-            numeric_xy(&t, "x", "y").expect_err("1e-300 underflows f32"),
-            "column 'y' line 2 has '1e-300', outside what the plot engine stores \
-             (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
+            numeric_xy(&t, "x", "y").expect_err("1e-300 is unproven"),
+            format!("column 'y' line 2 has '1e-300', {reason}")
         );
         let t = parse_csv("x,y\n0.1,2\n123456789.125,-3\n").expect("parses");
         let (xs, ys, dropped) = numeric_xy(&t, "x", "y").expect("f64");
@@ -1298,23 +1328,86 @@ mod tests {
         assert_eq!((ys, dropped), (vec![2.0, -3.0], 0));
         let csv = tmp("big.csv", "x,y\n1,2\n1e308,3\n");
         let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err("refused");
-        assert_eq!(
-            e,
-            "column 'x' line 3 has '1e308', outside what the plot engine stores \
-             (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
-        );
+        assert_eq!(e, format!("column 'x' line 3 has '1e308', {reason}"));
         let csv = tmp("tiny.csv", "x,y\n1,2\n2,-1e-300\n");
         let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err("refused");
         assert!(e.starts_with("column 'y' line 3 has '-1e-300', outside"), "{e}");
-        // Zero, -0 and f32's extremes are accepted; a value that only loses digits still plots.
-        let t = parse_csv("x,y\n0,3.4e38\n-3.4e38,1.2e-38\n-0,-1.2e-38\n").expect("parses");
+        // The edges: zero and -0, 1e-5 and 9.99e15 are drawn; just below 1e-5, 1e16 and 3.4e38 are not.
+        let t = parse_csv("x,y\n0,9.99e15\n-9.99e15,1e-5\n-0,-1e-5\n").expect("parses");
         let (xs, ys, _) = numeric_xy(&t, "x", "y").expect("in range");
-        assert_eq!(xs, [0.0, -3.4e38, 0.0]);
-        assert_eq!(ys, [3.4e38, 1.2e-38, -1.2e-38]);
+        assert_eq!(xs, [0.0, -9.99e15, 0.0]);
+        assert_eq!(ys, [9.99e15, 1e-5, -1e-5]);
+        for bad in ["9.99e-6", "-9.99e-6", "1e16", "-1e16", "3.4e38"] {
+            let t = parse_csv(&format!("x,y\n1,{bad}\n")).expect("parses");
+            let e = numeric_xy(&t, "x", "y").expect_err(bad);
+            assert!(e.contains(&format!("has '{bad}', outside")), "{bad}: {e}");
+        }
         let csv = tmp("digits.csv", "x,y\n1,2\n16777217,3\n");
         let (r, out, _) = go(&flags(&csv, &[]), &Env::default());
         assert_eq!(r, Ok(()));
         assert_eq!(out.matches('●').count(), 2, "{out}");
+    }
+
+    /// B2 of the review of #6992: R prints these breaks in scientific notation. The labels
+    /// below are ggplot2 4.0.3's own (`ggplot_build(...)$layout$panel_params[[1]]$x$get_labels()`
+    /// on the same x values), and the verb prints exactly them.
+    #[test]
+    fn scientific_axis_labels_are_the_ones_ggplot2_prints() {
+        let ys = "0\n0.25\n0.5\n0.75\n1";
+        let cases: [(&[&str], &[&str]); 4] = [
+            (&["0", "1e5", "2e5", "3e5", "4e5"], &["0e+00", "1e+05", "2e+05", "3e+05", "4e+05"]),
+            (
+                &["1e9", "1.5e9", "2e9", "2.5e9", "3e9"],
+                &["1.0e+09", "1.5e+09", "2.0e+09", "2.5e+09", "3.0e+09"],
+            ),
+            (
+                &["0", "1e-4", "2e-4", "3e-4", "4e-4"],
+                &["0e+00", "1e-04", "2e-04", "3e-04", "4e-04"],
+            ),
+            (
+                &["0", "10000", "20000", "30000", "40000"],
+                &["0", "10000", "20000", "30000", "40000"],
+            ),
+        ];
+        for (xs, want) in cases {
+            let body: String =
+                xs.iter().zip(ys.lines()).map(|(x, y)| format!("{x},{y}\n")).collect();
+            let csv = tmp("sci.csv", &format!("x,y\n{body}"));
+            let (r, svg, _) = go(&flags(&csv, &["--output", "svg"]), &Env::default());
+            assert_eq!(r, Ok(()));
+            let labels: Vec<&str> =
+                svg.split("</text>").filter_map(|t| t.rsplit_once('>').map(|(_, l)| l)).collect();
+            for w in want {
+                assert!(labels.contains(w), "{xs:?}: missing label {w} in {labels:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn axis_labels_match_the_r_oracle_across_the_proven_magnitude_range() {
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/fixtures/ggplot2/geom_point/labels_magnitude.tsv"
+        );
+        let tsv = std::fs::read_to_string(path).expect("fixture");
+        let mut checked = 0;
+        for line in tsv.lines().filter(|l| !l.starts_with('#')) {
+            let f: Vec<&str> = line.split('\t').collect();
+            assert_eq!(f.len(), 5, "{line}");
+            let (xs, ys): (Vec<&str>, Vec<&str>) =
+                (f[1].split(',').collect(), f[2].split(',').collect());
+            let body: String = xs.iter().zip(&ys).map(|(x, y)| format!("{x},{y}\n")).collect();
+            let csv = tmp("oracle.csv", &format!("x,y\n{body}"));
+            let (r, svg, _) = go(&flags(&csv, &["--output", "svg"]), &Env::default());
+            assert_eq!(r, Ok(()), "{}", f[0]);
+            let labels: Vec<&str> =
+                svg.split("</text>").filter_map(|t| t.rsplit_once('>').map(|(_, l)| l)).collect();
+            for l in f[3].split(' ').chain(f[4].split(' ')) {
+                assert!(labels.contains(&l), "{}: R prints {l}, apr drew {labels:?}", f[0]);
+            }
+            checked += 1;
+        }
+        assert_eq!(checked, 200);
     }
 
     #[test]
@@ -1355,7 +1448,7 @@ mod tests {
     /// labels too wide for the smallest terminal.
     #[test]
     fn engine_errors_are_messages() {
-        let wide = tmp("wide.csv", "x,y\n0,0\n1,123456789012345\n");
+        let wide = tmp("wide.csv", "x,y\n0,-1e14\n1,-1.000005e14\n");
         let e = go(&flags(&wide, &["--width", "20", "--height", "8"]), &Env::default())
             .0
             .expect_err("no room");
@@ -1524,6 +1617,8 @@ mod tests {
                 assert!(scale_for(aes, kind).is_ok(), "{id}: scale {aes} {kind}");
             }
             assert!(coord_for(row.coord).is_ok(), "{id}: coord {}", row.coord);
+            assert!(facet_for(row.facet).is_ok(), "{id}: facet {}", row.facet);
+            assert!(aes_for(row.aes).is_ok(), "{id}: aes {:?}", row.aes);
             assert!(theme_for(row.theme).is_ok(), "{id}: theme {}", row.theme);
         }
     }
@@ -1539,6 +1634,9 @@ mod tests {
         assert_eq!(scale_for("x", "log10").err(), want("scale", "x: log10"));
         assert_eq!(scale_for("colour", "continuous").err(), want("scale", "colour: continuous"));
         assert_eq!(coord_for("flip").err(), want("coord", "flip"));
+        assert_eq!(facet_for("wrap").err(), want("facet", "wrap"));
+        assert_eq!(aes_for(&["x", "y", "colour"]).err(), want("aes", "x y colour"));
+        assert_eq!(aes_for(&["x"]).err(), want("aes", "x"));
         assert_eq!(theme_for("bw").err(), want("theme", "bw"));
     }
 
@@ -1667,6 +1765,8 @@ mod tests {
             ("position", ProvenRow { position: "jitter", ..ROW_A }),
             ("scale", ProvenRow { scales: &[("x", "log10")], ..ROW_A }),
             ("coord", ProvenRow { coord: "flip", ..ROW_A }),
+            ("facet", ProvenRow { facet: "wrap", ..ROW_A }),
+            ("aes", ProvenRow { aes: &["x", "y", "colour"], ..ROW_A }),
             ("theme", ProvenRow { theme: "bw", ..ROW_A }),
         ];
         for (kind, row) in &cases {

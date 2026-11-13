@@ -233,5 +233,6 @@ aprender-train	--lib	hf_pipeline::export::pipeline
 aprender-train	--lib	models::llama_370m
 aprender-train	--lib	research::archive::tests
 aprender-viz	--lib	grammar::ggplot2_oracle
+aprender-viz	--lib	plot_cli
 aprender-viz	--test	raster_determinism
 aprender-viz	--test	render_determinism

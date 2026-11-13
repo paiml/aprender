@@ -38,6 +38,12 @@ empty stdout and the supported list on stderr:
 - A `coord:` with `xlim` or `ylim` is refused as
   `coord limits (xlim) are not proven by any ggplot2 row`: ggplot2 sets the panel's
   range and breaks from them, and no row proves that.
+- A value whose magnitude is outside the compared range is refused by line and column:
+  `column 'x' line 3 has '1e16', outside the magnitudes whose axis labels are proven against ggplot2 (zero, or 1e-5 up to but excluding 1e16)`.
+  Axis labels follow R's `format()` at 7 significant digits (fixed or scientific, as R
+  chooses: `0e+00 1e+05 ... 4e+05`). They were compared with ggplot2 4.0.3 on 188 ranges
+  whose decades run from 1e-5 to 9.99e15, and all matched; magnitudes outside that span
+  were not compared, so they are refused instead of drawn.
 - More than one layer is refused: each proven row draws one.
 - The global `--json` and `--quiet` are refused (`plot: --json is not supported`);
   the plot is the output.
