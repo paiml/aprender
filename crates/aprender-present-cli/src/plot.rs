@@ -22,12 +22,17 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 use trueno_viz::grammar::{
-    Aes, Coord, DataFrame, GGPlot, Geom, TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH,
-    MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    Aes, Coord, DataFrame, GGPlot, Geom, StepDirection, TerminalPlot, MAX_TERMINAL_HEIGHT,
+    MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
+/// Geoms that read the data: points, and the line family (`line` sorts by x, `path` keeps data
+/// order, `step` draws stairs).
+pub const DATA_GEOMS: &[&str] = &["point", "line", "path", "step"];
 /// Geoms the plot verb draws end to end.
-pub const GEOMS: &[&str] = &["point"];
+pub const GEOMS: &[&str] = &["point", "line", "path", "step", "hline", "vline", "abline"];
+/// Directions of a `step` layer, as ggplot2 spells them.
+pub const DIRECTIONS: &[&str] = &["hv", "vh", "mid"];
 /// Stats a layer may name.
 pub const STATS: &[&str] = &["identity"];
 /// Positions a layer may name.
@@ -41,7 +46,9 @@ pub const THEMES: &[&str] = &["grey", "gray"];
 /// Scale types for the x and y positions.
 pub const SCALES: &[&str] = &["continuous"];
 /// Aesthetics the plot verb maps.
-pub const AESTHETICS: &[&str] = &["x", "y"];
+pub const AESTHETICS: &[&str] = &["x", "y", "group"];
+/// Aesthetics that have a position scale.
+pub const SCALE_AESTHETICS: &[&str] = &["x", "y"];
 /// Terminal size when stdout is not a terminal, or when a terminal does not say its size.
 pub const DEFAULT_TERM_SIZE: (u32, u32) = (80, 24);
 /// SVG size in pixels when none is given (ggplot2's 800x600 preview in aprender-viz).
@@ -65,7 +72,7 @@ pub enum Output {
 #[derive(Debug, Clone, clap::Args)]
 pub struct PlotArgs {
     /// YAML plot spec (data, aes, layers, scales, coord, facet, labs, theme)
-    #[arg(long, conflicts_with_all = ["data", "aes", "geom"])]
+    #[arg(long, conflicts_with_all = ["data", "aes", "geom", "direction"])]
     pub spec: Option<PathBuf>,
 
     /// CSV file with a header row (`#` lines are skipped)
@@ -76,9 +83,40 @@ pub struct PlotArgs {
     #[arg(long, required_unless_present = "spec")]
     pub aes: Option<String>,
 
-    /// Geom of the single layer (supported: point) [default: point]
+    /// Geom of the data layer (point, line, path, step) [default: point]
     #[arg(long)]
     pub geom: Option<String>,
+
+    /// Step direction: hv, vh or mid [default: hv]; only with --geom step
+    #[arg(long)]
+    pub direction: Option<String>,
+
+    /// Horizontal reference line at this y (repeatable)
+    #[arg(
+        long,
+        value_name = "Y",
+        allow_hyphen_values = true,
+        conflicts_with = "spec"
+    )]
+    pub hline: Vec<f64>,
+
+    /// Vertical reference line at this x (repeatable)
+    #[arg(
+        long,
+        value_name = "X",
+        allow_hyphen_values = true,
+        conflicts_with = "spec"
+    )]
+    pub vline: Vec<f64>,
+
+    /// Reference line y = SLOPE * x + INTERCEPT, as SLOPE,INTERCEPT (repeatable)
+    #[arg(
+        long,
+        value_name = "SLOPE,INTERCEPT",
+        allow_hyphen_values = true,
+        conflicts_with = "spec"
+    )]
+    pub abline: Vec<String>,
 
     /// Plot title (overrides the spec's labs.title)
     #[arg(long)]
@@ -111,6 +149,46 @@ pub struct PlotArgs {
     /// Never emit colour escape sequences
     #[arg(long)]
     pub no_color: bool,
+}
+
+/// Why the verb failed. The exit code tells a caller whether to fix the command or the input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlotError {
+    /// The command or the spec asks for something the verb does not take: an unknown or
+    /// unsupported option, a bad value, a misplaced key. Exit code 2, as clap's own usage errors.
+    Usage(String),
+    /// The request is fine but the input or the output is not: unreadable file, bad CSV, a column
+    /// that is not numeric, a write that fails. Exit code 1.
+    Failed(String),
+}
+
+impl PlotError {
+    /// The process exit code: 2 for [`PlotError::Usage`], 1 for [`PlotError::Failed`].
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Usage(_) => 2,
+            Self::Failed(_) => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for PlotError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Usage(m) | Self::Failed(m) => f.write_str(m),
+        }
+    }
+}
+
+impl std::error::Error for PlotError {}
+
+fn usage<T>(r: Result<T, String>) -> Result<T, PlotError> {
+    r.map_err(PlotError::Usage)
+}
+
+fn failed<T>(r: Result<T, String>) -> Result<T, PlotError> {
+    r.map_err(PlotError::Failed)
 }
 
 /// The process facts that decide size and colour, read once so tests can set them.
@@ -180,8 +258,9 @@ pub enum FacetSpec {
 /// One layer of the spec.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[derive(Default)]
 pub struct LayerSpec {
-    /// `point`.
+    /// `point`, `line`, `path`, `step`, `hline`, `vline` or `abline`.
     pub geom: String,
     /// `identity` when absent.
     #[serde(default)]
@@ -189,6 +268,21 @@ pub struct LayerSpec {
     /// `identity` when absent.
     #[serde(default)]
     pub position: Option<String>,
+    /// `hv`, `vh` or `mid`; `step` only.
+    #[serde(default)]
+    pub direction: Option<String>,
+    /// Where an `hline` crosses y.
+    #[serde(default)]
+    pub yintercept: Option<f64>,
+    /// Where a `vline` crosses x.
+    #[serde(default)]
+    pub xintercept: Option<f64>,
+    /// Slope of an `abline`.
+    #[serde(default)]
+    pub slope: Option<f64>,
+    /// Intercept of an `abline`.
+    #[serde(default)]
+    pub intercept: Option<f64>,
 }
 
 /// `coord:` of the spec.
@@ -222,34 +316,42 @@ pub struct Labs {
 ///
 /// # Errors
 ///
-/// A message for the user: unreadable or malformed input, an unknown column, a non-numeric
-/// column, or anything the engine does not support yet (with the supported values).
+/// [`PlotError::Usage`] (exit 2) for anything the verb does not take: an unknown option or key,
+/// something the engine does not draw yet (with the supported values), a bad value.
+/// [`PlotError::Failed`] (exit 1) for unreadable or malformed input, an unknown column, a
+/// non-numeric column, or a failed write.
 pub fn run(
     args: &PlotArgs,
     env: &Env,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
-) -> Result<(), String> {
+) -> Result<(), PlotError> {
     let spec = match &args.spec {
         Some(path) => load_spec(path)?,
-        None => spec_from_flags(args)?,
+        None => usage(spec_from_flags(args))?,
     };
     let text = render(&spec, args, env, stderr)?;
     match &args.out {
-        Some(path) => {
-            std::fs::write(path, text).map_err(|e| format!("cannot write {}: {e}", path.display()))
-        }
-        None => stdout
-            .write_all(text.as_bytes())
-            .map_err(|e| format!("cannot write stdout: {e}")),
+        Some(path) => failed(
+            std::fs::write(path, text).map_err(|e| format!("cannot write {}: {e}", path.display())),
+        ),
+        None => failed(
+            stdout
+                .write_all(text.as_bytes())
+                .map_err(|e| format!("cannot write stdout: {e}")),
+        ),
     }
 }
 
-fn load_spec(path: &Path) -> Result<Spec, String> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| format!("cannot read spec {}: {e}", path.display()))?;
-    let mut spec: Spec = serde_saphyr::from_str(&text)
-        .map_err(|e| format!("invalid plot spec {}: {e}", path.display()))?;
+fn load_spec(path: &Path) -> Result<Spec, PlotError> {
+    let text = failed(
+        std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read spec {}: {e}", path.display())),
+    )?;
+    let mut spec: Spec = usage(
+        serde_saphyr::from_str(&text)
+            .map_err(|e| format!("invalid plot spec {}: {e}", path.display())),
+    )?;
     // A relative `data:` is relative to the spec file. `parent()` is `Some` for any file path
     // (`Some("")` for a bare name), and joining an absolute `data:` keeps it as it is.
     let dir = path.parent().unwrap_or(Path::new(""));
@@ -262,16 +364,48 @@ fn spec_from_flags(args: &PlotArgs) -> Result<Spec, String> {
     let data = args.data.clone().unwrap_or_default();
     let aes = parse_aes(args.aes.as_deref().unwrap_or_default())?;
     let geom = args.geom.clone().unwrap_or_else(|| "point".into());
+    let mut layers = vec![LayerSpec {
+        geom,
+        direction: args.direction.clone(),
+        ..LayerSpec::default()
+    }];
+    layers.extend(args.hline.iter().map(|&y| LayerSpec {
+        geom: "hline".into(),
+        yintercept: Some(y),
+        ..LayerSpec::default()
+    }));
+    layers.extend(args.vline.iter().map(|&x| LayerSpec {
+        geom: "vline".into(),
+        xintercept: Some(x),
+        ..LayerSpec::default()
+    }));
+    for pair in &args.abline {
+        let (slope, intercept) = parse_abline(pair)?;
+        layers.push(LayerSpec {
+            geom: "abline".into(),
+            slope: Some(slope),
+            intercept: Some(intercept),
+            ..LayerSpec::default()
+        });
+    }
     Ok(Spec {
         data,
         aes,
-        layers: vec![LayerSpec {
-            geom,
-            stat: None,
-            position: None,
-        }],
+        layers,
         ..Spec::default()
     })
+}
+
+/// Parse `--abline SLOPE,INTERCEPT`.
+///
+/// # Errors
+///
+/// Anything but two comma-separated numbers.
+pub fn parse_abline(s: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("--abline: expected SLOPE,INTERCEPT (two numbers), got '{s}'");
+    let (a, b) = s.split_once(',').ok_or_else(bad)?;
+    let num = |t: &str| t.trim().parse::<f64>().map_err(|_| bad());
+    Ok((num(a)?, num(b)?))
 }
 
 /// Parse `x=col,y=col` into a mapping.
@@ -326,18 +460,79 @@ fn check_facet(facet: Option<&FacetSpec>) -> Result<(), String> {
     }
 }
 
+/// A reference-line number: finite, and in the range the engine's `f32` keeps.
+fn check_number(key: &str, v: f64) -> Result<(), String> {
+    if v.is_finite() && fits_f32(v) {
+        return Ok(());
+    }
+    Err(format!(
+        "{key} must be a finite number (zero, or a magnitude 1.2e-38 to 3.4e38), got {v}"
+    ))
+}
+
+/// What a layer of each geom takes beyond `geom`, `stat` and `position`.
+fn check_layer(layer: &LayerSpec) -> Result<(), String> {
+    let geom = layer.geom.as_str();
+    check("geom", Some(geom), GEOMS)?;
+    check("stat", layer.stat.as_deref(), STATS)?;
+    check("position", layer.position.as_deref(), POSITIONS)?;
+    // (key, value present, geoms that take it)
+    let keys = [
+        ("direction", layer.direction.is_some(), "step"),
+        ("yintercept", layer.yintercept.is_some(), "hline"),
+        ("xintercept", layer.xintercept.is_some(), "vline"),
+        ("slope", layer.slope.is_some(), "abline"),
+        ("intercept", layer.intercept.is_some(), "abline"),
+    ];
+    for (key, present, only) in keys {
+        if present && geom != only {
+            return Err(format!(
+                "'{key}' applies to geom {only} only, not to geom {geom}"
+            ));
+        }
+    }
+    check("direction", layer.direction.as_deref(), DIRECTIONS)?;
+    let need = |key: &str, v: Option<f64>, flag: &str| {
+        let v = v.ok_or_else(|| format!("geom {geom} needs '{key}' ({flag})"))?;
+        check_number(key, v)
+    };
+    match geom {
+        "hline" => need("yintercept", layer.yintercept, "--hline Y"),
+        "vline" => need("xintercept", layer.xintercept, "--vline X"),
+        "abline" => {
+            need("slope", layer.slope, "--abline SLOPE,INTERCEPT")?;
+            need("intercept", layer.intercept, "--abline SLOPE,INTERCEPT")
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Validate the spec against what the engine draws, before any data is read.
 fn check_spec(spec: &Spec) -> Result<(), String> {
     if spec.layers.is_empty() {
         return Err("the plot has no layers; add one, e.g. geom: point".into());
     }
     for layer in &spec.layers {
-        check("geom", Some(&layer.geom), GEOMS)?;
-        check("stat", layer.stat.as_deref(), STATS)?;
-        check("position", layer.position.as_deref(), POSITIONS)?;
+        check_layer(layer)?;
+    }
+    if !spec
+        .layers
+        .iter()
+        .any(|l| DATA_GEOMS.contains(&l.geom.as_str()))
+    {
+        return Err(format!(
+            "reference lines need a data layer to give them a scale; add one of: {}",
+            DATA_GEOMS.join(", ")
+        ));
+    }
+    if let Some(c) = &spec.coord {
+        check("coord", Some(&c.kind), COORDS)?;
+        if (c.xlim.is_some() || c.ylim.is_some()) && spec.layers.iter().any(|l| l.geom != "point") {
+            return Err("coord xlim/ylim zooms the panel, which the line, path, step and reference layers do not support; drop the limits or use only point layers".into());
+        }
     }
     for (aes, scale) in &spec.scales {
-        check("scale aesthetic", Some(aes), AESTHETICS)?;
+        check("scale aesthetic", Some(aes), SCALE_AESTHETICS)?;
         check("scale", Some(scale), SCALES)?;
     }
     check_facet(spec.facet.as_ref())?;
@@ -367,11 +562,10 @@ fn output_size(args: &PlotArgs, env: &Env) -> (u32, u32) {
 }
 
 /// Apply the spec's `coord:` to the plot.
-fn apply_coord(plot: GGPlot, spec: &Spec) -> Result<GGPlot, String> {
+fn apply_coord(plot: GGPlot, spec: &Spec) -> GGPlot {
     let Some(c) = &spec.coord else {
-        return Ok(plot);
+        return plot;
     };
-    check("coord", Some(&c.kind), COORDS)?;
     let mut coord = Coord::cartesian();
     if let Some([lo, hi]) = c.xlim {
         coord = coord.xlim(lo, hi);
@@ -379,7 +573,7 @@ fn apply_coord(plot: GGPlot, spec: &Spec) -> Result<GGPlot, String> {
     if let Some([lo, hi]) = c.ylim {
         coord = coord.ylim(lo, hi);
     }
-    Ok(plot.coord(coord))
+    plot.coord(coord)
 }
 
 /// Apply title and axis labels; a flag wins over the spec's `labs:`.
@@ -403,26 +597,67 @@ fn apply_labs(mut plot: GGPlot, spec: &Spec, args: &PlotArgs) -> GGPlot {
     plot
 }
 
+/// The engine geom of a validated layer.
+fn engine_geom(layer: &LayerSpec) -> Geom {
+    // check_layer has proven the keys are there and finite; the fallbacks are never read.
+    let n = |v: Option<f64>| v.unwrap_or_default() as f32;
+    match layer.geom.as_str() {
+        "line" => Geom::line(),
+        "path" => Geom::path(),
+        "step" => Geom::step().direction(match layer.direction.as_deref() {
+            Some("vh") => StepDirection::Vh,
+            Some("mid") => StepDirection::Mid,
+            _ => StepDirection::Hv,
+        }),
+        "hline" => Geom::hline(n(layer.yintercept)),
+        "vline" => Geom::vline(n(layer.xintercept)),
+        "abline" => Geom::abline(n(layer.slope), n(layer.intercept)),
+        _ => Geom::point(),
+    }
+}
+
+/// Name of the internal group column: a control character, so no CSV header can collide with it
+/// (`aes: {x: a, group: a}` is legal).
+const GROUP_COLUMN: &str = "\u{1}group";
+
 /// Build the plot from the data and the spec.
-fn build_plot(
-    spec: &Spec,
-    (xcol, ycol): (&str, &str),
-    (xs, ys): (&[f64], &[f64]),
-    args: &PlotArgs,
-) -> Result<GGPlot, String> {
+fn build_plot(spec: &Spec, (xcol, ycol): (&str, &str), cols: &Cols, args: &PlotArgs) -> GGPlot {
     let mut df = DataFrame::new();
-    // numeric_xy refused every value outside f32's normal range, so this narrowing keeps the
+    // numeric_cols refused every value outside f32's normal range, so this narrowing keeps the
     // magnitude and loses only digits past f32's 24-bit mantissa.
     let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
-    df.add_column_f32(xcol, &narrow(xs));
-    df.add_column_f32(ycol, &narrow(ys));
-
-    let mut plot = GGPlot::new().data(df).aes(Aes::new().x(xcol).y(ycol));
-    for _ in &spec.layers {
-        plot = plot.geom(Geom::point());
+    df.add_column_f32(xcol, &narrow(&cols.xs));
+    df.add_column_f32(ycol, &narrow(&cols.ys));
+    let mut aes = Aes::new().x(xcol).y(ycol);
+    if let Some(g) = &cols.group {
+        add_group(&mut df, g);
+        aes = aes.group(GROUP_COLUMN);
     }
-    let plot = apply_coord(plot, spec)?;
-    Ok(apply_labs(plot, spec, args))
+    let mut plot = GGPlot::new().data(df).aes(aes);
+    for layer in &spec.layers {
+        plot = plot.geom(engine_geom(layer));
+    }
+    apply_labs(apply_coord(plot, spec), spec, args)
+}
+
+/// Add the group column: numbers when every cell is one (so 10 sorts after 9), text otherwise.
+fn add_group(df: &mut DataFrame, cells: &[String]) {
+    let nums: Option<Vec<f32>> = cells
+        .iter()
+        .map(|c| {
+            c.parse::<f64>()
+                .ok()
+                .filter(|v| v.is_finite() && fits_f32(*v))
+                .map(|v| v as f32)
+        })
+        .collect();
+    match nums {
+        Some(n) => df.add_column_f32(GROUP_COLUMN, &n),
+        None => {
+            let refs: Vec<&str> = cells.iter().map(String::as_str).collect();
+            df.add_column_str(GROUP_COLUMN, &refs);
+        }
+    }
 }
 
 /// Render the built plot to the requested target.
@@ -450,27 +685,49 @@ fn draw(
     .map_err(|e| e.to_string())
 }
 
+/// Data geoms that draw a line through consecutive rows.
+const STROKE_DATA_GEOMS: &[&str] = &["line", "path", "step"];
+
 /// Validate the spec against what the engine draws, then build and render the plot.
 fn render(
     spec: &Spec,
     args: &PlotArgs,
     env: &Env,
     stderr: &mut dyn Write,
-) -> Result<String, String> {
-    check_spec(spec)?;
-    let (xcol, ycol) = (mapped_col(spec, "x")?, mapped_col(spec, "y")?);
+) -> Result<String, PlotError> {
+    usage(check_spec(spec))?;
+    let (xcol, ycol) = (mapped_col(spec, "x"), mapped_col(spec, "y"));
+    let (xcol, ycol) = (usage(xcol)?, usage(ycol)?);
     let size = output_size(args, env);
     // Before the data is read: a size the engine cannot allocate must not cost a read first.
-    check_size(args.output, size)?;
+    usage(check_size(args.output, size))?;
 
-    let table = read_csv(&spec.data)?;
-    let (xs, ys, dropped) = numeric_xy(&table, xcol, ycol)?;
-    if dropped > 0 {
+    let table = failed(read_csv(&spec.data))?;
+    // A line breaks at a missing value (ggplot2 draws NA as a gap), so the rows stay and carry
+    // NaN; points just do not draw it. Without a line-family layer the rows are dropped.
+    let keep = spec
+        .layers
+        .iter()
+        .any(|l| STROKE_DATA_GEOMS.contains(&l.geom.as_str()));
+    let cols = failed(numeric_cols(
+        &table,
+        xcol,
+        ycol,
+        spec.aes.get("group").map(String::as_str),
+        keep,
+    ))?;
+    if cols.missing > 0 {
         // ggplot2's wording for the same event.
-        let _ = writeln!(stderr, "warning: Removed {dropped} rows containing missing values or values outside the scale range (geom_point).");
+        let geom = spec
+            .layers
+            .iter()
+            .find(|l| DATA_GEOMS.contains(&l.geom.as_str()))
+            .map_or("point", |l| l.geom.as_str());
+        let missing = cols.missing;
+        let _ = writeln!(stderr, "warning: Removed {missing} rows containing missing values or values outside the scale range (geom_{geom}).");
     }
-    let plot = build_plot(spec, (xcol, ycol), (&xs, &ys), args)?;
-    draw(plot, args, env, size)
+    let plot = build_plot(spec, (xcol, ycol), &cols, args);
+    failed(draw(plot, args, env, size))
 }
 
 /// Check a requested size against the target's bounds: 20x8 to 1000x1000 cells for a terminal,
@@ -605,19 +862,51 @@ fn is_missing(s: &str) -> bool {
     matches!(s, "" | "NA" | "NaN" | "nan" | "null" | "NULL")
 }
 
+/// The mapped columns of a table, one entry per kept row.
+#[derive(Debug, Default, PartialEq)]
+pub struct Cols {
+    /// x values; `NaN` for a missing one when rows are kept.
+    pub xs: Vec<f64>,
+    /// y values; `NaN` for a missing one when rows are kept.
+    pub ys: Vec<f64>,
+    /// The group cells, when `group` is mapped.
+    pub group: Option<Vec<String>>,
+    /// Rows with a missing x or y (dropped, or kept as `NaN`).
+    pub missing: usize,
+}
+
 /// The mapped x and y columns as `f64`, rows with a missing value in either dropped; also the
 /// number dropped.
 ///
 /// # Errors
 ///
-/// A column not in the header (the message lists the columns), a value that is neither a
-/// number nor missing (the column is not numeric), or a number the engine's `f32` cannot hold
-/// (a nonzero magnitude below 1.2e-38 or above 3.4e38).
+/// See [`numeric_cols`].
+#[cfg(test)]
 pub fn numeric_xy(
     table: &Table,
     xcol: &str,
     ycol: &str,
 ) -> Result<(Vec<f64>, Vec<f64>, usize), String> {
+    let c = numeric_cols(table, xcol, ycol, None, false)?;
+    Ok((c.xs, c.ys, c.missing))
+}
+
+/// The mapped x, y and optional group columns. With `keep_missing` a row with a missing x or y
+/// stays, as `NaN`, so that a line can break there; otherwise it is dropped.
+///
+/// # Errors
+///
+/// A column not in the header (the message lists the columns), a value that is neither a
+/// number nor missing (the column is not numeric), a number the engine's `f32` cannot hold
+/// (a nonzero magnitude below 1.2e-38 or above 3.4e38), a missing group cell in a kept row, or
+/// no row with both a numeric x and a numeric y.
+pub fn numeric_cols(
+    table: &Table,
+    xcol: &str,
+    ycol: &str,
+    gcol: Option<&str>,
+    keep_missing: bool,
+) -> Result<Cols, String> {
     let index = |name: &str| {
         table.columns.iter().position(|c| c == name).ok_or_else(|| {
             format!(
@@ -627,39 +916,58 @@ pub fn numeric_xy(
         })
     };
     let (xi, yi) = (index(xcol)?, index(ycol)?);
-    let (mut xs, mut ys, mut dropped) = (Vec::new(), Vec::new(), 0);
+    let gi = gcol.map(index).transpose()?;
+    let mut out = Cols {
+        group: gi.map(|_| Vec::new()),
+        ..Cols::default()
+    };
+    let mut complete = 0;
     for (line, fields) in &table.rows {
-        let value = |i: usize, name: &str| -> Result<Option<f64>, String> {
-            let s = fields[i].as_str();
-            if is_missing(s) {
-                return Ok(None);
+        let value = |i: usize, name: &str| cell_value(fields[i].as_str(), name, *line);
+        let (x, y) = (value(xi, xcol)?, value(yi, ycol)?);
+        let both = x.is_some() && y.is_some();
+        if both {
+            complete += 1;
+        } else {
+            out.missing += 1;
+            if !keep_missing {
+                continue;
             }
-            match s.parse::<f64>() {
-                Ok(v) if v.is_finite() && !fits_f32(v) => Err(format!(
-                    "column '{name}' line {line} has '{s}', outside what the plot engine stores \
-                     (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
-                )),
-                Ok(v) if v.is_finite() => Ok(Some(v)),
-                Ok(_) => Ok(None),
-                Err(_) => Err(format!(
-                    "column '{name}' is not numeric: line {line} has '{s}' (geom_point needs a continuous x and y)"
-                )),
+        }
+        out.xs.push(x.unwrap_or(f64::NAN));
+        out.ys.push(y.unwrap_or(f64::NAN));
+        if let (Some(i), Some(g), Some(name)) = (gi, out.group.as_mut(), gcol) {
+            let cell = fields[i].as_str();
+            if is_missing(cell) {
+                return Err(format!("group column '{name}' line {line} is missing"));
             }
-        };
-        match (value(xi, xcol)?, value(yi, ycol)?) {
-            (Some(x), Some(y)) => {
-                xs.push(x);
-                ys.push(y);
-            }
-            _ => dropped += 1,
+            g.push(cell.to_string());
         }
     }
-    if xs.is_empty() {
+    if complete == 0 {
         return Err(format!(
             "no rows with a numeric '{xcol}' and '{ycol}' to plot"
         ));
     }
-    Ok((xs, ys, dropped))
+    Ok(out)
+}
+
+/// One numeric cell: `None` for a missing or non-finite value.
+fn cell_value(s: &str, name: &str, line: usize) -> Result<Option<f64>, String> {
+    if is_missing(s) {
+        return Ok(None);
+    }
+    match s.parse::<f64>() {
+        Ok(v) if v.is_finite() && !fits_f32(v) => Err(format!(
+            "column '{name}' line {line} has '{s}', outside what the plot engine stores \
+             (f32: nonzero magnitudes 1.2e-38 to 3.4e38)"
+        )),
+        Ok(v) if v.is_finite() => Ok(Some(v)),
+        Ok(_) => Ok(None),
+        Err(_) => Err(format!(
+            "column '{name}' is not numeric: line {line} has '{s}' (a plot needs a continuous x and y)"
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -692,7 +1000,7 @@ mod tests {
         let (mut out, mut err) = (Vec::new(), Vec::new());
         let r = run(args, env, &mut out, &mut err);
         (
-            r,
+            r.map_err(|e| e.to_string()),
             String::from_utf8_lossy(&out).into(),
             String::from_utf8_lossy(&err).into(),
         )
@@ -924,10 +1232,13 @@ mod tests {
     #[test]
     fn unsupported_grammar_is_refused_with_the_supported_values() {
         let csv = tmp("row1u.csv", ROW1);
-        let e = go(&flags(&csv, &["--geom", "line"]), &Env::default())
+        let e = go(&flags(&csv, &["--geom", "bar"]), &Env::default())
             .0
             .expect_err("refused");
-        assert_eq!(e, "unsupported geom 'line'; supported: point");
+        assert_eq!(
+            e,
+            "unsupported geom 'bar'; supported: point, line, path, step, hline, vline, abline"
+        );
         let cases = [
             (
                 "layers: [{geom: point, stat: bin}]",
@@ -983,7 +1294,7 @@ mod tests {
         .expect("parses");
         assert_eq!(
             go(&colour, &Env::default()).0.err().as_deref(),
-            Some("unsupported aesthetic 'colour'; supported: x, y")
+            Some("unsupported aesthetic 'colour'; supported: x, y, group")
         );
         let no_y = parse(&["--data", csv.to_str().expect("utf8"), "--aes", "x=x"]).expect("parses");
         assert_eq!(
@@ -1099,7 +1410,10 @@ mod tests {
             &mut Broken,
             &mut Vec::new(),
         );
-        assert_eq!(r, Err("cannot write stdout: closed".into()));
+        assert_eq!(
+            r,
+            Err(PlotError::Failed("cannot write stdout: closed".into()))
+        );
         assert!(Broken.flush().is_ok());
     }
 
@@ -1376,14 +1690,33 @@ mod tests {
     }
 
     #[test]
+    fn check_spec_refuses_coord_limits_with_a_stroke_layer() {
+        let mut spec = Spec {
+            layers: vec![LayerSpec {
+                geom: "line".into(),
+                ..LayerSpec::default()
+            }],
+            coord: Some(CoordSpec {
+                kind: "cartesian".into(),
+                xlim: Some([0.0, 2.0]),
+                ylim: None,
+            }),
+            ..Spec::default()
+        };
+        let e = check_spec(&spec).expect_err("stroke plus limits");
+        assert!(e.contains("xlim/ylim"), "{e}");
+        spec.layers[0].geom = "point".into();
+        assert_eq!(check_spec(&spec), Ok(()));
+    }
+
+    #[test]
     fn check_spec_refuses_no_layers_and_bad_theme() {
         let e = check_spec(&Spec::default()).expect_err("no layers");
         assert!(e.contains("no layers"), "{e}");
         let spec = Spec {
             layers: vec![LayerSpec {
                 geom: "point".into(),
-                stat: None,
-                position: None,
+                ..LayerSpec::default()
             }],
             theme: Some("dark".into()),
             ..Spec::default()
@@ -1416,25 +1749,37 @@ mod tests {
     }
 
     #[test]
-    fn apply_coord_passes_without_coord_and_refuses_unknown() {
+    fn apply_coord_passes_without_coord_and_check_spec_refuses_unknown() {
         let none = Spec::default();
-        assert!(apply_coord(points(), &none).is_ok());
+        let out = term_text(apply_coord(points(), &none));
+        assert_eq!(out.matches('●').count(), 3, "{out}");
         let coord = |kind: &str| CoordSpec {
             kind: kind.into(),
             xlim: Some([0.0, 2.0]),
             ylim: Some([0.0, 5.0]),
         };
+        let layer = || LayerSpec {
+            geom: "point".into(),
+            ..LayerSpec::default()
+        };
         let polar = Spec {
+            layers: vec![layer()],
             coord: Some(coord("polar")),
             ..Spec::default()
         };
-        let e = apply_coord(points(), &polar).expect_err("polar");
+        let e = check_spec(&polar).expect_err("polar");
         assert!(e.contains("unsupported coord 'polar'"), "{e}");
+        let flip = Spec {
+            layers: vec![layer()],
+            coord: Some(coord("flip")),
+            ..Spec::default()
+        };
+        assert!(check_spec(&flip).is_err(), "flip is not a coord kind");
         let zoom = Spec {
             coord: Some(coord("cartesian")),
             ..Spec::default()
         };
-        let out = term_text(apply_coord(points(), &zoom).expect("cartesian"));
+        let out = term_text(apply_coord(points(), &zoom));
         assert_eq!(out.matches('●').count(), 2, "{out}");
     }
 
@@ -1457,5 +1802,73 @@ mod tests {
             !out.contains("SpecTitle") && !out.contains("SpecX"),
             "{out}"
         );
+    }
+
+    #[test]
+    fn parse_abline_takes_two_numbers() {
+        assert_eq!(parse_abline("0.5, -2").expect("ok"), (0.5, -2.0));
+        for bad in ["1", "a,1", "1,b", "1,2,3", ""] {
+            let e = parse_abline(bad).expect_err(bad);
+            assert!(e.contains("expected SLOPE,INTERCEPT"), "{e}");
+        }
+    }
+
+    fn table(columns: &[&str], rows: &[&[&str]]) -> Table {
+        Table {
+            columns: columns.iter().map(|c| (*c).to_owned()).collect(),
+            rows: rows
+                .iter()
+                .enumerate()
+                .map(|(i, r)| (i + 2, r.iter().map(|c| (*c).to_owned()).collect()))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn numeric_cols_keeps_missing_rows_only_when_asked() {
+        let t = table(
+            &["x", "y", "g"],
+            &[&["1", "2", "a"], &["2", "NA", "a"], &["3", "4", "b"]],
+        );
+        let kept = numeric_cols(&t, "x", "y", Some("g"), true).expect("kept");
+        assert_eq!(kept.xs, vec![1.0, 2.0, 3.0]);
+        assert!(kept.ys[1].is_nan() && kept.ys[2] == 4.0);
+        assert_eq!(
+            kept.group.as_deref(),
+            Some(&["a".to_owned(), "a".into(), "b".into()][..])
+        );
+        assert_eq!(kept.missing, 1);
+        let dropped = numeric_cols(&t, "x", "y", Some("g"), false).expect("dropped");
+        assert_eq!(dropped.xs, vec![1.0, 3.0]);
+        assert_eq!(dropped.group.map(|g| g.len()), Some(2));
+        assert_eq!(dropped.missing, 1);
+    }
+
+    #[test]
+    fn numeric_cols_refuses_a_missing_group_cell_and_an_unknown_group() {
+        let t = table(&["x", "y", "g"], &[&["1", "2", ""], &["2", "3", "a"]]);
+        let e = numeric_cols(&t, "x", "y", Some("g"), false).expect_err("missing group");
+        assert!(e.contains("group column 'g' line 2 is missing"), "{e}");
+        let e = numeric_cols(&t, "x", "y", Some("zz"), false).expect_err("unknown group");
+        assert!(e.contains("unknown column 'zz'"), "{e}");
+    }
+
+    #[test]
+    fn add_group_is_numeric_when_every_cell_is_a_number() {
+        let kinds = |c: &[&str]| {
+            let cells: Vec<String> = c.iter().map(|s| (*s).to_owned()).collect();
+            let mut df = DataFrame::new();
+            add_group(&mut df, &cells);
+            df.get(GROUP_COLUMN)
+                .expect("group column")
+                .iter()
+                .map(|v| v.as_str().is_some())
+                .collect::<Vec<_>>()
+        };
+        // Numbers stay numbers, so 10 sorts after 9; any other cell makes the whole column text.
+        assert_eq!(kinds(&["10", "9"]), vec![false, false]);
+        assert_eq!(kinds(&["10", "x"]), vec![true, true]);
+        // A number f32 cannot hold falls back to text instead of overflowing.
+        assert_eq!(kinds(&["1e300"]), vec![true]);
     }
 }

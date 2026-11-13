@@ -50,6 +50,7 @@ mod scale_discrete;
 mod scale_spec;
 mod scale_trans;
 mod stat;
+mod stroke;
 mod term;
 mod theme;
 
@@ -70,7 +71,7 @@ pub use scale_spec::{
 };
 pub use stat::Stat;
 pub use term::{
-    TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
-    POINT_GLYPH,
+    TerminalPlot, LINE_GLYPH, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT,
+    MIN_TERMINAL_WIDTH, POINT_GLYPH,
 };
 pub use theme::Theme;
