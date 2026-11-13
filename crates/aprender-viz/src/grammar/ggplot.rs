@@ -20,6 +20,7 @@ use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
 use super::path;
 use super::scale_spec::{require_scale_scope, PositionScaleSpec, ResolvedAxis};
+use super::stroke;
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -301,6 +302,8 @@ struct PanelFrame {
     h: u32,
     x_scale: LinearScale,
     y_scale: LinearScale,
+    /// The visible data domain (after coord limits), in the order x then y.
+    domain: stroke::Domain,
     x_ticks: Vec<(f64, String)>,
     y_ticks: Vec<(f64, String)>,
 }
@@ -348,6 +351,12 @@ impl BuiltGGPlot {
     /// it refuses instead of drawing a plot that disagrees with `layout()`. Use `layout()` for the
     /// scaled view.
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
+        self.draw_frame(true)
+    }
+
+    /// The framebuffer; `raster_strokes` draws line, path, step and reference layers into it
+    /// (the SVG draws those as vector elements instead).
+    fn draw_frame(&self, raster_strokes: bool) -> Result<Framebuffer> {
         if self.uses_position_scales() {
             return Err(Error::Rendering(
                 "scale_x/scale_y and text (discrete) positions are not drawn by the renderer yet; \
@@ -356,14 +365,15 @@ impl BuiltGGPlot {
             ));
         }
         let mut fb = Framebuffer::new(self.width, self.height)?;
+        let layout = if raster_strokes { self.stroke_layout()? } else { None };
 
         // Fill background
         fb.clear(self.theme.background);
 
         let ps = panels(&self.facet, &self.data)?;
         let grid = PanelGrid::new(&ps, self.width, self.height, self.theme.margin);
-        for p in &ps {
-            self.render_panel(&mut fb, p, &grid)?;
+        for (pi, p) in ps.iter().enumerate() {
+            self.render_panel(&mut fb, p, &grid, layout.as_ref().map(|l| (l, pi)))?;
         }
 
         Ok(fb)
@@ -377,7 +387,7 @@ impl BuiltGGPlot {
     ///
     /// Everything [`Self::to_framebuffer`] returns, plus PNG-encoding failures.
     pub fn to_svg(&self) -> Result<String> {
-        let fb = self.to_framebuffer()?;
+        let fb = self.draw_frame(false)?;
         let mut svg = SvgEncoder::from_framebuffer(&fb)?;
         let (w, h) = (self.width as f32, self.height as f32);
         let m = self.theme.margin as f32;
@@ -398,10 +408,43 @@ impl BuiltGGPlot {
         if let Some(y) = &self.ylab {
             svg = svg.text_anchored(m, (m * 0.9).max(12.0), y, 12.0, ink, TextAnchor::Start);
         }
+        svg = self.svg_strokes(svg)?;
         if self.theme.show_axis {
             svg = self.svg_axis_text(svg)?;
         }
         Ok(svg.render())
+    }
+
+    /// The layout, when a line, path, step or reference layer needs it to be drawn.
+    ///
+    /// # Errors
+    ///
+    /// `coord_flip()` is refused: the layout does not apply the coordinate system, so a stroke
+    /// drawn under it would be wrong. Everything `layout()` refuses.
+    fn stroke_layout(&self) -> Result<Option<BuiltLayout>> {
+        if !self.layers.iter().any(|l| path::is_path_family(&l.geom.geom_type)) {
+            return Ok(None);
+        }
+        if matches!(self.coord, Coord::Cartesian { flip: true, .. }) {
+            return Err(Error::Rendering(
+                "line, path, step and reference layers are not drawn under coord_flip() yet".into(),
+            ));
+        }
+        self.layout().map(Some)
+    }
+
+    /// Line, path, step and reference layers as vector elements at panel pixel coordinates.
+    fn svg_strokes(&self, mut svg: SvgEncoder) -> Result<SvgEncoder> {
+        let Some(built) = self.stroke_layout()? else { return Ok(svg) };
+        let ps = panels(&self.facet, &self.data)?;
+        let grid = PanelGrid::new(&ps, self.width, self.height, self.theme.margin);
+        for (pi, p) in ps.iter().enumerate() {
+            let f = self.panel_frame(p, &grid)?;
+            for layer in built.layers.iter().filter(|l| stroke::is_stroke(l)) {
+                svg = stroke::add_svg(svg, layer, pi, f.domain, (&f.x_scale, &f.y_scale));
+            }
+        }
+        Ok(svg)
     }
 
     /// Tick marks and break labels of every panel, at the breaks of the layout's position
@@ -484,11 +527,18 @@ impl BuiltGGPlot {
             y_ticks: inside(by, (y_min, y_max)),
             x_scale,
             y_scale,
+            domain: ((x_min, x_max), (y_min, y_max)),
         })
     }
 
     /// Draw one panel: background, scales, grid, layers, axes, border.
-    fn render_panel(&self, fb: &mut Framebuffer, p: &Panel, grid: &PanelGrid) -> Result<()> {
+    fn render_panel(
+        &self,
+        fb: &mut Framebuffer,
+        p: &Panel,
+        grid: &PanelGrid,
+        strokes: Option<(&BuiltLayout, usize)>,
+    ) -> Result<()> {
         let f = self.panel_frame(p, grid)?;
         let (plot_x, plot_y, plot_w, plot_h) = (f.x, f.y, f.w, f.h);
         let (x_scale, y_scale) = (&f.x_scale, &f.y_scale);
@@ -499,7 +549,15 @@ impl BuiltGGPlot {
             self.draw_grid(fb, &f);
         }
 
-        for layer in &self.layers {
+        for (i, layer) in self.layers.iter().enumerate() {
+            if path::is_path_family(&layer.geom.geom_type) {
+                if let Some((built, pi)) = strokes {
+                    if let Some(l) = built.layers.get(i) {
+                        stroke::draw_raster(fb, l, pi, f.domain, (x_scale, y_scale));
+                    }
+                }
+                continue;
+            }
             self.render_layer(fb, layer, p, x_scale, y_scale)?;
         }
 
@@ -861,23 +919,12 @@ impl BuiltGGPlot {
                     fb, &x_data, &y_data, x_scale, y_scale, colour, diameter, *shape,
                 );
             }
-            GeomType::Line { width } => {
-                Self::render_line(fb, &x_data, &y_data, x_scale, y_scale, color, *width);
-            }
             GeomType::Bar { width: bar_width } => {
                 Self::render_bars(fb, &x_data, &y_data, x_scale, y_scale, color, *bar_width);
             }
             GeomType::Area { alpha } => {
                 let area_color = Rgba::new(color.r, color.g, color.b, (255.0 * alpha) as u8);
                 Self::render_area(fb, &x_data, &y_data, x_scale, y_scale, area_color);
-            }
-            GeomType::Hline { yintercept } => {
-                let y_px = y_scale.scale(*yintercept);
-                draw_line_aa(fb, x_scale.range().0, y_px, x_scale.range().1, y_px, color);
-            }
-            GeomType::Vline { xintercept } => {
-                let x_px = x_scale.scale(*xintercept);
-                draw_line_aa(fb, x_px, y_scale.range().0, x_px, y_scale.range().1, color);
             }
             _ => {} // Other geoms not fully implemented yet
         }

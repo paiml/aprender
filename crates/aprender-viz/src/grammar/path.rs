@@ -10,7 +10,8 @@
 //!   as `ggplot_build()` keeps them. `geom_step` refuses such rows (its stair vertices are
 //!   undefined there).
 //! * Order. `geom_line` orders rows by (panel, group, x) with `NaN` x last and ties in data
-//!   order (ggplot2's `setup_data`). `geom_path` and `geom_step` keep data order.
+//!   order (ggplot2's `setup_data`). `geom_path` and `geom_step` keep data order in the built layer; the renderer draws `geom_path`
+//!   rows stable-sorted by group, as `GeomPath$draw_panel` does (stroke.rs `split_runs`).
 //! * Groups. Only an explicit `group` aesthetic is supported: a column that is all numbers or all
 //!   text with no missing cell; ids are the 1-based rank of the sorted distinct value (C
 //!   collation for text). Without it every row is group -1. Any other data-mapped aesthetic
