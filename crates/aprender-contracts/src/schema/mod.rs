@@ -8,6 +8,7 @@ pub mod no_test_debt;
 mod parser;
 mod types;
 mod validator;
+pub mod work_tickets;
 
 pub use artifact::{classify_artifact, validate_artifact, ArtifactKind};
 pub use clause::{Clause, FormalStatus};
