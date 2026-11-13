@@ -7,14 +7,20 @@
 
 use super::canvas2d::Canvas2DRenderer;
 use super::events::{keyboard_event_to_presentar, mouse_event_to_presentar};
+use super::frame_loop::{FrameLoop, FrameScheduler};
 use super::mount::{counter_tree, Frame, Mounted};
 use presentar_core::{Event, Widget};
 use std::any::Any;
-use std::cell::{Cell, RefCell};
+use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use web_sys::{window, EventTarget, HtmlCanvasElement, KeyboardEvent, MouseEvent};
+
+/// Called once per tick before the frame is decided, with the mounted tree and the
+/// milliseconds since the previous tick (never negative). It may call `request_repaint` or
+/// `set_animating`; the loop stops by itself when nothing is dirty.
+pub type FrameCallback = Box<dyn FnMut(&mut Mounted, f64)>;
 
 /// Called once per widget message, with the mounted tree to change in response.
 pub type MessageHandler = Box<dyn FnMut(&mut Mounted, Box<dyn Any + Send>)>;
@@ -24,36 +30,50 @@ pub const COUNTER_CANVAS_ID: &str = "presentar-counter";
 /// The canvas attribute the counter page writes its state to, for a test to read back.
 pub const COUNT_ATTRIBUTE: &str = "data-count";
 
+/// `requestAnimationFrame` as a `FrameScheduler`: the thin browser layer.
+struct RafScheduler {
+    tick: Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>>,
+}
+
+impl FrameScheduler for RafScheduler {
+    fn request(&mut self) -> Option<i32> {
+        let w = window()?;
+        let tick = self.tick.borrow();
+        let tick = tick.as_ref()?;
+        w.request_animation_frame(tick.as_ref().unchecked_ref())
+            .ok()
+    }
+
+    fn cancel(&mut self, id: i32) {
+        if let Some(w) = window() {
+            let _ = w.cancel_animation_frame(id);
+        }
+    }
+}
+
 struct Shared {
     mounted: RefCell<Mounted>,
     handler: RefCell<MessageHandler>,
+    frame_callback: RefCell<Option<FrameCallback>>,
     renderer: Canvas2DRenderer,
-    running: Cell<bool>,
-    pending: Cell<Option<i32>>,
-    tick: RefCell<Option<Closure<dyn FnMut(f64)>>>,
+    frames: RefCell<FrameLoop<RafScheduler>>,
+    tick: Rc<RefCell<Option<Closure<dyn FnMut(f64)>>>>,
 }
 
 impl Shared {
-    /// Ask the browser for one frame. `running` stays false if it refuses.
-    fn request(&self) {
-        let id = window().and_then(|w| {
-            let tick = self.tick.borrow();
-            let tick = tick.as_ref()?;
-            w.request_animation_frame(tick.as_ref().unchecked_ref())
-                .ok()
-        });
-        self.pending.set(id);
-        self.running.set(id.is_some());
-    }
-
     /// Start the loop if it is stopped and a frame is owed.
     fn kick(&self) {
-        if !self.running.get() && self.mounted.borrow().needs_frame() {
-            self.request();
-        }
+        let owed = self.mounted.borrow().needs_frame();
+        self.frames.borrow_mut().kick(owed);
     }
 
-    fn on_tick(&self) {
+    fn on_tick(&self, now: f64) {
+        let Some(dt) = self.frames.borrow_mut().begin_tick(now) else {
+            return;
+        };
+        if let Some(callback) = self.frame_callback.borrow_mut().as_mut() {
+            callback(&mut self.mounted.borrow_mut(), dt);
+        }
         let frame = self.mounted.borrow_mut().frame();
         match &frame {
             Frame::Painted(commands) => {
@@ -65,12 +85,7 @@ impl Shared {
             }
             Frame::Idle => {}
         }
-        if frame.wants_next() {
-            self.request();
-        } else {
-            self.pending.set(None);
-            self.running.set(false);
-        }
+        self.frames.borrow_mut().end_tick(frame.wants_next());
     }
 
     fn on_event(&self, event: &Event) {
@@ -113,6 +128,19 @@ impl MountHandle {
         std::mem::forget(self);
     }
 
+    /// Register the per-frame callback (replacing any earlier one) and start the loop.
+    /// It runs once per tick with the frame delta in ms.
+    pub fn on_frame(&self, callback: impl FnMut(&mut Mounted, f64) + 'static) {
+        *self.shared.frame_callback.borrow_mut() = Some(Box::new(callback));
+        self.shared.mounted.borrow_mut().request_repaint();
+        self.shared.kick();
+    }
+
+    /// Stop the frame loop for good: the pending frame is cancelled and no tick runs after.
+    pub fn stop(&self) {
+        self.shared.frames.borrow_mut().stop();
+    }
+
     /// Change the mounted tree from outside an event (a timer, a socket), then repaint.
     /// A repaint is always requested, so an in-place `root_mut()` change cannot be dropped.
     pub fn update(&self, change: impl FnOnce(&mut Mounted)) {
@@ -130,9 +158,7 @@ impl Drop for MountHandle {
         for (target, name, listener) in &self.listeners {
             let _ = target.remove_event_listener_with_callback(name, listener.function());
         }
-        if let (Some(id), Some(w)) = (self.shared.pending.take(), window()) {
-            let _ = w.cancel_animation_frame(id);
-        }
+        self.shared.frames.borrow_mut().stop();
         // The tick closure holds the only other Rc to `shared`; dropping it frees both.
         self.shared.tick.borrow_mut().take();
     }
@@ -162,16 +188,19 @@ pub fn mount(
     let (width, height) = (canvas.width() as f32, canvas.height() as f32);
     let renderer = Canvas2DRenderer::new(canvas.clone()).map_err(|e| JsValue::from_str(&e))?;
 
+    let tick = Rc::new(RefCell::new(None));
     let shared = Rc::new(Shared {
         mounted: RefCell::new(Mounted::new(root, width, height)),
         handler: RefCell::new(handler),
         renderer,
-        running: Cell::new(false),
-        pending: Cell::new(None),
-        tick: RefCell::new(None),
+        frame_callback: RefCell::new(None),
+        frames: RefCell::new(FrameLoop::new(RafScheduler {
+            tick: Rc::clone(&tick),
+        })),
+        tick,
     });
     let for_tick = Rc::clone(&shared);
-    *shared.tick.borrow_mut() = Some(Closure::new(move |_now: f64| for_tick.on_tick()));
+    *shared.tick.borrow_mut() = Some(Closure::new(move |now: f64| for_tick.on_tick(now)));
 
     let mut listeners = Vec::new();
     let canvas_target: EventTarget = canvas.into();

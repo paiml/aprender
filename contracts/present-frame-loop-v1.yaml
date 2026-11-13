@@ -1,0 +1,85 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-13"
+  updated: "2026-11-13"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6892 — requestAnimationFrame loop for the browser app"
+    - "crates/aprender-present-lib/src/browser/frame_loop.rs — the clock and loop state this pins"
+    - "crates/aprender-present-lib/src/browser/entry.rs — the wasm32 requestAnimationFrame binding"
+    - "contracts/present-mount-frame-v1.yaml — the repaint-or-stop decision this loop drives"
+  description: >
+    The browser app repaints per frame, not only on events. The bookkeeping of
+    that loop (frame delta from host timestamps, one request in flight, stop)
+    is a pure core behind a FrameScheduler trait; the web-sys binding is a
+    thin wasm32 layer. A negative delta breaks every animation; a tick after
+    stop repaints a page that was torn down.
+
+name: present-frame-loop
+version: "1.0.0"
+scope: >
+  `FrameClock`, `FrameLoop` and `FrameScheduler` in `browser::frame_loop`,
+  observed natively with a fake scheduler. Out of scope: the
+  requestAnimationFrame / cancelAnimationFrame calls in `browser::entry`
+  (wasm32 only, type-checked by the wasm32 guard; see open_obligations).
+status: active
+
+contract: |
+  (1) THE DELTA IS NEVER NEGATIVE. The first frame has delta 0; a timestamp
+      that goes backwards or is not finite gives 0.
+  (2) RECORDED TIME IS MONOTONE. A rejected timestamp does not move the clock,
+      so the next good timestamp is measured from the latest good one.
+  (3) ONE REQUEST IN FLIGHT. kick never requests while a frame is pending, and
+      never requests when no frame is owed.
+  (4) STOP CANCELS AND NO TICK RUNS AFTER IT. stop withdraws the pending
+      request, is idempotent, drops a callback already in flight and blocks
+      any later kick or end_tick request.
+  (5) THE LOOP ENDS WHEN NOTHING IS OWED. end_tick(false) leaves no request
+      pending; a refused request leaves the loop idle.
+equations:
+  frame_delta:
+    description: "Frame delta from host timestamps"
+    formula: "dt(now) = 0 if first or not finite(now) or now < last else now - last; last = now only when accepted"
+    domain: "now in f64 milliseconds"
+    codomain: "dt >= 0"
+    invariants:
+      - "dt >= 0 for every input"
+      - "last never decreases"
+falsification_tests:
+  - id: FALSIFY-PRESENT_FRAME_LOOP-001
+    description: "delta is never negative and recorded time does not go backwards"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::clock_never_returns_a_negative_delta_and_ignores_backward_time"
+    prediction: "0 for earlier, NaN and infinite stamps; 10 for 110 after 100"
+    if_fails: "animations jump backwards or divide by a negative step"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-002
+    description: "first frame has zero delta, then differences"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::clock_first_frame_has_zero_delta_then_differences"
+    prediction: "0, 16.5, 0"
+    if_fails: "the first frame gets a huge step from time zero"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-003
+    description: "one request in flight, only when a frame is owed"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::kick_requests_once_and_only_when_a_frame_is_owed"
+    prediction: "no request when not owed; exactly one after two kicks"
+    if_fails: "frames double up at 120 Hz, or an idle page burns a core"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-004
+    description: "stop cancels the pending frame and no tick runs after it"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::stop_cancels_the_pending_frame_and_no_tick_runs_after"
+    prediction: "one cancel of the pending id; begin_tick None; zero ticks; no new request"
+    if_fails: "a torn-down page keeps repainting"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-005
+    description: "stop inside a tick prevents the next request"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::stop_inside_a_tick_prevents_the_next_request"
+    prediction: "one request in total, none pending"
+    if_fails: "a callback that stops itself is re-armed"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-006
+    description: "the loop ends when nothing is owed; a refused request leaves it idle"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::ticks_continue_while_wanted_and_the_loop_stops_asking_otherwise && cargo test -p aprender-present-lib --lib browser::frame_loop::tests::a_refused_request_leaves_the_loop_idle"
+    prediction: "two requests for two wanted ticks, none after end_tick(false); refused request not running"
+    if_fails: "the loop spins with no work, or claims to run with no request"
+open_obligations:
+  - |
+    browser::entry (RafScheduler, the per-frame callback, MountHandle::stop) has
+    no browser run yet: owes a probar end-to-end run that counts frames on a
+    scratch page (#6892), and a wasm32 build for the new code path.
