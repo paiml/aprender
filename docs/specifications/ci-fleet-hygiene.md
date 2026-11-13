@@ -265,6 +265,14 @@ push to `main` (the backstop).
   train is the only way to `main`, and removing them is a separate change.
 - **Falsifier**: `scripts/check_ci_train_only.sh --self-test` (registered as `ci/explicit-test-commands.d/847-ci-train-only.cmd`)
   runs each verdict block as shipped and mutates `ci.yml` per conjunct, per `needs` edge and per refusal.
+- **Fix round 3 (finding 1, 3).** The train owes the same heavy set as a `merge_group` entry: `gate` requires
+  `needs.x86-main.result == success` on a train (vendored-schemas, guard-cargo-shard and guard-cargo run inside x86-main
+  there, as they ran in the whole-job-required `guards` job on `merge_group`), and the `guards` job's bin-filter step
+  (`scripts/tests/release_bin_filter_test.sh`) also runs in x86-main on `pull_request`. A push off `refs/heads/main`
+  (a `v*` tag, `master`) at the head sha of an open PR is RED on all three verdicts (no base-drift check runs there).
+  The guard also asserts that each required check name (`ci / gate`, `gate`, `workspace-test`) is produced by exactly
+  its verdict job (`ci-gate`, `gate`, `workspace-test`) and by no other job of any workflow, except `nightly.yml`'s
+  schedule/dispatch-only `gate` job.
 - **Consequences outside this repo** (rollout, not done by this change): the train must judge member candidacy on `pr-light`
   and keep one train in flight; stale-PR and arming rules must key on `pr-light` for member PRs; fork PRs cannot land.
 - **Train body shape (fix round 1, B4).** The PR-body lints of `guard-tree` (`check_pr_ont_delta.sh`, `check_pr_closes_issue.sh`) now
@@ -277,9 +285,30 @@ push to `main` (the backstop).
 - **One App login.** `BOT` in `scripts/check_ci_train_only.sh` is the single source; the guard asserts all 6 `user.login ==` uses
   in `ci.yml` and the `TRAIN_BOT` pin in `check_pr_ont_delta.sh` equal it. The value `paiml-fleet[bot]` is inferred from the App
   that merges train PRs (`merged_by` app/paiml-fleet on #6855); it is UNCONFIRMED against a live train PR's `user.login`.
-- **Cut-over (stale greens).** Open non-draft PRs whose rollup was green under the old rules stay mergeable alone until they
-  push again. At cut-over re-run or re-push each one (or label it) so the new verdicts grade it; arm nothing meanwhile.
-  Any run of the old workflow still in flight can post a green on its sha.
+- **Rollout order (fix round 3, finding 2). infra first.** infra's `merge-train.sh` must open train PRs with the App token
+  (author `paiml-fleet[bot]`) BEFORE this change merges. The last train before this change was opened by a personal login:
+  under this change such a train has `TRAIN=0`, all three verdicts refuse it, and with every ordinary PR refused too `main`
+  freezes. That is fail-closed (nothing lands untested), but it is an outage; merge this change only after one train PR
+  opened by the App token has been read back (`gh pr view <n> --json author` shows `app/paiml-fleet`).
+- **Cut-over (stale greens): every open PR needs a NEW head commit. A re-run is NOT enough.** Branch protection reads the
+  check runs on the PR's head sha. An open PR whose rollup went green under the old workflow keeps those greens on its
+  current head sha, so it stays mergeable alone until that sha changes. Re-running its checks does not help: a re-run
+  re-executes the original run, with the original `GITHUB_SHA` (the old `refs/pull/N/merge` commit) and therefore the OLD
+  `ci.yml`, so it can post a fresh green on the same head. The cop's cut-over step, at the merge of this change and before
+  ANY other merge (arm nothing meanwhile):
+  1. for every open PR: `gh pr update-branch <n>` (a merge of `main` into the branch; never a force-push). The new head
+     commit gets new `pull_request` runs from the new merge ref, whose `ci.yml` is the train-only one. A PR whose update
+     conflicts gets no run and no green; it stays unmergeable until its owner merges `main` (STALE PR RULE).
+  2. read back, per open PR: (a) `git merge-base --is-ancestor <cut-over commit> <head sha>` exits 0, i.e. the head is a
+     descendant of the cut-over commit; (b) the required checks on that head sha (`ci / gate`, `gate`, `workspace-test`)
+     belong to `CI` runs with `head_sha` == the new head, created after the cut-over merge, whose run commit's `ci.yml`
+     carries the refusal text `not mergeable alone: lands only via train/aprender-*` (for a non-train PR the three are RED
+     with exactly that message). A PR failing (a) or (b) is not mergeable evidence; repeat step 1 for it.
+  3. any run of the old workflow still in flight on an old head can post a green on that OLD sha; step 1 moves the head, so
+     that green no longer counts. Read back after the last old run has finished.
+  No structural guard is added for this: a `pull_request` run always evaluates the merge ref, which already contains the
+  new `main`, so a "merge-base predates the cut-over" check inside the new workflow could never fire on a NEW run and
+  cannot fire on an old re-run (which runs the old file). The step is the cop's, and the read-back above is its receipt.
 - **Emergency path.** A revert is a change like any other and lands through a train (label `expedite` makes a train of one, still the
   full heavy tier). There is no hand-made `train/aprender-*` branch: the author conjunct admits only the App. Restricting creation
   of `refs/heads/train/aprender-*` to the App by ruleset is advised and is an infra/GitHub setting, not part of this change.

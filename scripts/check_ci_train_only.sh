@@ -13,8 +13,20 @@
 #        workflow_dispatch off main     -> RED;  workflow_dispatch on refs/heads/main -> green
 #        train behind main / tip unread / pr-light red / a heavy result skipped -> RED
 #        train on main's tip, everything green                                  -> green
+#        gate on a train with x86-main not success (skipped/missing too) -> RED (fix round 3, finding 1: the train owes the
+#          whole x86-main job, where vendored-schemas, guard-cargo-shard and the bin filter run, as merge_group owes `guards`)
+#        push off refs/heads/main (v* tag, master) at the head sha of an open PR, or the PR list unreadable -> RED;
+#          push to main, and a tag push no open PR heads -> green
 #   3. the verdict needs every heavy job (a missing `needs` could let a skipped heavy job pass unseen); nothing in a
-#      verdict job is continue-on-error (no third state).
+#      verdict job is continue-on-error (no third state). gate reads X86R from needs.x86-main.result; x86-main runs the
+#      bin-filter step on pull_request (it ran in `guards` on merge_group).
+#   4. REQUIRED CHECK NAMES (fix round 3, finding 3). Branch protection keys on check-run NAMES, from any job of any
+#      workflow. Each required name is produced by exactly its verdict job and by no other job:
+#        `ci / gate` <- ci-gate,  `gate` <- gate,  `workspace-test` <- workspace-test   (REQ below).
+#      A job's check name is its `name:` or else its id; a reusable-workflow call job (`uses:`) yields "<name> / <inner>",
+#      so a call job whose name/id prefixes a required name is a producer. A `${{` in a job name is unknowable: RED.
+#      Other workflows in .github/workflows produce none of the three, except OTHER_OK (nightly.yml's `gate`: schedule
+#      and workflow_dispatch only; harmless alone, all three names are required, the other two stay ci.yml's).
 #
 # Usage:  bash scripts/check_ci_train_only.sh [--self-test] [WORKFLOW_FILE]
 # Wired:  ci/explicit-test-commands.d/847-ci-train-only.cmd (--self-test) and guard_tree.sh (no args).
@@ -29,6 +41,52 @@ CAN_DET="if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && ($EVENT_P
 CAN_SHARD="if: \${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && ($EVENT_PART) }}"
 CAN_TRAIN="TRAIN: \${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == '$BOT') && '1' || '0' }}"
 CAN_REF='REF: ${{ github.ref }}'
+CAN_X86R='X86R: ${{ needs.x86-main.result }}'
+CAN_BINF_IF="if: \${{ github.event_name == 'pull_request' }}"
+REQ=('ci / gate:ci-gate' 'gate:gate' 'workspace-test:workspace-test')   # required check name : the one job that may produce it
+OTHER_OK='nightly.yml:gate'   # the only other-workflow producer of a required name (see 4. above)
+
+check_names() { # FILE -> lines "id<TAB>check-name<TAB>uses(0|1)", one per job under `jobs:`
+    awk -v q="'" '
+        function flush() { if (id != "") print id "\t" (nm != "" ? nm : id) "\t" u; id = ""; nm = ""; u = 0 }
+        /^jobs:[[:space:]]*$/ { on = 1; next }
+        on && /^[^ #]/ { flush(); on = 0; next }
+        on && /^  [A-Za-z0-9_-]+:[[:space:]]*$/ { flush(); id = $0; sub(/^  /, "", id); sub(/:.*$/, "", id); next }
+        on && id != "" && /^    name:/ {
+            nm = $0; sub(/^    name:[[:space:]]*/, "", nm); sub(/[[:space:]]+#.*$/, "", nm); sub(/[[:space:]]+$/, "", nm)
+            c = substr(nm, 1, 1)
+            if ((c == "\"" || c == q) && substr(nm, length(nm), 1) == c) nm = substr(nm, 2, length(nm) - 2)
+            next }
+        on && id != "" && /^    uses:/ { u = 1 }
+        END { flush() }' "$1"
+}
+
+names_check() { # CI_FILE OTHER_DIR -> one FAIL line per required name not produced by exactly its verdict job; rc 1 when any
+    local f="$1" od="$2" bad=0 r nm want ids o base id cn u
+    local tab=$'\t'
+    while IFS="$tab" read -r id cn u; do
+        case "$cn" in *'${{'*) echo "FAIL  job $id: check name '$cn' is an expression (unknowable): RED"; bad=1 ;; esac
+    done < <(check_names "$f")
+    for r in "${REQ[@]}"; do
+        nm="${r%:*}" want="${r##*:}"
+        ids="$(check_names "$f" | awk -F '\t' -v n="$nm" '$2 == n {print $1}' | sort | tr '\n' ' ' | sed 's/ $//')"
+        [ "$ids" = "$want" ] || { echo "FAIL  required check '$nm' is produced by job(s) [${ids:-none}] in $(basename "$f"), want exactly [$want]"; bad=1; }
+        ids="$(check_names "$f" | awk -F '\t' -v n="$nm" '$3 == 1 && index(n, $2 " / ") == 1 {print $1}' | tr '\n' ' ' | sed 's/ $//')"
+        [ -z "$ids" ] || { echo "FAIL  required check '$nm' can come from reusable-workflow call job(s) [$ids]"; bad=1; }
+        for o in "$od"/*.yml "$od"/*.yaml; do
+            [ -f "$o" ] || continue
+            base="$(basename "$o")"
+            [ "$base" != ci.yml ] || continue   # the file under test stands in for ci.yml (a self-test mutant lives elsewhere)
+            while IFS="$tab" read -r id cn u; do
+                if [ "$cn" = "$nm" ] || { [ "$u" = 1 ] && [ "${nm#"$cn / "}" != "$nm" ]; }; then
+                    [ "$base:$id" = "$OTHER_OK" ] && [ "$nm" = gate ] && continue
+                    echo "FAIL  required check '$nm' is also produced by $base job $id"; bad=1
+                fi
+            done < <(check_names "$o")
+        done
+    done
+    return "$bad"
+}
 
 # has PATTERN -> rc 0 when stdin has a matching line; reads ALL of stdin (grep -q + pipefail reads a present line as absent).
 has() { /usr/bin/grep "$@" > /dev/null; }
@@ -62,7 +120,7 @@ runstep() {
     local td="$1" scr="$2" behind="$3"; shift 3
     printf '#!/bin/sh\n[ "%s" = fail ] && exit 1\necho "%s"\n' "$behind" "$behind" > "$td/bin/gh"; chmod +x "$td/bin/gh"
     runrc=0
-    runout="$(env -i PATH="$td/bin:/usr/bin:/bin:/usr/local/bin" REPO=x/y BASE_REF=main HEAD_SHA=abc "$@" bash -c "$scr" 2>&1)" || runrc=$?
+    runout="$(env -i PATH="$td/bin:/usr/bin:/bin:/usr/local/bin" REPO=x/y BASE_REF=main HEAD_SHA=abc GITHUB_SHA=abc "$@" bash -c "$scr" 2>&1)" || runrc=$?
 }
 
 # the per-job env for a fully green heavy tier (so only the tested condition can turn the step red)
@@ -71,7 +129,7 @@ green_env() { # JOB -> env assignments, one per line
         workspace-test) printf '%s\n' SHARD_RESULT=success WT_REUSE= WT_CITE= ;;
         ci-gate) printf '%s\n' 'RESULTS={"sov.gate":{"result":"success"}}' MG=skipped MG_X86= MG_DET= MG_CITE= ADV=skipped ;;
         gate) printf '%s\n' 'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
-                'DET={"determinism-compare":{"result":"success"}}' GRD=null GRDR=success WT=success MST=success \
+                'DET={"determinism-compare":{"result":"success"}}' GRD=null GRDR=success X86R=success WT=success MST=success \
                 MG=skipped MG_X86= MG_DET= MG_CITE= ADV=skipped ;;
     esac
 }
@@ -131,13 +189,34 @@ check() { # FILE -> one FAIL line per violated condition; rc 1 when any
         row 'train tip unreadable' red 'not on main' fail
         row 'train, pr-light red' red 'pr-light' 0 PRL=failure
         row 'train on main tip, all green' 0 '' 0
+        # push off main (finding 1): BEHIND doubles as the stubbed open-PR count (the PR block is not entered on push)
+        row 'push to main, all green' 0 '' 1 EVT=push TRAIN=0 REF=refs/heads/main PRL=skipped
+        row 'push of a v* tag no open PR heads' 0 '' 0 EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped
+        row 'push of a v* tag at an open PR head' red 'at the head of an open PR' 1 EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped
+        row 'push to master at an open PR head' red 'at the head of an open PR' 2 EVT=push TRAIN=0 REF=refs/heads/master PRL=skipped
+        row 'push of a v* tag, open PRs unreadable' red 'at the head of an open PR' fail EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped
         case "$j" in
             workspace-test) row 'train with the shard matrix skipped' red '' 0 SHARD_RESULT=skipped ;;
             ci-gate) row 'train with x86-main skipped (no sov.gate)' red '' 0 'RESULTS=null' ;;
             gate) row 'train with the determinism section missing' red '' 0 'DET=null'
-                  row 'train with workspace-test not green' red '' 0 WT=skipped ;;
+                  row 'train with workspace-test not green' red '' 0 WT=skipped
+                  row 'train with x86-main failed, its sections green' red 'x86-main is' 0 X86R=failure
+                  row 'train with x86-main skipped, its sections green' red 'x86-main is' 0 X86R=skipped
+                  row 'train with x86-main result missing' red 'x86-main is' 0 X86R=
+                  row 'merge_group ignores X86R (guards carries it)' 0 '' 0 EVT=merge_group TRAIN=0 PRL=skipped X86R=skipped \
+                      'GRD={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"}}'
+                  if ! line_eq "$blk" 10 'X86R:' "$CAN_X86R"; then echo "FAIL  gate: X86R is not needs.x86-main.result"; bad=1; fi ;;
         esac
     done
+    # the bin-filter step (merge_group runs it in `guards`) runs in x86-main on pull_request: present, and gated only on the event
+    blk="$(job_block "$f" x86-main)"
+    w="$(printf '%s\n' "$blk" | awk '/^      - name: Binary Release bin filter/{s=1;print;next} s&&/^      - /{exit} s{print}')"
+    if ! printf '%s\n' "$w" | has -x -F -- '          bash scripts/tests/release_bin_filter_test.sh'; then
+        echo "FAIL  x86-main has no bin-filter step (release_bin_filter_test.sh): a train would skip a guard merge_group ran"; bad=1
+    elif ! line_eq "$w" 8 'if:' "$CAN_BINF_IF"; then
+        echo "FAIL  x86-main bin-filter step: its if: is not exactly the pull_request condition"; bad=1
+    fi
+    names_check "$f" "${OTHER_WF_DIR:-$root/.github/workflows}" || bad=1
     rm -rf "${td:?}"
     for w in "gate:x86-main" "gate:determinism" "gate:workspace-test" "workspace-test:workspace-test-shard" "ci-gate:x86-main"; do
         j="${w%%:*}"; n="${w#*:}"
@@ -204,6 +283,39 @@ self_test() {
         mutant "$jb-dispatch-line-gone" "/^  $jb:\$/,/^  [a-z-]+:\$/{/workflow_dispatch on \\$\{REF/d}"
         mutant "$jb-dispatch-any-ref"   "/^  $jb:\$/,/^  [a-z-]+:\$/{s/\|\| \[ \"\\$\{REF:-\}\" = refs\/heads\/main \]/|| true/}"
         mutant "$jb-dispatch-wrong-ref" "/^  $jb:\$/,/^  [a-z-]+:\$/{s/= refs\/heads\/main \]/= refs\/heads\/dev ]/}"
+        # push off main at an open PR head (fix round 3, finding 1): the check gone, or an unread PR list passing
+        mutant "$jb-push-check-gone"     "/^  $jb:\$/,/^  [a-z-]+:\$/{/at the head of an open PR/d}"
+        mutant "$jb-push-unread-passes"  "/^  $jb:\$/,/^  [a-z-]+:\$/{s/\|\| open=unread/|| open=0/}"
+        mutant "$jb-push-tags-exempt"    "/^  $jb:\$/,/^  [a-z-]+:\$/{s/\[ \"\\$\{REF:-\}\" != refs\/heads\/main \]; then/[ \"\${REF:-}\" = refs\/heads\/master ]; then/}"
+    done
+    # --- fix round 3, finding 1: the train owes the whole x86-main job ---
+    mutant gate-x86-requirement-removed   "/^  gate:\$/,/^  [a-z-]+:\$/{/x86-main is '\\$\{X86R/d}"
+    mutant gate-x86-requirement-off-train "/^  gate:\$/,/^  [a-z-]+:\$/{s/\[ \"\\$EVT\" != pull_request \] \|\| \[ \"\\$\{X86R/[ \"\$EVT\" != dispatch ] || [ \"\${X86R/}"
+    mutant gate-x86-requirement-any-result "/^  gate:\$/,/^  [a-z-]+:\$/{s/\[ \"\\$\{X86R:-\}\" = success \]/[ -n \"\${X86R:-}\" ]/}"
+    mutant gate-x86r-reads-pr-light        's/X86R: \$\{\{ needs\.x86-main\.result/X86R: ${{ needs.pr-light.result/'
+    mutant gate-x86r-env-gone              '/^          X86R: /d'
+    mutant bin-filter-step-gone            '/^  x86-main:$/,/^  [a-z-]+:$/{/release_bin_filter_test\.sh/d}'
+    mutant bin-filter-step-if-false        "/^  x86-main:\$/,/^  [a-z-]+:\$/{s/if: \\$\{\{ github\.event_name == 'pull_request' \}\}\$/if: false/}"
+    # --- fix round 3, finding 3: required check names come from exactly their verdict job ---
+    mutant name-ci-gate-moved-to-pr-light  's/^    name: ci \/ gate$/    name: ci-gate/; s/^  pr-light:$/  pr-light:\n    name: ci \/ gate/'
+    mutant name-gate-moved-to-pr-light     's/^  pr-light:$/  pr-light:\n    name: gate/; s/^  gate:$/  gate:\n    name: final verdict/'
+    mutant name-wt-duplicated-on-pr-light  's/^  pr-light:$/  pr-light:\n    name: workspace-test/'
+    mutant name-ci-gate-dup-quoted-comment 's/^  pr-light:$/  pr-light:\n    name: "ci \/ gate"   # second producer/'
+    mutant name-gate-dup-on-x86-main       's/^  x86-main:$/  x86-main:\n    name: gate/'
+    mutant name-reusable-call-named-ci     's/^  runner-smells:$/  runner-smells:\n    name: ci/'
+    mutant name-verdict-renamed            's/^    name: ci \/ gate$/    name: ci \/ gate2/'
+    mutant name-gate-job-given-a-name      's/^  gate:$/  gate:\n    name: the gate/'
+    mutant name-wt-job-given-a-name        's/^  workspace-test:$/  workspace-test:\n    name: tests/'
+    mutant name-is-an-expression           "s/^    name: ci \\/ gate\$/    name: \${{ 'ci \\/ gate' }}/"
+    # another workflow producing a required name (nightly.yml's schedule-only `gate` is the one allowed producer)
+    mkdir -p "$td/wf"; cp "$root"/.github/workflows/*.yml "$td/wf/"
+    if got="$(OTHER_WF_DIR="$td/wf" check "$src")"; then echo "ok    green the workflow set as committed (copied)"; else echo "FAIL  green: the copied workflow set is RED: $got"; fails=1; fi
+    for name in workspace-test:workspace-test 'ci / gate:ci-gate-x' gate:gate; do
+        rm -rf "$td/wf2"; mkdir -p "$td/wf2"; cp "$td/wf/"*.yml "$td/wf2/"
+        printf 'name: planted\non: [pull_request]\njobs:\n  %s:\n    name: %s\n    runs-on: ubuntu-latest\n    steps:\n      - run: "true"\n' \
+            "${name##*:}" "${name%:*}" > "$td/wf2/planted.yml"
+        if got="$(OTHER_WF_DIR="$td/wf2" check "$src")"; then echo "FAIL  mutant other-workflow-produces '${name%:*}' stayed GREEN"; fails=1
+        else echo "ok    red   mutant other-workflow-produces '${name%:*}'"; fi
     done
     # --- the five gate-opening mutants the round-0 non-author review (Opus, f6c869bf3) found surviving ---
     mutant M2-verdict-if-wrapped-skippable "/^  (workspace-test|ci-gate|gate):\$/,/^    steps:/{s/^    if: always\\(\\)/    if: \${{ always() \&\& (github.event_name != 'pull_request' || startsWith(github.event.pull_request.head.ref, 'train\\/aprender-')) }}/}"

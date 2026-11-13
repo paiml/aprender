@@ -438,6 +438,13 @@ jobs:
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh --self-test
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      # #7001: on merge_group this step runs in the `guards` job; a train PR never reaches merge_group, so it runs here
+      - name: Binary Release bin filter (#6502) keeps every published bin and drops every publish=false one
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash scripts/tests/release_bin_filter_test.sh
       # PMAT-5971: on a merge_group entry guard-tree, guard-cargo and vendored-schemas run in the
       # `guards` job (below), not here: measured over 20 queue runs they were the two longest
       # sections (guard-cargo 1602 s median / 2100 s p90) and x86-main waited for them.
@@ -832,6 +839,7 @@ jobs:
     # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
     permissions:
       contents: read
+      pull-requests: read
     env:
       TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
       REF: ${{ github.ref }}
@@ -852,6 +860,12 @@ jobs:
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
           [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
+          # #7001: a push of a v* tag or master runs the heavy tier with no base-drift check; at the head sha of an open PR its
+          # green would satisfy that PR's required checks. Off refs/heads/main a push is evidence only for a sha no open PR heads.
+          if [ "${EVT:-}" = push ] && [ "${REF:-}" != refs/heads/main ]; then
+            open=$(gh api "repos/${REPO:?}/commits/${GITHUB_SHA:?}/pulls" --jq "[.[] | select(.state == \"open\" and .head.sha == \"${GITHUB_SHA}\")] | length") || open=unread
+            [ "$open" = 0 ] || { echo "::error::push to ${REF:-unknown} at the head of an open PR (open=$open) is not mergeable evidence (#7001)"; exit 1; }
+          fi
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # #7001: the heavy tier runs ONCE PER TRAIN. A pull_request that is not a train PR (TRAIN != 1: same-repo head,
           # train/aprender- ref, fleet author) can never satisfy this check: pr-light must be green, then it is refused with
@@ -931,6 +945,7 @@ jobs:
     # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
     permissions:
       contents: read
+      pull-requests: read
     env:
       TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
       REF: ${{ github.ref }}
@@ -954,6 +969,12 @@ jobs:
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
           [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
+          # #7001: a push of a v* tag or master runs the heavy tier with no base-drift check; at the head sha of an open PR its
+          # green would satisfy that PR's required checks. Off refs/heads/main a push is evidence only for a sha no open PR heads.
+          if [ "${EVT:-}" = push ] && [ "${REF:-}" != refs/heads/main ]; then
+            open=$(gh api "repos/${REPO:?}/commits/${GITHUB_SHA:?}/pulls" --jq "[.[] | select(.state == \"open\" and .head.sha == \"${GITHUB_SHA}\")] | length") || open=unread
+            [ "$open" = 0 ] || { echo "::error::push to ${REF:-unknown} at the head of an open PR (open=$open) is not mergeable evidence (#7001)"; exit 1; }
+          fi
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # #7001: the heavy tier runs ONCE PER TRAIN. A pull_request that is not a train PR (TRAIN != 1: same-repo head,
           # train/aprender- ref, fleet author) can never satisfy this check: pr-light must be green, then it is refused with
@@ -999,6 +1020,7 @@ jobs:
     # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
     permissions:
       contents: read
+      pull-requests: read
     env:
       TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
       REF: ${{ github.ref }}
@@ -1012,6 +1034,7 @@ jobs:
           X86: ${{ needs.x86-main.outputs.results }}
           GRD: ${{ needs.guards.outputs.results }}
           GRDR: ${{ needs.guards.result }}
+          X86R: ${{ needs.x86-main.result }}
           DET: ${{ needs.determinism.outputs.results }}
           WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
@@ -1027,6 +1050,12 @@ jobs:
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
           [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
+          # #7001: a push of a v* tag or master runs the heavy tier with no base-drift check; at the head sha of an open PR its
+          # green would satisfy that PR's required checks. Off refs/heads/main a push is evidence only for a sha no open PR heads.
+          if [ "${EVT:-}" = push ] && [ "${REF:-}" != refs/heads/main ]; then
+            open=$(gh api "repos/${REPO:?}/commits/${GITHUB_SHA:?}/pulls" --jq "[.[] | select(.state == \"open\" and .head.sha == \"${GITHUB_SHA}\")] | length") || open=unread
+            [ "$open" = 0 ] || { echo "::error::push to ${REF:-unknown} at the head of an open PR (open=$open) is not mergeable evidence (#7001)"; exit 1; }
+          fi
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
@@ -1072,6 +1101,9 @@ jobs:
             G=X86; [ "$EVT" != merge_group ] || G=GRD
             # the whole guards job, not only the two sections read below: a red vendored-schemas must block the entry
             [ "$EVT" != merge_group ] || [ "${GRDR:-}" = success ] || { echo "guards job: ${GRDR:-missing}"; exit 1; }
+            # #7001: on a train PR those guards (vendored-schemas, guard-cargo-shard, the bin filter) run inside x86-main, so the
+            # train owes the whole x86-main job as merge_group owes the whole guards job; skipped or missing is red
+            [ "$EVT" != pull_request ] || [ "${X86R:-}" = success ] || { echo "::error::train: x86-main is '${X86R:-missing}', not success (#7001)"; exit 1; }
             for pair in "$G:guard-tree" "$G:guard-cargo" X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
               r=$(res "${!job}" "$sec")
