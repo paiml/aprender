@@ -19,6 +19,12 @@ struct Sci {
     nsig: i32,
 }
 
+/// R rounds the scaled mantissa with `nearbyintl`: ties go to the even integer, so 3000000.5 is
+/// 3000000 and 3000001.5 is 3000002. (`libm::round` sends every tie away from zero.)
+fn round_half_even(x: f64) -> f64 {
+    libm::rint(x)
+}
+
 fn scientific(v: f64) -> Sci {
     if v == 0.0 || !v.is_finite() {
         return Sci { exponent: 0, nsig: 1 };
@@ -30,9 +36,9 @@ fn scientific(v: f64) -> Sci {
     // `10^-k` overflows below 1e-308 (subnormals): scale the value up first, exactly as R's long
     // double does implicitly.
     let mut m = if k < -300 {
-        libm::round(a * 1e30 / libm::pow(10.0, f64::from(k + 30)))
+        round_half_even(a * 1e30 / libm::pow(10.0, f64::from(k + 30)))
     } else {
-        libm::round(a / libm::pow(10.0, f64::from(k)))
+        round_half_even(a / libm::pow(10.0, f64::from(k)))
     };
     let full = libm::pow(10.0, f64::from(R_DIGITS));
     if m >= full {
@@ -137,6 +143,34 @@ mod tests {
         assert_eq!(format_labels(&[1e5]), ["1e+05"]);
         assert_eq!(format_labels(&[1.5e5, 2e5]), ["150000", "200000"]);
         assert_eq!(format_labels(&[1e-5]), ["1e-05"]);
+    }
+}
+
+#[cfg(test)]
+mod tie_tests {
+    use super::*;
+
+    /// R 4.6.2 `format(x, trim = TRUE)` (LC_COLLATE=C), the 7th significant digit a tie: R rounds
+    /// ties to even, so 3000000.5 -> 3000000 (one significant digit) where half-away gives
+    /// 3000001 (seven), and the fixed width then wins.
+    #[test]
+    fn a_tie_at_the_seventh_digit_rounds_to_even_as_r_does() {
+        assert_eq!(format_labels(&[3e9, 3_000_000_500.0]), ["3e+09", "3e+09"]);
+        let six: Vec<f64> = (0..6).map(|k| 3e9 + f64::from(k) * 100.0).collect();
+        assert_eq!(format_labels(&six), ["3e+09"; 6]);
+        // Not a tie at the 7th digit: all digits kept.
+        assert_eq!(
+            format_labels(&[3_000_000_001.0, 3_000_000_257.0, 3_000_000_513.0]),
+            ["3000000001", "3000000257", "3000000513"]
+        );
+        assert_eq!(format_labels(&[3_000_001_500.0, 3e9]), ["3000001500", "3000000000"]);
+        assert_eq!(format_labels(&[3_000_002_500.0, 3e9]), ["3000002500", "3000000000"]);
+        assert_eq!(format_labels(&[30_000_005.0, 0.0]), ["3e+07", "0e+00"]);
+        // Odd neighbour rounds up to the even one: 1234567.5 -> 1234568 (7 digits), tie at .5.
+        assert_eq!(format_labels(&[2_500_000.5, 0.0]), ["2500000", "0"]);
+        assert_eq!(format_labels(&[1_234_567.5, 0.0]), ["1234568", "0"]);
+        assert_eq!(format_labels(&[12_345_675.0, 0.0]), ["12345675", "0"]);
+        assert_eq!(format_labels(&[12_345_685.0, 0.0]), ["12345685", "0"]);
     }
 }
 

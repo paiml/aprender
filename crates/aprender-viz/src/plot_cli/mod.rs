@@ -18,7 +18,7 @@
 //! aprender-data, which would pull Arrow into a CLI that needs a header row, comma splitting with
 //! RFC 4180 quotes, `#` comment lines and an optional UTF-8 BOM. Values are read as `f64`, as
 //! ggplot2 reads them. The axis labels (ggplot2's `format()` at 7 significant digits, fixed or
-//! scientific as R chooses) were compared with ggplot2 4.0.3 on 188 ranges whose decades run from
+//! scientific as R chooses) were compared with ggplot2 4.0.3 on 200 sets whose decades run from
 //! 1e-5 to 9.99e15, and all were identical; a value of zero, or of magnitude 1e-5 up to but
 //! excluding 1e16, is drawn, and any other is refused by name rather than drawn with labels nobody
 //! compared. That span is far inside the engine's `f32`, so no value is turned into infinity or zero.
@@ -612,8 +612,8 @@ fn build_plot(
     args: &PlotArgs,
 ) -> Result<GGPlot, String> {
     let mut df = DataFrame::new();
-    // numeric_xy refused every value outside f32's normal range, so this narrowing keeps the
-    // magnitude and loses only digits past f32's 24-bit mantissa.
+    // numeric_xy refused every value outside f32's normal range and every column whose f32
+    // narrowing moves a value by more than MAX_F32_ERROR_OF_RANGE of the range.
     let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
     df.add_column_f32(xcol, &narrow(xs));
     df.add_column_f32(ycol, &narrow(ys));
@@ -786,12 +786,44 @@ pub const MIN_MAGNITUDE: f64 = 1e-5;
 /// Magnitudes at or above this are refused.
 pub const MAX_MAGNITUDE: f64 = 1e16;
 
-/// Zero, or a magnitude in the range whose axis labels were compared with ggplot2 4.0.3: 188
+/// Zero, or a magnitude in the range whose axis labels were compared with ggplot2 4.0.3: 200
 /// ranges, decades 1e-5 to 9.99e15, fixed and scientific notation, all identical (see the
 /// contract). It is far inside f32's normal range, so `as f32` keeps the magnitude.
 fn in_proven_range(v: f64) -> bool {
     let m = v.abs();
     m == 0.0 || (MIN_MAGNITUDE..MAX_MAGNITUDE).contains(&m)
+}
+
+/// The most a value may move when the engine stores it as `f32`, as a fraction of its column's
+/// range. ggplot2 works on doubles; the engine's data frame holds `f32`, so a value `f32` cannot
+/// hold exactly is a different number there. When the move is small against the range, the
+/// breaks and labels do not change (the oracle test proves it on decimals that are not `f32`
+/// exact); when it is not, as in `16777217,16777219` or `99999.99,100000.01`, the labels differ
+/// from R's, so the column is refused by name rather than drawn.
+pub const MAX_F32_ERROR_OF_RANGE: f64 = 1e-4;
+
+/// Refuse a column whose `f32` storage moves a value by more than [`MAX_F32_ERROR_OF_RANGE`] of
+/// the column's range. `values` are `(line, text, value)`.
+fn check_f32_fidelity(name: &str, values: &[(usize, String, f64)]) -> Result<(), String> {
+    let lo = values.iter().map(|v| v.2).fold(f64::INFINITY, f64::min);
+    let hi = values.iter().map(|v| v.2).fold(f64::NEG_INFINITY, f64::max);
+    let allowed = MAX_F32_ERROR_OF_RANGE * (hi - lo);
+    let worst = values
+        .iter()
+        .map(|(line, text, v)| (line, text, *v, (f64::from(*v as f32) - v).abs()))
+        .filter(|w| w.3 > allowed)
+        .max_by(|a, b| a.3.total_cmp(&b.3));
+    match worst {
+        None => Ok(()),
+        Some((line, text, v, err)) => Err(format!(
+            "column '{name}' line {line} has '{text}', which the engine stores as {} (binary32), \
+             a change of {err:e} against a column range of {:e}; ggplot2 would label the axis \
+             from {v}, so the labels would differ. A column is drawn only when no value moves by \
+             more than {MAX_F32_ERROR_OF_RANGE:e} of its range",
+            f64::from(v as f32),
+            hi - lo
+        )),
+    }
 }
 
 /// A cell ggplot2 would read as missing.
@@ -819,6 +851,7 @@ pub fn numeric_xy(
     };
     let (xi, yi) = (index(xcol)?, index(ycol)?);
     let (mut xs, mut ys, mut dropped) = (Vec::new(), Vec::new(), 0);
+    let (mut xt, mut yt) = (Vec::new(), Vec::new());
     for (line, fields) in &table.rows {
         let value = |i: usize, name: &str| -> Result<Option<f64>, String> {
             let s = fields[i].as_str();
@@ -842,6 +875,8 @@ pub fn numeric_xy(
             (Some(x), Some(y)) => {
                 xs.push(x);
                 ys.push(y);
+                xt.push((*line, fields[xi].clone(), x));
+                yt.push((*line, fields[yi].clone(), y));
             }
             _ => dropped += 1,
         }
@@ -849,6 +884,8 @@ pub fn numeric_xy(
     if xs.is_empty() {
         return Err(format!("no rows with a numeric '{xcol}' and '{ycol}' to plot"));
     }
+    check_f32_fidelity(xcol, &xt)?;
+    check_f32_fidelity(ycol, &yt)?;
     Ok((xs, ys, dropped))
 }
 
@@ -1383,6 +1420,27 @@ mod tests {
         }
     }
 
+    /// The numeric tick labels in the SVG, per axis: x ticks are `middle`-anchored, y ticks `end`-anchored
+    /// (axis titles are not numbers and are skipped).
+    fn tick_labels(svg: &str) -> (Vec<String>, Vec<String>) {
+        let (mut xs, mut ys) = (Vec::new(), Vec::new());
+        for t in svg.split("</text>") {
+            let Some((head, label)) = t.rsplit_once('>') else { continue };
+            if label.parse::<f64>().is_err() {
+                continue;
+            }
+            if head.contains("text-anchor=\"middle\"") {
+                xs.push(label.to_string());
+            } else if head.contains("text-anchor=\"end\"") {
+                ys.push(label.to_string());
+            }
+        }
+        (xs, ys)
+    }
+
+    /// ggplot2 4.0.3 reads every number as a double; the fixture's inputs are NOT rounded to
+    /// `f32`. A set either draws with exactly R's labels, per axis and in order, or (ids starting
+    /// `refuse_`, where `f32` storage changes the labels) is refused by name. Review of #6992, B2'.
     #[test]
     fn axis_labels_match_the_r_oracle_across_the_proven_magnitude_range() {
         let path = concat!(
@@ -1390,7 +1448,7 @@ mod tests {
             "/fixtures/ggplot2/geom_point/labels_magnitude.tsv"
         );
         let tsv = std::fs::read_to_string(path).expect("fixture");
-        let mut checked = 0;
+        let (mut drawn, mut refused) = (0, 0);
         for line in tsv.lines().filter(|l| !l.starts_with('#')) {
             let f: Vec<&str> = line.split('\t').collect();
             assert_eq!(f.len(), 5, "{line}");
@@ -1399,15 +1457,49 @@ mod tests {
             let body: String = xs.iter().zip(&ys).map(|(x, y)| format!("{x},{y}\n")).collect();
             let csv = tmp("oracle.csv", &format!("x,y\n{body}"));
             let (r, svg, _) = go(&flags(&csv, &["--output", "svg"]), &Env::default());
-            assert_eq!(r, Ok(()), "{}", f[0]);
-            let labels: Vec<&str> =
-                svg.split("</text>").filter_map(|t| t.rsplit_once('>').map(|(_, l)| l)).collect();
-            for l in f[3].split(' ').chain(f[4].split(' ')) {
-                assert!(labels.contains(&l), "{}: R prints {l}, apr drew {labels:?}", f[0]);
+            if f[0].starts_with("refuse_") {
+                let e = r.expect_err(f[0]);
+                assert!(e.starts_with("column '") && e.contains("(binary32)"), "{}: {e}", f[0]);
+                refused += 1;
+                continue;
             }
-            checked += 1;
+            assert_eq!(r, Ok(()), "{}", f[0]);
+            let (lx, ly) = tick_labels(&svg);
+            let want = |s: &str| s.split(' ').map(str::to_string).collect::<Vec<String>>();
+            assert_eq!(lx, want(f[3]), "{}: x labels", f[0]);
+            assert_eq!(ly, want(f[4]), "{}: y labels", f[0]);
+            drawn += 1;
         }
-        assert_eq!(checked, 200);
+        assert_eq!((drawn, refused), (200, 7));
+    }
+
+    /// The sets the review of #6992 found drawn with labels unlike R's: each is refused by name,
+    /// with the value and the column, and the same data one step coarser draws.
+    #[test]
+    fn values_f32_cannot_hold_are_refused_by_name() {
+        for vals in [
+            "16777217\n16777219",
+            "99999.99\n100000.01",
+            "0.9999999\n1",
+            "9.999999e15\n9.9999999e15",
+        ] {
+            let body: String = vals.lines().map(|v| format!("{v},{v}\n")).collect();
+            let csv = tmp("f32.csv", &format!("x,y\n{body}"));
+            let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err(vals);
+            let named = vals.lines().any(|v| e.contains(&format!(" has '{v}', which")));
+            assert!(e.starts_with("column 'x' line ") && named, "{vals}: {e}");
+            assert!(e.contains("(binary32)") && e.contains("1e-4 of its range"), "{e}");
+        }
+        // Not f32-exact, but the move is far inside the range: drawn.
+        let csv = tmp("f32ok.csv", "x,y\n0.1,0.1\n0.7,0.7\n19.99,19.99\n");
+        assert_eq!(go(&flags(&csv, &["--output", "svg"]), &Env::default()).0, Ok(()));
+        // The bound is the range: the same x offset over a wider range is drawn.
+        let csv = tmp("f32wide.csv", "x,y\n16777217,1\n33554432,2\n");
+        assert_eq!(go(&flags(&csv, &["--output", "svg"]), &Env::default()).0, Ok(()));
+        // y is checked too.
+        let csv = tmp("f32y.csv", "x,y\n1,16777217\n2,16777219\n");
+        let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err("y");
+        assert!(e.starts_with("column 'y' line ") && e.contains("(binary32)"), "{e}");
     }
 
     #[test]
@@ -1448,7 +1540,8 @@ mod tests {
     /// labels too wide for the smallest terminal.
     #[test]
     fn engine_errors_are_messages() {
-        let wide = tmp("wide.csv", "x,y\n0,-1e14\n1,-1.000005e14\n");
+        // f32-exact values (2^46 and 5 ulps above), so only the width decides.
+        let wide = tmp("wide.csv", "x,y\n0,-70368744177664\n1,-70368828063744\n");
         let e = go(&flags(&wide, &["--width", "20", "--height", "8"]), &Env::default())
             .0
             .expect_err("no room");

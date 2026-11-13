@@ -48,7 +48,7 @@ proof_obligations:
 - id: GG1-INV-002
   type: invariant
   property: Breaks and labels match ggplot2
-  formal: '∀ axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored (proven for data that is zero or has 1e-5 <= |v| < 1e16; apr plot refuses other magnitudes by name; fixture geom_point/labels_magnitude.tsv, 200 R 4.6.2 / ggplot2 4.0.3 label sets)'
+  formal: '∀ axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored (proven for data that is zero or has 1e-5 <= |v| < 1e16 and whose f32 storage moves no value by more than 1e-4 of its column range; apr plot refuses other magnitudes, and columns f32 cannot hold, by name; fixture geom_point/labels_magnitude.tsv: 200 R 4.6.2 / ggplot2 4.0.3 label sets drawn with exact per-axis labels from double inputs not rounded to f32, plus 7 sets the verb must refuse)'
   applies_to: extended_breaks
 - id: GG1-INV-003
   type: invariant
@@ -84,6 +84,16 @@ falsification_tests:
   prediction: mutating point_defaults::SIZE_MM 1.5 -> 2.0 turns ggplot2_row1_point_default_aesthetics RED
   test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
   if_fails: The aesthetic comparison does not read size from the fixture
+- id: FALSIFY-GG1-004
+  rule: A column f32 cannot hold is refused, not drawn with other labels
+  prediction: setting MAX_F32_ERROR_OF_RANGE to 1.0 turns plot_cli values_f32_cannot_hold_are_refused_by_name and axis_labels_match_the_r_oracle_across_the_proven_magnitude_range RED (16777217,16777219 and 99999.99,100000.01 draw with R-unlike labels)
+  test: cargo test -p aprender-viz --features plot-cli --lib values_f32_cannot_hold_are_refused_by_name
+  if_fails: The refusal is not exercised; the verb can print axis labels unlike ggplot2's and exit 0
+- id: FALSIFY-GG1-005
+  rule: Ties at the seventh significant digit round to even, as R does
+  prediction: replacing libm::rint by libm::round (half away from zero) in grammar/r_format.rs turns a_tie_at_the_seventh_digit_rounds_to_even_as_r_does RED (3e9, 3000000500 prints 3000000000 3000000500 instead of 3e+09 3e+09)
+  test: cargo test -p aprender-viz --lib a_tie_at_the_seventh_digit_rounds_to_even_as_r_does
+  if_fails: The label formatter disagrees with R on ties and the oracle cannot see it
 qa_gate:
   id: F-GG1-001
   name: ggplot2 conformance row 1 (geom_point + continuous scales)

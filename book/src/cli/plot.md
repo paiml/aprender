@@ -41,9 +41,14 @@ empty stdout and the supported list on stderr:
 - A value whose magnitude is outside the compared range is refused by line and column:
   `column 'x' line 3 has '1e16', outside the magnitudes whose axis labels are proven against ggplot2 (zero, or 1e-5 up to but excluding 1e16)`.
   Axis labels follow R's `format()` at 7 significant digits (fixed or scientific, as R
-  chooses: `0e+00 1e+05 ... 4e+05`). They were compared with ggplot2 4.0.3 on 188 ranges
+  chooses: `0e+00 1e+05 ... 4e+05`). They were compared with ggplot2 4.0.3 on 200 sets
   whose decades run from 1e-5 to 9.99e15, and all matched; magnitudes outside that span
   were not compared, so they are refused instead of drawn.
+- A column the engine cannot store without changing a label is refused by line and column:
+  the engine holds `f32`, ggplot2 holds doubles, and a value that moves by more than 1e-4 of
+  its column's range (`16777217,16777219`; `99999.99,100000.01`; `0.9999999,1`) would print
+  other labels than R. The message names the value, what the engine stores (`binary32`) and
+  the bound. `0.1` or `19.99` over a normal range move far less and are drawn.
 - More than one layer is refused: each proven row draws one.
 - The global `--json` and `--quiet` are refused (`plot: --json is not supported`);
   the plot is the output.

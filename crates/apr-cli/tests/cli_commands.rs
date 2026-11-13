@@ -1591,6 +1591,24 @@ fn apr_plot_keeps_verbose_lines_off_stdout() {
     assert!(stderr.contains("verbose: apr "), "{stderr}");
 }
 
+/// N5 of the review of #6992: a command that does not own stdout keeps its `--verbose`
+/// preamble on stdout (`vprintln!`); only `apr plot` moves it to stderr. The command fails
+/// (no such file) after the preamble is printed, which is all this test needs.
+#[test]
+fn verbose_preamble_stays_on_stdout_for_commands_that_do_not_own_it() {
+    let out = apr_binary()
+        .args(["-v", "lint", "/nonexistent/verbose-preamble-6992.apr"])
+        .output()
+        .expect("failed to run apr lint");
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stdout.contains("verbose: apr "),
+        "stdout: {stdout:.300} stderr: {stderr:.300}"
+    );
+    assert!(!stderr.contains("verbose: apr "), "{stderr:.300}");
+}
+
 /// L2 of the review of #6992: the help text is for users, so it carries no ticket number and
 /// no internal module path.
 #[test]
