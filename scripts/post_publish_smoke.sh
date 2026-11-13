@@ -1270,12 +1270,14 @@ SMOKE_FAIL step=container rc=1"; }
      && grep -q -- '--not-measured' "$root/scripts/cascade-publish.sh"; then
     echo "PASS  cascade-publish.sh calls the smoke and reports an index-wait timeout as not_measured"
   else echo "FAIL  cascade-publish.sh does not call the smoke / does not report an index-wait timeout"; ST_FAIL=$((ST_FAIL + 1)); fi
-  local dr="$root/scripts/cascade-drain.sh"
+  local dr="$root/scripts/cascade-drain.sh" dr_yank dr_nm
+  dr_yank=$(grep -A2 -F '"SMOKE_RESULT YANK "*)' "$dr") || dr_yank=''
+  dr_nm=$(grep -A2 -F '"SMOKE_RESULT NOT_MEASURED "*)' "$dr") || dr_nm=''
   if grep -qF 'crc=${PIPESTATUS[0]}' "$dr" \
      && grep -qF "grep '^SMOKE_RESULT '" "$dr" \
      && grep -qF 'yanked\":true' "$dr" \
-     && grep -A2 -F '"SMOKE_RESULT YANK "*)' "$dr" | grep -q 'exit 4' \
-     && grep -A2 -F '"SMOKE_RESULT NOT_MEASURED "*)' "$dr" | grep -q 'exit 5' \
+     && grep -q 'exit 4' <<<"$dr_yank" \
+     && grep -q 'exit 5' <<<"$dr_nm" \
      && ! grep -qE 'cascade-publish\.sh \) 2>&1 *\| *grep' "$dr"; then
     echo "PASS  cascade-drain.sh keeps the cascade rc, maps YANK->4 and NOT_MEASURED->5, does not count a yanked version"
   else echo "FAIL  cascade-drain.sh loses the rc / mis-maps a smoke verdict / counts a yanked version"; ST_FAIL=$((ST_FAIL + 1)); fi
