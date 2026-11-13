@@ -116,14 +116,8 @@ repro! {
         vec![0.5, 1e38, -1e38],
         limits(),
     );
-    // 3. and 4. line and area with finite points far off the canvas walked billions of pixels.
-    #[test]
-    fn line_coordlim_outside() = (
-        Geom::line(),
-        vec![0.5, 1e38, -1e38],
-        vec![0.5, 1e38, -1e38],
-        limits(),
-    );
+    // 3. and 4. line and area with finite points far off the canvas walked billions of pixels
+    // (a line is a stroke layer now: see `line_coordlim_outside` below).
     #[test]
     fn area_coordlim_outside() = (
         Geom::area(),
@@ -143,17 +137,66 @@ repro! {
     #[test]
     fn point_mixed() = (Geom::point(), mixed().0, mixed().1, Coord::cartesian());
     #[test]
-    fn line_mixed() = (Geom::line(), mixed().0, mixed().1, Coord::cartesian());
-    #[test]
     fn area_mixed() = (Geom::area(), mixed().0, mixed().1, Coord::cartesian());
     #[test]
     fn point_flip_inf() = (Geom::point(), mixed().0, mixed().1, Coord::cartesian().flip());
     #[test]
     fn bar_flip_inf() = (Geom::bar(), mixed().0, mixed().1, Coord::cartesian().flip());
     #[test]
-    fn line_flip_inf() = (Geom::line(), mixed().0, mixed().1, Coord::cartesian().flip());
-    #[test]
     fn area_flip_inf() = (Geom::area(), mixed().0, mixed().1, Coord::cartesian().flip());
+}
+
+/// Render `plot` through the framebuffer and the SVG, on its own thread; `true` when both
+/// refuse it with a typed error. A panic or a hang fails the test through [`bounded`].
+fn refused_by_both(name: &'static str, plot: GGPlot) -> bool {
+    bounded(name, move || {
+        let built = plot.build().expect("builds");
+        built.to_framebuffer().is_err() && built.to_svg().is_err()
+    })
+}
+
+// A line, path, step or reference layer is a stroke layer: its layout refuses what lies outside
+// its documented scope (infinite positions, a coordinate system but the default) with a typed
+// error, and the three targets propagate it. These three inputs used to render under the old
+// line renderer; they are refused, not drawn and not a panic.
+#[test]
+fn line_coordlim_outside() {
+    let plot = xy(&[0.5, 1e38, -1e38], &[0.5, 1e38, -1e38], Geom::line()).coord(limits());
+    assert!(refused_by_both("line_coordlim_outside", plot));
+}
+
+#[test]
+fn line_mixed() {
+    let (x, y) = mixed();
+    assert!(refused_by_both("line_mixed", xy(&x, &y, Geom::line())));
+}
+
+#[test]
+fn line_flip_inf() {
+    let (x, y) = mixed();
+    assert!(refused_by_both(
+        "line_flip_inf",
+        xy(&x, &y, Geom::line()).coord(Coord::cartesian().flip())
+    ));
+}
+
+#[test]
+fn a_canvas_with_no_room_draws_no_non_finite_stroke_vertex() {
+    // A 1-pixel-wide canvas leaves the panel no width: the x scale maps every value to NaN. The
+    // stroke must be dropped, not written as `NaN,40` into the SVG.
+    for w in 1..=3 {
+        bounded("no_room", move || {
+            let built = xy(&[0.0, 1.0, 2.0], &[0.0, 1.0, 0.5], Geom::line())
+                .dimensions(w, 40)
+                .build()
+                .expect("builds");
+            let _ = built.to_framebuffer();
+            if let Ok(svg) = built.to_svg() {
+                let m = svg_markup(&svg);
+                assert!(!m.contains("NaN") && !m.to_lowercase().contains("inf"), "{m}");
+            }
+        });
+    }
 }
 
 #[test]
@@ -497,12 +540,7 @@ fn dropped_rows_change_nothing_for_every_geom() {
     // rows must equal rendering without them, byte for byte.
     let clean = (vec![1.0_f32, 2.0, 3.0], vec![2.0_f32, 5.0, 3.0]);
     let dirty = (vec![1.0_f32, NAN, 2.0, INF, 3.0, 2.5], vec![2.0_f32, 4.0, 5.0, 4.0, 3.0, NAN]);
-    for (name, geom) in [
-        ("bar", Geom::bar()),
-        ("line", Geom::line()),
-        ("area", Geom::area()),
-        ("point", Geom::point()),
-    ] {
+    for (name, geom) in [("bar", Geom::bar()), ("area", Geom::area()), ("point", Geom::point())] {
         let want = xy(&clean.0, &clean.1, geom.clone()).build().expect("builds");
         let got = xy(&dirty.0, &dirty.1, geom).build().expect("builds");
         assert_eq!(

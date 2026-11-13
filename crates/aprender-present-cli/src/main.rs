@@ -169,7 +169,7 @@ fn main() {
             let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
             if let Err(e) = plot::run(&args, &env, &mut out, &mut err) {
                 eprintln!("error: {e}");
-                std::process::exit(1);
+                std::process::exit(e.exit_code());
             }
         }
         Commands::Serve { port, dir, watch } => {

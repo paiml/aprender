@@ -54,6 +54,9 @@ if [ "${1:-}" = --mutants ]; then
     mut escalate-every-run tag_publish_andon.sh 's/if \[ ! -e "\$state\/escalated-\$tag" \]; then/if true; then/'
     mut lock-exit-0 tag_publish_andon.sh 's/nothing done"; exit 3; }/nothing done"; exit 0; }/'
     mut fetch-unforced tag_publish_andon.sh 's/fetch -q --force --tags origin/fetch -q --tags origin/'
+    mut exemption-prefix-match tag_publish_andon.sh 's/\[ "\$t" = "\$1" \] \&\& return 0/[[ "$1" == "$t"* ]] \&\& return 0/'
+    mut exemption-skip-dropped tag_publish_andon.sh 's/^    superseded_tag "\$tag" \&\& continue$/    :/'
+    mut exemption-validation-dropped tag_publish_andon.sh 's/|| usage "bad exemption entry/|| : "bad exemption entry/'
     mut http-500-is-absent lib_crates_io.sh 's/^        \*) return 2 ;;$/        *) return 1 ;;/'
     mut http-404-is-unmeasured lib_crates_io.sh 's/^        404) return 1 ;;$/        404) return 2 ;;/'
     mut num-mismatch-ignored lib_crates_io.sh 's/jq -e --arg v "\$v" .\.version\.num == \$v. > \/dev\/null 2>&1 || return 2/:/'
@@ -188,6 +191,25 @@ git -C "$R" tag -d v1.2.0 > /dev/null
 mktag v2.0.0-rc.1 300; mktag nightly-x 300; mktag v3.0 300
 andon prerel "$J_NONE" --since $SINCE_OLD; expect "pre-release / odd tags rc" 0 "$RC"; expect "pre-release / odd tags: no inbox" 0 "$(lines "$TMP/inb-prerel")"
 git -C "$R" tag -d v2.0.0-rc.1 nightly-x v3.0 > /dev/null
+# superseded-tag exemptions (operator ruling 2026-11-13 06:57Z): exact match, named + dated + reasoned, else refused
+mktag v0.72.4 180
+andon ex-0724 "$J_NONE" --since $SINCE_OLD; expect "exempt v0.72.4 unpublished: rc" 0 "$RC"
+expect "exempt v0.72.4: no inbox" 0 "$(lines "$TMP/inb-ex-0724")"; expect "exempt v0.72.4: no escalate" 0 "$(lines "$TMP/esc-ex-0724")"; hasnt "exempt v0.72.4: no page" "$TMP/out-ex-0724" "PAGE"
+mktag v0.99.0 180
+andon ex-new "$J_NONE" --since $SINCE_OLD; expect "new unpublished tag still alarms: rc" 1 "$RC"
+has "new tag alarms: inbox names it" "$TMP/inb-ex-new" "v0.99.0"; hasnt "new tag alarms: not the exempt one" "$TMP/inb-ex-new" "v0.72.4 pushed"
+git -C "$R" tag -d v0.72.4 v0.99.0 > /dev/null
+mktag v0.72.40 180
+andon ex-look "$J_NONE" --since $SINCE_OLD; expect "lookalike v0.72.40 alarms: rc" 1 "$RC"; has "lookalike v0.72.40 named" "$TMP/inb-ex-look" "v0.72.40"
+git -C "$R" tag -d v0.72.40 > /dev/null
+mktag v0.72.4 180
+# an exemption entry missing its date or its reason is refused (exit 2, nothing measured); sandbox copies of the script
+for bad in 'v0.72.4||superseded' 'v0.72.4|2026-11-13|' 'v0.72.4|not-a-date|superseded' '|2026-11-13|superseded'; do
+    sed "s/^SUPERSEDED_TAGS=(\$/SUPERSEDED_TAGS=(\n    '$bad'\n)\nSUPERSEDED_UNUSED=(/" "$BIN/tag_publish_andon.sh" > "$BIN/bad.sh"
+    CRATES_IO_RESPONSE_FILE="$J_NONE" PATH="$TMP/stub:$PATH" bash "$BIN/bad.sh" --repo "$R" --state "$TMP/st-bad" --inbox "$TMP/inb-bad" --escalate "$TMP/esc-bad" --page-dry --since $SINCE_OLD > "$TMP/out-bad" 2>&1
+    expect "malformed exemption '$bad' refused" 2 "$?"; has "malformed exemption '$bad' says so" "$TMP/out-bad" "bad exemption"
+done
+git -C "$R" tag -d v0.72.4 > /dev/null
 # usage errors
 bash "$BIN/tag_publish_andon.sh" --repo "$R" --state "$TMP/st-u" --inbox "$TMP/i" --page-dry > /dev/null 2>&1; expect "no --escalate" 2 "$?"
 bash "$BIN/tag_publish_andon.sh" --repo "$R" --state "$TMP/st-u" --inbox "$TMP/i" --escalate "$TMP/e" --page-dry --since garbage > /dev/null 2>&1; expect "bad --since" 2 "$?"
