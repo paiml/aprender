@@ -31,3 +31,16 @@ w("ties_groups", ggplot(dt, aes(x, ymin = lo, ymax = hi, colour = g)) + geom_err
   "ggplot(dt, aes(x, ymin = lo, ymax = hi, colour = g)) + geom_errorbar()")
 w("inverted", ggplot(dt, aes(x, ymin = hi, ymax = lo)) + geom_errorbar(),
   "ggplot(dt, aes(x, ymin = hi, ymax = lo)) + geom_errorbar()")
+
+# #6976 review F1/F8: the default width comes from the LAYER's own x, not the plot's; x close to 0.
+dn0 <- read_case(here, "data_near0.csv")
+db <- read_case(here, "data_b.csv")
+dh <- read_case(file.path(here, "..", "geom_histogram"), "data.csv")
+w("near_zero", ggplot(dn0, aes(x, ymin = lo, ymax = hi)) + geom_errorbar(),
+  "ggplot(dn0, aes(x, ymin = lo, ymax = hi)) + geom_errorbar()")
+w("two_layers",
+  ggplot() + geom_errorbar(data = df, aes(x, ymin = lo, ymax = hi)) + geom_errorbar(data = db, aes(x, ymin = lo, ymax = hi)),
+  "ggplot() + geom_errorbar(data = df, aes(x, ymin = lo, ymax = hi)) + geom_errorbar(data = db, aes(x, ymin = lo, ymax = hi))")
+w("hist_plus_errorbar",
+  ggplot() + geom_histogram(data = dh, aes(x)) + geom_errorbar(data = db, aes(x, ymin = lo, ymax = hi)),
+  "ggplot() + geom_histogram(data = dh, aes(x)) + geom_errorbar(data = db, aes(x, ymin = lo, ymax = hi))")

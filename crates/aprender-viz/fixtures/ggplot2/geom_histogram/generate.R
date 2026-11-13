@@ -36,3 +36,8 @@ w("const_x", ggplot(dc, aes(x)) + geom_histogram(),
   "ggplot(dc, aes(x)) + geom_histogram()")
 w("colour_alpha", ggplot(df, aes(x)) + geom_histogram(bins = 5, colour = "blue", alpha = 0.25),
   "ggplot(df, aes(x)) + geom_histogram(bins = 5, colour = 'blue', alpha = 0.25)")
+
+# #6976 review F8: a value 2^-20 above a break lies inside the next bin only under 1e-8 fuzz.
+dfz <- read_case(here, "data_fuzz.csv")
+w("fuzz_edge", ggplot(dfz, aes(x)) + geom_histogram(breaks = c(0, 1, 2, 3, 4)),
+  "ggplot(dfz, aes(x)) + geom_histogram(breaks = c(0, 1, 2, 3, 4))")

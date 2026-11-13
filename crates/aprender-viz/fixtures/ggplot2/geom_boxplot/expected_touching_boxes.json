@@ -1,0 +1,73 @@
+{
+  "row": "geom_boxplot",
+  "case": "touching_boxes",
+  "spec": "ggplot(dtc, aes(x, v, group = x)) + geom_boxplot(width = 1)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomBoxplot",
+      "ymin": [1, 2, 4],
+      "lower": [1.5, 2.75, 5],
+      "middle": [2, 3.5, 6],
+      "upper": [2.5, 4.25, 7],
+      "ymax": [3, 5, 8],
+      "notchupper": [3.117228714274745, 5.1758430714121175, 8.23445742854949],
+      "notchlower": [0.88277128572525498, 1.8241569285878825, 3.76554257145051],
+      "x": [1, 2, 3],
+      "ymin_final": [1, 2, 4],
+      "ymax_final": [3, 5, 8],
+      "xmin": [0.5, 1.5, 2.5],
+      "xmax": [1.5, 2.5, 3.5],
+      "order": [1, 1, 1],
+      "xid": [1, 2, 3],
+      "newx": [1, 2, 3],
+      "new_width": [1, 1, 1],
+      "weight": [1, 1, 1],
+      "size": [1.5, 1.5, 1.5],
+      "alpha": [null, null, null],
+      "shape": [19, 19, 19],
+      "linetype": [1, 1, 1],
+      "linewidth": [0.5, 0.5, 0.5],
+      "width": [1, 1, 1],
+      "panel": [1, 1, 1],
+      "group": [1, 2, 3],
+      "outliers": [
+        [],
+        [],
+        []
+      ],
+      "colour_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ],
+      "fill_rgba": [
+        [255, 255, 255, 255],
+        [255, 255, 255, 255],
+        [255, 255, 255, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.5, 3.5],
+      "continuous_range": [0.34999999999999998, 3.6499999999999999],
+      "breaks": [1, 2, 3],
+      "labels": ["1", "2", "3"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [1, 8],
+      "continuous_range": [0.64999999999999991, 8.3499999999999996],
+      "breaks": [2, 4, 6, 8],
+      "labels": ["2", "4", "6", "8"],
+      "n_breaks_censored": 1
+    }
+  }
+}

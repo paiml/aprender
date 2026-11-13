@@ -30,3 +30,11 @@ w("na_y_groups", ggplot(dna, aes(y = v, fill = g)) + geom_boxplot(),
   "ggplot(dna, aes(y = v, fill = g)) + geom_boxplot()")
 w("two_rows", ggplot(d2, aes(y = v, fill = g)) + geom_boxplot(), "ggplot(d2, aes(y = v, fill = g)) + geom_boxplot()")
 w("x_varies_in_group", ggplot(dxv, aes(x, v, group = g)) + geom_boxplot(), "ggplot(dxv, aes(x, v, group = g)) + geom_boxplot()")
+
+# F7/F8 of the #6976 review: x close to 0 relative to its spacing (resolution(zero = TRUE) matters),
+# and boxes that touch edge to edge (find_x_overlaps).
+dn0 <- read_case(here, "data_near0.csv")
+dtc <- read_case(here, "data_touch.csv")
+w("x_near_zero", ggplot(dn0, aes(x, v, group = x)) + geom_boxplot(), "ggplot(dn0, aes(x, v, group = x)) + geom_boxplot()")
+w("touching_boxes", ggplot(dtc, aes(x, v, group = x)) + geom_boxplot(width = 1),
+  "ggplot(dtc, aes(x, v, group = x)) + geom_boxplot(width = 1)")

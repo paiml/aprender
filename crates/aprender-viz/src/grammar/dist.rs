@@ -28,6 +28,7 @@ use super::dist_math::{
 use super::facet::Facet;
 use super::geom::{Geom, GeomType};
 use super::ggplot::Layer;
+use super::stat::Stat;
 
 /// Which ggplot2 layer a [`DistSpec`] stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -311,7 +312,17 @@ impl Table {
 }
 
 fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
-    data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))
+    let cells = data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))?;
+    // R cannot build a data.frame from columns of unequal length, so there is no ggplot2
+    // behaviour to match: padding the short column with `NA` would be a guess.
+    if cells.len() != data.nrow() {
+        return Err(refuse(format!(
+            "column `{name}` has {} cells but the data has {} rows (ragged columns)",
+            cells.len(),
+            data.nrow()
+        )));
+    }
+    Ok(cells)
 }
 
 /// A numeric column, one entry per row. Missing is `NaN`; text and infinite values are refused.
@@ -393,6 +404,42 @@ fn group_ids(data: &DataFrame, aes: &Aes) -> Result<Vec<i64>> {
         .collect())
 }
 
+/// Refuse every input `layout()` would otherwise ignore or misread: a `stat` other than the
+/// geom's own, and an aesthetic the layer does not use (ggplot2 errors on a `y` for `stat_bin`
+/// and `stat_density`, and keeps an error bar's `y` as a column, which this crate does not).
+pub(super) fn check_inputs(kind: DistKind, aes: &Aes, stat: Option<&Stat>) -> Result<()> {
+    let own_stat = matches!(
+        (kind, stat),
+        (_, None)
+            | (DistKind::Errorbar, Some(Stat::Identity))
+            | (DistKind::Density, Some(Stat::Density))
+            | (DistKind::Boxplot, Some(Stat::Boxplot))
+    );
+    if !own_stat {
+        return Err(Error::UnsupportedStat(
+            "a stat other than the geom's own with a distribution layer: layout() computes only \
+             stat_bin, stat_density, stat_boxplot and identity, each as its geom names it",
+        ));
+    }
+    if aes.alpha.is_some() {
+        return Err(refuse("a mapped `alpha` is not supported"));
+    }
+    let unused: [(&str, bool); 6] = [
+        ("size", aes.size.is_some() || aes.size_value.is_some()),
+        ("shape", aes.shape.is_some()),
+        ("label", aes.label.is_some()),
+        ("y", aes.y.is_some() && kind != DistKind::Boxplot),
+        ("ymin", aes.ymin.is_some() && kind != DistKind::Errorbar),
+        ("ymax", aes.ymax.is_some() && kind != DistKind::Errorbar),
+    ];
+    if let Some((name, _)) = unused.iter().find(|(_, set)| *set) {
+        return Err(refuse(format!(
+            "the `{name}` aesthetic is not used by this layer and would be silently ignored"
+        )));
+    }
+    Ok(())
+}
+
 fn paint_colour(aes: &Aes, default: Paint) -> Paint {
     if aes.color.is_some() {
         Paint::Mapped
@@ -441,11 +488,8 @@ fn finite_range(v: &[f64]) -> Option<(f64, f64)> {
 }
 
 fn x_name(inp: &Input<'_>) -> Result<String> {
-    match (&inp.aes.x, &inp.aes.y) {
-        (Some(x), _) => Ok(x.clone()),
-        (None, Some(_)) => Err(refuse("a y-only histogram, frequency polygon or density (flipped orientation) is not supported")),
-        (None, None) => Err(refuse("this layer needs an `x` mapping")),
-    }
+    // A `y` mapping (a flipped histogram or density) is refused earlier, by `check_inputs`.
+    inp.aes.x.clone().ok_or_else(|| refuse("this layer needs an `x` mapping"))
 }
 
 fn bins_for(spec: &DistSpec, range: (f64, f64)) -> Result<Bins> {
@@ -726,7 +770,7 @@ fn stat_boxplot(inp: &Input<'_>) -> Result<(Table, Vec<i64>, Vec<Vec<f64>>)> {
     Ok((t, groups, outliers))
 }
 
-fn stat_errorbar(inp: &Input<'_>, all_x: &[f64]) -> Result<(Table, Vec<i64>)> {
+fn stat_errorbar(inp: &Input<'_>) -> Result<(Table, Vec<i64>)> {
     let need = |o: &Option<String>, what: &str| {
         o.clone().ok_or_else(|| {
             refuse(format!(
@@ -740,7 +784,8 @@ fn stat_errorbar(inp: &Input<'_>, all_x: &[f64]) -> Result<(Table, Vec<i64>)> {
     if x.is_empty() {
         return Err(Error::EmptyData);
     }
-    let width = inp.spec.width.unwrap_or_else(|| resolution(all_x, false) * 0.9);
+    // ggplot2 4.0.3 `GeomErrorbar$setup_data`: the width comes from this layer's own x.
+    let width = inp.spec.width.unwrap_or_else(|| resolution(&x, false) * 0.9);
     if !width.is_finite() || width < 0.0 {
         return Err(refuse("`width` must be a non-negative finite number"));
     }
@@ -753,6 +798,11 @@ fn stat_errorbar(inp: &Input<'_>, all_x: &[f64]) -> Result<(Table, Vec<i64>)> {
     t.constant("width", inp.spec.width.unwrap_or(0.9), x.len());
     Ok((t, inp.gid.clone()))
 }
+
+/// Largest magnitude a trained position scale may reach. Break search over limits near 1e200
+/// does not return (reviewed on #6976: `binwidth(1e300)`, `bw(1e-300)`), so a stat that produces
+/// such limits is refused before the scale is trained. Below this the search takes microseconds.
+pub(super) const MAX_SCALE_MAGNITUDE: f64 = 1e100;
 
 const X_AES: [&str; 5] = ["x", "xmin", "xmax", "xmin_final", "xmax_final"];
 const Y_AES: [&str; 8] =
@@ -768,6 +818,11 @@ fn train(layers: &[BuiltDist], names: &[&str], axis: &str) -> Result<PositionSca
         }
     }
     let (lo, hi) = acc.ok_or(Error::EmptyData)?;
+    if lo.abs() > MAX_SCALE_MAGNITUDE || hi.abs() > MAX_SCALE_MAGNITUDE {
+        return Err(Error::ScaleDomain(format!(
+            "the {axis} scale would span ({lo}, {hi}), beyond +-{MAX_SCALE_MAGNITUDE:e}: break search is refused at that size"
+        )));
+    }
     if lo >= hi {
         return Err(Error::ScaleDomain(format!(
             "the {axis} scale range is degenerate ({lo}); ggplot2 widens it, this crate does not yet"
@@ -821,9 +876,7 @@ pub(super) fn layout(
         let GeomType::Dist(spec) = &layer.geom.geom_type else { continue };
         let data = layer.data.as_ref().unwrap_or(plot_data);
         let aes = plot_aes.merge(&layer.aes);
-        if aes.alpha.is_some() {
-            return Err(refuse("a mapped `alpha` is not supported"));
-        }
+        check_inputs(spec.kind, &aes, layer.geom.stat.as_ref())?;
         let gid = group_ids(data, &aes)?;
         inputs.push(Input { spec, aes, data, gid });
     }
@@ -838,7 +891,7 @@ pub(super) fn layout(
     let range = finite_range(&all_x);
     let mut built = Vec::new();
     for inp in &inputs {
-        built.push(build_one(inp, range, &all_x)?);
+        built.push(build_one(inp, range)?);
     }
     let x = train(&built, &X_AES, "x")?;
     let y = train(&built, &Y_AES, "y")?;
@@ -855,7 +908,7 @@ pub(super) fn layout(
     Ok(BuiltLayout { layers: out, x, y })
 }
 
-fn build_one(inp: &Input<'_>, range: Option<(f64, f64)>, all_x: &[f64]) -> Result<BuiltDist> {
+fn build_one(inp: &Input<'_>, range: Option<(f64, f64)>) -> Result<BuiltDist> {
     let spec = inp.spec;
     let need_range = || range.ok_or(Error::EmptyData);
     if matches!(spec.kind, DistKind::Histogram | DistKind::Freqpoly | DistKind::Density) {
@@ -876,7 +929,7 @@ fn build_one(inp: &Input<'_>, range: Option<(f64, f64)>, all_x: &[f64]) -> Resul
         }
         DistKind::Boxplot => stat_boxplot(inp)?,
         DistKind::Errorbar => {
-            let (t, g) = stat_errorbar(inp, all_x)?;
+            let (t, g) = stat_errorbar(inp)?;
             (t, g, Vec::new())
         }
     };

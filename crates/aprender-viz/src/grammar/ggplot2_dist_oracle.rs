@@ -1192,13 +1192,7 @@ fn output_row_count_is_capped_before_it_is_built() {
 }
 
 #[test]
-fn short_columns_pad_with_missing_and_numeric_groups_sort_before_na() {
-    // `z` is shorter than `x`: the frame pads it with missing cells, which the stat drops.
-    let mut d = DataFrame::new();
-    d.add_column_f32("x", &[1.0, 2.0, 3.0, 4.0, 5.0]);
-    d.add_column_f32("z", &[1.0, 2.0, 3.0]);
-    let b = layout_of(d, Aes::new().x("z"), Geom::gg_histogram()).expect("builds");
-    assert!(!b.layers.is_empty());
+fn numeric_groups_sort_before_na() {
     // A numeric `group` column: numbers form their own groups and NA another, last.
     let mut g = DataFrame::from_xy(&[1.0, 2.0, 3.0, 4.0, 5.0], &[1.0; 5]);
     g.add_column_f32("k", &[1.0, 2.0, f32::NAN, 1.0, 2.0]);
@@ -1206,4 +1200,255 @@ fn short_columns_pad_with_missing_and_numeric_groups_sort_before_na() {
     let mut seen: Vec<i64> = b.layers[0].dist.as_ref().expect("dist").group.clone();
     seen.dedup();
     assert_eq!(seen, vec![1, 2, 3], "1, 2 then NA last");
+}
+
+// --- #6976 review: per-layer widths, edge cases and refusals ----------------------------------
+
+/// Several layers, each with its own data, against one fixture.
+fn run_layers(
+    json: &str,
+    row: &str,
+    case: &str,
+    skips: &[&[&str]],
+    layers: Vec<(DataFrame, Aes, Geom, &str)>,
+) {
+    let w = want(json, row, case);
+    let tag = format!("{row}/{case}");
+    let mut plot = GGPlot::new();
+    for (d, a, g, _) in &layers {
+        plot = plot.layer(Layer::new(g.clone()).data(d.clone()).aes(a.clone()));
+    }
+    let got = plot.build().and_then(|p| p.layout()).unwrap_or_else(|e| panic!("{tag}: {e}"));
+    let want_layers = w["layers"].as_array().expect("layers");
+    assert_eq!(got.layers.len(), want_layers.len(), "{tag}: layer count");
+    for (i, (l, (_, _, _, class))) in got.layers.iter().zip(&layers).enumerate() {
+        let d = l.dist.as_ref().expect("a distribution layer");
+        check_layer(&format!("{tag}#{i}"), d, &want_layers[i], class, skips[i]);
+    }
+    check_axis(&format!("{tag}.x"), &got.x, &w["panel"]["x"]);
+    check_axis(&format!("{tag}.y"), &got.y, &w["panel"]["y"]);
+}
+
+fn eb() -> Aes {
+    Aes::new().x("x").ymin("lo").ymax("hi")
+}
+
+#[test]
+fn err_width_comes_from_each_layers_own_x() {
+    run_layers(
+        fixture!("geom_errorbar", "two_layers"),
+        "geom_errorbar",
+        "two_layers",
+        &[&[], &[]],
+        vec![
+            (csv!("geom_errorbar", "data"), eb(), Geom::gg_errorbar(), "GeomErrorbar"),
+            (csv!("geom_errorbar", "data_b"), eb(), Geom::gg_errorbar(), "GeomErrorbar"),
+        ],
+    );
+}
+#[test]
+fn err_beside_a_histogram_ignores_the_histogram_x() {
+    run_layers(
+        fixture!("geom_errorbar", "hist_plus_errorbar"),
+        "geom_errorbar",
+        "hist_plus_errorbar",
+        &[HIST_SKIP, &[]],
+        vec![
+            (csv!("geom_histogram", "data"), ax(), Geom::gg_histogram(), "GeomBar"),
+            (csv!("geom_errorbar", "data_b"), eb(), Geom::gg_errorbar(), "GeomErrorbar"),
+        ],
+    );
+}
+#[test]
+fn err_x_near_zero_uses_resolution_without_zero() {
+    run(
+        fixture!("geom_errorbar", "near_zero"),
+        "geom_errorbar",
+        "near_zero",
+        "GeomErrorbar",
+        &[],
+        csv!("geom_errorbar", "data_near0"),
+        eb(),
+        Geom::gg_errorbar(),
+    );
+}
+#[test]
+fn box_x_near_zero_uses_resolution_with_zero() {
+    run(
+        fixture!("geom_boxplot", "x_near_zero"),
+        "geom_boxplot",
+        "x_near_zero",
+        "GeomBoxplot",
+        &[],
+        csv!("geom_boxplot", "data_near0"),
+        Aes::new().x("x").y("v").group("x"),
+        Geom::gg_boxplot(),
+    );
+}
+#[test]
+fn box_touching_boxes_stay_in_separate_clusters() {
+    run(
+        fixture!("geom_boxplot", "touching_boxes"),
+        "geom_boxplot",
+        "touching_boxes",
+        "GeomBoxplot",
+        &[],
+        csv!("geom_boxplot", "data_touch"),
+        Aes::new().x("x").y("v").group("x"),
+        Geom::gg_boxplot().width(1.0),
+    );
+}
+#[test]
+fn hist_break_fuzz_is_1e_minus_8() {
+    run(
+        fixture!("geom_histogram", "fuzz_edge"),
+        "geom_histogram",
+        "fuzz_edge",
+        "GeomBar",
+        HIST_SKIP,
+        csv!("geom_histogram", "data_fuzz"),
+        ax(),
+        Geom::gg_histogram().breaks(&[0.0, 1.0, 2.0, 3.0, 4.0]),
+    );
+}
+
+use super::Stat;
+
+#[test]
+fn a_stat_other_than_the_geoms_own_is_refused() {
+    let stats = [
+        Stat::Identity,
+        Stat::Count,
+        Stat::Bin { bins: 5 },
+        Stat::Density,
+        Stat::Boxplot,
+        Stat::Smooth,
+        Stat::Bin2d { bins_x: 2, bins_y: 2 },
+        Stat::Sum,
+        Stat::Mean,
+    ];
+    // (geom name, geom, aes, the one stat it accepts)
+    for (name, g, a) in all_geoms() {
+        let own = match name {
+            "dens" => Some(Stat::Density),
+            "box" => Some(Stat::Boxplot),
+            "err" => Some(Stat::Identity),
+            _ => None,
+        };
+        for s in &stats {
+            let r = layout_of(small(), a.clone(), g.clone().stat(s.clone()));
+            if own.as_ref().is_some_and(|o| std::mem::discriminant(o) == std::mem::discriminant(s))
+            {
+                assert!(r.is_ok(), "{name} with its own stat {s:?}: {r:?}");
+            } else {
+                assert!(matches!(r, Err(Error::UnsupportedStat(_))), "{name} {s:?}: {r:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn unused_aesthetics_are_refused_not_ignored() {
+    let sized = Aes::new().x("x").size("y");
+    for g in [Geom::gg_histogram(), Geom::gg_freqpoly(), Geom::gg_density()] {
+        for a in [
+            ax().y("y"),
+            sized.clone(),
+            ax().size_value(2.0),
+            ax().shape("y"),
+            ax().label("y"),
+            ax().ymin("y"),
+            ax().ymax("y"),
+        ] {
+            let r = layout_of(small(), a.clone(), g.clone());
+            assert!(matches!(r, Err(Error::Rendering(_))), "{a:?}: {r:?}");
+        }
+    }
+    // A box plot has no ymin/ymax mapping; an error bar keeps neither y nor a size.
+    let r = layout_of(small(), Aes::new().y("y").ymin("x"), Geom::gg_boxplot());
+    assert!(matches!(r, Err(Error::Rendering(_))), "box ymin: {r:?}");
+    let r = layout_of(small(), Aes::new().y("y").ymax("x"), Geom::gg_boxplot());
+    assert!(matches!(r, Err(Error::Rendering(_))), "box ymax: {r:?}");
+    let r = layout_of(small(), eb_small().y("y"), Geom::gg_errorbar());
+    assert!(matches!(r, Err(Error::Rendering(_))), "err y: {r:?}");
+    // The aesthetics each layer does use still build.
+    assert!(layout_of(small(), Aes::new().y("y").x("x"), Geom::gg_boxplot()).is_ok());
+    assert!(layout_of(small(), eb_small(), Geom::gg_errorbar()).is_ok());
+}
+
+fn eb_small() -> Aes {
+    Aes::new().x("x").ymin("x").ymax("y")
+}
+
+#[test]
+fn ragged_columns_are_a_typed_error() {
+    let mut d = DataFrame::new();
+    d.add_column_f32("x", &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    d.add_column_f32("z", &[1.0, 2.0, 3.0]);
+    d.add_column_f32("w", &[1.0, 2.0, 3.0, 4.0, 5.0]);
+    d.add_column_str("g", &["a", "b", "a"]);
+    for (name, a, g) in [
+        ("hist", Aes::new().x("z"), Geom::gg_histogram()),
+        ("dens", Aes::new().x("z"), Geom::gg_density()),
+        ("hist fill", ax().fill("g"), Geom::gg_histogram()),
+        ("box y", Aes::new().y("z"), Geom::gg_boxplot()),
+        ("box x", Aes::new().y("x").x("z"), Geom::gg_boxplot()),
+        ("err ymin", Aes::new().x("x").ymin("z").ymax("w"), Geom::gg_errorbar()),
+    ] {
+        let r = layout_of(d.clone(), a, g);
+        assert!(matches!(r, Err(Error::Rendering(_))), "{name}: {r:?}");
+    }
+}
+
+/// Run `f` on a thread and fail the test, instead of hanging it, if it does not return.
+fn within<T: Send + 'static>(secs: u64, f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(f());
+    });
+    rx.recv_timeout(std::time::Duration::from_secs(secs)).expect("layout() did not return in time")
+}
+
+#[test]
+fn extreme_parameters_return_a_typed_error_not_a_hang() {
+    let cases: Vec<(&str, Geom)> = vec![
+        ("hist binwidth 1e300", Geom::gg_histogram().binwidth(1e300)),
+        ("hist binwidth 1e200", Geom::gg_histogram().binwidth(1e200)),
+        ("freqpoly binwidth 1e300", Geom::gg_freqpoly().binwidth(1e300)),
+        ("dens bw 1e-300", Geom::gg_density().bw(1e-300)),
+        ("dens adjust 1e-300", Geom::gg_density().adjust(1e-300)),
+        ("dens bw 1e-150", Geom::gg_density().bw(1e-150)),
+    ];
+    for (name, g) in cases {
+        let r = within(60, move || layout_of(small(), ax(), g));
+        assert!(matches!(r, Err(Error::ScaleDomain(_) | Error::Rendering(_))), "{name}: {r:?}");
+    }
+    // Just inside the bound the layout still builds.
+    let r = within(60, || layout_of(small(), ax(), Geom::gg_density().bw(1e-90)));
+    assert!(r.is_ok(), "bw 1e-90: {r:?}");
+}
+
+#[test]
+fn every_coord_limit_and_facet_kind_is_refused() {
+    for (name, g, a) in all_geoms() {
+        for coord in
+            [Coord::cartesian().ylim(0.0, 1.0), Coord::cartesian().xlim(0.0, 1.0).ylim(0.0, 1.0)]
+        {
+            let r = plot_with(g.clone(), a.clone(), small())
+                .coord(coord)
+                .build()
+                .and_then(|p| p.layout());
+            assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{name} ylim: {r:?}");
+        }
+        for facet in [Facet::row("f"), Facet::col("f"), Facet::grid("f", "f"), Facet::wrap("f", 2)]
+        {
+            let mut d = small();
+            d.add_column_str("f", &["a", "b", "a", "b", "a"]);
+            let r = plot_with(g.clone(), a.clone(), d)
+                .facet(facet.clone())
+                .build()
+                .and_then(|p| p.layout());
+            assert!(matches!(r, Err(Error::Rendering(_))), "{name} {facet:?}: {r:?}");
+        }
+    }
 }
