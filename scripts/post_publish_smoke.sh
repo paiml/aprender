@@ -701,7 +701,10 @@ ROWS
 
 case_table() {
   local esc cls text got n=0 bad=0 nfx=0 f base want
-  esc=$(printf '\033')
+  # ESC is spelled differently from classify_stream on purpose: the
+  # B1-no-ansi-strip mutant edits that line only, so this table still feeds a
+  # real ESC to the mutated classifier and turns red.
+  esc=$'\033'
   while IFS=$'\t' read -r cls text; do
     [ -n "$cls" ] || continue
     text=${text//\\e/$esc}
