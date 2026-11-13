@@ -1,0 +1,81 @@
+{
+  "row": "marks_companions",
+  "case": "ribbon_tile",
+  "spec": "ggplot(df) + geom_ribbon(aes(x = x, ymin = lo, ymax = hi, group = g)) + geom_tile(aes(x, y, group = g))",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomRibbon",
+      "columns": ["x", "ymin", "ymax", "group", "flipped_aes", "y", "colour", "fill", "linewidth", "linetype", "alpha"],
+      "x": [1, 2, 3],
+      "ymin": [1, 1, 1],
+      "ymax": [2, 3, 4],
+      "group": [1, 1, 1],
+      "flipped_aes": [false, false, false],
+      "y": [1, 1, 1],
+      "colour_rgba": [
+        null,
+        null,
+        null
+      ],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ],
+      "linewidth": [0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1],
+      "alpha": [null, null, null],
+      "panel": [1, 1, 1]
+    },
+    {
+      "geom": "GeomTile",
+      "columns": ["x", "y", "group", "xmin", "xmax", "ymin", "ymax", "fill", "colour", "linewidth", "linetype", "alpha", "width", "height"],
+      "x": [1, 2, 3],
+      "y": [2, 5, 3],
+      "group": [1, 1, 1],
+      "xmin": [0.5, 1.5, 2.5],
+      "xmax": [1.5, 2.5, 3.5],
+      "ymin": [1.5, 4.5, 2.5],
+      "ymax": [2.5, 5.5, 3.5],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ],
+      "colour_rgba": [
+        null,
+        null,
+        null
+      ],
+      "linewidth": [0.20000000000000001, 0.20000000000000001, 0.20000000000000001],
+      "linetype": [1, 1, 1],
+      "alpha": [null, null, null],
+      "width": [1, 1, 1],
+      "height": [1, 1, 1],
+      "panel": [1, 1, 1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.5, 3.5],
+      "continuous_range": [0.34999999999999998, 3.6499999999999999],
+      "breaks": [1, 2, 3],
+      "labels": ["1", "2", "3"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [1, 5.5],
+      "continuous_range": [0.77500000000000002, 5.7249999999999996],
+      "breaks": [1, 2, 3, 4, 5],
+      "labels": ["1", "2", "3", "4", "5"],
+      "n_breaks_censored": 1
+    }
+  }
+}

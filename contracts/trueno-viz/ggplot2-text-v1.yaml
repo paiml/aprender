@@ -11,7 +11,7 @@ metadata:
     / .pt, family empty, angle 0, hjust = vjust = 0.5, fontface 1, lineheight 1.2). Glyph metrics
     and rendering are not claimed. Scope: the default Cartesian panel with the default continuous
     scales, no facets, no data-mapped colour, fill, size, shape or alpha; a non-default coord or a
-    facet is refused with a typed error. Also refused with a typed error: a column shorter than the frame, an infinite or text position, a layer stat other than the geom's default, a geom alpha that layout does not read, and an aesthetic that ggplot2 keeps and trains a scale on but this layer would drop (a mapped x or y on rect, xmin, xmax, ymin or ymax on text, a fixed size on every geom but text). Tick labels are compared for data magnitudes that format()
+    facet is refused with a typed error. Also refused with a typed error: a column shorter than the frame, an infinite or text position, a layer stat other than the geom's default, a companion layer that layout() does not lay out beside it (any geom but these five and geom_point, a stat other than identity on that geom_point, or a point position that is unmapped, text, short, infinite or inherits xmin, xmax, ymin or ymax), a geom alpha that layout does not read, and an aesthetic that ggplot2 keeps and trains a scale on but this layer would drop (a mapped x or y on rect, xmin, xmax, ymin or ymax on text, a fixed size on every geom but text). Tick labels are compared for data magnitudes that format()
     prints without exponent notation. The oracle is a committed JSON fixture produced by R; R is
     never run at test time. Layout only: this contract does not claim that the renderer draws the
     layer as ggplot2 does.
@@ -84,6 +84,26 @@ enforcement:
     description: "Aesthetics ggplot2 overwrites give a layer equal to the default layer"
     check: grammar::ggplot2_marks_oracle::overwritten_aesthetics_equal_default
     severity: ERROR
+  companion_cases:
+    description: "The five geoms beside each other and beside geom_point (24 committed cases, both orders, two and three layers, NA point cells) equal ggplot2 for every marks layer, the point rows and both shared panel scales"
+    check: grammar::ggplot2_marks_oracle::companions  # every test of the module, one per case
+    severity: ERROR
+  refuse_companions:
+    description: "Beside this geom, every layer but the five and geom_point (bar, histogram, boxplot, violin, smooth, line, path, step, reference lines) is refused with Error::UnsupportedLayer naming it, in either order, never laid out with scales its stat would widen"
+    check: grammar::ggplot2_marks_oracle::refuses_every_companion_geom_layout_does_not_model_for_every_geom
+    severity: ERROR
+  refuse_point_stat:
+    description: "Beside this geom, a geom_point with any stat but identity is refused with Error::UnsupportedStat naming the stat"
+    check: grammar::ggplot2_marks_oracle::refuses_every_stat_on_a_point_beside_every_geom
+    severity: ERROR
+  refuse_point_companion:
+    description: "Beside this geom, a geom_point whose x or y is unmapped, unknown, text, short or infinite, or that inherits xmin/xmax/ymin/ymax, is refused with a typed error"
+    check: grammar::ggplot2_marks_oracle::refuses_a_point_companion_layout_does_not_model_for_every_geom
+    severity: ERROR
+  refuse_one_axis:
+    description: "A layout that trains one position scale and not the other is refused with Error::ScaleDomain"
+    check: grammar::ggplot2_marks_oracle::refuses_a_layout_that_trains_one_axis_only
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GX-001
   rule: Default font size is 11 pt / .pt
@@ -129,3 +149,8 @@ qa_gate:
   - refuse_alpha
   - refuse_dropped_aesthetics
   - overwritten_aesthetics_equal_default
+  - companion_cases
+  - refuse_companions
+  - refuse_point_stat
+  - refuse_point_companion
+  - refuse_one_axis

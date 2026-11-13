@@ -1,0 +1,76 @@
+{
+  "row": "marks_companions",
+  "case": "point_area",
+  "spec": "ggplot(df) + geom_point(aes(px, py)) + geom_area(aes(x, y, group = g))",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomPoint",
+      "columns": ["x", "y", "group", "shape", "colour", "fill", "size", "alpha", "stroke"],
+      "x": [-1, 2, 4.5],
+      "y": [0.5, 6, 3],
+      "group": [-1, -1, -1],
+      "shape": [19, 19, 19],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ],
+      "fill_rgba": [
+        null,
+        null,
+        null
+      ],
+      "size": [1.5, 1.5, 1.5],
+      "alpha": [null, null, null],
+      "stroke": [0.5, 0.5, 0.5],
+      "panel": [1, 1, 1]
+    },
+    {
+      "geom": "GeomArea",
+      "columns": ["x", "y", "group", "flipped_aes", "ymin", "ymax", "colour", "fill", "linewidth", "linetype", "alpha"],
+      "x": [1, 2, 3],
+      "y": [2, 5, 3],
+      "group": [1, 1, 1],
+      "flipped_aes": [false, false, false],
+      "ymin": [0, 0, 0],
+      "ymax": [2, 5, 3],
+      "colour_rgba": [
+        null,
+        null,
+        null
+      ],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ],
+      "linewidth": [0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1],
+      "alpha": [null, null, null],
+      "panel": [1, 1, 1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-1, 4.5],
+      "continuous_range": [-1.2749999999999999, 4.7750000000000004],
+      "breaks": [-1, 0, 1, 2, 3, 4],
+      "labels": ["-1", "0", "1", "2", "3", "4"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [0, 6],
+      "continuous_range": [-0.30000000000000004, 6.2999999999999998],
+      "breaks": [0, 2, 4, 6],
+      "labels": ["0", "2", "4", "6"],
+      "n_breaks_censored": 0
+    }
+  }
+}

@@ -1,0 +1,76 @@
+{
+  "row": "marks_companions",
+  "case": "text_point",
+  "spec": "ggplot(df) + geom_text(aes(x, y, label = lab, group = g)) + geom_point(aes(px, py))",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomText",
+      "columns": ["x", "y", "label", "group", "nudge_x", "nudge_y", "colour", "family", "size", "angle", "hjust", "vjust", "alpha", "fontface", "lineheight"],
+      "x": [1, 2, 3],
+      "y": [2, 5, 3],
+      "label": ["p", "q", "r"],
+      "group": [1, 1, 1],
+      "nudge_x": [0, 0, 0],
+      "nudge_y": [0, 0, 0],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ],
+      "family": ["", "", ""],
+      "size": [3.8660578386605779, 3.8660578386605779, 3.8660578386605779],
+      "angle": [0, 0, 0],
+      "hjust": [0.5, 0.5, 0.5],
+      "vjust": [0.5, 0.5, 0.5],
+      "alpha": [null, null, null],
+      "fontface": [1, 1, 1],
+      "lineheight": [1.2, 1.2, 1.2],
+      "panel": [1, 1, 1]
+    },
+    {
+      "geom": "GeomPoint",
+      "columns": ["x", "y", "group", "shape", "colour", "fill", "size", "alpha", "stroke"],
+      "x": [-1, 2, 4.5],
+      "y": [0.5, 6, 3],
+      "group": [-1, -1, -1],
+      "shape": [19, 19, 19],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ],
+      "fill_rgba": [
+        null,
+        null,
+        null
+      ],
+      "size": [1.5, 1.5, 1.5],
+      "alpha": [null, null, null],
+      "stroke": [0.5, 0.5, 0.5],
+      "panel": [1, 1, 1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-1, 4.5],
+      "continuous_range": [-1.2749999999999999, 4.7750000000000004],
+      "breaks": [-1, 0, 1, 2, 3, 4],
+      "labels": ["-1", "0", "1", "2", "3", "4"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [0.5, 6],
+      "continuous_range": [0.22499999999999998, 6.2750000000000004],
+      "breaks": [2, 4, 6],
+      "labels": ["2", "4", "6"],
+      "n_breaks_censored": 1
+    }
+  }
+}

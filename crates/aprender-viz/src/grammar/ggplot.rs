@@ -17,6 +17,7 @@ use super::coord::{apply, apply_limits, Coord};
 use super::data::DataFrame;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
+use super::marks;
 use super::path;
 use super::theme::Theme;
 
@@ -610,18 +611,23 @@ impl BuiltGGPlot {
     /// An area, ribbon, tile, rect or text layer gives [`Error::UnsupportedCoord`] for a
     /// non-default coord or any facet, and [`Error::EmptyData`], [`Error::UnknownColumn`],
     /// [`Error::ScaleDomain`] or [`Error::Rendering`] for input it does not model (see `marks`);
-    /// [`Error::ScaleDomain`] when a scale trains on nothing.
+    /// [`Error::ScaleDomain`] when a scale trains on nothing. Such a layer may share the plot only
+    /// with the other four and `geom_point` with the identity stat: any other geom beside it is an
+    /// [`Error::UnsupportedLayer`] and any other stat on that `geom_point` an
+    /// [`Error::UnsupportedStat`] (their ggplot2 stat or setup widens the shared scales), and the
+    /// `geom_point` is refused for a missing, text, short or infinite `x`/`y` column or an
+    /// inherited `xmin`/`xmax`/`ymin`/`ymax`.
     pub fn layout(&self) -> Result<BuiltLayout> {
         path::require_default_coord(&self.layers, &self.coord)?;
         path::require_identity_stats(&self.layers)?;
+        marks::require_modelled_companions(&self.layers, &self.aes, &self.data)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
-        if layers.iter().any(|l| l.marks.is_some()) {
+        let any_marks = marks::any_marks(&self.layers);
+        if any_marks {
             self.require_default_coord_and_facet()?;
         }
         let (x, y) = self.position_scales(&layers);
-        if layers.iter().any(|l| l.marks.is_some())
-            && (x.limits.0 > x.limits.1 || y.limits.0 > y.limits.1)
-        {
+        if any_marks && (x.limits.0 > x.limits.1 || y.limits.0 > y.limits.1) {
             return Err(Error::ScaleDomain(
                 "a position scale trained on no finite value".to_string(),
             ));

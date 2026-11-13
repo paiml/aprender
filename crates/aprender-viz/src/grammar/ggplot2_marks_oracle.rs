@@ -133,8 +133,9 @@ enum Col {
     Group(Vec<i32>),
 }
 
-fn rust_columns(layout: &BuiltLayout) -> (usize, BTreeMap<String, Col>) {
-    let m = layout.layers[0].marks.as_ref().expect("a marks layer");
+/// The columns of the marks layer at `index`.
+fn layer_columns(layout: &BuiltLayout, index: usize) -> (usize, BTreeMap<String, Col>) {
+    let m = layout.layers[index].marks.as_ref().expect("a marks layer");
     let n = m.rows();
     let mut cols = BTreeMap::new();
     cols.insert("group".to_string(), Col::Group(m.group.clone()));
@@ -221,7 +222,14 @@ fn check_case(json: &str, geom_class: &str, row: &str, got: &BuiltLayout) {
     assert_eq!(got.layers.len(), 1);
     let layer = &want["layers"][0];
     assert_eq!(layer["geom"], geom_class);
-    let (n, cols) = rust_columns(got);
+    check_layer(got, 0, layer);
+    check_axis("x", &got.x, &want["panel"]["x"]);
+    check_axis("y", &got.y, &want["panel"]["y"]);
+}
+
+/// The marks layer at `index` against the fixture's layer: column set, row count, every value.
+fn check_layer(got: &BuiltLayout, index: usize, layer: &Value) {
+    let (n, cols) = layer_columns(got, index);
     let mut want_names: Vec<String> = layer["columns"]
         .as_array()
         .expect("columns")
@@ -235,8 +243,6 @@ fn check_case(json: &str, geom_class: &str, row: &str, got: &BuiltLayout) {
     for (name, col) in &cols {
         check_column(name, col, layer);
     }
-    check_axis("x", &got.x, &want["panel"]["x"]);
-    check_axis("y", &got.y, &want["panel"]["y"]);
 }
 
 fn steelblue_red(a: Aes) -> Aes {
@@ -1261,4 +1267,344 @@ fn numbers_sort_before_text_in_a_mixed_group_column() {
 fn ribbon_refuses_the_flipped_form() {
     let r = run(wide(), Aes::new().y("y").xmin("x0").xmax("x1"), Geom::ribbon());
     assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+}
+
+// --- companions: the five beside each other and beside geom_point (G1, shared scales) -----------
+
+/// The layer named `part` in `marks_companions/generate.R`: one of [`five`], `point` = `aes(px,
+/// py)`, or `point_na` = `aes(qx, qy)` (an NA in each point column).
+fn companion_layer(part: &str) -> super::Layer {
+    use super::Layer;
+    match part {
+        "point" => Layer::new(Geom::point()).aes(Aes::new().x("px").y("py")),
+        "point_na" => Layer::new(Geom::point()).aes(Aes::new().x("qx").y("qy")),
+        name => {
+            let (_, geom, aes) =
+                five().into_iter().find(|(n, _, _)| *n == name).expect("one of the five");
+            Layer::new(geom).aes(aes)
+        }
+    }
+}
+
+/// Lay `parts` out over `wide.csv` (no plot-level mapping, as in R) and compare every layer and
+/// both panel scales with `ggplot_build()`.
+fn run_companions(parts: &[&str], json: &str) {
+    let want: Value = serde_json::from_str(json).expect("fixture is valid JSON");
+    assert_eq!(want["versions"]["ggplot2"], "4.0.3", "fixture ggplot2");
+    assert_eq!(want["collation"], "C", "fixture collation");
+    assert_eq!(want["row"], "marks_companions");
+    let mut p = GGPlot::new()
+        .data(frame_from_csv(include_str!("../../fixtures/ggplot2/marks_companions/wide.csv")));
+    for part in parts {
+        p = p.layer(companion_layer(part));
+    }
+    let got = p.build().expect("plot builds").layout().expect("layout resolves");
+    let layers = want["layers"].as_array().expect("layers");
+    assert_eq!(got.layers.len(), layers.len(), "layer count");
+    for (i, (part, layer)) in parts.iter().zip(layers).enumerate() {
+        if part.starts_with("point") {
+            assert_eq!(layer["geom"], "GeomPoint");
+            // A built point layer keeps the complete rows only (`BuiltLayer`: ggplot2 keeps the
+            // incomplete ones until draw time), so compare R's complete rows. The panel scales
+            // below are trained on every non-missing cell, per axis, as in R.
+            let (wx, wy) = (nums(&layer["x"]), nums(&layer["y"]));
+            let complete: Vec<(f64, f64)> =
+                wx.into_iter().zip(wy).filter(|(a, b)| !a.is_nan() && !b.is_nan()).collect();
+            let got_rows: Vec<(f64, f64)> =
+                got.layers[i].x.iter().copied().zip(got.layers[i].y.iter().copied()).collect();
+            assert_eq!(got_rows.len(), complete.len(), "{part} rows");
+            for ((gx, gy), (x, y)) in got_rows.iter().zip(&complete) {
+                assert!(close(*gx, *x) && close(*gy, *y), "{part}: ({gx}, {gy}) vs ({x}, {y})");
+            }
+        } else {
+            let (_, class) = row_geom(&format!("geom_{part}"));
+            assert_eq!(layer["geom"], class, "layer {i}");
+            check_layer(&got, i, layer);
+        }
+    }
+    check_axis("x", &got.x, &want["panel"]["x"]);
+    check_axis("y", &got.y, &want["panel"]["y"]);
+}
+
+mod companions {
+    use super::run_companions;
+
+    macro_rules! case {
+        ($name:ident, [$($part:literal),+]) => {
+            #[test]
+            fn $name() {
+                run_companions(
+                    &[$($part),+],
+                    include_str!(concat!(
+                        "../../fixtures/ggplot2/marks_companions/expected_",
+                        stringify!($name),
+                        ".json"
+                    )),
+                );
+            }
+        };
+    }
+
+    case!(point_area, ["point", "area"]);
+    case!(point_ribbon, ["point", "ribbon"]);
+    case!(point_tile, ["point", "tile"]);
+    case!(point_rect, ["point", "rect"]);
+    case!(point_text, ["point", "text"]);
+    case!(area_point, ["area", "point"]);
+    case!(ribbon_point, ["ribbon", "point"]);
+    case!(tile_point, ["tile", "point"]);
+    case!(rect_point, ["rect", "point"]);
+    case!(text_point, ["text", "point"]);
+    case!(area_ribbon, ["area", "ribbon"]);
+    case!(area_tile, ["area", "tile"]);
+    case!(area_rect, ["area", "rect"]);
+    case!(area_text, ["area", "text"]);
+    case!(ribbon_tile, ["ribbon", "tile"]);
+    case!(ribbon_rect, ["ribbon", "rect"]);
+    case!(ribbon_text, ["ribbon", "text"]);
+    case!(tile_rect, ["tile", "rect"]);
+    case!(tile_text, ["tile", "text"]);
+    case!(rect_text, ["rect", "text"]);
+    case!(point_na_area, ["point_na", "area"]);
+    case!(point_na_text, ["point_na", "text"]);
+    case!(area_text_point, ["area", "text", "point"]);
+    case!(rect_tile_ribbon, ["rect", "tile", "ribbon"]);
+}
+
+/// `marks` and `companion` in both orders over [`wide`], laid out.
+fn both_orders(
+    geom: &Geom,
+    aes: &Aes,
+    companion: &super::Layer,
+) -> [Result<BuiltLayout, Error>; 2] {
+    use super::Layer;
+    let marks = Layer::new(geom.clone()).aes(aes.clone());
+    let lay = |a: &Layer, b: &Layer| {
+        GGPlot::new()
+            .data(wide())
+            .layer(a.clone())
+            .layer(b.clone())
+            .build()
+            .and_then(|b| b.layout())
+    };
+    [lay(&marks, companion), lay(companion, &marks)]
+}
+
+#[test]
+fn refuses_every_companion_geom_layout_does_not_model_for_every_geom() {
+    use super::Layer;
+    let xy = Aes::new().x("x").y("y");
+    // Each widens a shared scale in ggplot2 4.0.3 through its stat or setup (measured beside
+    // geom_area: bar y to 0 and x to the bar edges, histogram x to the bin edges, boxplot x to the
+    // box width, smooth y to its fit).
+    let modelled_elsewhere = [
+        ("geom_bar", Layer::new(Geom::bar()).aes(Aes::new().x("x"))),
+        ("geom_histogram", Layer::new(Geom::histogram()).aes(Aes::new().x("x"))),
+        ("geom_boxplot", Layer::new(Geom::boxplot()).aes(xy.clone())),
+        ("geom_violin", Layer::new(Geom::violin()).aes(xy.clone())),
+        ("geom_smooth", Layer::new(Geom::smooth()).aes(xy.clone())),
+    ];
+    for (name, geom, aes) in five() {
+        for (companion, layer) in &modelled_elsewhere {
+            for r in both_orders(&geom, &aes, layer) {
+                match &r {
+                    Err(Error::UnsupportedLayer(msg)) => {
+                        assert!(msg.starts_with(companion), "{name} + {companion}: {msg}");
+                    }
+                    other => panic!("{name} + {companion}: {other:?}"),
+                }
+            }
+        }
+        // The path family and reference lines are refused too (by the path guards, first).
+        for layer in [
+            Layer::new(Geom::line()).aes(xy.clone()),
+            Layer::new(Geom::path()).aes(xy.clone()),
+            Layer::new(Geom::step()).aes(xy.clone()),
+            Layer::new(Geom::hline(1.0)),
+            Layer::new(Geom::vline(1.0)),
+            Layer::new(Geom::abline(1.0, 0.0)),
+        ] {
+            for r in both_orders(&geom, &aes, &layer) {
+                assert!(matches!(r, Err(Error::UnsupportedLayer(_))), "{name} + {layer:?}: {r:?}");
+            }
+        }
+    }
+}
+
+#[test]
+fn refuses_every_stat_on_a_point_beside_every_geom() {
+    use super::{Layer, Stat};
+    let stats = [
+        (Stat::count(), "stat_count"),
+        (Stat::bin(5), "stat_bin "),
+        (Stat::density(), "stat_density"),
+        (Stat::boxplot(), "stat_boxplot"),
+        (Stat::smooth(), "stat_smooth"),
+        (Stat::bin2d(2, 2), "stat_bin_2d"),
+        (Stat::sum(), "stat_summary(fun = sum)"),
+        (Stat::mean(), "stat_summary(fun = mean)"),
+    ];
+    let point = |stat: Option<Stat>| {
+        let g = Geom::point();
+        Layer::new(stat.map_or(g.clone(), |s| g.stat(s))).aes(Aes::new().x("x").y("y"))
+    };
+    for (name, geom, aes) in five() {
+        for (stat, want) in &stats {
+            for r in both_orders(&geom, &aes, &point(Some(stat.clone()))) {
+                match &r {
+                    Err(Error::UnsupportedStat(msg)) => {
+                        assert!(msg.starts_with(want), "{name} + point {stat:?}: {msg}");
+                    }
+                    other => panic!("{name} + point {stat:?}: {other:?}"),
+                }
+            }
+        }
+        // The identity stat is the point's default: the same layout as no stat at all.
+        let [a, b] = both_orders(&geom, &aes, &point(Some(Stat::identity())));
+        let [c, d] = both_orders(&geom, &aes, &point(None));
+        assert!(a.is_ok() && b.is_ok(), "{name} + point identity: {a:?} {b:?}");
+        assert_eq!(format!("{:?}", a.ok()), format!("{:?}", c.ok()), "{name} identity");
+        assert_eq!(format!("{:?}", b.ok()), format!("{:?}", d.ok()), "{name} identity");
+    }
+}
+
+#[test]
+fn refuses_a_point_companion_layout_does_not_model_for_every_geom() {
+    use super::Layer;
+    let with = |extra: &[(&str, DataValue)]| {
+        let mut df = wide();
+        for (name, v) in extra {
+            df.add_column_values(
+                name,
+                vec![DataValue::Number(1.0), v.clone(), DataValue::Number(3.0)],
+            );
+        }
+        df
+    };
+    let point = |aes: Aes| Layer::new(Geom::point()).aes(aes);
+    for (name, geom, aes) in five() {
+        let marks = Layer::new(geom.clone()).aes(aes.clone());
+        let lay = |df: DataFrame, plot_aes: Aes, companion: Layer| {
+            let a = GGPlot::new()
+                .data(df.clone())
+                .aes(plot_aes.clone())
+                .layer(marks.clone())
+                .layer(companion.clone())
+                .build()
+                .and_then(|b| b.layout());
+            let b = GGPlot::new()
+                .data(df)
+                .aes(plot_aes)
+                .layer(companion)
+                .layer(marks.clone())
+                .build()
+                .and_then(|b| b.layout());
+            [a, b]
+        };
+        let rendering = |rs: [Result<BuiltLayout, Error>; 2], what: &str, needle: &str| {
+            for r in rs {
+                match &r {
+                    Err(Error::Rendering(m)) if m.contains(needle) => {}
+                    other => panic!("{name} + point {what}: {other:?}"),
+                }
+            }
+        };
+        // Unmapped x or y: ggplot2 refuses the point; nothing here may guess one.
+        rendering(lay(wide(), Aes::new(), point(Aes::new().y("y"))), "no x", "mapped x");
+        rendering(lay(wide(), Aes::new(), point(Aes::new().x("x"))), "no y", "mapped y");
+        // A text column needs a discrete scale (ggplot2 4.0.3 makes x/y discrete).
+        rendering(lay(wide(), Aes::new(), point(Aes::new().x("lab").y("y"))), "text x", "is text");
+        rendering(lay(wide(), Aes::new(), point(Aes::new().x("x").y("lab"))), "text y", "is text");
+        // A short column: R cannot build that frame.
+        let mut short = wide();
+        short.add_column_f32("s", &[1.0, 2.0]);
+        rendering(
+            lay(short.clone(), Aes::new(), point(Aes::new().x("s").y("y"))),
+            "short x",
+            "shorter",
+        );
+        rendering(lay(short, Aes::new(), point(Aes::new().x("x").y("s"))), "short y", "shorter");
+        // Bounds the point inherits: ggplot2 keeps them in its data and trains the scales on them.
+        for bound in ["xmin", "xmax", "ymin", "ymax"] {
+            let plot_aes = match bound {
+                "xmin" => Aes::new().xmin("x0"),
+                "xmax" => Aes::new().xmax("x1"),
+                "ymin" => Aes::new().ymin("lo"),
+                _ => Aes::new().ymax("hi"),
+            };
+            rendering(
+                lay(wide(), plot_aes, point(Aes::new().x("x").y("y"))),
+                bound,
+                &format!("mapped {bound}"),
+            );
+        }
+        // A missing column.
+        for r in lay(wide(), Aes::new(), point(Aes::new().x("nope").y("y"))) {
+            assert!(matches!(&r, Err(Error::UnknownColumn(c)) if c == "nope"), "{name}: {r:?}");
+        }
+        // An infinite position: ggplot2 squishes it to the panel, which layout() does not model.
+        for inf in [f32::INFINITY, f32::NEG_INFINITY] {
+            for axis in ["x", "y"] {
+                let df = with(&[("v", DataValue::Number(inf))]);
+                let a =
+                    if axis == "x" { Aes::new().x("v").y("y") } else { Aes::new().x("x").y("v") };
+                for r in lay(df, Aes::new(), point(a)) {
+                    assert!(matches!(r, Err(Error::ScaleDomain(_))), "{name} {axis} {inf}: {r:?}");
+                }
+            }
+        }
+        // The point's own frame is checked, not the plot's.
+        let own = Layer::new(Geom::point())
+            .data(frame(&[("x", &[1.0]), ("y", &[f32::INFINITY])]))
+            .aes(Aes::new().x("x").y("y"));
+        for r in lay(wide(), Aes::new(), own) {
+            assert!(matches!(r, Err(Error::ScaleDomain(_))), "{name} own data: {r:?}");
+        }
+        // And an NA cell is not refused: the scale trains on the other rows (fixture point_na_*).
+        for r in lay(with(&[("v", DataValue::Null)]), Aes::new(), point(Aes::new().x("v").y("y"))) {
+            assert!(r.is_ok(), "{name} NA: {r:?}");
+        }
+    }
+}
+
+#[test]
+fn refuses_a_layout_that_trains_one_axis_only() {
+    use super::Layer;
+    // An all-NA tile trains neither axis; a point with finite x and all-NA y trains x only. One
+    // untrained axis is an empty scale, refused like two.
+    let df = frame(&[
+        ("x", &[f32::NAN, f32::NAN]),
+        ("y", &[f32::NAN, f32::NAN]),
+        ("px", &[1.0, 2.0]),
+        ("py", &[f32::NAN, f32::NAN]),
+    ]);
+    let r = GGPlot::new()
+        .data(df.clone())
+        .layer(Layer::new(Geom::tile()).aes(Aes::new().x("x").y("y")))
+        .layer(Layer::new(Geom::point()).aes(Aes::new().x("px").y("py")))
+        .build()
+        .and_then(|b| b.layout());
+    assert!(matches!(r, Err(Error::ScaleDomain(_))), "x only: {r:?}");
+    let r = GGPlot::new()
+        .data(df)
+        .layer(Layer::new(Geom::tile()).aes(Aes::new().x("x").y("y")))
+        .layer(Layer::new(Geom::point()).aes(Aes::new().x("py").y("px")))
+        .build()
+        .and_then(|b| b.layout());
+    assert!(matches!(r, Err(Error::ScaleDomain(_))), "y only: {r:?}");
+}
+
+#[test]
+fn reports_a_companion_refusal_before_the_coord() {
+    use super::{Coord, Layer};
+    for (name, geom, aes) in five() {
+        let r = GGPlot::new()
+            .data(wide())
+            .layer(Layer::new(geom).aes(aes))
+            .layer(Layer::new(Geom::bar()).aes(Aes::new().x("x")))
+            .coord(Coord::cartesian().flip())
+            .build()
+            .and_then(|b| b.layout());
+        assert!(matches!(r, Err(Error::UnsupportedLayer(_))), "{name} + bar + flip: {r:?}");
+    }
 }
