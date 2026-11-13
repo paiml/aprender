@@ -1,7 +1,7 @@
 metadata:
   id: ggplot2-bars-stat-count-geom-bar-v1
   kind: pattern
-  version: 1.1.0
+  version: 1.2.0
   created: '2026-11-12'
   author: PAIML Engineering
   description: >-
@@ -95,37 +95,37 @@ falsification_tests:
 - id: FALSIFY-GGB1-001
   rule: Bar width is 0.9
   prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns 17 of the 43 ggplot2_bars tests RED (measured, 17 failed, 26 passed, rc=101); mutating the geom default (geom.rs DEFAULT_BAR_WIDTH_F32 0.9 -> 0.8) turns 21 RED (measured, 21 failed, 22 passed, rc=101). The default moved from 0.8 to 0.9 with this row, so a numeric-x geom_bar() caller (wasm.rs, examples/grammar_of_graphics.rs) draws 12% wider bars
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stat_count_geom_bar grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_bar_default_width_and_stat_count grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_col
   if_fails: A 10% narrower bar is invisible to the oracle; the edges are not compared
 - id: FALSIFY-GGB1-002
   rule: Discrete expansion is add 0.6
   prediction: mutating DISCRETE_EXPAND_ADD 0.6 -> 0.5 turns 37 of the 43 ggplot2_bars tests RED (measured, 37 failed, 6 passed, rc=101; every bar plot shares the discrete x axis)
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stat_count_geom_bar grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_position_dodge grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_hline_extend_y
   if_fails: The x continuous_range is not compared
 - id: FALSIFY-GGB1-003
   rule: Levels sort bytewise (LC_COLLATE=C), not case-insensitively
   prediction: sorting levels case-insensitively turns exactly _level_order_is_bytewise_c_collation, _group_order_is_bytewise_c_collation and _public_level_and_group_order_c_collation RED (measured on the level sort, 3 failed, 40 passed, rc=101; the fixture is x = a, B, B, c, whose C-locale limits are B, a, c)
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_level_order_is_bytewise_c_collation grammar::ggplot2_bars_oracle::ggplot2_bars_group_order_is_bytewise_c_collation grammar::ggplot2_bars_oracle::ggplot2_bars_public_level_and_group_order_c_collation
   if_fails: The mixed-case fixture is not in the suite; an all-lowercase x cannot tell the two orders apart
 - id: FALSIFY-GGB1-004
   rule: The public builder reaches the bar code
   prediction: dropping .width(..) at the single call site (GGPlot::bar_spec) turns ggplot2_bars_public_geom_bar_width RED and nothing else (measured, 1 failed, 42 passed, rc=101); making the Identity stat branch unreachable turns 13 tests RED (measured, 13 failed, 30 passed, rc=101); dropping .position(..) turns 9 tests RED (measured, 9 failed, 34 passed, rc=101)
-  test: cargo test -p aprender-viz --lib ggplot2_bars_public (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_bar_width grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_dodge
   if_fails: layout() is not compared with the same fixtures as bar_layout()
 - id: FALSIFY-GGB1-005
   rule: Facets split the stat and the position, not the scales
   prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED (measured, 7 failed, 36 passed, rc=101); counts, props and group ids per panel come from facet_bars and facet_bars_single (6 rows for geom_bar(fill) + facet_wrap, y range (-0.1, 2.1))
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_facet_stat_count_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_dodge_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_fill_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_preserve_single_is_global grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_total_is_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_group_ids_are_global
   if_fails: The facet fixtures do not count differently per panel than pooled
 - id: FALSIFY-GGB1-006
   rule: Position scales are trained over every layer
   prediction: dropping the y and x of non-bar layers from the scale training in layout_with_bars turns _mixed_col_and_point_share_the_y_scale and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 41 passed, rc=101); dropping an hline intercept turns _mixed_col_and_hline_extend_y RED (measured, 1 failed, 42 passed, rc=101); the levels of two bar layers are unioned (_mixed_two_bar_layers_union_their_levels)
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_point_share_the_y_scale grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_point_outside_the_bar_x_range grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_hline_extend_y grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_two_bar_layers_union_their_levels
   if_fails: A later layer can overwrite or ignore the shared scale
 - id: FALSIFY-GGB1-007
   rule: Unsupported shapes are typed errors
   prediction: letting the renderers draw text-x bars (removing the Err) turns _bars_on_a_discrete_x_are_not_drawn_yet_and_say_so RED (measured with the message changed, 1 failed, 42 passed, rc=101); a bar layer with its own data under a facet returns an Err naming it (_bar_layer_with_its_own_data_under_a_facet_is_a_typed_error)
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::bars_on_a_discrete_x_are_not_drawn_yet_and_say_so grammar::ggplot2_bars_oracle::bar_layer_with_its_own_data_under_a_facet_is_a_typed_error
   if_fails: A text-x bar plot renders without bars, silently
 - id: FALSIFY-GGB1-008
   rule: Layer fill under a plot x ranks fill first
@@ -162,6 +162,36 @@ falsification_tests:
   prediction: removing the finite-width check in bar_spec turns a_non_finite_bar_or_dodge_width_is_refused RED (measured, 1 failed, 70 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_non_finite_bar_or_dodge_width_is_refused
   if_fails: An infinite width trains an infinite x range
+- id: FALSIFY-GGB1-015
+  rule: A mapped colour, alpha, size, shape or label on a bar is refused
+  prediction: removing the aesthetic guard in bar_spec (or any one of its five terms) turns a_mapped_colour_alpha_size_shape_or_label_on_a_bar_is_refused RED (measured, mutations M1 to M5)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_mapped_colour_alpha_size_shape_or_label_on_a_bar_is_refused
+  if_fails: ggplot2 groups by every discrete mapped aesthetic, so the bar count and stacking differ from R and layout() returns Ok
+- id: FALSIFY-GGB1-016
+  rule: A position other than identity on a non-bar layer is refused
+  prediction: removing require_identity_position turns a_position_other_than_identity_on_a_non_bar_layer_is_refused RED (measured, mutation M7)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_position_other_than_identity_on_a_non_bar_layer_is_refused
+  if_fails: geom_point(position = stack) is laid out unstacked while ggplot2 stacks it
+- id: FALSIFY-GGB1-017
+  rule: A numeric or short facet column under bars is refused
+  prediction: removing the require_text_facet loop in layout_with_bars turns a_facet_column_that_is_numeric_or_short_is_refused_under_bars RED (measured, mutation M8)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_facet_column_that_is_numeric_or_short_is_refused_under_bars
+  if_fails: a numeric facet sorts as text (10 before 2) or a short column makes a panel named NA
+- id: FALSIFY-GGB1-018
+  rule: geom_bar with a y mapped is refused as ggplot2 does
+  prediction: removing the y guard on the count arm of bar_spec turns geom_bar_with_a_y_mapped_is_refused_as_ggplot2_does RED (measured, mutation M10)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::geom_bar_with_a_y_mapped_is_refused_as_ggplot2_does
+  if_fails: geom_bar counts and ignores the y that ggplot2 refuses
+- id: FALSIFY-GGB1-019
+  rule: A point companion with a short column is refused
+  prediction: removing the length check in require_bar_companion turns a_point_companion_with_a_short_column_is_refused RED (measured, mutation M9)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_point_companion_with_a_short_column_is_refused
+  if_fails: a ragged companion loses rows silently
+- id: FALSIFY-GGB1-020
+  rule: A non-finite stack or fill vjust is refused
+  prediction: removing the vjust finiteness check in bar_spec turns a_non_finite_stack_or_fill_vjust_is_refused RED (measured, mutation M6)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::a_non_finite_stack_or_fill_vjust_is_refused
+  if_fails: every y is NaN and layout() returns Ok
 qa_gate:
   id: F-GGB1-001
   name: ggplot2 conformance bars row 1 (stat_count + geom_bar)

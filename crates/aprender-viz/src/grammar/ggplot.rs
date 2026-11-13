@@ -678,6 +678,7 @@ impl BuiltGGPlot {
                 Self::bar_spec(l, data, &self.aes.merge(&l.aes)).transpose()
             })
             .collect::<Result<Vec<Option<BarSpec>>>>()?;
+        Self::require_identity_position(&self.layers, &specs)?;
         if specs.iter().any(Option::is_some) {
             return self.layout_with_bars(&specs);
         }
@@ -688,6 +689,31 @@ impl BuiltGGPlot {
         let (x, y) = self.position_scales();
         path::require_trained(&self.layers, &x, &y)?;
         Ok(BuiltLayout { layers, x, y, x_discrete: None })
+    }
+
+    /// Refuse a position adjustment on a layer that is not a bar layer: `layout()` applies one to
+    /// bars only, so a stack or dodge on a point or reference layer would be ignored while ggplot2
+    /// moves the layer (`geom_point(position = "stack")` stacks its points).
+    fn require_identity_position(layers: &[Layer], specs: &[Option<BarSpec>]) -> Result<()> {
+        let ignored =
+            layers.iter().zip(specs).any(|(l, s)| s.is_none() && l.position != Position::Identity);
+        if ignored {
+            return Err(Error::Rendering(
+                "a position adjustment other than identity on a layer that is not a bar layer: \
+                 layout() applies one to bars only"
+                    .to_string(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// The faceting variables of `facet`, none for [`Facet::None`].
+    fn facet_vars(facet: &Facet) -> Vec<&str> {
+        match facet {
+            Facet::None => vec![],
+            Facet::Row { var } | Facet::Col { var } | Facet::Wrap { var, .. } => vec![var.as_str()],
+            Facet::Grid { row, col } => vec![row.as_str(), col.as_str()],
+        }
     }
 
     /// Refuse a companion of a bar layer that the bar layout does not resolve as ggplot2 does.
@@ -720,6 +746,13 @@ impl BuiltGGPlot {
         for (axis, name) in [("x", aes.x.as_deref()), ("y", aes.y.as_deref())] {
             let name = name.unwrap_or(axis);
             let col = data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))?;
+            if col.len() != data.nrow() {
+                return Err(Error::Rendering(format!(
+                    "geom_point beside a bar layer: column `{name}` has {} values for {} rows",
+                    col.len(),
+                    data.nrow()
+                )));
+            }
             // A column is all text or all numbers (`DataFrame` builds whole columns); a text x maps
             // onto the discrete levels, a text y has no continuous position.
             if axis == "y" && col.iter().any(|v| v.as_str().is_some()) {
@@ -744,6 +777,9 @@ impl BuiltGGPlot {
             }
         }
         let levels = self.bar_levels();
+        for var in Self::facet_vars(&self.facet) {
+            path::require_text_facet(&self.data, var)?;
+        }
         let facet_rows: Option<Vec<Vec<usize>>> = match self.facet {
             Facet::None => None,
             _ => Some(panels(&self.facet, &self.data)?.into_iter().map(|p| p.rows).collect()),
@@ -873,6 +909,63 @@ impl BuiltGGPlot {
         })
     }
 
+    /// Refuse a bar layer whose aesthetics, position or width `bar_layout_in` would ignore or
+    /// mis-handle where ggplot2 would not.
+    fn require_supported_bar(layer: &Layer, aes: &Aes, width: f32) -> Result<()> {
+        let unsupported = |what: &str| Error::Rendering(format!("bar layer: {what}"));
+        if aes.group.is_some() {
+            return Err(unsupported("a group aesthetic is not supported (fill sets the groups)"));
+        }
+        // ggplot2 groups by EVERY discrete mapped aesthetic, so a mapped one beside `fill` changes
+        // the bar count and the stacking; `bar_spec` groups by x and fill only.
+        if aes.color.is_some()
+            || aes.alpha.is_some()
+            || aes.size.is_some()
+            || aes.shape.is_some()
+            || aes.label.is_some()
+        {
+            return Err(unsupported(
+                "a data-mapped colour, alpha, size, shape or label is not supported (only fill \
+                 sets the groups)",
+            ));
+        }
+        let (vjust, dodge_width) = match layer.position {
+            Position::Stack { vjust, .. } | Position::Fill { vjust, .. } => (vjust, 0.0),
+            Position::Dodge { width: Some(w), .. } => (0.0, w),
+            _ => (0.0, 0.0),
+        };
+        if !vjust.is_finite() {
+            return Err(unsupported("a stack or fill vjust must be a finite number"));
+        }
+        if !width_f64(width).is_finite() || !dodge_width.is_finite() {
+            return Err(unsupported("a bar or dodge width must be a finite number"));
+        }
+        Ok(())
+    }
+
+    /// The bare specification of a bar layer by its stat: counts for `geom_bar`, a `y` column for
+    /// `geom_col`. Any other stat, a `y` on a counting bar, or a column without `y` is refused.
+    fn bar_base(layer: &Layer, aes: &Aes, xname: &str) -> Result<BarSpec> {
+        let unsupported = |what: &str| Error::Rendering(format!("bar layer: {what}"));
+        match layer.geom.stat {
+            Some(Stat::Identity) => aes
+                .y
+                .as_deref()
+                .map(|y| BarSpec::col(xname, y))
+                .ok_or_else(|| unsupported("geom_col() needs a y aesthetic")),
+            None | Some(Stat::Count) => match aes.y {
+                Some(_) => Err(unsupported(
+                    "geom_bar() counts rows, so it takes an x aesthetic only: ggplot2 refuses a y \
+                     (use geom_col() for a y)",
+                )),
+                None => Ok(BarSpec::bar(xname)),
+            },
+            Some(_) => {
+                Err(Error::UnsupportedStat("a bar layer computes stat_count or stat_identity only"))
+            }
+        }
+    }
+
     /// The bar specification of a bar or column layer; `None` for every other layer. A bar layer
     /// whose `x` is not a complete text column is refused: ggplot2 would bin a numeric `x` by its
     /// resolution, which this crate does not compute.
@@ -884,30 +977,12 @@ impl BuiltGGPlot {
                  numeric or partly missing x is not supported",
             )));
         };
-        let unsupported = |what: &str| Error::Rendering(format!("bar layer: {what}"));
-        let mut spec = match layer.geom.stat {
-            Some(Stat::Identity) => match aes.y.as_deref() {
-                Some(y) => BarSpec::col(xname, y),
-                None => return Some(Err(unsupported("geom_col() needs a y aesthetic"))),
-            },
-            None | Some(Stat::Count) => BarSpec::bar(xname),
-            Some(_) => {
-                return Some(Err(Error::UnsupportedStat(
-                    "a bar layer computes stat_count or stat_identity only",
-                )))
-            }
+        let mut spec = match Self::bar_base(layer, aes, xname) {
+            Ok(spec) => spec,
+            Err(e) => return Some(Err(e)),
         };
-        if aes.group.is_some() {
-            return Some(Err(unsupported(
-                "a group aesthetic is not supported (fill sets the groups)",
-            )));
-        }
-        let dodge_width = match layer.position {
-            Position::Dodge { width: Some(w), .. } => w,
-            _ => 0.0,
-        };
-        if !width_f64(width).is_finite() || !dodge_width.is_finite() {
-            return Some(Err(unsupported("a bar or dodge width must be a finite number")));
+        if let Err(e) = Self::require_supported_bar(layer, aes, width) {
+            return Some(Err(e));
         }
         if let Some(fill) = aes.fill.as_deref() {
             spec = spec.fill(fill);

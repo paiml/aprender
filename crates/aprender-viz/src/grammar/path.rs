@@ -348,13 +348,13 @@ fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> 
 }
 
 /// A facet column must be all text so its levels sort as R's C-collation `factor()` does.
-fn require_text_facet(data: &DataFrame, var: &str) -> Result<()> {
+pub(super) fn require_text_facet(data: &DataFrame, var: &str) -> Result<()> {
     let col = data
         .get(var)
         .ok_or_else(|| Error::UnknownColumn(format!("no column {var:?} to facet by")))?;
     if col.len() < data.nrow() || !col.iter().all(|c| matches!(c, DataValue::Text(_))) {
         return Err(refuse(format!(
-            "facet column {var:?} must be text with no missing cell for path and reference layers"
+            "facet column {var:?} must be text with no missing cell for path, reference and bar layers"
         )));
     }
     Ok(())

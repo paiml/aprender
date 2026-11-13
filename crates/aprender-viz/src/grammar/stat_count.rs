@@ -239,10 +239,10 @@ pub fn sorted_levels<'a>(values: impl IntoIterator<Item = &'a str>) -> Vec<Strin
 
 /// Level `i` of `levels` sits at position `i + 1` on a discrete axis (`mapped_discrete`).
 pub fn level_positions(levels: &[String], values: &[&str]) -> Vec<f64> {
-    values
-        .iter()
-        .map(|v| levels.iter().position(|l| l == v).map_or(f64::NAN, |p| (p + 1) as f64))
-        .collect()
+    // Reversed, so a repeated level keeps its first position as a linear scan would.
+    let at: std::collections::HashMap<&str, usize> =
+        levels.iter().enumerate().rev().map(|(i, l)| (l.as_str(), i)).collect();
+    values.iter().map(|v| at.get(v).map_or(f64::NAN, |p| (p + 1) as f64)).collect()
 }
 
 /// `add_group()`: dense rank of the (x, fill) combinations present; the first column of the key

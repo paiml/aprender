@@ -1000,3 +1000,179 @@ fn a_non_finite_bar_or_dodge_width_is_refused() {
     let err = layout_of_layers(&abcd(), xy(), vec![col().position(nan)], None).expect_err("NaN");
     assert!(err.to_string().contains("width must be a finite number"), "{err}");
 }
+
+// --- ignored inputs are refused, not laid out differently from ggplot2 (review of #6938) ----------
+
+/// Rows `a,a,b,c,c` with a discrete `h` column: ggplot2 groups by every discrete mapped aesthetic,
+/// so mapping `h` to colour, alpha, size or shape changes the bar count (R11, R12, R13, R34, E2).
+fn grouped() -> DataFrame {
+    frame_from_csv("x,y,h,n,f\na,1,u,2,p\na,2,v,10,p\nb,3,u,2,q\nc,4,u,10,q\nc,5,v,10,q\n")
+}
+
+#[test]
+fn a_mapped_colour_alpha_size_shape_or_label_on_a_bar_is_refused() {
+    let mapped = [
+        ("colour", Aes::new().color("h")),
+        ("alpha", Aes::new().alpha("h")),
+        ("size", Aes::new().size("h")),
+        ("shape", Aes::new().shape("h")),
+        ("label", Aes::new().label("h")),
+    ];
+    for (what, extra) in mapped {
+        let merge = |base: Aes| base.merge(&extra);
+        for layer in [Layer::new(Geom::bar()), Layer::new(Geom::col())] {
+            let base = if matches!(layer.geom.stat, Some(Stat::Identity)) {
+                xy()
+            } else {
+                Aes::new().x("x")
+            };
+            // The mapping may sit on the plot or on the layer; both are refused.
+            let on_plot =
+                layout_of_layers(&grouped(), merge(base.clone()), vec![layer.clone()], None);
+            let on_layer = layout_of_layers(
+                &grouped(),
+                base.clone(),
+                vec![layer.clone().aes(merge(base))],
+                None,
+            );
+            for err in [on_plot, on_layer] {
+                let err = err.expect_err(what);
+                assert!(
+                    matches!(&err, Error::Rendering(m) if m.contains("data-mapped colour")),
+                    "{what}: {err}"
+                );
+            }
+        }
+    }
+    // Control: the same layers without the mapped aesthetic are laid out.
+    assert!(layout_of_layers(&grouped(), Aes::new().x("x"), vec![Layer::new(Geom::bar())], None)
+        .is_ok());
+    assert!(layout_of_layers(&grouped(), xy(), vec![Layer::new(Geom::col())], None).is_ok());
+}
+
+#[test]
+fn a_fixed_colour_on_a_bar_is_still_laid_out() {
+    // A fixed colour changes the outline, not the groups: nothing to refuse.
+    let aes = Aes::new().x("x").color_value(crate::color::Rgba::BLACK);
+    assert!(layout_of_layers(&grouped(), aes, vec![Layer::new(Geom::bar())], None).is_ok());
+}
+
+#[test]
+fn a_position_other_than_identity_on_a_non_bar_layer_is_refused() {
+    let positions = [Position::stack(), Position::fill(), Position::dodge()];
+    let point = |p: Position| point_layer(Aes::new().y("y")).position(p);
+    for p in positions {
+        // Beside bars (R17) ...
+        let err =
+            layout_of_layers(&grouped(), xy(), vec![col(), point(p)], None).expect_err("point");
+        assert!(
+            matches!(&err, Error::Rendering(m) if m.contains("not a bar layer")),
+            "{p:?}: {err}"
+        );
+        // ... and without a bar layer (R35).
+        let err = layout_of_layers(&grouped(), xy(), vec![point(p)], None).expect_err("alone");
+        assert!(
+            matches!(&err, Error::Rendering(m) if m.contains("not a bar layer")),
+            "{p:?}: {err}"
+        );
+        // Reference lines are non-bar layers too (P16, P17).
+        let err = layout_of_layers(&grouped(), xy(), vec![col(), hline(1.0).position(p)], None)
+            .expect_err("hline");
+        assert!(matches!(&err, Error::Rendering(_)), "{p:?}: {err}");
+    }
+    // Identity is the default and stays accepted.
+    let ok = point(Position::Identity);
+    assert!(layout_of_layers(&grouped(), xy(), vec![col(), ok], None).is_ok());
+}
+
+#[test]
+fn a_facet_column_that_is_numeric_or_short_is_refused_under_bars() {
+    // R14: facet_wrap(~n) sorts 2 before 10; the text-sorted panels would put "10" first.
+    let by_n = layout_of_layers(&grouped(), xy(), vec![col()], Some(Facet::wrap("n", 2)));
+    let err = by_n.expect_err("numeric facet");
+    assert!(err.to_string().contains("must be text"), "{err}");
+    // P09: a facet column shorter than the data would put the missing rows in a panel "NA".
+    let mut df = DataFrame::new();
+    df.add_column_str("x", &["a", "b", "c"]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    df.add_column_str("f", &["p", "q"]);
+    let err =
+        layout_of_layers(&df, xy(), vec![col()], Some(Facet::wrap("f", 2))).expect_err("short");
+    assert!(err.to_string().contains("must be text"), "{err}");
+    // Every facet shape is checked, and a text facet is still accepted.
+    for facet in [Facet::row("n"), Facet::col("n"), Facet::grid("f", "n"), Facet::grid("n", "f")] {
+        let err =
+            layout_of_layers(&grouped(), xy(), vec![col()], Some(facet)).expect_err("numeric");
+        assert!(err.to_string().contains("must be text"), "{err}");
+    }
+    assert!(layout_of_layers(&grouped(), xy(), vec![col()], Some(Facet::wrap("f", 2))).is_ok());
+    assert!(layout_of_layers(&grouped(), xy(), vec![col()], Some(Facet::grid("f", "h"))).is_ok());
+}
+
+#[test]
+fn geom_bar_with_a_y_mapped_is_refused_as_ggplot2_does() {
+    // E1: R errors "stat_count() must only have an x or y aesthetic".
+    let err = layout_of_layers(&grouped(), xy(), vec![Layer::new(Geom::bar())], None)
+        .expect_err("y on geom_bar");
+    assert!(err.to_string().contains("takes an x aesthetic only"), "{err}");
+    let counted = Layer::new(Geom::bar().stat(Stat::Count));
+    assert!(
+        layout_of_layers(&grouped(), xy(), vec![counted], None).is_err(),
+        "explicit stat_count"
+    );
+    assert!(layout_of_layers(&grouped(), xy(), vec![col()], None).is_ok(), "geom_col takes y");
+    let no_y = layout_of_layers(&grouped(), Aes::new().x("x"), vec![col()], None)
+        .expect_err("geom_col without y");
+    assert!(no_y.to_string().contains("geom_col() needs a y aesthetic"), "{no_y}");
+}
+
+#[test]
+fn a_point_companion_with_a_short_column_is_refused() {
+    // P08: a point whose y holds fewer values than the frame has rows used to lose rows silently.
+    let mut df = DataFrame::new();
+    df.add_column_str("x", &["a", "b", "c"]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    df.add_column_f32("z", &[5.0]);
+    let short_y = point_layer(Aes::new().y("z"));
+    let err = layout_of_layers(&df, xy(), vec![col(), short_y], None).expect_err("short y");
+    assert!(err.to_string().contains("`z` has 1 values for 3 rows"), "{err}");
+    let mut df = DataFrame::new();
+    df.add_column_str("x", &["a", "b", "c"]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    let mut own = DataFrame::new();
+    own.add_column_str("px", &["a", "b", "c"]);
+    own.add_column_f32("py", &[5.0, 6.0]);
+    let layer = point_layer(Aes::new().x("px").y("py")).data(own);
+    let err = layout_of_layers(&df, xy(), vec![col(), layer], None).expect_err("short own y");
+    assert!(err.to_string().contains("`py` has 2 values for 3 rows"), "{err}");
+}
+
+#[test]
+fn a_non_finite_stack_or_fill_vjust_is_refused() {
+    for vjust in [f64::NAN, f64::INFINITY] {
+        for p in
+            [Position::Stack { vjust, reverse: false }, Position::Fill { vjust, reverse: false }]
+        {
+            let err =
+                layout_of_layers(&abcd(), xy(), vec![col().position(p)], None).expect_err("vjust");
+            assert!(err.to_string().contains("vjust must be a finite number"), "{p:?}: {err}");
+        }
+    }
+    let ok = Position::Stack { vjust: 0.5, reverse: false };
+    assert!(layout_of_layers(&abcd(), xy(), vec![col().position(ok)], None).is_ok());
+}
+
+#[test]
+fn level_positions_scale_to_many_levels_and_match_a_linear_scan() {
+    use super::stat_count::level_positions;
+    let levels: Vec<String> = (0..50_000).map(|i| format!("l{i:06}")).collect();
+    let values: Vec<&str> = levels.iter().rev().map(String::as_str).chain(["absent"]).collect();
+    let got = level_positions(&levels, &values);
+    assert_eq!(got.len(), 50_001);
+    assert_eq!(got[0], 50_000.0, "last level is last");
+    assert_eq!(got[49_999], 1.0);
+    assert!(got[50_000].is_nan(), "an unknown value has no position");
+    // A repeated level keeps its first position, as a linear scan reports.
+    let repeated = vec!["b".to_string(), "a".to_string(), "b".to_string()];
+    assert_eq!(level_positions(&repeated, &["b", "a"]), vec![1.0, 2.0]);
+}

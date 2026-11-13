@@ -40,12 +40,12 @@ falsification_tests:
 - id: FALSIFY-GGF1-001
   rule: position_fill vjust defaults to 1
   prediction: mutating FILL_VJUST 1.0 -> 0.5 turns exactly ggplot2_bars_position_fill, ggplot2_bars_public_position_fill and ggplot2_bars_facet_position_fill_per_panel RED (measured, 3 failed, 40 passed, rc=101)
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_position_fill grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_fill grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_fill_per_panel
   if_fails: y of a filled bar is not compared
 - id: FALSIFY-GGF1-002
   rule: Each panel is normalised on its own
   prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED, among them ggplot2_bars_facet_position_fill_per_panel (measured, 7 failed, 36 passed, rc=101)
-  test: cargo test -p aprender-viz --lib ggplot2_bars (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_facet_stat_count_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_dodge_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_fill_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_preserve_single_is_global grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_total_is_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_group_ids_are_global
   if_fails: The facet fixture has no x whose stack total differs between panels
 qa_gate:
   id: F-GGF1-001
