@@ -15,6 +15,8 @@ pub mod events;
 #[cfg(target_arch = "wasm32")]
 pub mod showcase;
 #[cfg(target_arch = "wasm32")]
+pub mod video_dom;
+#[cfg(target_arch = "wasm32")]
 pub mod websocket;
 
 // Cross-platform modules (work on native for testing)
@@ -23,6 +25,7 @@ pub mod notebook;
 pub mod router;
 pub mod shell_autocomplete;
 pub mod storage;
+pub mod video_ops;
 
 #[cfg(target_arch = "wasm32")]
 pub use app::App;
@@ -38,6 +41,9 @@ pub use shell_autocomplete::ShellAutocompleteDemo;
 #[cfg(target_arch = "wasm32")]
 pub use showcase::ShowcaseDemo;
 pub use storage::{ScopedStorage, Storage, StorageError, StorageType};
+#[cfg(target_arch = "wasm32")]
+pub use video_dom::VideoLayer;
+pub use video_ops::{reconcile, VideoNode, VideoOp};
 #[cfg(target_arch = "wasm32")]
 pub use websocket::{WebSocketClient, WebSocketError};
 
