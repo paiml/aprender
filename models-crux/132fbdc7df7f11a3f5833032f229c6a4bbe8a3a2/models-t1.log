@@ -1,0 +1,3 @@
+MODELS lambda measured by apr 0.72.6 (132fbdc7d): cells=134 red=0 (crux_sweep_shards rc 0)
+MODELS gx10 measured by apr 0.72.6 (132fbdc7d): cells=134 red=0 (crux_sweep_shards rc 0)
+MODELS GO (CRUX smoke) on lambda and gx10 at 132fbdc7d: the judge passed both receipts (apr 0.72.6 (132fbdc7d))
