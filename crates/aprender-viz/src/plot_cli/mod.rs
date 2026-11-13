@@ -690,8 +690,7 @@ mod generator {
         let row = parse_row("c", &format!("{BLOCK}falsification_tests: [a]\n"));
         let row = row.expect("parses").expect("has a block");
         assert_eq!(check_oracle("c", &row, &oracle(POINT)), Ok(()));
-        let e = check_oracle("c", &row, &[]);
-        assert_eq!(e, Err("c: oracle o has no expected*.json".into()));
+        assert_eq!(check_oracle("c", &row, &[]), Err("c: oracle o has no expected*.json".into()));
         for (layers, got) in [
             (r#"{"geom": "GeomLine"}"#, r#"["GeomLine"]"#),
             (&format!("{POINT}, {POINT}"), r#"["GeomPoint", "GeomPoint"]"#),
@@ -708,6 +707,8 @@ mod generator {
             ("geom_point() + coord_flip()", "coord", "flip", "cartesian"),
             ("geom_point() + facet_wrap(~f)", "facet", "wrap", "null"),
             ("geom_point() + theme_bw()", "theme", "bw", "grey"),
+            ("geom_point() + theme_grey() + theme_bw()", "theme", "named twice", "grey"),
+            (r#"geom_point(stat = \"bin\")"#, "stat", "double-quoted", "identity"),
         ] {
             let o = [("e.json".into(), json(&format!("ggplot(df, aes(x, y)) + {call}"), POINT))];
             let want = format!("c: oracle e.json has {dim} {got}; the block declares {declared}");
@@ -716,9 +717,8 @@ mod generator {
         let o = [("e.json".into(), format!(r#"{{"layers": [{POINT}]}}"#))];
         assert_eq!(check_oracle("c", &row, &o), Err("c: oracle e.json has no spec".into()));
         let bad = [("expected.json".to_string(), "{".to_string())];
-        assert!(check_oracle("c", &row, &bad)
-            .expect_err("not json")
-            .starts_with("c: expected.json: "));
+        let e = check_oracle("c", &row, &bad).expect_err("not json");
+        assert!(e.starts_with("c: expected.json: "), "{e}");
         assert_eq!(geom_class("density_2d"), "GeomDensity2d");
     }
 

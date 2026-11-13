@@ -50,12 +50,15 @@ fn geom_class(geom: &str) -> String {
 }
 
 /// What the R call `spec` names after `key` (`flip` in `coord_flip()` after `coord_`), or
-/// ggplot2's default `default` when it names none.
+/// ggplot2's default `default` when it names none. A call naming `key` twice, or with a
+/// double quote (which `key`s spell `'`), is unreadable here and so matches no block.
 fn named<'a>(spec: &'a str, key: &str, default: &'a str) -> &'a str {
-    spec.find(key).map_or(default, |i| {
-        let rest = &spec[i + key.len()..];
-        &rest[..rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '_').unwrap_or(rest.len())]
-    })
+    match spec.match_indices(key).map(|(i, _)| &spec[i + key.len()..]).collect::<Vec<_>>()[..] {
+        _ if spec.contains('"') => "double-quoted",
+        [] => default,
+        [r] => &r[..r.find(|c: char| !c.is_ascii_alphanumeric() && c != '_').unwrap_or(r.len())],
+        _ => "named twice",
+    }
 }
 
 /// The block's oracle backs it: at least one `expected*.json` (`(file, text)`), and each draws

@@ -96,8 +96,8 @@ falsification_tests:
   if_fails: The refusal table no longer carries Inf, -inf, infinity, 1e400 and null
 - id: FALSIFY-GG1-006
   rule: the contract walk build.rs runs (plot_cli/proven_gen.rs sync) admits a ggplot2_row only with a falsifier and with every expected*.json drawing one layer of the block's geom from an R call naming the block's stat, position, scales, coord, facet and theme, and fails a committed table that differs
-  prediction: deleting the check_oracle call in read_rows, the layer or spec comparison, the empty-falsifier arm, or the drift check in sync turns the_contract_walk_admits_only_rows_their_oracles_back RED
-  test: cargo test -p aprender-viz --lib plot_cli::generator::the_contract_walk_admits_only_rows_their_oracles_back
+  prediction: deleting the check_oracle call in read_rows, the empty-falsifier arm or the drift check in sync turns the_contract_walk_admits_only_rows_their_oracles_back RED; admitting a second layer, an oracle dir with no expected*.json, an oracle with no spec, or a spec whose stat, position, scale_x, scale_y, coord, facet or theme differs from the block (or is double-quoted or named twice) turns a_row_needs_a_falsifier_and_an_oracle_drawing_its_one_geom RED
+  test: 'cargo test -p aprender-viz --lib plot_cli::generator::'
   if_fails: A block naming another geom than its R oracle drew would widen what apr plot draws
 - id: FALSIFY-GG1-007
   rule: apr plot refuses a column with one value by name, and a column f32 moves by more than 1e-4 of its range
