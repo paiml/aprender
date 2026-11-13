@@ -490,7 +490,8 @@ mod tests {
         assert!(err(row1().facet(Facet::wrap("g", 2)), plain(80, 24)).contains("facets"));
         assert!(err(row1().coord(Coord::cartesian().flip()), plain(80, 24)).contains("coord_flip"));
         assert!(err(row1().coord(Coord::polar()), plain(80, 24)).contains("polar"));
-        assert!(err(row1().geom(Geom::bar()), plain(80, 24)).contains("reference layers only"));
+        // Bars refuse in layout() over a numeric x, and over a text x in the terminal itself.
+        assert!(err(row1().geom(Geom::bar()), plain(80, 24)).contains("geom_bar()/geom_col()"));
         let scaled = row1().scale_x(scale_log10());
         assert!(err(scaled, plain(80, 24)).contains("scale_x/scale_y"));
         let scaled_y = row1().scale_y(scale_continuous());
@@ -499,6 +500,8 @@ mod tests {
         text.add_column_str("x", &["a", "b"]);
         text.add_column_f32("y", &[1.0, 2.0]);
         let discrete = GGPlot::new().data(text).aes(Aes::new().x("x").y("y"));
+        let col_msg = err(discrete.clone().geom(Geom::col()), plain(80, 24));
+        assert!(col_msg.contains("reference layers only"), "{col_msg}");
         assert!(err(discrete.geom(Geom::point()), plain(80, 24)).contains("text (discrete)"));
         let wide =
             // R's format() prints these breaks as 13-character labels (-1.000002e+14), too wide

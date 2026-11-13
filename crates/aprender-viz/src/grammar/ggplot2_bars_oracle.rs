@@ -1150,12 +1150,12 @@ fn every_render_target_refuses_a_position_it_would_not_apply() {
     assert!(numeric_col(&unique, half).to_framebuffer().is_err(), "vjust 0.5 stacks");
     // Controls: identity on the same layers still renders on every target.
     for (name, make) in &layers {
-        let plot = GGPlot::new()
-            .data(df.clone())
-            .aes(xy())
-            .layer(make(Position::Identity))
-            .build()
-            .expect("plot");
+        // A reference layer alone trains no axes (#6975 refuses it), so it rides on a point layer.
+        let mut b = GGPlot::new().data(df.clone()).aes(xy());
+        if *name == "hline" {
+            b = b.layer(Layer::new(Geom::point()));
+        }
+        let plot = b.layer(make(Position::Identity)).build().expect("plot");
         assert!(plot.to_framebuffer().is_ok(), "{name}: identity framebuffer");
     }
 }
