@@ -187,3 +187,29 @@ fn prop_pack_preserves_elements() {
     let all_found = found.iter().all(|&f| f);
     assert!(all_found, "Packing should preserve all unique values");
 }
+
+/// C-AVX512-BLIS-001 (contracts/avx512-blis-v1.yaml), at the contract's own bound:
+/// `|C_blis - C_naive| < 1e-5 * max|C_naive|` for every element. The shapes are
+/// above the small-GEMM cutoffs (>256 in some dimension) so the blocked BLIS
+/// path runs, and two of them are not tile multiples, so remainder tiles run too.
+#[test]
+fn falsify_avx512_blis_001_relative_bound() {
+    const EPS: f32 = 1e-5;
+    for (m, n, k) in [(264, 264, 264), (257, 263, 271), (300, 17, 290), (6, 512, 300)] {
+        let a: Vec<f32> = (0..m * k).map(|i| ((i % 5) as f32) * 0.1 + 0.05).collect();
+        let b: Vec<f32> = (0..k * n).map(|i| ((i % 7) as f32) * 0.1 - 0.1).collect();
+        let mut c_ref = vec![0.0f32; m * n];
+        let mut c_blis = vec![0.0f32; m * n];
+        gemm_reference(m, n, k, &a, &b, &mut c_ref).unwrap();
+        gemm_blis(m, n, k, &a, &b, &mut c_blis, None).unwrap();
+        let scale = c_ref.iter().fold(0.0f32, |acc, v| acc.max(v.abs()));
+        assert!(scale > 1.0, "fixture must produce a non-trivial C for {m}x{n}x{k}");
+        for (idx, (r, b)) in c_ref.iter().zip(&c_blis).enumerate() {
+            assert!(
+                (r - b).abs() < EPS * scale,
+                "C-AVX512-BLIS-001 {m}x{n}x{k} at {idx}: blis {b} vs naive {r} (bound {})",
+                EPS * scale
+            );
+        }
+    }
+}
