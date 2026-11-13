@@ -18,6 +18,7 @@ pub mod showcase;
 pub mod websocket;
 
 // Cross-platform modules (work on native for testing)
+pub mod frame_loop;
 pub mod mount;
 pub mod notebook;
 pub mod router;
@@ -30,6 +31,7 @@ pub use app::App;
 pub use canvas2d::Canvas2DRenderer;
 #[cfg(target_arch = "wasm32")]
 pub use entry::{mount, MessageHandler, MountHandle};
+pub use frame_loop::{FrameClock, FrameLoop, FrameScheduler};
 pub use mount::{schedule, Frame, FrameAction, Mounted};
 pub use router::{BrowserRouter, RouteMatch, RouteMatcher};
 pub use shell_autocomplete::ShellAutocomplete;
