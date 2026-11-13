@@ -34,11 +34,14 @@
 #   1. cargo install aprender --version <v> --locked          step cargo-install
 #   2. $CARGO_HOME/bin/apr --version carries <v> as an EXACT word
 #                                         step apr-version / apr-version-mismatch
-#   3. $CARGO_HOME/bin/apr explain E001 exits 0 and prints "Invalid Magic Bytes"
+#   3. $CARGO_HOME/bin/apr explain E001 exits 0       step verb-smoke
 #      (`explain` is requires_model:false, side_effects:[] in
 #      contracts/apr-cli-commands-v1.yaml: no model, no network, yet it runs real
 #      code, crates/apr-cli/src/commands/explain.rs)
-#                                         step verb-smoke / verb-smoke-output
+#      Its text is checked for "Invalid Magic Bytes", but a mismatch with exit 0
+#      is SMOKE_NOTMEASURED step=verb-smoke-output, NEVER a yank: a reworded help
+#      text is not a broken release. Only a non-zero exit of the verb (step
+#      verb-smoke) or the version checks (steps apr-version*) can lead to a yank.
 #   On ANY failed step the container then runs THE CONTROL: `cargo install
 #   aprender --version <prev> --locked` in the same image, same run, where <prev>
 #   is the newest non-yanked, non-prerelease version below <v> in the sparse
@@ -369,7 +372,7 @@ out=$("$CARGO_HOME/bin/apr" explain E001 2>&1)
 rc=$?
 echo "apr explain E001: $out"
 [ "$rc" -eq 0 ] || failed verb-smoke "$rc"
-case "$out" in *"Invalid Magic Bytes"*) : ;; *) failed verb-smoke-output 1 ;; esac
+case "$out" in *"Invalid Magic Bytes"*) : ;; *) notmeasured verb-smoke-output "rc=0, text differs" ;; esac
 echo "SMOKE_PASS"
 exit 0
 INNER
@@ -409,7 +412,9 @@ classify_run() {
   esac
   step=$(grep -o '^SMOKE_FAIL step=[a-z-]*' "$log" 2>/dev/null | tail -1 | sed 's/^SMOKE_FAIL step=//') || true
   case "$step" in
-    cargo-install|apr-version|apr-version-mismatch|verb-smoke|verb-smoke-output) : ;;
+    cargo-install|apr-version|apr-version-mismatch|verb-smoke) : ;;
+    # a text mismatch with exit 0 is never a yank, however it is reported
+    verb-smoke-output) echo "nm verb-smoke-output (exit 0, text mismatch: never a yank)"; return 0 ;;
     *) echo "nm exit 10 without a known SMOKE_FAIL step marker (got '${step:-none}')"; return 0 ;;
   esac
   cls=$(classify_log "$log")
@@ -695,6 +700,7 @@ none	    Finished `release` profile [optimized] target(s) in 4m 02s
 none	warning: unused import: `std::fmt`
 none	SMOKE_CONTROL result=pass rc=0 prev=0.74.9
 none	apr explain E001: E001: Invalid Magic Bytes
+none	apr explain E001: E001: bad file header (reworded help text)
 none	apr --version: apr 0.75.0
 ROWS
 }
@@ -1148,7 +1154,10 @@ SMOKE_FAIL step=container rc=1"; }
   ST_CALLS=2; st_case "in-container: apr 0.72.60 vs 0.72.6" 1 "0.72.6" "ANDON yank" "apr-version-mismatch" st_f_ver60 --version 0.72.6 --train-published 0.72.6
   ST_CALLS=2; st_case "in-container: apr --version rc 139" 1 "0.75.0" "ANDON yank" "step=apr-version " st_f_verfail $A
   ST_CALLS=2; st_case "in-container: verb smoke rc 101"    1 "0.75.0" "ANDON yank" "step=verb-smoke " st_f_expfail $A
-  ST_CALLS=2; st_case "in-container: verb smoke wrong output" 1 "0.75.0" "ANDON yank" "verb-smoke-output" st_f_expwrong $A
+  # a text mismatch with exit 0 is NOT_MEASURED (retried once, no control, no yank)
+  ST_CALLS=2; ST_SLEEPS=20; st_case "in-container: verb exit 0, wrong text -> NOT_MEASURED" 3 "" "not_measured" "reason=verb-smoke-output (reported by the container)" st_f_expwrong $A
+  ST_SEQ="f:verb-smoke-output f:verb-smoke-output"
+  ST_CALLS=2; ST_SLEEPS=20; st_case "SMOKE_FAIL step=verb-smoke-output twice -> NOT_MEASURED" 3 "" "not_measured" "never a yank" st_seq $A
   ST_CALLS=2; st_case "runtime: daemon down (stub runtime)" 3 "" "not_measured" "" st_f_daemon $A
   ST_CALLS=2; st_case "runtime: pull failure (stub runtime)" 3 "" "not_measured" "" st_f_pull $A
   ST_CALLS=2; st_case "runtime: hang -> real timeout"  3 "" "not_measured" "timeout (1s)" st_f_hang $A
@@ -1278,6 +1287,82 @@ SMOKE_FAIL step=container rc=1"; }
      && ! grep -qE '(^|[;&|(])[[:space:]]*rm +-' "$dr"; then
     echo "PASS  cascade-drain.sh: one mktemp -d root, log capped and rotated inside it, no rm"
   else echo "FAIL  cascade-drain.sh: $nmk mktemp calls / log uncapped or not rotated / an rm"; ST_FAIL=$((ST_FAIL + 1)); fi
+
+  # cascade-drain.sh RUN for real against a stub repo root: the universe
+  # (python3), the sparse index (curl) and pgrep are stubs on PATH, cascade-publish
+  # and the smoke are stub scripts beside the copied drain. No network, no cargo.
+  local dr_rows=0
+  dr_case() { # name want_rc want_smoke_runs want_out cascade_mode smoke_mode
+    local name=$1 want_rc=$2 want_runs=$3 want_out=$4 dd out rc=0 runs args ok=1
+    dr_rows=$((dr_rows + 1))
+    own_root drain || { ST_FAIL=$((ST_FAIL + 1)); return 0; }
+    dd=$OWN_ROOT_LAST
+    mkdir -p "$dd/repo/scripts" "$dd/repo/.cargo" "$dd/bin" "$dd/tmp"
+    cp "$dr" "$dd/repo/scripts/cascade-drain.sh"
+    printf '[package]\nname = "aprender"\nversion = "0.75.0"\n' >"$dd/repo/Cargo.toml"
+    printf 'keep-me\n' >"$dd/repo/.cargo/config.toml"
+    : >"$dd/smoke-runs"
+    if [ "$5" = live ]; then : >"$dd/live"; fi
+    cat >"$dd/bin/python3" <<'STUB'
+#!/usr/bin/env bash
+i=0; while [ "$i" -lt 70 ]; do printf 'stubcrate-%02d\t0.75.0\tlib\t%s\n' "$i" "$2"; i=$((i + 1)); done
+STUB
+    cat >"$dd/bin/curl" <<'STUB'
+#!/usr/bin/env bash
+if [ -e "$DR_DIR/live" ]; then v=0.75.0; else v=0.74.9; fi
+printf '{"name":"stubcrate","vers":"%s","yanked":false}\n' "$v"
+STUB
+    printf '#!/usr/bin/env bash\nexit 1\n' >"$dd/bin/pgrep"
+    cat >"$dd/repo/scripts/cascade-publish.sh" <<'STUB'
+#!/usr/bin/env bash
+case "$DR_CASCADE" in
+  live) echo "stub cascade: should not run when every crate is live"; exit 1 ;;
+  killed) : >"$DR_DIR/live"; echo "PUBLISHED stubcrate-69"; exit 137 ;; # dies before its smoke block
+  pass) : >"$DR_DIR/live"; echo "PUBLISHED stubcrate-69"; echo "SMOKE_RESULT PASS version=0.75.0" ;;
+  otherver) : >"$DR_DIR/live"; echo "PUBLISHED stubcrate-69"; echo "SMOKE_RESULT PASS version=0.74.9" ;;
+esac
+STUB
+    cat >"$dd/repo/scripts/post_publish_smoke.sh" <<'STUB'
+#!/usr/bin/env bash
+echo "$*" >>"$DR_DIR/smoke-runs"
+case "$DR_SMOKE" in
+  pass) echo "SMOKE_RESULT PASS version=$2"; exit 0 ;;
+  passrc3) echo "SMOKE_RESULT PASS version=$2"; exit 3 ;;
+  yank) echo "SMOKE_RESULT YANK version=$2 step=verb-smoke action=yanked"; exit 1 ;;
+  nm) echo "SMOKE_RESULT NOT_MEASURED version=$2 reason=stub"; exit 3 ;;
+  silent) exit 0 ;;
+esac
+STUB
+    chmod +x "$dd/bin/python3" "$dd/bin/curl" "$dd/bin/pgrep"
+    out=$(cd "$dd/repo" && PATH="$dd/bin:$PATH" TMPDIR="$dd/tmp" DR_DIR="$dd" DR_CASCADE="$5" DR_SMOKE="$6" \
+      bash scripts/cascade-drain.sh --passes 3 2>&1) || rc=$?
+    runs=$(wc -l <"$dd/smoke-runs" | tr -d ' ')
+    args=$(head -1 "$dd/smoke-runs")
+    [ "$rc" = "$want_rc" ] || ok=0
+    [ "$runs" = "$want_runs" ] || ok=0
+    if [ "$runs" != 0 ] && [ "$args" != "--version 0.75.0 --train-published 0.75.0" ]; then ok=0; fi
+    case "$out" in *"$want_out"*) : ;; *) ok=0 ;; esac
+    [ "$(cat "$dd/repo/.cargo/config.toml" 2>/dev/null)" = keep-me ] || ok=0
+    if [ "$ok" = 1 ]; then printf 'PASS  drain: %-60s rc=%s smoke-runs=%s\n' "$name" "$rc" "$runs"
+    else
+      printf 'FAIL  drain: %s rc=%s (want %s) smoke-runs=%s (want %s) args=[%s] config=[%s]\n' "$name" "$rc" "$want_rc" \
+        "$runs" "$want_runs" "$args" "$(cat "$dd/repo/.cargo/config.toml" 2>/dev/null)"
+      printf '%s\n' "$out" | tail -n 15 | sed 's/^/      | /'
+      ST_FAIL=$((ST_FAIL + 1))
+    fi
+    safe_rm_rf "$dd" "$dd" || ST_FAIL=$((ST_FAIL + 1))
+  }
+  dr_case "all live, no smoke line, own smoke PASS -> 0"   0 1 "smoke PASS (run by the drain)" live pass
+  dr_case "all live, no smoke line, own smoke YANK -> 4"   4 1 "DRAIN FAILED"                  live yank
+  dr_case "all live, no smoke line, own smoke NM -> 5"     5 1 "DRAIN NOT VERIFIED"            live nm
+  dr_case "all live, own smoke rc 0, no verdict line -> 5" 5 1 "no SMOKE_RESULT line"          live silent
+  dr_case "all live, own smoke PASS line but rc 3 -> 5"    5 1 "DRAIN NOT VERIFIED"            live passrc3
+  dr_case "last upload, cascade killed before smoke -> own smoke PASS" 0 1 "smoke PASS (run by the drain)" killed pass
+  dr_case "last upload, cascade killed before smoke -> own smoke YANK" 4 1 "DRAIN FAILED"     killed yank
+  dr_case "cascade PASS for the target -> 0, no second smoke" 0 0 "at 0.75.0, post-publish smoke PASS" pass pass
+  dr_case "cascade PASS for ANOTHER version -> 5"          5 0 "unrecognised post-publish smoke line" otherver pass
+  if [ "$dr_rows" -lt 9 ]; then echo "FAIL  drain: vacuity, $dr_rows rows"; ST_FAIL=$((ST_FAIL + 1)); fi
+
   if [ "$ST_FAIL" -eq 0 ]; then echo "self-test: ALL PASS"; return 0; fi
   echo "self-test: $ST_FAIL FAILED" >&2
   return 1
@@ -1381,6 +1466,17 @@ mutants() {
   mut "B5-drain-log-not-rotated"     cascade-drain.sh 's/mv -f -- "\$cascade_log" "\$cascade_log.prev"/:/'
   mut "B5-drain-log-per-pass"        cascade-drain.sh 's/^cascade_log="\$drain_root\/cascade.log"$/cascade_log=$(mktemp "${TMPDIR:-\/tmp}\/cascade-drain.XXXXXX")/'
   mut "B5-drain-rm-config"           cascade-drain.sh 's/^    mv -- "\${REPO_ROOT:?}\/.cargo\/config.toml".*$/    rm -f "${REPO_ROOT:?}\/.cargo\/config.toml"/'
+  # round 4: DRAIN COMPLETE only on a smoke PASS for $TARGET; config moved back
+  mut "B6-drain-complete-on-count"   cascade-drain.sh 's/^    if \[ "\$smoke_pass_seen" = 1 \]; then$/    if true; then/'
+  mut "B6-drain-empty-line-is-pass"  cascade-drain.sh 's/^        "") : ;; # no smoke.*$/        "") smoke_pass_seen=1 ;;/'
+  mut "B6-drain-any-pass-counts"     cascade-drain.sh 's/^        "SMOKE_RESULT PASS version=\$TARGET") smoke_pass_seen=1 ;;$/        "SMOKE_RESULT PASS "*) smoke_pass_seen=1 ;;/'
+  mut "B6-drain-own-yank-is-ok"      cascade-drain.sh '/run by the drain, rc=\$src): /{n;s/exit 4/exit 0/}'
+  mut "B6-drain-own-rc-ignored"      cascade-drain.sh 's/if \[ "\$src" -eq 0 \] && \[ "\$sline" = /if [ "$sline" = /'
+  mut "B6-drain-own-nm-is-ok"        cascade-drain.sh 's/^    exit 5$/    exit 0/'
+  mut "B6-drain-config-not-restored" cascade-drain.sh 's/^trap restore_config EXIT$/:/'
+  # round 4: a text mismatch with exit 0 is never a yank
+  mut "B7-text-mismatch-fails"       $P 's/notmeasured verb-smoke-output "rc=0, text differs"/failed verb-smoke-output 1/'
+  mut "B7-output-step-yanks"         $P 's/^    cargo-install|apr-version|apr-version-mismatch|verb-smoke) : ;;$/    cargo-install|apr-version|apr-version-mismatch|verb-smoke|verb-smoke-output) : ;;/'
   # every classifier pattern is load-bearing: delete each line in turn
   for arr in NET_PATTERNS HTTP_PATTERNS RESOLVER_PATTERNS ENV_PATTERNS BUILD_PATTERNS; do
     lines=$(awk -v a="$arr" '$0 == a"=(" {on=1; next} on && $0 == ")" {on=0} on {print NR}' "$SELF")

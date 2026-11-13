@@ -18,10 +18,17 @@
 #   scripts/cascade-drain.sh --target 0.61.0
 #   scripts/cascade-drain.sh --passes 30    # default is 20
 #
-# Exit codes: 0 drained | 2 stuck (no progress) | 3 passes exhausted
+# Exit codes: 0 drained AND smoke-verified | 2 stuck (no progress) | 3 passes exhausted
 #             4 post-publish smoke verdict YANK (yanked, dry-run, refused or yank failed)
 #             5 post-publish smoke verdict NOT_MEASURED (nothing was verified; no yank)
 # A yanked version is never counted as published.
+#
+# DRAIN COMPLETE (exit 0) needs TWO things: every crate live at its version, and
+# a `SMOKE_RESULT PASS version=$TARGET` line that THIS drain saw. A crate count
+# alone is not a release: a cascade pass can upload the last crate and die before
+# its smoke block. When every crate is live and no such line was seen, the drain
+# runs `post_publish_smoke.sh --version $TARGET --train-published $TARGET` itself
+# and exits on that verdict (PASS 0, YANK 4, anything else 5).
 set -uo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -145,12 +152,27 @@ fi
 
 # A dev [patch.crates-io] section makes `cargo publish` resolve siblings to
 # local paths and fail verification. It is untracked dev config, so it is MOVED
-# into this drain's own mktemp root (restore it with mv), never deleted: this
-# script runs no rm at all.
+# into this drain's own mktemp root and MOVED BACK on exit by the trap below,
+# never deleted: this script runs no rm at all. If something recreated the file
+# meanwhile, the trap leaves both in place and says where the moved copy is.
 drain_root=$(mktemp -d "${TMPDIR:-/tmp}/cascade-drain.XXXXXX") || { echo "FATAL: mktemp -d for the drain root failed" >&2; exit 2; }
+moved_config="${drain_root:?}/config.toml.moved-aside"
+restore_config() {
+    [ -e "$moved_config" ] || return 0
+    if [ -e "${REPO_ROOT:?}/.cargo/config.toml" ]; then
+        echo "NOT restored: ${REPO_ROOT}/.cargo/config.toml exists again; the moved copy stays at $moved_config" >&2
+        return 0
+    fi
+    mv -- "$moved_config" "${REPO_ROOT:?}/.cargo/config.toml" \
+        && echo "restored .cargo/config.toml" \
+        || echo "NOT restored: mv back failed; the moved copy stays at $moved_config" >&2
+}
+trap restore_config EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 if [ -e "${REPO_ROOT:?}/.cargo/config.toml" ]; then
-    mv -- "${REPO_ROOT:?}/.cargo/config.toml" "${drain_root:?}/config.toml.moved-aside"
-    echo "moved .cargo/config.toml aside to $drain_root/config.toml.moved-aside"
+    mv -- "${REPO_ROOT:?}/.cargo/config.toml" "$moved_config"
+    echo "moved .cargo/config.toml aside to $moved_config (moved back on exit)"
 fi
 
 # The cascade log lives in the drain root and is bounded: each pass writes only
@@ -159,12 +181,43 @@ fi
 # to cascade.log.prev. At most two capped files exist, whatever the pass count.
 DRAIN_LOG_CAP=8388608
 cascade_log="$drain_root/cascade.log"
+smoke_log="$drain_root/smoke.log"
+
+# Set only by an exact `SMOKE_RESULT PASS version=$TARGET` line in a cascade log
+# this drain wrote. Never by a count, an empty line or another version's PASS.
+smoke_pass_seen=0
+
+# all_live <n>: every crate is live. Exit 0 only on a smoke PASS for $TARGET.
+all_live() {
+    local sline src
+    if [ "$smoke_pass_seen" = 1 ]; then
+        echo "DRAIN COMPLETE: $1/$TOTAL at $TARGET, post-publish smoke PASS"
+        exit 0
+    fi
+    echo "all $1/$TOTAL crates live at $TARGET, but this drain saw no SMOKE_RESULT PASS for $TARGET; running the post-publish smoke now"
+    bash scripts/post_publish_smoke.sh --version "$TARGET" --train-published "$TARGET" 2>&1 \
+        | tail -c "$DRAIN_LOG_CAP" >"$smoke_log"
+    src=${PIPESTATUS[0]}
+    tail -n 20 "$smoke_log"
+    sline=$(grep '^SMOKE_RESULT ' "$smoke_log" | tail -1)
+    if [ "$src" -eq 0 ] && [ "$sline" = "SMOKE_RESULT PASS version=$TARGET" ]; then
+        echo "DRAIN COMPLETE: $1/$TOTAL at $TARGET, post-publish smoke PASS (run by the drain)"
+        exit 0
+    fi
+    case "$sline" in
+        "SMOKE_RESULT YANK "*)
+            echo "DRAIN FAILED: post-publish smoke (run by the drain, rc=$src): $sline (log: $smoke_log)" >&2
+            exit 4 ;;
+    esac
+    echo "DRAIN NOT VERIFIED: post-publish smoke (run by the drain) rc=$src: ${sline:-no SMOKE_RESULT line} (log: $smoke_log)" >&2
+    exit 5
+}
 
 for pass in $(seq 1 "$PASSES"); do
     if [ -f "$cascade_log" ]; then mv -f -- "$cascade_log" "$cascade_log.prev"; fi
     n=$(count_pub)
     echo "=== PASS $pass START: $n/$TOTAL at $TARGET ==="
-    if [ "$n" -ge "$TOTAL" ]; then echo "DRAIN COMPLETE: $n/$TOTAL at $TARGET"; exit 0; fi
+    if [ "$n" -ge "$TOTAL" ]; then all_live "$n"; fi
 
     # A stale CARGO_REGISTRY_TOKEN 403s every upload; the credentials file wins.
     # The cascade's rc and the smoke result must survive the filter: the capped
@@ -176,7 +229,8 @@ for pass in $(seq 1 "$PASSES"); do
     grep -E "PUBLISHED|FATAL|DEFER|already ${TARGET}|TIER|RETRY|SMOKE_RESULT|post-publish smoke" "$cascade_log" | tail -60
     smoke_line=$(grep '^SMOKE_RESULT ' "$cascade_log" | tail -1)
     case "$smoke_line" in
-        "SMOKE_RESULT PASS "*|"") : ;;
+        "SMOKE_RESULT PASS version=$TARGET") smoke_pass_seen=1 ;;
+        "") : ;; # no smoke this pass; all_live runs it if every crate turns out live
         "SMOKE_RESULT NOT_MEASURED "*)
             echo "DRAIN NOT VERIFIED: post-publish smoke NOT_MEASURED: $smoke_line (log: $cascade_log)" >&2
             exit 5 ;;
@@ -191,7 +245,7 @@ for pass in $(seq 1 "$PASSES"); do
 
     n2=$(count_pub)
     echo "=== PASS $pass END: $n2/$TOTAL ==="
-    if [ "$n2" -ge "$TOTAL" ]; then echo "DRAIN COMPLETE: $n2/$TOTAL at $TARGET"; exit 0; fi
+    if [ "$n2" -ge "$TOTAL" ]; then all_live "$n2"; fi
     # No forward progress means a genuine publish error, not a transient —
     # read the log rather than re-running. Never bump the version mid-drain.
     if [ "$n2" -le "$n" ]; then
