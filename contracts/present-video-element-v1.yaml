@@ -38,7 +38,17 @@ contract: |
   (4) PLAY AND PAUSE ARE IDEMPOTENT. Play is sent only on a not-playing to
       playing change and Pause only on the reverse; a steady state sends none.
   (5) A NON-FINITE RECTANGLE NEVER CAUSES A MOVE EVERY FRAME, and never reaches
-      a style string: from_video maps it to 0.
+      a style string: from_video maps it to 0 and style_for maps any
+      non-finite value (a hand-built VideoNode included) to 0.
+  (6) A SRC CHANGE ON A PLAYING NODE IS FOLLOWED BY PLAY. Setting src runs
+      the browser's media load algorithm, which leaves the element paused;
+      reconcile therefore emits Play after SetSrc when the node is playing
+      (order: Move, SetSrc, SetMuted, then Play/Pause), and the test model
+      DOM pauses on SetSrc so the tests catch a missing Play.
+  (7) A PARTIAL FAILURE LEAVES NO ORPHAN. sync_with advances the recorded
+      previous state op by op, so after a failed apply the next sync runs only
+      the remainder: no element is created twice, none is unreachable. The
+      applier records an element only once attached, and Drop removes all.
 equations:
   reconcile:
     description: "Operations between two frames"
@@ -60,6 +70,21 @@ open_obligations:
     owed (#6890 stays open until it exists). Coverage of video_ops.rs is
     measured in the PR that added it.
 falsification_tests:
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-007
+    description: "a src change on a playing video is followed by Play"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_on_playing_video_is_followed_by_play && cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_with_play_toggle_sends_one_play_and_paused_sends_none && cargo test -p aprender-present-lib --lib browser::video_ops::tests::failure_after_src_change_retries_play"
+    prediction: "[SetSrc, Play] for a playing node whose src changed; model DOM (paused on SetSrc) equals the from-scratch DOM; one Play at most; none for a paused node"
+    if_fails: "the element stays paused while VideoState says Playing"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-008
+    description: "a failure partway through sync leaves state consistent"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_keeps_previous_consistent_with_the_dom && cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_property_any_failure_point_converges"
+    prediction: "previous records exactly the applied ops; a retry runs only the remainder; failing at any op index then retrying converges to the from-scratch DOM"
+    if_fails: "elements are created twice and the first ones are orphaned in the DOM"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-009
+    description: "the style string never carries a non-finite value"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::style_is_sanitised_and_offset"
+    prediction: "NaN/inf/negative size become 0px; no NaN or inf in the string"
+    if_fails: "NaNpx reaches the style attribute"
   - id: FALSIFY-PRESENT_VIDEO_ELEMENT-001
     description: "an unchanged set yields no op"
     test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::nothing_changed_yields_no_op"
@@ -67,7 +92,7 @@ falsification_tests:
     if_fails: "a steady frame touches the DOM"
   - id: FALSIFY-PRESENT_VIDEO_ELEMENT-002
     description: "a new widget is one Create, a removed widget is one Remove"
-    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::removed_widget_is_exactly_one_remove"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::removed_widget_is_exactly_one_remove && cargo test -p aprender-present-lib --lib browser::video_ops::tests::appearing_widget_is_one_create_and_playing_adds_play"
     prediction: "[Remove b] when b disappears"
     if_fails: "an element is left behind or removed twice"
   - id: FALSIFY-PRESENT_VIDEO_ELEMENT-003

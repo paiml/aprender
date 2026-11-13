@@ -115,7 +115,9 @@ fn unique(nodes: &[VideoNode]) -> Vec<&VideoNode> {
 ///
 /// Removes come first (previous order), then per current node in order: a new key is one
 /// `Create` (plus `Play` if it is playing); a kept key gets only the operations for what
-/// changed. Equal sets yield no operation.
+/// changed, in the order `Move`, `SetSrc`, `SetMuted`, then `Play`/`Pause`. A src change on
+/// a playing node is followed by `Play` (the browser pauses on `SetSrc`). Equal sets yield
+/// no operation.
 #[must_use]
 pub fn reconcile(previous: &[VideoNode], current: &[VideoNode]) -> Vec<VideoOp> {
     let previous = unique(previous);
@@ -159,7 +161,11 @@ pub fn reconcile(previous: &[VideoNode], current: &[VideoNode]) -> Vec<VideoOp> 
                 muted: new.muted,
             });
         }
-        if old.playing != new.playing {
+        // Setting `src` runs the media load algorithm, which leaves the element paused. So a
+        // playing node whose src changed needs a `Play` after the `SetSrc`, even though its
+        // `playing` flag did not change. The play/pause op always comes last.
+        let src_reset_playback = old.src != new.src && new.playing;
+        if old.playing != new.playing || src_reset_playback {
             ops.push(if new.playing {
                 VideoOp::Play { id }
             } else {
@@ -168,6 +174,90 @@ pub fn reconcile(previous: &[VideoNode], current: &[VideoNode]) -> Vec<VideoOp> 
         }
     }
     ops
+}
+
+/// Update the model of the DOM (`previous`) for one operation that the applier has just
+/// executed. Mirrors the browser: `SetSrc` runs the media load algorithm, which leaves the
+/// element paused, so the node is recorded as not playing until a `Play` follows.
+fn advance(previous: &mut Vec<VideoNode>, op: &VideoOp) {
+    let find = |previous: &mut Vec<VideoNode>, id: &str| previous.iter().position(|n| n.id == id);
+    match op {
+        VideoOp::Create {
+            id,
+            rect,
+            src,
+            muted,
+        } => previous.push(VideoNode {
+            id: id.clone(),
+            rect: *rect,
+            src: src.clone(),
+            playing: false,
+            muted: *muted,
+        }),
+        VideoOp::Remove { id } => previous.retain(|n| n.id != *id),
+        VideoOp::Move { id, rect } => {
+            if let Some(i) = find(previous, id) {
+                previous[i].rect = *rect;
+            }
+        }
+        VideoOp::SetSrc { id, src } => {
+            if let Some(i) = find(previous, id) {
+                previous[i].src = src.clone();
+                previous[i].playing = false;
+            }
+        }
+        VideoOp::SetMuted { id, muted } => {
+            if let Some(i) = find(previous, id) {
+                previous[i].muted = *muted;
+            }
+        }
+        VideoOp::Play { id } => {
+            if let Some(i) = find(previous, id) {
+                previous[i].playing = true;
+            }
+        }
+        VideoOp::Pause { id } => {
+            if let Some(i) = find(previous, id) {
+                previous[i].playing = false;
+            }
+        }
+    }
+}
+
+/// Make the DOM match `target`, recording progress op by op.
+///
+/// Runs `reconcile(previous, target)` through `apply`. After each operation succeeds,
+/// `previous` is advanced to describe the DOM as it now is, so when `apply` fails partway
+/// `previous` is exactly the state of the applied prefix and a retry only runs the
+/// remainder (no element is created twice and orphaned). On success `previous` is `target`.
+///
+/// # Errors
+/// The first error of `apply`; the operations after it are not run.
+pub fn sync_with<E>(
+    previous: &mut Vec<VideoNode>,
+    target: &[VideoNode],
+    mut apply: impl FnMut(&VideoOp) -> Result<(), E>,
+) -> Result<(), E> {
+    for op in reconcile(previous, target) {
+        apply(&op)?;
+        advance(previous, &op);
+    }
+    *previous = target.to_vec();
+    Ok(())
+}
+
+/// The CSS `style` of an element laid over the canvas: `rect` in canvas pixels plus the
+/// canvas `origin` in the page. The absolute position is against the element's containing
+/// block, so the canvas's offset parent must be that block (a positioned ancestor).
+/// A non-finite value becomes 0 and a negative size becomes 0, whatever the caller built.
+#[must_use]
+pub fn style_for(rect: [f32; 4], origin: [f64; 2]) -> String {
+    let clean = |v: f64| if v.is_finite() { v } else { 0.0 };
+    let [x, y, w, h] = rect.map(|v| clean(f64::from(v)));
+    let left = clean(origin[0]) + x;
+    let top = clean(origin[1]) + y;
+    let (w, h) = (w.max(0.0), h.max(0.0));
+    format!("position:absolute;left:{left}px;top:{top}px;width:{w}px;height:{h}px")
 }
 
 #[cfg(test)]
@@ -205,7 +295,13 @@ mod tests {
                 VideoOp::Move { id, rect } => {
                     dom.get_mut(id).expect("move target").0 = rect.map(f32::to_bits)
                 }
-                VideoOp::SetSrc { id, src } => dom.get_mut(id).expect("src target").1 = src.clone(),
+                VideoOp::SetSrc { id, src } => {
+                    // Browser behaviour: setting src runs the media load algorithm,
+                    // which leaves the element paused.
+                    let e = dom.get_mut(id).expect("src target");
+                    e.1 = src.clone();
+                    e.2 = false;
+                }
                 VideoOp::SetMuted { id, muted } => dom.get_mut(id).expect("mute target").3 = *muted,
                 VideoOp::Play { id } => dom.get_mut(id).expect("play target").2 = true,
                 VideoOp::Pause { id } => dom.get_mut(id).expect("pause target").2 = false,
@@ -371,5 +467,158 @@ mod tests {
         );
         v.play();
         assert!(VideoNode::from_video("v", &v, [0.0; 4], false).playing);
+    }
+
+    #[test]
+    fn src_change_on_playing_video_is_followed_by_play() {
+        let mut old = node("a");
+        old.playing = true;
+        let mut new = old.clone();
+        new.src = "z.mp4".into();
+        let ops = reconcile(&[old.clone()], &[new.clone()]);
+        assert_eq!(
+            ops,
+            vec![
+                VideoOp::SetSrc {
+                    id: "a".into(),
+                    src: "z.mp4".into()
+                },
+                VideoOp::Play { id: "a".into() },
+            ]
+        );
+        // the model DOM pauses on SetSrc, so Play must restore the playing state
+        let mut dom = dom_of(&[old.clone()]);
+        apply(&mut dom, &reconcile(&[old], &[new.clone()]));
+        assert_eq!(dom, dom_of(&[new]));
+    }
+
+    #[test]
+    fn src_change_with_play_toggle_sends_one_play_and_paused_sends_none() {
+        let mut old = node("a");
+        let mut new = old.clone();
+        new.src = "z.mp4".into();
+        new.playing = true;
+        let plays = |ops: &[VideoOp]| {
+            ops.iter()
+                .filter(|o| matches!(o, VideoOp::Play { .. }))
+                .count()
+        };
+        assert_eq!(plays(&reconcile(&[old.clone()], &[new.clone()])), 1);
+        // paused stays paused across a src change: no Play
+        new.playing = false;
+        assert_eq!(plays(&reconcile(&[old.clone()], &[new.clone()])), 0);
+        // playing to paused with a src change: Pause, no Play
+        old.playing = true;
+        let ops = reconcile(&[old], &[new]);
+        assert_eq!(plays(&ops), 0);
+        assert!(ops.contains(&VideoOp::Pause { id: "a".into() }));
+    }
+
+    /// Run `sync_with` against a model DOM whose applier fails on the `fail_at`-th op
+    /// (0-based) of this call; returns the result.
+    fn sync_failing(
+        dom: &mut Dom,
+        previous: &mut Vec<VideoNode>,
+        target: &[VideoNode],
+        fail_at: Option<usize>,
+    ) -> Result<(), &'static str> {
+        let mut n = 0;
+        sync_with(previous, target, |op| {
+            let i = n;
+            n += 1;
+            if Some(i) == fail_at {
+                return Err("boom");
+            }
+            apply(dom, std::slice::from_ref(op));
+            Ok(())
+        })
+    }
+
+    #[test]
+    fn partial_failure_keeps_previous_consistent_with_the_dom() {
+        let target = vec![node("a"), node("b"), node("c")];
+        let mut dom = Dom::new();
+        let mut previous = Vec::new();
+        // Create a, Create b applied; Create c fails
+        assert_eq!(
+            sync_failing(&mut dom, &mut previous, &target, Some(2)),
+            Err("boom")
+        );
+        assert_eq!(dom.len(), 2);
+        assert_eq!(
+            previous.len(),
+            2,
+            "previous records exactly the applied ops"
+        );
+        // retry: only c is created, nothing is created twice, the DOM converges
+        let mut n = 0;
+        sync_with(&mut previous, &target, |op| {
+            n += 1;
+            assert_eq!(
+                *op,
+                VideoOp::Create {
+                    id: "c".into(),
+                    rect: target[2].rect,
+                    src: "c.mp4".into(),
+                    muted: false
+                }
+            );
+            apply(&mut dom, std::slice::from_ref(op));
+            Ok::<(), ()>(())
+        })
+        .expect("retry succeeds");
+        assert_eq!(n, 1);
+        assert_eq!(dom, dom_of(&target));
+        assert_eq!(previous, target);
+    }
+
+    #[test]
+    fn failure_after_src_change_retries_play() {
+        let mut old = node("a");
+        old.playing = true;
+        let mut new = old.clone();
+        new.src = "z.mp4".into();
+        let mut dom = dom_of(&[old.clone()]);
+        let mut previous = vec![old];
+        // SetSrc applies, Play fails
+        assert_eq!(
+            sync_failing(&mut dom, &mut previous, &[new.clone()], Some(1)),
+            Err("boom")
+        );
+        assert!(!previous[0].playing, "previous knows the element is paused");
+        assert_eq!(
+            sync_failing(&mut dom, &mut previous, &[new.clone()], None),
+            Ok(())
+        );
+        assert_eq!(dom, dom_of(&[new]));
+    }
+
+    #[test]
+    fn partial_failure_property_any_failure_point_converges() {
+        let a = vec![node("a"), node("b")];
+        let mut b2 = node("b");
+        b2.src = "q.mp4".into();
+        b2.playing = true;
+        b2.rect[0] = 5.0;
+        let b = vec![b2, node("c"), node("d")];
+        let total = reconcile(&a, &b).len();
+        for k in 0..total {
+            let mut dom = dom_of(&a);
+            let mut previous = a.clone();
+            assert!(sync_failing(&mut dom, &mut previous, &b, Some(k)).is_err());
+            assert_eq!(sync_failing(&mut dom, &mut previous, &b, None), Ok(()));
+            assert_eq!(dom, dom_of(&b), "fail point {k}");
+        }
+    }
+
+    #[test]
+    fn style_is_sanitised_and_offset() {
+        assert_eq!(
+            style_for([1.0, 2.0, 30.0, 40.0], [10.0, 20.0]),
+            "position:absolute;left:11px;top:22px;width:30px;height:40px"
+        );
+        let s = style_for([f32::NAN, f32::INFINITY, -4.0, f32::NAN], [0.0, 0.0]);
+        assert_eq!(s, "position:absolute;left:0px;top:0px;width:0px;height:0px");
+        assert!(!s.contains("NaN") && !s.contains("inf"));
     }
 }
