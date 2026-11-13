@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.72.6] - 2026-11-12
+
+Patch release cut as an emergency release. It carries the 17 PRs merged since v0.72.5: E1 presentar (wasm32 build of aprender-viz, the Rust-side mount and frame scheduler, and the Video, Waveform, Grid and SampleWindow widgets), E2 the terminal plot verb (`aprender-present plot`, PLOT-GG-001), E3 viz (ggplot2 parity rows 1 and 10-15), and release-path and main-red CI fixes.
+
+### Added
+
+- feat(present): Rust-side mount and frame scheduler for the browser app (#6893, #6892) (#6894)
+- feat(present-cli): aprender-present plot draws a ggplot2 plot in the terminal (PLOT-GG-001) (#6920)
+- feat(viz): ggplot2 parity rows 10-15: geom_line, geom_path, geom_step, geom_hline, geom_vline, geom_abline (layout oracle) (#6953)
+- feat(present): Video, Waveform, Grid and SampleWindow widgets (PMAT-6890, 6891, 6895, 6896) (re-cut of #6897) (#6967)
+
+### Fixed
+
+- fix(viz): refuse non-identity stats and non-point companion layers with line/path/step/reference layers (PLOT-GG-001) (#6979)
+- fix(viz): aprender-viz renderers are total for every f32 input (#6949)
+- fix(viz): aprender-viz --features wasm builds for wasm32 (#6911) (#6913)
+- fix(ci): register grammar::ggplot2_oracle in the tree-reader registry; main red at e3fe65aaf (PMAT-6909) (#6939)
+- fix(ci): register present-cli cli_surface_gate in the tree-reader registry; main red at a554d2f66 (PMAT-6909) (#6940)
+- fix(ci): rename present-cli cli_surface_gate test, name collision breaks every shard build; main red at b4cea460d (#6948)
+- fix(ci): check_ci_draft_skip reads all of its input; main red at e5c9b77bb (#6954)
+
+### Changed
+
+- ci(release): token_auth input publishes with the stored secret (PMAT-6905) (#6906)
+- ci(release): release job uses environment infra-read (PMAT-6907) (#6908)
+- PLOT-GG-001 row 1: geom_point + scale_x/y_continuous ggplot2 oracle (#6910)
+- docs(plot): PLOT-GG-001 spec and ggplot2 conformance matrix data (#6912)
+- refactor(viz): split terminal render and plot render under the complexity limit (#6951)
+- chore(ci): pin pmat 3.44.0 to follow the fleet box (unblocks #6954) (#6955)
+
 ## [0.72.5] - 2026-11-11
 
 Patch release, and the first 0.72.x meant for crates.io since 0.72.3: 0.72.4 was tagged but never published. It carries the changes merged since v0.72.4 (list below): the GPU serve routers behind AuthGate, bincode 1.x replaced by the in-tree aprender-legacy-codec, rusqlite 0.41.1 for RUSTSEC-2026-0459, a tokenizer fix for chat markers, and release-path fixes.
