@@ -1320,7 +1320,8 @@ mod tests {
     /// labels too wide for the smallest terminal, and a zero-width zoom for SVG.
     #[test]
     fn engine_errors_are_messages() {
-        let wide = tmp("wide.csv", "x,y\n0,0\n1,123456789012345\n");
+        // Breaks print as 13-character labels (-1.000002e+14), too wide for a 20-cell canvas.
+        let wide = tmp("wide.csv", "x,y\n0,-100000000000000\n1,-100000500000000\n");
         let e = go(
             &flags(&wide, &["--width", "20", "--height", "8"]),
             &Env::default(),
