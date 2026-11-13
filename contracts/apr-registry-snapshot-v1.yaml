@@ -144,20 +144,3 @@ toyota_way_principles:
     `apr backup --to <dir>` and persistent-HNSW snapshot are
     natural-extension follow-ups that compose this method without
     rewriting it.
-
-# #5291 batch 2: the ENFORCED falsification_conditions above, bound as
-# falsification_tests (same ids, same tests) so pv and the no-test debt
-# census see them. Only conditions whose test fn exists are bound.
-falsification_tests:
-  - id: FALSIFY-SNAPSHOT-001
-    rule: "A snapshot taken on a populated registry yields a target file that, when opened, reports the same model/dataset/recipe counts and the same row content (id, name, version) as the source at snapshot time."
-    prediction: "snapshot_yields_bit_identical_query_results passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-registry --test falsify_snapshot_001 snapshot_yields_bit_identical_query_results"
-  - id: FALSIFY-SNAPSHOT-002
-    rule: "Concurrent writers do NOT block on snapshot."
-    prediction: "snapshot_does_not_block_concurrent_writers passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-registry --test falsify_snapshot_002 snapshot_does_not_block_concurrent_writers"
-  - id: FALSIFY-SNAPSHOT-003
-    rule: "Snapshot to a path that already exists returns an error rather than silently overwriting."
-    prediction: "snapshot_refuses_to_overwrite_existing_file passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-registry --test falsify_snapshot_003 snapshot_refuses_to_overwrite_existing_file"

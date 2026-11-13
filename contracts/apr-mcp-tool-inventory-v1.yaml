@@ -181,16 +181,3 @@ toyota_way_principles:
     `pmcp`, the inventory entries become the input to whatever
     register-tool API pmcp exposes — the macro stays, only the
     consumer changes.
-
-# #5291 batch 2: the ENFORCED falsification_conditions above, bound as
-# falsification_tests (same ids, same tests) so pv and the no-test debt
-# census see them. Only conditions whose test fn exists are bound.
-falsification_tests:
-  - id: FALSIFY-INVENTORY-001
-    rule: "Iterating the inventory at startup yields exactly the same set of tool names as the previous hardcoded `tool_definitions()` vec (apr.version, apr.validate, apr.tensors, apr.bench, apr.qa, apr.trace, apr.run,..."
-    prediction: "inventory_yields_same_tool_set_as_hardcoded_list passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-mcp --test falsify_inventory_001 inventory_yields_same_tool_set_as_hardcoded_list"
-  - id: FALSIFY-INVENTORY-002
-    rule: "Two tools registered with the same `name` MUST cause `AprMcpServer::default()` (which iterates the inventory at startup and builds the dispatch index) to panic with a clear duplicate-name diagnostic, rather than..."
-    prediction: "duplicate_tool_name_panics_at_index_build passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-mcp --test falsify_inventory_002 duplicate_tool_name_panics_at_index_build"

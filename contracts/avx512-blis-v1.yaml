@@ -38,11 +38,12 @@ falsification:
     test: "backend equivalence tests"
     evidence: "cargo test -p aprender-compute --lib blis"
 
-# #5291 batch 2: bound to the BLIS-vs-reference property test. Its tolerance is
-# an absolute 1e-3, looser than the 1e-5 relative bound in the formula above;
-# it covers non-tile-aligned shapes (13x17x19) and the degenerate M/N/K = 1 cases.
+# #5291 batch 2: bound to a test that checks the formula above at its own bound
+# (relative, eps = 1e-5) on shapes large enough to take the blocked BLIS path,
+# two of them not tile multiples. The older prop_blis_matches_reference uses a
+# 1e-3 absolute tolerance on shapes small enough to skip BLIS, so it is not cited.
 falsification_tests:
   - id: FALSIFY-AVX512-BLIS-001
-    rule: "gemm_blis matches gemm_reference within 1e-3 absolute for 8 shapes, including prime (non-tile-aligned) and M/N/K = 1 shapes"
-    prediction: "prop_blis_matches_reference passes; it fails when the blocked GEMM drops or misplaces a tile"
-    test: "cargo test -p aprender-compute --lib prop_blis_matches_reference"
+    rule: "for every element, |C_blis - C_naive| < 1e-5 * max|C_naive| on 264^3, 257x263x271, 300x17x290 and 6x512x300"
+    prediction: "falsify_avx512_blis_001_relative_bound passes; it fails when the blocked GEMM drops, misplaces or mis-accumulates a tile"
+    test: "cargo test -p aprender-compute --lib falsify_avx512_blis_001_relative_bound"

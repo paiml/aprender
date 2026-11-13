@@ -188,24 +188,3 @@ toyota_way_principles:
     pre-authored gates 002/003/004 from §2.1 are discharged. Each
     phase = one PR ≈ one falsifier, per the project's
     falsifier-first cascade convention.
-
-# #5291 batch 2: the ENFORCED falsification_conditions above, bound as
-# falsification_tests (same ids, same tests) so pv and the no-test debt
-# census see them. Only conditions whose test fn exists are bound.
-falsification_tests:
-  - id: FALSIFY-HNSW-PERSIST-001
-    rule: "Insert N vectors into a `PersistentHnsw`, `flush()`, drop the handle, re-`open()` the same path, query the top-k, and assert the result is *exactly* the same `Vec<(id, score)>` as the same operations performed..."
-    prediction: "reopen_top_k_matches_in_memory passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-core --test falsify_hnsw_persist_001 reopen_top_k_matches_in_memory"
-  - id: FALSIFY-HNSW-PERSIST-002
-    rule: "`flush()` is atomic: bytes are written to a sibling `.tmp` file, fsync'd, then renamed onto `<path>`."
-    prediction: "partial_write_does_not_silently_corrupt passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-core --test falsify_hnsw_persist_002 partial_write_does_not_silently_corrupt"
-  - id: FALSIFY-HNSW-PERSIST-003
-    rule: "`PersistentHnsw::search` recall@10 against a deterministic fixture corpus is ≥ 0.90 vs."
-    prediction: "recall_at_10_meets_threshold passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-core --test falsify_hnsw_persist_003 recall_at_10_meets_threshold"
-  - id: FALSIFY-HNSW-PERSIST-004
-    rule: "Cold-open + first-query end-to-end latency on a deterministic 200-doc × 32-dim fixture stays under 500 ms (the §2.1 pre-auth budget)."
-    prediction: "cold_open_first_query_within_budget passes; it fails when the condition is violated"
-    test: "cargo test -p aprender-core --test falsify_hnsw_persist_004 cold_open_first_query_within_budget"

@@ -327,19 +327,3 @@ falsification:
 # YAML but missing from the test-side codegen-constant tables.
 # All six assertions in the `falsification.FALSIFY-MCP-008.assertions`
 # block above are now load-bearing at both layers.
-
-# #5291 batch 2: FALSIFY-MCP-008 above, bound to the tests in its test_harness
-# file, in the falsification_tests shape pv counts.
-falsification_tests:
-  - id: FALSIFY-MCP-008
-    rule: "each migrated tool's live tools/list inputSchema is byte-identical (after canonicalisation) to the schema derived from this contract"
-    prediction: "migrated_tools_match_yaml_contract_byte_for_byte passes; it fails when a schema drifts from the YAML"
-    test: "cargo test -p aprender-mcp --test falsify_mcp_008 migrated_tools_match_yaml_contract_byte_for_byte"
-  - id: FALSIFY-MCP-008-CODEGEN
-    rule: "the build.rs codegen constants parse and match the YAML for every tool"
-    prediction: "codegen_constants_parse_and_match_yaml_for_every_tool passes; it fails when a generated constant differs from the YAML"
-    test: "cargo test -p aprender-mcp --test falsify_mcp_008 codegen_constants_parse_and_match_yaml_for_every_tool"
-  - id: FALSIFY-MCP-008-COVER
-    rule: "codegen emits a constant for every tool name in this contract"
-    prediction: "codegen_constants_cover_every_tool_name passes; it fails when a tool has no generated constant"
-    test: "cargo test -p aprender-mcp --test falsify_mcp_008 codegen_constants_cover_every_tool_name"

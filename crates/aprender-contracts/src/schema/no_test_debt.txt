@@ -23,6 +23,11 @@ apr-corpus-tgi-ground-truth-corpus-v1.yaml
 apr-corpus-tiny-model-ground-truth-v1.yaml
 apr-corpus-vllm-ground-truth-corpus-v1.yaml
 apr-gemini-proxy-v1.yaml
+apr-hnsw-persistence-v1.yaml
+apr-hybrid-retrieval-v1.yaml
+apr-mcp-server-v1.yaml
+apr-mcp-tool-inventory-v1.yaml
+apr-mcp-tool-schemas-v1.yaml
 apr-org-taxonomy-v1.yaml
 apr-page-examples-bench-bpe-v1.yaml
 apr-page-examples-gpu-fallback-dogfood-v1.yaml
@@ -35,6 +40,9 @@ apr-page-examples-shell-encryption-demo-v1.yaml
 apr-page-introduction-v1.yaml
 apr-page-methodology-zero-tolerance-v1.yaml
 apr-page-ml-fundamentals-TEMPLATE-v1.yaml
+apr-registry-snapshot-v1.yaml
+apr-rerank-v1.yaml
+apr-serve-api-key-auth-v1.yaml
 apr-tool-bashrs-v1.yaml
 apr-tool-ccpo-v1.yaml
 apr-tool-cohete-v1.yaml
@@ -102,12 +110,14 @@ model-families/_schema.yaml
 model-families/llama-370m-sovereign-v1.yaml
 moe-expert-dispatch-v1.yaml
 nf4-backward-tensor-core-gemm-v1.yaml
+orchestrate-macos-portability-v1.yaml
 pipeline-cache-v1.yaml
 qlora-hyperparameters-v1.yaml
 qwen3-moe-streaming-sse-v1.yaml
 qwen35-hybrid-serve-dispatch-v1.yaml
 simd-scalar-parity-v1.yaml
 tdg-scoring-v1.yaml
+tokenizer-bpe-v1.yaml
 tracing-observability-v1.yaml
 trueno/kaizen/wgpu-backward-training-v1.yaml
 trueno/kaizen/wgpu-batched-eval-v1.yaml

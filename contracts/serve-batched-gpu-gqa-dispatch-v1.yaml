@@ -63,6 +63,6 @@ falsification:
 # #5291 batch 2: the row above, in the falsification_tests shape pv counts.
 falsification_tests:
   - id: FALSIFY-SERVE-GQA-BATCH-NO-CRASH
-    rule: "batch_generate_gpu on a GQA model with >=32 prompts returns Ok with one sequence per prompt (the MHA-only batched path is not selected for GQA)"
-    prediction: "falsify_pmat841_batched_gpu_gqa_no_crash passes; it panics out of bounds when the MHA layout guard is removed"
+    rule: "batch_generate_gpu on a GQA model with 32 prompts (two distinct, alternating) returns Ok with exactly one sequence per prompt; each starts with its own prompt, adds at most max_tokens, and equal prompts decode identically"
+    prediction: "falsify_pmat841_batched_gpu_gqa_no_crash passes; it fails when the MHA layout guard is removed (the MHA-only batched path is selected for GQA)"
     test: "cargo test -p aprender-serve --lib falsify_pmat841_batched_gpu_gqa_no_crash"

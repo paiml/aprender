@@ -498,7 +498,8 @@
         let _ = model.warmup_gpu_cache(); // is_gpu_cache_warm() == true (CPU dequant cache)
 
         // ≥32 prompts crosses GPU_BATCH_THRESHOLD and would select the MHA batched path.
-        let prompts: Vec<Vec<u32>> = (0..32).map(|_| vec![1u32, 2, 3]).collect();
+        // Two distinct prompts, alternating, so cross-prompt state leaks are visible.
+        let prompts: Vec<Vec<u32>> = (0..32).map(|i| vec![1u32, 2, 3 + (i % 2) as u32]).collect();
         let gen_config = QuantizedGenerateConfig::deterministic(2);
 
         let result = model.batch_generate_gpu(&prompts, &gen_config);
@@ -509,7 +510,14 @@
         );
         let sequences = result.expect("GQA batch generation must succeed");
         assert_eq!(sequences.len(), 32, "one output sequence per prompt");
-        for seq in &sequences {
-            assert!(seq.len() >= 3, "each sequence retains its prompt tokens");
+        // C-SERVE-GQA-DISPATCH-002: one sequence per prompt, each starting with ITS
+        // prompt and adding at most max_tokens; identical prompts under deterministic
+        // decoding give identical sequences (no KV cache shared across prompts).
+        for (seq, prompt) in sequences.iter().zip(&prompts) {
+            assert!(seq.starts_with(prompt), "sequence {seq:?} must start with its prompt {prompt:?}");
+            assert!(seq.len() <= prompt.len() + 2, "at most max_tokens=2 new tokens, got {seq:?}");
+        }
+        for (i, seq) in sequences.iter().enumerate().skip(2) {
+            assert_eq!(seq, &sequences[i % 2], "prompt {i} must decode like prompt {}", i % 2);
         }
     }
