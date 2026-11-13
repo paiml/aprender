@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.74.0] - 2026-11-14
+
+Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
+
+Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 12 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines), the presentar frame clock and video element, and release-path fixes.
+
+### Added
+
+- feat(viz): ggplot2 parity rows 2-4: scale_*_discrete, scale_*_log10, continuous limits/breaks/labels/expand (PLOT-GG-001) (#6916)
+- feat(present-cli): plot verb draws line, path, step, hline, vline, abline (PLOT-GG-001) (#6975)
+- feat(present-cli): page bundle glue_dir + missing_glue, no-script contract falsifiers (PMAT-6893) (#6977)
+- feat(present): frame clock and stop-able rAF frame loop (#6892) (#6998)
+- feat(present-lib): video element reconcile + wasm32 <video> applier (Refs #6890) (#6999)
+
+### Fixed
+
+- fix(ladder): regenerate discharge-summary tree_sha (summary-fresh red nightly) (#6993)
+- fix(present-cli): engine_errors_are_messages fixture follows #6916 label format (PLOT-GG-001) (#6994)
+- fix(release): tag-andon exempts superseded v0.72.4 (PMAT-5306) (#6995)
+- fix(contracts): regenerate contracts.nt, ONT-5 witness and README count after #6999 (#7008)
+- fix(release): post-publish smoke runs in a clean container; yank step for a fresh broken release (#7000) (#7005)
+
+### Changed
+
+- docs(roadmap): true up milestones; next release is 0.74.0 plot release (PMAT-5306) (#6997)
+- docs(roadmap): record the release train table ruled 2026-11-13 (PMAT-5306) (#7016)
+
 ## [0.72.6] - 2026-11-12
 
 Patch release cut as an emergency release. It carries the 17 PRs merged since v0.72.5: E1 presentar (wasm32 build of aprender-viz, the Rust-side mount and frame scheduler, and the Video, Waveform, Grid and SampleWindow widgets), E2 the terminal plot verb (`aprender-present plot`, PLOT-GG-001), E3 viz (ggplot2 parity rows 1 and 10-15), and release-path and main-red CI fixes.
