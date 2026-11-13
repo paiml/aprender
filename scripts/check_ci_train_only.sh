@@ -290,7 +290,7 @@ self_test() {
     done
     # --- fix round 3, finding 1: the train owes the whole x86-main job ---
     mutant gate-x86-requirement-removed   "/^  gate:\$/,/^  [a-z-]+:\$/{/x86-main is '\\$\{X86R/d}"
-    mutant gate-x86-requirement-off-train "/^  gate:\$/,/^  [a-z-]+:\$/{s/\[ \"\\$EVT\" != pull_request \] \|\| \[ \"\\$\{X86R/[ \"\$EVT\" != dispatch ] || [ \"\${X86R/}"
+    mutant gate-x86-requirement-off-train '/^  gate:$/,/^  [a-z-]+:$/{s/\[ "\$EVT" != pull_request \] \|\| \[ "\$\{X86R/[ "$EVT" != dispatch ] || [ "${X86R/}'
     mutant gate-x86-requirement-any-result "/^  gate:\$/,/^  [a-z-]+:\$/{s/\[ \"\\$\{X86R:-\}\" = success \]/[ -n \"\${X86R:-}\" ]/}"
     mutant gate-x86r-reads-pr-light        's/X86R: \$\{\{ needs\.x86-main\.result/X86R: ${{ needs.pr-light.result/'
     mutant gate-x86r-env-gone              '/^          X86R: /d'

@@ -70,7 +70,7 @@ gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the
     gate_script "$1" > "$s"
     if [ ! -s "$s" ]; then echo "ENV: no gate 'Check required sections' script in $1" >&2; rm -f "${s:?}"; return 2; fi
     g() { # <label> <want-rc> <X86> <DET>
-        r=0; PATH="$fg:$PATH" TRAIN="${TRAIN-0}" REPO=x/y BASE_REF=main HEAD_SHA=abc EVT="${ROWEVT-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" GRD="${GRD-$G}" GRDR="${GRDR-success}" PRL="${PRL:-success}" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
+        r=0; PATH="$fg:$PATH" TRAIN="${TRAIN-0}" REPO=x/y BASE_REF=main HEAD_SHA=abc EVT="${ROWEVT-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" GRD="${GRD-$G}" GRDR="${GRDR-success}" X86R="${X86R-success}" PRL="${PRL:-success}" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
         if [ "$r" = "$2" ]; then echo "ok   gate $1 -> exit $r"; else echo "FAIL gate $1: exit $r, wanted $2"; rc=1; fi
     }
     g "all fat needs green (control)" 0 "$G" "$D"
@@ -88,6 +88,10 @@ gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the
     ROWEVT=pull_request TRAIN=1 g "train pull_request: determinism skipped (no results output) is RED" 1 "$G" ""
     ROWEVT=pull_request TRAIN=1 g "train pull_request: heavy jobs skipped (no results output) are RED" 1 "" ""
     ROWEVT=pull_request TRAIN=1 PRL=failure g "train pull_request: pr-light failed is RED" 1 "$G" "$D"
+    # #7001 fix round 3: on a train the whole x86-main job stands in for the guards job (vendored-schemas runs there)
+    ROWEVT=pull_request TRAIN=1 X86R=failure g "train pull_request: x86-main red with its read sections green is RED" 1 "$G" "$D"
+    ROWEVT=pull_request TRAIN=1 X86R=cancelled g "train pull_request: x86-main CANCELLED with its read sections green is RED" 1 "$G" "$D"
+    ROWEVT=pull_request TRAIN=1 X86R="" g "train pull_request: x86-main result missing is RED" 1 "$G" "$D"
     ROWEVT=pull_request g "non-train pull_request: every job green is still RED (not mergeable alone)" 1 "$G" "$D"
     rm -f "${s:?}"; rm -rf "${fg:?}"
     return "$rc"
