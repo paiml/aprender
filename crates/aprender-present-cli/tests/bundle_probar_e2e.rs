@@ -2,8 +2,8 @@
 //! a scratch directory, load it in a real headless Chrome over CDP, drive every control, and
 //! read the results back from the page. A curl of the HTML is not a receipt.
 //!
-//! Independent of page layout: it relies only on the documented ids `#canvas` and `#status`
-//! (status text starts with "Ready" once the wasm app is up), and drives every interactive
+//! Independent of page layout: it relies only on the page's `<canvas>` (painted once the wasm app
+//! is up), and drives every interactive
 //! element it finds (`button`, `input`, `select`, `a[href]`, `[data-control]`) by enumeration.
 //!
 //! Gated on `APR_PROBAR_CHROMIUM` (path to a Chrome/Chromium executable); the test needs
@@ -86,16 +86,14 @@ fn bundle_page_every_control_driven_in_real_chrome() {
         return;
     };
     let root = repo_root();
-    // `bundle --output` is resolved relative to the repo root (wasm-pack gets `../../<output>`),
-    // so an absolute path lands in the wrong place; use a relative scratch dir under target/.
-    let rel_out = PathBuf::from(format!("target/bundle-e2e-{}", std::process::id()));
-    let out = root.join(&rel_out);
+    // An absolute `--output` must keep its glue (8d57fd7d0) and not land under the crate.
+    let out = root.join(format!("target/bundle-e2e-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&out);
 
     // 1. Build the bundle with the shipped verb (no wasm-opt: size is not under test).
     let st = Command::new(env!("CARGO_BIN_EXE_aprender-present"))
         .args(["bundle", "--no-optimize", "--output"])
-        .arg(&rel_out)
+        .arg(&out)
         .current_dir(&root)
         .status()
         .expect("run bundle");
@@ -133,31 +131,23 @@ fn bundle_page_every_control_driven_in_real_chrome() {
             .await
             .expect("goto");
 
-        // 3. Wait for the wasm app: #status starts with "Ready".
-        let mut status = String::new();
+        // 3. Wait for the wasm app: the page is a canvas plus loader, so "ready" means the
+        //    wasm renderer has painted a non-blank pixel onto the canvas.
+        const PAINTED: &str = "(() => { const c = document.querySelector('canvas'); \
+             if (!c) return false; \
+             const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; \
+             for (let i = 3; i < d.length; i += 4) { if (d[i] !== 0) return true; } return false; })()";
+        let mut painted = false;
         for _ in 0..150 {
-            if let Ok(r) = page
-                .evaluate("String((document.getElementById('status')||{}).textContent)")
-                .await
-            {
-                status = r.into_value::<String>().unwrap_or_default();
+            if let Ok(r) = page.evaluate(PAINTED).await {
+                painted = r.into_value::<bool>().unwrap_or(false);
             }
-            if status.starts_with("Ready") {
+            if painted {
                 break;
             }
             tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
-        assert!(status.starts_with("Ready"), "wasm never ready; #status = {status:?}");
-
-        // 4. The wasm renderer actually painted the canvas.
-        let painted: bool = eval(
-            &page,
-            "(() => { const c = document.getElementById('canvas'); \
-             const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; \
-             for (let i = 3; i < d.length; i += 4) { if (d[i] !== 0) return true; } return false; })()",
-        )
-        .await;
-        assert!(painted, "canvas is blank after wasm init");
+        assert!(painted, "canvas is blank: the wasm app never rendered");
 
         // 5. Drive every control; trap page errors raised meanwhile.
         let _: bool = eval(
@@ -189,14 +179,14 @@ fn bundle_page_every_control_driven_in_real_chrome() {
             let _: bool = eval(&page, &step).await;
         }
         // The canvas is a control too: click it through CDP's real input path.
-        page.click("#canvas").await.expect("click #canvas");
+        page.click("canvas").await.expect("click canvas");
 
         // 6. Read back: no page errors, still ready, still painted.
         let errs: Vec<String> = eval(&page, "window.__errs").await;
         assert!(errs.is_empty(), "page errors driving {n} controls: {errs:?}");
-        let after: String = eval(&page, "document.getElementById('status').textContent").await;
-        assert!(after.starts_with("Ready"), "status regressed: {after:?}");
-        eprintln!("bundle e2e: status={after:?} controls_driven={n} canvas_click=ok");
+        let still: bool = eval(&page, PAINTED).await;
+        assert!(still, "canvas went blank after driving the controls");
+        eprintln!("bundle e2e: painted=true controls_driven={n} canvas_click=ok");
 
         let _ = browser.close().await;
     });
