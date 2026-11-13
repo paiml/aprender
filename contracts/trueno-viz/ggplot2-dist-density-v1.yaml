@@ -8,7 +8,7 @@ metadata:
     ggplot2 conformance, distribution rows (PLOT-GG-001, paiml/aprender#6909, ticket paiml/aprender#6964) - geom_density: stat_density with bw = nrd0 (or a number), adjust, n, trim; R 4.6 density.default (BinDist, FFT, linear approx) on a 512-point grid by default; density, scaled, ndensity, count, wdensity, n.
     The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation;
     R is never run at test time. Every case goes through the public builder and layout().
-    Scope: continuous numeric data, one panel, no facets, plain coord_cartesian. Non-default coordinates (coord_flip, limits, polar, fixed) return Err(UnsupportedCoord) because layout() applies none; facets, mixing with other geoms, text or infinite positions, a continuous colour or fill mapping, two discrete mappings without a group, a fixed fill, a mapped alpha, a flipped orientation and invalid parameters return a typed Err (Rendering, UnknownColumn, ScaleDomain, EmptyData or UnsupportedCoord), never a panic. Mapped colours and fills carry the key but the palette is not resolved (the fixture holds the real palette). The layout path is fuzzed on extreme and non-finite f32 and on empty data: it never panics or hangs and builds a bounded number of bins and rows.
+    Scope: continuous numeric data, one panel, no facets, plain coord_cartesian. Non-default coordinates (coord_flip, limits, polar, fixed) return Err(UnsupportedCoord) because layout() applies none; facets of every kind, ylim, a stat other than the geom's own, an aesthetic the layer does not use, ragged columns, a position scale beyond +-1e100, mixing with other geoms, text or infinite positions, a continuous colour or fill mapping, two discrete mappings without a group, a fixed fill, a mapped alpha, a flipped orientation and invalid parameters return a typed Err (Rendering, UnknownColumn, ScaleDomain, EmptyData or UnsupportedCoord), never a panic. Mapped colours and fills carry the key but the palette is not resolved (the fixture holds the real palette). The layout path is fuzzed on extreme and non-finite f32 and on empty data: it never panics or hangs and builds a bounded number of bins and rows.
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), geom_density'
@@ -72,6 +72,31 @@ falsification_tests:
   rule: Non-default coordinate systems are refused
   prediction: accepting any Cartesian coord turns non_default_coord_is_a_typed_error RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::non_default_coord_is_a_typed_error
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-DENS-007
+  rule: A stat other than the geom's own is refused
+  prediction: accepting any other stat turns a_stat_other_than_the_geoms_own_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::a_stat_other_than_the_geoms_own_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-DENS-008
+  rule: Aesthetics the layer does not use are refused
+  prediction: ignoring a mapped size, shape, label or unused y/ymin/ymax turns unused_aesthetics_are_refused_not_ignored RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::unused_aesthetics_are_refused_not_ignored
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-DENS-009
+  rule: Ragged columns are a typed error
+  prediction: padding a short column with NA turns ragged_columns_are_a_typed_error RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::ragged_columns_are_a_typed_error
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-DENS-010
+  rule: Extreme parameters return a typed error
+  prediction: raising the 1e100 scale bound to 1e300 turns extreme_parameters_return_a_typed_error_not_a_hang RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::extreme_parameters_return_a_typed_error_not_a_hang
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-DENS-011
+  rule: Limits and every facet kind are refused
+  prediction: accepting ylim or a row, column, grid or wrap facet turns every_coord_limit_and_facet_kind_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::every_coord_limit_and_facet_kind_is_refused
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-DENS-001
