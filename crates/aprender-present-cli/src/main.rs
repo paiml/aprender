@@ -29,7 +29,7 @@ use std::fs;
 use std::io::Read;
 #[cfg(feature = "dev-server")]
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(feature = "dev-server")]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -599,8 +599,19 @@ fn bundle(output: PathBuf, no_optimize: bool) {
     // The page: the project page if it runs no script of its own, else the generated one.
     // The only script in a bundle is the generated loader (aprender#6893).
     // A refused bundle must not leave an earlier run's unaudited page beside fresh glue.
-    let _ = fs::remove_file(output.join("index.html"));
-    let _ = fs::remove_file(output.join("pkg").join(page::BOOT_FILE));
+    // `-o www` (or any spelling or symlink of it) would delete the source page before reading it.
+    let out_page = output.join("index.html");
+    let src_page = Path::new("www/index.html");
+    if same_page(&out_page, src_page) {
+        eprintln!(
+            "bundle refused: output page {} is the source page {}; choose another --output",
+            out_page.display(),
+            src_page.display()
+        );
+        std::process::exit(1);
+    }
+    remove_stale(&out_page);
+    remove_stale(&output.join("pkg").join(page::BOOT_FILE));
     let project_page = match fs::read_to_string("www/index.html") {
         Ok(html) => Some(html),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -629,6 +640,35 @@ fn bundle(output: PathBuf, no_optimize: bool) {
         println!("Bundle built successfully!");
         println!("  Output: {}", output.display());
         println!("  WASM size: {} KB", size / 1024);
+    }
+}
+
+/// True when both paths name the same file; an absent file is compared by its canonical parent.
+fn same_page(a: &Path, b: &Path) -> bool {
+    fn canon(p: &Path) -> Option<PathBuf> {
+        if let Ok(c) = fs::canonicalize(p) {
+            return Some(c);
+        }
+        let name = p.file_name()?;
+        let parent = p.parent().filter(|d| !d.as_os_str().is_empty());
+        let dir = fs::canonicalize(parent.unwrap_or_else(|| Path::new("."))).ok()?;
+        Some(dir.join(name))
+    }
+    match (canon(a), canon(b)) {
+        (Some(x), Some(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Remove a stale file; NotFound is fine, any other error stops the verb naming the path.
+fn remove_stale(path: &Path) {
+    match fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => {
+            eprintln!("cannot remove {}: {e}", path.display());
+            std::process::exit(1);
+        }
     }
 }
 

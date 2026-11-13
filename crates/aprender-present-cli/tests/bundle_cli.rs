@@ -149,3 +149,77 @@ fn an_unreadable_project_page_makes_the_verb_fail() {
     assert!(!cwd.join("dist/index.html").exists());
     let _ = fs::remove_dir_all(&cwd);
 }
+
+const SOURCE_PAGE: &str = "<html><body>my own page</body></html>";
+
+/// Lay out a project whose source page is `www/index.html`, bundle into `output`, and require a
+/// refusal that leaves the source page byte-for-byte alone.
+fn assert_source_page_survives(name: &str, output: &str, setup: impl Fn(&Path)) {
+    let cwd = scratch(name);
+    fs::create_dir_all(cwd.join("www")).expect("www");
+    fs::write(cwd.join("www/index.html"), SOURCE_PAGE).expect("page");
+    setup(&cwd);
+    let (out, _) = bundle(&cwd, output, true);
+    assert_ne!(out.status.code(), Some(0), "{out:?}");
+    assert_eq!(
+        fs::read_to_string(cwd.join("www/index.html")).expect("source page must still exist"),
+        SOURCE_PAGE
+    );
+    let _ = fs::remove_dir_all(&cwd);
+}
+
+/// `-o www` would make the output page the source page: refuse, delete nothing.
+#[test]
+fn output_dir_equal_to_www_is_refused_and_keeps_the_source_page() {
+    assert_source_page_survives("same-www", "www", |_| {});
+}
+
+#[test]
+fn output_dir_dot_slash_www_is_refused_and_keeps_the_source_page() {
+    assert_source_page_survives("same-dotwww", "./www", |_| {});
+}
+
+#[test]
+fn output_dir_www_dotdot_www_is_refused_and_keeps_the_source_page() {
+    assert_source_page_survives("same-dotdot", "www/../www", |_| {});
+}
+
+#[test]
+fn output_dir_symlink_to_www_is_refused_and_keeps_the_source_page() {
+    assert_source_page_survives("same-symlink", "dist", |cwd| {
+        std::os::unix::fs::symlink(cwd.join("www"), cwd.join("dist")).expect("symlink");
+    });
+}
+
+/// A refused page also removes a stale pkg/boot.js.
+#[test]
+fn a_refused_page_removes_a_stale_boot_js() {
+    let cwd = scratch("stale-boot");
+    fs::create_dir_all(cwd.join("www")).expect("www");
+    fs::create_dir_all(cwd.join("dist/pkg")).expect("pkg");
+    let boot = cwd.join("dist/pkg").join("boot.js");
+    fs::write(&boot, "old()").expect("stale boot");
+    fs::write(
+        cwd.join("www/index.html"),
+        "<html><script>x()</script></html>",
+    )
+    .expect("page");
+    let (out, _) = bundle(&cwd, "dist", true);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(!boot.exists());
+    let _ = fs::remove_dir_all(&cwd);
+}
+
+/// A removal that fails for a reason other than NotFound is an error naming the path.
+#[test]
+fn an_unremovable_stale_index_html_makes_the_verb_fail() {
+    let cwd = scratch("unremovable");
+    fs::create_dir_all(cwd.join("www")).expect("www");
+    fs::create_dir_all(cwd.join("dist/index.html")).expect("index.html as a directory");
+    fs::write(cwd.join("dist/index.html/keep"), "x").expect("keep");
+    fs::write(cwd.join("www/index.html"), SOURCE_PAGE).expect("page");
+    let (out, _) = bundle(&cwd, "dist", true);
+    assert_ne!(out.status.code(), Some(0), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("index.html"));
+    let _ = fs::remove_dir_all(&cwd);
+}
