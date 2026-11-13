@@ -25,11 +25,6 @@ serde-saphyr = { workspace = true }
 # PLOT-GG-001 (#6909): the plot verb renders through aprender-viz, the one plot engine.
 trueno-viz = { workspace = true }
 
-[dev-dependencies]
-# Bundle e2e (probar): real Chrome over CDP drives the bundled page.
-probar = { workspace = true, features = ["browser"] }
-tokio = { workspace = true }
-
 [build-dependencies]
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder
 aprender-build-sha = { workspace = true }  # #4219: APR_GIT_SHA for --version

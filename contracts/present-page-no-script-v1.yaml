@@ -70,18 +70,16 @@ falsification:
     evidence: "see the PR that added this contract"
 open_obligations:
   - |
-    The browser run is written but gated: tests/bundle_probar_e2e.rs bundles
-    with the shipped verb, loads the page in real headless Chrome with the
-    error trap installed before load, clicks the canvas "+" and reads
-    data-count back (0 -> 1 -> 2). It runs only where APR_PROBAR_CHROMIUM
-    points at a Chrome and wasm-pack plus the wasm32 target are installed;
-    that is no CI runner today, so no receipt from it exists yet (#6893).
-    In CI (fragment 728) it returns early and reports ok, which is a SKIP, a
-    third state the GATE/LAB rule bars from a PR path. It is to move to a
-    nightly LAB lane; no workflow change is in this PR, and no existing ledger
-    mechanism for LAB-run tests exists to fold it into.
-    Until it does, "the loader starts the module in a real browser" is not
-    measured here.
+    The browser run is NOT in this PR. The end-to-end test (bundles with the
+    shipped verb, loads the page in real headless Chrome with the error trap
+    installed before load, clicks the canvas "+" and reads data-count back,
+    0 -> 1 -> 2) lives on branch test/bundle-probar-e2e-lab-1113, pending a
+    nightly LAB lane. It needs APR_PROBAR_CHROMIUM plus wasm-pack and the
+    wasm32 target, which no CI runner has, so a CI fragment for it would be a
+    skip reported as ok, a third state the GATE/LAB rule bars from a PR path.
+    It was run once in real Chrome on kfocus at da8606109: 1 passed, 26.73 s;
+    that is not a CI receipt. Until the LAB lane exists, "the loader starts the
+    module in a real browser" is not measured in CI (#6893).
   - |
     The example pages under crates/aprender-present/www still carry
     hand-written script. They are not bundled by this verb today; moving them

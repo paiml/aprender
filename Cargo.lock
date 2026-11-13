@@ -995,14 +995,12 @@ dependencies = [
  "aprender-build-sha",
  "aprender-contracts",
  "aprender-present-yaml",
- "aprender-test-lib",
  "aprender-viz",
  "clap",
  "notify",
  "serde",
  "serde-saphyr",
  "tiny_http",
- "tokio",
  "tungstenite 0.26.2",
 ]
 
