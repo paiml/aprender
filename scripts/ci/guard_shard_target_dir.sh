@@ -33,5 +33,12 @@ base=${base%/}
 # A base that is already a shard's dir (this step re-run in one job) is not nested again.
 case "${base##*/}" in guard-shard-*) base=${base%/*} ;; esac
 dir="$base/guard-shard-$shard"
+# The base is inherited from the environment: a dir spelled with .. is refused, never created.
+case "$dir" in
+    */.. | */../*)
+        echo "guard_shard_target_dir: refusing $dir: contains .." >&2
+        exit 2
+        ;;
+esac
 mkdir -p -- "$dir" || { echo "guard_shard_target_dir: cannot create $dir" >&2; exit 2; }
 printf 'CARGO_TARGET_DIR=%s\n' "$dir"

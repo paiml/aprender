@@ -2046,13 +2046,20 @@ jobs:
           if [ "$ch" = "$ca" ]; then mounts=(-v "$ca:$ca"); else mounts=(-v "$ca:$ca:ro" -v "$ch:$ch"); fi
           # a toolchain outside RUSTUP_HOME (linked, or a symlink target) is invisible in the container unless mounted: rustc then falls through to the rustup proxy
           case "$tc" in "$ru"/*) tcm=() ;; *) tcm=(-v "$tc:$tc:ro") ;; esac
+          # #7026 gives each guard-cargo shard its own host CARGO_TARGET_DIR (guard-setup). The container must build
+          # into THAT dir, at the same path, or it primes a target the host build never reads and the host rebuilds
+          # cold (main run 43476008998: 159 units). Created first, so the docker daemon never makes it root-owned.
+          td=${CARGO_TARGET_DIR:-$root/target}
+          mkdir -p "$td"
+          case "$td" in "$root"/*) tdm=() ;; *) tdm=(-v "$td:$td") ;; esac
+          printf "pv target dir (container and host): %s\n" "$td"
           snap=$(mktemp)
           cp "$root/Cargo.lock" "$snap"
           printf 'host rustc: %s\n' "$("$tc/bin/rustc" -vV | sed -n 1p)"
           # toolchain bin first in PATH: the rustup proxy writes settings.toml, and RUSTUP_HOME is mounted read-only
           docker run --rm --user "$(id -u):$(id -g)" \
-            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" ${tcm[@]+"${tcm[@]}"} "${mounts[@]}" -v "$sc:/sccache" -e TC="$tc" \
-            -e HOME="$HOME" -e CARGO_HOME="$ch" -e RUSTUP_HOME="$ru" -e RUSTUP_TOOLCHAIN=1.93.0 -e RUSTFLAGS= -e CARGO_INCREMENTAL= \
+            -v "$root:$root" -w "$root" -v "$ru:$ru:ro" ${tcm[@]+"${tcm[@]}"} ${tdm[@]+"${tdm[@]}"} "${mounts[@]}" -v "$sc:/sccache" -e TC="$tc" \
+            -e HOME="$HOME" -e CARGO_HOME="$ch" -e CARGO_TARGET_DIR="$td" -e RUSTUP_HOME="$ru" -e RUSTUP_TOOLCHAIN=1.93.0 -e RUSTFLAGS= -e CARGO_INCREMENTAL= \
             -e PATH="$tc/bin:$ca/bin:/usr/local/cargo/bin:/usr/bin:/bin" \
             -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache -e SCCACHE_DIR=/sccache \
             -e SCCACHE_CACHE_SIZE=50G \
@@ -2065,7 +2072,7 @@ jobs:
           fi
           # the proof that the split costs the guard nothing: the host build equals a host-only second build (12)
           t0=$(date +%s)
-          n=$(cargo build -v -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha 2>&1 | grep -c ' Running `' || true)
+          n=$(CARGO_TARGET_DIR="$td" cargo build -v -p aprender-contracts-cli --bin pv --bin pv-sat --features update-check,build-sha 2>&1 | grep -c ' Running `' || true)
           printf 'host cargo build after the container build: %s compile commands, %s s\n' "$n" "$(( $(date +%s) - t0 ))"
           if [ "$n" -gt 12 ]; then
             echo "FAIL  the host rebuilt $n units after the container build (host-only second build is 12): env/toolchain mismatch"
