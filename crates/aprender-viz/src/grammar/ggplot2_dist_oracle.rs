@@ -1423,6 +1423,12 @@ fn extreme_parameters_return_a_typed_error_not_a_hang() {
         let r = within(60, move || layout_of(small(), ax(), g));
         assert!(matches!(r, Err(Error::ScaleDomain(_) | Error::Rendering(_))), "{name}: {r:?}");
     }
+    // Only the lower limit is huge: negative data in a bin that ends at the boundary 0.
+    let neg = DataFrame::from_xy(&[-1.0, -2.0, -3.0], &[1.0, 2.0, 3.0]);
+    let r = within(60, move || {
+        layout_of(neg, ax(), Geom::gg_histogram().binwidth(1e300).boundary(0.0))
+    });
+    assert!(matches!(r, Err(Error::ScaleDomain(_))), "one-sided low: {r:?}");
     // Just inside the bound the layout still builds.
     let r = within(60, || layout_of(small(), ax(), Geom::gg_density().bw(1e-90)));
     assert!(r.is_ok(), "bw 1e-90: {r:?}");
