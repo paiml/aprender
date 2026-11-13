@@ -29,7 +29,7 @@ use std::fs;
 use std::io::Read;
 #[cfg(feature = "dev-server")]
 use std::net::TcpListener;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 #[cfg(feature = "dev-server")]
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -542,6 +542,14 @@ fn rebuild_wasm() {
     }
 }
 
+/// Absolute `--out-dir` for wasm-pack. wasm-pack resolves a relative
+/// `--out-dir` against the crate dir, so a bare `../../<output>` mangled
+/// absolute `-o` paths; joining onto the cwd keeps relative paths relative
+/// to the invocation and leaves absolute paths untouched.
+fn wasm_pack_out_dir(output: &Path, cwd: &Path) -> PathBuf {
+    cwd.join(output).join("pkg")
+}
+
 fn bundle(output: PathBuf, no_optimize: bool) {
     println!("Building Presentar WASM bundle...");
 
@@ -557,7 +565,10 @@ fn bundle(output: PathBuf, no_optimize: bool) {
             "--release",
             "--out-dir",
         ])
-        .arg(format!("../../{}", output.join("pkg").display()))
+        .arg(wasm_pack_out_dir(
+            &output,
+            &std::env::current_dir().unwrap_or_default(),
+        ))
         .status()
         .expect("wasm-pack failed");
 
@@ -1422,6 +1433,18 @@ fn get_cache_control(path: &PathBuf) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wasm_pack_out_dir_absolute_output_is_not_rejoined() {
+        let got = wasm_pack_out_dir(Path::new("/a/b/dist"), Path::new("/repo"));
+        assert_eq!(got, PathBuf::from("/a/b/dist/pkg"));
+    }
+
+    #[test]
+    fn wasm_pack_out_dir_relative_output_joins_cwd() {
+        let got = wasm_pack_out_dir(Path::new("dist"), Path::new("/repo"));
+        assert_eq!(got, PathBuf::from("/repo/dist/pkg"));
+    }
+
     use super::*;
 
     /// aprender#6888: `bundle` and the `serve` watcher must name a crate that exists and that
