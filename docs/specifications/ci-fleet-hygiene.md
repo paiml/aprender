@@ -246,3 +246,24 @@ fixed a **silent-miss**: a crate-wide `mod tests;` match resolved `aprender-serv
 module rows have no row in the table of record (feature-gated: `setfit::*`, `tui::*`, `orbit::wasm`, …) and are
 priced 0.
 
+
+## §7 The heavy tier runs once per merge train; a PR lands only via the train (#7001)
+
+Ruled by quorum on #7001 (receipt `QUORUM-GATE-7001-1113`, verdict b). Today a PR is two tiers: `pr-light` (cheap, per PR
+push) and the heavy tier (`x86-main`, `workspace-test-shard` 1-4, `determinism`), which now runs only for a **train** and on
+push to `main` (the backstop).
+
+- **TRAIN** = `pull_request` AND head repo == this repo AND head ref starts with `train/aprender-` AND the PR author is the
+  fleet login (`noahgift` today: the train opens its PRs as that login). The same four conjuncts sit in the `if:` of every
+  heavy job and in the `TRAIN` env of the three verdict jobs.
+- **Verdict jobs** `workspace-test`, `ci / gate` and `gate`: on a non-train `pull_request` they pass only through `pr-light`
+  and then exit non-zero with `not mergeable alone: lands only via train/aprender-* (heavy tier runs once per train, #7001)`.
+  On a train PR they additionally fail unless the train branch contains the current `main` tip at verdict time
+  (`gh api compare` `behind_by` is 0; an unreadable tip is a failure), and a skipped or cancelled heavy job is a failure.
+  `pr-light` stays its own green/red result. A draft behaves as before. There is no `continue-on-error` and no third state.
+- **Merge-queue legs** (`mg-reuse-wt`, `guards`, the `merge_group` matrix of 3) are kept unchanged: they are dead while the
+  train is the only way to `main`, and removing them is a separate change.
+- **Falsifier**: `scripts/check_ci_train_only.sh --self-test` (registered as `ci/explicit-test-commands.d/847-ci-train-only.cmd`)
+  runs each verdict block as shipped and mutates `ci.yml` per conjunct, per `needs` edge and per refusal.
+- **Consequences outside this repo** (rollout, not done by this change): the train must judge member candidacy on `pr-light`
+  and keep one train in flight; stale-PR and arming rules must key on `pr-light` for member PRs; fork PRs cannot land.

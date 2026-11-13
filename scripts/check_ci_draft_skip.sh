@@ -53,7 +53,7 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
         fi
     done
     blk="$(job_block "$f" workspace-test)"
-    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E 'if: [$][{][{] (needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && github[.]event_name != .pull_request.)? [}][}]')" -lt 3 ]; then
+    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E 'if: [$][{][{] (needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && [(]github[.]event_name != .pull_request. [|][|] env[.]TRAIN == .1.[)])? [}][}]')" -lt 3 ]; then
         echo "FAIL  workspace-test: checkout, download-artifact and sigma steps are not all skipped on a draft"; bad=1
     fi
     return "$bad"
@@ -72,7 +72,7 @@ self_test() {
     awk '{print} /^  ci-gate:[[:space:]]*$/{on=1} on && /DRAFT: [$]/{for(i=0;i<20000;i++) print "      # pad pad pad pad pad pad"; on=0}' "$src" > "$td/long.yml"
     if got="$(check "$td/long.yml")"; then echo "ok    green a job block longer than one pipe buffer"; else echo "FAIL  green: a long job block is RED: $got"; fails=1; fi
     mutant no-ready-for-review 's/, ready_for_review\]/]/'
-    mutant x86-main-unguarded 's/ && github\.event\.pull_request\.draft != true( && github\.event_name != .pull_request.)? \}\}/ }}/'
+    mutant x86-main-unguarded '/^  x86-main:$/,/runs-on:/{s/ && github\.event\.pull_request\.draft != true//}'
     mutant shard-unguarded '/^  workspace-test-shard:$/,/runs-on:/{/draft != true/d;}'
     mutant gate-no-draft-exit '/echo "gate: draft PR/d'
     mutant ci-gate-no-draft-flag '/^  ci-gate:/,/^  gate:/{/DRAFT: \$/d}'

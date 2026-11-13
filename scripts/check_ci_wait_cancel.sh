@@ -66,10 +66,11 @@ gate_script() { # <file>
 gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the gate cannot be modelled
     local s g rc=0 r G='{"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' D='{"determinism-compare":{"result":"success"}}'
     s=$(mktemp "${TMPDIR:-/tmp}/ci-gate.XXXXXX")
+    fg=$(mktemp -d "${TMPDIR:-/tmp}/ci-gate-gh.XXXXXX"); printf '#!/bin/sh\necho 0\n' > "$fg/gh"; chmod +x "$fg/gh"  # #7001: the train verdict reads main's tip; this gh says behind_by 0
     gate_script "$1" > "$s"
     if [ ! -s "$s" ]; then echo "ENV: no gate 'Check required sections' script in $1" >&2; rm -f "${s:?}"; return 2; fi
     g() { # <label> <want-rc> <X86> <DET>
-        r=0; EVT="${ROWEVT-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" GRD="${GRD-$G}" GRDR="${GRDR-success}" PRL="${PRL:-success}" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
+        r=0; PATH="$fg:$PATH" TRAIN="${TRAIN-0}" REPO=x/y BASE_REF=main HEAD_SHA=abc EVT="${ROWEVT-merge_group}" MG=success MG_X86=0 MG_DET=0 MG_CITE= ADV=skipped WT=success MST=success X86="$3" GRD="${GRD-$G}" GRDR="${GRDR-success}" PRL="${PRL:-success}" DET="$4" bash "$s" > /dev/null 2>&1 || r=$?
         if [ "$r" = "$2" ]; then echo "ok   gate $1 -> exit $r"; else echo "FAIL gate $1: exit $r, wanted $2"; rc=1; fi
     }
     g "all fat needs green (control)" 0 "$G" "$D"
@@ -81,13 +82,14 @@ gate_probe() { # <file> -> prints ok/FAIL lines, returns 1 on a defect, 2 if the
     GRDR=skipped g "guards job SKIPPED is RED on merge_group" 1 "$G" "$D"
     # leak: the step env carries EVT=pull_request (x86-main, run 39888226186); a merge_group row must still be RED (#6061)
     EVT=pull_request GRD="" g "guards CANCELLED stays RED when the step env leaks EVT=pull_request" 1 "$G" "$D"
-    ROWEVT=pull_request GRDR="" g "pull_request: guards not run is not RED" 0 "$G" "$D"
-    # #5955: a PR head runs pr-light, not the heavy jobs; their missing results are not owed there, a failed pr-light is RED
-    # determinism does not run on a PR head: its missing compare is a skip there, never a RED (and x86-main still is)
-    ROWEVT=pull_request g "pull_request: determinism skipped (no results output) is not RED" 0 "$G" ""
-    ROWEVT=pull_request g "pull_request: heavy jobs skipped (no results output) pass when pr-light passed" 0 "" ""
-    ROWEVT=pull_request PRL=failure g "pull_request: pr-light failed is RED" 1 "$G" "$D"
-    rm -f "${s:?}"
+    # #7001: the heavy tier runs once per train. A TRAIN pull_request owes x86-main and determinism (guards stays merge_group-only);
+    # a pull_request that is not a train PR is never green, whatever its jobs did.
+    ROWEVT=pull_request TRAIN=1 GRDR="" g "train pull_request: guards not run is not RED" 0 "$G" "$D"
+    ROWEVT=pull_request TRAIN=1 g "train pull_request: determinism skipped (no results output) is RED" 1 "$G" ""
+    ROWEVT=pull_request TRAIN=1 g "train pull_request: heavy jobs skipped (no results output) are RED" 1 "" ""
+    ROWEVT=pull_request TRAIN=1 PRL=failure g "train pull_request: pr-light failed is RED" 1 "$G" "$D"
+    ROWEVT=pull_request g "non-train pull_request: every job green is still RED (not mergeable alone)" 1 "$G" "$D"
+    rm -f "${s:?}"; rm -rf "${fg:?}"
     return "$rc"
 }
 
