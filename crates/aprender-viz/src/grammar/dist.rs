@@ -328,16 +328,19 @@ fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
 /// A numeric column, one entry per row. Missing is `NaN`; text and infinite values are refused.
 fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
     let cells = column(data, name)?;
-    (0..data.nrow())
-        .map(|i| match cells.get(i) {
-            Some(DataValue::Number(v)) if v.is_infinite() => {
-                Err(refuse(format!("column `{name}` holds an infinite value")))
-            }
-            Some(DataValue::Number(v)) => Ok(f64::from(*v)),
-            Some(DataValue::Text(_)) => Err(refuse(format!(
+    cells
+        .iter()
+        .map(|cell| match cell {
+            DataValue::Text(_) => Err(refuse(format!(
                 "column `{name}` is text: a discrete position scale is not supported here"
             ))),
-            Some(DataValue::Null) | None => Ok(f64::NAN),
+            // `NaN` is the missing value (R's `NA`); a missing cell reads the same way.
+            other => match other.as_f32() {
+                Some(v) if v.is_infinite() => {
+                    Err(refuse(format!("column `{name}` holds an infinite value")))
+                }
+                v => Ok(v.map_or(f64::NAN, f64::from)),
+            },
         })
         .collect()
 }
