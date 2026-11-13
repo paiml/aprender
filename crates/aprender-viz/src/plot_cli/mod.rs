@@ -1496,6 +1496,11 @@ mod tests {
         // The bound is the range: the same x offset over a wider range is drawn.
         let csv = tmp("f32wide.csv", "x,y\n16777217,1\n33554432,2\n");
         assert_eq!(go(&flags(&csv, &["--output", "svg"]), &Env::default()).0, Ok(()));
+        // A constant column that f32 holds exactly moves by 0 against a range of 0: not this
+        // refusal (the engine's own "min and max cannot be equal" is what the user sees).
+        let csv = tmp("f32const.csv", "x,y\n2,1\n2,3\n");
+        let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err("constant x");
+        assert!(!e.contains("binary32"), "{e}");
         // y is checked too.
         let csv = tmp("f32y.csv", "x,y\n1,16777217\n2,16777219\n");
         let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err("y");
