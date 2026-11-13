@@ -54,6 +54,7 @@ mod scale_spec;
 mod scale_trans;
 mod stat;
 mod stat_count;
+mod stroke;
 mod term;
 mod theme;
 
@@ -78,7 +79,7 @@ pub use stat_count::{
     bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,
 };
 pub use term::{
-    TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
-    POINT_GLYPH,
+    TerminalPlot, LINE_GLYPH, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT,
+    MIN_TERMINAL_WIDTH, POINT_GLYPH,
 };
 pub use theme::Theme;
