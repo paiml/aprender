@@ -219,6 +219,8 @@ mod coord_grid_tests {
 // ============================================================================
 /// Grammar of Graphics implementation.
 pub mod grammar;
+/// The library core of `apr plot` (#6909): a CSV file drawn as ggplot2's row 1 (`geom_point`).
+pub mod plot_cli;
 /// High-level plot types (scatter, heatmap, histogram, etc.).
 pub mod plots;
 // ============================================================================

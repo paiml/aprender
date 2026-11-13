@@ -202,6 +202,18 @@ fn scan_starts(c: &Ctx<'_>, best: &mut Best, q: f64, j: f64, k: f64, step: f64) 
     }
 }
 
+/// `10^z` correctly rounded for |z| <= 22 (1e22 is exact, so `1 / 10^n` rounds once), as R's
+/// `powl` is: `libm::pow(10, -5)` is one ulp low, which moved an edge break inside (#6909).
+fn pow10(z: f64) -> f64 {
+    if z.abs() > 22.0 {
+        libm::pow(10.0, z)
+    } else if z < 0.0 {
+        1.0 / pow10(-z)
+    } else {
+        (0..z as i32).fold(1.0, |acc, _| acc * 10.0)
+    }
+}
+
 /// Every power of ten for this `(j, q, k)`, stopping when even a perfect coverage score could not
 /// beat what we already have.
 fn scan_powers(c: &Ctx<'_>, best: &mut Best, q: f64, j: f64, k: f64, sm: f64, dm: f64) {
@@ -209,7 +221,7 @@ fn scan_powers(c: &Ctx<'_>, best: &mut Best, q: f64, j: f64, k: f64, sm: f64, dm
     let mut z = libm::ceil(libm::log10(delta));
     let w = c.w;
     loop {
-        let step = j * q * libm::pow(10.0, z);
+        let step = j * q * pow10(z);
         let cm = coverage_max(c.dmin, c.dmax, step * (k - 1.0));
         if w[0] * sm + w[1] * cm + w[2] * dm + w[3] < best.score {
             return;
@@ -332,5 +344,19 @@ mod degenerate_tests {
     fn the_last_value_is_the_upper_end_even_when_the_step_underflows() {
         assert_eq!(degenerate(0.0, 5e-324, 5), [0.0, 0.0, 0.0, 0.0, 5e-324]);
         assert_eq!(degenerate(1.0, 2.0, 1), [1.0]);
+    }
+
+    /// R 4.6.2 `scales::extended_breaks()` on a ggplot2 expanded range (A_hi_e-4_m1_f0.2): the
+    /// last break, 1e-4, lies just past the range and ggplot2 censors it. With `10^-5` one ulp
+    /// low every break came out one ulp low, the last one inside the range, and it was drawn.
+    #[test]
+    fn breaks_next_to_an_expanded_edge_match_r_to_the_bit() {
+        let got = extended(1.6190476190476193e-5, 9.999999999999999e-5, 5, &Q_DEFAULT, &W_DEFAULT);
+        assert_eq!(got, [2e-5, 4e-5, 6.000000000000001e-5, 8e-5, 1e-4]);
+        for z in -22..=22 {
+            let want: f64 = format!("1e{z}").parse().expect("a power of ten parses");
+            assert_eq!(pow10(f64::from(z)), want, "10^{z}");
+        }
+        assert_eq!(pow10(-300.0), libm::pow(10.0, -300.0));
     }
 }
