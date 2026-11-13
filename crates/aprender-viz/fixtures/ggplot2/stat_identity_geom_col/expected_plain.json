@@ -4,6 +4,7 @@
   "data_file": "data.csv (rows with g == \"g1\")",
   "versions": {
     "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
     "ggplot2": "4.0.3",
     "scales": "1.4.0",
     "labeling": "0.4.3"

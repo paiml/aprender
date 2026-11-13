@@ -441,8 +441,10 @@ impl BuiltGGPlot {
     /// so refuse one rather than draw the unmoved layer: the same refusal as `layout()`.
     ///
     /// The one exception is a bar layer at the bar default, `position_stack(vjust = 1)`: ggplot2
-    /// leaves such a layer where it is when no `x` repeats (`PositionStack$setup_params`), so the
-    /// unmoved drawing is right exactly then.
+    /// leaves such a layer where it is when no `x` repeats (`PositionStack$setup_params`), so it is
+    /// drawn unmoved, identical to identity (a test pins that for `geom_col`). The renderer applies
+    /// no stat, so a counted `geom_bar()` is drawn from its raw y column: accepted, not verified
+    /// against ggplot2.
     fn require_drawable_positions(&self) -> Result<()> {
         for l in &self.layers {
             let unmoved = match (l.position, &l.geom.geom_type) {

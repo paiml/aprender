@@ -685,6 +685,38 @@ fn bars_on_a_discrete_x_are_not_drawn_yet_and_say_so() {
     assert!(svg.to_string().contains("bars on a discrete x are not drawn yet"), "{svg}");
 }
 
+#[test]
+fn bars_on_a_discrete_x_mapped_on_the_layer_are_refused_too() {
+    // x only on the layer (M10: reading the plot aes alone drew these silently).
+    let df = frame_from_csv("cat,y\na,2\nb,3\n");
+    let layer_only = GGPlot::new()
+        .data(df.clone())
+        .layer(Layer::new(Geom::col()).aes(Aes::new().x("cat").y("y")))
+        .build()
+        .expect("plot builds");
+    let numeric_plot = frame_from_csv("x,cat,y\n1,a,2\n2,b,3\n");
+    let mixed = GGPlot::new()
+        .data(numeric_plot)
+        .aes(Aes::new().x("x").y("y"))
+        .layer(Layer::new(Geom::col()).aes(Aes::new().x("cat")))
+        .build()
+        .expect("plot builds");
+    let counted = GGPlot::new()
+        .data(df)
+        .layer(Layer::new(Geom::bar()).aes(Aes::new().x("cat")))
+        .build()
+        .expect("plot builds");
+    for (name, plot) in [("layer only", layer_only), ("mixed", mixed), ("geom_bar", counted)] {
+        let fb = plot.to_framebuffer().expect_err(name);
+        assert!(fb.to_string().contains("bars on a discrete x are not drawn yet"), "{name}: {fb}");
+        let svg = plot.to_svg().expect_err(name);
+        assert!(
+            svg.to_string().contains("bars on a discrete x are not drawn yet"),
+            "{name}: {svg}"
+        );
+    }
+}
+
 // --- bars beside geom_hline / geom_vline / geom_point, and layer-level fill (bars_companions) -----
 // Each fixture is `ggplot_build()` of the plot named in its test. A bar layer over a text x routes
 // the whole plot to the bar layout; reference lines keep their own data (`grammar/path.rs`) and
@@ -1148,6 +1180,15 @@ fn every_render_target_refuses_a_position_it_would_not_apply() {
     assert!(numeric_col(&df, Position::stack()).to_framebuffer().is_err(), "repeated x");
     let half = Position::Stack { vjust: 0.5, reverse: false };
     assert!(numeric_col(&unique, half).to_framebuffer().is_err(), "vjust 0.5 stacks");
+    // The exception draws exactly what identity draws (no stack is applied), on both targets.
+    let stacked = numeric_col(&unique, Position::stack());
+    let ident = numeric_col(&unique, Position::Identity);
+    assert_eq!(stacked.to_svg().expect("svg"), ident.to_svg().expect("svg"), "svg = identity");
+    assert_eq!(
+        stacked.to_framebuffer().expect("fb").pixels(),
+        ident.to_framebuffer().expect("fb").pixels(),
+        "framebuffer = identity"
+    );
     // Controls: identity on the same layers still renders on every target.
     for (name, make) in &layers {
         // A reference layer alone trains no axes (#6975 refuses it), so it rides on a point layer.
