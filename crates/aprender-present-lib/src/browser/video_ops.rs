@@ -287,10 +287,12 @@ mod tests {
                     src,
                     muted,
                 } => {
-                    dom.insert(
+                    let prior = dom.insert(
                         id.clone(),
                         (rect.map(f32::to_bits), src.clone(), false, *muted),
                     );
+                    // The browser would add a second element; the model must not hide it.
+                    assert!(prior.is_none(), "created twice: {id}");
                 }
                 VideoOp::Move { id, rect } => {
                     dom.get_mut(id).expect("move target").0 = rect.map(f32::to_bits)

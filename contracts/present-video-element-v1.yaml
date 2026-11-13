@@ -70,21 +70,6 @@ open_obligations:
     owed (#6890 stays open until it exists). Coverage of video_ops.rs is
     measured in the PR that added it.
 falsification_tests:
-  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-007
-    description: "a src change on a playing video is followed by Play"
-    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_on_playing_video_is_followed_by_play && cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_with_play_toggle_sends_one_play_and_paused_sends_none && cargo test -p aprender-present-lib --lib browser::video_ops::tests::failure_after_src_change_retries_play"
-    prediction: "[SetSrc, Play] for a playing node whose src changed; model DOM (paused on SetSrc) equals the from-scratch DOM; one Play at most; none for a paused node"
-    if_fails: "the element stays paused while VideoState says Playing"
-  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-008
-    description: "a failure partway through sync leaves state consistent"
-    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_keeps_previous_consistent_with_the_dom && cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_property_any_failure_point_converges"
-    prediction: "previous records exactly the applied ops; a retry runs only the remainder; failing at any op index then retrying converges to the from-scratch DOM"
-    if_fails: "elements are created twice and the first ones are orphaned in the DOM"
-  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-009
-    description: "the style string never carries a non-finite value"
-    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::style_is_sanitised_and_offset"
-    prediction: "NaN/inf/negative size become 0px; no NaN or inf in the string"
-    if_fails: "NaNpx reaches the style attribute"
   - id: FALSIFY-PRESENT_VIDEO_ELEMENT-001
     description: "an unchanged set yields no op"
     test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::nothing_changed_yields_no_op"
@@ -115,3 +100,18 @@ falsification_tests:
     test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::nan_rect_is_stable_not_a_move_every_frame && cargo test -p aprender-present-lib --lib browser::video_ops::tests::duplicate_keys_are_one_element"
     prediction: "no op for an unchanged NaN rect; one Create for a repeated key"
     if_fails: "a bad rectangle moves the element every frame or a key makes two elements"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-007
+    description: "a src change on a playing video is followed by Play"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_on_playing_video_is_followed_by_play && cargo test -p aprender-present-lib --lib browser::video_ops::tests::src_change_with_play_toggle_sends_one_play_and_paused_sends_none && cargo test -p aprender-present-lib --lib browser::video_ops::tests::failure_after_src_change_retries_play"
+    prediction: "[SetSrc, Play] for a playing node whose src changed; model DOM (paused on SetSrc) equals the from-scratch DOM; one Play at most; none for a paused node"
+    if_fails: "the element stays paused while VideoState says Playing"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-008
+    description: "a failure partway through sync leaves state consistent"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_keeps_previous_consistent_with_the_dom && cargo test -p aprender-present-lib --lib browser::video_ops::tests::partial_failure_property_any_failure_point_converges"
+    prediction: "previous records exactly the applied ops; a retry runs only the remainder; failing at any op index then retrying converges to the from-scratch DOM"
+    if_fails: "elements are created twice and the first ones are orphaned in the DOM"
+  - id: FALSIFY-PRESENT_VIDEO_ELEMENT-009
+    description: "the style string never carries a non-finite value"
+    test: "cargo test -p aprender-present-lib --lib browser::video_ops::tests::style_is_sanitised_and_offset"
+    prediction: "NaN/inf/negative size become 0px; no NaN or inf in the string"
+    if_fails: "NaNpx reaches the style attribute"

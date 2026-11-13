@@ -100,7 +100,11 @@ impl VideoLayer {
                 let parent = self.canvas.parent_node().ok_or("canvas has no parent")?;
                 parent.insert_before(&el, self.canvas.next_sibling().as_ref())?;
                 // Recorded only once attached, so a failed Create leaves nothing behind.
-                self.elements.insert(id.clone(), el);
+                // Defence in depth: never orphan an element already held for this id.
+                if let Some(old) = self.elements.insert(id.clone(), el) {
+                    let old: &HtmlElement = old.as_ref();
+                    old.remove();
+                }
             }
             VideoOp::Move { id, rect } => self.place(self.element(id)?, *rect)?,
             VideoOp::SetSrc { id, src } => self.element(id)?.set_src(src),
