@@ -90,92 +90,224 @@ pub fn page_html(title: &str, canvas_id: &str, width: u32, height: u32) -> Resul
     ))
 }
 
-/// Advance `at` while `keep` holds, returning the characters passed over.
-fn take_while(chars: &[char], at: &mut usize, keep: impl Fn(char) -> bool) -> String {
-    let start = *at;
+/// One tag of the page: lower-cased name, whether it closes, and its attributes
+/// (lower-cased name, raw value).
+struct Tag {
+    name: String,
+    attrs: Vec<(String, String)>,
+}
+
+/// Tags a bundled page may not carry at all: each one loads or frames other content, re-points
+/// relative URLs, or redirects, so the page would run something the bundle did not generate.
+const REFUSED_TAGS: [&str; 8] = [
+    "base", "iframe", "frame", "frameset", "object", "embed", "applet", "portal",
+];
+
+/// Advance `at` while `keep` holds.
+fn skip(chars: &[char], at: &mut usize, keep: impl Fn(char) -> bool) {
     while *at < chars.len() && keep(chars[*at]) {
         *at += 1;
     }
-    chars[start..*at].iter().collect()
 }
 
-/// The value after an `=`: quoted (either quote, closing quote consumed) or bare.
-fn attribute_value(chars: &[char], at: &mut usize) -> String {
-    take_while(chars, at, char::is_whitespace);
-    match chars.get(*at).copied() {
-        Some(quote @ ('"' | '\'')) => {
-            *at += 1;
-            let value = take_while(chars, at, |c| c != quote);
-            *at = (*at + 1).min(chars.len());
-            value
+/// The value after an `=`: quoted (closing quote consumed) or bare (runs to whitespace or `>`,
+/// quote characters inside it are part of it). `Err` when a quote is never closed.
+fn read_value(chars: &[char], at: &mut usize) -> Result<String, String> {
+    skip(chars, at, char::is_whitespace);
+    let quote = chars.get(*at).copied().filter(|c| matches!(c, '"' | '\''));
+    let Some(q) = quote else {
+        let v = *at;
+        skip(chars, at, |c| !c.is_whitespace() && c != '>');
+        return Ok(chars[v..*at].iter().collect());
+    };
+    *at += 1;
+    let v = *at;
+    skip(chars, at, |c| c != q);
+    if *at >= chars.len() {
+        return Err(UNTERMINATED.to_string());
+    }
+    let value = chars[v..*at].iter().collect();
+    *at += 1;
+    Ok(value)
+}
+
+const UNTERMINATED: &str = "a tag is never closed (the page ends inside it)";
+
+/// One attribute: lower-cased name (a leading `=` belongs to the name, as in HTML) and value.
+fn read_attribute(chars: &[char], at: &mut usize) -> Result<(String, String), String> {
+    let start = *at;
+    *at += 1;
+    skip(chars, at, |c| {
+        !c.is_whitespace() && !matches!(c, '/' | '=' | '>')
+    });
+    let name: String = chars[start..*at]
+        .iter()
+        .collect::<String>()
+        .to_ascii_lowercase();
+    skip(chars, at, char::is_whitespace);
+    if chars.get(*at) != Some(&'=') {
+        return Ok((name, String::new()));
+    }
+    *at += 1;
+    Ok((name, read_value(chars, at)?))
+}
+
+/// Read the tag that starts after its `<` (and `/` for a closing tag) the way an HTML parser
+/// does: the name ends at whitespace, `/` or `>`; attributes are separated by whitespace or
+/// `/`. `Err` when the input ends before the closing `>`.
+fn read_tag(chars: &[char], at: &mut usize) -> Result<Tag, String> {
+    let start = *at;
+    skip(chars, at, |c| !c.is_whitespace() && c != '/' && c != '>');
+    let name: String = chars[start..*at]
+        .iter()
+        .collect::<String>()
+        .to_ascii_lowercase();
+    let mut attrs = Vec::new();
+    loop {
+        skip(chars, at, |c| c.is_whitespace() || c == '/');
+        match chars.get(*at) {
+            None => return Err(UNTERMINATED.to_string()),
+            Some('>') => {
+                *at += 1;
+                return Ok(Tag { name, attrs });
+            }
+            Some(_) => attrs.push(read_attribute(chars, at)?),
         }
-        _ => take_while(chars, at, |c| !c.is_whitespace()),
     }
 }
 
-/// One attribute of a tag: lower-cased name and its value (empty when it has none).
-fn attributes(tag_body: &str) -> Vec<(String, String)> {
-    let chars: Vec<char> = tag_body.chars().collect();
-    let mut at = 0;
+/// Every tag in `html`, in order, closing tags included. Comments and the doctype are skipped.
+/// `Err` when a tag or comment is never closed: a page cut off inside markup is not judged
+/// on what is left, because a browser would not stop there either.
+fn tags(html: &str) -> Result<Vec<Tag>, String> {
+    let chars: Vec<char> = html.chars().collect();
     let mut found = Vec::new();
-    // Skip the tag name.
-    take_while(&chars, &mut at, |c| !c.is_whitespace());
+    let mut at = 0;
     while at < chars.len() {
-        take_while(&chars, &mut at, |c| c.is_whitespace() || c == '/');
-        let name = take_while(&chars, &mut at, |c| !c.is_whitespace() && c != '=');
-        take_while(&chars, &mut at, char::is_whitespace);
-        let mut value = String::new();
-        if chars.get(at) == Some(&'=') {
+        if chars[at] != '<' {
             at += 1;
-            value = attribute_value(&chars, &mut at);
+            continue;
         }
-        if !name.is_empty() {
-            found.push((name.to_ascii_lowercase(), value));
+        let next = chars.get(at + 1).copied();
+        if next.is_some_and(|c| c.is_ascii_alphabetic()) {
+            at += 1;
+            found.push(read_tag(&chars, &mut at)?);
+        } else if next == Some('/') && chars.get(at + 2).is_some_and(|c| c.is_ascii_alphabetic()) {
+            at += 2;
+            found.push(read_tag(&chars, &mut at)?);
+        } else if next == Some('!') || next == Some('?') {
+            let comment = chars[at..].starts_with(&['<', '!', '-', '-']);
+            let end: Vec<char> = if comment { "-->" } else { ">" }.chars().collect();
+            let from = at + if comment { 4 } else { 2 };
+            let rel = chars
+                .get(from..)
+                .and_then(|rest| rest.windows(end.len()).position(|w| w == end.as_slice()));
+            let Some(rel) = rel else {
+                return Err("a comment or declaration is never closed".to_string());
+            };
+            at = from + rel + end.len();
+        } else {
+            at += 1;
         }
     }
-    found
+    Ok(found)
 }
 
-/// The body of every tag in `html` (the text between `<` and the matching `>`, quotes
-/// respected), in order. Closing tags and the doctype are included; callers skip them.
-fn tag_bodies(html: &str) -> Vec<String> {
-    let mut bodies = Vec::new();
-    let mut current: Option<String> = None;
-    let mut quote: Option<char> = None;
-    for c in html.chars() {
-        match (&mut current, quote) {
-            (None, _) => {
-                if c == '<' {
-                    current = Some(String::new());
-                }
+/// The numeric reference after `&` (`#106;`, `#x6a`, semicolon optional): the character and
+/// how many chars it used after the `&`.
+fn numeric_reference(rest: &[char]) -> (Option<char>, usize) {
+    let hex = matches!(rest.get(1), Some('x' | 'X'));
+    let radix = if hex { 16 } else { 10 };
+    let from = if hex { 2 } else { 1 };
+    let digits: String = rest[from.min(rest.len())..]
+        .iter()
+        .take_while(|c| c.is_digit(radix))
+        .collect();
+    let semi = usize::from(rest.get(from + digits.len()) == Some(&';'));
+    let code = u32::from_str_radix(&digits, radix)
+        .ok()
+        .and_then(char::from_u32);
+    (code, from + digits.len() + semi)
+}
+
+/// The named reference after `&`, for the names that can spell or hide a scheme. Letters have
+/// no named reference, so any other name is left alone.
+fn named_reference(rest: &[char]) -> (Option<char>, usize) {
+    let name: String = rest
+        .iter()
+        .take_while(|c| c.is_ascii_alphanumeric())
+        .collect();
+    let known = [
+        ("colon", ':'),
+        ("Tab", '\t'),
+        ("NewLine", '\n'),
+        ("amp", '&'),
+        ("lt", '<'),
+        ("gt", '>'),
+        ("quot", '"'),
+        ("apos", '\''),
+        ("lpar", '('),
+        ("rpar", ')'),
+    ]
+    .iter()
+    .find(|(n, _)| *n == name)
+    .map(|(_, c)| *c);
+    let semi = usize::from(rest.get(name.len()) == Some(&';'));
+    (known, name.len() + semi)
+}
+
+/// Decode the character references a browser decodes in an attribute value before it reads a
+/// URL scheme.
+fn decode_entities(value: &str) -> String {
+    let chars: Vec<char> = value.chars().collect();
+    let mut out = String::with_capacity(value.len());
+    let mut at = 0;
+    while at < chars.len() {
+        let c = chars[at];
+        at += 1;
+        if c != '&' {
+            out.push(c);
+            continue;
+        }
+        let rest = &chars[at..];
+        let (decoded, used) = if rest.first() == Some(&'#') {
+            numeric_reference(rest)
+        } else {
+            named_reference(rest)
+        };
+        match decoded {
+            Some(d) => {
+                out.push(d);
+                at += used;
             }
-            (Some(body), Some(open)) => {
-                body.push(c);
-                if c == open {
-                    quote = None;
-                }
-            }
-            (Some(body), None) => {
-                if c == '>' {
-                    bodies.push(std::mem::take(body));
-                    current = None;
-                } else {
-                    if c == '"' || c == '\'' {
-                        quote = Some(c);
-                    }
-                    body.push(c);
-                }
-            }
+            None => out.push('&'),
         }
     }
-    bodies
+    out
+}
+
+/// Does this attribute value, read as a browser reads it, start a script or an HTML document?
+fn is_script_url(value: &str) -> bool {
+    let compact: String = decode_entities(value)
+        .chars()
+        .filter(|c| !c.is_whitespace() && !c.is_control())
+        .collect::<String>()
+        .to_ascii_lowercase();
+    ["javascript:", "vbscript:", "data:text/html"]
+        .iter()
+        .any(|scheme| compact.starts_with(scheme))
 }
 
 /// Refuse a page that can run any script other than the generated loader.
 ///
+/// The page is read with a tokenizer that follows the HTML rules that matter here (name ends at
+/// whitespace, `/` or `>`; bare values may hold quotes; character references are decoded
+/// before a URL scheme is read) and then judged against an allow-list of what a bundled page
+/// may carry: no `on...` attribute on any tag, no `srcdoc`, no script URL in any attribute,
+/// none of `REFUSED_TAGS`, no meta refresh, no tag or comment left open.
+///
 /// # Errors
-/// One line per reason: a script tag that is not `BOOT_TAG`, a missing or repeated loader,
-/// an `on...` attribute, or a `javascript:` URL.
+/// One line per reason.
 pub fn audit_page(html: &str) -> Result<(), Vec<String>> {
     let mut reasons = Vec::new();
     let lower = html.to_ascii_lowercase();
@@ -193,26 +325,11 @@ pub fn audit_page(html: &str) -> Result<(), Vec<String>> {
             script_tags - boot_tags
         ));
     }
-    for body in tag_bodies(html) {
-        if body.starts_with('/') || body.starts_with('!') {
-            continue;
-        }
-        let tag: String = body
-            .chars()
-            .take_while(|c| !c.is_whitespace())
-            .collect::<String>()
-            .to_ascii_lowercase();
-        for (name, value) in attributes(&body) {
-            if name.starts_with("on") {
-                reasons.push(format!("<{tag}> has the script attribute '{name}'"));
-            }
-            let compact: String = value
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect::<String>()
-                .to_ascii_lowercase();
-            if compact.starts_with("javascript:") {
-                reasons.push(format!("<{tag}> {name} is a javascript: URL"));
+    match tags(html) {
+        Err(why) => reasons.push(why),
+        Ok(found) => {
+            for tag in found {
+                audit_tag(&tag, &mut reasons);
             }
         }
     }
@@ -220,6 +337,27 @@ pub fn audit_page(html: &str) -> Result<(), Vec<String>> {
         Ok(())
     } else {
         Err(reasons)
+    }
+}
+
+fn audit_tag(tag: &Tag, reasons: &mut Vec<String>) {
+    let name = &tag.name;
+    if REFUSED_TAGS.contains(&name.as_str()) {
+        reasons.push(format!("<{name}> is not allowed on a bundled page"));
+    }
+    if name == "meta" && tag.attrs.iter().any(|(a, _)| a == "http-equiv") {
+        reasons.push("<meta http-equiv> (refresh) is not allowed on a bundled page".to_string());
+    }
+    for (attr, value) in &tag.attrs {
+        if attr.starts_with("on") {
+            reasons.push(format!("<{name}> has the script attribute '{attr}'"));
+        }
+        if attr == "srcdoc" {
+            reasons.push(format!("<{name}> has a srcdoc document"));
+        }
+        if is_script_url(value) {
+            reasons.push(format!("<{name}> {attr} is a javascript: URL"));
+        }
     }
 }
 
@@ -394,6 +532,79 @@ mod tests {
                 with(r#"<body2 onload="go()"/>"#),
                 "'onload'",
             ),
+            (
+                "slash instead of a space: svg",
+                with("<svg/onload=alert(1)>"),
+                "'onload'",
+            ),
+            (
+                "slash instead of a space: img",
+                with(r#"<img/src="x"/onerror=alert(1)>"#),
+                "'onerror'",
+            ),
+            (
+                "unclosed tag: apostrophe in a bare value",
+                with("<img src=x alt=it's onerror=alert(1)>"),
+                "'onerror'",
+            ),
+            (
+                "numeric entity hides the scheme",
+                with(r#"<a href="&#106;avascript:alert(1)">x</a>"#),
+                "javascript: URL",
+            ),
+            (
+                "hex entity without a semicolon",
+                with(r#"<a href="&#x6a;avascript:alert(1)">x</a>"#),
+                "javascript: URL",
+            ),
+            (
+                "named entities hide the scheme",
+                with(r#"<a href="java&Tab;script&colon;alert(1)">x</a>"#),
+                "javascript: URL",
+            ),
+            (
+                "vbscript URL",
+                with(r#"<a href="vbscript:go()">x</a>"#),
+                "javascript: URL",
+            ),
+            (
+                "data html URL",
+                with(r#"<a href="data:text/html,x">x</a>"#),
+                "javascript: URL",
+            ),
+            (
+                "base re-points the loader",
+                with(r#"<base href="https://evil.example/">"#),
+                "<base>",
+            ),
+            (
+                "iframe srcdoc",
+                with(r#"<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe>"#),
+                "srcdoc",
+            ),
+            ("iframe", with(r#"<iframe src="/x"></iframe>"#), "<iframe>"),
+            ("object", with(r#"<object data="/x"></object>"#), "<object>"),
+            ("embed", with(r#"<embed src="/x">"#), "<embed>"),
+            (
+                "meta refresh",
+                with(r#"<meta http-equiv="refresh" content="0;url=https://evil.example/">"#),
+                "meta",
+            ),
+            (
+                "unterminated tag",
+                format!("{good}<img src=x onerror=go()"),
+                "never closed",
+            ),
+            (
+                "unterminated quote",
+                format!("{good}<p title='x"),
+                "never closed",
+            ),
+            (
+                "unterminated comment",
+                format!("{good}<!-- x"),
+                "never closed",
+            ),
         ];
         for (name, page, expect) in &refuse {
             let reasons = audit_page(page).expect_err(name);
@@ -431,11 +642,11 @@ mod tests {
     }
 
     #[test]
-    fn a_page_cut_off_inside_a_tag_or_a_quote_is_judged_on_what_is_there() {
+    fn a_page_cut_off_inside_a_tag_or_a_quote_is_refused() {
         assert!(audit_page("<p title=\"never closed").is_err());
         assert!(audit_page("<p onclick").is_err());
         let cut = format!("{}<p title='x", good());
-        assert_eq!(audit_page(&cut), Ok(()));
+        assert!(audit_page(&cut).is_err());
     }
 
     #[test]

@@ -31,9 +31,16 @@ contract: |
       calls its init. It holds no app logic.
   (2) A GENERATED PAGE PASSES THE AUDIT. It has one canvas and one script tag,
       the loader tag.
-  (3) THE AUDIT REFUSES EVERY OTHER WAY TO RUN SCRIPT: a script tag that is not
-      the loader tag, a missing or repeated loader, an `on...` attribute, a
-      `javascript:` URL.
+  (3) THE AUDIT REFUSES EVERY OTHER WAY TO RUN SCRIPT THAT IT KNOWS OF. It
+      reads the page with an HTML tokenizer (the name ends at whitespace, `/` or
+      `>`; bare values may hold quotes; character references are decoded before
+      a URL scheme is read) and refuses: a script tag that is not the loader
+      tag, a missing or repeated loader, an `on...` attribute on any tag
+      (including one after `/`), `srcdoc`, a `javascript:`, `vbscript:` or
+      `data:text/html` URL in any attribute (entity-encoded or not), the tags
+      base, iframe, frame, frameset, object, embed, applet and portal, a meta
+      http-equiv, and a tag or comment left open. It is a deny-list over parsed
+      tags, not a proof that a page is inert; the case table is its evidence.
   (4) A REFUSED PAGE IS NOT BUNDLED. No index.html and no loader are written,
       and the verb exits non-zero with the reasons.
   (5) TEXT IS NOT SCRIPT. The words "onclick" or "javascript:" in text or
@@ -54,10 +61,14 @@ falsification:
     evidence: "see the PR that added this contract"
 open_obligations:
   - |
-    No browser run yet: no wasm-bindgen tool is installed on any build host
-    (2026-11-11), so `bundle` itself has not produced a pkg/ directory. Owed:
-    a probar end-to-end run that bundles, loads the generated page, clicks "+"
-    and reads data-count back (#6893).
+    The browser run is written but gated: tests/bundle_probar_e2e.rs bundles
+    with the shipped verb, loads the page in real headless Chrome with the
+    error trap installed before load, clicks the canvas "+" and reads
+    data-count back (0 -> 1 -> 2). It runs only where APR_PROBAR_CHROMIUM
+    points at a Chrome and wasm-pack plus the wasm32 target are installed;
+    that is no CI runner today, so no receipt from it exists yet (#6893).
+    Until it does, "the loader starts the module in a real browser" is not
+    measured here.
   - |
     The example pages under crates/aprender-present/www still carry
     hand-written script. They are not bundled by this verb today; moving them
@@ -74,7 +85,7 @@ falsification_tests:
     prediction: "accepted; one script tag; the counter canvas"
     if_fails: "`new` and `bundle` write a page the bundle step would refuse"
   - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-003
-    description: "the audit case table: 14 pages refused, 6 accepted"
+    description: "the audit case table: 31 pages refused, 9 accepted"
     test: "cargo test -p aprender-present-cli page::tests::audit_case_table"
     prediction: "every refused row names its reason; every accepted row passes"
     if_fails: "script reaches a bundle, or a clean page is refused"
@@ -104,12 +115,17 @@ falsification_tests:
     prediction: "www/index.html accepted; www/pkg/boot.js equals boot_module"
     if_fails: "a new project starts with a page the bundle step refuses, or with no loader"
   - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-009
-    description: "the glue directory handed to the build tool is absolute for relative and absolute outputs"
-    test: "cargo test -p aprender-present-cli the_glue_directory_is_absolute_for_relative_and_absolute_outputs"
-    prediction: "dist -> <cwd>/dist/pkg; /srv/out -> /srv/out/pkg"
+    description: "the `bundle` verb hands the build tool an absolute glue directory for relative and absolute outputs (run through the binary with a fake wasm-pack on PATH)"
+    test: "cargo test -p aprender-present-cli --test bundle_cli relative_output_hands_the_build_tool_an_absolute_glue_dir && cargo test -p aprender-present-cli --test bundle_cli absolute_output_is_kept_as_given"
+    prediction: "dist -> <cwd>/dist/pkg; an absolute -o -> <o>/pkg; both bundles whole"
     if_fails: "an absolute -o sends the glue under crates/ and the bundle ships without it"
   - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-010
-    description: "a bundle whose glue is absent names each missing file"
-    test: "cargo test -p aprender-present-cli a_bundle_without_its_glue_names_each_missing_file"
-    prediction: "both files named when absent; one when one is absent; none when both exist"
+    description: "the `bundle` verb refuses a build that left no glue, naming each missing file (through the binary, fake wasm-pack writes nothing)"
+    test: "cargo test -p aprender-present-cli --test bundle_cli a_bundle_without_glue_is_refused_naming_each_file"
+    prediction: "exit non-zero; stderr names pkg/presentar.js and pkg/presentar_bg.wasm; no index.html"
     if_fails: "bundle exits 0 with a page that cannot load"
+  - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-011
+    description: "the `bundle` verb exits non-zero on a project page with script and writes no page"
+    test: "cargo test -p aprender-present-cli --test bundle_cli a_project_page_with_script_makes_the_verb_fail"
+    prediction: "non-zero exit; 'refused' on stderr; no index.html"
+    if_fails: "the verb ships a page the audit refused"

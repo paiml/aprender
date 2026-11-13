@@ -54,9 +54,17 @@ fn serve(dir: PathBuf) -> u16 {
             };
             let path = dir.join(&rel);
             if !rel.contains("..") && path.is_file() {
-                let ct =
-                    tiny_http::Header::from_bytes("Content-Type", content_type(&path)).unwrap();
-                let r = tiny_http::Response::from_data(std::fs::read(&path).unwrap());
+                let ct = tiny_http::Header::from_bytes("Content-Type", content_type(&path))
+                    .expect("header");
+                let mut body = std::fs::read(&path).expect("read served file");
+                if rel == "index.html" {
+                    // Test-side only: the bundle on disk is untouched. Put the error trap first
+                    // in <head>, before the loader runs.
+                    let html = String::from_utf8(body).expect("utf8 page");
+                    let trap = format!("<head><script>{TRAP}</script>");
+                    body = html.replacen("<head>", &trap, 1).into_bytes();
+                }
+                let r = tiny_http::Response::from_data(body);
                 let _ = req.respond(r.with_header(ct));
             } else {
                 let _ = req
@@ -66,6 +74,32 @@ fn serve(dir: PathBuf) -> u16 {
     });
     port
 }
+
+const PAINTED: &str = "(() => { const c = document.querySelector('canvas'); \
+     if (!c) return false; \
+     const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; \
+     for (let i = 3; i < d.length; i += 4) { if (d[i] !== 0) return true; } return false; })()";
+
+/// Runs before any page script: record every error and unhandled rejection.
+const TRAP: &str = "window.__errs = []; \
+    window.addEventListener('error', e => window.__errs.push(String(e.message))); \
+    window.addEventListener('unhandledrejection', e => window.__errs.push(String(e.reason)));";
+
+/// Click a grid over the canvas (mousedown + mouseup) until `data-count` changes; remember
+/// the point that did it in `window.__plus`.
+const FIND_PLUS: &str = "(() => { const c = document.querySelector('canvas'); \
+    const r = c.getBoundingClientRect(); const start = c.getAttribute('data-count'); \
+    for (let y = 2; y < c.height; y += 6) { for (let x = 2; x < c.width; x += 6) { \
+      for (const t of ['mousedown', 'mouseup']) { c.dispatchEvent(new MouseEvent(t, \
+        {bubbles: true, clientX: r.left + x, clientY: r.top + y, button: 0})); } \
+      if (c.getAttribute('data-count') !== start) { window.__plus = [x, y]; return true; } } } \
+    return false; })()";
+
+/// Click the remembered point once more.
+const CLICK_LAST: &str = "(() => { const c = document.querySelector('canvas'); \
+    const r = c.getBoundingClientRect(); const [x, y] = window.__plus; \
+    for (const t of ['mousedown', 'mouseup']) { c.dispatchEvent(new MouseEvent(t, \
+      {bubbles: true, clientX: r.left + x, clientY: r.top + y, button: 0})); } return true; })()";
 
 async fn eval<T: serde::de::DeserializeOwned>(page: &probar::Page, js: &str) -> T {
     page.evaluate(js)
@@ -101,18 +135,12 @@ fn bundle_page_every_control_driven_in_real_chrome() {
     assert!(out.join("pkg/presentar_bg.wasm").is_file(), "wasm missing");
     assert!(out.join("pkg/presentar.js").is_file(), "js glue missing");
 
-    // If the verb did not copy a page (cwd-relative www/), use the repo's page and say so, so
-    // the gap is visible rather than silently masked.
-    if !out.join("index.html").is_file() {
-        eprintln!(
-            "NOTE: bundle emitted no index.html; using crates/aprender-present/www/index.html"
-        );
-        std::fs::copy(
-            root.join("crates/aprender-present/www/index.html"),
-            out.join("index.html"),
-        )
-        .expect("copy page");
-    }
+    // The verb must have written the page itself; there is no fallback to a hand-written one.
+    assert!(
+        out.join("index.html").is_file(),
+        "bundle wrote no index.html"
+    );
+    assert!(out.join("pkg/boot.js").is_file(), "bundle wrote no loader");
     let port = serve(out.clone());
 
     // 2. Real Chrome over CDP. (probar's `headless: false` selects chromiumoxide's headless
@@ -127,16 +155,13 @@ fn bundle_page_every_control_driven_in_real_chrome() {
         .with_chromium_path(chrome);
         let browser = Browser::launch(cfg).await.expect("launch chrome");
         let mut page = browser.new_page().await.expect("new page");
-        page.goto(&format!("http://127.0.0.1:{port}/index.html"))
-            .await
-            .expect("goto");
+        // The error trap is already in the served page, ahead of every other script (see
+        // `serve`), so a failure in the loader or in `init()` is caught, not only a blank canvas.
+        let url = format!("http://127.0.0.1:{port}/index.html");
+        page.goto(&url).await.expect("goto");
 
         // 3. Wait for the wasm app: the page is a canvas plus loader, so "ready" means the
         //    wasm renderer has painted a non-blank pixel onto the canvas.
-        const PAINTED: &str = "(() => { const c = document.querySelector('canvas'); \
-             if (!c) return false; \
-             const d = c.getContext('2d').getImageData(0,0,c.width,c.height).data; \
-             for (let i = 3; i < d.length; i += 4) { if (d[i] !== 0) return true; } return false; })()";
         let mut painted = false;
         for _ in 0..150 {
             if let Ok(r) = page.evaluate(PAINTED).await {
@@ -150,13 +175,6 @@ fn bundle_page_every_control_driven_in_real_chrome() {
         assert!(painted, "canvas is blank: the wasm app never rendered");
 
         // 5. Drive every control; trap page errors raised meanwhile.
-        let _: bool = eval(
-            &page,
-            "window.__errs = []; \
-             window.addEventListener('error', e => window.__errs.push(String(e.message))); \
-             window.addEventListener('unhandledrejection', e => window.__errs.push(String(e.reason))); true",
-        )
-        .await;
         let n: u64 = eval(
             &page,
             &format!("document.querySelectorAll('{CONTROLS}').length"),
@@ -178,15 +196,29 @@ fn bundle_page_every_control_driven_in_real_chrome() {
             );
             let _: bool = eval(&page, &step).await;
         }
-        // The canvas is a control too: click it through CDP's real input path.
-        page.click("canvas").await.expect("click canvas");
 
-        // 6. Read back: no page errors, still ready, still painted.
+        // The counter is drawn on the canvas, so its "+" is found by clicking a grid of points
+        // (mousedown + mouseup, the events the app listens to) until `data-count` moves, then
+        // the count is read back after each further click.
+        let read_count = "document.querySelector('canvas').getAttribute('data-count')";
+        let before: Option<String> = eval(&page, read_count).await;
+        assert_eq!(before.as_deref(), Some("0"), "counter did not start at 0");
+        let found: bool = eval(&page, FIND_PLUS).await;
+        assert!(found, "no click on the canvas moved data-count: the + button does nothing");
+        let after_first: Option<String> = eval(&page, read_count).await;
+        assert_eq!(after_first.as_deref(), Some("1"), "first click must make it 1");
+        let again: bool = eval(&page, CLICK_LAST).await;
+        assert!(again);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        let after_second: Option<String> = eval(&page, read_count).await;
+        assert_eq!(after_second.as_deref(), Some("2"), "second click must make it 2");
+
+        // 6. Read back: no page errors since load, still painted.
         let errs: Vec<String> = eval(&page, "window.__errs").await;
-        assert!(errs.is_empty(), "page errors driving {n} controls: {errs:?}");
+        assert!(errs.is_empty(), "page errors since load: {errs:?}");
         let still: bool = eval(&page, PAINTED).await;
         assert!(still, "canvas went blank after driving the controls");
-        eprintln!("bundle e2e: painted=true controls_driven={n} canvas_click=ok");
+        eprintln!("bundle e2e: painted=true controls_driven={n} count=0->1->2 errors=0");
 
         let _ = browser.close().await;
     });
