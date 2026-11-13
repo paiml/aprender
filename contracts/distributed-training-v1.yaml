@@ -40,7 +40,8 @@ falsification:
     evidence: "cargo test -p aprender-train --lib run_worker_tests"
 
 # #5291 batch 2: params_after_step identical across workers, bound to the ring
-# all-reduce tests (every worker ends with the same averaged buffer), and the
+# all-reduce tests (every worker ends with the same averaged buffer), loss
+# equivalence bound to a data-parallel vs single-worker SGD step, and the
 # run_worker fail-closed row bound to its tests by fn name.
 falsification_tests:
   - id: FALSIFY-DISTRIBUTED_TRAINING_V1_001
@@ -51,6 +52,10 @@ falsification_tests:
     rule: "the same holds for 3 workers: every rank ends with the identical mean"
     prediction: "test_ring_allreduce_3_workers passes; it fails when any rank's buffer differs from the mean"
     test: "cargo test -p aprender-train --lib test_ring_allreduce_3_workers"
+  - id: FALSIFY-DISTRIBUTED_TRAINING_V1_002
+    rule: "loss_equivalence: one data-parallel SGD step (2 workers, half the rows each, gradients ring-all-reduced) gives identical params on both ranks and the full-data loss of a single worker on all rows, within 1e-5 relative"
+    prediction: "falsify_distributed_v1_002_loss_matches_single_worker passes; it fails when the all-reduce does not average (e.g. sums) the shard gradients"
+    test: "cargo test -p aprender-train --lib falsify_distributed_v1_002_loss_matches_single_worker"
   - id: FALSIFY-DISTRIBUTED_TRAINING_V1_003
     rule: "run_worker fails closed when the coordinator shuts down mid-AllReduce"
     prediction: "shutdown_during_allreduce_is_an_averaged_receive_error passes; it fails when that shutdown is not reported as an error"

@@ -42,16 +42,7 @@ pub fn moe_route(
     }
 
     // Step 2: softmax with max subtraction for numerical stability
-    let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let mut exp_sum = 0.0f32;
-    let mut probs = vec![0.0f32; num_experts];
-    for (i, &logit) in logits.iter().enumerate() {
-        probs[i] = (logit - max_logit).exp();
-        exp_sum += probs[i];
-    }
-    for p in &mut probs {
-        *p /= exp_sum;
-    }
+    let probs = router_probs(&logits);
 
     // Step 3: top-k selection
     let mut indexed: Vec<(usize, f32)> = probs.iter().copied().enumerate().collect();
@@ -69,6 +60,18 @@ pub fn moe_route(
     };
 
     MoeRouteResult { indices, weights }
+}
+
+/// Router softmax with max subtraction (moe-router-v1 `softmax_normalization`:
+/// the returned probabilities sum to 1.0).
+fn router_probs(logits: &[f32]) -> Vec<f32> {
+    let max_logit = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+    let mut probs: Vec<f32> = logits.iter().map(|&l| (l - max_logit).exp()).collect();
+    let exp_sum: f32 = probs.iter().sum();
+    for p in &mut probs {
+        *p /= exp_sum;
+    }
+    probs
 }
 
 /// Single expert SwiGLU forward pass.
@@ -222,6 +225,48 @@ pub fn moe_forward_token(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // FALSIFY-MOE_ROUTER_V1_001/002/003: router probs sum to 1, exactly k
+    // distinct experts are selected, and their renormalized weights sum to 1.
+    #[test]
+    fn falsify_moe_router_v1_sums_and_topk() {
+        const TOL: f32 = 1e-5;
+        let logit_sets: [&[f32]; 5] = [
+            &[0.0, 0.0, 0.0, 0.0],
+            &[1.0, -2.0, 3.5, 0.25, -7.0, 2.0],
+            &[80.0, 79.0, -80.0, 0.0, 12.0, 3.0, -1.0, 5.0],
+            &[-3.0, -3.0, -1e-3, -50.0],
+            &[0.5; 16],
+        ];
+        for logits in logit_sets {
+            let sum: f32 = router_probs(logits).iter().sum();
+            assert!(
+                (sum - 1.0).abs() < TOL,
+                "V1_001: probs sum {sum} for {logits:?}"
+            );
+        }
+        let hidden_dim = 3;
+        for (num_experts, k) in [(4, 1), (6, 2), (8, 3), (16, 16)] {
+            let hidden: Vec<f32> = (0..hidden_dim).map(|j| 0.3 * j as f32 - 0.2).collect();
+            let gate: Vec<f32> = (0..num_experts * hidden_dim)
+                .map(|i| ((i * 7 % 11) as f32 - 5.0) * 0.4)
+                .collect();
+            let r = moe_route(&hidden, &gate, num_experts, k, hidden_dim);
+            let mut distinct = r.indices.clone();
+            distinct.sort_unstable();
+            distinct.dedup();
+            assert_eq!(
+                (r.indices.len(), distinct.len()),
+                (k, k),
+                "V1_002: k={k} of {num_experts}"
+            );
+            let wsum: f32 = r.weights.iter().sum();
+            assert!(
+                (wsum - 1.0).abs() < TOL,
+                "V1_003: weights sum {wsum} (k={k})"
+            );
+        }
+    }
 
     // FALSIFY-MOE-ROUTER-001: Softmax stability with large logits
     #[test]

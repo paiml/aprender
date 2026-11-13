@@ -992,3 +992,7 @@ falsification_tests:
     rule: "the number of commands in `apr --help` equals the number registered here"
     prediction: "test_command_count_matches passes; it fails when the counts drift"
     test: "cargo test -p apr-cli --test cli_commands test_command_count_matches"
+  - id: FALSIFY-CLI-THRESHOLD-NAN-001
+    rule: "a NaN tolerance/threshold flag never turns a failing CRUX lint gate into an exit-0 Ok report; each case fails both with the defaults and with the NaN value"
+    prediction: "nan_threshold_never_reports_a_failing_lint_gate_as_ok passes; it fails when a NaN threshold makes the failing branch unreachable"
+    test: "cargo test -p apr-cli --test cli_commands nan_threshold_never_reports_a_failing_lint_gate_as_ok"
