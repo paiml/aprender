@@ -15,12 +15,17 @@
 //! - a finite value outside explicit `limits` is `NA`; an infinite value is kept;
 //! - text outside the levels of a discrete scale is `NA`.
 //!
+//! A `NaN` limit is R's `NA`: that end takes the data range (`limits = c(NA, 10)`).
+//!
 //! Training ignores non-finite values. Where ggplot2 errors, so does this: text in a continuous
 //! scale. Deliberate divergences, each returning `Err(ScaleDomain)`: a continuous axis with no
 //! limits and no finite value to train on (ggplot2 returns an infinite range); and explicit
 //! `limits` that are not finite after the transform (`limits = c(0, 100)` on `log10` errors in
 //! ggplot2; a negative limit, or an infinite one, makes it silently substitute the data range or
-//! return unusable breaks).
+//! return unusable breaks); a `NaN` limit whose substituted pair is inverted (R returns
+//! `-Inf`/`Inf` limits); an `expand` with a negative or non-finite component (R reorders or falls
+//! back to the limits); and `labels` whose length differs from the breaks (R errors for explicit
+//! breaks; for default discrete breaks it pads with `NA`).
 //!
 //! Not implemented: label functions, `n.breaks`, `minor_breaks =`, other `oob =` functions,
 //! `position =`, secondary axes, and the `expand = c(a, b, c, d)` shorthand (use [`Expansion`]).
@@ -39,7 +44,9 @@ use super::facet::Facet;
 use super::geom::GeomType;
 use super::ggplot::Layer;
 use super::r_format::format_labels;
-use super::scale_discrete::{position, resolve_discrete, train_levels, DiscreteSpec};
+use super::scale_discrete::{
+    check_discrete, position, resolve_discrete, train_levels, DiscreteSpec,
+};
 use super::scale_trans::{log_breaks, regular_minor_breaks, Transform};
 use super::stat::Stat;
 use crate::breaks::{extended, Q_DEFAULT, W_DEFAULT};
@@ -99,10 +106,37 @@ impl Expansion {
     /// `c(lo - (w * mult_l + add_l), hi + (w * mult_u + add_u))`, where `w` is the span, or 1 when
     /// the range has zero width (`scales::zero_range`). A single value `v` on a default axis
     /// therefore spans `v +- 0.05`, measured on ggplot2 4.0.3.
+    ///
+    /// An end that overflows to a non-finite value falls back to the limit on that side, as
+    /// ggplot2's `expand_limits_continuous_trans()` does (`limits = c(-.Machine$double.xmax,
+    /// .Machine$double.xmax)` keeps its limits as the panel).
     #[must_use]
     pub fn apply(self, (lo, hi): (f64, f64)) -> (f64, f64) {
         let width = if zero_range(lo, hi) { ZERO_RANGE_WIDTH } else { hi - lo };
-        (lo - (width * self.mult.0 + self.add.0), hi + (width * self.mult.1 + self.add.1))
+        let lower = lo - (width * self.mult.0 + self.add.0);
+        let upper = hi + (width * self.mult.1 + self.add.1);
+        (if lower.is_finite() { lower } else { lo }, if upper.is_finite() { upper } else { hi })
+    }
+
+    /// Refuse an expansion with a negative or non-finite component.
+    ///
+    /// Deliberate divergence: ggplot2 reorders the panel for a negative `mult` and falls back to
+    /// the limits for a `NaN` or infinite component; neither is reproduced, so each is a typed
+    /// error, never other numbers.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::ScaleDomain`] when any of `mult` and `add` is negative, `NaN` or infinite.
+    pub(crate) fn validate(self) -> Result<()> {
+        let parts = [self.mult.0, self.mult.1, self.add.0, self.add.1];
+        if parts.iter().all(|v| v.is_finite() && *v >= 0.0) {
+            Ok(())
+        } else {
+            Err(Error::ScaleDomain(format!(
+                "expansion {self:?} has a negative or non-finite component: ggplot2 reorders the \
+                 panel or falls back to the limits there, which is not reproduced"
+            )))
+        }
     }
 }
 
@@ -150,10 +184,12 @@ impl ContinuousSpec {
         Self { log10: true, ..Self::default() }
     }
 
-    /// `limits = c(lo, hi)`.
+    /// `limits = c(lo, hi)`. Two numbers are sorted (ggplot2 sorts `limits = c(10, 0)`). A `NaN`
+    /// end is R's `NA`: that end takes the trained data range, and the pair keeps its order.
     #[must_use]
     pub fn limits(mut self, lo: f64, hi: f64) -> Self {
-        self.limits = Some((lo.min(hi), lo.max(hi)));
+        self.limits =
+            Some(if lo.is_nan() || hi.is_nan() { (lo, hi) } else { (lo.min(hi), lo.max(hi)) });
         self
     }
 
@@ -229,28 +265,72 @@ impl From<DiscreteSpec> for PositionScaleSpec {
 /// The limits of an axis that was never trained: ggplot2 gives an empty continuous scale 0..1.
 pub const EMPTY_AXIS_LIMITS: (f64, f64) = (0.0, 1.0);
 
-/// Resolve a continuous axis. `trained` is the data range in scale space; an explicit
-/// `spec.limits` replaces it.
-#[must_use]
-pub fn resolve_continuous(trained: (f64, f64), spec: &ContinuousSpec) -> PositionScale {
+/// The explicit limits in scale space: a `NaN` end (R's `NA`) is the trained end. `None` when the
+/// spec gives no limits.
+fn explicit_limits(trained: (f64, f64), spec: &ContinuousSpec) -> Option<(f64, f64)> {
     let t = spec.transform();
-    let limits = spec.limits.map_or(trained, |(a, b)| (t.forward(a), t.forward(b)));
-    // A zero-width range is kept as is: `Expansion::apply` gives it ggplot2's width of 1. An
-    // inverted range only arises from an untrained axis (no data at all); ggplot2's empty
-    // continuous scale spans 0..1, and so does this.
-    let (lo, hi) = if limits.0 <= limits.1 { limits } else { EMPTY_AXIS_LIMITS };
-    let continuous_range = spec.expand.unwrap_or(Expansion::continuous_default()).apply((lo, hi));
-    let (rlo, rhi) = continuous_range;
+    spec.limits.map(|(a, b)| {
+        (
+            if a.is_nan() { trained.0 } else { t.forward(a) },
+            if b.is_nan() { trained.1 } else { t.forward(b) },
+        )
+    })
+}
 
-    // Breaks, in scale space.
-    let proposed: Vec<f64> = match &spec.breaks {
+/// The breaks the scale proposes before censoring, in scale space.
+fn proposed_breaks(spec: &ContinuousSpec, (rlo, rhi): (f64, f64)) -> Vec<f64> {
+    let t = spec.transform();
+    match &spec.breaks {
         Some(b) => b.iter().map(|v| t.forward(*v)).collect(),
         None if spec.log10 => log_breaks(t.inverse(rlo), t.inverse(rhi), DEFAULT_N_BREAKS)
             .into_iter()
             .map(|v| t.forward(v))
             .collect(),
         None => extended(rlo, rhi, DEFAULT_N_BREAKS, &Q_DEFAULT, &W_DEFAULT),
-    };
+    }
+}
+
+/// The limits and the expanded panel range of a continuous axis.
+fn continuous_panel(trained: (f64, f64), spec: &ContinuousSpec) -> ((f64, f64), (f64, f64)) {
+    let limits = explicit_limits(trained, spec).unwrap_or(trained);
+    // A zero-width range is kept as is: `Expansion::apply` gives it ggplot2's width of 1. An
+    // inverted range only arises from an untrained axis (no data at all); ggplot2's empty
+    // continuous scale spans 0..1, and so does this.
+    let (lo, hi) = if limits.0 <= limits.1 { limits } else { EMPTY_AXIS_LIMITS };
+    let range = spec.expand.unwrap_or(Expansion::continuous_default()).apply((lo, hi));
+    ((lo, hi), range)
+}
+
+/// Refuse the arguments of a continuous spec that ggplot2 errors on or this crate cannot place:
+/// an expansion that is negative or not finite, and `labels` whose length differs from the breaks
+/// (R: "`breaks` and `labels` must have the same length").
+fn check_continuous(trained: (f64, f64), spec: &ContinuousSpec) -> Result<()> {
+    if let Some(e) = spec.expand {
+        e.validate()?;
+    }
+    if let Some(labels) = &spec.labels {
+        let (_, range) = continuous_panel(trained, spec);
+        let n = spec.breaks.as_ref().map_or_else(|| proposed_breaks(spec, range).len(), Vec::len);
+        if labels.len() != n {
+            return Err(Error::ScaleDomain(format!(
+                "`breaks` and `labels` must have the same length ({n} breaks, {} labels)",
+                labels.len()
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Resolve a continuous axis. `trained` is the data range in scale space; an explicit
+/// `spec.limits` replaces it (a `NaN` end keeps that end of `trained`).
+///
+/// [`ResolvedAxis`] refuses the specs this cannot place (see `check_continuous`) before calling it.
+#[must_use]
+pub fn resolve_continuous(trained: (f64, f64), spec: &ContinuousSpec) -> PositionScale {
+    let t = spec.transform();
+    let ((lo, hi), continuous_range) = continuous_panel(trained, spec);
+    let (rlo, rhi) = continuous_range;
+    let proposed = proposed_breaks(spec, continuous_range);
     let kept_idx = censor_breaks(&proposed, rlo, rhi);
     let breaks: Vec<f64> = kept_idx.iter().map(|i| proposed[*i]).collect();
     let n_breaks_censored = proposed.len() - breaks.len();
@@ -374,6 +454,7 @@ impl ResolvedAxis {
     fn discrete(spec: &DiscreteSpec, columns: &[&[DataValue]]) -> Result<Self> {
         let trained =
             train_levels(columns.iter().flat_map(|c| c.iter()).filter_map(DataValue::as_str));
+        check_discrete(trained.len(), spec)?;
         let scale = resolve_discrete(trained, spec);
         let levels = scale.levels.clone().unwrap_or_default();
         if levels.is_empty() {
@@ -395,21 +476,30 @@ impl ResolvedAxis {
             .map(|v| t.forward(f64::from(v)))
             .filter(|v| v.is_finite())
             .fold((f64::MAX, f64::MIN), |(lo, hi), v| (lo.min(v), hi.max(v)));
-        if spec.limits.is_none() && trained.0 > trained.1 {
+        // Nothing to train on matters unless some end of the axis comes from the data: no limits,
+        // or a `NaN` (R's `NA`) end.
+        let open_end = spec.limits.map_or(true, |(a, b)| a.is_nan() || b.is_nan());
+        if open_end && trained.0 > trained.1 {
             return Err(Error::ScaleDomain(format!(
                 "continuous{} scale has no finite value to train on",
                 if spec.log10 { " log10" } else { "" }
             )));
         }
-        if let Some((a, b)) = spec.limits {
-            if !(t.forward(a).is_finite() && t.forward(b).is_finite()) {
+        let limits = explicit_limits(trained, spec);
+        if let Some((a, b)) = limits {
+            if !(a.is_finite() && b.is_finite()) {
                 return Err(Error::ScaleDomain(format!(
                     "scale limits ({a}, {b}) are not finite after the transform"
                 )));
             }
+            if a > b {
+                return Err(Error::ScaleDomain(format!(
+                    "scale limits ({a}, {b}) are inverted once the open end takes the data range"
+                )));
+            }
         }
+        check_continuous(trained, spec)?;
         let scale = resolve_continuous(trained, spec);
-        let limits = spec.limits.map(|(a, b)| (t.forward(a), t.forward(b)));
         Ok(Self { scale, map: AxisMap::Continuous { transform: t, limits } })
     }
 

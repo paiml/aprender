@@ -126,8 +126,28 @@ fn degenerate(dmin: f64, dmax: f64, m: usize) -> Vec<f64> {
     if m <= 1 {
         return vec![dmin];
     }
-    let step = (dmax - dmin) / (m as f64 - 1.0);
-    (0..m).map(|i| dmin + i as f64 * step).collect()
+    let gaps = m as f64 - 1.0;
+    let mut step = (dmax - dmin) / gaps;
+    if !step.is_finite() {
+        // `dmax - dmin` overflowed (`c(-.Machine$double.xmax, .Machine$double.xmax)`): R's
+        // `seq(length.out =)` divides each end first.
+        step = dmax / gaps - dmin / gaps;
+    }
+    // `seq(from, to, length.out = m)` ends at `to` exactly (even when `step` underflows to 0, a
+    // subnormal span); a value that would overflow counting up from `from` is counted down from
+    // `to` instead.
+    (0..m)
+        .map(|i| {
+            let up = dmin + i as f64 * step;
+            if i + 1 == m {
+                dmax
+            } else if up.is_finite() {
+                up
+            } else {
+                dmax - (m - 1 - i) as f64 * step
+            }
+        })
+        .collect()
 }
 
 /// The best labeling seen so far.
@@ -289,5 +309,28 @@ mod tests {
     fn a_narrow_range_far_from_zero_ends_like_r() {
         let v = 131_815_660_000_000.0_f64;
         assert_eq!(extended(v - 0.05, v + 0.05, 5, &Q_DEFAULT, &W_DEFAULT), [v - 0.05]);
+    }
+}
+
+#[cfg(test)]
+mod degenerate_tests {
+    use super::*;
+
+    /// `seq(-xmax, xmax, length.out = 5)` in R: the span overflows, so each end is divided first.
+    #[test]
+    fn a_span_that_overflows_keeps_finite_steps() {
+        let m = f64::MAX;
+        let got = degenerate(-m, m, 5);
+        assert_eq!(got.len(), 5);
+        assert!(got.iter().all(|v| v.is_finite()), "{got:?}");
+        assert_eq!((got[0], got[2], got[4]), (-m, 0.0, m));
+        assert!((got[1] + m / 2.0).abs() <= m * 1e-15, "{got:?}");
+    }
+
+    /// `seq(0, 5e-324, length.out = 5)`: the step underflows to 0, the last value is still `to`.
+    #[test]
+    fn the_last_value_is_the_upper_end_even_when_the_step_underflows() {
+        assert_eq!(degenerate(0.0, 5e-324, 5), [0.0, 0.0, 0.0, 0.0, 5e-324]);
+        assert_eq!(degenerate(1.0, 2.0, 1), [1.0]);
     }
 }

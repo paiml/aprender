@@ -18,6 +18,7 @@
 
 use super::build::PositionScale;
 use super::scale_spec::Expansion;
+use crate::error::{Error, Result};
 
 /// ggplot2's `default_expansion(discrete = expansion(add = 0.6))`: each side of a discrete axis
 /// grows by 0.6 of a level step.
@@ -96,6 +97,34 @@ pub fn discrete_range(n: usize, expand: Expansion) -> (f64, f64) {
     expand.apply((1.0, n as f64))
 }
 
+/// Refuse the arguments of a discrete spec that ggplot2 errors on or this crate cannot place: an
+/// expansion that is negative or not finite, and `labels` whose length differs from the breaks
+/// (`breaks`, or the levels when unset; `n_trained` counts the trained levels when `limits` is
+/// unset). R errors on explicit breaks ("`breaks` and `labels` must have the same length"); for
+/// default breaks it pads short labels with `NA` and drops extra ones, which is not reproduced.
+///
+/// # Errors
+///
+/// [`Error::ScaleDomain`] in either case.
+pub(crate) fn check_discrete(n_trained: usize, spec: &DiscreteSpec) -> Result<()> {
+    if let Some(e) = spec.expand {
+        e.validate()?;
+    }
+    if let Some(labels) = &spec.labels {
+        let n = spec
+            .breaks
+            .as_ref()
+            .map_or_else(|| spec.limits.as_ref().map_or(n_trained, Vec::len), Vec::len);
+        if labels.len() != n {
+            return Err(Error::ScaleDomain(format!(
+                "`breaks` and `labels` must have the same length ({n} breaks, {} labels)",
+                labels.len()
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Resolve a discrete axis: `trained` levels (used unless the spec gives `limits`) into the panel
 /// view. `limits` is `(1, n)`; the level names are in [`PositionScale::levels`], and `breaks` hold
 /// the break positions with `labels` beside them.
@@ -110,6 +139,11 @@ pub fn resolve_discrete(trained: Vec<String>, spec: &DiscreteSpec) -> PositionSc
     let mut breaks = Vec::new();
     let mut labels = Vec::new();
     for (i, name) in requested.iter().enumerate() {
+        // `unique(breaks)`: a repeated break is kept once, with the label of its first occurrence
+        // (`breaks = c("a", "a", "b")`, `labels = c("A", "B", "C")` gives `a b` / `A C`).
+        if requested[..i].contains(name) {
+            continue;
+        }
         // `intersect(breaks, limits)`: breaks that are not levels are dropped.
         let Some(pos) = position(&levels, name) else { continue };
         breaks.push(pos);

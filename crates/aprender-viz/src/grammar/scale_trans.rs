@@ -143,10 +143,12 @@ pub fn regular_minor_breaks(major: &[f64], limits: (f64, f64), n: usize) -> Vec<
     let bd = b[1] - b[0];
     let (lo, hi) = (limits.0.min(limits.1), limits.0.max(limits.1));
     let b_min = b.iter().copied().fold(f64::INFINITY, f64::min);
-    let b_max = b.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     if lo < b_min {
         b.insert(0, b[0] - bd);
     }
+    // R tests `max(b)` after the first insertion: with unsorted majors (`c(5, 1, 3)`) the
+    // inserted end can be the new maximum.
+    let b_max = b.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     if hi > b_max {
         b.push(b[b.len() - 1] + bd);
     }
@@ -216,5 +218,20 @@ mod tests {
         let m = regular_minor_breaks(&[0.0, 2.0], (-0.5, 2.5), 2);
         assert_eq!(m, [-2.0, -1.0, 0.0, 1.0, 2.0, 3.0, 4.0]);
         assert!(regular_minor_breaks(&[1.0], (0.0, 2.0), 2).is_empty());
+    }
+}
+
+#[cfg(test)]
+mod minor_break_order_tests {
+    use super::*;
+
+    /// `scales::regular_minor_breaks()(c(5, 1, 3), c(0.75, 6.25), 2)` in R: the low end is inserted
+    /// first (`9 5 1 3`), and `max(b)` is then 9, so nothing is appended. Before the fix the stale
+    /// maximum (5) appended `-1` and an extra `1` trailed the result.
+    #[test]
+    fn unsorted_majors_test_the_maximum_after_the_low_end_insert() {
+        let got = regular_minor_breaks(&[5.0, 1.0, 3.0], (0.75, 6.25), 2);
+        let inside: Vec<f64> = got.into_iter().filter(|m| (0.75..=6.25).contains(m)).collect();
+        assert_eq!(inside, [5.0, 3.0, 1.0, 2.0, 3.0]);
     }
 }

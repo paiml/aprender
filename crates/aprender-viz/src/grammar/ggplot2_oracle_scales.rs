@@ -762,3 +762,151 @@ fn expansion_mult_and_zero_range_match_r() {
     assert!(!super::scale_spec::zero_range(1.0, f64::INFINITY));
     assert!(!super::scale_spec::zero_range(f64::NEG_INFINITY, f64::INFINITY));
 }
+
+// --- Review of #6916, pass 3: edge cases (fixture `scale_edge`) --------------------------------
+
+/// Each case is a ggplot2 4.0.3 build over `scale_edge/data.csv`: a `NaN` limit is R's `NA` (that
+/// end takes the data range), limits near `f64::MAX` keep finite breaks, duplicate discrete
+/// breaks collapse, unsorted breaks get R's minor breaks, subnormal limits get R's labels, and
+/// `limits = c(1, 1 + 1e-15)` is a zero-width range (`zero_range` tolerance).
+#[test]
+fn ggplot2_scale_edge_cases() {
+    let m = f64::MAX;
+    run_fixture(
+        include_str!("../../fixtures/ggplot2/scale_edge/expected.json"),
+        include_str!("../../fixtures/ggplot2/scale_edge/data.csv"),
+        |name, df| match name {
+            "limits_na_lo" => {
+                point(df, "x", "y").scale_x(scale_continuous().limits(f64::NAN, 10.0))
+            }
+            "limits_na_hi" => point(df, "x", "y").scale_x(scale_continuous().limits(0.0, f64::NAN)),
+            "limits_na_both" => {
+                point(df, "x", "y").scale_x(scale_continuous().limits(f64::NAN, f64::NAN))
+            }
+            "limits_na_lo_log" => {
+                point(df, "x", "y").scale_x(scale_log10().limits(f64::NAN, 100.0))
+            }
+            "limits_pm_max" => point(df, "x", "y").scale_x(scale_continuous().limits(-m, m)),
+            "limits_zero_max" => point(df, "x", "y").scale_x(scale_continuous().limits(0.0, m)),
+            "limits_pm_max_no_expand" => point(df, "x", "y")
+                .scale_x(scale_continuous().limits(-m, m).expand(Expansion::none())),
+            "disc_dup_limits" => {
+                point(df, "g", "y").scale_x(scale_discrete().limits(["a", "a", "b"]))
+            }
+            "disc_dup_breaks" => point(df, "g", "y").scale_x(scale_discrete().breaks(["a", "a"])),
+            "disc_dup_breaks_labels" => point(df, "g", "y")
+                .scale_x(scale_discrete().breaks(["a", "a", "b"]).labels(["A", "B", "C"])),
+            "breaks_unsorted" => {
+                point(df, "x", "y").scale_x(scale_continuous().breaks([5.0, 1.0, 3.0]))
+            }
+            "limits_subnormal" => {
+                point(df, "x", "y").scale_x(scale_continuous().limits(0.0, 5e-324))
+            }
+            "limits_zero_range_tol" => {
+                point(df, "x", "y").scale_x(scale_continuous().limits(1.0, 1.0 + 1e-15))
+            }
+            other => panic!("unknown case {other}"),
+        },
+    );
+}
+
+/// Inputs R errors on (`breaks` and `labels` of different lengths), or answers with numbers this
+/// crate declines to reproduce (negative or non-finite expansion, a `NA` limit whose substituted
+/// pair is inverted, short labels on default discrete breaks): each is a typed
+/// `ScaleDomain` error, never other numbers. `refusals.json` records what R did.
+#[test]
+fn ggplot2_scale_edge_refusals() {
+    // The ones R itself errors on; for every other name R returned a range.
+    const R_ERRORS: [&str; 4] = [
+        "cont_labels_short",
+        "cont_labels_long",
+        "cont_labels_default_breaks",
+        "disc_labels_short",
+    ];
+    let want: Value =
+        serde_json::from_str(include_str!("../../fixtures/ggplot2/scale_edge/refusals.json"))
+            .expect("fixture is valid JSON");
+    assert_eq!(want["versions"]["ggplot2"], "4.0.3");
+    let refusals = want["refusals"].as_array().expect("refusals");
+    assert_eq!(refusals.len(), 11);
+    let csv = include_str!("../../fixtures/ggplot2/scale_edge/data.csv");
+    for r in refusals {
+        let name = r["name"].as_str().expect("name");
+        let df = frame_from_csv(csv, None);
+        let plot = match name {
+            "cont_labels_short" => point(df, "x", "y")
+                .scale_x(scale_continuous().breaks([1.0, 3.0, 5.0]).labels(["a", "b"])),
+            "cont_labels_long" => point(df, "x", "y")
+                .scale_x(scale_continuous().breaks([1.0, 3.0, 5.0]).labels(["a", "b", "c", "d"])),
+            "cont_labels_default_breaks" => {
+                point(df, "x", "y").scale_x(scale_continuous().labels(["a", "b"]))
+            }
+            "disc_labels_short" => point(df, "g", "y")
+                .scale_x(scale_discrete().breaks(["a", "b", "c"]).labels(["A", "B"])),
+            "disc_labels_default_breaks_short" => {
+                point(df, "g", "y").scale_x(scale_discrete().labels(["A", "B"]))
+            }
+            "expand_neg_mult" => {
+                point(df, "x", "y").scale_x(scale_continuous().expand(Expansion::mult(-0.6)))
+            }
+            "expand_neg_add" => {
+                point(df, "x", "y").scale_x(scale_continuous().expand(Expansion::add(-1.0)))
+            }
+            "expand_nan" => point(df, "x", "y")
+                .scale_x(scale_continuous().expand(Expansion::new((f64::NAN, 0.0), (0.0, 0.0)))),
+            "expand_inf_add" => point(df, "x", "y")
+                .scale_x(scale_continuous().expand(Expansion::add(f64::INFINITY))),
+            "disc_expand_neg" => {
+                point(df, "g", "y").scale_x(scale_discrete().expand(Expansion::add(-0.9)))
+            }
+            "limits_na_hi_below_data" => {
+                point(df, "x", "y").scale_x(scale_continuous().limits(10.0, f64::NAN))
+            }
+            other => panic!("unknown refusal {other}"),
+        };
+        let got = scoped(plot);
+        assert!(matches!(&got, Err(crate::error::Error::ScaleDomain(_))), "{name}: {got:?}");
+        assert_eq!(r["r_error"].is_string(), R_ERRORS.contains(&name), "{name}: R outcome");
+    }
+}
+
+/// A `NA` limit takes the data range, so an axis with no finite data cannot resolve it; a labels
+/// vector that matches an explicit `limits` of a discrete scale resolves, one that does not is
+/// refused.
+#[test]
+fn na_limit_needs_data_and_discrete_labels_match_limits() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[f32::INFINITY]);
+    df.add_column_f32("y", &[1.0]);
+    let got = scoped(point(df, "x", "y").scale_x(scale_continuous().limits(f64::NAN, 5.0)));
+    assert!(matches!(&got, Err(crate::error::Error::ScaleDomain(m)) if m.contains("train")));
+    let ok = scoped(
+        point(scope_frame(), "g", "y")
+            .scale_x(scale_discrete().limits(["a", "b", "c"]).labels(["A", "B", "C"])),
+    )
+    .expect("labels match the limits");
+    assert_eq!(ok.x.labels, ["A", "B", "C"]);
+    let bad = scoped(
+        point(scope_frame(), "g", "y")
+            .scale_x(scale_discrete().limits(["a", "b", "c"]).labels(["A", "B"])),
+    );
+    assert!(matches!(bad, Err(crate::error::Error::ScaleDomain(_))));
+}
+
+/// A text position in a LATER layer makes the plot discrete: the first layer's numbers then reach
+/// a text axis and are refused. Detection must be `any` layer, not `all` of them.
+#[test]
+fn a_text_position_in_any_layer_selects_the_scaled_path() {
+    use super::Layer;
+    let mut text = DataFrame::new();
+    text.add_column_str("x", &["a", "b"]);
+    text.add_column_f32("y", &[1.0, 2.0]);
+    let mut numbers = DataFrame::new();
+    numbers.add_column_f32("x", &[1.0, 2.0]);
+    numbers.add_column_f32("y", &[1.0, 2.0]);
+    let got = scoped(point(numbers, "x", "y").layer(Layer::new(Geom::point()).data(text)));
+    assert!(
+        matches!(&got, Err(crate::error::Error::ScaleDomain(m)) if m.contains("holds the number")),
+        "{got:?}"
+    );
+}

@@ -26,7 +26,14 @@ fn scientific(v: f64) -> Sci {
     let a = v.abs();
     let mut e = libm::floor(libm::log10(a)) as i32;
     // Mantissa scaled to R_DIGITS integer digits, rounded as R rounds it.
-    let mut m = libm::round(a / libm::pow(10.0, f64::from(e - (R_DIGITS - 1))));
+    let k = e - (R_DIGITS - 1);
+    // `10^-k` overflows below 1e-308 (subnormals): scale the value up first, exactly as R's long
+    // double does implicitly.
+    let mut m = if k < -300 {
+        libm::round(a * 1e30 / libm::pow(10.0, f64::from(k + 30)))
+    } else {
+        libm::round(a / libm::pow(10.0, f64::from(k)))
+    };
     let full = libm::pow(10.0, f64::from(R_DIGITS));
     if m >= full {
         m /= 10.0;
@@ -130,5 +137,18 @@ mod tests {
         assert_eq!(format_labels(&[1e5]), ["1e+05"]);
         assert_eq!(format_labels(&[1.5e5, 2e5]), ["150000", "200000"]);
         assert_eq!(format_labels(&[1e-5]), ["1e-05"]);
+    }
+}
+
+#[cfg(test)]
+mod subnormal_tests {
+    use super::*;
+
+    /// `format(c(0, 5e-324))` in R: scientific, seven significant digits, three-digit exponent.
+    #[test]
+    fn subnormals_print_in_scientific_form() {
+        assert_eq!(format_labels(&[0.0, 5e-324]), ["0.000000e+00", "4.940656e-324"]);
+        assert_eq!(decimals_needed(5e-324), 330);
+        assert_eq!(format_labels(&[1e-310]), ["1e-310"]);
     }
 }
