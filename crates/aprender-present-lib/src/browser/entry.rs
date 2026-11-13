@@ -130,6 +130,10 @@ impl MountHandle {
 
     /// Register the per-frame callback (replacing any earlier one) and start the loop.
     /// It runs once per tick with the frame delta in ms.
+    ///
+    /// The callback must not call `on_frame` or `update` on this same handle: the tick holds
+    /// the callback and the mounted tree borrowed, so that would panic on a `RefCell` borrow.
+    /// `stop` is safe to call from the callback.
     pub fn on_frame(&self, callback: impl FnMut(&mut Mounted, f64) + 'static) {
         *self.shared.frame_callback.borrow_mut() = Some(Box::new(callback));
         self.shared.mounted.borrow_mut().request_repaint();
@@ -137,6 +141,8 @@ impl MountHandle {
     }
 
     /// Stop the frame loop for good: the pending frame is cancelled and no tick runs after.
+    /// Stop is final; mount again to restart. Events after `stop` still mutate state but
+    /// never repaint, so the canvas and its data-count go stale.
     pub fn stop(&self) {
         self.shared.frames.borrow_mut().stop();
     }

@@ -116,13 +116,21 @@ impl<S: FrameScheduler> FrameLoop<S> {
     }
 
     /// The tick is done. Ask for another frame only if `wants_next` and the loop is live.
+    /// When the loop ends up idle (nothing owed, or the request was refused) the clock is
+    /// reset, so the first tick after the gap follows the first-frame rule (delta 0) rather
+    /// than spanning the idle time.
     pub fn end_tick(&mut self, wants_next: bool) {
         if wants_next && !self.stopped && self.pending.is_none() {
             self.pending = self.scheduler.request();
         }
+        if self.pending.is_none() {
+            self.clock = FrameClock::new();
+        }
     }
 
-    /// Stop for good: withdraw the pending request. Idempotent.
+    /// Stop for good: withdraw the pending request. Idempotent. Stop is final; build a new
+    /// loop to restart. Later `kick`s request nothing and no tick runs, so state changes
+    /// after `stop` are never repainted.
     pub fn stop(&mut self) {
         self.stopped = true;
         if let Some(id) = self.pending.take() {
@@ -241,5 +249,47 @@ mod tests {
         assert!(!l.is_running());
         assert_eq!(l.scheduler_mut().requested.len(), 1);
         assert!(l.scheduler_mut().cancelled.is_empty());
+    }
+
+    #[test]
+    fn the_first_tick_after_an_idle_gap_has_zero_delta() {
+        let mut l = FrameLoop::new(Fake::default());
+        l.kick(true);
+        assert_eq!(l.begin_tick(0.0), Some(0.0));
+        l.end_tick(true);
+        assert_eq!(l.begin_tick(1000.0), Some(1000.0));
+        l.end_tick(false);
+        l.kick(true);
+        assert_eq!(l.begin_tick(60016.0), Some(0.0));
+        l.end_tick(true);
+        assert_eq!(l.begin_tick(60032.0), Some(16.0));
+    }
+
+    #[test]
+    fn a_kick_during_a_tick_never_makes_two_requests_for_one_frame() {
+        let mut l = FrameLoop::new(Fake::default());
+        l.kick(true);
+        assert!(l.begin_tick(0.0).is_some());
+        l.kick(true);
+        assert_eq!(l.scheduler_mut().requested.len(), 2);
+        l.end_tick(true);
+        assert_eq!(l.scheduler_mut().requested.len(), 2);
+        assert!(l.is_running());
+    }
+
+    #[test]
+    fn after_stop_a_later_kick_requests_nothing_and_no_tick_runs() {
+        let mut l = FrameLoop::new(Fake::default());
+        l.kick(true);
+        assert!(l.begin_tick(0.0).is_some());
+        l.end_tick(false);
+        l.stop();
+        let before = l.scheduler_mut().requested.len();
+        l.kick(true);
+        l.end_tick(true);
+        assert_eq!(l.scheduler_mut().requested.len(), before);
+        assert!(!l.is_running());
+        assert_eq!(l.begin_tick(99.0), None);
+        assert_eq!(l.ticks(), 1);
     }
 }

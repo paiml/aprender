@@ -38,6 +38,13 @@ contract: |
       any later kick or end_tick request.
   (5) THE LOOP ENDS WHEN NOTHING IS OWED. end_tick(false) leaves no request
       pending; a refused request leaves the loop idle.
+  (6) NO IDLE GAP IN THE DELTA. When the loop goes idle (end_tick leaves nothing
+      pending) the clock resets, so the first tick after the gap has delta 0
+      (the first-frame rule) and never spans the idle time.
+  (7) A KICK DURING A TICK DOES NOT DOUBLE THE REQUEST. end_tick requests only
+      when nothing is pending.
+  (8) STOP IS FINAL. After stop no kick or end_tick requests a frame and no tick
+      runs; later state changes are never repainted. Mount again to restart.
 equations:
   frame_delta:
     description: "Frame delta from host timestamps"
@@ -78,8 +85,24 @@ falsification_tests:
     test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::ticks_continue_while_wanted_and_the_loop_stops_asking_otherwise && cargo test -p aprender-present-lib --lib browser::frame_loop::tests::a_refused_request_leaves_the_loop_idle"
     prediction: "two requests for two wanted ticks, none after end_tick(false); refused request not running"
     if_fails: "the loop spins with no work, or claims to run with no request"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-007
+    description: "the first tick after an idle gap has zero delta"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::the_first_tick_after_an_idle_gap_has_zero_delta"
+    prediction: "ticks to 1000, idle, kick, begin_tick(60016) gives 0, then 16 for 60032"
+    if_fails: "every restart after idle or a hidden tab gets a huge animation step"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-008
+    description: "a kick between begin_tick and end_tick(true) leaves one request for the next frame"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::a_kick_during_a_tick_never_makes_two_requests_for_one_frame"
+    prediction: "exactly 2 requests in total after end_tick(true); deleting the pending.is_none() guard in end_tick makes it 3"
+    if_fails: "two rAF callbacks per frame: animations run at double speed"
+  - id: FALSIFY-PRESENT_FRAME_LOOP-009
+    description: "after stop a later kick requests nothing and no tick runs"
+    test: "cargo test -p aprender-present-lib --lib browser::frame_loop::tests::after_stop_a_later_kick_requests_nothing_and_no_tick_runs"
+    prediction: "request count unchanged, not running, begin_tick None, ticks unchanged"
+    if_fails: "a stopped (torn down) page restarts its loop on the next event"
 open_obligations:
   - |
     browser::entry (RafScheduler, the per-frame callback, MountHandle::stop) has
     no browser run yet: owes a probar end-to-end run that counts frames on a
-    scratch page (#6892), and a wasm32 build for the new code path.
+    scratch page (#6892). The wasm32 cargo check of the new code path ran rc 0;
+    wasm32 clippy and the browser frame count remain.
