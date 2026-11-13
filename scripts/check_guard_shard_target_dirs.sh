@@ -69,8 +69,11 @@ check() {
         : > "$out"
         local run=${line//'${{ matrix.shard }}'/$k}
         case "$run" in *'${{'*) fail "unexpected expression left in: $run"; return ;; esac
-        (cd "$root" && env CARGO_TARGET_DIR="$base" GITHUB_ENV="$out" GITHUB_WORKSPACE="$root" bash -c "$run") \
-            > "$td/log.$k" 2>&1 || { fail "shard $k: the line exited non-zero: $(tr '\n' ' ' < "$td/log.$k")"; return; }
+        # The cd stands on its own line: $run is text read from sections.yml, and only $root is a path.
+        (
+            cd -- "$root" || exit 2
+            env CARGO_TARGET_DIR="$base" GITHUB_ENV="$out" GITHUB_WORKSPACE="$root" bash -c "$run"
+        ) > "$td/log.$k" 2>&1 || { fail "shard $k: the line exited non-zero: $(tr '\n' ' ' < "$td/log.$k")"; return; }
         dir=$(sed -n 's/^CARGO_TARGET_DIR=//p' "$out" | tail -n 1)
         [ -n "$dir" ] || { fail "shard $k: no CARGO_TARGET_DIR written to GITHUB_ENV"; return; }
         [ "${dir%/}" != "$base" ] || { fail "shard $k keeps the runner's shared target dir $dir"; return; }
@@ -110,6 +113,7 @@ self_test() {
     row "helper: empty shard -> refused" 1 helper "$td/b" ''
     row "helper: shard 0 -> refused" 1 helper "$td/b" 0
     row "helper: shard x -> refused" 1 helper "$td/b" x
+    row "helper: base spelled with .. -> refused" 1 helper "$td/b/.." 4
     row "helper: base already a shard dir -> not nested" 0 test "$(helper "$td/b/guard-shard-1" 2)" = "CARGO_TARGET_DIR=$td/b/guard-shard-2"
     copy_tree "$td/ok" && row "this tree's wiring -> green" 0 check "$td/ok"
     copy_tree "$td/m1" && sed -i 's|guard_shard_target_dir.sh "${{ matrix.shard }}"|guard_shard_target_dir.sh "1"|' "$td/m1/ci/sections.yml"
