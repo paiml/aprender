@@ -16,10 +16,13 @@
 #        gate on a train with x86-main not success (skipped/missing too) -> RED (fix round 3, finding 1: the train owes the
 #          whole x86-main job, where vendored-schemas, guard-cargo-shard and the bin filter run, as merge_group owes `guards`)
 #        push off refs/heads/main (v* tag, master) at the head sha of an open PR, or the PR list unreadable -> RED;
-#          push to main, and a tag push no open PR heads -> green
+#          push to main, and a tag push no open PR heads -> green. The step's own jq filter runs over fixtures: an open PR
+#          heading the sha -> RED; a closed one, or one whose BASE is the sha -> green.
 #   3. the verdict needs every heavy job (a missing `needs` could let a skipped heavy job pass unseen); nothing in a
 #      verdict job is continue-on-error (no third state). gate reads X86R from needs.x86-main.result; x86-main runs the
-#      bin-filter step on pull_request (it ran in `guards` on merge_group).
+#      bin-filter step on pull_request (it ran in `guards` on merge_group). The heavy jobs (x86-main, determinism,
+#      workspace-test-shard) carry no job-level continue-on-error, and a continue-on-error step in them must have an if:
+#      confined to a push to refs/heads/main with no `||` (else x86-main reports success over a failed guard).
 #   4. REQUIRED CHECK NAMES (fix round 3, finding 3). Branch protection keys on check-run NAMES, from any job of any
 #      workflow. Each required name is produced by exactly its verdict job and by no other job:
 #        `ci / gate` <- ci-gate,  `gate` <- gate,  `workspace-test` <- workspace-test   (REQ below).
@@ -118,7 +121,17 @@ line_eq() { # BLOCK INDENT PREFIX CANONICAL -> rc 0 when exactly one line at exa
 runrc=0; runout=""
 runstep() {
     local td="$1" scr="$2" behind="$3"; shift 3
-    printf '#!/bin/sh\n[ "%s" = fail ] && exit 1\necho "%s"\n' "$behind" "$behind" > "$td/bin/gh"; chmod +x "$td/bin/gh"
+    # With PULLS_JSON set, the commits/<sha>/pulls read applies the step's OWN --jq filter to that fixture (round 3 r2:
+    # a stub that ignored --jq let a filter on .base.sha or state "closed" pass every row).
+    { printf '#!/bin/sh\nB=%s\n' "'$behind'"
+      cat <<'STUB'
+[ "$B" = fail ] && exit 1
+case "$*" in *"/pulls"*) if [ -n "${PULLS_JSON:-}" ]; then
+    while [ $# -gt 0 ]; do if [ "$1" = --jq ]; then printf '%s' "$PULLS_JSON" | jq -r "$2"; exit $?; fi; shift; done
+    echo "stub: /pulls read without --jq" >&2; exit 1; fi ;; esac
+echo "$B"
+STUB
+    } > "$td/bin/gh"; chmod +x "$td/bin/gh"
     runrc=0
     runout="$(env -i PATH="$td/bin:/usr/bin:/bin:/usr/local/bin" REPO=x/y BASE_REF=main HEAD_SHA=abc GITHUB_SHA=abc "$@" bash -c "$scr" 2>&1)" || runrc=$?
 }
@@ -195,6 +208,13 @@ check() { # FILE -> one FAIL line per violated condition; rc 1 when any
         row 'push of a v* tag at an open PR head' red 'at the head of an open PR' 1 EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped
         row 'push to master at an open PR head' red 'at the head of an open PR' 2 EVT=push TRAIN=0 REF=refs/heads/master PRL=skipped
         row 'push of a v* tag, open PRs unreadable' red 'at the head of an open PR' fail EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped
+        # the step's own jq filter over a fixture (GITHUB_SHA=abc): only an OPEN PR whose HEAD is this sha refuses
+        row 'push of a v* tag, fixture: open PR heads this sha' red 'at the head of an open PR' 0 EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped \
+            'PULLS_JSON=[{"state":"open","head":{"sha":"abc"},"base":{"sha":"def"}}]'
+        row 'push of a v* tag, fixture: closed PR heads this sha' 0 '' 0 EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped \
+            'PULLS_JSON=[{"state":"closed","head":{"sha":"abc"},"base":{"sha":"def"}}]'
+        row 'push of a v* tag, fixture: open PR, this sha is its base' 0 '' 0 EVT=push TRAIN=0 REF=refs/tags/v9.9.9 PRL=skipped \
+            'PULLS_JSON=[{"state":"open","head":{"sha":"def"},"base":{"sha":"abc"}}]'
         case "$j" in
             workspace-test) row 'train with the shard matrix skipped' red '' 0 SHARD_RESULT=skipped ;;
             ci-gate) row 'train with x86-main skipped (no sov.gate)' red '' 0 'RESULTS=null' ;;
@@ -216,6 +236,21 @@ check() { # FILE -> one FAIL line per violated condition; rc 1 when any
     elif ! line_eq "$w" 8 'if:' "$CAN_BINF_IF"; then
         echo "FAIL  x86-main bin-filter step: its if: is not exactly the pull_request condition"; bad=1
     fi
+    # gate reads needs.x86-main.result and workspace-test reads the shard matrix result: a continue-on-error job, or a
+    # continue-on-error step that can run on a pull_request, reports success over a failed guard (no third state). Only a
+    # step whose if: confines it to a push to refs/heads/main (codecov, attest) may carry it.
+    for j in x86-main determinism workspace-test-shard; do
+        blk="$(job_block "$f" "$j")"
+        if printf '%s\n' "$blk" | /usr/bin/grep -q -E '^    continue-on-error:'; then echo "FAIL  heavy job $j is continue-on-error at job level"; bad=1; fi
+        # confined = the step if: has the push-to-main conjuncts and no `||` (an OR-ed clause could re-admit a PR)
+        n="$(printf '%s\n' "$blk" | awk '
+            function done() { if (c && !m) bad++; c = 0; m = 0 }
+            /^      - / { done() }
+            /^        continue-on-error:/ { c = 1 }
+            /^        if:/ && index($0, "github.event_name == '\''push'\'' && github.ref == '\''refs/heads/main'\''") && !index($0, "||") { m = 1 }
+            END { done(); print bad + 0 }')"
+        if [ "$n" != 0 ]; then echo "FAIL  heavy job $j: $n continue-on-error step(s) not confined to a push to main"; bad=1; fi
+    done
     names_check "$f" "${OTHER_WF_DIR:-$root/.github/workflows}" || bad=1
     rm -rf "${td:?}"
     for w in "gate:x86-main" "gate:determinism" "gate:workspace-test" "workspace-test:workspace-test-shard" "ci-gate:x86-main"; do
@@ -286,7 +321,9 @@ self_test() {
         # push off main at an open PR head (fix round 3, finding 1): the check gone, or an unread PR list passing
         mutant "$jb-push-check-gone"     "/^  $jb:\$/,/^  [a-z-]+:\$/{/at the head of an open PR/d}"
         mutant "$jb-push-unread-passes"  "/^  $jb:\$/,/^  [a-z-]+:\$/{s/\|\| open=unread/|| open=0/}"
-        mutant "$jb-push-tags-exempt"    "/^  $jb:\$/,/^  [a-z-]+:\$/{s/\[ \"\\$\{REF:-\}\" != refs\/heads\/main \]; then/[ \"\${REF:-}\" = refs\/heads\/master ]; then/}"
+        mutant "$jb-push-jq-base-sha"    "/^  $jb:\$/,/^  [a-z-]+:\$/{s/and \\.head\\.sha == /and .base.sha == /}"
+        mutant "$jb-push-jq-state-closed" '/^  '"$jb"':$/,/^  [a-z-]+:$/{s/\.state == \\"open\\"/.state == \\"closed\\"/}'
+        mutant "$jb-push-tags-exempt"   "/^  $jb:\$/,/^  [a-z-]+:\$/{s/\[ \"\\$\{REF:-\}\" != refs\/heads\/main \]; then/[ \"\${REF:-}\" = refs\/heads\/master ]; then/}"
     done
     # --- fix round 3, finding 1: the train owes the whole x86-main job ---
     mutant gate-x86-requirement-removed   "/^  gate:\$/,/^  [a-z-]+:\$/{/x86-main is '\\$\{X86R/d}"
@@ -296,6 +333,12 @@ self_test() {
     mutant gate-x86r-env-gone              '/^          X86R: /d'
     mutant bin-filter-step-gone            '/^  x86-main:$/,/^  [a-z-]+:$/{/release_bin_filter_test\.sh/d}'
     mutant bin-filter-step-if-false        "/^  x86-main:\$/,/^  [a-z-]+:\$/{s/if: \\$\{\{ github\.event_name == 'pull_request' \}\}\$/if: false/}"
+    # --- round 3 r2: a continue-on-error heavy job or PR-reachable step reports success over a failed guard ---
+    mutant x86-main-job-coe        's/^  x86-main:$/  x86-main:\n    continue-on-error: true/'
+    mutant determinism-job-coe     's/^  determinism:$/  determinism:\n    continue-on-error: true/'
+    mutant shard-job-coe           's/^  workspace-test-shard:$/  workspace-test-shard:\n    continue-on-error: true/'
+    mutant bin-filter-step-coe     's/^(      - name: Binary Release bin filter.*)$/\1\n        continue-on-error: true/'
+    mutant codecov-coe-if-ored     "s/(contains\\(steps\\.wait\\.outputs\\.deferred, 'codecov'\\))\$/\\1 || github.event_name == 'pull_request'/"
     # --- fix round 3, finding 3: required check names come from exactly their verdict job ---
     mutant name-ci-gate-moved-to-pr-light  's/^    name: ci \/ gate$/    name: ci-gate/; s/^  pr-light:$/  pr-light:\n    name: ci \/ gate/'
     mutant name-gate-moved-to-pr-light     's/^  pr-light:$/  pr-light:\n    name: gate/; s/^  gate:$/  gate:\n    name: final verdict/'
