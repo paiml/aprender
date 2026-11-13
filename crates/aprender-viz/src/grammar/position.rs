@@ -430,6 +430,15 @@ mod tests {
     }
 
     #[test]
+    fn a_nan_x_row_with_a_nan_ymax_gets_na_edges() {
+        // U1 (k6), R's PositionStack methods: NaN x and NaN ymax on one row give NA edges.
+        let mut rows = vec![row(1.0, 1, 1.0, 0.0, NAN), row(1.0, 2, 2.0, 0.0, 2.0)];
+        rows[0].x = NAN;
+        let rows = adjusted([rows, vec![row(1.0, 3, 4.0, 0.0, 4.0)]].concat(), Position::stack());
+        assert_y(&rows, &[0.0, 6.0, 4.0], &[NAN, 4.0, 0.0], &[NAN, 6.0, 4.0]);
+    }
+
+    #[test]
     fn a_nan_xmin_or_xmax_alone_blanks_the_row() {
         // P10 / P11, R's PositionStack methods on hand-built rows: only row 2's xmin (or xmax) is
         // NaN, and R blanks x, xmin, xmax and y of that row.
@@ -462,11 +471,69 @@ mod tests {
     }
 
     #[test]
+    fn a_swapped_row_alone_in_its_column_with_infinite_edges_is_still_swapped() {
+        // T13 (k4), R's PositionStack methods: ymin Inf, ymax -Inf puts row 1 alone in the negative
+        // stack, and R still swaps its edges.
+        let rows =
+            vec![row(1.0, 1, 1.0, f64::INFINITY, -f64::INFINITY), row(1.0, 2, 2.0, 0.0, 2.0)];
+        let rows = adjusted(rows, Position::stack());
+        assert_y(&rows, &[1.0, 2.0], &[1.0, 0.0], &[0.0, 2.0]);
+    }
+
+    #[test]
     fn a_swapped_row_in_the_negative_stack_keeps_its_edges_swapped() {
         // S2, R's PositionStack methods: max_is_lower applies below zero too.
         let rows = vec![row(1.0, 1, -1.0, 0.0, -1.0), row(1.0, 2, -2.0, 0.0, -2.0)];
         let rows = adjusted(rows, Position::stack());
         assert_y(&rows, &[-2.0, 0.0], &[-2.0, 0.0], &[-3.0, -2.0]);
+    }
+
+    #[test]
+    fn vjust_zero_keeps_the_negative_stack_swap() {
+        // T4 (k3), R's PositionStack methods: S2's rows with vjust = 0.
+        let rows = vec![row(1.0, 1, -1.0, 0.0, -1.0), row(1.0, 2, -2.0, 0.0, -2.0)];
+        let rows = adjusted(rows, Position::Stack { vjust: 0.0, reverse: false });
+        assert_y(&rows, &[-3.0, -2.0], &[-2.0, 0.0], &[-3.0, -2.0]);
+    }
+
+    #[test]
+    fn fill_with_vjust_half_keeps_the_swap() {
+        // T12 (k2), R's PositionStack methods: position_fill(vjust = 0.5); row 1 is swapped, row 2
+        // sits alone in the negative stack.
+        let rows = vec![
+            row(1.0, 1, 2.0, 5.0, 2.0),
+            row(1.0, 2, -1.0, 0.0, -1.0),
+            row(1.0, 3, 3.0, 0.0, 3.0),
+        ];
+        let rows = adjusted(rows, Position::Fill { vjust: 0.5, reverse: false });
+        assert_y(&rows, &[0.8, -0.5, 0.3], &[1.0, 0.0, 0.0], &[0.6, -1.0, 0.6]);
+    }
+
+    #[test]
+    fn an_inf_y_is_present_and_stacks() {
+        // T1 (k1), R's PositionStack methods: Inf is not missing; row 1's y is Inf - Inf = NaN, and
+        // its edges stay Inf, not NA.
+        let inf = f64::INFINITY;
+        let rows = vec![
+            row(1.0, 1, 1.0, 0.0, 1.0),
+            row(1.0, 2, inf, 0.0, inf),
+            row(1.0, 3, 2.0, 0.0, 2.0),
+        ];
+        let rows = adjusted(rows, Position::stack());
+        assert_y(&rows, &[NAN, inf, 2.0], &[inf, 2.0, 0.0], &[inf, inf, 2.0]);
+    }
+
+    #[test]
+    fn a_negative_zero_ymax_counts_as_zero() {
+        // T5b (k5), R's PositionStack methods: ymax == 0 is TRUE for -0, so ymax becomes ymin
+        // and rows 1 and 3 go to the negative stack.
+        let rows = vec![
+            row(1.0, 1, -1.0, -1.0, -0.0),
+            row(1.0, 2, 2.0, 0.0, 2.0),
+            row(1.0, 3, -2.0, -2.0, -0.0),
+        ];
+        let rows = adjusted(rows, Position::stack());
+        assert_y(&rows, &[-2.0, 2.0, 0.0], &[-3.0, 0.0, -2.0], &[-2.0, 2.0, 0.0]);
     }
 
     #[test]
