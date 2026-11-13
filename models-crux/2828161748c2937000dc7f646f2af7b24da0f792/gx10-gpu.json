@@ -1,5 +1,5 @@
 {
-  "version": "0.71.3",
+  "version": "0.72.6",
   "host": "gx10",
   "backend": "gpu",
   "isa": "aarch64",
@@ -27,10 +27,10 @@
     "source": "scripts/llama_pin.toml [protocol]"
   },
   "apr": {
-    "version_line": "apr 0.71.3 (d454a7a51)"
+    "version_line": "apr 0.72.6 (282816174)"
   },
   "harness": {
-    "sha": "d454a7a51",
+    "sha": "282816174",
     "driver": "scripts/crux_inference_dogfood.sh",
     "gpu_lock": "gpu-q --prio 3 (GPUQ_WAIT bound)"
   },
@@ -108,11 +108,11 @@
     "apr chat's backend is unverified: apr chat reports none (#3794)",
     "thinking ON until #3723 adds an apr toggle",
     "consumer-brief context rungs (#3716) and each engine's max accepted context",
-    "TTFT and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment"
+    "TTFT (run verb: only ollama reports a prefill_ms, which is a lower bound; llama-cli and apr print none) and decode rate: the serve verb's measurement goes through `apr test llm bench` (PERF-009), the next increment"
   ],
   "merged_shards": 5,
   "schema": "crux-inference-receipt/v1",
-  "judged_at": "2026-10-16T22:01Z",
+  "judged_at": "2026-11-13T22:03Z",
   "cells": [
     {
       "key": {
@@ -151,7 +151,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -171,9 +171,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 15.9,
+            "decode_rate": 16.9,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 17509.52
+            "inference_ms": 16574.89
           },
           "backend": {
             "requested": "gpu",
@@ -215,7 +215,7 @@
           "prompt_token_count": 30,
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -224,7 +224,7 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 402.9,
+            "prompt_rate": 397.5,
             "decode_rate": 64.9,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
@@ -356,7 +356,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -378,9 +378,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 14.6,
+            "decode_rate": 17.3,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 14058.0
+            "inference_ms": 10132.01
           },
           "backend": {
             "requested": "gpu",
@@ -434,7 +434,7 @@
           "prompt_token_count": 42,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -443,8 +443,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 261.6,
-            "decode_rate": 64.4,
+            "prompt_rate": 565.1,
+            "decode_rate": 68.5,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -575,7 +575,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -599,7 +599,7 @@
             "<answer>4</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -729,7 +729,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -754,7 +754,7 @@
             "<answer>7</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -886,7 +886,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -912,7 +912,7 @@
             "```python\ndef add(a, b):\n    return a + b\n```"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1014,422 +1014,6 @@
         "rung": "easy",
         "prompt_id": "ctl-2plus2",
         "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-recall-7",
-        "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "state_recall",
-        "expect": "7",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-recall-7",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "state_recall",
-        "expect": "7",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "nonstream",
         "route": "POST /generate"
       },
       "verdict": "GREEN",
@@ -1461,7 +1045,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -1493,7 +1077,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1630,7 +1214,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -1662,7 +1246,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1799,7 +1383,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -1831,7 +1415,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -1968,7 +1552,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -2000,7 +1584,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2137,7 +1721,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -2169,7 +1753,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2306,7 +1890,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -2338,7 +1922,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2474,7 +2058,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -2506,7 +2090,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2642,7 +2226,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -2672,7 +2256,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2806,7 +2390,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -2836,7 +2420,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -2970,7 +2554,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -3000,7 +2584,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3135,7 +2719,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -3165,7 +2749,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3300,7 +2884,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -3330,7 +2914,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3465,7 +3049,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -3495,7 +3079,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3630,7 +3214,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -3660,7 +3244,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3795,7 +3379,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -3828,7 +3412,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -3965,7 +3549,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -3998,7 +3582,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4135,7 +3719,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -4168,7 +3752,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4305,7 +3889,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -4338,7 +3922,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4475,7 +4059,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -4508,7 +4092,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4645,7 +4229,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -4678,7 +4262,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4814,7 +4398,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -4847,7 +4431,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -4983,7 +4567,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -5013,7 +4597,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5146,7 +4730,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -5176,7 +4760,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5309,7 +4893,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -5339,7 +4923,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5473,7 +5057,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -5503,7 +5087,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5637,7 +5221,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -5667,7 +5251,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5798,7 +5382,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -5829,7 +5413,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -5958,7 +5542,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -5980,7 +5564,7 @@
             "completion_tokens": 163,
             "decode_rate": 31.5,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 16715.91
+            "inference_ms": 14226.72
           },
           "backend": {
             "requested": "gpu",
@@ -6021,7 +5605,7 @@
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6030,8 +5614,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:** The user is asking for the sum of 2 and 2. They want the final answer enclosed in specific tags: `<answer></answer>`.\n\n2.  **Calculate the Answer:** 2 + 2 = 4.\n\n3.  **Format the Output:** The user explicitly requested the format `<answer>4</answer>`.\n\n4.  **Final Verification:** Does the output match the constraint? Yes. Is the math correct? Yes.\n\n5.  **Construct Final Response:**\n    <answer>4</answer>\n</think>\n\n<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 410.3,
-            "decode_rate": 70.0,
+            "prompt_rate": 396.6,
+            "decode_rate": 69.4,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -6158,7 +5742,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -6180,9 +5764,9 @@
             "reported_by": "apr",
             "prompt_tokens": 40,
             "completion_tokens": 347,
-            "decode_rate": 33.1,
+            "decode_rate": 33.3,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 24421.83
+            "inference_ms": 19834.98
           },
           "backend": {
             "requested": "gpu",
@@ -6235,7 +5819,7 @@
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6244,8 +5828,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function named `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint: Put *only* the function in a single ```python code block.\n    *   Output format: Markdown code block with Python syntax highlighting.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a function? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single code block? Yes.\n    *   Are there any extra explanations outside the code block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies I should minimize or exclude any surrounding text, but typically a brief introduction is acceptable unless strictly forbidden. However, \"Put only the function...\" suggests I should avoid extra chatter. I will provide just the code block to be safe and precise.\n\n4.  **Final Polish:**\n    *   Ensure the code is valid Python.\n    *   Ensure the block language is `python`.\n\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n5.  **Final Output Generation:** (Matches the drafted code block).\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 530.6,
-            "decode_rate": 66.0,
+            "prompt_rate": 544.8,
+            "decode_rate": 69.5,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -6374,7 +5958,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -6399,7 +5983,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6525,7 +6109,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -6552,7 +6136,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -6650,214 +6234,6 @@
         "rung": "easy",
         "prompt_id": "ctl-2plus2",
         "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "on",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "on",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "nonstream",
         "route": "POST /generate"
       },
       "verdict": "GREEN",
@@ -6886,7 +6262,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -6918,7 +6294,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7040,7 +6416,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -7072,7 +6448,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7194,7 +6570,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -7226,7 +6602,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7348,7 +6724,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -7380,7 +6756,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7502,7 +6878,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -7534,7 +6910,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7656,7 +7032,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -7688,7 +7064,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7809,7 +7185,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -7841,7 +7217,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -7962,7 +7338,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -7992,7 +7368,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8113,7 +7489,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -8143,7 +7519,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8264,7 +7640,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -8294,7 +7670,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8416,7 +7792,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -8446,7 +7822,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8568,7 +7944,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -8598,7 +7974,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8720,7 +8096,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -8750,7 +8126,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -8872,7 +8248,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -8902,7 +8278,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9021,7 +8397,7 @@
       },
       "subject": {
         "model_sha256": "00fe7986ff5f6b463e62455821146049db6f9313603938a70800d1fb69ef11a4",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -9052,7 +8428,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9169,7 +8545,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -9189,9 +8565,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 33.6,
+            "decode_rate": 33.8,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 9370.67
+            "inference_ms": 9630.16
           },
           "backend": {
             "requested": "gpu",
@@ -9233,7 +8609,7 @@
           "prompt_token_count": 30,
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9242,8 +8618,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 639.8,
-            "decode_rate": 116.3,
+            "prompt_rate": 670.6,
+            "decode_rate": 118.3,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -9374,7 +8750,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -9396,9 +8772,9 @@
             "reported_by": "apr",
             "prompt_tokens": 42,
             "completion_tokens": 18,
-            "decode_rate": 26.8,
+            "decode_rate": 26.4,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 4928.7
+            "inference_ms": 5730.99
           },
           "backend": {
             "requested": "gpu",
@@ -9452,7 +8828,7 @@
           "prompt_token_count": 42,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9461,8 +8837,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 901.6,
-            "decode_rate": 134.6,
+            "prompt_rate": 909.6,
+            "decode_rate": 128.9,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -9593,7 +8969,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -9617,7 +8993,7 @@
             "<answer>4</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9747,7 +9123,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -9772,7 +9148,7 @@
             "You asked me to remember the number **7**.\n\n<answer>7</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -9903,7 +9279,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -9929,7 +9305,7 @@
             "```python\ndef add(a, b):\n    return a + b\n```"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10031,422 +9407,6 @@
         "rung": "easy",
         "prompt_id": "ctl-2plus2",
         "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-recall-7",
-        "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "state_recall",
-        "expect": "7",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-recall-7",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "state_recall",
-        "expect": "7",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "nonstream",
         "route": "POST /generate"
       },
       "verdict": "GREEN",
@@ -10478,7 +9438,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -10510,7 +9470,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10647,7 +9607,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -10679,7 +9639,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10816,7 +9776,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -10848,7 +9808,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -10985,7 +9945,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -11017,7 +9977,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11154,7 +10114,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -11186,7 +10146,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11323,7 +10283,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -11355,7 +10315,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11491,7 +10451,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -11523,7 +10483,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11659,7 +10619,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -11689,7 +10649,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11823,7 +10783,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -11853,7 +10813,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -11987,7 +10947,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -12017,7 +10977,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12152,7 +11112,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -12182,7 +11142,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12317,7 +11277,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -12347,7 +11307,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12482,7 +11442,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -12512,7 +11472,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12647,7 +11607,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -12677,7 +11637,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12812,7 +11772,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -12845,7 +11805,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -12981,7 +11941,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -13014,7 +11974,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13150,7 +12110,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -13183,7 +12143,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13319,7 +12279,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -13352,7 +12312,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13488,7 +12448,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -13521,7 +12481,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13657,7 +12617,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -13690,7 +12650,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13825,7 +12785,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -13858,7 +12818,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -13993,7 +12953,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -14023,7 +12983,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14155,7 +13115,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -14185,7 +13145,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14317,7 +13277,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -14347,7 +13307,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14480,7 +13440,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -14510,7 +13470,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14643,7 +13603,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -14673,7 +13633,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14803,7 +13763,7 @@
       },
       "subject": {
         "model_sha256": "aaf42c8b7c3cab2bf3d69c355048d4a0ee9973d48f16c731c0520ee914699223",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -14834,7 +13794,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -14963,7 +13923,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -14983,9 +13943,9 @@
             "reported_by": "apr",
             "prompt_tokens": 30,
             "completion_tokens": 8,
-            "decode_rate": 15.3,
+            "decode_rate": 16.0,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 20955.3
+            "inference_ms": 16068.47
           },
           "backend": {
             "requested": "gpu",
@@ -15027,7 +13987,7 @@
           "prompt_token_count": 30,
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15036,8 +13996,8 @@
           "answer": "<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 190.1,
-            "decode_rate": 57.6,
+            "prompt_rate": 180.4,
+            "decode_rate": 58.5,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -15168,7 +14128,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -15192,7 +14152,7 @@
             "completion_tokens": 18,
             "decode_rate": 15.9,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 10885.39
+            "inference_ms": 13594.46
           },
           "backend": {
             "requested": "gpu",
@@ -15246,7 +14206,7 @@
           "prompt_token_count": 42,
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n\\n</think>\\n\\n",
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15255,8 +14215,8 @@
           "answer": "```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 292.8,
-            "decode_rate": 62.7,
+            "prompt_rate": 301.8,
+            "decode_rate": 61.3,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -15387,7 +14347,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -15411,7 +14371,7 @@
             "<answer>4</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15541,7 +14501,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -15566,7 +14526,7 @@
             "<answer>7</answer>"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15699,7 +14659,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -15725,7 +14685,7 @@
             "```python\ndef add(a, b):\n    return a + b\n```"
           ],
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -15827,422 +14787,6 @@
         "rung": "easy",
         "prompt_id": "ctl-2plus2",
         "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-recall-7",
-        "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "state_recall",
-        "expect": "7",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-recall-7",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "state_recall",
-        "expect": "7",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "off",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "nonstream",
         "route": "POST /generate"
       },
       "verdict": "GREEN",
@@ -16274,7 +14818,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -16306,7 +14850,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16443,7 +14987,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -16475,7 +15019,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16612,7 +15156,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -16644,7 +15188,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16781,7 +15325,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -16813,7 +15357,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -16950,7 +15494,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -16982,7 +15526,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17119,7 +15663,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -17151,7 +15695,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17287,7 +15831,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -17319,7 +15863,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17455,7 +15999,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -17485,7 +16029,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17619,7 +16163,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -17649,7 +16193,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17783,7 +16327,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -17813,7 +16357,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -17948,7 +16492,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -17978,7 +16522,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18113,7 +16657,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -18143,7 +16687,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18278,7 +16822,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -18308,7 +16852,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18443,7 +16987,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -18473,7 +17017,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18608,7 +17152,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -18641,7 +17185,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18779,7 +17323,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -18812,7 +17356,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -18950,7 +17494,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -18983,7 +17527,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19121,7 +17665,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -19154,7 +17698,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19292,7 +17836,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -19325,7 +17869,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19463,7 +18007,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -19496,7 +18040,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19633,7 +18177,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -19666,7 +18210,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19803,7 +18347,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -19833,7 +18377,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -19967,7 +18511,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -19997,7 +18541,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20131,7 +18675,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -20161,7 +18705,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20296,7 +18840,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -20326,7 +18870,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20461,7 +19005,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -20491,7 +19035,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20623,7 +19167,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -20654,7 +19198,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20783,7 +19327,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -20803,9 +19347,9 @@
             "reported_by": "apr",
             "prompt_tokens": 28,
             "completion_tokens": 213,
-            "decode_rate": 28.0,
+            "decode_rate": 27.9,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 17368.29
+            "inference_ms": 16498.93
           },
           "backend": {
             "requested": "gpu",
@@ -20846,7 +19390,7 @@
           "rendered_prompt": "<|im_start|>user\\nWhat is 2+2? Reply with the final answer inside <answer></answer>.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -20855,8 +19399,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:** The user is asking for the sum of 2 and 2 (\"What is 2+2?\"). They have specified a formatting constraint: \"Reply with the final answer inside <answer></answer>.\"\n\n2.  **Determine the Answer:** The mathematical sum of 2 and 2 is 4.\n\n3.  **Format the Output:** The user explicitly requested the final answer to be enclosed in specific tags: `<answer>` and `</answer>`.\n\n4.  **Construct the Final String:**\n    *   Content: 4\n    *   Tags: <answer>4</answer>\n\n5.  **Review Constraints:**\n    *   Did I answer the question? Yes (2+2=4).\n    *   Did I follow the formatting constraint? Yes (inside <answer></answer>).\n\n6.  **Final Output Generation:** <answer>4</answer>\n</think>\n\n<answer>4</answer>",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 197.7,
-            "decode_rate": 64.5,
+            "prompt_rate": 207.7,
+            "decode_rate": 66.4,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -20985,7 +19529,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -21009,7 +19553,7 @@
             "completion_tokens": 356,
             "decode_rate": 28.6,
             "rate_unit": "tokens per second, as the engine reported it",
-            "inference_ms": 24804.07
+            "inference_ms": 22773.2
           },
           "backend": {
             "requested": "gpu",
@@ -21062,7 +19606,7 @@
           "rendered_prompt": "<|im_start|>user\\nWrite a Python function add(a, b) that returns the sum of a and b. Put only the function in a single ```python code block.<|im_end|>\\n<|im_start|>assistant\\n<think>\\n",
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21071,8 +19615,8 @@
           "answer": "<think>\n\nThinking Process:\n\n1.  **Analyze the Request:**\n    *   Task: Write a Python function named `add(a, b)` that returns the sum of `a` and `b`.\n    *   Constraint: Put *only* the function in a single ```python code block.\n    *   Output Format: Markdown code block with Python syntax highlighting.\n\n2.  **Draft the Code:**\n    *   Function definition: `def add(a, b):`\n    *   Return statement: `return a + b`\n    *   Combine: `def add(a, b): return a + b`\n\n3.  **Check Constraints:**\n    *   Is it a Python function? Yes.\n    *   Does it return the sum? Yes.\n    *   Is it in a single code block? Yes.\n    *   Are there any extra explanations outside the block? The prompt says \"Put only the function in a single ```python code block.\" This usually implies I should avoid conversational filler before or after the block, or at least keep it minimal. However, standard AI behavior often includes a brief intro. But the instruction \"Put only the function...\" suggests strict adherence. I will output just the code block to be safe and precise.\n\n4.  **Final Polish:**\n    *   Ensure the code is valid Python.\n    *   Ensure the block language is specified as `python`.\n\n    ```python\n    def add(a, b):\n        return a + b\n    ```\n\n5.  **Final Decision:** Output the code block directly.cw\n</think>\n\n```python\ndef add(a, b):\n    return a + b\n```",
           "reported": {
             "reported_by": "llama.cpp",
-            "prompt_rate": 300.8,
-            "decode_rate": 67.0,
+            "prompt_rate": 283.3,
+            "decode_rate": 65.3,
             "rate_unit": "tokens per second, as the engine reported it",
             "prompt_tokens": null,
             "completion_tokens": null
@@ -21199,7 +19743,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -21224,7 +19768,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21350,7 +19894,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -21377,7 +19921,7 @@
           ],
           "prompt_opened_think": true,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21475,214 +20019,6 @@
         "rung": "easy",
         "prompt_id": "ctl-2plus2",
         "mode": "nonstream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve run verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "host": "gx10",
-        "verb": "serve stream",
-        "thinking": "on",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "stream",
-        "route": "POST /v1/chat/prompt-ids"
-      },
-      "verdict": "RED",
-      "oracle_route": null,
-      "reasons": [
-        "apr did not answer: exit 3",
-        "no same-representation oracle: no ggml-family engine answered on the identical weights (#3957 Q2)",
-        "no ground-truth control: neither hf nor vllm answered, so nothing shows this prompt is answerable (#3957 Q2)",
-        "no oracle route mapped for POST /v1/chat/prompt-ids: no comparator route asks its question in the same representation, so nothing can vouch for it -- map its kind in crux_serve_routes.ORACLE_ROUTE_BY_KIND (#3962 B4)"
-      ],
-      "format": "gguf",
-      "extracted": {},
-      "all_wrong": false,
-      "quorum": {
-        "floor": 2,
-        "engines_answered": 0,
-        "answered": [],
-        "comparators_answered": [],
-        "met": false
-      },
-      "subject": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
-        "under_development": false,
-        "development_note": null
-      },
-      "positive_control": true,
-      "oracle": {
-        "type": "answer",
-        "expect": "4",
-        "normalize": "int"
-      },
-      "engines": {
-        "apr": {
-          "answered": false,
-          "rc": 3,
-          "why": "exit 3",
-          "answer": null,
-          "reported": {},
-          "backend_verified": false,
-          "correct": false,
-          "version": "apr 0.71.3 (d454a7a51)",
-          "not_ran_reason": "unclassified"
-        },
-        "llama.cpp": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "version: 0.4.1-dev (build 2423, commit d1d3c339)",
-          "not_ran_reason": "unclassified"
-        },
-        "ollama": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "hf": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "transformers=5.17.0 torch=2.14.0+cu130 tokenizers=0.23.2 jinja2=3.1.6 torch_cuda=13.0 cuda_available=true device=NVIDIA_GB10 capability=sm_121 arch_list=sm_80,sm_90,sm_100,sm_110,sm_120 lock_sha256=752a1adb3e5241ca5c8cbf3a4fbe3df1251b0a6f8f4b300f38f828da29f807bb",
-          "not_ran_reason": "unclassified"
-        },
-        "llamafile": {
-          "answered": false,
-          "missing": true,
-          "why": "not requested",
-          "correct": false,
-          "version": null,
-          "not_ran_reason": "not_requested"
-        },
-        "vllm": {
-          "answered": false,
-          "missing": true,
-          "why": "missing: no row for this engine",
-          "correct": false,
-          "version": "vllm=0.30.0 torch=2.13.0+cu130 transformers=5.17.0 torch_cuda=13.0 device=NVIDIA_GB10 capability=sm_121 ninja=/home/noah/.local/share/crux/vllm-venv/bin/ninja lock_sha256=55012f3829b38da7519bdf7d099e307afe1c736b776ee0b53f1c25741195c1f1",
-          "not_ran_reason": "unclassified"
-        }
-      },
-      "agreement": {
-        "answered": [],
-        "all_identical": false,
-        "apr_matches": []
-      },
-      "token_parity": {
-        "measured": false,
-        "why": "not measured for the serve stream verb"
-      }
-    },
-    {
-      "key": {
-        "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "host": "gx10",
-        "verb": "serve run",
-        "thinking": "on",
-        "rung": "easy",
-        "prompt_id": "ctl-2plus2",
-        "mode": "nonstream",
         "route": "POST /generate"
       },
       "verdict": "GREEN",
@@ -21711,7 +20047,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -21743,7 +20079,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21805,7 +20141,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1096195-1794607101066227324.server.log) — engine core: AssertionError: Error in memory profiling. Initial free memory 80.42 GiB, current free memory 80.72 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.",
           "answer": null,
           "reported": {},
           "borrowed_from_route": "(route-less plugin row)",
@@ -21867,7 +20203,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -21899,7 +20235,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -21961,7 +20297,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1096195-1794607101066227324.server.log) — engine core: AssertionError: Error in memory profiling. Initial free memory 80.42 GiB, current free memory 80.72 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.",
           "answer": null,
           "reported": {},
           "borrowed_from_route": "(route-less plugin row)",
@@ -22023,7 +20359,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -22055,7 +20391,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -22179,7 +20515,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -22211,7 +20547,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -22335,7 +20671,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -22367,7 +20703,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -22429,7 +20765,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1096195-1794607101066227324.server.log) — engine core: AssertionError: Error in memory profiling. Initial free memory 80.42 GiB, current free memory 80.72 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.",
           "answer": null,
           "reported": {},
           "borrowed_from_route": "(route-less plugin row)",
@@ -22491,7 +20827,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -22523,7 +20859,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -22584,7 +20920,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1096195-1794607101066227324.server.log) — engine core: AssertionError: Error in memory profiling. Initial free memory 80.42 GiB, current free memory 80.72 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.",
           "answer": null,
           "reported": {},
           "borrowed_from_route": "(route-less plugin row)",
@@ -22646,7 +20982,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -22678,7 +21014,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -22801,7 +21137,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -22831,7 +21167,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -22890,7 +21226,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1096195-1794607101066227324.server.log) — engine core: AssertionError: Error in memory profiling. Initial free memory 80.42 GiB, current free memory 80.72 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.",
           "answer": null,
           "reported": {},
           "borrowed_from_route": "(route-less plugin row)",
@@ -22952,7 +21288,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -22982,7 +21318,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -23103,7 +21439,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -23133,7 +21469,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -23255,7 +21591,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -23285,7 +21621,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -23345,7 +21681,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1096195-1794607101066227324.server.log) — engine core: AssertionError: Error in memory profiling. Initial free memory 80.42 GiB, current free memory 80.72 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.",
           "answer": null,
           "reported": {},
           "borrowed_from_route": "POST /v1/chat/completions",
@@ -23407,7 +21743,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -23437,7 +21773,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -23559,7 +21895,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -23589,7 +21925,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -23649,7 +21985,7 @@
         "vllm": {
           "answered": false,
           "rc": null,
-          "why": "refused: HTTPError: HTTP Error 400: Bad Request",
+          "why": "refused: RuntimeError: vllm serve exited 1 before answering (log: vllm-batch-1096195-1794607101066227324.server.log) — engine core: AssertionError: Error in memory profiling. Initial free memory 80.42 GiB, current free memory 80.72 GiB. This happens when other processes sharing the same container release GPU memory while vLLM is profiling during initialization. To fix this, ensure consistent GPU memory allocation or isolate vLLM in its own container.",
           "answer": null,
           "reported": {},
           "borrowed_from_route": "POST /v1/chat/completions",
@@ -23711,7 +22047,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -23741,7 +22077,7 @@
           },
           "backend_verified": false,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -23860,7 +22196,7 @@
       },
       "subject": {
         "model_sha256": "b252c5610a42ca82d20fe2a12813e9d069eed89292907e26c783eeb0bc961bc7",
-        "apr_version": "apr 0.71.3 (d454a7a51)",
+        "apr_version": "apr 0.72.6 (282816174)",
         "under_development": false,
         "development_note": null
       },
@@ -23891,7 +22227,7 @@
           "prompt_token_count": null,
           "rendered_prompt": null,
           "correct": true,
-          "version": "apr 0.71.3 (d454a7a51)"
+          "version": "apr 0.72.6 (282816174)"
         },
         "llama.cpp": {
           "answered": true,
@@ -23975,12 +22311,12 @@
   "deterministic": [],
   "greedy": [],
   "summary": {
-    "RED": 16,
+    "RED": 0,
     "GREEN": 134,
     "ALL_WRONG": 0,
-    "cells": 150,
-    "judged": 150,
-    "verdict": "RED",
+    "cells": 134,
+    "judged": 134,
+    "verdict": "PASS",
     "deterministic": {
       "RED": 0,
       "GREEN": 0

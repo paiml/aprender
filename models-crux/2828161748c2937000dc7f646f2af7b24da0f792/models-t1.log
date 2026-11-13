@@ -1,0 +1,8 @@
+MODELS lambda measured by apr 0.72.6 (282816174): cells=96 red=96 (crux_sweep_shards rc 1)
+MODELS gx10 measured by apr 0.72.6 (282816174): cells=134 red=0 (crux_sweep_shards rc 0)
+MODELS NO-GO: the judge found red or missing cells (rc 1):
+MODELS   FAIL  lambda certified model 00fe7986ff5f thinking=off: 32 of 32 cell(s) not GREEN
+MODELS   FAIL  lambda certified model 00fe7986ff5f thinking=on: no CRUX cell -- not smoke-tested
+MODELS   FAIL  lambda certified model aaf42c8b7c3c thinking=off: 32 of 32 cell(s) not GREEN
+MODELS   FAIL  lambda certified model b252c5610a42 thinking=off: 32 of 32 cell(s) not GREEN
+MODELS   FAIL  lambda certified model b252c5610a42 thinking=on: no CRUX cell -- not smoke-tested
