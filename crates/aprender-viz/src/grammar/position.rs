@@ -10,7 +10,8 @@
 //!
 //! `NaN` stands for R's `NA`. Known differences from R, outside the tested domain: R's `cumsum`
 //! accumulates in long double, so a stacked edge can differ from R in the last ulp; and
-//! `vjust = NaN`, which R rejects with an error, yields `NaN` positions here.
+//! `vjust = NaN` on a layer with no repeated x, which R rejects with an error, yields `NaN`
+//! positions here (with repeated x, R also gives `y = NaN` and finite edges, as here).
 
 /// `position_stack(vjust = 1)`: the stack's top edge carries the point (`formals(position_stack)`).
 pub const STACK_VJUST: f64 = 1.0;
@@ -192,11 +193,16 @@ fn pos_stack(rows: &mut [BarRow], column: &[usize], vjust: f64, fill: bool) {
         let (lo, hi) =
             if a.is_nan() || b.is_nan() { (f64::NAN, f64::NAN) } else { (a.min(b), a.max(b)) };
         rows[*i].y = (1.0 - vjust) * lo + vjust * hi;
-        // `max_is_lower <- ymax < ymin` is NA when an edge is NA, and ifelse() then gives NA edges.
-        // Otherwise it never holds for rows built by this crate: ymin <= ymax.
-        let na_edge = rows[*i].ymin.is_nan() || rows[*i].ymax.is_nan();
-        rows[*i].ymin = if na_edge { f64::NAN } else { lo };
-        rows[*i].ymax = if na_edge { f64::NAN } else { hi };
+        // `max_is_lower <- ymax < ymin`: a row given with ymax below ymin keeps its edges swapped,
+        // and an NA edge makes it NA, so ifelse() gives NA edges.
+        let (ymin, ymax) = (rows[*i].ymin, rows[*i].ymax);
+        (rows[*i].ymin, rows[*i].ymax) = if ymin.is_nan() || ymax.is_nan() {
+            (f64::NAN, f64::NAN)
+        } else if ymax < ymin {
+            (hi, lo)
+        } else {
+            (lo, hi)
+        };
     }
 }
 
@@ -421,6 +427,38 @@ mod tests {
         let rows = adjusted([rows, vec![row(1.0, 3, 4.0, 0.0, 4.0)]].concat(), Position::stack());
         assert_y(&rows, &[0.0, 6.0, 4.0], &[0.0, NAN, 0.0], &[0.0, NAN, 4.0]);
         assert_x(&rows, [NAN, 1.0, 1.0]);
+    }
+
+    #[test]
+    fn a_nan_xmin_or_xmax_alone_blanks_the_row() {
+        // P10 / P11, R's PositionStack methods on hand-built rows: only row 2's xmin (or xmax) is
+        // NaN, and R blanks x, xmin, xmax and y of that row.
+        let blank: [fn(&mut BarRow); 2] = [|r| r.xmin = NAN, |r| r.xmax = NAN];
+        for set_nan in blank {
+            let y = [1.0, 2.0, 4.0];
+            let mut rows: Vec<BarRow> =
+                (0..3).map(|i| row(1.0, i as u32 + 1, y[i], 0.0, y[i])).collect();
+            set_nan(&mut rows[1]);
+            let rows = adjusted(rows, Position::stack());
+            assert_y(&rows, &[5.0, 0.0, 4.0], &[4.0, 0.0, 0.0], &[5.0, 0.0, 4.0]);
+            assert_x(&rows, [1.0, NAN, 1.0]);
+        }
+    }
+
+    #[test]
+    fn a_nan_ymin_alone_gives_na_edges() {
+        // P9, R's PositionStack methods: ymin NaN with finite y and ymax stacks (y = 3), NA edges.
+        let rows = vec![row(1.0, 1, 1.0, NAN, 1.0), row(1.0, 2, 2.0, 0.0, 2.0)];
+        let rows = adjusted(rows, Position::stack());
+        assert_y(&rows, &[3.0, 2.0], &[NAN, 0.0], &[NAN, 2.0]);
+    }
+
+    #[test]
+    fn a_row_given_with_ymax_below_ymin_keeps_its_edges_swapped() {
+        // P2, R's PositionStack methods: max_is_lower swaps the stacked edges of row 1.
+        let rows = vec![row(1.0, 1, 1.0, 2.0, 1.0), row(1.0, 2, 2.0, 0.0, 2.0)];
+        let rows = adjusted(rows, Position::stack());
+        assert_y(&rows, &[3.0, 2.0], &[3.0, 0.0], &[2.0, 2.0]);
     }
 
     #[test]
