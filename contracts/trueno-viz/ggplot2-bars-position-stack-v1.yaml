@@ -68,42 +68,42 @@ enforcement:
 falsification_tests:
 - id: FALSIFY-GGS1-001
   rule: Default stacking order is group 1 on top
-  prediction: flipping the order in position::stack (descending <-> ascending group) turns 17 of the 43 ggplot2_bars tests RED, the stack, fill, vjust, reverse, zero-height, identity and collation tests and their public and facet twins (measured, 17 failed, 26 passed, rc=101)
+  prediction: flipping the order in position::stack (descending <-> ascending group) turns 19 of the 88 ggplot2_bars tests RED, among them the stack, fill, vjust, reverse, zero-height, identity and collation tests and their public and facet twins (measured, 19 failed, 69 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_stack grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_position_fill grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_fill
   if_fails: Stack order is not observable in the fixture; use a fill with several groups per x
 - id: FALSIFY-GGS1-002
   rule: STACK_REVERSE defaults to FALSE
-  prediction: mutating STACK_REVERSE false -> true turns 15 of the 43 tests RED, among them the default stack, fill and identity tests and their public and facet twins (measured, 15 failed, 28 passed, rc=101); the explicit reverse test stays green
+  prediction: mutating STACK_REVERSE false -> true turns 18 of the 88 tests RED, among them the default stack, fill and identity tests and their public and facet twins (measured, 18 failed, 70 passed, rc=101); the explicit reverse test stays green
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack grammar::ggplot2_bars_oracle::ggplot2_bars_position_fill grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_stack grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel
   if_fails: The default stack does not read the constant
 - id: FALSIFY-GGS1-003
   rule: STACK_VJUST defaults to 1
-  prediction: mutating STACK_VJUST 1.0 -> 0.5 turns 23 of the 43 tests RED (stack, count, group1 prop, identity, plain identity, level/group order, zero-height, the mixed-layer tests and their public and facet twins; measured, 23 failed, 20 passed, rc=101)
+  prediction: mutating STACK_VJUST 1.0 -> 0.5 turns 41 of the 88 tests RED (stack, count, group1 prop, identity, plain identity, level/group order, zero-height, the mixed-layer tests and their public and facet twins; measured, 41 failed, 47 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack grammar::ggplot2_bars_oracle::ggplot2_bars_stat_count_geom_bar grammar::ggplot2_bars_oracle::ggplot2_bars_stat_count_group1_prop grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col_plain grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_stack grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel
   if_fails: y of a bar is not compared
 - id: FALSIFY-GGS1-004
   rule: A zero-height bar is not negative
-  prediction: mutating `ymax < 0.0` to `ymax <= 0.0` in position::stack turns exactly _position_stack_zero_height_bar and _public_position_stack_zero_height_bar RED (measured, 2 failed, 41 passed, rc=101)
+  prediction: mutating `ymax < 0.0` to `ymax <= 0.0` in position::stack turns exactly _position_stack_zero_height_bar and _public_position_stack_zero_height_bar RED (measured, 2 failed, 86 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack_zero_height_bar grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_stack_zero_height_bar
   if_fails: No fixture has a zero-height bar next to positive ones
 - id: FALSIFY-GGS1-005
   rule: Each panel is stacked on its own
-  prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED, among them _facet_position_stack_per_panel (measured, 7 failed, 36 passed, rc=101)
+  prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED, among them _facet_position_stack_per_panel (measured, 7 failed, 81 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_facet_stat_count_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_dodge_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_fill_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_preserve_single_is_global grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_total_is_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_group_ids_are_global
   if_fails: No facet fixture stacks bars at the same x in two panels
 - id: FALSIFY-GGS1-006
   rule: A unique x leaves a negative bar at y = value
-  prediction: dropping the vjust == 1 guard of the skip (never skipping) turns exactly _stack_skips_a_unique_x_so_a_negative_bar_keeps_its_value RED (measured, 1 failed, 84 passed, rc=101); skipping whenever vjust is 1 even with a repeated x turns 27 tests RED, the cross-panel and the stacking fixtures among them
+  prediction: dropping the vjust == 1 guard of the skip (never skipping) turns exactly _stack_skips_a_unique_x_so_a_negative_bar_keeps_its_value RED (measured, 1 failed, 87 passed, rc=101); skipping whenever vjust is 1 even with a repeated x turns 27 tests RED, the cross-panel and the stacking fixtures among them
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stack_skips_a_unique_x_so_a_negative_bar_keeps_its_value
   if_fails: The skip is not observable in the fixtures
 - id: FALSIFY-GGS1-007
   rule: The skip does not apply when vjust is not 1, fill is on, or x repeats across panels
-  prediction: dropping the vjust == 1 guard (skip whenever x is unique) turns exactly _stack_still_stacks_when_a_skip_condition_fails RED (measured, 1 failed, 84 passed, rc=101)
+  prediction: dropping the vjust == 1 guard (skip whenever x is unique) turns exactly _stack_still_stacks_when_a_skip_condition_fails RED (measured, 1 failed, 87 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stack_still_stacks_when_a_skip_condition_fails
   if_fails: No fixture stacks a unique x with vjust 0.5 or fill
 - id: FALSIFY-GGS1-008
   rule: Render targets refuse a position they would not apply
-  prediction: removing the check from to_framebuffer, or making Identity count as moved, or letting the unique-x test always pass, or widening the vjust guard turns exactly _every_render_target_refuses_a_position_it_would_not_apply RED (measured, 1 failed, 84 passed, rc=101, four mutants)
+  prediction: removing the check from to_framebuffer, or making Identity count as moved, or letting the unique-x test always pass, or widening the vjust guard turns exactly _every_render_target_refuses_a_position_it_would_not_apply RED (measured, 1 failed, 87 passed, rc=101 for the Identity and vjust-guard mutants; the check-removal and unique-always mutants also turn _the_unique_x_test_reads_the_layers_own_data_aes_and_signed_zeros RED, 2 failed, 86 passed). That second test also turns RED, 1 failed each, for dropping the + 0.0 in layer_x_is_unique (signed zero), reading the plot data instead of the layer data, and reading the plot aes instead of the merged layer aes
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::every_render_target_refuses_a_position_it_would_not_apply
   if_fails: The render path draws a layer ggplot2 would have moved
 qa_gate:

@@ -67,17 +67,17 @@ enforcement:
 falsification_tests:
 - id: FALSIFY-GGC1-001
   rule: Negative bars are recognised after setup_data
-  prediction: mutating the ymax == 0 test in position::stack to never match turns 4 tests RED (_stat_identity_geom_col, _public_geom_col and the two zero_height_bar tests; measured, 4 failed, 39 passed, rc=101)
+  prediction: mutating the ymax == 0 test in position::stack to never match turns 4 tests RED (_stat_identity_geom_col, _public_geom_col and the two zero_height_bar tests; measured, 4 failed, 84 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_position_stack_zero_height_bar grammar::ggplot2_bars_oracle::ggplot2_bars_public_position_stack_zero_height_bar
   if_fails: The negative value in the fixture is not exercised
 - id: FALSIFY-GGC1-002
   rule: geom_col width is 0.9
-  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns 17 of the 43 tests RED, both identity tests among them (measured, 17 failed, 26 passed, rc=101); mutating the geom default (geom.rs DEFAULT_BAR_WIDTH_F32 0.9 -> 0.8) turns 21 RED, the public, facet and mixed-layer tests (measured, 21 failed, 22 passed, rc=101)
+  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns 17 of the 88 tests RED, both identity tests among them (measured, 17 failed, 71 passed, rc=101); mutating the geom default (geom.rs DEFAULT_BAR_WIDTH_F32 0.9 -> 0.8) turns 43 RED, among them the public, facet and mixed-layer tests (measured, 43 failed, 45 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col grammar::ggplot2_bars_oracle::ggplot2_bars_stat_identity_geom_col_plain grammar::ggplot2_bars_oracle::ggplot2_bars_public_geom_col
   if_fails: Edges of identity bars are not compared
 - id: FALSIFY-GGC1-003
   rule: An identity layer over several layers shares one y scale
-  prediction: dropping the y of non-bar layers from the scale training (layout_with_bars) turns _mixed_col_and_point_share_the_y_scale and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 41 passed, rc=101); dropping an hline intercept turns _mixed_col_and_hline_extend_y RED (measured, 1 failed, 42 passed, rc=101)
+  prediction: dropping the y of non-bar layers from the scale training (layout_with_bars) turns _mixed_col_and_point_share_the_y_scale and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 86 passed, rc=101); dropping an hline intercept turns _mixed_col_and_hline_extend_y RED (measured, 1 failed, 87 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_point_share_the_y_scale grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_point_outside_the_bar_x_range grammar::ggplot2_bars_oracle::ggplot2_bars_mixed_col_and_hline_extend_y
   if_fails: The y range of geom_col + geom_point(aes(y = z)) is the same as the bars' alone
 - id: FALSIFY-GGC1-004
@@ -97,7 +97,7 @@ falsification_tests:
   if_fails: NaN rows are dropped or drawn silently
 - id: FALSIFY-GGC1-007
   rule: A numeric x beside bars sits at its own value on the discrete axis
-  prediction: dropping the companion x from the x range in layout_with_bars turns _point_with_a_numeric_x_sits_at_its_value and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 72 passed, rc=101)
+  prediction: dropping the companion x from the x range in layout_with_bars turns _point_with_a_numeric_x_sits_at_its_value and _mixed_point_outside_the_bar_x_range RED (measured, 2 failed, 86 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_point_with_a_numeric_x_sits_at_its_value
   if_fails: The numeric x is mapped onto a level or dropped
 qa_gate:

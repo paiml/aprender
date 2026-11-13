@@ -1161,6 +1161,74 @@ fn every_render_target_refuses_a_position_it_would_not_apply() {
 }
 
 #[test]
+fn the_unique_x_test_reads_the_layers_own_data_aes_and_signed_zeros() {
+    // ggplot2 stacks these (vec_duplicate_any on the layer's merged x); drawing them unmoved is wrong.
+    let refused = |plot: super::BuiltGGPlot, what: &str| {
+        let err = plot.to_svg().expect_err(what);
+        assert!(
+            matches!(&err, Error::Rendering(m) if m.contains("position adjustment")),
+            "{what}: {err}"
+        );
+        assert!(plot.to_framebuffer().is_err(), "{what}: to_framebuffer");
+    };
+    // A08: 0 and -0 are one x, so the layer stacks (R: x = 0 rows stack to 0..1 and 1..3).
+    let zeros = frame_from_csv("x,y\n0,1\n-0,2\n1,3\n");
+    let plot = GGPlot::new().data(zeros).aes(xy()).layer(col()).build().expect("plot");
+    refused(plot, "signed zeros");
+    // A09: the plot data is unique but the layer's own data repeats x.
+    let unique = frame_from_csv("x,y\n1,1\n2,2\n3,3\n");
+    let dup = frame_from_csv("x,y\n1,1\n1,2\n3,3\n");
+    let plot =
+        GGPlot::new().data(unique.clone()).aes(xy()).layer(col().data(dup)).build().expect("plot");
+    refused(plot, "layer data repeats x");
+    // A10: the plot aes maps a unique column, the layer aes maps a repeating one.
+    let both = frame_from_csv("u,d,y\n1,1,1\n2,1,2\n3,3,3\n");
+    let plot = GGPlot::new()
+        .data(both)
+        .aes(Aes::new().x("u").y("y"))
+        .layer(col().aes(Aes::new().x("d")))
+        .build()
+        .expect("plot");
+    refused(plot, "layer aes repeats x");
+    // Controls: the same shapes with unique x are drawn.
+    let ok = GGPlot::new()
+        .data(frame_from_csv("x,y\n0,1\n1,2\n"))
+        .aes(xy())
+        .layer(col())
+        .build()
+        .expect("plot");
+    assert!(ok.to_svg().is_ok() && ok.to_framebuffer().is_ok());
+}
+
+#[test]
+fn every_exact_test_a_bars_contract_names_exists() {
+    // A falsifier whose `--exact` name matches no test runs zero tests and passes: it proves nothing.
+    let contracts = [
+        include_str!("../../../../contracts/trueno-viz/ggplot2-bars-position-dodge-v1.yaml"),
+        include_str!("../../../../contracts/trueno-viz/ggplot2-bars-position-fill-v1.yaml"),
+        include_str!("../../../../contracts/trueno-viz/ggplot2-bars-position-stack-v1.yaml"),
+        include_str!("../../../../contracts/trueno-viz/ggplot2-bars-stat-count-geom-bar-v1.yaml"),
+        include_str!(
+            "../../../../contracts/trueno-viz/ggplot2-bars-stat-identity-geom-col-v1.yaml"
+        ),
+    ];
+    let source = include_str!("ggplot2_bars_oracle.rs");
+    let mut named = 0;
+    for text in contracts {
+        for line in text.lines().filter(|l| l.contains("--exact ")) {
+            let path = line.split("--exact ").nth(1).and_then(|r| r.split_whitespace().next());
+            let path = path.expect("an --exact path");
+            let name = path
+                .strip_prefix("grammar::ggplot2_bars_oracle::")
+                .unwrap_or_else(|| panic!("{path}: not a test of this module"));
+            assert!(source.contains(&format!("fn {name}(")), "{path}: no such test");
+            named += 1;
+        }
+    }
+    assert!(named >= 30, "only {named} --exact names found: the scan is blind");
+}
+
+#[test]
 fn a_position_other_than_identity_on_a_non_bar_layer_is_refused() {
     let positions = [Position::stack(), Position::fill(), Position::dodge()];
     let point = |p: Position| point_layer(Aes::new().y("y")).position(p);
