@@ -462,6 +462,14 @@ mod tests {
     }
 
     #[test]
+    fn a_swapped_row_in_the_negative_stack_keeps_its_edges_swapped() {
+        // S2, R's PositionStack methods: max_is_lower applies below zero too.
+        let rows = vec![row(1.0, 1, -1.0, 0.0, -1.0), row(1.0, 2, -2.0, 0.0, -2.0)];
+        let rows = adjusted(rows, Position::stack());
+        assert_y(&rows, &[-2.0, 0.0], &[-2.0, 0.0], &[-3.0, -2.0]);
+    }
+
+    #[test]
     fn stack_vjust_two_stacks_even_without_repeats() {
         // Q_vjust2_unique: any vjust other than 1 turns stacking on; y lies at twice the top edge.
         let rows = (1..=3).map(|i| row(f64::from(i), i, f64::from(i), 0.0, f64::from(i))).collect();
