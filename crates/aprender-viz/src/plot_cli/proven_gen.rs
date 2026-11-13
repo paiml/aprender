@@ -49,9 +49,19 @@ fn geom_class(geom: &str) -> String {
     format!("Geom{camel}")
 }
 
+/// What the R call `spec` names after `key` (`flip` in `coord_flip()` after `coord_`), or
+/// ggplot2's default `default` when it names none.
+fn named<'a>(spec: &'a str, key: &str, default: &'a str) -> &'a str {
+    spec.find(key).map_or(default, |i| {
+        let rest = &spec[i + key.len()..];
+        &rest[..rest.find(|c: char| !c.is_ascii_alphanumeric() && c != '_').unwrap_or(rest.len())]
+    })
+}
+
 /// The block's oracle backs it: at least one `expected*.json` (`(file, text)`), and each draws
-/// one layer of the block's geom, as a row proves one layer. The stat, position, coord, facet
-/// and theme are still read from the block as declared.
+/// one layer of the block's geom, as a row proves one layer, from an R call (`spec`) whose stat,
+/// position, scales, coord, facet and theme are the block's. The defaults are geom_point's: a
+/// row whose geom has another default stat is refused until this table knows it.
 fn check_oracle(name: &str, row: &Row, oracles: &[(String, String)]) -> Result<(), String> {
     if oracles.is_empty() {
         return Err(format!("{name}: oracle {} has no expected*.json", row.oracle));
@@ -67,8 +77,77 @@ fn check_oracle(name: &str, row: &Row, oracles: &[(String, String)]) -> Result<(
                 "{name}: oracle {file} draws layers {got:?}; the block declares one {want} layer"
             ));
         }
+        let spec = v["spec"].as_str().ok_or_else(|| format!("{name}: oracle {file} has no spec"))?;
+        for (dim, key, default, declared) in [
+            ("stat", "stat = '", "identity", &row.stat),
+            ("position", "position = '", "identity", &row.position),
+            ("scale_x", "scale_x_", "continuous", &row.scale_x),
+            ("scale_y", "scale_y_", "continuous", &row.scale_y),
+            ("coord", "coord_", "cartesian", &row.coord),
+            ("facet", "facet_", "null", &row.facet),
+            ("theme", "theme_", "grey", &row.theme),
+        ] {
+            let got = named(spec, key, default);
+            if got != declared {
+                return Err(format!("{name}: oracle {file} has {dim} {got}; the block declares {declared}"));
+            }
+        }
     }
     Ok(())
+}
+
+/// `(file name, text)` of each `expected*.json` in an oracle directory, by name.
+fn expected_jsons(dir: &Path) -> Result<Vec<(String, String)>, String> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Ok(Vec::new()) };
+    let mut out = Vec::new();
+    for path in entries.flatten().map(|e| e.path()) {
+        let n = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        if n.starts_with("expected") && n.ends_with(".json") {
+            println!("cargo:rerun-if-changed={}", path.display());
+            out.push((n.clone(), std::fs::read_to_string(&path).map_err(|e| format!("{n}: {e}"))?));
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Every `ggplot2_row:` block of the `ggplot2-*.yaml` contracts in `dir`, keyed by contract id,
+/// each checked against its oracle (a directory relative to `workspace`).
+fn read_rows(dir: &Path, workspace: &Path) -> Result<BTreeMap<String, Row>, String> {
+    let mut rows = BTreeMap::new();
+    for path in std::fs::read_dir(dir).map_err(|e| format!("read {dir:?}: {e}"))?.flatten() {
+        let path = path.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or_default();
+        let Some(id) = name.strip_suffix(".yaml").filter(|n| n.starts_with("ggplot2-")) else {
+            continue;
+        };
+        println!("cargo:rerun-if-changed={}", path.display());
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("{name}: {e}"))?;
+        let Some(row) = parse_row(name, &text)? else { continue };
+        check_oracle(name, &row, &expected_jsons(&workspace.join(&row.oracle))?)?;
+        rows.insert(id.to_string(), row);
+    }
+    Ok(rows)
+}
+
+/// The table at `table` is the contracts in `dir` rendered: a table that differs is an error,
+/// or with `regen` is rewritten. Without `dir` (a packaged crate) the committed table is kept.
+fn sync(dir: &Path, workspace: &Path, table: &Path, regen: bool) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Ok(());
+    }
+    println!("cargo:rerun-if-changed={}", dir.display());
+    let text = render(&read_rows(dir, workspace)?);
+    if std::fs::read_to_string(table).unwrap_or_default() == text {
+        return Ok(());
+    }
+    if regen {
+        return std::fs::write(table, text).map_err(|e| format!("write {table:?}: {e}"));
+    }
+    Err(format!(
+        "{table:?} differs from the ggplot2_row blocks in {dir:?}; regenerate it with \
+         APRENDER_VIZ_REGEN_PROVEN=1 cargo build -p aprender-viz and commit it"
+    ))
 }
 
 fn words(s: &str) -> String {

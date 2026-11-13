@@ -527,7 +527,7 @@ mod tests {
     }
 
     /// A column f32 moves by more than 1e-4 of its range is refused; 2.4e-5 of it is drawn.
-    /// N7: an error of 1 is refused against a range of 5000 (2e-4) and drawn against 20000.
+    /// N7: an error of 1 is refused against a range of 9999 and drawn against 10000: 1e-4, exactly.
     /// N3: a column with one value is refused by name, before its range of zero is used.
     #[test]
     fn values_f32_cannot_hold_are_refused_by_name() {
@@ -536,8 +536,8 @@ mod tests {
             "column 'x' line 3 has '16777219', which the engine stores as 16777220",
         );
         refusal("x,y\n1,99999.99\n2,100000.01\n", "column 'y' line");
-        refusal("x,y\n16777217,1\n16782217,2\n", "column 'x' line 3 has '16782217', which");
-        assert!(xy("x,y\n16777217,1\n16797217,2\n").is_ok());
+        refusal("x,y\n16777217,1\n16787216,2\n", "column 'x' line 2 has '16777217', which");
+        assert!(xy("x,y\n16777217,1\n16787217,2\n").is_ok());
         assert!(xy("x,y\n1000.1,1\n1001.1,2\n").is_ok());
         for (csv, name, v) in [("x,y\n1,1\n1,2\n", 'x', "1"), ("x,y\n1,0.1\n2,0.1\n", 'y', "0.1")] {
             let want =
@@ -549,86 +549,39 @@ mod tests {
     }
 
     /// A proven row's names each go through a builder; a row naming one with none is refused.
+    /// Every committed row builds, so a contract row that widens the proven set without an
+    /// implementation turns this red, not the output wrong.
     #[test]
     fn the_plot_is_built_from_the_proven_row() {
         let a = args(Path::new("unused.csv"));
         let (xs, ys) = (vec![1.0, 2.0], vec![3.0, 4.0]);
-        assert!(build_plot(&a, point_row(PROVEN_ROWS).expect("row 1"), (&xs, &ys)).is_ok());
-        let e = point_row(&[ProvenRow { geom: "line", ..ROW_A }]).expect_err("no point row");
+        for row in PROVEN_ROWS {
+            assert!(build_plot(&a, row, (&xs, &ys)).is_ok(), "{}", row.contract);
+        }
+        let e = point_row(&[ProvenRow { geom: "line", ..POINT_ROW }]).expect_err("no point row");
         assert_eq!(e, "no ggplot2 row proves geom_point, so apr plot has nothing to draw");
         for (row, want) in [
-            (ProvenRow { stat: "bin", ..ROW_A }, "stat 'bin'"),
-            (ProvenRow { position: "jitter", ..ROW_A }, "position 'jitter'"),
-            (ProvenRow { facet: "wrap", ..ROW_A }, "facet 'wrap'"),
-            (ProvenRow { aes: &["x"], ..ROW_A }, "aes 'x'"),
-            (ProvenRow { scales: &[("x", "log10")], ..ROW_A }, "scale 'x: log10'"),
-            (ProvenRow { coord: "flip", ..ROW_A }, "coord 'flip'"),
-            (ProvenRow { theme: "bw", ..ROW_A }, "theme 'bw'"),
+            (ProvenRow { geom: "line", ..POINT_ROW }, "geom 'line'"),
+            (ProvenRow { stat: "bin", ..POINT_ROW }, "stat 'bin'"),
+            (ProvenRow { position: "jitter", ..POINT_ROW }, "position 'jitter'"),
+            (ProvenRow { facet: "wrap", ..POINT_ROW }, "facet 'wrap'"),
+            (ProvenRow { aes: &["x"], ..POINT_ROW }, "aes 'x'"),
+            (ProvenRow { aes: &["x", "y", "colour"], ..POINT_ROW }, "aes 'x y colour'"),
+            (ProvenRow { scales: &[("x", "log10")], ..POINT_ROW }, "scale 'x: log10'"),
+            (ProvenRow { scales: &[("z", "continuous")], ..POINT_ROW }, "scale 'z: continuous'"),
+            (ProvenRow { coord: "flip", ..POINT_ROW }, "coord 'flip'"),
+            (ProvenRow { theme: "bw", ..POINT_ROW }, "theme 'bw'"),
         ] {
-            let e = build_plot(&a, &row, (&xs, &ys)).err();
-            assert_eq!(
-                e,
-                Some(format!("{want} is proven but the plot verb has no builder for it"))
-            );
+            let want = format!("{want} is proven but the plot verb has no builder for it");
+            assert_eq!(build_plot(&a, &row, (&xs, &ys)).err(), Some(want));
         }
+        assert!(PROVEN_ROWS.contains(&POINT_ROW), "row 1's block is in the table");
     }
 
-    /// The proven set is the row-1 contract's `ggplot2_row:` block, read by build.rs: geom_point
-    /// with identity stat and position, continuous x and y, ggplot2's default coord, facet and
-    /// theme. Adding a row to a contract adds it here; nothing else does.
-    #[test]
-    fn the_proven_set_is_the_row_contracts() {
-        let row1 = PROVEN_ROWS
-            .iter()
-            .find(|r| r.contract == "ggplot2-row1-point-v1")
-            .expect("row 1 is proven");
-        assert_eq!(
-            (row1.name, row1.geom, row1.stat, row1.position),
-            ("geom_point", "point", "identity", "identity")
-        );
-        assert_eq!(row1.scales, [("x", "continuous"), ("y", "continuous")]);
-        assert_eq!((row1.coord, row1.facet, row1.theme), ("cartesian", "null", "grey"));
-        assert_eq!(row1.aes, ["x", "y"]);
-    }
-
-    /// Every proven row has an engine builder for every dimension it names, so a contract row
-    /// that widens the proven set without an implementation turns this red, not the output wrong.
-    #[test]
-    fn every_proven_row_has_builders_for_every_dimension() {
-        for row in PROVEN_ROWS {
-            let id = row.contract;
-            assert!(geom_for(row.geom).is_ok(), "{id}: geom {}", row.geom);
-            assert!(stat_for(row.stat).is_ok(), "{id}: stat {}", row.stat);
-            assert!(position_for(row.position).is_ok(), "{id}: position {}", row.position);
-            for (aes, kind) in row.scales {
-                assert!(scale_for(aes, kind).is_ok(), "{id}: scale {aes} {kind}");
-            }
-            assert!(coord_for(row.coord).is_ok(), "{id}: coord {}", row.coord);
-            assert!(facet_for(row.facet).is_ok(), "{id}: facet {}", row.facet);
-            assert!(aes_for(row.aes).is_ok(), "{id}: aes {:?}", row.aes);
-            assert!(theme_for(row.theme).is_ok(), "{id}: theme {}", row.theme);
-        }
-    }
-
-    #[test]
-    fn a_proven_name_without_a_builder_is_an_error_naming_it() {
-        let want = |kind: &str, name: &str| {
-            Some(format!("{kind} '{name}' is proven but the plot verb has no builder for it"))
-        };
-        assert_eq!(geom_for("line").err(), want("geom", "line"));
-        assert_eq!(stat_for("bin").err(), want("stat", "bin"));
-        assert_eq!(position_for("jitter").err(), want("position", "jitter"));
-        assert_eq!(scale_for("x", "log10").err(), want("scale", "x: log10"));
-        assert_eq!(scale_for("colour", "continuous").err(), want("scale", "colour: continuous"));
-        assert_eq!(coord_for("flip").err(), want("coord", "flip"));
-        assert_eq!(facet_for("wrap").err(), want("facet", "wrap"));
-        assert_eq!(aes_for(&["x", "y", "colour"]).err(), want("aes", "x y colour"));
-        assert_eq!(aes_for(&["x"]).err(), want("aes", "x"));
-        assert_eq!(theme_for("bw").err(), want("theme", "bw"));
-    }
-
-    const ROW_A: ProvenRow = ProvenRow {
-        contract: "a",
+    /// Row 1's `ggplot2_row:` block: geom_point with identity stat and position, continuous x
+    /// and y, and ggplot2's default coord, facet and theme.
+    const POINT_ROW: ProvenRow = ProvenRow {
+        contract: "ggplot2-row1-point-v1",
         name: "geom_point",
         geom: "point",
         stat: "identity",
@@ -710,61 +663,115 @@ mod tests {
 #[cfg(test)]
 mod generator {
     use std::collections::BTreeMap;
+    use std::path::Path;
 
     include!("proven_gen.rs");
 
     const BLOCK: &str = "ggplot2_row:\n  ref: geom_point\n  geom: point\n  stat: identity\n  \
         position: identity\n  scale_x: continuous\n  scale_y: continuous\n  coord: cartesian\n  \
         facet: 'null'\n  theme: grey\n  aes: x y\n  oracle: o\n";
+    const SPEC: &str = "ggplot(df, aes(x, y)) + geom_point()";
+    const POINT: &str = r#"{"geom": "GeomPoint"}"#;
 
-    fn oracle(layers: &str) -> Vec<(String, String)> {
-        vec![("expected.json".into(), format!("{{\"layers\": [{layers}]}}"))]
+    fn json(spec: &str, layers: &str) -> String {
+        format!(r#"{{"spec": "{spec}", "layers": [{layers}]}}"#)
     }
 
-    /// N4: a block is admitted only with a falsifier and an oracle that draws one layer of its
-    /// geom, so a block naming another geom than its oracle drew fails the build.
+    fn oracle(layers: &str) -> Vec<(String, String)> {
+        vec![("expected.json".into(), json(SPEC, layers))]
+    }
+
+    /// N4: a block is admitted only with a falsifier and oracles that each draw one layer of its
+    /// geom from an R call naming the block's stat, position, scales, coord, facet and theme.
     #[test]
     fn a_row_needs_a_falsifier_and_an_oracle_drawing_its_one_geom() {
         assert!(parse_row("c", "falsification_tests: []\n").expect("no block").is_none());
-        let e = parse_row("c", BLOCK).err();
-        assert_eq!(e.as_deref(), Some("c: a ggplot2_row needs at least one falsification test"));
         assert!(parse_row("c", &format!("{BLOCK}  size: 2\nfalsification_tests: [a]\n")).is_err());
         let row = parse_row("c", &format!("{BLOCK}falsification_tests: [a]\n"));
         let row = row.expect("parses").expect("has a block");
-        let point = r#"{"geom": "GeomPoint"}"#;
-        assert_eq!(check_oracle("c", &row, &oracle(point)), Ok(()));
+        assert_eq!(check_oracle("c", &row, &oracle(POINT)), Ok(()));
         let e = check_oracle("c", &row, &[]);
         assert_eq!(e, Err("c: oracle o has no expected*.json".into()));
         for (layers, got) in [
             (r#"{"geom": "GeomLine"}"#, r#"["GeomLine"]"#),
-            (&format!("{point}, {point}"), r#"["GeomPoint", "GeomPoint"]"#),
+            (&format!("{POINT}, {POINT}"), r#"["GeomPoint", "GeomPoint"]"#),
             ("", "[]"),
         ] {
             let want = format!("c: oracle expected.json draws layers {got}; the block declares one GeomPoint layer");
             assert_eq!(check_oracle("c", &row, &oracle(layers)), Err(want));
         }
+        for (call, dim, got, declared) in [
+            ("geom_point(stat = 'bin')", "stat", "bin", "identity"),
+            ("geom_point(position = 'jitter')", "position", "jitter", "identity"),
+            ("geom_point() + scale_x_log10()", "scale_x", "log10", "continuous"),
+            ("geom_point() + scale_y_sqrt()", "scale_y", "sqrt", "continuous"),
+            ("geom_point() + coord_flip()", "coord", "flip", "cartesian"),
+            ("geom_point() + facet_wrap(~f)", "facet", "wrap", "null"),
+            ("geom_point() + theme_bw()", "theme", "bw", "grey"),
+        ] {
+            let o = [("e.json".into(), json(&format!("ggplot(df, aes(x, y)) + {call}"), POINT))];
+            let want = format!("c: oracle e.json has {dim} {got}; the block declares {declared}");
+            assert_eq!(check_oracle("c", &row, &o), Err(want));
+        }
+        let o = [("e.json".into(), format!(r#"{{"layers": [{POINT}]}}"#))];
+        assert_eq!(check_oracle("c", &row, &o), Err("c: oracle e.json has no spec".into()));
         let bad = [("expected.json".to_string(), "{".to_string())];
         assert!(check_oracle("c", &row, &bad)
             .expect_err("not json")
             .starts_with("c: expected.json: "));
-        assert_eq!(
-            (geom_class("point"), geom_class("density_2d")),
-            ("GeomPoint".into(), "GeomDensity2d".into())
-        );
+        assert_eq!(geom_class("density_2d"), "GeomDensity2d");
     }
 
-    /// The committed table is row 1's block rendered, and row 1's R oracle backs the block.
+    /// The walk build.rs runs, on a scratch tree: it reads only `ggplot2-*.yaml`, admits a row
+    /// whose every `expected*.json` backs its block, refuses a row whose oracle does not or that
+    /// has no falsifier, and fails a table that is not the rows rendered.
     #[test]
-    fn the_committed_table_is_the_contract_rendered() {
-        let read = |p: &str| {
-            let path = format!("{}/{p}", env!("CARGO_MANIFEST_DIR"));
-            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"))
+    fn the_contract_walk_admits_only_rows_their_oracles_back() {
+        let t = tempfile::tempdir().expect("tempdir");
+        let (ws, dir, table) = (t.path(), t.path().join("c"), t.path().join("rows.rs"));
+        let put = |p: &str, s: &str| {
+            let p = ws.join(p);
+            std::fs::create_dir_all(p.parent().expect("parent")).expect("mkdir");
+            std::fs::write(p, s).is_ok()
         };
-        let yaml = read("../../contracts/trueno-viz/ggplot2-row1-point-v1.yaml");
-        let row = parse_row("row1", &yaml).expect("parses").expect("row 1 has a block");
-        let json = read("fixtures/ggplot2/geom_point/expected.json");
-        assert_eq!(check_oracle("row1", &row, &[("expected.json".into(), json)]), Ok(()));
-        let rows = BTreeMap::from([("ggplot2-row1-point-v1".to_string(), row)]);
-        assert_eq!(render(&rows), read("src/plot_cli/proven_rows.rs"));
+        assert_eq!(sync(&dir, ws, &table, false), Ok(()), "no contracts: the table is kept");
+        put("c/ggplot2-a.yaml", &format!("{BLOCK}falsification_tests: [a]\n"));
+        put("c/notes.yaml", "ggplot2_row: 1\n");
+        put("o/expected_plain.json", &json(SPEC, POINT));
+        let e = sync(&dir, ws, &table, false).expect_err("the table is missing");
+        assert!(e.contains("differs from the ggplot2_row blocks"), "{e}");
+        assert_eq!(sync(&dir, ws, &table, true), Ok(()));
+        assert_eq!(sync(&dir, ws, &table, false), Ok(()));
+        let log = BLOCK.replace("x: continuous", "x: log10").replace("oracle: o", "oracle: p");
+        put("c/ggplot2-b.yaml", &format!("{log}falsification_tests: [a]\n"));
+        put("p/expected.json", &json(&format!("{SPEC} + scale_x_log10()"), POINT));
+        assert_eq!(sync(&dir, ws, &table, true), Ok(()));
+        let text = std::fs::read_to_string(&table).expect("table");
+        assert!(text.contains(r#"scales: &[("x", "log10"), ("y", "continuous")]"#), "{text}");
+        let line = BLOCK.replace("oracle: o", "oracle: q");
+        for (files, want) in [
+            (vec![("p/expected_z.json", json(SPEC, POINT))],
+             "ggplot2-b.yaml: oracle expected_z.json has scale_x continuous; the block declares log10"),
+            (vec![("c/ggplot2-c.yaml", format!("{line}falsification_tests: [a]\n")),
+                  ("q/expected.json", json(SPEC, r#"{"geom": "GeomLine"}"#))],
+             r#"ggplot2-c.yaml: oracle expected.json draws layers ["GeomLine"]; the block declares one GeomPoint layer"#),
+            (vec![("c/ggplot2-d.yaml", BLOCK.to_string())],
+             "ggplot2-d.yaml: a ggplot2_row needs at least one falsification test"),
+        ] {
+            assert!(files.iter().all(|(p, s)| put(p, s)));
+            assert_eq!(sync(&dir, ws, &table, true), Err(want.to_string()));
+            assert!(files.iter().all(|(p, _)| std::fs::remove_file(ws.join(p)).is_ok()));
+        }
+        assert_eq!(sync(&dir, ws, &table, false), Ok(()));
+    }
+
+    /// The committed table is every `contracts/trueno-viz/ggplot2-*.yaml` block rendered, each
+    /// backed by its R oracle: build.rs's check, run on the tree.
+    #[test]
+    fn the_committed_table_is_the_contracts_rendered() {
+        let krate = Path::new(env!("CARGO_MANIFEST_DIR"));
+        let (ws, table) = (krate.join("../.."), krate.join("src/plot_cli/proven_rows.rs"));
+        assert!(ws.join("contracts/trueno-viz").is_dir(), "the contracts are in the tree");
+        assert_eq!(sync(&ws.join("contracts/trueno-viz"), &ws, &table, false), Ok(()));
     }
 }
