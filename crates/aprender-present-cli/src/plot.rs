@@ -1634,7 +1634,7 @@ mod tests {
     /// labels too wide for the smallest terminal, and a zero-width zoom for SVG.
     #[test]
     fn engine_errors_are_messages() {
-        let wide = tmp("wide.csv", "x,y\n0,0\n1,123456789012345\n");
+        let wide = tmp("wide.csv", "x,y\n0,-1e14\n1,-1.000005e14\n");
         let e = go(
             &flags(&wide, &["--width", "20", "--height", "8"]),
             &Env::default(),
