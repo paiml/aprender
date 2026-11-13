@@ -93,6 +93,21 @@ falsification_tests:
   prediction: accepting ylim or a row, column, grid or wrap facet turns every_coord_limit_and_facet_kind_is_refused RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::every_coord_limit_and_facet_kind_is_refused
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-FREQ-011
+  rule: Position scales are refused
+  prediction: applying or ignoring scale_x/scale_y beside the layer instead of refusing turns position_scale_specs_beside_dist_layers_are_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::position_scale_specs_beside_dist_layers_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-FREQ-012
+  rule: Grouping is O(n log n)
+  prediction: a per-row linear group search or a per-group row scan turns one_hundred_thousand_groups_lay_out_in_bounded_time RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::one_hundred_thousand_groups_lay_out_in_bounded_time
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-FREQ-013
+  rule: Geom alpha reaches the layer
+  prediction: dropping the geom's alpha, or accepting it set twice or NaN, turns geom_alpha_reaches_every_dist_layer RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::geom_alpha_reaches_every_dist_layer
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-FREQ-001
   name: ggplot2 conformance (geom_freqpoly)
