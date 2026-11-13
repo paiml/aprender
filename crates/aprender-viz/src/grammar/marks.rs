@@ -317,30 +317,31 @@ fn require_point_companion(data: &DataFrame, aes: &Aes) -> Result<()> {
                 "geom_point beside area/ribbon/tile/rect/text needs a mapped {axis}"
             )));
         };
-        let cells = data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))?;
-        if cells.len() < data.nrow() {
-            return Err(Error::Rendering(format!(
-                "geom_point beside area/ribbon/tile/rect/text: column {name} is shorter than the \
-                 frame"
-            )));
-        }
-        for v in cells {
-            match v {
-                DataValue::Text(_) => {
-                    return Err(Error::Rendering(format!(
-                        "geom_point beside area/ribbon/tile/rect/text: column {name} is text, \
-                         which needs a discrete scale; not modelled"
-                    )))
-                }
-                DataValue::Number(n) if n.is_infinite() => {
-                    return Err(Error::ScaleDomain(format!(
-                        "geom_point beside area/ribbon/tile/rect/text: column {name}: infinite \
-                         position is not modelled"
-                    )))
-                }
-                _ => {}
-            }
-        }
+        require_point_column(data, name)?;
+    }
+    Ok(())
+}
+
+/// One position column of a `geom_point` beside the five: present, as long as the frame, and
+/// numeric without an infinite value (an NA cell is kept: the scale trains on the other rows).
+fn require_point_column(data: &DataFrame, name: &str) -> Result<()> {
+    let cells = data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))?;
+    if cells.len() < data.nrow() {
+        return Err(Error::Rendering(format!(
+            "geom_point beside area/ribbon/tile/rect/text: column {name} is shorter than the frame"
+        )));
+    }
+    if cells.iter().any(|v| matches!(v, DataValue::Text(_))) {
+        return Err(Error::Rendering(format!(
+            "geom_point beside area/ribbon/tile/rect/text: column {name} is text, which needs a \
+             discrete scale; not modelled"
+        )));
+    }
+    if cells.iter().any(|v| matches!(v, DataValue::Number(n) if n.is_infinite())) {
+        return Err(Error::ScaleDomain(format!(
+            "geom_point beside area/ribbon/tile/rect/text: column {name}: infinite position is \
+             not modelled"
+        )));
     }
     Ok(())
 }

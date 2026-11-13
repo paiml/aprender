@@ -1468,102 +1468,99 @@ fn refuses_every_stat_on_a_point_beside_every_geom() {
     }
 }
 
-#[test]
-fn refuses_a_point_companion_layout_does_not_model_for_every_geom() {
+/// `companion` beside each of [`five`] over `df` with plot-level `plot_aes`, in both orders.
+fn beside_every_geom(
+    df: &DataFrame,
+    plot_aes: &Aes,
+    companion: &super::Layer,
+) -> Vec<(String, Result<BuiltLayout, Error>)> {
     use super::Layer;
-    let with = |extra: &[(&str, DataValue)]| {
-        let mut df = wide();
-        for (name, v) in extra {
-            df.add_column_values(
-                name,
-                vec![DataValue::Number(1.0), v.clone(), DataValue::Number(3.0)],
-            );
-        }
-        df
-    };
-    let point = |aes: Aes| Layer::new(Geom::point()).aes(aes);
+    let mut out = Vec::new();
     for (name, geom, aes) in five() {
-        let marks = Layer::new(geom.clone()).aes(aes.clone());
-        let lay = |df: DataFrame, plot_aes: Aes, companion: Layer| {
-            let a = GGPlot::new()
+        let marks = Layer::new(geom).aes(aes);
+        for (order, pair) in [("after", [&marks, companion]), ("before", [companion, &marks])] {
+            let r = GGPlot::new()
                 .data(df.clone())
                 .aes(plot_aes.clone())
-                .layer(marks.clone())
-                .layer(companion.clone())
+                .layer(pair[0].clone())
+                .layer(pair[1].clone())
                 .build()
                 .and_then(|b| b.layout());
-            let b = GGPlot::new()
-                .data(df)
-                .aes(plot_aes)
-                .layer(companion)
-                .layer(marks.clone())
-                .build()
-                .and_then(|b| b.layout());
-            [a, b]
-        };
-        let rendering = |rs: [Result<BuiltLayout, Error>; 2], what: &str, needle: &str| {
-            for r in rs {
-                match &r {
-                    Err(Error::Rendering(m)) if m.contains(needle) => {}
-                    other => panic!("{name} + point {what}: {other:?}"),
-                }
-            }
-        };
+            out.push((format!("{name} ({order})"), r));
+        }
+    }
+    out
+}
+
+fn point_layer(aes: Aes) -> super::Layer {
+    super::Layer::new(Geom::point()).aes(aes)
+}
+
+/// [`wide`] plus a column `v` = `[1, cell, 3]`.
+fn wide_with_v(cell: DataValue) -> DataFrame {
+    let mut df = wide();
+    df.add_column_values("v", vec![DataValue::Number(1.0), cell, DataValue::Number(3.0)]);
+    df
+}
+
+#[test]
+fn refuses_a_point_companion_layout_does_not_model_for_every_geom() {
+    let mut short = wide();
+    short.add_column_f32("s", &[1.0, 2.0]);
+    let none = Aes::new();
+    // (what, frame, plot-level aes, point aes, text the Error::Rendering must contain)
+    let cases = [
         // Unmapped x or y: ggplot2 refuses the point; nothing here may guess one.
-        rendering(lay(wide(), Aes::new(), point(Aes::new().y("y"))), "no x", "mapped x");
-        rendering(lay(wide(), Aes::new(), point(Aes::new().x("x"))), "no y", "mapped y");
+        ("no x", wide(), none.clone(), Aes::new().y("y"), "mapped x".to_string()),
+        ("no y", wide(), none.clone(), Aes::new().x("x"), "mapped y".to_string()),
         // A text column needs a discrete scale (ggplot2 4.0.3 makes x/y discrete).
-        rendering(lay(wide(), Aes::new(), point(Aes::new().x("lab").y("y"))), "text x", "is text");
-        rendering(lay(wide(), Aes::new(), point(Aes::new().x("x").y("lab"))), "text y", "is text");
+        ("text x", wide(), none.clone(), Aes::new().x("lab").y("y"), "is text".to_string()),
+        ("text y", wide(), none.clone(), Aes::new().x("x").y("lab"), "is text".to_string()),
         // A short column: R cannot build that frame.
-        let mut short = wide();
-        short.add_column_f32("s", &[1.0, 2.0]);
-        rendering(
-            lay(short.clone(), Aes::new(), point(Aes::new().x("s").y("y"))),
-            "short x",
-            "shorter",
-        );
-        rendering(lay(short, Aes::new(), point(Aes::new().x("x").y("s"))), "short y", "shorter");
+        ("short x", short.clone(), none.clone(), Aes::new().x("s").y("y"), "shorter".to_string()),
+        ("short y", short, none, Aes::new().x("x").y("s"), "shorter".to_string()),
         // Bounds the point inherits: ggplot2 keeps them in its data and trains the scales on them.
-        for bound in ["xmin", "xmax", "ymin", "ymax"] {
-            let plot_aes = match bound {
-                "xmin" => Aes::new().xmin("x0"),
-                "xmax" => Aes::new().xmax("x1"),
-                "ymin" => Aes::new().ymin("lo"),
-                _ => Aes::new().ymax("hi"),
-            };
-            rendering(
-                lay(wide(), plot_aes, point(Aes::new().x("x").y("y"))),
-                bound,
-                &format!("mapped {bound}"),
-            );
-        }
-        // A missing column.
-        for r in lay(wide(), Aes::new(), point(Aes::new().x("nope").y("y"))) {
-            assert!(matches!(&r, Err(Error::UnknownColumn(c)) if c == "nope"), "{name}: {r:?}");
-        }
-        // An infinite position: ggplot2 squishes it to the panel, which layout() does not model.
-        for inf in [f32::INFINITY, f32::NEG_INFINITY] {
-            for axis in ["x", "y"] {
-                let df = with(&[("v", DataValue::Number(inf))]);
-                let a =
-                    if axis == "x" { Aes::new().x("v").y("y") } else { Aes::new().x("x").y("v") };
-                for r in lay(df, Aes::new(), point(a)) {
-                    assert!(matches!(r, Err(Error::ScaleDomain(_))), "{name} {axis} {inf}: {r:?}");
-                }
+        ("xmin", wide(), Aes::new().xmin("x0"), Aes::new().x("x").y("y"), "mapped xmin".into()),
+        ("xmax", wide(), Aes::new().xmax("x1"), Aes::new().x("x").y("y"), "mapped xmax".into()),
+        ("ymin", wide(), Aes::new().ymin("lo"), Aes::new().x("x").y("y"), "mapped ymin".into()),
+        ("ymax", wide(), Aes::new().ymax("hi"), Aes::new().x("x").y("y"), "mapped ymax".into()),
+    ];
+    for (what, df, plot_aes, aes, needle) in cases {
+        for (name, r) in beside_every_geom(&df, &plot_aes, &point_layer(aes)) {
+            match &r {
+                Err(Error::Rendering(m)) if m.contains(&needle) => {}
+                other => panic!("{name} + point {what}: {other:?}"),
             }
         }
-        // The point's own frame is checked, not the plot's.
-        let own = Layer::new(Geom::point())
-            .data(frame(&[("x", &[1.0]), ("y", &[f32::INFINITY])]))
-            .aes(Aes::new().x("x").y("y"));
-        for r in lay(wide(), Aes::new(), own) {
-            assert!(matches!(r, Err(Error::ScaleDomain(_))), "{name} own data: {r:?}");
+    }
+}
+
+#[test]
+fn refuses_a_missing_or_infinite_point_column_and_keeps_an_na_cell_for_every_geom() {
+    let none = Aes::new();
+    let unknown = point_layer(Aes::new().x("nope").y("y"));
+    for (name, r) in beside_every_geom(&wide(), &none, &unknown) {
+        assert!(matches!(&r, Err(Error::UnknownColumn(c)) if c == "nope"), "{name}: {r:?}");
+    }
+    // An infinite position: ggplot2 squishes it to the panel, which layout() does not model.
+    for inf in [f32::INFINITY, f32::NEG_INFINITY] {
+        let df = wide_with_v(DataValue::Number(inf));
+        for aes in [Aes::new().x("v").y("y"), Aes::new().x("x").y("v")] {
+            for (name, r) in beside_every_geom(&df, &none, &point_layer(aes.clone())) {
+                assert!(matches!(r, Err(Error::ScaleDomain(_))), "{name} {aes:?}: {r:?}");
+            }
         }
-        // And an NA cell is not refused: the scale trains on the other rows (fixture point_na_*).
-        for r in lay(with(&[("v", DataValue::Null)]), Aes::new(), point(Aes::new().x("v").y("y"))) {
-            assert!(r.is_ok(), "{name} NA: {r:?}");
-        }
+    }
+    // The point's own frame is checked, not the plot's.
+    let own = point_layer(Aes::new().x("x").y("y"))
+        .data(frame(&[("x", &[1.0]), ("y", &[f32::INFINITY])]));
+    for (name, r) in beside_every_geom(&wide(), &none, &own) {
+        assert!(matches!(r, Err(Error::ScaleDomain(_))), "{name} own data: {r:?}");
+    }
+    // An NA cell is not refused: the scale trains on the other rows (fixtures point_na_*).
+    let na = wide_with_v(DataValue::Null);
+    for (name, r) in beside_every_geom(&na, &none, &point_layer(Aes::new().x("v").y("y"))) {
+        assert!(r.is_ok(), "{name} NA: {r:?}");
     }
 }
 

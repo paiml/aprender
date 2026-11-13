@@ -95,8 +95,12 @@ enforcement:
     check: grammar::ggplot2_marks_oracle::refuses_every_stat_on_a_point_beside_every_geom
     severity: ERROR
   refuse_point_companion:
-    description: "Beside this geom, a geom_point whose x or y is unmapped, unknown, text, short or infinite, or that inherits xmin/xmax/ymin/ymax, is refused with a typed error"
+    description: "Beside this geom, a geom_point whose x or y is unmapped, text or short, or that inherits xmin/xmax/ymin/ymax, is refused with Error::Rendering"
     check: grammar::ggplot2_marks_oracle::refuses_a_point_companion_layout_does_not_model_for_every_geom
+    severity: ERROR
+  refuse_point_column:
+    description: "Beside this geom, a geom_point position column that is missing is refused with Error::UnknownColumn and one with an infinite value (in the plot frame or the layer frame) with Error::ScaleDomain; an NA cell is laid out"
+    check: grammar::ggplot2_marks_oracle::refuses_a_missing_or_infinite_point_column_and_keeps_an_na_cell_for_every_geom
     severity: ERROR
   refuse_one_axis:
     description: "A layout that trains one position scale and not the other is refused with Error::ScaleDomain"
@@ -151,4 +155,5 @@ qa_gate:
   - refuse_companions
   - refuse_point_stat
   - refuse_point_companion
+  - refuse_point_column
   - refuse_one_axis
