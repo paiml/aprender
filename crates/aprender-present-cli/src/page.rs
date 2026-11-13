@@ -43,18 +43,18 @@ pub fn write_boot_module(pkg_dir: &Path, out_name: &str) -> io::Result<()> {
     fs::write(pkg_dir.join(BOOT_FILE), boot_module(out_name))
 }
 
-fn escape_text(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for c in text.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            other => out.push(other),
-        }
-    }
-    out
+/// Title text the audit accepts: printable ASCII with no `<`, `>`, `&` or `"`; any other
+/// character becomes `_` (a title is a label, and the audit refuses markup characters in it).
+fn title_text(text: &str) -> String {
+    text.chars()
+        .map(|c| {
+            if c == ' ' || (c.is_ascii_graphic() && !matches!(c, '<' | '>' | '&' | '"')) {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
 }
 
 fn is_plain_id(id: &str) -> bool {
@@ -86,278 +86,348 @@ pub fn page_html(title: &str, canvas_id: &str, width: u32, height: u32) -> Resul
          {BOOT_TAG}\n\
          </body>\n\
          </html>\n",
-        escape_text(title)
+        title_text(title)
     ))
 }
 
-/// One tag of the page: lower-cased name, whether it closes, and its attributes
-/// (lower-cased name, raw value).
-struct Tag {
-    name: String,
-    attrs: Vec<(String, String)>,
-}
-
-/// Tags a bundled page may not carry at all: each one loads or frames other content, re-points
-/// relative URLs, or redirects, so the page would run something the bundle did not generate.
-const REFUSED_TAGS: [&str; 8] = [
-    "base", "iframe", "frame", "frameset", "object", "embed", "applet", "portal",
+/// Tags a bundled page may carry. Anything else is refused, whatever it holds.
+const ALLOWED_TAGS: [&str; 17] = [
+    "html", "head", "meta", "title", "body", "canvas", "div", "span", "p", "h1", "h2", "h3", "ul",
+    "ol", "li", "a", "img",
 ];
 
-/// Advance `at` while `keep` holds.
-fn skip(chars: &[char], at: &mut usize, keep: impl Fn(char) -> bool) {
-    while *at < chars.len() && keep(chars[*at]) {
-        *at += 1;
+/// Tags that never have an end tag.
+const VOID_TAGS: [&str; 2] = ["meta", "img"];
+
+/// Attributes a tag may carry beyond the global ones (`id`, `class`, `role`, `aria-*`,
+/// `data-*`).
+fn tag_attributes(tag: &str) -> &'static [&'static str] {
+    match tag {
+        "html" => &["lang"],
+        "meta" => &["charset", "name", "content"],
+        "canvas" => &["width", "height"],
+        "img" => &["src", "alt", "width", "height"],
+        "a" => &["href"],
+        _ => &[],
     }
 }
 
-/// The value after an `=`: quoted (closing quote consumed) or bare (runs to whitespace or `>`,
-/// quote characters inside it are part of it). `Err` when a quote is never closed.
-fn read_value(chars: &[char], at: &mut usize) -> Result<String, String> {
-    skip(chars, at, char::is_whitespace);
-    let quote = chars.get(*at).copied().filter(|c| matches!(c, '"' | '\''));
-    let Some(q) = quote else {
-        let v = *at;
-        skip(chars, at, |c| !c.is_whitespace() && c != '>');
-        return Ok(chars[v..*at].iter().collect());
+fn is_html_space(c: u8) -> bool {
+    matches!(c, b' ' | b'\t' | b'\n' | b'\r')
+}
+
+fn is_global_attribute(name: &str) -> bool {
+    let suffix = |prefix: &str| {
+        name.strip_prefix(prefix).is_some_and(|s| {
+            !s.is_empty()
+                && s.bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'_')
+        })
     };
-    *at += 1;
-    let v = *at;
-    skip(chars, at, |c| c != q);
-    if *at >= chars.len() {
-        return Err(UNTERMINATED.to_string());
-    }
-    let value = chars[v..*at].iter().collect();
-    *at += 1;
-    Ok(value)
+    matches!(name, "id" | "class" | "role") || suffix("aria-") || suffix("data-")
+}
+
+/// A fragment (`#x`) or a relative path: no scheme (no `:`), no `&` (a character reference
+/// could spell one), no backslash, and not protocol-relative.
+fn is_local_url(value: &str) -> bool {
+    !value.is_empty()
+        && !value.contains([':', '&', '\\', '<', '>', '"', '\''])
+        && !value.starts_with("//")
+        && !value.bytes().any(|b| b.is_ascii_control())
+}
+
+/// The audit's reader: ASCII bytes only (checked first), HTML whitespace only.
+struct Reader<'a> {
+    b: &'a [u8],
+    at: usize,
+    reasons: Vec<String>,
+    boot_tags: usize,
 }
 
 const UNTERMINATED: &str = "a tag is never closed (the page ends inside it)";
 
-/// One attribute: lower-cased name (a leading `=` belongs to the name, as in HTML) and value.
-fn read_attribute(chars: &[char], at: &mut usize) -> Result<(String, String), String> {
-    let start = *at;
-    *at += 1;
-    skip(chars, at, |c| {
-        !c.is_whitespace() && !matches!(c, '/' | '=' | '>')
-    });
-    let name: String = chars[start..*at]
-        .iter()
-        .collect::<String>()
-        .to_ascii_lowercase();
-    skip(chars, at, char::is_whitespace);
-    if chars.get(*at) != Some(&'=') {
-        return Ok((name, String::new()));
+impl Reader<'_> {
+    fn skip_space(&mut self) {
+        while self.b.get(self.at).is_some_and(|c| is_html_space(*c)) {
+            self.at += 1;
+        }
     }
-    *at += 1;
-    Ok((name, read_value(chars, at)?))
-}
 
-/// Read the tag that starts after its `<` (and `/` for a closing tag) the way an HTML parser
-/// does: the name ends at whitespace, `/` or `>`; attributes are separated by whitespace or
-/// `/`. `Err` when the input ends before the closing `>`.
-fn read_tag(chars: &[char], at: &mut usize) -> Result<Tag, String> {
-    let start = *at;
-    skip(chars, at, |c| !c.is_whitespace() && c != '/' && c != '>');
-    let name: String = chars[start..*at]
-        .iter()
-        .collect::<String>()
-        .to_ascii_lowercase();
-    let mut attrs = Vec::new();
-    loop {
-        skip(chars, at, |c| c.is_whitespace() || c == '/');
-        match chars.get(*at) {
-            None => return Err(UNTERMINATED.to_string()),
-            Some('>') => {
-                *at += 1;
-                return Ok(Tag { name, attrs });
+    /// Run of bytes up to HTML whitespace, `/`, `>` or (when `stop_eq`) `=`. `None` at end of
+    /// input.
+    fn run(&mut self, stop_eq: bool) -> Option<String> {
+        let from = self.at;
+        while let Some(&c) = self.b.get(self.at) {
+            if is_html_space(c) || c == b'/' || c == b'>' || (stop_eq && c == b'=') {
+                return Some(String::from_utf8_lossy(&self.b[from..self.at]).into_owned());
             }
-            Some(_) => attrs.push(read_attribute(chars, at)?),
+            self.at += 1;
         }
+        None
     }
-}
 
-/// Every tag in `html`, in order, closing tags included. Comments and the doctype are skipped.
-/// `Err` when a tag or comment is never closed: a page cut off inside markup is not judged
-/// on what is left, because a browser would not stop there either.
-fn tags(html: &str) -> Result<Vec<Tag>, String> {
-    let chars: Vec<char> = html.chars().collect();
-    let mut found = Vec::new();
-    let mut at = 0;
-    while at < chars.len() {
-        if chars[at] != '<' {
-            at += 1;
-            continue;
+    fn quoted_value(&mut self, tag: &str, attr: &str, quote: u8) -> Result<String, String> {
+        self.at += 1;
+        let from = self.at;
+        while self.b.get(self.at).is_some_and(|c| *c != quote) {
+            self.at += 1;
         }
-        let next = chars.get(at + 1).copied();
-        if next.is_some_and(|c| c.is_ascii_alphabetic()) {
-            at += 1;
-            found.push(read_tag(&chars, &mut at)?);
-        } else if next == Some('/') && chars.get(at + 2).is_some_and(|c| c.is_ascii_alphabetic()) {
-            at += 2;
-            found.push(read_tag(&chars, &mut at)?);
-        } else if next == Some('!') || next == Some('?') {
-            let comment = chars[at..].starts_with(&['<', '!', '-', '-']);
-            let end: Vec<char> = if comment { "-->" } else { ">" }.chars().collect();
-            let from = at + if comment { 4 } else { 2 };
-            let rel = chars
-                .get(from..)
-                .and_then(|rest| rest.windows(end.len()).position(|w| w == end.as_slice()));
-            let Some(rel) = rel else {
-                return Err("a comment or declaration is never closed".to_string());
-            };
-            at = from + rel + end.len();
-        } else {
-            at += 1;
+        if self.at >= self.b.len() {
+            return Err(UNTERMINATED.to_string());
         }
+        let v = String::from_utf8_lossy(&self.b[from..self.at]).into_owned();
+        self.at += 1;
+        let spaced = self
+            .b
+            .get(self.at)
+            .is_some_and(|c| is_html_space(*c) || *c == b'/' || *c == b'>');
+        if !spaced {
+            self.reasons
+                .push(format!("<{tag}> {attr}: no space after a quoted value"));
+        }
+        Ok(v)
     }
-    Ok(found)
-}
 
-/// The numeric reference after `&` (`#106;`, `#x6a`, semicolon optional): the character and
-/// how many chars it used after the `&`.
-fn numeric_reference(rest: &[char]) -> (Option<char>, usize) {
-    let hex = matches!(rest.get(1), Some('x' | 'X'));
-    let radix = if hex { 16 } else { 10 };
-    let from = if hex { 2 } else { 1 };
-    let digits: String = rest[from.min(rest.len())..]
-        .iter()
-        .take_while(|c| c.is_digit(radix))
-        .collect();
-    let semi = usize::from(rest.get(from + digits.len()) == Some(&';'));
-    let code = u32::from_str_radix(&digits, radix)
-        .ok()
-        .and_then(char::from_u32);
-    (code, from + digits.len() + semi)
-}
-
-/// The named reference after `&`, for the names that can spell or hide a scheme. Letters have
-/// no named reference, so any other name is left alone.
-fn named_reference(rest: &[char]) -> (Option<char>, usize) {
-    let name: String = rest
-        .iter()
-        .take_while(|c| c.is_ascii_alphanumeric())
-        .collect();
-    let known = [
-        ("colon", ':'),
-        ("Tab", '\t'),
-        ("NewLine", '\n'),
-        ("amp", '&'),
-        ("lt", '<'),
-        ("gt", '>'),
-        ("quot", '"'),
-        ("apos", '\''),
-        ("lpar", '('),
-        ("rpar", ')'),
-    ]
-    .iter()
-    .find(|(n, _)| *n == name)
-    .map(|(_, c)| *c);
-    let semi = usize::from(rest.get(name.len()) == Some(&';'));
-    (known, name.len() + semi)
-}
-
-/// Decode the character references a browser decodes in an attribute value before it reads a
-/// URL scheme.
-fn decode_entities(value: &str) -> String {
-    let chars: Vec<char> = value.chars().collect();
-    let mut out = String::with_capacity(value.len());
-    let mut at = 0;
-    while at < chars.len() {
-        let c = chars[at];
-        at += 1;
-        if c != '&' {
-            out.push(c);
-            continue;
+    fn bare_value(&mut self, tag: &str, attr: &str) -> Result<String, String> {
+        let from = self.at;
+        while let Some(&c) = self.b.get(self.at) {
+            if is_html_space(c) || c == b'>' {
+                break;
+            }
+            self.at += 1;
         }
-        let rest = &chars[at..];
-        let (decoded, used) = if rest.first() == Some(&'#') {
-            numeric_reference(rest)
-        } else {
-            named_reference(rest)
+        if self.at >= self.b.len() {
+            return Err(UNTERMINATED.to_string());
+        }
+        let v = String::from_utf8_lossy(&self.b[from..self.at]).into_owned();
+        let plain =
+            |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-' | b'.' | b'/' | b'#');
+        if !v.bytes().all(plain) {
+            self.reasons.push(format!(
+                "<{tag}> {attr}: an unquoted value may hold only letters, digits and _-./#"
+            ));
+        }
+        Ok(v)
+    }
+
+    fn value(&mut self, tag: &str, attr: &str) -> Result<(), String> {
+        let Some(&first) = self.b.get(self.at) else {
+            return Err(UNTERMINATED.to_string());
         };
-        match decoded {
-            Some(d) => {
-                out.push(d);
-                at += used;
+        let raw = if first == b'"' || first == b'\'' {
+            self.quoted_value(tag, attr, first)?
+        } else {
+            self.bare_value(tag, attr)?
+        };
+        self.check_value(tag, attr, &raw);
+        Ok(())
+    }
+
+    fn check_value(&mut self, tag: &str, attr: &str, value: &str) {
+        if matches!(attr, "href" | "src") {
+            if !is_local_url(value) {
+                self.reasons.push(format!(
+                    "<{tag}> {attr} is a javascript: URL or other scheme; only a fragment or a relative path is allowed"
+                ));
             }
-            None => out.push('&'),
+        } else if value.contains(['<', '>', '&']) {
+            self.reasons
+                .push(format!("<{tag}> {attr} holds '<', '>' or '&'"));
         }
     }
-    out
+
+    fn vet_name(&mut self, tag: &str, attr: &str, closing: bool) {
+        if attr.starts_with("on") {
+            self.reasons
+                .push(format!("<{tag}> has the script attribute '{attr}'"));
+        } else if attr == "srcdoc" {
+            self.reasons.push(format!("<{tag}> has a srcdoc document"));
+        } else if closing || !(is_global_attribute(attr) || tag_attributes(tag).contains(&attr)) {
+            self.reasons.push(format!(
+                "<{tag}> attribute '{attr}' is not on the allow-list"
+            ));
+        }
+        let name_ok = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b':');
+        if !attr.bytes().all(name_ok) {
+            self.reasons.push(format!(
+                "<{tag}> attribute name '{attr}' has a character outside letters, digits and -_:"
+            ));
+        }
+    }
+
+    /// Attributes of the tag whose name was just read, up to and including `>`.
+    fn attributes(&mut self, tag: &str, closing: bool) -> Result<(), String> {
+        loop {
+            while self
+                .b
+                .get(self.at)
+                .is_some_and(|c| is_html_space(*c) || *c == b'/')
+            {
+                self.at += 1;
+            }
+            match self.b.get(self.at) {
+                None => return Err(UNTERMINATED.to_string()),
+                Some(b'>') => {
+                    self.at += 1;
+                    return Ok(());
+                }
+                Some(_) => {}
+            }
+            let Some(name) = self.run(true) else {
+                return Err(UNTERMINATED.to_string());
+            };
+            let attr = name.to_ascii_lowercase();
+            if attr.is_empty() {
+                // a stray `=`: part of the name in HTML; refuse it
+                self.reasons
+                    .push(format!("<{tag}> has a nameless attribute"));
+                self.at += 1;
+                continue;
+            }
+            self.vet_name(tag, &attr, closing);
+            self.skip_space();
+            if self.b.get(self.at) == Some(&b'=') {
+                self.at += 1;
+                self.skip_space();
+                self.value(tag, &attr)?;
+            }
+        }
+    }
+
+    fn tag(&mut self, closing: bool) -> Result<(), String> {
+        let Some(raw) = self.run(false) else {
+            return Err(UNTERMINATED.to_string());
+        };
+        let name = raw.to_ascii_lowercase();
+        if !ALLOWED_TAGS.contains(&name.as_str()) {
+            self.reasons
+                .push(format!("<{name}> is not allowed on a bundled page"));
+        }
+        if closing && VOID_TAGS.contains(&name.as_str()) {
+            self.reasons.push(format!("</{name}> has no end tag"));
+        }
+        self.attributes(&name, closing)?;
+        if name == "title" && !closing {
+            self.title_text()?;
+        }
+        Ok(())
+    }
+
+    /// `<title>` holds text only: no `<` and no `&` before its end tag.
+    fn title_text(&mut self) -> Result<(), String> {
+        let rest = &self.b[self.at..];
+        let Some(end) = rest.iter().position(|c| *c == b'<') else {
+            return Err(UNTERMINATED.to_string());
+        };
+        if rest[..end].contains(&b'&') {
+            self.reasons.push("<title> text holds '&'".to_string());
+        }
+        let close = rest[end..].get(..8).map(|s| s.to_ascii_lowercase());
+        if close.as_deref() != Some(b"</title>".as_slice()) {
+            self.reasons
+                .push("<title> text holds '<' (a title ends only at </title>)".to_string());
+        }
+        Ok(())
+    }
+
+    fn run_all(&mut self) -> Result<(), String> {
+        let doctype = b"<!doctype html>";
+        self.skip_space();
+        if self.b[self.at..]
+            .get(..doctype.len())
+            .is_some_and(|s| s.eq_ignore_ascii_case(doctype))
+        {
+            self.at += doctype.len();
+        }
+        let boot = BOOT_TAG.as_bytes();
+        while self.at < self.b.len() {
+            if self.b[self.at] != b'<' {
+                self.at += 1;
+                continue;
+            }
+            if self.b[self.at..].starts_with(boot) {
+                self.boot_tags += 1;
+                self.at += boot.len();
+                continue;
+            }
+            let next = self.b.get(self.at + 1).copied();
+            match next {
+                Some(c) if c.is_ascii_alphabetic() => {
+                    self.at += 1;
+                    self.tag(false)?;
+                }
+                Some(b'/') if self.b.get(self.at + 2).is_some_and(u8::is_ascii_alphabetic) => {
+                    self.at += 2;
+                    self.tag(true)?;
+                }
+                Some(b'!' | b'?') => {
+                    return Err("a comment, CDATA section, declaration or doctype other than <!doctype html> is not allowed (a comment is never allowed)".to_string());
+                }
+                _ => {
+                    return Err("a '<' that does not start a known tag is not allowed".to_string());
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
-/// Does this attribute value, read as a browser reads it, start a script or an HTML document?
-fn is_script_url(value: &str) -> bool {
-    let compact: String = decode_entities(value)
-        .chars()
-        .filter(|c| !c.is_whitespace() && !c.is_control())
-        .collect::<String>()
-        .to_ascii_lowercase();
-    ["javascript:", "vbscript:", "data:text/html"]
-        .iter()
-        .any(|scheme| compact.starts_with(scheme))
-}
-
-/// Refuse a page that can run any script other than the generated loader.
+/// Refuse every page that is not inside a small fixed subset of HTML.
 ///
-/// The page is read with a tokenizer that follows the HTML rules that matter here (name ends at
-/// whitespace, `/` or `>`; bare values may hold quotes; character references are decoded
-/// before a URL scheme is read) and then judged against an allow-list of what a bundled page
-/// may carry: no `on...` attribute on any tag, no `srcdoc`, no script URL in any attribute,
-/// none of `REFUSED_TAGS`, no meta refresh, no tag or comment left open.
+/// This is an allow-list, not a deny-list. A page is accepted only when all of this holds:
+/// every byte is ASCII, and the only controls are space, tab, newline and carriage return
+/// (so no VT, FF, NBSP or other Unicode space that an HTML tokenizer and this one could split
+/// differently); the only markup is `<!doctype html>` and the tags in `ALLOWED_TAGS`, each with
+/// only the attributes `tag_attributes` and the global set allow; no comment, CDATA section or
+/// other declaration; no `<` in an attribute value or in text unless it starts a known tag; no
+/// raw-text element (`script`, `style`, `textarea`, `xmp`, `noscript` and the rest are not on
+/// the list; `<title>` text holds no `<` and no `&`); `href` and `src` hold a fragment or a
+/// relative path with no `:`; and the one script is exactly `BOOT_TAG`, once.
+///
+/// Because a refused construct is refused whole, the reader never has to agree with a browser
+/// about how it ends.
 ///
 /// # Errors
 /// One line per reason.
 pub fn audit_page(html: &str) -> Result<(), Vec<String>> {
     let mut reasons = Vec::new();
-    let lower = html.to_ascii_lowercase();
-    let script_tags = lower.matches("<script").count();
-    let boot_tags = html.matches(BOOT_TAG).count();
+    if let Some((at, c)) = html
+        .char_indices()
+        .find(|(_, c)| !c.is_ascii() || (c.is_ascii_control() && !matches!(c, '\t' | '\n' | '\r')))
+    {
+        return Err(vec![format!(
+            "byte {at} ({c:?}) is not plain ASCII text: only printable ASCII, space, tab, newline and carriage return are allowed"
+        )]);
+    }
+    let mut reader = Reader {
+        b: html.as_bytes(),
+        at: 0,
+        reasons: Vec::new(),
+        boot_tags: 0,
+    };
+    let finished = reader.run_all();
+    let boot_tags = reader.boot_tags;
+    reasons.append(&mut reader.reasons);
+    if let Err(why) = finished {
+        reasons.push(why);
+    }
     if boot_tags == 0 {
         reasons.push(format!("the generated loader is missing: {BOOT_TAG}"));
     }
     if boot_tags > 1 {
         reasons.push(format!("the generated loader appears {boot_tags} times"));
     }
+    let script_tags = html.to_ascii_lowercase().matches("<script").count();
     if script_tags > boot_tags {
         reasons.push(format!(
             "{} script tag(s) other than the generated loader",
             script_tags - boot_tags
         ));
     }
-    match tags(html) {
-        Err(why) => reasons.push(why),
-        Ok(found) => {
-            for tag in found {
-                audit_tag(&tag, &mut reasons);
-            }
-        }
-    }
     if reasons.is_empty() {
         Ok(())
     } else {
         Err(reasons)
-    }
-}
-
-fn audit_tag(tag: &Tag, reasons: &mut Vec<String>) {
-    let name = &tag.name;
-    if REFUSED_TAGS.contains(&name.as_str()) {
-        reasons.push(format!("<{name}> is not allowed on a bundled page"));
-    }
-    if name == "meta" && tag.attrs.iter().any(|(a, _)| a == "http-equiv") {
-        reasons.push("<meta http-equiv> (refresh) is not allowed on a bundled page".to_string());
-    }
-    for (attr, value) in &tag.attrs {
-        if attr.starts_with("on") {
-            reasons.push(format!("<{name}> has the script attribute '{attr}'"));
-        }
-        if attr == "srcdoc" {
-            reasons.push(format!("<{name}> has a srcdoc document"));
-        }
-        if is_script_url(value) {
-            reasons.push(format!("<{name}> {attr} is a javascript: URL"));
-        }
     }
 }
 
@@ -448,9 +518,9 @@ mod tests {
     }
 
     #[test]
-    fn the_title_is_escaped() {
-        let page = page_html(r#"a<script>&"b">"#, "c", 1, 1).expect("valid id");
-        assert!(page.contains("<title>a&lt;script&gt;&amp;&quot;b&quot;&gt;</title>"));
+    fn the_title_is_reduced_to_safe_text() {
+        let page = page_html("a<script>&\"b\">\u{e9}\u{b}", "c", 1, 1).expect("valid id");
+        assert!(page.contains("<title>a_script___b____</title>"));
         assert_eq!(audit_page(&page), Ok(()));
     }
 
@@ -603,8 +673,48 @@ mod tests {
             (
                 "unterminated comment",
                 format!("{good}<!-- x"),
-                "never closed",
+                "comment",
             ),
+            ("vertical tab inside an attribute name", with("<p title=a\u{b}b=\"> <img src=x onerror=alert(1)> \">x</p>"), "not plain ASCII"),
+            ("form feed", with("<p\u{c}title=x>x</p>"), "not plain ASCII"),
+            ("no-break space", with("<p title=a\u{a0}b=\"> <img src=x onerror=alert(1)> \">x</p>"), "not plain ASCII"),
+            ("non-ASCII text", with("<p>caf\u{e9}</p>"), "not plain ASCII"),
+            ("comment closed by <!-->", with("<!--> <img src=x onerror=alert(1)> -->"), "comment"),
+            ("comment closed by <!--->", with("<!---> <img src=x onerror=alert(1)> -->"), "comment"),
+            ("comment closed by --!>", with("<!-- a --!> <img src=x onerror=alert(1)> -->"), "comment"),
+            ("plain comment", with("<!-- hi -->"), "comment"),
+            ("CDATA", with("<![CDATA[ x ]]>"), "comment"),
+            ("other doctype", good.replace("<!DOCTYPE html>", "<!DOCTYPE html PUBLIC \"x\">"), "doctype"),
+            (
+                "textarea hides a quote",
+                with("<textarea><p title=\"</textarea><img src=x onerror=alert(1)>\">"),
+                "<textarea>",
+            ),
+            ("style raw text", with("<style><p title=\"</style><img src=x onerror=alert(1)>\"></style>"), "<style>"),
+            ("xmp raw text", with("<xmp><p title=\"</xmp><img src=x onerror=alert(1)>\">"), "<xmp>"),
+            ("noscript raw text", with("<noscript><p title=\"</noscript><img src=x onerror=alert(1)>\">"), "<noscript>"),
+            ("title with a tag", good.replace("<title>Demo</title>", "<title><img src=x onerror=alert(1)></title>"), "<title> text holds '<'"),
+            ("title with a reference", good.replace("<title>Demo</title>", "<title>a&amp;b</title>"), "<title> text holds '&'"),
+            (
+                "animate values list",
+                with("<svg><a><animate attributeName=href values=\"0;javascript:alert(1)\"/></a></svg>"),
+                "<svg>",
+            ),
+            ("animate on its own", with("<animate values=\"0;javascript:alert(1)\"/>"), "<animate>"),
+            ("stray less-than in text", with("<p>1 < 2</p>"), "known tag"),
+            ("less-than in a link", with("<a href=\"x<y\">x</a>"), "javascript: URL"),
+            ("meta http-equiv refresh is off the list", with("<meta http-equiv=\"refresh\" content=\"0\">"), "'http-equiv'"),
+            ("DEL control", with("<p>a\u{7f}b</p>"), "not plain ASCII"),
+            ("less-than in a value", with("<p title=\"a<b\">x</p>"), "holds '<'"),
+            ("attribute off the list", with("<p style=\"x\">x</p>"), "'style'"),
+            ("href off its tag", with("<p href=\"x\">x</p>"), "'href'"),
+            ("absolute link", with("<a href=\"https://example.com/\">x</a>"), "javascript: URL"),
+            ("protocol-relative link", with("<a href=\"//example.com/\">x</a>"), "javascript: URL"),
+            ("video is not on the list", with("<video src=\"a.mp4\" controls muted></video>"), "<video>"),
+            ("button is not on the list", with("<button>x</button>"), "<button>"),
+            ("svg is not on the list", with("<svg></svg>"), "<svg>"),
+            ("unquoted value with a quote", with("<p title=a\"b>x</p>"), "unquoted"),
+            ("no space after a quoted value", with("<p id=\"a\"onclick=\"go()\">x</p>"), "'onclick'"),
         ];
         for (name, page, expect) in &refuse {
             let reasons = audit_page(page).expect_err(name);
@@ -621,15 +731,28 @@ mod tests {
             ),
             (
                 "an attribute value that mentions onclick",
-                with(r#"<p title="onclick=go()">x</p>"#),
+                with(r#"<p data-note="onclick=go()">x</p>"#),
             ),
             (
-                "a link that mentions javascript later",
-                with(r#"<a href="https://example.com/javascript:intro">x</a>"#),
+                "a relative link that mentions javascript",
+                with(r#"<a href="docs/javascript-intro.html">x</a>"#),
+            ),
+            ("a fragment link", with(r##"<a href="#top">x</a>"##)),
+            (
+                "an image",
+                with(r#"<img src="a.png" alt="a picture" width=10 height=10>"#),
             ),
             (
-                "a bare attribute and a video",
-                with(r#"<video src="a.mp4" controls muted></video>"#),
+                "aria and data attributes",
+                with(r#"<div id="x" class="y" role="region" aria-label="z" data-k="v">x</div>"#),
+            ),
+            ("upper-case tags are normalized", with("<P CLASS=a>x</P>")),
+            (
+                "a head with a meta",
+                good.replace(
+                    "<title>",
+                    "<meta name=\"viewport\" content=\"width=device-width\">\n<title>",
+                ),
             ),
             (
                 "an unquoted value",
@@ -684,7 +807,10 @@ mod tests {
         let out = scratch("refused");
         let page = good().replace("</body>", "<script>x()</script></body>");
         let reasons = finish_bundle(&out, "presentar", Some(&page)).expect_err("refused");
-        assert!(reasons[0].contains("other than"), "{reasons:?}");
+        assert!(
+            reasons.iter().any(|r| r.contains("other than")),
+            "{reasons:?}"
+        );
         assert!(!out.join("index.html").exists());
         assert!(!out.join("pkg").exists());
         let _ = fs::remove_dir_all(&out);

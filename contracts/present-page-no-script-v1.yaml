@@ -31,16 +31,25 @@ contract: |
       calls its init. It holds no app logic.
   (2) A GENERATED PAGE PASSES THE AUDIT. It has one canvas and one script tag,
       the loader tag.
-  (3) THE AUDIT REFUSES EVERY OTHER WAY TO RUN SCRIPT THAT IT KNOWS OF. It
-      reads the page with an HTML tokenizer (the name ends at whitespace, `/` or
-      `>`; bare values may hold quotes; character references are decoded before
-      a URL scheme is read) and refuses: a script tag that is not the loader
-      tag, a missing or repeated loader, an `on...` attribute on any tag
-      (including one after `/`), `srcdoc`, a `javascript:`, `vbscript:` or
-      `data:text/html` URL in any attribute (entity-encoded or not), the tags
-      base, iframe, frame, frameset, object, embed, applet and portal, a meta
-      http-equiv, and a tag or comment left open. It is a deny-list over parsed
-      tags, not a proof that a page is inert; the case table is its evidence.
+  (3) THE AUDIT IS AN ALLOW-LIST. A page is accepted only when every byte is
+      ASCII (controls other than space, tab, newline and carriage return, and
+      every non-ASCII character, NBSP and VT included, are refused); the only
+      markup is `<!doctype html>` and these tags: html, head, meta, title,
+      body, canvas, div, span, p, h1-h3, ul, ol, li, a, img (names are
+      lower-cased before matching); each tag carries only id, class, role,
+      aria-* and data-* plus its own (html lang; meta charset, name, content;
+      canvas width, height; img src, alt, width, height; a href); `href` and
+      `src` hold a fragment or a relative path with no `:`, no `&` and no
+      leading `//`; no attribute value holds `<`, `>` or `&`; no comment, CDATA
+      section or other declaration is allowed (so the `<!-->`, `<!--->` and
+      `--!>` closers never have to be read); no raw-text or RCDATA element is
+      on the list (script other than the loader tag, style, textarea, xmp,
+      noscript, ...), and `<title>` text holds no `<` and no `&`; a `<` that
+      does not start a listed tag, and a tag or quote left open, are refused.
+      The one script is exactly the loader tag, once. Everything outside the
+      list is refused whole, so the audit never has to agree with a browser
+      about where a refused construct ends. It is not a proof that a page is
+      inert; the case table is its evidence.
   (4) A REFUSED PAGE IS NOT BUNDLED. No index.html and no loader are written,
       and the verb exits non-zero with the reasons.
   (5) TEXT IS NOT SCRIPT. The words "onclick" or "javascript:" in text or
@@ -67,6 +76,10 @@ open_obligations:
     data-count back (0 -> 1 -> 2). It runs only where APR_PROBAR_CHROMIUM
     points at a Chrome and wasm-pack plus the wasm32 target are installed;
     that is no CI runner today, so no receipt from it exists yet (#6893).
+    In CI (fragment 728) it returns early and reports ok, which is a SKIP, a
+    third state the GATE/LAB rule bars from a PR path. It is to move to a
+    nightly LAB lane; no workflow change is in this PR, and no existing ledger
+    mechanism for LAB-run tests exists to fold it into.
     Until it does, "the loader starts the module in a real browser" is not
     measured here.
   - |
@@ -85,7 +98,7 @@ falsification_tests:
     prediction: "accepted; one script tag; the counter canvas"
     if_fails: "`new` and `bundle` write a page the bundle step would refuse"
   - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-003
-    description: "the audit case table: 31 pages refused, 9 accepted"
+    description: "the audit case table: 63 pages refused, 10 accepted"
     test: "cargo test -p aprender-present-cli page::tests::audit_case_table"
     prediction: "every refused row names its reason; every accepted row passes"
     if_fails: "script reaches a bundle, or a clean page is refused"
@@ -101,8 +114,8 @@ falsification_tests:
     if_fails: "a bundle ships with no page or no loader"
   - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-006
     description: "the title and the canvas id cannot inject markup"
-    test: "cargo test -p aprender-present-cli page::tests::the_title_is_escaped && cargo test -p aprender-present-cli page::tests::a_canvas_id_that_could_break_out_of_the_attribute_is_refused"
-    prediction: "the title is escaped; an id outside A-Z a-z 0-9 - _ is an error"
+    test: "cargo test -p aprender-present-cli page::tests::the_title_is_reduced_to_safe_text && cargo test -p aprender-present-cli page::tests::a_canvas_id_that_could_break_out_of_the_attribute_is_refused"
+    prediction: "the title is reduced to printable ASCII without < > & \"; an id outside A-Z a-z 0-9 - _ is an error"
     if_fails: "a project name can put script on the page"
   - id: FALSIFY-PRESENT_PAGE_NO_SCRIPT-007
     description: "the CLI source holds no page script of its own"
