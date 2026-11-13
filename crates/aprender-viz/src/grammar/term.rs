@@ -8,7 +8,8 @@
 //! The output is a pure function of the plot and [`TerminalPlot`]: the same input and size give
 //! byte-identical text. Without colour the text carries no escape sequences at all.
 //!
-//! Supported today: point layers, `coord_cartesian()` (with limits, without flip), no facets.
+//! Supported today: point layers, `coord_cartesian()` (with limits, without flip), no facets, no
+//! `scale_x`/`scale_y` and no text position.
 //! Anything else is refused with an error naming what is missing; nothing falls back silently.
 
 use crate::error::{Error, Result};
@@ -262,8 +263,15 @@ impl BuiltGGPlot {
         Ok(c.render(opts.color))
     }
 
-    /// Refuse what the terminal target does not draw: facets and `coord_flip()`.
+    /// Refuse what the terminal target does not draw: facets, `coord_flip()`, and position scales
+    /// (`scale_x`/`scale_y` or a text position), whose positions and labels it does not map.
     fn check_drawable(&self) -> Result<()> {
+        if self.uses_position_scales() {
+            return Err(Error::Rendering(
+                "the terminal target does not draw scale_x/scale_y or text (discrete) positions yet"
+                    .into(),
+            ));
+        }
         if !matches!(self.facet(), Facet::None) {
             return Err(Error::Rendering("the terminal target does not draw facets yet".into()));
         }
@@ -344,7 +352,7 @@ fn draw_points(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
 mod tests {
     use super::*;
     use crate::color::Rgba;
-    use crate::grammar::{Aes, DataFrame, GGPlot, Geom};
+    use crate::grammar::{scale_continuous, scale_log10, Aes, DataFrame, GGPlot, Geom};
 
     /// Row 1's fixture data (`fixtures/ggplot2/geom_point/data.csv`).
     const X: [f32; 10] = [1.5, 2.25, 3.0, 4.75, 6.5, 8.125, 9.5, 11.0, 12.25, 13.75];
@@ -453,8 +461,19 @@ mod tests {
         assert!(err(row1().coord(Coord::cartesian().flip()), plain(80, 24)).contains("coord_flip"));
         assert!(err(row1().coord(Coord::polar()), plain(80, 24)).contains("polar"));
         assert!(err(row1().geom(Geom::line()), plain(80, 24)).contains("point layers only"));
+        let scaled = row1().scale_x(scale_log10());
+        assert!(err(scaled, plain(80, 24)).contains("scale_x/scale_y"));
+        let scaled_y = row1().scale_y(scale_continuous());
+        assert!(err(scaled_y, plain(80, 24)).contains("scale_x/scale_y"));
+        let mut text = DataFrame::new();
+        text.add_column_str("x", &["a", "b"]);
+        text.add_column_f32("y", &[1.0, 2.0]);
+        let discrete = GGPlot::new().data(text).aes(Aes::new().x("x").y("y"));
+        assert!(err(discrete.geom(Geom::point()), plain(80, 24)).contains("text (discrete)"));
         let wide =
-            GGPlot::new().data_xy(&[0.0, 1.0], &[0.0, 123_456_789_012_345.0]).geom(Geom::point());
+            // R's format() prints these breaks as 13-character labels (-1.000002e+14), too wide
+            // for a 20-cell canvas.
+            GGPlot::new().data_xy(&[0.0, 1.0], &[-1.0e14, -1.000_005e14]).geom(Geom::point());
         assert!(err(wide, plain(20, 8)).contains("no room for the panel"));
     }
 
