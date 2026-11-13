@@ -1483,3 +1483,172 @@ fn every_coord_limit_and_facet_kind_is_refused() {
         }
     }
 }
+
+// --- round 4 (#6976 review at 464be27): scales, group count, row caps, geom alpha ------------
+
+/// Every position-scale spec kind the builder takes, each of which ggplot2 would apply.
+fn scale_specs() -> Vec<(&'static str, super::PositionScaleSpec)> {
+    vec![
+        ("continuous", super::scale_continuous().into()),
+        ("log10", super::scale_log10().into()),
+        ("limits", super::scale_continuous().limits(-1.0, 1.5).into()),
+        ("breaks", super::scale_continuous().breaks([-1.0, 0.0, 1.0]).into()),
+        ("expand0", super::scale_continuous().expand(super::Expansion::mult(0.0)).into()),
+        ("discrete", super::scale_discrete().into()),
+    ]
+}
+
+/// F14: a `scale_x`/`scale_y` spec beside a distribution layer is refused by name. Before the
+/// fix `layout()` returned Ok with unscaled numbers (8 of 8 R probes disagreed with ggplot2).
+#[test]
+fn position_scale_specs_beside_dist_layers_are_refused() {
+    for (name, g, a) in all_geoms() {
+        let plain = plot_with(g.clone(), a.clone(), small()).build().and_then(|p| p.layout());
+        assert!(plain.is_ok(), "{name} without a scale builds: {plain:?}");
+        for (sname, spec) in scale_specs() {
+            for axis in ["x", "y"] {
+                let p = plot_with(g.clone(), a.clone(), small());
+                let p = if axis == "x" { p.scale_x(spec.clone()) } else { p.scale_y(spec.clone()) };
+                let r = p.build().and_then(|p| p.layout());
+                assert!(
+                    matches!(&r, Err(Error::UnsupportedLayer(m)) if m.contains("distribution")),
+                    "{name} scale_{axis} {sname}: {r:?}"
+                );
+            }
+        }
+    }
+    // A distribution layer that is not the first layer is still seen.
+    let p = GGPlot::new()
+        .data(small())
+        .layer(Layer::new(Geom::point()).aes(Aes::new().x("x").y("y")))
+        .layer(Layer::new(Geom::gg_histogram()).aes(ax()))
+        .scale_x(super::scale_log10());
+    let r = p.build().and_then(|p| p.layout());
+    assert!(matches!(&r, Err(Error::UnsupportedLayer(m)) if m.contains("distribution")), "{r:?}");
+}
+
+/// `n` rows, one group each (`k` = 0..n), with `x` = `k` and two values per group in `y`.
+fn many_groups(groups: usize) -> DataFrame {
+    let k: Vec<f32> = (0..groups).flat_map(|i| [i as f32, i as f32]).collect();
+    let y: Vec<f32> = (0..groups).flat_map(|_| [1.0, 2.0]).collect();
+    let mut d = DataFrame::from_xy(&k, &y);
+    d.add_column_f32("k", &k);
+    d
+}
+
+/// F16: grouping is `O(n log n)`. With 100k groups the old per-row linear search and per-group
+/// row scan took minutes (40k groups: 35 s errorbar, 73 s histogram, debug); R takes 0.14 s.
+/// Each case must finish well inside the bound, in a debug build. Density runs R's FFT on a grid
+/// of at least 512 points per group (a fixed per-group cost, as in R), so it runs 10k groups: a
+/// quadratic grouping costs 10^8 row visits there, which still breaks the bound.
+#[test]
+fn one_hundred_thousand_groups_lay_out_in_bounded_time() {
+    const SECS: u64 = 30;
+    let cases: Vec<(&str, usize, Geom, Aes)> = vec![
+        (
+            "errorbar",
+            100_000,
+            Geom::gg_errorbar(),
+            Aes::new().x("x").ymin("y").ymax("y").group("k"),
+        ),
+        ("histogram", 100_000, Geom::gg_histogram().bins(2), Aes::new().x("y").group("k")),
+        ("freqpoly", 100_000, Geom::gg_freqpoly().bins(2), Aes::new().x("y").group("k")),
+        ("boxplot dodge", 100_000, Geom::gg_boxplot(), Aes::new().x("x").y("y").group("k")),
+        ("density", 10_000, Geom::gg_density().n(16), Aes::new().x("y").group("k")),
+    ];
+    for (name, n, g, a) in cases {
+        let t0 = std::time::Instant::now();
+        let r = within(SECS, move || layout_of(many_groups(n), a, g));
+        let b = r.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let groups = b.layers[0].dist.as_ref().map_or(0, |d| {
+            let mut g = d.group.clone();
+            g.dedup();
+            g.len()
+        });
+        assert_eq!(groups, n, "{name}: every group is laid out");
+        assert!(t0.elapsed().as_secs() < SECS, "{name}: {:?}", t0.elapsed());
+    }
+}
+
+/// F17 (M45): the density row cap refuses before building. Each group has 2 points, so only the
+/// cap can refuse it (a 1-point group is refused on its own, which hid the cap before).
+#[test]
+fn density_row_cap_refuses_groups_that_would_build() {
+    // 5 groups x 2^20 = 5,242,880 rows: over the cap of 5,000,000. Every group is valid on its
+    // own (2 points), so without the cap this builds and returns Ok.
+    let mut d5 =
+        DataFrame::from_xy(&[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0], &[1.0; 10]);
+    d5.add_column_str("g", &["a", "a", "b", "b", "c", "c", "d", "d", "e", "e"]);
+    let r = layout_of(d5, ax().group("g"), Geom::gg_density().n(1 << 20));
+    assert!(
+        matches!(&r, Err(Error::Rendering(m)) if m.contains("too many rows")),
+        "5 groups at n = 2^20: {:?}",
+        r.map(|_| ())
+    );
+}
+
+/// F17 (M46): `n` above 2^20 is refused even for one group, whose rows fit the row cap.
+#[test]
+fn density_n_is_bounded_for_one_group() {
+    let at = layout_of(small(), ax(), Geom::gg_density().n(1 << 20));
+    assert!(at.is_ok(), "n = 2^20: {:?}", at.map(|_| ()));
+    let over = layout_of(small(), ax(), Geom::gg_density().n((1 << 20) + 1));
+    assert!(
+        matches!(&over, Err(Error::Rendering(m)) if m.contains("`n` must be")),
+        "n = 2^20 + 1: {:?}",
+        over.map(|_| ())
+    );
+}
+
+/// F15: `Geom::alpha` on a distribution geom is the layer's fixed alpha, as
+/// `geom_histogram(alpha = 0.25)` in ggplot2: the same R fixture as `hist_colour_alpha`, with the
+/// alpha given on the geom instead of the aesthetics.
+#[test]
+fn hist_geom_alpha_matches_r() {
+    run(
+        fixture!("geom_histogram", "colour_alpha"),
+        "geom_histogram",
+        "colour_alpha",
+        "GeomBar",
+        HIST_SKIP,
+        csv!("geom_histogram", "data"),
+        ax().color_value(Rgba::new(0, 0, 255, 255)),
+        Geom::gg_histogram().bins(5).alpha(0.25),
+    );
+}
+
+/// F15: every distribution geom carries `Geom::alpha` into its alpha column, clamped to [0, 1];
+/// alpha set twice, or NaN, is refused rather than one value silently dropped.
+#[test]
+fn geom_alpha_reaches_every_dist_layer() {
+    for (name, g, a) in all_geoms() {
+        for (given, want) in [(0.5_f32, 0.5_f64), (0.3, 0.3), (1.5, 1.0), (-0.5, 0.0)] {
+            let b = plot_with(g.clone().alpha(given), a.clone(), small())
+                .build()
+                .and_then(|p| p.layout())
+                .unwrap_or_else(|e| panic!("{name} alpha {given}: {e:?}"));
+            let d = b.layers[0].dist.as_ref().expect("dist layer");
+            let col = d.col("alpha").expect("alpha column");
+            assert!(!col.is_empty(), "{name}");
+            assert!(col.iter().all(|v| *v == want), "{name} alpha {given}: {col:?}");
+        }
+        let unset = plot_with(g.clone(), a.clone(), small()).build().and_then(|p| p.layout());
+        let unset = unset.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let col = unset.layers[0].dist.as_ref().and_then(|d| d.col("alpha")).expect("alpha");
+        assert!(col.iter().all(|v| v.is_nan()), "{name} unset alpha is NA: {col:?}");
+        let twice = plot_with(g.clone().alpha(0.5), a.clone().alpha_value(0.5), small())
+            .build()
+            .and_then(|p| p.layout());
+        assert!(
+            matches!(&twice, Err(Error::Rendering(m)) if m.contains("set it once")),
+            "{name} alpha twice: {twice:?}"
+        );
+        let nan = plot_with(g.clone().alpha(f32::NAN), a.clone(), small())
+            .build()
+            .and_then(|p| p.layout());
+        assert!(
+            matches!(&nan, Err(Error::Rendering(m)) if m.contains("NaN")),
+            "{name} alpha NaN: {nan:?}"
+        );
+    }
+}

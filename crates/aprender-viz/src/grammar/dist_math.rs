@@ -643,14 +643,15 @@ pub(super) fn dodge2(mut boxes: Vec<Box2>, padding: f64) -> Result<(Vec<Box2>, b
             "geom_boxplot: boxes whose centres coincide or are out of cluster order are not supported",
         ));
     }
-    let mut cursor = vec![0.0_f64; nclusters];
-    for (k, c) in centres.iter().enumerate() {
-        let total: f64 =
-            boxes.iter().zip(&ids).filter(|(_, id)| **id == k + 1).map(|(b, _)| b.new_width).sum();
-        if let Some(s) = cursor.get_mut(k) {
-            *s = c - total / 2.0;
+    // Each cluster's total width in one pass over the boxes (a scan per cluster was quadratic).
+    let mut total = vec![0.0_f64; nclusters];
+    for (b, id) in boxes.iter().zip(&ids) {
+        if let Some(t) = total.get_mut(id - 1) {
+            *t += b.new_width;
         }
     }
+    let cursor_of = |(c, t): (&f64, &f64)| c - t / 2.0;
+    let mut cursor: Vec<f64> = centres.iter().zip(&total).map(cursor_of).collect();
     for (b, id) in boxes.iter_mut().zip(&ids) {
         let k = id - 1;
         let start = cursor.get(k).copied().unwrap_or(f64::NAN);

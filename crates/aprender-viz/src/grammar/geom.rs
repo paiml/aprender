@@ -280,11 +280,15 @@ impl Geom {
         self
     }
 
-    /// Set the area alpha.
+    /// Set the area alpha, or a distribution layer's fixed alpha (clamped to `[0, 1]`, as
+    /// `Aes::alpha_value` does; widened through its shortest decimal form, so 0.3 stays 0.3).
     #[must_use]
     pub fn alpha(mut self, alpha: f32) -> Self {
-        if let GeomType::Area { alpha: ref mut a } = self.geom_type {
-            *a = alpha.clamp(0.0, 1.0);
+        let clamped = alpha.clamp(0.0, 1.0);
+        match &mut self.geom_type {
+            GeomType::Area { alpha: a } => *a = clamped,
+            GeomType::Dist(spec) => spec.alpha = format!("{clamped}").parse().ok(),
+            _ => {}
         }
         self
     }

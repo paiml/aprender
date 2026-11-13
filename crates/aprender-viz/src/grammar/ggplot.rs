@@ -747,8 +747,20 @@ impl BuiltGGPlot {
     /// [`Error::UnsupportedStat`], [`Error::UnsupportedCoord`] otherwise), and
     /// [`Error::ScaleDomain`] is returned for text in a continuous scale, or a continuous axis with
     /// no finite value to train on (ggplot2 would return an infinite range there).
+    ///
+    /// A plot with a distribution layer (`geom_histogram`, `geom_freqpoly`, `geom_density`,
+    /// `geom_boxplot`, `geom_errorbar`) and a `scale_x`/`scale_y` spec is an
+    /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
     pub fn layout(&self) -> Result<BuiltLayout> {
         if self.layers.iter().any(dist::is_dist) {
+            // The distribution layout trains its scales from the stat output and applies no
+            // position-scale spec, so a scale_x/scale_y spec is refused by name, never dropped.
+            if self.x_scale.is_some() || self.y_scale.is_some() {
+                return Err(Error::UnsupportedLayer(
+                    "scale_x/scale_y with distribution layers (histogram, freqpoly, density, \
+                     boxplot, errorbar): layout() does not apply position scales to them",
+                ));
+            }
             return dist::layout(&self.data, &self.aes, &self.layers, &self.coord, &self.facet);
         }
         path::require_default_coord(&self.layers, &self.coord)?;

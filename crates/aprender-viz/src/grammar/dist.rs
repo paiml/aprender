@@ -11,7 +11,11 @@
 //! system other than plain Cartesian, text `x` (a discrete scale), `y`-only histograms and
 //! densities (flipped orientation), two or more discrete mappings without a `group`, a continuous
 //! `colour` or `fill` mapping (the palette is not resolved: a mapped aesthetic is
-//! [`Paint::Mapped`]), non-finite input, and layers mixed with non-distribution layers.
+//! [`Paint::Mapped`]), non-finite input, layers mixed with non-distribution layers, and a
+//! `scale_x`/`scale_y` spec (refused in `GGPlot::layout`, which owns the scale specs).
+//!
+//! Cost: grouping is a sort plus binary search, and each group's rows are collected in one pass,
+//! so a layer with `g` groups over `n` rows costs `O(n log n)`, not `O(n * g)`.
 
 use crate::color::Rgba;
 use crate::error::{Error, Result};
@@ -87,6 +91,8 @@ pub struct DistSpec {
     pub width: Option<f64>,
     /// `linewidth` (default 0.5).
     pub linewidth: Option<f64>,
+    /// `alpha`, the layer's fixed alpha (`geom_histogram(alpha = 0.5)`), set by [`Geom::alpha`].
+    pub alpha: Option<f64>,
 }
 
 impl DistSpec {
@@ -107,6 +113,7 @@ impl DistSpec {
             coef: 1.5,
             width: None,
             linewidth: None,
+            alpha: None,
         }
     }
 }
@@ -396,12 +403,13 @@ fn group_ids(data: &DataFrame, aes: &Aes) -> Result<Vec<i64>> {
     let mut distinct = ks.clone();
     distinct.sort_by(key_order);
     distinct.dedup_by(|a, b| key_order(a, b).is_eq());
+    // `distinct` is sorted by `key_order`, a total order, so each key's rank is found by binary
+    // search: O(n log g), where a linear scan per row cost O(n * g) (reviewed on #6976, F16).
     Ok(ks
         .iter()
         .map(|k| {
             distinct
-                .iter()
-                .position(|d| key_order(d, k).is_eq())
+                .binary_search_by(|d| key_order(d, k))
                 .map_or(-1, |p| i64::try_from(p + 1).unwrap_or(i64::MAX))
         })
         .collect())
@@ -460,16 +468,17 @@ fn paint_fill(aes: &Aes, default: Paint) -> Paint {
     }
 }
 
-/// Distinct group ids of `rows`, ascending.
-fn groups_of(gid: &[i64], rows: &[usize]) -> Vec<i64> {
-    let mut g: Vec<i64> = rows.iter().filter_map(|i| gid.get(*i).copied()).collect();
-    g.sort_unstable();
-    g.dedup();
-    g
-}
-
-fn rows_in(gid: &[i64], rows: &[usize], g: i64) -> Vec<usize> {
-    rows.iter().copied().filter(|i| gid.get(*i) == Some(&g)).collect()
+/// The distinct group ids of `rows`, ascending, each with its rows in input order. One pass
+/// over `rows` plus a sort: scanning every row once per group was quadratic (F16 on #6976).
+fn group_rows(gid: &[i64], rows: &[usize]) -> Vec<(i64, Vec<usize>)> {
+    let mut by_group: std::collections::BTreeMap<i64, Vec<usize>> =
+        std::collections::BTreeMap::new();
+    for &i in rows {
+        if let Some(&g) = gid.get(i) {
+            by_group.entry(g).or_default().push(i);
+        }
+    }
+    by_group.into_iter().collect()
 }
 
 fn pick(v: &[f64], rows: &[usize]) -> Vec<f64> {
@@ -523,7 +532,7 @@ fn stat_bin(inp: &Input<'_>, range: (f64, f64), freqpoly: bool) -> Result<(Table
         return Err(Error::EmptyData);
     }
     let bins = bins_for(inp.spec, range)?;
-    let groups = groups_of(&inp.gid, &rows);
+    let groups = group_rows(&inp.gid, &rows);
     let nbin = bins.breaks.len().saturating_sub(1)
         + if freqpoly || inp.spec.pad.unwrap_or(false) { 2 } else { 0 };
     if nbin.saturating_mul(groups.len()) > MAX_OUTPUT_ROWS {
@@ -532,8 +541,8 @@ fn stat_bin(inp: &Input<'_>, range: (f64, f64), freqpoly: bool) -> Result<(Table
     let pad = freqpoly || inp.spec.pad.unwrap_or(false);
     let mut t = Table::default();
     let mut out_groups = Vec::new();
-    for g in &groups {
-        let gx = pick(&xs, &rows_in(&inp.gid, &rows, *g));
+    for (g, grows) in &groups {
+        let gx = pick(&xs, grows);
         let b = bin_vector(&gx, &bins, pad);
         t.extend("count", &b.count);
         t.extend("x", &b.x);
@@ -622,14 +631,14 @@ fn stat_density(inp: &Input<'_>, range: (f64, f64)) -> Result<(Table, Vec<i64>)>
     if rows.is_empty() {
         return Err(Error::EmptyData);
     }
-    let groups = groups_of(&inp.gid, &rows);
+    let groups = group_rows(&inp.gid, &rows);
     if spec.n.saturating_mul(groups.len()) > MAX_OUTPUT_ROWS {
         return Err(refuse("the layer would build too many rows"));
     }
     let mut t = Table::default();
     let mut out_groups = Vec::new();
-    for g in &groups {
-        let gx = pick(&xs, &rows_in(&inp.gid, &rows, *g));
+    for (g, grows) in &groups {
+        let gx = pick(&xs, grows);
         let len = density_group(spec, &gx, *g, range, &mut t)?;
         out_groups.extend(std::iter::repeat(*g).take(len));
     }
@@ -743,8 +752,7 @@ fn stat_boxplot(inp: &Input<'_>) -> Result<(Table, Vec<i64>, Vec<Vec<f64>>)> {
         return Err(Error::EmptyData);
     }
     let mut stats: Vec<(BoxStat, f64, f64)> = Vec::new();
-    for g in groups_of(&inp.gid, &rows) {
-        let grows = rows_in(&inp.gid, &rows, g);
+    for (g, grows) in group_rows(&inp.gid, &rows) {
         let gy = pick(&ys, &grows);
         let gx = pick(&xs, &grows);
         stats.push(box_stat(&gy, &gx, g, spec, width));
@@ -912,6 +920,20 @@ pub(super) fn layout(
     Ok(BuiltLayout { layers: out, x, y })
 }
 
+/// The layer's `alpha` column value: the geom's `alpha` ([`Geom::alpha`]) or the fixed
+/// `Aes::alpha_value`, `NaN` (ggplot2's `NA`) when neither is set. Both set at once, or a `NaN`
+/// geom alpha, is refused: either would silently drop a value the caller gave.
+fn layer_alpha(geom: Option<f64>, aes: Option<f32>) -> Result<f64> {
+    match (geom, aes) {
+        (Some(_), Some(_)) => Err(refuse(
+            "`alpha` is set on both the geom and the aesthetics: set it once (one would be ignored)",
+        )),
+        (Some(a), None) if a.is_nan() => Err(refuse("the geom's `alpha` is NaN")),
+        (Some(a), None) => Ok(a),
+        (None, a) => Ok(a.map_or(f64::NAN, f64::from)),
+    }
+}
+
 fn build_one(inp: &Input<'_>, range: Option<(f64, f64)>) -> Result<BuiltDist> {
     let spec = inp.spec;
     let need_range = || range.ok_or(Error::EmptyData);
@@ -942,7 +964,7 @@ fn build_one(inp: &Input<'_>, range: Option<(f64, f64)>) -> Result<BuiltDist> {
     if !lw.is_finite() || lw < 0.0 {
         return Err(refuse("`linewidth` must be a non-negative finite number"));
     }
-    let alpha = inp.aes.alpha_value.map_or(f64::NAN, f64::from);
+    let alpha = layer_alpha(spec.alpha, inp.aes.alpha_value)?;
     t.constant("linewidth", lw, n);
     t.constant("linetype", 1.0, n);
     t.constant("alpha", alpha, n);
