@@ -886,6 +886,11 @@ fn na_limit_needs_data_and_discrete_labels_match_limits() {
     )
     .expect("labels match the limits");
     assert_eq!(ok.x.labels, ["A", "B", "C"]);
+    // `intersect(breaks, limits)`: a break that is not a level is dropped, in place.
+    let dropped =
+        scoped(point(scope_frame(), "g", "y").scale_x(scale_discrete().breaks(["zz", "b"])))
+            .expect("a break outside the levels is dropped");
+    assert_eq!(dropped.x.labels, ["b"]);
     let bad = scoped(
         point(scope_frame(), "g", "y")
             .scale_x(scale_discrete().limits(["a", "b", "c"]).labels(["A", "B"])),
