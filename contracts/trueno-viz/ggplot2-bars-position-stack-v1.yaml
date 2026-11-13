@@ -9,7 +9,7 @@ metadata:
     never run at test time. Continuous values compare at 1e-9 relative + 1e-12 absolute; group ids, counts,
     levels and labels compare exactly.
     Level and group order is bytewise (LC_COLLATE=C): every generate.R pins it with Sys.setlocale and records it as "collate" in the fixture, and each oracle test asserts it, so R's locale-dependent sort() is never the reference.
-    Scope: vertical bars over a text x. Under a facet the stat and the position run per panel (group ids stay global, and position_dodge(preserve = single) takes its n from the busiest x of any panel) while the scales are trained across panels; position scales are trained over every layer of the plot (a point, hline or vline layer next to the bars widens them), as the facet_bars, facet_bars_single and mixed_layers fixtures record. Typed errors, not drawn and not guessed: a bar layer with its own data under a facet, and the framebuffer and SVG renderers on bars over a text x ("bars on a discrete x are not drawn yet").
+    Scope: vertical bars over a text x. Under a facet the stat and the position run per panel (group ids stay global, and position_dodge(preserve = single) takes its n from the busiest x of any panel) while the scales are trained across panels; position scales are trained over every layer of the plot (a point, hline or vline layer next to the bars widens them), as the facet_bars, facet_bars_single and mixed_layers fixtures record. Typed errors, not drawn and not guessed: a bar layer with its own data under a facet, the framebuffer and SVG renderers on bars over a text x ("bars on a discrete x are not drawn yet"), and a position adjustment the renderers would not apply (layout(), to_terminal(), to_framebuffer() and to_svg() all refuse it; the one drawn exception is a bar layer at position_stack(vjust = 1) whose x never repeats). PositionStack leaves the layer alone when no x repeats in the whole layer, fill is off and vjust is 1, so a negative bar over a unique x keeps y = value (fixtures/ggplot2/bars_stack_skip).
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), StatCount, GeomBar, GeomCol, PositionStack, PositionFill, PositionDodge'
@@ -53,6 +53,18 @@ enforcement:
     description: under a facet each panel is stacked on its own, group ids global
     check: grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel
     severity: ERROR
+  stack_skip_unique_x:
+    description: no repeated x, vjust 1, no fill leaves y = value (single row, unique x, unique x under a facet)
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_stack_skips_a_unique_x_so_a_negative_bar_keeps_its_value
+    severity: ERROR
+  stack_not_skipped_otherwise:
+    description: vjust 0.5, fill, and x repeated only across panels still stack
+    check: grammar::ggplot2_bars_oracle::ggplot2_bars_stack_still_stacks_when_a_skip_condition_fails
+    severity: ERROR
+  render_targets_refuse_unapplied_position:
+    description: svg, framebuffer, terminal and layout refuse a position on point, line, hline and numeric-x col
+    check: grammar::ggplot2_bars_oracle::every_render_target_refuses_a_position_it_would_not_apply
+    severity: ERROR
 falsification_tests:
 - id: FALSIFY-GGS1-001
   rule: Default stacking order is group 1 on top
@@ -79,6 +91,21 @@ falsification_tests:
   prediction: ignoring the facet when the bars are built (every row in one panel) turns the 7 facet tests RED, among them _facet_position_stack_per_panel (measured, 7 failed, 36 passed, rc=101)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_facet_stat_count_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_dodge_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_fill_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_position_stack_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_preserve_single_is_global grammar::ggplot2_bars_oracle::ggplot2_bars_facet_dodge_total_is_per_panel grammar::ggplot2_bars_oracle::ggplot2_bars_facet_group_ids_are_global
   if_fails: No facet fixture stacks bars at the same x in two panels
+- id: FALSIFY-GGS1-006
+  rule: A unique x leaves a negative bar at y = value
+  prediction: dropping the vjust == 1 guard of the skip (never skipping) turns exactly _stack_skips_a_unique_x_so_a_negative_bar_keeps_its_value RED (measured, 1 failed, 84 passed, rc=101); skipping whenever vjust is 1 even with a repeated x turns 27 tests RED, the cross-panel and the stacking fixtures among them
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stack_skips_a_unique_x_so_a_negative_bar_keeps_its_value
+  if_fails: The skip is not observable in the fixtures
+- id: FALSIFY-GGS1-007
+  rule: The skip does not apply when vjust is not 1, fill is on, or x repeats across panels
+  prediction: dropping the vjust == 1 guard (skip whenever x is unique) turns exactly _stack_still_stacks_when_a_skip_condition_fails RED (measured, 1 failed, 84 passed, rc=101)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::ggplot2_bars_stack_still_stacks_when_a_skip_condition_fails
+  if_fails: No fixture stacks a unique x with vjust 0.5 or fill
+- id: FALSIFY-GGS1-008
+  rule: Render targets refuse a position they would not apply
+  prediction: removing the check from to_framebuffer, or making Identity count as moved, or letting the unique-x test always pass, or widening the vjust guard turns exactly _every_render_target_refuses_a_position_it_would_not_apply RED (measured, 1 failed, 84 passed, rc=101, four mutants)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_oracle::every_render_target_refuses_a_position_it_would_not_apply
+  if_fails: The render path draws a layer ggplot2 would have moved
 qa_gate:
   id: F-GGS1-001
   name: ggplot2 conformance bars row 3 (position_stack)
@@ -90,3 +117,6 @@ qa_gate:
   - stack_zero_height_matches
   - stack_public_matches
   - stack_facet_matches
+  - stack_skip_unique_x
+  - stack_not_skipped_otherwise
+  - render_targets_refuse_unapplied_position
