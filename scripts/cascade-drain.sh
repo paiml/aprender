@@ -19,8 +19,8 @@
 #   scripts/cascade-drain.sh --passes 30    # default is 20
 #
 # Exit codes: 0 drained | 2 stuck (no progress) | 3 passes exhausted
-#             4 post-publish smoke FAILED (version yanked, or yank refused/failed)
-#             5 post-publish smoke not_measured (nothing was verified; no yank)
+#             4 post-publish smoke verdict YANK (yanked, dry-run, refused or yank failed)
+#             5 post-publish smoke verdict NOT_MEASURED (nothing was verified; no yank)
 # A yanked version is never counted as published.
 set -uo pipefail
 
@@ -144,35 +144,48 @@ if pgrep -f "$CASCADE_PROC" >/dev/null 2>&1; then
 fi
 
 # A dev [patch.crates-io] section makes `cargo publish` resolve siblings to
-# local paths and fail verification. Safe to drop: it is untracked dev config.
-rm -f -- "${REPO_ROOT:?}/.cargo/config.toml"
+# local paths and fail verification. It is untracked dev config, so it is MOVED
+# into this drain's own mktemp root (restore it with mv), never deleted: this
+# script runs no rm at all.
+drain_root=$(mktemp -d "${TMPDIR:-/tmp}/cascade-drain.XXXXXX") || { echo "FATAL: mktemp -d for the drain root failed" >&2; exit 2; }
+if [ -e "${REPO_ROOT:?}/.cargo/config.toml" ]; then
+    mv -- "${REPO_ROOT:?}/.cargo/config.toml" "${drain_root:?}/config.toml.moved-aside"
+    echo "moved .cargo/config.toml aside to $drain_root/config.toml.moved-aside"
+fi
 
-# ONE log for the whole drain, made here and truncated at the top of each pass:
-# no per-pass temp file piles up, and nothing in this script deletes it (the
-# path is printed with every verdict so the operator can read it).
-cascade_log=$(mktemp "${TMPDIR:-/tmp}/cascade-drain.XXXXXX") || { echo "FATAL: mktemp for the cascade log failed" >&2; exit 2; }
+# The cascade log lives in the drain root and is bounded: each pass writes only
+# the LAST $DRAIN_LOG_CAP bytes of the cascade output (the SMOKE_RESULT line is
+# the last line, so it survives the cap), and the previous pass's log is rotated
+# to cascade.log.prev. At most two capped files exist, whatever the pass count.
+DRAIN_LOG_CAP=8388608
+cascade_log="$drain_root/cascade.log"
 
 for pass in $(seq 1 "$PASSES"); do
-    : >"$cascade_log"
+    if [ -f "$cascade_log" ]; then mv -f -- "$cascade_log" "$cascade_log.prev"; fi
     n=$(count_pub)
     echo "=== PASS $pass START: $n/$TOTAL at $TARGET ==="
     if [ "$n" -ge "$TOTAL" ]; then echo "DRAIN COMPLETE: $n/$TOTAL at $TARGET"; exit 0; fi
 
     # A stale CARGO_REGISTRY_TOKEN 403s every upload; the credentials file wins.
-    # The cascade's rc and the smoke result must survive the filter: tee the full
-    # output to a log, keep the rc with PIPESTATUS, never read $? through a pipe.
+    # The cascade's rc and the smoke result must survive the filter: the capped
+    # output goes to the log, the rc is kept with PIPESTATUS (never $? through a
+    # pipe), and the summary is read back from the log.
     ( unset CARGO_REGISTRY_TOKEN; bash scripts/cascade-publish.sh ) 2>&1 \
-        | tee "$cascade_log" | grep -E "PUBLISHED|FATAL|DEFER|already ${TARGET}|TIER|RETRY|SMOKE_RESULT|post-publish smoke" | tail -60
+        | tail -c "$DRAIN_LOG_CAP" >"$cascade_log"
     crc=${PIPESTATUS[0]}
+    grep -E "PUBLISHED|FATAL|DEFER|already ${TARGET}|TIER|RETRY|SMOKE_RESULT|post-publish smoke" "$cascade_log" | tail -60
     smoke_line=$(grep '^SMOKE_RESULT ' "$cascade_log" | tail -1)
     case "$smoke_line" in
-        "SMOKE_RESULT pass "*|"") : ;;
-        "SMOKE_RESULT not_measured "*)
-            echo "DRAIN NOT VERIFIED: post-publish smoke not_measured: $smoke_line (log: $cascade_log)" >&2
+        "SMOKE_RESULT PASS "*|"") : ;;
+        "SMOKE_RESULT NOT_MEASURED "*)
+            echo "DRAIN NOT VERIFIED: post-publish smoke NOT_MEASURED: $smoke_line (log: $cascade_log)" >&2
             exit 5 ;;
-        *)
+        "SMOKE_RESULT YANK "*)
             echo "DRAIN FAILED: post-publish smoke: $smoke_line (log: $cascade_log)" >&2
             exit 4 ;;
+        *)
+            echo "DRAIN NOT VERIFIED: unrecognised post-publish smoke line: $smoke_line (log: $cascade_log)" >&2
+            exit 5 ;;
     esac
     if [ "$crc" -ne 0 ]; then echo "cascade-publish.sh pass $pass exited rc=$crc (log: $cascade_log)"; fi
 
