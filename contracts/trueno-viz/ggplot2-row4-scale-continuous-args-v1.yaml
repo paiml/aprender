@@ -1,0 +1,172 @@
+metadata:
+  id: ggplot2-row4-scale-continuous-args-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-12'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 4 (PLOT-GG-001, paiml/aprender#6909) - the continuous-scale arguments
+    limits, breaks, labels and expand = expansion(mult, add) on scale_x_continuous and
+    scale_y_continuous. aprender-viz's BuiltGGPlot::layout() must reproduce ggplot_build() in
+    ggplot2 4.0.3: expanded range with asymmetric mult/add, explicit breaks (those outside the
+    panel censored together with their labels), minor breaks, and limits that put breaks exactly on
+    the panel edge. The oracle is a committed JSON fixture produced by R; R is never run at test time.
+  references:
+  - 'ggplot2 4.0.3: scale_x_continuous(), expansion(), expand_range4()'
+  - 'scales 1.4.0: regular_minor_breaks()'
+  - 'crates/aprender-viz/fixtures/ggplot2/scale_continuous_args/generate.R'
+equations:
+  expand_range4:
+    formula: 'continuous_range = (lo - (s*m_l + a_l), hi + (s*m_u + a_u)), s = hi - lo, (lo, hi) = limits arg or data range'
+    domain: lo < hi
+    codomain: (f64, f64)
+    invariants:
+    - expansion(0) makes the panel exactly the limits
+    - default is mult 0.05, add 0 on both sides
+    - 'a zero-width range (one point, all-equal data, limits = c(v, v)) is expanded as width 1: v +- (mult + add), 4.95..5.05 for v = 5 (scales::expand_range zero_width = 1)'
+    - 'reversed limits c(10, 0) are sorted to (0, 10)'
+    - 'a range wider than sqrt(f64::MAX) (explicit limits such as c(-1e300, 1e300), or a log10 panel near 1e300) gets seq(lo, hi, length.out = 5) as its breaks, the labeling::extended guard; the break search returns on every finite range'
+    - 'the start offsets of the break search are counted as R counts min_start:max_start (floor(max - min + 1 + FLT_EPSILON) values), so a narrow range far from zero (one point at 131815660000000, start offsets past 2^53) ends; the breaks are R''s seq(lmin, lmax, by = lstep), which is lmin alone when the span is under 100 epsilons of the larger end (that point gets the one break v - 0.05, label 1.318157e+14, as in ggplot2 4.0.3)'
+    - 'a finite value outside explicit limits, or a negative value on a log scale, maps to NA: the row is kept as NaN; +-Inf data is NOT censored by limits (censor(only.finite = TRUE)) and is kept, while training ignores it; log10(0) is -Inf and is kept'
+    - 'a zero-width range at 0 (one point at 0, limits = c(0, 0)) is zero-width too, so it spans 0 +- 0.05; scales::zero_range compares relative to the smaller magnitude, which is undefined at 0, so equality is tested first'
+    - 'text under a continuous scale, no limits and no finite data, or explicit limits that are not finite after the transform (log10 limits = c(0, 100)) are Err(ScaleDomain): R errors on text and on non-finite limits; on no finite data it yields an infinite range, which aprender rejects deliberately. Explicit limits with no data need no training and are not an error'
+    - 'the renderers do not honour a scale spec and return Err(Rendering) when scale_x / scale_y is set (see row 3), so layout() and to_svg() cannot disagree silently'
+  explicit_breaks:
+    formula: 'breaks = { b in breaks_arg : lo_c <= b <= hi_c }; labels_i = labels_arg[i] for kept i; minor = regular_minor_breaks(n = 2) inside [lo_c, hi_c]'
+    domain: continuous_range, optional breaks and labels
+    codomain: (Vec<f64>, Vec<String>, Vec<f64>)
+    invariants:
+    - a break exactly on a panel limit is kept (inclusive censoring)
+    - a censored break takes its label with it and is counted in n_breaks_censored
+  scaled_scope:
+    formula: 'scaled(plot) ⇒ (∀ layer: geom = point ∧ stat = identity) ∧ coord = coord_cartesian() without xlim, ylim or flip ∧ facet = none, else Err (UnsupportedLayer, UnsupportedStat or ScaleDomain)'
+    domain: a GGPlot with scale_x, scale_y or a text position in a geom_point layer
+    codomain: Result<BuiltLayout>
+    invariants:
+    - 'every layer is checked, not only the first; a refused plot never returns a layout'
+    - 'every row of the frame is laid out: a ragged frame (columns of different lengths) gives NA (NaN) for the missing cells of a continuous axis instead of truncating to the shortest column; a position column absent from the frame is Err(UnknownColumn), not an empty layer'
+    - 'coord_flip, coord_cartesian(xlim/ylim), coord_polar and coord_fixed are each refused; facet_wrap and facet_grid (rows, cols or both) are each refused'
+    - 'divergence from R, deliberate and tested: with no scale spec and no text position, layout() keeps main''s numeric path (render-total-v1), which drops rows with a non-finite x or y; ggplot_build() keeps +-Inf rows. Setting an explicit scale_x_continuous() gives R''s behaviour (the +-Inf rows are kept as +-Inf)'
+proof_obligations:
+- id: GG4-INV-001
+  type: invariant
+  property: Expanded range with limits and expansion matches ggplot2
+  formal: '∀ axis: limits ≈ ggplot2.limits ∧ continuous_range ≈ ggplot2.continuous_range (1e-9 rel + 1e-12 abs)'
+  applies_to: expand_range4
+- id: GG4-INV-002
+  type: invariant
+  property: Explicit breaks, labels, censored count and minor breaks match ggplot2
+  formal: '∀ axis: breaks ≈ ggplot2.breaks ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored ∧ minor_breaks ≈ ggplot2.minor_breaks'
+  applies_to: explicit_breaks
+enforcement:
+  continuous_args_match:
+    description: limits, breaks, labels and expand cases equal ggplot2's
+    check: grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args
+    severity: ERROR
+  scaled_scope_refusals:
+    description: every coord, facet, layer and stat outside the scaled scope is refused, and the no-spec infinite-row divergence is pinned
+    check: grammar::ggplot2_oracle_scales::scaled_layout_refuses_every_non_default_coord
+    severity: ERROR
+  every_row_and_column:
+    description: a ragged frame is laid out on every row and an absent position column is Err(UnknownColumn)
+    check: grammar::ggplot2_oracle_scales::every_row_is_laid_out_and_an_absent_column_is_an_error
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG4-001
+  rule: Default expansion is mult 0.05
+  prediction: "mutating CONTINUOUS_EXPAND_MULT 0.05 -> 0.04 turns ggplot2_row4_scale_continuous_args RED (measured: rows 1, 2, 3, 4 all FAILED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args -- --exact
+  if_fails: The fixture's default-expansion axes are not compared
+- id: FALSIFY-GG4-002
+  rule: A break on a panel limit is kept
+  prediction: "mutating the censor test '<= hi' to '<= hi - 0.2' turns ggplot2_row4_scale_continuous_args RED (limits_no_expand_x puts a break at 10, the upper limit; measured: rows 3 and 4 FAILED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args -- --exact
+  if_fails: No fixture case has a break exactly on a limit
+- id: FALSIFY-GG4-003
+  rule: A zero-width range is expanded by width 1
+  prediction: "mutating ZERO_RANGE_WIDTH 1.0 -> 0.5 turns ggplot2_row4_scale_continuous_args (single_point, all_equal, limits_equal_x) RED (measured rc=101)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args -- --exact
+  if_fails: No fixture case has a zero-width range
+- id: FALSIFY-GG4-004
+  rule: Reversed limits are sorted
+  prediction: "mutating Some((lo.min(hi), lo.max(hi))) to Some((lo, hi)) in scale_spec.rs turns ggplot2_row4_scale_continuous_args (limits_reversed_x) RED (measured rc=101; this mutant survived before the case existed)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args -- --exact
+  if_fails: No fixture case has limits given high-to-low
+- id: FALSIFY-GG4-005
+  rule: Unplaceable rows stay as NA, on y as well as x
+  prediction: "mapping a y value outside the limits to 0.0 instead of NA turns ggplot2_row4_scale_continuous_args (limits_oob_na_y) RED (measured rc=101; survived before that case existed)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args -- --exact
+  if_fails: No fixture case puts a y value outside the limits
+- id: FALSIFY-GG4-006
+  rule: A zero-width range at 0 is zero-width (0 +- 0.05)
+  prediction: "removing the lo == hi test from zero_range in scale_spec.rs turns ggplot2_row4_scale_continuous_args (single_zero, single_zero_add_expand, limits_zero_zero) RED (measured rc=101, 1 FAILED; this mutant survived before those cases existed because every earlier zero-width case was away from 0)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args -- --exact
+  if_fails: No fixture case has a zero-width range at 0
+- id: FALSIFY-GG4-007
+  rule: Explicit limits that are not finite after the transform are an error
+  prediction: "removing the non-finite-limits Err in ResolvedAxis::continuous turns ggplot2_row3_row4_non_finite_explicit_limits_are_an_error RED (measured rc=101, 1 FAILED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row3_row4_non_finite_explicit_limits_are_an_error -- --exact
+  if_fails: limits = c(0, 100) on log10 yields an infinite panel instead of Err
+- id: FALSIFY-GG4-008
+  rule: Every non-default coord is refused on the scaled layout
+  prediction: "turning the coord_polar arm of require_scale_scope into Ok, and separately the coord_flip arm, each turns scaled_layout_refuses_every_non_default_coord RED (measured rc=101, 1 FAILED, both mutants)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::scaled_layout_refuses_every_non_default_coord -- --exact
+  if_fails: A scaled plot under a flipped, limited, polar or fixed coord returns a cartesian layout
+- id: FALSIFY-GG4-009
+  rule: Every facet is refused on the scaled layout
+  prediction: "disabling the facet check in require_scale_scope turns scaled_layout_refuses_every_facet RED (measured rc=101, 1 FAILED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::scaled_layout_refuses_every_facet -- --exact
+  if_fails: A faceted scaled plot returns one unfaceted panel
+- id: FALSIFY-GG4-010
+  rule: Every layer is checked, not only the first
+  prediction: "checking only layers[0] in require_scale_scope turns scaled_layout_refuses_any_non_point_layer RED (measured rc=101, 1 FAILED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::scaled_layout_refuses_any_non_point_layer -- --exact
+  if_fails: A second line, bar, text, area or histogram layer is laid out as points
+- id: FALSIFY-GG4-011
+  rule: Every non-identity stat is refused
+  prediction: "disabling the stat check in require_scale_scope turns scaled_layout_refuses_every_non_identity_stat RED (measured rc=101, 1 FAILED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::scaled_layout_refuses_every_non_identity_stat -- --exact
+  if_fails: A smoothed, binned or summarised layer is laid out as its raw rows
+- id: FALSIFY-GG4-012
+  rule: An explicit default spec keeps +-Inf rows as R does
+  prediction: "removing scale_x(scale_continuous()) from the inf_mixed_x case turns ggplot2_row4_scale_continuous_args RED (measured rc=101, 1 FAILED: the no-spec path drops the two infinite rows)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::ggplot2_row4_scale_continuous_args -- --exact
+  if_fails: The fixture case meant to match R on +-Inf runs through the dropping path
+- id: FALSIFY-GG4-013
+  rule: With no spec, non-finite rows are dropped (documented divergence)
+  prediction: "removing the finite-row filter in build_layer turns no_spec_layout_drops_infinite_rows RED (measured rc=101, 1 FAILED)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::no_spec_layout_drops_infinite_rows -- --exact
+  if_fails: The documented divergence from R is not what the code does
+- id: FALSIFY-GG4-014
+  rule: Every row is laid out, a ragged frame included
+  prediction: "looping to the shorter of the two position columns instead of data.nrow() in scaled_layer turns every_row_is_laid_out_and_an_absent_column_is_an_error RED (measured rc=101, 1 FAILED: 2 rows instead of 3)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::every_row_is_laid_out_and_an_absent_column_is_an_error -- --exact
+  if_fails: Rows past the shortest column silently disappear
+- id: FALSIFY-GG4-015
+  rule: An absent position column is an error
+  prediction: "making the absent-column lookup in scaled_layer return an empty column instead of Err(UnknownColumn) turns every_row_is_laid_out_and_an_absent_column_is_an_error RED (measured rc=101, 1 FAILED: a layout of NaN rows is returned)"
+  test: cargo test -p aprender-viz --lib grammar::ggplot2_oracle_scales::every_row_is_laid_out_and_an_absent_column_is_an_error -- --exact
+  if_fails: A misspelt aes column yields a plot with no points instead of an error
+- id: FALSIFY-GG4-016
+  rule: A range wider than sqrt(f64::MAX) is evenly spaced, as labeling::extended does
+  prediction: "removing the sqrt(f64::MAX) guard from breaks::search makes breaks::tests::a_range_wider_than_sqrt_max_is_evenly_spaced_like_r and ggplot2_rows_2_to_4_mixed_scales (log_limits_huge, cont_limits_huge) never return (measured: both killed by a 240 s timeout, rc=124); the coverage bound overflows to inf/inf = NaN and never prunes"
+  test: cargo test -p aprender-viz --lib breaks::tests::a_range_wider_than_sqrt_max_is_evenly_spaced_like_r -- --exact
+  if_fails: Explicit limits of c(-1e300, 1e300) hang layout() instead of matching R
+- id: FALSIFY-GG4-017
+  rule: The start offsets are counted like R's min_start:max_start, not stepped by 1.0
+  prediction: "restoring the start += 1.0 loop in breaks::scan_starts makes breaks::tests::a_narrow_range_far_from_zero_ends_like_r never return (measured: killed by a 240 s timeout, rc=124); past 2^53 the f64 step stalls"
+  test: cargo test -p aprender-viz --lib breaks::tests::a_narrow_range_far_from_zero_ends_like_r -- --exact
+  if_fails: One point near 1e14 hangs every renderer instead of getting R's one break
+- id: FALSIFY-GG4-018
+  rule: The final breaks follow R's seq(from, to, by), which returns from alone for a span under 100 epsilons
+  prediction: "setting the 100 * f64::EPSILON test in breaks::seq_by to 0 turns grammar::build::tests::one_value_far_from_zero_has_one_break_like_r RED (measured rc=101, 1 FAILED: five breaks where R gives v - 0.05)"
+  test: cargo test -p aprender-viz --lib grammar::build::tests::one_value_far_from_zero_has_one_break_like_r -- --exact
+  if_fails: A single value near 1e14 gets five rounded-together breaks where R gives one
+qa_gate:
+  id: F-GG4-001
+  name: ggplot2 conformance row 4 (continuous limits, breaks, labels, expand)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the row-4 fixture
+  checks:
+  - continuous_args_match
+  - scaled_scope_refusals
+  - every_row_and_column
