@@ -17,8 +17,19 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 JOB=guard-cargo-shard
 HELPER=scripts/ci/guard_shard_target_dir.sh
-TMPS=()
-trap 'rm -rf -- "${TMPS[@]}"' EXIT
+# ONE scratch root; every dir this script makes is under it, and only it is ever removed.
+SCRATCH=$(mktemp -d "${TMPDIR:-/tmp}/guard-shard-dirs.XXXXXX") || { echo "cannot make a scratch dir" >&2; exit 2; }
+# scratch_rm DIR - remove DIR only when it is a non-empty, existing dir under the scratch prefix.
+scratch_rm() {
+    local d=${1:-}
+    [ -n "$d" ] && [ -d "$d" ] || { echo "scratch_rm: refusing '$d': empty or not a dir" >&2; return 1; }
+    case "$d" in
+        */..|*/../*) echo "scratch_rm: refusing '$d': contains .." >&2; return 1 ;;
+        "${TMPDIR:-/tmp}"/guard-shard-dirs.?*) rm -rf -- "${d:?}" ;;
+        *) echo "scratch_rm: refusing '$d': outside ${TMPDIR:-/tmp}/guard-shard-dirs.*" >&2; return 1 ;;
+    esac
+}
+trap 'scratch_rm "${SCRATCH:?}"' EXIT
 
 fail() { printf 'FAIL  %s\n' "$*"; return 1; }
 
@@ -34,8 +45,7 @@ pinned_shards() {
 # check ROOT - rc 0 when ROOT's wiring gives every shard its own host target dir.
 check() {
     local root=$1 td n hidx gidx line k out dir base seen=''
-    td=$(mktemp -d) || return 2
-    TMPS+=("$td")
+    td=$(mktemp -d "$SCRATCH/check.XXXXXX") || return 2
     # The job under top-level `jobs:` (matrix-pins has a key of the same name), split into
     # steps at `      - `; comment lines are not code. No jq or yq: the CI image has neither.
     awk -v j="  $JOB:" -v h="$HELPER" '
@@ -86,8 +96,16 @@ self_test() {
         if [ "$got" = "$want" ]; then printf 'ok    %-58s rc=%s\n' "$name" "$rc"; else printf 'FAIL  %-58s rc=%s want %s\n' "$name" "$rc" "$want"; bad=1; fi
     }
     helper() { CARGO_TARGET_DIR=$1 bash "$ROOT/$HELPER" "$2"; }
-    td=$(mktemp -d) || return 2
-    TMPS+=("$td")
+    td=$(mktemp -d "$SCRATCH/self.XXXXXX") || return 2
+    # Cleanup refusals. Each decoy is INSIDE the scratch root but spelled outside its prefix,
+    # so a broken refusal can only ever remove scratch. The decoy must survive.
+    mkdir -p "$td/decoy"
+    row "scratch_rm: empty path -> refused" 1 scratch_rm ''
+    row "scratch_rm: path outside the prefix (//...) -> refused" 1 scratch_rm "/$td/decoy"
+    row "scratch_rm: path with .. -> refused" 1 scratch_rm "$td/decoy/.."
+    row "scratch_rm: the refused decoy still exists" 0 test -d "$td/decoy"
+    row "scratch_rm: a dir under the prefix -> removed" 0 scratch_rm "$td/decoy"
+    row "scratch_rm: ... and it is gone" 1 test -d "$td/decoy"
     row "helper: shard 3 -> rc 0" 0 helper "$td/b" 3
     row "helper: empty shard -> refused" 1 helper "$td/b" ''
     row "helper: shard 0 -> refused" 1 helper "$td/b" 0
