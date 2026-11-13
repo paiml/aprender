@@ -427,7 +427,8 @@ pub(super) fn check_inputs(kind: DistKind, aes: &Aes, stat: Option<&Stat>) -> Re
     if aes.alpha.is_some() {
         return Err(refuse("a mapped `alpha` is not supported"));
     }
-    let unused: [(&str, bool); 6] = [
+    let unused: [(&str, bool); 7] = [
+        ("fill", aes.fill.is_some() && matches!(kind, DistKind::Freqpoly | DistKind::Errorbar)),
         ("size", aes.size.is_some() || aes.size_value.is_some()),
         ("shape", aes.shape.is_some()),
         ("label", aes.label.is_some()),

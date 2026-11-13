@@ -1364,6 +1364,21 @@ fn unused_aesthetics_are_refused_not_ignored() {
             assert!(matches!(r, Err(Error::Rendering(_))), "{a:?}: {r:?}");
         }
     }
+    // F11: R keeps a mapped `fill` on a path or error bar (a palette colour in `fill_rgba`); this
+    // crate carries none, so it refuses rather than return NA.
+    for (name, a, g) in [
+        ("freqpoly fill", ax().fill("y"), Geom::gg_freqpoly()),
+        ("errorbar fill", eb_small().fill("y"), Geom::gg_errorbar()),
+    ] {
+        let r = layout_of(small(), a, g);
+        assert!(matches!(&r, Err(Error::Rendering(m)) if m.contains("`fill`")), "{name}: {r:?}");
+    }
+    // Fill stays accepted where it is drawn.
+    let mut grouped = small();
+    grouped.add_column_str("g", &["a", "a", "b", "b", "b"]);
+    assert!(layout_of(grouped.clone(), ax().fill("g"), Geom::gg_histogram()).is_ok());
+    assert!(layout_of(grouped.clone(), ax().fill("g"), Geom::gg_density()).is_ok());
+    assert!(layout_of(grouped, Aes::new().y("y").x("x").fill("g"), Geom::gg_boxplot()).is_ok());
     // A box plot has no ymin/ymax mapping; an error bar keeps neither y nor a size.
     let r = layout_of(small(), Aes::new().y("y").ymin("x"), Geom::gg_boxplot());
     assert!(matches!(r, Err(Error::Rendering(_))), "box ymin: {r:?}");
@@ -1429,6 +1444,16 @@ fn extreme_parameters_return_a_typed_error_not_a_hang() {
         layout_of(neg, ax(), Geom::gg_histogram().binwidth(1e300).boundary(0.0))
     });
     assert!(matches!(r, Err(Error::ScaleDomain(_))), "one-sided low: {r:?}");
+    // F12: the bound is inclusive. A scale reaching exactly 1e100 builds; the next float up does not.
+    let neg = || DataFrame::from_xy(&[-1.0, -2.0, -3.0], &[1.0, 2.0, 3.0]);
+    let r = within(60, move || {
+        layout_of(neg(), ax(), Geom::gg_histogram().binwidth(1e100).boundary(0.0))
+    });
+    assert!(r.is_ok(), "exactly 1e100: {r:?}");
+    let r = within(60, move || {
+        layout_of(neg(), ax(), Geom::gg_histogram().binwidth(1.000_000_1e100).boundary(0.0))
+    });
+    assert!(matches!(r, Err(Error::ScaleDomain(_))), "just above 1e100: {r:?}");
     // Just inside the bound the layout still builds.
     let r = within(60, || layout_of(small(), ax(), Geom::gg_density().bw(1e-90)));
     assert!(r.is_ok(), "bw 1e-90: {r:?}");
