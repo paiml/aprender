@@ -1022,8 +1022,8 @@ pub enum Commands {
     Pv(aprender_contracts_cli::cli::Commands),
 
     /// Draw a plot from CSV data and a ggplot2-like spec (terminal or SVG),
-    /// limited to the grammar the ggplot2 conformance rows prove (#6991).
-    /// The same verb as `aprender-present plot`: both call trueno_viz::plot_cli.
+    /// limited to the grammar the ggplot2 conformance rows prove.
+    /// The same verb as `aprender-present plot`.
     #[cfg(feature = "visualization")]
     Plot(trueno_viz::plot_cli::PlotArgs),
 }

@@ -2,7 +2,7 @@
 
 Draw a plot from a CSV file or a YAML spec, restricted to what the ggplot2 conformance contracts prove
 
-**Category**: Visualization
+**Category**: Tools
 
 ## Synopsis
 
@@ -32,8 +32,17 @@ empty stdout and the supported list on stderr:
 - `--geom line` fails with `unsupported geom 'line'; supported: point`.
 - A spec with `scales: {x: log10}` fails with
   `unsupported scale 'log10'; supported: continuous`.
-- A stat, position, coord, facet or theme outside the proven set is refused the
-  same way (`unsupported <kind> '<value>'; supported: <list>`).
+- A stat, position, coord or theme outside the proven set is refused the same way
+  (`unsupported <kind> '<value>'; supported: <list>`).
+- A facet is refused as `facets are not supported yet (got 'wrap'); supported: null`.
+- A `coord:` with `xlim` or `ylim` is refused as
+  `coord limits (xlim) are not proven by any ggplot2 row`: ggplot2 sets the panel's
+  range and breaks from them, and no row proves that.
+- More than one layer is refused: each proven row draws one.
+- The global `--json` and `--quiet` are refused (`plot: --json is not supported`);
+  the plot is the output.
+- A combination of values that no single row proves is refused, even when each
+  value is proven by some row.
 
 ## Examples
 

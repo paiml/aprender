@@ -27,8 +27,8 @@ use std::path::{Path, PathBuf};
 use batuta_common::cli_roles::{ConfigPath, FreeText, InputFile, OutputPath};
 
 use crate::grammar::{
-    Aes, Coord, DataFrame, GGPlot, Geom, TerminalPlot, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH,
-    MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    Aes, Coord, DataFrame, GGPlot, Geom, Stat, TerminalPlot, Theme, MAX_TERMINAL_HEIGHT,
+    MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 use serde::Deserialize;
 
@@ -138,6 +138,119 @@ fn geom_for(name: &str) -> Result<Geom, String> {
     }
 }
 
+/// Layers a proven row draws: a row names one geom, so it proves one layer.
+const ROW_LAYERS: usize = 1;
+
+/// The spelling a row uses for a name that has an alias (`gray` is `grey`).
+fn canonical(name: &str) -> &str {
+    ALIASES.iter().find(|(alias, _)| *alias == name).map_or(name, |(_, real)| real)
+}
+
+/// The layer's own choices fit the row. An unset stat or position is the row's.
+fn layer_fits(row: &ProvenRow, layer: &LayerSpec) -> bool {
+    row.geom == layer.geom
+        && layer.stat.as_deref().map_or(true, |s| s == row.stat)
+        && layer.position.as_deref().map_or(true, |p| p == row.position)
+}
+
+/// Every scale, aesthetic and coord the spec names is one this row proves.
+fn scales_fit(row: &ProvenRow, spec: &Spec) -> bool {
+    spec.scales.iter().all(|(a, t)| row.scales.iter().any(|s| s.0 == a && s.1 == t))
+        && spec.aes.keys().all(|a| row.aes.contains(&a.as_str()))
+        && spec.coord.as_ref().map_or(true, |c| c.kind == row.coord)
+}
+
+/// The facet and theme the spec names are the row's.
+fn panel_fits(row: &ProvenRow, spec: &Spec) -> bool {
+    let facet = match &spec.facet {
+        None => true,
+        Some(FacetSpec::Name(f)) => f == row.facet,
+        Some(FacetSpec::Other(_)) => false,
+    };
+    facet && spec.theme.as_deref().map_or(true, |t| canonical(t) == row.theme)
+}
+
+/// The one proven row the spec asks for. The per-value checks of [`check_spec`] test each
+/// value against the union of all rows; this tests the combination against each row, so a
+/// scale proven only with another geom, or a second layer, is refused.
+fn select_row<'a>(rows: &'a [ProvenRow], spec: &Spec) -> Result<&'a ProvenRow, String> {
+    let [layer] = spec.layers.as_slice() else {
+        return Err(format!(
+            "the plot has {} layers; each proven ggplot2 row draws {ROW_LAYERS}",
+            spec.layers.len()
+        ));
+    };
+    rows.iter()
+        .find(|r| layer_fits(r, layer) && scales_fit(r, spec) && panel_fits(r, spec))
+        .ok_or_else(|| {
+            let names: Vec<&str> = rows.iter().map(|r| r.name).collect();
+            format!(
+                "no proven ggplot2 row draws this combination of geom, stat, position, scales, \
+                 coord, facet, theme and aesthetics; proven rows: {}",
+                names.join(", ")
+            )
+        })
+}
+
+fn no_builder(kind: &str, name: &str) -> String {
+    format!("{kind} '{name}' is proven but the plot verb has no builder for it")
+}
+
+/// The engine stat for a proven stat name.
+fn stat_for(name: &str) -> Result<Stat, String> {
+    match name {
+        "identity" => Ok(Stat::Identity),
+        other => Err(no_builder("stat", other)),
+    }
+}
+
+/// Every layer the engine draws is placed as it is (`identity`).
+fn position_for(name: &str) -> Result<(), String> {
+    match name {
+        "identity" => Ok(()),
+        other => Err(no_builder("position", other)),
+    }
+}
+
+/// The engine trains continuous position scales on x and y and nothing else.
+fn scale_for(aes: &str, kind: &str) -> Result<(), String> {
+    match (aes, kind) {
+        ("x" | "y", "continuous") => Ok(()),
+        _ => Err(no_builder("scale", &format!("{aes}: {kind}"))),
+    }
+}
+
+/// The engine coord for a proven coord name.
+fn coord_for(name: &str) -> Result<Coord, String> {
+    match name {
+        "cartesian" => Ok(Coord::cartesian()),
+        other => Err(no_builder("coord", other)),
+    }
+}
+
+/// The engine theme for a proven theme name.
+fn theme_for(name: &str) -> Result<Theme, String> {
+    match name {
+        "grey" => Ok(Theme::grey()),
+        other => Err(no_builder("theme", other)),
+    }
+}
+
+/// Refuse the coords the rows do not prove, and the zoom limits no row proves: they set the
+/// panel's scale range and breaks, which ggplot2 computes differently from the data-trained
+/// ones the engine keeps.
+fn check_coord(coord: Option<&CoordSpec>) -> Result<(), String> {
+    let Some(c) = coord else {
+        return Ok(());
+    };
+    check("coord", Some(&c.kind), &coords())?;
+    for (name, lim) in [("xlim", c.xlim), ("ylim", c.ylim)] {
+        if lim.is_some() {
+            return Err(format!("coord limits ({name}) are not proven by any ggplot2 row"));
+        }
+    }
+    Ok(())
+}
 /// Terminal size when stdout is not a terminal, or when a terminal does not say its size.
 pub const DEFAULT_TERM_SIZE: (u32, u32) = (80, 24);
 /// SVG size in pixels when none is given (ggplot2's 800x600 preview in aprender-viz).
@@ -294,7 +407,8 @@ pub struct CoordSpec {
     /// `cartesian`.
     #[serde(rename = "type")]
     pub kind: String,
-    /// Zoom limits on x, as `coord_cartesian(xlim = )`.
+    /// Zoom limits on x, as `coord_cartesian(xlim = )`. Read only to be refused by name: no
+    /// ggplot2 row proves them.
     #[serde(default)]
     pub xlim: Option<[f64; 2]>,
     /// Zoom limits on y.
@@ -428,6 +542,7 @@ fn check_spec(spec: &Spec) -> Result<(), String> {
         check("scale", Some(scale), &scales(aes))?;
     }
     check_facet(spec.facet.as_ref())?;
+    check_coord(spec.coord.as_ref())?;
     check("theme", spec.theme.as_deref(), &themes())?;
     for aes in spec.aes.keys() {
         check("aesthetic", Some(aes), &aesthetics())?;
@@ -448,22 +563,6 @@ fn output_size(args: &PlotArgs, env: &Env) -> (u32, u32) {
             (args.width.unwrap_or(DEFAULT_SVG_SIZE.0), args.height.unwrap_or(DEFAULT_SVG_SIZE.1))
         }
     }
-}
-
-/// Apply the spec's `coord:` to the plot.
-fn apply_coord(plot: GGPlot, spec: &Spec) -> Result<GGPlot, String> {
-    let Some(c) = &spec.coord else {
-        return Ok(plot);
-    };
-    check("coord", Some(&c.kind), &coords())?;
-    let mut coord = Coord::cartesian();
-    if let Some([lo, hi]) = c.xlim {
-        coord = coord.xlim(lo, hi);
-    }
-    if let Some([lo, hi]) = c.ylim {
-        coord = coord.ylim(lo, hi);
-    }
-    Ok(plot.coord(coord))
 }
 
 /// Apply title and axis labels; a flag wins over the spec's `labs:`.
@@ -487,6 +586,7 @@ fn apply_labs(mut plot: GGPlot, spec: &Spec, args: &PlotArgs) -> GGPlot {
 /// Build the plot from the data and the spec.
 fn build_plot(
     spec: &Spec,
+    row: &ProvenRow,
     (xcol, ycol): (&str, &str),
     (xs, ys): (&[f64], &[f64]),
     args: &PlotArgs,
@@ -498,11 +598,13 @@ fn build_plot(
     df.add_column_f32(xcol, &narrow(xs));
     df.add_column_f32(ycol, &narrow(ys));
 
-    let mut plot = GGPlot::new().data(df).aes(Aes::new().x(xcol).y(ycol));
-    for layer in &spec.layers {
-        plot = plot.geom(geom_for(&layer.geom)?);
+    let plot = GGPlot::new().data(df).aes(Aes::new().x(xcol).y(ycol));
+    let plot = plot.geom(geom_for(row.geom)?.stat(stat_for(row.stat)?));
+    position_for(row.position)?;
+    for (aes, kind) in row.scales {
+        scale_for(aes, kind)?;
     }
-    let plot = apply_coord(plot, spec)?;
+    let plot = plot.coord(coord_for(row.coord)?).theme(theme_for(row.theme)?);
     Ok(apply_labs(plot, spec, args))
 }
 
@@ -532,6 +634,7 @@ fn render(
     stderr: &mut dyn Write,
 ) -> Result<String, String> {
     check_spec(spec)?;
+    let row = select_row(PROVEN_ROWS, spec)?;
     let (xcol, ycol) = (mapped_col(spec, "x")?, mapped_col(spec, "y")?);
     let size = output_size(args, env);
     // Before the data is read: a size the engine cannot allocate must not cost a read first.
@@ -543,7 +646,7 @@ fn render(
         // ggplot2's wording for the same event.
         let _ = writeln!(stderr, "warning: Removed {dropped} rows containing missing values or values outside the scale range (geom_point).");
     }
-    let plot = build_plot(spec, (xcol, ycol), (&xs, &ys), args)?;
+    let plot = build_plot(spec, row, (xcol, ycol), (&xs, &ys), args)?;
     draw(plot, args, env, size)
 }
 
@@ -906,18 +1009,17 @@ mod tests {
     }
 
     #[test]
-    fn spec_data_is_relative_to_the_spec_and_coord_limits_apply() {
+    fn spec_data_is_relative_to_the_spec() {
         let _ = tmp("rel.csv", ROW1);
         let spec = tmp(
             "rel.yaml",
             "data: rel.csv\naes: {x: x, y: y}\nlayers: [{geom: point}]\n\
-             coord: {type: cartesian, xlim: [0, 7], ylim: [0, 3]}\n",
+             coord: {type: cartesian}\n",
         );
         let args = parse(&["--spec", spec.to_str().expect("utf8")]).expect("parses");
         let (r, out, _) = go(&args, &Env::default());
         assert_eq!(r, Ok(()));
-        // x <= 7 and 0 <= y <= 3: (2.25, 0.5), (3, 1.75), (4.75, 3), (6.5, 2.5).
-        assert_eq!(out.matches('●').count(), 4, "{out}");
+        assert_eq!(out.matches('●').count(), 10, "{out}");
     }
 
     #[test]
@@ -1250,7 +1352,7 @@ mod tests {
     }
 
     /// An error from the engine itself (not from validation) reaches the user as a message:
-    /// labels too wide for the smallest terminal, and a zero-width zoom for SVG.
+    /// labels too wide for the smallest terminal.
     #[test]
     fn engine_errors_are_messages() {
         let wide = tmp("wide.csv", "x,y\n0,0\n1,123456789012345\n");
@@ -1258,19 +1360,6 @@ mod tests {
             .0
             .expect_err("no room");
         assert!(e.contains("no room for the panel"), "{e}");
-        let csv = tmp("row1z.csv", ROW1);
-        let spec = tmp(
-            "zoom.yaml",
-            &format!(
-                "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}]\n\
-                 coord: {{type: cartesian, ylim: [3, 3]}}\n",
-                csv.display()
-            ),
-        );
-        let args =
-            parse(&["--spec", spec.to_str().expect("utf8"), "--output", "svg"]).expect("parses");
-        let e = go(&args, &Env::default()).0.expect_err("degenerate zoom");
-        assert!(e.contains("Domain min and max cannot be equal"), "{e}");
     }
 
     fn points() -> GGPlot {
@@ -1326,21 +1415,48 @@ mod tests {
         assert_eq!(output_size(&sized, &Env::default()), (300, 200));
     }
 
+    fn coord_spec(kind: &str, xlim: Option<[f64; 2]>, ylim: Option<[f64; 2]>) -> CoordSpec {
+        CoordSpec { kind: kind.into(), xlim, ylim }
+    }
+
+    /// B1 (review of #6992): `coord_cartesian(xlim =, ylim =)` sets the panel's scale range and
+    /// breaks in ggplot2 (x 0..20 by 5), which the engine does not reproduce, and no row proves
+    /// it. Refused by name, whatever the values (reversed, NaN, infinite or equal ones included).
     #[test]
-    fn apply_coord_passes_without_coord_and_refuses_unknown() {
-        let none = Spec::default();
-        assert!(apply_coord(points(), &none).is_ok());
-        let coord = |kind: &str| CoordSpec {
-            kind: kind.into(),
-            xlim: Some([0.0, 2.0]),
-            ylim: Some([0.0, 5.0]),
-        };
-        let polar = Spec { coord: Some(coord("polar")), ..Spec::default() };
-        let e = apply_coord(points(), &polar).expect_err("polar");
-        assert!(e.contains("unsupported coord 'polar'"), "{e}");
-        let zoom = Spec { coord: Some(coord("cartesian")), ..Spec::default() };
-        let out = term_text(apply_coord(points(), &zoom).expect("cartesian"));
-        assert_eq!(out.matches('●').count(), 2, "{out}");
+    fn coord_limits_are_refused_by_name() {
+        assert!(check_coord(None).is_ok());
+        assert!(check_coord(Some(&coord_spec("cartesian", None, None))).is_ok());
+        let e = check_coord(Some(&coord_spec("polar", None, None))).expect_err("polar");
+        assert_eq!(e, "unsupported coord 'polar'; supported: cartesian");
+        for lim in [[0.0, 20.0], [8.0, 4.0], [f64::NAN, 4.0], [f64::INFINITY, 4.0], [3.0, 3.0]] {
+            let x = check_coord(Some(&coord_spec("cartesian", Some(lim), None))).expect_err("x");
+            assert_eq!(x, "coord limits (xlim) are not proven by any ggplot2 row");
+            let y = check_coord(Some(&coord_spec("cartesian", None, Some(lim)))).expect_err("y");
+            assert_eq!(y, "coord limits (ylim) are not proven by any ggplot2 row");
+        }
+    }
+
+    #[test]
+    fn coord_limits_in_a_spec_exit_with_the_refusal_and_draw_nothing() {
+        let csv = tmp("lim.csv", ROW1);
+        for (i, lim) in ["xlim: [0, 20]", "ylim: [-10, 10]", "xlim: [0, 20], ylim: [-10, 10]"]
+            .iter()
+            .enumerate()
+        {
+            let spec = tmp(
+                &format!("lim{i}.yaml"),
+                &format!(
+                    "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}]\n\
+                     coord: {{type: cartesian, {lim}}}\n",
+                    csv.display()
+                ),
+            );
+            let args = parse(&["--spec", spec.to_str().expect("utf8")]).expect("parses");
+            let (r, out, _) = go(&args, &Env::default());
+            let e = r.expect_err("refused");
+            assert!(e.starts_with("coord limits ("), "{lim}: {e}");
+            assert!(out.is_empty(), "nothing is drawn");
+        }
     }
 
     #[test]
@@ -1395,14 +1511,171 @@ mod tests {
         assert!(distinct([]).is_empty());
     }
 
+    /// Every proven row has an engine builder for every dimension it names, so a contract row
+    /// that widens the proven set without an implementation turns this red, not the output wrong.
     #[test]
-    fn every_proven_geom_has_a_builder() {
+    fn every_proven_row_has_builders_for_every_dimension() {
         for row in PROVEN_ROWS {
-            assert!(geom_for(row.geom).is_ok(), "{}: {}", row.contract, row.geom);
+            let id = row.contract;
+            assert!(geom_for(row.geom).is_ok(), "{id}: geom {}", row.geom);
+            assert!(stat_for(row.stat).is_ok(), "{id}: stat {}", row.stat);
+            assert!(position_for(row.position).is_ok(), "{id}: position {}", row.position);
+            for (aes, kind) in row.scales {
+                assert!(scale_for(aes, kind).is_ok(), "{id}: scale {aes} {kind}");
+            }
+            assert!(coord_for(row.coord).is_ok(), "{id}: coord {}", row.coord);
+            assert!(theme_for(row.theme).is_ok(), "{id}: theme {}", row.theme);
         }
-        assert_eq!(
-            geom_for("line").err().as_deref(),
-            Some("geom 'line' is proven but the plot verb has no builder for it")
+    }
+
+    #[test]
+    fn a_proven_name_without_a_builder_is_an_error_naming_it() {
+        let want = |kind: &str, name: &str| {
+            Some(format!("{kind} '{name}' is proven but the plot verb has no builder for it"))
+        };
+        assert_eq!(geom_for("line").err(), want("geom", "line"));
+        assert_eq!(stat_for("bin").err(), want("stat", "bin"));
+        assert_eq!(position_for("jitter").err(), want("position", "jitter"));
+        assert_eq!(scale_for("x", "log10").err(), want("scale", "x: log10"));
+        assert_eq!(scale_for("colour", "continuous").err(), want("scale", "colour: continuous"));
+        assert_eq!(coord_for("flip").err(), want("coord", "flip"));
+        assert_eq!(theme_for("bw").err(), want("theme", "bw"));
+    }
+
+    const ROW_A: ProvenRow = ProvenRow {
+        contract: "a",
+        name: "geom_point",
+        geom: "point",
+        stat: "identity",
+        position: "identity",
+        scales: &[("x", "continuous"), ("y", "continuous")],
+        coord: "cartesian",
+        facet: "null",
+        theme: "grey",
+        aes: &["x", "y"],
+    };
+    const ROW_B: ProvenRow = ProvenRow {
+        contract: "b",
+        name: "geom_line_log",
+        geom: "line",
+        stat: "identity",
+        position: "identity",
+        scales: &[("x", "log10"), ("y", "continuous")],
+        coord: "flip",
+        facet: "wrap",
+        theme: "bw",
+        aes: &["x", "y", "group"],
+    };
+
+    fn one_layer(geom: &str) -> Spec {
+        Spec {
+            layers: vec![LayerSpec { geom: geom.into(), stat: None, position: None }],
+            ..Spec::default()
+        }
+    }
+
+    /// M2 (review of #6992): the checks above test each value against the union of all rows. The
+    /// combination must be one row's: here `log10` is proven (with line), `point` is proven, and
+    /// still no row draws a point with a log10 x.
+    #[test]
+    fn select_row_takes_a_combination_from_one_row() {
+        let rows = [ROW_A, ROW_B];
+        assert_eq!(select_row(&rows, &one_layer("point")).map(|r| r.contract), Ok("a"));
+        assert_eq!(select_row(&rows, &one_layer("line")).map(|r| r.contract), Ok("b"));
+        let mut spec = one_layer("point");
+        spec.scales.insert("x".into(), "log10".into());
+        let e = select_row(&rows, &spec).expect_err("log10 is line's");
+        assert!(e.starts_with("no proven ggplot2 row draws this combination"), "{e}");
+        assert!(e.ends_with("proven rows: geom_point, geom_line_log"), "{e}");
+        spec.scales.clear();
+        spec.scales.insert("x".into(), "continuous".into());
+        assert_eq!(select_row(&rows, &spec).map(|r| r.contract), Ok("a"));
+    }
+
+    #[test]
+    fn select_row_checks_every_dimension_against_the_same_row() {
+        let rows = [ROW_A, ROW_B];
+        let mut cases: Vec<(&str, Spec)> = Vec::new();
+        let mut s = one_layer("point");
+        s.layers[0].stat = Some("bin".into());
+        cases.push(("stat", s));
+        let mut s = one_layer("point");
+        s.layers[0].position = Some("jitter".into());
+        cases.push(("position", s));
+        let mut s = one_layer("point");
+        s.aes.insert("group".into(), "g".into());
+        cases.push(("aes of line's row", s));
+        let mut s = one_layer("point");
+        s.coord = Some(coord_spec("flip", None, None));
+        cases.push(("coord of line's row", s));
+        let mut s = one_layer("point");
+        s.facet = Some(FacetSpec::Name("wrap".into()));
+        cases.push(("facet of line's row", s));
+        let mut s = one_layer("point");
+        s.facet = Some(FacetSpec::Other(serde::de::IgnoredAny));
+        cases.push(("facet mapping", s));
+        let mut s = one_layer("point");
+        s.theme = Some("bw".into());
+        cases.push(("theme of line's row", s));
+        for (what, spec) in &cases {
+            assert!(select_row(&rows, spec).is_err(), "{what} must not select a row");
+        }
+        let mut ok = one_layer("point");
+        ok.aes.insert("x".into(), "a".into());
+        ok.coord = Some(coord_spec("cartesian", None, None));
+        ok.facet = Some(FacetSpec::Name("null".into()));
+        ok.theme = Some("gray".into());
+        ok.layers[0].stat = Some("identity".into());
+        ok.layers[0].position = Some("identity".into());
+        assert_eq!(select_row(&rows, &ok).map(|r| r.contract), Ok("a"));
+    }
+
+    #[test]
+    fn two_point_layers_are_refused_because_a_row_proves_one() {
+        let mut two = one_layer("point");
+        two.layers.extend(one_layer("point").layers);
+        let e = select_row(&[ROW_A], &two).expect_err("two layers");
+        assert_eq!(e, "the plot has 2 layers; each proven ggplot2 row draws 1");
+        let csv = tmp("two.csv", ROW1);
+        let spec = tmp(
+            "two.yaml",
+            &format!(
+                "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}, {{geom: point}}]\n",
+                csv.display()
+            ),
         );
+        let args = parse(&["--spec", spec.to_str().expect("utf8")]).expect("parses");
+        let (r, out, _) = go(&args, &Env::default());
+        assert_eq!(r, Err("the plot has 2 layers; each proven ggplot2 row draws 1".into()));
+        assert!(out.is_empty());
+    }
+
+    /// `build_plot` consumes every dimension of the row it is given: a row that names a stat,
+    /// position, scale, coord or theme the verb cannot build is an error, never a plot drawn
+    /// with the defaults instead.
+    #[test]
+    fn build_plot_consumes_every_dimension_of_its_row() {
+        let csv = tmp("bp.csv", ROW1);
+        let args = flags(&csv, &[]);
+        let spec = one_layer("point");
+        let build =
+            |row: &ProvenRow| build_plot(&spec, row, ("x", "y"), (&[1.0, 2.0], &[1.0, 3.0]), &args);
+        assert!(build(&ROW_A).is_ok());
+        let cases = [
+            ("geom", ProvenRow { geom: "line", ..ROW_A }),
+            ("stat", ProvenRow { stat: "bin", ..ROW_A }),
+            ("position", ProvenRow { position: "jitter", ..ROW_A }),
+            ("scale", ProvenRow { scales: &[("x", "log10")], ..ROW_A }),
+            ("coord", ProvenRow { coord: "flip", ..ROW_A }),
+            ("theme", ProvenRow { theme: "bw", ..ROW_A }),
+        ];
+        for (kind, row) in &cases {
+            let e = build(row).err().unwrap_or_default();
+            assert!(e.contains(&format!("{kind} '")) && e.contains("no builder"), "{kind}: {e}");
+        }
+    }
+    #[test]
+    fn canonical_maps_an_alias_to_the_row_spelling() {
+        assert_eq!((canonical("gray"), canonical("grey"), canonical("bw")), ("grey", "grey", "bw"));
     }
 }

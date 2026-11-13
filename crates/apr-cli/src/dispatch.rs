@@ -104,7 +104,7 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
         ),
         #[cfg(feature = "visualization")]
-        Commands::Plot(args) => Some(plot_result(args)),
+        Commands::Plot(args) => Some(plot_result(args, cli.json, cli.quiet)),
         _ => None,
     }
 }
@@ -113,7 +113,20 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
 /// the two cannot drift apart. The plot goes to stdout (or `--out`); a refusal names what is not
 /// proven and exits non-zero.
 #[cfg(feature = "visualization")]
-fn plot_result(args: &trueno_viz::plot_cli::PlotArgs) -> Result<(), CliError> {
+fn plot_result(
+    args: &trueno_viz::plot_cli::PlotArgs,
+    json: bool,
+    quiet: bool,
+) -> Result<(), CliError> {
+    // The plot is the output and has no JSON form; a flag that would change the output is
+    // refused, not accepted and ignored.
+    for (on, flag) in [(json, "--json"), (quiet, "--quiet")] {
+        if on {
+            return Err(CliError::ValidationFailed(format!(
+                "plot: {flag} is not supported; the plot goes to stdout, or to a file with --out"
+            )));
+        }
+    }
     let env = trueno_viz::plot_cli::Env::from_process();
     let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
     trueno_viz::plot_cli::run(args, &env, &mut out, &mut err)

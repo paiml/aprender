@@ -1493,3 +1493,88 @@ fn apr_plot_refuses_an_unproven_scale_by_name() {
         "{stderr}"
     );
 }
+
+/// B1 of the review of #6992: coord zoom limits change the panel's range and breaks in
+/// ggplot2 and no row proves them, so `apr plot` refuses them by name and draws nothing.
+#[test]
+fn apr_plot_refuses_coord_limits_by_name() {
+    let (dir, csv) = row1_csv();
+    let spec = dir.path().join("lim.yaml");
+    std::fs::write(
+        &spec,
+        format!(
+            "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}]\n\
+             coord: {{type: cartesian, xlim: [0, 20], ylim: [-10, 10]}}\n",
+            csv.display()
+        ),
+    )
+    .expect("write spec");
+    let out = apr_plot(&["--spec", spec.to_str().expect("utf8")]);
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty(), "nothing is drawn");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("coord limits (xlim) are not proven by any ggplot2 row"),
+        "{stderr}"
+    );
+}
+
+/// M2 of the review of #6992: a second point layer is not what the one proven row draws.
+#[test]
+fn apr_plot_refuses_two_layers() {
+    let (dir, csv) = row1_csv();
+    let spec = dir.path().join("two.yaml");
+    std::fs::write(
+        &spec,
+        format!(
+            "data: {}\naes: {{x: x, y: y}}\nlayers: [{{geom: point}}, {{geom: point}}]\n",
+            csv.display()
+        ),
+    )
+    .expect("write spec");
+    let out = apr_plot(&["--spec", spec.to_str().expect("utf8")]);
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty(), "nothing is drawn");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("the plot has 2 layers"), "{stderr}");
+}
+
+/// L3 of the review of #6992: the global `--json` and `--quiet` would change the output, which
+/// `apr plot` does not offer, so they are refused instead of accepted and ignored.
+#[test]
+fn apr_plot_refuses_json_and_quiet() {
+    let (_dir, csv) = row1_csv();
+    for (flag, name) in [("--json", "--json"), ("-q", "--quiet")] {
+        let out = apr_binary()
+            .arg(flag)
+            .arg("plot")
+            .args(["--data", csv.to_str().expect("utf8"), "--aes", "x=x,y=y"])
+            .output()
+            .expect("failed to run apr plot");
+        assert!(!out.status.success(), "{flag} must be refused");
+        assert!(out.stdout.is_empty(), "nothing is drawn with {flag}");
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            stderr.contains(&format!("plot: {name} is not supported")),
+            "{stderr}"
+        );
+    }
+}
+
+/// L2 of the review of #6992: the help text is for users, so it carries no ticket number and
+/// no internal module path.
+#[test]
+fn apr_plot_help_has_no_ticket_or_internal_path() {
+    for args in [vec!["plot", "--help"], vec!["--help"]] {
+        let out = apr_binary()
+            .args(&args)
+            .output()
+            .expect("failed to run apr");
+        let text = String::from_utf8_lossy(&out.stdout);
+        assert!(text.contains("plot"), "plot is listed: {args:?}");
+        assert!(
+            !text.contains("#6991") && !text.contains("plot_cli"),
+            "{args:?}: {text}"
+        );
+    }
+}
