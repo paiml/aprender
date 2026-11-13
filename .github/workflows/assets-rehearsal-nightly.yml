@@ -161,36 +161,42 @@ jobs:
               esac
               ldd --version | head -1 > /workspace/target/BUILDER_GLIBC
               rustc --version > /workspace/target/BUILDER_RUSTC
-              cargo build --release --locked --bin pv -p aprender-contracts-cli --features update-check,build-sha --target "$T"
-              strip "/workspace/target/$T/release/pv"'
+              cargo build --release --locked --bin pv --bin pv-readme -p aprender-contracts-cli --features update-check,build-sha --target "$T"
+              strip "/workspace/target/$T/release/pv" "/workspace/target/$T/release/pv-readme"'
           mkdir -p "target/$T/release"
+          # #7012: mirrors #7011 in binary-release.yml — pv-readme rides in the pv archive.
           cp "$CACHE/target/$T/release/pv" "target/$T/release/pv"
+          cp "$CACHE/target/$T/release/pv-readme" "target/$T/release/pv-readme"
           {
             echo "### pv $T built on ${{ matrix.host }} inside ${{ matrix.image }}"
             echo "- toolchain: $(cat "$CACHE/target/BUILDER_RUSTC")"
             echo "- builder glibc: $(cat "$CACHE/target/BUILDER_GLIBC")"
           } >> "$GITHUB_STEP_SUMMARY"
-          ls -la "target/$T/release/pv"
+          ls -la "target/$T/release/pv" "target/$T/release/pv-readme"
       - name: The asset runs, and its floor is what its bytes require
         run: |
-          BIN="target/${{ matrix.target }}/release/pv"
-          "$BIN" --version
-          case "${{ matrix.target }}" in
-            *-musl)
-              n=$(objdump -p "$BIN" | grep -c 'NEEDED' || true)
-              echo "dynamic NEEDED entries: $n (expected 0)"
-              if [ "$n" -ne 0 ]; then echo "::error::$BIN is a musl asset with $n dynamic dependencies"; exit 1; fi
-              FLOOR="static (musl)" ;;
-            *)
-              FLOOR=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u -t_ -k2 -V | tail -1)
-              got=${FLOOR#GLIBC_}
-              if [ -n "$got" ] && [ "$(printf '%s\n%s\n' "$got" 2.31 | sort -V | tail -1)" != 2.31 ]; then
-                echo "::error::$BIN needs $FLOOR, above the GLIBC_2.31 floor this lane promises"; exit 1
-              fi
-              [ -n "$FLOOR" ] || FLOOR="none (no versioned glibc imports)" ;;
-          esac
-          echo "- glibc floor of this asset (objdump): $FLOOR" >> "$GITHUB_STEP_SUMMARY"
-          echo "asset glibc floor: $FLOOR"
+          # #7013: every binary the archive ships is graded, not only pv.
+          for NAME in pv pv-readme; do
+            BIN="target/${{ matrix.target }}/release/$NAME"
+            [ -x "$BIN" ] || { echo "::error::$BIN is missing: the archive would ship without $NAME"; exit 1; }
+            "$BIN" --version
+            case "${{ matrix.target }}" in
+              *-musl)
+                n=$(objdump -p "$BIN" | grep -c 'NEEDED' || true)
+                echo "dynamic NEEDED entries: $n (expected 0)"
+                if [ "$n" -ne 0 ]; then echo "::error::$BIN is a musl asset with $n dynamic dependencies"; exit 1; fi
+                FLOOR="static (musl)" ;;
+              *)
+                FLOOR=$(objdump -T "$BIN" | grep -oE 'GLIBC_[0-9]+\.[0-9]+(\.[0-9]+)?' | sort -u -t_ -k2 -V | tail -1)
+                got=${FLOOR#GLIBC_}
+                if [ -n "$got" ] && [ "$(printf '%s\n%s\n' "$got" 2.31 | sort -V | tail -1)" != 2.31 ]; then
+                  echo "::error::$BIN needs $FLOOR, above the GLIBC_2.31 floor this lane promises"; exit 1
+                fi
+                [ -n "$FLOOR" ] || FLOOR="none (no versioned glibc imports)" ;;
+            esac
+            echo "- glibc floor of $NAME (objdump): $FLOOR" >> "$GITHUB_STEP_SUMMARY"
+            echo "$NAME glibc floor: $FLOOR"
+          done
       - name: Package archive
         id: package
         run: |
@@ -198,7 +204,7 @@ jobs:
           TARGET="${{ matrix.target }}"
           ARCHIVE="pv-${VERSION}-${TARGET}"
           mkdir -p "$ARCHIVE"
-          cp "target/${TARGET}/release/pv" "$ARCHIVE/"
+          cp "target/${TARGET}/release/pv" "target/${TARGET}/release/pv-readme" "$ARCHIVE/"
           for f in README.md LICENSE LICENSE-MIT LICENSE-APACHE; do
             [ -f "$f" ] && cp "$f" "$ARCHIVE/"
           done

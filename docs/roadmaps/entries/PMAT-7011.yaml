@@ -1,0 +1,18 @@
+- id: PMAT-7011
+  github_issue: 7011
+  item_type: task
+  title: 'binary-release: build and package pv-readme in the pv archive'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T12:51:09Z
+  updated: 2026-11-13T12:51:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7010
