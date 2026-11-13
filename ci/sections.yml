@@ -1924,7 +1924,7 @@ jobs:
           # #7026: HOST steps (contracts_gate.sh -> pv_bin.sh) inherit the runner's CARGO_TARGET_DIR, and the fat
           # x86 job runs every shard at once on one runner, so they all built ONE <target>/debug/pv and pv_bin.sh
           # refused the last shard's build as WRONG-TREE (main run 43430038433, m30 rc=3). One dir per shard.
-          # scripts/check_guard_shard_target_dirs.sh runs this line per pinned shard and is red on any shared dir.
+          # Falsifier check_guard_shard_target_dirs (cargo-free; guard_tree.sh --no-cargo runs it) is red on any shared dir.
           bash scripts/ci/guard_shard_target_dir.sh "${{ matrix.shard }}" >> "$GITHUB_ENV" || exit 1
           printf 'host target dir: %s\n' "$(sed -n 's/^CARGO_TARGET_DIR=//p' "$GITHUB_ENV" | tail -n 1)"
       # #4415 (operator A4, 2026-09-25): ONE step runs every guard step of guard-cargo-steps
