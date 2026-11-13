@@ -37,7 +37,7 @@ js-sys = { workspace = true }
 web-sys = { workspace = true, features = [
     "BinaryType", "CanvasRenderingContext2d", "CanvasWindingRule", "CloseEvent", "Document",
     "Element", "ErrorEvent", "Event", "EventTarget", "History", "HtmlCanvasElement", "ImageData",
-    "KeyboardEvent", "Location", "MessageEvent", "MouseEvent", "Performance", "PointerEvent",
+    "HtmlElement", "HtmlMediaElement", "HtmlVideoElement", "KeyboardEvent", "Location", "MessageEvent", "MouseEvent", "Node", "Performance", "PointerEvent",
     "PopStateEvent", "Storage", "Touch", "TouchEvent", "TouchList", "Url", "WebSocket",
     "WheelEvent", "Window", "console",
 ] }
