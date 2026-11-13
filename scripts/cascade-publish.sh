@@ -869,18 +869,29 @@ if [ $ALL_OK -eq 1 ]; then
   # --order-check and --rehearse exit earlier), so the live path applies; any
   # other MODE gets --dry-run so it can never yank.
   # Wait (bounded) for the sparse index cargo resolves against to show the root.
+  # If it never shows, the smoke is NOT run as a yanking run: the version is not
+  # resolvable yet, which says nothing about the release. Report not_measured
+  # (rc 3, andon line with the exact rerun command) and exit non-zero.
   idx_try=0
   until version_live aprender "$TARGET_VERSION" || [ "$idx_try" -ge 20 ]; do
     idx_try=$((idx_try + 1)); sleep 15
   done
+  if ! version_live aprender "$TARGET_VERSION"; then
+    bash "$REPO_ROOT/scripts/post_publish_smoke.sh" --version "$TARGET_VERSION" \
+      --train-published "$TARGET_VERSION" \
+      --not-measured "sparse index still lacks aprender $TARGET_VERSION after 5 min"
+    smoke_rc=$?
+    [ "$smoke_rc" -ne 0 ] || smoke_rc=3
+    exit "$smoke_rc"
+  fi
   SMOKE_FLAGS=""
   case "$MODE" in
     publish|--tier) : ;;
     *) SMOKE_FLAGS="--dry-run"; echo "  post-publish smoke: MODE=$MODE is not a publishing run, calling with --dry-run (no yank possible)" ;;
   esac
+  smoke_rc=0
   bash "$REPO_ROOT/scripts/post_publish_smoke.sh" --version "$TARGET_VERSION" \
-    --train-published "$TARGET_VERSION" $SMOKE_FLAGS
-  smoke_rc=$?
+    --train-published "$TARGET_VERSION" $SMOKE_FLAGS || smoke_rc=$?
   exit "$smoke_rc"
 else
   exit 1

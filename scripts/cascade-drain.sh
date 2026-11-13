@@ -19,6 +19,9 @@
 #   scripts/cascade-drain.sh --passes 30    # default is 20
 #
 # Exit codes: 0 drained | 2 stuck (no progress) | 3 passes exhausted
+#             4 post-publish smoke FAILED (version yanked, or yank refused/failed)
+#             5 post-publish smoke not_measured (nothing was verified; no yank)
+# A yanked version is never counted as published.
 set -uo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
@@ -120,8 +123,10 @@ count_pub() {
         elif [ "$n" -eq 3 ]; then p="3/${crate:0:1}/${crate}"
         else p="${crate:0:2}/${crate:2:2}/${crate}"
         fi
-        v=$(curl -s --retry 3 --retry-delay 2 -H "User-Agent: ${DRAIN_UA}" "https://index.crates.io/${p}" 2>/dev/null \
-            | grep -v "^[[:space:]]*$" | tail -1 | sed -n "s/.*\"vers\":\"\([^\"]*\)\".*/\1/p")
+        last=$(curl -s --retry 3 --retry-delay 2 -H "User-Agent: ${DRAIN_UA}" "https://index.crates.io/${p}" 2>/dev/null \
+            | grep -v "^[[:space:]]*$" | tail -1)
+        v=$(printf "%s\n" "$last" | sed -n "s/.*\"vers\":\"\([^\"]*\)\".*/\1/p")
+        case "$last" in *\"yanked\":true*) exit 0 ;; esac
         [ "$v" = "${DRAIN_TARGET}" ] && echo ok
     ' _ {} | grep -c ok
 }
@@ -148,8 +153,23 @@ for pass in $(seq 1 "$PASSES"); do
     if [ "$n" -ge "$TOTAL" ]; then echo "DRAIN COMPLETE: $n/$TOTAL at $TARGET"; exit 0; fi
 
     # A stale CARGO_REGISTRY_TOKEN 403s every upload; the credentials file wins.
+    # The cascade's rc and the smoke result must survive the filter: tee the full
+    # output to a log, keep the rc with PIPESTATUS, never read $? through a pipe.
+    cascade_log=$(mktemp "${TMPDIR:-/tmp}/cascade-drain.XXXXXX")
     ( unset CARGO_REGISTRY_TOKEN; bash scripts/cascade-publish.sh ) 2>&1 \
-        | grep -E "PUBLISHED|FATAL|DEFER|already ${TARGET}|TIER|RETRY" | tail -60
+        | tee "${cascade_log:-/dev/null}" | grep -E "PUBLISHED|FATAL|DEFER|already ${TARGET}|TIER|RETRY|SMOKE_RESULT|post-publish smoke" | tail -60
+    crc=${PIPESTATUS[0]}
+    smoke_line=$(grep '^SMOKE_RESULT ' "$cascade_log" | tail -1)
+    case "$smoke_line" in
+        "SMOKE_RESULT pass "*|"") : ;;
+        "SMOKE_RESULT not_measured "*)
+            echo "DRAIN NOT VERIFIED: post-publish smoke not_measured: $smoke_line (log: $cascade_log)" >&2
+            exit 5 ;;
+        *)
+            echo "DRAIN FAILED: post-publish smoke: $smoke_line (log: $cascade_log)" >&2
+            exit 4 ;;
+    esac
+    if [ "$crc" -ne 0 ]; then echo "cascade-publish.sh pass $pass exited rc=$crc (log: $cascade_log)"; fi
 
     n2=$(count_pub)
     echo "=== PASS $pass END: $n2/$TOTAL ==="
