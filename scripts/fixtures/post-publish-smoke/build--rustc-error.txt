@@ -1,0 +1,14 @@
+[1m[92m  Installing[0m rustcerr v0.1.0 (/tmp/tmp.bDyXjapJHq/rustcerr)
+[1m[92m   Compiling[0m rustcerr v0.1.0 (/tmp/tmp.bDyXjapJHq/rustcerr)
+[1m[91merror[E0308][0m[1m: mismatched types[0m
+ [1m[94m--> [0msrc/main.rs:1:26
+  [1m[94m|[0m
+[1m[94m1[0m [1m[94m|[0m fn main() { let x: u32 = "no"; println!("{x}"); }
+  [1m[94m|[0m                    [1m[94m---[0m   [1m[91m^^^^[0m [1m[91mexpected `u32`, found `&str`[0m
+  [1m[94m|[0m                    [1m[94m|[0m
+  [1m[94m|[0m                    [1m[94mexpected due to this[0m
+
+[1mFor more information about this error, try `rustc --explain E0308`.[0m
+[1m[91merror[0m: could not compile `rustcerr` (bin "rustcerr") due to 1 previous error
+[1m[91merror[0m: failed to compile `rustcerr v0.1.0 (/tmp/tmp.bDyXjapJHq/rustcerr)`, intermediate artifacts can be found at `/tmp/tmp.bDyXjapJHq/rustcerr/target`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_BUILD_BUILD_DIR` to that path.

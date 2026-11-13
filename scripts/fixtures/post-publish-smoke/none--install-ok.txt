@@ -1,0 +1,6 @@
+[1m[92m  Installing[0m okc v0.1.0 (/tmp/tmp.bDyXjapJHq/okc)
+[1m[92m   Compiling[0m okc v0.1.0 (/tmp/tmp.bDyXjapJHq/okc)
+[1m[92m    Finished[0m `release` profile [optimized] target(s) in 0.34s
+[1m[92m  Installing[0m /tmp/tmp.bDyXjapJHq/r7/bin/okc
+[1m[92m   Installed[0m package `okc v0.1.0 (/tmp/tmp.bDyXjapJHq/okc)` (executable `okc`)
+[1m[33mwarning[0m: be sure to add `/tmp/tmp.bDyXjapJHq/r7/bin` to your PATH to be able to run the installed binaries
