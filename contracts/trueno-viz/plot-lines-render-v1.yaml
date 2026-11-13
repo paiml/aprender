@@ -139,6 +139,11 @@ falsification_tests:
   prediction: a panic on an extreme CLI value turns plot_extreme_inputs_never_panic RED (measured with an injected assert on |value| >= 1e30)
   test: cargo test -p aprender-present-cli --test present_cli_surface_gate -- --exact plot_extreme_inputs_never_panic
   if_fails: The test cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-PLOTLINES-021
+  rule: path rows are drawn stable-sorted by group, as GeomPath$draw_panel does
+  prediction: removing the sort by group in split_runs turns path_with_interleaved_groups_draws_one_polyline_per_group_as_r_does RED (3 polylines expected, fewer drawn), and also path_with_interleaved_text_groups_sorts_them_as_text, interleaved_groups_are_one_polyline_each_in_group_order and plot_path_with_interleaved_groups_draws_each_group_as_r_does (measured); sorting descending, or not filtering rows by panel, turns the same tests and runs_break_at_nan_group_and_panel RED (measured)
+  test: cargo test -p aprender-viz --test stroke_render -- --exact path_with_interleaved_groups_draws_one_polyline_per_group_as_r_does
+  if_fails: A path whose groups are interleaved in the data draws nothing and exits 0
 qa_gate:
   id: F-PLOTLINES-001
   name: plot verb lines and reference lines

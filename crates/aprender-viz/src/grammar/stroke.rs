@@ -93,7 +93,11 @@ fn reference_runs(
     vec![run]
 }
 
-/// Split rows into runs of consecutive finite vertices of one panel and one group.
+/// Split the rows of panel `want` into runs of consecutive finite vertices of one group. Rows are
+/// stable-sorted by group first, as `GeomPath$draw_panel` does (`data[order(data$group), ]`), so a
+/// group whose rows are interleaved with another's in the data is still one polyline, and
+/// polylines come out in ascending group order. A row of another panel is not part of the panel's
+/// sequence: it neither joins nor breaks a run.
 fn split_runs(
     x: &[f64],
     y: &[f64],
@@ -101,12 +105,15 @@ fn split_runs(
     group: &[i64],
     want: usize,
 ) -> Vec<Vec<(f64, f64)>> {
+    let mut rows: Vec<usize> =
+        (0..x.len().min(y.len())).filter(|&i| panel.get(i) == Some(&want)).collect();
+    rows.sort_by_key(|&i| group.get(i).copied());
     let mut runs: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut cur: Vec<(f64, f64)> = Vec::new();
     let mut last_group = None;
-    for (i, (&xv, &yv)) in x.iter().zip(y).enumerate() {
-        let (p, g) = (panel.get(i).copied(), group.get(i).copied());
-        let usable = p == Some(want) && xv.is_finite() && yv.is_finite();
+    for i in rows {
+        let (xv, yv, g) = (x[i], y[i], group.get(i).copied());
+        let usable = xv.is_finite() && yv.is_finite();
         if (!usable || last_group != g) && !cur.is_empty() {
             runs.push(std::mem::take(&mut cur));
         }
@@ -308,13 +315,38 @@ mod tests {
             vec![
                 vec![(0.0, 0.0), (1.0, 1.0)],
                 vec![(3.0, 3.0)],
-                vec![(4.0, 4.0)],
-                vec![(6.0, 6.0)]
+                // Row 5 is panel 1: it neither joins nor breaks panel 0's group 2.
+                vec![(4.0, 4.0), (6.0, 6.0)]
             ]
         );
-        // Short panel/group slices count as unusable rows, not a panic.
+        // Short panel/group slices are not a panic: no panel, no rows; no group, one group.
         assert!(split_runs(&x, &y, &[], &group, 0).is_empty());
-        assert_eq!(split_runs(&x, &y, &panel, &[], 0).len(), 3);
+        assert_eq!(
+            split_runs(&x, &y, &panel, &[], 0),
+            vec![vec![(0.0, 0.0), (1.0, 1.0)], vec![(3.0, 3.0), (4.0, 4.0), (6.0, 6.0)]]
+        );
+    }
+
+    #[test]
+    fn interleaved_groups_are_one_polyline_each_in_group_order() {
+        // R: data[order(data$group), ] before drawing (ggplot2 4.0.3 GeomPath).
+        let x = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let y = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0];
+        let panel = [0; 6];
+        let group = [3, 1, 2, 3, 1, 2];
+        let runs = split_runs(&x, &y, &panel, &group, 0);
+        assert_eq!(
+            runs,
+            vec![
+                vec![(1.0, 1.0), (4.0, 4.0)],
+                vec![(2.0, 2.0), (5.0, 5.0)],
+                vec![(0.0, 0.0), (3.0, 3.0)]
+            ]
+        );
+        // A gap inside one group still breaks it, in sorted order.
+        let y = [0.0, 1.0, 2.0, 3.0, f64::NAN, 5.0];
+        let runs = split_runs(&x, &y, &panel, &group, 0);
+        assert_eq!(runs[0], vec![(1.0, 1.0)]);
     }
 
     #[test]

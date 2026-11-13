@@ -506,3 +506,51 @@ fn a_degenerate_zoom_is_an_error_for_strokes_not_a_panic() {
         let _ = built.to_framebuffer();
     }
 }
+
+/// Pixel of data value `v` on one axis, fitted to the lowest and highest tick label of `ticks`.
+fn fit(ticks: &BTreeMap<String, f64>, v: f64) -> f64 {
+    let mut t: Vec<(f64, f64)> =
+        ticks.iter().map(|(l, &px)| (l.parse::<f64>().expect("numeric tick"), px)).collect();
+    t.sort_by(|a, b| a.0.total_cmp(&b.0));
+    let ((v0, p0), (v1, p1)) = (t[0], t[t.len() - 1]);
+    p0 + (v - v0) * (p1 - p0) / (v1 - v0)
+}
+
+/// `geom_path` over `x = 0..n`, `y` and a text `group`, drawn to SVG.
+fn grouped_path(y: &[f32], groups: &[&str]) -> Picture {
+    let mut df = DataFrame::new();
+    let x: Vec<f32> = (0..y.len()).map(|i| i as f32).collect();
+    df.add_column_f32("x", &x);
+    df.add_column_f32("y", y);
+    df.add_column_str("g", groups);
+    read(&svg_of(
+        GGPlot::new().data(df).aes(Aes::new().x("x").y("y").group("g")).geom(Geom::path()),
+    ))
+}
+
+fn in_pixels(p: &Picture, pts: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    pts.iter().map(|&(x, y)| (fit(&p.x_ticks, x), fit(&p.y_ticks, y))).collect()
+}
+
+// ggplot2 4.0.3, R 4.6.2, LC_ALL=C, `layer_grob()` polylines in data space (the review's C06):
+//   P(d(0:6, c(1,2,3,4,5,6,0), c("b","B","a","b","B","a","b"))) + geom_path()
+// GeomPath$draw_panel orders rows by group first, so R draws 3 polylines: B, a, b.
+#[test]
+fn path_with_interleaved_groups_draws_one_polyline_per_group_as_r_does() {
+    let p = grouped_path(&[1., 2., 3., 4., 5., 6., 0.], &["b", "B", "a", "b", "B", "a", "b"]);
+    assert_eq!(p.polylines.len(), 3, "{:?}", p.polylines);
+    assert_line(&p.polylines[0], &in_pixels(&p, &[(1.0, 2.0), (4.0, 5.0)]));
+    assert_line(&p.polylines[1], &in_pixels(&p, &[(2.0, 3.0), (5.0, 6.0)]));
+    assert_line(&p.polylines[2], &in_pixels(&p, &[(0.0, 1.0), (3.0, 4.0), (6.0, 0.0)]));
+}
+
+// The review's C07: text groups sort as strings ("10" < "2" < "9"), rows interleaved.
+//   P(d(0:5, c(5,1,4,2,3,0), c("10","9","2","10","9","2"))) + geom_path()
+#[test]
+fn path_with_interleaved_text_groups_sorts_them_as_text() {
+    let p = grouped_path(&[5., 1., 4., 2., 3., 0.], &["10", "9", "2", "10", "9", "2"]);
+    assert_eq!(p.polylines.len(), 3, "{:?}", p.polylines);
+    assert_line(&p.polylines[0], &in_pixels(&p, &[(0.0, 5.0), (3.0, 2.0)]));
+    assert_line(&p.polylines[1], &in_pixels(&p, &[(2.0, 4.0), (5.0, 0.0)]));
+    assert_line(&p.polylines[2], &in_pixels(&p, &[(1.0, 1.0), (4.0, 3.0)]));
+}

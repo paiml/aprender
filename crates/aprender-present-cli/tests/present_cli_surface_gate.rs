@@ -548,6 +548,44 @@ fn plot_groups_and_missing_values_break_the_line() {
 }
 
 #[test]
+fn plot_path_with_interleaved_groups_draws_each_group_as_r_does() {
+    // ggplot2 orders GeomPath rows by group before drawing: 2 groups interleaved in the file are
+    // the same 2 polylines as the file sorted by group (the review's repro drew 0 and exited 0).
+    let il = fixture(
+        "il",
+        "d.csv",
+        "x,y,g\n0,0,a\n0,10,b\n5,5,a\n5,5,b\n10,10,a\n10,0,b\n",
+    );
+    let sorted = fixture(
+        "il_sorted",
+        "d.csv",
+        "x,y,g\n0,0,a\n5,5,a\n10,10,a\n0,10,b\n5,5,b\n10,0,b\n",
+    );
+    let draw = |csv: &str| {
+        let out = run(&[
+            "plot",
+            "--output",
+            "svg",
+            "--data",
+            csv,
+            "--aes",
+            "x=x,y=y,group=g",
+            "--geom",
+            "path",
+        ]);
+        assert!(out.status.success());
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    let (a, b) = (draw(&il), draw(&sorted));
+    let ax = Axes::of(&a);
+    let lines = polylines(&a);
+    assert_eq!(lines.len(), 2, "{lines:?}");
+    assert_path(&lines[0], &[(0., 0.), (5., 5.), (10., 10.)], &ax);
+    assert_path(&lines[1], &[(0., 10.), (5., 5.), (10., 0.)], &ax);
+    assert_eq!(polylines(&a), polylines(&b));
+}
+
+#[test]
 fn plot_titles_still_draw_with_lines() {
     let csv = fixture("labs", "d.csv", DIAG);
     let svg = svg_of(&[
