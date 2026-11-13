@@ -22,10 +22,33 @@
 #   0. probe: fetch the sparse-index entry of the crate and require <v> in it.
 #      Failure is NOT a release failure: SMOKE_NOTMEASURED (index-probe,
 #      version-not-in-index).
-#   1. cargo install aprender --version <v> --locked.  Failure is classified from
-#      cargo's own output: network / environment (missing system library, no
-#      space, OOM) -> SMOKE_NOTMEASURED; compile or resolve error of the crate
-#      -> SMOKE_FAIL step=cargo-install; anything else -> SMOKE_NOTMEASURED.
+#   1. cargo install aprender --version <v> --locked.  On failure, cargo's
+#      diagnostics (progress lines such as `Compiling pkg-config v0.3.31` are
+#      dropped first: a crate name is not evidence) are classified in this order,
+#      first match wins:
+#        network (curl `[28] Timeout was reached`, `timed out`, `Could not
+#          resolve`, `failed to download`, `spurious network error`, TLS ...)
+#                                                    -> SMOKE_NOTMEASURED cargo-install-network
+#        resolver/index (`failed to select a version`, `no matching package
+#          named`, `failed to get`, index update/fetch/load failures ...)
+#                                                    -> SMOKE_NOTMEASURED cargo-install-resolver
+#          (a dependency whose index entry lags the root crate lands here)
+#        environment (no space, OOM/Killed, missing -l / pkg-config / OpenSSL,
+#          old rustc)                                -> SMOKE_NOTMEASURED cargo-install-environment
+#        a build failure (`could not compile`, `failed to run custom build
+#          command`, rustc `error[E...]`, `failed to parse manifest`, `--locked`
+#          lockfile mismatch) -> only a CANDIDATE, see the CONTROL below
+#        anything else, including a log whose only error is the
+#          `error: failed to compile \`aprender vX\`` wrapper cargo prints around
+#          EVERY install failure                     -> SMOKE_NOTMEASURED cargo-install-unclassified
+#      THE CONTROL. A candidate becomes SMOKE_FAIL step=cargo-install only when, in
+#      the same container, `cargo install aprender --version <prev> --locked`
+#      SUCCEEDS, where <prev> is the newest non-yanked, non-prerelease version
+#      below <v> in the crates.io sparse index (index.crates.io, the data cargo
+#      resolves against). That proves this image + network + toolchain can build
+#      aprender, so the failure is the release's. <prev> undeterminable ->
+#      SMOKE_NOTMEASURED control-undeterminable; control fails ->
+#      SMOKE_NOTMEASURED control-failed (the image cannot build aprender at all).
 #   2. $CARGO_HOME/bin/apr --version  must carry <v> as an EXACT word (0.72.6 does
 #      not match 0.72.60).               SMOKE_FAIL step=apr-version[-mismatch]
 #   3. $CARGO_HOME/bin/apr explain E001  must exit 0 and print "Invalid Magic Bytes".
@@ -36,10 +59,17 @@
 #      proves clap parsed, not that the shipped code runs.
 #                                         SMOKE_FAIL step=verb-smoke[-output]
 #
-# WHAT MAY YANK. Only a CLASSIFIED failure: the container exited 10 AND its log
-# holds `SMOKE_FAIL step=<one of the five names above>`. Everything else is
-# not_measured (rc 3, an andon line, NO yank), retried once first: no runtime,
-# daemon down, image pull failure, runtime rc 124/125/126/127/137, the timeout
+# WHAT MAY YANK, exactly. The same `SMOKE_FAIL step=<s>` (container exit 10), for
+# s one of the five names above, in TWO consecutive fresh-container runs, the
+# second started SMOKE_REPEAT_WAIT seconds after the first (default and floor
+# 120), AND the 24 h rule below. For s=cargo-install each of those runs also had
+# a passing control and a log matching no network/resolver/environment pattern.
+# For s=apr-version[-mismatch] / verb-smoke[-output] the binary built and then
+# ran wrongly; the repeat is the only extra condition. A failure that passes on
+# the repeat is a pass (no yank); a failure followed by anything else (another
+# step, not_measured) is not_measured. A control failure is not_measured at once
+# (reason=control-failed). Everything else is not_measured (rc 3, an andon line,
+# NO yank), retried once first: no runtime, daemon down, image pull failure, runtime rc 124/125/126/127/137, the timeout
 # (default 45 min), no network or index unreachable inside the container,
 # version not yet in the index, rc 0 without SMOKE_PASS, any failure without a
 # step marker.
@@ -116,6 +146,32 @@ published_epoch() {
   date -u -d "$ts" +%s 2>/dev/null || true
 }
 
+owned_by_me() { [ -O "$1" ]; } # seam: --self-test overrides it
+
+# previous_version <v> -> newest non-yanked, non-prerelease version below <v> in the
+# crates.io sparse index (the data cargo itself resolves against), or nothing.
+index_doc() { # the sparse-index document of $CRATE, or nothing
+  curl -fsS --max-time 60 -A "aprender-post-publish-smoke (release automation)" \
+    "https://index.crates.io/${CRATE:0:2}/${CRATE:2:2}/${CRATE}" 2>/dev/null || true
+}
+previous_version() {
+  local v=$1 doc line vers cands prev
+  doc=$(index_doc)
+  [ -n "$doc" ] || return 0
+  cands=""
+  while IFS= read -r line; do
+    vers=$(sed -n 's/.*"vers":"\([^"]*\)".*/\1/p' <<<"$line")
+    [ -n "$vers" ] || continue
+    case "$vers" in *-*|*+*) continue ;; esac
+    grep -q '"yanked":false' <<<"$line" || continue
+    cands="$cands$vers"$'\n'
+  done <<<"$doc"
+  [ -n "$cands" ] || return 0
+  prev=$(printf '%s%s\n' "$cands" "$v" | sort -V -u | grep -B1 -x -F -- "$v" | head -1) || true
+  [ "$prev" != "$v" ] || prev=""
+  printf '%s' "$prev"
+}
+
 # safe_rm_rf <path> <prefix> — the ONLY recursive delete in this file. It removes
 # <path> only when <path> is strictly under <prefix>, <prefix> is a path this script
 # made with mktemp (it starts with "$SCRATCH_ROOT/pps-"), and <path> has no ".."
@@ -129,6 +185,12 @@ safe_rm_rf() {
     "${SCRATCH_ROOT:?}"/pps-*) : ;;
     *) echo "safe_rm_rf: refused ($pre is not one of this script's own mktemp roots)" >&2; return 1 ;;
   esac
+  if [ -L "$pre" ]; then
+    echo "safe_rm_rf: refused ($pre is a symlink)" >&2; return 1
+  fi
+  if ! owned_by_me "$pre"; then
+    echo "safe_rm_rf: refused ($pre is missing or not owned by the current uid)" >&2; return 1
+  fi
   case "/$p/$pre/" in
     */../*) echo "safe_rm_rf: refused ($p has a .. component)" >&2; return 1 ;;
   esac
@@ -137,6 +199,27 @@ safe_rm_rf() {
     *) echo "safe_rm_rf: refused ($p is outside $pre)" >&2; return 1 ;;
   esac
   rm -rf "${p:?}"
+}
+
+# safe_rm_file <file> <prefix> — the ONLY file delete in this file. <prefix> must
+# sit under "$SCRATCH_ROOT/" and <file> must start with <prefix>; no ".." anywhere.
+safe_rm_file() {
+  local f=${1:-} pre=${2:-}
+  if [ -z "$f" ] || [ -z "$pre" ]; then
+    echo "safe_rm_file: refused (empty path or prefix)" >&2; return 1
+  fi
+  case "$pre" in
+    "${SCRATCH_ROOT:?}"/?*) : ;;
+    *) echo "safe_rm_file: refused ($pre is not under $SCRATCH_ROOT)" >&2; return 1 ;;
+  esac
+  case "/$f/$pre/" in
+    */../*) echo "safe_rm_file: refused ($f has a .. component)" >&2; return 1 ;;
+  esac
+  case "$f" in
+    "$pre"*) : ;;
+    *) echo "safe_rm_file: refused ($f is outside $pre)" >&2; return 1 ;;
+  esac
+  rm -f -- "${f:?}"
 }
 
 detect_container() {
@@ -169,13 +252,34 @@ cargo install @CRATE@ --version "$SMOKE_V" --locked >"$ilog" 2>&1
 rc=$?
 cat "$ilog"
 if [ "$rc" -ne 0 ]; then
-  if grep -q -i -E 'Could not resolve|resolve host|failed to download|download of .* failed|spurious network|network failure|Connection (refused|reset|timed out)|timed out|SSL (connect|error)|TLS (handshake|error)|certificate verif|Temporary failure|unable to update registry|failed to query replaced source|No route to host' "$ilog"; then
+  # Classify on cargo's diagnostics only: progress lines name crates
+  # (`Compiling pkg-config v0.3.31`, `Compiling openssl-probe`), and a crate name
+  # is not evidence of anything.
+  dlog=$(mktemp)
+  grep -v -E '^[[:space:]]*(Compiling|Downloaded|Downloading|Updating|Installing|Installed|Fresh|Checking|Locking|Adding|Building|Finished|Replacing|Replaced|Ignored|Packaging|Blocking)[[:space:]]' "$ilog" >"$dlog"
+  # Order matters: network, resolver/index and environment evidence are
+  # not_measured whatever else the log says, control or no control.
+  if grep -q -i -E 'Could not resolve|resolve host|failed to download|download of .* failed|spurious network|network failure|Connection (refused|reset|timed out)|timed out|Timeout was reached|\[(6|7|28|35|52|55|56)\] |SSL (connect|error)|TLS (handshake|error)|certificate verif|Temporary failure|No route to host' "$dlog"; then
     notmeasured cargo-install-network "rc=$rc"
   fi
-  if grep -q -i -E 'cannot find -l|pkg-config|could not find system library|OpenSSL|No space left|Killed|out of memory|Cannot allocate memory|signal: 9|SIGKILL|linker .cc. not found|cc: command not found|requires rustc|is not supported by' "$ilog"; then
+  if grep -q -i -E 'failed to select a version|no matching package named|candidate versions found|location searched|failed to get|unable to get packages|failed to load source|failed to update|failed to fetch|failed to query|unable to update registry|failed to read .*index|failed to parse registry' "$dlog"; then
+    notmeasured cargo-install-resolver "rc=$rc"
+  fi
+  if grep -q -i -E 'cannot find -l|pkg-config|could not find system library|OpenSSL|No space left|Killed|out of memory|Cannot allocate memory|signal: 9|SIGKILL|linker .cc. not found|cc: command not found|requires rustc|is not supported by' "$dlog"; then
     notmeasured cargo-install-environment "rc=$rc"
   fi
-  if grep -q -E 'could not compile|failed to compile|failed to select a version|no matching package|failed to parse manifest|needs to be updated but --locked|error\[E[0-9]+\]' "$ilog"; then
+  # A build failure line. NOT `failed to compile`: cargo prints that wrapper
+  # around EVERY install failure, so on its own it is no evidence at all.
+  if grep -q -E 'could not compile|failed to run custom build command|failed to parse manifest|needs to be updated but --locked|error\[E[0-9]+\]' "$dlog"; then
+    # A build failure is only a CANDIDATE. The control: the previous release
+    # must build in this very container, or the image/network/toolchain is
+    # what failed, not <v>.
+    [ -n "$SMOKE_PREV" ] || notmeasured control-undeterminable "v=$SMOKE_V"
+    clog=$(mktemp)
+    cargo install @CRATE@ --version "$SMOKE_PREV" --locked --root "$(mktemp -d)" >"$clog" 2>&1
+    crc=$?
+    tail -n 5 "$clog"
+    [ "$crc" -eq 0 ] || notmeasured control-failed "rc=$crc prev=$SMOKE_PREV"
     failed cargo-install "$rc"
   fi
   notmeasured cargo-install-unclassified "rc=$rc"
@@ -207,7 +311,7 @@ real_container_run() {
   local rt=$1 v=$2 log=$3 rc name inner
   name="pps-${log##*/}" # unique: the log name comes from mktemp
   inner=$(inner_script)
-  timeout "$TIMEOUT_SECS" "$rt" run --rm --name "$name" -e SMOKE_V="$v" "$SMOKE_IMAGE" bash -c "$inner" >"$log" 2>&1
+  timeout "$TIMEOUT_SECS" "$rt" run --rm --name "$name" -e SMOKE_V="$v" -e SMOKE_PREV="${SMOKE_PREV:-}" "$SMOKE_IMAGE" bash -c "$inner" >"$log" 2>&1
   rc=$?
   if [ "$rc" -eq 124 ]; then "$rt" rm -f "$name" >/dev/null 2>&1 || true; fi
   return "$rc"
@@ -292,7 +396,7 @@ yank_allowed() {
 }
 
 smoke_main() {
-  local version="" train_v="" nm_reason="" rt log smoke_rc verdict attempt why step
+  local version="" train_v="" nm_reason="" rt log smoke_rc verdict prev_verdict attempt why step repeat_wait
   DRY_RUN=0; PUBLISHED_AT=""; CONTAINER_CMD=""
   TIMEOUT_SECS="${SMOKE_TIMEOUT_SECS:-2700}"
   while [ $# -gt 0 ]; do
@@ -328,28 +432,56 @@ smoke_main() {
   fi
   mkdir -p "$SCRATCH_ROOT"
   log=$(mktemp "$SCRATCH_ROOT/post-publish-smoke.XXXXXX")
-  echo "post-publish smoke: $CRATE@$version in a clean container ($rt, $SMOKE_IMAGE, timeout ${TIMEOUT_SECS}s)"
-  verdict=""
-  for attempt in 1 2; do
+  SMOKE_PREV=$(previous_version "$version") || SMOKE_PREV=""
+  export SMOKE_PREV
+  echo "post-publish smoke: $CRATE@$version in a clean container ($rt, $SMOKE_IMAGE, timeout ${TIMEOUT_SECS}s, control ${SMOKE_PREV:-none})"
+  # Up to 3 runs. A pass or a control failure ends it. A classified failure must
+  # repeat (same step) after SMOKE_REPEAT_WAIT to count; a not_measured run is
+  # retried once. Anything else ends as not_measured, never as a yank.
+  # the wait before the confirming repeat: SMOKE_REPEAT_WAIT seconds, never under 120
+  repeat_wait=${SMOKE_REPEAT_WAIT:-120}
+  if ! [[ "$repeat_wait" =~ ^[0-9]+$ ]] || [ "$repeat_wait" -lt 120 ]; then repeat_wait=120; fi
+  verdict=""; prev_verdict=""
+  for attempt in 1 2 3; do
     smoke_rc=0
     container_run "$rt" "$version" "$log.$attempt" || smoke_rc=$?
     verdict=$(classify_run "$smoke_rc" "$log.$attempt")
     case "$verdict" in
-      nm*) echo "post-publish smoke: attempt $attempt not_measured (${verdict#nm }) (log: $log.$attempt)" >&2
-           [ "$attempt" = 2 ] || sleep "${SMOKE_RETRY_SLEEP:-20}" ;;
-      *) break ;;
+      pass) break ;;
+      "nm control-"*) break ;;
+      fail*)
+        # the same step again confirms; a DIFFERENT failed step right after a
+        # failure is no repeat, and ends below as not_measured
+        if [ "$verdict" = "$prev_verdict" ] || [ "$attempt" = 3 ] || [ "${prev_verdict%% *}" = fail ]; then break; fi
+        echo "post-publish smoke: attempt $attempt ${verdict} (log: $log.$attempt); repeating after ${repeat_wait}s to confirm" >&2
+        prev_verdict=$verdict
+        sleep "$repeat_wait" ;;
+      *)
+        echo "post-publish smoke: attempt $attempt not_measured (${verdict#nm }) (log: $log.$attempt)" >&2
+        if [ "$attempt" -ge 2 ]; then break; fi
+        prev_verdict=$verdict
+        sleep "${SMOKE_RETRY_SLEEP:-20}" ;;
     esac
   done
   case "$verdict" in
     pass)
       echo "post-publish smoke: PASS ($CRATE@$version)"
       echo "SMOKE_RESULT pass version=$version"
-      rm -f "${log:?}" "${log:?}".[12]
+      for why in "$log" "$log.1" "$log.2" "$log.3"; do safe_rm_file "$why" "$log" || true; done
       return 0 ;;
+    "nm control-"*)
+      why=${verdict#nm }; why=${why%% *}
+      echo "post-publish smoke: control did not hold ($why); log: $log.$attempt" >&2
+      report_not_measured "$version" "$why" || true
+      return 3 ;;
     nm*)
-      report_not_measured "$version" "${verdict#nm } after 2 attempts (log: $log.2)" || true
+      report_not_measured "$version" "${verdict#nm } after $attempt attempts (log: $log.$attempt)" || true
       return 3 ;;
   esac
+  if [ "$verdict" != "$prev_verdict" ]; then
+    report_not_measured "$version" "${verdict#fail } failed on attempt $attempt but did not repeat identically; unconfirmed (log: $log.$attempt)" || true
+    return 3
+  fi
   step=${verdict#fail }
   echo "post-publish smoke: FAIL step=$step rc=$smoke_rc (log: $log.$attempt)" >&2
   if why=$(yank_allowed "$version" "$train_v"); then
@@ -381,19 +513,24 @@ smoke_main() {
 
 ST_FAIL=0
 ST_CALLS=""
+ST_SLEEPS=""
 # st_case name want_rc want_yanks want_andon want_out setup_fn args...
 # ST_CALLS (global, "" = unchecked) is the expected number of container runs.
+# ST_SLEEPS (global, "" = unchecked) is the expected list of host-side sleeps:
+# `sleep` is stubbed to record its argument, so no row really waits.
 st_case() {
   local name=$1 want_rc=$2 want_yanks=$3 want_andon=$4 want_out=$5 setup=$6; shift 6
-  local d rc out yanks andon calls ok=1
+  local d rc out yanks andon calls sleeps ok=1
   d=$(mktemp -d "$SCRATCH_ROOT/pps-selftest.XXXXXX")
-  : >"$d/yanks"; : >"$d/andon"; : >"$d/calls"
+  : >"$d/yanks"; : >"$d/andon"; : >"$d/calls"; : >"$d/sleeps"
   out=$(
     set +e
     ST_DIR="$d"; export ST_DIR
     ANDON_INBOX="$d/andon"
     SCRATCH_ROOT="$d"
-    SMOKE_RETRY_SLEEP=0
+    unset SMOKE_RETRY_SLEEP SMOKE_REPEAT_WAIT
+    sleep() { echo "$1" >>"$d/sleeps"; }
+    previous_version() { echo "${ST_PREV-0.74.9}"; }
     do_yank() { echo "$1" >>"$d/yanks"; return 0; }
     now_epoch() { echo 1000000; }
     detect_container() { echo /stub/docker; }
@@ -405,6 +542,8 @@ st_case() {
   yanks=$(tr '\n' ' ' <"$d/yanks" | sed 's/ $//')
   andon=$(cat "$d/andon")
   calls=$(wc -l <"$d/calls" | tr -d ' ')
+  sleeps=$(tr '\n' ' ' <"$d/sleeps" | sed 's/ $//')
+  if [ -n "$ST_SLEEPS" ] && [ "$sleeps" != "$ST_SLEEPS" ]; then ok=0; fi
   [ "$rc" = "$want_rc" ] || ok=0
   [ "$yanks" = "$want_yanks" ] || ok=0
   if [ -n "$want_andon" ]; then case "$andon" in *"$want_andon"*) : ;; *) ok=0 ;; esac
@@ -412,15 +551,15 @@ st_case() {
   if [ -n "$want_out" ]; then case "$out" in *"$want_out"*) : ;; *) ok=0 ;; esac; fi
   if [ -n "$ST_CALLS" ] && [ "$calls" != "$ST_CALLS" ]; then ok=0; fi
   if [ "$ok" = 1 ]; then
-    printf 'PASS  %-46s rc=%s yanks=[%s] runs=%s\n' "$name" "$rc" "$yanks" "$calls"
+    printf 'PASS  %-50s rc=%s yanks=[%s] runs=%s waits=[%s]\n' "$name" "$rc" "$yanks" "$calls" "$sleeps"
   else
-    printf 'FAIL  %-46s rc=%s (want %s) yanks=[%s] (want [%s]) runs=%s (want %s) andon=[%s]\n' \
-      "$name" "$rc" "$want_rc" "$yanks" "$want_yanks" "$calls" "${ST_CALLS:-any}" "$andon"
+    printf 'FAIL  %-50s rc=%s (want %s) yanks=[%s] (want [%s]) runs=%s (want %s) waits=[%s] (want [%s]) andon=[%s]\n' \
+      "$name" "$rc" "$want_rc" "$yanks" "$want_yanks" "$calls" "${ST_CALLS:-any}" "$sleeps" "${ST_SLEEPS:-any}" "$andon"
     printf '%s\n' "$out" | sed 's/^/      | /'
     ST_FAIL=$((ST_FAIL + 1))
   fi
   safe_rm_rf "$d" "$d" || ST_FAIL=$((ST_FAIL + 1))
-  ST_CALLS=""
+  ST_CALLS=""; ST_SLEEPS=""; ST_PREV=0.74.9
 }
 
 st_unit() { # name want got
@@ -451,8 +590,8 @@ while [ $# -gt 0 ]; do
 done
 shift  # image
 [ "$1" = bash ] && [ "$2" = -c ] || exit 99
-exec env -i PATH="$ST_DIR/bin:/usr/bin:/bin" TMPDIR="$ST_DIR" SMOKE_V="$SMOKE_V" \
-  STUB_CARGO="${STUB_CARGO:-ok}" STUB_APR="${STUB_APR:-ok}" STUB_CURL="${STUB_CURL:-ok}" ST_DIR="$ST_DIR" \
+exec env -i PATH="$ST_DIR/bin:/usr/bin:/bin" TMPDIR="$ST_DIR" SMOKE_V="$SMOKE_V" SMOKE_PREV="${SMOKE_PREV:-}" \
+  STUB_CARGO="${STUB_CARGO:-ok}" STUB_APR="${STUB_APR:-ok}" STUB_CURL="${STUB_CURL:-ok}" STUB_CONTROL="${STUB_CONTROL:-ok}" ST_DIR="$ST_DIR" \
   bash -c "$3"
 RT
   cat >"$ST_DIR/bin/curl" <<'CURL'
@@ -470,14 +609,95 @@ shift
 args=" $* "
 case "$args" in *" aprender "*) : ;; *) echo "stub cargo: wrong crate: $args"; exit 99 ;; esac
 case "$args" in *" --locked "*) : ;; *) echo "stub cargo: --locked missing: $args"; exit 99 ;; esac
-case "$args" in *" --version $SMOKE_V "*) : ;; *) echo "stub cargo: wrong version: $args"; exit 99 ;; esac
-case "${STUB_CARGO:-ok}" in
-  compile) echo "error[E0432]: unresolved import"; echo "error: could not compile \`aprender\` (bin \"apr\") due to 1 previous error"; exit 101 ;;
-  resolve) echo "error: failed to select a version for the requirement \`aprender-core = \"=$SMOKE_V\"\`"; exit 101 ;;
-  network) echo "error: failed to download from \`https://static.crates.io/crates/serde/serde-1.0.crate\`"; echo "Caused by: [6] Could not resolve host: static.crates.io"; exit 101 ;;
-  syslib)  echo "error: failed to run custom build command for \`openssl-sys\`"; echo "Could not find openssl via pkg-config"; echo "error: could not compile \`openssl-sys\`"; exit 101 ;;
-  disk)    echo "error: could not compile \`aprender\`"; echo "No space left on device (os error 28)"; exit 101 ;;
-  boom)    echo "boom"; exit 101 ;;
+# Realistic cargo output: every install failure ends in the wrapper cargo prints.
+wrapper() { # <version>
+  echo "error: failed to compile \`aprender v$1\`, intermediate artifacts can be found at \`/tmp/cargo-installAbC123\`."
+  echo "To reuse those artifacts with a future compilation, set the environment variable \`CARGO_TARGET_DIR\` to that path."
+}
+progress() {
+  echo "    Updating crates.io index"
+  echo "  Downloaded clang-sys v1.8.1"
+  echo "   Compiling pkg-config v0.3.31"
+  echo "   Compiling openssl-probe v0.1.5"
+  echo "   Compiling clang-sys v1.8.1"
+}
+libclang() { # <version>: bindgen's build script in an image with no libclang
+  progress
+  echo "error: failed to run custom build command for \`clang-sys v1.8.1\`"
+  echo ""
+  echo "Caused by:"
+  echo "  process didn't exit successfully: \`/tmp/cargo-installAbC123/release/build/clang-sys-0f3a/build-script-build\` (exit status: 101)"
+  echo "  --- stderr"
+  echo "  thread 'main' panicked at build.rs:56:39:"
+  echo "  Unable to find libclang: \"couldn't find any valid shared libraries matching: ['libclang.so', 'libclang-*.so'], set the \`LIBCLANG_PATH\` environment variable to a path where one of these files can be found (invalid: [])\""
+  echo "warning: build failed, waiting for other jobs to finish..."
+  wrapper "$1"
+}
+case "$args" in
+  *" --version $SMOKE_V "*) : ;;
+  *" --version ${SMOKE_PREV:-NOPREV} "*) # the CONTROL install
+    echo "control" >>"$ST_DIR/control"
+    case "${STUB_CONTROL:-ok}" in
+      fail) libclang "$SMOKE_PREV"; exit 101 ;;
+      *) echo "  Installed package \`aprender v$SMOKE_PREV\`"; exit 0 ;;
+    esac ;;
+  *) echo "stub cargo: wrong version: $args"; exit 99 ;;
+esac
+mode=${STUB_CARGO:-ok}
+if [ "$mode" = flaky ]; then # first install of SMOKE_V fails, later ones pass
+  echo x >>"$ST_DIR/vcount"
+  if [ "$(wc -l <"$ST_DIR/vcount")" -le 1 ]; then mode=libclang; else mode=ok; fi
+fi
+case "$mode" in
+  compile)
+    echo "   Compiling aprender-core v$SMOKE_V"
+    echo "error[E0432]: unresolved import \`crate::format::gone\`"
+    echo "error: could not compile \`aprender-core\` (lib) due to 1 previous error"
+    wrapper "$SMOKE_V"; exit 101 ;;
+  libclang) libclang "$SMOKE_V"; exit 101 ;;
+  depsel) # a dependency whose sparse-index entry lags the root crate
+    echo "    Updating crates.io index"
+    echo "  Downloaded aprender v$SMOKE_V"
+    wrapper "$SMOKE_V"
+    echo ""
+    echo "Caused by:"
+    echo "  failed to select a version for the requirement \`aprender-core = \"=$SMOKE_V\"\`"
+    echo "  candidate versions found which didn't match: 0.74.9, 0.74.8"
+    echo "  location searched: crates.io index"
+    echo "  required by package \`aprender v$SMOKE_V\`"
+    exit 101 ;;
+  curl28)
+    echo "    Updating crates.io index"
+    echo "  Downloading crates ..."
+    wrapper "$SMOKE_V"
+    echo ""
+    echo "Caused by:"
+    echo "  failed to download from \`https://static.crates.io/crates/aprender-core/$SMOKE_V/download\`"
+    echo ""
+    echo "Caused by:"
+    echo "  [28] Timeout was reached (Operation timed out after 30001 milliseconds with 1048576 out of 9437184 bytes received)"
+    exit 101 ;;
+  bsnet) # a build script that downloads, offline: a build-failure line AND a network line
+    echo "   Compiling onnx-sys v0.4.0"
+    echo "error: failed to run custom build command for \`onnx-sys v0.4.0\`"
+    echo "  --- stderr"
+    echo "  Error: Could not resolve host: github.com"
+    wrapper "$SMOKE_V"; exit 101 ;;
+  syslib)
+    echo "   Compiling openssl-sys v0.9.103"
+    echo "error: failed to run custom build command for \`openssl-sys v0.9.103\`"
+    echo "  Could not find openssl via pkg-config"
+    wrapper "$SMOKE_V"; exit 101 ;;
+  disk)
+    echo "error: could not compile \`aprender-core\` (lib)"
+    echo "  No space left on device (os error 28)"
+    wrapper "$SMOKE_V"; exit 101 ;;
+  boom) # the wrapper and an unknown cause: no build-failure line
+    wrapper "$SMOKE_V"
+    echo ""
+    echo "Caused by:"
+    echo "  boom"
+    exit 101 ;;
 esac
 mkdir -p "$CARGO_HOME/bin"
 cat >"$CARGO_HOME/bin/apr" <<APR
@@ -540,21 +760,43 @@ self_test() {
     container_run() { st_cr_calls; if [ "$(wc -l <"$ST_DIR/calls")" -ge 2 ]; then echo SMOKE_PASS >"$3"; return 0; fi; echo "daemon" >"$3"; return 125; }
   }
   # the in-container script text, run by the real container_run through the stub runtime
-  st_fake() { # <STUB_RT> <STUB_CURL> <STUB_CARGO> <STUB_APR>
+  st_fake() { # <STUB_RT> <STUB_CURL> <STUB_CARGO> <STUB_APR> [<STUB_CONTROL>]
     st_make_fakes
     published_epoch() { echo $((1000000 - 3600)); }
     detect_container() { echo "$ST_DIR/rt"; }
-    STUB_RT=$1; STUB_CURL=$2; STUB_CARGO=$3; STUB_APR=$4
-    export STUB_RT STUB_CURL STUB_CARGO STUB_APR
+    STUB_RT=$1; STUB_CURL=$2; STUB_CARGO=$3; STUB_APR=$4; STUB_CONTROL=${5:-ok}
+    export STUB_RT STUB_CURL STUB_CARGO STUB_APR STUB_CONTROL
     container_run() { st_cr_calls; real_container_run "$@"; }
   }
   st_f_ok()      { st_fake none ok ok ok; }
   st_f_compile() { st_fake none ok compile ok; }
-  st_f_resolve() { st_fake none ok resolve ok; }
-  st_f_network() { st_fake none ok network ok; }
+  st_f_compile_ctlfail() { st_fake none ok compile ok fail; }
+  st_f_libclang_ctlfail() { st_fake none ok libclang ok fail; }
+  st_f_libclang_ctlok()   { st_fake none ok libclang ok ok; }
+  st_f_depsel()  { st_fake none ok depsel ok ok; }
+  st_f_curl28()  { st_fake none ok curl28 ok ok; }
+  st_f_bsnet()   { st_fake none ok bsnet ok ok; }
+  st_f_flaky()   { st_fake none ok flaky ok ok; }
   st_f_syslib()  { st_fake none ok syslib ok; }
   st_f_disk()    { st_fake none ok disk ok; }
   st_f_boom()    { st_fake none ok boom ok; }
+  st_f_wait5()   { st_fake none ok libclang ok ok; SMOKE_REPEAT_WAIT=5; export SMOKE_REPEAT_WAIT; }
+  st_f_wait300() { st_fake none ok libclang ok ok; SMOKE_REPEAT_WAIT=300; export SMOKE_REPEAT_WAIT; }
+  # a scripted sequence of container outcomes, one word of ST_SEQ per run:
+  # pass | nm | f:<step>
+  st_seq() {
+    published_epoch() { echo $((1000000 - 3600)); }
+    container_run() {
+      local n tok
+      st_cr_calls; n=$(wc -l <"$ST_DIR/calls" | tr -d ' ')
+      tok=$(printf '%s\n' "$ST_SEQ" | tr ' ' '\n' | sed -n "${n}p")
+      case "$tok" in
+        pass) echo SMOKE_PASS >"$3"; return 0 ;;
+        f:*) echo "SMOKE_FAIL step=${tok#f:} rc=1" >"$3"; return 10 ;;
+        *) echo "SMOKE_NOTMEASURED step=index-probe rc=6" >"$3"; return 11 ;;
+      esac
+    }
+  }
   st_f_curl()    { st_fake none down ok ok; }
   st_f_noidx()   { st_fake none missing ok ok; }
   st_f_ver60()   { st_fake none ok ok ver60; }
@@ -570,7 +812,20 @@ self_test() {
   local A="--version 0.75.0 --train-published 0.75.0"
   local FAILIN="ANDON yank: verb-smoke rc=10; log "
   ST_CALLS=1; st_case "smoke pass"                        0 ""      ""                  "SMOKE_RESULT pass"     st_ok      $A
-  ST_CALLS=1; st_case "classified fail, fresh, train version" 1 "0.75.0" "| aprender#7000 aprender@0.75.0 | ANDON yank: verb-smoke rc=10; log " "SMOKE_RESULT yanked" st_fresh $A
+  ST_CALLS=2; ST_SLEEPS=120; st_case "classified fail twice, fresh, train version" 1 "0.75.0" "| aprender#7000 aprender@0.75.0 | ANDON yank: verb-smoke rc=10; log " "SMOKE_RESULT yanked" st_fresh $A
+  # the repeat: one failure is never enough
+  ST_SEQ="f:verb-smoke pass"
+  ST_CALLS=2; ST_SLEEPS=120; st_case "repeat: fail then pass -> pass, no yank"   0 "" "" "SMOKE_RESULT pass" st_seq $A
+  ST_SEQ="f:verb-smoke nm"
+  ST_CALLS=2; st_case "repeat: fail then not_measured -> nm"     3 "" "not_measured" "SMOKE_RESULT not_measured" st_seq $A
+  ST_SEQ="nm f:verb-smoke f:verb-smoke"
+  ST_CALLS=3; ST_SLEEPS="20 120"; st_case "repeat: nm, fail, same fail -> yank" 1 "0.75.0" "ANDON yank: verb-smoke" "SMOKE_RESULT yanked" st_seq $A
+  ST_SEQ="nm f:verb-smoke f:apr-version"
+  ST_CALLS=3; st_case "repeat: nm, fail, different fail -> nm"   3 "" "not_measured" "did not repeat identically" st_seq $A
+  ST_SEQ="f:apr-version f:verb-smoke f:verb-smoke"
+  ST_CALLS=2; ST_SLEEPS=120; st_case "repeat: fail, then a DIFFERENT fail -> nm" 3 "" "not_measured" "did not repeat identically" st_seq $A
+  ST_SEQ="f:apr-version f:apr-version"
+  ST_CALLS=2; st_case "repeat: apr --version fails twice -> yank" 1 "0.75.0" "ANDON yank: apr-version" "SMOKE_RESULT yanked" st_seq $A
   st_case "fail at 25 h"                1 ""      ""                  "not permitted by rule" st_stale   $A
   st_case "fail at exactly 24 h"        1 ""      ""                  "not permitted by rule" st_edge    $A
   st_case "version mismatch"            1 ""      ""                  "not the version this release run published" st_fresh --version 0.75.0 --train-published 0.74.9
@@ -581,7 +836,7 @@ self_test() {
   st_case "dry-run fail prints WOULD_YANK"  1 ""  ""                  "WOULD_YANK aprender@0.75.0" st_fresh $A --dry-run
   st_case "--published-at without --dry-run"  2 "" ""                 "only with --dry-run"   st_fresh   $A --published-at 2026-11-13T09:00:00Z
   st_case "--published-at with --dry-run"   1 ""  ""                  "WOULD_YANK"            st_fresh   $A --published-at 2026-01-01T00:00:00Z --dry-run
-  st_case "bad version arg"             2 ""      ""                  "usage"                 st_ok      --version "0.75.0; rm -rf /" --train-published 0.75.0
+  st_case "bad version arg"             2 ""      ""                  "usage"                 st_ok      --version '0.75.0;$(id)' --train-published 0.75.0
   st_case "unknown argument"            2 ""      ""                  "unknown argument"      st_ok      --bogus
   local f
   for f in --version --train-published --published-at --container-cmd --timeout-min --not-measured; do
@@ -606,18 +861,28 @@ self_test() {
   st_case "--not-measured reason (index wait timeout)" 3 "" "not_measured" "SMOKE_RESULT not_measured" st_refuse $A --not-measured "index wait timed out"
   # the REAL in-container script, under stub cargo/curl/apr (no container, no network)
   ST_CALLS=1; st_case "in-container: all steps pass"        0 "" ""             "SMOKE_RESULT pass" st_f_ok $A
-  ST_CALLS=1; st_case "in-container: compile error -> yank" 1 "0.75.0" "ANDON yank: cargo-install" "SMOKE_RESULT yanked" st_f_compile $A
-  ST_CALLS=1; st_case "in-container: resolve error -> yank" 1 "0.75.0" "ANDON yank" "step=cargo-install" st_f_resolve $A
-  ST_CALLS=2; st_case "in-container: cargo network error"   3 "" "not_measured" "cargo-install-network" st_f_network $A
+  # cargo-install: realistic logs, every one ending in cargo's `failed to compile` wrapper
+  ST_CALLS=2; ST_SLEEPS=120; st_case "in-container: rustc error, control ok, repeats -> yank" 1 "0.75.0" "ANDON yank: cargo-install" "SMOKE_RESULT yanked" st_f_compile $A
+  ST_CALLS=1; st_case "in-container: rustc error, control FAILS -> nm"  3 "" "not_measured" "reason=control-failed" st_f_compile_ctlfail $A
+  ST_CALLS=1; st_case "in-container: libclang, control FAILS -> nm"     3 "" "not_measured" "reason=control-failed" st_f_libclang_ctlfail $A
+  ST_CALLS=2; ST_SLEEPS=120; st_case "in-container: libclang, control ok, repeats -> yank" 1 "0.75.0" "ANDON yank: cargo-install" "SMOKE_RESULT yanked" st_f_libclang_ctlok $A
+  ST_PREV=""
+  ST_CALLS=1; st_case "in-container: libclang, control undeterminable" 3 "" "not_measured" "reason=control-undeterminable" st_f_libclang_ctlok $A
+  ST_CALLS=2; ST_SLEEPS=120; st_case "in-container: install fails once, then passes" 0 "" "" "SMOKE_RESULT pass" st_f_flaky $A
+  ST_CALLS=2; st_case "in-container: dep 'failed to select a version' (control ok)" 3 "" "not_measured" "cargo-install-resolver" st_f_depsel $A
+  ST_CALLS=2; st_case "in-container: curl [28] Timeout was reached"  3 "" "not_measured" "cargo-install-network" st_f_curl28 $A
+  ST_CALLS=2; st_case "in-container: build script offline (control ok)" 3 "" "not_measured" "cargo-install-network" st_f_bsnet $A
   ST_CALLS=2; st_case "in-container: missing system library" 3 "" "not_measured" "cargo-install-environment" st_f_syslib $A
   ST_CALLS=2; st_case "in-container: disk full"             3 "" "not_measured" "cargo-install-environment" st_f_disk $A
-  ST_CALLS=2; st_case "in-container: unclassified install failure" 3 "" "not_measured" "cargo-install-unclassified" st_f_boom $A
+  ST_CALLS=2; st_case "in-container: only the failed-to-compile wrapper" 3 "" "not_measured" "cargo-install-unclassified" st_f_boom $A
+  ST_CALLS=2; ST_SLEEPS=120; st_case "repeat wait under 120 is raised to 120" 1 "0.75.0" "ANDON yank" "" st_f_wait5 $A
+  ST_CALLS=2; ST_SLEEPS=300; st_case "repeat wait is configurable upward"     1 "0.75.0" "ANDON yank" "" st_f_wait300 $A
   ST_CALLS=2; st_case "in-container: index probe fails"     3 "" "not_measured" "index-probe" st_f_curl $A
   ST_CALLS=2; st_case "in-container: version not in index"  3 "" "not_measured" "version-not-in-index" st_f_noidx $A
-  ST_CALLS=1; st_case "in-container: apr 0.72.60 vs 0.72.6" 1 "0.72.6" "ANDON yank" "apr-version-mismatch" st_f_ver60 --version 0.72.6 --train-published 0.72.6
-  ST_CALLS=1; st_case "in-container: apr --version rc 139" 1 "0.75.0" "ANDON yank" "step=apr-version" st_f_verfail $A
-  ST_CALLS=1; st_case "in-container: verb smoke rc 101"    1 "0.75.0" "ANDON yank" "step=verb-smoke" st_f_expfail $A
-  ST_CALLS=1; st_case "in-container: verb smoke wrong output" 1 "0.75.0" "ANDON yank" "verb-smoke-output" st_f_expwrong $A
+  ST_CALLS=2; st_case "in-container: apr 0.72.60 vs 0.72.6" 1 "0.72.6" "ANDON yank" "apr-version-mismatch" st_f_ver60 --version 0.72.6 --train-published 0.72.6
+  ST_CALLS=2; st_case "in-container: apr --version rc 139" 1 "0.75.0" "ANDON yank" "step=apr-version" st_f_verfail $A
+  ST_CALLS=2; st_case "in-container: verb smoke rc 101"    1 "0.75.0" "ANDON yank" "step=verb-smoke" st_f_expfail $A
+  ST_CALLS=2; st_case "in-container: verb smoke wrong output" 1 "0.75.0" "ANDON yank" "verb-smoke-output" st_f_expwrong $A
   ST_CALLS=2; st_case "runtime: daemon down (stub runtime)" 3 "" "not_measured" "" st_f_daemon $A
   ST_CALLS=2; st_case "runtime: pull failure (stub runtime)" 3 "" "not_measured" "" st_f_pull $A
   ST_CALLS=2; st_case "runtime: hang -> real timeout, no yank" 3 "" "not_measured" "timeout (1s)" st_f_hang $A
@@ -655,6 +920,26 @@ self_test() {
   )
   if [ -n "$ub" ]; then echo "FAIL  published_epoch unit rows: $ub"; ST_FAIL=$((ST_FAIL + 1)); fi
 
+  # previous_version (the CONTROL version) against a canned sparse-index document
+  ST_IDX='{"name":"aprender","vers":"0.74.8","deps":[],"cksum":"a","features":{},"yanked":false}
+{"name":"aprender","vers":"0.74.9","deps":[],"cksum":"b","features":{},"yanked":true}
+{"name":"aprender","vers":"0.74.10-rc.1","deps":[],"cksum":"c","features":{},"yanked":false}
+{"name":"aprender","vers":"0.75.0","deps":[],"cksum":"d","features":{},"yanked":false}
+{"name":"aprender","vers":"0.75.1","deps":[],"cksum":"e","features":{},"yanked":false}'
+  index_doc() { printf '%s\n' "$ST_IDX"; }
+  st_unit "control: skips yanked and prerelease"      0.74.8 "$(previous_version 0.75.0)"
+  st_unit "control: newest below, not the newest"     0.75.0 "$(previous_version 0.75.1)"
+  st_unit "control: none below the first version"     ""     "$(previous_version 0.74.8)"
+  st_unit "control: version absent from the index"    0.75.1 "$(previous_version 0.75.2)"
+  ST_IDX=""
+  st_unit "control: index unreachable -> none"        ""     "$(previous_version 0.75.0)"
+
+  # no delete outside the two guarded removers
+  local nrm
+  nrm=$(grep -cE '(^[[:space:]]*|[;&|(][[:space:]]*)rm +-' "$SELF") || nrm=0
+  if [ "$nrm" = 2 ]; then echo "PASS  only safe_rm_rf and safe_rm_file call rm"
+  else echo "FAIL  $nrm rm calls (want 2: safe_rm_rf, safe_rm_file)"; ST_FAIL=$((ST_FAIL + 1)); fi
+
   # safe_rm_rf refuses everything outside this script's own mktemp roots. The
   # decoy is a directory made by mktemp but NOT under a pps- root: a delete that
   # reaches it is a delete outside the script's own scratch tree.
@@ -676,12 +961,23 @@ self_test() {
   [ "$rrc" = 1 ] && [ -e "$decoy/keep" ] || { rm_ok=0; echo "FAIL  safe_rm_rf: .. in the prefix (rc=$rrc)"; }
   rrc=0; safe_rm_rf "/" "$rr" 2>/dev/null || rrc=$?
   [ "$rrc" = 1 ] || { rm_ok=0; echo "FAIL  safe_rm_rf: / (rc=$rrc)"; }
+  # a pps- root that is a SYMLINK to the decoy: deleting through it deletes the decoy
+  local lnk
+  lnk="$SCRATCH_ROOT/pps-link.$$"
+  ln -s "$decoy" "$lnk"
+  rrc=0; safe_rm_rf "$lnk/keep" "$lnk" 2>/dev/null || rrc=$?
+  [ "$rrc" = 1 ] && [ -e "$decoy/keep" ] || { rm_ok=0; echo "FAIL  safe_rm_rf: prefix is a symlink (rc=$rrc)"; }
+  safe_rm_file "$lnk" "$lnk" || rm_ok=0 # removes the link itself, never its target
+  # a pps- root the current uid does not own (ownership stubbed: tests run as one uid)
+  rrc=0; ( owned_by_me() { return 1; }; safe_rm_rf "$rr/sub" "$rr" ) 2>/dev/null || rrc=$?
+  [ "$rrc" = 1 ] && [ -d "$rr/sub" ] || { rm_ok=0; echo "FAIL  safe_rm_rf: prefix not owned by the current uid (rc=$rrc)"; }
   rrc=0; safe_rm_rf "$rr/sub" "$rr" || rrc=$?
   [ "$rrc" = 0 ] && [ ! -e "$rr/sub" ] && [ -d "$rr" ] || { rm_ok=0; echo "FAIL  safe_rm_rf: a path inside the root is removed (rc=$rrc)"; }
   rrc=0; safe_rm_rf "$rr" "$rr" || rrc=$?
   [ "$rrc" = 0 ] && [ ! -e "$rr" ] || { rm_ok=0; echo "FAIL  safe_rm_rf: the root itself is removed (rc=$rrc)"; }
-  rm -f "$decoy/keep"; rmdir "$decoy" 2>/dev/null || true
-  if [ "$rm_ok" = 1 ]; then echo "PASS  safe_rm_rf refuses paths outside its own mktemp roots (9 rows)"
+  safe_rm_file "$decoy/keep" "$decoy" || rm_ok=0
+  case "$decoy" in "${SCRATCH_ROOT:?}"/decoy-rmtest.?*) rmdir -- "$decoy" 2>/dev/null || true ;; esac
+  if [ "$rm_ok" = 1 ]; then echo "PASS  safe_rm_rf refuses paths outside its own mktemp roots, symlinked and foreign roots (11 rows)"
   else ST_FAIL=$((ST_FAIL + 1)); fi
 
   # structural
@@ -708,6 +1004,12 @@ self_test() {
      && ! grep -qE 'cascade-publish\.sh \) 2>&1 *\| *grep' "$root/scripts/cascade-drain.sh"; then
     echo "PASS  cascade-drain.sh keeps the cascade rc, reads SMOKE_RESULT, and does not count a yanked version"
   else echo "FAIL  cascade-drain.sh loses the cascade rc / ignores the smoke / counts a yanked version"; ST_FAIL=$((ST_FAIL + 1)); fi
+  local nmk
+  nmk=$(grep -c 'mktemp' "$root/scripts/cascade-drain.sh") || nmk=0
+  if [ "$nmk" = 1 ] && grep -qF ': >"$cascade_log"' "$root/scripts/cascade-drain.sh" \
+     && ! grep -qE '(^|[;&|(][[:space:]]*|^[[:space:]]+)rm +-[a-z]*[[:space:]]+[^ ]*cascade_log' "$root/scripts/cascade-drain.sh"; then
+    echo "PASS  cascade-drain.sh makes ONE cascade log and truncates it per pass (no per-pass temp, no rm of it)"
+  else echo "FAIL  cascade-drain.sh: $nmk mktemp calls / no per-pass truncate / an rm of the cascade log"; ST_FAIL=$((ST_FAIL + 1)); fi
   if [ "$ST_FAIL" -eq 0 ]; then echo "self-test: ALL PASS"; return 0; fi
   echo "self-test: $ST_FAIL FAILED" >&2
   return 1
@@ -731,7 +1033,7 @@ mutants() {
     if cmp -s "$target.orig" "$target"; then
       echo "MUTANT $name: NOT APPLIED (pattern drifted)"; bad=$((bad + 1)); return
     fi
-    rm -f "$target.orig"
+    safe_rm_file "$target.orig" "$d" || { bad=$((bad + 1)); return; }
     n=$((n + 1))
     rc=0
     bash "$d/scripts/post_publish_smoke.sh" --self-test >/dev/null 2>&1 || rc=$?
@@ -755,7 +1057,25 @@ mutants() {
   mut "B1-rc0-without-pass-ok"   $P 's/else echo "nm exit 0 without a SMOKE_PASS marker"; fi ;;/else echo "pass"; fi ;;/'
   mut "B1-network-is-release-fail" $P 's/notmeasured cargo-install-network "rc=\$rc"/failed cargo-install "$rc"/'
   mut "B1-unclassified-is-fail"  $P 's/notmeasured cargo-install-unclassified "rc=\$rc"/failed cargo-install "$rc"/'
-  mut "B1-no-retry"              $P 's/for attempt in 1 2; do/for attempt in 1; do/'
+  mut "B1-no-retry"              $P 's/for attempt in 1 2 3; do/for attempt in 1; do/'
+  # round 3: the control, the repeat, and each not_measured pattern class
+  mut "C1-no-control-check"      $P 's/^    \[ "\$crc" -eq 0 \] || notmeasured control-failed.*$/    :/'
+  mut "C1-no-control-version"    $P 's/^    \[ -n "\$SMOKE_PREV" \] || notmeasured control-undeterminable.*$/    :/'
+  mut "C1-control-failure-retried" $P 's/^      "nm control-"\*) break ;;$/      "nm control-"*) : ;;/'
+  mut "C2-no-repeat-loop"        $P 's/^        if \[ "\$verdict" = "\$prev_verdict" \] || .*; then break; fi$/        break/'
+  mut "C2-different-fail-continues" $P 's/ || \[ "\${prev_verdict%% \*}" = fail \]; then break; fi$/; then break; fi/'
+  mut "C2-no-repeat-check"       $P 's/^  if \[ "\$verdict" != "\$prev_verdict" \]; then$/  if false; then/'
+  mut "C2-repeat-wait-zero"      $P 's/^        sleep "\$repeat_wait" ;;$/        sleep 0 ;;/'
+  mut "C2-repeat-wait-no-floor"  $P 's/|| \[ "\$repeat_wait" -lt 120 \]; then repeat_wait=120/; then repeat_wait=120/'
+  mut "C3-drop-network-class"    $P 's/^    notmeasured cargo-install-network "rc=\$rc"$/    :/'
+  mut "C3-drop-resolver-class"   $P 's/^    notmeasured cargo-install-resolver "rc=\$rc"$/    :/'
+  mut "C3-drop-environment-class" $P 's/^    notmeasured cargo-install-environment "rc=\$rc"$/    :/'
+  mut "C3-drop-select-pattern"   $P "s/'failed to select a version|no matching package named|candidate versions found|location searched|/'/"
+  mut "C4-wrapper-is-evidence"   $P 's/could not compile|failed to run custom build command|/could not compile|failed to compile|failed to run custom build command|/'
+  mut "C4-classify-progress-lines" $P 's/^  grep -v -E .^\[\[:space:\]\]\*(Compiling.*"\$ilog" >"\$dlog"$/  cp "$ilog" "$dlog"/'
+  mut "C5-control-keeps-yanked"  $P 's/grep -q .*"yanked":false.* <<<"\$line" || continue/:/'
+  mut "R11-rm-symlink-root"      $P 's/^  if \[ -L "\$pre" \]; then$/  if false; then/'
+  mut "R12-rm-foreign-root"      $P 's/^  if ! owned_by_me "\$pre"; then$/  if false; then/'
   mut "B1-no-timeout"            $P 's/^  timeout "\$TIMEOUT_SECS" "\$rt" run/  "$rt" run/'
   mut "B2-published-at-anywhere" $P 's/if \[ -n "\$PUBLISHED_AT" \] \&\& \[ "\$DRY_RUN" != 1 \]; then/if false; then/'
   mut "B2-published-at-in-lookup" $P 's/if \[ -n "\$PUBLISHED_AT" \] \&\& \[ "\$DRY_RUN" = 1 \]; then/if [ -n "$PUBLISHED_AT" ]; then/'
@@ -768,6 +1088,7 @@ mutants() {
   mut "B4-drain-loses-rc"        cascade-drain.sh 's/^    crc=\${PIPESTATUS\[0\]}$/    crc=0/'
   mut "B4-drain-ignores-smoke"   cascade-drain.sh 's/grep '"'"'^SMOKE_RESULT /grep '"'"'^NOSUCH_RESULT /'
   mut "B4-drain-counts-yanked"   cascade-drain.sh 's/\*\\"yanked\\":true\*) exit 0/*\\"yanked\\":nope*) exit 0/'
+  mut "B5-drain-log-per-pass"    cascade-drain.sh 's/^    : >"\$cascade_log"$/    cascade_log=$(mktemp "${TMPDIR:-\/tmp}\/cascade-drain.XXXXXX")/'
   safe_rm_rf "$d" "$d" || bad=$((bad + 1))
   if [ "$bad" -eq 0 ]; then echo "mutants: all $n killed"; return 0; fi
   echo "mutants: $bad problem(s)" >&2
