@@ -103,7 +103,7 @@ qa_gate:
   - breaks_match
   - point_defaults_match
 # The grammar this row proves, as generate.R builds it: ggplot(df, aes(x, y)) + geom_point(),
-# with ggplot2's defaults for everything else. `apr plot` and `aprender-present plot` draw only
+# with ggplot2's defaults for everything else. `apr plot` draws only
 # what such a block names: crates/aprender-viz/build.rs derives the verb's supported set from
 # every ggplot2_row block (#6991). Flat scalars only, so the block can become the properties
 # of a pv ontology entity of type ggplot2-row once that entity type is declared in Σ; until then

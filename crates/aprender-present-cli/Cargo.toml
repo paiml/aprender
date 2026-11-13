@@ -20,8 +20,10 @@ clap = { version = "4.4", features = ["derive"] }
 notify = { version = "7.0", optional = true }
 tiny_http = "0.12"
 tungstenite = { version = "0.26", optional = true }
-# PLOT-GG-001 (#6909, #6991): the plot verb (spec parsing included) lives in aprender-viz.
-trueno-viz = { workspace = true, features = ["plot-cli"] }
+serde = { workspace = true }
+serde-saphyr = { workspace = true }
+# PLOT-GG-001 (#6909): the plot verb renders through aprender-viz, the one plot engine.
+trueno-viz = { workspace = true }
 
 [build-dependencies]
 provable-contracts = { workspace = true }  # #4369: build_helper::env_key, the one CONTRACT_* key builder

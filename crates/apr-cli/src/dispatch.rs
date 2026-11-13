@@ -109,8 +109,8 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
     }
 }
 
-/// `apr plot` (#6991): the verb `aprender-present plot` runs, from the same library function, so
-/// the two cannot drift apart. The plot goes to stdout (or `--out`); a refusal names what is not
+/// `apr plot` (#6991): the proven-only verb, run from the `plot_cli` library function, so
+/// the grammar cannot drift from the contract. The plot goes to stdout (or `--out`); a refusal names what is not
 /// proven and exits non-zero.
 #[cfg(feature = "visualization")]
 fn plot_result(

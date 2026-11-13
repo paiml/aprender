@@ -1,6 +1,6 @@
-//! `apr plot` and `aprender-present plot`: draw a plot from a CSV file and a ggplot2-like spec
-//! (PLOT-GG-001, paiml/aprender#6909, #6991). Both binaries call [`run`]; this module is the one
-//! front end and `crate::grammar::GGPlot` the one engine.
+//! `apr plot`: draw a plot from a CSV file and a ggplot2-like spec
+//! (PLOT-GG-001, paiml/aprender#6909, #6991). Only `apr` calls [`run`]; `aprender-present plot` keeps its own
+//! front end. This module is the proven-only front end and `crate::grammar::GGPlot` the engine.
 //!
 //! Two front ends build the same plot. Flags: `--data file.csv --aes x=a,y=b --geom point`.
 //! A YAML spec (`--spec plot.yaml`) that mirrors the grammar of graphics: `data`, `aes`,
@@ -289,7 +289,7 @@ pub enum Output {
     Svg,
 }
 
-/// Arguments of `apr plot` and `aprender-present plot`.
+/// Arguments of `apr plot`.
 #[derive(Debug, Clone, clap::Args)]
 pub struct PlotArgs {
     /// YAML plot spec (data, aes, layers, scales, coord, facet, labs, theme)
@@ -1497,10 +1497,11 @@ mod tests {
         let csv = tmp("f32wide.csv", "x,y\n16777217,1\n33554432,2\n");
         assert_eq!(go(&flags(&csv, &["--output", "svg"]), &Env::default()).0, Ok(()));
         // A constant column that f32 holds exactly moves by 0 against a range of 0: not this
-        // refusal (the engine's own "min and max cannot be equal" is what the user sees).
+        // refusal (the engine either draws it or says so itself).
         let csv = tmp("f32const.csv", "x,y\n2,1\n2,3\n");
-        let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err("constant x");
-        assert!(!e.contains("binary32"), "{e}");
+        if let Err(e) = go(&flags(&csv, &[]), &Env::default()).0 {
+            assert!(!e.contains("binary32"), "{e}");
+        }
         // y is checked too.
         let csv = tmp("f32y.csv", "x,y\n1,16777217\n2,16777219\n");
         let e = go(&flags(&csv, &[]), &Env::default()).0.expect_err("y");

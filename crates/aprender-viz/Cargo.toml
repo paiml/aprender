@@ -67,7 +67,7 @@ trueno-db = { workspace = true, optional = true }
 # Optional: Serialization (for ML integration, and the plot verb's YAML spec)
 serde = { version = "1.0", features = ["derive"], optional = true }
 
-# Optional: the plot verb (`plot-cli`), shared by `apr plot` and `aprender-present plot` (#6991).
+# Optional: the plot verb (`plot-cli`), used by `apr plot` (#6991).
 clap = { version = "4.5", features = ["derive"], optional = true }
 serde-saphyr = { workspace = true, optional = true }
 

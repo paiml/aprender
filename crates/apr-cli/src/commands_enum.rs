@@ -1023,7 +1023,7 @@ pub enum Commands {
 
     /// Draw a plot from CSV data and a ggplot2-like spec (terminal or SVG),
     /// limited to the grammar the ggplot2 conformance rows prove.
-    /// The same verb as `aprender-present plot`.
+    /// Proven-only: refuses by name whatever no ggplot2 row proves.
     #[cfg(feature = "visualization")]
     Plot(trueno_viz::plot_cli::PlotArgs),
 }
