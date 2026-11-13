@@ -118,3 +118,34 @@ fn a_project_page_with_script_makes_the_verb_fail() {
     assert!(!cwd.join("dist/index.html").exists());
     let _ = fs::remove_dir_all(&cwd);
 }
+
+/// A refused page must not leave an index.html from an earlier run beside the fresh glue.
+#[test]
+fn a_refused_page_removes_a_stale_index_html() {
+    let cwd = scratch("stale");
+    fs::create_dir_all(cwd.join("www")).expect("www");
+    fs::create_dir_all(cwd.join("dist")).expect("dist");
+    fs::write(cwd.join("dist/index.html"), "<script>old()</script>").expect("stale");
+    fs::write(
+        cwd.join("www/index.html"),
+        "<html><script>x()</script></html>",
+    )
+    .expect("page");
+    let (out, _) = bundle(&cwd, "dist", true);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(!cwd.join("dist/index.html").exists());
+    let _ = fs::remove_dir_all(&cwd);
+}
+
+/// An unreadable (here non-UTF-8) project page is an error with a message, not a silent fallback.
+#[test]
+fn an_unreadable_project_page_makes_the_verb_fail() {
+    let cwd = scratch("nonutf8");
+    fs::create_dir_all(cwd.join("www")).expect("www");
+    fs::write(cwd.join("www/index.html"), [0xff, 0xfe, 0x80]).expect("page");
+    let (out, _) = bundle(&cwd, "dist", true);
+    assert_eq!(out.status.code(), Some(1), "{out:?}");
+    assert!(String::from_utf8_lossy(&out.stderr).contains("cannot read www/index.html"));
+    assert!(!cwd.join("dist/index.html").exists());
+    let _ = fs::remove_dir_all(&cwd);
+}

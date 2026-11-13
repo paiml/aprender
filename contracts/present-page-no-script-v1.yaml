@@ -39,8 +39,8 @@ contract: |
       lower-cased before matching); each tag carries only id, class, role,
       aria-* and data-* plus its own (html lang; meta charset, name, content;
       canvas width, height; img src, alt, width, height; a href); `href` and
-      `src` hold a fragment or a relative path with no `:`, no `&` and no
-      leading `//`; no attribute value holds `<`, `>` or `&`; no comment, CDATA
+      `src` hold a fragment or a relative path with no `:`, no `&`, no
+      leading or trailing whitespace and no leading `//`; no attribute value holds `<`, `>` or `&`; no comment, CDATA
       section or other declaration is allowed (so the `<!-->`, `<!--->` and
       `--!>` closers never have to be read); no raw-text or RCDATA element is
       on the list (script other than the loader tag, style, textarea, xmp,

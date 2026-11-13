@@ -598,7 +598,17 @@ fn bundle(output: PathBuf, no_optimize: bool) {
 
     // The page: the project page if it runs no script of its own, else the generated one.
     // The only script in a bundle is the generated loader (aprender#6893).
-    let project_page = fs::read_to_string("www/index.html").ok();
+    // A refused bundle must not leave an earlier run's unaudited page beside fresh glue.
+    let _ = fs::remove_file(output.join("index.html"));
+    let _ = fs::remove_file(output.join("pkg").join(page::BOOT_FILE));
+    let project_page = match fs::read_to_string("www/index.html") {
+        Ok(html) => Some(html),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            eprintln!("cannot read www/index.html: {e}");
+            std::process::exit(1);
+        }
+    };
     match page::finish_bundle(&output, WASM_OUT_NAME, project_page.as_deref()) {
         Ok(page::PageSource::Project) => println!("Copied www/index.html (no script of its own)"),
         Ok(page::PageSource::Generated) => println!("Generated index.html"),

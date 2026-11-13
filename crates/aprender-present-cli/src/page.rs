@@ -128,11 +128,20 @@ fn is_global_attribute(name: &str) -> bool {
 }
 
 /// A fragment (`#x`) or a relative path: no scheme (no `:`), no `&` (a character reference
-/// could spell one), no backslash, and not protocol-relative.
+/// could spell one), no backslash, not protocol-relative, and no leading or trailing
+/// whitespace (a browser strips it, so `" //evil/"` would be protocol-relative).
 fn is_local_url(value: &str) -> bool {
     !value.is_empty()
         && !value.contains([':', '&', '\\', '<', '>', '"', '\''])
         && !value.starts_with("//")
+        && value
+            .bytes()
+            .next()
+            .is_some_and(|b| !b.is_ascii_whitespace())
+        && value
+            .bytes()
+            .next_back()
+            .is_some_and(|b| !b.is_ascii_whitespace())
         && !value.bytes().any(|b| b.is_ascii_control())
 }
 
@@ -623,8 +632,8 @@ mod tests {
                 "javascript: URL",
             ),
             (
-                "hex entity without a semicolon",
-                with(r#"<a href="&#x6a;avascript:alert(1)">x</a>"#),
+                "hex entity without a semicolon or a colon",
+                with(r#"<a href="&#x6Aavascript">x</a>"#),
                 "javascript: URL",
             ),
             (
@@ -710,6 +719,10 @@ mod tests {
             ("href off its tag", with("<p href=\"x\">x</p>"), "'href'"),
             ("absolute link", with("<a href=\"https://example.com/\">x</a>"), "javascript: URL"),
             ("protocol-relative link", with("<a href=\"//example.com/\">x</a>"), "javascript: URL"),
+            ("link padded with a space before //", with("<a href=\" //evil.example/\">x</a>"), "javascript: URL"),
+            ("image padded with a space before //", with("<img src=\" //evil.example/t.png\">"), "javascript: URL"),
+            ("relative path with a leading space", with("<a href=\" page.html\">x</a>"), "javascript: URL"),
+            ("relative path with a trailing space", with("<a href=\"page.html \">x</a>"), "javascript: URL"),
             ("video is not on the list", with("<video src=\"a.mp4\" controls muted></video>"), "<video>"),
             ("button is not on the list", with("<button>x</button>"), "<button>"),
             ("svg is not on the list", with("<svg></svg>"), "<svg>"),
