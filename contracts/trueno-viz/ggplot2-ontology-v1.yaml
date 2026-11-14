@@ -1,0 +1,177 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# ggplot2-ontology-v1 — the ggplot2 usable core as 49 graded rows: each is proven or RED (PLOT-GG-001, #6909)
+#
+# WHAT IT GOVERNS
+#   provable_contracts::ontology::extract::ggplot2_core — `extract:ggplot2-core`: the 49 rows below become
+#       ont:PlotRow nodes (also typed with their grammar concept), joined to what the tree holds for each row: a
+#       bound row contract (`entity: {type: ggplot2-row, ref: <row>}`), an oracle fixture at the pinned ggplot2
+#       version, a tracked surface snapshot naming the row, and a passing oracle receipt. One `apply` for the corpus
+#       and for the positive control.
+#   provable_contracts::lint::ggplot2_core_gate — inside `pv lint --gate shapes`: the planted positive control
+#       through this file's shape, the negative control, and the wiring check.
+#
+# THE RULE. A row is PROVEN iff all four hold: contract, fixture, surface, receipt. Every row that is not proven
+# carries `plot:notProven "<row>: <what is missing>"`, and the shape says maxCount 0 on it. Nothing is folded:
+# an absent file is a missing item, a file of a foreign schema is refused by name (PV-ONT-012).
+#
+# HONEST STATE AT THIS COMMIT: 0 of 49 proven. 7 rows are bound to a contract and carry a fixture; no row is
+# reachable through a tracked surface snapshot and no row has a receipt, because neither writer exists yet.
+#
+# NOT ARMED. The shape is computed every run and its violations count in `unarmed_violations`; it is not in
+# lint-baseline.json `armed_shapes`. `pv lint --gate shapes --shape ggplot2-core` arms it and exits 1 today.
+# Arming it for the corpus is a separate, signed-off change.
+#
+# NOT EXPRESSIBLE HERE: rendered pixels. The oracle proves ggplot_build() numbers (layout, breaks, labels, scale
+# domains), never how a plot looks.
+#
+# KIND: pattern. Shapes over a graph; the proof is the gate's own case table.
+# ─────────────────────────────────────────────────────────────────────────────
+name: ggplot2-ontology
+version: "1.0.0"
+scope: >
+  The 49 rows of the ggplot2 usable core, the grammar concept each belongs to, its required aesthetics as
+  ggplot2 4.0.3 declares them, and the closed shape that turns a row without its four proofs into a violation.
+  Out of scope: the per-row numbers (each row contract owns them), pixel appearance, the 525-row long tail.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-11-12'
+  last_modified: '2026-11-12'
+  author: PAIML Engineering
+  description: >
+    The ggplot2 usable core as ont:PlotRow nodes: a row is proven iff it has a bound contract, an oracle
+    fixture at ggplot2 4.0.3, a surface snapshot naming it and a passing receipt; otherwise the closed
+    ggplot2-core shape fails on plot:notProven.
+  references:
+    - 'paiml/aprender#6909 (PLOT-GG-001 master), #6988, #6989, #6990'
+    - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+    - 'crates/aprender-contracts/src/ontology/extract/ggplot2_core.rs, lint/ggplot2_core_gate.rs'
+    - 'contracts/ont-capability-cells-v1.yaml (the notRun / maxCount 0 pattern this row copies)'
+
+entity:
+  type: ggplot2-core
+  ref: crates/aprender-viz/fixtures/ggplot2
+  properties:
+    ggplot2: "4.0.3"
+    evidence: evidence/ggplot2
+
+relations:
+  depends_on: [ont-sigma-v1, ont-shapes-v1, ont-capability-cells-v1]
+
+shapes:
+  - id: ggplot2-core
+    targetClass: ont:PlotRow
+    closed: true
+    properties:
+      - {path: plot:row, minCount: 1, maxCount: 1, datatype: xsd:integer}
+      - {path: plot:name, minCount: 1, maxCount: 1}
+      - {path: plot:concept, minCount: 1, maxCount: 1, in: [Geom, Stat, Position, Scale, Coord, Facet, Guide, Theme, Label, OutputTarget]}
+      - {path: plot:ggplot2, minCount: 1, maxCount: 1, in: ["4.0.3"]}
+      - {path: plot:aes}
+      - {path: plot:contract, maxCount: 1}
+      - {path: plot:fixture}
+      - {path: plot:reachableBy, maxCount: 1}
+      - {path: plot:receipt}
+      - {path: plot:notProven, maxCount: 0}
+
+# The usable core, in the order of the plan's table B. `aes` is ggplot2 4.0.3's own `required_aes` of the row's
+# Geom (geom_*) or Stat (stat_*), read from R on the pinned version, "," between entries, "|" for ggplot2's either-or.
+core_rows:
+  - {row: 1, name: geom_point, concept: Geom, aes: "x,y"}
+  - {row: 2, name: geom_line, concept: Geom, aes: "x,y"}
+  - {row: 3, name: geom_path, concept: Geom, aes: "x,y"}
+  - {row: 4, name: geom_step, concept: Geom, aes: "x,y"}
+  - {row: 5, name: geom_hline, concept: Geom, aes: "yintercept"}
+  - {row: 6, name: geom_vline, concept: Geom, aes: "xintercept"}
+  - {row: 7, name: geom_abline, concept: Geom, aes: "slope,intercept"}
+  - {row: 8, name: geom_bar, concept: Geom, aes: "x,y"}
+  - {row: 9, name: geom_col, concept: Geom, aes: "x,y"}
+  - {row: 10, name: geom_histogram, concept: Geom, aes: "x,y"}
+  - {row: 11, name: geom_boxplot, concept: Geom, aes: "x|y,lower|xlower,upper|xupper,middle|xmiddle,ymin|xmin,ymax|xmax"}
+  - {row: 12, name: geom_area, concept: Geom, aes: "x,y"}
+  - {row: 13, name: geom_ribbon, concept: Geom, aes: "x|y,ymin|xmin,ymax|xmax"}
+  - {row: 14, name: geom_tile, concept: Geom, aes: "x,y"}
+  - {row: 15, name: geom_text, concept: Geom, aes: "x,y,label"}
+  - {row: 16, name: geom_smooth, concept: Geom, aes: "x,y"}
+  - {row: 17, name: stat_identity, concept: Stat, aes: ""}
+  - {row: 18, name: stat_count, concept: Stat, aes: "x|y"}
+  - {row: 19, name: stat_bin, concept: Stat, aes: "x|y"}
+  - {row: 20, name: stat_summary, concept: Stat, aes: "x,y"}
+  - {row: 21, name: position_identity, concept: Position, aes: ""}
+  - {row: 22, name: position_stack, concept: Position, aes: ""}
+  - {row: 23, name: position_dodge, concept: Position, aes: ""}
+  - {row: 24, name: position_fill, concept: Position, aes: ""}
+  - {row: 25, name: scale_x_continuous, concept: Scale, aes: ""}
+  - {row: 26, name: scale_y_continuous, concept: Scale, aes: ""}
+  - {row: 27, name: scale_x_discrete, concept: Scale, aes: ""}
+  - {row: 28, name: scale_y_discrete, concept: Scale, aes: ""}
+  - {row: 29, name: scale_x_log10, concept: Scale, aes: ""}
+  - {row: 30, name: scale_y_log10, concept: Scale, aes: ""}
+  - {row: 31, name: scale_x_date, concept: Scale, aes: ""}
+  - {row: 32, name: scale_y_date, concept: Scale, aes: ""}
+  - {row: 33, name: scale_colour_discrete, concept: Scale, aes: ""}
+  - {row: 34, name: scale_colour_continuous, concept: Scale, aes: ""}
+  - {row: 35, name: scale_fill_discrete, concept: Scale, aes: ""}
+  - {row: 36, name: scale_fill_continuous, concept: Scale, aes: ""}
+  - {row: 37, name: scale_size, concept: Scale, aes: ""}
+  - {row: 38, name: scale_shape, concept: Scale, aes: ""}
+  - {row: 39, name: scale_alpha, concept: Scale, aes: ""}
+  - {row: 40, name: coord_cartesian, concept: Coord, aes: ""}
+  - {row: 41, name: coord_flip, concept: Coord, aes: ""}
+  - {row: 42, name: facet_wrap, concept: Facet, aes: ""}
+  - {row: 43, name: facet_grid, concept: Facet, aes: ""}
+  - {row: 44, name: labs, concept: Label, aes: ""}
+  - {row: 45, name: guide_legend, concept: Guide, aes: ""}
+  - {row: 46, name: guide_colourbar, concept: Guide, aes: ""}
+  - {row: 47, name: theme_grey, concept: Theme, aes: ""}
+  - {row: 48, name: theme_minimal, concept: Theme, aes: ""}
+  - {row: 49, name: ggsave, concept: OutputTarget, aes: ""}
+
+equations:
+  proven:
+    formula: "proven(r) ⟺ contract(r) ∧ fixture(r, v) ∧ surface(r) ∧ receipt(r, v),  v = entity.properties.ggplot2"
+    domain: "the 49 core_rows"
+    codomain: "proven or a plot:notProven literal naming each missing item"
+    invariants:
+      - "a missing file is a missing item, never a pass"
+      - "a fixture at another ggplot2 version is not a fixture"
+    preconditions:
+      - "every row's concept is the one its name's prefix gives, else the table is refused by name"
+    postconditions:
+      - "not_proven = core_rows \\ proven, one plot:notProven per member"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: GGO-INV-001
+    property: a row without all four proofs fails the shape
+    formal: '¬proven(r) ⇒ Fail(ggplot2-core)'
+    prose: false
+  - id: GGO-INV-002
+    property: the plant fires through the shape or the gate declines
+    formal: 'pc_shapes(ggplot2-core) ≠ fired ⇒ verdict = Unknown'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-GGO-001
+    rule: the extractor's table, bindings and evidence
+    prediction: "a concept that disagrees with its name, a duplicate row, a row contract naming no core row and a foreign-schema receipt are each refused by name; a row missing any of the four items carries plot:notProven"
+    test: cargo test -p aprender-contracts --lib ontology::extract::ggplot2_core
+    if_fails: a row without its proofs is graded as proven, or a broken table is read
+  - id: FALSIFY-GGO-002
+    rule: the plant fires through the shape
+    prediction: "a bare planted row gives exactly one maxCount violation on plot:notProven; a fully evidenced row gives none; dropping maxCount 0 makes the control not-fired and the gate declines"
+    test: cargo test -p aprender-contracts --lib lint::ggplot2_core_gate
+    if_fails: the shape can be emptied without the gate noticing
+
+qa_gate:
+  id: F-GGO-001
+  name: ggplot2-core
+  description: 'Each of the 49 ggplot2 usable-core rows is proven, or the ggplot2-core shape is RED (PLOT-GG-001)'
+  checks:
+    - table_matches_prefixes
+    - not_proven_never_admitted
+    - plant_fires_through_shape
+  pass_criteria: 'All falsification tests pass; `pv lint contracts/ --gate shapes --shape ggplot2-core` exits 1 naming each not-proven row until all 49 are proven'
+  falsification: 'delete the maxCount 0 on plot:notProven → pc_shapes["ggplot2-core"] not-fired → exit 2'

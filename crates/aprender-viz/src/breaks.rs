@@ -204,8 +204,9 @@ fn scan_starts(c: &Ctx<'_>, best: &mut Best, q: f64, j: f64, k: f64, step: f64) 
 
 /// `10^z` correctly rounded for |z| <= 22 (1e22 is exact, so `1 / 10^n` rounds once), as R's
 /// `powl` is: `libm::pow(10, -5)` is one ulp low, which moved an edge break inside (#6909).
+/// A NaN `z` gives NaN, as `libm::pow` does.
 fn pow10(z: f64) -> f64 {
-    if z.abs() > 22.0 {
+    if z.is_nan() || z.abs() > 22.0 {
         libm::pow(10.0, z)
     } else if z < 0.0 {
         1.0 / pow10(-z)
@@ -358,5 +359,6 @@ mod degenerate_tests {
             assert_eq!(pow10(f64::from(z)), want, "10^{z}");
         }
         assert_eq!(pow10(-300.0), libm::pow(10.0, -300.0));
+        assert!(pow10(f64::NAN).is_nan(), "NaN is not 10^0");
     }
 }
