@@ -1,0 +1,7 @@
+    Updating crates.io index
+  Downloaded aprender v0.75.0
+error: failed to compile `aprender v0.75.0`, intermediate artifacts can be found at `/tmp/cargo-installAbC123`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_BUILD_BUILD_DIR` to that path.
+
+Caused by:
+  boom

@@ -281,7 +281,7 @@ fn test_no_unregistered_commands() {
     );
 }
 
-/// FALSIFY-CLI-005: Command count matches between contract and --help.
+/// FALSIFY-CLI-004: Command count matches between contract and --help.
 #[test]
 fn test_command_count_matches() {
     let help_commands = get_help_commands();
@@ -294,7 +294,7 @@ fn test_command_count_matches() {
 
     assert_eq!(
         help_count, contract_count,
-        "FALSIFY-CLI-005: Command count mismatch.\n\
+        "FALSIFY-CLI-004: Command count mismatch.\n\
          `apr --help` has {} commands, contract has {}.\n\
          Help commands: {:?}",
         help_count, contract_count, help_commands
@@ -486,7 +486,7 @@ fn report_says_gate_is_ok(stdout: &str, gate: &str) -> bool {
     })
 }
 
-/// FALSIFY-CLI-THRESHOLD-NAN-001: a NaN (or negative) tolerance must never turn
+/// FALSIFY-CLI-005: a NaN (or negative) tolerance must never turn
 /// a failing CRUX lint gate into a reported pass.
 ///
 /// Every one of these gates compares an observation against a threshold —
@@ -588,7 +588,7 @@ fn nan_threshold_never_reports_a_failing_lint_gate_as_ok() {
         let control = apr_binary().args(&base).output().expect("run apr");
         assert!(
             !control.status.success(),
-            "FALSIFY-CLI-THRESHOLD-NAN-001 control: `apr {}` must FAIL at the shipped \
+            "FALSIFY-CLI-005 control: `apr {}` must FAIL at the shipped \
              defaults, otherwise the disarm case below proves nothing.\nstdout:\n{}",
             base.join(" "),
             String::from_utf8_lossy(&control.stdout)
@@ -600,13 +600,13 @@ fn nan_threshold_never_reports_a_failing_lint_gate_as_ok() {
         let stdout = String::from_utf8_lossy(&out.stdout);
         assert!(
             !out.status.success(),
-            "FALSIFY-CLI-THRESHOLD-NAN-001: `apr {}` exited 0 — a NaN threshold disarmed \
+            "FALSIFY-CLI-005: `apr {}` exited 0 — a NaN threshold disarmed \
              the {gate} gate on a body that fails at the defaults.\nstdout:\n{stdout}",
             args.join(" ")
         );
         assert!(
             !report_says_gate_is_ok(&stdout, gate),
-            "FALSIFY-CLI-THRESHOLD-NAN-001: the report asserted `{gate} : Ok` for an \
+            "FALSIFY-CLI-005: the report asserted `{gate} : Ok` for an \
              observation it never actually checked.\nstdout:\n{stdout}"
         );
     }

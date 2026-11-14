@@ -1,0 +1,19 @@
+[1m[92m  Installing[0m regdep v0.1.0 (/tmp/tmp.bDyXjapJHq/regdep)
+[1m[92m    Updating[0m crates.io index
+[1m[33mwarning[0m: spurious network error (3 tries remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[33mwarning[0m: spurious network error (2 tries remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[33mwarning[0m: spurious network error (1 try remaining): [6] Could not resolve hostname (Could not resolve host: index.crates.io)
+[1m[91merror[0m: failed to compile `regdep v0.1.0 (/tmp/tmp.bDyXjapJHq/regdep)`, intermediate artifacts can be found at `/tmp/tmp.bDyXjapJHq/regdep/target`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_BUILD_BUILD_DIR` to that path.
+
+Caused by:
+  failed to get `serde` as a dependency of package `regdep v0.1.0 (/tmp/tmp.bDyXjapJHq/regdep)`
+
+Caused by:
+  download of config.json failed
+
+Caused by:
+  failed to download from `https://index.crates.io/config.json`
+
+Caused by:
+  [6] Could not resolve hostname (Could not resolve host: index.crates.io)
