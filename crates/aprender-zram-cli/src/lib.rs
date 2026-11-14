@@ -49,7 +49,7 @@ pub enum Commands {
 
 /// Parse `argv` and run one command. This is the whole of the standalone
 /// binary.
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn run() -> ExitCode {
     let cli = Cli::parse();
     match dispatch(&cli.command, cli.format) {
