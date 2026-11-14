@@ -362,7 +362,7 @@ impl BuiltGGPlot {
     /// was set, or a position column holds text): the renderer draws from its own linear scales and
     /// honours neither a position-scale spec (log10, limits, discrete levels) nor a discrete axis, so
     /// it refuses instead of drawing a plot that disagrees with `layout()`. Use `layout()` for the
-    /// scaled view.
+    /// scaled view. A distribution layer (`Geom::gg_*`) is an [`Error::UnsupportedLayer`].
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
         self.draw_frame(true)
     }
@@ -370,6 +370,9 @@ impl BuiltGGPlot {
     /// The framebuffer; `raster_strokes` draws line, path, step and reference layers into it
     /// (the SVG draws those as vector elements instead).
     fn draw_frame(&self, raster_strokes: bool) -> Result<Framebuffer> {
+        if self.layers.iter().any(dist::is_dist) {
+            return Err(Error::UnsupportedLayer(dist::NOT_DRAWN));
+        }
         if self.uses_position_scales() {
             return Err(Error::Rendering(
                 "scale_x/scale_y and text (discrete) positions are not drawn by the renderer yet; \
@@ -769,8 +772,6 @@ impl BuiltGGPlot {
     /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
     pub fn layout(&self) -> Result<BuiltLayout> {
         if self.layers.iter().any(dist::is_dist) {
-            // The distribution layout trains its scales from the stat output and applies no
-            // position-scale spec, so a scale_x/scale_y spec is refused by name, never dropped.
             if self.x_scale.is_some() || self.y_scale.is_some() {
                 return Err(Error::UnsupportedLayer(
                     "scale_x/scale_y with distribution layers (histogram, freqpoly, density, \

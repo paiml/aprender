@@ -5,7 +5,8 @@
 //! This slice holds the layer types and the input checks `layout()` runs before any stat: the
 //! group ids (ggplot2's `add_group()`), the refusals below, and the column reads. The stats, the
 //! positions and the scales retrained on their output land with their rows; until then
-//! `layout` returns `NOT_BUILT` for input that passes every check.
+//! `layout` returns `NOT_BUILT` for input that passes every check, and the renderers refuse
+//! every distribution layer with `NOT_DRAWN`.
 //!
 //! Out of scope, and refused with a typed error instead of drawn wrongly: facets, a coordinate
 //! system other than plain Cartesian, text `x` (a discrete scale), `y`-only histograms and
@@ -13,9 +14,6 @@
 //! `colour` or `fill` mapping (the palette is not resolved), non-finite input, layers mixed with
 //! non-distribution layers, and a `scale_x`/`scale_y` spec (refused in `GGPlot::layout`, which
 //! owns the scale specs).
-//!
-//! Cost: grouping is a sort plus binary search, so a layer with `g` groups over `n` rows costs
-//! `O(n log n)`, not `O(n * g)`.
 
 use crate::error::{Error, Result};
 
@@ -243,20 +241,15 @@ pub(super) fn check_inputs(kind: DistKind, aes: &Aes, stat: Option<&Stat>) -> Re
 }
 
 fn check_scope(coord: &Coord, facet: &Facet) -> Result<()> {
-    match coord {
-        Coord::Cartesian { xlim: None, ylim: None, flip: false } => {}
-        Coord::Cartesian { flip: true, .. } => {
-            return Err(Error::UnsupportedCoord("coord_flip with distribution layers"))
-        }
-        Coord::Cartesian { .. } => {
-            return Err(Error::UnsupportedCoord("coord_cartesian limits with distribution layers"))
-        }
-        Coord::Polar { .. } => {
-            return Err(Error::UnsupportedCoord("coord_polar with distribution layers"))
-        }
-        Coord::Fixed { .. } => {
-            return Err(Error::UnsupportedCoord("coord_fixed with distribution layers"))
-        }
+    let refused = match coord {
+        Coord::Cartesian { xlim: None, ylim: None, flip: false } => None,
+        Coord::Cartesian { flip: true, .. } => Some("coord_flip with distribution layers"),
+        Coord::Cartesian { .. } => Some("coord_cartesian limits with distribution layers"),
+        Coord::Polar { .. } => Some("coord_polar with distribution layers"),
+        Coord::Fixed { .. } => Some("coord_fixed with distribution layers"),
+    };
+    if let Some(what) = refused {
+        return Err(Error::UnsupportedCoord(what));
     }
     if !matches!(facet, Facet::None) {
         return Err(refuse("facets with distribution layers are not supported"));
@@ -267,6 +260,9 @@ fn check_scope(coord: &Coord, facet: &Facet) -> Result<()> {
 /// What [`layout`] returns for input that passes every check: the stats are not built yet.
 pub(super) const NOT_BUILT: &str =
     "distribution stats (stat_bin, stat_density, stat_boxplot, identity) are not built yet";
+
+/// What `to_framebuffer`/`to_svg` return for a distribution layer, instead of an empty panel.
+pub(super) const NOT_DRAWN: &str = "distribution layers are not drawn by the renderer yet";
 
 /// Check a plot made only of distribution layers, as `ggplot_build()` would before its stats.
 ///
@@ -354,7 +350,7 @@ mod tests {
         for (aes, want) in cases {
             assert_eq!(group_ids(&d, &aes).expect("groups"), want, "{aes:?}");
         }
-        // R builds the fill:colour interaction (5 1 3 2 4); it is refused, not approximated.
+        // R builds the fill:colour interaction (4 1 2 1 3); it is refused, not approximated.
         assert!(group_ids(&d, &Aes::new().fill("h").color("f")).is_err());
         assert!(group_ids(&d, &Aes::new().fill("n")).is_err(), "continuous fill");
     }
@@ -374,10 +370,15 @@ mod tests {
         assert!(ok);
     }
 
+    /// Checked input is `NOT_BUILT`; F19: the renderers refuse it instead of an empty panel.
     #[test]
-    fn checked_input_is_refused_as_not_built() {
+    fn checked_input_is_not_built_and_not_drawn() {
+        let drawn = |r: Result<()>| matches!(r, Err(Error::UnsupportedLayer(m)) if m == NOT_DRAWN);
         for (name, g, a) in all_geoms() {
-            assert!(not_built(&run(plot(small(), a, g))), "{name}");
+            let p = plot(small(), a, g).build().expect("builds");
+            assert!(not_built(&p.layout()), "{name}");
+            assert!(drawn(p.to_framebuffer().map(drop)), "{name} framebuffer");
+            assert!(drawn(p.to_svg().map(drop)), "{name} svg");
         }
     }
 
@@ -452,6 +453,22 @@ mod tests {
         assert!(matches!(r, Err(Error::UnknownColumn(_))));
         let r = run(plot(probe(), Aes::new().x("x").fill("h").color("f"), Geom::gg_histogram()));
         assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("interaction")));
+    }
+
+    /// F18: `ymin`/`ymax`, a layer's own data and a layer's own aesthetics are all checked.
+    #[test]
+    fn bounds_layer_data_and_layer_aes_are_checked() {
+        let inf = DataFrame::from_xy(&[1.0, f32::INFINITY, 3.0], &[1.0, 2.0, 3.0]);
+        let bar = |a: Aes, d: DataFrame| run(plot(d, a, Geom::gg_errorbar()));
+        let r = bar(Aes::new().x("y").ymin("x").ymax("y"), inf.clone());
+        assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("`x` holds an infinite")));
+        let r = bar(Aes::new().x("x").ymin("x").ymax("h"), probe());
+        assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("`h` is text")), "ymax");
+        let own = GGPlot::new().data(probe()).aes(Aes::new().x("x"));
+        let r = run(own.clone().layer(Layer::new(Geom::gg_histogram()).data(inf)));
+        assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("infinite")), "layer data");
+        let r = run(own.layer(Layer::new(Geom::gg_freqpoly()).aes(Aes::new().fill("h"))));
+        assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("`fill`")), "layer aes");
     }
 
     /// F14: a `scale_x`/`scale_y` spec beside a distribution layer is refused by name.
