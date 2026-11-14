@@ -4,14 +4,17 @@
 //! `f32`). Compared with R 4.6.2 / ggplot2 4.0.3: row 1's oracle and the 17 `geom_point_edges`
 //! sets, whose expanded edge lands on a break. Refused by column and line: a nonzero magnitude
 //! below 1e-5 or from 1e16 up, an infinite value, and a value `f32` moves by more than
-//! [`MAX_F32_ERROR_OF_RANGE`] of its column's range.
+//! [`MAX_F32_ERROR_OF_RANGE`] of its column's range. A zero-width column (constant, or a single
+//! row; [`zero_range`]) has no range of its own, so its allowance is taken from the panel the
+//! scale draws it over, [`Expansion::continuous_default`] applied to it (`v +- 0.05`): `0.1` is
+//! drawn, `16777217` alone is still refused.
 
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::grammar::{
-    Aes, Coord, DataFrame, GGPlot, Geom, TerminalPlot, Theme, MAX_TERMINAL_HEIGHT,
-    MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    zero_range, Aes, Coord, DataFrame, Expansion, GGPlot, Geom, TerminalPlot, Theme,
+    MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
 /// Terminal size in cells when no width or height is given.
@@ -24,8 +27,9 @@ pub const MAX_SVG_SIZE: u32 = 4096;
 pub const MIN_MAGNITUDE: f64 = 1e-5;
 /// Magnitudes at or above this are refused.
 pub const MAX_MAGNITUDE: f64 = 1e16;
-/// The most a value may move when stored as `f32`, as a fraction of its column's range: points
-/// are placed from `f32` values, so `16777217,16777219` would be drawn where the data is not.
+/// The most a value may move when stored as `f32`, as a fraction of its column's range (for a
+/// zero-width column, of the panel its scale draws): points are placed from `f32` values, so
+/// `16777217,16777219` would be drawn where the data is not.
 pub const MAX_F32_ERROR_OF_RANGE: f64 = 1e-4;
 
 /// Where the plot goes.
@@ -221,10 +225,18 @@ fn in_drawn_range(v: f64) -> bool {
 }
 
 /// Refuse a column whose `f32` storage moves a value by more than [`MAX_F32_ERROR_OF_RANGE`] of
-/// the column's range. `values` are `(line, text, value)`.
+/// the column's range. A zero-width column ([`zero_range`]) is measured against the panel its
+/// scale draws, [`Expansion::continuous_default`] applied to it, as `PositionScale::continuous`
+/// does; any other column against its own range. `values` are `(line, text, value)`.
 fn check_f32_fidelity(name: &str, values: &[(usize, String, f64)]) -> Result<(), String> {
     let (lo, hi) = domain(&values.iter().map(|v| v.2).collect::<Vec<f64>>());
-    let allowed = MAX_F32_ERROR_OF_RANGE * (hi - lo);
+    let span = if zero_range(lo, hi) {
+        let (a, b) = Expansion::continuous_default().apply((lo, hi));
+        b - a
+    } else {
+        hi - lo
+    };
+    let allowed = MAX_F32_ERROR_OF_RANGE * span;
     let worst = values
         .iter()
         .map(|(line, text, v)| (line, text, *v, (f64::from(*v as f32) - v).abs()))
@@ -234,9 +246,8 @@ fn check_f32_fidelity(name: &str, values: &[(usize, String, f64)]) -> Result<(),
         None => Ok(()),
         Some((line, text, v, err)) => Err(format!(
             "column '{name}' line {line} has '{text}', which the engine stores as {} (binary32), \
-             a change of {err:e} against a column range of {:e} (at most {MAX_F32_ERROR_OF_RANGE:e})",
+             a change of {err:e} against a column span of {span:e} (at most {MAX_F32_ERROR_OF_RANGE:e})",
             f64::from(v as f32),
-            hi - lo
         )),
     }
 }
@@ -408,6 +419,21 @@ mod tests {
         assert!(xy("x,y\n1000.1,1\n1001.1,2\n").is_ok() && xy("x,y\n1,1\n1,2\n").is_ok());
     }
 
+    /// A zero-width column is measured against the panel its scale draws (`v +- 0.05`, span 0.1),
+    /// not a range of 0: decimals f32 rounds are drawn, a value f32 cannot hold is still refused.
+    #[test]
+    fn zero_width_columns_use_the_drawn_span() {
+        assert!(xy("x,y\n0.1,1\n0.1,2\n0.1,3\n").is_ok(), "constant 0.1");
+        assert!(xy("x,y\n0.2,1e-5\n").is_ok(), "single row of decimals");
+        let (lo, hi) = Expansion::continuous_default().apply((0.1, 0.1));
+        assert!((hi - lo - 0.1).abs() < 1e-12, "the drawn span is 0.1");
+        refusal(
+            "x,y\n1,16777217\n2,16777217\n",
+            "column 'y' line 3 has '16777217', which the engine stores as 16777216",
+        );
+        refusal("x,y\n16777217,1\n", "column 'x' line 2 has '16777217'");
+    }
+
     /// N9: ggplot2's warning, singular for one row.
     #[test]
     fn missing_rows_warn_as_ggplot2_does() {
@@ -469,7 +495,16 @@ mod tests {
 
     #[test]
     fn env_is_read_from_the_process() {
-        std::env::set_var("NO_COLOR", "1"); // nothing else in this crate reads it
-        assert!(Env::from_process().no_color);
+        // Nothing else in this crate reads it; the prior value is restored before asserting.
+        let prior = std::env::var_os("NO_COLOR");
+        std::env::set_var("NO_COLOR", "1");
+        let set = Env::from_process().no_color;
+        std::env::set_var("NO_COLOR", "");
+        let empty = Env::from_process().no_color;
+        match prior {
+            Some(v) => std::env::set_var("NO_COLOR", v),
+            None => std::env::remove_var("NO_COLOR"),
+        }
+        assert!(set && !empty);
     }
 }
