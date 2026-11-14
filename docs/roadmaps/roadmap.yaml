@@ -27877,3 +27877,57 @@ Not done, pending the ruling: moving the 31 fixture files to an obviously synthe
   - kind:code
   notes: null
   epic: 6728
+- id: PMAT-7011
+  github_issue: 7011
+  item_type: task
+  title: 'binary-release: build and package pv-readme in the pv archive'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T12:51:09Z
+  updated: 2026-11-13T12:51:09Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7010
+- id: PMAT-7012
+  github_issue: 7012
+  item_type: task
+  title: 'assets-rehearsal-nightly: mirror the pv-readme build and package'
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T12:51:12Z
+  updated: 2026-11-13T12:51:12Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7010
+- id: PMAT-7013
+  github_issue: 7013
+  item_type: task
+  title: pv asset check covers pv-readme
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T12:51:15Z
+  updated: 2026-11-13T12:51:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7010
