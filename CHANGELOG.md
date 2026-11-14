@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
 
-Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 29 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines, the f64 plot core and the bar stat and position cores), the presentar frame clock and video element, and release-path fixes.
+Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 31 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines, the f64 plot core and the bar stat and position cores), the presentar frame clock and video element, and release-path fixes.
 
 ### Added
 
@@ -26,6 +26,7 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - feat(viz): apr plot f64 core (AP1, re-cut of #6992) (#7018)
 - feat(viz): apr plot draws from the proven-row table (AP2, re-cut of #6992) (#7020)
 - feat(viz): distribution layer core and input checks (PLOT-GG-001 recut D1) (#7044)
+- feat(apr): apr plot verb over the proven ggplot2 rows (re-cut AP3 of #6992) (#7042)
 
 ### Fixed
 
@@ -41,6 +42,7 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - fix(release): pv archive ships pv-readme (PMAT-7011/7012/7013) (#7022)
 - fix(roadmap): refold roadmap.yaml after the PMAT-7011..7013 entries (PMAT-7029) (#7050)
 - fix(viz): stat_count drops x values with no level; empty bar layer spans -0.05..1.05 (#7049)
+- fix(viz): F18 layer data/aes pins, F19 renderers refuse dist layers (#7044 review) (#7053)
 
 ### Changed
 
