@@ -1020,6 +1020,12 @@ pub enum Commands {
     /// in-apr route to the same commands)
     #[command(subcommand)]
     Pv(aprender_contracts_cli::cli::Commands),
+
+    /// Draw a plot from CSV data (terminal or SVG),
+    /// limited to the grammar the ggplot2 conformance rows prove.
+    /// Proven-only: refuses by name whatever no ggplot2 row proves.
+    #[cfg(feature = "visualization")]
+    Plot(trueno_viz::plot_cli::cli::PlotFlags),
 }
 
 /// Subcommands for `apr debug` (aprender#2377 finding 3).

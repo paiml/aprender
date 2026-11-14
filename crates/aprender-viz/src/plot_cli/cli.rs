@@ -1,0 +1,243 @@
+//! The command line of `apr plot` (feature `plot-cli`): `--data file.csv --aes x=a,y=b`, read
+//! into [`PlotArgs`] and drawn by [`super::run`]. Each argument carries its role type, which
+//! `apr surface` reads. Only what [`super::run`] draws is accepted: the `point` geom with `x` and
+//! `y` mapped; any other geom or aesthetic is refused by name with the supported values.
+
+use std::collections::BTreeMap;
+use std::io::Write;
+
+use batuta_common::cli_roles::{FreeText, InputFile};
+
+use super::{Env, Output, PlotArgs};
+
+/// The geoms [`super::run`] draws.
+const GEOMS: &[&str] = &["point"];
+/// The aesthetics [`super::run`] maps.
+const AESTHETICS: &[&str] = &["x", "y"];
+
+/// Arguments of `apr plot`.
+#[derive(Debug, Clone, clap::Args)]
+pub struct PlotFlags {
+    /// CSV file with a header row (`#` lines are skipped). Values are zero or have a magnitude
+    /// from 1e-5 up to but excluding 1e16, the span whose axis labels were compared with ggplot2
+    #[arg(long)]
+    pub data: InputFile,
+
+    /// Aesthetic mappings, e.g. x=height,y=weight
+    #[arg(long)]
+    pub aes: FreeText,
+
+    /// Geom of the single layer, one of the proven geoms [default: point]
+    #[arg(long)]
+    pub geom: Option<FreeText>,
+
+    /// Width: cells for term, pixels for svg
+    #[arg(long)]
+    pub width: Option<u32>,
+
+    /// Height: lines for term, pixels for svg
+    #[arg(long)]
+    pub height: Option<u32>,
+
+    /// Render target
+    #[arg(long, value_enum, default_value_t = Output::Term)]
+    pub output: Output,
+
+    /// Never emit colour escape sequences
+    #[arg(long)]
+    pub no_color: bool,
+}
+
+/// Parse `x=col,y=col` into a mapping.
+///
+/// # Errors
+///
+/// A pair without `=`, an empty side, or the same aesthetic twice.
+pub fn parse_aes(s: &str) -> Result<BTreeMap<String, String>, String> {
+    let mut out = BTreeMap::new();
+    for pair in s.split(',').map(str::trim).filter(|p| !p.is_empty()) {
+        let (k, v) = pair
+            .split_once('=')
+            .map(|(k, v)| (k.trim(), v.trim()))
+            .filter(|(k, v)| !k.is_empty() && !v.is_empty())
+            .ok_or_else(|| format!("--aes: expected aesthetic=column, got '{pair}'"))?;
+        if out.insert(k.to_string(), v.to_string()).is_some() {
+            return Err(format!("--aes: aesthetic '{k}' is mapped twice"));
+        }
+    }
+    Ok(out)
+}
+
+fn refuse(what: &str, got: &str, supported: &[&str]) -> String {
+    format!("unsupported {what} '{got}'; supported: {}", supported.join(", "))
+}
+
+impl PlotFlags {
+    /// The library arguments these flags ask for.
+    ///
+    /// # Errors
+    ///
+    /// A geom other than `point`, a malformed `--aes`, an aesthetic other than `x` and `y`, or
+    /// no mapping for `x` or `y`.
+    pub fn plot_args(&self) -> Result<PlotArgs, String> {
+        let geom = self.geom.as_deref().unwrap_or("point");
+        if !GEOMS.contains(&geom) {
+            return Err(refuse("geom", geom, GEOMS));
+        }
+        let mut aes = parse_aes(&self.aes)?;
+        if let Some(other) = aes.keys().find(|a| !AESTHETICS.contains(&a.as_str())) {
+            return Err(refuse("aesthetic", other, AESTHETICS));
+        }
+        let mut mapped = |a: &str| {
+            aes.remove(a).ok_or_else(|| format!("aes needs a mapping for '{a}' (e.g. {a}=column)"))
+        };
+        let (x, y) = (mapped("x")?, mapped("y")?);
+        Ok(PlotArgs {
+            data: self.data.clone().into_path_buf(),
+            x,
+            y,
+            width: self.width,
+            height: self.height,
+            output: self.output,
+            no_color: self.no_color,
+        })
+    }
+}
+
+/// Run `apr plot`: read the flags, then draw with [`super::run`].
+///
+/// # Errors
+///
+/// A refusal of [`PlotFlags::plot_args`], or of [`super::run`].
+pub fn run(
+    flags: &PlotFlags,
+    env: &Env,
+    stdout: &mut dyn Write,
+    stderr: &mut dyn Write,
+) -> Result<(), String> {
+    super::run(&flags.plot_args()?, env, stdout, stderr)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+    use std::path::PathBuf;
+
+    #[derive(Parser)]
+    struct Cli {
+        #[command(flatten)]
+        plot: PlotFlags,
+    }
+
+    fn parse(argv: &[&str]) -> Result<PlotFlags, clap::Error> {
+        Cli::try_parse_from(std::iter::once("plot").chain(argv.iter().copied())).map(|c| c.plot)
+    }
+
+    fn flags(aes: &str, extra: &[&str]) -> PlotFlags {
+        let mut v = vec!["--data", "d.csv", "--aes", aes];
+        v.extend_from_slice(extra);
+        parse(&v).expect("parses")
+    }
+
+    #[test]
+    fn args_parse_with_defaults() {
+        let a = parse(&["--data", "d.csv", "--aes", "x=a,y=b"]).expect("parses");
+        assert_eq!(a.output, Output::Term);
+        assert!(a.geom.is_none() && !a.no_color && a.width.is_none() && a.height.is_none());
+        let extra: Vec<&str> = "--geom point --width 60 --height 20 --output svg --no-color"
+            .split_whitespace()
+            .collect();
+        let a = flags("x=a,y=b", &extra);
+        assert_eq!((a.width, a.height, a.output), (Some(60), Some(20), Output::Svg));
+        assert!(a.no_color && a.geom.as_deref() == Some("point"));
+    }
+
+    #[test]
+    fn args_reject_missing_and_unknown() {
+        assert!(parse(&[]).is_err(), "needs --data and --aes");
+        assert!(parse(&["--data", "d.csv"]).is_err(), "needs --aes");
+        assert!(parse(&["--aes", "x=a,y=b"]).is_err(), "needs --data");
+        assert!(parse(&["--data", "d", "--aes", "x=a,y=b", "--output", "png"]).is_err());
+        assert!(parse(&["--data", "d", "--aes", "x=a,y=b", "--spec", "p.yaml"]).is_err());
+    }
+
+    #[test]
+    fn aes_parses_and_rejects_malformed() {
+        let m = parse_aes(" x = a , y=b ,").expect("parses");
+        assert_eq!(m.get("x").map(String::as_str), Some("a"));
+        assert_eq!(m.get("y").map(String::as_str), Some("b"));
+        assert_eq!(m.len(), 2);
+        let e = parse_aes("x").expect_err("no =");
+        assert_eq!(e, "--aes: expected aesthetic=column, got 'x'");
+        assert!(parse_aes("x=").is_err());
+        assert!(parse_aes("=a").is_err());
+        assert_eq!(
+            parse_aes("x=a,x=b").expect_err("twice"),
+            "--aes: aesthetic 'x' is mapped twice"
+        );
+    }
+
+    #[test]
+    fn flags_map_onto_the_library_arguments() {
+        let a = flags(" y = w , x = h ", &["--width", "60", "--height", "20", "--no-color"]);
+        let want = PlotArgs {
+            data: PathBuf::from("d.csv"),
+            x: "h".into(),
+            y: "w".into(),
+            width: Some(60),
+            height: Some(20),
+            output: Output::Term,
+            no_color: true,
+        };
+        assert_eq!(a.plot_args(), Ok(want));
+        let svg = flags("x=a,y=b", &["--output", "svg", "--geom", "point"]).plot_args();
+        assert_eq!(svg.map(|p| (p.output, p.no_color)), Ok((Output::Svg, false)));
+    }
+
+    #[test]
+    fn only_the_drawn_geom_and_aesthetics_are_accepted() {
+        let refused =
+            |aes: &str, extra: &[&str]| flags(aes, extra).plot_args().expect_err("refused");
+        assert_eq!(
+            refused("x=a,y=b", &["--geom", "line"]),
+            "unsupported geom 'line'; supported: point"
+        );
+        assert_eq!(
+            refused("x=a,y=b,colour=c", &[]),
+            "unsupported aesthetic 'colour'; supported: x, y"
+        );
+        assert_eq!(refused("y=b", &[]), "aes needs a mapping for 'x' (e.g. x=column)");
+        assert_eq!(refused("x=a", &[]), "aes needs a mapping for 'y' (e.g. y=column)");
+        assert!(refused("x", &[]).contains("expected aesthetic=column"));
+    }
+
+    #[test]
+    fn run_draws_through_the_library_and_refuses_before_reading() {
+        let dir = std::env::temp_dir().join(format!("plot-cli-flags-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        let csv = dir.join("row1.csv");
+        std::fs::write(&csv, "x,y\n1.5,-2.25\n2.25,0.5\n3,1.75\n4.75,3\n6.5,2.5\n")
+            .expect("write csv");
+        let path = csv.to_str().expect("utf8");
+        let go = |argv: &[&str]| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let f = parse(argv).expect("parses");
+            let r = run(&f, &Env::default(), &mut out, &mut err);
+            (r, String::from_utf8_lossy(&out).into_owned())
+        };
+        let (r, svg) = go(&["--data", path, "--aes", "x=x,y=y", "--output", "svg"]);
+        assert_eq!(r, Ok(()));
+        assert!(svg.starts_with("<svg"), "{svg:.200}");
+        let (r, term) =
+            go(&["--data", path, "--aes", "x=x,y=y", "--width", "40", "--height", "12"]);
+        assert_eq!(r, Ok(()));
+        assert_eq!(term.lines().count(), 12, "{term}");
+        let (r, out) = go(&["--data", path, "--aes", "x=x,y=y", "--geom", "line"]);
+        assert_eq!(r, Err("unsupported geom 'line'; supported: point".into()));
+        assert!(out.is_empty());
+        let (r, _) = go(&["--data", path, "--aes", "x=x,y=z"]);
+        assert!(r.expect_err("unknown column").contains("unknown column 'z'"));
+        std::fs::remove_dir_all(&dir).expect("rm tmp dir");
+    }
+}

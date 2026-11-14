@@ -67,6 +67,9 @@ trueno-db = { workspace = true, optional = true }
 # Optional: Serialization (for ML integration)
 serde = { version = "1.0", features = ["derive"], optional = true }
 
+# Optional: the plot verb (`plot-cli`), used by `apr plot` (#6991).
+clap = { version = "4.5", features = ["derive"], optional = true }
+
 # NOTE: realizar (=aprender-serve) + repartir (=aprender-distribute) removed (APR-MONO
 # self-containment): both were unused in viz src, and serve→viz is the correct direction
 # (the inference server plots via viz), so viz→serve closed a viz↔serve cycle.
@@ -137,6 +140,10 @@ db = ["dep:trueno-db"]
 
 # Terminal output support
 terminal = []
+
+# The plot verb: CSV to terminal or SVG, limited to the proven rows (#6991).
+# cli-roles: each argument carries its role type, which `apr surface` reads (#3745).
+plot-cli = ["dep:clap", "batuta-common/cli-roles"]
 
 # SVG output support
 svg = []
