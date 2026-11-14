@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
 
-Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 12 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines), the presentar frame clock and video element, and release-path fixes.
+Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 18 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines), the presentar frame clock and video element, and release-path fixes.
 
 ### Added
 
@@ -28,11 +28,17 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - fix(release): tag-andon exempts superseded v0.72.4 (PMAT-5306) (#6995)
 - fix(contracts): regenerate contracts.nt, ONT-5 witness and README count after #6999 (#7008)
 - fix(release): post-publish smoke runs in a clean container; yank step for a fresh broken release (#7000) (#7005)
+- fix(ci): one host target dir per guard-cargo shard (WRONG-TREE pv race) (#7027)
+- fix(ci): guard-cargo m16 SEC010 + m5 cold host rebuild after per-shard target dirs (#7034) (#7035)
+- fix(ci): register schema::work_tickets in tree_reader_tests (red main after #7037) (#7038)
 
 ### Changed
 
 - docs(roadmap): true up milestones; next release is 0.74.0 plot release (PMAT-5306) (#6997)
 - docs(roadmap): record the release train table ruled 2026-11-13 (PMAT-5306) (#7016)
+- chore(contracts): burn down no-test debt 433 -> 390 (#7032) (#7033)
+- chore(contracts): move 263 pmat work-ticket stubs out of contracts/ (#7037)
+- chore(contracts): bind 10 no-test contracts to CI-run falsification tests (debt 390 -> 380) (#7036)
 
 ## [0.72.6] - 2026-11-12
 
