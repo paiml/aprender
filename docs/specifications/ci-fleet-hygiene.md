@@ -275,40 +275,58 @@ push to `main` (the backstop).
   schedule/dispatch-only `gate` job.
 - **Consequences outside this repo** (rollout, not done by this change): the train must judge member candidacy on `pr-light`
   and keep one train in flight; stale-PR and arming rules must key on `pr-light` for member PRs; fork PRs cannot land.
-- **Train body shape (fix round 1, B4).** The PR-body lints of `guard-tree` (`check_pr_ont_delta.sh`, `check_pr_closes_issue.sh`) now
-  see a train body. The train aggregates its members' lines, copied verbatim:
-  `train-members: #7006 #7007` (one line, >= 1 PR number), then per member its own `ont-delta: <kind> <id>` line and its own
-  `Closes #N` / `keep-open: <reason>` lines. The ont-delta lint enters train mode only for head ref `train/aprender-*` AND author
-  `paiml-fleet[bot]` (`--head-ref`/`--author`, set from the event in `ci/sections.yml`); it then needs >= one ont-delta line per
-  named member and EVERY ont-delta line valid. The closes lint is unchanged: member PRs are PR refs, copied `Closes`/`keep-open`
-  lines are judged as in any body. A `train-members:` line in a non-train body buys nothing.
+- **Train body shape (fix round 1, B4; fix round 4).** The PR-body lints of `guard-tree` (`check_pr_ont_delta.sh`, `check_pr_closes_issue.sh`) now
+  see a train body. The train aggregates its members' lines, copied verbatim (infra `merge-train.sh` `member_lines`):
+  `train-members: #7006 #7007` (one line, >= 1 PR number), then per member a `member #N` header line followed by its own
+  `ont-delta: <kind> <id>` and `Closes #N` / `keep-open: <reason>` lines. The ont-delta lint enters train mode only for head ref
+  `train/aprender-*` AND author `paiml-fleet[bot]` (`--head-ref`/`--author`, set from the event in `ci/sections.yml`). It then
+  judges EACH named member exactly as that member would be judged alone: `ci/sections.yml` fetches member N's own changed files
+  (`pulls/N/files`, one REST read per member; a failed read fails the step) into `--member-files DIR`, and a member whose own
+  files are a sweep needs a valid first `ont-delta:` line inside its own `member #N` block. A code-only member owes no line.
+  A member with no file list is a failure, never "not a sweep". Round 1 required one ont-delta line per member, which made every
+  train mixing a sweep member and a code-only member red although each member alone was green (measured on the infra train body
+  shape with #7006, a sweep, plus a code-only member: round 1 printed `names 2 member(s) but carries 1 ont-delta line(s)`
+  and failed; round 4 passes, and still fails when #7006's own line is `ont-delta: none` with no reason). The closes lint is unchanged: member PRs are PR refs, copied `Closes`/`keep-open`
+  lines are judged as in any body. A `train-members:` line in a non-train body buys nothing (and fetches nothing).
 - **One App login.** `BOT` in `scripts/check_ci_train_only.sh` is the single source; the guard asserts all 6 `user.login ==` uses
-  in `ci.yml` and the `TRAIN_BOT` pin in `check_pr_ont_delta.sh` equal it. The value `paiml-fleet[bot]` is inferred from the App
-  that merges train PRs (`merged_by` app/paiml-fleet on #6855); it is UNCONFIRMED against a live train PR's `user.login`.
-- **Rollout order (fix round 3, finding 2). infra first.** infra's `merge-train.sh` must open train PRs with the App token
-  (author `paiml-fleet[bot]`) BEFORE this change merges. The last train before this change was opened by a personal login:
+  in `ci.yml` and the `TRAIN_BOT` pin in `check_pr_ont_delta.sh` equal it. The value `paiml-fleet[bot]` is the REST login of the
+  App that merges train PRs (`merged_by.login` on #6855 reads `paiml-fleet[bot]`, type `Bot`); it is still UNCONFIRMED against
+  the `user.login` of a train PR the App itself opened, because none exists yet.
+- **Rollout order (fix round 3, finding 2; non-author review of 1b4c25fcd, blocker 1). infra first, then a planted train.**
+  infra's `merge-train.sh` opens train PRs with the App token and writes the `train-members:` body: infra#4369 (`b993c94cb`,
+  merged 2026-11-13 16:09Z). Every train PR before it was opened by a personal login (#6843..#6864, the last on 2026-11-10);
   under this change such a train has `TRAIN=0`, all three verdicts refuse it, and with every ordinary PR refused too `main`
-  freezes. That is fail-closed (nothing lands untested), but it is an outage; merge this change only after one train PR
-  opened by the App token has been read back (`gh pr view <n> --json author` shows `app/paiml-fleet`).
+  freezes (fail-closed, but an outage). This change merges only after one train PR opened by the App token has been read back:
+  `gh api repos/paiml/aprender/pulls/<n> --jq .user.login` prints `paiml-fleet[bot]` and its body carries `train-members:`.
+  That train runs today's `main` workflow, so it proves the author and the body without risk; it is the infra cop's to start.
 - **Cut-over (stale greens): every open PR needs a NEW head commit. A re-run is NOT enough.** Branch protection reads the
   check runs on the PR's head sha. An open PR whose rollup went green under the old workflow keeps those greens on its
   current head sha, so it stays mergeable alone until that sha changes. Re-running its checks does not help: a re-run
   re-executes the original run, with the original `GITHUB_SHA` (the old `refs/pull/N/merge` commit) and therefore the OLD
   `ci.yml`, so it can post a fresh green on the same head. The cop's cut-over step, at the merge of this change and before
-  ANY other merge (arm nothing meanwhile):
-  1. for every open PR: `gh pr update-branch <n>` (a merge of `main` into the branch; never a force-push). The new head
-     commit gets new `pull_request` runs from the new merge ref, whose `ci.yml` is the train-only one. A PR whose update
-     conflicts gets no run and no green; it stays unmergeable until its owner merges `main` (STALE PR RULE).
-  2. read back, per open PR: (a) `git merge-base --is-ancestor <cut-over commit> <head sha>` exits 0, i.e. the head is a
-     descendant of the cut-over commit; (b) the required checks on that head sha (`ci / gate`, `gate`, `workspace-test`)
-     belong to `CI` runs with `head_sha` == the new head, created after the cut-over merge, whose run commit's `ci.yml`
-     carries the refusal text `not mergeable alone: lands only via train/aprender-*` (for a non-train PR the three are RED
-     with exactly that message). A PR failing (a) or (b) is not mergeable evidence; repeat step 1 for it.
-  3. any run of the old workflow still in flight on an old head can post a green on that OLD sha; step 1 moves the head, so
-     that green no longer counts. Read back after the last old run has finished.
-  No structural guard is added for this: a `pull_request` run always evaluates the merge ref, which already contains the
-  new `main`, so a "merge-base predates the cut-over" check inside the new workflow could never fire on a NEW run and
-  cannot fire on an old re-run (which runs the old file). The step is the cop's, and the read-back above is its receipt.
-- **Emergency path.** A revert is a change like any other and lands through a train (label `expedite` makes a train of one, still the
-  full heavy tier). There is no hand-made `train/aprender-*` branch: the author conjunct admits only the App. Restricting creation
-  of `refs/heads/train/aprender-*` to the App by ruleset is advised and is an infra/GitHub setting, not part of this change.
+  ANY other merge (arm nothing meanwhile), is one tool with a case table, `scripts/ci_train_cutover.sh` (`--self-test`):
+  1. `scripts/ci_train_cutover.sh --cutover <merge sha of this change> --apply`: for every open PR (drafts too: `gh pr ready`
+     would expose a draft's old greens) whose head does not contain the cut-over commit (REST compare status not `ahead` or
+     `identical`; an unreadable compare counts as stale), `gh pr update-branch <n>` (a merge of `main` into the branch; never
+     a force-push). The new head gets new `pull_request` runs from a merge ref whose `ci.yml` is the train-only one. A PR whose
+     update conflicts gets no run and no green; it stays unmergeable until its owner merges `main` (STALE PR RULE). `--apply`
+     always exits 1, because the heads have moved.
+  2. read back, after the last old-workflow run has finished: the same command without `--apply` exits 0. That is the
+     receipt: every open head descends from the cut-over commit, and no non-`train/aprender-*` head carries a `success` on
+     `ci / gate`, `gate` or `workspace-test` (on a descending head the train-only `ci.yml` refuses them, so a green there means
+     the PR edits `ci.yml`: the rollback path below, which needs a human eye). Exit 2 = not measured (rate limit under 1000,
+     or the PR list unreadable); decide nothing on it.
+  Measured read-only on 2026-11-14 against today's open PRs with an older `main` commit as the cut-over: 5 descend with no
+  required green, and #7040 carries greens on all three names from the old workflow, which is exactly the stale green this
+  step exists for.
+  No structural guard is added inside the workflow: a `pull_request` run always evaluates the merge ref, which already contains
+  the new `main`, so a "merge-base predates the cut-over" check inside the new workflow could never fire on a NEW run and
+  cannot fire on an old re-run (which runs the old file).
+- **Emergency path and rollback without a train.** A revert normally lands through a train (label `expedite` makes a train of
+  one, still the full heavy tier). If the train itself is down, a plain revert PR of this change's workflow hunks lands WITHOUT
+  a train: a `pull_request` run reads `ci.yml` from the PR's own merge ref, which is the reverted file, so the three verdicts
+  follow the old rule (`pr-light`) and the PR is mergeable alone. The same mechanism means any PR that edits `ci.yml` is
+  judged by its own edit; that was true before this change, and the control on it is review (workflow edits are a check-in,
+  `CLAUDE.md`), not this workflow. Not measured live. There is no hand-made `train/aprender-*` branch: the author conjunct
+  admits only the App. Restricting creation of `refs/heads/train/aprender-*` to the App by ruleset is advised and is an
+  infra/GitHub setting, not part of this change.

@@ -1414,7 +1414,7 @@ jobs:
         env:
           PR_NUMBER: ${{ github.event.pull_request.number }}
           GH_TOKEN: ${{ github.token }}
-          # #7001 B4: a train PR (fleet App, train/aprender-* ref) is judged on its aggregated member lines
+          # #7001 B4: a train PR (fleet App, train/aprender-* ref) is judged member by member, each on its OWN file list
           HEAD_REF: ${{ github.event.pull_request.head.ref }}
           PR_AUTHOR: ${{ github.event.pull_request.user.login }}
         run: |
@@ -1423,9 +1423,17 @@ jobs:
             --jq '.body // ""' > "$RUNNER_TEMP/ont-body.txt"
           gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}/files" --paginate \
             --jq '.[].filename' > "$RUNNER_TEMP/ont-files.txt"
+          # Train only (the script prints nothing otherwise): one file list per member PR. A failed read fails the step.
+          mkdir -p "$RUNNER_TEMP/ont-members"
+          members="$(setsid --wait bash scripts/check_pr_ont_delta.sh --list-train-members \
+            --body "$RUNNER_TEMP/ont-body.txt" --head-ref "$HEAD_REF" --author "$PR_AUTHOR")"
+          for n in $members; do
+            gh api "repos/${GITHUB_REPOSITORY}/pulls/${n}/files" --paginate \
+              --jq '.[].filename' > "$RUNNER_TEMP/ont-members/${n}.txt"
+          done
           setsid --wait bash scripts/check_pr_ont_delta.sh \
             --body "$RUNNER_TEMP/ont-body.txt" --changed "$RUNNER_TEMP/ont-files.txt" \
-            --head-ref "$HEAD_REF" --author "$PR_AUTHOR"
+            --head-ref "$HEAD_REF" --author "$PR_AUTHOR" --member-files "$RUNNER_TEMP/ont-members"
 
   guard-tree-steps:
     # MANIFEST, never run by GitHub (`if: false`). These are guard-tree's guard steps,

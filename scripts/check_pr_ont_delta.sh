@@ -35,7 +35,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-    printf 'usage: %s (--body FILE --changed FILE [--head-ref REF --author LOGIN]) | --self-test\n' "$(basename "$0")" >&2
+    printf 'usage: %s (--body FILE --changed FILE [--head-ref REF --author LOGIN [--member-files DIR]]) | (--list-train-members --body FILE --head-ref REF --author LOGIN) | --self-test\n' "$(basename "$0")" >&2
     exit 2
 }
 
@@ -91,32 +91,50 @@ check_body_text() { # check_body_text BODY_FILE -> 0 ok, 1 bad; prints the verdi
 # TRAIN BODY (#7001 fix round 1, B4). The merge train opens `train/aprender-*` PRs from the fleet App; its body has no
 # delta of its own, it AGGREGATES its members'. Accepted shape, copied verbatim from each member's body:
 #     train-members: #7006 #7007            one line, one or more PR numbers
-#     member #7006                          (any text; ignored)
+#     member #7006                          the member's block header (infra merge-train.sh writes exactly this line)
 #     ont-delta: type ONT-x                 each member's own ont-delta line, copied verbatim
 #     Closes #123                           each member's own closing / keep-open lines (see check_pr_closes_issue.sh)
-# Train mode needs: a train-members line naming >= 1 PR, at least one ont-delta line per named member, and EVERY ont-delta
-# line valid. Train mode is entered only by --head-ref/--author naming a train (TRAIN_BOT below); any other PR keeps the
-# first-line rule above, so a `train-members:` line in a feature-branch body buys nothing.
+# Train mode judges EACH named member exactly as it would be judged alone: member N's own changed files (MDIR/N.txt, fetched
+# by ci/sections.yml from pulls/N/files) decide whether N is a sweep, and a sweep member needs a valid first ont-delta line
+# in its own `member #N` block. A non-sweep member owes no line (fix round 4: the round-1 rule "one delta per member" made
+# every train that mixed a sweep member with a code-only member red, although each member alone was green). A missing or
+# empty member file list is a FAIL, never a "not a sweep" pass. Train mode is entered only by --head-ref/--author naming a
+# train (TRAIN_BOT below); any other PR keeps the first-line rule above, so a `train-members:` line buys nothing elsewhere.
 TRAIN_BOT='paiml-fleet[bot]'   # must equal BOT in scripts/check_ci_train_only.sh (the guard asserts it)
 is_train() { # is_train HEAD_REF AUTHOR
     case "$1" in train/aprender-*) [ "$2" = "$TRAIN_BOT" ] ;; *) return 1 ;; esac
 }
-check_train_body_text() { # check_train_body_text BODY_FILE -> 0 ok, 1 bad
-    local body="$1" mline members=0 deltas=0 line bad=0
-    mline="$(grep -iE '^[[:space:]]*train-members:' "$body" | head -1 || true)"
-    if [ -n "$mline" ]; then members="$(printf '%s\n' "${mline#*:}" | grep -oE '#[0-9]+' | sort -u | wc -l)"; fi
+train_members() { # train_members BODY_FILE -> the member PR numbers of the first train-members line, one per line
+    local mline
+    mline="$(grep -iE '^[[:space:]]*train-members:' "$1" | head -1 || true)"
+    [ -n "$mline" ] || return 0
+    printf '%s\n' "${mline#*:}" | grep -oE '#[0-9]+' | tr -d '#' | LC_ALL=C sort -un || true
+}
+member_block() { # member_block BODY_FILE N -> the lines after `member #N` up to the next `member #M` header
+    awk -v n="$2" '
+        /^[[:space:]]*member #[0-9]+[[:space:]]*$/ { m = $0; sub(/^[[:space:]]*member #/, "", m); sub(/[[:space:]]*$/, "", m); inb = (m == n); next }
+        inb { print }' "$1"
+}
+check_train_body_text() { # check_train_body_text BODY_FILE MEMBER_FILES_DIR -> 0 ok, 1 bad
+    local body="$1" mdir="${2:-}" n bad=0 members=0 why line
+    while IFS= read -r n; do
+        [ -n "$n" ] || continue
+        members=$((members+1))
+        if [ -z "$mdir" ] || [ ! -s "$mdir/$n.txt" ]; then
+            printf 'FAIL  member #%s: no changed-file list (%s/%s.txt); a member is never "not a sweep" unread.\n' "$n" "${mdir:-<no --member-files>}" "$n"
+            bad=1; continue
+        fi
+        if ! why="$(sweep_reason "$mdir/$n.txt")"; then
+            printf 'ok    member #%s: not a sweep PR\n' "$n"; continue
+        fi
+        printf 'member #%s: sweep (%s)\n' "$n" "$why"
+        line="$(member_block "$body" "$n" | grep -iE '^[[:space:]]*ont-delta:' | head -1 || true)"
+        check_delta_line "$line" || bad=1
+    done < <(train_members "$body")
     if [ "$members" -lt 1 ]; then
         printf 'FAIL  train body has no `train-members: #N [#M ...]` line naming at least one member PR.\n'
         return 1
     fi
-    deltas="$(grep -ciE '^[[:space:]]*ont-delta:' "$body" || true)"
-    if [ "$deltas" -lt "$members" ]; then
-        printf 'FAIL  train body names %s member(s) but carries %s ont-delta line(s); copy each member'"'"'s line verbatim.\n' "$members" "$deltas"
-        return 1
-    fi
-    while IFS= read -r line; do
-        check_delta_line "$line" || bad=1
-    done < <(grep -iE '^[[:space:]]*ont-delta:' "$body")
     return "$bad"
 }
 
@@ -200,33 +218,77 @@ trailer'
     row "type with NO id"                 1 'ont-delta: type'
     row "shape with NO id"                1 'ont-delta: shape  '
     row "empty body"                      1 ''
-    # --- train bodies (#7001 B4): aggregated member lines, judged only for a train ref + the fleet App author ---
-    trow() { # trow NAME WANT BODY
-        local name="$1" want="$2" body="$3"
+    # --- train bodies (#7001 B4, fix round 4): each member judged as alone, on its OWN files (MDIR/N.txt) ---
+    # member files: S = a prose sink (CLAUDE.md), C = code only. `-` = no file list for that member.
+    trow() { # trow NAME WANT "N:S|C|- ..." BODY
+        local name="$1" want="$2" spec="$3" body="$4" m n k mdir
+        mdir="$(mktemp -d "$tmp/m.XXXXXX")"
+        for m in $spec; do
+            n="${m%%:*}"; k="${m#*:}"
+            case "$k" in S) printf 'CLAUDE.md\nsrc/x.rs\n' > "$mdir/$n.txt" ;; C) printf 'src/x.rs\n' > "$mdir/$n.txt" ;; -) : ;; esac
+        done
         printf '%s' "$body" > "$tmp/b.txt"
-        set +e; check_train_body_text "$tmp/b.txt" >/dev/null 2>&1; rc=$?; set -e
+        set +e; check_train_body_text "$tmp/b.txt" "$mdir" >/dev/null 2>&1; rc=$?; set -e
         if [ "$rc" -eq "$want" ]; then pass=$((pass+1)); printf '  ok    %-46s want=%s\n' "$name" "$want"
         else fail=$((fail+1)); printf '  FAIL  %-46s want=%s got=%s\n' "$name" "$want" "$rc"; fi
     }
-    trow "train: two members, two deltas"      0 'train-members: #7006 #7007
+    trow "train: two sweep members, two deltas"   0 "7006:S 7007:S" 'train-members: #7006 #7007
 member #7006
 ont-delta: type ONT-x
 Closes #12
 member #7007
 ont-delta: none docs only'
-    trow "train: one member"                   0 'train-members: #7006
+    trow "train: one sweep member"                0 "7006:S" 'train-members: #7006
+member #7006
 ont-delta: resolves scripts/x.sh'
-    trow "train: no train-members line"        1 'ont-delta: type ONT-x'
-    trow "train: members line names no PR"     1 'train-members: none
-ont-delta: type ONT-x'
-    trow "train: fewer deltas than members"    1 'train-members: #1 #2
-ont-delta: type ONT-x'
-    trow "train: one member delta invalid"     1 'train-members: #1 #2
+    trow "train: sweep + code-only member"        0 "1:S 2:C" 'train-members: #1 #2
+member #1
 ont-delta: type ONT-x
+member #2
+Closes #9'
+    trow "train: code-only member, no lines"      0 "1:C" 'train-members: #1
+member #1'
+    trow "train: sweep member with no delta"      1 "1:C 2:S" 'train-members: #1 #2
+member #1
+ont-delta: type ONT-x
+member #2
+Closes #9'
+    trow "train: delta in the WRONG block"        1 "1:S 2:C" 'train-members: #1 #2
+member #1
+member #2
+ont-delta: type ONT-x'
+    trow "train: sweep member delta invalid"      1 "1:S 2:S" 'train-members: #1 #2
+member #1
+ont-delta: type ONT-x
+member #2
 ont-delta: none'
-    trow "train: unknown kind in a member"     1 'train-members: #1
+    trow "train: unknown kind in a sweep member"  1 "1:S" 'train-members: #1
+member #1
 ont-delta: entity ONT-x'
-    trow "train: empty body"                   1 ''
+    trow "train: first line of block decides"     1 "1:S" 'train-members: #1
+member #1
+ont-delta: entity ONT-x
+ont-delta: type ONT-y'
+    trow "train: member #1 block is not #10's"    1 "1:S 10:C" 'train-members: #1 #10
+member #10
+ont-delta: type ONT-x
+member #1'
+    trow "train: member file list missing"        1 "1:-" 'train-members: #1
+member #1
+ont-delta: type ONT-x'
+    trow "train: one of two file lists missing"   1 "1:S 2:-" 'train-members: #1 #2
+member #1
+ont-delta: type ONT-x
+member #2'
+    trow "train: no train-members line"           1 "1:S" 'member #1
+ont-delta: type ONT-x'
+    trow "train: members line names no PR"        1 "1:S" 'train-members: none
+ont-delta: type ONT-x'
+    trow "train: empty body"                      1 "" ''
+    printf 'train-members: #1\nmember #1\nont-delta: type ONT-x\n' > "$tmp/b.txt"
+    set +e; check_train_body_text "$tmp/b.txt" "" >/dev/null 2>&1; rc=$?; set -e
+    if [ "$rc" -eq 1 ]; then pass=$((pass+1)); printf '  ok    %-46s want=1\n' "train: no --member-files dir at all"
+    else fail=$((fail+1)); printf '  FAIL  %-46s want=1 got=%s\n' "train: no --member-files dir at all" "$rc"; fi
     for who in "train/aprender-1:paiml-fleet[bot]:0" "train/aprender-1:noahgift:1" "feat/x:paiml-fleet[bot]:1" "train/other-1:paiml-fleet[bot]:1" ":paiml-fleet[bot]:1"; do
         ref="${who%%:*}"; rest="${who#*:}"; au="${rest%:*}"; want="${who##*:}"
         if is_train "$ref" "$au"; then got=0; else got=1; fi
@@ -284,7 +346,7 @@ predicate_self_test() {
 }
 
 main() {
-    local body="" changed="" reason head_ref="" author="" judge=check_body_text
+    local body="" changed="" reason head_ref="" author="" mdir="" list_members=0
     if [ $# -eq 0 ] || [ "${1:-}" = "--self-test" ]; then
         self_test && predicate_self_test; return $?
     fi
@@ -294,9 +356,18 @@ main() {
             --changed) changed="${2:-}"; shift 2 ;;
             --head-ref) head_ref="${2:-}"; shift 2 ;;
             --author)   author="${2:-}"; shift 2 ;;
+            --member-files) mdir="${2:-}"; shift 2 ;;
+            --list-train-members) list_members=1; shift ;;
             *) usage ;;
         esac
     done
+    # --list-train-members: print the member PR numbers ci/sections.yml must fetch file lists for. Empty unless the event names a
+    # train (is_train), so a `train-members:` line in any other body fetches nothing.
+    if [ "$list_members" = 1 ]; then
+        [ -n "$body" ] && [ -f "$body" ] || usage
+        if is_train "$head_ref" "$author"; then train_members "$body"; fi
+        return 0
+    fi
     [ -n "$body" ] && [ -n "$changed" ] || usage
     [ -f "$body" ] || { printf 'NO-GO: body file %s does not exist.\n' "$body" >&2; exit 2; }
     [ -f "$changed" ] || { printf 'NO-GO: changed-files file %s does not exist.\n' "$changed" >&2; exit 2; }
@@ -320,8 +391,10 @@ main() {
         return 0
     fi
     printf 'sweep PR: %s\n' "$reason"
-    if is_train "$head_ref" "$author"; then judge=check_train_body_text; printf 'train PR: judging the aggregated member lines\n'; fi
-    if "$judge" "$body"; then printf 'PASS\n'; return 0; fi
+    if is_train "$head_ref" "$author"; then
+        printf 'train PR: judging each member on its own changed files\n'
+        if check_train_body_text "$body" "$mdir"; then printf 'PASS\n'; return 0; fi
+    elif check_body_text "$body"; then printf 'PASS\n'; return 0; fi
     printf 'FAILED: §11.1 — a sweep that ends in prose and nothing else is not finished.\n'
     return 1
 }
