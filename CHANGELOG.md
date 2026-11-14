@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
 
-Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 18 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines), the presentar frame clock and video element, and release-path fixes.
+Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 19 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines), the presentar frame clock and video element, and release-path fixes.
 
 ### Added
 
@@ -31,6 +31,7 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - fix(ci): one host target dir per guard-cargo shard (WRONG-TREE pv race) (#7027)
 - fix(ci): guard-cargo m16 SEC010 + m5 cold host rebuild after per-shard target dirs (#7034) (#7035)
 - fix(ci): register schema::work_tickets in tree_reader_tests (red main after #7037) (#7038)
+- fix(core): needless_bool under clippy 1.100 (toolchain ceiling) (#7039)
 
 ### Changed
 
