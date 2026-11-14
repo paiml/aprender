@@ -2809,3 +2809,52 @@
     ] ;
 .
 
+<https://ont.paiml.dev/v1alpha1/shape/ggplot2-core> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/PlotRow> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/row> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/concept> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "Geom" "Stat" "Position" "Scale" "Coord" "Facet" "Guide" "Theme" "Label" "OutputTarget" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/ggplot2> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "4.0.3" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/aes> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/contract> ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/fixture> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/reachableBy> ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/receipt> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/plot/notProven> ;
+        sh:maxCount 0 ;
+    ] ;
+.
+
