@@ -43,9 +43,12 @@ mod ggplot;
 #[cfg(test)]
 mod ggplot2_lines_oracle;
 #[cfg(test)]
+mod ggplot2_marks_oracle;
+#[cfg(test)]
 mod ggplot2_oracle;
 #[cfg(test)]
 mod ggplot2_oracle_scales;
+mod marks;
 mod path;
 mod position;
 mod r_format;

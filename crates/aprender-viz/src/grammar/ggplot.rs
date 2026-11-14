@@ -18,6 +18,7 @@ use super::data::{DataFrame, DataValue};
 use super::dist;
 use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
+use super::marks;
 use super::path;
 use super::scale_spec::{require_scale_scope, PositionScaleSpec, ResolvedAxis};
 use super::stroke;
@@ -770,6 +771,13 @@ impl BuiltGGPlot {
     /// A plot with a distribution layer (`geom_histogram`, `geom_freqpoly`, `geom_density`,
     /// `geom_boxplot`, `geom_errorbar`) and a `scale_x`/`scale_y` spec is an
     /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
+    ///
+    /// Without one, a `geom_area`, `geom_tile` or `geom_text` layer is an
+    /// [`Error::UnsupportedLayer`]: `layout()` does not resolve those geoms yet. Beside such a
+    /// layer, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
+    /// other stat on that `geom_point` an [`Error::UnsupportedStat`] (their ggplot2 stat or setup
+    /// widens the shared scales), and the `geom_point` is refused for a missing, text, short or
+    /// infinite `x`/`y` column; those refusals come first.
     pub fn layout(&self) -> Result<BuiltLayout> {
         if self.layers.iter().any(dist::is_dist) {
             if self.x_scale.is_some() || self.y_scale.is_some() {
@@ -785,6 +793,8 @@ impl BuiltGGPlot {
         if self.uses_position_scales() {
             return self.scaled_layout();
         }
+        marks::require_modelled_companions(&self.layers, &self.aes, &self.data)?;
+        marks::require_resolved(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
         let (x, y) = self.trained_domains();
         path::require_trained(&self.layers, x, y)?;
