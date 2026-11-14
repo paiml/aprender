@@ -1,0 +1,18 @@
+- id: PMAT-7013
+  github_issue: 7013
+  item_type: task
+  title: pv asset check covers pv-readme
+  status: planned
+  priority: medium
+  assigned_to: null
+  created: 2026-11-13T12:51:15Z
+  updated: 2026-11-13T12:51:15Z
+  spec: null
+  acceptance_criteria: []
+  phases: []
+  subtasks: []
+  estimated_effort: null
+  labels:
+  - kind:code
+  notes: null
+  epic: 7010
