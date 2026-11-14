@@ -384,6 +384,20 @@ fn dispatch_rosetta(action: &RosettaCommands, global_json: bool) -> Result<(), C
     }
 }
 
+/// A command whose stdout is its product (`apr plot` writes an SVG there): `--verbose` chatter
+/// goes to stderr for it, so the file the user redirects stays what the command made.
+fn command_owns_stdout(command: &Commands) -> bool {
+    #[cfg(feature = "visualization")]
+    {
+        matches!(command, Commands::Plot(_))
+    }
+    #[cfg(not(feature = "visualization"))]
+    {
+        let _ = command;
+        false
+    }
+}
+
 /// Execute the CLI command and return the result.
 pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
     contract_pre_contract_gate_enforcement!();
@@ -412,7 +426,11 @@ pub fn execute_command(cli: &Cli) -> Result<(), CliError> {
             cli.skip_contract,
             &gated_paths,
         ) {
-            vprintln!("{line}");
+            if command_owns_stdout(&cli.command) {
+                eprintln!("{line}");
+            } else {
+                vprintln!("{line}");
+            }
         }
     }
     if !cli.skip_contract {

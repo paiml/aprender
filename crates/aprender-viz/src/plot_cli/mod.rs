@@ -21,6 +21,10 @@ use crate::grammar::{
     MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
+/// The command line of `apr plot`.
+#[cfg(feature = "plot-cli")]
+pub mod cli;
+
 /// Terminal size in cells when no width or height is given.
 pub const DEFAULT_TERM_SIZE: (u32, u32) = (80, 24);
 /// SVG size in pixels when no width or height is given.
@@ -143,6 +147,7 @@ fn point_row(rows: &[ProvenRow]) -> Result<&ProvenRow, String> {
 
 /// Where the plot goes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "plot-cli", derive(clap::ValueEnum))]
 pub enum Output {
     /// Unicode text for a terminal.
     #[default]

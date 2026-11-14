@@ -103,8 +103,34 @@ fn dispatch_sibling_cli_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             aprender_contracts_cli::dispatch(command.clone())
                 .map_err(|e| CliError::ValidationFailed(format!("pv: {e}"))),
         ),
+        #[cfg(feature = "visualization")]
+        Commands::Plot(args) => Some(plot_result(args, cli.json, cli.quiet)),
         _ => None,
     }
+}
+
+/// `apr plot` (#6991): the proven-only verb, run from the `plot_cli` library function, so
+/// the grammar cannot drift from the contract. The plot goes to stdout; a refusal names what is not
+/// proven and exits non-zero.
+#[cfg(feature = "visualization")]
+fn plot_result(
+    args: &trueno_viz::plot_cli::cli::PlotFlags,
+    json: bool,
+    quiet: bool,
+) -> Result<(), CliError> {
+    // The plot is the output and has no JSON form; a flag that would change the output is
+    // refused, not accepted and ignored.
+    for (on, flag) in [(json, "--json"), (quiet, "--quiet")] {
+        if on {
+            return Err(CliError::ValidationFailed(format!(
+                "plot: {flag} is not supported; the plot goes to stdout"
+            )));
+        }
+    }
+    let env = trueno_viz::plot_cli::Env::from_process();
+    let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
+    trueno_viz::plot_cli::cli::run(args, &env, &mut out, &mut err)
+        .map_err(|e| CliError::ValidationFailed(format!("plot: {e}")))
 }
 
 /// #3604: `--revalidate` reaches the F2 hybrid guard through the same env seam the guard already
