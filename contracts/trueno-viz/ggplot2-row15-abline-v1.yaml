@@ -14,6 +14,7 @@ metadata:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), geom_abline'
   - 'crates/aprender-viz/fixtures/ggplot2/geom_abline/generate.R'
+entity: {type: ggplot2-row, ref: geom_abline}
 equations:
   abline_no_training:
     formula: 'scale limits are independent of abline layers'

@@ -15,8 +15,24 @@
     "refused": []
   },
   "consistent": true,
-  "classes": 23,
+  "classes": 37,
   "entailed_subsumptions": [
+    [
+      "Coord",
+      "PlotRow"
+    ],
+    [
+      "Facet",
+      "PlotRow"
+    ],
+    [
+      "Geom",
+      "PlotRow"
+    ],
+    [
+      "Guide",
+      "PlotRow"
+    ],
     [
       "Issue",
       "Json"
@@ -26,8 +42,20 @@
       "Contract"
     ],
     [
+      "Label",
+      "PlotRow"
+    ],
+    [
       "Milestone",
       "Json"
+    ],
+    [
+      "OutputTarget",
+      "PlotRow"
+    ],
+    [
+      "Position",
+      "PlotRow"
     ],
     [
       "PullRequest",
@@ -38,8 +66,20 @@
       "Json"
     ],
     [
+      "Scale",
+      "PlotRow"
+    ],
+    [
+      "Stat",
+      "PlotRow"
+    ],
+    [
       "Symbol",
       "Code"
+    ],
+    [
+      "Theme",
+      "PlotRow"
     ]
   ],
   "unintended_subsumptions": []
