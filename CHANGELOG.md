@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
 
-Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 25 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines, the f64 plot core and the bar stat and position cores), the presentar frame clock and video element, and release-path fixes.
+Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 29 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines, the f64 plot core and the bar stat and position cores), the presentar frame clock and video element, and release-path fixes.
 
 ### Added
 
@@ -24,6 +24,8 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - feat(contracts): ggplot2 ontology concepts + shapes for the 49 core rows (PLOT-GG-001, 0.74.2) (#6996)
 - feat(viz): stat_count / stat_identity bar layout core (PLOT-GG-001 recut B2) (#7040)
 - feat(viz): apr plot f64 core (AP1, re-cut of #6992) (#7018)
+- feat(viz): apr plot draws from the proven-row table (AP2, re-cut of #6992) (#7020)
+- feat(viz): distribution layer core and input checks (PLOT-GG-001 recut D1) (#7044)
 
 ### Fixed
 
@@ -37,6 +39,8 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - fix(ci): register schema::work_tickets in tree_reader_tests (red main after #7037) (#7038)
 - fix(core): needless_bool under clippy 1.100 (toolchain ceiling) (#7039)
 - fix(release): pv archive ships pv-readme (PMAT-7011/7012/7013) (#7022)
+- fix(roadmap): refold roadmap.yaml after the PMAT-7011..7013 entries (PMAT-7029) (#7050)
+- fix(viz): stat_count drops x values with no level; empty bar layer spans -0.05..1.05 (#7049)
 
 ### Changed
 
