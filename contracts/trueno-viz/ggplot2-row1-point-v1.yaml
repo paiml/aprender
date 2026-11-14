@@ -47,8 +47,8 @@ proof_obligations:
   applies_to: continuous_expansion
 - id: GG1-INV-002
   type: invariant
-  property: Breaks and labels match ggplot2
-  formal: '∀ axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored'
+  property: Breaks and labels match ggplot2 on the committed fixtures (row 1's oracle; apr plot's labels on the 17 geom_point_edges sets), scales trained on f64
+  formal: '∀ fixture set, axis: breaks ≈ ggplot2.breaks (1e-9 rel) ∧ labels = ggplot2.labels ∧ n_censored = ggplot2.n_censored'
   applies_to: extended_breaks
 - id: GG1-INV-003
   type: invariant
@@ -84,6 +84,16 @@ falsification_tests:
   prediction: mutating point_defaults::SIZE_MM 1.5 -> 2.0 turns ggplot2_row1_point_default_aesthetics RED
   test: cargo test -p aprender-viz --lib ggplot2_row1 (crates/aprender-viz/src/grammar/ggplot2_oracle.rs)
   if_fails: The aesthetic comparison does not read size from the fixture
+- id: FALSIFY-GG1-004
+  rule: apr plot trains the position scales on the f64 values (B3)
+  prediction: removing .trained_on(domain(xs), domain(ys)) in plot_cli::build_plot, or computing pow10 with libm::pow in breaks.rs, turns edge_labels_match_ggplot2 RED
+  test: cargo test -p aprender-viz --lib plot_cli::tests::edge_labels_match_ggplot2
+  if_fails: The geom_point_edges sets no longer land an expanded edge on a break; regenerate them from generate.R
+- id: FALSIFY-GG1-005
+  rule: apr plot refuses an infinite value by column and line; only empty, NA and NaN cells are dropped (B4)
+  prediction: deleting the is_infinite arm in plot_cli::numeric_xy, or adding null to the missing cells, turns numeric_columns_drop_missing_and_refuse_the_rest_by_line RED
+  test: cargo test -p aprender-viz --lib plot_cli::tests::numeric_columns_drop_missing_and_refuse_the_rest_by_line
+  if_fails: The refusal table no longer carries Inf, -inf, infinity, 1e400 and null
 qa_gate:
   id: F-GG1-001
   name: ggplot2 conformance row 1 (geom_point + continuous scales)

@@ -82,6 +82,8 @@ pub struct GGPlot {
     ylab: Option<String>,
     x_scale: Option<PositionScaleSpec>,
     y_scale: Option<PositionScaleSpec>,
+    /// x and y domains trained on `f64` data, used instead of the `f32` columns' extremes.
+    trained: Option<((f64, f64), (f64, f64))>,
 }
 
 impl Default for GGPlot {
@@ -108,7 +110,16 @@ impl GGPlot {
             ylab: None,
             x_scale: None,
             y_scale: None,
+            trained: None,
         }
+    }
+
+    /// Train the x and y scales on these `f64` `(min, max)` domains, not the `f32` columns, as
+    /// ggplot2 trains on doubles (an `f32` edge can censor a break R keeps). For one x/y layer.
+    #[must_use]
+    pub(crate) fn trained_on(mut self, x: (f64, f64), y: (f64, f64)) -> Self {
+        self.trained = Some((x, y));
+        self
     }
 
     /// Set the data.
@@ -236,6 +247,7 @@ impl GGPlot {
             ylab: self.ylab,
             x_scale: self.x_scale,
             y_scale: self.y_scale,
+            trained: self.trained,
         })
     }
 }
@@ -256,6 +268,7 @@ pub struct BuiltGGPlot {
     ylab: Option<String>,
     x_scale: Option<PositionScaleSpec>,
     y_scale: Option<PositionScaleSpec>,
+    trained: Option<((f64, f64), (f64, f64))>,
 }
 
 /// Where each panel sits in the figure.
@@ -649,6 +662,9 @@ impl BuiltGGPlot {
 
     /// The finite x and y domains every layer trains (`lo > hi` on an axis nothing trained).
     fn trained_domains(&self) -> ((f64, f64), (f64, f64)) {
+        if let Some(domains) = self.trained {
+            return domains;
+        }
         let mut x = (f32::MAX, f32::MIN);
         let mut y = (f32::MAX, f32::MIN);
 
