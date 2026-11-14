@@ -548,8 +548,17 @@ fn rebuild_wasm() {
 fn bundle(output: PathBuf, no_optimize: bool) {
     println!("Building Presentar WASM bundle...");
     let cwd = std::env::current_dir().expect("current directory");
+    build_wasm_release(&output, &cwd);
+    refuse_missing_glue(&output);
+    if !no_optimize {
+        optimize_wasm(&output);
+    }
+    write_bundle_page(&output);
+    print_bundle_size(&output);
+}
 
-    // Build with wasm-pack
+/// Build the release WASM with wasm-pack into the bundle's glue directory; exit 1 on failure.
+fn build_wasm_release(output: &Path, cwd: &Path) {
     let status = Command::new("wasm-pack")
         .args([
             "build",
@@ -561,7 +570,7 @@ fn bundle(output: PathBuf, no_optimize: bool) {
             "--release",
             "--out-dir",
         ])
-        .arg(page::glue_dir(&output, &cwd))
+        .arg(page::glue_dir(output, cwd))
         .status()
         .expect("wasm-pack failed");
 
@@ -569,37 +578,42 @@ fn bundle(output: PathBuf, no_optimize: bool) {
         eprintln!("wasm-pack build failed");
         std::process::exit(1);
     }
+}
 
-    // A page without its glue cannot load: say so instead of shipping it.
-    let missing = page::missing_glue(&output, WASM_OUT_NAME);
-    if !missing.is_empty() {
-        eprintln!(
-            "bundle refused: the generated glue is not in {}",
-            output.display()
-        );
-        for file in &missing {
-            eprintln!("  - {file}");
-        }
-        std::process::exit(1);
+/// A page without its glue cannot load: say so instead of shipping it.
+fn refuse_missing_glue(output: &Path) {
+    let missing = page::missing_glue(output, WASM_OUT_NAME);
+    if missing.is_empty() {
+        return;
     }
-
-    // Run wasm-opt for size reduction.
-    if !no_optimize {
-        let wasm_file = output.join("pkg/presentar_bg.wasm");
-        if wasm_file.exists() {
-            println!("Optimizing with wasm-opt...");
-            let _ = Command::new("wasm-opt")
-                .args(["-Oz", "-o"])
-                .arg(&wasm_file)
-                .arg(&wasm_file)
-                .status();
-        }
+    eprintln!(
+        "bundle refused: the generated glue is not in {}",
+        output.display()
+    );
+    for file in &missing {
+        eprintln!("  - {file}");
     }
+    std::process::exit(1);
+}
 
-    // The page: the project page if it runs no script of its own, else the generated one.
-    // The only script in a bundle is the generated loader (aprender#6893).
-    // A refused bundle must not leave an earlier run's unaudited page beside fresh glue.
-    // `-o www` (or any spelling or symlink of it) would delete the source page before reading it.
+/// Run wasm-opt for size reduction; a missing wasm-opt or WASM file is not an error.
+fn optimize_wasm(output: &Path) {
+    let wasm_file = output.join("pkg/presentar_bg.wasm");
+    if wasm_file.exists() {
+        println!("Optimizing with wasm-opt...");
+        let _ = Command::new("wasm-opt")
+            .args(["-Oz", "-o"])
+            .arg(&wasm_file)
+            .arg(&wasm_file)
+            .status();
+    }
+}
+
+/// The page: the project page if it runs no script of its own, else the generated one.
+/// The only script in a bundle is the generated loader (aprender#6893).
+/// A refused bundle must not leave an earlier run's unaudited page beside fresh glue.
+/// `-o www` (or any spelling or symlink of it) would delete the source page before reading it.
+fn write_bundle_page(output: &Path) {
     let out_page = output.join("index.html");
     let src_page = Path::new("www/index.html");
     if same_page(&out_page, src_page) {
@@ -612,15 +626,8 @@ fn bundle(output: PathBuf, no_optimize: bool) {
     }
     remove_stale(&out_page);
     remove_stale(&output.join("pkg").join(page::BOOT_FILE));
-    let project_page = match fs::read_to_string("www/index.html") {
-        Ok(html) => Some(html),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-        Err(e) => {
-            eprintln!("cannot read www/index.html: {e}");
-            std::process::exit(1);
-        }
-    };
-    match page::finish_bundle(&output, WASM_OUT_NAME, project_page.as_deref()) {
+    let project_page = read_project_page();
+    match page::finish_bundle(output, WASM_OUT_NAME, project_page.as_deref()) {
         Ok(page::PageSource::Project) => println!("Copied www/index.html (no script of its own)"),
         Ok(page::PageSource::Generated) => println!("Generated index.html"),
         Err(reasons) => {
@@ -631,8 +638,22 @@ fn bundle(output: PathBuf, no_optimize: bool) {
             std::process::exit(1);
         }
     }
+}
 
-    // Print bundle size
+/// `www/index.html` if present, `None` if absent; any other read error exits 1.
+fn read_project_page() -> Option<String> {
+    match fs::read_to_string("www/index.html") {
+        Ok(html) => Some(html),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => {
+            eprintln!("cannot read www/index.html: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
+/// Print the bundle size when the WASM file exists.
+fn print_bundle_size(output: &Path) {
     let wasm_file = output.join("pkg/presentar_bg.wasm");
     if wasm_file.exists() {
         let size = fs::metadata(&wasm_file).map(|m| m.len()).unwrap_or(0);
@@ -1872,5 +1893,34 @@ layout:
         assert!(files.iter().any(|(p, _)| p.ends_with("level3.txt")));
 
         let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    fn bundle_scratch(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("present-bundle-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(dir.join("pkg")).expect("scratch dir");
+        dir
+    }
+
+    /// The glue check passes (returns, no exit) once both generated glue files are present.
+    #[test]
+    fn refuse_missing_glue_returns_when_the_glue_is_complete() {
+        let dir = bundle_scratch("glue");
+        fs::write(dir.join("pkg").join(format!("{WASM_OUT_NAME}.js")), "").expect("js");
+        fs::write(dir.join("pkg").join(format!("{WASM_OUT_NAME}_bg.wasm")), "").expect("wasm");
+        assert!(page::missing_glue(&dir, WASM_OUT_NAME).is_empty());
+        refuse_missing_glue(&dir);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Without a WASM file, optimizing and reporting the size are no-ops that leave the tree alone.
+    #[test]
+    fn optimize_and_size_report_skip_an_absent_wasm_file() {
+        let dir = bundle_scratch("nowasm");
+        optimize_wasm(&dir);
+        print_bundle_size(&dir);
+        assert!(!dir.join("pkg/presentar_bg.wasm").exists());
+        let _ = fs::remove_dir_all(&dir);
     }
 }
