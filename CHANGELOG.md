@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
 
-Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 19 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines), the presentar frame clock and video element, and release-path fixes.
+Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 25 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines, the f64 plot core and the bar stat and position cores), the presentar frame clock and video element, and release-path fixes.
 
 ### Added
 
@@ -20,6 +20,10 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - feat(present-cli): page bundle glue_dir + missing_glue, no-script contract falsifiers (PMAT-6893) (#6977)
 - feat(present): frame clock and stop-able rAF frame loop (#6892) (#6998)
 - feat(present-lib): video element reconcile + wasm32 <video> applier (Refs #6890) (#6999)
+- feat(viz): position_stack / position_fill core for bar rows (recut B1) (#7021)
+- feat(contracts): ggplot2 ontology concepts + shapes for the 49 core rows (PLOT-GG-001, 0.74.2) (#6996)
+- feat(viz): stat_count / stat_identity bar layout core (PLOT-GG-001 recut B2) (#7040)
+- feat(viz): apr plot f64 core (AP1, re-cut of #6992) (#7018)
 
 ### Fixed
 
@@ -32,6 +36,7 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - fix(ci): guard-cargo m16 SEC010 + m5 cold host rebuild after per-shard target dirs (#7034) (#7035)
 - fix(ci): register schema::work_tickets in tree_reader_tests (red main after #7037) (#7038)
 - fix(core): needless_bool under clippy 1.100 (toolchain ceiling) (#7039)
+- fix(release): pv archive ships pv-readme (PMAT-7011/7012/7013) (#7022)
 
 ### Changed
 
@@ -40,6 +45,7 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - chore(contracts): burn down no-test debt 433 -> 390 (#7032) (#7033)
 - chore(contracts): move 263 pmat work-ticket stubs out of contracts/ (#7037)
 - chore(contracts): bind 10 no-test contracts to CI-run falsification tests (debt 390 -> 380) (#7036)
+- refactor(viz,present-cli): split 3 below-B definitions so CB-200 holds for v0.74.0 (#7029) (#7043)
 
 ## [0.72.6] - 2026-11-12
 
