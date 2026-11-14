@@ -14,6 +14,7 @@ metadata:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), geom_line'
   - 'crates/aprender-viz/fixtures/ggplot2/geom_line/generate.R'
+entity: {type: ggplot2-row, ref: geom_line}
 equations:
   line_order:
     formula: 'rows = stable sort by (PANEL, group, x), NA x last'

@@ -18,6 +18,7 @@ pub mod duplicate_stems;
 pub mod evidence_gate;
 pub mod finding;
 mod gates;
+pub mod ggplot2_core_gate;
 pub use gates::{collect_yaml_files, UNWALKED_DIRS};
 pub mod bindings_gate;
 mod gates_extended;
@@ -161,6 +162,10 @@ pub struct ShapesControls {
     /// contract declares the `capability-cells` shape.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub capability_cells: Option<capability_cells_gate::CapabilityCellsReport>,
+    /// PLOT-GG-001: the ggplot2 core rows and which are proven — absent unless a contract declares the
+    /// `ggplot2-core` shape or a core row exists.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ggplot2_core: Option<ggplot2_core_gate::Ggplot2CoreReport>,
 }
 
 /// Out-of-band structured detail for gates that post-date the frozen [`GateDetail`]
