@@ -51,6 +51,7 @@ mod scale_discrete;
 mod scale_spec;
 mod scale_trans;
 mod stat;
+mod stat_count;
 mod stroke;
 mod term;
 mod theme;
@@ -72,6 +73,9 @@ pub use scale_spec::{
     scale_continuous, scale_discrete, scale_log10, ContinuousSpec, Expansion, PositionScaleSpec,
 };
 pub use stat::Stat;
+pub use stat_count::{
+    bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,
+};
 pub use term::{
     TerminalPlot, LINE_GLYPH, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT,
     MIN_TERMINAL_WIDTH, POINT_GLYPH,
