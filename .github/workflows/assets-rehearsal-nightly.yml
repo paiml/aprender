@@ -164,7 +164,8 @@ jobs:
               cargo build --release --locked --bin pv --bin pv-readme -p aprender-contracts-cli --features update-check,build-sha --target "$T"
               strip "/workspace/target/$T/release/pv" "/workspace/target/$T/release/pv-readme"'
           mkdir -p "target/$T/release"
-          # #7012: mirrors #7011 in binary-release.yml — pv-readme rides in the pv archive.
+          # #7010: pv-readme rides in the pv archive. It is the README SHACL check other repos run
+          # in CI, and an asset no release carries is a check no runner can have.
           cp "$CACHE/target/$T/release/pv" "target/$T/release/pv"
           cp "$CACHE/target/$T/release/pv-readme" "target/$T/release/pv-readme"
           {
