@@ -24,7 +24,7 @@ use super::{Cli, Commands};
 /// failure never reaches here as a value. The old `Command::Error(String)`
 /// variant turned a parse failure INTO a command, which is how unknown input
 /// used to reach a handler at all.
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn run_cli(cli: Cli) -> ExitCode {
     match cli.into_command() {
         Commands::Run {
@@ -116,7 +116,7 @@ pub fn run_cli(cli: Cli) -> ExitCode {
 /// * `path` - Path to the experiment YAML file
 /// * `seed_override` - Optional seed to override the experiment's configured seed
 /// * `verbose` - Whether to enable verbose output
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn run_experiment(path: &Path, seed_override: Option<u64>, verbose: bool) -> ExitCode {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║           simular - EDD Experiment Runner                     ║");
@@ -165,7 +165,7 @@ pub fn run_experiment(path: &Path, seed_override: Option<u64>, verbose: bool) ->
 /// # Arguments
 ///
 /// * `path` - Path to the experiment YAML file
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn validate_experiment(path: &Path) -> ExitCode {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║       simular - EDD v2 Experiment Schema Validation           ║");
@@ -224,7 +224,7 @@ pub fn validate_experiment(path: &Path) -> ExitCode {
 ///
 /// * `path` - Path to the experiment YAML file
 /// * `runs` - Number of verification runs to perform
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn verify_reproducibility(path: &Path, runs: usize) -> ExitCode {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║        simular - Reproducibility Verification                 ║");
@@ -293,7 +293,7 @@ pub fn verify_reproducibility(path: &Path, runs: usize) -> ExitCode {
 /// # Arguments
 ///
 /// * `path` - Path to the experiment YAML file
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn emc_check(path: &Path) -> ExitCode {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║          simular - EMC Compliance Check                       ║");
@@ -324,7 +324,7 @@ pub fn emc_check(path: &Path) -> ExitCode {
 }
 
 /// List all EMCs available in the library.
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn list_emc() -> ExitCode {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║             simular - EMC Library                             ║");
@@ -381,7 +381,7 @@ pub fn list_emc() -> ExitCode {
 /// # Arguments
 ///
 /// * `path` - Path to the EMC file
-#[must_use]
+#[must_use = "the ExitCode must be returned from main"]
 pub fn emc_validate(path: &Path) -> ExitCode {
     println!("╔═══════════════════════════════════════════════════════════════╗");
     println!("║        simular - EDD v2 EMC Schema Validation                 ║");

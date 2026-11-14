@@ -44,6 +44,23 @@ concepts:
   LadderRung: {doc: "a model-capability-ladder rung, typed on extract:gguf's rung path only, disjoint from AprModel (v4.16 D-T2)"}
   Readme: {doc: "a README.md under contract, the focus node of extract:readme (ONT-4c)"}
   LlmContext: {doc: "an LLM context file (CLAUDE.md) under contract, the focus node of extract:llm-context (ONT-4c)"}
+  # PLOT-GG-001 (aprender#6909): the grammar of graphics as ggplot2 4.0.3 exports it. A PlotRow is one core row of
+  # contracts/trueno-viz/ggplot2-ontology-v1.yaml; each row is exactly one of the ten row concepts below, each of
+  # which is a PlotRow by its own doc (see `subsumes`). Data, Aes and Layer are what a row is applied to, not rows.
+  PlotRow: {doc: "a core row of the ggplot2 grammar — one exported constructor, the focus node of extract:ggplot2-core (plot:row, plot:name, plot:concept, plot:aes, plot:contract, plot:fixture, plot:receipt)"}
+  Data: {doc: "the data frame a plot or a layer maps from"}
+  Aes: {doc: "an aesthetic mapping — a column of Data bound to a visual channel (x, y, colour, …)"}
+  Layer: {doc: "one Data + Aes + Geom + Stat + Position combination drawn on a plot"}
+  Geom: {doc: "a PlotRow that is a geom_* constructor: the marks a layer draws"}
+  Stat: {doc: "a PlotRow that is a stat_* constructor: the transform a layer applies to its data"}
+  Position: {doc: "a PlotRow that is a position_* constructor: how a layer's overlapping marks are adjusted"}
+  Scale: {doc: "a PlotRow that is a scale_* constructor: the map from data values to an aesthetic's values"}
+  Coord: {doc: "a PlotRow that is a coord_* constructor: the coordinate system marks are placed in"}
+  Facet: {doc: "a PlotRow that is a facet_* constructor: how a plot splits into panels"}
+  Guide: {doc: "a PlotRow that is a guide_* constructor: the axis or legend that reads a scale back"}
+  Theme: {doc: "a PlotRow that is a theme or theme_* constructor: the non-data appearance of a plot"}
+  Label: {doc: "a PlotRow that is a label constructor (labs, xlab, ylab, ggtitle): a plot's text"}
+  OutputTarget: {doc: "a PlotRow that is an output constructor (ggsave): where a rendered plot is written"}
 
 roles:
   binds:
@@ -181,6 +198,11 @@ entity_types:
   # ONT-4c4 (aprender#4069): the bound #[kernel] symbols over extract:code, joined to evidence/kernels/<k>/<host>.json
   # (apr-kernel-receipt/v1 — the ladder schema there, or this one under the ladder root, is refused by name).
   - {name: kernel, extractor: kernel, implemented: true}
+  # PLOT-GG-001 (aprender#6909): the ggplot2 core table (one contract, typed ont:PlotRow per row) and the row
+  # contracts bound to it by name (entity.ref = the row). One extractor reads both: a row's proofs are its bound
+  # contract, its pinned-version fixtures, its plot surface entry and its passing oracle receipt.
+  - {name: ggplot2-core, extractor: ggplot2_core, implemented: true}
+  - {name: ggplot2-row, extractor: ggplot2_core, implemented: true}
 
 extractors:
   - {name: pv_contract, reader: ontology/extract/pv_contract.rs, implemented: true}
@@ -198,6 +220,7 @@ extractors:
   - {name: release_evidence, reader: ontology/extract/release_evidence.rs, implemented: true}
   - {name: cli_surface, reader: ontology/extract/cli_surface.rs, implemented: true}
   - {name: kernel, reader: ontology/extract/kernel.rs, implemented: true}
+  - {name: ggplot2_core, reader: ontology/extract/ggplot2_core.rs, implemented: true}
 
 # v4.16 D-T1 (qd4c4): the class a shape with no `targetClass` targets, by `entity.type` (shapes.rs::default_target).
 # A type absent here has no default: its shape is malformed, exit 3, named. The sigma gate cross-checks the map
@@ -223,6 +246,8 @@ entity_type_target_class:
   issue: ont:Issue
   pull-request: ont:PullRequest
   milestone: ont:Milestone
+  ggplot2-core: ont:PlotRow
+  ggplot2-row: ~
 
 # v4.16 D5b (qd4c3): which `## ` headings of an llm-context file satisfy each role. extract:llm-context emits
 # llm:purposeSection / rulesSection / commandsSection / layoutSection per match; an unlisted heading is no error.
@@ -265,6 +290,17 @@ subsumes:
   - {sub: Issue, sup: Json}
   - {sub: PullRequest, sup: Json}
   - {sub: Milestone, sup: Json}
+  # PLOT-GG-001: each row concept's doc opens "a PlotRow that is …".
+  - {sub: Geom, sup: PlotRow}
+  - {sub: Stat, sup: PlotRow}
+  - {sub: Position, sup: PlotRow}
+  - {sub: Scale, sup: PlotRow}
+  - {sub: Coord, sup: PlotRow}
+  - {sub: Facet, sup: PlotRow}
+  - {sub: Guide, sup: PlotRow}
+  - {sub: Theme, sup: PlotRow}
+  - {sub: Label, sup: PlotRow}
+  - {sub: OutputTarget, sup: PlotRow}
 
 readers:
   concepts: ontology/sigma.rs

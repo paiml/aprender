@@ -752,6 +752,10 @@ if [ "$MODE" = "--check" ]; then
     done
   done
   [ $any_behind -eq 0 ] && echo "  ✅ ALL $UNIVERSE_N crates at their target version"
+  # #7000: the post-publish smoke is SKIPPED here, on purpose. --check uploads
+  # nothing, so there is no release this run published to smoke or yank, and a
+  # container compile has no place in a status report.
+  echo "  post-publish smoke: SKIPPED in --check (uploads nothing; nothing this run published to smoke or yank)"
   exit 0
 fi
 
@@ -857,8 +861,38 @@ done
 if [ $ALL_OK -eq 1 ]; then
   echo "  ✅ ALL $VERIFIED crates at their target version (root $TARGET_VERSION)"
   echo ""
-  echo "Run: cargo install aprender --force && apr --version"
-  exit 0
+  # POST-PUBLISH SMOKE (#7000). This used to only echo the install command, so
+  # nothing ever ran `cargo install aprender@<v>` and a broken release stayed
+  # live. Now it runs in a clean container, and a failing smoke yanks THIS
+  # run's version (operator ruling 2026-10-25 16:23Z; scripts/post_publish_smoke.sh
+  # holds the only yank). Reaching here means a publishing run (--check,
+  # --order-check and --rehearse exit earlier), so the live path applies; any
+  # other MODE gets --dry-run so it can never yank.
+  # Wait (bounded) for the sparse index cargo resolves against to show the root.
+  # If it never shows, the smoke is NOT run as a yanking run: the version is not
+  # resolvable yet, which says nothing about the release. Report not_measured
+  # (rc 3, andon line with the exact rerun command) and exit non-zero.
+  idx_try=0
+  until version_live aprender "$TARGET_VERSION" || [ "$idx_try" -ge 20 ]; do
+    idx_try=$((idx_try + 1)); sleep 15
+  done
+  if ! version_live aprender "$TARGET_VERSION"; then
+    bash "$REPO_ROOT/scripts/post_publish_smoke.sh" --version "$TARGET_VERSION" \
+      --train-published "$TARGET_VERSION" \
+      --not-measured "sparse index still lacks aprender $TARGET_VERSION after 5 min"
+    smoke_rc=$?
+    [ "$smoke_rc" -ne 0 ] || smoke_rc=3
+    exit "$smoke_rc"
+  fi
+  SMOKE_FLAGS=""
+  case "$MODE" in
+    publish|--tier) : ;;
+    *) SMOKE_FLAGS="--dry-run"; echo "  post-publish smoke: MODE=$MODE is not a publishing run, calling with --dry-run (no yank possible)" ;;
+  esac
+  smoke_rc=0
+  bash "$REPO_ROOT/scripts/post_publish_smoke.sh" --version "$TARGET_VERSION" \
+    --train-published "$TARGET_VERSION" $SMOKE_FLAGS || smoke_rc=$?
+  exit "$smoke_rc"
 else
   exit 1
 fi

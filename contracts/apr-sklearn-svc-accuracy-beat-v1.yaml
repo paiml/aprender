@@ -52,3 +52,12 @@ beat:
   baseline_sourced_date: "2026-07-04"
   approved_compute: CPU
   ci_gate_name: "beat_sklearn_svc_accuracy"
+
+# #5291 batch 2: the beat gate above, bound as a falsification test. The test
+# reads beat_threshold from this file, so lowering the measured value or
+# raising the threshold past it turns it red.
+falsification_tests:
+  - id: FALSIFY-BEAT-SKLEARN-SVC-001
+    rule: "apr multiclass SVC (RBF and polynomial kernels) test accuracy on the Iris split is >= beat.beat_threshold"
+    prediction: "beat_sklearn_svc_accuracy passes; it fails when either kernel's accuracy < beat_threshold"
+    test: "cargo test -p aprender-core --test beat_sklearn_svc_accuracy beat_sklearn_svc_accuracy"

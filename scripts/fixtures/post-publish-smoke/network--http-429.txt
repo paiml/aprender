@@ -1,0 +1,9 @@
+    Updating crates.io index
+warning: spurious network error (3 tries remaining): failed to get successful HTTP response from `https://static.crates.io/crates/aprender-core/0.75.0/download`, got 429
+error: failed to compile `aprender v0.75.0`, intermediate artifacts can be found at `/tmp/cargo-installAbC123`.
+
+Caused by:
+  failed to download from `https://static.crates.io/crates/aprender-core/0.75.0/download`
+
+Caused by:
+  failed to get successful HTTP response from `https://static.crates.io/crates/aprender-core/0.75.0/download`, got 429

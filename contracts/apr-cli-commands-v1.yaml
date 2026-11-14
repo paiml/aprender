@@ -972,3 +972,27 @@ falsification:
       re-check its thresholds so a non-clap caller also fails closed. The
       shared validator is crates/apr-cli/src/commands/threshold_arg.rs.
     enforcement: "cargo test -p apr-cli --test cli_commands nan_threshold_never_reports_a_failing_lint_gate_as_ok"
+
+# #5291 batch 2: the FALSIFY-CLI rows above (their `enforcement:` cargo tests),
+# in the falsification_tests shape pv counts.
+falsification_tests:
+  - id: FALSIFY-CLI-001
+    rule: "every commands[].name in this contract appears in `apr --help`"
+    prediction: "test_all_contract_commands_exist passes; it fails when a registered command is missing from the binary"
+    test: "cargo test -p apr-cli --test cli_commands test_all_contract_commands_exist"
+  - id: FALSIFY-CLI-002
+    rule: "every command `apr --help` lists has an entry in this contract"
+    prediction: "test_no_unregistered_commands passes; it fails when the binary grows an unregistered command"
+    test: "cargo test -p apr-cli --test cli_commands test_no_unregistered_commands"
+  - id: FALSIFY-CLI-003
+    rule: "every command exits 0 on --help and does not panic"
+    prediction: "test_all_commands_respond_to_help passes; it fails on a non-zero exit or panic"
+    test: "cargo test -p apr-cli --test cli_commands test_all_commands_respond_to_help"
+  - id: FALSIFY-CLI-004
+    rule: "[condition FALSIFY-CLI-005] the number of commands in `apr --help` equals the number registered here"
+    prediction: "test_command_count_matches passes; it fails when the counts drift"
+    test: "cargo test -p apr-cli --test cli_commands test_command_count_matches"
+  - id: FALSIFY-CLI-005
+    rule: "[condition FALSIFY-CLI-THRESHOLD-NAN-001] a NaN tolerance/threshold flag never turns a failing CRUX lint gate into an exit-0 Ok report; each case fails both with the defaults and with the NaN value"
+    prediction: "nan_threshold_never_reports_a_failing_lint_gate_as_ok passes; it fails when a NaN threshold makes the failing branch unreachable"
+    test: "cargo test -p apr-cli --test cli_commands nan_threshold_never_reports_a_failing_lint_gate_as_ok"
