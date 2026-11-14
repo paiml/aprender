@@ -27,6 +27,10 @@ pub struct Aes {
     pub group: Option<String>,
     /// Label mapping (column name).
     pub label: Option<String>,
+    /// Lower bound mapping (column name), for `geom_errorbar`.
+    pub ymin: Option<String>,
+    /// Upper bound mapping (column name), for `geom_errorbar`.
+    pub ymax: Option<String>,
 
     // Fixed values (not data-mapped)
     /// Fixed color value.
@@ -48,6 +52,20 @@ impl Aes {
     #[must_use]
     pub fn x(mut self, column: &str) -> Self {
         self.x = Some(column.to_string());
+        self
+    }
+
+    /// Map the lower bound to a column.
+    #[must_use]
+    pub fn ymin(mut self, column: &str) -> Self {
+        self.ymin = Some(column.to_string());
+        self
+    }
+
+    /// Map the upper bound to a column.
+    #[must_use]
+    pub fn ymax(mut self, column: &str) -> Self {
+        self.ymax = Some(column.to_string());
         self
     }
 
@@ -141,6 +159,8 @@ impl Aes {
             fill: other.fill.clone().or_else(|| self.fill.clone()),
             group: other.group.clone().or_else(|| self.group.clone()),
             label: other.label.clone().or_else(|| self.label.clone()),
+            ymin: other.ymin.clone().or_else(|| self.ymin.clone()),
+            ymax: other.ymax.clone().or_else(|| self.ymax.clone()),
             color_value: other.color_value.or(self.color_value),
             size_value: other.size_value.or(self.size_value),
             alpha_value: other.alpha_value.or(self.alpha_value),

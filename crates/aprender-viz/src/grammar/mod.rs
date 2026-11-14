@@ -35,6 +35,8 @@ mod aes;
 mod build;
 mod coord;
 mod data;
+mod dist;
+mod dist_math;
 mod facet;
 mod geom;
 mod ggplot;
@@ -63,6 +65,7 @@ pub use build::{
 };
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
+pub use dist::{DistKind, DistSpec};
 pub use facet::{panels, Facet, Panel};
 pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
