@@ -591,9 +591,9 @@ STUB
   wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
-  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
-  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}"
+  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}"
   # Q6 quorum, C324: mac-check is LAB and left ci.yml (nightly.yml now). The `mac` key is
   # still computed above; ci.yml must neither run the job nor export the key.
   if [ -z "$(job mac-check)" ]; then pass=$((pass + 1)); else
@@ -602,7 +602,7 @@ STUB
     fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
   wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
   wire x86-main-advisories "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
-  wire workspace-test-shard "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}"
+  wire workspace-test-shard "if: \${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}"
   wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
   # PMAT-6169: pr-x64 is a variable-selected OPTION; the runs-on line is compared EXACT. PR_LIGHT_POOL == 'pr-x64' picks the
   # X64 pr-x64 pool, anything else (unset, today) keeps X64 clean-room.
@@ -641,8 +641,10 @@ STUB
     local f="$1" n="$2" j="$3" want="$4" ev="$5" prl="$6" rc scr; shift 6
     scr=$(stepscript "$f" "$j")
     [ -n "$scr" ] || { fail=$((fail + 1)); echo "FAIL prl-$n: no run script found for $j"; return; }
+    mkdir -p "$T/fakegh"
+    printf '#!/bin/sh\n[ "${FAKE_BEHIND:-0}" = fail ] && exit 1\necho "${FAKE_BEHIND:-0}"\n' > "$T/fakegh/gh"; chmod +x "$T/fakegh/gh"
     rc=0
-    env EVT="$ev" PRL="$prl" DRAFT="" RESULTS="null" MG="skipped" MG_X86="" MG_DET="" MG_CITE="" ADV="skipped" \
+    env PATH="$T/fakegh:$PATH" REPO=x/y BASE_REF=main HEAD_SHA=abc EVT="$ev" PRL="$prl" DRAFT="" REF="refs/pull/1/merge" RESULTS="null" MG="skipped" MG_X86="" MG_DET="" MG_CITE="" ADV="skipped" \
       X86="null" DET="null" WT="success" MST="success" SHARD_RESULT="skipped" WT_REUSE="" WT_CITE="" "$@" \
       bash -c "$scr" > /dev/null 2>&1 || rc=$?
     case "$want" in
@@ -653,7 +655,10 @@ STUB
   prlsuite() { # prlsuite WF TAG -> every row against workflow WF (TAG names the variant)
     local f="$1" t="$2" j
     for j in ci-gate gate workspace-test; do
-      prlrow "$f" "$t-$j-pr-light-ok"        "$j" 0   pull_request success
+      prlrow "$f" "$t-$j-pr-light-ok-not-train" "$j" red pull_request success
+      prlrow "$f" "$t-$j-train-behind"  "$j" red pull_request success TRAIN=1 FAKE_BEHIND=3
+      prlrow "$f" "$t-$j-train-unread"  "$j" red pull_request success TRAIN=1 FAKE_BEHIND=fail
+      prlrow "$f" "$t-$j-train-heavy-skipped" "$j" red pull_request success TRAIN=1 FAKE_BEHIND=0
       prlrow "$f" "$t-$j-pr-light-failed"    "$j" red pull_request failure
       prlrow "$f" "$t-$j-pr-light-skipped"   "$j" red pull_request skipped
       prlrow "$f" "$t-$j-pr-light-cancelled" "$j" red pull_request cancelled
@@ -673,6 +678,35 @@ STUB
       'GRD={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' GRDR=success \
       'DET={"determinism-compare":{"result":"success"}}'
     prlrow "$f" "$t-workspace-test-mg-shards-ran" workspace-test red merge_group skipped SHARD_RESULT=skipped
+    # #7001 controls: a train PR on main's tip with every heavy job green passes; the same with pr-light red, or off the tip, does not
+    prlrow "$f" "$t-workspace-test-train-green" workspace-test 0 pull_request success TRAIN=1 FAKE_BEHIND=0 SHARD_RESULT=success
+    prlrow "$f" "$t-workspace-test-train-prl-failed" workspace-test red pull_request failure TRAIN=1 FAKE_BEHIND=0 SHARD_RESULT=success
+    prlrow "$f" "$t-workspace-test-train-behind-shards-green" workspace-test red pull_request success TRAIN=1 FAKE_BEHIND=2 SHARD_RESULT=success
+    prlrow "$f" "$t-workspace-test-mg-shards-green" workspace-test 0 merge_group skipped SHARD_RESULT=success
+    prlrow "$f" "$t-workspace-test-empty-shards-green" workspace-test 0 "" success SHARD_RESULT=success
+    prlrow "$f" "$t-ci-gate-train-green" ci-gate 0 pull_request success TRAIN=1 FAKE_BEHIND=0 'RESULTS={"sov.gate":{"result":"success"}}'
+    prlrow "$f" "$t-ci-gate-empty-heavy-green" ci-gate 0 "" success 'RESULTS={"sov.gate":{"result":"success"}}'
+    prlrow "$f" "$t-ci-gate-train-prl-failed" ci-gate red pull_request failure TRAIN=1 FAKE_BEHIND=0 'RESULTS={"sov.gate":{"result":"success"}}'
+    # #7001 fix round 1: a draft is RED (exit 1, never green, never skipped), even a train with every heavy job green
+    prlrow "$f" "$t-ci-gate-draft-train-green-heavy" ci-gate red pull_request success TRAIN=1 FAKE_BEHIND=0 DRAFT=true 'RESULTS={"sov.gate":{"result":"success"}}'
+    prlrow "$f" "$t-workspace-test-draft-train-green-heavy" workspace-test red pull_request success TRAIN=1 FAKE_BEHIND=0 DRAFT=true SHARD_RESULT=success
+    prlrow "$f" "$t-gate-draft-mg-green" gate red merge_group skipped DRAFT=true \
+      'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+      'GRD={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' GRDR=success \
+      'DET={"determinism-compare":{"result":"success"}}'
+    # workflow_dispatch counts only on refs/heads/main, even with every heavy result green
+    for j in ci-gate workspace-test; do
+      case "$j" in ci-gate) g='RESULTS={"sov.gate":{"result":"success"}}' ;; *) g=SHARD_RESULT=success ;; esac
+      prlrow "$f" "$t-$j-dispatch-branch-green-heavy" "$j" red workflow_dispatch skipped REF=refs/heads/some-branch "$g"
+      prlrow "$f" "$t-$j-dispatch-emptyref-green-heavy" "$j" red workflow_dispatch skipped REF= "$g"
+      prlrow "$f" "$t-$j-dispatch-main-green-heavy" "$j" 0 workflow_dispatch skipped REF=refs/heads/main "$g"
+    done
+    prlrow "$f" "$t-gate-dispatch-branch-green-heavy" gate red workflow_dispatch skipped REF=refs/heads/some-branch \
+      'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+      'DET={"determinism-compare":{"result":"success"}}'
+    prlrow "$f" "$t-gate-dispatch-main-green-heavy" gate 0 workflow_dispatch skipped REF=refs/heads/main \
+      'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}' \
+      'DET={"determinism-compare":{"result":"success"}}'
   }
   prlsuite "$wf" real
   prlmut() { # prlmut NAME SED_EXPR: the mutant must change ci.yml and at least one prl row must go RED against it
@@ -690,6 +724,12 @@ STUB
   prlmut event-check-deleted-gate '/^  gate:$/,$ {s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
   prlmut event-check-deleted-workspace-test '/^  workspace-test:$/,/^  ci-gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if true; then/}'
   prlmut empty-event-counts-as-pr '/^  ci-gate:$/,/^  gate:$/{s/if \[ "\$\{EVT:-\}" = pull_request \]; then/if [ "${EVT:-pull_request}" = pull_request ]; then/}'
+  prlmut draft-exit-0-ci-gate '/^  ci-gate:$/,/^  gate:$/{s/(draft: not mergeable; mark ready[^"]*"; )exit 1/\1exit 0/}'
+  prlmut draft-exit-0-workspace-test '/^  workspace-test:$/,/^  ci-gate:$/{s/(draft: not mergeable; mark ready[^"]*"; )exit 1/\1exit 0/}'
+  prlmut draft-exit-0-gate '/^  gate:$/,${s/(draft: not mergeable; mark ready[^"]*"; )exit 1/\1exit 0/}'
+  prlmut dispatch-any-ref-ci-gate '/^  ci-gate:$/,/^  gate:$/{s/\|\| \[ "\$\{REF:-\}" = refs\/heads\/main \]/|| true/}'
+  prlmut dispatch-any-ref-workspace-test '/^  workspace-test:$/,/^  ci-gate:$/{s/\|\| \[ "\$\{REF:-\}" = refs\/heads\/main \]/|| true/}'
+  prlmut dispatch-any-ref-gate '/^  gate:$/,${s/\|\| \[ "\$\{REF:-\}" = refs\/heads\/main \]/|| true/}'
   prlmut pr-light-result-ignored '/^  ci-gate:$/,/^  gate:$/{s/\[ "\$\{PRL:-\}" = success \] \|\| /true || /}'
   poolrows() { # poolrows WF -> one line per violated pool row
     local j l want
@@ -765,7 +805,7 @@ STUB
     fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
   mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
   mgmut mg-if-removed-string-elsewhere "is not the push-only key" "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
-  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" '/^  x86-main:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: \${{ /}'
   mgmut determinism-if-loses-cancelled "job determinism needs mg-reuse but its if lacks" '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
   mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
   mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'

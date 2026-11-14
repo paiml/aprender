@@ -440,7 +440,7 @@ GH2EOF
   rm -rf "${d2:?}"
   # PMAT-5843: the required check must exist on a PR head. required set ∩ merge_group-only jobs = ∅, read from the real ci.yml.
   wf="$(dirname "$0")/../.github/workflows/ci.yml"
-  eq 'static: the parser finds the known merge-queue-only job x86-main' "$(mq_only_jobs "$wf" | grep -cxF x86-main)" 1
+  eq 'static: the parser finds the known merge-queue-only job guards (x86-main ran on a train PR from #7001, so it is no longer one)' "$(mq_only_jobs "$wf" | grep -cxF guards)" 1
   eq 'static: the parser does not call pr-light merge-queue-only' "$(mq_only_jobs "$wf" | grep -cxF pr-light)" 0
   eq 'static: the feeder requires a job that exists in ci.yml' "$(ci_jobs all "$wf" | grep -cxF -e "$GUARD_CHECK_NAME")" 1
   eq 'static: the feeder required set is disjoint from the merge-queue-only jobs' "$(required_is_mq_only "$GUARD_CHECK_NAME" "$wf")" ''

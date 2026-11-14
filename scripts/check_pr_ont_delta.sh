@@ -35,7 +35,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 usage() {
-    printf 'usage: %s (--body FILE --changed FILE) | --self-test\n' "$(basename "$0")" >&2
+    printf 'usage: %s (--body FILE --changed FILE [--head-ref REF --author LOGIN]) | --self-test\n' "$(basename "$0")" >&2
     exit 2
 }
 
@@ -83,8 +83,45 @@ sweep_reason() { # sweep_reason CHANGED_FILE
 ONT_DELTA_KINDS="type shape reason resolves"
 
 check_body_text() { # check_body_text BODY_FILE -> 0 ok, 1 bad; prints the verdict
-    local body="$1" line kind rest k ok
-    line="$(grep -iE '^[[:space:]]*ont-delta:' "$body" | head -1 || true)"
+    local line
+    line="$(grep -iE '^[[:space:]]*ont-delta:' "$1" | head -1 || true)"
+    check_delta_line "$line"
+}
+
+# TRAIN BODY (#7001 fix round 1, B4). The merge train opens `train/aprender-*` PRs from the fleet App; its body has no
+# delta of its own, it AGGREGATES its members'. Accepted shape, copied verbatim from each member's body:
+#     train-members: #7006 #7007            one line, one or more PR numbers
+#     member #7006                          (any text; ignored)
+#     ont-delta: type ONT-x                 each member's own ont-delta line, copied verbatim
+#     Closes #123                           each member's own closing / keep-open lines (see check_pr_closes_issue.sh)
+# Train mode needs: a train-members line naming >= 1 PR, at least one ont-delta line per named member, and EVERY ont-delta
+# line valid. Train mode is entered only by --head-ref/--author naming a train (TRAIN_BOT below); any other PR keeps the
+# first-line rule above, so a `train-members:` line in a feature-branch body buys nothing.
+TRAIN_BOT='paiml-fleet[bot]'   # must equal BOT in scripts/check_ci_train_only.sh (the guard asserts it)
+is_train() { # is_train HEAD_REF AUTHOR
+    case "$1" in train/aprender-*) [ "$2" = "$TRAIN_BOT" ] ;; *) return 1 ;; esac
+}
+check_train_body_text() { # check_train_body_text BODY_FILE -> 0 ok, 1 bad
+    local body="$1" mline members=0 deltas=0 line bad=0
+    mline="$(grep -iE '^[[:space:]]*train-members:' "$body" | head -1 || true)"
+    if [ -n "$mline" ]; then members="$(printf '%s\n' "${mline#*:}" | grep -oE '#[0-9]+' | sort -u | wc -l)"; fi
+    if [ "$members" -lt 1 ]; then
+        printf 'FAIL  train body has no `train-members: #N [#M ...]` line naming at least one member PR.\n'
+        return 1
+    fi
+    deltas="$(grep -ciE '^[[:space:]]*ont-delta:' "$body" || true)"
+    if [ "$deltas" -lt "$members" ]; then
+        printf 'FAIL  train body names %s member(s) but carries %s ont-delta line(s); copy each member'"'"'s line verbatim.\n' "$members" "$deltas"
+        return 1
+    fi
+    while IFS= read -r line; do
+        check_delta_line "$line" || bad=1
+    done < <(grep -iE '^[[:space:]]*ont-delta:' "$body")
+    return "$bad"
+}
+
+check_delta_line() { # check_delta_line LINE -> 0 ok, 1 bad; prints the verdict
+    local line="$1" kind rest k ok
     if [ -z "$line" ]; then
         printf 'FAIL  no `ont-delta:` line. §11.1: a sweep PR closes with a delta,\n'
         printf '      not a paragraph. Use one of:\n'
@@ -163,6 +200,39 @@ trailer'
     row "type with NO id"                 1 'ont-delta: type'
     row "shape with NO id"                1 'ont-delta: shape  '
     row "empty body"                      1 ''
+    # --- train bodies (#7001 B4): aggregated member lines, judged only for a train ref + the fleet App author ---
+    trow() { # trow NAME WANT BODY
+        local name="$1" want="$2" body="$3"
+        printf '%s' "$body" > "$tmp/b.txt"
+        set +e; check_train_body_text "$tmp/b.txt" >/dev/null 2>&1; rc=$?; set -e
+        if [ "$rc" -eq "$want" ]; then pass=$((pass+1)); printf '  ok    %-46s want=%s\n' "$name" "$want"
+        else fail=$((fail+1)); printf '  FAIL  %-46s want=%s got=%s\n' "$name" "$want" "$rc"; fi
+    }
+    trow "train: two members, two deltas"      0 'train-members: #7006 #7007
+member #7006
+ont-delta: type ONT-x
+Closes #12
+member #7007
+ont-delta: none docs only'
+    trow "train: one member"                   0 'train-members: #7006
+ont-delta: resolves scripts/x.sh'
+    trow "train: no train-members line"        1 'ont-delta: type ONT-x'
+    trow "train: members line names no PR"     1 'train-members: none
+ont-delta: type ONT-x'
+    trow "train: fewer deltas than members"    1 'train-members: #1 #2
+ont-delta: type ONT-x'
+    trow "train: one member delta invalid"     1 'train-members: #1 #2
+ont-delta: type ONT-x
+ont-delta: none'
+    trow "train: unknown kind in a member"     1 'train-members: #1
+ont-delta: entity ONT-x'
+    trow "train: empty body"                   1 ''
+    for who in "train/aprender-1:paiml-fleet[bot]:0" "train/aprender-1:noahgift:1" "feat/x:paiml-fleet[bot]:1" "train/other-1:paiml-fleet[bot]:1" ":paiml-fleet[bot]:1"; do
+        ref="${who%%:*}"; rest="${who#*:}"; au="${rest%:*}"; want="${who##*:}"
+        if is_train "$ref" "$au"; then got=0; else got=1; fi
+        if [ "$got" = "$want" ]; then pass=$((pass+1)); printf '  ok    %-46s want=%s\n' "is_train $ref $au" "$want"
+        else fail=$((fail+1)); printf '  FAIL  %-46s want=%s got=%s\n' "is_train $ref $au" "$want" "$got"; fi
+    done
     printf 'self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ -n "$tmp" ] && [ -d "$tmp" ] && rm -rf "$tmp"
     [ "$fail" -eq 0 ]
@@ -214,7 +284,7 @@ predicate_self_test() {
 }
 
 main() {
-    local body="" changed="" reason
+    local body="" changed="" reason head_ref="" author="" judge=check_body_text
     if [ $# -eq 0 ] || [ "${1:-}" = "--self-test" ]; then
         self_test && predicate_self_test; return $?
     fi
@@ -222,6 +292,8 @@ main() {
         case "$1" in
             --body)    body="${2:-}"; shift 2 ;;
             --changed) changed="${2:-}"; shift 2 ;;
+            --head-ref) head_ref="${2:-}"; shift 2 ;;
+            --author)   author="${2:-}"; shift 2 ;;
             *) usage ;;
         esac
     done
@@ -248,7 +320,8 @@ main() {
         return 0
     fi
     printf 'sweep PR: %s\n' "$reason"
-    if check_body_text "$body"; then printf 'PASS\n'; return 0; fi
+    if is_train "$head_ref" "$author"; then judge=check_train_body_text; printf 'train PR: judging the aggregated member lines\n'; fi
+    if "$judge" "$body"; then printf 'PASS\n'; return 0; fi
     printf 'FAILED: §11.1 — a sweep that ends in prose and nothing else is not finished.\n'
     return 1
 }

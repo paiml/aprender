@@ -89,13 +89,13 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     n_gate=$(printf '%s\n' "$g" | grep -c -E '^    needs: \[(.*, )?determinism(, .*)?\]$|^    if: always\(\)$|^ +for pair in .*DET:determinism-compare')
     [ "$n_gate" = 3 ] ||   # m:nogate
         { printf 'FAIL  W7 the gate no longer needs determinism under always() and reads DET:determinism-compare\n'; bad=1; }
-    # W10 determinism does not run on a PR head (the ARM64 pool is the queue's), so the job's if: names
-    # pull_request AND the gate skips DET:determinism-compare on pull_request only: a skipped job must
-    # not read as a missing section (RED on every PR), and the skip must not widen to other events.
-    grep -q -E "^    if: .*&& github\.event_name != 'pull_request' \}\}$" <<<"$j" ||   # m:nopr
-        { printf 'FAIL  W10 the determinism job still runs on a pull_request head (it competes with the queue head for the ARM64 pool)\n'; bad=1; }
-    [ "$(printf '%s\n' "$g" | grep -c -F '[ "$job:$EVT" = "DET:pull_request" ] && continue')" = 1 ] ||   # m:noskip
-        { printf 'FAIL  W10 the gate does not skip DET:determinism-compare on pull_request only\n'; bad=1; }
+    # W10 (#7001) determinism runs on push/tag and on a TRAIN pull_request (the heavy tier runs once per train), never on a
+    # non-train PR head: the job's if: names the pull_request exclusion with the train escape, and the gate skips NOTHING:
+    # a non-train pull_request is refused before the section loop, and a train PR owes DET:determinism-compare.
+    grep -q -E "^    if: .*\(github\.event_name != 'pull_request' \|\| \(.*startsWith\(github\.event\.pull_request\.head\.ref, 'train/aprender-'\).*\)\) \}\}$" <<<"$j" ||   # m:nopr
+        { printf 'FAIL  W10 the determinism job runs on a non-train pull_request head (it competes with the queue head for the ARM64 pool)\n'; bad=1; }
+    [ "$(printf '%s\n' "$g" | grep -c -E 'DET:[a-z_]+" \] && continue')" = 0 ] ||   # m:noskip
+        { printf 'FAIL  W10 the gate skips DET:determinism-compare on some event (a train PR owes it)\n'; bad=1; }
     # W10b the gate's EVT is the live event, not a literal: a hardcoded `EVT: pull_request` would
     # exempt DET:determinism-compare on merge_group and tag runs and every check above would still pass.
     [ "$(printf '%s\n' "$g" | grep -c -F 'EVT: ${{ github.event_name }}')" -ge 1 ] ||   # m:evtlit
@@ -175,12 +175,14 @@ selftest() {
     plant "$d/w5.yml" "s/determinism\\[ARM64\\],determinism-compare/determinism[ARM64]/"
     check "$d/w5.yml" > /dev/null 2>&1; row W5 RED $? "the compare section dropped from the job"
 
-    plant "$d/x1.yml" "s/ && github\\.event_name != 'pull_request' \\}\\}\$/ }}/"
-    check "$d/x1.yml" > /dev/null 2>&1; row X1 RED $? "determinism back on PR heads (the if: loses its pull_request clause)"
-    plant_file "$CI" "$d/x3.yml" '/^  gate:$/,/^    steps:$/!{/DET:pull_request" \] && continue/d}'
-    check "$d/x3.yml" > /dev/null 2>&1; row X3 RED $? "a gate that reads a skipped determinism-compare on a PR (RED on every PR)"
-    plant_file "$CI" "$d/x4.yml" '/^  gate:$/,/^    steps:$/!{s/"DET:pull_request" \] && continue/"DET:merge_group" ] \&\& continue/}'
-    check "$d/x4.yml" > /dev/null 2>&1; row X4 RED $? "a gate that skips determinism-compare on merge_group instead of pull_request"
+    plant "$d/x1.yml" "s/ && \\(github\\.event_name != 'pull_request' \\|\\|.*\$/ }}/"
+    check "$d/x1.yml" > /dev/null 2>&1; row X1 RED $? "determinism back on every PR head (the if: loses its pull_request exclusion)"
+    plant_file "$CI" "$d/x3.yml" '/^  gate:$/,/^    steps:$/!{s/^( +)r=\$\(res "\$\{!job\}" "\$sec"\)$/\1[ "$job:$EVT" = "DET:pull_request" ] \&\& continue\n&/}'
+    check "$d/x3.yml" > /dev/null 2>&1; row X3 RED $? "a gate that skips determinism-compare on a pull_request (a train PR owes it)"
+    plant_file "$CI" "$d/x4.yml" '/^  gate:$/,/^    steps:$/!{s/^( +)r=\$\(res "\$\{!job\}" "\$sec"\)$/\1[ "$job:$EVT" = "DET:merge_group" ] \&\& continue\n&/}'
+    check "$d/x4.yml" > /dev/null 2>&1; row X4 RED $? "a gate that skips determinism-compare on merge_group"
+    plant "$d/x6.yml" "s/ && startsWith\\(github\\.event\\.pull_request\\.head\\.ref, 'train\\/aprender-'\\)//"
+    check "$d/x6.yml" > /dev/null 2>&1; row X6 RED $? "determinism on a pull_request whose train ref prefix conjunct was dropped"
     plant_file "$CI" "$d/x5.yml" '/^  gate:$/,/^    steps:$/!{s/EVT: \$\{\{ github\.event_name \}\}/EVT: pull_request/}'
     check "$d/x5.yml" > /dev/null 2>&1; row X5 RED $? "a gate whose EVT is the literal pull_request (determinism exempt on every event)"
     plant "$d/w3c.yml" "s/^( +)(.*--sections 'determinism\\[ARM64\\],determinism-compare'.*)\$/\\1\\2\\n          FAT_ARTIFACT_WAIT_S: \"3600\"/"

@@ -320,7 +320,7 @@ jobs:
     needs: [mg-reuse]
     # Noah 15:09Z (#5955): heavy jobs run only in the merge queue and on push; a PR runs pr-light. `!= 'pull_request'` is
     # fail-closed: an empty or unknown event name owes the heavy job.
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}
     # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
     runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
@@ -440,6 +440,13 @@ jobs:
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh --self-test
       - name: install the toolchain rust-toolchain.toml pins
         run: setsid --wait bash scripts/ci/install_pinned_toolchain.sh
+      # #7001: on merge_group this step runs in the `guards` job; a train PR never reaches merge_group, so it runs here
+      - name: Binary Release bin filter (#6502) keeps every published bin and drops every publish=false one
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          set -euo pipefail
+          export PATH="$HOME/.cargo/bin:$PATH"
+          bash scripts/tests/release_bin_filter_test.sh
       # PMAT-5971: on a merge_group entry guard-tree, guard-cargo and vendored-schemas run in the
       # `guards` job (below), not here: measured over 20 queue runs they were the two longest
       # sections (guard-cargo 1602 s median / 2100 s p90) and x86-main waited for them.
@@ -669,7 +676,7 @@ jobs:
     # PR heads on the same gx10 pool as the queue head (a PR-head determinism queued ahead of the MQ
     # head's), so it runs on merge_group / push / tag only. x86-main stays on PR heads. The gate skips
     # DET:determinism-compare on pull_request only (loop below; scripts/check_determinism_wait.sh W10).
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
@@ -762,7 +769,7 @@ jobs:
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
     needs: [mg-reuse-wt]
-    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+    if: ${{ !cancelled() && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]')) }}
     # same lane as x86-main: the plain clean-room seats on every event
     runs-on: [self-hosted, Linux, X64, clean-room]
     # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY
@@ -830,6 +837,18 @@ jobs:
     timeout-minutes: 10
     needs: [workspace-test-shard, mg-reuse-wt, pr-light]
     if: always()
+    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet App (paiml-fleet[bot]; infra's merge-train.sh opens train PRs with the App token).
+    # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
+      REF: ${{ github.ref }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Every shard passed (or the whole set was reused from an identical-tree green PR run)
         env:
@@ -841,13 +860,29 @@ jobs:
           PRL: ${{ needs.pr-light.result }}
         run: |
           set -euo pipefail
-          [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
+          [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
+          [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
+          # #7001: a push of a v* tag or master runs the heavy tier with no base-drift check; at the head sha of an open PR its
+          # green would satisfy that PR's required checks. Off refs/heads/main a push is evidence only for a sha no open PR heads.
+          if [ "${EVT:-}" = push ] && [ "${REF:-}" != refs/heads/main ]; then
+            open=$(gh api "repos/${REPO:?}/commits/${GITHUB_SHA:?}/pulls" --jq "[.[] | select(.state == \"open\" and .head.sha == \"${GITHUB_SHA}\")] | length") || open=unread
+            [ "$open" = 0 ] || { echo "::error::push to ${REF:-unknown} at the head of an open PR (open=$open) is not mergeable evidence (#7001)"; exit 1; }
+          fi
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # #7001: the heavy tier runs ONCE PER TRAIN. A pull_request that is not a train PR (TRAIN != 1: same-repo head,
+          # train/aprender- ref, fleet author) can never satisfy this check: pr-light must be green, then it is refused with
+          # the message below, so "light-green, waiting for a train" reads differently from a real red. A train PR must be on
+          # main's tip at verdict time (behind_by 0, a failed read is a failure) and then falls through to the heavy checks
+          # below, where a skipped or cancelled heavy job is a failure. Any other event, an empty one included, owes the
+          # heavy jobs too (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            if [ "${TRAIN:-0}" != 1 ]; then
+              echo "::error::not mergeable alone: lands only via train/aprender-* (heavy tier runs once per train, #7001)"; exit 1
+            fi
+            behind=$(gh api "repos/${REPO:?}/compare/${BASE_REF:?}...${HEAD_SHA:?}" --jq .behind_by) || behind=unread
+            [ "$behind" = 0 ] || { echo "::error::train is not on main's tip (behind_by=$behind): rebuild the train on current main (#7001)"; exit 1; }
+            echo "pull_request: train PR on main's tip; the heavy results are checked below"
           fi
           # --- PR-LIGHT-VERDICT-END ---
           echo "workspace-test-shard matrix result: $SHARD_RESULT (reuse key wt='${WT_REUSE:-}')"
@@ -860,9 +895,9 @@ jobs:
           fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
       - uses: actions/checkout@v7
-        if: ${{ github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+        if: ${{ github.event.pull_request.draft != true && (github.event_name != 'pull_request' || env.TRAIN == '1') }}
       - uses: actions/download-artifact@v4
-        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || env.TRAIN == '1') }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -871,7 +906,7 @@ jobs:
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
       - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
-        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
+        if: ${{ needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || env.TRAIN == '1') }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"
@@ -908,6 +943,18 @@ jobs:
     timeout-minutes: 10
     needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]
     if: always()
+    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet App (paiml-fleet[bot]; infra's merge-train.sh opens train PRs with the App token).
+    # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
+      REF: ${{ github.ref }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: The sovereign-ci gate section's result
         env:
@@ -922,13 +969,29 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
-          [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
+          [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
+          [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
+          # #7001: a push of a v* tag or master runs the heavy tier with no base-drift check; at the head sha of an open PR its
+          # green would satisfy that PR's required checks. Off refs/heads/main a push is evidence only for a sha no open PR heads.
+          if [ "${EVT:-}" = push ] && [ "${REF:-}" != refs/heads/main ]; then
+            open=$(gh api "repos/${REPO:?}/commits/${GITHUB_SHA:?}/pulls" --jq "[.[] | select(.state == \"open\" and .head.sha == \"${GITHUB_SHA}\")] | length") || open=unread
+            [ "$open" = 0 ] || { echo "::error::push to ${REF:-unknown} at the head of an open PR (open=$open) is not mergeable evidence (#7001)"; exit 1; }
+          fi
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # #7001: the heavy tier runs ONCE PER TRAIN. A pull_request that is not a train PR (TRAIN != 1: same-repo head,
+          # train/aprender- ref, fleet author) can never satisfy this check: pr-light must be green, then it is refused with
+          # the message below, so "light-green, waiting for a train" reads differently from a real red. A train PR must be on
+          # main's tip at verdict time (behind_by 0, a failed read is a failure) and then falls through to the heavy checks
+          # below, where a skipped or cancelled heavy job is a failure. Any other event, an empty one included, owes the
+          # heavy jobs too (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            if [ "${TRAIN:-0}" != 1 ]; then
+              echo "::error::not mergeable alone: lands only via train/aprender-* (heavy tier runs once per train, #7001)"; exit 1
+            fi
+            behind=$(gh api "repos/${REPO:?}/compare/${BASE_REF:?}...${HEAD_SHA:?}" --jq .behind_by) || behind=unread
+            [ "$behind" = 0 ] || { echo "::error::train is not on main's tip (behind_by=$behind): rebuild the train on current main (#7001)"; exit 1; }
+            echo "pull_request: train PR on main's tip; the heavy results are checked below"
           fi
           # --- PR-LIGHT-VERDICT-END ---
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
@@ -955,12 +1018,25 @@ jobs:
     timeout-minutes: 22
     needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
     if: always()
+    # #7001 TRAIN: a pull_request from this repo, head ref train/aprender-*, opened by the fleet App (paiml-fleet[bot]; infra's merge-train.sh opens train PRs with the App token).
+    # The verdict reads TRAIN and the live main tip (gh api compare) itself; the heavy jobs carry the same four conjuncts in their `if:`.
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      TRAIN: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && startsWith(github.event.pull_request.head.ref, 'train/aprender-') && github.event.pull_request.user.login == 'paiml-fleet[bot]') && '1' || '0' }}
+      REF: ${{ github.ref }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      BASE_REF: ${{ github.event.pull_request.base.ref }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
     steps:
       - name: Check required sections
         env:
           X86: ${{ needs.x86-main.outputs.results }}
           GRD: ${{ needs.guards.outputs.results }}
           GRDR: ${{ needs.guards.result }}
+          X86R: ${{ needs.x86-main.result }}
           DET: ${{ needs.determinism.outputs.results }}
           WT: ${{ needs.workspace-test.result }}
           EVT: ${{ github.event_name }}
@@ -974,23 +1050,39 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
         run: |
           set -euo pipefail
-          [ "${DRAFT:-}" != true ] || { echo "gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
+          [ "${DRAFT:-}" != true ] || { echo "::error::draft: not mergeable; mark ready, then it lands only via train/aprender-*"; exit 1; }
+          [ "${EVT:-}" != workflow_dispatch ] || [ "${REF:-}" = refs/heads/main ] || { echo "::error::workflow_dispatch on ${REF:-unknown} is not mergeable evidence: dispatch only on refs/heads/main (#7001)"; exit 1; }
+          # #7001: a push of a v* tag or master runs the heavy tier with no base-drift check; at the head sha of an open PR its
+          # green would satisfy that PR's required checks. Off refs/heads/main a push is evidence only for a sha no open PR heads.
+          if [ "${EVT:-}" = push ] && [ "${REF:-}" != refs/heads/main ]; then
+            open=$(gh api "repos/${REPO:?}/commits/${GITHUB_SHA:?}/pulls" --jq "[.[] | select(.state == \"open\" and .head.sha == \"${GITHUB_SHA}\")] | length") || open=unread
+            [ "$open" = 0 ] || { echo "::error::push to ${REF:-unknown} at the head of an open PR (open=$open) is not mergeable evidence (#7001)"; exit 1; }
+          fi
           res() { printf '%s' "${1:-null}" | SEC="$2" jq -r '(. // {})[env.SEC].result // "missing"'; }
           # The old gate's needs, in its order: guard-tree, guard-cargo, ci (the
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
           # cuda-unit were never in the gate; Q6 quorum, C324 moved them to LAB
           # (gpu-lab-nightly.yml), so no job of this workflow runs them.
           # workspace-test is its own job now (three shard jobs + the Σ fan-in).
-          [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
-          [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
-          # Only a pull_request owes pr-light instead of the heavy jobs. Any other event, an empty one included,
-          # owes the heavy jobs (fail-closed) and falls through to their checks below.
+          # #7001: the heavy tier runs ONCE PER TRAIN. A pull_request that is not a train PR (TRAIN != 1: same-repo head,
+          # train/aprender- ref, fleet author) can never satisfy this check: pr-light must be green, then it is refused with
+          # the message below, so "light-green, waiting for a train" reads differently from a real red. A train PR must be on
+          # main's tip at verdict time (behind_by 0, a failed read is a failure) and then falls through to the heavy checks
+          # below, where a skipped or cancelled heavy job is a failure. Any other event, an empty one included, owes the
+          # heavy jobs too (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
-            echo "pull_request: pr-light passed; the heavy jobs are not owed (they run in the merge queue)"; exit 0
+            if [ "${TRAIN:-0}" != 1 ]; then
+              echo "::error::not mergeable alone: lands only via train/aprender-* (heavy tier runs once per train, #7001)"; exit 1
+            fi
+            behind=$(gh api "repos/${REPO:?}/compare/${BASE_REF:?}...${HEAD_SHA:?}" --jq .behind_by) || behind=unread
+            [ "$behind" = 0 ] || { echo "::error::train is not on main's tip (behind_by=$behind): rebuild the train on current main (#7001)"; exit 1; }
+            echo "pull_request: train PR on main's tip; the heavy results are checked below"
           fi
           # --- PR-LIGHT-VERDICT-END ---
+          [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
+          [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- MG-REUSE-VERDICT-BEGIN (T43, Refs #4678; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # On merge_group, mg-reuse may skip x86-main and determinism -- both or neither -- when the PR
           # head's same-named jobs and its gate passed on this exact tree. On a push to main it may skip
@@ -1011,10 +1103,11 @@ jobs:
             G=X86; [ "$EVT" != merge_group ] || G=GRD
             # the whole guards job, not only the two sections read below: a red vendored-schemas must block the entry
             [ "$EVT" != merge_group ] || [ "${GRDR:-}" = success ] || { echo "guards job: ${GRDR:-missing}"; exit 1; }
+            # #7001: on a train PR those guards (vendored-schemas, guard-cargo-shard, the bin filter) run inside x86-main, so the
+            # train owes the whole x86-main job as merge_group owes the whole guards job; skipped or missing is red
+            [ "$EVT" != pull_request ] || [ "${X86R:-}" = success ] || { echo "::error::train: x86-main is '${X86R:-missing}', not success (#7001)"; exit 1; }
             for pair in "$G:guard-tree" "$G:guard-cargo" X86:sov.gate DET:determinism-compare; do
               job="${pair%%:*}" sec="${pair#*:}"
-              # determinism does not run on a PR head (job-level if above): not a failure there.
-              [ "$job:$EVT" = "DET:pull_request" ] && continue
               r=$(res "${!job}" "$sec")
               if [ "$r" != success ]; then
                 echo "$sec failed: $r"
