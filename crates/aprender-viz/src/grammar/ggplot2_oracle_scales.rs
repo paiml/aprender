@@ -243,56 +243,140 @@ fn ggplot2_row3_scale_log10() {
 
 // --- Row 4: scale_x/y_continuous(limits, breaks, labels, expand) -------------------------------
 
+/// A case builder that hands the frame back when it does not know the case, so builders chain.
+type CaseResult = Result<GGPlot, DataFrame>;
+
+/// Chain case builders; a name none of them knows panics, as `run_fixture` requires.
+fn first_case(name: &str, df: DataFrame, builders: &[fn(&str, DataFrame) -> CaseResult]) -> GGPlot {
+    let mut df = df;
+    for build in builders {
+        match build(name, df) {
+            Ok(plot) => return plot,
+            Err(back) => df = back,
+        }
+    }
+    panic!("unknown case {name}")
+}
+
+/// Row 4 cases that set limits or breaks.
+fn continuous_limits_case(name: &str, df: DataFrame) -> CaseResult {
+    Ok(match name {
+        "limits_no_expand_x" => point(df, "x", "y")
+            .scale_x(scale_continuous().limits(0.0, 10.0).expand(Expansion::none())),
+        "limits_no_expand_y" => point(df, "x", "y")
+            .scale_y(scale_continuous().limits(-4.0, 8.0).expand(Expansion::none())),
+        "breaks_labels_expansion" => point(df, "x", "y").scale_x(
+            scale_continuous()
+                .breaks([2.0, 5.0, 8.0, 20.0])
+                .labels(["two", "five", "eight", "twenty"])
+                .expand(Expansion::new((0.02, 0.1), (1.0, 0.0))),
+        ),
+        "limits_breaks_y" => point(df, "x", "y")
+            .scale_y(scale_continuous().limits(-3.0, 8.0).breaks([0.0, 4.0, 8.0])),
+        "limits_reversed_x" => point(df, "x", "y").scale_x(scale_continuous().limits(10.0, 0.0)),
+        "limits_oob_na_y" => point(df, "x", "y").scale_y(scale_continuous().limits(0.0, 4.0)),
+        "limits_oob_na_x" => point(df, "x", "y").scale_x(scale_continuous().limits(2.0, 8.0)),
+        "limits_equal_x" => point(df, "x", "y").scale_x(scale_continuous().limits(3.0, 3.0)),
+        _ => return Err(df),
+    })
+}
+
+/// Row 4 cases on degenerate data, expansions and infinities.
+fn continuous_degenerate_case(name: &str, df: DataFrame) -> CaseResult {
+    Ok(match name {
+        "single_point" | "all_equal" => point(df, "x", "y"),
+        "single_point_add_expand" => point(df, "x", "y")
+            .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
+        "add_expansion_y" => {
+            point(df, "x", "y").scale_y(scale_continuous().expand(Expansion::add(2.0)))
+        }
+        "single_zero" => point(df, "z", "y"),
+        "single_zero_add_expand" => point(df, "z", "y")
+            .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
+        "limits_zero_zero" => point(df, "z", "y").scale_x(scale_continuous().limits(0.0, 0.0)),
+        // +-Inf data: ignored by training, kept by the limits censor. R's plot has no scale
+        // call, and ggplot2's default x scale IS scale_x_continuous(); the explicit default
+        // spec is what keeps the rows here (see `no_spec_layout_drops_infinite_rows`).
+        "inf_mixed_x" => point(df, "f", "y").scale_x(scale_continuous()),
+        "inf_limits_x" | "inf_only_limits_x" => {
+            point(df, "f", "y").scale_x(scale_continuous().limits(0.0, 3.0))
+        }
+        "inf_mixed_y_limits" => point(df, "z", "f").scale_y(scale_continuous().limits(-1.0, 4.0)),
+        _ => return Err(df),
+    })
+}
+
 #[test]
 fn ggplot2_row4_scale_continuous_args() {
     run_fixture(
         include_str!("../../fixtures/ggplot2/scale_continuous_args/expected.json"),
         include_str!("../../fixtures/ggplot2/scale_continuous_args/data.csv"),
-        |name, df| match name {
-            "limits_no_expand_x" => point(df, "x", "y")
-                .scale_x(scale_continuous().limits(0.0, 10.0).expand(Expansion::none())),
-            "limits_no_expand_y" => point(df, "x", "y")
-                .scale_y(scale_continuous().limits(-4.0, 8.0).expand(Expansion::none())),
-            "breaks_labels_expansion" => point(df, "x", "y").scale_x(
-                scale_continuous()
-                    .breaks([2.0, 5.0, 8.0, 20.0])
-                    .labels(["two", "five", "eight", "twenty"])
-                    .expand(Expansion::new((0.02, 0.1), (1.0, 0.0))),
-            ),
-            "limits_breaks_y" => point(df, "x", "y")
-                .scale_y(scale_continuous().limits(-3.0, 8.0).breaks([0.0, 4.0, 8.0])),
-            "limits_reversed_x" => {
-                point(df, "x", "y").scale_x(scale_continuous().limits(10.0, 0.0))
-            }
-            "limits_oob_na_y" => point(df, "x", "y").scale_y(scale_continuous().limits(0.0, 4.0)),
-            "limits_oob_na_x" => point(df, "x", "y").scale_x(scale_continuous().limits(2.0, 8.0)),
-            "single_point" | "all_equal" => point(df, "x", "y"),
-            "limits_equal_x" => point(df, "x", "y").scale_x(scale_continuous().limits(3.0, 3.0)),
-            "single_point_add_expand" => point(df, "x", "y")
-                .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
-            "add_expansion_y" => {
-                point(df, "x", "y").scale_y(scale_continuous().expand(Expansion::add(2.0)))
-            }
-            "single_zero" => point(df, "z", "y"),
-            "single_zero_add_expand" => point(df, "z", "y")
-                .scale_x(scale_continuous().expand(Expansion::new((0.1, 0.1), (2.0, 2.0)))),
-            "limits_zero_zero" => point(df, "z", "y").scale_x(scale_continuous().limits(0.0, 0.0)),
-            // +-Inf data: ignored by training, kept by the limits censor. R's plot has no scale
-            // call, and ggplot2's default x scale IS scale_x_continuous(); the explicit default
-            // spec is what keeps the rows here (see `no_spec_layout_drops_infinite_rows`).
-            "inf_mixed_x" => point(df, "f", "y").scale_x(scale_continuous()),
-            "inf_limits_x" | "inf_only_limits_x" => {
-                point(df, "f", "y").scale_x(scale_continuous().limits(0.0, 3.0))
-            }
-            "inf_mixed_y_limits" => {
-                point(df, "z", "f").scale_y(scale_continuous().limits(-1.0, 4.0))
-            }
-            other => panic!("unknown case {other}"),
-        },
+        |name, df| first_case(name, df, &[continuous_limits_case, continuous_degenerate_case]),
     );
 }
 
 // --- Rows 2-4 together: mixed scales on fresh data (second pass on #6916) ----------------------
+
+/// Mixed-scale cases with a discrete axis.
+fn mixed_discrete_case(name: &str, df: DataFrame) -> CaseResult {
+    Ok(match name {
+        "disc_x_nospec" => point(df, "g", "y"),
+        "disc_y_nospec" => point(df, "x", "g"),
+        "disc_x_default" => point(df, "g", "y").scale_x(scale_discrete()),
+        "disc_limits_reversed" => {
+            point(df, "g", "y").scale_x(scale_discrete().limits(["d", "c", "b", "a"]))
+        }
+        "disc_expand_add1" => {
+            point(df, "g", "y").scale_x(scale_discrete().expand(Expansion::add(1.0)))
+        }
+        "disc_breaks_labels" => {
+            point(df, "g", "y").scale_x(scale_discrete().breaks(["d", "a"]).labels(["D", "A"]))
+        }
+        "disc_y_limits_extra" => {
+            point(df, "x", "g").scale_y(scale_discrete().limits(["a", "b", "c", "d", "e"]))
+        }
+        "disc_limits_subset" => point(df, "g", "y").scale_x(scale_discrete().limits(["b", "a"])),
+        _ => return Err(df),
+    })
+}
+
+/// Mixed-scale cases with continuous axes only.
+fn mixed_continuous_case(name: &str, df: DataFrame) -> CaseResult {
+    Ok(match name {
+        "cont_big_default" => point(df, "big", "y").scale_x(scale_continuous()),
+        "cont_small_default" => point(df, "small", "y").scale_x(scale_continuous()),
+        "cont_neg_default" => point(df, "n", "y").scale_x(scale_continuous()),
+        "cont_breaks_outside" => {
+            point(df, "x", "y").scale_x(scale_continuous().breaks([-100.0, 0.0, 5.0, 100.0]))
+        }
+        "cont_expand_asym" => point(df, "x", "y")
+            .scale_y(scale_continuous().expand(Expansion::new((0.0, 0.2), (0.0, 0.0)))),
+        "cont_y_labels" => point(df, "x", "y")
+            .scale_y(scale_continuous().breaks([0.0, 2.5, 5.0]).labels(["lo", "mid", "hi"])),
+        "cont_small_limits_none" => point(df, "x", "small")
+            .scale_y(scale_continuous().limits(2e-05, 4e-05).expand(Expansion::none())),
+        "cont_limits_huge" => point(df, "x", "y").scale_x(scale_continuous().limits(-1e300, 1e300)),
+        _ => return Err(df),
+    })
+}
+
+/// Mixed-scale cases with a log10 axis.
+fn mixed_log_case(name: &str, df: DataFrame) -> CaseResult {
+    Ok(match name {
+        "log_wide" => point(df, "p", "y").scale_x(scale_log10()),
+        "log_narrow" => point(df, "q", "y").scale_x(scale_log10()),
+        "log_y" => point(df, "x", "p").scale_y(scale_log10()),
+        "log_limits_breaks" => point(df, "p", "y")
+            .scale_x(scale_log10().limits(1.0, 10000.0).breaks([1.0, 100.0, 10000.0])),
+        "log_x_cont_y_limits" => {
+            point(df, "q", "x").scale_x(scale_log10()).scale_y(scale_continuous().limits(0.0, 10.0))
+        }
+        "disc_x_log_y" => point(df, "g", "big").scale_y(scale_log10()),
+        // Wider than sqrt(f64::MAX): labeling::extended returns seq(dmin, dmax, length.out = 5).
+        "log_limits_huge" => point(df, "p", "y").scale_x(scale_log10().limits(1e300, 1e300)),
+        _ => return Err(df),
+    })
+}
 
 /// 23 cases on one frame: discrete on either axis with and without a spec, continuous defaults on
 /// wide, tiny and negative data, log10 on wide and sub-decade data (the `log_sub_breaks` path),
@@ -302,52 +386,8 @@ fn ggplot2_rows_2_to_4_mixed_scales() {
     run_fixture(
         include_str!("../../fixtures/ggplot2/scale_mixed/expected.json"),
         include_str!("../../fixtures/ggplot2/scale_mixed/data.csv"),
-        |name, df| match name {
-            "disc_x_nospec" => point(df, "g", "y"),
-            "disc_y_nospec" => point(df, "x", "g"),
-            "disc_x_default" => point(df, "g", "y").scale_x(scale_discrete()),
-            "disc_limits_reversed" => {
-                point(df, "g", "y").scale_x(scale_discrete().limits(["d", "c", "b", "a"]))
-            }
-            "disc_expand_add1" => {
-                point(df, "g", "y").scale_x(scale_discrete().expand(Expansion::add(1.0)))
-            }
-            "disc_breaks_labels" => {
-                point(df, "g", "y").scale_x(scale_discrete().breaks(["d", "a"]).labels(["D", "A"]))
-            }
-            "disc_y_limits_extra" => {
-                point(df, "x", "g").scale_y(scale_discrete().limits(["a", "b", "c", "d", "e"]))
-            }
-            "disc_limits_subset" => {
-                point(df, "g", "y").scale_x(scale_discrete().limits(["b", "a"]))
-            }
-            "cont_big_default" => point(df, "big", "y").scale_x(scale_continuous()),
-            "cont_small_default" => point(df, "small", "y").scale_x(scale_continuous()),
-            "cont_neg_default" => point(df, "n", "y").scale_x(scale_continuous()),
-            "cont_breaks_outside" => {
-                point(df, "x", "y").scale_x(scale_continuous().breaks([-100.0, 0.0, 5.0, 100.0]))
-            }
-            "cont_expand_asym" => point(df, "x", "y")
-                .scale_y(scale_continuous().expand(Expansion::new((0.0, 0.2), (0.0, 0.0)))),
-            "cont_y_labels" => point(df, "x", "y")
-                .scale_y(scale_continuous().breaks([0.0, 2.5, 5.0]).labels(["lo", "mid", "hi"])),
-            "cont_small_limits_none" => point(df, "x", "small")
-                .scale_y(scale_continuous().limits(2e-05, 4e-05).expand(Expansion::none())),
-            "log_wide" => point(df, "p", "y").scale_x(scale_log10()),
-            "log_narrow" => point(df, "q", "y").scale_x(scale_log10()),
-            "log_y" => point(df, "x", "p").scale_y(scale_log10()),
-            "log_limits_breaks" => point(df, "p", "y")
-                .scale_x(scale_log10().limits(1.0, 10000.0).breaks([1.0, 100.0, 10000.0])),
-            "log_x_cont_y_limits" => point(df, "q", "x")
-                .scale_x(scale_log10())
-                .scale_y(scale_continuous().limits(0.0, 10.0)),
-            "disc_x_log_y" => point(df, "g", "big").scale_y(scale_log10()),
-            // Wider than sqrt(f64::MAX): labeling::extended returns seq(dmin, dmax, length.out = 5).
-            "log_limits_huge" => point(df, "p", "y").scale_x(scale_log10().limits(1e300, 1e300)),
-            "cont_limits_huge" => {
-                point(df, "x", "y").scale_x(scale_continuous().limits(-1e300, 1e300))
-            }
-            other => panic!("unknown case {other}"),
+        |name, df| {
+            first_case(name, df, &[mixed_discrete_case, mixed_continuous_case, mixed_log_case])
         },
     );
 }
