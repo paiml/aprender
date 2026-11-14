@@ -27,11 +27,22 @@
 //! layer and `x` only on the plot ([`BarSpec::fill_first`]). Within one `aes()` this crate assumes x is
 //! written before fill (the builder does not record the order), so `aes(fill = g, x = x)` on one level
 //! is out of scope.
-//! Weights, `orientation = "y"`, `just`, `na.rm`, `position_dodge(reverse =)` and `position_dodge2` are
-//! not implemented. `width =` is implemented (`geom_bar(width =)`).
+//! Weights, `orientation = "y"`, `just`, `na.rm`, `position_dodge` and `position_dodge2` are not
+//! implemented ([`Position`] has no dodge). `width =` is implemented (`geom_bar(width =)`).
 //!
 //! Facets: [`bar_layout_in`] computes stat and position PER PANEL, as ggplot2 does, over x levels
 //! shared by all panels (fixed scales).
+//!
+//! x levels that leave out a data value (`scale_x_discrete(limits =)`): `stat_count` drops the rows
+//! whose x has no level before counting, as ggplot2 does (R also warns "Removed n rows containing
+//! non-finite outside the scale range"; no warning is emitted here). Group ids still come from all
+//! rows. `geom_col` keeps such a row with a `NaN` x and edges, as ggplot2 keeps it with an `NA` x.
+//! When rows exist but none has a level, [`BarError::NoLevel`] refuses a `geom_col`, and a `geom_bar`
+//! whose scale has no levels; a `geom_bar` with levels then has no bars, as in ggplot2.
+//!
+//! No rows at all: ggplot2 trains no discrete x scale and falls back to a continuous one over
+//! [`EMPTY_LIMITS`], so the x and y ranges are both `-0.05..1.05`. Only the RANGE is reproduced: the
+//! empty [`DiscreteAxis`] has no breaks, where R's fallback x scale has continuous ones.
 
 use std::collections::BTreeMap;
 
@@ -45,6 +56,10 @@ pub const DEFAULT_BAR_WIDTH: f64 = 0.9;
 pub const BAR_JUST: f64 = 0.5;
 /// `default_expansion(discrete = expansion(add = 0.6))`.
 pub const DISCRETE_EXPAND_ADD: f64 = 0.6;
+/// `expand_limits_discrete_trans()`'s `is_empty` branch: with no levels and no continuous range, a
+/// position scale spans `c(0, 1)` before the default continuous expansion. ggplot2's untrained y
+/// scale reports the same limits.
+pub const EMPTY_LIMITS: (f64, f64) = (0.0, 1.0);
 
 /// What went wrong building a bar layer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -64,6 +79,10 @@ pub enum BarError {
     },
     /// An identity `y` holds `NaN` or an infinity.
     NonFinite(String),
+    /// There are rows, but no row's `x` has a level in the x scale, and the layer is a `geom_col`
+    /// or the scale has no levels at all. ggplot2 4.0.3 errors (`geom_bar`, no levels) or builds a
+    /// degenerate panel (`geom_col`: every `y` set to 0, x range `-Inf..Inf`) there.
+    NoLevel(String),
 }
 
 impl std::fmt::Display for BarError {
@@ -77,6 +96,7 @@ impl std::fmt::Display for BarError {
                 write!(f, "column `{column}` has {len} values for {nrow} rows")
             }
             BarError::NonFinite(c) => write!(f, "column `{c}` holds a NaN or infinite value"),
+            BarError::NoLevel(c) => write!(f, "no value of column `{c}` is a level of the x scale"),
         }
     }
 }
@@ -305,14 +325,23 @@ fn stat_count(x_pos: &[f64], group: &[u32], width: f64) -> Vec<BarRow> {
 /// The discrete x axis for `levels`: the levels' `1..=n` expanded by [`DISCRETE_EXPAND_ADD`],
 /// unioned with `extent`, the UNEXPANDED continuous range that layers contribute (`range_c`: bar
 /// edges, numeric x of other layers).
+///
+/// With no levels and no extent the range is ggplot2's empty-scale fallback, [`EMPTY_LIMITS`]
+/// under the default continuous expansion (`-0.05..1.05`).
 #[must_use]
 pub fn discrete_axis(levels: &[String], extent: Option<(f64, f64)>) -> DiscreteAxis {
-    let n = levels.len() as f64;
-    let (mut lo, mut hi) = (1.0 - DISCRETE_EXPAND_ADD, n + DISCRETE_EXPAND_ADD);
-    if let Some((a, b)) = extent {
-        lo = lo.min(a);
-        hi = hi.max(b);
-    }
+    let (lo, hi) = match (levels.is_empty(), extent) {
+        (true, None) => PositionScale::continuous(EMPTY_LIMITS).continuous_range,
+        (_, extent) => {
+            let n = levels.len() as f64;
+            let (mut lo, mut hi) = (1.0 - DISCRETE_EXPAND_ADD, n + DISCRETE_EXPAND_ADD);
+            if let Some((a, b)) = extent {
+                lo = lo.min(a);
+                hi = hi.max(b);
+            }
+            (lo, hi)
+        }
+    };
     DiscreteAxis {
         limits: levels.to_vec(),
         continuous_range: (lo, hi),
@@ -361,9 +390,14 @@ pub fn bar_layout(df: &DataFrame, spec: &BarSpec) -> Result<BuiltBars, BarError>
 /// and the position adjustment run per panel, in panel order; the y scale and the x extent are
 /// trained over all panels (fixed scales). `BuiltBars::panel` gives each row's panel index.
 ///
+/// `x_levels` need not cover the data (`scale_x_discrete(limits =)`): under `stat_count` a row whose
+/// x has no level is dropped before counting, as ggplot2 drops it; under `stat_identity` it is kept
+/// with a `NaN` x and edges, as ggplot2 keeps an `NA` x.
+///
 /// # Errors
 ///
-/// As [`bar_layout`].
+/// As [`bar_layout`], and [`BarError::NoLevel`] when the panels hold rows but none has an x level
+/// and either the stat is identity or `x_levels` is empty.
 pub fn bar_layout_in(
     df: &DataFrame,
     spec: &BarSpec,
@@ -377,14 +411,24 @@ pub fn bar_layout_in(
         BarStat::Identity(ycol) => Some(number_column(df, ycol)?),
     };
     let x_pos = level_positions(x_levels, &x);
+    let mut rows_in_panels = panels.iter().flatten().peekable();
+    let has_rows = rows_in_panels.peek().is_some();
+    if has_rows
+        && rows_in_panels.all(|i| x_pos[*i].is_nan())
+        && (ycol.is_some() || x_levels.is_empty())
+    {
+        return Err(BarError::NoLevel(spec.x.clone()));
+    }
     let group = group_ids(&x, fill.as_deref(), spec.group_all, spec.fill_first);
 
     let mut per_panel: Vec<Vec<BarRow>> = panels
         .iter()
         .map(|idx| match &ycol {
             None => {
-                let xp: Vec<f64> = idx.iter().map(|i| x_pos[*i]).collect();
-                let g: Vec<u32> = idx.iter().map(|i| group[*i]).collect();
+                // `remove_missing()` on the required x: a value with no level never reaches the count.
+                let kept = idx.iter().filter(|i| !x_pos[**i].is_nan());
+                let xp: Vec<f64> = kept.clone().map(|i| x_pos[*i]).collect();
+                let g: Vec<u32> = kept.map(|i| group[*i]).collect();
                 stat_count(&xp, &g, spec.width)
             }
             Some(y) => idx
@@ -402,7 +446,7 @@ pub fn bar_layout_in(
         rows.extend(panel_rows);
     }
     let axis = discrete_axis(x_levels, x_extent(&rows));
-    let y = PositionScale::continuous(y_extent(&rows).unwrap_or((f64::MAX, f64::MIN)));
+    let y = PositionScale::continuous(y_extent(&rows).unwrap_or(EMPTY_LIMITS));
     Ok(BuiltBars { rows, panel, x: axis, y })
 }
 
@@ -553,6 +597,8 @@ mod tests {
     fn bad_columns_are_refused_naming_the_column() {
         let mut df = frame(&[("x", &["a", "b"]), ("t", &["1", "2"]), ("s", &["a"])]);
         df.add_column_f32("n", &[1.0, f32::NAN]);
+        df.add_column_f32("i", &[f32::INFINITY, 1.0]);
+        df.add_column_f32("j", &[1.0, f32::NEG_INFINITY]);
         let short = BarError::ShortColumn { column: "s".into(), len: 1, nrow: 2 };
         let cases = [
             (BarSpec::bar("z"), BarError::MissingColumn("z".into()), "column `z` not in the data"),
@@ -577,11 +623,97 @@ mod tests {
                 BarError::NonFinite("n".into()),
                 "column `n` holds a NaN or infinite value",
             ),
+            (
+                BarSpec::col("x", "i"),
+                BarError::NonFinite("i".into()),
+                "column `i` holds a NaN or infinite value",
+            ),
+            (
+                BarSpec::col("x", "j"),
+                BarError::NonFinite("j".into()),
+                "column `j` holds a NaN or infinite value",
+            ),
         ];
         for (spec, err, msg) in cases {
             assert_eq!(bar_layout(&df, &spec), Err(err.clone()), "{spec:?}");
             assert_eq!(err.to_string(), msg);
         }
+    }
+
+    /// `geom_bar() + scale_x_discrete(limits =)` leaving out data values: R drops those rows before
+    /// `stat_count` ("Removed n rows containing non-finite outside the scale range"). Group ids are
+    /// still ranked over every row (limits `b` keeps groups 3 and 4), and an unused level widens x.
+    #[test]
+    fn bar_drops_rows_whose_x_has_no_level_before_counting() {
+        let x: &[&str] = &["a", "a", "b", "a", "b", "b", "b"];
+        let df = frame(&[("x", x), ("g", &["v", "u", "u", "u", "v", "u", "v"])]);
+        let all = [(0..7).collect::<Vec<_>>()];
+        let lv = |l: &[&str]| l.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let none: &[f64] = &[];
+
+        // limits = "a": 1 row, count 3.
+        let b = bar_layout_in(&df, &BarSpec::bar("x"), &lv(&["a"]), &all).expect("builds");
+        let cols: [&[f64]; 6] = [&[1.0], &[3.0], &[0.0], &[3.0], &[0.55], &[1.45]];
+        check(&b, cols, &[1], Some([&[3.0], &[1.0]]));
+        check_axes(&b, [0.4, 1.6], &["a"], [0.0, 3.0], [-0.15, 3.15]);
+
+        // aes(x, fill = g), limits = "b": groups 3 (b, u) and 4 (b, v), stacked.
+        let b = bar_layout_in(&df, &BarSpec::bar("x").fill("g"), &lv(&["b"]), &all).expect("fill");
+        let cols: [&[f64]; 6] =
+            [&[1.0, 1.0], &[4.0, 2.0], &[2.0, 0.0], &[4.0, 2.0], &[0.55, 0.55], &[1.45, 1.45]];
+        check(&b, cols, &[3, 4], Some([&[2.0, 2.0], &[1.0, 1.0]]));
+        check_axes(&b, [0.4, 1.6], &["b"], [0.0, 4.0], [-0.2, 4.2]);
+
+        // aes(x, group = 1), limits = c("b", "zz"): the unused level still spans the axis.
+        let spec = BarSpec::bar("x").group_all();
+        let b = bar_layout_in(&df, &spec, &lv(&["b", "zz"]), &all).expect("group 1");
+        let cols: [&[f64]; 6] = [&[1.0], &[4.0], &[0.0], &[4.0], &[0.55], &[1.45]];
+        check(&b, cols, &[1], Some([&[4.0], &[1.0]]));
+        check_axes(&b, [0.4, 2.6], &["b", "zz"], [0.0, 4.0], [-0.2, 4.2]);
+
+        // limits = "z": every row dropped, no bars; y falls back to the untrained 0..1.
+        let b = bar_layout_in(&df, &BarSpec::bar("x"), &lv(&["z"]), &all).expect("no bars");
+        check(&b, [none; 6], &[], Some([none, none]));
+        check_axes(&b, [0.4, 1.6], &["z"], [0.0, 1.0], [-0.05, 1.05]);
+    }
+
+    /// No rows (`data.frame(x = character(0))`): R trains no discrete x scale, so both ranges are
+    /// the empty-scale fallback `-0.05..1.05`, for `geom_bar()` and for `geom_col()`.
+    #[test]
+    fn no_rows_gives_the_empty_scale_range_on_both_axes() {
+        let mut df = frame(&[("x", &[])]);
+        df.add_column_f32("y", &[]);
+        for spec in [BarSpec::bar("x"), BarSpec::col("x", "y")] {
+            let b = bar_layout(&df, &spec).expect("builds");
+            assert!(b.rows.is_empty() && b.panel.is_empty(), "{spec:?}");
+            check_axes(&b, [-0.05, 1.05], &[], [0.0, 1.0], [-0.05, 1.05]);
+        }
+    }
+
+    /// Rows, but no x level covers any of them. R 4.6.2 errors for `geom_bar()` with
+    /// `limits = character(0)` ("replacement has length zero") and, for `geom_col()`, sets every `y`
+    /// to 0 with an x range of `-Inf..Inf`: neither is reproduced, so both are refused.
+    #[test]
+    fn rows_with_no_level_are_refused_for_col_and_for_an_empty_scale() {
+        let mut df = frame(&[("x", &["q", "p"])]);
+        df.add_column_f32("y", &[-2.0, 3.0]);
+        let all = [vec![0, 1]];
+        let z = ["z".to_string()];
+        let cases: [(BarSpec, &[String]); 3] =
+            [(BarSpec::col("x", "y"), &[]), (BarSpec::col("x", "y"), &z), (BarSpec::bar("x"), &[])];
+        for (spec, levels) in cases {
+            let err = bar_layout_in(&df, &spec, levels, &all);
+            assert_eq!(err, Err(BarError::NoLevel("x".into())), "{spec:?} {levels:?}");
+        }
+        assert_eq!(
+            BarError::NoLevel("x".into()).to_string(),
+            "no value of column `x` is a level of the x scale"
+        );
+        // One covered row is enough for `geom_col`: the other keeps a NaN x, as R keeps an NA x.
+        let p = ["p".to_string()];
+        let b = bar_layout_in(&df, &BarSpec::col("x", "y"), &p, &all).expect("one level");
+        assert!(b.rows[0].x.is_nan() && b.rows[0].xmin.is_nan() && b.rows[1].x == 1.0);
+        check_axes(&b, [0.4, 1.6], &["p"], [-2.0, 3.0], [-2.25, 3.25]);
     }
 
     /// R's `match()`: a repeated level keeps its first position; a value with no level maps to `NA`.
