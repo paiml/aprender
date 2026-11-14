@@ -89,6 +89,12 @@ web-sys = { version = "0.3", optional = true, features = ["console"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = "0.2"
 
+# build.rs derives the plot verb's proven set from the ggplot2 row contracts (#6991).
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde-saphyr = { workspace = true }
+serde_json = { workspace = true }
+
 [dev-dependencies]
 # Testing
 proptest = "1.4"
@@ -100,6 +106,9 @@ approx = "0.5"
 
 # ggplot2 conformance fixtures (src/grammar/ggplot2_oracle.rs) are JSON.
 serde_json = { workspace = true }
+# build.rs's generator, tested in src/plot_cli (#6909).
+serde = { version = "1.0", features = ["derive"] }
+serde-saphyr = { workspace = true }
 
 
 [features]
