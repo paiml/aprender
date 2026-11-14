@@ -1,0 +1,13 @@
+[1m[92m  Installing[0m bspanic v0.1.0 (/tmp/tmp.bDyXjapJHq/bspanic)
+[1m[92m   Compiling[0m bspanic v0.1.0 (/tmp/tmp.bDyXjapJHq/bspanic)
+[1m[91merror[0m: failed to run custom build command for `bspanic v0.1.0 (/tmp/tmp.bDyXjapJHq/bspanic)`
+
+Caused by:
+  process didn't exit successfully: `/tmp/tmp.bDyXjapJHq/bspanic/target/release/build/bspanic-38adb14a110ddaaa/build-script-build` (exit status: 101)
+  --- stderr
+
+  thread 'main' (135) panicked at build.rs:1:13:
+  Unable to find libclang: "couldn't find any valid shared libraries"
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[1m[91merror[0m: failed to compile `bspanic v0.1.0 (/tmp/tmp.bDyXjapJHq/bspanic)`, intermediate artifacts can be found at `/tmp/tmp.bDyXjapJHq/bspanic/target`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_BUILD_BUILD_DIR` to that path.

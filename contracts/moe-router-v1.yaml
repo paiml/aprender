@@ -42,3 +42,23 @@ falsification:
     description: "∀ token: Σ selected_weights[token] = 1.0 after renorm"
     test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
     evidence: "cargo test --lib"
+
+# #5291 batch 2: the three router equations bound to the moe_route tests in
+# moe_dispatch.rs (the `falsification:` rows above name no test).
+falsification_tests:
+  - id: FALSIFY-MOE-ROUTER-001
+    rule: "weight_renormalization: the k selected weights sum to 1.0, with no NaN/Inf even for logits near 1000"
+    prediction: "test_softmax_stability_large_logits passes; it fails when the renormalised weights do not sum to 1"
+    test: "cargo test -p aprender-serve --lib test_softmax_stability_large_logits"
+  - id: FALSIFY-MOE-ROUTER-002
+    rule: "topk_selection: exactly k = num_experts_per_tok experts are selected, and equal logits give equal weights 1/k"
+    prediction: "test_zero_gate_uniform_routing passes; it fails when the router returns a count other than k"
+    test: "cargo test -p aprender-serve --lib test_zero_gate_uniform_routing"
+  - id: FALSIFY-MOE-ROUTER-003
+    rule: "top-k order: selected weights come out in descending probability order"
+    prediction: "test_renorm_preserves_order passes; it fails when selection is not by descending probability"
+    test: "cargo test -p aprender-serve --lib test_renorm_preserves_order"
+  - id: FALSIFY-MOE-ROUTER-004
+    rule: "[condition FALSIFY-MOE_ROUTER_V1_001] softmax_normalization, topk_selection and weight_renormalization: router_probs sums to 1 within 1e-5 on 5 logit sets (uniform, mixed sign, +/-80, near-tie, 16 equal); moe_route returns exactly k distinct experts whose weights sum to 1 within 1e-5, for (E,k) in (4,1) (6,2) (8,3) (16,16)"
+    prediction: "falsify_moe_router_v1_sums_and_topk passes; it fails when the softmax is not divided by its sum, when the renorm is skipped, or when other than k experts are returned"
+    test: "cargo test -p aprender-serve --lib falsify_moe_router_v1_sums_and_topk"

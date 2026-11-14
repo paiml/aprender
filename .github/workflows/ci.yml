@@ -269,6 +269,7 @@ jobs:
           bash scripts/release/falsify_exec_bit_guard.sh --mutants
           bash scripts/release/falsify_one_command.sh
           bash scripts/pr_light.sh --self-test
+          setsid --wait bash scripts/post_publish_smoke.sh --self-test
           setsid --wait bash scripts/check_no_claim_literals.sh --selftest
           setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
           setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
@@ -411,6 +412,7 @@ jobs:
           bash scripts/release/exec_bit_guard.sh
           bash scripts/release/falsify_exec_bit_guard.sh --mutants
           bash scripts/release/falsify_one_command.sh
+          setsid --wait bash scripts/post_publish_smoke.sh --self-test
           setsid --wait bash scripts/check_no_claim_literals.sh --selftest
           setsid --wait bash scripts/check_hardcoded_paths.sh --self-test
           setsid --wait bash scripts/check_pr_review_wiring.sh --self-test

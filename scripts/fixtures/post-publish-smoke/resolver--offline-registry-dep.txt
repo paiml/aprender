@@ -1,0 +1,9 @@
+[1m[92m  Installing[0m regdep v0.1.0 (/tmp/tmp.bDyXjapJHq/regdep)
+[1m[91merror[0m: failed to compile `regdep v0.1.0 (/tmp/tmp.bDyXjapJHq/regdep)`, intermediate artifacts can be found at `/tmp/tmp.bDyXjapJHq/regdep/target`.
+To reuse those artifacts with a future compilation, set the environment variable `CARGO_BUILD_BUILD_DIR` to that path.
+
+Caused by:
+  no matching package named `serde` found
+  location searched: crates.io index
+  required by package `regdep v0.1.0 (/tmp/tmp.bDyXjapJHq/regdep)`
+  As a reminder, you're using offline mode (--offline) which can sometimes cause surprising resolution failures, if this error is too confusing you may wish to retry without `--offline`.
