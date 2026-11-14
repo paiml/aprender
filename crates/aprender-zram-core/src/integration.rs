@@ -119,10 +119,7 @@ impl FeatureFlags {
     #[must_use]
     pub fn is_compatible(&self) -> bool {
         // CUDA requires std
-        if self.cuda && !self.std {
-            return false;
-        }
-        true
+        !self.cuda || self.std
     }
 }
 
