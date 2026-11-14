@@ -152,7 +152,7 @@ fn registered_commands() -> Vec<&'static str> {
         "sim",
         "cgp",
         "pv",
-        // #6991: aprender-present's plot verb, through the same library function
+        // #6991: the proven-only plot verb (trueno_viz::plot_cli); not aprender-present plot
         "plot",
     ]
 }
