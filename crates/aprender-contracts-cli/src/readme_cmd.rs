@@ -274,7 +274,6 @@ pub fn run(readme_path: &Path, contract_dir: &Path, write: bool) -> Result<Strin
 }
 
 /// The bin entry: parse `args`, run, print, map to an exit code.
-#[must_use]
 pub fn main_with(args: &[String]) -> ExitCode {
     let mut mode: Option<bool> = None;
     let mut readme_path = PathBuf::from("README.md");

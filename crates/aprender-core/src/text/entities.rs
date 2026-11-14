@@ -214,11 +214,7 @@ impl EntityExtractor {
 
         // Domain parts must not be empty
         let domain_parts: Vec<&str> = domain.split('.').collect();
-        if domain_parts.iter().any(|p| p.is_empty()) {
-            return false;
-        }
-
-        true
+        !domain_parts.iter().any(|p| p.is_empty())
     }
 
     /// Extract URLs (http/https).

@@ -305,6 +305,46 @@ mod tests {
         }
     }
 
+    /// distributed-training-v1 `loss_equivalence` (FALSIFY-DISTRIBUTED_TRAINING_V1_002, bound as FALSIFY-DIST-TRAIN-003):
+    /// one data-parallel SGD step on a linear-regression MSE, with each of 2 workers
+    /// holding half the rows and their gradients ring-all-reduced, gives the same
+    /// parameters and loss as a single worker stepping on all rows.
+    #[test]
+    fn falsify_distributed_v1_002_loss_matches_single_worker() {
+        let xs: Vec<[f32; 2]> =
+            (0..8).map(|i| [i as f32 * 0.25, 1.0 - (i % 3) as f32 * 0.5]).collect();
+        let ys: Vec<f32> = xs.iter().map(|x| 1.5 * x[0] - 0.7 * x[1] + 0.2).collect();
+        let grad = |w: &[f32; 2], rows: std::ops::Range<usize>| -> Vec<f32> {
+            let mut g = vec![0.0f32; 2];
+            for i in rows.clone() {
+                let err = w[0] * xs[i][0] + w[1] * xs[i][1] - ys[i];
+                g[0] += 2.0 * err * xs[i][0] / rows.len() as f32;
+                g[1] += 2.0 * err * xs[i][1] / rows.len() as f32;
+            }
+            g
+        };
+        let loss = |w: &[f32; 2]| -> f32 {
+            xs.iter().zip(&ys).map(|(x, y)| (w[0] * x[0] + w[1] * x[1] - y).powi(2)).sum::<f32>()
+                / 8.0
+        };
+        let (w0, lr) = ([0.1f32, -0.3], 0.05);
+        let step = |g: &[f32]| [w0[0] - lr * g[0], w0[1] - lr * g[1]];
+
+        let w_single = step(&grad(&w0, 0..8));
+        let (mut g0, mut g1) = (grad(&w0, 0..4), grad(&w0, 4..8));
+        let mut workers = setup_ring(2);
+        let mut w1 = workers.pop().unwrap();
+        let h1 = thread::spawn(move || w1.allreduce(&mut g1).map(|()| g1));
+        workers[0].allreduce(&mut g0).expect("allreduce w0");
+        let g1 = h1.join().expect("join w1").expect("allreduce w1");
+        let (wd0, wd1) = (step(&g0), step(&g1));
+
+        assert_eq!(wd0, wd1, "params_after_step identical across workers");
+        let (ls, ld) = (loss(&w_single), loss(&wd0));
+        assert!((ls - ld).abs() <= 1e-5 * ls.max(1.0), "loss single {ls} vs distributed {ld}");
+        assert!(ld < loss(&w0), "the step must reduce the loss ({} -> {ld})", loss(&w0));
+    }
+
     #[test]
     fn test_ring_allreduce_3_workers() {
         let mut workers = setup_ring(3);

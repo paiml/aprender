@@ -1,0 +1,6 @@
+   Compiling aprender-core v0.75.0
+error: could not compile `aprender-core` (lib)
+
+Caused by:
+  process didn't exit successfully: `rustc --crate-name aprender_core` (signal: 9, SIGKILL: kill)
+error: failed to compile `aprender v0.75.0`, intermediate artifacts can be found at `/tmp/cargo-installAbC123`.
