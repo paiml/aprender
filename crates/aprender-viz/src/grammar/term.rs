@@ -8,15 +8,18 @@
 //! The output is a pure function of the plot and [`TerminalPlot`]: the same input and size give
 //! byte-identical text. Without colour the text carries no escape sequences at all.
 //!
-//! Supported today: point layers, `coord_cartesian()` (with limits, without flip), no facets.
+//! Supported today: point, line, path, step and reference layers, `coord_cartesian()` (with limits, without flip), no facets, no
+//! `scale_x`/`scale_y` and no text position.
 //! Anything else is refused with an error naming what is missing; nothing falls back silently.
 
 use crate::error::{Error, Result};
 
-use super::build::BuiltLayout;
+use super::build::{BuiltLayer, BuiltLayout};
 use super::coord::{apply_limits, Coord};
 use super::facet::Facet;
 use super::ggplot::BuiltGGPlot;
+use super::path::BuiltPath;
+use super::stroke;
 
 /// Smallest canvas, in character cells, the terminal target draws on.
 pub const MIN_TERMINAL_WIDTH: u32 = 20;
@@ -29,6 +32,8 @@ pub const MAX_TERMINAL_WIDTH: u32 = 1000;
 pub const MAX_TERMINAL_HEIGHT: u32 = 1000;
 /// The glyph a point is drawn with (ggplot2's default `shape = 19`, a solid circle).
 pub const POINT_GLYPH: char = '●';
+/// The glyph a line, path, step or reference line is drawn with, one per cell it crosses.
+pub const LINE_GLYPH: char = '·';
 /// Fewest columns the panel may have; a narrower one is refused.
 pub const MIN_PANEL_WIDTH: usize = 8;
 
@@ -245,8 +250,11 @@ impl BuiltGGPlot {
         let layout = self.layout()?;
         let (xd, yd) =
             apply_limits(self.coord(), layout.x.continuous_range, layout.y.continuous_range)?;
-        if layout.layers.iter().any(|l| l.points.is_none()) {
-            return Err(Error::Rendering("the terminal target draws point layers only".into()));
+        if layout.layers.iter().any(|l| l.points.is_none() && l.path.is_none()) {
+            return Err(Error::Rendering(
+                "the terminal target draws point, line, path, step and reference layers only"
+                    .into(),
+            ));
         }
 
         let (w, h) = (opts.width as usize, opts.height as usize);
@@ -258,12 +266,19 @@ impl BuiltGGPlot {
 
         draw_y_axis(&mut c, &frame, &ticks);
         self.draw_x_axis(&mut c, &frame, &layout);
-        draw_points(&mut c, &frame, &layout);
+        draw_layers(&mut c, &frame, &layout);
         Ok(c.render(opts.color))
     }
 
-    /// Refuse what the terminal target does not draw: facets and `coord_flip()`.
+    /// Refuse what the terminal target does not draw: facets, `coord_flip()`, and position scales
+    /// (`scale_x`/`scale_y` or a text position), whose positions and labels it does not map.
     fn check_drawable(&self) -> Result<()> {
+        if self.uses_position_scales() {
+            return Err(Error::Rendering(
+                "the terminal target does not draw scale_x/scale_y or text (discrete) positions yet"
+                    .into(),
+            ));
+        }
         if !matches!(self.facet(), Facet::None) {
             return Err(Error::Rendering("the terminal target does not draw facets yet".into()));
         }
@@ -327,15 +342,38 @@ fn draw_y_axis(c: &mut Canvas, f: &Frame, ticks: &[(f64, &str)]) {
     }
 }
 
-/// Points last, so they sit on top of nothing but the panel.
-fn draw_points(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
+/// Every layer in order: a point layer one glyph per point, a stroke layer one glyph per cell
+/// its clipped segments cross.
+fn draw_layers(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
     for layer in &layout.layers {
-        let aes = layer.points.as_deref().unwrap_or_default();
-        for ((x, y), p) in layer.x.iter().zip(&layer.y).zip(aes) {
-            if in_domain(*x, f.xd) && in_domain(*y, f.yd) {
-                let ink = Ink::Point(p.colour.r, p.colour.g, p.colour.b);
-                c.put(f.col_of(*x), f.row_of(*y), POINT_GLYPH, ink);
+        match &layer.path {
+            Some(path) => draw_stroke_layer(c, f, layer, path),
+            None => draw_point_layer(c, f, layer),
+        }
+    }
+}
+
+/// One stroke layer: a glyph in every cell its clipped segments cross.
+fn draw_stroke_layer(c: &mut Canvas, f: &Frame, layer: &BuiltLayer, path: &BuiltPath) {
+    let ink = Ink::Point(path.aes.colour.r, path.aes.colour.g, path.aes.colour.b);
+    for line in stroke::polylines(layer, 0, (f.xd, f.yd)) {
+        let cells: Vec<(usize, usize)> =
+            line.iter().map(|&(x, y)| (f.col_of(x), f.row_of(y))).collect();
+        for w in cells.windows(2) {
+            for (col, row) in stroke::cells_between(w[0], w[1]) {
+                c.put(col, row, LINE_GLYPH, ink);
             }
+        }
+    }
+}
+
+/// One point layer: one glyph per point inside the domain.
+fn draw_point_layer(c: &mut Canvas, f: &Frame, layer: &BuiltLayer) {
+    let aes = layer.points.as_deref().unwrap_or_default();
+    for ((x, y), p) in layer.x.iter().zip(&layer.y).zip(aes) {
+        if in_domain(*x, f.xd) && in_domain(*y, f.yd) {
+            let ink = Ink::Point(p.colour.r, p.colour.g, p.colour.b);
+            c.put(f.col_of(*x), f.row_of(*y), POINT_GLYPH, ink);
         }
     }
 }
@@ -344,7 +382,7 @@ fn draw_points(c: &mut Canvas, f: &Frame, layout: &BuiltLayout) {
 mod tests {
     use super::*;
     use crate::color::Rgba;
-    use crate::grammar::{Aes, DataFrame, GGPlot, Geom};
+    use crate::grammar::{scale_continuous, scale_log10, Aes, DataFrame, GGPlot, Geom};
 
     /// Row 1's fixture data (`fixtures/ggplot2/geom_point/data.csv`).
     const X: [f32; 10] = [1.5, 2.25, 3.0, 4.75, 6.5, 8.125, 9.5, 11.0, 12.25, 13.75];
@@ -452,9 +490,20 @@ mod tests {
         assert!(err(row1().facet(Facet::wrap("g", 2)), plain(80, 24)).contains("facets"));
         assert!(err(row1().coord(Coord::cartesian().flip()), plain(80, 24)).contains("coord_flip"));
         assert!(err(row1().coord(Coord::polar()), plain(80, 24)).contains("polar"));
-        assert!(err(row1().geom(Geom::line()), plain(80, 24)).contains("point layers only"));
+        assert!(err(row1().geom(Geom::bar()), plain(80, 24)).contains("reference layers only"));
+        let scaled = row1().scale_x(scale_log10());
+        assert!(err(scaled, plain(80, 24)).contains("scale_x/scale_y"));
+        let scaled_y = row1().scale_y(scale_continuous());
+        assert!(err(scaled_y, plain(80, 24)).contains("scale_x/scale_y"));
+        let mut text = DataFrame::new();
+        text.add_column_str("x", &["a", "b"]);
+        text.add_column_f32("y", &[1.0, 2.0]);
+        let discrete = GGPlot::new().data(text).aes(Aes::new().x("x").y("y"));
+        assert!(err(discrete.geom(Geom::point()), plain(80, 24)).contains("text (discrete)"));
         let wide =
-            GGPlot::new().data_xy(&[0.0, 1.0], &[0.0, 123_456_789_012_345.0]).geom(Geom::point());
+            // R's format() prints these breaks as 13-character labels (-1.000002e+14), too wide
+            // for a 20-cell canvas.
+            GGPlot::new().data_xy(&[0.0, 1.0], &[-1.0e14, -1.000_005e14]).geom(Geom::point());
         assert!(err(wide, plain(20, 8)).contains("no room for the panel"));
     }
 

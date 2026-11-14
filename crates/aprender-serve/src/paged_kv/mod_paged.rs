@@ -440,11 +440,7 @@ impl PagedKvCache {
 
         // Low on free pages but have holes we can recover
         let free_ratio = self.free_pages.len() as f32 / self.total_pages as f32;
-        if free_ratio < 0.1 && stats.holes > 0 {
-            return true;
-        }
-
-        false
+        free_ratio < 0.1 && stats.holes > 0
     }
 
     /// Map a (sequence, position) pair to a flat slot index.

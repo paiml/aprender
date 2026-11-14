@@ -31,3 +31,12 @@ beat:
   baseline_sourced_date: "2026-06-11"
   approved_compute: CPU       # one of: CPU | GPU (PMAT-741 supports both)
   ci_gate_name: "beat_sklearn_iris"   # the test that enforces this gate
+
+# #5291 batch 2: the beat gate above, bound as a falsification test. The test
+# reads beat_threshold from this file, so lowering the measured value or
+# raising the threshold past it turns it red.
+falsification_tests:
+  - id: FALSIFY-BEAT-SKLEARN-IRIS-001
+    rule: "apr RandomForestClassifier test accuracy on the deterministic i%3 Iris split is >= beat.beat_threshold"
+    prediction: "beat_sklearn_iris_accuracy passes; it fails when accuracy < beat_threshold"
+    test: "cargo test -p aprender-core --test beat_sklearn_iris beat_sklearn_iris_accuracy"

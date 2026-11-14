@@ -10,7 +10,8 @@
 //!   as `ggplot_build()` keeps them. `geom_step` refuses such rows (its stair vertices are
 //!   undefined there).
 //! * Order. `geom_line` orders rows by (panel, group, x) with `NaN` x last and ties in data
-//!   order (ggplot2's `setup_data`). `geom_path` and `geom_step` keep data order.
+//!   order (ggplot2's `setup_data`). `geom_path` and `geom_step` keep data order in the built layer; the renderer draws `geom_path`
+//!   rows stable-sorted by group, as `GeomPath$draw_panel` does (stroke.rs `split_runs`).
 //! * Groups. Only an explicit `group` aesthetic is supported: a column that is all numbers or all
 //!   text with no missing cell; ids are the 1-based rank of the sorted distinct value (C
 //!   collation for text). Without it every row is group -1. Any other data-mapped aesthetic
@@ -51,7 +52,7 @@ use crate::color::Rgba;
 use crate::error::{Error, Result};
 
 use super::aes::Aes;
-use super::build::{BuiltLayer, PositionScale};
+use super::build::BuiltLayer;
 use super::coord::Coord;
 use super::data::{DataFrame, DataValue};
 use super::facet::{panels, Facet, Panel};
@@ -222,21 +223,20 @@ fn unsupported_stat(s: &Stat) -> Option<&'static str> {
 }
 
 /// Refuse a scale that ggplot2 would widen differently from the shared scale code.
-pub(super) fn require_trained(
-    layers: &[Layer],
-    x: &PositionScale,
-    y: &PositionScale,
-) -> Result<()> {
+///
+/// `x` and `y` are the TRAINED domains (`(lo, hi)` over the finite values, `lo > hi` when no
+/// value trained), read before [`super::build::PositionScale::continuous`] maps an empty domain to `0..1`.
+pub(super) fn require_trained(layers: &[Layer], x: (f64, f64), y: (f64, f64)) -> Result<()> {
     if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
         return Ok(());
     }
-    for (axis, s) in [("x", x), ("y", y)] {
-        if s.limits.0 >= s.limits.1 {
+    for (axis, (lo, hi)) in [("x", x), ("y", y)] {
+        if lo >= hi {
             return Err(Error::ScaleDomain(format!(
-                "{axis} scale has {} (limits {:?}); a degenerate range is not supported with \
-                 line, path, step or reference layers",
-                if s.limits.0 > s.limits.1 { "no finite value" } else { "a single value" },
-                s.limits
+                "{axis} scale has {} (trained domain {:?}); a degenerate range is not supported \
+                 with line, path, step or reference layers",
+                if lo > hi { "no finite value" } else { "a single value" },
+                (lo, hi)
             )));
         }
     }

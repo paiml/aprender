@@ -55,8 +55,9 @@ falsification:
     evidence: "pending first green run on the build host, 2026-11-11"
 open_obligations:
   - |
-    The wasm32 `<video>` element binding (web-sys) is a separate ticket and
-    must keep `VideoState` as the single source of truth.
+    The wasm32 `<video>` element binding lives in
+    `contracts/present-video-element-v1.yaml` (aprender#6890) and must keep
+    `VideoState` as the single source of truth.
 falsification_tests:
   - id: FALSIFY-PRESENT_VIDEO_WIDGET-001
     description: "paint stays inside any bounds with a centred glyph"

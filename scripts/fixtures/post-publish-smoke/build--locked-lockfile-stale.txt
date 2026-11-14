@@ -1,0 +1,4 @@
+    Updating crates.io index
+  Installing aprender v0.75.0
+error: the lock file /tmp/cargo-installAbC123/Cargo.lock needs to be updated but --locked was passed to prevent this
+If you want to try to generate the lock file without accessing the network, remove the --locked flag and use --offline instead.

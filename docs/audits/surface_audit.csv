@@ -819,20 +819,20 @@ aprender-train-shell,repl: memory,6,x86_64-linux,pytorch,no,12,test-harness,crat
 aprender-train-shell,repl: quit,6,x86_64-linux,pytorch,no,12,test-harness,crates/aprender-train-shell/src/commands.rs:72,low
 aprender-train-shell,repl: set <key> <value>,6,x86_64-linux,pytorch,no,12,test-harness,crates/aprender-train-shell/src/commands.rs:66,low
 aprender-zram-generator,aprender-zram-generator <NORMAL_DIR> (systemd.generator unit emission),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-zram-generator/src/main.rs:30-60,high
-aprender-present,aprender-present bundle,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:67,high
-aprender-present,aprender-present check,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:84,high
-aprender-present,aprender-present deploy,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:125,high
-aprender-present,aprender-present gate,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:106,high
-aprender-present,aprender-present new,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:78,high
-aprender-present,aprender-present plot,6,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:156,high
-aprender-present,aprender-present score,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:91,high
-aprender-present,aprender-present serve,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:52,high
+aprender-present,aprender-present bundle,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:69,high
+aprender-present,aprender-present check,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:86,high
+aprender-present,aprender-present deploy,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:127,high
+aprender-present,aprender-present gate,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:108,high
+aprender-present,aprender-present new,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:80,high
+aprender-present,aprender-present plot,6,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:158,high
+aprender-present,aprender-present score,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:93,high
+aprender-present,aprender-present serve,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:54,high
 aprender-ptop,aprender-ptop (interactive TUI system monitor),6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:120-134,high
 aprender-ptop,aprender-ptop --dump-config,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:56,high
 aprender-ptop,aprender-ptop --render-once,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:117,high
 aprender-ptop,aprender-ptop --render-once --explode <PANEL>,6,UNKNOWN,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:63,high
-pv-readme,pv-readme --check,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/readme_cmd.rs:285,high
-pv-readme,pv-readme --write,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/readme_cmd.rs:286,high
+pv-readme,pv-readme --check,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/readme_cmd.rs:284,high
+pv-readme,pv-readme --write,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/readme_cmd.rs:285,high
 pv-readme,pv-readme --version,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-readme/main.rs:10,high
 pv-sat,pv-sat [CONTRACT_DIR] (SAT witness write),6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:44-45,high
 pv-sat,pv-sat --self-test,6,x86_64-linux,NONE,no,6,contracts-pv,crates/aprender-contracts-cli/src/bin/pv-sat/main.rs:39,high
@@ -890,7 +890,7 @@ aprender-data,aprender-data --version,7,x86_64-linux,NONE,no,4,data-pipeline,cra
 aprender-db,aprender-db --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-db/src/main.rs:25,high
 aprender-explain,aprender-explain --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-explain/src/main.rs:20,high
 aprender-orchestrate,aprender-orchestrate --version,7,x86_64-linux,NONE,no,5,http-orchestrate-banco,crates/aprender-orchestrate/src/main_cli.rs:19,high
-aprender-present,aprender-present --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:43,high
+aprender-present,aprender-present --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-cli/src/main.rs:45,high
 aprender-ptop,aprender-ptop --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/ptop.rs:25,high
 aprender-score,aprender-score --version,7,x86_64-linux,NONE,no,0,entrypoint-and-mcp,crates/aprender-present-terminal/src/bin/score.rs:31,high
 aprender-profile,aprender-profile --version,7,x86_64-linux,NONE,no,9,profiling,crates/aprender-profile/src/cli.rs:29,high
