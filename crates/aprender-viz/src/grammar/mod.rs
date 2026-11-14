@@ -70,7 +70,8 @@ pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use position::{apply as apply_position, apply_panels, BarRow, Position};
 pub use scale_discrete::{DiscreteSpec, DISCRETE_EXPAND_ADD};
 pub use scale_spec::{
-    scale_continuous, scale_discrete, scale_log10, ContinuousSpec, Expansion, PositionScaleSpec,
+    scale_continuous, scale_discrete, scale_log10, zero_range, ContinuousSpec, Expansion,
+    PositionScaleSpec,
 };
 pub use stat::Stat;
 pub use stat_count::{
