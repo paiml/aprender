@@ -677,6 +677,14 @@ fn entity_count(name: &str, extraction: &extract::Extraction) -> Option<usize> {
         "example" => extraction.example.examples,
         // ONT-4g: one per bin target, keyed binary/<package>/<target> — 29 targets, not 28 names
         "binary" => extraction.binary.targets,
+        _ => return entity_count_tail(name, extraction),
+    })
+}
+
+/// The second half of [`entity_count`]'s arms (split out to keep each fn under the CB-200 min_grade):
+/// release/doc/kernel/ggplot2 extractors, then the GitHub snapshot types. `None` is "no counting arm".
+fn entity_count_tail(name: &str, extraction: &extract::Extraction) -> Option<usize> {
+    Some(match name {
         // By rule 0 when no release subject was given (an ordinary PR has none): the extractor did not run.
         "release-evidence" => extraction.release.as_ref().map_or(0, |r| r.cells),
         // #3777 registered cli-surface in Σ after #3624 derived these keys from it: the leaf commands the
