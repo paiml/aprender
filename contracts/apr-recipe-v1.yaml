@@ -88,10 +88,10 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Slice 1/6 carries only the schema itself. FALSIFY-APR-RECIPE-001 .. 005 are added back in
+# Slice 1 carries only the schema itself. The entries that cite Rust tests are added in
 # the slice that adds the test each one cites (loader and tests in slices 2-5, the CLI wiring
 # tests in slice 6), so that every slice head resolves its own test references.
-- id: FALSIFY-APR-RECIPE-000
+- id: FALSIFY-APR-RECIPE-001
   rule: the recipe contract is itself a valid contract
   prediction: "`pv validate contracts/apr-recipe-v1.yaml` exits 0"
   test: |
