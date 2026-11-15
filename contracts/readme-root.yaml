@@ -46,7 +46,7 @@ shape:
   closed: true
   properties:
     - {path: readme:schemaVersion, minCount: 1, maxCount: 1, pattern: "^[0-9]+\\.[0-9]+$"}
-    - {path: readme:kind, in: [library, cli, service, spec]}
+    - {path: readme:kind, minCount: 1, maxCount: 1, in: [library, cli, service, spec]}
     - {path: readme:entrypoint, minCount: 1, resolves: path}
     - {path: readme:verifiedCommand, minCount: 1, resolves: ci-step}
     - {path: readme:section, minCount: 3}
