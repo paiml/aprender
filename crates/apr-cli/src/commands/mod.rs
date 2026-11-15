@@ -226,6 +226,8 @@ pub(crate) mod trace;
 pub(crate) mod trace_save_tensor;
 #[cfg(feature = "training")]
 pub(crate) mod train;
+#[cfg(feature = "training")]
+pub(crate) mod train_recipe;
 pub(crate) mod tree;
 pub(crate) mod tui;
 #[cfg(feature = "training")]
