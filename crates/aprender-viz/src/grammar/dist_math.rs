@@ -424,6 +424,44 @@ pub(super) fn stat_density(xs: &[f64], from: f64, to: f64, n: usize) -> Result<D
     })
 }
 
+// ---- stat_bin with pad = TRUE (PLOT-GG-001, paiml/aprender#6963) ------------------------------
+
+/// `bin_vector(pad = TRUE)`: one zero-count bin on each end, as wide as the bin next to it, so a
+/// frequency polygon starts and ends on zero. `bin_out()` then rebuilds `xmin`, `xmax` and
+/// `density` from the padded `x`, `width` and `count` (the counts' sum is unchanged).
+fn pad_bins(b: &BuiltBins) -> Result<BuiltBins> {
+    let (Some(w1), Some(wn), Some(x1), Some(xn)) =
+        (b.width.first(), b.width.last(), b.x.first(), b.x.last())
+    else {
+        return Err(bad("stat_bin produced no bins to pad"));
+    };
+    let pad = |first: f64, mid: &[f64], last: f64| -> Vec<f64> {
+        std::iter::once(first).chain(mid.iter().copied()).chain(std::iter::once(last)).collect()
+    };
+    let width = pad(*w1, &b.width, *wn);
+    let x = pad(x1 - w1, &b.x, xn + wn);
+    let count = pad(0.0, &b.count, 0.0);
+    let total: f64 = count.iter().map(|c| c.abs()).sum();
+    Ok(BuiltBins {
+        xmin: x.iter().zip(&width).map(|(c, w)| c - w / 2.0).collect(),
+        xmax: x.iter().zip(&width).map(|(c, w)| c + w / 2.0).collect(),
+        density: count.iter().zip(&width).map(|(n, w)| n / w / total).collect(),
+        x,
+        width,
+        count,
+    })
+}
+
+/// `stat_bin(pad = TRUE)` over finite `x`, what `geom_freqpoly()` draws: [`stat_bin`] with a
+/// zero-count bin added at each end.
+///
+/// # Errors
+///
+/// The errors of [`stat_bin`].
+pub(super) fn stat_bin_padded(x: &[f64], a: &BinArgs) -> Result<BuiltBins> {
+    pad_bins(&stat_bin(x, a)?)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -514,5 +552,38 @@ mod density_tests {
             assert!((dnorm(x, 1.0) - want).abs() <= 1e-12 * want.max(1e-300), "{x}");
         }
         assert_eq!(dnorm(40.0, 1.0), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod pad_tests {
+    use super::*;
+
+    #[test]
+    fn padding_adds_a_zero_bin_each_side_with_the_neighbour_width() {
+        let a = BinArgs { bins: 30, binwidth: Some(1.0), boundary: Some(0.0), center: None };
+        let b = stat_bin_padded(&[1.0, 2.0, 3.0], &a).expect("bins");
+        assert_eq!(b.count, [0.0, 2.0, 1.0, 0.0]);
+        assert_eq!(b.x, [0.5, 1.5, 2.5, 3.5]);
+        assert_eq!(b.width, [1.0; 4]);
+        assert_eq!(b.xmin, [0.0, 1.0, 2.0, 3.0]);
+        assert_eq!(b.xmax, [1.0, 2.0, 3.0, 4.0]);
+        assert_eq!(b.density, [0.0, 2.0 / 3.0, 1.0 / 3.0, 0.0]);
+    }
+
+    #[test]
+    fn padding_refuses_what_stat_bin_refuses() {
+        let a = BinArgs { bins: 30, binwidth: None, boundary: None, center: None };
+        assert!(stat_bin_padded(&[], &a).is_err());
+        assert!(stat_bin_padded(&[1.0, f64::INFINITY], &a).is_err());
+        assert!(pad_bins(&BuiltBins {
+            x: vec![],
+            xmin: vec![],
+            xmax: vec![],
+            width: vec![],
+            count: vec![],
+            density: vec![],
+        })
+        .is_err());
     }
 }
