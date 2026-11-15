@@ -67,8 +67,9 @@ pub struct ProvenRow {
     pub aes: &'static [&'static str],
 }
 
-/// The rows the verb draws, generated from the contracts by `build.rs`.
-pub const PROVEN_ROWS: &[ProvenRow] = include!("proven_rows.rs");
+// `pub const PROVEN_ROWS`, generated from the contracts by `build.rs`. The file is a whole item
+// (not a bare expression) so rustfmt can parse it.
+include!("proven_rows.rs");
 
 /// The engine geom for a proven geom name. Every proven geom needs an arm here; a test walks
 /// [`PROVEN_ROWS`] to keep it so.
