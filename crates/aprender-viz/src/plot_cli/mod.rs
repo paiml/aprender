@@ -17,7 +17,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::grammar::{
-    zero_range, Aes, Coord, DataFrame, Expansion, GGPlot, Geom, Stat, TerminalPlot, Theme,
+    zero_range, Aes, Coord, DataFrame, Expansion, Facet, GGPlot, Geom, Stat, TerminalPlot, Theme,
     MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
@@ -174,6 +174,8 @@ pub struct PlotArgs {
     pub output: Output,
     /// Never emit colour escape sequences.
     pub no_color: bool,
+    /// Column to wrap panels on (`facet_wrap(~column)`); `None` draws one panel.
+    pub facet: Option<String>,
 }
 
 /// The process facts that decide colour, read once so tests can set them.
@@ -221,11 +223,15 @@ fn build_plot(
     args: &PlotArgs,
     row: &ProvenRow,
     (xs, ys): (&[f64], &[f64]),
+    facet: Option<(&str, &[&str])>,
 ) -> Result<GGPlot, String> {
     let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
     let mut df = DataFrame::new();
     df.add_column_f32(&args.x, &narrow(xs));
     df.add_column_f32(&args.y, &narrow(ys));
+    if let Some((col, labels)) = facet {
+        df.add_column_str(col, labels);
+    }
     let plot = GGPlot::new().data(df).aes(Aes::new().x(&args.x).y(&args.y));
     let plot = plot.geom(geom_for(row.geom)?.stat(stat_for(row.stat)?));
     position_for(row.position)?;
@@ -235,6 +241,10 @@ fn build_plot(
         scale_for(aes, kind)?;
     }
     let plot = plot.coord(coord_for(row.coord)?).theme(theme_for(row.theme)?);
+    let plot = match facet {
+        Some((col, labels)) => plot.facet(Facet::wrap(col, wrap_columns(labels))),
+        None => plot,
+    };
     Ok(plot.trained_on(domain(xs), domain(ys)))
 }
 
@@ -248,19 +258,52 @@ fn render(args: &PlotArgs, env: &Env, stderr: &mut dyn Write) -> Result<String, 
     let size = (args.width.unwrap_or(default.0), args.height.unwrap_or(default.1));
     // Before the data is read: a size the engine cannot allocate must not cost a read first.
     check_size(args.output, size)?;
-    let (xs, ys, dropped) = numeric_xy(&read_csv(&args.data)?, &args.x, &args.y)?;
+    let table = read_csv(&args.data)?;
+    let (xs, ys, dropped) = numeric_xy(&table, &args.x, &args.y)?;
     if dropped > 0 {
         // ggplot2's wording for the same event, singular for one row.
         let rows = if dropped == 1 { "row" } else { "rows" };
         let _ = writeln!(stderr, "warning: Removed {dropped} {rows} containing missing values or values outside the scale range (geom_point).");
     }
-    let plot = build_plot(args, row, (&xs, &ys))?;
+    let labels = args.facet.as_deref().map(|c| facet_labels(&table, args, c)).transpose()?;
+    let refs: Vec<&str> = labels.iter().flatten().map(String::as_str).collect();
+    let facet = args.facet.as_deref().map(|c| (c, refs.as_slice()));
+    let plot = build_plot(args, row, (&xs, &ys), facet)?;
     let target = TerminalPlot { width: size.0, height: size.1, color };
     match args.output {
         Output::Term => plot.build().and_then(|b| b.to_terminal(target)),
         Output::Svg => plot.dimensions(size.0, size.1).build().and_then(|b| b.to_svg()),
     }
     .map_err(|e| e.to_string())
+}
+
+/// ggplot2's `facet_wrap` column count: `ceil(sqrt(panels))` over the distinct labels.
+fn wrap_columns(labels: &[&str]) -> usize {
+    let mut levels = labels.to_vec();
+    levels.sort_unstable();
+    levels.dedup();
+    (1..=levels.len()).find(|n| n * n >= levels.len()).unwrap_or(1)
+}
+
+/// The facet column's text for the rows [`numeric_xy`] kept (both x and y a number), so each
+/// point lands in its own panel.
+fn facet_labels(table: &Table, args: &PlotArgs, col: &str) -> Result<Vec<String>, String> {
+    let at = |name: &str| table.columns.iter().position(|c| c == name);
+    let fi = at(col)
+        .ok_or_else(|| format!("unknown column '{col}'; columns: {}", table.columns.join(", ")))?;
+    if col == args.x || col == args.y {
+        return Err(format!("facet column '{col}' is also mapped to x or y"));
+    }
+    let (xi, yi) = (at(&args.x), at(&args.y));
+    let present = |f: &[String], i: Option<usize>| {
+        i.is_some_and(|i| f[i].parse::<f64>().is_ok_and(|v| !v.is_nan()))
+    };
+    Ok(table
+        .rows
+        .iter()
+        .filter(|(_, f)| present(f, xi) && present(f, yi))
+        .map(|(_, f)| f[fi].clone())
+        .collect())
 }
 
 /// A size inside the target's bounds: 20x8 to 1000x1000 cells, or 1x1 to 4096x4096 pixels.
@@ -555,7 +598,7 @@ mod tests {
         let a = args(Path::new("unused.csv"));
         let (xs, ys) = (vec![1.0, 2.0], vec![3.0, 4.0]);
         for row in PROVEN_ROWS {
-            assert!(build_plot(&a, row, (&xs, &ys)).is_ok(), "{}", row.contract);
+            assert!(build_plot(&a, row, (&xs, &ys), None).is_ok(), "{}", row.contract);
         }
         let e = point_row(&[ProvenRow { geom: "line", ..POINT_ROW }]).expect_err("no point row");
         assert_eq!(e, "no ggplot2 row proves geom_point, so apr plot has nothing to draw");
@@ -572,7 +615,7 @@ mod tests {
             (ProvenRow { theme: "bw", ..POINT_ROW }, "theme 'bw'"),
         ] {
             let want = format!("{want} is proven but the plot verb has no builder for it");
-            assert_eq!(build_plot(&a, &row, (&xs, &ys)).err(), Some(want));
+            assert_eq!(build_plot(&a, &row, (&xs, &ys), None).err(), Some(want));
         }
         assert!(PROVEN_ROWS.contains(&POINT_ROW), "row 1's block is in the table");
     }
