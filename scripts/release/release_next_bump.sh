@@ -24,7 +24,7 @@ if [ "${1:-}" = --self-test ]; then
     chk() { if [ "$2" = "$3" ]; then echo "  ok   $1"; else echo "  FAIL $1: got '$2' want '$3'"; fail=1; fi; }
     d=$(mktemp -d "${TMPDIR:-/tmp}/rnb.XXXXXX") || exit 2
     trap 'rm -rf -- "${d:?}"' EXIT
-    # stub gh: RNB_T_MS (space list of milestone titles), RNB_T_REM, RNB_T_MODE (fail|null|msnull|mstitle|more|errors)
+    # stub gh: RNB_T_MS (space list of milestone titles), RNB_T_REM, RNB_T_MODE (fail|null|msnull|mstitle|more|errors|remnull)
     cat > "$d/gh" << 'STUB'
 #!/bin/bash
 [ "${RNB_T_MODE:-}" = fail ] && exit 1
@@ -33,7 +33,8 @@ ms=$(for m in ${RNB_T_MS:-}; do printf '{"title":"%s"},' "$m"; done); ms="[${ms%
 [ "${RNB_T_MODE:-}" = mstitle ] && ms='[{"title":null},{"title":"0.75.0"}]'
 more=false; [ "${RNB_T_MODE:-}" = more ] && more=true
 errs='[]'; [ "${RNB_T_MODE:-}" = errors ] && errs='[{"type":"FORBIDDEN"}]'
-jq -n --argjson rem "${RNB_T_REM:-4000}" --argjson ms "$ms" --argjson more "$more" --argjson errs "$errs" \
+rem=${RNB_T_REM:-4000}; [ "${RNB_T_MODE:-}" = remnull ] && rem=null
+jq -n --argjson rem "$rem" --argjson ms "$ms" --argjson more "$more" --argjson errs "$errs" \
    '{errors:$errs,data:{rateLimit:{remaining:$rem},repository:{milestones:(if env.RNB_T_MODE == "msnull" then null else {pageInfo:{hasNextPage:$more},nodes:$ms} end)}}}'
 STUB
     chmod +x "$d/gh"
@@ -49,13 +50,16 @@ STUB
     chk "non-canonical titles are ignored" "$rc:$out" "0:0.74.3"
     run --current 0.80.0;      chk "no milestone above -> blocked, nothing printed but the verdict" "$rc:${out%% *}" "1:NEXT-BUMP-BLOCKED"
     RNB_T_MS="" run;           chk "no milestones at all -> blocked" "$rc:${out%% *}" "1:NEXT-BUMP-BLOCKED"
-    RNB_T_MODE=fail run;       chk "gh fails -> blocked" "$rc:${out%% *}" "1:NEXT-BUMP-BLOCKED"
+    RNB_T_MODE=fail run;       chk "gh fails -> blocked at the read, not later" "$rc:$(grep -c 'cannot read paiml' <<< "$out")" "1:1"
+    RNB_T_MODE=remnull run;    chk "rateLimit.remaining null -> blocked as unreadable" "$rc:$(grep -c 'is unreadable' <<< "$out")" "1:1"
+    RNB_T_MS="0.74.1 0.74.1 0.75.0" run; chk "two milestones with the same version -> that version, once" "$rc:$out" "0:0.74.1"
     RNB_T_MODE=null run;       chk "repository null with exit 0 -> blocked" "$rc:$(grep -c 'no repository' <<< "$out")" "1:1"
     RNB_T_MODE=msnull run;     chk "milestones null with exit 0 -> blocked" "$rc:${out%% *}" "1:NEXT-BUMP-BLOCKED"
     RNB_T_MODE=mstitle run;    chk "a null milestone title -> blocked, never skipped" "$rc:$(grep -c 'unreadable' <<< "$out")" "1:1"
     RNB_T_MODE=more run;       chk "more than 100 open milestones -> blocked" "$rc:${out%% *}" "1:NEXT-BUMP-BLOCKED"
     RNB_T_MODE=errors run;     chk "GraphQL errors with exit 0 -> blocked" "$rc:${out%% *}" "1:NEXT-BUMP-BLOCKED"
     RNB_T_REM=999 run;         chk "999 points left, floor 1000 -> blocked (GH-1)" "$rc:$(grep -c 'below the floor' <<< "$out")" "1:1"
+    RNB_T_REM=1000 run;        chk "allowance exactly at the floor passes" "$rc:$out" "0:0.74.1"
     RNB_T_REM=999 run --rate-floor 500; chk "--rate-floor 500 lets 999 through" "$rc:$out" "0:0.74.1"
     printf '[workspace.package]\nname = "x"\n' > "$d/Cargo.toml"
     run;                       chk "no workspace version -> blocked" "$rc:${out%% *}" "1:NEXT-BUMP-BLOCKED"
