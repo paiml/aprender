@@ -16,6 +16,12 @@ use std::path::{Path, PathBuf};
 
 /// The value the recipe's `recipe:` key must carry.
 pub(crate) const RECIPE_SCHEMA: &str = "apr-recipe-v1";
+/// The `schema` value of a receipt built from a recipe.
+pub(crate) const RECEIPT_SCHEMA: &str = "apr-recipe-receipt-v1";
+/// Recipe fields this engine validates and hashes but does not yet feed into
+/// the training loop. Kept in ONE place: when `apr finetune` threads the seed
+/// or runs the eval, the name leaves this list and the receipt says so.
+pub(crate) const FINETUNE_NOT_APPLIED: &[&str] = &["seed", "eval"];
 
 /// The training method a recipe selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -133,6 +139,30 @@ pub(crate) struct TrainRecipe {
     pub(crate) recipe_sha256: String,
 }
 
+/// One engine that took part in a run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct EngineId {
+    pub(crate) name: String,
+    pub(crate) version: String,
+    pub(crate) sha: String,
+}
+
+/// The receipt fields `apr-recipe-v1` requires of every run.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct RecipeReceipt {
+    pub(crate) schema: &'static str,
+    pub(crate) recipe_name: String,
+    pub(crate) recipe_sha256: String,
+    /// `None` when the file was not there to hash (plan mode).
+    pub(crate) data_sha256: Option<String>,
+    pub(crate) eval_sha256: Option<String>,
+    pub(crate) method: RecipeMethod,
+    pub(crate) seed: u64,
+    pub(crate) engines: Vec<EngineId>,
+    pub(crate) overrides: Vec<String>,
+    pub(crate) validated_not_applied: Vec<&'static str>,
+}
+
 /// Resolve `.` and `..` and repeated separators without touching the disk, so
 /// two spellings of one path compare equal.
 fn lexical_normalize(path: &Path) -> PathBuf {
@@ -150,6 +180,28 @@ fn lexical_normalize(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+/// True when both paths exist and are one file on disk (symlink, hard link).
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) if x == y => true,
+        _ => same_inode(a, b),
+    }
+}
+
+#[cfg(unix)]
+fn same_inode(a: &Path, b: &Path) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    match (std::fs::metadata(a), std::fs::metadata(b)) {
+        (Ok(x), Ok(y)) => x.dev() == y.dev() && x.ino() == y.ino(),
+        _ => false,
+    }
+}
+
+#[cfg(not(unix))]
+fn same_inode(_: &Path, _: &Path) -> bool {
+    false
 }
 
 fn refuse(origin: &str, violations: &[String]) -> CliError {
@@ -439,6 +491,13 @@ impl TrainRecipe {
                 bad.push(format!("field `{field}`: no such file {}", path.display()));
             }
         }
+        if same_file(&self.train, &self.heldout) {
+            bad.push(
+                "field `eval.heldout` must not be the training file `data.train` \
+                 (they are one file on disk)"
+                    .to_string(),
+            );
+        }
         if let (Some(pin), Some(actual)) = (&self.data_sha256_pin, sha256_file(&self.train)) {
             if *pin != actual {
                 bad.push(format!(
@@ -456,6 +515,36 @@ impl TrainRecipe {
                 bad.join("; ")
             )))
         }
+    }
+
+    /// The receipt fields for a run of this recipe by `engines`.
+    pub(crate) fn receipt(
+        &self,
+        engines: Vec<EngineId>,
+        overrides: Vec<String>,
+        validated_not_applied: &[&'static str],
+    ) -> RecipeReceipt {
+        RecipeReceipt {
+            schema: RECEIPT_SCHEMA,
+            recipe_name: self.name.clone(),
+            recipe_sha256: self.recipe_sha256.clone(),
+            data_sha256: sha256_file(&self.train),
+            eval_sha256: sha256_file(&self.heldout),
+            method: self.method,
+            seed: self.seed,
+            engines,
+            overrides,
+            validated_not_applied: validated_not_applied.to_vec(),
+        }
+    }
+}
+
+/// This binary, as a receipt engine.
+pub(crate) fn apr_engine() -> EngineId {
+    EngineId {
+        name: "apr".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        sha: env!("APR_GIT_SHA").to_string(),
     }
 }
 

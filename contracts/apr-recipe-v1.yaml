@@ -89,8 +89,8 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Each entry cites only tests present at this slice head; the rest of FALSIFY-APR-RECIPE-001 .. 005
-# return in the slices that add the test each one cites.
+# Each entry cites only tests present at this slice head; FALSIFY-APR-RECIPE-004 (flag conflicts) and the
+# CLI parts of 001 and 002 return in the slices that add the tests they cite.
 # Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
 # renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
 # slot is held by the contract-parses entry until the entry it stands in for lands.
@@ -108,9 +108,9 @@ falsification_tests:
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
-  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id, an unknown method, an empty string, a heldout that aliases the training file, a malformed data pin or a non-positive training number or a teacher without distill is refused by field, every fault in one message"
+  prediction: "A misspelt key, a missing required key, a teacher without distill, or a non-positive training number each yields a refusal naming that field"
   test: |
-    cargo test -p apr-cli --lib -- method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file teacher_rules_are_enforced_by_field
+    cargo test -p apr-cli --lib -- train_recipe::tests
   if_fails: "A typo in a recipe silently trains with a default"
 - id: FALSIFY-APR-RECIPE-004
   rule: the recipe contract is itself a valid contract
@@ -120,7 +120,7 @@ falsification_tests:
   if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
 - id: FALSIFY-APR-RECIPE-005
   rule: the data pin is real
-  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256`; a planted-wrong pin refuses the run at require_inputs, and sha256 matches its published vector (the receipt hashes land with the receipt)"
+  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256`; a planted-wrong pin refuses the run at require_inputs, sha256 matches its published vector, and the receipt carries the recipe, data and eval hashes and the engine"
   test: |
-    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin sha256_matches_the_published_test_vector
+    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin sha256_matches_the_published_test_vector receipt_carries_the_contract_fields
   if_fails: "A receipt can name data it did not train on"

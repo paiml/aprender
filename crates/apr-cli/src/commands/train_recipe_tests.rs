@@ -236,6 +236,29 @@ fn heldout_alias_of_the_training_file_is_refused() {
     }
 }
 
+/// A symlink or hard link is the same file on disk: `require_inputs` refuses
+/// it even though the two paths differ lexically.
+#[cfg(unix)]
+#[test]
+fn heldout_linked_to_the_training_file_is_refused_at_require_inputs() {
+    let dir = std::env::temp_dir().join(format!("apr-recipe-alias-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    for f in ["base.apr", "train.jsonl"] {
+        std::fs::write(dir.join(f), b"x").expect("write");
+    }
+    std::fs::remove_file(dir.join("held.jsonl")).ok();
+    std::os::unix::fs::symlink(dir.join("train.jsonl"), dir.join("held.jsonl")).expect("link");
+    let src = "recipe: apr-recipe-v1\nname: x\nbase: base.apr\nmethod: lora\n\
+               data:\n  train: train.jsonl\neval:\n  heldout: held.jsonl\nseed: 1\n";
+    let r = TrainRecipe::parse(src, &dir, "r.yaml").expect("lexically distinct");
+    let msg = r.require_inputs().expect_err("same file").to_string();
+    assert!(
+        msg.contains("field `eval.heldout`") && msg.contains("training file"),
+        "{msg}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn heldout_may_not_be_the_training_file() {
     let msg = refusal(&VALID.replace("data/heldout.jsonl", "data/train.jsonl"));
@@ -429,6 +452,56 @@ fn require_inputs_names_each_missing_file_then_passes_and_checks_the_pin() {
         .to_string();
     assert!(msg.contains("field `data.sha256` pins"), "{msg}");
     assert!(msg.contains(&actual), "{msg}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn receipt_carries_the_contract_fields() {
+    let dir = scratch("receipt");
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, VALID).expect("write recipe");
+    let r = TrainRecipe::load(&path).expect("load");
+
+    // Nothing to hash yet: the hashes are absent, never invented.
+    let receipt = r.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    assert_eq!(receipt.data_sha256, None);
+    assert_eq!(receipt.eval_sha256, None);
+
+    std::fs::write(dir.join("data/train.jsonl"), b"train\n").expect("train");
+    std::fs::write(dir.join("data/heldout.jsonl"), b"heldout\n").expect("heldout");
+    let receipt = r.receipt(
+        vec![apr_engine()],
+        vec!["--vram 8".to_string()],
+        FINETUNE_NOT_APPLIED,
+    );
+    assert_eq!(receipt.schema, RECEIPT_SCHEMA);
+    assert_eq!(receipt.recipe_sha256, sha256_bytes(VALID.as_bytes()));
+    assert_eq!(receipt.data_sha256, Some(sha256_bytes(b"train\n")));
+    assert_eq!(receipt.eval_sha256, Some(sha256_bytes(b"heldout\n")));
+    assert_eq!(receipt.seed, 42);
+    assert_eq!(receipt.engines.len(), 1);
+    assert_eq!(receipt.engines[0].name, "apr");
+    assert_eq!(receipt.engines[0].version, env!("CARGO_PKG_VERSION"));
+    assert!(!receipt.engines[0].sha.is_empty());
+
+    let json = serde_json::to_value(&receipt).expect("receipt serializes");
+    for key in [
+        "schema",
+        "recipe_name",
+        "recipe_sha256",
+        "data_sha256",
+        "eval_sha256",
+        "method",
+        "seed",
+        "engines",
+        "overrides",
+        "validated_not_applied",
+    ] {
+        assert!(json.get(key).is_some(), "receipt lacks `{key}`: {json}");
+    }
+    assert_eq!(json["method"], "lora");
+    assert_eq!(json["overrides"][0], "--vram 8");
+    assert_eq!(json["validated_not_applied"][0], "seed");
     std::fs::remove_dir_all(&dir).ok();
 }
 
