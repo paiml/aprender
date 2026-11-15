@@ -43,6 +43,8 @@ mod ggplot;
 #[cfg(test)]
 mod ggplot2_dist_density_oracle;
 #[cfg(test)]
+mod ggplot2_dist_freqpoly_oracle;
+#[cfg(test)]
 mod ggplot2_dist_oracle;
 #[cfg(test)]
 mod ggplot2_lines_oracle;

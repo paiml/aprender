@@ -21,7 +21,9 @@ use super::aes::Aes;
 use super::build::{BuiltDensity, BuiltLayer, BuiltLayout, PositionScale};
 use super::coord::Coord;
 use super::data::{DataFrame, DataValue};
-use super::dist_math::{cmp_na_last, stat_bin, stat_density, BinArgs, DENSITY_POINTS};
+use super::dist_math::{
+    cmp_na_last, stat_bin, stat_bin_padded, stat_density, BinArgs, DENSITY_POINTS,
+};
 use super::facet::Facet;
 use super::geom::{Geom, GeomType};
 use super::ggplot::Layer;
@@ -344,6 +346,9 @@ pub(super) fn layout(
             histogram(spec, data, aes, groups)
         }
         [(spec, data, aes, groups)] if spec.kind == DistKind::Density => density(data, aes, groups),
+        [(spec, data, aes, groups)] if spec.kind == DistKind::Freqpoly => {
+            freqpoly(spec, data, aes, groups)
+        }
         _ => Err(Error::UnsupportedLayer(NOT_BUILT)),
     }
 }
@@ -364,6 +369,39 @@ fn histogram(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Re
         center: spec.center,
     };
     let bins = stat_bin(&xs, &args)?;
+    let top = bins.count.iter().copied().fold(0.0_f64, f64::max);
+    let (lo, hi) =
+        (bins.xmin.first().copied().unwrap_or(0.0), bins.xmax.last().copied().unwrap_or(0.0));
+    let layer = BuiltLayer {
+        x: bins.x.clone(),
+        y: bins.count.clone(),
+        points: None,
+        path: None,
+        bins: Some(bins),
+        density: None,
+    };
+    Ok(BuiltLayout {
+        layers: vec![layer],
+        x: PositionScale::continuous((lo, hi)),
+        y: PositionScale::continuous((0.0, top)),
+    })
+}
+
+/// One ungrouped `geom_freqpoly()`: `stat_bin` with `pad = TRUE`, drawn as a path through the bin
+/// centres. The scales are retrained on the padded edges and on 0 and the largest count.
+fn freqpoly(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
+    if groups.iter().any(|g| *g != -1) {
+        return Err(refuse("grouped frequency polygons are not built yet"));
+    }
+    let name = aes.x.as_deref().ok_or_else(|| refuse("geom_freqpoly needs an `x` aesthetic"))?;
+    let xs: Vec<f64> = numeric(data, name)?.into_iter().filter(|v| !v.is_nan()).collect();
+    let args = BinArgs {
+        bins: spec.bins,
+        binwidth: spec.binwidth,
+        boundary: spec.boundary,
+        center: spec.center,
+    };
+    let bins = stat_bin_padded(&xs, &args)?;
     let top = bins.count.iter().copied().fold(0.0_f64, f64::max);
     let (lo, hi) =
         (bins.xmin.first().copied().unwrap_or(0.0), bins.xmax.last().copied().unwrap_or(0.0));
@@ -495,8 +533,8 @@ mod tests {
         let drawn = |r: Result<()>| matches!(r, Err(Error::UnsupportedLayer(m)) if m == NOT_DRAWN);
         for (name, g, a) in all_geoms() {
             let p = plot(small(), a, g).build().expect("builds");
-            // The histogram and the density are built; the other three stats are not.
-            assert_eq!(not_built(&p.layout()), name != "hist" && name != "dens", "{name}");
+            // The histogram, the frequency polygon and the density are built; the others are not.
+            assert_eq!(not_built(&p.layout()), !matches!(name, "hist" | "freq" | "dens"), "{name}");
             assert!(drawn(p.to_framebuffer().map(drop)), "{name} framebuffer");
             assert!(drawn(p.to_svg().map(drop)), "{name} svg");
         }
