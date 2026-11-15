@@ -228,6 +228,17 @@ mod tests {
     }
 
     #[test]
+    fn pre_flight_mixed_missing_and_absent_columns() {
+        let mut df = DataFrame::new();
+        df.columns.insert("m".into(), vec![DataValue::Number(1.0), DataValue::Text("a".into())]);
+        assert!(df.is_discrete("m"));
+        df.columns.insert("n".into(), vec![DataValue::Null, DataValue::Null]);
+        assert!(!df.is_discrete("n"));
+        assert_eq!(df.position_scale("n"), Some(PositionScale::continuous((0.0, 1.0))));
+        assert!(!df.is_discrete("absent"));
+    }
+
+    #[test]
     fn numeric_column_stays_continuous() {
         let df = DataFrame::from_xy(&[1.0, 5.0, 10.0], &[2.0, 3.0, 4.0]);
         assert!(!df.is_discrete("x"));
