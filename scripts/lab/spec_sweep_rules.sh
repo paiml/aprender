@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/lab/spec_sweep_rules.sh -- LAB (C324 items 4-5), spec-sweep 2026-10-31, epic #6809.
-# Enforces seven spec rules that had no blocking check: #6610 (PP-6) #6613 (slice-5 floor) #6614 (FT-12 state)
-# #6615 (T-5 reconcile blocks release) #6616 (plan-quorum apr lane advisory) #6641 (nemawashi advisory-until-ack) #6630 (gputrain contract status). Each rule is a function that prints
+# Enforces eight spec rules that had no blocking check: #6610 (PP-6) #6613 (slice-5 floor) #6614 (FT-12 state)
+# #6615 (T-5 reconcile blocks release) #6616 (plan-quorum apr lane advisory) #6641 (nemawashi advisory-until-ack) #6630 (gputrain contract status) #6617 (Track D non-blocking). Each rule is a function that prints
 # RED lines; a rule whose input file is missing is RED (the universe may not empty itself). A rule that is
 # true of the spec but not yet true of the code (6615) is RED too: that is the finding, one ticket, one owner.
 # Never in a PR, merge-queue or release job; run nightly or on demand.
@@ -15,7 +15,8 @@ AE=docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md
 MG=docs/specifications/aprender-distribute/multi-gpu-cpu-machine-tasks.md
 GC=contracts/entrenar/gpu-training-backend-v1.yaml
 SM2=docs/specifications/aprender-train/ship-model-2-spec.md
-RULES=(pp6 slice5 ft12 t5 pq nemawashi gputrain)
+PP66=docs/specifications/PP-066-release-spec.md
+RULES=(pp6 slice5 ft12 t5 pq nemawashi gputrain trackd)
 need() { [ -f "$1/$2" ] || { echo "RED $2: input missing"; return 1; }; }
 
 # 6610 PP-6: an arm with comparator_required: true declares phase: release (never merge/both/reporting).
@@ -94,6 +95,19 @@ gputrain() {
   [ "$c" = "$s" ] || echo "RED gputrain: contract status $c but spec s14.4 says $s"
 }
 
+# 6617 trackd: PP-066 Track D rows (D-Ndoc) are non-blocking: the Track D heading says so and no other row's
+# blockers cell (table column 4, or a "blockers:" card line) names one. Never a merge or release hold.
+trackd() {
+  need "$1" "$PP66" || return 0
+  awk -F'|' '
+    /^#+ / { d = ($0 ~ /^### Track D/); if (d && $0 ~ /non-blocking/) nb = 1 }
+    d && /^\| D-[0-9]+doc \|/ { ids++ }
+    !d && /^\|/ && $4 ~ /D-[0-9]+doc/ { printf "RED track-d: line %d row%s names a Track D row as a blocker\n", NR, $2 }
+    !d && /blockers: [^·]*D-[0-9]+doc/ { printf "RED track-d: line %d card names a Track D row as a blocker\n", NR }
+    END { if (!nb) print "RED track-d: no Track D heading marked non-blocking"; if (!ids) print "RED track-d: no Track D rows found (vacuous)" }
+  ' "$1/$PP66"
+}
+
 run() {
   local root=$1 out reds=0 r
   [ -d "$root" ] || { echo "usage: no such dir $root" >&2; return 2; }
@@ -122,6 +136,7 @@ selftest() {
     printf 'run: bash scripts/check_reconcile.sh\n' > "$t/.github/workflows/binary-release.yml"
     mkdir -p "$t/${MG%/*}"; printf -- '- Task assignment is advisory until worker acknowledges\n' > "$t/$MG"
     mkdir -p "$t/${GC%/*}" "$t/${SM2%/*}"; printf 'status: ACTIVE\n' > "$t/$GC"; printf '`contracts/entrenar/gpu-training-backend-v1.yaml` v1.0.0 ACTIVE,\n' > "$t/$SM2"
+    mkdir -p "$t/${PP66%/*}"; printf '### Track D\n| id | title | blockers |\n|---|---|---|\n| D-1doc | x | G-11 |\n### Track D - docs (non-blocking)\n## s6\n| W-B | x | S-3 |\n' > "$t/$PP66"
   }
   expect() { rc=0; run "$t" >/dev/null || rc=$?; [ "$rc" -eq "$1" ] || { echo "FAIL $2 rc=$rc want $1"; fail=1; }; }
   mk; expect 0 "good tree"
@@ -138,7 +153,10 @@ selftest() {
   mk; rm "$t/$MG"; expect 1 "multi-gpu spec missing"
   mk; printf '`contracts/entrenar/gpu-training-backend-v1.yaml` v1.0.0 PROPOSED,\n' > "$t/$SM2"; expect 1 "spec status differs from contract"
   mk; printf 'status: PROPOSED\n' > "$t/$GC"; expect 1 "contract status differs from spec"
-  if [ "$fail" -eq 0 ]; then echo "self-test: 14 cases ok"; fi
+  mk; printf '| W-B | x | D-1doc |\n' >> "$t/$PP66"; expect 1 "Track D row named as blocker"
+  mk; printf -- '- a - blockers: D-1doc - x\n' >> "$t/$PP66"; expect 1 "Track D named in card blockers"
+  mk; printf '### Track D\n| D-1doc | x | G-11 |\n' > "$t/$PP66"; expect 1 "heading not non-blocking"
+  if [ "$fail" -eq 0 ]; then echo "self-test: 17 cases ok"; fi
   return "$fail"
 }
 case "${1:-}" in
