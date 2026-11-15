@@ -88,6 +88,24 @@ rpg_member_dirs() {
     jq -r '[.packages[] | select(.publish != []) | "\(.name)-\(.version)"] | sort | .[]'
 }
 
+# rpg_clear_overlay_units TARGET NAME-VERSION: remove the .fingerprint of every compiled unit under
+# TARGET (any profile or triple) whose dep-info names an overlay source dir for NAME-VERSION.
+rpg_clear_overlay_units() {
+    local tdir=$1 md=$2 dd df u base
+    [ "${tdir#/}" != "$tdir" ] || return 1
+    for dd in "$tdir"/*/deps "$tdir"/*/*/deps; do
+        [ -d "$dd" ] || continue
+        for df in "$dd"/*.d; do
+            [ -f "$df" ] || continue
+            grep -qE "/registry/src/-[^/]+/${md}/" "$df" || continue
+            u=${df##*/}; u=${u%.d}
+            base=${dd%/deps}
+            rm -rf -- "${base:?}/.fingerprint/${u:?}" || return 1
+        done
+    done
+    return 0
+}
+
 self_test() {
     local fail=0 got want args why
     echo "$PROG self-test: case table"
@@ -123,6 +141,7 @@ EOF
         'echo "$*" >> "$FAKE_CARGO_LOG"' \
         'if [ -e "$FAKE_TARGET/package/tmp-registry/stale.crate" ]; then echo "error: no hash listed for a v0.0.0"; exit 101; fi' \
         'if [ -e "$CARGO_HOME/registry/src/-h/a-0.0.0/planted" ]; then echo "error: verified a leftover unpacked source"; exit 101; fi' \
+        'if [ -e "$FAKE_TARGET/debug/.fingerprint/a-1" ]; then echo "error: reused a compiled overlay unit"; exit 101; fi' \
         'echo "   Packaged 1 file"; [ -z "${FAKE_CARGO_RC:-}" ] || { echo "error: fake refusal"; exit "$FAKE_CARGO_RC"; }' > "$d/cargo"
     chmod +x "$d/cargo"; : > "$d/Cargo.toml"
     export FAKE_TARGET="$d/t"
@@ -143,6 +162,18 @@ EOF
         && [ -d "$CARGO_HOME/registry/src/index.crates.io-x/a-0.0.0" ]; then
         echo "  ok   a leftover unpacked member source is removed before the walk; other sources stay (#6880)"
     else echo "  FAIL a leftover unpacked overlay source was verified, or an unrelated source was removed"; fail=1; fi
+    # #6880 (compiled unit): a unit compiled from the overlay source by an earlier commit stays fresh
+    # in a kept target dir (cargo keys a registry unit by id, not mtime). Only the fingerprint of a
+    # unit whose dep-info reads a member overlay source goes; other units and the deps cache stay.
+    mkdir -p "$d/t/debug/deps" "$d/t/debug/.fingerprint/a-1" "$d/t/debug/.fingerprint/a-2" "$d/t/debug/.fingerprint/zz-1"
+    echo "$d/t/debug/deps/a-1.d: $CARGO_HOME/registry/src/-h/a-0.0.0/src/lib.rs" > "$d/t/debug/deps/a-1.d"
+    echo "$d/t/debug/deps/a-2.d: src/lib.rs" > "$d/t/debug/deps/a-2.d"
+    echo "$d/t/debug/deps/zz-1.d: $CARGO_HOME/registry/src/-h/zz-1.0.0/src/lib.rs" > "$d/t/debug/deps/zz-1.d"
+    if FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify > /dev/null \
+        && [ ! -e "$d/t/debug/.fingerprint/a-1" ] && [ -d "$d/t/debug/.fingerprint/a-2" ] && [ -d "$d/t/debug/.fingerprint/zz-1" ] \
+        && [ -e "$d/t/debug/deps/a-2.d" ]; then
+        echo "  ok   a compiled overlay unit of a member is invalidated; path and other units stay (#6880)"
+    else echo "  FAIL a compiled overlay unit survived into the walk, or an unrelated unit was removed"; fail=1; fi
     # The production case: CARGO_HOME unset or empty, so the cargo home is $HOME/.cargo. The
     # leftover there must go too, and nothing may be cleared straight under $HOME.
     mkdir -p "$d/home/.cargo/registry/src/-h/a-0.0.0" "$d/home/registry/src/-h/a-0.0.0"
@@ -241,6 +272,16 @@ package_walk() {
             [ -d "$md" ] || continue
             rm -rf -- "${md:?}" || { echo "ENV   package: cannot remove leftover $md"; return 2; }
         done
+    done < <(printf '%s\n' "$meta" | rpg_member_dirs)
+    # COMPILED OVERLAY UNIT (#6880, measured on cargo 1.93.0). cargo fingerprints a registry-source
+    # unit by package id and version only, with no mtime check, so the unit an earlier commit compiled
+    # from the overlay source stays "fresh" in a kept CARGO_TARGET_DIR although the source dir above
+    # was unpacked anew: verify linked the OLD sibling API (rc 0 for a broken API, false red for a new
+    # one). Remove only the .fingerprint of units whose dep-info reads <CARGO_HOME>/registry/src/-*/<member>;
+    # path units under <target>/package are keyed by path and already fresh, the deps cache stays.
+    while IFS= read -r m; do
+        [ -n "$m" ] || continue
+        rpg_clear_overlay_units "$tdir" "$m" || { echo "ENV   package: cannot clear compiled overlay units of $m"; return 2; }
     done < <(printf '%s\n' "$meta" | rpg_member_dirs)
     log=$(mktemp) || return 2
     (cd -- "$root" && cargo package "${args[@]}" ${mode:+"$mode"} --locked) > "$log" 2>&1 || rc=$?
