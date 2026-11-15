@@ -24,8 +24,12 @@ pub struct PlotFlags {
     pub data: InputFile,
 
     /// Aesthetic mappings, e.g. x=height,y=weight
+    #[arg(long, required_unless_present = "spec", conflicts_with = "spec")]
+    pub aes: Option<FreeText>,
+
+    /// A ggplot expression, e.g. "ggplot(df, aes(x, y)) + geom_point()" (instead of --aes/--geom)
     #[arg(long)]
-    pub aes: FreeText,
+    pub spec: Option<FreeText>,
 
     /// Geom of the single layer, one of the proven geoms [default: point]
     #[arg(long)]
@@ -68,6 +72,119 @@ pub fn parse_aes(s: &str) -> Result<BTreeMap<String, String>, String> {
     Ok(out)
 }
 
+/// A cursor over a ggplot expression; every error names the 1-based character position.
+struct Cursor<'a> {
+    chars: Vec<char>,
+    at: usize,
+    _src: &'a str,
+}
+
+impl<'a> Cursor<'a> {
+    fn new(src: &'a str) -> Self {
+        Self { chars: src.chars().collect(), at: 0, _src: src }
+    }
+
+    fn fail<T>(&self, want: &str) -> Result<T, String> {
+        let found =
+            self.chars.get(self.at).map_or("end of input".to_string(), |c| format!("'{c}'"));
+        Err(format!("--spec: position {}: expected {want}, found {found}", self.at + 1))
+    }
+
+    fn ws(&mut self) {
+        while self.chars.get(self.at).is_some_and(|c| c.is_whitespace()) {
+            self.at += 1;
+        }
+    }
+
+    fn eat(&mut self, c: char) -> Result<(), String> {
+        self.ws();
+        if self.chars.get(self.at) == Some(&c) {
+            self.at += 1;
+            Ok(())
+        } else {
+            self.fail(&format!("'{c}'"))
+        }
+    }
+
+    fn ident(&mut self) -> Result<String, String> {
+        self.ws();
+        let start = self.at;
+        while self.chars.get(self.at).is_some_and(|c| c.is_alphanumeric() || "_.".contains(*c)) {
+            self.at += 1;
+        }
+        if start == self.at {
+            return self.fail("a name");
+        }
+        Ok(self.chars[start..self.at].iter().collect())
+    }
+
+    fn keyword(&mut self, word: &str) -> Result<(), String> {
+        self.ws();
+        let start = self.at;
+        let got = self.ident()?;
+        if got == word {
+            Ok(())
+        } else {
+            self.at = start;
+            self.fail(&format!("'{word}'"))
+        }
+    }
+
+    /// `col` or `x = col` / `y = col`; a positional argument takes `slot`'s aesthetic.
+    fn aes_arg(&mut self, slot: &str) -> Result<(String, String), String> {
+        let first = self.ident()?;
+        self.ws();
+        if self.chars.get(self.at) == Some(&'=') {
+            self.at += 1;
+            Ok((first, self.ident()?))
+        } else {
+            Ok((slot.to_string(), first))
+        }
+    }
+}
+
+/// Parse `ggplot(df, aes(x, y)) + geom_point()` (positional or `x = col` arguments) into the
+/// geom name and the `x`/`y` column mapping.
+///
+/// # Errors
+///
+/// Anything outside that shape, with the 1-based character position of the first bad token.
+pub fn parse_spec(src: &str) -> Result<(String, BTreeMap<String, String>), String> {
+    let mut c = Cursor::new(src);
+    c.keyword("ggplot")?;
+    c.eat('(')?;
+    c.ident()?;
+    c.eat(',')?;
+    c.keyword("aes")?;
+    c.eat('(')?;
+    let mut aes = BTreeMap::new();
+    for (i, slot) in ["x", "y"].into_iter().enumerate() {
+        if i == 1 {
+            c.eat(',')?;
+        }
+        let (k, v) = c.aes_arg(slot)?;
+        if aes.insert(k.clone(), v).is_some() {
+            return Err(format!("--spec: position {}: aesthetic '{k}' is mapped twice", c.at));
+        }
+    }
+    c.eat(')')?;
+    c.eat(')')?;
+    c.eat('+')?;
+    c.ws();
+    let geom = c.ident()?;
+    let Some(geom) = geom.strip_prefix("geom_").map(str::to_string) else {
+        c.at -= geom.chars().count();
+        return c.fail("a geom_ call");
+    };
+    c.eat('(')?;
+    c.eat(')')?;
+    c.ws();
+    if c.at < c.chars.len() {
+        return c.fail("end of input");
+    }
+    Ok((geom, aes))
+}
+
 fn refuse(what: &str, got: &str, supported: &[&str]) -> String {
     format!("unsupported {what} '{got}'; supported: {}", supported.join(", "))
 }
@@ -80,11 +197,16 @@ impl PlotFlags {
     /// A geom other than `point`, a malformed `--aes`, an aesthetic other than `x` and `y`, or
     /// no mapping for `x` or `y`.
     pub fn plot_args(&self) -> Result<PlotArgs, String> {
-        let geom = self.geom.as_deref().unwrap_or("point");
-        if !GEOMS.contains(&geom) {
-            return Err(refuse("geom", geom, GEOMS));
+        let (geom, mut aes) = match (&self.spec, &self.aes) {
+            (Some(spec), _) => parse_spec(spec)?,
+            (None, aes) => (
+                self.geom.as_deref().unwrap_or("point").to_string(),
+                parse_aes(aes.as_deref().unwrap_or_default())?,
+            ),
+        };
+        if !GEOMS.contains(&geom.as_str()) {
+            return Err(refuse("geom", &geom, GEOMS));
         }
-        let mut aes = parse_aes(&self.aes)?;
         if let Some(other) = aes.keys().find(|a| !AESTHETICS.contains(&a.as_str())) {
             return Err(refuse("aesthetic", other, AESTHETICS));
         }
@@ -159,7 +281,7 @@ mod tests {
         assert!(parse(&["--data", "d.csv"]).is_err(), "needs --aes");
         assert!(parse(&["--aes", "x=a,y=b"]).is_err(), "needs --data");
         assert!(parse(&["--data", "d", "--aes", "x=a,y=b", "--output", "png"]).is_err());
-        assert!(parse(&["--data", "d", "--aes", "x=a,y=b", "--spec", "p.yaml"]).is_err());
+        assert!(parse(&["--data", "d", "--aes", "x=a,y=b", "--spec", "p"]).is_err(), "exclusive");
     }
 
     #[test]
@@ -176,6 +298,59 @@ mod tests {
             parse_aes("x=a,x=b").expect_err("twice"),
             "--aes: aesthetic 'x' is mapped twice"
         );
+    }
+
+    #[test]
+    fn spec_parses_and_names_the_position_of_a_malformed_one() {
+        let (g, m) = parse_spec(" ggplot(df, aes(h, w)) + geom_point() ").expect("parses");
+        assert_eq!((g.as_str(), m["x"].as_str(), m["y"].as_str()), ("point", "h", "w"));
+        let (_, m) = parse_spec("ggplot(df, aes(y = w, x = h)) + geom_point()").expect("named");
+        assert_eq!((m["x"].as_str(), m["y"].as_str()), ("h", "w"));
+        let bad = |s: &str| parse_spec(s).expect_err("refused");
+        assert_eq!(
+            bad("ggplot(df, aes(x, y) + geom_point()"),
+            "--spec: position 22: expected ')', found '+'"
+        );
+        assert_eq!(
+            bad("ggplot(df, aes(x y)) + geom_point()"),
+            "--spec: position 18: expected ',', found 'y'"
+        );
+        assert_eq!(
+            bad("ggplot(df, aes(x, y))"),
+            "--spec: position 22: expected '+', found end of input"
+        );
+        assert_eq!(
+            bad("ggplot(df, aes(x, y)) + point()"),
+            "--spec: position 25: expected a geom_ call, found 'p'"
+        );
+        assert!(bad("ggplot(df, aes(x, y)) + geom_point() x").contains("position 38"));
+        assert!(bad("plot(df)").contains("position 1"));
+    }
+
+    #[test]
+    fn spec_renders_and_a_bad_one_is_refused_before_reading() {
+        let dir = std::env::temp_dir().join(format!("plot-cli-spec-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        let csv = dir.join("d.csv");
+        std::fs::write(&csv, "x,y\n1.5,-2.25\n2.25,0.5\n3,1.75\n").expect("write csv");
+        let path = csv.to_str().expect("utf8");
+        let go = |spec: &str| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let f = parse(&["--data", path, "--output", "svg", "--spec", spec]).expect("parses");
+            (
+                run(&f, &Env::default(), &mut out, &mut err),
+                String::from_utf8_lossy(&out).into_owned(),
+            )
+        };
+        let (r, svg) = go("ggplot(df, aes(x, y)) + geom_point()");
+        assert_eq!(r, Ok(()));
+        assert!(svg.starts_with("<svg"), "{svg:.200}");
+        let (r, out) = go("ggplot(df, aes(x, y) + geom_point()");
+        assert_eq!(r, Err("--spec: position 22: expected ')', found '+'".into()));
+        assert!(out.is_empty());
+        let (r, _) = go("ggplot(df, aes(x, y)) + geom_line()");
+        assert_eq!(r, Err("unsupported geom 'line'; supported: point".into()));
+        std::fs::remove_dir_all(&dir).expect("rm tmp dir");
     }
 
     #[test]
