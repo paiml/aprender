@@ -98,7 +98,22 @@ ws_version() {
 vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }'; }
 
 # foreign_t1 OWN-PGID < "pgid args" lines -> every models_t1.sh process outside OWN-PGID
-foreign_t1() { awk -v own="$1" '$1 != own && $0 ~ /[ \/]models_t1\.sh( |$)/'; }
+# A models_t1.sh RUN is a process whose program is models_t1.sh: after the wrappers (env, timeout, setsid, nice,
+# stdbuf), a shell, their options, VAR=value words and durations, the first word names it. A process that only
+# carries the path as an argument (a linter over scripts/release/, an editor, tail) is not a run: on 2026-11-15 a
+# `bashrs lint ... scripts/release/models_t1.sh` refused the producer (PMAT-7017).
+foreign_t1() {
+    awk -v own="$1" '$1 != own {
+        for (i = 2; i <= NF; i++) {
+            t = $i
+            if (t ~ /^-/ || t ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || t ~ /^[0-9.]+[smhd]?$/) continue
+            sub(/.*\//, "", t)
+            if (t ~ /^(env|timeout|setsid|nice|stdbuf|bash|sh|dash|zsh)$/) continue
+            if (t == "models_t1.sh") print
+            break
+        }
+    }'
+}
 # The process table foreign_t1 reads. MODELS_NIGHTLY_PS_TABLE (a file of "pgid args" lines) is for
 # the self-test only: on a host where anyone is running a models_t1.sh fixture, the real table would
 # refuse every e2e row. The host units never set it.
@@ -561,6 +576,9 @@ self_test() {
     # -- foreign_t1 and no_token
     row foreign_models_t1_is_seen 0 "77 bash scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'77 bash scripts/release/models_t1.sh 0.70.2 abc out\n5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 vim models_t1.sh.log'
     row own_group_and_lookalikes_are_not_foreign 0 "" "models_t1" -- foreign_t1 5 <<< $'5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 tail -f out/models_t1.sh.log'
+    row a_path_in_the_arguments_is_not_a_run 0 "" "models_t1" -- foreign_t1 5 <<< $'78 bashrs lint --level error scripts/release/autopilot.sh scripts/release/models_t1.sh\n79 vim scripts/release/models_t1.sh\n80 bash -c grep -c x scripts/release/models_t1.sh\n81 cat /r/models_t1.sh'
+    row wrapped_runs_are_seen 0 "82 timeout -k 30 21600 bash /r/scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'82 timeout -k 30 21600 bash /r/scripts/release/models_t1.sh 1.2.3 c /o'
+    row env_and_direct_runs_are_seen 0 "84 /r/scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'83 env A=b setsid --wait bash -x scripts/release/models_t1.sh 1 c o\n84 /r/scripts/release/models_t1.sh 1 c o'
     row no_token_holds_in_a_clean_env 0 "" "" -- no_token
     row env_registry_token_refused 1 "" "" -- env CARGO_REGISTRY_TOKEN=x bash -c "$(declare -f no_token); no_token"
     row named_registry_token_refused 1 "" "" -- env CARGO_REGISTRIES_X_TOKEN=x bash -c "$(declare -f no_token); no_token"
