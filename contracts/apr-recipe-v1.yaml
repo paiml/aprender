@@ -89,8 +89,8 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Each entry cites only tests present at this slice head. FALSIFY-APR-RECIPE-004 (flag conflicts)
-# and the CLI/receipt parts of 001, 002 and 005 return in slice 6/6 with their tests.
+# Each entry cites only tests present at this slice head; the rest of FALSIFY-APR-RECIPE-001 .. 005
+# return in the slices that add the test each one cites.
 # Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
 # renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
 # slot is held by the contract-parses entry until the entry it stands in for lands.
@@ -101,6 +101,12 @@ falsification_tests:
     pv validate contracts/apr-recipe-v1.yaml
   if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
 - id: FALSIFY-APR-RECIPE-002
+  rule: a valid recipe parses
+  prediction: "A minimal valid recipe parses and its relative paths anchor at the recipe's directory"
+  test: |
+    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir
+  if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
+- id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
   prediction: "A method spelling outside lora, qlora and distill (any other case included) is not accepted"
   test: |
