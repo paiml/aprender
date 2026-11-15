@@ -57,6 +57,8 @@ out=$(run_case success "$OTHER" 0); rc=$?
 { [ "$rc" -ne 0 ] && grep -q 'not exactly' <<< "$out"; }; row $? "green job that tested another sha -> dies"
 out=$(run_case success "$SHA" 0 "$OTHER"); rc=$?
 { [ "$rc" -ne 0 ] && grep -q 'not exactly' <<< "$out"; }; row $? "log with two different tested-sha values (one == sha) -> dies"
+out=$(run_case success "$SHA" 0 "$SHA"); rc=$?
+[ "$rc" -eq 0 ]; row $? "the same tested-sha repeated in the log -> still passes (sort -u)"
 out=$(run_case success "$SHA" 1); rc=$?
 { [ "$rc" -ne 0 ] && grep -q 'dispatch' <<< "$out"; }; row $? "failed dispatch -> dies"
 out=$(run_case none "$SHA" 0); rc=$?
