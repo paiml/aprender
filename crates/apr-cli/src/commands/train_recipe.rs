@@ -11,6 +11,7 @@
 use crate::error::{CliError, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 /// The value the recipe's `recipe:` key must carry.
@@ -132,17 +133,6 @@ pub(crate) struct TrainRecipe {
     pub(crate) recipe_sha256: String,
 }
 
-fn refuse(origin: &str, violations: &[String]) -> CliError {
-    CliError::ValidationFailed(format!(
-        "recipe {origin} is not a valid {RECIPE_SCHEMA}: {}",
-        violations.join("; ")
-    ))
-}
-
-pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
-}
-
 /// Resolve `.` and `..` and repeated separators without touching the disk, so
 /// two spellings of one path compare equal.
 fn lexical_normalize(path: &Path) -> PathBuf {
@@ -160,6 +150,42 @@ fn lexical_normalize(path: &Path) -> PathBuf {
         }
     }
     out
+}
+
+fn refuse(origin: &str, violations: &[String]) -> CliError {
+    CliError::ValidationFailed(format!(
+        "recipe {origin} is not a valid {RECIPE_SCHEMA}: {}",
+        violations.join("; ")
+    ))
+}
+
+/// Lower-case hex of a sha256 digest.
+fn hex(digest: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut out = String::with_capacity(digest.len() * 2);
+    for byte in digest {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
+}
+
+/// sha256 of a file, streamed. `None` when the file cannot be read.
+pub(crate) fn sha256_file(path: &Path) -> Option<String> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buf = vec![0_u8; 1 << 16];
+    loop {
+        let n = file.read(&mut buf).ok()?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Some(hex(&hasher.finalize()))
 }
 
 fn is_sha256(s: &str) -> bool {
@@ -362,9 +388,8 @@ impl TrainRecipe {
                 None
             }),
         };
-
-        check_training(&raw.training, &mut bad);
         let teacher = check_teacher(raw.teacher.as_ref(), method, base_dir, &mut bad);
+        check_training(&raw.training, &mut bad);
         let output_dir = raw.output.as_ref().map(|o| {
             required(
                 o.dir.as_ref(),
@@ -395,6 +420,42 @@ impl TrainRecipe {
             output_dir: output_dir.map(|d| base_dir.join(d)),
             recipe_sha256: sha256_bytes(src.as_bytes()),
         })
+    }
+
+    /// Check the files a real run reads are there, and that the training data
+    /// still has its pinned hash. Runs before any model is loaded.
+    pub(crate) fn require_inputs(&self) -> Result<()> {
+        let mut bad = Vec::new();
+        let mut files = vec![
+            ("base", &self.base),
+            ("data.train", &self.train),
+            ("eval.heldout", &self.heldout),
+        ];
+        if let Some(t) = &self.teacher {
+            files.push(("teacher.model", &t.model));
+        }
+        for (field, path) in files {
+            if !path.is_file() {
+                bad.push(format!("field `{field}`: no such file {}", path.display()));
+            }
+        }
+        if let (Some(pin), Some(actual)) = (&self.data_sha256_pin, sha256_file(&self.train)) {
+            if *pin != actual {
+                bad.push(format!(
+                    "field `data.sha256` pins {pin} but {} hashes to {actual}",
+                    self.train.display()
+                ));
+            }
+        }
+        if bad.is_empty() {
+            Ok(())
+        } else {
+            Err(CliError::ValidationFailed(format!(
+                "recipe `{}` cannot run: {}",
+                self.name,
+                bad.join("; ")
+            )))
+        }
     }
 }
 

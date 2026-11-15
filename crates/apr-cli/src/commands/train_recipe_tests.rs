@@ -71,6 +71,35 @@ fn valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir() {
 }
 
 #[test]
+fn full_recipe_parses_every_optional_field() {
+    let src = format!(
+        "{VALID}training:\n  rank: 16\n  epochs: 2\n  learning_rate: 0.0001\n  max_seq_len: 256\n\
+         output:\n  dir: out/run1\n"
+    )
+    .replace(
+        "  train: data/train.jsonl\n",
+        &format!("  train: data/train.jsonl\n  sha256: {}\n", "ab".repeat(32)),
+    )
+    .replace(
+        "  heldout: data/heldout.jsonl\n",
+        "  heldout: data/heldout.jsonl\n  benchmark: humaneval-subset\n",
+    );
+    let src = src.replace("method: lora\n", "method: lora\nmodel_size: \" 0.8B \"\n");
+    let r = parse(&src).expect("full recipe parses");
+    assert_eq!(r.model_size.as_deref(), Some("0.8B"));
+    assert_eq!(r.rank, Some(16));
+    assert_eq!(r.epochs, Some(2));
+    assert_eq!(r.learning_rate, Some(0.0001));
+    assert_eq!(r.max_seq_len, Some(256));
+    assert_eq!(
+        r.output_dir.as_deref(),
+        Some(Path::new("/recipes/out/run1"))
+    );
+    assert_eq!(r.benchmark.as_deref(), Some("humaneval-subset"));
+    assert_eq!(r.data_sha256_pin, Some("ab".repeat(32)));
+}
+
+#[test]
 fn absolute_paths_are_kept() {
     let r = parse(&VALID.replace("models/base.apr", "/abs/base.apr")).expect("parses");
     assert_eq!(r.base, Path::new("/abs/base.apr"));
@@ -348,4 +377,66 @@ fn load_reads_a_file_and_names_it_when_it_cannot() {
     let msg = TrainRecipe::load(&path).expect_err("not utf-8").to_string();
     assert!(msg.contains("is not UTF-8"), "{msg}");
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn require_inputs_names_each_missing_file_then_passes_and_checks_the_pin() {
+    let dir = scratch("inputs");
+    let recipe = dir.join("r.yaml");
+    std::fs::write(&recipe, DISTILL).expect("write recipe");
+    let r = TrainRecipe::load(&recipe).expect("load");
+    let msg = r
+        .require_inputs()
+        .expect_err("nothing exists yet")
+        .to_string();
+    for field in [
+        "`base`",
+        "`data.train`",
+        "`eval.heldout`",
+        "`teacher.model`",
+    ] {
+        assert!(
+            msg.contains(&format!("field {field}: no such file")),
+            "{msg}"
+        );
+    }
+
+    std::fs::write(dir.join("models/student.apr"), b"s").expect("student");
+    std::fs::write(dir.join("models/teacher.apr"), b"t").expect("teacher");
+    std::fs::write(dir.join("data/train.jsonl"), b"{\"a\":1}\n").expect("train");
+    std::fs::write(dir.join("data/heldout.jsonl"), b"{\"a\":2}\n").expect("heldout");
+    r.require_inputs().expect("every input exists");
+
+    // The pin: right hash passes, a planted-wrong hash is refused by field.
+    let actual = sha256_file(&dir.join("data/train.jsonl")).expect("hash");
+    assert_eq!(actual, sha256_bytes(b"{\"a\":1}\n"));
+    let pinned = |hash: &str| {
+        DISTILL.replace(
+            "  train: data/train.jsonl\n",
+            &format!("  train: data/train.jsonl\n  sha256: {hash}\n"),
+        )
+    };
+    std::fs::write(&recipe, pinned(&actual)).expect("write pinned");
+    TrainRecipe::load(&recipe)
+        .expect("load pinned")
+        .require_inputs()
+        .expect("the true hash passes");
+    std::fs::write(&recipe, pinned(&"0".repeat(64))).expect("write wrong pin");
+    let msg = TrainRecipe::load(&recipe)
+        .expect("load wrong pin")
+        .require_inputs()
+        .expect_err("a planted-wrong data hash is refused")
+        .to_string();
+    assert!(msg.contains("field `data.sha256` pins"), "{msg}");
+    assert!(msg.contains(&actual), "{msg}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn sha256_matches_the_published_test_vector() {
+    assert_eq!(
+        sha256_bytes(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(sha256_file(Path::new("/nonexistent/recipe/input")), None);
 }

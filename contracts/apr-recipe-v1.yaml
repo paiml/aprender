@@ -102,9 +102,9 @@ falsification_tests:
   if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
 - id: FALSIFY-APR-RECIPE-002
   rule: a valid recipe parses
-  prediction: "A minimal valid recipe parses and its relative paths anchor at the recipe's directory, a distill recipe takes the teacher defaults and load() reads it from a file"
+  prediction: "A minimal valid recipe and a recipe with every optional field parse, and its relative paths anchor at the recipe's directory, a distill recipe takes the teacher defaults and load() reads it from a file"
   test: |
-    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir distill_recipe_parses_with_teacher_defaults load_reads_a_file_and_names_it_when_it_cannot
+    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir full_recipe_parses_every_optional_field distill_recipe_parses_with_teacher_defaults load_reads_a_file_and_names_it_when_it_cannot
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
@@ -120,7 +120,7 @@ falsification_tests:
   if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
 - id: FALSIFY-APR-RECIPE-005
   rule: the data pin is real
-  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256` (the pin-versus-file check and the receipt hashes land with the receipt)"
+  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256`; a planted-wrong pin refuses the run at require_inputs, and sha256 matches its published vector (the receipt hashes land with the receipt)"
   test: |
-    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256
+    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin sha256_matches_the_published_test_vector
   if_fails: "A receipt can name data it did not train on"
