@@ -17,8 +17,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::grammar::{
-    zero_range, Aes, Coord, DataFrame, Expansion, GGPlot, Geom, Layer, Stat, TerminalPlot, Theme,
-    MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    zero_range, Aes, Coord, DataFrame, Expansion, Facet, GGPlot, Geom, Layer, Stat, TerminalPlot,
+    Theme, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
 /// The command line of `apr plot`.
@@ -174,6 +174,8 @@ pub struct PlotArgs {
     pub output: Output,
     /// Never emit colour escape sequences.
     pub no_color: bool,
+    /// Column to wrap panels on (`facet_wrap(~column)`); `None` draws one panel.
+    pub facet: Option<String>,
     /// Horizontal reference lines, at these y values.
     pub hlines: Vec<f64>,
     /// Vertical reference lines, at these x values.
@@ -269,11 +271,15 @@ fn build_plot(
     args: &PlotArgs,
     row: &ProvenRow,
     (xs, ys): (&[f64], &[f64]),
+    facet: Option<(&str, &[&str])>,
 ) -> Result<GGPlot, String> {
     let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
     let mut df = DataFrame::new();
     df.add_column_f32(&args.x, &narrow(xs));
     df.add_column_f32(&args.y, &narrow(ys));
+    if let Some((col, labels)) = facet {
+        df.add_column_str(col, labels);
+    }
     let plot = GGPlot::new().data(df).aes(Aes::new().x(&args.x).y(&args.y));
     let plot = plot.geom(geom_for(row.geom)?.stat(stat_for(row.stat)?));
     position_for(row.position)?;
@@ -283,6 +289,10 @@ fn build_plot(
         scale_for(aes, kind)?;
     }
     let plot = plot.coord(coord_for(row.coord)?).theme(theme_for(row.theme)?);
+    let plot = match facet {
+        Some((col, labels)) => plot.facet(Facet::wrap(col, wrap_columns(labels))),
+        None => plot,
+    };
     let plot = add_decorations(plot, args);
     let (dx, dy) = trained_domains(args, xs, ys);
     Ok(plot.trained_on(dx, dy))
@@ -336,13 +346,59 @@ fn render(args: &PlotArgs, env: &Env, stderr: &mut dyn Write) -> Result<String, 
         let rows = if dropped == 1 { "row" } else { "rows" };
         let _ = writeln!(stderr, "warning: Removed {dropped} {rows} containing missing values or values outside the scale range (geom_point).");
     }
-    let plot = build_plot(args, row, (&xs, &ys)).map_err(failed)?;
+    let labels =
+        args.facet.as_deref().map(|c| facet_labels(&table, args, c)).transpose().map_err(failed)?;
+    let refs: Vec<&str> = labels.iter().flatten().map(String::as_str).collect();
+    let facet = args.facet.as_deref().map(|c| (c, refs.as_slice()));
+    let plot = build_plot(args, row, (&xs, &ys), facet).map_err(failed)?;
     let target = TerminalPlot { width: size.0, height: size.1, color };
     match args.output {
         Output::Term => plot.build().and_then(|b| b.to_terminal(target)),
         Output::Svg => plot.dimensions(size.0, size.1).build().and_then(|b| b.to_svg()),
     }
     .map_err(|e| PlotError::Failed(e.to_string()))
+}
+
+/// ggplot2's `facet_wrap` column count over the distinct labels: `wrap_dims` takes it from
+/// `grDevices::n2mfrow(n)[1]`, so 3 panels are 1x3 and 4 are 2x2.
+fn wrap_columns(labels: &[&str]) -> usize {
+    let mut levels = labels.to_vec();
+    levels.sort_unstable();
+    levels.dedup();
+    n2mfrow_columns(levels.len())
+}
+
+/// The first element of R's `n2mfrow(n)`: `n` up to 3, `(n+1) %/% 2` up to 6, `(n+2) %/% 3`
+/// up to 12, then `ceiling(sqrt(n))`. At least 1.
+fn n2mfrow_columns(n: usize) -> usize {
+    match n {
+        0 => 1,
+        1..=3 => n,
+        4..=6 => (n + 1) / 2,
+        7..=12 => (n + 2) / 3,
+        _ => (1..=n).find(|c| c * c >= n).unwrap_or(1),
+    }
+}
+
+/// The facet column's text for the rows [`numeric_xy`] kept (both x and y a number), so each
+/// point lands in its own panel.
+fn facet_labels(table: &Table, args: &PlotArgs, col: &str) -> Result<Vec<String>, String> {
+    let at = |name: &str| table.columns.iter().position(|c| c == name);
+    let fi = at(col)
+        .ok_or_else(|| format!("unknown column '{col}'; columns: {}", table.columns.join(", ")))?;
+    if col == args.x || col == args.y {
+        return Err(format!("facet column '{col}' is also mapped to x or y"));
+    }
+    let (xi, yi) = (at(&args.x), at(&args.y));
+    let present = |f: &[String], i: Option<usize>| {
+        i.is_some_and(|i| f[i].parse::<f64>().is_ok_and(|v| !v.is_nan()))
+    };
+    Ok(table
+        .rows
+        .iter()
+        .filter(|(_, f)| present(f, xi) && present(f, yi))
+        .map(|(_, f)| f[fi].clone())
+        .collect())
 }
 
 /// A size inside the target's bounds: 20x8 to 1000x1000 cells, or 1x1 to 4096x4096 pixels.
@@ -637,7 +693,7 @@ mod tests {
         let a = args(Path::new("unused.csv"));
         let (xs, ys) = (vec![1.0, 2.0], vec![3.0, 4.0]);
         for row in PROVEN_ROWS {
-            assert!(build_plot(&a, row, (&xs, &ys)).is_ok(), "{}", row.contract);
+            assert!(build_plot(&a, row, (&xs, &ys), None).is_ok(), "{}", row.contract);
         }
         let e = point_row(&[ProvenRow { geom: "line", ..POINT_ROW }]).expect_err("no point row");
         assert_eq!(e, "no ggplot2 row proves geom_point, so apr plot has nothing to draw");
@@ -654,7 +710,7 @@ mod tests {
             (ProvenRow { theme: "bw", ..POINT_ROW }, "theme 'bw'"),
         ] {
             let want = format!("{want} is proven but the plot verb has no builder for it");
-            assert_eq!(build_plot(&a, &row, (&xs, &ys)).err(), Some(want));
+            assert_eq!(build_plot(&a, &row, (&xs, &ys), None).err(), Some(want));
         }
         assert!(PROVEN_ROWS.contains(&POINT_ROW), "row 1's block is in the table");
     }
@@ -784,6 +840,18 @@ mod tests {
             None => std::env::remove_var("NO_COLOR"),
         }
         assert!(set && !empty);
+    }
+
+    #[test]
+    fn wrap_columns_follow_n2mfrow() {
+        // (panels, columns) from R: sapply(c(1:7,12,13,16,17), function(n) n2mfrow(n)[1]).
+        for (n, cols) in [(0, 1), (1, 1), (2, 2), (3, 3), (4, 2), (5, 3), (6, 3), (7, 3)] {
+            assert_eq!(n2mfrow_columns(n), cols, "{n} panels");
+        }
+        for (n, cols) in [(12, 4), (13, 4), (16, 4), (17, 5)] {
+            assert_eq!(n2mfrow_columns(n), cols, "{n} panels");
+        }
+        assert_eq!(wrap_columns(&["b", "a", "b", "c"]), 3);
     }
 
     #[test]
