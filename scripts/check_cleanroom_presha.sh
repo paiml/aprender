@@ -29,6 +29,7 @@ run_case() {
         rw_read() { :; }
         sleep() { :; }
         gh() {
+            printf '%s\n' "$*" >> "$d/args"
             case "$1 $2" in
                 "workflow run") return "$drc" ;;
                 "run list") [ "$concl" = none ] && return 0; echo 77 ;;
@@ -40,6 +41,8 @@ run_case() {
         cleanroom_on_sha "$SHA"
     ) 2>&1
     local rc=$?
+    grep -qF -e "-f ref=$SHA" "$d/args" 2> /dev/null && echo "ARG-REF-SHA"
+    grep -qF 'clean-room (aprender)' "$d/args" 2> /dev/null && echo "ARG-JOB-NAME"
     [ -s "$d/cleanroom-presha-run-id" ] && echo "RECORDED $(cat "$d/cleanroom-presha-run-id")"
     [ -n "${d:-}" ] && [ "${d#/}" != "$d" ] && rm -rf -- "${d:?}"
     return "$rc"
@@ -47,6 +50,7 @@ run_case() {
 
 out=$(run_case success "$SHA" 0); rc=$?
 { [ "$rc" -eq 0 ] && grep -q 'RECORDED 77' <<< "$out"; }; row $? "green job, tested-sha == sha -> passes and records the run id"
+{ grep -q 'ARG-REF-SHA' <<< "$out" && grep -q 'ARG-JOB-NAME' <<< "$out"; }; row $? "dispatch passes ref=<sha> and the run view selects the clean-room (aprender) job"
 out=$(run_case failure "$SHA" 0); rc=$?
 { [ "$rc" -ne 0 ] && grep -q '^DIE' <<< "$out"; }; row $? "red job -> dies, no tag"
 out=$(run_case success "$OTHER" 0); rc=$?
