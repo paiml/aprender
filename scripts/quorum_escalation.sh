@@ -32,7 +32,7 @@ verdict() { # receipt file -> PASS | FAIL | NM
   [ "$tok" = PASS ] || { echo FAIL; return; }
   rest=${b#*"$tok"}; pre=${b%%"$tok"*}
   u="${pre^^} ${rest^^}"   # 'fail=1' counts as 'FAIL=1'
-  [[ "$u" =~ (^|[^0-9])[1-9][0-9]*\ *(lanes?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
+  [[ "$u" =~ (^|[^0-9])[1-9][0-9]*\ *(LANES?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
   [[ "$u" =~ FAIL[A-Za-z]*[:\ =]+[1-9] ]] && { echo FAIL; return; }   # 'FAIL: 1', 'FAIL 1'
   if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)(/|\ +of\ +)([0-9]+) ]] || [[ $pre =~ ([0-9]+)(/|\ +of\ +)([0-9]+)[^A-Za-z0-9/]*$ ]]; then
     [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[3]}" ] && echo PASS || echo FAIL
@@ -119,6 +119,10 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (FAIL: 0)"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f11 'FAIL: 0' beside PASS is a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (fail=1)"; chk 1 "f12 PASS beside lower-case 'fail=1' is not a pass"; clr
   mk 7078 0100 "# Quorum #7078" "$F"; mk 7078 0200 "# Quorum #7078" "$F"; chk 2 "f12 a receipt naming only its own 4-digit PR has no chain: not measured"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (1 lane FAIL)"; chk 1 "f13 PASS beside lower-case '1 lane FAIL' is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-21)" "PMAT-Ticket: PMAT-30
+PMAT-Ticket: PMAT-31
+$F"; mk 2 0200 "# Quorum #2 (PMAT-21)" "$F"; chk 1 "f13 two different trailers fall back to line 1"; grep -q 'ticket=PMAT-21 ' "$t/esc" || { echo "FAIL: f13 ticket not PMAT-21"; bad=1; }; clr
   # f3: an unreadable receipt neither resets nor counts
   mk 1 0100 "# Quorum #1 (PMAT-9)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-9)" "no verdict here"; mk 3 0300 "# Quorum #3 (PMAT-9)" "$F"; chk 1 "f3 NM keeps the streak"; clr
   # f4: lane and prompt files are not receipts
