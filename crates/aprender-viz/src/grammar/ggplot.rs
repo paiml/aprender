@@ -843,7 +843,7 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, density: None })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
@@ -862,7 +862,7 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, density: None })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).

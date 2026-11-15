@@ -94,6 +94,22 @@ pub struct BuiltLayer {
     /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
     /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
     pub path: Option<BuiltPath>,
+    /// `stat_density` output for a density layer; `x`/`y` then hold the grid and the density.
+    pub density: Option<BuiltDensity>,
+}
+
+/// `stat_density`'s columns beyond `x` and `y`, one entry per grid point (`compute_density()` in
+/// ggplot2 4.0.3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuiltDensity {
+    /// `density / max(density)` (also ggplot2's `ndensity`).
+    pub scaled: Vec<f64>,
+    /// `density * n`.
+    pub count: Vec<f64>,
+    /// `density * sum(weights)`.
+    pub wdensity: Vec<f64>,
+    /// Rows in the group.
+    pub n: usize,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

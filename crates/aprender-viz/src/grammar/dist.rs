@@ -18,10 +18,10 @@
 use crate::error::{Error, Result};
 
 use super::aes::Aes;
-use super::build::BuiltLayout;
+use super::build::{BuiltDensity, BuiltLayer, BuiltLayout, PositionScale};
 use super::coord::Coord;
 use super::data::{DataFrame, DataValue};
-use super::dist_math::cmp_na_last;
+use super::dist_math::{cmp_na_last, stat_density, DENSITY_POINTS};
 use super::facet::Facet;
 use super::geom::{Geom, GeomType};
 use super::ggplot::Layer;
@@ -283,17 +283,54 @@ pub(super) fn layout(
         return Err(refuse("distribution layers cannot be combined with other geoms yet"));
     }
     check_scope(coord, facet)?;
+    let mut checked = Vec::with_capacity(layers.len());
     for layer in layers {
         let GeomType::Dist(spec) = &layer.geom.geom_type else { continue };
         let data = layer.data.as_ref().unwrap_or(plot_data);
         let aes = plot_aes.merge(&layer.aes);
         check_inputs(spec.kind, &aes, layer.geom.stat.as_ref())?;
-        group_ids(data, &aes)?;
+        let groups = group_ids(data, &aes)?;
         for name in [&aes.x, &aes.y, &aes.ymin, &aes.ymax].into_iter().flatten() {
             numeric(data, name)?;
         }
+        checked.push((spec.kind, data, aes, groups));
     }
-    Err(Error::UnsupportedLayer(NOT_BUILT))
+    match checked.as_slice() {
+        [(DistKind::Density, data, aes, groups)] => density(data, aes, groups),
+        _ => Err(Error::UnsupportedLayer(NOT_BUILT)),
+    }
+}
+
+/// One ungrouped `geom_density()`: `stat_density` over the x range, then `GeomArea`'s `ymin = 0`
+/// retrains the y scale, so it spans 0 to the largest density.
+fn density(data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
+    if groups.iter().any(|g| *g != -1) {
+        return Err(refuse("grouped densities are not built yet"));
+    }
+    let name = aes.x.as_deref().ok_or_else(|| refuse("geom_density needs an `x` aesthetic"))?;
+    // ggplot2 drops missing values (with a warning) before the stat.
+    let xs: Vec<f64> = numeric(data, name)?.into_iter().filter(|v| !v.is_nan()).collect();
+    let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let cols = stat_density(&xs, lo, hi, DENSITY_POINTS)?;
+    let top = cols.density.iter().copied().fold(0.0_f64, f64::max);
+    let layer = BuiltLayer {
+        x: cols.x.clone(),
+        y: cols.density.clone(),
+        points: None,
+        path: None,
+        density: Some(BuiltDensity {
+            scaled: cols.scaled,
+            count: cols.count,
+            wdensity: cols.wdensity,
+            n: cols.n,
+        }),
+    };
+    Ok(BuiltLayout {
+        layers: vec![layer],
+        x: PositionScale::continuous((lo, hi)),
+        y: PositionScale::continuous((0.0, top)),
+    })
 }
 
 #[cfg(test)]
@@ -376,7 +413,8 @@ mod tests {
         let drawn = |r: Result<()>| matches!(r, Err(Error::UnsupportedLayer(m)) if m == NOT_DRAWN);
         for (name, g, a) in all_geoms() {
             let p = plot(small(), a, g).build().expect("builds");
-            assert!(not_built(&p.layout()), "{name}");
+            // The density is built; the other four stats are not.
+            assert_eq!(not_built(&p.layout()), name != "dens", "{name}");
             assert!(drawn(p.to_framebuffer().map(drop)), "{name} framebuffer");
             assert!(drawn(p.to_svg().map(drop)), "{name} svg");
         }
@@ -409,7 +447,23 @@ mod tests {
             assert!(matches!(run(plot(small(), a, g)), Err(Error::UnsupportedStat(_))));
         }
         let own = Geom::gg_density().stat(Stat::Density);
-        assert!(not_built(&run(plot(small(), Aes::new().x("x"), own))));
+        assert!(run(plot(small(), Aes::new().x("x"), own)).is_ok());
+    }
+
+    /// `geom_density` through `layout()`: missing values are dropped as ggplot2 does, and input
+    /// with no bandwidth (one value, a constant) or with groups is refused with a typed error.
+    #[test]
+    fn density_drops_missing_and_refuses_degenerate_input() {
+        let dens = |d: DataFrame| run(plot(d, Aes::new().x("x"), Geom::gg_density()));
+        let clean = dens(DataFrame::from_xy(&[1.0, 2.0, 4.0, 8.0], &[0.0; 4])).expect("clean");
+        let gappy = dens(DataFrame::from_xy(&[1.0, f32::NAN, 2.0, 4.0, 8.0], &[0.0; 5]));
+        assert_eq!(gappy.expect("gappy").layers[0].y, clean.layers[0].y);
+        for xs in [&[3.0_f32][..], &[2.0, 2.0, 2.0], &[f32::NAN, f32::NAN]] {
+            let r = dens(DataFrame::from_xy(xs, &vec![0.0; xs.len()]));
+            assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("stat_density")), "{xs:?}");
+        }
+        let r = run(plot(probe(), Aes::new().x("x").color("h"), Geom::gg_density()));
+        assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("grouped")));
     }
 
     #[test]

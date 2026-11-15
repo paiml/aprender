@@ -274,7 +274,13 @@ pub(super) fn build_layer(
                 slope: slope.map_or_else(Vec::new, |s| vec![s; n]),
             }),
         };
-        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path) });
+        return Ok(BuiltLayer {
+            x: vec![],
+            y: vec![],
+            points: None,
+            path: Some(path),
+            density: None,
+        });
     }
 
     let own = layer.data.is_some();
@@ -309,7 +315,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path) })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), density: None })
 }
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {
