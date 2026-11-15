@@ -208,6 +208,41 @@ fn heldout_alias_of_the_training_file_is_refused() {
 }
 
 #[test]
+fn heldout_may_not_be_the_training_file() {
+    let msg = refusal(&VALID.replace("data/heldout.jsonl", "data/train.jsonl"));
+    assert!(
+        msg.contains("field `eval.heldout` must not be the training file"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn data_pin_must_be_a_sha256() {
+    for bad in ["abc".to_string(), "AB".repeat(32), "zz".repeat(32)] {
+        let msg = refusal(&VALID.replace(
+            "  train: data/train.jsonl\n",
+            &format!("  train: data/train.jsonl\n  sha256: \"{bad}\"\n"),
+        ));
+        assert!(msg.contains("field `data.sha256`"), "{bad}: {msg}");
+    }
+}
+
+#[test]
+fn training_numbers_must_be_positive() {
+    for (line, field) in [
+        ("rank: 0", "`training.rank`"),
+        ("epochs: 0", "`training.epochs`"),
+        ("max_seq_len: 0", "`training.max_seq_len`"),
+        ("learning_rate: 0.0", "`training.learning_rate`"),
+        ("learning_rate: -0.5", "`training.learning_rate`"),
+        ("learning_rate: .nan", "`training.learning_rate`"),
+    ] {
+        let msg = refusal(&format!("{VALID}training:\n  {line}\n"));
+        assert!(msg.contains(field), "{line}: {msg}");
+    }
+}
+
+#[test]
 fn method_spellings_round_trip() {
     for m in [
         RecipeMethod::Lora,
