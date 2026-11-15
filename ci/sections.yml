@@ -744,7 +744,7 @@ jobs:
           set -euo pipefail
           sig="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
-          # #6903: this step always runs, the quick-tier step does not: the flag rule and its wiring row are proved here too
+          # #6903: full tier, shard 1. The quick tier proves the same rule in its own Σ-executed step, so every tier does
           bash scripts/ci/quick_tier_targets.sh --self-test > /dev/null || { echo "::error::quick_tier_targets.sh --self-test is red"; exit 1; }
           bash scripts/ci/quick_tier_shard.sh --self-test
           docker run --rm \
@@ -1039,6 +1039,8 @@ jobs:
           sig="$RUNNER_TEMP/sigma"
           mkdir -p "$sig"
           python3 scripts/ci/sigma_executed.py --self-test
+          # #6903: runs on every quick-tier job, with or without a crate selected (a diff of ci/ or scripts/ only selects none)
+          bash scripts/ci/quick_tier_targets.sh --self-test > /dev/null || { echo "::error::quick_tier_targets.sh --self-test is red"; exit 1; }
           read -ra crates <<< "$CRATES"
           # #5210: the same split as the run step, derived again here from CRATES
           # (one list per call, so each call's junit is held to its own universe).
