@@ -17,8 +17,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::grammar::{
-    zero_range, Aes, Coord, DataFrame, Expansion, Facet, GGPlot, Geom, Stat, TerminalPlot, Theme,
-    MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    zero_range, Aes, Coord, DataFrame, Expansion, Facet, GGPlot, Geom, Layer, Stat, TerminalPlot,
+    Theme, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
 /// The command line of `apr plot`.
@@ -158,7 +158,7 @@ pub enum Output {
 }
 
 /// What to plot and how.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlotArgs {
     /// CSV file with a header row (`#` lines are skipped).
     pub data: PathBuf,
@@ -176,6 +176,18 @@ pub struct PlotArgs {
     pub no_color: bool,
     /// Column to wrap panels on (`facet_wrap(~column)`); `None` draws one panel.
     pub facet: Option<String>,
+    /// Horizontal reference lines, at these y values.
+    pub hlines: Vec<f64>,
+    /// Vertical reference lines, at these x values.
+    pub vlines: Vec<f64>,
+    /// Diagonal reference lines, `(slope, intercept)`.
+    pub ablines: Vec<(f64, f64)>,
+    /// Plot title.
+    pub title: Option<String>,
+    /// X axis label.
+    pub xlab: Option<String>,
+    /// Y axis label.
+    pub ylab: Option<String>,
 }
 
 /// The process facts that decide colour, read once so tests can set them.
@@ -281,7 +293,39 @@ fn build_plot(
         Some((col, labels)) => plot.facet(Facet::wrap(col, wrap_columns(labels))),
         None => plot,
     };
-    Ok(plot.trained_on(domain(xs), domain(ys)))
+    let plot = add_decorations(plot, args);
+    let (dx, dy) = trained_domains(args, xs, ys);
+    Ok(plot.trained_on(dx, dy))
+}
+
+/// The x and y domains the scales are trained on: the data, widened by each `--vline` (x) and
+/// `--hline` (y), as ggplot2 trains a scale on a reference line's intercept.
+fn trained_domains(args: &PlotArgs, xs: &[f64], ys: &[f64]) -> ((f64, f64), (f64, f64)) {
+    let with = |data: &[f64], lines: &[f64]| domain(&[data, lines].concat());
+    (with(xs, &args.vlines), with(ys, &args.hlines))
+}
+
+/// The reference lines and labels of `args`, as layers and label settings on `plot`.
+fn add_decorations(mut plot: GGPlot, args: &PlotArgs) -> GGPlot {
+    for &y in &args.hlines {
+        plot = plot.layer(Layer::new(Geom::hline(y as f32)));
+    }
+    for &x in &args.vlines {
+        plot = plot.layer(Layer::new(Geom::vline(x as f32)));
+    }
+    for &(m, b) in &args.ablines {
+        plot = plot.layer(Layer::new(Geom::abline(m as f32, b as f32)));
+    }
+    if let Some(t) = &args.title {
+        plot = plot.title(t.clone());
+    }
+    if let Some(l) = &args.xlab {
+        plot = plot.xlab(l.clone());
+    }
+    if let Some(l) = &args.ylab {
+        plot = plot.ylab(l.clone());
+    }
+    plot
 }
 
 /// Check the size, read the data, then build and render the plot.
@@ -808,6 +852,39 @@ mod tests {
             assert_eq!(n2mfrow_columns(n), cols, "{n} panels");
         }
         assert_eq!(wrap_columns(&["b", "a", "b", "c"]), 3);
+    }
+
+    #[test]
+    fn reference_lines_outside_the_data_widen_their_own_scale() {
+        let data = [1.0, 2.0, 3.0];
+        let a = PlotArgs { hlines: vec![10.0], vlines: vec![-5.0], ..PlotArgs::default() };
+        assert_eq!(trained_domains(&a, &data, &data), ((-5.0, 3.0), (1.0, 10.0)));
+        let none = PlotArgs::default();
+        assert_eq!(trained_domains(&none, &data, &data), ((1.0, 3.0), (1.0, 3.0)));
+    }
+
+    #[test]
+    fn decorations_reach_the_right_geom_and_label() {
+        let a = PlotArgs {
+            hlines: vec![5.0],
+            vlines: vec![7.0],
+            ablines: vec![(2.0, 3.0)],
+            title: Some("T".into()),
+            xlab: Some("X".into()),
+            ylab: Some("Y".into()),
+            ..PlotArgs::default()
+        };
+        let d = format!("{:?}", add_decorations(GGPlot::new(), &a));
+        for want in [
+            "title: Some(\"T\")",
+            "xlab: Some(\"X\")",
+            "ylab: Some(\"Y\")",
+            "Hline { yintercept: 5.0 }",
+            "Vline { xintercept: 7.0 }",
+            "Abline { slope: 2.0, intercept: 3.0 }",
+        ] {
+            assert!(d.contains(want), "{want} missing in {d}");
+        }
     }
 }
 

@@ -288,6 +288,9 @@ EOF
     : > "$d/args"; FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" > /dev/null
     if grep -qx 'package -p a --no-verify --locked' "$d/args"; then echo "  ok   the default walk stays --no-verify (rc-cut cost)"
     else echo "  FAIL default ran: $(cat "$d/args")"; fail=1; fi
+    got=$(FAKE_CLEAN_RC=101 FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" > /dev/null; echo "rc=$?")
+    if [ "$got" = rc=0 ]; then echo "  ok   the default walk does not run cargo clean (no overlay unit is compiled without --verify)"
+    else echo "  FAIL the default walk ran cargo clean: $got"; fail=1; fi
     rm -rf -- "${d:?}"; unset FAKE_TARGET
     if [ -n "$had_ch" ]; then export CARGO_HOME="$old_ch"; else unset CARGO_HOME; fi
     # WIRING: the autopilot's tag step runs --verify on the release commit AHEAD of the tag: the
@@ -360,20 +363,24 @@ package_walk() {
     # version qualifier is ignored, so the workspace copy goes too), dev and release. We do not guess
     # its directory names: afterwards any dep-info that still names a member overlay source (another
     # profile or triple, a clean that removed nothing) is ENV, never green.
-    local mds=()
-    mapfile -t mds < <(printf '%s\n' "$meta" | rpg_member_dirs)
-    # No --offline: `cargo clean -p` resolves the whole lockfile, so a cold CARGO_HOME or a new
-    # dependency needs the index (cargo package below is online too). Its stderr is kept.
-    local clog; clog=$(mktemp) || return 2
-    if ! (cd -- "$root" && cargo clean "${args[@]}" --locked && cargo clean "${args[@]}" --release --locked) > "$clog" 2>&1; then
-        echo "ENV   package: cargo clean could not drop the compiled overlay units of the members:"
-        tail -n 8 "$clog" | sed "s/^/        /"
-        rm -f -- "${clog:?}"; return 2
-    fi
-    rm -f -- "${clog:?}"
-    if ! rpg_overlay_units_gone "$tdir" "${mds[@]}"; then
-        echo "ENV   package: a compiled unit under $tdir still reads a member overlay source after cargo clean"
-        return 2
+    # --verify only: a --no-verify walk compiles no overlay source, so it has no stale unit to
+    # reuse and must not pay for a rebuild of every member or an online lockfile resolve.
+    if [ -z "$mode" ]; then
+        local mds=()
+        mapfile -t mds < <(printf '%s\n' "$meta" | rpg_member_dirs)
+        # No --offline: `cargo clean -p` resolves the whole lockfile, so a cold CARGO_HOME or a new
+        # dependency needs the index (cargo package below is online too). Its stderr is kept.
+        local clog; clog=$(mktemp) || return 2
+        if ! (cd -- "$root" && cargo clean "${args[@]}" --locked && cargo clean "${args[@]}" --release --locked) > "$clog" 2>&1; then
+            echo "ENV   package: cargo clean could not drop the compiled overlay units of the members:"
+            tail -n 8 "$clog" | sed "s/^/        /"
+            rm -f -- "${clog:?}"; return 2
+        fi
+        rm -f -- "${clog:?}"
+        if ! rpg_overlay_units_gone "$tdir" "${mds[@]}"; then
+            echo "ENV   package: a compiled unit under $tdir still reads a member overlay source after cargo clean"
+            return 2
+        fi
     fi
     log=$(mktemp) || return 2
     (cd -- "$root" && cargo package "${args[@]}" ${mode:+"$mode"} --locked) > "$log" 2>&1 || rc=$?
