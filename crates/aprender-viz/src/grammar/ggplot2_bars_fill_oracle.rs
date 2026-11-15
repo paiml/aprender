@@ -8,8 +8,8 @@
 //! Tolerance is the row-1 pattern: `|a - b| <= 1e-9 * max(|a|, |b|) + 1e-12` for positions,
 //! limits and breaks; labels, groups and panels compare exactly; `NaN` matches `null`.
 //!
-//! This module is a sibling of the bars oracle (#6928/#6929) so the two rows do not edit one
-//! file; it can fold into that file once it lands.
+//! This module is a sibling of the bars (#6928) and stack (#6929) oracles so the rows do not edit one
+//! file.
 
 use serde_json::Value;
 

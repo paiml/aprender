@@ -143,6 +143,11 @@ fn compare(case: &Value) -> f64 {
         worst.max(assert_close(&format!("{name}.y.range"), &yr, &nums(&py["continuous_range"])));
     worst = worst.max(assert_close(&format!("{name}.y.breaks"), &b.y.breaks, &nums(&py["breaks"])));
     assert_eq!(b.y.labels, strs(&py["labels"]), "{name}.y.labels");
+    worst = worst.max(assert_close(
+        &format!("{name}.y.minor_breaks"),
+        &b.y.minor_breaks,
+        &nums(&py["minor_breaks"]),
+    ));
     assert_eq!(
         b.y.n_breaks_censored as u64,
         py["n_breaks_censored"].as_u64().expect("count"),

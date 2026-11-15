@@ -251,9 +251,10 @@ fn position_stack_negative_values() {
 
 #[test]
 fn position_stack_unique_x() {
-    // No repeated x and vjust = 1: ggplot2 leaves the data alone; any other vjust stacks.
+    // No repeated x and vjust = 1: ggplot2 leaves the data alone (the negative bar keeps
+    // y = -1.5; stacking would put y at its top edge, 0); any other vjust stacks.
     let got = run("col_stack_unique_x");
-    assert!(got.rows.iter().all(|r| r.ymin == 0.0));
+    assert!(got.rows.iter().any(|r| r.y == -1.5 && r.ymax == 0.0));
     run("col_stack_unique_x_vjust_half");
 }
 

@@ -28,15 +28,15 @@ proof_obligations:
   applies_to: stack
 enforcement:
   default_cases:
-    description: the default stack and vjust fixtures are reproduced
+    description: the default stack fixture (col_stack, first group on top) is reproduced
     check: grammar::ggplot2_bars_stack_oracle::position_stack_col_default
     severity: ERROR
   reverse_and_count_cases:
-    description: reverse and counted bars are reproduced
+    description: the reverse fixtures (col_stack_reverse, col_stack_reverse_vjust_half) are reproduced
     check: grammar::ggplot2_bars_stack_oracle::position_stack_reverse
     severity: ERROR
   edge_cases:
-    description: negative values, unique x and zero-total stacks are reproduced
+    description: the negative-value fixtures (col_stack_negative, col_stack_negative_vjust_half) are reproduced
     check: grammar::ggplot2_bars_stack_oracle::position_stack_negative_values
     severity: ERROR
 falsification_tests:

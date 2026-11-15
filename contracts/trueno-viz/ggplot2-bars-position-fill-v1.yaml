@@ -28,15 +28,15 @@ proof_obligations:
   applies_to: fill
 enforcement:
   default_cases:
-    description: the default fill, reverse, vjust and width fixtures are reproduced
+    description: the default fill fixture (col_fill) is reproduced
     check: grammar::ggplot2_bars_fill_oracle::position_fill_col_default
     severity: ERROR
   count_and_negative_cases:
-    description: counted bars and negative values are reproduced
+    description: the counted-bar fixture (bar_fill) is reproduced
     check: grammar::ggplot2_bars_fill_oracle::position_fill_bar_count
     severity: ERROR
   edge_cases:
-    description: unique x and zero-total stacks are reproduced
+    description: the zero-total fixture (col_fill_zero_total) is reproduced
     check: grammar::ggplot2_bars_fill_oracle::position_fill_zero_total_stack
     severity: ERROR
 falsification_tests:
