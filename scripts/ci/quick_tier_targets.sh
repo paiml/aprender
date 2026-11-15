@@ -124,10 +124,17 @@ self_test() {
     check no_crate_is_caller_error           3 "$T/m.json" ""
     check unreadable_metadata_is_error       3 "$T/nope.json" ""           binonly
     # #6903: the tree-reader list call in ci/sections.yml takes its flags from this rule, never a literal --lib
+    # Fails closed: the file must be readable and must hold BOTH the rule call and the list call that uses it.
+    local sec; sec="$(cd "$(dirname "$0")/../.." && pwd)/ci/sections.yml"
     rows=$((rows + 1))
-    if git -C "$(dirname "$0")" grep -qE -- '\$TREE --lib --tests' -- ../../ci/sections.yml 2>/dev/null; then
-        echo "BROKE tree_list_flags_come_from_the_rule (ci/sections.yml passes a literal --lib to the tree-reader list)"; fails=$((fails + 1))
-    else echo "ok    tree_list_flags_come_from_the_rule"; fi
+    if [ -r "$sec" ] \
+        && grep -qF -- 'TREE_FLAGS="$(bash scripts/ci/quick_tier_targets.sh --metadata ' "$sec" \
+        && grep -qF -- 'cargo nextest list --profile ci $TREE $TREE_FLAGS -E ' "$sec" \
+        && ! grep -qE -- 'nextest list [^|]*\$TREE[^|]*--lib|nextest list [^|]*--lib[^|]*\$TREE' "$sec"; then
+        echo "ok    tree_list_flags_come_from_the_rule"
+    else
+        echo "BROKE tree_list_flags_come_from_the_rule (ci/sections.yml unreadable, or its tree-reader list does not take its flags from this rule)"; fails=$((fails + 1))
+    fi
     echo "quick_tier_targets self-test: $((rows - fails)) ok, $fails broke"
     [ "$fails" = 0 ]
 }

@@ -744,6 +744,8 @@ jobs:
           set -euo pipefail
           sig="$RUNNER_TEMP/sigma"
           python3 scripts/ci/sigma_executed.py --self-test
+          # #6903: this step always runs, the quick-tier step does not: the flag rule and its wiring row are proved here too
+          bash scripts/ci/quick_tier_targets.sh --self-test > /dev/null || { echo "::error::quick_tier_targets.sh --self-test is red"; exit 1; }
           bash scripts/ci/quick_tier_shard.sh --self-test
           docker run --rm \
             -v "${GITHUB_WORKSPACE}:/workspace" \
