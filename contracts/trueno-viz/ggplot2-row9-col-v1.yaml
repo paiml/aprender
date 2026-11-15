@@ -1,0 +1,83 @@
+metadata:
+  id: ggplot2-row9-col-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-15'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row 9 (PLOT-GG-001, paiml/aprender#6909, #6928) - stat_identity + geom_col over a
+    discrete x. bar_layout() must reproduce what ggplot_build() in ggplot2 4.0.3 computes: bar heights taken
+    from y, 0.9 default width (or width =), xmin/xmax, ymin/ymax, group ids, the discrete x scale and the
+    continuous y scale, with the default position_stack and with position = "identity". The oracle is a
+    committed JSON fixture produced by R 4.6.2 under LC_COLLATE=C; R is never run at test time.
+    Scope: a text x and optional text fill, a finite numeric y, one panel; text collation is bytewise (C).
+    Other positions (dodge, fill), stat_count, facets and a numeric x are other rows.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), GeomBar$setup_data, PositionStack'
+  - 'crates/aprender-viz/fixtures/ggplot2/stat_identity_geom_col/generate.R'
+entity: {type: ggplot2-row, ref: geom_col}
+equations:
+  col_edges:
+    formula: 'xmin = x - w/2, xmax = x + w/2, ymin = min(y, 0), ymax = max(y, 0) before stacking, w = 0.9 * resolution(x) unless width is set'
+    domain: text x, finite numeric y, one panel
+    codomain: Vec<BarRow>
+    invariants:
+    - y is taken unchanged from the data under stat_identity
+    - the discrete x position of a level is its 1-based rank in C collation
+    preconditions:
+    - every y is finite
+  stack_adjustment:
+    formula: 'per x, positive and negative heights stack separately in group order; y = top of the row'
+    domain: bars with position_stack
+    codomain: Vec<BarRow>
+    invariants:
+    - with position = identity the rows are left as stat_identity gave them
+proof_obligations:
+- id: GG9-INV-001
+  type: invariant
+  property: Bar rows, edges and group ids match ggplot2
+  formal: '∀ case, row: |field - ggplot2.field| <= 1e-9 rel + 1e-12 abs for x, y, ymin, ymax, xmin, xmax; group = ggplot2.group'
+  applies_to: col_edges
+- id: GG9-INV-002
+  type: invariant
+  property: Stacked heights and the trained y scale match ggplot2
+  formal: '∀ case: y limits, expanded range, breaks, labels and n_censored = ggplot2'
+  applies_to: stack_adjustment
+enforcement:
+  plain_matches:
+    description: unstacked columns, one per level, equal ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_row9_col_plain
+    severity: ERROR
+  stack_matches:
+    description: stacked columns with a fill, negatives included, equal ggplot2's
+    check: grammar::ggplot2_bars_oracle::ggplot2_row9_col_stack_fill
+    severity: ERROR
+  identity_matches:
+    description: position = identity leaves heights unstacked, as ggplot2
+    check: grammar::ggplot2_bars_oracle::ggplot2_row9_col_identity_fill
+    severity: ERROR
+  width_matches:
+    description: width = 0.5 sets the edges as ggplot2 does
+    check: grammar::ggplot2_bars_oracle::ggplot2_row9_col_width
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG9-001
+  rule: Default bar width is 0.9
+  prediction: mutating DEFAULT_BAR_WIDTH 0.9 -> 0.8 turns ggplot2_row9_col_plain, ggplot2_row9_col_stack_fill and ggplot2_row9_col_identity_fill RED (measured)
+  test: cargo test -p aprender-viz --lib ggplot2_row9 (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The edges are not compared against the fixture; the row proves nothing about width
+- id: FALSIFY-GG9-002
+  rule: Discrete x expands by 0.6
+  prediction: mutating DISCRETE_EXPAND_ADD 0.6 -> 0.8 turns all four ggplot2_row9 cases RED (measured)
+  test: cargo test -p aprender-viz --lib ggplot2_row9 (crates/aprender-viz/src/grammar/ggplot2_bars_oracle.rs)
+  if_fails: The x range is not compared against the fixture
+qa_gate:
+  id: F-GG9-001
+  name: ggplot2 conformance row 9 (stat_identity + geom_col)
+  description: bar_layout equals ggplot2 4.0.3 ggplot_build() for the row-9 fixture
+  checks:
+  - plain_matches
+  - stack_matches
+  - identity_matches
+  - width_matches

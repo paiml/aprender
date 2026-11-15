@@ -43,6 +43,10 @@ mod ggplot;
 #[cfg(test)]
 mod ggplot2_bars_fill_oracle;
 #[cfg(test)]
+mod ggplot2_bars_oracle;
+#[cfg(test)]
+mod ggplot2_bars_stack_oracle;
+#[cfg(test)]
 mod ggplot2_lines_oracle;
 #[cfg(test)]
 mod ggplot2_marks_oracle;

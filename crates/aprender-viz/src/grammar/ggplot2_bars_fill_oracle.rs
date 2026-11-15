@@ -29,10 +29,18 @@ fn close(a: f64, b: f64) -> bool {
     (a.is_nan() && b.is_nan()) || (a - b).abs() <= REL_TOL * a.abs().max(b.abs()) + ABS_TOL
 }
 
+thread_local! {
+    /// Largest `|got - want|` over every compared value of the current case (NaN pairs skipped).
+    static MAX_ABS_ERR: std::cell::Cell<f64> = const { std::cell::Cell::new(0.0) };
+}
+
 fn assert_close_slice(what: &str, got: &[f64], want: &[f64]) {
     assert_eq!(got.len(), want.len(), "{what}: length got {got:?} want {want:?}");
     for (i, (g, w)) in got.iter().zip(want).enumerate() {
         assert!(close(*g, *w), "{what}[{i}]: got {g:?} want {w:?} (tol {REL_TOL} rel)");
+        if !g.is_nan() {
+            MAX_ABS_ERR.with(|m| m.set(m.get().max((g - w).abs())));
+        }
     }
 }
 
@@ -109,6 +117,7 @@ fn spec_for(case: &str) -> BarSpec {
 
 fn check_case(case: &Value) -> BuiltBars {
     let name = case["name"].as_str().expect("case name");
+    MAX_ABS_ERR.with(|m| m.set(0.0));
     let df = frame(csv_for(case["data_file"].as_str().expect("data_file")));
     let got = bar_layout(&df, &spec_for(name)).unwrap_or_else(|e| panic!("{name}: {e}"));
     let l = &case["layer"];
@@ -168,6 +177,7 @@ fn check_case(case: &Value) -> BuiltBars {
         &got.y.minor_breaks,
         &nums(&py["minor_breaks"]),
     );
+    eprintln!("MAXERR position_fill {name} {:e}", MAX_ABS_ERR.with(std::cell::Cell::get));
     got
 }
 
