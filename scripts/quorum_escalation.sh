@@ -6,9 +6,9 @@
 #   bash scripts/quorum_escalation.sh --self-test
 #
 # Reads gate-quorum receipts (`triage-quorum-<PR>-gate-<hhmm>Z.md`, never the -A/-B/-C/-prompt lane
-# files) oldest first by mtime. CHAIN = the ticket the receipt is about: the first PMAT-<n> / #<n> /
-# "pace <n>" on line 1 (not the receipt's own PR), else the PMAT-<n> named most often in the body,
-# else the PR itself. VERDICT = the first PASS / NOT PASS / FAIL token of the receipt's last headline
+# files) oldest first by mtime. CHAIN = the ticket the receipt is about: its `PMAT-Ticket:` trailer when
+# that names one ticket, else the first PMAT-<n> / #<n> / "pace <n>" on line 1 (not the receipt's own
+# PR); no id = not measured. A triage-quorum-* file whose name is not a receipt or lane name = not measured. VERDICT = the first PASS / NOT PASS / FAIL token of the receipt's last headline
 # (TALLY / RESULT / OVERALL / Final, else VERDICT, else a "verdict X" on lines 1-3), after the last
 # arrow; a token beside an N/M tally passes only if N = M. No token = NOT MEASURED: it neither
 # resets a chain's streak nor counts toward it. On the SECOND consecutive non-PASS receipt of a
@@ -42,9 +42,10 @@ chain() { # receipt file -> ticket id
   local b own="" n
   b=$(basename "$1")
   [[ $b =~ ^triage-quorum-([0-9]+)- ]] && own=${BASH_REMATCH[1]}
-  n=$(head -n1 "$1" | grep -oE 'PMAT-[0-9]+|#[0-9]{4,}|pace [0-9]{4,}' | grep -oE '[0-9]+' | grep -vx "$own" | head -n1)
-  [ -n "$n" ] || n=$(grep -oE 'PMAT-[0-9]+' "$1" | grep -oE '[0-9]+' | sort | uniq -c | sort -k1,1nr | awk 'NR==1{print $2}')
-  if [ -n "$n" ]; then echo "PMAT-$n"; else echo "pr$own"; fi
+  n=$(grep -oE 'PMAT-Ticket: PMAT-[0-9]+' "$1" | grep -oE '[0-9]+$' | sort -u)   # the trailer wins when it names ONE ticket
+  case $n in *[!0-9]*) n="" ;; esac
+  [ -n "$n" ] || n=$(head -n1 "$1" | grep -oE 'PMAT-[0-9]+|#[0-9]{4,}|pace [0-9]{4,}' | grep -oE '[0-9]+' | grep -vx "$own" | head -n1)
+  [ -z "$n" ] || echo "PMAT-$n"   # never the most-mentioned id in the body: that keyed one ticket two ways. No id = NM.
 }
 
 run() { # dir esc owner
@@ -53,8 +54,13 @@ run() { # dir esc owner
   touch "$esc" 2>/dev/null || { echo "cannot write $esc" >&2; return 3; }
   while IFS= read -r f; do
     n=$((n + 1)); c=$(chain "$f"); v=$(verdict "$f")
+    [[ $f =~ /triage-quorum-[0-9]+-gate-[A-Za-z0-9-]*Z\.md$ ]] || v=NM   # a renamed receipt is not measured, never dropped
+    [ -n "$c" ] || v=NM
     if [ "$v" = NM ]; then nm=1; continue; fi   # not measured: neither resets nor counts
-    if [ "$v" = PASS ]; then streak[$c]=0; continue; fi
+    if [ "$v" = PASS ]; then
+      streak[$c]=0
+      continue
+    fi
     streak[$c]=$(( ${streak[$c]:-0} + 1 ))
     if [ "${streak[$c]}" -eq 2 ]; then
       line="ESCALATE ticket=$c receipts=${prev[$c]},$(basename "$f") owner=$owner"
@@ -64,7 +70,7 @@ run() { # dir esc owner
       fi
     fi
     prev[$c]=$(basename "$f")
-  done < <(ls -tr "$dir"/triage-quorum-*-gate-*Z.md 2>/dev/null | grep -E '/triage-quorum-[0-9]+-gate-[A-Za-z0-9-]*Z\.md$')
+  done < <(ls -tr "$dir"/triage-quorum-* 2>/dev/null | grep -vE '/triage-quorum-[0-9]+-gate-[A-Za-z0-9-]*Z-(A|B|C|prompt)\.[^/]*$')
   [ "$n" -eq 0 ] && return 2
   [ "$rc" -eq 0 ] && [ "$nm" -eq 1 ] && return 2
   return "$rc"
@@ -106,6 +112,11 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-10)" "$F"
   for x in A.md B.txt prompt.md prompt.Z.md; do cp "$t/triage-quorum-1-gate-0100Z.md" "$t/triage-quorum-1-gate-0100Z-$x"; touch -d "2026-10-23 0200" "$t/triage-quorum-1-gate-0100Z-$x"; done
   chk 0 "f4 lane/prompt files never count"; clr
+  # f7 renamed receipt = NM; f8 no chain id = NM; f9 trailer and line 1 key ONE chain, body mentions do not
+  mk 1 0100 "# Quorum #1 (PMAT-13)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-13)" "$F"; mv "$t/triage-quorum-2-gate-0200Z.md" "$t/triage-quorum-2-gate-0200Z-final.md"; mk 3 0300 "# Quorum #3 (PMAT-13)" "$P"; chk 2 "f7 renamed FAIL is NM, not a silent pass"; clr
+  mk 1 0100 "# Gate quorum: PR #1 at abc" "$F"; mk 2 0200 "# Gate quorum: PR #2 at def" "$F"; chk 2 "f8 no chain id is NM"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-14)" "$F"; mk 2 0200 "# Quorum receipt PR #2 (C324)" "- trailer PMAT-Ticket: PMAT-14 (see PMAT-99, PMAT-99)
+$F"; chk 1 "f9 one ticket keyed by line 1 and by trailer is one chain"; grep -q 'ticket=PMAT-14 ' "$t/esc" || { echo "FAIL: f9 ticket not PMAT-14"; bad=1; }; clr
   # f5: multi-digit tally
   mk 1 0100 "# Quorum #1 (PMAT-11)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-11)" "TALLY: 10/10 PASS"; mk 3 0300 "# Quorum #3 (PMAT-11)" "$F"; chk 0 "f5 10/10 is a PASS"; clr
   # f6: a failed write is not a clean exit
