@@ -20,7 +20,7 @@
 set -uo pipefail
 
 verdict() { # receipt file -> PASS | FAIL | NM
-  local l b tok rest pre
+  local l b tok rest pre u
   l=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final)\b.*(PASS|FAIL)' "$1" | tail -n1)
   [ -n "$l" ] || l=$(grep -i -E '^[^A-Za-z]*verdict\b.*(PASS|FAIL)' "$1" | tail -n1)
   [ -n "$l" ] || l=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(NOT PASS|PASS|FAIL).*')
@@ -31,8 +31,9 @@ verdict() { # receipt file -> PASS | FAIL | NM
   [ -n "$tok" ] || { echo NM; return; }
   [ "$tok" = PASS ] || { echo FAIL; return; }
   rest=${b#*"$tok"}; pre=${b%%"$tok"*}
-  [[ "$pre $rest" =~ (^|[^0-9])[1-9][0-9]*\ *(lanes?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
-  [[ "$pre $rest" =~ FAIL[A-Za-z]*[:\ =]+[1-9] ]] && { echo FAIL; return; }   # 'FAIL: 1', 'FAIL 1'
+  u="${pre^^} ${rest^^}"   # 'fail=1' counts as 'FAIL=1'
+  [[ "$u" =~ (^|[^0-9])[1-9][0-9]*\ *(lanes?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
+  [[ "$u" =~ FAIL[A-Za-z]*[:\ =]+[1-9] ]] && { echo FAIL; return; }   # 'FAIL: 1', 'FAIL 1'
   if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)(/|\ +of\ +)([0-9]+) ]] || [[ $pre =~ ([0-9]+)(/|\ +of\ +)([0-9]+)[^A-Za-z0-9/]*$ ]]; then
     [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[3]}" ] && echo PASS || echo FAIL
     return
@@ -116,6 +117,8 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (FAIL 1)"; chk 1 "f11 PASS beside 'FAIL 1' is not a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (3/3 lanes, 0 FAIL)"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f11 '0 FAIL' beside PASS is a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (FAIL: 0)"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f11 'FAIL: 0' beside PASS is a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (fail=1)"; chk 1 "f12 PASS beside lower-case 'fail=1' is not a pass"; clr
+  mk 7078 0100 "# Quorum #7078" "$F"; mk 7078 0200 "# Quorum #7078" "$F"; chk 2 "f12 a receipt naming only its own 4-digit PR has no chain: not measured"; clr
   # f3: an unreadable receipt neither resets nor counts
   mk 1 0100 "# Quorum #1 (PMAT-9)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-9)" "no verdict here"; mk 3 0300 "# Quorum #3 (PMAT-9)" "$F"; chk 1 "f3 NM keeps the streak"; clr
   # f4: lane and prompt files are not receipts
