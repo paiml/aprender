@@ -421,4 +421,19 @@ mod tests {
         // Empty data should return 1
         assert_eq!(hist.bin_count(), 1);
     }
+
+    #[test]
+    fn bar_geometry_uses_both_margins() {
+        let h = Histogram::new().data(&[1.0, 1.0]).bins(BinStrategy::Fixed(1)).dimensions(200, 200);
+        let fb = h.to_framebuffer().expect("fb");
+        let on = |x, y| fb.get_pixel(x, y) == Some(Rgba::rgb(70, 130, 180));
+        assert!(on(40, 40) && on(158, 158) && on(158, 159) && on(100, 159));
+        assert!(!on(159, 100) && !on(100, 39) && !on(100, 160) && !on(39, 100));
+    }
+
+    #[test]
+    fn bin_cap_is_65536() {
+        let h = Histogram::new().data(&[1.0, 2.0]).bins(BinStrategy::Fixed(usize::MAX));
+        assert_eq!(h.bin_count(), 65536);
+    }
 }

@@ -318,4 +318,57 @@ mod tests {
         let fb = plot.to_framebuffer();
         assert!(fb.is_ok());
     }
+
+    fn white(fb: &mut Framebuffer) {
+        for y in 0..20 {
+            for x in 0..20 {
+                fb.set_pixel(x, y, Rgba::rgb(255, 255, 255));
+            }
+        }
+    }
+
+    fn disc_pixels(cx: i64, cy: i64, size: f32, blend: bool) -> Vec<(u32, u32, Rgba)> {
+        let mut fb = Framebuffer::new(20, 20).expect("fb");
+        white(&mut fb);
+        fill_disc(&mut fb, cx, cy, size, Rgba::rgb(10, 20, 30).with_alpha(128), blend);
+        let mut out = Vec::new();
+        for y in 0..20 {
+            for x in 0..20 {
+                out.push((x, y, fb.get_pixel(x, y).expect("in bounds")));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn fill_disc_matches_reference_walk() {
+        let c = Rgba::rgb(10, 20, 30).with_alpha(128);
+        for (cx, cy, size, blend) in [
+            (10, 10, 6.0, false),
+            (10, 10, 6.0, true),
+            (5, 0, 6.0, false),
+            (0, 19, 8.0, false),
+            (19, 19, 6.0, true),
+        ] {
+            let mut want = Framebuffer::new(20, 20).expect("fb");
+            white(&mut want);
+            let r = (size / 2.0) as i64;
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    if dx * dx + dy * dy <= r * r {
+                        let (x, y) = ((cx + dx) as u32, (cy + dy) as u32);
+                        if blend {
+                            want.blend_pixel(x, y, c);
+                        } else {
+                            want.set_pixel(x, y, c);
+                        }
+                    }
+                }
+            }
+            let got = disc_pixels(cx, cy, size, blend);
+            for (x, y, p) in got {
+                assert_eq!(Some(p), want.get_pixel(x, y), "({cx},{cy}) size {size} px ({x},{y})");
+            }
+        }
+    }
 }
