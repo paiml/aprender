@@ -112,7 +112,7 @@ fn read_adapter_lora_params(adapter: &Path) -> Result<(u32, f32)> {
 /// FT-20 (#7023): a defaulted alpha silently changes the merge scale (alpha/rank).
 fn missing_alpha_err() -> CliError {
     CliError::ValidationFailed(
-        "adapter carries no lora_alpha (header, metadata.json sidecar or APR metadata); \
+        "adapter carries no lora_alpha (header, metadata.json sidecar, PEFT adapter_config.json or APR metadata); \
          refusing to guess a scale. Re-export the adapter with lora_alpha."
             .to_string(),
     )
@@ -525,11 +525,10 @@ fn verify_merged_runnable(out: &Path) -> Result<()> {
 }
 
 /// FT-20 (#7023): refuse a partial merge (adapter LoRA tensors that matched no base tensor)
-/// and a merge that changed no weight, before anything is written.
+/// before anything is written (the per-pair no-change check lives in `run_merge`).
 fn check_merge_complete(
     adapter_names: &std::collections::HashSet<String>,
     matched: &std::collections::HashSet<String>,
-    changed_any: bool,
 ) -> Result<()> {
     let mut unmatched: Vec<&str> = adapter_names
         .iter()
@@ -544,12 +543,36 @@ fn check_merge_complete(
             unmatched.join(", ")
         )));
     }
-    if !changed_any {
-        return Err(CliError::ValidationFailed(
-            "merge changed no weight (output would equal the base); refusing to write".to_string(),
-        ));
-    }
     Ok(())
+}
+
+/// FT-20 (#7023): validate one adapter pair against its base tensor's real dimensions and
+/// return the pair's rank. A is `[r, in]`, B is `[out, r]`, the base is `[out, in]`.
+fn check_pair_dims(
+    base_name: &str,
+    base_shape: &[usize],
+    a_name: &str,
+    a_shape: Option<Vec<usize>>,
+    b_name: &str,
+    b_shape: Option<Vec<usize>>,
+) -> Result<u32> {
+    let bad = |why: String| {
+        CliError::ValidationFailed(format!(
+            "adapter pair {a_name}/{b_name} does not fit base tensor {base_name} \
+             (base shape {base_shape:?}, A shape {a_shape:?}, B shape {b_shape:?}): {why}; \
+             refusing a partial merge"
+        ))
+    };
+    let (Some(a), Some(b)) = (a_shape.as_deref(), b_shape.as_deref()) else {
+        return Err(bad("adapter tensor missing from its header".to_string()));
+    };
+    let ([out, inp], [ar, ai], [bo, br]) = (base_shape, a, b) else {
+        return Err(bad("A, B and base must all be 2-D".to_string()));
+    };
+    if ar != br || ai != inp || bo != out || *ar == 0 {
+        return Err(bad("expected A [r, in] and B [out, r] for base [out, in]".to_string()));
+    }
+    u32::try_from(*ar).map_err(|_| bad("rank out of range".to_string()))
 }
 
 /// Run adapter merge (finetune merge)
@@ -596,7 +619,6 @@ fn run_merge(
 
     let engine = MergeEngine::new();
     let mut merged_count = 0u64;
-    let mut changed_any = false;
     let mut matched_a: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     // Read base model as V2 to preserve metadata INCLUDING embedded tokenizer.
@@ -654,34 +676,29 @@ fn run_merge(
                 .load_tensor_f32(adapter, &b_name)
                 .map_err(|e| CliError::ValidationFailed(format!("Failed to load {b_name}: {e}")))?;
 
-            // C-APR-MERGE-RUNNABLE: rank from the adapter's own [rank, d_in]
-            // lora_a shape — a stale/defaulted global rank makes MergeEngine
-            // mis-derive dims and silently return the base unchanged.
-            let rank = adapter_report
-                .tensors
-                .iter()
-                .find(|t| t.name == a_name)
-                .filter(|t| t.shape.len() == 2)
-                .and_then(|t| u32::try_from(t.shape[0]).ok())
-                .unwrap_or(lora_rank);
-
-            // Fail closed on a pair whose shapes cannot produce this base tensor
-            // (MergeEngine would return the base unchanged, still counted as merged).
-            let (ra, rb) = (lora_a.len(), lora_b.len());
-            let r = rank as usize;
-            if r == 0 || ra % r != 0 || rb % r != 0 || (ra / r) * (rb / r) != base_data.len() {
-                return Err(CliError::ValidationFailed(format!(
-                    "adapter pair {a_name}/{b_name} does not fit base tensor {} (shape {:?}, \
-                     rank {rank}, A len {ra}, B len {rb}); refusing a partial merge",
-                    ti.name, ti.shape
-                )));
-            }
+            // Fail closed on a pair whose real dimensions cannot produce this base
+            // tensor: A is [r, in], B is [out, r], base is [out, in] (a flat element
+            // count alone accepts transposed pairs and rank mismatches).
+            let dims = |n: &str| {
+                adapter_report
+                    .tensors
+                    .iter()
+                    .find(|t| t.name == n)
+                    .map(|t| t.shape.clone())
+            };
+            let rank = check_pair_dims(&ti.name, &ti.shape, &a_name, dims(&a_name), &b_name, dims(&b_name))?;
 
             merged_count += 1;
+            let out = engine.merge(&base_data, &lora_a, &lora_b, lora_alpha, rank);
+            if out.iter().zip(&base_data).all(|(o, b)| o.to_bits() == b.to_bits()) {
+                return Err(CliError::ValidationFailed(format!(
+                    "merge changed no weight for adapter pair {a_name}/{b_name} on {}; \
+                     refusing to write",
+                    ti.name
+                )));
+            }
             matched_a.insert(a_name);
             matched_a.insert(b_name);
-            let out = engine.merge(&base_data, &lora_a, &lora_b, lora_alpha, rank);
-            changed_any |= out != base_data;
             out
         } else {
             base_data
@@ -709,7 +726,7 @@ fn run_merge(
         )));
     }
 
-    check_merge_complete(&adapter_names, &matched_a, changed_any)?;
+    check_merge_complete(&adapter_names, &matched_a)?;
 
     let bytes = writer.write().map_err(|e| {
         CliError::ValidationFailed(format!("Failed to serialize merged model: {e}"))

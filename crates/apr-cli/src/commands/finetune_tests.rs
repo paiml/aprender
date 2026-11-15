@@ -1348,6 +1348,16 @@ fn build_import_shaped_qwen2_base_v2(hidden: usize, with_tokenizer: bool) -> Vec
 }
 
 fn build_named_qwen2_base_v2(hidden: usize, with_tokenizer: bool, names: [&str; 2]) -> Vec<u8> {
+    build_shaped_qwen2_base_v2(hidden, with_tokenizer, names, [hidden, hidden])
+}
+
+/// Like `build_named_qwen2_base_v2`, but the second tensor has shape `second` (`[out, in]`).
+fn build_shaped_qwen2_base_v2(
+    hidden: usize,
+    with_tokenizer: bool,
+    names: [&str; 2],
+    second: [usize; 2],
+) -> Vec<u8> {
     use aprender::format::v2::{AprV2Metadata, AprV2Writer};
 
     let mut md = AprV2Metadata::new("transformer_lm_q4k");
@@ -1391,7 +1401,7 @@ fn build_named_qwen2_base_v2(hidden: usize, with_tokenizer: bool, names: [&str; 
         vec![hidden, hidden],
         &vec![1.0_f32; hidden * hidden],
     );
-    w.add_f32_tensor(names[1], vec![hidden, hidden], &sq(hidden * hidden));
+    w.add_f32_tensor(names[1], second.to_vec(), &sq(second[0] * second[1]));
     w.write().expect("write import-shaped base v2")
 }
 
@@ -1888,13 +1898,18 @@ fn peft_adapter_merges_and_zero_match_refused() {
         ],
         Some(8.0),
     );
-    assert!(res.is_err(), "zero-match PEFT adapter must be refused");
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err()
+            && msg.contains("NONE matched")
+            && msg.contains("contains 1 LoRA tensor pairs"),
+        "zero-match PEFT adapter must be refused as zero-match with its pair counted: {msg}"
+    );
+    assert!(
+        msg.contains("nope.lora_A.weight"),
+        "must name an example: {msg}"
+    );
     assert!(!d.path().join("merged.apr").exists());
-}
-
-#[test]
-fn peft_adapter_zero_match_refused() {
-    peft_adapter_merges_and_zero_match_refused();
 }
 
 #[test]
@@ -2098,6 +2113,136 @@ fn shape_mismatched_pair_refused() {
     assert!(
         res.is_err() && msg.contains("gate_proj.weight"),
         "mismatched pair must refuse naming the base tensor: {msg}"
+    );
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+/// Merge on a base whose `gate_proj` is `[64, 32]` (non-square); returns the result.
+fn ft20_nonsquare_gate(
+    a_shape: Vec<usize>,
+    b_shape: Vec<usize>,
+) -> (Result<()>, tempfile::TempDir) {
+    let base = build_shaped_qwen2_base_v2(
+        32,
+        true,
+        [
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.mlp.gate_proj.weight",
+        ],
+        [64, 32],
+    );
+    let (a, b) = (
+        "model.layers.0.mlp.gate_proj.weight.lora_a",
+        "model.layers.0.mlp.gate_proj.weight.lora_b",
+    );
+    ft20_merge_on(base, &[(a, a_shape, 0.3), (b, b_shape, 0.5)], Some(8.0))
+}
+
+#[test]
+fn nonsquare_pair_merges_when_dims_fit() {
+    let (res, d) = ft20_nonsquare_gate(vec![4, 32], vec![64, 4]);
+    assert!(
+        res.is_ok(),
+        "A [4,32] / B [64,4] fits base [64,32]: {res:?}"
+    );
+    assert!(d.path().join("merged.apr").exists());
+}
+
+#[test]
+fn transposed_pair_on_nonsquare_base_refused() {
+    // A [4,64] / B [32,4]: flat (256/4)*(128/4) == 64*32, dims are transposed.
+    let (res, d) = ft20_nonsquare_gate(vec![4, 64], vec![32, 4]);
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("gate_proj.weight") && msg.contains("expected A [r, in]"),
+        "transposed pair must be refused naming the tensor: {msg}"
+    );
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+#[test]
+fn rank_mismatched_pair_refused() {
+    // A [4,32] (rank 4) with B [64,8] (rank 8): flat (128/4)*(512/4) == 64*32.
+    let (res, d) = ft20_nonsquare_gate(vec![4, 32], vec![64, 8]);
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("gate_proj.weight") && msg.contains("expected A [r, in]"),
+        "A/B rank mismatch must be refused naming the tensor: {msg}"
+    );
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+#[test]
+fn unprefixed_peft_adapter_merges_on_hf_named_base() {
+    let a = format!("{FT20_Q}.lora_A.weight");
+    let b = format!("{FT20_Q}.lora_B.weight");
+    let (res, d) = ft20_merge(&[(&a, vec![4, 32], 0.3), (&b, vec![32, 4], 0.5)], Some(8.0));
+    assert!(
+        res.is_ok(),
+        "unprefixed PEFT name on an HF base must merge: {res:?}"
+    );
+    assert_merged_close(&d, FT20_Q_W, 2.2);
+}
+
+#[test]
+fn prefixed_peft_mlp_adapter_merges_on_gguf_named_base() {
+    let base =
+        build_named_qwen2_base_v2(32, true, ["blk.0.attn_q.weight", "blk.0.ffn_gate.weight"]);
+    let m = "model.layers.0.mlp.gate_proj";
+    let a = format!("base_model.model.{m}.lora_A.weight");
+    let b = format!("base_model.model.{m}.lora_B.weight");
+    let (res, d) = ft20_merge_on(
+        base,
+        &[(&a, vec![4, 32], 0.3), (&b, vec![32, 4], 0.5)],
+        Some(8.0),
+    );
+    assert!(
+        res.is_ok(),
+        "prefixed mlp PEFT name on a GGUF base must merge: {res:?}"
+    );
+    assert_merged_close(&d, "blk.0.ffn_gate.weight", 1.22);
+}
+
+#[test]
+fn adapter_config_r_fallback_sets_merged_rank() {
+    // `r` (PEFT spelling) is the only rank source besides the default of 64.
+    let (res, d) = ft20_st_merge(Some(r#"{"r":4,"lora_alpha":8.0}"#));
+    assert!(res.is_ok(), "{res:?}");
+    let bytes = std::fs::read(d.path().join("merged.apr")).expect("merged.apr");
+    let r = aprender::format::v2::AprV2Reader::from_bytes(&bytes).expect("parse");
+    assert_eq!(r.metadata().custom["lora_rank"], serde_json::json!(4));
+}
+
+#[test]
+fn missing_alpha_error_names_adapter_config() {
+    let (res, _d) = ft20_st_merge(None);
+    let msg = format!("{res:?}");
+    assert!(msg.contains("adapter_config.json"), "{msg}");
+}
+
+#[test]
+fn zero_b_pair_refused_even_when_another_pair_changes() {
+    let (qa, qb) = (
+        format!("{FT20_Q}.weight.lora_a"),
+        format!("{FT20_Q}.weight.lora_b"),
+    );
+    let (ga, gb) = (
+        "model.layers.0.mlp.gate_proj.weight.lora_a",
+        "model.layers.0.mlp.gate_proj.weight.lora_b",
+    );
+    let (res, d) = ft20_merge(
+        &[
+            (&qa, vec![4, 32], 0.3),
+            (&qb, vec![32, 4], 0.5),
+            (ga, vec![4, 32], 0.3),
+            (gb, vec![32, 4], 0.0),
+        ],
+        Some(8.0),
+    );
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("changed no weight") && msg.contains("gate_proj"),
+        "a per-pair no-op must refuse naming the pair: {msg}"
     );
     assert!(!d.path().join("merged.apr").exists());
 }
