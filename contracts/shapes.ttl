@@ -2125,6 +2125,8 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/readme/kind> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
         sh:in ( "library" "cli" "service" "spec" ) ;
     ] ;
     sh:property [

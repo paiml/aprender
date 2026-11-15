@@ -2,7 +2,7 @@
 
 use super::*;
 
-const SHAPE: &str = "name: readme-root\nentity: {type: readme, ref: README.md}\nshape:\n  targetClass: readme:Readme\n  closed: true\n  properties:\n    - {path: readme:schemaVersion, minCount: 1, maxCount: 1}\n    - {path: readme:kind, in: [library, cli, service, spec]}\n    - {path: readme:entrypoint, minCount: 1, resolves: path}\n    - {path: readme:verifiedCommand, minCount: 1, resolves: ci-step}\n    - {path: readme:section, minCount: 3}\n    - {path: readme:contractCount, maxCount: 1, resolves: census}\n";
+const SHAPE: &str = "name: readme-root\nentity: {type: readme, ref: README.md}\nshape:\n  targetClass: readme:Readme\n  closed: true\n  properties:\n    - {path: readme:schemaVersion, minCount: 1, maxCount: 1}\n    - {path: readme:kind, minCount: 1, maxCount: 1, in: [library, cli, service, spec]}\n    - {path: readme:entrypoint, minCount: 1, resolves: path}\n    - {path: readme:verifiedCommand, minCount: 1, resolves: ci-step}\n    - {path: readme:section, minCount: 3}\n    - {path: readme:contractCount, maxCount: 1, resolves: census}\n";
 
 const WORKFLOW: &str =
     "on: [pull_request]\njobs:\n  j:\n    runs-on: x\n    steps:\n      - run: make lint\n";
@@ -116,6 +116,17 @@ fn a_missing_required_section_fails_by_shape() {
     let e = check(&d, &p).expect_err("two sections < 3");
     assert_eq!(e.code, 1);
     assert!(e.what.contains("section"), "{}", e.what);
+}
+
+#[test]
+fn a_readme_without_kind_fails_by_shape() {
+    // #7014: `readme:kind` is minCount 1; a README with no `kind:` line used to pass.
+    let d = fixture(SHAPE);
+    let text = readme(2, 2, "", "crates/x").replace("kind: library\n", "");
+    let p = put(&d, &text);
+    let e = check(&d, &p).expect_err("no kind");
+    assert_eq!(e.code, 1);
+    assert!(e.what.contains("kind"), "{}", e.what);
 }
 
 #[test]
