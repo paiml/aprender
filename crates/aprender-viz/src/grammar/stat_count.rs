@@ -81,7 +81,8 @@ pub enum BarError {
     NonFinite(String),
     /// There are rows, but no row's `x` has a level in the x scale, and the layer is a `geom_col`
     /// or the scale has no levels at all. ggplot2 4.0.3 errors (`geom_bar`, no levels) or builds a
-    /// degenerate panel (`geom_col`: every `y` set to 0, x range `-Inf..Inf`) there.
+    /// degenerate panel (`geom_col`: x range `-Inf..Inf`, and every `y` set to 0 under
+    /// `position_stack` and `position_fill`; `position_identity` keeps `y`) there.
     NoLevel(String),
 }
 
@@ -714,6 +715,43 @@ mod tests {
         let b = bar_layout_in(&df, &BarSpec::col("x", "y"), &p, &all).expect("one level");
         assert!(b.rows[0].x.is_nan() && b.rows[0].xmin.is_nan() && b.rows[1].x == 1.0);
         check_axes(&b, [0.4, 1.6], &["p"], [-2.0, 3.0], [-2.25, 3.25]);
+    }
+
+    /// `geom_col(aes(x, y), position = "stack") + scale_x_discrete(limits = "a") + facet_wrap(~p)`,
+    /// x = a b b, y = 2 3 -3: one panel holds the covered row, the other only uncovered rows. R 4.6.2
+    /// builds it (a level is covered in one panel): the uncovered rows keep a NaN x and edges, stack
+    /// sets their y to 0, the x range is 0.4..1.6, y limits 0..2 and y range -0.1..2.1. The guard
+    /// must look at every panel, so the uncovered panel is placed first and last in turn.
+    #[test]
+    fn faceted_col_builds_when_only_one_panel_has_a_level() {
+        let df = {
+            let mut df = frame(&[("x", &["a", "b", "b"])]);
+            df.add_column_f32("y", &[2.0, 3.0, -3.0]);
+            df
+        };
+        let a = ["a".to_string()];
+        let nan_row = ([f64::NAN, 0.0, 0.0, 0.0, f64::NAN, f64::NAN], 2);
+        for (panels, covered_first) in
+            [(vec![vec![0], vec![1, 2]], true), (vec![vec![1, 2], vec![0]], false)]
+        {
+            let b = bar_layout_in(&df, &BarSpec::col("x", "y"), &a, &panels).expect("builds");
+            let covered = ([1.0, 2.0, 0.0, 2.0, 0.55, 1.45], 1);
+            let order = if covered_first {
+                [covered, nan_row, nan_row]
+            } else {
+                [nan_row, nan_row, covered]
+            };
+            assert_eq!(b.rows.len(), 3, "{panels:?}");
+            for (r, (want, g)) in b.rows.iter().zip(order) {
+                let got = [r.x, r.y, r.ymin, r.ymax, r.xmin, r.xmax];
+                let same_nan = got.iter().zip(&want).all(|(g, w)| g.is_nan() == w.is_nan());
+                assert!(same_nan, "{panels:?}: got {got:?}, want {want:?}");
+                let num = |v: [f64; 6]| v.map(|f| if f.is_nan() { 0.0 } else { f });
+                assert_close(&num(got), &num(want), &format!("{panels:?}"));
+                assert_eq!(r.group, g, "{panels:?}");
+            }
+            check_axes(&b, [0.4, 1.6], &["a"], [0.0, 2.0], [-0.1, 2.1]);
+        }
     }
 
     /// R's `match()`: a repeated level keeps its first position; a value with no level maps to `NA`.
