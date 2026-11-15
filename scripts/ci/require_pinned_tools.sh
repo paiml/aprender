@@ -31,7 +31,7 @@ check() {
     if command -v yq > /dev/null 2>&1; then
         case "$(yq --version 2>&1)" in *" v4.52.2"*) ;; *) echo "::error::yq is '$(yq --version 2>&1)', pr-light needs v4.52.2 from forjar; pr-light does not fetch it"; bad=1 ;; esac
     fi
-    if [ -f "$ws/rust-toolchain.toml" ]; then
+    if test -f "$ws/rust-toolchain.toml"; then
         pin="$(pin_of "$ws/rust-toolchain.toml")"
         if [ -n "$pin" ]; then
             command -v rustup > /dev/null 2>&1 || { echo "::error::rustup is not provisioned (forjar rust-toolchain)"; bad=1; }
@@ -53,19 +53,43 @@ check() {
 
 self_test() {
     local pass=0 fail=0 d
-    row() { if [ "$2" = "$3" ]; then pass=$((pass + 1)); printf '  ok    %s\n' "$1"; else fail=$((fail + 1)); printf '  FAIL  %s want=%s got=%s\n' "$1" "$3" "$2"; fi; }
+    row() { if [[ $2 == "$3" ]]; then pass=$((pass + 1)); printf '  ok    %s\n' "$1"; else fail=$((fail + 1)); printf '  FAIL  %s want=%s got=%s\n' "$1" "$3" "$2"; fi; }
     row "jq-1.8.2 passes" "$(jq_ok jq-1.8.2 && echo y || echo n)" y
     row "jq-1.7.1 is refused" "$(jq_ok jq-1.7.1 && echo y || echo n)" n
     row "jq-1.7 is refused" "$(jq_ok jq-1.7 && echo y || echo n)" n
     row "jq-1.10 passes" "$(jq_ok jq-1.10 && echo y || echo n)" y
     d="$(mktemp -d "${TMPDIR:-/tmp}/rpt.XXXXXX")"
+    trap "rm -rf '${d:?}'" EXIT
     printf '[toolchain]\nchannel = "1.93.0"\ncomponents = ["rustfmt"]\n' > "$d/rust-toolchain.toml"
     row "the exact pin is read" "$(pin_of "$d/rust-toolchain.toml")" 1.93.0
     printf '[toolchain]\nchannel = "stable"\n' > "$d/rust-toolchain.toml"
     row "a floating channel is no pin" "$(pin_of "$d/rust-toolchain.toml")" ""
-    printf '[toolchain]\nchannel = "9.99.0"\n' > "$d/rust-toolchain.toml"
-    row "a missing toolchain is RED, not fetched" "$(check "$d" > /dev/null 2>&1 && echo y || echo n)" n
-    rm -rf "${d:?}"
+    row "a prefixed jq string is refused" "$(jq_ok xjq-1.8.2 && echo y || echo n)" n
+    # scen <name> <want y|n> <jq-version|-> <yq-version|-> <toolchains|-> <components|-> <image: ok|no|none> <channel>: run check() on stub tools only
+    scen() {
+        local name=$1 want=$2; shift 2
+        rm -rf "${d:?}/bin" "${d:?}/scripts"; mkdir -p "$d/bin" "$d/scripts/ci"
+        local t; for t in sed grep head; do ln -sf "$(command -v "$t")" "$d/bin/$t"; done
+        if [[ $1 != - ]]; then printf '#!/bin/sh\necho %s\n' "$1" > "$d/bin/jq"; fi
+        if [[ $2 != - ]]; then printf '#!/bin/sh\necho "yq version %s"\n' "$2" > "$d/bin/yq"; fi
+        if [[ $3 != - ]]; then printf '#!/bin/sh\nif [ "$1" = toolchain ]; then echo "%s"; else echo "%s"; fi\n' "$3" "$4" > "$d/bin/rustup"; fi
+        if [[ $5 != none ]]; then printf 'x localhost:5000/sovereign-ci:stable@sha256:%064d\n' 0 > "$d/scripts/ci/pr_light_fast.sh"; fi
+        printf '#!/bin/sh\nexit %s\n' "$([[ $5 == no ]] && echo 1 || echo 0)" > "$d/bin/docker"
+        printf '[toolchain]\nchannel = "%s"\n' "$6" > "$d/rust-toolchain.toml"
+        for t in jq yq rustup docker; do [ ! -f "$d/bin/$t" ] || chmod +x "$d/bin/$t"; done
+        local got=n; PATH="$d/bin" check "$d" > /dev/null 2>&1 && got=y; row "$name" "$got" "$want"
+    }
+    scen "all tools present is green" y jq-1.8.2 v4.52.2 1.93.0-x86_64 rustfmt-x none 1.93.0
+    scen "no pin needs no rustup" y jq-1.8.2 v4.52.2 - - none stable
+    scen "jq missing is RED" n - v4.52.2 1.93.0-x rustfmt none 1.93.0
+    scen "jq 1.7.1 is RED" n jq-1.7.1 v4.52.2 1.93.0-x rustfmt none 1.93.0
+    scen "yq missing is RED" n jq-1.8.2 - 1.93.0-x rustfmt none 1.93.0
+    scen "yq other version is RED" n jq-1.8.2 v4.52.3 1.93.0-x rustfmt none 1.93.0
+    scen "rustup missing is RED" n jq-1.8.2 v4.52.2 - - none 1.93.0
+    scen "a missing toolchain is RED, not fetched" n jq-1.8.2 v4.52.2 1.92.0-x rustfmt none 1.93.0
+    scen "a missing rustfmt is RED" n jq-1.8.2 v4.52.2 1.93.0-x clippy none 1.93.0
+    scen "a missing image is RED" n jq-1.8.2 v4.52.2 1.93.0-x rustfmt no 1.93.0
+    scen "a cached image is green" y jq-1.8.2 v4.52.2 1.93.0-x rustfmt ok 1.93.0
     printf 'require_pinned_tools self-test: %s passed, %s failed\n' "$pass" "$fail"
     [ "$fail" -eq 0 ]
 }
