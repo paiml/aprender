@@ -114,8 +114,12 @@ EOF
     # MECHANISM: a fake cargo records what package_walk asked for. --verify must drop
     # --no-verify (else the "dry-run" compiles nothing), and the default must keep it.
     local d; d=$(mktemp -d) || return 1
+    # Every walk below runs against a CARGO_HOME inside $d: the self-test never reads or clears the
+    # caller's cargo home, and does not depend on the caller's CARGO_HOME or HOME being absolute.
+    local had_ch=${CARGO_HOME+x} old_ch=${CARGO_HOME:-}
+    export CARGO_HOME="$d/ch"; mkdir -p "$CARGO_HOME"
     printf '%s\n' '#!/usr/bin/env bash' \
-        'if [ "$1" = metadata ]; then echo "{\"target_directory\":\"$FAKE_TARGET\",\"packages\":[{\"name\":\"a\",\"version\":\"0.0.0\",\"publish\":null},{\"name\":\"b\",\"publish\":[]}]}"; exit 0; fi' \
+        'if [ "$1" = metadata ]; then echo "{\"target_directory\":\"$FAKE_TARGET\",\"packages\":[{\"name\":\"a\",\"version\":\"0.0.0\",\"publish\":null},{\"name\":\"b\",\"version\":\"0.0.0\",\"publish\":[]}]}"; exit 0; fi' \
         'echo "$*" >> "$FAKE_CARGO_LOG"' \
         'if [ -e "$FAKE_TARGET/package/tmp-registry/stale.crate" ]; then echo "error: no hash listed for a v0.0.0"; exit 101; fi' \
         'if [ -e "$CARGO_HOME/registry/src/-h/a-0.0.0/planted" ]; then echo "error: verified a leftover unpacked source"; exit 101; fi' \
@@ -132,15 +136,25 @@ EOF
     # #6880: an unpacked overlay source left in CARGO_HOME by an earlier commit must not be what
     # gets verified (the fake cargo refuses when it is still there). Only the member's overlay dir
     # goes: a sibling overlay crate that is not a publishable member and the real registry copy stay.
-    export CARGO_HOME="$d/ch"
-    mkdir -p "$CARGO_HOME/registry/src/-h/a-0.0.0" "$CARGO_HOME/registry/src/-h/zz-1.0.0" "$CARGO_HOME/registry/src/index.crates.io-x/a-0.0.0"
+    mkdir -p "$CARGO_HOME/registry/src/-h/a-0.0.0" "$CARGO_HOME/registry/src/-h/zz-1.0.0" "$CARGO_HOME/registry/src/-h/b-0.0.0" "$CARGO_HOME/registry/src/index.crates.io-x/a-0.0.0"
     : > "$CARGO_HOME/registry/src/-h/a-0.0.0/planted"
     if FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify > /dev/null \
-        && [ ! -e "$CARGO_HOME/registry/src/-h/a-0.0.0" ] && [ -d "$CARGO_HOME/registry/src/-h/zz-1.0.0" ] \
+        && [ ! -e "$CARGO_HOME/registry/src/-h/a-0.0.0" ] && [ -d "$CARGO_HOME/registry/src/-h/zz-1.0.0" ] && [ -d "$CARGO_HOME/registry/src/-h/b-0.0.0" ] \
         && [ -d "$CARGO_HOME/registry/src/index.crates.io-x/a-0.0.0" ]; then
         echo "  ok   a leftover unpacked member source is removed before the walk; other sources stay (#6880)"
     else echo "  FAIL a leftover unpacked overlay source was verified, or an unrelated source was removed"; fail=1; fi
-    unset CARGO_HOME
+    # No absolute cargo home is ENV, never a walk that cleared nothing: a relative CARGO_HOME, and
+    # CARGO_HOME and HOME both empty (which used to give "/.cargo" and pass the check).
+    got=$(CARGO_HOME=relative FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d"; echo "rc=$?")
+    case "$got" in
+        ENV*"rc=2") echo "  ok   a CARGO_HOME that is not absolute is ENV" ;;
+        *) echo "  FAIL a relative CARGO_HOME gave: $got"; fail=1 ;;
+    esac
+    got=$(CARGO_HOME='' HOME='' FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d"; echo "rc=$?")
+    case "$got" in
+        ENV*"rc=2") echo "  ok   CARGO_HOME and HOME both empty is ENV, not a walk under /.cargo" ;;
+        *) echo "  FAIL empty CARGO_HOME and HOME gave: $got"; fail=1 ;;
+    esac
     got=$(FAKE_TARGET=relative FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d"; echo "rc=$?")
     case "$got" in
         ENV*"rc=2") echo "  ok   a target directory that is not absolute is ENV: nothing is emptied" ;;
@@ -158,6 +172,7 @@ EOF
     if grep -qx 'package -p a --no-verify --locked' "$d/args"; then echo "  ok   the default walk stays --no-verify (rc-cut cost)"
     else echo "  FAIL default ran: $(cat "$d/args")"; fail=1; fi
     rm -rf -- "${d:?}"; unset FAKE_TARGET
+    if [ -n "$had_ch" ]; then export CARGO_HOME="$old_ch"; else unset CARGO_HOME; fi
     # WIRING: the autopilot's tag step runs --verify on the release commit AHEAD of the tag: the
     # --verify line and its `die "publish dry-run` sit inside `if run_step tag`, before cut_tag.
     if wiring_ahead_of_tag "$HERE/autopilot.sh"; then echo "  ok   autopilot runs --verify ahead of the tag and stops on red"
@@ -208,7 +223,7 @@ package_walk() {
     # job (the nightly walks one version until the next bump) verifies the source an earlier commit
     # left there. Remove the members' own overlay dirs only (glob `-*` = the local overlay, never
     # index.crates.io-*); a failed removal is ENV.
-    local ch=${CARGO_HOME:-${HOME:-}/.cargo} md m
+    local ch=${CARGO_HOME:-${HOME:+${HOME}/.cargo}} md m
     if [ "${ch#/}" = "$ch" ]; then
         echo "ENV   package: no absolute CARGO_HOME to clear leftover overlay sources from"
         return 2
