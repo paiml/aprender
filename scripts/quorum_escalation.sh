@@ -97,11 +97,14 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS 2/3.
 **RESULT: PASS (3/3 valid lanes PASS).** This supersedes the NOT PASS above."; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f2 superseding PASS wins"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS 2/3. Fix it → re-seat both + new quorum."; chk 1 "f2 trailing arrow keeps the headline verdict"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS 2/3 → PASS 3/3 after the re-seat."; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f2 a verdict after the arrow wins"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS 2/3 (one lane errored)."; chk 1 "f2 PASS beside a 2/3 tally is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS (lane B errored)."; chk 1 "f2 NOT PASS without a tally is not a pass"; clr
   # f3: an unreadable receipt neither resets nor counts
   mk 1 0100 "# Quorum #1 (PMAT-9)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-9)" "no verdict here"; mk 3 0300 "# Quorum #3 (PMAT-9)" "$F"; chk 1 "f3 NM keeps the streak"; clr
   # f4: lane and prompt files are not receipts
   mk 1 0100 "# Quorum #1 (PMAT-10)" "$F"
-  for x in A.md B.txt prompt.md; do cp "$t/triage-quorum-1-gate-0100Z.md" "$t/triage-quorum-1-gate-0100Z-$x"; touch -d "2026-10-23 0200" "$t/triage-quorum-1-gate-0100Z-$x"; done
+  for x in A.md B.txt prompt.md prompt.Z.md; do cp "$t/triage-quorum-1-gate-0100Z.md" "$t/triage-quorum-1-gate-0100Z-$x"; touch -d "2026-10-23 0200" "$t/triage-quorum-1-gate-0100Z-$x"; done
   chk 0 "f4 lane/prompt files never count"; clr
   # f5: multi-digit tally
   mk 1 0100 "# Quorum #1 (PMAT-11)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-11)" "TALLY: 10/10 PASS"; mk 3 0300 "# Quorum #3 (PMAT-11)" "$F"; chk 0 "f5 10/10 is a PASS"; clr
