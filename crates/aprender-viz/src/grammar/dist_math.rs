@@ -446,20 +446,24 @@ fn pad_bins(b: &BuiltBins) -> Result<BuiltBins> {
         xmin: x.iter().zip(&width).map(|(c, w)| c - w / 2.0).collect(),
         xmax: x.iter().zip(&width).map(|(c, w)| c + w / 2.0).collect(),
         density: count.iter().zip(&width).map(|(n, w)| n / w / total).collect(),
+        ymin: vec![0.0; count.len()],
+        ymax: count.clone(),
+        group: vec![-1; count.len()],
         x,
         width,
         count,
     })
 }
 
-/// `stat_bin(pad = TRUE)` over finite `x`, what `geom_freqpoly()` draws: [`stat_bin`] with a
+/// `stat_bin(pad = TRUE)` over finite `x`, what `geom_freqpoly()` draws: `stat_bin` with a
 /// zero-count bin added at each end.
 ///
 /// # Errors
 ///
-/// The errors of [`stat_bin`].
+/// The errors of `stat_bin` (see `bin_breaks`).
 pub(super) fn stat_bin_padded(x: &[f64], a: &BinArgs) -> Result<BuiltBins> {
-    pad_bins(&stat_bin(x, a)?)
+    let breaks = bin_breaks(x, a)?;
+    pad_bins(&bins_from_counts(&breaks, count_bins(x, &breaks)))
 }
 
 #[cfg(test)]
@@ -583,6 +587,9 @@ mod pad_tests {
             width: vec![],
             count: vec![],
             density: vec![],
+            ymin: vec![],
+            ymax: vec![],
+            group: vec![],
         })
         .is_err());
     }

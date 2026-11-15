@@ -22,6 +22,15 @@ fn run(csv: &str, geom: Geom) -> BuiltLayout {
         .expect("layout")
 }
 
+/// Largest absolute difference between two equal-length slices (`NaN` pairs count as equal).
+fn max_abs(got: &[f64], want: &[f64]) -> f64 {
+    got.iter()
+        .zip(want)
+        .filter(|(g, w)| !(g.is_nan() && w.is_nan()))
+        .map(|(g, w)| (g - w).abs())
+        .fold(0.0_f64, f64::max)
+}
+
 fn check(case: &str, json: &str, csv: &str, geom: Geom) {
     let want: Value = serde_json::from_str(json).expect("fixture is valid JSON");
     assert_eq!(want["versions"]["ggplot2"], "4.0.3", "{case}: not the pinned ggplot2");
@@ -40,6 +49,18 @@ fn check(case: &str, json: &str, csv: &str, geom: Geom) {
         nums(&w["xmax"]).iter().zip(nums(&w["xmin"])).map(|(a, b)| a - b).collect();
     assert_close_slice(&format!("{case}.width"), &b.width, &span);
     assert_close_slice(&format!("{case}.density"), &b.density, &nums(&w["density"]));
+    let err = [
+        max_abs(&b.count, &nums(&w["count"])),
+        max_abs(&g.x, &nums(&w["x"])),
+        max_abs(&g.y, &nums(&w["y"])),
+        max_abs(&b.xmin, &nums(&w["xmin"])),
+        max_abs(&b.xmax, &nums(&w["xmax"])),
+        max_abs(&b.width, &span),
+        max_abs(&b.density, &nums(&w["density"])),
+    ]
+    .into_iter()
+    .fold(0.0_f64, f64::max);
+    eprintln!("freqpoly-oracle {case} max_abs_err={err:e}");
     check_axis(&format!("{case}.x"), &got.x, &want["panel"]["x"]);
     check_axis(&format!("{case}.y"), &got.y, &want["panel"]["y"]);
 }
