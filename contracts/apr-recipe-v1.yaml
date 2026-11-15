@@ -1,0 +1,119 @@
+# apr-recipe-v1 — the declarative fine-tune / distill recipe (CRUX-001, PMAT-5316).
+#
+# One YAML file names everything a training run depends on. `apr finetune --recipe r.yaml`
+# validates it before any model is opened and refuses by recipe field.
+# Loader: crates/apr-cli/src/commands/train_recipe.rs. Example: examples/recipes/tiny.yaml.
+
+metadata:
+  id: apr-recipe-v1
+  version: "1.0.0"
+  created: "2026-11-15"
+  author: PAIML Engineering
+  registry: true
+  status: partial
+  description: >
+    Schema of the apr training recipe and the order of refusal. A recipe carries the base
+    model, the training data, the method (lora, qlora or distill), the teacher (distill only),
+    the eval and the seed. The eval is required and is part of the recipe hash, so two runs
+    with the same recipe hash were asked the same question. This contract covers the schema,
+    the refusal before a model is loaded and the receipt fields; it does not claim that the
+    seed or the eval are applied by the training loop yet (the receipt lists them under
+    validated_not_applied).
+  references:
+  - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
+  - "crates/apr-cli/src/commands/train_recipe.rs"
+
+equations:
+  recipe_schema:
+    formula: |
+      Recipe ::= {
+        recipe:     "apr-recipe-v1",
+        name:       string,
+        base:       path,
+        model_size: string?,                 # planning size, e.g. "0.8B"
+        method:     "lora" | "qlora" | "distill",
+        data:       { train: path, sha256: hex64? },
+        eval:       { heldout: path, benchmark: string? },
+        seed:       u64,
+        teacher:    { model: path, temperature: f64?, alpha: f64? }?,
+        training:   { rank: u32?, epochs: u32?, learning_rate: f64?, max_seq_len: usize? }?,
+        output:     { dir: path }?
+      }
+      valid(R) <=> every required key present and non-empty
+               and R.eval.heldout != R.data.train
+               and (R.teacher present <=> R.method == "distill")
+               and every number in R.training > 0
+               and no key outside this grammar at any level
+    domain: UTF-8 YAML file
+    codomain: TrainRecipe | Refusal
+    invariants:
+    - "eval is REQUIRED: a recipe with no eval block is refused"
+    - "Unknown keys are refused at every level (strict schema)"
+    - "teacher is required when method is distill and refused otherwise"
+    - "eval.heldout MUST NOT be the training file"
+    - "Relative paths resolve against the recipe file's directory"
+
+  refusal_before_load:
+    formula: |
+      run(recipe_path) =
+        R  <- parse(read(recipe_path))        # only the recipe file is opened
+        if not valid(R): refuse(fields(R))    # exit 5, no model opened, no GPU allocated
+        if not plan:     require_inputs(R)    # files exist, data.sha256 pin matches
+        lower(R) -> finetune(...)             # first point a model may be opened
+      refuse(F) prints, for every f in F, the text "field `f`".
+    domain: (recipe file, flags)
+    codomain: exit code and stderr
+    invariants:
+    - "An invalid recipe is refused before the base model is opened"
+    - "The refusal names every recipe field at fault, in one message"
+    - "The refusal is a recipe validation error (exit 5), not a clap usage error (exit 2)"
+    - "A flag whose value the recipe carries conflicts with --recipe"
+
+  recipe_receipt:
+    formula: |
+      receipt(R, engines) = {
+        schema: "apr-recipe-receipt-v1",
+        recipe_name, recipe_sha256 = sha256(bytes(recipe file)),
+        data_sha256 = sha256(R.data.train) | null,
+        eval_sha256 = sha256(R.eval.heldout) | null,
+        method, seed, engines: [{name, version, sha}],
+        overrides: [string], validated_not_applied: [field]
+      }
+    domain: validated recipe
+    codomain: JSON object
+    invariants:
+    - "recipe_sha256 changes when the eval block changes"
+    - "A hash of a file that was not read is null, never a made-up value"
+    - "A pinned data.sha256 that differs from the file's hash refuses the run"
+
+falsification_tests:
+- id: FALSIFY-APR-RECIPE-001
+  rule: a recipe without eval is refused before any model is loaded
+  prediction: "`apr finetune --recipe` on a recipe with no eval block exits 5 and stderr names field `eval`; the base model path does not exist and is never reported"
+  test: |
+    cargo test -p apr-cli --lib -- recipe_without_eval_is_refused_before_any_model_is_touched missing_eval_is_refused_and_the_error_names_the_field
+  if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
+- id: FALSIFY-APR-RECIPE-002
+  rule: a valid recipe passes
+  prediction: "`apr finetune --recipe examples/recipes/tiny.yaml --plan --json` exits 0"
+  test: |
+    cargo test -p apr-cli --lib -- valid_recipe_plans valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir recipe_model_size_drives_the_plan
+  if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
+- id: FALSIFY-APR-RECIPE-003
+  rule: unknown keys and wrong shapes are refused by field
+  prediction: "A misspelt key, a missing required key, a teacher without distill, or a non-positive training number each yields a refusal naming that field"
+  test: |
+    cargo test -p apr-cli --lib -- train_recipe::tests
+  if_fails: "A typo in a recipe silently trains with a default"
+- id: FALSIFY-APR-RECIPE-004
+  rule: a flag the recipe carries conflicts with --recipe
+  prediction: "`apr finetune --recipe r.yaml --epochs 2` is refused by clap as an argument conflict, for every flag in FINETUNE_RECIPE_CARRIES"
+  test: |
+    cargo test -p apr-cli --lib -- test_finetune_recipe_conflicts_with_every_flag_it_carries test_finetune_recipe_flag_parses_alone_and_with_run_flags
+  if_fails: "Two sources for one value; the receipt's recipe hash no longer describes the run"
+- id: FALSIFY-APR-RECIPE-005
+  rule: the data pin and the receipt hashes are real
+  prediction: "A planted-wrong data.sha256 refuses the run naming field `data.sha256`; the receipt carries recipe, data and eval sha256, engine name, version and sha"
+  test: |
+    cargo test -p apr-cli --lib -- require_inputs_names_each_missing_file_then_passes_and_checks_the_pin receipt_carries_the_contract_fields recipe_hash_changes_with_the_eval
+  if_fails: "A receipt can name data it did not train on"
