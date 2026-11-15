@@ -37,7 +37,7 @@ run_case() {
                     if [ "$3" = --job ]; then { printf 'x tested-sha: %s\n' "$tested"; [ -z "$tested2" ] || printf 'x tested-sha: %s\n' "$tested2"; }; else echo "$concl 99"; fi ;;
             esac
         }
-        eval "$fn"
+        printf '%s\n' "$fn" > "$d/fn.sh" && . "$d/fn.sh" || exit 2
         cleanroom_on_sha "$SHA"
     ) 2>&1
     local rc=$?
