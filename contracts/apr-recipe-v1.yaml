@@ -2,7 +2,9 @@
 #
 # One YAML file names everything a training run depends on. `apr finetune --recipe r.yaml`
 # validates it before any model is opened and refuses by recipe field.
-# Loader: crates/apr-cli/src/commands/train_recipe.rs. Example: examples/recipes/tiny.yaml.
+# Loader: crates/apr-cli/src/commands/train_recipe.rs (lands in R-1 slice 2/6).
+# Example: examples/recipes/tiny.yaml and the --recipe flag (land in R-1 slice 6/6).
+# This slice is the schema only; each FALSIFY entry is added back in the slice that adds its test.
 
 metadata:
   id: apr-recipe-v1
@@ -21,7 +23,6 @@ metadata:
     validated_not_applied).
   references:
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
-  - "crates/apr-cli/src/commands/train_recipe.rs"
 
 equations:
   recipe_schema:
@@ -87,33 +88,12 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-- id: FALSIFY-APR-RECIPE-001
-  rule: a recipe without eval is refused before any model is loaded
-  prediction: "`apr finetune --recipe` on a recipe with no eval block exits 5 and stderr names field `eval`; the base model path does not exist and is never reported"
+# Slice 1/6 carries only the schema itself. FALSIFY-APR-RECIPE-001 .. 005 are added back in
+# the slice that adds the test each one cites (loader and tests in slices 2-5, the CLI wiring
+# tests in slice 6), so that every slice head resolves its own test references.
+- id: FALSIFY-APR-RECIPE-000
+  rule: the recipe contract is itself a valid contract
+  prediction: "`pv validate contracts/apr-recipe-v1.yaml` exits 0"
   test: |
-    cargo test -p apr-cli --lib -- recipe_without_eval_is_refused_before_any_model_is_touched missing_eval_is_refused_and_the_error_names_the_field
-  if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
-- id: FALSIFY-APR-RECIPE-002
-  rule: a valid recipe passes
-  prediction: "`apr finetune --recipe examples/recipes/tiny.yaml --plan --json` exits 0"
-  test: |
-    cargo test -p apr-cli --lib -- valid_recipe_plans valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir recipe_model_size_drives_the_plan
-  if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
-- id: FALSIFY-APR-RECIPE-003
-  rule: unknown keys and wrong shapes are refused by field
-  prediction: "A misspelt key, a missing required key, a teacher without distill, or a non-positive training number each yields a refusal naming that field"
-  test: |
-    cargo test -p apr-cli --lib -- train_recipe::tests
-  if_fails: "A typo in a recipe silently trains with a default"
-- id: FALSIFY-APR-RECIPE-004
-  rule: a flag the recipe carries conflicts with --recipe
-  prediction: "`apr finetune --recipe r.yaml --epochs 2` is refused by clap as an argument conflict, for every flag in FINETUNE_RECIPE_CARRIES"
-  test: |
-    cargo test -p apr-cli --lib -- test_finetune_recipe_conflicts_with_every_flag_it_carries test_finetune_recipe_flag_parses_alone_and_with_run_flags
-  if_fails: "Two sources for one value; the receipt's recipe hash no longer describes the run"
-- id: FALSIFY-APR-RECIPE-005
-  rule: the data pin and the receipt hashes are real
-  prediction: "A planted-wrong data.sha256 refuses the run naming field `data.sha256`; the receipt carries recipe, data and eval sha256, engine name, version and sha"
-  test: |
-    cargo test -p apr-cli --lib -- require_inputs_names_each_missing_file_then_passes_and_checks_the_pin receipt_carries_the_contract_fields recipe_hash_changes_with_the_eval
-  if_fails: "A receipt can name data it did not train on"
+    pv validate contracts/apr-recipe-v1.yaml
+  if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
