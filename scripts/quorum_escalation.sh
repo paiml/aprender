@@ -20,12 +20,13 @@
 set -uo pipefail
 
 verdict() { # receipt file -> PASS | FAIL | NM
-  local l b tok rest pre u
+  local l b tok rest pre u z
   l=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final)\b.*(PASS|FAIL)' "$1" | tail -n1)
   [ -n "$l" ] || l=$(grep -i -E '^[^A-Za-z]*verdict\b.*(PASS|FAIL)' "$1" | tail -n1)
   [ -n "$l" ] || l=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(NOT PASS|PASS|FAIL).*')
   [ -n "$l" ] || { echo NM; return; }
   b=${l#*:}
+  b=${b//[*_]/}   # markdown emphasis is not part of the verdict: '**PASS** (2/3)' is PASS (2/3)
   [[ ${b##*→} =~ (PASS|FAIL) ]] && b=${b##*→}   # a verdict after the last arrow wins
   tok=$(grep -oE 'NOT PASS|PASS|FAIL' <<<"$b" | head -n1)
   [ -n "$tok" ] || { echo NM; return; }
@@ -34,6 +35,8 @@ verdict() { # receipt file -> PASS | FAIL | NM
   u="${pre^^} ${rest^^}"   # 'fail=1' counts as 'FAIL=1'
   [[ "$u" =~ (^|[^0-9])[1-9][0-9]*\ *(LANES?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
   [[ "$u" =~ FAIL[A-Za-z]*[:\ =]+[1-9] ]] && { echo FAIL; return; }   # 'FAIL: 1', 'FAIL 1'
+  z=$(sed -E 's/(^|[^0-9])0 *(LANES? +)?FAIL[A-Z]*//g; s/NO +FAIL[A-Z]*//g; s/FAIL[A-Z]*[: =]+0([^0-9]|$)//g' <<<"${u%%. *}")   # the verdict's own sentence only: prose after it may say FAIL
+  [[ "$z" == *FAIL* ]] && { echo FAIL; return; }   # any FAIL left beside PASS (lane C: FAIL) is a fail: only a zero count clears it
   if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)(/|\ +of\ +)([0-9]+) ]] || [[ $pre =~ ([0-9]+)(/|\ +of\ +)([0-9]+)[^A-Za-z0-9/]*$ ]]; then
     [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[3]}" ] && echo PASS || echo FAIL
     return
@@ -120,6 +123,12 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (fail=1)"; chk 1 "f12 PASS beside lower-case 'fail=1' is not a pass"; clr
   mk 7078 0100 "# Quorum #7078" "$F"; mk 7078 0200 "# Quorum #7078" "$F"; chk 2 "f12 a receipt naming only its own 4-digit PR has no chain: not measured"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (1 lane FAIL)"; chk 1 "f13 PASS beside lower-case '1 lane FAIL' is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: **PASS** (2/3 lanes PASS)."; chk 1 "f14.1 a bold tally or a named FAIL lane beside PASS is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "**RESULT: PASS** (2/3 lanes PASS)"; chk 1 "f14.2 a bold tally or a named FAIL lane beside PASS is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (lane C: FAIL)"; chk 1 "f14.3 a bold tally or a named FAIL lane beside PASS is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (A PASS, B PASS, C FAIL)"; chk 1 "f14.4 a bold tally or a named FAIL lane beside PASS is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS — FAIL lanes: 1"; chk 1 "f14.5 a bold tally or a named FAIL lane beside PASS is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: **PASS** (3/3 lanes, no FAIL)"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f14 bold PASS 3/3 with no FAIL is a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-21)" "PMAT-Ticket: PMAT-30
 PMAT-Ticket: PMAT-31
 $F"; mk 2 0200 "# Quorum #2 (PMAT-21)" "$F"; chk 1 "f13 two different trailers fall back to line 1"; grep -q 'ticket=PMAT-21 ' "$t/esc" || { echo "FAIL: f13 ticket not PMAT-21"; bad=1; }; clr
