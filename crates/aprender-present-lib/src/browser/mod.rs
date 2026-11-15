@@ -7,6 +7,8 @@
 #[cfg(target_arch = "wasm32")]
 pub mod app;
 #[cfg(target_arch = "wasm32")]
+pub mod audio_source;
+#[cfg(target_arch = "wasm32")]
 pub mod canvas2d;
 #[cfg(target_arch = "wasm32")]
 pub mod entry;
@@ -20,6 +22,7 @@ pub mod video_dom;
 pub mod websocket;
 
 // Cross-platform modules (work on native for testing)
+pub mod audio_level;
 pub mod frame_loop;
 pub mod mount;
 pub mod notebook;
@@ -30,6 +33,9 @@ pub mod video_ops;
 
 #[cfg(target_arch = "wasm32")]
 pub use app::App;
+pub use audio_level::bytes_to_samples;
+#[cfg(target_arch = "wasm32")]
+pub use audio_source::AudioLevelSource;
 #[cfg(target_arch = "wasm32")]
 pub use canvas2d::Canvas2DRenderer;
 #[cfg(target_arch = "wasm32")]
