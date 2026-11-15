@@ -98,22 +98,44 @@ ws_version() {
 vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }'; }
 
 # foreign_t1 OWN-PGID < "pgid args" lines -> every models_t1.sh process outside OWN-PGID
-# A models_t1.sh RUN is a process whose program is models_t1.sh: after the wrappers (env, timeout, setsid, nice,
-# stdbuf), a shell, their options, VAR=value words and durations, the first word names it. A process that only
-# carries the path as an argument (a linter over scripts/release/, an editor, tail) is not a run: on 2026-11-15 a
-# `bashrs lint ... scripts/release/models_t1.sh` refused the producer (PMAT-7017).
+# FAIL CLOSED: a process counts as a run when a word of its command line is models_t1.sh (any directory, quotes
+# ignored), unless it is a known non-runner. Wrappers are never listed, so a new one (flock, nohup, sudo, ionice,
+# taskset, time, exec, any option or option argument) cannot hide a run. Two things clear a line, and both
+# are checked only where they decide what the line IS:
+#  - its PROGRAM (the first word, or the first word of a bash -c string) is a linter, editor, pager, searcher or
+#    copier (bashrs, vim, tail, grep, git, ...): a `bashrs lint ... scripts/release/models_t1.sh` is not a run
+#    (2026-11-15, PMAT-7017);
+#  - a shell on the line carries a no-exec option cluster (-n, -D): `bash -n models_t1.sh` parses and stops.
+# After a shell's -c the rest of the line is a command string and is read again from its first word.
 foreign_t1() {
-    awk -v own="$1" '$1 != own {
-        for (i = 2; i <= NF; i++) {
-            t = $i
-            if (t ~ /^-/ || t ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || t ~ /^[0-9.]+[smhd]?$/) continue
-            sub(/.*\//, "", t)
-            if (t ~ /^(env|timeout|setsid|nice|stdbuf|bash|sh|dash|zsh)$/) continue
-            if (t == "models_t1.sh") print
-            break
+    local prog
+    prog=$(cat <<'AWK'
+        BEGIN {
+            nn = split("bashrs shellcheck shfmt vim vi nvim view nano emacs less more most bat cat head tail grep egrep fgrep rg ag sed awk diff cmp ls wc stat file git sha256sum md5sum ps pgrep pkill man find tar cp mv rm scp rsync tee echo printf test code", npg, " ")
+            for (k = 1; k <= nn; k++) nonrun[npg[k]] = 1
+            ms = split("bash sh dash zsh ksh", ns, " ")
+            for (k = 1; k <= ms; k++) shell[ns[k]] = 1
         }
-    }'
+        $1 != own {
+            first = 1; insh = 0; run = 0
+            for (i = 2; i <= NF; i++) {
+                t = $i; gsub(/["\047]/, "", t); sub(/.*\//, "", t)
+                if (t == "models_t1.sh") { run = 1; break }
+                if (first && (t in nonrun)) break
+                first = 0
+                if (t in shell) { insh = 1; continue }
+                if (insh && t ~ /^-[A-Za-z]+$/) {
+                    if (t ~ /[nD]/) break
+                    if (t ~ /c/) { insh = 0; first = 1 }
+                }
+            }
+            if (run) print
+        }
+AWK
+    )
+    awk -v own="$1" "$prog"
 }
+
 # The process table foreign_t1 reads. MODELS_NIGHTLY_PS_TABLE (a file of "pgid args" lines) is for
 # the self-test only: on a host where anyone is running a models_t1.sh fixture, the real table would
 # refuse every e2e row. The host units never set it.
@@ -576,9 +598,45 @@ self_test() {
     # -- foreign_t1 and no_token
     row foreign_models_t1_is_seen 0 "77 bash scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'77 bash scripts/release/models_t1.sh 0.70.2 abc out\n5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 vim models_t1.sh.log'
     row own_group_and_lookalikes_are_not_foreign 0 "" "models_t1" -- foreign_t1 5 <<< $'5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 tail -f out/models_t1.sh.log'
-    row a_path_in_the_arguments_is_not_a_run 0 "" "models_t1" -- foreign_t1 5 <<< $'78 bashrs lint --level error scripts/release/autopilot.sh scripts/release/models_t1.sh\n79 vim scripts/release/models_t1.sh\n80 bash -c grep -c x scripts/release/models_t1.sh\n81 cat /r/models_t1.sh'
-    row wrapped_runs_are_seen 0 "82 timeout -k 30 21600 bash /r/scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'82 timeout -k 30 21600 bash /r/scripts/release/models_t1.sh 1.2.3 c /o'
-    row env_and_direct_runs_are_seen 0 "84 /r/scripts/release/models_t1.sh" "" -- foreign_t1 5 <<< $'83 env A=b setsid --wait bash -x scripts/release/models_t1.sh 1 c o\n84 /r/scripts/release/models_t1.sh 1 c o'
+    # one ps line per row, each asserted on its own: a run is printed back, a non-run prints nothing
+    t1_run() { row "t1_run_$1" 0 "9 $2" "" -- foreign_t1 5 <<< "9 $2"; }
+    t1_not() { row "t1_not_$1" 0 "" "models_t1" -- foreign_t1 5 <<< "9 $2"; }
+    t1_run direct "/r/scripts/release/models_t1.sh 1 c o"
+    t1_run bash_script "bash scripts/release/models_t1.sh 1 c o"
+    t1_run env_setsid_bash_x "env A=b setsid --wait bash -x scripts/release/models_t1.sh 1 c o"
+    t1_run timeout_kill_after "timeout -k 30 21600 bash /r/scripts/release/models_t1.sh 1.2.3 c /o"
+    t1_run timeout_s_kill "timeout -s KILL 5 bash scripts/release/models_t1.sh a"
+    t1_run timeout_signal_term "timeout --signal TERM 5 bash scripts/release/models_t1.sh a"
+    t1_run flock "flock /tmp/F bash models_t1.sh a"
+    t1_run nohup "nohup bash scripts/release/models_t1.sh a"
+    t1_run sudo_u "sudo -u u bash scripts/release/models_t1.sh a"
+    t1_run sudo_u_git "sudo -u git bash scripts/release/models_t1.sh a"
+    t1_run ionice "ionice -c 3 bash scripts/release/models_t1.sh a"
+    t1_run taskset "taskset -c 0-3 bash scripts/release/models_t1.sh a"
+    t1_run time "time bash scripts/release/models_t1.sh a"
+    t1_run exec "exec bash scripts/release/models_t1.sh a"
+    t1_run stdbuf_o_L "stdbuf -o L bash scripts/release/models_t1.sh a"
+    t1_run bash_o_pipefail "bash -o pipefail scripts/release/models_t1.sh a"
+    t1_run bash_plus_x "bash +x scripts/release/models_t1.sh a"
+    t1_run bash_rcfile "bash --rcfile /f scripts/release/models_t1.sh a"
+    t1_run env_u "env -u VAR bash scripts/release/models_t1.sh a"
+    t1_run env_C "env -C /d bash scripts/release/models_t1.sh a"
+    t1_run nice_n_plus "nice -n +5 bash scripts/release/models_t1.sh a"
+    t1_run bash_lc_string 'bash -lc "models_t1.sh a"'
+    t1_run sh_c_exec_bash "sh -c exec bash scripts/release/models_t1.sh"
+    t1_run bash_c_after_options "bash -o pipefail -c \"scripts/release/models_t1.sh a\""
+    t1_not bashrs_lint "bashrs lint --level error scripts/release/autopilot.sh scripts/release/models_t1.sh"
+    t1_not vim "vim scripts/release/models_t1.sh"
+    t1_not bash_c_grep "bash -c grep -c x scripts/release/models_t1.sh"
+    t1_not cat "cat /r/models_t1.sh"
+    t1_not tail_log "tail -f out/models_t1.sh.log"
+    t1_not git_blame "git log -p -- scripts/release/models_t1.sh"
+    t1_not bash_n "bash -n models_t1.sh"
+    t1_not sh_n "sh -n scripts/release/models_t1.sh"
+    t1_not bash_D "bash -D scripts/release/models_t1.sh"
+    t1_not no_models_t1_word "timeout 5 bash scripts/release/other.sh 1.2"
+    t1_not bare_dot "sleep ."
+    t1_not nice_wrapped_bash_n "nice -n 5 bash -n scripts/release/models_t1.sh"
     row no_token_holds_in_a_clean_env 0 "" "" -- no_token
     row env_registry_token_refused 1 "" "" -- env CARGO_REGISTRY_TOKEN=x bash -c "$(declare -f no_token); no_token"
     row named_registry_token_refused 1 "" "" -- env CARGO_REGISTRIES_X_TOKEN=x bash -c "$(declare -f no_token); no_token"
@@ -858,7 +916,12 @@ m43_publish_takes_a_measure	s/\[ -z "\$MEAS" \] [|][|] \[ "\$MODE" != --publish 
 m44_crux_takes_the_ladder_go_line	s/GO_RE=.MODELS GO \\\(CRUX smoke\\\) on./GO_RE="MODELS GO.*on"/
 m45_crux_names_the_ladder_measurer	s/MEASURER_RE=.crux_sweep_shards\\\.sh./MEASURER_RE="model_ladder\\.sh"/
 m46_masked_node_counted_as_token	s/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/[ ! -e "$ch\/credentials" ] \&\& [ ! -e "$ch\/credentials.toml" ]/
-m47_cargo_home_credentials_ignored	/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/d'
+m47_cargo_home_credentials_ignored	/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/d
+m48_nonrunners_ignored	s#if \(first && \(t in nonrun\)\) break#if (0) break#
+m49_no_exec_shell_counted_a_run	s#if \(t ~ /\[nD\]/\) break#if (0) break#
+m50_c_string_unread	s#if \(t ~ /c/\) \{ insh = 0; first = 1 \}#if (0) insh = 0#
+m51_original_wrapper_list_planted	s#if \(first && \(t in nonrun\)\) break#if (t ~ /^-/ || t ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || t ~ /^[0-9.]+[smhd]?$/) continue; if (t ~ /^(env|timeout|setsid|nice|stdbuf|bash|sh|dash|zsh)$/) continue; break#
+m52_only_the_first_word_read	s#^                first = 0$#                break#'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
