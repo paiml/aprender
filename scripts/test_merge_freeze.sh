@@ -38,6 +38,7 @@ case_ red-empty-queue "$R" '[]' "" 3 FREEZE
 case_ timed-out-is-red '[{"status":"completed","conclusion":"timed_out","createdAt":"2026-11-15T03:00:00Z"}]' "$Q" "" 3 FREEZE "10,12,"
 case_ cancelled-skipped-then-green '[{"status":"completed","conclusion":"cancelled","createdAt":"2026-11-15T09:00:00Z"},{"status":"completed","conclusion":"success","createdAt":"2026-11-15T03:00:00Z"}]' "$Q" "" 0 OPEN
 case_ unordered-input-newest-wins '[{"status":"completed","conclusion":"success","createdAt":"2026-11-14T03:00:00Z"},{"status":"completed","conclusion":"failure","createdAt":"2026-11-15T03:00:00Z"}]' "$Q" "" 3 FREEZE "10,12,"
+case_ newest-first-input-newest-wins '[{"status":"completed","conclusion":"failure","createdAt":"2026-11-15T03:00:00Z"},{"status":"completed","conclusion":"success","createdAt":"2026-11-14T03:00:00Z"}]' "$Q" "" 3 FREEZE "10,12,"
 case_ in-progress-ignored '[{"status":"in_progress","conclusion":null,"createdAt":"2026-11-15T09:00:00Z"},{"status":"completed","conclusion":"failure","createdAt":"2026-11-15T03:00:00Z"}]' "$Q" "" 3 FREEZE "10,12,"
 case_ no-runs-not-measured '[]' "$Q" "" 5 NOT_MEASURED
 case_ stale-verdict-not-measured '[{"status":"completed","conclusion":"success","createdAt":"2026-11-13T03:00:00Z"}]' "$Q" "" 5 NOT_MEASURED
