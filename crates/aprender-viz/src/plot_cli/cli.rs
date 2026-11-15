@@ -306,6 +306,8 @@ mod tests {
         assert_eq!((g.as_str(), m["x"].as_str(), m["y"].as_str()), ("point", "h", "w"));
         let (_, m) = parse_spec("ggplot(df, aes(y = w, x = h)) + geom_point()").expect("named");
         assert_eq!((m["x"].as_str(), m["y"].as_str()), ("h", "w"));
+        let (_, m) = parse_spec("ggplot(df, aes(h.cm, w_2)) + geom_point()").expect("dotted");
+        assert_eq!((m["x"].as_str(), m["y"].as_str()), ("h.cm", "w_2"));
         let bad = |s: &str| parse_spec(s).expect_err("refused");
         assert_eq!(
             bad("ggplot(df, aes(x, y) + geom_point()"),
