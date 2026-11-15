@@ -20,7 +20,7 @@ fi
 
 # run_case <job-conclusion|none> <tested-sha> <dispatch-rc> -- prints DIE/SAY lines, rc of the function
 run_case() {
-    local concl=$1 tested=$2 drc=$3 d
+    local concl=$1 tested=$2 drc=$3 tested2=${4:-} d
     d=$(mktemp -d) || exit 2
     (
         AP="$d"; LOG="$d/log"; INFRA=paiml/infra; AP_SETTLE=0; AP_POLL=0
@@ -34,7 +34,7 @@ run_case() {
                 "workflow run") return "$drc" ;;
                 "run list") [ "$concl" = none ] && return 0; echo 77 ;;
                 "run view")
-                    if [ "$3" = --job ]; then printf 'x tested-sha: %s\n' "$tested"; else echo "$concl 99"; fi ;;
+                    if [ "$3" = --job ]; then { printf 'x tested-sha: %s\n' "$tested"; [ -z "$tested2" ] || printf 'x tested-sha: %s\n' "$tested2"; }; else echo "$concl 99"; fi ;;
             esac
         }
         eval "$fn"
@@ -55,6 +55,8 @@ out=$(run_case failure "$SHA" 0); rc=$?
 { [ "$rc" -ne 0 ] && grep -q '^DIE' <<< "$out"; }; row $? "red job -> dies, no tag"
 out=$(run_case success "$OTHER" 0); rc=$?
 { [ "$rc" -ne 0 ] && grep -q 'not exactly' <<< "$out"; }; row $? "green job that tested another sha -> dies"
+out=$(run_case success "$SHA" 0 "$OTHER"); rc=$?
+{ [ "$rc" -ne 0 ] && grep -q 'not exactly' <<< "$out"; }; row $? "log with two different tested-sha values (one == sha) -> dies"
 out=$(run_case success "$SHA" 1); rc=$?
 { [ "$rc" -ne 0 ] && grep -q 'dispatch' <<< "$out"; }; row $? "failed dispatch -> dies"
 out=$(run_case none "$SHA" 0); rc=$?
