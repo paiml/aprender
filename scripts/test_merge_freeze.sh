@@ -44,6 +44,10 @@ case_ stale-verdict-not-measured '[{"status":"completed","conclusion":"success",
 case_ malformed-not-measured 'not json' "$Q" "" 5 NOT_MEASURED
 case_ malformed-queue-not-measured "$R" 'oops' "" 5 NOT_MEASURED
 
+case_ unknown-arg-not-measured "$G" "$Q" "--bogus" 5 NOT_MEASURED
+case_ exactly-36h-still-counts '[{"status":"completed","conclusion":"success","createdAt":"2026-11-14T00:00:00Z"}]' "$Q" "" 0 OPEN
+case_ one-second-past-36h-stale '[{"status":"completed","conclusion":"success","createdAt":"2026-11-13T23:59:59Z"}]' "$Q" "" 5 NOT_MEASURED
+
 # missing file -> NOT_MEASURED, never OPEN
 out=$(bash "$tool" --nightly "$tmp/absent.json" --queue "$tmp/q.json" --now "$NOW" 2>&1) && rc=0 || rc=$?
 if [ "$rc" = 5 ] && [ "${out%% *}" = NOT_MEASURED ]; then echo "ok   missing-file"; else echo "FAIL missing-file rc=$rc" >&2; fails=$((fails + 1)); fi
