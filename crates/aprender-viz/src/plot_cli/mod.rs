@@ -718,6 +718,30 @@ mod tests {
         }
         assert!(set && !empty);
     }
+
+    #[test]
+    fn decorations_reach_the_right_geom_and_label() {
+        let a = PlotArgs {
+            hlines: vec![5.0],
+            vlines: vec![7.0],
+            ablines: vec![(2.0, 3.0)],
+            title: Some("T".into()),
+            xlab: Some("X".into()),
+            ylab: Some("Y".into()),
+            ..PlotArgs::default()
+        };
+        let d = format!("{:?}", add_decorations(GGPlot::new(), &a));
+        for want in [
+            "title: Some(\"T\")",
+            "xlab: Some(\"X\")",
+            "ylab: Some(\"Y\")",
+            "Hline { yintercept: 5.0 }",
+            "Vline { xintercept: 7.0 }",
+            "Abline { slope: 2.0, intercept: 3.0 }",
+        ] {
+            assert!(d.contains(want), "{want} missing in {d}");
+        }
+    }
 }
 
 /// build.rs's generator, compiled here too so its checks run as tests (N4).
