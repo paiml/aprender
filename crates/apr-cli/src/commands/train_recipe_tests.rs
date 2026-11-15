@@ -144,6 +144,22 @@ fn unknown_keys_are_refused_by_name_at_every_level() {
     assert!(msg.contains("trian"), "{msg}");
     let msg = refusal(&format!("{VALID}training:\n  lr: 0.1\n"));
     assert!(msg.contains("lr"), "{msg}");
+    let msg = refusal(&VALID.replace("  heldout:", "  heldot:"));
+    assert!(msg.contains("heldot"), "{msg}");
+    let msg = refusal(&format!("{VALID}teacher:\n  modle: t.apr\n"));
+    assert!(msg.contains("modle"), "{msg}");
+    let msg = refusal(&format!("{VALID}output:\n  dri: out\n"));
+    assert!(msg.contains("dri"), "{msg}");
+}
+
+/// A wrong type or an unknown key is refused by the YAML reader, which stops
+/// at the first one: the fields missing beside it are NOT listed. This pins
+/// the limit the contract states, so widening it later is a visible change.
+#[test]
+fn a_reader_error_is_reported_alone() {
+    let msg = refusal("recipe: apr-recipe-v1\nname: x\nseed: forty-two\n");
+    assert!(msg.contains("r.yaml") && msg.contains("seed"), "{msg}");
+    assert!(!msg.contains("field `base`"), "{msg}");
 }
 
 #[test]
@@ -154,8 +170,8 @@ fn wrong_type_is_refused() {
     assert!(msg.contains("r.yaml") && msg.contains("seed"), "{msg}");
 }
 
-/// PMAT-5316 review: the refusal names EVERY field at fault in one message,
-/// a bad `seed` included, rather than aborting on the first type error.
+/// PMAT-5316 review: a negative `seed` (a value fault, not a type fault) is
+/// listed beside the missing fields in one message.
 #[test]
 fn bad_seed_does_not_hide_the_other_faulty_fields() {
     let msg = refusal("recipe: apr-recipe-v1\nname: x\nseed: -1\n");
