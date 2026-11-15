@@ -53,6 +53,9 @@ pub struct PlotFlags {
     #[arg(long)]
     pub no_color: bool,
 
+    /// Facet as `wrap=column`: one panel per value of the column
+    #[arg(long)]
+    pub facet: Option<FreeText>,
     /// Horizontal reference line at this y (repeatable)
     #[arg(long, allow_negative_numbers = true)]
     pub hline: Vec<f64>,
@@ -96,6 +99,21 @@ pub fn parse_aes(s: &str) -> Result<BTreeMap<String, String>, String> {
         }
     }
     Ok(out)
+}
+
+/// The facet forms [`super::run`] draws.
+const FACETS: &[&str] = &["wrap"];
+
+/// `wrap=column` into the column; any other form is refused by name.
+fn parse_facet(s: &str) -> Result<String, String> {
+    let (form, col) = s.split_once('=').map_or((s, ""), |(f, c)| (f.trim(), c.trim()));
+    if !FACETS.contains(&form) {
+        return Err(refuse("facet", form, FACETS));
+    }
+    if col.is_empty() {
+        return Err("--facet: expected wrap=column".into());
+    }
+    Ok(col.to_string())
 }
 
 /// Parse `slope,intercept`.
@@ -321,6 +339,7 @@ impl PlotFlags {
             aes.remove(a).ok_or_else(|| format!("aes needs a mapping for '{a}' (e.g. {a}=column)"))
         };
         let (x, y) = (mapped("x")?, mapped("y")?);
+        let facet = self.facet.as_deref().map(parse_facet).transpose()?;
         let finite = |flag: &str, v: &[f64]| {
             v.iter()
                 .all(|x| x.is_finite())
@@ -339,6 +358,7 @@ impl PlotFlags {
             height: self.height,
             output: self.output,
             no_color: self.no_color,
+            facet,
             hlines: finite("--hline", &self.hline)?,
             vlines: finite("--vline", &self.vline)?,
             ablines: self.abline.iter().map(|a| parse_abline(a)).collect::<Result<_, _>>()?,
@@ -577,6 +597,33 @@ mod tests {
         assert_eq!(a.plot_args(), Ok(want));
         let svg = flags("x=a,y=b", &["--output", "svg", "--geom", "point"]).plot_args();
         assert_eq!(svg.map(|p| (p.output, p.no_color)), Ok((Output::Svg, false)));
+    }
+
+    #[test]
+    fn facet_wrap_draws_strips_and_other_forms_are_refused() {
+        let dir = std::env::temp_dir().join(format!("plot-cli-facet-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        let csv = dir.join("f.csv");
+        std::fs::write(&csv, "x,y,g\n1,2,b\n2,3,a\n3,1,b\n4,5,c\n").expect("write csv");
+        let path = csv.to_str().expect("utf8");
+        let go = |facet: &str| {
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            let f =
+                parse(&["--data", path, "--aes", "x=x,y=y", "--output", "svg", "--facet", facet])
+                    .expect("parses");
+            let r = run(&f, &Env::default(), &mut out, &mut err).map_err(|e| e.to_string());
+            (r, String::from_utf8_lossy(&out).into_owned())
+        };
+        let (r, svg) = go("wrap=g");
+        assert_eq!(r, Ok(()));
+        assert_eq!(svg.matches(r#"fill="rgb(217,217,217)""#).count(), 3, "{svg}");
+        for level in [">a<", ">b<", ">c<"] {
+            assert!(svg.contains(level), "{level}");
+        }
+        assert_eq!(go("grid=g").0, Err("unsupported facet 'grid'; supported: wrap".into()));
+        assert!(go("wrap=zz").0.expect_err("unknown").contains("unknown column 'zz'"));
+        assert!(go("wrap=").0.is_err());
+        std::fs::remove_dir_all(&dir).expect("rm tmp dir");
     }
 
     #[test]
