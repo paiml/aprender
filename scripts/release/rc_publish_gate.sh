@@ -82,6 +82,12 @@ rpg_target_dir() {
     jq -r '.target_directory // "" | select(startswith("/"))'
 }
 
+# Pure: `cargo metadata` JSON on stdin -> `<name>-<version>` of every publishable member, one per
+# line (the directory name cargo unpacks an overlay source under). Empty when there is none.
+rpg_member_dirs() {
+    jq -r '[.packages[] | select(.publish != []) | "\(.name)-\(.version)"] | sort | .[]'
+}
+
 self_test() {
     local fail=0 got want args why
     echo "$PROG self-test: case table"
@@ -109,9 +115,10 @@ EOF
     # --no-verify (else the "dry-run" compiles nothing), and the default must keep it.
     local d; d=$(mktemp -d) || return 1
     printf '%s\n' '#!/usr/bin/env bash' \
-        'if [ "$1" = metadata ]; then echo "{\"target_directory\":\"$FAKE_TARGET\",\"packages\":[{\"name\":\"a\",\"publish\":null},{\"name\":\"b\",\"publish\":[]}]}"; exit 0; fi' \
+        'if [ "$1" = metadata ]; then echo "{\"target_directory\":\"$FAKE_TARGET\",\"packages\":[{\"name\":\"a\",\"version\":\"0.0.0\",\"publish\":null},{\"name\":\"b\",\"publish\":[]}]}"; exit 0; fi' \
         'echo "$*" >> "$FAKE_CARGO_LOG"' \
         'if [ -e "$FAKE_TARGET/package/tmp-registry/stale.crate" ]; then echo "error: no hash listed for a v0.0.0"; exit 101; fi' \
+        'if [ -e "$CARGO_HOME/registry/src/-h/a-0.0.0/planted" ]; then echo "error: verified a leftover unpacked source"; exit 101; fi' \
         'echo "   Packaged 1 file"; [ -z "${FAKE_CARGO_RC:-}" ] || { echo "error: fake refusal"; exit "$FAKE_CARGO_RC"; }' > "$d/cargo"
     chmod +x "$d/cargo"; : > "$d/Cargo.toml"
     export FAKE_TARGET="$d/t"
@@ -122,6 +129,18 @@ EOF
         && [ ! -e "$d/t/package" ] && [ -e "$d/t/debug/keep" ]; then
         echo "  ok   the walk starts from an empty <target>/package and keeps the build cache (#6878)"
     else echo "  FAIL a stale overlay tarball survived into the walk, or the build cache did not"; fail=1; fi
+    # #6880: an unpacked overlay source left in CARGO_HOME by an earlier commit must not be what
+    # gets verified (the fake cargo refuses when it is still there). Only the member's overlay dir
+    # goes: a sibling overlay crate that is not a publishable member and the real registry copy stay.
+    export CARGO_HOME="$d/ch"
+    mkdir -p "$CARGO_HOME/registry/src/-h/a-0.0.0" "$CARGO_HOME/registry/src/-h/zz-1.0.0" "$CARGO_HOME/registry/src/index.crates.io-x/a-0.0.0"
+    : > "$CARGO_HOME/registry/src/-h/a-0.0.0/planted"
+    if FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify > /dev/null \
+        && [ ! -e "$CARGO_HOME/registry/src/-h/a-0.0.0" ] && [ -d "$CARGO_HOME/registry/src/-h/zz-1.0.0" ] \
+        && [ -d "$CARGO_HOME/registry/src/index.crates.io-x/a-0.0.0" ]; then
+        echo "  ok   a leftover unpacked member source is removed before the walk; other sources stay (#6880)"
+    else echo "  FAIL a leftover unpacked overlay source was verified, or an unrelated source was removed"; fail=1; fi
+    unset CARGO_HOME
     got=$(FAKE_TARGET=relative FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d"; echo "rc=$?")
     case "$got" in
         ENV*"rc=2") echo "  ok   a target directory that is not absolute is ENV: nothing is emptied" ;;
@@ -184,6 +203,23 @@ package_walk() {
         echo "ENV   package: cannot empty ${tdir}/package"
         return 2
     fi
+    # LEFTOVER UNPACKED SOURCE (#6880). cargo does not unpack an overlay crate again when
+    # <CARGO_HOME>/registry/src/-<hash>/<crate>-<version> exists, so a CARGO_HOME that outlives the
+    # job (the nightly walks one version until the next bump) verifies the source an earlier commit
+    # left there. Remove the members' own overlay dirs only (glob `-*` = the local overlay, never
+    # index.crates.io-*); a failed removal is ENV.
+    local ch=${CARGO_HOME:-${HOME:-}/.cargo} md m
+    if [ "${ch#/}" = "$ch" ]; then
+        echo "ENV   package: no absolute CARGO_HOME to clear leftover overlay sources from"
+        return 2
+    fi
+    while IFS= read -r m; do
+        [ -n "$m" ] || continue
+        for md in "$ch"/registry/src/-*/"$m"; do
+            [ -d "$md" ] || continue
+            rm -rf -- "${md:?}" || { echo "ENV   package: cannot remove leftover $md"; return 2; }
+        done
+    done < <(printf '%s\n' "$meta" | rpg_member_dirs)
     log=$(mktemp) || return 2
     (cd -- "$root" && cargo package "${args[@]}" ${mode:+"$mode"} --locked) > "$log" 2>&1 || rc=$?
     got=$(grep -cE '^ +Packaged ' "$log")
