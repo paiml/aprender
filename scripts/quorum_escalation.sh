@@ -71,6 +71,13 @@ self_test() { # $1 = script under test
   mk 5 200 PMAT-2 "2/3 PASS"; mk 6 201 PMAT-3 "2/3 PASS"; mk 7 100 PMAT-1 "3/3 PASS"; mk 8 103 PMAT-1 "3/3 PASS"
   chk 0 "two chains, one FAIL each"; clr
   clr; mk 9 300 PMAT-4 "unreadable"; chk 2 "unreadable tally is not measured"
+  clr; mk 1 400 PMAT-5 "2/3 PASS"; mk 2 401 PMAT-5 "3/3 PASS"; mk 3 402 PMAT-5 "2/3 PASS"; chk 0 "PASS resets the streak"
+  clr; mk 1 410 PMAT-6 "2/3 PASS"; mk 2 411 PMAT-6 "unreadable"; mk 3 412 PMAT-6 "2/3 PASS"; chk 2 "NM resets the streak"
+  clr; mk 1 420 PMAT-7 "3/3 FAIL"; mk 2 421 PMAT-7 "3/3 FAIL"; chk 1 "N=M beside FAIL is a FAIL"
+  clr; mk 1 430 PMAT-12 "1/3 PASS"; mk 2 431 PMAT-12 "1/3 PASS"; chk 1 "two-digit ticket"
+  grep -q 'ticket=PMAT-12 ' "$t/esc" || { echo "FAIL: PMAT-12 truncated"; bad=1; }
+  rm -f "${t:?}/esc"; bash "$s" "$t" "$t/esc" >/dev/null 2>&1; grep -q 'owner=cop$' "$t/esc" || { echo "FAIL: default owner"; bad=1; }
+  clr; mk 9 300 PMAT-4 "unreadable"
   d=$(mktemp -d "${TMPDIR:-/tmp}/qe0.XXXXXX"); bash "$s" "$d" "$d/esc" >/dev/null 2>&1; [ "$?" = 2 ] || { echo "FAIL: empty dir"; bad=1; }
   rm -rf "${d:?}" "${t:?}"
   return "$bad"
