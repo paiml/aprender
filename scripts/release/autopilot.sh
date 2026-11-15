@@ -403,6 +403,32 @@ cut_tag_rehearsal() {
     say "WOULD git push origin $t"
     printf '%s %s\n' "$t" "$mc" > "$AP/would-tag" || die "cannot write $AP/would-tag"
 }
+# #6500: clean-room on the bump commit's sha BEFORE the tag exists. infra clean-room.yml takes a full sha as
+# `ref` and prints `tested-sha:`; the run must be green and have tested exactly <sha>, or no tag is cut.
+# The tag-time clean-room (step cleanroom) and the cascade's re-check stay. Guard: check_cleanroom_presha.sh.
+cleanroom_on_sha() {
+    local sha=$1 t0 crun="" jc="" jid shas
+    t0=$(date -u +%s)  # bashrs disable-line=DET002
+    gh workflow run clean-room.yml --repo "$INFRA" -f repos=aprender -f ref="$sha" >> "$LOG" 2>&1 || die "clean-room.yml dispatch on $sha failed -- no tag"
+    sleep "$AP_SETTLE"
+    for _ in 1 2 3; do
+        crun=$(gh run list --repo "$INFRA" --workflow clean-room.yml --event workflow_dispatch --limit 10 --json databaseId,createdAt --jq "[.[] | select((.createdAt | fromdateiso8601) >= $t0 - 30)] | sort_by(.createdAt) | last | .databaseId // empty")
+        [ -n "$crun" ] && break; sleep "$AP_POLL"
+    done
+    [ -n "$crun" ] || die "no clean-room.yml run appeared after the dispatch on $sha -- no tag"
+    for _ in $(seq 1 48); do
+        jc=$(gh run view "$crun" --repo "$INFRA" --json jobs --jq '.jobs[] | select(.name=="clean-room (aprender)") | select(.status=="completed") | "\(.conclusion) \(.databaseId)"' | head -1)
+        [ -n "$jc" ] && break
+        rw_read "$INFRA" "$crun" || :
+        sleep "$AP_POLL"
+    done
+    jid=${jc#* }; jc=${jc%% *}
+    [ "$jc" = success ] || die "clean-room (aprender) on $sha concluded '${jc:-absent}' (run $crun) -- no tag"
+    shas=$(gh run view --job "$jid" --repo "$INFRA" --log 2>> "$LOG" | grep -oE 'tested-sha: [0-9a-f]{40}' | sort -u)
+    [ "$shas" = "tested-sha: $sha" ] || die "clean-room run $crun tested '${shas//$'\n'/ }', not exactly $sha -- no tag"
+    printf '%s\n' "$crun" > "$AP/cleanroom-presha-run-id" || die "cannot write $AP/cleanroom-presha-run-id"
+    say "CLEANROOM-PRESHA GREEN on $sha, ahead of the tag (infra run $crun)"
+}
 if run_step tag; then
   git rev-parse -q --verify "refs/tags/$T" > /dev/null && die "tag $T already exists locally"
   [ -f "$AP/release_notes.md" ] || die "no $AP/release_notes.md (prepare_bump.sh writes it from CHANGELOG [$V])"
@@ -427,6 +453,7 @@ if run_step tag; then
     say "WOULD gh workflow run binary-release.yml --repo $REPO --ref $T -f tag=$T"
     say "REHEARSED the tag step for $T at $MC: WOULD lines only, nothing tagged, drafted or dispatched"
   else
+  cleanroom_on_sha "$MC"
   cut_tag "$V" "$T" "$MC"
   say "TAGGED $T at $MC"
   gh release create "$T" --repo "$REPO" --verify-tag --draft --title "aprender $V" --notes-file "$AP/release_notes.md" >> "$LOG" 2>&1 || die "gh release create --draft failed"
