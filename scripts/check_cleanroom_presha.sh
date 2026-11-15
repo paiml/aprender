@@ -34,7 +34,7 @@ run_case() {
                 "workflow run") return "$drc" ;;
                 "run list") [ "$concl" = none ] && return 0; echo 77 ;;
                 "run view")
-                    if [ "$3" = --job ]; then { printf 'x tested-sha: %s\n' "$tested"; [ -z "$tested2" ] || printf 'x tested-sha: %s\n' "$tested2"; }; else echo "$concl 99"; fi ;;
+                    if [ "$3" = --job ]; then [ "$tested" = LOGFAIL ] && return 1; [ "$tested" = NOLINE ] && { echo "x no sha here"; return 0; }; { printf 'x tested-sha: %s\n' "$tested"; [ -z "$tested2" ] || printf 'x tested-sha: %s\n' "$tested2"; }; elif [ "$concl" = viewfail ]; then return 1; elif [ "$concl" = pending ]; then :; else echo "$concl 99"; fi ;;
             esac
         }
         printf '%s\n' "$fn" > "$d/fn.sh" && . "$d/fn.sh" || exit 2
@@ -63,6 +63,18 @@ out=$(run_case success "$SHA" 1); rc=$?
 { [ "$rc" -ne 0 ] && grep -q 'dispatch' <<< "$out"; }; row $? "failed dispatch -> dies"
 out=$(run_case none "$SHA" 0); rc=$?
 { [ "$rc" -ne 0 ] && grep -q 'no clean-room.yml run' <<< "$out"; }; row $? "no run appears -> dies"
+for c in cancelled timed_out skipped; do
+    out=$(run_case "$c" "$SHA" 0); rc=$?
+    { [ "$rc" -ne 0 ] && grep -q "concluded .$c." <<< "$out"; }; row $? "$c job -> dies, no tag"
+done
+for c in viewfail pending; do
+    out=$(run_case "$c" "$SHA" 0); rc=$?
+    { [ "$rc" -ne 0 ] && grep -q "concluded .absent." <<< "$out"; }; row $? "run view $c (never a completed job) -> dies as absent"
+done
+for t in LOGFAIL NOLINE; do
+    out=$(run_case success "$t" 0); rc=$?
+    { [ "$rc" -ne 0 ] && grep -q "not exactly" <<< "$out"; }; row $? "job log $t (no tested-sha read) -> dies"
+done
 
 # order: the call sits in the tag step, ahead of cut_tag's call
 call=$(grep -n '^  cleanroom_on_sha "\$MC"' "$AP_FILE" | head -1 | cut -d: -f1)
