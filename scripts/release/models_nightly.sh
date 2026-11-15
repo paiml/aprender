@@ -753,7 +753,7 @@ self_test() {
     t1_not no_models_t1_word "timeout 5 bash scripts/release/other.sh 1.2"
     t1_not bare_dot "sleep ."
     t1_not nice_wrapped_bash_n "nice -n 5 bash -n scripts/release/models_t1.sh"
-    t1_run compound_git_pull_then_run 'bash -c git pull && scripts/release/models_t1.sh a'
+    t1_run compound_git_pull_then_run 'bash -c git pull && /r/scripts/release/models_t1.sh a'
     t1_run compound_echo_then_bash 'bash -c echo go; bash scripts/release/models_t1.sh a'
     t1_run compound_test_then_sh 'sh -c test -x x && models_t1.sh'
     t1_run compound_bash_n_then_run 'bash -c bash -n a.sh; models_t1.sh'
