@@ -52,6 +52,30 @@ pub struct PlotFlags {
     /// Never emit colour escape sequences
     #[arg(long)]
     pub no_color: bool,
+
+    /// Horizontal reference line at this y (repeatable)
+    #[arg(long, allow_negative_numbers = true)]
+    pub hline: Vec<f64>,
+
+    /// Vertical reference line at this x (repeatable)
+    #[arg(long, allow_negative_numbers = true)]
+    pub vline: Vec<f64>,
+
+    /// Reference line y = slope * x + intercept, as slope,intercept (repeatable)
+    #[arg(long, allow_hyphen_values = true)]
+    pub abline: Vec<FreeText>,
+
+    /// Plot title
+    #[arg(long)]
+    pub title: Option<FreeText>,
+
+    /// X axis label
+    #[arg(long)]
+    pub xlab: Option<FreeText>,
+
+    /// Y axis label
+    #[arg(long)]
+    pub ylab: Option<FreeText>,
 }
 
 /// Parse `x=col,y=col` into a mapping.
@@ -72,6 +96,18 @@ pub fn parse_aes(s: &str) -> Result<BTreeMap<String, String>, String> {
         }
     }
     Ok(out)
+}
+
+/// Parse `slope,intercept`.
+///
+/// # Errors
+///
+/// Not exactly two comma-separated finite numbers.
+pub fn parse_abline(s: &str) -> Result<(f64, f64), String> {
+    let bad = || format!("--abline: expected slope,intercept (two numbers), got '{s}'");
+    let (m, b) = s.split_once(',').ok_or_else(bad)?;
+    let num = |t: &str| t.trim().parse::<f64>().ok().filter(|v| v.is_finite());
+    Ok((num(m).ok_or_else(bad)?, num(b).ok_or_else(bad)?))
 }
 
 /// A cursor over a ggplot expression; every error names the 1-based character position.
@@ -285,6 +321,12 @@ impl PlotFlags {
             aes.remove(a).ok_or_else(|| format!("aes needs a mapping for '{a}' (e.g. {a}=column)"))
         };
         let (x, y) = (mapped("x")?, mapped("y")?);
+        let finite = |flag: &str, v: &[f64]| {
+            v.iter()
+                .all(|x| x.is_finite())
+                .then(|| v.to_vec())
+                .ok_or_else(|| format!("{flag}: value must be a finite number"))
+        };
         Ok(PlotArgs {
             data: match (&self.data, spec_data) {
                 (Some(d), _) => d.clone().into_path_buf(),
@@ -297,6 +339,12 @@ impl PlotFlags {
             height: self.height,
             output: self.output,
             no_color: self.no_color,
+            hlines: finite("--hline", &self.hline)?,
+            vlines: finite("--vline", &self.vline)?,
+            ablines: self.abline.iter().map(|a| parse_abline(a)).collect::<Result<_, _>>()?,
+            title: self.title.as_deref().map(str::to_string),
+            xlab: self.xlab.as_deref().map(str::to_string),
+            ylab: self.ylab.as_deref().map(str::to_string),
         })
     }
 }
@@ -523,6 +571,7 @@ mod tests {
             height: Some(20),
             output: Output::Term,
             no_color: true,
+            ..PlotArgs::default()
         };
         assert_eq!(a.plot_args(), Ok(want));
         let svg = flags("x=a,y=b", &["--output", "svg", "--geom", "point"]).plot_args();
@@ -544,6 +593,71 @@ mod tests {
         assert_eq!(refused("y=b", &[]), "aes needs a mapping for 'x' (e.g. x=column)");
         assert_eq!(refused("x=a", &[]), "aes needs a mapping for 'y' (e.g. y=column)");
         assert!(refused("x", &[]).contains("expected aesthetic=column"));
+    }
+
+    #[test]
+    fn reference_lines_and_labels_map_onto_the_library_arguments() {
+        let a = flags(
+            "x=a,y=b",
+            &[
+                "--hline", "-1.5", "--hline", "2", "--vline", "3", "--abline", "0.5,-1", "--title",
+                "T", "--xlab", "X", "--ylab", "Y",
+            ],
+        )
+        .plot_args()
+        .expect("maps");
+        assert_eq!(
+            (a.hlines, a.vlines, a.ablines),
+            (vec![-1.5, 2.0], vec![3.0], vec![(0.5, -1.0)])
+        );
+        assert_eq!(
+            (a.title.as_deref(), a.xlab.as_deref(), a.ylab.as_deref()),
+            (Some("T"), Some("X"), Some("Y"))
+        );
+    }
+
+    #[test]
+    fn malformed_abline_and_non_finite_lines_are_refused() {
+        let refused = |extra: &[&str]| flags("x=a,y=b", extra).plot_args().expect_err("refused");
+        for bad in ["1", "a,b", "1,2,3", "1,", "inf,0", "1,NaN"] {
+            assert_eq!(
+                refused(&["--abline", bad]),
+                format!("--abline: expected slope,intercept (two numbers), got '{bad}'")
+            );
+        }
+        assert_eq!(refused(&["--hline", "inf"]), "--hline: value must be a finite number");
+        assert_eq!(refused(&["--vline", "NaN"]), "--vline: value must be a finite number");
+    }
+
+    #[test]
+    fn lines_and_labels_reach_the_svg() {
+        let dir = std::env::temp_dir().join(format!("plot-cli-lines-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        let csv = dir.join("d.csv");
+        std::fs::write(&csv, "x,y\n1,1\n2,2\n3,3\n").expect("write csv");
+        let path = csv.to_str().expect("utf8");
+        let svg = |extra: &[&str]| {
+            let mut argv = vec!["--data", path, "--aes", "x=x,y=y", "--output", "svg"];
+            argv.extend_from_slice(extra);
+            let (mut out, mut err) = (Vec::new(), Vec::new());
+            run(&parse(&argv).expect("parses"), &Env::default(), &mut out, &mut err)
+                .expect("draws");
+            String::from_utf8(out).expect("utf8")
+        };
+        let plain = svg(&[]);
+        for (extra, label) in [
+            (vec!["--hline", "2"], None),
+            (vec!["--vline", "2"], None),
+            (vec!["--abline", "1,0"], None),
+            (vec!["--title", "TTLX"], Some("TTLX")),
+            (vec!["--xlab", "XLBX"], Some("XLBX")),
+            (vec!["--ylab", "YLBX"], Some("YLBX")),
+        ] {
+            let s = svg(&extra);
+            assert_ne!(s, plain, "{extra:?} changed nothing");
+            assert!(label.map_or(true, |l| s.contains(l)), "{extra:?}");
+        }
+        std::fs::remove_dir_all(&dir).expect("rm tmp dir");
     }
 
     #[test]
