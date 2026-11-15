@@ -101,12 +101,12 @@ rpg_overlay_units_gone() {
         esc=$(printf '%s' "$md" | sed 's/[][\.*^$+?(){}|/]/\\&/g') || return 1
         alt="${alt:+$alt|}$esc"
     done
-    grep -rlqE --include='*.d' "/registry/src/-[^/]*/($alt)/" "$tdir"
+    grep -RlqE --include='*.d' "/registry/src/-[^/]*/($alt)/" "$tdir"
     case $? in 1) return 0 ;; *) return 1 ;; esac
 }
 
 self_test() {
-    local fail=0 got want args why
+    local fail=0 got got2 want args why
     echo "$PROG self-test: case table"
     while IFS='|' read -r want args why; do
         # shellcheck disable=SC2086  # args is a space-separated list of exit codes on purpose
@@ -138,19 +138,22 @@ EOF
     printf '%s\n' '#!/usr/bin/env bash' \
         'if [ "$1" = metadata ]; then echo "{\"target_directory\":\"$FAKE_TARGET\",\"packages\":[{\"name\":\"${FAKE_M:-a}\",\"version\":\"0.0.0\",\"publish\":null},{\"name\":\"b\",\"version\":\"0.0.0\",\"publish\":[]}]}"; exit 0; fi' \
         'fake_clean_pkg() {' \
-        '  local f h' \
-        '  for f in "$FAKE_TARGET"/*/.fingerprint/"$1"-* "$FAKE_TARGET"/*/build/"$1"-*; do' \
+        '  local f h prof=debug' \
+        '  [ -z "$2" ] || prof=release' \
+        '  for f in "$FAKE_TARGET/$prof"/.fingerprint/"$1"-* "$FAKE_TARGET/$prof"/build/"$1"-*; do' \
         '    [ -e "$f" ] || continue' \
         '    h=${f##*-}' \
-        '    rm -rf "${f:?}" "${FAKE_TARGET:?}"/*/deps/*-"${h:?}".*' \
+        '    rm -rf "${f:?}" "${FAKE_TARGET:?}/$prof"/deps/*-"${h:?}".*' \
         '  done' \
         '}' \
         'if [ "$1" = clean ]; then' \
-        '  [ -z "${FAKE_CLEAN_RC:-}" ] || exit "$FAKE_CLEAN_RC"' \
+        '  case " $* " in *" --offline "*) echo "error: no matching package named x found (offline)" >&2; exit 101 ;; esac' \
+        '  [ -z "${FAKE_CLEAN_RC:-}" ] || { echo "error: fake clean refusal" >&2; exit "$FAKE_CLEAN_RC"; }' \
         '  [ -z "${FAKE_CLEAN_NOOP:-}" ] || exit 0' \
         '  shift' \
+        '  rel=; for a in "$@"; do [ "$a" != --release ] || rel=1; done' \
         '  while [ $# -gt 1 ]; do' \
-        '    [ "$1" != -p ] || fake_clean_pkg "$2"' \
+        '    [ "$1" != -p ] || fake_clean_pkg "$2" "$rel"' \
         '    shift' \
         '  done' \
         '  exit 0' \
@@ -212,6 +215,43 @@ EOF
         ENV*"rc=2") echo "  ok   a cargo clean that fails is ENV" ;;
         *) echo "  FAIL a failed cargo clean gave: $got"; fail=1 ;;
     esac
+    case "$got" in
+        *"fake clean refusal"*) echo "  ok   a failed cargo clean shows cargo's own stderr" ;;
+        *) echo "  FAIL a failed cargo clean hid its stderr: $got"; fail=1 ;;
+    esac
+    # the clean must not run --offline (a cold cargo home or a new dependency needs the index): the
+    # fake refuses --offline like cargo 1.93.0 did, so the plain walk above already goes red on it.
+    # --release units: a stale unit under the release profile must go too.
+    rm -rf -- "${d:?}/t/debug"; mkdir -p "$d/t/release/deps" "$d/t/release/.fingerprint/a-ff66"
+    echo "x: $CARGO_HOME/registry/src/-h/a-0.0.0/src/lib.rs" > "$d/t/release/deps/a-ff66.d"
+    if FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify > /dev/null \
+        && [ ! -e "$d/t/release/.fingerprint/a-ff66" ] && [ ! -e "$d/t/release/deps/a-ff66.d" ]; then
+        echo "  ok   a stale release-profile overlay unit is invalidated too (#6880)"
+    else echo "  FAIL a stale release-profile overlay unit survived into the walk"; fail=1; fi
+    # An unscannable or symlinked target is never "gone": the scan must fail closed on a directory
+    # it cannot read, and must follow a symlinked subdirectory.
+    rm -rf -- "${d:?}/t/release"
+    rpg_overlay_units_gone "$d/t" a-0.0.0; got=$?
+    if [ "$got" -eq 0 ]; then echo "  ok   scan: a clean target is gone"
+    else echo "  FAIL scan: a clean target gave $got"; fail=1; fi
+    mkdir -p "$d/real/deps"; echo "x: $CARGO_HOME/registry/src/-h/a-0.0.0/src/lib.rs" > "$d/real/deps/a-ff66.d"
+    ln -s "$d/real" "$d/t/linked"
+    rpg_overlay_units_gone "$d/t" a-0.0.0; got=$?
+    if [ "$got" -eq 1 ]; then echo "  ok   scan: a stale unit behind a symlinked subdirectory is found"
+    else echo "  FAIL scan: a stale unit behind a symlink gave $got"; fail=1; fi
+    rm -f -- "${d:?}/t/linked"
+    if [ "$(id -u)" -ne 0 ]; then
+        mkdir -p "$d/t/locked"; chmod 000 "$d/t/locked"
+        rpg_overlay_units_gone "$d/t" a-0.0.0; got=$?
+        got2=$(FAKE_M=a FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify; echo "rc=$?")
+        chmod 755 "$d/t/locked"; rmdir -- "${d:?}/t/locked"
+        if [ "$got" -eq 1 ]; then echo "  ok   scan: an unreadable target subdirectory is not gone"
+        else echo "  FAIL scan: an unreadable target subdirectory gave $got"; fail=1; fi
+        case "$got2" in
+            ENV*"rc=2") echo "  ok   an unscannable target is ENV in the walk" ;;
+            *) echo "  FAIL an unscannable target gave: $got2"; fail=1 ;;
+        esac
+    fi
     rm -rf -- "${d:?}/t/debug"
     # The production case: CARGO_HOME unset or empty, so the cargo home is $HOME/.cargo. The
     # leftover there must go too, and nothing may be cleared straight under $HOME.
@@ -322,10 +362,15 @@ package_walk() {
     # profile or triple, a clean that removed nothing) is ENV, never green.
     local mds=()
     mapfile -t mds < <(printf '%s\n' "$meta" | rpg_member_dirs)
-    if ! (cd -- "$root" && cargo clean "${args[@]}" --offline --locked && cargo clean "${args[@]}" --release --offline --locked) > /dev/null 2>&1; then
-        echo "ENV   package: cargo clean could not drop the compiled overlay units of the members"
-        return 2
+    # No --offline: `cargo clean -p` resolves the whole lockfile, so a cold CARGO_HOME or a new
+    # dependency needs the index (cargo package below is online too). Its stderr is kept.
+    local clog; clog=$(mktemp) || return 2
+    if ! (cd -- "$root" && cargo clean "${args[@]}" --locked && cargo clean "${args[@]}" --release --locked) > "$clog" 2>&1; then
+        echo "ENV   package: cargo clean could not drop the compiled overlay units of the members:"
+        tail -n 8 "$clog" | sed "s/^/        /"
+        rm -f -- "${clog:?}"; return 2
     fi
+    rm -f -- "${clog:?}"
     if ! rpg_overlay_units_gone "$tdir" "${mds[@]}"; then
         echo "ENV   package: a compiled unit under $tdir still reads a member overlay source after cargo clean"
         return 2
