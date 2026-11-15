@@ -132,24 +132,9 @@ impl ScatterPlot {
         // Render each point
         let point_count = self.point_count();
         for i in 0..point_count {
-            let px = x_scale.scale(self.x_data[i]) as i32;
-            let py = y_scale.scale(self.y_data[i]) as i32;
-
-            // Draw filled circle (simple box for now)
-            let radius = (self.point_size / 2.0) as i32;
-            for dy in -radius..=radius {
-                for dx in -radius..=radius {
-                    if dx * dx + dy * dy <= radius * radius {
-                        let x = (px + dx) as u32;
-                        let y = (py + dy) as u32;
-                        if self.alpha < 1.0 {
-                            fb.blend_pixel(x, y, color);
-                        } else {
-                            fb.set_pixel(x, y, color);
-                        }
-                    }
-                }
-            }
+            let px = i64::from(x_scale.scale(self.x_data[i]) as i32);
+            let py = i64::from(y_scale.scale(self.y_data[i]) as i32);
+            fill_disc(fb, px, py, self.point_size, color, self.alpha < 1.0);
         }
 
         Ok(())
@@ -168,6 +153,39 @@ impl ScatterPlot {
     }
 }
 
+/// Fill a disc of diameter `size` centred at (`cx`, `cy`), visiting only the pixels inside the
+/// canvas, so the cost is bounded by the canvas area whatever `size` or the centre is
+/// (render-total-v1, paiml/aprender#6952). The set of pixels written equals the unclipped walk.
+fn fill_disc(fb: &mut Framebuffer, cx: i64, cy: i64, size: f32, color: Rgba, blend: bool) {
+    let radius = (size / 2.0) as i64; // saturating cast: NaN is 0, +Inf is i64::MAX
+    let (w, h) = (i64::from(fb.width()), i64::from(fb.height()));
+    let r2 = i128::from(radius) * i128::from(radius);
+    let y_lo = (cy.saturating_sub(radius)).max(0);
+    let y_hi = (cy.saturating_add(radius)).min(h - 1);
+    for y in y_lo..=y_hi {
+        let dy = i128::from(y - cy);
+        let rem = r2 - dy * dy;
+        if rem < 0 {
+            continue;
+        }
+        let half = (rem as f64).sqrt() as i64;
+        let x_lo = (cx.saturating_sub(half)).max(0);
+        let x_hi = (cx.saturating_add(half)).min(w - 1);
+        for x in x_lo..=x_hi {
+            let dx = i128::from(x - cx);
+            if dx * dx + dy * dy > r2 {
+                continue;
+            }
+            let (x, y) = (x as u32, y as u32);
+            if blend {
+                fb.blend_pixel(x, y, color);
+            } else {
+                fb.set_pixel(x, y, color);
+            }
+        }
+    }
+}
+
 impl batuta_common::display::WithDimensions for ScatterPlot {
     fn set_dimensions(&mut self, width: u32, height: u32) {
         self.width = width;
@@ -179,6 +197,35 @@ impl batuta_common::display::WithDimensions for ScatterPlot {
 mod tests {
     use super::*;
     use batuta_common::display::WithDimensions;
+
+    #[test]
+    fn huge_point_size_is_bounded() {
+        for size in [1e5_f32, f32::MAX, f32::INFINITY, f32::NAN, -1.0] {
+            let start = std::time::Instant::now();
+            let fb = ScatterPlot::new()
+                .x(&[1.0, 2.0])
+                .y(&[1.0, 2.0])
+                .size(size)
+                .build()
+                .expect("build")
+                .to_framebuffer();
+            assert!(fb.is_ok());
+            assert!(start.elapsed() < std::time::Duration::from_secs(5), "size {size}");
+        }
+    }
+
+    #[test]
+    fn normal_size_disc_unchanged() {
+        let fb = ScatterPlot::new()
+            .x(&[1.0, 2.0])
+            .y(&[1.0, 2.0])
+            .size(6.0)
+            .build()
+            .expect("b")
+            .to_framebuffer()
+            .expect("fb");
+        assert!(fb.pixels().iter().any(|&p| p != 255));
+    }
 
     #[test]
     fn test_scatter_plot_builder() {
@@ -270,5 +317,58 @@ mod tests {
 
         let fb = plot.to_framebuffer();
         assert!(fb.is_ok());
+    }
+
+    fn white(fb: &mut Framebuffer) {
+        for y in 0..20 {
+            for x in 0..20 {
+                fb.set_pixel(x, y, Rgba::rgb(255, 255, 255));
+            }
+        }
+    }
+
+    fn disc_pixels(cx: i64, cy: i64, size: f32, blend: bool) -> Vec<(u32, u32, Rgba)> {
+        let mut fb = Framebuffer::new(20, 20).expect("fb");
+        white(&mut fb);
+        fill_disc(&mut fb, cx, cy, size, Rgba::rgb(10, 20, 30).with_alpha(128), blend);
+        let mut out = Vec::new();
+        for y in 0..20 {
+            for x in 0..20 {
+                out.push((x, y, fb.get_pixel(x, y).expect("in bounds")));
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn fill_disc_matches_reference_walk() {
+        let c = Rgba::rgb(10, 20, 30).with_alpha(128);
+        for (cx, cy, size, blend) in [
+            (10, 10, 6.0, false),
+            (10, 10, 6.0, true),
+            (5, 0, 6.0, false),
+            (0, 19, 8.0, false),
+            (19, 19, 6.0, true),
+        ] {
+            let mut want = Framebuffer::new(20, 20).expect("fb");
+            white(&mut want);
+            let r = (size / 2.0) as i64;
+            for dy in -r..=r {
+                for dx in -r..=r {
+                    if dx * dx + dy * dy <= r * r {
+                        let (x, y) = ((cx + dx) as u32, (cy + dy) as u32);
+                        if blend {
+                            want.blend_pixel(x, y, c);
+                        } else {
+                            want.set_pixel(x, y, c);
+                        }
+                    }
+                }
+            }
+            let got = disc_pixels(cx, cy, size, blend);
+            for (x, y, p) in got {
+                assert_eq!(Some(p), want.get_pixel(x, y), "({cx},{cy}) size {size} px ({x},{y})");
+            }
+        }
     }
 }
