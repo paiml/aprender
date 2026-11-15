@@ -8,7 +8,7 @@ use std::io::Write;
 
 use batuta_common::cli_roles::{FreeText, InputFile};
 
-use super::{Env, Output, PlotArgs};
+use super::{Env, Output, PlotArgs, PlotError};
 
 /// The geoms [`super::run`] draws.
 const GEOMS: &[&str] = &["point"];
@@ -230,14 +230,15 @@ impl PlotFlags {
 ///
 /// # Errors
 ///
-/// A refusal of [`PlotFlags::plot_args`], or of [`super::run`].
+/// [`PlotError::Usage`] (exit 2) for a refusal of [`PlotFlags::plot_args`] or a size out of
+/// bounds; [`PlotError::Failed`] (exit 1) for a failure of the input or the output.
 pub fn run(
     flags: &PlotFlags,
     env: &Env,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
-) -> Result<(), String> {
-    super::run(&flags.plot_args()?, env, stdout, stderr)
+) -> Result<(), PlotError> {
+    super::run(&flags.plot_args().map_err(PlotError::Usage)?, env, stdout, stderr)
 }
 
 #[cfg(test)]
@@ -390,6 +391,16 @@ mod tests {
     }
 
     #[test]
+    fn flag_refusals_exit_2_and_input_failures_exit_1() {
+        let go = |f: &PlotFlags| {
+            run(f, &Env::default(), &mut Vec::new(), &mut Vec::new()).map_err(|e| e.exit_code())
+        };
+        assert_eq!(go(&flags("x=a,y=b", &["--geom", "line"])), Err(2));
+        assert_eq!(go(&flags("y=b", &[])), Err(2));
+        assert_eq!(go(&flags("x=a,y=b", &[])), Err(1)); // d.csv does not exist
+    }
+
+    #[test]
     fn run_draws_through_the_library_and_refuses_before_reading() {
         let dir = std::env::temp_dir().join(format!("plot-cli-flags-{}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("tmp dir");
@@ -400,7 +411,7 @@ mod tests {
         let go = |argv: &[&str]| {
             let (mut out, mut err) = (Vec::new(), Vec::new());
             let f = parse(argv).expect("parses");
-            let r = run(&f, &Env::default(), &mut out, &mut err);
+            let r = run(&f, &Env::default(), &mut out, &mut err).map_err(|e| e.to_string());
             (r, String::from_utf8_lossy(&out).into_owned())
         };
         let (r, svg) = go(&["--data", path, "--aes", "x=x,y=y", "--output", "svg"]);
