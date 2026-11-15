@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/lab/spec_sweep_rules.sh -- LAB (C324 items 4-5), spec-sweep 2026-10-31, epic #6809.
-# Enforces five spec rules that had no blocking check: #6610 (PP-6) #6613 (slice-5 floor) #6614 (FT-12 state)
-# #6615 (T-5 reconcile blocks release) #6616 (plan-quorum apr lane advisory). Each rule is a function that prints
+# Enforces six spec rules that had no blocking check: #6610 (PP-6) #6613 (slice-5 floor) #6614 (FT-12 state)
+# #6615 (T-5 reconcile blocks release) #6616 (plan-quorum apr lane advisory) #6641 (nemawashi advisory-until-ack). Each rule is a function that prints
 # RED lines; a rule whose input file is missing is RED (the universe may not empty itself). A rule that is
 # true of the spec but not yet true of the code (6615) is RED too: that is the finding, one ticket, one owner.
 # Never in a PR, merge-queue or release job; run nightly or on demand.
@@ -12,6 +12,8 @@ EP74=docs/specifications/EPIC-0.74-any-model-plan.md
 DR=docs/specifications/DEBT-RATCHET-001-070-074.md
 FT=docs/specifications/release-0.70-fast-train-plan.md
 AE=docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md
+MG=docs/specifications/aprender-distribute/multi-gpu-cpu-machine-tasks.md
+RULES=(pp6 slice5 ft12 t5 pq nemawashi)
 need() { [ -f "$1/$2" ] || { echo "RED $2: input missing"; return 1; }; }
 
 # 6610 PP-6: an arm with comparator_required: true declares phase: release (never merge/both/reporting).
@@ -72,14 +74,21 @@ pq() {
   grep -q 'do-not-implement' <<<"$l" || echo "RED plan-quorum: no do-not-implement STOP"
 }
 
+# 6641 nemawashi: the multi-gpu spec still says task assignment is advisory until the worker acknowledges.
+# Spec-line half only: no deterministic definition of "no blocking-before-ack branch" exists for the code, so none is checked.
+nemawashi() {
+  need "$1" "$MG" || return 0
+  grep -q -F -- "Task assignment is advisory until worker acknowledges" "$1/$MG" || echo "RED nemawashi: advisory-until-ack line missing from $MG"
+}
+
 run() {
   local root=$1 out reds=0 r
   [ -d "$root" ] || { echo "usage: no such dir $root" >&2; return 2; }
-  for r in pp6 slice5 ft12 t5 pq; do
+  for r in "${RULES[@]}"; do
     out=$($r "$root"); if [ -n "$out" ]; then echo "$out"; reds=$((reds + 1)); fi
   done
-  if [ "$reds" -eq 0 ]; then echo "GREEN: 5 rules"; return 0; fi
-  echo "RED: $reds of 5 rules"; return 1
+  if [ "$reds" -eq 0 ]; then echo "GREEN: ${#RULES[@]} rules"; return 0; fi
+  echo "RED: $reds of ${#RULES[@]} rules"; return 1
 }
 
 selftest() {
@@ -98,6 +107,7 @@ selftest() {
     printf '### FT-12 · slice 1 PROPOSED (x)\n' > "$t/$FT"
     printf '3. **Plan quorum.** the apr lane is advisory per x. Any `do-not-implement` verdict is a STOP.\n' > "$t/$AE"
     printf 'run: bash scripts/check_reconcile.sh\n' > "$t/.github/workflows/binary-release.yml"
+    mkdir -p "$t/${MG%/*}"; printf -- '- Task assignment is advisory until worker acknowledges\n' > "$t/$MG"
   }
   expect() { rc=0; run "$t" >/dev/null || rc=$?; [ "$rc" -eq "$1" ] || { echo "FAIL $2 rc=$rc want $1"; fail=1; }; }
   mk; expect 0 "good tree"
@@ -110,7 +120,9 @@ selftest() {
   mk; printf 'run: bash scripts/check_reconcile.sh || true\n' > "$t/.github/workflows/binary-release.yml"; expect 1 "reconcile masked"
   mk; printf '3. **Plan quorum.** all lanes vote.\n' > "$t/$AE"; expect 1 "quorum rule weakened"
   mk; rm "$t/$DR"; expect 1 "input missing"
-  if [ "$fail" -eq 0 ]; then echo "self-test: 10 cases ok"; fi
+  mk; printf -- '- Task assignment is final\n' > "$t/$MG"; expect 1 "advisory-until-ack line gone"
+  mk; rm "$t/$MG"; expect 1 "multi-gpu spec missing"
+  if [ "$fail" -eq 0 ]; then echo "self-test: 12 cases ok"; fi
   return "$fail"
 }
 case "${1:-}" in
