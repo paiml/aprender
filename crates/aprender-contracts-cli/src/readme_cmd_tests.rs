@@ -130,6 +130,17 @@ fn a_readme_without_kind_fails_by_shape() {
 }
 
 #[test]
+fn a_readme_with_two_kinds_fails_by_shape() {
+    // #7014: `readme:kind` is maxCount 1; two values must not pass.
+    let d = fixture(SHAPE);
+    let text = readme(2, 2, "", "crates/x").replace("kind: library\n", "kind: [library, cli]\n");
+    let p = put(&d, &text);
+    let e = check(&d, &p).expect_err("kind as a two-value list");
+    assert_eq!(e.code, 1);
+    assert!(e.what.contains("kind"), "{}", e.what);
+}
+
+#[test]
 fn a_missing_entrypoint_and_an_unrun_claim_fail_by_name() {
     let d = fixture(SHAPE);
     let p = put(
