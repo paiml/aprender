@@ -194,20 +194,56 @@ impl Env {
     }
 }
 
+/// Why the verb failed. The exit code tells a caller whether to fix the command or the input
+/// (the split of the older `aprender-present plot`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlotError {
+    /// The command asks for something the verb does not take: an unsupported option, a bad
+    /// value, a size out of bounds. Exit code 2, as clap's own usage errors.
+    Usage(String),
+    /// The request is fine but the input or the output is not: unreadable file, bad CSV, a
+    /// column that is not numeric, an engine error, a write that fails. Exit code 1.
+    Failed(String),
+}
+
+impl PlotError {
+    /// The process exit code: 2 for [`PlotError::Usage`], 1 for [`PlotError::Failed`].
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Usage(_) => 2,
+            Self::Failed(_) => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for PlotError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Usage(m) | Self::Failed(m) => f.write_str(m),
+        }
+    }
+}
+
+impl std::error::Error for PlotError {}
+
 /// Draw the plot to `stdout`, warnings to `stderr`.
 ///
 /// # Errors
 ///
-/// A message for the user: a size out of bounds, unreadable or malformed CSV, an unknown or
-/// non-numeric column, a value refused by column and line, or an engine error.
+/// [`PlotError::Usage`] for a size out of bounds; [`PlotError::Failed`] for unreadable or
+/// malformed CSV, an unknown or non-numeric column, a value refused by column and line, an
+/// engine error or a failed write.
 pub fn run(
     args: &PlotArgs,
     env: &Env,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
-) -> Result<(), String> {
+) -> Result<(), PlotError> {
     let text = render(args, env, stderr)?;
-    stdout.write_all(text.as_bytes()).map_err(|e| format!("cannot write stdout: {e}"))
+    stdout
+        .write_all(text.as_bytes())
+        .map_err(|e| PlotError::Failed(format!("cannot write stdout: {e}")))
 }
 
 /// The `(min, max)` of `values`.
@@ -239,28 +275,30 @@ fn build_plot(
 }
 
 /// Check the size, read the data, then build and render the plot.
-fn render(args: &PlotArgs, env: &Env, stderr: &mut dyn Write) -> Result<String, String> {
-    let row = point_row(PROVEN_ROWS)?;
+fn render(args: &PlotArgs, env: &Env, stderr: &mut dyn Write) -> Result<String, PlotError> {
+    let failed = PlotError::Failed;
+    let row = point_row(PROVEN_ROWS).map_err(failed)?;
     let (default, color) = match args.output {
         Output::Term => (DEFAULT_TERM_SIZE, !args.no_color && !env.no_color && env.stdout_is_tty),
         Output::Svg => (DEFAULT_SVG_SIZE, false),
     };
     let size = (args.width.unwrap_or(default.0), args.height.unwrap_or(default.1));
     // Before the data is read: a size the engine cannot allocate must not cost a read first.
-    check_size(args.output, size)?;
-    let (xs, ys, dropped) = numeric_xy(&read_csv(&args.data)?, &args.x, &args.y)?;
+    check_size(args.output, size).map_err(PlotError::Usage)?;
+    let table = read_csv(&args.data).map_err(failed)?;
+    let (xs, ys, dropped) = numeric_xy(&table, &args.x, &args.y).map_err(failed)?;
     if dropped > 0 {
         // ggplot2's wording for the same event, singular for one row.
         let rows = if dropped == 1 { "row" } else { "rows" };
         let _ = writeln!(stderr, "warning: Removed {dropped} {rows} containing missing values or values outside the scale range (geom_point).");
     }
-    let plot = build_plot(args, row, (&xs, &ys))?;
+    let plot = build_plot(args, row, (&xs, &ys)).map_err(failed)?;
     let target = TerminalPlot { width: size.0, height: size.1, color };
     match args.output {
         Output::Term => plot.build().and_then(|b| b.to_terminal(target)),
         Output::Svg => plot.dimensions(size.0, size.1).build().and_then(|b| b.to_svg()),
     }
-    .map_err(|e| e.to_string())
+    .map_err(|e| PlotError::Failed(e.to_string()))
 }
 
 /// A size inside the target's bounds: 20x8 to 1000x1000 cells, or 1x1 to 4096x4096 pixels.
@@ -447,7 +485,7 @@ mod tests {
 
     fn go(args: &PlotArgs, env: &Env) -> (Result<(), String>, String, String) {
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let r = run(args, env, &mut out, &mut err);
+        let r = run(args, env, &mut out, &mut err).map_err(|e| e.to_string());
         (r, String::from_utf8_lossy(&out).into(), String::from_utf8_lossy(&err).into())
     }
 
@@ -661,11 +699,32 @@ mod tests {
     fn write_and_engine_failures_are_messages() {
         let mut full: &mut [u8] = &mut [];
         let r = run(&args(&tmp("full.csv", ROW1)), &Env::default(), &mut full, &mut Vec::new());
-        assert_eq!(r, Err("cannot write stdout: failed to write whole buffer".into()));
+        assert_eq!(
+            r,
+            Err(PlotError::Failed("cannot write stdout: failed to write whole buffer".into()))
+        );
         let wide = tmp("wide.csv", "x,y\n0,-70368744177664\n1,-70368828063744\n");
         let e =
             go(&PlotArgs { width: Some(20), height: Some(8), ..args(&wide) }, &Env::default()).0;
         assert!(e.expect_err("no room").contains("no room for the panel"));
+    }
+
+    #[test]
+    fn exit_codes_split_usage_from_failed() {
+        let code = |a: &PlotArgs| {
+            run(a, &Env::default(), &mut Vec::new(), &mut Vec::new()).map_err(|e| e.exit_code())
+        };
+        // A size out of bounds is a usage error, before the data is read.
+        let gone = args(Path::new("/nonexistent/plot.csv"));
+        assert_eq!(
+            code(&PlotArgs { width: Some(4097), output: Output::Svg, ..gone.clone() }),
+            Err(2)
+        );
+        // Unreadable data, a non-numeric column and an engine error are failures.
+        assert_eq!(code(&gone), Err(1));
+        assert_eq!(code(&PlotArgs { y: "nope".into(), ..args(&tmp("exit.csv", ROW1)) }), Err(1));
+        let wide = tmp("exit-wide.csv", "x,y\n0,-70368744177664\n1,-70368828063744\n");
+        assert_eq!(code(&PlotArgs { width: Some(20), height: Some(8), ..args(&wide) }), Err(1));
     }
 
     #[test]
