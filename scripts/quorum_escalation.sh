@@ -31,8 +31,9 @@ verdict() { # receipt file -> PASS | FAIL | NM
   [ -n "$tok" ] || { echo NM; return; }
   [ "$tok" = PASS ] || { echo FAIL; return; }
   rest=${b#*"$tok"}; pre=${b%%"$tok"*}
-  if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)/([0-9]+) ]] || [[ $pre =~ ([0-9]+)/([0-9]+)[^A-Za-z0-9/]*$ ]]; then
-    [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ] && echo PASS || echo FAIL
+  [[ "$pre $rest" =~ (^|[^0-9])[1-9][0-9]*\ *(lanes?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
+  if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)(/|\ +of\ +)([0-9]+) ]] || [[ $pre =~ ([0-9]+)(/|\ +of\ +)([0-9]+)[^A-Za-z0-9/]*$ ]]; then
+    [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[3]}" ] && echo PASS || echo FAIL
     return
   fi
   echo PASS
@@ -106,6 +107,10 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS 2/3 → PASS 3/3 after the re-seat."; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f2 a verdict after the arrow wins"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS 2/3 (one lane errored)."; chk 1 "f2 PASS beside a 2/3 tally is not a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS (lane B errored)."; chk 1 "f2 NOT PASS without a tally is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (3 of 4 lanes)."; chk 1 "f10 PASS beside '3 of 4' is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (2 lanes PASS, 1 FAIL)."; chk 1 "f10 PASS beside a counted FAIL is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "TALLY: 9/10 PASS"; chk 1 "f10 a 9/10 tally before PASS is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (4 of 4 lanes)."; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f10 '4 of 4' is a PASS"; clr
   # f3: an unreadable receipt neither resets nor counts
   mk 1 0100 "# Quorum #1 (PMAT-9)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-9)" "no verdict here"; mk 3 0300 "# Quorum #3 (PMAT-9)" "$F"; chk 1 "f3 NM keeps the streak"; clr
   # f4: lane and prompt files are not receipts
