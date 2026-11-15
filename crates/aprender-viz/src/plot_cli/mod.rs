@@ -248,7 +248,15 @@ fn build_plot(
     }
     let plot = plot.coord(coord_for(row.coord)?).theme(theme_for(row.theme)?);
     let plot = add_decorations(plot, args);
-    Ok(plot.trained_on(domain(xs), domain(ys)))
+    let (dx, dy) = trained_domains(args, xs, ys);
+    Ok(plot.trained_on(dx, dy))
+}
+
+/// The x and y domains the scales are trained on: the data, widened by each `--vline` (x) and
+/// `--hline` (y), as ggplot2 trains a scale on a reference line's intercept.
+fn trained_domains(args: &PlotArgs, xs: &[f64], ys: &[f64]) -> ((f64, f64), (f64, f64)) {
+    let with = |data: &[f64], lines: &[f64]| domain(&[data, lines].concat());
+    (with(xs, &args.vlines), with(ys, &args.hlines))
 }
 
 /// The reference lines and labels of `args`, as layers and label settings on `plot`.
@@ -717,6 +725,15 @@ mod tests {
             None => std::env::remove_var("NO_COLOR"),
         }
         assert!(set && !empty);
+    }
+
+    #[test]
+    fn reference_lines_outside_the_data_widen_their_own_scale() {
+        let data = [1.0, 2.0, 3.0];
+        let a = PlotArgs { hlines: vec![10.0], vlines: vec![-5.0], ..PlotArgs::default() };
+        assert_eq!(trained_domains(&a, &data, &data), ((-5.0, 3.0), (1.0, 10.0)));
+        let none = PlotArgs::default();
+        assert_eq!(trained_domains(&none, &data, &data), ((1.0, 3.0), (1.0, 3.0)));
     }
 
     #[test]
