@@ -202,7 +202,63 @@ fn check_training(t: &RawTraining, out: &mut Vec<String>) {
     }
 }
 
+fn check_teacher(
+    raw: Option<&RawTeacher>,
+    method: Option<RecipeMethod>,
+    base_dir: &Path,
+    out: &mut Vec<String>,
+) -> Option<RecipeTeacher> {
+    let distill = method == Some(RecipeMethod::Distill);
+    let Some(t) = raw else {
+        if distill {
+            out.push(
+                "field `teacher` is required when `method` is distill (the model to distill from)"
+                    .to_string(),
+            );
+        }
+        return None;
+    };
+    if !distill && method.is_some() {
+        out.push("field `teacher` is only valid when `method` is distill".to_string());
+    }
+    let model = required(
+        t.model.as_ref(),
+        "teacher.model",
+        "the teacher model file",
+        out,
+    );
+    let temperature = t.temperature.unwrap_or(3.0);
+    if !(temperature.is_finite() && temperature > 0.0) {
+        out.push(format!(
+            "field `teacher.temperature` must be a positive number, got {temperature}"
+        ));
+    }
+    let alpha = t.alpha.unwrap_or(0.7);
+    if !(0.0..=1.0).contains(&alpha) {
+        out.push(format!(
+            "field `teacher.alpha` must be between 0 and 1, got {alpha}"
+        ));
+    }
+    Some(RecipeTeacher {
+        model: base_dir.join(model),
+        temperature,
+        alpha,
+    })
+}
+
 impl TrainRecipe {
+    /// Read and validate a recipe file. Nothing but the recipe is opened.
+    pub(crate) fn load(path: &Path) -> Result<Self> {
+        let bytes = std::fs::read(path).map_err(|e| {
+            CliError::ValidationFailed(format!("cannot read recipe {}: {e}", path.display()))
+        })?;
+        let src = String::from_utf8(bytes).map_err(|e| {
+            CliError::ValidationFailed(format!("recipe {} is not UTF-8: {e}", path.display()))
+        })?;
+        let base_dir = path.parent().unwrap_or_else(|| Path::new(""));
+        Self::parse(&src, base_dir, &path.display().to_string())
+    }
+
     /// Validate recipe text. `base_dir` anchors relative paths; `origin` is
     /// how the recipe is named in an error.
     pub(crate) fn parse(src: &str, base_dir: &Path, origin: &str) -> Result<Self> {
@@ -308,6 +364,7 @@ impl TrainRecipe {
         };
 
         check_training(&raw.training, &mut bad);
+        let teacher = check_teacher(raw.teacher.as_ref(), method, base_dir, &mut bad);
         let output_dir = raw.output.as_ref().map(|o| {
             required(
                 o.dir.as_ref(),
@@ -330,8 +387,7 @@ impl TrainRecipe {
             heldout: base_dir.join(heldout),
             benchmark,
             seed,
-            // The optional blocks are read and validated in the next slices.
-            teacher: None,
+            teacher,
             rank: raw.training.rank,
             epochs: raw.training.epochs,
             learning_rate: raw.training.learning_rate,
