@@ -18,7 +18,7 @@ use entrenar_lora::{
     plan, recommended_learning_rate, MemoryPlanner, MemoryRequirement, MergeEngine, Method,
     OptimalConfig,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Fine-tuning method selection
 #[derive(Debug, Clone, Copy, Default)]
@@ -1424,6 +1424,137 @@ pub(crate) fn run(
     )
 }
 
+/// The `apr finetune` flags that still apply beside `--recipe`: where and how
+/// to run, never what to train (the recipe carries that).
+#[derive(Debug, Clone, Copy)]
+#[allow(dead_code)] // wired by the --recipe flag in the next slice
+pub(crate) struct RecipeRunFlags<'a> {
+    pub(crate) vram_gb: f64,
+    pub(crate) plan_only: bool,
+    pub(crate) output_path: Option<&'a Path>,
+    pub(crate) model_size: Option<&'a str>,
+    pub(crate) checkpoint_format: &'a str,
+    pub(crate) gpus: Option<&'a str>,
+    pub(crate) gpu_backend: &'a str,
+    pub(crate) wait_gpu: u64,
+    pub(crate) json_output: bool,
+    pub(crate) experimental_mps: bool,
+    pub(crate) gpu_share: u32,
+}
+
+/// Validate a recipe for `apr finetune` and say what it resolved to.
+///
+/// Opens the recipe file only; in a real run (`plan_only == false`) it also
+/// checks the base, data and eval files exist and hashes the data. No model is
+/// loaded here, so a refusal costs no GPU allocation.
+pub(crate) fn preflight_recipe(
+    recipe_path: &Path,
+    plan_only: bool,
+) -> Result<(
+    super::train_recipe::TrainRecipe,
+    super::train_recipe::RecipeReceipt,
+)> {
+    use super::train_recipe::{apr_engine, RecipeMethod, TrainRecipe, FINETUNE_NOT_APPLIED};
+    let recipe = TrainRecipe::load(recipe_path)?;
+    if recipe.method == RecipeMethod::Distill {
+        return Err(CliError::ValidationFailed(format!(
+            "recipe {}: field `method` is distill, which `apr finetune` does not run; \
+             `apr finetune --recipe` takes lora or qlora",
+            recipe_path.display()
+        )));
+    }
+    if let Some(size) = recipe.model_size.as_deref() {
+        parse_model_size(size).map_err(|e| {
+            CliError::ValidationFailed(format!(
+                "recipe {}: field `model_size` is not a model size: {e}",
+                recipe_path.display()
+            ))
+        })?;
+    }
+    if !plan_only {
+        recipe.require_inputs()?;
+    }
+    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    Ok((recipe, receipt))
+}
+
+/// The size `--plan` uses: `--model-size` wins over the recipe's `model_size`.
+fn recipe_model_size<'a>(
+    flags: &RecipeRunFlags<'a>,
+    recipe: &'a super::train_recipe::TrainRecipe,
+) -> Option<&'a str> {
+    flags.model_size.or(recipe.model_size.as_deref())
+}
+
+/// Where the adapter goes: `--output` as a file, else `<output.dir>/adapter.apr`
+/// (the trainer keeps `checkpoints/` beside the adapter file).
+fn recipe_output_path(
+    flags: &RecipeRunFlags<'_>,
+    recipe: &super::train_recipe::TrainRecipe,
+) -> Option<PathBuf> {
+    flags
+        .output_path
+        .map(Path::to_path_buf)
+        .or_else(|| recipe.output_dir.as_deref().map(|d| d.join("adapter.apr")))
+}
+
+/// `apr finetune --recipe <file>`: the recipe is validated first, then lowered
+/// onto the same `run` every flag-driven invocation uses (CRUX-001).
+#[allow(dead_code)] // wired by the --recipe flag in the next slice
+pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) -> Result<()> {
+    use super::train_recipe::RecipeMethod;
+    let (recipe, receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
+    let engine = super::train_recipe::apr_engine();
+    eprintln!(
+        "[recipe] {} ok: name={} method={} recipe_sha256={} data_sha256={} engine=apr {} ({})",
+        receipt.schema,
+        receipt.recipe_name,
+        recipe.method.as_str(),
+        receipt.recipe_sha256,
+        receipt.data_sha256.as_deref().unwrap_or("not_measured"),
+        engine.version,
+        engine.sha,
+    );
+    eprintln!(
+        "[recipe] validated and hashed, not yet applied by apr finetune: {}",
+        receipt.validated_not_applied.join(", ")
+    );
+    let output_buf = recipe_output_path(flags, &recipe);
+    let output = output_buf.as_deref();
+    run(
+        Some(&recipe.base),
+        recipe.method.as_str(),
+        recipe.rank,
+        flags.vram_gb,
+        flags.plan_only,
+        Some(&recipe.train),
+        output,
+        None,
+        false,
+        recipe.epochs.unwrap_or(3),
+        recipe.learning_rate,
+        recipe_model_size(flags, &recipe),
+        None,
+        5,
+        flags.checkpoint_format,
+        false,
+        recipe.max_seq_len,
+        recipe.method == RecipeMethod::Qlora,
+        flags.gpus,
+        flags.gpu_backend,
+        None,
+        None,
+        None,
+        None,
+        flags.wait_gpu,
+        &[],
+        None,
+        flags.json_output,
+        flags.experimental_mps,
+        flags.gpu_share,
+    )
+}
+
 /// Validate inputs and execute the LoRA training pipeline.
 #[allow(clippy::too_many_arguments)]
 fn run_finetune_training(
@@ -2422,6 +2553,10 @@ mod contract_tests;
 #[cfg(test)]
 #[path = "finetune_display_tests.rs"]
 mod display_tests;
+
+#[cfg(test)]
+#[path = "finetune_recipe_tests.rs"]
+mod recipe_tests;
 
 #[cfg(all(test, feature = "training"))]
 mod tests_2417 {
