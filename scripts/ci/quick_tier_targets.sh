@@ -123,6 +123,11 @@ self_test() {
     check unknown_crate_is_caller_error      3 "$T/m.json" ""              binonly nope
     check no_crate_is_caller_error           3 "$T/m.json" ""
     check unreadable_metadata_is_error       3 "$T/nope.json" ""           binonly
+    # #6903: the tree-reader list call in ci/sections.yml takes its flags from this rule, never a literal --lib
+    rows=$((rows + 1))
+    if git -C "$(dirname "$0")" grep -qE -- '\$TREE --lib --tests' -- ../../ci/sections.yml 2>/dev/null; then
+        echo "BROKE tree_list_flags_come_from_the_rule (ci/sections.yml passes a literal --lib to the tree-reader list)"; fails=$((fails + 1))
+    else echo "ok    tree_list_flags_come_from_the_rule"; fi
     echo "quick_tier_targets self-test: $((rows - fails)) ok, $fails broke"
     [ "$fails" = 0 ]
 }
