@@ -143,6 +143,13 @@ EOF
         && [ -d "$CARGO_HOME/registry/src/index.crates.io-x/a-0.0.0" ]; then
         echo "  ok   a leftover unpacked member source is removed before the walk; other sources stay (#6880)"
     else echo "  FAIL a leftover unpacked overlay source was verified, or an unrelated source was removed"; fail=1; fi
+    # The production case: CARGO_HOME unset or empty, so the cargo home is $HOME/.cargo. The
+    # leftover there must go too, and nothing may be cleared straight under $HOME.
+    mkdir -p "$d/home/.cargo/registry/src/-h/a-0.0.0" "$d/home/registry/src/-h/a-0.0.0"
+    if CARGO_HOME='' HOME="$d/home" FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify > /dev/null \
+        && [ ! -e "$d/home/.cargo/registry/src/-h/a-0.0.0" ] && [ -d "$d/home/registry/src/-h/a-0.0.0" ]; then
+        echo "  ok   with CARGO_HOME empty the leftover under \$HOME/.cargo is removed, nothing else"
+    else echo "  FAIL with CARGO_HOME empty the leftover under \$HOME/.cargo survived, or \$HOME itself was cleared"; fail=1; fi
     # No absolute cargo home is ENV, never a walk that cleared nothing: a relative CARGO_HOME, and
     # CARGO_HOME and HOME both empty (which used to give "/.cargo" and pass the check).
     got=$(CARGO_HOME=relative FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d"; echo "rc=$?")
