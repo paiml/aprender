@@ -89,22 +89,22 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Each entry cites only tests present at this slice head; FALSIFY-APR-RECIPE-004 (flag conflicts) and the
-# CLI parts of 001 and 002 return in the slices that add the tests they cite.
+# Each entry cites only tests present at this slice head; FALSIFY-APR-RECIPE-004 (flag conflicts) returns
+# in the slice that adds the test it cites.
 # Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
 # renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
 # slot is held by the contract-parses entry until the entry it stands in for lands.
 - id: FALSIFY-APR-RECIPE-001
-  rule: a recipe without eval is refused by field
-  prediction: "The loader refuses a recipe with no eval block and the error names field `eval` (the CLI exit-5 and no-model-opened parts land with the --recipe wiring)"
+  rule: a recipe without eval is refused before any model is loaded
+  prediction: "`apr finetune --recipe` on a recipe with no eval block exits 5 and stderr names field `eval`; the base model path does not exist and is never reported"
   test: |
-    cargo test -p apr-cli --lib -- missing_eval_is_refused_and_the_error_names_the_field
+    cargo test -p apr-cli --lib -- recipe_without_eval_is_refused_before_any_model_is_touched missing_eval_is_refused_and_the_error_names_the_field
   if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
 - id: FALSIFY-APR-RECIPE-002
-  rule: a valid recipe parses
-  prediction: "A minimal valid recipe and a recipe with every optional field parse, and its relative paths anchor at the recipe's directory, a distill recipe takes the teacher defaults and load() reads it from a file"
+  rule: a valid recipe passes
+  prediction: "`apr finetune --recipe examples/recipes/tiny.yaml --plan --json` exits 0"
   test: |
-    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir full_recipe_parses_every_optional_field distill_recipe_parses_with_teacher_defaults load_reads_a_file_and_names_it_when_it_cannot
+    cargo test -p apr-cli --lib -- valid_recipe_plans valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir recipe_model_size_drives_the_plan
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
