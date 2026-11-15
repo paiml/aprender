@@ -484,7 +484,7 @@ mod tests {
             let (mut out, mut err) = (Vec::new(), Vec::new());
             let f = parse(&["--data", path, "--output", "svg", "--spec", spec]).expect("parses");
             (
-                run(&f, &Env::default(), &mut out, &mut err),
+                run(&f, &Env::default(), &mut out, &mut err).map_err(|e| e.to_string()),
                 String::from_utf8_lossy(&out).into_owned(),
             )
         };
@@ -513,7 +513,8 @@ mod tests {
         let mut argv = vec!["--output", "svg", "--spec", s];
         argv.extend_from_slice(extra);
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let r = run(&parse(&argv).expect("parses"), &Env::default(), &mut out, &mut err);
+        let r = run(&parse(&argv).expect("parses"), &Env::default(), &mut out, &mut err)
+            .map_err(|e| e.to_string());
         (r, String::from_utf8_lossy(&out).into_owned())
     }
 
