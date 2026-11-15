@@ -1819,3 +1819,124 @@ fn classify_load_still_accepts_a_directory_of_safetensors() {
         "a directory must still go down the from_pretrained path: {msg}"
     );
 }
+
+// ============================================================================
+// FT-20 (#7023): wrong merges must refuse, not exit 0
+// ============================================================================
+
+/// Write a tiny adapter with the given (name, shape) tensors and optional alpha; return merge result.
+fn ft20_merge(
+    tensors: &[(&str, Vec<usize>, f32)],
+    alpha: Option<f64>,
+) -> (Result<()>, tempfile::TempDir) {
+    use aprender::format::v2::{AprV2Metadata, AprV2Writer};
+    let hidden = 32usize;
+    let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(
+        base_file.path(),
+        build_import_shaped_qwen2_base_v2(hidden, true),
+    )
+    .expect("write base");
+    let mut md = AprV2Metadata::new("ft20-adapter");
+    md.custom
+        .insert("lora_rank".to_string(), serde_json::json!(4));
+    if let Some(a) = alpha {
+        md.custom
+            .insert("lora_alpha".to_string(), serde_json::json!(a));
+    }
+    let mut w = AprV2Writer::new(md);
+    for (name, shape, v) in tensors {
+        let n: usize = shape.iter().product();
+        w.add_f32_tensor(*name, shape.clone(), &vec![*v; n]);
+    }
+    let adapter_file = NamedTempFile::with_suffix(".apr").expect("adapter tmp");
+    std::fs::write(adapter_file.path(), w.write().expect("write adapter")).expect("write");
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let out = dir.path().join("merged.apr");
+    let res = run_merge(
+        Some(base_file.path()),
+        Some(adapter_file.path()),
+        Some(&out),
+        true,
+    );
+    (res, dir)
+}
+
+const FT20_Q: &str = "model.layers.0.self_attn.q_proj";
+
+#[test]
+fn peft_adapter_merges_and_zero_match_refused() {
+    let a = format!("base_model.model.{FT20_Q}.lora_A.weight");
+    let b = format!("base_model.model.{FT20_Q}.lora_B.weight");
+    let (ok, _d) = ft20_merge(&[(&a, vec![4, 32], 0.3), (&b, vec![32, 4], 0.5)], Some(8.0));
+    assert!(ok.is_ok(), "PEFT-named adapter must merge: {ok:?}");
+    let (res, d) = ft20_merge(
+        &[
+            ("base_model.model.nope.lora_A.weight", vec![4, 32], 0.3),
+            ("base_model.model.nope.lora_B.weight", vec![32, 4], 0.5),
+        ],
+        Some(8.0),
+    );
+    assert!(res.is_err(), "zero-match PEFT adapter must be refused");
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+#[test]
+fn peft_adapter_zero_match_refused() {
+    peft_adapter_merges_and_zero_match_refused();
+}
+
+#[test]
+fn missing_lora_alpha_refused() {
+    let a = format!("{FT20_Q}.weight.lora_a");
+    let b = format!("{FT20_Q}.weight.lora_b");
+    let (res, _d) = ft20_merge(&[(&a, vec![4, 32], 0.3), (&b, vec![32, 4], 0.5)], None);
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("lora_alpha"),
+        "alpha must be required: {msg}"
+    );
+}
+
+#[test]
+fn partial_merge_refused() {
+    let a = format!("{FT20_Q}.weight.lora_a");
+    let b = format!("{FT20_Q}.weight.lora_b");
+    let (res, d) = ft20_merge(
+        &[
+            (&a, vec![4, 32], 0.3),
+            (&b, vec![32, 4], 0.5),
+            (
+                "model.layers.0.self_attn.nope.weight.lora_a",
+                vec![4, 32],
+                0.3,
+            ),
+            (
+                "model.layers.0.self_attn.nope.weight.lora_b",
+                vec![32, 4],
+                0.5,
+            ),
+        ],
+        Some(8.0),
+    );
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("partial merge"),
+        "partial must refuse: {msg}"
+    );
+    assert!(msg.contains("nope"), "must list unmatched names: {msg}");
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+#[test]
+fn unchanged_merge_refused() {
+    let a = format!("{FT20_Q}.weight.lora_a");
+    let b = format!("{FT20_Q}.weight.lora_b");
+    let (res, d) = ft20_merge(&[(&a, vec![4, 32], 0.3), (&b, vec![32, 4], 0.0)], Some(8.0));
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("changed no weight"),
+        "no-change must refuse: {msg}"
+    );
+    assert!(!d.path().join("merged.apr").exists());
+}
