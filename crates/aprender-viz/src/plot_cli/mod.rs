@@ -17,7 +17,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::grammar::{
-    zero_range, Aes, Coord, DataFrame, Expansion, GGPlot, Geom, Stat, TerminalPlot, Theme,
+    zero_range, Aes, Coord, DataFrame, Expansion, GGPlot, Geom, Layer, Stat, TerminalPlot, Theme,
     MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
@@ -158,7 +158,7 @@ pub enum Output {
 }
 
 /// What to plot and how.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlotArgs {
     /// CSV file with a header row (`#` lines are skipped).
     pub data: PathBuf,
@@ -174,6 +174,18 @@ pub struct PlotArgs {
     pub output: Output,
     /// Never emit colour escape sequences.
     pub no_color: bool,
+    /// Horizontal reference lines, at these y values.
+    pub hlines: Vec<f64>,
+    /// Vertical reference lines, at these x values.
+    pub vlines: Vec<f64>,
+    /// Diagonal reference lines, `(slope, intercept)`.
+    pub ablines: Vec<(f64, f64)>,
+    /// Plot title.
+    pub title: Option<String>,
+    /// X axis label.
+    pub xlab: Option<String>,
+    /// Y axis label.
+    pub ylab: Option<String>,
 }
 
 /// The process facts that decide colour, read once so tests can set them.
@@ -235,7 +247,31 @@ fn build_plot(
         scale_for(aes, kind)?;
     }
     let plot = plot.coord(coord_for(row.coord)?).theme(theme_for(row.theme)?);
+    let plot = add_decorations(plot, args);
     Ok(plot.trained_on(domain(xs), domain(ys)))
+}
+
+/// The reference lines and labels of `args`, as layers and label settings on `plot`.
+fn add_decorations(mut plot: GGPlot, args: &PlotArgs) -> GGPlot {
+    for &y in &args.hlines {
+        plot = plot.layer(Layer::new(Geom::hline(y as f32)));
+    }
+    for &x in &args.vlines {
+        plot = plot.layer(Layer::new(Geom::vline(x as f32)));
+    }
+    for &(m, b) in &args.ablines {
+        plot = plot.layer(Layer::new(Geom::abline(m as f32, b as f32)));
+    }
+    if let Some(t) = &args.title {
+        plot = plot.title(t.clone());
+    }
+    if let Some(l) = &args.xlab {
+        plot = plot.xlab(l.clone());
+    }
+    if let Some(l) = &args.ylab {
+        plot = plot.ylab(l.clone());
+    }
+    plot
 }
 
 /// Check the size, read the data, then build and render the plot.
