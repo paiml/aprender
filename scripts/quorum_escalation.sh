@@ -5,53 +5,66 @@
 #   bash scripts/quorum_escalation.sh <receipts-dir> <escalations-file> [owner]
 #   bash scripts/quorum_escalation.sh --self-test
 #
-# Reads gate-quorum receipts (`triage-quorum-<N>-gate-*.md`) oldest first by mtime. A chain is
-# the PMAT-<n> ticket named in the receipt's first line (else the PR number). A receipt PASSes
-# only on an N/M tally with N = M and no FAIL / NOT PASS beside it; a tally that cannot be read
-# is NOT MEASURED, never a pass. On the SECOND consecutive non-PASS receipt of a chain, one line
+# Reads gate-quorum receipts (`triage-quorum-<PR>-gate-<hhmm>Z.md`, never the -A/-B/-C/-prompt lane
+# files) oldest first by mtime. CHAIN = the ticket the receipt is about: the first PMAT-<n> / #<n> /
+# "pace <n>" on line 1 (not the receipt's own PR), else the PMAT-<n> named most often in the body,
+# else the PR itself. VERDICT = the first PASS / NOT PASS / FAIL token of the receipt's last headline
+# (TALLY / RESULT / OVERALL / Final, else VERDICT, else a "verdict X" on lines 1-3), after the last
+# arrow; a token beside an N/M tally passes only if N = M. No token = NOT MEASURED: it neither
+# resets a chain's streak nor counts toward it. On the SECOND consecutive non-PASS receipt of a
+# chain, one line
 #   ESCALATE ticket=<chain> receipts=<first>,<second> owner=<owner>
 # is appended to <escalations-file> (once: a rerun does not repeat it).
-# EXIT: 0 nothing new to escalate; 1 an escalation was written; 2 not measured (empty dir,
-# or an unreadable receipt in a chain).
+# EXIT: 0 nothing new to escalate; 1 an escalation was written; 2 not measured (empty dir, or an
+# unreadable receipt and nothing escalated); 3 the escalations file could not be written.
 set -uo pipefail
 
 verdict() { # receipt file -> PASS | FAIL | NM
-  local l
-  l=$(grep -m1 -E '(TALLY|VERDICT|RESULT)[^0-9]*[0-9]/[0-9]|(PASS|FAIL)[^0-9]*[0-9]/[0-9]' "$1") || { echo NM; return; }
-  case "$l" in *"NOT PASS"* | *FAIL*) echo FAIL; return ;; esac
-  if [[ $l =~ ([0-9])/([0-9]) ]] && [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ]; then echo PASS; else echo FAIL; fi
+  local l b tok rest pre
+  l=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final)\b.*(PASS|FAIL)' "$1" | tail -n1)
+  [ -n "$l" ] || l=$(grep -i -E '^[^A-Za-z]*verdict\b.*(PASS|FAIL)' "$1" | tail -n1)
+  [ -n "$l" ] || l=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(NOT PASS|PASS|FAIL).*')
+  [ -n "$l" ] || { echo NM; return; }
+  b=${l#*:}
+  [[ ${b##*→} =~ (PASS|FAIL) ]] && b=${b##*→}   # a verdict after the last arrow wins
+  tok=$(grep -oE 'NOT PASS|PASS|FAIL' <<<"$b" | head -n1)
+  [ -n "$tok" ] || { echo NM; return; }
+  [ "$tok" = PASS ] || { echo FAIL; return; }
+  rest=${b#*"$tok"}; pre=${b%%"$tok"*}
+  if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)/([0-9]+) ]] || [[ $pre =~ ([0-9]+)/([0-9]+)[^A-Za-z0-9/]*$ ]]; then
+    [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[2]}" ] && echo PASS || echo FAIL
+    return
+  fi
+  echo PASS
 }
 
 chain() { # receipt file -> ticket id
-  local h b
-  h=$(head -n1 "$1")
-  if [[ $h =~ (PMAT-[0-9]+) ]]; then echo "${BASH_REMATCH[1]}"; return; fi
+  local b own="" n
   b=$(basename "$1")
-  if [[ $b =~ ^triage-quorum-([0-9]+)- ]]; then echo "pr${BASH_REMATCH[1]}"; else echo "$b"; fi
+  [[ $b =~ ^triage-quorum-([0-9]+)- ]] && own=${BASH_REMATCH[1]}
+  n=$(head -n1 "$1" | grep -oE 'PMAT-[0-9]+|#[0-9]{4,}|pace [0-9]{4,}' | grep -oE '[0-9]+' | grep -vx "$own" | head -n1)
+  [ -n "$n" ] || n=$(grep -oE 'PMAT-[0-9]+' "$1" | grep -oE '[0-9]+' | sort | uniq -c | sort -k1,1nr | awk 'NR==1{print $2}')
+  if [ -n "$n" ]; then echo "PMAT-$n"; else echo "pr$own"; fi
 }
 
 run() { # dir esc owner
   local dir=$1 esc=$2 owner=${3:-cop} f c v line rc=0 nm=0 n=0
   local -A prev streak
-  touch "$esc"
+  touch "$esc" 2>/dev/null || { echo "cannot write $esc" >&2; return 3; }
   while IFS= read -r f; do
     n=$((n + 1)); c=$(chain "$f"); v=$(verdict "$f")
-    if [ "$v" = NM ]; then
-      nm=1
-      streak[$c]=0
-      continue
-    fi
-    if [ "$v" = PASS ]; then
-      streak[$c]=0
-      continue
-    fi
+    if [ "$v" = NM ]; then nm=1; continue; fi   # not measured: neither resets nor counts
+    if [ "$v" = PASS ]; then streak[$c]=0; continue; fi
     streak[$c]=$(( ${streak[$c]:-0} + 1 ))
     if [ "${streak[$c]}" -eq 2 ]; then
       line="ESCALATE ticket=$c receipts=${prev[$c]},$(basename "$f") owner=$owner"
-      if ! grep -qxF "$line" "$esc"; then echo "$line" >>"$esc"; rc=1; fi  # ESCALATE
+      if ! grep -qxF "$line" "$esc"; then
+        echo "$line" >>"$esc" || { echo "cannot write $esc" >&2; return 3; }  # ESCALATE
+        rc=1
+      fi
     fi
     prev[$c]=$(basename "$f")
-  done < <(ls -tr "$dir"/triage-quorum-*-gate-*.md 2>/dev/null)
+  done < <(ls -tr "$dir"/triage-quorum-*-gate-*Z.md 2>/dev/null | grep -E '/triage-quorum-[0-9]+-gate-[A-Za-z0-9-]*Z\.md$')
   [ "$n" -eq 0 ] && return 2
   [ "$rc" -eq 0 ] && [ "$nm" -eq 1 ] && return 2
   return "$rc"
@@ -60,25 +73,43 @@ run() { # dir esc owner
 self_test() { # $1 = script under test
   local t d bad=0 s=$1
   t=$(mktemp -d "${TMPDIR:-/tmp}/qe.XXXXXX") || return 2
-  mk() { printf '# Quorum receipt - aprender #%s (%s)\n\n**TALLY: %s**\n' "$2" "$3" "$4" >"$t/triage-quorum-$2-gate-$1.md"; touch -d "2026-10-23 0$1:00" "$t/triage-quorum-$2-gate-$1.md"; }
+  # mk <pr> <hhmm> <line1> <headline>: a receipt shaped like the real handoff ones
+  mk() { local f="$t/triage-quorum-$1-gate-$2Z.md"; printf '%s\n\nLanes: A opus, B haiku, C argon.\n%s\n' "$3" "$4" >"$f"; touch -d "2026-10-23 $2" "$f"; }
   clr() { rm -f "${t:?}"/triage-quorum-* "${t:?}/esc"; }
   chk() { local want=$1 got; shift; bash "$s" "$t" "$t/esc" x >/dev/null 2>&1; got=$?; [ "$got" = "$want" ] || { echo "FAIL: $*: rc $got want $want"; bad=1; }; }
-  mk 1 100 PMAT-1 "2/3 PASS"; chk 0 "one FAIL";                      clr
-  mk 2 101 PMAT-1 "3/3 PASS"; chk 0 "FAIL then PASS";                clr
-  clr; mk 3 102 PMAT-1 "2/3 PASS"; mk 4 103 PMAT-1 "1/3 PASS"; chk 1 "two in a row"
-  grep -q 'ticket=PMAT-1 receipts=triage-quorum-102-gate-3.md,triage-quorum-103-gate-4.md owner=x' "$t/esc" || { echo "FAIL: line wrong"; bad=1; }
+  local F="**VERDICT: FAIL (1/3).** Not armed." P="RESULT: PASS 3/3 (all lanes valid)."
+  mk 100 0100 "# Quorum #100 (PMAT-1)" "$F"; chk 0 "one FAIL"; clr
+  mk 100 0100 "# Quorum #100 (PMAT-1)" "$F"; mk 101 0200 "# Quorum #101 (PMAT-1)" "$P"; chk 0 "FAIL then PASS"; clr
+  mk 102 0300 "# Quorum #102 (PMAT-1)" "$F"; mk 103 0400 "# Quorum #103 (PMAT-1)" "$F"; chk 1 "two in a row"
+  grep -q 'ticket=PMAT-1 receipts=triage-quorum-102-gate-0300Z.md,triage-quorum-103-gate-0400Z.md owner=x' "$t/esc" || { echo "FAIL: line wrong"; bad=1; }
   chk 0 "rerun is idempotent"; clr
-  mk 5 200 PMAT-2 "2/3 PASS"; mk 6 201 PMAT-3 "2/3 PASS"; mk 7 100 PMAT-1 "3/3 PASS"; mk 8 103 PMAT-1 "3/3 PASS"
-  chk 0 "two chains, one FAIL each"; clr
-  clr; mk 9 300 PMAT-4 "unreadable"; chk 2 "unreadable tally is not measured"
-  clr; mk 1 400 PMAT-5 "2/3 PASS"; mk 2 401 PMAT-5 "3/3 PASS"; mk 3 402 PMAT-5 "2/3 PASS"; chk 0 "PASS resets the streak"
-  clr; mk 1 410 PMAT-6 "2/3 PASS"; mk 2 411 PMAT-6 "unreadable"; mk 3 412 PMAT-6 "2/3 PASS"; chk 2 "NM resets the streak"
-  clr; mk 1 420 PMAT-7 "3/3 FAIL"; mk 2 421 PMAT-7 "3/3 FAIL"; chk 1 "N=M beside FAIL is a FAIL"
-  clr; mk 1 430 PMAT-12 "1/3 PASS"; mk 2 431 PMAT-12 "1/3 PASS"; chk 1 "two-digit ticket"
-  grep -q 'ticket=PMAT-12 ' "$t/esc" || { echo "FAIL: PMAT-12 truncated"; bad=1; }
-  rm -f "${t:?}/esc"; bash "$s" "$t" "$t/esc" >/dev/null 2>&1; grep -q 'owner=cop$' "$t/esc" || { echo "FAIL: default owner"; bad=1; }
-  clr; mk 9 300 PMAT-4 "unreadable"
-  d=$(mktemp -d "${TMPDIR:-/tmp}/qe0.XXXXXX"); bash "$s" "$d" "$d/esc" >/dev/null 2>&1; [ "$?" = 2 ] || { echo "FAIL: empty dir"; bad=1; }
+  mk 100 0100 "# Quorum #100 (PMAT-1)" "$F"; mk 101 0200 "# Quorum #101 (PMAT-1)" "$P"; mk 102 0300 "# Quorum #102 (PMAT-1)" "$F"; chk 0 "PASS resets the streak"; clr
+  mk 200 0100 "# Quorum #200 (PMAT-2)" "$F"; mk 201 0200 "# Quorum #201 (PMAT-3)" "$F"; chk 0 "two chains, one FAIL each"; clr
+  mk 9 0100 "# Quorum #9 (PMAT-4)" "no verdict here"; chk 2 "unreadable tally is not measured"; clr
+  # f1: chain from receipt content as the real PMAT-5920 receipts carry it (pace on line 1, PMAT in body)
+  mk 6085 0100 "# Quorum #6085 @cdb (pace 5920 v13, gate-class), 05:45Z" "$F"
+  mk 6092 0200 "# Quorum receipt — paiml/aprender PR #6092 (C324)" "- trailer \`PMAT-Ticket: PMAT-5920\`
+## OVERALL: FAIL (0/3 PASS)"
+  chk 1 "f1 chain keyed by ticket, not by line 1 or PR"
+  grep -q 'ticket=PMAT-5920 ' "$t/esc" || { echo "FAIL: f1 ticket not PMAT-5920"; bad=1; }; clr
+  # f2: the verdict is the token, never a FAIL substring
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS 3/3. Adds hard FAIL(ENV) exit 1."; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f2 PASS beside FAIL(ENV) is a PASS"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS 2/3.
+**RESULT: PASS (3/3 valid lanes PASS).** This supersedes the NOT PASS above."; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f2 superseding PASS wins"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: NOT PASS 2/3. Fix it → re-seat both + new quorum."; chk 1 "f2 trailing arrow keeps the headline verdict"; clr
+  # f3: an unreadable receipt neither resets nor counts
+  mk 1 0100 "# Quorum #1 (PMAT-9)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-9)" "no verdict here"; mk 3 0300 "# Quorum #3 (PMAT-9)" "$F"; chk 1 "f3 NM keeps the streak"; clr
+  # f4: lane and prompt files are not receipts
+  mk 1 0100 "# Quorum #1 (PMAT-10)" "$F"
+  for x in A.md B.txt prompt.md; do cp "$t/triage-quorum-1-gate-0100Z.md" "$t/triage-quorum-1-gate-0100Z-$x"; touch -d "2026-10-23 0200" "$t/triage-quorum-1-gate-0100Z-$x"; done
+  chk 0 "f4 lane/prompt files never count"; clr
+  # f5: multi-digit tally
+  mk 1 0100 "# Quorum #1 (PMAT-11)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-11)" "TALLY: 10/10 PASS"; mk 3 0300 "# Quorum #3 (PMAT-11)" "$F"; chk 0 "f5 10/10 is a PASS"; clr
+  # f6: a failed write is not a clean exit
+  mk 1 0100 "# Quorum #1 (PMAT-12)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-12)" "$F"
+  bash "$s" "$t" "$t/nodir/esc" >/dev/null 2>&1; [ "$?" = 3 ] || { echo "FAIL: f6 unwritable escalations file"; bad=1; }
+  rm -f "${t:?}/esc"; bash "$s" "$t" "$t/esc" >/dev/null 2>&1; grep -q 'ticket=PMAT-12 .*owner=cop$' "$t/esc" || { echo "FAIL: default owner / PMAT-12"; bad=1; }
+  clr; d=$(mktemp -d "${TMPDIR:-/tmp}/qe0.XXXXXX"); bash "$s" "$d" "$d/esc" >/dev/null 2>&1; [ "$?" = 2 ] || { echo "FAIL: empty dir"; bad=1; }
   rm -rf "${d:?}" "${t:?}"
   return "$bad"
 }
@@ -92,3 +123,4 @@ if [ "${1:-}" = "--self-test" ]; then
 fi
 [ "$#" -ge 2 ] || { echo "usage: $0 <receipts-dir> <escalations-file> [owner] | --self-test" >&2; exit 2; }
 run "$@"
+exit $?
