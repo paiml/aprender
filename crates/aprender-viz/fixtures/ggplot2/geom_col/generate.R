@@ -1,6 +1,6 @@
 # Row 9 + stat_identity + position_stack: geom_col() over a discrete x (PLOT-GG-001, #6928).
 # Regenerate (needs R + ggplot2 4.0.3; nothing else):
-#   Rscript crates/aprender-viz/fixtures/ggplot2/stat_identity_geom_col/generate.R
+#   Rscript crates/aprender-viz/fixtures/ggplot2/geom_col/generate.R
 # Writes expected.json beside this file. Commit both; tests never run R.
 here <- (function() {
   arg <- grep("^--file=", commandArgs(FALSE), value = TRUE)

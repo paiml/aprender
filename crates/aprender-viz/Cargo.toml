@@ -69,6 +69,8 @@ serde = { version = "1.0", features = ["derive"], optional = true }
 
 # Optional: the plot verb (`plot-cli`), used by `apr plot` (#6991).
 clap = { workspace = true, optional = true }
+# `--spec file.yaml` of the plot verb.
+serde-saphyr = { workspace = true, optional = true }
 
 # NOTE: realizar (=aprender-serve) + repartir (=aprender-distribute) removed (APR-MONO
 # self-containment): both were unused in viz src, and serve→viz is the correct direction
@@ -143,7 +145,7 @@ terminal = []
 
 # The plot verb: CSV to terminal or SVG, limited to the proven rows (#6991).
 # cli-roles: each argument carries its role type, which `apr surface` reads (#3745).
-plot-cli = ["dep:clap", "batuta-common/cli-roles"]
+plot-cli = ["dep:clap", "dep:serde", "dep:serde-saphyr", "batuta-common/cli-roles"]
 
 # SVG output support
 svg = []

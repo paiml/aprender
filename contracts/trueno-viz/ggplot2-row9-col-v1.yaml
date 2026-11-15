@@ -15,7 +15,7 @@ metadata:
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), GeomBar$setup_data, PositionStack'
-  - 'crates/aprender-viz/fixtures/ggplot2/stat_identity_geom_col/generate.R'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_col/generate.R'
 entity: {type: ggplot2-row, ref: geom_col}
 equations:
   col_edges:

@@ -6649,6 +6649,11 @@
 <https://ont.paiml.dev/v1alpha1/contract/apr-qlora-composed-forward-equivalence-beat-v1> <https://ont.paiml.dev/v1alpha1/kind> "beat-benchmark"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-qlora-composed-forward-equivalence-beat-v1> <https://ont.paiml.dev/v1alpha1/status> "enforced"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-qlora-composed-forward-equivalence-beat-v1> <https://ont.paiml.dev/v1alpha1/version> "1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-recipe-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-recipe-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-recipe-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Kernel> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-recipe-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-recipe-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/apr-recipe-v1> <https://ont.paiml.dev/v1alpha1/id> "apr-recipe-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-registry-snapshot-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-registry-snapshot-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/apr-registry-snapshot-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/apr-registry-snapshot-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
@@ -22475,9 +22480,10 @@
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/aes> "y"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/concept> "Geom"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/contract> "ggplot2-row9-col-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_col/expected.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/ggplot2> "4.0.3"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/name> "geom_col"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/notProven> "geom_col: fixture, surface, receipt"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/notProven> "geom_col: surface, receipt"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <https://ont.paiml.dev/v1alpha1/plot/row> "9"^^<http://www.w3.org/2001/XMLSchema#integer> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_histogram> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Geom> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_histogram> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/PlotRow> .

@@ -1,6 +1,6 @@
 //! ggplot2 conformance for `stat_identity` + `geom_col` (PLOT-GG-001, paiml/aprender#6909, row 9).
 //!
-//! The fixture `fixtures/ggplot2/stat_identity_geom_col/expected.json` holds `ggplot_build()` output
+//! The fixture `fixtures/ggplot2/geom_col/expected.json` holds `ggplot_build()` output
 //! from ggplot2 4.0.3 (R 4.6.2, `LC_COLLATE=C`) for four `geom_col()` specs over `data.csv`: plain,
 //! stacked with a `fill`, `position = "identity"`, and `width = 0.5`. Each case is rebuilt with
 //! [`bar_layout`] and compared field by field. R is never run here.
@@ -12,8 +12,8 @@ use serde_json::Value;
 
 use super::{bar_layout, BarSpec, BuiltBars, DataFrame, Position};
 
-const JSON: &str = include_str!("../../fixtures/ggplot2/stat_identity_geom_col/expected.json");
-const CSV: &str = include_str!("../../fixtures/ggplot2/stat_identity_geom_col/data.csv");
+const JSON: &str = include_str!("../../fixtures/ggplot2/geom_col/expected.json");
+const CSV: &str = include_str!("../../fixtures/ggplot2/geom_col/data.csv");
 
 const REL_TOL: f64 = 1e-9;
 const ABS_TOL: f64 = 1e-12;
