@@ -95,11 +95,11 @@ falsification_tests:
 # renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
 # slot is held by the contract-parses entry until the entry it stands in for lands.
 - id: FALSIFY-APR-RECIPE-001
-  rule: the recipe contract is itself a valid contract
-  prediction: "`pv validate contracts/apr-recipe-v1.yaml` exits 0"
+  rule: a recipe without eval is refused by field
+  prediction: "The loader refuses a recipe with no eval block and the error names field `eval` (the CLI exit-5 and no-model-opened parts land with the --recipe wiring)"
   test: |
-    pv validate contracts/apr-recipe-v1.yaml
-  if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
+    cargo test -p apr-cli --lib -- missing_eval_is_refused_and_the_error_names_the_field
+  if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
 - id: FALSIFY-APR-RECIPE-002
   rule: a valid recipe parses
   prediction: "A minimal valid recipe parses and its relative paths anchor at the recipe's directory"
@@ -108,7 +108,13 @@ falsification_tests:
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
-  prediction: "A method spelling outside lora, qlora and distill (any other case included) is not accepted"
+  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id or an unknown method is refused by field, every fault in one message"
   test: |
-    cargo test -p apr-cli --lib -- method_spellings_round_trip
+    cargo test -p apr-cli --lib -- method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields
   if_fails: "A typo in a recipe silently trains with a default"
+- id: FALSIFY-APR-RECIPE-004
+  rule: the recipe contract is itself a valid contract
+  prediction: "`pv validate contracts/apr-recipe-v1.yaml` exits 0"
+  test: |
+    pv validate contracts/apr-recipe-v1.yaml
+  if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
