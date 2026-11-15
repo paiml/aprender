@@ -24,3 +24,14 @@ w("binwidth5_center0", ggplot(df, aes(x)) + geom_histogram(binwidth = 5, center 
 w("bins5_boundary2", ggplot(df, aes(x)) + geom_histogram(bins = 5, boundary = 2),
   "ggplot(df, aes(x)) + geom_histogram(bins = 5, boundary = 2)")
 w("constant", ggplot(dc, aes(x)) + geom_histogram(), "ggplot(dc, aes(x)) + geom_histogram()", "data_constant.csv")
+
+# Grouped (stacked) histograms: one set of bin edges from all of x, counts per group, then
+# position_stack(). g2 has unequal groups (15 and 9); g3 has three groups, and group c has no
+# value in the middle bins, so its rows there are empty bins (count 0) that still stack.
+dg <- utils::read.csv(file.path(here, "data_groups.csv"), stringsAsFactors = FALSE)
+w("groups2", ggplot(dg, aes(x, fill = g2)) + geom_histogram(bins = 8),
+  "ggplot(dg, aes(x, fill = g2)) + geom_histogram(bins = 8)", "data_groups.csv")
+w("groups3_empty", ggplot(dg, aes(x, fill = g3)) + geom_histogram(binwidth = 2, boundary = 0),
+  "ggplot(dg, aes(x, fill = g3)) + geom_histogram(binwidth = 2, boundary = 0)", "data_groups.csv")
+w("groups3_default", ggplot(dg, aes(x, fill = g3)) + geom_histogram(),
+  "ggplot(dg, aes(x, fill = g3)) + geom_histogram()", "data_groups.csv")

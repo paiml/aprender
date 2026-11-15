@@ -18,13 +18,14 @@
 use crate::error::{Error, Result};
 
 use super::aes::Aes;
-use super::build::{BuiltDensity, BuiltLayer, BuiltLayout, PositionScale};
+use super::build::{BuiltBins, BuiltDensity, BuiltLayer, BuiltLayout, PositionScale};
 use super::coord::Coord;
 use super::data::{DataFrame, DataValue};
-use super::dist_math::{cmp_na_last, stat_bin, stat_density, BinArgs, DENSITY_POINTS};
+use super::dist_math::{cmp_na_last, stat_bin_groups, stat_density, BinArgs, DENSITY_POINTS};
 use super::facet::Facet;
 use super::geom::{Geom, GeomType};
 use super::ggplot::Layer;
+use super::position::{apply as apply_position, BarRow, Position};
 use super::stat::Stat;
 
 /// Which ggplot2 layer a [`DistSpec`] stands for.
@@ -348,28 +349,89 @@ pub(super) fn layout(
     }
 }
 
-/// One ungrouped `geom_histogram()`: `stat_bin` (`pad = FALSE`), stacked from 0. The x scale is
-/// trained on the bin edges and the y scale on 0 and the largest count, as ggplot2 retrains
-/// them on the stat's output.
-fn histogram(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
-    if groups.iter().any(|g| *g != -1) {
-        return Err(refuse("grouped histograms (stacking) are not built yet"));
+/// The rows of `x` that are present, with their group ids (ggplot2 drops missing `x` before the
+/// stat, after `add_group()` has numbered the groups).
+fn present_rows(x: Vec<f64>, groups: &[i64]) -> (Vec<f64>, Vec<i64>) {
+    x.into_iter().zip(groups).filter(|(v, _)| !v.is_nan()).map(|(v, g)| (v, *g)).unzip()
+}
+
+/// Every group's bins as one set of columns, in group order (the row order of `stat_bin`'s output).
+fn concat_bins(parts: Vec<BuiltBins>) -> BuiltBins {
+    let mut all = BuiltBins {
+        x: vec![],
+        xmin: vec![],
+        xmax: vec![],
+        width: vec![],
+        count: vec![],
+        density: vec![],
+        ymin: vec![],
+        ymax: vec![],
+        group: vec![],
+    };
+    for p in parts {
+        all.x.extend(p.x);
+        all.xmin.extend(p.xmin);
+        all.xmax.extend(p.xmax);
+        all.width.extend(p.width);
+        all.count.extend(p.count);
+        all.density.extend(p.density);
+        all.ymin.extend(p.ymin);
+        all.ymax.extend(p.ymax);
+        all.group.extend(p.group);
     }
+    all
+}
+
+/// `position_stack()` on binned counts, through the bar rows' own stacking. Returns the stacked
+/// `y` (the top of each bar) and writes `ymin`/`ymax` back. A layer with one group has no
+/// repeated `x`, so the position leaves it as `stat_bin` made it.
+fn stack_bins(bins: &mut BuiltBins) -> Vec<f64> {
+    let mut ids: Vec<i64> = bins.group.clone();
+    ids.sort_unstable();
+    ids.dedup();
+    let rank = |g: i64| u32::try_from(ids.partition_point(|i| *i < g) + 1).unwrap_or(u32::MAX);
+    let mut rows: Vec<BarRow> = (0..bins.x.len())
+        .map(|i| BarRow {
+            x: bins.x[i],
+            y: bins.count[i],
+            ymin: 0.0,
+            ymax: bins.count[i],
+            xmin: bins.xmin[i],
+            xmax: bins.xmax[i],
+            width: bins.width[i],
+            group: rank(bins.group[i]),
+            count: Some(bins.count[i]),
+            prop: None,
+        })
+        .collect();
+    apply_position(&mut rows, Position::stack());
+    bins.ymin = rows.iter().map(|r| r.ymin).collect();
+    bins.ymax = rows.iter().map(|r| r.ymax).collect();
+    rows.iter().map(|r| r.y).collect()
+}
+
+/// One `geom_histogram()`: `stat_bin` (`pad = FALSE`) with shared edges across groups, stacked
+/// from 0 by `position_stack()`. The x scale is trained on the bin edges and the y scale on 0 and
+/// the tallest stack, as ggplot2 retrains them on the stat's output.
+fn histogram(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
     let name = aes.x.as_deref().ok_or_else(|| refuse("geom_histogram needs an `x` aesthetic"))?;
-    let xs: Vec<f64> = numeric(data, name)?.into_iter().filter(|v| !v.is_nan()).collect();
+    let (xs, ids) = present_rows(numeric(data, name)?, groups);
     let args = BinArgs {
         bins: spec.bins,
         binwidth: spec.binwidth,
         boundary: spec.boundary,
         center: spec.center,
     };
-    let bins = stat_bin(&xs, &args)?;
-    let top = bins.count.iter().copied().fold(0.0_f64, f64::max);
-    let (lo, hi) =
-        (bins.xmin.first().copied().unwrap_or(0.0), bins.xmax.last().copied().unwrap_or(0.0));
+    let mut bins = concat_bins(stat_bin_groups(&xs, &ids, &args)?);
+    let y = stack_bins(&mut bins);
+    let top = bins.ymax.iter().copied().fold(0.0_f64, f64::max);
+    let (lo, hi) = (
+        bins.xmin.iter().copied().fold(f64::INFINITY, f64::min),
+        bins.xmax.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    );
     let layer = BuiltLayer {
         x: bins.x.clone(),
-        y: bins.count.clone(),
+        y,
         points: None,
         path: None,
         bins: Some(bins),
@@ -549,17 +611,22 @@ mod tests {
     }
 
     /// `geom_histogram` through `layout()`: missing values are dropped as ggplot2 does, and input
-    /// with no bins (all missing) or with groups is refused with a typed error.
+    /// with no bins (all missing) is refused with a typed error; a grouped histogram stacks.
     #[test]
-    fn histogram_drops_missing_and_refuses_empty_and_grouped_input() {
+    fn histogram_drops_missing_refuses_empty_and_stacks_groups() {
         let hist = |d: DataFrame| run(plot(d, Aes::new().x("x"), Geom::gg_histogram()));
         let clean = hist(DataFrame::from_xy(&[1.0, 2.0, 4.0, 8.0], &[0.0; 4])).expect("clean");
         let gappy = hist(DataFrame::from_xy(&[1.0, f32::NAN, 2.0, 4.0, 8.0], &[0.0; 5]));
         assert_eq!(gappy.expect("gappy").layers[0].y, clean.layers[0].y);
         let none = hist(DataFrame::from_xy(&[f32::NAN, f32::NAN], &[0.0; 2]));
         assert!(matches!(none, Err(Error::Rendering(_))));
-        let r = run(plot(probe(), Aes::new().x("x").color("h"), Geom::gg_histogram()));
-        assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("grouped")));
+        let grouped = run(plot(probe(), Aes::new().x("x").fill("h"), Geom::gg_histogram()));
+        let layer = grouped.expect("grouped histogram builds").layers.remove(0);
+        let b = layer.bins.expect("bins");
+        assert_eq!(b.group.iter().copied().collect::<std::collections::BTreeSet<_>>().len(), 3);
+        let total: f64 = b.count.iter().sum();
+        assert_eq!(total, 5.0, "every row lands in exactly one bin");
+        assert!(b.ymax.iter().zip(&b.ymin).all(|(hi, lo)| hi >= lo));
     }
 
     #[test]

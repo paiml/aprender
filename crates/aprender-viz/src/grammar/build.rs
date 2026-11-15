@@ -100,7 +100,8 @@ pub struct BuiltLayer {
     pub density: Option<BuiltDensity>,
 }
 
-/// `stat_bin`'s columns, one entry per bin (`bin_out()` in ggplot2 4.0.3).
+/// `stat_bin`'s columns, one entry per bin and group, groups in ascending id (`bin_out()` in
+/// ggplot2 4.0.3), with the `ymin`/`ymax` that `position_stack()` leaves.
 #[derive(Debug, Clone, PartialEq)]
 pub struct BuiltBins {
     /// Bin centres.
@@ -115,6 +116,13 @@ pub struct BuiltBins {
     pub count: Vec<f64>,
     /// `count / width / sum(count)`.
     pub density: Vec<f64>,
+    /// Lower edge of the stacked bar: 0 for the first group, the running total below it after
+    /// `position_stack()`.
+    pub ymin: Vec<f64>,
+    /// Upper edge of the stacked bar.
+    pub ymax: Vec<f64>,
+    /// ggplot2's group id of each row (`-1` without a discrete mapping).
+    pub group: Vec<i64>,
 }
 
 /// `stat_density`'s columns beyond `x` and `y`, one entry per grid point (`compute_density()` in

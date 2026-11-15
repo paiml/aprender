@@ -150,32 +150,70 @@ fn count_bins(x: &[f64], breaks: &[f64]) -> Vec<f64> {
     count
 }
 
-/// `stat_bin` over finite `x`: ggplot2 4.0.3's `compute_bins()` then `bin_vector()`.
+/// ggplot2 4.0.3's `compute_bins()`: the bin edges, from the range of all the layer's `x` (the
+/// scale's dimension), so every group is cut at the same edges.
+fn bin_breaks(x: &[f64], a: &BinArgs) -> Result<Vec<f64>> {
+    check_args(x, a)?;
+    let lo = x.iter().copied().fold(f64::INFINITY, f64::min);
+    let hi = x.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    match a.binwidth {
+        Some(w) => breaks_width((lo, hi), w, a.center, a.boundary),
+        None => breaks_bins((lo, hi), a.bins, a.center, a.boundary),
+    }
+}
+
+/// `bin_out()`: one group's bins from its counts over `breaks`.
+fn bins_from_counts(breaks: &[f64], count: Vec<f64>) -> BuiltBins {
+    let width: Vec<f64> = breaks.windows(2).map(|w| w[1] - w[0]).collect();
+    let centre: Vec<f64> = breaks.windows(2).map(|w| (w[0] + w[1]) / 2.0).collect();
+    let total: f64 = count.iter().sum();
+    BuiltBins {
+        xmin: centre.iter().zip(&width).map(|(c, w)| c - w / 2.0).collect(),
+        xmax: centre.iter().zip(&width).map(|(c, w)| c + w / 2.0).collect(),
+        density: count.iter().zip(&width).map(|(n, w)| n / w / total).collect(),
+        ymin: vec![0.0; count.len()],
+        ymax: count.clone(),
+        group: vec![-1; count.len()],
+        x: centre,
+        width,
+        count,
+    }
+}
+
+/// `stat_bin` over finite `x`: ggplot2 4.0.3's `compute_bins()` then `bin_vector()`. The layout
+/// path goes through [`stat_bin_groups`]; this one-group form is what the kernel tests drive.
 ///
 /// # Errors
 ///
 /// [`Error::Rendering`] for no finite `x`, `bins == 0`, a non-positive or non-finite binwidth or
 /// boundary/center, both `boundary` and `center`, or more than 1,000,000 bins.
+#[cfg(test)]
 pub(super) fn stat_bin(x: &[f64], a: &BinArgs) -> Result<BuiltBins> {
-    check_args(x, a)?;
-    let lo = x.iter().copied().fold(f64::INFINITY, f64::min);
-    let hi = x.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let breaks = match a.binwidth {
-        Some(w) => breaks_width((lo, hi), w, a.center, a.boundary)?,
-        None => breaks_bins((lo, hi), a.bins, a.center, a.boundary)?,
-    };
-    let count = count_bins(x, &breaks);
-    let width: Vec<f64> = breaks.windows(2).map(|w| w[1] - w[0]).collect();
-    let centre: Vec<f64> = breaks.windows(2).map(|w| (w[0] + w[1]) / 2.0).collect();
-    let total: f64 = count.iter().sum();
-    Ok(BuiltBins {
-        xmin: centre.iter().zip(&width).map(|(c, w)| c - w / 2.0).collect(),
-        xmax: centre.iter().zip(&width).map(|(c, w)| c + w / 2.0).collect(),
-        density: count.iter().zip(&width).map(|(n, w)| n / w / total).collect(),
-        x: centre,
-        width,
-        count,
-    })
+    let breaks = bin_breaks(x, a)?;
+    Ok(bins_from_counts(&breaks, count_bins(x, &breaks)))
+}
+
+/// `stat_bin` per group: one set of edges from all of `x`, then each group's counts over them
+/// (empty bins stay, `drop = "none"`). Groups come out in ascending id, each with its `group` id.
+///
+/// # Errors
+///
+/// As [`stat_bin`], judged on all of `x`.
+pub(super) fn stat_bin_groups(x: &[f64], group: &[i64], a: &BinArgs) -> Result<Vec<BuiltBins>> {
+    let breaks = bin_breaks(x, a)?;
+    let mut ids: Vec<i64> = group.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids
+        .into_iter()
+        .map(|id| {
+            let own: Vec<f64> =
+                x.iter().zip(group).filter(|(_, g)| **g == id).map(|(v, _)| *v).collect();
+            let mut bins = bins_from_counts(&breaks, count_bins(&own, &breaks));
+            bins.group = vec![id; bins.count.len()];
+            bins
+        })
+        .collect())
 }
 
 // ---- stat_density (PLOT-GG-001, paiml/aprender#6964) ----------------------------------------
