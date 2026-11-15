@@ -277,12 +277,25 @@ fn render(args: &PlotArgs, env: &Env, stderr: &mut dyn Write) -> Result<String, 
     .map_err(|e| e.to_string())
 }
 
-/// ggplot2's `facet_wrap` column count: `ceil(sqrt(panels))` over the distinct labels.
+/// ggplot2's `facet_wrap` column count over the distinct labels: `wrap_dims` takes it from
+/// `grDevices::n2mfrow(n)[1]`, so 3 panels are 1x3 and 4 are 2x2.
 fn wrap_columns(labels: &[&str]) -> usize {
     let mut levels = labels.to_vec();
     levels.sort_unstable();
     levels.dedup();
-    (1..=levels.len()).find(|n| n * n >= levels.len()).unwrap_or(1)
+    n2mfrow_columns(levels.len())
+}
+
+/// The first element of R's `n2mfrow(n)`: `n` up to 3, `(n+1) %/% 2` up to 6, `(n+2) %/% 3`
+/// up to 12, then `ceiling(sqrt(n))`. At least 1.
+fn n2mfrow_columns(n: usize) -> usize {
+    match n {
+        0 => 1,
+        1..=3 => n,
+        4..=6 => (n + 1) / 2,
+        7..=12 => (n + 2) / 3,
+        _ => (1..=n).find(|c| c * c >= n).unwrap_or(1),
+    }
 }
 
 /// The facet column's text for the rows [`numeric_xy`] kept (both x and y a number), so each
@@ -724,6 +737,18 @@ mod tests {
             None => std::env::remove_var("NO_COLOR"),
         }
         assert!(set && !empty);
+    }
+
+    #[test]
+    fn wrap_columns_follow_n2mfrow() {
+        // (panels, columns) from R: sapply(c(1:7,12,13,16,17), function(n) n2mfrow(n)[1]).
+        for (n, cols) in [(0, 1), (1, 1), (2, 2), (3, 3), (4, 2), (5, 3), (6, 3), (7, 3)] {
+            assert_eq!(n2mfrow_columns(n), cols, "{n} panels");
+        }
+        for (n, cols) in [(12, 4), (13, 4), (16, 4), (17, 5)] {
+            assert_eq!(n2mfrow_columns(n), cols, "{n} panels");
+        }
+        assert_eq!(wrap_columns(&["b", "a", "b", "c"]), 3);
     }
 }
 
