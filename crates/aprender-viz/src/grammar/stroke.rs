@@ -60,7 +60,9 @@ pub(super) fn width_px(path: &BuiltPath) -> f64 {
 /// that is not a stroke layer, for a panel the layer has no rows in, and for a domain that is
 /// not finite.
 pub(super) fn polylines(layer: &BuiltLayer, panel: usize, domain: Domain) -> Vec<Vec<(f64, f64)>> {
-    let Some(path) = &layer.path else { return Vec::new() };
+    let Some(path) = &layer.path else {
+        return Vec::new();
+    };
     let ((x0, x1), (y0, y1)) = domain;
     if ![x0, x1, y0, y1].iter().all(|v| v.is_finite()) {
         return Vec::new();
@@ -80,8 +82,12 @@ fn reference_runs(
     panel: usize,
     ((xlo, xhi), (ylo, yhi)): Domain,
 ) -> Vec<Vec<(f64, f64)>> {
-    let Some(r) = &path.reference else { return Vec::new() };
-    let Some(&c) = r.intercept.get(panel) else { return Vec::new() };
+    let Some(r) = &path.reference else {
+        return Vec::new();
+    };
+    let Some(&c) = r.intercept.get(panel) else {
+        return Vec::new();
+    };
     let run = match r.kind {
         ReferenceKind::Horizontal => vec![(xlo, c), (xhi, c)],
         ReferenceKind::Vertical => vec![(c, ylo), (c, yhi)],
@@ -132,7 +138,9 @@ fn split_runs(
 fn clip_run(run: &[(f64, f64)], domain: Domain) -> Vec<Vec<(f64, f64)>> {
     let mut out: Vec<Vec<(f64, f64)>> = Vec::new();
     for w in run.windows(2) {
-        let Some((a, b)) = clip(w[0], w[1], domain) else { continue };
+        let Some((a, b)) = clip(w[0], w[1], domain) else {
+            continue;
+        };
         match out.last_mut() {
             Some(cur) if cur.last() == Some(&a) => cur.push(b),
             _ => out.push(vec![a, b]),
@@ -218,7 +226,9 @@ pub(super) fn draw_raster(
     let colour = colour(path);
     for line in polylines(layer, panel, domain) {
         for w in line.windows(2) {
-            let (Some(a), Some(b)) = (px(w[0], xs, ys), px(w[1], xs, ys)) else { continue };
+            let (Some(a), Some(b)) = (px(w[0], xs, ys), px(w[1], xs, ys)) else {
+                continue;
+            };
             draw_line_aa(fb, a.0, a.1, b.0, b.1, colour);
         }
     }
@@ -273,7 +283,7 @@ mod tests {
     }
 
     fn layer(x: &[f64], y: &[f64], p: Option<BuiltPath>) -> BuiltLayer {
-        BuiltLayer { x: x.to_vec(), y: y.to_vec(), points: None, path: p }
+        BuiltLayer { x: x.to_vec(), y: y.to_vec(), points: None, path: p, bins: None }
     }
 
     #[test]

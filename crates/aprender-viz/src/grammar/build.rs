@@ -94,6 +94,25 @@ pub struct BuiltLayer {
     /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
     /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
     pub path: Option<BuiltPath>,
+    /// `stat_bin` output for a histogram layer; `x`/`y` then hold the bin centres and counts.
+    pub bins: Option<BuiltBins>,
+}
+
+/// `stat_bin`'s columns, one entry per bin (`bin_out()` in ggplot2 4.0.3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuiltBins {
+    /// Bin centres.
+    pub x: Vec<f64>,
+    /// Lower edges (`x - width / 2`).
+    pub xmin: Vec<f64>,
+    /// Upper edges (`x + width / 2`).
+    pub xmax: Vec<f64>,
+    /// Bin widths.
+    pub width: Vec<f64>,
+    /// Rows per bin.
+    pub count: Vec<f64>,
+    /// `count / width / sum(count)`.
+    pub density: Vec<f64>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

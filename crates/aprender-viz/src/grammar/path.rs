@@ -274,7 +274,7 @@ pub(super) fn build_layer(
                 slope: slope.map_or_else(Vec::new, |s| vec![s; n]),
             }),
         };
-        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path) });
+        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path), bins: None });
     }
 
     let own = layer.data.is_some();
@@ -309,7 +309,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path) })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), bins: None })
 }
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {
@@ -371,7 +371,9 @@ fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
 /// The 0-based panel index of every row of `data`.
 fn row_panels(facet: &Facet, global: &[Panel], data: &DataFrame, own: bool) -> Result<Vec<usize>> {
     let mut out = vec![0; data.nrow()];
-    let Facet::Wrap { var, .. } = facet else { return Ok(out) };
+    let Facet::Wrap { var, .. } = facet else {
+        return Ok(out);
+    };
     let mine;
     let source: &[Panel] = if own {
         require_text_facet(data, var)?;
@@ -412,7 +414,9 @@ fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
 /// ggplot2's group ids: 1-based rank of the sorted distinct value, or -1 when unmapped.
 fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
     let n = data.nrow();
-    let Some(name) = aes.group.as_deref() else { return Ok(vec![-1; n]) };
+    let Some(name) = aes.group.as_deref() else {
+        return Ok(vec![-1; n]);
+    };
     let col =
         data.get(name).ok_or_else(|| Error::UnknownColumn(format!("no group column {name:?}")))?;
     let bad = || refuse(format!("group column {name:?} must be all numbers or all text, no gaps"));

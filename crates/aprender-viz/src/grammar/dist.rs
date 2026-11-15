@@ -18,10 +18,10 @@
 use crate::error::{Error, Result};
 
 use super::aes::Aes;
-use super::build::BuiltLayout;
+use super::build::{BuiltLayer, BuiltLayout, PositionScale};
 use super::coord::Coord;
 use super::data::{DataFrame, DataValue};
-use super::dist_math::cmp_na_last;
+use super::dist_math::{cmp_na_last, stat_bin, BinArgs};
 use super::facet::Facet;
 use super::geom::{Geom, GeomType};
 use super::ggplot::Layer;
@@ -53,11 +53,25 @@ pub struct DistSpec {
     pub width: Option<f64>,
     /// `alpha`, the layer's fixed alpha (`geom_histogram(alpha = 0.5)`), set by [`Geom::alpha`].
     pub alpha: Option<f64>,
+    /// `binwidth` of `stat_bin`; wins over `bins`.
+    pub binwidth: Option<f64>,
+    /// `boundary` of `stat_bin`: an edge of a bin.
+    pub boundary: Option<f64>,
+    /// `center` of `stat_bin`: the middle of a bin.
+    pub center: Option<f64>,
 }
 
 impl DistSpec {
     fn new(kind: DistKind) -> Self {
-        Self { kind, bins: 30, width: None, alpha: None }
+        Self {
+            kind,
+            bins: 30,
+            width: None,
+            alpha: None,
+            binwidth: None,
+            boundary: None,
+            center: None,
+        }
     }
 }
 
@@ -94,6 +108,34 @@ impl Geom {
     #[must_use]
     pub fn gg_errorbar() -> Self {
         Self::dist(DistKind::Errorbar)
+    }
+}
+
+/// `stat_bin` parameters on a distribution layer; no-ops on any other geom.
+impl Geom {
+    fn with_spec(mut self, f: impl FnOnce(&mut DistSpec)) -> Self {
+        if let GeomType::Dist(spec) = &mut self.geom_type {
+            f(spec);
+        }
+        self
+    }
+
+    /// `binwidth =` of `stat_bin`.
+    #[must_use]
+    pub fn binwidth(self, w: f64) -> Self {
+        self.with_spec(|s| s.binwidth = Some(w))
+    }
+
+    /// `boundary =` of `stat_bin`.
+    #[must_use]
+    pub fn boundary(self, b: f64) -> Self {
+        self.with_spec(|s| s.boundary = Some(b))
+    }
+
+    /// `center =` of `stat_bin`.
+    #[must_use]
+    pub fn center(self, c: f64) -> Self {
+        self.with_spec(|s| s.center = Some(c))
     }
 }
 
@@ -283,17 +325,59 @@ pub(super) fn layout(
         return Err(refuse("distribution layers cannot be combined with other geoms yet"));
     }
     check_scope(coord, facet)?;
+    let mut checked = Vec::with_capacity(layers.len());
     for layer in layers {
-        let GeomType::Dist(spec) = &layer.geom.geom_type else { continue };
+        let GeomType::Dist(spec) = &layer.geom.geom_type else {
+            continue;
+        };
         let data = layer.data.as_ref().unwrap_or(plot_data);
         let aes = plot_aes.merge(&layer.aes);
         check_inputs(spec.kind, &aes, layer.geom.stat.as_ref())?;
-        group_ids(data, &aes)?;
+        let groups = group_ids(data, &aes)?;
         for name in [&aes.x, &aes.y, &aes.ymin, &aes.ymax].into_iter().flatten() {
             numeric(data, name)?;
         }
+        checked.push((spec, data, aes, groups));
     }
-    Err(Error::UnsupportedLayer(NOT_BUILT))
+    match checked.as_slice() {
+        [(spec, data, aes, groups)] if spec.kind == DistKind::Histogram => {
+            histogram(spec, data, aes, groups)
+        }
+        _ => Err(Error::UnsupportedLayer(NOT_BUILT)),
+    }
+}
+
+/// One ungrouped `geom_histogram()`: `stat_bin` (`pad = FALSE`), stacked from 0. The x scale is
+/// trained on the bin edges and the y scale on 0 and the largest count, as ggplot2 retrains
+/// them on the stat's output.
+fn histogram(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
+    if groups.iter().any(|g| *g != -1) {
+        return Err(refuse("grouped histograms (stacking) are not built yet"));
+    }
+    let name = aes.x.as_deref().ok_or_else(|| refuse("geom_histogram needs an `x` aesthetic"))?;
+    let xs: Vec<f64> = numeric(data, name)?.into_iter().filter(|v| !v.is_nan()).collect();
+    let args = BinArgs {
+        bins: spec.bins,
+        binwidth: spec.binwidth,
+        boundary: spec.boundary,
+        center: spec.center,
+    };
+    let bins = stat_bin(&xs, &args)?;
+    let top = bins.count.iter().copied().fold(0.0_f64, f64::max);
+    let (lo, hi) =
+        (bins.xmin.first().copied().unwrap_or(0.0), bins.xmax.last().copied().unwrap_or(0.0));
+    let layer = BuiltLayer {
+        x: bins.x.clone(),
+        y: bins.count.clone(),
+        points: None,
+        path: None,
+        bins: Some(bins),
+    };
+    Ok(BuiltLayout {
+        layers: vec![layer],
+        x: PositionScale::continuous((lo, hi)),
+        y: PositionScale::continuous((0.0, top)),
+    })
 }
 
 #[cfg(test)]
@@ -376,7 +460,8 @@ mod tests {
         let drawn = |r: Result<()>| matches!(r, Err(Error::UnsupportedLayer(m)) if m == NOT_DRAWN);
         for (name, g, a) in all_geoms() {
             let p = plot(small(), a, g).build().expect("builds");
-            assert!(not_built(&p.layout()), "{name}");
+            // The histogram is built; the other four stats are not.
+            assert_eq!(not_built(&p.layout()), name != "hist", "{name}");
             assert!(drawn(p.to_framebuffer().map(drop)), "{name} framebuffer");
             assert!(drawn(p.to_svg().map(drop)), "{name} svg");
         }
