@@ -1,0 +1,75 @@
+metadata:
+  id: ggplot2-bars-position-fill-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-15'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row position_fill (PLOT-GG-001, paiml/aprender#6931, master #6909). position_fill() stacks the bars of each x and normalises every stack to a total height of 1 (negative and positive bars separately, as pos_stack() does). The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time. Every case goes through bar_layout(). Scope: vertical bars (orientation x), a discrete text x and a discrete text fill, geom_col (stat identity) and geom_bar (stat count), vjust and reverse of position_fill, a non-default width, no facet in the fixture (bar_layout_in computes per panel, untested here), no dodge. Anything else is out of scope for this row.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), position_fill, pos_stack'
+  - 'crates/aprender-viz/fixtures/ggplot2/position_fill/generate.R'
+entity: {type: ggplot2-row, ref: position_fill}
+equations:
+  fill:
+    formula: 'pos_stack(data, vjust, fill = TRUE) per (PANEL, xmin)'
+    domain: discrete text x and fill, finite numeric y (geom_col) or counted rows (geom_bar)
+    codomain: BarRow.{y,ymin,ymax} and the trained discrete x and continuous y scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; labels, groups and panels exact
+    preconditions:
+    - x and fill are text columns, else BarError::WrongType
+proof_obligations:
+- id: GGPF-INV-001
+  type: invariant
+  property: Bar rows and trained scales match ggplot2
+  formal: 'forall case: bar_layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact labels, groups, panels)'
+  applies_to: fill
+enforcement:
+  default_cases:
+    description: the default fill, reverse, vjust and width fixtures are reproduced
+    check: grammar::ggplot2_bars_fill_oracle::position_fill_col_default
+    severity: ERROR
+  count_and_negative_cases:
+    description: counted bars and negative values are reproduced
+    check: grammar::ggplot2_bars_fill_oracle::position_fill_bar_count
+    severity: ERROR
+  edge_cases:
+    description: unique x and zero-total stacks are reproduced
+    check: grammar::ggplot2_bars_fill_oracle::position_fill_zero_total_stack
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGPF-001
+  rule: Fill normalises each stack to 1
+  prediction: replacing Position::Fill by Position::Stack in the spec turns grammar::ggplot2_bars_fill_oracle::stack_is_not_fill's premise false and position_fill_col_default RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_fill_oracle::position_fill_col_default
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGPF-002
+  rule: reverse flips the stacking order
+  prediction: ignoring reverse in stack() turns position_fill_col_reverse RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_fill_oracle::position_fill_col_reverse
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGPF-003
+  rule: vjust selects the point inside each segment
+  prediction: ignoring vjust turns position_fill_col_vjust_half RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_fill_oracle::position_fill_col_vjust_half
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGPF-004
+  rule: Negative bars stack apart from positive ones
+  prediction: stacking negative and positive bars together turns position_fill_negative_values RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_fill_oracle::position_fill_negative_values
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGPF-005
+  rule: A unique x is still normalised
+  prediction: skipping fill when no x repeats turns position_fill_unique_x_still_normalises RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_bars_fill_oracle::position_fill_unique_x_still_normalises
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGPF-001
+  name: ggplot2 conformance row position_fill
+  description: aprender-viz bar_layout equals ggplot2 4.0.3 ggplot_build() for the position_fill fixtures
+  checks:
+  - default_cases
+  - count_and_negative_cases
+  - edge_cases
