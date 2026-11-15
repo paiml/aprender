@@ -98,38 +98,154 @@ ws_version() {
 vget() { awk -v k="$1" 'index($0, k "=") == 1 { print substr($0, length(k) + 2); exit }'; }
 
 # foreign_t1 OWN-PGID < "pgid args" lines -> every models_t1.sh process outside OWN-PGID
-# FAIL CLOSED: a process counts as a run when a word of its command line is models_t1.sh (any directory, quotes
-# ignored), unless it is a known non-runner. Wrappers are never listed, so a new one (flock, nohup, sudo, ionice,
-# taskset, time, exec, any option or option argument) cannot hide a run. Two things clear a line, and both
-# are checked only where they decide what the line IS:
-#  - its PROGRAM (the first word, or the first word of a bash -c string) is a linter, editor, pager, searcher or
-#    copier (bashrs, vim, tail, grep, git, ...): a `bashrs lint ... scripts/release/models_t1.sh` is not a run
-#    (2026-11-15, PMAT-7017);
-#  - a shell on the line carries a no-exec option cluster (-n, -D): `bash -n models_t1.sh` parses and stops.
-# After a shell's -c the rest of the line is a command string and is read again from its first word.
+# A line is decided by the program that actually receives models_t1.sh, not by the first word of the line, and it is
+# a NON-run only when that is provable; anything ambiguous stays a run (fail closed).
+#  - Known transparent wrappers (timeout, setsid, nice, ionice, taskset, flock, stdbuf, env, sudo, nohup, time, exec,
+#    command) are skipped with their own options and operands; an option the table does not know makes the line a run.
+#  - The program behind them is a non-run when it is a linter, editor, pager, searcher or copier that cannot execute
+#    its operands (bashrs lint, vim, tail, grep, git log, ...; git and bashrs only for a read-only subcommand, an
+#    editor only without a command option), or a shell carrying -n / -D (parse, do not execute).
+#  - A shell's -c string is judged one simple command at a time (split on ; & | ( ) and a backquote); a
+#    simple command is a run when models_t1.sh is its program or any of its words and it is not provably a non-run.
+#  - Any other program with a models_t1.sh word on its line is a run (a wrapper script, python, xargs, find -exec).
 foreign_t1() {
     local prog
     prog=$(cat <<'AWK'
-        BEGIN {
-            nn = split("bashrs shellcheck shfmt vim vi nvim view nano emacs less more most bat cat head tail grep egrep fgrep rg ag sed awk diff cmp ls wc stat file git sha256sum md5sum ps pgrep pkill man find tar cp mv rm scp rsync tee echo printf test code", npg, " ")
-            for (k = 1; k <= nn; k++) nonrun[npg[k]] = 1
-            ms = split("bash sh dash zsh ksh", ns, " ")
-            for (k = 1; k <= ms; k++) shell[ns[k]] = 1
+        function strip(x) { gsub(/["\047]/, "", x); return x }
+        function ist1(x) { x = strip(x); return x ~ /(^|[^A-Za-z0-9_.-])models_t1\.sh([^A-Za-z0-9_.-]|$)/ }
+        function anyt1(w, a, b,   i) { for (i = a; i <= b; i++) if (ist1(w[i])) return 1; return 0 }
+        # skipw WRAPPER-WORD ARRAY FIRST LAST -> index of the wrapped program, or -1 when an option is not in the table
+        function skipw(w, p, i, b,   x, nm, tsc, pos) {
+            tsc = 0
+            for (;;) {
+                if (i > b) return -1
+                x = strip(w[i])
+                if (x == "--") { i++; break }
+                if (substr(x, 1, 1) != "-") break
+                if (index(WF[p], " " x " ")) { i++; continue }
+                if (index(WA[p], " " x " ")) { if (x == "-c") tsc = 1; i += 2; continue }
+                nm = x; sub(/=.*/, "", nm)
+                if (x ~ /^--/ && nm != x && index(WA[p], " " nm " ")) { i++; continue }
+                if (p == "nice" && x ~ /^-[0-9]+$/) { i++; continue }
+                if (p == "stdbuf" && x ~ /^-[ioe]./) { i++; continue }
+                return -1   # M_WRAP_UNKNOWN_OPT
+            }
+            pos = WP[p]
+            if (p == "taskset" && tsc) pos = 0
+            if (i + pos > b + 1) return -1
+            return i + pos
         }
-        $1 != own {
-            first = 1; insh = 0; run = 0
-            for (i = 2; i <= NF; i++) {
-                t = $i; gsub(/["\047]/, "", t); sub(/.*\//, "", t)
-                if (t == "models_t1.sh") { run = 1; break }
-                if (first && (t in nonrun)) break
-                first = 0
-                if (t in shell) { insh = 1; continue }
-                if (insh && t ~ /^-[A-Za-z]+$/) {
-                    if (t ~ /[nD]/) break
-                    if (t ~ /c/) { insh = 0; first = 1 }
+        # nonrun_ok PROGRAM FIRST LAST -> 1 when this program provably does not execute its operands
+        function nonrun_ok(w, p, j, b,   x, k) {
+            if (p == "git") {
+                while (j <= b) {
+                    x = strip(w[j])
+                    if (x == "-C") { j += 2; continue }
+                    if (x == "--no-pager" || x == "-P" || x == "--paginate" || x == "-p") { j++; continue }
+                    break
+                }
+                return (j <= b && (strip(w[j]) in GITRO)) ? 1 : 0   # M_GIT_SUBCOMMAND
+            }
+            if (p == "bashrs") return (j <= b && (strip(w[j]) in BRS)) ? 1 : 0   # M_BASHRS_SUBCOMMAND
+            if (p in EDIT) {
+                for (k = j; k <= b; k++) {
+                    x = strip(w[k])
+                    if (x ~ /^(-[A-Za-z]*[cSs]|--cmd|--eval|--funcall|--load|--script|\+.*)$/) return 0   # M_EDITOR_COMMAND
                 }
             }
-            if (run) print
+            return 1
+        }
+        # shellrun ARRAY FIRST SHELL-INDEX LAST
+        function shellrun(w, a, i, b,   j, x, k, n, ch, np, noexec, cf, sg) {
+            j = i + 1; noexec = 0; cf = 0
+            while (j <= b) {
+                x = strip(w[j])
+                if (x == "--") { j++; break }
+                if (x ~ /^[-+][A-Za-z]+$/) {
+                    np = 0; n = length(x); sg = substr(x, 1, 1)
+                    for (k = 2; k <= n; k++) {
+                        ch = substr(x, k, 1)
+                        if (sg == "+" && (ch == "n" || ch == "c" || ch == "D")) return anyt1(w, a, b)   # M_PLUS_N
+                        if (ch == "n" || ch == "D") noexec = 1
+                        else if (ch == "c") cf = 1
+                        else if (ch == "o" || ch == "O") np++
+                        else if (index("lisexvfuEHPpBbhkmtaCrIT", ch) == 0) return anyt1(w, a, b)   # M_SHELL_UNKNOWN_LETTER
+                    }
+                    j += 1 + np; continue   # M_OPTION_ARG
+                }
+                if (x ~ /^--/) {
+                    if (index(" --norc --noprofile --posix --login --restricted --verbose --debugger --noediting ", " " x " ")) { j++; continue }
+                    if (x == "--rcfile" || x == "--init-file") { j += 2; continue }   # M_RCFILE_ARG
+                    return anyt1(w, a, b)   # M_SHELL_UNKNOWN_LONG
+                }
+                break   # M_SCRIPT_OPERAND
+            }
+            if (noexec) return 0   # M_NOEXEC
+            if (cf && j <= b) return str(w, j, b)   # M_C_STRING
+            if (j <= b && ist1(w[j])) return 1
+            return anyt1(w, a, b)
+        }
+        # one simple command, words a..b
+        function seg(w, a, b,   i, p, j) {
+            i = a
+            for (;;) {
+                while (i <= b && strip(w[i]) ~ /^[A-Za-z_][A-Za-z0-9_]*=/) i++   # M_ASSIGNMENT
+                if (i > b) return anyt1(w, a, b)
+                p = strip(w[i]); sub(/.*\//, "", p)
+                if (!(p in WA)) break   # M_WRAPPER
+                j = skipw(w, p, i + 1, b)
+                if (j < 0) return anyt1(w, a, b)
+                i = j
+            }
+            if (ist1(w[i])) return 1
+            if (p in NONRUN) return nonrun_ok(w, p, i + 1, b) ? 0 : anyt1(w, a, b)   # M_NONRUN
+            if (p in SHELL) return shellrun(w, a, i, b)
+            return anyt1(w, a, b)
+        }
+        # a command string: words j..b are split on shell operators and each simple command is judged on its own
+        function str(w, j, b,   s, n, t, k, st) {
+            s = ""
+            for (k = j; k <= b; k++) s = s " " strip(w[k])
+            gsub(/[;&|()\140]/, " ; ", s)   # M_SPLIT
+            n = split(s, t, " ")
+            st = 1
+            for (k = 1; k <= n + 1; k++) {
+                if (k > n || t[k] == ";") {
+                    if (k - 1 >= st && seg(t, st, k - 1)) return 1
+                    st = k + 1   # M_EVERY_SEGMENT
+                }
+            }
+            return 0
+        }
+        BEGIN {
+            nn = split("bashrs shellcheck shfmt vim vi nvim view nano emacs less more most cat head tail grep egrep fgrep diff cmp ls wc stat file sha256sum md5sum ps pgrep pkill man cp mv rm tee echo printf test git", npg, " ")
+            for (k = 1; k <= nn; k++) NONRUN[npg[k]] = 1
+            nn = split("vim vi nvim view nano emacs less more most", npg, " ")
+            for (k = 1; k <= nn; k++) EDIT[npg[k]] = 1
+            nn = split("log diff show blame status add commit grep ls-files rev-parse ls-tree cat-file shortlog describe", npg, " ")
+            for (k = 1; k <= nn; k++) GITRO[npg[k]] = 1
+            nn = split("lint check format purify audit score parse explain gate make", npg, " ")
+            for (k = 1; k <= nn; k++) BRS[npg[k]] = 1
+            nn = split("bash sh dash zsh ksh", npg, " ")
+            for (k = 1; k <= nn; k++) SHELL[npg[k]] = 1
+            WA["timeout"] = " -k --kill-after -s --signal "; WF["timeout"] = " --foreground --preserve-status -v --verbose "; WP["timeout"] = 1
+            WA["setsid"] = " "; WF["setsid"] = " -c --ctty -f --fork -w --wait "; WP["setsid"] = 0
+            WA["nice"] = " -n --adjustment "; WF["nice"] = " "; WP["nice"] = 0
+            WA["ionice"] = " -c --class -n --classdata "; WF["ionice"] = " -t --ignore "; WP["ionice"] = 0
+            WA["taskset"] = " -c --cpu-list "; WF["taskset"] = " -a --all-tasks "; WP["taskset"] = 1
+            WA["flock"] = " -w --timeout -E --conflict-exit-code "; WF["flock"] = " -n --nonblock --nb -x --exclusive -s --shared -o --close "; WP["flock"] = 1
+            WA["stdbuf"] = " -i -o -e --input --output --error "; WF["stdbuf"] = " "; WP["stdbuf"] = 0
+            WA["env"] = " -u --unset -C --chdir "; WF["env"] = " -i --ignore-environment "; WP["env"] = 0
+            WA["sudo"] = " -u --user -g --group -h --host -p --prompt -C -D --chdir -r --role -t --type -T --command-timeout -U --other-user "
+            WF["sudo"] = " -E --preserve-env -H --set-home -n --non-interactive -S --stdin -b --background -P -k -A --askpass "; WP["sudo"] = 0
+            WA["nohup"] = " "; WF["nohup"] = " "; WP["nohup"] = 0
+            WA["time"] = " "; WF["time"] = " -p "; WP["time"] = 0
+            WA["exec"] = " "; WF["exec"] = " "; WP["exec"] = 0
+            WA["command"] = " "; WF["command"] = " "; WP["command"] = 0
+        }
+        $1 != own {
+            for (i = 2; i <= NF; i++) w[i] = $i
+            if (seg(w, 2, NF)) print
         }
 AWK
     )
@@ -600,7 +716,7 @@ self_test() {
     row own_group_and_lookalikes_are_not_foreign 0 "" "models_t1" -- foreign_t1 5 <<< $'5 bash scripts/release/models_t1.sh 9.8.7 c out\n78 tail -f out/models_t1.sh.log'
     # one ps line per row, each asserted on its own: a run is printed back, a non-run prints nothing
     t1_run() { row "t1_run_$1" 0 "9 $2" "" -- foreign_t1 5 <<< "9 $2"; }
-    t1_not() { row "t1_not_$1" 0 "" "models_t1" -- foreign_t1 5 <<< "9 $2"; }
+    t1_not() { row "t1_not_$1" 0 "" "9 " -- foreign_t1 5 <<< "9 $2"; }
     t1_run direct "/r/scripts/release/models_t1.sh 1 c o"
     t1_run bash_script "bash scripts/release/models_t1.sh 1 c o"
     t1_run env_setsid_bash_x "env A=b setsid --wait bash -x scripts/release/models_t1.sh 1 c o"
@@ -637,6 +753,48 @@ self_test() {
     t1_not no_models_t1_word "timeout 5 bash scripts/release/other.sh 1.2"
     t1_not bare_dot "sleep ."
     t1_not nice_wrapped_bash_n "nice -n 5 bash -n scripts/release/models_t1.sh"
+    t1_run compound_git_pull_then_run 'bash -c git pull && scripts/release/models_t1.sh a'
+    t1_run compound_echo_then_bash 'bash -c echo go; bash scripts/release/models_t1.sh a'
+    t1_run compound_test_then_sh 'sh -c test -x x && models_t1.sh'
+    t1_run compound_bash_n_then_run 'bash -c bash -n a.sh; models_t1.sh'
+    t1_run compound_echo_n_then_run 'bash -c echo -n x; bash models_t1.sh'
+    t1_run compound_git_fetch_exec 'bash -c git fetch -q && exec bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_rm_then_run 'bash -c rm -rf /tmp/out && bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_test_then_dot 'bash -c test -d /r && . scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_bash_n_other_then_run 'bash -c bash -n scripts/release/models_t1.sh && bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run compound_attached_separator 'bash -c echo go;bash scripts/release/models_t1.sh a'
+    t1_run git_C_not_a_subcommand 'git -C /r bash scripts/release/models_t1.sh a'
+    t1_run git_exec_alias 'git -c alias.x=!bash x scripts/release/models_t1.sh'
+    t1_run bashrs_run 'bashrs run scripts/release/models_t1.sh'
+    t1_run vim_command_option 'vim -c !bash scripts/release/models_t1.sh'
+    t1_run script_operand_then_n 'bash /usr/local/bin/wrapper.sh -n 1 bash scripts/release/models_t1.sh 1.2.3 c /o'
+    t1_run python_wrapper 'python3 run.py scripts/release/models_t1.sh'
+    t1_run xargs_bash 'xargs bash scripts/release/models_t1.sh'
+    t1_run wrapper_unknown_option 'timeout --weird 5 bashrs lint scripts/release/models_t1.sh'
+    t1_run shell_unknown_letter 'bash -Zn scripts/release/models_t1.sh'
+    t1_run shell_plus_n 'bash +n scripts/release/models_t1.sh'
+    t1_run shell_unknown_long 'bash --weird -n scripts/release/models_t1.sh'
+    t1_run stdin_redirect_attached 'bash -c bash <scripts/release/models_t1.sh'
+    t1_run prefix_assignment_run 'A=b bash scripts/release/models_t1.sh a'
+    t1_not timeout_bashrs_lint 'timeout 60 bashrs lint --no-ignore --level error --format json scripts/release/models_t1.sh'
+    t1_not setsid_bashrs_lint 'setsid --wait bashrs lint --level error scripts/release/models_t1.sh'
+    t1_not nice_shellcheck 'nice -n 10 shellcheck scripts/release/models_t1.sh'
+    t1_not sudo_vim 'sudo vim scripts/release/models_t1.sh'
+    t1_not env_git_log 'env GIT_PAGER=cat git log -p -- scripts/release/models_t1.sh'
+    t1_not c_cd_then_bashrs 'bash -c cd /repo && bashrs lint --level error scripts/release/models_t1.sh'
+    t1_not c_assign_grep 'bash -c LC_ALL=C grep -n foo scripts/release/models_t1.sh'
+    t1_not c_set_then_shellcheck 'bash -c set -euo pipefail; shellcheck scripts/release/models_t1.sh'
+    t1_not taskset_mask_bashrs 'taskset 0x3 bashrs lint scripts/release/models_t1.sh'
+    t1_not taskset_c_bashrs 'taskset -c 0 bashrs lint scripts/release/models_t1.sh'
+    t1_not timeout_long_kill_after 'timeout --kill-after=30 60 shellcheck scripts/release/models_t1.sh'
+    t1_not git_C_log 'git -C /r --no-pager log -p scripts/release/models_t1.sh'
+    t1_not bash_o_then_n 'bash -o pipefail -n scripts/release/models_t1.sh'
+    t1_not bash_norc_n 'bash --norc -n scripts/release/models_t1.sh'
+    t1_not bash_rcfile_n 'bash --rcfile /f -n scripts/release/models_t1.sh'
+    t1_not bash_nc_string 'bash -nc scripts/release/models_t1.sh'
+    t1_not prefix_lookalike 'python3 /r/xmodels_t1.sh a'
+    t1_not suffix_lookalike 'python3 /r/models_t1.sh.bak a'
+    t1_not nonrun_then_other_cmd_nonrun 'bash -c echo a; vim scripts/release/models_t1.sh; cat x'
     row no_token_holds_in_a_clean_env 0 "" "" -- no_token
     row env_registry_token_refused 1 "" "" -- env CARGO_REGISTRY_TOKEN=x bash -c "$(declare -f no_token); no_token"
     row named_registry_token_refused 1 "" "" -- env CARGO_REGISTRIES_X_TOKEN=x bash -c "$(declare -f no_token); no_token"
@@ -917,11 +1075,29 @@ m44_crux_takes_the_ladder_go_line	s/GO_RE=.MODELS GO \\\(CRUX smoke\\\) on./GO_R
 m45_crux_names_the_ladder_measurer	s/MEASURER_RE=.crux_sweep_shards\\\.sh./MEASURER_RE="model_ladder\\.sh"/
 m46_masked_node_counted_as_token	s/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/[ ! -e "$ch\/credentials" ] \&\& [ ! -e "$ch\/credentials.toml" ]/
 m47_cargo_home_credentials_ignored	/\[ ! -r "\$ch\/credentials" \] && \[ ! -r "\$ch\/credentials.toml" \]/d
-m48_nonrunners_ignored	s#if \(first && \(t in nonrun\)\) break#if (0) break#
-m49_no_exec_shell_counted_a_run	s#if \(t ~ /\[nD\]/\) break#if (0) break#
-m50_c_string_unread	s#if \(t ~ /c/\) \{ insh = 0; first = 1 \}#if (0) insh = 0#
-m51_original_wrapper_list_planted	s#if \(first && \(t in nonrun\)\) break#if (t ~ /^-/ || t ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || t ~ /^[0-9.]+[smhd]?$/) continue; if (t ~ /^(env|timeout|setsid|nice|stdbuf|bash|sh|dash|zsh)$/) continue; break#
-m52_only_the_first_word_read	s#^                first = 0$#                break#'
+m48_nonrunners_ignored	s#if \(p in NONRUN\) return#if (0) return#
+m49_no_exec_shell_counted_a_run	s#if \(noexec\) return 0#if (0) return 0#
+m50_c_string_unread	s#if \(cf && j <= b\) return str#if (0) return str#
+m51_wrapper_not_skipped	s#if \(!\(p in WA\)\) break#break#
+m52_only_the_first_segment_judged	s#st = k \+ 1#st = n + 2#
+m53_command_string_not_split	s#gsub\(/\[;&\|\(\)\\140\]/, " ; ", s\)#s = s#
+m54_unknown_wrapper_option_skipped	s#return -1   \# M_WRAP_UNKNOWN_OPT#i++; continue#
+m55_git_any_subcommand	s#\(strip\(w\[j\]\) in GITRO\)#1#
+m56_bashrs_any_subcommand	s#\(strip\(w\[j\]\) in BRS\)#1#
+m57_editor_command_ignored	s#return 0   \# M_EDITOR_COMMAND#continue#
+m58_unknown_shell_letter_ignored	s#return anyt1\(w, a, b\)   \# M_SHELL_UNKNOWN_LETTER#continue#
+m59_plus_n_read_as_noexec	s#if \(sg == "\+" && \(ch == "n" [|][|] ch == "c" [|][|] ch == "D"\)\) return anyt1\(w, a, b\)   \# M_PLUS_N#if (0) ch = ch#
+m60_shell_option_arg_not_consumed	s#j \+= 1 \+ np; continue#j += 1; continue#
+m61_rcfile_arg_not_consumed	s#\{ j \+= 2; continue \}   \# M_RCFILE_ARG#{ j++; continue }#
+m62_unknown_long_option_skipped	s#return anyt1\(w, a, b\)   \# M_SHELL_UNKNOWN_LONG#j++; continue#
+m63_options_read_after_script_operand	s#break   \# M_SCRIPT_OPERAND#j++; continue#
+m64_assignment_not_skipped	s#while \(i <= b && strip\(w\[i\]\) ~ /\^\[A-Za-z_\]\[A-Za-z0-9_\]\*=/\) i\+\+#while (0) i++#
+m66_wrapper_positional_not_skipped	s#return i \+ pos$#return i#
+m67_taskset_cpu_list_not_marked	s#if \(x == "-c"\) tsc = 1;#if (x == "-c") tsc = 0;#
+m68_models_t1_suffix_unbounded	s#models_t1\\\.sh\(\[\^A-Za-z0-9_\.-\]\|\$\)/#models_t1\\.sh/#
+m69_models_t1_prefix_unbounded	s#/\(\^\|\[\^A-Za-z0-9_\.-\]\)models_t1#/models_t1#
+m70_git_C_operand_not_skipped	s#if \(x == "-C"\) \{ j \+= 2; continue \}#if (x == "-C") { j++; continue }#
+m71_shell_D_not_noexec	s#if \(ch == "n" [|][|] ch == "D"\) noexec = 1#if (ch == "n") noexec = 1#'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3
