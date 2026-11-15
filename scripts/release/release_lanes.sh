@@ -316,6 +316,10 @@ measured_cpu() {
     fl=$((lim / 5)); [ "$fl" -le "$RATE_FLOOR" ] || fl=$RATE_FLOOR  # MUTANT-ANCHOR: m30
     [ "$rem" -ge "$fl" ] || { echo "not_measured: core remaining $rem under $fl" >&2; return 2; }  # MUTANT-ANCHOR: m29
     rows="$(infra_rows "" infra_gh)" || { echo "not_measured: paiml/infra clean-room runs were not read" >&2; return 2; }  # MUTANT-ANCHOR: m26
+    # PMAT-6676: say what was read, so a pick of "0 commits" names which runs and why (run attempt status conclusion tested_sha)
+    printf 'measured-cpu: read %s infra run(s), %s tested a commit\n' "$(printf '%s\n' "$rows" | awk 'NF >= 5 { n++ } END { print n + 0 }')" \
+        "$(printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 && $5 ~ /^[0-9a-f]{40}$/ && !s[$5]++ { n++ } END { print n + 0 }')" >&2
+    printf '%s\n' "$rows" | awk -F '\t' 'NF >= 5 { printf "measured-cpu:   run %s attempt %s %s/%s tested %s\n", $1, $2, $3, $4, substr($5, 1, 12) }' >&2
     while read -r sha; do
         [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || continue
         v="$(printf '%s\n' "$rows" | judge_cpu "$sha")"
@@ -508,6 +512,12 @@ FAKE
     logs "$fg" 300 200 "$d"; logs "$fg" 250 200 "$e"; logs "$fg" 200 200 "$c"
     want="$(tsv "$d" red 30; tsv "$c" green 20)"
     exact measured_cpu_lists_each_measured_commit_newest_first 0 "$want" -- cpu "$fg" "$tmp/ca"
+    # PMAT-6676: a pick that finds no measured commit must say what it read (4 runs, 3 tested a commit), on stderr
+    o="$(cpu "$fg" "$tmp/ca" 2>&1 >/dev/null)"
+    case "$o" in
+        *"measured-cpu: read 4 infra run(s), 3 tested a commit"*) ok measured_cpu_says_what_it_read "$o" ;;
+        *) broke measured_cpu_says_what_it_read "stderr: ${o:0:160}" ;;
+    esac
     : > "$fg/calls"
     exact measured_cpu_second_read_is_the_same_read 0 "$want" -- cpu "$fg" "$tmp/ca"
     if [ "$(grep -c '' "$fg/calls")" -gt 0 ] && ! grep -q ' -$' "$fg/calls"; then ok measured_cpu_resends_every_cached_etag "$(grep -c '' "$fg/calls") reads"
