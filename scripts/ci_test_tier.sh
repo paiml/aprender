@@ -23,7 +23,7 @@
 #     than one commit that sees only the last. MG_BASE_SHA unset or not a commit, an
 #     EMPTY diff, or a failed diff -> full (fail closed). Only a non-empty docs-only
 #     diff is none. Renames: diff_into uses --no-renames (#3664), both sides touched.
-#   docs-only: every touched path under docs/roadmaps/ or docs/audits/ and present
+#   docs-only: every touched path under docs/roadmaps/ (not a fold input: entries/, roadmap-base.yaml, roadmap.yaml, #6902) or docs/audits/ and present
 #     at HEAD -> tier=none; workspace-test has nothing to measure (#3658).
 #   push to main: the same, over the push's own range github.event.before..after
 #     (env PUSH_BEFORE..HEAD; the queue rebase-merges, so a push carries N commits).
@@ -220,6 +220,10 @@ docs_only() { # $1 = diff file -> 0 iff every non-empty path is docs/roadmaps/**
     while IFS= read -r p; do
         [ -n "$p" ] || continue
         any=1
+        # #6902: a FOLD INPUT is read by rollup_fold (aprender-ci-tools) and the aprender-rollup
+        # fold tests, which assert roadmap.yaml == fold(roadmap-base.yaml, entries/). A diff that
+        # touches one is never docs-only, so the PR owes the registry's fold targets.
+        case "$p" in docs/roadmaps/entries/*|docs/roadmaps/roadmap-base.yaml|docs/roadmaps/roadmap.yaml) return 1 ;; esac
         case "$p" in docs/roadmaps/*|docs/audits/*) ;; *) return 1 ;; esac
         git -C "$ROOT" cat-file -e "HEAD:$p" 2>/dev/null || return 1
     done < "$1"
@@ -640,8 +644,8 @@ self_test() {
     cap sq-leaf mgrun "$(git -C "$td/s-leaf" rev-parse HEAD~1)" --repo-root "$td/s-leaf"
     row 0 "merge_group on a SQUASH queue ref, leaf crate -> tier=quick with that crate ($leaf)" "^crates=.*$leaf" bash -c "$(replay sq-leaf)"
     cap sq-docs mgrun "$(git -C "$td/s-docs" rev-parse HEAD~1)" --repo-root "$td/s-docs"
-    row 0 "merge_group, docs-only group (roadmap entry only) -> tier=none" '^tier=none$' bash -c "$(replay sq-docs)"
-    row 0 "  ...and the reason says docs-only, so the skip is auditable in the log" 'docs-only' bash -c "$(replay sq-docs)"
+    row 0 "merge_group, a roadmap entry only is NOT docs-only: the fold tests run (#6902)" '^tier=quick$' bash -c "$(replay sq-docs)"
+    row 0 "  ...and the quick tier carries the fold test target" 'aprender-ci-tools:--test:rollup_fold' bash -c "$(replay sq-docs)"
     row 0 "push of a SQUASH landing (one parent, no reflog) -> quick over PUSH_BEFORE..HEAD, not full" "^crates=.*$leaf" env PUSH_BEFORE="$(git -C "$td/s-leaf" rev-parse HEAD^1)" bash "$T" --event push --repo-root "$td/s-leaf"
     row 0 "push of a TAG (#5172) -> ONE tier line, full, over the same squash repo: never the refined diff" '^tier=full 1$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$T' --event push --repo-root '$td/s-leaf'); printf '%s %s\\n' \"\$(printf '%s\\n' \"\$o\" | grep '^tier=' | head -n1)\" \"\$(printf '%s\\n' \"\$o\" | grep -c '^tier=')\""
     MGARGS="--mg-run 123456 --mg-sha \$(git -C '$td/s-leaf' rev-parse HEAD) --mg-conclusion success"
@@ -651,8 +655,12 @@ self_test() {
     row 0 "  (mutant file really differs from the script)" '^DIFFERS$' bash -c "if cmp -s '$T' '$td/mutant-tagreuse.sh'; then echo SAME; else echo DIFFERS; fi"
     row 0 "MUTANT: a push arm that does not special-case tags reuses the quick MG green on a tag -> the row above goes RED" '^MUTANT-REUSE$' bash -c "o=\$(GITHUB_REF=refs/tags/v9.9.9 bash '$td/mutant-tagreuse.sh' --event push --repo-root '$td/s-leaf' $MGARGS); if grep -q '^tier=reuse$' <<< \"\$o\"; then echo MUTANT-REUSE; else echo SURVIVED; fi"
     # #3658 DOCS-ONLY on a pull_request (paths that exist in this tree).
-    printf 'docs/roadmaps/roadmap.yaml\ndocs/audits/pp-066-plan-quorum.md\n' > "$td/d-docs.txt"
-    row 0 "pull_request, roadmap + audit only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"
+    printf 'docs/audits/pp-066-plan-quorum.md\ndocs/roadmaps/README.md\n' > "$td/d-docs.txt"
+    row 0 "pull_request, audit + roadmap README only -> tier=none (no Rust test reads those paths)" '^tier=none$' bash "$T" --event pull_request --diff-from "$td/d-docs.txt"
+    for p in docs/roadmaps/entries/GH-4045.yaml docs/roadmaps/roadmap-base.yaml docs/roadmaps/roadmap.yaml; do
+        printf "%s\n" "$p" > "$td/d-fold.txt"
+        row 0 "pull_request, ONLY $p (a fold input) -> tier=quick with the fold test, not none (#6902)" "^aprender-ci-tools:--test:rollup_fold|targets=.*aprender-ci-tools:--test:rollup_fold" bash "$T" --event pull_request --diff-from "$td/d-fold.txt"
+    done
     printf 'docs/roadmaps/roadmap.yaml\ndocs/roadmaps/entries/PMAT-DELETED-3658.yaml\n' > "$td/d-docs-del.txt"
     row 0 "  ...but a DELETED docs path falls through to quick (a tree reader asserts cited paths exist)" '^tier=quick$' bash "$T" --event pull_request --diff-from "$td/d-docs-del.txt"
     printf 'docs/roadmaps/roadmap.yaml\nscripts/foo.sh\n' > "$td/d-docs-mixed.txt"
