@@ -169,4 +169,14 @@ mod issue_6958_tests {
         );
         assert_eq!(format_labels(&[-1e38, 0.0, 1e38]), ["-1e+38", "0e+00", "1e+38"]);
     }
+
+    /// Width ties and sign handling at the fixed/scientific switch (R: `format(1e4)` is fixed,
+    /// `format(-1e4)` is fixed, `format(-1e5)` is scientific).
+    #[test]
+    fn switch_boundaries_and_signs() {
+        assert_eq!(format_labels(&[1e4]), ["10000"]);
+        assert_eq!(format_labels(&[-1e4]), ["-10000"]);
+        assert_eq!(format_labels(&[-1e5]), ["-1e+05"]);
+        assert_eq!(format_labels(&[0.5]), ["0.5"]);
+    }
 }
