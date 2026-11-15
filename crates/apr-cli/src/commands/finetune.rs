@@ -1427,7 +1427,6 @@ pub(crate) fn run(
 /// The `apr finetune` flags that still apply beside `--recipe`: where and how
 /// to run, never what to train (the recipe carries that).
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // wired by the --recipe flag in the next slice
 pub(crate) struct RecipeRunFlags<'a> {
     pub(crate) vram_gb: f64,
     pub(crate) plan_only: bool,
@@ -1500,7 +1499,6 @@ fn recipe_output_path(
 
 /// `apr finetune --recipe <file>`: the recipe is validated first, then lowered
 /// onto the same `run` every flag-driven invocation uses (CRUX-001).
-#[allow(dead_code)] // wired by the --recipe flag in the next slice
 pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) -> Result<()> {
     use super::train_recipe::RecipeMethod;
     let (recipe, receipt) = preflight_recipe(recipe_path, flags.plan_only)?;

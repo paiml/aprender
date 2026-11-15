@@ -683,6 +683,84 @@
         }
     }
 
+    /// `apr finetune --recipe r.yaml` parses with no positional model (CRUX-001).
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_recipe_flag_parses_alone_and_with_run_flags() {
+        let cli = parse_cli(vec![
+            "apr", "finetune", "--recipe", "r.yaml", "--plan", "--vram", "8", "--model-size", "1B",
+            "-o", "out",
+        ])
+        .expect("`apr finetune --recipe r.yaml --plan` must parse");
+        match *cli.command {
+            Commands::ModelOps(ModelOpsCommands::Finetune {
+                ref recipe,
+                ref file,
+                plan,
+                ..
+            }) => {
+                assert_eq!(
+                    recipe.as_deref(),
+                    Some(std::path::Path::new("r.yaml"))
+                );
+                assert!(file.is_none());
+                assert!(plan);
+            }
+            _ => panic!("Expected Finetune command"),
+        }
+        let cli = parse_cli(vec!["apr", "finetune", "model.apr"]).expect("bare finetune parses");
+        match *cli.command {
+            Commands::ModelOps(ModelOpsCommands::Finetune { ref recipe, .. }) => {
+                assert!(recipe.is_none());
+            }
+            _ => panic!("Expected Finetune command"),
+        }
+    }
+
+    /// A value the recipe carries may not also arrive as a flag: one source of
+    /// truth per run. Every name in `FINETUNE_RECIPE_CARRIES` is exercised, so
+    /// a renamed clap id (which clap would only catch at runtime) fails here.
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_recipe_conflicts_with_every_flag_it_carries() {
+        let cases: [(&str, &[&str]); 19] = [
+            ("file", &["model.apr"]),
+            ("method", &["--method", "lora"]),
+            ("rank", &["--rank", "8"]),
+            ("data", &["--data", "d.jsonl"]),
+            ("adapter", &["--adapter", "a"]),
+            ("merge", &["--merge"]),
+            ("epochs", &["--epochs", "2"]),
+            ("learning_rate", &["--learning-rate", "0.001"]),
+            ("task", &["--task", "classify"]),
+            ("num_classes", &["--num-classes", "3"]),
+            ("oversample", &["--oversample"]),
+            ("max_seq_len", &["--max-seq-len", "64"]),
+            ("adapters", &["--adapters", "d:c"]),
+            ("adapters_config", &["--adapters-config", "a.toml"]),
+            ("role", &["--role", "worker"]),
+            ("bind", &["--bind", "0.0.0.0:1"]),
+            ("coordinator", &["--coordinator", "h:1"]),
+            ("expect_workers", &["--expect-workers", "2"]),
+            ("quantize_nf4", &["--quantize-nf4"]),
+        ];
+        let ids: Vec<&str> = cases.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, crate::FINETUNE_RECIPE_CARRIES, "the table is the list");
+        for (id, extra) in cases {
+            let mut args = vec!["apr", "finetune", "--recipe", "r.yaml"];
+            args.extend_from_slice(extra);
+            let err = match parse_cli(args) {
+                Ok(_) => panic!("`--recipe` with `{id}` must be refused"),
+                Err(e) => e,
+            };
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "{id}: {err}"
+            );
+        }
+    }
+
     /// `apr distill --backend` — the earlier report called this the same defect
     /// class. Re-measured: it is NOT. `distill::run()` rejects an unknown value
     /// by name before any I/O (commands/distill.rs:464-503, covered by

@@ -89,11 +89,10 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Each entry cites only tests present at this slice head; FALSIFY-APR-RECIPE-004 (flag conflicts) returns
-# in the slice that adds the test it cites.
+# Each entry cites only tests present at this slice head; the receipt-hash citation of
+# FALSIFY-APR-RECIPE-005 returns in the slice that adds its test.
 # Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
-# renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
-# slot is held by the contract-parses entry until the entry it stands in for lands.
+# renumbered as slices land: ids 001-005 here are the final ids.
 - id: FALSIFY-APR-RECIPE-001
   rule: a recipe without eval is refused before any model is loaded
   prediction: "`apr finetune --recipe` on a recipe with no eval block exits 5 and stderr names field `eval`; the base model path does not exist and is never reported"
@@ -113,11 +112,11 @@ falsification_tests:
     cargo test -p apr-cli --lib -- train_recipe::tests
   if_fails: "A typo in a recipe silently trains with a default"
 - id: FALSIFY-APR-RECIPE-004
-  rule: the recipe contract is itself a valid contract
-  prediction: "`pv validate contracts/apr-recipe-v1.yaml` exits 0"
+  rule: a flag the recipe carries conflicts with --recipe
+  prediction: "`apr finetune --recipe r.yaml --epochs 2` is refused by clap as an argument conflict, for every flag in FINETUNE_RECIPE_CARRIES"
   test: |
-    pv validate contracts/apr-recipe-v1.yaml
-  if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
+    cargo test -p apr-cli --lib -- test_finetune_recipe_conflicts_with_every_flag_it_carries test_finetune_recipe_flag_parses_alone_and_with_run_flags
+  if_fails: "Two sources for one value; the receipt's recipe hash no longer describes the run"
 - id: FALSIFY-APR-RECIPE-005
   rule: the data pin is real
   prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256`; a planted-wrong pin refuses the run at require_inputs, sha256 matches its published vector, and the receipt carries the recipe, data and eval hashes and the engine"

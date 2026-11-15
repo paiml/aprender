@@ -1,4 +1,29 @@
 
+/// What a recipe carries, so `apr finetune --recipe` refuses the same value arriving twice
+/// (CRUX-001). clap ignores defaults here: only a flag the user typed conflicts.
+#[cfg(feature = "training")]
+pub(crate) const FINETUNE_RECIPE_CARRIES: [&str; 19] = [
+    "file",
+    "method",
+    "rank",
+    "data",
+    "adapter",
+    "merge",
+    "epochs",
+    "learning_rate",
+    "task",
+    "num_classes",
+    "oversample",
+    "max_seq_len",
+    "adapters",
+    "adapters_config",
+    "role",
+    "bind",
+    "coordinator",
+    "expect_workers",
+    "quantize_nf4",
+];
+
 #[derive(Subcommand, Debug)]
 pub enum ModelOpsCommands {
     /// Fine-tune model with LoRA/QLoRA (GH-244)
@@ -108,6 +133,12 @@ pub enum ModelOpsCommands {
         /// PMAT-486: Enable StepProfiler for per-phase wall-clock timing
         #[arg(long)]
         profile: bool,
+
+        /// Declarative recipe (contracts/apr-recipe-v1.yaml): base, data, method, eval and seed
+        /// in one file. It is validated before any model is loaded, and it replaces the flags
+        /// it carries
+        #[arg(long, value_name = "FILE", conflicts_with_all = FINETUNE_RECIPE_CARRIES)]
+        recipe: Option<ConfigPath>,
     },
     /// Prune model (structured/unstructured pruning) (GH-247)
     Prune {
