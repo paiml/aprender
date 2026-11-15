@@ -426,6 +426,7 @@ impl BuiltGGPlot {
             svg = svg.text_anchored(m, (m * 0.9).max(12.0), y, 12.0, ink, TextAnchor::Start);
         }
         svg = self.svg_strokes(svg)?;
+        svg = self.svg_facet_strips(svg)?;
         if self.theme.show_axis {
             svg = self.svg_axis_text(svg)?;
         }
@@ -462,6 +463,30 @@ impl BuiltGGPlot {
             for layer in built.layers.iter().filter(|l| stroke::is_stroke(l)) {
                 svg = stroke::add_svg(svg, layer, pi, f.domain, (&f.x_scale, &f.y_scale));
             }
+        }
+        Ok(svg)
+    }
+
+    /// One strip per panel of a faceted plot (ggplot2's `strip.background` grey85 and the level
+    /// as `strip.text`), at the top of the panel; no facet draws none (#7087).
+    fn svg_facet_strips(&self, mut svg: SvgEncoder) -> Result<SvgEncoder> {
+        const STRIP_PX: f32 = 14.0;
+        if matches!(self.facet, Facet::None) {
+            return Ok(svg);
+        }
+        let ps = panels(&self.facet, &self.data)?;
+        let grid = PanelGrid::new(&ps, self.width, self.height, self.theme.margin);
+        for p in &ps {
+            let (x, y, w, _) = grid.rect(p);
+            let (x, y, w) = (x as f32, y as f32, w as f32);
+            svg = svg.rect(x, y, w, STRIP_PX, Rgba::rgb(217, 217, 217)).text_anchored(
+                x + w / 2.0,
+                y + STRIP_PX * 0.7,
+                &p.levels.join(", "),
+                10.0,
+                self.theme.axis_color,
+                TextAnchor::Middle,
+            );
         }
         Ok(svg)
     }
@@ -1365,6 +1390,38 @@ mod tests {
             assert!(svg.contains(&format!(">{label}</text>")), "break label {label} missing");
         }
         assert_eq!(plot(Theme::void()).to_svg().expect("svg").matches("</text>").count(), 0);
+    }
+
+    /// Facet strips (#7087): a faceted plot's SVG carries one strip per panel, a grey rect and
+    /// the panel's level as text, in panel order; an unfaceted plot carries none.
+    #[test]
+    fn test_ggplot_svg_facet_strips_golden() {
+        let build = |facet: Facet| {
+            let mut df = DataFrame::new();
+            df.add_column_f32("x", &[1.0, 2.0, 3.0, 4.0]);
+            df.add_column_f32("y", &[1.0, 2.0, 3.0, 4.0]);
+            df.add_column_str("category", &["b", "a", "b", "c"]);
+            GGPlot::new()
+                .data(df)
+                .aes(Aes::new().x("x").y("y"))
+                .geom(Geom::point())
+                .theme(Theme::void())
+                .facet(facet)
+                .build()
+                .expect("plot builds")
+                .to_svg()
+                .expect("svg renders")
+        };
+        let svg = build(Facet::wrap("category", 2));
+        let strip_texts: Vec<&str> = svg
+            .split("<text")
+            .skip(1)
+            .filter_map(|t| t.split_once('>').and_then(|(_, r)| r.split_once("</text>")))
+            .map(|(label, _)| label)
+            .collect();
+        assert_eq!(strip_texts, ["a", "b", "c"], "{svg}");
+        assert_eq!(svg.matches(r#"fill="rgb(217,217,217)""#).count(), 3, "{svg}");
+        assert_eq!(build(Facet::None).matches("</text>").count(), 0);
     }
 
     /// `coord_flip()` puts y's breaks on the bottom axis.

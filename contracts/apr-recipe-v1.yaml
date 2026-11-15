@@ -23,6 +23,7 @@ metadata:
     validated_not_applied).
   references:
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
+  - "crates/apr-cli/src/commands/train_recipe.rs"
 
 equations:
   recipe_schema:
@@ -88,12 +89,20 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Slice 1 carries only the schema itself. The entries that cite Rust tests are added in
-# the slice that adds the test each one cites (loader and tests in slices 2-5, the CLI wiring
-# tests in slice 6), so that every slice head resolves its own test references.
+# Each entry cites only tests present at this slice head. FALSIFY-APR-RECIPE-004 (flag conflicts)
+# and the CLI/receipt parts of 001, 002 and 005 return in slice 6/6 with their tests.
+# Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
+# renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
+# slot is held by the contract-parses entry until the entry it stands in for lands.
 - id: FALSIFY-APR-RECIPE-001
   rule: the recipe contract is itself a valid contract
   prediction: "`pv validate contracts/apr-recipe-v1.yaml` exits 0"
   test: |
     pv validate contracts/apr-recipe-v1.yaml
   if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
+- id: FALSIFY-APR-RECIPE-002
+  rule: unknown keys and wrong shapes are refused by field
+  prediction: "A method spelling outside lora, qlora and distill (any other case included) is not accepted"
+  test: |
+    cargo test -p apr-cli --lib -- method_spellings_round_trip
+  if_fails: "A typo in a recipe silently trains with a default"
