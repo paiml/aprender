@@ -611,7 +611,7 @@ mod tests {
             let f =
                 parse(&["--data", path, "--aes", "x=x,y=y", "--output", "svg", "--facet", facet])
                     .expect("parses");
-            let r = run(&f, &Env::default(), &mut out, &mut err);
+            let r = run(&f, &Env::default(), &mut out, &mut err).map_err(|e| e.to_string());
             (r, String::from_utf8_lossy(&out).into_owned())
         };
         let (r, svg) = go("wrap=g");
