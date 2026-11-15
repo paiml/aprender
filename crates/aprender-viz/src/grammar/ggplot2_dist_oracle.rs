@@ -44,27 +44,49 @@ fn check(case: &str, json: &str, csv: &str, geom: Geom) {
     check_axis(&format!("{case}.y"), &got.y, &want["panel"]["y"]);
 }
 
-macro_rules! case {
-    ($name:ident, $geom:expr) => {
-        #[test]
-        fn $name() {
-            let json = include_str!(concat!(
-                "../../fixtures/ggplot2/geom_histogram/expected_",
-                stringify!($name),
-                ".json"
-            ));
-            check(stringify!($name), json, CSV, $geom);
-        }
-    };
+#[test]
+fn default() {
+    let json = include_str!("../../fixtures/ggplot2/geom_histogram/expected_default.json");
+    check("default", json, CSV, Geom::gg_histogram());
 }
 
-case!(default, Geom::gg_histogram());
-case!(bins10, Geom::gg_histogram().bins(10));
-case!(bins1, Geom::gg_histogram().bins(1));
-case!(binwidth2, Geom::gg_histogram().binwidth(2.0));
-case!(binwidth1_boundary0, Geom::gg_histogram().binwidth(1.0).boundary(0.0));
-case!(binwidth5_center0, Geom::gg_histogram().binwidth(5.0).center(0.0));
-case!(bins5_boundary2, Geom::gg_histogram().bins(5).boundary(2.0));
+#[test]
+fn bins10() {
+    let json = include_str!("../../fixtures/ggplot2/geom_histogram/expected_bins10.json");
+    check("bins10", json, CSV, Geom::gg_histogram().bins(10));
+}
+
+#[test]
+fn bins1() {
+    let json = include_str!("../../fixtures/ggplot2/geom_histogram/expected_bins1.json");
+    check("bins1", json, CSV, Geom::gg_histogram().bins(1));
+}
+
+#[test]
+fn binwidth2() {
+    let json = include_str!("../../fixtures/ggplot2/geom_histogram/expected_binwidth2.json");
+    check("binwidth2", json, CSV, Geom::gg_histogram().binwidth(2.0));
+}
+
+#[test]
+fn binwidth1_boundary0() {
+    let json =
+        include_str!("../../fixtures/ggplot2/geom_histogram/expected_binwidth1_boundary0.json");
+    check("binwidth1_boundary0", json, CSV, Geom::gg_histogram().binwidth(1.0).boundary(0.0));
+}
+
+#[test]
+fn binwidth5_center0() {
+    let json =
+        include_str!("../../fixtures/ggplot2/geom_histogram/expected_binwidth5_center0.json");
+    check("binwidth5_center0", json, CSV, Geom::gg_histogram().binwidth(5.0).center(0.0));
+}
+
+#[test]
+fn bins5_boundary2() {
+    let json = include_str!("../../fixtures/ggplot2/geom_histogram/expected_bins5_boundary2.json");
+    check("bins5_boundary2", json, CSV, Geom::gg_histogram().bins(5).boundary(2.0));
+}
 
 #[test]
 fn constant() {

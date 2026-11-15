@@ -41,6 +41,8 @@ mod facet;
 mod geom;
 mod ggplot;
 #[cfg(test)]
+mod ggplot2_dist_density_oracle;
+#[cfg(test)]
 mod ggplot2_dist_oracle;
 #[cfg(test)]
 mod ggplot2_lines_oracle;
@@ -66,7 +68,7 @@ mod theme;
 pub use aes::Aes;
 pub use build::{
     format_labels, point_defaults, point_diameter_px, point_size_mm_for_diameter_px, BuiltBins,
-    BuiltLayer, BuiltLayout, PointAes, PositionScale,
+    BuiltDensity, BuiltLayer, BuiltLayout, PointAes, PositionScale,
 };
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};

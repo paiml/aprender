@@ -1,0 +1,95 @@
+metadata:
+  id: ggplot2-row16-histogram-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-15'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row geom_histogram (PLOT-GG-001, paiml/aprender#6962, master #6909). geom_histogram() draws stat_bin with pad = FALSE, closed = "right" and fuzzed edges, stacked from 0: one bar per bin with the columns x, xmin, xmax, width, count and density. bins (default 30), binwidth, boundary and center are honoured as bin_breaks_bins and bin_breaks_width do, including the width quirk of bin_breaks_bins and the 0.1 width of a zero-range x. The x scale is trained on the bin edges and the y scale on 0 and the largest count.
+    The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time. Every case goes through the public builder and layout(), and counts and edges are compared at 1e-9 relative plus 1e-12 absolute.
+    Scope: one ungrouped geom_histogram layer on a numeric x. Missing x values are dropped as ggplot2 does. Grouped layers (stacking), no finite x, a non-positive binwidth, both boundary and center, more than 1,000,000 bins, a y aesthetic, a mapped alpha, size, shape or label, a non-default stat, facets, any coordinate system but plain Cartesian, a scale_x or scale_y spec, text or infinite x, and a histogram mixed with other geoms return a typed Err (Rendering, UnsupportedStat, UnsupportedCoord or UnsupportedLayer), never a panic. Renderers still refuse the layer (NOT_DRAWN).
+  references:
+  - 'ggplot2 4.0.3: ggplot_build(), geom_histogram, stat_bin, bin_breaks_bins, bin_breaks_width'
+  - 'R 4.6.2: base::cut, base::findInterval'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_histogram/generate.R'
+entity: {type: ggplot2-row, ref: geom_histogram}
+equations:
+  stat_bin:
+    formula: 'count[i] = #{x : breaks[i] < x <= breaks[i+1]} (the first bin includes its lower edge); density[i] = count[i] / width[i] / sum(count)'
+    domain: finite numeric x, at least one value after dropping missing ones
+    codomain: BuiltLayer x = bin centres, y = count, BuiltLayer.bins (x, xmin, xmax, width, count, density) and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs
+    - the counts sum to the number of finite x
+    preconditions:
+    - at least one value after dropping missing ones, else Rendering
+    - bins at least 1, binwidth positive and finite, not both boundary and center, else Rendering
+    - plain coord_cartesian and no facet, else UnsupportedCoord or Rendering
+proof_obligations:
+- id: GGH-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  applies_to: stat_bin
+enforcement:
+  default_case:
+    description: the default 30 bins are reproduced
+    check: grammar::ggplot2_dist_oracle::default
+    severity: ERROR
+  binning_cases:
+    description: bins, binwidth, boundary and center are reproduced
+    check: grammar::ggplot2_dist_oracle::binwidth5_center0
+    severity: ERROR
+  refusal_cases:
+    description: empty, grouped and out-of-scope input is refused with a typed Err
+    check: grammar::dist::tests::histogram_drops_missing_and_refuses_empty_and_grouped_input
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGH-001
+  rule: The default is 30 bins, with the bin_breaks_bins width quirk
+  prediction: changing the default bin count or the width formula of breaks_bins turns the default fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::default
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGH-002
+  rule: A single bin spans the data range
+  prediction: changing the one-bin branch of breaks_bins turns the bins1 fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::bins1
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGH-003
+  rule: binwidth wins over bins and anchors at the origin R picks
+  prediction: changing the origin of breaks_width turns the binwidth2 fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::binwidth2
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGH-004
+  rule: boundary shifts every edge
+  prediction: ignoring boundary in bins_params turns the binwidth1_boundary0 fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::binwidth1_boundary0
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGH-005
+  rule: center puts a bin middle on the value
+  prediction: ignoring center in bins_params turns the binwidth5_center0 fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::binwidth5_center0
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGH-006
+  rule: Zero-range x uses a bin width of 0.1
+  prediction: changing the zero-range width in breaks_bins turns the constant fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_oracle::constant
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGH-007
+  rule: Empty and grouped input is refused
+  prediction: letting an all-missing or grouped histogram through histogram() turns the refusal test RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::dist::tests::histogram_drops_missing_and_refuses_empty_and_grouped_input
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGH-008
+  rule: Non-default coordinate systems and facets are refused
+  prediction: removing the check_scope call in dist::layout turns the coords test RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::dist::tests::coords_facets_and_mixed_layers_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGH-001
+  name: ggplot2 conformance row geom_histogram
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the geom_histogram fixtures
+  checks:
+  - default_case
+  - binning_cases
+  - refusal_cases

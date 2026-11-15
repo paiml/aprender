@@ -96,6 +96,8 @@ pub struct BuiltLayer {
     pub path: Option<BuiltPath>,
     /// `stat_bin` output for a histogram layer; `x`/`y` then hold the bin centres and counts.
     pub bins: Option<BuiltBins>,
+    /// `stat_density` output for a density layer; `x`/`y` then hold the grid and the density.
+    pub density: Option<BuiltDensity>,
 }
 
 /// `stat_bin`'s columns, one entry per bin (`bin_out()` in ggplot2 4.0.3).
@@ -113,6 +115,20 @@ pub struct BuiltBins {
     pub count: Vec<f64>,
     /// `count / width / sum(count)`.
     pub density: Vec<f64>,
+}
+
+/// `stat_density`'s columns beyond `x` and `y`, one entry per grid point (`compute_density()` in
+/// ggplot2 4.0.3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuiltDensity {
+    /// `density / max(density)` (also ggplot2's `ndensity`).
+    pub scaled: Vec<f64>,
+    /// `density * n`.
+    pub count: Vec<f64>,
+    /// `density * sum(weights)`.
+    pub wdensity: Vec<f64>,
+    /// Rows in the group.
+    pub n: usize,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).
