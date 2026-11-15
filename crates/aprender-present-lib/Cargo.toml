@@ -35,7 +35,7 @@ js-sys = { workspace = true }
 # the browser module names every web-sys type it touches here. Without the list the crate
 # does not build for wasm32 (aprender#6888).
 web-sys = { workspace = true, features = [
-    "BinaryType", "CanvasRenderingContext2d", "CanvasWindingRule", "CloseEvent", "Document",
+    "AnalyserNode", "AudioContext", "AudioNode", "BinaryType", "MediaDevices", "MediaStream", "MediaStreamAudioSourceNode", "MediaStreamConstraints", "Navigator", "CanvasRenderingContext2d", "CanvasWindingRule", "CloseEvent", "Document",
     "Element", "ErrorEvent", "Event", "EventTarget", "History", "HtmlCanvasElement", "ImageData",
     "HtmlElement", "HtmlMediaElement", "HtmlVideoElement", "KeyboardEvent", "Location", "MessageEvent", "MouseEvent", "Node", "Performance", "PointerEvent",
     "PopStateEvent", "Storage", "Touch", "TouchEvent", "TouchList", "Url", "WebSocket",
