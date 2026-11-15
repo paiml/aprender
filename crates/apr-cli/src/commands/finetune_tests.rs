@@ -1337,6 +1337,17 @@ fn run_with_missing_model_file_errors() {
 /// fields, HF-alias dimension keys ONLY in `custom`, embedded tokenizer.
 #[cfg(test)]
 fn build_import_shaped_qwen2_base_v2(hidden: usize, with_tokenizer: bool) -> Vec<u8> {
+    build_named_qwen2_base_v2(
+        hidden,
+        with_tokenizer,
+        [
+            "model.layers.0.self_attn.q_proj.weight",
+            "model.layers.0.mlp.gate_proj.weight",
+        ],
+    )
+}
+
+fn build_named_qwen2_base_v2(hidden: usize, with_tokenizer: bool, names: [&str; 2]) -> Vec<u8> {
     use aprender::format::v2::{AprV2Metadata, AprV2Writer};
 
     let mut md = AprV2Metadata::new("transformer_lm_q4k");
@@ -1376,15 +1387,11 @@ fn build_import_shaped_qwen2_base_v2(hidden: usize, with_tokenizer: bool) -> Vec
     );
     w.add_f32_tensor("model.norm.weight", vec![hidden], &vec![1.0; hidden]);
     w.add_f32_tensor(
-        "model.layers.0.self_attn.q_proj.weight",
+        names[0],
         vec![hidden, hidden],
         &vec![1.0_f32; hidden * hidden],
     );
-    w.add_f32_tensor(
-        "model.layers.0.mlp.gate_proj.weight",
-        vec![hidden, hidden],
-        &sq(hidden * hidden),
-    );
+    w.add_f32_tensor(names[1], vec![hidden, hidden], &sq(hidden * hidden));
     w.write().expect("write import-shaped base v2")
 }
 
@@ -1829,14 +1836,17 @@ fn ft20_merge(
     tensors: &[(&str, Vec<usize>, f32)],
     alpha: Option<f64>,
 ) -> (Result<()>, tempfile::TempDir) {
+    ft20_merge_on(build_import_shaped_qwen2_base_v2(32, true), tensors, alpha)
+}
+
+fn ft20_merge_on(
+    base_bytes: Vec<u8>,
+    tensors: &[(&str, Vec<usize>, f32)],
+    alpha: Option<f64>,
+) -> (Result<()>, tempfile::TempDir) {
     use aprender::format::v2::{AprV2Metadata, AprV2Writer};
-    let hidden = 32usize;
     let base_file = NamedTempFile::with_suffix(".apr").expect("base tmp");
-    std::fs::write(
-        base_file.path(),
-        build_import_shaped_qwen2_base_v2(hidden, true),
-    )
-    .expect("write base");
+    std::fs::write(base_file.path(), base_bytes).expect("write base");
     let mut md = AprV2Metadata::new("ft20-adapter");
     md.custom
         .insert("lora_rank".to_string(), serde_json::json!(4));
@@ -1870,6 +1880,7 @@ fn peft_adapter_merges_and_zero_match_refused() {
     let b = format!("base_model.model.{FT20_Q}.lora_B.weight");
     let (ok, _d) = ft20_merge(&[(&a, vec![4, 32], 0.3), (&b, vec![32, 4], 0.5)], Some(8.0));
     assert!(ok.is_ok(), "PEFT-named adapter must merge: {ok:?}");
+    assert_merged_close(&_d, FT20_Q_W, 2.2);
     let (res, d) = ft20_merge(
         &[
             ("base_model.model.nope.lora_A.weight", vec![4, 32], 0.3),
@@ -1937,6 +1948,156 @@ fn unchanged_merge_refused() {
     assert!(
         res.is_err() && msg.contains("changed no weight"),
         "no-change must refuse: {msg}"
+    );
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+/// Read `name` back from `merged.apr` and assert every element is ~`want`.
+fn assert_merged_close(dir: &tempfile::TempDir, name: &str, want: f32) {
+    use aprender::format::v2::AprV2Reader;
+    use aprender::format::AprV2DequantExt;
+    let bytes = std::fs::read(dir.path().join("merged.apr")).expect("merged.apr written");
+    let r = AprV2Reader::from_bytes(&bytes).expect("parse merged");
+    let w = r.get_tensor_as_f32(name).expect("tensor in merged");
+    assert!(
+        w.iter().all(|x| (x - want).abs() < 1e-3),
+        "{name} must be W + (alpha/rank)*B@A = {want}, got {:?}",
+        &w[..4]
+    );
+}
+
+const FT20_Q_W: &str = "model.layers.0.self_attn.q_proj.weight";
+
+/// PEFT safetensors bundle: `adapter_model.safetensors` (+ optional `adapter_config.json`).
+fn ft20_st_merge(config: Option<&str>) -> (Result<()>, tempfile::TempDir) {
+    use safetensors::tensor::{Dtype, TensorView};
+    let dir = tempfile::tempdir().expect("tmpdir");
+    let ab: Vec<u8> = vec![0.3_f32; 4 * 32]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    let bb: Vec<u8> = vec![0.5_f32; 32 * 4]
+        .iter()
+        .flat_map(|v| v.to_le_bytes())
+        .collect();
+    let mut t = std::collections::HashMap::new();
+    t.insert(
+        format!("base_model.model.{FT20_Q}.lora_A.weight"),
+        TensorView::new(Dtype::F32, vec![4, 32], &ab).expect("view a"),
+    );
+    t.insert(
+        format!("base_model.model.{FT20_Q}.lora_B.weight"),
+        TensorView::new(Dtype::F32, vec![32, 4], &bb).expect("view b"),
+    );
+    let meta = Some(std::collections::HashMap::from([(
+        "format".to_string(),
+        "pt".to_string(),
+    )]));
+    let st = dir.path().join("adapter_model.safetensors");
+    safetensors::serialize_to_file(&t, &meta, &st).expect("write st");
+    if let Some(c) = config {
+        std::fs::write(dir.path().join("adapter_config.json"), c).expect("write cfg");
+    }
+    let base = NamedTempFile::with_suffix(".apr").expect("base tmp");
+    std::fs::write(base.path(), build_import_shaped_qwen2_base_v2(32, true)).expect("base");
+    let out_dir = tempfile::tempdir().expect("outdir");
+    let res = run_merge(
+        Some(base.path()),
+        Some(&st),
+        Some(&out_dir.path().join("merged.apr")),
+        true,
+    );
+    (res, out_dir)
+}
+
+#[test]
+fn peft_safetensors_bundle_alpha_from_adapter_config() {
+    let (res, d) = ft20_st_merge(Some(r#"{"peft_type":"LORA","r":4,"lora_alpha":8.0}"#));
+    assert!(
+        res.is_ok(),
+        "PEFT bundle with adapter_config.json must merge: {res:?}"
+    );
+    assert_merged_close(&d, FT20_Q_W, 2.2);
+}
+
+#[test]
+fn peft_safetensors_without_alpha_refused() {
+    let (res, d) = ft20_st_merge(None);
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("lora_alpha"),
+        "alpha required: {msg}"
+    );
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+#[test]
+fn gguf_named_base_merges_unprefixed_peft_adapter() {
+    let base =
+        build_named_qwen2_base_v2(32, true, ["blk.0.attn_q.weight", "blk.0.ffn_gate.weight"]);
+    let a = format!("{FT20_Q}.lora_A.weight");
+    let b = format!("{FT20_Q}.lora_B.weight");
+    let (res, d) = ft20_merge_on(
+        base,
+        &[(&a, vec![4, 32], 0.3), (&b, vec![32, 4], 0.5)],
+        Some(8.0),
+    );
+    assert!(
+        res.is_ok(),
+        "unprefixed PEFT name on a GGUF base must merge: {res:?}"
+    );
+    assert_merged_close(&d, "blk.0.attn_q.weight", 2.2);
+}
+
+#[test]
+fn orphan_lora_b_refused() {
+    let a = format!("{FT20_Q}.weight.lora_a");
+    let b = format!("{FT20_Q}.weight.lora_b");
+    let (res, d) = ft20_merge(
+        &[
+            (&a, vec![4, 32], 0.3),
+            (&b, vec![32, 4], 0.5),
+            (
+                "model.layers.0.mlp.gate_proj.weight.lora_b",
+                vec![32, 4],
+                0.5,
+            ),
+        ],
+        Some(8.0),
+    );
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("gate_proj.weight.lora_b"),
+        "orphan lora_b must refuse naming it: {msg}"
+    );
+    assert!(!d.path().join("merged.apr").exists());
+}
+
+#[test]
+fn shape_mismatched_pair_refused() {
+    let a = format!("{FT20_Q}.weight.lora_a");
+    let b = format!("{FT20_Q}.weight.lora_b");
+    let (res, d) = ft20_merge(
+        &[
+            (&a, vec![4, 32], 0.3),
+            (&b, vec![32, 4], 0.5),
+            (
+                "model.layers.0.mlp.gate_proj.weight.lora_a",
+                vec![4, 64],
+                0.3,
+            ),
+            (
+                "model.layers.0.mlp.gate_proj.weight.lora_b",
+                vec![64, 4],
+                0.5,
+            ),
+        ],
+        Some(8.0),
+    );
+    let msg = format!("{res:?}");
+    assert!(
+        res.is_err() && msg.contains("gate_proj.weight"),
+        "mismatched pair must refuse naming the base tensor: {msg}"
     );
     assert!(!d.path().join("merged.apr").exists());
 }
