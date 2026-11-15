@@ -515,7 +515,7 @@ FAKE
     # PMAT-6676: a pick that finds no measured commit must say what it read (4 runs, 3 tested a commit), on stderr
     o="$(cpu "$fg" "$tmp/ca" 2>&1 >/dev/null)"
     case "$o" in
-        *"measured-cpu: read 4 infra run(s), 3 tested a commit"*) ok measured_cpu_says_what_it_read "$o" ;;
+        *"measured-cpu: read 4 infra run(s), 3 tested a commit"*"run 30 attempt 1 completed/failure tested ${d:0:12}"*) ok measured_cpu_says_what_it_read "$o" ;;
         *) broke measured_cpu_says_what_it_read "stderr: ${o:0:160}" ;;
     esac
     : > "$fg/calls"
@@ -574,6 +574,9 @@ FAKE
     infra "$tmp/fb" 30 300 completed success; infra "$tmp/fb" 20 200 completed failure
     logs "$tmp/fb" 300 200 "$c"; logs "$tmp/fb" 200 200 "$c"
     exact measured_cpu_lists_a_commit_once_as_its_newest_run_judged_it 0 "$(tsv "$c" green 30)" -- cpu "$tmp/fb" "$tmp/cj"
+    o="$(cpu "$tmp/fb" "$tmp/cj" 2>&1 >/dev/null)"
+    case "$o" in *"read 2 infra run(s), 1 tested a commit"*) ok measured_cpu_counts_a_twice_tested_commit_once "1 of 2" ;;
+        *) broke measured_cpu_counts_a_twice_tested_commit_once "stderr: ${o:0:160}" ;; esac
     # fixture c: an empty run list is a read that found none; a body that is no run list is a failed read
     printf '5000 4000\n' > "$tmp/fc/rate"
     runs "$tmp/fc" 200 '{"workflow_runs":[]}'
