@@ -29,13 +29,15 @@ check() {
     fi
     command -v yq > /dev/null 2>&1 || { echo "::error::yq is not provisioned on this runner (pinned v4.52.2 in forjar); pr-light does not download it"; bad=1; }
     if command -v yq > /dev/null 2>&1; then
-        case "$(yq --version 2>&1)" in *" v4.52.2"*) ;; *) echo "::error::yq is '$(yq --version 2>&1)', pr-light needs v4.52.2 from forjar; pr-light does not fetch it"; bad=1 ;; esac
+        case "$(yq --version 2>&1)" in *" v4.52.2") ;; *) echo "::error::yq is '$(yq --version 2>&1)', pr-light needs v4.52.2 from forjar; pr-light does not fetch it"; bad=1 ;; esac
     fi
-    if test -f "$ws/rust-toolchain.toml"; then
+    if ! test -f "$ws/rust-toolchain.toml"; then
+        echo "::error::no rust-toolchain.toml under '$ws': the toolchain pin cannot be read, so it is not checked (run from the workspace root or pass it)"; bad=1
+    else
         pin="$(pin_of "$ws/rust-toolchain.toml")"
         if [ -n "$pin" ]; then
             command -v rustup > /dev/null 2>&1 || { echo "::error::rustup is not provisioned (forjar rust-toolchain)"; bad=1; }
-            if [ "$bad" = 0 ] && ! grep -q "^${pin}-" <<< "$(rustup toolchain list 2> /dev/null)"; then
+            if [ "$bad" = 0 ] && ! grep -q "^${pin//./\\.}-" <<< "$(rustup toolchain list 2> /dev/null)"; then
                 echo "::error::toolchain $pin (rust-toolchain.toml) is not on this runner; provision it in forjar machines/*/forjar.yaml. pr-light does not fetch it"; bad=1
             fi
             if [ "$bad" = 0 ] && ! grep -q '^rustfmt' <<< "$(rustup component list --toolchain "$pin" --installed 2> /dev/null)"; then
@@ -76,6 +78,7 @@ self_test() {
         if [[ $5 != none ]]; then printf 'x localhost:5000/sovereign-ci:stable@sha256:%064d\n' 0 > "$d/scripts/ci/pr_light_fast.sh"; fi
         printf '#!/bin/sh\nexit %s\n' "$([[ $5 == no ]] && echo 1 || echo 0)" > "$d/bin/docker"
         printf '[toolchain]\nchannel = "%s"\n' "$6" > "$d/rust-toolchain.toml"
+        if [[ $6 == absent ]]; then rm -f "${d:?}/rust-toolchain.toml"; fi
         for t in jq yq rustup docker; do [ ! -f "$d/bin/$t" ] || chmod +x "$d/bin/$t"; done
         local got=n; PATH="$d/bin" check "$d" > /dev/null 2>&1 && got=y; row "$name" "$got" "$want"
     }
@@ -85,6 +88,9 @@ self_test() {
     scen "jq 1.7.1 is RED" n jq-1.7.1 v4.52.2 1.93.0-x rustfmt none 1.93.0
     scen "yq missing is RED" n jq-1.8.2 - 1.93.0-x rustfmt none 1.93.0
     scen "yq other version is RED" n jq-1.8.2 v4.52.3 1.93.0-x rustfmt none 1.93.0
+    scen "yq v4.52.20 is RED (the pin is exact)" n jq-1.8.2 v4.52.20 1.93.0-x rustfmt none 1.93.0
+    scen "a missing rust-toolchain.toml is RED, not skipped" n jq-1.8.2 v4.52.2 1.93.0-x rustfmt none absent
+    scen "the pin's dots are literal" n jq-1.8.2 v4.52.2 1x93y0-x rustfmt none 1.93.0
     scen "rustup missing is RED" n jq-1.8.2 v4.52.2 - - none 1.93.0
     scen "a missing toolchain is RED, not fetched" n jq-1.8.2 v4.52.2 1.92.0-x rustfmt none 1.93.0
     scen "a missing rustfmt is RED" n jq-1.8.2 v4.52.2 1.93.0-x clippy none 1.93.0
