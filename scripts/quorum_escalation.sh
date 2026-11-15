@@ -32,6 +32,7 @@ verdict() { # receipt file -> PASS | FAIL | NM
   [ "$tok" = PASS ] || { echo FAIL; return; }
   rest=${b#*"$tok"}; pre=${b%%"$tok"*}
   [[ "$pre $rest" =~ (^|[^0-9])[1-9][0-9]*\ *(lanes?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
+  [[ "$pre $rest" =~ FAIL[A-Za-z]*[:\ =]+[1-9] ]] && { echo FAIL; return; }   # 'FAIL: 1', 'FAIL 1'
   if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)(/|\ +of\ +)([0-9]+) ]] || [[ $pre =~ ([0-9]+)(/|\ +of\ +)([0-9]+)[^A-Za-z0-9/]*$ ]]; then
     [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[3]}" ] && echo PASS || echo FAIL
     return
@@ -111,6 +112,10 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (2 lanes PASS, 1 FAIL)."; chk 1 "f10 PASS beside a counted FAIL is not a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "TALLY: 9/10 PASS"; chk 1 "f10 a 9/10 tally before PASS is not a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (4 of 4 lanes)."; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f10 '4 of 4' is a PASS"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (lanes: 3/3 PASS; FAIL: 1)"; chk 1 "f11 PASS beside 'FAIL: 1' is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (FAIL 1)"; chk 1 "f11 PASS beside 'FAIL 1' is not a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (3/3 lanes, 0 FAIL)"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f11 '0 FAIL' beside PASS is a pass"; clr
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (FAIL: 0)"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f11 'FAIL: 0' beside PASS is a pass"; clr
   # f3: an unreadable receipt neither resets nor counts
   mk 1 0100 "# Quorum #1 (PMAT-9)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-9)" "no verdict here"; mk 3 0300 "# Quorum #3 (PMAT-9)" "$F"; chk 1 "f3 NM keeps the streak"; clr
   # f4: lane and prompt files are not receipts
