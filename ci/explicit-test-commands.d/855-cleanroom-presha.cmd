@@ -1,0 +1,2 @@
+# clean-room on the bump commit's sha before the tag (#6500): green + tested-sha == sha passes; red job, another or a second tested-sha, failed dispatch and a missing run die; the tag step calls it before cut_tag; fails on a FAIL row or a missing PASS line as well as the exit status
+out=$(bash scripts/check_cleanroom_presha.sh 2>&1); rc=$?; printf '%s\n' "$out"; [ "$rc" -eq 0 ] && ! printf '%s\n' "$out" | grep -q 'FAIL' && printf '%s\n' "$out" | grep -qx 'PASS'
