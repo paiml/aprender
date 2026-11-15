@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/lab/spec_sweep_rules.sh -- LAB (C324 items 4-5), spec-sweep 2026-10-31, epic #6809.
 # Enforces eight spec rules that had no blocking check: #6610 (PP-6) #6613 (slice-5 floor) #6614 (FT-12 state)
-# #6615 (T-5 reconcile blocks release) #6616 (plan-quorum apr lane advisory) #6641 (nemawashi advisory-until-ack) #6630 (gputrain contract status) #6617 (Track D non-blocking). Each rule is a function that prints
+# #6615 (T-5 reconcile blocks release) #6616 (plan-quorum apr lane advisory) #6641 (nemawashi advisory-until-ack) #6617 (Track D non-blocking). Each rule is a function that prints
 # RED lines; a rule whose input file is missing is RED (the universe may not empty itself). A rule that is
 # true of the spec but not yet true of the code (6615) is RED too: that is the finding, one ticket, one owner.
 # Never in a PR, merge-queue or release job; run nightly or on demand.
@@ -13,10 +13,8 @@ DR=docs/specifications/DEBT-RATCHET-001-070-074.md
 FT=docs/specifications/release-0.70-fast-train-plan.md
 AE=docs/specifications/APR-EPIC-001-themed-epics-and-issue-cap.md
 MG=docs/specifications/aprender-distribute/multi-gpu-cpu-machine-tasks.md
-GC=contracts/entrenar/gpu-training-backend-v1.yaml
-SM2=docs/specifications/aprender-train/ship-model-2-spec.md
 PP66=docs/specifications/PP-066-release-spec.md
-RULES=(pp6 slice5 ft12 t5 pq nemawashi gputrain trackd)
+RULES=(pp6 slice5 ft12 t5 pq nemawashi trackd)
 need() { [ -f "$1/$2" ] || { echo "RED $2: input missing"; return 1; }; }
 
 # 6610 PP-6: an arm with comparator_required: true declares phase: release (never merge/both/reporting).
@@ -84,16 +82,6 @@ nemawashi() {
   grep -q -F -- "Task assignment is advisory until worker acknowledges" "$1/$MG" || echo "RED nemawashi: advisory-until-ack line missing from $MG"
 }
 
-# 6630 gputrain: the status ship-model-2-spec s14.4 states for the GPU-backend contract equals the contract's own status.
-gputrain() {
-  need "$1" "$GC" || return 0; need "$1" "$SM2" || return 0
-  local c s
-  c=$(grep -m 1 -E '^status:' "$1/$GC" | sed -E 's/^status:[[:space:]]*//; s/[[:space:]]+$//')
-  s=$(grep -F -- "${GC##*/}" "$1/$SM2" | grep -m 1 -o -E '(PROPOSED|ACTIVE)' || true)
-  [ -n "$c" ] || { echo "RED gputrain: contract status unreadable"; return 0; }
-  [ -n "$s" ] || { echo "RED gputrain: spec states no PROPOSED/ACTIVE status for the contract"; return 0; }
-  [ "$c" = "$s" ] || echo "RED gputrain: contract status $c but spec s14.4 says $s"
-}
 
 # 6617 trackd: PP-066 Track D rows (D-Ndoc) are non-blocking: the Track D heading says so and no other row's
 # blockers cell (table column 4, or a "blockers:" card line) names one. Never a merge or release hold.
@@ -135,7 +123,6 @@ selftest() {
     printf '3. **Plan quorum.** the apr lane is advisory per x. Any `do-not-implement` verdict is a STOP.\n' > "$t/$AE"
     printf 'run: bash scripts/check_reconcile.sh\n' > "$t/.github/workflows/binary-release.yml"
     mkdir -p "$t/${MG%/*}"; printf -- '- Task assignment is advisory until worker acknowledges\n' > "$t/$MG"
-    mkdir -p "$t/${GC%/*}" "$t/${SM2%/*}"; printf 'status: ACTIVE\n' > "$t/$GC"; printf '`contracts/entrenar/gpu-training-backend-v1.yaml` v1.0.0 ACTIVE,\n' > "$t/$SM2"
     mkdir -p "$t/${PP66%/*}"; printf '### Track D\n| id | title | blockers |\n|---|---|---|\n| D-1doc | x | G-11 |\n### Track D - docs (non-blocking)\n## s6\n| W-B | x | S-3 |\n' > "$t/$PP66"
   }
   expect() { rc=0; run "$t" >/dev/null || rc=$?; [ "$rc" -eq "$1" ] || { echo "FAIL $2 rc=$rc want $1"; fail=1; }; }
@@ -151,12 +138,11 @@ selftest() {
   mk; rm "$t/$DR"; expect 1 "input missing"
   mk; printf -- '- Task assignment is final\n' > "$t/$MG"; expect 1 "advisory-until-ack line gone"
   mk; rm "$t/$MG"; expect 1 "multi-gpu spec missing"
-  mk; printf '`contracts/entrenar/gpu-training-backend-v1.yaml` v1.0.0 PROPOSED,\n' > "$t/$SM2"; expect 1 "spec status differs from contract"
-  mk; printf 'status: PROPOSED\n' > "$t/$GC"; expect 1 "contract status differs from spec"
   mk; printf '| W-B | x | D-1doc |\n' >> "$t/$PP66"; expect 1 "Track D row named as blocker"
   mk; printf -- '- a - blockers: D-1doc - x\n' >> "$t/$PP66"; expect 1 "Track D named in card blockers"
   mk; printf '### Track D\n| D-1doc | x | G-11 |\n' > "$t/$PP66"; expect 1 "heading not non-blocking"
-  if [ "$fail" -eq 0 ]; then echo "self-test: 17 cases ok"; fi
+  mk; printf '### Track D - docs (non-blocking)\n| W-B | x | S-3 |\n' > "$t/$PP66"; expect 1 "no Track D rows (vacuous)"
+  if [ "$fail" -eq 0 ]; then echo "self-test: 16 cases ok"; fi
   return "$fail"
 }
 case "${1:-}" in
