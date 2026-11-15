@@ -88,22 +88,21 @@ rpg_member_dirs() {
     jq -r '[.packages[] | select(.publish != []) | "\(.name)-\(.version)"] | sort | .[]'
 }
 
-# rpg_clear_overlay_units TARGET NAME-VERSION: remove the .fingerprint of every compiled unit under
-# TARGET (any profile or triple) whose dep-info names an overlay source dir for NAME-VERSION.
-rpg_clear_overlay_units() {
-    local tdir=$1 md=$2 dd df u base
-    [ "${tdir#/}" != "$tdir" ] || return 1
-    for dd in "$tdir"/*/deps "$tdir"/*/*/deps; do
-        [ -d "$dd" ] || continue
-        for df in "$dd"/*.d; do
-            [ -f "$df" ] || continue
-            grep -qE "/registry/src/-[^/]+/${md}/" "$df" || continue
-            u=${df##*/}; u=${u%.d}
-            base=${dd%/deps}
-            rm -rf -- "${base:?}/.fingerprint/${u:?}" || return 1
-        done
+# rpg_overlay_units_gone TARGET NAME-VERSION...: 0 when no dep-info under TARGET (any profile or
+# triple, build-script units included) still names an overlay source dir of a member, 1 when one
+# does or the scan could not run. It never reads cargo's directory layout: a unit is judged by the
+# source path it was compiled from.
+rpg_overlay_units_gone() {
+    local tdir=$1 md esc alt=''
+    shift
+    [ "${tdir#/}" != "$tdir" ] && [ "$#" -gt 0 ] || return 1
+    [ -d "$tdir" ] || return 0
+    for md in "$@"; do
+        esc=$(printf '%s' "$md" | sed 's/[][\.*^$+?(){}|/]/\\&/g') || return 1
+        alt="${alt:+$alt|}$esc"
     done
-    return 0
+    grep -rlqE --include='*.d' "/registry/src/-[^/]*/($alt)/" "$tdir"
+    case $? in 1) return 0 ;; *) return 1 ;; esac
 }
 
 self_test() {
@@ -137,11 +136,29 @@ EOF
     local had_ch=${CARGO_HOME+x} old_ch=${CARGO_HOME:-}
     export CARGO_HOME="$d/ch"; mkdir -p "$CARGO_HOME"
     printf '%s\n' '#!/usr/bin/env bash' \
-        'if [ "$1" = metadata ]; then echo "{\"target_directory\":\"$FAKE_TARGET\",\"packages\":[{\"name\":\"a\",\"version\":\"0.0.0\",\"publish\":null},{\"name\":\"b\",\"version\":\"0.0.0\",\"publish\":[]}]}"; exit 0; fi' \
+        'if [ "$1" = metadata ]; then echo "{\"target_directory\":\"$FAKE_TARGET\",\"packages\":[{\"name\":\"${FAKE_M:-a}\",\"version\":\"0.0.0\",\"publish\":null},{\"name\":\"b\",\"version\":\"0.0.0\",\"publish\":[]}]}"; exit 0; fi' \
+        'fake_clean_pkg() {' \
+        '  local f h' \
+        '  for f in "$FAKE_TARGET"/*/.fingerprint/"$1"-* "$FAKE_TARGET"/*/build/"$1"-*; do' \
+        '    [ -e "$f" ] || continue' \
+        '    h=${f##*-}' \
+        '    rm -rf "${f:?}" "${FAKE_TARGET:?}"/*/deps/*-"${h:?}".*' \
+        '  done' \
+        '}' \
+        'if [ "$1" = clean ]; then' \
+        '  [ -z "${FAKE_CLEAN_RC:-}" ] || exit "$FAKE_CLEAN_RC"' \
+        '  [ -z "${FAKE_CLEAN_NOOP:-}" ] || exit 0' \
+        '  shift' \
+        '  while [ $# -gt 1 ]; do' \
+        '    [ "$1" != -p ] || fake_clean_pkg "$2"' \
+        '    shift' \
+        '  done' \
+        '  exit 0' \
+        'fi' \
         'echo "$*" >> "$FAKE_CARGO_LOG"' \
         'if [ -e "$FAKE_TARGET/package/tmp-registry/stale.crate" ]; then echo "error: no hash listed for a v0.0.0"; exit 101; fi' \
         'if [ -e "$CARGO_HOME/registry/src/-h/a-0.0.0/planted" ]; then echo "error: verified a leftover unpacked source"; exit 101; fi' \
-        'if [ -e "$FAKE_TARGET/debug/.fingerprint/a-1" ]; then echo "error: reused a compiled overlay unit"; exit 101; fi' \
+        'if grep -rlqE --include="*.d" "/registry/src/-[^/]*/${FAKE_M:-a}-0\.0\.0/" "$FAKE_TARGET"; then echo "error: reused a compiled overlay unit"; exit 101; fi' \
         'echo "   Packaged 1 file"; [ -z "${FAKE_CARGO_RC:-}" ] || { echo "error: fake refusal"; exit "$FAKE_CARGO_RC"; }' > "$d/cargo"
     chmod +x "$d/cargo"; : > "$d/Cargo.toml"
     export FAKE_TARGET="$d/t"
@@ -163,17 +180,39 @@ EOF
         echo "  ok   a leftover unpacked member source is removed before the walk; other sources stay (#6880)"
     else echo "  FAIL a leftover unpacked overlay source was verified, or an unrelated source was removed"; fail=1; fi
     # #6880 (compiled unit): a unit compiled from the overlay source by an earlier commit stays fresh
-    # in a kept target dir (cargo keys a registry unit by id, not mtime). Only the fingerprint of a
-    # unit whose dep-info reads a member overlay source goes; other units and the deps cache stay.
-    mkdir -p "$d/t/debug/deps" "$d/t/debug/.fingerprint/a-1" "$d/t/debug/.fingerprint/a-2" "$d/t/debug/.fingerprint/zz-1"
-    echo "$d/t/debug/deps/a-1.d: $CARGO_HOME/registry/src/-h/a-0.0.0/src/lib.rs" > "$d/t/debug/deps/a-1.d"
-    echo "$d/t/debug/deps/a-2.d: src/lib.rs" > "$d/t/debug/deps/a-2.d"
-    echo "$d/t/debug/deps/zz-1.d: $CARGO_HOME/registry/src/-h/zz-1.0.0/src/lib.rs" > "$d/t/debug/deps/zz-1.d"
-    if FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify > /dev/null \
-        && [ ! -e "$d/t/debug/.fingerprint/a-1" ] && [ -d "$d/t/debug/.fingerprint/a-2" ] && [ -d "$d/t/debug/.fingerprint/zz-1" ] \
-        && [ -e "$d/t/debug/deps/a-2.d" ]; then
-        echo "  ok   a compiled overlay unit of a member is invalidated; path and other units stay (#6880)"
-    else echo "  FAIL a compiled overlay unit survived into the walk, or an unrelated unit was removed"; fail=1; fi
+    # in a kept target dir (cargo keys a registry unit by id, not mtime). cargo's own clean drops the
+    # member's units; the gate never guesses their directory names. One row per shape the first
+    # attempt (dep-info stem as fingerprint name, deps/ only) left in place, each planted alone beside
+    # an unrelated unit that must stay.
+    st_unit() { # LABEL MEMBER FINGERPRINT-DIR DEP-INFO (the last two relative to <target>/debug)
+        local label=$1 m=$2 fp=$3 dep=$4 t=$d/t/debug
+        rm -rf -- "${d:?}/t/debug"
+        mkdir -p "$t/deps" "$t/.fingerprint/$fp" "$t/.fingerprint/zz-9" "$(dirname -- "$t/$dep")"
+        echo "x: $CARGO_HOME/registry/src/-h/$m-0.0.0/src/lib.rs" > "$t/$dep"
+        echo "zz-9.d: $CARGO_HOME/registry/src/-h/zz-1.0.0/src/lib.rs" > "$t/deps/zz-9.d"
+        if FAKE_M=$m FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify > /dev/null \
+            && [ ! -e "$t/.fingerprint/$fp" ] && [ ! -e "$t/$dep" ] && [ -d "$t/.fingerprint/zz-9" ] && [ -e "$t/deps/zz-9.d" ]; then
+            echo "  ok   compiled overlay unit: $label is invalidated; the unrelated unit stays (#6880)"
+        else echo "  FAIL compiled overlay unit: $label survived into the walk, or an unrelated unit was removed"; fail=1; fi
+    }
+    st_unit "plain package name" a a-aa11 deps/a-aa11.d
+    st_unit "hyphenated package (lib stem h_p)" h-p h-p-bb22 deps/h_p-bb22.d
+    st_unit "custom [lib] name" c-q c-q-cc33 deps/provable_x-cc33.d
+    st_unit "build-script unit" h-p h-p-dd44 build/h-p-dd44/build_script_build-dd44.d
+    # Fail closed: a clean that removed nothing while a stale unit exists, and a clean that failed,
+    # are ENV (rc 2), never a green walk.
+    mkdir -p "$d/t/debug/deps"; echo "x: $CARGO_HOME/registry/src/-h/h-p-0.0.0/src/lib.rs" > "$d/t/debug/deps/h_p-ee55.d"
+    got=$(FAKE_M=h-p FAKE_CLEAN_NOOP=1 FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify; echo "rc=$?")
+    case "$got" in
+        ENV*"rc=2") echo "  ok   a clean that removed nothing while a stale unit exists is ENV" ;;
+        *) echo "  FAIL a no-op clean with a stale unit gave: $got"; fail=1 ;;
+    esac
+    got=$(FAKE_M=h-p FAKE_CLEAN_RC=101 FAKE_CARGO_LOG=$d/args PATH="$d:$PATH" package_walk "$d" --verify; echo "rc=$?")
+    case "$got" in
+        ENV*"rc=2") echo "  ok   a cargo clean that fails is ENV" ;;
+        *) echo "  FAIL a failed cargo clean gave: $got"; fail=1 ;;
+    esac
+    rm -rf -- "${d:?}/t/debug"
     # The production case: CARGO_HOME unset or empty, so the cargo home is $HOME/.cargo. The
     # leftover there must go too, and nothing may be cleared straight under $HOME.
     mkdir -p "$d/home/.cargo/registry/src/-h/a-0.0.0" "$d/home/registry/src/-h/a-0.0.0"
@@ -277,12 +316,20 @@ package_walk() {
     # unit by package id and version only, with no mtime check, so the unit an earlier commit compiled
     # from the overlay source stays "fresh" in a kept CARGO_TARGET_DIR although the source dir above
     # was unpacked anew: verify linked the OLD sibling API (rc 0 for a broken API, false red for a new
-    # one). Remove only the .fingerprint of units whose dep-info reads <CARGO_HOME>/registry/src/-*/<member>;
-    # path units under <target>/package are keyed by path and already fresh, the deps cache stays.
-    while IFS= read -r m; do
-        [ -n "$m" ] || continue
-        rpg_clear_overlay_units "$tdir" "$m" || { echo "ENV   package: cannot clear compiled overlay units of $m"; return 2; }
-    done < <(printf '%s\n' "$meta" | rpg_member_dirs)
+    # one). cargo drops a member's lib, build-script and run units itself (`cargo clean -p`; the
+    # version qualifier is ignored, so the workspace copy goes too), dev and release. We do not guess
+    # its directory names: afterwards any dep-info that still names a member overlay source (another
+    # profile or triple, a clean that removed nothing) is ENV, never green.
+    local mds=()
+    mapfile -t mds < <(printf '%s\n' "$meta" | rpg_member_dirs)
+    if ! (cd -- "$root" && cargo clean "${args[@]}" --offline --locked && cargo clean "${args[@]}" --release --offline --locked) > /dev/null 2>&1; then
+        echo "ENV   package: cargo clean could not drop the compiled overlay units of the members"
+        return 2
+    fi
+    if ! rpg_overlay_units_gone "$tdir" "${mds[@]}"; then
+        echo "ENV   package: a compiled unit under $tdir still reads a member overlay source after cargo clean"
+        return 2
+    fi
     log=$(mktemp) || return 2
     (cd -- "$root" && cargo package "${args[@]}" ${mode:+"$mode"} --locked) > "$log" 2>&1 || rc=$?
     got=$(grep -cE '^ +Packaged ' "$log")
