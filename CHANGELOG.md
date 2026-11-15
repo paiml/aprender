@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
 
-Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 31 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines, the f64 plot core and the bar stat and position cores), the presentar frame clock and video element, and release-path fixes.
+Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 0.72.6 to 0.74.0, the version named by its milestone. It carries the 34 PRs merged since v0.72.6: plot slice 1 (ggplot2 parity rows 2-4, the plot verb drawing line, path, step and reference lines, the f64 plot core and the bar stat and position cores), the presentar frame clock and video element, and release-path fixes.
 
 ### Added
 
@@ -43,6 +43,8 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - fix(roadmap): refold roadmap.yaml after the PMAT-7011..7013 entries (PMAT-7029) (#7050)
 - fix(viz): stat_count drops x values with no level; empty bar layer spans -0.05..1.05 (#7049)
 - fix(viz): F18 layer data/aes pins, F19 renderers refuse dist layers (#7044 review) (#7053)
+- fix(pv): repo_tree_pv pins the measured shape count after #6996 added ggplot2-core (#7029) (#7056)
+- fix(viz): proven_rows table is a rustfmt-parseable item; main red at include-fmt ratchet (PMAT-7029) (#7059)
 
 ### Changed
 
@@ -52,6 +54,7 @@ Minor release for the 14 Nov 2026 train. There is no 0.73.x: the line goes from 
 - chore(contracts): move 263 pmat work-ticket stubs out of contracts/ (#7037)
 - chore(contracts): bind 10 no-test contracts to CI-run falsification tests (debt 390 -> 380) (#7036)
 - refactor(viz,present-cli): split 3 below-B definitions so CB-200 holds for v0.74.0 (#7029) (#7043)
+- refactor(aprender-contracts): entity_count under min_grade for CB-200 (PMAT-7029) (#7060)
 
 ## [0.72.6] - 2026-11-12
 
