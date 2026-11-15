@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::{Path, PathBuf};
 
 use batuta_common::cli_roles::{FreeText, InputFile};
 
@@ -20,14 +21,15 @@ const AESTHETICS: &[&str] = &["x", "y"];
 pub struct PlotFlags {
     /// CSV file with a header row (`#` lines are skipped). Values are zero or have a magnitude
     /// from 1e-5 up to but excluding 1e16, the span whose axis labels were compared with ggplot2
-    #[arg(long)]
-    pub data: InputFile,
+    #[arg(long, required_unless_present = "spec")]
+    pub data: Option<InputFile>,
 
     /// Aesthetic mappings, e.g. x=height,y=weight
     #[arg(long, required_unless_present = "spec", conflicts_with = "spec")]
     pub aes: Option<FreeText>,
 
-    /// A ggplot expression, e.g. "ggplot(df, aes(x, y)) + geom_point()" (instead of --aes/--geom)
+    /// A ggplot expression, e.g. "ggplot(df, aes(x, y)) + geom_point()", or a YAML file (name
+    /// ending .yaml/.yml) with `data`, `aes` and `layers` (instead of --aes/--geom)
     #[arg(long)]
     pub spec: Option<FreeText>,
 
@@ -185,6 +187,69 @@ pub fn parse_spec(src: &str) -> Result<(String, BTreeMap<String, String>), Strin
     Ok((geom, aes))
 }
 
+/// The YAML spec. A key the verb cannot draw is named in [`parse_spec_file`], not ignored.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileSpec {
+    data: Option<PathBuf>,
+    aes: BTreeMap<String, String>,
+    layers: Vec<FileLayer>,
+    // Keys of the older spec this verb does not draw yet: read only to be refused.
+    scales: Option<serde::de::IgnoredAny>,
+    coord: Option<serde::de::IgnoredAny>,
+    facet: Option<serde::de::IgnoredAny>,
+    labs: Option<serde::de::IgnoredAny>,
+    theme: Option<serde::de::IgnoredAny>,
+}
+
+/// One layer of the YAML spec: only its geom is drawn.
+#[derive(Debug, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FileLayer {
+    geom: String,
+}
+
+/// Whether a `--spec` value names a YAML file rather than holding a ggplot expression.
+fn is_yaml_path(spec: &str) -> bool {
+    Path::new(spec)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml"))
+}
+
+/// Read a YAML spec into the geom, the aesthetics and its `data:` (relative to the spec file).
+///
+/// # Errors
+///
+/// An unreadable or malformed file, an unknown key or layer key, a key the verb does not draw
+/// (`scales`, `coord`, `facet`, `labs`, `theme`), or other than exactly one layer.
+pub fn parse_spec_file(
+    path: &Path,
+) -> Result<(String, BTreeMap<String, String>, Option<PathBuf>), String> {
+    let text = std::fs::read_to_string(path)
+        .map_err(|e| format!("cannot read spec {}: {e}", path.display()))?;
+    let spec: FileSpec = serde_saphyr::from_str(&text)
+        .map_err(|e| format!("invalid plot spec {}: {e}", path.display()))?;
+    let drawn = [
+        ("scales", spec.scales.is_some()),
+        ("coord", spec.coord.is_some()),
+        ("facet", spec.facet.is_some()),
+        ("labs", spec.labs.is_some()),
+        ("theme", spec.theme.is_some()),
+    ];
+    if let Some((key, _)) = drawn.iter().find(|(_, set)| *set) {
+        return Err(format!(
+            "spec {}: '{key}' is not drawn by this verb yet; supported keys: data, aes, layers",
+            path.display()
+        ));
+    }
+    let [layer] = <[FileLayer; 1]>::try_from(spec.layers).map_err(|l| {
+        format!("spec {}: expected exactly one layer, got {}", path.display(), l.len())
+    })?;
+    let data = spec.data.map(|d| path.parent().unwrap_or(Path::new("")).join(d));
+    Ok((layer.geom, spec.aes, data))
+}
+
 fn refuse(what: &str, got: &str, supported: &[&str]) -> String {
     format!("unsupported {what} '{got}'; supported: {}", supported.join(", "))
 }
@@ -197,7 +262,13 @@ impl PlotFlags {
     /// A geom other than `point`, a malformed `--aes`, an aesthetic other than `x` and `y`, or
     /// no mapping for `x` or `y`.
     pub fn plot_args(&self) -> Result<PlotArgs, String> {
+        let mut spec_data = None;
         let (geom, mut aes) = match (&self.spec, &self.aes) {
+            (Some(spec), _) if is_yaml_path(spec) => {
+                let (g, a, d) = parse_spec_file(Path::new(&**spec))?;
+                spec_data = d;
+                (g, a)
+            }
             (Some(spec), _) => parse_spec(spec)?,
             (None, aes) => (
                 self.geom.as_deref().unwrap_or("point").to_string(),
@@ -215,7 +286,11 @@ impl PlotFlags {
         };
         let (x, y) = (mapped("x")?, mapped("y")?);
         Ok(PlotArgs {
-            data: self.data.clone().into_path_buf(),
+            data: match (&self.data, spec_data) {
+                (Some(d), _) => d.clone().into_path_buf(),
+                (None, Some(d)) => d,
+                (None, None) => return Err("no data: give --data or `data:` in the spec".into()),
+            },
             x,
             y,
             width: self.width,
@@ -352,6 +427,87 @@ mod tests {
         assert!(out.is_empty());
         let (r, _) = go("ggplot(df, aes(x, y)) + geom_line()");
         assert_eq!(r, Err("unsupported geom 'line'; supported: point".into()));
+        std::fs::remove_dir_all(&dir).expect("rm tmp dir");
+    }
+
+    fn yaml_in(name: &str, body: &str) -> (PathBuf, PathBuf) {
+        let dir = std::env::temp_dir().join(format!("plot-cli-yaml-{name}-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("tmp dir");
+        std::fs::write(dir.join("d.csv"), "x,y\n1.5,-2.25\n2.25,0.5\n3,1.75\n").expect("csv");
+        let spec = dir.join("p.yaml");
+        std::fs::write(&spec, body).expect("spec");
+        (dir, spec)
+    }
+
+    fn draw_yaml(spec: &Path, extra: &[&str]) -> (Result<(), String>, String) {
+        let s = spec.to_str().expect("utf8");
+        let mut argv = vec!["--output", "svg", "--spec", s];
+        argv.extend_from_slice(extra);
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let r = run(&parse(&argv).expect("parses"), &Env::default(), &mut out, &mut err);
+        (r, String::from_utf8_lossy(&out).into_owned())
+    }
+
+    #[test]
+    fn yaml_spec_draws_data_aes_and_a_point_layer() {
+        let (dir, spec) = yaml_in(
+            "ok",
+            "data: d.csv\naes:\n  x: x\n  y: y\nlayers:\n  - geom: point\nfacet: null\n",
+        );
+        let (r, svg) = draw_yaml(&spec, &[]);
+        assert_eq!(r, Ok(()));
+        assert!(svg.starts_with("<svg"), "{svg:.200}");
+        // --data wins over the spec's data:, and a spec without data: needs --data.
+        let csv = dir.join("d.csv");
+        let (r, _) = draw_yaml(&spec, &["--data", csv.to_str().expect("utf8")]);
+        assert_eq!(r, Ok(()));
+        std::fs::write(&spec, "aes:\n  x: x\n  y: y\nlayers:\n  - geom: point\n").expect("w");
+        let (r, _) = draw_yaml(&spec, &[]);
+        assert_eq!(r, Err("no data: give --data or `data:` in the spec".into()));
+        std::fs::remove_dir_all(&dir).expect("rm tmp dir");
+    }
+
+    #[test]
+    fn yaml_spec_refuses_what_is_not_drawn_and_the_aes_and_geom_rules_still_hold() {
+        let head = "data: d.csv\naes:\n  x: x\n  y: y\nlayers:\n  - geom: point\n";
+        for (extra, key) in [
+            ("labs:\n  title: T\n", "labs"),
+            ("scales:\n  x: log10\n", "scales"),
+            ("coord:\n  type: cartesian\n", "coord"),
+            ("facet: wrap\n", "facet"),
+            ("theme: bw\n", "theme"),
+        ] {
+            let (dir, spec) = yaml_in(key, &format!("{head}{extra}"));
+            let (r, out) = draw_yaml(&spec, &[]);
+            let e = r.expect_err("refused");
+            assert!(e.contains(&format!("'{key}' is not drawn")), "{e}");
+            assert!(out.is_empty());
+            std::fs::remove_dir_all(&dir).expect("rm tmp dir");
+        }
+        let (dir, spec) =
+            yaml_in("geom", "data: d.csv\naes:\n  x: x\n  y: y\nlayers:\n  - geom: line\n");
+        assert_eq!(
+            draw_yaml(&spec, &[]).0,
+            Err("unsupported geom 'line'; supported: point".into())
+        );
+        let two = "data: d.csv\naes:\n  x: x\n  y: y\nlayers:\n  - geom: point\n  - geom: point\n";
+        std::fs::write(&spec, two).expect("w");
+        assert!(draw_yaml(&spec, &[]).0.expect_err("two").contains("exactly one layer, got 2"));
+        let stat = "data: d.csv\naes:\n  x: x\n  y: y\nlayers:\n  - geom: point\n    stat: bin\n";
+        std::fs::write(&spec, stat).expect("w");
+        assert!(draw_yaml(&spec, &[]).0.expect_err("stat").contains("invalid plot spec"));
+        std::fs::remove_dir_all(&dir).expect("rm tmp dir");
+    }
+
+    #[test]
+    fn yaml_spec_malformed_or_missing_is_refused() {
+        let (dir, spec) = yaml_in("bad", "data: [unclosed\n");
+        let e = draw_yaml(&spec, &[]).0.expect_err("malformed");
+        assert!(e.starts_with("invalid plot spec "), "{e}");
+        std::fs::write(&spec, "bogus: 1\n").expect("w");
+        assert!(draw_yaml(&spec, &[]).0.expect_err("unknown key").contains("invalid plot spec"));
+        std::fs::remove_file(&spec).expect("rm");
+        assert!(draw_yaml(&spec, &[]).0.expect_err("missing").contains("cannot read spec"));
         std::fs::remove_dir_all(&dir).expect("rm tmp dir");
     }
 
