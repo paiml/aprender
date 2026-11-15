@@ -113,8 +113,8 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     );
     assert_eq!(x["pc_shape"], "fired", "{g}");
     // ONT-4b: exactly one, from ont:id minCount; ONT-4c1, ONT-4f and ONT-4c add plants (see the history
-    // below): 42.
-    assert_eq!(x["plant_violations"], 42, "{g}");
+    // below); #7111 adds one, from readme:kind minCount on readme-root: 43.
+    assert_eq!(x["plant_violations"], 43, "{g}");
     // The shape count is hardcoded on purpose, so adding a shape turns this red and makes you name it.
     // MEASURED: `pv extract contracts --check` reported
     // shapes_n=9, triples=15851 (the 0.69 batch, #3669, pinned pv 0.68.2 built from
