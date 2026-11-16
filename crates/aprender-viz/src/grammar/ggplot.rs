@@ -454,7 +454,9 @@ impl BuiltGGPlot {
 
     /// Line, path, step and reference layers as vector elements at panel pixel coordinates.
     fn svg_strokes(&self, mut svg: SvgEncoder) -> Result<SvgEncoder> {
-        let Some(built) = self.stroke_layout()? else { return Ok(svg) };
+        let Some(built) = self.stroke_layout()? else {
+            return Ok(svg);
+        };
         let ps = panels(&self.facet, &self.data)?;
         let grid = PanelGrid::new(&ps, self.width, self.height, self.theme.margin);
         for (pi, p) in ps.iter().enumerate() {
@@ -505,7 +507,9 @@ impl BuiltGGPlot {
             // A tick whose pixel is not finite (a domain wider than f32) is not written: SVG
             // attributes never carry NaN or inf.
             for (v, label) in &f.x_ticks {
-                let Some(px) = Self::pixel(&f.x_scale, *v as f32) else { continue };
+                let Some(px) = Self::pixel(&f.x_scale, *v as f32) else {
+                    continue;
+                };
                 svg = svg.line(px, bottom, px, bottom + TICK_PX, ink, 1.0).text_anchored(
                     px,
                     bottom + TICK_PX + AXIS_TEXT_PX,
@@ -516,7 +520,9 @@ impl BuiltGGPlot {
                 );
             }
             for (v, label) in &f.y_ticks {
-                let Some(py) = Self::pixel(&f.y_scale, *v as f32) else { continue };
+                let Some(py) = Self::pixel(&f.y_scale, *v as f32) else {
+                    continue;
+                };
                 svg = svg.line(left - TICK_PX, py, left, py, ink, 1.0).text_anchored(
                     left - TICK_PX - 2.0,
                     py + AXIS_TEXT_PX * 0.35,
@@ -681,7 +687,9 @@ impl BuiltGGPlot {
     /// the extremes matter — so this reads the compacting accessor deliberately.
     fn extend_range(acc: (f32, f32), data: &DataFrame, col: Option<&String>) -> (f32, f32) {
         let Some(col) = col else { return acc };
-        let Some(values) = data.get_f32_present(col) else { return acc };
+        let Some(values) = data.get_f32_present(col) else {
+            return acc;
+        };
         values.iter().filter(|v| v.is_finite()).fold(acc, |(lo, hi), &v| (lo.min(v), hi.max(v)))
     }
 
@@ -889,7 +897,7 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, filled: None })
+        Ok(BuiltLayer { x, y, points, path: None, bins: None, density: None, filled: None })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
@@ -911,7 +919,7 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, filled: None })
+        Ok(BuiltLayer { x, y, points, path: None, bins: None, density: None, filled: None })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).
