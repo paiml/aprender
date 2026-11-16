@@ -143,7 +143,9 @@ impl Geom {
     }
 }
 
-/// `stat_bin` parameters on a distribution layer; no-ops on any other geom.
+/// `stat_bin` and `stat_ydensity` parameters on a distribution layer; no-ops on any other geom.
+/// `trim`, `adjust` and `violin_scale` on a distribution layer other than `geom_violin` are
+/// refused by `layout()`, not ignored.
 impl Geom {
     fn with_spec(mut self, f: impl FnOnce(&mut DistSpec)) -> Self {
         if let GeomType::Dist(spec) = &mut self.geom_type {
@@ -214,6 +216,16 @@ pub(super) fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataVal
 
 /// A numeric column, one entry per row. Missing is `NaN`; text and infinite values are refused.
 pub(super) fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
+    let v = numeric_lenient(data, name)?;
+    if v.iter().any(|x| x.is_infinite()) {
+        return Err(refuse(format!("column `{name}` holds an infinite value")));
+    }
+    Ok(v)
+}
+
+/// [`numeric`] that lets an infinite value through, for a stat whose ggplot2 original drops
+/// non-finite rows (`remove_missing(finite = TRUE)`) and so can be matched by dropping them too.
+pub(super) fn numeric_lenient(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
     let cells = column(data, name)?;
     cells
         .iter()
@@ -222,12 +234,7 @@ pub(super) fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
                 "column `{name}` is text: a discrete position scale is not supported here"
             ))),
             // `NaN` is the missing value (R's `NA`); a missing cell reads the same way.
-            other => match other.as_f32() {
-                Some(v) if v.is_infinite() => {
-                    Err(refuse(format!("column `{name}` holds an infinite value")))
-                }
-                v => Ok(v.map_or(f64::NAN, f64::from)),
-            },
+            other => Ok(other.as_f32().map_or(f64::NAN, f64::from)),
         })
         .collect()
 }
@@ -332,6 +339,27 @@ pub(super) fn check_inputs(kind: DistKind, aes: &Aes, stat: Option<&Stat>) -> Re
     Ok(())
 }
 
+/// `trim`, `adjust` and `scale` belong to `stat_ydensity`. Set to anything but their default on a
+/// layer that does not honour them they would be silently ignored, so they are refused by name.
+/// (`geom_density(adjust = 0.5)` is valid in ggplot2 but not built here.)
+fn check_violin_only(spec: &DistSpec) -> Result<()> {
+    if spec.kind == DistKind::Violin {
+        return Ok(());
+    }
+    let set = [
+        ("adjust", spec.adjust != 1.0),
+        ("trim", !spec.trim),
+        ("violin_scale", spec.violin_scale != ViolinScale::Area),
+    ];
+    match set.iter().find(|(_, changed)| *changed) {
+        Some((name, _)) => Err(refuse(format!(
+            "`{name}` is a geom_violin parameter: this layer does not honour it, and it would be \
+             silently ignored"
+        ))),
+        None => Ok(()),
+    }
+}
+
 fn check_scope(coord: &Coord, facet: &Facet) -> Result<()> {
     let refused = match coord {
         Coord::Cartesian { xlim: None, ylim: None, flip: false } => None,
@@ -383,6 +411,7 @@ pub(super) fn layout(
         let data = layer.data.as_ref().unwrap_or(plot_data);
         let aes = plot_aes.merge(&layer.aes);
         check_inputs(spec.kind, &aes, layer.geom.stat.as_ref())?;
+        check_violin_only(spec)?;
         let groups = group_ids(data, &aes)?;
         // A violin reads its own `x` (text is a discrete scale there) and `y`.
         if spec.kind != DistKind::Violin {
@@ -684,6 +713,33 @@ mod tests {
         }
         let own = Geom::gg_density().stat(Stat::Density);
         assert!(run(plot(small(), Aes::new().x("x"), own)).is_ok());
+    }
+
+    /// `adjust`, `trim` and `violin_scale` are geom_violin parameters: on every other layer a
+    /// non-default value is refused by name, and the default is accepted.
+    #[test]
+    fn violin_only_parameters_are_refused_on_the_other_distribution_layers() {
+        let on = |g: Geom, a: Aes| run(plot(small(), a, g));
+        let x = || Aes::new().x("x");
+        for (name, geom, aes) in [
+            ("adjust", Geom::gg_density().adjust(0.5), x()),
+            ("trim", Geom::gg_density().trim(false), x()),
+            ("adjust", Geom::gg_histogram().adjust(0.5), x()),
+            ("trim", Geom::gg_histogram().trim(false), x()),
+            ("violin_scale", Geom::gg_freqpoly().violin_scale(ViolinScale::Width), x()),
+            ("adjust", Geom::gg_freqpoly().adjust(2.0), x()),
+            (
+                "violin_scale",
+                Geom::gg_boxplot().violin_scale(ViolinScale::Count),
+                Aes::new().y("x"),
+            ),
+        ] {
+            let r = on(geom, aes);
+            let want = format!("`{name}` is a geom_violin parameter");
+            assert!(matches!(&r, Err(Error::Rendering(m)) if m.contains(&want)), "{name}: {r:?}");
+        }
+        assert!(on(Geom::gg_density(), x()).is_ok());
+        assert!(on(Geom::gg_histogram().adjust(1.0).trim(true), x()).is_ok());
     }
 
     /// `geom_density` through `layout()`: missing values are dropped as ggplot2 does, and input

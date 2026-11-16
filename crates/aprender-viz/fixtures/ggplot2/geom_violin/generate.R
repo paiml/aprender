@@ -66,11 +66,40 @@ cases <- list(
   list("constant", "data_constant.csv", "aes(g, y)", aes(g, y), geom_violin()),
   list("constant_only", "data_constant_only.csv", "aes(g, y)", aes(g, y), geom_violin())
 )
+# Cases that rescale or edit a committed CSV (the Rust oracle applies the same edit, `edit()` in
+# ggplot2_dist_violin_oracle.rs): list(name, file, aes text, aes, layer, edit text, edit).
+# 2^-14 and 2^14 are exact in the f32 cells; the offset keeps a multiple of 1/16 (exact in f32).
+edited <- list(
+  list("small_unit", "data_three.csv", "aes(g, y)", aes(g, y), geom_violin(),
+    "y * 2^-14", function(d) { d$y <- d$y * 2^-14; d }),
+  list("small_unit_8", "data_three.csv", "aes(g, y)", aes(g, y), geom_violin(),
+    "y * 2^-8", function(d) { d$y <- d$y * 2^-8; d }),
+  list("small_unit_adjust", "data_three.csv", "aes(g, y)", aes(g, y), geom_violin(adjust = 0.5),
+    "y * 2^-14", function(d) { d$y <- d$y * 2^-14; d }),
+  list("large_unit", "data_three.csv", "aes(g, y)", aes(g, y), geom_violin(),
+    "y * 2^14", function(d) { d$y <- d$y * 2^14; d }),
+  list("offset", "data_three.csv", "aes(g, y)", aes(g, y), geom_violin(),
+    "floor(y * 16) / 16 + 1e6", function(d) { d$y <- floor(d$y * 16) / 16 + 1e6; d }),
+  list("tiny_x_gaps", "data_three.csv", "aes(xn, y, group = g)", aes(xn, y, group = g), geom_violin(),
+    "xn = c(2^-30, 2^-29, 3 * 2^-30)[match(g, c('a','b','c'))]",
+    function(d) { d$xn <- c(2^-30, 2^-29, 3 * 2^-30)[match(d$g, c("a", "b", "c"))]; d }),
+  list("inf_y", "data_three.csv", "aes(g, y)", aes(g, y), geom_violin(),
+    "y[c(2, 15)] = c(Inf, -Inf)", function(d) { d$y[c(2, 15)] <- c(Inf, -Inf); d }),
+  list("inf_x", "data_three.csv", "aes(xn, y, group = g)", aes(xn, y, group = g), geom_violin(),
+    "xn[c(3, 20)] = c(Inf, -Inf)", function(d) { d$xn[c(3, 20)] <- c(Inf, -Inf); d })
+)
+cases <- c(cases, lapply(edited, function(e) c(e[1:5], list(NULL), e[6:7])))
 for (case in cases) {
   df <- read(case[[2]])
+  edit_text <- NULL
+  if (length(case) >= 8) {
+    df <- case[[8]](df)
+    edit_text <- case[[7]]
+  }
   layer <- case[[5]]
   call <- paste(deparse(layer$constructor %||% quote(geom_violin())), collapse = "")
   spec <- sprintf("ggplot(df, %s) + %s  # df = %s", case[[3]], call, case[[2]])
+  if (!is.null(edit_text)) spec <- paste0(spec, " with ", edit_text)
   write_violin(ggplot(df, case[[4]]) + layer, spec, case[[2]],
     file.path(here, paste0("expected_", case[[1]], ".json")))
 }

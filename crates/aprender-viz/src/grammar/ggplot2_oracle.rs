@@ -24,9 +24,9 @@ use serde_json::Value;
 use super::{Aes, BuiltLayout, DataFrame, GGPlot, Geom, PositionScale};
 
 /// Relative tolerance for every continuous value. See the module docs.
-const REL_TOL: f64 = 1e-9;
+pub(super) const REL_TOL: f64 = 1e-9;
 /// Absolute floor, for values at exactly zero.
-const ABS_TOL: f64 = 1e-12;
+pub(super) const ABS_TOL: f64 = 1e-12;
 
 pub(super) fn close(a: f64, b: f64) -> bool {
     (a - b).abs() <= REL_TOL * a.abs().max(b.abs()) + ABS_TOL

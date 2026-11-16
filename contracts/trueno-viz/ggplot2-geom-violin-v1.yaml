@@ -6,8 +6,8 @@ metadata:
   author: PAIML Engineering
   description: >-
     ggplot2 conformance row geom_violin (PLOT-GG-001, master #6909; ticket #6984). geom_violin() draws stat_ydensity per group (rows sharing a ggplot2 group): the group's y density at 512 points over [min(y), max(y)] (trim = TRUE) or three unadjusted bw.nrd0 bandwidths past it (trim = FALSE), the bandwidth being bw.nrd0 times adjust inside density(); then the three quantile rows (type 7, probabilities 0.25, 0.5, 0.75) that ggplot2 4.0.3 appends after the grid rows, every other column interpolated at the quantile's y, and the grid rows whose y equals a quantile y removed. Per panel, violinwidth follows scale (area: density / max over the panel; count: that times n / max(n); width: scaled). GeomViolin then sets width (the parameter, else 0.9 * resolution(x, zero = TRUE, discrete = FALSE)) and xmin/xmax, and position_dodge (preserve total) splits the width of an x among the groups sharing it, with order the group's rank there. The discrete x scale is trained on every row before the stat, so a dropped group keeps its level; the continuous range is retrained on xmin/xmax.
-    The oracle is a set of committed JSON fixtures produced by ggplot2 4.0.3 under R 4.6.2 with C collation; R is never run at test time. Every case goes through the public builder and layout() and compares x, y, density, scaled, ndensity, count, wdensity, n, quantile, violinwidth, width, xmin, xmax, order and ymax row by row, and both position scales, at 1e-9 relative plus 1e-12 absolute, the same for every case. Cases: single, three, count, width, trim_false, trim_adjust, adjust_half, width_half, width_wide, fill, dodge3, numeric_x, na, tiny, constant, constant_only (16).
-    Differences from R, all refused with a typed Err (Rendering unless noted) and never approximated: (1) a numeric x without a group aesthetic, which R pools into one violin at the mid-range of x (an x that varies within a group); (2) a text x with a missing cell; (3) a colour mapping, and fill and colour on two different columns in one aes() call; (4) a layer in which no group has two rows with finite x and y, where R returns an empty layer; (5) a non-finite or non-positive adjust or width; (6) a coordinate system other than plain Cartesian (UnsupportedCoord), facets, a scale_x or scale_y spec (UnsupportedLayer), and any other geom in the plot. Not expressible through the API, so neither accepted nor approximated: draw_quantiles and quantiles, bounds, kernels other than gaussian, bandwidth rules other than bw.nrd0, orientation = y, and a weight aesthetic. Not built: the fill palette colours, and the default weight, colour, linewidth, linetype and alpha columns. Integer-typed numbers: R's resolution() of an integer x is 1, while this crate holds every number as a double, so the fixtures coerce integer columns to double. The grouping interaction orders x (text) before fill, which is an assumption the fill and dodge3 fixtures confirm for these inputs. Overlapping widths warn in R and are accepted here. Rendering: to_framebuffer and to_svg return UnsupportedLayer, and to_terminal returns Rendering, for the undrawn layer, as for every distribution layer. geom_violin is not one of the 49 core rows of the ontology, so this contract binds no ggplot2-row entity.
+    The oracle is a set of committed JSON fixtures produced by ggplot2 4.0.3 under R 4.6.2 with C collation; R is never run at test time. Every case goes through the public builder and layout() and compares x, y, density, scaled, ndensity, count, wdensity, n, quantile, violinwidth, width, xmin, xmax, order and ymax row by row, and both position scales, at 1e-9 relative plus 1e-12 absolute, the same for every case. Cases: single, three, count, width, trim_false, trim_adjust, adjust_half, width_half, width_wide, fill, dodge3, numeric_x, na, tiny, constant, constant_only (16), then small_unit_8, large_unit, offset, tiny_x_gaps, inf_y, inf_x (6 more, y scaled by 2^-8 and 2^14, y shifted by 1e6, x gaps below sqrt(eps), infinite y and infinite x rows), all compared; and small_unit and small_unit_adjust (y scaled by 2^-14), which R computes and this port refuses (the refused region below). Each case also reports the largest relative error over every value, the largest absolute error and the largest share of the tolerance used, under `--nocapture`.
+    Infinite x or y rows are dropped as R does (remove_missing(finite = TRUE) warns and drops them; the group ids numbered before the stat stay, measured in R). resolution() is 1 when no gap exceeds sqrt(eps), as in R (measured width 0.9). Differences from R, all refused with a typed Err (Rendering unless noted) and never approximated: (1) a numeric x without a group aesthetic, which R pools into one violin at the mid-range of x (an x that varies within a group); (2) a text x with a missing cell; (3) a colour mapping, and fill and colour on two different columns in one aes() call; (4) a layer in which no group has two rows with finite x and y, where R returns an empty layer; (5) a non-finite or non-positive adjust or width; (6) a group whose density is too concentrated: R's density() convolves with an FFT whose rounding noise (measured up to 9.1e-17 of the peak count) lands in the tails, where this port's direct sum is accurate, so the two differ by that noise, which cannot be reproduced; a group is refused when 1e-15 * max(count) exceeds 1e-12 + 1e-9 * min(count) (measured: y * 2^-8 passes in R-comparison, y * 2^-14 and adjust 0.5 at 2^-9 and below are refused; the guard also refuses some default cases from 2^-11 that would have passed, a conservative bound; rescale y to order 1); (7) adjust, trim and violin_scale set to a non-default value on geom_density, geom_histogram, geom_freqpoly and geom_boxplot, which do not honour them (UnsupportedLayer or Rendering, never silently ignored); (8) a coordinate system other than plain Cartesian (UnsupportedCoord), facets, a scale_x or scale_y spec (UnsupportedLayer), and any other geom in the plot. Not expressible through the API, so neither accepted nor approximated: draw_quantiles and quantiles, bounds, kernels other than gaussian, bandwidth rules other than bw.nrd0, orientation = y, and a weight aesthetic. Not built: the fill palette colours, and the default weight, colour, linewidth, linetype and alpha columns. Integer-typed numbers: R's resolution() of an integer x is 1, while this crate holds every number as a double, so the fixtures coerce integer columns to double. The grouping interaction orders x (text) before fill, which is an assumption the fill and dodge3 fixtures confirm for these inputs. Overlapping widths warn in R and are accepted here. Rendering: to_framebuffer and to_svg return UnsupportedLayer, and to_terminal returns Rendering, for the undrawn layer, as for every distribution layer. geom_violin is not one of the 49 core rows of the ontology, so this contract binds no ggplot2-row entity.
   references:
   - 'ggplot2 4.0.3: ggplot_build(), geom_violin, stat_ydensity, position_dodge'
   - 'R 4.6.2: stats::density.default, stats::bw.nrd0, stats::quantile (type 7)'
@@ -32,7 +32,7 @@ proof_obligations:
   applies_to: stat_ydensity
 enforcement:
   oracle_cases:
-    description: the 16 fixtures are reproduced
+    description: the 22 fixtures that R and this port both compute are reproduced (16 original, 6 added), and the 2 that this port refuses are refused
     check: grammar::ggplot2_dist_violin_oracle::three
     severity: ERROR
   refusal_cases:
@@ -153,6 +153,46 @@ falsification_tests:
   rule: 'to_framebuffer, to_svg and to_terminal refuse the undrawn layer with a typed error'
   prediction: 'Removing the dist refusal in GGPlot::draw_frame turns every_renderer_refuses_the_undrawn_layer RED'
   test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::every_renderer_refuses_the_undrawn_layer
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-023
+  rule: 'A group whose density is too concentrated for R''s FFT noise to be reproduced is refused with a typed error, never returned (y * 2^-14)'
+  prediction: 'Dropping the check_noise_floor call in group_stat turns small_unit_refused RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::small_unit_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-024
+  rule: 'Infinite y rows are dropped as R does'
+  prediction: 'Filtering with is_nan instead of is_finite on y in rows_by_group turns inf_y RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::inf_y
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-025
+  rule: 'Infinite x rows are dropped as R does, with the group ids kept'
+  prediction: 'Dropping the x.is_finite() test in rows_by_group turns inf_x RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::inf_x
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-026
+  rule: 'resolution is 1 when no gap exceeds sqrt(eps)'
+  prediction: 'Returning the infinite gap instead of 1 at the end of resolution turns tiny_x_gaps RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::tiny_x_gaps
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-027
+  rule: 'adjust, trim and violin_scale are refused on the other distribution layers when non-default'
+  prediction: 'Removing the check_violin_only call in dist::layout turns violin_only_parameters_are_refused_on_the_other_distribution_layers RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::dist::tests::violin_only_parameters_are_refused_on_the_other_distribution_layers
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-028
+  rule: 'The sorted dodge equals the quadratic definition, -0.0 and 0.0 being one x'
+  prediction: 'Comparing x by bit pattern instead of == in the run walk of dodge (so -0.0 and 0.0 are two xs) turns the_sorted_dodge_equals_the_quadratic_definition RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::the_sorted_dodge_equals_the_quadratic_definition
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-029
+  rule: 'The refusal bound compares the tail noise with the smallest count'
+  prediction: 'Comparing against the largest count instead of the smallest in check_noise_floor turns small_unit_adjust_refused RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::small_unit_adjust_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-030
+  rule: 'The refusal bound does not refuse a case R and this port agree on (y * 2^-8)'
+  prediction: 'Setting FFT_NOISE to 1e-5 turns small_unit_8 RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::small_unit_8
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-GGV-001

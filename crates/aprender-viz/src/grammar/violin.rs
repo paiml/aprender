@@ -18,7 +18,9 @@ use crate::error::{Error, Result};
 use super::aes::Aes;
 use super::build::{BuiltLayer, BuiltLayout, BuiltViolin, PositionScale};
 use super::data::{DataFrame, DataValue};
-use super::dist::{column, is_text, key_order, keys, numeric, refuse, DistSpec, Key, ViolinScale};
+use super::dist::{
+    column, is_text, key_order, keys, numeric_lenient, refuse, DistSpec, Key, ViolinScale,
+};
 use super::dist_math::{
     approx1, bw_nrd0, quantile7, stat_density_adjusted, DensityCols, DENSITY_POINTS,
 };
@@ -77,7 +79,7 @@ fn check_spec(spec: &DistSpec) -> Result<()> {
 /// `x` as positions, and the levels when it is text.
 fn positions(data: &DataFrame, name: &str) -> Result<(Vec<f64>, Option<Vec<String>>)> {
     if !is_text(data, name)? {
-        return Ok((numeric(data, name)?, None));
+        return Ok((numeric_lenient(data, name)?, None));
     }
     let cells = column(data, name)?;
     let mut text: Vec<&str> = Vec::with_capacity(cells.len());
@@ -143,13 +145,13 @@ fn read_input(data: &DataFrame, aes: &Aes) -> Result<Input> {
     let xname = aes.x.as_deref().ok_or_else(|| refuse("geom_violin needs an `x` aesthetic"))?;
     let yname = aes.y.as_deref().ok_or_else(|| refuse("geom_violin needs a `y` aesthetic"))?;
     let (x, levels) = positions(data, xname)?;
-    let y = numeric(data, yname)?;
+    let y = numeric_lenient(data, yname)?;
     let group = group_column(data, aes, levels.is_some())?;
     Ok(Input { x, levels, y, group })
 }
 
-/// The `(x, y)` pairs with finite `x` and `y` (`remove_missing(finite = TRUE)`), by ascending
-/// group id.
+/// The `(x, y)` pairs with finite `x` and `y` (`remove_missing(finite = TRUE)`: a missing or
+/// infinite value drops its row, the group ids having been numbered before), by ascending group id.
 fn rows_by_group(input: &Input) -> Vec<(i64, Vec<(f64, f64)>)> {
     let mut ids: Vec<i64> = input.group.clone();
     ids.sort_unstable();
@@ -160,7 +162,7 @@ fn rows_by_group(input: &Input) -> Vec<(i64, Vec<(f64, f64)>)> {
                 .group
                 .iter()
                 .zip(input.x.iter().zip(&input.y))
-                .filter(|(g, (x, y))| **g == id && !x.is_nan() && !y.is_nan())
+                .filter(|(g, (x, y))| **g == id && x.is_finite() && y.is_finite())
                 .map(|(_, (x, y))| (*x, *y))
                 .collect();
             (id, rows)
@@ -180,6 +182,34 @@ fn group_x(xs: &[f64]) -> Result<f64> {
     Ok(first)
 }
 
+/// What R's FFT leaves behind, relative to the largest `count`: `density()` convolves with an FFT
+/// whose rounding noise (measured at up to 9.1e-17 of the peak, `pmax.int(0, ...)` turning half of
+/// it into exact zeros) lands in the tails, where the true value is smaller. This port sums the
+/// convolution directly and is accurate there, so it differs from R by that noise, which no
+/// algorithm reproduces. Ten times the measured figure.
+const FFT_NOISE: f64 = 1e-15;
+/// The tolerance the oracle holds every case to: `|got - want| <= REL * |want| + ABS`.
+const TOL_REL: f64 = 1e-9;
+const TOL_ABS: f64 = 1e-12;
+
+/// Refuse a group whose R output would be tail noise this port cannot reproduce within tolerance:
+/// the noise `FFT_NOISE * max(count)` exceeds what the smallest `count` is allowed to differ by.
+/// `count` is the binding column: `density` and `scaled` pass whenever it does.
+fn check_noise_floor(dens: &DensityCols) -> Result<()> {
+    let peak = dens.count.iter().copied().fold(0.0, f64::max);
+    let low = dens.count.iter().copied().fold(f64::INFINITY, f64::min);
+    if FFT_NOISE * peak > TOL_ABS + TOL_REL * low {
+        return Err(refuse(format!(
+            "geom_violin: this group's density is too concentrated to match R within tolerance \
+             (largest count {peak:e}, smallest {low:e}): R's FFT leaves rounding noise of about \
+             {:e} in the tails, which this port cannot reproduce; rescale `y` (a unit where the \
+             values are of order 1)",
+            FFT_NOISE * peak
+        )));
+    }
+    Ok(())
+}
+
 /// `stat_ydensity`'s `compute_group()` on the `y` of one group of at least two rows.
 fn group_stat(spec: &DistSpec, ys: &[f64]) -> Result<(DensityCols, Vec<f64>)> {
     let bw = bw_nrd0(ys)?;
@@ -187,6 +217,7 @@ fn group_stat(spec: &DistSpec, ys: &[f64]) -> Result<(DensityCols, Vec<f64>)> {
     let hi = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     let ext = if spec.trim { 0.0 } else { UNTRIMMED_EXT * bw };
     let dens = stat_density_adjusted(ys, lo - ext, hi + ext, DENSITY_POINTS, spec.adjust)?;
+    check_noise_floor(&dens)?;
     let mut sorted = ys.to_vec();
     sorted.sort_by(f64::total_cmp);
     let quants = QUANTILES.iter().map(|p| quantile7(&sorted, *p)).collect();
@@ -251,7 +282,7 @@ fn violin_widths(scale: ViolinScale, density: &[f64], scaled: &[f64], n: &[f64])
 }
 
 /// `resolution(x, zero = TRUE, discrete = FALSE)`: the smallest gap between distinct values
-/// (with 0 among them), or 1 when `x` has no spread.
+/// (with 0 among them) that exceeds `sqrt(eps)`, or 1 when `x` has no spread or no such gap.
 fn resolution(xs: &[f64]) -> f64 {
     let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
     let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
@@ -262,7 +293,12 @@ fn resolution(xs: &[f64]) -> f64 {
     v.sort_by(f64::total_cmp);
     v.dedup();
     let tol = f64::EPSILON.sqrt();
-    v.windows(2).map(|w| w[1] - w[0]).filter(|d| *d > tol).fold(f64::INFINITY, f64::min)
+    let gap = v.windows(2).map(|w| w[1] - w[0]).filter(|d| *d > tol).fold(f64::INFINITY, f64::min);
+    if gap.is_finite() {
+        gap
+    } else {
+        1.0
+    }
 }
 
 /// `scales::zero_range()` with its default tolerance.
@@ -283,30 +319,41 @@ struct Dodged {
 }
 
 /// `PositionDodge`: groups sharing an `x` split its width; `order` is a group's rank there.
+/// Rows are sorted by `x` once, so each run of equal `x` is found in `O(N log N)` overall.
 fn dodge(x: &[f64], group: &[i64], width: f64) -> Dodged {
     let (xmin0, xmax0): (Vec<f64>, Vec<f64>) =
         x.iter().map(|v| (v - width / 2.0, v + width / 2.0)).unzip();
     let span = xmax0.first().zip(xmin0.first()).map_or(width, |(hi, lo)| hi - lo);
     let n_rows = x.len();
     let mut out = Dodged { x: x.to_vec(), xmin: xmin0, xmax: xmax0, order: vec![1.0; n_rows] };
-    let cells = out.x.iter_mut().zip(out.xmin.iter_mut().zip(out.xmax.iter_mut()));
-    for (((v, g), (cx, (cmin, cmax))), o) in
-        x.iter().zip(group).zip(cells).zip(out.order.iter_mut())
-    {
-        let mut peers: Vec<i64> =
-            x.iter().zip(group).filter(|(w, _)| *w == v).map(|(_, h)| *h).collect();
-        peers.sort_unstable();
-        peers.dedup();
-        let n = peers.len() as f64;
-        let idx = peers.iter().position(|h| h == g).map_or(1.0, |p| (p + 1) as f64);
-        *o = idx;
-        if peers.len() > 1 {
-            *cx = v + span * ((idx - 0.5) / n - 0.5);
-            *cmin = *cx - span / n / 2.0;
-            *cmax = *cx + span / n / 2.0;
-        }
+    // `+ 0.0` makes -0.0 and 0.0 one key, as `==` does.
+    let mut by_x: Vec<usize> = (0..n_rows).collect();
+    by_x.sort_by(|a, b| (x[*a] + 0.0).total_cmp(&(x[*b] + 0.0)));
+    let mut start = 0;
+    while start < n_rows {
+        // `max(1)`: a NaN is never equal to itself, and still belongs to a run of its own.
+        let run = by_x[start..].iter().take_while(|i| x[**i] == x[by_x[start]]).count().max(1);
+        dodge_run(&mut out, &by_x[start..start + run], x, group, span);
+        start += run;
     }
     out
+}
+
+/// The rows (indices) that share one `x`: each is placed among the groups present there.
+fn dodge_run(out: &mut Dodged, rows: &[usize], x: &[f64], group: &[i64], span: f64) {
+    let mut peers: Vec<i64> = rows.iter().map(|i| group[*i]).collect();
+    peers.sort_unstable();
+    peers.dedup();
+    let n = peers.len() as f64;
+    for i in rows {
+        let idx = peers.binary_search(&group[*i]).map_or(1.0, |p| (p + 1) as f64);
+        out.order[*i] = idx;
+        if peers.len() > 1 {
+            out.x[*i] = x[*i] + span * ((idx - 0.5) / n - 0.5);
+            out.xmin[*i] = out.x[*i] - span / n / 2.0;
+            out.xmax[*i] = out.x[*i] + span / n / 2.0;
+        }
+    }
 }
 
 fn extent(lo: &[f64], hi: &[f64]) -> (f64, f64) {
@@ -509,10 +556,16 @@ mod tests {
     }
 
     #[test]
-    fn infinite_and_hostile_values_return_errors_not_panics() {
+    fn infinite_rows_are_dropped_as_r_does_and_hostile_values_return_errors_not_panics() {
         let mut d = small();
-        d.add_column_f32("inf", &[1.0, f32::INFINITY, 2.0, 3.0, 1.0, 2.0, 3.0, 4.0]);
-        let r = run(plot(d, Aes::new().x("g").y("inf"), Geom::gg_violin()));
+        d.add_column_f32("inf", &[1.0, f32::INFINITY, 2.0, 3.0, 1.0, 2.0, 3.0, f32::NEG_INFINITY]);
+        let b = run(plot(d, Aes::new().x("g").y("inf"), Geom::gg_violin())).expect("drops rows");
+        let v = b.layers[0].violin.as_ref().expect("violin columns");
+        assert_eq!(v.n.iter().copied().fold(0.0, f64::max), 3.0, "a keeps 3 rows, b keeps 3");
+        let mut all = DataFrame::new();
+        all.add_column_str("g", &["a", "a"]);
+        all.add_column_f32("y", &[f32::INFINITY, f32::NEG_INFINITY]);
+        let r = run(plot(all, gy(), Geom::gg_violin()));
         assert!(r.is_err(), "{r:?}");
         let mut big = DataFrame::new();
         big.add_column_str("g", &["a", "a"]);
@@ -521,6 +574,32 @@ mod tests {
         let empty = DataFrame::new();
         let r = run(plot(empty, gy(), Geom::gg_violin()));
         assert!(r.is_err(), "{r:?}");
+    }
+
+    #[test]
+    fn infinite_x_rows_are_dropped_and_the_group_ids_stay() {
+        let mut d = small();
+        d.add_column_f32("xi", &[1.0, 1.0, f32::INFINITY, 1.0, 3.0, 3.0, 3.0, 3.0]);
+        let aes = Aes::new().x("xi").y("y").group("g");
+        let b = run(plot(d, aes, Geom::gg_violin())).expect("drops rows");
+        let v = b.layers[0].violin.as_ref().expect("violin columns");
+        assert_eq!(v.n.iter().copied().fold(0.0, f64::max), 4.0);
+        assert!(v.n.contains(&3.0), "group a lost the infinite row");
+    }
+
+    /// A dense group is refused by name; the same data in unit scale is not.
+    #[test]
+    fn a_group_too_concentrated_for_r_to_be_matched_is_refused_by_name() {
+        let tiny = |k: f32| {
+            let mut d = small();
+            let y: Vec<f32> =
+                [1.0f32, 2.0, 4.0, 7.5, 2.0, 3.0, 5.0, 8.5].iter().map(|v| v * k).collect();
+            d.add_column_f32("ys", &y);
+            run(plot(d, Aes::new().x("g").y("ys"), Geom::gg_violin().adjust(0.05)))
+        };
+        assert!(tiny(1.0).is_ok());
+        let r = tiny(1.0 / 1024.0);
+        assert!(refused_with(&r, "too concentrated"), "{r:?}");
     }
 
     /// With violin as the ONLY layer: every coord, facet and scale spec is refused by name.
@@ -567,9 +646,46 @@ mod tests {
     #[test]
     fn resolution_is_the_smallest_gap_with_zero_among_the_values() {
         assert_eq!(resolution(&[3.0, 3.0]), 1.0, "no spread");
+        // No gap above sqrt(eps): R returns 1 (measured: width 0.9), not infinity.
+        assert_eq!(
+            resolution(&[
+                (1.0 / 1_073_741_824.0),
+                (1.0 / 536_870_912.0),
+                3.0 * (1.0 / 1_073_741_824.0)
+            ]),
+            1.0
+        );
         assert_eq!(resolution(&[1.5, 5.0, 9.0]), 1.5, "zero joins: 0, 1.5, 5, 9");
         assert_eq!(resolution(&[1.0, 2.0, 3.0]), 1.0);
         assert!((resolution(&[2.0, 2.25, 4.0]) - 0.25).abs() < 1e-15);
+    }
+
+    /// The quadratic definition `position_dodge` states: peers are the distinct groups among the
+    /// rows whose `x` is equal (`-0.0 == 0.0`). The sorted walk must give the same numbers.
+    #[test]
+    fn the_sorted_dodge_equals_the_quadratic_definition() {
+        let x = [1.0, -0.0, 2.0, 0.0, 1.0, 2.0, 2.0, 3.5, 0.0, 1.0];
+        let group = [3, 1, 2, 5, 1, 2, 9, 4, 1, 3];
+        let width = 0.9;
+        let d = dodge(&x, &group, width);
+        // The span `position_dodge` takes: the first row's xmax - xmin, rounded as R rounds it.
+        let span = (x[0] + width / 2.0) - (x[0] - width / 2.0);
+        for i in 0..x.len() {
+            let mut peers: Vec<i64> =
+                (0..x.len()).filter(|j| x[*j] == x[i]).map(|j| group[j]).collect();
+            peers.sort_unstable();
+            peers.dedup();
+            let n = peers.len() as f64;
+            let idx = (peers.iter().position(|g| *g == group[i]).expect("own group") + 1) as f64;
+            let (cx, lo, hi) = if peers.len() > 1 {
+                let c = x[i] + span * ((idx - 0.5) / n - 0.5);
+                (c, c - span / n / 2.0, c + span / n / 2.0)
+            } else {
+                (x[i], x[i] - width / 2.0, x[i] + width / 2.0)
+            };
+            assert_eq!(d.order[i], idx, "row {i}");
+            assert_eq!((d.x[i], d.xmin[i], d.xmax[i]), (cx, lo, hi), "row {i}");
+        }
     }
 
     #[test]

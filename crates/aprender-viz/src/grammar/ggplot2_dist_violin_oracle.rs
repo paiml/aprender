@@ -6,7 +6,7 @@
 
 use serde_json::Value;
 
-use super::ggplot2_oracle::{assert_close_slice, check_axis, close, nums, strs};
+use super::ggplot2_oracle::{assert_close_slice, check_axis, close, nums, strs, ABS_TOL, REL_TOL};
 use super::{Aes, BuiltLayout, DataFrame, GGPlot, Geom, Layer, PositionScale, ViolinScale};
 
 /// A CSV with numeric and text columns; `NA` is a missing number. Numbers must be exact in f32.
@@ -66,21 +66,26 @@ fn close_or_both_missing(g: f64, w: f64) -> bool {
     (g.is_nan() && w.is_nan()) || close(g, w)
 }
 
-/// `(relative, absolute)` error of one value. The relative figure is only meaningful away from
-/// zero, so values under 1e-6 contribute to the absolute figure alone.
-fn err(g: f64, w: f64) -> (f64, f64) {
+/// The three figures reported for a case: the largest relative error over every value (zero
+/// against zero counts as no error; a value R floors to zero where this port holds rounding noise
+/// counts as 1), the largest absolute error, and the largest share of the tolerance used, the
+/// error divided by `1e-9 * max(|got|, |want|) + 1e-12` (the rule of [`close`]; at most 1 passes).
+type Figures = (f64, f64, f64);
+
+/// The [`Figures`] of one value pair.
+fn err(g: f64, w: f64) -> Figures {
     if g.is_nan() && w.is_nan() {
-        return (0.0, 0.0);
+        return (0.0, 0.0, 0.0);
     }
     let (abs, mag) = ((g - w).abs(), g.abs().max(w.abs()));
-    (if mag < 1e-6 { 0.0 } else { abs / mag }, abs)
+    (if mag > 0.0 { abs / mag } else { 0.0 }, abs, abs / (REL_TOL * mag + ABS_TOL))
 }
 
-fn worse(a: (f64, f64), b: (f64, f64)) -> (f64, f64) {
-    (a.0.max(b.0), a.1.max(b.1))
+fn worse(a: Figures, b: Figures) -> Figures {
+    (a.0.max(b.0), a.1.max(b.1), a.2.max(b.2))
 }
 
-fn check_x_axis(case: &str, got: &PositionScale, want: &Value) -> (f64, f64) {
+fn check_x_axis(case: &str, got: &PositionScale, want: &Value) -> Figures {
     let kind = want["kind"].as_str().expect("axis kind");
     assert_eq!(got.levels.is_some(), kind == "discrete", "{case}.x kind");
     if let Some(levels) = &got.levels {
@@ -100,11 +105,11 @@ fn check_x_axis(case: &str, got: &PositionScale, want: &Value) -> (f64, f64) {
         let lim = [got.limits.0, got.limits.1];
         assert_close_slice(&format!("{case}.x.limits"), &lim, &nums(&want["limits"]));
     }
-    range.iter().zip(&w_range).map(|(g, w)| err(*g, *w)).fold((0.0, 0.0), worse)
+    range.iter().zip(&w_range).map(|(g, w)| err(*g, *w)).fold((0.0, 0.0, 0.0), worse)
 }
 
-/// Compare every column of the layer and both axes; returns the largest relative error seen.
-fn check_columns(case: &str, got: &BuiltLayout, want: &Value) -> (f64, f64) {
+/// Compare every column of the layer and both axes; returns the [`Figures`] over all of them.
+fn check_columns(case: &str, got: &BuiltLayout, want: &Value) -> Figures {
     let (g, w) = (&got.layers[0], &want["layers"][0]);
     assert_eq!(w["geom"], "GeomViolin", "{case}");
     let v = g.violin.as_ref().expect("a violin layer carries its columns");
@@ -127,7 +132,7 @@ fn check_columns(case: &str, got: &BuiltLayout, want: &Value) -> (f64, f64) {
         ("order", &v.order),
         ("quantile", &v.quantile),
     ];
-    let mut worst = (0.0_f64, 0.0_f64);
+    let mut worst = (0.0_f64, 0.0_f64, 0.0_f64);
     for (name, got_col) in columns {
         let want_col = nums_na(&w[name]);
         assert_eq!(got_col.len(), want_col.len(), "{case}.{name}: length");
@@ -142,7 +147,7 @@ fn check_columns(case: &str, got: &BuiltLayout, want: &Value) -> (f64, f64) {
     worst
 }
 
-fn check(case: &str, json: &str, csv: &str, aes: Aes, geom: Geom) -> (f64, f64) {
+fn check(case: &str, json: &str, csv: &str, aes: Aes, geom: Geom) -> Figures {
     let want: Value = serde_json::from_str(json).expect("fixture is valid JSON");
     assert_eq!(want["versions"]["ggplot2"], "4.0.3", "{case}: not the pinned ggplot2");
     assert_eq!(want["versions"]["collate"], "C", "{case}: fixture not made under C collation");
@@ -167,8 +172,10 @@ macro_rules! fixture {
 /// One case: its name, `expected_<name>.json`, the data and the plot; prints the figure the PR
 /// body quotes under `--nocapture`.
 fn case(name: &str, json: &str, csv: &str, aes: Aes, geom: Geom) {
-    let (rel, abs) = check(name, json, csv, aes, geom);
-    println!("violin {name} vs R: relative {rel:e} absolute {abs:e}");
+    let (rel, abs, share) = check(name, json, csv, aes, geom);
+    println!(
+        "violin {name} vs R: relative {rel:e} (all values) absolute {abs:e} tolerance share {share:e}"
+    );
 }
 
 #[test]
@@ -342,5 +349,125 @@ fn constant_only() {
         fixture!("data_constant_only.csv"),
         gy(),
         Geom::gg_violin(),
+    );
+}
+
+/// `csv` with column `col` replaced by `f(row index, value)` for every data row, as R's `edit` in
+/// `generate.R` does (`inf` is how Rust prints an infinity, and parses it back).
+fn edit_csv(csv: &str, col: &str, f: impl Fn(usize, f64) -> f64) -> String {
+    let mut lines = csv.lines();
+    let header = lines.next().expect("csv has a header");
+    let at = header.split(',').position(|h| h.trim() == col).expect("column in the csv");
+    let mut out = vec![header.to_string()];
+    for (i, line) in lines.filter(|l| !l.trim().is_empty()).enumerate() {
+        let mut cells: Vec<String> = line.split(',').map(|c| c.trim().to_string()).collect();
+        let v: f64 = cells[at].parse().expect("numeric cell");
+        cells[at] = f(i, v).to_string();
+        out.push(cells.join(","));
+    }
+    out.join("\n")
+}
+
+/// `data_three.csv` with the same edit `generate.R` applies (its `edited` list).
+fn three_edited(col: &str, f: impl Fn(usize, f64) -> f64) -> String {
+    edit_csv(fixture!("data_three.csv"), col, f)
+}
+
+fn xn_gaps(csv: &str) -> String {
+    // `xn = c(2^-30, 2^-29, 3 * 2^-30)[match(g, c('a','b','c'))]`: the first cell of each group.
+    let gaps = [(1.0 / 1_073_741_824.0), (1.0 / 536_870_912.0), 3.0 * (1.0 / 1_073_741_824.0)];
+    let mut lines = csv.lines();
+    let header = lines.next().expect("csv has a header").to_string();
+    let mut out = vec![header];
+    for line in lines.filter(|l| !l.trim().is_empty()) {
+        let mut cells: Vec<String> = line.split(',').map(|c| c.trim().to_string()).collect();
+        let at = ["a", "b", "c"].iter().position(|g| *g == cells[0]).expect("group a, b or c");
+        cells[3] = gaps[at].to_string();
+        out.push(cells.join(","));
+    }
+    out.join("\n")
+}
+
+fn xn_gy() -> Aes {
+    Aes::new().x("xn").y("y").group("g")
+}
+
+#[test]
+fn small_unit_8() {
+    let csv = three_edited("y", |_, v| v * (1.0 / 256.0));
+    case("small_unit_8", fixture!("expected_small_unit_8.json"), &csv, gy(), Geom::gg_violin());
+}
+
+#[test]
+fn large_unit() {
+    let csv = three_edited("y", |_, v| v * 16384.0);
+    case("large_unit", fixture!("expected_large_unit.json"), &csv, gy(), Geom::gg_violin());
+}
+
+#[test]
+fn offset() {
+    let csv = three_edited("y", |_, v| (v * 16.0).floor() / 16.0 + 1e6);
+    case("offset", fixture!("expected_offset.json"), &csv, gy(), Geom::gg_violin());
+}
+
+// R's `resolution()` is 1 when no gap exceeds sqrt(eps): the width stays 0.9.
+#[test]
+fn tiny_x_gaps() {
+    let csv = xn_gaps(fixture!("data_three.csv"));
+    case("tiny_x_gaps", fixture!("expected_tiny_x_gaps.json"), &csv, xn_gy(), Geom::gg_violin());
+}
+
+// R drops infinite rows (`remove_missing(finite = TRUE)`) and keeps the group numbering.
+#[test]
+fn inf_y() {
+    let csv = three_edited("y", |i, v| match i {
+        1 => f64::INFINITY,
+        14 => f64::NEG_INFINITY,
+        _ => v,
+    });
+    case("inf_y", fixture!("expected_inf_y.json"), &csv, gy(), Geom::gg_violin());
+}
+
+#[test]
+fn inf_x() {
+    let csv = three_edited("xn", |i, v| match i {
+        2 => f64::INFINITY,
+        19 => f64::NEG_INFINITY,
+        _ => v,
+    });
+    case("inf_x", fixture!("expected_inf_x.json"), &csv, xn_gy(), Geom::gg_violin());
+}
+
+/// A case R computes but this port refuses: the fixture must be the pinned one, and the refusal
+/// must be the typed noise-floor error (never an `Ok` that differs from R).
+fn refused(name: &str, json: &str, csv: &str, geom: Geom) {
+    let want: Value = serde_json::from_str(json).expect("fixture is valid JSON");
+    assert_eq!(want["versions"]["ggplot2"], "4.0.3", "{name}: not the pinned ggplot2");
+    let err = GGPlot::new()
+        .data(frame_from_csv(csv))
+        .aes(gy())
+        .layer(Layer::new(geom))
+        .build()
+        .expect("builds")
+        .layout()
+        .expect_err("refused");
+    assert!(err.to_string().contains("too concentrated"), "{name}: {err}");
+}
+
+// y * 2^-14: R's tails are FFT rounding noise this port cannot reproduce, so the group is refused.
+#[test]
+fn small_unit_refused() {
+    let csv = three_edited("y", |_, v| v * (1.0 / 16384.0));
+    refused("small_unit", fixture!("expected_small_unit.json"), &csv, Geom::gg_violin());
+}
+
+#[test]
+fn small_unit_adjust_refused() {
+    let csv = three_edited("y", |_, v| v * (1.0 / 16384.0));
+    refused(
+        "small_unit_adjust",
+        fixture!("expected_small_unit_adjust.json"),
+        &csv,
+        Geom::gg_violin().adjust(0.5),
     );
 }
