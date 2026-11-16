@@ -144,3 +144,40 @@ fn a_coord_flip_is_refused() {
         .and_then(|b| b.layout());
     assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "got {r:?}");
 }
+
+/// A polygon-only plot under every non-default coord is refused (no other path-family layer needed).
+#[test]
+fn every_non_default_coord_is_refused_for_a_lone_polygon() {
+    use super::coord::Coord;
+    for coord in [
+        Coord::cartesian().flip(),
+        Coord::cartesian().xlim(0.0, 10.0),
+        Coord::cartesian().ylim(0.0, 10.0),
+        Coord::polar(),
+        Coord::fixed(1.0),
+    ] {
+        let r = super::GGPlot::new()
+            .data(csv!("data"))
+            .aes(xy())
+            .layer(Layer::new(Geom::polygon()))
+            .coord(coord)
+            .build()
+            .and_then(|b| b.layout());
+        assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "got {r:?}");
+    }
+}
+
+/// A `geom_point` beside a polygon that maps a missing column is refused, not returned empty.
+#[test]
+fn a_point_beside_a_polygon_with_a_missing_column_is_refused() {
+    let res = build(
+        csv!("data"),
+        xy(),
+        vec![
+            Layer::new(Geom::polygon()),
+            Layer::new(Geom::point()).aes(Aes::new().x("nope").y("y")),
+        ],
+        Facet::None,
+    );
+    assert!(res.is_err(), "got {res:?}");
+}

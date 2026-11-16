@@ -172,3 +172,40 @@ fn empty_data_is_a_typed_error_not_a_panic() {
     let res = build(d, full(), vec![Layer::new(Geom::segment())], Facet::None);
     assert!(matches!(res, Err(Error::ScaleDomain(_))), "got {res:?}");
 }
+
+/// A segment-only plot under every non-default coord is refused (no other path-family layer needed).
+#[test]
+fn every_non_default_coord_is_refused_for_a_lone_segment() {
+    use super::coord::Coord;
+    for coord in [
+        Coord::cartesian().flip(),
+        Coord::cartesian().xlim(0.0, 10.0),
+        Coord::cartesian().ylim(0.0, 10.0),
+        Coord::polar(),
+        Coord::fixed(1.0),
+    ] {
+        let r = super::GGPlot::new()
+            .data(csv!("data"))
+            .aes(full())
+            .layer(Layer::new(Geom::segment()))
+            .coord(coord)
+            .build()
+            .and_then(|b| b.layout());
+        assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "got {r:?}");
+    }
+}
+
+/// A `geom_point` beside a segment that maps a missing column is refused, not returned empty.
+#[test]
+fn a_point_beside_a_segment_with_a_missing_column_is_refused() {
+    let res = build(
+        csv!("data"),
+        full(),
+        vec![
+            Layer::new(Geom::segment()),
+            Layer::new(Geom::point()).aes(Aes::new().x("nope").y("y")),
+        ],
+        Facet::None,
+    );
+    assert!(res.is_err(), "got {res:?}");
+}

@@ -4,6 +4,7 @@
 
 use serde_json::Value;
 
+use super::coord::Coord;
 use super::ggplot2_pack_common::{
     build, check_axis, check_common, close, frame_from_csv, nums, strs, want, wrap_f, xy,
 };
@@ -167,8 +168,25 @@ fn a_degenerate_scale_is_refused() {
     assert!(matches!(res, Err(Error::ScaleDomain(_))), "got {res:?}");
 }
 
+/// FALSIFY-GG18-006: the path-family guard alone refuses text beside a path layer.
 #[test]
-fn text_beside_a_path_layer_is_still_refused() {
+fn the_path_guard_refuses_text_beside_a_path_layer() {
+    let layers = vec![Layer::new(Geom::text()), Layer::new(Geom::line())];
+    let res = super::path::require_identity_stats(&layers);
+    assert!(matches!(res, Err(Error::UnsupportedLayer(_))), "got {res:?}");
+}
+
+/// FALSIFY-GG18-007: the marks guard alone refuses a path layer beside text.
+#[test]
+fn the_marks_guard_refuses_a_path_layer_beside_text() {
+    let layers = vec![Layer::new(Geom::text()), Layer::new(Geom::line())];
+    let data = csv!("data");
+    let res = super::marks::require_modelled_companions(&layers, &lab(), &data);
+    assert!(matches!(res, Err(Error::UnsupportedLayer(_))), "got {res:?}");
+}
+
+#[test]
+fn text_beside_a_path_layer_is_refused_end_to_end() {
     let res = build(
         csv!("data"),
         lab(),
@@ -176,6 +194,103 @@ fn text_beside_a_path_layer_is_still_refused() {
         Facet::None,
     );
     assert!(matches!(res, Err(Error::UnsupportedLayer(_))), "got {res:?}");
+}
+
+fn coords() -> Vec<(&'static str, Coord, &'static str)> {
+    vec![
+        ("flip", Coord::cartesian().flip(), "coord_flip"),
+        ("xlim", Coord::cartesian().xlim(0.0, 10.0), "limits"),
+        ("ylim", Coord::cartesian().ylim(0.0, 10.0), "limits"),
+        ("xlim+flip", Coord::cartesian().xlim(0.0, 10.0).flip(), "coord_flip"),
+        ("polar", Coord::polar(), "coord_polar"),
+        ("fixed", Coord::fixed(1.0), "coord_fixed"),
+    ]
+}
+
+fn with_coord(layers: Vec<Layer>, coord: Coord) -> crate::error::Result<BuiltLayout> {
+    let mut p = super::GGPlot::new().data(csv!("data")).aes(lab());
+    for l in layers {
+        p = p.layer(l);
+    }
+    p.coord(coord).build()?.layout()
+}
+
+/// FALSIFY-GG18-008: a text layer under any non-default coord is refused, alone and beside a
+/// `geom_point`, with the variant and the coord named.
+#[test]
+fn every_non_default_coord_is_refused_for_text() {
+    let routes: Vec<(&str, Vec<Layer>)> = vec![
+        ("text alone", vec![Layer::new(Geom::text())]),
+        ("text + point", vec![Layer::new(Geom::point()), Layer::new(Geom::text())]),
+        ("point + text", vec![Layer::new(Geom::text()), Layer::new(Geom::point())]),
+    ];
+    for (route, layers) in routes {
+        for (name, coord, want_msg) in coords() {
+            match with_coord(layers.clone(), coord) {
+                Err(Error::UnsupportedCoord(m)) => {
+                    assert!(m.contains(want_msg), "{route} under {name}: message {m:?}");
+                    assert!(m.contains("text"), "{route} under {name}: message {m:?}");
+                }
+                other => panic!("{route} under {name}: expected UnsupportedCoord, got {other:?}"),
+            }
+        }
+    }
+}
+
+#[test]
+fn the_default_coord_is_accepted_for_text() {
+    let r = with_coord(vec![Layer::new(Geom::text())], Coord::cartesian());
+    assert!(r.is_ok(), "got {r:?}");
+}
+
+#[test]
+fn non_finite_text_params_are_refused() {
+    for g in [
+        Geom::text().nudge_x(f32::INFINITY),
+        Geom::text().nudge_y(f32::NAN),
+        Geom::text().hjust(f32::INFINITY),
+        Geom::text().vjust(f32::NEG_INFINITY),
+        Geom::text().angle(f32::NAN),
+    ] {
+        let res = build(csv!("data"), lab(), vec![Layer::new(g)], Facet::None);
+        assert!(matches!(res, Err(Error::Rendering(_))), "got {res:?}");
+    }
+}
+
+/// The scale limits and the layer positions add the nudge in the same precision.
+#[test]
+fn a_non_dyadic_nudge_agrees_between_the_scale_and_the_positions() {
+    let g = Geom::text().nudge_x(0.1).nudge_y(0.3);
+    let got = build(csv!("data"), lab(), vec![Layer::new(g)], Facet::None).expect("resolves");
+    let xs = &got.layers[0].x;
+    let (lo, hi) = (
+        xs.iter().copied().fold(f64::INFINITY, f64::min),
+        xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
+    );
+    let (l0, l1) = got.x.limits;
+    assert!((l0 - lo).abs() <= 1e-6 * lo.abs().max(1.0), "{l0} vs {lo}");
+    assert!((l1 - hi).abs() <= 1e-6 * hi.abs().max(1.0), "{l1} vs {hi}");
+}
+
+#[test]
+fn a_numeric_label_column_is_refused() {
+    let mut d = DataFrame::new();
+    d.add_column_f32("x", &[1.0, 2.0]);
+    d.add_column_f32("y", &[1.0, 3.0]);
+    d.add_column_f32("lab", &[0.1, 1e5]);
+    let res = build(d, lab(), vec![Layer::new(Geom::text())], Facet::None);
+    assert!(matches!(res, Err(Error::Rendering(_))), "got {res:?}");
+}
+
+#[test]
+fn a_point_beside_text_with_a_missing_column_is_refused() {
+    let res = build(
+        csv!("data"),
+        lab(),
+        vec![Layer::new(Geom::text()), Layer::new(Geom::point()).aes(Aes::new().x("nope").y("y"))],
+        Facet::None,
+    );
+    assert!(res.is_err(), "got {res:?}");
 }
 
 #[test]

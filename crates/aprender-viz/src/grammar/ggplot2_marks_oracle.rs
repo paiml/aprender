@@ -289,7 +289,12 @@ fn reports_a_companion_refusal_before_the_coord() {
             .coord(Coord::cartesian().flip())
             .build()
             .and_then(|b| b.layout());
-        assert!(matches!(r, Err(Error::UnsupportedLayer(_))), "{name} + bar + flip: {r:?}");
+        if name == "text" {
+            // geom_text is coord-checked (text.rs): the coord refusal comes first, both typed.
+            assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{name} + bar + flip: {r:?}");
+        } else {
+            assert!(matches!(r, Err(Error::UnsupportedLayer(_))), "{name} + bar + flip: {r:?}");
+        }
     }
 }
 

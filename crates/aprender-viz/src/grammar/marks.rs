@@ -108,6 +108,29 @@ pub(super) fn require_modelled_companions(
     Ok(())
 }
 
+/// Refuse a `geom_point` beside a path-family layer (segment, polygon, line, ...) that maps a
+/// missing, short, text or infinite `x`/`y` column: `build_layer` would otherwise return it as an
+/// empty layer and `layout()` would answer `Ok`. (Marks and text are covered by
+/// [`require_modelled_companions`].)
+///
+/// # Errors
+///
+/// As [`require_modelled_companions`] for a `geom_point`.
+pub(super) fn require_path_point_companions(
+    layers: &[Layer],
+    plot_aes: &Aes,
+    plot_data: &DataFrame,
+) -> Result<()> {
+    if !layers.iter().any(|l| super::path::is_path_family(&l.geom.geom_type)) {
+        return Ok(());
+    }
+    for l in layers.iter().filter(|l| matches!(l.geom.geom_type, GeomType::Point { .. })) {
+        let data = l.data.as_ref().unwrap_or(plot_data);
+        require_point_companion(data, &plot_aes.merge(&l.aes))?;
+    }
+    Ok(())
+}
+
 /// The refusal naming a companion geom that may not share a plot with the five.
 fn unsupported_companion(g: &GeomType) -> &'static str {
     match g {

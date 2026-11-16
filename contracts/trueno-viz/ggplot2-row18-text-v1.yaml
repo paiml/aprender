@@ -71,9 +71,19 @@ falsification_tests:
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_text_oracle::a_text_layer_without_a_label_is_refused
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GG18-006
-  rule: Text beside a path-family layer is refused
-  prediction: letting both require_identity_stats (path.rs) and require_modelled_companions (marks.rs) accept the line beside geom_text turns text_beside_a_path_layer_is_still_refused RED
-  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_text_oracle::text_beside_a_path_layer_is_still_refused
+  rule: Text beside a path-family layer is refused by the path-family guard on its own
+  prediction: letting require_identity_stats (path.rs) accept the line beside geom_text turns the_path_guard_refuses_text_beside_a_path_layer RED, with require_modelled_companions untouched
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_text_oracle::the_path_guard_refuses_text_beside_a_path_layer
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG18-007
+  rule: A path-family layer beside text is refused by the marks guard on its own
+  prediction: letting require_modelled_companions (marks.rs) accept the line beside geom_text turns the_marks_guard_refuses_a_path_layer_beside_text RED, with require_identity_stats untouched
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_text_oracle::the_marks_guard_refuses_a_path_layer_beside_text
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG18-008
+  rule: A text layer under any non-default coord is refused, alone or beside geom_point
+  prediction: dropping geom_text from the layers require_default_coord (path.rs) checks turns every_non_default_coord_is_refused_for_text RED (text alone under coord_flip returns Ok)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_text_oracle::every_non_default_coord_is_refused_for_text
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-GG18-001

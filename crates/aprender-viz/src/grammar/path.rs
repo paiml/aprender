@@ -26,7 +26,7 @@
 //! * Coordinate systems. Only the default `coord_cartesian()` (no limits, no flip) is supported:
 //!   `layout()` applies no coordinate system, so `coord_flip`, `coord_cartesian(xlim, ylim)`,
 //!   `coord_polar` and `coord_fixed` are an [`Error::UnsupportedCoord`] while one of these layers
-//!   is present (`require_default_coord`).
+//!   (or a `geom_text` layer) is present (`require_default_coord`).
 //! * Stats. Only the identity stat (`stat = None` or `Stat::Identity`) is supported, on every
 //!   layer of a plot that has one of these layers: `layout()` computes no stat, and ggplot2 would
 //!   (`stat_smooth`, `stat_bin`, `stat_count`, `stat_density`, `stat_boxplot`, `stat_bin_2d`,
@@ -35,7 +35,7 @@
 //!   Any other geom is an [`Error::UnsupportedLayer`]: `geom_bar`, `geom_histogram`,
 //!   `geom_area`, `geom_tile`, `geom_boxplot`, `geom_violin` and `geom_smooth` change ggplot2's
 //!   trained scales or layer data through their stat or setup (`stat_align`, bar/tile widths, a
-//!   zero baseline), and `geom_text` is not proven here.
+//!   zero baseline); `geom_text` is resolved by `text.rs` and refused beside these layers.
 //! * Position adjustments, `na.rm` and `orientation` have no field in the builder, so every
 //!   layer is `position = "identity"`, `na.rm = FALSE` and `orientation = NA` as in ggplot2's
 //!   defaults; `ggplot_build()` keeps `NA` rows either way (they are removed only when drawn).
@@ -161,27 +161,27 @@ fn refuse(msg: impl Into<String>) -> Error {
     Error::Rendering(msg.into())
 }
 
-/// Refuse any coordinate system but the default `coord_cartesian()` while a path-family or
-/// reference layer is present. `layout()` applies no coordinate system (limits, flip, polar and
+/// Refuse any coordinate system but the default `coord_cartesian()` while a path-family,
+/// reference or `geom_text` layer is present. `layout()` applies no coordinate system (limits, flip, polar and
 /// fixed all change ggplot2's `panel_params`), so answering with the default numbers would be
 /// silently wrong.
 pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| is_resolved_family(&l.geom.geom_type)) {
         return Ok(());
     }
     match coord {
         Coord::Cartesian { xlim: None, ylim: None, flip: false } => Ok(()),
         Coord::Cartesian { flip: true, .. } => Err(Error::UnsupportedCoord(
-            "coord_flip with line, path, step or reference layers: layout() does not flip",
+            "coord_flip with line, path, step, segment, polygon, text or reference layers: layout() does not flip",
         )),
         Coord::Cartesian { .. } => Err(Error::UnsupportedCoord(
-            "coord_cartesian limits with line, path, step or reference layers: layout() does not apply them",
+            "coord_cartesian limits with line, path, step, segment, polygon, text or reference layers: layout() does not apply them",
         )),
         Coord::Polar { .. } => Err(Error::UnsupportedCoord(
-            "coord_polar with line, path, step or reference layers",
+            "coord_polar with line, path, step, segment, polygon, text or reference layers",
         )),
         Coord::Fixed { .. } => Err(Error::UnsupportedCoord(
-            "coord_fixed with line, path, step or reference layers",
+            "coord_fixed with line, path, step, segment, polygon, text or reference layers",
         )),
     }
 }

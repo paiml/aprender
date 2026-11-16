@@ -690,11 +690,11 @@ impl BuiltGGPlot {
     ) -> (f32, f32) {
         let Some(col) = col else { return acc };
         let Some(values) = data.get_f32_present(col) else { return acc };
-        let shift = nudge as f32;
-        values
-            .iter()
-            .filter(|v| v.is_finite())
-            .fold(acc, |(lo, hi), &v| (lo.min(v + shift), hi.max(v + shift)))
+        // Add in f64, as the layer positions do (`text.rs`), and round to f32 once.
+        values.iter().filter(|v| v.is_finite()).fold(acc, |(lo, hi), &v| {
+            let shifted = (f64::from(v) + nudge) as f32;
+            (lo.min(shifted), hi.max(shifted))
+        })
     }
 
     /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
@@ -815,8 +815,9 @@ impl BuiltGGPlot {
     /// `geom_boxplot`, `geom_errorbar`) and a `scale_x`/`scale_y` spec is an
     /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
     ///
-    /// Without one, a `geom_area`, `geom_tile` or `geom_text` layer is an
-    /// [`Error::UnsupportedLayer`]: `layout()` does not resolve those geoms yet. Beside such a
+    /// Without one, a `geom_area` or `geom_tile` layer is an
+    /// [`Error::UnsupportedLayer`]: `layout()` does not resolve those geoms yet (`geom_text`
+    /// resolves, under the default coord only). Beside such a
     /// layer, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
     /// other stat on that `geom_point` an [`Error::UnsupportedStat`] (their ggplot2 stat or setup
     /// widens the shared scales), and the `geom_point` is refused for a missing, text, short or
@@ -833,6 +834,7 @@ impl BuiltGGPlot {
         }
         path::require_default_coord(&self.layers, &self.coord)?;
         path::require_identity_stats(&self.layers)?;
+        marks::require_path_point_companions(&self.layers, &self.aes, &self.data)?;
         if self.uses_position_scales() {
             return self.scaled_layout();
         }

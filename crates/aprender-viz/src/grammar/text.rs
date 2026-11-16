@@ -9,10 +9,12 @@
 //!   not layout and are not carried.
 //! * Positions are continuous numbers; `NaN` rows are kept. A text or infinite position is an
 //!   [`Error::Rendering`], a missing column an [`Error::UnknownColumn`].
-//! * The label column must exist and be text or numbers; a missing `label` aesthetic is an
+//! * The label column must exist and be text (a numeric label column is refused: R formats
+//!   numbers differently); a missing `label` aesthetic is an
 //!   [`Error::Rendering`] (ggplot2 errors: "requires the following missing aesthetics: label").
 //! * Groups and facets follow `path.rs` (explicit `group` only; `facet_wrap` over a text column).
 //!   `label` never forms a group (ggplot2 excludes it from the implicit grouping).
+//! * Non-finite `nudge_x`, `nudge_y`, `hjust`, `vjust` or `angle` are an [`Error::Rendering`].
 //! * A data-mapped colour, size, shape, alpha or fill would train a scale and is refused.
 //! * Only the default `coord_cartesian()`, the identity stat, and `geom_point` companions are
 //!   supported with it, as in `path.rs`; `layout()` computes no text extents.
@@ -75,13 +77,34 @@ fn labels(data: &DataFrame, aes: &Aes) -> Result<Vec<Option<String>>> {
         aes.label.as_deref().ok_or_else(|| refuse("geom_text requires the label aesthetic"))?;
     let col =
         data.get(name).ok_or_else(|| Error::UnknownColumn(format!("no label column {name:?}")))?;
+    // R keeps a numeric label numeric and formats it differently from Rust's `{v}` on an f32
+    // (1e-05, 1e+05, widening digits); not modelled, so refused rather than approximated.
+    if col.iter().any(|v| matches!(v, DataValue::Number(_))) {
+        return Err(refuse(format!(
+            "geom_text label column {name:?} is numeric: numeric label formatting is not modelled"
+        )));
+    }
     Ok((0..data.nrow())
         .map(|i| match col.get(i) {
             Some(DataValue::Text(s)) => Some(s.clone()),
-            Some(DataValue::Number(v)) if v.is_finite() => Some(format!("{v}")),
             _ => None,
         })
         .collect())
+}
+
+fn refuse_non_finite(p: &TextParams) -> Result<()> {
+    for (name, v) in [
+        ("nudge_x", p.nudge_x),
+        ("nudge_y", p.nudge_y),
+        ("hjust", p.hjust),
+        ("vjust", p.vjust),
+        ("angle", p.angle),
+    ] {
+        if !v.is_finite() {
+            return Err(refuse(format!("geom_text {name} must be finite, got {v}")));
+        }
+    }
+    Ok(())
 }
 
 fn refuse_mapped(aes: &Aes) -> Result<()> {
@@ -114,6 +137,7 @@ pub(super) fn build_layer(
     if let Some(msg) = layer.geom.stat.as_ref().and_then(unsupported_stat) {
         return Err(Error::UnsupportedStat(msg));
     }
+    refuse_non_finite(p)?;
     let aes = plot_aes.merge(&layer.aes);
     refuse_mapped(&aes)?;
     let global = global_panels(facet, plot_data)?;
