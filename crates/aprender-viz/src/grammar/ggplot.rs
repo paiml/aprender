@@ -17,6 +17,7 @@ use super::coord::{apply, apply_limits, Coord};
 use super::data::{DataFrame, DataValue};
 use super::dist;
 use super::facet::{panels, Facet, Panel};
+use super::filled;
 use super::geom::{Geom, GeomType, PointShape};
 use super::marks;
 use super::path;
@@ -692,6 +693,12 @@ impl BuiltGGPlot {
 
     /// The finite x and y domains every layer trains (`lo > hi` on an axis nothing trained).
     fn trained_domains(&self) -> ((f64, f64), (f64, f64)) {
+        self.trained_domains_for(false)
+    }
+
+    /// [`Self::trained_domains`]; with `skip_filled`, an area or ribbon layer adds nothing here
+    /// because `layout()` trains on its built rows (stat, stacking and padding included).
+    fn trained_domains_for(&self, skip_filled: bool) -> ((f64, f64), (f64, f64)) {
         if let Some(domains) = self.trained {
             return domains;
         }
@@ -699,21 +706,10 @@ impl BuiltGGPlot {
         let mut y = (f32::MAX, f32::MIN);
 
         for layer in &self.layers {
-            // Reference lines do not inherit x/y; hline trains y and vline trains x with the
-            // intercept, abline trains neither (ggplot2: `inherit.aes = FALSE`).
-            match &layer.geom.geom_type {
-                GeomType::Hline { yintercept } if yintercept.is_finite() => {
-                    y = (y.0.min(*yintercept), y.1.max(*yintercept));
-                    continue;
-                }
-                GeomType::Vline { xintercept } if xintercept.is_finite() => {
-                    x = (x.0.min(*xintercept), x.1.max(*xintercept));
-                    continue;
-                }
-                GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. } => {
-                    continue
-                }
-                _ => {}
+            if Self::train_reference_line(&layer.geom.geom_type, &mut x, &mut y)
+                || (skip_filled && filled::is_filled(&layer.geom.geom_type))
+            {
+                continue;
             }
             let data = layer.data.as_ref().unwrap_or(&self.data);
             let layer_aes = self.aes.merge(&layer.aes);
@@ -723,6 +719,27 @@ impl BuiltGGPlot {
 
         let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
         (wide(x), wide(y))
+    }
+
+    /// Reference lines do not inherit x/y; hline trains y and vline trains x with the intercept,
+    /// abline trains neither (ggplot2: `inherit.aes = FALSE`). True when the layer is one of them.
+    fn train_reference_line(g: &GeomType, x: &mut (f32, f32), y: &mut (f32, f32)) -> bool {
+        match g {
+            GeomType::Hline { yintercept } => {
+                if yintercept.is_finite() {
+                    *y = (y.0.min(*yintercept), y.1.max(*yintercept));
+                }
+                true
+            }
+            GeomType::Vline { xintercept } => {
+                if xintercept.is_finite() {
+                    *x = (x.0.min(*xintercept), x.1.max(*xintercept));
+                }
+                true
+            }
+            GeomType::Abline { .. } => true,
+            _ => false,
+        }
     }
 
     /// The columns that feed one axis, one per layer (`x_axis` selects x or y).
@@ -821,7 +838,11 @@ impl BuiltGGPlot {
         marks::require_modelled_companions(&self.layers, &self.aes, &self.data)?;
         marks::require_resolved(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
-        let (x, y) = self.trained_domains();
+        let (mut x, mut y) = self.trained_domains_for(true);
+        for (ex, ey) in layers.iter().map(filled::extents) {
+            x = merge_extent(x, ex);
+            y = merge_extent(y, ey);
+        }
         path::require_trained(&self.layers, x, y)?;
         Ok(BuiltLayout { layers, x: PositionScale::continuous(x), y: PositionScale::continuous(y) })
     }
@@ -868,11 +889,14 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, filled: None })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
+        if filled::is_filled(&layer.geom.geom_type) {
+            return filled::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
         }
@@ -887,7 +911,7 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, filled: None })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).
@@ -1169,6 +1193,11 @@ impl BuiltGGPlot {
             1.0,
         );
     }
+}
+
+/// Widen a trained `(lo, hi)` domain by a built layer's finite extent.
+fn merge_extent(domain: (f64, f64), extent: Option<(f64, f64)>) -> (f64, f64) {
+    extent.map_or(domain, |(lo, hi)| (domain.0.min(lo), domain.1.max(hi)))
 }
 
 #[cfg(test)]

@@ -1,0 +1,81 @@
+metadata:
+  id: ggplot2-geom-ribbon-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, core row geom_ribbon (PLOT-GG-001, paiml/aprender#6909). Identity stat and position; rows ordered by panel, group, x with a missing x last, y = ymin, rows with
+    NaN kept, an inverted band neither swapped nor clamped, a mapped y ignored. 8 cases, max error 0 (copied values). Scope: continuous numeric x and y; facet_wrap per panel as R;
+    other facets, data-mapped colour, size, shape, alpha, fill or label, a non-identity explicit stat, companion geoms other than geom_point and any coordinate system but the default
+    coord_cartesian return a typed Err (Rendering, UnknownColumn, ScaleDomain, UnsupportedCoord, UnsupportedStat or UnsupportedLayer), never a panic. The oracle is a committed JSON
+    fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time. Every case goes through the public builder and layout().
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_ribbon'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_ribbon/generate.R'
+entity: {type: ggplot2-row, ref: geom_ribbon}
+equations:
+  ordering:
+    formula: 'setup_data: order(PANEL, group, x); y = ymin'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: ribbon(x,ymin,ymax,panel,group) -> BuiltLayer.filled and the trained scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; panels and groups exact
+    preconditions:
+    - x, ymin and ymax are mapped to existing columns, else UnknownColumn or Rendering
+    - every layer has the identity stat, else UnsupportedStat; companions are geom_point only, else UnsupportedLayer
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+proof_obligations:
+- id: GG-RIBBON-INV-001
+  type: invariant
+  property: Built layer data and trained scales match ggplot2
+  formal: '∀ case: layout(case) ≈ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  applies_to: ordering
+- id: GG-RIBBON-INV-002
+  type: invariant
+  property: Out-of-scope input is a typed Err
+  formal: '∀ unsupported input: layout() → Err, never a panic'
+  applies_to: ordering
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_geom_ribbon_oracle::a_plain_band_keeps_its_rows
+    severity: ERROR
+  order_cases:
+    description: ordering by panel, group and x is reproduced
+    check: grammar::ggplot2_geom_ribbon_oracle::rows_are_ordered_by_group_then_x
+    severity: ERROR
+  edge_cases:
+    description: missing values and inverted bands are reproduced
+    check: grammar::ggplot2_geom_ribbon_oracle::missing_values_are_kept_with_x_last
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG-RIBBON-001
+  rule: Rows are ordered by x
+  prediction: reversing the x comparison in order_rows turns rows_are_ordered_by_x RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_ribbon_oracle::rows_are_ordered_by_x
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-RIBBON-002
+  rule: y is ymin
+  prediction: taking y from ymax in ribbon() turns a_plain_band_keeps_its_rows RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_ribbon_oracle::a_plain_band_keeps_its_rows
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-RIBBON-003
+  rule: Rows are ordered by group before x
+  prediction: dropping the group key from order_rows turns rows_are_ordered_by_group_then_x RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_ribbon_oracle::rows_are_ordered_by_group_then_x
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-RIBBON-004
+  rule: A data-mapped fill is refused
+  prediction: removing the fill test in require_supported turns a_data_mapped_fill_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_ribbon_oracle::a_data_mapped_fill_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GG-RIBBON-001
+  name: ggplot2 conformance (geom_ribbon)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for these fixtures
+  checks:
+  - primary_cases
+  - order_cases
+  - edge_cases

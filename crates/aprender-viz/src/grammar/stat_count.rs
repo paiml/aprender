@@ -27,8 +27,8 @@
 //! layer and `x` only on the plot ([`BarSpec::fill_first`]). Within one `aes()` this crate assumes x is
 //! written before fill (the builder does not record the order), so `aes(fill = g, x = x)` on one level
 //! is out of scope.
-//! Weights, `orientation = "y"`, `just`, `na.rm`, `position_dodge` and `position_dodge2` are not
-//! implemented ([`Position`] has no dodge). `width =` is implemented (`geom_bar(width =)`).
+//! Weights, `orientation = "y"`, `just`, `na.rm` and `position_dodge2` are not
+//! implemented (only `position_dodge` is implemented). `width =` is implemented (`geom_bar(width =)`).
 //!
 //! Facets: [`bar_layout_in`] computes stat and position PER PANEL, as ggplot2 does, over x levels
 //! shared by all panels (fixed scales).

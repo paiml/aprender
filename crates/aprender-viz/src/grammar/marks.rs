@@ -22,8 +22,6 @@ use crate::error::{Error, Result};
 /// Which of the marks geoms a layer is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MarkKind {
-    /// `geom_area()`: `stat_align` + `position_stack`.
-    Area,
     /// `geom_tile()`.
     Tile,
     /// `geom_text()`.
@@ -33,7 +31,6 @@ enum MarkKind {
 impl MarkKind {
     fn of(geom: &GeomType) -> Option<Self> {
         match geom {
-            GeomType::Area { .. } => Some(MarkKind::Area),
             GeomType::Tile => Some(MarkKind::Tile),
             GeomType::Text => Some(MarkKind::Text),
             _ => None,
@@ -54,9 +51,6 @@ pub(super) fn any_marks(layers: &[Layer]) -> bool {
 pub(super) fn require_resolved(layers: &[Layer]) -> Result<()> {
     match layers.iter().find_map(|l| MarkKind::of(&l.geom.geom_type)) {
         None => Ok(()),
-        Some(MarkKind::Area) => {
-            Err(Error::UnsupportedLayer("geom_area: layout() does not resolve it yet"))
-        }
         Some(MarkKind::Tile) => {
             Err(Error::UnsupportedLayer("geom_tile: layout() does not resolve it yet"))
         }

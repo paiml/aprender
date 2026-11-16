@@ -1,12 +1,11 @@
-//! Position adjustments: `position_stack` and `position_fill`.
+//! Position adjustments: `position_stack`, `position_fill` and `position_dodge`.
 //!
 //! These are the numeric parts of ggplot2 4.0.3's `PositionStack` and `PositionFill`
 //! (`pos_stack()` and `collide()` in `position-collide.R`), applied
 //! to bar rows in data space. Every default is ggplot2's, taken from `formals()` on the reference
 //! host rather than from memory, and is a named constant here.
 //!
-//! Scope: vertical bars only (`orientation = "x"`, no `flipped_aes`). `position_dodge` is not
-//! implemented here and has no oracle row.
+//! Scope: vertical bars only (`orientation = "x"`, no `flipped_aes`).
 //!
 //! `NaN` stands for R's `NA`. Known differences from R, outside the tested domain: R's `cumsum`
 //! accumulates in long double, so a stacked edge can differ from R in the last ulp; and
@@ -19,6 +18,15 @@ pub const STACK_VJUST: f64 = 1.0;
 pub const STACK_REVERSE: bool = false;
 /// `position_fill(vjust = 1)`.
 pub const FILL_VJUST: f64 = 1.0;
+
+/// `position_dodge(preserve = )`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Preserve {
+    /// Split the x slot between the groups present at that x (ggplot2's default).
+    Total,
+    /// Every bar gets the width it would have at the x with the most groups.
+    Single,
+}
 
 /// A position adjustment applied to a bar layer.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -39,6 +47,15 @@ pub enum Position {
         /// As [`Position::Stack`].
         reverse: bool,
     },
+    /// `position_dodge(width, preserve, reverse)`: bars of one x side by side.
+    Dodge {
+        /// Dodge width; `None` takes the first non-NaN `xmax - xmin` of the panel.
+        width: Option<f64>,
+        /// `preserve = "total"` or `"single"`.
+        preserve: Preserve,
+        /// Reverse the order of the groups within an x.
+        reverse: bool,
+    },
 }
 
 impl Position {
@@ -52,6 +69,12 @@ impl Position {
     #[must_use]
     pub fn fill() -> Self {
         Position::Fill { vjust: FILL_VJUST, reverse: STACK_REVERSE }
+    }
+
+    /// `position_dodge()` with ggplot2's defaults (`width = NULL`, `preserve = "total"`, `reverse = FALSE`).
+    #[must_use]
+    pub fn dodge() -> Self {
+        Position::Dodge { width: None, preserve: Preserve::Total, reverse: false }
     }
 }
 
@@ -84,6 +107,14 @@ pub struct BarRow {
 
 /// Apply `position` in place to the rows of a single-panel layer. Row order is preserved.
 pub fn apply(rows: &mut [BarRow], position: Position) {
+    if let Position::Dodge { width, preserve, reverse } = position {
+        let mut panels = vec![rows.to_vec()];
+        dodge(&mut panels, width, preserve, reverse);
+        if let Some(done) = panels.pop() {
+            rows.clone_from_slice(&done);
+        }
+        return;
+    }
     if let Some((vjust, reverse, fill)) = stacking(position, has_repeated_x(rows.iter())) {
         stack(rows, vjust, reverse, fill);
     }
@@ -92,6 +123,10 @@ pub fn apply(rows: &mut [BarRow], position: Position) {
 /// Apply `position` to a layer whose rows are split by panel, as ggplot2 does: stacking and filling
 /// happen inside each panel (`Position$compute_layer` splits by `PANEL`).
 pub fn apply_panels(panels: &mut [Vec<BarRow>], position: Position) {
+    if let Position::Dodge { width, preserve, reverse } = position {
+        dodge(panels, width, preserve, reverse);
+        return;
+    }
     if let Some((vjust, reverse, fill)) =
         stacking(position, has_repeated_x(panels.iter().flatten()))
     {
@@ -107,10 +142,110 @@ pub fn apply_panels(panels: &mut [Vec<BarRow>], position: Position) {
 /// negative bar over a unique x keeps y = value (stacking would set it to 0).
 fn stacking(position: Position, repeated_x: bool) -> Option<(f64, bool, bool)> {
     match position {
-        Position::Identity => None,
+        Position::Identity | Position::Dodge { .. } => None,
         Position::Stack { vjust, .. } if vjust == 1.0 && !repeated_x => None,
         Position::Stack { vjust, reverse } => Some((vjust, reverse, false)),
         Position::Fill { vjust, reverse } => Some((vjust, reverse, true)),
+    }
+}
+
+/// vctrs equality key: `-0.0` is `0.0`, every NaN is one value.
+fn key(x: f64) -> u64 {
+    if x.is_nan() {
+        f64::NAN.to_bits()
+    } else {
+        (x + 0.0).to_bits()
+    }
+}
+
+/// Dense ranks (1-based) of `values` among their sorted distinct values.
+fn dense_rank(values: &[i64]) -> Vec<i64> {
+    let mut distinct = values.to_vec();
+    distinct.sort_unstable();
+    distinct.dedup();
+    values.iter().map(|v| distinct.binary_search(v).map_or(0, |p| p as i64 + 1)).collect()
+}
+
+/// Distinct groups among `subset`.
+fn distinct_groups(rows: &[BarRow], subset: &[usize]) -> usize {
+    let mut g: Vec<u32> = subset.iter().map(|i| rows[*i].group).collect();
+    g.sort_unstable();
+    g.dedup();
+    g.len()
+}
+
+/// `PositionDodge` (ggplot2 4.0.3): `setup_params`, `setup_data` and `collide(pos_dodge)`.
+fn dodge(panels: &mut [Vec<BarRow>], width: Option<f64>, preserve: Preserve, reverse: bool) {
+    let orders = dodge_orders(panels, preserve, reverse);
+    // setup_params: for "single", n is the most groups at one (PANEL, xmin).
+    let slices: Vec<Vec<Vec<usize>>> =
+        panels.iter().map(|rows| by_xmin(rows, &(0..rows.len()).collect::<Vec<_>>())).collect();
+    let n_single = (preserve == Preserve::Single).then(|| {
+        panels
+            .iter()
+            .zip(&slices)
+            .flat_map(|(rows, sl)| sl.iter().map(move |s| distinct_groups(rows, s)))
+            .max()
+            .unwrap_or(1)
+    });
+    for ((rows, sl), o) in panels.iter_mut().zip(&slices).zip(&orders) {
+        // collide_setup: the param, else the first non-NA xmax - xmin of the panel.
+        let w = width
+            .or_else(|| rows.iter().map(|r| r.xmax - r.xmin).find(|v| !v.is_nan()))
+            .unwrap_or(f64::NAN);
+        for s in sl {
+            let n = n_single.unwrap_or_else(|| distinct_groups(rows, s));
+            if n != 1 {
+                dodge_slice(rows, s, o, w, n);
+            }
+        }
+    }
+}
+
+/// `setup_data`: `order` is the rank of the group among the groups at the same x of the panel,
+/// negated when reversed, then re-ranked per (x, PANEL) for "total" or over the layer for "single".
+fn dodge_orders(panels: &[Vec<BarRow>], preserve: Preserve, reverse: bool) -> Vec<Vec<i64>> {
+    let mut orders: Vec<Vec<i64>> = Vec::with_capacity(panels.len());
+    for rows in panels {
+        let mut o = vec![0_i64; rows.len()];
+        let mut by_x: std::collections::HashMap<u64, Vec<usize>> = std::collections::HashMap::new();
+        for (i, r) in rows.iter().enumerate() {
+            by_x.entry(key(r.x)).or_default().push(i);
+        }
+        for idx in by_x.values() {
+            let groups: Vec<i64> = idx.iter().map(|i| i64::from(rows[*i].group)).collect();
+            let signed: Vec<i64> =
+                dense_rank(&groups).iter().map(|r| if reverse { -r } else { *r }).collect();
+            let fin = if preserve == Preserve::Total { dense_rank(&signed) } else { signed };
+            for (k, i) in idx.iter().enumerate() {
+                o[*i] = fin[k];
+            }
+        }
+        orders.push(o);
+    }
+    if preserve == Preserve::Single {
+        let all: Vec<i64> = orders.iter().flatten().copied().collect();
+        let mut ranked = dense_rank(&all).into_iter();
+        for v in orders.iter_mut().flatten() {
+            *v = ranked.next().unwrap_or(*v);
+        }
+    }
+    orders
+}
+
+/// `pos_dodge` for the rows of one (PANEL, xmin) slice split into `n` slots of width `w`.
+fn dodge_slice(rows: &mut [BarRow], s: &[usize], o: &[i64], w: f64, n: usize) {
+    let d_width = s
+        .iter()
+        .map(|i| rows[*i].xmax - rows[*i].xmin)
+        .filter(|v| !v.is_nan())
+        .fold(f64::NAN, |a, b| if a.is_nan() || b > a { b } else { a });
+    let nf = n as f64;
+    for i in s {
+        let x = rows[*i].x + w * ((o[*i] as f64 - 0.5) / nf - 0.5);
+        rows[*i].x = x;
+        rows[*i].xmin = x - d_width / nf / 2.0;
+        rows[*i].xmax = x + d_width / nf / 2.0;
     }
 }
 

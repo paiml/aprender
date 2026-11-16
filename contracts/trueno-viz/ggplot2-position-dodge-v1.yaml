@@ -1,0 +1,69 @@
+metadata:
+  id: ggplot2-position-dodge-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, core row position_dodge (PLOT-GG-001, paiml/aprender#6909). PositionDodge 4.0.3: order of the group within its x (negated when reversed), total or single
+    preserve, width parameter or the first non-NA xmax - xmin, per-panel slices, n = 1 left untouched. 14 cases through BarSpec and layout. Scope: bars and columns on continuous or
+    discrete x; a non-numeric or infinite position returns a typed Err, never a panic. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R
+    is never run at test time.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), position_dodge'
+  - 'crates/aprender-viz/fixtures/ggplot2/position_dodge/generate.R'
+entity: {type: ggplot2-row, ref: position_dodge}
+equations:
+  dodge:
+    formula: 'x_new = x + w * ((order - 0.5) / n - 0.5); half-width d_width / n / 2'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: Position::Dodge {width, preserve, reverse} applied to BarRow
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; panels, groups and counts exact
+    preconditions:
+    - width, when given, is finite
+    - preserve is Total or Single; reverse is a bool
+proof_obligations:
+- id: GG-DODGE-INV-001
+  type: invariant
+  property: Dodged bars match ggplot2
+  formal: '∀ case: dodge(case) ≈ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  applies_to: dodge
+enforcement:
+  primary_cases:
+    description: the total-preserve fixtures are reproduced
+    check: grammar::ggplot2_position_dodge_oracle::position_dodge_total_splits_the_slot_between_groups_present
+    severity: ERROR
+  preserve_cases:
+    description: single preserve is reproduced
+    check: grammar::ggplot2_position_dodge_oracle::position_dodge_preserve_single
+    severity: ERROR
+  edge_cases:
+    description: negative, reversed and faceted fixtures are reproduced
+    check: grammar::ggplot2_position_dodge_oracle::position_dodge_reverse
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG-DODGE-001
+  rule: The slot is split at the group centres
+  prediction: dropping the - 0.5 in the centre formula turns position_dodge_total_splits_the_slot_between_groups_present RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_position_dodge_oracle::position_dodge_total_splits_the_slot_between_groups_present
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-DODGE-002
+  rule: reverse negates the order
+  prediction: ignoring reverse in the order rank turns position_dodge_reverse RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_position_dodge_oracle::position_dodge_reverse
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-DODGE-003
+  rule: preserve single uses the layer-wide maximum group count
+  prediction: using the per-x group count under Single turns position_dodge_preserve_single RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_position_dodge_oracle::position_dodge_preserve_single
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GG-DODGE-001
+  name: ggplot2 conformance (position_dodge)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for these fixtures
+  checks:
+  - primary_cases
+  - preserve_cases
+  - edge_cases
