@@ -419,6 +419,8 @@ pub mod parallel;
 /// single-vector reference implementations. Exposed as `apr qa` Gate 6.
 pub mod ptx_parity;
 pub mod quantize;
+/// `qwen4_exp` (Qwen 4 preview) config, recognition and named refusal (#7169 S1)
+pub mod qwen4_exp;
 #[cfg(feature = "server")]
 pub mod registry;
 #[cfg(all(test, feature = "server"))]
