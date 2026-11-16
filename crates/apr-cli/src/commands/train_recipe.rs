@@ -5,8 +5,9 @@
 //! refuses an invalid recipe before any model is opened, and every refusal
 //! names the recipe field at fault. Relative paths resolve against the
 //! recipe file's directory.
-// Removed when `apr finetune` wires the recipe in (last slice of the stack).
-#![allow(dead_code)]
+//!
+//! This module is the schema and its validator only. The recipe is lowered
+//! onto the existing `apr finetune` arguments by `finetune::run_from_recipe`.
 
 use crate::error::{CliError, Result};
 use serde::{Deserialize, Serialize};

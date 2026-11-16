@@ -13,6 +13,8 @@
 #   - the receipt (its overrides included) is built and printed on stderr as text; it is not
 #     written to a file and not part of --json output
 #   - --profile prints its one line and does nothing else, with or without --recipe
+#   - the global --verbose and --quiet work beside --recipe as for every command, through the
+#     process-wide setting; they are not arguments of the recipe run and no recipe test covers them
 #   - the run flags --output, --vram, --gpus, --gpu-backend, --wait-gpu, --checkpoint-format,
 #     --experimental-mps, --gpu-share and --json are passed on by dispatch; no test checks that
 #     each one arrives (--plan and --model-size are checked)
