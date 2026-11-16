@@ -1,0 +1,5 @@
+   Compiling serde v1.0.219
+   Compiling aprender-core v0.71.0 (/home/runner/work/aprender/aprender/crates/aprender-core)
+error: Permission denied (os error 13) at path "/var/lib/ci-target/runnerAbC123"
+
+error: could not compile `aprender-core` (lib) due to 1 previous error
