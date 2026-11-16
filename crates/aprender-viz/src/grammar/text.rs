@@ -168,5 +168,6 @@ pub(super) fn build_layer(
         points: None,
         path: None,
         text: Some(text),
+        filled: None,
     })
 }

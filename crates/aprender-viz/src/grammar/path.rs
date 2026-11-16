@@ -147,17 +147,23 @@ pub(super) fn is_path_family(g: &GeomType) -> bool {
     )
 }
 
+/// A geom whose layers make `layout()` apply the path-family guards: the path family and the
+/// filled geoms.
+pub(super) fn is_gated(g: &GeomType) -> bool {
+    is_path_family(g) || super::filled::is_filled(g)
+}
+
 /// Is this a geom whose positions `layout()` resolves with a trained, non-degenerate scale: a
-/// path-family geom or `geom_text`?
+/// gated geom or `geom_text`?
 pub(super) fn is_resolved_family(g: &GeomType) -> bool {
-    is_path_family(g) || matches!(g, GeomType::Text(_))
+    is_gated(g) || matches!(g, GeomType::Text(_))
 }
 
 fn is_reference(g: &GeomType) -> bool {
     matches!(g, GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. })
 }
 
-fn refuse(msg: impl Into<String>) -> Error {
+pub(super) fn refuse(msg: impl Into<String>) -> Error {
     Error::Rendering(msg.into())
 }
 
@@ -190,15 +196,23 @@ pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<(
 /// would silently skip, and every companion layer other than `geom_point` (its ggplot2 stat or
 /// setup changes the shared scales). Answering with the raw data would be silently wrong.
 pub(super) fn require_identity_stats(layers: &[Layer]) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| is_gated(&l.geom.geom_type)) {
         return Ok(());
+    }
+    if layers.iter().any(|l| is_path_family(&l.geom.geom_type))
+        && layers.iter().any(|l| super::filled::is_filled(&l.geom.geom_type))
+    {
+        return Err(Error::UnsupportedLayer(
+            "geom_area or geom_ribbon beside a line, path, step or reference layer: layout() \
+             resolves them separately, not together",
+        ));
     }
     for l in layers {
         let g = &l.geom.geom_type;
-        if !is_path_family(g) && !matches!(g, GeomType::Point { .. }) {
+        if !is_gated(g) && !matches!(g, GeomType::Point { .. }) {
             return Err(Error::UnsupportedLayer(
-                "only geom_point may share a plot with line, path, step or reference layers: \
-                 layout() does not resolve other geoms with them (their ggplot2 stat or setup \
+                "only geom_point may share a plot with line, path, step, reference, area or ribbon \
+                 layers: layout() does not resolve other geoms with them (their ggplot2 stat or setup \
                  can change the shared scales)",
             ));
         }
@@ -292,7 +306,14 @@ pub(super) fn build_layer(
             yend: None,
             fill: None,
         };
-        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path), text: None });
+        return Ok(BuiltLayer {
+            x: vec![],
+            y: vec![],
+            points: None,
+            path: Some(path),
+            text: None,
+            filled: None,
+        });
     }
 
     let own = layer.data.is_some();
@@ -336,7 +357,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None, xend, yend, fill };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path), text: None })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), text: None, filled: None })
 }
 
 /// `GeomPolygon$default_aes$fill`, `"grey20"` (`#333333`), fully opaque.
@@ -483,7 +504,7 @@ pub(super) fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
 }
 
 /// Ascending with `NaN` last and equal values tied, as R's `order()`.
-fn cmp_na_last(a: f64, b: f64) -> Ordering {
+pub(super) fn cmp_na_last(a: f64, b: f64) -> Ordering {
     match (a.is_nan(), b.is_nan()) {
         (true, true) => Ordering::Equal,
         (true, false) => Ordering::Greater,

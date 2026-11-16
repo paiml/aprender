@@ -376,3 +376,30 @@ fn an_infinite_point_position_beside_segment_or_polygon_is_refused() {
         assert!(matches!(res, Err(Error::Rendering(_))), "{:?}: {res:?}", other.geom_type);
     }
 }
+
+/// Without a segment or polygon layer an infinite `geom_point` position behaves as on `main`: the
+/// row is dropped and does not train the x scale, alone or beside a line, as when it is absent.
+#[test]
+fn an_infinite_point_without_segment_or_polygon_behaves_as_on_main() {
+    let frame = |xs: &[f32]| {
+        let mut df = DataFrame::new();
+        df.add_column_f32("x", xs);
+        let ys: Vec<f32> = xs.iter().map(|v| if v.is_finite() { *v + 1.0 } else { 2.0 }).collect();
+        df.add_column_f32("y", &ys);
+        df
+    };
+    let x_range = |res: crate::error::Result<BuiltLayout>| match res {
+        Ok(l) => l.x.continuous_range,
+        Err(e) => panic!("expected Ok, got {e:?}"),
+    };
+    let with_inf = frame(&[1.0, f32::INFINITY, 3.0, 4.0]);
+    let without = frame(&[1.0, 3.0, 4.0]);
+    let alone = |df: DataFrame| build(df, xy(), vec![Layer::new(Geom::point())], Facet::None);
+    assert_eq!(x_range(alone(with_inf.clone())), x_range(alone(without.clone())));
+    let beside = |df: DataFrame| {
+        let line = frame(&[1.0, 3.0]);
+        let point = Layer::new(Geom::point()).data(df).aes(xy());
+        build(line, xy(), vec![Layer::new(Geom::line()), point], Facet::None)
+    };
+    assert_eq!(x_range(beside(with_inf)), x_range(beside(without)));
+}

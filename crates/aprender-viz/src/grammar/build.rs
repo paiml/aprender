@@ -11,6 +11,7 @@ pub use super::r_format::format_labels;
 use super::scale_spec::{resolve_continuous, ContinuousSpec};
 use crate::color::Rgba;
 
+use super::filled::BuiltFilled;
 use super::path::BuiltPath;
 use super::text::BuiltText;
 
@@ -98,6 +99,9 @@ pub struct BuiltLayer {
     /// Resolved `geom_text` data; `None` for other geoms. `x`/`y` keep `NaN` rows and are
     /// already shifted by `nudge_x`/`nudge_y`, as in `ggplot_build()`.
     pub text: Option<BuiltText>,
+    /// Resolved `geom_area` / `geom_ribbon` data; `None` for other geoms. `x`/`y` hold the final
+    /// `x` and `y` (`y` is `ymin` for a ribbon); `NaN` rows are kept for a ribbon.
+    pub filled: Option<BuiltFilled>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).
