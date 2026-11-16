@@ -1,0 +1,52 @@
+{
+  "row": "geom_text",
+  "case": "na",
+  "spec": "ggplot(dna, aes(x, y, label = lab)) + geom_text()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomText",
+      "x": [1, null, 3, 4],
+      "y": [2, 3, null, 5],
+      "label": ["one", "no x", "no y", "four"],
+      "nudge_x": [0, 0, 0, 0],
+      "nudge_y": [0, 0, 0, 0],
+      "size": [3.8660578386605779, 3.8660578386605779, 3.8660578386605779, 3.8660578386605779],
+      "angle": [0, 0, 0, 0],
+      "hjust": [0.5, 0.5, 0.5, 0.5],
+      "vjust": [0.5, 0.5, 0.5, 0.5],
+      "alpha": [null, null, null, null],
+      "panel": [1, 1, 1, 1],
+      "group": [-1, -1, -1, -1],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 4],
+      "continuous_range": [0.84999999999999998, 4.1500000000000004],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["1", "2", "3", "4"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [2, 5],
+      "continuous_range": [1.8500000000000001, 5.1500000000000004],
+      "breaks": [2, 3, 4, 5],
+      "labels": ["2", "3", "4", "5"],
+      "n_breaks_censored": 0
+    }
+  }
+}

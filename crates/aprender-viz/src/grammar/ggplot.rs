@@ -22,6 +22,7 @@ use super::marks;
 use super::path;
 use super::scale_spec::{require_scale_scope, PositionScaleSpec, ResolvedAxis};
 use super::stroke;
+use super::text;
 use super::theme::Theme;
 
 /// A layer in the plot.
@@ -678,10 +679,22 @@ impl BuiltGGPlot {
     /// A column that is unmapped or absent leaves the accumulator untouched, which is how a layer
     /// that sets only `x` contributes nothing to the `y` range. Alignment is irrelevant here — only
     /// the extremes matter — so this reads the compacting accessor deliberately.
-    fn extend_range(acc: (f32, f32), data: &DataFrame, col: Option<&String>) -> (f32, f32) {
+    ///
+    /// `nudge` is the `position_nudge` shift of a `geom_text` layer (`0` for every other geom):
+    /// ggplot2 retrains the scales on the shifted positions.
+    fn extend_range(
+        acc: (f32, f32),
+        data: &DataFrame,
+        col: Option<&String>,
+        nudge: f64,
+    ) -> (f32, f32) {
         let Some(col) = col else { return acc };
         let Some(values) = data.get_f32_present(col) else { return acc };
-        values.iter().filter(|v| v.is_finite()).fold(acc, |(lo, hi), &v| (lo.min(v), hi.max(v)))
+        let shift = nudge as f32;
+        values
+            .iter()
+            .filter(|v| v.is_finite())
+            .fold(acc, |(lo, hi), &v| (lo.min(v + shift), hi.max(v + shift)))
     }
 
     /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
@@ -717,8 +730,13 @@ impl BuiltGGPlot {
             }
             let data = layer.data.as_ref().unwrap_or(&self.data);
             let layer_aes = self.aes.merge(&layer.aes);
-            x = Self::extend_range(x, data, layer_aes.x.as_ref());
-            y = Self::extend_range(y, data, layer_aes.y.as_ref());
+            let (nx, ny) = text::nudge(&layer.geom.geom_type);
+            x = Self::extend_range(x, data, layer_aes.x.as_ref(), nx);
+            y = Self::extend_range(y, data, layer_aes.y.as_ref(), ny);
+            if matches!(layer.geom.geom_type, GeomType::Segment) {
+                x = Self::extend_range(x, data, layer_aes.xend.as_ref(), 0.0);
+                y = Self::extend_range(y, data, layer_aes.yend.as_ref(), 0.0);
+            }
         }
 
         let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
@@ -868,13 +886,16 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, text: None })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
+        if let GeomType::Text(p) = &layer.geom.geom_type {
+            return text::build_layer(layer, p, &self.aes, &self.data, &self.facet);
         }
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
@@ -887,7 +908,7 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, text: None })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).

@@ -48,6 +48,14 @@ mod ggplot2_marks_oracle;
 mod ggplot2_oracle;
 #[cfg(test)]
 mod ggplot2_oracle_scales;
+#[cfg(test)]
+mod ggplot2_pack_common;
+#[cfg(test)]
+mod ggplot2_polygon_oracle;
+#[cfg(test)]
+mod ggplot2_segment_oracle;
+#[cfg(test)]
+mod ggplot2_text_oracle;
 mod marks;
 mod path;
 mod position;
@@ -59,6 +67,7 @@ mod stat;
 mod stat_count;
 mod stroke;
 mod term;
+mod text;
 mod theme;
 
 pub use aes::Aes;
@@ -70,7 +79,7 @@ pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
 pub use dist::{DistKind, DistSpec};
 pub use facet::{panels, Facet, Panel};
-pub use geom::{Geom, StepDirection};
+pub use geom::{Geom, StepDirection, TextParams};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use position::{apply as apply_position, apply_panels, BarRow, Position};
@@ -87,4 +96,5 @@ pub use term::{
     TerminalPlot, LINE_GLYPH, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT,
     MIN_TERMINAL_WIDTH, POINT_GLYPH,
 };
+pub use text::BuiltText;
 pub use theme::Theme;

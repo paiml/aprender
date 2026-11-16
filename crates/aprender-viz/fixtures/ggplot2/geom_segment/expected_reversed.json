@@ -1,0 +1,48 @@
+{
+  "row": "geom_segment",
+  "case": "reversed",
+  "spec": "ggplot(dr, aes(x, y, xend = xend, yend = yend)) + geom_segment()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomSegment",
+      "x": [5, 6, 4],
+      "y": [5, 4, 3],
+      "xend": [1, 2, 3.5],
+      "yend": [1, 0.5, 2.25],
+      "linewidth": [0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1],
+      "alpha": [null, null, null],
+      "panel": [1, 1, 1],
+      "group": [-1, -1, -1],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 6],
+      "continuous_range": [0.75, 6.25],
+      "breaks": [2, 4, 6],
+      "labels": ["2", "4", "6"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [0.5, 5],
+      "continuous_range": [0.27500000000000002, 5.2249999999999996],
+      "breaks": [1, 2, 3, 4, 5],
+      "labels": ["1", "2", "3", "4", "5"],
+      "n_breaks_censored": 1
+    }
+  }
+}

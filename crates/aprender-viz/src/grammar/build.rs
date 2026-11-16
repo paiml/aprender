@@ -12,6 +12,7 @@ use super::scale_spec::{resolve_continuous, ContinuousSpec};
 use crate::color::Rgba;
 
 use super::path::BuiltPath;
+use super::text::BuiltText;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
@@ -94,6 +95,9 @@ pub struct BuiltLayer {
     /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
     /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
     pub path: Option<BuiltPath>,
+    /// Resolved `geom_text` data; `None` for other geoms. `x`/`y` keep `NaN` rows and are
+    /// already shifted by `nudge_x`/`nudge_y`, as in `ggplot_build()`.
+    pub text: Option<BuiltText>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

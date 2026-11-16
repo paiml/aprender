@@ -1,0 +1,53 @@
+{
+  "row": "geom_polygon",
+  "case": "single",
+  "spec": "ggplot(ds, aes(x, y)) + geom_polygon()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomPolygon",
+      "x": [0, 4, 4, 0],
+      "y": [0, 0, 3, 3],
+      "linewidth": [0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1],
+      "alpha": [null, null, null, null],
+      "panel": [1, 1, 1, 1],
+      "group": [-1, -1, -1, -1],
+      "colour_rgba": [
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0],
+        [255, 255, 255, 0]
+      ],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0, 4],
+      "continuous_range": [-0.20000000000000001, 4.2000000000000002],
+      "breaks": [0, 1, 2, 3, 4],
+      "labels": ["0", "1", "2", "3", "4"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 3],
+      "continuous_range": [-0.15000000000000002, 3.1499999999999999],
+      "breaks": [0, 1, 2, 3],
+      "labels": ["0", "1", "2", "3"],
+      "n_breaks_censored": 0
+    }
+  }
+}

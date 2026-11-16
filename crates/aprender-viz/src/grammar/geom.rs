@@ -72,8 +72,8 @@ pub enum GeomType {
     Violin,
     /// Tile/rectangle (for heatmaps).
     Tile,
-    /// Text labels.
-    Text,
+    /// Text labels (`geom_text`).
+    Text(TextParams),
     /// Horizontal line.
     Hline {
         /// Y intercept.
@@ -88,6 +88,10 @@ pub enum GeomType {
     Dist(super::dist::DistSpec),
     /// Connected line segments in data order (`geom_path`).
     Path,
+    /// One straight segment per row, from `(x, y)` to `(xend, yend)` (`geom_segment`).
+    Segment,
+    /// Filled polygons, one per group, rows in data order (`geom_polygon`).
+    Polygon,
     /// Stair-step line (`geom_step`).
     Step {
         /// Which way the stair turns first.
@@ -105,6 +109,28 @@ pub enum GeomType {
         /// Smoothing method.
         method: SmoothMethod,
     },
+}
+
+/// The `geom_text` parameters that reach the layer data (`hjust`, `vjust`, `angle`, `nudge_x`,
+/// `nudge_y`). `size`, `colour` and `alpha` come from the layer's [`Aes`] fixed values.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TextParams {
+    /// Horizontal justification, `0.5` by default (`GeomText$default_aes`).
+    pub hjust: f32,
+    /// Vertical justification, `0.5` by default.
+    pub vjust: f32,
+    /// Rotation in degrees, `0` by default.
+    pub angle: f32,
+    /// Shift added to every x by `position_nudge`, `0` by default.
+    pub nudge_x: f32,
+    /// Shift added to every y by `position_nudge`, `0` by default.
+    pub nudge_y: f32,
+}
+
+impl Default for TextParams {
+    fn default() -> Self {
+        Self { hjust: 0.5, vjust: 0.5, angle: 0.0, nudge_x: 0.0, nudge_y: 0.0 }
+    }
 }
 
 /// Direction of a `geom_step` (ggplot2 `direction`).
@@ -196,7 +222,57 @@ impl Geom {
     /// Create a text geometry.
     #[must_use]
     pub fn text() -> Self {
-        Self { geom_type: GeomType::Text, aes: None, stat: None }
+        Self { geom_type: GeomType::Text(TextParams::default()), aes: None, stat: None }
+    }
+
+    /// Create a segment geometry: one straight segment per row.
+    #[must_use]
+    pub fn segment() -> Self {
+        Self { geom_type: GeomType::Segment, aes: None, stat: None }
+    }
+
+    /// Create a polygon geometry: one filled polygon per group.
+    #[must_use]
+    pub fn polygon() -> Self {
+        Self { geom_type: GeomType::Polygon, aes: None, stat: None }
+    }
+
+    /// Set a text geometry's parameter through `set`; any other geometry is unchanged.
+    fn text_param(mut self, set: impl FnOnce(&mut TextParams)) -> Self {
+        if let GeomType::Text(p) = &mut self.geom_type {
+            set(p);
+        }
+        self
+    }
+
+    /// Set a text geometry's horizontal justification.
+    #[must_use]
+    pub fn hjust(self, v: f32) -> Self {
+        self.text_param(|p| p.hjust = v)
+    }
+
+    /// Set a text geometry's vertical justification.
+    #[must_use]
+    pub fn vjust(self, v: f32) -> Self {
+        self.text_param(|p| p.vjust = v)
+    }
+
+    /// Set a text geometry's rotation in degrees.
+    #[must_use]
+    pub fn angle(self, v: f32) -> Self {
+        self.text_param(|p| p.angle = v)
+    }
+
+    /// Set a text geometry's `nudge_x`.
+    #[must_use]
+    pub fn nudge_x(self, v: f32) -> Self {
+        self.text_param(|p| p.nudge_x = v)
+    }
+
+    /// Set a text geometry's `nudge_y`.
+    #[must_use]
+    pub fn nudge_y(self, v: f32) -> Self {
+        self.text_param(|p| p.nudge_y = v)
     }
 
     /// Create a horizontal line.
@@ -422,7 +498,7 @@ mod tests {
     #[test]
     fn test_geom_text() {
         let g = Geom::text();
-        assert!(matches!(g.geom_type, GeomType::Text));
+        assert!(matches!(g.geom_type, GeomType::Text(_)));
     }
 
     #[test]
@@ -568,7 +644,7 @@ mod tests {
             GeomType::Boxplot,
             GeomType::Violin,
             GeomType::Tile,
-            GeomType::Text,
+            GeomType::Text(TextParams::default()),
             GeomType::Hline { yintercept: 0.0 },
             GeomType::Vline { xintercept: 0.0 },
             GeomType::Smooth { method: SmoothMethod::Loess },

@@ -1,0 +1,51 @@
+{
+  "row": "geom_text",
+  "case": "negative",
+  "spec": "ggplot(dn, aes(x, y, label = lab)) + geom_text(nudge_x = -0.5, nudge_y = 0.25)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomText",
+      "x": [-3.5, -0.5, 2],
+      "y": [-1.75, 0.25, -1.25],
+      "label": ["minus three", "origin", "right"],
+      "nudge_x": [-0.5, -0.5, -0.5],
+      "nudge_y": [0.25, 0.25, 0.25],
+      "size": [3.8660578386605779, 3.8660578386605779, 3.8660578386605779],
+      "angle": [0, 0, 0],
+      "hjust": [0.5, 0.5, 0.5],
+      "vjust": [0.5, 0.5, 0.5],
+      "alpha": [null, null, null],
+      "panel": [1, 1, 1],
+      "group": [-1, -1, -1],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [-3.5, 2],
+      "continuous_range": [-3.7749999999999999, 2.2749999999999999],
+      "breaks": [-2, 0, 2],
+      "labels": ["-2", "0", "2"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [-1.75, 0.25],
+      "continuous_range": [-1.8500000000000001, 0.34999999999999998],
+      "breaks": [-1.5, -1, -0.5, 0],
+      "labels": ["-1.5", "-1.0", "-0.5", "0.0"],
+      "n_breaks_censored": 2
+    }
+  }
+}

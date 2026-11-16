@@ -123,6 +123,13 @@ pub struct BuiltPath {
     pub stairs: Option<Stairs>,
     /// Present for `geom_hline`, `geom_vline` and `geom_abline`.
     pub reference: Option<Reference>,
+    /// `xend` of every row of a `geom_segment` layer; `None` when `xend` is not mapped (and for
+    /// every other geom).
+    pub xend: Option<Vec<f64>>,
+    /// `yend` of every row of a `geom_segment` layer; `None` when `yend` is not mapped.
+    pub yend: Option<Vec<f64>>,
+    /// `fill` of a `geom_polygon` layer (`#333333FF`); `None` for every other geom.
+    pub fill: Option<Rgba>,
 }
 
 /// Is this one of the geoms this module builds?
@@ -132,10 +139,18 @@ pub(super) fn is_path_family(g: &GeomType) -> bool {
         GeomType::Line { .. }
             | GeomType::Path
             | GeomType::Step { .. }
+            | GeomType::Segment
+            | GeomType::Polygon
             | GeomType::Hline { .. }
             | GeomType::Vline { .. }
             | GeomType::Abline { .. }
     )
+}
+
+/// Is this a geom whose positions `layout()` resolves with a trained, non-degenerate scale: a
+/// path-family geom or `geom_text`?
+pub(super) fn is_resolved_family(g: &GeomType) -> bool {
+    is_path_family(g) || matches!(g, GeomType::Text(_))
 }
 
 fn is_reference(g: &GeomType) -> bool {
@@ -195,7 +210,7 @@ pub(super) fn require_identity_stats(layers: &[Layer]) -> Result<()> {
 }
 
 /// The refusal for a stat `layout()` does not compute; `None` for the identity stat.
-fn unsupported_stat(s: &Stat) -> Option<&'static str> {
+pub(super) fn unsupported_stat(s: &Stat) -> Option<&'static str> {
     let msg = match s {
         Stat::Identity => return None,
         Stat::Count => "stat_count with line, path, step or reference layers: layout() computes no stat",
@@ -227,7 +242,7 @@ fn unsupported_stat(s: &Stat) -> Option<&'static str> {
 /// `x` and `y` are the TRAINED domains (`(lo, hi)` over the finite values, `lo > hi` when no
 /// value trained), read before [`super::build::PositionScale::continuous`] maps an empty domain to `0..1`.
 pub(super) fn require_trained(layers: &[Layer], x: (f64, f64), y: (f64, f64)) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| is_resolved_family(&l.geom.geom_type)) {
         return Ok(());
     }
     for (axis, (lo, hi)) in [("x", x), ("y", y)] {
@@ -273,8 +288,11 @@ pub(super) fn build_layer(
                 intercept: vec![intercept; n],
                 slope: slope.map_or_else(Vec::new, |s| vec![s; n]),
             }),
+            xend: None,
+            yend: None,
+            fill: None,
         };
-        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path) });
+        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path), text: None });
     }
 
     let own = layer.data.is_some();
@@ -286,7 +304,16 @@ pub(super) fn build_layer(
     let (mut panel, mut group) = (panel, group);
 
     let mut stairs = None;
+    let (mut xend, mut yend, mut fill) = (None, None, None);
     match geom {
+        GeomType::Segment => {
+            if aes.xend.is_none() && aes.yend.is_none() {
+                return Err(refuse("geom_segment needs an xend or a yend aesthetic"));
+            }
+            xend = aes.xend.as_deref().map(|n| read_column(data, n, "xend")).transpose()?;
+            yend = aes.yend.as_deref().map(|n| read_column(data, n, "yend")).transpose()?;
+        }
+        GeomType::Polygon => fill = Some(POLYGON_FILL),
         GeomType::Line { .. } => {
             let mut idx: Vec<usize> = (0..x.len()).collect();
             idx.sort_by(|&a, &b| {
@@ -308,9 +335,15 @@ pub(super) fn build_layer(
         }
         _ => {}
     }
-    let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path) })
+    let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None, xend, yend, fill };
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), text: None })
 }
+
+/// `GeomPolygon$default_aes$fill`, `"grey20"` (`#333333`), fully opaque.
+const POLYGON_FILL: Rgba = Rgba::new(51, 51, 51, 255);
+
+/// `GeomPolygon$default_aes$colour` is `NA`: `col2rgb(NA, alpha = TRUE)` is white, transparent.
+const POLYGON_NO_COLOUR: Rgba = Rgba::new(255, 255, 255, 0);
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {
     if aes.color.is_some()
@@ -337,7 +370,11 @@ fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> 
         return Err(refuse("geom_line width is not ggplot2's linewidth; leave it at its default"));
     }
     Ok(StrokeAes {
-        colour: aes.color_value.unwrap_or(Rgba::BLACK),
+        colour: aes.color_value.unwrap_or(if matches!(geom, GeomType::Polygon) {
+            POLYGON_NO_COLOUR
+        } else {
+            Rgba::BLACK
+        }),
         linewidth: 0.5,
         linetype: 1,
         alpha: aes.alpha_value.map(f64::from),
@@ -345,7 +382,7 @@ fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> 
 }
 
 /// A facet column must be all text so its levels sort as R's C-collation `factor()` does.
-fn require_text_facet(data: &DataFrame, var: &str) -> Result<()> {
+pub(super) fn require_text_facet(data: &DataFrame, var: &str) -> Result<()> {
     let col = data
         .get(var)
         .ok_or_else(|| Error::UnknownColumn(format!("no column {var:?} to facet by")))?;
@@ -357,7 +394,7 @@ fn require_text_facet(data: &DataFrame, var: &str) -> Result<()> {
     Ok(())
 }
 
-fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
+pub(super) fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
     match facet {
         Facet::None => Ok(vec![Panel { levels: vec![], row: 0, col: 0, rows: vec![] }]),
         Facet::Wrap { var, .. } => {
@@ -369,7 +406,12 @@ fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
 }
 
 /// The 0-based panel index of every row of `data`.
-fn row_panels(facet: &Facet, global: &[Panel], data: &DataFrame, own: bool) -> Result<Vec<usize>> {
+pub(super) fn row_panels(
+    facet: &Facet,
+    global: &[Panel],
+    data: &DataFrame,
+    own: bool,
+) -> Result<Vec<usize>> {
     let mut out = vec![0; data.nrow()];
     let Facet::Wrap { var, .. } = facet else { return Ok(out) };
     let mine;
@@ -392,7 +434,7 @@ fn row_panels(facet: &Facet, global: &[Panel], data: &DataFrame, own: bool) -> R
 }
 
 /// One column as f64, one entry per row of `data`: `NA`, null and missing cells are `NaN`.
-fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
+pub(super) fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
     let col =
         data.get(name).ok_or_else(|| Error::UnknownColumn(format!("no {what} column {name:?}")))?;
     (0..data.nrow())
@@ -410,7 +452,7 @@ fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
 }
 
 /// ggplot2's group ids: 1-based rank of the sorted distinct value, or -1 when unmapped.
-fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
+pub(super) fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
     let n = data.nrow();
     let Some(name) = aes.group.as_deref() else { return Ok(vec![-1; n]) };
     let col =

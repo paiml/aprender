@@ -35,7 +35,7 @@ impl MarkKind {
         match geom {
             GeomType::Area { .. } => Some(MarkKind::Area),
             GeomType::Tile => Some(MarkKind::Tile),
-            GeomType::Text => Some(MarkKind::Text),
+            GeomType::Text(_) => Some(MarkKind::Text),
             _ => None,
         }
     }
@@ -46,13 +46,18 @@ pub(super) fn any_marks(layers: &[Layer]) -> bool {
     layers.iter().any(|l| MarkKind::of(&l.geom.geom_type).is_some())
 }
 
-/// Refuse the first marks layer: `layout()` does not resolve it yet.
+/// Refuse the first `geom_area` or `geom_tile` layer: `layout()` does not resolve it yet.
 ///
 /// # Errors
 ///
 /// [`Error::UnsupportedLayer`] naming the geom.
 pub(super) fn require_resolved(layers: &[Layer]) -> Result<()> {
-    match layers.iter().find_map(|l| MarkKind::of(&l.geom.geom_type)) {
+    // `geom_text` is resolved (`text.rs`); only the other marks geoms are refused.
+    let unresolved = layers
+        .iter()
+        .filter_map(|l| MarkKind::of(&l.geom.geom_type))
+        .find(|k| !matches!(k, MarkKind::Text));
+    match unresolved {
         None => Ok(()),
         Some(MarkKind::Area) => {
             Err(Error::UnsupportedLayer("geom_area: layout() does not resolve it yet"))
@@ -60,9 +65,7 @@ pub(super) fn require_resolved(layers: &[Layer]) -> Result<()> {
         Some(MarkKind::Tile) => {
             Err(Error::UnsupportedLayer("geom_tile: layout() does not resolve it yet"))
         }
-        Some(MarkKind::Text) => {
-            Err(Error::UnsupportedLayer("geom_text: layout() does not resolve it yet"))
-        }
+        Some(MarkKind::Text) => Ok(()),
     }
 }
 

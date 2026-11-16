@@ -34,14 +34,19 @@ fn wide() -> DataFrame {
     df
 }
 
-/// The refusal of a marks layer that `layout()` does not resolve yet, naming `name`.
+/// What `layout()` does with a marks layer `name` once the companion guard has passed: refuses
+/// `geom_area` and `geom_tile` as not resolved yet, and resolves `geom_text` (`text.rs`, proven
+/// in `ggplot2_text_oracle.rs`).
 fn unresolved(name: &str, r: &Result<BuiltLayout, Error>) -> bool {
+    if name == "text" {
+        return r.is_ok();
+    }
     matches!(r, Err(Error::UnsupportedLayer(m))
         if *m == format!("geom_{name}: layout() does not resolve it yet"))
 }
 
 #[test]
-fn refuses_every_marks_geom_layout_does_not_resolve_yet() {
+fn refuses_area_and_tile_and_resolves_text() {
     for (name, geom, aes) in three() {
         let r = GGPlot::new().data(wide()).aes(aes).geom(geom).build().and_then(|b| b.layout());
         assert!(unresolved(name, &r), "{name}: {r:?}");

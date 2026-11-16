@@ -1,0 +1,50 @@
+{
+  "row": "geom_segment",
+  "case": "xend_only",
+  "spec": "ggplot(df, aes(x, y, xend = xend)) + geom_segment()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomSegment",
+      "x": [1, 2, 3, 4, 5, 6],
+      "y": [2, 5, 3, 1, 4, 2],
+      "xend": [2, 1, 3, 6, 4.5, 8],
+      "linewidth": [0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1, 1, 1, 1],
+      "alpha": [null, null, null, null, null, null],
+      "panel": [1, 1, 1, 1, 1, 1],
+      "group": [-1, -1, -1, -1, -1, -1],
+      "colour_rgba": [
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255],
+        [0, 0, 0, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 8],
+      "continuous_range": [0.64999999999999991, 8.3499999999999996],
+      "breaks": [2, 4, 6, 8],
+      "labels": ["2", "4", "6", "8"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [1, 5],
+      "continuous_range": [0.80000000000000004, 5.2000000000000002],
+      "breaks": [1, 2, 3, 4, 5],
+      "labels": ["1", "2", "3", "4", "5"],
+      "n_breaks_censored": 0
+    }
+  }
+}

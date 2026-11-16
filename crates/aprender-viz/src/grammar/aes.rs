@@ -27,6 +27,10 @@ pub struct Aes {
     pub group: Option<String>,
     /// Label mapping (column name).
     pub label: Option<String>,
+    /// End x mapping (column name), for `geom_segment`.
+    pub xend: Option<String>,
+    /// End y mapping (column name), for `geom_segment`.
+    pub yend: Option<String>,
     /// Lower bound mapping (column name), for `geom_errorbar`.
     pub ymin: Option<String>,
     /// Upper bound mapping (column name), for `geom_errorbar`.
@@ -52,6 +56,20 @@ impl Aes {
     #[must_use]
     pub fn x(mut self, column: &str) -> Self {
         self.x = Some(column.to_string());
+        self
+    }
+
+    /// Map the end x position to a column (`geom_segment`).
+    #[must_use]
+    pub fn xend(mut self, column: &str) -> Self {
+        self.xend = Some(column.to_string());
+        self
+    }
+
+    /// Map the end y position to a column (`geom_segment`).
+    #[must_use]
+    pub fn yend(mut self, column: &str) -> Self {
+        self.yend = Some(column.to_string());
         self
     }
 
@@ -159,6 +177,8 @@ impl Aes {
             fill: other.fill.clone().or_else(|| self.fill.clone()),
             group: other.group.clone().or_else(|| self.group.clone()),
             label: other.label.clone().or_else(|| self.label.clone()),
+            xend: other.xend.clone().or_else(|| self.xend.clone()),
+            yend: other.yend.clone().or_else(|| self.yend.clone()),
             ymin: other.ymin.clone().or_else(|| self.ymin.clone()),
             ymax: other.ymax.clone().or_else(|| self.ymax.clone()),
             color_value: other.color_value.or(self.color_value),

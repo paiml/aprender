@@ -68,10 +68,39 @@ pub(super) fn polylines(layer: &BuiltLayer, panel: usize, domain: Domain) -> Vec
     let domain = ((x0.min(x1), x0.max(x1)), (y0.min(y1), y0.max(y1)));
     let runs = match (&path.reference, &path.stairs) {
         (Some(_), _) => reference_runs(path, panel, domain),
+        (None, None) if path.xend.is_some() || path.yend.is_some() => {
+            segment_runs(layer, path, panel)
+        }
+        (None, None) if path.fill.is_some() => closed_runs(layer, path, panel),
         (None, Some(s)) => split_runs(&s.x, &s.y, &s.panel, &s.group, panel),
         (None, None) => split_runs(&layer.x, &layer.y, &path.panel, &path.group, panel),
     };
     runs.iter().flat_map(|r| clip_run(r, domain)).collect()
+}
+
+/// One two-vertex run per `geom_segment` row of `panel`. A row lacking an end (`xend` or `yend`
+/// not mapped) or with a non-finite coordinate draws nothing.
+fn segment_runs(layer: &BuiltLayer, path: &BuiltPath, panel: usize) -> Vec<Vec<(f64, f64)>> {
+    let (Some(xe), Some(ye)) = (&path.xend, &path.yend) else { return Vec::new() };
+    (0..layer.x.len())
+        .filter(|&i| path.panel.get(i) == Some(&panel))
+        .filter_map(|i| {
+            let (a, b) = ((layer.x[i], layer.y[i]), (*xe.get(i)?, *ye.get(i)?));
+            let finite = [a.0, a.1, b.0, b.1].iter().all(|v| v.is_finite());
+            finite.then(|| vec![a, b])
+        })
+        .collect()
+}
+
+/// The outline of each `geom_polygon` group of `panel`: its run closed back to its first vertex.
+fn closed_runs(layer: &BuiltLayer, path: &BuiltPath, panel: usize) -> Vec<Vec<(f64, f64)>> {
+    let mut runs = split_runs(&layer.x, &layer.y, &path.panel, &path.group, panel);
+    for r in &mut runs {
+        if let (Some(&first), true) = (r.first(), r.len() > 2) {
+            r.push(first);
+        }
+    }
+    runs
 }
 
 /// The vertices of the single segment a reference line is, across the visible domain.
@@ -269,11 +298,14 @@ mod tests {
             aes: aes(alpha),
             stairs: None,
             reference,
+            xend: None,
+            yend: None,
+            fill: None,
         }
     }
 
     fn layer(x: &[f64], y: &[f64], p: Option<BuiltPath>) -> BuiltLayer {
-        BuiltLayer { x: x.to_vec(), y: y.to_vec(), points: None, path: p }
+        BuiltLayer { x: x.to_vec(), y: y.to_vec(), points: None, path: p, text: None }
     }
 
     #[test]
