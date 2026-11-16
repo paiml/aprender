@@ -161,6 +161,22 @@ fn unknown_keys_are_refused_by_name_at_every_level() {
     assert!(msg.contains("trian"), "{msg}");
     let msg = refusal(&format!("{VALID}training:\n  lr: 0.1\n"));
     assert!(msg.contains("lr"), "{msg}");
+    let msg = refusal(&VALID.replace("  heldout:", "  heldot:"));
+    assert!(msg.contains("heldot"), "{msg}");
+    let msg = refusal(&format!("{VALID}teacher:\n  modle: t.apr\n"));
+    assert!(msg.contains("modle"), "{msg}");
+    let msg = refusal(&format!("{VALID}output:\n  dri: out\n"));
+    assert!(msg.contains("dri"), "{msg}");
+}
+
+/// A wrong type or an unknown key is refused by the YAML reader, which stops
+/// at the first one: the fields missing beside it are NOT listed. This pins
+/// the limit the contract states, so widening it later is a visible change.
+#[test]
+fn a_reader_error_is_reported_alone() {
+    let msg = refusal("recipe: apr-recipe-v1\nname: x\nseed: forty-two\n");
+    assert!(msg.contains("r.yaml") && msg.contains("seed"), "{msg}");
+    assert!(!msg.contains("field `base`"), "{msg}");
 }
 
 #[test]
@@ -171,8 +187,8 @@ fn wrong_type_is_refused() {
     assert!(msg.contains("r.yaml") && msg.contains("seed"), "{msg}");
 }
 
-/// PMAT-5316 review: the refusal names EVERY field at fault in one message,
-/// a bad `seed` included, rather than aborting on the first type error.
+/// PMAT-5316 review: a negative `seed` (a value fault, not a type fault) is
+/// listed beside the missing fields in one message.
 #[test]
 fn bad_seed_does_not_hide_the_other_faulty_fields() {
     let msg = refusal("recipe: apr-recipe-v1\nname: x\nseed: -1\n");
@@ -198,6 +214,8 @@ fn heldout_alias_of_the_training_file_is_refused() {
         "data/../data/train.jsonl",
         "/recipes/data/train.jsonl",
         "data//train.jsonl",
+        "../../recipes/data/train.jsonl",
+        "/../recipes/data/train.jsonl",
     ] {
         let msg = refusal(&VALID.replace("data/heldout.jsonl", alias));
         assert!(
@@ -205,6 +223,32 @@ fn heldout_alias_of_the_training_file_is_refused() {
             "{alias}: {msg}"
         );
     }
+}
+
+/// A `..` with no name left to remove is kept, so two different files under
+/// a relative recipe directory are not mistaken for one.
+#[test]
+fn leading_parent_dirs_are_not_dropped() {
+    assert_eq!(
+        lexical_normalize(Path::new("../../a/./b/../c")),
+        Path::new("../../a/c")
+    );
+    assert_eq!(lexical_normalize(Path::new("/../a")), Path::new("/a"));
+    let src = VALID.replace("data/heldout.jsonl", "../../data/train.jsonl");
+    let r = TrainRecipe::parse(&src, Path::new(""), "r.yaml").expect("a different file");
+    assert_eq!(r.heldout, Path::new("../../data/train.jsonl"));
+}
+
+/// With `data.train` missing, the same-file rule has nothing to compare and
+/// must not add a second message.
+#[test]
+fn same_file_rule_is_silent_without_a_training_file() {
+    let src = VALID
+        .replace("  train: data/train.jsonl\n", "  sha256: null\n")
+        .replace("data/heldout.jsonl", ".");
+    let msg = refusal(&src);
+    assert!(msg.contains("field `data.train` is required"), "{msg}");
+    assert!(!msg.contains("must not be the training file"), "{msg}");
 }
 
 #[test]
@@ -218,7 +262,13 @@ fn heldout_may_not_be_the_training_file() {
 
 #[test]
 fn data_pin_must_be_a_sha256() {
-    for bad in ["abc".to_string(), "AB".repeat(32), "zz".repeat(32)] {
+    for bad in [
+        "abc".to_string(),
+        "AB".repeat(32),
+        "zz".repeat(32),
+        "a1".repeat(32)[1..].to_string(),
+        "a1".repeat(32) + "0",
+    ] {
         let msg = refusal(&VALID.replace(
             "  train: data/train.jsonl\n",
             &format!("  train: data/train.jsonl\n  sha256: \"{bad}\"\n"),
@@ -236,6 +286,7 @@ fn training_numbers_must_be_positive() {
         ("learning_rate: 0.0", "`training.learning_rate`"),
         ("learning_rate: -0.5", "`training.learning_rate`"),
         ("learning_rate: .nan", "`training.learning_rate`"),
+        ("learning_rate: .inf", "`training.learning_rate`"),
     ] {
         let msg = refusal(&format!("{VALID}training:\n  {line}\n"));
         assert!(msg.contains(field), "{line}: {msg}");
@@ -296,6 +347,9 @@ fn teacher_rules_are_enforced_by_field() {
         ("temperature: .inf", "`teacher.temperature`"),
         ("alpha: 1.5", "`teacher.alpha`"),
         ("alpha: -0.1", "`teacher.alpha`"),
+        ("temperature: -1.0", "`teacher.temperature`"),
+        ("temperature: .nan", "`teacher.temperature`"),
+        ("alpha: .nan", "`teacher.alpha`"),
     ] {
         let msg = refusal(&DISTILL.replace(
             "  model: models/teacher.apr\n",
@@ -303,6 +357,32 @@ fn teacher_rules_are_enforced_by_field() {
         ));
         assert!(msg.contains(field), "{line}: {msg}");
     }
+}
+
+/// The positive control for the optional keys: a value that passes its rule
+/// reaches the parsed recipe, so a refusal test cannot pass by dropping it.
+#[test]
+fn valid_optional_fields_are_kept() {
+    let pin = "0f3a9c5e".repeat(8);
+    let src = VALID.replace(
+        "  train: data/train.jsonl\n",
+        &format!("  train: data/train.jsonl\n  sha256: {pin}\n"),
+    )
+        + "model_size: \" 0.8B \"\ntraining:\n  rank: 8\n  epochs: 3\n  learning_rate: 0.0002\n  \
+         max_seq_len: 512\noutput:\n  dir: out\n";
+    let src = src.replace(
+        "  heldout: data/heldout.jsonl\n",
+        "  heldout: data/heldout.jsonl\n  benchmark: humaneval\n",
+    );
+    let r = parse(&src).expect("every optional value here is valid");
+    assert_eq!(r.data_sha256_pin.as_deref(), Some(pin.as_str()));
+    assert_eq!(r.model_size.as_deref(), Some("0.8B"));
+    assert_eq!(r.benchmark.as_deref(), Some("humaneval"));
+    assert_eq!(
+        (r.rank, r.epochs, r.learning_rate, r.max_seq_len),
+        (Some(8), Some(3), Some(0.0002), Some(512))
+    );
+    assert_eq!(r.output_dir.as_deref(), Some(Path::new("/recipes/out")));
 }
 
 #[test]
@@ -327,6 +407,50 @@ fn scratch(tag: &str) -> PathBuf {
     std::fs::create_dir_all(dir.join("data")).expect("scratch data dir");
     std::fs::create_dir_all(dir.join("models")).expect("scratch models dir");
     dir
+}
+
+#[test]
+fn teacher_alpha_bounds_are_inclusive() {
+    for alpha in ["0.0", "1.0"] {
+        let r = parse(&DISTILL.replace(
+            "  model: models/teacher.apr\n",
+            &format!("  model: models/teacher.apr\n  alpha: {alpha}\n"),
+        ))
+        .expect("alpha at a bound parses");
+        let want: f64 = alpha.parse().expect("number");
+        assert_eq!(r.teacher.expect("teacher").alpha, want);
+    }
+}
+
+/// An unknown method is one fault, not two: the teacher rule waits until the
+/// method is known.
+#[test]
+fn teacher_rule_is_silent_when_the_method_is_unknown() {
+    let msg = refusal(&DISTILL.replace("method: distill", "method: dora"));
+    assert!(msg.contains("field `method` must be one of"), "{msg}");
+    assert!(!msg.contains("field `teacher`"), "{msg}");
+}
+
+/// An empty heldout is reported as empty, not also as the training file.
+#[test]
+fn same_file_rule_is_silent_without_a_heldout_file() {
+    let src = VALID
+        .replace("data/train.jsonl", ".")
+        .replace("data/heldout.jsonl", "\"\"");
+    let msg = refusal(&src);
+    assert!(msg.contains("field `eval.heldout`"), "{msg}");
+    assert!(!msg.contains("must not be the training file"), "{msg}");
+}
+
+#[test]
+fn load_names_the_file_in_a_refusal() {
+    let dir = scratch("load-refusal");
+    let path = dir.join("bad.yaml");
+    std::fs::write(&path, without("eval:")).expect("write recipe");
+    let msg = TrainRecipe::load(&path).expect_err("refused").to_string();
+    assert!(msg.contains("field `eval` is required"), "{msg}");
+    assert!(msg.contains(&path.display().to_string()), "{msg}");
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 #[test]

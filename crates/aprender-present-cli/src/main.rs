@@ -37,6 +37,9 @@ use tiny_http::{Response, Server};
 #[cfg(feature = "dev-server")]
 use tungstenite::accept;
 
+// PLOT-GG-001 (#6918): parser lands first; the plot verb adopts it next.
+#[cfg(test)]
+mod ggspec;
 mod page;
 
 #[derive(Parser)]

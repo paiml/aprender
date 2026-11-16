@@ -20,6 +20,10 @@ pub enum BinStrategy {
     Fixed(usize),
 }
 
+/// Upper bound on the bin count: more bins than this cannot be drawn on any canvas the
+/// framebuffer accepts, and an unbounded count allocates without limit (paiml/aprender#6952).
+const MAX_BINS: usize = 1 << 16;
+
 /// Builder for creating histograms.
 #[derive(Debug, Clone)]
 pub struct Histogram {
@@ -107,9 +111,9 @@ impl Histogram {
                     (libm::log2f(n as f32).ceil() + 1.0) as usize
                 }
             }
-            BinStrategy::Fixed(bins) => bins.max(1),
+            BinStrategy::Fixed(bins) => bins,
         }
-        .max(1)
+        .clamp(1, MAX_BINS)
     }
 
     fn data_range(&self) -> f32 {
@@ -184,8 +188,8 @@ impl Histogram {
         let max_count = *counts.iter().max().unwrap_or(&1);
 
         // Calculate plot area
-        let plot_width = self.width - 2 * self.margin;
-        let plot_height = self.height - 2 * self.margin;
+        let plot_width = self.width.saturating_sub(self.margin.saturating_mul(2));
+        let plot_height = self.height.saturating_sub(self.margin.saturating_mul(2));
         let bar_width = plot_width / bin_count as u32;
 
         // Draw bars
@@ -222,6 +226,23 @@ impl batuta_common::display::WithDimensions for Histogram {
 mod tests {
     use super::*;
     use batuta_common::display::WithDimensions;
+
+    #[test]
+    fn bins_never_exceed_cap() {
+        let h = Histogram::new().data(&[1.0, 2.0]).bins(BinStrategy::Fixed(usize::MAX));
+        assert_eq!(h.bin_count(), MAX_BINS);
+        let h = Histogram::new()
+            .data(&[0.0, 0.0, 0.0, 0.0, 1e-45, 1e-45, 1e-45, 1e30])
+            .bins(BinStrategy::FreedmanDiaconis);
+        assert!(h.bin_count() <= MAX_BINS);
+        assert!(h.to_framebuffer().is_ok());
+    }
+
+    #[test]
+    fn tiny_canvas_does_not_underflow() {
+        let h = Histogram::new().data(&[1.0, 2.0, 3.0]).dimensions(10, 10);
+        assert!(h.to_framebuffer().is_ok());
+    }
 
     #[test]
     fn test_histogram_builder() {
@@ -399,5 +420,20 @@ mod tests {
         let hist = Histogram::new();
         // Empty data should return 1
         assert_eq!(hist.bin_count(), 1);
+    }
+
+    #[test]
+    fn bar_geometry_uses_both_margins() {
+        let h = Histogram::new().data(&[1.0, 1.0]).bins(BinStrategy::Fixed(1)).dimensions(200, 200);
+        let fb = h.to_framebuffer().expect("fb");
+        let on = |x, y| fb.get_pixel(x, y) == Some(Rgba::rgb(70, 130, 180));
+        assert!(on(40, 40) && on(158, 158) && on(158, 159) && on(100, 159));
+        assert!(!on(159, 100) && !on(100, 39) && !on(100, 160) && !on(39, 100));
+    }
+
+    #[test]
+    fn bin_cap_is_65536() {
+        let h = Histogram::new().data(&[1.0, 2.0]).bins(BinStrategy::Fixed(usize::MAX));
+        assert_eq!(h.bin_count(), 65536);
     }
 }

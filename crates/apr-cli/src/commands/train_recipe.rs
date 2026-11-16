@@ -151,11 +151,15 @@ fn lexical_normalize(path: &Path) -> PathBuf {
     for c in path.components() {
         match c {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() {
-                    out.push("..");
+            // `..` removes a name, stays at the root, and is kept when
+            // there is no name left to remove (`../../a` stays `../../a`).
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
                 }
-            }
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                _ => out.push(".."),
+            },
             other => out.push(other.as_os_str()),
         }
     }
@@ -343,6 +347,7 @@ impl TrainRecipe {
             }
         };
         if !heldout.is_empty()
+            && !train.is_empty()
             && lexical_normalize(&base_dir.join(&heldout))
                 == lexical_normalize(&base_dir.join(&train))
         {
