@@ -1443,9 +1443,10 @@ pub(crate) struct RecipeRunFlags<'a> {
 
 /// Validate a recipe for `apr finetune` and say what it resolved to.
 ///
-/// Opens the recipe file only; in a real run (`plan_only == false`) it also
-/// checks the base, data and eval files exist and hashes the data. No model is
-/// loaded here, so a refusal costs no GPU allocation.
+/// Reads the recipe file. In a real run (`plan_only == false`) it also refuses
+/// when the base, data or eval file is missing. In both modes the receipt
+/// hashes the data and eval files that exist. No model is loaded here, so a
+/// refusal costs no GPU allocation.
 pub(crate) fn preflight_recipe(
     recipe_path: &Path,
     plan_only: bool,
@@ -1497,11 +1498,24 @@ fn recipe_output_path(
         .or_else(|| recipe.output_dir.as_deref().map(|d| d.join("adapter.apr")))
 }
 
+/// Epochs for a recipe with no `training.epochs`: the `--epochs` flag default.
+const RECIPE_DEFAULT_EPOCHS: u32 = 3;
+
+/// The two training values the recipe decides by rule, not by a field copy:
+/// the epoch count (its default when absent) and whether the base is loaded
+/// NF4-quantized (only for `qlora`).
+fn recipe_epochs_and_nf4(recipe: &super::train_recipe::TrainRecipe) -> (u32, bool) {
+    (
+        recipe.epochs.unwrap_or(RECIPE_DEFAULT_EPOCHS),
+        recipe.method == super::train_recipe::RecipeMethod::Qlora,
+    )
+}
+
 /// `apr finetune --recipe <file>`: the recipe is validated first, then lowered
 /// onto the same `run` every flag-driven invocation uses (CRUX-001).
 pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) -> Result<()> {
-    use super::train_recipe::RecipeMethod;
     let (recipe, receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
+    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(&recipe);
     let engine = super::train_recipe::apr_engine();
     eprintln!(
         "[recipe] {} ok: name={} method={} recipe_sha256={} data_sha256={} engine=apr {} ({})",
@@ -1529,7 +1543,7 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         output,
         None,
         false,
-        recipe.epochs.unwrap_or(3),
+        epochs,
         recipe.learning_rate,
         recipe_model_size(flags, &recipe),
         None,
@@ -1537,7 +1551,7 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         flags.checkpoint_format,
         false,
         recipe.max_seq_len,
-        recipe.method == RecipeMethod::Qlora,
+        quantize_nf4,
         flags.gpus,
         flags.gpu_backend,
         None,

@@ -827,9 +827,10 @@ fn parse_model_size(size: &str) -> Result<u64> {
     })?;
 
     let params = num * multiplier as f64;
-    if !(num.is_finite() && num > 0.0 && params >= 1.0 && params < u64::MAX as f64) {
+    // NaN fails both comparisons; infinity fails the second.
+    if !(params >= 1.0 && params < u64::MAX as f64) {
         return Err(CliError::ValidationFailed(format!(
-            "Model size must be a positive, finite number of parameters: {size}"
+            "Model size must be at least 1 parameter and fit in 64 bits: {size}"
         )));
     }
     Ok(params as u64)

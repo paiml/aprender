@@ -717,6 +717,45 @@
         }
     }
 
+    /// The flag reaches the recipe path through dispatch: the shipped example
+    /// plans, a real run of it is refused by field for its absent files, a
+    /// run flag is passed on, and every refusal is a validation error (exit 5),
+    /// not a usage error.
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_recipe_dispatch_plans_the_example_and_refuses_with_exit_5() {
+        const EXAMPLE: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/recipes/tiny.yaml"
+        );
+        let run = |args: Vec<&'static str>| {
+            let cli = parse_cli(args).expect("parses");
+            dispatch_model_commands(&cli).expect("finetune is a model command")
+        };
+        run(vec!["apr", "finetune", "--recipe", EXAMPLE, "--plan"])
+            .expect("the shipped example must plan on a fresh checkout");
+
+        let err = run(vec!["apr", "finetune", "--recipe", EXAMPLE]).expect_err("no input files");
+        assert_eq!(err.exit_code(), std::process::ExitCode::from(5), "{err}");
+        let msg = err.to_string();
+        for field in ["`base`", "`data.train`", "`eval.heldout`"] {
+            assert!(msg.contains(&format!("field {field}: no such file")), "{msg}");
+        }
+
+        let err = run(vec![
+            "apr", "finetune", "--recipe", EXAMPLE, "--plan", "--model-size", "BOGUS",
+        ])
+        .expect_err("--model-size is passed on");
+        assert!(err.to_string().contains("BOGUS"), "{err}");
+
+        let err = run(vec![
+            "apr", "finetune", "--recipe", "/nonexistent/apr-recipe.yaml", "--plan",
+        ])
+        .expect_err("absent recipe");
+        assert_eq!(err.exit_code(), std::process::ExitCode::from(5), "{err}");
+        assert!(err.to_string().contains("cannot read recipe"), "{err}");
+    }
+
     /// A value the recipe carries may not also arrive as a flag: one source of
     /// truth per run. Every name in `FINETUNE_RECIPE_CARRIES` is exercised, so
     /// a renamed clap id (which clap would only catch at runtime) fails here.

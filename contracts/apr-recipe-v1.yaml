@@ -2,9 +2,19 @@
 #
 # One YAML file names everything a training run depends on. `apr finetune --recipe r.yaml`
 # validates it before any model is opened and refuses by recipe field.
-# Loader: crates/apr-cli/src/commands/train_recipe.rs (lands in R-1 slice 2/6).
-# Example: examples/recipes/tiny.yaml and the --recipe flag (land in R-1 slice 6/6).
-# This slice is the schema only; each FALSIFY entry is added back in the slice that adds its test.
+# Loader: crates/apr-cli/src/commands/train_recipe.rs.
+# Example: examples/recipes/tiny.yaml. Flag: `apr finetune --recipe <FILE>` (dispatch.rs calls
+# `run_from_recipe` in finetune.rs).
+# Each FALSIFY entry is added in the slice that adds its test.
+#
+# Limits at this head (status: partial):
+#   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
+#   - a flag conflict is a clap usage error (exit 2); only recipe refusals are exit 5
+#   - the run flags --output, --vram, --gpus, --gpu-backend, --wait-gpu, --checkpoint-format,
+#     --experimental-mps, --gpu-share and --json are passed on by dispatch; no test checks that
+#     each one arrives (--plan and --model-size are checked)
+#   - the recipe file is asked for its type and then opened: a path swapped for a pipe between
+#     the two is not seen
 
 metadata:
   id: apr-recipe-v1
@@ -67,7 +77,7 @@ equations:
     codomain: exit code and stderr
     invariants:
     - "An invalid recipe is refused before the base model is opened"
-    - "The refusal names every recipe field at fault, in one message"
+    - "The refusal names every missing or wrong-valued recipe field in one message; a misspelt key or a wrong type is reported alone"
     - "The refusal is a recipe validation error (exit 5), not a clap usage error (exit 2)"
     - "A flag whose value the recipe carries conflicts with --recipe"
 
@@ -89,27 +99,25 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Each entry cites only tests present at this slice head; the receipt-hash citation of
-# FALSIFY-APR-RECIPE-005 returns in the slice that adds its test.
-# Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
-# renumbered as slices land: ids 001-005 here are the final ids.
+# Each entry cites only tests present at this slice head.
+# Test ids are consecutive from 001 (scripts/ci/fail_fast.py ids).
 - id: FALSIFY-APR-RECIPE-001
   rule: a recipe without eval is refused before any model is loaded
-  prediction: "`apr finetune --recipe` on a recipe with no eval block exits 5 and stderr names field `eval`; the base model path does not exist and is never reported"
+  prediction: "The loader and `run_from_recipe` (plan or real run) refuse a recipe with no eval block and the error names field `eval`; the base model path in the test does not exist and the error does not name it. Through the CLI flag a recipe refusal is a validation error (exit 5), checked for an absent recipe file and for absent input files"
   test: |
-    cargo test -p apr-cli --lib -- recipe_without_eval_is_refused_before_any_model_is_touched missing_eval_is_refused_and_the_error_names_the_field
+    cargo test -p apr-cli --lib -- recipe_without_eval_is_refused_before_any_model_is_touched missing_eval_is_refused_and_the_error_names_the_field test_finetune_recipe_dispatch_plans_the_example_and_refuses_with_exit_5 load_refuses_a_recipe_path_that_is_not_a_regular_file
   if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
 - id: FALSIFY-APR-RECIPE-002
   rule: a valid recipe passes
-  prediction: "`apr finetune --recipe examples/recipes/tiny.yaml --plan --json` exits 0"
+  prediction: "A valid recipe parses with its relative paths anchored at the recipe's directory, and `run_from_recipe` with plan_only returns Ok for it without any input file existing. `apr finetune --recipe examples/recipes/tiny.yaml --plan` returns Ok through dispatch"
   test: |
-    cargo test -p apr-cli --lib -- valid_recipe_plans valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir recipe_model_size_drives_the_plan
+    cargo test -p apr-cli --lib -- test_finetune_recipe_dispatch_plans_the_example_and_refuses_with_exit_5 valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir valid_optional_fields_are_kept full_recipe_parses_every_optional_field distill_recipe_parses_with_teacher_defaults teacher_alpha_bounds_are_inclusive teacher_temperature_just_above_zero_is_accepted load_reads_a_file_and_names_it_when_it_cannot load_names_the_file_in_a_refusal valid_recipe_plans recipe_model_size_drives_the_plan recipe_epochs_default_and_nf4_follow_the_method model_size_bounds_are_one_parameter_and_u64
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
-  prediction: "A misspelt key, a missing required key, a teacher without distill, or a non-positive training number each yields a refusal naming that field"
+  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id, an unknown method, an empty string, a heldout that aliases the training file, a malformed data pin, a non-positive training number, a teacher without distill, distill without a teacher, a teacher temperature that is not above 0 or a teacher alpha outside 0 to 1 is refused by field. Missing keys and wrong values are all listed in one message; a misspelt key or a wrong type is reported alone, because the YAML reader stops at the first one"
   test: |
-    cargo test -p apr-cli --lib -- train_recipe::tests
+    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file leading_parent_dirs_are_not_dropped same_file_rule_is_silent_without_a_training_file teacher_rules_are_enforced_by_field teacher_rule_is_silent_when_the_method_is_unknown teacher_values_are_checked_when_the_method_is_unknown same_file_rule_is_silent_without_a_heldout_file
   if_fails: "A typo in a recipe silently trains with a default"
 - id: FALSIFY-APR-RECIPE-004
   rule: a flag the recipe carries conflicts with --recipe
@@ -118,8 +126,8 @@ falsification_tests:
     cargo test -p apr-cli --lib -- test_finetune_recipe_conflicts_with_every_flag_it_carries test_finetune_recipe_flag_parses_alone_and_with_run_flags
   if_fails: "Two sources for one value; the receipt's recipe hash no longer describes the run"
 - id: FALSIFY-APR-RECIPE-005
-  rule: the data pin is real
-  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256`; a planted-wrong pin refuses the run at require_inputs, sha256 matches its published vector, and the receipt carries the recipe, data and eval hashes and the engine"
+  rule: the inputs are real files and the data pin is real
+  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256`. require_inputs names every input that is not a file (a directory counts as missing), refuses a heldout that is a symlink or a hard link to the training file, and refuses a pin that differs from the training file's hash; a pin on an absent file is not compared. sha256 matches its published vectors for bytes and for a file longer than one read; a path that is not a regular file (a directory, a device, a named pipe) has no hash and is not opened. The receipt carries the recipe, data and eval hashes, the method, the seed, the engine, the overrides and the validated-not-applied list; a hash of a file that was not read is null; the recipe hash changes with the eval block"
   test: |
-    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin sha256_matches_the_published_test_vector receipt_carries_the_contract_fields
+    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin require_inputs_refuses_a_directory_and_skips_the_pin_of_an_absent_file heldout_linked_to_the_training_file_is_refused_at_require_inputs heldout_hard_linked_to_the_training_file_is_refused_at_require_inputs sha256_matches_the_published_test_vector sha256_file_hashes_past_one_buffer a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read receipt_carries_the_contract_fields recipe_hash_changes_with_the_eval_block
   if_fails: "A receipt can name data it did not train on"

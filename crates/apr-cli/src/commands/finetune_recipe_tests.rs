@@ -84,7 +84,13 @@ fn preflight_resolves_the_recipe_and_builds_the_receipt() {
     assert_eq!(recipe.rank, Some(8));
     assert_eq!(recipe.base, dir.join("models/base.apr"));
     assert_eq!(receipt.recipe_sha256, sha256_bytes(VALID.as_bytes()));
-    assert_eq!(receipt.data_sha256, None, "plan mode: no data to hash");
+    assert_eq!(receipt.data_sha256, None, "the data file is absent");
+    // Plan mode still hashes the files that exist.
+    std::fs::create_dir_all(dir.join("data")).expect("data dir");
+    std::fs::write(dir.join("data/train.jsonl"), b"abc").expect("train file");
+    let (_, receipt) = preflight_recipe(&path, true).expect("plan preflight");
+    assert_eq!(receipt.data_sha256, Some(sha256_bytes(b"abc")));
+    assert_eq!(receipt.eval_sha256, None, "the eval file is absent");
     assert_eq!(receipt.validated_not_applied, vec!["seed", "eval"]);
     assert_eq!(receipt.engines.len(), 1);
     assert!(receipt.overrides.is_empty());
@@ -197,10 +203,13 @@ fn distill_recipe_is_refused_by_finetune_naming_method() {
         .replace("method: qlora", "method: distill")
         .replace("data:", "teacher:\n  model: models/teacher.apr\ndata:");
     let path = write_recipe(&dir, &body);
-    let msg = run_from_recipe(&path, &flags(true))
-        .expect_err("apr finetune does not run distill")
-        .to_string();
-    assert!(msg.contains("field `method` is distill"), "{msg}");
+    // A real run refuses on the method too, before it looks for the files.
+    for plan_only in [true, false] {
+        let msg = run_from_recipe(&path, &flags(plan_only))
+            .expect_err("apr finetune does not run distill")
+            .to_string();
+        assert!(msg.contains("field `method` is distill"), "{msg}");
+    }
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -213,4 +222,49 @@ fn absent_recipe_file_is_named() {
         msg.contains("cannot read recipe /nonexistent/r.yaml"),
         "{msg}"
     );
+}
+
+/// The size bounds, at the function: one parameter is the smallest size, a
+/// size under one parameter is refused, and so is one that does not fit u64.
+#[test]
+fn model_size_bounds_are_one_parameter_and_u64() {
+    assert_eq!(parse_model_size("0.000001M").expect("one parameter"), 1);
+    assert_eq!(parse_model_size("0.5M").expect("half a million"), 500_000);
+    assert_eq!(parse_model_size("7b").expect("lower case"), 7_000_000_000);
+    // 2^64 parameters is the first size refused; 18446744073B is under it
+    // (the nearest f64 to 18446744073e9 is 512 below it).
+    assert_eq!(
+        parse_model_size("18446744073B").expect("just under 2^64"),
+        18_446_744_072_999_999_488
+    );
+    for bad in [
+        "0.0000005M",
+        "0B",
+        "-1B",
+        "NaNB",
+        "infB",
+        "18446744073.709551616B",
+        "1e11B",
+        "1e300B",
+    ] {
+        let msg = parse_model_size(bad).expect_err(bad).to_string();
+        assert!(msg.contains("at least 1 parameter"), "{bad}: {msg}");
+    }
+}
+
+/// What the recipe decides by rule: epochs fall back to 3 when the recipe has
+/// none, and only `qlora` asks for the NF4-quantized base.
+#[test]
+fn recipe_epochs_default_and_nf4_follow_the_method() {
+    let dir = scratch("lower");
+    let load = |body: &str| {
+        let path = write_recipe(&dir, body);
+        crate::commands::train_recipe::TrainRecipe::load(&path).expect("valid recipe")
+    };
+    assert_eq!(recipe_epochs_and_nf4(&load(VALID)), (1, true));
+    let lora = VALID.replace("method: qlora", "method: lora");
+    assert_eq!(recipe_epochs_and_nf4(&load(&lora)), (1, false));
+    let no_epochs = VALID.replace("  epochs: 1\n", "");
+    assert_eq!(recipe_epochs_and_nf4(&load(&no_epochs)), (3, true));
+    std::fs::remove_dir_all(&dir).ok();
 }

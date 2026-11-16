@@ -171,11 +171,15 @@ fn lexical_normalize(path: &Path) -> PathBuf {
     for c in path.components() {
         match c {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() {
-                    out.push("..");
+            // `..` removes a name, stays at the root, and is kept when
+            // there is no name left to remove (`../../a` stays `../../a`).
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
                 }
-            }
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                _ => out.push(".."),
+            },
             other => out.push(other.as_os_str()),
         }
     }
@@ -227,6 +231,11 @@ pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
 
 /// sha256 of a file, streamed. `None` when the file cannot be read.
 pub(crate) fn sha256_file(path: &Path) -> Option<String> {
+    // Asked before the open: a device has no end, and opening a pipe waits
+    // for a writer.
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
     let mut file = std::fs::File::open(path).ok()?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0_u8; 1 << 16];
@@ -327,6 +336,17 @@ fn check_teacher(
 impl TrainRecipe {
     /// Read and validate a recipe file. Nothing but the recipe is opened.
     pub(crate) fn load(path: &Path) -> Result<Self> {
+        // Asked before the open: a device has no end, and opening a pipe waits
+        // for a writer.
+        let is_regular = std::fs::metadata(path).map_err(|e| {
+            CliError::ValidationFailed(format!("cannot read recipe {}: {e}", path.display()))
+        })?;
+        if !is_regular.is_file() {
+            return Err(CliError::ValidationFailed(format!(
+                "recipe {} is not a regular file",
+                path.display()
+            )));
+        }
         let bytes = std::fs::read(path).map_err(|e| {
             CliError::ValidationFailed(format!("cannot read recipe {}: {e}", path.display()))
         })?;
@@ -421,6 +441,7 @@ impl TrainRecipe {
             }
         };
         if !heldout.is_empty()
+            && !train.is_empty()
             && lexical_normalize(&base_dir.join(&heldout))
                 == lexical_normalize(&base_dir.join(&train))
         {

@@ -130,7 +130,19 @@ fn plot_result(
     let env = trueno_viz::plot_cli::Env::from_process();
     let (mut out, mut err) = (std::io::stdout().lock(), std::io::stderr().lock());
     trueno_viz::plot_cli::cli::run(args, &env, &mut out, &mut err)
-        .map_err(|e| CliError::ValidationFailed(format!("plot: {e}")))
+        .map_err(plot_error_to_cli)
+}
+
+/// Keep `plot_cli`'s usage/failed split (PMAT-7082) on apr's existing exit codes: a command the verb
+/// does not take is `ValidationFailed` (5, as the `--json` refusal above); a bad or unreadable input
+/// is `InvalidInput` (4, "the input could not be parsed"). No new code, no contract change.
+#[cfg(feature = "visualization")]
+fn plot_error_to_cli(e: trueno_viz::plot_cli::PlotError) -> CliError {
+    use trueno_viz::plot_cli::PlotError;
+    match e {
+        PlotError::Usage(m) => CliError::ValidationFailed(format!("plot: {m}")),
+        PlotError::Failed(m) => CliError::InvalidInput(format!("plot: {m}")),
+    }
 }
 
 /// #3604: `--revalidate` reaches the F2 hybrid guard through the same env seam the guard already
@@ -1372,5 +1384,21 @@ mod batch_jsonl_logprobs_4026 {
         )
         .expect_err("missing files");
         assert!(!err.to_string().contains("--logprobs"), "{err}");
+    }
+
+    #[cfg(feature = "visualization")]
+    #[test]
+    fn plot_usage_error_exits_5() {
+        let e = crate::plot_error_to_cli(trueno_viz::plot_cli::PlotError::Usage("unknown key".into()));
+        assert_eq!(e.exit_code_value(), 5, "{e}");
+        assert!(e.to_string().contains("plot: unknown key"), "{e}");
+    }
+
+    #[cfg(feature = "visualization")]
+    #[test]
+    fn plot_failure_exits_4() {
+        let e = crate::plot_error_to_cli(trueno_viz::plot_cli::PlotError::Failed("cannot read x.csv".into()));
+        assert_eq!(e.exit_code_value(), 4, "{e}");
+        assert!(e.to_string().contains("plot: cannot read x.csv"), "{e}");
     }
 }
