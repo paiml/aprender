@@ -293,6 +293,77 @@ fn training_numbers_must_be_positive() {
     }
 }
 
+const DISTILL: &str = "\
+recipe: apr-recipe-v1
+name: qwen-distill-demo
+base: models/student.apr
+method: distill
+teacher:
+  model: models/teacher.apr
+data:
+  train: data/train.jsonl
+eval:
+  heldout: data/heldout.jsonl
+seed: 7
+";
+
+#[test]
+fn distill_recipe_parses_with_teacher_defaults() {
+    let r = parse(DISTILL).expect("distill recipe parses");
+    assert_eq!(r.method, RecipeMethod::Distill);
+    assert_eq!(
+        r.teacher,
+        Some(RecipeTeacher {
+            model: PathBuf::from("/recipes/models/teacher.apr"),
+            temperature: 3.0,
+            alpha: 0.7,
+        })
+    );
+    let r = parse(&DISTILL.replace(
+        "  model: models/teacher.apr\n",
+        "  model: models/teacher.apr\n  temperature: 2.0\n  alpha: 0.5\n",
+    ))
+    .expect("explicit teacher numbers parse");
+    let t = r.teacher.expect("teacher");
+    assert_eq!((t.temperature, t.alpha), (2.0, 0.5));
+}
+
+#[test]
+fn teacher_rules_are_enforced_by_field() {
+    let msg = refusal(&DISTILL.replace("teacher:\n  model: models/teacher.apr\n", ""));
+    assert!(
+        msg.contains("field `teacher` is required when `method` is distill"),
+        "{msg}"
+    );
+    let msg = refusal(&DISTILL.replace("method: distill", "method: lora"));
+    assert!(
+        msg.contains("field `teacher` is only valid when `method` is distill"),
+        "{msg}"
+    );
+    let msg = refusal(&DISTILL.replace("method: distill", "method: qlora"));
+    assert!(
+        msg.contains("field `teacher` is only valid when `method` is distill"),
+        "{msg}"
+    );
+    let msg = refusal(&DISTILL.replace("  model: models/teacher.apr\n", "  alpha: 0.5\n"));
+    assert!(msg.contains("field `teacher.model` is required"), "{msg}");
+    for (line, field) in [
+        ("temperature: 0.0", "`teacher.temperature`"),
+        ("temperature: .inf", "`teacher.temperature`"),
+        ("alpha: 1.5", "`teacher.alpha`"),
+        ("alpha: -0.1", "`teacher.alpha`"),
+        ("temperature: -1.0", "`teacher.temperature`"),
+        ("temperature: .nan", "`teacher.temperature`"),
+        ("alpha: .nan", "`teacher.alpha`"),
+    ] {
+        let msg = refusal(&DISTILL.replace(
+            "  model: models/teacher.apr\n",
+            &format!("  model: models/teacher.apr\n  {line}\n"),
+        ));
+        assert!(msg.contains(field), "{line}: {msg}");
+    }
+}
+
 /// The positive control for the optional keys: a value that passes its rule
 /// reaches the parsed recipe, so a refusal test cannot pass by dropping it.
 #[test]
@@ -333,4 +404,101 @@ fn method_spellings_round_trip() {
         None,
         "the schema is lower-case"
     );
+}
+
+fn scratch(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("apr-recipe-{tag}-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(dir.join("data")).expect("scratch data dir");
+    std::fs::create_dir_all(dir.join("models")).expect("scratch models dir");
+    dir
+}
+
+#[test]
+fn teacher_alpha_bounds_are_inclusive() {
+    for alpha in ["0.0", "1.0"] {
+        let r = parse(&DISTILL.replace(
+            "  model: models/teacher.apr\n",
+            &format!("  model: models/teacher.apr\n  alpha: {alpha}\n"),
+        ))
+        .expect("alpha at a bound parses");
+        let want: f64 = alpha.parse().expect("number");
+        assert_eq!(r.teacher.expect("teacher").alpha, want);
+    }
+}
+
+/// Any temperature above 0 is accepted: the bound is 0, not 1.
+#[test]
+fn teacher_temperature_just_above_zero_is_accepted() {
+    let r = parse(&DISTILL.replace(
+        "  model: models/teacher.apr\n",
+        "  model: models/teacher.apr\n  temperature: 0.001\n",
+    ))
+    .expect("a small positive temperature parses");
+    assert_eq!(r.teacher.expect("teacher").temperature, 0.001);
+}
+
+/// With an unknown method only the presence rule waits; the values inside the
+/// teacher block are still checked.
+#[test]
+fn teacher_values_are_checked_when_the_method_is_unknown() {
+    let msg = refusal(&DISTILL.replace("method: distill", "method: dora").replace(
+        "  model: models/teacher.apr\n",
+        "  model: models/teacher.apr\n  alpha: 1.5\n",
+    ));
+    assert!(msg.contains("field `method` must be one of"), "{msg}");
+    assert!(msg.contains("field `teacher.alpha`"), "{msg}");
+}
+
+/// An unknown method is one fault, not two: the teacher rule waits until the
+/// method is known.
+#[test]
+fn teacher_rule_is_silent_when_the_method_is_unknown() {
+    let msg = refusal(&DISTILL.replace("method: distill", "method: dora"));
+    assert!(msg.contains("field `method` must be one of"), "{msg}");
+    assert!(!msg.contains("field `teacher` is"), "{msg}");
+}
+
+/// An empty heldout is reported as empty, not also as the training file.
+#[test]
+fn same_file_rule_is_silent_without_a_heldout_file() {
+    let src = VALID
+        .replace("data/train.jsonl", ".")
+        .replace("data/heldout.jsonl", "\"\"");
+    let msg = refusal(&src);
+    assert!(msg.contains("field `eval.heldout`"), "{msg}");
+    assert!(!msg.contains("must not be the training file"), "{msg}");
+}
+
+#[test]
+fn load_names_the_file_in_a_refusal() {
+    let dir = scratch("load-refusal");
+    let path = dir.join("bad.yaml");
+    std::fs::write(&path, without("eval:")).expect("write recipe");
+    let msg = TrainRecipe::load(&path).expect_err("refused").to_string();
+    assert!(msg.contains("field `eval` is required"), "{msg}");
+    assert!(msg.contains(&path.display().to_string()), "{msg}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn load_reads_a_file_and_names_it_when_it_cannot() {
+    let dir = scratch("load");
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, VALID).expect("write recipe");
+    let r = TrainRecipe::load(&path).expect("load");
+    assert_eq!(r.base, dir.join("models/base.apr"));
+
+    let missing = dir.join("absent.yaml");
+    let msg = TrainRecipe::load(&missing)
+        .expect_err("absent recipe")
+        .to_string();
+    assert!(msg.contains("cannot read recipe"), "{msg}");
+    assert!(msg.contains("absent.yaml"), "{msg}");
+
+    std::fs::write(&path, [0xff_u8, 0xfe, 0x00]).expect("write bytes");
+    let msg = TrainRecipe::load(&path).expect_err("not utf-8").to_string();
+    assert!(msg.contains("is not UTF-8"), "{msg}");
+    assert!(msg.contains(&path.display().to_string()), "{msg}");
+    std::fs::remove_dir_all(&dir).ok();
 }

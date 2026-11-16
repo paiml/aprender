@@ -8,7 +8,6 @@
 #
 # NOT YET ENFORCED by the loader at this head (status: partial). Nothing calls the loader yet,
 # and each rule below gets its check, its test and its FALSIFY entry in a later slice:
-#   - teacher present <=> method == distill (a teacher block is read and dropped)
 #   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
 #   - require_inputs (files exist, the data.sha256 pin matches the file; the pin's shape is
 #     checked), exit 5, the --recipe flag conflicts and the receipt
@@ -108,15 +107,15 @@ falsification_tests:
   if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
 - id: FALSIFY-APR-RECIPE-002
   rule: a valid recipe parses
-  prediction: "A minimal valid recipe parses and its relative paths anchor at the recipe's directory"
+  prediction: "A minimal valid recipe parses and its relative paths anchor at the recipe's directory, a distill recipe takes the teacher defaults and load() reads it from a file"
   test: |
-    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir valid_optional_fields_are_kept
+    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir valid_optional_fields_are_kept distill_recipe_parses_with_teacher_defaults teacher_alpha_bounds_are_inclusive teacher_temperature_just_above_zero_is_accepted load_reads_a_file_and_names_it_when_it_cannot load_names_the_file_in_a_refusal
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
-  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id, an unknown method, an empty string, a heldout that aliases the training file, a malformed data pin or a non-positive training number is refused by field. Missing keys and wrong values are all listed in one message; a misspelt key or a wrong type is reported alone, because the YAML reader stops at the first one"
+  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id, an unknown method, an empty string, a heldout that aliases the training file, a malformed data pin, a non-positive training number, a teacher without distill, distill without a teacher, a teacher temperature that is not above 0 or a teacher alpha outside 0 to 1 is refused by field. Missing keys and wrong values are all listed in one message; a misspelt key or a wrong type is reported alone, because the YAML reader stops at the first one"
   test: |
-    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file leading_parent_dirs_are_not_dropped same_file_rule_is_silent_without_a_training_file
+    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file leading_parent_dirs_are_not_dropped same_file_rule_is_silent_without_a_training_file teacher_rules_are_enforced_by_field teacher_rule_is_silent_when_the_method_is_unknown teacher_values_are_checked_when_the_method_is_unknown same_file_rule_is_silent_without_a_heldout_file
   if_fails: "A typo in a recipe silently trains with a default"
 - id: FALSIFY-APR-RECIPE-004
   rule: the recipe contract is itself a valid contract
