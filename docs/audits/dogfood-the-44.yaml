@@ -71,7 +71,7 @@ features:
   quality: 2
   hardware: x86_64-linux
   confidence: high
-  evidence: 'crates/apr-cli/src/model_ops_commands.rs:48'
+  evidence: 'crates/apr-cli/src/model_ops_commands.rs:75'
   issue: null
   waiver: null
 - feature: 'apr rosetta compare-inference'
