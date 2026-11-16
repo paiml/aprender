@@ -55,24 +55,28 @@ vline() { # one headline -> PASS | FAIL | NM
   re='(^|[^A-Z0-9])FAIL($|[^A-Z0-9])'
   [[ $s =~ $re ]] && { echo FAIL; return; }
   [[ $s =~ $wait ]] && { echo FAIL; return; }   # 'PASS pending re-review' has not passed
-  # every tally in the sentence ('2/3', '3 of 4', '2 valid lanes out of 3'), wherever it sits, needs N = M
+  # every tally in the sentence ('2/3', '3 of 4', 'only 2 lanes were valid out of 3'; any number of
+  # words between N and OF M), wherever it sits, needs N = M
   while read -r n m; do
     n=$((10#$n)); m=$((10#$m))
     [ "$n" -eq "$m" ] || { echo FAIL; return; }
-  done < <(grep -oE '[0-9]+( +[A-Z]+){0,3} *(/| OF ) *[0-9]+' <<<"$s" | sed -E 's/^([0-9]+)[^0-9]+([0-9]+)$/\1 \2/')
+  done < <(grep -oE '[0-9]+( +[A-Z]+)* *(/| OF ) *[0-9]+' <<<"$s" | sed -E 's/^([0-9]+)[^0-9]+([0-9]+)$/\1 \2/')
   echo PASS
 }
 
 verdict() { # receipt file -> PASS | FAIL | NM
-  local a b l c=""
+  local h l c=""
   # HEADLINES: the keyword must be followed by its colon, so a lane line ('Result A: PASS') or
   # prose ('Final step: ...', 'Overall the lanes pass') is never taken for the receipt's verdict.
-  # The last TALLY/RESULT/OVERALL/Final line and the last VERDICT line are both read, and a PASS
-  # needs both: a later '**Result:** PASS' does not outrank 'VERDICT: FAIL'.
-  a=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final)[*_ ]*:.*(pass|fail)' "$1" | tail -n1)
-  b=$(grep -i -E '^[^A-Za-z]*verdict[*_ ]*:.*(pass|fail)' "$1" | tail -n1)
-  [ -n "$a$b" ] || a=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(not pass|pass|fail).*')
-  for l in "$a" "$b"; do [ -z "$l" ] || c="$c $(vline "$l")"; done
+  # EVERY TALLY/RESULT/OVERALL/Final/VERDICT line is read, and a PASS needs all of them: a later
+  # 'Result: PASS' does not outrank an earlier 'RESULT: FAIL (1/3)' or a second 'VERDICT: FAIL'.
+  h=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final|verdict)[*_ ]*:.*(pass|fail)' "$1")
+  [ -n "$h" ] || h=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(not pass|pass|fail).*')
+  # one exception: a headline that SAYS it supersedes ('This supersedes the NOT PASS above')
+  # replaces every headline before it; a later bare 'Result: PASS' replaces nothing.
+  l=$(grep -n -i -E '\bsupersed(e|es|ing)\b' <<<"$h" | tail -n1 | cut -d: -f1)
+  [ -z "$l" ] || h=$(tail -n "+$l" <<<"$h")
+  while IFS= read -r l; do [ -z "$l" ] || c="$c $(vline "$l")"; done <<<"$h"
   case $c in *FAIL*) echo FAIL ;; *PASS*) echo PASS ;; *) echo NM ;; esac
 }
 
@@ -191,6 +195,16 @@ VERDICT: PASS 3/3"; ps "VERDICT: PASS (3 valid lanes out of 3)"
 VERDICT: PASS"; np "RESULT: FAIL (2/3) → lane C PASS"; np "RESULT: FAIL (1/3) → PASS. Pending lane C re-run"
   ps "$P
 Final note: lane B saw a FAIL, the re-run cleared it"
+  # f17 (round 8, receipts @eb39528)
+  np "RESULT: FAIL (1/3)
+Result: PASS (3/3 valid lanes PASS). Lane B re-ran."; ps "RESULT: FAIL (1/3)
+VERDICT: FAIL
+RESULT: PASS (3/3 valid lanes PASS). This supersedes the FAIL above."
+  np "RESULT: FAIL (1/3)
+- lane C
+Result: PASS"; np "VERDICT: PASS 3/3
+VERDICT: FAIL"; np "RESULT: PASS (only 2 lanes were valid out of 3)"
+  ps "RESULT: PASS (all 3 lanes were valid out of 3)"
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: BYPASS"; chk 2 "f15 BYPASS is not a PASS token: not measured"; clr
   mk 1 0100 "# Quorum #1 (PMAT-21)" "PMAT-Ticket: PMAT-30
 PMAT-Ticket: PMAT-31
