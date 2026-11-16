@@ -19,12 +19,10 @@ fn frame(cols: &[(&str, &[f32])]) -> DataFrame {
     df
 }
 
-/// The marks geoms still unresolved, with a mapping each would lay out from [`wide`].
+/// The marks geoms `layout()` still refuses (tile, rect, raster and area resolve), with a mapping each
+/// would lay out from [`wide`].
 fn three() -> Vec<(&'static str, Geom, Aes)> {
-    vec![
-        ("tile", Geom::tile(), Aes::new().x("x").y("y").group("g")),
-        ("text", Geom::text(), Aes::new().x("x").y("y").label("lab").group("g")),
-    ]
+    vec![("text", Geom::text(), Aes::new().x("x").y("y").label("lab").group("g"))]
 }
 
 fn wide() -> DataFrame {

@@ -1,0 +1,54 @@
+{
+  "row": "geom_tile",
+  "case": "single",
+  "spec": "ggplot(ds, aes(x, y)) + geom_tile()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "warnings": [],
+  "layers": [
+    {
+      "geom": "GeomTile",
+      "x": [3],
+      "y": [5],
+      "xmin": [2.5],
+      "xmax": [3.5],
+      "ymin": [4.5],
+      "ymax": [5.5],
+      "linewidth": [0.20000000000000001],
+      "linetype": [1],
+      "alpha": [null],
+      "width": [1],
+      "height": [1],
+      "panel": [1],
+      "group": [-1],
+      "fill_rgba": [
+        [51, 51, 51, 255]
+      ],
+      "colour_rgba": [
+        null
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [2.5, 3.5],
+      "continuous_range": [2.4500000000000002, 3.5499999999999998],
+      "breaks": [2.5, 2.75, 3, 3.25, 3.5],
+      "labels": ["2.50", "2.75", "3.00", "3.25", "3.50"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [4.5, 5.5],
+      "continuous_range": [4.4500000000000002, 5.5499999999999998],
+      "breaks": [4.5, 4.75, 5, 5.25, 5.5],
+      "labels": ["4.50", "4.75", "5.00", "5.25", "5.50"],
+      "n_breaks_censored": 0
+    }
+  }
+}

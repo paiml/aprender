@@ -139,6 +139,7 @@ fn ribbon(x: &[f64], lo: &[f64], hi: &[f64], panel: &[usize], group: &[i64]) -> 
         y: ymin.clone(),
         points: None,
         path: None,
+        rects: None,
         bins: None,
         density: None,
         filled: Some(BuiltFilled {
@@ -225,6 +226,7 @@ fn area(x: &[f64], y: &[f64], panel: &[usize], group: &[i64]) -> BuiltLayer {
         y: out.iter().map(|b| b.y).collect(),
         points: None,
         path: None,
+        rects: None,
         bins: None,
         density: None,
         filled: Some(BuiltFilled {

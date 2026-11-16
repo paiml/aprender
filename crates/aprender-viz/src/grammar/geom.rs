@@ -72,8 +72,23 @@ pub enum GeomType {
     Boxplot,
     /// Violin plot.
     Violin,
-    /// Tile/rectangle (for heatmaps).
-    Tile,
+    /// `geom_tile`: a rectangle centred on (`x`, `y`). `width` and `height` are ggplot2's
+    /// parameters of the same name; `None` sizes the tile by the data resolution.
+    Tile {
+        /// Fixed width in data units.
+        width: Option<f64>,
+        /// Fixed height in data units.
+        height: Option<f64>,
+    },
+    /// `geom_rect`: a rectangle from `xmin`, `xmax`, `ymin` and `ymax`.
+    Rect,
+    /// `geom_raster`: one cell per (`x`, `y`), sized by the grid spacing.
+    Raster {
+        /// Where the cell sits horizontally (`xmin = x - w * (1 - hjust)`: 0 puts x on the cell's right edge, 1 on its left edge).
+        hjust: f64,
+        /// Where the cell sits vertically (`ymin = y - h * (1 - vjust)`: 0 puts y on the cell's top edge, 1 on its bottom edge).
+        vjust: f64,
+    },
     /// Text labels.
     Text,
     /// Horizontal line.
@@ -198,7 +213,46 @@ impl Geom {
     /// Create a tile geometry (for heatmaps).
     #[must_use]
     pub fn tile() -> Self {
-        Self { geom_type: GeomType::Tile, aes: None, stat: None }
+        Self { geom_type: GeomType::Tile { width: None, height: None }, aes: None, stat: None }
+    }
+
+    /// Create a rectangle geometry (`geom_rect`).
+    #[must_use]
+    pub fn rect() -> Self {
+        Self { geom_type: GeomType::Rect, aes: None, stat: None }
+    }
+
+    /// Create a raster geometry (`geom_raster`), centred cells (`hjust = vjust = 0.5`).
+    #[must_use]
+    pub fn raster() -> Self {
+        Self { geom_type: GeomType::Raster { hjust: 0.5, vjust: 0.5 }, aes: None, stat: None }
+    }
+
+    /// Set a raster's `hjust`, widened through its shortest decimal form so 0.3 stays 0.3.
+    #[must_use]
+    pub fn hjust(mut self, hjust: f32) -> Self {
+        if let GeomType::Raster { hjust: ref mut h, .. } = self.geom_type {
+            *h = format!("{hjust}").parse().unwrap_or(f64::from(hjust));
+        }
+        self
+    }
+
+    /// Set a raster's `vjust`, widened through its shortest decimal form so 0.3 stays 0.3.
+    #[must_use]
+    pub fn vjust(mut self, vjust: f32) -> Self {
+        if let GeomType::Raster { vjust: ref mut v, .. } = self.geom_type {
+            *v = format!("{vjust}").parse().unwrap_or(f64::from(vjust));
+        }
+        self
+    }
+
+    /// Set a tile's `height`, widened through its shortest decimal form so 0.3 stays 0.3.
+    #[must_use]
+    pub fn height(mut self, height: f32) -> Self {
+        if let GeomType::Tile { height: ref mut h, .. } = self.geom_type {
+            *h = Some(format!("{height}").parse().unwrap_or(f64::from(height)));
+        }
+        self
     }
 
     /// Create a text geometry.
@@ -271,6 +325,9 @@ impl Geom {
         match &mut self.geom_type {
             GeomType::Line { width: ref mut w } | GeomType::Bar { width: ref mut w } => *w = width,
             GeomType::Dist(spec) => spec.width = format!("{width}").parse().ok(),
+            GeomType::Tile { width: ref mut w, .. } => {
+                *w = Some(format!("{width}").parse().unwrap_or(f64::from(width)));
+            }
             _ => {}
         }
         self
@@ -423,7 +480,7 @@ mod tests {
     #[test]
     fn test_geom_tile() {
         let g = Geom::tile();
-        assert!(matches!(g.geom_type, GeomType::Tile));
+        assert!(matches!(g.geom_type, GeomType::Tile { width: None, height: None }));
         assert!(g.stat.is_none());
     }
 
@@ -575,7 +632,9 @@ mod tests {
             GeomType::Histogram { bins: 30 },
             GeomType::Boxplot,
             GeomType::Violin,
-            GeomType::Tile,
+            GeomType::Tile { width: None, height: None },
+            GeomType::Rect,
+            GeomType::Raster { hjust: 0.5, vjust: 0.5 },
             GeomType::Text,
             GeomType::Hline { yintercept: 0.0 },
             GeomType::Vline { xintercept: 0.0 },

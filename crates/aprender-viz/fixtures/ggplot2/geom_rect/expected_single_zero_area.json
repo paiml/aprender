@@ -1,0 +1,50 @@
+{
+  "row": "geom_rect",
+  "case": "single_zero_area",
+  "spec": "ggplot(dsz, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)) + geom_rect()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "warnings": [],
+  "layers": [
+    {
+      "geom": "GeomRect",
+      "xmin": [2],
+      "xmax": [2],
+      "ymin": [3],
+      "ymax": [5],
+      "linewidth": [0.5],
+      "linetype": [1],
+      "alpha": [null],
+      "panel": [1],
+      "group": [-1],
+      "fill_rgba": [
+        [89, 89, 89, 255]
+      ],
+      "colour_rgba": [
+        null
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [2, 2],
+      "continuous_range": [1.95, 2.0499999999999998],
+      "breaks": [1.9500000000000002, 1.9750000000000001, 2, 2.0250000000000004],
+      "labels": ["1.950", "1.975", "2.000", "2.025"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [3, 5],
+      "continuous_range": [2.8999999999999999, 5.0999999999999996],
+      "breaks": [3, 3.5, 4, 4.5, 5],
+      "labels": ["3.0", "3.5", "4.0", "4.5", "5.0"],
+      "n_breaks_censored": 0
+    }
+  }
+}

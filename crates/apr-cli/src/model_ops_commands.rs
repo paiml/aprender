@@ -137,9 +137,9 @@ pub enum ModelOpsCommands {
         profile: bool,
 
         /// Declarative recipe (contracts/apr-recipe-v1.yaml): base, data, method, eval and seed
-        /// in one file. It is validated before any model is loaded, and it replaces the flags
-        /// it carries. --model-size and --output still apply: each wins over the recipe's
-        /// model_size and output.dir, and the run prints the replacement
+        /// in one file. It is validated before any model is loaded, and the flags whose value
+        /// it carries are refused beside it. --model-size and --output still apply: each wins
+        /// over the recipe's model_size and output.dir, and the run prints the replacement
         #[arg(long, value_name = "FILE", conflicts_with_all = FINETUNE_RECIPE_CARRIES)]
         recipe: Option<ConfigPath>,
     },

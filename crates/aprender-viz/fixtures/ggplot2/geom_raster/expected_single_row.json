@@ -1,0 +1,50 @@
+{
+  "row": "geom_raster",
+  "case": "single_row",
+  "spec": "ggplot(dsr, aes(x, y)) + geom_raster()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "warnings": [],
+  "layers": [
+    {
+      "geom": "GeomRaster",
+      "x": [1, 2, 3, 4],
+      "y": [5, 5, 5, 5],
+      "xmin": [0.5, 1.5, 2.5, 3.5],
+      "xmax": [1.5, 2.5, 3.5, 4.5],
+      "ymin": [4.5, 4.5, 4.5, 4.5],
+      "ymax": [5.5, 5.5, 5.5, 5.5],
+      "alpha": [null, null, null, null],
+      "panel": [1, 1, 1, 1],
+      "group": [-1, -1, -1, -1],
+      "fill_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0.5, 4.5],
+      "continuous_range": [0.29999999999999999, 4.7000000000000002],
+      "breaks": [1, 2, 3, 4],
+      "labels": ["1", "2", "3", "4"],
+      "n_breaks_censored": 2
+    },
+    "y": {
+      "limits": [4.5, 5.5],
+      "continuous_range": [4.4500000000000002, 5.5499999999999998],
+      "breaks": [4.5, 4.75, 5, 5.25, 5.5],
+      "labels": ["4.50", "4.75", "5.00", "5.25", "5.50"],
+      "n_breaks_censored": 0
+    }
+  }
+}

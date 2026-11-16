@@ -1,12 +1,11 @@
 //! Filled marks and text: `geom_area`, `geom_ribbon`, `geom_tile`, `geom_rect`, `geom_text`
-//! (PLOT-GG-001, paiml/aprender#6909). The "five" below are these; `geom_rect` has no
-//! constructor yet, so only area, ribbon, tile and text can reach this module. Area and ribbon
-//! are resolved by `filled`, but a `geom_point` beside them still gets the companion checks here.
+//! (PLOT-GG-001, paiml/aprender#6909). The "five" below are these. Area and ribbon are
+//! resolved by `filled`, but a `geom_point` beside them still gets the companion checks here.
 //!
-//! `layout()` does not resolve tile and text yet. It used to lay them out as points: raw `x`/`y`
-//! rows, scales trained on them, tile bounds or labels. That is a plausible wrong answer, so
-//! [`require_resolved`] refuses each of them with a typed error until its `ggplot_build()`
-//! resolution lands.
+//! `layout()` resolves `geom_tile`, `geom_rect` and `geom_raster` (see `rects`) and does not
+//! resolve text yet. It used to lay it out as points: raw `x`/`y` rows, scales trained on
+//! them, no labels. That is a plausible wrong answer, so [`require_resolved`] refuses it with a
+//! typed error until its `ggplot_build()` resolution lands.
 //!
 //! Companion layers. The x and y scales are shared, so a plot with one of these layers may hold
 //! only these geoms and `geom_point` with the identity stat; every other geom is an
@@ -23,8 +22,12 @@ use crate::error::{Error, Result};
 /// Which of the marks geoms a layer is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MarkKind {
-    /// `geom_tile()`.
+    /// `geom_tile()`; resolved by `rects`.
     Tile,
+    /// `geom_rect()`; resolved by `rects`.
+    Rect,
+    /// `geom_raster()`; resolved by `rects`.
+    Raster,
     /// `geom_text()`.
     Text,
 }
@@ -32,7 +35,9 @@ enum MarkKind {
 impl MarkKind {
     fn of(geom: &GeomType) -> Option<Self> {
         match geom {
-            GeomType::Tile => Some(MarkKind::Tile),
+            GeomType::Tile { .. } => Some(MarkKind::Tile),
+            GeomType::Rect => Some(MarkKind::Rect),
+            GeomType::Raster { .. } => Some(MarkKind::Raster),
             GeomType::Text => Some(MarkKind::Text),
             _ => None,
         }
@@ -50,11 +55,12 @@ pub(super) fn any_marks(layers: &[Layer]) -> bool {
 ///
 /// [`Error::UnsupportedLayer`] naming the geom.
 pub(super) fn require_resolved(layers: &[Layer]) -> Result<()> {
-    match layers.iter().find_map(|l| MarkKind::of(&l.geom.geom_type)) {
-        None => Ok(()),
-        Some(MarkKind::Tile) => {
-            Err(Error::UnsupportedLayer("geom_tile: layout() does not resolve it yet"))
-        }
+    match layers
+        .iter()
+        .filter_map(|l| MarkKind::of(&l.geom.geom_type))
+        .find(|k| matches!(k, MarkKind::Text))
+    {
+        None | Some(MarkKind::Tile | MarkKind::Rect | MarkKind::Raster) => Ok(()),
         Some(MarkKind::Text) => {
             Err(Error::UnsupportedLayer("geom_text: layout() does not resolve it yet"))
         }

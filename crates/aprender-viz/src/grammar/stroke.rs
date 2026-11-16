@@ -288,6 +288,7 @@ mod tests {
             y: y.to_vec(),
             points: None,
             path: p,
+            rects: None,
             bins: None,
             density: None,
             filled: None,
