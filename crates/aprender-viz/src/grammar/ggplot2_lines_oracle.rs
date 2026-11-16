@@ -987,6 +987,21 @@ mod robustness {
         assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
     }
 
+    /// Merged rows 10-15 state `Err(Rendering)` for an infinite position; a `geom_point` beside the
+    /// line must not change the variant.
+    #[test]
+    fn a_point_beside_a_line_with_an_infinite_position_keeps_the_rendering_error() {
+        let mut inf = ok_df();
+        inf.add_column_f32("y", &[1.0, f32::INFINITY, 2.0]);
+        for layers in [
+            vec![layer(Geom::point()), layer(Geom::line())],
+            vec![layer(Geom::line()), layer(Geom::point())],
+        ] {
+            let r = build(inf.clone(), xy(), layers, Facet::None);
+            assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+        }
+    }
+
     #[test]
     fn several_nan_positions_keep_their_order_after_the_finite_ones() {
         let mut df = ok_df();

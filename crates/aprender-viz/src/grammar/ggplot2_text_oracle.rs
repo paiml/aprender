@@ -257,9 +257,11 @@ fn non_finite_text_params_are_refused() {
     }
 }
 
-/// The scale limits and the layer positions add the nudge in the same precision.
+/// Stated limit (row 18 contract): the layer positions are f64 sums, the trained limits are those
+/// sums rounded once to f32. This pins that limit exactly; it does not claim 1e-9 agreement with R
+/// for a non-f32-representable `x + nudge`.
 #[test]
-fn a_non_dyadic_nudge_agrees_between_the_scale_and_the_positions() {
+fn a_non_dyadic_nudge_limits_are_the_f64_sum_rounded_once_to_f32() {
     let g = Geom::text().nudge_x(0.1).nudge_y(0.3);
     let got = build(csv!("data"), lab(), vec![Layer::new(g)], Facet::None).expect("resolves");
     let xs = &got.layers[0].x;
@@ -267,9 +269,7 @@ fn a_non_dyadic_nudge_agrees_between_the_scale_and_the_positions() {
         xs.iter().copied().fold(f64::INFINITY, f64::min),
         xs.iter().copied().fold(f64::NEG_INFINITY, f64::max),
     );
-    let (l0, l1) = got.x.limits;
-    assert!((l0 - lo).abs() <= 1e-6 * lo.abs().max(1.0), "{l0} vs {lo}");
-    assert!((l1 - hi).abs() <= 1e-6 * hi.abs().max(1.0), "{l1} vs {hi}");
+    assert_eq!(got.x.limits, (f64::from(lo as f32), f64::from(hi as f32)));
 }
 
 #[test]
