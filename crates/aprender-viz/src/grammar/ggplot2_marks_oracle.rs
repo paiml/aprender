@@ -86,13 +86,13 @@ fn refuses_every_companion_geom_layout_does_not_model_for_every_geom() {
     let xy = Aes::new().x("x").y("y");
     // Each widens a shared scale in ggplot2 4.0.3 through its stat or setup (measured beside
     // geom_area: bar y to 0 and x to the bar edges, histogram x to the bin edges, boxplot x to the
-    // box width, smooth y to its fit).
+    // box width). geom_smooth is modelled now: beside tile or text it is refused by the path
+    // guards (see the smooth oracle), not named here.
     let modelled_elsewhere = [
         ("geom_bar", Layer::new(Geom::bar()).aes(Aes::new().x("x"))),
         ("geom_histogram", Layer::new(Geom::histogram()).aes(Aes::new().x("x"))),
         ("geom_boxplot", Layer::new(Geom::boxplot()).aes(xy.clone())),
         ("geom_violin", Layer::new(Geom::violin()).aes(xy.clone())),
-        ("geom_smooth", Layer::new(Geom::smooth()).aes(xy.clone())),
     ];
     for (name, geom, aes) in three() {
         for (companion, layer) in &modelled_elsewhere {
