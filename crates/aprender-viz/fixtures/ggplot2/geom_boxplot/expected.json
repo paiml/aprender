@@ -1,0 +1,1179 @@
+{
+  "row": "geom_boxplot",
+  "data_file": "data.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "cases": [
+    {
+      "name": "no_x_single",
+      "spec": "ggplot(d, aes(y = y)) + geom_boxplot()",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [-1],
+        "x": [0],
+        "xmin": [-0.375],
+        "xmax": [0.375],
+        "ymin": [1],
+        "lower": [3.25],
+        "middle": [5.5],
+        "upper": [7.75],
+        "ymax": [9],
+        "notchlower": [3.2516205836202823],
+        "notchupper": [7.7483794163797182],
+        "ymin_final": [1],
+        "ymax_final": [30],
+        "relvarwidth": [3.1622776601683795],
+        "outliers": [
+          [30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [-0.375, 0.375],
+          "continuous_range": [-0.41249999999999998, 0.41249999999999998],
+          "breaks": [-0.40000000000000002, -0.20000000000000001, 0, 0.20000000000000007, 0.40000000000000002],
+          "labels": ["-0.4", "-0.2", "0.0", "0.2", "0.4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [-0.40000000000000002, -0.30000000000000004, -0.20000000000000001, -0.10000000000000001, 0, 0.10000000000000003, 0.20000000000000007, 0.30000000000000004, 0.40000000000000002]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 30],
+          "continuous_range": [-0.45000000000000018, 31.449999999999999],
+          "breaks": [0, 10, 20, 30],
+          "labels": ["0", "10", "20", "30"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 5, 10, 15, 20, 25, 30]
+        }
+      }
+    },
+    {
+      "name": "text_x_single",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot()",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1],
+        "x": [1],
+        "xmin": [0.625],
+        "xmax": [1.375],
+        "ymin": [1],
+        "lower": [3.25],
+        "middle": [5.5],
+        "upper": [7.75],
+        "ymax": [9],
+        "notchlower": [3.2516205836202823],
+        "notchupper": [7.7483794163797182],
+        "ymin_final": [1],
+        "ymax_final": [30],
+        "relvarwidth": [3.1622776601683795],
+        "outliers": [
+          [30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a"],
+          "continuous_range": [0.40000000000000002, 1.6000000000000001],
+          "breaks": ["a"],
+          "break_positions": [1],
+          "labels": ["a"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 30],
+          "continuous_range": [-0.45000000000000018, 31.449999999999999],
+          "breaks": [0, 10, 20, 30],
+          "labels": ["0", "10", "20", "30"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 5, 10, 15, 20, 25, 30]
+        }
+      }
+    },
+    {
+      "name": "categories_outliers",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot()",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3],
+        "x": [1, 2, 3],
+        "xmin": [0.625, 1.625, 2.625],
+        "xmax": [1.375, 2.375, 3.375],
+        "ymin": [1, 10, 2],
+        "lower": [3.25, 11.25, 3.75],
+        "middle": [5.5, 13.5, 6.5],
+        "upper": [7.75, 15.75, 9.25],
+        "ymax": [9, 18, 11],
+        "notchlower": [3.2516205836202823, 11.251620583620282, 3.9914130803710757],
+        "notchupper": [7.7483794163797182, 15.748379416379718, 9.0085869196289252],
+        "ymin_final": [1, -20, -30],
+        "ymax_final": [30, 18, 60],
+        "relvarwidth": [3.1622776601683795, 3.1622776601683795, 3.4641016151377544],
+        "outliers": [
+          [30],
+          [-20],
+          [60, -30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b", "c"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["a", "b", "c"],
+          "break_positions": [1, 2, 3],
+          "labels": ["a", "b", "c"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "small_n_1_to_5",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot()",
+      "rows": [33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3, 4, 5],
+        "x": [1, 2, 3, 4, 5],
+        "xmin": [0.625, 1.625, 2.625, 3.625, 4.625],
+        "xmax": [1.375, 2.375, 3.375, 4.375, 5.375],
+        "ymin": [7, 1, 1, 1, 1],
+        "lower": [7, 1.25, 1.5, 1.75, 2],
+        "middle": [7, 1.5, 2, 2.5, 3],
+        "upper": [7, 1.75, 6, 27.25, 4],
+        "ymax": [7, 2, 10, 27.25, 5],
+        "notchlower": [7, 0.94138564286262749, -2.1049604139382394, -17.645, 1.5868050382201329],
+        "notchupper": [7, 2.0586143571373725, 6.1049604139382394, 22.645, 4.4131949617798671],
+        "ymin_final": [7, 1, 1, 1, 1],
+        "ymax_final": [7, 2, 10, 100, 5],
+        "relvarwidth": [1, 1.4142135623730951, 1.7320508075688772, 2, 2.2360679774997898],
+        "outliers": [
+          [],
+          [],
+          [],
+          [100],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["d", "e", "f", "g", "h"],
+          "continuous_range": [0.40000000000000002, 5.5999999999999996],
+          "breaks": ["d", "e", "f", "g", "h"],
+          "break_positions": [1, 2, 3, 4, 5],
+          "labels": ["d", "e", "f", "g", "h"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 100],
+          "continuous_range": [-3.9500000000000002, 104.95],
+          "breaks": [0, 25, 50, 75, 100],
+          "labels": ["0", "25", "50", "75", "100"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 12.5, 25, 37.5, 50, 62.5, 75, 87.5, 100]
+        }
+      }
+    },
+    {
+      "name": "ties_and_all_equal",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot()",
+      "rows": [48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2],
+        "x": [1, 2],
+        "xmin": [0.625, 1.625],
+        "xmax": [1.375, 2.375],
+        "ymin": [2, 4],
+        "lower": [2, 4],
+        "middle": [2.5, 4],
+        "upper": [3, 4],
+        "ymax": [3, 4],
+        "notchlower": [1.9413856428626275, 4],
+        "notchupper": [3.0586143571373725, 4],
+        "ymin_final": [2, 4],
+        "ymax_final": [9, 4],
+        "relvarwidth": [2.8284271247461903, 2.2360679774997898],
+        "outliers": [
+          [9],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["i", "j"],
+          "continuous_range": [0.40000000000000002, 2.6000000000000001],
+          "breaks": ["i", "j"],
+          "break_positions": [1, 2],
+          "labels": ["i", "j"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [2, 9],
+          "continuous_range": [1.6499999999999999, 9.3499999999999996],
+          "breaks": [2, 4, 6, 8],
+          "labels": ["2", "4", "6", "8"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2, 3, 4, 5, 6, 7, 8, 9]
+        }
+      }
+    },
+    {
+      "name": "coef_6",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot(coef = 6)",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3],
+        "x": [1, 2, 3],
+        "xmin": [0.625, 1.625, 2.625],
+        "xmax": [1.375, 2.375, 3.375],
+        "ymin": [1, 10, 2],
+        "lower": [3.25, 11.25, 3.75],
+        "middle": [5.5, 13.5, 6.5],
+        "upper": [7.75, 15.75, 9.25],
+        "ymax": [30, 18, 11],
+        "notchlower": [3.2516205836202823, 11.251620583620282, 3.9914130803710757],
+        "notchupper": [7.7483794163797182, 15.748379416379718, 9.0085869196289252],
+        "ymin_final": [1, -20, -30],
+        "ymax_final": [30, 18, 60],
+        "relvarwidth": [3.1622776601683795, 3.1622776601683795, 3.4641016151377544],
+        "outliers": [
+          [],
+          [-20],
+          [60, -30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b", "c"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["a", "b", "c"],
+          "break_positions": [1, 2, 3],
+          "labels": ["a", "b", "c"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "coef_zero",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot(coef = 0)",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3],
+        "x": [1, 2, 3],
+        "xmin": [0.625, 1.625, 2.625],
+        "xmax": [1.375, 2.375, 3.375],
+        "ymin": [3.25, 11.25, 3.75],
+        "lower": [3.25, 11.25, 3.75],
+        "middle": [5.5, 13.5, 6.5],
+        "upper": [7.75, 15.75, 9.25],
+        "ymax": [7.75, 15.75, 9.25],
+        "notchlower": [3.2516205836202823, 11.251620583620282, 3.9914130803710757],
+        "notchupper": [7.7483794163797182, 15.748379416379718, 9.0085869196289252],
+        "ymin_final": [1, -20, -30],
+        "ymax_final": [30, 18, 60],
+        "relvarwidth": [3.1622776601683795, 3.1622776601683795, 3.4641016151377544],
+        "outliers": [
+          [30, 1, 2, 3, 8, 9],
+          [-20, 10, 11, 16, 17, 18],
+          [60, 11, 10, 3, 2, -30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b", "c"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["a", "b", "c"],
+          "break_positions": [1, 2, 3],
+          "labels": ["a", "b", "c"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "coef_large",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot(coef = 100)",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2],
+        "x": [1, 2],
+        "xmin": [0.625, 1.625],
+        "xmax": [1.375, 2.375],
+        "ymin": [1, -30],
+        "lower": [3.25, 3.75],
+        "middle": [5.5, 6.5],
+        "upper": [7.75, 9.25],
+        "ymax": [30, 60],
+        "notchlower": [3.2516205836202823, 3.9914130803710757],
+        "notchupper": [7.7483794163797182, 9.0085869196289252],
+        "ymin_final": [1, -30],
+        "ymax_final": [30, 60],
+        "relvarwidth": [3.1622776601683795, 3.4641016151377544],
+        "outliers": [
+          [],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "c"],
+          "continuous_range": [0.40000000000000002, 2.6000000000000001],
+          "breaks": ["a", "c"],
+          "break_positions": [1, 2],
+          "labels": ["a", "c"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "width_half",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot(width = 0.5)",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3],
+        "x": [1, 2, 3],
+        "xmin": [0.75, 1.75, 2.75],
+        "xmax": [1.25, 2.25, 3.25],
+        "ymin": [1, 10, 2],
+        "lower": [3.25, 11.25, 3.75],
+        "middle": [5.5, 13.5, 6.5],
+        "upper": [7.75, 15.75, 9.25],
+        "ymax": [9, 18, 11],
+        "notchlower": [3.2516205836202823, 11.251620583620282, 3.9914130803710757],
+        "notchupper": [7.7483794163797182, 15.748379416379718, 9.0085869196289252],
+        "ymin_final": [1, -20, -30],
+        "ymax_final": [30, 18, 60],
+        "relvarwidth": [3.1622776601683795, 3.1622776601683795, 3.4641016151377544],
+        "outliers": [
+          [30],
+          [-20],
+          [60, -30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b", "c"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["a", "b", "c"],
+          "break_positions": [1, 2, 3],
+          "labels": ["a", "b", "c"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "width_wide_overlap",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot(width = 2)",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2],
+        "x": [1, 2],
+        "xmin": [0.55000000000000004, 1.55],
+        "xmax": [1.45, 2.4500000000000002],
+        "ymin": [1, 10],
+        "lower": [3.25, 11.25],
+        "middle": [5.5, 13.5],
+        "upper": [7.75, 15.75],
+        "ymax": [9, 18],
+        "notchlower": [3.2516205836202823, 11.251620583620282],
+        "notchupper": [7.7483794163797182, 15.748379416379718],
+        "ymin_final": [1, -20],
+        "ymax_final": [30, 18],
+        "relvarwidth": [3.1622776601683795, 3.1622776601683795],
+        "outliers": [
+          [30],
+          [-20]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b"],
+          "continuous_range": [0.40000000000000002, 2.6000000000000001],
+          "breaks": ["a", "b"],
+          "break_positions": [1, 2],
+          "labels": ["a", "b"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-20, 30],
+          "continuous_range": [-22.5, 32.5],
+          "breaks": [-20, -10, 0, 10, 20, 30],
+          "labels": ["-20", "-10", "0", "10", "20", "30"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [-20, -15, -10, -5, 0, 5, 10, 15, 20, 25, 30]
+        }
+      }
+    },
+    {
+      "name": "fill_split",
+      "spec": "ggplot(d, aes(x, y, fill = f)) + geom_boxplot()",
+      "rows": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3, 4],
+        "x": [0.8125, 1.1875, 2, 3],
+        "xmin": [0.64375000000000004, 1.01875, 1.6625000000000001, 2.6625000000000001],
+        "xmax": [0.98124999999999996, 1.35625, 2.3374999999999999, 3.3374999999999999],
+        "ymin": [1, 2, 10, 3],
+        "lower": [2.25, 3.25, 11.25, 4.25],
+        "middle": [3.5, 4.5, 12.5, 5.5],
+        "upper": [4.75, 5.75, 13.75, 6.75],
+        "ymax": [6, 6, 15, 8],
+        "notchlower": [1.8874192526677409, 2.8874192526677409, 10.88741925266774, 3.8874192526677409],
+        "notchupper": [5.1125807473322595, 6.1125807473322595, 14.11258074733226, 7.1125807473322595],
+        "ymin_final": [1, 2, 10, 3],
+        "ymax_final": [6, 20, 15, 8],
+        "relvarwidth": [2.4494897427831779, 2.4494897427831779, 2.4494897427831779, 2.4494897427831779],
+        "outliers": [
+          [],
+          [20],
+          [],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["u", "v", "w"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["u", "v", "w"],
+          "break_positions": [1, 2, 3],
+          "labels": ["u", "v", "w"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 20],
+          "continuous_range": [0.049999999999999933, 20.949999999999999],
+          "breaks": [5, 10, 15, 20],
+          "labels": ["5", "10", "15", "20"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20]
+        }
+      }
+    },
+    {
+      "name": "colour_split",
+      "spec": "ggplot(d, aes(x, y, colour = f)) + geom_boxplot()",
+      "rows": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3, 4],
+        "x": [0.8125, 1.1875, 2, 3],
+        "xmin": [0.64375000000000004, 1.01875, 1.6625000000000001, 2.6625000000000001],
+        "xmax": [0.98124999999999996, 1.35625, 2.3374999999999999, 3.3374999999999999],
+        "ymin": [1, 2, 10, 3],
+        "lower": [2.25, 3.25, 11.25, 4.25],
+        "middle": [3.5, 4.5, 12.5, 5.5],
+        "upper": [4.75, 5.75, 13.75, 6.75],
+        "ymax": [6, 6, 15, 8],
+        "notchlower": [1.8874192526677409, 2.8874192526677409, 10.88741925266774, 3.8874192526677409],
+        "notchupper": [5.1125807473322595, 6.1125807473322595, 14.11258074733226, 7.1125807473322595],
+        "ymin_final": [1, 2, 10, 3],
+        "ymax_final": [6, 20, 15, 8],
+        "relvarwidth": [2.4494897427831779, 2.4494897427831779, 2.4494897427831779, 2.4494897427831779],
+        "outliers": [
+          [],
+          [20],
+          [],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["u", "v", "w"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["u", "v", "w"],
+          "break_positions": [1, 2, 3],
+          "labels": ["u", "v", "w"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 20],
+          "continuous_range": [0.049999999999999933, 20.949999999999999],
+          "breaks": [5, 10, 15, 20],
+          "labels": ["5", "10", "15", "20"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20]
+        }
+      }
+    },
+    {
+      "name": "group_split",
+      "spec": "ggplot(d, aes(x, y, group = gr)) + geom_boxplot()",
+      "rows": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [2, 1],
+        "x": [1.5250000000000004, 2.2000000000000002],
+        "xmin": [1.3225000000000005, 1.7950000000000002],
+        "xmax": [1.7275000000000003, 2.605],
+        "ymin": [1, 2],
+        "lower": [3.75, 3.75],
+        "middle": [8, 5],
+        "upper": [12.25, 6.25],
+        "ymax": [15, 8],
+        "notchlower": [4.1230929423916631, 3.8597332183504891],
+        "notchupper": [11.876907057608337, 6.1402667816495109],
+        "ymin_final": [1, 2],
+        "ymax_final": [15, 20],
+        "relvarwidth": [3.4641016151377544, 3.4641016151377544],
+        "outliers": [
+          [],
+          [20]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["u", "v", "w"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["u", "v", "w"],
+          "break_positions": [1, 2, 3],
+          "labels": ["u", "v", "w"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 20],
+          "continuous_range": [0.049999999999999933, 20.949999999999999],
+          "breaks": [5, 10, 15, 20],
+          "labels": ["5", "10", "15", "20"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20]
+        }
+      }
+    },
+    {
+      "name": "group_split_width_half",
+      "spec": "ggplot(d, aes(x, y, group = gr)) + geom_boxplot(width = 0.5)",
+      "rows": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [2, 1],
+        "x": [1.5250000000000004, 2.2000000000000002],
+        "xmin": [1.3225000000000005, 1.7950000000000002],
+        "xmax": [1.7275000000000003, 2.605],
+        "ymin": [1, 2],
+        "lower": [3.75, 3.75],
+        "middle": [8, 5],
+        "upper": [12.25, 6.25],
+        "ymax": [15, 8],
+        "notchlower": [4.1230929423916631, 3.8597332183504891],
+        "notchupper": [11.876907057608337, 6.1402667816495109],
+        "ymin_final": [1, 2],
+        "ymax_final": [15, 20],
+        "relvarwidth": [3.4641016151377544, 3.4641016151377544],
+        "outliers": [
+          [],
+          [20]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["u", "v", "w"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["u", "v", "w"],
+          "break_positions": [1, 2, 3],
+          "labels": ["u", "v", "w"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 20],
+          "continuous_range": [0.049999999999999933, 20.949999999999999],
+          "breaks": [5, 10, 15, 20],
+          "labels": ["5", "10", "15", "20"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20]
+        }
+      }
+    },
+    {
+      "name": "continuous_x_one_box_width_half",
+      "spec": "ggplot(d, aes(n, y)) + geom_boxplot(width = 0.5)",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": ["Orientation is not uniquely specified when both the x and y aesthetics are\ncontinuous. Picking default orientation 'x'.", "Continuous x aesthetic\ni did you forget `aes(group = ...)`?"],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [-1],
+        "x": [2],
+        "xmin": [1.1000000000000001],
+        "xmax": [2.8999999999999999],
+        "ymin": [1],
+        "lower": [4],
+        "middle": [8],
+        "upper": [12.25],
+        "ymax": [18],
+        "notchlower": [5.6957157768083384],
+        "notchupper": [10.304284223191662],
+        "ymin_final": [-30],
+        "ymax_final": [60],
+        "relvarwidth": [5.6568542494923806],
+        "outliers": [
+          [30, -20, 60, -30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.1000000000000001, 2.8999999999999999],
+          "continuous_range": [1.01, 2.9899999999999998],
+          "breaks": [1.5, 2, 2.5],
+          "labels": ["1.5", "2.0", "2.5"],
+          "n_breaks_censored": 2,
+          "minor_breaks": [1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "fill_split_width_half",
+      "spec": "ggplot(d, aes(x, y, fill = f)) + geom_boxplot(width = 0.5)",
+      "rows": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3, 4],
+        "x": [0.875, 1.125, 2, 3],
+        "xmin": [0.76249999999999996, 1.0125, 1.7749999999999999, 2.7749999999999999],
+        "xmax": [0.98750000000000004, 1.2375, 2.2250000000000001, 3.2250000000000001],
+        "ymin": [1, 2, 10, 3],
+        "lower": [2.25, 3.25, 11.25, 4.25],
+        "middle": [3.5, 4.5, 12.5, 5.5],
+        "upper": [4.75, 5.75, 13.75, 6.75],
+        "ymax": [6, 6, 15, 8],
+        "notchlower": [1.8874192526677409, 2.8874192526677409, 10.88741925266774, 3.8874192526677409],
+        "notchupper": [5.1125807473322595, 6.1125807473322595, 14.11258074733226, 7.1125807473322595],
+        "ymin_final": [1, 2, 10, 3],
+        "ymax_final": [6, 20, 15, 8],
+        "relvarwidth": [2.4494897427831779, 2.4494897427831779, 2.4494897427831779, 2.4494897427831779],
+        "outliers": [
+          [],
+          [20],
+          [],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["u", "v", "w"],
+          "continuous_range": [0.40000000000000002, 3.6000000000000001],
+          "breaks": ["u", "v", "w"],
+          "break_positions": [1, 2, 3],
+          "labels": ["u", "v", "w"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 20],
+          "continuous_range": [0.049999999999999933, 20.949999999999999],
+          "breaks": [5, 10, 15, 20],
+          "labels": ["5", "10", "15", "20"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20]
+        }
+      }
+    },
+    {
+      "name": "three_boxes_one_x",
+      "spec": "ggplot(d, aes(x, y, fill = f)) + geom_boxplot()",
+      "rows": [85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3],
+        "x": [0.75, 1, 1.25],
+        "xmin": [0.63749999999999996, 0.88749999999999996, 1.1375],
+        "xmax": [0.86250000000000004, 1.1125, 1.3625],
+        "ymin": [1, 2, 0],
+        "lower": [2, 3, 1],
+        "middle": [3, 4, 2],
+        "upper": [4, 5, 3],
+        "ymax": [5, 8, 4],
+        "notchlower": [1.5868050382201329, 2.5868050382201329, 0.58680503822013286],
+        "notchupper": [4.4131949617798671, 5.4131949617798671, 3.4131949617798671],
+        "ymin_final": [1, 2, 0],
+        "ymax_final": [5, 8, 4],
+        "relvarwidth": [2.2360679774997898, 2.2360679774997898, 2.2360679774997898],
+        "outliers": [
+          [],
+          [],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["z"],
+          "continuous_range": [0.40000000000000002, 1.6000000000000001],
+          "breaks": ["z"],
+          "break_positions": [1],
+          "labels": ["z"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [0, 8],
+          "continuous_range": [-0.40000000000000002, 8.4000000000000004],
+          "breaks": [0, 2, 4, 6, 8],
+          "labels": ["0", "2", "4", "6", "8"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        }
+      }
+    },
+    {
+      "name": "no_x_fill",
+      "spec": "ggplot(d, aes(y = y, fill = f)) + geom_boxplot()",
+      "rows": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2],
+        "x": [-0.1875, 0.1875],
+        "xmin": [-0.35625000000000001, 0.018749999999999989],
+        "xmax": [-0.018749999999999989, 0.35625000000000001],
+        "ymin": [1, 2],
+        "lower": [3.75, 3.75],
+        "middle": [8, 5],
+        "upper": [12.25, 6.25],
+        "ymax": [15, 8],
+        "notchlower": [4.1230929423916631, 3.8597332183504891],
+        "notchupper": [11.876907057608337, 6.1402667816495109],
+        "ymin_final": [1, 2],
+        "ymax_final": [15, 20],
+        "relvarwidth": [3.4641016151377544, 3.4641016151377544],
+        "outliers": [
+          [],
+          [20]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [-0.35625000000000001, 0.35625000000000001],
+          "continuous_range": [-0.39187500000000003, 0.39187500000000003],
+          "breaks": [-0.20000000000000001, 0, 0.20000000000000007],
+          "labels": ["-0.2", "0.0", "0.2"],
+          "n_breaks_censored": 2,
+          "minor_breaks": [-0.30000000000000004, -0.20000000000000001, -0.10000000000000001, 0, 0.10000000000000003, 0.20000000000000007, 0.30000000000000004]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 20],
+          "continuous_range": [0.049999999999999933, 20.949999999999999],
+          "breaks": [5, 10, 15, 20],
+          "labels": ["5", "10", "15", "20"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20]
+        }
+      }
+    },
+    {
+      "name": "continuous_x_one_box",
+      "spec": "ggplot(d, aes(n, y)) + geom_boxplot()",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": ["Orientation is not uniquely specified when both the x and y aesthetics are\ncontinuous. Picking default orientation 'x'.", "Continuous x aesthetic\ni did you forget `aes(group = ...)`?"],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [-1],
+        "x": [2],
+        "xmin": [1.1000000000000001],
+        "xmax": [2.8999999999999999],
+        "ymin": [1],
+        "lower": [4],
+        "middle": [8],
+        "upper": [12.25],
+        "ymax": [18],
+        "notchlower": [5.6957157768083384],
+        "notchupper": [10.304284223191662],
+        "ymin_final": [-30],
+        "ymax_final": [60],
+        "relvarwidth": [5.6568542494923806],
+        "outliers": [
+          [30, -20, 60, -30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.1000000000000001, 2.8999999999999999],
+          "continuous_range": [1.01, 2.9899999999999998],
+          "breaks": [1.5, 2, 2.5],
+          "labels": ["1.5", "2.0", "2.5"],
+          "n_breaks_censored": 2,
+          "minor_breaks": [1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "continuous_x_grouped",
+      "spec": "ggplot(d, aes(n, y, group = n)) + geom_boxplot()",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2, 3],
+        "x": [1, 2, 3],
+        "xmin": [0.625, 1.625, 2.625],
+        "xmax": [1.375, 2.375, 3.375],
+        "ymin": [1, 10, 2],
+        "lower": [3.25, 11.25, 3.75],
+        "middle": [5.5, 13.5, 6.5],
+        "upper": [7.75, 15.75, 9.25],
+        "ymax": [9, 18, 11],
+        "notchlower": [3.2516205836202823, 11.251620583620282, 3.9914130803710757],
+        "notchupper": [7.7483794163797182, 15.748379416379718, 9.0085869196289252],
+        "ymin_final": [1, -20, -30],
+        "ymax_final": [30, 18, 60],
+        "relvarwidth": [3.1622776601683795, 3.1622776601683795, 3.4641016151377544],
+        "outliers": [
+          [30],
+          [-20],
+          [60, -30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [0.625, 3.375],
+          "continuous_range": [0.48749999999999999, 3.5125000000000002],
+          "breaks": [1, 2, 3],
+          "labels": ["1", "2", "3"],
+          "n_breaks_censored": 2,
+          "minor_breaks": [0.5, 1, 1.5, 2, 2.5, 3, 3.5]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-30, 60],
+          "continuous_range": [-34.5, 64.5],
+          "breaks": [-20, 0, 20, 40, 60],
+          "labels": ["-20", "0", "20", "40", "60"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-30, -20, -10, 0, 10, 20, 30, 40, 50, 60]
+        }
+      }
+    },
+    {
+      "name": "continuous_x_fill",
+      "spec": "ggplot(d, aes(n, y, fill = f)) + geom_boxplot()",
+      "rows": [61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84],
+      "r_warnings": ["Orientation is not uniquely specified when both the x and y aesthetics are\ncontinuous. Picking default orientation 'x'."],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2],
+        "x": [1.7750000000000001, 2.6750000000000003],
+        "xmin": [1.5725000000000002, 2.0675000000000003],
+        "xmax": [1.9775, 3.2825000000000002],
+        "ymin": [1, 2],
+        "lower": [3.75, 3.75],
+        "middle": [8, 5],
+        "upper": [12.25, 6.25],
+        "ymax": [15, 8],
+        "notchlower": [4.1230929423916631, 3.8597332183504891],
+        "notchupper": [11.876907057608337, 6.1402667816495109],
+        "ymin_final": [1, 2],
+        "ymax_final": [15, 20],
+        "relvarwidth": [3.4641016151377544, 3.4641016151377544],
+        "outliers": [
+          [],
+          [20]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.5725000000000002, 3.2825000000000002],
+          "continuous_range": [1.4870000000000003, 3.3680000000000003],
+          "breaks": [1.5, 2, 2.5, 3],
+          "labels": ["1.5", "2.0", "2.5", "3.0"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 20],
+          "continuous_range": [0.049999999999999933, 20.949999999999999],
+          "breaks": [5, 10, 15, 20],
+          "labels": ["5", "10", "15", "20"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20]
+        }
+      }
+    },
+    {
+      "name": "resolution_counts_zero",
+      "spec": "ggplot(d, aes(n, y, group = n)) + geom_boxplot()",
+      "rows": [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 56, 57, 58, 59, 60],
+      "r_warnings": [],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1, 2],
+        "x": [2, 10],
+        "xmin": [1.25, 9.25],
+        "xmax": [2.75, 10.75],
+        "ymin": [10, 4],
+        "lower": [11.25, 4],
+        "middle": [13.5, 4],
+        "upper": [15.75, 4],
+        "ymax": [18, 4],
+        "notchlower": [11.251620583620282, 4],
+        "notchupper": [15.748379416379718, 4],
+        "ymin_final": [-20, 4],
+        "ymax_final": [18, 4],
+        "relvarwidth": [3.1622776601683795, 2.2360679774997898],
+        "outliers": [
+          [-20],
+          []
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [1.25, 10.75],
+          "continuous_range": [0.77499999999999991, 11.225],
+          "breaks": [3, 6, 9],
+          "labels": ["3", "6", "9"],
+          "n_breaks_censored": 2,
+          "minor_breaks": [1.5, 3, 4.5, 6, 7.5, 9, 10.5]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-20, 18],
+          "continuous_range": [-21.899999999999999, 19.899999999999999],
+          "breaks": [-20, -10, 0, 10],
+          "labels": ["-20", "-10", "0", "10"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-20, -15, -10, -5, 0, 5, 10, 15]
+        }
+      }
+    },
+    {
+      "name": "na_y_dropped",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot()",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 100],
+      "r_warnings": ["Removed 1 row containing non-finite outside the scale range (`stat_boxplot()`)."],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1],
+        "x": [1],
+        "xmin": [0.625],
+        "xmax": [1.375],
+        "ymin": [1],
+        "lower": [3.25],
+        "middle": [5.5],
+        "upper": [7.75],
+        "ymax": [9],
+        "notchlower": [3.2516205836202823],
+        "notchupper": [7.7483794163797182],
+        "ymin_final": [1],
+        "ymax_final": [30],
+        "relvarwidth": [3.1622776601683795],
+        "outliers": [
+          [30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a"],
+          "continuous_range": [0.40000000000000002, 1.6000000000000001],
+          "breaks": ["a"],
+          "break_positions": [1],
+          "labels": ["a"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 30],
+          "continuous_range": [-0.45000000000000018, 31.449999999999999],
+          "breaks": [0, 10, 20, 30],
+          "labels": ["0", "10", "20", "30"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 5, 10, 15, 20, 25, 30]
+        }
+      }
+    },
+    {
+      "name": "group_all_missing_y_vanishes",
+      "spec": "ggplot(d, aes(x, y)) + geom_boxplot()",
+      "rows": [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 100],
+      "r_warnings": ["Removed 1 row containing non-finite outside the scale range (`stat_boxplot()`)."],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [2],
+        "x": [2],
+        "xmin": [1.625],
+        "xmax": [2.375],
+        "ymin": [10],
+        "lower": [11.25],
+        "middle": [13.5],
+        "upper": [15.75],
+        "ymax": [18],
+        "notchlower": [11.251620583620282],
+        "notchupper": [15.748379416379718],
+        "ymin_final": [-20],
+        "ymax_final": [18],
+        "relvarwidth": [3.1622776601683795],
+        "outliers": [
+          [-20]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "discrete",
+          "limits": ["a", "b"],
+          "continuous_range": [0.40000000000000002, 2.6000000000000001],
+          "breaks": ["a", "b"],
+          "break_positions": [1, 2],
+          "labels": ["a", "b"]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [-20, 18],
+          "continuous_range": [-21.899999999999999, 19.899999999999999],
+          "breaks": [-20, -10, 0, 10],
+          "labels": ["-20", "-10", "0", "10"],
+          "n_breaks_censored": 1,
+          "minor_breaks": [-20, -15, -10, -5, 0, 5, 10, 15]
+        }
+      }
+    },
+    {
+      "name": "na_numeric_x_dropped",
+      "spec": "ggplot(d, aes(n, y, group = n)) + geom_boxplot()",
+      "rows": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 101],
+      "r_warnings": ["Removed 1 row containing missing values or values outside the scale range\n(`stat_boxplot()`)."],
+      "layer": {
+        "geom": "GeomBoxplot",
+        "group": [1],
+        "x": [1],
+        "xmin": [0.625],
+        "xmax": [1.375],
+        "ymin": [1],
+        "lower": [3.25],
+        "middle": [5.5],
+        "upper": [7.75],
+        "ymax": [9],
+        "notchlower": [3.2516205836202823],
+        "notchupper": [7.7483794163797182],
+        "ymin_final": [1],
+        "ymax_final": [30],
+        "relvarwidth": [3.1622776601683795],
+        "outliers": [
+          [30]
+        ]
+      },
+      "panel": {
+        "x": {
+          "kind": "continuous",
+          "limits": [0.625, 1.375],
+          "continuous_range": [0.58750000000000002, 1.4125000000000001],
+          "breaks": [0.60000000000000009, 0.80000000000000004, 1, 1.2000000000000002, 1.4000000000000001],
+          "labels": ["0.6", "0.8", "1.0", "1.2", "1.4"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0.60000000000000009, 0.70000000000000007, 0.80000000000000004, 0.90000000000000002, 1, 1.1000000000000001, 1.2000000000000002, 1.3000000000000003, 1.4000000000000001]
+        },
+        "y": {
+          "kind": "continuous",
+          "limits": [1, 30],
+          "continuous_range": [-0.45000000000000018, 31.449999999999999],
+          "breaks": [0, 10, 20, 30],
+          "labels": ["0", "10", "20", "30"],
+          "n_breaks_censored": 0,
+          "minor_breaks": [0, 5, 10, 15, 20, 25, 30]
+        }
+      }
+    }
+  ]
+}

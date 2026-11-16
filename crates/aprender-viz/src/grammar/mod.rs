@@ -42,6 +42,8 @@ mod filled;
 mod geom;
 mod ggplot;
 #[cfg(test)]
+mod ggplot2_dist_boxplot_oracle;
+#[cfg(test)]
 mod ggplot2_geom_area_oracle;
 #[cfg(test)]
 mod ggplot2_geom_ribbon_oracle;
@@ -63,6 +65,7 @@ mod scale_discrete;
 mod scale_spec;
 mod scale_trans;
 mod stat;
+mod stat_boxplot;
 mod stat_count;
 mod stroke;
 mod term;
@@ -88,6 +91,7 @@ pub use scale_spec::{
     PositionScaleSpec,
 };
 pub use stat::Stat;
+pub use stat_boxplot::BoxRow;
 pub use stat_count::{
     bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,
 };

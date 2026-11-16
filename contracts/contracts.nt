@@ -10271,6 +10271,14 @@
 <https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-area-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/trueno-viz/ggplot2-geom-area-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-area-v1> <https://ont.paiml.dev/v1alpha1/id> "ggplot2-geom-area-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-area-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/ggplot2-row> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <https://ont.paiml.dev/v1alpha1/entityRef> "geom_boxplot"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <https://ont.paiml.dev/v1alpha1/entityType> "ggplot2-row"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <https://ont.paiml.dev/v1alpha1/file> "contracts/trueno-viz/ggplot2-geom-boxplot-v1.yaml"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <https://ont.paiml.dev/v1alpha1/id> "ggplot2-geom-boxplot-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-boxplot-v1> <https://ont.paiml.dev/v1alpha1/kind> "pattern"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-ribbon-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <http://www.w3.org/ns/prov#Entity> .
 <https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-ribbon-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Contract> .
 <https://ont.paiml.dev/v1alpha1/contract/ggplot2-geom-ribbon-v1> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/entity/ggplot2-row> .
@@ -22482,9 +22490,11 @@
 <https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/aes> "ymax|xmax"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/aes> "ymin|xmin"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/concept> "Geom"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/contract> "ggplot2-geom-boxplot-v1"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_boxplot/expected.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/ggplot2> "4.0.3"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/name> "geom_boxplot"^^<http://www.w3.org/2001/XMLSchema#string> .
-<https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/notProven> "geom_boxplot: contract, fixture, surface, receipt"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/notProven> "geom_boxplot: surface, receipt"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_boxplot> <https://ont.paiml.dev/v1alpha1/plot/row> "11"^^<http://www.w3.org/2001/XMLSchema#integer> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/Geom> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_col> <http://www.w3.org/1999/02/22-rdf-syntax-ns#type> <https://ont.paiml.dev/v1alpha1/PlotRow> .

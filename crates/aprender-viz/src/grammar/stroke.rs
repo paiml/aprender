@@ -273,7 +273,14 @@ mod tests {
     }
 
     fn layer(x: &[f64], y: &[f64], p: Option<BuiltPath>) -> BuiltLayer {
-        BuiltLayer { x: x.to_vec(), y: y.to_vec(), points: None, path: p, filled: None }
+        BuiltLayer {
+            x: x.to_vec(),
+            y: y.to_vec(),
+            points: None,
+            path: p,
+            filled: None,
+            boxes: None,
+        }
     }
 
     #[test]

@@ -149,6 +149,7 @@ fn ribbon(x: &[f64], lo: &[f64], hi: &[f64], panel: &[usize], group: &[i64]) -> 
             align_padding: None,
             flipped_aes: false,
         }),
+        boxes: None,
     }
 }
 
@@ -233,6 +234,7 @@ fn area(x: &[f64], y: &[f64], panel: &[usize], group: &[i64]) -> BuiltLayer {
             align_padding: ran.then(|| idx.iter().map(|&i| rows[i].pad).collect()),
             flipped_aes: false,
         }),
+        boxes: None,
     }
 }
 

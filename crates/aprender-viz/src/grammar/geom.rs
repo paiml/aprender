@@ -276,6 +276,16 @@ impl Geom {
         self
     }
 
+    /// Set a boxplot's `coef`, the whisker reach in IQRs (default 1.5). Widened through its
+    /// shortest decimal form, so 1.5 stays 1.5.
+    #[must_use]
+    pub fn coef(mut self, coef: f32) -> Self {
+        if let GeomType::Dist(spec) = &mut self.geom_type {
+            spec.coef = format!("{coef}").parse().unwrap_or(f64::NAN);
+        }
+        self
+    }
+
     /// Set the number of bins.
     #[must_use]
     pub fn bins(mut self, bins: usize) -> Self {

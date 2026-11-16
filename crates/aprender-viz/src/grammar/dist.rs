@@ -26,6 +26,7 @@ use super::facet::Facet;
 use super::geom::{Geom, GeomType};
 use super::ggplot::Layer;
 use super::stat::Stat;
+use super::stat_boxplot;
 
 /// Which ggplot2 layer a [`DistSpec`] stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,11 +54,13 @@ pub struct DistSpec {
     pub width: Option<f64>,
     /// `alpha`, the layer's fixed alpha (`geom_histogram(alpha = 0.5)`), set by [`Geom::alpha`].
     pub alpha: Option<f64>,
+    /// `coef` of `geom_boxplot`: the whisker reach in IQRs (default 1.5), set by [`Geom::coef`].
+    pub coef: f64,
 }
 
 impl DistSpec {
     fn new(kind: DistKind) -> Self {
-        Self { kind, bins: 30, width: None, alpha: None }
+        Self { kind, bins: 30, width: None, alpha: None, coef: 1.5 }
     }
 }
 
@@ -106,7 +109,7 @@ pub(super) fn is_dist(layer: &Layer) -> bool {
     matches!(layer.geom.geom_type, GeomType::Dist(_))
 }
 
-fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
+pub(super) fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
     let cells = data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))?;
     // R cannot build a data.frame from columns of unequal length, so there is no ggplot2
     // behaviour to match: padding the short column with `NA` would be a guess.
@@ -121,7 +124,7 @@ fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
 }
 
 /// A numeric column, one entry per row. Missing is `NaN`; text and infinite values are refused.
-fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
+pub(super) fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
     let cells = column(data, name)?;
     cells
         .iter()
@@ -142,13 +145,13 @@ fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
 
 /// A grouping key `(class, number, text)`: class 0 is a number, 1 text, 2 missing, so values sort
 /// before `NA` (R's `order()`), numbers by value and text byte-wise.
-type Key = (u8, f64, String);
+pub(super) type Key = (u8, f64, String);
 
-fn key_order(a: &Key, b: &Key) -> std::cmp::Ordering {
+pub(super) fn key_order(a: &Key, b: &Key) -> std::cmp::Ordering {
     a.0.cmp(&b.0).then(cmp_na_last(a.1, b.1)).then_with(|| a.2.as_bytes().cmp(b.2.as_bytes()))
 }
 
-fn keys(data: &DataFrame, name: &str) -> Result<Vec<Key>> {
+pub(super) fn keys(data: &DataFrame, name: &str) -> Result<Vec<Key>> {
     let cells = column(data, name)?;
     Ok((0..data.nrow())
         .map(|i| match cells.get(i) {
@@ -159,7 +162,7 @@ fn keys(data: &DataFrame, name: &str) -> Result<Vec<Key>> {
         .collect())
 }
 
-fn is_text(data: &DataFrame, name: &str) -> Result<bool> {
+pub(super) fn is_text(data: &DataFrame, name: &str) -> Result<bool> {
     Ok(column(data, name)?.iter().any(|c| matches!(c, DataValue::Text(_))))
 }
 
@@ -259,10 +262,46 @@ fn check_scope(coord: &Coord, facet: &Facet) -> Result<()> {
 
 /// What [`layout`] returns for input that passes every check: the stats are not built yet.
 pub(super) const NOT_BUILT: &str =
-    "distribution stats (stat_bin, stat_density, stat_boxplot, identity) are not built yet";
+    "distribution stats (stat_bin, stat_density, identity) are not built yet";
 
 /// What `to_framebuffer`/`to_svg` return for a distribution layer, instead of an empty panel.
 pub(super) const NOT_DRAWN: &str = "distribution layers are not drawn by the renderer yet";
+
+fn is_boxplot(layer: &Layer) -> bool {
+    matches!(&layer.geom.geom_type, GeomType::Dist(s) if s.kind == DistKind::Boxplot)
+}
+
+/// The checks every distribution layer passes before its stat; a boxplot checks its own columns.
+fn check_layer(plot_data: &DataFrame, plot_aes: &Aes, layer: &Layer) -> Result<()> {
+    let GeomType::Dist(spec) = &layer.geom.geom_type else { return Ok(()) };
+    let data = layer.data.as_ref().unwrap_or(plot_data);
+    let aes = plot_aes.merge(&layer.aes);
+    check_inputs(spec.kind, &aes, layer.geom.stat.as_ref())?;
+    if spec.kind == DistKind::Boxplot {
+        return Ok(());
+    }
+    group_ids(data, &aes)?;
+    for name in [&aes.x, &aes.y, &aes.ymin, &aes.ymax].into_iter().flatten() {
+        numeric(data, name)?;
+    }
+    Ok(())
+}
+
+/// The built boxplot layer, `None` when the plot has no boxplot; a boxplot beside any other
+/// distribution layer is refused.
+fn build_boxplot(
+    plot_data: &DataFrame,
+    plot_aes: &Aes,
+    layers: &[Layer],
+) -> Option<Result<BuiltLayout>> {
+    let boxplot = layers.iter().find(|l| is_boxplot(l))?;
+    let GeomType::Dist(spec) = &boxplot.geom.geom_type else { return None };
+    if layers.len() != 1 {
+        return Some(Err(refuse("geom_boxplot cannot be combined with other distribution layers")));
+    }
+    let data = boxplot.data.as_ref().unwrap_or(plot_data);
+    Some(stat_boxplot::layout(data, &plot_aes.merge(&boxplot.aes), spec))
+}
 
 /// Check a plot made only of distribution layers, as `ggplot_build()` would before its stats.
 ///
@@ -284,14 +323,10 @@ pub(super) fn layout(
     }
     check_scope(coord, facet)?;
     for layer in layers {
-        let GeomType::Dist(spec) = &layer.geom.geom_type else { continue };
-        let data = layer.data.as_ref().unwrap_or(plot_data);
-        let aes = plot_aes.merge(&layer.aes);
-        check_inputs(spec.kind, &aes, layer.geom.stat.as_ref())?;
-        group_ids(data, &aes)?;
-        for name in [&aes.x, &aes.y, &aes.ymin, &aes.ymax].into_iter().flatten() {
-            numeric(data, name)?;
-        }
+        check_layer(plot_data, plot_aes, layer)?;
+    }
+    if let Some(built) = build_boxplot(plot_data, plot_aes, layers) {
+        return built;
     }
     Err(Error::UnsupportedLayer(NOT_BUILT))
 }
@@ -310,7 +345,6 @@ mod tests {
             ("hist", Geom::gg_histogram(), Aes::new().x("x")),
             ("freq", Geom::gg_freqpoly(), Aes::new().x("x")),
             ("dens", Geom::gg_density(), Aes::new().x("x")),
-            ("box", Geom::gg_boxplot(), Aes::new().y("x")),
             ("err", Geom::gg_errorbar(), Aes::new().x("x").ymin("x").ymax("x")),
         ]
     }

@@ -294,6 +294,7 @@ pub(super) fn build_layer(
             points: None,
             path: Some(path),
             filled: None,
+            boxes: None,
         });
     }
 
@@ -329,7 +330,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path), filled: None })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), filled: None, boxes: None })
 }
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {

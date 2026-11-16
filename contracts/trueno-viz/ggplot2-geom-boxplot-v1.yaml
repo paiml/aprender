@@ -1,0 +1,135 @@
+metadata:
+  id: ggplot2-geom-boxplot-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, core row geom_boxplot (PLOT-GG-001, paiml/aprender#6909). stat_boxplot (type-7 hinges, whiskers to the most extreme point within coef x IQR, outliers,
+    notches 1.58 IQR / sqrt(n), relvarwidth, width 0.75 x resolution) then position_dodge2 (padding 0.1), as ggplot_build() lays them out. 25 cases, max relative error 1e-9
+    (every value goes through the public builder and layout()). Scope: a y mapping, x absent, numeric or text, fill, colour and group splitting a category into dodged boxes. Out of
+    scope (a typed Err, never a panic and never an empty or partial layer): a boxplot of x alone, a text, infinite or all-missing y, a non-positive or non-finite width, a non-finite
+    coef, a continuous fill or colour, a missing value in a text x, fill or colour, a surviving row with a missing group, other distribution layers beside it. The renderers refuse the
+    layer (UnsupportedLayer). The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_boxplot, stat_boxplot, position_dodge2'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_boxplot/generate.R'
+entity: {type: ggplot2-row, ref: geom_boxplot}
+equations:
+  boxplot_layout:
+    formula: 'stat_boxplot(type-7 hinges, coef x IQR fences, notch = 1.58 IQR / sqrt(n)); position_dodge2(padding = 0.1)'
+    domain: numeric y; x absent, numeric or text; optional text fill, colour or group
+    codomain: boxes(group,x,xmin,xmax,ymin,lower,middle,upper,ymax,notchlower,notchupper,outliers,relvarwidth) -> BuiltLayer.boxes and the trained scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; group ids exact
+    preconditions:
+    - y is mapped to an existing numeric column, else UnknownColumn or Rendering
+    - 'known difference from R: an infinite y is refused where R drops the row'
+    - 'known difference from R: a missing value in a text x, fill or colour is refused where R adds a level'
+    - 'known difference from R: a surviving row with a missing group value is refused where R makes a group of it'
+    - 'known difference from R: no row with a finite x and y is refused where R draws an empty layer'
+    - 'known difference from R: a non-positive or non-finite width and a non-finite coef are refused'
+    - 'known difference from R: a continuous fill or colour is refused (no palette is resolved; a discrete fill or colour only groups)'
+    - 'known difference from R: a boxplot of x alone (flipped orientation) is refused'
+    - 'known limit: the interaction of x, fill and colour into a group follows the mapping order x, fill, colour; a different order inside one aes() call is not verified against R'
+    - 'known difference from R: a numeric x is always a double, so an integer-typed x (resolution 1 in R) is not distinguished'
+    - 'known difference from R: to_svg and to_framebuffer refuse the layer with UnsupportedLayer; it is not drawn'
+proof_obligations:
+- id: GG-BOXPLOT-INV-001
+  type: invariant
+  property: Built boxes and trained scales match ggplot2
+  formal: '∀ case in scope: layout(case) ≈ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  applies_to: boxplot_layout
+- id: GG-BOXPLOT-INV-002
+  type: invariant
+  property: Out-of-scope input is a typed Err
+  formal: '∀ unsupported input: layout() → Err, never a panic, never an empty layer'
+  applies_to: boxplot_layout
+enforcement:
+  primary_cases:
+    description: single and several boxes, outliers, coef and width are reproduced
+    check: grammar::ggplot2_dist_boxplot_oracle::several_categories_with_outliers_on_both_sides
+    severity: ERROR
+  dodge_cases:
+    description: fill, colour and group splits are reproduced
+    check: grammar::ggplot2_dist_boxplot_oracle::fill_splits_each_category_into_dodged_boxes
+    severity: ERROR
+  edge_cases:
+    description: missing values and out-of-scope input behave as stated
+    check: grammar::ggplot2_dist_boxplot_oracle::out_of_scope_input_is_a_typed_error
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG-BOXPLOT-001
+  rule: Hinges are type-7 quantiles
+  prediction: using n instead of n - 1 in quantile7 turns groups_of_one_to_five_values RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::groups_of_one_to_five_values
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-002
+  rule: Whiskers reach coef IQRs past the hinges
+  prediction: replacing coef by 2.0 in the fence turns coef_six_moves_the_fences RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::coef_six_moves_the_fences
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-003
+  rule: The notch is 1.58 IQR / sqrt(n) about the median
+  prediction: changing NOTCH to 1.5 turns one_box_with_a_text_x RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::one_box_with_a_text_x
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-004
+  rule: relvarwidth is sqrt(n)
+  prediction: returning n for relvarwidth turns one_box_with_a_text_x RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::one_box_with_a_text_x
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-005
+  rule: resolution() counts 0 as a value
+  prediction: dropping the 0 from resolution turns resolution_counts_zero_as_a_value RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::resolution_counts_zero_as_a_value
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-006
+  rule: position_dodge2 pads a shared box to 90% of its slot
+  prediction: setting DODGE2_PADDING to 0.0 turns fill_splits_each_category_into_dodged_boxes RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::fill_splits_each_category_into_dodged_boxes
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-007
+  rule: A group spanning several x has width 0.9 times its span
+  prediction: setting SPAN_WIDTH to 1.0 turns a_group_spanning_several_x_ignores_width RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::a_group_spanning_several_x_ignores_width
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-008
+  rule: A row with a missing x is dropped before the stat
+  prediction: testing only y for finiteness in split_groups turns a_missing_numeric_x_is_dropped RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::a_missing_numeric_x_is_dropped
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-009
+  rule: A group left with no finite row vanishes and keeps the other ids
+  prediction: creating the group before the finiteness test in split_groups turns a_group_with_no_finite_y_vanishes RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::a_group_with_no_finite_y_vanishes
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-010
+  rule: A boxplot of x alone (flipped orientation) is refused
+  prediction: removing the no-y test in check_params turns out_of_scope_input_is_a_typed_error RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::out_of_scope_input_is_a_typed_error
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-011
+  rule: The renderers refuse a boxplot layer
+  prediction: skipping the is_dist test in draw_frame turns the_renderers_refuse_a_boxplot RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::the_renderers_refuse_a_boxplot
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-012
+  rule: Group ids are dense ranks in ascending order
+  prediction: reversing the sort in ranks turns a_group_column_splits_a_category RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::a_group_column_splits_a_category
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-013
+  rule: A surviving row with a missing group value is refused
+  prediction: removing the missing_group test in split_groups turns out_of_scope_input_is_a_typed_error RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::out_of_scope_input_is_a_typed_error
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GG-BOXPLOT-001
+  name: ggplot2 conformance (geom_boxplot)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for these fixtures
+  checks:
+  - primary_cases
+  - dodge_cases
+  - edge_cases
