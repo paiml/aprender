@@ -8,9 +8,14 @@
 # Reads gate-quorum receipts (`triage-quorum-<PR>-gate-<hhmm>Z.md`, never the -A/-B/-C/-prompt lane
 # files) oldest first by mtime. CHAIN = the ticket the receipt is about: its `PMAT-Ticket:` trailer when
 # that names one ticket, else the first PMAT-<n> / #<n> / "pace <n>" on line 1 (not the receipt's own
-# PR); no id = not measured. A triage-quorum-* file whose name is not a receipt or lane name = not measured. VERDICT = the first PASS / NOT PASS / FAIL token of the receipt's last headline
-# (TALLY / RESULT / OVERALL / Final, else VERDICT, else a "verdict X" on lines 1-3), after the last
-# arrow; a token beside an N/M tally passes only if N = M. No token = NOT MEASURED: it neither
+# PR); no id = not measured. A triage-quorum-* file whose name is not a receipt or lane name = not
+# measured. VERDICT = the first PASS / FAIL word of the receipt's last headline (a line opening
+# with TALLY: / RESULT: / OVERALL: / Final:, else VERDICT:, else a "verdict X" on lines 1-3), read
+# in upper case; NOT PASS in any spelling is FAIL; a verdict that opens the text after the last
+# arrow wins. A PASS stands only if its own sentence holds no other FAIL (a zero count, FAIL(ENV),
+# "fail closed" and a FAIL it says it fixes or supersedes do not count) and every N/M or "N of M"
+# in it has N = M. When in doubt it reads FAIL: a false escalation costs one look, a missed one
+# hides a stuck ticket. No verdict word = NOT MEASURED: it neither
 # resets a chain's streak nor counts toward it. On the SECOND consecutive non-PASS receipt of a
 # chain, one line
 #   ESCALATE ticket=<chain> receipts=<first>,<second> owner=<owner>
@@ -18,29 +23,42 @@
 # EXIT: 0 nothing new to escalate; 1 an escalation was written; 2 not measured (empty dir, or an
 # unreadable receipt and nothing escalated); 3 the escalations file could not be written.
 set -uo pipefail
+export LC_ALL=C   # one reading under every locale: cron's is not known
 
 verdict() { # receipt file -> PASS | FAIL | NM
-  local l b tok rest pre u z
-  l=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final)\b.*(PASS|FAIL)' "$1" | tail -n1)
-  [ -n "$l" ] || l=$(grep -i -E '^[^A-Za-z]*verdict\b.*(PASS|FAIL)' "$1" | tail -n1)
-  [ -n "$l" ] || l=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(NOT PASS|PASS|FAIL).*')
+  local l u s tok n m re
+  # HEADLINE: the keyword must be followed by its colon, so a lane line ('Result A: PASS') or
+  # prose ('Final step: ...', 'Overall the lanes pass') is never taken for the receipt's verdict
+  l=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final)[*_ ]*:.*(pass|fail)' "$1" | tail -n1)
+  [ -n "$l" ] || l=$(grep -i -E '^[^A-Za-z]*verdict[*_ ]*:.*(pass|fail)' "$1" | tail -n1)
+  [ -n "$l" ] || l=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(not pass|pass|fail).*')
   [ -n "$l" ] || { echo NM; return; }
-  b=${l#*:}
-  b=${b//[*_]/}   # markdown emphasis is not part of the verdict: '**PASS** (2/3)' is PASS (2/3)
-  [[ ${b##*→} =~ (PASS|FAIL) ]] && b=${b##*→}   # a verdict after the last arrow wins
-  tok=$(grep -oE 'NOT PASS|PASS|FAIL' <<<"$b" | head -n1)
+  u=${l^^}; u=${u#*:}   # one case from here on: 'result: fail' and 'fail=1' are FAIL
+  u=${u//\*/}           # markdown emphasis is not part of the verdict: '**PASS** (2/3)' is PASS (2/3)
+  # every spelling of a negative verdict is FAIL; whole words only, so BYPASS is not a PASS
+  u=$(sed -E 's/\b(NOT?|NON)[ _-]+PASS(ED|ES|ING)?\b/FAIL/g; s/\b(NOT|NON)PASS(ED|ES|ING)?\b/FAIL/g; s/_//g; s/\bFAIL(ED|S|ING|URES?)?\b/FAIL/g; s/\bPASS(ED|ES|ING)?\b/PASS/g; s/[-=]>/→/g' <<<"$u")
+  re='^[^A-Z0-9]*(PASS|FAIL)($|[^A-Z0-9])'
+  s=${u##*→}
+  if [[ "$s" =~ $re ]]; then u=$s; fi   # after the last arrow, only a verdict that OPENS the text wins: '→ fix pushed, PASS pending' does not
+  tok=$(grep -oE '\b(PASS|FAIL)\b' <<<"$u" | head -n1)
   [ -n "$tok" ] || { echo NM; return; }
   [ "$tok" = PASS ] || { echo FAIL; return; }
-  rest=${b#*"$tok"}; pre=${b%%"$tok"*}
-  u="${pre^^} ${rest^^}"   # 'fail=1' counts as 'FAIL=1'
-  [[ "$u" =~ (^|[^0-9])[1-9][0-9]*\ *(LANES?\ +)?FAIL ]] && { echo FAIL; return; }   # a counted FAIL beside PASS
-  [[ "$u" =~ FAIL[A-Za-z]*[:\ =]+[1-9] ]] && { echo FAIL; return; }   # 'FAIL: 1', 'FAIL 1'
-  z=$(sed -E 's/(^|[^0-9])0 *(LANES? +)?FAIL[A-Z]*//g; s/NO +FAIL[A-Z]*//g; s/FAIL[A-Z]*[: =]+0([^0-9]|$)//g' <<<"${u%%. *}")   # the verdict's own sentence only: prose after it may say FAIL
-  [[ "$z" == *FAIL* ]] && { echo FAIL; return; }   # any FAIL left beside PASS (lane C: FAIL) is a fail: only a zero count clears it
-  if [[ $rest =~ ^[^A-Za-z0-9/]{0,3}([0-9]+)(/|\ +of\ +)([0-9]+) ]] || [[ $pre =~ ([0-9]+)(/|\ +of\ +)([0-9]+)[^A-Za-z0-9/]*$ ]]; then
-    [ "${BASH_REMATCH[1]}" = "${BASH_REMATCH[3]}" ] && echo PASS || echo FAIL
-    return
-  fi
+  # A PASS headline. Its own sentence only: prose after it may say FAIL. Clear what states that
+  # nothing failed (a zero count, FAIL(ENV), fail closed, a FAIL the receipt says it fixes or
+  # supersedes); any FAIL left beside the PASS is a non-pass lane.
+  s=$(sed -E 's/\b0+ *(\/| OF ) *[0-9]+ +(LANES? +)?FAIL\b//g
+    s/\b(0+|NO|NONE|ZERO)( +LANES?)? +FAIL\b//g
+    s/\bFAIL( +(LANES?|COUNT))? *[:=]? *0+\b//g
+    s/\bFAIL *\([A-Z]+\)//g; s/\bFAIL[ -]CLOSED\b//g
+    s/\b(FIXES|FIXED|SUPERSEDES|CLOSES|RESOLVES)( +[A-Z0-9#-]+){0,3} +FAIL\b//g
+    s/\bROUND[ -]?[0-9]+ +FAIL +(FIXED|CLOSED|RESOLVED)\b//g' <<<"${u%%. *}")
+  re='(^|[^A-Z0-9])FAIL($|[^A-Z0-9])'
+  [[ $s =~ $re ]] && { echo FAIL; return; }
+  # every tally in the sentence ('2/3', '3 of 4', '1 valid lane of 3'), wherever it sits, needs N = M
+  while read -r n m; do
+    n=$((10#$n)); m=$((10#$m))
+    [ "$n" -eq "$m" ] || { echo FAIL; return; }
+  done < <(grep -oE '[0-9]+( +[A-Z]+){0,2} *(/| OF ) *[0-9]+' <<<"$s" | sed -E 's/^([0-9]+)[^0-9]+([0-9]+)$/\1 \2/')
   echo PASS
 }
 
@@ -59,7 +77,9 @@ run() { # dir esc owner
   local -A prev streak
   touch "$esc" 2>/dev/null || { echo "cannot write $esc" >&2; return 3; }
   while IFS= read -r f; do
-    n=$((n + 1)); c=$(chain "$f"); v=$(verdict "$f")
+    n=$((n + 1))
+    [ -f "$f" ] || { nm=1; continue; }   # a folder of that name is not a receipt
+    c=$(chain "$f"); v=$(verdict "$f")
     [[ $f =~ /triage-quorum-[0-9]+-gate-[A-Za-z0-9-]*Z\.md$ ]] || v=NM   # a renamed receipt is not measured, never dropped
     [ -n "$c" ] || v=NM
     if [ "$v" = NM ]; then nm=1; continue; fi   # not measured: neither resets nor counts
@@ -76,7 +96,7 @@ run() { # dir esc owner
       fi
     fi
     prev[$c]=$(basename "$f")
-  done < <(ls -tr "$dir"/triage-quorum-* 2>/dev/null | grep -vE '/triage-quorum-[0-9]+-gate-[A-Za-z0-9-]*Z-(A|B|C|prompt)\.[^/]*$')
+  done < <(ls -trd "$dir"/triage-quorum-* 2>/dev/null | grep -vE '/triage-quorum-[0-9]+-gate-[A-Za-z0-9-]*Z-(A|B|C|prompt)\.[^/]*$')
   [ "$n" -eq 0 ] && return 2
   [ "$rc" -eq 0 ] && [ "$nm" -eq 1 ] && return 2
   return "$rc"
@@ -129,6 +149,25 @@ self_test() { # $1 = script under test
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS (A PASS, B PASS, C FAIL)"; chk 1 "f14.4 a bold tally or a named FAIL lane beside PASS is not a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: PASS — FAIL lanes: 1"; chk 1 "f14.5 a bold tally or a named FAIL lane beside PASS is not a pass"; clr
   mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: **PASS** (3/3 lanes, no FAIL)"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f14 bold PASS 3/3 with no FAIL is a pass"; clr
+  # f15 (round 6): np = FAIL then X must escalate (X is a non-pass); ps = FAIL, X, FAIL must not (X is a PASS)
+  np() { mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "$1"; chk 1 "f15 non-pass: $1"; clr; }
+  ps() { mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "$1"; mk 3 0300 "# Quorum #3 (PMAT-8)" "$F"; chk 0 "f15 pass: $1"; clr; }
+  np "TALLY: 2/3 lanes PASS"; np "RESULT: PASS (valid lanes 2/3)"; np "OVERALL: PASS (1 valid lane of 3)"
+  np "RESULT: PASS with 2/3 lanes"; np "TALLY: PASS — 2 of 3 lanes"; np "RESULT: PASS (1/3 FAIL)"
+  np "RESULT: PASS (opus PASS, haiku PASS, argon NOT PASS)"; np "RESULT: PASS (2 PASS, 1 NOT PASS)"
+  np "RESULT: FAIL (1/3) → fix pushed, PASS pending re-quorum"; np "RESULT: FAIL (1/3) -> fix pushed, PASS pending"
+  np "RESULT: NOT-PASS"; np "RESULT: NOT_PASS"; np "RESULT: NOT  PASS"; np "RESULT: NO PASS (lane B errored)"; np "result: fail"
+  np "$F
+- Result A: PASS"; np "$F
+Final step: rerun after the fix; expected PASS."; np "## RESULT: FAIL (1/3)
+Overall the lanes pass/fail table is below."
+  ps "RESULT: PASS (FAIL lanes: 0)"; ps "RESULT: PASS 3/3 (no lane FAILED; all valid)"; ps "RESULT: PASS 3/3 (all lanes valid; 0 of 3 FAIL)"
+  ps "RESULT: PASS (none FAIL)"; ps "RESULT: PASS (zero FAIL)"; ps "RESULT: PASS (FAIL count: 0)"; ps "RESULT: PASS (0/3 FAIL)"
+  ps "RESULT: PASS 3/3 (fixes the round-4 FAIL)"; ps "RESULT: PASS 3/3 (all lanes valid; unknown events fail closed)"
+  ps "RESULT: PASS 3/3 — supersedes the FAIL at 0300Z."; ps "RESULT: PASS 3/3 (round 2 FAIL fixed)"
+  ps "RESULT: PASS 3/3. Fixes FAIL 1 from round 2."; ps "RESULT: PASS 3/3 — no lane FAILED."; ps "RESULT: NOT PASS 2/3 -> PASS 3/3 after the re-seat."
+  np "RESULT: PASS (opus PASS, argon **NOT** PASS)"; ps "RESULT: PASS 3/3 (adds a hard FAIL(ENV) exit)"; ps "RESULT: PASS 3/3. Lane B FAIL was conditional."
+  mk 1 0100 "# Quorum #1 (PMAT-8)" "$F"; mk 2 0200 "# Quorum #2 (PMAT-8)" "RESULT: BYPASS"; chk 2 "f15 BYPASS is not a PASS token: not measured"; clr
   mk 1 0100 "# Quorum #1 (PMAT-21)" "PMAT-Ticket: PMAT-30
 PMAT-Ticket: PMAT-31
 $F"; mk 2 0200 "# Quorum #2 (PMAT-21)" "$F"; chk 1 "f13 two different trailers fall back to line 1"; grep -q 'ticket=PMAT-21 ' "$t/esc" || { echo "FAIL: f13 ticket not PMAT-21"; bad=1; }; clr
