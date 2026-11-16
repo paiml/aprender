@@ -300,7 +300,7 @@ fn build_boxplot(
         return Some(Err(refuse("geom_boxplot cannot be combined with other distribution layers")));
     }
     let data = boxplot.data.as_ref().unwrap_or(plot_data);
-    Some(stat_boxplot::layout(data, &plot_aes.merge(&boxplot.aes), spec))
+    Some(stat_boxplot::layout(data, plot_aes, &boxplot.aes, spec))
 }
 
 /// Check a plot made only of distribution layers, as `ggplot_build()` would before its stats.
@@ -345,6 +345,7 @@ mod tests {
             ("hist", Geom::gg_histogram(), Aes::new().x("x")),
             ("freq", Geom::gg_freqpoly(), Aes::new().x("x")),
             ("dens", Geom::gg_density(), Aes::new().x("x")),
+            ("box", Geom::gg_boxplot(), Aes::new().y("x")),
             ("err", Geom::gg_errorbar(), Aes::new().x("x").ymin("x").ymax("x")),
         ]
     }
@@ -410,7 +411,11 @@ mod tests {
         let drawn = |r: Result<()>| matches!(r, Err(Error::UnsupportedLayer(m)) if m == NOT_DRAWN);
         for (name, g, a) in all_geoms() {
             let p = plot(small(), a, g).build().expect("builds");
-            assert!(not_built(&p.layout()), "{name}");
+            // a boxplot is built (its stat exists) but, like the rest, not drawn
+            assert!(
+                if name == "box" { p.layout().is_ok() } else { not_built(&p.layout()) },
+                "{name}"
+            );
             assert!(drawn(p.to_framebuffer().map(drop)), "{name} framebuffer");
             assert!(drawn(p.to_svg().map(drop)), "{name} svg");
         }

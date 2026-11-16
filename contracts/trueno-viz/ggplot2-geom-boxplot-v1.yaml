@@ -6,11 +6,11 @@ metadata:
   author: PAIML Engineering
   description: >-
     ggplot2 conformance, core row geom_boxplot (PLOT-GG-001, paiml/aprender#6909). stat_boxplot (type-7 hinges, whiskers to the most extreme point within coef x IQR, outliers,
-    notches 1.58 IQR / sqrt(n), relvarwidth, width 0.75 x resolution) then position_dodge2 (padding 0.1), as ggplot_build() lays them out. 25 cases, max relative error 1e-9
-    (every value goes through the public builder and layout()). Scope: a y mapping, x absent, numeric or text, fill, colour and group splitting a category into dodged boxes. Out of
-    scope (a typed Err, never a panic and never an empty or partial layer): a boxplot of x alone, a text, infinite or all-missing y, a non-positive or non-finite width, a non-finite
-    coef, a continuous fill or colour, a missing value in a text x, fill or colour, a surviving row with a missing group, other distribution layers beside it. The renderers refuse the
-    layer (UnsupportedLayer). The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time.
+    notches 1.58 IQR / sqrt(n), relvarwidth, width 0.75 x resolution) then position_dodge2 (padding 0.1), as ggplot_build() lays them out. 29 cases, max relative error 1e-9
+    (every value goes through the public builder and layout()). Scope: a y mapping, x absent, numeric or text, fill, colour (each in the plot or the layer aes()) and group splitting a category into dodged boxes. Out of
+    scope (a typed Err, never a panic and never an empty or partial layer): a boxplot of x alone, a text, infinite or all-missing y, an infinite x, fill and colour on two columns in one aes() call, a non-positive or non-finite width, a non-finite
+    coef, a continuous fill or colour, a missing value in a text x, fill or colour, a surviving row with a missing group, other distribution layers beside it. The renderers (svg, framebuffer, terminal) refuse the
+    layer (UnsupportedLayer or Rendering). The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time.
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), geom_boxplot, stat_boxplot, position_dodge2'
@@ -25,16 +25,17 @@ equations:
     - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; group ids exact
     preconditions:
     - y is mapped to an existing numeric column, else UnknownColumn or Rendering
-    - 'known difference from R: an infinite y is refused where R drops the row'
+    - 'known difference from R: an infinite y or an infinite x is refused where R drops the row'
     - 'known difference from R: a missing value in a text x, fill or colour is refused where R adds a level'
     - 'known difference from R: a surviving row with a missing group value is refused where R makes a group of it'
     - 'known difference from R: no row with a finite x and y is refused where R draws an empty layer'
     - 'known difference from R: a non-positive or non-finite width and a non-finite coef are refused'
     - 'known difference from R: a continuous fill or colour is refused (no palette is resolved; a discrete fill or colour only groups)'
     - 'known difference from R: a boxplot of x alone (flipped orientation) is refused'
-    - 'known limit: the interaction of x, fill and colour into a group follows the mapping order x, fill, colour; a different order inside one aes() call is not verified against R'
+    - 'group interaction order (measured against ggplot2 4.0.3): R interacts the discrete mappings in the order the evaluated aesthetics come, the layer aes() before the plot aes(), the first variable slowest; the engine does the same, and the 4 layered cases are R output'
+    - 'known difference from R: a discrete fill and colour on two different columns in the same aes() call are refused, because R orders them as written, which the engine does not record; x is assumed written before fill or colour inside one call, so only the group ids (not the box positions) could differ from R when fill is written before a text x'
     - 'known difference from R: a numeric x is always a double, so an integer-typed x (resolution 1 in R) is not distinguished'
-    - 'known difference from R: to_svg and to_framebuffer refuse the layer with UnsupportedLayer; it is not drawn'
+    - 'known difference from R: to_svg and to_framebuffer refuse the layer with UnsupportedLayer, and to_terminal with Rendering; it is not drawn'
 proof_obligations:
 - id: GG-BOXPLOT-INV-001
   type: invariant
@@ -124,6 +125,21 @@ falsification_tests:
   rule: A surviving row with a missing group value is refused
   prediction: removing the missing_group test in split_groups turns out_of_scope_input_is_a_typed_error RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::out_of_scope_input_is_a_typed_error
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-014
+  rule: The layer's discrete mappings are interacted before the plot's
+  prediction: ignoring where a mapping was written (fixed order x, fill, colour) in discrete_vars turns a_layer_colour_is_interacted_before_a_plot_fill RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::a_layer_colour_is_interacted_before_a_plot_fill
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-015
+  rule: A discrete fill and colour on two columns in one aes() call are refused
+  prediction: removing the same-call test in discrete_vars turns fill_and_colour_in_one_aes_call_are_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::fill_and_colour_in_one_aes_call_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-BOXPLOT-016
+  rule: The terminal target refuses a boxplot layer
+  prediction: removing the no-points-or-path test in to_terminal turns the_terminal_refuses_a_boxplot RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_boxplot_oracle::the_terminal_refuses_a_boxplot
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-GG-BOXPLOT-001

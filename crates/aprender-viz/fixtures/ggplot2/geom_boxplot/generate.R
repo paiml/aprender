@@ -11,8 +11,8 @@ source(file.path(here, "..", "oracle_scales.R"))
 suppressPackageStartupMessages(library(ggplot2))
 
 # Every value is exactly representable in f32 (the Rust frame stores f32).
-blk <- function(x, f, n, gr, y) data.frame(x = x, f = f, n = n, gr = gr, y = y,
-                                           stringsAsFactors = FALSE)
+blk <- function(x, f, n, gr, y, c = "u") data.frame(x = x, f = f, n = n, gr = gr, y = y, c = c,
+                                                    stringsAsFactors = FALSE)
 d <- rbind(
   blk("a", "p", 1, 0, c(30, 1, 2, 3, 4, 5, 6, 7, 8, 9)),             # block A: high outlier
   blk("b", "p", 2, 0, c(-20, 10, 11, 12, 13, 14, 15, 16, 17, 18)),   # block B: low outlier
@@ -32,7 +32,13 @@ d <- rbind(
   blk("z", "q", 6, 2, c(2, 3, 4, 5, 8)),
   blk("z", "r", 6, 3, c(0, 1, 2, 3, 4)),
   blk("a", "p", 1, 0, NA),                                           # NA y (row 59)
-  blk("a", "p", NA, 0, 5)                                            # NA numeric x (row 60)
+  blk("a", "p", NA, 0, 5),                                           # NA numeric x (row 60)
+  # block S: two text x, two fill levels, two colour levels, every combination (the
+  # layer-versus-plot order of the group interaction); `c` is "u" on every other row
+  blk("s", "p", 1, 0, c(1, 2, 3), "u"), blk("s", "p", 1, 0, c(2, 4, 6), "v"),
+  blk("s", "q", 1, 0, c(3, 5, 7), "u"), blk("s", "q", 1, 0, c(4, 6, 9), "v"),
+  blk("t", "p", 1, 0, c(5, 6, 8), "u"), blk("t", "p", 1, 0, c(6, 8, 9), "v"),
+  blk("t", "q", 1, 0, c(7, 9, 10), "u"), blk("t", "q", 1, 0, c(8, 10, 13), "v")
 )
 d$n <- as.numeric(d$n)   # a double, as the Rust frame holds it (R's integer x has resolution 1)
 d$y <- as.numeric(d$y)
@@ -46,6 +52,7 @@ rows_of <- function(...) sort(unique(unlist(list(...))))
 A <- ix("a"); A <- A[d$n[A] == 1]
 B <- ix("b"); C <- ix("c"); Dd <- ix("d"); E <- ix("e"); Ff <- ix("f"); G <- ix("g")
 H <- ix("h"); I <- ix("i"); J <- ix("j"); K <- ix("u", "v", "w"); N <- ix("z")
+S <- ix("s", "t")
 NAY <- which(is.na(d$y)); NAX <- which(is.na(d$n))
 
 box <- function(m, ..., rows) {
@@ -110,7 +117,18 @@ cases <- list(
     box(aes(x, y), rows = rows_of(B, which(d$x == "a" & is.na(d$y))))),
   c(list(name = "na_numeric_x_dropped",
          spec = "ggplot(d, aes(n, y, group = n)) + geom_boxplot()"),
-    box(aes(n, y, group = n), rows = rows_of(A, NAX)))
+    box(aes(n, y, group = n), rows = rows_of(A, NAX))),
+  # fill / colour split between ggplot() and geom_boxplot(): R interacts the layer's mappings first
+  c(list(name = "layer_colour_plot_fill",
+         spec = "ggplot(d, aes(x, y, fill = f)) + geom_boxplot(aes(colour = c))"),
+    box(aes(x, y, fill = f), aes(colour = c), rows = S)),
+  c(list(name = "layer_fill_plot_colour",
+         spec = "ggplot(d, aes(x, y, colour = c)) + geom_boxplot(aes(fill = f))"),
+    box(aes(x, y, colour = c), aes(fill = f), rows = S)),
+  c(list(name = "layer_fill_only", spec = "ggplot(d, aes(x, y)) + geom_boxplot(aes(fill = f))"),
+    box(aes(x, y), aes(fill = f), rows = S)),
+  c(list(name = "layer_x_plot_fill", spec = "ggplot(d, aes(fill = f)) + geom_boxplot(aes(x, y))"),
+    box(aes(fill = f), aes(x, y), rows = S))
 )
 
 num <- function(v) I(as.numeric(v))

@@ -7,8 +7,8 @@
 //! 1. Rows with a missing `y`, or a missing numeric `x`, are dropped (R warns and drops them). The
 //!    discrete `x` scale is trained on every row first, so a level whose rows were all dropped
 //!    still takes a position.
-//! 2. `add_group()`: the interaction of the discrete mappings (`x` when text, then `fill`, then
-//!    `colour`), or a `group` column's dense rank, or `-1` when nothing is discrete. A box is made
+//! 2. `add_group()`: the interaction of the discrete mappings (`x` when text, `fill`, `colour`;
+//!    the layer's `aes()` before the plot's, as R evaluates them), or a `group` column's dense rank, or `-1` when nothing is discrete. A box is made
 //!    per group.
 //! 3. `StatBoxplot$compute_group`: `quantile(y, type = 7)` at `0, .25, .5, .75, 1`; an outlier is
 //!    a `y` beyond `coef * IQR` of the box; the whiskers reach the furthest value inside; the
@@ -144,25 +144,55 @@ fn ranks(data: &DataFrame, name: &str) -> Result<Vec<usize>> {
     Ok(ks.iter().map(|k| distinct.binary_search_by(|d| key_order(d, k)).unwrap_or(0)).collect())
 }
 
-/// The discrete mappings ggplot2's `add_group()` interacts, in mapping order: `x` (text), `fill`,
-/// `colour`. A continuous `fill` or `colour` is refused: the palette is not resolved.
+/// A discrete mapping is a text column; a continuous `fill` or `colour` is refused (the palette is
+/// not resolved) and so is a missing value in one (R makes a level of it).
+fn check_discrete(data: &DataFrame, name: &str) -> Result<()> {
+    if !is_text(data, name)? {
+        return Err(refuse(format!(
+            "`{name}` is a continuous colour or fill mapping: continuous colour scales are not supported"
+        )));
+    }
+    if keys(data, name)?.iter().any(|k| k.0 == 2) {
+        return Err(refuse(format!(
+            "column `{name}` holds a missing value: R makes a level of it, which is not supported"
+        )));
+    }
+    Ok(())
+}
+
+/// The discrete mappings ggplot2's `add_group()` interacts, in the order R evaluates them: the
+/// layer's own `aes()` first, then the plot's (`defaults(layer$mapping, plot$mapping)`, measured
+/// against ggplot2 4.0.3). The first variable is the slowest in `id()`. Inside one `aes()` call R
+/// uses the written order, which [`Aes`] does not keep: `x` before `fill` is assumed there, and a
+/// `fill` and a `colour` on two columns from one call are refused because their order moves the
+/// boxes. `x` joins only when it is text.
 fn discrete_vars<'a>(
     data: &DataFrame,
     aes: &'a Aes,
+    layer_aes: &Aes,
     x_text: Option<&'a str>,
 ) -> Result<Vec<&'a str>> {
-    let mut vars: Vec<&str> = x_text.into_iter().collect();
-    for name in [aes.fill.as_deref(), aes.color.as_deref()].into_iter().flatten() {
-        if !is_text(data, name)? {
+    // (written in the plot call rather than the layer call, column); `false` sorts first.
+    let mut found: Vec<(bool, &str)> =
+        x_text.map(|x| (layer_aes.x.is_none(), x)).into_iter().collect();
+    let fill = aes.fill.as_deref().map(|f| (layer_aes.fill.is_none(), f));
+    let colour = aes.color.as_deref().map(|c| (layer_aes.color.is_none(), c));
+    for (level, name) in fill.iter().chain(colour.iter()) {
+        check_discrete(data, name)?;
+        found.push((*level, name));
+    }
+    if let (Some((fl, f)), Some((cl, c))) = (fill, colour) {
+        if fl == cl && f != c {
             return Err(refuse(format!(
-                "`{name}` is a continuous colour or fill mapping: continuous colour scales are not supported"
+                "`fill` (`{f}`) and `colour` (`{c}`) are both discrete and mapped in the same aes() \
+                 call: R orders them as written, which is not recorded, so the boxes could be \
+                 misplaced"
             )));
         }
-        if keys(data, name)?.iter().any(|k| k.0 == 2) {
-            return Err(refuse(format!(
-                "column `{name}` holds a missing value: R makes a level of it, which is not supported"
-            )));
-        }
+    }
+    found.sort_by_key(|(plot_level, _)| *plot_level);
+    let mut vars: Vec<&str> = Vec::new();
+    for (_, name) in found {
         if !vars.contains(&name) {
             vars.push(name);
         }
@@ -172,10 +202,15 @@ fn discrete_vars<'a>(
 
 /// ggplot2's `add_group()`: `id()` of the discrete mappings (first variable slowest), re-ranked
 /// densely; a `group` column overrides them; `-1` when nothing is discrete.
-fn group_ids(data: &DataFrame, aes: &Aes, x_text: Option<&str>) -> Result<Vec<i64>> {
+fn group_ids(
+    data: &DataFrame,
+    aes: &Aes,
+    layer_aes: &Aes,
+    x_text: Option<&str>,
+) -> Result<Vec<i64>> {
     let vars = match &aes.group {
         Some(g) => vec![g.as_str()],
-        None => discrete_vars(data, aes, x_text)?,
+        None => discrete_vars(data, aes, layer_aes, x_text)?,
     };
     if vars.is_empty() {
         return Ok(vec![-1; data.nrow()]);
@@ -433,17 +468,24 @@ fn x_scale(rows: &[BoxRow], levels: Option<Vec<String>>) -> PositionScale {
 /// or a surviving row with a missing `group` (R adds a level or a group for it), a `width` that is not positive and finite, a `coef`
 /// that is not finite, no row with a finite `x` and `y`, and a continuous `fill` or `colour`.
 /// A mapped `fill`/`colour` only groups: no palette is resolved. Known differences from R, kept
-/// as such: the order of two discrete mappings inside one `aes()` call is taken as `x`, `fill`,
-/// `colour`; an integer-typed numeric `x` in R has resolution 1, a number here is always a double.
+/// as such: the layer's discrete mappings are interacted before the plot's (as R does), `x` is taken
+/// before `fill` inside one `aes()` call, and a discrete `fill` and `colour` on different columns
+/// from one call are refused; an infinite `x` is refused (R drops the row); an integer-typed numeric `x` in R has resolution 1, a number here is always a double.
 ///
 /// # Errors
 ///
 /// [`Error::Rendering`] as above, [`Error::UnknownColumn`] for an absent column.
-pub(super) fn layout(data: &DataFrame, aes: &Aes, spec: &DistSpec) -> Result<BuiltLayout> {
+pub(super) fn layout(
+    data: &DataFrame,
+    plot_aes: &Aes,
+    layer_aes: &Aes,
+    spec: &DistSpec,
+) -> Result<BuiltLayout> {
+    let aes = &plot_aes.merge(layer_aes);
     check_params(spec, aes)?;
     let x = read_x(data, aes)?;
     let y = numeric(data, aes.y.as_deref().unwrap_or_default())?;
-    let group = group_ids(data, aes, x.text_column.as_deref())?;
+    let group = group_ids(data, aes, layer_aes, x.text_column.as_deref())?;
     let width = default_width(spec, &x);
     let missing = missing_group_rows(data, aes)?;
     let boxes: Vec<BoxRow> = split_groups(&x, &y, &group, &missing)?
