@@ -28,18 +28,18 @@ const REL_TOL: f64 = 1e-9;
 /// Absolute floor, for values at exactly zero.
 const ABS_TOL: f64 = 1e-12;
 
-fn close(a: f64, b: f64) -> bool {
+pub(super) fn close(a: f64, b: f64) -> bool {
     (a - b).abs() <= REL_TOL * a.abs().max(b.abs()) + ABS_TOL
 }
 
-fn assert_close_slice(what: &str, got: &[f64], want: &[f64]) {
+pub(super) fn assert_close_slice(what: &str, got: &[f64], want: &[f64]) {
     assert_eq!(got.len(), want.len(), "{what}: length got {got:?} want {want:?}");
     for (i, (g, w)) in got.iter().zip(want).enumerate() {
         assert!(close(*g, *w), "{what}[{i}]: got {g:?} want {w:?} (tol {REL_TOL} rel)");
     }
 }
 
-fn nums(v: &Value) -> Vec<f64> {
+pub(super) fn nums(v: &Value) -> Vec<f64> {
     v.as_array()
         .expect("fixture field is an array")
         .iter()
@@ -47,7 +47,7 @@ fn nums(v: &Value) -> Vec<f64> {
         .collect()
 }
 
-fn strs(v: &Value) -> Vec<String> {
+pub(super) fn strs(v: &Value) -> Vec<String> {
     v.as_array()
         .expect("fixture field is an array")
         .iter()
@@ -57,7 +57,7 @@ fn strs(v: &Value) -> Vec<String> {
 
 /// Parse a two-column numeric CSV (header `x,y`) into a frame. Values must be exact in f32;
 /// the parse asserts it, so a fixture edit cannot quietly turn the test into a rounding test.
-fn frame_from_csv(csv: &str) -> DataFrame {
+pub(super) fn frame_from_csv(csv: &str) -> DataFrame {
     let mut lines = csv.lines();
     let header: Vec<&str> = lines.next().expect("csv has a header").split(',').collect();
     let mut cols: Vec<Vec<f32>> = vec![Vec::new(); header.len()];
@@ -76,7 +76,7 @@ fn frame_from_csv(csv: &str) -> DataFrame {
     df
 }
 
-fn check_axis(name: &str, got: &PositionScale, want: &Value) {
+pub(super) fn check_axis(name: &str, got: &PositionScale, want: &Value) {
     assert_close_slice(
         &format!("{name}.limits"),
         &[got.limits.0, got.limits.1],

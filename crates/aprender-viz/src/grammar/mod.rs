@@ -38,6 +38,7 @@ mod data;
 mod dist;
 mod dist_math;
 mod facet;
+mod filled;
 mod geom;
 mod ggplot;
 #[cfg(test)]
@@ -47,6 +48,16 @@ mod ggplot2_bars_oracle;
 #[cfg(test)]
 mod ggplot2_bars_stack_oracle;
 #[cfg(test)]
+mod ggplot2_dist_density_oracle;
+#[cfg(test)]
+mod ggplot2_dist_freqpoly_oracle;
+#[cfg(test)]
+mod ggplot2_dist_oracle;
+#[cfg(test)]
+mod ggplot2_geom_area_oracle;
+#[cfg(test)]
+mod ggplot2_geom_ribbon_oracle;
+#[cfg(test)]
 mod ggplot2_lines_oracle;
 #[cfg(test)]
 mod ggplot2_marks_oracle;
@@ -54,6 +65,8 @@ mod ggplot2_marks_oracle;
 mod ggplot2_oracle;
 #[cfg(test)]
 mod ggplot2_oracle_scales;
+#[cfg(test)]
+mod ggplot2_position_dodge_oracle;
 mod marks;
 mod path;
 mod position;
@@ -69,17 +82,18 @@ mod theme;
 
 pub use aes::Aes;
 pub use build::{
-    format_labels, point_defaults, point_diameter_px, point_size_mm_for_diameter_px, BuiltLayer,
-    BuiltLayout, PointAes, PositionScale,
+    format_labels, point_defaults, point_diameter_px, point_size_mm_for_diameter_px, BuiltBins,
+    BuiltDensity, BuiltLayer, BuiltLayout, PointAes, PositionScale,
 };
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
 pub use dist::{DistKind, DistSpec};
 pub use facet::{panels, Facet, Panel};
+pub use filled::BuiltFilled;
 pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
-pub use position::{apply as apply_position, apply_panels, BarRow, Position};
+pub use position::{apply as apply_position, apply_panels, BarRow, Position, Preserve};
 pub use scale_discrete::{DiscreteSpec, DISCRETE_EXPAND_ADD};
 pub use scale_spec::{
     scale_continuous, scale_discrete, scale_log10, zero_range, ContinuousSpec, Expansion,
