@@ -8,9 +8,10 @@
 // Removed when `apr finetune` wires the recipe in (last slice of the stack).
 #![allow(dead_code)]
 
-use crate::error::CliError;
+use crate::error::{CliError, Result};
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use sha2::{Digest, Sha256};
+use std::path::{Path, PathBuf};
 
 /// The value the recipe's `recipe:` key must carry.
 pub(crate) const RECIPE_SCHEMA: &str = "apr-recipe-v1";
@@ -136,6 +137,214 @@ fn refuse(origin: &str, violations: &[String]) -> CliError {
         "recipe {origin} is not a valid {RECIPE_SCHEMA}: {}",
         violations.join("; ")
     ))
+}
+
+pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+/// Resolve `.` and `..` and repeated separators without touching the disk, so
+/// two spellings of one path compare equal.
+fn lexical_normalize(path: &Path) -> PathBuf {
+    use std::path::Component;
+    let mut out = PathBuf::new();
+    for c in path.components() {
+        match c {
+            Component::CurDir => {}
+            // `..` removes a name, stays at the root, and is kept when
+            // there is no name left to remove (`../../a` stays `../../a`).
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
+                }
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                _ => out.push(".."),
+            },
+            other => out.push(other.as_os_str()),
+        }
+    }
+    out
+}
+
+fn is_sha256(s: &str) -> bool {
+    s.len() == 64
+        && s.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+/// A required, non-empty string; a miss is recorded against `field`.
+fn required(value: Option<&String>, field: &str, why: &str, out: &mut Vec<String>) -> String {
+    match value.map(|s| s.trim()) {
+        Some(s) if !s.is_empty() => s.to_string(),
+        Some(_) => {
+            out.push(format!("field `{field}` is empty ({why})"));
+            String::new()
+        }
+        None => {
+            out.push(format!("field `{field}` is required ({why})"));
+            String::new()
+        }
+    }
+}
+
+fn check_training(t: &RawTraining, out: &mut Vec<String>) {
+    if t.rank == Some(0) {
+        out.push("field `training.rank` must be greater than 0".to_string());
+    }
+    if t.epochs == Some(0) {
+        out.push("field `training.epochs` must be greater than 0".to_string());
+    }
+    if let Some(lr) = t.learning_rate {
+        if !(lr.is_finite() && lr > 0.0) {
+            out.push(format!(
+                "field `training.learning_rate` must be a positive number, got {lr}"
+            ));
+        }
+    }
+    if t.max_seq_len == Some(0) {
+        out.push("field `training.max_seq_len` must be greater than 0".to_string());
+    }
+}
+
+impl TrainRecipe {
+    /// Validate recipe text. `base_dir` anchors relative paths; `origin` is
+    /// how the recipe is named in an error.
+    pub(crate) fn parse(src: &str, base_dir: &Path, origin: &str) -> Result<Self> {
+        let raw: RawRecipe = serde_saphyr::from_str_with_options(
+            src,
+            serde_saphyr::options! { strict_booleans: true, merge_keys: serde_saphyr::MergeKeyPolicy::AsOrdinary, emit_comments: false, reject_non_finite_typeless_float: false },
+        )
+        .map_err(|e| refuse(origin, &[e.to_string()]))?;
+
+        let mut bad = Vec::new();
+        match raw.recipe.as_deref() {
+            Some(RECIPE_SCHEMA) => {}
+            Some(other) => bad.push(format!(
+                "field `recipe` must be `{RECIPE_SCHEMA}`, got `{other}`"
+            )),
+            None => bad.push(format!(
+                "field `recipe` is required (the schema id, `{RECIPE_SCHEMA}`)"
+            )),
+        }
+        let name = required(raw.name.as_ref(), "name", "a label for receipts", &mut bad);
+        let base = required(raw.base.as_ref(), "base", "the base model file", &mut bad);
+        if raw
+            .model_size
+            .as_deref()
+            .is_some_and(|m| m.trim().is_empty())
+        {
+            bad.push(
+                "field `model_size` is empty (omit it or give a size such as 0.8B)".to_string(),
+            );
+        }
+        let method_text = required(
+            raw.method.as_ref(),
+            "method",
+            "one of lora, qlora, distill",
+            &mut bad,
+        );
+        let method = RecipeMethod::parse(&method_text);
+        if method.is_none() && !method_text.is_empty() {
+            bad.push(format!(
+                "field `method` must be one of lora, qlora, distill, got `{method_text}`"
+            ));
+        }
+
+        let (train, pin) = match raw.data.as_ref() {
+            Some(d) => (
+                required(
+                    d.train.as_ref(),
+                    "data.train",
+                    "the training data file",
+                    &mut bad,
+                ),
+                d.sha256.clone(),
+            ),
+            None => {
+                bad.push("field `data` is required (block with `train`)".to_string());
+                (String::new(), None)
+            }
+        };
+        if let Some(p) = pin.as_deref() {
+            if !is_sha256(p) {
+                bad.push("field `data.sha256` must be 64 lower-case hex characters".to_string());
+            }
+        }
+
+        let (heldout, benchmark) = match raw.eval.as_ref() {
+            Some(e) => (
+                required(
+                    e.heldout.as_ref(),
+                    "eval.heldout",
+                    "the held-out eval file",
+                    &mut bad,
+                ),
+                e.benchmark.clone(),
+            ),
+            None => {
+                bad.push(
+                    "field `eval` is required (block with `heldout`: a run without an eval \
+                     cannot be compared)"
+                        .to_string(),
+                );
+                (String::new(), None)
+            }
+        };
+        if !heldout.is_empty()
+            && !train.is_empty()
+            && lexical_normalize(&base_dir.join(&heldout))
+                == lexical_normalize(&base_dir.join(&train))
+        {
+            bad.push("field `eval.heldout` must not be the training file `data.train`".to_string());
+        }
+        if benchmark.as_deref().is_some_and(|b| b.trim().is_empty()) {
+            bad.push("field `eval.benchmark` is empty (omit it or name a benchmark)".to_string());
+        }
+
+        let seed = match raw.seed {
+            None => {
+                bad.push("field `seed` is required (an unsigned integer)".to_string());
+                None
+            }
+            Some(s) => u64::try_from(s).ok().or_else(|| {
+                bad.push(format!("field `seed` must be an unsigned integer, got {s}"));
+                None
+            }),
+        };
+
+        check_training(&raw.training, &mut bad);
+        let output_dir = raw.output.as_ref().map(|o| {
+            required(
+                o.dir.as_ref(),
+                "output.dir",
+                "where the run writes",
+                &mut bad,
+            )
+        });
+
+        let (Some(method), Some(seed), true) = (method, seed, bad.is_empty()) else {
+            return Err(refuse(origin, &bad));
+        };
+        Ok(Self {
+            name,
+            base: base_dir.join(base),
+            model_size: raw.model_size.map(|m| m.trim().to_string()),
+            method,
+            train: base_dir.join(train),
+            data_sha256_pin: pin,
+            heldout: base_dir.join(heldout),
+            benchmark,
+            seed,
+            // The teacher block is read and validated in a later slice.
+            teacher: None,
+            rank: raw.training.rank,
+            epochs: raw.training.epochs,
+            learning_rate: raw.training.learning_rate,
+            max_seq_len: raw.training.max_seq_len,
+            output_dir: output_dir.map(|d| base_dir.join(d)),
+            recipe_sha256: sha256_bytes(src.as_bytes()),
+        })
+    }
 }
 
 #[cfg(test)]
