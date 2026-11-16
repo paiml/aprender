@@ -17,8 +17,8 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::grammar::{
-    zero_range, Aes, Coord, DataFrame, Expansion, GGPlot, Geom, Stat, TerminalPlot, Theme,
-    MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
+    zero_range, Aes, Coord, DataFrame, Expansion, Facet, GGPlot, Geom, Layer, Stat, TerminalPlot,
+    Theme, MAX_TERMINAL_HEIGHT, MAX_TERMINAL_WIDTH, MIN_TERMINAL_HEIGHT, MIN_TERMINAL_WIDTH,
 };
 
 /// The command line of `apr plot`.
@@ -158,7 +158,7 @@ pub enum Output {
 }
 
 /// What to plot and how.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PlotArgs {
     /// CSV file with a header row (`#` lines are skipped).
     pub data: PathBuf,
@@ -174,6 +174,20 @@ pub struct PlotArgs {
     pub output: Output,
     /// Never emit colour escape sequences.
     pub no_color: bool,
+    /// Column to wrap panels on (`facet_wrap(~column)`); `None` draws one panel.
+    pub facet: Option<String>,
+    /// Horizontal reference lines, at these y values.
+    pub hlines: Vec<f64>,
+    /// Vertical reference lines, at these x values.
+    pub vlines: Vec<f64>,
+    /// Diagonal reference lines, `(slope, intercept)`.
+    pub ablines: Vec<(f64, f64)>,
+    /// Plot title.
+    pub title: Option<String>,
+    /// X axis label.
+    pub xlab: Option<String>,
+    /// Y axis label.
+    pub ylab: Option<String>,
 }
 
 /// The process facts that decide colour, read once so tests can set them.
@@ -194,20 +208,56 @@ impl Env {
     }
 }
 
+/// Why the verb failed. The exit code tells a caller whether to fix the command or the input
+/// (the split of the older `aprender-present plot`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PlotError {
+    /// The command asks for something the verb does not take: an unsupported option, a bad
+    /// value, a size out of bounds. Exit code 2, as clap's own usage errors.
+    Usage(String),
+    /// The request is fine but the input or the output is not: unreadable file, bad CSV, a
+    /// column that is not numeric, an engine error, a write that fails. Exit code 1.
+    Failed(String),
+}
+
+impl PlotError {
+    /// The process exit code: 2 for [`PlotError::Usage`], 1 for [`PlotError::Failed`].
+    #[must_use]
+    pub fn exit_code(&self) -> i32 {
+        match self {
+            Self::Usage(_) => 2,
+            Self::Failed(_) => 1,
+        }
+    }
+}
+
+impl std::fmt::Display for PlotError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Usage(m) | Self::Failed(m) => f.write_str(m),
+        }
+    }
+}
+
+impl std::error::Error for PlotError {}
+
 /// Draw the plot to `stdout`, warnings to `stderr`.
 ///
 /// # Errors
 ///
-/// A message for the user: a size out of bounds, unreadable or malformed CSV, an unknown or
-/// non-numeric column, a value refused by column and line, or an engine error.
+/// [`PlotError::Usage`] for a size out of bounds; [`PlotError::Failed`] for unreadable or
+/// malformed CSV, an unknown or non-numeric column, a value refused by column and line, an
+/// engine error or a failed write.
 pub fn run(
     args: &PlotArgs,
     env: &Env,
     stdout: &mut dyn Write,
     stderr: &mut dyn Write,
-) -> Result<(), String> {
+) -> Result<(), PlotError> {
     let text = render(args, env, stderr)?;
-    stdout.write_all(text.as_bytes()).map_err(|e| format!("cannot write stdout: {e}"))
+    stdout
+        .write_all(text.as_bytes())
+        .map_err(|e| PlotError::Failed(format!("cannot write stdout: {e}")))
 }
 
 /// The `(min, max)` of `values`.
@@ -221,11 +271,15 @@ fn build_plot(
     args: &PlotArgs,
     row: &ProvenRow,
     (xs, ys): (&[f64], &[f64]),
+    facet: Option<(&str, &[&str])>,
 ) -> Result<GGPlot, String> {
     let narrow = |v: &[f64]| v.iter().map(|&x| x as f32).collect::<Vec<f32>>();
     let mut df = DataFrame::new();
     df.add_column_f32(&args.x, &narrow(xs));
     df.add_column_f32(&args.y, &narrow(ys));
+    if let Some((col, labels)) = facet {
+        df.add_column_str(col, labels);
+    }
     let plot = GGPlot::new().data(df).aes(Aes::new().x(&args.x).y(&args.y));
     let plot = plot.geom(geom_for(row.geom)?.stat(stat_for(row.stat)?));
     position_for(row.position)?;
@@ -235,32 +289,116 @@ fn build_plot(
         scale_for(aes, kind)?;
     }
     let plot = plot.coord(coord_for(row.coord)?).theme(theme_for(row.theme)?);
-    Ok(plot.trained_on(domain(xs), domain(ys)))
+    let plot = match facet {
+        Some((col, labels)) => plot.facet(Facet::wrap(col, wrap_columns(labels))),
+        None => plot,
+    };
+    let plot = add_decorations(plot, args);
+    let (dx, dy) = trained_domains(args, xs, ys);
+    Ok(plot.trained_on(dx, dy))
+}
+
+/// The x and y domains the scales are trained on: the data, widened by each `--vline` (x) and
+/// `--hline` (y), as ggplot2 trains a scale on a reference line's intercept.
+fn trained_domains(args: &PlotArgs, xs: &[f64], ys: &[f64]) -> ((f64, f64), (f64, f64)) {
+    let with = |data: &[f64], lines: &[f64]| domain(&[data, lines].concat());
+    (with(xs, &args.vlines), with(ys, &args.hlines))
+}
+
+/// The reference lines and labels of `args`, as layers and label settings on `plot`.
+fn add_decorations(mut plot: GGPlot, args: &PlotArgs) -> GGPlot {
+    for &y in &args.hlines {
+        plot = plot.layer(Layer::new(Geom::hline(y as f32)));
+    }
+    for &x in &args.vlines {
+        plot = plot.layer(Layer::new(Geom::vline(x as f32)));
+    }
+    for &(m, b) in &args.ablines {
+        plot = plot.layer(Layer::new(Geom::abline(m as f32, b as f32)));
+    }
+    if let Some(t) = &args.title {
+        plot = plot.title(t.clone());
+    }
+    if let Some(l) = &args.xlab {
+        plot = plot.xlab(l.clone());
+    }
+    if let Some(l) = &args.ylab {
+        plot = plot.ylab(l.clone());
+    }
+    plot
 }
 
 /// Check the size, read the data, then build and render the plot.
-fn render(args: &PlotArgs, env: &Env, stderr: &mut dyn Write) -> Result<String, String> {
-    let row = point_row(PROVEN_ROWS)?;
+fn render(args: &PlotArgs, env: &Env, stderr: &mut dyn Write) -> Result<String, PlotError> {
+    let failed = PlotError::Failed;
+    let row = point_row(PROVEN_ROWS).map_err(failed)?;
     let (default, color) = match args.output {
         Output::Term => (DEFAULT_TERM_SIZE, !args.no_color && !env.no_color && env.stdout_is_tty),
         Output::Svg => (DEFAULT_SVG_SIZE, false),
     };
     let size = (args.width.unwrap_or(default.0), args.height.unwrap_or(default.1));
     // Before the data is read: a size the engine cannot allocate must not cost a read first.
-    check_size(args.output, size)?;
-    let (xs, ys, dropped) = numeric_xy(&read_csv(&args.data)?, &args.x, &args.y)?;
+    check_size(args.output, size).map_err(PlotError::Usage)?;
+    let table = read_csv(&args.data).map_err(failed)?;
+    let (xs, ys, dropped) = numeric_xy(&table, &args.x, &args.y).map_err(failed)?;
     if dropped > 0 {
         // ggplot2's wording for the same event, singular for one row.
         let rows = if dropped == 1 { "row" } else { "rows" };
         let _ = writeln!(stderr, "warning: Removed {dropped} {rows} containing missing values or values outside the scale range (geom_point).");
     }
-    let plot = build_plot(args, row, (&xs, &ys))?;
+    let labels =
+        args.facet.as_deref().map(|c| facet_labels(&table, args, c)).transpose().map_err(failed)?;
+    let refs: Vec<&str> = labels.iter().flatten().map(String::as_str).collect();
+    let facet = args.facet.as_deref().map(|c| (c, refs.as_slice()));
+    let plot = build_plot(args, row, (&xs, &ys), facet).map_err(failed)?;
     let target = TerminalPlot { width: size.0, height: size.1, color };
     match args.output {
         Output::Term => plot.build().and_then(|b| b.to_terminal(target)),
         Output::Svg => plot.dimensions(size.0, size.1).build().and_then(|b| b.to_svg()),
     }
-    .map_err(|e| e.to_string())
+    .map_err(|e| PlotError::Failed(e.to_string()))
+}
+
+/// ggplot2's `facet_wrap` column count over the distinct labels: `wrap_dims` takes it from
+/// `grDevices::n2mfrow(n)[1]`, so 3 panels are 1x3 and 4 are 2x2.
+fn wrap_columns(labels: &[&str]) -> usize {
+    let mut levels = labels.to_vec();
+    levels.sort_unstable();
+    levels.dedup();
+    n2mfrow_columns(levels.len())
+}
+
+/// The first element of R's `n2mfrow(n)`: `n` up to 3, `(n+1) %/% 2` up to 6, `(n+2) %/% 3`
+/// up to 12, then `ceiling(sqrt(n))`. At least 1.
+fn n2mfrow_columns(n: usize) -> usize {
+    match n {
+        0 => 1,
+        1..=3 => n,
+        4..=6 => (n + 1) / 2,
+        7..=12 => (n + 2) / 3,
+        _ => (1..=n).find(|c| c * c >= n).unwrap_or(1),
+    }
+}
+
+/// The facet column's text for the rows [`numeric_xy`] kept (both x and y a number), so each
+/// point lands in its own panel.
+fn facet_labels(table: &Table, args: &PlotArgs, col: &str) -> Result<Vec<String>, String> {
+    let at = |name: &str| table.columns.iter().position(|c| c == name);
+    let fi = at(col)
+        .ok_or_else(|| format!("unknown column '{col}'; columns: {}", table.columns.join(", ")))?;
+    if col == args.x || col == args.y {
+        return Err(format!("facet column '{col}' is also mapped to x or y"));
+    }
+    let (xi, yi) = (at(&args.x), at(&args.y));
+    let present = |f: &[String], i: Option<usize>| {
+        i.is_some_and(|i| f[i].parse::<f64>().is_ok_and(|v| !v.is_nan()))
+    };
+    Ok(table
+        .rows
+        .iter()
+        .filter(|(_, f)| present(f, xi) && present(f, yi))
+        .map(|(_, f)| f[fi].clone())
+        .collect())
 }
 
 /// A size inside the target's bounds: 20x8 to 1000x1000 cells, or 1x1 to 4096x4096 pixels.
@@ -447,7 +585,7 @@ mod tests {
 
     fn go(args: &PlotArgs, env: &Env) -> (Result<(), String>, String, String) {
         let (mut out, mut err) = (Vec::new(), Vec::new());
-        let r = run(args, env, &mut out, &mut err);
+        let r = run(args, env, &mut out, &mut err).map_err(|e| e.to_string());
         (r, String::from_utf8_lossy(&out).into(), String::from_utf8_lossy(&err).into())
     }
 
@@ -555,7 +693,7 @@ mod tests {
         let a = args(Path::new("unused.csv"));
         let (xs, ys) = (vec![1.0, 2.0], vec![3.0, 4.0]);
         for row in PROVEN_ROWS {
-            assert!(build_plot(&a, row, (&xs, &ys)).is_ok(), "{}", row.contract);
+            assert!(build_plot(&a, row, (&xs, &ys), None).is_ok(), "{}", row.contract);
         }
         let e = point_row(&[ProvenRow { geom: "line", ..POINT_ROW }]).expect_err("no point row");
         assert_eq!(e, "no ggplot2 row proves geom_point, so apr plot has nothing to draw");
@@ -572,7 +710,7 @@ mod tests {
             (ProvenRow { theme: "bw", ..POINT_ROW }, "theme 'bw'"),
         ] {
             let want = format!("{want} is proven but the plot verb has no builder for it");
-            assert_eq!(build_plot(&a, &row, (&xs, &ys)).err(), Some(want));
+            assert_eq!(build_plot(&a, &row, (&xs, &ys), None).err(), Some(want));
         }
         assert!(PROVEN_ROWS.contains(&POINT_ROW), "row 1's block is in the table");
     }
@@ -661,11 +799,32 @@ mod tests {
     fn write_and_engine_failures_are_messages() {
         let mut full: &mut [u8] = &mut [];
         let r = run(&args(&tmp("full.csv", ROW1)), &Env::default(), &mut full, &mut Vec::new());
-        assert_eq!(r, Err("cannot write stdout: failed to write whole buffer".into()));
+        assert_eq!(
+            r,
+            Err(PlotError::Failed("cannot write stdout: failed to write whole buffer".into()))
+        );
         let wide = tmp("wide.csv", "x,y\n0,-70368744177664\n1,-70368828063744\n");
         let e =
             go(&PlotArgs { width: Some(20), height: Some(8), ..args(&wide) }, &Env::default()).0;
         assert!(e.expect_err("no room").contains("no room for the panel"));
+    }
+
+    #[test]
+    fn exit_codes_split_usage_from_failed() {
+        let code = |a: &PlotArgs| {
+            run(a, &Env::default(), &mut Vec::new(), &mut Vec::new()).map_err(|e| e.exit_code())
+        };
+        // A size out of bounds is a usage error, before the data is read.
+        let gone = args(Path::new("/nonexistent/plot.csv"));
+        assert_eq!(
+            code(&PlotArgs { width: Some(4097), output: Output::Svg, ..gone.clone() }),
+            Err(2)
+        );
+        // Unreadable data, a non-numeric column and an engine error are failures.
+        assert_eq!(code(&gone), Err(1));
+        assert_eq!(code(&PlotArgs { y: "nope".into(), ..args(&tmp("exit.csv", ROW1)) }), Err(1));
+        let wide = tmp("exit-wide.csv", "x,y\n0,-70368744177664\n1,-70368828063744\n");
+        assert_eq!(code(&PlotArgs { width: Some(20), height: Some(8), ..args(&wide) }), Err(1));
     }
 
     #[test]
@@ -681,6 +840,51 @@ mod tests {
             None => std::env::remove_var("NO_COLOR"),
         }
         assert!(set && !empty);
+    }
+
+    #[test]
+    fn wrap_columns_follow_n2mfrow() {
+        // (panels, columns) from R: sapply(c(1:7,12,13,16,17), function(n) n2mfrow(n)[1]).
+        for (n, cols) in [(0, 1), (1, 1), (2, 2), (3, 3), (4, 2), (5, 3), (6, 3), (7, 3)] {
+            assert_eq!(n2mfrow_columns(n), cols, "{n} panels");
+        }
+        for (n, cols) in [(12, 4), (13, 4), (16, 4), (17, 5)] {
+            assert_eq!(n2mfrow_columns(n), cols, "{n} panels");
+        }
+        assert_eq!(wrap_columns(&["b", "a", "b", "c"]), 3);
+    }
+
+    #[test]
+    fn reference_lines_outside_the_data_widen_their_own_scale() {
+        let data = [1.0, 2.0, 3.0];
+        let a = PlotArgs { hlines: vec![10.0], vlines: vec![-5.0], ..PlotArgs::default() };
+        assert_eq!(trained_domains(&a, &data, &data), ((-5.0, 3.0), (1.0, 10.0)));
+        let none = PlotArgs::default();
+        assert_eq!(trained_domains(&none, &data, &data), ((1.0, 3.0), (1.0, 3.0)));
+    }
+
+    #[test]
+    fn decorations_reach_the_right_geom_and_label() {
+        let a = PlotArgs {
+            hlines: vec![5.0],
+            vlines: vec![7.0],
+            ablines: vec![(2.0, 3.0)],
+            title: Some("T".into()),
+            xlab: Some("X".into()),
+            ylab: Some("Y".into()),
+            ..PlotArgs::default()
+        };
+        let d = format!("{:?}", add_decorations(GGPlot::new(), &a));
+        for want in [
+            "title: Some(\"T\")",
+            "xlab: Some(\"X\")",
+            "ylab: Some(\"Y\")",
+            "Hline { yintercept: 5.0 }",
+            "Vline { xintercept: 7.0 }",
+            "Abline { slope: 2.0, intercept: 3.0 }",
+        ] {
+            assert!(d.contains(want), "{want} missing in {d}");
+        }
     }
 }
 

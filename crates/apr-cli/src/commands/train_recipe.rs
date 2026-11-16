@@ -171,11 +171,15 @@ fn lexical_normalize(path: &Path) -> PathBuf {
     for c in path.components() {
         match c {
             Component::CurDir => {}
-            Component::ParentDir => {
-                if !out.pop() {
-                    out.push("..");
+            // `..` removes a name, stays at the root, and is kept when
+            // there is no name left to remove (`../../a` stays `../../a`).
+            Component::ParentDir => match out.components().next_back() {
+                Some(Component::Normal(_)) => {
+                    out.pop();
                 }
-            }
+                Some(Component::RootDir | Component::Prefix(_)) => {}
+                _ => out.push(".."),
+            },
             other => out.push(other.as_os_str()),
         }
     }
@@ -227,6 +231,11 @@ pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
 
 /// sha256 of a file, streamed. `None` when the file cannot be read.
 pub(crate) fn sha256_file(path: &Path) -> Option<String> {
+    // Asked before the open: a device has no end, and opening a pipe waits
+    // for a writer.
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
     let mut file = std::fs::File::open(path).ok()?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0_u8; 1 << 16];
@@ -421,6 +430,7 @@ impl TrainRecipe {
             }
         };
         if !heldout.is_empty()
+            && !train.is_empty()
             && lexical_normalize(&base_dir.join(&heldout))
                 == lexical_normalize(&base_dir.join(&train))
         {
