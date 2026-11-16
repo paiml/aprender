@@ -136,6 +136,7 @@ uuid = { version = "1", features = ["v4", "serde"] }
 
 # Numerical traits (for generic code)
 num-traits = "0.2"
+apr-format = { path = "../apr-format", version = "0.74.0" }  # #7169 shared qwen4_exp refusal text
 
 # Half-precision floats (for Q4_K and other K-quantization formats)
 half = { version = "2.4", features = ["std"] }

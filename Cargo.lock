@@ -1410,6 +1410,7 @@ version = "0.74.0"
 dependencies = [
  "anyhow",
  "approx",
+ "apr-format",
  "aprender-compute",
  "aprender-contracts",
  "aprender-contracts-macros",

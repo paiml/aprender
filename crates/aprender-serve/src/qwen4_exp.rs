@@ -9,12 +9,8 @@
 
 use serde::Deserialize;
 
-/// `model_type` of the composite config.
-pub const MODEL_TYPE: &str = "qwen4_exp";
-/// `model_type` of its nested `text_config`.
-pub const TEXT_MODEL_TYPE: &str = "qwen4_exp_text";
-/// HF `architectures[0]`.
-pub const ARCHITECTURE: &str = "Qwen4ExpForConditionalGeneration";
+// One source for ids and the refusal text: `apr-format` (shared with `apr import`).
+pub use apr_format::qwen4_exp::{is_qwen4_exp, ARCHITECTURE, MODEL_TYPE, TEXT_MODEL_TYPE};
 
 /// `mtp` sub-object (multi-token-prediction head).
 #[derive(Debug, Clone, Default, Deserialize, PartialEq)]
@@ -251,41 +247,35 @@ impl UnsupportedOp {
     }
 }
 
-/// Is this `model_type` / `architectures` pair `qwen4_exp`?
-#[must_use]
-pub fn is_qwen4_exp(model_type: Option<&str>, architectures: &[String]) -> bool {
-    matches!(model_type, Some(MODEL_TYPE | TEXT_MODEL_TYPE))
-        || architectures.iter().any(|a| a == ARCHITECTURE)
-}
-
 /// The named refusal for inference on `qwen4_exp`.
 #[must_use]
 pub fn refusal_reason(ops: &[UnsupportedOp]) -> String {
     let names: Vec<&str> = ops.iter().map(|o| o.name()).collect();
-    format!(
-        "architecture '{MODEL_TYPE}' is recognised but this build has no forward for its new \
-         ops: [{}]. This is a refusal, not a fallback: nothing was loaded and nothing was \
-         generated (paiml/aprender#7169 S2/S3).",
-        names.join(", ")
-    )
+    apr_format::qwen4_exp::refusal_reason(&names)
 }
 
 /// Refusal for a `qwen4_exp` safetensors config, `None` for any other arch.
 #[must_use]
 pub fn refusal_for(model_type: Option<&str>, architectures: &[String]) -> Option<String> {
-    if !is_qwen4_exp(model_type, architectures) {
-        return None;
+    apr_format::qwen4_exp::refusal_for(model_type, architectures)
+}
+
+/// Fail closed if `config` is `qwen4_exp`. Not feature-gated: shared by the CPU
+/// converter and the CUDA loader so both refuse by name before reading tensors.
+///
+/// # Errors
+/// `UnsupportedOperation` naming every unsupported op.
+pub fn check_config(config: &crate::SafetensorsConfig) -> crate::error::Result<()> {
+    match refusal_for(
+        config.model_type.as_deref(),
+        config.architectures.as_deref().unwrap_or(&[]),
+    ) {
+        Some(reason) => Err(crate::error::RealizarError::UnsupportedOperation {
+            operation: "qwen4_exp_forward".to_string(),
+            reason,
+        }),
+        None => Ok(()),
     }
-    // All six ops are unconditional for this architecture, so the refusal
-    // does not depend on the (possibly partial) config contents.
-    Some(refusal_reason(&[
-        UnsupportedOp::SparseAttentionIndexer,
-        UnsupportedOp::NgramEmbedding,
-        UnsupportedOp::PerLayerEmbedding,
-        UnsupportedOp::HyperConnectionResidual,
-        UnsupportedOp::SigmoidOutputGate,
-        UnsupportedOp::MultiTokenPrediction,
-    ]))
 }
 
 /// Tensor families of a `qwen4_exp` checkpoint.
@@ -313,6 +303,26 @@ pub enum TensorFamily {
     Vision,
 }
 
+/// Layer-suffix prefix table, first match wins (`self_attn.indexer.` before `self_attn.`).
+const LAYER_PREFIXES: [(&str, TensorFamily); 8] = [
+    ("linear_attn.", TensorFamily::LinearAttention),
+    ("self_attn.indexer.", TensorFamily::Indexer),
+    ("self_attn.", TensorFamily::FullAttention),
+    ("mlp.", TensorFamily::Moe),
+    ("attn_hyper_connection.", TensorFamily::HyperConnection),
+    ("mlp_hyper_connection.", TensorFamily::HyperConnection),
+    ("ple.ple_embedding.", TensorFamily::NgramEmbedding),
+    ("ple.", TensorFamily::PerLayerEmbedding),
+];
+
+/// Classify a name below `layers.<idx>.`; `None` means unknown.
+fn classify_layer_suffix(rest: &str) -> Option<TensorFamily> {
+    LAYER_PREFIXES
+        .iter()
+        .find(|(p, _)| rest.starts_with(p))
+        .map(|&(_, f)| f)
+}
+
 /// Classify a tensor name; `None` means unknown.
 #[must_use]
 pub fn classify_tensor(name: &str) -> Option<TensorFamily> {
@@ -330,29 +340,9 @@ pub fn classify_tensor(name: &str) -> Option<TensorFamily> {
     if rest.starts_with("hyper_connection_mixer.") {
         return Some(F::HyperConnection);
     }
-    let rest = rest.strip_prefix("layers.")?;
-    let (idx, rest) = rest.split_once('.')?;
+    let (idx, rest) = rest.strip_prefix("layers.")?.split_once('.')?;
     idx.parse::<usize>().ok()?;
-    let family = if rest.starts_with("linear_attn.") {
-        F::LinearAttention
-    } else if rest.starts_with("self_attn.indexer.") {
-        F::Indexer
-    } else if rest.starts_with("self_attn.") {
-        F::FullAttention
-    } else if rest.starts_with("mlp.") {
-        F::Moe
-    } else if rest.starts_with("attn_hyper_connection.")
-        || rest.starts_with("mlp_hyper_connection.")
-    {
-        F::HyperConnection
-    } else if rest.starts_with("ple.ple_embedding.") {
-        F::NgramEmbedding
-    } else if rest.starts_with("ple.") {
-        F::PerLayerEmbedding
-    } else {
-        return None;
-    };
-    Some(family)
+    classify_layer_suffix(rest)
 }
 
 #[cfg(test)]
@@ -450,5 +440,36 @@ mod tests {
     fn refusal_for_only_fires_on_qwen4_exp() {
         assert!(refusal_for(Some("qwen4_exp_text"), &[]).is_some());
         assert!(refusal_for(Some("qwen3_5"), &[]).is_none());
+    }
+
+    #[test]
+    fn classify_tensor_unknown_names_are_none() {
+        for n in [
+            "foo.weight",
+            "",
+            "model.language_model.layers.0.bogus.weight",
+            "model.language_model.layers.x.mlp.gate.weight",
+            "model.language_model.bogus",
+            "model.language_model.layers.0",
+        ] {
+            assert_eq!(classify_tensor(n), None, "{n}");
+        }
+    }
+
+    #[test]
+    fn check_config_refuses_qwen4_exp_by_name_and_passes_others() {
+        use crate::safetensors::SafetensorsConfig;
+        let cfg: SafetensorsConfig = serde_json::from_str(CONFIG).expect("cfg");
+        let err = check_config(&cfg).expect_err("must refuse");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("qwen4_exp") && msg.contains("refusal, not a fallback"),
+            "{msg}"
+        );
+        assert!(msg.contains("no tensor data was read"), "{msg}");
+        assert!(!msg.contains("nothing was loaded"), "{msg}");
+        let other: SafetensorsConfig =
+            serde_json::from_str(r#"{"model_type":"qwen3","hidden_size":8}"#).expect("cfg");
+        assert!(check_config(&other).is_ok());
     }
 }

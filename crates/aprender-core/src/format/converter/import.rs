@@ -39,6 +39,11 @@ pub fn apr_import<P: AsRef<Path>>(
     // Step 1: Resolve source to local path
     let local_path = resolve_source(&parsed_source, options.cache)?;
 
+    // #7169: qwen4_exp has no import/forward path; refuse by name from config.json
+    // before any tensor read (an unknown model_type would otherwise become Auto and
+    // q/k-norm evidence would mislabel it Qwen3).
+    refuse_qwen4_exp(&local_path)?;
+
     // Step 2: Check if GGUF - use raw import path to preserve quantization
     // PMAT-271: Use magic bytes first, extension fallback for extensionless HF cache blobs
     let is_gguf = crate::format::rosetta::FormatType::from_magic(&local_path)
