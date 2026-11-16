@@ -11,7 +11,10 @@ for (case in list(
   list("default", "data.csv"),
   list("three", "data_three.csv"),
   list("outlier", "data_outlier.csv"),
-  list("negative", "data_negative.csv")
+  list("negative", "data_negative.csv"),
+  list("iqr0", "data_iqr0.csv"),
+  list("constant", "data_constant.csv"),
+  list("zero", "data_zero.csv")
 )) {
   df <- utils::read.csv(file.path(here, case[[2]]))
   spec <- sprintf("ggplot(df, aes(x)) + geom_density()  # df = %s", case[[2]])

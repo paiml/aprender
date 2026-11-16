@@ -633,17 +633,25 @@ mod tests {
     }
 
     /// `geom_density` through `layout()`: missing values are dropped as ggplot2 does, and input
-    /// with no bandwidth (one value, a constant) or with groups is refused with a typed error.
+    /// with no bandwidth (fewer than two values) or with groups is refused with a typed error.
     #[test]
     fn density_drops_missing_and_refuses_degenerate_input() {
         let dens = |d: DataFrame| run(plot(d, Aes::new().x("x"), Geom::gg_density()));
         let clean = dens(DataFrame::from_xy(&[1.0, 2.0, 4.0, 8.0], &[0.0; 4])).expect("clean");
         let gappy = dens(DataFrame::from_xy(&[1.0, f32::NAN, 2.0, 4.0, 8.0], &[0.0; 5]));
         assert_eq!(gappy.expect("gappy").layers[0].y, clean.layers[0].y);
-        for xs in [&[3.0_f32][..], &[2.0, 2.0, 2.0], &[f32::NAN, f32::NAN]] {
+        // The bandwidth step is what refuses these: the message names it, so a `bw_nrd0` that let
+        // a short sample through would change it (the range guard would otherwise also refuse).
+        for xs in [&[3.0_f32][..], &[f32::NAN, f32::NAN]] {
             let r = dens(DataFrame::from_xy(xs, &vec![0.0; xs.len()]));
-            assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("stat_density")), "{xs:?}");
+            assert!(
+                matches!(&r, Err(Error::Rendering(m)) if m.contains("needs at least two values")),
+                "{xs:?}: {r:?}"
+            );
         }
+        // A constant sample is built, as ggplot2 does (bandwidth falls back to |x[1]|).
+        let flat = dens(DataFrame::from_xy(&[2.0, 2.0, 2.0], &[0.0; 3])).expect("constant builds");
+        assert_eq!(flat.layers[0].x.len(), 512);
         let r = run(plot(probe(), Aes::new().x("x").color("h"), Geom::gg_density()));
         assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("grouped")));
     }

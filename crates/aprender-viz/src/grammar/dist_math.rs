@@ -284,8 +284,8 @@ fn quantile7(sorted: &[f64], p: f64) -> f64 {
 ///
 /// # Errors
 ///
-/// [`Error::Rendering`] for fewer than two values, a non-finite value, or a constant sample
-/// (zero spread: ggplot2 falls back to `|x[1]|`, which this crate refuses instead).
+/// [`Error::Rendering`] for fewer than two values or a non-finite value. A sample with no spread
+/// is not refused: like R, `lo` falls back to `sd`, then `|x[1]|`, then `1`.
 pub(super) fn bw_nrd0(xs: &[f64]) -> Result<f64> {
     if xs.len() < 2 {
         return Err(density_refusal("needs at least two values (ggplot2 drops the group)"));
@@ -297,9 +297,19 @@ pub(super) fn bw_nrd0(xs: &[f64]) -> Result<f64> {
     sorted.sort_by(|a, b| cmp_na_last(*a, *b));
     let hi = r_sd(xs);
     let iqr = quantile7(&sorted, 0.75) - quantile7(&sorted, 0.25);
-    let lo = hi.min(iqr / 1.34);
-    if lo <= 0.0 || !lo.is_finite() {
-        return Err(density_refusal("constant data has no bandwidth (zero spread)"));
+    let mut lo = hi.min(iqr / 1.34);
+    // R: `(lo <- hi) || (lo <- abs(x[1L])) || (lo <- 1.)`: each assignment is taken if non-zero.
+    if lo == 0.0 {
+        lo = hi;
+    }
+    if lo == 0.0 {
+        lo = xs[0].abs();
+    }
+    if lo == 0.0 {
+        lo = 1.0;
+    }
+    if !lo.is_finite() {
+        return Err(density_refusal("bandwidth is not finite"));
     }
     Ok(0.9 * lo * libm::pow(xs.len() as f64, -0.2))
 }
@@ -397,17 +407,20 @@ fn approx1(xs: &[f64], ys: &[f64], v: f64) -> f64 {
 ///
 /// # Errors
 ///
-/// [`Error::Rendering`] for fewer than two values, a non-finite value or `from`/`to`, a constant
-/// sample, or `from >= to`.
+/// [`Error::Rendering`] for fewer than two values, a non-finite value or `from`/`to`, or
+/// `from > to`. `from == to` (a constant sample) is built, as ggplot2 does.
 pub(super) fn stat_density(xs: &[f64], from: f64, to: f64, n: usize) -> Result<DensityCols> {
     let bw = bw_nrd0(xs)?;
-    if !(from.is_finite() && to.is_finite() && from < to) || n < 2 {
-        return Err(density_refusal("the output range must be finite with from < to"));
+    if !(from.is_finite() && to.is_finite() && from <= to) || n < 2 {
+        return Err(density_refusal("the output range must be finite with from <= to"));
     }
     let size = n.max(512);
     let size = if size > 512 { size.next_power_of_two() } else { size };
     let nx = xs.len() as f64;
     let (lo, up) = (from - EXT * bw, to + EXT * bw);
+    if !(lo.is_finite() && up.is_finite() && (up - lo) > 0.0) {
+        return Err(density_refusal("the padded grid range is not finite and positive"));
+    }
     let y = bin_dist(xs, 1.0 / nx, lo, up, size);
     let conv = convolve_head(&y, &kernel_ordinates(size, up - lo, bw), size);
     let grid = seq_len_out(lo, up, size);
@@ -529,10 +542,22 @@ mod density_tests {
     fn refuses_short_constant_and_non_finite_input() {
         assert!(bw_nrd0(&[]).is_err());
         assert!(bw_nrd0(&[1.0]).is_err());
-        assert!(bw_nrd0(&[2.0, 2.0, 2.0]).is_err());
         assert!(bw_nrd0(&[1.0, f64::NAN]).is_err());
         assert!(stat_density(&[1.0, 2.0], 2.0, 1.0, 512).is_err());
         assert!(stat_density(&[1.0, 2.0], f64::NAN, 1.0, 512).is_err());
+    }
+
+    #[test]
+    fn iqr0_and_constant_bandwidth_fall_back_like_bw_nrd0() {
+        // IQR 0, sd > 0: lo = sd. R: bw.nrd0(c(0,0,0,0,0,0,0,1,5)) = 0.9 * sd * 9^-0.2.
+        let xs = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 5.0];
+        let want = 0.9 * r_sd(&xs) * libm::pow(9.0, -0.2);
+        assert!((bw_nrd0(&xs).expect("bw") - want).abs() < 1e-15);
+        // sd 0: lo = |x[1]|, then 1.
+        let c = bw_nrd0(&[-2.0, -2.0, -2.0]).expect("constant");
+        assert!((c - 0.9 * 2.0 * libm::pow(3.0, -0.2)).abs() < 1e-15);
+        let z = bw_nrd0(&[0.0, 0.0, 0.0]).expect("zero");
+        assert!((z - 0.9 * libm::pow(3.0, -0.2)).abs() < 1e-15);
     }
 
     #[test]

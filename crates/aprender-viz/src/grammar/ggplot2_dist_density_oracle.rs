@@ -63,3 +63,7 @@ case!(default, "data.csv");
 case!(three, "data_three.csv");
 case!(outlier, "data_outlier.csv");
 case!(negative, "data_negative.csv");
+// IQR 0 with sd > 0: bw.nrd0 falls back to sd. Constant samples fall back to |x[1]|, then 1.
+case!(iqr0, "data_iqr0.csv");
+case!(constant, "data_constant.csv");
+case!(zero, "data_zero.csv");
