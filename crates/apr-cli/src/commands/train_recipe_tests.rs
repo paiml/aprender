@@ -71,6 +71,35 @@ fn valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir() {
 }
 
 #[test]
+fn full_recipe_parses_every_optional_field() {
+    let src = format!(
+        "{VALID}training:\n  rank: 16\n  epochs: 2\n  learning_rate: 0.0001\n  max_seq_len: 256\n\
+         output:\n  dir: out/run1\n"
+    )
+    .replace(
+        "  train: data/train.jsonl\n",
+        &format!("  train: data/train.jsonl\n  sha256: {}\n", "ab".repeat(32)),
+    )
+    .replace(
+        "  heldout: data/heldout.jsonl\n",
+        "  heldout: data/heldout.jsonl\n  benchmark: humaneval-subset\n",
+    );
+    let src = src.replace("method: lora\n", "method: lora\nmodel_size: \" 0.8B \"\n");
+    let r = parse(&src).expect("full recipe parses");
+    assert_eq!(r.model_size.as_deref(), Some("0.8B"));
+    assert_eq!(r.rank, Some(16));
+    assert_eq!(r.epochs, Some(2));
+    assert_eq!(r.learning_rate, Some(0.0001));
+    assert_eq!(r.max_seq_len, Some(256));
+    assert_eq!(
+        r.output_dir.as_deref(),
+        Some(Path::new("/recipes/out/run1"))
+    );
+    assert_eq!(r.benchmark.as_deref(), Some("humaneval-subset"));
+    assert_eq!(r.data_sha256_pin, Some("ab".repeat(32)));
+}
+
+#[test]
 fn absolute_paths_are_kept() {
     let r = parse(&VALID.replace("models/base.apr", "/abs/base.apr")).expect("parses");
     assert_eq!(r.base, Path::new("/abs/base.apr"));
@@ -223,6 +252,29 @@ fn heldout_alias_of_the_training_file_is_refused() {
             "{alias}: {msg}"
         );
     }
+}
+
+/// A symlink or hard link is the same file on disk: `require_inputs` refuses
+/// it even though the two paths differ lexically.
+#[cfg(unix)]
+#[test]
+fn heldout_linked_to_the_training_file_is_refused_at_require_inputs() {
+    let dir = std::env::temp_dir().join(format!("apr-recipe-alias-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("scratch dir");
+    for f in ["base.apr", "train.jsonl"] {
+        std::fs::write(dir.join(f), b"x").expect("write");
+    }
+    std::fs::remove_file(dir.join("held.jsonl")).ok();
+    std::os::unix::fs::symlink(dir.join("train.jsonl"), dir.join("held.jsonl")).expect("link");
+    let src = "recipe: apr-recipe-v1\nname: x\nbase: base.apr\nmethod: lora\n\
+               data:\n  train: train.jsonl\neval:\n  heldout: held.jsonl\nseed: 1\n";
+    let r = TrainRecipe::parse(src, &dir, "r.yaml").expect("lexically distinct");
+    let msg = r.require_inputs().expect_err("same file").to_string();
+    assert!(
+        msg.contains("field `eval.heldout`") && msg.contains("training file"),
+        "{msg}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
 }
 
 /// A `..` with no name left to remove is kept, so two different files under
@@ -501,4 +553,260 @@ fn load_reads_a_file_and_names_it_when_it_cannot() {
     assert!(msg.contains("is not UTF-8"), "{msg}");
     assert!(msg.contains(&path.display().to_string()), "{msg}");
     std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn require_inputs_names_each_missing_file_then_passes_and_checks_the_pin() {
+    let dir = scratch("inputs");
+    let recipe = dir.join("r.yaml");
+    std::fs::write(&recipe, DISTILL).expect("write recipe");
+    let r = TrainRecipe::load(&recipe).expect("load");
+    let msg = r
+        .require_inputs()
+        .expect_err("nothing exists yet")
+        .to_string();
+    for field in [
+        "`base`",
+        "`data.train`",
+        "`eval.heldout`",
+        "`teacher.model`",
+    ] {
+        assert!(
+            msg.contains(&format!("field {field}: no such file")),
+            "{msg}"
+        );
+    }
+
+    std::fs::write(dir.join("models/student.apr"), b"s").expect("student");
+    std::fs::write(dir.join("models/teacher.apr"), b"t").expect("teacher");
+    std::fs::write(dir.join("data/train.jsonl"), b"{\"a\":1}\n").expect("train");
+    std::fs::write(dir.join("data/heldout.jsonl"), b"{\"a\":2}\n").expect("heldout");
+    r.require_inputs().expect("every input exists");
+
+    // The pin: right hash passes, a planted-wrong hash is refused by field.
+    let actual = sha256_file(&dir.join("data/train.jsonl")).expect("hash");
+    assert_eq!(actual, sha256_bytes(b"{\"a\":1}\n"));
+    let pinned = |hash: &str| {
+        DISTILL.replace(
+            "  train: data/train.jsonl\n",
+            &format!("  train: data/train.jsonl\n  sha256: {hash}\n"),
+        )
+    };
+    std::fs::write(&recipe, pinned(&actual)).expect("write pinned");
+    TrainRecipe::load(&recipe)
+        .expect("load pinned")
+        .require_inputs()
+        .expect("the true hash passes");
+    std::fs::write(&recipe, pinned(&"0".repeat(64))).expect("write wrong pin");
+    let msg = TrainRecipe::load(&recipe)
+        .expect("load wrong pin")
+        .require_inputs()
+        .expect_err("a planted-wrong data hash is refused")
+        .to_string();
+    assert!(msg.contains("field `data.sha256` pins"), "{msg}");
+    assert!(msg.contains(&actual), "{msg}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A hard link has its own path but the same inode: canonicalize does not
+/// fold it, so the inode comparison must.
+#[cfg(unix)]
+#[test]
+fn heldout_hard_linked_to_the_training_file_is_refused_at_require_inputs() {
+    let dir = scratch("hardlink");
+    std::fs::write(dir.join("models/base.apr"), b"b").expect("base");
+    std::fs::write(dir.join("data/train.jsonl"), b"same\n").expect("train");
+    std::fs::hard_link(dir.join("data/train.jsonl"), dir.join("data/heldout.jsonl")).expect("link");
+    let r = TrainRecipe::parse(VALID, &dir, "r.yaml").expect("lexically distinct");
+    let msg = r.require_inputs().expect_err("one inode").to_string();
+    assert!(msg.contains("recipe `qwen-lora-demo` cannot run"), "{msg}");
+    assert!(msg.contains("they are one file on disk"), "{msg}");
+    assert!(!msg.contains("no such file"), "{msg}");
+
+    // Two files with the same bytes are still two files.
+    std::fs::remove_file(dir.join("data/heldout.jsonl")).expect("unlink");
+    std::fs::write(dir.join("data/heldout.jsonl"), b"same\n").expect("heldout");
+    r.require_inputs()
+        .expect("equal content is not the same file; a lora recipe needs no teacher file");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A directory where a file is expected is refused: the input must be a file.
+#[test]
+fn require_inputs_refuses_a_directory_and_skips_the_pin_of_an_absent_file() {
+    let dir = scratch("inputs-dir");
+    std::fs::create_dir_all(dir.join("models/base.apr")).expect("a directory named like the model");
+    std::fs::write(dir.join("data/heldout.jsonl"), b"h\n").expect("heldout");
+    let src = VALID.replace(
+        "  train: data/train.jsonl\n",
+        &format!("  train: data/train.jsonl\n  sha256: {}\n", "0".repeat(64)),
+    );
+    let r = TrainRecipe::parse(&src, &dir, "r.yaml").expect("parses");
+    let msg = r.require_inputs().expect_err("refused").to_string();
+    assert!(msg.contains("field `base`: no such file"), "{msg}");
+    assert!(msg.contains("field `data.train`: no such file"), "{msg}");
+    assert!(!msg.contains("field `eval.heldout`"), "{msg}");
+    assert!(!msg.contains("field `teacher.model`"), "{msg}");
+    assert!(
+        !msg.contains("field `data.sha256`"),
+        "an absent file has no hash to compare: {msg}"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// The file hash is streamed in 64 KiB reads; a file longer than one read
+/// must hash the same as its bytes.
+#[test]
+fn sha256_file_hashes_past_one_buffer() {
+    let dir = scratch("bigfile");
+    let bytes: Vec<u8> = (0..200_000_u32).map(|i| (i % 251) as u8).collect();
+    let path = dir.join("data/big.bin");
+    std::fs::write(&path, &bytes).expect("write");
+    assert_eq!(sha256_file(&path), Some(sha256_bytes(&bytes)));
+    // The published vector for one million `a` bytes (FIPS 180 examples).
+    let million = dir.join("data/million.bin");
+    std::fs::write(&million, vec![b'a'; 1_000_000]).expect("write");
+    assert_eq!(
+        sha256_file(&million).as_deref(),
+        Some("cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `f` on its own thread; panics if it has not answered in 20 seconds.
+#[cfg(unix)]
+fn within_20s<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || tx.send(f()).ok());
+    rx.recv_timeout(std::time::Duration::from_secs(20))
+        .expect("the call must return: it is reading a file that has no end")
+}
+
+/// Review of a163e8112 and a31785740: a path that is not a regular file has no
+/// hash and is never opened. `/dev/zero` never ends, and opening a pipe waits
+/// for a writer, so either would hang the run.
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read() {
+    let dir = scratch("notfile");
+    assert_eq!(sha256_file(&dir.join("data")), None, "a directory");
+    assert_eq!(within_20s(|| sha256_file(Path::new("/dev/zero"))), None);
+    let src = VALID.replace("data/train.jsonl", "/dev/zero");
+    let r = TrainRecipe::parse(&src, &dir, "r.yaml").expect("parses");
+    let (refused, receipt) = within_20s(move || {
+        let refused = r.require_inputs().expect_err("refused").to_string();
+        (refused, r.receipt(Vec::new(), Vec::new(), &[]))
+    });
+    assert!(
+        refused.contains("field `data.train`: no such file /dev/zero"),
+        "{refused}"
+    );
+    assert_eq!(receipt.data_sha256, None);
+
+    for name in ["train.pipe", "heldout.pipe"] {
+        let made = std::process::Command::new("mkfifo")
+            .arg(dir.join("data").join(name))
+            .status()
+            .expect("mkfifo runs");
+        assert!(made.success(), "mkfifo {name}");
+    }
+    let pipe = dir.join("data/train.pipe");
+    assert_eq!(within_20s(move || sha256_file(&pipe)), None);
+    let src = VALID
+        .replace("data/train.jsonl", "data/train.pipe")
+        .replace("data/heldout.jsonl", "data/heldout.pipe");
+    let pinned = src.replace(
+        "data/train.pipe\n",
+        &format!("data/train.pipe\n  sha256: {}\n", sha256_bytes(b"x")),
+    );
+    assert_ne!(pinned, src, "the pin line was added");
+    for (what, src) in [("no pin", src), ("pinned", pinned)] {
+        let r = TrainRecipe::parse(&src, &dir, "r.yaml").expect("parses");
+        let (refused, receipt) = within_20s(move || {
+            let refused = r.require_inputs().expect_err("refused").to_string();
+            (refused, r.receipt(Vec::new(), Vec::new(), &[]))
+        });
+        for field in ["`data.train`", "`eval.heldout`"] {
+            assert!(
+                refused.contains(&format!("field {field}: no such file")),
+                "{what}: {refused}"
+            );
+        }
+        assert!(
+            !refused.contains("field `data.sha256`"),
+            "{what}: {refused}"
+        );
+        assert_eq!((receipt.data_sha256, receipt.eval_sha256), (None, None));
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Contract invariant: the eval block is part of the recipe hash.
+#[test]
+fn recipe_hash_changes_with_the_eval_block() {
+    let a = parse(VALID).expect("parses");
+    let b = parse(&VALID.replace("data/heldout.jsonl", "data/other.jsonl")).expect("parses");
+    assert_ne!(a.recipe_sha256, b.recipe_sha256);
+}
+
+#[test]
+fn receipt_carries_the_contract_fields() {
+    let dir = scratch("receipt");
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, VALID).expect("write recipe");
+    let r = TrainRecipe::load(&path).expect("load");
+
+    // Nothing to hash yet: the hashes are absent, never invented.
+    let receipt = r.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    assert_eq!(receipt.data_sha256, None);
+    assert_eq!(receipt.eval_sha256, None);
+
+    std::fs::write(dir.join("data/train.jsonl"), b"train\n").expect("train");
+    std::fs::write(dir.join("data/heldout.jsonl"), b"heldout\n").expect("heldout");
+    let receipt = r.receipt(
+        vec![apr_engine()],
+        vec!["--vram 8".to_string()],
+        FINETUNE_NOT_APPLIED,
+    );
+    assert_eq!(receipt.schema, RECEIPT_SCHEMA);
+    assert_eq!(receipt.recipe_sha256, sha256_bytes(VALID.as_bytes()));
+    assert_eq!(receipt.data_sha256, Some(sha256_bytes(b"train\n")));
+    assert_eq!(receipt.eval_sha256, Some(sha256_bytes(b"heldout\n")));
+    assert_eq!(receipt.seed, 42);
+    assert_eq!(receipt.recipe_name, "qwen-lora-demo");
+    assert_eq!(receipt.method, RecipeMethod::Lora);
+    assert_eq!(receipt.validated_not_applied, ["seed", "eval"]);
+    assert_eq!(receipt.engines.len(), 1);
+    assert_eq!(receipt.engines[0].name, "apr");
+    assert_eq!(receipt.engines[0].version, env!("CARGO_PKG_VERSION"));
+    assert!(!receipt.engines[0].sha.is_empty());
+
+    let json = serde_json::to_value(&receipt).expect("receipt serializes");
+    for key in [
+        "schema",
+        "recipe_name",
+        "recipe_sha256",
+        "data_sha256",
+        "eval_sha256",
+        "method",
+        "seed",
+        "engines",
+        "overrides",
+        "validated_not_applied",
+    ] {
+        assert!(json.get(key).is_some(), "receipt lacks `{key}`: {json}");
+    }
+    assert_eq!(json["method"], "lora");
+    assert_eq!(json["overrides"][0], "--vram 8");
+    assert_eq!(json["validated_not_applied"][0], "seed");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn sha256_matches_the_published_test_vector() {
+    assert_eq!(
+        sha256_bytes(b"abc"),
+        "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    );
+    assert_eq!(sha256_file(Path::new("/nonexistent/recipe/input")), None);
 }
