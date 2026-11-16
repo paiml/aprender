@@ -49,6 +49,7 @@ pub mod error;
 pub mod f16;
 pub mod falsifiers;
 pub mod model_card;
+pub mod qwen4_exp;
 pub mod types;
 pub mod v2;
 pub mod validate;

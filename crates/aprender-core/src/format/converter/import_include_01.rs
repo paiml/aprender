@@ -1,3 +1,21 @@
+/// Refuse a `qwen4_exp` checkpoint by name (same text as `aprender-serve`, one source
+/// in `apr_format::qwen4_exp`). Reads only the sibling `config.json`.
+fn refuse_qwen4_exp(model_path: &Path) -> Result<()> {
+    let Some(cfg) = find_config_json(model_path) else {
+        return Ok(());
+    };
+    let Ok(text) = fs::read_to_string(cfg) else {
+        return Ok(());
+    };
+    let Ok(raw) = serde_json::from_str::<serde_json::Value>(&sanitize_hf_json(&text)) else {
+        return Ok(());
+    };
+    match apr_format::qwen4_exp::refusal_for_json(&raw) {
+        Some(message) => Err(AprenderError::FormatError { message }),
+        None => Ok(()),
+    }
+}
+
 /// Infer architecture from user option or model config string.
 fn infer_architecture(user_arch: &Architecture, config_arch: Option<&str>) -> Architecture {
     if *user_arch != Architecture::Auto {

@@ -31,6 +31,10 @@ impl SafeTensorsCudaModel {
             }
         })?;
 
+        // #7169: qwen4_exp has no forward; refuse by name before config extraction
+        // (otherwise: an unnamed "missing hidden_size" on the composite config).
+        crate::qwen4_exp::check_config(&json_config)?;
+
         // 3. Extract config (F-LOAD-064, F-LOAD-065)
         let config = Self::extract_config(&json_config)?;
 
