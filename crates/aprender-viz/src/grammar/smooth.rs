@@ -30,6 +30,7 @@ use super::data::{DataFrame, DataValue};
 use super::facet::Facet;
 use super::geom::{GeomType, SmoothMethod};
 use super::ggplot::Layer;
+use super::lm_qr::{lm_fit, LmFit};
 use super::path::{group_ids, refuse};
 use super::stat::Stat;
 use super::t_dist::qt_upper;
@@ -162,62 +163,25 @@ fn finite_rows(xs: &[f64], ys: &[f64], group: &[i64], g: i64) -> (Vec<f64>, Vec<
         .unzip()
 }
 
-/// A least-squares line `y = ybar + slope * (x - xbar)` and what its band needs.
-#[derive(Debug, Clone, Copy)]
-struct Fit {
-    m: f64,
-    xbar: f64,
-    ybar: f64,
-    sxx: f64,
-    slope: f64,
-    /// Residual variance `rss / (m - 2)`; `NaN` with no residual degree of freedom.
-    var: f64,
-    df: f64,
-}
-
-/// Fit one group, on x centred at its mean so an offset in x costs no digits. `None` when the
-/// group has fewer than two distinct x (`StatSmooth` returns an empty frame for it).
-fn fit_group(xs: &[f64], ys: &[f64]) -> Option<Fit> {
-    let first = *xs.first()?;
-    if xs.iter().all(|x| *x == first) {
-        return None;
+/// Fit one group as R's `lm(y ~ x)` does (see `lm_qr`). `Ok(None)` when the group has fewer than
+/// two distinct x (`StatSmooth` returns an empty frame for it); `Err` when R's rank verdict cannot
+/// be reproduced with confidence.
+fn fit_group(xs: &[f64], ys: &[f64]) -> Result<Option<LmFit>> {
+    let Some(first) = xs.first() else { return Ok(None) };
+    if xs.iter().all(|x| x == first) {
+        return Ok(None);
     }
-    let m = xs.len() as f64;
-    let xbar = xs.iter().sum::<f64>() / m;
-    let ybar = ys.iter().sum::<f64>() / m;
-    let sxx = xs.iter().map(|x| (x - xbar) * (x - xbar)).sum::<f64>();
-    let sxy = xs.iter().zip(ys).map(|(x, y)| (x - xbar) * (y - ybar)).sum::<f64>();
-    let slope = sxy / sxx;
-    let rss = xs
-        .iter()
-        .zip(ys)
-        .map(|(x, y)| {
-            let r = y - (ybar + slope * (x - xbar));
-            r * r
-        })
-        .sum::<f64>();
-    let df = m - 2.0;
-    let var = if df > 0.0 { rss / df } else { f64::NAN };
-    Some(Fit { m, xbar, ybar, sxx, slope, var, df })
-}
-
-/// The fitted value and the standard error of the mean prediction at `x0`.
-fn predict(f: &Fit, x0: f64) -> (f64, f64) {
-    let d = x0 - f.xbar;
-    let se = (f.var * (1.0 / f.m + d * d / f.sxx)).sqrt();
-    (f.ybar + f.slope * d, se)
+    lm_fit(xs, ys).map(Some)
 }
 
 /// `seq(lo, hi, length.out = n)`: both ends exact, the others `lo + i * by`.
 fn x_grid(lo: f64, hi: f64, n: usize) -> Vec<f64> {
-    match n {
-        0 => Vec::new(),
-        1 => vec![lo],
-        _ => {
-            let by = (hi - lo) / (n - 1) as f64;
-            (0..n).map(|i| if i + 1 == n { hi } else { lo + i as f64 * by }).collect()
-        }
+    if n == 1 {
+        return vec![lo];
     }
+    // `require_spec` has refused n == 0 and n > MAX_N before any grid is built.
+    let by = (hi - lo) / (n - 1) as f64;
+    (0..n).map(|i| if i + 1 == n { hi } else { lo + i as f64 * by }).collect()
 }
 
 /// The columns of the rows built so far.
@@ -232,13 +196,13 @@ struct Rows {
 }
 
 /// Append group `g`'s fitted rows: nothing when the group has too few distinct x.
-fn append_group(rows: &mut Rows, spec: &SmoothSpec, g: i64, xs: &[f64], ys: &[f64]) {
-    let Some(fit) = fit_group(xs, ys) else { return };
+fn append_group(rows: &mut Rows, spec: &SmoothSpec, g: i64, xs: &[f64], ys: &[f64]) -> Result<()> {
+    let Some(fit) = fit_group(xs, ys)? else { return Ok(()) };
     let lo = xs.iter().copied().fold(f64::INFINITY, f64::min);
     let hi = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
-    let t = qt_upper((1.0 - spec.level) / 2.0, fit.df);
+    let t = qt_upper((1.0 - spec.level) / 2.0, fit.df)?;
     for x0 in x_grid(lo, hi, spec.n) {
-        let (y, se) = predict(&fit, x0);
+        let (y, se) = fit.predict(x0);
         rows.x.push(x0);
         rows.y.push(y);
         rows.group.push(g);
@@ -246,6 +210,7 @@ fn append_group(rows: &mut Rows, spec: &SmoothSpec, g: i64, xs: &[f64], ys: &[f6
         rows.lo.push(y - t * se);
         rows.hi.push(y + t * se);
     }
+    Ok(())
 }
 
 /// Build one `geom_smooth(method = "lm")` layer.
@@ -267,7 +232,7 @@ pub(super) fn build_layer(
     let mut rows = Rows::default();
     for g in ids {
         let (gx, gy) = finite_rows(&xs, &ys, &group, g);
-        append_group(&mut rows, &spec, g, &gx, &gy);
+        append_group(&mut rows, &spec, g, &gx, &gy)?;
     }
     if rows.x.is_empty() {
         return Err(refuse(

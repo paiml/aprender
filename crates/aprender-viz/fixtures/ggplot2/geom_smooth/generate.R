@@ -67,8 +67,21 @@ w("with_points", base("data_noisy.csv") + geom_point() + sm() +
 w("own_data", ggplot(rd("data_point.csv"), aes(x, y)) + geom_point() + sm(data = rd("data_wide.csv")),
   "ggplot(pts, aes(x, y)) + geom_point() + geom_smooth(method = \"lm\", formula = y ~ x, data = wide)")
 
+
+# Offset ladder: the same y over x = c + k * spacing, from c = 1e3 to 1e10 and down to unit spacing
+# near 1. R's lm() drops the slope (rank 1, a flat line at mean(y), df = n - 1) once the slope
+# column's norm falls below 1e-7 of its original norm; every case is f32-exact.
+for (case in c("ladder_1e3", "ladder_1e5", "ladder_1e7", "ladder_3e7", "ladder_1e8",
+               "ladder_1e8_rank1", "ladder_1e10", "ladder_1e10_rank1", "ladder_small",
+               "ladder_small_rank1", "ladder_edge_full", "ladder_edge_rank1")) {
+  d <- rd(paste0("data_", case, ".csv"))
+  w(case, ggplot(d, aes(x, y)) + sm(), paste0(S, ")"))
+  fit <- lm(y ~ x, d)
+  cat(sprintf("%s rank=%d\n", case, fit$rank))
+}
+
 # Student-t upper-tail quantiles, for the in-crate implementation to be tested against directly.
-dfs <- c(1, 2, 3, 5, 10, 30, 78, 1000)
+dfs <- c(1, 2, 3, 5, 10, 30, 78, 100, 1000, 1e4, 1e6)
 qs <- c(0.5, 0.25, 0.1, 0.05, 0.025, 0.005, 0.0005, 1e-6)
 tab <- expand.grid(q = qs, df = dfs)
 tab$t <- mapply(function(q, d) qt(q, d, lower.tail = FALSE), tab$q, tab$df)

@@ -15,12 +15,13 @@ use super::ggplot2_geom_area_oracle::{
     assert_close_slice, build, check_axis, csv, fixture, frame_from_csv, ints, nums,
     report_max_err, reset_max_err, want,
 };
+use super::lm_qr::lm_fit;
 use super::stat::Stat;
 use super::t_dist::qt_upper;
 use super::{Aes, BuiltLayer, BuiltLayout, Coord, DataFrame, Facet, GGPlot, Geom, Layer};
 use crate::error::Error;
 
-const CASES: usize = 16;
+const CASES: usize = 28;
 
 fn lm() -> Geom {
     Geom::smooth().method(SmoothMethod::Linear)
@@ -226,12 +227,29 @@ fn the_t_quantile_matches_r_for_every_df_and_level() {
             .expect("fixture is valid JSON");
     assert_eq!(w["versions"]["ggplot2"], "4.0.3");
     let (qs, dfs, ts) = (nums(&w["q"]), nums(&w["df"]), nums(&w["t"]));
-    assert_eq!(qs.len(), 64);
-    for df in [1.0, 2.0, 3.0, 5.0, 10.0, 30.0, 78.0, 1000.0] {
+    assert_eq!(qs.len(), 88);
+    for df in [1.0, 2.0, 3.0, 5.0, 10.0, 30.0, 78.0, 100.0, 1000.0, 1e4, 1e6] {
         assert!(dfs.contains(&df), "df {df} missing from the table");
     }
-    let got: Vec<f64> = qs.iter().zip(&dfs).map(|(q, d)| qt_upper(*q, *d)).collect();
+    let got: Vec<f64> =
+        qs.iter().zip(&dfs).map(|(q, d)| qt_upper(*q, *d).expect("converges")).collect();
     assert_close_slice("qt", &got, &ts);
+}
+
+/// The large-df rows of the table on their own (df 100 to 1e6, every level; measured to 1e8 at 6e-10, so a million-row group stays inside 1e-9), so a regression in the
+/// incomplete beta at large df names itself.
+#[test]
+fn the_t_quantile_matches_r_at_large_df() {
+    let w: Value =
+        serde_json::from_str(include_str!("../../fixtures/ggplot2/geom_smooth/qt_table.json"))
+            .expect("fixture is valid JSON");
+    let (qs, dfs, ts) = (nums(&w["q"]), nums(&w["df"]), nums(&w["t"]));
+    let rows: Vec<usize> = (0..qs.len()).filter(|i| dfs[*i] >= 100.0).collect();
+    assert_eq!(rows.len(), 32, "4 large dfs (100, 1000, 1e4, 1e6) x 8 levels");
+    let got: Vec<f64> =
+        rows.iter().map(|i| qt_upper(qs[*i], dfs[*i]).expect("converges")).collect();
+    let want: Vec<f64> = rows.iter().map(|i| ts[*i]).collect();
+    assert_close_slice("qt large df", &got, &want);
 }
 
 // --- refusals: out-of-scope input is a typed error, never a plausible wrong answer ---------------
@@ -402,6 +420,91 @@ fn drawing_a_smooth_layer_is_refused() {
         "{:?}",
         fb.map(|_| ())
     );
+}
+
+// --- the lm fit's offset ladder and rank rule, against R's lm() ----------------------------------
+
+/// Every ladder case against R: x = c + k * spacing for c from 1e3 to 1e10 and near 1, where R's
+/// QR on the uncentred x loses digits the engine must lose identically, and where R's rank rule
+/// (slope norm below 1e-7 of its original norm) turns the line flat.
+#[test]
+fn the_offset_ladder_matches_r_including_where_the_slope_is_dropped() {
+    macro_rules! ladder {
+        ($($case:literal),*) => {
+            [$(($case, csv!("geom_smooth", concat!("data_", $case)),
+                fixture!("geom_smooth", $case))),*]
+        };
+    }
+    let cases = ladder!(
+        "ladder_1e3",
+        "ladder_1e5",
+        "ladder_1e7",
+        "ladder_3e7",
+        "ladder_1e8",
+        "ladder_1e8_rank1",
+        "ladder_1e10",
+        "ladder_1e10_rank1",
+        "ladder_small",
+        "ladder_small_rank1",
+        "ladder_edge_full",
+        "ladder_edge_rank1"
+    );
+    assert_eq!(cases.len(), CASES - 16);
+    for (case, data, json) in cases {
+        run(case, data, json);
+    }
+}
+
+/// R's rank verdict itself, read off the fit: rank 2 above the threshold, 1 below, with R's
+/// `df.residual = n - rank`.
+#[test]
+fn the_rank_rule_follows_r_on_either_side_of_the_threshold() {
+    let ys = [1.5, 2.25, 2.0];
+    let at = |c: f64, s: f64| lm_fit(&[c, c + s, c + 2.0 * s], &ys).expect("fits");
+    assert_eq!((at(65_318_000.0, 8.0).rank, at(65_322_000.0, 8.0).rank), (2, 1));
+    assert_eq!((at(1e8, 16.0).rank, at(1e8, 8.0).rank), (2, 1));
+    assert_eq!(at(1e8, 8.0).df, 2.0);
+}
+
+/// Within 1e-6 of the threshold R's verdict is a matter of the last digit of a norm (and so of the
+/// BLAS), so the engine refuses instead of answering with a verdict that may differ from R's.
+#[test]
+fn a_rank_verdict_within_a_millionth_of_the_threshold_is_refused() {
+    for c in [65_319_712.0, 65_319_720.0] {
+        let mut d = DataFrame::new();
+        d.add_column_f32("x", &[c as f32, (c + 8.0) as f32, (c + 16.0) as f32]);
+        d.add_column_f32("y", &[1.5, 2.25, 2.0]);
+        let r = build(d, xy(), vec![Layer::new(lm())], Facet::None);
+        assert!(matches!(&r, Err(Error::Rendering(m)) if m.contains("rank threshold")), "{r:?}");
+    }
+}
+
+/// The terminal target draws point, line, path, step and reference layers only; a smooth layer is
+/// refused there with that typed error, never drawn without its fit.
+#[test]
+fn the_terminal_target_refuses_a_smooth_layer() {
+    let p = GGPlot::new().data(noisy()).aes(xy()).layer(Layer::new(lm())).build().expect("builds");
+    let r = p.to_terminal(super::TerminalPlot { width: 60, height: 16, color: false });
+    assert!(matches!(&r, Err(Error::Rendering(m)) if m.contains("point, line, path")), "{r:?}");
+}
+
+/// A scale_x/scale_y or a facet is refused beside a smooth layer only; the same plot without one
+/// still builds, so the smooth row's new refusals do not reach the other rows.
+#[test]
+fn scales_and_facets_without_a_smooth_layer_are_unaffected() {
+    let ok = GGPlot::new()
+        .data(noisy())
+        .aes(xy())
+        .scale_x(super::scale_log10())
+        .layer(Layer::new(Geom::point()))
+        .build()
+        .and_then(|b| b.layout());
+    assert!(ok.is_ok(), "{ok:?}");
+    let mut d = noisy();
+    d.add_column_str("f", &["u"; 12]);
+    let r =
+        build(d, xy(), vec![Layer::new(Geom::point())], Facet::Wrap { var: "f".into(), ncol: 2 });
+    assert!(r.is_ok(), "{r:?}");
 }
 
 /// `frame_from_csv` is shared; keep the import used when a case is added without one.

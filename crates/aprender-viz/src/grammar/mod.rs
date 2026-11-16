@@ -57,6 +57,7 @@ mod ggplot2_oracle;
 mod ggplot2_oracle_scales;
 #[cfg(test)]
 mod ggplot2_position_dodge_oracle;
+mod lm_qr;
 mod marks;
 mod path;
 mod position;

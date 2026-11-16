@@ -5,16 +5,21 @@ metadata:
   created: '2026-11-16'
   author: PAIML Engineering
   description: >-
-    ggplot2 conformance, core row 16 geom_smooth(method = "lm") (PLOT-GG-001, paiml/aprender#6983, master #6909). stat_smooth with formula y ~ x per group: a least-squares line fitted to
-    the group's finite rows, evaluated at n = 80 points evenly spaced over the group's own x range, fitted y, se of the mean prediction, and ymin/ymax = y -+ qt(1 - (1 - level) / 2, m - 2) * se;
-    se = FALSE leaves x and y only; a group with fewer than two distinct x vanishes as in R; the position scales are trained on x, y, ymin and ymax of the stat output. 16 cases against
-    ggplot2 4.0.3 under R 4.6.2, largest observed relative error 2.4e-10 (x near 1e6, where R's QR and the centred solution differ in the last digits), 3.6e-14 for every other case. The Student-t
-    quantile is in-crate (regularised incomplete beta, safeguarded Newton), no crates.io dependency, and is tested directly against R's qt() for 8 df values at 8 levels. Scope: continuous
-    numeric x and y, one panel. Refused with a typed Err, never a panic and never an Ok with an empty or partial layer: a method other than lm (a bare geom_smooth() is refused, not fitted
-    with lm), a stat other than stat_smooth, fullrange = TRUE, level outside (0, 1), n of 0 or past 1000000, a facet, a mapped colour, size, shape, alpha, fill, label, ymin or ymax,
-    a text or missing position column, a layer with no fittable group, scale_x/scale_y, any coordinate system but the default coord_cartesian (also for a smooth layer alone), a companion
-    other than geom_point, and a drawn plot (to_svg, to_framebuffer). The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at
-    test time. Every case goes through the public builder and layout().
+    ggplot2 conformance, core row 16 geom_smooth(method = "lm") (PLOT-GG-001, paiml/aprender#6983, master #6909). stat_smooth with formula y ~ x per group: the lm fit of the group's finite rows,
+    solved as R solves it (LINPACK dqrdc2 Householder QR with limited pivoting and tol 1e-7 on the uncentred [1, x], qr.solve of R for the leverage, predict.lm in R's operation order), evaluated
+    at n = 80 points evenly spaced over the group's own x range: fitted y, se of the mean prediction, and ymin/ymax = y -+ qt(1 - (1 - level) / 2, df) * se with df = n - rank; when the slope column
+    is rank-deficient (its norm after the intercept falls below 1e-7 of its original norm, e.g. x = 1e8, 1e8 + 8, 1e8 + 16) R drops the slope, draws a flat line at mean(y) with df = n - 1, and so
+    does this engine; a rank verdict within 1e-6 of that threshold is refused (R's own verdict there depends on the BLAS). se = FALSE leaves x and y only; a group with fewer than two distinct x
+    vanishes as in R; the position scales are trained on x, y, ymin and ymax of the stat output. 28 cases against ggplot2 4.0.3 under R 4.6.2: the 16 base cases plus an offset ladder from
+    x near 1e3 to 1e10 and near 1 and both sides of the rank rule. Measured against R, the largest relative error of any fitted column over all cases is 3.6e-13 (the ymin of the groups case); the
+    absolute x error grows with the x magnitude only through R's own x grid (1.9e-6 at x = 1e10, relative 1.9e-16). The Student-t quantile is in-crate (regularised incomplete beta, safeguarded
+    Newton, Stirling-difference front factor at large df), no crates.io dependency, tested directly against R's qt() for 11 df values from 1 to 1e6 at 8 levels; it returns an Err, never a
+    quantile, when the solver does not converge. Scope: continuous numeric x and y, one panel. Refused with a typed Err, never a panic and never an Ok with an empty or partial layer: a method
+    other than lm (a bare geom_smooth() is refused, not fitted with lm), a stat other than stat_smooth, fullrange = TRUE, level outside (0, 1), n of 0 or past 1000000, a facet, a mapped colour,
+    size, shape, alpha, fill, label, ymin or ymax, a text or missing position column, a layer with no fittable group, a rank verdict within 1e-6 of R's threshold, scale_x/scale_y, any coordinate
+    system but the default coord_cartesian (also for a smooth layer alone), a companion other than geom_point, a point companion with a missing column, a non-count stat or infinite or text
+    positions, and a drawn plot (to_svg, to_framebuffer, to_terminal). Every refusal above applies only to plots that contain a smooth layer: the same scale, facet or point plot without one is
+    unchanged. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time. Every case goes through the public builder and layout().
   references:
   - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
   - 'ggplot2 4.0.3: ggplot_build(), geom_smooth, stat_smooth, predict.lm(interval = "confidence")'
@@ -22,7 +27,7 @@ metadata:
 entity: {type: ggplot2-row, ref: geom_smooth}
 equations:
   lm_band:
-    formula: 'x_i = lo + i * (hi - lo) / (n - 1); y = ybar + b (x - xbar); se = sqrt(s2 (1/m + (x - xbar)^2 / Sxx)); ymin, ymax = y -+ qt(1 - (1 - level) / 2, m - 2) se'
+    formula: 'x_i = lo + i * (hi - lo) / (n - 1); [1, x] = QR by dqrdc2 (tol 1e-7); y = [1, x_i] beta; se = sqrt(res_var * |[1, x_i] R^-1|^2); ymin, ymax = y -+ qt(1 - (1 - level) / 2, m - rank) se'
     domain: numeric columns, one panel, groups with at least 2 distinct finite x
     codomain: smooth(x,y,ymin,ymax,se,group) -> BuiltLayer.smooth and the trained scales
     invariants:
@@ -38,7 +43,11 @@ equations:
     - 'known difference from R: level outside (0, 1), n above 1000000 and fullrange = TRUE return Err(Rendering); R gives infinite or empty bands, an unbounded allocation, or a wider x range'
     - 'known difference from R: a data-mapped colour, size, shape, alpha, fill or label (which split groups or style the layer in R), a mapped ymin or ymax, and a facet return Err(Rendering); R draws them'
     - 'known difference from R: scale_x/scale_y with a smooth layer return Err(UnsupportedLayer); to_svg and to_framebuffer return Err(UnsupportedLayer) because the renderer draws no smooth layer'
-    - 'known difference from R: with x near 1e6 R solves the fit by QR on the uncentred x and loses about 2e-10 relative against the centred least squares used here; the offset case passes at that measured error, under the 1e-9 tolerance'
+    - 'same as R: the fit is R''s lm() on the uncentred design, so the offset ladder (x near 1e3 to 1e10 and near 1) matches R to within the tolerance, including R''s own rounding drift at large x, and a slope column below the 1e-7 rank threshold is dropped (flat line at mean(y), df = n - 1)'
+    - 'known difference from R: a rank verdict within 1e-6 of the threshold (slope norm / original norm between 1 - 1e-6 and 1 + 1e-6 times 1e-7) returns Err(Rendering) where R decides by the last digit of a norm and so by its BLAS (x = 65319712 + 8 k, k = 0..2 is such a case)'
+    - 'known difference from R: no new refusal applies without a smooth layer. With one: a point companion with an unknown column, a non-count stat (stat_count) or infinite or text positions returns Err(UnknownColumn, UnsupportedStat or Rendering) (marks.rs treats the smooth as a modelled companion); scale_x/scale_y and a facet return Err; a line, area, ribbon, boxplot or bar companion returns Err(UnsupportedLayer); the terminal target returns Err(Rendering) for the smooth layer'
+    - 'known difference from the tolerance claim: the Student-t quantile is measured to 6e-10 relative at df = 1e8 (3e-12 at 1e6, the table limit); every smooth with fewer than 1e6 rows per group is inside 1e-9 with margin'
+    - 'public API change (semver): GeomType::Smooth gains the field spec: SmoothSpec (breaks exhaustive struct patterns and literals), and BuiltLayer gains pub smooth: Option<BuiltSmooth> (breaks struct literals)'
     - 'not expressible in the builder, so not refused and not fitted: formula other than y ~ x, weights, orientation = "y", xseq, span, na.rm (ggplot2 defaults are used: y ~ x, no weights, orientation NA, na.rm FALSE)'
     - 'same as R: a row with a missing or infinite x or y is dropped before the fit; a zero-width y range is widened by the scale (continuous_range), not refused'
 proof_obligations:
@@ -50,7 +59,7 @@ proof_obligations:
 - id: GG-SMOOTH-LM-INV-002
   type: invariant
   property: The Student-t quantile matches R's qt()
-  formal: '∀ df in {1,2,3,5,10,30,78,1000}, q in the fixture table: qt_upper(q, df) ≈ qt(q, df, lower.tail = FALSE) (1e-9 rel + 1e-12 abs)'
+  formal: '∀ df in {1,2,3,5,10,30,78,100,1000,1e4,1e6}, q in the fixture table: qt_upper(q, df) ≈ qt(q, df, lower.tail = FALSE) (1e-9 rel + 1e-12 abs)'
   applies_to: lm_band
 - id: GG-SMOOTH-LM-INV-003
   type: invariant
@@ -66,6 +75,10 @@ enforcement:
     description: two points, constant y, dropped rows and vanishing groups are reproduced
     check: grammar::ggplot2_geom_smooth_oracle::two_points_have_no_residual_degrees_of_freedom
     severity: ERROR
+  rank_cases:
+    description: the offset ladder and R's rank rule are reproduced
+    check: grammar::ggplot2_geom_smooth_oracle::the_offset_ladder_matches_r_including_where_the_slope_is_dropped
+    severity: ERROR
   quantile_cases:
     description: the t quantile equals R's qt()
     check: grammar::ggplot2_geom_smooth_oracle::the_t_quantile_matches_r_for_every_df_and_level
@@ -73,7 +86,7 @@ enforcement:
 falsification_tests:
 - id: FALSIFY-GG-SMOOTH-LM-001
   rule: The band uses qt(.975, m-2)
-  prediction: using df + 1 in the quantile in append_group turns noisy_data_gets_a_fitted_band RED
+  prediction: using fit.df + 1.0 in the quantile in append_group turns noisy_data_gets_a_fitted_band RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::noisy_data_gets_a_fitted_band
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GG-SMOOTH-LM-002
@@ -82,13 +95,13 @@ falsification_tests:
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_non_default_n_changes_the_grid
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GG-SMOOTH-LM-003
-  rule: se carries the 1/m leverage term
-  prediction: dropping 1/m from se in predict turns noisy_data_gets_a_fitted_band RED
+  rule: se carries the leverage term of qr.solve(R)
+  prediction: zeroing the leverage inverse in LmFit::predict (lm_qr.rs) turns noisy_data_gets_a_fitted_band RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::noisy_data_gets_a_fitted_band
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GG-SMOOTH-LM-004
   rule: A group with one distinct x is dropped
-  prediction: removing the constant-x test in fit_group turns a_group_with_one_distinct_x_vanishes RED
+  prediction: removing the constant-x test in fit_group (smooth.rs) turns a_group_with_one_distinct_x_vanishes RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_group_with_one_distinct_x_vanishes
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GG-SMOOTH-LM-005
@@ -118,7 +131,7 @@ falsification_tests:
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GG-SMOOTH-LM-010
   rule: No residual degree of freedom gives a missing se and band
-  prediction: replacing the df > 0 test with df.max(1.0) in fit_group turns two_points_have_no_residual_degrees_of_freedom RED
+  prediction: replacing the residual df in lm_fit with df.max(1.0) turns two_points_have_no_residual_degrees_of_freedom RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::two_points_have_no_residual_degrees_of_freedom
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GG-SMOOTH-LM-011
@@ -206,6 +219,41 @@ falsification_tests:
   prediction: halving the tail by dropping the 0.5 factor in upper_tail turns the_t_quantile_matches_r_for_every_df_and_level RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::the_t_quantile_matches_r_for_every_df_and_level
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-028
+  rule: R's rank rule drops a slope column below 1e-7 of its norm
+  prediction: making negligible in lm_qr.rs never drop a column turns the_offset_ladder_matches_r_including_where_the_slope_is_dropped RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::the_offset_ladder_matches_r_including_where_the_slope_is_dropped
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-029
+  rule: The fit is solved on the uncentred design in R's operation order
+  prediction: solving on x shifted by its first value instead of the uncentred x in lm_fit (lm_qr.rs) turns the_offset_ladder_matches_r_including_where_the_slope_is_dropped RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::the_offset_ladder_matches_r_including_where_the_slope_is_dropped
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-030
+  rule: A rank verdict within 1e-6 of the threshold is refused
+  prediction: never setting the edge flag in negligible (lm_qr.rs) turns a_rank_verdict_within_a_millionth_of_the_threshold_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_rank_verdict_within_a_millionth_of_the_threshold_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-031
+  rule: An unconverged quantile solve is an Err
+  prediction: returning Ok(t) after the iteration cap in qt_upper_with turns an_unconverged_solve_is_an_error_not_a_quantile RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::t_dist::tests::an_unconverged_solve_is_an_error_not_a_quantile
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-032
+  rule: The t quantile is exact at large df
+  prediction: taking ln Gamma(a + b) - ln Gamma(a) as a plain lgamma difference at every a in ln_gamma_ratio turns the_t_quantile_matches_r_at_large_df RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::the_t_quantile_matches_r_at_large_df
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-033
+  rule: The terminal target refuses a smooth layer
+  prediction: dropping the points/path test in to_terminal turns the_terminal_target_refuses_a_smooth_layer RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::the_terminal_target_refuses_a_smooth_layer
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-034
+  rule: A plot without a smooth layer keeps its scales and facets
+  prediction: making is_smooth true for a point geom turns scales_and_facets_without_a_smooth_layer_are_unaffected RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::scales_and_facets_without_a_smooth_layer_are_unaffected
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-GG-SMOOTH-LM-001
   name: ggplot2 conformance (geom_smooth lm)
@@ -213,4 +261,5 @@ qa_gate:
   checks:
   - primary_cases
   - edge_cases
+  - rank_cases
   - quantile_cases
