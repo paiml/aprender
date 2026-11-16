@@ -8,10 +8,10 @@
 #
 # NOT YET ENFORCED by the loader at this head (status: partial). Nothing calls the loader yet,
 # and each rule below gets its check, its test and its FALSIFY entry in a later slice:
-#   - eval.heldout != data.train
-#   - teacher present <=> method == distill
-#   - every number in training > 0 (present optional blocks are not value-checked yet)
-#   - require_inputs, the data.sha256 pin, exit 5, the --recipe flag conflicts and the receipt
+#   - teacher present <=> method == distill (a teacher block is read and dropped)
+#   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
+#   - require_inputs (files exist, the data.sha256 pin matches the file; the pin's shape is
+#     checked), exit 5, the --recipe flag conflicts and the receipt
 
 metadata:
   id: apr-recipe-v1
@@ -110,13 +110,13 @@ falsification_tests:
   rule: a valid recipe parses
   prediction: "A minimal valid recipe parses and its relative paths anchor at the recipe's directory"
   test: |
-    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir
+    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir valid_optional_fields_are_kept
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field
-  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id or an unknown method is refused by field. Missing keys and wrong values are all listed in one message; a misspelt key or a wrong type is reported alone, because the YAML reader stops at the first one"
+  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id, an unknown method, an empty string, a heldout that aliases the training file, a malformed data pin or a non-positive training number is refused by field. Missing keys and wrong values are all listed in one message; a misspelt key or a wrong type is reported alone, because the YAML reader stops at the first one"
   test: |
-    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields
+    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file leading_parent_dirs_are_not_dropped same_file_rule_is_silent_without_a_training_file
   if_fails: "A typo in a recipe silently trains with a default"
 - id: FALSIFY-APR-RECIPE-004
   rule: the recipe contract is itself a valid contract
@@ -124,3 +124,9 @@ falsification_tests:
   test: |
     pv validate contracts/apr-recipe-v1.yaml
   if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
+- id: FALSIFY-APR-RECIPE-005
+  rule: the data pin has the shape of a sha256
+  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256` (the pin-versus-file check and the receipt hashes land with the receipt)"
+  test: |
+    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256
+  if_fails: "A pin that can never match a file is accepted, so the later pin-versus-file check has nothing sound to compare"
