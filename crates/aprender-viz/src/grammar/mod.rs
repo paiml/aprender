@@ -47,6 +47,8 @@ mod ggplot2_dist_freqpoly_oracle;
 #[cfg(test)]
 mod ggplot2_dist_oracle;
 #[cfg(test)]
+mod ggplot2_dist_violin_oracle;
+#[cfg(test)]
 mod ggplot2_lines_oracle;
 #[cfg(test)]
 mod ggplot2_marks_oracle;
@@ -66,15 +68,16 @@ mod stat_count;
 mod stroke;
 mod term;
 mod theme;
+mod violin;
 
 pub use aes::Aes;
 pub use build::{
     format_labels, point_defaults, point_diameter_px, point_size_mm_for_diameter_px, BuiltBins,
-    BuiltDensity, BuiltLayer, BuiltLayout, PointAes, PositionScale,
+    BuiltDensity, BuiltLayer, BuiltLayout, BuiltViolin, PointAes, PositionScale,
 };
 pub use coord::{apply, apply_limits, Coord};
 pub use data::{DataFrame, DataValue};
-pub use dist::{DistKind, DistSpec};
+pub use dist::{DistKind, DistSpec, ViolinScale};
 pub use facet::{panels, Facet, Panel};
 pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};

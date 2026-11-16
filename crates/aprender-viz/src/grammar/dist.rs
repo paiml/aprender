@@ -29,6 +29,7 @@ use super::geom::{Geom, GeomType};
 use super::ggplot::Layer;
 use super::position::{apply as apply_position, BarRow, Position};
 use super::stat::Stat;
+use super::violin;
 
 /// Which ggplot2 layer a [`DistSpec`] stands for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +44,19 @@ pub enum DistKind {
     Boxplot,
     /// `geom_errorbar()`: identity stat, identity position.
     Errorbar,
+    /// `geom_violin()`: `stat_ydensity`, `position_dodge`.
+    Violin,
+}
+
+/// `scale =` of `geom_violin()`: how the violins' widths are scaled against each other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViolinScale {
+    /// `"area"` (the default): every violin has the same area.
+    Area,
+    /// `"count"`: areas are proportional to the number of observations.
+    Count,
+    /// `"width"`: every violin has the same maximum width.
+    Width,
 }
 
 /// A distribution layer's parameters, named as ggplot2 names them.
@@ -62,6 +76,12 @@ pub struct DistSpec {
     pub boundary: Option<f64>,
     /// `center` of `stat_bin`: the middle of a bin.
     pub center: Option<f64>,
+    /// `trim` of `stat_ydensity` (default `true`).
+    pub trim: bool,
+    /// `adjust` of `stat_ydensity` (default 1).
+    pub adjust: f64,
+    /// `scale` of `stat_ydensity`.
+    pub violin_scale: ViolinScale,
 }
 
 impl DistSpec {
@@ -74,6 +94,9 @@ impl DistSpec {
             binwidth: None,
             boundary: None,
             center: None,
+            trim: true,
+            adjust: 1.0,
+            violin_scale: ViolinScale::Area,
         }
     }
 }
@@ -112,6 +135,12 @@ impl Geom {
     pub fn gg_errorbar() -> Self {
         Self::dist(DistKind::Errorbar)
     }
+
+    /// ggplot2 4.0.3 `geom_violin()`, as built by `layout()`.
+    #[must_use]
+    pub fn gg_violin() -> Self {
+        Self::dist(DistKind::Violin)
+    }
 }
 
 /// `stat_bin` parameters on a distribution layer; no-ops on any other geom.
@@ -140,9 +169,27 @@ impl Geom {
     pub fn center(self, c: f64) -> Self {
         self.with_spec(|s| s.center = Some(c))
     }
+
+    /// `trim =` of `stat_ydensity` (`geom_violin`).
+    #[must_use]
+    pub fn trim(self, trim: bool) -> Self {
+        self.with_spec(|s| s.trim = trim)
+    }
+
+    /// `adjust =` of `stat_ydensity` (`geom_violin`): a multiplier on the bandwidth.
+    #[must_use]
+    pub fn adjust(self, adjust: f64) -> Self {
+        self.with_spec(|s| s.adjust = adjust)
+    }
+
+    /// `scale =` of `stat_ydensity` (`geom_violin`).
+    #[must_use]
+    pub fn violin_scale(self, scale: ViolinScale) -> Self {
+        self.with_spec(|s| s.violin_scale = scale)
+    }
 }
 
-fn refuse(msg: impl Into<String>) -> Error {
+pub(super) fn refuse(msg: impl Into<String>) -> Error {
     Error::Rendering(msg.into())
 }
 
@@ -151,7 +198,7 @@ pub(super) fn is_dist(layer: &Layer) -> bool {
     matches!(layer.geom.geom_type, GeomType::Dist(_))
 }
 
-fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
+pub(super) fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
     let cells = data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))?;
     // R cannot build a data.frame from columns of unequal length, so there is no ggplot2
     // behaviour to match: padding the short column with `NA` would be a guess.
@@ -166,7 +213,7 @@ fn column<'a>(data: &'a DataFrame, name: &str) -> Result<&'a [DataValue]> {
 }
 
 /// A numeric column, one entry per row. Missing is `NaN`; text and infinite values are refused.
-fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
+pub(super) fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
     let cells = column(data, name)?;
     cells
         .iter()
@@ -187,13 +234,13 @@ fn numeric(data: &DataFrame, name: &str) -> Result<Vec<f64>> {
 
 /// A grouping key `(class, number, text)`: class 0 is a number, 1 text, 2 missing, so values sort
 /// before `NA` (R's `order()`), numbers by value and text byte-wise.
-type Key = (u8, f64, String);
+pub(super) type Key = (u8, f64, String);
 
-fn key_order(a: &Key, b: &Key) -> std::cmp::Ordering {
+pub(super) fn key_order(a: &Key, b: &Key) -> std::cmp::Ordering {
     a.0.cmp(&b.0).then(cmp_na_last(a.1, b.1)).then_with(|| a.2.as_bytes().cmp(b.2.as_bytes()))
 }
 
-fn keys(data: &DataFrame, name: &str) -> Result<Vec<Key>> {
+pub(super) fn keys(data: &DataFrame, name: &str) -> Result<Vec<Key>> {
     let cells = column(data, name)?;
     Ok((0..data.nrow())
         .map(|i| match cells.get(i) {
@@ -204,7 +251,7 @@ fn keys(data: &DataFrame, name: &str) -> Result<Vec<Key>> {
         .collect())
 }
 
-fn is_text(data: &DataFrame, name: &str) -> Result<bool> {
+pub(super) fn is_text(data: &DataFrame, name: &str) -> Result<bool> {
     Ok(column(data, name)?.iter().any(|c| matches!(c, DataValue::Text(_))))
 }
 
@@ -273,7 +320,7 @@ pub(super) fn check_inputs(kind: DistKind, aes: &Aes, stat: Option<&Stat>) -> Re
         ("size", aes.size.is_some() || aes.size_value.is_some()),
         ("shape", aes.shape.is_some()),
         ("label", aes.label.is_some()),
-        ("y", aes.y.is_some() && kind != DistKind::Boxplot),
+        ("y", aes.y.is_some() && !matches!(kind, DistKind::Boxplot | DistKind::Violin)),
         ("ymin", aes.ymin.is_some() && kind != DistKind::Errorbar),
         ("ymax", aes.ymax.is_some() && kind != DistKind::Errorbar),
     ];
@@ -337,8 +384,11 @@ pub(super) fn layout(
         let aes = plot_aes.merge(&layer.aes);
         check_inputs(spec.kind, &aes, layer.geom.stat.as_ref())?;
         let groups = group_ids(data, &aes)?;
-        for name in [&aes.x, &aes.y, &aes.ymin, &aes.ymax].into_iter().flatten() {
-            numeric(data, name)?;
+        // A violin reads its own `x` (text is a discrete scale there) and `y`.
+        if spec.kind != DistKind::Violin {
+            for name in [&aes.x, &aes.y, &aes.ymin, &aes.ymax].into_iter().flatten() {
+                numeric(data, name)?;
+            }
         }
         checked.push((spec, data, aes, groups));
     }
@@ -350,6 +400,7 @@ pub(super) fn layout(
         [(spec, data, aes, groups)] if spec.kind == DistKind::Freqpoly => {
             freqpoly(spec, data, aes, groups)
         }
+        [(spec, data, aes, _)] if spec.kind == DistKind::Violin => violin::violin(spec, data, aes),
         _ => Err(Error::UnsupportedLayer(NOT_BUILT)),
     }
 }
@@ -441,6 +492,7 @@ fn histogram(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Re
         path: None,
         bins: Some(bins),
         density: None,
+        violin: None,
     };
     Ok(BuiltLayout {
         layers: vec![layer],
@@ -474,6 +526,7 @@ fn freqpoly(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Res
         path: None,
         bins: Some(bins),
         density: None,
+        violin: None,
     };
     Ok(BuiltLayout {
         layers: vec![layer],
@@ -507,6 +560,7 @@ fn density(data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
             wdensity: cols.wdensity,
             n: cols.n,
         }),
+        violin: None,
     };
     Ok(BuiltLayout {
         layers: vec![layer],

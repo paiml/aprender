@@ -268,7 +268,7 @@ fn r_sd(xs: &[f64]) -> f64 {
 }
 
 /// R's type 7 `quantile()` of an ascending slice.
-fn quantile7(sorted: &[f64], p: f64) -> f64 {
+pub(super) fn quantile7(sorted: &[f64], p: f64) -> f64 {
     let index = 1.0 + (sorted.len() as f64 - 1.0) * p;
     let (lo, hi) = (index.floor(), index.ceil());
     let (a, b) = (sorted[lo as usize - 1], sorted[hi as usize - 1]);
@@ -384,7 +384,7 @@ fn seq_len_out(from: f64, to: f64, n: usize) -> Vec<f64> {
 }
 
 /// R's `approx(xs, ys, v)$y` for ascending `xs` (`approx1` in R's C code).
-fn approx1(xs: &[f64], ys: &[f64], v: f64) -> f64 {
+pub(super) fn approx1(xs: &[f64], ys: &[f64], v: f64) -> f64 {
     let (mut i, mut j) = (0, xs.len() - 1);
     while i + 1 < j {
         let ij = (i + j) / 2;
@@ -410,7 +410,27 @@ fn approx1(xs: &[f64], ys: &[f64], v: f64) -> f64 {
 /// [`Error::Rendering`] for fewer than two values, a non-finite value or `from`/`to`, or
 /// `from > to`. `from == to` (a constant sample) is built, as ggplot2 does.
 pub(super) fn stat_density(xs: &[f64], from: f64, to: f64, n: usize) -> Result<DensityCols> {
-    let bw = bw_nrd0(xs)?;
+    stat_density_adjusted(xs, from, to, n, 1.0)
+}
+
+/// [`stat_density`] with `adjust`: the bandwidth `bw.nrd0` picks is multiplied by it inside
+/// `stats::density()`, after `from`/`to` were chosen (so a caller's `from - 3 * bw` uses the
+/// unadjusted bandwidth, as `stat_ydensity` does). `adjust = 1` is `stat_density` exactly.
+///
+/// # Errors
+///
+/// As [`stat_density`], and [`Error::Rendering`] for an `adjust` that is not finite and positive.
+pub(super) fn stat_density_adjusted(
+    xs: &[f64],
+    from: f64,
+    to: f64,
+    n: usize,
+    adjust: f64,
+) -> Result<DensityCols> {
+    if !(adjust.is_finite() && adjust > 0.0) {
+        return Err(density_refusal("`adjust` must be finite and positive"));
+    }
+    let bw = bw_nrd0(xs)? * adjust;
     if !(from.is_finite() && to.is_finite() && from <= to) || n < 2 {
         return Err(density_refusal("the output range must be finite with from <= to"));
     }

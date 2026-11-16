@@ -290,6 +290,7 @@ mod tests {
             path: p,
             bins: None,
             density: None,
+            violin: None,
         }
     }
 

@@ -1,0 +1,61 @@
+{
+  "row": "geom_violin",
+  "spec": "ggplot(df, aes(g, y)) + geom_violin()  # df = data_constant_only.csv",
+  "data_file": "data_constant_only.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomViolin",
+      "x": [1, 1, 1],
+      "density": [0.58486137963346829, 0.58486137963346829, 0.58486137963346829],
+      "scaled": [1, 1, 1],
+      "ndensity": [1, 1, 1],
+      "count": [2.3394455185338732, 2.3394455185338732, 2.3394455185338732],
+      "wdensity": [2.3394455185338732, 2.3394455185338732, 2.3394455185338732],
+      "n": [4, 4, 4],
+      "y": [1, 1, 1],
+      "quantile": [0.25, 0.5, 0.75],
+      "violinwidth": [1, 1, 1],
+      "flipped_aes": [false, false, false],
+      "width": [0.90000000000000002, 0.90000000000000002, 0.90000000000000002],
+      "xmin": [0.55000000000000004, 0.55000000000000004, 0.55000000000000004],
+      "xmax": [1.45, 1.45, 1.45],
+      "order": [1, 1, 1],
+      "ymax": [1, 1, 1],
+      "weight": [1, 1, 1],
+      "colour": ["#333333FF", "#333333FF", "#333333FF"],
+      "fill": ["white", "white", "white"],
+      "linewidth": [0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1],
+      "alpha": [null, null, null],
+      "colour_rgba": [
+        [51, 51, 51, 255],
+        [51, 51, 51, 255],
+        [51, 51, 51, 255]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "kind": "discrete",
+      "limits": ["a"],
+      "continuous_range": [0.40000000000000002, 1.6000000000000001],
+      "breaks": [1],
+      "labels": ["a"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [1, 1],
+      "continuous_range": [0.94999999999999996, 1.05],
+      "breaks": [0.95000000000000007, 0.97500000000000009, 1, 1.0250000000000001, 1.05],
+      "labels": ["0.950", "0.975", "1.000", "1.025", "1.050"],
+      "n_breaks_censored": 0
+    }
+  }
+}

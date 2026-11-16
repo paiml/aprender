@@ -98,6 +98,37 @@ pub struct BuiltLayer {
     pub bins: Option<BuiltBins>,
     /// `stat_density` output for a density layer; `x`/`y` then hold the grid and the density.
     pub density: Option<BuiltDensity>,
+    /// `stat_ydensity` output for a violin layer; `x`/`y` then hold the dodged position and the
+    /// grid.
+    pub violin: Option<BuiltViolin>,
+}
+
+/// `stat_ydensity`'s columns beyond `x` and `y` after `position_dodge`, one entry per row: each
+/// group's grid points (minus those equal to a quantile), then its three quantile rows.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuiltViolin {
+    /// The density estimate.
+    pub density: Vec<f64>,
+    /// `density / max(density)` over the group's grid (also ggplot2's `ndensity`).
+    pub scaled: Vec<f64>,
+    /// `density * n`.
+    pub count: Vec<f64>,
+    /// `density * sum(weights)`.
+    pub wdensity: Vec<f64>,
+    /// Rows in the row's group.
+    pub n: Vec<f64>,
+    /// The quantile of a quantile row (0.25, 0.5, 0.75); `NaN` (R's `NA`) on a grid row.
+    pub quantile: Vec<f64>,
+    /// The half-width scale `GeomViolin` draws, by the layer's `scale`.
+    pub violinwidth: Vec<f64>,
+    /// The violin's width (0.9 times the resolution of `x`, or `width =`).
+    pub width: f64,
+    /// Left edge after `position_dodge`.
+    pub xmin: Vec<f64>,
+    /// Right edge after `position_dodge`.
+    pub xmax: Vec<f64>,
+    /// `position_dodge`'s `order`: 1-based rank of the group among those at the same `x`.
+    pub order: Vec<f64>,
 }
 
 /// `stat_bin`'s columns, one entry per bin and group, groups in ascending id (`bin_out()` in

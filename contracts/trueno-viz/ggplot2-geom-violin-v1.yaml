@@ -1,0 +1,164 @@
+metadata:
+  id: ggplot2-geom-violin-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row geom_violin (PLOT-GG-001, master #6909; ticket #6984). geom_violin() draws stat_ydensity per group (rows sharing a ggplot2 group): the group's y density at 512 points over [min(y), max(y)] (trim = TRUE) or three unadjusted bw.nrd0 bandwidths past it (trim = FALSE), the bandwidth being bw.nrd0 times adjust inside density(); then the three quantile rows (type 7, probabilities 0.25, 0.5, 0.75) that ggplot2 4.0.3 appends after the grid rows, every other column interpolated at the quantile's y, and the grid rows whose y equals a quantile y removed. Per panel, violinwidth follows scale (area: density / max over the panel; count: that times n / max(n); width: scaled). GeomViolin then sets width (the parameter, else 0.9 * resolution(x, zero = TRUE, discrete = FALSE)) and xmin/xmax, and position_dodge (preserve total) splits the width of an x among the groups sharing it, with order the group's rank there. The discrete x scale is trained on every row before the stat, so a dropped group keeps its level; the continuous range is retrained on xmin/xmax.
+    The oracle is a set of committed JSON fixtures produced by ggplot2 4.0.3 under R 4.6.2 with C collation; R is never run at test time. Every case goes through the public builder and layout() and compares x, y, density, scaled, ndensity, count, wdensity, n, quantile, violinwidth, width, xmin, xmax, order and ymax row by row, and both position scales, at 1e-9 relative plus 1e-12 absolute, the same for every case. Cases: single, three, count, width, trim_false, trim_adjust, adjust_half, width_half, width_wide, fill, dodge3, numeric_x, na, tiny, constant, constant_only (16).
+    Differences from R, all refused with a typed Err (Rendering unless noted) and never approximated: (1) a numeric x without a group aesthetic, which R pools into one violin at the mid-range of x (an x that varies within a group); (2) a text x with a missing cell; (3) a colour mapping, and fill and colour on two different columns in one aes() call; (4) a layer in which no group has two rows with finite x and y, where R returns an empty layer; (5) a non-finite or non-positive adjust or width; (6) a coordinate system other than plain Cartesian (UnsupportedCoord), facets, a scale_x or scale_y spec (UnsupportedLayer), and any other geom in the plot. Not expressible through the API, so neither accepted nor approximated: draw_quantiles and quantiles, bounds, kernels other than gaussian, bandwidth rules other than bw.nrd0, orientation = y, and a weight aesthetic. Not built: the fill palette colours, and the default weight, colour, linewidth, linetype and alpha columns. Integer-typed numbers: R's resolution() of an integer x is 1, while this crate holds every number as a double, so the fixtures coerce integer columns to double. The grouping interaction orders x (text) before fill, which is an assumption the fill and dodge3 fixtures confirm for these inputs. Overlapping widths warn in R and are accepted here. Rendering: to_framebuffer and to_svg return UnsupportedLayer, and to_terminal returns Rendering, for the undrawn layer, as for every distribution layer. geom_violin is not one of the 49 core rows of the ontology, so this contract binds no ggplot2-row entity.
+  references:
+  - 'ggplot2 4.0.3: ggplot_build(), geom_violin, stat_ydensity, position_dodge'
+  - 'R 4.6.2: stats::density.default, stats::bw.nrd0, stats::quantile (type 7)'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_violin/generate.R'
+equations:
+  stat_ydensity:
+    formula: 'per group: density(y, from = min(y) - m * bw0, to = max(y) + m * bw0, adjust)(512 points), m = 0 if trim else 3, bw0 = bw.nrd0(y); then 3 quantile rows appended'
+    domain: a group of at least two rows with finite x and y
+    codomain: BuiltLayer x, y, BuiltViolin columns and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs
+    - a group has 515 rows, minus each grid row equal to a quantile y
+    preconditions:
+    - at least one group with two rows, else Rendering
+    - x constant within a group, else Rendering
+    - plain coord_cartesian and no facet, else UnsupportedCoord or Rendering
+proof_obligations:
+- id: GGV-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  applies_to: stat_ydensity
+enforcement:
+  oracle_cases:
+    description: the 16 fixtures are reproduced
+    check: grammar::ggplot2_dist_violin_oracle::three
+    severity: ERROR
+  refusal_cases:
+    description: input outside the scope above is refused with a typed Err
+    check: grammar::violin::tests::numeric_x_without_a_group_is_refused
+    severity: ERROR
+  renderer_refusal:
+    description: the three renderers refuse the undrawn layer
+    check: grammar::violin::tests::every_renderer_refuses_the_undrawn_layer
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGV-001
+  rule: 'The untrimmed grid extends three UNADJUSTED bandwidths past the range (ggplot2 passes modifier * bw, with bw = bw.nrd0 alone); `adjust` acts only inside density()'
+  prediction: 'Using the adjusted bandwidth in the trim = FALSE extension of group_stat turns trim_adjust RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::trim_adjust
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-002
+  rule: '`adjust` multiplies the bandwidth'
+  prediction: 'Passing adjust 1.0 to stat_density_adjusted in group_stat turns adjust_half RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::adjust_half
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-003
+  rule: 'Each group''s three quantile rows are appended after its grid rows, with every column interpolated at the quantile''s y'
+  prediction: 'Building the group without quantile rows (assemble_group given an empty quantile list) turns three RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::three
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-004
+  rule: 'Grid rows whose y equals a quantile y are removed before the quantile rows are appended (so constant data gives 3 rows)'
+  prediction: 'Keeping every grid row in assemble_group turns constant_only RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::constant_only
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-005
+  rule: 'scale = "count": violinwidth = density / max(density) * n / max(n)'
+  prediction: 'Dropping the n / max(n) factor in violin_widths turns count RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::count
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-006
+  rule: 'scale = "width": violinwidth = scaled (per group density / its maximum)'
+  prediction: 'Using density / max(density) for the Width arm of violin_widths turns width RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::width
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-007
+  rule: 'scale = "area": the maximum is taken over the whole panel, not per group'
+  prediction: 'Taking the maximum over the first 515 rows only in violin_widths turns three RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::three
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-008
+  rule: 'width defaults to 0.9 * resolution(x, zero = TRUE): zero joins the values before gaps are taken'
+  prediction: 'Dropping the zero from resolution turns numeric_x RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::numeric_x
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-009
+  rule: 'resolution is 1 when x has no spread'
+  prediction: 'Returning 0.5 instead of 1 for a zero range in resolution turns single RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::single
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-010
+  rule: 'position_dodge splits an x''s width among the groups at that x only'
+  prediction: 'Counting the groups of every x in dodge turns dodge3 RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::dodge3
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-011
+  rule: '`order` is the rank of the group among those at its x'
+  prediction: 'Setting order to 1 for every row in dodge turns fill RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::fill
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-012
+  rule: 'A group with fewer than two present rows is dropped'
+  prediction: 'Keeping groups of one row in stat_groups turns tiny RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::tiny
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-013
+  rule: 'Rows with a missing y are removed before the stat'
+  prediction: 'Keeping NA y rows in rows_by_group turns na RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::na
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-014
+  rule: 'The discrete x scale is trained before the stat, on every row, so the level of a dropped group stays'
+  prediction: 'Training the levels on the surviving groups only in violin turns tiny RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::tiny
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-015
+  rule: 'The continuous x range is retrained on xmin/xmax after the dodge'
+  prediction: 'Retraining the x range on x instead of xmin/xmax in violin turns width_wide RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::width_wide
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-016
+  rule: 'An explicit width replaces 0.9 * resolution'
+  prediction: 'Ignoring spec.width in violin turns width_half RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_violin_oracle::width_half
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-017
+  rule: 'An x that varies within a group (R pools it into one violin at the mid-range) is refused'
+  prediction: 'Dropping the check in group_x turns numeric_x_without_a_group_is_refused RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::numeric_x_without_a_group_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-018
+  rule: 'A colour mapping is refused'
+  prediction: 'Dropping the check in check_aesthetics turns colour_and_missing_aesthetics_are_refused RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::colour_and_missing_aesthetics_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-019
+  rule: 'A layer where no group has two rows is refused, not returned empty'
+  prediction: 'Dropping the emptiness check in stat_groups turns a_layer_without_a_group_of_two_rows_is_refused_not_returned_empty RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::a_layer_without_a_group_of_two_rows_is_refused_not_returned_empty
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-020
+  rule: 'A non-positive or non-finite width is refused'
+  prediction: 'Dropping the width check in check_spec turns invalid_adjust_and_width_are_refused RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::invalid_adjust_and_width_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-021
+  rule: 'Coordinate systems, facets and scale specs are refused when violin is the only layer'
+  prediction: 'Removing the check_scope call in dist::layout turns coords_facets_scales_and_mixed_layers_are_refused_for_a_lone_violin RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::coords_facets_scales_and_mixed_layers_are_refused_for_a_lone_violin
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGV-022
+  rule: 'to_framebuffer, to_svg and to_terminal refuse the undrawn layer with a typed error'
+  prediction: 'Removing the dist refusal in GGPlot::draw_frame turns every_renderer_refuses_the_undrawn_layer RED'
+  test: cargo test -p aprender-viz --lib -- --exact grammar::violin::tests::every_renderer_refuses_the_undrawn_layer
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGV-001
+  name: ggplot2 conformance row geom_violin
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the geom_violin fixtures
+  checks:
+  - oracle_cases
+  - refusal_cases
+  - renderer_refusal
