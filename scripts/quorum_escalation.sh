@@ -72,9 +72,13 @@ verdict() { # receipt file -> PASS | FAIL | NM
   # 'Result: PASS' does not outrank an earlier 'RESULT: FAIL (1/3)' or a second 'VERDICT: FAIL'.
   h=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final|verdict)[*_ ]*:.*(pass|fail)' "$1")
   [ -n "$h" ] || h=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(not pass|pass|fail).*')
-  # one exception: a headline that SAYS it supersedes ('This supersedes the NOT PASS above')
-  # replaces every headline before it; a later bare 'Result: PASS' replaces nothing.
-  l=$(grep -n -i -E '\bsupersed(e|es|ing)\b' <<<"$h" | tail -n1 | cut -d: -f1)
+  # one exception: a headline that SAYS it supersedes a non-pass verdict ('This supersedes the
+  # NOT PASS above', 'supersedes the round 2 FAIL') replaces every headline before it. It must
+  # name the verdict it replaces ('supersedes #7000' does not) and must not be negated
+  # ('nothing here supersedes the FAIL'); a later bare 'Result: PASS' replaces nothing.
+  local sup='\bsupersed(e|es|ing)( +(the|all|every|earlier|previous|prior|above|round[ -]?[0-9]+))* +(not[ _-]*pass|non[ _-]*pass|fail(ed|s|ures?)?)\b'
+  local neg="\\b(not|no|nothing|never|none|doesn't|does not|cannot|can't)\\b[^.]*\\bsupersed"
+  l=$(grep -n -i -E "$sup" <<<"$h" | grep -v -i -E "$neg" | tail -n1 | cut -d: -f1)
   [ -z "$l" ] || h=$(tail -n "+$l" <<<"$h")
   while IFS= read -r l; do [ -z "$l" ] || c="$c $(vline "$l")"; done <<<"$h"
   case $c in *FAIL*) echo FAIL ;; *PASS*) echo PASS ;; *) echo NM ;; esac
@@ -200,6 +204,13 @@ Final note: lane B saw a FAIL, the re-run cleared it"
 Result: PASS (3/3 valid lanes PASS). Lane B re-ran."; ps "RESULT: FAIL (1/3)
 VERDICT: FAIL
 RESULT: PASS (3/3 valid lanes PASS). This supersedes the FAIL above."
+  np "VERDICT: FAIL
+Result: PASS (3/3). This PR supersedes #7000."; np "VERDICT: FAIL
+RESULT: PASS - nothing here supersedes the FAIL"; np "VERDICT: FAIL
+RESULT: PASS (3/3). It does not supersede the FAIL above."; ps "VERDICT: FAIL
+RESULT: PASS (3/3). Supersedes the round 2 FAIL."
+  np "VERDICT: FAIL
+RESULT: PASS (3/3). Supersedes PR 7000 FAIL."
   np "RESULT: FAIL (1/3)
 - lane C
 Result: PASS"; np "VERDICT: PASS 3/3
