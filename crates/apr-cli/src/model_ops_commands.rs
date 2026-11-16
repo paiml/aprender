@@ -1,6 +1,8 @@
 
-/// What a recipe carries, so `apr finetune --recipe` refuses the same value arriving twice
+/// The flags `apr finetune --recipe` refuses, because the recipe carries their value
 /// (CRUX-001). clap ignores defaults here: only a flag the user typed conflicts.
+/// Two values the recipe may carry are NOT here: `--model-size` and `--output` are accepted
+/// and win over `model_size` and `output.dir` (finetune.rs `recipe_overrides` records it).
 #[cfg(feature = "training")]
 pub(crate) const FINETUNE_RECIPE_CARRIES: [&str; 19] = [
     "file",
@@ -136,7 +138,8 @@ pub enum ModelOpsCommands {
 
         /// Declarative recipe (contracts/apr-recipe-v1.yaml): base, data, method, eval and seed
         /// in one file. It is validated before any model is loaded, and it replaces the flags
-        /// it carries
+        /// it carries. --model-size and --output still apply: each wins over the recipe's
+        /// model_size and output.dir, and the run prints the replacement
         #[arg(long, value_name = "FILE", conflicts_with_all = FINETUNE_RECIPE_CARRIES)]
         recipe: Option<ConfigPath>,
     },

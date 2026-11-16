@@ -59,7 +59,9 @@ Options:
       --recipe <FILE>                  Declarative recipe (contracts/apr-recipe-v1.yaml): base,
                                        data, method, eval and seed in one file. It is validated
                                        before any model is loaded, and it replaces the flags it
-                                       carries
+                                       carries. --model-size and --output still apply: each wins
+                                       over the recipe's model_size and output.dir, and the run
+                                       prints the replacement
       --json                           Output as JSON
   -v, --verbose                        Verbose output
   -q, --quiet                          Quiet mode (errors only)

@@ -10,6 +10,9 @@
 # Limits at this head (status: partial):
 #   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
 #   - a flag conflict is a clap usage error (exit 2); only recipe refusals are exit 5
+#   - the receipt (its overrides included) is built and printed on stderr as text; it is not
+#     written to a file and not part of --json output
+#   - --profile prints its one line and does nothing else, with or without --recipe
 #   - the run flags --output, --vram, --gpus, --gpu-backend, --wait-gpu, --checkpoint-format,
 #     --experimental-mps, --gpu-share and --json are passed on by dispatch; no test checks that
 #     each one arrives (--plan and --model-size are checked)
@@ -79,7 +82,8 @@ equations:
     - "An invalid recipe is refused before the base model is opened"
     - "The refusal names every missing or wrong-valued recipe field in one message; a misspelt key or a wrong type is reported alone"
     - "The refusal is a recipe validation error (exit 5), not a clap usage error (exit 2)"
-    - "A flag whose value the recipe carries conflicts with --recipe"
+    - "A flag in FINETUNE_RECIPE_CARRIES conflicts with --recipe"
+    - "--model-size and --output are accepted beside --recipe and win over model_size and output.dir; the receipt lists each replacement under overrides"
 
   recipe_receipt:
     formula: |
@@ -120,11 +124,11 @@ falsification_tests:
     cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file leading_parent_dirs_are_not_dropped same_file_rule_is_silent_without_a_training_file teacher_rules_are_enforced_by_field teacher_rule_is_silent_when_the_method_is_unknown teacher_values_are_checked_when_the_method_is_unknown same_file_rule_is_silent_without_a_heldout_file
   if_fails: "A typo in a recipe silently trains with a default"
 - id: FALSIFY-APR-RECIPE-004
-  rule: a flag the recipe carries conflicts with --recipe
-  prediction: "`apr finetune --recipe r.yaml --epochs 2` is refused by clap as an argument conflict, for every flag in FINETUNE_RECIPE_CARRIES"
+  rule: a flag beside --recipe is refused or recorded
+  prediction: "`apr finetune --recipe r.yaml --epochs 2` is refused by clap as an argument conflict, for every flag in FINETUNE_RECIPE_CARRIES. --model-size and --output are accepted; when the recipe carries model_size or output.dir, the receipt's overrides list names the replacement, and it is empty otherwise"
   test: |
-    cargo test -p apr-cli --lib -- test_finetune_recipe_conflicts_with_every_flag_it_carries test_finetune_recipe_flag_parses_alone_and_with_run_flags
-  if_fails: "Two sources for one value; the receipt's recipe hash no longer describes the run"
+    cargo test -p apr-cli --lib -- test_finetune_recipe_conflicts_with_every_flag_it_carries test_finetune_recipe_flag_parses_alone_and_with_run_flags a_flag_that_replaces_a_recipe_value_is_recorded_in_the_receipt
+  if_fails: "A value changes without a record; the receipt's recipe hash no longer describes the run"
 - id: FALSIFY-APR-RECIPE-005
   rule: the inputs are real files and the data pin is real
   prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256`. require_inputs names every input that is not a file (a directory counts as missing), refuses a heldout that is a symlink or a hard link to the training file, and refuses a pin that differs from the training file's hash; a pin on an absent file is not compared. sha256 matches its published vectors for bytes and for a file longer than one read; a path that is not a regular file (a directory, a device, a named pipe) has no hash and is not opened. The receipt carries the recipe, data and eval hashes, the method, the seed, the engine, the overrides and the validated-not-applied list; a hash of a file that was not read is null; the recipe hash changes with the eval block"

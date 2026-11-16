@@ -756,8 +756,9 @@
         assert!(err.to_string().contains("cannot read recipe"), "{err}");
     }
 
-    /// A value the recipe carries may not also arrive as a flag: one source of
-    /// truth per run. Every name in `FINETUNE_RECIPE_CARRIES` is exercised, so
+    /// Every flag in `FINETUNE_RECIPE_CARRIES` is refused beside `--recipe`
+    /// (`--model-size` and `--output` are not in it: they are accepted and
+    /// recorded as overrides). Every name in the list is exercised, so
     /// a renamed clap id (which clap would only catch at runtime) fails here.
     #[cfg(feature = "training")]
     #[test]
