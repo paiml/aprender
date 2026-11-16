@@ -536,7 +536,7 @@ impl BuiltGGPlot {
         let (x, y, w, h) = grid.rect(p);
 
         // Panels share one domain, so marks stay comparable between them.
-        let (xs, ys) = self.position_scales();
+        let (xs, ys) = self.position_scales()?;
         let ((x_min, x_max), (y_min, y_max)) =
             apply_limits(&self.coord, xs.continuous_range, ys.continuous_range)?;
 
@@ -686,29 +686,33 @@ impl BuiltGGPlot {
     }
 
     /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
-    fn position_scales(&self) -> (PositionScale, PositionScale) {
-        let (x, y) = self.trained_domains();
-        (PositionScale::continuous(x), PositionScale::continuous(y))
+    ///
+    /// # Errors
+    ///
+    /// A tile, rect or raster layer that `rects::build_layer` refuses: the renderer reaches here
+    /// without `layout()`, so the refusal is returned rather than trained as nothing.
+    fn position_scales(&self) -> Result<(PositionScale, PositionScale)> {
+        let (x, y) = self.trained_domains()?;
+        Ok((PositionScale::continuous(x), PositionScale::continuous(y)))
     }
 
-    /// Tile, rect and raster train f64 bounds; an unbuildable layer is refused by `build_layer`
-    /// before `layout()` reads these domains.
+    /// Tile, rect and raster train f64 bounds. A layer `build_layer` refuses (a data-mapped fill,
+    /// a facet, a text or infinite value, a missing column) is the typed error, not "trained
+    /// nothing": `position_scales()` is reached by the renderer without `layout()`.
     fn train_rects(
         &self,
         layer: &Layer,
         xr: (f64, f64),
         yr: (f64, f64),
-    ) -> ((f64, f64), (f64, f64)) {
-        match rects::build_layer(layer, &self.aes, &self.data, &self.facet) {
-            Ok(built) => rects::train(&built, xr, yr),
-            Err(_) => (xr, yr),
-        }
+    ) -> Result<((f64, f64), (f64, f64))> {
+        let built = rects::build_layer(layer, &self.aes, &self.data, &self.facet)?;
+        Ok(rects::train(&built, xr, yr))
     }
 
     /// The finite x and y domains every layer trains (`lo > hi` on an axis nothing trained).
-    fn trained_domains(&self) -> ((f64, f64), (f64, f64)) {
+    fn trained_domains(&self) -> Result<((f64, f64), (f64, f64))> {
         if let Some(domains) = self.trained {
-            return domains;
+            return Ok(domains);
         }
         let mut x = (f32::MAX, f32::MIN);
         let mut y = (f32::MAX, f32::MIN);
@@ -733,7 +737,7 @@ impl BuiltGGPlot {
                 _ => {}
             }
             if rects::is_rect_family(&layer.geom.geom_type) {
-                (xr, yr) = self.train_rects(layer, xr, yr);
+                (xr, yr) = self.train_rects(layer, xr, yr)?;
                 continue;
             }
             let data = layer.data.as_ref().unwrap_or(&self.data);
@@ -745,7 +749,7 @@ impl BuiltGGPlot {
         let wide = |(lo, hi): (f32, f32), (rlo, rhi): (f64, f64)| {
             (f64::from(lo).min(rlo), f64::from(hi).max(rhi))
         };
-        (wide(x, xr), wide(y, yr))
+        Ok((wide(x, xr), wide(y, yr)))
     }
 
     /// The columns that feed one axis, one per layer (`x_axis` selects x or y).
@@ -820,8 +824,9 @@ impl BuiltGGPlot {
     /// `geom_boxplot`, `geom_errorbar`) and a `scale_x`/`scale_y` spec is an
     /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
     ///
-    /// Without one, a `geom_area`, `geom_tile` or `geom_text` layer is an
-    /// [`Error::UnsupportedLayer`]: `layout()` does not resolve those geoms yet. Beside such a
+    /// Without one, a `geom_area` or `geom_text` layer is an
+    /// [`Error::UnsupportedLayer`]: `layout()` does not resolve those geoms yet. `geom_tile`,
+    /// `geom_rect` and `geom_raster` resolve (see `rects`). Beside such a
     /// layer, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
     /// other stat on that `geom_point` an [`Error::UnsupportedStat`] (their ggplot2 stat or setup
     /// widens the shared scales), and the `geom_point` is refused for a missing, text, short or
@@ -845,7 +850,7 @@ impl BuiltGGPlot {
         marks::require_modelled_companions(&self.layers, &self.aes, &self.data)?;
         marks::require_resolved(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
-        let (x, y) = self.trained_domains();
+        let (x, y) = self.trained_domains()?;
         path::require_trained(&self.layers, x, y)?;
         Ok(BuiltLayout { layers, x: PositionScale::continuous(x), y: PositionScale::continuous(y) })
     }

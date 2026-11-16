@@ -15,6 +15,7 @@ ds <- read_case(here, "data_single.csv")
 dsz <- read_case(here, "data_single_zero.csv")
 dn <- read_case(here, "data_negative.csv")
 dna <- read_case(here, "data_na.csv")
+dpt <- read_case(here, "data_point.csv")
 row <- "geom_rect"
 out <- function(case) file.path(here, paste0("expected_", case, ".json"))
 w <- function(case, plot, spec) write_rects_fixture(plot, row, case, spec, out(case))
@@ -29,5 +30,7 @@ w("negative", ggplot(dn, m) + geom_rect(), "ggplot(dn, aes(xmin = xmin, xmax = x
 w("na_rows", ggplot(dna, m) + geom_rect(), "ggplot(dna, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)) + geom_rect()")
 w("fill_colour_alpha", ggplot(d, m) + geom_rect(fill = "red", colour = "blue", alpha = 0.5),
   "ggplot(d, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)) + geom_rect(fill = 'red', colour = 'blue', alpha = 0.5)")
-w("with_point", ggplot(d) + geom_rect(m) + geom_point(aes(x = xmin, y = ymin)),
-  "ggplot(d) + geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)) + geom_point(aes(x = xmin, y = ymin))")
+# The point (7, -2) lies outside the rect envelope (x -1..5, y 0..6), so the shared scales widen to
+# x [-1, 7] and y [-2, 6]: a layer that did not train the point would leave them at [-1, 5], [0, 6].
+w("with_point", ggplot(d) + geom_rect(m) + geom_point(data = dpt, aes(x, y)),
+  "ggplot(d) + geom_rect(aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)) + geom_point(data = dpt, aes(x, y))")

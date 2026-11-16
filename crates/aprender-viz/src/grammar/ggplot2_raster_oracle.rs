@@ -80,6 +80,11 @@ fn uneven_x_warns_and_uses_the_smallest_step() {
     );
 }
 
+// NOT A BUG: ggplot2 4.0.3's `GeomRaster$setup_data` raises the same text, "Raster pixels are placed
+// at uneven horizontal intervals and will be shifted", from BOTH its x and its y branch (the y
+// branch was copy-pasted and never reworded). Captured on kfocus with ggplot2 4.0.3: uneven x and
+// uneven y each give exactly that first line, and `expected_uneven_{x,y}.json` record it. The
+// comparison is exact, so the word "horizontal" here must stay.
 #[test]
 fn uneven_y_warns_with_the_horizontal_text() {
     run(

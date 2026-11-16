@@ -44,7 +44,7 @@ enforcement:
 falsification_tests:
 - id: FALSIFY-GGTILE-001
   rule: "A tile is x -+ width/2 and y -+ height/2"
-  prediction: "mutation (half-width: `a + sign * d / 2.0` becomes `a + sign * d` in rects.rs build_layer) turns default_size_is_the_data_resolution and width_and_height_parameters RED"
+  prediction: "mutation (half-width: `a + sign * d / 2.0` becomes `a + sign * d` in rects.rs tile_parts) turns default_size_is_the_data_resolution and width_and_height_parameters RED"
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::default_size_is_the_data_resolution grammar::ggplot2_tile_oracle::width_and_height_parameters
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GGTILE-002
@@ -84,7 +84,7 @@ falsification_tests:
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GGTILE-009
   rule: "A geom_point beside a tile trains the same scales"
-  prediction: "mutation (trained_domains drops the point layer's domain (`(f64::from(lo).min(rlo), f64::from(hi).max(rhi))` becomes `(rlo, rhi)`)) turns a_point_layer_shares_the_scales RED"
+  prediction: "mutation (trained_domains drops the point layer's domain (`(f64::from(lo).min(rlo), f64::from(hi).max(rhi))` becomes `(rlo, rhi)`)) turns a_point_layer_shares_the_scales RED. The point (3, 5) lies above the tile envelope, so the y limits change from [-0.25, 2.25] (tiles alone, expected_uneven.json) to [-0.25, 5] (expected_with_point.json), and the y continuous_range from [-0.375, 2.375] to [-0.5125, 5.2625]; x limits [0.5, 8.5] do not change"
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_point_layer_shares_the_scales
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GGTILE-010

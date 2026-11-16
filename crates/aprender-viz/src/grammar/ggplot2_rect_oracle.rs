@@ -85,7 +85,10 @@ fn fixed_fill_colour_and_alpha() {
 #[test]
 fn a_point_layer_shares_the_scales() {
     let w = want(fixture!("geom_rect", "with_point"), ROW, "with_point");
-    let point = layer(Geom::point()).aes(Aes::new().x("xmin").y("ymin"));
+    // The point (7, -2) is outside the rect envelope, so the shared limits widen to x [-1, 7] and
+    // y [-2, 6] (they are [-1, 5] and [0, 6] for the rect alone): only a trained point shows.
+    let point =
+        layer(Geom::point()).aes(Aes::new().x("x").y("y")).data(csv!("geom_rect", "data_point"));
     let rect = layer(Geom::rect()).aes(bounds());
     let got = build(csv!("geom_rect", "data"), Aes::new(), vec![rect, point]).expect("layout");
     check(&got, &w, G, RectKind::Rect);

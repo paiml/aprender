@@ -82,9 +82,9 @@ pub enum GeomType {
     Rect,
     /// `geom_raster`: one cell per (`x`, `y`), sized by the grid spacing.
     Raster {
-        /// Where the cell sits horizontally (0 = x is the left edge, 1 = the right edge).
+        /// Where the cell sits horizontally (`xmin = x - w * (1 - hjust)`: 0 puts x on the cell's right edge, 1 on its left edge).
         hjust: f64,
-        /// Where the cell sits vertically (0 = y is the bottom edge, 1 = the top edge).
+        /// Where the cell sits vertically (`ymin = y - h * (1 - vjust)`: 0 puts y on the cell's top edge, 1 on its bottom edge).
         vjust: f64,
     },
     /// Text labels.

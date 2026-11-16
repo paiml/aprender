@@ -171,6 +171,8 @@ pub(super) fn check_rects(tag: &str, got: &BuiltLayer, w: &Value, geom: &str, ki
     let r = got.rects.as_ref().expect("a tile, rect or raster layer resolves rect data");
     assert_eq!(r.kind, kind, "{tag}: kind");
     let n = nums(&w["xmin"]).len();
+    assert!(n > 0, "{tag}: a fixture with no rows proves nothing");
+    assert_eq!(r.xmin.len(), n, "{tag}: row count");
     assert_eq!(ints(&w["panel"]), vec![1; n], "{tag}.panel: one panel");
     assert_eq!(ints(&w["group"]), vec![-1; n], "{tag}.group: no group");
     assert_close_slice(&format!("{tag}.xmin"), &r.xmin, &nums(&w["xmin"]));
@@ -210,6 +212,7 @@ pub(super) fn check_rects(tag: &str, got: &BuiltLayer, w: &Value, geom: &str, ki
             Some(v) => assert!(close(v, *a), "{tag}.alpha[{i}]: got {v} want {a}"),
         }
     }
+    assert_eq!(w["fill_rgba"].as_array().map(Vec::len), Some(n), "{tag}.fill rows");
     for i in 0..n {
         assert_eq!(rgba(r.fill), nums(&w["fill_rgba"][i]), "{tag}.fill[{i}]");
     }
@@ -218,6 +221,7 @@ pub(super) fn check_rects(tag: &str, got: &BuiltLayer, w: &Value, geom: &str, ki
         let absent = ["colour_rgba", "linewidth", "linetype"].iter().all(|k| w.get(*k).is_none());
         assert!(absent, "{tag}: R raster has an outline column");
     } else {
+        assert_eq!(w["colour_rgba"].as_array().map(Vec::len), Some(n), "{tag}.colour rows");
         for i in 0..n {
             let want = &w["colour_rgba"][i];
             match r.colour {

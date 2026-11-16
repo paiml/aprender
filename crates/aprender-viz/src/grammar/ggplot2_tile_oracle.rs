@@ -163,6 +163,18 @@ fn data_mapped_aesthetics_a_group_and_a_facet_are_refused() {
 }
 
 #[test]
+fn bounds_mapped_on_a_tile_or_raster_are_refused() {
+    let mut df = frame(&[1.0, 2.0], &[1.0, 2.0]);
+    df.add_column_f32("b", &[0.0, 1.0]);
+    for aes in [xy().xmin("b"), xy().xmax("b"), xy().ymin("b"), xy().ymax("b")] {
+        for g in [Geom::tile(), Geom::raster()] {
+            let r = build(df.clone(), aes.clone(), vec![layer(g)]);
+            assert!(matches!(r, Err(Error::Rendering(m)) if m.contains("xmin")), "bounds");
+        }
+    }
+}
+
+#[test]
 fn a_non_identity_stat_and_a_non_default_coord_are_refused() {
     let df = frame(&[1.0, 2.0], &[1.0, 2.0]);
     let r = build(df.clone(), xy(), vec![layer(Geom::tile().stat(Stat::Count))]);
@@ -179,4 +191,16 @@ fn a_tile_beside_an_unresolved_geom_is_still_refused() {
     let df = frame(&[1.0, 2.0], &[1.0, 2.0]);
     let r = build(df, xy(), vec![layer(Geom::tile()), layer(Geom::area())]);
     assert!(matches!(r, Err(Error::UnsupportedLayer(m)) if m.starts_with("geom_area")), "area");
+}
+
+#[test]
+fn the_renderer_returns_a_refused_layers_error_instead_of_training_nothing() {
+    // `to_framebuffer` reaches the position scales without `layout()`. A tile with a data-mapped
+    // fill (the usual heatmap) is refused by `build_layer`; training must return that error, not
+    // fall back to the empty 0..1 scale.
+    let mut df = frame(&[1.0, 2.0], &[1.0, 2.0]);
+    df.add_column_f32("z", &[1.0, 2.0]);
+    let p = super::GGPlot::new().data(df).aes(xy().fill("z")).layer(layer(Geom::tile()));
+    let r = p.build().and_then(|b| b.to_framebuffer());
+    assert!(matches!(r, Err(Error::Rendering(_))), "{:?}", r.map(|_| ()));
 }

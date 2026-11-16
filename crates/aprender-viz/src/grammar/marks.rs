@@ -1,6 +1,6 @@
 //! Filled marks and text: `geom_area`, `geom_ribbon`, `geom_tile`, `geom_rect`, `geom_text`
-//! (PLOT-GG-001, paiml/aprender#6909). The "five" below are these; `geom_ribbon` and `geom_rect`
-//! have no constructor yet, so only area, tile and text can reach this module.
+//! (PLOT-GG-001, paiml/aprender#6909). The "five" below are these; `geom_ribbon` has no
+//! constructor yet, so only area, tile, rect and text can reach this module.
 //!
 //! `layout()` resolves `geom_tile`, `geom_rect` and `geom_raster` (see `rects`); the rest are refused.
 //! It does not resolve the others yet. It used to lay them out as points: raw `x`/`y`

@@ -160,6 +160,8 @@ pub(super) fn raster_step(v: &[f64], warnings: &mut Vec<String>) -> f64 {
     let Some(&first) = diffs.first() else { return 1.0 };
     let tol = spacing_tolerance();
     if diffs.windows(2).any(|p| (p[1] - p[0]).abs() > tol) {
+        // Verbatim ggplot2 4.0.3, and the same text for the y axis: its y branch says "horizontal"
+        // too (R's copy-paste, confirmed by running it). Not a typo here; do not reword.
         warnings.push(
             "Raster pixels are placed at uneven horizontal intervals and will be shifted"
                 .to_string(),
@@ -215,6 +217,14 @@ pub(super) fn build_layer(
     let data = layer.data.as_ref().unwrap_or(plot_data);
     let aes = plot_aes.merge(&layer.aes);
     require_plain_aes(&aes)?;
+    let bounds_mapped =
+        aes.xmin.is_some() || aes.xmax.is_some() || aes.ymin.is_some() || aes.ymax.is_some();
+    if bounds_mapped && !matches!(layer.geom.geom_type, GeomType::Rect) {
+        return Err(refuse(
+            "xmin, xmax, ymin or ymax on a tile or raster layer: ggplot2 resolves those bounds as \
+             a rect, which this row does not model",
+        ));
+    }
     let mut warnings = Vec::new();
     let p = match layer.geom.geom_type {
         GeomType::Rect => rect_parts(&aes, data)?,
