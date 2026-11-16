@@ -154,8 +154,8 @@ proptest! {
         vocab_size in 1_usize..=500_000_usize,
         // FFN expansion multiplier (2x..8x)
         ffn_mult in 2_usize..=8_usize,
-        // context_length
-        context_length in 0_usize..=2_097_152_usize,
+        // context_length: 0 is refused since #2479 (model-metadata-bounds-v1), so a VALID config starts at 1
+        context_length in 1_usize..=2_097_152_usize,
     ) {
         let head_dim = 1_usize << head_dim_log2;
         let gqa_ratio = 1_usize << gqa_ratio_log2;
