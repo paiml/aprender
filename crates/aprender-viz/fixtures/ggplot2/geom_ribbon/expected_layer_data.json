@@ -1,0 +1,49 @@
+{
+  "row": "geom_ribbon",
+  "case": "layer_data",
+  "spec": "ggplot(pts, aes(x, y)) + geom_point() + geom_ribbon(data = d, aes(x, ymin = lo, ymax = hi))",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomPoint",
+      "x": [0, 2],
+      "y": [5, 0],
+      "flipped_aes": [],
+      "panel": [1, 1],
+      "group": [-1, -1]
+    },
+    {
+      "geom": "GeomRibbon",
+      "x": [1, 2],
+      "y": [0, 1],
+      "ymin": [0, 1],
+      "ymax": [1, 2],
+      "flipped_aes": [0, 0],
+      "panel": [1, 1],
+      "group": [-1, -1]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0, 2],
+      "continuous_range": [-0.10000000000000001, 2.1000000000000001],
+      "breaks": [0, 0.5, 1, 1.5, 2],
+      "labels": ["0.0", "0.5", "1.0", "1.5", "2.0"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 5],
+      "continuous_range": [-0.25, 5.25],
+      "breaks": [0, 1, 2, 3, 4, 5],
+      "labels": ["0", "1", "2", "3", "4", "5"],
+      "n_breaks_censored": 0
+    }
+  }
+}

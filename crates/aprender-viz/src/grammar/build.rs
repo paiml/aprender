@@ -11,6 +11,7 @@ pub use super::r_format::format_labels;
 use super::scale_spec::{resolve_continuous, ContinuousSpec};
 use crate::color::Rgba;
 
+use super::filled::BuiltFilled;
 use super::path::BuiltPath;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
@@ -94,6 +95,9 @@ pub struct BuiltLayer {
     /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
     /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
     pub path: Option<BuiltPath>,
+    /// Resolved `geom_area` / `geom_ribbon` data; `None` for other geoms. `x`/`y` hold the final
+    /// `x` and `y` (`y` is `ymin` for a ribbon); `NaN` rows are kept for a ribbon.
+    pub filled: Option<BuiltFilled>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

@@ -1,11 +1,12 @@
 //! Filled marks and text: `geom_area`, `geom_ribbon`, `geom_tile`, `geom_rect`, `geom_text`
-//! (PLOT-GG-001, paiml/aprender#6909). The "five" below are these; `geom_ribbon` and `geom_rect`
-//! have no constructor yet, so only area, tile and text can reach this module.
+//! (PLOT-GG-001, paiml/aprender#6909). The "five" below are these; `geom_rect` has no
+//! constructor yet, so only area, ribbon, tile and text can reach this module. Area and ribbon
+//! are resolved by `filled`, but a `geom_point` beside them still gets the companion checks here.
 //!
-//! `layout()` does not resolve these geoms yet. It used to lay them out as points: raw `x`/`y`
-//! rows, scales trained on them, no `stat_align`, stacking, tile bounds or labels. That is a
-//! plausible wrong answer, so [`require_resolved`] refuses each of them with a typed error until
-//! its `ggplot_build()` resolution lands.
+//! `layout()` does not resolve tile and text yet. It used to lay them out as points: raw `x`/`y`
+//! rows, scales trained on them, tile bounds or labels. That is a plausible wrong answer, so
+//! [`require_resolved`] refuses each of them with a typed error until its `ggplot_build()`
+//! resolution lands.
 //!
 //! Companion layers. The x and y scales are shared, so a plot with one of these layers may hold
 //! only these geoms and `geom_point` with the identity stat; every other geom is an
@@ -22,8 +23,6 @@ use crate::error::{Error, Result};
 /// Which of the marks geoms a layer is.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum MarkKind {
-    /// `geom_area()`: `stat_align` + `position_stack`.
-    Area,
     /// `geom_tile()`.
     Tile,
     /// `geom_text()`.
@@ -33,7 +32,6 @@ enum MarkKind {
 impl MarkKind {
     fn of(geom: &GeomType) -> Option<Self> {
         match geom {
-            GeomType::Area { .. } => Some(MarkKind::Area),
             GeomType::Tile => Some(MarkKind::Tile),
             GeomType::Text => Some(MarkKind::Text),
             _ => None,
@@ -54,9 +52,6 @@ pub(super) fn any_marks(layers: &[Layer]) -> bool {
 pub(super) fn require_resolved(layers: &[Layer]) -> Result<()> {
     match layers.iter().find_map(|l| MarkKind::of(&l.geom.geom_type)) {
         None => Ok(()),
-        Some(MarkKind::Area) => {
-            Err(Error::UnsupportedLayer("geom_area: layout() does not resolve it yet"))
-        }
         Some(MarkKind::Tile) => {
             Err(Error::UnsupportedLayer("geom_tile: layout() does not resolve it yet"))
         }
@@ -66,7 +61,7 @@ pub(super) fn require_resolved(layers: &[Layer]) -> Result<()> {
     }
 }
 
-/// Refuse, while one of the five geoms is present, every layer `layout()` does not resolve beside
+/// Refuse, while one of the five geoms (or an area or ribbon layer) is present, every layer `layout()` does not resolve beside
 /// it. The scales are shared, so a companion whose ggplot2 stat, setup or position widens them
 /// (measured on ggplot2 4.0.3 beside `geom_area`: `geom_bar` takes y to 0 and x to the bar edges,
 /// `geom_histogram` x to the bin edges, `geom_point(stat = "count")` y to 0) would make `layout()`
@@ -85,12 +80,13 @@ pub(super) fn require_modelled_companions(
     plot_aes: &Aes,
     plot_data: &DataFrame,
 ) -> Result<()> {
-    if !any_marks(layers) {
+    let filled = |g: &GeomType| super::filled::is_filled(g);
+    if !any_marks(layers) && !layers.iter().any(|l| filled(&l.geom.geom_type)) {
         return Ok(());
     }
     for l in layers {
         let g = &l.geom.geom_type;
-        if MarkKind::of(g).is_some() {
+        if MarkKind::of(g).is_some() || filled(g) {
             continue;
         }
         if !matches!(g, GeomType::Point { .. }) {
