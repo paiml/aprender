@@ -68,20 +68,57 @@ fn seq_len(g: &Value) -> usize {
         .expect("seq") as usize
 }
 
+/// True when the k-th and (k+1)-th best block scores are equal: `torch.topk` documents no
+/// tie order, so the reference's choice among the tied blocks cannot be pinned by a golden.
+fn boundary_tie(scores: &[f32], k: usize) -> bool {
+    let k = k.min(scores.len());
+    if k == 0 || k >= scores.len() {
+        return false;
+    }
+    let mut s = scores.to_vec();
+    s.sort_by(|a, b| b.total_cmp(a));
+    s[k - 1] == s[k]
+}
+
+/// Sorted scores of the blocks a mask row selects (a block counts when its first token is set).
+fn chosen_scores(row: &[bool], visible: &[bool], ratio: usize, scores: &[f32]) -> Vec<f32> {
+    let vis: Vec<usize> = (0..visible.len()).filter(|&i| visible[i]).collect();
+    let mut out: Vec<f32> = (0..scores.len())
+        .filter(|&b| row[vis[b * ratio]])
+        .map(|b| scores[b])
+        .collect();
+    out.sort_by(|a, b| a.total_cmp(b));
+    out
+}
+
+struct IndexerCase {
+    qkw: Vec<f32>,
+    qn: Vec<f32>,
+    kn: Vec<f32>,
+    s: IndexerShape,
+    seq: usize,
+}
+
+impl IndexerCase {
+    fn params(&self) -> IndexerParams<'_> {
+        IndexerParams {
+            qk_proj: &self.qkw,
+            q_norm: &self.qn,
+            k_norm: &self.kn,
+        }
+    }
+}
+
 #[test]
-fn indexer_selection_matches_reference_exactly() {
+fn indexer_selection_matches_reference() {
     let g = golden("indexer");
-    let (qkw, qn, kn) = (
-        f32s(&g["params"]["index_qk_proj.weight"]),
-        f32s(&g["params"]["q_layernorm.weight"]),
-        f32s(&g["params"]["k_layernorm.weight"]),
-    );
-    let p = IndexerParams {
-        qk_proj: &qkw,
-        q_norm: &qn,
-        k_norm: &kn,
+    let c = IndexerCase {
+        qkw: f32s(&g["params"]["index_qk_proj.weight"]),
+        qn: f32s(&g["params"]["q_layernorm.weight"]),
+        kn: f32s(&g["params"]["k_layernorm.weight"]),
+        s: indexer_shape(&g),
+        seq: seq_len(&g),
     };
-    let s = indexer_shape(&g);
     let (hid, cos, sin) = (
         f32s(&g["inputs"]["hidden_states"]),
         f32s(&g["inputs"]["cos"]),
@@ -91,29 +128,44 @@ fn indexer_selection_matches_reference_exactly() {
         bools(&g["inputs"]["visible_mask"]),
         bools(&g["output"]["selected_token_mask"]),
     );
-    let seq = seq_len(&g);
+    let (seq, s) = (c.seq, &c.s);
     let (hs, rs, ms) = (seq * s.hidden, cos.len() / 2, seq * seq);
-    let mut mismatches = 0;
+    let (mut exact, mut tied) = (0, Vec::new());
     for b in 0..2 {
-        let got = indexer_select(
-            &p,
-            &s,
+        let (h, co, si, v) = (
             &hid[b * hs..(b + 1) * hs],
             &cos[b * rs..(b + 1) * rs],
             &sin[b * rs..(b + 1) * rs],
             &vis[b * ms..(b + 1) * ms],
-        )
-        .expect("indexer");
-        mismatches += got
-            .iter()
-            .zip(&want[b * ms..(b + 1) * ms])
-            .filter(|(a, b)| a != b)
-            .count();
+        );
+        let got = indexer_select(&c.params(), s, h, co, si, v).expect("indexer");
+        for t in 0..seq {
+            let (gr, wr) = (
+                &got[t * seq..(t + 1) * seq],
+                &want[b * ms + t * seq..][..seq],
+            );
+            if gr == wr {
+                exact += 1;
+                continue;
+            }
+            // A differing row is only acceptable if the top-k boundary is tied and the
+            // reference's choice is an equally valid top-k (same multiset of block scores).
+            let sc = indexer_block_scores_row(&c.params(), s, h, co, si, v, t).expect("scores");
+            assert!(
+                boundary_tie(&sc, s.budget / s.ratio),
+                "b={b} q={t}: differs without a tie"
+            );
+            let vr = &v[t * seq..(t + 1) * seq];
+            assert_eq!(
+                chosen_scores(gr, vr, s.ratio, &sc),
+                chosen_scores(wr, vr, s.ratio, &sc),
+                "b={b} q={t}: reference selection is not an equal-score top-k"
+            );
+            tied.push((b, t));
+        }
     }
-    assert_eq!(
-        mismatches, 0,
-        "selected-token mask differs from the reference"
-    );
+    println!("indexer rows exact={exact} tie-ambiguous={tied:?}");
+    assert_eq!(exact + tied.len(), 2 * seq);
 }
 
 #[test]
@@ -195,9 +247,34 @@ fn indexed_attention_matches_reference() {
             .expect("attention"),
         );
     }
-    let e = max_err(&got, &want);
-    println!("indexed_attention max_abs_err = {e:e}");
-    assert!(e <= TOL, "max abs err {e}");
+    // Rows whose indexer top-k boundary is tied (relu-dead blocks, score exactly 0) are
+    // ambiguous vs torch.topk's unspecified tie order; every other row must match.
+    let (h, s) = (a.indexer.hidden, &a.indexer);
+    let (mut worst, mut worst_tied, mut tied) = (0f32, 0f32, Vec::new());
+    for b in 0..2 {
+        for t in 0..seq {
+            let lo = (b * seq + t) * h;
+            let e = max_err(&got[lo..lo + h], &want[lo..lo + h]);
+            let sc = indexer_block_scores_row(
+                &p.indexer,
+                s,
+                &hid[b * hs..(b + 1) * hs],
+                &cos[b * rs..(b + 1) * rs],
+                &sin[b * rs..(b + 1) * rs],
+                &vis[b * ms..(b + 1) * ms],
+                t,
+            )
+            .expect("scores");
+            if boundary_tie(&sc, s.budget / s.ratio) {
+                tied.push((b, t));
+                worst_tied = worst_tied.max(e);
+            } else {
+                worst = worst.max(e);
+            }
+        }
+    }
+    println!("indexed_attention max_abs_err (untied rows) = {worst:e}; tied rows {tied:?} err {worst_tied:e}");
+    assert!(worst <= TOL, "max abs err {worst}");
 }
 
 fn hc_weights(p: &Value) -> Vec<Vec<f32>> {
