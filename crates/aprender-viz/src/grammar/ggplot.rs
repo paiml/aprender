@@ -17,6 +17,7 @@ use super::coord::{apply, apply_limits, Coord};
 use super::data::{DataFrame, DataValue};
 use super::dist;
 use super::facet::{panels, Facet, Panel};
+use super::filled;
 use super::geom::{Geom, GeomType, PointShape};
 use super::marks;
 use super::path;
@@ -460,7 +461,9 @@ impl BuiltGGPlot {
 
     /// Line, path, step and reference layers as vector elements at panel pixel coordinates.
     fn svg_strokes(&self, mut svg: SvgEncoder) -> Result<SvgEncoder> {
-        let Some(built) = self.stroke_layout()? else { return Ok(svg) };
+        let Some(built) = self.stroke_layout()? else {
+            return Ok(svg);
+        };
         let ps = panels(&self.facet, &self.data)?;
         let grid = PanelGrid::new(&ps, self.width, self.height, self.theme.margin);
         for (pi, p) in ps.iter().enumerate() {
@@ -511,7 +514,9 @@ impl BuiltGGPlot {
             // A tick whose pixel is not finite (a domain wider than f32) is not written: SVG
             // attributes never carry NaN or inf.
             for (v, label) in &f.x_ticks {
-                let Some(px) = Self::pixel(&f.x_scale, *v as f32) else { continue };
+                let Some(px) = Self::pixel(&f.x_scale, *v as f32) else {
+                    continue;
+                };
                 svg = svg.line(px, bottom, px, bottom + TICK_PX, ink, 1.0).text_anchored(
                     px,
                     bottom + TICK_PX + AXIS_TEXT_PX,
@@ -522,7 +527,9 @@ impl BuiltGGPlot {
                 );
             }
             for (v, label) in &f.y_ticks {
-                let Some(py) = Self::pixel(&f.y_scale, *v as f32) else { continue };
+                let Some(py) = Self::pixel(&f.y_scale, *v as f32) else {
+                    continue;
+                };
                 svg = svg.line(left - TICK_PX, py, left, py, ink, 1.0).text_anchored(
                     left - TICK_PX - 2.0,
                     py + AXIS_TEXT_PX * 0.35,
@@ -687,7 +694,9 @@ impl BuiltGGPlot {
     /// the extremes matter — so this reads the compacting accessor deliberately.
     fn extend_range(acc: (f32, f32), data: &DataFrame, col: Option<&String>) -> (f32, f32) {
         let Some(col) = col else { return acc };
-        let Some(values) = data.get_f32_present(col) else { return acc };
+        let Some(values) = data.get_f32_present(col) else {
+            return acc;
+        };
         values.iter().filter(|v| v.is_finite()).fold(acc, |(lo, hi), &v| (lo.min(v), hi.max(v)))
     }
 
@@ -717,6 +726,12 @@ impl BuiltGGPlot {
 
     /// The finite x and y domains every layer trains (`lo > hi` on an axis nothing trained).
     fn trained_domains(&self) -> Result<((f64, f64), (f64, f64))> {
+        self.trained_domains_for(false)
+    }
+
+    /// [`Self::trained_domains`]; with `skip_filled`, an area or ribbon layer adds nothing here
+    /// because `layout()` trains on its built rows (stat, stacking and padding included).
+    fn trained_domains_for(&self, skip_filled: bool) -> Result<((f64, f64), (f64, f64))> {
         if let Some(domains) = self.trained {
             return Ok(domains);
         }
@@ -726,21 +741,10 @@ impl BuiltGGPlot {
         let mut yr = (f64::INFINITY, f64::NEG_INFINITY);
 
         for layer in &self.layers {
-            // Reference lines do not inherit x/y; hline trains y and vline trains x with the
-            // intercept, abline trains neither (ggplot2: `inherit.aes = FALSE`).
-            match &layer.geom.geom_type {
-                GeomType::Hline { yintercept } if yintercept.is_finite() => {
-                    y = (y.0.min(*yintercept), y.1.max(*yintercept));
-                    continue;
-                }
-                GeomType::Vline { xintercept } if xintercept.is_finite() => {
-                    x = (x.0.min(*xintercept), x.1.max(*xintercept));
-                    continue;
-                }
-                GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. } => {
-                    continue
-                }
-                _ => {}
+            if Self::train_reference_line(&layer.geom.geom_type, &mut x, &mut y)
+                || (skip_filled && filled::is_filled(&layer.geom.geom_type))
+            {
+                continue;
             }
             if rects::is_rect_family(&layer.geom.geom_type) {
                 (xr, yr) = self.train_rects(layer, xr, yr)?;
@@ -756,6 +760,27 @@ impl BuiltGGPlot {
             (f64::from(lo).min(rlo), f64::from(hi).max(rhi))
         };
         Ok((wide(x, xr), wide(y, yr)))
+    }
+
+    /// Reference lines do not inherit x/y; hline trains y and vline trains x with the intercept,
+    /// abline trains neither (ggplot2: `inherit.aes = FALSE`). True when the layer is one of them.
+    fn train_reference_line(g: &GeomType, x: &mut (f32, f32), y: &mut (f32, f32)) -> bool {
+        match g {
+            GeomType::Hline { yintercept } => {
+                if yintercept.is_finite() {
+                    *y = (y.0.min(*yintercept), y.1.max(*yintercept));
+                }
+                true
+            }
+            GeomType::Vline { xintercept } => {
+                if xintercept.is_finite() {
+                    *x = (x.0.min(*xintercept), x.1.max(*xintercept));
+                }
+                true
+            }
+            GeomType::Abline { .. } => true,
+            _ => false,
+        }
     }
 
     /// The columns that feed one axis, one per layer (`x_axis` selects x or y).
@@ -830,10 +855,9 @@ impl BuiltGGPlot {
     /// `geom_boxplot`, `geom_errorbar`) and a `scale_x`/`scale_y` spec is an
     /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
     ///
-    /// Without one, a `geom_area` or `geom_text` layer is an
-    /// [`Error::UnsupportedLayer`]: `layout()` does not resolve those geoms yet. `geom_tile`,
-    /// `geom_rect` and `geom_raster` resolve (see `rects`). Beside such a
-    /// layer, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
+    /// Without one, a `geom_text` layer is an [`Error::UnsupportedLayer`]:
+    /// `layout()` does not resolve those geoms yet (`geom_area` and `geom_ribbon` are resolved by
+    /// `filled`, `geom_tile`, `geom_rect` and `geom_raster` by `rects`). Beside any of these layers, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
     /// other stat on that `geom_point` an [`Error::UnsupportedStat`] (their ggplot2 stat or setup
     /// widens the shared scales), and the `geom_point` is refused for a missing, text, short or
     /// infinite `x`/`y` column; those refusals come first.
@@ -856,7 +880,11 @@ impl BuiltGGPlot {
         marks::require_modelled_companions(&self.layers, &self.aes, &self.data)?;
         marks::require_resolved(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
-        let (x, y) = self.trained_domains()?;
+        let (mut x, mut y) = self.trained_domains_for(true)?;
+        for (ex, ey) in layers.iter().map(filled::extents) {
+            x = merge_extent(x, ex);
+            y = merge_extent(y, ey);
+        }
         path::require_trained(&self.layers, x, y)?;
         Ok(BuiltLayout { layers, x: PositionScale::continuous(x), y: PositionScale::continuous(y) })
     }
@@ -903,11 +931,23 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, rects: None })
+        Ok(BuiltLayer {
+            x,
+            y,
+            points,
+            path: None,
+            rects: None,
+            bins: None,
+            density: None,
+            filled: None,
+        })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
+        if filled::is_filled(&layer.geom.geom_type) {
+            return filled::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
         }
@@ -925,7 +965,16 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, rects: None })
+        Ok(BuiltLayer {
+            x,
+            y,
+            points,
+            path: None,
+            rects: None,
+            bins: None,
+            density: None,
+            filled: None,
+        })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).
@@ -1207,6 +1256,11 @@ impl BuiltGGPlot {
             1.0,
         );
     }
+}
+
+/// Widen a trained `(lo, hi)` domain by a built layer's finite extent.
+fn merge_extent(domain: (f64, f64), extent: Option<(f64, f64)>) -> (f64, f64) {
+    extent.map_or(domain, |(lo, hi)| (domain.0.min(lo), domain.1.max(hi)))
 }
 
 #[cfg(test)]

@@ -1,0 +1,24 @@
+# apr-recipe-v1 (contracts/apr-recipe-v1.yaml): one file names everything a run depends on.
+#
+#   apr finetune --recipe examples/recipes/tiny.yaml --plan --json
+#
+# --plan validates the recipe and prints the resolved plan without opening a model, so it runs
+# on a fresh checkout. Without --plan the base, data and eval files below must exist; relative
+# paths resolve against this file's directory.
+recipe: apr-recipe-v1
+name: tiny-qlora
+base: models/qwen-0.8b.apr
+model_size: 0.8B
+method: qlora
+data:
+  train: data/train.jsonl
+eval:
+  heldout: data/heldout.jsonl
+seed: 42
+training:
+  rank: 8
+  epochs: 1
+  learning_rate: 0.0002
+  max_seq_len: 256
+output:
+  dir: out/tiny-qlora

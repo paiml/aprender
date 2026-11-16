@@ -11,6 +11,7 @@ pub use super::r_format::format_labels;
 use super::scale_spec::{resolve_continuous, ContinuousSpec};
 use crate::color::Rgba;
 
+use super::filled::BuiltFilled;
 use super::path::BuiltPath;
 use super::rects::BuiltRects;
 
@@ -99,6 +100,52 @@ pub struct BuiltLayer {
     /// other geoms. For these layers `x`/`y` keep `NaN` rows, as `ggplot_build()` does (a rect
     /// layer has no `x`/`y`).
     pub rects: Option<BuiltRects>,
+    /// `stat_bin` output for a histogram layer; `x`/`y` then hold the bin centres and counts.
+    pub bins: Option<BuiltBins>,
+    /// `stat_density` output for a density layer; `x`/`y` then hold the grid and the density.
+    pub density: Option<BuiltDensity>,
+    /// Resolved `geom_area` / `geom_ribbon` data; `None` for other geoms. `x`/`y` hold the final
+    /// `x` and `y` (`y` is `ymin` for a ribbon); `NaN` rows are kept for a ribbon.
+    pub filled: Option<BuiltFilled>,
+}
+
+/// `stat_bin`'s columns, one entry per bin and group, groups in ascending id (`bin_out()` in
+/// ggplot2 4.0.3), with the `ymin`/`ymax` that `position_stack()` leaves.
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuiltBins {
+    /// Bin centres.
+    pub x: Vec<f64>,
+    /// Lower edges (`x - width / 2`).
+    pub xmin: Vec<f64>,
+    /// Upper edges (`x + width / 2`).
+    pub xmax: Vec<f64>,
+    /// Bin widths.
+    pub width: Vec<f64>,
+    /// Rows per bin.
+    pub count: Vec<f64>,
+    /// `count / width / sum(count)`.
+    pub density: Vec<f64>,
+    /// Lower edge of the stacked bar: 0 for the first group, the running total below it after
+    /// `position_stack()`.
+    pub ymin: Vec<f64>,
+    /// Upper edge of the stacked bar.
+    pub ymax: Vec<f64>,
+    /// ggplot2's group id of each row (`-1` without a discrete mapping).
+    pub group: Vec<i64>,
+}
+
+/// `stat_density`'s columns beyond `x` and `y`, one entry per grid point (`compute_density()` in
+/// ggplot2 4.0.3).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BuiltDensity {
+    /// `density / max(density)` (also ggplot2's `ndensity`).
+    pub scaled: Vec<f64>,
+    /// `density * n`.
+    pub count: Vec<f64>,
+    /// `density * sum(weights)`.
+    pub wdensity: Vec<f64>,
+    /// Rows in the group.
+    pub n: usize,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

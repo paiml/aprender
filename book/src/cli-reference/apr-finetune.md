@@ -56,6 +56,12 @@ Options:
                                        process. Only effective with --experimental-mps. Default: 50
                                        [default: 50]
       --profile                        PMAT-486: Enable StepProfiler for per-phase wall-clock timing
+      --recipe <FILE>                  Declarative recipe (contracts/apr-recipe-v1.yaml): base,
+                                       data, method, eval and seed in one file. It is validated
+                                       before any model is loaded, and the flags whose value it
+                                       carries are refused beside it. --model-size and --output
+                                       still apply: each wins over the recipe's model_size and
+                                       output.dir, and the run prints the replacement
       --json                           Output as JSON
   -v, --verbose                        Verbose output
   -q, --quiet                          Quiet mode (errors only)

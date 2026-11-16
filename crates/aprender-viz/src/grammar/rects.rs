@@ -254,7 +254,16 @@ pub(super) fn build_layer(
         alpha: aes.alpha_value.map(widen),
         warnings,
     };
-    Ok(BuiltLayer { x: p.x, y: p.y, points: None, path: None, rects: Some(rects) })
+    Ok(BuiltLayer {
+        x: p.x,
+        y: p.y,
+        points: None,
+        path: None,
+        rects: Some(rects),
+        bins: None,
+        density: None,
+        filled: None,
+    })
 }
 
 /// What one geom contributes before the shared outline, colour and alpha are applied.

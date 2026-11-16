@@ -189,8 +189,8 @@ fn a_non_identity_stat_and_a_non_default_coord_are_refused() {
 #[test]
 fn a_tile_beside_an_unresolved_geom_is_still_refused() {
     let df = frame(&[1.0, 2.0], &[1.0, 2.0]);
-    let r = build(df, xy(), vec![layer(Geom::tile()), layer(Geom::area())]);
-    assert!(matches!(r, Err(Error::UnsupportedLayer(m)) if m.starts_with("geom_area")), "area");
+    let r = build(df, xy(), vec![layer(Geom::tile()), layer(Geom::text())]);
+    assert!(matches!(r, Err(Error::UnsupportedLayer(m)) if m.starts_with("geom_text")), "text");
 }
 
 #[test]

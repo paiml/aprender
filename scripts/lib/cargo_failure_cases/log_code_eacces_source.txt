@@ -1,0 +1,4 @@
+   Compiling aprender-core v0.71.0 (/home/runner/work/aprender/aprender/crates/aprender-core)
+error: couldn't read crates/foo/src/lib.rs: Permission denied (os error 13)
+
+error: could not compile `foo` (lib) due to 1 previous error
