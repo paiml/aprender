@@ -6,11 +6,13 @@
 # Example: examples/recipes/tiny.yaml and the --recipe flag land in the last slice.
 # Each FALSIFY entry is added in the slice that adds its test.
 #
-# NOT YET ENFORCED by the loader at this head (status: partial). Nothing calls the loader yet,
-# and each rule below gets its check, its test and its FALSIFY entry in a later slice:
+# NOT YET ENFORCED by the loader at this head (status: partial). `preflight_recipe` and
+# `run_from_recipe` in finetune.rs call the loader and no CLI flag calls them yet.
+# Each rule below gets its check, its test and its FALSIFY entry in a later slice:
 #   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
-#   - exit 5 and the --recipe flag conflicts (nothing calls require_inputs or builds a receipt
-#     from the CLI yet; both are tested as functions)
+#   - exit 5, the --recipe flag and its flag conflicts: `preflight_recipe` in finetune.rs loads
+#     the recipe, calls require_inputs (unless planning) and builds the receipt, and it is tested
+#     as a function; no CLI flag reaches it yet
 
 metadata:
   id: apr-recipe-v1
@@ -100,16 +102,16 @@ falsification_tests:
 # Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so the
 # contract-parses entry holds slot 004 here and moves back as later entries land.
 - id: FALSIFY-APR-RECIPE-001
-  rule: a recipe without eval is refused by field
-  prediction: "The loader refuses a recipe with no eval block and the error names field `eval` (the CLI exit-5 and no-model-opened parts land with the --recipe wiring)"
+  rule: a recipe without eval is refused before any model is loaded
+  prediction: "The loader and `run_from_recipe` (plan or real run) refuse a recipe with no eval block and the error names field `eval`; the base model path in the test does not exist and the error does not name it (the CLI flag and exit 5 land with the --recipe wiring)"
   test: |
-    cargo test -p apr-cli --lib -- missing_eval_is_refused_and_the_error_names_the_field
+    cargo test -p apr-cli --lib -- recipe_without_eval_is_refused_before_any_model_is_touched missing_eval_is_refused_and_the_error_names_the_field
   if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
 - id: FALSIFY-APR-RECIPE-002
-  rule: a valid recipe parses
-  prediction: "A minimal valid recipe and a recipe with every optional field parse, and its relative paths anchor at the recipe's directory, a distill recipe takes the teacher defaults and load() reads it from a file"
+  rule: a valid recipe passes
+  prediction: "A valid recipe parses with its relative paths anchored at the recipe's directory, and `run_from_recipe` with plan_only returns Ok for it without any input file existing"
   test: |
-    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir valid_optional_fields_are_kept full_recipe_parses_every_optional_field distill_recipe_parses_with_teacher_defaults teacher_alpha_bounds_are_inclusive teacher_temperature_just_above_zero_is_accepted load_reads_a_file_and_names_it_when_it_cannot load_names_the_file_in_a_refusal
+    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir valid_optional_fields_are_kept full_recipe_parses_every_optional_field distill_recipe_parses_with_teacher_defaults teacher_alpha_bounds_are_inclusive teacher_temperature_just_above_zero_is_accepted load_reads_a_file_and_names_it_when_it_cannot load_names_the_file_in_a_refusal valid_recipe_plans recipe_model_size_drives_the_plan recipe_epochs_default_and_nf4_follow_the_method model_size_bounds_are_one_parameter_and_u64
   if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
 - id: FALSIFY-APR-RECIPE-003
   rule: unknown keys and wrong shapes are refused by field

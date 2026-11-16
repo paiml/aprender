@@ -826,7 +826,14 @@ fn parse_model_size(size: &str) -> Result<u64> {
         CliError::ValidationFailed(format!("Invalid number in model size: {num_str}"))
     })?;
 
-    Ok((num * multiplier as f64) as u64)
+    let params = num * multiplier as f64;
+    // NaN fails both comparisons; infinity fails the second.
+    if !(params >= 1.0 && params < u64::MAX as f64) {
+        return Err(CliError::ValidationFailed(format!(
+            "Model size must be at least 1 parameter and fit in 64 bits: {size}"
+        )));
+    }
+    Ok(params as u64)
 }
 
 /// Estimate parameters from GGUF metadata or file size fallback.
