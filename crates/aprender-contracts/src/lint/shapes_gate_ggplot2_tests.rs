@@ -24,7 +24,7 @@ fn lying_stats() -> ggplot2_core::Ggplot2Stats {
 
 /// The unscoped corpus run: every row counted, both controls fired, the report honest, the shape unarmed.
 #[test]
-fn the_corpus_counts_49_core_rows_7_bound_0_proven() {
+fn the_corpus_counts_49_core_rows_11_bound_0_proven() {
     let ShapesOutcome::Ran { result, .. } = run_shapes_gate(&corpus()) else {
         panic!("the shapes gate did not run over the corpus");
     };
@@ -37,7 +37,7 @@ fn the_corpus_counts_49_core_rows_7_bound_0_proven() {
         panic!("{:?}", result.extra);
     };
     assert_eq!(by_entity_type.get("ggplot2-core"), Some(&49));
-    assert_eq!(by_entity_type.get("ggplot2-row"), Some(&7));
+    assert_eq!(by_entity_type.get("ggplot2-row"), Some(&11));
     for t in ["ggplot2-core", "ggplot2-row"] {
         assert_eq!(
             controls.pc_extract.get(t).map(String::as_str),
@@ -52,7 +52,7 @@ fn the_corpus_counts_49_core_rows_7_bound_0_proven() {
     let r = controls.ggplot2_core.as_ref().expect("ggplot2_core report");
     assert_eq!(
         (r.domain.len(), r.bound, r.proven.len(), r.not_proven.len()),
-        (49, 7, 0, 49)
+        (49, 11, 0, 49)
     );
     assert_eq!(r.ggplot2.as_deref(), Some("4.0.3"));
 }

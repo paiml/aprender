@@ -1,0 +1,53 @@
+{
+  "row": "geom_histogram",
+  "spec": "ggplot(dc, aes(x)) + geom_histogram()",
+  "data_file": "data_constant.csv",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomBar",
+      "count": [4],
+      "x": [3],
+      "xmin": [2.9500000000000002],
+      "xmax": [3.0499999999999998],
+      "density": [9.9999999999999911],
+      "ncount": [1],
+      "ndensity": [1],
+      "flipped_aes": [false],
+      "y": [4],
+      "ymin": [0],
+      "ymax": [4],
+      "colour": [null],
+      "fill": ["#595959FF"],
+      "linewidth": [0.5],
+      "linetype": [1],
+      "alpha": [null],
+      "width": [0.90000000000000002],
+      "colour_rgba": [
+        [255, 255, 255, 0]
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [2.9500000000000002, 3.0499999999999998],
+      "continuous_range": [2.9450000000000003, 3.0549999999999997],
+      "breaks": [2.9500000000000002, 2.9750000000000001, 3, 3.0250000000000004, 3.0500000000000003],
+      "labels": ["2.950", "2.975", "3.000", "3.025", "3.050"],
+      "n_breaks_censored": 0
+    },
+    "y": {
+      "limits": [0, 4],
+      "continuous_range": [-0.20000000000000001, 4.2000000000000002],
+      "breaks": [0, 1, 2, 3, 4],
+      "labels": ["0", "1", "2", "3", "4"],
+      "n_breaks_censored": 0
+    }
+  }
+}

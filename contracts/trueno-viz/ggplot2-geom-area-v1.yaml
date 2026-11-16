@@ -1,0 +1,87 @@
+metadata:
+  id: ggplot2-geom-area-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, core row geom_area (PLOT-GG-001, paiml/aprender#6909). stat_align (a panel with one group is left as is; otherwise every group is interpolated onto the union
+    of x and zero-crossing locations, tripled by +-adjust, padded with zero rows flagged align_padding), then GeomArea setup_data (ymin 0, ymax y, rows ordered by panel, group, x) and
+    position_stack when an x repeats layer-wide. 11 cases (one with negative stacked groups), max error 4.4e-16. Scope: continuous numeric x and y; facet_wrap per panel as R; other facets, data-mapped colour, size,
+    shape, alpha, fill or label, a non-identity explicit stat, companion geoms other than geom_point, a geom_point companion whose x or y is unmapped, missing, text, short or infinite, and any coordinate system but the default coord_cartesian return a typed Err
+    (Rendering, UnknownColumn, ScaleDomain, UnsupportedCoord, UnsupportedStat or UnsupportedLayer), never a panic. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R
+    4.6.2) under C collation; R is never run at test time. Every case goes through the public builder and layout().
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_area'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_area/generate.R'
+entity: {type: ggplot2-row, ref: geom_area}
+equations:
+  stat_align:
+    formula: 'stat_align(data) then setup_data then position_stack per panel'
+    domain: numeric columns, continuous scales, facet_wrap or no facet
+    codomain: area(x,y,panel,group) -> BuiltLayer.filled and the trained scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; panels, groups and the align_padding flags exact
+    preconditions:
+    - x has at least one finite value, else ScaleDomain
+    - every layer has the identity stat or the geom own stat, else UnsupportedStat; companions are geom_point only, else UnsupportedLayer
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+proof_obligations:
+- id: GG-AREA-INV-001
+  type: invariant
+  property: Built layer data and trained scales match ggplot2
+  formal: '∀ case: layout(case) ≈ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  applies_to: stat_align
+- id: GG-AREA-INV-002
+  type: invariant
+  property: Out-of-scope input is a typed Err
+  formal: '∀ unsupported input: layout() → Err, never a panic'
+  applies_to: stat_align
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_geom_area_oracle::equal_groups_share_their_locations
+    severity: ERROR
+  alignment_cases:
+    description: interpolation, crossings and repeated x are reproduced
+    check: grammar::ggplot2_geom_area_oracle::a_zero_crossing_adds_its_own_location
+    severity: ERROR
+  edge_cases:
+    description: degenerate fixtures are reproduced or refused with a typed Err
+    check: grammar::ggplot2_geom_area_oracle::a_one_row_group_vanishes
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG-AREA-001
+  rule: Zero crossings add an alignment location
+  prediction: negating y[p] in crossings() turns a_zero_crossing_adds_its_own_location RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_area_oracle::a_zero_crossing_adds_its_own_location
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-AREA-002
+  rule: Padding rows sit one adjust beyond the last location
+  prediction: dropping the + adjust of the upper padding row in align_group turns unequal_groups_are_interpolated_onto_the_union RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_area_oracle::unequal_groups_are_interpolated_onto_the_union
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-AREA-003
+  rule: A repeated x keeps its first and last row, the first shifted by adjust
+  prediction: not shifting the first row x in align_group turns a_repeated_x_keeps_its_first_and_last_row RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_area_oracle::a_repeated_x_keeps_its_first_and_last_row
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-AREA-004
+  rule: Rows are ordered by panel, group, then x
+  prediction: dropping the group key from order_rows turns rows_are_ordered_by_panel_group_and_x RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_area_oracle::rows_are_ordered_by_panel_group_and_x
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-AREA-005
+  rule: A data-mapped fill is refused
+  prediction: removing the fill test in require_supported turns a_data_mapped_fill_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_area_oracle::a_data_mapped_fill_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GG-AREA-001
+  name: ggplot2 conformance (geom_area)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for these fixtures
+  checks:
+  - primary_cases
+  - alignment_cases
+  - edge_cases
