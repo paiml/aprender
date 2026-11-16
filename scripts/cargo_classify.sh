@@ -85,7 +85,7 @@ CARGO_CLASSIFY_CASES="${CARGO_CLASSIFY_DIR}/lib/cargo_failure_cases"
 # `cargo test` logs, where TEST NAMES AND ASSERTION MESSAGES routinely contain
 # the words "connection refused", "signal: 9" and "No space left on device".
 # Rows C11-C13 are those.
-_CARGO_ENV_SIG='The slotmap turned out to be too small with [0-9]+ entries|could not execute process|could not parse/generate dep info|No space left on device \(os error 28\)|process did(n.t| not) exit successfully:.*\(signal: (9|15)[,)]|failed to acquire package cache lock|error: failed to download|couldn.t create a temp dir|\[double-spawn\] failed to exec'
+_CARGO_ENV_SIG='The slotmap turned out to be too small with [0-9]+ entries|could not execute process|could not parse/generate dep info|No space left on device \(os error 28\)|process did(n.t| not) exit successfully:.*\(signal: (9|15)[,)]|failed to acquire package cache lock|error: failed to download|couldn.t create a temp dir|\[double-spawn\] failed to exec|Permission denied \(os error 13\) at path "/var/lib/ci-target/'
 
 # The network rows need TWO conditions, because "Connection refused" and
 # "Temporary failure in name resolution" are ordinary strings that a test can
@@ -200,6 +200,10 @@ cargo_classify_selftest() {
     # without a gc overflows it before cargo reads a manifest. Four of sixteen
     # fleet checkouts were past 32 on 2026-09-03 (33, 34, 37, 38 packs).
     _row ENV  'C20 gix-odb slotmap overflow (33+ packs in the checkout)' log_env_gix_slotmap.txt
+    # C21: the shared CI target dir is unwritable by this runner user - a host
+    # fault. Anchored on the target-dir PATH, never on the bare phrase: C22 is
+    # the same errno on a repo source path, which is a code defect.
+    _row ENV  'C21 EACCES on the shared CI target dir'          log_env_target_eacces.txt
 
     # --- CODE: cargo ran, and the answer is about the code -----------------
     _row CODE 'C5  a genuine unresolved import'                  log_code_unresolved_import.txt
@@ -217,6 +221,7 @@ cargo_classify_selftest() {
     _row CODE 'C11 a test NAMED after a refused connection'      log_code_test_named_after_env.txt
     _row CODE 'C13 a test asserting on the text "signal: 9"'     log_code_test_asserts_signal_text.txt
     _row CODE 'C17 a test asserting the prose "No space left..."' log_code_test_prose_enospc.txt
+    _row CODE 'C22 EACCES on a repo SOURCE path is CODE'         log_code_eacces_source.txt
 
     # --- the missing measurement is never CODE -----------------------------
     rows=$(( rows + 1 ))
