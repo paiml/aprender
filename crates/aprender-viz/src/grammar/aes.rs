@@ -31,6 +31,10 @@ pub struct Aes {
     pub ymin: Option<String>,
     /// Upper bound mapping (column name), for `geom_errorbar`.
     pub ymax: Option<String>,
+    /// Left edge mapping (column name), for `geom_rect`.
+    pub xmin: Option<String>,
+    /// Right edge mapping (column name), for `geom_rect`.
+    pub xmax: Option<String>,
 
     // Fixed values (not data-mapped)
     /// Fixed color value.
@@ -39,6 +43,8 @@ pub struct Aes {
     pub size_value: Option<f32>,
     /// Fixed alpha value.
     pub alpha_value: Option<f32>,
+    /// Fixed fill colour (`geom_tile(fill = ...)`, `geom_rect`, `geom_raster`).
+    pub fill_value: Option<Rgba>,
 }
 
 impl Aes {
@@ -66,6 +72,27 @@ impl Aes {
     #[must_use]
     pub fn ymax(mut self, column: &str) -> Self {
         self.ymax = Some(column.to_string());
+        self
+    }
+
+    /// Map the left edge to a column (`geom_rect`).
+    #[must_use]
+    pub fn xmin(mut self, column: &str) -> Self {
+        self.xmin = Some(column.to_string());
+        self
+    }
+
+    /// Map the right edge to a column (`geom_rect`).
+    #[must_use]
+    pub fn xmax(mut self, column: &str) -> Self {
+        self.xmax = Some(column.to_string());
+        self
+    }
+
+    /// Set a fixed fill colour.
+    #[must_use]
+    pub fn fill_value(mut self, fill: Rgba) -> Self {
+        self.fill_value = Some(fill);
         self
     }
 
@@ -161,6 +188,9 @@ impl Aes {
             label: other.label.clone().or_else(|| self.label.clone()),
             ymin: other.ymin.clone().or_else(|| self.ymin.clone()),
             ymax: other.ymax.clone().or_else(|| self.ymax.clone()),
+            xmin: other.xmin.clone().or_else(|| self.xmin.clone()),
+            xmax: other.xmax.clone().or_else(|| self.xmax.clone()),
+            fill_value: other.fill_value.or(self.fill_value),
             color_value: other.color_value.or(self.color_value),
             size_value: other.size_value.or(self.size_value),
             alpha_value: other.alpha_value.or(self.alpha_value),

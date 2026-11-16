@@ -21,6 +21,7 @@ use super::filled;
 use super::geom::{Geom, GeomType, PointShape};
 use super::marks;
 use super::path;
+use super::rects;
 use super::scale_spec::{require_scale_scope, PositionScaleSpec, ResolvedAxis};
 use super::stroke;
 use super::theme::Theme;
@@ -364,7 +365,8 @@ impl BuiltGGPlot {
     /// was set, or a position column holds text): the renderer draws from its own linear scales and
     /// honours neither a position-scale spec (log10, limits, discrete levels) nor a discrete axis, so
     /// it refuses instead of drawing a plot that disagrees with `layout()`. Use `layout()` for the
-    /// scaled view. A distribution layer (`Geom::gg_*`) is an [`Error::UnsupportedLayer`].
+    /// scaled view. A distribution layer (`Geom::gg_*`) and a tile, rect or raster layer (resolved by `layout()`,
+    /// not drawn) are an [`Error::UnsupportedLayer`].
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
         self.draw_frame(true)
     }
@@ -374,6 +376,11 @@ impl BuiltGGPlot {
     fn draw_frame(&self, raster_strokes: bool) -> Result<Framebuffer> {
         if self.layers.iter().any(dist::is_dist) {
             return Err(Error::UnsupportedLayer(dist::NOT_DRAWN));
+        }
+        if self.layers.iter().any(|l| rects::is_rect_family(&l.geom.geom_type)) {
+            // A layer `build_layer` refuses keeps its own error; an accepted one is not drawn.
+            self.position_scales()?;
+            return Err(Error::UnsupportedLayer(rects::NOT_DRAWN));
         }
         if self.uses_position_scales() {
             return Err(Error::Rendering(
@@ -542,7 +549,7 @@ impl BuiltGGPlot {
         let (x, y, w, h) = grid.rect(p);
 
         // Panels share one domain, so marks stay comparable between them.
-        let (xs, ys) = self.position_scales();
+        let (xs, ys) = self.position_scales()?;
         let ((x_min, x_max), (y_min, y_max)) =
             apply_limits(&self.coord, xs.continuous_range, ys.continuous_range)?;
 
@@ -694,29 +701,53 @@ impl BuiltGGPlot {
     }
 
     /// The x and y position scales, trained on every layer's data (ggplot2's scale training).
-    fn position_scales(&self) -> (PositionScale, PositionScale) {
-        let (x, y) = self.trained_domains();
-        (PositionScale::continuous(x), PositionScale::continuous(y))
+    ///
+    /// # Errors
+    ///
+    /// A tile, rect or raster layer that `rects::build_layer` refuses: the renderer reaches here
+    /// without `layout()`, so the refusal is returned rather than trained as nothing.
+    fn position_scales(&self) -> Result<(PositionScale, PositionScale)> {
+        let (x, y) = self.trained_domains()?;
+        Ok((PositionScale::continuous(x), PositionScale::continuous(y)))
+    }
+
+    /// Tile, rect and raster train f64 bounds. A layer `build_layer` refuses (a data-mapped fill,
+    /// a facet, a text or infinite value, a missing column) is the typed error, not "trained
+    /// nothing": `position_scales()` is reached by the renderer without `layout()`.
+    fn train_rects(
+        &self,
+        layer: &Layer,
+        xr: (f64, f64),
+        yr: (f64, f64),
+    ) -> Result<((f64, f64), (f64, f64))> {
+        let built = rects::build_layer(layer, &self.aes, &self.data, &self.facet)?;
+        Ok(rects::train(&built, xr, yr))
     }
 
     /// The finite x and y domains every layer trains (`lo > hi` on an axis nothing trained).
-    fn trained_domains(&self) -> ((f64, f64), (f64, f64)) {
+    fn trained_domains(&self) -> Result<((f64, f64), (f64, f64))> {
         self.trained_domains_for(false)
     }
 
     /// [`Self::trained_domains`]; with `skip_filled`, an area or ribbon layer adds nothing here
     /// because `layout()` trains on its built rows (stat, stacking and padding included).
-    fn trained_domains_for(&self, skip_filled: bool) -> ((f64, f64), (f64, f64)) {
+    fn trained_domains_for(&self, skip_filled: bool) -> Result<((f64, f64), (f64, f64))> {
         if let Some(domains) = self.trained {
-            return domains;
+            return Ok(domains);
         }
         let mut x = (f32::MAX, f32::MIN);
         let mut y = (f32::MAX, f32::MIN);
+        let mut xr = (f64::INFINITY, f64::NEG_INFINITY);
+        let mut yr = (f64::INFINITY, f64::NEG_INFINITY);
 
         for layer in &self.layers {
             if Self::train_reference_line(&layer.geom.geom_type, &mut x, &mut y)
                 || (skip_filled && filled::is_filled(&layer.geom.geom_type))
             {
+                continue;
+            }
+            if rects::is_rect_family(&layer.geom.geom_type) {
+                (xr, yr) = self.train_rects(layer, xr, yr)?;
                 continue;
             }
             let data = layer.data.as_ref().unwrap_or(&self.data);
@@ -725,8 +756,10 @@ impl BuiltGGPlot {
             y = Self::extend_range(y, data, layer_aes.y.as_ref());
         }
 
-        let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
-        (wide(x), wide(y))
+        let wide = |(lo, hi): (f32, f32), (rlo, rhi): (f64, f64)| {
+            (f64::from(lo).min(rlo), f64::from(hi).max(rhi))
+        };
+        Ok((wide(x, xr), wide(y, yr)))
     }
 
     /// Reference lines do not inherit x/y; hline trains y and vline trains x with the intercept,
@@ -822,9 +855,9 @@ impl BuiltGGPlot {
     /// `geom_boxplot`, `geom_errorbar`) and a `scale_x`/`scale_y` spec is an
     /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
     ///
-    /// Without one, a `geom_tile` or `geom_text` layer is an [`Error::UnsupportedLayer`]:
+    /// Without one, a `geom_text` layer is an [`Error::UnsupportedLayer`]:
     /// `layout()` does not resolve those geoms yet (`geom_area` and `geom_ribbon` are resolved by
-    /// `filled`). Beside any of these layers, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
+    /// `filled`, `geom_tile`, `geom_rect` and `geom_raster` by `rects`). Beside any of these layers, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
     /// other stat on that `geom_point` an [`Error::UnsupportedStat`] (their ggplot2 stat or setup
     /// widens the shared scales), and the `geom_point` is refused for a missing, text, short or
     /// infinite `x`/`y` column; those refusals come first.
@@ -840,13 +873,14 @@ impl BuiltGGPlot {
         }
         path::require_default_coord(&self.layers, &self.coord)?;
         path::require_identity_stats(&self.layers)?;
+        rects::require_supported(&self.layers, &self.coord)?;
         if self.uses_position_scales() {
             return self.scaled_layout();
         }
         marks::require_modelled_companions(&self.layers, &self.aes, &self.data)?;
         marks::require_resolved(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
-        let (mut x, mut y) = self.trained_domains_for(true);
+        let (mut x, mut y) = self.trained_domains_for(true)?;
         for (ex, ey) in layers.iter().map(filled::extents) {
             x = merge_extent(x, ex);
             y = merge_extent(y, ey);
@@ -897,7 +931,16 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, bins: None, density: None, filled: None })
+        Ok(BuiltLayer {
+            x,
+            y,
+            points,
+            path: None,
+            rects: None,
+            bins: None,
+            density: None,
+            filled: None,
+        })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
@@ -907,6 +950,9 @@ impl BuiltGGPlot {
         }
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
+        if rects::is_rect_family(&layer.geom.geom_type) {
+            return rects::build_layer(layer, &self.aes, &self.data, &self.facet);
         }
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
@@ -919,7 +965,16 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, bins: None, density: None, filled: None })
+        Ok(BuiltLayer {
+            x,
+            y,
+            points,
+            path: None,
+            rects: None,
+            bins: None,
+            density: None,
+            filled: None,
+        })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).

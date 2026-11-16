@@ -439,6 +439,7 @@ fn histogram(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Re
         y,
         points: None,
         path: None,
+        rects: None,
         bins: Some(bins),
         density: None,
         filled: None,
@@ -473,6 +474,7 @@ fn freqpoly(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Res
         y: bins.count.clone(),
         points: None,
         path: None,
+        rects: None,
         bins: Some(bins),
         density: None,
         filled: None,
@@ -502,6 +504,7 @@ fn density(data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
         y: cols.density.clone(),
         points: None,
         path: None,
+        rects: None,
         bins: None,
         density: Some(BuiltDensity {
             scaled: cols.scaled,

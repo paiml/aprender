@@ -13,6 +13,7 @@ use crate::color::Rgba;
 
 use super::filled::BuiltFilled;
 use super::path::BuiltPath;
+use super::rects::BuiltRects;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
@@ -95,6 +96,10 @@ pub struct BuiltLayer {
     /// Resolved path, step or reference-line data; `None` for other geoms. For these layers `x`/`y`
     /// keep `NaN` rows, as `ggplot_build()` does (reference layers have no `x`/`y`).
     pub path: Option<BuiltPath>,
+    /// Resolved `geom_tile`, `geom_rect` or `geom_raster` data (bounds, fill, outline); `None` for
+    /// other geoms. For these layers `x`/`y` keep `NaN` rows, as `ggplot_build()` does (a rect
+    /// layer has no `x`/`y`).
+    pub rects: Option<BuiltRects>,
     /// `stat_bin` output for a histogram layer; `x`/`y` then hold the bin centres and counts.
     pub bins: Option<BuiltBins>,
     /// `stat_density` output for a density layer; `x`/`y` then hold the grid and the density.

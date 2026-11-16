@@ -1,0 +1,116 @@
+metadata:
+  id: ggplot2-geom-raster-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance row (PLOT-GG-001, paiml/aprender#6909) - geom_raster layer data. The cell width and height are the first gap of the sorted distinct x and y values (1 for a single value). Uneven spacing (|diff of diffs| > sqrt(eps)) warns with ggplot2's text and uses the smallest gap. The text is "Raster pixels are placed at uneven horizontal intervals and will be shifted" for an uneven y axis as well as an uneven x axis: ggplot2 4.0.3's y branch repeats the word "horizontal" (captured by running ggplot2 4.0.3 under R 4.6.2 on both cases; expected_uneven_x.json and expected_uneven_y.json hold it), so this is not a Rust typo. xmin = x - w*(1-hjust), xmax = x + w*hjust, and y likewise with vjust. Only fill and alpha exist as aesthetics: there is no outline. Scope: continuous numeric x and y, one panel, identity stat, default coordinate system; a facet, group, data-mapped colour, fill, alpha, size, shape or label, a non-identity stat, a non-default coordinate system, text, infinite or non-finite values return a typed Err (Rendering, UnknownColumn, ScaleDomain, UnsupportedCoord or UnsupportedStat), never a panic. The Rust DataFrame has no integer type, so fixtures force doubles. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 under R; R is never run at test time. Every case goes through the public builder and layout(), compared at 1e-9 rel + 1e-12 abs.
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_raster'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_raster/generate.R'
+equations:
+  raster_cells:
+    formula: "w = first gap of sorted unique x (smallest if uneven) ; xmin = x - w(1-hjust), xmax = x + w hjust ; y likewise with vjust"
+    domain: numeric columns, continuous scales, no facet
+    codomain: BuiltLayer.rects and the trained panel scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; colours and warnings exact
+    preconditions:
+    - trained x and y ranges are non-degenerate, else ScaleDomain
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord
+    - every layer has the identity stat, else UnsupportedStat
+proof_obligations:
+- id: GGRASTER-INV-001
+  type: invariant
+  property: Layer data and trained scales match ggplot2
+  formal: 'forall case: layout(case) ~ ggplot2 fixture (1e-9 rel + 1e-12 abs; exact colours, warnings)'
+  applies_to: raster_cells
+enforcement:
+  primary_cases:
+    description: the main fixtures are reproduced
+    check: grammar::ggplot2_raster_oracle::a_regular_grid
+    severity: ERROR
+  group_or_style_cases:
+    description: fixed fill and alpha fixtures are reproduced
+    check: grammar::ggplot2_raster_oracle::fixed_fill_and_alpha
+    severity: ERROR
+  edge_cases:
+    description: out-of-scope inputs are refused with a typed Err
+    check: grammar::ggplot2_raster_oracle::infinite_text_mapped_group_and_facet_are_refused
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GGRASTER-001
+  rule: "An uneven grid uses the smallest step"
+  prediction: "mutation (raster_step takes the largest step (`f64::min` becomes `f64::max`)) turns uneven_x_warns_and_uses_the_smallest_step RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::uneven_x_warns_and_uses_the_smallest_step
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-002
+  rule: "An uneven grid warns with ggplot2's text (\"horizontal\" for y too, as ggplot2 4.0.3 prints it)"
+  prediction: "mutation (the unevenness test never fires (`.any(|p| ... > tol)` becomes `false`)) turns uneven_y_warns_with_the_horizontal_text RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::uneven_y_warns_with_the_horizontal_text
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-003
+  rule: "xmax is x + w * hjust"
+  prediction: "mutation (xmax uses 1 - hjust) turns hjust_and_vjust_differ RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::hjust_and_vjust_differ
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-004
+  rule: "ymax is y + h * vjust"
+  prediction: "mutation (ymax uses hjust) turns hjust_and_vjust_differ RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::hjust_and_vjust_differ
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-005
+  rule: "xmin is x - w * (1 - hjust)"
+  prediction: "mutation (xmin uses -hjust) turns hjust_and_vjust_zero RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::hjust_and_vjust_zero
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-006
+  rule: "ymin is y - h * (1 - vjust)"
+  prediction: "mutation (ymin uses -vjust) turns hjust_and_vjust_zero RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::hjust_and_vjust_zero
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-007
+  rule: "A single distinct value is one cell wide"
+  prediction: "mutation (the single-value step is 2 instead of 1) turns a_single_cell RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::a_single_cell
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-008
+  rule: "A raster has no outline"
+  prediction: "mutation (a raster keeps a requested outline colour (`if raster { None } else { aes.color_value }` becomes `aes.color_value`)) turns a_raster_has_no_outline_even_when_one_is_asked_for RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::a_raster_has_no_outline_even_when_one_is_asked_for
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-009
+  rule: "The default raster fill is #333333FF"
+  prediction: "mutation (raster fill red channel 51 becomes 89) turns a_regular_grid RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::a_regular_grid
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-010
+  rule: "Distinct values are deduplicated before gaps are taken"
+  prediction: "mutation (sorted_unique keeps repeats) turns a_regular_grid RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::a_regular_grid
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-011
+  rule: "Gaps are taken over sorted values"
+  prediction: "mutation (sorted_unique stops sorting) turns negative_unsorted_positions RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::negative_unsorted_positions
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-012
+  rule: "A non-finite hjust or vjust is refused"
+  prediction: "mutation (the finite check is skipped (`if !hjust.is_finite() || ... {` becomes `if false {`)) turns a_non_finite_hjust_or_vjust_is_refused RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::a_non_finite_hjust_or_vjust_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRASTER-013
+  rule: "A raster layer is refused by to_svg and to_framebuffer, not returned undrawn"
+  prediction: "mutation (draw_frame no longer refuses rect-family layers (the `rects::is_rect_family` branch removed)) turns a_raster_is_refused_by_both_renderers_not_returned_empty RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_raster_oracle::a_raster_is_refused_by_both_renderers_not_returned_empty
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GGRASTER-001
+  name: ggplot2 conformance (geom_raster)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for the geom_raster fixtures
+  checks:
+  - primary_cases
+  - group_or_style_cases
+  - edge_cases
