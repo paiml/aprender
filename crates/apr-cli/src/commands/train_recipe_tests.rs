@@ -682,8 +682,9 @@ fn within_20s<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
         .expect("the call must return: it is reading a file that has no end")
 }
 
-/// Review of a163e8112: a path that is not a regular file has no hash, and is
-/// never read. `/dev/zero` never ends, so reading it would hang the run.
+/// Review of a163e8112 and a31785740: a path that is not a regular file has no
+/// hash and is never opened. `/dev/zero` never ends, and opening a pipe waits
+/// for a writer, so either would hang the run.
 #[cfg(unix)]
 #[test]
 fn a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read() {
@@ -701,6 +702,42 @@ fn a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read() {
         "{refused}"
     );
     assert_eq!(receipt.data_sha256, None);
+
+    for name in ["train.pipe", "heldout.pipe"] {
+        let made = std::process::Command::new("mkfifo")
+            .arg(dir.join("data").join(name))
+            .status()
+            .expect("mkfifo runs");
+        assert!(made.success(), "mkfifo {name}");
+    }
+    let pipe = dir.join("data/train.pipe");
+    assert_eq!(within_20s(move || sha256_file(&pipe)), None);
+    let src = VALID
+        .replace("data/train.jsonl", "data/train.pipe")
+        .replace("data/heldout.jsonl", "data/heldout.pipe");
+    let pinned = src.replace(
+        "data/train.pipe\n",
+        &format!("data/train.pipe\n  sha256: {}\n", sha256_bytes(b"x")),
+    );
+    assert_ne!(pinned, src, "the pin line was added");
+    for (what, src) in [("no pin", src), ("pinned", pinned)] {
+        let r = TrainRecipe::parse(&src, &dir, "r.yaml").expect("parses");
+        let (refused, receipt) = within_20s(move || {
+            let refused = r.require_inputs().expect_err("refused").to_string();
+            (refused, r.receipt(Vec::new(), Vec::new(), &[]))
+        });
+        for field in ["`data.train`", "`eval.heldout`"] {
+            assert!(
+                refused.contains(&format!("field {field}: no such file")),
+                "{what}: {refused}"
+            );
+        }
+        assert!(
+            !refused.contains("field `data.sha256`"),
+            "{what}: {refused}"
+        );
+        assert_eq!((receipt.data_sha256, receipt.eval_sha256), (None, None));
+    }
     std::fs::remove_dir_all(&dir).ok();
 }
 

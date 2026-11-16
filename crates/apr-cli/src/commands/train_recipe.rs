@@ -231,11 +231,12 @@ pub(crate) fn sha256_bytes(bytes: &[u8]) -> String {
 
 /// sha256 of a file, streamed. `None` when the file cannot be read.
 pub(crate) fn sha256_file(path: &Path) -> Option<String> {
-    let mut file = std::fs::File::open(path).ok()?;
-    // Only a regular file has an end: a device or a pipe would be read forever.
-    if !file.metadata().ok()?.is_file() {
+    // Asked before the open: a device has no end, and opening a pipe waits
+    // for a writer.
+    if !std::fs::metadata(path).ok()?.is_file() {
         return None;
     }
+    let mut file = std::fs::File::open(path).ok()?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0_u8; 1 << 16];
     loop {
@@ -507,9 +508,7 @@ impl TrainRecipe {
                     .to_string(),
             );
         }
-        // The training file is hashed only when a pin asks for it.
-        let pin = self.data_sha256_pin.as_ref();
-        if let Some((pin, actual)) = pin.and_then(|p| Some((p, sha256_file(&self.train)?))) {
+        if let (Some(pin), Some(actual)) = (&self.data_sha256_pin, sha256_file(&self.train)) {
             if *pin != actual {
                 bad.push(format!(
                     "field `data.sha256` pins {pin} but {} hashes to {actual}",
