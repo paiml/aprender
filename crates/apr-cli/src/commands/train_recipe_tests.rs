@@ -214,6 +214,8 @@ fn heldout_alias_of_the_training_file_is_refused() {
         "data/../data/train.jsonl",
         "/recipes/data/train.jsonl",
         "data//train.jsonl",
+        "../../recipes/data/train.jsonl",
+        "/../recipes/data/train.jsonl",
     ] {
         let msg = refusal(&VALID.replace("data/heldout.jsonl", alias));
         assert!(
@@ -221,6 +223,32 @@ fn heldout_alias_of_the_training_file_is_refused() {
             "{alias}: {msg}"
         );
     }
+}
+
+/// A `..` with no name left to remove is kept, so two different files under
+/// a relative recipe directory are not mistaken for one.
+#[test]
+fn leading_parent_dirs_are_not_dropped() {
+    assert_eq!(
+        lexical_normalize(Path::new("../../a/./b/../c")),
+        Path::new("../../a/c")
+    );
+    assert_eq!(lexical_normalize(Path::new("/../a")), Path::new("/a"));
+    let src = VALID.replace("data/heldout.jsonl", "../../data/train.jsonl");
+    let r = TrainRecipe::parse(&src, Path::new(""), "r.yaml").expect("a different file");
+    assert_eq!(r.heldout, Path::new("../../data/train.jsonl"));
+}
+
+/// With `data.train` missing, the same-file rule has nothing to compare and
+/// must not add a second message.
+#[test]
+fn same_file_rule_is_silent_without_a_training_file() {
+    let src = VALID
+        .replace("  train: data/train.jsonl\n", "  sha256: null\n")
+        .replace("data/heldout.jsonl", ".");
+    let msg = refusal(&src);
+    assert!(msg.contains("field `data.train` is required"), "{msg}");
+    assert!(!msg.contains("must not be the training file"), "{msg}");
 }
 
 #[test]
@@ -234,7 +262,13 @@ fn heldout_may_not_be_the_training_file() {
 
 #[test]
 fn data_pin_must_be_a_sha256() {
-    for bad in ["abc".to_string(), "AB".repeat(32), "zz".repeat(32)] {
+    for bad in [
+        "abc".to_string(),
+        "AB".repeat(32),
+        "zz".repeat(32),
+        "a1".repeat(32)[1..].to_string(),
+        "a1".repeat(32) + "0",
+    ] {
         let msg = refusal(&VALID.replace(
             "  train: data/train.jsonl\n",
             &format!("  train: data/train.jsonl\n  sha256: \"{bad}\"\n"),
@@ -263,7 +297,7 @@ fn training_numbers_must_be_positive() {
 /// reaches the parsed recipe, so a refusal test cannot pass by dropping it.
 #[test]
 fn valid_optional_fields_are_kept() {
-    let pin = "ab".repeat(32);
+    let pin = "0f3a9c5e".repeat(8);
     let src = VALID.replace(
         "  train: data/train.jsonl\n",
         &format!("  train: data/train.jsonl\n  sha256: {pin}\n"),

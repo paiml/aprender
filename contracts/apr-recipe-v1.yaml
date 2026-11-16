@@ -116,7 +116,7 @@ falsification_tests:
   rule: unknown keys and wrong shapes are refused by field
   prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id, an unknown method, an empty string, a heldout that aliases the training file, a malformed data pin or a non-positive training number is refused by field. Missing keys and wrong values are all listed in one message; a misspelt key or a wrong type is reported alone, because the YAML reader stops at the first one"
   test: |
-    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file
+    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file leading_parent_dirs_are_not_dropped same_file_rule_is_silent_without_a_training_file
   if_fails: "A typo in a recipe silently trains with a default"
 - id: FALSIFY-APR-RECIPE-004
   rule: the recipe contract is itself a valid contract
@@ -125,8 +125,8 @@ falsification_tests:
     pv validate contracts/apr-recipe-v1.yaml
   if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
 - id: FALSIFY-APR-RECIPE-005
-  rule: the data pin is real
+  rule: the data pin has the shape of a sha256
   prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256` (the pin-versus-file check and the receipt hashes land with the receipt)"
   test: |
     cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256
-  if_fails: "A receipt can name data it did not train on"
+  if_fails: "A pin that can never match a file is accepted, so the later pin-versus-file check has nothing sound to compare"
