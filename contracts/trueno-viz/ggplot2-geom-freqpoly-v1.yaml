@@ -84,17 +84,17 @@ falsification_tests:
   prediction: removing the check_scope call in dist::layout turns the coords test RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::dist::tests::coords_facets_and_mixed_layers_are_refused
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
-- id: FALSIFY-GFP-012
+- id: FALSIFY-GFP-009
   rule: boundary shifts every edge on the bins path
   prediction: ignoring the given boundary in bins_params (always taking range.0 - width / 2) turns the bins5_boundary2 fixture RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::bins5_boundary2
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
-- id: FALSIFY-GFP-013
+- id: FALSIFY-GFP-010
   rule: center on the bins path leaves the boundary unset so breaks_width centres a bin on it
   prediction: setting a boundary in bins_params even when a center is given (so the center is ignored) turns the bins10_center0 fixture RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::bins10_center0
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
-- id: FALSIFY-GFP-014
+- id: FALSIFY-GFP-011
   rule: breaks_width anchors the first edge at the boundary-aligned origin at or below min(x)
   prediction: rounding the origin of breaks_width up instead of down (ceil for floor) turns the binwidth5_center1 fixture RED (the binwidth2 and boundary0 cases have min(x) on a boundary and cannot see it)
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::binwidth5_center1
