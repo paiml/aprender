@@ -204,3 +204,16 @@ fn the_renderer_returns_a_refused_layers_error_instead_of_training_nothing() {
     let r = p.build().and_then(|b| b.to_framebuffer());
     assert!(matches!(r, Err(Error::Rendering(_))), "{:?}", r.map(|_| ()));
 }
+
+#[test]
+fn a_tile_is_refused_by_both_renderers_not_returned_empty() {
+    let p = super::GGPlot::new()
+        .data(frame(&[1.0, 2.0], &[1.0, 2.0]))
+        .aes(xy())
+        .layer(layer(Geom::tile()))
+        .build()
+        .expect("builds");
+    let drawn = |m: &&str| *m == super::rects::NOT_DRAWN;
+    assert!(matches!(p.to_framebuffer(), Err(Error::UnsupportedLayer(m)) if drawn(&m)));
+    assert!(matches!(p.to_svg(), Err(Error::UnsupportedLayer(m)) if drawn(&m)));
+}

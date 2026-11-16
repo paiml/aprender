@@ -176,3 +176,19 @@ fn infinite_text_mapped_group_and_facet_are_refused() {
     let r = p.coord(Coord::polar()).build().and_then(|b| b.layout());
     assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{r:?}");
 }
+
+#[test]
+fn a_raster_is_refused_by_both_renderers_not_returned_empty() {
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[1.0, 2.0]);
+    df.add_column_f32("y", &[1.0, 2.0]);
+    let p = super::GGPlot::new()
+        .data(df)
+        .aes(xy())
+        .layer(layer(Geom::raster()))
+        .build()
+        .expect("builds");
+    let drawn = |m: &&str| *m == super::rects::NOT_DRAWN;
+    assert!(matches!(p.to_framebuffer(), Err(Error::UnsupportedLayer(m)) if drawn(&m)));
+    assert!(matches!(p.to_svg(), Err(Error::UnsupportedLayer(m)) if drawn(&m)));
+}

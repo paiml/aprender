@@ -364,7 +364,8 @@ impl BuiltGGPlot {
     /// was set, or a position column holds text): the renderer draws from its own linear scales and
     /// honours neither a position-scale spec (log10, limits, discrete levels) nor a discrete axis, so
     /// it refuses instead of drawing a plot that disagrees with `layout()`. Use `layout()` for the
-    /// scaled view. A distribution layer (`Geom::gg_*`) is an [`Error::UnsupportedLayer`].
+    /// scaled view. A distribution layer (`Geom::gg_*`) and a tile, rect or raster layer (resolved by `layout()`,
+    /// not drawn) are an [`Error::UnsupportedLayer`].
     pub fn to_framebuffer(&self) -> Result<Framebuffer> {
         self.draw_frame(true)
     }
@@ -374,6 +375,11 @@ impl BuiltGGPlot {
     fn draw_frame(&self, raster_strokes: bool) -> Result<Framebuffer> {
         if self.layers.iter().any(dist::is_dist) {
             return Err(Error::UnsupportedLayer(dist::NOT_DRAWN));
+        }
+        if self.layers.iter().any(|l| rects::is_rect_family(&l.geom.geom_type)) {
+            // A layer `build_layer` refuses keeps its own error; an accepted one is not drawn.
+            self.position_scales()?;
+            return Err(Error::UnsupportedLayer(rects::NOT_DRAWN));
         }
         if self.uses_position_scales() {
             return Err(Error::Rendering(

@@ -117,6 +117,11 @@ falsification_tests:
   prediction: "mutation (marks::require_resolved stops refusing geom_area (`MarkKind::Area | MarkKind::Text` becomes `MarkKind::Text`)) turns a_tile_beside_an_unresolved_geom_is_still_refused RED"
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_tile_beside_an_unresolved_geom_is_still_refused
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGTILE-016
+  rule: "A tile layer is refused by to_svg and to_framebuffer, not returned undrawn"
+  prediction: "mutation (draw_frame no longer refuses rect-family layers (the `rects::is_rect_family` branch removed)) turns a_tile_is_refused_by_both_renderers_not_returned_empty RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_tile_oracle::a_tile_is_refused_by_both_renderers_not_returned_empty
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-GGTILE-001
   name: ggplot2 conformance (geom_tile)

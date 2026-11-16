@@ -81,6 +81,11 @@ falsification_tests:
   prediction: "mutation (the missing-mapping error becomes an empty column) turns a_missing_bound_mapping_or_column_is_refused RED"
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::a_missing_bound_mapping_or_column_is_refused
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GGRECT-009
+  rule: "A rect layer is refused by to_svg and to_framebuffer, not returned undrawn"
+  prediction: "mutation (draw_frame no longer refuses rect-family layers (the `rects::is_rect_family` branch removed)) turns a_rect_is_refused_by_both_renderers_not_returned_empty RED"
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_rect_oracle::a_rect_is_refused_by_both_renderers_not_returned_empty
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-GGRECT-001
   name: ggplot2 conformance (geom_rect)

@@ -73,6 +73,11 @@ pub struct BuiltRects {
     pub warnings: Vec<String>,
 }
 
+/// What the renderers return for a tile, rect or raster layer: `layout()` resolves them, but no
+/// renderer draws them yet, so a plot is refused rather than returned with the layer missing.
+pub(super) const NOT_DRAWN: &str =
+    "tile, rect and raster layers are not drawn by the renderer yet; use layout()";
+
 /// Is this geom a tile, rect or raster?
 pub(super) fn is_rect_family(g: &GeomType) -> bool {
     matches!(g, GeomType::Tile { .. } | GeomType::Rect | GeomType::Raster { .. })

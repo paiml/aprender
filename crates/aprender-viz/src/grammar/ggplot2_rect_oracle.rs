@@ -161,3 +161,16 @@ fn mapped_aesthetics_facets_stats_and_coords_are_refused() {
     let r = p.coord(Coord::cartesian().flip()).build().and_then(|b| b.layout());
     assert!(matches!(r, Err(Error::UnsupportedCoord(_))), "{r:?}");
 }
+
+#[test]
+fn a_rect_is_refused_by_both_renderers_not_returned_empty() {
+    let p = super::GGPlot::new()
+        .data(csv!("geom_rect", "data"))
+        .aes(bounds())
+        .layer(layer(Geom::rect()))
+        .build()
+        .expect("builds");
+    let drawn = |m: &&str| *m == super::rects::NOT_DRAWN;
+    assert!(matches!(p.to_framebuffer(), Err(Error::UnsupportedLayer(m)) if drawn(&m)));
+    assert!(matches!(p.to_svg(), Err(Error::UnsupportedLayer(m)) if drawn(&m)));
+}
