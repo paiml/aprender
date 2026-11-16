@@ -487,32 +487,3 @@ pub fn hc_stream_init(s: &HcShape, embeds: &[f32]) -> Vec<f32> {
         .flat_map(|r| r.repeat(s.count))
         .collect()
 }
-
-/// Block scores of query `t` (diagnostics for tie checks): one score per complete
-/// block of the query's visible tokens, in block order.
-pub fn indexer_block_scores_row(
-    p: &IndexerParams,
-    s: &IndexerShape,
-    hidden: &[f32],
-    cos: &[f32],
-    sin: &[f32],
-    visible: &[bool],
-    t: usize,
-) -> OpResult<Vec<f32>> {
-    ensure("hidden", hidden.len() % s.hidden, 0)?;
-    let seq = hidden.len() / s.hidden;
-    ensure("visible", visible.len(), seq * seq)?;
-    ensure("query", usize::from(t < seq), 1)?;
-    let (q, k) = indexer_qk(p, s, hidden, cos, sin);
-    let qd = s.n_heads * s.head_dim;
-    let vis: Vec<usize> = (0..seq).filter(|&i| visible[t * seq + i]).collect();
-    let full = &vis[..vis.len() / s.ratio * s.ratio];
-    Ok(block_scores(
-        p,
-        s,
-        &q[t * qd..(t + 1) * qd],
-        &k,
-        full,
-        (cos, sin),
-    ))
-}
