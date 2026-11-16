@@ -7,8 +7,8 @@ metadata:
   description: >-
     ggplot2 conformance, core row geom_area (PLOT-GG-001, paiml/aprender#6909). stat_align (a panel with one group is left as is; otherwise every group is interpolated onto the union
     of x and zero-crossing locations, tripled by +-adjust, padded with zero rows flagged align_padding), then GeomArea setup_data (ymin 0, ymax y, rows ordered by panel, group, x) and
-    position_stack when an x repeats layer-wide. 10 cases, max error 4.4e-16. Scope: continuous numeric x and y; facet_wrap per panel as R; other facets, data-mapped colour, size,
-    shape, alpha, fill or label, a non-identity explicit stat, companion geoms other than geom_point and any coordinate system but the default coord_cartesian return a typed Err
+    position_stack when an x repeats layer-wide. 11 cases (one with negative stacked groups), max error 4.4e-16. Scope: continuous numeric x and y; facet_wrap per panel as R; other facets, data-mapped colour, size,
+    shape, alpha, fill or label, a non-identity explicit stat, companion geoms other than geom_point, a geom_point companion whose x or y is unmapped, missing, text, short or infinite, and any coordinate system but the default coord_cartesian return a typed Err
     (Rendering, UnknownColumn, ScaleDomain, UnsupportedCoord, UnsupportedStat or UnsupportedLayer), never a panic. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R
     4.6.2) under C collation; R is never run at test time. Every case goes through the public builder and layout().
   references:

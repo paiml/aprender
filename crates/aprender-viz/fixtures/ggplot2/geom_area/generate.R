@@ -28,3 +28,4 @@ w("facet", "data_facet.csv", paste0(s, " + facet_wrap(~f)"), extra = facet_wrap(
 w("onerow", "data_onerow.csv", s)
 w("na", "data_na.csv", s)
 w("unsorted", "data_unsorted.csv", s)
+w("negative", "data_negative.csv", s)

@@ -7,7 +7,7 @@ metadata:
   description: >-
     ggplot2 conformance, core row geom_ribbon (PLOT-GG-001, paiml/aprender#6909). Identity stat and position; rows ordered by panel, group, x with a missing x last, y = ymin, rows with
     NaN kept, an inverted band neither swapped nor clamped, a mapped y ignored. 8 cases, max error 0 (copied values). Scope: continuous numeric x and y; facet_wrap per panel as R;
-    other facets, data-mapped colour, size, shape, alpha, fill or label, a non-identity explicit stat, companion geoms other than geom_point and any coordinate system but the default
+    other facets, data-mapped colour, size, shape, alpha, fill or label, a non-identity explicit stat, companion geoms other than geom_point, a geom_point companion whose x or y is unmapped, missing, text, short or infinite, and any coordinate system but the default
     coord_cartesian return a typed Err (Rendering, UnknownColumn, ScaleDomain, UnsupportedCoord, UnsupportedStat or UnsupportedLayer), never a panic. The oracle is a committed JSON
     fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at test time. Every case goes through the public builder and layout().
   references:
@@ -26,11 +26,12 @@ equations:
     - x, ymin and ymax are mapped to existing columns, else UnknownColumn or Rendering
     - every layer has the identity stat, else UnsupportedStat; companions are geom_point only, else UnsupportedLayer
     - coordinate system is the default coord_cartesian, else UnsupportedCoord
+    - known difference from R: a ribbon whose x holds a single distinct finite value returns ScaleDomain where R draws it
 proof_obligations:
 - id: GG-RIBBON-INV-001
   type: invariant
   property: Built layer data and trained scales match ggplot2
-  formal: '∀ case: layout(case) ≈ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  formal: '∀ case with ≥2 distinct finite x: layout(case) ≈ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
   applies_to: ordering
 - id: GG-RIBBON-INV-002
   type: invariant

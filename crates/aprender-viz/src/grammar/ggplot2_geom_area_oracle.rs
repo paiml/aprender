@@ -205,7 +205,7 @@ fn xy() -> Aes {
     Aes::new().x("x").y("y")
 }
 
-const CASES: usize = 10;
+const CASES: usize = 11;
 
 /// Compare one area case: both scales and the single `GeomArea` layer.
 fn run(case: &str, data: DataFrame, aes: Aes, facet: Facet, json: &str) {
@@ -238,6 +238,16 @@ fn unequal_groups_are_interpolated_onto_the_union() {
         xyg(),
         Facet::None,
         fixture!("geom_area", "unequal"),
+    );
+}
+#[test]
+fn negative_groups_stack_downward_with_r_edge_order() {
+    run(
+        "negative",
+        csv!("geom_area", concat!("data_", "negative")),
+        xyg(),
+        Facet::None,
+        fixture!("geom_area", "negative"),
     );
 }
 #[test]
@@ -345,7 +355,7 @@ fn lay(aes: Aes, geom: Geom) -> crate::error::Result<BuiltLayout> {
 #[test]
 fn a_data_mapped_fill_is_refused() {
     let r = lay(xyg().fill("g"), Geom::area());
-    assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    assert!(matches!(&r, Err(Error::Rendering(m)) if m.contains("geom_area")), "{r:?}");
 }
 
 #[test]
@@ -393,4 +403,35 @@ fn an_area_does_not_make_a_point_beside_it_wrong() {
     let got = r.expect("area and point share a plot");
     assert_eq!(got.layers.len(), 2);
     assert!(got.layers[0].filled.is_some() && got.layers[1].filled.is_none());
+}
+
+/// A `geom_point` beside an area gets the same refusals as beside the other marks: a missing,
+/// text or infinite position column is a typed error, never an `Ok` with an empty point layer.
+#[test]
+fn a_bad_point_companion_beside_an_area_is_refused() {
+    let area_pt = |pt: Aes| {
+        build(
+            tiny(),
+            xyg(),
+            vec![Layer::new(Geom::area()), Layer::new(Geom::point()).aes(pt)],
+            Facet::None,
+        )
+    };
+    let r = area_pt(Aes::new().x("x").y("nope"));
+    assert!(matches!(r, Err(Error::UnknownColumn(_))), "{r:?}");
+    let r = area_pt(Aes::new().x("x").y("g"));
+    assert!(
+        matches!(r, Err(Error::UnsupportedLayer(_) | Error::Rendering(_))),
+        "text column: {r:?}"
+    );
+    let mut df = tiny();
+    let n = df.nrow();
+    df.add_column_f32("inf", &vec![f32::INFINITY; n]);
+    let r = build(
+        df,
+        xyg(),
+        vec![Layer::new(Geom::area()), Layer::new(Geom::point()).aes(Aes::new().x("x").y("inf"))],
+        Facet::None,
+    );
+    assert!(matches!(r, Err(Error::ScaleDomain(_))), "{r:?}");
 }

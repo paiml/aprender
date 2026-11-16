@@ -22455,6 +22455,7 @@
 <https://ont.paiml.dev/v1alpha1/plot/geom_area> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_area/expected_equal.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_area> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_area/expected_facet.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_area> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_area/expected_na.json"^^<http://www.w3.org/2001/XMLSchema#string> .
+<https://ont.paiml.dev/v1alpha1/plot/geom_area> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_area/expected_negative.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_area> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_area/expected_onerow.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_area> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_area/expected_single.json"^^<http://www.w3.org/2001/XMLSchema#string> .
 <https://ont.paiml.dev/v1alpha1/plot/geom_area> <https://ont.paiml.dev/v1alpha1/plot/fixture> "crates/aprender-viz/fixtures/ggplot2/geom_area/expected_unequal.json"^^<http://www.w3.org/2001/XMLSchema#string> .

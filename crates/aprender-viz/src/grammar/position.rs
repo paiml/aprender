@@ -1,7 +1,7 @@
 //! Position adjustments: `position_stack`, `position_fill` and `position_dodge`.
 //!
-//! These are the numeric parts of ggplot2 4.0.3's `PositionStack` and `PositionFill`
-//! (`pos_stack()` and `collide()` in `position-collide.R`), applied
+//! These are the numeric parts of ggplot2 4.0.3's `PositionStack`, `PositionFill` and
+//! `PositionDodge` (`pos_stack()`, `pos_dodge()` and `collide()` in `position-collide.R`), applied
 //! to bar rows in data space. Every default is ggplot2's, taken from `formals()` on the reference
 //! host rather than from memory, and is a named constant here.
 //!

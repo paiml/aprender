@@ -814,9 +814,9 @@ impl BuiltGGPlot {
     /// `geom_boxplot`, `geom_errorbar`) and a `scale_x`/`scale_y` spec is an
     /// [`Error::UnsupportedLayer`]: the distribution layout does not apply position scales.
     ///
-    /// Without one, a `geom_area`, `geom_tile` or `geom_text` layer is an
-    /// [`Error::UnsupportedLayer`]: `layout()` does not resolve those geoms yet. Beside such a
-    /// layer, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
+    /// Without one, a `geom_tile` or `geom_text` layer is an [`Error::UnsupportedLayer`]:
+    /// `layout()` does not resolve those geoms yet (`geom_area` and `geom_ribbon` are resolved by
+    /// `filled`). Beside any of these layers, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
     /// other stat on that `geom_point` an [`Error::UnsupportedStat`] (their ggplot2 stat or setup
     /// widens the shared scales), and the `geom_point` is refused for a missing, text, short or
     /// infinite `x`/`y` column; those refusals come first.

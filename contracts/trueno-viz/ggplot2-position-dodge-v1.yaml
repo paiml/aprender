@@ -6,7 +6,7 @@ metadata:
   author: PAIML Engineering
   description: >-
     ggplot2 conformance, core row position_dodge (PLOT-GG-001, paiml/aprender#6909). PositionDodge 4.0.3: order of the group within its x (negated when reversed), total or single
-    preserve, width parameter or the first non-NA xmax - xmin, per-panel slices, n = 1 left untouched. 14 cases through BarSpec and layout. Scope: bars and columns on continuous or
+    preserve, width parameter or the first non-NA xmax - xmin, per-panel slices, n = 1 left untouched. 14 cases through the bar_layout_in builder (bars built from BarSpec, position applied per panel; the oracle splits facet panels itself). Scope: bars and columns on continuous or
     discrete x; a non-numeric or infinite position returns a typed Err, never a panic. The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R
     is never run at test time.
   references:
@@ -17,7 +17,7 @@ entity: {type: ggplot2-row, ref: position_dodge}
 equations:
   dodge:
     formula: 'x_new = x + w * ((order - 0.5) / n - 0.5); half-width d_width / n / 2'
-    domain: numeric columns, continuous scales, facet_wrap or no facet
+    domain: bars or columns on a discrete x, facet_wrap or no facet
     codomain: Position::Dodge {width, preserve, reverse} applied to BarRow
     invariants:
     - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; panels, groups and counts exact

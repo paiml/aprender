@@ -154,7 +154,7 @@ fn a_missing_edge_mapping_is_refused() {
 #[test]
 fn a_data_mapped_fill_is_refused() {
     let r = lay(band().fill("g"), Geom::ribbon());
-    assert!(matches!(r, Err(Error::Rendering(_))), "{r:?}");
+    assert!(matches!(&r, Err(Error::Rendering(m)) if m.contains("geom_ribbon")), "{r:?}");
 }
 
 #[test]
@@ -193,4 +193,20 @@ fn a_single_position_has_no_degenerate_scale_answer() {
         Facet::None,
     );
     assert!(matches!(r, Err(Error::ScaleDomain(_))), "{r:?}");
+}
+
+/// A `geom_point` beside a ribbon gets the companion refusals: a missing column is a typed error,
+/// never an `Ok` with an empty point layer.
+#[test]
+fn a_bad_point_companion_beside_a_ribbon_is_refused() {
+    let r = build(
+        tiny(),
+        band(),
+        vec![
+            Layer::new(Geom::ribbon()),
+            Layer::new(Geom::point()).aes(Aes::new().x("x").y("nope")),
+        ],
+        Facet::None,
+    );
+    assert!(matches!(r, Err(Error::UnknownColumn(_))), "{r:?}");
 }
