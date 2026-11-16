@@ -174,6 +174,54 @@ fn model_size_flag_wins_over_the_recipe() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// Review of a6934d3da: `--model-size` and `--output` win over the recipe, so
+/// the receipt must say so. A flag that fills a value the recipe does not
+/// carry is not an override.
+#[test]
+fn a_flag_that_replaces_a_recipe_value_is_recorded_in_the_receipt() {
+    let dir = scratch("overrides");
+    let carried =
+        VALID.replace("method: qlora", "model_size: 0.8B\nmethod: qlora") + "output:\n  dir: out\n";
+    let path = write_recipe(&dir, &carried);
+    let mut f = flags(true);
+    f.model_size = Some("7B");
+    f.output_path = Some(Path::new("/tmp/a.apr"));
+    let (_, receipt) = recipe_receipt_for_run(&path, &f).expect("valid");
+    assert_eq!(
+        receipt.overrides,
+        vec![
+            "model_size: 0.8B -> 7B (--model-size)".to_string(),
+            format!(
+                "output.dir: {} -> /tmp/a.apr (--output)",
+                dir.join("out").display()
+            ),
+        ]
+    );
+
+    f.output_path = None;
+    let (_, receipt) = recipe_receipt_for_run(&path, &f).expect("valid");
+    assert_eq!(
+        receipt.overrides,
+        vec!["model_size: 0.8B -> 7B (--model-size)"]
+    );
+    f.model_size = None;
+    f.output_path = Some(Path::new("/tmp/a.apr"));
+    let (_, receipt) = recipe_receipt_for_run(&path, &f).expect("valid");
+    assert_eq!(receipt.overrides.len(), 1, "{:?}", receipt.overrides);
+    assert!(receipt.overrides[0].starts_with("output.dir: "));
+    f.output_path = None;
+    let (_, receipt) = recipe_receipt_for_run(&path, &f).expect("valid");
+    assert!(receipt.overrides.is_empty(), "no flag, no override");
+
+    // The recipe carries neither value: the flags fill gaps and replace nothing.
+    let bare = write_recipe(&dir, VALID);
+    f.model_size = Some("7B");
+    f.output_path = Some(Path::new("/tmp/a.apr"));
+    let (_, receipt) = recipe_receipt_for_run(&bare, &f).expect("valid");
+    assert!(receipt.overrides.is_empty(), "{:?}", receipt.overrides);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 /// `output.dir` is a directory: the adapter is written inside it, so the
 /// checkpoints (`<adapter parent>/checkpoints`) stay inside it too. An
 /// explicit `--output` is a file and is used as given.

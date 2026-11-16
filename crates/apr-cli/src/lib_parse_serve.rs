@@ -683,6 +683,124 @@
         }
     }
 
+    /// `apr finetune --recipe r.yaml` parses with no positional model (CRUX-001).
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_recipe_flag_parses_alone_and_with_run_flags() {
+        let cli = parse_cli(vec![
+            "apr", "finetune", "--recipe", "r.yaml", "--plan", "--vram", "8", "--model-size", "1B",
+            "-o", "out",
+        ])
+        .expect("`apr finetune --recipe r.yaml --plan` must parse");
+        match *cli.command {
+            Commands::ModelOps(ModelOpsCommands::Finetune {
+                ref recipe,
+                ref file,
+                plan,
+                ..
+            }) => {
+                assert_eq!(
+                    recipe.as_deref(),
+                    Some(std::path::Path::new("r.yaml"))
+                );
+                assert!(file.is_none());
+                assert!(plan);
+            }
+            _ => panic!("Expected Finetune command"),
+        }
+        let cli = parse_cli(vec!["apr", "finetune", "model.apr"]).expect("bare finetune parses");
+        match *cli.command {
+            Commands::ModelOps(ModelOpsCommands::Finetune { ref recipe, .. }) => {
+                assert!(recipe.is_none());
+            }
+            _ => panic!("Expected Finetune command"),
+        }
+    }
+
+    /// The flag reaches the recipe path through dispatch: the shipped example
+    /// plans, a real run of it is refused by field for its absent files, a
+    /// run flag is passed on, and every refusal is a validation error (exit 5),
+    /// not a usage error.
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_recipe_dispatch_plans_the_example_and_refuses_with_exit_5() {
+        const EXAMPLE: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/recipes/tiny.yaml"
+        );
+        let run = |args: Vec<&'static str>| {
+            let cli = parse_cli(args).expect("parses");
+            dispatch_model_commands(&cli).expect("finetune is a model command")
+        };
+        run(vec!["apr", "finetune", "--recipe", EXAMPLE, "--plan"])
+            .expect("the shipped example must plan on a fresh checkout");
+
+        let err = run(vec!["apr", "finetune", "--recipe", EXAMPLE]).expect_err("no input files");
+        assert_eq!(err.exit_code(), std::process::ExitCode::from(5), "{err}");
+        let msg = err.to_string();
+        for field in ["`base`", "`data.train`", "`eval.heldout`"] {
+            assert!(msg.contains(&format!("field {field}: no such file")), "{msg}");
+        }
+
+        let err = run(vec![
+            "apr", "finetune", "--recipe", EXAMPLE, "--plan", "--model-size", "BOGUS",
+        ])
+        .expect_err("--model-size is passed on");
+        assert!(err.to_string().contains("BOGUS"), "{err}");
+
+        let err = run(vec![
+            "apr", "finetune", "--recipe", "/nonexistent/apr-recipe.yaml", "--plan",
+        ])
+        .expect_err("absent recipe");
+        assert_eq!(err.exit_code(), std::process::ExitCode::from(5), "{err}");
+        assert!(err.to_string().contains("cannot read recipe"), "{err}");
+    }
+
+    /// Every flag in `FINETUNE_RECIPE_CARRIES` is refused beside `--recipe`
+    /// (`--model-size` and `--output` are not in it: they are accepted and
+    /// recorded as overrides). Every name in the list is exercised, so
+    /// a renamed clap id (which clap would only catch at runtime) fails here.
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_recipe_conflicts_with_every_flag_it_carries() {
+        let cases: [(&str, &[&str]); 19] = [
+            ("file", &["model.apr"]),
+            ("method", &["--method", "lora"]),
+            ("rank", &["--rank", "8"]),
+            ("data", &["--data", "d.jsonl"]),
+            ("adapter", &["--adapter", "a"]),
+            ("merge", &["--merge"]),
+            ("epochs", &["--epochs", "2"]),
+            ("learning_rate", &["--learning-rate", "0.001"]),
+            ("task", &["--task", "classify"]),
+            ("num_classes", &["--num-classes", "3"]),
+            ("oversample", &["--oversample"]),
+            ("max_seq_len", &["--max-seq-len", "64"]),
+            ("adapters", &["--adapters", "d:c"]),
+            ("adapters_config", &["--adapters-config", "a.toml"]),
+            ("role", &["--role", "worker"]),
+            ("bind", &["--bind", "0.0.0.0:1"]),
+            ("coordinator", &["--coordinator", "h:1"]),
+            ("expect_workers", &["--expect-workers", "2"]),
+            ("quantize_nf4", &["--quantize-nf4"]),
+        ];
+        let ids: Vec<&str> = cases.iter().map(|(id, _)| *id).collect();
+        assert_eq!(ids, crate::FINETUNE_RECIPE_CARRIES, "the table is the list");
+        for (id, extra) in cases {
+            let mut args = vec!["apr", "finetune", "--recipe", "r.yaml"];
+            args.extend_from_slice(extra);
+            let err = match parse_cli(args) {
+                Ok(_) => panic!("`--recipe` with `{id}` must be refused"),
+                Err(e) => e,
+            };
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "{id}: {err}"
+            );
+        }
+    }
+
     /// `apr distill --backend` — the earlier report called this the same defect
     /// class. Re-measured: it is NOT. `distill::run()` rejects an unknown value
     /// by name before any I/O (commands/distill.rs:464-503, covered by

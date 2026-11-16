@@ -336,6 +336,17 @@ fn check_teacher(
 impl TrainRecipe {
     /// Read and validate a recipe file. Nothing but the recipe is opened.
     pub(crate) fn load(path: &Path) -> Result<Self> {
+        // Asked before the open: a device has no end, and opening a pipe waits
+        // for a writer.
+        let is_regular = std::fs::metadata(path).map_err(|e| {
+            CliError::ValidationFailed(format!("cannot read recipe {}: {e}", path.display()))
+        })?;
+        if !is_regular.is_file() {
+            return Err(CliError::ValidationFailed(format!(
+                "recipe {} is not a regular file",
+                path.display()
+            )));
+        }
         let bytes = std::fs::read(path).map_err(|e| {
             CliError::ValidationFailed(format!("cannot read recipe {}: {e}", path.display()))
         })?;

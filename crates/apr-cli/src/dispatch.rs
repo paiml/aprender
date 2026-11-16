@@ -1126,9 +1126,28 @@ fn dispatch_model_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             experimental_mps,
             gpu_share,
             profile,
+            recipe,
         }) => {
             if *profile {
                 eprintln!("StepProfiler enabled for finetune (PMAT-486)");
+            }
+            if let Some(recipe) = recipe.as_deref() {
+                return Some(finetune::run_from_recipe(
+                    recipe,
+                    &finetune::RecipeRunFlags {
+                        vram_gb: *vram,
+                        plan_only: *plan,
+                        output_path: output.as_deref(),
+                        model_size: model_size.as_deref(),
+                        checkpoint_format,
+                        gpus: gpus.as_deref(),
+                        gpu_backend,
+                        wait_gpu: *wait_gpu,
+                        json_output: cli.json,
+                        experimental_mps: *experimental_mps,
+                        gpu_share: *gpu_share,
+                    },
+                ));
             }
             finetune::run(
                 file.as_deref(),

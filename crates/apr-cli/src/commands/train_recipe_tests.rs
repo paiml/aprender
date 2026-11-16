@@ -555,6 +555,27 @@ fn load_reads_a_file_and_names_it_when_it_cannot() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// A recipe path that is not a regular file is refused without being opened:
+/// `/dev/zero` never ends, and opening a pipe waits for a writer.
+#[cfg(unix)]
+#[test]
+fn load_refuses_a_recipe_path_that_is_not_a_regular_file() {
+    let dir = scratch("load-notfile");
+    let pipe = dir.join("r.pipe");
+    let made = std::process::Command::new("mkfifo")
+        .arg(&pipe)
+        .status()
+        .expect("mkfifo runs");
+    assert!(made.success(), "mkfifo");
+    for path in [dir.clone(), PathBuf::from("/dev/zero"), pipe] {
+        let shown = path.display().to_string();
+        let msg = within_20s(move || TrainRecipe::load(&path).expect_err("refused").to_string());
+        assert!(msg.contains("is not a regular file"), "{shown}: {msg}");
+        assert!(msg.contains(&shown), "{msg}");
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn require_inputs_names_each_missing_file_then_passes_and_checks_the_pin() {
     let dir = scratch("inputs");

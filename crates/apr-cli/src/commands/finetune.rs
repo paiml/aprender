@@ -1425,9 +1425,11 @@ pub(crate) fn run(
 }
 
 /// The `apr finetune` flags that still apply beside `--recipe`: where and how
-/// to run, never what to train (the recipe carries that).
+/// to run. Two of them can replace a value the recipe carries: `model_size`
+/// wins over the recipe's `model_size` and `output_path` over `output.dir`
+/// (`recipe_overrides` records each). `--profile` is not here: dispatch prints
+/// its one line and nothing reads it, with or without `--recipe`.
 #[derive(Debug, Clone, Copy)]
-#[allow(dead_code)] // wired by the --recipe flag in the next slice
 pub(crate) struct RecipeRunFlags<'a> {
     pub(crate) vram_gb: f64,
     pub(crate) plan_only: bool,
@@ -1512,11 +1514,45 @@ fn recipe_epochs_and_nf4(recipe: &super::train_recipe::TrainRecipe) -> (u32, boo
     )
 }
 
+/// The recipe values a run flag replaces. `--model-size` and `--output` are
+/// accepted beside `--recipe` and win over `model_size` and `output.dir`; each
+/// such replacement is named here so the receipt records it. A flag that fills
+/// a value the recipe does not carry replaces nothing and is not listed.
+fn recipe_overrides(
+    flags: &RecipeRunFlags<'_>,
+    recipe: &super::train_recipe::TrainRecipe,
+) -> Vec<String> {
+    let mut overrides = Vec::new();
+    if let (Some(flag), Some(own)) = (flags.model_size, recipe.model_size.as_deref()) {
+        overrides.push(format!("model_size: {own} -> {flag} (--model-size)"));
+    }
+    if let (Some(flag), Some(own)) = (flags.output_path, recipe.output_dir.as_deref()) {
+        overrides.push(format!(
+            "output.dir: {} -> {} (--output)",
+            own.display(),
+            flag.display()
+        ));
+    }
+    overrides
+}
+
+/// `preflight_recipe` plus the overrides the run flags make.
+fn recipe_receipt_for_run(
+    recipe_path: &Path,
+    flags: &RecipeRunFlags<'_>,
+) -> Result<(
+    super::train_recipe::TrainRecipe,
+    super::train_recipe::RecipeReceipt,
+)> {
+    let (recipe, mut receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
+    receipt.overrides = recipe_overrides(flags, &recipe);
+    Ok((recipe, receipt))
+}
+
 /// `apr finetune --recipe <file>`: the recipe is validated first, then lowered
 /// onto the same `run` every flag-driven invocation uses (CRUX-001).
-#[allow(dead_code)] // wired by the --recipe flag in the next slice
 pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) -> Result<()> {
-    let (recipe, receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
+    let (recipe, receipt) = recipe_receipt_for_run(recipe_path, flags)?;
     let (epochs, quantize_nf4) = recipe_epochs_and_nf4(&recipe);
     let engine = super::train_recipe::apr_engine();
     eprintln!(
@@ -1533,6 +1569,12 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         "[recipe] validated and hashed, not yet applied by apr finetune: {}",
         receipt.validated_not_applied.join(", ")
     );
+    if !receipt.overrides.is_empty() {
+        eprintln!(
+            "[recipe] overridden by flags: {}",
+            receipt.overrides.join("; ")
+        );
+    }
     let output_buf = recipe_output_path(flags, &recipe);
     let output = output_buf.as_deref();
     run(
