@@ -423,6 +423,8 @@ pub mod quantize;
 pub mod qwen4_exp;
 /// `qwen4_exp` indexer, indexed attention and hc residual (#7175)
 pub mod qwen4_exp_attn;
+/// `qwen4_exp` gated norm, n-gram embedding and PLE (#7175)
+pub mod qwen4_exp_embed;
 #[cfg(feature = "server")]
 pub mod registry;
 #[cfg(all(test, feature = "server"))]
