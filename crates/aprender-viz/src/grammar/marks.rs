@@ -2,7 +2,8 @@
 //! (PLOT-GG-001, paiml/aprender#6909). The "five" below are these; `geom_ribbon` and `geom_rect`
 //! have no constructor yet, so only area, tile and text can reach this module.
 //!
-//! `layout()` does not resolve these geoms yet. It used to lay them out as points: raw `x`/`y`
+//! `layout()` resolves `geom_tile`, `geom_rect` and `geom_raster` (see `rects`); the rest are refused.
+//! It does not resolve the others yet. It used to lay them out as points: raw `x`/`y`
 //! rows, scales trained on them, no `stat_align`, stacking, tile bounds or labels. That is a
 //! plausible wrong answer, so [`require_resolved`] refuses each of them with a typed error until
 //! its `ggplot_build()` resolution lands.
@@ -24,8 +25,12 @@ use crate::error::{Error, Result};
 enum MarkKind {
     /// `geom_area()`: `stat_align` + `position_stack`.
     Area,
-    /// `geom_tile()`.
+    /// `geom_tile()`; resolved by `rects`.
     Tile,
+    /// `geom_rect()`; resolved by `rects`.
+    Rect,
+    /// `geom_raster()`; resolved by `rects`.
+    Raster,
     /// `geom_text()`.
     Text,
 }
@@ -34,7 +39,9 @@ impl MarkKind {
     fn of(geom: &GeomType) -> Option<Self> {
         match geom {
             GeomType::Area { .. } => Some(MarkKind::Area),
-            GeomType::Tile => Some(MarkKind::Tile),
+            GeomType::Tile { .. } => Some(MarkKind::Tile),
+            GeomType::Rect => Some(MarkKind::Rect),
+            GeomType::Raster { .. } => Some(MarkKind::Raster),
             GeomType::Text => Some(MarkKind::Text),
             _ => None,
         }
@@ -52,13 +59,11 @@ pub(super) fn any_marks(layers: &[Layer]) -> bool {
 ///
 /// [`Error::UnsupportedLayer`] naming the geom.
 pub(super) fn require_resolved(layers: &[Layer]) -> Result<()> {
-    match layers.iter().find_map(|l| MarkKind::of(&l.geom.geom_type)) {
-        None => Ok(()),
+    let unresolved = |k: &MarkKind| matches!(k, MarkKind::Area | MarkKind::Text);
+    match layers.iter().filter_map(|l| MarkKind::of(&l.geom.geom_type)).find(unresolved) {
+        None | Some(MarkKind::Tile | MarkKind::Rect | MarkKind::Raster) => Ok(()),
         Some(MarkKind::Area) => {
             Err(Error::UnsupportedLayer("geom_area: layout() does not resolve it yet"))
-        }
-        Some(MarkKind::Tile) => {
-            Err(Error::UnsupportedLayer("geom_tile: layout() does not resolve it yet"))
         }
         Some(MarkKind::Text) => {
             Err(Error::UnsupportedLayer("geom_text: layout() does not resolve it yet"))

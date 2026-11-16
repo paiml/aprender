@@ -20,6 +20,7 @@ use super::facet::{panels, Facet, Panel};
 use super::geom::{Geom, GeomType, PointShape};
 use super::marks;
 use super::path;
+use super::rects;
 use super::scale_spec::{require_scale_scope, PositionScaleSpec, ResolvedAxis};
 use super::stroke;
 use super::theme::Theme;
@@ -690,6 +691,20 @@ impl BuiltGGPlot {
         (PositionScale::continuous(x), PositionScale::continuous(y))
     }
 
+    /// Tile, rect and raster train f64 bounds; an unbuildable layer is refused by `build_layer`
+    /// before `layout()` reads these domains.
+    fn train_rects(
+        &self,
+        layer: &Layer,
+        xr: (f64, f64),
+        yr: (f64, f64),
+    ) -> ((f64, f64), (f64, f64)) {
+        match rects::build_layer(layer, &self.aes, &self.data, &self.facet) {
+            Ok(built) => rects::train(&built, xr, yr),
+            Err(_) => (xr, yr),
+        }
+    }
+
     /// The finite x and y domains every layer trains (`lo > hi` on an axis nothing trained).
     fn trained_domains(&self) -> ((f64, f64), (f64, f64)) {
         if let Some(domains) = self.trained {
@@ -697,6 +712,8 @@ impl BuiltGGPlot {
         }
         let mut x = (f32::MAX, f32::MIN);
         let mut y = (f32::MAX, f32::MIN);
+        let mut xr = (f64::INFINITY, f64::NEG_INFINITY);
+        let mut yr = (f64::INFINITY, f64::NEG_INFINITY);
 
         for layer in &self.layers {
             // Reference lines do not inherit x/y; hline trains y and vline trains x with the
@@ -715,14 +732,20 @@ impl BuiltGGPlot {
                 }
                 _ => {}
             }
+            if rects::is_rect_family(&layer.geom.geom_type) {
+                (xr, yr) = self.train_rects(layer, xr, yr);
+                continue;
+            }
             let data = layer.data.as_ref().unwrap_or(&self.data);
             let layer_aes = self.aes.merge(&layer.aes);
             x = Self::extend_range(x, data, layer_aes.x.as_ref());
             y = Self::extend_range(y, data, layer_aes.y.as_ref());
         }
 
-        let wide = |(lo, hi): (f32, f32)| (f64::from(lo), f64::from(hi));
-        (wide(x), wide(y))
+        let wide = |(lo, hi): (f32, f32), (rlo, rhi): (f64, f64)| {
+            (f64::from(lo).min(rlo), f64::from(hi).max(rhi))
+        };
+        (wide(x, xr), wide(y, yr))
     }
 
     /// The columns that feed one axis, one per layer (`x_axis` selects x or y).
@@ -815,6 +838,7 @@ impl BuiltGGPlot {
         }
         path::require_default_coord(&self.layers, &self.coord)?;
         path::require_identity_stats(&self.layers)?;
+        rects::require_supported(&self.layers, &self.coord)?;
         if self.uses_position_scales() {
             return self.scaled_layout();
         }
@@ -868,13 +892,16 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, rects: None })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
+        if rects::is_rect_family(&layer.geom.geom_type) {
+            return rects::build_layer(layer, &self.aes, &self.data, &self.facet);
         }
         let data = layer.data.as_ref().unwrap_or(&self.data);
         let aes = self.aes.merge(&layer.aes);
@@ -887,7 +914,7 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None })
+        Ok(BuiltLayer { x, y, points, path: None, rects: None })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).

@@ -195,7 +195,7 @@ pub(super) fn require_identity_stats(layers: &[Layer]) -> Result<()> {
 }
 
 /// The refusal for a stat `layout()` does not compute; `None` for the identity stat.
-fn unsupported_stat(s: &Stat) -> Option<&'static str> {
+pub(super) fn unsupported_stat(s: &Stat) -> Option<&'static str> {
     let msg = match s {
         Stat::Identity => return None,
         Stat::Count => "stat_count with line, path, step or reference layers: layout() computes no stat",
@@ -227,14 +227,16 @@ fn unsupported_stat(s: &Stat) -> Option<&'static str> {
 /// `x` and `y` are the TRAINED domains (`(lo, hi)` over the finite values, `lo > hi` when no
 /// value trained), read before [`super::build::PositionScale::continuous`] maps an empty domain to `0..1`.
 pub(super) fn require_trained(layers: &[Layer], x: (f64, f64), y: (f64, f64)) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| {
+        is_path_family(&l.geom.geom_type) || super::rects::is_rect_family(&l.geom.geom_type)
+    }) {
         return Ok(());
     }
     for (axis, (lo, hi)) in [("x", x), ("y", y)] {
         if lo >= hi {
             return Err(Error::ScaleDomain(format!(
                 "{axis} scale has {} (trained domain {:?}); a degenerate range is not supported \
-                 with line, path, step or reference layers",
+                 with line, path, step, reference, tile, rect or raster layers",
                 if lo > hi { "no finite value" } else { "a single value" },
                 (lo, hi)
             )));
@@ -274,7 +276,13 @@ pub(super) fn build_layer(
                 slope: slope.map_or_else(Vec::new, |s| vec![s; n]),
             }),
         };
-        return Ok(BuiltLayer { x: vec![], y: vec![], points: None, path: Some(path) });
+        return Ok(BuiltLayer {
+            x: vec![],
+            y: vec![],
+            points: None,
+            path: Some(path),
+            rects: None,
+        });
     }
 
     let own = layer.data.is_some();
@@ -309,7 +317,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path) })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), rects: None })
 }
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {
@@ -392,7 +400,7 @@ fn row_panels(facet: &Facet, global: &[Panel], data: &DataFrame, own: bool) -> R
 }
 
 /// One column as f64, one entry per row of `data`: `NA`, null and missing cells are `NaN`.
-fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
+pub(super) fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
     let col =
         data.get(name).ok_or_else(|| Error::UnknownColumn(format!("no {what} column {name:?}")))?;
     (0..data.nrow())

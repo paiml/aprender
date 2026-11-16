@@ -1,0 +1,54 @@
+{
+  "row": "geom_rect",
+  "case": "na_rows",
+  "spec": "ggplot(dna, aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax)) + geom_rect()",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "warnings": [],
+  "layers": [
+    {
+      "geom": "GeomRect",
+      "xmin": [1, null, 2],
+      "xmax": [3, 5, 6],
+      "ymin": [2, 0, null],
+      "ymax": [4, 1.5, 9],
+      "linewidth": [0.5, 0.5, 0.5],
+      "linetype": [1, 1, 1],
+      "alpha": [null, null, null],
+      "panel": [1, 1, 1],
+      "group": [-1, -1, -1],
+      "fill_rgba": [
+        [89, 89, 89, 255],
+        [89, 89, 89, 255],
+        [89, 89, 89, 255]
+      ],
+      "colour_rgba": [
+        null,
+        null,
+        null
+      ]
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [1, 6],
+      "continuous_range": [0.75, 6.25],
+      "breaks": [2, 4, 6],
+      "labels": ["2", "4", "6"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [0, 9],
+      "continuous_range": [-0.45000000000000001, 9.4499999999999993],
+      "breaks": [0, 2.5, 5, 7.5],
+      "labels": ["0.0", "2.5", "5.0", "7.5"],
+      "n_breaks_censored": 1
+    }
+  }
+}

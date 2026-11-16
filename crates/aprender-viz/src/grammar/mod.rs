@@ -48,10 +48,19 @@ mod ggplot2_marks_oracle;
 mod ggplot2_oracle;
 #[cfg(test)]
 mod ggplot2_oracle_scales;
+#[cfg(test)]
+mod ggplot2_raster_oracle;
+#[cfg(test)]
+mod ggplot2_rect_oracle;
+#[cfg(test)]
+mod ggplot2_rects_common;
+#[cfg(test)]
+mod ggplot2_tile_oracle;
 mod marks;
 mod path;
 mod position;
 mod r_format;
+mod rects;
 mod scale_discrete;
 mod scale_spec;
 mod scale_trans;
@@ -74,6 +83,7 @@ pub use geom::{Geom, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use position::{apply as apply_position, apply_panels, BarRow, Position};
+pub use rects::{BuiltRects, RectKind};
 pub use scale_discrete::{DiscreteSpec, DISCRETE_EXPAND_ADD};
 pub use scale_spec::{
     scale_continuous, scale_discrete, scale_log10, zero_range, ContinuousSpec, Expansion,
