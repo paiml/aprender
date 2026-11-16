@@ -56,6 +56,8 @@ pub enum GeomType {
         /// Fill alpha.
         alpha: f32,
     },
+    /// Band between `ymin` and `ymax` (`geom_ribbon()`).
+    Ribbon,
     /// Bars.
     Bar {
         /// Bar width (0-1 fraction of available space).
@@ -157,6 +159,12 @@ impl Geom {
     #[must_use]
     pub fn area() -> Self {
         Self { geom_type: GeomType::Area { alpha: 0.3 }, aes: None, stat: None }
+    }
+
+    /// Create a ribbon geometry.
+    #[must_use]
+    pub fn ribbon() -> Self {
+        Self { geom_type: GeomType::Ribbon, aes: None, stat: None }
     }
 
     /// Create a bar geometry.
