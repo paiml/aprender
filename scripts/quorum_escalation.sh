@@ -72,13 +72,15 @@ verdict() { # receipt file -> PASS | FAIL | NM
   # 'Result: PASS' does not outrank an earlier 'RESULT: FAIL (1/3)' or a second 'VERDICT: FAIL'.
   h=$(grep -i -E '^[^A-Za-z]*(tally|result|overall|final|verdict)[*_ ]*:.*(pass|fail)' "$1")
   [ -n "$h" ] || h=$(head -n3 "$1" | grep -i -m1 -oE 'verdict:? *(not pass|pass|fail).*')
-  # one exception: a headline that SAYS it supersedes a non-pass verdict ('This supersedes the
-  # NOT PASS above', 'supersedes the round 2 FAIL') replaces every headline before it. It must
-  # name the verdict it replaces ('supersedes #7000' does not) and must not be negated
-  # ('nothing here supersedes the FAIL'); a later bare 'Result: PASS' replaces nothing.
-  local sup='\bsupersed(e|es|ing)( +(the|all|every|earlier|previous|prior|above|round[ -]?[0-9]+))* +(not[ _-]*pass|non[ _-]*pass|fail(ed|s|ures?)?)\b'
-  local neg="\\b(not|no|nothing|never|none|doesn't|does not|cannot|can't)\\b[^.]*\\bsupersed"
-  l=$(grep -n -i -E "$sup" <<<"$h" | grep -v -i -E "$neg" | tail -n1 | cut -d: -f1)
+  # one exception, an ALLOWLIST of one exact clause: a headline holding the sentence
+  # 'This supersedes the NOT PASS above.' (or '... the FAIL above.') replaces every headline
+  # before it, when nothing after the clause on that line asks a question or sets a condition.
+  # Any other line naming 'supersede' ('won't supersede', 'supersedes #7000', 'supersedes the
+  # FAIL only if C re-runs', 'supersedes the FAIL? No.') replaces nothing: the FAIL stands.
+  local sup='(^|[.!*] +)This supersedes the (NOT PASS|FAIL) above\.( |$)'
+  local cond='[?]|(^|[^A-Za-z])(if|only|unless|until|once|pending|when|after|provided|assuming|expected|would|will|should)([^A-Za-z]|$)'
+  l=$(grep -n -E "$sup" <<<"$h" | tail -n1 | cut -d: -f1)
+  if [ -n "$l" ] && grep -q -i -E "$cond" <<<"$(sed -n "${l}p" <<<"$h" | sed -E 's/.*This supersedes the (NOT PASS|FAIL) above\.//')"; then l=""; fi
   [ -z "$l" ] || h=$(tail -n "+$l" <<<"$h")
   while IFS= read -r l; do [ -z "$l" ] || c="$c $(vline "$l")"; done <<<"$h"
   case $c in *FAIL*) echo FAIL ;; *PASS*) echo PASS ;; *) echo NM ;; esac
@@ -207,8 +209,19 @@ RESULT: PASS (3/3 valid lanes PASS). This supersedes the FAIL above."
   np "VERDICT: FAIL
 Result: PASS (3/3). This PR supersedes #7000."; np "VERDICT: FAIL
 RESULT: PASS - nothing here supersedes the FAIL"; np "VERDICT: FAIL
-RESULT: PASS (3/3). It does not supersede the FAIL above."; ps "VERDICT: FAIL
+RESULT: PASS (3/3). It does not supersede the FAIL above."; np "VERDICT: FAIL
 RESULT: PASS (3/3). Supersedes the round 2 FAIL."
+  np "VERDICT: FAIL
+RESULT: PASS (3/3). This won't supersede the FAIL above."; np "VERDICT: FAIL
+RESULT: PASS (3/3). This wouldn"$'\xe2\x80\x99'"t supersede the FAIL above."; np "VERDICT: FAIL
+RESULT: PASS (3/3). This supersedes the FAIL above only if lane C re-runs."; np "VERDICT: FAIL
+RESULT: PASS (3/3). This supersedes the FAIL above? No."; np "VERDICT: FAIL
+RESULT: PASS (3/3). This supersedes the FAIL above. Lane C re-runs first, until then hold."
+  np "VERDICT: FAIL
+RESULT: PASS (3/3). This supersedes the FAIL above. Is lane C done?"; np "VERDICT: FAIL
+RESULT: PASS (3/3). Nobody claims This supersedes the FAIL above."
+  ps "VERDICT: FAIL
+**RESULT: PASS (3/3 valid lanes PASS) @0e092b2.** This supersedes the NOT PASS above. B's first run is kept as history."
   np "VERDICT: FAIL
 RESULT: PASS (3/3). Supersedes PR 7000 FAIL."
   np "RESULT: FAIL (1/3)
