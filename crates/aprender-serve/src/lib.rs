@@ -421,6 +421,8 @@ pub mod ptx_parity;
 pub mod quantize;
 /// `qwen4_exp` (Qwen 4 preview) config, recognition and named refusal (#7169 S1)
 pub mod qwen4_exp;
+/// `qwen4_exp` indexer, indexed attention and hc residual (#7175)
+pub mod qwen4_exp_attn;
 /// `qwen4_exp` gated norm, n-gram embedding and PLE (#7175)
 pub mod qwen4_exp_embed;
 #[cfg(feature = "server")]
