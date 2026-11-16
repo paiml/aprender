@@ -6,8 +6,9 @@
 # Example: examples/recipes/tiny.yaml and the --recipe flag land in the last slice.
 # Each FALSIFY entry is added in the slice that adds its test.
 #
-# NOT YET ENFORCED by the loader at this head (status: partial). Nothing calls the loader yet,
-# and each rule below gets its check, its test and its FALSIFY entry in a later slice:
+# NOT YET ENFORCED by the loader at this head (status: partial). `preflight_recipe` and
+# `run_from_recipe` in finetune.rs call the loader and no CLI flag calls them yet.
+# Each rule below gets its check, its test and its FALSIFY entry in a later slice:
 #   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
 #   - exit 5, the --recipe flag and its flag conflicts: `preflight_recipe` in finetune.rs loads
 #     the recipe, calls require_inputs (unless planning) and builds the receipt, and it is tested

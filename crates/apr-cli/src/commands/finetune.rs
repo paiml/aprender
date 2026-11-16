@@ -1444,9 +1444,10 @@ pub(crate) struct RecipeRunFlags<'a> {
 
 /// Validate a recipe for `apr finetune` and say what it resolved to.
 ///
-/// Opens the recipe file only; in a real run (`plan_only == false`) it also
-/// checks the base, data and eval files exist and hashes the data. No model is
-/// loaded here, so a refusal costs no GPU allocation.
+/// Reads the recipe file. In a real run (`plan_only == false`) it also refuses
+/// when the base, data or eval file is missing. In both modes the receipt
+/// hashes the data and eval files that exist. No model is loaded here, so a
+/// refusal costs no GPU allocation.
 pub(crate) fn preflight_recipe(
     recipe_path: &Path,
     plan_only: bool,
