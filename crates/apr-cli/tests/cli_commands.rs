@@ -1383,8 +1383,31 @@ fn kind_totality_guard_case_table() {
     }
 }
 
-/// The row-1 fixture R generated the ggplot2 oracle from.
-const ROW1_CSV: &str = include_str!("../../aprender-viz/fixtures/ggplot2/geom_point/data.csv");
+/// The row-1 fixture R generated the ggplot2 oracle from: a copy of
+/// `crates/aprender-viz/fixtures/ggplot2/geom_point/data.csv` kept inside this
+/// crate, because `cargo package -p apr-cli` ships only this crate's files and an
+/// `include_str!` of the sibling path does not compile from the published tarball.
+const ROW1_CSV: &str = include_str!("fixtures/ggplot2/geom_point/data.csv");
+
+/// The copy must stay byte-identical to the fixture the oracle was generated from.
+/// From the published tarball the sibling crate is absent, so there is nothing to
+/// compare; inside the workspace its manifest exists and the files must match.
+#[test]
+fn row1_csv_copy_matches_the_viz_fixture() {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates dir");
+    if !crates.join("aprender-viz/Cargo.toml").exists() {
+        return;
+    }
+    let original =
+        std::fs::read_to_string(crates.join("aprender-viz/fixtures/ggplot2/geom_point/data.csv"))
+            .expect("the viz fixture exists inside the workspace");
+    assert_eq!(
+        ROW1_CSV, original,
+        "crates/apr-cli/tests/fixtures/ggplot2/geom_point/data.csv drifted from the aprender-viz fixture; copy it again"
+    );
+}
 
 fn row1_csv() -> (tempfile::TempDir, std::path::PathBuf) {
     let dir = tempfile::tempdir().expect("tempdir");
