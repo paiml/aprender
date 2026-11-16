@@ -20,6 +20,10 @@ w("binwidth1_boundary0", ggplot(df, aes(x)) + geom_freqpoly(binwidth = 1, bounda
   "ggplot(df, aes(x)) + geom_freqpoly(binwidth = 1, boundary = 0)")
 w("binwidth5_center0", ggplot(df, aes(x)) + geom_freqpoly(binwidth = 5, center = 0),
   "ggplot(df, aes(x)) + geom_freqpoly(binwidth = 5, center = 0)")
+w("binwidth5_center1", ggplot(df, aes(x)) + geom_freqpoly(binwidth = 5, center = 1),
+  "ggplot(df, aes(x)) + geom_freqpoly(binwidth = 5, center = 1)")
+w("bins10_center0", ggplot(df, aes(x)) + geom_freqpoly(bins = 10, center = 0),
+  "ggplot(df, aes(x)) + geom_freqpoly(bins = 10, center = 0)")
 w("bins5_boundary2", ggplot(df, aes(x)) + geom_freqpoly(bins = 5, boundary = 2),
   "ggplot(df, aes(x)) + geom_freqpoly(bins = 5, boundary = 2)")
 w("constant", ggplot(dc, aes(x)) + geom_freqpoly(), "ggplot(dc, aes(x)) + geom_freqpoly()", "data_constant.csv")

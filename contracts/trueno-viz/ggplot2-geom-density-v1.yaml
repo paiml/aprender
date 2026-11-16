@@ -36,7 +36,7 @@ enforcement:
     check: grammar::ggplot2_dist_density_oracle::default
     severity: ERROR
   bandwidth_cases:
-    description: the IQR branch of bw.nrd0, its zero-IQR and zero-spread fallbacks and the smallest sample are reproduced
+    description: the IQR branch of bw.nrd0 is reproduced (its zero-IQR and zero-spread fallbacks are FALSIFY-GGD-007 and FALSIFY-GGD-008, the smallest sample FALSIFY-GGD-003)
     check: grammar::ggplot2_dist_density_oracle::outlier
     severity: ERROR
   refusal_cases:
@@ -76,8 +76,8 @@ falsification_tests:
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GGD-008
   rule: A constant sample takes abs(x[1]), and a zero sample takes 1, as its bandwidth
-  prediction: dropping the abs(x[1]) or the 1.0 fallback turns the constant or the zero fixture RED
-  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_density_oracle::zero
+  prediction: dropping the abs(x[1]) fallback turns the constant fixture RED, and dropping the 1.0 fallback turns the zero fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_density_oracle::constant grammar::ggplot2_dist_density_oracle::zero
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GGD-006
   rule: Non-default coordinate systems and facets are refused

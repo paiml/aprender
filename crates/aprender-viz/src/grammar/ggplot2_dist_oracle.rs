@@ -119,6 +119,19 @@ fn binwidth5_center0() {
 }
 
 #[test]
+fn binwidth5_center1() {
+    let json =
+        include_str!("../../fixtures/ggplot2/geom_histogram/expected_binwidth5_center1.json");
+    check("binwidth5_center1", json, CSV, Geom::gg_histogram().binwidth(5.0).center(1.0));
+}
+
+#[test]
+fn bins10_center0() {
+    let json = include_str!("../../fixtures/ggplot2/geom_histogram/expected_bins10_center0.json");
+    check("bins10_center0", json, CSV, Geom::gg_histogram().bins(10).center(0.0));
+}
+
+#[test]
 fn bins5_boundary2() {
     let json = include_str!("../../fixtures/ggplot2/geom_histogram/expected_bins5_boundary2.json");
     check("bins5_boundary2", json, CSV, Geom::gg_histogram().bins(5).boundary(2.0));

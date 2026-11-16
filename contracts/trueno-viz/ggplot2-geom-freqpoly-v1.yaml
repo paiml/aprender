@@ -37,7 +37,7 @@ enforcement:
     severity: ERROR
   binning_cases:
     description: bins, binwidth, boundary and center are reproduced
-    check: grammar::ggplot2_dist_freqpoly_oracle::binwidth5_center0
+    check: grammar::ggplot2_dist_freqpoly_oracle::binwidth5_center1
     severity: ERROR
   refusal_cases:
     description: empty, grouped and out-of-scope input is refused with a typed Err
@@ -56,18 +56,18 @@ falsification_tests:
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GFP-003
   rule: binwidth wins over bins and anchors at the origin R picks
-  prediction: changing the origin of breaks_width turns the binwidth2 fixture RED
+  prediction: making bin_breaks ignore binwidth (taking the bins path instead) turns the binwidth2 fixture RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::binwidth2
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GFP-004
-  rule: boundary shifts every edge
-  prediction: ignoring boundary in bins_params turns the binwidth1_boundary0 fixture RED
+  rule: boundary shifts every edge on the binwidth path
+  prediction: ignoring the given boundary in breaks_width (always falling back to width / 2) turns the binwidth1_boundary0 fixture RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::binwidth1_boundary0
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GFP-005
-  rule: center puts a bin middle on the value
-  prediction: ignoring center in bins_params turns the binwidth5_center0 fixture RED
-  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::binwidth5_center0
+  rule: center puts a bin middle on the value, on the binwidth path
+  prediction: ignoring center in breaks_width (always taking boundary = width / 2) turns the binwidth5_center1 fixture RED (center 1 moves the first edge from -2.5 to -1.5; the center 0 case lands on the default edges and cannot see it)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::binwidth5_center1
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 - id: FALSIFY-GFP-006
   rule: Zero-range x uses a bin width of 0.1
@@ -83,6 +83,21 @@ falsification_tests:
   rule: Non-default coordinate systems and facets are refused
   prediction: removing the check_scope call in dist::layout turns the coords test RED
   test: cargo test -p aprender-viz --lib -- --exact grammar::dist::tests::coords_facets_and_mixed_layers_are_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GFP-012
+  rule: boundary shifts every edge on the bins path
+  prediction: ignoring the given boundary in bins_params (always taking range.0 - width / 2) turns the bins5_boundary2 fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::bins5_boundary2
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GFP-013
+  rule: center on the bins path leaves the boundary unset so breaks_width centres a bin on it
+  prediction: setting a boundary in bins_params even when a center is given (so the center is ignored) turns the bins10_center0 fixture RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::bins10_center0
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GFP-014
+  rule: breaks_width anchors the first edge at the boundary-aligned origin at or below min(x)
+  prediction: rounding the origin of breaks_width up instead of down (ceil for floor) turns the binwidth5_center1 fixture RED (the binwidth2 and boundary0 cases have min(x) on a boundary and cannot see it)
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_dist_freqpoly_oracle::binwidth5_center1
   if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
 qa_gate:
   id: F-GFP-001
