@@ -4,6 +4,9 @@
 
 use std::collections::HashMap;
 
+use super::build::PositionScale;
+use super::scale_discrete::{resolve_discrete, train_levels, DiscreteSpec};
+
 /// A value in a data frame.
 #[derive(Debug, Clone, PartialEq)]
 pub enum DataValue {
@@ -147,6 +150,30 @@ impl DataFrame {
         self.columns.len()
     }
 
+    /// True when the column holds any text cell: ggplot2 reads a character column as discrete.
+    /// A numeric (or all-missing) column is not discrete.
+    #[must_use]
+    pub fn is_discrete(&self, name: &str) -> bool {
+        self.columns.get(name).is_some_and(|c| c.iter().any(|v| matches!(v, DataValue::Text(_))))
+    }
+
+    /// The position scale for a column: a text column trains a discrete scale on its sorted
+    /// distinct levels; a numeric column trains a continuous scale on its range. `None` when the
+    /// column is absent.
+    #[must_use]
+    pub fn position_scale(&self, name: &str) -> Option<PositionScale> {
+        let col = self.columns.get(name)?;
+        if self.is_discrete(name) {
+            let levels = train_levels(col.iter().filter_map(DataValue::as_str));
+            return Some(resolve_discrete(levels, &DiscreteSpec::new()));
+        }
+        let nums: Vec<f64> = col.iter().filter_map(DataValue::as_f32).map(f64::from).collect();
+        let lo = nums.iter().copied().fold(f64::INFINITY, f64::min);
+        let hi = nums.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        let range = if nums.is_empty() { (0.0, 1.0) } else { (lo, hi) };
+        Some(PositionScale::continuous(range))
+    }
+
     /// Check if a column exists.
     #[must_use]
     pub fn has_column(&self, name: &str) -> bool {
@@ -187,6 +214,38 @@ mod tests {
 
         let text: DataValue = "hello".into();
         assert_eq!(text.as_str(), Some("hello"));
+    }
+
+    #[test]
+    fn text_column_maps_to_discrete_scale() {
+        let mut df = DataFrame::new();
+        df.add_column_str("g", &["b", "a", "b", "c"]);
+        assert!(df.is_discrete("g"));
+        let s = df.position_scale("g").expect("column present");
+        assert_eq!(s.levels, Some(vec!["a".to_string(), "b".to_string(), "c".to_string()]));
+        assert_eq!(s.limits, (1.0, 3.0));
+        assert_eq!(s.breaks, vec![1.0, 2.0, 3.0]);
+    }
+
+    #[test]
+    fn pre_flight_mixed_missing_and_absent_columns() {
+        let mut df = DataFrame::new();
+        df.columns.insert("m".into(), vec![DataValue::Number(1.0), DataValue::Text("a".into())]);
+        assert!(df.is_discrete("m"));
+        df.columns.insert("n".into(), vec![DataValue::Null, DataValue::Null]);
+        assert!(!df.is_discrete("n"));
+        assert_eq!(df.position_scale("n"), Some(PositionScale::continuous((0.0, 1.0))));
+        assert!(!df.is_discrete("absent"));
+    }
+
+    #[test]
+    fn numeric_column_stays_continuous() {
+        let df = DataFrame::from_xy(&[1.0, 5.0, 10.0], &[2.0, 3.0, 4.0]);
+        assert!(!df.is_discrete("x"));
+        let s = df.position_scale("x").expect("column present");
+        assert_eq!(s.levels, None);
+        assert_eq!(s, PositionScale::continuous((1.0, 10.0)));
+        assert!(df.position_scale("nope").is_none());
     }
 
     #[test]
