@@ -340,6 +340,11 @@ fn teacher_rules_are_enforced_by_field() {
         msg.contains("field `teacher` is only valid when `method` is distill"),
         "{msg}"
     );
+    let msg = refusal(&DISTILL.replace("method: distill", "method: qlora"));
+    assert!(
+        msg.contains("field `teacher` is only valid when `method` is distill"),
+        "{msg}"
+    );
     let msg = refusal(&DISTILL.replace("  model: models/teacher.apr\n", "  alpha: 0.5\n"));
     assert!(msg.contains("field `teacher.model` is required"), "{msg}");
     for (line, field) in [
@@ -422,13 +427,36 @@ fn teacher_alpha_bounds_are_inclusive() {
     }
 }
 
+/// Any temperature above 0 is accepted: the bound is 0, not 1.
+#[test]
+fn teacher_temperature_just_above_zero_is_accepted() {
+    let r = parse(&DISTILL.replace(
+        "  model: models/teacher.apr\n",
+        "  model: models/teacher.apr\n  temperature: 0.001\n",
+    ))
+    .expect("a small positive temperature parses");
+    assert_eq!(r.teacher.expect("teacher").temperature, 0.001);
+}
+
+/// With an unknown method only the presence rule waits; the values inside the
+/// teacher block are still checked.
+#[test]
+fn teacher_values_are_checked_when_the_method_is_unknown() {
+    let msg = refusal(&DISTILL.replace("method: distill", "method: dora").replace(
+        "  model: models/teacher.apr\n",
+        "  model: models/teacher.apr\n  alpha: 1.5\n",
+    ));
+    assert!(msg.contains("field `method` must be one of"), "{msg}");
+    assert!(msg.contains("field `teacher.alpha`"), "{msg}");
+}
+
 /// An unknown method is one fault, not two: the teacher rule waits until the
 /// method is known.
 #[test]
 fn teacher_rule_is_silent_when_the_method_is_unknown() {
     let msg = refusal(&DISTILL.replace("method: distill", "method: dora"));
     assert!(msg.contains("field `method` must be one of"), "{msg}");
-    assert!(!msg.contains("field `teacher`"), "{msg}");
+    assert!(!msg.contains("field `teacher` is"), "{msg}");
 }
 
 /// An empty heldout is reported as empty, not also as the training file.
@@ -471,5 +499,6 @@ fn load_reads_a_file_and_names_it_when_it_cannot() {
     std::fs::write(&path, [0xff_u8, 0xfe, 0x00]).expect("write bytes");
     let msg = TrainRecipe::load(&path).expect_err("not utf-8").to_string();
     assert!(msg.contains("is not UTF-8"), "{msg}");
+    assert!(msg.contains(&path.display().to_string()), "{msg}");
     std::fs::remove_dir_all(&dir).ok();
 }
