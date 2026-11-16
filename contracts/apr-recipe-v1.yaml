@@ -2,9 +2,16 @@
 #
 # One YAML file names everything a training run depends on. `apr finetune --recipe r.yaml`
 # validates it before any model is opened and refuses by recipe field.
-# Loader: crates/apr-cli/src/commands/train_recipe.rs (lands in R-1 slice 2/6).
-# Example: examples/recipes/tiny.yaml and the --recipe flag (land in R-1 slice 6/6).
-# This slice is the schema only; each FALSIFY entry is added back in the slice that adds its test.
+# Loader: crates/apr-cli/src/commands/train_recipe.rs.
+# Example: examples/recipes/tiny.yaml and the --recipe flag land in the last slice.
+# Each FALSIFY entry is added in the slice that adds its test.
+#
+# NOT YET ENFORCED by the loader at this head (status: partial). Nothing calls the loader yet,
+# and each rule below gets its check, its test and its FALSIFY entry in a later slice:
+#   - eval.heldout != data.train
+#   - teacher present <=> method == distill
+#   - every number in training > 0 (present optional blocks are not value-checked yet)
+#   - require_inputs, the data.sha256 pin, exit 5, the --recipe flag conflicts and the receipt
 
 metadata:
   id: apr-recipe-v1
@@ -89,11 +96,10 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Each entry cites only tests present at this slice head; the rest of FALSIFY-APR-RECIPE-001 .. 005
-# return in the slices that add the test each one cites.
-# Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
-# renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
-# slot is held by the contract-parses entry until the entry it stands in for lands.
+# Each entry cites only tests present at this slice head; further entries are added in the slices
+# that add the test each one cites.
+# Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so the
+# contract-parses entry holds slot 004 here and moves back as later entries land.
 - id: FALSIFY-APR-RECIPE-001
   rule: a recipe without eval is refused by field
   prediction: "The loader refuses a recipe with no eval block and the error names field `eval` (the CLI exit-5 and no-model-opened parts land with the --recipe wiring)"
