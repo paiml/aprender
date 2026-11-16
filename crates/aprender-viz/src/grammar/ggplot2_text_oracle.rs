@@ -330,3 +330,49 @@ fn text_params_on_another_geom_are_a_no_op() {
     let g = Geom::point().nudge_x(1.0).hjust(0.0);
     assert!(matches!(g.geom_type, super::geom::GeomType::Point { .. }));
 }
+
+/// A `geom_point` beside a path-family layer is first routed by `uses_position_scales`: a text
+/// position column, or a `scale_x`/`scale_y` spec, selects the scaled layout, whose scope check
+/// refuses the non-point layer with `UnsupportedLayer` (rows 2 and 4), as on `main`. The path
+/// companion guard must not run first and change that variant.
+#[test]
+fn a_point_routed_to_the_scaled_layout_keeps_the_scoped_refusal_beside_a_line() {
+    let mut text_x = DataFrame::new();
+    text_x.add_column_str("x", &["a", "b", "c"]);
+    text_x.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    let layers = || vec![Layer::new(Geom::point()), Layer::new(Geom::line())];
+    let res = build(text_x, xy(), layers(), Facet::None);
+    assert!(matches!(res, Err(Error::UnsupportedLayer(_))), "text column: {res:?}");
+
+    let mut df = DataFrame::new();
+    df.add_column_f32("x", &[1.0, 2.0, 3.0]);
+    df.add_column_f32("y", &[1.0, 2.0, 3.0]);
+    for missing in ["nope", "x"] {
+        let mut p = super::GGPlot::new().data(df.clone()).aes(xy()).scale_x(super::scale_log10());
+        p = p.layer(Layer::new(Geom::line()));
+        let point = Aes::new().x(missing).y(if missing == "x" { "short" } else { "y" });
+        p = p.layer(Layer::new(Geom::point()).aes(point));
+        let res = p.build().and_then(|b| b.layout());
+        assert!(matches!(res, Err(Error::UnsupportedLayer(_))), "{missing}: {res:?}");
+    }
+}
+
+/// ggplot2 4.0.3 keeps a `geom_point` with an infinite position (the row stays in `layer_data`, it
+/// is clamped to the panel edge and the scale ignores it); `layout()` does not model that, so an
+/// infinite value beside a segment or polygon is refused rather than silently dropped.
+#[test]
+fn an_infinite_point_position_beside_segment_or_polygon_is_refused() {
+    for other in [Geom::segment(), Geom::polygon()] {
+        let mut inf = DataFrame::new();
+        inf.add_column_f32("px", &[1.0, f32::INFINITY, 3.0]);
+        inf.add_column_f32("py", &[1.0, 2.0, 3.0]);
+        let point = Layer::new(Geom::point()).data(inf).aes(Aes::new().x("px").y("py"));
+        let mut base = DataFrame::new();
+        for (name, v) in [("x", 1.0), ("y", 1.0), ("xend", 2.0), ("yend", 3.0)] {
+            base.add_column_f32(name, &[v, v + 1.0, v + 2.0]);
+        }
+        let aes = xy().xend("xend").yend("yend");
+        let res = build(base, aes, vec![Layer::new(other.clone()), point], Facet::None);
+        assert!(matches!(res, Err(Error::Rendering(_))), "{:?}: {res:?}", other.geom_type);
+    }
+}

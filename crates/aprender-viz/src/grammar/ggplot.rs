@@ -821,7 +821,9 @@ impl BuiltGGPlot {
     /// layer, any other geom than these and `geom_point` is an [`Error::UnsupportedLayer`] and any
     /// other stat on that `geom_point` an [`Error::UnsupportedStat`] (their ggplot2 stat or setup
     /// widens the shared scales), and the `geom_point` is refused for a missing, text, short or
-    /// infinite `x`/`y` column; those refusals come first.
+    /// infinite `x`/`y` column; those refusals come first, except that a `geom_point` routed to the
+    /// scaled layout (a `scale_x`/`scale_y` spec or a text position) keeps that layout's own scope
+    /// refusals beside a path-family layer.
     pub fn layout(&self) -> Result<BuiltLayout> {
         if self.layers.iter().any(dist::is_dist) {
             if self.x_scale.is_some() || self.y_scale.is_some() {
@@ -834,10 +836,10 @@ impl BuiltGGPlot {
         }
         path::require_default_coord(&self.layers, &self.coord)?;
         path::require_identity_stats(&self.layers)?;
-        marks::require_path_point_companions(&self.layers, &self.aes, &self.data)?;
         if self.uses_position_scales() {
             return self.scaled_layout();
         }
+        marks::require_path_point_companions(&self.layers, &self.aes, &self.data)?;
         marks::require_modelled_companions(&self.layers, &self.aes, &self.data)?;
         marks::require_resolved(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;

@@ -103,20 +103,23 @@ pub(super) fn require_modelled_companions(
             return Err(Error::UnsupportedStat(msg));
         }
         let data = l.data.as_ref().unwrap_or(plot_data);
-        require_point_companion(data, &plot_aes.merge(&l.aes), true)?;
+        require_point_companion(data, &plot_aes.merge(&l.aes), Infinite::ScaleDomain)?;
     }
     Ok(())
 }
 
 /// Refuse a `geom_point` beside a path-family layer (segment, polygon, line, ...) that maps a
-/// missing, short or text `x`/`y` column (an infinite value is not checked here: the merged path
-/// rows keep their own `Err(Rendering)` from the path layer's build, see the row 10-15 contracts): `build_layer` would otherwise return it as an
-/// empty layer and `layout()` would answer `Ok`. (Marks and text are covered by
-/// [`require_modelled_companions`].)
+/// missing, short or text `x`/`y` column: `build_layer` would otherwise return it as an empty
+/// layer and `layout()` would answer `Ok`. An infinite value is refused with [`Error::Rendering`]
+/// only beside a segment or polygon (ggplot2 keeps such a point and clamps it to the panel edge,
+/// `panel_points` drops it); beside the merged line, path, step and reference rows it is left to
+/// the path layer's own `Err(Rendering)` (rows 10-15), so those keep what they returned. (Marks
+/// and text are covered by [`require_modelled_companions`].)
 ///
 /// # Errors
 ///
-/// As [`require_modelled_companions`] for a `geom_point`.
+/// As [`require_modelled_companions`] for a `geom_point`, with [`Error::Rendering`] for an
+/// infinite value.
 pub(super) fn require_path_point_companions(
     layers: &[Layer],
     plot_aes: &Aes,
@@ -125,11 +128,29 @@ pub(super) fn require_path_point_companions(
     if !layers.iter().any(|l| super::path::is_path_family(&l.geom.geom_type)) {
         return Ok(());
     }
+    let infinite =
+        if layers.iter().any(|l| matches!(l.geom.geom_type, GeomType::Segment | GeomType::Polygon))
+        {
+            Infinite::Rendering
+        } else {
+            Infinite::Keep
+        };
     for l in layers.iter().filter(|l| matches!(l.geom.geom_type, GeomType::Point { .. })) {
         let data = l.data.as_ref().unwrap_or(plot_data);
-        require_point_companion(data, &plot_aes.merge(&l.aes), false)?;
+        require_point_companion(data, &plot_aes.merge(&l.aes), infinite)?;
     }
     Ok(())
+}
+
+/// What a `geom_point` companion does with an infinite position value.
+#[derive(Clone, Copy)]
+enum Infinite {
+    /// Not checked here.
+    Keep,
+    /// [`Error::ScaleDomain`] (beside the five marks).
+    ScaleDomain,
+    /// [`Error::Rendering`] (beside segment and polygon).
+    Rendering,
 }
 
 /// The refusal naming a companion geom that may not share a plot with the five.
@@ -192,21 +213,21 @@ fn unsupported_point_stat(s: &Stat) -> Option<&'static str> {
 
 /// A `geom_point` beside the five trains the shared scales on its raw `x` and `y`: both must be
 /// mapped, present, complete-length numeric columns without an infinite value.
-fn require_point_companion(data: &DataFrame, aes: &Aes, refuse_infinite: bool) -> Result<()> {
+fn require_point_companion(data: &DataFrame, aes: &Aes, infinite: Infinite) -> Result<()> {
     for (axis, name) in [("x", &aes.x), ("y", &aes.y)] {
         let Some(name) = name.as_deref() else {
             return Err(Error::Rendering(format!(
                 "geom_point beside area/ribbon/tile/rect/text needs a mapped {axis}"
             )));
         };
-        require_point_column(data, name, refuse_infinite)?;
+        require_point_column(data, name, infinite)?;
     }
     Ok(())
 }
 
 /// One position column of a `geom_point` beside the five: present, as long as the frame, and
 /// numeric without an infinite value (an NA cell is kept: the scale trains on the other rows).
-fn require_point_column(data: &DataFrame, name: &str, refuse_infinite: bool) -> Result<()> {
+fn require_point_column(data: &DataFrame, name: &str, infinite: Infinite) -> Result<()> {
     let cells = data.get(name).ok_or_else(|| Error::UnknownColumn(name.to_string()))?;
     if cells.len() < data.nrow() {
         return Err(Error::Rendering(format!(
@@ -219,12 +240,17 @@ fn require_point_column(data: &DataFrame, name: &str, refuse_infinite: bool) -> 
              discrete scale; not modelled"
         )));
     }
-    if refuse_infinite && cells.iter().any(|v| matches!(v, DataValue::Number(n) if n.is_infinite()))
+    if matches!(infinite, Infinite::Keep)
+        || !cells.iter().any(|v| matches!(v, DataValue::Number(n) if n.is_infinite()))
     {
-        return Err(Error::ScaleDomain(format!(
-            "geom_point beside area/ribbon/tile/rect/text: column {name}: infinite position is \
-             not modelled"
-        )));
+        return Ok(());
     }
-    Ok(())
+    let msg = format!(
+        "geom_point beside area/ribbon/tile/rect/text/segment/polygon: column {name}: infinite \
+         position is not modelled"
+    );
+    Err(match infinite {
+        Infinite::Rendering => Error::Rendering(msg),
+        _ => Error::ScaleDomain(msg),
+    })
 }
