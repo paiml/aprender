@@ -26,7 +26,7 @@ equations:
     - x, ymin and ymax are mapped to existing columns, else UnknownColumn or Rendering
     - every layer has the identity stat, else UnsupportedStat; companions are geom_point only, else UnsupportedLayer
     - coordinate system is the default coord_cartesian, else UnsupportedCoord
-    - known difference from R: a ribbon whose x holds a single distinct finite value returns ScaleDomain where R draws it
+    - 'known difference from R: a ribbon whose x holds a single distinct finite value returns ScaleDomain where R draws it'
 proof_obligations:
 - id: GG-RIBBON-INV-001
   type: invariant
