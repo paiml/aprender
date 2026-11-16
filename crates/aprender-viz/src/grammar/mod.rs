@@ -46,6 +46,8 @@ mod ggplot2_geom_area_oracle;
 #[cfg(test)]
 mod ggplot2_geom_ribbon_oracle;
 #[cfg(test)]
+mod ggplot2_geom_smooth_oracle;
+#[cfg(test)]
 mod ggplot2_lines_oracle;
 #[cfg(test)]
 mod ggplot2_marks_oracle;
@@ -62,9 +64,11 @@ mod r_format;
 mod scale_discrete;
 mod scale_spec;
 mod scale_trans;
+mod smooth;
 mod stat;
 mod stat_count;
 mod stroke;
+mod t_dist;
 mod term;
 mod theme;
 
@@ -78,7 +82,7 @@ pub use data::{DataFrame, DataValue};
 pub use dist::{DistKind, DistSpec};
 pub use facet::{panels, Facet, Panel};
 pub use filled::BuiltFilled;
-pub use geom::{Geom, StepDirection};
+pub use geom::{Geom, SmoothMethod, StepDirection};
 pub use ggplot::{BuiltGGPlot, GGPlot, Layer};
 pub use path::{BuiltPath, Reference, ReferenceKind, Stairs, StrokeAes};
 pub use position::{apply as apply_position, apply_panels, BarRow, Position, Preserve};
@@ -87,6 +91,7 @@ pub use scale_spec::{
     scale_continuous, scale_discrete, scale_log10, zero_range, ContinuousSpec, Expansion,
     PositionScaleSpec,
 };
+pub use smooth::{BuiltSmooth, SmoothSpec};
 pub use stat::Stat;
 pub use stat_count::{
     bar_layout, bar_layout_in, BarError, BarSpec, BarStat, BuiltBars, DiscreteAxis,

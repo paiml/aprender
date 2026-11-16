@@ -138,10 +138,10 @@ pub(super) fn is_path_family(g: &GeomType) -> bool {
     )
 }
 
-/// A geom whose layers make `layout()` apply the path-family guards: the path family and the
-/// filled geoms.
+/// A geom whose layers make `layout()` apply the path-family guards: the path family, the filled
+/// geoms and `geom_smooth`.
 pub(super) fn is_gated(g: &GeomType) -> bool {
-    is_path_family(g) || super::filled::is_filled(g)
+    is_path_family(g) || super::filled::is_filled(g) || super::smooth::is_smooth(g)
 }
 
 fn is_reference(g: &GeomType) -> bool {
@@ -192,8 +192,12 @@ pub(super) fn require_identity_stats(layers: &[Layer]) -> Result<()> {
              resolves them separately, not together",
         ));
     }
+    require_family_alone(layers)?;
     for l in layers {
         let g = &l.geom.geom_type;
+        if super::smooth::is_smooth(g) {
+            continue; // its own stat is checked by `smooth::build_layer`
+        }
         if !is_gated(g) && !matches!(g, GeomType::Point { .. }) {
             return Err(Error::UnsupportedLayer(
                 "only geom_point may share a plot with line, path, step, reference, area or ribbon \
@@ -204,6 +208,24 @@ pub(super) fn require_identity_stats(layers: &[Layer]) -> Result<()> {
         if let Some(msg) = l.geom.stat.as_ref().and_then(unsupported_stat) {
             return Err(Error::UnsupportedStat(msg));
         }
+    }
+    Ok(())
+}
+
+/// Refuse a smooth layer beside a path-family or filled layer: `layout()` resolves each family on
+/// its own, and the scales they train are shared.
+fn require_family_alone(layers: &[Layer]) -> Result<()> {
+    if !layers.iter().any(|l| super::smooth::is_smooth(&l.geom.geom_type)) {
+        return Ok(());
+    }
+    let other = |l: &Layer| {
+        is_path_family(&l.geom.geom_type) || super::filled::is_filled(&l.geom.geom_type)
+    };
+    if layers.iter().any(other) {
+        return Err(Error::UnsupportedLayer(
+            "geom_smooth beside a line, path, step, reference, area or ribbon layer: layout() \
+             resolves them separately, not together",
+        ));
     }
     Ok(())
 }
@@ -244,7 +266,16 @@ pub(super) fn require_trained(layers: &[Layer], x: (f64, f64), y: (f64, f64)) ->
     if !layers.iter().any(|l| is_gated(&l.geom.geom_type)) {
         return Ok(());
     }
+    // R widens a zero-width y range (`continuous_range`), so a fit through constant y is a plot; the
+    // widening is applied by the scale, and only a smooth-only plot can reach it with a fitted line.
+    let smooth_only = layers
+        .iter()
+        .filter(|l| is_gated(&l.geom.geom_type))
+        .all(|l| super::smooth::is_smooth(&l.geom.geom_type));
     for (axis, (lo, hi)) in [("x", x), ("y", y)] {
+        if smooth_only && axis == "y" && lo == hi {
+            continue;
+        }
         if lo >= hi {
             return Err(Error::ScaleDomain(format!(
                 "{axis} scale has {} (trained domain {:?}); a degenerate range is not supported \
@@ -294,6 +325,7 @@ pub(super) fn build_layer(
             points: None,
             path: Some(path),
             filled: None,
+            smooth: None,
         });
     }
 
@@ -329,7 +361,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path), filled: None })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), filled: None, smooth: None })
 }
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {

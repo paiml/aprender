@@ -1,0 +1,45 @@
+{
+  "row": "geom_smooth",
+  "case": "constant_x",
+  "spec": "ggplot(d, aes(x, y)) + geom_smooth(method = \"lm\", formula = y ~ x) + geom_point(data = pts)",
+  "collation": "C",
+  "versions": {
+    "R": "R version 4.6.2 (2026-10-29)",
+    "collate": "C",
+    "ggplot2": "4.0.3",
+    "scales": "1.4.0",
+    "labeling": "0.4.3"
+  },
+  "layers": [
+    {
+      "geom": "GeomSmooth",
+      "flipped_aes": [],
+      "group": [],
+      "n_rows": 0
+    },
+    {
+      "geom": "GeomPoint",
+      "x": [0, 14],
+      "y": [12, 0],
+      "flipped_aes": [],
+      "group": [-1, -1],
+      "n_rows": 2
+    }
+  ],
+  "panel": {
+    "x": {
+      "limits": [0, 14],
+      "continuous_range": [-0.70000000000000007, 14.699999999999999],
+      "breaks": [0, 5, 10],
+      "labels": ["0", "5", "10"],
+      "n_breaks_censored": 1
+    },
+    "y": {
+      "limits": [0, 12],
+      "continuous_range": [-0.60000000000000009, 12.6],
+      "breaks": [0, 2.5, 5, 7.5, 10, 12.5],
+      "labels": ["0.0", "2.5", "5.0", "7.5", "10.0", "12.5"],
+      "n_breaks_censored": 0
+    }
+  }
+}

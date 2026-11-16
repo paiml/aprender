@@ -13,6 +13,7 @@ use crate::color::Rgba;
 
 use super::filled::BuiltFilled;
 use super::path::BuiltPath;
+use super::smooth::BuiltSmooth;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
 /// `default_expansion()` for a continuous scale. Each side grows by 5% of the data span.
@@ -98,6 +99,9 @@ pub struct BuiltLayer {
     /// Resolved `geom_area` / `geom_ribbon` data; `None` for other geoms. `x`/`y` hold the final
     /// `x` and `y` (`y` is `ymin` for a ribbon); `NaN` rows are kept for a ribbon.
     pub filled: Option<BuiltFilled>,
+    /// Resolved `geom_smooth(method = "lm")` data; `None` for other geoms. `x`/`y` hold the
+    /// evaluation points and the fitted values.
+    pub smooth: Option<BuiltSmooth>,
 }
 
 /// One trained continuous position scale, as a panel sees it (ggplot2's view scale).

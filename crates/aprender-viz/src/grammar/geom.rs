@@ -3,6 +3,7 @@
 //! Defines visual representations of data.
 
 use super::aes::Aes;
+use super::smooth::SmoothSpec;
 use super::stat::Stat;
 
 /// Shape types for point geometries.
@@ -106,6 +107,8 @@ pub enum GeomType {
     Smooth {
         /// Smoothing method.
         method: SmoothMethod,
+        /// `se`, `level`, `n` and `fullrange` of `stat_smooth`.
+        spec: SmoothSpec,
     },
 }
 
@@ -250,10 +253,58 @@ impl Geom {
     #[must_use]
     pub fn smooth() -> Self {
         Self {
-            geom_type: GeomType::Smooth { method: SmoothMethod::Loess },
+            geom_type: GeomType::Smooth {
+                method: SmoothMethod::Loess,
+                spec: SmoothSpec::default(),
+            },
             aes: None,
             stat: Some(Stat::Smooth),
         }
+    }
+
+    /// `stat_smooth(method = ...)`. Only [`SmoothMethod::Linear`] (`method = "lm"`) is laid out.
+    #[must_use]
+    pub fn method(mut self, method: SmoothMethod) -> Self {
+        if let GeomType::Smooth { method: ref mut m, .. } = self.geom_type {
+            *m = method;
+        }
+        self
+    }
+
+    /// `se` of a smooth layer: draw (and compute) the confidence band. Default `true`.
+    #[must_use]
+    pub fn se(mut self, se: bool) -> Self {
+        if let GeomType::Smooth { ref mut spec, .. } = self.geom_type {
+            spec.se = se;
+        }
+        self
+    }
+
+    /// `level` of a smooth layer's confidence band. Default 0.95.
+    #[must_use]
+    pub fn level(mut self, level: f64) -> Self {
+        if let GeomType::Smooth { ref mut spec, .. } = self.geom_type {
+            spec.level = level;
+        }
+        self
+    }
+
+    /// `n` of a smooth layer: the number of evaluation points. Default 80.
+    #[must_use]
+    pub fn n(mut self, n: usize) -> Self {
+        if let GeomType::Smooth { ref mut spec, .. } = self.geom_type {
+            spec.n = n;
+        }
+        self
+    }
+
+    /// `fullrange` of a smooth layer. `true` is refused by `layout()`.
+    #[must_use]
+    pub fn fullrange(mut self, fullrange: bool) -> Self {
+        if let GeomType::Smooth { ref mut spec, .. } = self.geom_type {
+            spec.fullrange = fullrange;
+        }
+        self
     }
 
     /// Set the point shape.
@@ -455,7 +506,7 @@ mod tests {
     fn test_geom_smooth() {
         let g = Geom::smooth();
         match g.geom_type {
-            GeomType::Smooth { method } => assert_eq!(method, SmoothMethod::Loess),
+            GeomType::Smooth { method, .. } => assert_eq!(method, SmoothMethod::Loess),
             _ => panic!("Expected smooth geom"),
         }
         assert!(g.stat.is_some());
@@ -579,8 +630,8 @@ mod tests {
             GeomType::Text,
             GeomType::Hline { yintercept: 0.0 },
             GeomType::Vline { xintercept: 0.0 },
-            GeomType::Smooth { method: SmoothMethod::Loess },
-            GeomType::Smooth { method: SmoothMethod::Linear },
+            GeomType::Smooth { method: SmoothMethod::Loess, spec: SmoothSpec::default() },
+            GeomType::Smooth { method: SmoothMethod::Linear, spec: SmoothSpec::default() },
         ];
         for t in types {
             let debug = format!("{t:?}");

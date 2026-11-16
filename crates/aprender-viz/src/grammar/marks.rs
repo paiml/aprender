@@ -80,7 +80,7 @@ pub(super) fn require_modelled_companions(
     plot_aes: &Aes,
     plot_data: &DataFrame,
 ) -> Result<()> {
-    let filled = |g: &GeomType| super::filled::is_filled(g);
+    let filled = |g: &GeomType| super::filled::is_filled(g) || super::smooth::is_smooth(g);
     if !any_marks(layers) && !layers.iter().any(|l| filled(&l.geom.geom_type)) {
         return Ok(());
     }

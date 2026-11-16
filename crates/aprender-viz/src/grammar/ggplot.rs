@@ -22,6 +22,7 @@ use super::geom::{Geom, GeomType, PointShape};
 use super::marks;
 use super::path;
 use super::scale_spec::{require_scale_scope, PositionScaleSpec, ResolvedAxis};
+use super::smooth;
 use super::stroke;
 use super::theme::Theme;
 
@@ -375,6 +376,9 @@ impl BuiltGGPlot {
         if self.layers.iter().any(dist::is_dist) {
             return Err(Error::UnsupportedLayer(dist::NOT_DRAWN));
         }
+        if self.layers.iter().any(|l| smooth::is_smooth(&l.geom.geom_type)) {
+            return Err(Error::UnsupportedLayer(smooth::NOT_DRAWN));
+        }
         if self.uses_position_scales() {
             return Err(Error::Rendering(
                 "scale_x/scale_y and text (discrete) positions are not drawn by the renderer yet; \
@@ -707,7 +711,9 @@ impl BuiltGGPlot {
 
         for layer in &self.layers {
             if Self::train_reference_line(&layer.geom.geom_type, &mut x, &mut y)
-                || (skip_filled && filled::is_filled(&layer.geom.geom_type))
+                || (skip_filled
+                    && (filled::is_filled(&layer.geom.geom_type)
+                        || smooth::is_smooth(&layer.geom.geom_type)))
             {
                 continue;
             }
@@ -839,9 +845,11 @@ impl BuiltGGPlot {
         marks::require_resolved(&self.layers)?;
         let layers = self.layers.iter().map(|l| self.build_layer(l)).collect::<Result<Vec<_>>>()?;
         let (mut x, mut y) = self.trained_domains_for(true);
-        for (ex, ey) in layers.iter().map(filled::extents) {
-            x = merge_extent(x, ex);
-            y = merge_extent(y, ey);
+        for l in &layers {
+            for (ex, ey) in [filled::extents(l), smooth::extents(l)] {
+                x = merge_extent(x, ex);
+                y = merge_extent(y, ey);
+            }
         }
         path::require_trained(&self.layers, x, y)?;
         Ok(BuiltLayout { layers, x: PositionScale::continuous(x), y: PositionScale::continuous(y) })
@@ -889,13 +897,16 @@ impl BuiltGGPlot {
             y.push(y_axis.position(ys.get(i).unwrap_or(&MISSING))?);
         }
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, filled: None })
+        Ok(BuiltLayer { x, y, points, path: None, filled: None, smooth: None })
     }
 
     /// One layer's built data: rows where both positions are finite numbers, plus point aesthetics.
     fn build_layer(&self, layer: &Layer) -> Result<BuiltLayer> {
         if filled::is_filled(&layer.geom.geom_type) {
             return filled::build_layer(layer, &self.aes, &self.data, &self.facet);
+        }
+        if smooth::is_smooth(&layer.geom.geom_type) {
+            return smooth::build_layer(layer, &self.aes, &self.data, &self.facet);
         }
         if path::is_path_family(&layer.geom.geom_type) {
             return path::build_layer(layer, &self.aes, &self.data, &self.facet);
@@ -911,7 +922,7 @@ impl BuiltGGPlot {
             .filter(|(a, b)| a.is_finite() && b.is_finite())
             .unzip();
         let points = Self::point_aes(layer, &aes, x.len());
-        Ok(BuiltLayer { x, y, points, path: None, filled: None })
+        Ok(BuiltLayer { x, y, points, path: None, filled: None, smooth: None })
     }
 
     /// `n` copies of a point layer's aesthetics (`None` for any other geom).

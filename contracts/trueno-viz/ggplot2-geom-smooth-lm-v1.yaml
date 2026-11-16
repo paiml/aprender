@@ -1,0 +1,216 @@
+metadata:
+  id: ggplot2-geom-smooth-lm-v1
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-16'
+  author: PAIML Engineering
+  description: >-
+    ggplot2 conformance, core row 16 geom_smooth(method = "lm") (PLOT-GG-001, paiml/aprender#6983, master #6909). stat_smooth with formula y ~ x per group: a least-squares line fitted to
+    the group's finite rows, evaluated at n = 80 points evenly spaced over the group's own x range, fitted y, se of the mean prediction, and ymin/ymax = y -+ qt(1 - (1 - level) / 2, m - 2) * se;
+    se = FALSE leaves x and y only; a group with fewer than two distinct x vanishes as in R; the position scales are trained on x, y, ymin and ymax of the stat output. 16 cases against
+    ggplot2 4.0.3 under R 4.6.2, largest observed relative error 2.4e-10 (x near 1e6, where R's QR and the centred solution differ in the last digits), 3.6e-14 for every other case. The Student-t
+    quantile is in-crate (regularised incomplete beta, safeguarded Newton), no crates.io dependency, and is tested directly against R's qt() for 8 df values at 8 levels. Scope: continuous
+    numeric x and y, one panel. Refused with a typed Err, never a panic and never an Ok with an empty or partial layer: a method other than lm (a bare geom_smooth() is refused, not fitted
+    with lm), a stat other than stat_smooth, fullrange = TRUE, level outside (0, 1), n of 0 or past 1000000, a facet, a mapped colour, size, shape, alpha, fill, label, ymin or ymax,
+    a text or missing position column, a layer with no fittable group, scale_x/scale_y, any coordinate system but the default coord_cartesian (also for a smooth layer alone), a companion
+    other than geom_point, and a drawn plot (to_svg, to_framebuffer). The oracle is a committed JSON fixture produced by ggplot2 4.0.3 (R 4.6.2) under C collation; R is never run at
+    test time. Every case goes through the public builder and layout().
+  references:
+  - 'Wickham (2010) A Layered Grammar of Graphics, J. Comput. Graph. Stat. 19(1)'
+  - 'ggplot2 4.0.3: ggplot_build(), geom_smooth, stat_smooth, predict.lm(interval = "confidence")'
+  - 'crates/aprender-viz/fixtures/ggplot2/geom_smooth/generate.R'
+entity: {type: ggplot2-row, ref: geom_smooth}
+equations:
+  lm_band:
+    formula: 'x_i = lo + i * (hi - lo) / (n - 1); y = ybar + b (x - xbar); se = sqrt(s2 (1/m + (x - xbar)^2 / Sxx)); ymin, ymax = y -+ qt(1 - (1 - level) / 2, m - 2) se'
+    domain: numeric columns, one panel, groups with at least 2 distinct finite x
+    codomain: smooth(x,y,ymin,ymax,se,group) -> BuiltLayer.smooth and the trained scales
+    invariants:
+    - matches ggplot2 4.0.3 within 1e-9 rel + 1e-12 abs; groups and flipped_aes exact
+    preconditions:
+    - x and y are mapped to existing numeric columns, else UnknownColumn or Rendering
+    - method lm, stat smooth or none, no facet, no mapped colour, size, shape, alpha, fill, label, ymin or ymax, else UnsupportedStat or Rendering
+    - level in (0, 1), n in 1..=1000000, fullrange FALSE, else Rendering
+    - coordinate system is the default coord_cartesian, else UnsupportedCoord, also for a smooth layer alone
+    - companions are geom_point only, else UnsupportedLayer
+    - 'known difference from R: a plot whose groups all have one distinct x returns Err(Rendering) where R returns an empty layer (the fixture expected_constant_x.json records R: 0 rows)'
+    - 'known difference from R: n = 1 (a single evaluation point, so a single trained x) returns Err(ScaleDomain) where R draws it'
+    - 'known difference from R: level outside (0, 1), n above 1000000 and fullrange = TRUE return Err(Rendering); R gives infinite or empty bands, an unbounded allocation, or a wider x range'
+    - 'known difference from R: a data-mapped colour, size, shape, alpha, fill or label (which split groups or style the layer in R), a mapped ymin or ymax, and a facet return Err(Rendering); R draws them'
+    - 'known difference from R: scale_x/scale_y with a smooth layer return Err(UnsupportedLayer); to_svg and to_framebuffer return Err(UnsupportedLayer) because the renderer draws no smooth layer'
+    - 'known difference from R: with x near 1e6 R solves the fit by QR on the uncentred x and loses about 2e-10 relative against the centred least squares used here; the offset case passes at that measured error, under the 1e-9 tolerance'
+    - 'not expressible in the builder, so not refused and not fitted: formula other than y ~ x, weights, orientation = "y", xseq, span, na.rm (ggplot2 defaults are used: y ~ x, no weights, orientation NA, na.rm FALSE)'
+    - 'same as R: a row with a missing or infinite x or y is dropped before the fit; a zero-width y range is widened by the scale (continuous_range), not refused'
+proof_obligations:
+- id: GG-SMOOTH-LM-INV-001
+  type: invariant
+  property: Built layer data and trained scales match ggplot2
+  formal: '∀ case with ≥2 distinct finite x in some group: layout(case) ≈ ggplot2 fixture (1e-9 rel + 1e-12 abs)'
+  applies_to: lm_band
+- id: GG-SMOOTH-LM-INV-002
+  type: invariant
+  property: The Student-t quantile matches R's qt()
+  formal: '∀ df in {1,2,3,5,10,30,78,1000}, q in the fixture table: qt_upper(q, df) ≈ qt(q, df, lower.tail = FALSE) (1e-9 rel + 1e-12 abs)'
+  applies_to: lm_band
+- id: GG-SMOOTH-LM-INV-003
+  type: invariant
+  property: Out-of-scope input is a typed Err
+  formal: '∀ unsupported input: layout() → Err, never a panic and never an Ok with an empty layer'
+  applies_to: lm_band
+enforcement:
+  primary_cases:
+    description: the fitted line and band are reproduced
+    check: grammar::ggplot2_geom_smooth_oracle::noisy_data_gets_a_fitted_band
+    severity: ERROR
+  edge_cases:
+    description: two points, constant y, dropped rows and vanishing groups are reproduced
+    check: grammar::ggplot2_geom_smooth_oracle::two_points_have_no_residual_degrees_of_freedom
+    severity: ERROR
+  quantile_cases:
+    description: the t quantile equals R's qt()
+    check: grammar::ggplot2_geom_smooth_oracle::the_t_quantile_matches_r_for_every_df_and_level
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-GG-SMOOTH-LM-001
+  rule: The band uses qt(.975, m-2)
+  prediction: using df + 1 in the quantile in append_group turns noisy_data_gets_a_fitted_band RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::noisy_data_gets_a_fitted_band
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-002
+  rule: The grid is seq(lo, hi, length.out = n)
+  prediction: dividing the grid step by n instead of n - 1 in x_grid turns a_non_default_n_changes_the_grid RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_non_default_n_changes_the_grid
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-003
+  rule: se carries the 1/m leverage term
+  prediction: dropping 1/m from se in predict turns noisy_data_gets_a_fitted_band RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::noisy_data_gets_a_fitted_band
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-004
+  rule: A group with one distinct x is dropped
+  prediction: removing the constant-x test in fit_group turns a_group_with_one_distinct_x_vanishes RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_group_with_one_distinct_x_vanishes
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-005
+  rule: A row with a missing or infinite y is dropped before the fit
+  prediction: removing the y finiteness test in finite_rows turns missing_and_infinite_rows_are_dropped_before_the_fit RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::missing_and_infinite_rows_are_dropped_before_the_fit
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-006
+  rule: se = FALSE removes ymin, ymax and se
+  prediction: forcing the band on in assemble turns se_false_leaves_x_and_y_only RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::se_false_leaves_x_and_y_only
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-007
+  rule: The level sets the quantile
+  prediction: fixing the tail probability at 0.025 in append_group turns a_non_default_level_widens_the_band RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_non_default_level_widens_the_band
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-008
+  rule: n sets the number of points
+  prediction: fixing the grid at 80 points in append_group turns a_non_default_n_changes_the_grid RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_non_default_n_changes_the_grid
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-009
+  rule: y is trained on y, ymin and ymax
+  prediction: training y on the fitted values only in extents turns noisy_data_gets_a_fitted_band RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::noisy_data_gets_a_fitted_band
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-010
+  rule: No residual degree of freedom gives a missing se and band
+  prediction: replacing the df > 0 test with df.max(1.0) in fit_group turns two_points_have_no_residual_degrees_of_freedom RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::two_points_have_no_residual_degrees_of_freedom
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-011
+  rule: A method other than lm is refused
+  prediction: removing the method test in require_supported turns a_bare_geom_smooth_is_refused_not_fitted_with_lm RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_bare_geom_smooth_is_refused_not_fitted_with_lm
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-012
+  rule: A stat other than stat_smooth is refused
+  prediction: removing the stat test in require_supported turns a_stat_other_than_smooth_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_stat_other_than_smooth_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-013
+  rule: A facet is refused
+  prediction: removing the facet test in require_supported turns a_facet_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_facet_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-014
+  rule: A mapped ymin or ymax is refused
+  prediction: dropping the ymin test in require_aes turns a_data_mapped_style_aesthetic_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_data_mapped_style_aesthetic_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-015
+  rule: fullrange = TRUE is refused
+  prediction: removing the fullrange test in require_spec turns fullrange_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::fullrange_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-016
+  rule: A level outside (0, 1) is refused
+  prediction: dropping the upper level bound in require_spec turns a_level_outside_zero_one_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_level_outside_zero_one_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-017
+  rule: An n past the cap is refused
+  prediction: dropping the MAX_N test in require_spec turns an_n_of_zero_or_past_the_cap_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::an_n_of_zero_or_past_the_cap_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-018
+  rule: A text position column is refused
+  prediction: turning the text-cell refusal into NaN in read_position turns a_missing_or_text_position_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_missing_or_text_position_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-019
+  rule: Each group is fitted on its own rows
+  prediction: dropping the group test in finite_rows turns each_group_is_fitted_over_its_own_range RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::each_group_is_fitted_over_its_own_range
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-020
+  rule: A layer with no fittable group is refused
+  prediction: removing the empty-layer test in build_layer turns a_layer_with_no_fittable_group_is_refused_where_r_returns_it_empty RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_layer_with_no_fittable_group_is_refused_where_r_returns_it_empty
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-021
+  rule: A smooth layer alone triggers the coord check
+  prediction: removing smooth from is_gated in path.rs turns every_non_default_coord_is_refused_for_a_smooth_alone RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::every_non_default_coord_is_refused_for_a_smooth_alone
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-022
+  rule: A zero-width y range is widened, not refused
+  prediction: removing the smooth-only y exemption in require_trained turns a_constant_y_gives_a_zero_width_band_and_the_zero_range_scale RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_constant_y_gives_a_zero_width_band_and_the_zero_range_scale
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-023
+  rule: A smooth beside a line, area or ribbon is refused
+  prediction: removing the body of require_family_alone turns every_companion_but_point_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::every_companion_but_point_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-024
+  rule: to_svg and to_framebuffer refuse a smooth layer
+  prediction: removing the smooth test in draw_frame turns drawing_a_smooth_layer_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::drawing_a_smooth_layer_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-025
+  rule: A point companion of a smooth keeps its column checks
+  prediction: removing smooth from the filled test in marks.rs require_modelled_companions turns a_bad_point_companion_beside_a_smooth_is_refused RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_bad_point_companion_beside_a_smooth_is_refused
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-026
+  rule: A smooth layer's raw rows do not train the scales
+  prediction: letting trained_domains_for read a smooth layer's raw rows turns a_smooth_layers_raw_rows_do_not_train_the_scales RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::a_smooth_layers_raw_rows_do_not_train_the_scales
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+- id: FALSIFY-GG-SMOOTH-LM-027
+  rule: The Student-t upper tail is exact
+  prediction: halving the tail by dropping the 0.5 factor in upper_tail turns the_t_quantile_matches_r_for_every_df_and_level RED
+  test: cargo test -p aprender-viz --lib -- --exact grammar::ggplot2_geom_smooth_oracle::the_t_quantile_matches_r_for_every_df_and_level
+  if_fails: The fixture or comparison cannot see this behaviour; the row proves nothing about it
+qa_gate:
+  id: F-GG-SMOOTH-LM-001
+  name: ggplot2 conformance (geom_smooth lm)
+  description: aprender-viz layout equals ggplot2 4.0.3 ggplot_build() for these fixtures
+  checks:
+  - primary_cases
+  - edge_cases
+  - quantile_cases
