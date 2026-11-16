@@ -663,6 +663,44 @@ fn sha256_file_hashes_past_one_buffer() {
     let path = dir.join("data/big.bin");
     std::fs::write(&path, &bytes).expect("write");
     assert_eq!(sha256_file(&path), Some(sha256_bytes(&bytes)));
+    // The published vector for one million `a` bytes (FIPS 180 examples).
+    let million = dir.join("data/million.bin");
+    std::fs::write(&million, vec![b'a'; 1_000_000]).expect("write");
+    assert_eq!(
+        sha256_file(&million).as_deref(),
+        Some("cdc76e5c9914fb9281a1c7e284d73e67f1809a48a497200e046d39ccc7112cd0")
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// `f` on its own thread; panics if it has not answered in 20 seconds.
+#[cfg(unix)]
+fn within_20s<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || tx.send(f()).ok());
+    rx.recv_timeout(std::time::Duration::from_secs(20))
+        .expect("the call must return: it is reading a file that has no end")
+}
+
+/// Review of a163e8112: a path that is not a regular file has no hash, and is
+/// never read. `/dev/zero` never ends, so reading it would hang the run.
+#[cfg(unix)]
+#[test]
+fn a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read() {
+    let dir = scratch("notfile");
+    assert_eq!(sha256_file(&dir.join("data")), None, "a directory");
+    assert_eq!(within_20s(|| sha256_file(Path::new("/dev/zero"))), None);
+    let src = VALID.replace("data/train.jsonl", "/dev/zero");
+    let r = TrainRecipe::parse(&src, &dir, "r.yaml").expect("parses");
+    let (refused, receipt) = within_20s(move || {
+        let refused = r.require_inputs().expect_err("refused").to_string();
+        (refused, r.receipt(Vec::new(), Vec::new(), &[]))
+    });
+    assert!(
+        refused.contains("field `data.train`: no such file /dev/zero"),
+        "{refused}"
+    );
+    assert_eq!(receipt.data_sha256, None);
     std::fs::remove_dir_all(&dir).ok();
 }
 
