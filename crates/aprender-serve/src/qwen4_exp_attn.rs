@@ -6,13 +6,21 @@
 //! `modeling_qwen4_exp.py` (`Qwen4ExpTextQSAIndexer`, `Qwen4ExpTextAttention`,
 //! `Qwen4ExpTextGatedResidual`). Pure fp32 CPU functions on row-major slices
 //! with explicit shapes; one sequence per call (batches are looped by the caller).
-//! Not covered: KV/indexer cache decode (queries == keys), bf16 islands.
+//! Not covered: KV/indexer cache decode (queries == keys; decode and the KV cache are out of scope), bf16 islands.
 
 use crate::gguf::forward_qwen35::apply_sigmoid_gate;
 use crate::gguf::ops::{rms_norm_unit_offset, softmax};
 
 /// Result of an op: shape violations are reported, never panicked on.
 pub type OpResult<T> = Result<T, String>;
+
+fn positive(name: &str, v: usize) -> OpResult<()> {
+    if v > 0 {
+        Ok(())
+    } else {
+        Err(format!("{name}: must be > 0"))
+    }
+}
 
 fn ensure(name: &str, got: usize, want: usize) -> OpResult<()> {
     if got == want {
@@ -59,6 +67,40 @@ fn rope_token(x: &mut [f32], head_dim: usize, cos: &[f32], sin: &[f32]) {
             head[i + half] = b * cos[i + half] + a * sin[i + half];
         }
     }
+}
+
+/// Checks every cheap shape precondition of the indexer and returns the sequence length.
+fn validate_indexer(
+    p: &IndexerParams,
+    s: &IndexerShape,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+    visible: &[bool],
+) -> OpResult<usize> {
+    for (n, v) in [
+        ("hidden", s.hidden),
+        ("n_heads", s.n_heads),
+        ("head_dim", s.head_dim),
+        ("ratio", s.ratio),
+    ] {
+        positive(n, v)?;
+    }
+    ensure("hidden", hidden.len() % s.hidden, 0)?;
+    let seq = hidden.len() / s.hidden;
+    positive("seq", seq)?;
+    ensure("visible", visible.len(), seq * seq)?;
+    ensure("cos", cos.len() % seq, 0)?;
+    ensure("sin", sin.len(), cos.len())?;
+    let rot = cos.len() / seq;
+    positive("rotary_dim", rot)?;
+    ensure("rotary_dim parity", rot % 2, 0)?;
+    ensure("rotary_dim <= head_dim", usize::from(rot <= s.head_dim), 1)?;
+    let qk = (s.n_heads + 1) * s.head_dim * s.hidden;
+    ensure("qk_proj", p.qk_proj.len(), qk)?;
+    ensure("q_layernorm", p.q_norm.len(), s.head_dim)?;
+    ensure("k_layernorm", p.k_norm.len(), s.head_dim)?;
+    Ok(seq)
 }
 
 /// Indexer weights (`Qwen4ExpTextQSAIndexer`).
@@ -208,16 +250,7 @@ pub fn indexer_select(
     sin: &[f32],
     visible: &[bool],
 ) -> OpResult<Vec<bool>> {
-    ensure("hidden", hidden.len() % s.hidden, 0)?;
-    let seq = hidden.len() / s.hidden;
-    ensure("visible", visible.len(), seq * seq)?;
-    ensure("cos", cos.len() % seq, 0)?;
-    ensure("sin", sin.len(), cos.len())?;
-    ensure(
-        "qk_proj",
-        p.qk_proj.len(),
-        (s.n_heads + 1) * s.head_dim * s.hidden,
-    )?;
+    let seq = validate_indexer(p, s, hidden, cos, sin, visible)?;
     let (q, k) = indexer_qk(p, s, hidden, cos, sin);
     let qd = s.n_heads * s.head_dim;
     let mut mask = Vec::with_capacity(seq * seq);
@@ -263,6 +296,21 @@ pub struct AttentionShape {
     pub head_dim: usize,
     /// Indexer settings (also carries `hidden` and `eps`).
     pub indexer: IndexerShape,
+}
+
+/// Checks the attention weights against the shape (the indexer is checked separately).
+fn validate_attention(p: &AttentionParams, a: &AttentionShape) -> OpResult<()> {
+    positive("n_heads", a.n_heads)?;
+    positive("n_kv", a.n_kv)?;
+    positive("head_dim", a.head_dim)?;
+    ensure("gqa", a.n_heads % a.n_kv, 0)?;
+    let (h, d) = (a.indexer.hidden, a.head_dim);
+    ensure("q_proj", p.q_proj.len(), a.n_heads * d * 2 * h)?;
+    ensure("k_proj", p.k_proj.len(), a.n_kv * d * h)?;
+    ensure("v_proj", p.v_proj.len(), a.n_kv * d * h)?;
+    ensure("o_proj", p.o_proj.len(), h * a.n_heads * d)?;
+    ensure("q_norm", p.q_norm.len(), d)?;
+    ensure("k_norm", p.k_norm.len(), d)
 }
 
 /// Per-token projections: queries, sigmoid-gate pre-activations, keys, values.
@@ -323,6 +371,11 @@ fn attend_head(
     let kv = head / (a.n_heads / a.n_kv);
     let q = &pr.q[t * nq + head * d..t * nq + (head + 1) * d];
     let keys: Vec<usize> = (0..allowed.len()).filter(|&i| allowed[i]).collect();
+    if keys.is_empty() {
+        // A query that sees no key (e.g. a left-pad row): zeros, like torch>=2.5 sdpa safe softmax.
+        // Eager attention would instead average V over all keys (uniform softmax of equal minima).
+        return vec![0f32; d];
+    }
     let scale = (d as f32).powf(-0.5);
     let mut w: Vec<f32> = keys
         .iter()
@@ -361,11 +414,9 @@ pub fn indexed_attention(
     visible: &[bool],
 ) -> OpResult<Vec<f32>> {
     let h = a.indexer.hidden;
-    ensure("hidden", hidden.len() % h, 0)?;
-    let seq = hidden.len() / h;
-    ensure("q_proj", p.q_proj.len(), a.n_heads * a.head_dim * 2 * h)?;
-    ensure("o_proj", p.o_proj.len(), h * a.n_heads * a.head_dim)?;
-    ensure("gqa", a.n_heads % a.n_kv, 0)?;
+    validate_attention(p, a)?;
+    let seq = validate_indexer(&p.indexer, &a.indexer, hidden, cos, sin, visible)?;
+    ensure("rotary_dim", usize::from(cos.len() / seq <= a.head_dim), 1)?;
     let sel = indexer_select(&p.indexer, &a.indexer, hidden, cos, sin, visible)?;
     let pr = project_qkv(p, a, hidden, cos, sin);
     let nq = a.n_heads * a.head_dim;

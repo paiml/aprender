@@ -41,6 +41,7 @@ fn usizes(v: &Value) -> Vec<usize> {
 
 fn max_err(got: &[f32], want: &[f32]) -> f32 {
     assert_eq!(got.len(), want.len(), "length");
+    assert!(got.iter().all(|v| v.is_finite()), "non-finite output");
     got.iter()
         .zip(want)
         .map(|(a, b)| (a - b).abs())
@@ -221,6 +222,61 @@ fn indexed_attention_matches_reference() {
     let e = max_err(&got, &want);
     println!("indexed_attention max_abs_err = {e:e}");
     assert!(e <= TOL, "max abs err {e}");
+}
+
+#[test]
+fn query_with_no_visible_key_yields_zero_row_not_panic() {
+    let g = golden("indexed_attention");
+    let w = |k: &str| f32s(&g["params"][k]);
+    let (qp, kp, vp, op, qn, kn) = (
+        w("q_proj.weight"),
+        w("k_proj.weight"),
+        w("v_proj.weight"),
+        w("o_proj.weight"),
+        w("q_norm.weight"),
+        w("k_norm.weight"),
+    );
+    let iw = [
+        w("indexer.index_qk_proj.weight"),
+        w("indexer.q_layernorm.weight"),
+        w("indexer.k_layernorm.weight"),
+    ];
+    let p = AttentionParams {
+        q_proj: &qp,
+        k_proj: &kp,
+        v_proj: &vp,
+        o_proj: &op,
+        q_norm: &qn,
+        k_norm: &kn,
+        indexer: indexer_params(&iw),
+    };
+    let a = AttentionShape {
+        n_heads: cfg_usize(&g, "num_attention_heads"),
+        n_kv: cfg_usize(&g, "num_key_value_heads"),
+        head_dim: cfg_usize(&g, "head_dim"),
+        indexer: indexer_shape(&g),
+    };
+    let seq = seq_len(&g);
+    let h = a.indexer.hidden;
+    let hid = f32s(&g["inputs"]["hidden_states"]);
+    let cos = f32s(&g["inputs"]["cos"]);
+    let sin = f32s(&g["inputs"]["sin"]);
+    let mut vis = bools(&g["inputs"]["visible_mask"])[..seq * seq].to_vec();
+    let want = f32s(&g["output"]["attn_output"]);
+    // A left-pad query: its row sees no key at all (not a hand-edited diagonal).
+    vis[..seq].fill(false);
+    let (hs, rs) = (seq * h, cos.len() / 2);
+    let got = indexed_attention(&p, &a, &hid[..hs], &cos[..rs], &sin[..rs], &vis)
+        .expect("empty row must not error or panic");
+    assert!(got[..h].iter().all(|v| *v == 0.0), "empty row is not zero");
+    // Other rows do not depend on row 0's visibility (queries equal keys).
+    let e = max_err(&got[h..], &want[h..hs]);
+    println!("rows after the empty one: max_abs_err = {e:e}");
+    assert!(e <= TOL, "max abs err {e}");
+    // Mis-sized weights are reported, not panicked on.
+    let short = &kp[..kp.len() - 1];
+    let bad = AttentionParams { k_proj: short, ..p };
+    assert!(indexed_attention(&bad, &a, &hid[..hs], &cos[..rs], &sin[..rs], &vis).is_err());
 }
 
 fn hc_weights(p: &Value) -> Vec<Vec<f32>> {
