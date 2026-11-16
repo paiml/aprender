@@ -138,11 +138,17 @@ pub(super) fn is_path_family(g: &GeomType) -> bool {
     )
 }
 
+/// A geom whose layers make `layout()` apply the path-family guards: the path family and the
+/// filled geoms.
+pub(super) fn is_gated(g: &GeomType) -> bool {
+    is_path_family(g) || super::filled::is_filled(g)
+}
+
 fn is_reference(g: &GeomType) -> bool {
     matches!(g, GeomType::Hline { .. } | GeomType::Vline { .. } | GeomType::Abline { .. })
 }
 
-fn refuse(msg: impl Into<String>) -> Error {
+pub(super) fn refuse(msg: impl Into<String>) -> Error {
     Error::Rendering(msg.into())
 }
 
@@ -151,7 +157,7 @@ fn refuse(msg: impl Into<String>) -> Error {
 /// fixed all change ggplot2's `panel_params`), so answering with the default numbers would be
 /// silently wrong.
 pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| is_gated(&l.geom.geom_type)) {
         return Ok(());
     }
     match coord {
@@ -175,15 +181,23 @@ pub(super) fn require_default_coord(layers: &[Layer], coord: &Coord) -> Result<(
 /// would silently skip, and every companion layer other than `geom_point` (its ggplot2 stat or
 /// setup changes the shared scales). Answering with the raw data would be silently wrong.
 pub(super) fn require_identity_stats(layers: &[Layer]) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| is_gated(&l.geom.geom_type)) {
         return Ok(());
+    }
+    if layers.iter().any(|l| is_path_family(&l.geom.geom_type))
+        && layers.iter().any(|l| super::filled::is_filled(&l.geom.geom_type))
+    {
+        return Err(Error::UnsupportedLayer(
+            "geom_area or geom_ribbon beside a line, path, step or reference layer: layout() \
+             resolves them separately, not together",
+        ));
     }
     for l in layers {
         let g = &l.geom.geom_type;
-        if !is_path_family(g) && !matches!(g, GeomType::Point { .. }) {
+        if !is_gated(g) && !matches!(g, GeomType::Point { .. }) {
             return Err(Error::UnsupportedLayer(
-                "only geom_point may share a plot with line, path, step or reference layers: \
-                 layout() does not resolve other geoms with them (their ggplot2 stat or setup \
+                "only geom_point may share a plot with line, path, step, reference, area or ribbon \
+                 layers: layout() does not resolve other geoms with them (their ggplot2 stat or setup \
                  can change the shared scales)",
             ));
         }
@@ -227,7 +241,7 @@ fn unsupported_stat(s: &Stat) -> Option<&'static str> {
 /// `x` and `y` are the TRAINED domains (`(lo, hi)` over the finite values, `lo > hi` when no
 /// value trained), read before [`super::build::PositionScale::continuous`] maps an empty domain to `0..1`.
 pub(super) fn require_trained(layers: &[Layer], x: (f64, f64), y: (f64, f64)) -> Result<()> {
-    if !layers.iter().any(|l| is_path_family(&l.geom.geom_type)) {
+    if !layers.iter().any(|l| is_gated(&l.geom.geom_type)) {
         return Ok(());
     }
     for (axis, (lo, hi)) in [("x", x), ("y", y)] {
@@ -281,6 +295,7 @@ pub(super) fn build_layer(
             path: Some(path),
             bins: None,
             density: None,
+            filled: None,
         });
     }
 
@@ -316,7 +331,7 @@ pub(super) fn build_layer(
         _ => {}
     }
     let path = BuiltPath { panel, group, aes: stroke, stairs, reference: None };
-    Ok(BuiltLayer { x, y, points: None, path: Some(path), bins: None, density: None })
+    Ok(BuiltLayer { x, y, points: None, path: Some(path), bins: None, density: None, filled: None })
 }
 
 fn stroke_aes(geom: &GeomType, aes: &Aes, reference: bool) -> Result<StrokeAes> {
@@ -364,7 +379,7 @@ fn require_text_facet(data: &DataFrame, var: &str) -> Result<()> {
     Ok(())
 }
 
-fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
+pub(super) fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
     match facet {
         Facet::None => Ok(vec![Panel { levels: vec![], row: 0, col: 0, rows: vec![] }]),
         Facet::Wrap { var, .. } => {
@@ -376,7 +391,12 @@ fn global_panels(facet: &Facet, plot_data: &DataFrame) -> Result<Vec<Panel>> {
 }
 
 /// The 0-based panel index of every row of `data`.
-fn row_panels(facet: &Facet, global: &[Panel], data: &DataFrame, own: bool) -> Result<Vec<usize>> {
+pub(super) fn row_panels(
+    facet: &Facet,
+    global: &[Panel],
+    data: &DataFrame,
+    own: bool,
+) -> Result<Vec<usize>> {
     let mut out = vec![0; data.nrow()];
     let Facet::Wrap { var, .. } = facet else {
         return Ok(out);
@@ -401,7 +421,7 @@ fn row_panels(facet: &Facet, global: &[Panel], data: &DataFrame, own: bool) -> R
 }
 
 /// One column as f64, one entry per row of `data`: `NA`, null and missing cells are `NaN`.
-fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
+pub(super) fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
     let col =
         data.get(name).ok_or_else(|| Error::UnknownColumn(format!("no {what} column {name:?}")))?;
     (0..data.nrow())
@@ -419,7 +439,7 @@ fn read_column(data: &DataFrame, name: &str, what: &str) -> Result<Vec<f64>> {
 }
 
 /// ggplot2's group ids: 1-based rank of the sorted distinct value, or -1 when unmapped.
-fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
+pub(super) fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
     let n = data.nrow();
     let Some(name) = aes.group.as_deref() else {
         return Ok(vec![-1; n]);
@@ -452,7 +472,7 @@ fn group_ids(aes: &Aes, data: &DataFrame) -> Result<Vec<i64>> {
 }
 
 /// Ascending with `NaN` last and equal values tied, as R's `order()`.
-fn cmp_na_last(a: f64, b: f64) -> Ordering {
+pub(super) fn cmp_na_last(a: f64, b: f64) -> Ordering {
     match (a.is_nan(), b.is_nan()) {
         (true, true) => Ordering::Equal,
         (true, false) => Ordering::Greater,

@@ -11,6 +11,7 @@ pub use super::r_format::format_labels;
 use super::scale_spec::{resolve_continuous, ContinuousSpec};
 use crate::color::Rgba;
 
+use super::filled::BuiltFilled;
 use super::path::BuiltPath;
 
 /// Multiplicative expansion of a continuous position scale: `expansion(mult = 0.05)`, ggplot2's
@@ -98,6 +99,9 @@ pub struct BuiltLayer {
     pub bins: Option<BuiltBins>,
     /// `stat_density` output for a density layer; `x`/`y` then hold the grid and the density.
     pub density: Option<BuiltDensity>,
+    /// Resolved `geom_area` / `geom_ribbon` data; `None` for other geoms. `x`/`y` hold the final
+    /// `x` and `y` (`y` is `ymin` for a ribbon); `NaN` rows are kept for a ribbon.
+    pub filled: Option<BuiltFilled>,
 }
 
 /// `stat_bin`'s columns, one entry per bin and group, groups in ascending id (`bin_out()` in

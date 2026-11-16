@@ -441,6 +441,7 @@ fn histogram(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Re
         path: None,
         bins: Some(bins),
         density: None,
+        filled: None,
     };
     Ok(BuiltLayout {
         layers: vec![layer],
@@ -474,6 +475,7 @@ fn freqpoly(spec: &DistSpec, data: &DataFrame, aes: &Aes, groups: &[i64]) -> Res
         path: None,
         bins: Some(bins),
         density: None,
+        filled: None,
     };
     Ok(BuiltLayout {
         layers: vec![layer],
@@ -507,6 +509,7 @@ fn density(data: &DataFrame, aes: &Aes, groups: &[i64]) -> Result<BuiltLayout> {
             wdensity: cols.wdensity,
             n: cols.n,
         }),
+        filled: None,
     };
     Ok(BuiltLayout {
         layers: vec![layer],

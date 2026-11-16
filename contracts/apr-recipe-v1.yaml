@@ -2,9 +2,16 @@
 #
 # One YAML file names everything a training run depends on. `apr finetune --recipe r.yaml`
 # validates it before any model is opened and refuses by recipe field.
-# Loader: crates/apr-cli/src/commands/train_recipe.rs (lands in R-1 slice 2/6).
-# Example: examples/recipes/tiny.yaml and the --recipe flag (land in R-1 slice 6/6).
-# This slice is the schema only; each FALSIFY entry is added back in the slice that adds its test.
+# Loader: crates/apr-cli/src/commands/train_recipe.rs.
+# Example: examples/recipes/tiny.yaml and the --recipe flag land in the last slice.
+# Each FALSIFY entry is added in the slice that adds its test.
+#
+# NOT YET ENFORCED by the loader at this head (status: partial). Nothing calls the loader yet,
+# and each rule below gets its check, its test and its FALSIFY entry in a later slice:
+#   - teacher present <=> method == distill (a teacher block is read and dropped)
+#   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
+#   - require_inputs (files exist, the data.sha256 pin matches the file; the pin's shape is
+#     checked), exit 5, the --recipe flag conflicts and the receipt
 
 metadata:
   id: apr-recipe-v1
@@ -67,7 +74,7 @@ equations:
     codomain: exit code and stderr
     invariants:
     - "An invalid recipe is refused before the base model is opened"
-    - "The refusal names every recipe field at fault, in one message"
+    - "The refusal names every missing or wrong-valued recipe field in one message; a misspelt key or a wrong type is reported alone"
     - "The refusal is a recipe validation error (exit 5), not a clap usage error (exit 2)"
     - "A flag whose value the recipe carries conflicts with --recipe"
 
@@ -89,20 +96,37 @@ equations:
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
 falsification_tests:
-# Each entry cites only tests present at this slice head. FALSIFY-APR-RECIPE-004 (flag conflicts)
-# and the CLI/receipt parts of 001, 002 and 005 return in slice 6/6 with their tests.
-# Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so they are
-# renumbered as slices land: ids 001-005 here are the final ids except that FALSIFY-APR-RECIPE-004's
-# slot is held by the contract-parses entry until the entry it stands in for lands.
+# Each entry cites only tests present at this slice head; further entries are added in the slices
+# that add the test each one cites.
+# Test ids are consecutive from 001 at every slice head (scripts/ci/fail_fast.py ids), so the
+# contract-parses entry holds slot 004 here and moves back as later entries land.
 - id: FALSIFY-APR-RECIPE-001
+  rule: a recipe without eval is refused by field
+  prediction: "The loader refuses a recipe with no eval block and the error names field `eval` (the CLI exit-5 and no-model-opened parts land with the --recipe wiring)"
+  test: |
+    cargo test -p apr-cli --lib -- missing_eval_is_refused_and_the_error_names_the_field
+  if_fails: "A run with no eval can start; its result cannot be compared with any other engine"
+- id: FALSIFY-APR-RECIPE-002
+  rule: a valid recipe parses
+  prediction: "A minimal valid recipe parses and its relative paths anchor at the recipe's directory"
+  test: |
+    cargo test -p apr-cli --lib -- valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir valid_optional_fields_are_kept
+  if_fails: "The validator refuses everything; FALSIFY-APR-RECIPE-001 would then pass vacuously"
+- id: FALSIFY-APR-RECIPE-003
+  rule: unknown keys and wrong shapes are refused by field
+  prediction: "A misspelt key at any level, a missing required key, a wrong type, a wrong schema id, an unknown method, an empty string, a heldout that aliases the training file, a malformed data pin or a non-positive training number is refused by field. Missing keys and wrong values are all listed in one message; a misspelt key or a wrong type is reported alone, because the YAML reader stops at the first one"
+  test: |
+    cargo test -p apr-cli --lib -- a_reader_error_is_reported_alone method_spellings_round_trip each_missing_required_field_is_named missing_nested_required_fields_are_named every_violation_is_reported_at_once wrong_schema_id_and_unknown_method_are_refused unknown_keys_are_refused_by_name_at_every_level wrong_type_is_refused bad_seed_does_not_hide_the_other_faulty_fields empty_strings_are_refused_by_field heldout_alias_of_the_training_file_is_refused empty_training_block_is_the_defaults data_pin_must_be_a_sha256 training_numbers_must_be_positive heldout_may_not_be_the_training_file leading_parent_dirs_are_not_dropped same_file_rule_is_silent_without_a_training_file
+  if_fails: "A typo in a recipe silently trains with a default"
+- id: FALSIFY-APR-RECIPE-004
   rule: the recipe contract is itself a valid contract
   prediction: "`pv validate contracts/apr-recipe-v1.yaml` exits 0"
   test: |
     pv validate contracts/apr-recipe-v1.yaml
   if_fails: "The schema the recipe loader is built against does not parse; no later FALSIFY entry means anything"
-- id: FALSIFY-APR-RECIPE-002
-  rule: unknown keys and wrong shapes are refused by field
-  prediction: "A method spelling outside lora, qlora and distill (any other case included) is not accepted"
+- id: FALSIFY-APR-RECIPE-005
+  rule: the data pin has the shape of a sha256
+  prediction: "A data.sha256 that is not 64 lower-case hex characters is refused naming field `data.sha256` (the pin-versus-file check and the receipt hashes land with the receipt)"
   test: |
-    cargo test -p apr-cli --lib -- method_spellings_round_trip
-  if_fails: "A typo in a recipe silently trains with a default"
+    cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256
+  if_fails: "A pin that can never match a file is accepted, so the later pin-versus-file check has nothing sound to compare"
