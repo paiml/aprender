@@ -212,6 +212,7 @@ aprender-serve	--lib	gpu::adapters::wgpu_adapter
 aprender-serve	--lib	infer
 aprender-serve	--lib	kernel_registry
 aprender-serve	--lib	quantize::contract_tests
+aprender-serve	--test	qwen4_exp_refusal
 aprender-shell	--lib	model
 aprender-simulate	--lib	demos::tsp_grasp
 aprender-simulate	--lib	edd::runner
