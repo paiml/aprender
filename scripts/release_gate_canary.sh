@@ -12,6 +12,13 @@ ROOT="$(git rev-parse --show-toplevel)"
 DIR="$ROOT/.ops/release"
 fail=0
 
+# SEC010: validate the path before cd/cat: absolute, no '..' (it is the git toplevel plus a fixed suffix).
+case "$DIR" in
+  *..*) echo "FAIL: release gate dir contains '..': $DIR" >&2; exit 1 ;;
+  /*) ;;
+  *) echo "FAIL: release gate dir is not absolute: $DIR" >&2; exit 1 ;;
+esac
+
 if ! (cd "$DIR" && sha256sum --check --quiet SHA256SUMS); then
   echo "FAIL: vendored release gate differs from SHA256SUMS (pin: $(cat "$DIR/PIN"))" >&2
   exit 1
