@@ -1643,3 +1643,14 @@ nightly-train-self-test:
 	@test -n "$(BUNDLE)" || { echo "FAIL: BUNDLE=<pinned bundle dir> is required (the helpers live there)"; exit 3; }
 	bash "$(BUNDLE)/nightly_train.sh" --self-test
 	bash "$(BUNDLE)/nightly_train.sh" --mutants
+
+# BUILD-SYNC-001 release gate, aprender canary (ANDON1-6). The gate is vendored byte for byte from
+# paiml/infra fleet/release at the sha in .ops/release/PIN (hashes: .ops/release/SHA256SUMS); fixes
+# land upstream and arrive by a PIN bump, never by editing the copy. pins.tsv is aprender's own row.
+# It only decides GO/NO-GO from receipts; the publish path stays release.yml (PUB1).
+#   make release-gate REPO=paiml/aprender SHA=<tag sha> REL_DIR=<receipt dir>
+-include .ops/release/release.mk
+
+release-gate-canary: ## Check the vendored release gate's hashes and its GO/NO-GO case table
+	bash scripts/release_gate_canary.sh
+.PHONY: release-gate-canary

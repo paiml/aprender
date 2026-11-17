@@ -1,0 +1,2 @@
+# repo	pin_tag	driver (existing publish path; the session runs it, the lib never does)
+paiml/aprender	v0.75.0	gh workflow run release.yml (workflow_dispatch; PUB1: the release workflow is the only publish path)
