@@ -47,6 +47,8 @@ ignore = [
     # aprender-db -> duckdb -> rust_decimal, but duckdb is optional (competitive-benchmarks)
     # and rust_decimal's own rkyv dep is optional and never enabled; Cargo.lock records it
     # anyway. Fix is rkyv >=0.8.17, unavailable: rust_decimal 1.42.1 (newest) still needs 0.7.
+    { id = "RUSTSEC-2026-0543", reason = "chrono: unmaintained; no maintained replacement upgrade available; tracked in #7191" },
+    { id = "RUSTSEC-2026-0542", reason = "humantime: unmaintained (wraps chrono); no maintained replacement upgrade available; tracked in #7191" },
 ]
 
 [licenses]
