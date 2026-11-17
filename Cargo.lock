@@ -386,7 +386,6 @@ dependencies = [
  "aprender-present-core",
  "aprender-present-terminal",
  "aprender-test-lib",
- "chrono",
  "clap",
  "crossterm 0.28.1",
  "dirs 5.0.1",

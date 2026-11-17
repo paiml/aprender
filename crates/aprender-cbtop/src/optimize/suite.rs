@@ -248,7 +248,7 @@ impl OptimizationSuite {
             }
         }
 
-        let timestamp = chrono::Utc::now().to_rfc3339();
+        let timestamp = crate::rfc3339::now_rfc3339();
 
         Ok(BaselineReport {
             version: env!("CARGO_PKG_VERSION").to_string(),

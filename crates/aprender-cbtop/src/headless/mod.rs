@@ -146,7 +146,7 @@ impl HeadlessBenchmark {
 
         Ok(BenchmarkResult {
             version: env!("CARGO_PKG_VERSION").to_string(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: crate::rfc3339::now_rfc3339(),
             duration_secs: total_duration.as_secs_f64(),
             system,
             benchmark: BenchmarkConfig {
