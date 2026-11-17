@@ -130,3 +130,89 @@
         std::fs::write(dir.path().join("s.safetensors"), [0u8; 1]).expect("write");
         assert!(validate_shard_index(&idx).is_ok());
     }
+
+    /// Parse a CLI line and return the model paths the contract gate would see.
+    fn gated_paths(args: Vec<&'static str>) -> Vec<PathBuf> {
+        let cli = parse_cli(args).expect("args must parse");
+        match *cli.command {
+            Commands::Extended(ref ext) => extract_extended_model_paths(ext),
+            _ => panic!("expected an Extended command"),
+        }
+    }
+
+    /// B6: extended action commands that take one FILE hand it to the gate.
+    #[test]
+    fn test_extract_extended_model_paths_single_file_actions() {
+        for args in [
+            vec!["apr", "chat", "m.gguf"],
+            vec!["apr", "bench", "m.gguf"],
+            vec!["apr", "eval", "m.gguf"],
+            vec!["apr", "profile", "m.gguf"],
+            vec!["apr", "compare-hf", "m.gguf", "--hf", "org/repo"],
+        ] {
+            let name = args[1];
+            assert_eq!(
+                gated_paths(args),
+                vec![PathBuf::from("m.gguf")],
+                "{name} must gate its model file"
+            );
+        }
+    }
+
+    /// B6: `test tensor` (and its `probar` alias) gates its file.
+    #[test]
+    fn test_extract_extended_model_paths_probar_tensor() {
+        assert_eq!(
+            gated_paths(vec!["apr", "test", "tensor", "m.apr"]),
+            vec![PathBuf::from("m.apr")]
+        );
+        assert_eq!(
+            gated_paths(vec!["apr", "probar", "tensor", "m.apr"]),
+            vec![PathBuf::from("m.apr")]
+        );
+    }
+
+    /// B6: `test llm` drives an endpoint or reads receipts, never a model file.
+    #[test]
+    fn test_extract_extended_model_paths_llm_exempt() {
+        assert!(gated_paths(vec!["apr", "test", "llm", "bench"]).is_empty());
+        assert!(gated_paths(vec!["apr", "test", "llm", "ttft-verdict", "--run", "d"]).is_empty());
+        assert!(gated_paths(vec!["apr", "test", "llm", "shape-check", "w.json"]).is_empty());
+    }
+
+    /// B6: cbtop gates `--model-path` only when given.
+    #[test]
+    fn test_extract_extended_model_paths_cbtop() {
+        assert_eq!(
+            gated_paths(vec!["apr", "cbtop", "--model-path", "m.gguf"]),
+            vec![PathBuf::from("m.gguf")]
+        );
+        assert!(gated_paths(vec!["apr", "cbtop"]).is_empty());
+    }
+
+    /// B6: rosetta action subcommands gate their sources; diagnostics are exempt.
+    #[test]
+    fn test_extract_extended_model_paths_rosetta() {
+        assert_eq!(
+            gated_paths(vec!["apr", "rosetta", "convert", "a.gguf", "b.safetensors"]),
+            vec![PathBuf::from("a.gguf")]
+        );
+        assert_eq!(
+            gated_paths(vec!["apr", "rosetta", "compare-inference", "a.gguf", "b.apr"]),
+            vec![PathBuf::from("a.gguf"), PathBuf::from("b.apr")]
+        );
+        assert!(gated_paths(vec!["apr", "rosetta", "inspect", "a.gguf"]).is_empty());
+    }
+
+    /// B6: diagnostic extended commands must work on corrupt models, so are exempt.
+    #[test]
+    fn test_extract_extended_model_paths_diagnostics_exempt() {
+        for args in [
+            vec!["apr", "qa", "m.gguf"],
+            vec!["apr", "hex", "m.gguf"],
+            vec!["apr", "tree", "m.apr"],
+        ] {
+            let name = args[1];
+            assert!(gated_paths(args).is_empty(), "{name} is diagnostic (exempt)");
+        }
+    }
