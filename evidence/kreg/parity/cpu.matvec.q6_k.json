@@ -4,7 +4,7 @@
     "max_abs_err": 0.00046068206529525924,
     "max_rel_err": 1.6505971099429934e-6
   },
-  "host": "noah-Lambda-Vector",
+  "host": "x86_64-seat",
   "host_arch": "x86_64",
   "input_set": {
     "device": "x86_64",
