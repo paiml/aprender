@@ -149,6 +149,71 @@ fn test_parse_import_error_generic() {
     }
 }
 
+// B8: precedence, case-folding and retry-after extraction (existing tests above
+// cover 404/401/gated/429-with-60/rate-limit-no-number/generic only).
+#[cfg(feature = "hf-hub-integration")]
+#[test]
+fn test_parse_import_error_retry_after_30() {
+    let err = parse_import_error("429 Too Many Requests, retry after 30", "test/model");
+    assert!(matches!(
+        err,
+        ImportError::RateLimited {
+            retry_after: Some(30)
+        }
+    ));
+}
+
+#[cfg(feature = "hf-hub-integration")]
+#[test]
+fn test_parse_import_error_retry_word_without_number_is_none() {
+    let err = parse_import_error("too many requests, please retry later", "test/model");
+    assert!(matches!(
+        err,
+        ImportError::RateLimited { retry_after: None }
+    ));
+}
+
+#[cfg(feature = "hf-hub-integration")]
+#[test]
+fn test_parse_import_error_mixed_case_forbidden() {
+    let err = parse_import_error("FORBIDDEN", "org/model");
+    match err {
+        ImportError::AuthRequired { resource } => assert_eq!(resource, "org/model"),
+        _ => panic!("Expected AuthRequired error, got {:?}", err),
+    }
+}
+
+#[cfg(feature = "hf-hub-integration")]
+#[test]
+fn test_parse_import_error_precedence_not_found_over_rate_limit() {
+    let err = parse_import_error("404 ... 429", "test/model");
+    assert!(matches!(
+        err,
+        ImportError::NotFound { status: 404, .. }
+    ));
+}
+
+#[cfg(feature = "hf-hub-integration")]
+#[test]
+fn test_parse_import_error_precedence_auth_over_rate_limit() {
+    let err = parse_import_error("403 forbidden after 429 rate limit", "test/model");
+    assert!(matches!(err, ImportError::AuthRequired { .. }));
+}
+
+#[cfg(feature = "hf-hub-integration")]
+#[test]
+fn test_parse_import_error_unknown_message_preserved_verbatim() {
+    let msg = "Weird Failure: socket reset (Mixed CASE)";
+    let err = parse_import_error(msg, "test/model");
+    match err {
+        ImportError::DownloadFailed { source, reason } => {
+            assert_eq!(source, "test/model");
+            assert_eq!(reason, msg);
+        }
+        _ => panic!("Expected DownloadFailed error, got {:?}", err),
+    }
+}
+
 #[test]
 fn test_import_error_from_conversion() {
     let import_err = ImportError::NotFound {
