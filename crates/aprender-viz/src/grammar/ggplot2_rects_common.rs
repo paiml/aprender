@@ -8,7 +8,7 @@
 
 use serde_json::Value;
 
-use super::rects::RectKind;
+use super::rects::{BuiltRects, RectKind};
 use super::{Aes, BuiltLayer, BuiltLayout, DataFrame, Facet, GGPlot, Geom, Layer, PositionScale};
 use crate::color::Rgba;
 
@@ -179,6 +179,18 @@ pub(super) fn check_rects(tag: &str, got: &BuiltLayer, w: &Value, geom: &str, ki
     assert_close_slice(&format!("{tag}.xmax"), &r.xmax, &nums(&w["xmax"]));
     assert_close_slice(&format!("{tag}.ymin"), &r.ymin, &nums(&w["ymin"]));
     assert_close_slice(&format!("{tag}.ymax"), &r.ymax, &nums(&w["ymax"]));
+    check_rect_position(tag, got, w, kind);
+    check_rect_extent(tag, r, w, kind, n);
+    check_rect_alpha(tag, r, w, n);
+    assert_eq!(w["fill_rgba"].as_array().map(Vec::len), Some(n), "{tag}.fill rows");
+    for i in 0..n {
+        assert_eq!(rgba(r.fill), nums(&w["fill_rgba"][i]), "{tag}.fill[{i}]");
+    }
+    check_rect_outline(tag, r, w, kind, n);
+}
+
+/// A rect layer carries no x/y; tile and raster layers do.
+fn check_rect_position(tag: &str, got: &BuiltLayer, w: &Value, kind: RectKind) {
     if kind == RectKind::Rect {
         assert!(got.x.is_empty() && got.y.is_empty(), "{tag}: a rect layer carries no x/y");
         assert!(w.get("x").is_none() && w.get("y").is_none(), "{tag}: R has x/y on a rect");
@@ -186,6 +198,10 @@ pub(super) fn check_rects(tag: &str, got: &BuiltLayer, w: &Value, geom: &str, ki
         assert_close_slice(&format!("{tag}.x"), &got.x, &nums(&w["x"]));
         assert_close_slice(&format!("{tag}.y"), &got.y, &nums(&w["y"]));
     }
+}
+
+/// Tiles have width/height columns; rects and rasters have none.
+fn check_rect_extent(tag: &str, r: &BuiltRects, w: &Value, kind: RectKind, n: usize) {
     match kind {
         RectKind::Tile => {
             assert_close_slice(
@@ -204,6 +220,9 @@ pub(super) fn check_rects(tag: &str, got: &BuiltLayer, w: &Value, geom: &str, ki
             assert!(w.get("width").is_none() && w.get("height").is_none(), "{tag}: R has width");
         }
     }
+}
+
+fn check_rect_alpha(tag: &str, r: &BuiltRects, w: &Value, n: usize) {
     let alpha = nums(&w["alpha"]);
     assert_eq!(alpha.len(), n, "{tag}.alpha rows");
     for (i, a) in alpha.iter().enumerate() {
@@ -212,10 +231,10 @@ pub(super) fn check_rects(tag: &str, got: &BuiltLayer, w: &Value, geom: &str, ki
             Some(v) => assert!(close(v, *a), "{tag}.alpha[{i}]: got {v} want {a}"),
         }
     }
-    assert_eq!(w["fill_rgba"].as_array().map(Vec::len), Some(n), "{tag}.fill rows");
-    for i in 0..n {
-        assert_eq!(rgba(r.fill), nums(&w["fill_rgba"][i]), "{tag}.fill[{i}]");
-    }
+}
+
+/// Rasters have no outline; tiles and rects carry colour, linewidth and linetype.
+fn check_rect_outline(tag: &str, r: &BuiltRects, w: &Value, kind: RectKind, n: usize) {
     if kind == RectKind::Raster {
         assert!(r.colour.is_none() && r.linewidth.is_none() && r.linetype.is_none(), "{tag}");
         let absent = ["colour_rgba", "linewidth", "linetype"].iter().all(|k| w.get(*k).is_none());
