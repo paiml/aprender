@@ -35,7 +35,7 @@ bad_trigger() { # FILE: succeeds when the workflow can fire on a PR, merge-queue
 }
 
 run() {
-    local red=0 f bad="" n=0
+    local red=0 f bad="" n=0 unmeasured="" brc
     for f in "$SPEC" "$SCRIPT"; do [ -f "$f" ] || { echo "NO-MEASURE: $f does not exist" >&2; return 2; }; done
     [ -d "$WORKFLOWS_DIR" ] || { echo "NO-MEASURE: $WORKFLOWS_DIR does not exist" >&2; return 2; }
     if grep -Eq 'R-c .*is a \*\*release gate\*\*' "$SPEC" && grep -Eq 'RECON1' "$SPEC" && grep -Eq 'never in a PR' "$SPEC"; then echo "  ok    spec   R-c is a release gate (RECON1), never in a PR"
@@ -44,10 +44,15 @@ run() {
         [ -f "$f" ] || continue
         grep -q 'check_reconcile' "$f" || continue
         n=$((n+1))
-        if bad_trigger "$f"; then
-            bad="$bad $(basename "$f")"
-        fi
+        # bad_trigger: rc 0 = fires on a non-LAB event, rc 1 = LAB-safe, any other rc = triggers unreadable (RED, never a pass)
+        brc=0; bad_trigger "$f" || brc=$?
+        case "$brc" in
+            0) bad="$bad $(basename "$f")" ;;
+            1) ;;
+            *) unmeasured="$unmeasured $(basename "$f")" ;;
+        esac
     done
+    if [ -n "$unmeasured" ]; then echo "  RED   scope  cannot read the triggers (bad_trigger rc not 0/1) of:$unmeasured"; red=1; fi
     if [ -z "$bad" ]; then echo "  ok    scope  $n workflow(s) run check_reconcile.sh; none on a PR/merge-queue/push/release trigger"
     else echo "  RED   scope  check_reconcile.sh runs on a non-LAB trigger in:$bad"; red=1; fi
     if [ "$red" -eq 0 ]; then echo "GREEN reconcile LAB scope"; else echo "RED reconcile LAB scope"; fi
@@ -63,6 +68,11 @@ self_test() {
         if [ "$rc" = "$2" ]; then echo "  pass  $1 (rc=$rc)"; else echo "  FAIL  $1: want $2 got $rc"; fail=1; fi
     }
     expect "real spec + no reconcile workflow is GREEN" 0
+    # A failing on_triggers (stubbed rc 3 -> bad_trigger rc 2) must be RED; it used to read as "not bad" (GREEN).
+    printf 'on:\n  workflow_dispatch:\njobs:\n  r:\n    steps:\n      - run: scripts/check_reconcile.sh\n' > "$d/wf/stub.yml"
+    set +e; ( on_triggers() { return 3; }; SPEC="$d/spec.md" SCRIPT="$d/s.sh" WORKFLOWS_DIR="$d/wf" run ) >/dev/null 2>&1; rc=$?; set -e
+    if [ "$rc" = 1 ]; then echo "  pass  failing on_triggers is RED (rc=$rc)"; else echo "  FAIL  failing on_triggers: want 1 got $rc"; fail=1; fi
+    rm -f "${d:?}/wf/stub.yml"
     printf 'on:\n  workflow_dispatch:\njobs:\n  release:\n    steps:\n      - run: scripts/check_reconcile.sh\n' > "$d/wf/rel.yml"; expect "job keyed release: under dispatch is GREEN" 0
     printf 'on:\n  workflow_call:\n  schedule:\n    - cron: "0 3 * * *"\njobs:\n  r:\n    steps:\n      - run: scripts/check_reconcile.sh\n' > "$d/wf/rel.yml"; expect "workflow_call is RED" 1
     printf "'on':\n  pull_request:\njobs:\n  r:\n    steps:\n      - run: scripts/check_reconcile.sh\n" > "$d/wf/rel.yml"; expect "quoted 'on': pull_request is RED" 1
