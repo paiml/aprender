@@ -152,6 +152,45 @@ pub struct RooflineParams {
     pub gpu_arithmetic_intensity: Option<f64>,
 }
 
+/// Format a UTC instant as RFC 3339, byte-identical to the former
+/// `chrono::Utc::now().to_rfc3339()` (`YYYY-MM-DDTHH:MM:SS[.fff[fff[fff]]]+00:00`,
+/// fractional digits only as needed in groups of 3; PMAT-7195 dropped chrono).
+fn format_rfc3339_utc(secs: i64, nanos: u32) -> String {
+    let days = secs.div_euclid(86_400);
+    let tod = secs.rem_euclid(86_400);
+    // Civil-from-days (Howard Hinnant), proleptic Gregorian.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    let frac = if nanos == 0 {
+        String::new()
+    } else if nanos % 1_000_000 == 0 {
+        format!(".{:03}", nanos / 1_000_000)
+    } else if nanos % 1_000 == 0 {
+        format!(".{:06}", nanos / 1_000)
+    } else {
+        format!(".{nanos:09}")
+    };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}{frac}+00:00",
+        tod / 3_600,
+        tod % 3_600 / 60,
+        tod % 60
+    )
+}
+
+/// Current UTC time as RFC 3339.
+fn now_rfc3339() -> String {
+    let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    format_rfc3339_utc(d.as_secs() as i64, d.subsec_nanos())
+}
+
 impl HardwareCapability {
     /// Detect hardware capabilities at runtime
     pub fn detect() -> Self {
@@ -164,7 +203,7 @@ impl HardwareCapability {
         let byte_budget_throughput = cpu.memory_bw_gbps.min(25.0);
 
         HardwareCapability {
-            timestamp: chrono::Utc::now().to_rfc3339(),
+            timestamp: now_rfc3339(),
             hostname: get_hostname(),
             cpu,
             gpu,

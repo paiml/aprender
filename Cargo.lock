@@ -464,7 +464,6 @@ dependencies = [
  "aprender-solve",
  "aprender-sparse",
  "bytemuck",
- "chrono",
  "criterion 0.7.0",
  "crossterm 0.28.1",
  "dhat",
