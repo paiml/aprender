@@ -346,6 +346,8 @@ fn test_format_rfc3339_utc_matches_chrono_output() {
     assert_eq!(format_rfc3339_utc(1_700_000_000, 0), "2023-11-14T22:13:20+00:00");
     assert_eq!(format_rfc3339_utc(4_102_444_800, 0), "2100-01-01T00:00:00+00:00");
     assert_eq!(format_rfc3339_utc(-86_400, 0), "1969-12-31T00:00:00+00:00");
+    assert_eq!(format_rfc3339_utc(4_107_542_400, 0), "2100-03-01T00:00:00+00:00");
+    assert_eq!(format_rfc3339_utc(-1, 0), "1969-12-31T23:59:59+00:00");
     assert_eq!(format_rfc3339_utc(1_700_000_000, 123_000_000), "2023-11-14T22:13:20.123+00:00");
     assert_eq!(format_rfc3339_utc(1_700_000_000, 123_456_000), "2023-11-14T22:13:20.123456+00:00");
     assert_eq!(
