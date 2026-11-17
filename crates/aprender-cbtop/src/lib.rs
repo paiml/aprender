@@ -89,6 +89,7 @@ pub mod prometheus;
 pub mod quantize;
 pub mod regression_pipeline;
 pub mod remote_agent;
+mod rfc3339;
 pub mod ring_buffer;
 pub mod roofline;
 pub mod statistics;

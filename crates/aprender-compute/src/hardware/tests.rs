@@ -337,3 +337,29 @@ fn test_gpu_backend_variants() {
     let debug_str = format!("{:?}", GpuBackend::Cuda);
     assert!(debug_str.contains("Cuda"));
 }
+
+// PMAT-7195: pins the output of the former `chrono::Utc::now().to_rfc3339()`.
+#[test]
+fn test_format_rfc3339_utc_matches_chrono_output() {
+    assert_eq!(format_rfc3339_utc(0, 0), "1970-01-01T00:00:00+00:00");
+    assert_eq!(format_rfc3339_utc(951_782_400, 0), "2000-02-29T00:00:00+00:00");
+    assert_eq!(format_rfc3339_utc(1_700_000_000, 0), "2023-11-14T22:13:20+00:00");
+    assert_eq!(format_rfc3339_utc(4_102_444_800, 0), "2100-01-01T00:00:00+00:00");
+    assert_eq!(format_rfc3339_utc(-86_400, 0), "1969-12-31T00:00:00+00:00");
+    assert_eq!(format_rfc3339_utc(4_107_542_400, 0), "2100-03-01T00:00:00+00:00");
+    assert_eq!(format_rfc3339_utc(-1, 0), "1969-12-31T23:59:59+00:00");
+    assert_eq!(format_rfc3339_utc(1_700_000_000, 123_000_000), "2023-11-14T22:13:20.123+00:00");
+    assert_eq!(format_rfc3339_utc(1_700_000_000, 123_456_000), "2023-11-14T22:13:20.123456+00:00");
+    assert_eq!(
+        format_rfc3339_utc(1_700_000_000, 123_456_789),
+        "2023-11-14T22:13:20.123456789+00:00"
+    );
+}
+
+#[test]
+fn test_now_rfc3339_shape() {
+    let ts = now_rfc3339();
+    assert!(ts.ends_with("+00:00"), "{ts}");
+    assert_eq!(&ts[4..5], "-");
+    assert_eq!(&ts[10..11], "T");
+}
