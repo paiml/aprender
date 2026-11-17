@@ -391,6 +391,16 @@ self_test() {
         printf 'FAIL R2-twin: expected empty, got [%s]\n' "$got" >&2
         fails=$((fails + 1))
     fi
+    # R2: the body check itself errors (rc 2) -> R2 returns 2, never a pass.
+    _close_saved="$CLOSE_SCRIPT"
+    printf '#!/usr/bin/env bash\nexit 2\n' > "${fixdir}/close-rc2.sh"
+    CLOSE_SCRIPT="${fixdir}/close-rc2.sh"
+    rc=0; r2_missing_closing_ref "${fixdir}/merged-prs-twin.json" >/dev/null || rc=$?
+    CLOSE_SCRIPT="$_close_saved"
+    if [ "$rc" -ne 2 ]; then
+        printf 'FAIL R2-closes-rc2: expected exit 2, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
     rm -rf "${fixdir:?}"
 
     # R3: a branch with no open PR, tip 20 days old -> R3 = [stale-branch].
@@ -559,6 +569,10 @@ EOF_GH
     if [ "$rc" -ne 2 ]; then printf 'FAIL rev-bogus: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     rc=0; rev_rc v0.3.0 --prev-tag v0.1.0 --rev || rc=$?
     if [ "$rc" -ne 2 ]; then printf 'FAIL rev-novalue: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    rc=0; rev_rc v0.3.0 --rev "" --prev-tag v0.1.0 || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL rev-emptyvalue: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    rc=0; rev_rc v0.3.0 --rev HEAD --prev-tag "" || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL prev-tag-emptyvalue: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     rc=0; rev_rc v0.3.0 --rev HEAD --prev-tag v0.2.0 || rc=$?
     if [ "$rc" -ne 2 ]; then printf 'FAIL rev-empty-window: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     rc=0; rev_rc v0.3.0 --rev v0.1.0 --prev-tag v0.2.0 || rc=$?
@@ -583,7 +597,7 @@ EOF_GH
         printf 'self-test FAILED: %s case(s).\n' "$fails" >&2
         return 1
     fi
-    printf 'self-test OK: 27 case(s).\n'
+    printf 'self-test OK: 30 case(s).\n'
     return 0
 }
 
@@ -610,17 +624,17 @@ main() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --prev-tag)
-                [ $# -ge 2 ] || usage
+                { [ $# -ge 2 ] && [ -n "${2:-}" ]; } || usage
                 prev_tag="${2:-}"
                 shift 2
                 ;;
             --json)
-                [ $# -ge 2 ] || usage
+                { [ $# -ge 2 ] && [ -n "${2:-}" ]; } || usage
                 json_out="${2:-}"
                 shift 2
                 ;;
             --rev)
-                [ $# -ge 2 ] || usage
+                { [ $# -ge 2 ] && [ -n "${2:-}" ]; } || usage
                 rev="${2:-}"
                 shift 2
                 ;;
