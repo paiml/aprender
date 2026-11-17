@@ -52,11 +52,11 @@ ft12() {
   [ "$n" -eq 1 ] || echo "RED FT-12: header has $n state tokens (want exactly 1 of PROPOSED|RULED)"
 }
 
-# 6615 T-5: a release workflow runs scripts/check_reconcile.sh and does not mask its exit.
+# 6615 T-5 (scans release.yml, binary-release.yml, release-gates-nightly.yml): a release workflow runs scripts/check_reconcile.sh and does not mask its exit.
 t5() {
   local f hit=0 w="$1/.github/workflows"
   [ -d "$w" ] || { echo "RED T-5: no workflows dir"; return 0; }
-  for f in "$w"/binary-release.yml "$w"/release-gates-nightly.yml; do
+  for f in "$w"/release.yml "$w"/binary-release.yml "$w"/release-gates-nightly.yml; do
     [ -f "$f" ] || continue
     if grep -q 'check_reconcile.sh' "$f"; then
       hit=$((hit + 1))
@@ -134,6 +134,8 @@ selftest() {
   mk; printf '### FT-12 · PROPOSED RULED\n' > "$t/$FT"; expect 1 "two state tokens"
   mk; printf 'run: echo hi\n' > "$t/.github/workflows/binary-release.yml"; expect 1 "reconcile not run"
   mk; printf 'run: bash scripts/check_reconcile.sh || true\n' > "$t/.github/workflows/binary-release.yml"; expect 1 "reconcile masked"
+  mk; rm -f "${t:?}/.github/workflows/binary-release.yml"; printf 'run: bash scripts/check_reconcile.sh "v$V"\n' > "$t/.github/workflows/release.yml"; expect 0 "release.yml runs reconcile"
+  mk; rm -f "${t:?}/.github/workflows/binary-release.yml"; printf 'run: bash scripts/check_reconcile.sh "v$V" || true\n' > "$t/.github/workflows/release.yml"; expect 1 "release.yml masks reconcile"
   mk; printf '3. **Plan quorum.** all lanes vote.\n' > "$t/$AE"; expect 1 "quorum rule weakened"
   mk; rm "$t/$DR"; expect 1 "input missing"
   mk; printf -- '- Task assignment is final\n' > "$t/$MG"; expect 1 "advisory-until-ack line gone"
@@ -142,7 +144,7 @@ selftest() {
   mk; printf -- '- a - blockers: D-1doc - x\n' >> "$t/$PP66"; expect 1 "Track D named in card blockers"
   mk; printf '### Track D\n| D-1doc | x | G-11 |\n' > "$t/$PP66"; expect 1 "heading not non-blocking"
   mk; printf '### Track D - docs (non-blocking)\n| W-B | x | S-3 |\n' > "$t/$PP66"; expect 1 "no Track D rows (vacuous)"
-  if [ "$fail" -eq 0 ]; then echo "self-test: 16 cases ok"; fi
+  if [ "$fail" -eq 0 ]; then echo "self-test: 18 cases ok"; fi
   return "$fail"
 }
 case "${1:-}" in

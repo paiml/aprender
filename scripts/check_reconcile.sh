@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check_reconcile.sh <tag> [--prev-tag T] [--json OUT] [--self-test]
+# check_reconcile.sh <tag> [--prev-tag T] [--rev SHA] [--json OUT] [--self-test]
 #
 # APR-RELEASE-001 section 6, T-5 reconcile. Computes the five predicates and
 # fails (exit 1) unless R1..R4 are ALL zero. The autopilot writes DONE only
@@ -14,6 +14,9 @@
 #                       --prev-tag's date.
 #   R5 ratio            issues opened vs closed in the window (recorded, not
 #                       gated).
+#
+# --rev SHA: judge the window prev..SHA when <tag> does not exist yet (release.yml bump path,
+#            before the tag is made). If <tag> exists it must point at SHA, else exit 2.
 #
 # Exit 0  = R1..R4 all zero.
 # Exit 1  = at least one of R1..R4 is nonzero (receipt still written/printed).
@@ -36,7 +39,7 @@ SCRIPT_DIR="$(dirname "$SELF_PATH")"
 CLOSE_SCRIPT="${SCRIPT_DIR}/check_pr_closes_issue.sh"
 
 usage() {
-    printf 'usage: %s <tag> [--prev-tag TAG] [--json FILE] | --self-test\n' "$(basename "$0")" >&2
+    printf 'usage: %s <tag> [--prev-tag TAG] [--rev SHA] [--json FILE] | --self-test\n' "$(basename "$0")" >&2
     exit 2
 }
 
@@ -505,11 +508,53 @@ self_test() {
         fails=$((fails + 1))
     fi
 
+    # --rev: a tag that is not made yet is judged at --rev (release.yml bump path). A bogus --rev is exit 2;
+    # a good --rev on a repo with a fake gh that sees nothing open reads R1..R4 = 0 -> exit 0; a seeded
+    # closing keyword with the issue open (fake gh lists #5) -> exit 1.
+    rc=0
+    bash "$SELF_PATH" "v9.9.9-none" --rev "not-a-commit-xyz" >/dev/null 2>&1 || rc=$?
+    if [ "$rc" -ne 2 ]; then
+        printf 'FAIL rev-bogus: expected exit 2, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    revdir="$(mktemp -d)"
+    mkdir -p "${revdir}/bin" "${revdir}/repo"
+    cat > "${revdir}/bin/gh" <<'EOF_GH'
+#!/bin/sh
+case "$*" in
+    "auth status") exit 0 ;;
+    "issue list --state open"*) printf '[{"number":5}]\n' ;;
+    *) printf '[]\n' ;;
+esac
+EOF_GH
+    chmod +x "${revdir}/bin/gh"
+    (
+        cd "${revdir}/repo" || exit 9
+        git init -q --template= . && git config core.hooksPath /dev/null && git config user.email t@example.invalid && git config user.name t
+        git commit -q --allow-empty -m "base" && git tag v0.1.0
+        git commit -q --allow-empty -m "work"
+        PATH="${revdir}/bin:${PATH}" bash "$SELF_PATH" v0.1.1 --rev HEAD --prev-tag v0.1.0 >/dev/null 2>&1
+    ) && rc=0 || rc=$?
+    if [ "$rc" -ne 0 ]; then
+        printf 'FAIL rev-clean: expected exit 0, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    (
+        cd "${revdir}/repo" || exit 9
+        git commit -q --allow-empty -m "fix: x" -m "Fixes #5"
+        PATH="${revdir}/bin:${PATH}" bash "$SELF_PATH" v0.1.1 --rev HEAD --prev-tag v0.1.0 >/dev/null 2>&1
+    ) && rc=0 || rc=$?
+    if [ "$rc" -ne 1 ]; then
+        printf 'FAIL rev-seeded: expected exit 1, got %s\n' "$rc" >&2
+        fails=$((fails + 1))
+    fi
+    rm -rf "${revdir:?}"
+
     if [ "$fails" -ne 0 ]; then
         printf 'self-test FAILED: %s case(s).\n' "$fails" >&2
         return 1
     fi
-    printf 'self-test OK: 17 case(s).\n'
+    printf 'self-test OK: 20 case(s).\n'
     return 0
 }
 
@@ -532,6 +577,7 @@ main() {
 
     prev_tag=""
     json_out=""
+    rev=""
     while [ $# -gt 0 ]; do
         case "$1" in
             --prev-tag)
@@ -540,6 +586,10 @@ main() {
                 ;;
             --json)
                 json_out="${2:-}"
+                shift 2
+                ;;
+            --rev)
+                rev="${2:-}"
                 shift 2
                 ;;
             *)
@@ -561,13 +611,27 @@ main() {
         exit 2
     fi
 
-    if ! git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; then
+    # end = the commit the window ends at: the tag's commit, or --rev when the tag is not made yet.
+    end=""
+    if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null 2>&1; then
+        end="$(git rev-parse "${tag}^{commit}")"
+        if [ -n "$rev" ] && [ "$(git rev-parse -q --verify "${rev}^{commit}" 2>/dev/null || true)" != "$end" ]; then
+            printf 'ENV: tag %s exists at %s, not at --rev %s\n' "$tag" "$end" "$rev" >&2
+            exit 2
+        fi
+    elif [ -n "$rev" ]; then
+        end="$(git rev-parse -q --verify "${rev}^{commit}" 2>/dev/null || true)"
+        if [ -z "$end" ]; then
+            printf 'ENV: --rev not a commit: %s\n' "$rev" >&2
+            exit 2
+        fi
+    else
         printf 'ENV: tag not found: %s\n' "$tag" >&2
         exit 2
     fi
 
     if [ -z "$prev_tag" ]; then
-        prev_tag="$(git describe --tags --abbrev=0 "${tag}^" 2>/dev/null || true)"
+        prev_tag="$(git describe --tags --abbrev=0 "${end}^" 2>/dev/null || true)"
         if [ -z "$prev_tag" ]; then
             printf 'ENV: could not derive --prev-tag from %s^; pass it explicitly.\n' "$tag" >&2
             exit 2
@@ -587,12 +651,12 @@ main() {
     input_dir="$(mktemp -d)" || exit 2
     trap 'rm -rf "${input_dir:?}"' EXIT
 
-    if ! fetch_live_inputs "$tag" "$prev_tag" "$input_dir"; then
+    if ! fetch_live_inputs "$end" "$prev_tag" "$input_dir"; then
         printf 'ENV: failed to gather inputs from git/gh.\n' >&2
         exit 2
     fi
 
-    sha="$(git rev-parse "$tag")"
+    sha="$end"
     prev_epoch="$(git log -1 --format=%at "$prev_tag")"
 
     rc=0

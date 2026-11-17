@@ -21,6 +21,9 @@
 #              PEM private-key blocks and token shapes. rc 0 = green; 1 (a finding) and 2 (not measured) = red. Its
 #              own self-test runs first: a red self-test is red. autopilot runs the same command on the release commit.
 #              Not one of the judge's 15 lanes: its green nights are this job's runs on main.
+#   reconcile  scripts/check_reconcile.sh <newest final tag> (APR-RELEASE-001 T-5, RECON1 aprender#7194): R1..R4 zero over
+#              the window before that tag. The same command release.yml runs before it tags; the three green nights of
+#              this job are what let the gate be counted as guarding a release. rc 0 = green; 1 and 2 = red.
 #
 # The judge's LANES rows (filled once nightly-train.yml is on main):
 #   milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
@@ -135,4 +138,36 @@ jobs:
             0) echo "CRATE-CONTENTS: every published crate read, no finding (rc=0)" ;;
             1) echo "::error::a published crate carries a secret-shaped file or line (rc=1): see the FOUND lines"; exit 1 ;;
             *) echo "::error::the published crates could not be read (rc=$rc): Unknown is not a pass"; exit 1 ;;
+          esac
+
+  reconcile:
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          fetch-depth: 0   # the tags name the window
+      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+        env:
+          REF: ${{ inputs.ref || github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
+
+      - name: check_reconcile.sh (self-test, then the newest final tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          rc=0
+          setsid --wait bash scripts/check_reconcile.sh --self-test || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::check_reconcile.sh self-test is red rc=$rc: its verdict would not be evidence"; exit 1; }
+          last=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1)
+          [ -n "$last" ] || { echo "::error::no final vX.Y.Z tag: the window cannot be named"; exit 2; }
+          echo "reconcile target: v$last"
+          setsid --wait bash scripts/check_reconcile.sh "v$last" || rc=$?
+          case $rc in
+            0) echo "RECONCILE v$last: R1..R4 all zero (rc=0)" ;;
+            1) echo "::error::reconcile refused v$last (rc=1): see the R1..R4 lines above"; exit 1 ;;
+            *) echo "::error::reconcile could not be judged (rc=$rc): Unknown is not a pass"; exit 1 ;;
           esac
