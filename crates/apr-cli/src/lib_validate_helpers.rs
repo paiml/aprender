@@ -99,3 +99,34 @@
         let p = write_manifest(dir.path(), &[("a.safetensors", 8), ("b.safetensors", 2)]);
         assert!(validate_shard_manifest(&p, dir.path()).is_ok());
     }
+
+    /// B3: a path with no parent has no manifest to consult and passes.
+    #[test]
+    fn test_validate_shard_index_no_parent_ok() {
+        assert!(validate_shard_index(Path::new("")).is_ok());
+    }
+
+    /// B3: a directory without `.apr-manifest.json` is not checked and passes.
+    #[test]
+    fn test_validate_shard_index_no_manifest_ok() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let idx = dir.path().join("model.safetensors.index.json");
+        assert!(validate_shard_index(&idx).is_ok());
+    }
+
+    /// B3: a present manifest is delegated to `validate_shard_manifest`.
+    #[test]
+    fn test_validate_shard_index_delegates_to_manifest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let idx = dir.path().join("model.safetensors.index.json");
+        std::fs::write(dir.path().join(".apr-manifest.json"), "{not json").expect("write");
+        let m = shard_err(validate_shard_index(&idx));
+        assert!(m.contains("Failed to parse manifest"), "msg: {m}");
+
+        write_manifest(dir.path(), &[("s.safetensors", 1)]);
+        let m = shard_err(validate_shard_index(&idx));
+        assert!(m.contains("is missing"), "msg: {m}");
+
+        std::fs::write(dir.path().join("s.safetensors"), [0u8; 1]).expect("write");
+        assert!(validate_shard_index(&idx).is_ok());
+    }
