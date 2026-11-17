@@ -1,36 +1,29 @@
 {
-  "build_identity": "cd871fed3eae3bb3f2c3e411645e72b854c7dfa7",
+  "build_identity": "0d7b74b840752d69adab64258c60c9327d34b1a9",
   "fp32_activations": {
-    "max_abs_err": 6.751743057975546e-7,
-    "max_rel_err": 1.6214049125919576e-7
+    "max_abs_err": 2.7821356525237206e-6,
+    "max_rel_err": 5.568608963671898e-7
   },
-  "host": "mac-server",
+  "host": "noah-Lambda-Vector",
   "host_arch": "x86_64",
   "input_set": {
-    "device": "x86_64+sse4.2+avx+avx2+fma+avx512f+avx512bw+avx512vnni",
+    "device": "x86_64",
     "driver": "none",
     "oracle": "apr_format_decode_f64",
     "row_sha256": "161efcb0f97746ead2b836fd2de3e084dea1c362cf8dd83032d3830aa8a634ca",
     "source_sha256": "c9834f19787a10943c8906006d7c3d40a590e0046047946056597e590ff795ed",
     "toolchain": "1.93.0"
   },
-  "input_set_hash": "6522cda881818b9e677aea4618c502b1d8e2aaefd01e94e42fbbdf4264c36a6c",
-  "isa_detected": [
-    "sse4.2",
-    "avx",
-    "avx2",
-    "fma",
-    "avx512f",
-    "avx512bw",
-    "avx512vnni"
-  ],
+  "input_set_hash": "b2f22a7602f9220abe1d17320594e17f3fcb6750c0c1927148bd7d5afa64ad96",
+  "isa_detected": [],
+  "isa_forced": "scalar",
   "kernel_id": "cpu.matvec.apr_q4",
   "margin": {
     "acc": "f32",
     "error_model": "EM-DOT",
-    "max_margin": 0.00012582004836859338,
-    "nmse": 2.4321349965007475e-14,
-    "p999_margin": 0.00012582004836859338,
+    "max_margin": 0.00046594951182879273,
+    "nmse": 1.917319578427197e-13,
+    "p999_margin": 0.00046594951182879273,
     "verdict": "pass"
   },
   "oracle": "apr_format_decode_f64",
@@ -39,12 +32,12 @@
   "registry_precision": "f32",
   "schema": "kernel-parity-receipt/v1",
   "served": {
-    "max_abs_err": 6.751743057975546e-7,
-    "max_rel_err": 1.6214049125919576e-7
+    "max_abs_err": 2.7821356525237206e-6,
+    "max_rel_err": 5.568608963671898e-7
   },
   "source_fn": "dequantize_apr_q4",
-  "tolerance_rel": 4e-7,
-  "ts": "2026-09-29T03:39:51Z",
+  "tolerance_rel": 2e-6,
+  "ts": "2026-11-17T21:38:30Z",
   "workload": {
     "in_dim": 2048,
     "out_dim": 256,
