@@ -77,7 +77,7 @@ for record in data.split(b"\x00"):
         nums.add(m.group(3))
 for n in sorted(nums, key=int):
     print(n)
-' "$logfile")"
+' "$logfile")" || return 2
 
     # grep -v exits 1 on an empty list (no open issue): that is data, not a failed read; any other status is a failure.
     open_nums="$(cut -f1 "$issues_open_file" | { grep -vE '^[[:space:]]*$' || [ "$?" -eq 1 ]; } | LC_ALL=C sort -u)"
@@ -111,19 +111,24 @@ for pr in data:
     body = pr.get("body") or ""
     with open(os.path.join(outdir, "%s.txt" % num), "w") as fh:
         fh.write(body)
-' "$merged_prs_file" "$workdir"
+' "$merged_prs_file" "$workdir" || { rm -rf "${workdir:?}"; return 2; }
 
+    failed=""
     for bodyfile in "$workdir"/*.txt; do
         [ -e "$bodyfile" ] || continue
         num="$(basename "$bodyfile" .txt)"
         rc=0
         bash "$CLOSE_SCRIPT" --body "$bodyfile" >/dev/null 2>&1 || rc=$?
         if [ "$rc" -eq 1 ]; then
-            printf '%s\n' "$num"
+            failed="${failed}${num}
+"
+        elif [ "$rc" -ne 0 ]; then
+            rm -rf "${workdir:?}"
+            return 2   # the body check itself errored: not a pass
         fi
-    done | LC_ALL=C sort -n -u
-
+    done
     rm -rf "${workdir:?}"
+    printf '%s' "$failed" | grep -v '^$' | LC_ALL=C sort -n -u || [ "$?" -eq 1 ]
     return 0
 }
 
@@ -143,7 +148,7 @@ for pr in data:
     ref = pr.get("headRefName", "")
     if ref:
         print(ref)
-' "$open_prs_file")"
+' "$open_prs_file")" || return 2
     open_sp=" $(printf '%s' "$open_refs" | tr '\n' ' ') "
 
     while IFS="$(printf '\t')" read -r branch date_str; do
@@ -187,7 +192,7 @@ for pr in data:
     epoch = int(dt.replace(tzinfo=datetime.timezone.utc).timestamp())
     if epoch < prev_epoch:
         print(pr.get("number"))
-' "$open_prs_file" "$prev_tag_epoch"
+' "$open_prs_file" "$prev_tag_epoch" || return 2
     return 0
 }
 
@@ -242,11 +247,12 @@ receipt = {
 }
 print(json.dumps(receipt))
 '
-}
+}   # callers add || return 2
 
 # reconcile_from_dir DIR SHA TAG PREV_TAG PREV_EPOCH JSON_OUT
 # Runs all five predicates against the files in DIR, writes/prints the
-# receipt, and returns 0 iff R1..R4 are all zero.
+# receipt, and returns 0 iff R1..R4 are all zero, 1 if any is nonzero, 2 if a
+# predicate or the receipt could not be computed (a crash is never a zero).
 reconcile_from_dir() {
     dir="$1"
     sha="$2"
@@ -257,25 +263,25 @@ reconcile_from_dir() {
 
     cutoff_epoch="$(date -u -d '-14 days' +%s)"  # bashrs disable-line=DET002
 
-    r1_list="$(r1_fixed_but_open "${dir}/log.bin" "${dir}/issues-open.tsv")"
-    r2_list="$(r2_missing_closing_ref "${dir}/merged-prs.json")"
-    r3_list="$(r3_dead_branches "${dir}/branches.txt" "${dir}/open-prs.json" "$cutoff_epoch")"
-    r4_list="$(r4_dirty_stale_prs "${dir}/open-prs.json" "$prev_epoch")"
+    r1_list="$(r1_fixed_but_open "${dir}/log.bin" "${dir}/issues-open.tsv")" || return 2
+    r2_list="$(r2_missing_closing_ref "${dir}/merged-prs.json")" || return 2
+    r3_list="$(r3_dead_branches "${dir}/branches.txt" "${dir}/open-prs.json" "$cutoff_epoch")" || return 2
+    r4_list="$(r4_dirty_stale_prs "${dir}/open-prs.json" "$prev_epoch")" || return 2
 
     arrival="0"
     closure="0"
     if [ -f "${dir}/issues-window.json" ]; then
-        arrival="$(python3 -c 'import json,sys;print(int(json.load(open(sys.argv[1])).get("opened",0)))' "${dir}/issues-window.json")"
-        closure="$(python3 -c 'import json,sys;print(int(json.load(open(sys.argv[1])).get("closed",0)))' "${dir}/issues-window.json")"
+        arrival="$(python3 -c 'import json,sys;print(int(json.load(open(sys.argv[1])).get("opened",0)))' "${dir}/issues-window.json")" || return 2
+        closure="$(python3 -c 'import json,sys;print(int(json.load(open(sys.argv[1])).get("closed",0)))' "${dir}/issues-window.json")" || return 2
     fi
-    ratio="$(r5_ratio "$arrival" "$closure")"
+    ratio="$(r5_ratio "$arrival" "$closure")" || return 2
 
     r1_count="$(count_lines "$r1_list")"
     r2_count="$(count_lines "$r2_list")"
     r3_count="$(count_lines "$r3_list")"
     r4_count="$(count_lines "$r4_list")"
 
-    receipt="$(build_json "$sha" "$prev_tag" "$tag" "$r1_list" "$r1_count" "$r2_list" "$r2_count" "$r3_list" "$r3_count" "$r4_list" "$r4_count" "$arrival" "$closure" "$ratio")"
+    receipt="$(build_json "$sha" "$prev_tag" "$tag" "$r1_list" "$r1_count" "$r2_list" "$r2_count" "$r3_list" "$r3_count" "$r4_list" "$r4_count" "$arrival" "$closure" "$ratio")" || return 2
 
     if [ -n "$json_out" ]; then
         printf '%s\n' "$receipt" > "$json_out"
@@ -507,6 +513,23 @@ self_test() {
         fails=$((fails + 1))
     fi
 
+    # N3: a predicate that cannot read its input is exit 2, never a zero count.
+    fixdir="$(mktemp -d)"
+    : > "${fixdir}/log.bin"; : > "${fixdir}/issues-open.tsv"; : > "${fixdir}/branches.txt"
+    printf '{not json' > "${fixdir}/merged-prs.json"; printf '[]' > "${fixdir}/open-prs.json"
+    rc=0
+    reconcile_from_dir "$fixdir" "abc123" "v0.1.1" "v0.1.0" "$(date -u +%s)" "" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 2 ]; then printf 'FAIL malformed-merged-prs: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    printf '[]' > "${fixdir}/merged-prs.json"; printf 'oops' > "${fixdir}/open-prs.json"
+    rc=0
+    reconcile_from_dir "$fixdir" "abc123" "v0.1.1" "v0.1.0" "$(date -u +%s)" "" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 2 ]; then printf 'FAIL malformed-open-prs: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    printf '[]' > "${fixdir}/open-prs.json"
+    rc=0
+    reconcile_from_dir "$fixdir" "abc123" "v0.1.1" "v0.1.0" "$(date -u +%s)" "" >/dev/null 2>&1 || rc=$?  # bashrs disable-line=DET002
+    if [ "$rc" -ne 0 ]; then printf 'FAIL empty-fixture-clean: expected exit 0, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    rm -rf "${fixdir:?}"
+
     # --rev: a tag that is not made yet is judged at --rev (release.yml bump path). Every row runs with a stub gh on
     # PATH, so exit 2 can only come from the --rev / window logic, never from a missing gh.
     revdir="$(mktemp -d)"
@@ -560,7 +583,7 @@ EOF_GH
         printf 'self-test FAILED: %s case(s).\n' "$fails" >&2
         return 1
     fi
-    printf 'self-test OK: 24 case(s).\n'
+    printf 'self-test OK: 27 case(s).\n'
     return 0
 }
 
