@@ -36,3 +36,10 @@ falsification_tests:
     test_harness: "grep -c '^```bash' book/src/cli/validate.md"
     expected_output: "stdout >= 1"
     if_fails: "Add a ```bash code block with a runnable example."
+
+  - id: FALSIFY-PAGE-CLI-VALIDATE-004
+    name: truncated_shard_refused
+    prediction: "a shard whose size differs from .apr-manifest.json, or is absent, is refused with a re-download hint"
+    test_harness: "cargo test -p apr-cli --lib validate_shard_manifest"
+    expected_output: "test result: ok. 5 passed"
+    if_fails: "validate_shard_manifest in crates/apr-cli/src/validate.rs accepts a missing, truncated or unparseable shard manifest."

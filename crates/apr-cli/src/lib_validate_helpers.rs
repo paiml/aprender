@@ -24,3 +24,78 @@
         assert!(parse_showcase_step("Import").is_err());
         assert!(parse_showcase_step("").is_err());
     }
+
+    fn write_manifest(dir: &Path, files: &[(&str, u64)]) -> PathBuf {
+        let map: serde_json::Map<String, serde_json::Value> = files
+            .iter()
+            .map(|(n, s)| {
+                (
+                    (*n).to_string(),
+                    serde_json::json!({"size": s, "blake3": "00"}),
+                )
+            })
+            .collect();
+        let manifest = serde_json::json!({"version": 1, "repo": "org/repo", "files": map});
+        let p = dir.join(".apr-manifest.json");
+        std::fs::write(&p, manifest.to_string()).expect("write manifest");
+        p
+    }
+
+    fn shard_err(r: Result<(), CliError>) -> String {
+        match r {
+            Err(CliError::ValidationFailed(m)) => m,
+            other => panic!("expected ValidationFailed, got {other:?}"),
+        }
+    }
+
+    /// B2: a manifest file that does not exist is refused.
+    #[test]
+    fn test_validate_shard_manifest_missing_manifest() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let m = shard_err(validate_shard_manifest(
+            &dir.path().join(".apr-manifest.json"),
+            dir.path(),
+        ));
+        assert!(m.contains("Failed to read manifest"), "msg: {m}");
+    }
+
+    /// B2: malformed manifest JSON is refused.
+    #[test]
+    fn test_validate_shard_manifest_bad_json() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = dir.path().join(".apr-manifest.json");
+        std::fs::write(&p, "{not json").expect("write");
+        let m = shard_err(validate_shard_manifest(&p, dir.path()));
+        assert!(m.contains("Failed to parse manifest"), "msg: {m}");
+    }
+
+    /// B2: a shard listed in the manifest but absent on disk is refused.
+    #[test]
+    fn test_validate_shard_manifest_missing_shard() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let p = write_manifest(dir.path(), &[("model-00001.safetensors", 4)]);
+        let m = shard_err(validate_shard_manifest(&p, dir.path()));
+        assert!(m.contains("model-00001.safetensors"), "msg: {m}");
+        assert!(m.contains("is missing"), "msg: {m}");
+    }
+
+    /// B2: a truncated shard (size differs from the manifest) is refused.
+    #[test]
+    fn test_validate_shard_manifest_size_mismatch() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.safetensors"), [0u8; 3]).expect("write");
+        let p = write_manifest(dir.path(), &[("a.safetensors", 8)]);
+        let m = shard_err(validate_shard_manifest(&p, dir.path()));
+        assert!(m.contains("size mismatch"), "msg: {m}");
+        assert!(m.contains("expected 8 bytes, got 3 bytes"), "msg: {m}");
+    }
+
+    /// B2: matching sizes pass.
+    #[test]
+    fn test_validate_shard_manifest_all_good() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        std::fs::write(dir.path().join("a.safetensors"), [0u8; 8]).expect("write");
+        std::fs::write(dir.path().join("b.safetensors"), [0u8; 2]).expect("write");
+        let p = write_manifest(dir.path(), &[("a.safetensors", 8), ("b.safetensors", 2)]);
+        assert!(validate_shard_manifest(&p, dir.path()).is_ok());
+    }
