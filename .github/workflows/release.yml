@@ -41,6 +41,7 @@ permissions:
   contents: write
   id-token: write   # Trusted Publishing: OIDC exchange for a short-lived crates.io token
   actions: write    # gh workflow run binary-release.yml
+  issues: read      # check_reconcile.sh R1/R5 list issues
   pull-requests: write   # T5: next_dev_bump.sh opens the X.(Y+1).0-dev bump PR on main after the tag
 
 concurrency:
@@ -61,6 +62,30 @@ jobs:
         run: |
           git config user.name "aprender-release"
           git config user.email "noreply@paiml.com"
+      - name: check_reconcile.sh (T-5 reconcile gate, before any tag or publish)
+        # RECON1 (aprender#7194): R1..R4 must all be zero or nothing is tagged or published. Runs on the bump path
+        # (tag not made yet: judged at the release sha via --rev) and on publish_only (tag exists). Unmasked on purpose.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ inputs.version }}
+          SHA: ${{ inputs.sha }}
+          PUBLISH_ONLY: ${{ inputs.publish_only && '1' || '0' }}
+        run: |
+          set -uo pipefail
+          # previous tag = newest final vX.Y.Z strictly below this version
+          prev=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | grep -vxF "$VERSION" \
+            | { sort -V; printf '%s\n' "$VERSION"; } | sort -V | awk -v v="$VERSION" '$0==v{print p; exit} {p=$0}')
+          [ -n "$prev" ] || { echo "::error::no final tag below v$VERSION: the reconcile window cannot be named"; exit 2; }
+          rev=()
+          [ "$PUBLISH_ONLY" = 1 ] || rev=(--rev "$SHA")
+          rc=0
+          setsid --wait bash scripts/check_reconcile.sh "v$VERSION" --prev-tag "v$prev" ${rev[@]+"${rev[@]}"} || rc=$?
+          case $rc in
+            0) echo "RECONCILE v$VERSION (window v$prev..): R1..R4 all zero (rc=0)" ;;
+            1) echo "::error::reconcile refused v$VERSION (rc=1): see the R1..R4 lines above"; exit 1 ;;
+            *) echo "::error::reconcile could not be judged (rc=$rc): Unknown is not a pass"; exit 1 ;;
+          esac
       - id: auth
         if: ${{ !inputs.dry_run && !inputs.token_auth }}
         uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6

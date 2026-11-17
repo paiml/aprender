@@ -21,6 +21,9 @@
 #              PEM private-key blocks and token shapes. rc 0 = green; 1 (a finding) and 2 (not measured) = red. Its
 #              own self-test runs first: a red self-test is red. autopilot runs the same command on the release commit.
 #              Not one of the judge's 15 lanes: its green nights are this job's runs on main.
+#   reconcile  scripts/check_reconcile.sh <newest final tag> (APR-RELEASE-001 T-5, RECON1 aprender#7194): R1..R4 zero over
+#              the window before that tag. The same command and window (--prev-tag by the same rule) release.yml runs before it tags; the three green nights of
+#              this job are what let the gate be counted as guarding a release. rc 0 = green; 1 and 2 = red.
 #
 # The judge's LANES rows (filled once nightly-train.yml is on main):
 #   milestone;verdict;check_milestone_cut.sh --must-carry;.github/workflows/release-gates-nightly.yml;^schedule$;^milestone$
@@ -28,16 +31,6 @@
 name: release-gates-nightly
 
 on:
-  workflow_call:   # #5082: release-rehearsal-nightly.yml calls this at its pick C
-    inputs:
-      ref:
-        description: C, the 40-hex commit every job checks out and asserts
-        type: string
-        required: true
-      caller:
-        description: the calling job's name, which GitHub puts first in each called job's name
-        type: string
-        required: true
   schedule:
     # Schedule events on this account fire 3h51m-6h49m late (examples-nightly.yml, #3292), so the cron is set
     # ~5h before the 04:45Z judge. Both jobs take minutes; landing early is harmless, landing after 04:45Z is
@@ -46,7 +39,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: release-gates-nightly-${{ github.ref }}${{ inputs.caller && format('-{0}-{1}', inputs.caller, github.run_id) || '' }}
+  group: release-gates-nightly-${{ github.ref }}
   cancel-in-progress: false
 
 permissions:
@@ -61,11 +54,11 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0   # the tags name the last release
-      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+      - name: Assert HEAD is ${{ github.sha }}
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
       - name: check_milestone_cut.sh <train> --must-carry (autopilot cut_tag, before the carry)
@@ -99,10 +92,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || github.sha }}
-      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
+      - name: Assert HEAD is ${{ github.sha }}
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
       - name: check_publish_preflight.sh --graph-only (R2 + R6)
@@ -118,10 +111,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.ref || github.sha }}
-      - name: Assert HEAD is ${{ inputs.ref || github.sha }}
+          ref: ${{ github.sha }}
+      - name: Assert HEAD is ${{ github.sha }}
         env:
-          REF: ${{ inputs.ref || github.sha }}
+          REF: ${{ github.sha }}
         run: bash scripts/release/release_lanes.sh assert-head "$REF"
 
       - name: check_crate_contents.sh (nothing secret in the published crates)
@@ -135,4 +128,40 @@ jobs:
             0) echo "CRATE-CONTENTS: every published crate read, no finding (rc=0)" ;;
             1) echo "::error::a published crate carries a secret-shaped file or line (rc=1): see the FOUND lines"; exit 1 ;;
             *) echo "::error::the published crates could not be read (rc=$rc): Unknown is not a pass"; exit 1 ;;
+          esac
+
+  reconcile:
+    runs-on: [self-hosted, X64, Linux, clean-room, intel]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0   # the tags name the window
+      - name: Assert HEAD is ${{ github.sha }}
+        env:
+          REF: ${{ github.sha }}
+        run: bash scripts/release/release_lanes.sh assert-head "$REF"
+
+      - name: check_reconcile.sh (self-test, then the newest final tag)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -uo pipefail
+          rc=0
+          setsid --wait bash scripts/check_reconcile.sh --self-test || rc=$?
+          [ "$rc" -eq 0 ] || { echo "::error::check_reconcile.sh self-test is red rc=$rc: its verdict would not be evidence"; exit 1; }
+          last=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1)
+          [ -n "$last" ] || { echo "::error::no final vX.Y.Z tag: the window cannot be named"; exit 2; }
+          # previous tag = newest final vX.Y.Z strictly below the target: the same window release.yml judges
+          prev=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | grep -vxF "$last" \
+            | { sort -V; printf '%s\n' "$last"; } | sort -V | awk -v v="$last" '$0==v{print p; exit} {p=$0}')
+          [ -n "$prev" ] || { echo "::error::no final tag below v$last: the window cannot be named"; exit 2; }
+          echo "reconcile target: v$last (window v$prev..v$last)"
+          setsid --wait bash scripts/check_reconcile.sh "v$last" --prev-tag "v$prev" || rc=$?
+          case $rc in
+            0) echo "RECONCILE v$last: R1..R4 all zero (rc=0)" ;;
+            1) echo "::error::reconcile refused v$last (rc=1): see the R1..R4 lines above"; exit 1 ;;
+            *) echo "::error::reconcile could not be judged (rc=$rc): Unknown is not a pass"; exit 1 ;;
           esac
