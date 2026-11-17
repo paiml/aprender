@@ -29,7 +29,9 @@ on_triggers() {
     ' "$1"
 }
 bad_trigger() { # FILE: succeeds when the workflow can fire on a PR, merge-queue, push, release or call event
-    on_triggers "$1" | grep -Eq '^(KEY (pull_request|pull_request_target|merge_group|push|release|workflow_call)$|INLINE (.*[^A-Za-z_])?(pull_request|pull_request_target|merge_group|push|release|workflow_call)([^A-Za-z_]|$))'
+    local trig
+    trig="$(on_triggers "$1")" || return 2
+    grep -Eq '^(KEY (pull_request|pull_request_target|merge_group|push|release|workflow_call)$|INLINE (.*[^A-Za-z_])?(pull_request|pull_request_target|merge_group|push|release|workflow_call)([^A-Za-z_]|$))' <<<"$trig"
 }
 
 run() {
