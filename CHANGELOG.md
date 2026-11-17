@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Planned as 0.75.0 for the Fri 20 Nov 2026 train. This is a draft. The full list of merged PRs is added on the release branch.
+
+### Qwen 4 (`qwen4_exp`): preview architecture recognised, not yet runnable
+
+This release does **not** support running Qwen 4. It ships what has merged:
+
+- **Recognised.** `qwen4_exp` configs are parsed and the architecture is named. Ops that are not supported are refused by name (#7171).
+- **Unsafe paths refused by name.** `apr import` and the CUDA loader refuse a `qwen4_exp` model with an error that names the architecture, instead of loading it wrong (#7173). A GGUF file is not covered yet: a GGUF whose architecture key is unknown still falls back to Qwen2.
+- **6 of 7 new ops at parity on prefill.** These ops match the transformers reference (sha `36e937ae`) within 1e-5 fp32 on seeded golden vectors:
+  - the lightning indexer (block top-k);
+  - indexed sparse attention with its sigmoid output gate;
+  - the multi-stream (hc) residual;
+  - the gated RMSNorm;
+  - the n-gram hashed embedding;
+  - PLE (#7176, #7177, #7178).
+- **Not in this release.** MTP has no reference implementation to test against. Decode, the KV cache, n-gram context carry-over and PLE conv state are planned for 0.75.x. Until then `apr run`, `apr chat` and `apr serve` do not run a Qwen 4 model.
+
 ## [0.74.0] - 2026-11-14
 
 Plot verbs in this release are a preview: NOT pv-proven and not for course demos. Courses pin plots only from v0.74.2.
