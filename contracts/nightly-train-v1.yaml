@@ -116,6 +116,11 @@ proof_obligations:
     property: "Under --exit-verdict exit 0 means RELEASABLE and every NOT RELEASABLE exits non-zero; a RELEASABLE run still exits non-zero when a later step fails (inbox read-back, NT-INV-013); without the flag the status says only whether the train ran"
     formal: "exit_verdict(run) ⇒ (exit(run) = 0 ⇒ line(run) = RELEASABLE(C)) ∧ (line(run) ≠ RELEASABLE(C) ⇒ exit(run) ≠ 0)"
     applies_to: verdict_line
+  - id: NT-INV-016
+    type: invariant
+    property: "A lab row (kind lab) names its one ticket and owner in its check column, is read like an info lane, and never changes the verdict: a red or not_measured lab lane leaves the line RELEASABLE. The edge lane (LAB #5254, the Jetson fast-verbs nightly) is such a row."
+    formal: "kind(lane) = lab ⇒ (verdict(run) is independent of state(lane)) ∧ ticket(check(lane)) ≠ ∅"
+    applies_to: verdict_line
 
 falsification_tests:
   - id: FALSIFY-NT-001

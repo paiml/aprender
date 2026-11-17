@@ -117,6 +117,7 @@ cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nigh
 assets;lab;LAB #5152, owner aprender-cd: binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^(schedule|workflow_dispatch)$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
 preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^preflight$
 publish-dryrun;lab;LAB #5153, owner aprender-cd: rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^publish-dryrun$
+edge;lab;LAB #5254, owner aprender-cd: edge-fast-verbs-nightly.yml, CRUX verbs + tok/s on the Jetson;.github/workflows/edge-fast-verbs-nightly.yml;^(schedule|workflow_dispatch)$;^edge$
 coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^(schedule|workflow_dispatch)$;^coverage$
 guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^(schedule|workflow_dispatch)$;
 mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^(schedule|workflow_dispatch)$;
@@ -895,7 +896,7 @@ self_test() {
         env NIGHTLY_TRAIN_FAULT=judge bash "$SCRIPT_PATH" --from "$d" --out "$tmp/out" --now 2026-10-04T06:00:00Z
     row the_trap_line_is_recorded 0 "NOT RELEASABLE: nightly-train, judge" "" -- cat "$tmp/out/2026-10-04/line"
     st_verdict_lanes_are_release_day_checks() { printf "verdict=%s;lab=%s;coverage=%s\n" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"verdict\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$2 == \"lab\" { printf \"%s%s\", s, \$1; s = \" \" }")" "$(printf "%s\n" "$LANES" | awk -F ";" "\$1 == \"coverage\" { print \$2 }")"; }
-    row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build models milestone cleanroom-gpu preflight;lab=deep-bins-smoke dogfood readiness cleanroom-cpu assets publish-dryrun;coverage=info" "" -- \
+    row verdict_lanes_are_release_day_checks 0 "verdict=ci-main deep-doctests deep-nodefault deep-examples deep-bins-build models milestone cleanroom-gpu preflight;lab=deep-bins-smoke dogfood readiness cleanroom-cpu assets publish-dryrun edge;coverage=info" "" -- \
         st_verdict_lanes_are_release_day_checks
     st_norm() {
         printf '{"workflows":[{"node_id":"WA","path":".github/workflows/a.yml"},{"node_id":"WC","path":".github/workflows/c.yml"}]}\n' > "$tmp/wf.json"
@@ -1481,6 +1482,7 @@ m107_lanes_unread_run_dropped	s/if (n == 0) { for (i = 1; i <= o; i++) print old
 m108_lanes_run_on_c_reread	s/if (id != "" \&\& h != C) print id/if (id != "") print id/
 m109_self_test_runs_the_bundle	s/ \&\& SCRIPT_PATH="\$tmp\/self\/\${SCRIPT_PATH##\*\/}" || exit 3/ || exit 3/
 m110_lab_lanes_vote	s/\$2 == "verdict" { nv++/($2 == "verdict" || $2 == "lab") { nv++/
+m112_edge_lane_flipped_to_verdict	/^edge;lab;/s/^edge;lab;/edge;verdict;/
 '
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
