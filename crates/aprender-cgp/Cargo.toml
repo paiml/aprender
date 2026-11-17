@@ -28,7 +28,6 @@ serde-saphyr = { workspace = true }
 anyhow = "1.0"
 thiserror = "2.0"
 # Time
-chrono = "0.4"
 # System detection
 which = "7"
 num_cpus = "1.17"
