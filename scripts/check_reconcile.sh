@@ -79,7 +79,8 @@ for n in sorted(nums, key=int):
     print(n)
 ' "$logfile")"
 
-    open_nums="$(cut -f1 "$issues_open_file" 2>/dev/null | grep -vE '^[[:space:]]*$' | LC_ALL=C sort -u || true)"
+    # grep -v exits 1 on an empty list (no open issue): that is data, not a failed read; any other status is a failure.
+    open_nums="$(cut -f1 "$issues_open_file" | { grep -vE '^[[:space:]]*$' || [ "$?" -eq 1 ]; } | LC_ALL=C sort -u)"
     open_sp=" $(printf '%s' "$open_nums" | tr '\n' ' ') "
 
     while IFS= read -r num; do
@@ -295,9 +296,7 @@ reconcile_from_dir() {
 # ---------------------------------------------------------------------------
 
 fetch_live_inputs() {
-    tag="$1"
-    prev_tag="$2"
-    dir="$3"
+    local tag="$1" prev_tag="$2" dir="$3" prev_date opened closed
 
     gh issue list --state open --limit 1000 --json number \
         | python3 -c 'import json,sys
@@ -314,10 +313,10 @@ for i in json.load(sys.stdin):
     gh pr list --state open --json number,headRefName,mergeStateStatus,createdAt --limit 500 \
         > "${dir}/open-prs.json" || return 1
 
-    git fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*' --prune || true
+    git fetch --quiet origin '+refs/heads/*:refs/remotes/origin/*' --prune || return 1
     git for-each-ref --format="$(printf '%%(refname:short)\t%%(committerdate:iso-strict)')" refs/remotes/origin/ \
         | sed -E 's#^origin/##' \
-        > "${dir}/branches.txt" || true
+        > "${dir}/branches.txt" || return 1
 
     opened="$(gh issue list --search "created:>=${prev_date%%T*}" --json number --limit 1000 | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')"
     closed="$(gh issue list --state closed --search "closed:>=${prev_date%%T*}" --json number --limit 1000 | python3 -c 'import json,sys;print(len(json.load(sys.stdin)))')"
@@ -508,15 +507,8 @@ self_test() {
         fails=$((fails + 1))
     fi
 
-    # --rev: a tag that is not made yet is judged at --rev (release.yml bump path). A bogus --rev is exit 2;
-    # a good --rev on a repo with a fake gh that sees nothing open reads R1..R4 = 0 -> exit 0; a seeded
-    # closing keyword with the issue open (fake gh lists #5) -> exit 1.
-    rc=0
-    bash "$SELF_PATH" "v9.9.9-none" --rev "not-a-commit-xyz" >/dev/null 2>&1 || rc=$?
-    if [ "$rc" -ne 2 ]; then
-        printf 'FAIL rev-bogus: expected exit 2, got %s\n' "$rc" >&2
-        fails=$((fails + 1))
-    fi
+    # --rev: a tag that is not made yet is judged at --rev (release.yml bump path). Every row runs with a stub gh on
+    # PATH, so exit 2 can only come from the --rev / window logic, never from a missing gh.
     revdir="$(mktemp -d)"
     mkdir -p "${revdir}/bin" "${revdir}/repo"
     cat > "${revdir}/bin/gh" <<'EOF_GH'
@@ -530,31 +522,45 @@ EOF_GH
     chmod +x "${revdir}/bin/gh"
     (
         cd "${revdir}/repo" || exit 9
-        git init -q --template= . && git config core.hooksPath /dev/null && git config user.email t@example.invalid && git config user.name t
+        git init -q --template= . && git config core.hooksPath /dev/null && git config user.email t@example.invalid && git config user.name t && git remote add origin "${revdir}/repo"
         git commit -q --allow-empty -m "base" && git tag v0.1.0
         git commit -q --allow-empty -m "work"
-        PATH="${revdir}/bin:${PATH}" bash "$SELF_PATH" v0.1.1 --rev HEAD --prev-tag v0.1.0 >/dev/null 2>&1
-    ) && rc=0 || rc=$?
-    if [ "$rc" -ne 0 ]; then
-        printf 'FAIL rev-clean: expected exit 0, got %s\n' "$rc" >&2
-        fails=$((fails + 1))
-    fi
+        git tag v0.2.0
+    )
+    rev_rc() { # args... -> rc of check_reconcile.sh run inside the fixture repo
+        local r=0
+        ( cd "${revdir}/repo" && PATH="${revdir}/bin:${PATH}" bash "$SELF_PATH" "$@" >/dev/null 2>&1 ) || r=$?
+        return "$r"
+    }
+    rc=0; rev_rc v9.9.9-none --rev "not-a-commit-xyz" --prev-tag v0.1.0 || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL rev-bogus: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    rc=0; rev_rc v0.3.0 --prev-tag v0.1.0 --rev || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL rev-novalue: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    rc=0; rev_rc v0.3.0 --rev HEAD --prev-tag v0.2.0 || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL rev-empty-window: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    rc=0; rev_rc v0.3.0 --rev v0.1.0 --prev-tag v0.2.0 || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL rev-not-ancestor: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    rc=0; rev_rc v0.2.0 --rev v0.1.0 --prev-tag v0.1.0 || rc=$?
+    if [ "$rc" -ne 2 ]; then printf 'FAIL rev-tag-elsewhere: expected exit 2, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
+    (
+        cd "${revdir}/repo" || exit 9
+        git commit -q --allow-empty -m "next"
+    )
+    rc=0; rev_rc v0.3.0 --rev HEAD --prev-tag v0.2.0 || rc=$?
+    if [ "$rc" -ne 0 ]; then printf 'FAIL rev-clean: expected exit 0, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     (
         cd "${revdir}/repo" || exit 9
         git commit -q --allow-empty -m "fix: x" -m "Fixes #5"
-        PATH="${revdir}/bin:${PATH}" bash "$SELF_PATH" v0.1.1 --rev HEAD --prev-tag v0.1.0 >/dev/null 2>&1
-    ) && rc=0 || rc=$?
-    if [ "$rc" -ne 1 ]; then
-        printf 'FAIL rev-seeded: expected exit 1, got %s\n' "$rc" >&2
-        fails=$((fails + 1))
-    fi
+    )
+    rc=0; rev_rc v0.3.0 --rev HEAD --prev-tag v0.2.0 || rc=$?
+    if [ "$rc" -ne 1 ]; then printf 'FAIL rev-seeded: expected exit 1, got %s\n' "$rc" >&2; fails=$((fails + 1)); fi
     rm -rf "${revdir:?}"
 
     if [ "$fails" -ne 0 ]; then
         printf 'self-test FAILED: %s case(s).\n' "$fails" >&2
         return 1
     fi
-    printf 'self-test OK: 20 case(s).\n'
+    printf 'self-test OK: 24 case(s).\n'
     return 0
 }
 
@@ -581,14 +587,17 @@ main() {
     while [ $# -gt 0 ]; do
         case "$1" in
             --prev-tag)
+                [ $# -ge 2 ] || usage
                 prev_tag="${2:-}"
                 shift 2
                 ;;
             --json)
+                [ $# -ge 2 ] || usage
                 json_out="${2:-}"
                 shift 2
                 ;;
             --rev)
+                [ $# -ge 2 ] || usage
                 rev="${2:-}"
                 shift 2
                 ;;
@@ -640,6 +649,13 @@ main() {
 
     if ! git rev-parse -q --verify "refs/tags/${prev_tag}" >/dev/null 2>&1; then
         printf 'ENV: prev-tag not found: %s\n' "$prev_tag" >&2
+        exit 2
+    fi
+
+    # The window must be a real, non-empty range: prev-tag an ancestor of the end commit and not the end commit itself.
+    if ! git merge-base --is-ancestor "refs/tags/${prev_tag}" "$end" 2>/dev/null \
+        || [ "$(git rev-parse "refs/tags/${prev_tag}^{commit}")" = "$end" ]; then
+        printf 'ENV: prev-tag %s is not an ancestor of %s (or the window is empty).\n' "$prev_tag" "$end" >&2
         exit 2
     fi
 

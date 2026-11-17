@@ -22,7 +22,7 @@
 #              own self-test runs first: a red self-test is red. autopilot runs the same command on the release commit.
 #              Not one of the judge's 15 lanes: its green nights are this job's runs on main.
 #   reconcile  scripts/check_reconcile.sh <newest final tag> (APR-RELEASE-001 T-5, RECON1 aprender#7194): R1..R4 zero over
-#              the window before that tag. The same command release.yml runs before it tags; the three green nights of
+#              the window before that tag. The same command and window (--prev-tag by the same rule) release.yml runs before it tags; the three green nights of
 #              this job are what let the gate be counted as guarding a release. rc 0 = green; 1 and 2 = red.
 #
 # The judge's LANES rows (filled once nightly-train.yml is on main):
@@ -164,8 +164,12 @@ jobs:
           [ "$rc" -eq 0 ] || { echo "::error::check_reconcile.sh self-test is red rc=$rc: its verdict would not be evidence"; exit 1; }
           last=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | sort -V | tail -n 1)
           [ -n "$last" ] || { echo "::error::no final vX.Y.Z tag: the window cannot be named"; exit 2; }
-          echo "reconcile target: v$last"
-          setsid --wait bash scripts/check_reconcile.sh "v$last" || rc=$?
+          # previous tag = newest final vX.Y.Z strictly below the target: the same window release.yml judges
+          prev=$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sed 's/^v//' | grep -vxF "$last" \
+            | { sort -V; printf '%s\n' "$last"; } | sort -V | awk -v v="$last" '$0==v{print p; exit} {p=$0}')
+          [ -n "$prev" ] || { echo "::error::no final tag below v$last: the window cannot be named"; exit 2; }
+          echo "reconcile target: v$last (window v$prev..v$last)"
+          setsid --wait bash scripts/check_reconcile.sh "v$last" --prev-tag "v$prev" || rc=$?
           case $rc in
             0) echo "RECONCILE v$last: R1..R4 all zero (rc=0)" ;;
             1) echo "::error::reconcile refused v$last (rc=1): see the R1..R4 lines above"; exit 1 ;;

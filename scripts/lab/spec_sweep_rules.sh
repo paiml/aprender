@@ -52,18 +52,24 @@ ft12() {
   [ "$n" -eq 1 ] || echo "RED FT-12: header has $n state tokens (want exactly 1 of PROPOSED|RULED)"
 }
 
-# 6615 T-5 (scans release.yml, binary-release.yml, release-gates-nightly.yml): a release workflow runs scripts/check_reconcile.sh and does not mask its exit.
+# 6615 T-5: release.yml (the release decision surface) runs scripts/check_reconcile.sh and does not mask its exit: no
+# `|| true` on the line, no continue-on-error on the same step. binary-release.yml and release-gates-nightly.yml are
+# scanned for masking too, but a hit there never stands in for release.yml.
 t5() {
-  local f hit=0 w="$1/.github/workflows"
+  local f w="$1/.github/workflows"
   [ -d "$w" ] || { echo "RED T-5: no workflows dir"; return 0; }
+  [ -f "$w/release.yml" ] && grep -q 'check_reconcile.sh' "$w/release.yml" || echo "RED T-5: release.yml does not run scripts/check_reconcile.sh"
   for f in "$w"/release.yml "$w"/binary-release.yml "$w"/release-gates-nightly.yml; do
     [ -f "$f" ] || continue
-    if grep -q 'check_reconcile.sh' "$f"; then
-      hit=$((hit + 1))
-      grep -q -E '\|\|[[:space:]]*true|continue-on-error' <<<"$(grep 'check_reconcile.sh' "$f")" && echo "RED T-5: $(basename "$f") masks check_reconcile.sh"
-    fi
+    grep -q 'check_reconcile.sh' "$f" || continue
+    grep -q -E '\|\|[[:space:]]*true' <<<"$(grep 'check_reconcile.sh' "$f")" && echo "RED T-5: $(basename "$f") masks check_reconcile.sh"
+    awk '
+      function flush() { if (hit && coe) bad = 1 }
+      match($0, /^ *- /) { if (!started || RLENGTH - 2 <= ind) { flush(); hit = 0; coe = 0; ind = RLENGTH - 2; started = 1 } }
+      /check_reconcile\.sh/ { hit = 1 }
+      /continue-on-error/ { coe = 1 }
+      END { flush(); exit bad ? 1 : 0 }' "$f" || echo "RED T-5: $(basename "$f") step runs check_reconcile.sh with continue-on-error"
   done
-  [ "$hit" -gt 0 ] || echo "RED T-5: no release workflow runs scripts/check_reconcile.sh"
 }
 
 # 6616 plan quorum: the rule line says the apr lane is advisory and a do-not-implement verdict is a STOP.
@@ -121,7 +127,7 @@ selftest() {
     printf 'With `B = 8819`, gap = 681\n' > "$t/$DR"
     printf '### FT-12 · slice 1 PROPOSED (x)\n' > "$t/$FT"
     printf '3. **Plan quorum.** the apr lane is advisory per x. Any `do-not-implement` verdict is a STOP.\n' > "$t/$AE"
-    printf 'run: bash scripts/check_reconcile.sh\n' > "$t/.github/workflows/binary-release.yml"
+    printf 'jobs:\n  r:\n    steps:\n      - name: reconcile\n        run: bash scripts/check_reconcile.sh "v$V"\n' > "$t/.github/workflows/release.yml"
     mkdir -p "$t/${MG%/*}"; printf -- '- Task assignment is advisory until worker acknowledges\n' > "$t/$MG"
     mkdir -p "$t/${PP66%/*}"; printf '### Track D\n| id | title | blockers |\n|---|---|---|\n| D-1doc | x | G-11 |\n### Track D - docs (non-blocking)\n## s6\n| W-B | x | S-3 |\n' > "$t/$PP66"
   }
@@ -132,10 +138,11 @@ selftest() {
   mk; printf '| A: P₀ bp | ≥ 9,300 (x) |\n' > "$t/$EP74"; expect 1 "wrong floor"
   mk; printf '### FT-12 · slice 1 (x)\n' > "$t/$FT"; expect 1 "no state token"
   mk; printf '### FT-12 · PROPOSED RULED\n' > "$t/$FT"; expect 1 "two state tokens"
-  mk; printf 'run: echo hi\n' > "$t/.github/workflows/binary-release.yml"; expect 1 "reconcile not run"
-  mk; printf 'run: bash scripts/check_reconcile.sh || true\n' > "$t/.github/workflows/binary-release.yml"; expect 1 "reconcile masked"
-  mk; rm -f "${t:?}/.github/workflows/binary-release.yml"; printf 'run: bash scripts/check_reconcile.sh "v$V"\n' > "$t/.github/workflows/release.yml"; expect 0 "release.yml runs reconcile"
-  mk; rm -f "${t:?}/.github/workflows/binary-release.yml"; printf 'run: bash scripts/check_reconcile.sh "v$V" || true\n' > "$t/.github/workflows/release.yml"; expect 1 "release.yml masks reconcile"
+  mk; printf 'run: echo hi\n' > "$t/.github/workflows/release.yml"; expect 1 "reconcile not run in release.yml"
+  mk; printf 'run: bash scripts/check_reconcile.sh || true\n' > "$t/.github/workflows/release.yml"; expect 1 "reconcile masked in release.yml"
+  mk; printf 'run: echo hi\n' > "$t/.github/workflows/release.yml"; printf 'run: bash scripts/check_reconcile.sh\n' > "$t/.github/workflows/release-gates-nightly.yml"; expect 1 "nightly hit does not stand in for release.yml"
+  mk; printf 'jobs:\n  r:\n    steps:\n      - name: reconcile\n        continue-on-error: true\n        run: bash scripts/check_reconcile.sh "v$V"\n      - name: next\n        run: echo hi\n' > "$t/.github/workflows/release.yml"; expect 1 "step-level continue-on-error"
+  mk; printf 'jobs:\n  r:\n    steps:\n      - name: other\n        continue-on-error: true\n        run: echo hi\n      - name: reconcile\n        run: bash scripts/check_reconcile.sh "v$V"\n' > "$t/.github/workflows/release.yml"; expect 0 "continue-on-error on another step is fine"
   mk; printf '3. **Plan quorum.** all lanes vote.\n' > "$t/$AE"; expect 1 "quorum rule weakened"
   mk; rm "$t/$DR"; expect 1 "input missing"
   mk; printf -- '- Task assignment is final\n' > "$t/$MG"; expect 1 "advisory-until-ack line gone"
@@ -144,7 +151,7 @@ selftest() {
   mk; printf -- '- a - blockers: D-1doc - x\n' >> "$t/$PP66"; expect 1 "Track D named in card blockers"
   mk; printf '### Track D\n| D-1doc | x | G-11 |\n' > "$t/$PP66"; expect 1 "heading not non-blocking"
   mk; printf '### Track D - docs (non-blocking)\n| W-B | x | S-3 |\n' > "$t/$PP66"; expect 1 "no Track D rows (vacuous)"
-  if [ "$fail" -eq 0 ]; then echo "self-test: 18 cases ok"; fi
+  if [ "$fail" -eq 0 ]; then echo "self-test: 19 cases ok"; fi
   return "$fail"
 }
 case "${1:-}" in

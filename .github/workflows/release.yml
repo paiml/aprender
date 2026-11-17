@@ -62,9 +62,6 @@ jobs:
         run: |
           git config user.name "aprender-release"
           git config user.email "noreply@paiml.com"
-      - id: auth
-        if: ${{ !inputs.dry_run && !inputs.token_auth }}
-        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
       - name: check_reconcile.sh (T-5 reconcile gate, before any tag or publish)
         # RECON1 (aprender#7194): R1..R4 must all be zero or nothing is tagged or published. Runs on the bump path
         # (tag not made yet: judged at the release sha via --rev) and on publish_only (tag exists). Unmasked on purpose.
@@ -89,6 +86,9 @@ jobs:
             1) echo "::error::reconcile refused v$VERSION (rc=1): see the R1..R4 lines above"; exit 1 ;;
             *) echo "::error::reconcile could not be judged (rc=$rc): Unknown is not a pass"; exit 1 ;;
           esac
+      - id: auth
+        if: ${{ !inputs.dry_run && !inputs.token_auth }}
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
       - name: release
         env:
           GH_TOKEN: ${{ secrets.INFRA_ACTIONS_READ }}

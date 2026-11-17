@@ -50,11 +50,14 @@ A missing read of any of the three is NOT_MEASURED (rc 2), never published.
 
 ## GATE / LAB (C324)
 
-R-c is **LAB**: it runs at night on an idle machine, never in a PR, merge-queue or release
-job, and a red opens or updates one ticket and stays silent. R-b is a delta to a step of the release
+R-c (`scripts/check_reconcile.sh`) is a **release gate** by the operator's yes (RECON1, 2026-11-17, #7194; it was LAB
+before): `release.yml` runs it unmasked before any tag or publish, and `release-gates-nightly.yml` runs it nightly on the newest
+final tag so the three green nights can be counted. It is never in a PR or merge-queue job: no `pull_request`,
+`pull_request_target`, `merge_group` or `push` trigger. A red opens or updates one ticket. It counts as guarding a release only
+after three green nights on the nightly. R-b is a delta to a step of the release
 train (`autopilot.sh close`), which already sits on the release path; it adds no new
 check on a PR. R-a is enforced by R-b for the train and, for hand closes (how 0.72.0 closed), found by D-1 the next night.
-It is not a PR gate: no merge is blocked by it.
+It is not a PR gate: no merge is blocked by it. Not covered by the RECON1 gate: the `autopilot.sh` and `promote_nightly.sh` tag paths and `make publish` / `cascade-drain` (follow-up).
 
 ## Falsifiers
 
