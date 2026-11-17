@@ -271,6 +271,113 @@ fn required(value: Option<&String>, field: &str, why: &str, out: &mut Vec<String
     }
 }
 
+/// The `recipe` field must name the recipe schema.
+fn check_schema_id(raw: &RawRecipe, bad: &mut Vec<String>) {
+    match raw.recipe.as_deref() {
+        Some(RECIPE_SCHEMA) => {}
+        Some(other) => bad.push(format!(
+            "field `recipe` must be `{RECIPE_SCHEMA}`, got `{other}`"
+        )),
+        None => bad.push(format!(
+            "field `recipe` is required (the schema id, `{RECIPE_SCHEMA}`)"
+        )),
+    }
+}
+
+/// Resolve `method`, recording why it is missing or unknown.
+fn check_method(raw: &RawRecipe, bad: &mut Vec<String>) -> Option<RecipeMethod> {
+    let method_text = required(
+        raw.method.as_ref(),
+        "method",
+        "one of lora, qlora, distill",
+        bad,
+    );
+    let method = RecipeMethod::parse(&method_text);
+    if method.is_none() && !method_text.is_empty() {
+        bad.push(format!(
+            "field `method` must be one of lora, qlora, distill, got `{method_text}`"
+        ));
+    }
+    method
+}
+
+/// The training file and its optional pinned hash.
+fn check_data(raw: &RawRecipe, bad: &mut Vec<String>) -> (String, Option<String>) {
+    let (train, pin) = match raw.data.as_ref() {
+        Some(d) => (
+            required(
+                d.train.as_ref(),
+                "data.train",
+                "the training data file",
+                bad,
+            ),
+            d.sha256.clone(),
+        ),
+        None => {
+            bad.push("field `data` is required (block with `train`)".to_string());
+            (String::new(), None)
+        }
+    };
+    if let Some(p) = pin.as_deref() {
+        if !is_sha256(p) {
+            bad.push("field `data.sha256` must be 64 lower-case hex characters".to_string());
+        }
+    }
+    (train, pin)
+}
+
+/// The held-out eval file and optional benchmark name.
+fn check_eval(
+    raw: &RawRecipe,
+    train: &str,
+    base_dir: &Path,
+    bad: &mut Vec<String>,
+) -> (String, Option<String>) {
+    let (heldout, benchmark) = match raw.eval.as_ref() {
+        Some(e) => (
+            required(
+                e.heldout.as_ref(),
+                "eval.heldout",
+                "the held-out eval file",
+                bad,
+            ),
+            e.benchmark.clone(),
+        ),
+        None => {
+            bad.push(
+                "field `eval` is required (block with `heldout`: a run without an eval \
+                 cannot be compared)"
+                    .to_string(),
+            );
+            (String::new(), None)
+        }
+    };
+    if !heldout.is_empty()
+        && !train.is_empty()
+        && lexical_normalize(&base_dir.join(&heldout)) == lexical_normalize(&base_dir.join(train))
+    {
+        bad.push("field `eval.heldout` must not be the training file `data.train`".to_string());
+    }
+    if benchmark.as_deref().is_some_and(|b| b.trim().is_empty()) {
+        bad.push("field `eval.benchmark` is empty (omit it or name a benchmark)".to_string());
+    }
+    (heldout, benchmark)
+}
+
+/// `seed` must be present and an unsigned integer.
+fn check_seed(seed: Option<i64>, bad: &mut Vec<String>) -> Option<u64> {
+    match seed {
+        None => {
+            bad.push("field `seed` is required (an unsigned integer)".to_string());
+            None
+        }
+        Some(s) => u64::try_from(s).ok().or_else(|| {
+            bad.push(format!("field `seed` must be an unsigned integer, got {s}"));
+            None
+        }),
+    }
+}
+
 fn check_training(t: &RawTraining, out: &mut Vec<String>) {
     if t.rank == Some(0) {
         out.push("field `training.rank` must be greater than 0".to_string());
@@ -368,15 +475,7 @@ impl TrainRecipe {
         .map_err(|e| refuse(origin, &[e.to_string()]))?;
 
         let mut bad = Vec::new();
-        match raw.recipe.as_deref() {
-            Some(RECIPE_SCHEMA) => {}
-            Some(other) => bad.push(format!(
-                "field `recipe` must be `{RECIPE_SCHEMA}`, got `{other}`"
-            )),
-            None => bad.push(format!(
-                "field `recipe` is required (the schema id, `{RECIPE_SCHEMA}`)"
-            )),
-        }
+        check_schema_id(&raw, &mut bad);
         let name = required(raw.name.as_ref(), "name", "a label for receipts", &mut bad);
         let base = required(raw.base.as_ref(), "base", "the base model file", &mut bad);
         if raw
@@ -388,80 +487,11 @@ impl TrainRecipe {
                 "field `model_size` is empty (omit it or give a size such as 0.8B)".to_string(),
             );
         }
-        let method_text = required(
-            raw.method.as_ref(),
-            "method",
-            "one of lora, qlora, distill",
-            &mut bad,
-        );
-        let method = RecipeMethod::parse(&method_text);
-        if method.is_none() && !method_text.is_empty() {
-            bad.push(format!(
-                "field `method` must be one of lora, qlora, distill, got `{method_text}`"
-            ));
-        }
+        let method = check_method(&raw, &mut bad);
 
-        let (train, pin) = match raw.data.as_ref() {
-            Some(d) => (
-                required(
-                    d.train.as_ref(),
-                    "data.train",
-                    "the training data file",
-                    &mut bad,
-                ),
-                d.sha256.clone(),
-            ),
-            None => {
-                bad.push("field `data` is required (block with `train`)".to_string());
-                (String::new(), None)
-            }
-        };
-        if let Some(p) = pin.as_deref() {
-            if !is_sha256(p) {
-                bad.push("field `data.sha256` must be 64 lower-case hex characters".to_string());
-            }
-        }
-
-        let (heldout, benchmark) = match raw.eval.as_ref() {
-            Some(e) => (
-                required(
-                    e.heldout.as_ref(),
-                    "eval.heldout",
-                    "the held-out eval file",
-                    &mut bad,
-                ),
-                e.benchmark.clone(),
-            ),
-            None => {
-                bad.push(
-                    "field `eval` is required (block with `heldout`: a run without an eval \
-                     cannot be compared)"
-                        .to_string(),
-                );
-                (String::new(), None)
-            }
-        };
-        if !heldout.is_empty()
-            && !train.is_empty()
-            && lexical_normalize(&base_dir.join(&heldout))
-                == lexical_normalize(&base_dir.join(&train))
-        {
-            bad.push("field `eval.heldout` must not be the training file `data.train`".to_string());
-        }
-        if benchmark.as_deref().is_some_and(|b| b.trim().is_empty()) {
-            bad.push("field `eval.benchmark` is empty (omit it or name a benchmark)".to_string());
-        }
-
-        let seed = match raw.seed {
-            None => {
-                bad.push("field `seed` is required (an unsigned integer)".to_string());
-                None
-            }
-            Some(s) => u64::try_from(s).ok().or_else(|| {
-                bad.push(format!("field `seed` must be an unsigned integer, got {s}"));
-                None
-            }),
-        };
+        let (train, pin) = check_data(&raw, &mut bad);
+        let (heldout, benchmark) = check_eval(&raw, &train, base_dir, &mut bad);
+        let seed = check_seed(raw.seed, &mut bad);
         let teacher = check_teacher(raw.teacher.as_ref(), method, base_dir, &mut bad);
         check_training(&raw.training, &mut bad);
         let output_dir = raw.output.as_ref().map(|o| {
