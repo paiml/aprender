@@ -1,0 +1,4 @@
+MODELS lambda NO-GO: no receipt -- BUILD-FAILED (rc 3)
+MODELS gx10 measured by apr 0.75.0 (d868798a4): cells=134 red=0 (crux_sweep_shards rc 0)
+MODELS NO-GO: the judge found red or missing cells (rc 1):
+MODELS   FAIL  host lambda has no CRUX receipt from the release binary -- the smoke gate needs every named host

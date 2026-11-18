@@ -1,0 +1,2 @@
+cargo-memcap: REFUSED: /mnt/nvme-raid0 has 189G free, under the 200G floor; no new heavy job starts and none holds a slot. Free space, then retry (PMAT-2976)
+MODELS-LEG lambda BUILD-FAILED
