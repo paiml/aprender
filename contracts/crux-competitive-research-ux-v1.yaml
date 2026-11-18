@@ -841,3 +841,17 @@ status:
   pmat_tickets_created: 140    # one per missing story
   phase_0_completed_at: "2026-04-18"
   last_enrichment_wave: "2026-04-18 J-cohort republication — 20 J-stories rewritten from OpenCLIP draft to OpenCLAW agent-orchestration semantics (see §10 resolution); spec now 250/250 = 100% complete."
+
+falsification_tests:
+  - id: FALSIFY-CRUXREG-001
+    rule: "registry parses with at least 250 story rows, each with demand_score, competitor and status"
+    prediction: "the_real_crux_registry_rows_are_all_in_domain fails on a short or incomplete registry"
+    test: "cargo test -p aprender-contracts --lib the_real_crux_registry_rows_are_all_in_domain"
+  - id: FALSIFY-CRUXREG-002
+    rule: "scaffolded crux contracts still parse and validate"
+    prediction: "real_crux_contract_still_validates fails on drift"
+    test: "cargo test -p aprender-contracts --lib real_crux_contract_still_validates"
+  - id: FALSIFY-CRUXREG-003
+    rule: "every competitor named in the corpus is in the registry vocabulary"
+    prediction: "competitor_registry_covers_the_corpus_vocabulary fails on an unknown competitor"
+    test: "cargo test -p aprender-contracts --lib competitor_registry_covers_the_corpus_vocabulary"

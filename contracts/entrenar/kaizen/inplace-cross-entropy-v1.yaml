@@ -100,3 +100,17 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-IPXENT-001
+    rule: "grad = softmax - onehot reproduced in place of logits: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "test_cross_entropy_gradient fails if the formula drifts"
+    test: "cargo test -p aprender-train --lib test_cross_entropy_gradient"
+  - id: FALSIFY-IPXENT-002
+    rule: "loss is the mean of -log softmax at the target: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "test_cov3_compute_causal_lm_loss_uniform_logits_high_loss fails if the loss is wrong"
+    test: "cargo test -p aprender-train --lib test_cov3_compute_causal_lm_loss_uniform_logits_high_loss"
+  - id: FALSIFY-IPXENT-003
+    rule: "gradient rows sum to zero: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "the gradient-sum test fails if the formula drifts"
+    test: "cargo test -p aprender-train --lib test_cov3_compute_causal_lm_loss_gradient_sums_to_zero_per_row"

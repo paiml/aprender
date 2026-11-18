@@ -142,3 +142,21 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-IFXENT-001
+    rule: "loss low when logits match targets, grad shape seq*vocab: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "test_compute_causal_lm_loss_basic fails if loss/grad drift"
+    test: "cargo test -p aprender-train --lib test_compute_causal_lm_loss_basic"
+  - id: FALSIFY-IFXENT-002
+    rule: "masked (empty-range) positions have exactly zero gradient and loss"
+    prediction: "test_compute_causal_lm_loss_empty_range fails if a masked position gets gradient"
+    test: "cargo test -p aprender-train --lib test_compute_causal_lm_loss_empty_range"
+  - id: FALSIFY-IFXENT-003
+    rule: "out-of-vocab target contributes no loss"
+    prediction: "test_compute_causal_lm_loss_target_out_of_vocab fails otherwise"
+    test: "cargo test -p aprender-train --lib test_compute_causal_lm_loss_target_out_of_vocab"
+  - id: FALSIFY-IFXENT-004
+    rule: "gradient rows sum to zero"
+    prediction: "the gradient-sum test fails if the formula drifts"
+    test: "cargo test -p aprender-train --lib test_cov3_compute_causal_lm_loss_gradient_sums_to_zero_per_row"

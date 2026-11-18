@@ -80,3 +80,17 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-FXENT-001
+    rule: "grad = softmax - onehot, loss = mean -log softmax: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "test_cross_entropy_gradient fails if the target-class gradient is not negative or non-finite"
+    test: "cargo test -p aprender-train --lib test_cross_entropy_gradient"
+  - id: FALSIFY-FXENT-002
+    rule: "per-row gradient (softmax - onehot) sums to zero: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "the gradient-sum test fails if the formula drifts"
+    test: "cargo test -p aprender-train --lib test_cov3_compute_causal_lm_loss_gradient_sums_to_zero_per_row"
+  - id: FALSIFY-FXENT-003
+    rule: "softmax is numerically stable at large logits: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "test_softmax_numerical_stability fails on overflow"
+    test: "cargo test -p aprender-train --lib test_softmax_numerical_stability"
