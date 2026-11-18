@@ -504,16 +504,6 @@ jobs:
           bash scripts/ci/fetch_p6.sh --no-tags --depth=1 origin "$base"
           git update-ref refs/remotes/origin/main "$base"
           printf 'refinement base: %s base %s pinned as origin/main\n' "${GITHUB_EVENT_NAME}" "$(git rev-parse 'origin/main^{commit}')"
-      - name: "R3 reconcile self-test (host step: push and merge_group entries not reused; pull_request runs it in pr-light, PMAT-7229)"
-        if: matrix.shard == 1 || matrix.shards == 1
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Host step, not an explicit-test fragment: the self-test calls python3, and the explicit-test
-          # container has none. Runs in the quick tier too. On pull_request this shard is skipped; pr-light in ci.yml carries the same step.
-          out=$(bash scripts/check_reconcile.sh --self-test 2>&1) || { printf '%s\n' "$out"; echo "::error::check_reconcile.sh --self-test is red"; exit 1; }
-          printf '%s\n' "$out" | tail -n 3
-          case "$out" in *"self-test OK: 33 case(s)."*) ;; *) echo "::error::check_reconcile.sh --self-test did not report 33 cases"; exit 1 ;; esac
       - name: Workspace lib tests (25,300+)
         if: steps.tier.outputs.tier == 'full'
         # Excluded: aprender-compute (SIMD SIGSEGV at exit), aprender-gpu and aprender-cuda-edge
@@ -1749,6 +1739,13 @@ jobs:
       # Text-only, no build. Self-test first (Verification Discipline #7).
       - name: "Receipt-wiring guard case table (both polarities of the if:)"
         run: setsid --wait bash scripts/check_pr_review_wiring.sh --self-test
+      # PMAT-7229: the R3 (check_reconcile) self-test. R3 exempts ruleset-locked heads; this keeps both twins and the nested nightly/a/b case RED-able.
+      - name: R3 reconcile self-test (exemption twins; PMAT-7229)
+        run: |
+          set -euo pipefail
+          out=$(setsid --wait bash scripts/check_reconcile.sh --self-test 2>&1) || { printf '%s\n' "$out"; echo "::error::check_reconcile.sh --self-test is red"; exit 1; }
+          printf '%s\n' "$out" | tail -n 3
+          case "$out" in *"self-test OK: 33 case(s)."*) ;; *) echo "::error::check_reconcile.sh --self-test did not report 33 cases"; exit 1 ;; esac
       - name: The PR-review receipt guard is wired job-level, not path-filtered
         run: setsid --wait bash scripts/check_pr_review_wiring.sh
       # #4441 passed FAT_SECRET_PR_REVIEW_SIGNING_KEY_B (no "64"), so pr-review-sign
