@@ -10,6 +10,7 @@
 #   R2 missing-closing  merged PRs in the window whose body fails
 #                       check_pr_closes_issue.sh.
 #   R3 dead branches    remote branches with no open PR, tip older than 14d.
+#                       release/* and nightly/* heads are ruleset-locked and exempt.
 #   R4 dirty stale PRs  open PRs mergeStateStatus=DIRTY, created before
 #                       --prev-tag's date.
 #   R5 ratio            issues opened vs closed in the window (recorded, not
@@ -155,6 +156,11 @@ for pr in data:
         [ -z "$branch" ] && continue
         case "$open_sp" in
             *" $branch "*) continue ;;
+        esac
+        # NOAH-1118 R3B: release/* and nightly/* heads are ruleset-locked (deletion refused by
+        # the org ruleset), so no archive-then-delete can clear them: exempt, never counted.
+        case "$branch" in
+            release/*|nightly/*) continue ;;
         esac
         epoch=""
         epoch="$(date -u -d "$date_str" +%s 2>/dev/null || true)"
@@ -428,6 +434,18 @@ self_test() {
     got="$(r3_dead_branches "${fixdir}/branches.txt" "${fixdir}/open-prs-covers.json" "$cutoff_epoch")"
     if [ "$(count_lines "$got")" != "0" ]; then
         printf 'FAIL R3-twin-has-pr: expected empty, got [%s]\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
+    printf 'release/0.70\t%s\nnightly/probe\t%s\n' "$stale_date" "$stale_date" > "${fixdir}/branches-locked.txt"
+    got="$(r3_dead_branches "${fixdir}/branches-locked.txt" "${fixdir}/open-prs-empty.json" "$cutoff_epoch")"
+    if [ "$(count_lines "$got")" != "0" ]; then
+        printf 'FAIL R3-twin-locked: expected empty, got [%s]\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
+    printf 'releasex/stale\t%s\nfix/nightly/stale\t%s\n' "$stale_date" "$stale_date" > "${fixdir}/branches-lookalike.txt"
+    got="$(r3_dead_branches "${fixdir}/branches-lookalike.txt" "${fixdir}/open-prs-empty.json" "$cutoff_epoch")"
+    if [ "$(count_lines "$got")" != "2" ]; then
+        printf 'FAIL R3-twin-lookalike: expected 2 listed, got [%s]\n' "$got" >&2
         fails=$((fails + 1))
     fi
     rm -rf "${fixdir:?}"
