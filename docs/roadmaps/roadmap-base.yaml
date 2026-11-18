@@ -5679,7 +5679,7 @@ roadmap:
   updated: 2026-04-08 08:54:18.361385+00:00
   spec: null
   acceptance_criteria:
-  - 'Create docs/registry/apr-tools/apr-tool-{name}-v1.yaml (moved out of contracts/ in #7235) for each ACTIVE-TOOL repo. Each contract defines: purpose,
+  - 'Create contracts/apr-tool-{name}-v1.yaml for each ACTIVE-TOOL repo. Each contract defines: purpose,
     inputs, outputs, 5 falsification conditions. Provable-contracts-first documentation.'
   phases: []
   subtasks: []
