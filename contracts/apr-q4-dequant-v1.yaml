@@ -1,6 +1,10 @@
 metadata:
   version: 1.0.0
   created: '2026-11-17'
+  valid_under:
+    world: committed
+  depends_on:
+    - bf16-dequant-v1
   author: PAIML Engineering
   description: |
     APR-Q4 dequantization (dequantize_q4) f16-scale safety (GH-186). Blocks are
@@ -41,13 +45,13 @@ proof_obligations:
   type: invariant
   property: scale clamp
   formal: |
-    For scale bits in {0x7E00, 0x7C00, 0xFC00, 0x0001} every output value == 0.0.
+    ∀ b ∈ {0x7E00, 0x7C00, 0xFC00, 0x0001}: ∀ v ∈ output(b) · isFinite(v) ∧ v = 0.0
 - id: AQ4DQ-INV-002
   type: invariant
   property: nibble mapping, block spanning and length
   formal: |
-    Nibble 0 -> -8*scale, nibble 15 -> +7*scale; element_count 33 uses block 1's
-    scale for element 32; short data pads with 0.0 and len == element_count.
+    nibble 0 → -8 × scale ∧ nibble 15 → 7 × scale ∧ len(output) = element_count;
+    element 32 uses block 1's scale; short data pads with 0.0
 
 falsification_tests:
 - id: FT-AQ4DQ-001
