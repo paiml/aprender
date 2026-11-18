@@ -319,3 +319,25 @@ references:
   - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
   - "Sennrich et al. (2016) arXiv:1508.07909"
   - "Unicode Standard Annex #15 (NFC)"
+
+falsification_tests:
+  - id: FALSIFY-BPE-001
+    description: "INV-BPE-001 vocab-size bound (algorithm level; no real tokenizer is loaded)"
+    test: "cargo test -p aprender-core --lib format::bpe_inv_001"
+    prediction: "Sizes in [32000, 65536] pass; drift and off-by-one fail"
+    if_fails: "Vocab bound check accepts a bad size"
+  - id: FALSIFY-BPE-002
+    description: "INV-BPE-002 special-token ids are distinct and in range"
+    test: "cargo test -p aprender-core --lib format::bpe_inv_002"
+    prediction: "Distinct in-range ids pass; collisions and out-of-range fail"
+    if_fails: "Special-token check is too loose"
+  - id: FALSIFY-BPE-003
+    description: "INV-BPE-003 round-trip floor over the held-out corpus (algorithm level)"
+    test: "cargo test -p aprender-core --lib format::bpe_inv_003"
+    prediction: "Zero round-trip failures pass; any failure fails"
+    if_fails: "Round-trip gate accepts failures"
+  - id: FALSIFY-BPE-006
+    description: "INV-BPE-006 determinism across runs (algorithm level; the cross-OS run is NOT CI evidence)"
+    test: "cargo test -p aprender-core --lib format::bpe_inv_006"
+    prediction: "Identical id sequences pass; any difference fails"
+    if_fails: "Determinism check is too loose"

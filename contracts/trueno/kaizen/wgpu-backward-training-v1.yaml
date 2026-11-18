@@ -90,3 +90,15 @@ hardware_verified:
   backend: Vulkan
   vram: 16GB GDDR6
   results: 7/7 PASS, max diff < 2.4e-7
+
+falsification_tests:
+  - id: FALSIFY-WGPU-BACKWARD-001
+    description: "CPU reference GEMM backward matches a naive reference (the wgpu parity tests test_falsify_wgpu_* are gpu-feature gated and NOT CI evidence)"
+    test: "cargo test -p aprender-compute --lib test_gemm_backward_matches_naive_reference"
+    prediction: "Relative error below 1e-5"
+    if_fails: "Backward GEMM reference is wrong, so GPU parity has no valid baseline"
+  - id: FALSIFY-WGPU-BACKWARD-002
+    description: "NF4 blockwise quantise/dequantise roundtrip (CPU reference for the GPU NF4 dequant parity claim)"
+    test: "cargo test -p aprender-compute --lib test_nf4_blockwise_roundtrip"
+    prediction: "Roundtrip error within the NF4 bound"
+    if_fails: "NF4 reference is wrong"

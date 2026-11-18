@@ -199,3 +199,15 @@ affected_files:
 - path: src/train/transformer_trainer/wgpu_runner.rs
   functions:
   - 'run_wgpu_training: tokenize→embed→36-layer train loop→checkpoint'
+
+falsification_tests:
+  - id: FALSIFY-WGPU-TRANSFORMER-TRAINER-001
+    description: "CPU LoRA forward analogue (the wgpu_* trainer tests are behind feature gpu and are NOT CI evidence)"
+    test: "cargo test -p aprender-train --lib test_lora_forward_unmerged"
+    prediction: "Unmerged LoRA forward equals base plus scaled adapter product"
+    if_fails: "LoRA forward math is wrong"
+  - id: FALSIFY-WGPU-TRANSFORMER-TRAINER-002
+    description: "QLoRA forward matches LoRA forward (CPU analogue)"
+    test: "cargo test -p aprender-train --lib test_qlora_forward_matches_lora"
+    prediction: "QLoRA output equals LoRA output within quantisation error"
+    if_fails: "QLoRA path diverges from LoRA"
