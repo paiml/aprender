@@ -19,11 +19,10 @@ fn with_one_test() -> String {
 }
 
 /// The first listed path: a real debt entry, whatever the list holds today.
-fn a_listed_path() -> &'static str {
-    debt_entries()
-        .into_iter()
-        .next()
-        .expect("the list is not empty until 0.75")
+/// `None` once the list is burned down to empty (0.75): then no contract is
+/// exempt and the listed-row checks have nothing to assert.
+fn a_listed_path() -> Option<&'static str> {
+    debt_entries().into_iter().next()
 }
 
 #[test]
@@ -76,9 +75,9 @@ fn rel_to_contracts_case_table() {
 fn schema_026_case_table() {
     let zero = parse_contract_str(ZERO_TESTS).expect("parses");
     let one = parse_contract_str(&with_one_test()).expect("parses");
-    let listed = format!("contracts/{}", a_listed_path());
+    let listed = a_listed_path().map(|p| format!("contracts/{p}"));
     // (row, path, contract, fires)
-    let rows: [(&str, &str, &Contract, bool); 7] = [
+    let mut rows: Vec<(&str, &str, &Contract, bool)> = vec![
         (
             "new contract, no tests",
             "contracts/brand-new-v1.yaml",
@@ -91,7 +90,6 @@ fn schema_026_case_table() {
             &zero,
             true,
         ),
-        ("listed contract, no tests", &listed, &zero, false),
         (
             "new contract with a test",
             "contracts/brand-new-v1.yaml",
@@ -117,6 +115,9 @@ fn schema_026_case_table() {
             false,
         ),
     ];
+    if let Some(listed) = listed.as_deref() {
+        rows.push(("listed contract, no tests", listed, &zero, false));
+    }
     for (row, path, contract, fires) in rows {
         let v = check_in_tree(Path::new(path), contract);
         assert_eq!(v.is_some(), fires, "{row}: {v:?}");
@@ -174,8 +175,10 @@ fn the_repo_contracts_dir_is_a_census_tree() {
             "{rel}"
         );
     }
-    let listed = root.join(a_listed_path());
-    assert!(check(&listed, &zero).is_none(), "{}", listed.display());
+    if let Some(p) = a_listed_path() {
+        let listed = root.join(p);
+        assert!(check(&listed, &zero).is_none(), "{}", listed.display());
+    }
 }
 
 #[test]
