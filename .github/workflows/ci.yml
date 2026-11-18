@@ -276,6 +276,12 @@ jobs:
           setsid --wait bash scripts/ci/fixture_quiet.sh --self-test
           setsid --wait bash scripts/ci/fetch_p6.sh --self-test
           setsid --wait bash scripts/ci/fetch_p6.sh --check-wiring
+      - name: R3 reconcile self-test (33 cases; PMAT-7229)
+        run: |
+          set -euo pipefail
+          out=$(bash scripts/check_reconcile.sh --self-test 2>&1) || { printf '%s\n' "$out"; echo "::error::check_reconcile.sh --self-test is red"; exit 1; }
+          printf '%s\n' "$out" | tail -n 3
+          case "$out" in *"self-test OK: 33 case(s)."*) ;; *) echo "::error::check_reconcile.sh --self-test did not report 33 cases"; exit 1 ;; esac
       - name: fat_driver case table must still turn RED
         run: setsid --wait bash scripts/ci/fixture_quiet.sh "fat_driver self-test" -- python3 scripts/ci/fat_driver.py self-test
       - name: FAT_SECRET plumbing guard case table
