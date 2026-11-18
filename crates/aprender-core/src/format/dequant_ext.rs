@@ -154,3 +154,67 @@ impl AprV2DequantExt for AprV2ReaderRef<'_> {
         decode_tensor_bytes(dtype, data, element_count)
     }
 }
+
+#[cfg(test)]
+mod q4_dequant_tests {
+    use super::dequantize_q4;
+
+    /// f16 bit patterns: 1.0 and 2.0.
+    const F16_ONE: u16 = 0x3C00;
+    const F16_TWO: u16 = 0x4000;
+
+    /// One 18-byte block: f16 scale (LE) followed by 16 packed-nibble bytes.
+    fn block(scale_bits: u16, fill: u8) -> Vec<u8> {
+        let mut b = scale_bits.to_le_bytes().to_vec();
+        b.extend_from_slice(&[fill; 16]);
+        b
+    }
+
+    /// FT-AQ4DQ-001 / AQ4DQ-INV-001: GH-186 clamp. NaN, +-Inf and subnormal
+    /// scales give an all-zero block (never NaN/Inf).
+    #[test]
+    fn dequantize_q4_inf_scale_is_exactly_zero() {
+        for bits in [0x7C00_u16, 0xFC00, 0x7E00, 0x0001] {
+            let out = dequantize_q4(&block(bits, 0xFF), 32);
+            assert_eq!(out.len(), 32, "scale bits {bits:#06x}");
+            assert!(
+                out.iter().all(|v| *v == 0.0 && v.is_finite()),
+                "scale bits {bits:#06x} must clamp to exact zeros"
+            );
+        }
+    }
+
+    /// FT-AQ4DQ-002: nibble 0 -> -8*scale, nibble 15 -> +7*scale; low nibble
+    /// is the even element, high nibble the odd element.
+    #[test]
+    fn dequantize_q4_nibble_extremes() {
+        let out = dequantize_q4(&block(F16_ONE, 0xF0), 32);
+        assert_eq!(out.len(), 32);
+        for (i, v) in out.iter().enumerate() {
+            let expected = if i % 2 == 0 { -8.0 } else { 7.0 };
+            assert_eq!(*v, expected, "scale 1.0, element {i}");
+        }
+        let out2 = dequantize_q4(&block(F16_TWO, 0xF0), 32);
+        assert_eq!(out2[0], -16.0);
+        assert_eq!(out2[1], 14.0);
+    }
+
+    /// FT-AQ4DQ-003: element 32 reads block 1 (18-byte stride, own scale);
+    /// short data zero-pads to element_count.
+    #[test]
+    fn dequantize_q4_element_count_33() {
+        let mut data = block(F16_ONE, 0xF0);
+        data.extend(block(F16_TWO, 0xF0));
+        let out = dequantize_q4(&data, 33);
+        assert_eq!(out.len(), 33);
+        assert_eq!(out[0], -8.0, "block 0 uses scale 1.0");
+        assert_eq!(out[32], -16.0, "element 32 uses block 1's scale 2.0");
+
+        let short = dequantize_q4(&block(F16_ONE, 0xF0), 64);
+        assert_eq!(short.len(), 64);
+        assert!(
+            short[32..].iter().all(|v| *v == 0.0),
+            "short data pads zeros"
+        );
+    }
+}

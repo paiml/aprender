@@ -10,4 +10,6 @@ include!("cbtop_pipeline_brick.rs");
 include!("cbtop_headless_report.rs");
 include!("cbtop_json_output_02.rs");
 include!("cbtop_falsification_summary_hardware.rs");
+include!("cbtop_score_brick_tests.rs");
+include!("cbtop_stats_helper_tests.rs");
 }

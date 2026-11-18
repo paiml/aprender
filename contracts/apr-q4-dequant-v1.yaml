@@ -1,0 +1,84 @@
+metadata:
+  version: 1.0.0
+  created: '2026-11-17'
+  author: PAIML Engineering
+  description: |
+    APR-Q4 dequantization (dequantize_q4) f16-scale safety (GH-186). Blocks are
+    [f16 scale (2 B)] + [16 B packed nibbles] = 32 values. A NaN, Inf or
+    subnormal scale is clamped to 0 so corrupt scales cannot propagate NaN/Inf
+    into activations. Output is always exactly element_count long, zero padded
+    when the data is short.
+  references:
+  - 'crates/aprender-core/src/format/dequant_ext.rs — dequantize_q4'
+  - 'contracts/bf16-dequant-v1.yaml — sibling dequant contract'
+
+name: apr-q4-dequant
+version: 1.0.0
+scope: aprender-core format dequantize_q4 — scale clamp, nibble mapping, block spanning, length
+
+equations:
+  apr_q4_scale_clamp:
+    formula: |
+      scale = 0 if is_nan(s) or is_infinite(s) or |s| < F16_MIN_NORMAL else s,
+      where s = f16_to_f32(le_u16(block[0..2])).
+    domain: any 2-byte f16 bit pattern
+    codomain: finite f32
+    invariants:
+    - 'NaN, +-Inf and subnormal scales yield an all-zero block'
+    - 'output values are always finite'
+  apr_q4_dequant_formula:
+    formula: |
+      value[i] = ((nibble(i) as i8) - 8) as f32 * scale; nibble(i) is the low
+      nibble of byte i/2 when i is even, else the high nibble. Nibble 0 -> -8*scale,
+      nibble 15 -> +7*scale. Each 32-value block has its own scale.
+    domain: data bytes, element_count
+    codomain: Vec<f32> of length element_count
+    invariants:
+    - 'len(output) == element_count, zero padded when data is short, never panics'
+
+proof_obligations:
+- id: AQ4DQ-INV-001
+  type: invariant
+  property: scale clamp
+  formal: |
+    For scale bits in {0x7E00, 0x7C00, 0xFC00, 0x0001} every output value == 0.0.
+- id: AQ4DQ-INV-002
+  type: invariant
+  property: nibble mapping, block spanning and length
+  formal: |
+    Nibble 0 -> -8*scale, nibble 15 -> +7*scale; element_count 33 uses block 1's
+    scale for element 32; short data pads with 0.0 and len == element_count.
+
+falsification_tests:
+- id: FT-AQ4DQ-001
+  rule: Inf scale clamps to exactly zero
+  prediction: dequantize_q4(block(0x7C00, 0xFF), 32) is 32 exact zeros.
+  if_fails: 'the is_infinite() arm of the GH-186 clamp was removed.'
+  evidence: cargo test -p aprender-core --lib dequantize_q4_inf_scale_is_exactly_zero
+- id: FT-AQ4DQ-002
+  rule: nibble extremes map to -8 and +7 times scale
+  prediction: byte 0xF0 with scale 1.0 yields [-8.0, 7.0, ...]; scale 2.0 yields [-16.0, 14.0].
+  if_fails: 'the signed-nibble offset (8) or nibble order is wrong.'
+  evidence: cargo test -p aprender-core --lib dequantize_q4_nibble_extremes
+- id: FT-AQ4DQ-003
+  rule: element 32 uses the second block's scale and short data is zero padded
+  prediction: count 33 over two blocks gives out[32] == -16.0; count 64 over one block gives 32 trailing zeros.
+  if_fails: 'block stride (18 bytes) or the resize pad is wrong.'
+  evidence: cargo test -p aprender-core --lib dequantize_q4_element_count_33
+
+kani_harnesses:
+- id: KANI-AQ4DQ-001
+  obligation: output length equals element_count and never panics
+  property: 'for all data len in [0..80] and element_count in [0..64]: len(dequantize_q4) == element_count.'
+  bound: 80
+  strategy: bounded_int
+  solver: cadical
+  harness: verify_apr_q4_dequant_len
+
+qa_gate:
+  id: F-AQ4DQ-001
+  name: apr-q4-dequant-v1 Contract
+  description: dequantize_q4 never propagates NaN/Inf scales and always returns element_count values.
+  checks:
+  - validation
+  - falsification

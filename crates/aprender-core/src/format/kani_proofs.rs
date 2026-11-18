@@ -90,3 +90,19 @@ mod tests {
         assert_eq!(padding, 4);
     }
 }
+
+/// KANI-AQ4DQ-001: `dequantize_q4` always returns exactly `element_count`
+/// values and never panics, for bounded data lengths and element counts.
+#[cfg(kani)]
+#[kani::proof]
+#[kani::unwind(70)]
+fn verify_apr_q4_dequant_len() {
+    let len: usize = kani::any();
+    let element_count: usize = kani::any();
+    kani::assume(len <= 80);
+    kani::assume(element_count <= 64);
+
+    let data = vec![kani::any::<u8>(); len];
+    let out = crate::format::dequant_ext::dequantize_q4(&data, element_count);
+    assert_eq!(out.len(), element_count);
+}
