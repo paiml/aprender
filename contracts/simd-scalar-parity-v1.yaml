@@ -33,3 +33,14 @@ falsification:
     description: "∀ input_len: SIMD + scalar remainder = complete output"
     test: "Related tests in crates/aprender-compute/src/backends/"
     evidence: "cargo test --lib"
+
+# PMAT-7235: bound to CI-run tests (--lib).
+falsification_tests:
+  - id: FALSIFY-SIMD_SCALAR_PARITY_V1-BIND-001
+    rule: "covers FALSIFY-SIMD_SCALAR_PARITY_V1_001: AVX2 output matches the scalar output"
+    prediction: "test_avx2_matches_scalar passes (skips when the CPU lacks AVX2)"
+    test: "cargo test -p aprender-compute --lib test_avx2_matches_scalar"
+  - id: FALSIFY-SIMD_SCALAR_PARITY_V1-BIND-002
+    rule: "covers FALSIFY-SIMD_SCALAR_PARITY_V1_002: non-aligned lengths: SIMD body plus scalar remainder gives the complete output"
+    prediction: "test_avx2_non_aligned_dimensions passes"
+    test: "cargo test -p aprender-compute --lib test_avx2_non_aligned_dimensions"

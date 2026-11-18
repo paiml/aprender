@@ -24,6 +24,27 @@ fn test_tensor_zeros_ones() {
     assert!(o.data().iter().all(|&x| x == 1.0));
 }
 
+/// FALSIFY-MEM-001: Tensor::zeros allocates exactly product(shape) f32 values
+/// (product(shape) * 4 bytes) and every one is zero (FALSIFY-MEM-003).
+#[test]
+fn test_tensor_zeros_allocation_matches_shape() {
+    for shape in [vec![1usize], vec![4, 4], vec![2, 3, 5], vec![7, 1, 3]] {
+        let z = Tensor::zeros(&shape);
+        let expected: usize = shape.iter().product();
+        assert_eq!(z.numel(), expected, "shape {shape:?}");
+        assert_eq!(z.data().len(), expected, "shape {shape:?}");
+        assert_eq!(
+            std::mem::size_of_val(z.data()),
+            expected * 4,
+            "shape {shape:?}"
+        );
+        assert!(
+            z.data().iter().all(|&x| x.to_bits() == 0),
+            "shape {shape:?}"
+        );
+    }
+}
+
 #[test]
 fn test_requires_grad() {
     let t = Tensor::from_slice(&[1.0, 2.0]).requires_grad();

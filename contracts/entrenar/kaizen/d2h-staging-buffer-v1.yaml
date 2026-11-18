@@ -101,3 +101,17 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-D2HS-001
+    rule: "gradient accumulation values identical after the buffer-reuse change: CPU path only; zero-allocation/transfer claim is GPU-only"
+    prediction: "test_block_gradient_set_accumulate fails if accumulated values change"
+    test: "cargo test -p aprender-train --lib test_block_gradient_set_accumulate"
+  - id: FALSIFY-D2HS-002
+    rule: "gradient scaling values identical"
+    prediction: "test_block_gradient_set_scale fails if scaling changes"
+    test: "cargo test -p aprender-train --lib test_block_gradient_set_scale"
+  - id: FALSIFY-D2HS-003
+    rule: "zeroing leaves no stale values between steps"
+    prediction: "test_block_gradient_set_zeroed fails if buffers retain stale data"
+    test: "cargo test -p aprender-train --lib test_block_gradient_set_zeroed"

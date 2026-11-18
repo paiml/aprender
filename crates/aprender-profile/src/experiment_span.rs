@@ -675,6 +675,28 @@ mod tests {
         assert_eq!(span.span_type, SpanType::Experiment);
     }
 
+    /// FALSIFY-TRACING_OBSERVABILITY_V1_002: a child nests inside its parent in
+    /// time (child.start >= parent.start, child.end <= parent.end) and shares
+    /// the parent's trace.
+    #[test]
+    fn test_experiment_span_child_nests_inside_parent() {
+        let mut parent = ExperimentSpan::new_experiment("parent", ExperimentMetadata::default());
+        let mut child = ExperimentSpan::new_experiment_with_parent(
+            "child",
+            ExperimentMetadata::default(),
+            parent.trace_id,
+            parent.span_id,
+        );
+        child.end();
+        parent.end();
+
+        assert_eq!(child.trace_id, parent.trace_id);
+        assert_eq!(child.parent_span_id, Some(parent.span_id));
+        assert!(child.start_time_nanos >= parent.start_time_nanos);
+        assert!(child.end_time_nanos >= child.start_time_nanos);
+        assert!(child.end_time_nanos <= parent.end_time_nanos);
+    }
+
     #[test]
     fn test_experiment_span_end() {
         let meta = ExperimentMetadata::default();

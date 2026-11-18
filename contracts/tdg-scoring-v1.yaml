@@ -33,3 +33,10 @@ falsification:
     description: "score(A) > score(B) ⟹ grade(A) ≥ grade(B)"
     test: "Related tests in crates/aprender-contracts/src/"
     evidence: "cargo test --lib"
+
+# PMAT-7235: bound to CI-run tests (--lib).
+falsification_tests:
+  - id: FALSIFY-TDG_SCORING_V1-BIND-001
+    rule: "covers FALSIFY-TDG_SCORING_V1_001: composite score is bounded and grade is monotone in score"
+    prediction: "composite_is_bounded_and_grade_is_monotone_in_score passes; fails on an out-of-range composite or a grade that drops as score rises"
+    test: "cargo test -p aprender-contracts --lib composite_is_bounded_and_grade_is_monotone_in_score"

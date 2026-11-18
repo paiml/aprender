@@ -42,3 +42,25 @@ falsification:
     description: "1e-6 ≤ learning_rate ≤ 1e-3"
     test: "Related tests in crates/aprender-train/src/finetune/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-QLORA-HYPERPARAMETERS-001
+    description: "LoRA rank outside the accepted range is rejected by config validation (validator bound is 1..=1024, wider than the 4..=256 preference)"
+    test: "cargo test -p aprender-train --lib test_invalid_lora_rank_too_high"
+    prediction: "rank 2000 yields InvalidLoRARank"
+    if_fails: "Out-of-range ranks pass validation"
+  - id: FALSIFY-QLORA-HYPERPARAMETERS-002
+    description: "Non-positive LoRA alpha is rejected; tuner rank is clamped to 4..=64"
+    test: "cargo test -p aprender-train --lib test_invalid_lora_alpha"
+    prediction: "alpha 0.0 yields InvalidLoRAAlpha"
+    if_fails: "Degenerate alpha passes validation"
+  - id: FALSIFY-QLORA-HYPERPARAMETERS-003
+    description: "Tuner clamps LoRA rank into 4..=64"
+    test: "cargo test -p aprender-train --lib test_extract_trial_params_rank_clamping"
+    prediction: "rank 0 -> 4 and rank 80 -> 64"
+    if_fails: "Tuner proposes ranks outside the bound"
+  - id: FALSIFY-QLORA-HYPERPARAMETERS-004
+    description: "Non-positive learning rate is rejected (the 1e-6..1e-3 band itself is not enforced by a test)"
+    test: "cargo test -p aprender-train --lib test_invalid_learning_rate"
+    prediction: "lr 0.0 and -0.1 yield InvalidLearningRate"
+    if_fails: "Invalid learning rates pass validation"

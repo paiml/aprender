@@ -24,7 +24,11 @@ fn probes_populated_for_complete_contract() {
         .find(|p| p.probe == "has_equations")
         .expect("should have has_equations probe");
     assert!(eq_probe.outcome, "has_equations should pass");
-    assert!(eq_probe.detail.contains("1 equation"), "detail: {}", eq_probe.detail);
+    assert!(
+        eq_probe.detail.contains("1 equation"),
+        "detail: {}",
+        eq_probe.detail
+    );
 }
 
 #[test]
@@ -135,7 +139,7 @@ equations:
         version: "1.0.0".into(),
         target_crate: "test".into(),
         critical_path: vec![],
-            bindings: vec![
+        bindings: vec![
             crate::binding::KernelBinding {
                 contract: "test-v1".into(),
                 equation: "f".into(),
@@ -172,14 +176,22 @@ equations:
         .find(|p| p.probe == "f")
         .expect("should have probe for equation 'f'");
     assert!(f_probe.outcome, "f should be implemented");
-    assert!(f_probe.detail.contains("implemented"), "detail: {}", f_probe.detail);
+    assert!(
+        f_probe.detail.contains("implemented"),
+        "detail: {}",
+        f_probe.detail
+    );
 
     let g_probe = bind_probes
         .iter()
         .find(|p| p.probe == "g")
         .expect("should have probe for equation 'g'");
     assert!(!g_probe.outcome, "g is partial, not fully implemented");
-    assert!(g_probe.detail.contains("partial"), "detail: {}", g_probe.detail);
+    assert!(
+        g_probe.detail.contains("partial"),
+        "detail: {}",
+        g_probe.detail
+    );
 }
 
 #[test]
@@ -196,7 +208,10 @@ equations:
     let score = score_contract(&contract, None, "test-v1");
     // When probes are present, they should serialize
     let json = serde_json::to_string(&score).unwrap();
-    assert!(json.contains("probes"), "JSON should include probes when non-empty");
+    assert!(
+        json.contains("probes"),
+        "JSON should include probes when non-empty"
+    );
 
     // Manually construct a ContractScore with empty probes to verify skip_serializing_if
     let empty_score = ContractScore {
@@ -211,7 +226,10 @@ equations:
         probes: vec![],
     };
     let json = serde_json::to_string(&empty_score).unwrap();
-    assert!(!json.contains("probes"), "JSON should omit probes when empty");
+    assert!(
+        !json.contains("probes"),
+        "JSON should omit probes when empty"
+    );
 }
 
 #[test]

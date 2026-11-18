@@ -415,3 +415,12 @@ errors:
             code: { type: integer, const: 400 }
             message: { type: string }
             status: { type: string, const: INVALID_ARGUMENT }
+
+# #7235: the proxy itself is PLANNED. What exists today is the Gemini wire codec
+# of the canonical harness IR; its functionCall/functionResponse parts are
+# tested here. The proxy's HTTP behaviour (-001, -002, -004..-006) stays unbound.
+falsification_tests:
+  - id: FALSIFY-GEMINI-PROXY-001
+    rule: "[condition FALSIFY-GEMINI-PROXY-003, codec layer only] Gemini functionCall and functionResponse parts round-trip losslessly through the canonical IR"
+    prediction: "falsify_ir_gemini_roundtrip_002 passes; it fails when a call name, args or a response pairing is lost"
+    test: "cargo test -p aprender-serve --lib harness_ir::tests::falsify_ir_gemini_roundtrip_002"

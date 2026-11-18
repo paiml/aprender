@@ -3684,3 +3684,18 @@ status_history:
         Each new fixture ticks parity_matrix_coverage.covered_count up.
         FALSIFY-CCPA-007 stays informational-only in CI until the corpus
         reaches 17/17 — at which point the gate becomes a hard CI blocker.
+
+# ─────────────────────────────────────────────────────────────────────────────
+# falsification_tests — the claims of this contract that a CI-run test in THIS
+# tree checks (#7235). Only the aprender-side half of CCPA-001 is bound: the
+# `apr code --emit-trace` writer. The remaining gates (CCPA-002..020: replay,
+# differ, sovereignty, corpus coverage, parity score, Arena, project-scale)
+# live in the companion repo's ccpa-* crates and stay UNBOUND here; they are
+# listed in falsification_conditions with their planned harness, not claimed.
+# ─────────────────────────────────────────────────────────────────────────────
+falsification_tests:
+  - id: FALSIFY-CCPA-APR-001
+    description: "apr code --emit-trace writes a ccpa-trace.jsonl whose records carry the four kinds, the prompt, the token counts and a v1 envelope"
+    test: "cargo test -p aprender-orchestrate --lib emit_trace_tests"
+    prediction: "emit_ccpa_trace writes 4 JSONL records with the expected kinds, every record carries v:1, and prompt/response/token/elapsed fields are populated"
+    if_fails: "the student-side trace writer drifts from the ccpa-trace schema pinned by this contract, so the companion differ cannot parse apr code output (FALSIFY-CCPA-001 input side)"

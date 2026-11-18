@@ -431,3 +431,7 @@ include!("dispatch_metrics.rs");
 #[cfg(test)]
 #[path = "tests_engine_identity.rs"]
 mod tests_engine_identity;
+
+#[cfg(test)]
+#[path = "tests_streaming_sink_sse.rs"]
+mod tests_streaming_sink_sse;

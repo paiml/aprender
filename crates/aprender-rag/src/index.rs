@@ -516,6 +516,32 @@ mod tests {
 
     // ============ BM25Index Tests ============
 
+    /// FALSIFY-HYBRID-003: an injected tokenizer drives `add()`; the inverted-index
+    /// keys are exactly the injected tokens, unlike the built-in tokenizer's.
+    #[test]
+    fn falsify_hybrid_003_bm25_uses_injected_tokenizer() {
+        #[derive(Debug)]
+        struct MarkerTokenizer;
+        impl crate::tokenizer::Tokenizer for MarkerTokenizer {
+            fn tokenize(&self, _text: &str) -> Vec<String> {
+                vec!["FALSIFY_HYBRID_003_MARKER".to_string()]
+            }
+        }
+
+        let mut default_index = BM25Index::new();
+        let mut marker_index =
+            BM25Index::new().with_tokenizer(std::sync::Arc::new(MarkerTokenizer));
+        assert!(!default_index.has_custom_tokenizer());
+        assert!(marker_index.has_custom_tokenizer());
+
+        let chunk = create_test_chunk("important content with searchable words");
+        default_index.add(&chunk);
+        marker_index.add(&chunk);
+
+        assert!(default_index.indexed_terms().contains(&"important"));
+        assert_eq!(marker_index.indexed_terms(), vec!["FALSIFY_HYBRID_003_MARKER"]);
+    }
+
     #[test]
     fn test_bm25_index_new() {
         let index = BM25Index::new();

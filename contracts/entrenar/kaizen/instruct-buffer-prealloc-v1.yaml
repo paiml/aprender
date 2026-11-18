@@ -112,3 +112,17 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-IBPA-001
+    rule: "classifier train step behaviour unchanged (finite loss, CPU path): zero-allocation/PCIe claim is GPU-only"
+    prediction: "test_classify_pipeline_train_step fails if the step breaks"
+    test: "cargo test -p aprender-train --lib test_classify_pipeline_train_step"
+  - id: FALSIFY-IBPA-002
+    rule: "train step is deterministic across runs"
+    prediction: "test_cov4_train_step_deterministic fails on nondeterminism"
+    test: "cargo test -p aprender-train --lib test_cov4_train_step_deterministic"
+  - id: FALSIFY-IBPA-003
+    rule: "instruct train step behaviour unchanged"
+    prediction: "test_instruct_train_step fails if the step breaks"
+    test: "cargo test -p aprender-train --lib test_instruct_train_step"

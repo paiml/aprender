@@ -292,3 +292,52 @@ toyota_way_principles:
     three-step process with compiler/test enforcement at each step: ship
     the test, append an entry here, update the spec. A missing step
     fails CI instead of silently degrading.
+
+# #7235: the ENFORCED conditions above that have a `--lib` unit test, bound to
+# it. FALSIFY-MCP-002/003/004 are integration targets (tests/falsify_*.rs) that
+# no CI job runs, so they are left out rather than bound to a test CI skips.
+falsification_tests:
+  - id: FALSIFY-MCP-001
+    rule: "`initialize` answers with a protocolVersion"
+    prediction: "initialize_returns_protocol_version passes; it fails when initialize omits the protocol version (the 500ms budget stays in tests/falsify_m1.rs)"
+    test: "cargo test -p aprender-mcp --lib initialize_returns_protocol_version"
+  - id: FALSIFY-MCP-002
+    rule: "an Invalid-Request, a ping and a version proposal are classified by the real read loop as JSON-RPC and MCP require (a request that is not a valid Request object is -32600 with the id echoed)"
+    prediction: "serve_stream_protocol_surface_matches_jsonrpc_and_mcp passes; it fails when the loop mis-classifies one of them"
+    test: "cargo test -p aprender-mcp --lib serve_stream_protocol_surface_matches_jsonrpc_and_mcp"
+  - id: FALSIFY-MCP-003
+    rule: "[condition FALSIFY-MCP-006] cancelling a long-running subprocess stops it within the grace window"
+    prediction: "cancellable_stops_long_running_subprocess_within_grace passes; it fails when the child outlives the grace window"
+    test: "cargo test -p aprender-mcp --lib cancellable_stops_long_running_subprocess_within_grace"
+  - id: FALSIFY-MCP-004
+    rule: "[condition FALSIFY-MCP-007] a protocolVersion the server does not speak is answered with a success result carrying the version it does support, never an error"
+    prediction: "initialize_negotiates_down_instead_of_erroring passes; it fails when a mismatch becomes a JSON-RPC error"
+    test: "cargo test -p aprender-mcp --lib initialize_negotiates_down_instead_of_erroring"
+  - id: FALSIFY-MCP-005
+    rule: "[condition FALSIFY-MCP-008, names and descriptions only] the live tools/list names and descriptions equal the ones in contracts/apr-mcp-tool-schemas-v1.yaml"
+    prediction: "live_tools_match_schema_contract_names_and_descriptions passes; it fails when a tool is added, dropped or re-described without the contract"
+    test: "cargo test -p aprender-mcp --lib live_tools_match_schema_contract_names_and_descriptions"
+  - id: FALSIFY-MCP-006
+    rule: "[condition FALSIFY-MCP-009] the server never replies to a JSON-RPC notification (a request with no id)"
+    prediction: "serve_stream_never_answers_a_notification passes; it fails when a no-id request gets any response line"
+    test: "cargo test -p aprender-mcp --lib serve_stream_never_answers_a_notification"
+  - id: FALSIFY-MCP-007
+    rule: "[condition FALSIFY-MCP-010] a tools/call in flight at stdin EOF is answered before the loop returns"
+    prediction: "serve_stream_answers_tools_call_before_returning_on_eof passes; it fails when the loop drops in-flight results"
+    test: "cargo test -p aprender-mcp --lib serve_stream_answers_tools_call_before_returning_on_eof"
+  - id: FALSIFY-MCP-008
+    rule: "[condition FALSIFY-MCP-011] a line that is not valid UTF-8 is answered with -32700 and the session keeps serving"
+    prediction: "serve_stream_survives_invalid_utf8_line passes; it fails when a bad byte ends the session"
+    test: "cargo test -p aprender-mcp --lib serve_stream_survives_invalid_utf8_line"
+  - id: FALSIFY-MCP-009
+    rule: "[condition FALSIFY-MCP-012] valid JSON that is not a valid Request is -32600 with the client's id echoed"
+    prediction: "missing_required_field_is_invalid_request_with_id_echoed passes; it fails when the id is lost or the code is -32700"
+    test: "cargo test -p aprender-mcp --lib missing_required_field_is_invalid_request_with_id_echoed"
+  - id: FALSIFY-MCP-010
+    rule: "[condition FALSIFY-MCP-013] `ping` is answered with an empty result"
+    prediction: "ping_returns_empty_result passes; it fails when ping is -32601 or non-empty"
+    test: "cargo test -p aprender-mcp --lib ping_returns_empty_result"
+  - id: FALSIFY-MCP-011
+    rule: "[condition FALSIFY-MCP-014] a wrong-typed required argument is reported as a type error naming the received type, never as missing"
+    prediction: "wrong_type_names_the_type_and_never_says_missing passes; it fails when the message says missing"
+    test: "cargo test -p aprender-mcp --lib wrong_type_names_the_type_and_never_says_missing"

@@ -53,3 +53,13 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-LGZR-001
+    rule: "after a train step, zeroing the accumulators leaves every gradient zero (CPU path only; the single reused GPU zero buffer and the 1-allocation-per-batch claim are CUDA-only and not CI evidence)"
+    prediction: "test_cov_zero_grads fails if zero_all_gradients leaves stale gradient values"
+    test: "cargo test -p aprender-train --lib test_cov_zero_grads"
+  - id: FALSIFY-LGZR-002
+    rule: "gradient zeroing is complete between accumulation cycles (accumulate, zero, grad norm ~0)"
+    prediction: "test_cov4_zero_grads_then_check fails if gradient norm is non-zero after zeroing"
+    test: "cargo test -p aprender-train --lib test_cov4_zero_grads_then_check"

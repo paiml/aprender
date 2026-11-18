@@ -14,6 +14,7 @@ metadata:
   language: "Rust"
   category: active-tool
   topic: paiml-active-tool
+  expected: {archived: false, has_readme: false, has_ci_workflows: true}
 
 inputs:
   - "AI API requests"
@@ -21,7 +22,7 @@ outputs:
   - "Proxied responses"
 preconditions:
   - "Repository paiml/ccpo exists and is not archived"
-  - "README.md documents purpose and usage"
+  - "Repository paiml/ccpo has no README as of the 2026-11-18 snapshot (follow-up: create_readme)"
   - "CI pipeline passes on main branch"
 postconditions:
   - "Tool produces documented outputs from documented inputs"
@@ -45,3 +46,12 @@ falsification:
 
 entity:
   type: repo
+  ref: paiml/ccpo@360f173fb16b68b735b8323edbbe56c5fc49b9db
+
+# #7235: bound to a CI-run test. The snapshot is dated evidence captured from the GitHub API (see captured_at in
+# evidence/github/repo/), not a live check of the repo.
+falsification_tests:
+  - id: FALSIFY-APR_TOOL_CCPO_V1-BIND-001
+    rule: "the snapshot of paiml/ccpo (evidence/github/repo/, dated evidence captured at 2026-11-18T20:13:38Z, not a live check) equals the state this row declares (metadata.expected, default archived=false, has_readme=true, has_ci_workflows=true), and its ref and nameWithOwner match this row"
+    prediction: "apr_tool_rows_hold_against_repo_snapshots fails when the snapshot is missing, disagrees with the row, or records the repo archived, without a README or without a CI workflow"
+    test: "cargo test -p aprender-contracts --lib apr_tool_rows_hold_against_repo_snapshots"

@@ -188,3 +188,16 @@ toyota_way_principles:
     pre-authored gates 002/003/004 from §2.1 are discharged. Each
     phase = one PR ≈ one falsifier, per the project's
     falsifier-first cascade convention.
+
+# #7235: only the claims that have a `--lib` test are bound. PERSIST-002 (a
+# garbage .tmp sibling, atomic rename), -003 (recall@10) and -004 (cold-open
+# latency) live in tests/falsify_hnsw_persist_00{2,3,4}.rs, which no CI job runs.
+falsification_tests:
+  - id: FALSIFY-HNSW-PERSIST-001
+    rule: "flush, drop and re-open preserve search results byte-for-byte"
+    prediction: "flush_then_reopen_preserves_search_byte_stable passes; it fails when persistence loses or reorders neighbours"
+    test: "cargo test -p aprender-core --lib flush_then_reopen_preserves_search_byte_stable"
+  - id: FALSIFY-HNSW-PERSIST-002
+    rule: "[condition FALSIFY-HNSW-PERSIST-002, part b] a payload that fails to decode returns an error from open(), never a panic or a usable-looking index"
+    prediction: "open_after_decode_failure_returns_error_not_panic passes; it fails when open() panics or returns an index"
+    test: "cargo test -p aprender-core --lib open_after_decode_failure_returns_error_not_panic"

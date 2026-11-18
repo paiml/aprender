@@ -979,3 +979,15 @@ references:
   - "contracts/tensor-layout-v1.yaml (LAYOUT-001 row-major)"
   - "docs/specifications/aprender-train/ship-two-models-spec.md §5"
   - "memory/project_ship_two_001_model1_qlora_divergence.md (motivation)"
+
+falsification_tests:
+  - id: FALSIFY-LLAMA-370M-001
+    description: "Rust scaffold constants match this YAML (reads the YAML in tree; skips out of tree)"
+    test: "cargo test -p aprender-train --lib falsify_ship_011_rust_scaffold_matches_yaml_contract"
+    prediction: "Every architectural constant equals Llama370MConfig"
+    if_fails: "YAML and Rust scaffold drifted"
+  - id: FALSIFY-LLAMA-370M-002
+    description: "Parameter count lies in the contract band"
+    test: "cargo test -p aprender-train --lib estimated_param_count_within_contract_band"
+    prediction: "Count within 366M..374M"
+    if_fails: "A dimension drifted"

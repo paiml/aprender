@@ -38,3 +38,15 @@ beat:
   baseline_sourced_date: "2026-06-13"
   approved_compute: CPU
   ci_gate_name: "beat_sklearn_linreg_speed"
+
+# #7235: falsification tests bound to CI-run tests. The speed ratio itself needs uv +
+# scikit-learn and runs only in beat-speed-nightly.yml (#[ignore]): NOT CI evidence.
+falsification_tests:
+  - id: FALSIFY-BEAT-SKLEARN-LINREG-SPEED-001
+    rule: "the LinearRegression fit+predict path being timed is numerically correct (recovers y = 2x + 1 exactly); CPU algorithm-level check only, the apr_ms/sklearn_ms <= beat_threshold claim is nightly-only and is not covered here"
+    prediction: "test_simple_regression fails if fit returns wrong coefficients or intercept"
+    test: "cargo test -p aprender-core --lib test_simple_regression"
+  - id: FALSIFY-BEAT-SKLEARN-LINREG-SPEED-002
+    rule: "predict(fit(X, y), X) reproduces y on a multi-feature problem"
+    prediction: "test_prediction_invariant fails if predictions drift from the exact linear target"
+    test: "cargo test -p aprender-core --lib test_prediction_invariant"

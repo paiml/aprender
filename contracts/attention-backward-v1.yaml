@@ -33,3 +33,14 @@ falsification:
     description: "∀ i<j: attention_weight[i,j] == 0 (causal masking preserved in backward)"
     test: "Related tests in crates/aprender-train/src/"
     evidence: "cargo test --lib"
+
+# #7235: falsification tests bound to CI-run tests.
+falsification_tests:
+  - id: FALSIFY-ATTENTION-BACKWARD-001
+    rule: "[condition FALSIFY-ATTENTION_BACKWARD_V1_001] dQ from the backward pass matches a central finite-difference reference within 1e-2"
+    prediction: "falsify_attention_backward_v1_001_dq_matches_numeric passes; it fails when the dQ formula (softmax backward, 1/sqrt(d_k) scaling) is wrong"
+    test: "cargo test -p aprender-train --lib falsify_attention_backward_v1_001_dq_matches_numeric"
+  - id: FALSIFY-ATTENTION-BACKWARD-002
+    rule: "[condition FALSIFY-ATTENTION_BACKWARD_V1_002] the causal mask is preserved in backward: a future position receives exactly zero dK and dV"
+    prediction: "falsify_attention_backward_v1_002_causal_mask_in_backward passes; it fails when masked weights leak gradient"
+    test: "cargo test -p aprender-train --lib falsify_attention_backward_v1_002_causal_mask_in_backward"

@@ -33,3 +33,21 @@ falsification:
     description: "∀ binding in code: ∃ equation in YAML"
     test: "Related tests in crates/aprender-contracts/src/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-COMPLY-001
+    rule: "every YAML binding resolves to an implemented item (no ghost binding)"
+    prediction: "an unallowlisted ghost is rejected by name; the repo corpus has none"
+    test: "cargo test -p aprender-contracts --lib an_unallowlisted_ghost_is_rejected_by_name"
+  - id: FALSIFY-COMPLY-002
+    rule: "the repo corpus has no unallowlisted ghost and no stale allowlist entry"
+    prediction: "the enforcing run fails on a new ghost"
+    test: "cargo test -p aprender-contracts --lib the_repo_corpus_has_no_unallowlisted_ghost_and_no_stale_entry"
+  - id: FALSIFY-COMPLY-003
+    rule: "a public fn without a binding is reported as unbound (no orphan)"
+    prediction: "test_reverse_coverage_some_unbound reports the unbound fn"
+    test: "cargo test -p aprender-contracts --lib test_reverse_coverage_some_unbound"
+  - id: FALSIFY-COMPLY-004
+    rule: "a fully bound crate reports 100% reverse coverage"
+    prediction: "test_reverse_coverage_all_bound fails if a bound fn is reported unbound"
+    test: "cargo test -p aprender-contracts --lib test_reverse_coverage_all_bound"

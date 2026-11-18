@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/organizational-intelligence-plugin@428ecc25a067ad27cb37bddfdefb539b0bf1c5c3",
+  "nameWithOwner": "paiml/organizational-intelligence-plugin",
+  "defaultBranch": "main",
+  "sha": "428ecc25a067ad27cb37bddfdefb539b0bf1c5c3",
+  "url": "https://github.com/paiml/organizational-intelligence-plugin",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

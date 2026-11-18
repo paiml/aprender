@@ -55,6 +55,39 @@ fn grade_thresholds() {
     assert_eq!(Grade::from_score(0.30), Grade::F);
 }
 
+/// FALSIFY-TDG_SCORING_V1_001/002: composites stay in [0, 1] (0..=100 when
+/// scaled) and the grade never improves as the score falls.
+#[test]
+fn composite_is_bounded_and_grade_is_monotone_in_score() {
+    let kernel = parse_contract_str(minimal_kernel_yaml()).unwrap();
+    let empty = parse_contract_str(
+        "metadata:\n  version: \"1.0.0\"\n  description: \"Empty\"\n  registry: true\n  references: [\"Paper\"]\nequations:\n  f:\n    formula: \"f(x) = x\"\n",
+    )
+    .unwrap();
+    for (name, c) in [("kernel", &kernel), ("empty", &empty)] {
+        let s = score_contract(c, None, name);
+        assert!(
+            (0.0..=1.0).contains(&s.composite),
+            "{name}: composite {} out of range",
+            s.composite
+        );
+        assert_eq!(s.grade, Grade::from_score(s.composite), "{name}");
+    }
+    let rank = |g: Grade| match g {
+        Grade::A => 4,
+        Grade::B => 3,
+        Grade::C => 2,
+        Grade::D => 1,
+        Grade::F => 0,
+    };
+    let mut prev = rank(Grade::from_score(0.0));
+    for i in 1..=1000 {
+        let r = rank(Grade::from_score(f64::from(i) / 1000.0));
+        assert!(r >= prev, "grade fell as score rose at {i}/1000");
+        prev = r;
+    }
+}
+
 #[test]
 fn custom_weights_change_composite() {
     let contract = parse_contract_str(minimal_kernel_yaml()).unwrap();

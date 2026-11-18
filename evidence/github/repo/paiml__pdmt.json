@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/pdmt@c75da90d6b4dde180b35a5363da170b57eaba251",
+  "nameWithOwner": "paiml/pdmt",
+  "defaultBranch": "main",
+  "sha": "c75da90d6b4dde180b35a5363da170b57eaba251",
+  "url": "https://github.com/paiml/pdmt",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

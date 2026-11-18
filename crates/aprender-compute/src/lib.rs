@@ -615,6 +615,9 @@ mod contract_tests;
 mod force_isa_tests;
 
 #[cfg(test)]
+mod contract_tests_gemm_backward;
+
+#[cfg(test)]
 mod contract_tests_image;
 
 #[cfg(test)]

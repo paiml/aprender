@@ -135,3 +135,10 @@ falsification:
   - name: FALSIFY-ARCH-003
     description: "crates.io ownership lost after archive"
     check: "`cargo owner --list <crate>` still shows PAIML team"
+
+# #7235: falsification tests bound to CI-run tests.
+falsification_tests:
+  - id: FALSIFY-ARCHIVE-REPOS-001
+    rule: "[condition FALSIFY-ARCH-002] each of the 20 repos listed for archival has its new home in the monorepo (crates/<new_crate>/Cargo.toml declares that crate), so the redirect README is not a dead end"
+    prediction: "archive_repos_new_homes_exist_in_the_monorepo passes; it fails when the list is not 20 repos or a named new_crate has no manifest in the tree"
+    test: "cargo test -p aprender-contracts --lib archive_repos_new_homes_exist_in_the_monorepo"

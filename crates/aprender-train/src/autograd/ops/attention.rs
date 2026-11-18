@@ -410,6 +410,71 @@ mod tests {
         }
     }
 
+    /// FALSIFY-ATTENTION_BACKWARD_V1_001: dQ from the backward pass matches a
+    /// central finite-difference reference of the causal forward.
+    #[test]
+    fn falsify_attention_backward_v1_001_dq_matches_numeric() {
+        let (seq_len, d_k, d_v) = (3, 2, 2);
+        let q_data = vec![0.5f32, -0.3, 0.8, 0.1, -0.6, 0.9];
+        let k_data = vec![0.2f32, 0.7, -0.4, 0.5, 0.3, -0.8];
+        let v_data = vec![1.0f32, -1.0, 0.5, 2.0, -0.5, 1.5];
+        let up = vec![0.3f32, -0.2, 0.7, 0.4, -0.9, 0.6];
+
+        let q = Tensor::new(Array1::from(q_data.clone()), true);
+        let k = Tensor::new(Array1::from(k_data.clone()), false);
+        let v = Tensor::new(Array1::from(v_data.clone()), false);
+        let mut out = attention_causal(&q, &k, &v, seq_len, d_k, seq_len, d_v);
+        crate::autograd::backward(&mut out, Some(Array1::from(up.clone())));
+        let analytic = q.grad().expect("dQ available");
+
+        let loss = |qd: &[f32]| -> f32 {
+            let qt = Tensor::new(Array1::from(qd.to_vec()), false);
+            let kt = Tensor::new(Array1::from(k_data.clone()), false);
+            let vt = Tensor::new(Array1::from(v_data.clone()), false);
+            let o = attention_causal(&qt, &kt, &vt, seq_len, d_k, seq_len, d_v);
+            o.data().iter().zip(up.iter()).map(|(a, b)| a * b).sum()
+        };
+        let eps = 1e-2f32;
+        for i in 0..q_data.len() {
+            let mut plus = q_data.clone();
+            let mut minus = q_data.clone();
+            plus[i] += eps;
+            minus[i] -= eps;
+            let numeric = (loss(&plus) - loss(&minus)) / (2.0 * eps);
+            assert!(
+                (analytic[i] - numeric).abs() < 1e-2,
+                "FALSIFIED ATTENTION_BACKWARD_V1_001: dQ[{i}] analytic={} numeric={numeric}",
+                analytic[i]
+            );
+        }
+    }
+
+    /// FALSIFY-ATTENTION_BACKWARD_V1_002: the causal mask survives the backward
+    /// pass. Only row 1 receives upstream gradient, so position 2 (a future
+    /// position for row 1) must get exactly zero dK and dV.
+    #[test]
+    fn falsify_attention_backward_v1_002_causal_mask_in_backward() {
+        let (seq_len, d_k, d_v) = (3, 2, 2);
+        let q = Tensor::new(Array1::from(vec![0.5f32, -0.3, 0.8, 0.1, -0.6, 0.9]), true);
+        let k = Tensor::new(Array1::from(vec![0.2f32, 0.7, -0.4, 0.5, 0.3, -0.8]), true);
+        let v = Tensor::new(Array1::from(vec![1.0f32, -1.0, 0.5, 2.0, -0.5, 1.5]), true);
+        let mut out = attention_causal(&q, &k, &v, seq_len, d_k, seq_len, d_v);
+        let up = Array1::from(vec![0.0f32, 0.0, 1.0, 1.0, 0.0, 0.0]);
+        crate::autograd::backward(&mut out, Some(up));
+        let dk = k.grad().expect("dK available");
+        let dv = v.grad().expect("dV available");
+        for d in 0..d_k {
+            assert_eq!(dk[2 * d_k + d], 0.0, "FALSIFIED: dK leaks from future position 2");
+        }
+        for d in 0..d_v {
+            assert_eq!(dv[2 * d_v + d], 0.0, "FALSIFIED: dV leaks from future position 2");
+        }
+        assert!(
+            dv.iter().skip(d_v).take(d_v).any(|x| *x != 0.0),
+            "dV for the attended position 1 must be nonzero"
+        );
+    }
+
     /// ENC-002: Verify attention is bidirectional (no causal mask).
     ///
     /// In causal attention, position 0 cannot attend to position 1+.

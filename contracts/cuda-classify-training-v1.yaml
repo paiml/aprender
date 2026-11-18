@@ -33,3 +33,15 @@ falsification:
     description: "CUDA gradients match CPU within ε"
     test: "Related tests in crates/aprender-train/src/finetune/classify_pipeline/"
     evidence: "cargo test --lib"
+
+# #7235: falsification tests bound to CI-run tests. The CUDA kernels need a GPU and are not
+# CI evidence; these bind the CPU reference path of the same math (forward softmax, gradients).
+falsification_tests:
+  - id: FALSIFY-CUDA_CLASSIFY_TRAINING_V1-BIND-001
+    rule: "covers FALSIFY-CUDA_CLASSIFY_TRAINING_V1_001: classifier forward (linear + softmax) is a valid distribution: probabilities in [0,1] summing to 1 within 1e-5, finite loss; CPU reference only, the CUDA-vs-CPU epsilon parity claim is GPU-only and not covered here"
+    prediction: "test_cov4_forward_only_with_probs_classes fails if the forward softmax is not normalised"
+    test: "cargo test -p aprender-train --lib test_cov4_forward_only_with_probs_classes"
+  - id: FALSIFY-CUDA_CLASSIFY_TRAINING_V1-BIND-002
+    rule: "covers FALSIFY-CUDA_CLASSIFY_TRAINING_V1_002: classifier gradients (cross-entropy backward + AdamW step) drive the loss down over 20 accumulation epochs; CPU reference only, the CUDA gradient parity claim is GPU-only and not covered here"
+    prediction: "test_ssc025_accumulate_gradients_convergence fails if gradients are wrong in sign or scale"
+    test: "cargo test -p aprender-train --lib test_ssc025_accumulate_gradients_convergence"

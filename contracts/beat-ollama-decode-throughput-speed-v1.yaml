@@ -169,3 +169,26 @@ ci_gating:
     #        OLLAMA_MODEL=qwen2.5-coder:1.5b-instruct-q4_K_M \
     #        cargo test -p aprender-serve --test beat_ollama_decode_throughput_speed \
     #          -- --ignored --nocapture
+
+# #7235: falsification tests bound to CI-run tests. The GPU decode ratio itself needs an NVIDIA
+# host + ollama and runs manually (#[ignore]): it is NOT CI evidence. What CI runs is the
+# harness's CPU-side calibration: every compute-capability floor carries its derivation, the
+# floors sit below the observed ratios they were derived from, and an unanswered probe never
+# resolves to a floor.
+falsification_tests:
+  - id: FALSIFY-BEAT-OLLAMA-DECODE-001
+    rule: "every SILICON_FLOORS entry states what it was derived from and has a plausible no-collapse floor; the apr-vs-ollama GPU measurement is not covered by this test"
+    prediction: "every_floor_states_what_it_was_derived_from fails when a floor has no derivation or an implausible value"
+    test: "cargo test -p aprender-serve --test beat_ollama_decode_throughput_speed every_floor_states_what_it_was_derived_from"
+  - id: FALSIFY-BEAT-OLLAMA-DECODE-002
+    rule: "the sm_89 floor is calibrated and carries its derivation"
+    prediction: "sm_89_is_calibrated_and_carries_its_derivation fails when the sm_89 entry is dropped or uncalibrated"
+    test: "cargo test -p aprender-serve --test beat_ollama_decode_throughput_speed sm_89_is_calibrated_and_carries_its_derivation"
+  - id: FALSIFY-BEAT-OLLAMA-DECODE-003
+    rule: "the sm_121 floor is derived from its recorded observations (worst x 0.88), never invented"
+    prediction: "gb10_floor_is_derived_from_its_observations fails when the floor is not under every recorded night"
+    test: "cargo test -p aprender-serve --test beat_ollama_decode_throughput_speed gb10_floor_is_derived_from_its_observations"
+  - id: FALSIFY-BEAT-OLLAMA-DECODE-004
+    rule: "an unanswered compute-capability probe never resolves to a floor"
+    prediction: "an_unanswered_probe_never_resolves_to_a_floor fails when an unknown silicon inherits a floor"
+    test: "cargo test -p aprender-serve --test beat_ollama_decode_throughput_speed an_unanswered_probe_never_resolves_to_a_floor"

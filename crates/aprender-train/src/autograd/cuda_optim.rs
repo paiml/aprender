@@ -25,8 +25,6 @@
 #![allow(clippy::ref_as_ptr)]
 
 #[cfg(feature = "cuda")]
-use std::collections::HashMap;
-#[cfg(feature = "cuda")]
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(feature = "cuda")]
@@ -39,6 +37,8 @@ use trueno_gpu::kernels::{
 };
 
 use super::cuda_tensor::{CudaTensorError, Result};
+#[cfg(feature = "cuda")]
+use super::kernel_module_cache::LazyModuleCache;
 
 /// Cached compiled CUDA modules for optimizer kernels
 #[cfg(feature = "cuda")]
@@ -48,7 +48,7 @@ static OPTIM_KERNEL_CACHE: OnceLock<Mutex<OptimKernelCache>> = OnceLock::new();
 #[cfg(feature = "cuda")]
 struct OptimKernelCache {
     ctx: std::sync::Arc<CudaContext>,
-    modules: HashMap<String, CudaModule>,
+    lazy: LazyModuleCache<CudaModule>,
     sm_target: String,
 }
 
@@ -56,7 +56,7 @@ struct OptimKernelCache {
 impl OptimKernelCache {
     fn new(ctx: std::sync::Arc<CudaContext>) -> Self {
         let sm_target = ctx.sm_target().unwrap_or_else(|_| "sm_70".to_string());
-        Self { ctx, modules: HashMap::new(), sm_target }
+        Self { ctx, lazy: LazyModuleCache::new(), sm_target }
     }
 
     fn sm_target(&self) -> &str {
@@ -65,17 +65,16 @@ impl OptimKernelCache {
 
     /// Look up a previously compiled module by key (KAIZEN-058).
     fn get_cached(&mut self, name: &str) -> Option<&mut CudaModule> {
-        self.modules.get_mut(name)
+        self.lazy.get_cached(name)
     }
 
     fn get_or_compile(&mut self, name: &str, ptx: &str) -> Result<&mut CudaModule> {
-        if !self.modules.contains_key(name) {
-            let module = CudaModule::from_ptx(&self.ctx, ptx).map_err(|e| {
+        let ctx = &self.ctx;
+        self.lazy.get_or_compile_with(name, || {
+            CudaModule::from_ptx(ctx, ptx).map_err(|e| {
                 CudaTensorError::KernelError(format!("Failed to compile {name}: {e:?}"))
-            })?;
-            self.modules.insert(name.to_string(), module);
-        }
-        Ok(self.modules.get_mut(name).expect("module was just inserted above"))
+            })
+        })
     }
 }
 

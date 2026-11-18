@@ -33,3 +33,17 @@ falsification:
     description: "total tokens ≤ max_context_length"
     test: "Related tests in crates/aprender-rag/src/"
     evidence: "cargo test --lib"
+
+falsification_tests:
+  - id: FALSIFY-CTXGEN-001
+    rule: "selected docs are ordered by descending relevance score"
+    prediction: "lambda_one_yields_relevance_descending fails when the order is not descending"
+    test: "cargo test -p aprender-rag --lib lambda_one_yields_relevance_descending"
+  - id: FALSIFY-CTXGEN-002
+    rule: "assembled context respects the token budget"
+    prediction: "test_context_assembler_max_tokens fails when chunks exceed the budget"
+    test: "cargo test -p aprender-rag --lib test_context_assembler_max_tokens"
+  - id: FALSIFY-CTXGEN-003
+    rule: "assembly keeps results in rank order under a budget that fits"
+    prediction: "test_context_assembler_sequential fails when chunks are dropped or reordered"
+    test: "cargo test -p aprender-rag --lib test_context_assembler_sequential"

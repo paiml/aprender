@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/depyler@cd045f371c7ffe5b4d937bd45a7bfb016775a56f",
+  "nameWithOwner": "paiml/depyler",
+  "defaultBranch": "main",
+  "sha": "cd045f371c7ffe5b4d937bd45a7bfb016775a56f",
+  "url": "https://github.com/paiml/depyler",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

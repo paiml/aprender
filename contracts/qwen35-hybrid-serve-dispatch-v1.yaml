@@ -152,3 +152,15 @@ open_obligations:
     Streaming is asserted for /api/chat only through the #3571 OpenAI-wire
     streaming row and a manual NDJSON probe recorded in empirical_status. A
     cargo-level streaming row for the ollama wire is owed.
+
+falsification_tests:
+  - id: FALSIFY-QWEN35-HYBRID-DISPATCH-001
+    description: "The degeneracy check catches the zero-layer-base defect (pure test, runs in CI)"
+    test: "cargo test -p aprender-serve --lib the_degeneracy_check_catches_the_defect_it_is_named_for"
+    prediction: "A degenerate output is flagged"
+    if_fails: "The dispatch defect could pass unnoticed"
+  - id: FALSIFY-QWEN35-HYBRID-DISPATCH-002
+    description: "Ollama chat wire answers from the hybrid (model-gated: skips without APR_QWEN35_MODEL, so CI evidence only where the GGUF exists)"
+    test: "cargo test -p aprender-serve --lib the_ollama_chat_wire_answers_from_the_hybrid"
+    prediction: "Chat answer comes from the hybrid backend"
+    if_fails: "Chat wire decodes through the dense zero-layer base"

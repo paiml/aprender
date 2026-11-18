@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/paiml-mcp-agent-toolkit@070edeb390b92d3b133342b89d35241e5b0a9e35",
+  "nameWithOwner": "paiml/paiml-mcp-agent-toolkit",
+  "defaultBranch": "master",
+  "sha": "070edeb390b92d3b133342b89d35241e5b0a9e35",
+  "url": "https://github.com/paiml/paiml-mcp-agent-toolkit",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

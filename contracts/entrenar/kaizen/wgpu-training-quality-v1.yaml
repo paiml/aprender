@@ -108,3 +108,15 @@ affected_files:
 - path: src/train/transformer_trainer/wgpu_runner.rs
   functions:
   - 'run_wgpu_training: albor HP config (beta2, wd)'
+
+falsification_tests:
+  - id: FALSIFY-WGPU-TRAIN-QUALITY-001
+    description: "LoRA+ learning-rate ratio reaches the train config (NEFTune and focal weighting live in the gpu-gated wgpu_trainer and are NOT CI evidence)"
+    test: "cargo test -p aprender-train --lib test_build_train_config_lora_plus_ratio"
+    prediction: "lora_plus_ratio from the spec is carried into the built config"
+    if_fails: "LoRA+ ratio is silently dropped"
+  - id: FALSIFY-WGPU-TRAIN-QUALITY-002
+    description: "AdamW weight decay is applied (CPU optimizer)"
+    test: "cargo test -p aprender-train --lib test_adamw_weight_decay"
+    prediction: "Decayed parameters shrink relative to the no-decay run"
+    if_fails: "AdamW hyperparameters are not honoured"

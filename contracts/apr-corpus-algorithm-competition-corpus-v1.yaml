@@ -48,3 +48,12 @@ falsification:
 
 entity:
   type: repo
+
+# #7235: the postcondition "Corpus indexed in oracle RAG pipeline", bound to a
+# lib test that CI runs. It reads every apr-corpus-*-v1.yaml repo and asserts
+# the default oracle IndexConfig lists it as a corpus directory.
+falsification_tests:
+  - id: FALSIFY-CORPUS-ALGORITHM-COMPETITION-CORPUS-001
+    rule: "the corpus repo named in this contract is in the oracle RAG default IndexConfig (rust or python corpus dirs)"
+    prediction: "falsify_apr_corpus_every_contract_repo_is_rag_indexed passes; it fails when a contract's repo is not indexed by default"
+    test: "cargo test -p aprender-orchestrate --lib falsify_apr_corpus_every_contract_repo_is_rag_indexed"
