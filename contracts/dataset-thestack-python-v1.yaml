@@ -346,3 +346,33 @@ gates:
       non-NFC bytes in corpus → tokenizer drift between train and
       inference → MODEL-2 generates garbage at inference.
     blocks_ac: "AC-SHIP2-003 + AC-SHIP2-010 (Golden Output)"
+
+falsification_tests:
+  - id: FALSIFY-THESTACK-001
+    rule: "INV-DATA-001 license whitelist: one disallowed file fails the decision rule (algorithm level; real-corpus scan not run in CI)"
+    prediction: "fail_one_disallowed_in_million fails if the rule tolerates a disallowed license"
+    test: "cargo test -p aprender-core --lib format::data_inv_001::tests::fail_one_disallowed_in_million"
+  - id: FALSIFY-THESTACK-002
+    rule: "INV-DATA-002 PII scrub: one pattern match fails the decision rule (algorithm level)"
+    prediction: "fail_one_match_in_million_files fails if the rule tolerates a PII match"
+    test: "cargo test -p aprender-core --lib format::data_inv_002::tests::fail_one_match_in_million_files"
+  - id: FALSIFY-THESTACK-003
+    rule: "INV-DATA-003 dedup: Jaccard at or above 0.85 fails the decision rule (algorithm level)"
+    prediction: "provenance_jaccard_threshold_is_0_85 fails if the threshold drifts"
+    test: "cargo test -p aprender-core --lib format::data_inv_003::tests::provenance_jaccard_threshold_is_0_85"
+  - id: FALSIFY-THESTACK-004
+    rule: "INV-DATA-004 token budget and 2% val floor (algorithm level)"
+    prediction: "provenance_val_floor_is_two_percent fails if the floor drifts"
+    test: "cargo test -p aprender-core --lib format::data_inv_004::tests::provenance_val_floor_is_two_percent"
+  - id: FALSIFY-THESTACK-005
+    rule: "INV-DATA-005 corpus digest reproducibility: differing digest fails (algorithm level)"
+    prediction: "fail_first_byte_differs fails if a digest mismatch passes"
+    test: "cargo test -p aprender-core --lib format::data_inv_005::tests::fail_first_byte_differs"
+  - id: FALSIFY-THESTACK-006
+    rule: "INV-DATA-006 train/val disjoint: one shared file fails the decision rule (algorithm level)"
+    prediction: "fail_one_file_in_both_splits fails if leakage passes"
+    test: "cargo test -p aprender-core --lib format::data_inv_006::tests::fail_one_file_in_both_splits"
+  - id: FALSIFY-THESTACK-007
+    rule: "INV-DATA-007 UTF-8/NFC: one failure fails the decision rule (algorithm level)"
+    prediction: "fail_one_utf8_failure_in_million fails if a decode failure passes"
+    test: "cargo test -p aprender-core --lib format::data_inv_007::tests::fail_one_utf8_failure_in_million"

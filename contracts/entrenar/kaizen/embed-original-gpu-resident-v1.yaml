@@ -108,3 +108,13 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-EOGR-001
+    rule: "embedding table built from params holds the same data (CPU reference; PCIe claim GPU-only)"
+    prediction: "test_embedding_from_params fails if weights are not carried"
+    test: "cargo test -p aprender-train --lib test_embedding_from_params"
+  - id: FALSIFY-EOGR-002
+    rule: "embedding forward reads the table rows"
+    prediction: "test_embedding_forward fails if lookup breaks"
+    test: "cargo test -p aprender-train --lib test_embedding_forward"

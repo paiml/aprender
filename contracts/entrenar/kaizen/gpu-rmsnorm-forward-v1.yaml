@@ -124,3 +124,17 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-GRMSF-001
+    rule: "output = RMSNorm(x) * gamma: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "test_rms_norm_forward fails if the CPU reference drifts"
+    test: "cargo test -p aprender-train --lib test_rms_norm_forward"
+  - id: FALSIFY-GRMSF-002
+    rule: "RMSNorm normalises to unit RMS"
+    prediction: "test_rms_norm_normalization_property fails otherwise"
+    test: "cargo test -p aprender-train --lib test_rms_norm_normalization_property"
+  - id: FALSIFY-GRMSF-003
+    rule: "batched RMSNorm matches per-row"
+    prediction: "test_rms_norm_batched fails otherwise"
+    test: "cargo test -p aprender-train --lib test_rms_norm_batched"

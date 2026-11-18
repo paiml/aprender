@@ -91,3 +91,17 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+falsification_tests:
+  - id: FALSIFY-WSCL-001
+    rule: "L2 norm of clipped gradients <= max_grad_norm: CPU reference of the numeric claim only; the CUDA-only transfer/allocation claim needs a GPU and is not CI evidence"
+    prediction: "test_clip_grad_norm_with_clipping fails if clipping leaves norm above max"
+    test: "cargo test -p aprender-train --lib test_clip_grad_norm_with_clipping"
+  - id: FALSIFY-WSCL-002
+    rule: "clipping preserves gradient direction"
+    prediction: "test_clip_grad_norm_preserves_relative_magnitudes fails if direction changes"
+    test: "cargo test -p aprender-train --lib test_clip_grad_norm_preserves_relative_magnitudes"
+  - id: FALSIFY-WSCL-003
+    rule: "no clipping at or below the threshold"
+    prediction: "test_clip_grad_norm_exactly_at_threshold fails if sub-threshold grads are scaled"
+    test: "cargo test -p aprender-train --lib test_clip_grad_norm_exactly_at_threshold"

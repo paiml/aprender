@@ -146,3 +146,33 @@ lib_name_strategy:
     name = "aprender-compute"  # crates.io name
     [lib]
     name = "trueno"            # Rust import: use trueno::*;
+
+falsification_tests:
+  - id: FALSIFY-CGPBUILD-001
+    rule: "workspace members are unique"
+    prediction: "test_no_duplicate_workspace_members fails on a duplicated member"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_no_duplicate_workspace_members"
+  - id: FALSIFY-CGPBUILD-002
+    rule: "workspace version is consistent"
+    prediction: "test_workspace_version_consistency fails on a diverging version"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_workspace_version_consistency"
+  - id: FALSIFY-CGPBUILD-003
+    rule: "workspace member count stays above the floor"
+    prediction: "test_minimum_workspace_member_count fails below the floor"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_minimum_workspace_member_count"
+  - id: FALSIFY-CGPBUILD-004
+    rule: "root Cargo.toml has no [patch.crates-io]"
+    prediction: "test_no_patch_in_root_cargo_toml fails when a patch table appears"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_no_patch_in_root_cargo_toml"
+  - id: FALSIFY-CGPBUILD-005
+    rule: "every member dir has a Cargo.toml"
+    prediction: "test_all_workspace_dirs_have_cargo_toml fails on a manifest-less member"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_all_workspace_dirs_have_cargo_toml"
+  - id: FALSIFY-CGPBUILD-006
+    rule: "crate names use the aprender prefix"
+    prediction: "test_all_crate_names_use_aprender_prefix fails on a foreign name"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_all_crate_names_use_aprender_prefix"
+  - id: FALSIFY-CGPBUILD-007
+    rule: "layout is flat, no nested crates"
+    prediction: "test_flat_layout_no_nested_crates fails on a nested crate"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_flat_layout_no_nested_crates"

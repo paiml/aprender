@@ -306,3 +306,25 @@ phases:
   - id: P6-archive
     name: "Archive old repos as read-only"
     deliverable: "19 repos archived, README points to monorepo"
+
+falsification_tests:
+  - id: FALSIFY-CGPCONS-001
+    rule: "no duplicate members after consolidation (merge-conflict residue)"
+    prediction: "test_no_duplicate_workspace_members fails on duplicates"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_no_duplicate_workspace_members"
+  - id: FALSIFY-CGPCONS-002
+    rule: "all consolidated repos are present as workspace members"
+    prediction: "test_minimum_workspace_member_count fails when members are missing"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_minimum_workspace_member_count"
+  - id: FALSIFY-CGPCONS-003
+    rule: "layout stays flat crates/aprender-*"
+    prediction: "test_flat_layout_no_nested_crates fails on nesting"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_flat_layout_no_nested_crates"
+  - id: FALSIFY-CGPCONS-004
+    rule: "no [patch] overrides hide a sibling"
+    prediction: "test_no_patch_in_root_cargo_toml fails on a patch table"
+    test: "cargo test -p aprender-core --test monorepo_invariants test_no_patch_in_root_cargo_toml"
+  - id: FALSIFY-CGPCONS-005
+    rule: "path pins name their target version"
+    prediction: "falsify_mono_014_path_pins_name_their_target_version fails on a stale path pin"
+    test: "cargo test -p aprender-core --test monorepo_invariants falsify_mono_014_path_pins_name_their_target_version"
