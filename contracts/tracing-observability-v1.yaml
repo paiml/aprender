@@ -33,3 +33,14 @@ falsification:
     description: "∀ child span: child.start ≥ parent.start ∧ child.end ≤ parent.end"
     test: "Related tests in crates/aprender-profile/src/ + crates/aprender-profile-core/src/"
     evidence: "cargo test --lib"
+
+# PMAT-7235: bound to CI-run tests (--lib).
+falsification_tests:
+  - id: FALSIFY-TRACING_OBSERVABILITY_V1_001
+    rule: "a started span can be ended with an end time at or after its start"
+    prediction: "test_experiment_span_end passes"
+    test: "cargo test -p aprender-profile --lib test_experiment_span_end"
+  - id: FALSIFY-TRACING_OBSERVABILITY_V1_002
+    rule: "a child span nests inside its parent"
+    prediction: "test_experiment_span_child_nests_inside_parent passes; fails if the child escapes the parent interval"
+    test: "cargo test -p aprender-profile --lib test_experiment_span_child_nests_inside_parent"

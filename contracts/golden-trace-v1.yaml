@@ -33,3 +33,14 @@ falsification:
     description: "argmax(model_logits) == argmax(reference_logits) for all positions"
     test: "Related tests in crates/aprender-serve/src/"
     evidence: "cargo test --lib"
+
+# PMAT-7235: bound to CI-run tests (--lib).
+falsification_tests:
+  - id: FALSIFY-GOLDEN_TRACE_V1_001
+    rule: "logit verification accepts equal logits and rejects ones outside the tolerance"
+    prediction: "test_verify_logits_pass and test_verify_logits_fail pass"
+    test: "cargo test -p aprender-core --lib test_verify_logits_pass"
+  - id: FALSIFY-GOLDEN_TRACE_V1_002
+    rule: "logit stats report the argmax of the logits"
+    prediction: "test_logit_stats passes"
+    test: "cargo test -p aprender-core --lib test_logit_stats"

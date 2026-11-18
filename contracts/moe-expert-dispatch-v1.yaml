@@ -33,3 +33,10 @@ falsification:
     description: "output[t] = Σ_e weight[t,e] * expert_output[t,e]"
     test: "Related tests in crates/aprender-serve/src/gpu/scheduler/moe_dispatch.rs"
     evidence: "cargo test --lib"
+
+# PMAT-7235: bound to CI-run tests (--lib).
+falsification_tests:
+  - id: FALSIFY-MOE_EXPERT_DISPATCH_V1_001
+    rule: "output[t] = sum_e weight[t,e] * expert_output[t,e], and unrouted experts do not affect it"
+    prediction: "falsify_moe_expert_dispatch_isolation_and_weighted_sum passes; fails if scrambling an unrouted expert changes the output or the sum differs"
+    test: "cargo test -p aprender-serve --lib falsify_moe_expert_dispatch_isolation_and_weighted_sum"

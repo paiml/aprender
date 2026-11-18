@@ -55,3 +55,14 @@ falsification:
     description: "All bytes of Tensor::zeros are 0 after construction"
     test: "proptest: random shape; Tensor::zeros(shape, F32); assert all bytes == 0u8"
     evidence: "cargo test -p aprender-core --lib memory_safety"
+
+# PMAT-7235: bound to CI-run tests (--lib).
+falsification_tests:
+  - id: FALSIFY-MEM-001
+    rule: "Tensor::zeros allocates numel * 4 bytes and every bit is zero"
+    prediction: "test_tensor_zeros_allocation_matches_shape passes; fails on a wrong size or a nonzero byte"
+    test: "cargo test -p aprender-core --lib test_tensor_zeros_allocation_matches_shape"
+  - id: FALSIFY-MEM-002
+    rule: "a safetensors tensor whose offsets run past EOF returns Err, not a panic"
+    prediction: "test_tensor_out_of_bounds passes; fails if the read panics or returns Ok"
+    test: "cargo test -p aprender-core --lib test_tensor_out_of_bounds"
