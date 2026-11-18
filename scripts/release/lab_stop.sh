@@ -164,8 +164,7 @@ mutants() {
         if ! bash -n "$copy" 2>/dev/null; then
             printf '  BROKE %-34s does not parse\n' "$name"; fail=$((fail + 1)); continue
         fi
-        rc=0; o="$(cp "$copy" "$HERE/.mut.$name.sh" && bash "$SCRIPT_PATH" --self-test-of "$HERE/.mut.$name.sh" < /dev/null 2>&1)" || rc=$?
-        rm -f "${HERE:?}/.mut.$name.sh"
+        rc=0; o="$(bash "$SCRIPT_PATH" --self-test-of "$copy" < /dev/null 2>&1)" || rc=$?
         case "$rc:$o" in
             0:*) printf '  BROKE %-34s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
             *"  BROKE "*) printf '  ok    %-34s killed, %s row(s) broke\n' "$name" "$(awk '/^  BROKE /{n++} END{print n+0}' <<< "$o")"; pass=$((pass + 1)) ;;
