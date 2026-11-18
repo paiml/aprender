@@ -154,6 +154,9 @@ mutants() {
     tmp="$(mktemp -d)"
     case "$tmp" in ?*/tmp.?*) : ;; *) echo "mktemp gave '${tmp:-}', refusing"; return 2 ;; esac
     trap selftest_cleanup RETURN
+    # The copy resolves its siblings through its own $HERE, so it must sit beside them: without nightly_greens.sh the
+    # judge prints no count and EVERY mutant "dies" for the wrong reason. Copy each sibling this script runs via $HERE.
+    cp -- "$GREENS" "$tmp/${GREENS##*/}" || { echo "cannot stage ${GREENS##*/}, refusing"; return 2; }
     while read -r name expr; do
         [ -n "$name" ] || continue
         copy="$tmp/$name.sh"
@@ -165,6 +168,14 @@ mutants() {
             printf '  BROKE %-34s does not parse\n' "$name"; fail=$((fail + 1)); continue
         fi
         rc=0; o="$(bash "$SCRIPT_PATH" --self-test-of "$copy" < /dev/null 2>&1)" || rc=$?
+        if [ "${name#guard_}" != "$name" ]; then # a comment-only mutant must SURVIVE: if it dies the harness is vacuous
+            if [ "$rc" -eq 0 ] && ! grep -q '^  BROKE ' <<< "$o"; then
+                printf '  ok    %-34s survived, as a comment-only change must\n' "$name"; pass=$((pass + 1))
+            else
+                printf '  BROKE %-34s a comment-only mutant died (exit %s): the harness is vacuous\n' "$name" "$rc"; fail=$((fail + 1))
+            fi
+            continue
+        fi
         case "$rc:$o" in
             0:*) printf '  BROKE %-34s SURVIVED: the case table stayed green\n' "$name"; fail=$((fail + 1)) ;;
             *"  BROKE "*) printf '  ok    %-34s killed, %s row(s) broke\n' "$name" "$(awk '/^  BROKE /{n++} END{print n+0}' <<< "$o")"; pass=$((pass + 1)) ;;
@@ -178,6 +189,7 @@ drop_the_young_lane_check   s#if \[ -z "\$first" \] || \[\[ "\$first" > "\$start
 ignore_tonight              s|if \[ "\$tonight" = success \]; then|if false; then|
 stop_on_one_green           s|if \[ "\$total" -ne 0 \]; then|if [ "$total" -gt 1 ]; then|
 window_of_three             s|^WINDOW=7|WINDOW=3|
+guard_comment_only_survives s|# STATED, NOT PROVED|# STATEDX, NOT PROVED|
 history_not_cut_to_window   s#--history "\$cut" --as-of#--history "$history" --as-of#
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
