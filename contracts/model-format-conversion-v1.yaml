@@ -328,7 +328,7 @@ qa_gate:
   - merge_weight_algebra
   - import_integrity
   - export_fidelity
-  pass_criteria: All 9 falsification tests pass
+  pass_criteria: All 10 falsification tests pass
   falsification: >
     Convert a model, count tensors, verify all preserved.
     Quantize with extreme values, check error bounds.
