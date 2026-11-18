@@ -76,7 +76,9 @@ fn test_generate_zero_max_tokens() {
 fn test_generate_returns_prompt_plus_generated() {
     let t = create_test_transformer(16, 1, 100);
     let prompt = vec![1u32, 5, 10];
-    let result = t.generate(&prompt, 3).expect("test value should be present");
+    let result = t
+        .generate(&prompt, 3)
+        .expect("test value should be present");
     // Should start with the prompt
     assert_eq!(&result[..3], &[1, 5, 10]);
     assert!(result.len() >= 3, "should at least contain prompt");
@@ -225,7 +227,9 @@ fn test_config_accessor_returns_correct_values() {
 fn test_forward_with_cache_first_token() {
     let t = create_test_transformer(16, 1, 100);
     let mut cache = AprKVCache::new(t.config());
-    let logits = t.forward_with_cache(1, &mut cache, 0).expect("test value should be present");
+    let logits = t
+        .forward_with_cache(1, &mut cache, 0)
+        .expect("test value should be present");
     assert_eq!(logits.len(), 100);
 }
 
@@ -233,8 +237,12 @@ fn test_forward_with_cache_first_token() {
 fn test_forward_with_cache_sequential() {
     let t = create_test_transformer(16, 1, 100);
     let mut cache = AprKVCache::new(t.config());
-    let _l1 = t.forward_with_cache(1, &mut cache, 0).expect("test value should be present");
-    let l2 = t.forward_with_cache(2, &mut cache, 1).expect("test value should be present");
+    let _l1 = t
+        .forward_with_cache(1, &mut cache, 0)
+        .expect("test value should be present");
+    let l2 = t
+        .forward_with_cache(2, &mut cache, 1)
+        .expect("test value should be present");
     assert_eq!(l2.len(), 100);
 }
 
@@ -243,7 +251,9 @@ fn test_forward_with_cache_many_positions() {
     let t = create_test_transformer(16, 1, 100);
     let mut cache = AprKVCache::new(t.config());
     for pos in 0..10 {
-        let logits = t.forward_with_cache(1, &mut cache, pos).expect("test value should be present");
+        let logits = t
+            .forward_with_cache(1, &mut cache, pos)
+            .expect("test value should be present");
         assert_eq!(logits.len(), 100, "pos {pos}");
     }
 }
@@ -260,7 +270,9 @@ fn test_generate_with_cache_basic() {
         temperature: 0.0,
         ..Default::default()
     };
-    let result = t.generate_with_cache(&[1], &config).expect("test value should be present");
+    let result = t
+        .generate_with_cache(&[1], &config)
+        .expect("test value should be present");
     assert!(!result.is_empty(), "should at least have prompt");
     assert!(result.len() <= 4, "prompt(1) + max 3 generated");
 }
@@ -283,7 +295,9 @@ fn test_generate_with_cache_nonzero_temperature() {
         temperature: 0.8,
         ..Default::default()
     };
-    let result = t.generate_with_cache(&[1], &config).expect("test value should be present");
+    let result = t
+        .generate_with_cache(&[1], &config)
+        .expect("test value should be present");
     assert!(!result.is_empty());
 }
 
@@ -295,7 +309,9 @@ fn test_generate_with_cache_multi_prompt_tokens() {
         temperature: 0.0,
         ..Default::default()
     };
-    let result = t.generate_with_cache(&[1, 5, 10], &config).expect("test value should be present");
+    let result = t
+        .generate_with_cache(&[1, 5, 10], &config)
+        .expect("test value should be present");
     // Should start with prompt
     assert_eq!(result[0], 1);
     assert_eq!(result[1], 5);
@@ -412,8 +428,35 @@ fn test_kv_cache_len_after_forward() {
     let t = create_test_transformer(16, 1, 100);
     let mut cache = AprKVCache::new(t.config());
     assert_eq!(cache.len(), 0);
-    let _ = t.forward_with_cache(1, &mut cache, 0).expect("test value should be present");
+    let _ = t
+        .forward_with_cache(1, &mut cache, 0)
+        .expect("test value should be present");
     assert_eq!(cache.len(), 1);
+}
+
+/// FALSIFY-PIPELINE_CACHE_V1_002: a cache rebuilt from scratch over the same
+/// tokens yields the same logits as the original cache, and a different token
+/// history yields different logits (so the comparison is not vacuous).
+#[test]
+fn test_kv_cache_recompute_from_scratch_matches() {
+    let t = create_test_transformer(16, 1, 100);
+    let run = |tokens: &[u32]| {
+        let mut cache = AprKVCache::new(t.config());
+        let mut last = Vec::new();
+        for (pos, &tok) in tokens.iter().enumerate() {
+            last = t
+                .forward_with_cache(tok, &mut cache, pos)
+                .expect("forward_with_cache");
+        }
+        (cache.len(), last)
+    };
+    let (len_a, logits_a) = run(&[1, 2, 3]);
+    let (len_b, logits_b) = run(&[1, 2, 3]);
+    let (_, logits_c) = run(&[1, 2, 4]);
+    assert_eq!(len_a, 3);
+    assert_eq!(len_b, 3);
+    assert_eq!(logits_a, logits_b, "recompute must match bit-for-bit");
+    assert_ne!(logits_a, logits_c, "different history must change logits");
 }
 
 #[test]
@@ -421,7 +464,9 @@ fn test_kv_cache_grows_with_tokens() {
     let t = create_test_transformer(16, 1, 100);
     let mut cache = AprKVCache::new(t.config());
     for pos in 0..5 {
-        let _ = t.forward_with_cache(1, &mut cache, pos).expect("test value should be present");
+        let _ = t
+            .forward_with_cache(1, &mut cache, pos)
+            .expect("test value should be present");
     }
     assert_eq!(cache.len(), 5);
 }
