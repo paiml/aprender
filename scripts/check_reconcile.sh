@@ -10,6 +10,8 @@
 #   R2 missing-closing  merged PRs in the window whose body fails
 #                       check_pr_closes_issue.sh.
 #   R3 dead branches    remote branches with no open PR, tip older than 14d.
+#                       release/** and single-level nightly/<name> heads (the paths the repository
+#                       rulesets lock against deletion) are exempt.
 #   R4 dirty stale PRs  open PRs mergeStateStatus=DIRTY, created before
 #                       --prev-tag's date.
 #   R5 ratio            issues opened vs closed in the window (recorded, not
@@ -155,6 +157,14 @@ for pr in data:
         [ -z "$branch" ] && continue
         case "$open_sp" in
             *" $branch "*) continue ;;
+        esac
+        # R3B: release/** and single-level nightly/<name> heads cannot be deleted (deletion refused by the
+        # repository rulesets release-locked, refs/heads/release/**, and nightly-locked, refs/heads/nightly/*
+        # one level), so no archive-then-delete can clear them: exempt, never counted. A nested
+        # nightly/a/b is NOT locked by nightly-locked, so it falls through and is judged like any branch.
+        case "$branch" in
+            nightly/*/*) ;;
+            release/*|nightly/*) continue ;;
         esac
         epoch=""
         epoch="$(date -u -d "$date_str" +%s 2>/dev/null || true)"
@@ -430,6 +440,18 @@ self_test() {
         printf 'FAIL R3-twin-has-pr: expected empty, got [%s]\n' "$got" >&2
         fails=$((fails + 1))
     fi
+    printf 'release/0.70\t%s\nnightly/probe\t%s\n' "$stale_date" "$stale_date" > "${fixdir}/branches-locked.txt"
+    got="$(r3_dead_branches "${fixdir}/branches-locked.txt" "${fixdir}/open-prs-empty.json" "$cutoff_epoch")"
+    if [ "$(count_lines "$got")" != "0" ]; then
+        printf 'FAIL R3-twin-locked: expected empty, got [%s]\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
+    printf 'releasex/stale\t%s\nfix/nightly/stale\t%s\nnightly/a/b\t%s\n' "$stale_date" "$stale_date" "$stale_date" > "${fixdir}/branches-lookalike.txt"
+    got="$(r3_dead_branches "${fixdir}/branches-lookalike.txt" "${fixdir}/open-prs-empty.json" "$cutoff_epoch")"
+    if [ "$(count_lines "$got")" != "3" ]; then
+        printf 'FAIL R3-twin-lookalike: expected 3 listed, got [%s]\n' "$got" >&2
+        fails=$((fails + 1))
+    fi
     rm -rf "${fixdir:?}"
 
     # R4: a DIRTY PR created before prev-tag's date -> R4 = [7]. Twin A: DIRTY
@@ -607,7 +629,7 @@ EOF_GH
         printf 'self-test FAILED: %s case(s).\n' "$fails" >&2
         return 1
     fi
-    printf 'self-test OK: 31 case(s).\n'
+    printf 'self-test OK: 33 case(s).\n'
     return 0
 }
 
