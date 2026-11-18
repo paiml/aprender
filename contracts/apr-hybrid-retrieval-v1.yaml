@@ -194,3 +194,20 @@ toyota_way_principles:
     fixture/refactoring/perf prerequisites for gates 001/003/004
     land. Each phase = one PR ≈ one falsifier, per the project's
     falsifier-first cascade.
+
+# #7235: HYBRID-001/002/004 need the integration target
+# crates/aprender-rag/tests, which no CI job runs, so they are bound only through
+# the `--lib` tests below.
+falsification_tests:
+  - id: FALSIFY-HYBRID-001
+    rule: "reciprocal-rank fusion combines the ranks of the dense and BM25 lists"
+    prediction: "test_rrf_combines_ranks passes; it fails when fusion ignores one list or mis-scores"
+    test: "cargo test -p aprender-rag --lib test_rrf_combines_ranks"
+  - id: FALSIFY-HYBRID-002
+    rule: "the hybrid retriever returns fused results end to end"
+    prediction: "test_hybrid_retriever_retrieve passes; it fails when retrieval returns nothing or unfused results"
+    test: "cargo test -p aprender-rag --lib test_hybrid_retriever_retrieve"
+  - id: FALSIFY-HYBRID-003
+    rule: "BM25 tokenizes with the injected tokenizer, not a hardcoded one"
+    prediction: "falsify_hybrid_003_bm25_uses_injected_tokenizer passes; it fails when the injected tokenizer is ignored"
+    test: "cargo test -p aprender-rag --lib falsify_hybrid_003_bm25_uses_injected_tokenizer"

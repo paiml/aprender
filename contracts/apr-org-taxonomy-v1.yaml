@@ -56,3 +56,11 @@ falsification:
   - condition: "Category counts don't sum to total_repos"
     severity: P0
     action: recount
+
+# #7235: only the arithmetic condition is mechanical (the others need `gh` and
+# the live org). It is bound to a `--lib` test.
+falsification_tests:
+  - id: FALSIFY-ORG-TAXONOMY-001
+    rule: "the category counts sum to metadata.total_repos, and metadata.categories equals the number of categories"
+    prediction: "org_taxonomy_category_counts_sum_to_total_repos passes; it fails when a count is edited without the total"
+    test: "cargo test -p aprender-contracts --lib org_taxonomy_category_counts_sum_to_total_repos"

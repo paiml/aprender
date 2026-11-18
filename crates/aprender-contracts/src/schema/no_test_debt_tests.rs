@@ -267,3 +267,36 @@ fn corpus_no_test_debt_within_release_cap() {
         r.unwalked
     );
 }
+
+/// `contracts/apr-org-taxonomy-v1.yaml` falsification: "Category counts don't
+/// sum to total_repos". Bound by that contract's `falsification_tests` (#7235).
+#[test]
+fn org_taxonomy_category_counts_sum_to_total_repos() {
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../contracts/apr-org-taxonomy-v1.yaml");
+    let text = std::fs::read_to_string(&path).expect("apr-org-taxonomy-v1.yaml is readable");
+    let doc: serde_yaml::Value =
+        serde_yaml::from_str(&text).expect("apr-org-taxonomy-v1.yaml parses");
+    let total = doc["metadata"]["total_repos"]
+        .as_u64()
+        .expect("metadata.total_repos is a number");
+    let cats = doc["categories"]
+        .as_mapping()
+        .expect("categories is a mapping");
+    let sum: u64 = cats
+        .values()
+        .map(|v| v.as_u64().expect("each category count is a number"))
+        .sum();
+    assert_eq!(
+        sum, total,
+        "category counts sum to {sum}, metadata.total_repos is {total}"
+    );
+    let declared = doc["metadata"]["categories"]
+        .as_u64()
+        .expect("metadata.categories is a number");
+    assert_eq!(
+        cats.len() as u64,
+        declared,
+        "metadata.categories disagrees with the category list"
+    );
+}

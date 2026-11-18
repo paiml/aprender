@@ -236,4 +236,85 @@ mod tests {
         let index = ToolIndex::from_inventory();
         assert!(index.dispatch_for("apr.never").is_none());
     }
+
+    fn fixture_tool(
+        _args: &serde_json::Value,
+        _cancel: &mpsc::Receiver<()>,
+        _sink: Option<&NotificationSink>,
+        _token: Option<serde_json::Value>,
+    ) -> ToolCallResult {
+        ToolCallResult::success("fixture".to_string())
+    }
+
+    fn fixture_def(name: &str) -> ToolDefinition {
+        ToolDefinition {
+            name: name.to_string(),
+            description: "fixture".to_string(),
+            input_schema: crate::types::InputSchema {
+                schema_type: "object".to_string(),
+                properties: Default::default(),
+                required: vec![],
+            },
+        }
+    }
+
+    /// FALSIFY-INVENTORY-002: two entries with one name are refused, and the
+    /// diagnostic names the offending tool.
+    #[test]
+    fn from_entries_refuses_duplicate_tool_name() {
+        let result = ToolIndex::from_entries(vec![
+            (fixture_def("fx.dup"), fixture_tool as DispatchFn),
+            (fixture_def("fx.dup"), fixture_tool as DispatchFn),
+        ]);
+        match result {
+            Ok(_) => panic!("a duplicate tool name must be refused"),
+            Err(msg) => assert!(msg.contains("fx.dup"), "diagnostic names the tool: {msg}"),
+        }
+        assert!(
+            ToolIndex::from_entries(vec![
+                (fixture_def("fx.a"), fixture_tool as DispatchFn),
+                (fixture_def("fx.b"), fixture_tool as DispatchFn),
+            ])
+            .is_ok(),
+            "distinct names are accepted"
+        );
+    }
+
+    /// FALSIFY-MCP-008 (lib-level): the live tool set and every live tool
+    /// description equal what `contracts/apr-mcp-tool-schemas-v1.yaml` declares.
+    #[test]
+    fn live_tools_match_schema_contract_names_and_descriptions() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/apr-mcp-tool-schemas-v1.yaml");
+        let text = std::fs::read_to_string(&path).expect("schema contract readable");
+        let mut declared: Vec<(String, String)> = Vec::new();
+        let mut current: Option<String> = None;
+        for line in text.lines() {
+            if let Some(name) = line.strip_prefix("  - name: apr.") {
+                current = Some(format!("apr.{}", name.trim()));
+            } else if let (Some(name), Some(desc)) =
+                (current.as_ref(), line.strip_prefix("    description: \""))
+            {
+                let desc = desc.strip_suffix('"').expect("description is quoted");
+                declared.push((name.clone(), desc.to_string()));
+                current = None;
+            }
+        }
+        declared.sort();
+        let index = ToolIndex::from_inventory();
+        let mut live: Vec<(String, String)> = index
+            .definitions()
+            .iter()
+            .map(|d| (d.name.clone(), d.description.clone()))
+            .collect();
+        live.sort();
+        assert_eq!(live.len(), declared.len(), "same tool count");
+        for ((ln, ld), (dn, dd)) in live.iter().zip(declared.iter()) {
+            assert_eq!(ln, dn, "tool names match the contract");
+            assert_eq!(
+                ld, dd,
+                "{ln}: description matches the contract byte-for-byte"
+            );
+        }
+    }
 }
