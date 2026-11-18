@@ -4,4 +4,3 @@
 # listed here (SCHEMA-026), and a line whose contract now has tests or is gone
 # fails the corpus test, so this list only shrinks. Its length is capped per
 # release by schema::no_test_debt::debt_cap: 803 / 602 / 401 / 200 / 0.
-entrenar/kaizen/lazy-ptx-cache-v1.yaml

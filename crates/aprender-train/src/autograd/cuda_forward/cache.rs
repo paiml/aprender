@@ -4,8 +4,6 @@
 #![allow(clippy::ref_as_ptr)]
 
 #[cfg(feature = "cuda")]
-use std::collections::HashMap;
-#[cfg(feature = "cuda")]
 use std::sync::{Mutex, OnceLock};
 
 #[cfg(feature = "cuda")]
@@ -24,6 +22,7 @@ use crate::autograd::cuda_tensor::{CudaTensorError, Result};
 // header and YOGA-NIGHTLY-001 R-2: the property test that guards this file must
 // run on a machine with no GPU.
 use super::keys;
+use crate::autograd::kernel_module_cache::{check_ptx_target, LazyModuleCache};
 
 /// Cached compiled CUDA modules for forward kernels
 #[cfg(feature = "cuda")]
@@ -41,7 +40,7 @@ pub(super) static FORWARD_KERNEL_CACHE: OnceLock<Mutex<ForwardKernelCache>> = On
 #[cfg(feature = "cuda")]
 pub(super) struct ForwardKernelCache {
     ctx: std::sync::Arc<CudaContext>,
-    modules: HashMap<String, CudaModule>,
+    lazy: LazyModuleCache<CudaModule>,
     /// JIT compiles observed since the last reset (PMAT-272, YOGA-NIGHTLY-001 R-3).
     ///
     /// A cache MISS after pre_warm_for_model is the Blackwell cascade's root
@@ -53,7 +52,6 @@ pub(super) struct ForwardKernelCache {
     /// Counting it turns that silent success into an assertion any architecture
     /// can make locally — no second machine, no cross-arch transcript diff, and
     /// no confound from differing CUDA toolkits.
-    jit_compiles: usize,
     /// Device SM target string (e.g. "sm_89" for RTX 4090)
     sm_target: String,
     /// cuBLAS handle (ALB-075): forward=tensor cores, backward=SIMD (ALB-076/trueno#170)
@@ -82,7 +80,7 @@ impl ForwardKernelCache {
         };
 
         eprintln!("[CUDA] Kernel cache initialized for target: {sm_target}");
-        Self { ctx, modules: HashMap::new(), sm_target, cublas, jit_compiles: 0 }
+        Self { ctx, lazy: LazyModuleCache::new(), sm_target, cublas }
     }
 
     /// Get a reference to the cuBLAS handle, if available.
@@ -110,7 +108,7 @@ impl ForwardKernelCache {
     /// JIT compiles seen since construction or the last reset (R-3).
     #[cfg(test)]
     pub(super) fn jit_compiles(&self) -> usize {
-        self.jit_compiles
+        self.lazy.jit_compiles() as usize
     }
 
     /// Zero the JIT counter. Call this AFTER pre_warm_for_model.
@@ -125,7 +123,7 @@ impl ForwardKernelCache {
     /// runtime building keys with separate format! calls that drifted apart).
     #[cfg(test)]
     pub(super) fn reset_jit_counter(&mut self) {
-        self.jit_compiles = 0;
+        self.lazy.reset_jit_counter();
     }
 
     /// Look up a previously compiled module by key (KAIZEN-058).
@@ -134,7 +132,7 @@ impl ForwardKernelCache {
     /// Callers should use this before generating PTX to avoid unnecessary
     /// multi-KB String allocations (~1000 per training step).
     pub(super) fn get_cached(&mut self, name: &str) -> Option<&mut CudaModule> {
-        self.modules.get_mut(name)
+        self.lazy.get_cached(name)
     }
 
     /// Compile PTX and cache the resulting module.
@@ -144,45 +142,31 @@ impl ForwardKernelCache {
     /// Validates that the PTX `.target` directive matches the device's compute
     /// capability. Rejects PTX compiled for the wrong architecture.
     pub(super) fn get_or_compile(&mut self, name: &str, ptx: &str) -> Result<&mut CudaModule> {
-        use std::collections::hash_map::Entry;
-
-        // F-PTX-001: Validate PTX target matches device
-        if let Some(target_line) = ptx.lines().find(|l| l.starts_with(".target ")) {
-            let ptx_target = target_line.trim().trim_start_matches(".target ");
-            if ptx_target != self.sm_target {
-                return Err(CudaTensorError::KernelError(format!(
-                    "F-PTX-001 violated: PTX target '{ptx_target}' != device target '{}'. \
-                     Use kernel.emit_ptx_for_target(\"{}\") instead of emit_ptx().",
-                    self.sm_target, self.sm_target
-                )));
+        check_ptx_target(ptx, &self.sm_target).map_err(|msg| {
+            CudaTensorError::KernelError(format!(
+                "{msg}. Use kernel.emit_ptx_for_target(\"{}\") instead of emit_ptx().",
+                self.sm_target
+            ))
+        })?;
+        let ctx = &self.ctx;
+        // PMAT-698i / R-3: a miss is logged and counted (the cascade root cause).
+        self.lazy.get_or_compile_with(name, || {
+            eprintln!("[FWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
+            // trueno#200: Use from_ptx_direct on Blackwell
+            let (major, _) = ctx
+                .compute_capability()
+                .map_err(|e| CudaTensorError::KernelError(format!("compute_capability: {e:?}")))?;
+            let module = if major >= 12 {
+                CudaModule::from_ptx_direct(ctx, ptx)
+            } else {
+                CudaModule::from_ptx(ctx, ptx)
             }
-        }
-
-        match self.modules.entry(name.to_string()) {
-            Entry::Occupied(e) => Ok(e.into_mut()),
-            Entry::Vacant(e) => {
-                // PMAT-698i: diagnostic logging. Surfaces every forward-cache
-                // JIT event with its kernel name so missing pre-warm entries
-                // are identifiable in O(1) instead of O(N) iterations.
-                eprintln!("[FWD-CACHE] Compiling '{name}' (ptx_len={})", ptx.len());
-                // R-3: a miss is the countable form of the cascade root cause.
-                self.jit_compiles += 1;
-                // trueno#200: Use from_ptx_direct on Blackwell
-                let (major, _) = self.ctx.compute_capability().map_err(|e| {
-                    CudaTensorError::KernelError(format!("compute_capability: {e:?}"))
-                })?;
-                let module = if major >= 12 {
-                    CudaModule::from_ptx_direct(&self.ctx, ptx)
-                } else {
-                    CudaModule::from_ptx(&self.ctx, ptx)
-                }
-                .map_err(|err| {
-                    CudaTensorError::KernelError(format!("Failed to compile {name}: {err:?}"))
-                })?;
-                eprintln!("[FWD-CACHE] OK '{name}'");
-                Ok(e.insert(module))
-            }
-        }
+            .map_err(|err| {
+                CudaTensorError::KernelError(format!("Failed to compile {name}: {err:?}"))
+            })?;
+            eprintln!("[FWD-CACHE] OK '{name}'");
+            Ok(module)
+        })
     }
 
     /// Pre-warm all kernels needed for transformer forward pass.

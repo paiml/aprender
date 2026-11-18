@@ -96,3 +96,25 @@ qa_gate:
   checks:
   - validation
   - falsification
+
+# CPU-testable policy lives in crates/aprender-train/src/autograd/kernel_module_cache.rs
+# (LazyModuleCache + check_ptx_target), used by all three CUDA caches. The CUDA
+# module load itself (CudaModule::from_ptx) is NOT CI evidence: it needs a GPU
+# and the `cuda` feature, which no merge-path job runs.
+falsification_tests:
+  - id: FALSIFY-LPTX-001
+    rule: "hit path is a pure map lookup: a cached key never invokes compile and never counts a JIT"
+    prediction: "hit_does_not_compile and get_cached_is_pure_lookup fail if a hit runs compile or bumps the counter"
+    test: "cargo test -p aprender-train --lib kernel_module_cache::tests::hit_does_not_compile"
+  - id: FALSIFY-LPTX-002
+    rule: "cold path (miss) compiles exactly once, later calls hit"
+    prediction: "miss_compiles_once_then_hits fails if compile runs more than once for one key"
+    test: "cargo test -p aprender-train --lib kernel_module_cache::tests::miss_compiles_once_then_hits"
+  - id: FALSIFY-LPTX-003
+    rule: "a failed compile is propagated and inserts nothing"
+    prediction: "compile_error_propagates_and_inserts_nothing fails if a failed compile leaves an entry"
+    test: "cargo test -p aprender-train --lib kernel_module_cache::tests::compile_error_propagates_and_inserts_nothing"
+  - id: FALSIFY-LPTX-004
+    rule: "F-PTX-001: PTX whose .target differs from the device target is rejected; matching or absent accepted"
+    prediction: "target_mismatch_rejected and target_match_or_absent_accepted fail if the check is weakened"
+    test: "cargo test -p aprender-train --lib kernel_module_cache::tests::target_mismatch_rejected"

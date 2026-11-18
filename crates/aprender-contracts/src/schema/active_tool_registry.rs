@@ -21,13 +21,14 @@ pub fn is_active_tool_row(text: &str) -> bool {
     let Ok(doc) = serde_yaml::from_str::<Value>(text) else {
         return false;
     };
-    [doc.get("metadata"), Some(&doc)]
+    let found = [doc.get("metadata"), Some(&doc)]
         .into_iter()
         .flatten()
         .any(|m| {
             m.get("registry").and_then(Value::as_bool) == Some(true)
                 && m.get("category").and_then(Value::as_str) == Some("active-tool")
-        })
+        });
+    found
 }
 
 /// Active-tool rows under `dir` (every subdirectory) that carry no

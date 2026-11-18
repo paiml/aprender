@@ -470,7 +470,7 @@ mod tests {
             assert_eq!(dv[2 * d_v + d], 0.0, "FALSIFIED: dV leaks from future position 2");
         }
         assert!(
-            dv[d_v..2 * d_v].iter().any(|x| *x != 0.0),
+            dv.iter().skip(d_v).take(d_v).any(|x| *x != 0.0),
             "dV for the attended position 1 must be nonzero"
         );
     }
