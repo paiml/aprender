@@ -57,13 +57,17 @@ NEED=3
 # C355 item 6: the release-rehearsal check needs one night. A constant, keyed on the check's name, never an option.
 # An exact string compare, never a glob: no near-miss spelling inherits the one night.
 REHEARSAL_NEED=1
-need_of() { if [ "$1" = release-rehearsal ]; then printf '%s\n' "$REHEARSAL_NEED"; else printf '%s\n' "$NEED"; fi; }
+# Epic #7149 R3 (#7158): a lab lane's workflow is a check that needs LAB_NEED = 7 nights, and prints notgreen=, the nights
+# in a row not green ending at --as-of. An exact-name list, never a glob and never an option.
+LAB_NEED=7
+is_lab() { case "$1" in lab-edge|lab-edge-opt|lab-wasm|lab-box) return 0 ;; *) return 1 ;; esac; }
+need_of() { if [ "$1" = release-rehearsal ]; then printf '%s\n' "$REHEARSAL_NEED"; elif is_lab "$1"; then printf '%s\n' "$LAB_NEED"; else printf '%s\n' "$NEED"; fi; }
 
 caller_error() { printf 'FAIL  NIGHTLY %s: caller error: %s\n' "$PROG" "$*"; exit 3; }
 
 # judge check history as-of -> the verdict line and one context line on stdout; exits 0/1/2/3 as above
 judge() {
-    awk -v check="$1" -v asof="$3" -v need="$(need_of "$1")" '
+    awk -v check="$1" -v asof="$3" -v need="$(need_of "$1")" -v lab="$(is_lab "$1" && printf 1 || printf 0)" '
     function days(y, m, d,    era, yoe, doy, doe, mp) {    # civil date -> days since 1970-01-01 (H. Hinnant)
         y -= (m <= 2)
         era = int(y / 400)
@@ -135,18 +139,21 @@ judge() {
             if (st[k] == "green") total++
             if ((st[k] == "green" || st[k] == "red" || st[k] == "retried") && (last == "" || k > last)) last = k
         }
+        ng = 0; lc = ""
+        if (lab == 1 && first != "") { k = asof_n; while (k >= first + 0 && !((k in st) && st[k] == "green")) { ng++; k-- } }
+        if (lab == 1) lc = sprintf(" notgreen=%d", ng)
         info = sprintf("      NIGHTLY %s counted %d scheduled or dispatched run(s) on main up to %s; not counted: %d other row(s), %d after --as-of", check, runs, asof, other, later)
         npend = 0; pmax = 0
         for (k in st) if (st[k] == "pending" && (last == "" || k + 0 > last)) { npend++; if (k + 0 > pmax) pmax = k + 0 }
         if (npend > 0) info = info sprintf("; still running: %d night(s), newest %s", npend, civil(pmax))
         if (last == "") {
-            printf "FAIL  NIGHTLY %s not_measured: no green or red nightly run on main up to %s (streak=0 total=0 need=%d)\n", check, asof, need
+            printf "FAIL  NIGHTLY %s not_measured: no green or red nightly run on main up to %s (streak=0 total=0 need=%d%s)\n", check, asof, need, lc
             print info; exit 2
         }
         streak = 0; k = last
         while ((k in st) && st[k] == "green") { streak++; ids[streak] = rid[k]; k-- }
         stop = (k in st) ? st[k] : ((k < first) ? "start" : "absent")
-        counts = sprintf("streak=%d total=%d need=%d", streak, total, need)
+        counts = sprintf("streak=%d total=%d need=%d%s", streak, total, need, lc)
         if (last < asof_n - 1) {
             printf "FAIL  NIGHTLY %s not_measured: stale, the newest green or red night is %s and --as-of %s needs %s or later (%s)\n", check, civil(last), asof, civil(asof_n - 1), counts
             print info; exit 2
@@ -334,6 +341,24 @@ selftest() {
     else
         printf '  BROKE %-50s REHEARSAL_NEED=%s, C355 item 6 says one\n' committed_rehearsal_need_is_one "$REHEARSAL_NEED"; fail=$((fail + 1))
     fi
+    # Epic #7149 R3 (#7158): a lab lane's workflow is a check with need 7 that also prints notgreen=
+    fx labred "501 $D-01 failure" "502 $D-02 failure" "503 $D-03 failure" "504 $D-04 failure" "505 $D-05 failure" "506 $D-06 failure" "507 $D-07 failure"
+    fx labsix "601 $D-01 success" "602 $D-02 failure" "603 $D-03 failure" "604 $D-04 failure" "605 $D-05 cancelled" "606 $D-06 failure" "607 $D-07 failure"
+    fx labgap "701 $D-01 failure" "703 $D-03 failure" "704 $D-04 failure" "705 $D-05 failure" "706 $D-06 failure" "707 $D-07 failure"
+    jl() { row "$1" "$2" "$3" -- --check "$4" --history "$tmp/$5" --as-of "$D-07"; }
+    jl lab_seven_not_green_nights_print_seven         1 "(streak=0 total=0 need=7 notgreen=7)" lab-wasm labred
+    jl lab_six_not_green_after_a_green_print_six      1 "(streak=0 total=1 need=7 notgreen=6)" lab-edge labsix
+    jl lab_a_night_with_no_run_is_not_green           1 "(streak=0 total=0 need=7 notgreen=7)" lab-box labgap
+    jl lab_edge_opt_is_a_lab_check                    1 "need=7 notgreen=7" lab-edge-opt labred
+    jl a_check_outside_the_lab_list_needs_three       1 "(streak=0 total=0 need=3)" lab-other labred
+    jl a_non_lab_check_prints_no_notgreen             1 "(streak=0 total=0 need=3)" R7 labred
+    jl near_miss_lab_prefix_needs_three               1 "(streak=0 total=0 need=3)" x-lab-wasm labred
+    jl near_miss_lab_suffix_needs_three               1 "(streak=0 total=0 need=3)" lab-wasm2 labred
+    if [ "$LAB_NEED" = 7 ]; then
+        printf '  ok    %-50s LAB_NEED=7\n' committed_lab_need_is_seven; pass=$((pass + 1))
+    else
+        printf '  BROKE %-50s LAB_NEED=%s, epic #7149 R3 says seven\n' committed_lab_need_is_seven "$LAB_NEED"; fail=$((fail + 1))
+    fi
     printf -- '--- %s/%s rows ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
 }
@@ -401,6 +426,12 @@ no_staleness_bound          /^judge() {$/,/^}$/s/if (last < asof_n - 1)/if (0)/
 absent_night_is_the_start   /^judge() {$/,/^}$/s/: ((k < first) ? "start" : "absent")/: "start"/
 streak_off_by_one           /^judge() {$/,/^}$/s/if (streak >= need)/if (streak >= need - 1)/
 leap_years_ignored          /^judge() {$/,/^}$/s/doe = yoe \* 365 + int(yoe \/ 4) - int(yoe \/ 100) + doy/doe = yoe * 365 + doy/
+lab_need_is_six             /^LAB_NEED=7/s/^LAB_NEED=7/LAB_NEED=6/
+lab_need_is_three           /^LAB_NEED=7/s/^LAB_NEED=7/LAB_NEED=3/
+lab_not_keyed               /^need_of() /s/elif is_lab "\$1"/elif false/
+lab_any_name_keyed          /^is_lab() /s/lab-edge|lab-edge-opt|lab-wasm|lab-box/lab-*/
+lab_notgreen_off_by_one     /^judge() {$/,/^}$/s/{ ng++; k-- }/{ ng++; k-- } ng++/
+lab_notgreen_not_printed    /^judge() {$/,/^}$/s/if (lab == 1) lc = /if (0) lc = /
 MUTANTS
     printf -- '--- %s/%s mutants killed ---\n' "$pass" "$((pass + fail))"
     [ "$fail" -eq 0 ]
