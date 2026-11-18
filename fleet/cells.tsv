@@ -1,4 +1,4 @@
-# measured 2026-11-18T13:53:32Z
+# measured 2026-11-18T14:38:33Z
 lambda-labs	apr	GREEN	ok (installed nightly@3795072, target nightly@3795072)
 lambda-labs	pv	GREEN	ok (installed v0.74.0@037af85, target v0.74.0@037af85)
 lambda-labs	forjar	GREEN	ok (installed nightly@1fbf561, target nightly@1fbf561)
@@ -6,9 +6,9 @@ lambda-labs	bashrs	GREEN	no-sha (installed nightly@a51e562, target nightly@a51e5
 lambda-labs	pmat	GREEN	ok (installed nightly@d7a0bfd, target nightly@d7a0bfd)
 lambda-labs	pzsh	GREEN	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
 lambda-labs	copia	GREEN	no-sha (installed nightly@f48cb27, target nightly@f48cb27)
-lambda-labs	rmedia	GREEN	ok (installed nightly@98629da, target nightly@98629da)
+lambda-labs	rmedia	GREEN	ok (installed nightly@ce4dfd0, target nightly@ce4dfd0)
 lambda-labs	apex	GREEN	ok (installed v-apex-0.1.0-rc.2@f2e20b6, target v-apex-0.1.0-rc.2@f2e20b6)
-lambda-labs	rmedia-courier	GREEN	ok (installed nightly@98629da, target nightly@98629da)
+lambda-labs	rmedia-courier	GREEN	ok (installed nightly@ce4dfd0, target nightly@ce4dfd0)
 lambda-labs	ollama	GREEN	ok (installed 0.40.16, target v0.40.16)
 lambda-labs	llama.cpp	GREEN	lag (installed b12506, target b12512)
 gx10	apr	GREEN	ok (installed nightly@3795072, target nightly@3795072)
