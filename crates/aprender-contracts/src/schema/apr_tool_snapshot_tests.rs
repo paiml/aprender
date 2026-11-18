@@ -9,21 +9,44 @@ fn tree_path(test: &str, rel: &str) -> Option<PathBuf> {
     crate::tree::workspace_path_or_skip_at(test, Path::new(env!("CARGO_MANIFEST_DIR")), rel)
 }
 
-/// Why a snapshot does not support the row's three claims; empty when it does.
-fn claim_failures(snap: &serde_json::Value) -> Vec<String> {
+/// The three facts a row asserts about its repo, in `claim_failures` order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Expected {
+    archived: bool,
+    has_readme: bool,
+    has_ci_workflows: bool,
+}
+
+/// What an active-tool row claims unless it declares `metadata.expected`.
+const ACTIVE: Expected = Expected {
+    archived: false,
+    has_readme: true,
+    has_ci_workflows: true,
+};
+
+/// The row's `metadata.expected` mapping, or [`ACTIVE`] when absent; `None` when present but malformed.
+fn expected_of(row: &serde_yaml::Value) -> Option<Expected> {
+    let Some(e) = row["metadata"].get("expected") else {
+        return Some(ACTIVE);
+    };
+    Some(Expected {
+        archived: e["archived"].as_bool()?,
+        has_readme: e["has_readme"].as_bool()?,
+        has_ci_workflows: e["has_ci_workflows"].as_bool()?,
+    })
+}
+
+/// Why the snapshot differs from what the row declares; empty when snapshot == declared.
+fn claim_failures(snap: &serde_json::Value, want: Expected) -> Vec<String> {
     let mut out = Vec::new();
-    if snap.get("archived").and_then(serde_json::Value::as_bool) != Some(false) {
-        out.push("archived is not false".to_string());
-    }
-    if snap.get("has_readme").and_then(serde_json::Value::as_bool) != Some(true) {
-        out.push("has_readme is not true".to_string());
-    }
-    if snap
-        .get("has_ci_workflows")
-        .and_then(serde_json::Value::as_bool)
-        != Some(true)
-    {
-        out.push("has_ci_workflows is not true".to_string());
+    for (key, w) in [
+        ("archived", want.archived),
+        ("has_readme", want.has_readme),
+        ("has_ci_workflows", want.has_ci_workflows),
+    ] {
+        if snap.get(key).and_then(serde_json::Value::as_bool) != Some(w) {
+            out.push(format!("{key} is not {w} (the row declares {w})"));
+        }
     }
     out
 }
@@ -36,19 +59,42 @@ fn slug_of(entity_ref: &str) -> Option<String> {
 }
 
 #[test]
-fn snapshot_claim_check_refuses_each_false_claim() {
+fn snapshot_claim_check_refuses_every_mismatch() {
     let ok = serde_json::json!({"archived": false, "has_readme": true, "has_ci_workflows": true});
-    assert!(claim_failures(&ok).is_empty());
-    for (key, bad) in [
+    assert!(claim_failures(&ok, ACTIVE).is_empty());
+    for (key, flipped) in [
         ("archived", serde_json::json!(true)),
         ("has_readme", serde_json::json!(false)),
         ("has_ci_workflows", serde_json::json!(false)),
     ] {
         let mut v = ok.clone();
-        v[key] = bad;
-        assert_eq!(claim_failures(&v).len(), 1, "{key} alone must fail");
+        v[key] = flipped;
+        assert_eq!(claim_failures(&v, ACTIVE).len(), 1, "{key} alone must fail");
+        // declaring the flipped state makes the same snapshot pass, and the original now fails
+        let mut want = ACTIVE;
+        match key {
+            "archived" => want.archived = true,
+            "has_readme" => want.has_readme = false,
+            _ => want.has_ci_workflows = false,
+        }
+        assert!(claim_failures(&v, want).is_empty(), "{key} declared");
+        assert_eq!(
+            claim_failures(&ok, want).len(),
+            1,
+            "{key} declared, snapshot differs"
+        );
     }
-    assert_eq!(claim_failures(&serde_json::json!({})).len(), 3);
+    assert_eq!(claim_failures(&serde_json::json!({}), ACTIVE).len(), 3);
+    let row: serde_yaml::Value = serde_yaml::from_str("metadata: {}").unwrap();
+    assert_eq!(expected_of(&row), Some(ACTIVE));
+    let row: serde_yaml::Value = serde_yaml::from_str(
+        "metadata: {expected: {archived: true, has_readme: true, has_ci_workflows: true}}",
+    )
+    .unwrap();
+    assert_eq!(expected_of(&row).map(|e| e.archived), Some(true));
+    let row: serde_yaml::Value =
+        serde_yaml::from_str("metadata: {expected: {archived: true}}").unwrap();
+    assert_eq!(expected_of(&row), None);
     assert_eq!(
         slug_of("paiml/forjar@abc").as_deref(),
         Some("paiml__forjar")
@@ -57,8 +103,8 @@ fn snapshot_claim_check_refuses_each_false_claim() {
 }
 
 /// Every `contracts/apr-tool-*-v1.yaml` row: its `entity.ref` resolves to a committed snapshot whose `ref`,
-/// `nameWithOwner` and the row's `repo` agree, and the snapshot has archived=false, has_readme=true and
-/// has_ci_workflows=true. A missing snapshot fails.
+/// `nameWithOwner` and the row's `repo` agree, and the snapshot equals the row's `metadata.expected` (default: archived=false,
+/// has_readme=true, has_ci_workflows=true). A missing snapshot fails.
 #[test]
 fn apr_tool_rows_hold_against_repo_snapshots() {
     let t = "apr_tool_rows_hold_against_repo_snapshots";
@@ -112,7 +158,11 @@ fn apr_tool_rows_hold_against_repo_snapshots() {
         if snap["nameWithOwner"].as_str() != Some(repo) {
             failures.push(format!("{label}: snapshot repo != row repo `{repo}`"));
         }
-        for f in claim_failures(&snap) {
+        let Some(want) = expected_of(&doc) else {
+            failures.push(format!("{label}: metadata.expected is malformed"));
+            continue;
+        };
+        for f in claim_failures(&snap, want) {
             failures.push(format!("{label} ({repo}): {f}"));
         }
     }
