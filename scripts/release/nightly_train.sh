@@ -117,7 +117,7 @@ cleanroom-gpu;verdict;b2-gpu.yml on the tag;.github/workflows/release-lanes-nigh
 assets;lab;LAB #5152, owner aprender-cd: binary-release.yml + check_release_assets.sh;.github/workflows/assets-rehearsal-nightly.yml;^(schedule|workflow_dispatch)$;^(Rehearsal tag, and the rehearsal is still the release.s build|The rehearsal built every asset the release owes)$;2
 preflight;verdict;check_publish_preflight.sh R1-R8;.github/workflows/release-gates-nightly.yml;^(schedule|workflow_dispatch)$;^preflight$
 publish-dryrun;lab;LAB #5153, owner aprender-cd: rc_publish_gate.sh --verify + cascade-publish.sh --check;.github/workflows/release-lanes-nightly.yml;^(schedule|workflow_dispatch)$;^publish-dryrun$
-edge;lab;LAB #5254, owner aprender-cd: edge-fast-verbs-nightly.yml, CRUX verbs + tok/s on the Jetson;.github/workflows/edge-fast-verbs-nightly.yml;^(schedule|workflow_dispatch)$;^edge$
+edge;lab;LAB #5254, owner aprender-cd: edge-fast-verbs-nightly.yml, CRUX verbs + tok/s on the edge seat;.github/workflows/edge-fast-verbs-nightly.yml;^(schedule|workflow_dispatch)$;^edge$
 coverage;info;tag_coverage_gate.sh (C291.1: not gating);.github/workflows/coverage-nightly.yml;^(schedule|workflow_dispatch)$;^coverage$
 guards;info;guards-nightly;.github/workflows/guards-nightly.yml;^(schedule|workflow_dispatch)$;
 mutants;info;mutants-nightly;.github/workflows/mutants-nightly.yml;^(schedule|workflow_dispatch)$;

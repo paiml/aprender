@@ -118,7 +118,7 @@ proof_obligations:
     applies_to: verdict_line
   - id: NT-INV-016
     type: invariant
-    property: "A lab row (kind lab) names its one ticket and owner in its check column, is read like an info lane, and never changes the verdict: a red or not_measured lab lane leaves the line RELEASABLE. The edge lane (LAB #5254, the Jetson fast-verbs nightly) is such a row."
+    property: "A lab row (kind lab) names its one ticket and owner in its check column, is read like an info lane, and never changes the verdict: a red or not_measured lab lane leaves the line RELEASABLE. The edge lane (LAB #5254, the edge fast-verbs nightly) is such a row."
     formal: "kind(lane) = lab ⇒ (verdict(run) is independent of state(lane)) ∧ ticket(check(lane)) ≠ ∅"
     applies_to: verdict_line
 
