@@ -77,6 +77,8 @@ fn h2_headings_case_table() {
 #[test]
 fn book_page_contracts_match_their_pages() {
     let pages = [
+        "apr-page-examples-bench-bpe-v1.yaml",
+        "apr-page-examples-gpu-fallback-dogfood-v1.yaml",
         "apr-page-examples-qa-falsification-v1.yaml",
         "apr-page-examples-qa-run-v1.yaml",
         "apr-page-examples-qa-serve-v1.yaml",

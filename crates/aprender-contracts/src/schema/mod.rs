@@ -1,4 +1,6 @@
 pub mod artifact;
+#[cfg(test)]
+mod book_build_tests;
 mod clause;
 pub mod composition;
 pub mod external_corpora;

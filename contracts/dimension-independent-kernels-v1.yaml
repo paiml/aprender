@@ -33,3 +33,13 @@ falsification:
     description: "kernel binary loaded once, M/K/N passed as launch params"
     test: "Related tests in crates/aprender-compute/src/backends/gpu/"
     evidence: "cargo test --lib"
+
+# #7235: falsification tests bound to CI-run tests. The CUDA kernels (aprender-gpu) need a GPU
+# and are not CI evidence; this binds the CPU algorithm-level analogue of the same claim: the
+# tiled GEMM agrees with the reference GEMM for arbitrary, non-aligned M,K,N. The
+# "kernel loaded once, M/K/N as launch params" claim (V1_002) is GPU-only and not covered.
+falsification_tests:
+  - id: FALSIFY-DIMENSION_INDEPENDENT_KERNELS_V1_001
+    rule: "for arbitrary M,K,N (including 1x1x1 and non-aligned shapes) the optimised GEMM equals the reference GEMM within epsilon; CPU algorithm-level check, the CUDA claim is not CI evidence"
+    prediction: "falsify_blis_002_gemm_non_aligned fails if the optimised result diverges from the reference on any shape"
+    test: "cargo test -p aprender-compute --lib falsify_blis_002_gemm_non_aligned"

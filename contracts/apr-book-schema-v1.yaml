@@ -37,3 +37,14 @@ falsification:
   - condition: "Page contains TODO/TBD/WIP/placeholder text"
     severity: P0
     action: delete_page
+
+# #7235: falsification tests bound to CI-run tests.
+falsification_tests:
+  - id: FALSIFY-BOOK-SCHEMA-001
+    rule: "every book page's PCU header names a contracts/ file that exists (a PCU contract that is missing is a P0); the page-has-header and TODO-free claims are not covered by this test"
+    prediction: "book_pages_pcu_contracts_exist fails when a page's PCU header references a nonexistent contract"
+    test: "cargo test -p aprender-contracts --lib book_pages_pcu_contracts_exist"
+  - id: FALSIFY-BOOK-SCHEMA-002
+    rule: "every page SUMMARY.md lists exists on disk"
+    prediction: "book_build_structure_holds fails when SUMMARY.md lists a missing page"
+    test: "cargo test -p aprender-contracts --lib book_build_structure_holds"
