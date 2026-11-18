@@ -9,6 +9,19 @@
         }
     }
 
+    /// B1: pinned independent of the table, so a wrong table row cannot self-confirm.
+    #[test]
+    fn test_parse_showcase_step_pinned_mapping() {
+        assert_eq!(
+            parse_showcase_step("gguf").expect("gguf parses"),
+            showcase::ShowcaseStep::GgufInference
+        );
+        assert_eq!(
+            parse_showcase_step("convert").expect("convert parses"),
+            showcase::ShowcaseStep::Convert
+        );
+    }
+
     /// B1: an unknown `--step` is rejected, names the input and lists every valid name.
     #[test]
     fn test_parse_showcase_step_unknown_names_input_and_lists_all() {
@@ -200,6 +213,14 @@
         assert_eq!(
             gated_paths(vec!["apr", "rosetta", "compare-inference", "a.gguf", "b.apr"]),
             vec![PathBuf::from("a.gguf"), PathBuf::from("b.apr")]
+        );
+        assert_eq!(
+            gated_paths(vec!["apr", "rosetta", "chain", "a.gguf", "safetensors", "apr"]),
+            vec![PathBuf::from("a.gguf")]
+        );
+        assert_eq!(
+            gated_paths(vec!["apr", "rosetta", "verify", "a.gguf"]),
+            vec![PathBuf::from("a.gguf")]
         );
         assert!(gated_paths(vec!["apr", "rosetta", "inspect", "a.gguf"]).is_empty());
     }
