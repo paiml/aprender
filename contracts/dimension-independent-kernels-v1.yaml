@@ -39,7 +39,7 @@ falsification:
 # tiled GEMM agrees with the reference GEMM for arbitrary, non-aligned M,K,N. The
 # "kernel loaded once, M/K/N as launch params" claim (V1_002) is GPU-only and not covered.
 falsification_tests:
-  - id: FALSIFY-DIMENSION_INDEPENDENT_KERNELS_V1_001
-    rule: "for arbitrary M,K,N (including 1x1x1 and non-aligned shapes) the optimised GEMM equals the reference GEMM within epsilon; CPU algorithm-level check, the CUDA claim is not CI evidence"
+  - id: FALSIFY-DIMENSION_INDEPENDENT_KERNELS_V1-BIND-001
+    rule: "covers FALSIFY-DIMENSION_INDEPENDENT_KERNELS_V1_001: for arbitrary M,K,N (including 1x1x1 and non-aligned shapes) the optimised GEMM equals the reference GEMM within epsilon; CPU algorithm-level check, the CUDA claim is not CI evidence"
     prediction: "falsify_blis_002_gemm_non_aligned fails if the optimised result diverges from the reference on any shape"
     test: "cargo test -p aprender-compute --lib falsify_blis_002_gemm_non_aligned"

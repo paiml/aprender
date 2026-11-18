@@ -106,7 +106,7 @@ verification:
 
 # #7235: falsification tests bound to CI-run tests.
 falsification_tests:
-  - id: FALSIFY-BOOK-002
-    rule: "every .md path SUMMARY.md lists exists on disk, book.toml exists with git-repository-url paiml/aprender, and .github/workflows/book.yml exists; the mdbook build itself and the deploy are workflow evidence, not this test"
+  - id: FALSIFY-BOOK-BIND-001
+    rule: "covers FALSIFY-BOOK-002: every .md path SUMMARY.md lists exists on disk, book.toml exists with git-repository-url paiml/aprender, and .github/workflows/book.yml exists; the mdbook build itself and the deploy are workflow evidence, not this test"
     prediction: "book_build_structure_holds fails when SUMMARY.md lists a missing page or book.toml/book.yml are absent"
     test: "cargo test -p aprender-contracts --lib book_build_structure_holds"

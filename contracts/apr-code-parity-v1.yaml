@@ -932,19 +932,19 @@ change_log:
 # #7235: the ACTIVE conditions above, bound to the `--lib` tests they name.
 # FALSIFY-CODE-PARITY-001..005 are DRAFT/PLANNED (no harness exists) and stay out.
 falsification_tests:
-  - id: FALSIFY-CODE-PARITY-006
-    rule: "a `-p --output-format json` run writes one JSON document on every exit, with status and a real exit_code on error (driver error, failing tool, empty completion)"
+  - id: FALSIFY-CODE-PARITY-BIND-001
+    rule: "covers FALSIFY-CODE-PARITY-006: a `-p --output-format json` run writes one JSON document on every exit, with status and a real exit_code on error (driver error, failing tool, empty completion)"
     prediction: "the falsify_3775 tests pass; they fail when stdout is empty or the exit code is 0 on a failure"
     test: "cargo test -p aprender-orchestrate --lib falsify_3775"
-  - id: FALSIFY-CODE-PARITY-007
-    rule: "every AgentError variant maps to a snake_case error kind in the envelope"
+  - id: FALSIFY-CODE-PARITY-BIND-002
+    rule: "covers FALSIFY-CODE-PARITY-007: every AgentError variant maps to a snake_case error kind in the envelope"
     prediction: "every_agent_error_variant_has_a_snake_case_kind passes; it fails when a variant has no kind"
     test: "cargo test -p aprender-orchestrate --lib every_agent_error_variant_has_a_snake_case_kind"
-  - id: FALSIFY-CODE-PARITY-008
+  - id: FALSIFY-CODE-PARITY-BIND-003
     rule: "slash commands leave history untouched, clear it or compact it exactly as declared"
     prediction: "the handle_slash tests pass; they fail when a command mutates history it should preserve"
     test: "cargo test -p aprender-orchestrate --lib handle_slash"
-  - id: FALSIFY-CODE-PARITY-009
+  - id: FALSIFY-CODE-PARITY-BIND-004
     rule: "pv check-parity row verdicts follow the declared hit bounds (below min and above max fail, bounds inclusive, variant-count fallback)"
     prediction: "the check_row_* tests pass; they fail when a bound is exclusive or a fallback is missed"
     test: "cargo test -p aprender-contracts-cli --lib check_parity::tests"
