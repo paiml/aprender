@@ -142,3 +142,25 @@ affected_files:
 - path: src/train/transformer_trainer/wgpu_runner.rs
   functions:
   - 'run_wgpu_training: multi-epoch loop, data shuffle, best checkpoint'
+
+falsification_tests:
+  - id: FALSIFY-WGPU-PROD-KAIZEN-001
+    description: "CPU-reference attention backward matches numeric gradients (GPU wgpu run itself is NOT CI evidence)"
+    test: "cargo test -p aprender-train --lib falsify_attention_backward_v1_001_dq_matches_numeric"
+    prediction: "dQ from the analytic attention backward matches the finite-difference gradient"
+    if_fails: "Attention backward is wrong, so any backend that mirrors it trains on bad gradients"
+  - id: FALSIFY-WGPU-PROD-KAIZEN-002
+    description: "LoRA backward reaches the adapter and not the frozen base (CPU path; the W5700X seq-len-128 run is NOT CI evidence)"
+    test: "cargo test -p aprender-train --lib lora_forward_backward_reaches_adapter_not_base"
+    prediction: "Adapter gradients are non-zero and base gradients stay zero"
+    if_fails: "LoRA training updates the base or never reaches the adapter"
+  - id: FALSIFY-WGPU-PROD-KAIZEN-003
+    description: "Gradient accumulation with LoRA behaves as specified (CPU trainer)"
+    test: "cargo test -p aprender-train --lib test_falsify_f_edge_007_grad_accumulation_with_lora"
+    prediction: "Accumulated gradients match the single-batch result"
+    if_fails: "Accumulation drops or double counts micro-batch gradients"
+  - id: FALSIFY-WGPU-PROD-KAIZEN-004
+    description: "Multi-epoch shuffle yields a different permutation per epoch"
+    test: "cargo test -p aprender-train --lib test_shuffled_batch_order_different_epochs"
+    prediction: "Epoch orders differ and each is a permutation"
+    if_fails: "Epochs replay one data order"
