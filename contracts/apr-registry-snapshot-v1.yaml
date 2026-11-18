@@ -144,3 +144,14 @@ toyota_way_principles:
     `apr backup --to <dir>` and persistent-HNSW snapshot are
     natural-extension follow-ups that compose this method without
     rewriting it.
+
+# #7235: falsification tests bound to CI-run tests.
+falsification_tests:
+  - id: FALSIFY-APR-REGISTRY-SNAPSHOT-001
+    rule: "[condition FALSIFY-SNAPSHOT-001] a snapshot of a populated registry opens as a database with the same model rows and counts as the source"
+    prediction: "falsify_snapshot_001_snapshot_matches_source_rows passes; it fails when the snapshot loses or alters rows"
+    test: "cargo test -p aprender-registry --lib falsify_snapshot_001_snapshot_matches_source_rows"
+  - id: FALSIFY-APR-REGISTRY-SNAPSHOT-002
+    rule: "[condition FALSIFY-SNAPSHOT-003] snapshot to an existing path errors and leaves the prior file untouched"
+    prediction: "falsify_snapshot_003_refuses_to_overwrite_existing_file passes; it fails when VACUUM INTO clobbers an existing file"
+    test: "cargo test -p aprender-registry --lib falsify_snapshot_003_refuses_to_overwrite_existing_file"

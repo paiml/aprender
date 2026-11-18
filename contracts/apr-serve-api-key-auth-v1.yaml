@@ -145,3 +145,14 @@ toyota_way_principles:
     contract. Multi-key, OAuth, and role-based access can extend this
     contract without breaking the v1 acceptance gate (each adds new
     gates rather than reinterpreting the existing ones).
+
+# #7235: falsification tests bound to CI-run tests.
+falsification_tests:
+  - id: FALSIFY-APR-SERVE-API-KEY-AUTH-001
+    rule: "[condition FALSIFY-AUTH-001] without an Authorization bearer header every protected route on every router builder returns 401 with error=unauthorized"
+    prediction: "missing_bearer_returns_401_on_every_route passes; it fails when any route answers without a bearer token"
+    test: "cargo test -p apr-cli --test falsify_auth_001 missing_bearer_returns_401_on_every_route"
+  - id: FALSIFY-APR-SERVE-API-KEY-AUTH-002
+    rule: "[condition FALSIFY-AUTH-002] a valid bearer token (SHA-256 equal to the configured hash) is accepted on every protected route"
+    prediction: "valid_bearer_passes_on_every_route passes; it fails when a correct key is refused on any route"
+    test: "cargo test -p apr-cli --test falsify_auth_002 valid_bearer_passes_on_every_route"

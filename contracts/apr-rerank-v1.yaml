@@ -228,3 +228,14 @@ toyota_way_principles:
     upstream dependencies (HELIX-IDEA-005, `aprender-serve`
     cross-encoder routing) land. Each phase = one PR ≈ one or two
     falsifiers, per the project's falsifier-first cascade.
+
+# #7235: falsification tests bound to CI-run tests.
+falsification_tests:
+  - id: FALSIFY-APR-RERANK-001
+    rule: "[condition FALSIFY-RERANK-RRF-002] RRF fusion is input-order invariant: fuse(a,b) equals fuse(b,a) on a tie-free rotational fixture"
+    prediction: "falsify_rerank_rrf_002_input_order_invariant passes; it fails when RRF weights one input list more than the other"
+    test: "cargo test -p aprender-rag --lib falsify_rerank_rrf_002_input_order_invariant"
+  - id: FALSIFY-APR-RERANK-002
+    rule: "[condition FALSIFY-RERANK-MMR-002] MMR with lambda=1.0 returns candidates by relevance descending with score equal to relevance"
+    prediction: "lambda_one_yields_relevance_descending passes; it fails when the diversity term leaks at lambda=1"
+    test: "cargo test -p aprender-rag --lib lambda_one_yields_relevance_descending"
