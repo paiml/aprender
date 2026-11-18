@@ -738,6 +738,23 @@ fn committed() -> Vec<(serde_json::Value, serde_json::Value)> {
         .collect()
 }
 
+/// A committed bound must be exactly what `tolerance_from` derives from the receipt's own served
+/// measurement, so hand-loosening `tolerance_rel` is caught (not just a re-measure under it).
+fn check_bound_derived(rc: &serde_json::Value) -> std::result::Result<(), String> {
+    let bound = rc["tolerance_rel"].as_f64().ok_or("no tolerance_rel")?;
+    let served = rc["served"]["max_rel_err"]
+        .as_f64()
+        .ok_or("no served.max_rel_err")?;
+    let want = tolerance_from(served);
+    if bound == want {
+        Ok(())
+    } else {
+        Err(format!(
+            "tolerance_rel {bound} != tolerance_from(served.max_rel_err {served}) = {want}"
+        ))
+    }
+}
+
 /// FALSIFY-KREG-009: a committed receipt is the row's tolerance, agrees with its receipts entry,
 /// and still holds — its own seed and workload, re-measured here, stay within `tolerance_rel`.
 #[test]
@@ -790,6 +807,9 @@ fn committed_parity_receipts_hold_on_this_host() {
             trials: dim("trials"),
         };
         let bound = rc["tolerance_rel"].as_f64().expect("tolerance_rel");
+        if let Err(e) = check_bound_derived(&rc) {
+            panic!("{id}: {e} ({path})");
+        }
         let now = measure(kernel(id), w, false);
         assert_eq!(
             rc["margin"]["verdict"], "pass",
@@ -978,4 +998,24 @@ fn tolerance_rounds_twice_the_measurement_up_to_one_digit() {
         let got = tolerance_from(m);
         assert!((got - want).abs() < want * 1e-9, "{m}: {got} != {want}");
     }
+}
+
+#[test]
+fn a_hand_loosened_receipt_bound_fails_the_derivation_check() {
+    let served = 3.0e-7;
+    let mut rc = serde_json::json!({
+        "served": {"max_rel_err": served},
+        "tolerance_rel": tolerance_from(served),
+    });
+    assert!(check_bound_derived(&rc).is_ok());
+    rc["tolerance_rel"] = serde_json::json!(1e-2);
+    assert!(
+        check_bound_derived(&rc).is_err(),
+        "loosened bound must fail"
+    );
+    rc["tolerance_rel"] = serde_json::json!(1e-9);
+    assert!(
+        check_bound_derived(&rc).is_err(),
+        "tightened bound must fail too"
+    );
 }
