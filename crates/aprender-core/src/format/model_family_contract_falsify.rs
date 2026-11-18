@@ -1034,6 +1034,73 @@ mod contract_falsification {
         );
     }
 
+    // ========================================================================
+    // FALSIFY-MF-SCHEMA-001: the `_schema.yaml` descriptor is real and true
+    //
+    // `load_all_families` skips `_`-prefixed files, so nothing else reads
+    // `_schema.yaml`. Prediction: it parses, declares `kind: model-family`,
+    // and every field its header comment lists as required is a top-level key
+    // of every family YAML.
+    // If fails: the schema documentation names a field the families do not
+    // carry (or is not YAML), so the descriptor misleads authors of new families.
+    // ========================================================================
+    #[test]
+    fn falsify_mf_schema_001_descriptor_matches_families() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../contracts/model-families");
+        let text = std::fs::read_to_string(dir.join("_schema.yaml")).expect("read _schema.yaml");
+        let doc: serde_yaml::Value = serde_yaml::from_str(&text).expect("_schema.yaml is YAML");
+        assert_eq!(
+            doc.get("metadata")
+                .and_then(|m| m.get("kind"))
+                .and_then(|k| k.as_str()),
+            Some("model-family"),
+            "FALSIFY-MF-SCHEMA-001: metadata.kind must be model-family"
+        );
+        let required: Vec<String> = text
+            .lines()
+            .skip_while(|l| !l.starts_with("# Required fields:"))
+            .take_while(|l| !l.starts_with("# Optional fields:"))
+            .flat_map(|l| {
+                l.trim_start_matches('#')
+                    .trim_start_matches(" Required fields:")
+                    .split(',')
+                    .map(|f| f.trim().to_string())
+                    .collect::<Vec<_>>()
+            })
+            .filter(|f| !f.is_empty())
+            .collect();
+        assert!(
+            required.len() >= 9,
+            "FALSIFY-MF-SCHEMA-001: parsed too few required fields: {required:?}"
+        );
+        let mut missing = Vec::new();
+        for entry in std::fs::read_dir(&dir)
+            .expect("read model-families dir")
+            .flatten()
+        {
+            let path = entry.path();
+            let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+            if name.starts_with('_') || !name.ends_with(".yaml") {
+                continue;
+            }
+            let t = std::fs::read_to_string(&path).expect("read family yaml");
+            if t.lines().any(|l| l.starts_with("contract_id:")) {
+                continue;
+            }
+            let d: serde_yaml::Value = serde_yaml::from_str(&t).expect("family YAML parses");
+            for f in &required {
+                if d.get(f.as_str()).is_none() {
+                    missing.push(format!("{name}: missing `{f}`"));
+                }
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "FALSIFY-MF-SCHEMA-001: required fields absent:\n{}",
+            missing.join("\n")
+        );
+    }
+
     // FALSIFY-FT-QWEN35-001..007 and FALSIFY-FT-XCRATE-001..004 moved to
     // tests/contracts/classification_finetune_xcrate_contract.rs (PMAT-1098).
     // They name `entrenar`, a PATH-ONLY dev-dep (PMAT-955: a version there is a

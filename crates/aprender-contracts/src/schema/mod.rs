@@ -1,3 +1,4 @@
+pub mod active_tool_registry;
 pub mod artifact;
 #[cfg(test)]
 mod book_build_tests;

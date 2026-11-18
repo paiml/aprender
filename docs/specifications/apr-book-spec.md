@@ -1711,7 +1711,7 @@ equations:
 5. **Total archived: 62** (14 merged + 6 should-merge + 24 stale + 18 legacy-library)
 
 **Phase 2 — Provable-contracts-first documentation**: DONE (2026-04-08)
-1. ~~21 ACTIVE-TOOL repos get provable contracts~~ — `contracts/apr-tool-*-v1.yaml` (21 files)
+1. ~~21 ACTIVE-TOOL repos get provable contracts~~ — `docs/registry/apr-tools/apr-tool-*-v1.yaml` (21 files; moved out of `contracts/` in #7235: registry rows with no provable claims)
 2. Each contract defines: purpose, inputs, outputs, 5 falsification conditions
 3. Book chapters reference tools by `apr` subcommand or `aprender-*` crate only
 
@@ -1722,7 +1722,7 @@ equations:
 
 **Contract inventory**:
 - 20 book chapter contracts (`apr-book-ch*-v1.yaml`)
-- 21 active-tool contracts (`apr-tool-*-v1.yaml`)
+- 21 active-tool registry rows (`docs/registry/apr-tools/apr-tool-*-v1.yaml`, moved out of `contracts/` in #7235)
 - 13 ground-truth corpus contracts (`apr-corpus-*-v1.yaml`)
 - 1 org taxonomy contract (`apr-org-taxonomy-v1.yaml`)
 - **Total: 55 new contracts** from this spec
@@ -1778,7 +1778,7 @@ falsification:
 |----------|-------|---------|
 | Page contracts (PCU) | 236 | `apr-page-*-v1.yaml` |
 | Chapter contracts | 27 | `apr-book-ch*-v1.yaml` |
-| Active-tool contracts | 21 | `apr-tool-*-v1.yaml` |
+| Active-tool registry rows | 21 | `docs/registry/apr-tools/apr-tool-*-v1.yaml` |
 | Ground-truth corpus contracts | 13 | `apr-corpus-*-v1.yaml` |
 | Book schema contract | 1 | `apr-book-schema-v1.yaml` |
 | Org taxonomy contract | 1 | `apr-org-taxonomy-v1.yaml` |
