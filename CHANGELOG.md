@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Planned as 0.75.0 for the Fri 20 Nov 2026 train. This is a draft. The full list of merged PRs is added on the release branch.
+## [0.75.0] - 2026-11-18
+
+Qwen 4: preview architecture; 6/7 ops at parity; decode and KV-cache land in 0.75.x.
 
 ### Qwen 4 (`qwen4_exp`): preview architecture recognised, not yet runnable
 
@@ -23,6 +25,88 @@ This release does **not** support running Qwen 4. It ships what has merged:
   - the n-gram hashed embedding;
   - PLE (#7176, #7177, #7178).
 - **Not in this release.** MTP has no reference implementation to test against. Decode, the KV cache, n-gram context carry-over and PLE conv state are planned for 0.75.x. Until then `apr run`, `apr chat` and `apr serve` do not run a Qwen 4 model.
+
+### Merged since v0.74.0 (71)
+
+#### Added
+
+- feat(lab): nightly lab receipt, stop rule R3, edge lane as lab row (#7155 #7158 #7160) (#7220)
+- feat(release): run check_reconcile.sh as a release gate (spec-sweep T-5) (#7196)
+- feat(release): vendor the BUILD-SYNC-001 release gate as the aprender canary (#7186)
+- feat(qwen4): lightning indexer, sparse attention and hc residual match the transformers reference (#7178)
+- feat(qwen4): gated norm, n-gram embedding and PLE match the transformers reference (#7177)
+- feat(qwen4): recognise qwen4_exp config and refuse its unsupported ops by name (#7171)
+- feat(viz): PLOT-GG-001 rows geom_tile, geom_rect, geom_raster at ggplot2 4.0.3 parity (#7153)
+- feat(viz): bar rows geom_col, position_stack, position_fill at ggplot2 4.0.3 parity (#6928 #6929 #6931) (#7121)
+- feat(apr-cli): apr finetune --recipe flag and example recipe (R-1 slice 12) (#7141)
+- feat(finetune): recipe preflight and lowering onto run, slices 10+11 (PMAT-5316) (#7139)
+- feat(recipe): require_inputs, sha256_file, linked-file check and receipt with tests (R-1 slices 8+9) (#7137)
+- feat(viz): geom_histogram + geom_freqpoly + geom_density layout rows at ggplot2 4.0.3 parity (PLOT-GG-001) (#7128)
+- feat(apr-cli): recipe teacher rules and TrainRecipe::load (PMAT-5316 slice 7) (#7135)
+- feat(quorum): escalate on the second consecutive non-PASS gate quorum of a ticket chain (PMAT-6101) (#7078)
+- feat(viz): PLOT-GG-001 rows geom_area, geom_ribbon, position_dodge at ggplot2 4.0.3 parity (#7147)
+- feat(apr-cli): apr-recipe-v1 optional-field, alias, pin and training-number rules (R-1 slices 5+6) (#7132)
+- feat(apr-cli): parse the required keys of apr-recipe-v1 (R-1 slice 3) (#7130)
+- feat(apr-cli): apr-recipe-v1 schema types (recipe slice 2) (#7126) (#7127)
+- feat(plot): apr plot --facet wrap=<column> draws facet strips (#7087, #7091) (#7101)
+- feat(contracts): apr-recipe-v1 schema for apr finetune --recipe (slice 1/6) (#7118)
+- feat(present-cli): ggspec AST, error type and allow-lists (slice 1 of the plot spec parser) (#7116)
+- feat(plot): text columns are read as discrete (#7086) (#7090)
+- feat(plot-cli): reference lines and labels (--hline/--vline/--abline, --title/--xlab/--ylab) (#7105)
+- feat(release): release_next_bump.sh reads the next version from milestones, fails closed (#7106)
+- feat(plot-cli): --spec reads a YAML file for the keys it can draw (#7110)
+- feat(present-lib): wasm32 microphone level source + pure byte-to-sample map (#7094) (#7097)
+- feat(plot-cli): usage errors exit 2, failures exit 1 (#7109)
+- feat(plot): --spec takes a ggplot expression string (#7085) (#7089)
+- feat(release): autopilot runs clean-room on the bump commit sha before the tag (PMAT-6500) (#7079)
+- feat(release): merge_freeze.sh gives the freeze/drain verdict for a red nightly (PMAT-6494) (#7077)
+- feat(viz): layout() refuses area/tile/text and unresolved companions (PLOT-GG-001 M1) (#7065)
+
+#### Fixed
+
+- fix(reconcile): R3 exempts release/** and single-level nightly/<name> heads, the paths the repository rulesets lock against deletion (PMAT-7229)
+- fix(contracts): model-format-conversion pass_criteria count 9 to 10 (main red, contract_data_integrity) (#7226)
+- fix(contracts): regenerate ont witness after #7220 (main red, clean-room B2) (#7224)
+- fix(kreg): parity receipts bound the scalar path (q6_k, apr_q4, apr_q8) (#7205) (#7206)
+- fix(contracts): unbreak main after #7222 (twin stem, sigma, valid_under, depends_on, witness) (#7223)
+- fix(lab): reconcile_lab_scope treats bad_trigger rc 2 as RED (PMAT-7202) (#7203)
+- fix(compute): drop chrono from aprender-compute (RUSTSEC-2026-0543) (#7197)
+- fix(deps): zip 9.0.5 (RUSTSEC-2026-0548); ignore chrono/humantime unmaintained (#7192)
+- fix(release): validate gate dir in release_gate_canary.sh (SEC010) (#7193)
+- fix(serve): move qwen4_exp fixture tests out of src so the published tarball builds (#7184)
+- fix(test): VMC-004 valid-config generator starts context_length at 1 (main red) (#7179)
+- fix(ci): register qwen4_exp_refusal in the tree-reader registry (main red) (#7174)
+- fix(qwen4): apr import and the CUDA loader refuse qwen4_exp by name (#7173)
+- fix(ci): cargo_classify reads EACCES on the shared target dir as ENV (#7168)
+- fix(apr-cli): cli_commands row-1 CSV fixture ships in the crate tarball (#7164)
+- fix(readme): contract count 1731 -> 1734 (main red since #7128) (#7162)
+- fix(contracts): readme-root requires readme:kind exactly once (#7111) (#7112)
+- fix(plot-cli): two test helpers compare errors as text; main red at 1c5ef6765 (#7124) (#7125)
+- fix(apr-cli): apr plot exit codes 5 (usage) and 4 (failure) (#7123)
+- fix(viz): ScatterPlot and Histogram are total for extreme size, bins and canvas (#7093) (#7096)
+- fix(rc-publish-gate): cargo clean and target scan only under --verify (#7098) (#7102)
+- fix(release): measured-cpu says which infra runs it read (#7092) (#7095)
+- fix(ci): a roadmap fold input is never docs-only; the PR tier runs the fold tests (PMAT-6902) (#7080)
+- fix(release): the models nightly counts a models_t1.sh run by its program, not by a path in the arguments (PMAT-7017) (#7071)
+- fix(finetune): merge refuses PEFT zero-match, missing lora_alpha, partial and no-op merges (PMAT-7023) (#7066)
+- fix(release): rc_publish_gate clears leftover overlay member sources before the package walk (#6880) (#7068)
+- fix(lora): load_adapter_peft checks dtype, converts bf16/f16, sorts weights (PMAT-7024) (#7067)
+
+#### Other
+
+- docs(readme): CONTRACT_COUNT 1740 -> 1742 (main red, readme_sync m27/m30) (#7228)
+- style(apr-cli): rustfmt two include!d cbtop test files (main red, include_fmt_ratchet) (#7227)
+- test: cbtop and format helper coverage (B4,B5,B7,B8) (#7222)
+- refactor: split train_recipe parse and check_rects to clear the CB-200 dogfood row (#7190)
+- docs(changelog): 0.75.0 draft notes — Qwen 4 preview recognised, not runnable (#7183)
+- test(qwen4): golden vectors for the qwen4_exp ops from the transformers reference (#7176)
+- chore(recipe): slice 13, drop the dead-code allow and correct the recipe flag help (PMAT-5316) (#7143)
+- test(cuda): decode throughput falsifier names each dropped trial (#7166)
+- lab(spec-sweep): rules for #6641, #6617 (slice) (#7120)
+- ci: add scripts/ci/require_pinned_tools.sh, not wired (#7113) (#7114)
+- test(viz): pin R fixed-vs-scientific tick labels beyond 2^-8..1e4 (PMAT-6958) (#7081)
+- ci: tree-reader nextest list takes its flags from quick_tier_targets.sh (#6903) (#7069)
+- test(viz): faceted geom_col with one all-uncovered panel builds; fix NoLevel doc (PMAT-7046) (#7054)
 
 ## [0.74.0] - 2026-11-14
 
