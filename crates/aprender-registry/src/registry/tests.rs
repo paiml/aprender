@@ -187,3 +187,48 @@ fn test_list_operations() {
     let versions = registry.list_model_versions("model-a").unwrap();
     assert_eq!(versions.len(), 2);
 }
+
+/// FALSIFY-SNAPSHOT-001 (lib-test form): a snapshot of a populated registry
+/// opens as a database with the same model rows as the source.
+#[test]
+fn falsify_snapshot_001_snapshot_matches_source_rows() {
+    let (_dir, registry) = setup();
+    for i in 0..3u32 {
+        registry
+            .register_model(
+                &format!("model-{i}"),
+                &ModelVersion::new(1, 0, i),
+                format!("bytes {i}").as_bytes(),
+                ModelCard::new(format!("Model {i}")),
+            )
+            .unwrap();
+    }
+    let target_dir = TempDir::new().unwrap();
+    let target = target_dir.path().join("snapshot.db");
+    registry.snapshot(&target).unwrap();
+    assert!(target.is_file(), "VACUUM INTO must create the target file");
+
+    let snap = super::database::RegistryDb::open(&target).unwrap();
+    let mut src = registry.list_models().unwrap();
+    src.sort();
+    let mut got = snap.list_model_names().unwrap();
+    got.sort();
+    assert_eq!(snap.count_models().unwrap(), src.len());
+    assert_eq!(src, got);
+}
+
+/// FALSIFY-SNAPSHOT-003 (lib-test form): snapshot to an existing path errors
+/// and leaves the prior file untouched.
+#[test]
+fn falsify_snapshot_003_refuses_to_overwrite_existing_file() {
+    let (_dir, registry) = setup();
+    registry
+        .register_model("marker", &ModelVersion::new(1, 0, 0), b"data", ModelCard::new("marker"))
+        .unwrap();
+    let target_dir = TempDir::new().unwrap();
+    let target = target_dir.path().join("backup.db");
+    std::fs::write(&target, b"i was here first").unwrap();
+
+    assert!(registry.snapshot(&target).is_err(), "snapshot must not clobber an existing file");
+    assert_eq!(std::fs::read(&target).unwrap(), b"i was here first");
+}

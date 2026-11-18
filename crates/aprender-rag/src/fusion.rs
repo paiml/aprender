@@ -395,6 +395,26 @@ mod tests {
         assert_eq!(results[0].0, chunk_id(1));
     }
 
+    /// FALSIFY-RERANK-RRF-002: swapping the dense and sparse inputs yields the
+    /// identical fused ranking and scores (RRF weights neither input more).
+    #[test]
+    fn falsify_rerank_rrf_002_input_order_invariant() {
+        let strategy = FusionStrategy::RRF { k: 60.0 };
+        // Rotational pair: every fused score is distinct, so no tie-break order.
+        let a = vec![(chunk_id(1), 0.9), (chunk_id(2), 0.8), (chunk_id(3), 0.7)];
+        let b = vec![(chunk_id(2), 0.9), (chunk_id(3), 0.8), (chunk_id(1), 0.7)];
+
+        let ab = strategy.fuse(&a, &b);
+        let ba = strategy.fuse(&b, &a);
+
+        assert_eq!(ab.len(), 3);
+        assert_eq!(ab.len(), ba.len());
+        for (x, y) in ab.iter().zip(ba.iter()) {
+            assert_eq!(x.0, y.0, "fused order changed when inputs were swapped");
+            assert!((x.1 - y.1).abs() < 1e-9, "fused score changed when inputs were swapped");
+        }
+    }
+
     #[test]
     fn test_rrf_score_calculation() {
         let strategy = FusionStrategy::RRF { k: 60.0 };
