@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/rust-mcp-sdk@2b4de67f984f6a23f7660bbb79443aff052b7303",
+  "nameWithOwner": "paiml/rust-mcp-sdk",
+  "defaultBranch": "main",
+  "sha": "2b4de67f984f6a23f7660bbb79443aff052b7303",
+  "url": "https://github.com/paiml/rust-mcp-sdk",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

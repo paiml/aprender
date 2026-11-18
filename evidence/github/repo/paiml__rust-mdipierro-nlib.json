@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/rust-mdipierro-nlib@f1da033f9b810769336e302e139cb5ad4bb63608",
+  "nameWithOwner": "paiml/rust-mdipierro-nlib",
+  "defaultBranch": "main",
+  "sha": "f1da033f9b810769336e302e139cb5ad4bb63608",
+  "url": "https://github.com/paiml/rust-mdipierro-nlib",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

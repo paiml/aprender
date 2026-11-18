@@ -1,0 +1,56 @@
+metadata:
+  version: "1.0.0"
+  created: "2026-04-08"
+  author: PAIML Engineering
+  registry: true
+  references:
+    - "docs/specifications/aprender-monorepo-consolidation.md"
+  description: >
+    apr-tool-pcode: Pragmatic AI Labs coding agent
+  contract: apr-tool-pcode
+  status: enforced
+  repo: "paiml/pcode"
+  purpose: "Pragmatic AI Labs coding agent"
+  language: "Rust"
+  category: active-tool
+  topic: paiml-active-tool
+
+inputs:
+  - "Code generation prompts"
+outputs:
+  - "Generated code"
+preconditions:
+  - "Repository paiml/pcode exists and is not archived"
+  - "README.md documents purpose and usage"
+  - "CI pipeline passes on main branch"
+postconditions:
+  - "Tool produces documented outputs from documented inputs"
+  - "No legacy names in source code imports"
+falsification:
+  - condition: "gh repo view paiml/pcode returns archived=true"
+    severity: P0
+    action: reclassify
+  - condition: "README.md missing or empty"
+    severity: P0
+    action: create_readme
+  - condition: "No CI workflow in .github/workflows/"
+    severity: P1
+    action: add_ci
+  - condition: "cargo build fails (Rust) or equivalent build fails"
+    severity: P0
+    action: fix_build
+  - condition: "Zero tests in repository"
+    severity: P1
+    action: add_tests
+
+entity:
+  type: repo
+  ref: paiml/pcode@aba243a4fe37ff8fe6c6cbec50f7ef43604800d6
+
+# #7235: bound to a CI-run test. The snapshot is dated evidence captured from the GitHub API (see captured_at in
+# evidence/github/repo/), not a live check of the repo.
+falsification_tests:
+  - id: FALSIFY-APR_TOOL_PCODE_V1-BIND-001
+    rule: "the snapshot of paiml/pcode (evidence/github/repo/, dated evidence captured at 2026-11-18T20:13:38Z, not a live check) says archived=false, has_readme=true and has_ci_workflows=true, and its ref and nameWithOwner match this row"
+    prediction: "apr_tool_rows_hold_against_repo_snapshots fails when the snapshot is missing, disagrees with the row, or records the repo archived, without a README or without a CI workflow"
+    test: "cargo test -p aprender-contracts --lib apr_tool_rows_hold_against_repo_snapshots"

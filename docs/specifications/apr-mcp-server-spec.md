@@ -7,7 +7,7 @@
 - `contracts/mcp-tool-schema-v1.yaml` — upstream MCP tool registration, schema fidelity, session lifecycle, error mapping (existing)
 - `contracts/apr-mcp-tool-schemas-v1.yaml` — per-tool `inputSchema` + description source of truth; drives `build.rs` codegen; `status: ENFORCED` (M3, 2026-04-18)
 - `contracts/pmcp/mcp-protocol-sdk-v1.yaml` — `pmcp` crate contract (existing)
-- `docs/registry/apr-tools/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
+- `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — `paiml/rust-mcp-sdk` dependency contract (existing)
 - `contracts/apr-cli-commands-v1.yaml` — 58-command tool surface (57 commands + `mcp` added 2026-04-17 per PR #864)
 - `contracts/apr-mcp-server-v1.yaml` — end-to-end MCP server contract; 8 falsification_conditions + test cross-links + exact-8 invariant pinned by `apr_mcp_server_contract_ids_are_falsify_mcp_001_through_008`; `status: ACTIVE` (PR #886 merged 2026-04-19; top-level `status: ACTIVE` + all 8 falsification_conditions `status: ENFORCED`)
 - `contracts/apr-claude-proxy-v1.yaml` — Anthropic Messages-API proxy request/response shape + 6 falsification gates; `status: DRAFT` (PMAT-CLAUDE-PROXY-001, promotes to ENFORCED at M6-δ, 2026-04-18)
@@ -458,7 +458,7 @@ closes:
 
 - **Existing infrastructure** (ready to use):
   - `contracts/mcp-tool-schema-v1.yaml` — defines JSON-RPC error codes, session lifecycle
-  - `docs/registry/apr-tools/apr-tool-rust-mcp-sdk-v1.yaml` — approves `paiml/rust-mcp-sdk` (pmcp v2.3) as dependency. Already linked by `aprender-orchestrate` for MCP client usage; `aprender-mcp` server-side migration is scheduled for M5+
+  - `contracts/apr-tool-rust-mcp-sdk-v1.yaml` — approves `paiml/rust-mcp-sdk` (pmcp v2.3) as dependency. Already linked by `aprender-orchestrate` for MCP client usage; `aprender-mcp` server-side migration is scheduled for M5+
   - MCP tool surface lives in `crates/aprender-mcp/src/tools/` (not `apr-cli/src/tool_commands.rs` — that is the unrelated `apr tool` CLI group for Showcase/Rosetta)
 
 - **Aspirational follow-ons** (spec files not yet authored):

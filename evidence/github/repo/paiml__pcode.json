@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/pcode@aba243a4fe37ff8fe6c6cbec50f7ef43604800d6",
+  "nameWithOwner": "paiml/pcode",
+  "defaultBranch": "main",
+  "sha": "aba243a4fe37ff8fe6c6cbec50f7ef43604800d6",
+  "url": "https://github.com/paiml/pcode",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

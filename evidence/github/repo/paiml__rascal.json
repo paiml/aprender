@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/rascal@4d00dea842ce6eeffc992d9a648af9ae4446fcab",
+  "nameWithOwner": "paiml/rascal",
+  "defaultBranch": "main",
+  "sha": "4d00dea842ce6eeffc992d9a648af9ae4446fcab",
+  "url": "https://github.com/paiml/rascal",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

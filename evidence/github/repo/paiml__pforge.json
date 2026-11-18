@@ -1,0 +1,11 @@
+{
+  "ref": "paiml/pforge@78e6860810d739c4ee559cc8652755ed1496c1a5",
+  "nameWithOwner": "paiml/pforge",
+  "defaultBranch": "main",
+  "sha": "78e6860810d739c4ee559cc8652755ed1496c1a5",
+  "url": "https://github.com/paiml/pforge",
+  "archived": false,
+  "has_readme": true,
+  "has_ci_workflows": true,
+  "captured_at": "2026-11-18T20:13:38Z"
+}

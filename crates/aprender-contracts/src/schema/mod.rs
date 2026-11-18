@@ -1,4 +1,5 @@
-pub mod active_tool_registry;
+#[cfg(test)]
+mod apr_tool_snapshot_tests;
 pub mod artifact;
 #[cfg(test)]
 mod book_build_tests;
