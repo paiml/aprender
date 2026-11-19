@@ -96,6 +96,9 @@ impl Drop for PlanJsonGuard {
 /// The values the run resolved after recipe defaults and flags.
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedRun<'a> {
+    pub(crate) rank: u32,
+    pub(crate) learning_rate: f64,
+    pub(crate) max_seq_len: usize,
     pub(crate) epochs: u32,
     pub(crate) quantize_nf4: bool,
     pub(crate) model_size: Option<&'a str>,
@@ -119,10 +122,10 @@ pub(crate) fn build_receipt(
         "hyperparameters": {
             "method": recipe.method.as_str(),
             "seed": recipe.seed,
-            "rank": recipe.rank,
+            "rank": resolved.rank,
             "epochs": resolved.epochs,
-            "learning_rate": recipe.learning_rate,
-            "max_seq_len": recipe.max_seq_len,
+            "learning_rate": resolved.learning_rate,
+            "max_seq_len": resolved.max_seq_len,
             "quantize_nf4": resolved.quantize_nf4,
             "model_size": resolved.model_size,
             "eval_benchmark": recipe.benchmark,

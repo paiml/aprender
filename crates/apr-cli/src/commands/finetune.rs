@@ -1401,18 +1401,7 @@ pub(crate) fn run(
 
     // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
     // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
-    if let Some(user_rank) = rank {
-        config.rank = user_rank;
-        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
-                                               // Keep the LR consistent with the (now overridden) rank.
-        config.learning_rate = recommended_learning_rate(config.method, user_rank);
-    }
-
-    // FALSIFY-QLORA-RANK-AWARE-LR: resolve the effective learning rate. An
-    // explicit --learning-rate wins; otherwise use the rank-aware recommendation
-    // — the classic 2e-4 default diverges at the high ranks auto-selected to
-    // fill VRAM (measured: 1.5B QLoRA @ 2e-4/rank256 blew up to loss ~11-16).
-    let learning_rate = learning_rate.unwrap_or_else(|| f64::from(config.learning_rate));
+    let learning_rate = apply_rank_and_lr(&mut config, rank, learning_rate);
 
     display_run_header(
         ft_method,
@@ -1450,6 +1439,47 @@ pub(crate) fn run(
         gpu_backend,
         max_seq_len,
     )
+}
+
+/// Apply `--rank` and resolve the effective learning rate on a planner config.
+///
+/// GH-568: an explicit rank overrides the planner's and the LR follows it.
+/// FALSIFY-QLORA-RANK-AWARE-LR: an explicit `--learning-rate` wins; otherwise the
+/// rank-aware recommendation is used, because the classic 2e-4 default diverges at the
+/// high ranks auto-selected to fill VRAM (measured: 1.5B QLoRA @ 2e-4/rank256 blew up to
+/// loss ~11-16). `run` and the recipe receipt both call this, so they cannot drift.
+fn apply_rank_and_lr(
+    config: &mut OptimalConfig,
+    rank: Option<u32>,
+    learning_rate: Option<f64>,
+) -> f64 {
+    if let Some(user_rank) = rank {
+        config.rank = user_rank;
+        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
+        config.learning_rate = recommended_learning_rate(config.method, user_rank);
+    }
+    learning_rate.unwrap_or_else(|| f64::from(config.learning_rate))
+}
+
+/// The rank, learning rate and max sequence length a recipe run trains with, after the
+/// planner and defaults fill what the recipe leaves out. The receipt records these.
+fn resolve_recipe_hparams(
+    recipe: &super::train_recipe::TrainRecipe,
+    flags: &RecipeRunFlags<'_>,
+) -> Result<(u32, f64, usize)> {
+    let ft_method: FinetuneMethod = recipe
+        .method
+        .as_str()
+        .parse()
+        .map_err(CliError::ValidationFailed)?;
+    let params = resolve_model_params(recipe_model_size(flags, recipe), Some(&recipe.base))?;
+    let mut config = plan(params, flags.vram_gb, ft_method.into())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+    let lr = apply_rank_and_lr(&mut config, recipe.rank, recipe.learning_rate);
+    let max_seq_len = recipe
+        .max_seq_len
+        .unwrap_or(entrenar::finetune::instruct_pipeline::InstructConfig::default().max_seq_len);
+    Ok((config.rank, lr, max_seq_len))
 }
 
 /// The `apr finetune` flags that still apply beside `--recipe`: where and how
@@ -1700,7 +1730,11 @@ fn emit_run_receipt(
     out: &mut dyn std::io::Write,
 ) -> Result<()> {
     use super::finetune_recipe_run as frr;
+    let (rank, learning_rate, max_seq_len) = resolve_recipe_hparams(recipe, flags)?;
     let resolved = frr::ResolvedRun {
+        rank,
+        learning_rate,
+        max_seq_len,
         epochs,
         quantize_nf4,
         model_size: recipe_model_size(flags, recipe),

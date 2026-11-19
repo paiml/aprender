@@ -27,6 +27,9 @@ fn receipt_for(dir: &Path, seed: u64) -> Value {
     std::fs::write(&path, recipe_text(seed)).expect("recipe");
     let (recipe, base) = crate::commands::finetune::preflight_recipe(&path, false).expect("ok");
     let resolved = ResolvedRun {
+        rank: 4,
+        learning_rate: 0.0002,
+        max_seq_len: 128,
         epochs: 2,
         quantize_nf4: true,
         model_size: Some("0.8B"),
@@ -107,6 +110,9 @@ fn a_missing_base_hash_is_null_never_invented() {
     std::fs::write(&path, recipe_text(1)).expect("recipe");
     let (recipe, base) = crate::commands::finetune::preflight_recipe(&path, true).expect("plan");
     let resolved = ResolvedRun {
+        rank: 4,
+        learning_rate: 0.0002,
+        max_seq_len: 128,
         epochs: 1,
         quantize_nf4: false,
         model_size: None,
@@ -550,5 +556,48 @@ fn wgpu_run_keeps_seed_under_validated_not_applied() {
     let (_, receipt) =
         crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("receipt");
     assert!(receipt.validated_not_applied.is_empty());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn receipt_records_the_values_the_run_used_when_the_recipe_omits_them() {
+    let dir = scratch("resolved-hparams");
+    let path = dir.join("r.yaml");
+    std::fs::write(
+        &path,
+        "recipe: apr-recipe-v1\nname: tiny\nbase: base.apr\nmethod: qlora\n\
+         model_size: 0.8B\ndata:\n  train: train.jsonl\neval:\n  heldout: heldout.jsonl\n\
+         seed: 1\ntraining:\n  epochs: 2\n",
+    )
+    .expect("recipe");
+    let adapter = dir.join("out/adapter.apr");
+    let flags = run_flags(Some(&adapter), false, true);
+    let (recipe, receipt) =
+        crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("preflight");
+    assert!(
+        recipe.rank.is_none() && recipe.learning_rate.is_none() && recipe.max_seq_len.is_none()
+    );
+    let mut out: Vec<u8> = Vec::new();
+    crate::commands::finetune::run_recipe_with(&recipe, &receipt, &flags, &mut out, |_, _, _| {
+        Ok(())
+    })
+    .expect("run ok");
+    let v: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("out").join(RECEIPT_FILE)).expect("receipt"),
+    )
+    .expect("json");
+    let h = &v["hyperparameters"];
+    assert!(
+        h["rank"].as_u64().is_some_and(|r| r > 0),
+        "rank resolved: {h}"
+    );
+    assert!(
+        h["learning_rate"].as_f64().is_some_and(|l| l > 0.0),
+        "lr resolved: {h}"
+    );
+    assert!(
+        h["max_seq_len"].as_u64().is_some_and(|m| m > 0),
+        "max_seq_len resolved: {h}"
+    );
     std::fs::remove_dir_all(&dir).ok();
 }
