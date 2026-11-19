@@ -182,21 +182,29 @@ fn the_planted_falsifiers_each_go_red_naming_the_path() {
         SPEC,
         &[
             // the three falsifiers of the phase-0 verification line
-            ("invalid-missing-seed.sim.yaml", "minCount", "sim:seed"),
+            ("invalid-missing-seed.sim.yaml", "minCount", "ont:sim/seed"),
             (
                 "invalid-no-invariants.sim.yaml",
                 "minCount",
-                "sim:invariants",
+                "ont:sim/invariants",
             ),
             (
                 "invalid-empty-invariants.sim.yaml",
                 "minCount",
-                "sim:invariants",
+                "ont:sim/invariants",
             ),
-            ("invalid-empty-spec.sim.yaml", "minCount", "sim:seed"),
-            ("invalid-empty-spec.sim.yaml", "minCount", "sim:invariants"),
-            ("invalid-empty-spec.sim.yaml", "minCount", "sim:laws"),
-            ("invalid-empty-spec.sim.yaml", "minCount", "sim:entities"),
+            ("invalid-empty-spec.sim.yaml", "minCount", "ont:sim/seed"),
+            (
+                "invalid-empty-spec.sim.yaml",
+                "minCount",
+                "ont:sim/invariants",
+            ),
+            ("invalid-empty-spec.sim.yaml", "minCount", "ont:sim/laws"),
+            (
+                "invalid-empty-spec.sim.yaml",
+                "minCount",
+                "ont:sim/entities",
+            ),
         ],
     );
 }
@@ -207,24 +215,36 @@ fn the_closed_sets_and_shapes_refuse_each_for_its_own_reason() {
         SPEC,
         &[
             ("invalid-extra-key.sim.yaml", "closed", "ieee_strict"),
-            ("invalid-bad-unit.sim.yaml", "in", "sim:unit"),
-            ("invalid-bad-seed-algorithm.sim.yaml", "in", "sim:algorithm"),
-            ("invalid-seed-no-value.sim.yaml", "minCount", "sim:value"),
-            ("invalid-bad-entity-kind.sim.yaml", "in", "sim:kind"),
-            ("invalid-no-entities.sim.yaml", "minCount", "sim:entities"),
+            ("invalid-bad-unit.sim.yaml", "node", "ont:sim/unit"),
+            (
+                "invalid-bad-seed-algorithm.sim.yaml",
+                "node",
+                "ont:sim/algorithm",
+            ),
+            ("invalid-seed-no-value.sim.yaml", "node", "ont:sim/value"),
+            ("invalid-bad-entity-kind.sim.yaml", "node", "ont:sim/kind"),
+            (
+                "invalid-no-entities.sim.yaml",
+                "minCount",
+                "ont:sim/entities",
+            ),
             (
                 "invalid-law-without-invariant.sim.yaml",
-                "minCount",
-                "sim:invariant",
+                "node",
+                "ont:sim/invariant",
             ),
             (
                 "invalid-law-bad-invariant-id.sim.yaml",
-                "pattern",
-                "sim:invariant",
+                "node",
+                "ont:sim/invariant",
             ),
-            ("invalid-zero-horizon.sim.yaml", "pattern", "sim:horizon_ns"),
-            ("invalid-bad-schema-tag.sim.yaml", "in", "sim:schema"),
-            ("invalid-float-clock.sim.yaml", "in", "sim:time_unit"),
+            (
+                "invalid-zero-horizon.sim.yaml",
+                "pattern",
+                "ont:sim/horizon_ns",
+            ),
+            ("invalid-bad-schema-tag.sim.yaml", "in", "ont:sim/schema"),
+            ("invalid-float-clock.sim.yaml", "in", "ont:sim/time_unit"),
         ],
     );
 }
@@ -265,20 +285,24 @@ fn the_receipt_shape_has_both_arms() {
             (
                 "invalid-receipt-no-final-hash.json",
                 "minCount",
-                "sim:final_hash",
+                "ont:sim/final_hash",
             ),
             (
                 "invalid-receipt-short-hash.json",
                 "pattern",
-                "sim:final_hash",
+                "ont:sim/final_hash",
             ),
             (
                 "invalid-receipt-no-verdicts.json",
                 "minCount",
-                "sim:verdicts",
+                "ont:sim/verdicts",
             ),
             ("invalid-receipt-extra-key.json", "closed", "host"),
-            ("invalid-receipt-empty.json", "minCount", "sim:final_hash"),
+            (
+                "invalid-receipt-empty.json",
+                "minCount",
+                "ont:sim/final_hash",
+            ),
         ],
     );
 }
