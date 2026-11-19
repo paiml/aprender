@@ -473,6 +473,13 @@ for fl in --repo --sha --before --ref --event --now; do
   want "Y19 $fl as the LAST flag with no value exits 2" 2 "$RC"
 done
 
+# Y20 (#7314 lane 1 on cb90e8c): a ROOT commit (no parent) dies at "no parent" with zero gh calls; without `cut -s` the sha itself read as its parent.
+RG="$T/rootrepo"; mkdir -p "$RG/bin"; git init -q -b main "$RG/r" && git -C "$RG/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
+printf '#!/bin/sh\necho called >> "%s/gh.calls"\nexit 1\n' "$RG" > "$RG/bin/gh"; chmod +x "$RG/bin/gh"
+RSHA=$(git -C "$RG/r" rev-parse HEAD)
+OUT=$(cd "$RG/r" && PATH="$RG/bin:$PATH" bash "$FACTS" --repo o/r --sha "$RSHA" --before 0000000000000000000000000000000000000000 --ref refs/heads/main --event push --now 1000 2>&1); RC=$?
+want "Y20 a root commit is refused as 'no parent' before any gh call" "1:1:0" "$RC:$(grep -c 'no parent' <<< "$OUT"):$(wc -l < "$RG/gh.calls" 2> /dev/null || echo 0)"
+
 # -- Z: round 3 of #7314 (fail-closed facts, fork guard on every PR-run self-hosted job, the --now wiring)
 # Z1-Z8: the facts reader's draft and freshness derivation, on saved API objects (no network).
 ZP="$T/zpr.json"

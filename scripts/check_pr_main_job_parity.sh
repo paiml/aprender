@@ -142,7 +142,7 @@ function fold(s,   m) { # function calls become one U term; one that names githu
 function judge(e, evn,   v) {
   err = ""; ev = evn; pos = 1
   rf = (evn == "push") ? "refs/heads/main" : ((evn == "pull_request") ? "refs/pull/N/merge" : "refs/heads/gh-readonly-queue/main/pr-1-0")
-  if (e ~ /github[ ]*\[/) { err = "github[...] bracket dereference: " e; return "U" }
+  if (tolower(e) ~ /github[ ]*\[/) { err = "github[...] bracket dereference: " e; return "U" }
   e = fold(e)
   if (e ~ /^ *$/) return "T"
   if (err != "") return "U"
@@ -164,7 +164,8 @@ BEGIN { FS = "\t" }
   # Quoted literals are dropped first (a string holding "always()" is no status call). Only always() and a negated cancelled()/failure()
   # stay true when a need was skipped; a bare cancelled()/failure() is false then, so such a job keeps needs: propagation (RED, never OK).
   lx = tolower(ex); gsub(/\047[^\047]*\047/, "", lx)
-  ST[nj] = (lx ~ /always[ ]*\(/ || lx ~ /![ ]*(cancelled|failure)[ ]*\(/)
+  # A success() call anywhere makes the job need its needs to have succeeded (a skipped need is not success), so it keeps propagation.
+  ST[nj] = ((lx ~ /always[ ]*\(/ || lx ~ /![ ]*(cancelled|failure)[ ]*\(/) && lx !~ /success[ ]*\(/)
   KEY[$1 SUBSEP $2] = nj
 }
 END {
@@ -220,7 +221,7 @@ rows() {
       | (.jobs // {}) | to_entries[]
       | [$f, .key, (if $pushmain then "1" else "0" end), (if $prmain then "1" else "0" end),
          (if $ev|index("merge_group") then "1" else "0" end),
-         (((.value.if // "")|tostring)|gsub("[\t\n\r]+";" ")),
+         (((.value.if | if . == null then "" else . end)|tostring)|gsub("[\t\n\r]+";" ")),
          ((.value.needs // []) | arr | map(tostring) | join(","))] | @tsv') || { echo "RED: $(basename "$f") has a shape jq cannot read, so it was not judged" >&2; return 1; }
     [ -z "$raw" ] || acc="$acc$raw
 "
@@ -285,7 +286,7 @@ drafts() {
       | [ (.jobs // {}) | to_entries[]
           | select(.key as $k | $pr | index($k))
           | select(((.value["timeout-minutes"] // 0) | tostring | [scan("[0-9]+") | tonumber] | max // 0) >= 100)
-          | {k: .key, d: (((.value.if // "") | tostring) | contains("github.event.pull_request.draft"))} ] as $h
+          | {k: .key, d: (((.value.if | if . == null then "" else . end) | tostring) | contains("github.event.pull_request.draft"))} ] as $h
       | if ($h | map(select(.d)) | length) > 0 then $h[] | select(.d | not) | .k else empty end') \
       || { echo "RED: $(basename "$f") could not be read for the draft-parity check" >&2; return 1; }
     while read -r j; do
@@ -318,7 +319,7 @@ $key"
     fi
     key="$f:$j"
     if [ "$pr" = 0 ]; then
-      if printf "%s\n" "$exempt" | grep -qxF -- "$key"; then used="$used
+      if grep -qxF -- "$key" <<< "$exempt"; then used="$used
 $key"; continue; fi
       if [ "$mg" = 1 ]; then echo "RED: $key runs on push to main but is skipped on pull_request by an if: event guard (merge_group does not cover it)"
       else echo "RED: $key runs on push to main and not on any pull_request run"; fi
@@ -336,7 +337,7 @@ $key"; continue; fi
     fail=1
   done <<< "$dr"
   for key in $(printf "%s\n" "$exempt" | tr " " "_" | grep -v "^$"); do
-    printf "%s\n" "$used" | grep -qxF -- "$key" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
+    grep -qxF -- "$key" <<< "$used" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
   done
   [ "$fail" = 0 ] && echo "OK: every job that runs on push to main also runs on a pull_request, and no job passes a PR before its heavy checks"
   return "$fail"
@@ -825,6 +826,13 @@ jobs:
   tf "startsWith(github['ref'], ..) bracket dereference is unjudgeable, RED" 1 ci.yml "$H
   a: {runs-on: x, if: \"github.event_name == 'push' || startsWith(github['ref'], 'refs/heads/')\", steps: []}
 "
+  tf "uppercase GITHUB['ref'] bracket dereference is unjudgeable, RED (#7314 lane 2 on cb90e8c)" 1 ci.yml "$H
+  a: {runs-on: x, if: \"GITHUB['ref'] == 'refs/heads/main'\", steps: []}
+"
+  tf "if: false (a boolean) is a disabled job, not an unconditional one, green (#7314 lane 1 on cb90e8c)" 0 ci.yml "$H
+  a: {runs-on: x, timeout-minutes: 240, if: \"github.event.pull_request.draft != true\", steps: []}
+  b: {runs-on: x, timeout-minutes: 240, if: false, steps: []}
+"
   tf "push || NaN (a falsy literal) never runs on a PR, RED" 1 ci.yml "$H
   a: {runs-on: x, if: \"github.event_name == 'push' || NaN\", steps: []}
 "
@@ -851,6 +859,14 @@ jobs:
   tx "needs a PR-skipped job, if holds a quoted always() literal, RED" 1 "$H
   p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
   a: {runs-on: x, needs: [p], if: \"vars.MODE != 'always()'\", steps: []}
+"
+  tx "needs a PR-skipped job, if always() && success(), RED (#7314 lane 2 on cb90e8c)" 1 "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  a: {runs-on: x, needs: [p], if: \"\${{ always() && success() }}\", steps: []}
+"
+  tx "needs a PR-skipped job, if !cancelled() && success(), RED (#7314 lane 2 on cb90e8c)" 1 "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  a: {runs-on: x, needs: [p], if: \"\${{ !cancelled() && success() }}\", steps: []}
 "
   tx "needs a PR-skipped job, if always() is green (always runs on a skipped need)" 0 "$H
   p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}

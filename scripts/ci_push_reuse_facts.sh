@@ -96,7 +96,7 @@ for v in repo sha before ref event; do [ -n "${!v}" ] || die "--$v is required";
 command -v jq > /dev/null && command -v gh > /dev/null && command -v git > /dev/null || die "jq, gh and git are required"
 
 tree=$(git rev-parse "$sha^{tree}" 2> /dev/null) || die "commit $sha not in this clone"
-parents=$(git rev-list --parents -n 1 "$sha" | cut -d' ' -f2- | jq -R 'split(" ") | map(select(length > 0))') || die "cannot read parents"
+parents=$(git rev-list --parents -n 1 "$sha" | cut -s -d' ' -f2- | jq -R 'split(" ") | map(select(length > 0))') || die "cannot read parents"
 b=$(jq -r '.[0] // empty' <<< "$parents")
 [ -n "$b" ] || die "no parent"
 

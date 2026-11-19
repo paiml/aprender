@@ -347,6 +347,17 @@ fn judge_call(ctx: &str, dir: &Path, j: &Mapping, depth: usize, why: &mut Vec<St
 
 /// A step that touches the repo, a cache or an artifact needs a token: on a moved job it must be
 /// skipped on `pull_request`.
+const OPT_SKIP: &str = "(github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1')";
+
+/// Skipped on a pull_request: the old form, or the one exact fragment that is the complement of the spot routing
+/// (`PR && PR_SPOT_OPTIN == '1'`), so the step runs on a PR only on the clean-room labels. No other `||` in either.
+fn skipped_on_pr(cond: &str) -> bool {
+    let rest = cond.replace(OPT_SKIP, "");
+    let old_form = cond.contains("github.event_name != 'pull_request'") && !cond.contains("||");
+    let opt_form = cond.contains(OPT_SKIP) && !rest.contains("||");
+    old_form || opt_form
+}
+
 fn step_needs_pr_skip(step: &Mapping) -> bool {
     let uses = key(step, "uses")
         .and_then(|u| u.as_str().map(str::to_lowercase))
@@ -396,7 +407,7 @@ fn check_moved(ctx: &str, j: &Mapping, canon: &str, all: &[String], why: &mut Ve
             let cond = key(&st, "if")
                 .and_then(|c| c.as_str().map(str::to_string))
                 .unwrap_or_default();
-            if !cond.contains("github.event_name != 'pull_request'") || cond.contains("||") {
+            if !skipped_on_pr(&cond) {
                 why.push(format!(
                     "{ctx}: a checkout, cache or artifact step runs on pull_request"
                 ));
@@ -742,7 +753,7 @@ fn check_triggers(top: &Mapping, why: &mut Vec<String>) {
 fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     const JOB: &str = "mg-reuse-self-test";
     const IF: &str =
-        "${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}";
+        "${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}";
     let Some(Value::Mapping(jobs)) = key(top, "jobs") else {
         return;
     };
@@ -1254,7 +1265,7 @@ fn moved_jobs_carry_no_checkout_cache_secret_or_write() {
     // workspace-test's checkout is skipped on a pull_request; drop that skip
     let no_skip = job_mut(
         "workspace-test",
-        "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}",
+        "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}",
         "github.event.pull_request.draft != true }}",
     );
     red(
@@ -1264,10 +1275,28 @@ fn moved_jobs_carry_no_checkout_cache_secret_or_write() {
     );
     let or_skip = job_mut(
         "workspace-test",
-        "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}",
+        "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}",
         "github.event_name != 'pull_request' || true }}",
     );
     red("workspace-test-or-true", &or_skip, "runs on pull_request");
+    // the spot-opt-in skip must be the exact complement of the spot routing, with no other `||`
+    for (n, to) in [
+        (
+            "workspace-test-optin-wrong-value",
+            "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '0') }}",
+        ),
+        (
+            "workspace-test-optin-plus-or-true",
+            "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') || true }}",
+        ),
+    ] {
+        let m = job_mut(
+            "workspace-test",
+            "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}",
+            to,
+        );
+        red(n, &m, "runs on pull_request");
+    }
     for job in ["ci-gate", "gate"] {
         for (n, step) in [
             ("checkout", "      - uses: actions/checkout@v7\n"),
@@ -1358,8 +1387,8 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("step-if", job_mut(job, "      - name: pr spot labels guard", "      - if: false\n        name: pr spot labels guard"), "no unmasked step"),
         ("step-continue", job_mut(job, "      - name: pr spot labels guard", "      - continue-on-error: true\n        name: pr spot labels guard"), "no unmasked step"),
         ("job-continue", job_mut(job, "    runs-on:", "    continue-on-error: true\n    runs-on:"), "continue-on-error"),
-        ("job-if-merge-group-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "if: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
-        ("job-if-pr-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "if: ${{ github.event_name == 'pull_request' }}"), "all-events condition"),
+        ("job-if-merge-group-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}", "if: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
+        ("job-if-pr-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}", "if: ${{ github.event_name == 'pull_request' }}"), "all-events condition"),
         ("skip-suffix", job_mut(job, step, &format!("{step} -- --skip ''")), "no unmasked step"),
         ("list-suffix", job_mut(job, step, &format!("{step} -- --list")), "no unmasked step"),
         ("semicolon-suffix", job_mut(job, step, &format!("{step}; true")), "no unmasked step"),
@@ -1373,7 +1402,7 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("no-errexit", job_mut(job, "set -euo pipefail", "true"), "no unmasked step"),
         ("job-defaults-shell", job_mut(job, "    runs-on:", "    defaults:\n      run:\n        shell: \"true {0}\"\n    runs-on:"), "sets defaults"),
         ("job-Continue-On-Error-case", job_mut(job, "    runs-on:", "    Continue-On-Error: true\n    runs-on:"), "has continue-on-error"),
-        ("job-If-case", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "If: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
+        ("job-If-case", job_mut(job, "if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}", "If: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
         ("gate-drops-mst-line", real_mut("          [ \"$MST\" = success ] || { echo \"mg-reuse-self-test failed: $MST\"; exit 1; }\n", ""), "does not enforce"),
         ("gate-mst-env-constant", real_mut("MST: ${{ needs.mg-reuse-self-test.result }}", "MST: success"), "does not enforce"),
         ("multiline-if-wrapper", job_mut(job, "          timeout --foreground", "          if false; then\n          timeout --foreground"), "no unmasked step"),

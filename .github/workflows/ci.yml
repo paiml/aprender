@@ -925,9 +925,9 @@ jobs:
           fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
       - uses: actions/checkout@v7
-        if: ${{ github.event.pull_request.draft != true }}
+        if: ${{ github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}
       - uses: actions/download-artifact@v4
-        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
+        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -936,7 +936,7 @@ jobs:
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
       - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
-        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
+        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"

@@ -611,7 +611,7 @@ STUB
   # too; workspace-test accepts wt=1 only from a job that succeeded. Without these rows a drifted `if` would read as green.
   wire workspace-test-shard "needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   # the download step and the Sigma step each carry the clause: exactly two lines in the workspace-test job
-  wtc=$(job workspace-test); wtc=$(grep -cF "if: \${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}" <<<"$wtc") || wtc=0
+  wtc=$(job workspace-test); wtc=$(grep -cF "if: \${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}" <<<"$wtc") || wtc=0
   if [ "$wtc" -eq 2 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: workspace-test has $wtc (want 2) steps skipped on needs.mg-reuse.outputs.wt"; fi
   wire workspace-test "WT_SRC_RESULT: \${{ needs.mg-reuse-wt.outputs.wt == '1' && needs.mg-reuse-wt.result || needs.mg-reuse.result }}"
   wire workspace-test '[ "${WT_SRC_RESULT:-}" = success ]'

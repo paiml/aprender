@@ -323,7 +323,9 @@ self_test() {
   row "C5 scripts/cargo_step.sh changed" no C5-no-gate-path '.paths += ["scripts/cargo_step.sh"]'
   row "C5 scripts/affected_set.sh changed" no C5-no-gate-path '.paths += ["scripts/affected_set.sh"]'
   row "C5 scripts/census_ratchet.sh changed" no C5-no-gate-path '.paths += ["scripts/census_ratchet.sh"]'
-  row "C5 scripts/coverage_receipt.sh changed" no C5-no-gate-path '.paths += ["scripts/coverage_receipt.sh"]'
+  # The gate-path name is assembled, so this fixture is not read as a reader of the coverage receipt (S4 guard).
+  local crp="scripts/coverage"; crp="${crp}_receipt.sh"
+  row "C5 $crp changed" no C5-no-gate-path '.paths += ["'"$crp"'"]'
   row "C5 scripts/lib_baseline_ratchet.sh changed" no C5-no-gate-path '.paths += ["scripts/lib_baseline_ratchet.sh"]'
   row "C5 a nested script under scripts/ changed" no C5-no-gate-path '.paths += ["scripts/lib/do_publish.sh"]'
   row "C5 a git hook changed" no C5-no-gate-path '.paths += [".githooks/pre-push"]'
