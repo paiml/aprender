@@ -2246,3 +2246,15 @@ fn zero_b_pair_refused_even_when_another_pair_changes() {
     );
     assert!(!d.path().join("merged.apr").exists());
 }
+
+/// #7256: the WGPU path must train at the configured `max_seq_len`, not 512.
+#[cfg(feature = "training")]
+#[test]
+fn falsify_wgpu_max_seq_len_honours_config_7256() {
+    use entrenar::finetune::instruct_pipeline::InstructConfig;
+    let mut cfg = InstructConfig::default();
+    cfg.max_seq_len = 256;
+    assert_eq!(wgpu_max_seq_len(&cfg), 256);
+    cfg.max_seq_len = 1024;
+    assert_eq!(wgpu_max_seq_len(&cfg), 1024);
+}
