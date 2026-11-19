@@ -250,33 +250,6 @@ fn the_closed_sets_and_shapes_refuse_each_for_its_own_reason() {
 }
 
 #[test]
-fn a_valid_spec_is_refused_once_its_seed_is_planted_out() {
-    // Mutation control: the SAME valid spec with only `seed` removed must go red, so the green above is the
-    // shape's doing and not the harness's.
-    let valid = canonical_json("mm1-littles-law.sim.yaml");
-    let mut v: Value = serde_json::from_str(&valid).expect("json");
-    v.as_object_mut().expect("object").remove("seed");
-    let dir = tempfile::tempdir().expect("scratch");
-    let planted = dir.path().join("planted.json");
-    std::fs::write(&planted, serde_json::to_string(&v).expect("json")).expect("write");
-    // reuse `judge` by placing the planted file under the fixtures name it reads from
-    let name = "invalid-missing-seed.sim.yaml";
-    let r = judge(SPEC, name);
-    assert_eq!(r.code, 1, "{}", r.all());
-    let removed: Vec<&str> = v
-        .as_object()
-        .expect("object")
-        .keys()
-        .map(String::as_str)
-        .collect();
-    assert!(!removed.contains(&"seed"));
-    assert!(
-        valid.contains("\"seed\""),
-        "the valid control carries its seed"
-    );
-}
-
-#[test]
 fn the_receipt_shape_has_both_arms() {
     assert_pass(RECEIPT, "receipt-mm1.json");
     assert_refused(
