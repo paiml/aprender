@@ -49,7 +49,7 @@ read_text() { cat -- "$1"; }
 run_apr() {
   local apr="$1" model="$2" out rc=0
   local -a extra=()
-  IFS=' ' read -r -a extra <<<"${APR_RUN_EXTRA:-}" || true
+  IFS=$' \t\n' read -r -a extra <<<"${APR_RUN_EXTRA:-}" || true
   out="$("$apr" run "$model" -n 4 --json "${extra[@]+"${extra[@]}"}" 2>&1)" || rc=$?
   printf '%s\n' "$out"
   return "$rc"
@@ -123,6 +123,7 @@ expected_problems() {
     if ! [[ "${num#\#}" =~ ^[0-9]+$ ]]; then
       echo "entry '${name}' has no numeric issue (got '${num}')"
     fi
+    if [[ -n "${rest}" && "${rest}" != \#* ]]; then echo "entry '${name}' has trailing text (got '${rest}')"; fi
     if [[ -n "${seen[$name]:-}" ]]; then echo "duplicate entry for '${name}'"; fi
     seen[$name]=1
   done <<<"$text"
@@ -182,6 +183,7 @@ run_all() {
     line="$(trim "$line")"
     [[ -z "$line" || "$line" == \#* ]] && continue
     base="${line##*/}"
+    if [[ -z "$base" ]]; then echo "NOT_MEASURED ${line}: model path has no file name (trailing slash?)"; nm=1; continue; fi
     listed[$base]=1
     if ! file_exists "$line"; then
       echo "NOT_MEASURED ${base}: model file missing"; nm=1; continue
@@ -359,8 +361,69 @@ FAKE
   e2e expected-entry-not-in-list 3 "$ADM" OPEN yes "$QE" '/models/other.gguf'
   e2e expected-no-number 3 "$ADM" OPEN yes 'a.gguf' '/models/a.gguf'
   e2e expected-duplicate 3 "$FB" OPEN yes $'a.gguf 1\na.gguf 2' '/models/a.gguf'
-  e2e two-models-one-red 1 "$FB" OPEN yes "$NONE" $'/models/a.gguf\n/models/b.gguf'
-  e2e red-beats-not-measured 1 "$FB" OPEN yes "$NONE" $'/models/a.gguf\n/models/b.gguf'
+  e2e two-models-both-red 1 "$FB" OPEN yes "$NONE" $'/models/a.gguf\n/models/b.gguf'
+  e2e expected-trailing-text 3 "$FB" OPEN yes 'a.gguf 7285 junk' '/models/a.gguf'
+  e2e expected-trailing-comment-ok 0 "$FB" OPEN yes 'a.gguf 7285 # why' '/models/a.gguf'
+  e2e trailing-slash-model-path 3 "$ADM" OPEN yes "$NONE" '/models/dir/'
+  e2e bare-slash-model-path 3 "$ADM" OPEN yes "$NONE" '/'
+
+  # two models with DIFFERENT outcomes: the exit precedence (red beats not_measured beats
+  # green) and the absence of any flag reset by a later green model
+  e2m() { # name want etext "model=output[#rc]"...
+    local name="$1" want="$2" etext="$3" ltext="" spec r=0
+    shift 3
+    for spec in "$@"; do ltext+="/models/${spec%%=*}"$'\n'; done
+    (
+      gpu_probe() { echo "GPU 0: NVIDIA GB10"; }
+      is_exec() { return 0; }
+      file_exists() { return 0; }
+      read_text() { case "$1" in /lists/expected.txt) printf '%s\n' "$etext" ;; *) printf '%s\n' "$ltext" ;; esac; }
+      run_apr() {
+        local s o m="${2##*/}"
+        for s in "${SPECS[@]}"; do
+          if [[ "${s%%=*}" == "$m" ]]; then
+            o="${s#*=}"
+            if [[ "$o" == *'#'* ]]; then printf '%s\n' "${o%#*}"; return "${o##*#}"; fi
+            printf '%s\n' "$o"; return 0
+          fi
+        done
+      }
+      issue_state() { echo OPEN; }
+      SPECS=("$@")
+      run_all "$apr" "$list" "$exp"
+    ) >/dev/null || r=$?
+    t "e2m-$name" "$want" "$r"
+  }
+  e2m red-then-green 1 "$NONE" "a.gguf=$FB" "b.gguf=$ADM"
+  e2m green-then-red 1 "$NONE" "a.gguf=$ADM" "b.gguf=$FB"
+  e2m red-then-not-measured 1 "$NONE" "a.gguf=$FB" "b.gguf=crash#1"
+  e2m not-measured-then-red 1 "$NONE" "a.gguf=crash#1" "b.gguf=$FB"
+  e2m not-measured-then-green 3 "$NONE" "a.gguf=crash#1" "b.gguf=$ADM"
+  e2m green-then-not-measured 3 "$NONE" "a.gguf=$ADM" "b.gguf=crash#1"
+  e2m both-green 0 "$NONE" "a.gguf=$ADM" "b.gguf=$ADM"
+  e2m green-and-expected 0 'b.gguf 7285' "a.gguf=$ADM" "b.gguf=$FB"
+
+  # the real file_exists and is_exec on real files (no seam): a directory, a missing path,
+  # a file without the read or the exec bit
+  local d="${tmp}/d" f="${tmp}/f" x="${tmp}/x" nr="${tmp}/nr"
+  mkdir -p "$d"
+  : >"$f"; : >"$x"; : >"$nr"
+  chmod 644 "$f"; chmod 755 "$x"; chmod 000 "$nr"
+  t seam-file-exists-file yes "$(if file_exists "$f"; then echo yes; else echo no; fi)"
+  t seam-file-exists-dir no "$(if file_exists "$d"; then echo yes; else echo no; fi)"
+  t seam-file-exists-missing no "$(if file_exists "${tmp}/none"; then echo yes; else echo no; fi)"
+  if [[ "$(id -u)" -ne 0 ]]; then
+    t seam-file-exists-unreadable no "$(if file_exists "$nr"; then echo yes; else echo no; fi)"
+  fi
+  t seam-is-exec-exec yes "$(if is_exec "$x"; then echo yes; else echo no; fi)"
+  t seam-is-exec-plain-file no "$(if is_exec "$f"; then echo yes; else echo no; fi)"
+  t seam-is-exec-dir no "$(if is_exec "$d"; then echo yes; else echo no; fi)"
+  t seam-is-exec-missing no "$(if is_exec "${tmp}/none"; then echo yes; else echo no; fi)"
+  t seam-read-text-roundtrip hello "$(printf 'hello\n' >"$f"; read_text "$f")"
+
+  # APR_RUN_EXTRA splits on any whitespace, never globs
+  t run-apr-extra-tab-split 2 "$(APR_RUN_EXTRA=$'--a\t--b' run_apr "${tmp}/fakeapr" /m/a.gguf | grep -c '^ARG\[--[ab]\]$')"
+  t shipped-expected-valid '' "$(expected_problems "$(<"$DEFAULT_EXPECTED")")"
 
   # input-file refusals (seams answer per path)
   local rc=0
@@ -410,6 +473,7 @@ FAKE
   mc models-missing-value 2 --apr /p/apr --models
   mc expected-missing-value 2 --apr /p/apr --models /l/m --expected
   mc no-models 2 --apr /p/apr
+  mc self-test-extra-arg 2 --self-test --bogus
   mc no-apr 2 --models /l/m
   mc empty-apr-value 2 --apr '' --models /l/m
   rc=0
@@ -452,7 +516,7 @@ FAKE
 
 main() {
   local apr="" list="" expected="$DEFAULT_EXPECTED"
-  if [[ "${1:-}" == "--self-test" ]]; then self_test; exit $?; fi
+  if [[ "${1:-}" == "--self-test" ]]; then [[ $# -eq 1 ]] || usage; self_test; exit $?; fi
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --apr | --models | --expected)

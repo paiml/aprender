@@ -42,35 +42,141 @@ ACCESSOR_FILE="crates/aprender-serve/src/gguf/config.rs"
 # Identifier boundaries are explicit (awk ERE has no \b), and the denominator is anchored to
 # the start of an identifier path so `num_kv_heads` can never match `heads`.
 AWK_PROG='
-function strip(s,   out, i, n, c, c2, j) {
-  out = ""; n = length(s); i = 1
+# blanks every char of s except newlines (keeps offsets and line numbers)
+function blank(s) { gsub(/[^\n]/, " ", s); return s }
+function isid(c) { return c ~ /[A-Za-z0-9_]/ }
+# strip_all: T -> same-length text with comments, string and char literals blanked.
+# State crosses lines: nested block comments, multi-line and raw strings.
+function strip_all(T,   n, i, c, c2, out, d, j, h, k, raw, p) {
+  n = length(T); i = 1; out = ""
   while (i <= n) {
-    c = substr(s, i, 1); c2 = substr(s, i, 2)
-    if (inblk) { if (c2 == "*/") { inblk = 0; i += 2 } else i++; continue }
-    if (c2 == "//") break
-    if (c2 == "/*") { inblk = 1; i += 2; out = out " "; continue }
-    if (c == "\"") {
-      i++
-      while (i <= n) {
-        c = substr(s, i, 1)
-        if (c == "\\") { i += 2; continue }
-        if (c == "\"") { i++; break }
-        i++
+    c = substr(T, i, 1); c2 = substr(T, i, 2)
+    if (c2 == "//") {
+      j = index(substr(T, i), "\n"); if (j == 0) j = n - i + 2
+      out = out blank(substr(T, i, j - 1)); i += j - 1; continue
+    }
+    if (c2 == "/*") {
+      d = 1; j = i + 2
+      while (j <= n && d > 0) {
+        if (substr(T, j, 2) == "/*") { d++; j += 2 } else if (substr(T, j, 2) == "*/") { d--; j += 2 } else j++
       }
-      out = out "\"\""; continue
+      out = out blank(substr(T, i, j - i)); i = j; continue
+    }
+    if ((c == "r" || (c == "b" && substr(T, i + 1, 1) == "r")) && (i == 1 || !isid(substr(T, i - 1, 1)))) {
+      p = i + (c == "b" ? 2 : 1); h = 0
+      while (substr(T, p + h, 1) == "#") h++
+      if (substr(T, p + h, 1) == "\"") {
+        raw = "\""; for (k = 0; k < h; k++) raw = raw "#"
+        j = index(substr(T, p + h + 1), raw)
+        j = (j == 0) ? n + 1 : p + h + j + length(raw)
+        out = out blank(substr(T, i, j - i)); i = j; continue
+      }
+    }
+    if (c == "\"") {
+      j = i + 1
+      while (j <= n) {
+        k = substr(T, j, 1)
+        if (k == "\\") { j += 2; continue }
+        if (k == "\"") { j++; break }
+        j++
+      }
+      if (j > n + 1) j = n + 1
+      out = out blank(substr(T, i, j - i)); i = j; continue
     }
     if (c == SQ) {
-      if (substr(s, i + 2, 1) == SQ) { i += 3; out = out " "; continue }
-      if (substr(s, i + 1, 1) == "\\") {
-        j = index(substr(s, i + 2), SQ)
-        if (j > 0 && j <= 4) { i += 2 + j; out = out " "; continue }
+      if (substr(T, i + 2, 1) == SQ && substr(T, i + 1, 1) != "\\") { out = out "   "; i += 3; continue }
+      if (substr(T, i + 1, 1) == "\\") {
+        j = index(substr(T, i + 2), SQ)
+        if (j > 0 && j <= 10) { out = out blank(substr(T, i, 2 + j)); i += 2 + j; continue }
       }
     }
     out = out c; i++
   }
   return out
 }
-function cnt(s, ch,   t) { t = s; return gsub(ch, "", t) }
+# close_of S POS: index of the bracket closing the one opened at POS, or 0
+function close_of(S, pos,   n, i, d, o, c, cl) {
+  n = length(S); o = substr(S, pos, 1)
+  cl = (o == "(") ? ")" : ((o == "[") ? "]" : "}")
+  d = 0
+  for (i = pos; i <= n; i++) {
+    c = substr(S, i, 1)
+    if (c == o) d++; else if (c == cl) { d--; if (d == 0) return i }
+  }
+  return 0
+}
+# pred_is_test: a cfg predicate that holds only under test: bare `test`, or all(.., test, ..)
+function pred_is_test(p,   n, i, d, c, arg, args, na, k, inner) {
+  gsub(/^[ \n\t]+|[ \n\t]+$/, "", p)
+  if (p == "test") return 1
+  if (p !~ /^all[ ]*\(/) return 0
+  inner = substr(p, index(p, "(") + 1); sub(/\)[ \n\t]*$/, "", inner)
+  n = length(inner); d = 0; arg = ""
+  for (i = 1; i <= n + 1; i++) {
+    c = (i <= n) ? substr(inner, i, 1) : ","
+    if (c == "(" || c == "[") d++
+    if (c == ")" || c == "]") d--
+    if (c == "," && d == 0) {
+      gsub(/^[ \n\t]+|[ \n\t]+$/, "", arg)
+      if (arg == "test") return 1
+      arg = ""
+    } else arg = arg c
+  }
+  return 0
+}
+# item_end S START: index of the last char of the item that starts at START
+function item_end(S, start,   n, i, c, d, kw, rest, brace_item, w) {
+  n = length(S); i = start
+  rest = substr(S, i, 200)
+  while (match(rest, /^(pub[ \n\t]*(\([^)]*\))?|unsafe|async|default|const[ \n\t]+(fn|unsafe)|extern[ \n\t]*("[^"]*")?)[ \n\t]+/)) {
+    if (rest ~ /^extern[ \n\t]*("[^"]*")?[ \n\t]*\{/) break
+    i += RLENGTH; rest = substr(S, i, 200)
+    if (rest ~ /^(const[ \n\t]+)?fn[ \n\t]/) break
+  }
+  brace_item = (rest ~ /^(fn|mod|impl|struct|enum|trait|union|macro_rules|extern)([^A-Za-z0-9_]|$)/)
+  d = 0
+  for (; i <= n; i++) {
+    c = substr(S, i, 1)
+    if (c == "(" || c == "[") d++
+    else if (c == ")" || c == "]") { if (d == 0) return i - 1; d-- }
+    else if (c == "{") {
+      if (brace_item && d == 0) { w = close_of(S, i); return (w == 0) ? n : w }
+      d++
+    }
+    else if (c == "}") { if (d == 0) return i - 1; d-- }
+    else if (c == ";" && d == 0) return i
+    else if (c == "," && d == 0 && !brace_item) return i
+  }
+  return n
+}
+# blank_cfg_test: blank every #[cfg(test)]-gated item (attribute included), and only that.
+function blank_cfg_test(S,   n, pos, rest, o, e, pred, q, a, b, st, en, out, last, inner) {
+  out = ""; last = 1; pos = 1
+  while (1) {
+    rest = substr(S, pos)
+    if (!match(rest, /#!?\[[ \n\t]*cfg[ \n\t]*\(/)) break
+    a = pos + RSTART - 1
+    inner = (substr(S, a + 1, 1) == "!")
+    o = a + RLENGTH - 1
+    e = close_of(S, o)
+    if (e == 0) break
+    q = e + 1
+    while (substr(S, q, 1) ~ /[ \n\t]/) q++
+    if (substr(S, q, 1) != "]") { pos = e + 1; continue }
+    pred = substr(S, o + 1, e - o - 1)
+    if (!pred_is_test(pred)) { pos = q + 1; continue }
+    if (inner) return blank(S)
+    st = q + 1
+    while (1) {
+      while (substr(S, st, 1) ~ /[ \n\t]/) st++
+      if (substr(S, st, 2) == "#[") { b = close_of(S, st + 1); if (b == 0) break; st = b + 1 } else break
+    }
+    en = item_end(S, st)
+    out = out substr(S, last, a - last) blank(substr(S, a, en - a + 1))
+    last = en + 1; pos = en + 1
+  }
+  return out substr(S, last)
+}
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 BEGIN {
   SQ = sprintf("%c", 39)
@@ -80,36 +186,19 @@ BEGIN {
   pre = "(^|[^A-Za-z0-9_])" recv
   post = "([^A-Za-z0-9_]|$)"
   cast = "([ ]+as[ ]+[A-Za-z0-9_]+)?"
-  numtail = "[ ]*(\\(\\))?" cast "[ ]*\\)?[ ]*"
+  numtail = "[ ]*(\\(\\))?[ ]*\\)?" cast "[ ]*\\)?[ ]*"
   re_div = pre num numtail "/[ ]*\\(?[ ]*" recv den "(\\(\\))?" post
-  # a test-only attribute: cfg(test), or cfg(all(.., test, ..)) with test a bare member
-  re_cfgt = "^ *#\\[cfg\\((all\\(([^()]*,)? *)?test *(,[^()]*)?\\)?\\)\\]"
-  re_chk = pre num numtail "[.]checked_div[(][ ]*\\(?[ ]*" recv den "(\\(\\))?" cast "[ ]*\\)?[ ]*[)]"
+  re_chk = pre num numtail "[.]checked_div[(][ ]*\\(?[ ]*" recv den "(\\(\\))?" post
 }
-{ c = strip($0); gsub(/\t/, " ", c); code[NR] = c; orig[NR] = $0 }
+{ T = T $0 "\n"; orig[NR] = $0 }
 END {
-  # blank the body of every #[cfg(test)] item, and only that
-  mode = 0; depth = 0
-  for (i = 1; i <= NR; i++) {
-    c = code[i]
-    if (mode == 0) {
-      if (c !~ re_cfgt) continue
-      sub(re_cfgt " *", "", c); mode = 1
-    }
-    if (mode == 1) {
-      code[i] = ""
-      if (c ~ /^ *$/ || c ~ /^ *#\[/) continue
-      po = index(c, "{"); ps = index(c, ";")
-      if (po && (!ps || po < ps)) { depth = cnt(c, "[{]") - cnt(c, "[}]"); mode = (depth > 0) ? 2 : 0; continue }
-      if (ps) { mode = 0; continue }
-      continue
-    }
-    if (mode == 2) { depth += cnt(c, "[{]") - cnt(c, "[}]"); code[i] = ""; if (depth <= 0) mode = 0 }
-  }
+  S = blank_cfg_test(strip_all(T))
+  gsub(/\t/, " ", S)
+  split(S, code, "\n")
   for (i = 1; i <= NR; i++) {
     if (code[i] ~ /^ *$/) continue
-    L = length(code[i]); w = code[i]; used = 0; lastj = i; j = i
-    while (used < 2 && ++j <= NR) { if (code[j] ~ /^ *$/) continue; w = w " " code[j]; used++; lastj = j }
+    L = length(code[i]); w = code[i]; used = 0; j = i; delete jl
+    while (used < 2 && ++j <= NR) { if (code[j] ~ /^ *$/) continue; w = w " " code[j]; used++; jl[used] = j }
     hit = 0; end = 0
     if (match(w, re_div)) {
       es = RSTART + ((substr(w, RSTART, 1) ~ /[^A-Za-z0-9_]/) ? 1 : 0)
@@ -120,9 +209,9 @@ END {
       if (es <= L) { hit = 1; end = RSTART + RLENGTH - 1 }
     }
     if (!hit) continue
-    text = orig[i]
-    if (end > L + 1) {   # L+1 is the joining space the trailing boundary may consume
-      for (j = i + 1; j <= lastj; j++) if (code[j] !~ /^ *$/) text = text " " trim(orig[j])
+    text = orig[i]; e = L
+    for (k = 1; k <= used && end > e + 1; k++) {   # e+1 is the joining space the boundary may consume
+      text = text " " trim(orig[jl[k]]); e += 1 + length(code[jl[k]])
     }
     printf "%s:%d: %s\n", FNAME, i, text
   }
@@ -132,12 +221,17 @@ END {
 # is_test_path PATH: 0 when the path is test code.
 is_test_path() {
   local p="$1" base="${1##*/}"
-  [[ "$p" == */tests/* || "$p" == tests/* || "$p" == */testing/* || "$base" == *test* ]]   # testing/ is `#[cfg(test)] pub mod testing` in lib.rs
+  base="${base%.rs}"
+  [[ "$p" == */tests/* || "$p" == tests/* || "$p" == */testing/* ]] && return 0   # testing/ is `#[cfg(test)] pub mod testing` in lib.rs
+  # a test file has the token test(s) at an end of its name, or tests anywhere (the include!d
+  # chunks are `<name>_tests_<topic>.rs`), or is a proptests file; "test" inside a word or in the
+  # middle (latest_kv, load_testing, convoy_test_result) is production code
+  [[ "$base" == test || "$base" == test_* || "$base" == *_test || "$base" == tests || "$base" == tests_* || "$base" == *_tests || "$base" == *_tests_* || "$base" == proptests* || "$base" == *_proptests* ]]
 }
 
 # scan_text FNAME TEXT: prints hits for one file's text.
 scan_text() {
-  awk -v FNAME="$1" "$AWK_PROG" <<<"$2"
+  LC_ALL=C awk -v FNAME="$1" "$AWK_PROG" <<<"$2"
 }
 
 # --- allowlist ------------------------------------------------------------------------
@@ -145,23 +239,33 @@ scan_text() {
 # norm: collapse runs of whitespace and trim, so an entry survives re-indentation and line moves.
 norm() { sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' <<<"$1"; }
 
+# split_cols LINE: splits on every TAB without collapsing empty columns (bash `read` with a
+# whitespace IFS would shift an empty column left). Sets the array COLS.
+split_cols() {
+  local s="$1"
+  COLS=()
+  while [[ "$s" == *$'\t'* ]]; do COLS+=("${s%%$'\t'*}"); s="${s#*$'\t'}"; done
+  COLS+=("$s")
+}
+
 # allow_problems ALLOW: prints one line per malformed row (bad status, bad count, extra column,
-# missing column) and per repeated (path, text) pair.
+# missing column, empty column) and per repeated (path, text) pair.
 allow_problems() {
-  local a_path a_text a_status a_count a_extra key n=0
+  local line n=0 key
   local -A seen=()
-  while IFS=$'\t' read -r a_path a_text a_status a_count a_extra || [[ -n "${a_path:-}" ]]; do
+  while IFS= read -r line || [[ -n "$line" ]]; do
     n=$((n + 1))
-    [[ -z "${a_path:-}" || "$a_path" == \#* ]] && continue
-    if [[ -z "${a_text:-}" ]]; then echo "row ${n}: missing text column"; continue; fi
-    if ! [[ "${a_status:-}" =~ ^(legacy|known-defect\ \#[0-9]+)$ ]]; then
-      echo "row ${n}: status '${a_status:-}' is not 'legacy' or 'known-defect #NNNN'"
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    split_cols "$line"
+    if [[ -z "${COLS[1]:-}" ]]; then echo "row ${n}: missing text column"; continue; fi
+    if ! [[ "${COLS[2]:-}" =~ ^(legacy|known-defect\ \#[0-9]+)$ ]]; then
+      echo "row ${n}: status '${COLS[2]:-}' is not 'legacy' or 'known-defect #NNNN'"
     fi
-    if [[ -n "${a_count:-}" ]] && ! [[ "$a_count" =~ ^[1-9][0-9]*$ ]]; then
-      echo "row ${n}: count '${a_count}' is not a positive integer"
+    if [[ ${#COLS[@]} -ge 4 ]] && ! [[ "${COLS[3]}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "row ${n}: count '${COLS[3]}' is not a positive integer"
     fi
-    if [[ -n "${a_extra:-}" ]]; then echo "row ${n}: more than four columns"; fi
-    key="${a_path}"$'\t'"$(norm "$a_text")"
+    if [[ ${#COLS[@]} -gt 4 ]]; then echo "row ${n}: more than four columns"; fi
+    key="${COLS[0]}"$'\t'"$(norm "${COLS[1]}")"
     if [[ -n "${seen[$key]:-}" ]]; then echo "row ${n}: repeated (path, text) pair, first on row ${seen[$key]}; use the count column"; fi
     seen[$key]="${seen[$key]:-$n}"
   done <<<"$1"
@@ -171,14 +275,15 @@ allow_problems() {
 # validated). Prints one row per hit and per stale entry; sets J_NEW, J_STALE, J_KNOWN,
 # J_LEGACY (globals).
 judge() {
-  local hits="$1" allow="$2" line path text key a_path a_text a_status a_count a_extra left
+  local hits="$1" allow="$2" line path text key left
   local -A avail=() status=()
   J_NEW=0 J_STALE=0 J_KNOWN=0 J_LEGACY=0
-  while IFS=$'\t' read -r a_path a_text a_status a_count a_extra || [[ -n "${a_path:-}" ]]; do
-    [[ -z "${a_path:-}" || "$a_path" == \#* ]] && continue
-    key="${a_path}"$'\t'"$(norm "$a_text")"
-    avail[$key]=$(( ${avail[$key]:-0} + ${a_count:-1} ))
-    status[$key]="$a_status"
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ -z "$line" || "$line" == \#* ]] && continue
+    split_cols "$line"
+    key="${COLS[0]}"$'\t'"$(norm "${COLS[1]}")"
+    avail[$key]=$(( ${avail[$key]:-0} + ${COLS[3]:-1} ))
+    status[$key]="${COLS[2]}"
   done <<<"$allow"
   local -A used=()
   while IFS= read -r line; do
@@ -213,7 +318,7 @@ usage() {
 main() {
   local root allow="" allow_given=0
   root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-  if [[ "${1:-}" == "--self-test" ]]; then self_test; exit $?; fi
+  if [[ "${1:-}" == "--self-test" ]]; then [[ $# -eq 1 ]] || usage; self_test; exit $?; fi
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --root | --allow)
@@ -331,6 +436,64 @@ self_test() {
   hit char-literal-before          $'let c = \'/\'; let d = hidden_dim / num_heads;'
   hit before-cfg-test              $'let d = hidden_dim / num_heads;\n#[cfg(test)]\nmod tests {}'
 
+  # round 2: cfg(test) blanking is item-exact
+  hit cfg-test-stacked-attr-same-line-use $'#[cfg(test)] #[allow(dead_code)] use x::y;\nfn f() { let d = hidden_dim / num_heads; }'
+  hit cfg-test-stacked-attr-same-line-mod $'#[cfg(test)] #[allow(dead_code)] mod t { fn g() {} }\nfn f() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-stacked-attr-body  $'#[cfg(test)] #[allow(dead_code)] mod t { fn g() { let d = hidden_dim / num_heads; } }'
+  hit cfg-test-struct-field-comma  $'struct S {\n    #[cfg(test)]\n    a: u8,\n    b: usize,\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  hit cfg-test-enum-variant-comma  $'enum E {\n    #[cfg(test)]\n    A,\n    B,\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  hit cfg-test-match-arm           $'fn f(x: u8) -> usize {\n    match x {\n        #[cfg(test)]\n        0 => 1,\n        _ => hidden_dim / num_heads,\n    }\n}'
+  miss cfg-test-match-arm-body     $'fn f(x: u8) -> usize {\n    match x {\n        #[cfg(test)]\n        0 => hidden_dim / num_heads,\n        _ => 1,\n    }\n}'
+  hit cfg-test-array-semicolon-sig $'#[cfg(test)]\nfn t(a: [usize; 2]) {\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-array-semicolon-body $'#[cfg(test)]\nfn t(a: [usize; 2]) {\n    let d = hidden_dim / num_heads;\n}'
+  hit cfg-test-const-then-code     $'#[cfg(test)]\nconst X: [u8; 2] = [1, 2];\nfn f() { let d = hidden_dim / num_heads; }'
+  hit cfg-test-item-then-prod-same-line $'#[cfg(test)] fn t() {} fn f() { let d = hidden_dim / num_heads; }'
+  hit cfg-test-statement-then-prod $'fn f() {\n    #[cfg(test)]\n    let a = 1;\n    let d = hidden_dim / num_heads;\n}'
+  miss cfg-test-nested-predicate   $'#[cfg(all(test, not(target_arch = "wasm32")))]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
+  miss cfg-test-spaced-attribute   $'#[ cfg ( test ) ]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
+  miss cfg-test-inner-attribute    $'#![cfg(test)]\nfn f() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-pub-crate-fn       $'#[cfg(test)]\npub(crate) fn t() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-impl-block         $'#[cfg(test)]\nimpl X {\n    fn t(&self) { let d = hidden_dim / num_heads; }\n}'
+  hit cfg-test-generic-fn-then-prod $'#[cfg(test)]\nfn t<A, B>(a: A, b: B) {}\nfn f() { let d = hidden_dim / num_heads; }'
+
+  # round 2: stripping carries state across lines
+  miss raw-string-braces           $'let s = r#"{"msg": "{"}"#;\nlet t = "hidden_dim / num_heads";'
+  hit  raw-string-then-code        $'let s = r#"a " b"#; let d = hidden_dim / num_heads;'
+  miss raw-string-plain            'let s = r"hidden_dim / num_heads";'
+  miss raw-string-backslash-end    $'let s = r"foo\\"; // hidden_dim / num_heads'
+  miss raw-string-multiline        $'let s = r#"\nhidden_dim / num_heads\n"#;'
+  miss string-multiline            $'let s = "line one\nhidden_dim / num_heads\nend";'
+  miss string-escaped-quote        'let s = "a \" hidden_dim / num_heads \" b";'
+  hit  string-escaped-backslash    'let s = "a \\"; let d = hidden_dim / num_heads;'
+  hit  string-after-escape-quote   $'let s = "q\\"";\nlet d = hidden_dim / num_heads;'
+  miss block-comment-nested        $'/* a /* b */ hidden_dim / num_heads */\nlet d = 1;'
+  hit  block-comment-nested-ends   $'/* a /* b */ c */ let d = hidden_dim / num_heads;'
+  hit  byte-string-then-code       $'let s = b"x"; let d = hidden_dim / num_heads;'
+  hit  lifetime-not-char           $'fn f<\'a>(x: &\'a str) { let d = hidden_dim / num_heads; }'
+  miss char-quote-literal          $'let c = \'"\'; // hidden_dim / num_heads'
+
+  # round 2: matcher shapes
+  hit checked-div-trailing-comma   $'foo(hidden_dim.checked_div(num_heads), 1)'
+  hit checked-div-arg-comma        $'let d = hidden_dim.checked_div(num_heads,);'
+  hit checked-div-max              'let d = hidden_dim.checked_div(num_heads.max(1));'
+  hit checked-div-unwrap-or        'let d = hidden_dim.checked_div(num_heads).unwrap_or(1);'
+  miss checked-div-heads-suffix    'let d = hidden_dim.checked_div(num_heads_total);'
+  hit paren-numerator-then-cast    'let d = (hidden_dim) as usize / num_heads;'
+  hit paren-numerator-cast-inside  'let d = (self.hidden_dim) as usize / self.num_heads as usize;'
+  miss cast-then-other             'let d = (hidden_dim) as usize / num_kv_heads;'
+
+  # round 2: the report glues only the lines the match spans
+  out="$(scan_text f.rs $'let d = hidden_dim\n    / num_heads;\nlet e = head_dim;')"
+  t report-two-line-span-not-three "f.rs:1: let d = hidden_dim / num_heads;" "$out"
+  out="$(scan_text f.rs $'let d = hidden_dim\n    / num_heads;\nlet e = head_dim;\nlet g = 1;')"
+  t report-two-line-span-fourth-line "f.rs:1: let d = hidden_dim / num_heads;" "$out"
+  out="$(scan_text f.rs $'let a = (\n    hidden_dim\n    / num_heads\n);\nlet z = 1;')"
+  t report-three-line-span "f.rs:2:     hidden_dim / num_heads" "$out"
+  out="$(scan_text f.rs $'let d = hidden_dim /\n    num_heads;')"
+  t report-trailing-slash-span "f.rs:1: let d = hidden_dim / num_heads;" "$out"
+  out="$(scan_text f.rs $'let d = hidden_dim / num_heads;\nlet e = 2;')"
+  t report-one-line-no-glue "f.rs:1: let d = hidden_dim / num_heads;" "$out"
+
   # must-not-match
   miss accessor-call               'let head_dim = model.config.head_dim();'
   miss kv-heads                    'let g = hidden_dim / num_kv_heads;'
@@ -388,6 +551,14 @@ self_test() {
   tp prod-cuda        no  crates/aprender-serve/src/gguf/cuda/mod.rs
   tp prod-parity-gate no  crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs
   tp prod-attention   no  crates/aprender-serve/src/gguf/inference/attention_gqa.rs
+  tp latest-kv-prod   no  crates/aprender-serve/src/gguf/inference/latest_kv.rs
+  tp load-testing-prod no crates/aprender-serve/src/bench/load_testing.rs
+  tp mid-test-prod    no  crates/aprender-serve/src/bench/convoy_test_result.rs
+  tp test-prefix      yes crates/aprender-serve/src/quantize/test_helpers.rs
+  tp test-suffix      yes crates/aprender-serve/src/quantize/parity_test.rs
+  tp proptests-file   yes crates/aprender-serve/src/cuda/executor/proptests_kernels.rs
+  tp bare-tests-file  yes crates/aprender-serve/src/tests.rs
+  tp tests-named-dir-prod no crates/aprender-serve/src/contests/mod.rs
 
   # hit reporting carries path and line number
   out="$(scan_text a/b.rs $'fn x() {}\nlet d = hidden_dim / num_heads;')"
@@ -444,6 +615,12 @@ self_test() {
   ap repeated-pair "repeated (path, text) pair, first on row 1; use the count column" "a.rs${T}x / y${T}legacy"$'\n'"a.rs${T}x  /  y${T}legacy"
   ap repeated-pair-mixed-status "repeated (path, text) pair, first on row 1; use the count column" "a.rs${T}x / y${T}legacy"$'\n'"a.rs${T}x / y${T}known-defect #1"
   ap same-text-other-path-ok '' "a.rs${T}x / y${T}legacy"$'\n'"b.rs${T}x / y${T}legacy"
+  ap empty-status-middle "status '' is not 'legacy' or 'known-defect #NNNN'" "a.rs${T}x / y${T}${T}legacy"
+  ap empty-count "count '' is not a positive integer" "a.rs${T}x / y${T}legacy${T}"
+  ap empty-count-then-extra "count '' is not a positive integer" "a.rs${T}x / y${T}legacy${T}${T}2"
+  ap empty-text-middle "missing text column" "a.rs${T}${T}legacy"
+  ap trailing-tab-after-status "count '' is not a positive integer" "a.rs${T}x / y${T}legacy${T}"
+  jc count-2-unused-stale 0 2 0 0 '' "a.rs${T}x / y${T}legacy${T}2"
 
   # the shipped allowlist is itself valid
   local shipped
@@ -475,6 +652,14 @@ self_test() {
   mc root-not-a-dir 3 --root "${tmp}/nope" --allow "${tmp}/empty.allow"
   mc allow-missing 3 --root "$repo" --allow "${tmp}/nope.allow"
   mc allow-is-directory 3 --root "$repo" --allow "$tmp"
+  mc self-test-extra-arg 2 --self-test --bogus
+  # the default allowlist (no --allow) is the shipped one: a clean temp repo makes every shipped
+  # row stale (red); a corrupted default path would be not_measured
+  mc default-allowlist-used-stale 1 --root "$repo"
+  if [[ "$(id -u)" -ne 0 ]]; then
+    printf '# x\n' >"${tmp}/noread.allow"; chmod 000 "${tmp}/noread.allow"
+    mc allow-unreadable 3 --root "$repo" --allow "${tmp}/noread.allow"
+  fi
   mc allow-bogus-status 3 --root "$repo" --allow "${tmp}/bad.allow"
   mc stale-entry-red 1 --root "$repo" --allow "${tmp}/hit.allow"
   printf 'fn bad() { let d = hidden_dim / num_heads; }\n' >"${src}/hit.rs"
