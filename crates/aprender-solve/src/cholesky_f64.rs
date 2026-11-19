@@ -1,11 +1,8 @@
 //! f64 Cholesky factorization in a fixed operation order (SIM3D P3, #7248).
 //!
-//! # Contract (`contracts/simular/f64-dense-solve-v1.yaml`)
-//!
-//! A = L L^T, L lower triangular with positive diagonal. Every sum runs in
-//! ascending `k` with plain `f64` `*` and `-` (no FMA, no reordering, no
-//! parallel reduction), so the same input gives the same bits on every host
-//! and in WASM. IEEE-754 `sqrt` and `/` are correctly rounded.
+//! Contract: `contracts/simular/f64-dense-solve-v1.yaml`. A = L L^T; every sum
+//! runs in ascending `k` with plain `f64` ops (no FMA, no reordering), so the
+//! bits are the same on every host and in WASM.
 
 use crate::error::SolverError;
 
@@ -54,7 +51,7 @@ pub fn cholesky_f64(a: &[f64], n: usize) -> Result<CholeskyF64, SolverError> {
 }
 
 impl CholeskyF64 {
-    /// Solve `A x = b` by forward then back substitution, ascending/descending index order.
+    /// Solve `A x = b` (forward, then back substitution, fixed index order).
     ///
     /// # Errors
     ///
@@ -138,10 +135,7 @@ mod tests {
         let b: Vec<f64> = (0..n).map(|i| (i + 1) as f64).collect();
         let x1 = cholesky_f64(&h, n).unwrap().solve(&b).unwrap();
         let x2 = cholesky_f64(&h, n).unwrap().solve(&b).unwrap();
-        assert_eq!(
-            x1.iter().map(|v| v.to_bits()).collect::<Vec<_>>(),
-            x2.iter().map(|v| v.to_bits()).collect::<Vec<_>>()
-        );
+        assert!(x1.iter().zip(&x2).all(|(a, b)| a.to_bits() == b.to_bits()));
         for i in 0..n {
             let r: f64 = (0..n).map(|j| h[i * n + j] * x1[j]).sum::<f64>() - b[i];
             assert!(r.abs() < 1e-9, "residual {r}");

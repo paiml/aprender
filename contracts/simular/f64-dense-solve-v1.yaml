@@ -1,12 +1,10 @@
 metadata:
   version: 1.0.0
   kind: pattern
+  references: ['IEEE 754-2019 §5.4.1 (correctly rounded + - * / sqrt)']
   created: '2026-11-19'
   author: PAIML Engineering
   description: f64 dense Cholesky solve in a fixed operation order (SIM3D P3, #7248 first slice)
-  references:
-  - 'IEEE 754-2019 §5.4.1 (+, -, *, / and sqrt are correctly rounded)'
-  - 'Higham (2002) Accuracy and Stability of Numerical Algorithms, ch. 10'
 equations:
   cholesky_f64_fixed_order:
     formula: 'A = L L^T, sums in ascending k, no FMA, no reordering'
@@ -15,9 +13,6 @@ equations:
     invariants:
     - Same input gives bit-identical L and x on every host and in WASM
     - Non-positive or NaN pivot at column j returns NotPositiveDefinite(j)
-    - Exact on integer-factor inputs (L L^T representable in f64)
-    preconditions:
-    - a.len() == n*n
 proof_obligations:
 - id: F64DS-INV-001
   type: invariant
