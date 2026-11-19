@@ -1575,7 +1575,6 @@ pub(crate) fn recipe_receipt_for_run(
 /// onto the same `run` every flag-driven invocation uses (CRUX-001).
 pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) -> Result<()> {
     let (recipe, receipt) = recipe_receipt_for_run(recipe_path, flags)?;
-    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(&recipe);
     let engine = super::train_recipe::apr_engine();
     eprintln!(
         "[recipe] {} ok: name={} method={} recipe_sha256={} data_sha256={} engine=apr {} ({})",
@@ -1593,52 +1592,81 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
             receipt.validated_not_applied.join(", ")
         );
     }
+    let mut stdout = std::io::stdout();
+    run_recipe_with(
+        &recipe,
+        &receipt,
+        flags,
+        &mut stdout,
+        |output, epochs, quantize_nf4| {
+            run(
+                Some(&recipe.base),
+                recipe.method.as_str(),
+                recipe.rank,
+                flags.vram_gb,
+                flags.plan_only,
+                Some(&recipe.train),
+                output,
+                None,
+                false,
+                epochs,
+                recipe.learning_rate,
+                recipe_model_size(flags, &recipe),
+                None,
+                5,
+                flags.checkpoint_format,
+                false,
+                recipe.max_seq_len,
+                quantize_nf4,
+                flags.gpus,
+                flags.gpu_backend,
+                None,
+                None,
+                None,
+                None,
+                flags.wait_gpu,
+                &[],
+                None,
+                flags.json_output,
+                flags.experimental_mps,
+                flags.gpu_share,
+            )
+        },
+    )
+}
+
+/// The recipe run itself, with the trainer injected so a test can observe what it is run under.
+///
+/// While `train` runs, the trainer seed is the recipe's (0 included) and, under `--json`, the
+/// plan object is held back. After `train` returns Ok on a real run (not `--plan`), the receipt
+/// is written beside the adapter and, under `--json`, printed to `out` as the one JSON document.
+pub(crate) fn run_recipe_with<F>(
+    recipe: &super::train_recipe::TrainRecipe,
+    receipt: &super::train_recipe::RecipeReceipt,
+    flags: &RecipeRunFlags<'_>,
+    out: &mut dyn std::io::Write,
+    train: F,
+) -> Result<()>
+where
+    F: FnOnce(Option<&Path>, u32, bool) -> Result<()>,
+{
+    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
     let _seed = super::finetune_recipe_run::SeedGuard::set(recipe.seed);
+    let _plan_json =
+        super::finetune_recipe_run::PlanJsonGuard::suppress(flags.json_output && !flags.plan_only);
     if !receipt.overrides.is_empty() {
         eprintln!(
             "[recipe] overridden by flags: {}",
             receipt.overrides.join("; ")
         );
     }
-    let output_buf = recipe_output_path(flags, &recipe);
+    let output_buf = recipe_output_path(flags, recipe);
     let output = output_buf.as_deref();
-    let result = run(
-        Some(&recipe.base),
-        recipe.method.as_str(),
-        recipe.rank,
-        flags.vram_gb,
-        flags.plan_only,
-        Some(&recipe.train),
-        output,
-        None,
-        false,
-        epochs,
-        recipe.learning_rate,
-        recipe_model_size(flags, &recipe),
-        None,
-        5,
-        flags.checkpoint_format,
-        false,
-        recipe.max_seq_len,
-        quantize_nf4,
-        flags.gpus,
-        flags.gpu_backend,
-        None,
-        None,
-        None,
-        None,
-        flags.wait_gpu,
-        &[],
-        None,
-        flags.json_output,
-        flags.experimental_mps,
-        flags.gpu_share,
-    );
-    result?;
+    train(output, epochs, quantize_nf4)?;
     if flags.plan_only {
         return Ok(());
     }
-    emit_run_receipt(&recipe, &receipt, output, flags, epochs, quantize_nf4)
+    emit_run_receipt(recipe, receipt, output, flags, epochs, quantize_nf4, out)
 }
 
 /// Write `receipt.json` after a real recipe run and, with `--json`, print the same object.
@@ -1649,6 +1677,7 @@ fn emit_run_receipt(
     flags: &RecipeRunFlags<'_>,
     epochs: u32,
     quantize_nf4: bool,
+    out: &mut dyn std::io::Write,
 ) -> Result<()> {
     use super::finetune_recipe_run as frr;
     let resolved = frr::ResolvedRun {
@@ -1665,7 +1694,8 @@ fn emit_run_receipt(
     let path = frr::write_receipt(&frr::receipt_dir(output), &value)?;
     eprintln!("[recipe] receipt written to {}", path.display());
     if flags.json_output {
-        println!("{value}");
+        writeln!(out, "{value}")
+            .map_err(|e| CliError::ValidationFailed(format!("cannot print receipt: {e}")))?;
     }
     Ok(())
 }
@@ -1738,15 +1768,18 @@ fn display_finetune_plan(
     let req = planner.estimate(config.method, config.rank);
 
     if json_output {
-        display_plan_json(
-            config,
-            &req,
-            model_params,
-            vram_gb,
-            epochs,
-            learning_rate,
-            plan_only,
-        );
+        // A `--json` recipe run prints one document, the receipt, so the plan object is held back.
+        if !super::finetune_recipe_run::plan_json_suppressed() {
+            display_plan_json(
+                config,
+                &req,
+                model_params,
+                vram_gb,
+                epochs,
+                learning_rate,
+                plan_only,
+            );
+        }
     } else {
         display_plan_text(config, &req, vram_gb);
     }

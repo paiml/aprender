@@ -148,37 +148,155 @@ fn trainer_config_seed_equals_the_recipe_seed_zero_included() {
     assert_eq!(instruct_training_config(2, 10, out).seed, DEFAULT_SEED);
 }
 
-#[test]
-fn recipe_run_threads_the_recipe_seed_into_the_trainer_config() {
-    // The same lowering `run_from_recipe` uses: the guard is set from `recipe.seed`.
-    let dir = scratch("thread");
+fn run_flags<'a>(out: Option<&'a Path>, plan_only: bool, json: bool) -> RunFlags<'a> {
+    crate::commands::finetune::RecipeRunFlags {
+        vram_gb: 24.0,
+        plan_only,
+        output_path: out,
+        model_size: None,
+        checkpoint_format: "safetensors",
+        gpus: None,
+        gpu_backend: "cuda",
+        wait_gpu: 0,
+        json_output: json,
+        experimental_mps: false,
+        gpu_share: 0,
+    }
+}
+
+type RunFlags<'a> = crate::commands::finetune::RecipeRunFlags<'a>;
+
+/// Drive the real `run_recipe_with` seam (the code `run_from_recipe` runs) with an injected
+/// trainer. Returns the result, what the trainer saw, and what the seam printed to stdout.
+fn drive(
+    dir: &Path,
+    seed: u64,
+    plan_only: bool,
+    json: bool,
+    trainer_ok: bool,
+) -> (Result<()>, Vec<(u64, bool)>, String) {
     let path = dir.join("r.yaml");
-    std::fs::write(&path, recipe_text(0)).expect("recipe");
-    let (recipe, _) = crate::commands::finetune::preflight_recipe(&path, false).expect("ok");
-    let _g = SeedGuard::set(recipe.seed);
-    let cfg = crate::commands::finetune::instruct_training_config(2, 10, Path::new("o/a.apr"));
-    assert_eq!(cfg.seed, 0);
+    std::fs::write(&path, recipe_text(seed)).expect("recipe");
+    let adapter = dir.join("out/adapter.apr");
+    let flags = run_flags(Some(&adapter), plan_only, json);
+    let (recipe, receipt) =
+        crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("preflight");
+    let mut seen = Vec::new();
+    let mut out: Vec<u8> = Vec::new();
+    let r = crate::commands::finetune::run_recipe_with(
+        &recipe,
+        &receipt,
+        &flags,
+        &mut out,
+        |_, _, _| {
+            seen.push((run_seed(), plan_json_suppressed()));
+            if trainer_ok {
+                Ok(())
+            } else {
+                Err(CliError::ValidationFailed("trainer failed".to_string()))
+            }
+        },
+    );
+    (r, seen, String::from_utf8(out).expect("utf8"))
+}
+
+#[test]
+fn recipe_run_hands_the_trainer_the_recipe_seed_zero_included() {
+    for seed in [0u64, 1, 7777] {
+        let dir = scratch("seam-seed");
+        let (r, seen, _) = drive(&dir, seed, false, false, true);
+        r.expect("run ok");
+        assert_eq!(
+            seen,
+            vec![(seed, false)],
+            "trainer ran under the recipe seed"
+        );
+        assert_eq!(run_seed(), DEFAULT_SEED, "guard released after the run");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[test]
+fn recipe_run_writes_receipt_only_after_a_successful_real_run() {
+    let dir = scratch("seam-receipt");
+    let rpath = dir.join("out").join(RECEIPT_FILE);
+    let (r, _, _) = drive(&dir, 3, false, false, false);
+    assert!(r.is_err());
+    assert!(!rpath.exists(), "a failed trainer leaves no receipt");
+    let (r, _, _) = drive(&dir, 3, true, false, true);
+    r.expect("plan ok");
+    assert!(!rpath.exists(), "--plan leaves no receipt");
+    let (r, _, _) = drive(&dir, 3, false, false, true);
+    r.expect("run ok");
+    let v: Value =
+        serde_json::from_str(&std::fs::read_to_string(&rpath).expect("receipt")).expect("json");
+    assert_eq!(v["hyperparameters"]["seed"], 3);
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// Train the smallest in-test fixture (tiny transformer, 12 samples, 2 epochs) on the CPU and
-/// return the per-epoch losses plus the sha256 of every `model.safetensors` checkpoint written.
-fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<(String, String)>) {
+#[test]
+fn json_recipe_run_prints_exactly_one_document_and_holds_back_the_plan() {
+    let dir = scratch("seam-json");
+    let (r, seen, out) = drive(&dir, 4, false, true, true);
+    r.expect("run ok");
+    assert_eq!(
+        seen,
+        vec![(4, true)],
+        "plan JSON suppressed while the trainer runs"
+    );
+    let docs: Vec<Value> = serde_json::Deserializer::from_str(&out)
+        .into_iter::<Value>()
+        .collect::<std::result::Result<_, _>>()
+        .expect("stdout is JSON");
+    assert_eq!(docs.len(), 1, "exactly one document: {out}");
+    assert_eq!(docs[0]["schema"], FINETUNE_RECEIPT_SCHEMA);
+    assert!(!plan_json_suppressed(), "guard released");
+    let (_, seen, out) = drive(&dir, 4, true, true, true);
+    assert_eq!(seen, vec![(4, false)], "--plan keeps its plan JSON");
+    assert!(out.is_empty(), "--plan prints no receipt");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// One checkpoint file split the way a reader sees it: the header JSON parsed (key order
+/// dropped), the sha256 of the tensor bytes after the header, and the header as written.
+struct Ckpt {
+    rel: String,
+    raw_sha: String,
+    header: Value,
+    header_text: String,
+    data_sha: String,
+}
+
+fn split_safetensors(rel: String, bytes: &[u8]) -> Ckpt {
+    let n = u64::from_le_bytes(bytes[..8].try_into().expect("8 bytes")) as usize;
+    let header_text = String::from_utf8(bytes[8..8 + n].to_vec()).expect("utf8 header");
+    Ckpt {
+        rel,
+        raw_sha: sha256_bytes(bytes),
+        header: serde_json::from_str(&header_text).expect("header json"),
+        header_text,
+        data_sha: sha256_bytes(&bytes[8 + n..]),
+    }
+}
+
+/// Train the smallest in-test fixture (tiny transformer, 6 samples, 2 epochs) on the CPU and
+/// return the per-epoch losses plus every `model.safetensors` checkpoint written.
+fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<Ckpt>) {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
     use entrenar::finetune::instruct_trainer::InstructTrainer;
     use entrenar::transformer::TransformerConfig;
-    let corpus: Vec<InstructSample> = (0..12)
+    let corpus: Vec<InstructSample> = (0..6)
         .map(|i| InstructSample {
             instruction: format!("Write function {i}"),
             response: format!("def func_{i}():\n    return {i}"),
-            system: None,
+            system: Some("s".to_string()),
             metadata: None,
         })
         .collect();
     let icfg = InstructConfig {
         lora_rank: 4,
-        max_seq_len: 32,
+        max_seq_len: 128,
         ..InstructConfig::default()
     };
     // The base weights come from a process-global init seed that the train-config loader tests
@@ -213,11 +331,14 @@ fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<(String, String)>) 
                     .expect("under ckpt")
                     .display()
                     .to_string();
-                hashes.push((rel, sha256_bytes(&std::fs::read(&p).expect("read ckpt"))));
+                hashes.push(split_safetensors(
+                    rel,
+                    &std::fs::read(&p).expect("read ckpt"),
+                ));
             }
         }
     }
-    hashes.sort();
+    hashes.sort_by(|a, b| a.rel.cmp(&b.rel));
     std::fs::remove_dir_all(&ckpt).ok();
     (
         result
@@ -229,25 +350,71 @@ fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<(String, String)>) 
     )
 }
 
-/// Real CPU run on the smallest in-test fixture. Measured limit, not hidden: two same-seed runs
-/// of this fixture write checkpoints that alternate between two distinct sha256 values (epoch 0
-/// included), so a byte-identical checkpoint claim is NOT made here. The seed is proven to reach
-/// the trainer by the config tests above; this test proves the run completes end to end on CPU
-/// with the recipe seed in force, writes a checkpoint per epoch, and gives identical losses.
+/// Real CPU training on a fixture whose loss is non-zero (the chat template alone is ~100 bytes
+/// under the byte fallback, so `max_seq_len` must leave room for the response, or every step
+/// returns loss 0.0 and nothing depends on the seed).
+///
+/// Same seed: identical losses and identical tensor bytes in every checkpoint. Another seed:
+/// different losses and different tensor bytes. The checkpoint FILE bytes are not claimed:
+/// `InstructTrainer::save_checkpoint` passes a `HashMap` as the safetensors metadata, whose
+/// per-process-random iteration order puts `epoch` and `val_loss` in either order in the header
+/// (two sha256 values). The header is compared as parsed JSON; the order is its own finding.
 #[test]
-fn same_seed_cpu_run_completes_with_identical_losses_and_writes_checkpoints() {
+fn same_seed_cpu_run_is_identical_and_another_seed_differs() {
     let (la, ha) = tiny_train(5, "a");
-    let (lb, _) = tiny_train(5, "b");
+    let (lb, hb) = tiny_train(5, "b");
+    let (lc, hc) = tiny_train(6, "c");
     assert_eq!(la.len(), 2, "two epochs ran");
     assert!(
-        ha.iter().any(|(p, _)| p.starts_with("epoch-0")),
+        la.iter().all(|(t, v)| *t > 0.0 && *v > 0.0),
+        "non-zero losses: {la:?}"
+    );
+    assert_eq!(ha.len(), hb.len());
+    assert!(
+        ha.iter().any(|c| c.rel.starts_with("epoch-0")),
         "epoch-0 checkpoint written"
     );
     assert!(
-        ha.iter().any(|(p, _)| p.starts_with("epoch-1")),
+        ha.iter().any(|c| c.rel.starts_with("epoch-1")),
         "epoch-1 checkpoint written"
     );
     assert_eq!(la, lb, "same seed: identical per-epoch losses");
+    for (x, y) in ha.iter().zip(&hb) {
+        assert_eq!(x.rel, y.rel);
+        assert_eq!(
+            x.data_sha, y.data_sha,
+            "same seed: identical tensor bytes in {}",
+            x.rel
+        );
+        assert_eq!(
+            x.header, y.header,
+            "same seed: identical header JSON in {}",
+            x.rel
+        );
+    }
+    assert_ne!(la, lc, "another seed: different losses");
+    assert!(
+        ha.iter().zip(&hc).any(|(x, z)| x.data_sha != z.data_sha),
+        "another seed: different tensor bytes"
+    );
+    // Where two same-seed checkpoint FILES differ, only the header's key order does.
+    let mut raw_differs = 0;
+    for (x, y) in ha.iter().zip(&hb) {
+        if x.raw_sha != y.raw_sha {
+            raw_differs += 1;
+            assert_ne!(x.header_text, y.header_text);
+            assert_eq!(x.header, y.header);
+            assert_eq!(x.data_sha, y.data_sha);
+            eprintln!(
+                "raw file differs, header text: {} vs {}",
+                x.header_text, y.header_text
+            );
+        }
+    }
+    eprintln!(
+        "same-seed checkpoint files with different raw bytes: {raw_differs}/{}",
+        ha.len()
+    );
 }
 
 #[test]

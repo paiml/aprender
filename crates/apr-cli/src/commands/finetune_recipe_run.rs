@@ -42,6 +42,31 @@ impl Drop for SeedGuard {
     }
 }
 
+thread_local! {
+    static PLAN_JSON_SUPPRESSED: Cell<bool> = const { Cell::new(false) };
+}
+
+/// True while a `--json` recipe run owns stdout: the plan object is not printed, because the
+/// run prints exactly one document, the receipt.
+pub(crate) fn plan_json_suppressed() -> bool {
+    PLAN_JSON_SUPPRESSED.with(Cell::get)
+}
+
+/// Suppresses the plan JSON on this thread while alive; restores the previous state on drop.
+pub(crate) struct PlanJsonGuard(bool);
+
+impl PlanJsonGuard {
+    pub(crate) fn suppress(on: bool) -> Self {
+        Self(PLAN_JSON_SUPPRESSED.with(|c| c.replace(on)))
+    }
+}
+
+impl Drop for PlanJsonGuard {
+    fn drop(&mut self) {
+        PLAN_JSON_SUPPRESSED.with(|c| c.set(self.0));
+    }
+}
+
 /// The values the run resolved after recipe defaults and flags.
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedRun<'a> {
