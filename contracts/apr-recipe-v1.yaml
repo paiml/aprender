@@ -168,6 +168,24 @@ equations:
     - "A hash of a file that was not read is null, never a made-up value"
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
+  base_formats:
+    formula: |
+      format(F) = apr          if magic(F) in {"APR\0", "APRN"}
+                  gguf         if magic(F) == "GGUF"
+                  safetensors  if u64le(F[0..8]) + 8 <= size(F) and F[8] == '{'
+                  refuse       otherwise                      # unsupported or corrupt
+      base(F) = F                          if format(F) == apr
+              = apr_import(F)              if format(F) == safetensors
+              = apr_import(F)              if format(F) == gguf and every tensor dtype in {F32, F16, BF16}
+              = refuse("quantized")        if format(F) == gguf otherwise
+    domain: base model file
+    codomain: row-major APR file | Refusal
+    invariants:
+    - "The format comes from the magic bytes, never the extension, and is logged"
+    - "A GGUF's dims are reversed to row-major at the import boundary (LAYOUT-001/002, contracts/tensor-layout-v1.yaml): [ne0, ne1] becomes [ne1, ne0] with the data bytes unchanged; no col-major kernel is used"
+    - "A quantized GGUF is refused with its reason, never silently dequantized"
+    - "A corrupt or unsupported file is refused before any training"
+
 falsification_tests:
 # Each entry cites only tests present at this slice head.
 # Test ids are consecutive from 001 (scripts/ci/fail_fast.py ids).
@@ -202,13 +220,12 @@ falsification_tests:
     cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin require_inputs_refuses_a_directory_and_skips_the_pin_of_an_absent_file heldout_linked_to_the_training_file_is_refused_at_require_inputs heldout_hard_linked_to_the_training_file_is_refused_at_require_inputs sha256_matches_the_published_test_vector sha256_file_hashes_past_one_buffer a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read receipt_carries_the_contract_fields recipe_hash_changes_with_the_eval_block
   if_fails: "A receipt can name data it did not train on"
 - id: FALSIFY-APR-RECIPE-006
-<<<<<<< HEAD
   rule: the recipe seed reaches the trainer and a run leaves a receipt
   prediction: "The trainer seed follows the recipe seed (zero included) while a recipe run is active and returns to 42 afterwards, nested guards restore the outer seed. The finetune receipt carries the recipe, base model, dataset and heldout hashes, the apr version and commit and the resolved hyperparameters; a hash of an absent file is null; building it twice from one recipe gives byte-identical receipt.json and a different seed gives different bytes; on the CPU trainer, two same-seed runs give identical non-zero losses and a byte-identical checkpoint file (sha256 of model.safetensors, metadata written in sorted order, #7255) through the recipe run path, and another seed gives different losses and a different file sha256; the trainer validates on the heldout file and trains on the whole data.train; `--json` prints one document; validated_not_applied is empty, except `seed` and `eval` when the run trains on the WGPU path, which reads neither; the only notice of unapplied fields names the wgpu backend; the WGPU pipeline trains at the recipe max_seq_len (else 512), the value the receipt records"
   test: |
     cargo test -p apr-cli --lib -- trainer_seed_defaults_to_42_and_follows_the_guard seed_zero_is_applied_not_mistaken_for_unset receipt_carries_hashes_version_commit_and_hyperparameters the_same_recipe_gives_byte_identical_receipt_and_another_seed_does_not a_missing_base_hash_is_null_never_invented trainer_config_seed_equals_the_recipe_seed_zero_included recipe_run_hands_the_trainer_the_recipe_seed_zero_included recipe_run_writes_receipt_only_after_a_successful_real_run json_recipe_run_prints_exactly_one_document_and_holds_back_the_plan wgpu_run_keeps_seed_under_validated_not_applied wgpu_run_trains_at_the_recipe_max_seq_len_not_a_hardcoded_512 same_seed_recipe_run_writes_identical_checkpoint_files_and_another_seed_differs recipe_heldout_file_is_the_trainers_validation_set recipe_path_no_longer_says_not_yet_applied receipt_dir_is_the_adapter_directory_else_current write_receipt_creates_the_directory_and_ends_with_a_newline receipt_records_the_values_the_run_used_when_the_recipe_omits_them
   if_fails: "Two seeds train the same way, or a run cannot be tied to the inputs and binary that made it"
-=======
+- id: FALSIFY-APR-RECIPE-010
   rule: the LoRA and optimiser keys default to today's values and are refused by field when out of range
   prediction: "A recipe without lora.alpha, lora.dropout, lora.target_modules, training.warmup or training.weight_decay resolves to alpha unset (planner's), 0.0, [q_proj, v_proj], 0.03 and 0.01. A zero or negative alpha, a dropout or warmup outside [0,1), a negative weight decay and an empty or blank target module list are each refused naming the field (`lora.alpha`, `lora.dropout`, `training.warmup`, ...), all in one message. A misspelt key, or the old flat names training.lora_alpha / training.warmup_fraction, is still refused. The recipe's alpha and warmup are read by the run and cleared when it ends"
   test: |
@@ -235,4 +252,9 @@ falsification_tests:
   test: |
     cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- every_example_recipe_passes_dry_run
   if_fails: "A shipped example no longer parses, so the first recipe a user copies is refused"
->>>>>>> origin/feat/ft-recipe-b-dryrun-lora
+- id: FALSIFY-APR-RECIPE-011
+  rule: the base is .apr, SafeTensors or GGUF, detected by magic bytes, and refused before training when unsupported, corrupt or quantized
+  prediction: "The base format is read from the first bytes of the file, never the extension (a SafeTensors named .bin, a GGUF named .safetensors and an APR named .gguf are each detected as what they are). A SafeTensors or GGUF base is imported to row-major APR through the importer `apr import` uses and the run logs `[base] detected format=<apr|safetensors|gguf>`; a real recipe run also logs `[recipe] base format=...` before any model is loaded. A file that is none of the three, a truncated SafeTensors header, a GGUF whose header does not parse, and a GGUF with any quantized tensor (a dtype other than F32, F16 or BF16) are refused with an error naming the file; the quantized refusal states that training would dequantize silently. A valid tiny F32 GGUF (GGUF tensor names, dims stored innermost-first) imports with every dim pair reversed to row-major (gate [16, 8], down [8, 16]) and with the same values as the same model imported from SafeTensors; this fails if the reversal is skipped. The same tiny model as .safetensors, as the APR that import produces and as that GGUF, trained under one recipe shape (method lora, trainer seed 42; the recipe `seed` is recorded, not applied) gives equal adapter tensors and equal loss for .safetensors and .apr, an equal adapter for the GGUF, and the same APR run twice is identical"
+  test: |
+    cargo test -p apr-cli --lib -- format_comes_from_magic_bytes_not_the_extension unsupported_or_corrupt_files_are_refused_with_a_clear_error a_quantized_gguf_is_refused_with_its_reason_and_an_exact_one_is_not a_safetensors_base_is_imported_to_row_major_apr_and_the_format_is_named an_apr_base_is_used_in_place a_gguf_base_lands_row_major_with_data_unchanged_after_import one_recipe_trains_the_same_model_from_safetensors_apr_and_gguf
+  if_fails: "A base the pipeline cannot read fails deep inside training under a message naming a format the caller never gave, or a quantized GGUF is trained on silently dequantized values"

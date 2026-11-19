@@ -2,7 +2,7 @@
 #![allow(clippy::disallowed_methods, clippy::unwrap_used)]
 
 //! End-to-end falsification of `apr finetune --recipe` LoRA keys and `--dry-run` (an alias of `--plan`)
-//! (PMAT-7240; contracts/apr-recipe-v1.yaml, FALSIFY-APR-RECIPE-006..009).
+//! (PMAT-7240; contracts/apr-recipe-v1.yaml, FALSIFY-APR-RECIPE-007..010).
 //!
 //! Every test drives the real `apr` binary on a recipe whose input files do not exist.
 

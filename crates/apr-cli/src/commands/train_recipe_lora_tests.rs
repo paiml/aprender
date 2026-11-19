@@ -1,5 +1,5 @@
 //! PMAT-7240: the LoRA/optimiser keys of `apr-recipe-v1` (contracts/apr-recipe-v1.yaml,
-//! FALSIFY-APR-RECIPE-006 and 007).
+//! FALSIFY-APR-RECIPE-010 and 007).
 
 use super::*;
 use crate::commands::train_recipe::TrainRecipe;
