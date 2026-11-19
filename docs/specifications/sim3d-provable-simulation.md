@@ -105,7 +105,7 @@ row naming a contract or an id that does not exist turns it red.
 
 This change IS a gate change (`GATE CHANGE: yes`). Gate parts: the `SIM-001` and `SIM-002` Error
 rules of `pv validate`; the admission of `kind: simulation` in `ont-shapes-v1.yaml`; the
-`pv_surface_gate.rs` count (`shapes_n` 74 to 76); and the case-table test
+`repo_tree_pv.rs` count (`shapes_n` 74 to 76) and the `pv_surface_gate.rs` rows for `SIM-001` and `SIM-002`; and the case-table test
 `crates/aprender-contracts-cli/tests/sim3d_spec.rs`, which runs on every pull request through
 `ci/explicit-test-commands.d/871-aprender-contracts-cli-sim3d-spec.cmd`. The shapes are not armed
 for corpus verdicts (that is a change to the lint baseline, and a check becomes a gate only after
