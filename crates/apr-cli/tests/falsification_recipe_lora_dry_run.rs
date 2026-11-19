@@ -66,7 +66,7 @@ fn all_json(stdout: &[u8]) -> Vec<serde_json::Value> {
 /// every default filled in, through the binary. A recipe that sets nothing prints the defaults;
 /// one that sets values prints them. Every value is a number: the planner's rank, alpha and
 /// learning rate are the ones the plan block above it prints, and `training.max_seq_len` is the
-/// sequence length the selected training path uses (512 unset; the WGPU path ignores a set value).
+/// sequence length the selected training path uses (the recipe's value, else 512, on every path).
 #[test]
 fn dry_run_prints_the_resolved_recipe_with_every_default_filled_in() {
     let bare = write_recipe("resolved", RECIPE);
@@ -130,9 +130,7 @@ fn dry_run_prints_the_resolved_recipe_with_every_default_filled_in() {
     assert_eq!(r["training"]["weight_decay"], 0.0);
     assert_eq!(r["training"]["epochs"], 2);
     assert_eq!(r["training"]["learning_rate"], 0.0005);
-    // The WGPU path builds its pipeline with a fixed 512 and never reads the set value.
-    let expect_seq = if cfg!(feature = "wgpu") { 512 } else { 256 };
-    assert_eq!(r["training"]["max_seq_len"], expect_seq);
+    assert_eq!(r["training"]["max_seq_len"], 256);
     let out = apr(&["finetune", "--recipe", bare.to_str().unwrap(), "--dry-run"]);
     assert!(String::from_utf8_lossy(&out.stdout).contains("Resolved recipe (defaults filled in):"));
 }
@@ -275,9 +273,8 @@ fn tiny_recipe_plan_is_byte_identical_to_main() {
         let rest = &out.stdout[golden.len()..];
         let resolved: serde_json::Value = serde_json::from_slice(rest.trim_ascii())
             .expect("the resolved recipe follows the plan");
-        let seq = if cfg!(feature = "wgpu") { 512 } else { 256 };
         assert_eq!(
-            resolved["training"]["max_seq_len"], seq,
+            resolved["training"]["max_seq_len"], 256,
             "tiny sets 256: {flag}"
         );
         assert_eq!(resolved["training"]["rank"], 8);
