@@ -59,6 +59,8 @@ mod generated_contracts;
 pub mod cli;
 pub mod config;
 pub mod demos;
+#[path = "engine/determinism.rs"]
+pub mod determinism;
 pub mod discovery;
 pub mod domains;
 pub mod edd;
