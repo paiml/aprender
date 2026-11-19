@@ -1,0 +1,28 @@
+# apr-recipe-v1 (contracts/apr-recipe-v1.yaml): Gemma 2 9B, 4-bit QLoRA, shorter context to fit a
+# 24 GB card.
+#
+#   apr finetune --recipe examples/recipes/gemma-2-9b-qlora.yaml --dry-run
+#
+# --dry-run validates the recipe and prints it fully resolved, without opening a model or the
+# data. A real run needs the base, data and eval files below; relative paths resolve against
+# this file's directory. Add --plan to see the memory plan for the declared model_size.
+recipe: apr-recipe-v1
+name: gemma-2-9b-qlora
+base: models/gemma-2-9b-it.apr
+model_size: 9B
+method: qlora
+data:
+  train: data/instruct-train.jsonl
+eval:
+  heldout: data/instruct-heldout.jsonl
+seed: 3407
+lora:
+  alpha: 16
+training:
+  rank: 8
+  warmup: 0.1
+  epochs: 1
+  learning_rate: 0.0001
+  max_seq_len: 1024
+output:
+  dir: out/gemma-2-9b-qlora
