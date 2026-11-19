@@ -181,7 +181,7 @@ jobs:
   mg-reuse-self-test:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: [self-hosted, Linux, X64, clean-room]
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -192,6 +192,8 @@ jobs:
         run: |
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
+      - name: pr spot labels guard
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -e CARGO_TARGET_DIR=/tmp/t -w /w localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
@@ -253,8 +255,6 @@ jobs:
           echo "$d" >> "$GITHUB_PATH"
       - name: no pull-request-target guard (P0; every push, a dependency of the required gate)
         run: sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
-      - name: pr spot labels guard (only the three aggregators may take the opt-in spot labels; parsed YAML, RED on any other)
-        run: sh scripts/guards/test-pr-spot-labels-guard.sh && sh scripts/guards/pr-spot-labels-guard.sh
       - name: Cheap checks (fmt, falsification-ID order, guard case tables)
         run: |
           set -euo pipefail
@@ -829,7 +829,7 @@ jobs:
 
   workspace-test:
     # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
-    # there. merge_group, push and every other event keep the clean-room labels. Guard: scripts/guards/pr-spot-labels-guard.sh.
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
     runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","clean-room"]') }}
     permissions:
       contents: read
@@ -911,7 +911,7 @@ jobs:
   ci-gate:
     name: ci / gate
     # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
-    # there. merge_group, push and every other event keep the clean-room labels. Guard: scripts/guards/pr-spot-labels-guard.sh.
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
     runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     permissions:
       contents: read
@@ -962,7 +962,7 @@ jobs:
 
   gate:
     # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
-    # there. merge_group, push and every other event keep the clean-room labels. Guard: scripts/guards/pr-spot-labels-guard.sh.
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
     runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
     permissions:
       contents: read
