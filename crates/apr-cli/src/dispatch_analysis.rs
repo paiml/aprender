@@ -1871,6 +1871,12 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             *json,
         ),
 
+        // #7294: `apr embed` runs realizar's forward; without `inference` it says so.
+        #[cfg(not(feature = "inference"))]
+        ExtendedCommands::Embed { .. } => Err(CliError::ValidationFailed(
+            "`apr embed` needs the `inference` feature; this apr was built without it".to_string(),
+        )),
+        #[cfg(feature = "inference")]
         ExtendedCommands::Embed {
             model,
             text,
