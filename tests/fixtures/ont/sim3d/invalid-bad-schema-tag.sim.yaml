@@ -1,0 +1,11 @@
+schema: sim3d-spec/v2
+name: broken
+time_unit: ns
+horizon_ns: 1000000
+seed: {value: 1, algorithm: pcg64}
+entities:
+  - {id: arrivals, kind: source, rate_per_s: 1.0}
+laws:
+  - {id: LAW-001, statement: "conservation of requests", invariant: INV-001}
+invariants:
+  - {id: INV-001, formula: "arrived = served + queued", unit: requests}
