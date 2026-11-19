@@ -19,11 +19,13 @@
 #   merge_group   merge_group.base_sha (MG_BASE_SHA), as the refinement-gate pin does. The queue
 #                 builds on main as it merges, so an entry main already deleted that a PR adds
 #                 back is still refused there.
-#   push          the event's own `before` sha (PUSH_BEFORE_SHA): 40-hex and not zero, else refuse. The
+#   push          a tag push: the tagged commit's first parent (#5172: its before is all zeros). A branch
+#                 push: the event's own `before` sha (PUSH_BEFORE_SHA), 40-hex and not zero, else refuse; the
+#                 depth-1 clone is deepened (bounded) until merge-base(before, HEAD) resolves. The
 #                 live tip moved under a waiting run: main 2+ squashes past HEAD grafted main to two
 #                 commits, HEAD left its first-parent line, and seven differential guards read
 #                 NOT_MEASURED. `before` does not move; a failed fetch of it refuses.
-#   otherwise     the origin/main tip (workflow_dispatch, schedule, none).
+#   otherwise     the origin/main tip (workflow_dispatch, none).
 #
 # EXIT 0 pinned · 1 refused (no build base can be named) or a fetch failed · 64 usage
 #
@@ -50,7 +52,7 @@ refuse() {
 
 pin() { # pin <repo dir>: pins origin/main there for $GITHUB_EVENT_NAME
     local dir="$1" ev="${GITHUB_EVENT_NAME:-}" base how
-    local parents=()
+    local parents=() deepen=0 i
     case "$ev" in
         pull_request) # PIN-BUILD-BASE-MUTATION-POINT
             mapfile -t parents < <(git -C "$dir" cat-file -p 'HEAD^{commit}' 2>/dev/null | awk '/^$/{exit} /^parent /{print $2}')
@@ -69,8 +71,23 @@ pin() { # pin <repo dir>: pins origin/main there for $GITHUB_EVENT_NAME
             # The event's own `before` is the tip main had before this push: a fact of the event,
             # immune to main moving while the run waits. The live tip is not (it grafted main to 2
             # commits and left HEAD off its first-parent line once main had moved 2+ squashes).
-            is_sha "${PUSH_BEFORE_SHA:-}" || refuse "push: no usable event.before (PUSH_BEFORE_SHA='${PUSH_BEFORE_SHA:-}')" || return 1
-            base="$PUSH_BEFORE_SHA"; how="push event.before"
+            case "${GITHUB_REF:-}" in
+                refs/tags/*) # PIN-BUILD-BASE-TAG-ARM
+                    # #5172: a push that CREATES a ref carries before=0000..., and a release tag push
+                    # always does. Its base is the tagged commit's first parent, never `before`. The
+                    # old pin took the tip here and never refused; this pins HEAD^1, a base that names
+                    # the tagged commit's own change, so it is the same or stricter and never red on the zero.
+                    git -C "$dir" rev-parse -q --verify 'HEAD^1^{commit}' >/dev/null 2>&1 \
+                        || fetch "$dir" -q --no-tags --depth=2 origin "$(git -C "$dir" rev-parse HEAD)" || return 1
+                    base=$(git -C "$dir" rev-parse -q --verify 'HEAD^1^{commit}') \
+                        || refuse "push of tag ${GITHUB_REF#refs/tags/}: HEAD has no first parent to pin" || return 1
+                    how="tag push: first parent of the tagged commit"
+                    ;;
+                *)
+                    is_sha "${PUSH_BEFORE_SHA:-}" || refuse "push: no usable event.before (PUSH_BEFORE_SHA='${PUSH_BEFORE_SHA:-}')" || return 1
+                    base="$PUSH_BEFORE_SHA"; how="push event.before"; deepen=1
+                    ;;
+            esac
             ;;
         *)
             fetch "$dir" -q --no-tags --depth=1 origin +refs/heads/main:refs/remotes/origin/main || return 1
@@ -81,6 +98,17 @@ pin() { # pin <repo dir>: pins origin/main there for $GITHUB_EVENT_NAME
     fetch "$dir" -q --no-tags --depth=1 origin "$base" || refuse "cannot fetch the build base $base" || return 1
     git -C "$dir" update-ref refs/remotes/origin/main "$base"
     [ "$(git -C "$dir" rev-parse 'origin/main^{commit}')" = "$base" ] || refuse "origin/main does not read back as $base" || return 1
+    if [ "$deepen" = 1 ]; then
+        # Section clones are depth 1: HEAD has no parent link, so merge-base(before, HEAD) cannot
+        # resolve for a push of N commits (resolve_base then names no base). Deepen HEAD in bounded
+        # steps (4 x 64 commits) until before is reached; still unresolved, refuse.
+        for i in 1 2 3 4; do
+            git -C "$dir" merge-base "$base" HEAD >/dev/null 2>&1 && break
+            fetch "$dir" -q --no-tags --deepen=64 origin "$(git -C "$dir" rev-parse HEAD)" || return 1
+        done
+        git -C "$dir" merge-base "$base" HEAD >/dev/null 2>&1 \
+            || refuse "push: no merge base of event.before $base and HEAD within 256 commits" || return 1
+    fi
     printf 'comparand: %s pinned as origin/main (%s; event %s)\n' "$base" "$how" "$ev"
 }
 
@@ -129,7 +157,7 @@ self_test() {
     }
     run_pin() { # run_pin <dir> <event> <pr head> <mg base> -> pin's rc; PINNED = origin/main after, or "unset"
         local rc=0
-        ( GITHUB_EVENT_NAME="$2" PR_HEAD_SHA="$3" MG_BASE_SHA="$4" PUSH_BEFORE_SHA="${PBS:-}" pin "$1" ) > "$TD/last.log" 2>&1 || rc=$?
+        ( GITHUB_EVENT_NAME="$2" PR_HEAD_SHA="$3" MG_BASE_SHA="$4" PUSH_BEFORE_SHA="${PBS:-}" GITHUB_REF="${REF:-}" pin "$1" ) > "$TD/last.log" 2>&1 || rc=$?
         PINNED=$(git -C "$1" rev-parse -q --verify 'refs/remotes/origin/main^{commit}' 2>/dev/null) || PINNED=unset
         return "$rc"
     }
@@ -224,7 +252,7 @@ self_test() {
     d=$(clone_at p6pr "$m"); rc=0; run_pin_p6 "1 2" "$d" pull_request "$prh" "" || rc=$?
     row "P6: pull_request's base fetch, two reads dead, pins on the third" "$rc $PINNED $READS" "0 $c0 3"
     d=$(clone_at p6push "$c2"); rc=0; PBS=$c0 run_pin_p6 1 "$d" push "" "" || rc=$?
-    row "P6: push's before fetch, first read dead, is read again and pins" "$rc $PINNED $READS" "0 $c0 2"
+    row "P6: push's before fetch, first read dead, is read again and pins (2 reads, plus 1 deepen read)" "$rc $PINNED $READS" "0 $c0 3"
     d=$(clone_at p6cap "$m2"); rc=0; run_pin_p6 "1 2 3" "$d" merge_group "" "$c2" || rc=$?
     row "P6: three dead reads are the cap, and the pin refuses" \
         "$rc $PINNED $READS $(said 'no answer under P6') $(said 'cannot fetch the build base')" "1 unset 3 says-cause says-cause"
@@ -240,16 +268,23 @@ self_test() {
     g push -q "$u" main
     d=$(clone_at r1 "$c2"); rc=0; PBS=$c0 run_pin "$d" push "" "" || rc=$?
     row "R1 push, main advanced 2 past HEAD: pins the event's before, not the moved tip" "$rc $PINNED" "0 $c0"
-    # R2 judges with the REAL resolve_base on a full-history checkout (fetch-depth: 0), as x86-main does.
-    r2="$TD/r2"; git init -q --template= "$r2" && git -C "$r2" remote add origin "$u" \
-        && git -C "$r2" fetch -q --no-tags origin "$c2" && git -C "$r2" checkout -q --detach FETCH_HEAD \
-        || { printf 'FAIL  self-test: cannot build clone r2\n'; return 1; }
-    rc=0; PBS=$c0 run_pin "$r2" push "" "" || rc=$?
-    hc=0; ( unset BASELINE_RATCHET_BASE_REF GITHUB_EVENT_NAME; REPO_ROOT="$r2"; PROG=pin_build_base_st
-            . "$here/scripts/lib/resolve_base.sh" || exit 2
-            resolve_base HEAD && printf '%s' "$BASE_REF" ) > "$TD/last.log" 2>&1 || hc=$?
-    row "R2 push, main advanced 2 past HEAD: resolve_base on HEAD names the before, rc 0" \
-        "$rc $PINNED $hc $(cat "$TD/last.log")" "0 $c0 0 $c0"
+    # R2 judges with the REAL resolve_base in a DEPTH-1 clone, the shape the sections run in (the
+    # old pin's deepen-by-one resolved a one-commit push; a push of N commits needs the deepen here).
+    r2_row() { # r2_row <label> <name> <head> <before> <want base>
+        local dd rr=0 hh=0
+        dd=$(clone_at "$2" "$3"); PBS=$4 run_pin "$dd" push "" "" || rr=$?
+        ( unset BASELINE_RATCHET_BASE_REF GITHUB_EVENT_NAME; REPO_ROOT="$dd"; PROG=pin_build_base_st
+          . "$here/scripts/lib/resolve_base.sh" || exit 2
+          resolve_base HEAD && printf '%s' "$BASE_REF" ) > "$TD/last.log" 2>&1 || hh=$?
+        row "$1" "$rr $PINNED $hh $(cat "$TD/last.log")" "0 $4 0 $5"
+    }
+    r2_row "R2a depth-1 clone, one-commit push, main advanced 2 past: resolve_base names the before, rc 0" r2a "$c2" "$c0" "$c0"
+    r2_row "R2b depth-1 clone, three-commit push (c2 c3 c4), main at HEAD: resolve_base names the before, rc 0" r2b "$c4" "$c0" "$c0"
+    g checkout -q --orphan orph; g rm -rq --cached . 2>/dev/null || true; printf 'o\n' > "$w/o.txt"; g add o.txt; g commit -q -m orph
+    local orph; orph=$(g rev-parse HEAD); g push -q "$u" "orph:refs/heads/orph"; g checkout -q -f main
+    d=$(clone_at r2c "$c4"); rc=0; PBS=$orph run_pin "$d" push "" "" || rc=$?
+    row "R2c push whose before shares no history with HEAD: refuses after the bounded deepen, nothing judged" \
+        "$rc $(said 'no merge base of event.before')" "1 says-cause"
     d=$(clone_at r3 "$c2"); rc=0; PBS=$c0 run_pin_p6 "1 2 3" "$d" push "" "" || rc=$?
     row "R3 push, every read of before dead: refuses, nothing pinned (fail-closed)" \
         "$rc $PINNED $READS $(said 'cannot fetch the build base')" "1 unset 3 says-cause"
@@ -260,6 +295,15 @@ self_test() {
     done
     d=$(clone_at r4_missing "$c2"); rc=0; PBS=$(printf '%040d' 7) run_pin "$d" push "" "" || rc=$?
     row "R4 push with an event.before origin does not have refuses" "$rc $PINNED $(said 'cannot fetch the build base')" "1 unset says-cause"
+    # B1 (#5172): a tag push has before=ZERO. The old pin took the tip and never refused; the pin now takes HEAD^1.
+    d=$(clone_at t1 "$c2"); rc=0; REF=refs/tags/v1.0.0 PBS=$ZERO run_pin "$d" push "" "" || rc=$?
+    row "T1 tag push (before all zeros) pins HEAD^1 in a depth-1 clone" "$rc $PINNED" "0 $c0"
+    d=$(clone_at t2 "$c4"); rc=0; REF=refs/tags/v1.0.0 PBS=$c3 run_pin "$d" push "" "" || rc=$?
+    row "T2 tag push ignores a before that is not HEAD^1 (a moved tag): still HEAD^1" "$rc $PINNED" "0 $c3"
+    d=$(clone_at t3 "$c2"); rc=0; REF=refs/heads/main PBS=$ZERO run_pin "$d" push "" "" || rc=$?
+    row "T3 branch push with a zero before still refuses" "$rc $PINNED $(said 'push: no usable event.before')" "1 unset says-cause"
+    d=$(clone_at t4 "$c0"); rc=0; REF=refs/tags/v0.0.1 PBS=$ZERO run_pin "$d" push "" "" || rc=$?
+    row "T4 tag push on a root commit (no first parent) refuses" "$rc $PINNED $(said 'has no first parent')" "1 unset says-cause"
     d=$(clone_at wd2 "$c4"); rc=0; PBS=$c3 run_pin "$d" workflow_dispatch "" "" || rc=$?
     row "workflow_dispatch still pins the live tip, ignoring any before" "$rc $PINNED" "0 $c4"
 

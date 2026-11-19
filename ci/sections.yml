@@ -1321,8 +1321,10 @@ jobs:
       #   pull_request  the merge commit's first parent, checked against the PR head
       #   merge_group   merge_group.base_sha, as the refinement-gate pin does
       #   push          the event's own `before` (PUSH_BEFORE_SHA), which main
-      #                 moving during the run cannot change; refused when unusable
-      #   otherwise     the tip (workflow_dispatch, schedule)
+      #                 moving during the run cannot change; refused when unusable.
+      #                 A tag push (before is all zeros): the tagged commit's first
+      #                 parent. The depth-1 clone is deepened (bounded) to reach `before`.
+      #   otherwise     the tip (workflow_dispatch)
       # The shared ratchet library takes the same first parent on its own
       # (scripts/lib_baseline_ratchet.sh FIRSTPARENT), so a lib ratchet and a
       # script that reads origin/main directly cannot disagree. A PR that adds
