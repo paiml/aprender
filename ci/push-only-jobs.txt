@@ -1,0 +1,6 @@
+# Jobs that run on a push to main and on no pull_request or merge_group run, each with its reason.
+# Read by scripts/check_pr_main_job_parity.sh. An entry whose job is not push-only is stale and fails.
+# Format: <workflow-file>:<job> <reason>. None of these runs a test, so none can be the red-main bench.
+advisory-andon.yml:andon files an advisory ticket on main; never blocks a PR (PMAT-5792, C324)
+book.yml:deploy publishes the built book to GitHub Pages; the build job runs on pull_request
+ci.yml:mg-reuse reads the merge_group result for the same sha to skip a duplicate run on push; tests nothing itself
