@@ -2254,7 +2254,7 @@ fn falsify_wgpu_max_seq_len_honours_config_7256() {
     use entrenar::finetune::instruct_pipeline::InstructConfig;
     let mut cfg = InstructConfig::default();
     cfg.max_seq_len = 256;
-    assert_eq!(wgpu_max_seq_len(&cfg), 256);
+    assert_eq!(wgpu_instruct_max_seq_len(&cfg), 256);
     cfg.max_seq_len = 1024;
-    assert_eq!(wgpu_max_seq_len(&cfg), 1024);
+    assert_eq!(wgpu_instruct_max_seq_len(&cfg), 1024);
 }
