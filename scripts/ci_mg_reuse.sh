@@ -603,6 +603,14 @@ STUB
   wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true }}"
   wire x86-main-advisories "github.event.pull_request.draft != true }}"
   wire workspace-test-shard "needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}"
+  # #7298: the push arm's `wt` comes from mg-reuse, so the shard, the artifact download and the Sigma step are skipped on it
+  # too; workspace-test accepts wt=1 only from a job that succeeded. Without these rows a drifted `if` would read as green.
+  wire workspace-test-shard "needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}"
+  # the download step and the Sigma step each carry the clause: exactly two lines in the workspace-test job
+  wtc=$(job workspace-test); wtc=$(grep -cF "if: \${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}" <<<"$wtc") || wtc=0
+  if [ "$wtc" -eq 2 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: workspace-test has $wtc (want 2) steps skipped on needs.mg-reuse.outputs.wt"; fi
+  wire workspace-test "WT_SRC_RESULT: \${{ needs.mg-reuse-wt.outputs.wt == '1' && needs.mg-reuse-wt.result || needs.mg-reuse.result }}"
+  wire workspace-test '[ "${WT_SRC_RESULT:-}" = success ]'
   wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
   # PMAT-6169: pr-x64 is a variable-selected OPTION; the runs-on line is compared EXACT. PR_LIGHT_POOL == 'pr-x64' picks the
   # X64 pr-x64 pool, anything else (unset, today) keeps X64 clean-room.

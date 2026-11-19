@@ -21,14 +21,16 @@
 #   stamp{sha tree base head}|null (what the PR run recorded of its test merge commit M)
 #   m_derived{tree base head}|null (re-derived from M's own object, null when M is not fetchable)
 #   expect_shards  runs_complete
-#   run{id event path head_sha status conclusion newest_id completed_epoch jobs_total tier_reuse jobs[{name conclusion run_id head_sha}]}
+#   run{id event path head_sha status conclusion newest_id started_epoch jobs_total pull_requests[{number base_ref}] jobs[{name conclusion run_id head_sha}]}
 #   paths[] (B..S changed paths)  now
 #
 # C1 push to refs/heads/main, one parent B, before == B.   C2 S bound to a merged same-repo non-draft PR.
-# C3 tested tree == pushed tree and same base: (a) the run's stamp (checked against M's object when
-#    fetchable) or (b) B is an ancestor of H and H^{tree} == S^{tree}.   C4 the run is complete, real,
-#    newest, and every named job succeeded; advisories skipped in it; it did not itself reuse.
-# C5 no gate path changed.   C6 the run completed within 24 h.
+# C3 tested tree == pushed tree and same base. A recorded stamp is BINDING: when the run left one, (a) it must
+#    match (and M.s own object, when fetchable) and (b) is not consulted; only a run with no stamp may fall back to
+#    (b) B is an ancestor of H and H^{tree} == S^{tree}.   C4 the run is complete, real, bound to THIS PR into main,
+#    newest, and every named job succeeded; advisories skipped in it; it did not itself reuse (no receipt-judge job
+#    that ran: read from the run.s own job list, never from workflow text).
+# C5 no gate path changed (every path under scripts/ is one).   C6 the run STARTED within 24 h.
 # NEVER reused: advisories (the workflow always runs them), tags, release/publish, a cited reuse, a
 # run that is not the newest on the head, forks, multi-commit/non-squash/direct pushes, gate-change
 # PRs, a red/cancelled/skipped/partly read result.
@@ -48,7 +50,9 @@ def named($n): [.run.jobs[] | select(.name == $n)];
 def okjob($n): (named($n) | length) == 1 and (named($n)[0].conclusion == "success");
 def gatepath:
   test("^(\\.github/|ci/|fleet/|machines/|arbiter/|\\.cargo/)")
-  or test("^scripts/(ci|check_|[^/]*guard|[^/]*gate|[^/]*publish|[^/]*release)")
+  or test("^scripts/")
+  or test("(^|/)(\\.github/|\\.githooks/)")
+  or test("(^|/)[^/]*(-guard\\.sh|pre-job[^/]*|admission[^/]*|publish[^/]*\\.sh|release[^/]*\\.sh)$")
   or test("^(Makefile|rust-toolchain|deny\\.toml|\\.pmat-gates\\.toml)")
   or test("(ruleset|protection|allowlist|-ledger\\.txt)");
 def c3a: # an absent or non-object stamp makes every field check below false, so no separate type check is needed
@@ -73,8 +77,9 @@ def c3b:
   chk("C2-fork"; .pr.is_fork == false and (.repo | type == "string" and length > 0) and .pr.head_repo == .repo), # R-C2FORK
   chk("C2-draft"; .pr.draft == false), # R-C2DRAFT
   chk("C2-head-sha"; (.pr.head_sha | sha)), # R-C2HEAD
-  chk("C3-tree-identity"; c3a or c3b), # R-C3
+  chk("C3-tree-identity"; if .stamp == null then c3b else c3a end), # R-C3
   chk("C4-run-identity"; (.run.id | isint) and .run.event == "pull_request" and .run.head_sha == .pr.head_sha and .run.path == ".github/workflows/ci.yml"), # R-C4IDENT
+  chk("C4-run-pr"; .pr.number as $n | any(.run.pull_requests[]; .number == $n and .base_ref == "main")), # R-C4PR
   chk("C4-run-newest"; .runs_complete == true and .run.id == .run.newest_id), # R-C4NEWEST
   chk("C4-run-done"; .run.status == "completed" and .run.conclusion == "success"), # R-C4DONE
   chk("C4-jobs-fully-read"; (.run.jobs | type == "array" and length > 0) and .run.jobs_total == (.run.jobs | length) and all(.run.jobs[]; (.name | type == "string") and .run_id == $__r and .head_sha == $__h)), # R-C4JOBS
@@ -87,10 +92,10 @@ def c3b:
   chk("C4-workspace-test-ran"; okjob("workspace-test-ran")), # R-C4WTRAN
   chk("C4-shards"; (.expect_shards | type == "number" and . == floor and . >= 1) and (. as $r | $r.expect_shards as $n | (([$r.run.jobs[] | select(.name | startswith("workspace-test-shard"))] | length) == $n) and all(range(1; $n + 1); . as $i | $r | okjob("workspace-test-shard (\($i), \($n))")))), # R-C4SHARDS
   chk("C4-advisories-skipped"; (named("x86-main-advisories") | length) == 1 and named("x86-main-advisories")[0].conclusion == "skipped"), # R-C4ADV
-  chk("C4-not-a-reuse"; .run.tier_reuse == false), # R-C4TIER
+  chk("C4-not-a-reuse"; all(.run.jobs[]; .name != "receipt-judge" or .conclusion == "skipped")), # R-C4TIER
   chk("C5-paths-judgeable"; (.paths | type == "array" and length > 0) and all(.paths[]; type == "string" and length > 0 and (test("^/|\\.\\.|\"|\\\\|\\n") | not))), # R-C5JUDGE
   chk("C5-no-gate-path"; all(.paths[]; gatepath | not)), # R-C5GATE
-  chk("C6-fresh"; (.now | isint) and (.run.completed_epoch | isint) and (.now - .run.completed_epoch) >= 0 and (.now - .run.completed_epoch) <= 86400) # R-C6
+  chk("C6-fresh"; (.now | isint) and (.run.started_epoch | isint) and (.now - .run.started_epoch) >= 0 and (.now - .run.started_epoch) <= 86400) # R-C6
 ]
 | map(select(.[1] | not))
 | if length == 0 then "ok" else .[0][0] end
@@ -152,7 +157,7 @@ base_facts() {
        pr: {number: 7001, merged: true, merge_commit_sha: $s, is_fork: false, head_repo: "paiml/aprender", draft: false, head_sha: $h},
        head_tree: $t, base_in_head: true, stamp: null, m_derived: null, expect_shards: 4, runs_complete: true,
        run: {id: 900, event: "pull_request", path: ".github/workflows/ci.yml", head_sha: $h, status: "completed", conclusion: "success",
-             newest_id: 900, completed_epoch: 1000000, jobs_total: ($jobs | length), tier_reuse: false, jobs: $jobs},
+             newest_id: 900, started_epoch: 1000000, jobs_total: ($jobs | length), pull_requests: [{number: 7001, base_ref: "main"}], jobs: $jobs},
        paths: ["crates/aprender-core/src/lib.rs", "docs/notes.md"], now: 1003600}'
 }
 
@@ -193,8 +198,10 @@ self_test() {
   row "extra skipped job in the run" yes "" 'addj("mac-check";"skipped")'
   row "extra successful job in the run" yes "" 'addj("runner-smells";"success")'
   row "docs-only and crate paths" yes "" '.paths=["docs/a.md","crates/apr-cli/src/main.rs","README.md"]'
-  row "a script that is not a gate script" yes "" '.paths=["scripts/bench_decode.sh"]'
-  row "PR number large" yes "" '.pr.number = 123456'
+  row "a bench script outside scripts/ is not a gate path" yes "" '.paths=["benches/decode.sh","crates/x/run_bench.sh"]'
+  row "a stale tier_reuse key in the facts is ignored (the fact comes from the run's jobs, never from workflow text)" yes "" '.run.tier_reuse=true'
+  row "a skipped receipt-judge job (the run did test)" yes "" 'addj("receipt-judge";"skipped")'
+  row "PR number large" yes "" '.pr.number = 123456 | .run.pull_requests[0].number = 123456'
   row "five shards expected, five present" yes "" '.expect_shards=5 | .run.jobs |= map(if .name|startswith("workspace-test-shard") then .name |= sub(", 4\\)"; ", 5)") else . end) | addj("workspace-test-shard (5, 5)";"success")'
 
   # ---- C1
@@ -239,6 +246,11 @@ self_test() {
   row "C3 stamp contradicted by M's object (tree)" no C3-tree-identity 'stamp | .m_derived={tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
   row "C3 stamp contradicted by M's object (base)" no C3-tree-identity 'stamp | .m_derived={tree:.tree, base:"'"$SHA_O"'", head:.pr.head_sha}'
   row "C3 stamp contradicted by M's object (head)" no C3-tree-identity 'stamp | .m_derived={tree:.tree, base:.parents[0], head:"'"$SHA_O"'"}'
+  row "C3 path b holds but the run's stamp says another tree (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
+  row "C3 path b holds but the run's stamp says another base (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:.tree, base:"'"$SHA_O"'", head:.pr.head_sha}'
+  row "C3 path b holds but the run's stamp says another head (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:.tree, base:.parents[0], head:"'"$SHA_O"'"}'
+  row "C3 path b holds but M's own object contradicts the stamp (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:.tree, base:.parents[0], head:.pr.head_sha} | .m_derived={tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
+  row "C3 path b holds but the stamp is not an object (binding)" no C3-tree-identity '.stamp="yes"'
 
   # ---- C4
   row "C4 run is a push run" no C4-run-identity '.run.event="push"'
@@ -278,8 +290,15 @@ self_test() {
   row "C4 expect_shards missing" no F-shape 'del(.expect_shards)'
   row "C4 advisories ran in the cited run (it reused)" no C4-advisories-skipped 'setj("x86-main-advisories";"success")'
   row "C4 advisories missing" no C4-advisories-skipped 'delj("x86-main-advisories")'
-  row "C4 cited run was itself a receipt reuse" no C4-not-a-reuse '.run.tier_reuse=true'
-  row "C4 tier_reuse unknown" no C4-not-a-reuse 'del(.run.tier_reuse)'
+  row "C4 cited run ran a receipt-judge job (it was a receipt reuse)" no C4-not-a-reuse 'addj("receipt-judge";"success")'
+  row "C4 receipt-judge failed in the cited run" no C4-no-unknown-result 'addj("receipt-judge";"failure")'
+  row "C4 receipt-judge result null" no C4-no-unknown-result 'addj("receipt-judge";null)'
+  row "C4 cited run belongs to no PR (empty pull_requests)" no C4-run-pr '.run.pull_requests=[]'
+  row "C4 pull_requests missing" no C4-run-pr 'del(.run.pull_requests)'
+  row "C4 cited run is a PR into master, not main" no C4-run-pr '.run.pull_requests[0].base_ref="master"'
+  row "C4 cited run is for another PR number" no C4-run-pr '.run.pull_requests[0].number=7002'
+  row "C4 pull_requests number a string" no C4-run-pr '.run.pull_requests[0].number="7001"'
+  row "C4 one of two linked PRs is this one into main" yes "" '.run.pull_requests += [{number: 7002, base_ref: "master"}]'
 
   # ---- C5
   row "C5 workflow changed" no C5-no-gate-path '.paths += [".github/workflows/ci.yml"]'
@@ -294,6 +313,20 @@ self_test() {
   row "C5 fleet path changed" no C5-no-gate-path '.paths += ["fleet/rules/x.md"]'
   row "C5 an allowlist changed" no C5-no-gate-path '.paths += ["docs/foo-allowlist.txt"]'
   row "C5 a ruleset file changed" no C5-no-gate-path '.paths += ["docs/org-ruleset.json"]'
+  row "C5 scripts/pr_light.sh changed" no C5-no-gate-path '.paths += ["scripts/pr_light.sh"]'
+  row "C5 scripts/cargo_step.sh changed" no C5-no-gate-path '.paths += ["scripts/cargo_step.sh"]'
+  row "C5 scripts/affected_set.sh changed" no C5-no-gate-path '.paths += ["scripts/affected_set.sh"]'
+  row "C5 scripts/census_ratchet.sh changed" no C5-no-gate-path '.paths += ["scripts/census_ratchet.sh"]'
+  row "C5 scripts/coverage_receipt.sh changed" no C5-no-gate-path '.paths += ["scripts/coverage_receipt.sh"]'
+  row "C5 scripts/lib_baseline_ratchet.sh changed" no C5-no-gate-path '.paths += ["scripts/lib_baseline_ratchet.sh"]'
+  row "C5 a nested script under scripts/ changed" no C5-no-gate-path '.paths += ["scripts/lib/do_publish.sh"]'
+  row "C5 a git hook changed" no C5-no-gate-path '.paths += [".githooks/pre-push"]'
+  row "C5 a nested guard changed" no C5-no-gate-path '.paths += ["tools/x/run-guard.sh"]'
+  row "C5 a nested publish script changed" no C5-no-gate-path '.paths += ["tools/publish_crates.sh"]'
+  row "C5 a nested release script changed" no C5-no-gate-path '.paths += ["tools/make_release.sh"]'
+  row "C5 a pre-job script changed" no C5-no-gate-path '.paths += ["tools/runner-pre-job.sh"]'
+  row "C5 an admission file changed" no C5-no-gate-path '.paths += ["tools/admission.yml"]'
+  row "C5 a nested workflows dir changed" no C5-no-gate-path '.paths += ["crates/x/.github/workflows/y.yml"]'
   row "C5 empty path list" no C5-paths-judgeable '.paths=[]'
   row "C5 path list missing" no F-shape 'del(.paths)'
   row "C5 path with .." no C5-paths-judgeable '.paths += ["a/../b"]'
@@ -304,11 +337,11 @@ self_test() {
 
   # ---- C6
   row "C6 run completed 86401 s ago" no C6-fresh '.now = 1000000 + 86401'
-  row "C6 run completed in the future" no C6-fresh '.run.completed_epoch = 1003601'
+  row "C6 run completed in the future" no C6-fresh '.run.started_epoch = 1003601'
   row "C6 now missing" no F-shape 'del(.now)'
   row "C6 now a string" no C6-fresh '.now="1003600"'
-  row "C6 completion time a string" no C6-fresh '.run.completed_epoch="2026-11-19"'
-  row "C6 completion time missing" no C6-fresh 'del(.run.completed_epoch)'
+  row "C6 completion time a string" no C6-fresh '.run.started_epoch="2026-11-19"'
+  row "C6 completion time missing" no C6-fresh 'del(.run.started_epoch)'
 
   # ---- first unproven condition wins (order)
   row "order: C1 before C4" no C1-event '.event="pull_request" | .run.conclusion="failure"'
@@ -373,7 +406,7 @@ mutants() {
       if cmp -s "$SELF" "$w/m.sh"; then echo "mutants: R-$m $kind did not change the file (bad mutator)"; surv="$surv R-$m/$kind(no-op)"; continue; fi
       if ! bash "$w/m.sh" --filter-ok; then echo "mutants: R-$m $kind does not compile (not a kill)"; surv="$surv R-$m/$kind(syntax)"; continue; fi
       out=$(bash "$w/m.sh" --self-test 2>&1); rc=$?
-      if [ "$rc" -ne 0 ] && printf '%s\n' "$out" | grep -Eq '^self-test: [0-9]+ rows, [1-9][0-9]* failed'; then killed=$((killed + 1)); else surv="$surv R-$m/$kind"; fi
+      if [ "$rc" -ne 0 ] && grep -Eq '^self-test: [0-9]+ rows, [1-9][0-9]* failed' <<< "$out"; then killed=$((killed + 1)); else surv="$surv R-$m/$kind"; fi
     done
   done
   rm -rf "${w:?}"

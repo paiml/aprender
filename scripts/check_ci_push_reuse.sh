@@ -436,8 +436,25 @@ want "X3b no verdict copy still names merge_group:success:1:1" 0 "$(grep -cF 'me
 bash "$ROOT/scripts/ci_mg_reuse.sh" --self-test >"$T/mgst" 2>&1; rc=$?
 want "X4 ci_mg_reuse.sh --self-test (verdict rows incl. push, job wiring) is green" 0 "$rc"
 
+# -- Y: the PR-run arm (#7298; its decision table is scripts/ci_push_reuse.sh --self-test). Structure only, on the surfaces that table cannot see.
+FACTS="$ROOT/scripts/ci_push_reuse_facts.sh"
+want "Y1 the facts reader never derives a fact from workflow text (no tier_reuse, no grep of ci.yml for receipt-judge)" 0 \
+     "$(grep -cE 'tier_reuse|grep .*receipt-judge' "$FACTS")"
+want "Y2 C6 reads the run's start (run_started_at), not updated_at" "1:0" "$(grep -c 'run_started_at' "$FACTS"):$(grep -c 'updated_at' "$FACTS")"
+want "Y3 the run's pull_requests[] are carried into the facts" 1 "$(grep -c 'pull_requests: \[' "$FACTS")"
+want "Y4 the stamp log is read whole, a failed read is a refusal, and one stamp line is required" 3 \
+     "$(grep -cE 'stamp job log read failed|has \$nstamps stamp lines|stamp and an unavailable line' "$FACTS")"
+want "Y5 the facts reader pipes nothing into grep -q" 0 "$(grep -cE '\| *grep -[a-zA-Z]*q' "$FACTS")"
+# x86=1 / det=1 / wt=1 are written once by the PR-run arm, directly inside the exact-`reuse=yes` branch
+want "Y6 the PR-run arm writes x86=1 once" 1 "$(grep -cF '{ echo "x86=1"; echo "det=1"; echo "cite=$cite"; echo "wt=1"; echo "wt_cite=$cite"; }' "$CI")"
+want "Y7 that write sits directly under the exact reuse=yes test" 1 \
+     "$(grep -B2 -F '{ echo "x86=1"; echo "det=1"; echo "cite=$cite"; echo "wt=1"; echo "wt_cite=$cite"; }' "$CI" | grep -cF 'if [ "$pr" = "reuse=yes" ]; then')"
+want "Y8 a failed facts read leaves the outputs alone (reuse=no, never yes)" 1 "$(grep -cF 'pr="reuse=no reason=the facts could not be read"' "$CI")"
+want "Y9 workspace-test-ran still records the stamp, once" 1 "$(grep -c 'echo "PUSH-REUSE-STAMP tested_sha=' "$CI")"
+want "Y10 workspace-test accepts wt=1 only from a job that succeeded" 1 "$(grep -cF '[ "${WT_SRC_RESULT:-}" = success ]' "$CI")"
+
 if [ "$fails" -eq 0 ]; then
-  echo "check_ci_push_reuse: OK - push reuses only a merge-queue success on its own sha (x86-main + determinism: only a real run); every doubt runs it"
+  echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"
   exit 0
 fi
 echo "check_ci_push_reuse: $fails assertion(s) FAILED"

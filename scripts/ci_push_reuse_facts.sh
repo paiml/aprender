@@ -53,7 +53,8 @@ cite=$(jq -r '[.workflow_runs[]? | select(.head_sha == "'"$h"'" and .conclusion 
 rid="${cite:-$newest}"
 run=$(jq -c --argjson id "$rid" --argjson nw "$newest" '.workflow_runs[] | select(.id == $id)
   | {id: .id, event: .event, path: .path, head_sha: .head_sha, status: .status, conclusion: .conclusion, newest_id: $nw,
-     completed_epoch: (.updated_at | fromdateiso8601)}' <<< "$runs") || die "run object unreadable"
+     started_epoch: (.run_started_at | fromdateiso8601),
+     pull_requests: [(.pull_requests // [])[] | {number: .number, base_ref: .base.ref}]}' <<< "$runs") || die "run object unreadable"
 
 jobsj=$(gh api "repos/$repo/actions/runs/$rid/jobs?per_page=100&filter=latest" 2> /dev/null) || die "job list read failed"
 jobs=$(jq -c '[.jobs[]? | {name: .name, conclusion: .conclusion, run_id: .run_id, head_sha: .head_sha}]' <<< "$jobsj") || die "job list unreadable"
@@ -63,7 +64,15 @@ jobs_total=$(jq '.total_count // -1' <<< "$jobsj") || die "job count unreadable"
 stamp=null; m_derived=null
 wtid=$(jq -r '[.jobs[]? | select(.name == "workspace-test-ran")] | if length == 1 then .[0].id else empty end' <<< "$jobsj")
 if [ -n "$wtid" ]; then
-  line=$(gh api "repos/$repo/actions/jobs/$wtid/logs" 2> /dev/null | grep -Eo 'PUSH-REUSE-STAMP tested_sha=[0-9a-f]{40} tested_tree=[0-9a-f]{40} tested_base=[0-9a-f]{40} tested_head=[0-9a-f]{40}' | tail -n 1) || line=""
+  # The log is read whole (a failed read is a refusal: a stamp that might contradict path b must never be skipped),
+  # then matched with here-strings, never a pipe. Exactly ONE stamp line is accepted, and none when the same log
+  # also carries the unavailable line, so a line planted before the real one can never win.
+  log=$(gh api "repos/$repo/actions/jobs/$wtid/logs" 2> /dev/null) || die "stamp job log read failed"
+  stamps=$(grep -Eo 'PUSH-REUSE-STAMP tested_sha=[0-9a-f]{40} tested_tree=[0-9a-f]{40} tested_base=[0-9a-f]{40} tested_head=[0-9a-f]{40}' <<< "$log") || stamps=""
+  nstamps=$(grep -c . <<< "$stamps") || nstamps=0
+  [ "$nstamps" -le 1 ] || die "the stamp job log has $nstamps stamp lines"
+  if [ "$nstamps" -eq 1 ] && grep -qF 'PUSH-REUSE-STAMP unavailable' <<< "$log"; then die "the stamp job log has a stamp and an unavailable line"; fi
+  line="$stamps"
   if [ -n "$line" ]; then
     stamp=$(printf '%s\n' "$line" | sed -E 's/.*tested_sha=([0-9a-f]+) tested_tree=([0-9a-f]+) tested_base=([0-9a-f]+) tested_head=([0-9a-f]+)/\1 \2 \3 \4/' \
       | jq -R -c 'split(" ") | {sha: .[0], tree: .[1], base: .[2], head: .[3]}') || stamp=null
@@ -74,17 +83,17 @@ if [ -n "$wtid" ]; then
   fi
 fi
 
-# B..S changed paths; the push matrix of S; whether S's workflow can reuse a receipt (unknown = true, fail closed)
+# B..S changed paths; the push matrix of S. Whether the CITED RUN reused a receipt is
+# read by the decision from that run's own job list (C4-not-a-reuse), never from workflow text.
 paths=$(git diff --no-renames --name-only "$b" "$sha" | jq -R -s -c 'split("\n") | map(select(length > 0))') || die "diff unreadable"
 wf=$(git show "$sha:.github/workflows/ci.yml" 2> /dev/null) || die "ci.yml of $sha unreadable"
 exp=$(printf '%s\n' "$wf" | sed -n "s/^[[:space:]]*shards: .*|| '\[\([0-9][0-9]*\)\]').*/\1/p" | head -n 1)
 [[ $exp =~ ^[0-9]+$ ]] || die "push shard count not readable from ci.yml"
-if printf '%s\n' "$wf" | grep -q 'receipt-judge'; then tier_reuse=true; else tier_reuse=false; fi
 
 jq -n -c --arg event "$event" --arg ref "$ref" --arg sha "$sha" --arg tree "$tree" --argjson parents "$parents" --arg before "$before" --arg repo "$repo" \
   --argjson pr "$pr" --arg head_tree "$head_tree" --argjson base_in_head "$base_in_head" --argjson stamp "$stamp" --argjson m_derived "$m_derived" \
   --argjson expect_shards "$exp" --argjson runs_complete "$runs_complete" --argjson run "$run" --argjson jobs "$jobs" --argjson jobs_total "$jobs_total" \
-  --argjson tier_reuse "$tier_reuse" --argjson paths "$paths" --argjson now "$(date +%s)" \
+  --argjson paths "$paths" --argjson now "$(date +%s)" \
   '{event: $event, ref: $ref, sha: $sha, tree: $tree, parents: $parents, before: $before, repo: $repo, pr: $pr, head_tree: $head_tree,
     base_in_head: $base_in_head, stamp: $stamp, m_derived: $m_derived, expect_shards: $expect_shards, runs_complete: $runs_complete,
-    run: ($run + {jobs: $jobs, jobs_total: $jobs_total, tier_reuse: $tier_reuse}), paths: $paths, now: $now}' || die "facts could not be assembled"
+    run: ($run + {jobs: $jobs, jobs_total: $jobs_total}), paths: $paths, now: $now}' || die "facts could not be assembled"
