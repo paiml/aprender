@@ -250,6 +250,7 @@
         print_comparison_row("Both zero", 0.0, 0.0);
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_cross_format_comparison_nonexistent_files() {
         let result = run_cross_format_comparison(

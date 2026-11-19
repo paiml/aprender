@@ -3338,6 +3338,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "training")]
     /// SPEC §83 P2-C: when `--corpus` is repeated with multiple paths,
     /// `run_encode_corpus` MUST collect documents from every source and
     /// write them as a single contiguous shard stream. Verifies the
@@ -3438,6 +3439,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "training")]
     /// SPEC §83 P2-C: empty `--corpus` slice must error fast (not silently
     /// produce an empty output corpus).
     #[test]
@@ -3616,12 +3618,14 @@ mod tests {
         assert_eq!(format_duration(120.0), "2.0 hours");
     }
 
+    #[cfg(feature = "training")]
     #[test]
     fn test_resolve_num_workers_explicit() {
         assert_eq!(resolve_num_workers(Some(4)).unwrap(), 4);
         assert_eq!(resolve_num_workers(Some(1)).unwrap(), 1);
     }
 
+    #[cfg(feature = "training")]
     #[test]
     fn test_resolve_num_workers_zero_is_error() {
         let err = resolve_num_workers(Some(0)).unwrap_err();
@@ -3631,6 +3635,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "training")]
     #[test]
     fn test_resolve_num_workers_none_uses_parallelism() {
         let n = resolve_num_workers(None).unwrap();

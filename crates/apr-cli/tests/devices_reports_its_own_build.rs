@@ -57,7 +57,8 @@ fn a_cuda_build_does_not_report_its_own_cuda_as_not_compiled() {
 }
 
 #[test]
-#[cfg(not(feature = "cuda"))]
+// #7294: `trueno` is linked only by `inference`; without it there is no registry to ask.
+#[cfg(all(not(feature = "cuda"), feature = "inference"))]
 fn a_non_cuda_build_still_says_not_compiled_even_where_a_gpu_exists() {
     // The falsifier for the fix: "always say yes" passes the arm above and fails this one. This
     // runs on hosts with and without a GPU and must answer the same way on both — the question is

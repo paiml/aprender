@@ -46,6 +46,7 @@
         assert!(paths.is_empty(), "Publish is a diagnostic command (exempt)");
     }
 
+    #[cfg(feature = "training")]
     /// Test extract_model_paths: Tune is diagnostic (exempt)
     #[test]
     fn test_extract_paths_tune_exempt() {

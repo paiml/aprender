@@ -1409,6 +1409,7 @@ mod thinking_budget_resolution {
 mod golden_output_tests {
     use super::*;
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_golden_test_cases_nonempty_and_structured() {
         let cases = golden_test_cases_for(None);
@@ -1420,6 +1421,7 @@ mod golden_output_tests {
         }
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_golden_test_cases_arithmetic_case_present() {
         let cases = golden_test_cases_for(None);
@@ -1430,6 +1432,7 @@ mod golden_output_tests {
         assert!(arith.1.contains(&"4"));
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_golden_test_cases_deterministic() {
         let a = golden_test_cases_for(None);
@@ -1440,6 +1443,7 @@ mod golden_output_tests {
         }
     }
 
+    #[cfg(feature = "inference")]
     /// Poka-yoke for #2350: no golden prompt may be a bare one-or-two-word user
     /// message.
     ///
@@ -1956,6 +1960,7 @@ mod golden_output_tests {
         format!("<|im_start|>user\n{question}<|im_end|>\n<|im_start|>assistant\n")
     }
 
+    #[cfg(feature = "inference")]
     /// done_when 2, second half: "Every other architecture keeps byte-identical
     /// ChatML, pinned by a test."
     ///
@@ -2031,6 +2036,7 @@ mod golden_output_tests {
         );
     }
 
+    #[cfg(feature = "inference")]
     /// done_when 2, first half, and the whole defect: `qwen3` must be asked with
     /// production's no-think template, not ChatML. Without the `<think>\n</think>`
     /// prefill the model reasons for the full budget and the gate reports "Empty
@@ -2052,6 +2058,7 @@ mod golden_output_tests {
         }
     }
 
+    #[cfg(feature = "inference")]
     /// The gate and production must not drift apart by construction: whatever the
     /// detector says for an architecture is what the gate sends. This fails if a
     /// later change re-hardcodes a template in the gate.
@@ -2071,6 +2078,7 @@ mod golden_output_tests {
         }
     }
 
+    #[cfg(feature = "inference")]
     /// A format that declares no architecture (APR, SafeTensors) is unchanged.
     #[test]
     fn an_unknown_architecture_keeps_the_legacy_chatml() {
@@ -2083,6 +2091,7 @@ mod golden_output_tests {
 
     // ---- done_when 3: both modes -------------------------------------------
 
+    #[cfg(feature = "inference")]
     /// The ON prompt is production's own prompt with the suppression removed —
     /// derived from the rendering, so a replacement template is followed rather
     /// than bypassed.
@@ -2100,6 +2109,7 @@ mod golden_output_tests {
         );
     }
 
+    #[cfg(feature = "inference")]
     /// An architecture production does NOT suppress has no second mode to judge,
     /// and the gate must not invent one.
     #[test]
@@ -2109,6 +2119,7 @@ mod golden_output_tests {
         assert!(thinking_on_case(None).is_none());
     }
 
+    #[cfg(feature = "inference")]
     /// Only an EMPTY prefilled block is suppression. A block with reasoning in it
     /// is content, and cutting it would change the conversation.
     #[test]
@@ -2129,6 +2140,7 @@ mod golden_output_tests {
         );
     }
 
+    #[cfg(feature = "inference")]
     /// #3990 MUST-RED (pre-fix probe): the ON leg must ask the model the way its OWN template asks
     /// it with thinking on. Qwen3.5's official template ends `assistant\n<think>\n`; the
     /// derivation from the no-think production prompt ends `assistant\n`, and on that prompt
@@ -2212,6 +2224,7 @@ mod golden_output_tests {
         }
     }
 
+    #[cfg(feature = "inference")]
     /// #3990: the official prompt OPENS the block, so the continuation has no `<think>` of its
     /// own. Judged raw, a model that reasoned and closed reads "never entered"; judged whole, it
     /// passes -- and an empty prefilled block is still "closed EMPTY".
@@ -2236,6 +2249,7 @@ mod golden_output_tests {
         assert_eq!(on_leg_judged_text("assistant\n", "x"), "x");
     }
 
+    #[cfg(feature = "inference")]
     /// done_when 3: ON passes only when the block CLOSES and the answer is right.
     #[test]
     fn the_thinking_on_leg_judges_closure_and_the_answer() {
@@ -2297,6 +2311,7 @@ mod golden_output_tests {
         }
     }
 
+    #[cfg(feature = "inference")]
     /// #3948 quorum item 1, MUST-RED: a block holding one character or one token is not
     /// reasoning either. `any_think_block_has_content` accepted `<think>.</think>`, so a
     /// model that emitted a single token between the tags passed the leg it skipped.
@@ -2340,6 +2355,7 @@ mod golden_output_tests {
         );
     }
 
+    #[cfg(feature = "inference")]
     /// Whatever the architecture, the QUESTIONS and the expected patterns are the
     /// same ones — #3724 changed how the gate asks, never what it checks, and
     /// "no check is relaxed" is part of done_when 2.

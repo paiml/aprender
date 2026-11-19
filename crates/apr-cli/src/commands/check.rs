@@ -707,6 +707,7 @@ include!("check_03.rs");
 mod check_tests {
     use super::*;
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_any_name_contains_finds_match() {
         let names = &["model.layers.0.self_attn.q_proj.weight", "lm_head.weight"];
@@ -714,12 +715,14 @@ mod check_tests {
         assert!(any_name_contains(names, &["lm_head"]));
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_any_name_contains_no_match() {
         let names = &["model.layers.0.self_attn.q_proj.weight"];
         assert!(!any_name_contains(names, &["decoder", "encoder"]));
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_all_groups_match_all_present() {
         let names = &[
@@ -731,6 +734,7 @@ mod check_tests {
         assert!(all_groups_match(names, groups));
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_all_groups_match_missing_group() {
         let names = &["model.layers.0.self_attn.q_proj.weight"];
@@ -741,6 +745,7 @@ mod check_tests {
         assert!(!all_groups_match(names, groups));
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_all_groups_match_empty_names() {
         let names: &[&str] = &[];
@@ -748,6 +753,7 @@ mod check_tests {
         assert!(!all_groups_match(names, groups));
     }
 
+    #[cfg(feature = "inference")]
     #[test]
     fn test_all_groups_match_empty_groups() {
         let names = &["model.layers.0.weight"];

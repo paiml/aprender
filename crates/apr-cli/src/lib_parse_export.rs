@@ -368,6 +368,7 @@
         }
     }
 
+    #[cfg(feature = "training")]
     /// Test parsing 'apr tune' command with all options
     #[test]
     fn test_parse_tune_command() {
@@ -417,6 +418,7 @@
         }
     }
 
+    #[cfg(feature = "training")]
     /// Test parsing 'apr tune' with defaults (no file)
     #[test]
     fn test_parse_tune_defaults() {

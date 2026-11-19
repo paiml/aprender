@@ -161,6 +161,7 @@
         assert!(result.is_ok(), "Explain with error code should succeed");
     }
 
+    #[cfg(feature = "training")]
     /// Test execute_command: Tune --plan without file succeeds
     #[test]
     fn test_execute_tune_plan_no_file() {

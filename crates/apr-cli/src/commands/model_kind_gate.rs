@@ -136,3 +136,60 @@ pub(crate) fn refuse_gguf_path(path: &Path, verb: &str) -> Result<(), CliError> 
 #[cfg(all(test, feature = "inference"))]
 #[path = "model_kind_gate_tests.rs"]
 pub(crate) mod tests;
+
+// #7294: the no-`inference` stubs. Without realizar the gate cannot read a GGUF header, so it refuses a
+// GGUF file by its magic and passes every other format.
+#[cfg(all(test, not(feature = "inference")))]
+mod no_inference_tests {
+    use super::*;
+    use std::io::Write;
+
+    fn temp_with(bytes: &[u8]) -> tempfile::NamedTempFile {
+        let mut file = tempfile::NamedTempFile::new().expect("temp file");
+        file.write_all(bytes).expect("write");
+        file
+    }
+
+    #[test]
+    fn gguf_magic_bytes_are_refused_with_model_load_failed() {
+        let err = refuse_non_generative_bytes(b"GGUF\x03\0\0\0", "run").expect_err("GGUF refused");
+        assert!(matches!(err, CliError::ModelLoadFailed(_)), "{err:?}");
+        assert!(err.to_string().contains("inference"), "{err}");
+    }
+
+    #[test]
+    fn non_gguf_bytes_pass() {
+        assert!(refuse_non_generative_bytes(b"APR\0rest", "run").is_ok());
+        assert!(refuse_non_generative_bytes(b"", "run").is_ok());
+    }
+
+    #[test]
+    fn gguf_path_is_refused_by_both_path_gates() {
+        let file = temp_with(b"GGUF\x03\0\0\0");
+        for result in [
+            refuse_non_generative_path(file.path(), "run"),
+            refuse_gguf_path(file.path(), "rerank"),
+        ] {
+            assert!(
+                matches!(result, Err(CliError::ModelLoadFailed(_))),
+                "{result:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn non_gguf_and_missing_paths_pass() {
+        let file = temp_with(b"APR\0rest");
+        assert!(refuse_non_generative_path(file.path(), "run").is_ok());
+        assert!(refuse_gguf_path(file.path(), "rerank").is_ok());
+        assert!(
+            refuse_non_generative_path(std::path::Path::new("/nonexistent/x.gguf"), "run").is_ok()
+        );
+    }
+
+    #[test]
+    fn is_embedding_path_is_false_without_inference() {
+        let file = temp_with(b"GGUF\x03\0\0\0");
+        assert!(!is_embedding_path(file.path()));
+    }
+}
