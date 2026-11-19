@@ -717,6 +717,29 @@
         }
     }
 
+    /// `--dry-run` is an alias of `--plan`: it parses to the same field, needs `--recipe` to mean
+    /// anything and, through dispatch, plans a recipe whose files do not exist (PMAT-7240,
+    /// FALSIFY-APR-RECIPE-008).
+    #[cfg(feature = "training")]
+    #[test]
+    fn test_finetune_dry_run_is_the_plan_flag() {
+        let cli = parse_cli(vec!["apr", "finetune", "--recipe", "r.yaml", "--dry-run"])
+            .expect("--dry-run parses");
+        match *cli.command {
+            Commands::ModelOps(ModelOpsCommands::Finetune { plan, .. }) => assert!(plan),
+            _ => panic!("Expected Finetune command"),
+        }
+        const EXAMPLE: &str = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../examples/recipes/tiny.yaml"
+        );
+        let cli = parse_cli(vec!["apr", "finetune", "--recipe", EXAMPLE, "--dry-run"])
+            .expect("parses");
+        dispatch_model_commands(&cli)
+            .expect("finetune is a model command")
+            .expect("dry run of the shipped example succeeds with no input file");
+    }
+
     /// The flag reaches the recipe path through dispatch: the shipped example
     /// plans, a real run of it is refused by field for its absent files, a
     /// run flag is passed on, and every refusal is a validation error (exit 5),

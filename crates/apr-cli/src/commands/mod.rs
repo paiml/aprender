@@ -73,6 +73,10 @@ pub(crate) mod explain_token_lint;
 pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
+#[cfg(feature = "training")]
+pub(crate) mod finetune_base;
+#[cfg(feature = "training")]
+pub(crate) mod finetune_recipe_run;
 pub(crate) mod flow;
 pub(crate) mod fp8_classifier;
 pub(crate) mod fp8_lint;
@@ -228,6 +232,8 @@ pub(crate) mod trace_save_tensor;
 pub(crate) mod train;
 #[cfg(feature = "training")]
 pub(crate) mod train_recipe;
+#[cfg(feature = "training")]
+pub(crate) mod train_recipe_lora;
 pub(crate) mod tree;
 pub(crate) mod tui;
 #[cfg(feature = "training")]

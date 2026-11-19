@@ -43,8 +43,8 @@ pub enum ModelOpsCommands {
         /// Available VRAM in GB
         #[arg(long, default_value = "16.0")]
         vram: f64,
-        /// Plan mode (estimate only)
-        #[arg(long)]
+        /// Plan mode (estimate only); `--dry-run` is the same flag
+        #[arg(long, alias = "dry-run")]
         plan: bool,
         /// Training data file (JSONL format)
         #[arg(long, short = 'd', value_name = "FILE")]
