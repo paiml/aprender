@@ -5,9 +5,10 @@
 #
 # For every workflow with a push trigger that reaches main, each job is evaluated on three
 # events: push, pull_request, merge_group. A job is on an event when the workflow triggers
-# on it and the job's `if:` does not exclude it. The `if:` is read for `github.event_name`
-# literals only: `!= 'X'` removes X; `== 'X'` (no `||` in the expression) keeps only the
-# listed events; any `||` mix is read as "runs everywhere" (never a false red).
+# on it and the job's `if:` does not exclude it. The `if:` is evaluated per event with `&&`, `||`, `!` and parentheses;
+# a term about `github.event_name ==|!= 'X'` is true or false, any other term is "may run". A job whose `if:` names
+# github.event_name in a form not understood, or that does not parse, is RED (unjudgeable), never read as running everywhere.
+# FAIL CLOSED: a workflow yq cannot read, a directory with no *.yml or *.yaml, and an unjudgeable `if:` each exit 1 with the cause.
 #
 # VIOLATION 1: job is on push, and not on pull_request. A merge_group run does not count: the queue
 # is a different event and may be off, and a job that first runs after the merge makes main the test bench.
@@ -32,13 +33,110 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WF="${PARITY_WORKFLOWS:-$ROOT/.github/workflows}"
 EX="${PARITY_EXEMPT:-$ROOT/ci/push-only-jobs.txt}"
 
-# rows: "<file>\t<job>\t<push>\t<pr>\t<mg>" with 1/0
+
+# Every read below FAILS CLOSED: a workflow yq or jq cannot read, an empty workflow set, and an `if:` the judge cannot
+# evaluate are each a RED (non-zero, with the cause named), never an OK. Reads go through a variable, never a
+# process substitution, because `< <(cmd)` discards cmd's exit status.
+WFILES=()
+wfiles() { # sets WFILES to every *.yml and *.yaml directly in $WF; non-zero when the directory is unreadable or holds none
+  local out
+  [ -d "$WF" ] || { echo "RED: workflow directory $WF does not exist (nothing was judged)" >&2; return 1; }
+  out=$(find "$WF" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | LC_ALL=C sort) || { echo "RED: cannot list $WF (nothing was judged)" >&2; return 1; }
+  [ -n "$out" ] || { echo "RED: no *.yml or *.yaml workflow in $WF (nothing was judged, a vacuous pass is refused)" >&2; return 1; }
+  mapfile -t WFILES <<< "$out"
+}
+
+# The judge. Input: "<file>\t<job>\t<pushmain>\t<pr trigger>\t<mg trigger>\t<if expr>" lines. For each job on a push to main it
+# evaluates the `if:` once per event with three values: T, F, U (a term that is not about github.event_name is U, "may run").
+# `&&`, `||`, `!` and parentheses are understood; function calls are folded into one U term. A term that names github.event_name
+# in any form but `github.event_name ==|!= 'lit'`, an unbalanced or empty expression, or a call that names it, is unjudgeable:
+# the job prints as `ERR\t<file>\t<job>\t<reason>` and scan() refuses. A job is on an event when the workflow triggers on it and
+# its `if:` is not F there. Output: "<file>\t<job>\t1\t<on pr>\t<on mg>" for jobs on push.
+JUDGE='
+function setor(v, w) { return (v == "T" || w == "T") ? "T" : ((v == "U" || w == "U") ? "U" : "F") }
+function setand(v, w) { return (v == "F" || w == "F") ? "F" : ((v == "U" || w == "U") ? "U" : "T") }
+function tokenize(s,   i, c, n, a, j) {
+  nt = 0; i = 1; n = length(s)
+  while (i <= n && err == "") {
+    c = substr(s, i, 1)
+    if (c == " ") { i++; continue }
+    if (c == "(" || c == ")") { t[++nt] = c; i++; continue }
+    if (substr(s, i, 2) == "&&" || substr(s, i, 2) == "||") { t[++nt] = substr(s, i, 2); i += 2; continue }
+    if (c == "!" && substr(s, i + 1, 1) != "=") { t[++nt] = "!"; i++; continue }
+    a = ""
+    while (i <= n) {
+      c = substr(s, i, 1)
+      if (c == "\047") { j = index(substr(s, i + 1), "\047"); if (j == 0) { err = "unterminated quote"; return } a = a substr(s, i, j + 1); i += j + 1; continue }
+      if (c == "(" || c == ")") break
+      if (substr(s, i, 2) == "&&" || substr(s, i, 2) == "||") break
+      a = a c; i++
+    }
+    sub(/ +$/, "", a); t[++nt] = "A:" a
+  }
+}
+function atom(a,   lit, eq) {
+  if (a == "") { err = "empty term"; return "U" }
+  if (a ~ /event_name/) {
+    if (a !~ /^github\.event_name *(==|!=) *\047[A-Za-z_]+\047$/) { err = "github.event_name used in a form the check does not understand: " a; return "U" }
+    match(a, /\047[A-Za-z_]+\047/); lit = substr(a, RSTART + 1, RLENGTH - 2); eq = (lit == ev)
+    if (a ~ /!=/) return eq ? "F" : "T"
+    return eq ? "T" : "F"
+  }
+  if (a == "true") return "T"
+  if (a == "false") return "F"
+  return "U"
+}
+function pprim(   v, a) {
+  if (pos > nt) { err = "expression ends early"; return "U" }
+  if (t[pos] == "(") { pos++; v = por(); if (err != "") return "U"; if (pos > nt || t[pos] != ")") { err = "unbalanced parenthesis"; return "U" } pos++; return v }
+  if (substr(t[pos], 1, 2) == "A:") { a = substr(t[pos], 3); pos++; return atom(a) }
+  err = "unexpected " t[pos]; return "U"
+}
+function pnot(   v) {
+  if (pos > nt) { err = "expression ends early"; return "U" }
+  if (t[pos] == "!") { pos++; v = pnot(); return (v == "T") ? "F" : ((v == "F") ? "T" : "U") }
+  return pprim()
+}
+function pand(   v, w) { v = pnot(); while (err == "" && pos <= nt && t[pos] == "&&") { pos++; w = pnot(); v = setand(v, w) } return v }
+function por(   v, w) { v = pand(); while (err == "" && pos <= nt && t[pos] == "||") { pos++; w = pand(); v = setor(v, w) } return v }
+function fold(s,   m) { # function calls become one U term; one that names github.event_name is unjudgeable
+  gsub(/[$][{][{]/, "", s); gsub(/[}][}]/, "", s)
+  while (match(s, /[A-Za-z_][A-Za-z0-9_]*\([^()]*\)/)) {
+    m = substr(s, RSTART, RLENGTH)
+    if (m ~ /event_name/) err = "a call names github.event_name: " m
+    s = substr(s, 1, RSTART - 1) "CALL" substr(s, RSTART + RLENGTH)
+  }
+  return s
+}
+function judge(e, evn,   v) {
+  err = ""; ev = evn; pos = 1
+  e = fold(e)
+  if (e ~ /^ *$/) return "T"
+  if (err != "") return "U"
+  tokenize(e)
+  if (err != "") return "U"
+  v = por()
+  if (err == "" && pos <= nt) err = "trailing " t[pos]
+  return v
+}
+BEGIN { FS = "\t" }
+{
+  if ($3 != "1") next
+  ex = $6; on_pr = 0; on_mg = 0; bad = ""
+  v = judge(ex, "push"); if (err != "") bad = err
+  if ($4 == "1" && bad == "") { v = judge(ex, "pull_request"); if (err != "") bad = err; else on_pr = (v != "F") }
+  if ($5 == "1" && bad == "") { v = judge(ex, "merge_group"); if (err != "") bad = err; else on_mg = (v != "F") }
+  if (bad != "") { print "ERR\t" $1 "\t" $2 "\t" bad; next }
+  v = judge(ex, "push"); if (v == "F") next
+  print $1 "\t" $2 "\t1\t" on_pr "\t" on_mg
+}'
+
+# rows: "<file>\t<job>\t1\t<pr>\t<mg>" with 1/0 for each job on push, or "ERR\t<file>\t<job>\t<reason>"
 rows() {
-  local f
-  for f in "$WF"/*.yml; do
-    [ -e "$f" ] || continue
-    yq -o=json '.' "$f" | jq -r --arg f "$(basename "$f")" '
-      def lits($e; $op): [ $e | scan("github\\.event_name\\s*" + $op + "\\s*\u0027([a-z_]+)\u0027") | .[0] ];
+  local f raw acc=""
+  for f in "${WFILES[@]}"; do
+    raw=$(yq -o=json '.' "$f") || { echo "RED: $(basename "$f") is not readable by yq (malformed YAML), so it was not judged" >&2; return 1; }
+    raw=$(printf '%s' "$raw" | jq -r --arg f "$(basename "$f")" '
       (.on // {}) as $on
       | (if ($on|type)=="string" then [$on] elif ($on|type)=="array" then $on else ($on|keys) end) as $ev
       | (if ($on|type)=="object" and ($on.push|type)=="object"
@@ -47,26 +145,25 @@ rows() {
                    else ($b==null or ($b|map(select(.=="main" or .=="master" or test("\\*")))|length>0)) end)
            else ($ev|index("push")!=null) end) as $pushmain
       | (.jobs // {}) | to_entries[]
-      | .key as $j | ((.value.if // "")|tostring) as $e
-      | ( ["push","pull_request","merge_group"]
-          | map(select(. as $x | ($x=="push" and $pushmain) or ($x!="push" and ($ev|index($x)!=null))))
-          | (if ($e|contains("||")) then .
-             else ( lits($e;"==") as $pos | lits($e;"!=") as $neg
-                    | (if ($pos|length)>0 then map(select(. as $x | $pos|index($x))) else . end)
-                    | map(select(. as $x | ($neg|index($x))|not)) ) end) ) as $on
-      | select($on|index("push"))
-      | [$f,$j,"1",(if $on|index("pull_request") then "1" else "0" end),(if $on|index("merge_group") then "1" else "0" end)] | @tsv'
+      | [$f, .key, (if $pushmain then "1" else "0" end), (if $ev|index("pull_request") then "1" else "0" end),
+         (if $ev|index("merge_group") then "1" else "0" end),
+         (((.value.if // "")|tostring)|gsub("[\t\n\r]+";" "))] | @tsv') || { echo "RED: $(basename "$f") has a shape jq cannot read, so it was not judged" >&2; return 1; }
+    [ -z "$raw" ] || acc="$acc$raw
+"
   done
+  printf '%s' "$acc" | awk "$JUDGE"
 }
 
 # VIOLATION 2 rows: "<file>\t<job>" for each job whose run script exits 0 on a pull_request branch.
 shortcuts() {
-  local f j b
-  for f in "$WF"/*.yml; do
-    [ -e "$f" ] || continue
+  local f raw j b body
+  for f in "${WFILES[@]}"; do
+    raw=$(yq -o=json '.' "$f" | jq -r '(.jobs // {}) | to_entries[] | [.key, ([.value.steps[]?.run // empty] | join("\n") | @base64)] | @tsv') \
+      || { echo "RED: $(basename "$f") could not be read for the pull_request shortcut check" >&2; return 1; }
     while IFS=$'\t' read -r j b; do
       [ -n "$j" ] || continue
-      if printf '%s' "$b" | base64 -d | awk '
+      body=$(printf '%s' "$b" | base64 -d) || { echo "RED: $(basename "$f"):$j run script is not decodable" >&2; return 1; }
+      if printf '%s' "$body" | awk '
           /^[[:space:]]*#/ { next }
           /^[[:space:]]*\[.*pull_request.*\][[:space:]]*&&.*exit[[:space:]]+0/ { hit = 1 }
           /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { inif = 1; if ($0 ~ /exit[[:space:]]+0/) hit = 1; next }
@@ -75,31 +172,39 @@ shortcuts() {
           END { exit !hit }'; then
         printf '%s\t%s\n' "$(basename "$f")" "$j"
       fi
-    done < <(yq -o=json '.' "$f" | jq -r '(.jobs // {}) | to_entries[] | [.key, ([.value.steps[]?.run // empty] | join("\n") | @base64)] | @tsv')
+    done <<< "$raw"
   done
 }
 
 # VIOLATION 3 rows: "<file>\t<job>" for each heavy push+PR job lacking the draft clause a heavy sibling carries.
+# $1 = the rows() output (read once by scan).
 drafts() {
-  local f pr_jobs
-  for f in "$WF"/*.yml; do
-    [ -e "$f" ] || continue
-    pr_jobs="$(rows | awk -F'\t' -v f="$(basename "$f")" '$1==f && $4=="1" {print $2}')"
+  local f pr_jobs raw j
+  for f in "${WFILES[@]}"; do
+    pr_jobs="$(printf '%s\n' "$1" | awk -F'\t' -v f="$(basename "$f")" '$1==f && $4=="1" {print $2}')"
     [ -n "$pr_jobs" ] || continue
-    yq -o=json '.' "$f" | jq -r --arg pj "$pr_jobs" '
+    raw=$(yq -o=json '.' "$f" | jq -r --arg pj "$pr_jobs" '
       ($pj | split("\n")) as $pr
       | [ (.jobs // {}) | to_entries[]
           | select(.key as $k | $pr | index($k))
           | select(((.value["timeout-minutes"] // 0) | tostring | [scan("[0-9]+") | tonumber] | max // 0) >= 100)
           | {k: .key, d: (((.value.if // "") | tostring) | contains("github.event.pull_request.draft"))} ] as $h
-      | if ($h | map(select(.d)) | length) > 0 then $h[] | select(.d | not) | .k else empty end' \
-      | while read -r j; do printf '%s\t%s\n' "$(basename "$f")" "$j"; done
+      | if ($h | map(select(.d)) | length) > 0 then $h[] | select(.d | not) | .k else empty end') \
+      || { echo "RED: $(basename "$f") could not be read for the draft-parity check" >&2; return 1; }
+    while read -r j; do
+      [ -n "$j" ] || continue
+      printf '%s\t%s\n' "$(basename "$f")" "$j"
+    done <<< "$raw"
   done
 }
 
 scan() {
-  local fail=0 f j p pr mg key reason
+  local fail=0 f j p pr mg key reason rws sc dr
   local exempt="" used=""
+  wfiles || return 1
+  rws=$(rows) || { echo "RED: the workflow rows could not be read; the scan is refused, not passed"; return 1; }
+  sc=$(shortcuts) || { echo "RED: the pull_request shortcut scan could not be read; refused, not passed"; return 1; }
+  dr=$(drafts "$rws") || { echo "RED: the draft-parity scan could not be read; refused, not passed"; return 1; }
   if [ -f "$EX" ]; then
     while read -r key reason || [ -n "$key" ]; do
       case "$key" in ''|\#*) continue ;; esac
@@ -110,6 +215,10 @@ $key"
   fi
   while IFS=$'\t' read -r f j p pr mg; do
     [ -n "$f" ] || continue
+    if [ "$f" = ERR ]; then
+      echo "RED: $j:$p has an if: the check cannot judge ($pr${mg:+ $mg}); an unjudgeable if: is refused, never read as running everywhere"
+      fail=1; continue
+    fi
     key="$f:$j"
     if [ "$pr" = 0 ]; then
       if printf "%s\n" "$exempt" | grep -qxF -- "$key"; then used="$used
@@ -118,17 +227,17 @@ $key"; continue; fi
       else echo "RED: $key runs on push to main and not on any pull_request run"; fi
       fail=1
     fi
-  done < <(rows)
+  done <<< "$rws"
   while IFS=$'\t' read -r f j; do
     [ -n "$f" ] || continue
     echo "RED: $f:$j passes a pull_request (exit 0) before it checks the heavy jobs"
     fail=1
-  done < <(shortcuts)
+  done <<< "$sc"
   while IFS=$'\t' read -r f j; do
     [ -n "$f" ] || continue
     echo "RED: $f:$j is a heavy job on push and pull_request without the draft clause its heavy siblings carry (a draft PR runs it)"
     fail=1
-  done < <(drafts)
+  done <<< "$dr"
   for key in $(printf "%s\n" "$exempt" | tr " " "_" | grep -v "^$"); do
     printf "%s\n" "$used" | grep -qxF -- "$key" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
   done
@@ -137,7 +246,7 @@ $key"; continue; fi
 }
 
 self_test() {
-  local d fails=0 w
+  local d fails=0 w rc
   d="$(mktemp -d)"; w="$d/wf"; mkdir -p "$w"
   t() { # name, expected rc, exempt content, workflow body
     printf '%s' "$4" > "$w/ci.yml"; printf '%s' "$3" > "$d/ex"
@@ -230,6 +339,66 @@ jobs:
 jobs:
   a: {runs-on: x, steps: []}
 "
+  # FAIL CLOSED rows (#7314 lane 2): each was a silent exit 0 before. tf = like t, but names the file and clears the dir first.
+  tf() { # name, expected rc, file name, workflow body
+    rm -f "${w:?}"/*; printf '%s' "$4" > "$w/$3"; : > "$d/ex"
+    PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; local rc=$?
+    [ "$rc" = "$2" ] && echo "ok   $1" || { echo "FAIL $1 (rc $rc, want $2)"; fails=1; }
+  }
+  tf "malformed YAML is RED, not OK" 1 ci.yml 'on: [push
+jobs:
+  bad: [
+'
+  printf '%s' "$H
+  a: {runs-on: x, steps: []}
+" > "$w/good.yml"; printf 'on: [push\njobs:\n  bad: [\n' > "$w/bad.yml"; : > "$d/ex"
+  PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 1 ] && echo "ok   one malformed workflow beside a clean one is RED" || { echo "FAIL one malformed workflow beside a clean one (rc $rc, want 1)"; fails=1; }
+  rm -f "${w:?}"/*; : > "$d/ex"
+  PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 1 ] && echo "ok   an empty workflow directory is RED (no vacuous pass)" || { echo "FAIL an empty workflow directory (rc $rc, want 1)"; fails=1; }
+  PARITY_WORKFLOWS="$d/no-such-dir" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 1 ] && echo "ok   a missing workflow directory is RED" || { echo "FAIL a missing workflow directory (rc $rc, want 1)"; fails=1; }
+  tf "a .yaml push-only workflow is scanned and RED" 1 ci.yaml "on: {push: {branches: [main]}}
+jobs:
+  a: {runs-on: x, steps: []}
+"
+  tf "a clean .yaml workflow is scanned and green" 0 ci.yaml "$H
+  a: {runs-on: x, steps: []}
+"
+  tf "push || merge_group (never on a PR) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || github.event_name == 'merge_group'\", steps: []}
+"
+  tf "(push || merge_group) && other is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"(github.event_name == 'push' || github.event_name == 'merge_group') && vars.X == 'y'\", steps: []}
+"
+  tf "event_name == 'push' || a pull_request term is green" 0 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || github.event_name == 'pull_request'\", steps: []}
+"
+  tf "!= pull_request || draft guard is green (it runs on a PR when not a draft)" 0 ci.yml "$H
+  a: {runs-on: x, if: \"\${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}\", steps: []}
+"
+  tf "NO-FORK guard form is green" 0 ci.yml "$H
+  a: {runs-on: x, if: \"github.event.pull_request.draft != true && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)\", steps: []}
+"
+  tf "!cancelled() with a draft clause is green" 0 ci.yml "$H
+  a: {runs-on: x, if: \"!cancelled() && github.event.pull_request.draft != true\", steps: []}
+"
+  tf "a call naming github.event_name is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"contains(fromJSON('[\\\"push\\\"]'), github.event_name)\", steps: []}
+"
+  tf "reversed literal == github.event_name is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"'push' == github.event_name\", steps: []}
+"
+  tf "an unbalanced parenthesis is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"(github.event_name == 'push'\", steps: []}
+"
+  tf "a dangling || is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' ||\", steps: []}
+"
+  tf "a negated group that removes PR is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"!(github.event_name == 'pull_request' || github.event_name == 'merge_group')\", steps: []}
+"
   # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
   # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
   local sh yqp jqp
@@ -251,6 +420,6 @@ jobs:
 case "${1:-}" in
   --self-test) self_test; exit $? ;;
   --live) scan; exit $? ;;
-  -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help) sed -n "2,24p" "$0" | sed 's/^# \{0,1\}//' ;;
   *) scan; exit $? ;;
 esac

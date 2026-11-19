@@ -59,6 +59,9 @@ esac
 repo="" sha="" before="" ref="" event="" now=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
+    --repo|--sha|--before|--ref|--event|--now) [ "$#" -ge 2 ] || { echo "facts: $1 needs a value" >&2; exit 2; } ;;  # a bare `shift 2` fails and never advances: that looped forever
+  esac
+  case "$1" in
     --repo) repo="${2-}"; shift 2 ;; --sha) sha="${2-}"; shift 2 ;; --before) before="${2-}"; shift 2 ;;
     --ref) ref="${2-}"; shift 2 ;; --event) event="${2-}"; shift 2 ;;
     --now) now="${2-}"; shift 2 ;;

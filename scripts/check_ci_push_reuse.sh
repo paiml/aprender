@@ -461,6 +461,17 @@ want "Y13 a log with no stamp line yields null" null "$(bash "$FACTS" --parse-st
 want "Y14 a PR run of x86-main that skipped sov.test reads skipped" '"skipped"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-pr-sections.fixture" sov.test)"
 want "Y15 a run that ran sov.test reads success" '"success"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.fixture" sov.test)"
 want "Y16 a section the log does not carry reads null" null "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.fixture" no.such.section)"
+# Y17-Y19 (#7314): the SEC010 refusal of a ".." path is exercised (deleting it turns a row red), and a flag with no value exits 2, never loops.
+OUT=$(bash "$FACTS" --parse-stamp-log "$FX/../ci_push_reuse/stamp-job-no-stamp.fixture" 2>/dev/null); RC=$?
+want "Y17 --parse-stamp-log refuses a path with .. (exit 1, nothing printed, the readable file is not parsed)" "1:" "$RC:$OUT"
+OUT=$(bash "$FACTS" --parse-section-log "$FX/../ci_push_reuse/x86-main-push-sections.fixture" sov.test 2>/dev/null); RC=$?
+want "Y18 --parse-section-log refuses a path with .. (exit 1, nothing printed)" "1:" "$RC:$OUT"
+for fl in --repo --sha --before --ref --event --now; do
+  RC=0; timeout 10 bash "$FACTS" "$fl" >/dev/null 2>&1 || RC=$?
+  want "Y19 $fl with no value exits 2 (124 would be the old endless loop)" 2 "$RC"
+  RC=0; timeout 10 bash "$FACTS" --repo a/b --sha 0 --before 0 --ref r --event e "$fl" >/dev/null 2>&1 || RC=$?
+  want "Y19 $fl as the LAST flag with no value exits 2" 2 "$RC"
+done
 
 if [ "$fails" -eq 0 ]; then
   echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"
