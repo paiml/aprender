@@ -1,0 +1,16 @@
+# The throwaway crate the nightly publish rehearsal uploads (scripts/release/publish_rehearsal.sh, PMAT-6914).
+# NOT a member of the aprender workspace: the empty [workspace] table below makes this directory its own root,
+# so `cargo metadata` at the repo root never lists it and `cargo build` here never reads the root manifest.
+# `version` is a placeholder. The script sets the real version (0.0.<run-number>) in a scratch COPY; the tree never changes.
+[package]
+name = "aprender-publish-rehearsal"
+version = "0.0.0"
+edition = "2021"
+description = "Test artifact: the aprender release pipeline publishes this crate nightly to rehearse its own publish path. Not for use."
+license = "MIT"
+repository = "https://github.com/paiml/aprender"
+readme = "README.md"
+
+[workspace]
+
+[dependencies]
