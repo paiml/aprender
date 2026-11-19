@@ -193,7 +193,7 @@ jobs:
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
       - name: pr spot labels guard
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -e CARGO_TARGET_DIR=/tmp/t -w /w localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
+        run: docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -e CARGO_TARGET_DIR=/tmp/t -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -e CARGO_INCREMENTAL=0 -w /w localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
