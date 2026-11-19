@@ -14,11 +14,14 @@ check() { # spec-file -> RED lines, "CHECKED n" last
   while IFS='|' read -r _ inv _ path ob _; do
     inv=$(echo "$inv" | tr -d ' '); path=$(echo "$path" | tr -d ' `'); ob=$(echo "$ob" | tr -d ' `')
     n=$((n + 1))
+    if ! [[ "$ob" =~ ^[A-Za-z0-9][A-Za-z0-9_-]*$ ]]; then echo "RED $inv: obligation cell '$ob' is empty or not an id"; bad=1; continue; fi
     if [ ! -f "$path" ]; then echo "RED $inv: contract $path does not exist"; bad=1; continue; fi
     if ! "$PV" validate "$path" > /dev/null 2>&1; then echo "RED $inv: pv validate rejects $path"; bad=1; continue; fi
-    if ! grep -qF -- "$ob" "$path"; then echo "RED $inv: $path has no obligation $ob"; bad=1; fi
+    if ! grep -qE -- "^[[:space:]]*-[[:space:]]+id:[[:space:]]*[\"']?${ob}[\"']?[[:space:]]*$" "$path"; then echo "RED $inv: $path has no obligation $ob"; bad=1; fi
   done < <(grep -E '^\| SIM3D-INV-[0-9]+ ' "$f")
-  echo "CHECKED $n invariant row(s)"
+  named=$(grep -oE 'SIM3D-INV-[0-9]+' "$f" | sort -u | wc -l | tr -d ' ')
+  echo "CHECKED $n invariant row(s) of $named named"
+  if [ "$n" -ne "$named" ]; then echo "RED rows checked ($n) != SIM3D-INV ids the spec names ($named): a malformed row was skipped"; bad=1; fi
   [ "$n" -gt 0 ] || { echo "cannot measure: 0 invariant rows" >&2; return 2; }
   return "$bad"
 }
@@ -30,7 +33,15 @@ if [ "${1:-}" = --self-test ]; then
   check "$s" > /dev/null && { echo "FAIL planted fake contract passes (mutant)"; fail=1; }
   cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/s/SIM-SPEC-INV-001/SIM-SPEC-INV-999/' "$s"
   check "$s" > /dev/null && { echo "FAIL planted fake obligation id passes (mutant)"; fail=1; }
+  cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/s/SIM-SPEC-INV-001/SIM-SPEC-INV-00/' "$s"
+  check "$s" > /dev/null && { echo "FAIL truncated obligation id passes (mutant)"; fail=1; }
+  cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/s/`SIM-SPEC-INV-001`/`kind`/' "$s"
+  check "$s" > /dev/null && { echo "FAIL non-id word 'kind' as obligation passes (mutant)"; fail=1; }
+  cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/s/`SIM-SPEC-INV-001`/` `/' "$s"
+  check "$s" > /dev/null && { echo "FAIL empty obligation cell passes (mutant)"; fail=1; }
+  cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/{s/^| /|/;s/SIM-SPEC-INV-001/FAKE-999/}' "$s"
+  check "$s" > /dev/null && { echo "FAIL malformed (skipped) row passes (mutant)"; fail=1; }
   : > "$s"; check "$s" > /dev/null 2>&1 && { echo "FAIL empty spec passes"; fail=1; }
-  [ "$fail" = 0 ] && echo "check_sim3d_spec_contracts: self-test PASS (4 rows)"; exit "$fail"
+  [ "$fail" = 0 ] && echo "check_sim3d_spec_contracts: self-test PASS (8 cases)"; exit "$fail"
 fi
 check "${1:-$SPEC_DEFAULT}"
