@@ -1,0 +1,8 @@
+commit=d868798a410d5048ba0a7b3c61b2d247cd7256e1
+sha9=d868798a4
+version=0.75.0
+entry=scripts/release/models_t1.sh@f79404fdafb9f6936a9196859f70a72e6952108e
+measure=ladder
+t1_rc=1
+state=red
+reason=gx10 receipt has red cells; lambda NO-GO: no receipt -- BUILD-FAILED (rc 3)
