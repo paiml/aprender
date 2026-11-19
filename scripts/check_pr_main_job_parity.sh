@@ -41,7 +41,7 @@ WFILES=()
 wfiles() { # sets WFILES to every *.yml and *.yaml directly in $WF; non-zero when the directory is unreadable or holds none
   local out
   [ -d "$WF" ] || { echo "RED: workflow directory $WF does not exist (nothing was judged)" >&2; return 1; }
-  out=$(find "$WF" -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | LC_ALL=C sort) || { echo "RED: cannot list $WF (nothing was judged)" >&2; return 1; }
+  out=$(find "$WF" -maxdepth 1 \( -type f -o -type l \) \( -name '*.yml' -o -name '*.yaml' \) | LC_ALL=C sort) || { echo "RED: cannot list $WF (nothing was judged)" >&2; return 1; }
   [ -n "$out" ] || { echo "RED: no *.yml or *.yaml workflow in $WF (nothing was judged, a vacuous pass is refused)" >&2; return 1; }
   mapfile -t WFILES <<< "$out"
 }
@@ -84,8 +84,17 @@ function atom(a,   lit, eq, la) {
     if (a ~ /!=/) return eq ? "F" : "T"
     return eq ? "T" : "F"
   }
-  if (a == "true") return "T"
-  if (a == "false") return "F"
+  # github.ref differs per event (push to main: refs/heads/main; a PR: refs/pull/N/merge; the queue: refs/heads/gh-readonly-queue/...),
+  # so `github.ref == refs/heads/main` is false on a PR. Only the exact `github.ref ==|!= '"'"'lit'"'"'` form is judged; any other
+  # use of github.ref* is unjudgeable.
+  if (la ~ /github\.ref/) {
+    if (la !~ /^github\.ref *(==|!=) *\047[^\047]+\047$/) { err = "github.ref used in a form the check does not understand: " a; return "U" }
+    match(la, /\047[^\047]+\047/); lit = substr(la, RSTART + 1, RLENGTH - 2); eq = (lit == tolower(rf))
+    if (a ~ /!=/) return eq ? "F" : "T"
+    return eq ? "T" : "F"
+  }
+  if (la == "true") return "T"   # GitHub reads TRUE/True/true alike
+  if (la == "false") return "F"
   return "U"
 }
 function pprim(   v, a) {
@@ -106,12 +115,14 @@ function fold(s,   m) { # function calls become one U term; one that names githu
   while (match(s, /[A-Za-z_][A-Za-z0-9_]*\([^()]*\)/)) {
     m = substr(s, RSTART, RLENGTH)
     if (tolower(m) ~ /event_name/) err = "a call names github.event_name: " m
+    else if (tolower(m) ~ /github\.ref/) err = "a call names github.ref: " m
     s = substr(s, 1, RSTART - 1) "CALL" substr(s, RSTART + RLENGTH)
   }
   return s
 }
 function judge(e, evn,   v) {
   err = ""; ev = evn; pos = 1
+  rf = (evn == "push") ? "refs/heads/main" : ((evn == "pull_request") ? "refs/pull/1/merge" : "refs/heads/gh-readonly-queue/main/pr-1-0")
   e = fold(e)
   if (e ~ /^ *$/) return "T"
   if (err != "") return "U"
@@ -139,6 +150,9 @@ rows() {
   for f in "${WFILES[@]}"; do
     raw=$(yq -o=json '.' "$f") || { echo "RED: $(basename "$f") is not readable by yq (malformed YAML), so it was not judged" >&2; return 1; }
     raw=$(printf '%s' "$raw" | jq -r --arg f "$(basename "$f")" '
+      def arr: if type=="array" then . elif type=="null" then [] else [.] end;
+      def gl: gsub("\\.";"\\.") | gsub("\\*\\*";"@@DS@@") | gsub("\\*";"[^/]*") | gsub("@@DS@@";".*") | gsub("\\?";"[^/]");
+      def pats($ps; $b): reduce ($ps|arr)[] as $p (false; if ($p|startswith("!")) then (if ($b|test("^"+($p[1:]|gl)+"$")) then false else . end) else (if ($b|test("^"+($p|gl)+"$")) then true else . end) end);
       (.on // {}) as $on
       | (if ($on|type)=="string" then [$on] elif ($on|type)=="array" then $on else ($on|keys) end) as $ev
       | (if ($on|type)=="object" and ($on.push|type)=="object"
@@ -146,8 +160,17 @@ rows() {
                  | if $b==null and $t!=null then false
                    else ($b==null or ($b|map(select(.=="main" or .=="master" or test("\\*")))|length>0)) end)
            else ($ev|index("push")!=null) end) as $pushmain
+      | (if ($ev|index("pull_request")) == null then false
+         elif ($on|type)=="object" and ($on.pull_request|type)=="object" then
+           ($on.pull_request) as $p
+           | (($on.push // {}) | if type=="object" then . else {} end) as $q
+           | (if $p.branches != null then pats($p.branches; "main") else true end)
+             and (if $p["branches-ignore"] != null then (pats($p["branches-ignore"]; "main") | not) else true end)
+             and (if $p.paths != null then (($p.paths|arr|sort) == (($q.paths // null)|arr|sort)) else true end)
+             and (if $p["paths-ignore"] != null then (($p["paths-ignore"]|arr|sort) == (($q["paths-ignore"] // null)|arr|sort)) else true end)
+         else true end) as $prmain
       | (.jobs // {}) | to_entries[]
-      | [$f, .key, (if $pushmain then "1" else "0" end), (if $ev|index("pull_request") then "1" else "0" end),
+      | [$f, .key, (if $pushmain then "1" else "0" end), (if $prmain then "1" else "0" end),
          (if $ev|index("merge_group") then "1" else "0" end),
          (((.value.if // "")|tostring)|gsub("[\t\n\r]+";" "))] | @tsv') || { echo "RED: $(basename "$f") has a shape jq cannot read, so it was not judged" >&2; return 1; }
     [ -z "$raw" ] || acc="$acc$raw
@@ -166,11 +189,26 @@ shortcuts() {
       [ -n "$j" ] || continue
       body=$(printf '%s' "$b" | base64 -d) || { echo "RED: $(basename "$f"):$j run script is not decodable" >&2; return 1; }
       if printf '%s' "$body" | awk '
+          # A PR "shortcut" is any path that returns success on a pull_request before the heavy checks. Judged conservatively (over-matching
+          # is a RED, never an OK): `[ .. pull_request .. ] && exit 0`, `[ .. pull_request .. ] || .. exit 0` (either polarity), an if/elif
+          # on pull_request whose block (nested ifs counted by depth, an else included) reaches exit 0, and a `case` arm naming pull_request
+          # that reaches exit 0.
+          function words(l, w,   n, a, i, c) { n = split(l, a, /[^A-Za-z0-9_]+/); c = 0; for (i = 1; i <= n; i++) if (a[i] == w) c++; return c }
           /^[[:space:]]*#/ { next }
-          /^[[:space:]]*\[.*pull_request.*\][[:space:]]*&&.*exit[[:space:]]+0/ { hit = 1 }
-          /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { inif = 1; if ($0 ~ /exit[[:space:]]+0/) hit = 1; next }
-          inif && /exit[[:space:]]+0/ { hit = 1 }
-          inif && /^[[:space:]]*fi([[:space:];]|$)/ { inif = 0 }
+          {
+            l = $0; nif = words(l, "if"); nfi = words(l, "fi")
+            ex = (l ~ /exit[[:space:]]+0([^0-9]|$)/)
+            if (l ~ /^[[:space:]]*\[.*pull_request.*\][[:space:]]*(&&|\|\|).*exit[[:space:]]+0([^0-9]|$)/) hit = 1
+            if (l ~ /^[[:space:]]*(if|elif)[[:space:]].*pull_request/) { if (ex) hit = 1 }
+            else if (prd > 0 && ex) hit = 1
+            d += nif - nfi
+            if (l ~ /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ && prd == 0 && d > 0 && (nif > nfi || l ~ /^[[:space:]]*elif/)) prd = d
+            if (prd > 0 && d < prd) prd = 0
+            if (d < 0) d = 0
+            if (l !~ /^[[:space:]]*(if|elif)[[:space:]]/ && l ~ /(^|[[:space:]])\(?"?([A-Za-z_*]+"?\|"?)*pull_request("?\|"?[A-Za-z_*]+)*"?\)/) { carm = 1; if (ex) hit = 1 }
+            else if (carm && ex) hit = 1
+            if (carm && l ~ /;;/) carm = 0
+          }
           END { exit !hit }'; then
         printf '%s\t%s\n' "$(basename "$f")" "$j"
       fi
@@ -416,6 +454,162 @@ jobs:
   tf "a negated group that removes PR is RED" 1 ci.yml "$H
   a: {runs-on: x, if: \"!(github.event_name == 'pull_request' || github.event_name == 'merge_group')\", steps: []}
 "
+  # #7314 round 4 (agy lanes 1+2 on ce76a90, lane 1+2 on b8fd832): each row below was a silent exit 0 before.
+  tf "[ != pull_request ] || exit 0 is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${EVT:-}\" != pull_request ] || exit 0
+          check_heavy
+"
+  tf "[ != pull_request ] || { ..; exit 0; } is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${EVT:-}\" != pull_request ] || { echo light passed; exit 0; }
+          check_heavy
+"
+  tf "case pull_request) exit 0 on one line is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\${EVT:-}\" in pull_request) exit 0 ;; esac
+          check_heavy
+"
+  tf "case arm on its own line reaching exit 0 is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\${EVT:-}\" in
+            push|pull_request)
+              echo light
+              exit 0 ;;
+          esac
+          check_heavy
+"
+  tf "case arm on pull_request that does not exit 0 is green" 0 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\${EVT:-}\" in
+            pull_request) echo light ;;
+            *) exit 0 ;;
+          esac
+          check_heavy
+"
+  tf "nested if before exit 0 inside the pull_request block is RED (depth, not a flag)" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            if [ \"\${PRL:-}\" != success ]; then
+              exit 1
+            fi
+            echo light passed; exit 0
+          fi
+          check_heavy
+"
+  tf "single-line if pull_request; fi then a draft exit 0 is green (no leaked state)" 0 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then echo ok; fi
+          [ \"\$DRAFT\" != true ] || { echo draft; exit 0; }
+"
+  tf "pull_request.branches that drops main is RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {branches: [release-only]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.branches-ignore main is RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {branches-ignore: [main]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.branches [**, !main] drops main, RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {branches: ["**", "!main"]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.branches [main] is green" 0 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {branches: [main]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.branches [**] is green" 0 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {branches: ["**"]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.paths the push trigger lacks is RED (a PR can skip the job)" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {paths: ["src/**"]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.paths-ignore the push trigger lacks is RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {paths-ignore: ["docs/**"]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "the same paths on push and pull_request is green" 0 ci.yml 'on:
+  push: {branches: [main], paths: ["src/**", "b"]}
+  pull_request: {paths: ["b", "src/**"]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "push || FALSE (upper-case literal) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || FALSE\", steps: []}
+"
+  tf "!= pull_request || FALSE is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name != 'pull_request' || FALSE\", steps: []}
+"
+  tf "push || ! TRUE is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || ! TRUE\", steps: []}
+"
+  tf "github.ref == refs/heads/main never holds on a PR, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.ref == 'refs/heads/main'\", steps: []}
+"
+  tf "push || github.ref == refs/heads/main is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || github.ref == 'refs/heads/main'\", steps: []}
+"
+  tf "github.REF == REFS/HEADS/MAIN (case) is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.REF == 'REFS/HEADS/MAIN'\", steps: []}
+"
+  tf "github.ref != refs/heads/main is green (true on a PR)" 0 ci.yml "$H
+  a: {runs-on: x, if: \"github.ref != 'refs/heads/main' || github.event_name == 'push'\", steps: []}
+"
+  tf "a call naming github.ref is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"startsWith(github.ref, 'refs/heads/')\", steps: []}
+"
+  tf "github.ref_name is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.ref_name == 'main'\", steps: []}
+"
+  # symlinked workflow files are scanned (find -type f skipped them)
+  rm -f "${w:?}"/*; : > "$d/ex"
+  printf 'on: {push: {branches: [main]}}\njobs:\n  hidden: {runs-on: x, steps: []}\n' > "$d/hidden.yml"; ln -s "$d/hidden.yml" "$w/link.yml"
+  PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 1 ] && echo "ok   a symlinked push-only workflow is scanned and RED" || { echo "FAIL a symlinked push-only workflow (rc $rc, want 1)"; fails=1; }
+  rm -f "${w:?}"/*; printf '%s\n  a: {runs-on: x, steps: []}\n' "$H" > "$d/clean.yml"; ln -s "$d/clean.yml" "$w/link.yaml"
+  PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 0 ] && echo "ok   a symlinked clean .yaml workflow is scanned and green" || { echo "FAIL a symlinked clean workflow (rc $rc, want 0)"; fails=1; }
+  rm -f "${w:?}"/*; ln -s "$d/no-such-target.yml" "$w/dangling.yml"
+  PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 1 ] && echo "ok   a dangling symlinked workflow is RED" || { echo "FAIL a dangling symlinked workflow (rc $rc, want 1)"; fails=1; }
+  rm -f "${w:?}"/*
   # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
   # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
   local sh yqp jqp

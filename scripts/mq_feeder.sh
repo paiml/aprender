@@ -440,7 +440,8 @@ GH2EOF
   rm -rf "${d2:?}"
   # PMAT-5843: the required check must exist on a PR head. required set ∩ merge_group-only jobs = ∅, read from the real ci.yml.
   wf="$(dirname "$0")/../.github/workflows/ci.yml"
-  eq 'static: the parser finds the known merge-queue-only job x86-main' "$(mq_only_jobs "$wf" | grep -cxF x86-main)" 1
+  eq 'static: the parser finds the known merge-queue-only jobs guards and mg-reuse-wt' "$(mq_only_jobs "$wf" | grep -cxE 'guards|mg-reuse-wt')" 2
+  eq 'static: x86-main runs on a same-repo PR (#7314 fork-guarded if), so it is not merge-queue-only' "$(mq_only_jobs "$wf" | grep -cxF x86-main)" 0
   eq 'static: the parser does not call pr-light merge-queue-only' "$(mq_only_jobs "$wf" | grep -cxF pr-light)" 0
   eq 'static: the feeder requires a job that exists in ci.yml' "$(ci_jobs all "$wf" | grep -cxF -e "$GUARD_CHECK_NAME")" 1
   eq 'static: the feeder required set is disjoint from the merge-queue-only jobs' "$(required_is_mq_only "$GUARD_CHECK_NAME" "$wf")" ''
@@ -459,6 +460,9 @@ GH2EOF
   eq 'static: needs reaches a hyphenated job id (the real ci.yml shape)' "$(required_is_mq_only y-child "$fx")" y-child
   eq 'static: an if: always() job runs when its need is skipped, so it is not merge-queue-only' "$(required_is_mq_only z-always "$fx")" ''
   eq 'static: a job that needs a PR-runnable job is not merge-queue-only' "$(required_is_mq_only ok "$fx")" ''
+  printf '  forkg:\n    if: ${{ !cancelled() && (github.event_name != %spull_request%s || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}\n  forkgmq:\n    if: ${{ github.event_name != %spull_request%s && github.event.pull_request.draft != true }}\n' "$Q" "$Q" "$Q" "$Q" >> "$fx"
+  eq 'static: a fork-guarded || (same-repo PR runs it) is PR-runnable, not merge-queue-only' "$(required_is_mq_only forkg "$fx")" ''
+  eq 'static: the same if without the same-repo branch is merge-queue-only' "$(required_is_mq_only forkgmq "$fx")" forkgmq
   printf 'on:\n  push:\n  merge_group:\njobs:\n  pr-light:\n    runs-on: x\n' > "$fx"
   eq 'static: a workflow with no pull_request trigger is merge-queue-only' "$(required_is_mq_only pr-light "$fx")" pr-light
   printf 'on:\n  pull_request:\njobs:\n  a:\n    runs-on: x\nenv:\n  pr-light:\n    x: 1\n' > "$fx"

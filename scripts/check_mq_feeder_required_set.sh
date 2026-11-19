@@ -60,7 +60,7 @@ fi
 # The bare run below sets no GUARD_CHECK_NAME: it judges the default scripts/mq_feeder.sh:17 gives (`${GUARD_CHECK_NAME:-pr-light}`),
 # so a feeder default changed to a merge-queue-only job turns it red. Only the --self-test branch above pins the name (and exits).
 bash "$0" --self-test || exit 1
-# the feeder's own self-test holds the real-ci.yml assertion (x86-main is merge-queue-only, pr-light is not) and the runtime tests
+# the feeder's own self-test holds the real-ci.yml assertion (guards is merge-queue-only, x86-main and pr-light are not) and the runtime tests
 bash "$FEEDER" --self-test > /dev/null || { echo "check_mq_feeder_required_set: FAIL the feeder --self-test is red"; exit 1; }
 out="$(bash "$FEEDER" --check-required "$ROOT/.github/workflows/ci.yml" 2>&1)"; rc=$?
 if [ "$rc" -eq 0 ]; then echo "check_mq_feeder_required_set: PASS ($out)"; exit 0; fi

@@ -200,8 +200,9 @@ jobs:
 
   # The same case table on every event, so a change that breaks the key is RED on
   # its own PR, not first in the queue. gate requires it.
+  # NO-FORK-1 (#7314): runs the PR tree on a self-hosted seat, so a fork PR skips it.
   mg-reuse-self-test:
-    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
+    if: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft) }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 10
     permissions:
