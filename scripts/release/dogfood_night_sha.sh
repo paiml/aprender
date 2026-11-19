@@ -91,9 +91,11 @@ ROWS
   # The pick decides nothing unless the producer checks out what it prints.
   WF="$(dirname "$SELF")/../../.github/workflows/dogfood-nightly.yml"
   if [ -f "$WF" ]; then
-    for want in '          ref: ${{ needs.night.outputs.sha }}' '            sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)"); rc=$?' '    needs: night'; do
+    for want in '          ref: ${{ needs.night.outputs.sha }}' '            rc=0; sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)") || rc=$?' '    needs: night'; do
       grep -qxF -- "$want" "$WF" || { echo "SELF-TEST FAILED: dogfood-nightly.yml no longer has: $want"; exit 1; }
     done
+    # The step runs under bash -e: `cmd; rc=$?` ends the step silently on a non-zero cmd (#7291). Refuse that form anywhere.
+    if grep -qE '; (rc|r5)=\$\?$' "$WF"; then echo "SELF-TEST FAILED: dogfood-nightly.yml has a bare '...; rc=\$?' capture, which exits silently under -e"; exit 1; fi
     echo "self-test: dogfood-nightly.yml checks out the pick"
   fi
   bad=0

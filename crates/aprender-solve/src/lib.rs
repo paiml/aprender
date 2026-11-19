@@ -34,6 +34,7 @@
 
 mod blas3;
 mod cholesky;
+mod cholesky_f64;
 mod error;
 mod lu;
 mod qr;
@@ -47,6 +48,7 @@ pub use blas3::{
     f32_to_f16, gemm_ex, gemm_ex_epilogue, gemm_strided_batched, symm, syr2k, syrk, trmm, Epilogue,
 };
 pub use cholesky::{cholesky, CholeskyFactorization};
+pub use cholesky_f64::{cholesky_f64, CholeskyF64};
 pub use error::SolverError;
 pub use lu::{lu_factorize, LuFactorization};
 pub use qr::{qr_factorize, QrFactorization};

@@ -77,7 +77,7 @@ jobs:
           # One read every 5 minutes (GH-1), at most 12: tonight's nightly.yml run is created
           # within minutes of this one or the lane is not_measured, never a guess.
           for i in $(seq 1 12); do
-            sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)"); rc=$?
+            rc=0; sha=$(bash scripts/release/dogfood_night_sha.sh --now "$(date -u +%s)") || rc=$?
             [ "$rc" -ne 1 ] && break
             [ "$i" -lt 12 ] && sleep 300
           done
@@ -158,14 +158,15 @@ jobs:
           # satisfy if-no-files-found with a receipt from another night.
           SOURCE_DATE_EPOCH=$(date -u +%s); export SOURCE_DATE_EPOCH
           ts=$(date -u -d @"$SOURCE_DATE_EPOCH" +%Y%m%dT%H%M%SZ)
-          bash scripts/dogfood.sh --phase nightly > "$RUNNER_TEMP/dogfood/dogfood-nightly.log" 2>&1; rc=$?
+          # The shell runs under bash -e: a bare `cmd; rc=$?` ends the step on a non-zero cmd (#7291). `|| rc=$?` keeps -e quiet.
+          rc=0; bash scripts/dogfood.sh --phase nightly > "$RUNNER_TEMP/dogfood/dogfood-nightly.log" 2>&1 || rc=$?
           if [ -f ".dogfood/receipt-$ts.json" ]; then cp ".dogfood/receipt-$ts.json" "$RUNNER_TEMP/dogfood/receipt-$ts.json"; else echo "::error::dogfood wrote no receipt-$ts.json tonight (rc=$rc)"; norcpt=1; fi
           tail -n 40 "$RUNNER_TEMP/dogfood/dogfood-nightly.log"
           [ "$rc" -eq 0 ] || bash scripts/dogfood_nightly_explain.sh "$RUNNER_TEMP/dogfood/dogfood-nightly.log" "$rc"
           dirty=$(git status --porcelain)
           [ -z "$dirty" ] || { echo "::error::tree dirty after dogfood: $(printf '%s' "$dirty" | head -3 | tr '\n' ' ')"; exit 1; }
           # Negative control, run whatever the verdict: a nightly receipt is never a release receipt.
-          setsid --wait bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1; r5=$?
+          r5=0; setsid --wait bash scripts/check_publish_preflight.sh --receipt-only > "$RUNNER_TEMP/dogfood/dogfood-r5.log" 2>&1 || r5=$?
           tail -n 2 "$RUNNER_TEMP/dogfood/dogfood-r5.log"
           if [ "$r5" -eq 0 ] || ! grep -q 'is a --phase nightly receipt' "$RUNNER_TEMP/dogfood/dogfood-r5.log"; then
             echo "::error::R5 did not refuse the nightly receipt (rc=$r5): a nightly receipt would pass a publish"; exit 1

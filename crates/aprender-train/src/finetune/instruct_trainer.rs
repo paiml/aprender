@@ -243,11 +243,7 @@ impl InstructTrainer {
             let val_result = self.pipeline.evaluate(&val_prompts, &val_responses);
 
             let epoch_time_ms = epoch_start.elapsed().as_millis() as u64;
-            let samples_per_sec = if epoch_time_ms > 0 {
-                train_prepared.len() as f32 / (epoch_time_ms as f32 / 1000.0)
-            } else {
-                0.0
-            };
+            let samples_per_sec = samples_per_second(train_prepared.len(), epoch_time_ms);
 
             let metrics = InstructEpochMetrics {
                 epoch,
@@ -274,12 +270,7 @@ impl InstructTrainer {
             }
 
             // Periodic checkpoint
-            let effective_save_every = if self.config.epochs <= self.config.save_every {
-                1
-            } else {
-                self.config.save_every
-            };
-            if effective_save_every > 0 && (epoch + 1) % effective_save_every == 0 {
+            if periodic_save_due(self.config.epochs, self.config.save_every, epoch) {
                 let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
                 let _ = self.save_checkpoint(&epoch_path, epoch, &metrics);
             }
@@ -293,18 +284,13 @@ impl InstructTrainer {
             }
         }
 
-        // PMAT-512: Print final training summary to stderr for canary parser.
-        if let Some(last) = epoch_metrics.last() {
-            eprintln!(
-                "[training] Training complete: final_loss={:.4} best_val_loss={:.4} best_epoch={} epochs={} time={}s{}",
-                last.train_loss,
-                best_val_loss,
-                best_epoch + 1,
-                epoch_metrics.len(),
-                total_start.elapsed().as_secs(),
-                if stopped_early { " (early stopped)" } else { "" },
-            );
-        }
+        print_training_summary(
+            &epoch_metrics,
+            best_val_loss,
+            best_epoch,
+            stopped_early,
+            total_start.elapsed().as_secs(),
+        );
 
         // PMAT-483: Print profiler report at end of training (text + JSON)
         if self.pipeline.profiler.is_enabled() {
@@ -488,13 +474,11 @@ impl InstructTrainer {
             })
             .collect();
 
-        let mut st_metadata = std::collections::HashMap::new();
+        let mut st_metadata = std::collections::BTreeMap::new();
         st_metadata.insert("epoch".to_string(), epoch.to_string());
         st_metadata.insert("val_loss".to_string(), format!("{:.6}", metrics.val_loss));
 
-        let safetensor_bytes = safetensors::serialize(views, Some(st_metadata)).map_err(|e| {
-            crate::Error::Serialization(format!("SafeTensors serialization failed: {e}"))
-        })?;
+        let safetensor_bytes = serialize_with_ordered_metadata(views, &st_metadata)?;
         std::fs::write(path.join("model.safetensors"), safetensor_bytes)?;
 
         contract_post_save_checkpoint!(());
@@ -502,11 +486,132 @@ impl InstructTrainer {
     }
 }
 
+/// Samples per second, 0 when no time elapsed.
+fn samples_per_second(samples: usize, elapsed_ms: u64) -> f32 {
+    if elapsed_ms > 0 {
+        samples as f32 / (elapsed_ms as f32 / 1000.0)
+    } else {
+        0.0
+    }
+}
+
+/// Whether the periodic checkpoint is due after `epoch` (0-based).
+/// A run no longer than `save_every` still saves every epoch.
+fn periodic_save_due(epochs: usize, save_every: usize, epoch: usize) -> bool {
+    let every = if epochs <= save_every { 1 } else { save_every };
+    every > 0 && (epoch + 1) % every == 0
+}
+
+/// PMAT-512: final training summary on stderr for the canary parser.
+fn print_training_summary(
+    epoch_metrics: &[InstructEpochMetrics],
+    best_val_loss: f32,
+    best_epoch: usize,
+    stopped_early: bool,
+    elapsed_secs: u64,
+) {
+    if let Some(last) = epoch_metrics.last() {
+        eprintln!(
+            "[training] Training complete: final_loss={:.4} best_val_loss={:.4} best_epoch={} epochs={} time={}s{}",
+            last.train_loss,
+            best_val_loss,
+            best_epoch + 1,
+            epoch_metrics.len(),
+            elapsed_secs,
+            if stopped_early { " (early stopped)" } else { "" },
+        );
+    }
+}
+
+/// Serialize tensors to SafeTensors bytes with `__metadata__` keys in sorted order.
+///
+/// `safetensors::serialize` takes a `HashMap`, whose iteration order is random per
+/// instance, so two same-seed runs wrote different header bytes (#7255). The tensors
+/// are serialized without metadata and the sorted `__metadata__` object is spliced in
+/// as the first header entry; the header length is recomputed and re-padded to 8 bytes.
+pub(crate) fn serialize_with_ordered_metadata<V>(
+    views: Vec<(&str, V)>,
+    metadata: &std::collections::BTreeMap<String, String>,
+) -> crate::Result<Vec<u8>>
+where
+    V: safetensors::tensor::View,
+{
+    let ser_err =
+        |m: String| crate::Error::Serialization(format!("SafeTensors serialization failed: {m}"));
+    let bytes = safetensors::serialize(views, None).map_err(|e| ser_err(e.to_string()))?;
+    let n = u64::from_le_bytes(bytes[..8].try_into().map_err(|_| ser_err("short header".into()))?)
+        as usize;
+    let header = std::str::from_utf8(&bytes[8..8 + n]).map_err(|e| ser_err(e.to_string()))?;
+    let body = header
+        .trim_end()
+        .strip_prefix('{')
+        .ok_or_else(|| ser_err("header is not an object".into()))?;
+    let meta = serde_json::to_string(metadata).map_err(|e| ser_err(e.to_string()))?;
+    let sep = if body.trim_start().starts_with('}') { "" } else { "," };
+    let mut new_header = format!("{{\"__metadata__\":{meta}{sep}{body}");
+    while new_header.len() % 8 != 0 {
+        new_header.push(' ');
+    }
+    let mut out = Vec::with_capacity(8 + new_header.len() + bytes.len() - 8 - n);
+    out.extend_from_slice(&(new_header.len() as u64).to_le_bytes());
+    out.extend_from_slice(new_header.as_bytes());
+    out.extend_from_slice(&bytes[8 + n..]);
+    Ok(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::finetune::instruct_pipeline::InstructConfig;
     use crate::transformer::TransformerConfig;
+
+    #[test]
+    fn samples_per_second_guards_zero_time() {
+        assert_eq!(samples_per_second(10, 0), 0.0);
+        assert_eq!(samples_per_second(10, 2000), 5.0);
+    }
+
+    #[test]
+    fn periodic_save_due_matches_old_rule() {
+        assert!(periodic_save_due(2, 5, 0));
+        assert!(periodic_save_due(5, 5, 1));
+        assert!(!periodic_save_due(10, 5, 0));
+        assert!(periodic_save_due(10, 5, 4));
+        assert!(!periodic_save_due(10, 0, 4));
+    }
+
+    #[test]
+    fn ordered_metadata_is_sorted_and_roundtrips() {
+        use safetensors::tensor::{Dtype, TensorView};
+        let data = [1.0f32, 2.0, 3.0, 4.0];
+        let bytes: &[u8] = bytemuck::cast_slice(&data);
+        let mut meta = std::collections::BTreeMap::new();
+        meta.insert("val_loss".to_string(), "6.743455".to_string());
+        meta.insert("epoch".to_string(), "1".to_string());
+        let mk = || vec![("t", TensorView::new(Dtype::F32, vec![2, 2], bytes).unwrap())];
+        let a = serialize_with_ordered_metadata(mk(), &meta).unwrap();
+        for _ in 0..32 {
+            assert_eq!(a, serialize_with_ordered_metadata(mk(), &meta).unwrap());
+        }
+        let n = u64::from_le_bytes(a[..8].try_into().unwrap()) as usize;
+        assert_eq!(n % 8, 0);
+        let hdr = std::str::from_utf8(&a[8..8 + n]).unwrap();
+        assert!(
+            hdr.starts_with(r#"{"__metadata__":{"epoch":"1","val_loss":"6.743455"},"#),
+            "{hdr}"
+        );
+        let st = safetensors::SafeTensors::deserialize(&a).unwrap();
+        assert_eq!(st.tensor("t").unwrap().data(), bytes);
+    }
+
+    #[test]
+    fn ordered_metadata_with_no_tensors_is_valid() {
+        let mut meta = std::collections::BTreeMap::new();
+        meta.insert("a".to_string(), "b".to_string());
+        let none: Vec<(&str, safetensors::tensor::TensorView<'_>)> = vec![];
+        let out = serialize_with_ordered_metadata(none, &meta).unwrap();
+        assert!(safetensors::SafeTensors::deserialize(&out).is_ok());
+    }
 
     fn make_corpus(n: usize) -> Vec<InstructSample> {
         (0..n)
@@ -563,6 +668,36 @@ mod tests {
         assert!(result.best_val_loss >= 0.0);
         // #3703: `total_time_ms` is a truncated wall-clock `as_millis()`, 0 on a host that trains
         // this tiny config in under a millisecond, so it is not asserted. The epoch count is.
+    }
+
+    /// #7255: two same-seed runs write a checkpoint with an identical sha256.
+    #[test]
+    fn same_seed_checkpoints_have_identical_sha256() {
+        let digest = |dir: &std::path::Path| {
+            let model_config = TransformerConfig::tiny();
+            let instruct_config =
+                InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
+            let pipeline = InstructPipeline::new(&model_config, instruct_config);
+            let config = InstructTrainingConfig { epochs: 1, seed: 7, ..Default::default() };
+            let mut trainer = InstructTrainer::new(pipeline, make_corpus(10), config).unwrap();
+            let metrics = InstructEpochMetrics {
+                epoch: 0,
+                train_loss: 1.0,
+                train_perplexity: 2.0,
+                val_loss: 6.743455,
+                val_perplexity: 3.0,
+                learning_rate: 1e-4,
+                epoch_time_ms: 0,
+                samples_per_sec: 0.0,
+            };
+            trainer.save_checkpoint(dir, 0, &metrics).unwrap();
+            let bytes = std::fs::read(dir.join("model.safetensors")).unwrap();
+            format!("{:x}", Sha256::digest(&bytes))
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let a = digest(&tmp.path().join("a"));
+        let b = digest(&tmp.path().join("b"));
+        assert_eq!(a, b);
     }
 
     #[test]
