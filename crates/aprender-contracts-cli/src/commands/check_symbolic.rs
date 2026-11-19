@@ -784,4 +784,61 @@ mod tests {
             assert_eq!(strip_prose(input), want, "{input}");
         }
     }
+
+    /// (contract file, equation) pairs whose three invariants are typed formulas (SIM3D #7253).
+    const TYPED: [(&str, &str); 2] = [
+        ("simular/simulation-determinism-v1.yaml", "time_advancement"),
+        ("simular/simulation-step-v1.yaml", "step_monotonicity"),
+    ];
+
+    fn typed_equation(file: &str, eq: &str) -> (String, Vec<String>) {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts")
+            .join(file);
+        let c = parse_contract(&p).expect("contract");
+        let e = &c.equations[eq];
+        (e.formula.clone(), e.invariants.clone())
+    }
+
+    #[test]
+    fn simular_typed_invariants_all_hold() {
+        for (file, eq) in TYPED {
+            let (formula, invs) = typed_equation(file, eq);
+            assert_eq!(invs.len(), 3, "{file}");
+            for i in &invs {
+                let v = check_invariant(&formula, i);
+                assert!(
+                    matches!(v, Verdict::Holds { points } if points > 10),
+                    "{file} {i}: {v:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn simular_planted_wrong_formula_is_violated() {
+        for (file, eq, from, to) in [
+            (
+                "simular/simulation-determinism-v1.yaml",
+                "time_advancement",
+                "t0 + n * timestep_secs;",
+                "t0 - n * timestep_secs;",
+            ),
+            (
+                "simular/simulation-step-v1.yaml",
+                "step_monotonicity",
+                "step_count(n) = n",
+                "step_count(n) = 2 * n",
+            ),
+        ] {
+            let (formula, invs) = typed_equation(file, eq);
+            assert!(formula.contains(from), "{file}: mutation site missing");
+            let bad = formula.replacen(from, to, 1);
+            assert!(
+                invs.iter()
+                    .any(|i| matches!(check_invariant(&bad, i), Verdict::Violated { .. })),
+                "{file}: planted formula not caught"
+            );
+        }
+    }
 }
