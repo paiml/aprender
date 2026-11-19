@@ -311,6 +311,20 @@ fn gpu_backend_notice(
     }
 }
 
+/// The sequence length a run really uses: the value set by the recipe or `--max-seq-len`, else
+/// `InstructConfig`'s default (512), on every path, the WGPU one included (PMAT-7239).
+/// `--dry-run` prints this number (PMAT-7240).
+#[cfg(feature = "training")]
+fn effective_max_seq_len(set: Option<usize>, _gpu_backend: &str, _quantize_nf4: bool) -> usize {
+    wgpu_max_seq_len(set)
+}
+
+/// Without the `training` feature nothing trains; the value printed is the one set or 512.
+#[cfg(not(feature = "training"))]
+fn effective_max_seq_len(set: Option<usize>, _gpu_backend: &str, _quantize_nf4: bool) -> usize {
+    set.unwrap_or(512)
+}
+
 /// Build the `InstructConfig` for the default LoRA/QLoRA training path.
 ///
 /// Root cause (Defect 2): the old inline construction hardcoded
@@ -341,7 +355,7 @@ fn build_instruct_config(
 /// instruct (CPU/CUDA) path trains at, so one `max_seq_len` means one length on
 /// every backend (it was a literal 512 here).
 #[cfg(feature = "training")]
-fn wgpu_max_seq_len(
+fn wgpu_instruct_max_seq_len(
     instruct_config: &entrenar::finetune::instruct_pipeline::InstructConfig,
 ) -> usize {
     instruct_config.max_seq_len
@@ -357,26 +371,6 @@ fn wgpu_max_seq_len(
 ///   4. Fix: Use InstructPipeline::from_apr() + InstructTrainer::train()
 ///
 /// Contract: qlora-training-loop-v1 (frozen_base, lora_forward, response_only_loss)
-/// #2417: reject a base model the training pipeline cannot open, naming the
-/// actual limitation and the command that fixes it.
-///
-/// `apr.finetune`'s `inputSchema` advertises `.apr`, `.gguf` and
-/// `.safetensors`; only `.apr` can currently be trained from. Saying so is the
-/// difference between a usable diagnostic and "Invalid magic: e00a0000".
-#[cfg(feature = "training")]
-fn ensure_apr_base_model(model_path: &Path) -> Result<()> {
-    if super::model_config::is_apr_file(model_path) {
-        return Ok(());
-    }
-    Err(CliError::ValidationFailed(format!(
-        "Fine-tuning requires an APR base model; '{}' is not one. \
-         The LoRA/QLoRA training pipeline reads .apr only. \
-         Convert first: `apr convert {} -o base.apr`, then fine-tune base.apr.",
-        model_path.display(),
-        model_path.display(),
-    )))
-}
-
 #[cfg(feature = "training")]
 fn execute_training(
     model_path: &Path,
@@ -392,14 +386,12 @@ fn execute_training(
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
-    use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
 
-    // 0. #2417: every training path below ends in `InstructPipeline::from_apr`,
-    // which reads APR only. A .safetensors or .gguf base used to reach that
-    // call and fail as "Failed to open APR file '<model>.safetensors': Invalid
-    // magic" — a message naming a format the caller never mentioned, after a
-    // full plan had already been printed. Reject it here, actionably.
-    ensure_apr_base_model(model_path)?;
+    // 0. PMAT-7241: the pipeline below reads APR only. A SafeTensors or GGUF base is
+    // detected by magic bytes and imported to row-major APR first (a quantized GGUF
+    // is refused); a corrupt or unsupported file is refused before any training.
+    let prepared = super::finetune_base::prepare_base(model_path)?;
+    let model_path = prepared.path();
 
     // 1. Resolve model config from APR metadata (GH-376: pass model_size for GGUF files)
     let model_config =
@@ -459,7 +451,7 @@ fn execute_training(
             learning_rate,
             json_output,
             corpus,
-            wgpu_max_seq_len(&instruct_config),
+            wgpu_instruct_max_seq_len(&instruct_config),
         );
     }
 
@@ -473,23 +465,9 @@ fn execute_training(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
 
     // 4. Create trainer and run
-    let train_config = InstructTrainingConfig {
-        epochs: epochs as usize,
-        val_split: if corpus.len() < 20 { 0.1 } else { 0.2 },
-        save_every: 1,
-        early_stopping_patience: 5,
-        checkpoint_dir: output_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("checkpoints"),
-        seed: 42,
-        log_interval: 1,
-        warmup_fraction: 0.03,
-        lr_min: 1e-6,
-    };
+    let train_config = instruct_training_config(epochs, corpus.len(), output_path);
 
-    let mut trainer = InstructTrainer::new(pipeline, corpus, train_config)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
+    let mut trainer = build_instruct_trainer(pipeline, corpus, train_config)?;
 
     let result = trainer.train();
 
@@ -506,13 +484,56 @@ fn execute_training(
     Ok(())
 }
 
+/// The trainer of an instruct run. A recipe run validates on its `eval.heldout` file (PMAT-7239);
+/// every other run splits the corpus.
+#[cfg(feature = "training")]
+pub(crate) fn build_instruct_trainer(
+    pipeline: entrenar::finetune::instruct_pipeline::InstructPipeline,
+    corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+    train_config: entrenar::finetune::instruct_trainer::InstructTrainingConfig,
+) -> Result<entrenar::finetune::instruct_trainer::InstructTrainer> {
+    use entrenar::finetune::instruct_trainer::InstructTrainer;
+    match super::finetune_recipe_run::run_heldout() {
+        Some(heldout_path) => {
+            let heldout = load_instruct_corpus(&heldout_path)?;
+            InstructTrainer::with_heldout(pipeline, corpus, heldout, train_config)
+        }
+        None => InstructTrainer::new(pipeline, corpus, train_config),
+    }
+    .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))
+}
+
+/// The trainer configuration of an instruct run (PMAT-7239). The seed is the
+/// recipe's while a recipe run is in flight on this thread, else 42.
+#[cfg(feature = "training")]
+pub(crate) fn instruct_training_config(
+    epochs: u32,
+    corpus_len: usize,
+    output_path: &Path,
+) -> entrenar::finetune::instruct_trainer::InstructTrainingConfig {
+    entrenar::finetune::instruct_trainer::InstructTrainingConfig {
+        epochs: epochs as usize,
+        val_split: if corpus_len < 20 { 0.1 } else { 0.2 },
+        save_every: 1,
+        early_stopping_patience: 5,
+        checkpoint_dir: output_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("checkpoints"),
+        seed: super::finetune_recipe_run::run_seed(),
+        log_interval: 1,
+        warmup_fraction: super::train_recipe_lora::warmup_fraction(),
+        lr_min: 1e-6,
+    }
+}
+
 /// Read the JSONL instruction corpus, rejecting an empty training set.
 ///
 /// Extracted from `execute_training` (PMAT-938) so the training entry point
 /// stays under the cognitive-complexity cap. Behaviour is unchanged: the same
 /// per-line errors, the same blank-line skip, the same empty-corpus rejection.
 #[cfg(feature = "training")]
-fn load_instruct_corpus(
+pub(crate) fn load_instruct_corpus(
     data_path: &Path,
 ) -> Result<Vec<entrenar::finetune::instruct_corpus::InstructSample>> {
     use entrenar::finetune::instruct_corpus::InstructSample;
@@ -613,6 +634,13 @@ fn report_checkpoint_output(output_path: &Path, json_output: bool) {
             checkpoint_dir.display()
         );
     }
+}
+
+/// The sequence length the WGPU pipeline trains at: the requested value, else entrenar's default
+/// (512), the same resolution `resolve_recipe_hparams` records in the receipt.
+pub(crate) fn wgpu_max_seq_len(requested: Option<usize>) -> usize {
+    requested
+        .unwrap_or(entrenar::finetune::instruct_pipeline::InstructConfig::default().max_seq_len)
 }
 
 /// §26.11.7: GPU-only training via WgpuInstructPipeline.
@@ -1282,6 +1310,32 @@ fn dispatch_finetune_mode(
     None
 }
 
+/// The planner's config with the user's `--rank` and an active recipe's `lora_alpha` applied.
+/// `run` takes its config here and nothing else, so every later use (header, adapter metadata,
+/// the exported adapter's alpha) sees the same alpha (PMAT-7240, FALSIFY-APR-RECIPE-007).
+pub(crate) fn resolve_run_config(
+    model_params: u64,
+    vram_gb: f64,
+    ft_method: FinetuneMethod,
+    rank: Option<u32>,
+) -> Result<OptimalConfig> {
+    let mut config = plan(model_params, vram_gb, ft_method.into())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+
+    // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
+    // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
+    if let Some(user_rank) = rank {
+        config.rank = user_rank;
+        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
+                                               // Keep the LR consistent with the (now overridden) rank.
+        config.learning_rate = recommended_learning_rate(config.method, user_rank);
+    }
+    // PMAT-7240: a recipe's `training.lora_alpha` wins over the planner's and the 2 x rank rule.
+    config.alpha = super::train_recipe_lora::alpha_or(config.alpha);
+
+    Ok(config)
+}
+
 /// Run the finetune command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -1380,17 +1434,7 @@ pub(crate) fn run(
 
     let model_params = resolve_model_params(model_size, model_path)?;
 
-    let mut config = plan(model_params, vram_gb, ft_method.into())
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
-
-    // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
-    // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
-    if let Some(user_rank) = rank {
-        config.rank = user_rank;
-        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
-                                               // Keep the LR consistent with the (now overridden) rank.
-        config.learning_rate = recommended_learning_rate(config.method, user_rank);
-    }
+    let config = resolve_run_config(model_params, vram_gb, ft_method, rank)?;
 
     // FALSIFY-QLORA-RANK-AWARE-LR: resolve the effective learning rate. An
     // explicit --learning-rate wins; otherwise use the rank-aware recommendation
@@ -1436,6 +1480,26 @@ pub(crate) fn run(
     )
 }
 
+/// The rank, learning rate and max sequence length a recipe run trains with, after the
+/// planner and defaults fill what the recipe leaves out. The receipt records these.
+fn resolve_recipe_hparams(
+    recipe: &super::train_recipe::TrainRecipe,
+    flags: &RecipeRunFlags<'_>,
+) -> Result<(u32, f64, usize)> {
+    let ft_method: FinetuneMethod = recipe
+        .method
+        .as_str()
+        .parse()
+        .map_err(CliError::ValidationFailed)?;
+    let params = resolve_model_params(recipe_model_size(flags, recipe), Some(&recipe.base))?;
+    let config = resolve_run_config(params, flags.vram_gb, ft_method, recipe.rank)?;
+    let lr = recipe
+        .learning_rate
+        .unwrap_or_else(|| f64::from(config.learning_rate));
+    let max_seq_len = wgpu_max_seq_len(recipe.max_seq_len);
+    Ok((config.rank, lr, max_seq_len))
+}
+
 /// The `apr finetune` flags that still apply beside `--recipe`: where and how
 /// to run. Two of them can replace a value the recipe carries: `model_size`
 /// wins over the recipe's `model_size` and `output_path` over `output.dir`
@@ -1469,7 +1533,7 @@ pub(crate) fn preflight_recipe(
     super::train_recipe::TrainRecipe,
     super::train_recipe::RecipeReceipt,
 )> {
-    use super::train_recipe::{apr_engine, RecipeMethod, TrainRecipe, FINETUNE_NOT_APPLIED};
+    use super::train_recipe::{apr_engine, RecipeMethod, TrainRecipe};
     let recipe = TrainRecipe::load(recipe_path)?;
     if recipe.method == RecipeMethod::Distill {
         return Err(CliError::ValidationFailed(format!(
@@ -1489,7 +1553,8 @@ pub(crate) fn preflight_recipe(
     if !plan_only {
         recipe.require_inputs()?;
     }
-    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    let not_applied: Vec<&'static str> = recipe.lora.not_applied().to_vec();
+    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), &not_applied);
     Ok((recipe, receipt))
 }
 
@@ -1548,8 +1613,15 @@ fn recipe_overrides(
     overrides
 }
 
+/// True when this recipe run trains on the WGPU path, which does not take the seed.
+fn recipe_uses_wgpu(recipe: &super::train_recipe::TrainRecipe, flags: &RecipeRunFlags<'_>) -> bool {
+    let (_, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    gpu_backend_notice(flags.gpu_backend, quantize_nf4, cfg!(feature = "wgpu")).use_wgpu
+        && cfg!(feature = "wgpu")
+}
+
 /// `preflight_recipe` plus the overrides the run flags make.
-fn recipe_receipt_for_run(
+pub(crate) fn recipe_receipt_for_run(
     recipe_path: &Path,
     flags: &RecipeRunFlags<'_>,
 ) -> Result<(
@@ -1558,6 +1630,12 @@ fn recipe_receipt_for_run(
 )> {
     let (recipe, mut receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
     receipt.overrides = recipe_overrides(flags, &recipe);
+    if recipe_uses_wgpu(&recipe, flags) {
+        // The WGSL path reads neither the recipe seed nor the heldout file: say so instead of
+        // claiming either applied.
+        receipt.validated_not_applied.insert(0, "seed");
+        receipt.validated_not_applied.push("eval");
+    }
     Ok((recipe, receipt))
 }
 
@@ -1565,7 +1643,16 @@ fn recipe_receipt_for_run(
 /// onto the same `run` every flag-driven invocation uses (CRUX-001).
 pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) -> Result<()> {
     let (recipe, receipt) = recipe_receipt_for_run(recipe_path, flags)?;
-    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(&recipe);
+    if !flags.plan_only {
+        // PMAT-7241: name the base format and refuse a corrupt, unsupported or
+        // quantized-GGUF base before any model is loaded.
+        let base_format = super::finetune_base::preflight_base(&recipe.base)?;
+        eprintln!(
+            "[recipe] base format={} (detected by magic bytes) file={}",
+            base_format.as_str(),
+            recipe.base.display()
+        );
+    }
     let engine = super::train_recipe::apr_engine();
     eprintln!(
         "[recipe] {} ok: name={} method={} recipe_sha256={} data_sha256={} engine=apr {} ({})",
@@ -1577,50 +1664,161 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         engine.version,
         engine.sha,
     );
-    eprintln!(
-        "[recipe] validated and hashed, not yet applied by apr finetune: {}",
-        receipt.validated_not_applied.join(", ")
-    );
+    if !receipt.validated_not_applied.is_empty() {
+        eprintln!(
+            "[recipe] the wgpu backend does not apply: {}",
+            receipt.validated_not_applied.join(", ")
+        );
+    }
+    let mut stdout = std::io::stdout();
+    run_recipe_with(
+        &recipe,
+        &receipt,
+        flags,
+        &mut stdout,
+        |output, epochs, quantize_nf4| {
+            run(
+                Some(&recipe.base),
+                recipe.method.as_str(),
+                recipe.rank,
+                flags.vram_gb,
+                flags.plan_only,
+                Some(&recipe.train),
+                output,
+                None,
+                false,
+                epochs,
+                recipe.learning_rate,
+                recipe_model_size(flags, &recipe),
+                None,
+                5,
+                flags.checkpoint_format,
+                false,
+                recipe.max_seq_len,
+                quantize_nf4,
+                flags.gpus,
+                flags.gpu_backend,
+                None,
+                None,
+                None,
+                None,
+                flags.wait_gpu,
+                &[],
+                None,
+                flags.json_output,
+                flags.experimental_mps,
+                flags.gpu_share,
+            )
+        },
+    )
+}
+
+/// The recipe run itself, with the trainer injected so a test can observe what it is run under.
+///
+/// While `train` runs, the trainer seed is the recipe's (0 included) and, under `--json`, the
+/// plan object is held back. After `train` returns Ok on a real run (not `--plan`), the receipt
+/// is written beside the adapter and, under `--json`, printed to `out` as the one JSON document.
+pub(crate) fn run_recipe_with<F>(
+    recipe: &super::train_recipe::TrainRecipe,
+    receipt: &super::train_recipe::RecipeReceipt,
+    flags: &RecipeRunFlags<'_>,
+    out: &mut dyn std::io::Write,
+    train: F,
+) -> Result<()>
+where
+    F: FnOnce(Option<&Path>, u32, bool) -> Result<()>,
+{
+    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    let _seed = super::finetune_recipe_run::SeedGuard::set(recipe.seed);
+    let _heldout = super::finetune_recipe_run::HeldoutGuard::set(&recipe.heldout);
+    let _lora = super::train_recipe_lora::activate(&recipe.lora);
+    let _plan_json =
+        super::finetune_recipe_run::PlanJsonGuard::suppress(flags.json_output && !flags.plan_only);
     if !receipt.overrides.is_empty() {
         eprintln!(
             "[recipe] overridden by flags: {}",
             receipt.overrides.join("; ")
         );
     }
-    let output_buf = recipe_output_path(flags, &recipe);
+    let output_buf = recipe_output_path(flags, recipe);
     let output = output_buf.as_deref();
-    run(
-        Some(&recipe.base),
-        recipe.method.as_str(),
-        recipe.rank,
-        flags.vram_gb,
-        flags.plan_only,
-        Some(&recipe.train),
-        output,
-        None,
-        false,
+    train(output, epochs, quantize_nf4)?;
+    if flags.plan_only {
+        writeln!(out, "{}", resolved_recipe_text(recipe, flags, output)?)
+            .map_err(|e| CliError::ValidationFailed(format!("cannot print recipe: {e}")))?;
+        return Ok(());
+    }
+    emit_run_receipt(recipe, receipt, output, flags, epochs, quantize_nf4, out)
+}
+
+/// Write `receipt.json` after a real recipe run and, with `--json`, print the same object.
+fn emit_run_receipt(
+    recipe: &super::train_recipe::TrainRecipe,
+    receipt: &super::train_recipe::RecipeReceipt,
+    output: Option<&Path>,
+    flags: &RecipeRunFlags<'_>,
+    epochs: u32,
+    quantize_nf4: bool,
+    out: &mut dyn std::io::Write,
+) -> Result<()> {
+    use super::finetune_recipe_run as frr;
+    let (rank, learning_rate, max_seq_len) = resolve_recipe_hparams(recipe, flags)?;
+    let resolved = frr::ResolvedRun {
+        rank,
+        learning_rate,
+        max_seq_len,
         epochs,
-        recipe.learning_rate,
-        recipe_model_size(flags, &recipe),
-        None,
-        5,
-        flags.checkpoint_format,
-        false,
-        recipe.max_seq_len,
         quantize_nf4,
-        flags.gpus,
-        flags.gpu_backend,
-        None,
-        None,
-        None,
-        None,
-        flags.wait_gpu,
-        &[],
-        None,
-        flags.json_output,
-        flags.experimental_mps,
-        flags.gpu_share,
-    )
+        model_size: recipe_model_size(flags, recipe),
+    };
+    let value = frr::build_receipt(
+        recipe,
+        receipt,
+        &super::train_recipe::apr_engine(),
+        &resolved,
+    );
+    let path = frr::write_receipt(&frr::receipt_dir(output), &value)?;
+    eprintln!("[recipe] receipt written to {}", path.display());
+    if flags.json_output {
+        writeln!(out, "{value}")
+            .map_err(|e| CliError::ValidationFailed(format!("cannot print receipt: {e}")))?;
+    }
+    Ok(())
+}
+
+/// What `--dry-run` / `--plan` print after the plan: the recipe with every default filled in,
+/// each a number the run uses (the planner's rank, alpha and learning rate, and the sequence
+/// length of the selected path). `--json` prints the bare JSON object; text mode heads it.
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn resolved_recipe_text(
+    recipe: &super::train_recipe::TrainRecipe,
+    flags: &RecipeRunFlags<'_>,
+    output: Option<&Path>,
+) -> Result<String> {
+    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    let size = recipe_model_size(flags, recipe);
+    let ft_method: FinetuneMethod = recipe
+        .method
+        .as_str()
+        .parse()
+        .map_err(CliError::ValidationFailed)?;
+    let params = resolve_model_params(size, Some(&recipe.base))?;
+    let config = resolve_run_config(params, flags.vram_gb, ft_method, recipe.rank)?;
+    let run = super::train_recipe::ResolvedRun {
+        rank: config.rank,
+        alpha: config.alpha,
+        learning_rate: recipe
+            .learning_rate
+            .unwrap_or_else(|| f64::from(config.learning_rate)),
+        max_seq_len: effective_max_seq_len(recipe.max_seq_len, flags.gpu_backend, quantize_nf4),
+    };
+    let value = recipe.resolved(size, output, epochs, &run);
+    let body = serde_json::to_string_pretty(&value).unwrap_or_default();
+    Ok(if flags.json_output {
+        body
+    } else {
+        format!("\nResolved recipe (defaults filled in):\n{body}")
+    })
 }
 
 /// Validate inputs and execute the LoRA training pipeline.
@@ -1691,15 +1889,18 @@ fn display_finetune_plan(
     let req = planner.estimate(config.method, config.rank);
 
     if json_output {
-        display_plan_json(
-            config,
-            &req,
-            model_params,
-            vram_gb,
-            epochs,
-            learning_rate,
-            plan_only,
-        );
+        // A `--json` recipe run prints one document, the receipt, so the plan object is held back.
+        if !super::finetune_recipe_run::plan_json_suppressed() {
+            display_plan_json(
+                config,
+                &req,
+                model_params,
+                vram_gb,
+                epochs,
+                learning_rate,
+                plan_only,
+            );
+        }
     } else {
         display_plan_text(config, &req, vram_gb);
     }
@@ -2625,64 +2826,3 @@ mod display_tests;
 #[cfg(test)]
 #[path = "finetune_recipe_tests.rs"]
 mod recipe_tests;
-
-#[cfg(all(test, feature = "training"))]
-mod tests_2417 {
-    use super::ensure_apr_base_model;
-
-    fn scratch(tag: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("apr-2417-ft-{tag}-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("create scratch dir");
-        dir
-    }
-
-    /// #2417 — a .safetensors base reached `InstructPipeline::from_apr` and
-    /// died as "Failed to open APR file '<model>.safetensors': Invalid magic:
-    /// e00a0000", after printing a full training plan. The rejection must name
-    /// the real limitation and the command that fixes it.
-    #[test]
-    fn safetensors_base_is_rejected_with_an_actionable_message() {
-        let dir = scratch("st");
-        let model = dir.join("base.safetensors");
-        // Real safetensors: 8-byte little-endian header length, then JSON.
-        let header = br#"{"__metadata__":{"format":"pt"}}"#;
-        let mut bytes = (header.len() as u64).to_le_bytes().to_vec();
-        bytes.extend_from_slice(header);
-        std::fs::write(&model, &bytes).expect("write model");
-
-        let err = ensure_apr_base_model(&model).expect_err("safetensors cannot be trained from");
-        let msg = err.to_string();
-        assert!(
-            !msg.contains("Invalid magic"),
-            "message leaks the loader's internals: {msg}"
-        );
-        assert!(msg.contains("base.safetensors"), "{msg}");
-        assert!(
-            msg.contains("apr convert"),
-            "message must say how to proceed: {msg}"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    /// The positive control: an APR v2 header passes the preflight untouched,
-    /// so the check cannot break the one format that does work.
-    #[test]
-    fn apr_base_passes_the_preflight() {
-        let dir = scratch("apr");
-        let model = dir.join("base.apr");
-        let mut bytes = b"APR\0".to_vec();
-        bytes.resize(128, 0);
-        std::fs::write(&model, &bytes).expect("write model");
-
-        ensure_apr_base_model(&model).expect("an APR base must be accepted");
-
-        // v1 "APRN" is accepted too — the preflight must not narrow support.
-        let v1 = dir.join("legacy.apr");
-        let mut bytes = b"APRN".to_vec();
-        bytes.resize(128, 0);
-        std::fs::write(&v1, &bytes).expect("write v1 model");
-        ensure_apr_base_model(&v1).expect("an APR v1 base must be accepted");
-
-        std::fs::remove_dir_all(&dir).ok();
-    }
-}
