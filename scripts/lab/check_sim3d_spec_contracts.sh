@@ -26,9 +26,9 @@ if [ "${1:-}" = --self-test ]; then
   t=$(mktemp -d); trap 'rm -rf -- "${t:?}"' EXIT; fail=0; s="$t/s.md"
   cp "$SPEC_DEFAULT" "$s"
   check "$s" > /dev/null || { echo "FAIL the real map is RED"; fail=1; }
-  cp "$SPEC_DEFAULT" "$s"; sed -i '0,/sim3d-spec-v1.yaml/s//sim3d-no-such-v1.yaml/' "$s"
+  cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/s/sim3d-spec-v1/sim3d-no-such-v1/' "$s"
   check "$s" > /dev/null && { echo "FAIL planted fake contract passes (mutant)"; fail=1; }
-  cp "$SPEC_DEFAULT" "$s"; sed -i '0,/SIM-SPEC-INV-001/s//SIM-SPEC-INV-999/' "$s"
+  cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/s/SIM-SPEC-INV-001/SIM-SPEC-INV-999/' "$s"
   check "$s" > /dev/null && { echo "FAIL planted fake obligation id passes (mutant)"; fail=1; }
   : > "$s"; check "$s" > /dev/null 2>&1 && { echo "FAIL empty spec passes"; fail=1; }
   [ "$fail" = 0 ] && echo "check_sim3d_spec_contracts: self-test PASS (4 rows)"; exit "$fail"
