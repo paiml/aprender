@@ -253,6 +253,8 @@ jobs:
           echo "$d" >> "$GITHUB_PATH"
       - name: no pull-request-target guard (P0; every push, a dependency of the required gate)
         run: sh scripts/guards/test-no-pull-request-target-guard.sh && sh scripts/guards/no-pull-request-target-guard.sh
+      - name: pr spot labels guard (only the three aggregators may take the opt-in spot labels; parsed YAML, RED on any other)
+        run: sh scripts/guards/test-pr-spot-labels-guard.sh && sh scripts/guards/pr-spot-labels-guard.sh
       - name: Cheap checks (fmt, falsification-ID order, guard case tables)
         run: |
           set -euo pipefail
@@ -826,7 +828,11 @@ jobs:
         run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}-s${{ matrix.shard }}" "$GITHUB_RUN_ID"; fi
 
   workspace-test:
-    runs-on: [self-hosted, Linux, clean-room]
+    # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: scripts/guards/pr-spot-labels-guard.sh.
+    runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","clean-room"]') }}
+    permissions:
+      contents: read
     timeout-minutes: 10
     needs: [workspace-test-shard, mg-reuse-wt, pr-light]
     if: always()
@@ -904,7 +910,11 @@ jobs:
 
   ci-gate:
     name: ci / gate
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: scripts/guards/pr-spot-labels-guard.sh.
+    runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    permissions:
+      contents: read
     timeout-minutes: 10
     needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]
     if: always()
@@ -951,7 +961,11 @@ jobs:
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
 
   gate:
-    runs-on: [self-hosted, Linux, X64, clean-room]   # X64 only: gx10 aarch64 runners die at job start (#6200)
+    # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: scripts/guards/pr-spot-labels-guard.sh.
+    runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    permissions:
+      contents: read
     timeout-minutes: 22
     needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
     if: always()
