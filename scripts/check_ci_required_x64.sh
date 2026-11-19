@@ -24,7 +24,7 @@ if [ "${1:-}" = "--self-test" ]; then
   [ -z "$(bad_jobs "$base")" ] || { echo "FAIL: real ci.yml is not clean"; exit 1; }
   for j in $JOBS; do
     # mutation: drop X64 from this job's runs-on only
-    awk -v j="$j" '$0 ~ "^  "j":[[:space:]]*$" {m=1} m && /^    runs-on:/ { sub(/X64, /,""); m=0 } {print}' "$base" > "$t/m.yml"
+    awk -v j="$j" '$0 ~ "^  "j":[[:space:]]*$" {m=1} m && /^    runs-on:/ { sub(/"?X64"?, ?/,""); m=0 } {print}' "$base" > "$t/m.yml"
     [ "$(bad_jobs "$t/m.yml")" = "$j" ] || { echo "FAIL: dropping X64 from $j not caught"; exit 1; }
   done
   grep -v '^  gate:' "$base" > "$t/m.yml"   # mutation: job renamed/removed

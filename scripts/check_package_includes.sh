@@ -354,6 +354,18 @@ if [ "${1:-}" = "--self-test" ]; then
   else
     printf 'FAIL  row 17 host log rc=%s (want 4), crate log rc=%s (want 1)\n' "$h_rc" "$c_rc"; fails=1
   fi
+  # Row 17b: the SAME crate error with cargo's ANSI colour in front of "error" (measured on a burst
+  # runner, main run 44583965968) must still be 1 (RED) and still name the crate; a coloured disk-full
+  # line must still be 4. Stripping the escapes does not loosen what is matched.
+  printf 'pkgs/pti-fixture-0.1.0/src/lib.rs:3:22: \033[1m\033[31merror\033[0m\033[1m: couldn'"'"'t read `x`\033[0m\n\033[1m\033[31merror\033[0m: could not compile `pti-fixture` (lib test) due to 1 previous error\n' > "$TD/crate-colour.log"
+  printf '\033[1m\033[31merror\033[0m: failed to write `/t/x`\nCaused by:\n  No space left on device (os error 28)\n' > "$TD/host-colour.log"
+  cc_out="$(python3 "$REPO_ROOT/scripts/lib/tarball_build_errors.py" "$TD/crate-colour.log")"; cc_rc=$?
+  hc_rc=0; python3 "$REPO_ROOT/scripts/lib/tarball_build_errors.py" "$TD/host-colour.log" > /dev/null || hc_rc=$?
+  if [ "$cc_rc" = 1 ] && [ "$hc_rc" = 4 ] && grep -q 'RED   pti-fixture-0.1.0' <<< "$cc_out"; then
+    printf 'ok    row 17b a coloured crate error is 1 (RED, crate named), a coloured disk-full is 4\n'
+  else
+    printf 'FAIL  row 17b coloured crate rc=%s (want 1), coloured host rc=%s (want 4)\n%s\n' "$cc_rc" "$hc_rc" "$cc_out"; fails=1
+  fi
   # Row 18 (#4114 quorum lane 1): --crate-file keys on the MANIFEST name, so a prerelease version
   # with a '-' (0.1.0-rc.1) substitutes the right crate instead of "matching 0".
   tb_fixture "$TD/tb-rc" 'pub fn f() {}\n'

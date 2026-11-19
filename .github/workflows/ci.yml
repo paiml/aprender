@@ -181,7 +181,7 @@ jobs:
   mg-reuse-self-test:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     runs-on: [self-hosted, Linux, X64, clean-room]
-    timeout-minutes: 10
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -192,6 +192,27 @@ jobs:
         run: |
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
+      - name: pr spot labels guard
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cname="spot-labels-${GITHUB_RUN_ID}"
+          # check_wiring bans the shell-masking idioms in this step, so the cleanup uses an if. An if condition cannot
+          # trip errexit: a missing container is fine and the EXIT trap cannot turn a passing guard's status 0 into 1.
+          reap() { if docker rm -f "$cname" >/dev/null 2>&1; then :; fi; }
+          reap
+          trap reap EXIT INT TERM
+          # per-run dirs: GITHUB_RUN_ID is never reused, so no other job shares these (the run- prefix is what the disk reaper collects)
+          base="/mnt/nvme-raid0/targets/aprender-ci/spot-labels/run-${GITHUB_RUN_ID}"
+          mkdir -p "$base/registry" "$base/target"
+          # one line on purpose: a backslash continuation joins differently in bash than in the guard test, so check_wiring refuses any
+          timeout --foreground -k 30 900 docker run --rm --init --name "$cname" --cpus 4 --memory 8g --memory-swap 8g --pids-limit 2048 -v "$GITHUB_WORKSPACE:/w:ro" -v "$base/registry:/usr/local/cargo/registry" -v "$base/target:/t" -e CARGO_TARGET_DIR=/t -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e CARGO_INCREMENTAL=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -w /w localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
+      - name: reap the guard container and its per-run dir
+        if: ${{ always() }}
+        run: |
+          if docker rm -f "spot-labels-${GITHUB_RUN_ID}" >/dev/null 2>&1; then :; fi
+          # The container runs as root, so its files survive a plain rm; free_own_target_dir.sh retries as root in the job image.
+          if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh spot-labels "$GITHUB_RUN_ID"; fi
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
@@ -825,7 +846,11 @@ jobs:
         run: if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh "${{ github.event.pull_request.number || github.ref_name }}-s${{ matrix.shard }}" "$GITHUB_RUN_ID"; fi
 
   workspace-test:
-    runs-on: [self-hosted, Linux, clean-room]
+    # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
+    runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","clean-room"]') }}
+    permissions:
+      contents: read
     timeout-minutes: 10
     needs: [workspace-test-shard, mg-reuse-wt, pr-light]
     if: always()
@@ -904,7 +929,11 @@ jobs:
 
   ci-gate:
     name: ci / gate
-    runs-on: [self-hosted, Linux, X64, clean-room]
+    # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
+    runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    permissions:
+      contents: read
     timeout-minutes: 10
     needs: [x86-main, mg-reuse, x86-main-advisories, pr-light]
     if: always()
@@ -952,7 +981,11 @@ jobs:
           [ "$r" = success ] || { echo "::error::ci / gate: section result is '$r'"; exit 1; }
 
   gate:
-    runs-on: [self-hosted, Linux, X64, clean-room]   # X64 only: gx10 aarch64 runners die at job start (#6200)
+    # PR_SPOT_OPTIN=1 (unset by default) sends a pull_request run of this aggregator to the shared spot pool; it only reads needs.* results
+    # there. merge_group, push and every other event keep the clean-room labels. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
+    runs-on: ${{ (github.event_name == 'pull_request' && vars.PR_SPOT_OPTIN == '1') && fromJSON('["self-hosted","burst-x64","burst-public"]') || fromJSON('["self-hosted","Linux","X64","clean-room"]') }}
+    permissions:
+      contents: read
     timeout-minutes: 22
     needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]
     if: always()
@@ -981,7 +1014,7 @@ jobs:
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
           # cuda-unit were never in the gate; Q6 quorum, C324 moved them to LAB
           # (gpu-lab-nightly.yml), so no job of this workflow runs them.
-          # workspace-test is its own job now (three shard jobs + the Σ fan-in).
+          # workspace-test is its own job now (three shard jobs + the sum fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---

@@ -1,0 +1,92 @@
+# ──────────────────────────────────────────────
+# sim3d-receipt-v1 — the closed shape of a simulation receipt (SIM3D P0, aprender#7245, epic #7244)
+#
+# A receipt is what a run states about itself: which spec (sha256), which kernel (git sha), which seed, the final
+# hash of the hash-chained trajectory, the step count, and one verdict per invariant monitor. The kernel that
+# writes it is P1 (#7246, #7251); this contract is the shape it must write, so the receipt can be graded before
+# the kernel exists. Same path as sim3d-spec-v1: `type: json`, closed shape, no `entity:` here, graded by
+# crates/aprender-contracts-cli/tests/sim3d_spec.rs on a scratch copy with `--shape sim3d-receipt-v1`.
+#
+# NOT SAID: that `final_hash` is the hash of the trajectory. The shape checks it is 64 lowercase hex, never that
+# it is the right 64 hex. Recomputing it is the viewer's and the kernel's test (P1, P4), not a shape's.
+# ──────────────────────────────────────────────
+name: sim3d-receipt
+version: "1.0.0"
+scope: >
+  What one simulation receipt (canonical JSON) must state. Out of scope: producing it, and checking the hash
+  against a trajectory.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: simulation
+  created: '2026-11-19'
+  last_modified: '2026-11-19'
+  author: PAIML Engineering
+  description: >
+    A simulation receipt names the spec and kernel it ran, the seed, the step count, the final trajectory hash and
+    the verdict of every invariant monitor, and nothing else. A receipt with no verdicts is refused: a run no
+    monitor judged proves nothing.
+  references:
+    - 'aprender#7245 (this row); epic aprender#7244; docs/specifications/sim3d-provable-simulation.md'
+    - 'contracts/sim3d-spec-v1.yaml — the spec this receipt answers'
+    - 'tests/fixtures/ont/sim3d/ — the case table, both arms'
+
+vocabulary:
+  prefix: sim
+  root_class: sim:Receipt
+  nested:
+    verdicts: sim:Verdict
+
+shape:
+  targetClass: sim:Receipt
+  closed: true
+  properties:
+    - {path: sim:schema, minCount: 1, maxCount: 1, in: ["sim3d-receipt/v1"]}
+    - {path: sim:spec_sha256, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^[0-9a-f]{64}$"}
+    - {path: sim:kernel_sha, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^[0-9a-f]{40}$"}
+    - {path: sim:seed, minCount: 1, maxCount: 1, datatype: xsd:integer, pattern: "^(0|[1-9][0-9]*)$"}
+    - {path: sim:steps, minCount: 1, maxCount: 1, datatype: xsd:integer, pattern: "^[1-9][0-9]*$"}
+    - {path: sim:final_hash, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^[0-9a-f]{64}$"}
+    - path: sim:verdicts
+      minCount: 1
+      node:
+        closed: true
+        properties:
+          - {path: sim:invariant, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^INV-[0-9]{3}$"}
+          - {path: sim:holds, minCount: 1, maxCount: 1, datatype: xsd:boolean}
+          # The first step at which the monitor failed; absent when it holds.
+          - {path: sim:first_bad_step, maxCount: 1, datatype: xsd:integer}
+
+equations:
+  conforms:
+    formula: "∀ r ∈ receipts(R): keys(r) = {schema, spec_sha256, kernel_sha, seed, steps, final_hash, verdicts} ∧ each value in its declared set"
+    domain: "R, one simulation receipt as canonical JSON"
+    codomain: "conforms, or a violation naming the receipt and the path"
+    invariants:
+      - "a receipt with no final hash, a short hash or a non-hex hash is refused"
+      - "a receipt with no verdict is refused"
+    preconditions:
+      - "the receipt is JSON"
+    postconditions:
+      - "every receipt names its spec, kernel, seed, final hash and a verdict per monitor"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: SIM-RCPT-INV-001
+    property: a receipt carries a 64-hex final trajectory hash
+    formal: 'final_hash(r) ∉ [0-9a-f]{64} ⇒ Fail(sim3d-receipt-v1, r)'
+    prose: false
+  - id: SIM-RCPT-INV-002
+    property: a receipt carries at least one monitor verdict
+    formal: 'len(verdicts(r)) = 0 ⇒ Fail(sim3d-receipt-v1, r)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-SIM-RCPT-001
+    rule: both arms of the receipt shape
+    prediction: >
+      a receipt with all seven fields conforms; one missing final_hash, with a 10-hex final_hash, with no
+      verdicts, or with an eighth key is refused naming the path
+    test: cargo test -p aprender-contracts-cli --test sim3d_spec
+    if_fails: a run can state a receipt that names no hash or no verdict and still pass pv

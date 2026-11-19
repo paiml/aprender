@@ -2057,7 +2057,8 @@ jobs:
           root=$(git rev-parse --show-toplevel)
           ru=${RUSTUP_HOME:-$HOME/.rustup}; ca=$HOME/.cargo; tc=$(readlink -f "$(dirname "$(dirname "$(rustup which rustc --toolchain 1.93.0)")")")
           ch=${CARGO_HOME:-$HOME/.cargo}
-          sc=${SCCACHE_HOST_DIR:-$HOME/.cache/sccache}
+          # a /sccache mount this user cannot write fails the cc-rs build script (main run 44583965968): probe, else a temp dir
+          sc=$(bash "$root/scripts/ci/sccache_probe.sh" "${SCCACHE_HOST_DIR:-$HOME/.cache/sccache}")
           # pinned by digest, never :stable (pace condition 7); bump with the image
           img=localhost:5000/sovereign-ci@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36
           # the digest is the amd64 manifest; any other arch keeps the host build it had before
@@ -2613,6 +2614,10 @@ jobs:
             # only when the dir is actually unwritable, so the common path pays
             # nothing.
             mkdir -p "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME" 2>/dev/null || true
+            # A /sccache mount this user cannot write fails the cc-rs build script (main run 44583965968,
+            # guard-cargo#m60, burst runner): probe it, fall back to a temp dir (one log line), never fail.
+            local sccache_dir
+            sccache_dir=$(bash "$GITHUB_WORKSPACE/scripts/ci/sccache_probe.sh" "/home/noah/data/sccache")
             local d
             for d in "$GUARD_TARGET_DIR" "$GUARD_CARGO_HOME"; do
               if [ -d "$d" ] && [ ! -w "$d" ]; then
@@ -2627,7 +2632,7 @@ jobs:
               -v "${GUARD_CARGO_HOME}:/cargo-home" \
               -v "${GUARD_TARGET_DIR}:/workspace/target" \
               -e CARGO_HOME=/cargo-home \
-              -v "/home/noah/data/sccache:/sccache" \
+              -v "${sccache_dir}:/sccache" \
               -w /workspace \
               -e CARGO_TARGET_DIR=/workspace/target \
               -e RUSTC_WRAPPER=/usr/local/cargo/bin/sccache \

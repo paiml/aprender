@@ -80,6 +80,9 @@ pub fn is_contract_yaml(path: &Path) -> bool {
 pub fn parse_contract_str(yaml: &str) -> Result<Contract, ContractError> {
     let mut contract: Contract = serde_yaml::from_str(yaml)?;
     contract.unknown_top_level_keys = unknown_top_level_keys(yaml);
+    if contract.kind() == ContractKind::Simulation {
+        drop_vacuous_shape_keys(yaml, &mut contract.unknown_top_level_keys);
+    }
     contract.kind_declared = kind_is_declared(yaml);
     contract.strict_yaml_error = strict_yaml_error(yaml);
     contract.falsification_tests_declared = top_level_key_written(yaml, "falsification_tests");
@@ -106,6 +109,36 @@ fn kaizen_record(yaml: &str, kind: ContractKind) -> Result<Option<KaizenRecord>,
         return Ok(None);
     }
     Ok(Some(serde_yaml::from_str::<KaizenRecord>(yaml)?))
+}
+
+/// Fourth pass, run ONLY for `metadata.kind: simulation` (SIM-001): a `shape:` that is null, an empty
+/// mapping or a scalar, and a `shapes:` that is null, an empty list or not a list, declare no shape, so
+/// neither key may satisfy "declares a shape". Both keys are dropped from `keys` unless one of them
+/// holds something: a non-empty mapping for `shape:`, or a non-empty list for `shapes:`. Scoped to the
+/// kind for the reason `kaizen_record` is: only a document that declared itself a simulation is probed.
+/// A probe that cannot read the document leaves `keys` untouched (the main parse already reported it).
+fn drop_vacuous_shape_keys(yaml: &str, keys: &mut Vec<String>) {
+    #[derive(serde::Deserialize)]
+    struct ShapeProbe {
+        shape: Option<serde_yaml::Value>,
+        shapes: Option<serde_yaml::Value>,
+    }
+    let Ok(probe) = serde_yaml::from_str::<ShapeProbe>(yaml) else {
+        return;
+    };
+    let one = probe
+        .shape
+        .as_ref()
+        .and_then(serde_yaml::Value::as_mapping)
+        .is_some_and(|m| !m.is_empty());
+    let many = probe
+        .shapes
+        .as_ref()
+        .and_then(serde_yaml::Value::as_sequence)
+        .is_some_and(|q| !q.is_empty());
+    if !one && !many {
+        keys.retain(|k| k != "shape" && k != "shapes");
+    }
 }
 
 /// Top-level mapping keys of `yaml` that are not fields of [`Contract`].
