@@ -36,6 +36,7 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd, lc, k) { # drop a trailing comm
         if (dd > 0 && L !~ /[ \t:,[{]/) midq = midq + 1
         q = c
       }
+      else if ((c == "\042" || c == "\047") && p == ":" && dd > 0) midq = midq + 1 # an adjacent quote after a colon that did not follow a quoted key ([]:"v", a:"v"): refuse
       else if (c == "#" && p ~ /[ \t]/) { s = substr(s, 1, i - 1); break }
       else if (c == "{" && p == "$" && substr(s, i + 1, 1) == "{") { # a ${{ }} expression: its braces are not flow; inside a flow collection refuse
         if (dd > 0) midq = midq + 1
@@ -354,6 +355,9 @@ EOF
   printf 'name: x\non: { workflow_dispatch: { inputs: { a: { "default" :"}}}} # " } } }, schedule: [{ cron: "5 20 * * *" }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r7.yml"; expect "blank before the colon of a JSON-style pair" "$t/r7.yml" fail
   printf "name: x\non: { workflow_dispatch: { inputs: { a: { 'default' :'}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r8.yml"; expect "blank before the colon, single quotes" "$t/r8.yml" fail
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    env: { "a" :"} # ",\n    timeout-minutes: 25\n    , "b" :"{x" }\n    steps:\n      - run: echo untimed\n        env: { "a" :"} # ",\n        timeout-minutes: 10\n        , "b" :"{x" }\n' > "$t/r9.yml"; expect "blank before the colon, multi-line env forging timeouts" "$t/r9.yml" fail
+
+  printf 'name: x\non: { workflow_dispatch: { inputs: { a: { []:"}}}} # " } } }, schedule: [{ cron: "5 20 * * *" }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r10.yml"; expect "flow collection key then adjacent quote" "$t/r10.yml" fail
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    env: { []:"} # ",\n    timeout-minutes: 25\n    , []:"{x" }\n    steps:\n      - run: echo untimed\n        env: { []:"} # ",\n        timeout-minutes: 10\n        , []:"{x" }\n' > "$t/r11.yml"; expect "flow key then adjacent quote, multi-line env" "$t/r11.yml" fail
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
