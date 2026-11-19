@@ -262,8 +262,18 @@ rm -f -- "$out/$LOCAL_HOST.json" "$out/$REMOTE_HOST.json" "$out/$REMOTE_HOST.jso
 fi
 
 local_leg() {
-    local tdir got
-    cargo build --release -p apr-cli --bin apr --features cuda --locked \
+    local tdir got brc blog="$out/$LOCAL_HOST.build.log"
+    cargo build --release -p apr-cli --bin apr --features cuda --locked > "$blog" 2>&1; brc=$?
+    cat -- "$blog"
+    # PMAT-7235 / L23: cargo-memcap REFUSING the build (disk under its floor rc 28, no slot rc 75, a
+    # cannot-measure rc 2) is an environment refusal -- nothing was built or measured, so it is ENV (exit 2,
+    # not_measured upstream), never a red build. A compile error is cargo's own rc 101 and stays BUILD-FAILED.
+    if [ "$brc" -ne 0 ] && grep -qE '^cargo-memcap: (REFUSED|CANNOT MEASURE)' -- "$blog"; then
+        case $brc in 2|28|75)
+            echo "MODELS-LEG $LOCAL_HOST ENV: cargo-memcap refused the build (cargo rc $brc) -- nothing was built or measured"; return 3 ;;
+        esac
+    fi
+    [ "$brc" -eq 0 ] \
         || { echo "MODELS-LEG $LOCAL_HOST BUILD-FAILED"; return 3; }
     tdir=${CARGO_TARGET_DIR:-$(cargo metadata --no-deps --format-version 1 | jq -r .target_directory)}
     got=$("$tdir/release/apr" --version 2>/dev/null | head -n 1)

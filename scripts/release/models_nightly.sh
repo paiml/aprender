@@ -613,7 +613,7 @@ cfxc() {
 }
 
 self_test() {
-    local tmp pass=0 fail=0 d o rc c1 c2 c3 work repo bare clone
+    local tmp pass=0 fail=0 d o rc c1 c2 c3 c4 c5 work repo bare clone
     tmp=$(mktemp -d) || exit 3
     tmp=$(cd "$tmp" && pwd -P)
     cd -- "$tmp" || exit 3; export GIT_CEILING_DIRECTORIES="${tmp%/*}"   # a fetch that loses its -C must not reach the caller's checkout (#5025)
@@ -645,6 +645,10 @@ self_test() {
     row go_line_with_nonzero_exit_is_not_green 0 "$N" "$G" -- cl "$d" 1
     d="$tmp/c/build"; cfx "$d" none ok "MODELS lambda NO-GO: no receipt -- BUILD-FAILED (rc 3)" "MODELS NO-GO: the judge found red or missing cells (rc 1):"
     row build_failure_is_red 0 "${R}lambda NO-GO: no receipt -- BUILD-FAILED" "" -- cl "$d" 1
+    d="$tmp/c/memcap"; cfx "$d" none ok "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc 28) -- nothing was built or measured (rc 3)" "MODELS NO-GO: the judge found red or missing cells (rc 1):"
+    row cargo_memcap_refusal_is_not_measured 0 "${N}MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused" "$R" -- cl "$d" 2
+    d="$tmp/c/memcap-red"; cfx "$d" none red "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc 28) -- nothing was built or measured (rc 3)"
+    row refusal_beside_a_real_red_cell_stays_red 0 "${R}gx10 receipt has red cells" "" -- cl "$d" 2
     d="$tmp/c/notrel"; cfx "$d" ok none "MODELS gx10 NO-GO: no receipt -- NOT-THE-RELEASE: 'apr 1' (want 'apr 2') (rc 3)"
     row binary_not_c_is_red 0 "${R}gx10 NO-GO: no receipt -- NOT-THE-RELEASE" "" -- cl "$d" 1
     d="$tmp/c/wrongbin"; cfx "$d" wrong ok "MODELS lambda NO-GO: the receipt was measured by 'apr 0.0.1 (000000000)', not 'apr $ST_V ($ST_S)'"
@@ -828,6 +832,9 @@ echo "MODELS_T1_SCOPE=${MODELS_T1_SCOPE-unset}"
 echo "MODELS_T1_MEASURE=${MODELS_T1_MEASURE-unset}"
 red=0; [ "${STUB_MODE:-green}" != red ] || red=2
 [ "${STUB_MODE:-green}" != slow ] || exec sleep 30
+# PMAT-7235: a refused lambda build (cargo-memcap, disk under its floor) is ENV, exit 2; a real one is BUILD-FAILED, exit 1
+[ "${STUB_MODE:-green}" != refuse ] || { echo "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc 28) -- nothing was built or measured (rc 3)"; exit 2; }
+[ "${STUB_MODE:-green}" != buildfail ] || { echo "MODELS lambda NO-GO: no receipt -- BUILD-FAILED (rc 3)"; echo "MODELS NO-GO: the judge found red or missing cells (rc 1):"; exit 1; }
 if [ "${MODELS_T1_MEASURE:-ladder}" = crux ]; then
     v=PASS; [ "$red" = 0 ] || v=RED
     for h in lambda gx10; do
@@ -897,6 +904,19 @@ STUB
     c3=$(git -C "$tmp/src" rev-parse HEAD)
     row e2e_timeout_is_not_measured 0 "RUN not_measured at ${c3:0:9}" "" -- env STUB_MODE=slow bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work" --timeout 2
     row e2e_not_measured_is_measured_again 0 "RUN green at ${c3:0:9}" "SKIP" -- nightly --run --repo "$repo" --work "$work"
+    # PMAT-7235 / L23: a refused build measured nothing, so it is not_measured and the next run measures C again;
+    # a real build failure is red and final (flake-fishing protection: a real red is never re-rolled)
+    echo refuse >> "$tmp/src/Cargo.toml"; git -C "$tmp/src" commit -q -am c4 && git -C "$tmp/src" push -q "$bare" main || exit 3
+    c4=$(git -C "$tmp/src" rev-parse HEAD)
+    row e2e_refused_build_is_not_measured 0 "RUN not_measured at ${c4:0:9}" "RUN red" -- env STUB_MODE=refuse bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
+    row e2e_refused_build_verdict_is_not_measured 0 "state=not_measured" "state=red" -- cat "$work/$PENDING/$c4/verdict"
+    row e2e_refused_build_second_run_runs_again 0 "RUN not_measured at ${c4:0:9}" "SKIP" -- env STUB_MODE=refuse bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
+    row e2e_refused_build_then_green_is_measured 0 "RUN green at ${c4:0:9}" "SKIP" -- nightly --run --repo "$repo" --work "$work"
+    echo buildfail >> "$tmp/src/Cargo.toml"; git -C "$tmp/src" commit -q -am c5 && git -C "$tmp/src" push -q "$bare" main || exit 3
+    c5=$(git -C "$tmp/src" rev-parse HEAD)
+    row e2e_real_build_failure_is_red 0 "RUN red at ${c5:0:9}" "RUN not_measured" -- env STUB_MODE=buildfail bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
+    row e2e_real_build_failure_verdict_is_red 0 "state=red" "state=not_measured" -- cat "$work/$PENDING/$c5/verdict"
+    row e2e_real_build_failure_second_run_skips 0 "SKIP: ${c5:0:9} is already measured red" "RUN " -- nightly --run --repo "$repo" --work "$work"
     row e2e_token_refused 3 "REFUSED: a registry token" "RUN " -- env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --run --repo "$repo" --work "$work"
     row e2e_publish_token_refused 3 "REFUSED: a registry token" "PUBLISHED" -- env CARGO_REGISTRY_TOKEN=x bash "$SCRIPT_PATH" --publish --repo "$repo" --work "$work"
     mkdir -p "$tmp/fake"; printf 'sleep 30\n' > "$tmp/fake/models_t1.sh"
@@ -1097,7 +1117,10 @@ m67_taskset_cpu_list_not_marked	s#if \(x == "-c"\) tsc = 1;#if (x == "-c") tsc =
 m68_models_t1_suffix_unbounded	s#models_t1\\\.sh\(\[\^A-Za-z0-9_\.-\]\|\$\)/#models_t1\\.sh/#
 m69_models_t1_prefix_unbounded	s#/\(\^\|\[\^A-Za-z0-9_\.-\]\)models_t1#/models_t1#
 m70_git_C_operand_not_skipped	s#if \(x == "-C"\) \{ j \+= 2; continue \}#if (x == "-C") { j++; continue }#
-m71_shell_D_not_noexec	s#if \(ch == "n" [|][|] ch == "D"\) noexec = 1#if (ch == "n") noexec = 1#'
+m71_shell_D_not_noexec	s#if \(ch == "n" [|][|] ch == "D"\) noexec = 1#if (ch == "n") noexec = 1#
+m72_refusal_is_final	s/case \$s in green[|]red[)] say/case $s in green|red|not_measured) say/
+m73_env_refusal_is_red	s/[(]BUILD-FAILED[|]NOT-THE-RELEASE/(BUILD-FAILED|ENV:|NOT-THE-RELEASE/
+m74_real_build_failure_rerolled	s/case \$s in green[|]red[)] say/case $s in green) say/'
 mutants() {
     local tmp pass=0 fail=0 name expr o rc
     tmp=$(mktemp -d) || exit 3

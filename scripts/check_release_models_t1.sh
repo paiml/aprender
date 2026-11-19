@@ -25,6 +25,7 @@
 #                    nor the stale rel-9.9.9; rel-9.9.7 and rel-9.9.9 are gone (#5264).
 #   gx10-unreachable ssh rc 255: STOP, "unreachable over SSH".
 #   build-fails      lambda's build fails: STOP, "BUILD-FAILED".
+#   build-refused   lambda's cargo-memcap REFUSES the build (disk under its floor, rc 28): ENV, exit 2, never BUILD-FAILED (PMAT-7235).
 #   missing-receipt  lambda's model_ladder writes nothing: STOP, "wrote no receipt".
 #   red-cell         a red cell on gx10: STOP, "the judge found red".
 #   judge-decline    the judge exits 2: STOP, "the judge DECLINED".
@@ -216,6 +217,7 @@ case "${1:-}" in
   build)
     printf 'build host=%s oom=%s flock=%s\n' "$host" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
     [ "${FX_BUILD_FAIL_HOST:-}" = "$host" ] && { echo "error: could not compile (fixture)"; exit 101; }
+    [ "${FX_BUILD_REFUSE_HOST:-}" = "$host" ] && { echo "cargo-memcap: REFUSED: /mnt/nvme-raid0 has 189G free, under the 200G floor; no new heavy job starts (PMAT-2976)" >&2; exit 28; }
     s=$(git rev-parse --short=10 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef00
     mkdir -p "$tdir/release"
     printf '#!/usr/bin/env bash\nprintf "apr %s (%s)\\n"\n' "$v" "$s" > "$tdir/release/apr"
@@ -463,6 +465,13 @@ stops() { # TAG AUTOPILOT MODELS_T1 NEEDLE ENV... -> 0 when the step STOPped nam
 }
 unreachable()   { stops "unreach-$1" "$2" "$3" "MODELS gx10 NO-GO: no receipt -- unreachable over SSH" FX_SSH_DOWN=1; }
 build_fails()   { stops "build-$1" "$2" "$3" "MODELS lambda NO-GO: no receipt -- BUILD-FAILED" FX_BUILD_FAIL_HOST=lambda; }
+build_refused() {
+    local rc; stops "refused-$1" "$2" "$3" "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build" FX_BUILD_REFUSE_HOST=lambda; rc=$?
+    [ "$rc" = 0 ] || return "$rc"
+    ! grep -q 'BUILD-FAILED' "$TMP/refused-$1/ap/STATUS" || { printf 'a refused build was named BUILD-FAILED\n'; return 1; }
+    grep -q 'rc=2' "$TMP/refused-$1/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+    return 0
+}
 missing()       { stops "missing-$1" "$2" "$3" "MODELS lambda NO-GO: no receipt -- model_ladder.sh wrote no receipt" FX_NO_RECEIPT_HOST=lambda; }
 red_cell()      { stops "red-$1" "$2" "$3" "MODELS NO-GO: the judge found red" FX_RED_HOST=gx10; }
 decline()       { stops "decline-$1" "$2" "$3" "MODELS NO-GO: the judge DECLINED" FX_JUDGE_DECLINE=1; }
@@ -598,7 +607,7 @@ r_stale()   { # an apr built from another commit: its surface would derive anoth
 }
 
 # ---- the rows ---------------------------------------------------------------------------------
-for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" \
+for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" "build-refused build_refused" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
             "stale-binary stale" "disk-refusal disk" "t1-lock-held t1_held" "gx10-lock-held gx10_held" "oom-victim oom_victim" \
             "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "crux-green-pair crux_green" \
@@ -674,6 +683,7 @@ PY
 mutant shared-target    "$MODELS" "$A_SHARED" 'export CARGO_TARGET_DIR="\$repo/target"' green_pair
 mutant no-255-reason    "$MODELS" "$A_255" 'elif false; then' unreachable
 mutant build-ignored    "$MODELS" "$A_BUILD" '        || true' build_fails
+mutant refusal-is-build "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 99)' build_refused
 mutant no-receipt-ok    "$MODELS" "$A_NORCPT" '        continue' missing
 mutant red-is-go        "$MODELS" "$A_RED" '    *) ;; 99) echo' red_cell
 mutant decline-is-go    "$MODELS" "$A_DECLINE" '    2) ;; 98) echo "' decline
