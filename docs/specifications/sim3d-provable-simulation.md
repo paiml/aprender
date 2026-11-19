@@ -3,7 +3,7 @@ kind: docs
 ---
 # SIM3D: Provable Simulation (phases 0 and 1)
 
-**Status**: PROPOSED. Phases 0 and 1 of epic aprender#7244 (milestone 0.77.0).
+**Status**: PROPOSED (drafted 2026-11-19). Phases 0 and 1 of epic aprender#7244 (milestone 0.77.0).
 **Rows**: aprender#7252 (this document), aprender#7245 (ontology, shapes, contracts).
 **Contracts**: `contracts/sim3d-spec-v1.yaml`, `contracts/sim3d-receipt-v1.yaml`,
 `contracts/simular/simulation-determinism-v1.yaml`, `contracts/simular/simulation-step-v1.yaml`.
