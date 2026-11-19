@@ -266,9 +266,18 @@ fn json_recipe_run_prints_exactly_one_document_and_holds_back_the_plan() {
     .expect("receipt.json is JSON");
     assert_eq!(docs[0], file, "the --json document equals receipt.json");
     assert!(!plan_json_suppressed(), "guard released");
+    let before = std::fs::read(dir.join("out").join(RECEIPT_FILE)).expect("receipt.json");
     let (_, seen, out) = drive(&dir, 4, true, true, true);
     assert_eq!(seen, vec![(4, false)], "--plan keeps its plan JSON");
-    assert!(out.is_empty(), "--plan prints no receipt");
+    // The contract (recipe_dry_run) prints the resolved recipe on stdout under --plan; what
+    // --plan never does is print or rewrite a receipt.
+    let plan_doc: Value = serde_json::from_str(&out).expect("--plan stdout is the resolved recipe");
+    assert_ne!(
+        plan_doc["schema"], FINETUNE_RECEIPT_SCHEMA,
+        "--plan prints no receipt"
+    );
+    let after = std::fs::read(dir.join("out").join(RECEIPT_FILE)).expect("receipt.json");
+    assert_eq!(before, after, "--plan does not rewrite receipt.json");
     std::fs::remove_dir_all(&dir).ok();
 }
 
