@@ -230,6 +230,20 @@ jobs:
 jobs:
   a: {runs-on: x, steps: []}
 "
+  # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
+  # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
+  local sh yqp jqp
+  sh="$(command -v bash)"; yqp="$(command -v yq)"; jqp="$(command -v jq)"
+  mkdir -p "$d/noyq" "$d/nojq"; ln -sf "$jqp" "$d/noyq/jq"; ln -sf "$yqp" "$d/nojq/yq"
+  te() { # name, expected rc, PATH dir
+    printf '%s' "$H
+  a: {runs-on: x, steps: []}
+" > "$w/ci.yml"; : > "$d/ex"
+    PATH="$3" PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" "$sh" "$0" >/dev/null 2>&1; local rc=$?
+    [ "$rc" = "$2" ] && echo "ok   $1" || { echo "FAIL $1 (rc $rc, want $2)"; fails=1; }
+  }
+  te "yq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/noyq"
+  te "jq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/nojq"
   rm -rf "${d:?}"
   return "$fails"
 }
