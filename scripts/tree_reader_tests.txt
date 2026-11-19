@@ -33,6 +33,7 @@ apr-cli	--test	cli_commands
 apr-cli	--test	falsification_crux_a_01
 apr-cli	--test	falsification_crux_a_03
 apr-cli	--test	falsification_crux_a_20
+apr-cli	--test	falsification_recipe_lora_dry_run
 apr-cli	--test	pixel_regression
 apr-cli	--test	registry_failure_catalogue
 apr-cli	--test	thinking_budgets_mirror
