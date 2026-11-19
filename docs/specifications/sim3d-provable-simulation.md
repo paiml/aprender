@@ -62,8 +62,8 @@ undeclared invariant, an empty spec, an extra key, a unit outside the closed set
 1. That a law's `invariant` id is declared is a join, which the SHACL subset cannot state. pv does it in the
    json extractor instead: the contract's vocabulary `refs` maps `invariant` to the root's `invariants`, the
    extractor points the law at the invariant node with that `id` (or at an untyped dangling node), and the
-   shape asks `class: sim:Invariant`. `pv lint --gate sigma --gate shapes` therefore goes red, naming
-   `ont:sim/invariant`, on `invalid-law-undeclared-invariant`; no test helper does the join.
+   shape asks `class: sim:Invariant`. `pv lint --gate sigma --gate shapes` therefore goes red on `invalid-law-undeclared-invariant`, with a `node` violation saying the dangling id
+   (`...invariants.undeclared.INV-999`) is not an instance of `ont:sim/Invariant`; no test helper does the join.
 2. A positive-number bound (such as a maximum horizon) needs `minInclusive` and
    `maxInclusive`, which the subset lacks. The horizon is checked by its lexical form only.
 3. A spec that conforms is well formed, not correct. Nothing in phase 0 runs a simulation.

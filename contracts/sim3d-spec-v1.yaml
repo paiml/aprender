@@ -22,7 +22,7 @@
 #
 #   1. (closed) A law's `invariant` being DECLARED is a join. The SHACL subset has no join, so the json extractor
 #      resolves the id against the root's `invariants[].id` (vocabulary `refs`) and the shape asks `class:
-#      sim:Invariant` of the result: pv refuses an undeclared or malformed id, naming ont:sim/invariant.
+#      sim:Invariant` of the result: pv refuses an undeclared or malformed id, naming the dangling node.
 #   2. `horizon_ns` is an integer written without sign or leading zero (a pattern on its lexical form); a bound
 #      such as "at most 10^15" needs minInclusive/maxInclusive, which the subset lacks.
 #   3. Nothing here runs the simulation. A spec that conforms is well formed, not correct.
@@ -168,8 +168,8 @@ falsification_tests:
   - id: FALSIFY-SIM-SPEC-004
     rule: the invariant join, in pv
     prediction: >
-      a law naming an invariant id that `invariants` does not declare is refused by pv itself (exit 1, a (class)
-      violation naming ont:sim/invariant); declaring the id clears it
+      a law naming an invariant id that `invariants` does not declare is refused by pv itself (exit 1, a (node)
+      violation naming the undeclared id); declaring the id clears it
     test: cargo test -p aprender-contracts-cli --test sim3d_spec
     if_fails: a law can cite an invariant nobody declared and still pass pv
   - id: FALSIFY-SIM-SPEC-003

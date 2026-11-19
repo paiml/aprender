@@ -199,8 +199,8 @@ fn a_law_naming_an_undeclared_invariant_is_refused_by_pv() {
         SPEC,
         &[(
             "invalid-law-undeclared-invariant.sim.yaml",
-            "class",
-            "ont:sim/invariant",
+            "node",
+            "invariants.undeclared.INV-999> is not an instance of ont:sim/Invariant",
         )],
     );
     // declaring the id clears it: the same spec with the invariant added conforms
@@ -226,7 +226,7 @@ fn a_law_naming_an_undeclared_invariant_is_refused_by_pv() {
     let n = r
         .errors()
         .iter()
-        .filter(|m| m.contains("ont:sim/invariant"))
+        .filter(|m| m.contains("is not an instance of ont:sim/Invariant"))
         .count();
     assert!(n >= 2, "both dangling laws are named, got {n}\n{}", r.all());
 }
@@ -291,7 +291,7 @@ fn the_closed_sets_and_shapes_refuse_each_for_its_own_reason() {
             (
                 "invalid-law-bad-invariant-id.sim.yaml",
                 "node",
-                "ont:sim/invariant",
+                "is not an instance of ont:sim/Invariant",
             ),
             (
                 "invalid-zero-horizon.sim.yaml",
