@@ -1,0 +1,19 @@
+# The load-balancer scenario of #7251, at the level of detail the shape grades. Valid.
+schema: sim3d-spec/v1
+name: lb-round-robin
+time_unit: ns
+horizon_ns: 60000000000
+seed: {value: 7, algorithm: counter-based}
+entities:
+  - {id: clients, kind: source, rate_per_s: 200.0}
+  - {id: balancer, kind: router}
+  - {id: target_a, kind: server, rate_per_s: 120.0, capacity: 64}
+  - {id: target_b, kind: server, rate_per_s: 120.0, capacity: 64}
+  - {id: probe, kind: health_check}
+  - {id: out, kind: sink}
+laws:
+  - {id: LAW-001, statement: "arrived equals served plus queued plus dropped at every step", invariant: INV-001}
+  - {id: LAW-002, statement: "no request is routed to an unhealthy target", invariant: INV-002}
+invariants:
+  - {id: INV-001, formula: "arrived = served + queued + dropped", unit: requests}
+  - {id: INV-002, formula: "routed_to_unhealthy = 0", unit: count}

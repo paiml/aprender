@@ -47,6 +47,12 @@ use serde::{Deserialize, Serialize};
 ///   status from a closed vocabulary, state something that can fail, and — if
 ///   it pins a baseline/target — actually claim a movement, in a direction
 ///   that does not contradict its own cost metrics.
+/// - `Simulation`: the closed shape of a simulation spec or receipt (SIM3D,
+///   aprender#7245): a spec file read through the `type: json` extractor and
+///   graded by a closed shape. Exempt from the kernel provability invariant (it
+///   proves a document is well formed, not a theorem) but held to its own rules
+///   by `validate_simulation` (SIM-001..002): it must declare a shape and a
+///   falsification test that can fail.
 #[derive(
     Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -72,6 +78,8 @@ pub enum ContractKind {
     /// task, with a pinned baseline that fails CI on regression. The measurement
     /// backbone for the four-pillar "replace AND beat" mission (PMAT-741).
     BeatBenchmark,
+    /// A simulation spec or receipt shape (SIM3D, aprender#7245).
+    Simulation,
 }
 
 impl std::fmt::Display for ContractKind {
@@ -90,6 +98,7 @@ impl std::fmt::Display for ContractKind {
             Self::Schema => "schema",
             Self::Kaizen => "kaizen",
             Self::BeatBenchmark => "beat-benchmark",
+            Self::Simulation => "simulation",
         };
         write!(f, "{s}")
     }
@@ -130,5 +139,69 @@ mod beat_benchmark_tests {
             errors.is_empty(),
             "pilot beat contract has errors: {errors:?}"
         );
+    }
+}
+
+#[cfg(test)]
+mod simulation_tests {
+    use super::*;
+    use crate::schema::{parse_contract_str, validate_contract};
+
+    fn rules(yaml: &str) -> Vec<String> {
+        let c = parse_contract_str(yaml).expect("parses");
+        assert_eq!(c.kind(), ContractKind::Simulation);
+        validate_contract(&c).into_iter().map(|v| v.rule).collect()
+    }
+
+    const HEAD: &str = "metadata:\n  version: \"1.0.0\"\n  kind: simulation\n  description: a simulation spec shape\n  references: [\"aprender#7245\"]\n";
+
+    #[test]
+    fn simulation_kind_round_trips() {
+        assert_eq!(ContractKind::Simulation.to_string(), "simulation");
+        let k: ContractKind = serde_yaml::from_str("simulation").unwrap();
+        assert_eq!(k, ContractKind::Simulation);
+    }
+
+    #[test]
+    fn a_simulation_contract_without_a_shape_is_sim_001() {
+        let y = format!("{HEAD}falsification_tests:\n  - id: F-1\n    rule: r\n    prediction: p\n    test: t\n    if_fails: f\n");
+        let r = rules(&y);
+        assert!(r.iter().any(|x| x == "SIM-001"), "{r:?}");
+        assert!(!r.iter().any(|x| x == "SIM-002"), "{r:?}");
+    }
+
+    #[test]
+    fn a_simulation_contract_with_a_vacuous_shape_value_is_sim_001() {
+        let tail = "falsification_tests:\n  - id: F-1\n    rule: r\n    prediction: p\n    test: t\n    if_fails: f\n";
+        for vacuous in [
+            "shape: null\n",
+            "shape: {}\n",
+            "shape: todo\n",
+            "shapes: []\n",
+            "shapes:\n",
+            "shapes: todo\n",
+        ] {
+            let r = rules(&format!("{HEAD}{vacuous}{tail}"));
+            assert!(r.iter().any(|x| x == "SIM-001"), "{vacuous:?}: {r:?}");
+        }
+        let ok = rules(&format!(
+            "{HEAD}shapes:\n  - id: a\n    closed: true\n{tail}"
+        ));
+        assert!(!ok.iter().any(|x| x == "SIM-001"), "{ok:?}");
+    }
+
+    #[test]
+    fn a_simulation_contract_without_a_falsifier_is_sim_002() {
+        let y = format!("{HEAD}shape:\n  targetClass: sim:Simulation\n  closed: true\n");
+        let r = rules(&y);
+        assert!(r.iter().any(|x| x == "SIM-002"), "{r:?}");
+        assert!(!r.iter().any(|x| x == "SIM-001"), "{r:?}");
+    }
+
+    #[test]
+    fn a_simulation_contract_with_both_raises_neither() {
+        let y = format!("{HEAD}shape:\n  targetClass: sim:Simulation\n  closed: true\nfalsification_tests:\n  - id: F-1\n    rule: r\n    prediction: p\n    test: t\n    if_fails: f\n");
+        let r = rules(&y);
+        assert!(!r.iter().any(|x| x.starts_with("SIM-")), "{r:?}");
     }
 }

@@ -275,6 +275,12 @@ pub fn parse_shapes_with(
         shape: stem.to_string(),
         what: "`shapes:` is not a list".into(),
     })?;
+    if seq.is_empty() {
+        return Err(ShapeError::Malformed {
+            shape: stem.to_string(),
+            what: "`shapes:` is empty: declare at least one shape or drop the key".into(),
+        });
+    }
     for (i, entry) in seq.iter().enumerate() {
         let map = entry.as_mapping().ok_or_else(|| ShapeError::Malformed {
             shape: stem.to_string(),
@@ -1455,6 +1461,16 @@ mod tests {
         assert!(matches!(
             parse_shape_with("t", &doc, &pv_map()),
             Err(ShapeError::Malformed { what, .. }) if what.contains("nested node shape")
+        ));
+    }
+
+    #[test]
+    fn an_empty_shapes_list_is_malformed_not_a_contract_with_no_shapes() {
+        let doc: serde_yaml::Value =
+            serde_yaml::from_str("entity: {type: pv-contract}\nshapes: []\n").unwrap();
+        assert!(matches!(
+            parse_shapes_with("t", &doc, &pv_map()),
+            Err(ShapeError::Malformed { what, .. }) if what.contains("`shapes:` is empty")
         ));
     }
 
