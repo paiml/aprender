@@ -247,6 +247,20 @@ fn recipe_output_dir_holds_the_adapter_and_its_checkpoints() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
+/// PMAT-7319: the resolved recipe's `output.dir` is the directory, not `<dir>/adapter.apr`.
+#[test]
+fn resolved_output_dir_is_the_directory_not_the_adapter_file() {
+    let dir = scratch("outshown");
+    let body = format!("{VALID}output:\n  dir: out/run1\n");
+    let (recipe, _) = preflight_recipe(&write_recipe(&dir, &body), true).expect("valid");
+    let mut f = flags(true);
+    assert_eq!(recipe_output_shown(&f, &recipe), Some(dir.join("out/run1")));
+    let given = Path::new("x/mine.apr");
+    f.output_path = Some(given);
+    assert_eq!(recipe_output_shown(&f, &recipe).as_deref(), Some(given));
+    std::fs::remove_dir_all(&dir).ok();
+}
+
 #[test]
 fn distill_recipe_is_refused_by_finetune_naming_method() {
     let dir = scratch("distill");
