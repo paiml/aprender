@@ -17,7 +17,11 @@ if [ -z "$here" ]; then exit 1; fi
 # The awk program: exit 0 clean (prints one "inspected" line), exit 1 with one finding per line, exit 2 when the file
 # uses a YAML form this script does not judge (printed as "UNJUDGED ..."): refuse rather than guess.
 AWK_PROG=$(cat <<'AWK'
-function strip(s,   i, n, c, q, p, pp, j, L, dd, lc) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
+function adj(s, ci, lc,   k) { # the colon at ci follows a quoted key that closed at lc, with only blanks between (JSON-style "k" :"v")
+  for (k = ci - 1; k >= 1 && substr(s, k, 1) ~ /[ \t]/; k--) ;
+  return (k == lc)
+}
+function strip(s,   i, n, c, q, p, pp, j, L, dd, lc, k) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
   # a quote opens a scalar only at a token start (line start or after blank , : [ ] { } -), never mid-word (it's);
   # noq is the line with its quoted spans removed; uq is set when a quote is still open at the end of the line
   q = ""; n = length(s); noq = ""; uq = 0; dd = fdepth + 0; lc = -9
@@ -25,7 +29,7 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd, lc) { # drop a trailing comment
     c = substr(s, i, 1); p = (i == 1) ? " " : substr(s, i - 1, 1); pp = (i <= 2) ? " " : substr(s, i - 2, 1)
     if (q == "") {
       # a hyphen never opens a quote (a-' is mid-word); a colon does only right after a closing quote ("k":"v")
-      if ((c == "\042" || c == "\047") && (p ~ /[ \t,[\]{}]/ || (p == ":" && lc == i - 2))) {
+      if ((c == "\042" || c == "\047") && (p ~ /[ \t,[\]{}]/ || (p == ":" && adj(s, i - 1, lc)))) {
         # inside a flow collection a quote opens a scalar only after : , [ { or a block dash; after a word it is text of a
         # plain scalar (a '), and which quote closes which is then ambiguous: refuse the line (midq) rather than guess
         L = " "; for (j = i - 1; j >= 1; j--) { L = substr(s, j, 1); if (L !~ /[ \t]/) break }
@@ -346,6 +350,10 @@ EOF
   printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: a- ' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r4.yml"; expect_unj "dash then space-quote in flow" "$t/r4.yml"
   printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: x':' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r5.yml"; expect "colon after a mid-word quote is not a token start" "$t/r5.yml" fail
   printf 'on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: {"a":"b", "c":\x27d\x27}\n        timeout-minutes: 10\n' > "$t/r6.yml"; expect "JSON-style quoted pairs stay judged" "$t/r6.yml" pass
+
+  printf 'name: x\non: { workflow_dispatch: { inputs: { a: { "default" :"}}}} # " } } }, schedule: [{ cron: "5 20 * * *" }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r7.yml"; expect "blank before the colon of a JSON-style pair" "$t/r7.yml" fail
+  printf "name: x\non: { workflow_dispatch: { inputs: { a: { 'default' :'}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r8.yml"; expect "blank before the colon, single quotes" "$t/r8.yml" fail
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    env: { "a" :"} # ",\n    timeout-minutes: 25\n    , "b" :"{x" }\n    steps:\n      - run: echo untimed\n        env: { "a" :"} # ",\n        timeout-minutes: 10\n        , "b" :"{x" }\n' > "$t/r9.yml"; expect "blank before the colon, multi-line env forging timeouts" "$t/r9.yml" fail
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
