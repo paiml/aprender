@@ -2999,8 +2999,7 @@
         sh:path <https://ont.paiml.dev/v1alpha1/sim/invariant> ;
         sh:minCount 1 ;
         sh:maxCount 1 ;
-        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
-        sh:pattern "^INV-[0-9]{3}$" ;
+        sh:class <https://ont.paiml.dev/v1alpha1/sim/Invariant> ;
     ] ;
 .
 
