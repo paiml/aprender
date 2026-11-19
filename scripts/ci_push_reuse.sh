@@ -17,19 +17,21 @@
 #   ci_push_reuse.sh --mutants               # delete or invert each condition in a scratch copy; every mutant must turn the table RED
 #
 # Facts (all required): event ref sha tree parents[] before repo
-#   pr{number merged merge_commit_sha is_fork head_repo draft head_sha}  head_tree  base_in_head
-#   stamp{sha tree base head}|null (what the PR run recorded of its test merge commit M)
+#   pr{number merged merge_commit_sha base_ref head_ref is_fork head_repo draft head_sha}  (base_ref and head_ref are read from the PR object)
+#   stamp{sha tree base head}  (MANDATORY: what the PR run recorded of its test merge commit M; null refuses)
 #   m_derived{tree base head}|null (re-derived from M's own object, null when M is not fetchable)
 #   expect_shards  runs_complete
-#   run{id event path head_sha status conclusion newest_id started_epoch jobs_total pull_requests[{number base_ref}] jobs[{name conclusion run_id head_sha}]}
+#   run{id event path head_sha head_branch status conclusion newest_id started_epoch jobs_total sov_test("success"|...|null: read from the run's x86-main log) jobs[{name conclusion run_id head_sha}]}
 #   paths[] (B..S changed paths)  now
 #
 # C1 push to refs/heads/main, one parent B, before == B.   C2 S bound to a merged same-repo non-draft PR.
-# C3 tested tree == pushed tree and same base. A recorded stamp is BINDING: when the run left one, (a) it must
-#    match (and M.s own object, when fetchable) and (b) is not consulted; only a run with no stamp may fall back to
-#    (b) B is an ancestor of H and H^{tree} == S^{tree}.   C4 the run is complete, real, bound to THIS PR into main,
-#    newest, and every named job succeeded; advisories skipped in it; it did not itself reuse (no receipt-judge job
-#    that ran: read from the run.s own job list, never from workflow text).
+# C3 the run tested this tree on main's tip. The stamp the run's workspace-test-ran job emitted is MANDATORY (no stamp, no reuse) and
+#    binds the run to the push: stamp.tree == S^{tree}, stamp.base == B (S's parent: main's tip when the run tested), stamp.head == the PR's
+#    own head.sha; M's own object must agree when fetchable. There is no fallback: a run's pull_requests[] is empty once the PR is merged.
+# C4 the run is complete, real, from the PR's own head branch, the PR is into main (read from the PR object), newest, every named job
+#    succeeded; advisories skipped; it did not itself reuse (no receipt-judge job that ran); AND it ran the heavy `sov.test` section:
+#    ci/sections.yml sets heavy_on train, so on an ordinary PR x86-main is green with sov.test SKIPPED (printed NOT MEASURED) while a
+#    push to main owes it. That result is read from the cited run's own x86-main log, never from a branch name or a label.
 # C5 no gate path changed (every path under scripts/ is one).   C6 the run STARTED within 24 h.
 # NEVER reused: advisories (the workflow always runs them), tags, release/publish, a cited reuse, a
 # run that is not the newest on the head, forks, multi-commit/non-squash/direct pushes, gate-change
@@ -61,11 +63,8 @@ def c3a: # an absent or non-object stamp makes every field check below false, so
   cj(.stamp.base == .parents[0]) and # R-C3A4
   cj(.stamp.head == .pr.head_sha) and # R-C3A5
   cj(.m_derived == null or (.m_derived.tree == .stamp.tree and .m_derived.base == .stamp.base and .m_derived.head == .stamp.head)); # R-C3A6
-def c3b:
-  cj(.base_in_head == true) and # R-C3B1
-  cj((.head_tree | sha) and .head_tree == .tree); # R-C3B2
 [
-  chk("F-shape"; type == "object" and (keys | contains(["event","ref","sha","tree","parents","before","repo","pr","head_tree","base_in_head","expect_shards","runs_complete","run","paths","now"]))), # R-FSHAPE
+  chk("F-shape"; type == "object" and (keys | contains(["event","ref","sha","tree","parents","before","repo","pr","stamp","m_derived","expect_shards","runs_complete","run","paths","now"]))), # R-FSHAPE
   chk("C1-event"; .event == "push"), # R-C1EVENT
   chk("C1-ref"; .ref == "refs/heads/main"), # R-C1REF
   chk("C1-shas"; (.sha | sha) and (.tree | sha) and (.before | sha)), # R-C1SHAS
@@ -77,9 +76,10 @@ def c3b:
   chk("C2-fork"; .pr.is_fork == false and (.repo | type == "string" and length > 0) and .pr.head_repo == .repo), # R-C2FORK
   chk("C2-draft"; .pr.draft == false), # R-C2DRAFT
   chk("C2-head-sha"; (.pr.head_sha | sha)), # R-C2HEAD
-  chk("C3-tree-identity"; if .stamp == null then c3b else c3a end), # R-C3
+  chk("C3-tree-identity"; c3a), # R-C3
   chk("C4-run-identity"; (.run.id | isint) and .run.event == "pull_request" and .run.head_sha == .pr.head_sha and .run.path == ".github/workflows/ci.yml"), # R-C4IDENT
-  chk("C4-run-pr"; .pr.number as $n | any(.run.pull_requests[]; .number == $n and .base_ref == "main")), # R-C4PR
+  chk("C4-pr-base"; .pr.base_ref == "main"), # R-C4PRBASE
+  chk("C4-run-branch"; (.run.head_branch | type == "string" and length > 0) and .run.head_branch == .pr.head_ref), # R-C4BRANCH
   chk("C4-run-newest"; .runs_complete == true and .run.id == .run.newest_id), # R-C4NEWEST
   chk("C4-run-done"; .run.status == "completed" and .run.conclusion == "success"), # R-C4DONE
   chk("C4-jobs-fully-read"; (.run.jobs | type == "array" and length > 0) and .run.jobs_total == (.run.jobs | length) and all(.run.jobs[]; (.name | type == "string") and .run_id == $__r and .head_sha == $__h)), # R-C4JOBS
@@ -93,6 +93,7 @@ def c3b:
   chk("C4-shards"; (.expect_shards | type == "number" and . == floor and . >= 1) and (. as $r | $r.expect_shards as $n | (([$r.run.jobs[] | select(.name | startswith("workspace-test-shard"))] | length) == $n) and all(range(1; $n + 1); . as $i | $r | okjob("workspace-test-shard (\($i), \($n))")))), # R-C4SHARDS
   chk("C4-advisories-skipped"; (named("x86-main-advisories") | length) == 1 and named("x86-main-advisories")[0].conclusion == "skipped"), # R-C4ADV
   chk("C4-not-a-reuse"; all(.run.jobs[]; .name != "receipt-judge" or .conclusion == "skipped")), # R-C4TIER
+  chk("C4-sov-test"; .run.sov_test == "success"), # R-C4SOV
   chk("C5-paths-judgeable"; (.paths | type == "array" and length > 0) and all(.paths[]; type == "string" and length > 0 and (test("^/|\\.\\.|\"|\\\\|\\n") | not))), # R-C5JUDGE
   chk("C5-no-gate-path"; all(.paths[]; gatepath | not)), # R-C5GATE
   chk("C6-fresh"; (.now | isint) and (.run.started_epoch | isint) and (.now - .run.started_epoch) >= 0 and (.now - .run.started_epoch) <= 86400) # R-C6
@@ -146,7 +147,7 @@ SHA_M=5555555555555555555555555555555555555555
 SHA_O=6666666666666666666666666666666666666666
 
 base_facts() {
-  jq -n --arg s "$SHA_S" --arg b "$SHA_B" --arg h "$SHA_H" --arg t "$TREE" '
+  jq -n --arg s "$SHA_S" --arg b "$SHA_B" --arg h "$SHA_H" --arg t "$TREE" --arg m "$SHA_M" '
     ["x86-main","determinism","gate","ci / gate","workspace-test","workspace-test-ran",
      "workspace-test-shard (1, 4)","workspace-test-shard (2, 4)","workspace-test-shard (3, 4)","workspace-test-shard (4, 4)",
      "pr-light"] as $ok
@@ -154,18 +155,17 @@ base_facts() {
       + [{name: "x86-main-advisories", conclusion: "skipped", run_id: 900, head_sha: $h},
          {name: "guards", conclusion: "skipped", run_id: 900, head_sha: $h}] as $jobs
     | {event: "push", ref: "refs/heads/main", sha: $s, tree: $t, parents: [$b], before: $b, repo: "paiml/aprender",
-       pr: {number: 7001, merged: true, merge_commit_sha: $s, is_fork: false, head_repo: "paiml/aprender", draft: false, head_sha: $h},
-       head_tree: $t, base_in_head: true, stamp: null, m_derived: null, expect_shards: 4, runs_complete: true,
+       pr: {number: 7001, merged: true, merge_commit_sha: $s, base_ref: "main", head_ref: "feat/x", is_fork: false, head_repo: "paiml/aprender", draft: false, head_sha: $h},
+       stamp: {sha: $m, tree: $t, base: $b, head: $h}, m_derived: null, expect_shards: 4, runs_complete: true,
        run: {id: 900, event: "pull_request", path: ".github/workflows/ci.yml", head_sha: $h, status: "completed", conclusion: "success",
-             newest_id: 900, started_epoch: 1000000, jobs_total: ($jobs | length), pull_requests: [{number: 7001, base_ref: "main"}], jobs: $jobs},
+             newest_id: 900, started_epoch: 1000000, head_branch: "feat/x", sov_test: "success", jobs_total: ($jobs | length), jobs: $jobs},
        paths: ["crates/aprender-core/src/lib.rs", "docs/notes.md"], now: 1003600}'
 }
 
 # jq prelude for the table's edits
 PRE='def setj($n;$c): .run.jobs |= map(if .name==$n then .conclusion=$c else . end);
 def delj($n): .run.jobs |= map(select(.name!=$n)) | .run.jobs_total = (.run.jobs|length);
-def addj($n;$c): .run.jobs += [{name:$n, conclusion:$c, run_id:900, head_sha:.pr.head_sha}] | .run.jobs_total = (.run.jobs|length);
-def stamp: .base_in_head=false | .head_tree="'"$SHA_O"'" | .stamp={sha:"'"$SHA_M"'", tree:.tree, base:.parents[0], head:.pr.head_sha};'
+def addj($n;$c): .run.jobs += [{name:$n, conclusion:$c, run_id:900, head_sha:.pr.head_sha}] | .run.jobs_total = (.run.jobs|length);'
 
 self_test() {
   local t pass=0 fail=0 n=0 base out
@@ -188,10 +188,10 @@ self_test() {
   raw() { local got; n=$((n + 1)); printf '%s' "$4" > "$t/r.json"; got=$(bash "$SELF" decide --facts "$t/r.json"); check_row "$1" "$2" "$3" "$got"; }
 
   # ---- must reuse
-  row "base: PR up to date, tree identical, run green and fresh (path b)" yes "" '.'
-  row "path a: PR not up to date, run stamp proves tree and base" yes "" 'stamp'
-  row "path a: stamp agrees with M's own object" yes "" 'stamp | .m_derived={tree:.tree, base:.parents[0], head:.pr.head_sha}'
-  row "path a and b both hold" yes "" '.stamp={sha:"'"$SHA_M"'", tree:.tree, base:.parents[0], head:.pr.head_sha}'
+  row "base: stamp binds tree, base and head; the run list carries no pull_requests (empty after the merge)" yes "" '.'
+  row "stamp agrees with M's own object" yes "" '.m_derived={tree:.tree, base:.parents[0], head:.pr.head_sha}'
+  row "a stale run.pull_requests key in the facts is ignored (it is empty or wrong after the merge)" yes "" '.run.pull_requests=[]'
+  row "the run ran sov.test (heavy owed: train/batch/full-ci)" yes "" '.run.sov_test="success"'
   row "run completed 86399 s ago" yes "" '.now = 1000000 + 86399'
   row "run completed exactly 86400 s ago" yes "" '.now = 1000000 + 86400'
   row "run completed 0 s ago" yes "" '.now = 1000000'
@@ -201,7 +201,7 @@ self_test() {
   row "a bench script outside scripts/ is not a gate path" yes "" '.paths=["benches/decode.sh","crates/x/run_bench.sh"]'
   row "a stale tier_reuse key in the facts is ignored (the fact comes from the run's jobs, never from workflow text)" yes "" '.run.tier_reuse=true'
   row "a skipped receipt-judge job (the run did test)" yes "" 'addj("receipt-judge";"skipped")'
-  row "PR number large" yes "" '.pr.number = 123456 | .run.pull_requests[0].number = 123456'
+  row "PR number large" yes "" '.pr.number = 123456'
   row "five shards expected, five present" yes "" '.expect_shards=5 | .run.jobs |= map(if .name|startswith("workspace-test-shard") then .name |= sub(", 4\\)"; ", 5)") else . end) | addj("workspace-test-shard (5, 5)";"success")'
 
   # ---- C1
@@ -234,23 +234,18 @@ self_test() {
   row "C2 head sha malformed" no C2-head-sha '.pr.head_sha="abc"'
 
   # ---- C3
-  row "C3 PR not up to date, no stamp" no C3-tree-identity '.base_in_head=false'
-  row "C3 trees differ, no stamp" no C3-tree-identity '.head_tree="'"$SHA_O"'"'
-  row "C3 head tree missing, no stamp" no F-shape 'del(.head_tree)'
-  row "C3 base_in_head a string" no C3-tree-identity '.base_in_head="true"'
-  row "C3 stamp tree differs" no C3-tree-identity 'stamp | .stamp.tree="'"$SHA_O"'"'
-  row "C3 stamp base is not B" no C3-tree-identity 'stamp | .stamp.base="'"$SHA_O"'"'
-  row "C3 stamp head is not H" no C3-tree-identity 'stamp | .stamp.head="'"$SHA_O"'"'
-  row "C3 stamp field malformed" no C3-tree-identity 'stamp | .stamp.sha="nope"'
-  row "C3 stamp not an object" no C3-tree-identity 'stamp | .stamp="yes"'
-  row "C3 stamp contradicted by M's object (tree)" no C3-tree-identity 'stamp | .m_derived={tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
-  row "C3 stamp contradicted by M's object (base)" no C3-tree-identity 'stamp | .m_derived={tree:.tree, base:"'"$SHA_O"'", head:.pr.head_sha}'
-  row "C3 stamp contradicted by M's object (head)" no C3-tree-identity 'stamp | .m_derived={tree:.tree, base:.parents[0], head:"'"$SHA_O"'"}'
-  row "C3 path b holds but the run's stamp says another tree (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
-  row "C3 path b holds but the run's stamp says another base (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:.tree, base:"'"$SHA_O"'", head:.pr.head_sha}'
-  row "C3 path b holds but the run's stamp says another head (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:.tree, base:.parents[0], head:"'"$SHA_O"'"}'
-  row "C3 path b holds but M's own object contradicts the stamp (binding)" no C3-tree-identity '.stamp={sha:"'"$SHA_M"'", tree:.tree, base:.parents[0], head:.pr.head_sha} | .m_derived={tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
-  row "C3 path b holds but the stamp is not an object (binding)" no C3-tree-identity '.stamp="yes"'
+  row "C3 no stamp (path b is gone: a run with no recorded merge proves nothing)" no C3-tree-identity '.stamp=null'
+  row "C3 stamp key missing" no F-shape 'del(.stamp)'
+  row "C3 m_derived key missing" no F-shape 'del(.m_derived)'
+  row "C3 old-shape facts: base_in_head and head_tree cannot stand in for a stamp" no C3-tree-identity '.stamp=null | .base_in_head=true | .head_tree=.tree'
+  row "C3 stamp tree differs" no C3-tree-identity '.stamp.tree="'"$SHA_O"'"'
+  row "C3 stamp base is not B" no C3-tree-identity '.stamp.base="'"$SHA_O"'"'
+  row "C3 stamp head is not H" no C3-tree-identity '.stamp.head="'"$SHA_O"'"'
+  row "C3 stamp field malformed" no C3-tree-identity '.stamp.sha="nope"'
+  row "C3 stamp not an object" no C3-tree-identity '.stamp="yes"'
+  row "C3 stamp contradicted by M's object (tree)" no C3-tree-identity '.m_derived={tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
+  row "C3 stamp contradicted by M's object (base)" no C3-tree-identity '.m_derived={tree:.tree, base:"'"$SHA_O"'", head:.pr.head_sha}'
+  row "C3 stamp contradicted by M's object (head)" no C3-tree-identity '.m_derived={tree:.tree, base:.parents[0], head:"'"$SHA_O"'"}'
 
   # ---- C4
   row "C4 run is a push run" no C4-run-identity '.run.event="push"'
@@ -293,12 +288,18 @@ self_test() {
   row "C4 cited run ran a receipt-judge job (it was a receipt reuse)" no C4-not-a-reuse 'addj("receipt-judge";"success")'
   row "C4 receipt-judge failed in the cited run" no C4-no-unknown-result 'addj("receipt-judge";"failure")'
   row "C4 receipt-judge result null" no C4-no-unknown-result 'addj("receipt-judge";null)'
-  row "C4 cited run belongs to no PR (empty pull_requests)" no C4-run-pr '.run.pull_requests=[]'
-  row "C4 pull_requests missing" no C4-run-pr 'del(.run.pull_requests)'
-  row "C4 cited run is a PR into master, not main" no C4-run-pr '.run.pull_requests[0].base_ref="master"'
-  row "C4 cited run is for another PR number" no C4-run-pr '.run.pull_requests[0].number=7002'
-  row "C4 pull_requests number a string" no C4-run-pr '.run.pull_requests[0].number="7001"'
-  row "C4 one of two linked PRs is this one into main" yes "" '.run.pull_requests += [{number: 7002, base_ref: "master"}]'
+  row "C4 the PR was into master, not main" no C4-pr-base '.pr.base_ref="master"'
+  row "C4 the PR base_ref missing" no C4-pr-base 'del(.pr.base_ref)'
+  row "C4 the PR base_ref null" no C4-pr-base '.pr.base_ref=null'
+  row "C4 the run came from another branch than the PR head" no C4-run-branch '.run.head_branch="feat/other"'
+  row "C4 run head_branch missing" no C4-run-branch 'del(.run.head_branch)'
+  row "C4 run head_branch empty and PR head_ref empty" no C4-run-branch '.run.head_branch="" | .pr.head_ref=""'
+  row "C4 ordinary PR: x86-main is green but ran no sov.test (printed NOT MEASURED)" no C4-sov-test '.run.sov_test="skipped"'
+  row "C4 sov.test failed in the cited run" no C4-sov-test '.run.sov_test="failure"'
+  row "C4 sov.test cancelled in the cited run" no C4-sov-test '.run.sov_test="cancelled"'
+  row "C4 sov.test result not read (null: no line, two lines, or no x86-main log)" no C4-sov-test '.run.sov_test=null'
+  row "C4 sov.test fact missing" no C4-sov-test 'del(.run.sov_test)'
+  row "C4 sov.test result is a bool" no C4-sov-test '.run.sov_test=true'
 
   # ---- C5
   row "C5 workflow changed" no C5-no-gate-path '.paths += [".github/workflows/ci.yml"]'
@@ -345,7 +346,7 @@ self_test() {
 
   # ---- first unproven condition wins (order)
   row "order: C1 before C4" no C1-event '.event="pull_request" | .run.conclusion="failure"'
-  row "order: C2 before C3" no C2-merged '.pr.merged=false | .base_in_head=false'
+  row "order: C2 before C3" no C2-merged '.pr.merged=false | .stamp=null'
 
   # ---- malformed or unreadable facts, missing tools, error paths: never yes
   raw "facts: empty file" no "facts are empty" ''

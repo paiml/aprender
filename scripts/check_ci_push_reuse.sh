@@ -441,7 +441,7 @@ FACTS="$ROOT/scripts/ci_push_reuse_facts.sh"
 want "Y1 the facts reader never derives a fact from workflow text (no tier_reuse, no grep of ci.yml for receipt-judge)" 0 \
      "$(grep -cE 'tier_reuse|grep .*receipt-judge' "$FACTS")"
 want "Y2 C6 reads the run's start (run_started_at), not updated_at" "1:0" "$(grep -c 'run_started_at' "$FACTS"):$(grep -c 'updated_at' "$FACTS")"
-want "Y3 the run's pull_requests[] are carried into the facts" 1 "$(grep -c 'pull_requests: \[' "$FACTS")"
+want "Y3 the facts carry the PR own base_ref and head_ref, the run head_branch and sov_test; never run.pull_requests (empty after the merge)" "1:1:1:1:0" "$(grep -c "base_ref: " "$FACTS"):$(grep -c "head_ref: " "$FACTS"):$(grep -c "head_branch: " "$FACTS"):$(grep -c "sov_test" "$FACTS" | sed "s/^[2-9].*/1/;s/^1[0-9].*/1/"):$(grep -c "pull_requests" "$FACTS")"
 want "Y4 the stamp log is read whole, a failed read is a refusal, and one stamp line is required" 3 \
      "$(grep -cE 'stamp job log read failed|has \$nstamps stamp lines|stamp and an unavailable line' "$FACTS")"
 want "Y5 the facts reader pipes nothing into grep -q" 0 "$(grep -cE '\| *grep -[a-zA-Z]*q' "$FACTS")"
@@ -452,6 +452,15 @@ want "Y7 that write sits directly under the exact reuse=yes test" 1 \
 want "Y8 a failed facts read leaves the outputs alone (reuse=no, never yes)" 1 "$(grep -cF 'pr="reuse=no reason=the facts could not be read"' "$CI")"
 want "Y9 workspace-test-ran still records the stamp, once" 1 "$(grep -c 'echo "PUSH-REUSE-STAMP tested_sha=' "$CI")"
 want "Y10 workspace-test accepts wt=1 only from a job that succeeded" 1 "$(grep -cF '[ "${WT_SRC_RESULT:-}" = success ]' "$CI")"
+FX="$ROOT/scripts/fixtures/ci_push_reuse"
+want "Y11 a real-shape stamp job log (BOM, CRLF, colour-prefixed echoed script, one emitted stamp) yields the stamp" 1 \
+     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-with-stamp.log" | jq -r 'select(.tree != null and (.sha|length)==40) | 1')"
+want "Y12 a log that only echoes the unavailable text and emits it yields no stamp (null), never a stamp" null \
+     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-unavailable.log")"
+want "Y13 a log with no stamp line yields null" null "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-no-stamp.log")"
+want "Y14 a PR run of x86-main that skipped sov.test reads skipped" '"skipped"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-pr-sections.log" sov.test)"
+want "Y15 a run that ran sov.test reads success" '"success"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.log" sov.test)"
+want "Y16 a section the log does not carry reads null" null "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.log" no.such.section)"
 
 if [ "$fails" -eq 0 ]; then
   echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"
