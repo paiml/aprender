@@ -115,6 +115,7 @@ A_NORCPT='        echo "MODELS $h NO-GO: no receipt -- $(leg_reason "$h" "$rc")"
 A_RED='    *) echo "MODELS NO-GO: the judge found red or missing cells (rc $jrc):"'
 A_DECLINE='    2) echo "MODELS NO-GO: the judge DECLINED (rc 2)'
 A_PROOF='mt_version_is "\$got" "$ver" "$sha" || { echo "MODELS-LEG $REMOTE_HOST NOT-THE-RELEASE'
+A_MEMGREP='    if [ "$brc" -ne 0 ] && grep -qE '"'"'^cargo-memcap: (REFUSED|CANNOT MEASURE)'"'"' -- "$blog"; then'
 A_DISK='if [ -z "\$free_kib" ] || [ "\$free_kib" -lt $NEED_KIB ]; then'
 A_LLOCK='flock -n 7 || { echo "MODELS NO-GO: another models_t1.sh holds $LOCK'
 A_RLOCK='flock -n 8 || { echo "MODELS-LEG $REMOTE_HOST ENV: busy'
@@ -218,6 +219,16 @@ case "${1:-}" in
     printf 'build host=%s oom=%s flock=%s\n' "$host" "${FX_OOM:-none}" "${FX_FLOCK:-0}" >> "$FX_LOG"
     [ "${FX_BUILD_FAIL_HOST:-}" = "$host" ] && { echo "error: could not compile (fixture)"; exit 101; }
     [ "${FX_BUILD_REFUSE_HOST:-}" = "$host" ] && { echo "cargo-memcap: REFUSED: /mnt/nvme-raid0 has 189G free, under the 200G floor; no new heavy job starts (PMAT-2976)" >&2; exit 28; }
+    # FX_BUILD_RC_HOST/FX_BUILD_RC/FX_BUILD_MSG: a build that exits FX_BUILD_RC printing one of four texts
+    if [ "${FX_BUILD_RC_HOST:-}" = "$host" ]; then
+        case "${FX_BUILD_MSG:-none}" in
+            refuse)   echo "cargo-memcap: REFUSED: fixture refusal (PMAT-2976)" >&2 ;;
+            block)    printf "refused by: jobs\ncargo-memcap: REFUSED: 'cargo build' on lambda-labs (infra#3973)\n" >&2 ;;
+            indented) echo "  cargo-memcap: REFUSED: echoed by a build script" >&2 ;;
+            *)        echo "error: fixture build output, no refusal" >&2 ;;
+        esac
+        exit "${FX_BUILD_RC:-101}"
+    fi
     s=$(git rev-parse --short=10 HEAD); [ "${FX_STALE_HOST:-}" = "$host" ] && s=deadbeef00
     mkdir -p "$tdir/release"
     printf '#!/usr/bin/env bash\nprintf "apr %s (%s)\\n"\n' "$v" "$s" > "$tdir/release/apr"
@@ -472,6 +483,27 @@ build_refused() {
     grep -q 'rc=2' "$TMP/refused-$1/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
     return 0
 }
+# build_rc TAG RC MSG WANT AP MT -> WANT env: STOP names ENV (exit 2, never BUILD-FAILED); WANT bf: STOP names BUILD-FAILED, never ENV
+build_rc() {
+    local t="rc-$1" want=$2 d n; d="$TMP/rc-$1"
+    if [ "$want" = env ]; then
+        stops "$t" "$7" "$8" "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc $3)" FX_BUILD_RC_HOST=lambda FX_BUILD_RC="$3" FX_BUILD_MSG="$4" || return $?
+        ! grep -q 'BUILD-FAILED' "$d/ap/STATUS" || { printf 'a refusal was named BUILD-FAILED\n'; return 1; }
+        grep -q 'rc=2' "$d/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+    else
+        stops "$t" "$7" "$8" "MODELS lambda NO-GO: no receipt -- BUILD-FAILED" FX_BUILD_RC_HOST=lambda FX_BUILD_RC="$3" FX_BUILD_MSG="$4" || return $?
+        ! grep -q 'ENV: cargo-memcap' "$d/ap/STATUS" || { printf 'a real build failure was named ENV\n'; return 1; }
+    fi
+    return 0
+}
+# rows: TAG-PREFIX is $1 (real|m-name) so each mutant has its own fixture dirs
+r_env_rc2_block()    { build_rc "envrc2-$1" env 2 block x x "$2" "$3"; }
+r_env_rc75()         { build_rc "envrc75-$1" env 75 refuse x x "$2" "$3"; }
+r_bf_text_rc101()    { build_rc "bftext101-$1" bf 101 refuse x x "$2" "$3"; }
+r_bf_rc28_no_text()  { build_rc "bf28-$1" bf 28 none x x "$2" "$3"; }
+r_bf_rc2_no_text()   { build_rc "bf2-$1" bf 2 none x x "$2" "$3"; }
+r_bf_indented_101()  { build_rc "bfind101-$1" bf 101 indented x x "$2" "$3"; }
+r_bf_indented_28()   { build_rc "bfind28-$1" bf 28 indented x x "$2" "$3"; }
 missing()       { stops "missing-$1" "$2" "$3" "MODELS lambda NO-GO: no receipt -- model_ladder.sh wrote no receipt" FX_NO_RECEIPT_HOST=lambda; }
 red_cell()      { stops "red-$1" "$2" "$3" "MODELS NO-GO: the judge found red" FX_RED_HOST=gx10; }
 decline()       { stops "decline-$1" "$2" "$3" "MODELS NO-GO: the judge DECLINED" FX_JUDGE_DECLINE=1; }
@@ -608,6 +640,9 @@ r_stale()   { # an apr built from another commit: its surface would derive anoth
 
 # ---- the rows ---------------------------------------------------------------------------------
 for spec in "green-pair green_pair" "gx10-unreachable unreachable" "build-fails build_fails" "build-refused build_refused" \
+            "build-refused-rc2-block r_env_rc2_block" "build-refused-rc75 r_env_rc75" "build-text-rc101-is-build-failed r_bf_text_rc101" \
+            "build-rc28-no-text-is-build-failed r_bf_rc28_no_text" "build-rc2-no-text-is-build-failed r_bf_rc2_no_text" \
+            "build-indented-text-rc101-is-build-failed r_bf_indented_101" "build-indented-text-rc28-is-build-failed r_bf_indented_28" \
             "missing-receipt missing" "red-cell red_cell" "judge-decline decline" \
             "stale-binary stale" "disk-refusal disk" "t1-lock-held t1_held" "gx10-lock-held gx10_held" "oom-victim oom_victim" \
             "ladder-explicit ladder_explicit" "measure-bogus measure_bogus" "crux-green-pair crux_green" \
@@ -683,6 +718,14 @@ PY
 mutant shared-target    "$MODELS" "$A_SHARED" 'export CARGO_TARGET_DIR="\$repo/target"' green_pair
 mutant no-255-reason    "$MODELS" "$A_255" 'elif false; then' unreachable
 mutant build-ignored    "$MODELS" "$A_BUILD" '        || true' build_fails
+mutant guard-any-rc "$MODELS" '        case $brc in 2|28|75)' '        case $brc in *)' r_bf_text_rc101
+mutant guard-text-ignored "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && true; then' r_bf_rc28_no_text
+mutant guard-text-ignored-rc2 "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && true; then' r_bf_rc2_no_text
+mutant guard-text-unanchored "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && grep -qE '"'"'(cargo-memcap: (REFUSED|CANNOT MEASURE)|error)'"'"' -- "$blog"; then' r_bf_rc28_no_text
+mutant guard-text-unanchored-indent "$MODELS" "$A_MEMGREP" '    if [ "$brc" -ne 0 ] && grep -qE '"'"'cargo-memcap: (REFUSED|CANNOT MEASURE)'"'"' -- "$blog"; then' r_bf_indented_28
+mutant guard-101-is-refusal-text "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 2|28|75|101)' r_bf_text_rc101
+mutant guard-drops-75 "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 2|28)' r_env_rc75
+mutant guard-drops-2 "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 28|75)' r_env_rc2_block
 mutant refusal-is-build "$MODELS" '        case $brc in 2|28|75)' '        case $brc in 99)' build_refused
 mutant no-receipt-ok    "$MODELS" "$A_NORCPT" '        continue' missing
 mutant red-is-go        "$MODELS" "$A_RED" '    *) ;; 99) echo' red_cell
