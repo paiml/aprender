@@ -12,11 +12,14 @@
 # basename contains "test", everything from the first `#[cfg(test)]` line of a file down,
 # comment text, and gguf/config.rs (the accessor itself).
 #
-#   bash scripts/check_head_dim_single_source.sh [--root DIR] [--allow FILE]
-#   bash scripts/check_head_dim_single_source.sh --self-test
+#   bash scripts/lab/check_head_dim_single_source.sh [--root DIR] [--allow FILE]
+#   bash scripts/lab/check_head_dim_single_source.sh --self-test
 #
-# --allow FILE: lines "<repo-relative path> <ticket>". A hit in a listed path is reported as
-#   ALLOWED, and a listed path with no hit is red (stale entry). None is shipped.
+# --allow FILE: one entry per line, TAB-separated: <repo-relative path> <normalized line text> <status>.
+#   status is "legacy" or "known-defect #NNNN". An entry matches a hit on path plus the line text with
+#   whitespace collapsed (never a line number); each entry consumes one hit. A hit with no entry is
+#   red (NEW site); an entry with no hit is red ("remove the entry"). Default: the allowlist beside
+#   this script, check_head_dim_single_source.allow.
 # Exit: 0 no hits; 1 hits or stale allow entry; 2 usage; 3 not_measured (no files scanned).
 # Not wired into any workflow, PR path or guard tree.
 
@@ -123,31 +126,94 @@ self_test() {
   out="$(scan_text a/b.rs $'fn x() {}\nlet d = hidden_dim / num_heads;')"
   if [[ "$out" == "a/b.rs:2: let d = hidden_dim / num_heads;" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL report-format: $out"; fi
 
+  # allowlist judgement: match on path plus normalized text, never a line number
+  local T=$'\t' H A
+  H='a.rs:10: let d = hidden_dim / num_heads;'
+  A="a.rs${T}let d = hidden_dim / num_heads;${T}legacy"
+  jc() { # name want_new want_stale want_known want_legacy hits allow
+    local got; judge "$6" "$7" >/dev/null
+    got="${J_NEW}/${J_STALE}/${J_KNOWN}/${J_LEGACY}"
+    if [[ "$got" == "$2/$3/$4/$5" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL judge $1: got $got want $2/$3/$4/$5"; fi
+  }
+  jc listed-site-green          0 0 0 1 "$H" "$A"
+  jc moved-line-number-green    0 0 0 1 'a.rs:99: let d = hidden_dim / num_heads;' "$A"
+  jc reindented-green           0 0 0 1 'a.rs:10:        let   d = hidden_dim / num_heads;' "$A"
+  jc new-site-red               1 0 0 1 "$H"$'\n''a.rs:20: let e = hidden_dim / n_heads;' "$A"
+  jc new-file-red               1 1 0 0 'b.rs:10: let d = hidden_dim / num_heads;' "$A"
+  jc removed-site-stale-red     0 1 0 0 '' "$A"
+  jc stale-text-changed-red     1 1 0 0 'a.rs:10: let d = hidden_dim / num_heads + 1;' "$A"
+  jc known-defect-green         0 0 1 0 "$H" "a.rs${T}let d = hidden_dim / num_heads;${T}known-defect #7285"
+  jc duplicate-needs-two        1 0 0 1 "$H"$'\n''a.rs:12: let d = hidden_dim / num_heads;' "$A"
+  jc comment-and-blank-ignored  0 0 0 1 "$H" $'# note\n\n'"$A"
+  local jout
+  jout="$(judge '' "$A")"
+  if [[ "$jout" == *"remove the entry"* ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL stale message: $jout"; fi
+  jout="$(judge "$H" '')"
+  if [[ "$jout" == NEW\ * ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL new message: $jout"; fi
+
   echo "self-test: ${pass} passed, ${fail} failed"
   [[ "$fail" -eq 0 ]]
+}
+
+# --- allowlist judgement --------------------------------------------------------------
+
+# norm: collapse runs of whitespace and trim, so an entry survives re-indentation and line moves.
+norm() { sed -E 's/[[:space:]]+/ /g; s/^ //; s/ $//' <<<"$1"; }
+
+# judge HITS ALLOW: HITS is "path:line: text" lines, ALLOW the allowlist text. Prints one row per
+# hit and per stale entry; sets J_NEW, J_STALE, J_KNOWN, J_LEGACY (globals).
+judge() {
+  local hits="$1" allow="$2" line path text key a_path a_text a_status
+  local -A avail=() status=()
+  J_NEW=0 J_STALE=0 J_KNOWN=0 J_LEGACY=0
+  while IFS=$'\t' read -r a_path a_text a_status; do
+    [[ -z "$a_path" || "$a_path" == \#* ]] && continue
+    key="${a_path}"$'\t'"$(norm "$a_text")"
+    avail[$key]=$(( ${avail[$key]:-0} + 1 ))
+    status[$key]="$a_status"
+  done <<<"$allow"
+  local -A used=()
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+    path="${line%%:*}"; text="$(norm "${line#*: }")"; key="${path}"$'\t'"${text}"
+    if (( ${avail[$key]:-0} > ${used[$key]:-0} )); then
+      used[$key]=$(( ${used[$key]:-0} + 1 ))
+      if [[ "${status[$key]}" == known-defect* ]]; then
+        J_KNOWN=$((J_KNOWN + 1)); echo "KNOWN-DEFECT (${status[$key]}) ${line}"
+      else
+        J_LEGACY=$((J_LEGACY + 1)); echo "ALLOWED ${line}"
+      fi
+    else
+      J_NEW=$((J_NEW + 1)); echo "NEW ${line}"
+    fi
+  done <<<"$hits"
+  for key in "${!avail[@]}"; do
+    if (( ${avail[$key]} > ${used[$key]:-0} )); then
+      J_STALE=$((J_STALE + 1)); echo "STALE allow entry, remove the entry: ${key//$'\t'/ :: }"
+    fi
+  done
 }
 
 # --- main ---------------------------------------------------------------------------
 
 main() {
-  local root allow=""
-  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  local root allow="" allow_given=0
+  root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
   if [[ "${1:-}" == "--self-test" ]]; then self_test; exit $?; fi
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --root) root="${2:-}"; shift 2 ;;
-      --allow) allow="${2:-}"; shift 2 ;;
+      --allow) allow="${2:-}"; allow_given=1; shift 2 ;;
       *) echo "usage: $0 [--root DIR] [--allow FILE] | --self-test" >&2; exit 2 ;;
     esac
   done
+  if [[ "$allow_given" -eq 0 ]]; then allow="$(dirname "${BASH_SOURCE[0]}")/check_head_dim_single_source.allow"; fi
+  if [[ ! -r "$allow" ]]; then echo "not_measured: allowlist unreadable: ${allow}"; exit 3; fi
 
-  local files scanned=0 hits=0 f text out allowed_text="" a_path a_rest
+  local files scanned=0 f text out all_hits=""
   if ! files="$(git -C "$root" ls-files -- "$SCAN_DIR")" || [[ -z "$files" ]]; then
     echo "not_measured: no files listed under ${SCAN_DIR} in ${root}"; exit 3
   fi
-  if [[ -n "$allow" ]]; then allowed_text="$(<"$allow")"; fi
-
-  local seen_allowed=" "
   while IFS= read -r f; do
     [[ "$f" == *.rs ]] || continue
     [[ "$f" == "$ACCESSOR_FILE" ]] && continue
@@ -156,28 +222,14 @@ main() {
     text="$(<"${root}/${f}")"
     out="$(scan_text "$f" "$text")"
     [[ -z "$out" ]] && continue
-    local is_allowed=0
-    while read -r a_path a_rest; do
-      [[ -z "$a_path" || "$a_path" == \#* ]] && continue
-      if [[ "$a_path" == "$f" ]]; then is_allowed=1; seen_allowed="${seen_allowed}${f} "; fi
-    done <<<"$allowed_text"
-    if [[ "$is_allowed" -eq 1 ]]; then
-      while IFS= read -r line; do echo "ALLOWED ${line}"; done <<<"$out"
-    else
-      while IFS= read -r line; do echo "HIT ${line}"; hits=$((hits + 1)); done <<<"$out"
-    fi
+    all_hits+="${out}"$'\n'
   done <<<"$files"
 
   if [[ "$scanned" -eq 0 ]]; then echo "not_measured: scanned 0 non-test .rs files"; exit 3; fi
 
-  local stale=0
-  while read -r a_path a_rest; do
-    [[ -z "$a_path" || "$a_path" == \#* ]] && continue
-    if [[ "$seen_allowed" != *" ${a_path} "* ]]; then echo "STALE allow entry (no hit): ${a_path}"; stale=1; fi
-  done <<<"$allowed_text"
-
-  echo "scanned ${scanned} files, ${hits} hits"
-  if [[ "$hits" -gt 0 || "$stale" -eq 1 ]]; then exit 1; fi
+  judge "$all_hits" "$(<"$allow")"
+  echo "scanned ${scanned} files: ${J_NEW} new, ${J_STALE} stale, ${J_KNOWN} known-defect, ${J_LEGACY} legacy"
+  if [[ "$J_NEW" -gt 0 || "$J_STALE" -gt 0 ]]; then exit 1; fi
   exit 0
 }
 

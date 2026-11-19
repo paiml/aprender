@@ -6,8 +6,8 @@
 # fallback (#7285: Qwen3-0.6B Q4_K_M, cosine 0.453, "falling back to CPU") is otherwise
 # only a log line that no lane reads.
 #
-#   bash scripts/check_gpu_fallback_witness.sh --apr "$APR" --models LIST [--expected FILE]
-#   bash scripts/check_gpu_fallback_witness.sh --self-test
+#   bash scripts/lab/check_gpu_fallback_witness.sh --apr "$APR" --models LIST [--expected FILE]
+#   bash scripts/lab/check_gpu_fallback_witness.sh --self-test
 #
 # LIST     one GGUF path per line; blank lines and '#' lines ignored.
 # EXPECTED one line per model known to fall back: "<gguf basename> <issue number>".
@@ -27,7 +27,7 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 DEFAULT_EXPECTED="${REPO_ROOT}/evidence/models/expected-gpu-fallback.txt"
 ISSUE_REPO="${ISSUE_REPO:-paiml/aprender}"
 
@@ -211,7 +211,7 @@ self_test() {
 
   # end to end through run_all, in subshells because it exits. No files are made:
   # every filesystem and process touch goes through a seam.
-  local apr=/pinned/apr list=/lists/models.txt exp=/lists/expected.txt
+  local apr=/pinned/pinned-binary list=/lists/models.txt exp=/lists/expected.txt
   e2e() { # name want apr_output issue_state gpu(yes|no) with_expected(yes|no)
     local name="$1" want="$2" aout="$3" st="$4" gpu="$5" wexp="$6" r=0
     (
