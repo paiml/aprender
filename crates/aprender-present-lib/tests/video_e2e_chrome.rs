@@ -90,18 +90,20 @@ async fn video_plays_and_pauses_in_grid_cell_and_modal() {
         tokio::time::sleep(Duration::from_millis(100)).await;
     }
 
-    // Three elements: two in the grid's cells (side by side), one over the modal.
+    // Three elements (newest first in the DOM): two side by side in the grid's row, one for the modal.
     let rects = js(&d, "JSON.stringify([...document.querySelectorAll('video')].map(v => { const r = v.getBoundingClientRect(); return [r.x, r.y, r.width, r.height]; }))").await;
-    let rects: Vec<[f64; 4]> =
+    let mut rects: Vec<[f64; 4]> =
         serde_json::from_str(rects.as_str().expect("rects")).expect("rects json");
     assert_eq!(rects.len(), 3, "{rects:?}");
+    rects.sort_by(|a, b| (a[1], a[0]).partial_cmp(&(b[1], b[0])).expect("finite"));
+    let [cell0, cell1, modal] = [rects[0], rects[1], rects[2]];
     assert!(
-        rects[1][0] > rects[0][0] + rects[0][2] - 1.0 && rects[0][1] == rects[1][1],
+        cell0[1] == cell1[1] && cell1[0] >= cell0[0] + cell0[2],
         "grid cells: {rects:?}"
     );
     assert!(
-        rects[2][2] > 0.0 && rects[2][0] != rects[0][0],
-        "modal: {rects:?}"
+        modal[1] >= cell0[1] + cell0[3] && modal[2] > 0.0,
+        "modal below the grid row: {rects:?}"
     );
 
     for id in ["grid-0", "grid-1", "modal"] {
