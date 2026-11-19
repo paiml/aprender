@@ -43,6 +43,32 @@ impl Drop for SeedGuard {
 }
 
 thread_local! {
+    static RUN_HELDOUT: std::cell::RefCell<Option<PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// The recipe's `eval.heldout` file while a [`HeldoutGuard`] is alive on this thread, else None.
+/// The trainer validates on it instead of splitting the training data.
+pub(crate) fn run_heldout() -> Option<PathBuf> {
+    RUN_HELDOUT.with(|c| c.borrow().clone())
+}
+
+/// Sets the heldout file for this thread and restores the previous one on drop.
+pub(crate) struct HeldoutGuard(Option<PathBuf>);
+
+impl HeldoutGuard {
+    pub(crate) fn set(path: &Path) -> Self {
+        Self(RUN_HELDOUT.with(|c| c.replace(Some(path.to_path_buf()))))
+    }
+}
+
+impl Drop for HeldoutGuard {
+    fn drop(&mut self) {
+        let prev = self.0.take();
+        RUN_HELDOUT.with(|c| *c.borrow_mut() = prev);
+    }
+}
+
+thread_local! {
     static PLAN_JSON_SUPPRESSED: Cell<bool> = const { Cell::new(false) };
 }
 

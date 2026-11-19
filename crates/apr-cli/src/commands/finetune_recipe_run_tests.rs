@@ -1,7 +1,7 @@
 //! PMAT-7239: the recipe seed reaches the trainer; `receipt.json` is written after a run.
 
 use super::*;
-use crate::commands::train_recipe::{apr_engine, sha256_bytes, FINETUNE_NOT_APPLIED};
+use crate::commands::train_recipe::{apr_engine, sha256_bytes};
 use std::path::PathBuf;
 
 fn recipe_text(seed: u64) -> String {
@@ -75,7 +75,11 @@ fn receipt_carries_hashes_version_commit_and_hyperparameters() {
     assert_eq!(h["max_seq_len"], 128);
     assert_eq!(h["quantize_nf4"], true);
     assert_eq!(h["model_size"], "0.8B");
-    assert_eq!(v["validated_not_applied"][0], FINETUNE_NOT_APPLIED[0]);
+    assert_eq!(
+        v["validated_not_applied"],
+        json!([]),
+        "the trainer applies the eval: nothing is validated-only"
+    );
     std::fs::remove_dir_all(&dir).ok();
 }
 
@@ -250,6 +254,11 @@ fn json_recipe_run_prints_exactly_one_document_and_holds_back_the_plan() {
         .expect("stdout is JSON");
     assert_eq!(docs.len(), 1, "exactly one document: {out}");
     assert_eq!(docs[0]["schema"], FINETUNE_RECEIPT_SCHEMA);
+    let file: Value = serde_json::from_str(
+        &std::fs::read_to_string(dir.join("out").join(RECEIPT_FILE)).expect("receipt.json"),
+    )
+    .expect("receipt.json is JSON");
+    assert_eq!(docs[0], file, "the --json document equals receipt.json");
     assert!(!plan_json_suppressed(), "guard released");
     let (_, seen, out) = drive(&dir, 4, true, true, true);
     assert_eq!(seen, vec![(4, false)], "--plan keeps its plan JSON");
@@ -279,21 +288,36 @@ fn split_safetensors(rel: String, bytes: &[u8]) -> Ckpt {
     }
 }
 
-/// Train the smallest in-test fixture (tiny transformer, 6 samples, 2 epochs) on the CPU and
-/// return the per-epoch losses plus every `model.safetensors` checkpoint written.
-fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<Ckpt>) {
+/// Run the recipe seam (`run_recipe_with`, the code `run_from_recipe` runs) with a trainer that
+/// really trains the smallest fixture (tiny transformer, 6 samples, 3 heldout samples) on the
+/// CPU. The trainer is built by `build_instruct_trainer` and its config by
+/// `instruct_training_config`, the functions the real `apr finetune` run uses, so the seed and
+/// the heldout file reach it only through the recipe. Returns the per-epoch losses, the train and
+/// validation set sizes, and every `model.safetensors` checkpoint the run wrote.
+fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, (usize, usize), Vec<Ckpt>) {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
-    use entrenar::finetune::instruct_trainer::InstructTrainer;
     use entrenar::transformer::TransformerConfig;
-    let corpus: Vec<InstructSample> = (0..6)
-        .map(|i| InstructSample {
-            instruction: format!("Write function {i}"),
-            response: format!("def func_{i}():\n    return {i}"),
-            system: Some("s".to_string()),
-            metadata: None,
-        })
-        .collect();
+    let dir = scratch(&format!("det-{tag}"));
+    let line = |i: usize| {
+        format!("{{\"instruction\":\"Write function {i}\",\"response\":\"def func_{i}():\\n    return {i}\",\"system\":\"s\"}}\n")
+    };
+    std::fs::write(
+        dir.join("train.jsonl"),
+        (0..6).map(line).collect::<String>(),
+    )
+    .expect("train");
+    std::fs::write(
+        dir.join("heldout.jsonl"),
+        (10..13).map(line).collect::<String>(),
+    )
+    .expect("heldout");
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, recipe_text(seed)).expect("recipe");
+    let adapter = dir.join("out/adapter.apr");
+    let flags = run_flags(Some(&adapter), false, false);
+    let (recipe, receipt) =
+        crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("preflight");
     let icfg = InstructConfig {
         lora_rank: 4,
         max_seq_len: 128,
@@ -310,14 +334,36 @@ fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<Ckpt>) {
             break p;
         }
     };
-    let _g = SeedGuard::set(seed);
-    let ckpt = std::env::temp_dir().join(format!("apr-ft-det-{tag}-{}", std::process::id()));
-    std::fs::remove_dir_all(&ckpt).ok();
-    let mut cfg =
-        crate::commands::finetune::instruct_training_config(2, corpus.len(), Path::new("o/a.apr"));
-    cfg.checkpoint_dir = ckpt.clone();
-    let mut trainer = InstructTrainer::new(pipeline, corpus, cfg).expect("trainer");
-    let result = trainer.train();
+    let mut losses = Vec::new();
+    let mut sizes = (0, 0);
+    let mut out: Vec<u8> = Vec::new();
+    crate::commands::finetune::run_recipe_with(
+        &recipe,
+        &receipt,
+        &flags,
+        &mut out,
+        |output, epochs, _| {
+            let corpus: Vec<InstructSample> =
+                crate::commands::finetune::load_instruct_corpus(&recipe.train)?;
+            let cfg = crate::commands::finetune::instruct_training_config(
+                epochs,
+                corpus.len(),
+                output.expect("recipe output path"),
+            );
+            let mut trainer =
+                crate::commands::finetune::build_instruct_trainer(pipeline, corpus, cfg)?;
+            sizes = (trainer.train_size(), trainer.val_size());
+            let result = trainer.train();
+            losses = result
+                .epoch_metrics
+                .iter()
+                .map(|m| (m.train_loss, m.val_loss))
+                .collect();
+            Ok(())
+        },
+    )
+    .expect("recipe run");
+    let ckpt = dir.join("out/checkpoints");
     let mut hashes = Vec::new();
     let mut stack = vec![ckpt.clone()];
     while let Some(d) = stack.pop() {
@@ -339,37 +385,32 @@ fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<Ckpt>) {
         }
     }
     hashes.sort_by(|a, b| a.rel.cmp(&b.rel));
-    std::fs::remove_dir_all(&ckpt).ok();
-    (
-        result
-            .epoch_metrics
-            .iter()
-            .map(|m| (m.train_loss, m.val_loss))
-            .collect(),
-        hashes,
-    )
+    std::fs::remove_dir_all(&dir).ok();
+    (losses, sizes, hashes)
 }
 
-/// Real CPU training on a fixture whose loss is non-zero (the chat template alone is ~100 bytes
-/// under the byte fallback, so `max_seq_len` must leave room for the response, or every step
-/// returns loss 0.0 and nothing depends on the seed).
+/// Real CPU training driven through the recipe run path (#7239 acceptance 1 and 2, #7255).
 ///
-/// Same seed: identical losses and identical tensor bytes in every checkpoint. Another seed:
-/// different losses and different tensor bytes. The checkpoint FILE bytes are not claimed:
-/// `InstructTrainer::save_checkpoint` passes a `HashMap` as the safetensors metadata, whose
-/// per-process-random iteration order puts `epoch` and `val_loss` in either order in the header
-/// (two sha256 values). The header is compared as parsed JSON; the order is its own finding.
+/// Same seed: identical per-epoch losses and a byte-identical checkpoint FILE (sha256 of the
+/// whole `model.safetensors`, header included) for every epoch. Another seed: different losses
+/// and different file sha256. The fixture's loss is non-zero (the chat template alone is ~100
+/// bytes under the byte fallback, so `max_seq_len` must leave room for the response, or every
+/// step returns loss 0.0 and nothing depends on the seed).
 #[test]
-fn same_seed_cpu_run_is_identical_and_another_seed_differs() {
-    let (la, ha) = tiny_train(5, "a");
-    let (lb, hb) = tiny_train(5, "b");
-    let (lc, hc) = tiny_train(6, "c");
+fn same_seed_recipe_run_writes_identical_checkpoint_files_and_another_seed_differs() {
+    let (la, sa, ha) = tiny_train(5, "a");
+    let (lb, _, hb) = tiny_train(5, "b");
+    let (lc, _, hc) = tiny_train(6, "c");
     assert_eq!(la.len(), 2, "two epochs ran");
     assert!(
         la.iter().all(|(t, v)| *t > 0.0 && *v > 0.0),
         "non-zero losses: {la:?}"
     );
-    assert_eq!(ha.len(), hb.len());
+    assert_eq!(
+        sa,
+        (6, 3),
+        "train on the whole corpus, validate on the heldout file"
+    );
     assert!(
         ha.iter().any(|c| c.rel.starts_with("epoch-0")),
         "epoch-0 checkpoint written"
@@ -379,42 +420,103 @@ fn same_seed_cpu_run_is_identical_and_another_seed_differs() {
         "epoch-1 checkpoint written"
     );
     assert_eq!(la, lb, "same seed: identical per-epoch losses");
+    assert_eq!(ha.len(), hb.len());
     for (x, y) in ha.iter().zip(&hb) {
         assert_eq!(x.rel, y.rel);
         assert_eq!(
-            x.data_sha, y.data_sha,
-            "same seed: identical tensor bytes in {}",
-            x.rel
-        );
-        assert_eq!(
-            x.header, y.header,
-            "same seed: identical header JSON in {}",
-            x.rel
+            x.raw_sha, y.raw_sha,
+            "same seed: identical checkpoint file sha256 for {} ({} vs {})",
+            x.rel, x.header_text, y.header_text
         );
     }
     assert_ne!(la, lc, "another seed: different losses");
     assert!(
-        ha.iter().zip(&hc).any(|(x, z)| x.data_sha != z.data_sha),
-        "another seed: different tensor bytes"
+        ha.iter().zip(&hc).any(|(x, z)| x.raw_sha != z.raw_sha),
+        "another seed: different checkpoint file sha256"
     );
-    // Where two same-seed checkpoint FILES differ, only the header's key order does.
-    let mut raw_differs = 0;
-    for (x, y) in ha.iter().zip(&hb) {
-        if x.raw_sha != y.raw_sha {
-            raw_differs += 1;
-            assert_ne!(x.header_text, y.header_text);
-            assert_eq!(x.header, y.header);
-            assert_eq!(x.data_sha, y.data_sha);
-            eprintln!(
-                "raw file differs, header text: {} vs {}",
-                x.header_text, y.header_text
-            );
-        }
+}
+
+/// `eval.heldout` reaches the trainer: it validates on that file and trains on all of the corpus,
+/// where a flag-driven run splits the corpus.
+#[test]
+fn recipe_heldout_file_is_the_trainers_validation_set() {
+    use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
+    use entrenar::transformer::TransformerConfig;
+    let dir = scratch("heldout-seam");
+    let sample = |i: usize| format!("{{\"instruction\":\"q{i}\",\"response\":\"a{i}\"}}\n");
+    std::fs::write(
+        dir.join("train.jsonl"),
+        (0..8).map(sample).collect::<String>(),
+    )
+    .expect("t");
+    std::fs::write(
+        dir.join("heldout.jsonl"),
+        (20..25).map(sample).collect::<String>(),
+    )
+    .expect("h");
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, recipe_text(1)).expect("recipe");
+    let adapter = dir.join("out/adapter.apr");
+    let flags = run_flags(Some(&adapter), false, false);
+    let (recipe, receipt) =
+        crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("preflight");
+    let mk = || {
+        InstructPipeline::new(
+            &TransformerConfig::tiny(),
+            InstructConfig {
+                lora_rank: 4,
+                max_seq_len: 32,
+                ..InstructConfig::default()
+            },
+        )
+    };
+    let corpus = || crate::commands::finetune::load_instruct_corpus(&recipe.train).expect("corpus");
+    let cfg =
+        || crate::commands::finetune::instruct_training_config(1, 8, Path::new("out/adapter.apr"));
+    let mut sizes = (0, 0);
+    let mut out: Vec<u8> = Vec::new();
+    crate::commands::finetune::run_recipe_with(&recipe, &receipt, &flags, &mut out, |_, _, _| {
+        let t = crate::commands::finetune::build_instruct_trainer(mk(), corpus(), cfg())?;
+        sizes = (t.train_size(), t.val_size());
+        Ok(())
+    })
+    .expect("recipe run");
+    assert_eq!(sizes, (8, 5), "recipe run: all train, heldout validates");
+    assert!(run_heldout().is_none(), "guard released after the run");
+    let t = crate::commands::finetune::build_instruct_trainer(mk(), corpus(), cfg()).expect("t");
+    assert_ne!(
+        (t.train_size(), t.val_size()),
+        (8, 5),
+        "a run outside a recipe splits the corpus"
+    );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// #7239 acceptance 4: no "not yet applied" on the recipe path, and the contract does not
+/// claim the eval is unapplied.
+#[test]
+fn recipe_path_no_longer_says_not_yet_applied() {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let files = [
+        root.join("src/commands/finetune.rs"),
+        root.join("src/commands/finetune_recipe_run.rs"),
+        root.join("src/commands/train_recipe.rs"),
+        root.join("../../contracts/apr-recipe-v1.yaml"),
+    ];
+    let needle = ["not yet", "applied"].join(" ");
+    for f in &files {
+        let text = std::fs::read_to_string(f).unwrap_or_else(|e| panic!("{}: {e}", f.display()));
+        assert!(
+            !text.contains(&needle),
+            "{} still says `{needle}`",
+            f.display()
+        );
+        assert!(
+            !text.contains("FINETUNE_NOT_APPLIED"),
+            "{} still has the marker",
+            f.display()
+        );
     }
-    eprintln!(
-        "same-seed checkpoint files with different raw bytes: {raw_differs}/{}",
-        ha.len()
-    );
 }
 
 #[test]
@@ -439,9 +541,14 @@ fn wgpu_run_keeps_seed_under_validated_not_applied() {
         crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("receipt");
     let has_seed = receipt.validated_not_applied.contains(&"seed");
     assert_eq!(has_seed, cfg!(feature = "wgpu"));
+    assert_eq!(
+        receipt.validated_not_applied.contains(&"eval"),
+        cfg!(feature = "wgpu"),
+        "the WGSL path reads no heldout file"
+    );
     flags.gpu_backend = "cuda";
     let (_, receipt) =
         crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("receipt");
-    assert!(!receipt.validated_not_applied.contains(&"seed"));
+    assert!(receipt.validated_not_applied.is_empty());
     std::fs::remove_dir_all(&dir).ok();
 }

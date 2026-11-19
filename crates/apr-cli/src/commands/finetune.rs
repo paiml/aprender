@@ -382,7 +382,6 @@ fn execute_training(
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
-    use entrenar::finetune::instruct_trainer::InstructTrainer;
 
     // 0. #2417: every training path below ends in `InstructPipeline::from_apr`,
     // which reads APR only. A .safetensors or .gguf base used to reach that
@@ -464,8 +463,7 @@ fn execute_training(
     // 4. Create trainer and run
     let train_config = instruct_training_config(epochs, corpus.len(), output_path);
 
-    let mut trainer = InstructTrainer::new(pipeline, corpus, train_config)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
+    let mut trainer = build_instruct_trainer(pipeline, corpus, train_config)?;
 
     let result = trainer.train();
 
@@ -480,6 +478,25 @@ fn execute_training(
     report_checkpoint_output(output_path, json_output);
 
     Ok(())
+}
+
+/// The trainer of an instruct run. A recipe run validates on its `eval.heldout` file (PMAT-7239);
+/// every other run splits the corpus.
+#[cfg(feature = "training")]
+pub(crate) fn build_instruct_trainer(
+    pipeline: entrenar::finetune::instruct_pipeline::InstructPipeline,
+    corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+    train_config: entrenar::finetune::instruct_trainer::InstructTrainingConfig,
+) -> Result<entrenar::finetune::instruct_trainer::InstructTrainer> {
+    use entrenar::finetune::instruct_trainer::InstructTrainer;
+    match super::finetune_recipe_run::run_heldout() {
+        Some(heldout_path) => {
+            let heldout = load_instruct_corpus(&heldout_path)?;
+            InstructTrainer::with_heldout(pipeline, corpus, heldout, train_config)
+        }
+        None => InstructTrainer::new(pipeline, corpus, train_config),
+    }
+    .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))
 }
 
 /// The trainer configuration of an instruct run (PMAT-7239). The seed is the
@@ -512,7 +529,7 @@ pub(crate) fn instruct_training_config(
 /// stays under the cognitive-complexity cap. Behaviour is unchanged: the same
 /// per-line errors, the same blank-line skip, the same empty-corpus rejection.
 #[cfg(feature = "training")]
-fn load_instruct_corpus(
+pub(crate) fn load_instruct_corpus(
     data_path: &Path,
 ) -> Result<Vec<entrenar::finetune::instruct_corpus::InstructSample>> {
     use entrenar::finetune::instruct_corpus::InstructSample;
@@ -1468,7 +1485,7 @@ pub(crate) fn preflight_recipe(
     super::train_recipe::TrainRecipe,
     super::train_recipe::RecipeReceipt,
 )> {
-    use super::train_recipe::{apr_engine, RecipeMethod, TrainRecipe, FINETUNE_NOT_APPLIED};
+    use super::train_recipe::{apr_engine, RecipeMethod, TrainRecipe};
     let recipe = TrainRecipe::load(recipe_path)?;
     if recipe.method == RecipeMethod::Distill {
         return Err(CliError::ValidationFailed(format!(
@@ -1488,7 +1505,7 @@ pub(crate) fn preflight_recipe(
     if !plan_only {
         recipe.require_inputs()?;
     }
-    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), &[]);
     Ok((recipe, receipt))
 }
 
@@ -1565,8 +1582,10 @@ pub(crate) fn recipe_receipt_for_run(
     let (recipe, mut receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
     receipt.overrides = recipe_overrides(flags, &recipe);
     if recipe_uses_wgpu(&recipe, flags) {
-        // The WGSL path never reads the recipe seed: say so instead of claiming it applied.
+        // The WGSL path reads neither the recipe seed nor the heldout file: say so instead of
+        // claiming either applied.
         receipt.validated_not_applied.insert(0, "seed");
+        receipt.validated_not_applied.push("eval");
     }
     Ok((recipe, receipt))
 }
@@ -1588,7 +1607,7 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
     );
     if !receipt.validated_not_applied.is_empty() {
         eprintln!(
-            "[recipe] validated and hashed, not yet applied by apr finetune: {}",
+            "[recipe] the wgpu backend does not apply: {}",
             receipt.validated_not_applied.join(", ")
         );
     }
@@ -1652,6 +1671,7 @@ where
 {
     let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
     let _seed = super::finetune_recipe_run::SeedGuard::set(recipe.seed);
+    let _heldout = super::finetune_recipe_run::HeldoutGuard::set(&recipe.heldout);
     let _plan_json =
         super::finetune_recipe_run::PlanJsonGuard::suppress(flags.json_output && !flags.plan_only);
     if !receipt.overrides.is_empty() {

@@ -10,8 +10,8 @@
 # Limits at this head (status: partial):
 #   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
 #   - a flag conflict is a clap usage error (exit 2); only recipe refusals are exit 5
-#   - the eval block is validated and hashed but not yet applied by the trainer (the heldout file
-#     is not read by the training loop; the receipt lists `eval` under validated_not_applied)
+#   - on the wgpu backend neither the seed nor the eval.heldout file reaches the trainer: the
+#     receipt lists both under validated_not_applied (the CUDA and CPU paths apply both)
 #   - --profile prints its one line and does nothing else, with or without --recipe
 #   - the global --verbose and --quiet work beside --recipe as for every command, through the
 #     process-wide setting; they are not arguments of the recipe run and no recipe test covers them
@@ -34,8 +34,9 @@ metadata:
     the eval and the seed. The eval is required and is part of the recipe hash, so two runs
     with the same recipe hash were asked the same question. This contract covers the schema,
     the refusal before a model is loaded and the receipt fields. The seed is applied: it is the
-    trainer's seed (split and shuffle), not a fixed 42. It does not claim that the eval is
-    applied by the training loop yet (the receipt lists it under validated_not_applied).
+    trainer's seed (split and shuffle), not a fixed 42. The eval is applied: the trainer
+    validates on eval.heldout and trains on all of data.train. On the wgpu backend neither the
+    seed nor the heldout file is read, and the receipt lists both under validated_not_applied.
   references:
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
   - "crates/apr-cli/src/commands/train_recipe.rs"
@@ -163,7 +164,7 @@ falsification_tests:
   if_fails: "A receipt can name data it did not train on"
 - id: FALSIFY-APR-RECIPE-006
   rule: the recipe seed reaches the trainer and a run leaves a receipt
-  prediction: "The trainer seed follows the recipe seed (zero included) while a recipe run is active and returns to 42 afterwards, nested guards restore the outer seed. The finetune receipt carries the recipe, base model, dataset and heldout hashes, the apr version and commit and the resolved hyperparameters; a hash of an absent file is null; building it twice from one recipe gives byte-identical receipt.json and a different seed gives different bytes; on the CPU trainer, two same-seed runs give identical non-zero losses and identical checkpoint tensor bytes and another seed gives different ones (checkpoint file sha256 is not claimed, #7255); `--json` prints one document; only `eval` remains under validated_not_applied, plus `seed` when the run trains on the WGPU path, which does not read it"
+  prediction: "The trainer seed follows the recipe seed (zero included) while a recipe run is active and returns to 42 afterwards, nested guards restore the outer seed. The finetune receipt carries the recipe, base model, dataset and heldout hashes, the apr version and commit and the resolved hyperparameters; a hash of an absent file is null; building it twice from one recipe gives byte-identical receipt.json and a different seed gives different bytes; on the CPU trainer, two same-seed runs give identical non-zero losses and a byte-identical checkpoint file (sha256 of model.safetensors, metadata written in sorted order, #7255) through the recipe run path, and another seed gives different losses and a different file sha256; the trainer validates on the heldout file and trains on the whole data.train; `--json` prints one document; validated_not_applied is empty, except `seed` and `eval` when the run trains on the WGPU path, which reads neither; the only notice of unapplied fields names the wgpu backend"
   test: |
-    cargo test -p apr-cli --lib -- trainer_seed_defaults_to_42_and_follows_the_guard seed_zero_is_applied_not_mistaken_for_unset receipt_carries_hashes_version_commit_and_hyperparameters the_same_recipe_gives_byte_identical_receipt_and_another_seed_does_not a_missing_base_hash_is_null_never_invented trainer_config_seed_equals_the_recipe_seed_zero_included recipe_run_hands_the_trainer_the_recipe_seed_zero_included recipe_run_writes_receipt_only_after_a_successful_real_run json_recipe_run_prints_exactly_one_document_and_holds_back_the_plan wgpu_run_keeps_seed_under_validated_not_applied same_seed_cpu_run_is_identical_and_another_seed_differs receipt_dir_is_the_adapter_directory_else_current write_receipt_creates_the_directory_and_ends_with_a_newline
+    cargo test -p apr-cli --lib -- trainer_seed_defaults_to_42_and_follows_the_guard seed_zero_is_applied_not_mistaken_for_unset receipt_carries_hashes_version_commit_and_hyperparameters the_same_recipe_gives_byte_identical_receipt_and_another_seed_does_not a_missing_base_hash_is_null_never_invented trainer_config_seed_equals_the_recipe_seed_zero_included recipe_run_hands_the_trainer_the_recipe_seed_zero_included recipe_run_writes_receipt_only_after_a_successful_real_run json_recipe_run_prints_exactly_one_document_and_holds_back_the_plan wgpu_run_keeps_seed_under_validated_not_applied same_seed_recipe_run_writes_identical_checkpoint_files_and_another_seed_differs recipe_heldout_file_is_the_trainers_validation_set recipe_path_no_longer_says_not_yet_applied receipt_dir_is_the_adapter_directory_else_current write_receipt_creates_the_directory_and_ends_with_a_newline
   if_fails: "Two seeds train the same way, or a run cannot be tied to the inputs and binary that made it"

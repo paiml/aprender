@@ -49,6 +49,9 @@ fn without(key: &str) -> String {
     out
 }
 
+/// A sample list: the receipt carries whatever the caller passes.
+const NOT_APPLIED_SAMPLE: &[&str] = &["eval"];
+
 #[test]
 fn valid_minimal_recipe_parses_with_paths_anchored_at_the_recipe_dir() {
     let r = parse(VALID).expect("the positive control must parse");
@@ -778,7 +781,7 @@ fn receipt_carries_the_contract_fields() {
     let r = TrainRecipe::load(&path).expect("load");
 
     // Nothing to hash yet: the hashes are absent, never invented.
-    let receipt = r.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    let receipt = r.receipt(vec![apr_engine()], Vec::new(), NOT_APPLIED_SAMPLE);
     assert_eq!(receipt.data_sha256, None);
     assert_eq!(receipt.eval_sha256, None);
 
@@ -787,7 +790,7 @@ fn receipt_carries_the_contract_fields() {
     let receipt = r.receipt(
         vec![apr_engine()],
         vec!["--vram 8".to_string()],
-        FINETUNE_NOT_APPLIED,
+        NOT_APPLIED_SAMPLE,
     );
     assert_eq!(receipt.schema, RECEIPT_SCHEMA);
     assert_eq!(receipt.recipe_sha256, sha256_bytes(VALID.as_bytes()));
