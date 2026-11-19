@@ -34,13 +34,16 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd, lc, k) { # drop a trailing comm
         # plain scalar (a '), and which quote closes which is then ambiguous: refuse the line (midq) rather than guess
         L = " "; for (j = i - 1; j >= 1; j--) { L = substr(s, j, 1); if (L !~ /[ \t]/) break }
         if (dd > 0 && L !~ /[ \t:,[{]/) midq = midq + 1
+        # block context: a quote after a word in KEY position (no ": " before it), or with flow brackets after it on the line, is
+        # text of a plain scalar that this scan would read as a quote opener, and which brackets are real is then ambiguous
+        if (dd == 0 && L !~ /[ \t:,[{-]/ && (substr(s, 1, i - 1) !~ /:([ \t]|$)/ || substr(s, i + 1) ~ /[{}[\]]/)) midq = midq + 1
         q = c
       }
       else if ((c == "\042" || c == "\047") && p == ":" && dd > 0) midq = midq + 1 # an adjacent quote after a colon that did not follow a quoted key ([]:"v", a:"v"): refuse
       else if (c == "#" && p ~ /[ \t]/) { s = substr(s, 1, i - 1); break }
       else if (c == "{" && p == "$" && substr(s, i + 1, 1) == "{") { # a ${{ }} expression: its braces are not flow; inside a flow collection refuse
         if (dd > 0) midq = midq + 1
-        j = index(substr(s, i), "}}"); if (j == 0) { noq = noq substr(s, i); break }
+        j = index(substr(s, i), "}}"); if (j == 0) { midq = midq + 1; noq = noq c; continue } # unclosed expression: refuse the line
         noq = noq substr(s, i, j + 1); i = i + j
       }
       else { noq = noq c; if (c ~ /[{[]/) dd++; else if (c ~ /[}\]]/) dd-- }
@@ -358,6 +361,11 @@ EOF
 
   printf 'name: x\non: { workflow_dispatch: { inputs: { a: { []:"}}}} # " } } }, schedule: [{ cron: "5 20 * * *" }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r10.yml"; expect "flow collection key then adjacent quote" "$t/r10.yml" fail
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    env: { []:"} # ",\n    timeout-minutes: 25\n    , []:"{x" }\n    steps:\n      - run: echo untimed\n        env: { []:"} # ",\n        timeout-minutes: 10\n        , []:"{x" }\n' > "$t/r11.yml"; expect "flow key then adjacent quote, multi-line env" "$t/r11.yml" fail
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    runs-on: ubuntu-latest\n    ${{ a } }: "\n    timeout-minutes: 25\n    " # "\n    steps:\n      - run: echo UNTIMED\n        ${{ a } }: "\n        timeout-minutes: 10\n        " # "\n' > "$t/r12.yml"; expect_unj "unclosed expression opener hiding a multi-line quote" "$t/r12.yml"
+
+  printf "name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    a ' : { b: 'x',\n    timeout-minutes: 25\n    , d: x ' } # '\n    steps:\n      - run: echo untimed\n        a ' : { b: 'x',\n        timeout-minutes: 10\n        , d: x ' } # '\n" > "$t/r13.yml"; expect_unj "space-quote in a block plain key hiding flow brackets" "$t/r13.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    a " : { b: "x",\n    timeout-minutes: 25\n    , d: x " } # "\n    steps:\n      - run: echo untimed\n        a " : { b: "x",\n        timeout-minutes: 10\n        , d: x " } # "\n' > "$t/r14.yml"; expect_unj "same with double quotes" "$t/r14.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
