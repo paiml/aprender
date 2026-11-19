@@ -1,0 +1,1 @@
+{"id":"mm1-queue","entities":["server"],"laws":["poisson arrivals"],"invariants":["rho < 1 [dimensionless]"]}

@@ -61,6 +61,16 @@ concepts:
   Theme: {doc: "a PlotRow that is a theme or theme_* constructor: the non-data appearance of a plot"}
   Label: {doc: "a PlotRow that is a label constructor (labs, xlab, ylab, ggtitle): a plot's text"}
   OutputTarget: {doc: "a PlotRow that is an output constructor (ggsave): where a rendered plot is written"}
+  # SIM3D-ONT-001 (aprender#7245, master #7244): the simulation spec and receipt of the SIM3D line. A Simulation is
+  # one spec document; Entity above is the ontology's own root and is reused, not redeclared (a spec's entities are
+  # SimEntity). Spec and receipt are closed shapes graded through extract:json (contracts/simulation-spec-v1.yaml).
+  Simulation: {doc: "one simulation spec — a seeded run of entities under laws with declared invariants; the focus node of contracts/simulation-spec-v1.yaml"}
+  SimEntity: {doc: "a thing a Simulation steps — a queue, a body, a server; named in the spec's entities list"}
+  Law: {doc: "a rule a Simulation applies each step to its SimEntity set (an equation of motion, an arrival process)"}
+  Invariant: {doc: "a typed formula with a unit that must hold on every step of a Trajectory; a spec with none is refused"}
+  Seed: {doc: "the integer that fixes a Simulation's random draws; a spec without one is not reproducible and is refused"}
+  Trajectory: {doc: "the ordered states a Simulation visits from its Seed, one per step"}
+  SimReceipt: {doc: "the record of one Simulation run: spec id, seed, step count and the verdict of each Invariant over the Trajectory"}
 
 roles:
   binds:

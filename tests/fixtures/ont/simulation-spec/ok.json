@@ -1,0 +1,1 @@
+{"id":"mm1-queue","seed":42,"entities":["server","queue"],"laws":["poisson arrivals, lambda=0.8 per s","exp service, mu=1.0 per s"],"invariants":["rho = lambda/mu < 1 [dimensionless]","L = rho/(1-rho) [customers]"]}

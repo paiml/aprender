@@ -1,0 +1,78 @@
+# ──────────────────────────────────────────────
+# simulation-spec-v1 — the spec document of the SIM3D line, under contract (aprender#7245, master #7244)
+#
+# KIND: pattern, through the `extract:json` path that already grades a JSON document as one focus node
+# (pattern: contracts/findings-ledger-v1.yaml). pv's closed shape IS the validator; the spec is canonical JSON.
+# The case table is crates/aprender-contracts-cli/tests/ont_simulation_spec.rs over
+# tests/fixtures/ont/simulation-spec/, which copies this file into a scratch corpus and arms the shape.
+#
+# NOT IN THIS SLICE (named so it is not read as done): the `simulation` contract kind in the schema, the
+# receipt shape, and the check-symbolic grammar for typed invariants with units (9 simular contracts parse 0).
+# ──────────────────────────────────────────────
+name: simulation-spec
+version: "1.0.0"
+scope: >
+  What a simulation spec document must state: an id, a seed, at least one entity, one law and one declared
+  invariant, and nothing else. Out of scope: the receipt, the stepper, and any gate on a pull request or release.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: pattern
+  created: '2026-11-19'
+  last_modified: '2026-11-19'
+  author: PAIML Engineering
+  description: >
+    A spec that names no seed cannot be replayed, and one that names no invariant cannot be falsified; both
+    are refused, as is an empty spec.
+  references:
+    - 'aprender#7245 (this row); master aprender#7244'
+    - 'contracts/findings-ledger-v1.yaml — the extract:json closed-shape precedent'
+
+vocabulary:
+  prefix: sim
+  root_class: sim:Simulation
+
+shape:
+  targetClass: sim:Simulation
+  closed: true
+  properties:
+    - {path: sim:id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^[a-z0-9]+(-[a-z0-9]+)*$"}
+    - {path: sim:seed, minCount: 1, maxCount: 1, datatype: xsd:integer}
+    - {path: sim:entities, minCount: 1, datatype: xsd:string, minLength: 1}
+    - {path: sim:laws, minCount: 1, datatype: xsd:string, minLength: 3}
+    - {path: sim:invariants, minCount: 1, datatype: xsd:string, minLength: 3}
+
+equations:
+  conforms:
+    formula: "keys(spec) = {id, seed, entities, laws, invariants} ∧ seed ∈ ℤ ∧ |entities| ≥ 1 ∧ |laws| ≥ 1 ∧ |invariants| ≥ 1"
+    domain: "spec, one canonical-JSON simulation document"
+    codomain: "conforms, or a violation naming the field"
+    invariants:
+      - "a spec without a seed is refused"
+      - "a spec without an invariant is refused"
+      - "an empty spec is refused"
+    preconditions:
+      - "the spec is one JSON object"
+    postconditions:
+      - "every conforming spec can be replayed (seed) and falsified (invariant)"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: SS-INV-001
+    property: a spec is replayable
+    formal: 'seed(spec) undefined ⇒ Fail(simulation-spec-v1, spec)'
+    prose: false
+  - id: SS-INV-002
+    property: a spec is falsifiable
+    formal: '|invariants(spec)| = 0 ⇒ Fail(simulation-spec-v1, spec)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-SS-001
+    rule: both arms of the spec shape
+    prediction: >
+      the M/M/1 spec conforms; a spec missing its seed, one declaring no invariant, one with an extra key and
+      the empty object are each refused naming the constraint
+    test: cargo test -p aprender-contracts-cli --test ont_simulation_spec
+    if_fails: a simulation can be specified that cannot be replayed or falsified
