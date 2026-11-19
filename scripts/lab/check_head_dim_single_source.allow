@@ -1,13 +1,14 @@
-# check_head_dim_single_source allowlist. TAB-separated: path, normalized line text, status.
-# Matches on path plus whitespace-collapsed text, never a line number. One entry consumes one hit.
-# status: legacy | known-defect #NNNN. A NEW site is red; an entry with no hit is red (remove it).
+# check_head_dim_single_source allowlist. TAB-separated: path, normalized line text, status[, count].
+# Matches on path plus whitespace-collapsed text, never a line number. A row consumes `count` hits
+# (default 1); a repeated (path, text) pair is an error, so use the count column.
+# status: legacy | known-defect #NNNN (anything else, or none, is an error).
+# A NEW site is red; an entry with unused count is red (remove or lower it).
 crates/aprender-serve/src/apply.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/apr/cuda_model_init.rs	hidden_dim / num_heads	legacy
 crates/aprender-serve/src/apr/cuda_streaming_weights.rs	hidden_dim / num_heads	legacy
 crates/aprender-serve/src/apr/forward_cuda.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/apr/forward.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/apr_transformer/attention_kernels.rs	let head_dim = self.config.hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/apr_transformer/attention_kernels.rs	let head_dim = self.config.hidden_dim / num_heads;	legacy
+crates/aprender-serve/src/apr_transformer/attention_kernels.rs	let head_dim = self.config.hidden_dim / num_heads;	legacy	2
 crates/aprender-serve/src/apr_transformer/attention_kernels.rs	let head_dim = self.config.hidden_dim / self.config.num_heads;	legacy
 crates/aprender-serve/src/apr_transformer/config.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/apr_transformer/config.rs	.unwrap_or_else(|| config.hidden_dim.checked_div(config.num_heads).unwrap_or(0));	legacy
@@ -17,32 +18,25 @@ crates/aprender-serve/src/apr_transformer/inference.rs	let head_dim = hidden_dim
 crates/aprender-serve/src/apr_transformer/inference.rs	let head_dim_pre = hidden_dim / self.config.num_heads;	legacy
 crates/aprender-serve/src/apr_transformer/pmat-260.rs	let head_dim = hidden_dim / self.config.num_heads;	legacy
 crates/aprender-serve/src/apr_transformer/pmat-260.rs	let head_dim_pre = hidden_dim / self.config.num_heads;	legacy
-crates/aprender-serve/src/apr_transformer/q4_simd_activations_cache.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/apr_transformer/q4_simd_activations_cache.rs	let head_dim = hidden_dim / num_heads;	legacy
+crates/aprender-serve/src/apr_transformer/q4_simd_activations_cache.rs	let head_dim = hidden_dim / num_heads;	legacy	2
 crates/aprender-serve/src/apr_transformer/q4_simd_from_gguf.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/apr_transformer/quantized_transformer.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/apr/weight.rs	hidden_dim / num_heads	legacy
 crates/aprender-serve/src/brick/mod_per_activation_quant.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/cuda/streaming.rs	let head_dim = self.hidden_dim / self.num_heads;	legacy
-crates/aprender-serve/src/cuda/streaming.rs	let head_dim = self.hidden_dim / self.num_heads;	legacy
-crates/aprender-serve/src/cuda/streaming.rs	let head_dim = self.hidden_dim / self.num_heads;	legacy
+crates/aprender-serve/src/cuda/streaming.rs	let head_dim = self.hidden_dim / self.num_heads;	legacy	3
 crates/aprender-serve/src/cuda/streaming.rs	let head_dim = self.hidden_dim / self.num_heads.max(1);	legacy
 crates/aprender-serve/src/fixtures/mod_generate_apr_model.rs	let head_dim = config.hidden_dim / config.num_heads;	legacy
 crates/aprender-serve/src/fixtures/mod_gguf_try_model.rs	let head_dim = config.hidden_dim / config.num_heads;	legacy
 crates/aprender-serve/src/fixtures/mod_gguf_try_model.rs	let kv_dim = config.num_kv_heads * (config.hidden_dim / config.num_heads);	legacy
 crates/aprender-serve/src/gamma.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/gguf/config_gguf.rs	let head_dim = config.hidden_dim / config.num_heads;	legacy
-crates/aprender-serve/src/gguf/config_gguf.rs	let head_dim = config.hidden_dim / config.num_heads;	legacy
-crates/aprender-serve/src/gguf/config_gguf.rs	let head_dim = config.hidden_dim / config.num_heads;	legacy
+crates/aprender-serve/src/gguf/config_gguf.rs	let head_dim = config.hidden_dim / config.num_heads;	legacy	3
 crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs	let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;	known-defect #7285
-crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs	* (self.model.config.hidden_dim / self.model.config.num_heads);	known-defect #7285
-crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs	* (self.model.config.hidden_dim / self.model.config.num_heads);	known-defect #7285
+crates/aprender-serve/src/gguf/cuda/generate_batched_streaming.rs	* (self.model.config.hidden_dim / self.model.config.num_heads);	known-defect #7285	2
 crates/aprender-serve/src/gguf/cuda/mod_parity_gate.rs	hidden_dim / num_heads	known-defect #7285
 crates/aprender-serve/src/gguf/cuda/mod.rs	let head_dim = model.config.hidden_dim / model.config.num_heads;	known-defect #7285
 crates/aprender-serve/src/gguf/cuda/mod.rs	let head_dim = model.config.hidden_dim / num_heads;	known-defect #7285
 crates/aprender-serve/src/gguf/cuda/speculative.rs	let head_dim = draft_model.model.config.hidden_dim / draft_model.model.config.num_heads;	known-defect #7285
-crates/aprender-serve/src/gguf/cuda/speculative.rs	let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;	known-defect #7285
-crates/aprender-serve/src/gguf/cuda/speculative.rs	let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;	known-defect #7285
+crates/aprender-serve/src/gguf/cuda/speculative.rs	let head_dim = self.model.config.hidden_dim / self.model.config.num_heads;	known-defect #7285	2
 crates/aprender-serve/src/gguf/inference/forward/acceleration.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/gguf/inference/forward/attention.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/gguf/inference/forward/batched.rs	let head_dim = hidden_dim / num_heads;	legacy
@@ -50,29 +44,25 @@ crates/aprender-serve/src/gguf/inference/forward/batch_size.rs	let head_dim = hi
 crates/aprender-serve/src/gguf/inference/forward/cache.rs	let head_dim = hidden_dim / self.config.num_heads;	legacy
 crates/aprender-serve/src/gguf/loader_apr_quantized.rs	let default_head_dim = hidden_dim.checked_div(config.num_heads).unwrap_or(0);	legacy
 crates/aprender-serve/src/gguf/loading.rs	let default_head_dim = if config.num_heads > 0 { hidden_dim / config.num_heads } else { 0 };	legacy
-crates/aprender-serve/src/gpu/adapters/apr_q4_apply_rope_gpu.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/gpu/adapters/apr_q4_apply_rope_gpu.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/gpu/adapters/apr_q4k.rs	hidden_dim / num_heads	legacy
-crates/aprender-serve/src/gpu/adapters/apr_q4k.rs	hidden_dim / num_heads	legacy
+crates/aprender-serve/src/gpu/adapters/apr_q4_apply_rope_gpu.rs	let head_dim = hidden_dim / num_heads;	legacy	2
+crates/aprender-serve/src/gpu/adapters/apr_q4k.rs	hidden_dim / num_heads	legacy	2
 crates/aprender-serve/src/gpu/adapters/apr_q4k.rs	if inferred != hidden_dim / num_heads {	legacy
 crates/aprender-serve/src/gpu/adapters/using.rs	let head_dim = self.config.explicit_head_dim.unwrap_or(hidden_dim / num_heads);	legacy
 crates/aprender-serve/src/gpu/scheduler/types.rs	.unwrap_or_else(|| self.hidden_dim / self.num_heads)	legacy
 crates/aprender-serve/src/infer/batch_wgpu.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/inference/kv_cache.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/inference/kv_cache.rs	let head_dim = hidden_dim / num_heads;	legacy
+crates/aprender-serve/src/inference/kv_cache.rs	let head_dim = hidden_dim / num_heads;	legacy	2
 crates/aprender-serve/src/inference/norm.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/infer/gguf_gpu_generate.rs	config.hidden_dim / config.num_heads,	legacy
 crates/aprender-serve/src/infer/gguf_gpu_generate.rs	let kv_dim = config.num_kv_heads * (config.hidden_dim / config.num_heads);	legacy
 crates/aprender-serve/src/layers/attention_constructor.rs	let head_dim = hidden_dim / num_heads;	legacy
 crates/aprender-serve/src/qwen4_exp_embed.rs	let w = cfg.embed_dim / heads;	legacy
 crates/aprender-serve/src/safetensors_cuda_load_safe_tensors.rs	let head_dim = config.hidden_dim / config.num_heads;	legacy
-crates/aprender-serve/src/safetensors_cuda_load_safe_tensors.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/safetensors_cuda_load_safe_tensors.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/safetensors_cuda_upload_weights_safe.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/safetensors_cuda_upload_weights_safe.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/safetensors_infer_convert.rs	let head_dim = hidden_dim / num_heads;	legacy
-crates/aprender-serve/src/safetensors_infer_convert.rs	let head_dim = hidden_dim / num_heads;	legacy
+crates/aprender-serve/src/safetensors_cuda_load_safe_tensors.rs	let head_dim = hidden_dim / num_heads;	legacy	2
+crates/aprender-serve/src/safetensors_cuda_upload_weights_safe.rs	let head_dim = hidden_dim / num_heads;	legacy	2
+crates/aprender-serve/src/safetensors_infer_convert.rs	let head_dim = hidden_dim / num_heads;	legacy	2
 crates/aprender-serve/src/safetensors/inner.rs	let default_head_dim = hidden_dim.checked_div(config.num_heads).unwrap_or(hidden_dim);	legacy
 crates/aprender-serve/src/safetensors/safetensors_config.rs	if heads > 0 { Some(hidden / heads) } else { None }	legacy
 crates/aprender-serve/src/safetensors/safetensors_parser.rs	hidden.checked_div(heads)	legacy
 crates/aprender-serve/src/safetensors/transform.rs	let head_dim = hidden_dim / num_heads;	legacy
+crates/aprender-serve/src/gguf/inference/forward/forward_qwen35.rs	let head_dim = base.config.hidden_dim / num_heads;	legacy
+crates/aprender-serve/src/infer/inference_result.rs	let kv_dim = model.config.num_kv_heads * (model.config.hidden_dim / model.config.num_heads);	legacy
