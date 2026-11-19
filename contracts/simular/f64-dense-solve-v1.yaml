@@ -1,0 +1,53 @@
+metadata:
+  version: 1.0.0
+  kind: pattern
+  references: ['IEEE 754-2019 §5.4.1 (correctly rounded + - * / sqrt)']
+  created: '2026-11-19'
+  author: PAIML Engineering
+  description: f64 dense Cholesky solve in a fixed operation order (SIM3D P3, #7248 first slice)
+equations:
+  cholesky_f64_fixed_order:
+    formula: 'A = L L^T, sums in ascending k, no FMA, no reordering'
+    domain: A ∈ R^{n×n} symmetric positive definite, f64
+    codomain: Result<L, SolverError>
+    invariants:
+    - Same input gives bit-identical L and x on every host and in WASM
+    - Non-positive or NaN pivot at column j returns NotPositiveDefinite(j)
+proof_obligations:
+- id: F64DS-INV-001
+  type: invariant
+  property: Exact factor and solve on an exactly representable SPD case
+  formal: 'A = L L^T with L=[[2,0,0],[1,2,0],[1,1,2]] ⇒ cholesky_f64(A) = L and solve(A·[1,2,3]) = [1,2,3]'
+  applies_to: cholesky_f64_fixed_order
+- id: F64DS-INV-002
+  type: invariant
+  property: Indefinite input is rejected, never factored
+  formal: 'cholesky_f64([[1,2],[2,1]]) = Err(NotPositiveDefinite(1))'
+  applies_to: cholesky_f64_fixed_order
+- id: F64DS-BND-003
+  type: bound
+  property: f64 residual on Hilbert(5)
+  formal: '|A x - b|_inf < 1e-9'
+  tolerance: 1.0e-9
+  applies_to: cholesky_f64_fixed_order
+falsification_tests:
+- id: FALSIFY-SIM3D-CHOL-001
+  description: 'F64DS-INV-001: exact factor'
+  test: cargo test -p aprender-solve --lib falsify_sim3d_chol_exact_factor
+  prediction: 'L equals the integer factor exactly'
+  if_fails: 'accumulation order or pivot arithmetic changed'
+- id: FALSIFY-SIM3D-CHOL-002
+  description: 'F64DS-INV-001: exact solve'
+  test: cargo test -p aprender-solve --lib falsify_sim3d_chol_exact_solve
+  prediction: 'x equals [1,2,3] exactly'
+  if_fails: 'a substitution sign or index error'
+- id: FALSIFY-SIM3D-CHOL-003
+  description: 'F64DS-INV-002: rejects indefinite, NaN, bad shapes'
+  test: cargo test -p aprender-solve --lib falsify_sim3d_chol_rejects_indefinite_and_bad_shape
+  prediction: 'typed errors, no panic'
+  if_fails: 'pivot guard weakened'
+- id: FALSIFY-SIM3D-CHOL-004
+  description: 'F64DS-BND-003: f64 residual and bit-repeatability'
+  test: cargo test -p aprender-solve --lib falsify_sim3d_chol_f64_precision_and_repeatable
+  prediction: 'residual < 1e-9 and two runs equal bit for bit'
+  if_fails: 'precision dropped to f32 or order became nondeterministic'
