@@ -54,6 +54,8 @@ regex = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 proptest = { workspace = true }
+jugar-probar = { path = "../aprender-test-lib", package = "aprender-test-lib", features = ["browser"] }  # real-Chrome run of #7261
+tokio = { workspace = true }
 
 [target.'cfg(target_arch = "wasm32")'.dev-dependencies]
 wasm-bindgen-test = { workspace = true }
