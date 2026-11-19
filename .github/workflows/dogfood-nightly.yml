@@ -24,7 +24,8 @@ name: dogfood-nightly
 
 on:
     # STOPPED (#7277, slice of #7181): red every night 2026-11-12..19, so the LAB 7-day rule stops the timer.
-    # The owner restores it by re-adding `schedule:` with the cron `5 20 * * *` once #7181 is fixed; run by hand with workflow_dispatch.
+    # The owner restores it by re-adding `schedule:` with the cron `5 20 * * *` once #7181 is fixed (run by hand with workflow_dispatch meanwhile),
+    # AND by updating scripts/check_dogfood_nightly_lab.sh (its schedule rule) in the same PR, or that guard fails the PR.
   workflow_dispatch:
     inputs:
       plant:
@@ -64,7 +65,7 @@ jobs:
         timeout-minutes: 5
         run: setsid --wait bash scripts/release/dogfood_night_sha.sh --self-test
       - name: Resolve C
-        timeout-minutes: 65
+        timeout-minutes: 60
         id: pick
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
