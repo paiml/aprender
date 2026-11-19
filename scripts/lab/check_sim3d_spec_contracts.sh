@@ -41,7 +41,7 @@ if [ "${1:-}" = --self-test ]; then
     cases=$((cases + 1))
     out=$(check "$s" 2>&1) || rc=$?
     if [ "$rc" -ne "$want" ]; then echo "FAIL $label: exit $rc, want $want"; fail=1
-    elif [ -n "$sub" ] && ! printf '%s' "$out" | grep -qF -- "$sub"; then echo "FAIL $label: output lacks '$sub'"; fail=1; fi
+    elif [ -n "$sub" ] && ! grep -qF -- "$sub" <<<"$out"; then echo "FAIL $label: output lacks '$sub'"; fail=1; fi
   }
   cp "$SPEC_DEFAULT" "$s"; expect 0 "CHECKED" "the real map is green"
   cp "$SPEC_DEFAULT" "$s"; sed -i '/^| SIM3D-INV-004/s/sim3d-spec-v1/sim3d-no-such-v1/' "$s"
