@@ -601,6 +601,7 @@ jobs:
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/pin_build_base.sh
       - name: Install cargo-deny (if absent)
         env:
