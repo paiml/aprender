@@ -26,6 +26,8 @@
 #   bash scripts/check_pr_main_job_parity.sh --self-test  # case table on throwaway workflows
 #   env: PARITY_WORKFLOWS (dir), PARITY_EXEMPT (file)
 set -uo pipefail
+command -v yq >/dev/null || { echo "ENV: yq missing"; exit 2; }
+command -v jq >/dev/null || { echo "ENV: jq missing"; exit 2; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WF="${PARITY_WORKFLOWS:-$ROOT/.github/workflows}"
 EX="${PARITY_EXEMPT:-$ROOT/ci/push-only-jobs.txt}"

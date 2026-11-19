@@ -318,7 +318,7 @@ jobs:
 
   x86-main:
     needs: [mg-reuse]
-    # #7272 (operator ruling: one check set per repo): every job that runs on a push to main also runs on a pull_request,
+    # #7272 (one check set per repo): every job that runs on a push to main also runs on a pull_request,
     # on the same runner pool, matrix and features. A draft owes nothing until ready_for_review.
     if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}
     # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
@@ -664,7 +664,7 @@ jobs:
 
   determinism:
     needs: [mg-reuse, x86-main]
-    # #7272 (operator ruling: one check set per repo, enforced by pmat comply): determinism runs on a pull_request exactly
+    # #7272 (one check set per repo): determinism runs on a pull_request exactly
     # as on a push to main, so a red determinism-compare is found before the merge. This reverses the 2026-10-17 rule that
     # kept it off PR heads; the gate reads DET:determinism-compare on every event (scripts/check_determinism_wait.sh W10).
     if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event.pull_request.draft != true }}
@@ -842,7 +842,7 @@ jobs:
           [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
-          # operator ruling, #7272). pr-light passing is never a pass by itself: the block falls through to the
+          # #7272). pr-light passing is never a pass by itself: the block falls through to the
           # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
@@ -924,7 +924,7 @@ jobs:
           [ "${DRAFT:-}" != true ] || { echo "ci / gate: draft PR, full CI is not owed until ready_for_review"; exit 0; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
-          # operator ruling, #7272). pr-light passing is never a pass by itself: the block falls through to the
+          # #7272). pr-light passing is never a pass by itself: the block falls through to the
           # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }
@@ -985,7 +985,7 @@ jobs:
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
           # A pull_request owes pr-light AND every heavy job that runs on a push to main (one check set per repo,
-          # operator ruling, #7272). pr-light passing is never a pass by itself: the block falls through to the
+          # #7272). pr-light passing is never a pass by itself: the block falls through to the
           # heavy-job checks below on every event, an empty one included (fail-closed).
           if [ "${EVT:-}" = pull_request ]; then
             [ "${PRL:-}" = success ] || { echo "::error::pull_request: pr-light is '${PRL:-}', not success"; exit 1; }

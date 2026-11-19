@@ -619,7 +619,7 @@ STUB
   # pool. The merge_group half (this row): x86-main and workspace-test-shard take the mq lane on a
   # merge_group entry and clean-room on every other event, and nothing else is event-conditional.
   # Each row is compared as the EXACT line (trailing comment stripped), so a third state cannot slip in.
-  # #7272 (operator: one check set per repo): a pull_request owes pr-light AND the heavy jobs exactly as a push does.
+  # #7272 (one check set per repo): a pull_request owes pr-light AND the heavy jobs exactly as a push does.
   # Both directions, run through the real step scripts: a pull_request with the heavy jobs skipped FAILS even when
   # pr-light is green; a merge_group, push, empty or unknown event with the heavy jobs skipped FAILS too; every
   # event with the heavy jobs green PASSES (a pull_request additionally needs pr-light green).
