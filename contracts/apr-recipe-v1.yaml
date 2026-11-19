@@ -10,8 +10,8 @@
 # Limits at this head (status: partial):
 #   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
 #   - a flag conflict is a clap usage error (exit 2); only recipe refusals are exit 5
-#   - the receipt (its overrides included) is built and printed on stderr as text; it is not
-#     written to a file and not part of --json output
+#   - the eval block is validated and hashed but not yet applied by the trainer (the heldout file
+#     is not read by the training loop; the receipt lists `eval` under validated_not_applied)
 #   - --profile prints its one line and does nothing else, with or without --recipe
 #   - the global --verbose and --quiet work beside --recipe as for every command, through the
 #     process-wide setting; they are not arguments of the recipe run and no recipe test covers them
@@ -33,9 +33,9 @@ metadata:
     model, the training data, the method (lora, qlora or distill), the teacher (distill only),
     the eval and the seed. The eval is required and is part of the recipe hash, so two runs
     with the same recipe hash were asked the same question. This contract covers the schema,
-    the refusal before a model is loaded and the receipt fields; it does not claim that the
-    seed or the eval are applied by the training loop yet (the receipt lists them under
-    validated_not_applied).
+    the refusal before a model is loaded and the receipt fields. The seed is applied: it is the
+    trainer's seed (split and shuffle), not a fixed 42. It does not claim that the eval is
+    applied by the training loop yet (the receipt lists it under validated_not_applied).
   references:
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
   - "crates/apr-cli/src/commands/train_recipe.rs"
@@ -87,6 +87,27 @@ equations:
     - "A flag in FINETUNE_RECIPE_CARRIES conflicts with --recipe"
     - "--model-size and --output are accepted beside --recipe and win over model_size and output.dir; the receipt lists each replacement under overrides"
 
+  finetune_receipt:
+    formula: |
+      after a real (non --plan) run of R:
+        <output dir>/receipt.json = {
+          schema: "apr-finetune-receipt-v1",
+          recipe_name, recipe_sha256, base_model_sha256, dataset_sha256, eval_sha256,
+          apr: {version, commit},
+          hyperparameters: {method, seed, rank, epochs, learning_rate, max_seq_len,
+                            quantize_nf4, model_size, eval_benchmark},
+          overrides, validated_not_applied
+        }
+        --json prints the same object on stdout
+      trainer.seed = R.seed
+    domain: validated recipe, completed run
+    codomain: receipt.json | Refusal
+    invariants:
+    - "The trainer seed is the recipe seed (0 included); a run that has no recipe keeps 42"
+    - "The same recipe, base, data and binary give a byte-identical receipt.json; another seed gives a different one"
+    - "A hash of a file that was not read is null, never a made-up value"
+    - "receipt.json is written only after the run returned Ok and never for --plan"
+
   recipe_receipt:
     formula: |
       receipt(R, engines) = {
@@ -137,3 +158,9 @@ falsification_tests:
   test: |
     cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin require_inputs_refuses_a_directory_and_skips_the_pin_of_an_absent_file heldout_linked_to_the_training_file_is_refused_at_require_inputs heldout_hard_linked_to_the_training_file_is_refused_at_require_inputs sha256_matches_the_published_test_vector sha256_file_hashes_past_one_buffer a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read receipt_carries_the_contract_fields recipe_hash_changes_with_the_eval_block
   if_fails: "A receipt can name data it did not train on"
+- id: FALSIFY-APR-RECIPE-006
+  rule: the recipe seed reaches the trainer and a run leaves a receipt
+  prediction: "The trainer seed follows the recipe seed (zero included) while a recipe run is active and returns to 42 afterwards, nested guards restore the outer seed. The finetune receipt carries the recipe, base model, dataset and heldout hashes, the apr version and commit and the resolved hyperparameters; a hash of an absent file is null; building it twice from one recipe gives byte-identical receipt.json and a different seed gives different bytes; only `eval` remains under validated_not_applied"
+  test: |
+    cargo test -p apr-cli --lib -- trainer_seed_defaults_to_42_and_follows_the_guard seed_zero_is_applied_not_mistaken_for_unset receipt_carries_hashes_version_commit_and_hyperparameters the_same_recipe_gives_byte_identical_receipt_and_another_seed_does_not a_missing_base_hash_is_null_never_invented receipt_dir_is_the_adapter_directory_else_current write_receipt_creates_the_directory_and_ends_with_a_newline
+  if_fails: "Two seeds train the same way, or a run cannot be tied to the inputs and binary that made it"

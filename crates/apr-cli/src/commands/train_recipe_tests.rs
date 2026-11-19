@@ -796,7 +796,7 @@ fn receipt_carries_the_contract_fields() {
     assert_eq!(receipt.seed, 42);
     assert_eq!(receipt.recipe_name, "qwen-lora-demo");
     assert_eq!(receipt.method, RecipeMethod::Lora);
-    assert_eq!(receipt.validated_not_applied, ["seed", "eval"]);
+    assert_eq!(receipt.validated_not_applied, ["eval"]);
     assert_eq!(receipt.engines.len(), 1);
     assert_eq!(receipt.engines[0].name, "apr");
     assert_eq!(receipt.engines[0].version, env!("CARGO_PKG_VERSION"));
@@ -819,7 +819,7 @@ fn receipt_carries_the_contract_fields() {
     }
     assert_eq!(json["method"], "lora");
     assert_eq!(json["overrides"][0], "--vram 8");
-    assert_eq!(json["validated_not_applied"][0], "seed");
+    assert_eq!(json["validated_not_applied"][0], "eval");
     std::fs::remove_dir_all(&dir).ok();
 }
 

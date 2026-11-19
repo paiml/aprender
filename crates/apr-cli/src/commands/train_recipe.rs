@@ -20,9 +20,9 @@ pub(crate) const RECIPE_SCHEMA: &str = "apr-recipe-v1";
 /// The `schema` value of a receipt built from a recipe.
 pub(crate) const RECEIPT_SCHEMA: &str = "apr-recipe-receipt-v1";
 /// Recipe fields this engine validates and hashes but does not yet feed into
-/// the training loop. Kept in ONE place: when `apr finetune` threads the seed
-/// or runs the eval, the name leaves this list and the receipt says so.
-pub(crate) const FINETUNE_NOT_APPLIED: &[&str] = &["seed", "eval"];
+/// the training loop (the seed is applied since PMAT-7239). Kept in ONE place: when
+/// `apr finetune` runs the eval, the name leaves this list and the receipt says so.
+pub(crate) const FINETUNE_NOT_APPLIED: &[&str] = &["eval"];
 
 /// The training method a recipe selects.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]

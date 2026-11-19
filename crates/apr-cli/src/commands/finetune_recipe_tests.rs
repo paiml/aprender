@@ -91,7 +91,7 @@ fn preflight_resolves_the_recipe_and_builds_the_receipt() {
     let (_, receipt) = preflight_recipe(&path, true).expect("plan preflight");
     assert_eq!(receipt.data_sha256, Some(sha256_bytes(b"abc")));
     assert_eq!(receipt.eval_sha256, None, "the eval file is absent");
-    assert_eq!(receipt.validated_not_applied, vec!["seed", "eval"]);
+    assert_eq!(receipt.validated_not_applied, vec!["eval"]);
     assert_eq!(receipt.engines.len(), 1);
     assert!(receipt.overrides.is_empty());
     std::fs::remove_dir_all(&dir).ok();

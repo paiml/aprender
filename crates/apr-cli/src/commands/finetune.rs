@@ -471,7 +471,7 @@ fn execute_training(
             .parent()
             .unwrap_or(Path::new("."))
             .join("checkpoints"),
-        seed: 42,
+        seed: super::finetune_recipe_run::run_seed(),
         log_interval: 1,
         warmup_fraction: 0.03,
         lr_min: 1e-6,
@@ -1565,10 +1565,13 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         engine.version,
         engine.sha,
     );
-    eprintln!(
-        "[recipe] validated and hashed, not yet applied by apr finetune: {}",
-        receipt.validated_not_applied.join(", ")
-    );
+    if !receipt.validated_not_applied.is_empty() {
+        eprintln!(
+            "[recipe] validated and hashed, not yet applied by apr finetune: {}",
+            receipt.validated_not_applied.join(", ")
+        );
+    }
+    let _seed = super::finetune_recipe_run::SeedGuard::set(recipe.seed);
     if !receipt.overrides.is_empty() {
         eprintln!(
             "[recipe] overridden by flags: {}",
@@ -1577,7 +1580,7 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
     }
     let output_buf = recipe_output_path(flags, &recipe);
     let output = output_buf.as_deref();
-    run(
+    let result = run(
         Some(&recipe.base),
         recipe.method.as_str(),
         recipe.rank,
@@ -1608,7 +1611,41 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         flags.json_output,
         flags.experimental_mps,
         flags.gpu_share,
-    )
+    );
+    result?;
+    if flags.plan_only {
+        return Ok(());
+    }
+    emit_run_receipt(&recipe, &receipt, output, flags, epochs, quantize_nf4)
+}
+
+/// Write `receipt.json` after a real recipe run and, with `--json`, print the same object.
+fn emit_run_receipt(
+    recipe: &super::train_recipe::TrainRecipe,
+    receipt: &super::train_recipe::RecipeReceipt,
+    output: Option<&Path>,
+    flags: &RecipeRunFlags<'_>,
+    epochs: u32,
+    quantize_nf4: bool,
+) -> Result<()> {
+    use super::finetune_recipe_run as frr;
+    let resolved = frr::ResolvedRun {
+        epochs,
+        quantize_nf4,
+        model_size: recipe_model_size(flags, recipe),
+    };
+    let value = frr::build_receipt(
+        recipe,
+        receipt,
+        &super::train_recipe::apr_engine(),
+        &resolved,
+    );
+    let path = frr::write_receipt(&frr::receipt_dir(output), &value)?;
+    eprintln!("[recipe] receipt written to {}", path.display());
+    if flags.json_output {
+        println!("{value}");
+    }
+    Ok(())
 }
 
 /// Validate inputs and execute the LoRA training pipeline.
