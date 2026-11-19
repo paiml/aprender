@@ -205,7 +205,7 @@ apr,apr export --format mlx,6,x86_64-linux;nvidia-cuda,huggingface-transformers,
 apr,apr export --format onnx,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:491,high
 apr,apr export --format openvino,6,x86_64-linux;nvidia-cuda,pytorch,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:491,high
 apr,apr export --format safetensors,6,x86_64-linux;nvidia-cuda,safetensors,no,10,apr-core-commands,crates/apr-cli/src/commands_enum.rs:491,high
-apr,apr finetune,2,x86_64-linux,unsloth,yes,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:31,high
+apr,apr finetune,2,x86_64-linux,unsloth,yes,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:31-47,high
 apr,apr finetune --task classify,2,x86_64-linux,unsloth,no,10,apr-core-commands,crates/apr-cli/src/model_ops_commands.rs:73,high
 apr,apr flow,6,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:693,high
 apr,apr fp8-lint,1,x86_64-linux,NONE,yes,1,apr-lint-diag,crates/apr-cli/src/extended_commands.rs:909,high
