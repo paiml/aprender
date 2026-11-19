@@ -165,13 +165,6 @@ falsification_tests:
       and a law whose invariant id is not INV-<nnn> are each refused
     test: cargo test -p aprender-contracts-cli --test sim3d_spec
     if_fails: a required field starts manufacturing plausible values
-  - id: FALSIFY-SIM-SPEC-004
-    rule: the invariant join, in pv
-    prediction: >
-      a law naming an invariant id that `invariants` does not declare is refused by pv itself (exit 1, a (node)
-      violation naming the undeclared id); declaring the id clears it
-    test: cargo test -p aprender-contracts-cli --test sim3d_spec
-    if_fails: a law can cite an invariant nobody declared and still pass pv
   - id: FALSIFY-SIM-SPEC-003
     rule: the check is not vacuous
     prediction: >
@@ -179,3 +172,10 @@ falsification_tests:
       count of a valid spec is exactly 1
     test: cargo test -p aprender-contracts-cli --test sim3d_spec
     if_fails: a spec reads as conforming because nothing was graded
+  - id: FALSIFY-SIM-SPEC-004
+    rule: the invariant join, in pv
+    prediction: >
+      a law naming an invariant id that `invariants` does not declare is refused by pv itself (exit 1, a (node)
+      violation naming the undeclared id); declaring the id clears it
+    test: cargo test -p aprender-contracts-cli --test sim3d_spec
+    if_fails: a law can cite an invariant nobody declared and still pass pv
