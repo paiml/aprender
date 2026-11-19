@@ -1,0 +1,113 @@
+metadata:
+  kind: pattern
+  version: 1.0.0
+  created: '2026-11-19'
+  author: PAIML Engineering
+  description: Determinism core — integer-ns time, order-independent keyed RNG, hash-chained trajectory and receipt
+  references:
+  - 'Salmon et al. (2011) Parallel random numbers: as easy as 1, 2, 3'
+  - 'Steele, Lea, Flood (2014) Fast splittable pseudorandom number generators'
+equations:
+  keyed_draw:
+    formula: 'draw(seed, entity, event, k) = mix(mix(mix(mix(seed) xor entity) xor event) xor k)'
+    domain: seed, entity, event, k ∈ u64
+    codomain: u64
+    invariants:
+    - 'Pure: equal keys give equal values, no state advances'
+    - 'Keyed: changing any one key component changes the value'
+    preconditions:
+    - none
+  order_independence:
+    formula: 'hash(run(order_a)) = hash(run(order_b)) for any permutations order_a, order_b'
+    domain: order ∈ Perm(entities)
+    codomain: hash
+    invariants:
+    - 'Each entity reads only the previous snapshot and writes a fresh buffer'
+    - 'The buffer is sorted by entity id before it is hashed'
+    preconditions:
+    - entity ids are unique
+  hash_chain:
+    formula: 'h_k = H(domain, h_(k-1), k, t_k, states_k) with t_k = k * dt_ns'
+    domain: k ∈ u64, dt_ns > 0
+    codomain: 32 bytes
+    invariants:
+    - 'Same spec and seed twice give the same final hash'
+    - 'A different seed gives a different final hash'
+    - 'Changing one state word at step j changes every h_k for k >= j'
+    preconditions:
+    - dt_ns > 0
+proof_obligations:
+- id: SDC-INV-001
+  type: invariant
+  property: Keyed draw purity
+  formal: '∀ s, e, v, k: draw(s, e, v, k) = draw(s, e, v, k)'
+  applies_to: keyed_draw
+- id: SDC-INV-002
+  type: invariant
+  property: Evaluation-order independence
+  formal: '∀ o1, o2: hash(run(o1)) = hash(run(o2))'
+  applies_to: order_independence
+- id: SDC-INV-003
+  type: invariant
+  property: Run reproducibility
+  formal: '∀ spec, seed: run(spec, seed) = run(spec, seed)'
+  applies_to: hash_chain
+- id: SDC-INV-004
+  type: invariant
+  property: Seed sensitivity
+  formal: 'seed1 ≠ seed2 ⇒ final_hash1 ≠ final_hash2'
+  applies_to: hash_chain
+enforcement:
+  repeat_run_equal:
+    description: Two runs from the same spec and seed give the same chain
+    check: determinism::tests::same_spec_and_seed_twice_gives_same_hash
+    severity: ERROR
+  shuffle_equal:
+    description: Shuffled entity evaluation order gives the same chain
+    check: determinism::tests::shuffled_evaluation_order_gives_same_hash
+    severity: ERROR
+  seed_differs:
+    description: A different seed gives a different final hash
+    check: determinism::tests::different_seed_gives_different_hash
+    severity: ERROR
+  golden_pinned:
+    description: Final hash of the reference run is pinned to a literal
+    check: determinism::tests::golden_final_hash_is_pinned
+    severity: ERROR
+falsification_tests:
+- id: FALSIFY-SDC-001
+  rule: Run reproducibility
+  prediction: two runs of 200 steps, same spec and seed, have identical trajectories and receipts
+  test: determinism::tests::same_spec_and_seed_twice_gives_same_hash
+  if_fails: hidden state, clock, or unordered iteration in the kernel
+- id: FALSIFY-SDC-002
+  rule: Evaluation-order independence
+  prediction: eight random permutations per step over 100 steps all give the baseline chain
+  test: determinism::tests::shuffled_evaluation_order_gives_same_hash
+  if_fails: canonicalisation (sort by entity id) removed, or a model reads state written this step
+- id: FALSIFY-SDC-003
+  rule: Seed sensitivity
+  prediction: seeds 1 and 2 give different h_0 and different final hashes
+  test: determinism::tests::different_seed_gives_different_hash
+  if_fails: seed not mixed into the chain or the keyed draw
+- id: FALSIFY-SDC-004
+  rule: Chain linkage
+  prediction: flipping one state bit at step 3 changes every later hash and no earlier one
+  test: determinism::tests::chain_links_every_step_to_the_previous
+  if_fails: step hash does not include the previous hash
+- id: FALSIFY-SDC-005
+  rule: Receipt conforms to the pv shape
+  prediction: the canonical receipt the kernel writes passes `pv lint --gate shapes --shape sim3d-receipt-v1` (contracts/sim3d-receipt-v1.yaml); a missing final_hash, empty verdicts, an eighth key or a non-INV monitor name each go red naming the path
+  test: cargo test -p aprender-contracts-cli --test sim3d_kernel_receipt
+  if_fails: the kernel writes a receipt the shared shape refuses, or the shape no longer binds the kernel's output (LAB check, not on a PR path)
+qa_gate:
+  id: F-SDC-001
+  name: Determinism Core Contract
+  description: Repeat, shuffle, seed and linkage falsifiers for the simulation determinism core
+  checks:
+  - repeat_run_equal
+  - shuffle_equal
+  - seed_differs
+  - golden_pinned
+  pass_criteria: All 4 falsification tests pass
+  falsification: Remove the sort by entity id before hashing
