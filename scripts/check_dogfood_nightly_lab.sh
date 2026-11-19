@@ -55,6 +55,27 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd, lc, k) { # drop a trailing comm
   sub(/[ \t]+$/, "", s)
   return s
 }
+function shape_ok(r,   v, k, rest) { # one line is a blank, a comment, "key:", "key: V", "- V" or "- key: V" with a simple V
+  sub(/[ \t]+$/, "", r)
+  if (r ~ /^[ ]*(#.*)?$/) return 1
+  if (r ~ /\t/) return 0
+  if (match(r, /[ ]#/) && r !~ /^[ ]*#/) { r = substr(r, 1, RSTART - 1); sub(/[ \t]+$/, "", r) } # a trailing comment; a quote before it makes the prefix fail below
+  if (match(r, /^ *(- +)*/)) rest = substr(r, RLENGTH + 1); else return 0
+  if (rest ~ /^[A-Za-z0-9_.-]+:/) v = substr(rest, index(rest, ":") + 1)
+  else if (rest ~ /^"[^"\\]*" *:/) { match(rest, /^"[^"\\]*" *:/); v = substr(rest, RLENGTH + 1) }
+  else if (rest ~ /^\047[^\047]*\047 *:/) { match(rest, /^\047[^\047]*\047 *:/); v = substr(rest, RLENGTH + 1) }
+  else v = " " rest # a bare sequence item
+  if (v == "") return 1
+  if (v !~ /^ /) return 0
+  sub(/^ +/, "", v)
+  if (v == "") return 1
+  if (v ~ /^[|>][-+0-9]*$/) return 1
+  if (v ~ /^"[^"\\]*"$/ || v ~ /^\047[^\047]*\047$/) return 1
+  if (v ~ /^[[{][^"\047#]*[\]}]$/) return 1
+  if (v ~ /^["\047\[{&*!|>%@`#?]/) return 0
+  if (v ~ /(^|[ ]):([ ]|$)/ || v ~ / #/ || v ~ /:$/) return 0
+  return 1
+}
 function close_step() { if (step && !hastm) miss = miss " " name; step = 0 }
 function close_job() {
   close_step()
@@ -78,6 +99,10 @@ BEGIN { bsind = -1 }
     if (RLENGTH > bsind) next
     bsind = -1
   }
+  # Whitelist first: a line outside the YAML subset below is refused, whatever strip() would make of it. The quote and
+  # bracket scans kept being desynced by YAML 1.2 corner cases (each review round found one); a closed list of line
+  # shapes cannot be desynced, because nothing outside it is tokenised at all.
+  if (!shape_ok($0)) { shp = shp + 1; if (shp == 1) shp1 = FNR }
   esc = 0
   line = strip($0)
   if (esc) escn++
@@ -88,6 +113,7 @@ BEGIN { bsind = -1 }
   if (isdash) { bsr = line; sub(/^ *-[ \t]*/, "", bsr); kcol = length(line) - length(bsr) }
   if (line ~ /(:|-)[ \t]+[|>][-+0-9]*$/) bsind = (isdash && bsr ~ /^[|>]/) ? ind : kcol
   isbs = (bsind >= 0)
+  if (isbs && ind > 0 && inon) onbs = onbs + 1 # a block scalar under on: can spell a trigger name as data
   if (line ~ /(^[ \t]*(-[ \t]+)*|:[ \t]+)[!&*]/) tag = tag + 1
   else if (noq ~ /[{[,][ \t]*[!&*]/ || noq ~ /:[ \t]*[!&*]/) tag = tag + 1 # tag, anchor or alias inside a flow collection
   if (line ~ /^[ \t]*(-[ \t]+)*\?([ \t]|$)/) qkey = qkey + 1
@@ -143,6 +169,8 @@ BEGIN { bsind = -1 }
 END {
   close_job()
   unj = 0
+  if (shp + 0 > 0) { print "UNJUDGED: line outside the judged YAML subset (" shp " lines, first at line " shp1 ")"; unj = 1 }
+  if (onbs + 0 > 0) { print "UNJUDGED: block scalar under the on: key (" onbs " lines)"; unj = 1 }
   if (bom) { print "UNJUDGED: byte-order mark at the start of the file"; unj = 1 }
   if (badtop != "") { print "UNJUDGED: column-0 line that is not a plain or quoted top-level key (flow continuation, document marker, anchor):" badtop; unj = 1 }
   if (flowcont + 0 > 0) { print "UNJUDGED: multi-line flow collection continued at column 0"; unj = 1 }
@@ -345,7 +373,7 @@ EOF
   # lane-1 FAIL at 4576b77: a space then a quote inside a plain scalar in a flow collection; refused (exit 2)
   printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: a ' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/p1.yml"; expect_unj "space-quote in a plain scalar in flow" "$t/p1.yml"
   printf "name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    env: { a: x ', b: '} # ',\n    timeout-minutes: 25\n    , c: x ', d: '{x' }\n    steps:\n      - run: echo untimed\n        env: { a: x ', b: '} # ',\n        timeout-minutes: 10\n        , c: x ', d: '{x' }\n" > "$t/p2.yml"; expect_unj "multi-line flow env with space-quote forging timeouts" "$t/p2.yml"
-  printf "on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: { a: 'q', b: [ 'r', \"s\" ] }\n        timeout-minutes: 10\n" > "$t/p3.yml"; expect "quotes after colon, comma and bracket in flow stay judged" "$t/p3.yml" pass
+  printf "on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: { a: 'q', b: [ 'r', \"s\" ] }\n        timeout-minutes: 10\n" > "$t/p3.yml"; expect_unj "quotes inside a flow collection are refused (the whitelist does not tokenise them)" "$t/p3.yml"
   printf "on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo 'a b'\n        if: \${{ github.x == 'y' }}\n        timeout-minutes: 10\n" > "$t/p4.yml"; expect "quotes in block plain scalars stay judged" "$t/p4.yml" pass
 
   printf "on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: { a: \${{ x ' }}, b: '}} # ' }\n        timeout-minutes: 10\n" > "$t/p5.yml"; expect_unj "expression inside a flow collection" "$t/p5.yml"
@@ -353,7 +381,7 @@ EOF
   # lane FAIL at e14700c: a dash before space-quote in flow; a colon after a quote that did not close a scalar; refused or judged
   printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: a- ' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r4.yml"; expect_unj "dash then space-quote in flow" "$t/r4.yml"
   printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: x':' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r5.yml"; expect "colon after a mid-word quote is not a token start" "$t/r5.yml" fail
-  printf 'on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: {"a":"b", "c":\x27d\x27}\n        timeout-minutes: 10\n' > "$t/r6.yml"; expect "JSON-style quoted pairs stay judged" "$t/r6.yml" pass
+  printf 'on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: {"a":"b", "c":\x27d\x27}\n        timeout-minutes: 10\n' > "$t/r6.yml"; expect_unj "JSON-style quoted pairs inside flow are refused" "$t/r6.yml"
 
   printf 'name: x\non: { workflow_dispatch: { inputs: { a: { "default" :"}}}} # " } } }, schedule: [{ cron: "5 20 * * *" }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r7.yml"; expect "blank before the colon of a JSON-style pair" "$t/r7.yml" fail
   printf "name: x\non: { workflow_dispatch: { inputs: { a: { 'default' :'}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r8.yml"; expect "blank before the colon, single quotes" "$t/r8.yml" fail
@@ -381,6 +409,9 @@ EOF
 
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    runs-on: ubuntu-latest\n    a}: {\n    timeout-minutes: 25\n    , []:"{a" }\n    steps:\n      - run: echo UNTIMED\n        a}: {\n        timeout-minutes: 10\n        , []:"{a" }\n' > "$t/r23.yml"; expect_unj "mid-word closer before a real flow opener" "$t/r23.yml"
   printf 'name: x\non:\n  workflow_dispatch:\n    inputs:\n      a}: {\nfake: 1\n      , []:"{a" }\n  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        timeout-minutes: 10\n' > "$t/r24.yml"; expect_unj "mid-word closer hiding schedule" "$t/r24.yml"
+
+  printf 'name: x\non:\n  - >-\n    schedule\n  - workflow_dispatch\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r25.yml"; expect_unj "block scalar spelling a trigger under on" "$t/r25.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\n    inputs:\n      a { ": " } # x\nfake: 1\n      " # "\n  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        timeout-minutes: 10\n' > "$t/r26.yml"; expect_unj "brace-and-quote text in a plain key" "$t/r26.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
