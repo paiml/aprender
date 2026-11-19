@@ -473,7 +473,7 @@ fn execute_training(
             .join("checkpoints"),
         seed: 42,
         log_interval: 1,
-        warmup_fraction: 0.03,
+        warmup_fraction: super::train_recipe_lora::warmup_fraction(),
         lr_min: 1e-6,
     };
 
@@ -1270,6 +1270,32 @@ fn dispatch_finetune_mode(
     None
 }
 
+/// The planner's config with the user's `--rank` and an active recipe's `lora_alpha` applied.
+/// `run` takes its config here and nothing else, so every later use (header, adapter metadata,
+/// the exported adapter's alpha) sees the same alpha (PMAT-7240, FALSIFY-APR-RECIPE-007).
+pub(crate) fn resolve_run_config(
+    model_params: u64,
+    vram_gb: f64,
+    ft_method: FinetuneMethod,
+    rank: Option<u32>,
+) -> Result<OptimalConfig> {
+    let mut config = plan(model_params, vram_gb, ft_method.into())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+
+    // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
+    // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
+    if let Some(user_rank) = rank {
+        config.rank = user_rank;
+        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
+                                               // Keep the LR consistent with the (now overridden) rank.
+        config.learning_rate = recommended_learning_rate(config.method, user_rank);
+    }
+    // PMAT-7240: a recipe's `training.lora_alpha` wins over the planner's and the 2 x rank rule.
+    config.alpha = super::train_recipe_lora::alpha_or(config.alpha);
+
+    Ok(config)
+}
+
 /// Run the finetune command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -1368,17 +1394,7 @@ pub(crate) fn run(
 
     let model_params = resolve_model_params(model_size, model_path)?;
 
-    let mut config = plan(model_params, vram_gb, ft_method.into())
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
-
-    // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
-    // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
-    if let Some(user_rank) = rank {
-        config.rank = user_rank;
-        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
-                                               // Keep the LR consistent with the (now overridden) rank.
-        config.learning_rate = recommended_learning_rate(config.method, user_rank);
-    }
+    let config = resolve_run_config(model_params, vram_gb, ft_method, rank)?;
 
     // FALSIFY-QLORA-RANK-AWARE-LR: resolve the effective learning rate. An
     // explicit --learning-rate wins; otherwise use the rank-aware recommendation
@@ -1477,7 +1493,9 @@ pub(crate) fn preflight_recipe(
     if !plan_only {
         recipe.require_inputs()?;
     }
-    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    let mut not_applied: Vec<&'static str> = FINETUNE_NOT_APPLIED.to_vec();
+    not_applied.extend_from_slice(recipe.lora.not_applied());
+    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), &not_applied);
     Ok((recipe, receipt))
 }
 
@@ -1577,6 +1595,7 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
     }
     let output_buf = recipe_output_path(flags, &recipe);
     let output = output_buf.as_deref();
+    let _lora = super::train_recipe_lora::activate(&recipe.lora);
     run(
         Some(&recipe.base),
         recipe.method.as_str(),

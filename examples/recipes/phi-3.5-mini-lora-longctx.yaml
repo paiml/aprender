@@ -1,0 +1,31 @@
+# apr-recipe-v1 (contracts/apr-recipe-v1.yaml): Phi-3.5 mini, 16-bit LoRA at a 4096-token
+# context with a higher rank, and the LoRA/optimiser keys written out with their defaults.
+#
+#   apr finetune --recipe examples/recipes/phi-3.5-mini-lora-longctx.yaml --dry-run
+#
+# --dry-run validates the recipe and prints it fully resolved, without opening a model or the
+# data. A real run needs the base, data and eval files below; relative paths resolve against
+# this file's directory. lora_dropout, weight_decay and target_modules are validated and
+# recorded but not yet read by the training loop; at these default values nothing is lost.
+recipe: apr-recipe-v1
+name: phi-3.5-mini-lora-longctx
+base: models/phi-3.5-mini-instruct.apr
+model_size: 3.8B
+method: lora
+data:
+  train: data/longdoc-train.jsonl
+eval:
+  heldout: data/longdoc-heldout.jsonl
+seed: 3407
+training:
+  rank: 32
+  lora_alpha: 64
+  lora_dropout: 0.0
+  target_modules: [q_proj, v_proj]
+  warmup_fraction: 0.03
+  weight_decay: 0.01
+  epochs: 2
+  learning_rate: 0.0001
+  max_seq_len: 4096
+output:
+  dir: out/phi-3.5-mini-lora-longctx

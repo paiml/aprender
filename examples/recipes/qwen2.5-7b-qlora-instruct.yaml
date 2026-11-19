@@ -1,0 +1,26 @@
+# apr-recipe-v1 (contracts/apr-recipe-v1.yaml): Qwen2.5 7B instruct, 4-bit QLoRA instruction tuning.
+#
+#   apr finetune --recipe examples/recipes/qwen2.5-7b-qlora-instruct.yaml --dry-run
+#
+# --dry-run validates the recipe and prints it fully resolved, without opening a model or the
+# data. A real run needs the base, data and eval files below; relative paths resolve against
+# this file's directory.
+recipe: apr-recipe-v1
+name: qwen2.5-7b-qlora-instruct
+base: models/qwen2.5-7b-instruct.apr
+model_size: 7B
+method: qlora
+data:
+  train: data/instruct-train.jsonl
+eval:
+  heldout: data/instruct-heldout.jsonl
+seed: 3407
+training:
+  rank: 16
+  lora_alpha: 16
+  warmup_fraction: 0.03
+  epochs: 2
+  learning_rate: 0.0002
+  max_seq_len: 2048
+output:
+  dir: out/qwen2.5-7b-qlora-instruct

@@ -316,3 +316,37 @@ fn recipe_epochs_default_and_nf4_follow_the_method() {
     assert_eq!(recipe_epochs_and_nf4(&load(&no_epochs)), (3, true));
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// FALSIFY-APR-RECIPE-007, run path: with a recipe's `lora_alpha: 32` active, the config `run`
+/// trains with (`resolve_run_config`, the only config `run` builds) carries alpha 32 and the
+/// adapter metadata `run` writes (`write_adapter_metadata`) reads back 32. Without the recipe
+/// key the planner's 2 x rank stands, so the test tells the two apart.
+#[test]
+fn recipe_alpha_reaches_the_config_the_run_trains_and_saves_with() {
+    use crate::commands::train_recipe::TrainRecipe;
+    let dir = scratch("alpha-run");
+    let load = |body: &str| {
+        let path = write_recipe(&dir, body);
+        TrainRecipe::load(&path).expect("valid recipe")
+    };
+    let with = load(&VALID.replace("  epochs: 1\n", "  epochs: 1\n  lora_alpha: 32\n"));
+    let without = load(VALID);
+    let saved_alpha = |recipe: &TrainRecipe| {
+        let _active = crate::commands::train_recipe_lora::activate(&recipe.lora);
+        let config =
+            resolve_run_config(1_000_000_000, 16.0, FinetuneMethod::LoRA, Some(8)).expect("plans");
+        let mut writer = aprender::serialization::apr::AprWriter::new();
+        write_adapter_metadata(&mut writer, Path::new("m.apr"), &config, 1, 2e-4, None);
+        let bytes = writer.to_bytes().expect("serialises");
+        let reader =
+            aprender::serialization::apr::AprReader::from_bytes(bytes).expect("reads back");
+        let meta = reader.get_metadata("lora_alpha").expect("lora_alpha saved");
+        (config.alpha, meta.as_f64().expect("number"))
+    };
+    assert_eq!(saved_alpha(&with), (32.0, 32.0));
+    assert_eq!(saved_alpha(&without), (16.0, 16.0), "rank 8 -> 2 x rank");
+    // The guard cleared the recipe: a later run sees no recipe alpha.
+    let c = resolve_run_config(1_000_000_000, 16.0, FinetuneMethod::LoRA, Some(8)).expect("plans");
+    assert_eq!(c.alpha, 16.0);
+    std::fs::remove_dir_all(&dir).ok();
+}

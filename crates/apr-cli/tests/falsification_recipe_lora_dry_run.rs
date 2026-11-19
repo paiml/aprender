@@ -1,0 +1,165 @@
+// Integration tests: unwrap()/expect() are idiomatic here.
+#![allow(clippy::disallowed_methods, clippy::unwrap_used)]
+
+//! End-to-end falsification of `apr finetune --recipe` LoRA keys and `--dry-run` (an alias of `--plan`)
+//! (PMAT-7240; contracts/apr-recipe-v1.yaml, FALSIFY-APR-RECIPE-006..009).
+//!
+//! Every test drives the real `apr` binary on a recipe whose input files do not exist.
+
+use assert_cmd::Command;
+use std::path::PathBuf;
+
+const RECIPE: &str = "\
+recipe: apr-recipe-v1
+name: e2e
+base: models/none.apr
+model_size: 1B
+method: lora
+data:
+  train: data/t.jsonl
+eval:
+  heldout: data/h.jsonl
+seed: 7
+training:
+  rank: 8
+";
+
+fn write_recipe(tag: &str, body: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("apr-recipe-e2e-{tag}-{}", std::process::id()));
+    std::fs::remove_dir_all(&dir).ok();
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, body).unwrap();
+    path
+}
+
+fn apr(args: &[&str]) -> std::process::Output {
+    Command::cargo_bin("apr")
+        .unwrap()
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+/// The first JSON object in a command's stdout (a header line may precede it).
+fn first_json(stdout: &[u8]) -> serde_json::Value {
+    let text = String::from_utf8_lossy(stdout);
+    let start = text.find('{').expect("a JSON object on stdout");
+    serde_json::Deserializer::from_str(&text[start..])
+        .into_iter::<serde_json::Value>()
+        .next()
+        .expect("one value")
+        .expect("valid JSON")
+}
+
+/// FALSIFY-APR-RECIPE-007 (plan path): lora_alpha 32 shows as recommended_alpha 32.
+/// The run path has its own falsifier, `recipe_alpha_reaches_the_config_the_run_trains_and_saves_with`.
+#[test]
+fn recipe_lora_alpha_reaches_the_plan() {
+    let with = write_recipe("alpha32", &format!("{RECIPE}  lora_alpha: 32\n"));
+    let out = apr(&[
+        "finetune",
+        "--recipe",
+        with.to_str().unwrap(),
+        "--plan",
+        "--json",
+    ]);
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(first_json(&out.stdout)["recommended_alpha"], 32.0);
+    let without = write_recipe("alphadef", RECIPE);
+    let out = apr(&[
+        "finetune",
+        "--recipe",
+        without.to_str().unwrap(),
+        "--plan",
+        "--json",
+    ]);
+    assert!(out.status.success());
+    assert_ne!(first_json(&out.stdout)["recommended_alpha"], 32.0);
+}
+
+/// FALSIFY-APR-RECIPE-008: `--dry-run` is `--plan`: same exit code, same stdout, with no
+/// model, data or eval file on disk; refusals are the same (exit 5).
+#[test]
+fn dry_run_is_the_plan_flag() {
+    let path = write_recipe("dry", &format!("{RECIPE}  lora_alpha: 32\n"));
+    let p = path.to_str().unwrap();
+    let plan = apr(&["finetune", "--recipe", p, "--plan", "--json"]);
+    let dry = apr(&["finetune", "--recipe", p, "--dry-run", "--json"]);
+    assert_eq!(
+        dry.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&dry.stderr)
+    );
+    assert_eq!(plan.status.code(), dry.status.code());
+    assert_eq!(
+        plan.stdout, dry.stdout,
+        "--dry-run must print what --plan prints"
+    );
+    for (tag, body, needle) in [
+        ("unk", format!("{RECIPE}  lora_alfa: 32\n"), "lora_alfa"),
+        (
+            "bad",
+            format!("{RECIPE}  lora_alpha: 0\n"),
+            "training.lora_alpha",
+        ),
+    ] {
+        let path = write_recipe(tag, &body);
+        let p = path.to_str().unwrap();
+        for flag in ["--plan", "--dry-run"] {
+            let out = apr(&["finetune", "--recipe", p, flag]);
+            assert_eq!(out.status.code(), Some(5), "{tag} {flag}");
+            assert!(
+                String::from_utf8_lossy(&out.stderr).contains(needle),
+                "{tag} {flag}"
+            );
+        }
+    }
+}
+
+/// FALSIFY-APR-RECIPE-007: a field validated but not applied is reported, never silent.
+#[test]
+fn validated_but_not_applied_fields_are_reported() {
+    let path = write_recipe(
+        "na",
+        &format!("{RECIPE}  lora_dropout: 0.1\n  weight_decay: 0.0\n"),
+    );
+    let out = apr(&["finetune", "--recipe", path.to_str().unwrap(), "--dry-run"]);
+    assert_eq!(out.status.code(), Some(0));
+    let text = String::from_utf8_lossy(&out.stderr);
+    assert!(text.contains("training.lora_dropout"), "{text}");
+    assert!(text.contains("training.weight_decay"), "{text}");
+    let path = write_recipe("na0", RECIPE);
+    let out = apr(&["finetune", "--recipe", path.to_str().unwrap(), "--dry-run"]);
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("training.lora_dropout"));
+}
+
+/// FALSIFY-APR-RECIPE-009: every shipped example recipe passes `--dry-run` through the binary.
+#[test]
+fn every_example_recipe_passes_dry_run() {
+    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../examples/recipes");
+    let mut n = 0;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().is_some_and(|x| x == "yaml") {
+            let out = apr(&["finetune", "--recipe", path.to_str().unwrap(), "--dry-run"]);
+            assert_eq!(
+                out.status.code(),
+                Some(0),
+                "{}: {}",
+                path.display(),
+                String::from_utf8_lossy(&out.stderr)
+            );
+            n += 1;
+        }
+    }
+    assert!(
+        n >= 7,
+        "expected tiny plus six notebook examples, found {n}"
+    );
+}

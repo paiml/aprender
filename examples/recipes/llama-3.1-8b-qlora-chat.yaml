@@ -1,0 +1,27 @@
+# apr-recipe-v1 (contracts/apr-recipe-v1.yaml): Llama 3.1 8B, 4-bit QLoRA on a chat-format JSONL
+# (the shape of the Unsloth "conversational" notebook).
+#
+#   apr finetune --recipe examples/recipes/llama-3.1-8b-qlora-chat.yaml --dry-run
+#
+# --dry-run validates the recipe and prints it fully resolved, without opening a model or the
+# data. A real run needs the base, data and eval files below; relative paths resolve against
+# this file's directory. method: qlora loads the base NF4-quantised.
+recipe: apr-recipe-v1
+name: llama-3.1-8b-qlora-chat
+base: models/llama-3.1-8b-instruct.apr
+model_size: 8B
+method: qlora
+data:
+  train: data/chat-train.jsonl
+eval:
+  heldout: data/chat-heldout.jsonl
+seed: 3407
+training:
+  rank: 16
+  lora_alpha: 16
+  warmup_fraction: 0.05
+  epochs: 1
+  learning_rate: 0.0002
+  max_seq_len: 2048
+output:
+  dir: out/llama-3.1-8b-qlora-chat

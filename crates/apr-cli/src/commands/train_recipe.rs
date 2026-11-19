@@ -9,6 +9,7 @@
 //! This module is the schema and its validator only. The recipe is lowered
 //! onto the existing `apr finetune` arguments by `finetune::run_from_recipe`.
 
+use super::train_recipe_lora::{RawLoraFields, RecipeLora};
 use crate::error::{CliError, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -99,6 +100,24 @@ struct RawTraining {
     epochs: Option<u32>,
     learning_rate: Option<f64>,
     max_seq_len: Option<usize>,
+    lora_alpha: Option<f64>,
+    lora_dropout: Option<f64>,
+    target_modules: Option<Vec<String>>,
+    warmup_fraction: Option<f64>,
+    weight_decay: Option<f64>,
+}
+
+impl RawTraining {
+    /// The PMAT-7240 keys, handed to `train_recipe_lora` for validation.
+    fn lora_fields(&self) -> RawLoraFields {
+        RawLoraFields {
+            lora_alpha: self.lora_alpha,
+            lora_dropout: self.lora_dropout,
+            target_modules: self.target_modules.clone(),
+            warmup_fraction: self.warmup_fraction,
+            weight_decay: self.weight_decay,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -135,6 +154,8 @@ pub(crate) struct TrainRecipe {
     pub(crate) epochs: Option<u32>,
     pub(crate) learning_rate: Option<f64>,
     pub(crate) max_seq_len: Option<usize>,
+    /// LoRA alpha, dropout, target modules, warmup and weight decay (PMAT-7240).
+    pub(crate) lora: RecipeLora,
     pub(crate) output_dir: Option<PathBuf>,
     /// sha256 of the recipe file's bytes. The eval block is part of it.
     pub(crate) recipe_sha256: String,
@@ -494,6 +515,7 @@ impl TrainRecipe {
         let seed = check_seed(raw.seed, &mut bad);
         let teacher = check_teacher(raw.teacher.as_ref(), method, base_dir, &mut bad);
         check_training(&raw.training, &mut bad);
+        let lora = RecipeLora::check(&raw.training.lora_fields(), &mut bad);
         let output_dir = raw.output.as_ref().map(|o| {
             required(
                 o.dir.as_ref(),
@@ -521,6 +543,7 @@ impl TrainRecipe {
             epochs: raw.training.epochs,
             learning_rate: raw.training.learning_rate,
             max_seq_len: raw.training.max_seq_len,
+            lora,
             output_dir: output_dir.map(|d| base_dir.join(d)),
             recipe_sha256: sha256_bytes(src.as_bytes()),
         })
