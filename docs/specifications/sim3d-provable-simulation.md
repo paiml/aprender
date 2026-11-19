@@ -52,17 +52,18 @@ is the existing M/M/1 experiment (seed 42, arrival rate 5.0, service rate 6.0) i
 ### 2.2 Verification line
 
 `pv lint --gate sigma --gate shapes` is green on the valid M/M/1 spec. The planted
-falsifiers each go red, naming the path: a missing seed, a spec with no invariants, an
-empty spec, an extra key, a unit outside the closed set. The case table is
+falsifiers each go red, naming the path: a missing seed, a spec with no invariants, a law naming an
+undeclared invariant, an empty spec, an extra key, a unit outside the closed set. The case table is
 `crates/aprender-contracts-cli/tests/sim3d_spec.rs`, which grades each fixture under
 `tests/fixtures/ont/sim3d/` against the real contract.
 
 ### 2.3 What the shape cannot say
 
-1. A law's `invariant` id is well formed, but that an invariant with that id is declared is
-   a join, and the SHACL subset has no join. pv does not check it; the case-table harness does
-   (`undeclared_invariant_refs`, fixture `invalid-law-undeclared-invariant`). Moving it into
-   pv belongs to the typed-invariants row.
+1. That a law's `invariant` id is declared is a join, which the SHACL subset cannot state. pv does it in the
+   json extractor instead: the contract's vocabulary `refs` maps `invariant` to the root's `invariants`, the
+   extractor points the law at the invariant node with that `id` (or at an untyped dangling node), and the
+   shape asks `class: sim:Invariant`. `pv lint --gate sigma --gate shapes` therefore goes red, naming
+   `ont:sim/invariant`, on `invalid-law-undeclared-invariant`; no test helper does the join.
 2. A positive-number bound (such as a maximum horizon) needs `minInclusive` and
    `maxInclusive`, which the subset lacks. The horizon is checked by its lexical form only.
 3. A spec that conforms is well formed, not correct. Nothing in phase 0 runs a simulation.
@@ -111,6 +112,5 @@ one ticket with one owner.
 ## 6. Not done in this change
 
 - The `check-symbolic` grammar extension (aprender#7253, stretch).
-- Cross-checking that a law's invariant id is declared in the same spec.
 - Positive-number and range bounds, pending SHACL subset support.
 - The kernel and its receipts (phase-1 rows aprender#7246 and aprender#7251).

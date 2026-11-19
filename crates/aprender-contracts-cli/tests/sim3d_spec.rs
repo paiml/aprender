@@ -99,6 +99,18 @@ impl Run {
 
 /// Judge `fixture` on the real contract `contract_file` (shape id = its stem).
 fn judge(contract_file: &str, fixture: &str) -> Run {
+    judge_text(contract_file, &canonical_json(fixture))
+}
+
+/// Judge an in-memory document (a mutated fixture) the same way.
+fn judge_value(contract_file: &str, doc: &Value) -> Run {
+    judge_text(
+        contract_file,
+        &serde_json::to_string(&canonical(doc)).expect("serialises"),
+    )
+}
+
+fn judge_text(contract_file: &str, doc: &str) -> Run {
     let shape = contract_file.trim_end_matches(".yaml");
     let contract = std::fs::read_to_string(repo_root().join("contracts").join(contract_file))
         .expect("contract readable");
@@ -114,7 +126,7 @@ fn judge(contract_file: &str, fixture: &str) -> Run {
         format!("{contract}\nentity:\n  type: json\n  ref: data/doc.json\n"),
     )
     .expect("write contract");
-    std::fs::write(dir.path().join("data/doc.json"), canonical_json(fixture)).expect("write doc");
+    std::fs::write(dir.path().join("data/doc.json"), doc).expect("write doc");
     let out = Command::new(pv_bin())
         .args(["lint"])
         .arg(dir.path().join("contracts"))
@@ -126,25 +138,6 @@ fn judge(contract_file: &str, fixture: &str) -> Run {
         stdout: String::from_utf8_lossy(&out.stdout).into_owned(),
         stderr: String::from_utf8_lossy(&out.stderr).into_owned(),
     }
-}
-
-/// The join the closed shape cannot say (SHACL subset has no join): every law's `invariant` id must be declared in
-/// `invariants[].id`. Returns the undeclared ids, in law order; empty means the join holds.
-fn undeclared_invariant_refs(spec: &Value) -> Vec<String> {
-    let declared: Vec<&str> = spec["invariants"]
-        .as_array()
-        .map(|a| a.iter().filter_map(|i| i["id"].as_str()).collect())
-        .unwrap_or_default();
-    spec["laws"]
-        .as_array()
-        .map(|a| {
-            a.iter()
-                .filter_map(|l| l["invariant"].as_str())
-                .filter(|id| !declared.contains(id))
-                .map(str::to_owned)
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 fn fixture_value(name: &str) -> Value {
@@ -197,32 +190,45 @@ fn assert_refused(contract: &str, rows: &[(&str, &str, &str)]) {
 fn the_mm1_experiment_and_the_load_balancer_specs_conform() {
     assert_pass(SPEC, "mm1-littles-law.sim.yaml");
     assert_pass(SPEC, "lb-round-robin.sim.yaml");
-    for f in ["mm1-littles-law.sim.yaml", "lb-round-robin.sim.yaml"] {
-        assert_eq!(
-            undeclared_invariant_refs(&fixture_value(f)),
-            Vec::<String>::new(),
-            "{f}: every law names a declared invariant"
-        );
-    }
 }
 
 #[test]
-fn a_law_naming_an_undeclared_invariant_goes_red() {
-    // pv's closed shape passes this fixture (the id is well formed); the join is what refuses it.
-    assert_pass(SPEC, "invalid-law-undeclared-invariant.sim.yaml");
-    assert_eq!(
-        undeclared_invariant_refs(&fixture_value("invalid-law-undeclared-invariant.sim.yaml")),
-        vec!["INV-999".to_owned()]
+fn a_law_naming_an_undeclared_invariant_is_refused_by_pv() {
+    // pv itself refuses it: the extractor resolves the id against `invariants[].id`, the shape asks for the class.
+    assert_refused(
+        SPEC,
+        &[(
+            "invalid-law-undeclared-invariant.sim.yaml",
+            "class",
+            "ont:sim/invariant",
+        )],
     );
-    // inline mutants: declaring the id clears it, a second dangling law is reported too
-    let ok = serde_json::json!({"laws":[{"invariant":"A"}],"invariants":[{"id":"A"}]});
-    assert!(undeclared_invariant_refs(&ok).is_empty());
-    let two =
-        serde_json::json!({"laws":[{"invariant":"A"},{"invariant":"B"}],"invariants":[{"id":"A"}]});
-    assert_eq!(undeclared_invariant_refs(&two), vec!["B".to_owned()]);
-    // no invariants at all: every reference dangles
-    let none = serde_json::json!({"laws":[{"invariant":"A"}]});
-    assert_eq!(undeclared_invariant_refs(&none), vec!["A".to_owned()]);
+    // declaring the id clears it: the same spec with the invariant added conforms
+    let mut spec = fixture_value("invalid-law-undeclared-invariant.sim.yaml");
+    let mut extra = spec["invariants"][0].clone();
+    extra["id"] = serde_json::json!("INV-999");
+    spec["invariants"]
+        .as_array_mut()
+        .expect("invariants")
+        .push(extra);
+    let r = judge_value(SPEC, &spec);
+    assert_eq!(r.code, 0, "a declared id must conform\n{}", r.all());
+    // a second dangling law is refused too: remove INV-999 and point two laws at nothing
+    let mut two = spec.clone();
+    two["invariants"].as_array_mut().expect("invariants").pop();
+    let laws = two["laws"].as_array_mut().expect("laws");
+    let mut again = laws[0].clone();
+    again["id"] = serde_json::json!("LAW-998");
+    again["invariant"] = serde_json::json!("INV-998");
+    laws.push(again);
+    let r = judge_value(SPEC, &two);
+    assert_eq!(r.code, 1, "two dangling laws\n{}", r.all());
+    let n = r
+        .errors()
+        .iter()
+        .filter(|m| m.contains("ont:sim/invariant"))
+        .count();
+    assert!(n >= 2, "both dangling laws are named, got {n}\n{}", r.all());
 }
 
 #[test]
