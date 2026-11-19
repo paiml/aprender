@@ -478,7 +478,21 @@ const GUARD_STEP_KEYS: [&str; 3] = ["name", "run", "timeout-minutes"];
 const UNJUDGEABLE_RUN: &str = "<run text this guard cannot judge: `${{` or a trailing backslash>";
 
 fn run_text_judgeable(run: &str) -> bool {
-    !run.contains("${{") && !run.lines().any(|l| l.trim_end().ends_with('\\'))
+    // Bash's blanks are ASCII space and tab only. Rust's `trim` also strips U+00A0, U+3000, \x0b, \x0c and \r, which bash
+    // reads as word characters, so a line this reader drops as a `#` comment could be live bash. So the run text may hold
+    // printable ASCII, newline and tab and nothing else, and only space and tab are ever trimmed.
+    run.chars()
+        .all(|c| c == '\n' || c == '\t' || c == ' ' || c.is_ascii_graphic())
+        && !run.contains("${{")
+        && !run.lines().any(|l| blank_trim_end(l).ends_with('\\'))
+}
+
+fn is_blank(c: char) -> bool {
+    c == ' ' || c == '\t'
+}
+
+fn blank_trim_end(l: &str) -> &str {
+    l.trim_end_matches(is_blank)
 }
 
 /// A `run` script as lines: blank and `#` comment lines dropped, each line trimmed.
@@ -487,7 +501,7 @@ fn logical_lines(run: &str) -> Vec<String> {
         return vec![UNJUDGEABLE_RUN.to_string()];
     }
     run.lines()
-        .map(str::trim)
+        .map(|l| l.trim_matches(is_blank))
         .filter(|t| !t.is_empty() && !t.starts_with('#'))
         .map(str::to_string)
         .collect()
@@ -675,34 +689,52 @@ fn on_block(top: &Mapping) -> Option<Mapping> {
         .and_then(|(_, v)| v.as_mapping().cloned())
 }
 
-/// The guard job only runs when the workflow does: push (branches and `v*` tags, no path filter), pull_request with
-/// `ready_for_review` (a draft skips the guard and the gate, so marking it ready must start the full run) and no path
-/// filter, and merge_group.
+/// The whole `on:` block, pinned. The guard job only runs when the workflow does, so any filter (branches, tags, paths,
+/// ignore lists), a narrowed `types` (which replaces GitHub's default opened/synchronize/reopened), a `merge_group` with
+/// a body, or another trigger changes when the guard runs. The block is compared, normalised (maps and lists sorted, so
+/// order and flow-versus-block style do not matter), against one expected value.
+const EXPECTED_ON: &str = "push:
+  branches: [main, master]
+  tags: ['v*']
+pull_request:
+  branches: [main, master]
+  types: [opened, synchronize, reopened, ready_for_review]
+merge_group:
+workflow_dispatch:
+";
+
+fn norm(v: &Value) -> String {
+    match v {
+        Value::Null => "null".into(),
+        Value::Bool(b) => format!("b:{b}"),
+        Value::Number(n) => format!("n:{n}"),
+        Value::String(s) => format!("s:{s:?}"),
+        Value::Sequence(s) => {
+            let mut x: Vec<String> = s.iter().map(norm).collect();
+            x.sort();
+            format!("[{}]", x.join(","))
+        }
+        Value::Mapping(m) => {
+            let mut x: Vec<String> = m
+                .iter()
+                .map(|(k, v)| format!("{}=>{}", norm(k), norm(v)))
+                .collect();
+            x.sort();
+            format!("{{{}}}", x.join(","))
+        }
+        Value::Tagged(_) => "<tagged>".into(),
+    }
+}
+
 fn check_triggers(top: &Mapping, why: &mut Vec<String>) {
     let Some(on) = on_block(top) else {
         return why.push("wiring: `on` is missing or not a mapping".into());
     };
-    let filtered = |m: &Value| {
-        m.as_mapping().is_some_and(|m| {
-            ["paths", "paths-ignore"]
-                .iter()
-                .any(|f| key(m, f).is_some())
-        })
-    };
-    let push = key(&on, "push");
-    let prr = key(&on, "pull_request");
-    let ready = prr
-        .as_ref()
-        .and_then(Value::as_mapping)
-        .and_then(|m| key(m, "types"))
-        .and_then(|t| t.as_sequence().cloned())
-        .is_some_and(|t| t.iter().any(|x| x.as_str() == Some("ready_for_review")));
-    if push.as_ref().is_none_or(filtered)
-        || prr.as_ref().is_none_or(filtered)
-        || !ready
-        || key(&on, "merge_group").is_none()
-    {
-        why.push("wiring: `on` lacks an unfiltered push, pull_request with ready_for_review, or merge_group".into());
+    let want: Value = serde_yaml::from_str(EXPECTED_ON).expect("expected on block parses");
+    if norm(&Value::Mapping(on)) != norm(&want) {
+        why.push(
+            "wiring: `on` lacks the exact pinned trigger block (push main/master + v* tags, pull_request main/master with opened/synchronize/reopened/ready_for_review, merge_group, workflow_dispatch; no filter, no other trigger)".into(),
+        );
     }
 }
 
@@ -754,6 +786,15 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     {
         why.push(format!(
             "wiring: {JOB} has an earlier step outside the allowlist (it could write GITHUB_ENV or GITHUB_PATH)"
+        ));
+    }
+    // The guard must test the checked-out tree of the run: `actions/checkout@v7` (no `with`, which earlier_step_ok
+    // enforces) has to come before the guard step in this same job, or a stale warm clone is what gets tested.
+    if !steps[..guard_at].iter().any(
+        |s| matches!(s, Value::Mapping(m) if key(m, "uses").as_ref().and_then(Value::as_str) == Some("actions/checkout@v7")),
+    ) {
+        why.push(format!(
+            "wiring: {JOB} has no actions/checkout@v7 step before the guard step (it would test a stale workspace)"
         ));
     }
     if !job
@@ -860,6 +901,41 @@ fn judge(dir: &Path) -> Result<usize, Vec<String>> {
 
 // ---------------------------------------------------------------------------------------------
 // tests
+
+#[test]
+fn only_ascii_printable_newline_and_tab_are_judgeable() {
+    for bad in [
+        "\u{a0}#x",
+        "\u{3000}#x",
+        "\u{b}#x",
+        "\u{c}#x",
+        "a\r\nb",
+        "\u{1}",
+        "caf\u{e9}",
+    ] {
+        assert_eq!(
+            logical_lines(bad),
+            vec![UNJUDGEABLE_RUN.to_string()],
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        logical_lines("\t # c\n  a b\t\n\n"),
+        vec!["a b".to_string()]
+    );
+}
+
+#[test]
+fn trigger_order_and_style_do_not_matter() {
+    let ci = real_mut(
+        "branches: [main, master]\n    # Drafts",
+        "branches: [master, main]\n    # Drafts",
+    );
+    let d = dir_with(&[("ci.yml", &ci)]);
+    if let Err(w) = judge(d.path()) {
+        assert!(!w.iter().any(|x| x.contains("`on` lacks")), "{w:?}");
+    }
+}
 
 fn ci_text() -> String {
     fs::read_to_string(repo().join(".github/workflows/ci.yml")).unwrap()
@@ -1359,6 +1435,18 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("on-no-push", real_mut("  push:\n    branches: [main, master]", "  pushx:\n    branches: [main, master]"), "`on` lacks"),
         ("on-push-paths", real_mut("    branches: [main, master]\n    #", "    branches: [main, master]\n    paths: [nonexistent]\n    #"), "`on` lacks"),
         ("on-no-merge-group", real_mut("  merge_group:\n", "  merge_groupx:\n"), "`on` lacks"),
+        ("nbsp-comment-in-guard", job_mut(job, "set -euo pipefail", "set -euo pipefail\n          \u{a0}#() { :; }; exit 0"), "no unmasked step"),
+        ("ideographic-space-comment-in-guard", job_mut(job, "set -euo pipefail", "set -euo pipefail\n          \u{3000}#() { :; }; exit 0"), "no unmasked step"),
+        ("nbsp-comment-earlier-step", job_mut(job, "        run: bash scripts/ci_mg_reuse.sh --self-test", "        run: |\n          \u{a0}#() { :; }; echo SHELLOPTS=noexec >> \"$GITHUB_ENV\"\n          bash scripts/ci_mg_reuse.sh --self-test"), "earlier step"),
+        ("nbsp-comment-in-gate", job_mut("gate", "set -euo pipefail", "set -euo pipefail\n          \u{a0}#() { :; }; exit 0"), "does not enforce"),
+        ("nbsp-before-bracket-in-gate", job_mut("gate", "          [ \"${DRAFT:-}\" != true ]", "          \u{a0}[ \"${DRAFT:-}\" != true ]"), "does not enforce"),
+        ("on-push-branches-narrowed", real_mut("  push:\n    branches: [main, master]", "  push:\n    branches: [nonexistent]"), "`on` lacks"),
+        ("on-push-no-tags", real_mut("    tags: ['v*']\n", ""), "`on` lacks"),
+        ("on-pr-types-narrowed", real_mut("types: [opened, synchronize, reopened, ready_for_review]", "types: [ready_for_review]"), "`on` lacks"),
+        ("on-pr-branches-ignore", real_mut("  pull_request:\n    branches: [main, master]", "  pull_request:\n    branches-ignore: ['**']"), "`on` lacks"),
+        ("on-merge-group-types-empty", real_mut("  merge_group:\n", "  merge_group:\n    types: []\n"), "`on` lacks"),
+        ("on-extra-trigger", real_mut("  workflow_dispatch:\n", "  workflow_dispatch:\n  schedule:\n    - cron: '0 0 * * *'\n"), "`on` lacks"),
+        ("no-checkout-before-guard", job_mut(job, "      - uses: actions/checkout@v7\n", ""), "actions/checkout@v7"),
         ("gate-step-if-false", job_mut("gate", "      - name: Check required sections", "      - if: false\n        name: Check required sections"), "does not enforce"),
     ];
     for (n, text, needle) in cases {

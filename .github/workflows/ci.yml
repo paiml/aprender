@@ -1014,7 +1014,7 @@ jobs:
           # sovereign-ci gate), workspace-test, determinism-compare. gpu-quick and
           # cuda-unit were never in the gate; Q6 quorum, C324 moved them to LAB
           # (gpu-lab-nightly.yml), so no job of this workflow runs them.
-          # workspace-test is its own job now (three shard jobs + the Σ fan-in).
+          # workspace-test is its own job now (three shard jobs + the sum fan-in).
           [ "$WT" = success ] || { echo "workspace-test failed: $WT"; exit 1; }
           [ "$MST" = success ] || { echo "mg-reuse-self-test failed: $MST"; exit 1; }
           # --- PR-LIGHT-VERDICT-BEGIN (#5955, Noah 15:09Z; scripts/ci_mg_reuse.sh --self-test runs this block) ---
