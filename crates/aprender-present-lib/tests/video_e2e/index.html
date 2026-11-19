@@ -5,7 +5,11 @@
 <script type="module">
 import init, * as m from './video_e2e.js';
 await init();
-Object.assign(window, m);
+window.e2e = new m.E2e();
+window.layoutOk = () => {
+  const r = [...document.querySelectorAll('video')].map(v => v.getBoundingClientRect()).sort((a, b) => a.y - b.y || a.x - b.x);
+  return r.length === 3 && r[0].y === r[1].y && r[1].x >= r[0].right && r[2].y >= r[0].bottom && r[2].width > 0;
+};
 window.ready = true;
 </script>
 </body></html>
