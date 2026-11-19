@@ -115,7 +115,7 @@ BEGIN { bsind = -1 }
   if (isdash) { bsr = line; sub(/^ *-[ \t]*/, "", bsr); kcol = length(line) - length(bsr) }
   if (line ~ /(:|-)[ \t]+[|>][-+0-9]*$/) bsind = (isdash && bsr ~ /^[|>]/) ? ind : kcol
   isbs = (bsind >= 0)
-  if (isbs && ind > 0 && inon) onbs = onbs + 1 # a block scalar under on: can spell a trigger name as data
+  if (isbs && ((ind > 0 && inon) || line ~ /^[\042\047]?on[\042\047]?[ \t]*:/)) onbs = onbs + 1 # a block scalar under on: can spell a trigger name as data
   if (line ~ /(^[ \t]*(-[ \t]+)*|:[ \t]+)[!&*]/) tag = tag + 1
   else if (noq ~ /[{[,][ \t]*[!&*]/ || noq ~ /:[ \t]*[!&*]/) tag = tag + 1 # tag, anchor or alias inside a flow collection
   if (line ~ /^[ \t]*(-[ \t]+)*\?([ \t]|$)/) qkey = qkey + 1
@@ -419,6 +419,9 @@ EOF
   printf 'name: x\non:\n  workflow_dispatch: # \r  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r27.yml"; expect_unj "bare CR hiding schedule" "$t/r27.yml"
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - timeout-minutes: 10\n        run: |\n          echo hi\r      - run: echo UNTIMED\n' > "$t/r28.yml"; expect_unj "bare CR inside a block scalar" "$t/r28.yml"
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10 # \342\200\250      - run: echo UNTIMED\n' > "$t/r29.yml"; expect_unj "Unicode LS as a line break" "$t/r29.yml"
+
+  printf 'name: x\non: |-\n  schedule\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r30.yml"; expect_unj "block scalar on the on: line itself" "$t/r30.yml"
+  printf 'name: x\n"on": >-\n  schedule\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r31.yml"; expect_unj "block scalar on a quoted on key" "$t/r31.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
