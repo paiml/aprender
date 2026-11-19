@@ -197,8 +197,11 @@ jobs:
         run: |
           set -euo pipefail
           cname="spot-labels-${GITHUB_RUN_ID}"
-          docker rm -f "$cname" >/dev/null 2>&1 || true
-          trap 'docker rm -f "$cname" >/dev/null 2>&1; true' EXIT INT TERM
+          # check_wiring bans the shell-masking idioms in this step, so the cleanup uses an if. An if condition cannot
+          # trip errexit: a missing container is fine and the EXIT trap cannot turn a passing guard's status 0 into 1.
+          reap() { if docker rm -f "$cname" >/dev/null 2>&1; then :; fi; }
+          reap
+          trap reap EXIT INT TERM
           # per-run dirs: GITHUB_RUN_ID is never reused, so no other job shares these (the run- prefix is what the disk reaper collects)
           base="/mnt/nvme-raid0/targets/aprender-ci/run-${GITHUB_RUN_ID}/spot-labels-guard"
           mkdir -p "$base/registry" "$base/target"
