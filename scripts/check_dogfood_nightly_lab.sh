@@ -64,7 +64,9 @@ function shape_ok(r,   v, k, rest) { # one line is a blank, a comment, "key:", "
   if (rest ~ /^[A-Za-z0-9_.-]+:/) v = substr(rest, index(rest, ":") + 1)
   else if (rest ~ /^"[^"\\]*" *:/) { match(rest, /^"[^"\\]*" *:/); v = substr(rest, RLENGTH + 1) }
   else if (rest ~ /^\047[^\047]*\047 *:/) { match(rest, /^\047[^\047]*\047 *:/); v = substr(rest, RLENGTH + 1) }
-  else v = " " rest # a bare sequence item
+  else if (rest == "-") return 1 # an empty sequence item
+  else if (substr(r, 1, RLENGTH) ~ /-/) v = " " rest # a bare sequence item "- V"
+  else return 0 # a bare line with no key and no dash: a plain-scalar continuation or a next-line block scalar header
   if (v == "") return 1
   if (v !~ /^ /) return 0
   sub(/^ +/, "", v)
@@ -422,6 +424,9 @@ EOF
 
   printf 'name: x\non: |-\n  schedule\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r30.yml"; expect_unj "block scalar on the on: line itself" "$t/r30.yml"
   printf 'name: x\n"on": >-\n  schedule\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r31.yml"; expect_unj "block scalar on a quoted on key" "$t/r31.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n      minutes\n    steps:\n      - run: echo hi\n        timeout-minutes: 10\n          minutes\n' > "$t/r32.yml"; expect_unj "multi-line plain scalar after timeout-minutes" "$t/r32.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      |\n      - run: echo FAKE\n        timeout-minutes: 10\n' > "$t/r33.yml"; expect_unj "next-line block scalar header under steps" "$t/r33.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
