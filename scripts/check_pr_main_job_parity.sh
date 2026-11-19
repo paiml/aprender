@@ -26,6 +26,16 @@
 #   bash scripts/check_pr_main_job_parity.sh --live       # alias of the plain scan
 #   bash scripts/check_pr_main_job_parity.sh --self-test  # case table on throwaway workflows
 #   env: PARITY_WORKFLOWS (dir), PARITY_EXEMPT (file)
+#
+# KNOWN LIMITS (forms this guard does not judge; each is refused or ignored, never read as parity):
+#   - `if:` terms other than github.event_name, github.ref and `github.event.pull_request ==|!= null` are "may run"; a job that
+#     only runs on a PR through another context (a label, an actor, an input) is read as on the PR.
+#   - A `needs:` edge counts only inside one workflow file; a need that names no job there reads as not on the event (RED).
+#   - A `pull_request.types` list is judged only for the three defaults (opened, synchronize, reopened) being present.
+#   - A `paths`/`paths-ignore` filter must equal the push filter (a set, or as written when it holds a `!` entry); a looser PR filter is RED.
+#   - The PR-shortcut scan reads run scripts line by line: a shortcut built across a function, an eval, a sourced file or a variable
+#     holding the event name is not seen. It matches `exit 0` and a bare `exit` after a pull_request test; it does not read `exit $rc`.
+#   - A reusable workflow (`uses:` job) is judged by its caller's `if:` only; the callee's own steps are not read.
 set -uo pipefail
 command -v yq >/dev/null || { echo "ENV: yq missing"; exit 2; }
 command -v jq >/dev/null || { echo "ENV: jq missing"; exit 2; }
@@ -93,8 +103,15 @@ function atom(a,   lit, eq, la) {
     if (a ~ /!=/) return eq ? "F" : "T"
     return eq ? "T" : "F"
   }
+  # github.event.pull_request is null on push and merge_group, an object on pull_request; only the exact `== null` / `!= null` form is judged.
+  if (la ~ /^github\.event\.pull_request *(==|!=) *null$/) {
+    eq = (ev != "pull_request")
+    if (a ~ /!=/) return eq ? "F" : "T"
+    return eq ? "T" : "F"
+  }
   if (la == "true") return "T"   # GitHub reads TRUE/True/true alike
   if (la == "false") return "F"
+  if (la ~ /^(0|-0|0\.0+|\047\047|null)$/) return "F"   # the falsy literals: 0, -0, 0.0, empty string, null
   return "U"
 }
 function pprim(   v, a) {
@@ -134,14 +151,34 @@ function judge(e, evn,   v) {
 }
 BEGIN { FS = "\t" }
 {
-  if ($3 != "1") next
-  ex = $6; on_pr = 0; on_mg = 0; bad = ""
-  v = judge(ex, "push"); if (err != "") bad = err
-  if ($4 == "1" && bad == "") { v = judge(ex, "pull_request"); if (err != "") bad = err; else on_pr = (v != "F") }
-  if ($5 == "1" && bad == "") { v = judge(ex, "merge_group"); if (err != "") bad = err; else on_mg = (v != "F") }
-  if (bad != "") { print "ERR\t" $1 "\t" $2 "\t" bad; next }
-  v = judge(ex, "push"); if (v == "F") next
-  print $1 "\t" $2 "\t1\t" on_pr "\t" on_mg
+  nj++; ex = $6; bad = ""; onpr = 0; onmg = 0; pv = "F"
+  if ($3 == "1") { pv = judge(ex, "push"); if (err != "") bad = err }
+  if ($4 == "1" && bad == "") { v = judge(ex, "pull_request"); if (err != "") bad = err; else onpr = (v != "F") }
+  if ($5 == "1" && bad == "") { v = judge(ex, "merge_group"); if (err != "") bad = err; else onmg = (v != "F") }
+  FL[nj] = $1; JB[nj] = $2; PM[nj] = ($3 == "1"); ONPUSH[nj] = ($3 == "1" && pv != "F"); BAD[nj] = bad
+  P[nj] = onpr; M[nj] = onmg; NEEDS[nj] = $7
+  # A job whose if: names always(), cancelled() or failure() runs whatever its needs did; any other job is skipped when a needed job is skipped.
+  ST[nj] = (tolower(ex) ~ /(always|cancelled|failure)[ ]*\(/)
+  KEY[$1 SUBSEP $2] = nj
+}
+END {
+  # needs: a job without a status-check function is not on an event when a job it needs is not (a skipped need skips it); a need that
+  # names no job of the file is unjudgeable and reads as not on the event. Iterated to a fixed point (the relation only ever clears).
+  for (r = 0; r < nj; r++) for (i = 1; i <= nj; i++) {
+    if (ST[i] || NEEDS[i] == "") continue
+    n = split(NEEDS[i], nd, ",")
+    for (k = 1; k <= n; k++) {
+      if (!((FL[i] SUBSEP nd[k]) in KEY)) { P[i] = 0; M[i] = 0; continue }
+      x = KEY[FL[i] SUBSEP nd[k]]
+      if (!P[x]) P[i] = 0
+      if (!M[x]) M[i] = 0
+    }
+  }
+  for (i = 1; i <= nj; i++) {
+    if (!PM[i]) continue
+    if (BAD[i] != "") { print "ERR\t" FL[i] "\t" JB[i] "\t" BAD[i]; continue }
+    if (ONPUSH[i]) print FL[i] "\t" JB[i] "\t1\t" P[i] "\t" M[i]
+  }
 }'
 
 # rows: "<file>\t<job>\t1\t<pr>\t<mg>" with 1/0 for each job on push, or "ERR\t<file>\t<job>\t<reason>"
@@ -152,6 +189,9 @@ rows() {
     raw=$(printf '%s' "$raw" | jq -r --arg f "$(basename "$f")" '
       def arr: if type=="array" then . elif type=="null" then [] else [.] end;
       def gl: gsub("\\.";"\\.") | gsub("\\*\\*";"@@DS@@") | gsub("\\*";"[^/]*") | gsub("@@DS@@";".*") | gsub("\\?";"[^/]");
+      # A paths filter on pull_request must be non-empty and equal the push filter. A filter holding a negation is order-sensitive,
+      # so it is compared as written; one without is compared as a set.
+      def pseq($a; $b): ($a|arr) as $x | ($b|arr) as $y | ($x|length) > 0 and (if ($x+$y|map(tostring|startswith("!"))|any) then $x == $y else ($x|sort) == ($y|sort) end);
       def pats($ps; $b): reduce ($ps|arr)[] as $p (false; if ($p|startswith("!")) then (if ($b|test("^"+($p[1:]|gl)+"$")) then false else . end) else (if ($b|test("^"+($p|gl)+"$")) then true else . end) end);
       (.on // {}) as $on
       | (if ($on|type)=="string" then [$on] elif ($on|type)=="array" then $on else ($on|keys) end) as $ev
@@ -166,13 +206,15 @@ rows() {
            | (($on.push // {}) | if type=="object" then . else {} end) as $q
            | (if $p.branches != null then pats($p.branches; "main") else true end)
              and (if $p["branches-ignore"] != null then (pats($p["branches-ignore"]; "main") | not) else true end)
-             and (if $p.paths != null then (($p.paths|arr|sort) == (($q.paths // null)|arr|sort)) else true end)
-             and (if $p["paths-ignore"] != null then (($p["paths-ignore"]|arr|sort) == (($q["paths-ignore"] // null)|arr|sort)) else true end)
+             and (if $p.types != null then (($p.types|arr) as $ty | (["opened","synchronize","reopened"] | all(. as $d | $ty | index($d) != null))) else true end)
+             and (if $p.paths != null then pseq($p.paths; $q.paths) else true end)
+             and (if $p["paths-ignore"] != null then pseq($p["paths-ignore"]; $q["paths-ignore"]) else true end)
          else true end) as $prmain
       | (.jobs // {}) | to_entries[]
       | [$f, .key, (if $pushmain then "1" else "0" end), (if $prmain then "1" else "0" end),
          (if $ev|index("merge_group") then "1" else "0" end),
-         (((.value.if // "")|tostring)|gsub("[\t\n\r]+";" "))] | @tsv') || { echo "RED: $(basename "$f") has a shape jq cannot read, so it was not judged" >&2; return 1; }
+         (((.value.if // "")|tostring)|gsub("[\t\n\r]+";" ")),
+         ((.value.needs // []) | arr | map(tostring) | join(","))] | @tsv') || { echo "RED: $(basename "$f") has a shape jq cannot read, so it was not judged" >&2; return 1; }
     [ -z "$raw" ] || acc="$acc$raw
 "
   done
@@ -197,15 +239,21 @@ shortcuts() {
           /^[[:space:]]*#/ { next }
           {
             l = $0; nif = words(l, "if"); nfi = words(l, "fi")
-            ex = (l ~ /exit[[:space:]]+0([^0-9]|$)/)
-            if (l ~ /^[[:space:]]*\[.*pull_request.*\][[:space:]]*(&&|\|\|).*exit[[:space:]]+0([^0-9]|$)/) hit = 1
+            # `exit 0` and a bare `exit` (status of the last command, success after an echo) both return success.
+            ex = (l ~ /(^|[^A-Za-z0-9_-])exit[[:space:]]+0([^0-9]|$)/ || l ~ /(^|[^A-Za-z0-9_-])exit[[:space:]]*([;&|})]|$)/)
+            if (l ~ /^[[:space:]]*(\[|test[[:space:]]).*pull_request.*(&&|\|\|).*(exit)/ && ex) hit = 1
+            # `[ .. pull_request .. ] && {` / `|| {` (or a line that continues): the brace block, or the next line, is the guarded body.
+            if (blk > 0 && ex) hit = 1
+            if (blk == 1 && l !~ /(&&|\|\||\\)[[:space:]]*$/ && l !~ /\{[[:space:]]*$/) blk = 0
+            if (blk == 2 && l ~ /^[[:space:]]*\}/) blk = 0
+            if (l ~ /^[[:space:]]*(\[|test[[:space:]]).*pull_request/ && l ~ /(&&|\|\||\\)[[:space:]]*\{?[[:space:]]*$/ ) blk = (l ~ /\{[[:space:]]*$/) ? 2 : 1
             if (l ~ /^[[:space:]]*(if|elif)[[:space:]].*pull_request/) { if (ex) hit = 1 }
             else if (prd > 0 && ex) hit = 1
             d += nif - nfi
             if (l ~ /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ && prd == 0 && d > 0 && (nif > nfi || l ~ /^[[:space:]]*elif/)) prd = d
             if (prd > 0 && d < prd) prd = 0
             if (d < 0) d = 0
-            if (l !~ /^[[:space:]]*(if|elif)[[:space:]]/ && l ~ /(^|[[:space:]])\(?"?([A-Za-z_*]+"?\|"?)*pull_request("?\|"?[A-Za-z_*]+)*"?\)/) { carm = 1; if (ex) hit = 1 }
+            if (l !~ /^[[:space:]]*(if|elif)[[:space:]]/ && l ~ /(^|[[:space:]])\(?["\047]?([A-Za-z_*]+["\047]?\|["\047]?)*pull_request(["\047]?\|["\047]?[A-Za-z_*]+)*["\047]?\)/) { carm = 1; if (ex) hit = 1 }
             else if (carm && ex) hit = 1
             if (carm && l ~ /;;/) carm = 0
           }
@@ -597,6 +645,152 @@ jobs:
 "
   tf "github.ref_name is unjudgeable, RED" 1 ci.yml "$H
   a: {runs-on: x, if: \"github.ref_name == 'main'\", steps: []}
+"
+  # needs: a skipped need skips its dependent unless the dependent's if: names always(), cancelled() or failure()
+  t "needs a push-only (exempt) job, no status function: skipped on a PR, RED" 1 "ci.yml:p push-only ticket maker" "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  x: {runs-on: x, needs: [p], steps: []}
+"
+  t "needs a push-only job as a bare string, RED" 1 "ci.yml:p push-only ticket maker" "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  x: {runs-on: x, needs: p, steps: []}
+"
+  t "needs a push-only job, transitively through a middle job, RED" 1 "ci.yml:p push-only ticket maker" "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  m: {runs-on: x, needs: [p], if: \"success()\", steps: []}
+  x: {runs-on: x, needs: [m], steps: []}
+"
+  t "needs a push-only job with !cancelled() runs on a PR, green" 0 "ci.yml:p push-only ticket maker" "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  x: {runs-on: x, needs: [p], if: \"\${{ !cancelled() }}\", steps: []}
+"
+  t "needs a job the file does not define is unjudgeable, RED" 1 "" "$H
+  x: {runs-on: x, needs: [ghost], steps: []}
+"
+  t "needs a job that runs on a PR is green" 0 "" "$H
+  p: {runs-on: x, steps: []}
+  x: {runs-on: x, needs: [p], steps: []}
+"
+  # pull_request.types and an empty or reordered-negated paths filter
+  tf "pull_request.types [closed] never runs on an open PR, RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {branches: [main], types: [closed]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.types [labeled] is RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {types: [labeled]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.types with the three defaults plus more is green" 0 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {types: [opened, synchronize, reopened, ready_for_review]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.paths [] against no push paths is RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {paths: []}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "pull_request.paths-ignore [] against no push filter is RED" 1 ci.yml 'on:
+  push: {branches: [main]}
+  pull_request: {paths-ignore: []}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "the same negated paths in a different order is RED (order decides)" 1 ci.yml 'on:
+  push: {branches: [main], paths: ["!src/foo", "src/**"]}
+  pull_request: {paths: ["src/**", "!src/foo"]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  tf "the same negated paths in the same order is green" 0 ci.yml 'on:
+  push: {branches: [main], paths: ["src/**", "!src/foo"]}
+  pull_request: {paths: ["src/**", "!src/foo"]}
+jobs:
+  a: {runs-on: x, steps: []}
+'
+  # more shortcut forms
+  tf "[ != pull_request ] || { ...; exit 0; } across lines is RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${EVT:-}\" != pull_request ] || {
+            echo light passed
+            exit 0
+          }
+          check_heavy
+"
+  tf "[ = pull_request ] && { ...; exit 0; } across lines is RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${EVT:-}\" = pull_request ] && {
+            echo light passed
+            exit 0
+          }
+          check_heavy
+"
+  tf "a single-quoted case arm 'pull_request') exit 0 is RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\${EVT:-}\" in
+            'pull_request') exit 0 ;;
+          esac
+          check_heavy
+"
+  tf "test = pull_request && exit 0 is RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          test \"\${EVT:-}\" = pull_request && exit 0
+          check_heavy
+"
+  tf "a bare exit inside the pull_request if block is RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            echo light passed
+            exit
+          fi
+          check_heavy
+"
+  tf "exit 1 inside the pull_request if block is green (a failure is not a pass)" 0 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            exit 1
+          fi
+          check_heavy
+"
+  # falsy literals and the null form
+  tf "push || 0 is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || 0\", steps: []}
+"
+  tf "push || '' is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || ''\", steps: []}
+"
+  tf "push || null is RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || null\", steps: []}
+"
+  tf "github.event.pull_request == null is RED (null on push, an object on a PR)" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event.pull_request == null\", steps: []}
+"
+  tf "github.event.pull_request != null is green (an object on a PR)" 0 ci.yml "$H
+  a: {runs-on: x, if: \"github.event.pull_request != null || github.event_name == 'push'\", steps: []}
 "
   # symlinked workflow files are scanned (find -type f skipped them)
   rm -f "${w:?}"/*; : > "$d/ex"
