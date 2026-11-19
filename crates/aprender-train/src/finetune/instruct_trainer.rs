@@ -670,34 +670,63 @@ mod tests {
         // this tiny config in under a millisecond, so it is not asserted. The epoch count is.
     }
 
-    /// #7255: two same-seed runs write a checkpoint with an identical sha256.
+    fn write_checkpoint(dir: &std::path::Path) -> Vec<u8> {
+        let model_config = TransformerConfig::tiny();
+        let instruct_config =
+            InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
+        let pipeline = InstructPipeline::new(&model_config, instruct_config);
+        let config = InstructTrainingConfig { epochs: 1, seed: 7, ..Default::default() };
+        let mut trainer = InstructTrainer::new(pipeline, make_corpus(10), config).unwrap();
+        let metrics = InstructEpochMetrics {
+            epoch: 0,
+            train_loss: 1.0,
+            train_perplexity: 2.0,
+            val_loss: 6.743455,
+            val_perplexity: 3.0,
+            learning_rate: 1e-4,
+            epoch_time_ms: 0,
+            samples_per_sec: 0.0,
+        };
+        trainer.save_checkpoint(dir, 0, &metrics).unwrap();
+        std::fs::read(dir.join("model.safetensors")).unwrap()
+    }
+
+    /// #7255, #7293: 16 same-seed runs write a checkpoint with an identical sha256. A HashMap
+    /// metadata order would pass two runs about half the time; 16 passes about 1 in 32768.
     #[test]
     fn same_seed_checkpoints_have_identical_sha256() {
-        let digest = |dir: &std::path::Path| {
-            let model_config = TransformerConfig::tiny();
-            let instruct_config =
-                InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
-            let pipeline = InstructPipeline::new(&model_config, instruct_config);
-            let config = InstructTrainingConfig { epochs: 1, seed: 7, ..Default::default() };
-            let mut trainer = InstructTrainer::new(pipeline, make_corpus(10), config).unwrap();
-            let metrics = InstructEpochMetrics {
-                epoch: 0,
-                train_loss: 1.0,
-                train_perplexity: 2.0,
-                val_loss: 6.743455,
-                val_perplexity: 3.0,
-                learning_rate: 1e-4,
-                epoch_time_ms: 0,
-                samples_per_sec: 0.0,
-            };
-            trainer.save_checkpoint(dir, 0, &metrics).unwrap();
-            let bytes = std::fs::read(dir.join("model.safetensors")).unwrap();
-            format!("{:x}", Sha256::digest(&bytes))
-        };
         let tmp = tempfile::tempdir().unwrap();
-        let a = digest(&tmp.path().join("a"));
-        let b = digest(&tmp.path().join("b"));
-        assert_eq!(a, b);
+        let digests: Vec<String> = (0..16)
+            .map(|i| {
+                format!("{:x}", Sha256::digest(write_checkpoint(&tmp.path().join(format!("c{i}")))))
+            })
+            .collect();
+        for (i, d) in digests.iter().enumerate() {
+            assert_eq!(d, &digests[0], "checkpoint {i} differs from checkpoint 0");
+        }
+    }
+
+    /// #7293: through the real `save_checkpoint` call site, the `__metadata__` keys in the
+    /// written file bytes are sorted, for each of 16 checkpoints. A call site reverting to
+    /// `serialize(views, Some(HashMap))` writes a random order per call (two keys, so each
+    /// call is sorted by chance half the time); 16 calls pass by chance 1 in 65536.
+    #[test]
+    fn save_checkpoint_metadata_keys_sorted_in_file_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..16 {
+            let bytes = write_checkpoint(&tmp.path().join(format!("c{i}")));
+            let n = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+            let hdr = std::str::from_utf8(&bytes[8..8 + n]).unwrap();
+            let key = "\"__metadata__\":{";
+            let start = hdr.find(key).expect("header has __metadata__") + key.len();
+            let obj = &hdr[start..start + hdr[start..].find('}').expect("metadata object closes")];
+            // Quoted tokens alternate key, value (values are strings without escapes).
+            let keys: Vec<&str> = obj.split('"').skip(1).step_by(2).step_by(2).collect();
+            assert!(keys.len() >= 2, "need 2+ metadata keys to prove an order: {obj}");
+            let mut sorted = keys.clone();
+            sorted.sort_unstable();
+            assert_eq!(keys, sorted, "checkpoint {i}: metadata keys not sorted: {obj}");
+        }
     }
 
     #[test]
