@@ -62,6 +62,17 @@ concepts:
   Label: {doc: "a PlotRow that is a label constructor (labs, xlab, ylab, ggtitle): a plot's text"}
   OutputTarget: {doc: "a PlotRow that is an output constructor (ggsave): where a rendered plot is written"}
 
+  # SIM3D-001 (aprender#7245, epic #7244): a simulation is one spec file that pv grades as a closed shape, run by a
+  # deterministic kernel, and summarised by a receipt. `Entity` already means "anything the ontology can name", so the
+  # simulated element is `SimEntity`. Seven concepts, each the focus node of contracts/sim3d-{spec,receipt}-v1.yaml.
+  Simulation: {doc: "a simulation spec at one seed — the root node of a .sim.yaml, emitted as canonical JSON and read by extract:json (sim:schema, sim:name, sim:seed, sim:entities, sim:laws, sim:invariants)"}
+  SimEntity: {doc: "one simulated element of a Simulation — a source, queue, server, router or health check (sim:id, sim:kind)"}
+  Law: {doc: "a rule a Simulation obeys at every step, naming the Invariant that monitors it (sim:id, sim:invariant)"}
+  Invariant: {doc: "a typed formula with a unit that must hold at every step of a trajectory (sim:id, sim:formula, sim:unit)"}
+  Seed: {doc: "the one declared source of randomness of a Simulation (sim:value, sim:algorithm); a spec without one is refused"}
+  Trajectory: {doc: "the hash-chained sequence of states a kernel emits from a Simulation and its Seed; the thing proved, not the pixels"}
+  Receipt: {doc: "what a run of a Simulation states about itself — spec sha, kernel sha, seed, final trajectory hash and monitor verdicts (sim:spec_sha256, sim:final_hash, sim:verdicts)"}
+
 roles:
   binds:
     {domain: Contract, range: Code, symmetric: false, acyclic: false, doc: "the contract governs this code"}
