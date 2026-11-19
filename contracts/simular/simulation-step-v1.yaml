@@ -14,6 +14,7 @@ equations:
     - time(t+1) > time(t)
     - step_count(n+1) = step_count(n) + 1
     - time(t+1) - time(t) = timestep_secs
+    - 'Substep multiplier: Δt_sub = Δt / substep_multiplier'
     preconditions:
     - t < max_steps
     - timestep_secs > 0.0
