@@ -17,14 +17,15 @@ if [ -z "$here" ]; then exit 1; fi
 # The awk program: exit 0 clean (prints one "inspected" line), exit 1 with one finding per line, exit 2 when the file
 # uses a YAML form this script does not judge (printed as "UNJUDGED ..."): refuse rather than guess.
 AWK_PROG=$(cat <<'AWK'
-function strip(s,   i, n, c, q, p) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
+function strip(s,   i, n, c, q, p, pp) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
   # a quote opens a scalar only at a token start (line start or after blank , : [ ] { } -), never mid-word (it's);
   # noq is the line with its quoted spans removed; uq is set when a quote is still open at the end of the line
   q = ""; n = length(s); noq = ""; uq = 0
   for (i = 1; i <= n; i++) {
-    c = substr(s, i, 1); p = (i == 1) ? " " : substr(s, i - 1, 1)
+    c = substr(s, i, 1); p = (i == 1) ? " " : substr(s, i - 1, 1); pp = (i <= 2) ? " " : substr(s, i - 2, 1)
     if (q == "") {
-      if ((c == "\042" || c == "\047") && p ~ /[ \t,:[\]{}-]/) q = c
+      # a hyphen never opens a quote (a-' is mid-word); a colon does only right after a closing quote ("k":"v")
+      if ((c == "\042" || c == "\047") && (p ~ /[ \t,[\]{}]/ || (p == ":" && pp ~ /[\042\047]/))) q = c
       else if (c == "#" && p ~ /[ \t]/) { s = substr(s, 1, i - 1); break }
       else noq = noq c
     } else if (q == "\042" && c == "\\") { esc = 1; i++ }
@@ -68,11 +69,12 @@ BEGIN { bsind = -1 }
   if (line ~ /(:|-)[ \t]+[|>][-+0-9]*$/) bsind = (isdash && bsr ~ /^[|>]/) ? ind : kcol
   isbs = (bsind >= 0)
   if (line ~ /(^[ \t]*(-[ \t]+)*|:[ \t]+)[!&*]/) tag = tag + 1
+  else if (noq ~ /[{[,][ \t]*[!&*]/ || noq ~ /:[ \t]*[!&*]/) tag = tag + 1 # tag, anchor or alias inside a flow collection
   if (line ~ /^[ \t]*(-[ \t]+)*\?([ \t]|$)/) qkey = qkey + 1
   t = noq
   if (fdepth > 0 && ind == 0) flowcont = flowcont + 1
   fdepth += gsub(/[{[]/, "", t); fdepth -= gsub(/[}\]]/, "", t)
-  if (fdepth < 0) fdepth = 0
+  if (fdepth < 0) { negflow = negflow + 1; fdepth = 0 }
   if (fdepth > 0) flowml = flowml + 1
   if (ind == 0) { # a top-level key; anything else at column 0 is a form this script does not judge
     if (line !~ /^([A-Za-z0-9_.-]+|"[^"]*"|\047[^\047]*\047)[ \t]*:([ \t]|$)/) badtop = badtop " " substr(line, 1, 20)
@@ -127,6 +129,7 @@ END {
   if (flowcont + 0 > 0) { print "UNJUDGED: multi-line flow collection continued at column 0"; unj = 1 }
   if (mlq + 0 > 0) { print "UNJUDGED: quoted scalar continued over several lines (" mlq " lines)"; unj = 1 }
   if (flowml + 0 > 0) { print "UNJUDGED: multi-line flow collection (" flowml " lines)"; unj = 1 }
+  if (negflow + 0 > 0) { print "UNJUDGED: closing flow bracket with no opener (" negflow " lines)"; unj = 1 }
   if (tag + 0 > 0) { print "UNJUDGED: tag, anchor or alias at a key or value start (" tag " lines)"; unj = 1 }
   if (qkey + 0 > 0) { print "UNJUDGED: explicit '? ' key (" qkey " lines)"; unj = 1 }
   if (escn + 0 > 0) { print "UNJUDGED: backslash escape inside a double-quoted scalar (" escn " lines)"; unj = 1 }
@@ -310,6 +313,14 @@ EOF
   printf 'on:\n  workflow_dispatch:\n"jobs":\n  night:\n    steps:\n      - run: echo untimed\n' > "$t/m4.yml"; expect "quoted jobs key with an untimed step" "$t/m4.yml" fail
   printf 'on:\n  workflow_dispatch:\n"jobs":\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/m6.yml"; expect "quoted jobs key is judged, not skipped" "$t/m6.yml" pass
   printf 'on:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo it'"'"'s fine\n        timeout-minutes: 10\n' > "$t/m5.yml"; expect "mid-word apostrophe in a plain scalar stays judged" "$t/m5.yml" pass
+
+  # lane-2 FAIL at df2e3e1: hyphen or colon before a mid-word quote, unbalanced closers, tags inside flow collections; all refused (exit 2)
+  printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: a-' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/d1.yml"; expect "mid-word hyphen before a quote is not a token start" "$t/d1.yml" fail
+  printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: a:\" }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/d2.yml"; expect "mid-word colon before a quote is not a token start" "$t/d2.yml" fail
+  printf "name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    env: { a: x-', b: '} # ',\n    timeout-minutes: 25\n    }\n    steps:\n      - run: echo untimed\n        env: { a: x-', b: '} # ',\n        timeout-minutes: 10\n        }\n" > "$t/d3.yml"; expect_unj "multi-line flow env forging timeouts" "$t/d3.yml"
+  printf 'on:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        timeout-minutes: 10\n        }\n' > "$t/d4.yml"; expect_unj "closing bracket with no opener" "$t/d4.yml"
+  printf 'name: x\nenv: { &s "schedule": "1" }\non: { workflow_dispatch: {}, *s : [{ cron: "5 20 * * *" }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/d5.yml"; expect_unj "anchor and alias inside flow collections" "$t/d5.yml"
+  printf 'on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: {"a":!!str b}\n        timeout-minutes: 10\n' > "$t/d6.yml"; expect_unj "tag after a JSON-style colon in flow" "$t/d6.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
