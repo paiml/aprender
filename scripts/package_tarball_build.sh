@@ -153,7 +153,7 @@ pargs=()
 while IFS= read -r n; do [ -n "$n" ] && pargs+=(-p "$n"); done <<< "$names"
 
 # 1. package, into a private target dir so only THIS run's .crate files exist there
-if ! (cd "$ROOT" && CARGO_TARGET_DIR="$T/pkg-target" cargo package "${pargs[@]}" --no-verify "${DIRTY[@]}" > "$T/package.log" 2>&1); then
+if ! (cd "$ROOT" && CARGO_TERM_COLOR=never CARGO_TARGET_DIR="$T/pkg-target" cargo package "${pargs[@]}" --no-verify "${DIRTY[@]}" > "$T/package.log" 2>&1); then
   echo "  cannot check: cargo package failed:"; grep -E '^error' -A6 "$T/package.log" | head -n 20; exit 2
 fi
 mkdir -p "$T/ws/pkgs"
@@ -200,7 +200,7 @@ echo "PATCH: $(grep -c . <<< "$rows") crate(s) resolved from their unpacked tarb
 
 # 3. the build
 echo "building: cargo build --workspace --tests --keep-going (target $BUILD_TARGET)"
-(cd "$T/ws" && CARGO_TARGET_DIR="$BUILD_TARGET" cargo build --workspace --tests --keep-going --message-format short > "$T/build.log" 2>&1)
+(cd "$T/ws" && CARGO_TERM_COLOR=never CARGO_TARGET_DIR="$BUILD_TARGET" cargo build --color never --workspace --tests --keep-going --message-format short > "$T/build.log" 2>&1)
 brc=$?
 
 # 4. what the tarballs do NOT test is printed, never silent (#4114/#4129/#4130): integration targets
