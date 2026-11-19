@@ -10,8 +10,8 @@
 # Limits at this head (status: partial):
 #   - seed is read as a signed 64-bit number: a seed above 9223372036854775807 is refused
 #   - a flag conflict is a clap usage error (exit 2); only recipe refusals are exit 5
-#   - the receipt (its overrides included) is built and printed on stderr as text; it is not
-#     written to a file and not part of --json output
+#   - on the wgpu backend neither the seed nor the eval.heldout file reaches the trainer: the
+#     receipt lists both under validated_not_applied (the CUDA and CPU paths apply both)
 #   - --profile prints its one line and does nothing else, with or without --recipe
 #   - the global --verbose and --quiet work beside --recipe as for every command, through the
 #     process-wide setting; they are not arguments of the recipe run and no recipe test covers them
@@ -33,9 +33,10 @@ metadata:
     model, the training data, the method (lora, qlora or distill), the teacher (distill only),
     the eval and the seed. The eval is required and is part of the recipe hash, so two runs
     with the same recipe hash were asked the same question. This contract covers the schema,
-    the refusal before a model is loaded and the receipt fields; it does not claim that the
-    seed or the eval are applied by the training loop yet (the receipt lists them under
-    validated_not_applied).
+    the refusal before a model is loaded and the receipt fields. The seed is applied: it is the
+    trainer's seed (split and shuffle), not a fixed 42. The eval is applied: the trainer
+    validates on eval.heldout and trains on all of data.train. On the wgpu backend neither the
+    seed nor the heldout file is read, and the receipt lists both under validated_not_applied.
   references:
   - "docs/specifications/EPIC-0.75-crux-finetune-distill-plan.md"
   - "crates/apr-cli/src/commands/train_recipe.rs"
@@ -53,13 +54,17 @@ equations:
         eval:       { heldout: path, benchmark: string? },
         seed:       u64,
         teacher:    { model: path, temperature: f64?, alpha: f64? }?,
-        training:   { rank: u32?, epochs: u32?, learning_rate: f64?, max_seq_len: usize? }?,
+        lora:       { alpha: f64?, dropout: f64?, target_modules: [string]? }?,
+        training:   { rank: u32?, epochs: u32?, learning_rate: f64?, max_seq_len: usize?,
+                      warmup: f64?, weight_decay: f64? }?,
         output:     { dir: path }?
       }
       valid(R) <=> every required key present and non-empty
                and R.eval.heldout != R.data.train
                and (R.teacher present <=> R.method == "distill")
-               and every number in R.training > 0
+               and every number in R.training > 0, except
+                   lora.dropout in [0,1), training.warmup in [0,1), training.weight_decay >= 0
+               and R.lora.alpha > 0 and lora.target_modules non-empty, no empty name
                and no key outside this grammar at any level
     domain: UTF-8 YAML file
     codomain: TrainRecipe | Refusal
@@ -69,6 +74,40 @@ equations:
     - "teacher is required when method is distill and refused otherwise"
     - "eval.heldout MUST NOT be the training file"
     - "Relative paths resolve against the recipe file's directory"
+
+  recipe_lora_fields:
+    formula: |
+      defaults = { lora.alpha: planner's (2 x rank; printed as that number), lora.dropout: 0.0, training.warmup: 0.03,
+                   training.weight_decay: 0.01, lora.target_modules: [q_proj, v_proj] }
+      resolve(R) = defaults overlaid with R.lora and R.training
+      applied     = { lora.alpha -> adapter alpha, training.warmup -> LR warmup }
+      not_applied = { f in {lora.dropout, training.weight_decay, lora.target_modules} : resolve(R).f != defaults.f }
+    domain: validated recipe
+    codomain: resolved LoRA fields and the not-applied list
+    invariants:
+    - "An absent key resolves to the value finetune hard-coded before these keys existed, so an existing recipe runs unchanged"
+    - "A recipe with lora.alpha A yields an adapter whose alpha is A; without it the planner's alpha stands"
+    - "lora.dropout, training.weight_decay and lora.target_modules are validated but the instruct training loop does not read them: a value off its default is listed under validated_not_applied under its dotted name"
+    - "Each out-of-range value is refused by field, with every other violation in the same message"
+
+  recipe_dry_run:
+    formula: |
+      dry_run == plan: `--dry-run` is the clap alias of `--plan` (one flag, one code path)
+      plan(recipe_path) = validate(read(recipe_path)) ; print plan ; print resolved recipe ; print receipt ; exit 0
+      resolved recipe = every key of the grammar with its default filled in, each a number or value the run uses:
+        training.rank, lora.alpha and training.learning_rate are the plan's recommended_rank, recommended_alpha and learning_rate
+        (the recipe's own value, else the planner's); training.max_seq_len is the length the selected path uses: the recipe's value,
+        else InstructConfig's default (512), on every path, the WGPU one included
+      the plan block of an unmodified examples/recipes/tiny.yaml is byte-identical to origin/main's
+      it opens no base model, no data file and no GPU; it needs only the recipe file
+    domain: (recipe file, flags)
+    codomain: plan and resolved recipe on stdout and receipt on stderr, or a recipe refusal (exit 5)
+    invariants:
+    - "--dry-run and --plan are the same flag: same exit code, same stdout, same refusals"
+    - "The resolved recipe is printed on the run path after the plan, with lora.dropout, lora.target_modules, training.warmup, training.weight_decay and training.epochs filled in from their defaults"
+    - "Unknown keys and invalid values are refused exactly as in a real run"
+    - "validated_not_applied names every field the recipe set that the loop does not read"
+    - "Every recipe under examples/recipes/ passes --dry-run"
 
   refusal_before_load:
     formula: |
@@ -87,6 +126,31 @@ equations:
     - "A flag in FINETUNE_RECIPE_CARRIES conflicts with --recipe"
     - "--model-size and --output are accepted beside --recipe and win over model_size and output.dir; the receipt lists each replacement under overrides"
 
+  finetune_receipt:
+    formula: |
+      after a real (non --plan) run of R:
+        <output dir>/receipt.json = {
+          schema: "apr-finetune-receipt-v1",
+          recipe_name, recipe_sha256, base_model_sha256, dataset_sha256, eval_sha256,
+          apr: {version, commit},
+          hyperparameters: {method, seed, rank, epochs, learning_rate, max_seq_len,
+                            quantize_nf4, model_size, eval_benchmark},
+          overrides, validated_not_applied
+        }
+        --json prints the same object on stdout
+      trainer.seed = R.seed
+    domain: validated recipe, completed run
+    codomain: receipt.json | Refusal
+    invariants:
+    - "The trainer seed is the recipe seed (0 included); a run that has no recipe keeps 42"
+    - "The same recipe, base, data and binary give a byte-identical receipt.json; another seed gives a different one"
+    - "On the CPU trainer, the same seed gives identical per-epoch losses and a byte-identical checkpoint file (same model.safetensors sha256; the metadata is written in sorted key order, paiml/aprender#7255); another seed gives different losses and a different file sha256"
+    - "`apr finetune --recipe R --json` prints exactly one JSON document on stdout, the receipt (the plan object is not printed on a real run)"
+    - "A run on the WGPU path lists `seed` and `eval` under validated_not_applied (that path reads neither); its pipeline trains at the receipt's max_seq_len (the recipe value, else 512), so max_seq_len is applied there"
+    - "The receipt's rank, learning_rate and max_seq_len are the values the run trained with (the planner's rank, the rank-aware learning rate and the default max_seq_len when the recipe omits them), never null"
+    - "A hash of a file that was not read is null, never a made-up value"
+    - "receipt.json is written only after the run returned Ok and never for --plan"
+
   recipe_receipt:
     formula: |
       receipt(R, engines) = {
@@ -103,6 +167,24 @@ equations:
     - "recipe_sha256 changes when the eval block changes"
     - "A hash of a file that was not read is null, never a made-up value"
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
+
+  base_formats:
+    formula: |
+      format(F) = apr          if magic(F) in {"APR\0", "APRN"}
+                  gguf         if magic(F) == "GGUF"
+                  safetensors  if u64le(F[0..8]) + 8 <= size(F) and F[8] == '{'
+                  refuse       otherwise                      # unsupported or corrupt
+      base(F) = F                          if format(F) == apr
+              = apr_import(F)              if format(F) == safetensors
+              = apr_import(F)              if format(F) == gguf and every tensor dtype in {F32, F16, BF16}
+              = refuse("quantized")        if format(F) == gguf otherwise
+    domain: base model file
+    codomain: row-major APR file | Refusal
+    invariants:
+    - "The format comes from the magic bytes, never the extension, and is logged"
+    - "A GGUF's dims are reversed to row-major at the import boundary (LAYOUT-001/002, contracts/tensor-layout-v1.yaml): [ne0, ne1] becomes [ne1, ne0] with the data bytes unchanged; no col-major kernel is used"
+    - "A quantized GGUF is refused with its reason, never silently dequantized"
+    - "A corrupt or unsupported file is refused before any training"
 
 falsification_tests:
 # Each entry cites only tests present at this slice head.
@@ -137,3 +219,42 @@ falsification_tests:
   test: |
     cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin require_inputs_refuses_a_directory_and_skips_the_pin_of_an_absent_file heldout_linked_to_the_training_file_is_refused_at_require_inputs heldout_hard_linked_to_the_training_file_is_refused_at_require_inputs sha256_matches_the_published_test_vector sha256_file_hashes_past_one_buffer a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read receipt_carries_the_contract_fields recipe_hash_changes_with_the_eval_block
   if_fails: "A receipt can name data it did not train on"
+- id: FALSIFY-APR-RECIPE-006
+  rule: the recipe seed reaches the trainer and a run leaves a receipt
+  prediction: "The trainer seed follows the recipe seed (zero included) while a recipe run is active and returns to 42 afterwards, nested guards restore the outer seed. The finetune receipt carries the recipe, base model, dataset and heldout hashes, the apr version and commit and the resolved hyperparameters; a hash of an absent file is null; building it twice from one recipe gives byte-identical receipt.json and a different seed gives different bytes; on the CPU trainer, two same-seed runs give identical non-zero losses and a byte-identical checkpoint file (sha256 of model.safetensors, metadata written in sorted order, #7255) through the recipe run path, and another seed gives different losses and a different file sha256; the trainer validates on the heldout file and trains on the whole data.train; `--json` prints one document; validated_not_applied is empty, except `seed` and `eval` when the run trains on the WGPU path, which reads neither; the only notice of unapplied fields names the wgpu backend; the WGPU pipeline trains at the recipe max_seq_len (else 512), the value the receipt records"
+  test: |
+    cargo test -p apr-cli --lib -- trainer_seed_defaults_to_42_and_follows_the_guard seed_zero_is_applied_not_mistaken_for_unset receipt_carries_hashes_version_commit_and_hyperparameters the_same_recipe_gives_byte_identical_receipt_and_another_seed_does_not a_missing_base_hash_is_null_never_invented trainer_config_seed_equals_the_recipe_seed_zero_included recipe_run_hands_the_trainer_the_recipe_seed_zero_included recipe_run_writes_receipt_only_after_a_successful_real_run json_recipe_run_prints_exactly_one_document_and_holds_back_the_plan wgpu_run_keeps_seed_under_validated_not_applied wgpu_run_trains_at_the_recipe_max_seq_len_not_a_hardcoded_512 same_seed_recipe_run_writes_identical_checkpoint_files_and_another_seed_differs recipe_heldout_file_is_the_trainers_validation_set recipe_path_no_longer_says_not_yet_applied receipt_dir_is_the_adapter_directory_else_current write_receipt_creates_the_directory_and_ends_with_a_newline receipt_records_the_values_the_run_used_when_the_recipe_omits_them
+  if_fails: "Two seeds train the same way, or a run cannot be tied to the inputs and binary that made it"
+- id: FALSIFY-APR-RECIPE-007
+  rule: a recipe's lora.alpha reaches the adapter config, and a value the loop ignores is reported
+  prediction: "`apr finetune --recipe r.yaml --plan --json` with lora.alpha 32 prints recommended_alpha 32 (the planner's value without the key). lora.dropout, training.weight_decay and lora.target_modules off their defaults are listed in the receipt under validated_not_applied; at their defaults nothing is listed"
+  test: |
+    cargo test -p apr-cli --lib -- only_values_the_loop_ignores_are_reported_as_not_applied recipe_alpha_reaches_the_config_the_run_trains_and_saves_with
+    cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- recipe_lora_alpha_reaches_the_plan validated_but_not_applied_fields_are_reported
+  if_fails: "The recipe says alpha 32 and the adapter is trained and saved with another value, or the receipt claims a setting the loop never read"
+- id: FALSIFY-APR-RECIPE-008
+  rule: --dry-run prints the resolved recipe without opening anything and keeps the refusals
+  prediction: "`apr finetune --recipe r.yaml --dry-run` exits 0 when the base, data and eval files do not exist and prints byte-identical stdout to `--plan`, because it is the same flag; that stdout is the plan followed by the fully resolved recipe (lora.alpha, lora.dropout, lora.target_modules, training.rank, training.epochs, training.learning_rate, training.max_seq_len, training.warmup, training.weight_decay), every one a number the run uses and none a placeholder: rank, alpha and learning rate equal the plan's recommended_rank, recommended_alpha and learning_rate, and max_seq_len is the recipe's value, else InstructConfig's default (512), on every path, the WGPU one included. The plan object of the unmodified examples/recipes/tiny.yaml is byte-identical to the one origin/main prints (pinned by a golden fixture). An unknown key or a bad value is refused with exit 5 under both spellings. A real run of the same recipe is refused for its absent files"
+  test: |
+    cargo test -p apr-cli --lib -- test_finetune_dry_run_is_the_plan_flag
+    cargo test -p apr-cli --lib -- effective_max_seq_len
+    cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- dry_run_is_the_plan_flag dry_run_prints_the_resolved_recipe_with_every_default_filled_in tiny_recipe_plan_is_byte_identical_to_main
+  if_fails: "A user cannot check a recipe without loading a model, or --dry-run accepts what a real run refuses"
+- id: FALSIFY-APR-RECIPE-009
+  rule: every shipped example recipe passes --dry-run
+  prediction: "Each yaml under examples/recipes/ (the tiny example and the six notebook-case recipes: Llama 3.2 1B LoRA, Llama 3.1 8B QLoRA, Qwen2.5 7B QLoRA, Mistral 7B QLoRA with alpha 32, Gemma 2 9B QLoRA, Phi-3.5 mini LoRA) exits 0 through the binary under --dry-run"
+  test: |
+    cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- every_example_recipe_passes_dry_run
+  if_fails: "A shipped example no longer parses, so the first recipe a user copies is refused"
+- id: FALSIFY-APR-RECIPE-010
+  rule: the LoRA and optimiser keys default to today's values and are refused by field when out of range
+  prediction: "A recipe without lora.alpha, lora.dropout, lora.target_modules, training.warmup or training.weight_decay resolves to alpha unset (planner's), 0.0, [q_proj, v_proj], 0.03 and 0.01. A zero or negative alpha, a dropout or warmup outside [0,1), a negative weight decay and an empty or blank target module list are each refused naming the field (`lora.alpha`, `lora.dropout`, `training.warmup`, ...), all in one message. A misspelt key, or the old flat names training.lora_alpha / training.warmup_fraction, is still refused. The recipe's alpha and warmup are read by the run and cleared when it ends"
+  test: |
+    cargo test -p apr-cli --lib -- absent_keys_resolve_to_the_values_finetune_hard_coded every_key_is_read each_bad_value_is_refused_by_field every_violation_is_listed_at_once zero_dropout_zero_warmup_and_zero_decay_are_valid a_misspelt_or_old_key_is_still_refused the_active_block_is_read_by_the_run_and_cleared_after
+  if_fails: "A recipe can silently train with a different alpha or warmup than it declares, or accept a nonsense value"
+- id: FALSIFY-APR-RECIPE-011
+  rule: the base is .apr, SafeTensors or GGUF, detected by magic bytes, and refused before training when unsupported, corrupt or quantized
+  prediction: "The base format is read from the first bytes of the file, never the extension (a SafeTensors named .bin, a GGUF named .safetensors and an APR named .gguf are each detected as what they are). A SafeTensors or GGUF base is imported to row-major APR through the importer `apr import` uses and the run logs `[base] detected format=<apr|safetensors|gguf>`; a real recipe run also logs `[recipe] base format=...` before any model is loaded. A file that is none of the three, a truncated SafeTensors header, a GGUF whose header does not parse, and a GGUF with any quantized tensor (a dtype other than F32, F16 or BF16) are refused with an error naming the file; the quantized refusal states that training would dequantize silently. A valid tiny F32 GGUF (GGUF tensor names, dims stored innermost-first) imports with every dim pair reversed to row-major (gate [16, 8], down [8, 16]) and with the same values as the same model imported from SafeTensors; this fails if the reversal is skipped. The same tiny model as .safetensors, as the APR that import produces and as that GGUF, trained under one recipe shape (method lora, no recipe run is active, so the trainer seed is the default 42) gives equal adapter tensors and equal loss for .safetensors and .apr, an equal adapter for the GGUF, and the same APR run twice is identical"
+  test: |
+    cargo test -p apr-cli --lib -- format_comes_from_magic_bytes_not_the_extension unsupported_or_corrupt_files_are_refused_with_a_clear_error a_quantized_gguf_is_refused_with_its_reason_and_an_exact_one_is_not a_safetensors_base_is_imported_to_row_major_apr_and_the_format_is_named an_apr_base_is_used_in_place a_gguf_base_lands_row_major_with_data_unchanged_after_import one_recipe_trains_the_same_model_from_safetensors_apr_and_gguf
+  if_fails: "A base the pipeline cannot read fails deep inside training under a message naming a format the caller never gave, or a quantized GGUF is trained on silently dequantized values"

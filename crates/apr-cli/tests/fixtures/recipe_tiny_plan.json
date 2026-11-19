@@ -1,0 +1,23 @@
+{
+  "model_params": 800000000,
+  "vram_gb": 16.0,
+  "recommended_method": "QLoRA",
+  "recommended_rank": 8,
+  "recommended_alpha": 16.0,
+  "trainable_params": 25165824,
+  "trainable_percent": 3.1457279999999996,
+  "memory_gb": 1.456964608,
+  "utilization_percent": 9.1060288,
+  "speedup": 1.8,
+  "epochs": 1,
+  "learning_rate": 0.0002,
+  "plan_only": true,
+  "memory_breakdown": {
+    "model_bytes": 400000000,
+    "adapter_bytes": 1572864,
+    "optimizer_bytes": 6291456,
+    "activation_bytes": 805306368,
+    "total_bytes": 1213170688,
+    "savings_percent": 86.22227737118982
+  }
+}

@@ -152,6 +152,41 @@ impl InstructTrainer {
         Ok(Self { pipeline, config, train_data, val_data, rng_seed, data_hash })
     }
 
+    /// Create a trainer that trains on all of `corpus` and validates on `heldout`
+    /// (a recipe's `eval.heldout`), instead of splitting the corpus.
+    ///
+    /// `config.val_split` is not used. The data hash covers the training corpus only.
+    ///
+    /// # Errors
+    /// Returns error if either set is empty or epochs is 0.
+    pub fn with_heldout(
+        pipeline: InstructPipeline,
+        corpus: Vec<InstructSample>,
+        heldout: Vec<InstructSample>,
+        config: InstructTrainingConfig,
+    ) -> crate::Result<Self> {
+        if corpus.is_empty() {
+            return Err(crate::Error::ConfigError("GH-371: corpus must not be empty".to_string()));
+        }
+        if heldout.is_empty() {
+            return Err(crate::Error::ConfigError("heldout set must not be empty".to_string()));
+        }
+        if config.epochs == 0 {
+            return Err(crate::Error::ConfigError("GH-371: epochs must be > 0".to_string()));
+        }
+        let rng_seed = config.seed;
+        let data_hash = Self::compute_data_hash(&corpus);
+        Ok(Self { pipeline, config, train_data: corpus, val_data: heldout, rng_seed, data_hash })
+    }
+
+    /// Write the per-epoch checkpoint when `epoch` falls on the `save_every` cadence.
+    fn save_periodic_checkpoint(&mut self, epoch: usize, metrics: &InstructEpochMetrics) {
+        if periodic_save_due(self.config.epochs, self.config.save_every, epoch) {
+            let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
+            let _ = self.save_checkpoint(&epoch_path, epoch, metrics);
+        }
+    }
+
     /// Run the full training loop.
     pub fn train(&mut self) -> InstructTrainResult {
         use crate::optim::{LRScheduler, WarmupCosineDecayLR};
@@ -270,10 +305,7 @@ impl InstructTrainer {
             }
 
             // Periodic checkpoint
-            if periodic_save_due(self.config.epochs, self.config.save_every, epoch) {
-                let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
-                let _ = self.save_checkpoint(&epoch_path, epoch, &metrics);
-            }
+            self.save_periodic_checkpoint(epoch, &metrics);
 
             epoch_metrics.push(metrics);
 
@@ -622,6 +654,26 @@ mod tests {
                 metadata: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn test_with_heldout_validates_on_the_heldout_set_not_a_split() {
+        let model_config = TransformerConfig::tiny();
+        let mk = || {
+            InstructPipeline::new(
+                &model_config,
+                InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() },
+            )
+        };
+        let config = InstructTrainingConfig { epochs: 1, ..Default::default() };
+        let t = InstructTrainer::with_heldout(mk(), make_corpus(6), make_corpus(3), config.clone())
+            .expect("trainer");
+        assert_eq!(t.train_size(), 6, "all of the corpus trains");
+        assert_eq!(t.val_size(), 3, "validation is the heldout set");
+        assert!(
+            InstructTrainer::with_heldout(mk(), make_corpus(6), vec![], config.clone()).is_err()
+        );
+        assert!(InstructTrainer::with_heldout(mk(), vec![], make_corpus(3), config).is_err());
     }
 
     #[test]
