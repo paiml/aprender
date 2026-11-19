@@ -36,13 +36,13 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd, lc, k) { # drop a trailing comm
         if (dd > 0 && L !~ /[ \t:,[{]/) midq = midq + 1
         # block context: a quote after a word in KEY position (no ": " before it), or with flow brackets after it on the line, is
         # text of a plain scalar that this scan would read as a quote opener, and which brackets are real is then ambiguous
-        if (dd == 0 && L !~ /[ \t:,[{-]/ && (substr(s, 1, i - 1) !~ /:([ \t]|$)/ || substr(s, i + 1) ~ /[{}[\]]/)) midq = midq + 1
+        if (dd == 0 && L !~ /[ \t:,[{]/ && substr(s, 1, i - 1) !~ /^[ \t]*(-[ \t]+)*$/ && (substr(s, 1, i - 1) !~ /:([ \t]|$)/ || substr(s, i + 1) ~ /[{}[\]]/)) midq = midq + 1
         q = c
       }
       else if ((c == "\042" || c == "\047") && p == ":" && dd > 0) midq = midq + 1 # an adjacent quote after a colon that did not follow a quoted key ([]:"v", a:"v"): refuse
       else if (c == "#" && p ~ /[ \t]/) { s = substr(s, 1, i - 1); break }
       else if (c == "{" && p == "$" && substr(s, i + 1, 1) == "{") { # a ${{ }} expression: its braces are not flow; inside a flow collection refuse
-        if (dd > 0) midq = midq + 1
+        if (dd > 0 || substr(s, 1, i - 1) !~ /(:|-)[ \t]/) midq = midq + 1 # only a block VALUE may hold an expression; in a key or in flow, refuse
         j = index(substr(s, i), "}}"); if (j == 0) { midq = midq + 1; noq = noq c; continue } # unclosed expression: refuse the line
         noq = noq substr(s, i, j + 1); i = i + j
       }
@@ -366,6 +366,11 @@ EOF
 
   printf "name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    a ' : { b: 'x',\n    timeout-minutes: 25\n    , d: x ' } # '\n    steps:\n      - run: echo untimed\n        a ' : { b: 'x',\n        timeout-minutes: 10\n        , d: x ' } # '\n" > "$t/r13.yml"; expect_unj "space-quote in a block plain key hiding flow brackets" "$t/r13.yml"
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    a " : { b: "x",\n    timeout-minutes: 25\n    , d: x " } # "\n    steps:\n      - run: echo untimed\n        a " : { b: "x",\n        timeout-minutes: 10\n        , d: x " } # "\n' > "$t/r14.yml"; expect_unj "same with double quotes" "$t/r14.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    runs-on: ubuntu-latest\n    env:\n      ${{ x : " # }}\n    timeout-minutes: 25\n    " # "\n    steps:\n      - run: echo UNTIMED\n        env:\n          ${{ x : " # }}\n        timeout-minutes: 10\n        " # "\n' > "$t/r15.yml"; expect_unj "expression in key position hiding a multi-line quote" "$t/r15.yml"
+
+  printf "name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    runs-on: ubuntu-latest\n    a- ' : [ # '\n    timeout-minutes: 25\n    , a- ' ] # '\n    steps:\n      - run: echo untimed\n        a- ' : [ # '\n        timeout-minutes: 10\n        , a- ' ] # '\n" > "$t/r16.yml"; expect_unj "word-dash-space-quote in block context" "$t/r16.yml"
+  printf "on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - 'run': x\n        timeout-minutes: 10\n" > "$t/r17.yml"; expect_unj "quoted key after a block dash is judged as a quoted first key" "$t/r17.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
