@@ -93,6 +93,8 @@ BEGIN { bsind = -1 }
 {
   sub(/\r$/, "")
   if (FNR == 1 && index($0, "\357\273\277") == 1) bom = 1
+  # YAML also breaks a line at a bare CR and at NEL, LS and PS; awk splits on LF only, so one record can hold several YAML lines
+  if (index($0, "\r") > 0 || index($0, "\302\205") > 0 || index($0, "\342\200\250") > 0 || index($0, "\342\200\251") > 0) brk = brk + 1
   if (bsind >= 0) { # inside a block scalar: its text is data, not structure
     if ($0 ~ /^[ \t]*$/) next
     match($0, /^ */)
@@ -170,6 +172,7 @@ END {
   close_job()
   unj = 0
   if (shp + 0 > 0) { print "UNJUDGED: line outside the judged YAML subset (" shp " lines, first at line " shp1 ")"; unj = 1 }
+  if (brk + 0 > 0) { print "UNJUDGED: a YAML line break other than LF inside a line (" brk " lines)"; unj = 1 }
   if (onbs + 0 > 0) { print "UNJUDGED: block scalar under the on: key (" onbs " lines)"; unj = 1 }
   if (bom) { print "UNJUDGED: byte-order mark at the start of the file"; unj = 1 }
   if (badtop != "") { print "UNJUDGED: column-0 line that is not a plain or quoted top-level key (flow continuation, document marker, anchor):" badtop; unj = 1 }
@@ -412,6 +415,10 @@ EOF
 
   printf 'name: x\non:\n  - >-\n    schedule\n  - workflow_dispatch\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r25.yml"; expect_unj "block scalar spelling a trigger under on" "$t/r25.yml"
   printf 'name: x\non:\n  workflow_dispatch:\n    inputs:\n      a { ": " } # x\nfake: 1\n      " # "\n  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        timeout-minutes: 10\n' > "$t/r26.yml"; expect_unj "brace-and-quote text in a plain key" "$t/r26.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch: # \r  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r27.yml"; expect_unj "bare CR hiding schedule" "$t/r27.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - timeout-minutes: 10\n        run: |\n          echo hi\r      - run: echo UNTIMED\n' > "$t/r28.yml"; expect_unj "bare CR inside a block scalar" "$t/r28.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10 # \342\200\250      - run: echo UNTIMED\n' > "$t/r29.yml"; expect_unj "Unicode LS as a line break" "$t/r29.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
