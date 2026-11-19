@@ -15,6 +15,7 @@ include!("lib_parse_tensors.rs");
 include!("lib_parse.rs");
 include!("lib_parse_rosetta_02.rs");
 include!("lib_extract_paths.rs");
+include!("lib_validate_helpers.rs");
 include!("lib_execute_export_convert.rs");
 include!("lib_verbose_inheritance_parse.rs");
 include!("lib_parse_thinking_3723.rs");
