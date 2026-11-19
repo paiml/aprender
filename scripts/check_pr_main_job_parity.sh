@@ -36,6 +36,8 @@
 #   - The PR-shortcut scan reads run scripts line by line: a shortcut built across a function, an eval, a sourced file or a variable
 #     holding the event name is not seen. It matches `exit 0` and a bare `exit` after a pull_request test; it does not read `exit $rc`.
 #   - A reusable workflow (`uses:` job) is judged by its caller's `if:` only; the callee's own steps are not read.
+#   - A step-level `if:` is not read: a step skipped on a pull_request by `if: github.event_name != 'pull_request'` reads as run.
+#     (Reading it flagged three live jobs whose step `if:` legitimately names the event, so it stays a limit.)
 set -uo pipefail
 command -v yq >/dev/null || { echo "ENV: yq missing"; exit 2; }
 command -v jq >/dev/null || { echo "ENV: jq missing"; exit 2; }
@@ -111,7 +113,7 @@ function atom(a,   lit, eq, la) {
   }
   if (la == "true") return "T"   # GitHub reads TRUE/True/true alike
   if (la == "false") return "F"
-  if (la ~ /^(0|-0|0\.0+|\047\047|null)$/) return "F"   # the falsy literals: 0, -0, 0.0, empty string, null
+  if (la ~ /^(-?0|-?0\.0+|-?0x0+|-?0e[+-]?0+|nan|\047\047|null)$/) return "F"   # the falsy literals: 0, -0, 0.0, empty string, null
   return "U"
 }
 function pprim(   v, a) {
@@ -139,7 +141,8 @@ function fold(s,   m) { # function calls become one U term; one that names githu
 }
 function judge(e, evn,   v) {
   err = ""; ev = evn; pos = 1
-  rf = (evn == "push") ? "refs/heads/main" : ((evn == "pull_request") ? "refs/pull/1/merge" : "refs/heads/gh-readonly-queue/main/pr-1-0")
+  rf = (evn == "push") ? "refs/heads/main" : ((evn == "pull_request") ? "refs/pull/N/merge" : "refs/heads/gh-readonly-queue/main/pr-1-0")
+  if (e ~ /github[ ]*\[/) { err = "github[...] bracket dereference: " e; return "U" }
   e = fold(e)
   if (e ~ /^ *$/) return "T"
   if (err != "") return "U"
@@ -158,7 +161,10 @@ BEGIN { FS = "\t" }
   FL[nj] = $1; JB[nj] = $2; PM[nj] = ($3 == "1"); ONPUSH[nj] = ($3 == "1" && pv != "F"); BAD[nj] = bad
   P[nj] = onpr; M[nj] = onmg; NEEDS[nj] = $7
   # A job whose if: names always(), cancelled() or failure() runs whatever its needs did; any other job is skipped when a needed job is skipped.
-  ST[nj] = (tolower(ex) ~ /(always|cancelled|failure)[ ]*\(/)
+  # Quoted literals are dropped first (a string holding "always()" is no status call). Only always() and a negated cancelled()/failure()
+  # stay true when a need was skipped; a bare cancelled()/failure() is false then, so such a job keeps needs: propagation (RED, never OK).
+  lx = tolower(ex); gsub(/\047[^\047]*\047/, "", lx)
+  ST[nj] = (lx ~ /always[ ]*\(/ || lx ~ /![ ]*(cancelled|failure)[ ]*\(/)
   KEY[$1 SUBSEP $2] = nj
 }
 END {
@@ -188,7 +194,7 @@ rows() {
     raw=$(yq -o=json '.' "$f") || { echo "RED: $(basename "$f") is not readable by yq (malformed YAML), so it was not judged" >&2; return 1; }
     raw=$(printf '%s' "$raw" | jq -r --arg f "$(basename "$f")" '
       def arr: if type=="array" then . elif type=="null" then [] else [.] end;
-      def gl: gsub("\\.";"\\.") | gsub("\\*\\*";"@@DS@@") | gsub("\\*";"[^/]*") | gsub("@@DS@@";".*") | gsub("\\?";"[^/]");
+      def gl: gsub("(?<c>[|$^(){}])";"\\\(.c)") | gsub("\\.";"\\.") | gsub("\\*\\*";"@@DS@@") | gsub("\\*";"[^/]*") | gsub("@@DS@@";".*") | gsub("\\?";"[^/]");
       # A paths filter on pull_request must be non-empty and equal the push filter. A filter holding a negation is order-sensitive,
       # so it is compared as written; one without is compared as a set.
       def pseq($a; $b): ($a|arr) as $x | ($b|arr) as $y | ($x|length) > 0 and (if ($x+$y|map(tostring|startswith("!"))|any) then $x == $y else ($x|sort) == ($y|sort) end);
@@ -196,9 +202,10 @@ rows() {
       (.on // {}) as $on
       | (if ($on|type)=="string" then [$on] elif ($on|type)=="array" then $on else ($on|keys) end) as $ev
       | (if ($on|type)=="object" and ($on.push|type)=="object"
-           then (($on.push.branches // null) as $b | ($on.push.tags // null) as $t
-                 | if $b==null and $t!=null then false
-                   else ($b==null or ($b|map(select(.=="main" or .=="master" or test("\\*")))|length>0)) end)
+           then (($on.push.branches // null) as $b | ($on.push.tags // null) as $t | ($on.push["branches-ignore"] // null) as $bi
+                 | if $b==null and $t!=null and $bi==null then false
+                   else (($b==null or pats($b; "main") or ($b|arr|map(select(.=="main" or .=="master" or test("[*?]")))|length>0))
+                         and ($bi==null or (pats($bi; "main")|not))) end)
            else ($ev|index("push")!=null) end) as $pushmain
       | (if ($ev|index("pull_request")) == null then false
          elif ($on|type)=="object" and ($on.pull_request|type)=="object" then
@@ -235,17 +242,19 @@ shortcuts() {
           # is a RED, never an OK): `[ .. pull_request .. ] && exit 0`, `[ .. pull_request .. ] || .. exit 0` (either polarity), an if/elif
           # on pull_request whose block (nested ifs counted by depth, an else included) reaches exit 0, and a `case` arm naming pull_request
           # that reaches exit 0.
-          function words(l, w,   n, a, i, c) { n = split(l, a, /[^A-Za-z0-9_]+/); c = 0; for (i = 1; i <= n; i++) if (a[i] == w) c++; return c }
+          function words(l, w,   n, a, i, c) { gsub(/"[^"]*"/, "", l); gsub(/\047[^\047]*\047/, "", l); n = split(l, a, /[^A-Za-z0-9_]+/); c = 0; for (i = 1; i <= n; i++) if (a[i] == w) c++; return c }
           /^[[:space:]]*#/ { next }
           {
             l = $0; nif = words(l, "if"); nfi = words(l, "fi")
             # `exit 0` and a bare `exit` (status of the last command, success after an echo) both return success.
-            ex = (l ~ /(^|[^A-Za-z0-9_-])exit[[:space:]]+0([^0-9]|$)/ || l ~ /(^|[^A-Za-z0-9_-])exit[[:space:]]*([;&|})]|$)/)
-            if (l ~ /^[[:space:]]*(\[|test[[:space:]]).*pull_request.*(&&|\|\|).*(exit)/ && ex) hit = 1
+            ex = (l ~ /(^|[^A-Za-z0-9_-])exit[[:space:]]+["\047]?0["\047]?([^0-9]|$)/ || l ~ /(^|[^A-Za-z0-9_-])exit[[:space:]]*([;&|})#]|$)/)
+            if (l ~ /(\[|test[[:space:]]).*pull_request.*(&&|\|\|).*(exit)/ && ex) hit = 1
             # `[ .. pull_request .. ] && {` / `|| {` (or a line that continues): the brace block, or the next line, is the guarded body.
             if (blk > 0 && ex) hit = 1
             if (blk == 1 && l !~ /(&&|\|\||\\)[[:space:]]*$/ && l !~ /\{[[:space:]]*$/) blk = 0
             if (blk == 2 && l ~ /^[[:space:]]*\}/) blk = 0
+            if (blk == 1 && l ~ /^[[:space:]]*\{[[:space:]]*$/) blk = 2
+            if (l ~ /pull_request/ && l ~ /(&&|\|\|)[[:space:]]*\{[^}]*$/) blk = 2
             if (l ~ /^[[:space:]]*(\[|test[[:space:]]).*pull_request/ && l ~ /(&&|\|\||\\)[[:space:]]*\{?[[:space:]]*$/ ) blk = (l ~ /\{[[:space:]]*$/) ? 2 : 1
             if (l ~ /^[[:space:]]*(if|elif)[[:space:]].*pull_request/) { if (ex) hit = 1 }
             else if (prd > 0 && ex) hit = 1
@@ -253,7 +262,7 @@ shortcuts() {
             if (l ~ /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ && prd == 0 && d > 0 && (nif > nfi || l ~ /^[[:space:]]*elif/)) prd = d
             if (prd > 0 && d < prd) prd = 0
             if (d < 0) d = 0
-            if (l !~ /^[[:space:]]*(if|elif)[[:space:]]/ && l ~ /(^|[[:space:]])\(?["\047]?([A-Za-z_*]+["\047]?\|["\047]?)*pull_request(["\047]?\|["\047]?[A-Za-z_*]+)*["\047]?\)/) { carm = 1; if (ex) hit = 1 }
+            if (l !~ /^[[:space:]]*(if|elif)[[:space:]]/ && l ~ /(^|[[:space:]|(])["\047]?pull_request[*"\047]*[[:space:]]*[|)]/) { carm = 1; if (ex) hit = 1 }
             else if (carm && ex) hit = 1
             if (carm && l ~ /;;/) carm = 0
           }
@@ -804,6 +813,151 @@ jobs:
   PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
   [ "$rc" = 1 ] && echo "ok   a dangling symlinked workflow is RED" || { echo "FAIL a dangling symlinked workflow (rc $rc, want 1)"; fails=1; }
   rm -f "${w:?}"/*
+  # #7314 lane 2 on a192475: each row below was a silent exit 0 before it was fixed.
+  tx() { # name, expected rc, workflow body; job p is the exempt push-only one
+    rm -f "${w:?}"/*; printf '%s' "$3" > "$w/ci.yml"; printf '%s' "ci.yml:p push only" > "$d/ex"
+    PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; local rc=$?
+    [ "$rc" = "$2" ] && echo "ok   $1" || { echo "FAIL $1 (rc $rc, want $2)"; fails=1; }
+  }
+  tf "github['ref'] bracket dereference is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || github['ref'] == 'refs/heads/main'\", steps: []}
+"
+  tf "startsWith(github['ref'], ..) bracket dereference is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || startsWith(github['ref'], 'refs/heads/')\", steps: []}
+"
+  tf "push || NaN (a falsy literal) never runs on a PR, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || NaN\", steps: []}
+"
+  tf "push || -0.0 (a falsy literal) never runs on a PR, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || -0.0\", steps: []}
+"
+  tf "push || 0x0 (a falsy literal) never runs on a PR, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || 0x0\", steps: []}
+"
+  tf "push || 0e0 (a falsy literal) never runs on a PR, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || 0e0\", steps: []}
+"
+  tf "push || github.ref == a PR merge ref never runs on a PR, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || github.ref == 'refs/pull/1/merge'\", steps: []}
+"
+  tx "needs a PR-skipped job, if success() || failure(), RED" 1 "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  a: {runs-on: x, needs: [p], if: \"\${{ success() || failure() }}\", steps: []}
+"
+  tx "needs a PR-skipped job, if success() || cancelled(), RED" 1 "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  a: {runs-on: x, needs: [p], if: \"\${{ success() || cancelled() }}\", steps: []}
+"
+  tx "needs a PR-skipped job, if holds a quoted always() literal, RED" 1 "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  a: {runs-on: x, needs: [p], if: \"vars.MODE != 'always()'\", steps: []}
+"
+  tx "needs a PR-skipped job, if always() is green (always runs on a skipped need)" 0 "$H
+  p: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+  a: {runs-on: x, needs: [p], if: \"always()\", steps: []}
+"
+  tf "pull_request.branches with a literal | never matches main, RED" 1 ci.yml "on: {push: {branches: [main]}, pull_request: {branches: [\"release|main\"]}}
+jobs:
+  a: {runs-on: x, steps: []}
+"
+  tf "pull_request.branches with a literal $ never matches main, RED" 1 ci.yml "on: {push: {branches: [main]}, pull_request: {branches: [\"main\$\"]}}
+jobs:
+  a: {runs-on: x, steps: []}
+"
+  tf "push.branches with a ? glob reaches main, push-only job RED" 1 ci.yml "on: {push: {branches: [\"mai?\"]}}
+jobs:
+  a: {runs-on: x, steps: []}
+"
+  tf "push with branches-ignore and tags reaches main, push-only job RED" 1 ci.yml "on: {push: {branches-ignore: [dev], tags: [\"v*\"]}}
+jobs:
+  a: {runs-on: x, steps: []}
+"
+  tf "push with branches-ignore: [main] does not reach main, green" 0 ci.yml "on: {push: {branches-ignore: [main]}}
+jobs:
+  a: {runs-on: x, steps: []}
+"
+  tf "brace block with code on the opening line is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${EVT:-}\" != pull_request ] || { echo light passed
+            exit 0
+          }
+          check_heavy
+"
+  tf "backslash-continued { block is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${EVT:-}\" != pull_request ] || \\
+          {
+            echo light passed
+            exit 0
+          }
+          check_heavy
+"
+  tf "case arm with spaces round | is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\${EVT:-}\" in
+            push | pull_request ) exit 0 ;;
+          esac
+          check_heavy
+"
+  tf "case arm with a glob is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\${EVT:-}\" in
+            pull_request*) exit 0 ;;
+          esac
+          check_heavy
+"
+  tf "bare exit followed by a comment is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            echo light passed
+            exit # ok
+          fi
+          check_heavy
+"
+  tf "exit \"0\" quoted is a PR shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            exit \"0\"
+          fi
+          check_heavy
+"
+  tf "a chained command before [ pull_request ] && exit 0 is a shortcut, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          echo checking && [ \"\${EVT:-}\" = pull_request ] && exit 0
+          check_heavy
+"
+  tf "fi inside quoted text does not close the if, RED" 1 ci.yml "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            echo \"wi-fi light passed\"
+            exit 0
+          fi
+          check_heavy
+"
   # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
   # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
   local sh yqp jqp
