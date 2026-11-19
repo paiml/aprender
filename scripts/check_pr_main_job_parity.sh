@@ -62,7 +62,7 @@ queue_live() { # 0 = an active ruleset carries a merge_queue rule
 
 scan() {
   local live="$1" fail=0 f j p pr mg key reason seen=""
-  declare -A exempt used
+  local exempt="" used=""
   if [ -f "$EX" ]; then
     while read -r key reason || [ -n "$key" ]; do
       case "$key" in ''|\#*) continue ;; esac
