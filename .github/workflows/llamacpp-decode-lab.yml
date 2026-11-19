@@ -1,0 +1,37 @@
+name: llama.cpp decode ratio (LAB nightly)
+
+# LAB check (GATE/LAB rule): schedule and workflow_dispatch ONLY. Never a PR,
+# merge or release path, never required, writes a receipt and cannot block.
+# Mirrors cuda-nightly.yml's decode beat on the same GPU runner and host group.
+on:
+  schedule:
+    - cron: "15 21 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ratio:
+    if: ${{ vars.CUDA_RUNNER_READY == 'true' }}
+    concurrency:
+      group: perf-gx10
+      cancel-in-progress: false
+    runs-on: [self-hosted, gpu, Linux, ARM64, cuda, blackwell, gx10]
+    timeout-minutes: 60
+    env:
+      APR_BIN: ${{ github.workspace }}/target/release/apr
+      APR_GGUF: ${{ vars.APR_DECODE_GGUF || '/home/noah/models/qwen2.5-coder-1.5b-instruct-q4_k_m.gguf' }}
+      LLAMA_BENCH_PATH: ${{ vars.LLAMA_BENCH_PATH }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build apr (cuda)
+        run: nice -n 19 cargo build --release --features cuda --bin apr
+      - name: Measure apr vs llama.cpp decode
+        run: bash scripts/llamacpp_decode_ratio_lab.sh
+        env:
+          OUT: ${{ runner.temp }}/llamacpp-decode-ratio.json
+      - uses: actions/upload-artifact@v7
+        with:
+          name: llamacpp-decode-ratio
+          path: ${{ runner.temp }}/llamacpp-decode-ratio.json

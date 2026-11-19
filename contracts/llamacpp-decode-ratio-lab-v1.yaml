@@ -1,0 +1,49 @@
+metadata:
+  version: 1.0.0
+  created: '2026-11-19'
+  author: PAIML Engineering
+  description: "LAB lane (#6570): nightly ratio of apr GPU decode tok/s to llama.cpp tg tok/s, same GGUF, same GPU, written as a receipt. It has NO blocking threshold: it runs only on schedule or workflow_dispatch, never on a PR, merge or release path, and a NOT_MEASURED or low ratio opens one ticket and stops there."
+  kind: pattern
+  references:
+    - "scripts/llamacpp_decode_ratio_lab.sh — the producer of the receipt"
+    - ".github/workflows/llamacpp-decode-lab.yml — schedule and workflow_dispatch only"
+    - "contracts/beat-ollama-decode-throughput-speed-v1.yaml — the ollama decode beat this mirrors"
+    - "contracts/pp-llama-001-comparator-pin-v1.yaml — the pinned comparator the lane resolves through llama_bin.sh"
+  tags:
+    - parity
+    - llama.cpp
+    - lab
+
+equations:
+  decode_ratio_receipt:
+    formula: "ratio = median_k((384-128)/(ms384_k-ms128_k)*1000) / llama_bench_tg_avg_ts"
+    domain: "apr built --features cuda; a pinned llama-bench resolved by llama_bin_resolve; one GGUF file read by both sides"
+    codomain: "a JSON receipt with status MEASURED or NOT_MEASURED and threshold null"
+    invariants:
+      - "Either side absent or unpinned yields status NOT_MEASURED with a reason, never a ratio"
+      - "The script exits 0 whatever the ratio: a LAB check cannot block"
+      - "The receipt carries threshold null until the owner promotes the check with three green nights"
+
+proof_obligations:
+  - id: LCDR-INV-001
+    type: invariant
+    property: "The lane is LAB: it has no PR, push, merge or release trigger"
+    formal: "on: keys of llamacpp-decode-lab.yml are exactly {schedule, workflow_dispatch}"
+    applies_to: decode_ratio_receipt
+  - id: LCDR-INV-002
+    type: invariant
+    property: "A missing input yields NOT_MEASURED, not a ratio"
+    formal: "APR_BIN not executable => receipt.status = NOT_MEASURED and receipt.ratio_apr_over_llamacpp = empty"
+    applies_to: decode_ratio_receipt
+
+falsification_tests:
+  - id: FALSIFY-LCDR-001
+    rule: "The lane has no blocking trigger"
+    prediction: "The workflow's top-level on: block lists only schedule and workflow_dispatch"
+    test: "! grep -E '^  (pull_request|push|merge_group|release|workflow_call)' .github/workflows/llamacpp-decode-lab.yml"
+    if_fails: "A LAB lane reached a PR or release path, which the GATE/LAB rule forbids."
+  - id: FALSIFY-LCDR-002
+    rule: "An unmeasurable run writes NOT_MEASURED and exits 0"
+    prediction: "With a nonexistent APR_BIN the script exits 0 and the receipt says NOT_MEASURED"
+    test: "APR_BIN=/nonexistent/lcdr-absent APR_GGUF=/nonexistent/lcdr-absent OUT=${TMPDIR:-/tmp}/lcdr.json bash scripts/llamacpp_decode_ratio_lab.sh >/dev/null && grep -q NOT_MEASURED ${TMPDIR:-/tmp}/lcdr.json"
+    if_fails: "The lane reports a ratio it did not measure, or blocks on a missing input."
