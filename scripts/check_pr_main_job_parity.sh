@@ -112,7 +112,7 @@ $key"
     [ -n "$f" ] || continue
     key="$f:$j"
     if [ "$pr" = 0 ]; then
-      if printf "%s\n" "$exempt" | grep -qxF -- "$key"; then used="$used
+      if grep -qxF -- "$key" <<<"$exempt"; then used="$used
 $key"; continue; fi
       if [ "$mg" = 1 ]; then echo "RED: $key runs on push to main but is skipped on pull_request by an if: event guard (merge_group does not cover it)"
       else echo "RED: $key runs on push to main and not on any pull_request run"; fi
@@ -130,7 +130,7 @@ $key"; continue; fi
     fail=1
   done < <(drafts)
   for key in $(printf "%s\n" "$exempt" | tr " " "_" | grep -v "^$"); do
-    printf "%s\n" "$used" | grep -qxF -- "$key" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
+    grep -qxF -- "$key" <<<"$used" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
   done
   [ "$fail" = 0 ] && echo "OK: every job that runs on push to main also runs on a pull_request, and no job passes a PR before its heavy checks"
   return "$fail"
