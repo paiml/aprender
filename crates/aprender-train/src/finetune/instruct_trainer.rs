@@ -670,6 +670,36 @@ mod tests {
         // this tiny config in under a millisecond, so it is not asserted. The epoch count is.
     }
 
+    /// #7255: two same-seed runs write a checkpoint with an identical sha256.
+    #[test]
+    fn same_seed_checkpoints_have_identical_sha256() {
+        let digest = |dir: &std::path::Path| {
+            let model_config = TransformerConfig::tiny();
+            let instruct_config =
+                InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
+            let pipeline = InstructPipeline::new(&model_config, instruct_config);
+            let config = InstructTrainingConfig { epochs: 1, seed: 7, ..Default::default() };
+            let mut trainer = InstructTrainer::new(pipeline, make_corpus(10), config).unwrap();
+            let metrics = InstructEpochMetrics {
+                epoch: 0,
+                train_loss: 1.0,
+                train_perplexity: 2.0,
+                val_loss: 6.743455,
+                val_perplexity: 3.0,
+                learning_rate: 1e-4,
+                epoch_time_ms: 0,
+                samples_per_sec: 0.0,
+            };
+            trainer.save_checkpoint(dir, 0, &metrics).unwrap();
+            let bytes = std::fs::read(dir.join("model.safetensors")).unwrap();
+            format!("{:x}", Sha256::digest(&bytes))
+        };
+        let tmp = tempfile::tempdir().unwrap();
+        let a = digest(&tmp.path().join("a"));
+        let b = digest(&tmp.path().join("b"));
+        assert_eq!(a, b);
+    }
+
     #[test]
     fn test_data_hash_deterministic() {
         let corpus = make_corpus(5);

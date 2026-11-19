@@ -49,8 +49,8 @@ done <<< "$rows"
 if [ -z "$from_n" ]; then printf '%s: milestone %s is not open in %s: nothing to carry\n' "$PROG" "$ver" "$repo"; exit 0; fi
 [ -n "$next_n" ] || die "no open milestone newer than $ver in $repo to carry into"
 
-# The issues API lists issues AND pull requests of a milestone; `gh pr list` has no --milestone flag (#7238).
-nums=$($GH api "repos/$repo/issues?milestone=$from_n&state=open&per_page=100" --paginate --jq '.[].number' 2> /dev/null) \
+nums=$( { $GH issue list -R "$repo" --milestone "$ver" --state open --limit 500 --json number --jq '.[].number' \
+        && $GH pr list -R "$repo" --milestone "$ver" --state open --limit 500 --json number --jq '.[].number'; } 2> /dev/null) \
     || die "cannot list open items of milestone $ver (not_measured)"
 fail=0 moved=0
 for n in $nums; do
