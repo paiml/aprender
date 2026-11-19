@@ -78,8 +78,11 @@ const EXTERNAL_CALLS: [&str; 3] = [
 /// The one `with.runs_on` an external call may pass, and which call may pass it.
 const SMELLS_RUNS_ON: &str = X64;
 
+/// Workflow keys are matched case-insensitively, as Actions does (`If:` is `if:`). Job ids use `Mapping::get`.
 fn key(m: &Mapping, k: &str) -> Option<Value> {
-    m.get(k).cloned()
+    m.iter()
+        .find(|(n, _)| n.as_str().is_some_and(|n| n.eq_ignore_ascii_case(k)))
+        .map(|(_, v)| v.clone())
 }
 
 /// Every scalar (keys and values) under `v`; a merge key or a tag cannot be judged.
@@ -464,7 +467,64 @@ fn check_workflow_level(base: &str, top: &Mapping, why: &mut Vec<String>) {
     }
 }
 
-/// Part (f): the guard test runs, unmasked, in the job every event runs, and `gate` needs it.
+/// The only keys the guard step may carry. Any other (`shell`, `if`, `continue-on-error`, `uses`, `with`, `env`,
+/// in any case) can skip or mask it.
+const GUARD_STEP_KEYS: [&str; 3] = ["name", "run", "timeout-minutes"];
+
+/// A `run` script as logical lines: comment lines dropped, backslash continuations joined.
+fn logical_lines(run: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    for l in run.lines() {
+        let t = l.trim();
+        if t.starts_with('#') {
+            continue;
+        }
+        match t.strip_suffix('\\') {
+            Some(head) => {
+                cur.push_str(head);
+                cur.push(' ');
+            }
+            None => {
+                cur.push_str(t);
+                out.push(std::mem::take(&mut cur));
+            }
+        }
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
+}
+
+fn run_lines(s: &Mapping) -> Vec<String> {
+    key(s, "run")
+        .and_then(|r| r.as_str().map(logical_lines))
+        .unwrap_or_default()
+}
+
+/// The guard step: only the allowed keys, `set -euo pipefail`, no masking idiom anywhere in the script, and one
+/// top-level command (no `if`, `!`, `;`, `|`, `&`, comment) that ends exactly at `--test falsification_pr_spot_labels`.
+fn guard_step_ok(s: &Mapping) -> bool {
+    let keys_ok = s.iter().all(|(k, _)| {
+        k.as_str()
+            .is_some_and(|k| GUARD_STEP_KEYS.iter().any(|a| a.eq_ignore_ascii_case(k)))
+    });
+    let lines = run_lines(s);
+    keys_ok
+        && lines.iter().any(|l| l == "set -euo pipefail")
+        && !lines
+            .iter()
+            .any(|l| l.contains("||") || l.contains("set +") || l.contains("exit 0"))
+        && lines.iter().any(|l| {
+            l.starts_with("timeout ")
+                && l.contains(" cargo test ")
+                && l.ends_with("--test falsification_pr_spot_labels")
+                && !l.contains([';', '|', '&', '!', '#'])
+        })
+}
+
+/// Part (f): the guard test runs, unmasked, in the job every event runs, and `gate` needs it AND enforces its result.
 fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     const JOB: &str = "mg-reuse-self-test";
     const IF: &str =
@@ -472,7 +532,7 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     let Some(Value::Mapping(jobs)) = key(top, "jobs") else {
         return;
     };
-    let Some(Value::Mapping(job)) = key(&jobs, JOB) else {
+    let Some(Value::Mapping(job)) = jobs.get(JOB).cloned() else {
         return why.push(format!("wiring: job {JOB} is missing"));
     };
     if key(&job, "if").as_ref().and_then(Value::as_str) != Some(IF) {
@@ -483,32 +543,53 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     if key(&job, "continue-on-error").is_some() {
         why.push(format!("wiring: {JOB} has continue-on-error"));
     }
+    if key(&job, "defaults").is_some() {
+        why.push(format!(
+            "wiring: {JOB} sets defaults (a default shell can mask)"
+        ));
+    }
     let steps = match key(&job, "steps") {
         Some(Value::Sequence(s)) => s,
         _ => return why.push(format!("wiring: {JOB} steps are not a list")),
     };
-    let wired = steps.iter().any(|s| {
-        let Value::Mapping(s) = s else { return false };
-        let run = key(s, "run")
-            .and_then(|r| r.as_str().map(str::to_string))
-            .unwrap_or_default();
-        run.contains("--test falsification_pr_spot_labels")
-            && run.contains("cargo test")
-            && !["||", "set +e", "exit 0"].iter().any(|m| run.contains(m))
-            && key(s, "if").is_none()
-            && key(s, "continue-on-error").is_none()
-    });
+    let wired = steps
+        .iter()
+        .any(|s| matches!(s, Value::Mapping(s) if guard_step_ok(s)));
     if !wired {
         why.push(format!(
             "wiring: {JOB} has no unmasked step running this test"
         ));
     }
-    let needs = key(&jobs, "gate")
-        .and_then(|g| g.as_mapping().and_then(|g| key(g, "needs")))
+    let gate = jobs.get("gate").and_then(Value::as_mapping);
+    let needs = gate
+        .and_then(|g| key(g, "needs"))
         .map(|n| all_scalars(&n, &mut Vec::new()))
         .unwrap_or_default();
     if !needs.iter().any(|n| n == JOB) {
         why.push(format!("wiring: `gate` does not need {JOB}"));
+    }
+    // Needing the job is not enough: `gate` must also fail on its result.
+    let gate_lines: Vec<String> = gate
+        .and_then(|g| key(g, "steps"))
+        .and_then(|s| s.as_sequence().cloned())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Value::as_mapping)
+        .flat_map(run_lines)
+        .collect();
+    let gate_scalars = gate
+        .map(|g| all_scalars(&Value::Mapping(g.clone()), &mut Vec::new()))
+        .unwrap_or_default();
+    if !gate_lines
+        .iter()
+        .any(|l| l.starts_with("[ \"$MST\" = success ] || {"))
+        || !gate_scalars
+            .iter()
+            .any(|s| s == "${{ needs.mg-reuse-self-test.result }}")
+    {
+        why.push(format!(
+            "wiring: `gate` does not enforce {JOB}'s result ($MST)"
+        ));
     }
 }
 
@@ -1008,6 +1089,22 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("job-continue", job_mut(job, "    runs-on:", "    continue-on-error: true\n    runs-on:"), "continue-on-error"),
         ("job-if-merge-group-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "if: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
         ("job-if-pr-only", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "if: ${{ github.event_name == 'pull_request' }}"), "all-events condition"),
+        ("skip-suffix", job_mut(job, step, &format!("{step} -- --skip ''")), "no unmasked step"),
+        ("list-suffix", job_mut(job, step, &format!("{step} -- --list")), "no unmasked step"),
+        ("semicolon-suffix", job_mut(job, step, &format!("{step}; true")), "no unmasked step"),
+        ("step-shell-true", job_mut(job, "      - name: pr spot labels guard", "      - shell: \"true {0}\"\n        name: pr spot labels guard"), "no unmasked step"),
+        ("step-If-case", job_mut(job, "      - name: pr spot labels guard", "      - If: false\n        name: pr spot labels guard"), "no unmasked step"),
+        ("step-Continue-On-Error-case", job_mut(job, "      - name: pr spot labels guard", "      - Continue-On-Error: true\n        name: pr spot labels guard"), "no unmasked step"),
+        ("if-wrapped", job_mut(job, "          timeout --foreground", "          if timeout --foreground"), "no unmasked step"),
+        ("negated", job_mut(job, "          timeout --foreground", "          ! timeout --foreground"), "no unmasked step"),
+        ("commented-out", job_mut(job, "cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels", "# cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels"), "no unmasked step"),
+        ("errexit-off", job_mut(job, "set -euo pipefail", "set -euo pipefail\n          set +o errexit"), "no unmasked step"),
+        ("no-errexit", job_mut(job, "set -euo pipefail", "true"), "no unmasked step"),
+        ("job-defaults-shell", job_mut(job, "    runs-on:", "    defaults:\n      run:\n        shell: \"true {0}\"\n    runs-on:"), "sets defaults"),
+        ("job-Continue-On-Error-case", job_mut(job, "    runs-on:", "    Continue-On-Error: true\n    runs-on:"), "has continue-on-error"),
+        ("job-If-case", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "If: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
+        ("gate-drops-mst-line", real_mut("          [ \"$MST\" = success ] || { echo \"mg-reuse-self-test failed: $MST\"; exit 1; }\n", ""), "does not enforce"),
+        ("gate-mst-env-constant", real_mut("MST: ${{ needs.mg-reuse-self-test.result }}", "MST: success"), "does not enforce"),
         ("not-a-need-of-gate", real_mut("needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]", "needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, pr-light]"), "does not need"),
     ];
     for (n, text, needle) in cases {

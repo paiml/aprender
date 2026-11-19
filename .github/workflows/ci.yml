@@ -203,7 +203,7 @@ jobs:
           reap
           trap reap EXIT INT TERM
           # per-run dirs: GITHUB_RUN_ID is never reused, so no other job shares these (the run- prefix is what the disk reaper collects)
-          base="/mnt/nvme-raid0/targets/aprender-ci/run-${GITHUB_RUN_ID}/spot-labels-guard"
+          base="/mnt/nvme-raid0/targets/aprender-ci/spot-labels/run-${GITHUB_RUN_ID}"
           mkdir -p "$base/registry" "$base/target"
           timeout --foreground -k 30 900 docker run --rm --init --name "$cname" --cpus 4 --memory 8g --memory-swap 8g --pids-limit 2048 \
             -v "$GITHUB_WORKSPACE:/w:ro" -v "$base/registry:/usr/local/cargo/registry" -v "$base/target:/t" \
@@ -215,7 +215,8 @@ jobs:
         if: ${{ always() }}
         run: |
           docker rm -f "spot-labels-${GITHUB_RUN_ID}" >/dev/null 2>&1 || true
-          rm -rf "/mnt/nvme-raid0/targets/aprender-ci/run-${GITHUB_RUN_ID:?}/spot-labels-guard"
+          # The container runs as root, so its files survive a plain rm; free_own_target_dir.sh retries as root in the job image.
+          if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh spot-labels "$GITHUB_RUN_ID"; fi
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
