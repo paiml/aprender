@@ -20,10 +20,13 @@ if [ "$1" = api ] && [ "$2" = -X ]; then
     [ "$FAKE_PATCH" = "fail$n" ] && exit 1
     cat > /dev/null; echo "$FAKE_NEXT"; exit 0
 elif [ "$1" = api ]; then
+    case "$2" in "repos/"*"/issues?milestone="*)
+        [ "$FAKE_ITEMS" = down ] && exit 1
+        case "$2" in *milestone=31\&*) printf '1\n2\n'; exit 0;; *) exit 1;; esac;;
+    esac
     [ "$FAKE_MS" = down ] && exit 1
     printf '%s' "$FAKE_MS"; exit 0
-elif [ "$1" = issue ]; then printf '1\n2\n'; exit 0
-elif [ "$1" = pr ]; then exit 0
+elif [ "$1" = issue ] || [ "$1" = pr ]; then echo "fake gh: $1 list is not used (no --milestone on pr)" >&2; exit 1
 fi
 FAKE
 chmod +x "$TMP/gh"
@@ -38,8 +41,8 @@ row() { # name want_rc must_match must_not_match -- args ; env via exports
     [ -z "$no" ] || ! grep -Eq -- "$no" <<<"$all" || ok=0
     if [ $ok = 1 ]; then pass=$((pass+1)); else fail=$((fail+1)); printf 'FAIL %s (rc=%s want %s)\n%s\n' "$name" "$rc" "$want" "$out"; fi
 }
-export FAKE_MS="$FIXTURE_MS" FAKE_NEXT=15 FAKE_PATCH=ok
-export FAKE_PATCH=ok
+export FAKE_MS="$FIXTURE_MS" FAKE_NEXT=15 FAKE_PATCH=ok FAKE_ITEMS=ok
+export FAKE_PATCH=ok FAKE_ITEMS=ok
 row dry-run 0 'dry-run: #2 0.72.3 -> 0.73.0' 'api -X PATCH' -- 0.72.3
 export FAKE_PATCH=ok
 row execute-moves-to-next-not-backlog 0 'moved=2 failed=0' 'milestone":11' -- 0.72.3 --execute
@@ -50,6 +53,7 @@ FAKE_PATCH=fail2 row PLANTED-one-http-failure-exit-1 1 'moved=1 failed=1' '' -- 
 FAKE_MS=down row PLANTED-unreadable-milestones-refuses 1 'not_measured' 'moved=' -- 0.72.3 --execute
 FAKE_MS='[{"number":31,"title":"0.72.3"},{"number":11,"title":"backlog"}]' row PLANTED-no-next-milestone-refuses 1 'no open milestone newer' 'moved=' -- 0.72.3 --execute
 FAKE_MS='[{"number":15,"title":"0.73.0"}]' row released-milestone-not-open-noop 0 'nothing to carry' 'PATCH' -- 0.72.3 --execute
+FAKE_ITEMS=down row PLANTED-unreadable-items-refuses 1 'not_measured' 'moved=' -- 0.72.3 --execute
 row bad-version-usage 2 'X.Y.Z' '' -- 0.72 --execute
 row unknown-flag-usage 2 'unknown argument' '' -- 0.72.3 --bogus
 printf 'falsify_carry_milestone: pass=%s fail=%s\n' "$pass" "$fail"
