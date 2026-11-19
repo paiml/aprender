@@ -3,8 +3,9 @@
 <body style="margin:0;position:relative">
 <canvas id="c" width="800" height="600"></canvas>
 <script type="module">
-import init from './video_e2e.js';
+import init, * as m from './video_e2e.js';
 await init();
+Object.assign(window, m);
 window.ready = true;
 </script>
 </body></html>
