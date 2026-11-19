@@ -40,22 +40,22 @@ proof_obligations:
 - id: SDC-INV-001
   type: invariant
   property: Keyed draw purity
-  formal: 'draw(s, e, v, k) = draw(s, e, v, k)'
+  formal: '∀ s, e, v, k: draw(s, e, v, k) = draw(s, e, v, k)'
   applies_to: keyed_draw
 - id: SDC-INV-002
   type: invariant
   property: Evaluation-order independence
-  formal: 'hash(run(o1)) = hash(run(o2))'
+  formal: '∀ o1, o2: hash(run(o1)) = hash(run(o2))'
   applies_to: order_independence
 - id: SDC-INV-003
   type: invariant
   property: Run reproducibility
-  formal: 'run(spec, seed) = run(spec, seed)'
+  formal: '∀ spec, seed: run(spec, seed) = run(spec, seed)'
   applies_to: hash_chain
 - id: SDC-INV-004
   type: invariant
   property: Seed sensitivity
-  formal: 'seed1 != seed2 => final_hash1 != final_hash2'
+  formal: 'seed1 ≠ seed2 ⇒ final_hash1 ≠ final_hash2'
   applies_to: hash_chain
 enforcement:
   repeat_run_equal:

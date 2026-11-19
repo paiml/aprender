@@ -184,7 +184,7 @@ impl Trajectory {
 /// Receipt of a run: what was run and what came out.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Receipt {
-    /// BLAKE3 of the spec bytes the caller supplied (hex).
+    /// SHA-256 of the spec bytes the caller supplied (hex); `sha256sum spec` matches it.
     pub spec_sha: String,
     /// BLAKE3 of this kernel's source (hex), see [`kernel_sha`].
     pub kernel_sha: String,
@@ -218,10 +218,15 @@ pub fn kernel_sha() -> String {
     hex(blake3::hash(body.as_bytes()).as_bytes())
 }
 
-/// BLAKE3 of arbitrary spec bytes as hex (what callers put in `spec_sha`).
+/// SHA-256 of arbitrary spec bytes as hex (what callers put in `spec_sha`); equals `sha256sum`.
 #[must_use]
 pub fn spec_sha(spec_bytes: &[u8]) -> String {
-    hex(blake3::hash(spec_bytes).as_bytes())
+    hex(&sha256(spec_bytes))
+}
+
+fn sha256(bytes: &[u8]) -> [u8; 32] {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).into()
 }
 
 /// The deterministic simulation kernel.
@@ -258,7 +263,7 @@ impl<M: DetModel> DetSim<M> {
         if let Some(w) = entities.windows(2).find(|w| w[0].id == w[1].id) {
             return Err(DetError::DuplicateEntity(w[0].id));
         }
-        let spec_sha = *blake3::hash(spec_bytes).as_bytes();
+        let spec_sha = sha256(spec_bytes);
         let mut h = blake3::Hasher::new();
         h.update(DOMAIN);
         h.update(b"/init");
@@ -841,6 +846,15 @@ mod tests {
     }
 
     #[test]
+    fn spec_sha_is_sha256_known_vector() {
+        // FIPS 180-2 vector: SHA-256("abc"); `printf abc | sha256sum` prints the same.
+        assert_eq!(
+            spec_sha(b"abc"),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
     fn kernel_sha_ignores_test_module_and_is_stable() {
         assert_eq!(kernel_sha(), kernel_sha());
         assert_eq!(kernel_sha().len(), 64);
@@ -855,5 +869,5 @@ mod tests {
     }
 
     const GOLDEN_FINAL_HASH: &str =
-        "767f63f68670c60aca5dec94f38c9317f40a806e066cb134c6604c3cabb581fc";
+        "fa609ca2079bd458e5317cb680f341428d3e246a77846c88cb04675d35d72199";
 }

@@ -8,7 +8,7 @@
 //! |---|---|---|
 //! | sigma | `ont2b_sigma_gate` | Pass |
 //! | relations | `ont4_relations_gate` | Pass, typed relations present, legacy `depends_on` counted |
-//! | shapes | `ont4b_shapes_gate` | Pass, plant fired, 74 shapes, 42 plant violations |
+//! | shapes | `ont4b_shapes_gate` | Pass, plant fired, 76 shapes, 43 plant violations |
 //! | refines | `ont4e_refines_gate` | Pass, a Liskov pair checked, `pc_checker` fired |
 //! | theorem-pairing, depends-on-present | `ev11_lint_ratchets` | Pass, equal to the baseline file, which is not written |
 //!
@@ -150,7 +150,8 @@ fn the_repo_corpus_passes_with_the_plant_fired_and_the_whole_corpus_as_focus_nod
     // per-forward `kernel-registry-v1.op`: 68 + 5 = 73.
     // PLOT-GG-001 (#6996) adds `ggplot2-ontology-v1`'s closed `ggplot2-core` shape over the 49 core rows (not in
     // `armed_shapes`): 74.
-    assert_eq!(x["shapes_n"], 74, "{g}");
+    // SIM3D-001 (#7245) adds `sim3d-spec-v1` and `sim3d-receipt-v1`, one closed shape each: 76.
+    assert_eq!(x["shapes_n"], 76, "{g}");
 }
 
 #[test]
@@ -194,5 +195,5 @@ fn the_tracked_repo_graph_is_fresh() {
     assert_eq!(r.code, 0, "{}", show(&r));
     let v: serde_json::Value = serde_json::from_str(&r.stdout).expect("stdout is JSON");
     assert!(v["triples"].as_u64().unwrap_or(0) > 5000, "{}", show(&r));
-    assert_eq!(v["shapes_n"], 74, "{}", show(&r));
+    assert_eq!(v["shapes_n"], 76, "{}", show(&r));
 }
