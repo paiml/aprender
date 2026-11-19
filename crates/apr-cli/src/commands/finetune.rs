@@ -382,7 +382,6 @@ fn execute_training(
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
-    use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
 
     // 0. #2417: every training path below ends in `InstructPipeline::from_apr`,
     // which reads APR only. A .safetensors or .gguf base used to reach that
@@ -449,6 +448,7 @@ fn execute_training(
             learning_rate,
             json_output,
             corpus,
+            wgpu_max_seq_len(max_seq_len),
         );
     }
 
@@ -462,23 +462,9 @@ fn execute_training(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
 
     // 4. Create trainer and run
-    let train_config = InstructTrainingConfig {
-        epochs: epochs as usize,
-        val_split: if corpus.len() < 20 { 0.1 } else { 0.2 },
-        save_every: 1,
-        early_stopping_patience: 5,
-        checkpoint_dir: output_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("checkpoints"),
-        seed: 42,
-        log_interval: 1,
-        warmup_fraction: 0.03,
-        lr_min: 1e-6,
-    };
+    let train_config = instruct_training_config(epochs, corpus.len(), output_path);
 
-    let mut trainer = InstructTrainer::new(pipeline, corpus, train_config)
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
+    let mut trainer = build_instruct_trainer(pipeline, corpus, train_config)?;
 
     let result = trainer.train();
 
@@ -495,13 +481,56 @@ fn execute_training(
     Ok(())
 }
 
+/// The trainer of an instruct run. A recipe run validates on its `eval.heldout` file (PMAT-7239);
+/// every other run splits the corpus.
+#[cfg(feature = "training")]
+pub(crate) fn build_instruct_trainer(
+    pipeline: entrenar::finetune::instruct_pipeline::InstructPipeline,
+    corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+    train_config: entrenar::finetune::instruct_trainer::InstructTrainingConfig,
+) -> Result<entrenar::finetune::instruct_trainer::InstructTrainer> {
+    use entrenar::finetune::instruct_trainer::InstructTrainer;
+    match super::finetune_recipe_run::run_heldout() {
+        Some(heldout_path) => {
+            let heldout = load_instruct_corpus(&heldout_path)?;
+            InstructTrainer::with_heldout(pipeline, corpus, heldout, train_config)
+        }
+        None => InstructTrainer::new(pipeline, corpus, train_config),
+    }
+    .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))
+}
+
+/// The trainer configuration of an instruct run (PMAT-7239). The seed is the
+/// recipe's while a recipe run is in flight on this thread, else 42.
+#[cfg(feature = "training")]
+pub(crate) fn instruct_training_config(
+    epochs: u32,
+    corpus_len: usize,
+    output_path: &Path,
+) -> entrenar::finetune::instruct_trainer::InstructTrainingConfig {
+    entrenar::finetune::instruct_trainer::InstructTrainingConfig {
+        epochs: epochs as usize,
+        val_split: if corpus_len < 20 { 0.1 } else { 0.2 },
+        save_every: 1,
+        early_stopping_patience: 5,
+        checkpoint_dir: output_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("checkpoints"),
+        seed: super::finetune_recipe_run::run_seed(),
+        log_interval: 1,
+        warmup_fraction: 0.03,
+        lr_min: 1e-6,
+    }
+}
+
 /// Read the JSONL instruction corpus, rejecting an empty training set.
 ///
 /// Extracted from `execute_training` (PMAT-938) so the training entry point
 /// stays under the cognitive-complexity cap. Behaviour is unchanged: the same
 /// per-line errors, the same blank-line skip, the same empty-corpus rejection.
 #[cfg(feature = "training")]
-fn load_instruct_corpus(
+pub(crate) fn load_instruct_corpus(
     data_path: &Path,
 ) -> Result<Vec<entrenar::finetune::instruct_corpus::InstructSample>> {
     use entrenar::finetune::instruct_corpus::InstructSample;
@@ -604,6 +633,13 @@ fn report_checkpoint_output(output_path: &Path, json_output: bool) {
     }
 }
 
+/// The sequence length the WGPU pipeline trains at: the requested value, else entrenar's default
+/// (512), the same resolution `resolve_recipe_hparams` records in the receipt.
+pub(crate) fn wgpu_max_seq_len(requested: Option<usize>) -> usize {
+    requested
+        .unwrap_or(entrenar::finetune::instruct_pipeline::InstructConfig::default().max_seq_len)
+}
+
 /// §26.11.7: GPU-only training via WgpuInstructPipeline.
 /// Loads Q4K model directly to GPU (no Transformer, no 20-min CPU dequant).
 #[cfg(feature = "training")]
@@ -619,6 +655,7 @@ fn execute_training_wgpu(
     learning_rate: f64,
     json_output: bool,
     corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+    max_seq_len: usize,
 ) -> Result<()> {
     use entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline;
     use entrenar::tokenizer::HfTokenizer;
@@ -716,7 +753,7 @@ fn execute_training_wgpu(
         num_layers,
         hidden,
         vocab,
-        512, // max_seq_len
+        max_seq_len,
         heads,
         kv_heads,
         inter,
@@ -1373,18 +1410,7 @@ pub(crate) fn run(
 
     // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
     // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
-    if let Some(user_rank) = rank {
-        config.rank = user_rank;
-        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
-                                               // Keep the LR consistent with the (now overridden) rank.
-        config.learning_rate = recommended_learning_rate(config.method, user_rank);
-    }
-
-    // FALSIFY-QLORA-RANK-AWARE-LR: resolve the effective learning rate. An
-    // explicit --learning-rate wins; otherwise use the rank-aware recommendation
-    // — the classic 2e-4 default diverges at the high ranks auto-selected to
-    // fill VRAM (measured: 1.5B QLoRA @ 2e-4/rank256 blew up to loss ~11-16).
-    let learning_rate = learning_rate.unwrap_or_else(|| f64::from(config.learning_rate));
+    let learning_rate = apply_rank_and_lr(&mut config, rank, learning_rate);
 
     display_run_header(
         ft_method,
@@ -1424,6 +1450,47 @@ pub(crate) fn run(
     )
 }
 
+/// Apply `--rank` and resolve the effective learning rate on a planner config.
+///
+/// GH-568: an explicit rank overrides the planner's and the LR follows it.
+/// FALSIFY-QLORA-RANK-AWARE-LR: an explicit `--learning-rate` wins; otherwise the
+/// rank-aware recommendation is used, because the classic 2e-4 default diverges at the
+/// high ranks auto-selected to fill VRAM (measured: 1.5B QLoRA @ 2e-4/rank256 blew up to
+/// loss ~11-16). `run` and the recipe receipt both call this, so they cannot drift.
+fn apply_rank_and_lr(
+    config: &mut OptimalConfig,
+    rank: Option<u32>,
+    learning_rate: Option<f64>,
+) -> f64 {
+    if let Some(user_rank) = rank {
+        config.rank = user_rank;
+        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
+        config.learning_rate = recommended_learning_rate(config.method, user_rank);
+    }
+    learning_rate.unwrap_or_else(|| f64::from(config.learning_rate))
+}
+
+/// The rank, learning rate and max sequence length a recipe run trains with, after the
+/// planner and defaults fill what the recipe leaves out. The receipt records these.
+fn resolve_recipe_hparams(
+    recipe: &super::train_recipe::TrainRecipe,
+    flags: &RecipeRunFlags<'_>,
+) -> Result<(u32, f64, usize)> {
+    let ft_method: FinetuneMethod = recipe
+        .method
+        .as_str()
+        .parse()
+        .map_err(CliError::ValidationFailed)?;
+    let params = resolve_model_params(recipe_model_size(flags, recipe), Some(&recipe.base))?;
+    let mut config = plan(params, flags.vram_gb, ft_method.into())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+    let lr = apply_rank_and_lr(&mut config, recipe.rank, recipe.learning_rate);
+    let max_seq_len = recipe
+        .max_seq_len
+        .unwrap_or(entrenar::finetune::instruct_pipeline::InstructConfig::default().max_seq_len);
+    Ok((config.rank, lr, max_seq_len))
+}
+
 /// The `apr finetune` flags that still apply beside `--recipe`: where and how
 /// to run. Two of them can replace a value the recipe carries: `model_size`
 /// wins over the recipe's `model_size` and `output_path` over `output.dir`
@@ -1457,7 +1524,7 @@ pub(crate) fn preflight_recipe(
     super::train_recipe::TrainRecipe,
     super::train_recipe::RecipeReceipt,
 )> {
-    use super::train_recipe::{apr_engine, RecipeMethod, TrainRecipe, FINETUNE_NOT_APPLIED};
+    use super::train_recipe::{apr_engine, RecipeMethod, TrainRecipe};
     let recipe = TrainRecipe::load(recipe_path)?;
     if recipe.method == RecipeMethod::Distill {
         return Err(CliError::ValidationFailed(format!(
@@ -1477,7 +1544,7 @@ pub(crate) fn preflight_recipe(
     if !plan_only {
         recipe.require_inputs()?;
     }
-    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), FINETUNE_NOT_APPLIED);
+    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), &[]);
     Ok((recipe, receipt))
 }
 
@@ -1536,8 +1603,15 @@ fn recipe_overrides(
     overrides
 }
 
+/// True when this recipe run trains on the WGPU path, which does not take the seed.
+fn recipe_uses_wgpu(recipe: &super::train_recipe::TrainRecipe, flags: &RecipeRunFlags<'_>) -> bool {
+    let (_, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    gpu_backend_notice(flags.gpu_backend, quantize_nf4, cfg!(feature = "wgpu")).use_wgpu
+        && cfg!(feature = "wgpu")
+}
+
 /// `preflight_recipe` plus the overrides the run flags make.
-fn recipe_receipt_for_run(
+pub(crate) fn recipe_receipt_for_run(
     recipe_path: &Path,
     flags: &RecipeRunFlags<'_>,
 ) -> Result<(
@@ -1546,6 +1620,12 @@ fn recipe_receipt_for_run(
 )> {
     let (recipe, mut receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
     receipt.overrides = recipe_overrides(flags, &recipe);
+    if recipe_uses_wgpu(&recipe, flags) {
+        // The WGSL path reads neither the recipe seed nor the heldout file: say so instead of
+        // claiming either applied.
+        receipt.validated_not_applied.insert(0, "seed");
+        receipt.validated_not_applied.push("eval");
+    }
     Ok((recipe, receipt))
 }
 
@@ -1553,7 +1633,6 @@ fn recipe_receipt_for_run(
 /// onto the same `run` every flag-driven invocation uses (CRUX-001).
 pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) -> Result<()> {
     let (recipe, receipt) = recipe_receipt_for_run(recipe_path, flags)?;
-    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(&recipe);
     let engine = super::train_recipe::apr_engine();
     eprintln!(
         "[recipe] {} ok: name={} method={} recipe_sha256={} data_sha256={} engine=apr {} ({})",
@@ -1565,50 +1644,123 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         engine.version,
         engine.sha,
     );
-    eprintln!(
-        "[recipe] validated and hashed, not yet applied by apr finetune: {}",
-        receipt.validated_not_applied.join(", ")
-    );
+    if !receipt.validated_not_applied.is_empty() {
+        eprintln!(
+            "[recipe] the wgpu backend does not apply: {}",
+            receipt.validated_not_applied.join(", ")
+        );
+    }
+    let mut stdout = std::io::stdout();
+    run_recipe_with(
+        &recipe,
+        &receipt,
+        flags,
+        &mut stdout,
+        |output, epochs, quantize_nf4| {
+            run(
+                Some(&recipe.base),
+                recipe.method.as_str(),
+                recipe.rank,
+                flags.vram_gb,
+                flags.plan_only,
+                Some(&recipe.train),
+                output,
+                None,
+                false,
+                epochs,
+                recipe.learning_rate,
+                recipe_model_size(flags, &recipe),
+                None,
+                5,
+                flags.checkpoint_format,
+                false,
+                recipe.max_seq_len,
+                quantize_nf4,
+                flags.gpus,
+                flags.gpu_backend,
+                None,
+                None,
+                None,
+                None,
+                flags.wait_gpu,
+                &[],
+                None,
+                flags.json_output,
+                flags.experimental_mps,
+                flags.gpu_share,
+            )
+        },
+    )
+}
+
+/// The recipe run itself, with the trainer injected so a test can observe what it is run under.
+///
+/// While `train` runs, the trainer seed is the recipe's (0 included) and, under `--json`, the
+/// plan object is held back. After `train` returns Ok on a real run (not `--plan`), the receipt
+/// is written beside the adapter and, under `--json`, printed to `out` as the one JSON document.
+pub(crate) fn run_recipe_with<F>(
+    recipe: &super::train_recipe::TrainRecipe,
+    receipt: &super::train_recipe::RecipeReceipt,
+    flags: &RecipeRunFlags<'_>,
+    out: &mut dyn std::io::Write,
+    train: F,
+) -> Result<()>
+where
+    F: FnOnce(Option<&Path>, u32, bool) -> Result<()>,
+{
+    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    let _seed = super::finetune_recipe_run::SeedGuard::set(recipe.seed);
+    let _heldout = super::finetune_recipe_run::HeldoutGuard::set(&recipe.heldout);
+    let _plan_json =
+        super::finetune_recipe_run::PlanJsonGuard::suppress(flags.json_output && !flags.plan_only);
     if !receipt.overrides.is_empty() {
         eprintln!(
             "[recipe] overridden by flags: {}",
             receipt.overrides.join("; ")
         );
     }
-    let output_buf = recipe_output_path(flags, &recipe);
+    let output_buf = recipe_output_path(flags, recipe);
     let output = output_buf.as_deref();
-    run(
-        Some(&recipe.base),
-        recipe.method.as_str(),
-        recipe.rank,
-        flags.vram_gb,
-        flags.plan_only,
-        Some(&recipe.train),
-        output,
-        None,
-        false,
+    train(output, epochs, quantize_nf4)?;
+    if flags.plan_only {
+        return Ok(());
+    }
+    emit_run_receipt(recipe, receipt, output, flags, epochs, quantize_nf4, out)
+}
+
+/// Write `receipt.json` after a real recipe run and, with `--json`, print the same object.
+fn emit_run_receipt(
+    recipe: &super::train_recipe::TrainRecipe,
+    receipt: &super::train_recipe::RecipeReceipt,
+    output: Option<&Path>,
+    flags: &RecipeRunFlags<'_>,
+    epochs: u32,
+    quantize_nf4: bool,
+    out: &mut dyn std::io::Write,
+) -> Result<()> {
+    use super::finetune_recipe_run as frr;
+    let (rank, learning_rate, max_seq_len) = resolve_recipe_hparams(recipe, flags)?;
+    let resolved = frr::ResolvedRun {
+        rank,
+        learning_rate,
+        max_seq_len,
         epochs,
-        recipe.learning_rate,
-        recipe_model_size(flags, &recipe),
-        None,
-        5,
-        flags.checkpoint_format,
-        false,
-        recipe.max_seq_len,
         quantize_nf4,
-        flags.gpus,
-        flags.gpu_backend,
-        None,
-        None,
-        None,
-        None,
-        flags.wait_gpu,
-        &[],
-        None,
-        flags.json_output,
-        flags.experimental_mps,
-        flags.gpu_share,
-    )
+        model_size: recipe_model_size(flags, recipe),
+    };
+    let value = frr::build_receipt(
+        recipe,
+        receipt,
+        &super::train_recipe::apr_engine(),
+        &resolved,
+    );
+    let path = frr::write_receipt(&frr::receipt_dir(output), &value)?;
+    eprintln!("[recipe] receipt written to {}", path.display());
+    if flags.json_output {
+        writeln!(out, "{value}")
+            .map_err(|e| CliError::ValidationFailed(format!("cannot print receipt: {e}")))?;
+    }
+    Ok(())
 }
 
 /// Validate inputs and execute the LoRA training pipeline.
@@ -1679,15 +1831,18 @@ fn display_finetune_plan(
     let req = planner.estimate(config.method, config.rank);
 
     if json_output {
-        display_plan_json(
-            config,
-            &req,
-            model_params,
-            vram_gb,
-            epochs,
-            learning_rate,
-            plan_only,
-        );
+        // A `--json` recipe run prints one document, the receipt, so the plan object is held back.
+        if !super::finetune_recipe_run::plan_json_suppressed() {
+            display_plan_json(
+                config,
+                &req,
+                model_params,
+                vram_gb,
+                epochs,
+                learning_rate,
+                plan_only,
+            );
+        }
     } else {
         display_plan_text(config, &req, vram_gb);
     }

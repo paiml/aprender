@@ -152,6 +152,43 @@ impl InstructTrainer {
         Ok(Self { pipeline, config, train_data, val_data, rng_seed, data_hash })
     }
 
+    /// Create a trainer that trains on all of `corpus` and validates on `heldout`
+    /// (a recipe's `eval.heldout`), instead of splitting the corpus.
+    ///
+    /// `config.val_split` is not used. The data hash covers the training corpus only.
+    ///
+    /// # Errors
+    /// Returns error if either set is empty or epochs is 0.
+    pub fn with_heldout(
+        pipeline: InstructPipeline,
+        corpus: Vec<InstructSample>,
+        heldout: Vec<InstructSample>,
+        config: InstructTrainingConfig,
+    ) -> crate::Result<Self> {
+        if corpus.is_empty() {
+            return Err(crate::Error::ConfigError("GH-371: corpus must not be empty".to_string()));
+        }
+        if heldout.is_empty() {
+            return Err(crate::Error::ConfigError("heldout set must not be empty".to_string()));
+        }
+        if config.epochs == 0 {
+            return Err(crate::Error::ConfigError("GH-371: epochs must be > 0".to_string()));
+        }
+        let rng_seed = config.seed;
+        let data_hash = Self::compute_data_hash(&corpus);
+        Ok(Self { pipeline, config, train_data: corpus, val_data: heldout, rng_seed, data_hash })
+    }
+
+    /// Write the per-epoch checkpoint when `epoch` falls on the `save_every` cadence.
+    fn save_periodic_checkpoint(&mut self, epoch: usize, metrics: &InstructEpochMetrics) {
+        let every =
+            if self.config.epochs <= self.config.save_every { 1 } else { self.config.save_every };
+        if every > 0 && (epoch + 1) % every == 0 {
+            let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
+            let _ = self.save_checkpoint(&epoch_path, epoch, metrics);
+        }
+    }
+
     /// Run the full training loop.
     pub fn train(&mut self) -> InstructTrainResult {
         use crate::optim::{LRScheduler, WarmupCosineDecayLR};
@@ -274,15 +311,7 @@ impl InstructTrainer {
             }
 
             // Periodic checkpoint
-            let effective_save_every = if self.config.epochs <= self.config.save_every {
-                1
-            } else {
-                self.config.save_every
-            };
-            if effective_save_every > 0 && (epoch + 1) % effective_save_every == 0 {
-                let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
-                let _ = self.save_checkpoint(&epoch_path, epoch, &metrics);
-            }
+            self.save_periodic_checkpoint(epoch, &metrics);
 
             epoch_metrics.push(metrics);
 
@@ -488,11 +517,11 @@ impl InstructTrainer {
             })
             .collect();
 
-        let mut st_metadata = std::collections::HashMap::new();
+        let mut st_metadata = std::collections::BTreeMap::new();
         st_metadata.insert("epoch".to_string(), epoch.to_string());
         st_metadata.insert("val_loss".to_string(), format!("{:.6}", metrics.val_loss));
 
-        let safetensor_bytes = safetensors::serialize(views, Some(st_metadata)).map_err(|e| {
+        let safetensor_bytes = serialize_sorted_metadata(views, &st_metadata).map_err(|e| {
             crate::Error::Serialization(format!("SafeTensors serialization failed: {e}"))
         })?;
         std::fs::write(path.join("model.safetensors"), safetensor_bytes)?;
@@ -500,6 +529,46 @@ impl InstructTrainer {
         contract_post_save_checkpoint!(());
         Ok(())
     }
+}
+
+/// Serialize tensors to safetensors bytes with the `__metadata__` keys in sorted order (#7255).
+///
+/// `safetensors::serialize` takes the metadata as a `HashMap`, whose per-process random
+/// iteration order puts the keys in either order in the header, so two runs with identical
+/// weights wrote different file bytes. The tensors are serialized without metadata (their header
+/// order is already deterministic) and the header is rewritten with a sorted `__metadata__`.
+///
+/// # Errors
+/// Returns the serialization failure as text.
+fn serialize_sorted_metadata<'a>(
+    views: Vec<(&'a str, safetensors::tensor::TensorView<'a>)>,
+    metadata: &std::collections::BTreeMap<String, String>,
+) -> std::result::Result<Vec<u8>, String> {
+    let bytes = safetensors::serialize(views, None).map_err(|e| e.to_string())?;
+    let n_bytes: [u8; 8] =
+        bytes.get(..8).and_then(|b| b.try_into().ok()).ok_or("short safetensors buffer")?;
+    let n = u64::from_le_bytes(n_bytes) as usize;
+    let header_end = 8usize.checked_add(n).filter(|e| *e <= bytes.len()).ok_or("bad header")?;
+    let header: serde_json::Value =
+        serde_json::from_slice(&bytes[8..header_end]).map_err(|e| e.to_string())?;
+    let serde_json::Value::Object(tensors) = header else {
+        return Err("safetensors header is not an object".to_string());
+    };
+    let mut out = serde_json::Map::new();
+    let sorted: serde_json::Map<String, serde_json::Value> =
+        metadata.iter().map(|(k, v)| (k.clone(), serde_json::Value::String(v.clone()))).collect();
+    out.insert("__metadata__".to_string(), serde_json::Value::Object(sorted));
+    for (k, v) in tensors {
+        out.insert(k, v);
+    }
+    let mut header_bytes = serde_json::to_vec(&out).map_err(|e| e.to_string())?;
+    let padded = header_bytes.len().next_multiple_of(8);
+    header_bytes.resize(padded, b' ');
+    let mut result = Vec::with_capacity(8 + padded + bytes.len() - header_end);
+    result.extend_from_slice(&(padded as u64).to_le_bytes());
+    result.extend_from_slice(&header_bytes);
+    result.extend_from_slice(&bytes[header_end..]);
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -517,6 +586,57 @@ mod tests {
                 metadata: None,
             })
             .collect()
+    }
+
+    #[test]
+    fn test_metadata_order_is_sorted_and_bytes_are_stable() {
+        use safetensors::tensor::{Dtype, TensorView};
+        let data: Vec<u8> = [1.0f32, 2.0].iter().flat_map(|f| f.to_le_bytes()).collect();
+        let mut meta = std::collections::BTreeMap::new();
+        meta.insert("val_loss".to_string(), "0.5".to_string());
+        meta.insert("epoch".to_string(), "3".to_string());
+        meta.insert("zeta".to_string(), "z".to_string());
+        let make = || {
+            let v = vec![("w", TensorView::new(Dtype::F32, vec![2], &data).expect("view"))];
+            serialize_sorted_metadata(v, &meta).expect("serialize")
+        };
+        let first = make();
+        for _ in 0..64 {
+            assert_eq!(make(), first, "same input, same bytes");
+        }
+        let n = u64::from_le_bytes(first[..8].try_into().expect("8")) as usize;
+        assert_eq!(n % 8, 0, "header padded to 8");
+        let text = std::str::from_utf8(&first[8..8 + n]).expect("utf8");
+        let e = text.find("\"epoch\"").expect("epoch");
+        let v = text.find("\"val_loss\"").expect("val_loss");
+        let z = text.find("\"zeta\"").expect("zeta");
+        assert!(e < v && v < z, "metadata keys sorted: {text}");
+        let st = safetensors::SafeTensors::deserialize(&first).expect("readable");
+        assert_eq!(st.tensor("w").expect("w").data(), &data[..]);
+        let (_, parsed) = safetensors::SafeTensors::read_metadata(&first).expect("meta");
+        let m = parsed.metadata().as_ref().expect("metadata");
+        assert_eq!(m.get("epoch").map(String::as_str), Some("3"));
+        assert_eq!(m.get("val_loss").map(String::as_str), Some("0.5"));
+    }
+
+    #[test]
+    fn test_with_heldout_validates_on_the_heldout_set_not_a_split() {
+        let model_config = TransformerConfig::tiny();
+        let mk = || {
+            InstructPipeline::new(
+                &model_config,
+                InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() },
+            )
+        };
+        let config = InstructTrainingConfig { epochs: 1, ..Default::default() };
+        let t = InstructTrainer::with_heldout(mk(), make_corpus(6), make_corpus(3), config.clone())
+            .expect("trainer");
+        assert_eq!(t.train_size(), 6, "all of the corpus trains");
+        assert_eq!(t.val_size(), 3, "validation is the heldout set");
+        assert!(
+            InstructTrainer::with_heldout(mk(), make_corpus(6), vec![], config.clone()).is_err()
+        );
+        assert!(InstructTrainer::with_heldout(mk(), vec![], make_corpus(3), config).is_err());
     }
 
     #[test]
