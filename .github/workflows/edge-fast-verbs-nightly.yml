@@ -26,7 +26,7 @@ permissions:
 jobs:
   edge:
     runs-on: [self-hosted, Linux, ARM64, gpu, cuda, jetson]
-    timeout-minutes: 180
+    timeout-minutes: 90
     # PP-19: one GPU job on the box at a time.
     concurrency:
       group: perf-jetson
@@ -35,12 +35,26 @@ jobs:
       MODEL_FILE: ${{ inputs.model || 'Qwen3.5-2B-Q4_K_M.gguf' }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      # First (S0.4, #7157): plain sh, before the jq pin; a failure is a NOT_MEASURED cell in the receipt.
+      - name: Health (disk, GPU visible, model sha256)
+        id: health
+        timeout-minutes: 5
+        run: |
+          d="$RUNNER_TEMP/edge"; mkdir -p "$d"; date -u +%FT%TZ > "$d/started"; why=""
+          free=$(df -Pk "$HOME" | awk 'NR == 2 { print $4 }')
+          [ "${free:-0}" -ge 10485760 ] || why="disk: ${free:-?} KiB free, need 10485760"
+          [ -e /dev/nvhost-gpu ] || [ -e /dev/nvidiactl ] || why="$why; GPU not visible"
+          sha=$(sha256sum "$HOME/models/$MODEL_FILE") || why="$why; no model $MODEL_FILE"
+          st=MEASURED; rs=null; [ -z "$why" ] || { st=NOT_MEASURED; rs='"run_failed"'; echo "::error::health: $why"; }
+          printf '{"id":"edge.health","state":"%s","value":null,"unit":null,"n":1,"median":null,"spread":null,"baseline":null,"delta_pct":null,"reason":%s}\n' "$st" "$rs" > "$d/cell-h.json"
+          echo "model sha256 ${sha%% *}"; [ -z "$why" ]
       # The edge device ships no jq, and apr_bin.sh, the nightly script and the
       # two steps after it all need one (first run 38519390597 died on that). The
       # fleet pin, as in ci.yml, for arm64: put on PATH for every later step,
       # fail closed on a checksum, version or behaviour mismatch. The sha256 is
       # the one in the upstream release's sha256sum.txt for jq-linux-arm64.
       - name: Pin jq 1.8.2 (sha256-verified, fail closed)
+        timeout-minutes: 2
         env:
           JQ_URL: https://github.com/jqlang/jq/releases/download/jq-1.8.2/jq-linux-arm64
           JQ_SHA256: 8b85c817833814ddca00a144c33705546355afccf0cf39b188f3cdb48b852309
@@ -57,22 +71,48 @@ jobs:
           [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
           echo "$d" >> "$GITHUB_PATH"
       - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        timeout-minutes: 3
       - name: Build apr (cuda)
+        id: build
+        timeout-minutes: 25
         run: |
           export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"
           # A persistent target dir: the cold build takes ~18 min on this device.
           export CARGO_TARGET_DIR="$HOME/data/edge-target"
           cargo build --release --features cuda --bin apr
-      - name: Measure
-        id: measure
-        run: |
-          export PATH="$HOME/.cargo/bin:/usr/local/cuda/bin:$PATH"
-          # The same target dir; apr_bin.sh reads it back through cargo metadata.
-          export CARGO_TARGET_DIR="$HOME/data/edge-target"
           . scripts/apr_bin.sh || exit 1   # exports $APR, built from this tree at HEAD
-          bash scripts/edge_fast_verbs_nightly.sh \
-            --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson
+          { echo "APR=$APR"; echo "CARGO_TARGET_DIR=$CARGO_TARGET_DIR"; } >> "$GITHUB_ENV"
+          { echo "$HOME/.cargo/bin"; echo /usr/local/cuda/bin; } >> "$GITHUB_PATH"
+      # The six measurements (--only N), each with its own limit, above the in-script --step-timeout bound.
+      - { name: 'Measure 0: chat template', if: '!cancelled() && steps.build.outcome == ''success''', timeout-minutes: 3, run: 'bash scripts/edge_fast_verbs_nightly.sh --only 0 --step-timeout 120 --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson' }
+      - { name: 'Measure 1: CRUX smoke', if: '!cancelled() && steps.build.outcome == ''success''', timeout-minutes: 22, run: 'bash scripts/edge_fast_verbs_nightly.sh --only 1 --step-timeout 600 --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson' }
+      - { name: 'Measure 2: apr decode', if: '!cancelled() && steps.build.outcome == ''success''', timeout-minutes: 8, run: 'bash scripts/edge_fast_verbs_nightly.sh --only 2 --step-timeout 420 --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson' }
+      - { name: 'Measure 3: ollama parity', if: '!cancelled() && steps.build.outcome == ''success''', timeout-minutes: 12, run: 'bash scripts/edge_fast_verbs_nightly.sh --only 3 --step-timeout 660 --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson' }
+      - { name: 'Measure 4: apr CPU decode', if: '!cancelled() && steps.build.outcome == ''success''', timeout-minutes: 8, run: 'bash scripts/edge_fast_verbs_nightly.sh --only 4 --step-timeout 420 --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson' }
+      - { name: 'Measure 5: apr profile', if: '!cancelled() && steps.build.outcome == ''success''', timeout-minutes: 5, run: 'bash scripts/edge_fast_verbs_nightly.sh --only 5 --step-timeout 240 --model "$HOME/models/$MODEL_FILE" --out "$RUNNER_TEMP/edge" --host jetson' }
+      # The receipt (contracts/nightly-lab-receipt-v1.yaml); printf only, jq is not pinned when health fails.
+      - name: Receipt
+        if: always()
+        timeout-minutes: 3
+        env: { JOB: '${{ job.status }}', BUILD: '${{ steps.build.outcome }}' }
+        run: |
+          d="$RUNNER_TEMP/edge"; mkdir -p "$d"; why=run_failed; cells=""
+          [ "$JOB" != cancelled ] || why=step_timeout
+          [ "$BUILD" != failure ] || why=build_failed
+          for p in h:health 0:m0.template 1:m1.crux 2:m2.decode 3:m3.ollama 4:m4.cpu_decode 5:m5.profile; do
+            [ -s "$d/cell-${p%%:*}.json" ] || printf '{"id":"edge.%s","state":"NOT_MEASURED","value":null,"unit":null,"n":0,"median":null,"spread":null,"baseline":null,"delta_pct":null,"reason":"%s"}\n' "${p#*:}" "$why" > "$d/cell-${p%%:*}.json"
+            cells="${cells:+$cells,}$(cat "$d/cell-${p%%:*}.json")"
+          done
+          dev=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo unknown); mem=$(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo)
+          printf '{"schema_version":1,"lane":"edge","sha":"%s","runner_name":"%s","started":"%s","finished":"%s","device":{"model":"%s","mem_mb":%s,"temp_c_start":null,"temp_c_end":null},"cells":[%s]}\n' \
+            "$GITHUB_SHA" "$RUNNER_NAME" "$(cat "$d/started" 2>/dev/null || date -u +%FT%TZ)" "$(date -u +%FT%TZ)" "$dev" "$mem" "$cells" > "$d/receipt.json"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        timeout-minutes: 3
+        with: { name: edge-receipt, path: '${{ runner.temp }}/edge/receipt.json', if-no-files-found: error }
       - name: Post the gap list on #5254
+        timeout-minutes: 3
         if: always()
         run: |
           f="$RUNNER_TEMP/edge/gaps.md"
@@ -86,6 +126,7 @@ jobs:
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/issues/5254/comments" \
             --data @"$RUNNER_TEMP/comment.json" > /dev/null
       - name: Disable after 7 consecutive red nights
+        timeout-minutes: 2
         if: failure()
         run: |
           api="$GITHUB_API_URL/repos/$GITHUB_REPOSITORY/actions/workflows/edge-fast-verbs-nightly.yml"
@@ -98,3 +139,11 @@ jobs:
               "$api/disable"
             echo "7 consecutive red nights: workflow disabled until its owner re-enables it"
           fi
+      # R2, last: red on any NOT_MEASURED cell or false check.
+      - name: Verdict (R2)
+        if: always()
+        timeout-minutes: 2
+        run: |
+          r="$RUNNER_TEMP/edge/receipt.json"
+          [ -s "$r" ] || { echo "::error::no receipt"; exit 1; }
+          if grep -E -o '"id":"[^"]*","state":"NOT_MEASURED"|"ok":false' "$r"; then echo "::error::cells not measured or checks false"; exit 1; fi
