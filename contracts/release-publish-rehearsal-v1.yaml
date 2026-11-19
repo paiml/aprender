@@ -1,0 +1,132 @@
+metadata:
+  kind: pattern
+  version: "1.0.0"
+  created: "2026-11-12"
+  updated: "2026-11-12"
+  author: PAIML Engineering
+  registry: false
+  references:
+    - "paiml/aprender#6914 (PMAT-6914) — nightly real publish rehearsal with a throwaway crate"
+    - "scripts/release/publish_rehearsal.sh — the driver a nightly workflow calls"
+    - "scripts/release/falsify_publish_rehearsal.sh — its case table (rows) and planted defects (--mutants)"
+    - "ci/publish-rehearsal/ — the throwaway crate aprender-publish-rehearsal, its own workspace root"
+    - "scripts/cascade-publish.sh clean_room_gate — the one question release day asks, reused unchanged"
+  description: >
+    0.72.5 went red three times on release day at steps no nightly had ever run: the crates.io auth exchange,
+    a gh read of another repository, a job log. The existing release rehearsal runs everything except the upload and
+    holds no credential. This contract pins the script that pushes one throwaway crate (version 0.0.<run-number>)
+    through the true path: clean-room read, upload, index read-back.
+
+name: release-publish-rehearsal
+version: "1.0.0"
+scope: >
+  scripts/release/publish_rehearsal.sh and the crate it uploads (ci/publish-rehearsal). Not covered: the nightly workflow
+  that calls it (a separate change) and the crates.io Trusted Publisher entry (see open_obligations).
+status: active
+
+contract: |
+  (1) FAIL-CLOSED, BY STEP. The run-number must match ^[1-9][0-9]*$ and dry_run must be 0 or 1; the version is
+      0.0.<run-number>. Each of clean-room read, upload and index read-back is a STOP naming the step.
+  (2) THE SAME CLEAN-ROOM QUESTION. The newest vX.Y.Z tag (rc, nightly and other tags are not releases) is judged by the
+      clean_room_gate function of scripts/cascade-publish.sh, loaded from that file at run time without running it. A
+      missing function or file is a STOP.
+  (3) THE TREE IS NEVER WRITTEN. The version is set, and the lock file generated, in a scratch copy under
+      ${RUNNER_TEMP:-${TMPDIR:-/tmp}}; the committed crate stays at 0.0.0 and the scratch dir is removed on exit.
+  (4) THE TOKEN IS CARGO'S ALONE. CARGO_REGISTRY_TOKEN is read only by cargo from its environment: never an argument,
+      never printed (cargo output shown by the script has the value replaced), never handed to the clean-room gate.
+      An empty token with dry_run=0 is a STOP before any upload.
+  (5) A RERUN RESUMES. cargo's refusal for exactly this version ("already exists on crates.io index" / "is already
+      uploaded") counts as uploaded; any other refusal, or a refusal naming another version, is a STOP.
+  (6) THE INDEX IS THE TRUTH. After the upload the version must appear, not yanked, on the crates.io sparse index
+      within PUB_REH_TRIES reads (default 30, 10 s apart, about 5 minutes); otherwise STOP.
+  (7) DRY RUN UPLOADS NOTHING. dry_run=1 does the argument and clean-room steps for real, prints WOULD publish, needs no
+      token, makes no upload and no index read.
+  (8) NOT A WORKSPACE MEMBER. aprender-publish-rehearsal has an empty [workspace] table: the root workspace does not
+      list it and reading it writes nothing into the tree.
+
+equations:
+  rehearsal_version:
+    description: "The version is a function of the run number alone"
+    formula: "version(n) = 0.0.n for n matching ^[1-9][0-9]*$, else refused with exit 2"
+    domain: "the first argument"
+    codomain: "a semver string or a refusal"
+    invariants:
+      - "0, leading zeros, signs, dots, spaces and a trailing newline are refused"
+  rehearsal_steps:
+    description: "A rehearsal is green only when every step held, in order"
+    formula: "green = arg_ok ∧ tag_found ∧ gate(root, tag) = 0 ∧ (dry ∨ (token ≠ '' ∧ (upload_rc = 0 ∨ already(upload_out, n)) ∧ on_index(n)))"
+    domain: "one run of the script"
+    codomain: "exit 0 (REHEARSED or WOULD publish) or exit 1 with one STOP line naming the step"
+    invariants:
+      - "no step after a refused step runs"
+      - "the committed tree, HEAD and the tags are identical before and after"
+
+proof_obligations:
+  - id: RPR-INV-001
+    type: invariant
+    property: "A run number outside ^[1-9][0-9]*$ is refused before any step runs"
+    formal: "¬(n ~ ^[1-9][0-9]*$) ⇒ exit = 2 ∧ gate_calls = 0 ∧ publish_calls = 0"
+    applies_to: rehearsal_version
+  - id: RPR-INV-002
+    type: invariant
+    property: "The clean-room gate is asked for the newest vX.Y.Z tag, and a refusal stops the run"
+    formal: "gate(root, newest_release_tag) ≠ 0 ⇒ publish_calls = 0 ∧ exit = 1"
+    applies_to: rehearsal_steps
+  - id: RPR-INV-003
+    type: invariant
+    property: "The token never appears in the output and the gate never sees it"
+    formal: "token ∉ output ∧ env(gate).CARGO_REGISTRY_TOKEN unset"
+    applies_to: rehearsal_steps
+  - id: RPR-INV-004
+    type: invariant
+    property: "Only a refusal naming exactly this version counts as uploaded"
+    formal: "already(out, n) ⟺ out matches 'already exists|is already uploaded' ∧ out names 0.0.n as a whole version"
+    applies_to: rehearsal_steps
+  - id: RPR-INV-005
+    type: invariant
+    property: "A version that never shows on the index is a STOP after at most PUB_REH_TRIES reads"
+    formal: "¬on_index(n) ⇒ exit = 1 ∧ index_reads = PUB_REH_TRIES"
+    applies_to: rehearsal_steps
+  - id: RPR-INV-006
+    type: invariant
+    property: "A dry run uploads nothing and reads no index"
+    formal: "dry = 1 ⇒ publish_calls = 0 ∧ index_reads = 0"
+    applies_to: rehearsal_steps
+  - id: RPR-INV-007
+    type: invariant
+    property: "The committed tree is not modified by a run"
+    formal: "git_status_porcelain(after) = ∅ ∧ HEAD(after) = HEAD(before)"
+    applies_to: rehearsal_steps
+  - id: RPR-INV-008
+    type: invariant
+    property: "The throwaway crate is not a member of the root workspace"
+    formal: "'aprender-publish-rehearsal' ∉ names(cargo metadata --no-deps at the root)"
+    applies_to: rehearsal_steps
+
+falsification_tests:
+  - id: FALSIFY-RPR-001
+    rule: "Every row of the case table holds"
+    prediction: "Bad run numbers, no release tag, a refused clean-room read, an empty token, a refused upload, an upload already present, an index that never shows the version, a dry run, a clean tree and a token-free output behave as stated; the two crate rows need cargo"
+    test: "bash scripts/release/falsify_publish_rehearsal.sh"
+    if_fails: "The rehearsal can pass on a step it did not take, or print the registry token"
+  - id: FALSIFY-RPR-002
+    rule: "The case table can still fail on the defects it names"
+    prediction: "Each planted defect (a guard removed or loosened in a scratch copy of the script) turns at least one row red; the last line reads 'mutants: N of N killed'"
+    test: "bash scripts/release/falsify_publish_rehearsal.sh --mutants"
+    if_fails: "The case table is theater: a guard in publish_rehearsal.sh could be deleted unnoticed"
+
+open_obligations:
+  - |
+    The first publish of the crate name aprender-publish-rehearsal, and its Trusted Publisher entry on crates.io, need a
+    person (the name is claimed by an authenticated owner; the entry binds the workflow). Until then the upload step has
+    never run for real.
+  - |
+    Three nights of the rehearsal on the crates.io index are not measured yet; no gate is claimed from this contract.
+
+qa_gate:
+  id: F-RPR-001
+  name: "The publish rehearsal is fail-closed by step and writes nothing into the tree"
+  description: "scripts/release/publish_rehearsal.sh runs clean-room read, upload and index read-back for a throwaway crate; its case table and planted defects pin each guard."
+  checks:
+    - "rehearsal_version"
+    - "rehearsal_steps"
