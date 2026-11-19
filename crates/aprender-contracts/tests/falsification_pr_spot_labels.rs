@@ -471,30 +471,26 @@ fn check_workflow_level(base: &str, top: &Mapping, why: &mut Vec<String>) {
 /// in any case) can skip or mask it.
 const GUARD_STEP_KEYS: [&str; 3] = ["name", "run", "timeout-minutes"];
 
-/// A `run` script as logical lines: comment lines dropped, backslash continuations joined.
+/// What a `run` script is judged on. Unlike bash, this reader cannot see two things, so a run block that has either is
+/// refused outright (no row can match it): a `${{ }}` expression (GitHub expands it BEFORE bash runs, so even inside a
+/// `#` comment it can inject lines), and a line ending in a backslash (bash joins it with no space and keeps the next
+/// line's indent; a comment line is never joined, and heredocs and quotes are not modeled).
+const UNJUDGEABLE_RUN: &str = "<run text this guard cannot judge: `${{` or a trailing backslash>";
+
+fn run_text_judgeable(run: &str) -> bool {
+    !run.contains("${{") && !run.lines().any(|l| l.trim_end().ends_with('\\'))
+}
+
+/// A `run` script as lines: blank and `#` comment lines dropped, each line trimmed.
 fn logical_lines(run: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for l in run.lines() {
-        let t = l.trim();
-        if t.starts_with('#') {
-            continue;
-        }
-        match t.strip_suffix('\\') {
-            Some(head) => {
-                cur.push_str(head.trim_end());
-                cur.push(' ');
-            }
-            None => {
-                cur.push_str(t);
-                out.push(std::mem::take(&mut cur));
-            }
-        }
+    if !run_text_judgeable(run) {
+        return vec![UNJUDGEABLE_RUN.to_string()];
     }
-    if !cur.is_empty() {
-        out.push(cur);
-    }
-    out
+    run.lines()
+        .map(str::trim)
+        .filter(|t| !t.is_empty() && !t.starts_with('#'))
+        .map(str::to_string)
+        .collect()
 }
 
 fn run_lines(s: &Mapping) -> Vec<String> {
@@ -580,10 +576,23 @@ const GATE_PRE_MST_LINES: [&str; 4] = [
     "res() { printf '%s' \"${1:-null}\" | SEC=\"$2\" jq -r '(. // {})[env.SEC].result // \"missing\"'; }",
     "[ \"$WT\" = success ] || { echo \"workspace-test failed: $WT\"; exit 1; }",
 ];
-/// The only env names `gate`'s step may bind (exact, case-sensitive). Any other (`SHELLOPTS`, `BASH_FUNC_*`, `BASH_ENV`...) is red.
-const GATE_STEP_ENV: [&str; 14] = [
-    "X86", "GRD", "GRDR", "DET", "WT", "EVT", "MG", "MG_X86", "MG_DET", "MG_CITE", "ADV", "MST",
-    "PRL", "DRAFT",
+/// `gate`'s step env, EXACT: these names bound to exactly these expressions, nothing else (a different `DRAFT`, an
+/// extra `PATH`, a constant `MST` are all red).
+const GATE_STEP_ENV: [(&str, &str); 14] = [
+    ("X86", "${{ needs.x86-main.outputs.results }}"),
+    ("GRD", "${{ needs.guards.outputs.results }}"),
+    ("GRDR", "${{ needs.guards.result }}"),
+    ("DET", "${{ needs.determinism.outputs.results }}"),
+    ("WT", "${{ needs.workspace-test.result }}"),
+    ("EVT", "${{ github.event_name }}"),
+    ("MG", "${{ needs.mg-reuse.result }}"),
+    ("MG_X86", "${{ needs.mg-reuse.outputs.x86 }}"),
+    ("MG_DET", "${{ needs.mg-reuse.outputs.det }}"),
+    ("MG_CITE", "${{ needs.mg-reuse.outputs.cite }}"),
+    ("ADV", "${{ needs.x86-main-advisories.result }}"),
+    ("MST", "${{ needs.mg-reuse-self-test.result }}"),
+    ("PRL", "${{ needs.pr-light.result }}"),
+    ("DRAFT", "${{ github.event.pull_request.draft }}"),
 ];
 const GATE_STEP_KEYS: [&str; 4] = ["name", "env", "run", "timeout-minutes"];
 const GATE_JOB_KEYS: [&str; 6] = [
@@ -612,10 +621,10 @@ fn gate_enforces_mst(gate: &Mapping) -> bool {
     let lines = run_lines(s);
     let env = key(s, "env").and_then(|e| e.as_mapping().cloned());
     let env_ok = env.as_ref().is_some_and(|e| {
-        e.iter()
-            .all(|(k, _)| k.as_str().is_some_and(|k| GATE_STEP_ENV.contains(&k)))
-            && e.get("MST").and_then(Value::as_str)
-                == Some("${{ needs.mg-reuse-self-test.result }}")
+        e.len() == GATE_STEP_ENV.len()
+            && GATE_STEP_ENV
+                .iter()
+                .all(|(k, v)| e.get(*k).and_then(Value::as_str) == Some(*v))
     });
     let keys_ok = s
         .iter()
@@ -657,6 +666,46 @@ fn earlier_step_ok(s: &Mapping) -> bool {
         }
 }
 
+/// The `on:` key (`on` is a string here, but a YAML 1.1 reader makes it `true`, so accept both).
+fn on_block(top: &Mapping) -> Option<Mapping> {
+    top.iter()
+        .find(|(k, _)| {
+            k.as_bool() == Some(true) || k.as_str().is_some_and(|k| k.eq_ignore_ascii_case("on"))
+        })
+        .and_then(|(_, v)| v.as_mapping().cloned())
+}
+
+/// The guard job only runs when the workflow does: push (branches and `v*` tags, no path filter), pull_request with
+/// `ready_for_review` (a draft skips the guard and the gate, so marking it ready must start the full run) and no path
+/// filter, and merge_group.
+fn check_triggers(top: &Mapping, why: &mut Vec<String>) {
+    let Some(on) = on_block(top) else {
+        return why.push("wiring: `on` is missing or not a mapping".into());
+    };
+    let filtered = |m: &Value| {
+        m.as_mapping().is_some_and(|m| {
+            ["paths", "paths-ignore"]
+                .iter()
+                .any(|f| key(m, f).is_some())
+        })
+    };
+    let push = key(&on, "push");
+    let prr = key(&on, "pull_request");
+    let ready = prr
+        .as_ref()
+        .and_then(Value::as_mapping)
+        .and_then(|m| key(m, "types"))
+        .and_then(|t| t.as_sequence().cloned())
+        .is_some_and(|t| t.iter().any(|x| x.as_str() == Some("ready_for_review")));
+    if push.as_ref().is_none_or(filtered)
+        || prr.as_ref().is_none_or(filtered)
+        || !ready
+        || key(&on, "merge_group").is_none()
+    {
+        why.push("wiring: `on` lacks an unfiltered push, pull_request with ready_for_review, or merge_group".into());
+    }
+}
+
 /// Part (f): the guard test runs, unmasked, in the job every event runs, and `gate` needs it AND enforces its result.
 fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     const JOB: &str = "mg-reuse-self-test";
@@ -668,9 +717,11 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     let Some(Value::Mapping(job)) = jobs.get(JOB).cloned() else {
         return why.push(format!("wiring: job {JOB} is missing"));
     };
-    if key(top, "defaults").is_some() || env_masks(top) {
-        why.push("wiring: workflow level sets defaults or a shell-changing env".into());
+    // Workflow-level env is inherited by both jobs (`PATH`, `LD_PRELOAD`, `DRAFT`...), so any of it is red.
+    if key(top, "defaults").is_some() || key(top, "env").is_some() || env_masks(top) {
+        why.push("wiring: workflow level sets defaults or an env".into());
     }
+    check_triggers(top, why);
     if key(&job, "if").as_ref().and_then(Value::as_str) != Some(IF) {
         why.push(format!(
             "wiring: {JOB} `if` is not the all-events condition"
@@ -1287,6 +1338,27 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("gate-trap-exit-0", job_mut("gate", &format!("          {MST_LINE}"), &format!("          trap 'exit 0' EXIT\n          {MST_LINE}")), "does not enforce"),
         ("gate-exec-wrapper", job_mut("gate", &format!("          {MST_LINE}"), &format!("          exec bash -c 'exit 0'\n          {MST_LINE}")), "does not enforce"),
         ("gate-earlier-step-github-env", job_mut("gate", "      - name: Check required sections", "      - run: echo SHELLOPTS=noexec >> \"$GITHUB_ENV\"\n      - name: Check required sections"), "does not enforce"),
+        ("gate-draft-constant", job_mut("gate", "DRAFT: ${{ github.event.pull_request.draft }}", "DRAFT: \"true\""), "does not enforce"),
+        ("gate-draft-env-dropped", job_mut("gate", "          DRAFT: ${{ github.event.pull_request.draft }}\n", ""), "does not enforce"),
+        ("gate-env-path", job_mut("gate", "MST: ${{ needs.mg-reuse-self-test.result }}", "MST: ${{ needs.mg-reuse-self-test.result }}\n          PATH: ./scripts:/usr/bin"), "does not enforce"),
+        ("gate-job-env-path", job_mut("gate", "    runs-on:", "    env:\n      PATH: ./scripts:/usr/bin\n    runs-on:"), "does not enforce"),
+        ("gate-job-env-draft", job_mut("gate", "    runs-on:", "    env:\n      DRAFT: \"true\"\n    runs-on:"), "does not enforce"),
+        ("gate-continuation-split-operator", job_mut("gate", "[ \"${DRAFT:-}\" != true ]", "[ \"${DRAFT:-}\" !=\\\n          true ]"), "does not enforce"),
+        ("gate-comment-expression", job_mut("gate", "          set -euo pipefail\n", "          set -euo pipefail\n          # ${{ '\\nexit 0\\n' }}\n"), "does not enforce"),
+        ("gate-comment-continuation", job_mut("gate", "          set -euo pipefail\n", "          set -euo pipefail\n          # note \\\n"), "does not enforce"),
+        ("guard-comment-expression", job_mut(job, "          reap\n", "          reap\n          # ${{ '\\nexit 0\\n' }}\n"), "no unmasked step"),
+        ("guard-continuation", job_mut(job, " --cpus 4 --memory 8g", " \\\n            --cpus 4 --memory 8g"), "no unmasked step"),
+        ("guard-comment-continuation", job_mut(job, "          reap\n", "          reap\n          # note \\\n"), "no unmasked step"),
+        ("earlier-step-expression", job_mut(job, "        run: bash scripts/ci_mg_reuse.sh --self-test", "        run: |\n          # ${{ '\\ntrue >> \"$GITHUB_PATH\"\\n' }}\n          bash scripts/ci_mg_reuse.sh --self-test"), "earlier step"),
+        ("earlier-step-continuation", job_mut(job, "        run: bash scripts/ci_mg_reuse.sh --self-test", "        run: |\n          bash scripts/ci_mg_reuse.sh \\\n            --self-test"), "earlier step"),
+        ("top-env-path", real_mut("\njobs:\n", "\nenv:\n  PATH: ./scripts:/usr/bin\njobs:\n"), "workflow level sets defaults or an env"),
+        ("top-env-draft", real_mut("\njobs:\n", "\nenv:\n  DRAFT: \"true\"\njobs:\n"), "workflow level sets defaults or an env"),
+        ("top-Env-case", real_mut("\njobs:\n", "\nEnv:\n  LD_PRELOAD: /tmp/x.so\njobs:\n"), "workflow level sets defaults or an env"),
+        ("job-env-path", job_mut(job, "    runs-on:", "    env:\n      PATH: ./scripts:/usr/bin\n    runs-on:"), "sets defaults or env"),
+        ("on-no-ready-for-review", real_mut("types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened]"), "`on` lacks"),
+        ("on-no-push", real_mut("  push:\n    branches: [main, master]", "  pushx:\n    branches: [main, master]"), "`on` lacks"),
+        ("on-push-paths", real_mut("    branches: [main, master]\n    #", "    branches: [main, master]\n    paths: [nonexistent]\n    #"), "`on` lacks"),
+        ("on-no-merge-group", real_mut("  merge_group:\n", "  merge_groupx:\n"), "`on` lacks"),
         ("gate-step-if-false", job_mut("gate", "      - name: Check required sections", "      - if: false\n        name: Check required sections"), "does not enforce"),
     ];
     for (n, text, needle) in cases {
