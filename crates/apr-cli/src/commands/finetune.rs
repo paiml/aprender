@@ -337,6 +337,16 @@ fn build_instruct_config(
     }
 }
 
+/// #7256: the sequence length the WGPU pipeline trains at. It is the value the
+/// instruct (CPU/CUDA) path trains at, so one `max_seq_len` means one length on
+/// every backend (it was a literal 512 here).
+#[cfg(feature = "training")]
+fn wgpu_max_seq_len(
+    instruct_config: &entrenar::finetune::instruct_pipeline::InstructConfig,
+) -> usize {
+    instruct_config.max_seq_len
+}
+
 /// Execute LoRA adapter creation from model tensors.
 /// §26: Execute QLoRA training via entrenar InstructPipeline bridge.
 ///
@@ -449,6 +459,7 @@ fn execute_training(
             learning_rate,
             json_output,
             corpus,
+            wgpu_max_seq_len(&instruct_config),
         );
     }
 
@@ -619,6 +630,7 @@ fn execute_training_wgpu(
     learning_rate: f64,
     json_output: bool,
     corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+    max_seq_len: usize,
 ) -> Result<()> {
     use entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline;
     use entrenar::tokenizer::HfTokenizer;
@@ -716,7 +728,7 @@ fn execute_training_wgpu(
         num_layers,
         hidden,
         vocab,
-        512, // max_seq_len
+        max_seq_len,
         heads,
         kv_heads,
         inter,
