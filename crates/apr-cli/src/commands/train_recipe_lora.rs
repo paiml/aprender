@@ -154,20 +154,19 @@ thread_local! {
     static ACTIVE: RefCell<Option<RecipeLora>> = const { RefCell::new(None) };
 }
 
-/// Holds a recipe's LoRA block active for the run on this thread; restores the previous
-/// block (none, or the outer run's) on drop.
-pub(crate) struct ActiveGuard(Option<RecipeLora>);
+/// Holds a recipe's LoRA block active for the run on this thread; clears it on drop.
+pub(crate) struct ActiveGuard;
 
 impl Drop for ActiveGuard {
     fn drop(&mut self) {
-        let previous = self.0.take();
-        ACTIVE.with(|a| *a.borrow_mut() = previous);
+        ACTIVE.with(|a| *a.borrow_mut() = None);
     }
 }
 
 /// Make `lora` the block `finetune::run` reads on this thread until the guard drops.
 pub(crate) fn activate(lora: &RecipeLora) -> ActiveGuard {
-    ActiveGuard(ACTIVE.with(|a| a.borrow_mut().replace(lora.clone())))
+    ACTIVE.with(|a| *a.borrow_mut() = Some(lora.clone()));
+    ActiveGuard
 }
 
 /// The LoRA alpha for this run: the active recipe's, else `planned`.

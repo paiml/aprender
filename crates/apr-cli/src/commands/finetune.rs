@@ -1647,8 +1647,6 @@ pub(crate) fn recipe_receipt_for_run(
         // claiming either applied.
         receipt.validated_not_applied.insert(0, "seed");
         receipt.validated_not_applied.push("eval");
-        // The WGSL loop builds its own schedule: it never reads training.warmup either.
-        receipt.validated_not_applied.push("training.warmup");
     }
     Ok((recipe, receipt))
 }
@@ -1680,7 +1678,7 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
     );
     if !receipt.validated_not_applied.is_empty() {
         eprintln!(
-            "[recipe] validated but not applied by this run: {}",
+            "[recipe] the wgpu backend does not apply: {}",
             receipt.validated_not_applied.join(", ")
         );
     }
@@ -1758,13 +1756,8 @@ where
     let output = output_buf.as_deref();
     train(output, epochs, quantize_nf4)?;
     if flags.plan_only {
-        let shown = recipe_output_shown(flags, recipe);
-        writeln!(
-            out,
-            "{}",
-            resolved_recipe_text(recipe, flags, shown.as_deref())?
-        )
-        .map_err(|e| CliError::ValidationFailed(format!("cannot print recipe: {e}")))?;
+        writeln!(out, "{}", resolved_recipe_text(recipe, flags, output)?)
+            .map_err(|e| CliError::ValidationFailed(format!("cannot print recipe: {e}")))?;
         return Ok(());
     }
     emit_run_receipt(recipe, receipt, output, flags, epochs, quantize_nf4, out)

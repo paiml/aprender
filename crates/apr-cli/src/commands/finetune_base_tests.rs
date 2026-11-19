@@ -466,7 +466,8 @@ fn run_fingerprint(dir: &Path, base: &str, tag: &str) -> (AdapterWeights, serde_
 
 /// FALSIFY-APR-RECIPE-011, end to end: the same tiny model as SafeTensors, as the APR
 /// that import produces, and as an exact-F32 GGUF, run through one recipe shape and
-/// one seed. The recipe seed is applied (SeedGuard) and is the same for all three.
+/// one seed. The run seed is the trainer's own fixed 42 (the recipe `seed` is recorded,
+/// not applied), so it is the same for all three.
 #[test]
 fn one_recipe_trains_the_same_model_from_safetensors_apr_and_gguf() {
     let dir = scratch("e2e");

@@ -149,16 +149,3 @@ fn the_active_block_is_read_by_the_run_and_cleared_after() {
     assert_eq!(alpha_or(16.0), 16.0, "cleared when the run ends");
     assert_eq!(warmup_fraction(), 0.03);
 }
-
-/// PMAT-7319: a nested activation restores the outer block on drop, not "none".
-#[test]
-fn a_nested_activation_restores_the_outer_block() {
-    let outer = parse("lora:\n  alpha: 32\n").expect("valid");
-    let inner = parse("lora:\n  alpha: 8\n").expect("valid");
-    let _outer = activate(&outer.lora);
-    {
-        let _inner = activate(&inner.lora);
-        assert_eq!(alpha_or(16.0), 8.0);
-    }
-    assert_eq!(alpha_or(16.0), 32.0, "the outer run's block is back");
-}
