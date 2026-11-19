@@ -602,18 +602,17 @@ impl TrainRecipe {
 
     #[allow(clippy::disallowed_methods)]
     /// The recipe with every default filled in, as `--dry-run` / `--plan` print it (PMAT-7240).
-    /// A value the planner picks from the model size (rank, alpha, learning rate, sequence
-    /// length) when the recipe leaves it out is named `planner`; the plan above it has the number.
-    /// `epochs` is the count the run will use and `model_size` / `output` are after run flags.
+    /// Every value is a number the run uses: `run` carries the planner's rank, alpha and learning
+    /// rate (after the recipe's own values and `--rank`) and the sequence length of the selected
+    /// training path. `epochs` is the count the run will use; `model_size` / `output` are after
+    /// run flags.
     pub(crate) fn resolved(
         &self,
         model_size: Option<&str>,
         output: Option<&Path>,
         epochs: u32,
+        run: &ResolvedRun,
     ) -> serde_json::Value {
-        const PLANNER: &str = "planner";
-        let num =
-            |v: Option<f64>| v.map_or_else(|| serde_json::json!(PLANNER), |x| serde_json::json!(x));
         serde_json::json!({
             "recipe": RECIPE_SCHEMA,
             "name": self.name,
@@ -630,15 +629,15 @@ impl TrainRecipe {
             },
             "seed": self.seed,
             "lora": {
-                "alpha": num(self.lora.alpha),
+                "alpha": run.alpha,
                 "dropout": self.lora.dropout,
                 "target_modules": self.lora.target_modules,
             },
             "training": {
-                "rank": self.rank.map_or_else(|| serde_json::json!(PLANNER), |r| serde_json::json!(r)),
+                "rank": run.rank,
                 "epochs": epochs,
-                "learning_rate": num(self.learning_rate),
-                "max_seq_len": self.max_seq_len.map_or_else(|| serde_json::json!(PLANNER), |m| serde_json::json!(m)),
+                "learning_rate": run.learning_rate,
+                "max_seq_len": run.max_seq_len,
                 "warmup": self.lora.warmup_fraction,
                 "weight_decay": self.lora.weight_decay,
             },
@@ -666,6 +665,15 @@ impl TrainRecipe {
             validated_not_applied: validated_not_applied.to_vec(),
         }
     }
+}
+
+/// The numbers a run of a recipe settles on, which the recipe may leave to the planner.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ResolvedRun {
+    pub(crate) rank: u32,
+    pub(crate) alpha: f32,
+    pub(crate) learning_rate: f64,
+    pub(crate) max_seq_len: usize,
 }
 
 /// This binary, as a receipt engine.

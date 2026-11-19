@@ -76,7 +76,7 @@ equations:
 
   recipe_lora_fields:
     formula: |
-      defaults = { lora.alpha: planner's (2 x rank), lora.dropout: 0.0, training.warmup: 0.03,
+      defaults = { lora.alpha: planner's (2 x rank; printed as that number), lora.dropout: 0.0, training.warmup: 0.03,
                    training.weight_decay: 0.01, lora.target_modules: [q_proj, v_proj] }
       resolve(R) = defaults overlaid with R.lora and R.training
       applied     = { lora.alpha -> adapter alpha, training.warmup -> LR warmup }
@@ -93,7 +93,11 @@ equations:
     formula: |
       dry_run == plan: `--dry-run` is the clap alias of `--plan` (one flag, one code path)
       plan(recipe_path) = validate(read(recipe_path)) ; print plan ; print resolved recipe ; print receipt ; exit 0
-      resolved recipe = every key of the grammar with its default filled in (a planner-chosen value is the string "planner"; the plan above it has the number)
+      resolved recipe = every key of the grammar with its default filled in, each a number or value the run uses:
+        training.rank, lora.alpha and training.learning_rate are the plan's recommended_rank, recommended_alpha and learning_rate
+        (the recipe's own value, else the planner's); training.max_seq_len is the length the selected path uses: the recipe's value,
+        else InstructConfig's default (512), except on the WGPU path, which builds its pipeline with a fixed 512
+      the plan block of an unmodified examples/recipes/tiny.yaml is byte-identical to origin/main's
       it opens no base model, no data file and no GPU; it needs only the recipe file
     domain: (recipe file, flags)
     codomain: plan and resolved recipe on stdout and receipt on stderr, or a recipe refusal (exit 5)
@@ -186,10 +190,11 @@ falsification_tests:
   if_fails: "The recipe says alpha 32 and the adapter is trained and saved with another value, or the receipt claims a setting the loop never read"
 - id: FALSIFY-APR-RECIPE-008
   rule: --dry-run prints the resolved recipe without opening anything and keeps the refusals
-  prediction: "`apr finetune --recipe r.yaml --dry-run` exits 0 when the base, data and eval files do not exist and prints byte-identical stdout to `--plan`, because it is the same flag; that stdout is the plan followed by the fully resolved recipe (lora.alpha, lora.dropout, lora.target_modules, training.warmup, training.weight_decay, training.epochs with defaults filled in). An unknown key or a bad value is refused with exit 5 under both spellings. A real run of the same recipe is refused for its absent files"
+  prediction: "`apr finetune --recipe r.yaml --dry-run` exits 0 when the base, data and eval files do not exist and prints byte-identical stdout to `--plan`, because it is the same flag; that stdout is the plan followed by the fully resolved recipe (lora.alpha, lora.dropout, lora.target_modules, training.rank, training.epochs, training.learning_rate, training.max_seq_len, training.warmup, training.weight_decay), every one a number the run uses and none a placeholder: rank, alpha and learning rate equal the plan's recommended_rank, recommended_alpha and learning_rate, and max_seq_len is 512 when unset (the recipe's value when set, except on the WGPU path, which uses a fixed 512). The plan object of the unmodified examples/recipes/tiny.yaml is byte-identical to the one origin/main prints (pinned by a golden fixture). An unknown key or a bad value is refused with exit 5 under both spellings. A real run of the same recipe is refused for its absent files"
   test: |
     cargo test -p apr-cli --lib -- test_finetune_dry_run_is_the_plan_flag
-    cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- dry_run_is_the_plan_flag dry_run_prints_the_resolved_recipe_with_every_default_filled_in
+    cargo test -p apr-cli --lib -- effective_max_seq_len
+    cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- dry_run_is_the_plan_flag dry_run_prints_the_resolved_recipe_with_every_default_filled_in tiny_recipe_plan_is_byte_identical_to_main
   if_fails: "A user cannot check a recipe without loading a model, or --dry-run accepts what a real run refuses"
 - id: FALSIFY-APR-RECIPE-009
   rule: every shipped example recipe passes --dry-run

@@ -350,3 +350,24 @@ fn recipe_alpha_reaches_the_config_the_run_trains_and_saves_with() {
     assert_eq!(c.alpha, 16.0);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// PMAT-7240: `--dry-run` prints the sequence length the selected path uses. Unset: the
+/// instruct default (512). Set: that value, except on the WGPU path, which is built with a fixed
+/// 512 and never reads it.
+#[test]
+fn effective_max_seq_len_follows_the_selected_path() {
+    assert_eq!(effective_max_seq_len(None, "auto", false), 512);
+    assert_eq!(effective_max_seq_len(Some(256), "cuda", true), 256);
+    assert_eq!(effective_max_seq_len(Some(256), "auto", false), 256);
+    let wgpu_run = cfg!(feature = "wgpu");
+    // `--gpu-backend wgpu` selects the WGPU pipeline when it is compiled in, and `auto` does so
+    // for NF4 (QLoRA); plain LoRA on `auto` stays on the CPU path.
+    assert_eq!(
+        effective_max_seq_len(Some(256), "wgpu", false),
+        if wgpu_run { 512 } else { 256 }
+    );
+    assert_eq!(
+        effective_max_seq_len(Some(256), "auto", true),
+        if wgpu_run { 512 } else { 256 }
+    );
+}

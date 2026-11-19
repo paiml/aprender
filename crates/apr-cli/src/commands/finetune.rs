@@ -311,6 +311,30 @@ fn gpu_backend_notice(
     }
 }
 
+/// The sequence length the WGPU training path builds its pipeline with. It does not read the
+/// recipe's or `--max-seq-len`'s value (see `effective_max_seq_len`).
+#[cfg(feature = "training")]
+const WGPU_MAX_SEQ_LEN: usize = 512;
+
+/// The sequence length a run really uses: on the WGPU path the fixed `WGPU_MAX_SEQ_LEN` (the
+/// value set by the recipe or `--max-seq-len` is not read there), otherwise the value set or
+/// `InstructConfig`'s default. `--dry-run` prints this number (PMAT-7240).
+#[cfg(feature = "training")]
+fn effective_max_seq_len(set: Option<usize>, gpu_backend: &str, quantize_nf4: bool) -> usize {
+    use entrenar::finetune::instruct_pipeline::InstructConfig;
+    if cfg!(feature = "wgpu") && gpu_backend_notice(gpu_backend, quantize_nf4, true).use_wgpu {
+        WGPU_MAX_SEQ_LEN
+    } else {
+        set.unwrap_or(InstructConfig::default().max_seq_len)
+    }
+}
+
+/// Without the `training` feature nothing trains; the value printed is the one set or 512.
+#[cfg(not(feature = "training"))]
+fn effective_max_seq_len(set: Option<usize>, _gpu_backend: &str, _quantize_nf4: bool) -> usize {
+    set.unwrap_or(512)
+}
+
 /// Build the `InstructConfig` for the default LoRA/QLoRA training path.
 ///
 /// Root cause (Defect 2): the old inline construction hardcoded
@@ -716,7 +740,7 @@ fn execute_training_wgpu(
         num_layers,
         hidden,
         vocab,
-        512, // max_seq_len
+        WGPU_MAX_SEQ_LEN,
         heads,
         kv_heads,
         inter,
@@ -1629,27 +1653,44 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         flags.gpu_share,
     )?;
     if flags.plan_only {
-        println!("{}", resolved_recipe_text(&recipe, flags, output));
+        println!("{}", resolved_recipe_text(&recipe, flags, output)?);
     }
     Ok(())
 }
 
-/// What `--dry-run` / `--plan` print after the plan: the recipe with every default filled in.
-/// `--json` prints the bare JSON object; text mode heads it so a reader can find it.
+/// What `--dry-run` / `--plan` print after the plan: the recipe with every default filled in,
+/// each a number the run uses (the planner's rank, alpha and learning rate, and the sequence
+/// length of the selected path). `--json` prints the bare JSON object; text mode heads it.
 #[allow(clippy::disallowed_methods)]
 pub(crate) fn resolved_recipe_text(
     recipe: &super::train_recipe::TrainRecipe,
     flags: &RecipeRunFlags<'_>,
     output: Option<&Path>,
-) -> String {
-    let (epochs, _) = recipe_epochs_and_nf4(recipe);
-    let value = recipe.resolved(recipe_model_size(flags, recipe), output, epochs);
+) -> Result<String> {
+    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    let size = recipe_model_size(flags, recipe);
+    let ft_method: FinetuneMethod = recipe
+        .method
+        .as_str()
+        .parse()
+        .map_err(CliError::ValidationFailed)?;
+    let params = resolve_model_params(size, Some(&recipe.base))?;
+    let config = resolve_run_config(params, flags.vram_gb, ft_method, recipe.rank)?;
+    let run = super::train_recipe::ResolvedRun {
+        rank: config.rank,
+        alpha: config.alpha,
+        learning_rate: recipe
+            .learning_rate
+            .unwrap_or_else(|| f64::from(config.learning_rate)),
+        max_seq_len: effective_max_seq_len(recipe.max_seq_len, flags.gpu_backend, quantize_nf4),
+    };
+    let value = recipe.resolved(size, output, epochs, &run);
     let body = serde_json::to_string_pretty(&value).unwrap_or_default();
-    if flags.json_output {
+    Ok(if flags.json_output {
         body
     } else {
         format!("\nResolved recipe (defaults filled in):\n{body}")
-    }
+    })
 }
 
 /// Validate inputs and execute the LoRA training pipeline.
