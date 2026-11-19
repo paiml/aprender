@@ -9,14 +9,17 @@
 # literals only: `!= 'X'` removes X; `== 'X'` (no `||` in the expression) keeps only the
 # listed events; any `||` mix is read as "runs everywhere" (never a false red).
 #
-# VIOLATION: job is on push, and on neither pull_request nor merge_group.
-# With --live, a job covered only by merge_group is a violation too while no active ruleset
-# of the repo carries a `merge_queue` rule (the queue is off, so merge_group never fires).
+# VIOLATION 1: job is on push, and not on pull_request. A merge_group run does not count: the queue
+# is a different event and may be off, and a job that first runs after the merge makes main the test bench.
+# VIOLATION 2: a job's run script returns success on a pull_request before it has checked the heavy jobs
+# (an `if` on the pull_request event whose body reaches `exit 0`, or `[ .. = pull_request ] && exit 0`).
+# An aggregate job that passes a PR on a light check alone makes the heavy jobs optional there.
+# --live is kept as an alias of the plain scan (merge_group-only coverage is now RED offline, so no ruleset read is needed).
 # EXEMPT: ci/push-only-jobs.txt, one `<workflow-file>:<job> <reason>` per line. An entry
 # whose job is not push-only, or does not exist, is stale and fails.
 #
 #   bash scripts/check_pr_main_job_parity.sh              # scan .github/workflows
-#   bash scripts/check_pr_main_job_parity.sh --live       # also read the ruleset (gh, 1 call)
+#   bash scripts/check_pr_main_job_parity.sh --live       # alias of the plain scan
 #   bash scripts/check_pr_main_job_parity.sh --self-test  # case table on throwaway workflows
 #   env: PARITY_WORKFLOWS (dir), PARITY_EXEMPT (file)
 set -uo pipefail
@@ -51,17 +54,28 @@ rows() {
   done
 }
 
-queue_live() { # 0 = an active ruleset carries a merge_queue rule
-  local ids id
-  ids=$(gh api "repos/${GITHUB_REPOSITORY:-paiml/aprender}/rulesets" --jq '.[]|select(.enforcement=="active")|.id' 2>/dev/null) || return 2
-  for id in $ids; do
-    gh api "repos/${GITHUB_REPOSITORY:-paiml/aprender}/rulesets/$id" --jq '[.rules[].type]|index("merge_queue")' 2>/dev/null | grep -qE '^[0-9]+$' && return 0
+# VIOLATION 2 rows: "<file>\t<job>" for each job whose run script exits 0 on a pull_request branch.
+shortcuts() {
+  local f j b
+  for f in "$WF"/*.yml; do
+    [ -e "$f" ] || continue
+    while IFS=$'\t' read -r j b; do
+      [ -n "$j" ] || continue
+      if printf '%s' "$b" | base64 -d | awk '
+          /^[[:space:]]*#/ { next }
+          /^[[:space:]]*\[.*pull_request.*\][[:space:]]*&&.*exit[[:space:]]+0/ { hit = 1 }
+          /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { inif = 1; if ($0 ~ /exit[[:space:]]+0/) hit = 1; next }
+          inif && /exit[[:space:]]+0/ { hit = 1 }
+          inif && /^[[:space:]]*fi([[:space:];]|$)/ { inif = 0 }
+          END { exit !hit }'; then
+        printf '%s\t%s\n' "$(basename "$f")" "$j"
+      fi
+    done < <(yq -o=json '.' "$f" | jq -r '(.jobs // {}) | to_entries[] | [.key, ([.value.steps[]?.run // empty] | join("\n") | @base64)] | @tsv')
   done
-  return 1
 }
 
 scan() {
-  local live="$1" fail=0 f j p pr mg key reason
+  local fail=0 f j p pr mg key reason
   local exempt="" used=""
   if [ -f "$EX" ]; then
     while read -r key reason || [ -n "$key" ]; do
@@ -71,25 +85,26 @@ scan() {
 $key"
     done < "$EX"
   fi
-  local mgok=1
-  if [ "$live" = 1 ]; then
-    queue_live; case $? in 0) mgok=1 ;; 1) mgok=0 ;; *) echo "not_measured: ruleset read failed"; return 2 ;; esac
-  fi
   while IFS=$'\t' read -r f j p pr mg; do
     [ -n "$f" ] || continue
     key="$f:$j"
-    if [ "$pr" = 0 ] && { [ "$mg" = 0 ] || [ "$mgok" = 0 ]; }; then
+    if [ "$pr" = 0 ]; then
       if printf "%s\n" "$exempt" | grep -qxF -- "$key"; then used="$used
 $key"; continue; fi
-      if [ "$mg" = 1 ]; then echo "RED: $key runs on push to main and only on merge_group, and no merge_queue rule is active"
-      else echo "RED: $key runs on push to main and on no pull_request or merge_group run"; fi
+      if [ "$mg" = 1 ]; then echo "RED: $key runs on push to main but is skipped on pull_request by an if: event guard (merge_group does not cover it)"
+      else echo "RED: $key runs on push to main and not on any pull_request run"; fi
       fail=1
     fi
   done < <(rows)
+  while IFS=$'\t' read -r f j; do
+    [ -n "$f" ] || continue
+    echo "RED: $f:$j passes a pull_request (exit 0) before it checks the heavy jobs"
+    fail=1
+  done < <(shortcuts)
   for key in $(printf "%s\n" "$exempt" | tr " " "_" | grep -v "^$"); do
     printf "%s\n" "$used" | grep -qxF -- "$key" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
   done
-  [ "$fail" = 0 ] && echo "OK: every job that runs on push to main also runs on a pull_request or merge_group event"
+  [ "$fail" = 0 ] && echo "OK: every job that runs on push to main also runs on a pull_request, and no job passes a PR before its heavy checks"
   return "$fail"
 }
 
@@ -109,8 +124,51 @@ jobs:'
   t "job on pull_request is green" 0 "" "$H
   a: {runs-on: x, steps: []}
 "
-  t "!= pull_request but on merge_group is green" 0 "" "$H
+  t "!= pull_request but on merge_group is RED (the queue does not cover it)" 1 "" "$H
   a: {runs-on: x, if: \"github.event_name != 'pull_request'\", steps: []}
+"
+  t "!= pull_request with a push-only exemption is green" 0 "ci.yml:a ticket-maker, cannot block" "$H
+  a: {runs-on: x, if: \"github.event_name != 'pull_request'\", steps: []}
+"
+  t "draft guard only is green" 0 "" "$H
+  a: {runs-on: x, if: \"github.event.pull_request.draft != true\", steps: []}
+"
+  t "aggregate exits 0 on a PR before the heavy checks is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            echo light passed; exit 0
+          fi
+          check_heavy
+"
+  t "aggregate one-liner [ pull_request ] && exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" = pull_request ] && exit 0
+          check_heavy
+"
+  t "aggregate that checks light then falls through is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            [ \"\${PRL:-}\" = success ] || exit 1
+            echo light passed
+          fi
+          check_heavy
+"
+  t "draft exit 0 and an echo naming pull_request are green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${DRAFT:-}\" != true ] || { echo draft; exit 0; }
+          echo \"pull_request: nothing owed\"; exit 0
 "
   t "== push with || is read as everywhere" 0 "" "$H
   a: {runs-on: x, if: \"github.event_name == 'push' || x\", steps: []}
@@ -138,7 +196,7 @@ jobs:
 
 case "${1:-}" in
   --self-test) self_test; exit $? ;;
-  --live) scan 1; exit $? ;;
+  --live) scan; exit $? ;;
   -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' ;;
-  *) scan 0; exit $? ;;
+  *) scan; exit $? ;;
 esac
