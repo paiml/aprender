@@ -1154,8 +1154,8 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
         ("runner-smells", format!("{DF} && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)")),
         ("x86-main", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {DF} }}}}")),
         ("x86-main-advisories", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && {DF} }}}}")),
-        // #7272: determinism runs on a pull_request exactly as on a push to main; no event guard.
-        ("determinism", "${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}".into()),
+        // #7272: determinism runs on a non-draft pull_request exactly as on a push to main; no event guard.
+        ("determinism", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.det != '1' && {DF} }}}}")),
         // merge_group-only: a draft never reaches the queue, so there is nothing to skip.
         ("mg-reuse-wt", "github.event_name == 'merge_group'".into()),
         ("guards", "${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}".into()),

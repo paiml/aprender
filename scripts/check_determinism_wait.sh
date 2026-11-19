@@ -92,8 +92,11 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     # W10 determinism runs on a PR head exactly as on a push to main (#7272, one check set per repo): the job's if: must
     # NOT name pull_request, and the gate must NOT skip DET:determinism-compare on any event (a skip there reads a
     # job a PR no longer runs as covered, which is how a red determinism reached main).
-    grep -q -F "pull_request" <<<"$(printf '%s\n' "$j" | grep -E '^    if:')" &&   # m:nopr
+    grep -q -F "event_name != 'pull_request'" <<<"$(printf '%s\n' "$j" | grep -E '^    if:')" &&   # m:nopr
         { printf 'FAIL  W10 the determinism job is event-guarded off a pull_request head (it must run on a PR as on a push to main)\n'; bad=1; }
+    # W10c a draft owes no heavy job (x86-main and the shards carry the same clause): determinism must skip a draft.
+    grep -q -F "github.event.pull_request.draft != true" <<<"$(printf '%s\n' "$j" | grep -E '^    if:')" ||   # m:nodraft
+        { printf 'FAIL  W10c the determinism job runs on a draft pull_request (its if: lacks github.event.pull_request.draft != true)\n'; bad=1; }
     [ "$(printf '%s\n' "$g" | grep -c -E '"DET:[a-z_]+" \] && continue')" = 0 ] ||   # m:noskip
         { printf 'FAIL  W10 the gate skips DET:determinism-compare on some event (every event, a PR included, must read it)\n'; bad=1; }
     # W10b the gate's EVT is the live event, not a literal: a hardcoded `EVT: pull_request` would
@@ -177,6 +180,8 @@ selftest() {
 
     plant "$d/x1.yml" "s/^(    if: .*) \\}\\}\$/\\1 \\&\\& github.event_name != 'pull_request' }}/"
     check "$d/x1.yml" > /dev/null 2>&1; row X1 RED $? "determinism off PR heads again (the if: gains a pull_request exclusion)"
+    plant "$d/x6.yml" "s/^(    if: .*) \\&\\& github\\.event\\.pull_request\\.draft != true \\}\\}\$/\\1 }}/"
+    check "$d/x6.yml" > /dev/null 2>&1; row X6 RED $? "determinism runs on a draft pull_request (the if: lost its draft clause)"
     plant_file "$CI" "$d/x3.yml" '/^  gate:$/,/^    steps:$/!{s/^( +)(r=\$\(res "\$\{!job\}" "\$sec"\))$/\1[ "$job:$EVT" = "DET:pull_request" ] \&\& continue\n\1\2/}'
     check "$d/x3.yml" > /dev/null 2>&1; row X3 RED $? "a gate that skips determinism-compare on a PR (a red compare would reach main)"
     plant_file "$CI" "$d/x4.yml" '/^  gate:$/,/^    steps:$/!{s/^( +)(r=\$\(res "\$\{!job\}" "\$sec"\))$/\1[ "$job:$EVT" = "DET:merge_group" ] \&\& continue\n\1\2/}'

@@ -14,6 +14,9 @@
 # VIOLATION 2: a job's run script returns success on a pull_request before it has checked the heavy jobs
 # (an `if` on the pull_request event whose body reaches `exit 0`, or `[ .. = pull_request ] && exit 0`).
 # An aggregate job that passes a PR on a light check alone makes the heavy jobs optional there.
+# VIOLATION 3 (draft parity): in a workflow where a heavy job (timeout-minutes >= 100 in any branch of its expression) that runs on
+# push to main and on pull_request carries a `github.event.pull_request.draft` clause, every other such heavy job must carry it
+# too. A heavy job without it runs on a draft PR while its siblings skip, so a draft burns the pool the others spare.
 # --live is kept as an alias of the plain scan (merge_group-only coverage is now RED offline, so no ruleset read is needed).
 # EXEMPT: ci/push-only-jobs.txt, one `<workflow-file>:<job> <reason>` per line. An entry
 # whose job is not push-only, or does not exist, is stale and fails.
@@ -74,6 +77,24 @@ shortcuts() {
   done
 }
 
+# VIOLATION 3 rows: "<file>\t<job>" for each heavy push+PR job lacking the draft clause a heavy sibling carries.
+drafts() {
+  local f pr_jobs
+  for f in "$WF"/*.yml; do
+    [ -e "$f" ] || continue
+    pr_jobs="$(rows | awk -F'\t' -v f="$(basename "$f")" '$1==f && $4=="1" {print $2}')"
+    [ -n "$pr_jobs" ] || continue
+    yq -o=json '.' "$f" | jq -r --arg pj "$pr_jobs" '
+      ($pj | split("\n")) as $pr
+      | [ (.jobs // {}) | to_entries[]
+          | select(.key as $k | $pr | index($k))
+          | select(((.value["timeout-minutes"] // 0) | tostring | [scan("[0-9]+") | tonumber] | max // 0) >= 100)
+          | {k: .key, d: (((.value.if // "") | tostring) | contains("github.event.pull_request.draft"))} ] as $h
+      | if ($h | map(select(.d)) | length) > 0 then $h[] | select(.d | not) | .k else empty end' \
+      | while read -r j; do printf '%s\t%s\n' "$(basename "$f")" "$j"; done
+  done
+}
+
 scan() {
   local fail=0 f j p pr mg key reason
   local exempt="" used=""
@@ -101,6 +122,11 @@ $key"; continue; fi
     echo "RED: $f:$j passes a pull_request (exit 0) before it checks the heavy jobs"
     fail=1
   done < <(shortcuts)
+  while IFS=$'\t' read -r f j; do
+    [ -n "$f" ] || continue
+    echo "RED: $f:$j is a heavy job on push and pull_request without the draft clause its heavy siblings carry (a draft PR runs it)"
+    fail=1
+  done < <(drafts)
   for key in $(printf "%s\n" "$exempt" | tr " " "_" | grep -v "^$"); do
     printf "%s\n" "$used" | grep -qxF -- "$key" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
   done
@@ -169,6 +195,18 @@ jobs:'
       - run: |
           [ \"\${DRAFT:-}\" != true ] || { echo draft; exit 0; }
           echo \"pull_request: nothing owed\"; exit 0
+"
+  t "heavy job missing the draft clause its sibling carries is RED" 1 "" "$H
+  a: {runs-on: x, timeout-minutes: 240, if: \"github.event.pull_request.draft != true\", steps: []}
+  b: {runs-on: x, timeout-minutes: 120, steps: []}
+"
+  t "heavy jobs both carrying the draft clause are green" 0 "" "$H
+  a: {runs-on: x, timeout-minutes: 240, if: \"github.event.pull_request.draft != true\", steps: []}
+  b: {runs-on: x, timeout-minutes: 120, if: \"!cancelled() && github.event.pull_request.draft != true\", steps: []}
+"
+  t "light job without the draft clause beside a heavy one is green" 0 "" "$H
+  a: {runs-on: x, timeout-minutes: 240, if: \"github.event.pull_request.draft != true\", steps: []}
+  b: {runs-on: x, timeout-minutes: 10, steps: []}
 "
   t "== push with || is read as everywhere" 0 "" "$H
   a: {runs-on: x, if: \"github.event_name == 'push' || x\", steps: []}

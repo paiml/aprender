@@ -667,7 +667,7 @@ jobs:
     # #7272 (operator ruling: one check set per repo, enforced by pmat comply): determinism runs on a pull_request exactly
     # as on a push to main, so a red determinism-compare is found before the merge. This reverses the 2026-10-17 rule that
     # kept it off PR heads; the gate reads DET:determinism-compare on every event (scripts/check_determinism_wait.sh W10).
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
