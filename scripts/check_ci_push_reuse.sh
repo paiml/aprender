@@ -454,13 +454,13 @@ want "Y9 workspace-test-ran still records the stamp, once" 1 "$(grep -c 'echo "P
 want "Y10 workspace-test accepts wt=1 only from a job that succeeded" 1 "$(grep -cF '[ "${WT_SRC_RESULT:-}" = success ]' "$CI")"
 FX="$ROOT/scripts/fixtures/ci_push_reuse"
 want "Y11 a real-shape stamp job log (BOM, CRLF, colour-prefixed echoed script, one emitted stamp) yields the stamp" 1 \
-     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-with-stamp.log" | jq -r 'select(.tree != null and (.sha|length)==40) | 1')"
+     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-with-stamp.fixture" | jq -r 'select(.tree != null and (.sha|length)==40) | 1')"
 want "Y12 a log that only echoes the unavailable text and emits it yields no stamp (null), never a stamp" null \
-     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-unavailable.log")"
-want "Y13 a log with no stamp line yields null" null "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-no-stamp.log")"
-want "Y14 a PR run of x86-main that skipped sov.test reads skipped" '"skipped"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-pr-sections.log" sov.test)"
-want "Y15 a run that ran sov.test reads success" '"success"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.log" sov.test)"
-want "Y16 a section the log does not carry reads null" null "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.log" no.such.section)"
+     "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-unavailable.fixture")"
+want "Y13 a log with no stamp line yields null" null "$(bash "$FACTS" --parse-stamp-log "$FX/stamp-job-no-stamp.fixture")"
+want "Y14 a PR run of x86-main that skipped sov.test reads skipped" '"skipped"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-pr-sections.fixture" sov.test)"
+want "Y15 a run that ran sov.test reads success" '"success"' "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.fixture" sov.test)"
+want "Y16 a section the log does not carry reads null" null "$(bash "$FACTS" --parse-section-log "$FX/x86-main-push-sections.fixture" no.such.section)"
 
 if [ "$fails" -eq 0 ]; then
   echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"

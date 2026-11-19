@@ -19,7 +19,7 @@
 # Facts (all required): event ref sha tree parents[] before repo
 #   pr{number merged merge_commit_sha base_ref head_ref is_fork head_repo draft head_sha}  (base_ref and head_ref are read from the PR object)
 #   stamp{sha tree base head}  (MANDATORY: what the PR run recorded of its test merge commit M; null refuses)
-#   m_derived{tree base head}|null (re-derived from M's own object, null when M is not fetchable)
+#   m_derived{tree base head}|null (re-derived from M's own object; null when M is not fetchable, and null is refused)
 #   expect_shards  runs_complete
 #   run{id event path head_sha head_branch status conclusion newest_id started_epoch jobs_total sov_test("success"|...|null: read from the run's x86-main log) jobs[{name conclusion run_id head_sha}]}
 #   paths[] (B..S changed paths)  now
@@ -62,7 +62,7 @@ def c3a: # an absent or non-object stamp makes every field check below false, so
   cj(.stamp.tree == .tree) and # R-C3A3
   cj(.stamp.base == .parents[0]) and # R-C3A4
   cj(.stamp.head == .pr.head_sha) and # R-C3A5
-  cj(.m_derived == null or (.m_derived.tree == .stamp.tree and .m_derived.base == .stamp.base and .m_derived.head == .stamp.head)); # R-C3A6
+  cj(.m_derived != null and (.m_derived.tree == .stamp.tree and .m_derived.base == .stamp.base and .m_derived.head == .stamp.head)); # R-C3A6
 [
   chk("F-shape"; type == "object" and (keys | contains(["event","ref","sha","tree","parents","before","repo","pr","stamp","m_derived","expect_shards","runs_complete","run","paths","now"]))), # R-FSHAPE
   chk("C1-event"; .event == "push"), # R-C1EVENT
@@ -156,7 +156,7 @@ base_facts() {
          {name: "guards", conclusion: "skipped", run_id: 900, head_sha: $h}] as $jobs
     | {event: "push", ref: "refs/heads/main", sha: $s, tree: $t, parents: [$b], before: $b, repo: "paiml/aprender",
        pr: {number: 7001, merged: true, merge_commit_sha: $s, base_ref: "main", head_ref: "feat/x", is_fork: false, head_repo: "paiml/aprender", draft: false, head_sha: $h},
-       stamp: {sha: $m, tree: $t, base: $b, head: $h}, m_derived: null, expect_shards: 4, runs_complete: true,
+       stamp: {sha: $m, tree: $t, base: $b, head: $h}, m_derived: {tree: $t, base: $b, head: $h}, expect_shards: 4, runs_complete: true,
        run: {id: 900, event: "pull_request", path: ".github/workflows/ci.yml", head_sha: $h, status: "completed", conclusion: "success",
              newest_id: 900, started_epoch: 1000000, head_branch: "feat/x", sov_test: "success", jobs_total: ($jobs | length), jobs: $jobs},
        paths: ["crates/aprender-core/src/lib.rs", "docs/notes.md"], now: 1003600}'
@@ -236,11 +236,12 @@ self_test() {
   # ---- C3
   row "C3 no stamp (path b is gone: a run with no recorded merge proves nothing)" no C3-tree-identity '.stamp=null'
   row "C3 stamp key missing" no F-shape 'del(.stamp)'
+  row "C3 m_derived null (M not fetchable) is refused" no C3-tree-identity '.m_derived=null'
   row "C3 m_derived key missing" no F-shape 'del(.m_derived)'
   row "C3 old-shape facts: base_in_head and head_tree cannot stand in for a stamp" no C3-tree-identity '.stamp=null | .base_in_head=true | .head_tree=.tree'
-  row "C3 stamp tree differs" no C3-tree-identity '.stamp.tree="'"$SHA_O"'"'
-  row "C3 stamp base is not B" no C3-tree-identity '.stamp.base="'"$SHA_O"'"'
-  row "C3 stamp head is not H" no C3-tree-identity '.stamp.head="'"$SHA_O"'"'
+  row "C3 stamp tree differs" no C3-tree-identity '.stamp.tree="'"$SHA_O"'" | .m_derived.tree=.stamp.tree'
+  row "C3 stamp base is not B" no C3-tree-identity '.stamp.base="'"$SHA_O"'" | .m_derived.base=.stamp.base'
+  row "C3 stamp head is not H" no C3-tree-identity '.stamp.head="'"$SHA_O"'" | .m_derived.head=.stamp.head'
   row "C3 stamp field malformed" no C3-tree-identity '.stamp.sha="nope"'
   row "C3 stamp not an object" no C3-tree-identity '.stamp="yes"'
   row "C3 stamp contradicted by M's object (tree)" no C3-tree-identity '.m_derived={tree:"'"$SHA_O"'", base:.parents[0], head:.pr.head_sha}'
