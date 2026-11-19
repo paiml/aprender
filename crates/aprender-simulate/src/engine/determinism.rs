@@ -803,5 +803,6 @@ mod tests {
         assert_eq!(s.receipt().final_hash, GOLDEN_FINAL_HASH);
     }
 
-    const GOLDEN_FINAL_HASH: &str = "PLACEHOLDER";
+    const GOLDEN_FINAL_HASH: &str =
+        "767f63f68670c60aca5dec94f38c9317f40a806e066cb134c6604c3cabb581fc";
 }
