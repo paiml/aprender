@@ -46,11 +46,12 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd, lc, k) { # drop a trailing comm
         j = index(substr(s, i), "}}"); if (j == 0) { midq = midq + 1; noq = noq c; continue } # unclosed expression: refuse the line
         noq = noq substr(s, i, j + 1); i = i + j
       }
-      else { noq = noq c; if (c ~ /[{[]/ && (dd > 0 || p ~ /[ \t]/)) dd++; else if (c ~ /[}\]]/ && dd > 0) dd-- } # a mid-word bracket in a plain scalar opens no flow collection
+      else { noq = noq c; if (c ~ /[{[]/ && (dd > 0 || p ~ /[ \t]/)) dd++; else if (c ~ /[}\]]/ && dd > 0) dd--; else if (c ~ /[}\]]/ && p ~ /[ \t,]/) negd = negd + 1 } # a mid-word bracket in a plain scalar opens no flow collection
     } else if (q == "\042" && c == "\\") { esc = 1; i++ }
     else if (c == q) { if (q == "\047" && substr(s, i + 1, 1) == "\047") i++; else { q = ""; lc = i } }
   }
   if (q != "") uq = 1
+  endd = dd
   sub(/[ \t]+$/, "", s)
   return s
 }
@@ -92,8 +93,7 @@ BEGIN { bsind = -1 }
   if (line ~ /^[ \t]*(-[ \t]+)*\?([ \t]|$)/) qkey = qkey + 1
   t = noq
   if (fdepth > 0 && ind == 0) flowcont = flowcont + 1
-  fdepth += gsub(/[{[]/, "", t); fdepth -= gsub(/[}\]]/, "", t)
-  if (fdepth < 0) { negflow = negflow + 1; fdepth = 0 }
+  fdepth = endd; if (negd > 0) { negflow = negflow + 1; negd = 0 } # the depth strip() tracked, in order, not a raw bracket count
   if (fdepth > 0) flowml = flowml + 1
   if (ind == 0) { # a top-level key; anything else at column 0 is a form this script does not judge
     if (line !~ /^([A-Za-z0-9_.-]+|"[^"]*"|\047[^\047]*\047)[ \t]*:([ \t]|$)/) badtop = badtop " " substr(line, 1, 20)
@@ -378,6 +378,9 @@ EOF
 
   printf "name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    runs-on: ubuntu-latest\n    a, ' : \" # '\n    timeout-minutes: 25\n    \" # \"\n    steps:\n      - run: echo UNTIMED\n        a, ' : \" # '\n        timeout-minutes: 10\n        \" # \"\n" > "$t/r21.yml"; expect_unj "comma then space-quote in a block key" "$t/r21.yml"
   printf "name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    runs-on: ubuntu-latest\n    a[ ' : \" # ' ]\n    timeout-minutes: 25\n    \" # \"\n    steps:\n      - run: echo UNTIMED\n        a[ ' : \" # ' ]\n        timeout-minutes: 10\n        \" # \"\n" > "$t/r22.yml"; expect_unj "mid-word bracket then space-quote in a block key" "$t/r22.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    runs-on: ubuntu-latest\n    a}: {\n    timeout-minutes: 25\n    , []:"{a" }\n    steps:\n      - run: echo UNTIMED\n        a}: {\n        timeout-minutes: 10\n        , []:"{a" }\n' > "$t/r23.yml"; expect_unj "mid-word closer before a real flow opener" "$t/r23.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\n    inputs:\n      a}: {\nfake: 1\n      , []:"{a" }\n  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        timeout-minutes: 10\n' > "$t/r24.yml"; expect_unj "mid-word closer hiding schedule" "$t/r24.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
