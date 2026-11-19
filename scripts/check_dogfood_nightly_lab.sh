@@ -17,16 +17,20 @@ if [ -z "$here" ]; then exit 1; fi
 # The awk program: exit 0 clean (prints one "inspected" line), exit 1 with one finding per line, exit 2 when the file
 # uses a YAML form this script does not judge (printed as "UNJUDGED ..."): refuse rather than guess.
 AWK_PROG=$(cat <<'AWK'
-function strip(s,   i, n, c, q) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
-  q = ""; n = length(s)
+function strip(s,   i, n, c, q, p) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
+  # a quote opens a scalar only at a token start (line start or after blank , : [ ] { } -), never mid-word (it's);
+  # noq is the line with its quoted spans removed; uq is set when a quote is still open at the end of the line
+  q = ""; n = length(s); noq = ""; uq = 0
   for (i = 1; i <= n; i++) {
-    c = substr(s, i, 1)
+    c = substr(s, i, 1); p = (i == 1) ? " " : substr(s, i - 1, 1)
     if (q == "") {
-      if (c == "\042" || c == "\047") q = c
-      else if (c == "#" && (i == 1 || substr(s, i - 1, 1) ~ /[ \t]/)) { s = substr(s, 1, i - 1); break }
+      if ((c == "\042" || c == "\047") && p ~ /[ \t,:[\]{}-]/) q = c
+      else if (c == "#" && p ~ /[ \t]/) { s = substr(s, 1, i - 1); break }
+      else noq = noq c
     } else if (q == "\042" && c == "\\") { esc = 1; i++ }
     else if (c == q) { if (q == "\047" && substr(s, i + 1, 1) == "\047") i++; else q = "" }
   }
+  if (q != "") uq = 1
   sub(/[ \t]+$/, "", s)
   return s
 }
@@ -56,6 +60,7 @@ BEGIN { bsind = -1 }
   esc = 0
   line = strip($0)
   if (esc) escn++
+  if (uq) mlq++
   if (line ~ /^[ \t]*$/) next
   match(line, /^ */); ind = RLENGTH
   isdash = (line ~ /^ *-( |$)/); kcol = ind; bsr = line
@@ -64,15 +69,16 @@ BEGIN { bsind = -1 }
   isbs = (bsind >= 0)
   if (line ~ /(^[ \t]*(-[ \t]+)*|:[ \t]+)[!&*]/) tag = tag + 1
   if (line ~ /^[ \t]*(-[ \t]+)*\?([ \t]|$)/) qkey = qkey + 1
-  t = line; gsub(/"[^"]*"/, "", t); gsub(/\047[^\047]*\047/, "", t)
+  t = noq
   if (fdepth > 0 && ind == 0) flowcont = flowcont + 1
   fdepth += gsub(/[{[]/, "", t); fdepth -= gsub(/[}\]]/, "", t)
   if (fdepth < 0) fdepth = 0
+  if (fdepth > 0) flowml = flowml + 1
   if (ind == 0) { # a top-level key; anything else at column 0 is a form this script does not judge
     if (line !~ /^([A-Za-z0-9_.-]+|"[^"]*"|\047[^\047]*\047)[ \t]*:([ \t]|$)/) badtop = badtop " " substr(line, 1, 20)
     if (line ~ /^["\047]?jobs["\047]?[ \t]*:[ \t]*[^ \t]/) badtop = badtop " jobs-inline"
     close_job()
-    injobs = (line ~ /^jobs[ \t]*:[ \t]*$/)
+    injobs = (line ~ /^["\047]?jobs["\047]?[ \t]*:[ \t]*$/)
     inon = (line ~ /^[\042\047]?on[\042\047]?[ \t]*:/)
     jind = 0; jkind = 0
   }
@@ -119,6 +125,8 @@ END {
   if (bom) { print "UNJUDGED: byte-order mark at the start of the file"; unj = 1 }
   if (badtop != "") { print "UNJUDGED: column-0 line that is not a plain or quoted top-level key (flow continuation, document marker, anchor):" badtop; unj = 1 }
   if (flowcont + 0 > 0) { print "UNJUDGED: multi-line flow collection continued at column 0"; unj = 1 }
+  if (mlq + 0 > 0) { print "UNJUDGED: quoted scalar continued over several lines (" mlq " lines)"; unj = 1 }
+  if (flowml + 0 > 0) { print "UNJUDGED: multi-line flow collection (" flowml " lines)"; unj = 1 }
   if (tag + 0 > 0) { print "UNJUDGED: tag, anchor or alias at a key or value start (" tag " lines)"; unj = 1 }
   if (qkey + 0 > 0) { print "UNJUDGED: explicit '? ' key (" qkey " lines)"; unj = 1 }
   if (escn + 0 > 0) { print "UNJUDGED: backslash escape inside a double-quoted scalar (" escn " lines)"; unj = 1 }
@@ -294,6 +302,14 @@ EOF
   printf 'on:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - "run": x\n        timeout-minutes: 10\n' > "$t/h2.yml"; expect_unj "step whose first line is a quoted key" "$t/h2.yml"
   printf 'on:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - { run: x }\n' > "$t/h3.yml"; expect_unj "flow-style step" "$t/h3.yml"
   printf 'on:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - uses: a/b@v1\n        timeout-minutes: 10\n        runs-on: [x, y]\n' > "$t/h4.yml"; expect "flow list as a plain value is not refused" "$t/h4.yml" pass
+
+  # lane-2 FAIL at 126c2c2: mid-word quote, multi-line flow values, multi-line quoted scalars, quoted "jobs"; all refused (exit 2)
+  printf "name: x\non: { workflow_dispatch: { inputs: { a: { description: it's }, b: { default: '}}}} #x' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/m1.yml"; expect "mid-word apostrophe truncating flow on" "$t/m1.yml" fail
+  printf 'on:\n  workflow_dispatch:\njobs:\n  night:\n    steps:\n      - run: echo hi\n        env: {\n          timeout-minutes: 10\n        }\n    env: {\n      timeout-minutes: 25\n    }\n' > "$t/m2.yml"; expect_unj "multi-line flow env forging timeouts" "$t/m2.yml"
+  printf 'name: "dogfood\n  x"\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: "echo hi\n        timeout-minutes: 10\n        "\n' > "$t/m3.yml"; expect_unj "multi-line quoted scalar forging a timeout" "$t/m3.yml"
+  printf 'on:\n  workflow_dispatch:\n"jobs":\n  night:\n    steps:\n      - run: echo untimed\n' > "$t/m4.yml"; expect "quoted jobs key with an untimed step" "$t/m4.yml" fail
+  printf 'on:\n  workflow_dispatch:\n"jobs":\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/m6.yml"; expect "quoted jobs key is judged, not skipped" "$t/m6.yml" pass
+  printf 'on:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo it'"'"'s fine\n        timeout-minutes: 10\n' > "$t/m5.yml"; expect "mid-word apostrophe in a plain scalar stays judged" "$t/m5.yml" pass
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
