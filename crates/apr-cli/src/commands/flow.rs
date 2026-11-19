@@ -70,8 +70,23 @@ pub(crate) fn run(
         .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
 
     // APR-EMBED-001 EG-1: an embedding model is drawn by kind, never as a decoder with an LM head.
+    #[cfg(feature = "inference")]
     if let Some(embedding) = embedding_flow(&report)? {
         return run_embedding_flow(apr_path, &report, &embedding, component, json_output);
+    }
+    // #7294: the kind decision lives in realizar. Without `inference`, a file that carries the
+    // embedding-only `<arch>.pooling_type` key is refused rather than drawn as a decoder.
+    #[cfg(not(feature = "inference"))]
+    if let Some(arch) = report.metadata.get("general.architecture") {
+        if report
+            .metadata
+            .contains_key(&format!("{arch}.pooling_type"))
+        {
+            return Err(CliError::InvalidFormat(format!(
+                "'{arch}' looks like an embedding model; `apr flow` needs the `inference` feature \
+                 to draw it, and this apr was built without it"
+            )));
+        }
     }
 
     let tensor_names: Vec<String> = report.tensors.iter().map(|t| t.name.clone()).collect();
@@ -567,7 +582,9 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
 }
 
 include!("flow_print_cross.rs");
+#[cfg(feature = "inference")]
 include!("flow_embedding.rs");
+#[cfg(feature = "inference")]
 include!("flow_embedding_tests.rs");
 include!("flow_coverage_tests.rs");
 include!("flow_03.rs");
