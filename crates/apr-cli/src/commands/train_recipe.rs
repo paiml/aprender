@@ -9,6 +9,7 @@
 //! This module is the schema and its validator only. The recipe is lowered
 //! onto the existing `apr finetune` arguments by `finetune::run_from_recipe`.
 
+use super::train_recipe_lora::{RawLoraFields, RecipeLora};
 use crate::error::{CliError, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -63,6 +64,7 @@ struct RawRecipe {
     teacher: Option<RawTeacher>,
     #[serde(default)]
     training: RawTraining,
+    lora: Option<RawLora>,
     output: Option<RawOutput>,
 }
 
@@ -95,6 +97,31 @@ struct RawTraining {
     epochs: Option<u32>,
     learning_rate: Option<f64>,
     max_seq_len: Option<usize>,
+    warmup: Option<f64>,
+    weight_decay: Option<f64>,
+}
+
+/// The `lora:` block (issue #7240: `lora.alpha`, `lora.dropout`, `lora.target_modules`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLora {
+    alpha: Option<f64>,
+    dropout: Option<f64>,
+    target_modules: Option<Vec<String>>,
+}
+
+impl RawRecipe {
+    /// The PMAT-7240 keys, handed to `train_recipe_lora` for validation.
+    fn lora_fields(&self) -> RawLoraFields {
+        let l = self.lora.clone().unwrap_or_default();
+        RawLoraFields {
+            alpha: l.alpha,
+            dropout: l.dropout,
+            target_modules: l.target_modules,
+            warmup: self.training.warmup,
+            weight_decay: self.training.weight_decay,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -131,6 +158,8 @@ pub(crate) struct TrainRecipe {
     pub(crate) epochs: Option<u32>,
     pub(crate) learning_rate: Option<f64>,
     pub(crate) max_seq_len: Option<usize>,
+    /// LoRA alpha, dropout, target modules, warmup and weight decay (PMAT-7240).
+    pub(crate) lora: RecipeLora,
     pub(crate) output_dir: Option<PathBuf>,
     /// sha256 of the recipe file's bytes. The eval block is part of it.
     pub(crate) recipe_sha256: String,
@@ -490,6 +519,7 @@ impl TrainRecipe {
         let seed = check_seed(raw.seed, &mut bad);
         let teacher = check_teacher(raw.teacher.as_ref(), method, base_dir, &mut bad);
         check_training(&raw.training, &mut bad);
+        let lora = RecipeLora::check(&raw.lora_fields(), &mut bad);
         let output_dir = raw.output.as_ref().map(|o| {
             required(
                 o.dir.as_ref(),
@@ -517,6 +547,7 @@ impl TrainRecipe {
             epochs: raw.training.epochs,
             learning_rate: raw.training.learning_rate,
             max_seq_len: raw.training.max_seq_len,
+            lora,
             output_dir: output_dir.map(|d| base_dir.join(d)),
             recipe_sha256: sha256_bytes(src.as_bytes()),
         })
@@ -565,6 +596,51 @@ impl TrainRecipe {
         }
     }
 
+    #[allow(clippy::disallowed_methods)]
+    /// The recipe with every default filled in, as `--dry-run` / `--plan` print it (PMAT-7240).
+    /// Every value is a number the run uses: `run` carries the planner's rank, alpha and learning
+    /// rate (after the recipe's own values and `--rank`) and the sequence length of the selected
+    /// training path. `epochs` is the count the run will use; `model_size` / `output` are after
+    /// run flags.
+    pub(crate) fn resolved(
+        &self,
+        model_size: Option<&str>,
+        output: Option<&Path>,
+        epochs: u32,
+        run: &ResolvedRun,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "recipe": RECIPE_SCHEMA,
+            "name": self.name,
+            "base": self.base.display().to_string(),
+            "model_size": model_size,
+            "method": self.method.as_str(),
+            "data": {
+                "train": self.train.display().to_string(),
+                "sha256": self.data_sha256_pin,
+            },
+            "eval": {
+                "heldout": self.heldout.display().to_string(),
+                "benchmark": self.benchmark,
+            },
+            "seed": self.seed,
+            "lora": {
+                "alpha": run.alpha,
+                "dropout": self.lora.dropout,
+                "target_modules": self.lora.target_modules,
+            },
+            "training": {
+                "rank": run.rank,
+                "epochs": epochs,
+                "learning_rate": run.learning_rate,
+                "max_seq_len": run.max_seq_len,
+                "warmup": self.lora.warmup_fraction,
+                "weight_decay": self.lora.weight_decay,
+            },
+            "output": { "dir": output.map(|o| o.display().to_string()) },
+        })
+    }
+
     /// The receipt fields for a run of this recipe by `engines`.
     pub(crate) fn receipt(
         &self,
@@ -585,6 +661,15 @@ impl TrainRecipe {
             validated_not_applied: validated_not_applied.to_vec(),
         }
     }
+}
+
+/// The numbers a run of a recipe settles on, which the recipe may leave to the planner.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct ResolvedRun {
+    pub(crate) rank: u32,
+    pub(crate) alpha: f32,
+    pub(crate) learning_rate: f64,
+    pub(crate) max_seq_len: usize,
 }
 
 /// This binary, as a receipt engine.

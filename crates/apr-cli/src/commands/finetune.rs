@@ -311,6 +311,20 @@ fn gpu_backend_notice(
     }
 }
 
+/// The sequence length a run really uses: the value set by the recipe or `--max-seq-len`, else
+/// `InstructConfig`'s default (512), on every path, the WGPU one included (PMAT-7239).
+/// `--dry-run` prints this number (PMAT-7240).
+#[cfg(feature = "training")]
+fn effective_max_seq_len(set: Option<usize>, _gpu_backend: &str, _quantize_nf4: bool) -> usize {
+    wgpu_max_seq_len(set)
+}
+
+/// Without the `training` feature nothing trains; the value printed is the one set or 512.
+#[cfg(not(feature = "training"))]
+fn effective_max_seq_len(set: Option<usize>, _gpu_backend: &str, _quantize_nf4: bool) -> usize {
+    set.unwrap_or(512)
+}
+
 /// Build the `InstructConfig` for the default LoRA/QLoRA training path.
 ///
 /// Root cause (Defect 2): the old inline construction hardcoded
@@ -519,7 +533,7 @@ pub(crate) fn instruct_training_config(
             .join("checkpoints"),
         seed: super::finetune_recipe_run::run_seed(),
         log_interval: 1,
-        warmup_fraction: 0.03,
+        warmup_fraction: super::train_recipe_lora::warmup_fraction(),
         lr_min: 1e-6,
     }
 }
@@ -1307,6 +1321,32 @@ fn dispatch_finetune_mode(
     None
 }
 
+/// The planner's config with the user's `--rank` and an active recipe's `lora_alpha` applied.
+/// `run` takes its config here and nothing else, so every later use (header, adapter metadata,
+/// the exported adapter's alpha) sees the same alpha (PMAT-7240, FALSIFY-APR-RECIPE-007).
+pub(crate) fn resolve_run_config(
+    model_params: u64,
+    vram_gb: f64,
+    ft_method: FinetuneMethod,
+    rank: Option<u32>,
+) -> Result<OptimalConfig> {
+    let mut config = plan(model_params, vram_gb, ft_method.into())
+        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+
+    // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
+    // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
+    if let Some(user_rank) = rank {
+        config.rank = user_rank;
+        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
+                                               // Keep the LR consistent with the (now overridden) rank.
+        config.learning_rate = recommended_learning_rate(config.method, user_rank);
+    }
+    // PMAT-7240: a recipe's `training.lora_alpha` wins over the planner's and the 2 x rank rule.
+    config.alpha = super::train_recipe_lora::alpha_or(config.alpha);
+
+    Ok(config)
+}
+
 /// Run the finetune command
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::disallowed_methods)]
@@ -1405,12 +1445,13 @@ pub(crate) fn run(
 
     let model_params = resolve_model_params(model_size, model_path)?;
 
-    let mut config = plan(model_params, vram_gb, ft_method.into())
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
+    let config = resolve_run_config(model_params, vram_gb, ft_method, rank)?;
 
-    // GH-568: Respect --rank flag. Planner auto-selects optimal rank but user override
-    // takes precedence (critical for VRAM-constrained devices like yoga 8GB).
-    let learning_rate = apply_rank_and_lr(&mut config, rank, learning_rate);
+    // FALSIFY-QLORA-RANK-AWARE-LR: resolve the effective learning rate. An
+    // explicit --learning-rate wins; otherwise use the rank-aware recommendation
+    // — the classic 2e-4 default diverges at the high ranks auto-selected to
+    // fill VRAM (measured: 1.5B QLoRA @ 2e-4/rank256 blew up to loss ~11-16).
+    let learning_rate = learning_rate.unwrap_or_else(|| f64::from(config.learning_rate));
 
     display_run_header(
         ft_method,
@@ -1450,26 +1491,6 @@ pub(crate) fn run(
     )
 }
 
-/// Apply `--rank` and resolve the effective learning rate on a planner config.
-///
-/// GH-568: an explicit rank overrides the planner's and the LR follows it.
-/// FALSIFY-QLORA-RANK-AWARE-LR: an explicit `--learning-rate` wins; otherwise the
-/// rank-aware recommendation is used, because the classic 2e-4 default diverges at the
-/// high ranks auto-selected to fill VRAM (measured: 1.5B QLoRA @ 2e-4/rank256 blew up to
-/// loss ~11-16). `run` and the recipe receipt both call this, so they cannot drift.
-fn apply_rank_and_lr(
-    config: &mut OptimalConfig,
-    rank: Option<u32>,
-    learning_rate: Option<f64>,
-) -> f64 {
-    if let Some(user_rank) = rank {
-        config.rank = user_rank;
-        config.alpha = user_rank as f32 * 2.0; // alpha = 2 * rank (standard)
-        config.learning_rate = recommended_learning_rate(config.method, user_rank);
-    }
-    learning_rate.unwrap_or_else(|| f64::from(config.learning_rate))
-}
-
 /// The rank, learning rate and max sequence length a recipe run trains with, after the
 /// planner and defaults fill what the recipe leaves out. The receipt records these.
 fn resolve_recipe_hparams(
@@ -1482,12 +1503,11 @@ fn resolve_recipe_hparams(
         .parse()
         .map_err(CliError::ValidationFailed)?;
     let params = resolve_model_params(recipe_model_size(flags, recipe), Some(&recipe.base))?;
-    let mut config = plan(params, flags.vram_gb, ft_method.into())
-        .map_err(|e| CliError::ValidationFailed(format!("Failed to plan config: {e}")))?;
-    let lr = apply_rank_and_lr(&mut config, recipe.rank, recipe.learning_rate);
-    let max_seq_len = recipe
-        .max_seq_len
-        .unwrap_or(entrenar::finetune::instruct_pipeline::InstructConfig::default().max_seq_len);
+    let config = resolve_run_config(params, flags.vram_gb, ft_method, recipe.rank)?;
+    let lr = recipe
+        .learning_rate
+        .unwrap_or_else(|| f64::from(config.learning_rate));
+    let max_seq_len = wgpu_max_seq_len(recipe.max_seq_len);
     Ok((config.rank, lr, max_seq_len))
 }
 
@@ -1544,7 +1564,8 @@ pub(crate) fn preflight_recipe(
     if !plan_only {
         recipe.require_inputs()?;
     }
-    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), &[]);
+    let not_applied: Vec<&'static str> = recipe.lora.not_applied().to_vec();
+    let receipt = recipe.receipt(vec![apr_engine()], Vec::new(), &not_applied);
     Ok((recipe, receipt))
 }
 
@@ -1711,6 +1732,7 @@ where
     let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
     let _seed = super::finetune_recipe_run::SeedGuard::set(recipe.seed);
     let _heldout = super::finetune_recipe_run::HeldoutGuard::set(&recipe.heldout);
+    let _lora = super::train_recipe_lora::activate(&recipe.lora);
     let _plan_json =
         super::finetune_recipe_run::PlanJsonGuard::suppress(flags.json_output && !flags.plan_only);
     if !receipt.overrides.is_empty() {
@@ -1723,6 +1745,8 @@ where
     let output = output_buf.as_deref();
     train(output, epochs, quantize_nf4)?;
     if flags.plan_only {
+        writeln!(out, "{}", resolved_recipe_text(recipe, flags, output)?)
+            .map_err(|e| CliError::ValidationFailed(format!("cannot print recipe: {e}")))?;
         return Ok(());
     }
     emit_run_receipt(recipe, receipt, output, flags, epochs, quantize_nf4, out)
@@ -1761,6 +1785,41 @@ fn emit_run_receipt(
             .map_err(|e| CliError::ValidationFailed(format!("cannot print receipt: {e}")))?;
     }
     Ok(())
+}
+
+/// What `--dry-run` / `--plan` print after the plan: the recipe with every default filled in,
+/// each a number the run uses (the planner's rank, alpha and learning rate, and the sequence
+/// length of the selected path). `--json` prints the bare JSON object; text mode heads it.
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn resolved_recipe_text(
+    recipe: &super::train_recipe::TrainRecipe,
+    flags: &RecipeRunFlags<'_>,
+    output: Option<&Path>,
+) -> Result<String> {
+    let (epochs, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    let size = recipe_model_size(flags, recipe);
+    let ft_method: FinetuneMethod = recipe
+        .method
+        .as_str()
+        .parse()
+        .map_err(CliError::ValidationFailed)?;
+    let params = resolve_model_params(size, Some(&recipe.base))?;
+    let config = resolve_run_config(params, flags.vram_gb, ft_method, recipe.rank)?;
+    let run = super::train_recipe::ResolvedRun {
+        rank: config.rank,
+        alpha: config.alpha,
+        learning_rate: recipe
+            .learning_rate
+            .unwrap_or_else(|| f64::from(config.learning_rate)),
+        max_seq_len: effective_max_seq_len(recipe.max_seq_len, flags.gpu_backend, quantize_nf4),
+    };
+    let value = recipe.resolved(size, output, epochs, &run);
+    let body = serde_json::to_string_pretty(&value).unwrap_or_default();
+    Ok(if flags.json_output {
+        body
+    } else {
+        format!("\nResolved recipe (defaults filled in):\n{body}")
+    })
 }
 
 /// Validate inputs and execute the LoRA training pipeline.
