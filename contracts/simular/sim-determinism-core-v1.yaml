@@ -95,6 +95,11 @@ falsification_tests:
   prediction: flipping one state bit at step 3 changes every later hash and no earlier one
   test: determinism::tests::chain_links_every_step_to_the_previous
   if_fails: step hash does not include the previous hash
+- id: FALSIFY-SDC-005
+  rule: Receipt conforms to the pv shape
+  prediction: the canonical receipt the kernel writes passes `pv lint --gate shapes --shape sim3d-receipt-v1` (contracts/sim3d-receipt-v1.yaml); a missing final_hash, empty verdicts, an eighth key or a non-INV monitor name each go red naming the path
+  test: cargo test -p aprender-contracts-cli --test sim3d_kernel_receipt
+  if_fails: the kernel writes a receipt the shared shape refuses, or the shape no longer binds the kernel's output (LAB check, not on a PR path)
 qa_gate:
   id: F-SDC-001
   name: Determinism Core Contract

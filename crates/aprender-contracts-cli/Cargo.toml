@@ -51,6 +51,8 @@ build-sha = ["dep:aprender-build-sha"]
 
 [dev-dependencies]
 tempfile = "3"
+# SIM3D #7246: the kernel's own receipt is graded by pv (tests/sim3d_kernel_receipt.rs)
+simular = { workspace = true }
 
 [lints]
 workspace = true

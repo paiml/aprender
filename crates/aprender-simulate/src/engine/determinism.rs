@@ -450,60 +450,80 @@ fn shape_err(m: &str) -> DetError {
     DetError::BadReceiptShape(m.to_string())
 }
 
-fn is_hex64(v: &serde_json::Value) -> bool {
+fn is_hex(v: &serde_json::Value, len: usize) -> bool {
     v.as_str().is_some_and(|s| {
-        s.len() == 64
+        s.len() == len
             && s.bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
     })
 }
 
+fn is_inv_id(s: &str) -> bool {
+    s.len() == 7 && s.starts_with("INV-") && s[4..].bytes().all(|b| b.is_ascii_digit())
+}
+
+/// One verdict as `contracts/sim3d-receipt-v1.yaml` states it: closed keys
+/// `invariant`, `holds`, and `first_bad_step` only when the monitor failed.
 fn verdict_ok(item: &serde_json::Value) -> bool {
     let Some(o) = item.as_object() else {
         return false;
     };
-    o.len() == 3
-        && o.get("name").is_some_and(serde_json::Value::is_string)
-        && o.get("steps_checked").is_some_and(|x| x.as_u64().is_some())
-        && o.get("first_violation")
-            .is_some_and(|x| x.is_null() || x.as_u64().is_some())
+    let holds = o.get("holds").and_then(serde_json::Value::as_bool);
+    let named = o
+        .get("invariant")
+        .and_then(serde_json::Value::as_str)
+        .is_some_and(is_inv_id);
+    let bad = o.get("first_bad_step");
+    named
+        && match holds {
+            Some(true) => o.len() == 2 && bad.is_none(),
+            Some(false) => o.len() == 3 && bad.is_some_and(|x| x.as_u64().is_some()),
+            None => false,
+        }
 }
 
 impl Receipt {
-    /// Canonical JSON: keys sorted at every level, no whitespace, integers only.
-    /// Byte-stable across hosts, suitable for hashing and for `pv` shape gates.
+    /// Canonical JSON in the shape of `contracts/sim3d-receipt-v1.yaml`: keys
+    /// sorted at every level, no whitespace, integers only. `kernel_sha` is the
+    /// first 40 hex chars of the kernel's BLAKE3 (the shape's 40-hex width); the
+    /// full digest stays in [`Receipt::kernel_sha`]. Byte-stable across hosts.
     #[must_use]
     pub fn to_canonical_json(&self) -> String {
         let mut s = String::new();
+        let kernel40 = self.kernel_sha.get(..40).unwrap_or(&self.kernel_sha);
         let _ = write!(
             s,
-            "{{\"final_hash\":\"{}\",\"kernel_sha\":\"{}\",\"monitor_verdicts\":[",
-            self.final_hash, self.kernel_sha
+            "{{\"final_hash\":\"{}\",\"kernel_sha\":\"{kernel40}\",\"schema\":\"sim3d-receipt/v1\",\"seed\":{},\"spec_sha256\":\"{}\",\"steps\":{},\"verdicts\":[",
+            self.final_hash, self.seed, self.spec_sha, self.steps
         );
         for (i, v) in self.monitor_verdicts.iter().enumerate() {
             if i > 0 {
                 s.push(',');
             }
-            let fv = v
-                .first_violation
-                .map_or_else(|| "null".to_string(), |x| x.to_string());
-            let _ = write!(
-                s,
-                "{{\"first_violation\":{fv},\"name\":\"{}\",\"steps_checked\":{}}}",
-                json_escape(&v.name),
-                v.steps_checked
-            );
+            match v.first_violation {
+                Some(step) => {
+                    let _ = write!(
+                        s,
+                        "{{\"first_bad_step\":{step},\"holds\":false,\"invariant\":\"{}\"}}",
+                        json_escape(&v.name)
+                    );
+                }
+                None => {
+                    let _ = write!(
+                        s,
+                        "{{\"holds\":true,\"invariant\":\"{}\"}}",
+                        json_escape(&v.name)
+                    );
+                }
+            }
         }
-        let _ = write!(
-            s,
-            "],\"seed\":{},\"spec_sha\":\"{}\",\"steps\":{}}}",
-            self.seed, self.spec_sha, self.steps
-        );
+        s.push_str("]}");
         s
     }
 
-    /// Check `json` against the closed receipt shape: exactly the six keys, hex
-    /// hashes of 64 chars, unsigned integers, well-formed verdicts.
+    /// Fast in-crate pre-check of `json` against the same closed shape. The
+    /// authority is `pv lint --gate shapes --shape sim3d-receipt-v1`, run on this
+    /// output by `crates/aprender-contracts-cli/tests/sim3d_kernel_receipt.rs`.
     ///
     /// # Errors
     /// [`DetError::BadReceiptShape`] naming the first violation.
@@ -514,31 +534,36 @@ impl Receipt {
         let keys = [
             "final_hash",
             "kernel_sha",
-            "monitor_verdicts",
+            "schema",
             "seed",
-            "spec_sha",
+            "spec_sha256",
             "steps",
+            "verdicts",
         ];
         if obj.len() != keys.len() || keys.iter().any(|k| !obj.contains_key(*k)) {
             return Err(shape_err("keys are not exactly the closed set"));
         }
-        for k in ["final_hash", "kernel_sha", "spec_sha"] {
-            if !is_hex64(&obj[k]) {
-                return Err(shape_err(&format!("{k} is not 64 hex chars")));
+        if obj["schema"].as_str() != Some("sim3d-receipt/v1") {
+            return Err(shape_err("schema tag"));
+        }
+        for (k, n) in [("final_hash", 64), ("spec_sha256", 64), ("kernel_sha", 40)] {
+            if !is_hex(&obj[k], n) {
+                return Err(shape_err(&format!("{k} is not {n} hex chars")));
             }
         }
-        for k in ["seed", "steps"] {
-            if obj[k].as_u64().is_none() {
-                return Err(shape_err(&format!("{k} is not an unsigned integer")));
-            }
+        if obj["seed"].as_u64().is_none() {
+            return Err(shape_err("seed is not an unsigned integer"));
         }
-        let verdicts = obj["monitor_verdicts"]
+        if obj["steps"].as_u64().is_none_or(|n| n == 0) {
+            return Err(shape_err("steps is not a positive integer"));
+        }
+        let verdicts = obj["verdicts"]
             .as_array()
-            .ok_or_else(|| shape_err("monitor_verdicts is not an array"))?;
-        if verdicts.iter().all(verdict_ok) {
+            .ok_or_else(|| shape_err("verdicts is not an array"))?;
+        if !verdicts.is_empty() && verdicts.iter().all(verdict_ok) {
             Ok(())
         } else {
-            Err(shape_err("verdict shape"))
+            Err(shape_err("verdicts empty or malformed"))
         }
     }
 }
@@ -718,7 +743,7 @@ mod tests {
     struct CapMonitor(u64);
     impl Monitor for CapMonitor {
         fn name(&self) -> &str {
-            "total-below-cap"
+            "INV-001"
         }
         fn holds(&self, _s: u64, _t: SimTime, st: &[EntityState]) -> bool {
             st.iter().map(|e| e.words[0]).sum::<u64>() < self.0
@@ -752,6 +777,11 @@ mod tests {
         let j = s.receipt().to_canonical_json();
         assert!(Receipt::check_shape(&j).is_ok(), "{j}");
         assert!(j.starts_with("{\"final_hash\":\""));
+        assert!(j.contains("\"schema\":\"sim3d-receipt/v1\""));
+        assert!(
+            j.contains("{\"holds\":true,\"invariant\":\"INV-001\"}"),
+            "{j}"
+        );
         let again = {
             let mut t = sim(9);
             t.add_monitor(Box::new(CapMonitor(u64::MAX)));
@@ -774,14 +804,35 @@ mod tests {
             good.replace("\"steps\":3", "\"steps\":-3"),
             good.replacen("\"final_hash\":\"", "\"final_hash\":\"zz", 1),
             good.replace("\"kernel_sha\"", "\"kernel\""),
+            good.replace("sim3d-receipt/v1", "sim3d-receipt/v2"),
+            good.replace("\"holds\":true", "\"holds\":false"),
+            good.replace("\"INV-001\"", "\"total-below-cap\""),
+            good.replace("\"steps\":3", "\"steps\":0"),
+            good.replacen("\"kernel_sha\":\"", "\"kernel_sha\":\"ab", 1),
             good.replace("}", ",\"extra\":1}"),
-            good.replace("\"monitor_verdicts\":[", "\"monitor_verdicts\":[1,"),
+            good.replace("\"verdicts\":[", "\"verdicts\":[1,"),
             "[]".to_string(),
             "{".to_string(),
         ];
         for c in &cases {
             assert!(Receipt::check_shape(c).is_err(), "accepted: {c}");
         }
+    }
+
+    #[test]
+    fn violated_monitor_emits_first_bad_step_and_passes_shape() {
+        let mut s = sim(9);
+        s.add_monitor(Box::new(CapMonitor(200)));
+        s.run(100);
+        let j = s.receipt().to_canonical_json();
+        assert!(j.contains("\"holds\":false"), "{j}");
+        assert!(j.contains("\"first_bad_step\":"), "{j}");
+        assert!(Receipt::check_shape(&j).is_ok(), "{j}");
+        // no monitor at all: a run nothing judged is refused
+        let none = sim(9);
+        let mut n = none;
+        n.run(3);
+        assert!(Receipt::check_shape(&n.receipt().to_canonical_json()).is_err());
     }
 
     #[test]
