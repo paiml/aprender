@@ -513,26 +513,29 @@ const GUARD_LINES: [&str; 6] = [
     "base=\"/mnt/nvme-raid0/targets/aprender-ci/spot-labels/run-${GITHUB_RUN_ID}\"",
     "mkdir -p \"$base/registry\" \"$base/target\"",
 ];
-const GUARD_CMD_HEAD: &str =
-    "timeout --foreground -k 30 900 docker run --rm --init --name \"$cname\" ";
-const GUARD_IMAGE: &str = " localhost:5000/sovereign-ci:stable@sha256:";
+/// The one docker command, EXACT up to the image digest: every option, mount and env var is fixed text, so a
+/// second image, `-d`, `--entrypoint` (quoted or not), a cargo runner variable or any other extra word is red.
+/// Only the 64-hex digest may change (a pin bump). Nothing may follow the test name.
+const GUARD_CMD_PREFIX: &str = concat!(
+    "timeout --foreground -k 30 900 docker run --rm --init --name \"$cname\" ",
+    "--cpus 4 --memory 8g --memory-swap 8g --pids-limit 2048 ",
+    "-v \"$GITHUB_WORKSPACE:/w:ro\" -v \"$base/registry:/usr/local/cargo/registry\" -v \"$base/target:/t\" ",
+    "-e CARGO_TARGET_DIR=/t -e CARGO_BUILD_JOBS=\"${RUNNER_THREAD_CAP:-4}\" ",
+    "-e RUST_TEST_THREADS=\"${RUNNER_THREAD_CAP:-4}\" -e CARGO_INCREMENTAL=0 ",
+    "-e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -w /w ",
+    "localhost:5000/sovereign-ci:stable@sha256:"
+);
 const GUARD_CMD_TAIL: &str =
     " cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels";
 
-/// The one docker command: fixed head, the pinned image (any 64-hex digest), then exactly the test, nothing after.
 fn guard_cmd_ok(l: &str) -> bool {
-    let Some((head, rest)) = l.rsplit_once(GUARD_IMAGE) else {
-        return false;
-    };
-    l.starts_with(GUARD_CMD_HEAD)
-        && !head.contains(['\'', ';', '|', '&', '!', '#', '`'])
-        && !head.contains("--entrypoint")
-        && !head.contains("$(")
-        && rest.len() == 64 + GUARD_CMD_TAIL.len()
-        && rest
-            .get(..64)
-            .is_some_and(|d| d.chars().all(|c| c.is_ascii_hexdigit()))
-        && rest.get(64..) == Some(GUARD_CMD_TAIL)
+    l.strip_prefix(GUARD_CMD_PREFIX).is_some_and(|rest| {
+        rest.len() == 64 + GUARD_CMD_TAIL.len()
+            && rest
+                .get(..64)
+                .is_some_and(|d| d.chars().all(|c| c.is_ascii_hexdigit()))
+            && rest.get(64..) == Some(GUARD_CMD_TAIL)
+    })
 }
 
 fn guard_step_ok(s: &Mapping) -> bool {
@@ -569,40 +572,89 @@ fn env_masks(m: &Mapping) -> bool {
 const MST_LINE: &str =
     "[ \"$MST\" = success ] || { echo \"mg-reuse-self-test failed: $MST\"; exit 1; }";
 
-/// `gate` has a step that carries the whole MST line before the pull_request early exit, binds `MST` to the job's
-/// result, assigns it nowhere, and has no key that could skip or mask it.
+/// The only lines that may run in `gate`'s step before the MST line (comments dropped). An allowlist, so no
+/// wrapper, `trap`, `declare`/`export`/`readonly MST=`, `exec`, shadowing function or early `exit` can precede it.
+const GATE_PRE_MST_LINES: [&str; 4] = [
+    "set -euo pipefail",
+    "[ \"${DRAFT:-}\" != true ] || { echo \"gate: draft PR, full CI is not owed until ready_for_review\"; exit 0; }",
+    "res() { printf '%s' \"${1:-null}\" | SEC=\"$2\" jq -r '(. // {})[env.SEC].result // \"missing\"'; }",
+    "[ \"$WT\" = success ] || { echo \"workspace-test failed: $WT\"; exit 1; }",
+];
+/// The only env names `gate`'s step may bind (exact, case-sensitive). Any other (`SHELLOPTS`, `BASH_FUNC_*`, `BASH_ENV`...) is red.
+const GATE_STEP_ENV: [&str; 14] = [
+    "X86", "GRD", "GRDR", "DET", "WT", "EVT", "MG", "MG_X86", "MG_DET", "MG_CITE", "ADV", "MST",
+    "PRL", "DRAFT",
+];
+const GATE_STEP_KEYS: [&str; 4] = ["name", "env", "run", "timeout-minutes"];
+const GATE_JOB_KEYS: [&str; 6] = [
+    "runs-on",
+    "permissions",
+    "timeout-minutes",
+    "needs",
+    "if",
+    "steps",
+];
+
+/// `gate` runs even when a need failed (`if: always()`), has no key outside the job allowlist, and its FIRST step
+/// (nothing runs before it) has only allowlisted keys and env names, runs exactly the allowlisted lines and then the
+/// whole MST line, and binds `MST` to the job's result.
 fn gate_enforces_mst(gate: &Mapping) -> bool {
+    let job_ok = gate
+        .iter()
+        .all(|(k, _)| k.as_str().is_some_and(|k| GATE_JOB_KEYS.contains(&k)))
+        && key(gate, "if").as_ref().and_then(Value::as_str) == Some("always()");
     let Some(Value::Sequence(steps)) = key(gate, "steps") else {
         return false;
     };
-    steps.iter().filter_map(Value::as_mapping).any(|s| {
-        let lines = run_lines(s);
-        let Some(at) = lines.iter().position(|l| l == MST_LINE) else {
-            return false;
-        };
-        let pr_exit = lines
+    let Some(Value::Mapping(s)) = steps.first() else {
+        return false;
+    };
+    let lines = run_lines(s);
+    let env = key(s, "env").and_then(|e| e.as_mapping().cloned());
+    let env_ok = env.as_ref().is_some_and(|e| {
+        e.iter()
+            .all(|(k, _)| k.as_str().is_some_and(|k| GATE_STEP_ENV.contains(&k)))
+            && e.get("MST").and_then(Value::as_str)
+                == Some("${{ needs.mg-reuse-self-test.result }}")
+    });
+    let keys_ok = s
+        .iter()
+        .all(|(k, _)| k.as_str().is_some_and(|k| GATE_STEP_KEYS.contains(&k)));
+    let at = lines.iter().position(|l| l == MST_LINE);
+    job_ok
+        && env_ok
+        && keys_ok
+        && at == Some(GATE_PRE_MST_LINES.len())
+        && lines
             .iter()
-            .position(|l| l.starts_with("if [ \"${EVT:-}\" = pull_request ]"))
-            .unwrap_or(usize::MAX);
-        let env_ok = key(s, "env")
-            .and_then(|e| e.as_mapping().cloned())
-            .and_then(|e| e.get("MST").and_then(Value::as_str).map(str::to_string))
-            .as_deref()
-            == Some("${{ needs.mg-reuse-self-test.result }}");
-        let keys_ok = s.iter().all(|(k, _)| {
-            !k.as_str().is_some_and(|k| {
-                ["if", "continue-on-error", "shell", "defaults"]
-                    .iter()
-                    .any(|b| b.eq_ignore_ascii_case(k))
-            })
-        });
-        at < pr_exit
-            && env_ok
-            && keys_ok
-            && !lines
-                .iter()
-                .any(|l| l.starts_with("MST=") || l.starts_with("export MST"))
-    })
+            .zip(GATE_PRE_MST_LINES)
+            .all(|(l, want)| l == want)
+}
+
+/// Steps that may run before the guard step in `mg-reuse-self-test`: checkout, and the two scripts' exact `run` text.
+const EARLIER_RUNS: [&str; 3] = [
+    "bash scripts/ci_mg_reuse.sh --self-test",
+    "setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test",
+    "setsid --wait bash scripts/check_ci_wait_cancel.sh",
+];
+const GUARD_JOB_KEYS: [&str; 5] = ["if", "runs-on", "timeout-minutes", "permissions", "steps"];
+
+fn earlier_step_ok(s: &Mapping) -> bool {
+    let keys_ok = s.iter().all(|(k, _)| {
+        k.as_str()
+            .is_some_and(|k| ["name", "uses", "run"].contains(&k))
+    });
+    let uses = key(s, "uses");
+    let run = key(s, "run");
+    keys_ok
+        && match (uses, run) {
+            (Some(Value::String(u)), None) => u == "actions/checkout@v7",
+            (None, Some(Value::String(_))) => {
+                let l = run_lines(s);
+                !l.is_empty() && l.iter().all(|x| EARLIER_RUNS.contains(&x.as_str()))
+            }
+            _ => false,
+        }
 }
 
 /// Part (f): the guard test runs, unmasked, in the job every event runs, and `gate` needs it AND enforces its result.
@@ -639,6 +691,26 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     let wired = steps
         .iter()
         .any(|s| matches!(s, Value::Mapping(s) if guard_step_ok(s)));
+    // Anything that runs before the guard step can poison its environment (`>> "$GITHUB_ENV"`, `>> "$GITHUB_PATH"`, an
+    // action's `core.exportVariable`). So every earlier step is an exact allowlisted one, and the job has no other key.
+    let guard_at = steps
+        .iter()
+        .position(|s| matches!(s, Value::Mapping(s) if guard_step_ok(s)))
+        .unwrap_or(0);
+    if !steps[..guard_at]
+        .iter()
+        .all(|s| s.as_mapping().is_some_and(earlier_step_ok))
+    {
+        why.push(format!(
+            "wiring: {JOB} has an earlier step outside the allowlist (it could write GITHUB_ENV or GITHUB_PATH)"
+        ));
+    }
+    if !job
+        .iter()
+        .all(|(k, _)| k.as_str().is_some_and(|k| GUARD_JOB_KEYS.contains(&k)))
+    {
+        why.push(format!("wiring: {JOB} has a key outside the allowlist"));
+    }
     if !wired {
         why.push(format!(
             "wiring: {JOB} has no unmasked step running this test"
@@ -1149,6 +1221,7 @@ fn workflow_level_permissions_are_judged() {
 // the guard must run on pull_request, merge_group AND push, unmasked
 #[test]
 fn guard_is_wired_unmasked_into_every_event() {
+    const DIGEST: &str = "70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36";
     let job = "mg-reuse-self-test";
     let step = "--test falsification_pr_spot_labels";
     let cases = [
@@ -1190,6 +1263,31 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("gate-mst-no-exit", real_mut("echo \"mg-reuse-self-test failed: $MST\"; exit 1; }", "echo \"mg-reuse-self-test failed: $MST\"; }"), "does not enforce"),
         ("gate-mst-assigned", real_mut("          [ \"$MST\" = success ] ||", "          MST=success\n          [ \"$MST\" = success ] ||"), "does not enforce"),
         ("not-a-need-of-gate", real_mut("needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]", "needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, pr-light]"), "does not need"),
+        ("duplicate-image", job_mut(job, "docker run --rm --init --name \"$cname\"", &format!("docker run --rm --init --name \"$cname\" localhost:5000/sovereign-ci:stable@sha256:{DIGEST} true")), "no unmasked step"),
+        ("detach-flag", job_mut(job, "docker run --rm --init --name \"$cname\"", "docker run --rm --init --name \"$cname\" -d"), "no unmasked step"),
+        ("quoted-entrypoint", job_mut(job, "docker run --rm --init --name \"$cname\"", "docker run --rm --init --name \"$cname\" --entry\"\"point true"), "no unmasked step"),
+        ("cargo-runner-env", job_mut(job, "-e CARGO_TARGET_DIR=/t", "-e CARGO_TARGET_DIR=/t -e CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=true"), "no unmasked step"),
+        ("guard-step-env", job_mut(job, "      - name: pr spot labels guard", "      - env:\n          RUSTC_WRAPPER: true\n        name: pr spot labels guard"), "no unmasked step"),
+        ("earlier-step-github-env", job_mut(job, "        run: bash scripts/ci_mg_reuse.sh --self-test", "        run: |\n          bash scripts/ci_mg_reuse.sh --self-test\n          echo CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER=true >> \"$GITHUB_ENV\""), "earlier step"),
+        ("earlier-step-github-path", job_mut(job, "        run: bash scripts/ci_mg_reuse.sh --self-test", "        run: |\n          bash scripts/ci_mg_reuse.sh --self-test\n          echo /tmp/evil >> \"$GITHUB_PATH\""), "earlier step"),
+        ("earlier-step-uses-action", job_mut(job, "      - name: pr spot labels guard", "      - uses: some/action@v1\n      - name: pr spot labels guard"), "earlier step"),
+        ("job-extra-key", job_mut(job, "    runs-on:", "    container: alpine\n    runs-on:"), "key outside the allowlist"),
+        ("gate-step-env-shellopts", job_mut("gate", "MST: ${{ needs.mg-reuse-self-test.result }}", "MST: ${{ needs.mg-reuse-self-test.result }}\n          SHELLOPTS: noexec"), "does not enforce"),
+        ("gate-step-env-bash-func", job_mut("gate", "MST: ${{ needs.mg-reuse-self-test.result }}", "MST: ${{ needs.mg-reuse-self-test.result }}\n          \"BASH_FUNC_[%%\": \"() { return 0; }\""), "does not enforce"),
+        ("gate-step-env-bash-env", job_mut("gate", "MST: ${{ needs.mg-reuse-self-test.result }}", "MST: ${{ needs.mg-reuse-self-test.result }}\n          bash_env: /dev/null"), "does not enforce"),
+        ("gate-job-if-false", job_mut("gate", "    if: always()", "    if: false"), "does not enforce"),
+        ("gate-job-if-success", job_mut("gate", "    if: always()", "    if: ${{ success() }}"), "does not enforce"),
+        ("gate-job-if-dropped", job_mut("gate", "    if: always()\n", ""), "does not enforce"),
+        ("gate-if-false-wrapper", job_mut("gate", &format!("          {MST_LINE}"), &format!("          if false; then\n          {MST_LINE}\n          fi")), "does not enforce"),
+        ("gate-early-exit-0", job_mut("gate", &format!("          {MST_LINE}"), &format!("          exit 0\n          {MST_LINE}")), "does not enforce"),
+        ("gate-declare-mst", job_mut("gate", &format!("          {MST_LINE}"), &format!("          declare MST=success\n          {MST_LINE}")), "does not enforce"),
+        ("gate-readonly-mst", job_mut("gate", &format!("          {MST_LINE}"), &format!("          readonly MST=success\n          {MST_LINE}")), "does not enforce"),
+        ("gate-export-mst", job_mut("gate", &format!("          {MST_LINE}"), &format!("          export MST=success\n          {MST_LINE}")), "does not enforce"),
+        ("gate-bracket-shadow", job_mut("gate", &format!("          {MST_LINE}"), &format!("          [() {{ return 0; }}\n          {MST_LINE}")), "does not enforce"),
+        ("gate-trap-exit-0", job_mut("gate", &format!("          {MST_LINE}"), &format!("          trap 'exit 0' EXIT\n          {MST_LINE}")), "does not enforce"),
+        ("gate-exec-wrapper", job_mut("gate", &format!("          {MST_LINE}"), &format!("          exec bash -c 'exit 0'\n          {MST_LINE}")), "does not enforce"),
+        ("gate-earlier-step-github-env", job_mut("gate", "      - name: Check required sections", "      - run: echo SHELLOPTS=noexec >> \"$GITHUB_ENV\"\n      - name: Check required sections"), "does not enforce"),
+        ("gate-step-if-false", job_mut("gate", "      - name: Check required sections", "      - if: false\n        name: Check required sections"), "does not enforce"),
     ];
     for (n, text, needle) in cases {
         red(n, &text, needle);
