@@ -607,7 +607,7 @@ STUB
   # PMAT-6169: pr-x64 is a variable-selected OPTION; the runs-on line is compared EXACT. PR_LIGHT_POOL == 'pr-x64' picks the
   # X64 pr-x64 pool, anything else (unset, today) keeps X64 clean-room.
   wire pr-light "runs-on: \${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"pr-x64\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-  wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, pr-light]'
+  wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]'
   wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'

@@ -53,7 +53,7 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
         fi
     done
     blk="$(job_block "$f" workspace-test)"
-    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E 'if: [$][{][{] (needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && github[.]event_name != .pull_request.)? [}][}]')" -lt 3 ]; then
+    if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E 'if: [$][{][{] (needs[.]mg-reuse[.]outputs[.]wt != .1. && )?(needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && github[.]event_name != .pull_request.)? [}][}]')" -lt 3 ]; then
         echo "FAIL  workspace-test: checkout, download-artifact and sigma steps are not all skipped on a draft"; bad=1
     fi
     return "$bad"
