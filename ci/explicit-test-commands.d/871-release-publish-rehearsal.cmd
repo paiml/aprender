@@ -1,0 +1,1 @@
+bash scripts/release/falsify_publish_rehearsal.sh
