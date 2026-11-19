@@ -214,7 +214,7 @@ jobs:
       - name: reap the guard container and its per-run dir
         if: ${{ always() }}
         run: |
-          docker rm -f "spot-labels-${GITHUB_RUN_ID}" >/dev/null 2>&1 || true
+          if docker rm -f "spot-labels-${GITHUB_RUN_ID}" >/dev/null 2>&1; then :; fi
           # The container runs as root, so its files survive a plain rm; free_own_target_dir.sh retries as root in the job image.
           if [ -f scripts/ci/free_own_target_dir.sh ]; then bash scripts/ci/free_own_target_dir.sh spot-labels "$GITHUB_RUN_ID"; fi
 
