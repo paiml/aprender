@@ -223,7 +223,7 @@ case "${1:-}" in
     if [ "${FX_BUILD_RC_HOST:-}" = "$host" ]; then
         case "${FX_BUILD_MSG:-none}" in
             refuse)   echo "cargo-memcap: REFUSED: fixture refusal (PMAT-2976)" >&2 ;;
-            block)    printf "refused by: jobs\ncargo-memcap: REFUSED: 'cargo build' on lambda-labs (infra#3973)\n" >&2 ;;
+            block)    printf "refused by: jobs\ncargo-memcap: REFUSED: '\x63argo build' on lambda-labs (infra#3973)\n" >&2 ;;
             indented) echo "  cargo-memcap: REFUSED: echoed by a build script" >&2 ;;
             *)        echo "error: fixture build output, no refusal" >&2 ;;
         esac
@@ -487,9 +487,10 @@ build_refused() {
 build_rc() {
     local t="rc-$1" want=$2 d n; d="$TMP/rc-$1"
     if [ "$want" = env ]; then
-        stops "$t" "$7" "$8" "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build (cargo rc $3)" FX_BUILD_RC_HOST=lambda FX_BUILD_RC="$3" FX_BUILD_MSG="$4" || return $?
+        stops "$t" "$7" "$8" "MODELS lambda NO-GO: no receipt -- ENV: cargo-memcap refused the build" FX_BUILD_RC_HOST=lambda FX_BUILD_RC="$3" FX_BUILD_MSG="$4" || return $?
         ! grep -q 'BUILD-FAILED' "$d/ap/STATUS" || { printf 'a refusal was named BUILD-FAILED\n'; return 1; }
         grep -q 'rc=2' "$d/ap/STATUS" || { printf 'models_t1.sh did not exit 2 (ENV)\n'; return 1; }
+        grep -qE "refused the build \(.* rc $3\)" "$d/ap/STATUS" || { printf 'the refusal did not carry the build exit code %s\n' "$3"; return 1; }
     else
         stops "$t" "$7" "$8" "MODELS lambda NO-GO: no receipt -- BUILD-FAILED" FX_BUILD_RC_HOST=lambda FX_BUILD_RC="$3" FX_BUILD_MSG="$4" || return $?
         ! grep -q 'ENV: cargo-memcap' "$d/ap/STATUS" || { printf 'a real build failure was named ENV\n'; return 1; }
