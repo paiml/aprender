@@ -41,5 +41,5 @@ falsification_tests:
     name: unknown_step_names_input
     prediction: "an unknown --step is rejected with a message naming the input and listing every valid step"
     test_harness: "cargo test -p apr-cli --lib parse_showcase_step"
-    expected_output: "test result: ok. 2 passed"
+    expected_output: "test result: ok. 3 passed"
     if_fails: "parse_showcase_step in crates/apr-cli/src/validate.rs lost its unknown-step message or a SHOWCASE_STEPS entry no longer round-trips."
