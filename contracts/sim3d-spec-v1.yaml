@@ -32,7 +32,7 @@ version: "1.0.0"
 scope: >
   What one simulation spec (a .sim.yaml emitted as canonical JSON) must state: a schema tag, a name, one seed,
   integer-nanosecond time, at least one entity, at least one law and at least one typed invariant, and nothing
-  else. Out of scope: the receipt (sim3d-receipt-v1), running the kernel, and any gate on a pull request or release.
+  else. Out of scope: the receipt (sim3d-receipt-v1) and running the kernel. This contract's own case table (tests/sim3d_spec.rs, fragment 871) does run on every pull request; the invariant-map checker is LAB.
 status: active
 
 metadata:
