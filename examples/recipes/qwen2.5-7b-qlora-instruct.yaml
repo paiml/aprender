@@ -15,10 +15,11 @@ data:
 eval:
   heldout: data/instruct-heldout.jsonl
 seed: 3407
+lora:
+  alpha: 16
 training:
   rank: 16
-  lora_alpha: 16
-  warmup_fraction: 0.03
+  warmup: 0.03
   epochs: 2
   learning_rate: 0.0002
   max_seq_len: 2048

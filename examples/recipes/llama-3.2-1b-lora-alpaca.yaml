@@ -6,8 +6,8 @@
 # --dry-run validates the recipe and prints it fully resolved, without opening a model or the
 # data, so it runs on a fresh checkout. A real run needs the base, data and eval files below;
 # relative paths resolve against this file's directory.
-# lora_alpha and warmup_fraction reach the training run. lora_dropout, weight_decay and
-# target_modules are validated but not yet read by the training loop; the receipt lists any of
+# lora.alpha and training.warmup reach the training run. lora.dropout, training.weight_decay
+# and lora.target_modules are validated but not yet read by the training loop; the receipt lists any of
 # them you move off their default under validated_not_applied.
 recipe: apr-recipe-v1
 name: llama-3.2-1b-lora-alpaca
@@ -19,10 +19,11 @@ data:
 eval:
   heldout: data/alpaca-heldout.jsonl
 seed: 3407
+lora:
+  alpha: 16
 training:
   rank: 16
-  lora_alpha: 16
-  warmup_fraction: 0.03
+  warmup: 0.03
   epochs: 1
   learning_rate: 0.0002
   max_seq_len: 2048

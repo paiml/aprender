@@ -5,7 +5,7 @@
 #
 # --dry-run validates the recipe and prints it fully resolved, without opening a model or the
 # data. A real run needs the base, data and eval files below; relative paths resolve against
-# this file's directory. lora_dropout, weight_decay and target_modules are validated and
+# this file's directory. lora.dropout, training.weight_decay and lora.target_modules are validated and
 # recorded but not yet read by the training loop; at these default values nothing is lost.
 recipe: apr-recipe-v1
 name: phi-3.5-mini-lora-longctx
@@ -17,12 +17,13 @@ data:
 eval:
   heldout: data/longdoc-heldout.jsonl
 seed: 3407
+lora:
+  alpha: 64
+  dropout: 0.0
+  target_modules: [q_proj, v_proj]
 training:
   rank: 32
-  lora_alpha: 64
-  lora_dropout: 0.0
-  target_modules: [q_proj, v_proj]
-  warmup_fraction: 0.03
+  warmup: 0.03
   weight_decay: 0.01
   epochs: 2
   learning_rate: 0.0001

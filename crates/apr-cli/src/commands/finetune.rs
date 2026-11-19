@@ -1627,7 +1627,29 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
         flags.json_output,
         flags.experimental_mps,
         flags.gpu_share,
-    )
+    )?;
+    if flags.plan_only {
+        println!("{}", resolved_recipe_text(&recipe, flags, output));
+    }
+    Ok(())
+}
+
+/// What `--dry-run` / `--plan` print after the plan: the recipe with every default filled in.
+/// `--json` prints the bare JSON object; text mode heads it so a reader can find it.
+#[allow(clippy::disallowed_methods)]
+pub(crate) fn resolved_recipe_text(
+    recipe: &super::train_recipe::TrainRecipe,
+    flags: &RecipeRunFlags<'_>,
+    output: Option<&Path>,
+) -> String {
+    let (epochs, _) = recipe_epochs_and_nf4(recipe);
+    let value = recipe.resolved(recipe_model_size(flags, recipe), output, epochs);
+    let body = serde_json::to_string_pretty(&value).unwrap_or_default();
+    if flags.json_output {
+        body
+    } else {
+        format!("\nResolved recipe (defaults filled in):\n{body}")
+    }
 }
 
 /// Validate inputs and execute the LoRA training pipeline.

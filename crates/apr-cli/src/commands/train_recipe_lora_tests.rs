@@ -17,8 +17,9 @@ eval:
 seed: 1
 ";
 
-fn parse(training: &str) -> crate::error::Result<TrainRecipe> {
-    let src = format!("{HEAD}training:\n{training}");
+/// `blocks` is YAML appended to the required keys: `lora:` and `training:` blocks.
+fn parse(blocks: &str) -> crate::error::Result<TrainRecipe> {
+    let src = format!("{HEAD}{blocks}");
     TrainRecipe::parse(&src, Path::new("."), "test")
 }
 
@@ -44,8 +45,8 @@ fn absent_keys_resolve_to_the_values_finetune_hard_coded() {
 #[test]
 fn every_key_is_read() {
     let r = parse(
-        "  lora_alpha: 32\n  lora_dropout: 0.05\n  warmup_fraction: 0.1\n  weight_decay: 0.001\n  \
-         target_modules: [q_proj, k_proj, v_proj, o_proj]\n",
+        "lora:\n  alpha: 32\n  dropout: 0.05\n  target_modules: [q_proj, k_proj, v_proj, o_proj]\n\
+         training:\n  warmup: 0.1\n  weight_decay: 0.001\n",
     )
     .expect("valid");
     assert_eq!(r.lora.alpha, Some(32.0));
@@ -60,21 +61,21 @@ fn every_key_is_read() {
 /// moves one off its default the receipt must say it was not applied. Alpha and warmup are applied.
 #[test]
 fn only_values_the_loop_ignores_are_reported_as_not_applied() {
-    let r = parse("  lora_alpha: 32\n  warmup_fraction: 0.1\n").expect("valid");
+    let r = parse("lora:\n  alpha: 32\ntraining:\n  warmup: 0.1\n").expect("valid");
     assert!(r.lora.not_applied().is_empty(), "{:?}", r.lora);
     let r =
-        parse("  lora_dropout: 0.05\n  weight_decay: 0.0\n  target_modules: [q_proj, k_proj]\n")
+        parse("lora:\n  dropout: 0.05\n  target_modules: [q_proj, k_proj]\ntraining:\n  weight_decay: 0.0\n")
             .expect("valid");
     assert_eq!(
         r.lora.not_applied(),
         [
-            "training.lora_dropout",
-            "training.weight_decay",
-            "training.target_modules"
+            "lora.dropout",
+            "lora.target_modules",
+            "training.weight_decay"
         ]
     );
     let r =
-        parse("  lora_dropout: 0.0\n  weight_decay: 0.01\n  target_modules: [q_proj, v_proj]\n")
+        parse("lora:\n  dropout: 0.0\n  target_modules: [q_proj, v_proj]\ntraining:\n  weight_decay: 0.01\n")
             .expect("valid");
     assert!(r.lora.not_applied().is_empty(), "defaults are not 'set'");
 }
@@ -82,55 +83,64 @@ fn only_values_the_loop_ignores_are_reported_as_not_applied() {
 #[test]
 fn each_bad_value_is_refused_by_field() {
     let cases = [
-        ("  lora_alpha: 0\n", "training.lora_alpha"),
-        ("  lora_alpha: -4\n", "training.lora_alpha"),
-        ("  lora_dropout: 1.0\n", "training.lora_dropout"),
-        ("  lora_dropout: -0.1\n", "training.lora_dropout"),
-        ("  warmup_fraction: 1\n", "training.warmup_fraction"),
-        ("  warmup_fraction: -0.5\n", "training.warmup_fraction"),
-        ("  weight_decay: -0.01\n", "training.weight_decay"),
-        ("  target_modules: []\n", "training.target_modules"),
+        ("lora:\n  alpha: 0\n", "lora.alpha"),
+        ("lora:\n  alpha: -4\n", "lora.alpha"),
+        ("lora:\n  dropout: 1.0\n", "lora.dropout"),
+        ("lora:\n  dropout: -0.1\n", "lora.dropout"),
+        ("training:\n  warmup: 1\n", "training.warmup"),
+        ("training:\n  warmup: -0.5\n", "training.warmup"),
         (
-            "  target_modules: [q_proj, '']\n",
-            "training.target_modules",
+            "training:\n  weight_decay: -0.01\n",
+            "training.weight_decay",
+        ),
+        ("lora:\n  target_modules: []\n", "lora.target_modules"),
+        (
+            "lora:\n  target_modules: [q_proj, '']\n",
+            "lora.target_modules",
         ),
     ];
-    for (training, field) in cases {
-        let msg = refusal(training);
-        assert!(
-            msg.contains(&format!("field `{field}`")),
-            "{training}: {msg}"
-        );
+    for (blocks, field) in cases {
+        let msg = refusal(blocks);
+        assert!(msg.contains(&format!("field `{field}`")), "{blocks}: {msg}");
     }
 }
 
 #[test]
 fn every_violation_is_listed_at_once() {
-    let msg = refusal("  lora_alpha: 0\n  lora_dropout: 2\n  weight_decay: -1\n");
-    for field in ["lora_alpha", "lora_dropout", "weight_decay"] {
-        assert!(msg.contains(&format!("training.{field}")), "{msg}");
+    let msg = refusal("lora:\n  alpha: 0\n  dropout: 2\ntraining:\n  weight_decay: -1\n");
+    for field in ["lora.alpha", "lora.dropout", "training.weight_decay"] {
+        assert!(msg.contains(field), "{msg}");
     }
 }
 
 #[test]
 fn zero_dropout_zero_warmup_and_zero_decay_are_valid() {
-    let r = parse("  lora_dropout: 0\n  warmup_fraction: 0\n  weight_decay: 0\n").expect("valid");
+    let r =
+        parse("lora:\n  dropout: 0\ntraining:\n  warmup: 0\n  weight_decay: 0\n").expect("valid");
     assert_eq!(r.lora.warmup_fraction, 0.0);
     assert_eq!(r.lora.weight_decay, 0.0);
 }
 
+/// The old flat names (`training.lora_alpha` ...) are not keys: the schema is the issue's.
 #[test]
-fn a_misspelt_key_is_still_refused() {
-    let msg = refusal("  lora_alfa: 32\n");
-    assert!(msg.contains("lora_alfa"), "{msg}");
-    assert!(msg.contains("apr-recipe-v1"), "{msg}");
+fn a_misspelt_or_old_key_is_still_refused() {
+    for blocks in [
+        "training:\n  lora_alpha: 32\n",
+        "training:\n  warmup_fraction: 0.1\n",
+        "lora:\n  alfa: 32\n",
+    ] {
+        let msg = refusal(blocks);
+        assert!(msg.contains("apr-recipe-v1"), "{msg}");
+    }
+    let msg = refusal("lora:\n  alfa: 32\n");
+    assert!(msg.contains("alfa"), "{msg}");
 }
 
 #[test]
 fn the_active_block_is_read_by_the_run_and_cleared_after() {
     assert_eq!(alpha_or(16.0), 16.0);
     assert_eq!(warmup_fraction(), 0.03);
-    let r = parse("  lora_alpha: 32\n  warmup_fraction: 0.25\n").expect("valid");
+    let r = parse("lora:\n  alpha: 32\ntraining:\n  warmup: 0.25\n").expect("valid");
     {
         let _guard = activate(&r.lora);
         assert_eq!(alpha_or(16.0), 32.0);

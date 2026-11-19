@@ -46,13 +46,14 @@ impl Default for RecipeLora {
     }
 }
 
-/// The raw values of the five keys, as read from `training:`.
+/// The raw values of the five keys: `lora.{alpha,dropout,target_modules}` and
+/// `training.{warmup,weight_decay}`.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct RawLoraFields {
-    pub(crate) lora_alpha: Option<f64>,
-    pub(crate) lora_dropout: Option<f64>,
+    pub(crate) alpha: Option<f64>,
+    pub(crate) dropout: Option<f64>,
     pub(crate) target_modules: Option<Vec<String>>,
-    pub(crate) warmup_fraction: Option<f64>,
+    pub(crate) warmup: Option<f64>,
     pub(crate) weight_decay: Option<f64>,
 }
 
@@ -60,9 +61,9 @@ impl RecipeLora {
     /// Validate the keys; every violation is recorded against its field.
     pub(crate) fn check(raw: &RawLoraFields, bad: &mut Vec<String>) -> Self {
         let mut out = Self::default();
-        out.check_alpha(raw.lora_alpha, bad);
-        out.check_dropout(raw.lora_dropout, bad);
-        out.check_warmup(raw.warmup_fraction, bad);
+        out.check_alpha(raw.alpha, bad);
+        out.check_dropout(raw.dropout, bad);
+        out.check_warmup(raw.warmup, bad);
         out.check_weight_decay(raw.weight_decay, bad);
         if let Some(t) = raw.target_modules.as_ref() {
             out.check_targets(t, bad);
@@ -76,7 +77,7 @@ impl RecipeLora {
             self.alpha = Some(a);
         } else {
             bad.push(format!(
-                "field `training.lora_alpha` must be a positive number, got {a}"
+                "field `lora.alpha` must be a positive number, got {a}"
             ));
         }
     }
@@ -85,10 +86,10 @@ impl RecipeLora {
         let Some(d) = dropout else { return };
         if (0.0..1.0).contains(&d) {
             self.dropout = d;
-            self.mark_unapplied(d != DEFAULT_LORA_DROPOUT, "training.lora_dropout");
+            self.mark_unapplied(d != DEFAULT_LORA_DROPOUT, "lora.dropout");
         } else {
             bad.push(format!(
-                "field `training.lora_dropout` must be at least 0 and below 1, got {d}"
+                "field `lora.dropout` must be at least 0 and below 1, got {d}"
             ));
         }
     }
@@ -99,7 +100,7 @@ impl RecipeLora {
             self.warmup_fraction = w;
         } else {
             bad.push(format!(
-                "field `training.warmup_fraction` must be at least 0 and below 1, got {w}"
+                "field `training.warmup` must be at least 0 and below 1, got {w}"
             ));
         }
     }
@@ -119,8 +120,7 @@ impl RecipeLora {
     fn check_targets(&mut self, targets: &[String], bad: &mut Vec<String>) {
         if targets.is_empty() || targets.iter().any(|m| m.trim().is_empty()) {
             bad.push(
-                "field `training.target_modules` must be a non-empty list of module names"
-                    .to_string(),
+                "field `lora.target_modules` must be a non-empty list of module names".to_string(),
             );
             return;
         }
@@ -130,7 +130,7 @@ impl RecipeLora {
             .map(String::as_str)
             .ne(DEFAULT_TARGET_MODULES);
         self.target_modules = cleaned;
-        self.mark_unapplied(changed, "training.target_modules");
+        self.mark_unapplied(changed, "lora.target_modules");
     }
 
     fn mark_unapplied(&mut self, changed: bool, field: &'static str) {

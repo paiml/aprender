@@ -16,10 +16,11 @@ data:
 eval:
   heldout: data/chat-heldout.jsonl
 seed: 3407
+lora:
+  alpha: 16
 training:
   rank: 16
-  lora_alpha: 16
-  warmup_fraction: 0.05
+  warmup: 0.05
   epochs: 1
   learning_rate: 0.0002
   max_seq_len: 2048

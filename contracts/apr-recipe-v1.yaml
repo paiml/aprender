@@ -53,17 +53,17 @@ equations:
         eval:       { heldout: path, benchmark: string? },
         seed:       u64,
         teacher:    { model: path, temperature: f64?, alpha: f64? }?,
+        lora:       { alpha: f64?, dropout: f64?, target_modules: [string]? }?,
         training:   { rank: u32?, epochs: u32?, learning_rate: f64?, max_seq_len: usize?,
-                      lora_alpha: f64?, lora_dropout: f64?, target_modules: [string]?,
-                      warmup_fraction: f64?, weight_decay: f64? }?,
+                      warmup: f64?, weight_decay: f64? }?,
         output:     { dir: path }?
       }
       valid(R) <=> every required key present and non-empty
                and R.eval.heldout != R.data.train
                and (R.teacher present <=> R.method == "distill")
                and every number in R.training > 0, except
-                   lora_dropout in [0,1), warmup_fraction in [0,1), weight_decay >= 0
-               and R.training.lora_alpha > 0 and target_modules non-empty, no empty name
+                   lora.dropout in [0,1), training.warmup in [0,1), training.weight_decay >= 0
+               and R.lora.alpha > 0 and lora.target_modules non-empty, no empty name
                and no key outside this grammar at any level
     domain: UTF-8 YAML file
     codomain: TrainRecipe | Refusal
@@ -76,28 +76,30 @@ equations:
 
   recipe_lora_fields:
     formula: |
-      defaults = { lora_alpha: planner's (2 x rank), lora_dropout: 0.0, warmup_fraction: 0.03,
-                   weight_decay: 0.01, target_modules: [q_proj, v_proj] }
-      resolve(R) = defaults overlaid with R.training
-      applied     = { lora_alpha -> adapter alpha, warmup_fraction -> LR warmup }
-      not_applied = { f in {lora_dropout, weight_decay, target_modules} : resolve(R).f != defaults.f }
+      defaults = { lora.alpha: planner's (2 x rank), lora.dropout: 0.0, training.warmup: 0.03,
+                   training.weight_decay: 0.01, lora.target_modules: [q_proj, v_proj] }
+      resolve(R) = defaults overlaid with R.lora and R.training
+      applied     = { lora.alpha -> adapter alpha, training.warmup -> LR warmup }
+      not_applied = { f in {lora.dropout, training.weight_decay, lora.target_modules} : resolve(R).f != defaults.f }
     domain: validated recipe
     codomain: resolved LoRA fields and the not-applied list
     invariants:
     - "An absent key resolves to the value finetune hard-coded before these keys existed, so an existing recipe runs unchanged"
-    - "A recipe with lora_alpha A yields an adapter whose alpha is A; without it the planner's alpha stands"
-    - "lora_dropout, weight_decay and target_modules are validated but the instruct training loop does not read them: a value off its default is listed under validated_not_applied as training.<field>"
+    - "A recipe with lora.alpha A yields an adapter whose alpha is A; without it the planner's alpha stands"
+    - "lora.dropout, training.weight_decay and lora.target_modules are validated but the instruct training loop does not read them: a value off its default is listed under validated_not_applied under its dotted name"
     - "Each out-of-range value is refused by field, with every other violation in the same message"
 
   recipe_dry_run:
     formula: |
       dry_run == plan: `--dry-run` is the clap alias of `--plan` (one flag, one code path)
-      plan(recipe_path) = validate(read(recipe_path)) ; print plan ; print receipt ; exit 0
+      plan(recipe_path) = validate(read(recipe_path)) ; print plan ; print resolved recipe ; print receipt ; exit 0
+      resolved recipe = every key of the grammar with its default filled in (a planner-chosen value is the string "planner"; the plan above it has the number)
       it opens no base model, no data file and no GPU; it needs only the recipe file
     domain: (recipe file, flags)
-    codomain: plan on stdout and receipt on stderr, or a recipe refusal (exit 5)
+    codomain: plan and resolved recipe on stdout and receipt on stderr, or a recipe refusal (exit 5)
     invariants:
     - "--dry-run and --plan are the same flag: same exit code, same stdout, same refusals"
+    - "The resolved recipe is printed on the run path after the plan, with lora.dropout, lora.target_modules, training.warmup, training.weight_decay and training.epochs filled in from their defaults"
     - "Unknown keys and invalid values are refused exactly as in a real run"
     - "validated_not_applied names every field the recipe set that the loop does not read"
     - "Every recipe under examples/recipes/ passes --dry-run"
@@ -171,23 +173,23 @@ falsification_tests:
   if_fails: "A receipt can name data it did not train on"
 - id: FALSIFY-APR-RECIPE-006
   rule: the LoRA and optimiser keys default to today's values and are refused by field when out of range
-  prediction: "A recipe without lora_alpha, lora_dropout, target_modules, warmup_fraction or weight_decay resolves to alpha unset (planner's), 0.0, [q_proj, v_proj], 0.03 and 0.01. A zero or negative alpha, a dropout or warmup outside [0,1), a negative weight decay and an empty or blank target module list are each refused naming field `training.<key>`, all in one message. A misspelt key is still refused. The recipe's alpha and warmup are read by the run and cleared when it ends"
+  prediction: "A recipe without lora.alpha, lora.dropout, lora.target_modules, training.warmup or training.weight_decay resolves to alpha unset (planner's), 0.0, [q_proj, v_proj], 0.03 and 0.01. A zero or negative alpha, a dropout or warmup outside [0,1), a negative weight decay and an empty or blank target module list are each refused naming the field (`lora.alpha`, `lora.dropout`, `training.warmup`, ...), all in one message. A misspelt key, or the old flat names training.lora_alpha / training.warmup_fraction, is still refused. The recipe's alpha and warmup are read by the run and cleared when it ends"
   test: |
-    cargo test -p apr-cli --lib -- absent_keys_resolve_to_the_values_finetune_hard_coded every_key_is_read each_bad_value_is_refused_by_field every_violation_is_listed_at_once zero_dropout_zero_warmup_and_zero_decay_are_valid a_misspelt_key_is_still_refused the_active_block_is_read_by_the_run_and_cleared_after
+    cargo test -p apr-cli --lib -- absent_keys_resolve_to_the_values_finetune_hard_coded every_key_is_read each_bad_value_is_refused_by_field every_violation_is_listed_at_once zero_dropout_zero_warmup_and_zero_decay_are_valid a_misspelt_or_old_key_is_still_refused the_active_block_is_read_by_the_run_and_cleared_after
   if_fails: "A recipe can silently train with a different alpha or warmup than it declares, or accept a nonsense value"
 - id: FALSIFY-APR-RECIPE-007
-  rule: a recipe's lora_alpha reaches the adapter config, and a value the loop ignores is reported
-  prediction: "`apr finetune --recipe r.yaml --plan --json` with training.lora_alpha 32 prints recommended_alpha 32 (the planner's value without the key). lora_dropout, weight_decay and target_modules off their defaults are listed in the receipt under validated_not_applied as training.<key>; at their defaults nothing is listed"
+  rule: a recipe's lora.alpha reaches the adapter config, and a value the loop ignores is reported
+  prediction: "`apr finetune --recipe r.yaml --plan --json` with lora.alpha 32 prints recommended_alpha 32 (the planner's value without the key). lora.dropout, training.weight_decay and lora.target_modules off their defaults are listed in the receipt under validated_not_applied; at their defaults nothing is listed"
   test: |
     cargo test -p apr-cli --lib -- only_values_the_loop_ignores_are_reported_as_not_applied recipe_alpha_reaches_the_config_the_run_trains_and_saves_with
     cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- recipe_lora_alpha_reaches_the_plan validated_but_not_applied_fields_are_reported
   if_fails: "The recipe says alpha 32 and the adapter is trained and saved with another value, or the receipt claims a setting the loop never read"
 - id: FALSIFY-APR-RECIPE-008
   rule: --dry-run prints the resolved recipe without opening anything and keeps the refusals
-  prediction: "`apr finetune --recipe r.yaml --dry-run` exits 0 when the base, data and eval files do not exist and prints byte-identical stdout to `--plan`, because it is the same flag. An unknown key or a bad value is refused with exit 5 under both spellings. A real run of the same recipe is refused for its absent files"
+  prediction: "`apr finetune --recipe r.yaml --dry-run` exits 0 when the base, data and eval files do not exist and prints byte-identical stdout to `--plan`, because it is the same flag; that stdout is the plan followed by the fully resolved recipe (lora.alpha, lora.dropout, lora.target_modules, training.warmup, training.weight_decay, training.epochs with defaults filled in). An unknown key or a bad value is refused with exit 5 under both spellings. A real run of the same recipe is refused for its absent files"
   test: |
     cargo test -p apr-cli --lib -- test_finetune_dry_run_is_the_plan_flag
-    cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- dry_run_is_the_plan_flag
+    cargo test -p apr-cli --test falsification_recipe_lora_dry_run -- dry_run_is_the_plan_flag dry_run_prints_the_resolved_recipe_with_every_default_filled_in
   if_fails: "A user cannot check a recipe without loading a model, or --dry-run accepts what a real run refuses"
 - id: FALSIFY-APR-RECIPE-009
   rule: every shipped example recipe passes --dry-run

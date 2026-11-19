@@ -52,11 +52,77 @@ fn first_json(stdout: &[u8]) -> serde_json::Value {
         .expect("valid JSON")
 }
 
-/// FALSIFY-APR-RECIPE-007 (plan path): lora_alpha 32 shows as recommended_alpha 32.
+/// Every JSON object in a command's stdout, in order.
+fn all_json(stdout: &[u8]) -> Vec<serde_json::Value> {
+    let text = String::from_utf8_lossy(stdout);
+    let start = text.find('{').expect("a JSON object on stdout");
+    serde_json::Deserializer::from_str(&text[start..])
+        .into_iter::<serde_json::Value>()
+        .map(|v| v.expect("valid JSON"))
+        .collect()
+}
+
+/// FALSIFY-APR-RECIPE-008, run path: `--dry-run` and `--plan` print the fully resolved recipe,
+/// every default filled in, through the binary. A recipe that sets nothing prints the defaults;
+/// one that sets values prints them; the planner-chosen values are named, not omitted.
+#[test]
+fn dry_run_prints_the_resolved_recipe_with_every_default_filled_in() {
+    let bare = write_recipe("resolved", RECIPE);
+    let p = bare.to_str().unwrap();
+    for flag in ["--dry-run", "--plan"] {
+        let out = apr(&["finetune", "--recipe", p, flag, "--json"]);
+        assert_eq!(out.status.code(), Some(0), "{flag}");
+        let docs = all_json(&out.stdout);
+        assert_eq!(docs.len(), 2, "plan object then resolved recipe: {flag}");
+        let r = &docs[1];
+        assert_eq!(r["recipe"], "apr-recipe-v1");
+        assert_eq!(r["name"], "e2e");
+        assert_eq!(r["seed"], 7);
+        assert_eq!(r["lora"]["dropout"], 0.0);
+        assert_eq!(
+            r["lora"]["target_modules"],
+            serde_json::json!(["q_proj", "v_proj"])
+        );
+        assert_eq!(r["lora"]["alpha"], "planner");
+        assert_eq!(r["training"]["warmup"], 0.03);
+        assert_eq!(r["training"]["weight_decay"], 0.01);
+        assert_eq!(r["training"]["epochs"], 3);
+        assert_eq!(r["training"]["rank"], 8);
+        assert_eq!(r["training"]["learning_rate"], "planner");
+    }
+    let set = write_recipe(
+        "resolved-set",
+        &format!(
+            "{RECIPE}  warmup: 0.1\n  weight_decay: 0.0\n  epochs: 2\nlora:\n  alpha: 32\n  dropout: 0.05\n  target_modules: [q_proj, k_proj]\n"
+        ),
+    );
+    let out = apr(&[
+        "finetune",
+        "--recipe",
+        set.to_str().unwrap(),
+        "--dry-run",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(0));
+    let r = all_json(&out.stdout).remove(1);
+    assert_eq!(r["lora"]["alpha"], 32.0);
+    assert_eq!(r["lora"]["dropout"], 0.05);
+    assert_eq!(
+        r["lora"]["target_modules"],
+        serde_json::json!(["q_proj", "k_proj"])
+    );
+    assert_eq!(r["training"]["warmup"], 0.1);
+    assert_eq!(r["training"]["weight_decay"], 0.0);
+    assert_eq!(r["training"]["epochs"], 2);
+    let out = apr(&["finetune", "--recipe", bare.to_str().unwrap(), "--dry-run"]);
+    assert!(String::from_utf8_lossy(&out.stdout).contains("Resolved recipe (defaults filled in):"));
+}
+
+/// FALSIFY-APR-RECIPE-007 (plan path): lora.alpha 32 shows as recommended_alpha 32.
 /// The run path has its own falsifier, `recipe_alpha_reaches_the_config_the_run_trains_and_saves_with`.
 #[test]
 fn recipe_lora_alpha_reaches_the_plan() {
-    let with = write_recipe("alpha32", &format!("{RECIPE}  lora_alpha: 32\n"));
+    let with = write_recipe("alpha32", &format!("{RECIPE}lora:\n  alpha: 32\n"));
     let out = apr(&[
         "finetune",
         "--recipe",
@@ -86,7 +152,7 @@ fn recipe_lora_alpha_reaches_the_plan() {
 /// model, data or eval file on disk; refusals are the same (exit 5).
 #[test]
 fn dry_run_is_the_plan_flag() {
-    let path = write_recipe("dry", &format!("{RECIPE}  lora_alpha: 32\n"));
+    let path = write_recipe("dry", &format!("{RECIPE}lora:\n  alpha: 32\n"));
     let p = path.to_str().unwrap();
     let plan = apr(&["finetune", "--recipe", p, "--plan", "--json"]);
     let dry = apr(&["finetune", "--recipe", p, "--dry-run", "--json"]);
@@ -102,12 +168,8 @@ fn dry_run_is_the_plan_flag() {
         "--dry-run must print what --plan prints"
     );
     for (tag, body, needle) in [
-        ("unk", format!("{RECIPE}  lora_alfa: 32\n"), "lora_alfa"),
-        (
-            "bad",
-            format!("{RECIPE}  lora_alpha: 0\n"),
-            "training.lora_alpha",
-        ),
+        ("unk", format!("{RECIPE}lora:\n  alfa: 32\n"), "alfa"),
+        ("bad", format!("{RECIPE}lora:\n  alpha: 0\n"), "lora.alpha"),
     ] {
         let path = write_recipe(tag, &body);
         let p = path.to_str().unwrap();
@@ -127,16 +189,16 @@ fn dry_run_is_the_plan_flag() {
 fn validated_but_not_applied_fields_are_reported() {
     let path = write_recipe(
         "na",
-        &format!("{RECIPE}  lora_dropout: 0.1\n  weight_decay: 0.0\n"),
+        &format!("{RECIPE}  weight_decay: 0.0\nlora:\n  dropout: 0.1\n"),
     );
     let out = apr(&["finetune", "--recipe", path.to_str().unwrap(), "--dry-run"]);
     assert_eq!(out.status.code(), Some(0));
     let text = String::from_utf8_lossy(&out.stderr);
-    assert!(text.contains("training.lora_dropout"), "{text}");
+    assert!(text.contains("lora.dropout"), "{text}");
     assert!(text.contains("training.weight_decay"), "{text}");
     let path = write_recipe("na0", RECIPE);
     let out = apr(&["finetune", "--recipe", path.to_str().unwrap(), "--dry-run"]);
-    assert!(!String::from_utf8_lossy(&out.stderr).contains("training.lora_dropout"));
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("lora.dropout"));
 }
 
 /// FALSIFY-APR-RECIPE-009: every shipped example recipe passes `--dry-run` through the binary.

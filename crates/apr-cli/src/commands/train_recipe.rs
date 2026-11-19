@@ -68,6 +68,7 @@ struct RawRecipe {
     teacher: Option<RawTeacher>,
     #[serde(default)]
     training: RawTraining,
+    lora: Option<RawLora>,
     output: Option<RawOutput>,
 }
 
@@ -100,22 +101,29 @@ struct RawTraining {
     epochs: Option<u32>,
     learning_rate: Option<f64>,
     max_seq_len: Option<usize>,
-    lora_alpha: Option<f64>,
-    lora_dropout: Option<f64>,
-    target_modules: Option<Vec<String>>,
-    warmup_fraction: Option<f64>,
+    warmup: Option<f64>,
     weight_decay: Option<f64>,
 }
 
-impl RawTraining {
+/// The `lora:` block (issue #7240: `lora.alpha`, `lora.dropout`, `lora.target_modules`).
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawLora {
+    alpha: Option<f64>,
+    dropout: Option<f64>,
+    target_modules: Option<Vec<String>>,
+}
+
+impl RawRecipe {
     /// The PMAT-7240 keys, handed to `train_recipe_lora` for validation.
     fn lora_fields(&self) -> RawLoraFields {
+        let l = self.lora.clone().unwrap_or_default();
         RawLoraFields {
-            lora_alpha: self.lora_alpha,
-            lora_dropout: self.lora_dropout,
-            target_modules: self.target_modules.clone(),
-            warmup_fraction: self.warmup_fraction,
-            weight_decay: self.weight_decay,
+            alpha: l.alpha,
+            dropout: l.dropout,
+            target_modules: l.target_modules,
+            warmup: self.training.warmup,
+            weight_decay: self.training.weight_decay,
         }
     }
 }
@@ -515,7 +523,7 @@ impl TrainRecipe {
         let seed = check_seed(raw.seed, &mut bad);
         let teacher = check_teacher(raw.teacher.as_ref(), method, base_dir, &mut bad);
         check_training(&raw.training, &mut bad);
-        let lora = RecipeLora::check(&raw.training.lora_fields(), &mut bad);
+        let lora = RecipeLora::check(&raw.lora_fields(), &mut bad);
         let output_dir = raw.output.as_ref().map(|o| {
             required(
                 o.dir.as_ref(),
@@ -590,6 +598,52 @@ impl TrainRecipe {
                 bad.join("; ")
             )))
         }
+    }
+
+    #[allow(clippy::disallowed_methods)]
+    /// The recipe with every default filled in, as `--dry-run` / `--plan` print it (PMAT-7240).
+    /// A value the planner picks from the model size (rank, alpha, learning rate, sequence
+    /// length) when the recipe leaves it out is named `planner`; the plan above it has the number.
+    /// `epochs` is the count the run will use and `model_size` / `output` are after run flags.
+    pub(crate) fn resolved(
+        &self,
+        model_size: Option<&str>,
+        output: Option<&Path>,
+        epochs: u32,
+    ) -> serde_json::Value {
+        const PLANNER: &str = "planner";
+        let num =
+            |v: Option<f64>| v.map_or_else(|| serde_json::json!(PLANNER), |x| serde_json::json!(x));
+        serde_json::json!({
+            "recipe": RECIPE_SCHEMA,
+            "name": self.name,
+            "base": self.base.display().to_string(),
+            "model_size": model_size,
+            "method": self.method.as_str(),
+            "data": {
+                "train": self.train.display().to_string(),
+                "sha256": self.data_sha256_pin,
+            },
+            "eval": {
+                "heldout": self.heldout.display().to_string(),
+                "benchmark": self.benchmark,
+            },
+            "seed": self.seed,
+            "lora": {
+                "alpha": num(self.lora.alpha),
+                "dropout": self.lora.dropout,
+                "target_modules": self.lora.target_modules,
+            },
+            "training": {
+                "rank": self.rank.map_or_else(|| serde_json::json!(PLANNER), |r| serde_json::json!(r)),
+                "epochs": epochs,
+                "learning_rate": num(self.learning_rate),
+                "max_seq_len": self.max_seq_len.map_or_else(|| serde_json::json!(PLANNER), |m| serde_json::json!(m)),
+                "warmup": self.lora.warmup_fraction,
+                "weight_decay": self.lora.weight_decay,
+            },
+            "output": { "dir": output.map(|o| o.display().to_string()) },
+        })
     }
 
     /// The receipt fields for a run of this recipe by `engines`.

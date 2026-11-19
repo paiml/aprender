@@ -317,7 +317,7 @@ fn recipe_epochs_default_and_nf4_follow_the_method() {
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// FALSIFY-APR-RECIPE-007, run path: with a recipe's `lora_alpha: 32` active, the config `run`
+/// FALSIFY-APR-RECIPE-007, run path: with a recipe's `lora.alpha: 32` active, the config `run`
 /// trains with (`resolve_run_config`, the only config `run` builds) carries alpha 32 and the
 /// adapter metadata `run` writes (`write_adapter_metadata`) reads back 32. Without the recipe
 /// key the planner's 2 x rank stands, so the test tells the two apart.
@@ -329,7 +329,7 @@ fn recipe_alpha_reaches_the_config_the_run_trains_and_saves_with() {
         let path = write_recipe(&dir, body);
         TrainRecipe::load(&path).expect("valid recipe")
     };
-    let with = load(&VALID.replace("  epochs: 1\n", "  epochs: 1\n  lora_alpha: 32\n"));
+    let with = load(&format!("{VALID}lora:\n  alpha: 32\n"));
     let without = load(VALID);
     let saved_alpha = |recipe: &TrainRecipe| {
         let _active = crate::commands::train_recipe_lora::activate(&recipe.lora);
