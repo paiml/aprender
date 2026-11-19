@@ -44,6 +44,12 @@ permissions:
 
 jobs:
   measure:
+    # HOLD (2026-11-19, #7076, ruling W6 of 2026-11-15): disabled until intel is
+    # rebuilt from the fleet image and passes the N2 cut-over gate. One job has
+    # sat queued on intel,perf-solo since 2026-11-15 and holds a queue slot.
+    # Re-enable: delete this `if:` and scripts/check_nightly_hold_7076.sh in a
+    # PR that closes #7076.
+    if: false
     # PP-19 / §5.4. The group moved DOWN to the job and lost both the ref suffix
     # and the cancellation.
     #
