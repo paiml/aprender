@@ -181,6 +181,7 @@ aprender-orchestrate	--lib	agent::repl_directives
 aprender-orchestrate	--lib	analyzer
 aprender-orchestrate	--lib	cli::agent
 aprender-orchestrate	--lib	cli::falsify
+aprender-orchestrate	--lib	cli::oracle::rag_index
 aprender-orchestrate	--lib	falsification::auditors::tests
 aprender-orchestrate	--lib	falsification::invariants
 aprender-orchestrate	--lib	falsification::jidoka
