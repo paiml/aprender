@@ -382,7 +382,7 @@ fn execute_training(
 ) -> Result<()> {
     use entrenar::finetune::instruct_corpus::InstructSample;
     use entrenar::finetune::instruct_pipeline::InstructPipeline;
-    use entrenar::finetune::instruct_trainer::{InstructTrainer, InstructTrainingConfig};
+    use entrenar::finetune::instruct_trainer::InstructTrainer;
 
     // 0. #2417: every training path below ends in `InstructPipeline::from_apr`,
     // which reads APR only. A .safetensors or .gguf base used to reach that
@@ -462,20 +462,7 @@ fn execute_training(
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create pipeline: {e}")))?;
 
     // 4. Create trainer and run
-    let train_config = InstructTrainingConfig {
-        epochs: epochs as usize,
-        val_split: if corpus.len() < 20 { 0.1 } else { 0.2 },
-        save_every: 1,
-        early_stopping_patience: 5,
-        checkpoint_dir: output_path
-            .parent()
-            .unwrap_or(Path::new("."))
-            .join("checkpoints"),
-        seed: super::finetune_recipe_run::run_seed(),
-        log_interval: 1,
-        warmup_fraction: 0.03,
-        lr_min: 1e-6,
-    };
+    let train_config = instruct_training_config(epochs, corpus.len(), output_path);
 
     let mut trainer = InstructTrainer::new(pipeline, corpus, train_config)
         .map_err(|e| CliError::ValidationFailed(format!("Failed to create trainer: {e}")))?;
@@ -493,6 +480,30 @@ fn execute_training(
     report_checkpoint_output(output_path, json_output);
 
     Ok(())
+}
+
+/// The trainer configuration of an instruct run (PMAT-7239). The seed is the
+/// recipe's while a recipe run is in flight on this thread, else 42.
+#[cfg(feature = "training")]
+pub(crate) fn instruct_training_config(
+    epochs: u32,
+    corpus_len: usize,
+    output_path: &Path,
+) -> entrenar::finetune::instruct_trainer::InstructTrainingConfig {
+    entrenar::finetune::instruct_trainer::InstructTrainingConfig {
+        epochs: epochs as usize,
+        val_split: if corpus_len < 20 { 0.1 } else { 0.2 },
+        save_every: 1,
+        early_stopping_patience: 5,
+        checkpoint_dir: output_path
+            .parent()
+            .unwrap_or(Path::new("."))
+            .join("checkpoints"),
+        seed: super::finetune_recipe_run::run_seed(),
+        log_interval: 1,
+        warmup_fraction: 0.03,
+        lr_min: 1e-6,
+    }
 }
 
 /// Read the JSONL instruction corpus, rejecting an empty training set.
@@ -1536,8 +1547,15 @@ fn recipe_overrides(
     overrides
 }
 
+/// True when this recipe run trains on the WGPU path, which does not take the seed.
+fn recipe_uses_wgpu(recipe: &super::train_recipe::TrainRecipe, flags: &RecipeRunFlags<'_>) -> bool {
+    let (_, quantize_nf4) = recipe_epochs_and_nf4(recipe);
+    gpu_backend_notice(flags.gpu_backend, quantize_nf4, cfg!(feature = "wgpu")).use_wgpu
+        && cfg!(feature = "wgpu")
+}
+
 /// `preflight_recipe` plus the overrides the run flags make.
-fn recipe_receipt_for_run(
+pub(crate) fn recipe_receipt_for_run(
     recipe_path: &Path,
     flags: &RecipeRunFlags<'_>,
 ) -> Result<(
@@ -1546,6 +1564,10 @@ fn recipe_receipt_for_run(
 )> {
     let (recipe, mut receipt) = preflight_recipe(recipe_path, flags.plan_only)?;
     receipt.overrides = recipe_overrides(flags, &recipe);
+    if recipe_uses_wgpu(&recipe, flags) {
+        // The WGSL path never reads the recipe seed: say so instead of claiming it applied.
+        receipt.validated_not_applied.insert(0, "seed");
+    }
     Ok((recipe, receipt))
 }
 

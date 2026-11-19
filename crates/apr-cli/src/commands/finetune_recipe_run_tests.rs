@@ -136,3 +136,145 @@ fn write_receipt_creates_the_directory_and_ends_with_a_newline() {
     assert!(text.ends_with("}\n"), "{text}");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn trainer_config_seed_equals_the_recipe_seed_zero_included() {
+    use crate::commands::finetune::instruct_training_config;
+    let out = Path::new("out/adapter.apr");
+    for seed in [0u64, 1, 42, 7777] {
+        let _g = SeedGuard::set(seed);
+        assert_eq!(instruct_training_config(2, 10, out).seed, seed);
+    }
+    assert_eq!(instruct_training_config(2, 10, out).seed, DEFAULT_SEED);
+}
+
+#[test]
+fn recipe_run_threads_the_recipe_seed_into_the_trainer_config() {
+    // The same lowering `run_from_recipe` uses: the guard is set from `recipe.seed`.
+    let dir = scratch("thread");
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, recipe_text(0)).expect("recipe");
+    let (recipe, _) = crate::commands::finetune::preflight_recipe(&path, false).expect("ok");
+    let _g = SeedGuard::set(recipe.seed);
+    let cfg = crate::commands::finetune::instruct_training_config(2, 10, Path::new("o/a.apr"));
+    assert_eq!(cfg.seed, 0);
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Train the smallest in-test fixture (tiny transformer, 12 samples, 2 epochs) on the CPU and
+/// return the per-epoch losses plus the sha256 of every `model.safetensors` checkpoint written.
+fn tiny_train(seed: u64, tag: &str) -> (Vec<(f32, f32)>, Vec<(String, String)>) {
+    use entrenar::finetune::instruct_corpus::InstructSample;
+    use entrenar::finetune::instruct_pipeline::{InstructConfig, InstructPipeline};
+    use entrenar::finetune::instruct_trainer::InstructTrainer;
+    use entrenar::transformer::TransformerConfig;
+    let corpus: Vec<InstructSample> = (0..12)
+        .map(|i| InstructSample {
+            instruction: format!("Write function {i}"),
+            response: format!("def func_{i}():\n    return {i}"),
+            system: None,
+            metadata: None,
+        })
+        .collect();
+    let icfg = InstructConfig {
+        lora_rank: 4,
+        max_seq_len: 32,
+        ..InstructConfig::default()
+    };
+    // The base weights come from a process-global init seed that the train-config loader tests
+    // also set, without taking this lock. Hold the lock and rebuild until the seed read back
+    // after construction is still the one asked for, so a racing setter cannot reach the fixture.
+    let _init = entrenar::transformer::init::lock_init_seed(42);
+    let pipeline = loop {
+        entrenar::transformer::init::set_init_seed(42);
+        let p = InstructPipeline::new(&TransformerConfig::tiny(), icfg.clone());
+        if entrenar::transformer::init::get_init_seed() == 42 {
+            break p;
+        }
+    };
+    let _g = SeedGuard::set(seed);
+    let ckpt = std::env::temp_dir().join(format!("apr-ft-det-{tag}-{}", std::process::id()));
+    std::fs::remove_dir_all(&ckpt).ok();
+    let mut cfg =
+        crate::commands::finetune::instruct_training_config(2, corpus.len(), Path::new("o/a.apr"));
+    cfg.checkpoint_dir = ckpt.clone();
+    let mut trainer = InstructTrainer::new(pipeline, corpus, cfg).expect("trainer");
+    let result = trainer.train();
+    let mut hashes = Vec::new();
+    let mut stack = vec![ckpt.clone()];
+    while let Some(d) = stack.pop() {
+        for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.file_name().is_some_and(|n| n == "model.safetensors") {
+                let rel = p
+                    .strip_prefix(&ckpt)
+                    .expect("under ckpt")
+                    .display()
+                    .to_string();
+                hashes.push((rel, sha256_bytes(&std::fs::read(&p).expect("read ckpt"))));
+            }
+        }
+    }
+    hashes.sort();
+    std::fs::remove_dir_all(&ckpt).ok();
+    (
+        result
+            .epoch_metrics
+            .iter()
+            .map(|m| (m.train_loss, m.val_loss))
+            .collect(),
+        hashes,
+    )
+}
+
+/// Real CPU run on the smallest in-test fixture. Measured limit, not hidden: two same-seed runs
+/// of this fixture write checkpoints that alternate between two distinct sha256 values (epoch 0
+/// included), so a byte-identical checkpoint claim is NOT made here. The seed is proven to reach
+/// the trainer by the config tests above; this test proves the run completes end to end on CPU
+/// with the recipe seed in force, writes a checkpoint per epoch, and gives identical losses.
+#[test]
+fn same_seed_cpu_run_completes_with_identical_losses_and_writes_checkpoints() {
+    let (la, ha) = tiny_train(5, "a");
+    let (lb, _) = tiny_train(5, "b");
+    assert_eq!(la.len(), 2, "two epochs ran");
+    assert!(
+        ha.iter().any(|(p, _)| p.starts_with("epoch-0")),
+        "epoch-0 checkpoint written"
+    );
+    assert!(
+        ha.iter().any(|(p, _)| p.starts_with("epoch-1")),
+        "epoch-1 checkpoint written"
+    );
+    assert_eq!(la, lb, "same seed: identical per-epoch losses");
+}
+
+#[test]
+fn wgpu_run_keeps_seed_under_validated_not_applied() {
+    let dir = scratch("wgpu");
+    let path = dir.join("r.yaml");
+    std::fs::write(&path, recipe_text(3)).expect("recipe");
+    let mut flags = crate::commands::finetune::RecipeRunFlags {
+        vram_gb: 24.0,
+        plan_only: false,
+        output_path: None,
+        model_size: None,
+        checkpoint_format: "safetensors",
+        gpus: None,
+        gpu_backend: "wgpu",
+        wait_gpu: 0,
+        json_output: false,
+        experimental_mps: false,
+        gpu_share: 0,
+    };
+    let (_, receipt) =
+        crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("receipt");
+    let has_seed = receipt.validated_not_applied.contains(&"seed");
+    assert_eq!(has_seed, cfg!(feature = "wgpu"));
+    flags.gpu_backend = "cuda";
+    let (_, receipt) =
+        crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("receipt");
+    assert!(!receipt.validated_not_applied.contains(&"seed"));
+    std::fs::remove_dir_all(&dir).ok();
+}
