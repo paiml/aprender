@@ -1,0 +1,18 @@
+# The existing M/M/1 experiment (crates/aprender-simulate/examples/experiments/littles_law_validation.yaml:
+# seed 42, lambda 5.0, mu 6.0) restated as a SIM3D spec. Valid.
+schema: sim3d-spec/v1
+name: mm1-littles-law
+time_unit: ns
+horizon_ns: 1000000000000
+seed: {value: 42, algorithm: pcg64}
+entities:
+  - {id: arrivals, kind: source, rate_per_s: 5.0}
+  - {id: queue, kind: queue, capacity: 1000}
+  - {id: server, kind: server, rate_per_s: 6.0}
+  - {id: done, kind: sink}
+laws:
+  - {id: LAW-001, statement: "arrived equals served plus queued plus dropped at every step", invariant: INV-001}
+  - {id: LAW-002, statement: "mean number in system equals arrival rate times mean time in system", invariant: INV-002}
+invariants:
+  - {id: INV-001, formula: "arrived = served + queued + dropped", unit: requests}
+  - {id: INV-002, formula: "|L - lambda * W| / L <= tolerance", unit: dimensionless, tolerance: 0.05}

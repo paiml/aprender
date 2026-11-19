@@ -1,0 +1,168 @@
+# ──────────────────────────────────────────────
+# sim3d-spec-v1 — the closed shape of a simulation spec (SIM3D P0, aprender#7245, epic #7244)
+#
+# THE DEFECT THIS CLOSES. A simulation spec was a YAML file nothing graded: `ieee_strict` is a flag with no effect,
+# a seed is optional, and the invariants of the simular contracts are prose (`check-symbolic` parses 0 of 9). A spec
+# with no seed, or with no invariant a run could be held to, passed every gate there is.
+#
+# KIND: simulation, through the `extract:json` path (ONT-001 §3.7). The spec is written as `.sim.yaml` and EMITTED as
+# canonical JSON (sorted keys, no whitespace) before pv reads it, so pv's closed shape IS the validator: no second
+# reader, no new extractor. The case table is crates/aprender-contracts-cli/tests/sim3d_spec.rs over
+# tests/fixtures/ont/sim3d/, which converts each fixture and has pv judge it on THIS file.
+#
+# ── NO `entity:` HERE, ON PURPOSE ─────────────────────────────────────────────────────────────────────────────
+#
+# Same as findings-ledger-v1: the spec is many files, one per simulation, and `entity.ref` names one. The shape
+# grades zero focus nodes in the corpus and is not in `armed_shapes` (arming it edits lint-baseline.json, a gate
+# file, and is a separate ruling: a check becomes a GATE only after three green nights). It is graded where a spec
+# is written, by the test, which copies THIS file into a scratch corpus, appends an `entity:` block and runs
+#     pv lint <scratch>/contracts --gate shapes --shape sim3d-spec-v1
+#
+# ── WHAT THE SHAPE CAN NOT SAY (said out loud, so nobody believes it does) ───────────────────────────────────
+#
+#   1. A law's `invariant` id is a well-formed id; that an invariant with that id is DECLARED is a join, and the
+#      SHACL subset has no join. It is not checked here. Closing it is the typed-invariants row (#7253).
+#   2. `horizon_ns` is an integer written without sign or leading zero (a pattern on its lexical form); a bound
+#      such as "at most 10^15" needs minInclusive/maxInclusive, which the subset lacks.
+#   3. Nothing here runs the simulation. A spec that conforms is well formed, not correct.
+# ──────────────────────────────────────────────
+name: sim3d-spec
+version: "1.0.0"
+scope: >
+  What one simulation spec (a .sim.yaml emitted as canonical JSON) must state: a schema tag, a name, one seed,
+  integer-nanosecond time, at least one entity, at least one law and at least one typed invariant, and nothing
+  else. Out of scope: the receipt (sim3d-receipt-v1), running the kernel, and any gate on a pull request or release.
+status: active
+
+metadata:
+  version: "1.0.0"
+  kind: simulation
+  created: '2026-11-19'
+  last_modified: '2026-11-19'
+  author: PAIML Engineering
+  description: >
+    A simulation spec is an ontology instance: the closed set of keys a simulation may state, with the seed, the
+    laws and the typed invariants required rather than optional. A missing seed, an empty invariant list and an
+    empty spec are each refused, naming the path that failed.
+  references:
+    - 'aprender#7245 (this row); epic aprender#7244; docs/specifications/sim3d-provable-simulation.md'
+    - 'contracts/findings-ledger-v1.yaml — the pattern this contract follows (type: json, closed shape)'
+    - 'contracts/ontology.yaml — the Simulation, SimEntity, Law, Invariant and Seed concepts'
+    - 'tests/fixtures/ont/sim3d/ — the case table, both arms'
+
+vocabulary:
+  prefix: sim
+  root_class: sim:Simulation
+  nested:
+    seed: sim:Seed
+    entities: sim:SimEntity
+    laws: sim:Law
+    invariants: sim:Invariant
+
+shape:
+  targetClass: sim:Simulation
+  closed: true
+  properties:
+    # The version of this shape the spec was written for; a spec for another shape is refused, not reinterpreted.
+    - {path: sim:schema, minCount: 1, maxCount: 1, in: ["sim3d-spec/v1"]}
+    # A slug: it names the run in receipts and file names.
+    - {path: sim:name, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"}
+    # Time is integer nanoseconds. A float clock is the first source of cross-host divergence.
+    - {path: sim:time_unit, minCount: 1, maxCount: 1, in: ["ns"]}
+    - {path: sim:horizon_ns, minCount: 1, maxCount: 1, datatype: xsd:integer, pattern: "^[1-9][0-9]*$"}
+    # THE seed. Required, exactly one: a spec with no seed is not a reproducible run.
+    - path: sim:seed
+      minCount: 1
+      maxCount: 1
+      node:
+        closed: true
+        properties:
+          - {path: sim:value, minCount: 1, maxCount: 1, datatype: xsd:integer, pattern: "^(0|[1-9][0-9]*)$"}
+          - {path: sim:algorithm, minCount: 1, maxCount: 1, in: [pcg64, counter-based]}
+    - path: sim:entities
+      minCount: 1
+      node:
+        closed: true
+        properties:
+          - {path: sim:id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^[a-z][a-z0-9_]*$"}
+          - {path: sim:kind, minCount: 1, maxCount: 1, in: [source, queue, server, router, health_check, sink]}
+          # Optional numeric parameters; absent when the kind has none.
+          - {path: sim:rate_per_s, maxCount: 1}
+          - {path: sim:capacity, maxCount: 1, datatype: xsd:integer}
+    - path: sim:laws
+      minCount: 1
+      node:
+        closed: true
+        properties:
+          - {path: sim:id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^LAW-[0-9]{3}$"}
+          - {path: sim:statement, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 8}
+          # The invariant that monitors this law. Its being declared is NOT checked (see header, point 1).
+          - {path: sim:invariant, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^INV-[0-9]{3}$"}
+    - path: sim:invariants
+      minCount: 1
+      node:
+        closed: true
+        properties:
+          - {path: sim:id, minCount: 1, maxCount: 1, datatype: xsd:string, pattern: "^INV-[0-9]{3}$"}
+          - {path: sim:formula, minCount: 1, maxCount: 1, datatype: xsd:string, minLength: 3}
+          # Typed: every invariant states the unit of the quantity it bounds. A closed set, no free text.
+          - {path: sim:unit, minCount: 1, maxCount: 1, in: [dimensionless, count, requests, requests/s, ns, s, m, J]}
+          - {path: sim:tolerance, maxCount: 1}
+
+equations:
+  conforms:
+    formula: "∀ s ∈ specs(S): keys(s) = {schema, name, time_unit, horizon_ns, seed, entities, laws, invariants} ∧ each value in its declared set"
+    domain: "S, one simulation spec emitted as canonical JSON"
+    codomain: "conforms, or a violation naming the spec and the path"
+    invariants:
+      - "a spec with no seed is refused (minCount)"
+      - "a spec with no invariant is refused, and so is a law that names none"
+      - "an empty spec is refused, once per required path"
+      - "a key outside the declared set is refused at every level (closed shape)"
+    preconditions:
+      - "the spec is JSON: the .sim.yaml emitted with sorted keys"
+    postconditions:
+      - "every spec names its seed, its laws and its typed invariants"
+    lean_theorem: none — L4 not declared
+
+invariants:
+  - id: SIM-SPEC-INV-001
+    property: a spec carries exactly one seed
+    formal: 'len(seed(s)) ≠ 1 ⇒ Fail(sim3d-spec-v1, s)'
+    prose: false
+  - id: SIM-SPEC-INV-002
+    property: a spec declares at least one invariant
+    formal: 'len(invariants(s)) = 0 ⇒ Fail(sim3d-spec-v1, s)'
+    prose: false
+  - id: SIM-SPEC-INV-003
+    property: every invariant states a unit from the closed set
+    formal: 'unit(i) ∉ {dimensionless, count, requests, requests/s, ns, s, m, J} ⇒ Fail(sim3d-spec-v1, i)'
+    prose: false
+  - id: SIM-SPEC-INV-004
+    property: every law names the invariant that monitors it
+    formal: 'len(invariant(l)) ≠ 1 ⇒ Fail(sim3d-spec-v1, l)'
+    prose: false
+
+falsification_tests:
+  - id: FALSIFY-SIM-SPEC-001
+    rule: both arms of the shape
+    prediction: >
+      the M/M/1 and the load-balancer specs conform (verdict Pass, one focus node, zero violations); a spec with
+      no seed, no invariants, no entities or laws, an empty spec, an extra key, or an out-of-set unit is refused
+      with exit 1 naming the path
+    test: cargo test -p aprender-contracts-cli --test sim3d_spec
+    if_fails: a simulation spec can omit its seed or its invariants and still pass pv
+  - id: FALSIFY-SIM-SPEC-002
+    rule: the closed escapes
+    prediction: >
+      a seed algorithm, entity kind, schema tag or unit outside its declared set, a zero or leading-zero horizon,
+      and a law whose invariant id is not INV-<nnn> are each refused
+    test: cargo test -p aprender-contracts-cli --test sim3d_spec
+    if_fails: a required field starts manufacturing plausible values
+  - id: FALSIFY-SIM-SPEC-003
+    rule: the check is not vacuous
+    prediction: >
+      the harness refuses a fixture directory in which zero valid specs were judged, and the judged focus-node
+      count of a valid spec is exactly 1
+    test: cargo test -p aprender-contracts-cli --test sim3d_spec
+    if_fails: a spec reads as conforming because nothing was graded
