@@ -1320,9 +1320,11 @@ jobs:
       # merge commit. Pinned per event (scripts/ci/pin_build_base.sh):
       #   pull_request  the merge commit's first parent, checked against the PR head
       #   merge_group   merge_group.base_sha, as the refinement-gate pin does
-      #   otherwise     the tip, deepened by one on push (resolve_base.sh judges a
-      #                 push against HEAD's first parent: HEAD vs HEAD would pass
-      #                 vacuously, the G-10 quorum's finding)
+      #   push          the event's own `before` (PUSH_BEFORE_SHA), which main
+      #                 moving during the run cannot change; refused when unusable.
+      #                 A tag push (before is all zeros): the tagged commit's first
+      #                 parent. The depth-1 clone is deepened (bounded) to reach `before`.
+      #   otherwise     the tip (workflow_dispatch)
       # The shared ratchet library takes the same first parent on its own
       # (scripts/lib_baseline_ratchet.sh FIRSTPARENT), so a lib ratchet and a
       # script that reads origin/main directly cannot disagree. A PR that adds
@@ -1334,6 +1336,7 @@ jobs:
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: |
           bash scripts/ci/pin_build_base.sh --self-test
           bash scripts/ci/pin_build_base.sh
@@ -1891,6 +1894,7 @@ jobs:
         env:
           PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           MG_BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
         run: bash scripts/ci/pin_build_base.sh
       # DOCKER CREATES A MISSING BIND SOURCE AS root:root, AND `--user` ALONE
       # THEN EACCESs ON IT. The per-RUN target path is fresh every run, so a
