@@ -142,9 +142,12 @@ evaluate() {
     c="$(cat "$2/C" 2>/dev/null)"; rd="$(cat "$2/read" 2>/dev/null)"
     [ -f "$2/attempts.tsv" ] || : > "$2/attempts.tsv"
     [ -f "$2/runs.tsv" ] || : > "$2/runs.tsv"
+    # producer workflows the repo has switched off (path, state): a lane whose producer is off was STOPPED (C324 item 5), not misread
+    jq -r '(.workflows // [])[] | select((.state // "active") != "active") | [.path, .state] | @tsv' "$2/workflows.json" > "$2/disabled.tsv" 2>/dev/null || : > "$2/disabled.tsv"
     awk -F '\t' -v OFS='\t' -v C="$c" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" '
     FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; NEED[n] = (a[7] ~ /^[0-9]+$/ ? a[7] + 0 : 1); next }
     FILENAME == ARGV[2] { AT[$1] = $2; next }
+    FILENAME == ARGV[3] { DIS[$1] = $2; next }
     {
         # a run can carry the jobs of two producers (--in-run: the lanes and models jobs of the rehearsal); a lane reads only its own
         key = $2 SUBSEP $3 SUBSEP $10 SUBSEP $13
@@ -207,6 +210,10 @@ evaluate() {
             }
             # every run of the lane is on another commit than the read C: a setup fault (the night and the read disagree),
             #   printed as one, with the head of that run in the row; it stays not_measured, never a pass and never a third state
+            if (pick == "" && (WF[i] in DIS)) {
+                if (MODE == "final") out(i, "not_measured", "", "", "stopped, not a setup fault: producer workflow is " DIS[WF[i]] " (C324 item 5: its own 7-day stop); its owner runs gh workflow enable, then a dispatch" (other != "" ? "; newest run " other : "; no run on main"))
+                continue
+            }
             if (pick == "") {
                 if (MODE == "final") out(i, "not_measured", "", "", (pwhy == "" && other != "" ? "setup fault: run head is not C " substr(C, 1, 10) "; " : "") (pwhy != "" ? pwhy : "no run on C") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main" : "")))
                 continue
@@ -231,7 +238,7 @@ evaluate() {
             if (att > 1) out(i, "red", pick, att, "success only at attempt " att ": a retried green is not a green")
             else out(i, "green", pick, att, "")
         }
-    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/runs.tsv"
+    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/disabled.tsv" "$2/runs.tsv"
 }
 # hours LANESOUT REDAGE_OUTPUT_FILE -> lane<TAB>hours lost (2 decimals) for every lane red_age measured
 hours() {
@@ -1078,6 +1085,15 @@ v-e;verdict;check E;-;-;-" "$d"
     row a_late_start_night_lane_a_is_green 0 "$(printf 'v-a\tverdict\tgreen\t.github/workflows/a.yml ^job-a$\t101\t%s' "$ST_C")" "" -- cat "$tmp/ls.out"
     row a_lane_only_on_c2_prints_c2_in_its_row 0 "$(printf 'v-b\tverdict\tnot_measured\t.github/workflows/b.yml \tnot_measured\t%s\t' "$ST_X")" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/ls.out"
     row a_lane_only_on_c2_is_a_setup_fault 0 "$(printf '\tsetup fault: run head is not C aaaaaaaaaa; no run on C; newest run 201 on bbbbbbbbbb')" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/ls.out"
+    # a lane whose producer workflow the repo switched off is STOPPED (C324 item 5), not a setup fault; still not_measured (#6126)
+    st_stopped_lane() {
+        local f="$tmp/fstop"; rm -rf "${f:?}"; cp -r "$tmp/fls" "$f"
+        jq '.workflows |= map(if .path == ".github/workflows/b.yml" then . + {state: "disabled_manually"} else . + {state: "active"} end)' "$tmp/fls/workflows.json" > "$f/workflows.json"
+        decide "$ST_LANES" "$f" 2026-10-04T06:00:00Z; cat "$f/lanes.tsv"
+    }
+    st_stopped_lane > "$tmp/stop.out" 2>&1
+    row a_disabled_producer_is_stopped_not_a_setup_fault 0 "stopped, not a setup fault: producer workflow is disabled_manually" "setup fault: run head is not C" -- cat "$tmp/stop.out"
+    row a_disabled_producer_lane_stays_not_measured 0 "$(printf 'v-b\tverdict\tnot_measured')" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/stop.out"
     st_late_start_line() {
         bash "$SCRIPT_PATH" --from "$tmp/fls" --out "$tmp/ols" --now 2026-10-04T06:00:00Z > /dev/null
         cat "$tmp/ols/2026-10-04/line"; command grep '^# read C' "$tmp/ols/2026-10-04/bundle.tsv"
@@ -1483,6 +1499,7 @@ m108_lanes_run_on_c_reread	s/if (id != "" \&\& h != C) print id/if (id != "") pr
 m109_self_test_runs_the_bundle	s/ \&\& SCRIPT_PATH="\$tmp\/self\/\${SCRIPT_PATH##\*\/}" || exit 3/ || exit 3/
 m110_lab_lanes_vote	s/\$2 == "verdict" { nv++/($2 == "verdict" || $2 == "lab") { nv++/
 m112_edge_lane_flipped_to_verdict	/^edge;lab;/s/^edge;lab;/edge;verdict;/
+m113_stopped_producer_read_as_setup_fault	s/pick == "" \&\& (WF\[i\] in DIS)/pick == "" \&\& 0/
 '
 # each planted mutant must change the file, still parse, and turn at least one row RED
 mutants() {
