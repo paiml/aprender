@@ -448,7 +448,7 @@ fn permissions_ok(v: &Value) -> bool {
 fn check_workflow_level(base: &str, top: &Mapping, why: &mut Vec<String>) {
     for (k, v) in top {
         let ks = k.as_str().unwrap_or("");
-        if ks == "jobs" {
+        if ks.eq_ignore_ascii_case("jobs") {
             continue;
         }
         let mut names = all_scalars(v, &mut Vec::new());
@@ -459,7 +459,7 @@ fn check_workflow_level(base: &str, top: &Mapping, why: &mut Vec<String>) {
         {
             why.push(format!("{base}: workflow level names secrets: {s}"));
         }
-        if ks == "permissions" && !permissions_ok(v) {
+        if ks.eq_ignore_ascii_case("permissions") && !permissions_ok(v) {
             why.push(format!(
                 "{base}: workflow permissions wider than contents: read"
             ));
@@ -482,7 +482,7 @@ fn logical_lines(run: &str) -> Vec<String> {
         }
         match t.strip_suffix('\\') {
             Some(head) => {
-                cur.push_str(head);
+                cur.push_str(head.trim_end());
                 cur.push(' ');
             }
             None => {
@@ -503,8 +503,38 @@ fn run_lines(s: &Mapping) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// The guard step: only the allowed keys, `set -euo pipefail`, no masking idiom anywhere in the script, and one
-/// top-level command (no `if`, `!`, `;`, `|`, `&`, comment) that ends exactly at `--test falsification_pr_spot_labels`.
+/// The guard step's script is an ALLOWLIST: after `set -euo pipefail` only these lines and the one docker command.
+/// Any other line (a wrapper, a function, a `set +`, an `exit`, a redefined `reap`) is red.
+const GUARD_LINES: [&str; 6] = [
+    "cname=\"spot-labels-${GITHUB_RUN_ID}\"",
+    "reap() { if docker rm -f \"$cname\" >/dev/null 2>&1; then :; fi; }",
+    "reap",
+    "trap reap EXIT INT TERM",
+    "base=\"/mnt/nvme-raid0/targets/aprender-ci/spot-labels/run-${GITHUB_RUN_ID}\"",
+    "mkdir -p \"$base/registry\" \"$base/target\"",
+];
+const GUARD_CMD_HEAD: &str =
+    "timeout --foreground -k 30 900 docker run --rm --init --name \"$cname\" ";
+const GUARD_IMAGE: &str = " localhost:5000/sovereign-ci:stable@sha256:";
+const GUARD_CMD_TAIL: &str =
+    " cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels";
+
+/// The one docker command: fixed head, the pinned image (any 64-hex digest), then exactly the test, nothing after.
+fn guard_cmd_ok(l: &str) -> bool {
+    let Some((head, rest)) = l.rsplit_once(GUARD_IMAGE) else {
+        return false;
+    };
+    l.starts_with(GUARD_CMD_HEAD)
+        && !head.contains(['\'', ';', '|', '&', '!', '#', '`'])
+        && !head.contains("--entrypoint")
+        && !head.contains("$(")
+        && rest.len() == 64 + GUARD_CMD_TAIL.len()
+        && rest
+            .get(..64)
+            .is_some_and(|d| d.chars().all(|c| c.is_ascii_hexdigit()))
+        && rest.get(64..) == Some(GUARD_CMD_TAIL)
+}
+
 fn guard_step_ok(s: &Mapping) -> bool {
     let keys_ok = s.iter().all(|(k, _)| {
         k.as_str()
@@ -512,16 +542,67 @@ fn guard_step_ok(s: &Mapping) -> bool {
     });
     let lines = run_lines(s);
     keys_ok
-        && lines.iter().any(|l| l == "set -euo pipefail")
-        && !lines
+        && lines.first().map(String::as_str) == Some("set -euo pipefail")
+        && lines.iter().filter(|l| guard_cmd_ok(l)).count() == 1
+        && lines
             .iter()
-            .any(|l| l.contains("||") || l.contains("set +") || l.contains("exit 0"))
-        && lines.iter().any(|l| {
-            l.starts_with("timeout ")
-                && l.contains(" cargo test ")
-                && l.ends_with("--test falsification_pr_spot_labels")
-                && !l.contains([';', '|', '&', '!', '#'])
+            .skip(1)
+            .all(|l| GUARD_LINES.contains(&l.as_str()) || guard_cmd_ok(l))
+}
+
+/// An `env` that can change how bash runs a step (`SHELLOPTS`, `BASH_ENV`, an exported function) is red.
+fn env_masks(m: &Mapping) -> bool {
+    key(m, "env")
+        .and_then(|e| e.as_mapping().cloned())
+        .is_some_and(|e| {
+            e.iter().any(|(k, _)| {
+                k.as_str().is_some_and(|k| {
+                    let k = k.to_ascii_uppercase();
+                    ["SHELLOPTS", "BASHOPTS", "BASH_ENV", "ENV", "PS4"].contains(&k.as_str())
+                        || k.starts_with("BASH_FUNC")
+                })
+            })
         })
+}
+
+/// The `gate` line that fails on a red `mg-reuse-self-test`, whole (so `exit 1` cannot be dropped).
+const MST_LINE: &str =
+    "[ \"$MST\" = success ] || { echo \"mg-reuse-self-test failed: $MST\"; exit 1; }";
+
+/// `gate` has a step that carries the whole MST line before the pull_request early exit, binds `MST` to the job's
+/// result, assigns it nowhere, and has no key that could skip or mask it.
+fn gate_enforces_mst(gate: &Mapping) -> bool {
+    let Some(Value::Sequence(steps)) = key(gate, "steps") else {
+        return false;
+    };
+    steps.iter().filter_map(Value::as_mapping).any(|s| {
+        let lines = run_lines(s);
+        let Some(at) = lines.iter().position(|l| l == MST_LINE) else {
+            return false;
+        };
+        let pr_exit = lines
+            .iter()
+            .position(|l| l.starts_with("if [ \"${EVT:-}\" = pull_request ]"))
+            .unwrap_or(usize::MAX);
+        let env_ok = key(s, "env")
+            .and_then(|e| e.as_mapping().cloned())
+            .and_then(|e| e.get("MST").and_then(Value::as_str).map(str::to_string))
+            .as_deref()
+            == Some("${{ needs.mg-reuse-self-test.result }}");
+        let keys_ok = s.iter().all(|(k, _)| {
+            !k.as_str().is_some_and(|k| {
+                ["if", "continue-on-error", "shell", "defaults"]
+                    .iter()
+                    .any(|b| b.eq_ignore_ascii_case(k))
+            })
+        });
+        at < pr_exit
+            && env_ok
+            && keys_ok
+            && !lines
+                .iter()
+                .any(|l| l.starts_with("MST=") || l.starts_with("export MST"))
+    })
 }
 
 /// Part (f): the guard test runs, unmasked, in the job every event runs, and `gate` needs it AND enforces its result.
@@ -535,6 +616,9 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     let Some(Value::Mapping(job)) = jobs.get(JOB).cloned() else {
         return why.push(format!("wiring: job {JOB} is missing"));
     };
+    if key(top, "defaults").is_some() || env_masks(top) {
+        why.push("wiring: workflow level sets defaults or a shell-changing env".into());
+    }
     if key(&job, "if").as_ref().and_then(Value::as_str) != Some(IF) {
         why.push(format!(
             "wiring: {JOB} `if` is not the all-events condition"
@@ -543,9 +627,9 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
     if key(&job, "continue-on-error").is_some() {
         why.push(format!("wiring: {JOB} has continue-on-error"));
     }
-    if key(&job, "defaults").is_some() {
+    if key(&job, "defaults").is_some() || key(&job, "env").is_some() {
         why.push(format!(
-            "wiring: {JOB} sets defaults (a default shell can mask)"
+            "wiring: {JOB} sets defaults or env (a shell default or env can mask)"
         ));
     }
     let steps = match key(&job, "steps") {
@@ -569,23 +653,10 @@ fn check_wiring(top: &Mapping, why: &mut Vec<String>) {
         why.push(format!("wiring: `gate` does not need {JOB}"));
     }
     // Needing the job is not enough: `gate` must also fail on its result.
-    let gate_lines: Vec<String> = gate
-        .and_then(|g| key(g, "steps"))
-        .and_then(|s| s.as_sequence().cloned())
-        .unwrap_or_default()
-        .iter()
-        .filter_map(Value::as_mapping)
-        .flat_map(run_lines)
-        .collect();
-    let gate_scalars = gate
-        .map(|g| all_scalars(&Value::Mapping(g.clone()), &mut Vec::new()))
-        .unwrap_or_default();
-    if !gate_lines
-        .iter()
-        .any(|l| l.starts_with("[ \"$MST\" = success ] || {"))
-        || !gate_scalars
-            .iter()
-            .any(|s| s == "${{ needs.mg-reuse-self-test.result }}")
+    if !gate.is_some_and(gate_enforces_mst)
+        || gate.is_some_and(|g| {
+            key(g, "continue-on-error").is_some() || key(g, "defaults").is_some() || env_masks(g)
+        })
     {
         why.push(format!(
             "wiring: `gate` does not enforce {JOB}'s result ($MST)"
@@ -885,7 +956,7 @@ fn parser_level_bypasses_are_red() {
         ("dup-runs-on", format!("on: push\njobs:\n  t:\n    runs-on: [self-hosted, burst-x64]\n    runs-on: {sh}\n    steps: []\n"), "does not parse"),
         ("dup-jobs", format!("on: push\njobs:\n  a:\n    runs-on: [self-hosted]\n    steps: []\njobs:\n  b:\n    runs-on: {sh}\n    steps: []\n"), "does not parse"),
         ("dup-permissions", real_mut("  gate:\n", "  gate:\n    permissions:\n      contents: read\n"), "does not parse"),
-        ("case-variant-key", "on: push\njobs:\n  t:\n    Runs-On: ${{ vars.POOL }}\n    steps: []\n".to_string(), "no runs-on and no uses"),
+        ("case-variant-key", "on: push\njobs:\n  t:\n    Runs-On: ${{ vars.POOL }}\n    steps: []\n".to_string(), "runs-on expression cannot be resolved"),
         ("tab-job-name", "on: push\njobs:\n  \"a\tb\tc\":\n    runs-on: [self-hosted, Linux]\n    steps: []\n".to_string(), "spot seat"),
         ("tab-in-label", "on: push\njobs:\n  t:\n    runs-on: \"a\tb\t${{ vars.POOL }}\"\n    steps: []\n".to_string(), "spot seat"),
         ("escape-key", "on: push\njobs:\n  t:\n    \"runs\\x2Don\": [self-hosted]\n    steps: []\n".to_string(), "spot seat"),
@@ -1105,6 +1176,19 @@ fn guard_is_wired_unmasked_into_every_event() {
         ("job-If-case", job_mut(job, "if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}", "If: ${{ github.event_name == 'merge_group' }}"), "all-events condition"),
         ("gate-drops-mst-line", real_mut("          [ \"$MST\" = success ] || { echo \"mg-reuse-self-test failed: $MST\"; exit 1; }\n", ""), "does not enforce"),
         ("gate-mst-env-constant", real_mut("MST: ${{ needs.mg-reuse-self-test.result }}", "MST: success"), "does not enforce"),
+        ("multiline-if-wrapper", job_mut(job, "          timeout --foreground", "          if false; then\n          timeout --foreground"), "no unmasked step"),
+        ("function-shadow", job_mut(job, "          mkdir -p", "          timeout() { :; }\n          mkdir -p"), "no unmasked step"),
+        ("reap-exit-two-spaces", job_mut(job, "reap() { if docker rm -f \"$cname\" >/dev/null 2>&1; then :; fi; }", "reap() { exit  0; }"), "no unmasked step"),
+        ("set-two-spaces", job_mut(job, "set -euo pipefail", "set -euo pipefail\n          set  +e"), "no unmasked step"),
+        ("exec-true", job_mut(job, "          mkdir -p", "          exec true\n          mkdir -p"), "no unmasked step"),
+        ("no-run-before-test", job_mut(job, " cargo test --locked", " cargo test --no-run --locked"), "no unmasked step"),
+        ("entrypoint-true", job_mut(job, "docker run --rm --init", "docker run --rm --entrypoint true --init"), "no unmasked step"),
+        ("job-env-shellopts", job_mut(job, "    runs-on:", "    env:\n      SHELLOPTS: noexec\n    runs-on:"), "sets defaults or env"),
+        ("top-defaults-shell", real_mut("\njobs:\n", "\ndefaults:\n  run:\n    shell: \"true {0}\"\njobs:\n"), "workflow level sets defaults"),
+        ("top-Permissions-case", real_mut("\njobs:\n", "\nPermissions: write-all\njobs:\n"), "permissions wider"),
+        ("gate-continue-on-error", job_mut("gate", "    runs-on:", "    continue-on-error: true\n    runs-on:"), "does not enforce"),
+        ("gate-mst-no-exit", real_mut("echo \"mg-reuse-self-test failed: $MST\"; exit 1; }", "echo \"mg-reuse-self-test failed: $MST\"; }"), "does not enforce"),
+        ("gate-mst-assigned", real_mut("          [ \"$MST\" = success ] ||", "          MST=success\n          [ \"$MST\" = success ] ||"), "does not enforce"),
         ("not-a-need-of-gate", real_mut("needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, mg-reuse-self-test, pr-light]", "needs: [x86-main, guards, workspace-test, determinism, mg-reuse, x86-main-advisories, pr-light]"), "does not need"),
     ];
     for (n, text, needle) in cases {
