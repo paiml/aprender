@@ -70,8 +70,8 @@ jobs:
           rc=0; "$d/jq" -e . < /dev/null > /dev/null || rc=$?
           [ "$rc" = 4 ] || { echo "::error::the pinned jq exits $rc on empty input with -e, not 4"; exit 1; }
           echo "$d" >> "$GITHUB_PATH"
-      - uses: actions/checkout@v7
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         timeout-minutes: 3
       - name: Build apr (cuda)
         id: build
@@ -107,7 +107,7 @@ jobs:
           dev=$(tr -d '\0' < /proc/device-tree/model 2>/dev/null || echo unknown); mem=$(awk '/MemTotal/ { print int($2 / 1024) }' /proc/meminfo)
           printf '{"schema_version":1,"lane":"edge","sha":"%s","runner_name":"%s","started":"%s","finished":"%s","device":{"model":"%s","mem_mb":%s,"temp_c_start":null,"temp_c_end":null},"cells":[%s]}\n' \
             "$GITHUB_SHA" "$RUNNER_NAME" "$(cat "$d/started" 2>/dev/null || date -u +%FT%TZ)" "$(date -u +%FT%TZ)" "$dev" "$mem" "$cells" > "$d/receipt.json"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         timeout-minutes: 3
         with: { name: edge-receipt, path: '${{ runner.temp }}/edge/receipt.json', if-no-files-found: error }
