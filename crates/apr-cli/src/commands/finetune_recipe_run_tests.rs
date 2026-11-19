@@ -601,3 +601,27 @@ fn receipt_records_the_values_the_run_used_when_the_recipe_omits_them() {
     );
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn wgpu_run_trains_at_the_recipe_max_seq_len_not_a_hardcoded_512() {
+    assert_eq!(
+        crate::commands::finetune::wgpu_max_seq_len(Some(128)),
+        128,
+        "the recipe value reaches the WGPU pipeline"
+    );
+    assert_eq!(
+        crate::commands::finetune::wgpu_max_seq_len(None),
+        512,
+        "no recipe value: entrenar's default"
+    );
+    let src = include_str!("finetune.rs");
+    let call = src
+        .split("WgpuInstructPipeline::new(")
+        .nth(1)
+        .and_then(|rest| rest.split(");").next())
+        .expect("WgpuInstructPipeline::new call");
+    assert!(
+        !call.contains("512"),
+        "the WGPU pipeline must take max_seq_len, not a literal 512"
+    );
+}

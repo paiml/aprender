@@ -448,6 +448,7 @@ fn execute_training(
             learning_rate,
             json_output,
             corpus,
+            wgpu_max_seq_len(max_seq_len),
         );
     }
 
@@ -632,6 +633,13 @@ fn report_checkpoint_output(output_path: &Path, json_output: bool) {
     }
 }
 
+/// The sequence length the WGPU pipeline trains at: the requested value, else entrenar's default
+/// (512), the same resolution `resolve_recipe_hparams` records in the receipt.
+pub(crate) fn wgpu_max_seq_len(requested: Option<usize>) -> usize {
+    requested
+        .unwrap_or(entrenar::finetune::instruct_pipeline::InstructConfig::default().max_seq_len)
+}
+
 /// §26.11.7: GPU-only training via WgpuInstructPipeline.
 /// Loads Q4K model directly to GPU (no Transformer, no 20-min CPU dequant).
 #[cfg(feature = "training")]
@@ -647,6 +655,7 @@ fn execute_training_wgpu(
     learning_rate: f64,
     json_output: bool,
     corpus: Vec<entrenar::finetune::instruct_corpus::InstructSample>,
+    max_seq_len: usize,
 ) -> Result<()> {
     use entrenar::finetune::wgpu_pipeline::WgpuInstructPipeline;
     use entrenar::tokenizer::HfTokenizer;
@@ -744,7 +753,7 @@ fn execute_training_wgpu(
         num_layers,
         hidden,
         vocab,
-        512, // max_seq_len
+        max_seq_len,
         heads,
         kv_heads,
         inter,
