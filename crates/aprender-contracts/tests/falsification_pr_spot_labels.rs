@@ -7,7 +7,7 @@
 //!  (a) GitHub routes a job to a seat when the job's labels are a SUBSET of the seat's labels, so
 //!      a job's resolved `runs-on` must hold a label no spot seat carries (or a runner group on the
 //!      committed non-spot list). `[self-hosted]`, `[self-hosted, Linux]`, `[self-hosted, Linux,
-//!      tier2, ffmpeg]`, `{labels: [...]}` and matrix options are all judged by that rule.
+//!      pool2, ffmpeg]`, `{labels: [...]}` and matrix options are all judged by that rule.
 //!  (b) the only jobs that may route to the spot pool are the three ci.yml aggregators, and only
 //!      with their one canonical expression. They must have permissions exactly `contents: read`,
 //!      no scalar naming secrets, a token or id-token, and no checkout, cache or artifact step that
@@ -44,44 +44,35 @@ fn canonical(job: &str) -> Option<String> {
     ))
 }
 
-/// MEASURED SNAPSHOT, 2026-11-19, read-only REST (`orgs/paiml/actions/runners`, 631 burst seats):
-/// every burst seat carries exactly `Linux, burst-x64, ffmpeg, self-hosted, tier2`. `x64` and
-/// `burst-public` are added on purpose (an arch label may appear on a seat, and `burst-public` is
-/// the PR-only spot label). Compared lower-case. A snapshot, not a live read: re-measure before
-/// trusting it for a new seat family.
-const SPOT_SEAT_LABELS: [&str; 7] = [
+/// Labels a spot seat carries, as a committed dated snapshot (2026-11-19), not a live read: re-measure
+/// before trusting it for a new seat family. `x64` and `burst-public` are added on purpose (an arch
+/// label may appear on a seat, and `burst-public` is the PR-only spot label). Compared lower-case.
+/// Any label of the generic pool-class form (letters then digits, e.g. `pool2`) also counts as seat-carried, so a
+/// class label never makes a job look safe.
+const SPOT_SEAT_LABELS: [&str; 6] = [
     "self-hosted",
     "linux",
     "x64",
-    "tier2",
     "ffmpeg",
     "burst-x64",
     "burst-public",
 ];
 
-/// MEASURED SNAPSHOT, same read: org runner groups holding ZERO burst seats.
-const NON_SPOT_GROUPS: [&str; 15] = [
-    "Default",
-    "gpu-nodes",
-    "gpu-x86",
-    "aprender-reserved",
-    "gate-path-slot",
-    "rmedia-loan",
-    "mini-mac",
-    "public-build",
-    "lambda-night",
-    "aprender-only",
-    "infra-first",
-    "gate-light-shared",
-    "release-lane",
-    "demo-record",
-    "dotgithub-gate",
-];
+fn seat_carried(l: &str) -> bool {
+    let l = l.trim().to_lowercase();
+    let digits = l.trim_start_matches(|c: char| c.is_ascii_lowercase());
+    let class_label =
+        digits.len() < l.len() && !digits.is_empty() && digits.chars().all(|c| c.is_ascii_digit());
+    class_label || SPOT_SEAT_LABELS.contains(&l.as_str())
+}
+
+/// Runner groups known to hold no spot seat (same dated snapshot). Any other group is red (cannot judge).
+const NON_SPOT_GROUPS: [&str; 1] = ["Default"];
 
 /// EXTERNAL reusable calls this repo makes: the exact `uses` string. Anything else is red.
 const EXTERNAL_CALLS: [&str; 3] = [
     "paiml/.github/.github/workflows/runner-smells.yml@d768b8ac5abfa7d0038470fd38023a15323ac0aa",
-    "paiml/.github/.github/workflows/pr-gate.yml@main",
+    "paiml/.github/.github/workflows/pr-gate.yml@8289382dfd2852714a7fa14868a7545c91cd98e6",
     "paiml/.github/.github/workflows/fork-pr-closer.yml@830147e62523b292823e3134943de10265c4569e",
 ];
 /// The one `with.runs_on` an external call may pass, and which call may pass it.
@@ -143,9 +134,7 @@ fn leaves_spot(v: &Value) -> Result<(), String> {
     if ls.is_empty() {
         return Err("empty label list".into());
     }
-    let outside = ls.iter().any(|l| {
-        !l.contains("${{") && !SPOT_SEAT_LABELS.contains(&l.trim().to_lowercase().as_str())
-    });
+    let outside = ls.iter().any(|l| !l.contains("${{") && !seat_carried(l));
     if outside {
         Ok(())
     } else {
@@ -679,7 +668,7 @@ fn empty_and_missing_dir_fail() {
     assert!(judge(&d.path().join("absent")).is_err());
 }
 
-// lane 1+2 finding 1: label SUBSET routing, on the real x86-main job and on scratch workflows
+// label SUBSET routing, on the real x86-main job and on scratch workflows
 #[test]
 fn subset_label_lists_are_red() {
     let real = "runs-on: [self-hosted, Linux, X64, clean-room]";
@@ -687,13 +676,13 @@ fn subset_label_lists_are_red() {
         "[self-hosted]",
         "[self-hosted, Linux]",
         "[self-hosted, Linux, X64]",
-        "[self-hosted, Linux, tier2, ffmpeg]",
+        "[self-hosted, Linux, pool2, ffmpeg]",
         "[self-hosted, Linux, burst-x64]",
         "[SELF-HOSTED, linux]",
         "self-hosted",
         "{labels: [self-hosted, Linux]}",
         "{group: spot-pool}",
-        "{group: tier2, labels: [self-hosted]}",
+        "{group: pool2, labels: [self-hosted]}",
         "[]",
     ]
     .iter()
@@ -713,9 +702,9 @@ fn subset_label_lists_are_red() {
     }
     // a group on the non-spot list, and a label no seat carries, are fine
     for ok in [
-        "{group: gpu-nodes}",
+        "{group: Default}",
         "[self-hosted, Linux, clean-room]",
-        "[self-hosted, intel]",
+        "[self-hosted, other-pool]",
     ] {
         assert!(
             judge(dir_with(&[("a.yml", &wf(ok))]).path()).is_ok(),
@@ -792,7 +781,7 @@ fn matrix_labels_are_judged_per_option() {
     red("matrix-no-strategy", no_strategy, "literal strategy");
 }
 
-// lane 1 finding 2: non-PR triggers carry the same rule
+// non-PR triggers carry the same rule
 #[test]
 fn every_trigger_is_judged() {
     for trig in [
@@ -802,12 +791,12 @@ fn every_trigger_is_judged() {
         "issue_comment",
         "release",
     ] {
-        let w = format!("on:\n  {trig}\njobs:\n  rel:\n    permissions:\n      contents: write\n      id-token: write\n    runs-on: [self-hosted, Linux, tier2, ffmpeg]\n    steps:\n      - run: echo ${{{{ secrets.CARGO_REGISTRY_TOKEN }}}}\n");
+        let w = format!("on:\n  {trig}\njobs:\n  rel:\n    permissions:\n      contents: write\n      id-token: write\n    runs-on: [self-hosted, Linux, pool2, ffmpeg]\n    steps:\n      - run: echo ${{{{ secrets.CARGO_REGISTRY_TOKEN }}}}\n");
         red(&format!("trigger-{trig}"), &w, "can land on a spot seat");
     }
 }
 
-// lane 1+2: duplicate keys, case variants, tabs, escapes are all resolved by the parser
+// duplicate keys, case variants, tabs, escapes are all resolved by the parser
 #[test]
 fn parser_level_bypasses_are_red() {
     let sh = "[self-hosted, Linux, X64, clean-room]";
@@ -833,16 +822,16 @@ fn parser_level_bypasses_are_red() {
     }
 }
 
-// lane 1 finding 3 / lane 2 finding 4: reusable calls are judged, not trusted
+// reusable calls are judged, not trusted
 #[test]
 fn reusable_calls_are_judged() {
     let call = |body: &str| format!("on: push\njobs:\n  c:\n{body}");
     let cases = [
         ("unlisted-external", call("    uses: o/r/.github/workflows/x.yml@v1\n"), "not on the allowlist"),
         ("unpinned-lookalike", call("    uses: paiml/.github/.github/workflows/pr-gate.yml@v1\n"), "not on the allowlist"),
-        ("external-with-runs-on-hyphen", call("    uses: paiml/.github/.github/workflows/pr-gate.yml@main\n    with:\n      runs-on: '${{ vars.POOL }}'\n"), "passes a runs-on"),
-        ("external-with-runner-label", call("    uses: paiml/.github/.github/workflows/pr-gate.yml@main\n    with:\n      runner_label: x\n"), "passes a runs-on"),
-        ("external-secrets", call("    uses: paiml/.github/.github/workflows/pr-gate.yml@main\n    secrets: inherit\n"), "passes secrets"),
+        ("external-with-runs-on-hyphen", call("    uses: paiml/.github/.github/workflows/pr-gate.yml@8289382dfd2852714a7fa14868a7545c91cd98e6\n    with:\n      runs-on: '${{ vars.POOL }}'\n"), "passes a runs-on"),
+        ("external-with-runner-label", call("    uses: paiml/.github/.github/workflows/pr-gate.yml@8289382dfd2852714a7fa14868a7545c91cd98e6\n    with:\n      runner_label: x\n"), "passes a runs-on"),
+        ("external-secrets", call("    uses: paiml/.github/.github/workflows/pr-gate.yml@8289382dfd2852714a7fa14868a7545c91cd98e6\n    secrets: inherit\n"), "passes secrets"),
         ("external-smells-wrong-runs-on", call("    uses: paiml/.github/.github/workflows/runner-smells.yml@d768b8ac5abfa7d0038470fd38023a15323ac0aa\n    with:\n      runs_on: '[\"self-hosted\",\"Linux\"]'\n"), "passes a runs-on"),
         ("local-missing", call("    uses: ./.github/workflows/absent.yml\n"), "unreadable"),
         ("local-escape", call("    uses: ./.github/workflows/../../x.yml\n"), "cannot judge"),
@@ -911,7 +900,7 @@ fn only_the_three_aggregators_may_take_the_spot_expression() {
 
 #[test]
 fn moved_jobs_carry_no_checkout_cache_secret_or_write() {
-    // lane 2 finding 5: workspace-test's checkout is skipped on a pull_request; drop that skip
+    // workspace-test's checkout is skipped on a pull_request; drop that skip
     let no_skip = job_mut(
         "workspace-test",
         "github.event.pull_request.draft != true && github.event_name != 'pull_request' }}",
@@ -984,7 +973,7 @@ fn moved_jobs_carry_no_checkout_cache_secret_or_write() {
     }
 }
 
-// lane 2 finding 6: top-level permissions
+// top-level permissions
 #[test]
 fn workflow_level_permissions_are_judged() {
     for (i, p) in [
@@ -1005,7 +994,7 @@ fn workflow_level_permissions_are_judged() {
     assert!(judge(dir_with(&[("ci.yml", &ok)]).path()).is_ok());
 }
 
-// lane 2 finding 3: the guard must run on pull_request, merge_group AND push, unmasked
+// the guard must run on pull_request, merge_group AND push, unmasked
 #[test]
 fn guard_is_wired_unmasked_into_every_event() {
     let job = "mg-reuse-self-test";

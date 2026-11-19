@@ -193,7 +193,20 @@ jobs:
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
           setsid --wait bash scripts/check_ci_wait_cancel.sh
       - name: pr spot labels guard
-        run: docker run --rm -v "$GITHUB_WORKSPACE:/w:ro" -e CARGO_TARGET_DIR=/tmp/t -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -e CARGO_INCREMENTAL=0 -w /w localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cname="spot-labels-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          trap 'docker rm -f "$cname" >/dev/null 2>&1; true' EXIT INT TERM
+          reg=/mnt/nvme-raid0/cargo-ci/registry/spot-labels-guard
+          tgt=/mnt/nvme-raid0/targets/aprender-ci/spot-labels-guard
+          mkdir -p "$reg" "$tgt"
+          timeout 900 docker run --rm --init --name "$cname" --cpus 4 --memory 8g --memory-swap 8g --pids-limit 2048 \
+            -v "$GITHUB_WORKSPACE:/w:ro" -v "$reg:/usr/local/cargo/registry" -v "$tgt:/t" \
+            -e CARGO_TARGET_DIR=/t -e CARGO_BUILD_JOBS=4 -e RUST_TEST_THREADS=4 -e CARGO_INCREMENTAL=0 \
+            -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -w /w \
+            localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 \
+            cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
 
   # Noah 15:09Z (#5955): what a ready PR runs instead of x86-main. Text-only cheap checks (the x86-main steps that run
   # before "install the toolchain") and the fat_driver self-test; clean-room X64 runner, no section, no cargo build.
