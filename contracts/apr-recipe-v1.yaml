@@ -104,6 +104,24 @@ equations:
     - "A hash of a file that was not read is null, never a made-up value"
     - "A pinned data.sha256 that differs from the file's hash refuses the run"
 
+  base_formats:
+    formula: |
+      format(F) = apr          if magic(F) in {"APR\0", "APRN"}
+                  gguf         if magic(F) == "GGUF"
+                  safetensors  if u64le(F[0..8]) + 8 <= size(F) and F[8] == '{'
+                  refuse       otherwise                      # unsupported or corrupt
+      base(F) = F                          if format(F) == apr
+              = apr_import(F)              if format(F) == safetensors
+              = apr_import(F)              if format(F) == gguf and every tensor dtype in {F32, F16, BF16}
+              = refuse("quantized")        if format(F) == gguf otherwise
+    domain: base model file
+    codomain: row-major APR file | Refusal
+    invariants:
+    - "The format comes from the magic bytes, never the extension, and is logged"
+    - "A GGUF is transposed to row-major at the import boundary (LAYOUT-001/002, contracts/tensor-layout-v1.yaml); no col-major kernel is used"
+    - "A quantized GGUF is refused with its reason, never silently dequantized"
+    - "A corrupt or unsupported file is refused before any training"
+
 falsification_tests:
 # Each entry cites only tests present at this slice head.
 # Test ids are consecutive from 001 (scripts/ci/fail_fast.py ids).
@@ -137,3 +155,9 @@ falsification_tests:
   test: |
     cargo test -p apr-cli --lib -- data_pin_must_be_a_sha256 require_inputs_names_each_missing_file_then_passes_and_checks_the_pin require_inputs_refuses_a_directory_and_skips_the_pin_of_an_absent_file heldout_linked_to_the_training_file_is_refused_at_require_inputs heldout_hard_linked_to_the_training_file_is_refused_at_require_inputs sha256_matches_the_published_test_vector sha256_file_hashes_past_one_buffer a_path_that_is_not_a_regular_file_has_no_hash_and_is_not_read receipt_carries_the_contract_fields recipe_hash_changes_with_the_eval_block
   if_fails: "A receipt can name data it did not train on"
+- id: FALSIFY-APR-RECIPE-006
+  rule: the base is .apr, SafeTensors or GGUF, detected by magic bytes, and refused before training when unsupported, corrupt or quantized
+  prediction: "The base format is read from the first bytes of the file, never the extension (a SafeTensors named .bin, a GGUF named .safetensors and an APR named .gguf are each detected as what they are). A SafeTensors or GGUF base is imported to row-major APR through the importer `apr import` uses (a GGUF is transposed at that boundary, LAYOUT-001/002; no col-major kernel) and the run logs `[base] detected format=<apr|safetensors|gguf>`; a real recipe run also logs `[recipe] base format=...` before any model is loaded. A file that is none of the three, a truncated SafeTensors header, a GGUF whose header does not parse, and a GGUF with any quantized tensor (a dtype other than F32, F16 or BF16) are refused with an error naming the file; the quantized refusal states that training would dequantize silently"
+  test: |
+    cargo test -p apr-cli --lib -- format_comes_from_magic_bytes_not_the_extension unsupported_or_corrupt_files_are_refused_with_a_clear_error a_quantized_gguf_is_refused_with_its_reason_and_an_exact_one_is_not a_safetensors_base_is_imported_to_row_major_apr_and_the_format_is_named an_apr_base_is_used_in_place
+  if_fails: "A base the pipeline cannot read fails deep inside training under a message naming a format the caller never gave, or a quantized GGUF is trained on silently dequantized values"

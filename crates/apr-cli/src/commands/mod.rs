@@ -73,6 +73,8 @@ pub(crate) mod explain_token_lint;
 pub(crate) mod export;
 #[cfg(feature = "training")]
 pub(crate) mod finetune;
+#[cfg(feature = "training")]
+pub(crate) mod finetune_base;
 pub(crate) mod flow;
 pub(crate) mod fp8_classifier;
 pub(crate) mod fp8_lint;
