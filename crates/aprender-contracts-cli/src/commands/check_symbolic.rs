@@ -347,9 +347,23 @@ fn parse_defs(formula: &str) -> Vec<Clause> {
         .collect()
 }
 
-/// Drop a trailing ` (comment)` and a ` for all ...` / ` for ...` suffix.
+/// Drop a leading `Label: ` (letters, spaces, `_` only, so `F(x): ..` and `x1: a = b` are untouched).
+fn strip_label(s: &str) -> &str {
+    match s.split_once(": ") {
+        Some((l, rest))
+            if !l.is_empty()
+                && l.chars()
+                    .all(|c| c.is_ascii_alphabetic() || c == ' ' || c == '_') =>
+        {
+            rest.trim()
+        }
+        _ => s,
+    }
+}
+
+/// Drop a leading `Label: `, a trailing ` (comment)` and a ` for all ...` / ` for ...` suffix.
 fn strip_prose(s: &str) -> String {
-    let mut s = s.trim().to_string();
+    let mut s = strip_label(s.trim()).to_string();
     if s.ends_with(')') {
         if let Some(i) = s.rfind(" (") {
             // A parenthetical after an operator or `=` is an operand, not a comment: `F(x) = (x + 1)`.
@@ -782,6 +796,85 @@ mod tests {
             ("F(x) = x", "F(x) = x"),
         ] {
             assert_eq!(strip_prose(input), want, "{input}");
+        }
+    }
+
+    const TIME: &str = "t(n) = t0 + n * timestep_secs";
+    const STEP: &str = "step_count(n) = n; dt_sub(m) = timestep_secs / m";
+
+    #[test]
+    fn label_prefix_case_table() {
+        for (input, want) in [
+            ("Monotonic: t(n+1) > t(n) for all n", "t(n+1) > t(n)"),
+            ("Substep multiplier: a = b", "a = b"),
+            ("F(x) = x", "F(x) = x"),
+            ("F(x: 1) = x", "F(x: 1) = x"),
+            ("x1: a = b", "x1: a = b"),
+        ] {
+            assert_eq!(strip_prose(input), want, "{input}");
+        }
+    }
+
+    #[test]
+    fn typed_time_and_step_forms_must_parse() {
+        for (f, inv) in [
+            (TIME, "Monotonic: t(n+1) > t(n) for all n"),
+            (TIME, "t(n+1) - t(n) = timestep_secs"),
+            (TIME, "t(0) = t0"),
+            (STEP, "step_count(n+1) = step_count(n) + 1"),
+            (STEP, "dt_sub(m) * m = timestep_secs"),
+        ] {
+            assert!(
+                matches!(check_invariant(f, inv), Verdict::Holds { .. }),
+                "{inv}"
+            );
+        }
+    }
+
+    #[test]
+    fn planted_wrong_time_and_step_formulas_are_violated() {
+        assert!(matches!(
+            check_invariant("t(n) = t0 - n * timestep_secs", "Monotonic: t(n+1) > t(n)"),
+            Verdict::Violated { .. }
+        ));
+        assert!(matches!(
+            check_invariant(
+                "step_count(n) = 2 * n",
+                "step_count(n+1) = step_count(n) + 1"
+            ),
+            Verdict::Violated { .. }
+        ));
+    }
+
+    #[test]
+    fn untyped_time_and_step_prose_must_not_parse() {
+        for inv in [
+            "steps_until(target) returns correct step count",
+            "substep_multiplier partitions steps for Heijunka scheduling",
+            "Time strictly increases per step",
+            "Substep multiplier: \u{394}t_sub = \u{394}t / substep_multiplier",
+        ] {
+            assert!(
+                matches!(check_invariant(TIME, inv), Verdict::Unparsed { .. }),
+                "{inv}"
+            );
+        }
+    }
+
+    #[test]
+    fn simular_contracts_hold_three_each() {
+        for f in ["simulation-determinism-v1.yaml", "simulation-step-v1.yaml"] {
+            let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../../contracts/simular")
+                .join(f);
+            let c = parse_contract(&p).expect("contract");
+            let holds = c
+                .equations
+                .values()
+                .flat_map(|e| e.invariants.iter().map(|i| check_invariant(&e.formula, i)))
+                .filter(|v| matches!(v, Verdict::Holds { .. }))
+                .count();
+            assert_eq!(holds, 3, "{f}");
         }
     }
 }

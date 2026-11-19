@@ -7,13 +7,13 @@ metadata:
   - 'Fujimoto (2000) Parallel and Distributed Simulation Systems'
 equations:
   step_monotonicity:
-    formula: '∀ t: time(step(t+1)) > time(step(t))'
+    formula: 'time(t) = t0 + t * timestep_secs; step_count(n) = n'
     domain: t ∈ N, simulation state S_t
     codomain: S_{t+1} with updated clock
     invariants:
-    - Time strictly increases per step
-    - step_count increments by 1
-    - 'Substep multiplier: Δt_sub = Δt / substep_multiplier'
+    - time(t+1) > time(t)
+    - step_count(n+1) = step_count(n) + 1
+    - time(t+1) - time(t) = timestep_secs
     preconditions:
     - t < max_steps
     - timestep_secs > 0.0
