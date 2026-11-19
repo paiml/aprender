@@ -344,7 +344,7 @@ jobs:
     needs: [mg-reuse]
     # One check set per repo (decision: #7272 issuecomment-7007305270): every job that runs on a push to main also runs on a pull_request,
     # on the same runner pool, matrix and features. A draft owes nothing until ready_for_review.
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     # every event, merge_group included, takes the certified clean-room seats: [self-hosted, Linux, X64, clean-room]
     runs-on: [self-hosted, Linux, X64, clean-room]
     # merge_group: 2 x p95 (8.9 min, 30 green queue runs, 2026-10-24) + 20 min for a cold image pull (the Set-up-runner pull has measured 20 min, sections.yml:94); the 240 stays for push.
@@ -612,7 +612,7 @@ jobs:
 
   x86-main-advisories:
     needs: [mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, X64, clean-room]
     timeout-minutes: 30
     permissions:
@@ -692,7 +692,7 @@ jobs:
     # One check set per repo (decision: #7272 issuecomment-7007305270): determinism runs on a pull_request exactly
     # as on a push to main, so a red determinism-compare is found before the merge. This reverses the 2026-10-17 rule that
     # kept it off PR heads; the gate reads DET:determinism-compare on every event (scripts/check_determinism_wait.sh W10).
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room, ARM64]
     timeout-minutes: 120
     # T42: start only once x86-main has concluded. The ARM64 raster takes about a minute; before
@@ -777,7 +777,7 @@ jobs:
   # (mgshape) is RED until this job needs it and keys its if on receipt-judge.outputs.ok.
   workspace-test-ran:
     needs: [workspace-test-shard]
-    if: ${{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room]
     timeout-minutes: 5
     steps:
@@ -797,7 +797,7 @@ jobs:
   workspace-test-shard:
     # T43b: a merge_group entry whose tree equals a green PR run's skips the shards (mg-reuse-wt); anything else runs them
     needs: [mg-reuse-wt, mg-reuse]
-    if: ${{ !cancelled() && needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
+    if: ${{ !cancelled() && needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     # same lane as x86-main: the plain clean-room seats on every event
     runs-on: [self-hosted, Linux, X64, clean-room]
     # pull_request/push: >= section 150 (sections.yml:112) + the untimed ~20-min image pull on the full-tier fallback. merge_group is DELIBERATELY

@@ -74,11 +74,13 @@ function tokenize(s,   i, c, n, a, j) {
     sub(/ +$/, "", a); t[++nt] = "A:" a
   }
 }
-function atom(a,   lit, eq) {
+function atom(a,   lit, eq, la) {
   if (a == "") { err = "empty term"; return "U" }
-  if (a ~ /event_name/) {
-    if (a !~ /^github\.event_name *(==|!=) *\047[A-Za-z_]+\047$/) { err = "github.event_name used in a form the check does not understand: " a; return "U" }
-    match(a, /\047[A-Za-z_]+\047/); lit = substr(a, RSTART + 1, RLENGTH - 2); eq = (lit == ev)
+  # GitHub compares strings and property names case-insensitively ('PUSH' == 'push' is true), so judge on the lower-cased term.
+  la = tolower(a)
+  if (la ~ /event_name/) {
+    if (la !~ /^github\.event_name *(==|!=) *\047[a-z_]+\047$/) { err = "github.event_name used in a form the check does not understand: " a; return "U" }
+    match(la, /\047[a-z_]+\047/); lit = substr(la, RSTART + 1, RLENGTH - 2); eq = (lit == ev)
     if (a ~ /!=/) return eq ? "F" : "T"
     return eq ? "T" : "F"
   }
@@ -103,7 +105,7 @@ function fold(s,   m) { # function calls become one U term; one that names githu
   gsub(/[$][{][{]/, "", s); gsub(/[}][}]/, "", s)
   while (match(s, /[A-Za-z_][A-Za-z0-9_]*\([^()]*\)/)) {
     m = substr(s, RSTART, RLENGTH)
-    if (m ~ /event_name/) err = "a call names github.event_name: " m
+    if (tolower(m) ~ /event_name/) err = "a call names github.event_name: " m
     s = substr(s, 1, RSTART - 1) "CALL" substr(s, RSTART + RLENGTH)
   }
   return s
@@ -383,6 +385,21 @@ jobs:
 "
   tf "!cancelled() with a draft clause is green" 0 ci.yml "$H
   a: {runs-on: x, if: \"!cancelled() && github.event.pull_request.draft != true\", steps: []}
+"
+  tf "upper-case event_name literal 'PUSH' is judged as push, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'PUSH'\", steps: []}
+"
+  tf "mixed-case literal != 'Pull_Request' is judged as pull_request, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name != 'Pull_Request'\", steps: []}
+"
+  tf "upper-case property github.EVENT_NAME == 'push' is judged, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"github.EVENT_NAME == 'push'\", steps: []}
+"
+  tf "mixed-case literal == 'Pull_Request' is green" 0 ci.yml "$H
+  a: {runs-on: x, if: \"github.event_name == 'PUSH' || github.event_name == 'Pull_Request'\", steps: []}
+"
+  tf "a call naming github.EVENT_NAME is unjudgeable, RED" 1 ci.yml "$H
+  a: {runs-on: x, if: \"contains(fromJSON('[\\\"push\\\"]'), github.EVENT_NAME)\", steps: []}
 "
   tf "a call naming github.event_name is unjudgeable, RED" 1 ci.yml "$H
   a: {runs-on: x, if: \"contains(fromJSON('[\\\"push\\\"]'), github.event_name)\", steps: []}

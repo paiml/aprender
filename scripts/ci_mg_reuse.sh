@@ -576,6 +576,10 @@ STUB
 
   # The wiring: each skip and each refusal is where ci.yml decides it.
   job() { awk -v j="  $1:" '$0 == j {f = 1; next} f && /^  [A-Za-z0-9_-]+:$/ {exit} f' "$wf" 2> /dev/null; }
+  # the same-repo fork guard every self-hosted PR-run job carries (#7314); FORKE is the same text as an ERE for the sed mutants
+  qt="'"; fk="github.event.pull_request.head.repo.full_name == github.repository"
+  FORKG="(github.event_name != ${qt}pull_request${qt} || ${fk})"
+  FORKE="\\(github.event_name != ${qt}pull_request${qt} \\|\\| ${fk}\\)"
   wire() { # wire JOB FIXED_STRING
     # Capture, then a here-string: never pipe into grep -q here. grep -q exits on its first
     # match, job's awk takes SIGPIPE (141), and under this file's pipefail the pipeline is
@@ -591,21 +595,21 @@ STUB
   wire mg-reuse 'PBEFORE: ${{ github.event.before }}'
   wire mg-reuse-self-test 'bash scripts/ci_mg_reuse.sh --self-test'
   wire x86-main 'needs: [mg-reuse]'
-  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true }}"
+  wire x86-main "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   wire determinism 'needs: [mg-reuse, x86-main]'  # T42: determinism also waits on x86-main
-  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && github.event.pull_request.draft != true }}"
+  wire determinism "if: \${{ !cancelled() && needs.mg-reuse.outputs.det != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   # Q6 quorum, C324: mac-check is LAB and left ci.yml (nightly.yml now). The `mac` key is
   # still computed above; ci.yml must neither run the job nor export the key.
   if [ -z "$(job mac-check)" ]; then pass=$((pass + 1)); else
     fail=$((fail + 1)); echo "FAIL wiring: ci.yml runs mac-check, a LAB job (Q6 quorum, C324)"; fi
   if grep -qF 'outputs.mac' <<<"$(job mg-reuse)"; then
     fail=$((fail + 1)); echo "FAIL wiring: mg-reuse still exports mac, which no ci.yml job reads"; else pass=$((pass + 1)); fi
-  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && github.event.pull_request.draft != true }}"
+  wire x86-main-advisories "if: \${{ !cancelled() && needs.mg-reuse.outputs.x86 == '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   wire x86-main-advisories "github.event.pull_request.draft != true }}"
-  wire workspace-test-shard "needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}"
+  wire workspace-test-shard "needs.mg-reuse-wt.outputs.wt != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   # #7298: the push arm's `wt` comes from mg-reuse, so the shard, the artifact download and the Sigma step are skipped on it
   # too; workspace-test accepts wt=1 only from a job that succeeded. Without these rows a drifted `if` would read as green.
-  wire workspace-test-shard "needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}"
+  wire workspace-test-shard "needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
   # the download step and the Sigma step each carry the clause: exactly two lines in the workspace-test job
   wtc=$(job workspace-test); wtc=$(grep -cF "if: \${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}" <<<"$wtc") || wtc=0
   if [ "$wtc" -eq 2 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: workspace-test has $wtc (want 2) steps skipped on needs.mg-reuse.outputs.wt"; fi
@@ -801,7 +805,7 @@ STUB
     fail=$((fail + 1)); echo "FAIL mutant mgshape-unreadable: an unreadable workflow passed green (fails open)"; fi
   mgmut mg-if-old-merge_group "mg-reuse if names merge_group" "s/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/    if: github.event_name == 'merge_group' || (github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main')/"
   mgmut mg-if-removed-string-elsewhere "is not the push-only key" "/^    if: github.event_name == 'push' && github.ref == 'refs\/heads\/main'/{s/.*/    # if: github.event_name == 'push' \&\& github.ref == 'refs\/heads\/main'/}"
-  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && github.event.pull_request.draft != true \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
+  mgmut x86-main-if-loses-cancelled "job x86-main needs mg-reuse but its if lacks" "s/^    if: \\$\{\{ !cancelled\(\) && needs.mg-reuse.outputs.x86 != '1' && ${FORKE} && github.event.pull_request.draft != true \}\}/    if: \${{ needs.mg-reuse.outputs.x86 != '1' }}/"
   mgmut determinism-if-loses-cancelled "job determinism needs mg-reuse but its if lacks" '/^  determinism:$/,/^    runs-on:/{s/^    if: \$\{\{ !cancelled\(\) && /    if: ${{ /}'
   mgmut x86-main-needs-lookalike "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{s/^    needs: \[mg-reuse\]$/    needs: [mg-reuse-self-test]/}'
   mgmut x86-main-drops-needs "job x86-main no longer needs mg-reuse" '/^  x86-main:$/,/^    if:/{/^    needs: \[mg-reuse\]$/d}'

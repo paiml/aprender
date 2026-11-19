@@ -49,7 +49,29 @@ section_result() {
   sed -E "s/^${TS} section [^:]+: ([a-z]+) in [0-9]+s\$/\"\1\"/" <<< "$lines"
 }
 
+
+# pr_facts REPO PR-JSON: the PR facts as JSON. `draft` is the PR's own boolean, and ONLY a JSON boolean: a missing, null,
+# string ("true") or number value is null here, and the decision (C2-draft: draft == false) refuses null. It is never `(.draft == true)`,
+# which would read an unreadable draft as "not a draft".
+pr_facts() {
+  jq -c --arg repo "$1" '{number: .number, merged: (.merged == true), merge_commit_sha: .merge_commit_sha, base_ref: .base.ref, head_ref: .head.ref,
+    is_fork: ((.head.repo.full_name // "") != $repo), head_repo: (.head.repo.full_name // null),
+    draft: (if (.draft | type) == "boolean" then .draft else null end), head_sha: .head.sha}' <<< "$2"
+}
+
+# run_facts ID NEWEST RUNS-JSON: the cited run's facts. Freshness (C6) is judged from `created_at`, the run's creation time, which a
+# re-run (run_attempt > 1) never resets. `run_started_at` IS reset by a re-run, so it would let an old run pass the 24 h gate: it is not read.
+run_facts() {
+  jq -c --argjson id "$1" --argjson nw "$2" '.workflow_runs[] | select(.id == $id)
+  | {id: .id, event: .event, path: .path, head_sha: .head_sha, head_branch: .head_branch, status: .status, conclusion: .conclusion, newest_id: $nw,
+     run_attempt: .run_attempt, created_epoch: (.created_at | fromdateiso8601)}' <<< "$3"
+}
+
 case "${1-}" in
+  --derive-pr-facts) case "${3-}" in *..*) echo "facts: refusing a path with \"..\"" >&2; exit 1 ;; esac  # bashrs SEC010
+    [ -r "${3-}" ] && [ -n "${2-}" ] || die "usage: --derive-pr-facts REPO FILE"; pr_facts "$2" "$(< "$3")"; exit $? ;;
+  --derive-run-facts) case "${2-}" in *..*) echo "facts: refusing a path with \"..\"" >&2; exit 1 ;; esac  # bashrs SEC010
+    [ -r "${2-}" ] && [[ ${3-} =~ ^[0-9]+$ ]] && [[ ${4-} =~ ^[0-9]+$ ]] || die "usage: --derive-run-facts FILE ID NEWEST"; run_facts "$3" "$4" "$(< "$2")"; exit $? ;;
   --parse-stamp-log) case "${2-}" in *..*) echo "facts: refusing a log path with \"..\"" >&2; exit 1 ;; esac  # bashrs SEC010: refuse the path, never read it
     [ -r "${2-}" ] || die "no readable log file"; stamp_from_log "$(< "$2")"; exit $? ;;
   --parse-section-log) case "${2-}" in *..*) echo "facts: refusing a log path with \"..\"" >&2; exit 1 ;; esac  # bashrs SEC010
@@ -88,8 +110,7 @@ h=$(jq -r '.head.sha // empty' <<< "$prj")
 # base_ref and head_ref come from the PR object, not from the run: a run's own PR list is computed live from OPEN
 # PRs and is empty after the merge, so it can never bind a run to a merged PR. What survives the merge is (a) the PR's
 # own head.sha and base.ref, read here, and (b) the stamp the run recorded (the base and head of its test merge).
-pr=$(jq -c --arg repo "$repo" '{number: .number, merged: (.merged == true), merge_commit_sha: .merge_commit_sha, base_ref: .base.ref, head_ref: .head.ref,
-  is_fork: ((.head.repo.full_name // "") != $repo), head_repo: (.head.repo.full_name // null), draft: (.draft == true), head_sha: .head.sha}' <<< "$prj") || die "PR facts unreadable"
+pr=$(pr_facts "$repo" "$prj") || die "PR facts unreadable"
 
 # H's ci.yml pull_request runs (1 call): the newest by id, and the newest success to cite
 runs=$(gh api "repos/$repo/actions/workflows/ci.yml/runs?head_sha=$h&event=pull_request&per_page=100" 2> /dev/null) || die "run list read failed"
@@ -98,9 +119,7 @@ newest=$(jq -r '[.workflow_runs[]? | select(.head_sha == "'"$h"'")] | map(.id) |
 cite=$(jq -r '[.workflow_runs[]? | select(.head_sha == "'"$h"'" and .conclusion == "success")] | map(.id) | max // empty' <<< "$runs")
 [ -n "$newest" ] || die "no pull_request run on $h"
 rid="${cite:-$newest}"
-run=$(jq -c --argjson id "$rid" --argjson nw "$newest" '.workflow_runs[] | select(.id == $id)
-  | {id: .id, event: .event, path: .path, head_sha: .head_sha, head_branch: .head_branch, status: .status, conclusion: .conclusion, newest_id: $nw,
-     started_epoch: (.run_started_at | fromdateiso8601)}' <<< "$runs") || die "run object unreadable"
+run=$(run_facts "$rid" "$newest" "$runs") || die "run object unreadable"
 
 jobsj=$(gh api "repos/$repo/actions/runs/$rid/jobs?per_page=100&filter=latest" 2> /dev/null) || die "job list read failed"
 jobs=$(jq -c '[.jobs[]? | {name: .name, conclusion: .conclusion, run_id: .run_id, head_sha: .head_sha}]' <<< "$jobsj") || die "job list unreadable"

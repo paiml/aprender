@@ -21,7 +21,7 @@
 #   stamp{sha tree base head}  (MANDATORY: what the PR run recorded of its test merge commit M; null refuses)
 #   m_derived{tree base head}|null (re-derived from M's own object; null when M is not fetchable, and null is refused)
 #   expect_shards  runs_complete
-#   run{id event path head_sha head_branch status conclusion newest_id started_epoch jobs_total sov_test("success"|...|null: read from the run's x86-main log) jobs[{name conclusion run_id head_sha}]}
+#   run{id event path head_sha head_branch status conclusion newest_id created_epoch jobs_total sov_test("success"|...|null: read from the run's x86-main log) jobs[{name conclusion run_id head_sha}]}
 #   paths[] (B..S changed paths)  now
 #
 # C1 push to refs/heads/main, one parent B, before == B.   C2 S bound to a merged same-repo non-draft PR.
@@ -96,7 +96,7 @@ def c3a: # an absent or non-object stamp makes every field check below false, so
   chk("C4-sov-test"; .run.sov_test == "success"), # R-C4SOV
   chk("C5-paths-judgeable"; (.paths | type == "array" and length > 0) and all(.paths[]; type == "string" and length > 0 and (test("^/|\\.\\.|\"|\\\\|\\n") | not))), # R-C5JUDGE
   chk("C5-no-gate-path"; all(.paths[]; gatepath | not)), # R-C5GATE
-  chk("C6-fresh"; (.now | isint) and (.run.started_epoch | isint) and (.now - .run.started_epoch) >= 0 and (.now - .run.started_epoch) <= 86400) # R-C6
+  chk("C6-fresh"; (.now | isint) and (.run.created_epoch | isint) and (.now - .run.created_epoch) >= 0 and (.now - .run.created_epoch) <= 86400) # R-C6
 ]
 | map(select(.[1] | not))
 | if length == 0 then "ok" else .[0][0] end
@@ -158,7 +158,7 @@ base_facts() {
        pr: {number: 7001, merged: true, merge_commit_sha: $s, base_ref: "main", head_ref: "feat/x", is_fork: false, head_repo: "paiml/aprender", draft: false, head_sha: $h},
        stamp: {sha: $m, tree: $t, base: $b, head: $h}, m_derived: {tree: $t, base: $b, head: $h}, expect_shards: 4, runs_complete: true,
        run: {id: 900, event: "pull_request", path: ".github/workflows/ci.yml", head_sha: $h, status: "completed", conclusion: "success",
-             newest_id: 900, started_epoch: 1000000, head_branch: "feat/x", sov_test: "success", jobs_total: ($jobs | length), jobs: $jobs},
+             newest_id: 900, created_epoch: 1000000, head_branch: "feat/x", sov_test: "success", jobs_total: ($jobs | length), jobs: $jobs},
        paths: ["crates/aprender-core/src/lib.rs", "docs/notes.md"], now: 1003600}'
 }
 
@@ -231,6 +231,10 @@ self_test() {
   row "C2 fork head (repo gone)" no C2-fork '.pr.head_repo=null'
   row "C2 draft PR" no C2-draft '.pr.draft=true'
   row "C2 draft flag missing" no C2-draft 'del(.pr.draft)'
+  row "C2 draft flag null" no C2-draft '.pr.draft=null'
+  row "C2 draft flag the string true" no C2-draft '.pr.draft="true"'
+  row "C2 draft flag the string false" no C2-draft '.pr.draft="false"'
+  row "C2 draft flag a number 0" no C2-draft '.pr.draft=0'
   row "C2 head sha malformed" no C2-head-sha '.pr.head_sha="abc"'
 
   # ---- C3
@@ -338,12 +342,13 @@ self_test() {
   row "C5 empty path string" no C5-paths-judgeable '.paths += [""]'
 
   # ---- C6
-  row "C6 run completed 86401 s ago" no C6-fresh '.now = 1000000 + 86401'
-  row "C6 run completed in the future" no C6-fresh '.run.started_epoch = 1003601'
+  row "C6 run created 86401 s ago" no C6-fresh '.now = 1000000 + 86401'
+  row "C6 run created in the future" no C6-fresh '.run.created_epoch = 1003601'
+  row "C6 re-run: a fresh run_started_at cannot rescue a run created 86401 s ago" no C6-fresh '.now = 1000000 + 86401 | .run.run_attempt = 2 | .run.run_started_at = 1086000'
   row "C6 now missing" no F-shape 'del(.now)'
   row "C6 now a string" no C6-fresh '.now="1003600"'
-  row "C6 completion time a string" no C6-fresh '.run.started_epoch="2026-11-19"'
-  row "C6 completion time missing" no C6-fresh 'del(.run.started_epoch)'
+  row "C6 creation time a string" no C6-fresh '.run.created_epoch="2026-11-19"'
+  row "C6 creation time missing" no C6-fresh 'del(.run.created_epoch)'
 
   # ---- first unproven condition wins (order)
   row "order: C1 before C4" no C1-event '.event="pull_request" | .run.conclusion="failure"'

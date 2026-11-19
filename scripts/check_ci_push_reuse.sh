@@ -440,7 +440,7 @@ want "X4 ci_mg_reuse.sh --self-test (verdict rows incl. push, job wiring) is gre
 FACTS="$ROOT/scripts/ci_push_reuse_facts.sh"
 want "Y1 the facts reader never derives a fact from workflow text (no tier_reuse, no grep of ci.yml for receipt-judge)" 0 \
      "$(grep -cE 'tier_reuse|grep .*receipt-judge' "$FACTS")"
-want "Y2 C6 reads the run's start (run_started_at), not updated_at" "1:0" "$(grep -c 'run_started_at' "$FACTS"):$(grep -c 'updated_at' "$FACTS")"
+want "Y2 C6 reads the run's creation (created_at, which a re-run never resets), never run_started_at (a re-run resets it) or updated_at" "1:0:0" "$(grep -c 'created_epoch: (.created_at | fromdateiso8601)' "$FACTS"):$(grep -c 'run_started_at | fromdateiso8601' "$FACTS"):$(grep -c 'updated_at' "$FACTS")"
 want "Y3 the facts carry the PR own base_ref and head_ref, the run head_branch and sov_test; never run.pull_requests (empty after the merge)" "1:1:1:1:0" "$(grep -c "base_ref: " "$FACTS"):$(grep -c "head_ref: " "$FACTS"):$(grep -c "head_branch: " "$FACTS"):$(grep -c "sov_test" "$FACTS" | sed "s/^[2-9].*/1/;s/^1[0-9].*/1/"):$(grep -c "pull_requests" "$FACTS")"
 want "Y4 the stamp log is read whole, a failed read is a refusal, and one stamp line is required" 3 \
      "$(grep -cE 'stamp job log read failed|has \$nstamps stamp lines|stamp and an unavailable line' "$FACTS")"
@@ -472,6 +472,49 @@ for fl in --repo --sha --before --ref --event --now; do
   RC=0; timeout 10 bash "$FACTS" --repo a/b --sha 0 --before 0 --ref r --event e "$fl" >/dev/null 2>&1 || RC=$?
   want "Y19 $fl as the LAST flag with no value exits 2" 2 "$RC"
 done
+
+# -- Z: round 3 of #7314 (fail-closed facts, fork guard on every PR-run self-hosted job, the --now wiring)
+# Z1-Z8: the facts reader's draft and freshness derivation, on saved API objects (no network).
+ZP="$T/zpr.json"
+zpr() { printf '%s' "$1" > "$ZP"; bash "$FACTS" --derive-pr-facts o/r "$ZP" 2>&1; }
+ZBASE='"number":7,"merged":true,"merge_commit_sha":"a","base":{"ref":"main"},"head":{"ref":"f","sha":"b","repo":{"full_name":"o/r"}}'
+want "Z1 draft false reads false" "false" "$(zpr "{$ZBASE,\"draft\":false}" | jq -c '.draft')"
+want "Z2 draft true reads true" "true" "$(zpr "{$ZBASE,\"draft\":true}" | jq -c '.draft')"
+want "Z3 a missing draft reads null (the decision refuses), never false" "null" "$(zpr "{$ZBASE}" | jq -c '.draft')"
+want "Z4 a null draft reads null" "null" "$(zpr "{$ZBASE,\"draft\":null}" | jq -c '.draft')"
+want "Z5 the string \"true\" reads null" "null" "$(zpr "{$ZBASE,\"draft\":\"true\"}" | jq -c '.draft')"
+want "Z5b the number 0 reads null" "null" "$(zpr "{$ZBASE,\"draft\":0}" | jq -c '.draft')"
+ZR="$T/zruns.json"
+zrun() { printf '{"workflow_runs":[{"id":5,"event":"pull_request","path":"p","head_sha":"h","head_branch":"b","status":"completed","conclusion":"success","run_attempt":%s,"created_at":"2026-11-18T10:00:00Z","run_started_at":"%s"}]}' "$1" "$2" > "$ZR"
+  bash "$FACTS" --derive-run-facts "$ZR" 5 5 2>&1; }
+want "Z6 the run's freshness is its created_at (2026-11-18T10:00:00Z = 1794996000)" "1794996000" "$(zrun 1 2026-11-18T10:00:00Z | jq -r '.created_epoch')"
+want "Z7 a re-run (attempt 3) with a run_started_at of a day later does NOT move the freshness time" "1794996000" "$(zrun 3 2026-11-19T09:00:00Z | jq -r '.created_epoch')"
+want "Z8 the run facts carry no started_epoch" "null" "$(zrun 3 2026-11-19T09:00:00Z | jq -r '.started_epoch')"
+printf '{"workflow_runs":[{"id":5,"run_attempt":1,"run_started_at":"2026-11-18T10:00:00Z"}]}' > "$ZR"
+RC=0; bash "$FACTS" --derive-run-facts "$ZR" 5 5 > /dev/null 2>&1 || RC=$?
+want "Z9 a run with no created_at is unreadable (non-zero), never a fresh run" "1" "$([ "$RC" -ne 0 ] && echo 1 || echo 0)"
+# Z10-Z14: every self-hosted job that a pull_request now runs carries the fork guard, and removing it from any one is caught.
+FORKG="(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
+FORKW="github.event.pull_request.head.repo.full_name == github.repository"
+jobif() { awk -v J="$2:" '/^  [A-Za-z0-9_-]+:$/ {j = $1} j == J && /^    if:/ {print; exit}' "$1"; }
+forkok() { # forkok FILE JOB: 1 when the job's own if: carries the fork guard
+  case "$(jobif "$1" "$2")" in *"$FORKW"*) echo 1 ;; *) echo 0 ;; esac; }
+for j in x86-main x86-main-advisories determinism workspace-test-shard workspace-test-ran; do
+  want "Z10 $j carries the fork guard in its own if:" 1 "$(forkok "$CI" "$j")"
+  sed "/^  $j:\$/,/^    runs-on:/s/ \&\& (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)//; /^  $j:\$/,/^    runs-on:/s/ \&\& github.event.pull_request.head.repo.full_name == github.repository//" "$CI" > "$T/zf-$j.yml"
+  want "Z11 mutant: $j without the fork guard is caught" 0 "$(forkok "$T/zf-$j.yml" "$j")"
+done
+want "Z12 control: runner-smells keeps the same guard form (the one the others copy)" 1 "$(forkok "$CI" runner-smells)"
+# a fork PR still fails closed: the verdict jobs read the skipped heavy jobs as red (workspace-test: shard result skipped; ci / gate: no sov.gate result)
+want "Z13 workspace-test refuses a non-success shard result (a fork PR skips the shards)" 1 "$(grep -cF '[ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result' "$CI")"
+want "Z14 ci / gate reads a missing sov.gate result as red" 1 "$(grep -cF 'ci / gate: section result is' "$CI")"
+# Z15: --now is passed to the facts reader (deleting it must turn this red; the reader itself refuses without it)
+NOWARG='--now "$(date +%s)"'
+want "Z15 ci.yml passes $NOWARG to ci_push_reuse_facts.sh" 1 "$(grep -cF "ci_push_reuse_facts.sh --repo \"\$REPO\" --sha \"\$GITHUB_SHA\" --before \"\$PBEFORE\" --ref \"\$GITHUB_REF\" --event \"\$EVT\" $NOWARG" "$CI")"
+sed 's| --now "$(date +%s)"||' "$CI" > "$T/znow.yml"
+want "Z16 mutant: ci.yml without --now is caught" 0 "$(grep -cF "ci_push_reuse_facts.sh --repo \"\$REPO\" --sha \"\$GITHUB_SHA\" --before \"\$PBEFORE\" --ref \"\$GITHUB_REF\" --event \"\$EVT\" $NOWARG" "$T/znow.yml")"
+RC=0; bash "$FACTS" --repo a/b --sha 0000000000000000000000000000000000000000 --before 0 --ref r --event push > /dev/null 2>&1 || RC=$?
+want "Z17 the facts reader without --now refuses (exit 1)" 1 "$RC"
 
 if [ "$fails" -eq 0 ]; then
   echo "check_ci_push_reuse: OK - a push reuses only a merge-queue success on its own sha, or the PR's own green run when scripts/ci_push_reuse.sh C1-C6 hold (workspace-test, x86-main, determinism: only a real run); every doubt runs the jobs"

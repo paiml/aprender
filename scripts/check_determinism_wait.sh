@@ -92,7 +92,11 @@ check() {   # check <ci.yml>: rc 0 when W1-W5 hold
     # W10 determinism runs on a PR head exactly as on a push to main (#7272, one check set per repo): the job's if: must
     # NOT name pull_request, and the gate must NOT skip DET:determinism-compare on any event (a skip there reads a
     # job a PR no longer runs as covered, which is how a red determinism reached main).
-    grep -q -F "event_name != 'pull_request'" <<<"$(printf '%s\n' "$j" | grep -E '^    if:')" &&   # m:nopr
+    # The ONE allowed mention is the same-repo fork guard (a fork PR never runs self-hosted jobs; a non-fork PR runs it, #7314): it is cut out
+    # whole before the test, so any OTHER `event_name != 'pull_request'` (a guard that turns the job off for every PR) is still RED.
+    forkg="(github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)"
+    ifl="$(printf '%s\n' "$j" | grep -E '^    if:')"; ifl="${ifl//"$forkg"/}"
+    grep -q -F "event_name != 'pull_request'" <<<"$ifl" &&   # m:nopr
         { printf 'FAIL  W10 the determinism job is event-guarded off a pull_request head (it must run on a PR as on a push to main)\n'; bad=1; }
     # W10c a draft owes no heavy job (x86-main and the shards carry the same clause): determinism must skip a draft.
     grep -q -F "github.event.pull_request.draft != true" <<<"$(printf '%s\n' "$j" | grep -E '^    if:')" ||   # m:nodraft
