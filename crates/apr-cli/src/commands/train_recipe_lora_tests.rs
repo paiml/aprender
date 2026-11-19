@@ -70,8 +70,8 @@ fn only_values_the_loop_ignores_are_reported_as_not_applied() {
         r.lora.not_applied(),
         [
             "lora.dropout",
-            "lora.target_modules",
-            "training.weight_decay"
+            "training.weight_decay",
+            "lora.target_modules"
         ]
     );
     let r =
