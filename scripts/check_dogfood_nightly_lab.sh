@@ -17,19 +17,19 @@ if [ -z "$here" ]; then exit 1; fi
 # The awk program: exit 0 clean (prints one "inspected" line), exit 1 with one finding per line, exit 2 when the file
 # uses a YAML form this script does not judge (printed as "UNJUDGED ..."): refuse rather than guess.
 AWK_PROG=$(cat <<'AWK'
-function strip(s,   i, n, c, q, p, pp, j, L, dd) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
+function strip(s,   i, n, c, q, p, pp, j, L, dd, lc) { # drop a trailing comment (a # after whitespace, outside quotes) and trailing blanks
   # a quote opens a scalar only at a token start (line start or after blank , : [ ] { } -), never mid-word (it's);
   # noq is the line with its quoted spans removed; uq is set when a quote is still open at the end of the line
-  q = ""; n = length(s); noq = ""; uq = 0; dd = fdepth + 0
+  q = ""; n = length(s); noq = ""; uq = 0; dd = fdepth + 0; lc = -9
   for (i = 1; i <= n; i++) {
     c = substr(s, i, 1); p = (i == 1) ? " " : substr(s, i - 1, 1); pp = (i <= 2) ? " " : substr(s, i - 2, 1)
     if (q == "") {
       # a hyphen never opens a quote (a-' is mid-word); a colon does only right after a closing quote ("k":"v")
-      if ((c == "\042" || c == "\047") && (p ~ /[ \t,[\]{}]/ || (p == ":" && pp ~ /[\042\047]/))) {
+      if ((c == "\042" || c == "\047") && (p ~ /[ \t,[\]{}]/ || (p == ":" && lc == i - 2))) {
         # inside a flow collection a quote opens a scalar only after : , [ { or a block dash; after a word it is text of a
         # plain scalar (a '), and which quote closes which is then ambiguous: refuse the line (midq) rather than guess
         L = " "; for (j = i - 1; j >= 1; j--) { L = substr(s, j, 1); if (L !~ /[ \t]/) break }
-        if (dd > 0 && L !~ /[ \t:,[{-]/) midq = midq + 1
+        if (dd > 0 && L !~ /[ \t:,[{]/) midq = midq + 1
         q = c
       }
       else if (c == "#" && p ~ /[ \t]/) { s = substr(s, 1, i - 1); break }
@@ -40,7 +40,7 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd) { # drop a trailing comment (a 
       }
       else { noq = noq c; if (c ~ /[{[]/) dd++; else if (c ~ /[}\]]/) dd-- }
     } else if (q == "\042" && c == "\\") { esc = 1; i++ }
-    else if (c == q) { if (q == "\047" && substr(s, i + 1, 1) == "\047") i++; else q = "" }
+    else if (c == q) { if (q == "\047" && substr(s, i + 1, 1) == "\047") i++; else { q = ""; lc = i } }
   }
   if (q != "") uq = 1
   sub(/[ \t]+$/, "", s)
@@ -341,6 +341,11 @@ EOF
   printf "on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo 'a b'\n        if: \${{ github.x == 'y' }}\n        timeout-minutes: 10\n" > "$t/p4.yml"; expect "quotes in block plain scalars stay judged" "$t/p4.yml" pass
 
   printf "on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: { a: \${{ x ' }}, b: '}} # ' }\n        timeout-minutes: 10\n" > "$t/p5.yml"; expect_unj "expression inside a flow collection" "$t/p5.yml"
+
+  # lane FAIL at e14700c: a dash before space-quote in flow; a colon after a quote that did not close a scalar; refused or judged
+  printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: a- ' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r4.yml"; expect_unj "dash then space-quote in flow" "$t/r4.yml"
+  printf "name: x\non: { workflow_dispatch: { inputs: { a: { default: x':' }, b: { default: '}}}} # ' } } }, schedule: [{ cron: '5 20 * * *' }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n" > "$t/r5.yml"; expect "colon after a mid-word quote is not a token start" "$t/r5.yml" fail
+  printf 'on:\n  workflow_dispatch: {}\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: x\n        env: {"a":"b", "c":\x27d\x27}\n        timeout-minutes: 10\n' > "$t/r6.yml"; expect "JSON-style quoted pairs stay judged" "$t/r6.yml" pass
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
