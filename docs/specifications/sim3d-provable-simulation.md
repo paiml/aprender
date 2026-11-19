@@ -60,7 +60,9 @@ empty spec, an extra key, a unit outside the closed set. The case table is
 ### 2.3 What the shape cannot say
 
 1. A law's `invariant` id is well formed, but that an invariant with that id is declared is
-   a join, and the SHACL subset has no join. Closing it belongs to the typed-invariants row.
+   a join, and the SHACL subset has no join. pv does not check it; the case-table harness does
+   (`undeclared_invariant_refs`, fixture `invalid-law-undeclared-invariant`). Moving it into
+   pv belongs to the typed-invariants row.
 2. A positive-number bound (such as a maximum horizon) needs `minInclusive` and
    `maxInclusive`, which the subset lacks. The horizon is checked by its lexical form only.
 3. A spec that conforms is well formed, not correct. Nothing in phase 0 runs a simulation.

@@ -128,6 +128,29 @@ fn judge(contract_file: &str, fixture: &str) -> Run {
     }
 }
 
+/// The join the closed shape cannot say (SHACL subset has no join): every law's `invariant` id must be declared in
+/// `invariants[].id`. Returns the undeclared ids, in law order; empty means the join holds.
+fn undeclared_invariant_refs(spec: &Value) -> Vec<String> {
+    let declared: Vec<&str> = spec["invariants"]
+        .as_array()
+        .map(|a| a.iter().filter_map(|i| i["id"].as_str()).collect())
+        .unwrap_or_default();
+    spec["laws"]
+        .as_array()
+        .map(|a| {
+            a.iter()
+                .filter_map(|l| l["invariant"].as_str())
+                .filter(|id| !declared.contains(id))
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn fixture_value(name: &str) -> Value {
+    serde_json::from_str(&canonical_json(name)).expect("canonical json parses")
+}
+
 const SPEC: &str = "sim3d-spec-v1.yaml";
 const RECEIPT: &str = "sim3d-receipt-v1.yaml";
 
@@ -174,6 +197,32 @@ fn assert_refused(contract: &str, rows: &[(&str, &str, &str)]) {
 fn the_mm1_experiment_and_the_load_balancer_specs_conform() {
     assert_pass(SPEC, "mm1-littles-law.sim.yaml");
     assert_pass(SPEC, "lb-round-robin.sim.yaml");
+    for f in ["mm1-littles-law.sim.yaml", "lb-round-robin.sim.yaml"] {
+        assert_eq!(
+            undeclared_invariant_refs(&fixture_value(f)),
+            Vec::<String>::new(),
+            "{f}: every law names a declared invariant"
+        );
+    }
+}
+
+#[test]
+fn a_law_naming_an_undeclared_invariant_goes_red() {
+    // pv's closed shape passes this fixture (the id is well formed); the join is what refuses it.
+    assert_pass(SPEC, "invalid-law-undeclared-invariant.sim.yaml");
+    assert_eq!(
+        undeclared_invariant_refs(&fixture_value("invalid-law-undeclared-invariant.sim.yaml")),
+        vec!["INV-999".to_owned()]
+    );
+    // inline mutants: declaring the id clears it, a second dangling law is reported too
+    let ok = serde_json::json!({"laws":[{"invariant":"A"}],"invariants":[{"id":"A"}]});
+    assert!(undeclared_invariant_refs(&ok).is_empty());
+    let two =
+        serde_json::json!({"laws":[{"invariant":"A"},{"invariant":"B"}],"invariants":[{"id":"A"}]});
+    assert_eq!(undeclared_invariant_refs(&two), vec!["B".to_owned()]);
+    // no invariants at all: every reference dangles
+    let none = serde_json::json!({"laws":[{"invariant":"A"}]});
+    assert_eq!(undeclared_invariant_refs(&none), vec!["A".to_owned()]);
 }
 
 #[test]
@@ -299,6 +348,7 @@ fn every_fixture_in_the_table_is_judged_and_none_is_orphaned() {
         "invalid-no-entities.sim.yaml",
         "invalid-law-without-invariant.sim.yaml",
         "invalid-law-bad-invariant-id.sim.yaml",
+        "invalid-law-undeclared-invariant.sim.yaml",
         "invalid-zero-horizon.sim.yaml",
         "invalid-bad-schema-tag.sim.yaml",
         "invalid-float-clock.sim.yaml",
