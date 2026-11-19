@@ -15,7 +15,7 @@
     "refused": []
   },
   "consistent": true,
-  "classes": 37,
+  "classes": 44,
   "entailed_subsumptions": [
     [
       "Coord",
