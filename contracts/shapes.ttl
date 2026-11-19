@@ -2004,7 +2004,7 @@
     ] ;
     sh:property [
         sh:path <https://ont.paiml.dev/v1alpha1/kind> ;
-        sh:in ( "schema" "pattern" "kaizen" "kernel" "model-family" "beat-benchmark" "training-loop" "registry" "pretraining-corpus" "training-precondition-gate" "tokenizer" "model-family-variant" "corpus-assembly" ) ;
+        sh:in ( "schema" "pattern" "kaizen" "kernel" "model-family" "beat-benchmark" "training-loop" "registry" "pretraining-corpus" "training-precondition-gate" "tokenizer" "model-family-variant" "corpus-assembly" "simulation" ) ;
     ] ;
 .
 
@@ -2808,6 +2808,227 @@
         sh:minCount 1 ;
         sh:maxCount 1 ;
         sh:in ( "true"^^<http://www.w3.org/2001/XMLSchema#boolean> ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/sim3d-receipt-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/sim/Receipt> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/schema> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "sim3d-receipt/v1" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/spec_sha256> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/kernel_sha> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^[0-9a-f]{40}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/seed> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+        sh:pattern "^(0|[1-9][0-9]*)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/steps> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+        sh:pattern "^[1-9][0-9]*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/final_hash> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^[0-9a-f]{64}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/verdicts> ;
+        sh:minCount 1 ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/sim3d-receipt-v1/node/verdicts> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/sim3d-receipt-v1/node/verdicts> a sh:NodeShape ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/invariant> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^INV-[0-9]{3}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/holds> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#boolean> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/first_bad_step> ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1> a sh:NodeShape ;
+    sh:targetClass <https://ont.paiml.dev/v1alpha1/sim/Simulation> ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/schema> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "sim3d-spec/v1" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/name> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^[a-z][a-z0-9]*(-[a-z0-9]+)*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/time_unit> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "ns" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/horizon_ns> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+        sh:pattern "^[1-9][0-9]*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/seed> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/seed> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/entities> ;
+        sh:minCount 1 ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/entities> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/laws> ;
+        sh:minCount 1 ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/laws> ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/invariants> ;
+        sh:minCount 1 ;
+        sh:node <https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/invariants> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/seed> a sh:NodeShape ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/value> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+        sh:pattern "^(0|[1-9][0-9]*)$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/algorithm> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "pcg64" "counter-based" ) ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/entities> a sh:NodeShape ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/id> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^[a-z][a-z0-9_]*$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/kind> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "source" "queue" "server" "router" "health_check" "sink" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/rate_per_s> ;
+        sh:maxCount 1 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/capacity> ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#integer> ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/laws> a sh:NodeShape ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/id> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^LAW-[0-9]{3}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/statement> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 8 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/invariant> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^INV-[0-9]{3}$" ;
+    ] ;
+.
+
+<https://ont.paiml.dev/v1alpha1/shape/sim3d-spec-v1/node/invariants> a sh:NodeShape ;
+    sh:closed true ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/id> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:pattern "^INV-[0-9]{3}$" ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/formula> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:datatype <http://www.w3.org/2001/XMLSchema#string> ;
+        sh:minLength 3 ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/unit> ;
+        sh:minCount 1 ;
+        sh:maxCount 1 ;
+        sh:in ( "dimensionless" "count" "requests" "requests/s" "ns" "s" "m" "J" ) ;
+    ] ;
+    sh:property [
+        sh:path <https://ont.paiml.dev/v1alpha1/sim/tolerance> ;
+        sh:maxCount 1 ;
     ] ;
 .
 
