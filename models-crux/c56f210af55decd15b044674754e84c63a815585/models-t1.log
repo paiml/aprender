@@ -1,0 +1,4 @@
+MODELS lambda measured by apr 0.75.0 (c56f210af): cells=134 red=134 (crux_sweep_shards rc 1)
+MODELS gx10 measured by apr 0.75.0 (c56f210af): cells=134 red=0 (crux_sweep_shards rc 0)
+MODELS NO-GO: the judge found red or missing cells (rc 1):
+MODELS   FAIL  no prompt-certification receipt at 'evidence/crux/0.75.0/prompt-certification.json' ([Errno 2] No such file or directory: 'evidence/crux/0.75.0/prompt-certification.json') -- which models CRUX must cover is unknown, so every held model stays CRUX-required (#3710 ruling 1)
