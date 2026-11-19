@@ -115,6 +115,12 @@ BEGIN { bsind = -1 }
   match(line, /^ */); ind = RLENGTH
   isdash = (line ~ /^ *-( |$)/); kcol = ind; bsr = line
   if (isdash) { bsr = line; sub(/^ *-[ \t]*/, "", bsr); kcol = length(line) - length(bsr) }
+  # a line indented deeper than the previous line's key, after that line carried an inline value, continues that value
+  # (a multi-line plain scalar, even one that starts with "- "): the value is then not the integer it looks like
+  if (pvval && ind > pvk) cont = cont + 1
+  r2 = line; sub(/^ *(- +)*/, "", r2)
+  if (match(r2, /^([A-Za-z0-9_.-]+|"[^"]*"|\047[^\047]*\047) *:/)) r2 = substr(r2, RLENGTH + 1)
+  sub(/^ +/, "", r2); pvval = (r2 != "" && r2 !~ /^[|>]/ && r2 != "-"); pvk = kcol
   if (line ~ /(:|-)[ \t]+[|>][-+0-9]*$/) bsind = (isdash && bsr ~ /^[|>]/) ? ind : kcol
   isbs = (bsind >= 0)
   if (isbs && ((ind > 0 && inon) || line ~ /^[\042\047]?on[\042\047]?[ \t]*:/)) onbs = onbs + 1 # a block scalar under on: can spell a trigger name as data
@@ -174,6 +180,7 @@ END {
   close_job()
   unj = 0
   if (shp + 0 > 0) { print "UNJUDGED: line outside the judged YAML subset (" shp " lines, first at line " shp1 ")"; unj = 1 }
+  if (cont + 0 > 0) { print "UNJUDGED: a value continued on a deeper-indented line (" cont " lines)"; unj = 1 }
   if (brk + 0 > 0) { print "UNJUDGED: a YAML line break other than LF inside a line (" brk " lines)"; unj = 1 }
   if (onbs + 0 > 0) { print "UNJUDGED: block scalar under the on: key (" onbs " lines)"; unj = 1 }
   if (bom) { print "UNJUDGED: byte-order mark at the start of the file"; unj = 1 }
@@ -427,6 +434,8 @@ EOF
 
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n      minutes\n    steps:\n      - run: echo hi\n        timeout-minutes: 10\n          minutes\n' > "$t/r32.yml"; expect_unj "multi-line plain scalar after timeout-minutes" "$t/r32.yml"
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      |\n      - run: echo FAKE\n        timeout-minutes: 10\n' > "$t/r33.yml"; expect_unj "next-line block scalar header under steps" "$t/r33.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n      - minutes\n    steps:\n      - run: echo hi\n        timeout-minutes: 10\n          - minutes\n' > "$t/r34.yml"; expect_unj "dash continuation of a plain value" "$t/r34.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
