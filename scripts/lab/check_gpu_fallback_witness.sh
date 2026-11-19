@@ -29,7 +29,7 @@
 #
 # Pin the binary: pass the path "$APR" from scripts/apr_bin.sh; a bare `apr` is refused.
 # The apr invocation is `apr run MODEL -n 4 --json`; APR_RUN_EXTRA appends flags, split on
-# whitespace into an array (no glob expansion, no quote processing).
+# whitespace (spaces, tabs, newlines) into an array (no glob expansion, no quote processing).
 # This script is not wired into any workflow, PR path or guard tree.
 
 set -euo pipefail
@@ -49,7 +49,7 @@ read_text() { cat -- "$1"; }
 run_apr() {
   local apr="$1" model="$2" out rc=0
   local -a extra=()
-  IFS=$' \t\n' read -r -a extra <<<"${APR_RUN_EXTRA:-}" || true
+  IFS=$' \t\n' read -r -d '' -a extra <<<"${APR_RUN_EXTRA:-}" || true
   out="$("$apr" run "$model" -n 4 --json "${extra[@]+"${extra[@]}"}" 2>&1)" || rc=$?
   printf '%s\n' "$out"
   return "$rc"
@@ -402,6 +402,9 @@ FAKE
   e2m green-then-not-measured 3 "$NONE" "a.gguf=$ADM" "b.gguf=crash#1"
   e2m both-green 0 "$NONE" "a.gguf=$ADM" "b.gguf=$ADM"
   e2m green-and-expected 0 'b.gguf 7285' "a.gguf=$ADM" "b.gguf=$FB"
+  e2m red-then-expected 1 'b.gguf 7285' "a.gguf=$FB" "b.gguf=$FB"
+  e2m not-measured-then-expected 3 'b.gguf 7285' "a.gguf=crash#1" "b.gguf=$FB"
+  e2m red-then-expected-then-green 1 'b.gguf 7285' "a.gguf=$FB" "b.gguf=$FB" "c.gguf=$ADM"
 
   # the real file_exists and is_exec on real files (no seam): a directory, a missing path,
   # a file without the read or the exec bit
@@ -423,6 +426,8 @@ FAKE
 
   # APR_RUN_EXTRA splits on any whitespace, never globs
   t run-apr-extra-tab-split 2 "$(APR_RUN_EXTRA=$'--a\t--b' run_apr "${tmp}/fakeapr" /m/a.gguf | grep -c '^ARG\[--[ab]\]$')"
+  t run-apr-extra-newline-split 2 "$(APR_RUN_EXTRA=$'--a\n--b' run_apr "${tmp}/fakeapr" /m/a.gguf | grep -c '^ARG\[--[ab]\]$')"
+  t run-apr-extra-mixed-whitespace-split 3 "$(APR_RUN_EXTRA=$' --a\n\n\t--b \n--c\n' run_apr "${tmp}/fakeapr" /m/a.gguf | grep -c '^ARG\[--[abc]\]$')"
   t shipped-expected-valid '' "$(expected_problems "$(<"$DEFAULT_EXPECTED")")"
 
   # input-file refusals (seams answer per path)
@@ -450,6 +455,16 @@ FAKE
     run_all "$apr" "$list" "$exp"
   ) >/dev/null 2>&1 || rc=$?
   t unreadable-list-text 3 "$rc"
+  rc=0
+  (
+    is_exec() { return 0; }
+    gpu_probe() { echo "GPU 0: x"; }
+    file_exists() { return 0; }
+    read_text() { case "$1" in /lists/expected.txt) return 1 ;; *) echo "/models/a.gguf" ;; esac; }
+    run_apr() { printf '%s\n' "$ADM"; }
+    run_all "$apr" "$list" "$exp"
+  ) >/dev/null 2>&1 || rc=$?
+  t unreadable-expected-text-only 3 "$rc"
   rc=0
   (
     is_exec() { return 0; }

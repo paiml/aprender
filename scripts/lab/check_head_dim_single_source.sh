@@ -9,9 +9,16 @@
 #
 # Red on any non-test site under crates/aprender-serve/src that divides a hidden width by a
 # head count. Out of scope by construction: files whose path has a tests/ directory or whose
-# basename contains "test", the BODY of an item marked `#[cfg(test)]` (production code before
-# and after it is still scanned), comment text, string literals, and gguf/config.rs (the
-# accessor itself).
+# basename contains "test", the body of a `#[cfg(test)]` `mod NAME { .. }` block (end found by
+# brace count on stripped text), a `#[cfg(test)]` `mod NAME;` or `use ..;`, a leading inner
+# `#![cfg(test)]` (whole file), comment text, string literals, and gguf/config.rs (the accessor
+# itself).
+#
+# KNOWN LIMITS (never guessed at): a `#[cfg(test)]` on any other form (fn, impl, const, static,
+# field, match arm, statement, brace macro, `include!`), an inner `#![cfg(test)]` below the top
+# of a file, an unbalanced cfg attribute, and an unterminated or unparseable literal or comment
+# make the FILE unjudged: it is named and the run exits 3 (not_measured), never silently blanked.
+# Macro-generated code is not seen at all.
 #
 # The matcher reads comment- and string-stripped code, joins a statement that rustfmt split
 # over up to three lines, and accepts `as` casts, parenthesised operands and `()` method
@@ -30,13 +37,15 @@
 #   beside this script, check_head_dim_single_source.allow.
 # Exit: 0 no hits; 1 hits or stale allow entry; 2 usage (unknown option, option missing its
 #   value); 3 not_measured (no files scanned, unreadable or non-file allowlist, malformed
-#   allowlist, root not a directory, a listed source file unreadable or deleted).
+#   allowlist (including an empty path column), root not a directory, a listed source file
+#   unreadable or deleted, or any file unjudged (see KNOWN LIMITS; a red elsewhere still exits 1).
 # Not wired into any workflow, PR path or guard tree.
 
 set -euo pipefail
 
 SCAN_DIR="crates/aprender-serve/src"
 ACCESSOR_FILE="crates/aprender-serve/src/gguf/config.rs"
+declare -A UNJ_PATHS=()   # files the scan could not judge; their allowlist rows are not evaluated
 
 # The matcher. Reads one file's text on stdin; FNAME names it. Prints "path:line: text".
 # Identifier boundaries are explicit (awk ERE has no \b), and the denominator is anchored to
@@ -46,8 +55,9 @@ AWK_PROG='
 function blank(s) { gsub(/[^\n]/, " ", s); return s }
 function isid(c) { return c ~ /[A-Za-z0-9_]/ }
 # strip_all: T -> same-length text with comments, string and char literals blanked.
-# State crosses lines: nested block comments, multi-line and raw strings.
-function strip_all(T,   n, i, c, c2, out, d, j, h, k, raw, p) {
+# State crosses lines: nested block comments, multi-line and raw strings (r, br, cr). A literal
+# or comment it cannot close or parse sets UNJ (the file is unjudged, never guessed at).
+function strip_all(T,   n, i, c, c2, out, d, j, h, k, raw, p, closed) {
   n = length(T); i = 1; out = ""
   while (i <= n) {
     c = substr(T, i, 1); c2 = substr(T, i, 2)
@@ -60,35 +70,45 @@ function strip_all(T,   n, i, c, c2, out, d, j, h, k, raw, p) {
       while (j <= n && d > 0) {
         if (substr(T, j, 2) == "/*") { d++; j += 2 } else if (substr(T, j, 2) == "*/") { d--; j += 2 } else j++
       }
+      if (d > 0 && UNJ == "") UNJ = "unterminated block comment"
       out = out blank(substr(T, i, j - i)); i = j; continue
     }
-    if ((c == "r" || (c == "b" && substr(T, i + 1, 1) == "r")) && (i == 1 || !isid(substr(T, i - 1, 1)))) {
-      p = i + (c == "b" ? 2 : 1); h = 0
+    if ((c == "r" || ((c == "b" || c == "c") && substr(T, i + 1, 1) == "r")) && (i == 1 || !isid(substr(T, i - 1, 1)))) {
+      p = i + (c == "r" ? 1 : 2); h = 0
       while (substr(T, p + h, 1) == "#") h++
       if (substr(T, p + h, 1) == "\"") {
         raw = "\""; for (k = 0; k < h; k++) raw = raw "#"
         j = index(substr(T, p + h + 1), raw)
+        if (j == 0 && UNJ == "") UNJ = "unterminated raw string"
         j = (j == 0) ? n + 1 : p + h + j + length(raw)
         out = out blank(substr(T, i, j - i)); i = j; continue
       }
     }
     if (c == "\"") {
-      j = i + 1
+      j = i + 1; closed = 0
       while (j <= n) {
         k = substr(T, j, 1)
         if (k == "\\") { j += 2; continue }
-        if (k == "\"") { j++; break }
+        if (k == "\"") { j++; closed = 1; break }
         j++
       }
+      if (!closed && UNJ == "") UNJ = "unterminated string literal"
       if (j > n + 1) j = n + 1
       out = out blank(substr(T, i, j - i)); i = j; continue
     }
     if (c == SQ) {
-      if (substr(T, i + 2, 1) == SQ && substr(T, i + 1, 1) != "\\") { out = out "   "; i += 3; continue }
-      if (substr(T, i + 1, 1) == "\\") {
-        j = index(substr(T, i + 2), SQ)
-        if (j > 0 && j <= 10) { out = out blank(substr(T, i, 2 + j)); i += 2 + j; continue }
+      k = substr(T, i + 1, 1)
+      if (k == "\\") {
+        j = index(substr(T, i + 3), SQ)
+        if (j > 0 && j <= 10) { out = out blank(substr(T, i, 3 + j)); i += 3 + j; continue }
+        if (UNJ == "") UNJ = "unparseable char literal"
+      } else if (substr(T, i + 2, 1) == SQ) { out = out "   "; i += 3; continue }
+      else if (k != "" && index(PR, k) == 0 && k != "\n") {   # multibyte char literal: the closing quote is within 4 bytes
+        j = index(substr(T, i + 1), SQ)
+        if (j > 0 && j <= 5) { out = out blank(substr(T, i, 1 + j)); i += 1 + j; continue }
+        if (UNJ == "") UNJ = "unparseable char literal"
       }
+      else if (index(PR, k) > 0 && k !~ /[A-Za-z_]/ && UNJ == "") UNJ = "unparseable quote"
     }
     out = out c; i++
   }
@@ -106,51 +126,29 @@ function close_of(S, pos,   n, i, d, o, c, cl) {
   return 0
 }
 # pred_is_test: a cfg predicate that holds only under test: bare `test`, or all(.., test, ..)
-function pred_is_test(p,   n, i, d, c, arg, args, na, k, inner) {
+# with the test arm at any nesting depth of all(..)
+function pred_is_test(p,   n, i, d, c, arg, inner) {
   gsub(/^[ \n\t]+|[ \n\t]+$/, "", p)
   if (p == "test") return 1
-  if (p !~ /^all[ ]*\(/) return 0
+  if (p !~ /^all[ \n\t]*\(/) return 0
   inner = substr(p, index(p, "(") + 1); sub(/\)[ \n\t]*$/, "", inner)
   n = length(inner); d = 0; arg = ""
   for (i = 1; i <= n + 1; i++) {
     c = (i <= n) ? substr(inner, i, 1) : ","
     if (c == "(" || c == "[") d++
     if (c == ")" || c == "]") d--
-    if (c == "," && d == 0) {
-      gsub(/^[ \n\t]+|[ \n\t]+$/, "", arg)
-      if (arg == "test") return 1
-      arg = ""
-    } else arg = arg c
+    if (c == "," && d == 0) { if (pred_is_test(arg)) return 1; arg = "" } else arg = arg c
   }
   return 0
 }
-# item_end S START: index of the last char of the item that starts at START
-function item_end(S, start,   n, i, c, d, kw, rest, brace_item, w) {
-  n = length(S); i = start
-  rest = substr(S, i, 200)
-  while (match(rest, /^(pub[ \n\t]*(\([^)]*\))?|unsafe|async|default|const[ \n\t]+(fn|unsafe)|extern[ \n\t]*("[^"]*")?)[ \n\t]+/)) {
-    if (rest ~ /^extern[ \n\t]*("[^"]*")?[ \n\t]*\{/) break
-    i += RLENGTH; rest = substr(S, i, 200)
-    if (rest ~ /^(const[ \n\t]+)?fn[ \n\t]/) break
-  }
-  brace_item = (rest ~ /^(fn|mod|impl|struct|enum|trait|union|macro_rules|extern)([^A-Za-z0-9_]|$)/)
-  d = 0
-  for (; i <= n; i++) {
-    c = substr(S, i, 1)
-    if (c == "(" || c == "[") d++
-    else if (c == ")" || c == "]") { if (d == 0) return i - 1; d-- }
-    else if (c == "{") {
-      if (brace_item && d == 0) { w = close_of(S, i); return (w == 0) ? n : w }
-      d++
-    }
-    else if (c == "}") { if (d == 0) return i - 1; d-- }
-    else if (c == ";" && d == 0) return i
-    else if (c == "," && d == 0 && !brace_item) return i
-  }
-  return n
-}
-# blank_cfg_test: blank every #[cfg(test)]-gated item (attribute included), and only that.
-function blank_cfg_test(S,   n, pos, rest, o, e, pred, q, a, b, st, en, out, last, inner) {
+function nl_count(s,   t) { t = s; return gsub(/\n/, "", t) }
+# blank_cfg_test: blank a `#[cfg(test)]` (test-only predicate) `mod NAME { .. }` block, a
+# `mod NAME;` declaration or a `use ..;` item, attribute included, and nothing else. The end of
+# a mod block is found by brace count on the stripped text. Any other test-gated form (fn, impl,
+# const, struct field, match arm, statement, macro, ...) or an attribute it cannot parse sets
+# UNJ: the file is unjudged, never silently blanked. A leading inner `#![cfg(test)]` (nothing
+# but inner attributes before it) gates the whole file; one anywhere else sets UNJ.
+function blank_cfg_test(S,   pos, rest, o, e, pred, q, a, b, st, en, out, last, inner, k, w, lead) {
   out = ""; last = 1; pos = 1
   while (1) {
     rest = substr(S, pos)
@@ -159,19 +157,45 @@ function blank_cfg_test(S,   n, pos, rest, o, e, pred, q, a, b, st, en, out, las
     inner = (substr(S, a + 1, 1) == "!")
     o = a + RLENGTH - 1
     e = close_of(S, o)
-    if (e == 0) break
+    if (e == 0) { UNJ = "line " (nl_count(substr(S, 1, a)) + 1) ": unbalanced cfg attribute"; return S }
     q = e + 1
     while (substr(S, q, 1) ~ /[ \n\t]/) q++
-    if (substr(S, q, 1) != "]") { pos = e + 1; continue }
+    if (substr(S, q, 1) != "]") { UNJ = "line " (nl_count(substr(S, 1, a)) + 1) ": malformed cfg attribute"; return S }
     pred = substr(S, o + 1, e - o - 1)
     if (!pred_is_test(pred)) { pos = q + 1; continue }
-    if (inner) return blank(S)
+    if (inner) {
+      lead = substr(S, 1, a - 1)
+      while (match(lead, /^[ \n\t]*#!\[[^]]*\]/)) lead = substr(lead, RLENGTH + 1)
+      if (lead ~ /^[ \n\t]*$/) return blank(S)
+      UNJ = "line " (nl_count(substr(S, 1, a)) + 1) ": inner #![cfg(test)] below the top of the file"
+      return S
+    }
     st = q + 1
     while (1) {
       while (substr(S, st, 1) ~ /[ \n\t]/) st++
-      if (substr(S, st, 2) == "#[") { b = close_of(S, st + 1); if (b == 0) break; st = b + 1 } else break
+      if (substr(S, st, 2) == "#[") {
+        b = close_of(S, st + 1)
+        if (b == 0) { UNJ = "line " (nl_count(substr(S, 1, st)) + 1) ": unbalanced attribute"; return S }
+        st = b + 1
+      } else break
     }
-    en = item_end(S, st)
+    rest = substr(S, st, 400)
+    if (match(rest, /^pub[ \n\t]*\([^)]*\)[ \n\t]*/) || match(rest, /^pub[ \n\t]+/)) { st += RLENGTH; rest = substr(S, st, 400) }
+    if (match(rest, /^mod[ \n\t]+[A-Za-z_][A-Za-z0-9_]*[ \n\t]*[{;]/)) {
+      en = st + RLENGTH - 1
+      if (substr(S, en, 1) == "{") {
+        en = close_of(S, en)
+        if (en == 0) { UNJ = "line " (nl_count(substr(S, 1, a)) + 1) ": unbalanced cfg(test) mod block"; return S }
+      }
+    } else if (match(rest, /^use[ \n\t]/)) {
+      k = index(substr(S, st), ";")
+      if (k == 0) { UNJ = "line " (nl_count(substr(S, 1, a)) + 1) ": cfg(test) use without a semicolon"; return S }
+      en = st + k - 1
+    } else {
+      w = substr(rest, 1, 28); gsub(/[ \n\t]+/, " ", w)
+      UNJ = "line " (nl_count(substr(S, 1, a)) + 1) ": cfg(test) on a form that is not a mod block (`" w "`)"
+      return S
+    }
     out = out substr(S, last, a - last) blank(substr(S, a, en - a + 1))
     last = en + 1; pos = en + 1
   }
@@ -180,6 +204,7 @@ function blank_cfg_test(S,   n, pos, rest, o, e, pred, q, a, b, st, en, out, las
 function trim(s) { sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s); return s }
 BEGIN {
   SQ = sprintf("%c", 39)
+  for (ci = 32; ci < 127; ci++) PR = PR sprintf("%c", ci)   # printable ASCII; a quote followed by anything else is a multibyte char literal
   num = "(hidden_dim|hidden_size|hidden|embed_dim|embedding_dim|d_model|embedding_length)"
   den = "(num_heads|n_heads|n_head|num_attention_heads|head_count|heads)"
   recv = "([A-Za-z_][A-Za-z0-9_]*(\\(\\))?[.])*"
@@ -193,6 +218,7 @@ BEGIN {
 { T = T $0 "\n"; orig[NR] = $0 }
 END {
   S = blank_cfg_test(strip_all(T))
+  if (UNJ != "") { printf "@@UNJUDGED@@ %s: %s\n", FNAME, UNJ; exit }
   gsub(/\t/, " ", S)
   split(S, code, "\n")
   for (i = 1; i <= NR; i++) {
@@ -257,7 +283,8 @@ allow_problems() {
     n=$((n + 1))
     [[ -z "$line" || "$line" == \#* ]] && continue
     split_cols "$line"
-    if [[ -z "${COLS[1]:-}" ]]; then echo "row ${n}: missing text column"; continue; fi
+    if [[ -z "$(norm "${COLS[0]}")" ]]; then echo "row ${n}: empty path column"; continue; fi
+    if [[ -z "$(norm "${COLS[1]:-}")" ]]; then echo "row ${n}: missing text column"; continue; fi
     if ! [[ "${COLS[2]:-}" =~ ^(legacy|known-defect\ \#[0-9]+)$ ]]; then
       echo "row ${n}: status '${COLS[2]:-}' is not 'legacy' or 'known-defect #NNNN'"
     fi
@@ -301,6 +328,7 @@ judge() {
     fi
   done <<<"$hits"
   for key in "${!avail[@]}"; do
+    [[ -n "${UNJ_PATHS[${key%%$'\t'*}]:-}" ]] && continue
     left=$(( ${avail[$key]} - ${used[$key]:-0} ))
     if (( left > 0 )); then
       J_STALE=$((J_STALE + left)); echo "STALE allow entry (${left} unused), remove the entry: ${key//$'\t'/ :: }"
@@ -336,7 +364,7 @@ main() {
   problems="$(allow_problems "$allow_text")"
   if [[ -n "$problems" ]]; then echo "not_measured: malformed allowlist ${allow}:"; echo "$problems"; exit 3; fi
 
-  local files scanned=0 f text out all_hits=""
+  local files scanned=0 f text out all_hits="" unjudged=""
   if ! files="$(git -C "$root" ls-files -co --exclude-standard -- "$SCAN_DIR")" || [[ -z "$files" ]]; then
     echo "not_measured: no files listed under ${SCAN_DIR} in ${root}"; exit 3
   fi
@@ -350,15 +378,17 @@ main() {
     scanned=$((scanned + 1))
     if ! text="$(<"${root}/${f}")"; then echo "not_measured: cannot read ${f}"; exit 3; fi
     out="$(scan_text "$f" "$text")"
+    if [[ "$out" == "@@UNJUDGED@@ "* ]]; then unjudged+="UNJUDGED ${out#@@UNJUDGED@@ }"$'\n'; UNJ_PATHS[$f]=1; continue; fi
     [[ -z "$out" ]] && continue
     all_hits+="${out}"$'\n'
   done <<<"$files"
 
   if [[ "$scanned" -eq 0 ]]; then echo "not_measured: scanned 0 non-test .rs files"; exit 3; fi
-
+  [[ -n "$unjudged" ]] && printf '%s' "$unjudged"
   judge "$all_hits" "$allow_text"
-  echo "scanned ${scanned} files: ${J_NEW} new, ${J_STALE} stale, ${J_KNOWN} known-defect, ${J_LEGACY} legacy"
+  echo "scanned ${scanned} files, ${#UNJ_PATHS[@]} unjudged: ${J_NEW} new, ${J_STALE} stale, ${J_KNOWN} known-defect, ${J_LEGACY} legacy"
   if [[ "$J_NEW" -gt 0 || "$J_STALE" -gt 0 ]]; then exit 1; fi
+  if [[ -n "$unjudged" ]]; then echo "not_measured: ${#UNJ_PATHS[@]} file(s) could not be judged (listed above); a clean result on the rest is not a pass"; exit 3; fi
   exit 0
 }
 
@@ -370,11 +400,15 @@ self_test() {
   trap '[[ -n "${tmp:-}" ]] && rm -rf "${tmp:?}"' RETURN
   hit() { # name text   (must match)
     local out; out="$(scan_text f.rs "$2")"
-    if [[ -n "$out" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL must-match $1: $2"; fi
+    if [[ -n "$out" && "$out" != "@@UNJUDGED@@ "* ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL must-match $1: $2"; fi
   }
   miss() { # name text   (must NOT match)
     local out; out="$(scan_text f.rs "$2")"
     if [[ -z "$out" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL must-not-match $1: $2 -> $out"; fi
+  }
+  unj() { # name text   (must be reported unjudged, never a hit and never silently scanned)
+    local out; out="$(scan_text f.rs "$2")"
+    if [[ "$out" == "@@UNJUDGED@@ f.rs: "* ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL must-be-unjudged $1: $2 -> $out"; fi
   }
   t() { # name want got
     if [[ "$2" == "$3" ]]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL $1: want '$2' got '$3'"; fi
@@ -429,7 +463,7 @@ self_test() {
   hit after-cfg-test-mod-closes    $'#[cfg(test)]\nmod tests {\n    fn t() { if x { y } }\n}\nfn f() { let d = hidden_dim / num_heads; }'
   hit after-cfg-test-mod-same-line $'#[cfg(test)] mod tests { fn t() {} }\nfn f() { let d = hidden_dim / num_heads; }'
   hit after-cfg-test-extern-mod    $'#[cfg(test)]\nmod tests;\nfn f() { let d = hidden_dim / num_heads; }'
-  hit after-cfg-test-fn            $'#[cfg(test)]\nfn helper() {\n    let x = 1;\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj after-cfg-test-fn            $'#[cfg(test)]\nfn helper() {\n    let x = 1;\n}\nfn f() { let d = hidden_dim / num_heads; }'
   hit after-cfg-test-with-allow    $'#[cfg(test)]\n#[allow(dead_code)]\nmod tests {\n}\nfn f() { let d = hidden_dim / num_heads; }'
   hit cfg-not-test-is-production   $'#[cfg(not(test))]\nfn f() { let d = hidden_dim / num_heads; }'
   hit slashes-in-string-before     'let u = "http://x"; let d = hidden_dim / num_heads;'
@@ -440,21 +474,21 @@ self_test() {
   hit cfg-test-stacked-attr-same-line-use $'#[cfg(test)] #[allow(dead_code)] use x::y;\nfn f() { let d = hidden_dim / num_heads; }'
   hit cfg-test-stacked-attr-same-line-mod $'#[cfg(test)] #[allow(dead_code)] mod t { fn g() {} }\nfn f() { let d = hidden_dim / num_heads; }'
   miss cfg-test-stacked-attr-body  $'#[cfg(test)] #[allow(dead_code)] mod t { fn g() { let d = hidden_dim / num_heads; } }'
-  hit cfg-test-struct-field-comma  $'struct S {\n    #[cfg(test)]\n    a: u8,\n    b: usize,\n}\nfn f() { let d = hidden_dim / num_heads; }'
-  hit cfg-test-enum-variant-comma  $'enum E {\n    #[cfg(test)]\n    A,\n    B,\n}\nfn f() { let d = hidden_dim / num_heads; }'
-  hit cfg-test-match-arm           $'fn f(x: u8) -> usize {\n    match x {\n        #[cfg(test)]\n        0 => 1,\n        _ => hidden_dim / num_heads,\n    }\n}'
-  miss cfg-test-match-arm-body     $'fn f(x: u8) -> usize {\n    match x {\n        #[cfg(test)]\n        0 => hidden_dim / num_heads,\n        _ => 1,\n    }\n}'
-  hit cfg-test-array-semicolon-sig $'#[cfg(test)]\nfn t(a: [usize; 2]) {\n}\nfn f() { let d = hidden_dim / num_heads; }'
-  miss cfg-test-array-semicolon-body $'#[cfg(test)]\nfn t(a: [usize; 2]) {\n    let d = hidden_dim / num_heads;\n}'
-  hit cfg-test-const-then-code     $'#[cfg(test)]\nconst X: [u8; 2] = [1, 2];\nfn f() { let d = hidden_dim / num_heads; }'
-  hit cfg-test-item-then-prod-same-line $'#[cfg(test)] fn t() {} fn f() { let d = hidden_dim / num_heads; }'
-  hit cfg-test-statement-then-prod $'fn f() {\n    #[cfg(test)]\n    let a = 1;\n    let d = hidden_dim / num_heads;\n}'
+  unj cfg-test-struct-field-comma  $'struct S {\n    #[cfg(test)]\n    a: u8,\n    b: usize,\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj cfg-test-enum-variant-comma  $'enum E {\n    #[cfg(test)]\n    A,\n    B,\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj cfg-test-match-arm           $'fn f(x: u8) -> usize {\n    match x {\n        #[cfg(test)]\n        0 => 1,\n        _ => hidden_dim / num_heads,\n    }\n}'
+  unj cfg-test-match-arm-body     $'fn f(x: u8) -> usize {\n    match x {\n        #[cfg(test)]\n        0 => hidden_dim / num_heads,\n        _ => 1,\n    }\n}'
+  unj cfg-test-array-semicolon-sig $'#[cfg(test)]\nfn t(a: [usize; 2]) {\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj cfg-test-array-semicolon-body $'#[cfg(test)]\nfn t(a: [usize; 2]) {\n    let d = hidden_dim / num_heads;\n}'
+  unj cfg-test-const-then-code     $'#[cfg(test)]\nconst X: [u8; 2] = [1, 2];\nfn f() { let d = hidden_dim / num_heads; }'
+  unj cfg-test-item-then-prod-same-line $'#[cfg(test)] fn t() {} fn f() { let d = hidden_dim / num_heads; }'
+  unj cfg-test-statement-then-prod $'fn f() {\n    #[cfg(test)]\n    let a = 1;\n    let d = hidden_dim / num_heads;\n}'
   miss cfg-test-nested-predicate   $'#[cfg(all(test, not(target_arch = "wasm32")))]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
   miss cfg-test-spaced-attribute   $'#[ cfg ( test ) ]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
   miss cfg-test-inner-attribute    $'#![cfg(test)]\nfn f() { let d = hidden_dim / num_heads; }'
-  miss cfg-test-pub-crate-fn       $'#[cfg(test)]\npub(crate) fn t() { let d = hidden_dim / num_heads; }'
-  miss cfg-test-impl-block         $'#[cfg(test)]\nimpl X {\n    fn t(&self) { let d = hidden_dim / num_heads; }\n}'
-  hit cfg-test-generic-fn-then-prod $'#[cfg(test)]\nfn t<A, B>(a: A, b: B) {}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj cfg-test-pub-crate-fn       $'#[cfg(test)]\npub(crate) fn t() { let d = hidden_dim / num_heads; }'
+  unj cfg-test-impl-block         $'#[cfg(test)]\nimpl X {\n    fn t(&self) { let d = hidden_dim / num_heads; }\n}'
+  unj cfg-test-generic-fn-then-prod $'#[cfg(test)]\nfn t<A, B>(a: A, b: B) {}\nfn f() { let d = hidden_dim / num_heads; }'
 
   # round 2: stripping carries state across lines
   miss raw-string-braces           $'let s = r#"{"msg": "{"}"#;\nlet t = "hidden_dim / num_heads";'
@@ -471,6 +505,62 @@ self_test() {
   hit  byte-string-then-code       $'let s = b"x"; let d = hidden_dim / num_heads;'
   hit  lifetime-not-char           $'fn f<\'a>(x: &\'a str) { let d = hidden_dim / num_heads; }'
   miss char-quote-literal          $'let c = \'"\'; // hidden_dim / num_heads'
+
+  # round 3: literals. Live code follows every literal, so a stripper that swallows the rest
+  # of the line (a quote it did not close) turns the row red.
+  hit char-quote-then-code         $'let c = \'"\'; let d = hidden_dim / num_heads;'
+  hit char-escaped-quote-then-code $'let c = \'\\\'\'; let d = hidden_dim / num_heads;'
+  hit char-escaped-backslash       $'let c = \'\\\\\'; let d = hidden_dim / num_heads;'
+  hit char-escape-width-exact      $'let c = \'\\u{1}\'hidden_dim / num_heads;'
+  hit char-escape-width-exact-simple $'let c = \'\\n\'hidden_dim / num_heads;'
+  unj  ident-ending-in-r-is-not-a-raw-prefix $'let a = xr"\\"; let d = hidden_dim / num_heads;'
+  hit char-unicode-escape          $'let c = \'\\u{FFFD}\'; let d = hidden_dim / num_heads;'
+  hit char-multibyte               $'let c = \'\xe2\x96\x88\'; let d = hidden_dim / num_heads;'
+  hit char-multibyte-4-byte        $'let c = \'\xf0\x9f\x8e\x89\'; let d = hidden_dim / num_heads;'
+  hit lifetime-then-code           $'fn f<\'a>(x: &\'a str) { let d = hidden_dim / num_heads; }'
+  hit byte-char-quote              $'let c = b\'"\'; let d = hidden_dim / num_heads;'
+  hit raw-string-0-hash-backslash  $'let s = r"\\"; let d = hidden_dim / num_heads;'
+  hit raw-byte-string-0-hash       $'let s = br"\\"; let d = hidden_dim / num_heads;'
+  hit raw-c-string-0-hash          $'let s = cr"\\"; let d = hidden_dim / num_heads;'
+  hit raw-string-1-hash-inner-quote $'let s = r#"a"b"#; let d = hidden_dim / num_heads;'
+  hit raw-byte-string-1-hash       $'let s = br#"a"b"#; let d = hidden_dim / num_heads;'
+  hit raw-c-string-1-hash          $'let s = cr#"a"b"#; let d = hidden_dim / num_heads;'
+  hit raw-string-2-hash            $'let s = r##"a"#b"##; let d = hidden_dim / num_heads;'
+  miss raw-c-string-body           $'let s = cr#"hidden_dim / num_heads"#;'
+  miss raw-byte-string-body        $'let s = br#"hidden_dim / num_heads"#;'
+  hit raw-ident-not-a-string       $'let r#type = 1; let d = hidden_dim / num_heads;'
+  hit ident-ending-in-r-then-string $'let bar = foo"x"; let d = hidden_dim / num_heads;'
+  unj  unterminated-string         $'let s = "abc;\nlet d = hidden_dim / num_heads;'
+  unj  unterminated-raw-string     $'let s = r#"abc"; let d = hidden_dim / num_heads;'
+  unj  unterminated-block-comment  $'/* never closed\nlet d = hidden_dim / num_heads;'
+  unj  unterminated-escaped-char   $'let c = \'\\u{1F600; let d = hidden_dim / num_heads;'
+  unj  quote-before-punctuation    $'let c = \'(; let d = hidden_dim / num_heads;'
+
+  # round 3: cfg(test). Only a `mod NAME { .. }` block (end by brace count), a `mod NAME;` and a
+  # `use ..;` are blanked. Every other test-gated form is unjudged, never silently blanked.
+  miss cfg-test-inner-attr-whole-file  $'#![cfg(test)]\nfn a() {}\nfn f() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-inner-attr-after-other $'#![allow(dead_code)]\n#![cfg(test)]\nfn a() {}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-inner-attr-in-submodule $'mod m {\n    #![cfg(test)]\n    fn t() {}\n}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-inner-attr-after-code  $'fn a() {}\n#![cfg(test)]\nfn f() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-nested-all             $'#[cfg(all(unix, all(test, feature = "a")))]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
+  miss cfg-test-nested-all-deep        $'#[cfg(all(all(all(test))))]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
+  hit  cfg-test-all-without-test       $'#[cfg(all(unix, all(feature = "a", not(test))))]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
+  unj  cfg-test-generic-comma-const    $'#[cfg(test)]\nconst X: HashMap<A, B> = M;\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-brace-macro            $'#[cfg(test)]\nthread_local! { static X: u8 = 0; }\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-const-fn               $'#[cfg(test)]\nconst fn t() -> usize { 1 }\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-pub-const-fn           $'#[cfg(test)]\npub const fn t() -> usize { 1 }\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-if-statement           $'fn f() {\n    #[cfg(test)]\n    if x { y(); }\n    let d = hidden_dim / num_heads;\n}'
+  unj  cfg-test-match-arm-block        $'fn f(x: u8) -> usize {\n    match x {\n        #[cfg(test)]\n        0 => { 1 }\n        _ => hidden_dim / num_heads,\n    }\n}'
+  unj  cfg-test-impl-no-body-split     $'#[cfg(test)]\nimpl X for Y {}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-unbalanced-attr        $'#[cfg(test\nmod t {}\nfn f() { let d = hidden_dim / num_heads; }'
+  unj  cfg-test-mod-unbalanced-block   $'#[cfg(test)]\nmod t {\n    fn g() {\nfn f() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-pub-crate-mod          $'#[cfg(test)]\npub(crate) mod t { fn g() { let d = hidden_dim / num_heads; } }'
+  miss cfg-test-pub-mod                $'#[cfg(test)]\npub mod t { fn g() { let d = hidden_dim / num_heads; } }'
+  hit  cfg-test-pub-mod-declaration    $'#[cfg(test)]\npub mod t;\nfn f() { let d = hidden_dim / num_heads; }'
+  hit  cfg-test-use-group              $'#[cfg(test)]\nuse super::{a, b};\nfn f() { let d = hidden_dim / num_heads; }'
+  hit  cfg-test-mod-ends-at-brace-count $'#[cfg(test)]\nmod t { fn a() { if x { y } } }\nfn f() { let d = hidden_dim / num_heads; }'
+  miss cfg-test-mod-brace-in-string    $'#[cfg(test)]\nmod t { fn a() { let s = "}"; let c = \'}\'; let d = hidden_dim / num_heads; } }'
+  hit  cfg-test-two-mods               $'#[cfg(test)]\nmod a { fn g() {} }\nfn f() { let d = hidden_dim / num_heads; }\n#[cfg(test)]\nmod b { fn g() {} }'
 
   # round 2: matcher shapes
   hit checked-div-trailing-comma   $'foo(hidden_dim.checked_div(num_heads), 1)'
@@ -513,7 +603,7 @@ self_test() {
   miss hidden-prefix-ident         'let x = prehidden_dim / num_heads;'
   miss after-cfg-test              $'fn real() {}\n#[cfg(test)]\nmod tests { fn t() { let d = hidden_dim / num_heads; } }'
   miss inside-cfg-test-nested      $'#[cfg(test)]\nmod tests {\n    mod inner {\n        fn t() { let d = hidden_dim / num_heads; }\n    }\n    fn u() { let d = hidden_dim / num_heads; }\n}'
-  miss inside-cfg-test-fn          $'#[cfg(test)]\nfn helper() {\n    let d = hidden_dim / num_heads;\n}'
+  unj inside-cfg-test-fn          $'#[cfg(test)]\nfn helper() {\n    let d = hidden_dim / num_heads;\n}'
   miss inside-cfg-test-brace-string $'#[cfg(test)]\nmod tests {\n    fn t() { let s = "}"; let d = hidden_dim / num_heads; }\n}'
   miss cfg-test-use-item           $'#[cfg(test)] use x::hidden_dim / num_heads;'
   miss inside-cfg-all-test-first   $'#[cfg(all(test, feature = "cuda"))]\nmod t { fn f() { let d = hidden_dim / num_heads; } }'
@@ -619,6 +709,9 @@ self_test() {
   ap empty-count "count '' is not a positive integer" "a.rs${T}x / y${T}legacy${T}"
   ap empty-count-then-extra "count '' is not a positive integer" "a.rs${T}x / y${T}legacy${T}${T}2"
   ap empty-text-middle "missing text column" "a.rs${T}${T}legacy"
+  ap empty-path "empty path column" "${T}x / y${T}legacy"
+  ap blank-path "empty path column" "   ${T}x / y${T}legacy"
+  ap blank-text "missing text column" "a.rs${T}   ${T}legacy"
   ap trailing-tab-after-status "count '' is not a positive integer" "a.rs${T}x / y${T}legacy${T}"
   jc count-2-unused-stale 0 2 0 0 '' "a.rs${T}x / y${T}legacy${T}2"
 
@@ -635,7 +728,7 @@ self_test() {
     ( main "$@" ) >/dev/null 2>&1 || r=$?
     t "main-$name" "$want" "$r"
   }
-  local repo="${tmp}/repo" src="${tmp}/repo/crates/aprender-serve/src"
+  local repo="${tmp}/repo" src="${tmp}/repo/crates/aprender-serve/src" unjout
   mkdir -p "${src}/gguf" "${src}/tests"
   git -C "$repo" init -q
   printf 'fn ok() { let d = cfg.head_dim(); }\n' >"${src}/ok.rs"
@@ -677,6 +770,28 @@ self_test() {
   mkdir -p "$src"
   printf 'fn t() { let d = hidden_dim / num_heads; }\n' >"${src}/only_tests.rs"
   mc only-test-files-scanned-zero 3 --root "$repo" --allow "${tmp}/empty.allow"
+
+  # an allowlist row with an empty path column is malformed (not_measured), not a stale row (red)
+  printf '\tlet d = hidden_dim / num_heads;\tlegacy\n' >"${tmp}/emptypath.allow"
+  printf 'crates/aprender-serve/src/\tlet d = hidden_dim / num_heads;\tlegacy\n' >"${tmp}/dirpath.allow"
+  mc allow-empty-path 3 --root "$repo" --allow "${tmp}/emptypath.allow"
+  mkdir -p "$src"
+  printf 'fn ok() { let d = cfg.head_dim(); }\n' >"${src}/ok.rs"
+  mc allow-empty-path-clean-tree 3 --root "$repo" --allow "${tmp}/emptypath.allow"
+  # a file with a form the script does not judge: not_measured (exit 3, named), never green
+  printf '#[cfg(test)]\nfn t() {}\nfn p() { let d = hidden_dim / num_heads; }\n' >"${src}/unj.rs"
+  unjout="$( (main --root "$repo" --allow "${tmp}/empty.allow") 2>&1 )" || true
+  t main-unjudged-names-the-file yes "$(if [[ "$unjout" == *"UNJUDGED crates/aprender-serve/src/unj.rs: line 1: cfg(test) on a form that is not a mod block"* ]]; then echo yes; else echo no; fi)"
+  mc unjudged-file-not-measured 3 --root "$repo" --allow "${tmp}/empty.allow"
+  # allowlist rows for an unjudged file are not evaluated, so they are not reported stale
+  printf 'crates/aprender-serve/src/unj.rs\tlet d = hidden_dim / num_heads;\tlegacy\n' >"${tmp}/unj.allow"
+  mc unjudged-file-allow-row-not-stale 3 --root "$repo" --allow "${tmp}/unj.allow"
+  # a red in a judged file still wins over an unjudged one
+  printf 'fn bad() { let d = hidden_dim / num_heads; }\n' >"${src}/hit.rs"
+  mc red-beats-unjudged 1 --root "$repo" --allow "${tmp}/empty.allow"
+  rm -f "${src:?}/hit.rs" "${src:?}/unj.rs"
+  mc judged-again-green 0 --root "$repo" --allow "${tmp}/empty.allow"
+  rm -f "${src:?}/ok.rs"
 
   echo "self-test: ${pass} passed, ${fail} failed"
   [[ "$fail" -eq 0 ]]
