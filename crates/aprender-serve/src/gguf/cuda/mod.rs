@@ -500,7 +500,7 @@ impl OwnedQuantizedModelCuda {
         let num_layers = model.layers.len();
         let num_heads = model.config.num_heads;
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
-        let head_dim = model.config.hidden_dim / num_heads;
+        let head_dim = model.config.head_dim(); // #7285: not hidden/heads (Qwen3-0.6B: 128)
 
         executor
             .init_kv_cache_gpu(num_layers, num_heads, num_kv_heads, head_dim, max_seq_len)
@@ -773,7 +773,7 @@ impl OwnedQuantizedModelCuda {
         // the KV-cache budget below.
         let num_layers = model.layers.len();
         let num_kv_heads = model.config.num_kv_heads; // PAR-021 GQA support
-        let head_dim = model.config.hidden_dim / model.config.num_heads;
+        let head_dim = model.config.head_dim(); // #7285
 
         if let Err(error) = Self::configure_executor(&mut executor, &model, max_seq_len) {
             return Err(CudaInitError {
@@ -1047,3 +1047,8 @@ include!("gemm_layout_tests_3975.rs");
 #[cfg(all(test, feature = "gpu"))]
 #[path = "moe_refusal_tests_3992.rs"]
 mod moe_refusal_tests_3992;
+
+// #7285: no GPU needed; guards the per-head width the executor is sized with.
+#[cfg(test)]
+#[path = "head_dim_tests_7285.rs"]
+mod head_dim_tests_7285;
