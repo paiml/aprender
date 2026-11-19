@@ -305,7 +305,7 @@ STUB
 
 # fixture NAME AUTOPILOT MODELS_T1 -> $TMP/NAME: origin (parent 9.9.8 + release 9.9.9), the main
 # checkout, the fake gx10 home. Returns 2 if it cannot be built.
-fixture() {
+fixture_build() {
     local d="$TMP/$1" r
     r="$d/repo"
     mkdir -p "$r/scripts/release" "$d/ap" || return 2
@@ -387,7 +387,27 @@ STUB
     git -C "$r" rev-parse HEAD > "$d/mc"
     # the fake gx10: its checkout sits at the PARENT, with a stale release dir beside it
     mkdir -p "$d/gx10/src" "$d/gx10/.cache/aprender-release/rel-9.9.7/target" "$d/gx10/.cache/aprender-release/rel-9.9.9/target" || return 2
-    git clone -q "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2
+    # --no-local: a plain local clone walks origin.git/objects and link()s/copies every loose file, so one that
+    # leaves that directory mid-walk kills it with "failed to copy file to ...: No such file or directory"
+    # (PR runs on a git 2.55 runner, PMAT-7284). A pack-protocol clone reads through the object store instead.
+    git clone -q --no-local "$d/origin.git" "$d/gx10/src/aprender" && git -C "$d/gx10/src/aprender" checkout -q --detach HEAD^ || return 2
+}
+# fx_diag NAME -- what a failed fixture build saw, so the next failure names its cause instead of "could not build"
+fx_diag() {
+    {   printf 'fixture-diag: %s: git %s; TMP %s (%s entries); row dir %s; loose objects in origin.git: %s\n' "$1" \
+            "$(git --version | cut -d' ' -f3)" "$([ -d "$TMP" ] && echo present || echo GONE)" "$(find "$TMP" -mindepth 1 -maxdepth 1 2> /dev/null | wc -l)" \
+            "$([ -d "$TMP/$1" ] && echo present || echo GONE)" "$(find "$TMP/$1/origin.git/objects" -type f -path '*/??/*' 2> /dev/null | wc -l)"
+        printf 'fixture-diag: %s: git gc/repack/maintenance processes: %s\n' "$1" \
+            "$(pgrep -af 'git (gc|repack|maintenance|prune)' 2> /dev/null | head -n 3 | tr '\n' ';')"
+        printf 'fixture-diag: %s: %s\n' "$1" "$(df -P "$TMP" 2> /dev/null | tail -n 1)"
+    } >&2
+}
+# fixture NAME AUTOPILOT MODELS_T1 -> fixture_build, and a failed build says what it saw
+fixture() {
+    fixture_build "$@" && return 0
+    local rc=$?
+    fx_diag "$1"
+    return "$rc"
 }
 
 # models NAME AUTOPILOT MODELS_T1 [ENV=VAL ...] -> runs `autopilot.sh 9.9.9 99 models models`
@@ -695,6 +715,32 @@ for spec in "r7-green r7_green" "r7-red r7_red" "r7-missing r7_missing" "r7-decl
     set -- $spec
     msg=$($2 real "$PREFLIGHT"); row "$1" "$?" "$msg"
 done
+
+# ---- PMAT-7284: how the fixture builder clones, and what a failed build reports ---------------------
+# A git shim logs every call and, with FX_CLONE_FAIL=1, fails a clone with the error the PR runs printed.
+FX_REAL_GIT=$(command -v git); export FX_REAL_GIT
+mkdir -p "$TMP/fx-shim"
+cat > "$TMP/fx-shim/git" <<'STUB'
+#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$FX_GITLOG"
+if [ "${FX_CLONE_FAIL:-0}" = 1 ]; then
+    for a in "$@"; do [ "$a" = clone ] && { echo "fatal: failed to copy file to 'x/.git/objects/4f/57': No such file or directory" >&2; exit 128; }; done
+fi
+exec "$FX_REAL_GIT" "$@"
+STUB
+chmod +x "$TMP/fx-shim/git"
+fx_clone_row() { # -> 0 when the fixture's gx10 clone goes through the pack protocol, not a loose-file walk
+    ( PATH="$TMP/fx-shim:$PATH" FX_GITLOG="$TMP/fx-clone.log" fixture fx-clone "$AUTOPILOT" "$MODELS" ) > /dev/null 2>&1 || { printf 'the fixture did not build\n'; return 2; }
+    grep -qE '^clone -q --no-local .*origin\.git' "$TMP/fx-clone.log" || { printf 'gx10 was cloned with a local object walk: %s\n' "$(grep '^clone' "$TMP/fx-clone.log" | head -n 1)"; return 1; }
+}
+fx_diag_row() { # -> 0 when a failed build returns 2 AND says what it saw
+    local out frc
+    out=$( ( PATH="$TMP/fx-shim:$PATH" FX_GITLOG="$TMP/fx-fail.log" FX_CLONE_FAIL=1 fixture fx-fail "$AUTOPILOT" "$MODELS" ) 2>&1 ); frc=$?
+    [ "$frc" = 2 ] || { printf 'a failed clone returned %s, not 2\n' "$frc"; return 1; }
+    grep -q '^fixture-diag: fx-fail: git .*TMP present' <<< "$out" || { printf 'no fixture-diag line: %s\n' "$(head -n 2 <<< "$out" | tr '\n' ' ')"; return 1; }
+}
+msg=$(fx_clone_row); row "fixture-clone-no-local" "$?" "$msg"
+msg=$(fx_diag_row);  row "fixture-failure-diagnosed" "$?" "$msg"
 
 # ---- the mutants ------------------------------------------------------------------------------
 # mutant NAME SRC ANCHOR REPLACEMENT ROWFN [autopilot] -- replace ANCHOR's first line, run ROWFN
