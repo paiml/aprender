@@ -20,13 +20,13 @@ equations:
     - state is finite (no NaN/Inf)
     lean_theorem: Theorems.Step_Determinism
   time_advancement:
-    formula: t(n) = t(0) + n * timestep_secs(config)
+    formula: 't(n) = t0 + n * timestep_secs; tsub(n) = t0 + n * timestep_secs / m; steps_until(target) = (target - t0) / timestep_secs'
     domain: config ∈ ClockConfig, n ∈ usize
     codomain: f64
     invariants:
-    - 'Monotonic: t(n+1) > t(n) for all n'
-    - steps_until(target) returns correct step count
-    - substep_multiplier partitions steps for Heijunka scheduling
+    - 't(n+1) > t(n) for all n'
+    - 't(steps_until(target)) = target'
+    - 'tsub(m * n) = t(n)'
     preconditions:
     - timestep_secs > 0.0
     - target_time > current_time
