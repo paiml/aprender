@@ -5,7 +5,8 @@
 # and the caller then runs the jobs (reuse=no). About 6 REST calls: the PR of the commit, the PR, the
 # run list, the job list, the stamp job's log, x86-main's log.
 #
-#   ci_push_reuse_facts.sh --repo OWNER/NAME --sha S --before P --ref REF --event EVT
+#   ci_push_reuse_facts.sh --repo OWNER/NAME --sha S --before P --ref REF --event EVT --now EPOCH
+#     (--now is supplied by the caller, `date +%s`; this script reads no clock, so it is deterministic)
 #   ci_push_reuse_facts.sh --parse-stamp-log FILE        # the stamp parser alone, on a saved job log (the tests use it)
 #   ci_push_reuse_facts.sh --parse-section-log FILE NAME # one section's result line from a saved x86-main log
 #
@@ -49,19 +50,23 @@ section_result() {
 }
 
 case "${1-}" in
-  --parse-stamp-log) [ -r "${2-}" ] || die "no readable log file"; stamp_from_log "$(cat "$2")"; exit $? ;;
-  --parse-section-log) [ -r "${2-}" ] && [ -n "${3-}" ] || die "usage: --parse-section-log FILE NAME"; section_result "$(cat "$2")" "$3"; exit $? ;;
+  --parse-stamp-log) case "${2-}" in *..*) echo "facts: refusing a log path with \"..\"" >&2; exit 1 ;; esac  # bashrs SEC010: refuse the path, never read it
+    [ -r "${2-}" ] || die "no readable log file"; stamp_from_log "$(< "$2")"; exit $? ;;
+  --parse-section-log) case "${2-}" in *..*) echo "facts: refusing a log path with \"..\"" >&2; exit 1 ;; esac  # bashrs SEC010
+    [ -r "${2-}" ] && [ -n "${3-}" ] || die "usage: --parse-section-log FILE NAME"; section_result "$(< "$2")" "$3"; exit $? ;;
 esac
 
-repo="" sha="" before="" ref="" event=""
+repo="" sha="" before="" ref="" event="" now=""
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --repo) repo="${2-}"; shift 2 ;; --sha) sha="${2-}"; shift 2 ;; --before) before="${2-}"; shift 2 ;;
     --ref) ref="${2-}"; shift 2 ;; --event) event="${2-}"; shift 2 ;;
+    --now) now="${2-}"; shift 2 ;;
     *) echo "facts: unknown argument $1" >&2; exit 1 ;;
   esac
 done
 for v in repo sha before ref event; do [ -n "${!v}" ] || die "--$v is required"; done
+[[ $now =~ ^[0-9]+$ ]] || die "--now (epoch seconds, supplied by the caller) is required"
 [[ $sha =~ ^[0-9a-f]{40}$ ]] || die "sha is not 40-hex"
 command -v jq > /dev/null && command -v gh > /dev/null && command -v git > /dev/null || die "jq, gh and git are required"
 
@@ -131,7 +136,7 @@ exp=$(printf '%s\n' "$wf" | sed -n "s/^[[:space:]]*shards: .*|| '\[\([0-9][0-9]*
 jq -n -c --arg event "$event" --arg ref "$ref" --arg sha "$sha" --arg tree "$tree" --argjson parents "$parents" --arg before "$before" --arg repo "$repo" \
   --argjson pr "$pr" --argjson stamp "$stamp" --argjson m_derived "$m_derived" \
   --argjson expect_shards "$exp" --argjson runs_complete "$runs_complete" --argjson run "$run" --argjson jobs "$jobs" --argjson jobs_total "$jobs_total" --argjson sov_test "$sov_test" \
-  --argjson paths "$paths" --argjson now "$(date +%s)" \
+  --argjson paths "$paths" --argjson now "$now" \
   '{event: $event, ref: $ref, sha: $sha, tree: $tree, parents: $parents, before: $before, repo: $repo, pr: $pr,
     stamp: $stamp, m_derived: $m_derived, expect_shards: $expect_shards, runs_complete: $runs_complete,
     run: ($run + {jobs: $jobs, jobs_total: $jobs_total, sov_test: $sov_test}), paths: $paths, now: $now}' || die "facts could not be assembled"

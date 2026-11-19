@@ -148,7 +148,7 @@ jobs:
           # Anything but an exact `reuse=yes` (a failed read, a refusal, a crash) leaves the outputs as they are: the jobs run.
           if [ "$EVT" = push ] && ! grep -qx 'x86=1' <<< "$out"; then
             facts="$RUNNER_TEMP/push-reuse-facts.json"
-            if bash scripts/ci_push_reuse_facts.sh --repo "$REPO" --sha "$GITHUB_SHA" --before "$PBEFORE" --ref "$GITHUB_REF" --event "$EVT" > "$facts"; then
+            if bash scripts/ci_push_reuse_facts.sh --repo "$REPO" --sha "$GITHUB_SHA" --before "$PBEFORE" --ref "$GITHUB_REF" --event "$EVT" --now "$(date +%s)" > "$facts"; then
               pr=$(bash scripts/ci_push_reuse.sh decide --facts "$facts")
             else
               pr="reuse=no reason=the facts could not be read"
