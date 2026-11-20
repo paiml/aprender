@@ -135,6 +135,8 @@ decide() {
   [ "$(concl "$jobs" workspace-test-ran)" = success ] || wt=0 # R:k6-wt-ran
   # a reuse with nothing to cite is not a reuse
   [[ "$wcite" =~ ^run\ [0-9]+\ attempt\ [0-9]+\ on\ [0-9a-f]{10}$ ]] || wt=0 # R:k6-wt-cite
+  # #7273: a pull_request run of workspace-test cannot run the cross-shard Σ-executed (its checkout and artifact download are barred on the PR spot pool, falsification_pr_spot_labels.rs), so citing it would skip Σ on the queue entry: the queue runs the shards and Σ itself.
+  wt=0 # R:k6-wt-no-sigma-on-pr
   mc=1
   [ "$(concl "$jobs" mac-check)" = success ] || mc=0 # R:k6-mac
   emit "$x" "$x" "$mc" "run $rid attempt $att on ${h:0:10}" "$h" \
@@ -442,7 +444,7 @@ self_test() {
   }
   wd() { local n="$1" want="$2" m="$3" b="$4" h="$5" r="$6" j="$7"
     wrow "$n" "$want" --event merge_group --queue-head "$m" --base "$b" --pr-head "$h" --runs "$F/$r" --jobs "$F/$j"; }
-  wd identical-tree-skips       1 "$M" "$B" "$H" runs.ok jobs.wt-ok
+  wd identical-tree-pr-sigma-never-ran-runs 0 "$M" "$B" "$H" runs.ok jobs.wt-ok
   wd draft-run-no-shards-runs   0 "$M" "$B" "$H" runs.ok jobs.wt-draft
   wd receipt-reuse-12of12-green-runs 0 "$M" "$B" "$H" runs.ok jobs.wt-receipt
   wd ran-job-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.wt-noran
@@ -457,7 +459,7 @@ self_test() {
   wd head-wt-failed-runs        0 "$M" "$B" "$H" runs.ok jobs.fail-wt
   wd head-wt-missing-runs       0 "$M" "$B" "$H" runs.ok jobs.no-wt
   wd run-in-progress-runs       0 "$M" "$B" "$H" runs.newer-running jobs.wt-ok
-  wd head-x86-failed-still-skips 1 "$M" "$B" "$H" runs.ok jobs.wt-x86fail
+  wd head-x86-failed-still-runs 0 "$M" "$B" "$H" runs.ok jobs.wt-x86fail
   wrow push-never-skips         0 --event push --queue-head "$M" --base "$B" --pr-head "$H" --runs "$F/runs.ok" --jobs "$F/jobs.ok"
   # the override passes wt only as exactly 1, with its citation
   local wo

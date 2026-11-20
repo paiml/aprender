@@ -7,7 +7,9 @@
 # events: push, pull_request, merge_group. A job is on an event when the workflow triggers
 # on it and the job's `if:` does not exclude it. The `if:` is read for `github.event_name`
 # literals only: `!= 'X'` removes X; `== 'X'` (no `||` in the expression) keeps only the
-# listed events; any `||` mix is read as "runs everywhere" (never a false red).
+# listed events; a `||` expression is the UNION of its disjuncts (a disjunct naming no event runs everywhere); `'X' == github.event_name`
+# is read like `github.event_name == 'X'`; a negated group `!( .. )` around event_name is unreadable and fails closed (rc 2).
+# A missing or empty workflow dir, a workflow that does not parse, or a workflows set with no job also fail closed (rc 2, never OK).
 #
 # VIOLATION 1: job is on push, and not on pull_request. A merge_group run does not count: the queue
 # is a different event and may be off, and a job that first runs after the merge makes main the test bench.
@@ -35,10 +37,14 @@ EX="${PARITY_EXEMPT:-$ROOT/ci/push-only-jobs.txt}"
 # rows: "<file>\t<job>\t<push>\t<pr>\t<mg>" with 1/0
 rows() {
   local f
-  for f in "$WF"/*.yml; do
+  for f in "$WF"/*.yml "$WF"/*.yaml; do
     [ -e "$f" ] || continue
     yq -o=json '.' "$f" | jq -r --arg f "$(basename "$f")" '
-      def lits($e; $op): [ $e | scan("github\\.event_name\\s*" + $op + "\\s*\u0027([a-z_]+)\u0027") | .[0] ];
+      def lits($e; $op): [ $e | scan("github\\.event_name\\s*" + $op + "\\s*\u0027([a-z_]+)\u0027") | .[0] ]
+                         + [ $e | scan("\u0027([a-z_]+)\u0027\\s*" + $op + "\\s*github\\.event_name") | .[0] ];
+      def evs($all; $p): lits($p;"==") as $pos | lits($p;"!=") as $neg
+                         | $all | (if ($pos|length)>0 then map(select(. as $x | $pos|index($x))) else . end)
+                         | map(select(. as $x | ($neg|index($x))|not));
       (.on // {}) as $on
       | (if ($on|type)=="string" then [$on] elif ($on|type)=="array" then $on else ($on|keys) end) as $ev
       | (if ($on|type)=="object" and ($on.push|type)=="object"
@@ -50,41 +56,44 @@ rows() {
       | .key as $j | ((.value.if // "")|tostring) as $e
       | ( ["push","pull_request","merge_group"]
           | map(select(. as $x | ($x=="push" and $pushmain) or ($x!="push" and ($ev|index($x)!=null))))
-          | (if ($e|contains("||")) then .
-             else ( lits($e;"==") as $pos | lits($e;"!=") as $neg
-                    | (if ($pos|length)>0 then map(select(. as $x | $pos|index($x))) else . end)
-                    | map(select(. as $x | ($neg|index($x))|not)) ) end) ) as $on
+          | (if ($e|test("event_name")) and ($e|test("![[:space:]]*\\(")) then error("unreadable if: negated group")
+             else . as $base | (($e|split("||")) | if length==0 then [""] else . end) | map(. as $p | $base | evs(.; $p)) | add | unique end) ) as $on
       | select($on|index("push"))
-      | [$f,$j,"1",(if $on|index("pull_request") then "1" else "0" end),(if $on|index("merge_group") then "1" else "0" end)] | @tsv'
+      | [$f,$j,"1",(if $on|index("pull_request") then "1" else "0" end),(if $on|index("merge_group") then "1" else "0" end)] | @tsv' || return 1
   done
 }
 
 # VIOLATION 2 rows: "<file>\t<job>" for each job whose run script exits 0 on a pull_request branch.
 shortcuts() {
-  local f j b
-  for f in "$WF"/*.yml; do
+  local f j b js
+  for f in "$WF"/*.yml "$WF"/*.yaml; do
     [ -e "$f" ] || continue
+    js="$(yq -o=json '.' "$f" | jq -r '(.jobs // {}) | to_entries[] | [.key, ([.value.steps[]?.run // empty] | join("\n") | @base64)] | @tsv')" || return 1
     while IFS=$'\t' read -r j b; do
       [ -n "$j" ] || continue
       if printf '%s' "$b" | base64 -d | awk '
           /^[[:space:]]*#/ { next }
-          /^[[:space:]]*\[.*pull_request.*\][[:space:]]*&&.*exit[[:space:]]+0/ { hit = 1 }
-          /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { inif = 1; if ($0 ~ /exit[[:space:]]+0/) hit = 1; next }
-          inif && /exit[[:space:]]+0/ { hit = 1 }
+          /^[[:space:]]*\[.*pull_request.*\][[:space:]]*&&.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
+          /^[[:space:]]*\[.*!=[[:space:]]*"?pull_request"?[[:space:]]*\][[:space:]]*\|\|.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
+          /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { inif = 1; if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; next }
+          inif && /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/ { hit = 1 }
           inif && /^[[:space:]]*fi([[:space:];]|$)/ { inif = 0 }
+          /^[[:space:]]*(\*\|)?pull_request(\|[A-Za-z_*]+)*\)/ { incase = ($0 !~ /;;/); if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; next }
+          incase && /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/ { hit = 1 }
+          incase && /;;/ { incase = 0 }
           END { exit !hit }'; then
         printf '%s\t%s\n' "$(basename "$f")" "$j"
       fi
-    done < <(yq -o=json '.' "$f" | jq -r '(.jobs // {}) | to_entries[] | [.key, ([.value.steps[]?.run // empty] | join("\n") | @base64)] | @tsv')
+    done <<<"$js"
   done
 }
 
 # VIOLATION 3 rows: "<file>\t<job>" for each heavy push+PR job lacking the draft clause a heavy sibling carries.
 drafts() {
   local f pr_jobs
-  for f in "$WF"/*.yml; do
+  for f in "$WF"/*.yml "$WF"/*.yaml; do
     [ -e "$f" ] || continue
-    pr_jobs="$(rows | awk -F'\t' -v f="$(basename "$f")" '$1==f && $4=="1" {print $2}')"
+    pr_jobs="$(printf '%s\n' "$ROWS" | awk -F'\t' -v f="$(basename "$f")" '$1==f && $4=="1" {print $2}')"
     [ -n "$pr_jobs" ] || continue
     yq -o=json '.' "$f" | jq -r --arg pj "$pr_jobs" '
       ($pj | split("\n")) as $pr
@@ -93,13 +102,31 @@ drafts() {
           | select(((.value["timeout-minutes"] // 0) | tostring | [scan("[0-9]+") | tonumber] | max // 0) >= 100)
           | {k: .key, d: (((.value.if // "") | tostring) | contains("github.event.pull_request.draft"))} ] as $h
       | if ($h | map(select(.d)) | length) > 0 then $h[] | select(.d | not) | .k else empty end' \
-      | while read -r j; do printf '%s\t%s\n' "$(basename "$f")" "$j"; done
+      | while read -r j; do printf '%s\t%s\n' "$(basename "$f")" "$j"; done || return 1
   done
 }
 
+# Fail closed (rc 2, never OK): a missing or empty workflow dir, a workflow that does not parse, a jobs map that yields no row.
+preflight() {
+  local f n=0 jn=0 c
+  [ -d "$WF" ] || { echo "ENV: workflow dir $WF is missing"; return 2; }
+  for f in "$WF"/*.yml "$WF"/*.yaml; do
+    [ -e "$f" ] || continue
+    n=$((n + 1))
+    c="$(yq -o=json '.' "$f" 2>/dev/null | jq -e -r 'if type == "object" then ((.jobs // {}) | length) else empty end' 2>/dev/null)" || { echo "ENV: $f does not parse as a YAML mapping"; return 2; }
+    jn=$((jn + c))
+  done
+  [ "$n" -gt 0 ] || { echo "ENV: no workflow file under $WF"; return 2; }
+  [ "$jn" -gt 0 ] || { echo "ENV: the workflows under $WF define no job"; return 2; }
+}
+
 scan() {
-  local fail=0 f j p pr mg key reason
+  local fail=0 f j p pr mg key reason SHORTS DRAFTS
   local exempt="" used=""
+  preflight || return 2
+  ROWS="$(rows)" || { echo "ENV: could not read the jobs and if: conditions of $WF"; return 2; }
+  SHORTS="$(shortcuts)" || { echo "ENV: could not read the run scripts of $WF"; return 2; }
+  DRAFTS="$(drafts)" || { echo "ENV: could not read the heavy-job draft clauses of $WF"; return 2; }
   if [ -f "$EX" ]; then
     while read -r key reason || [ -n "$key" ]; do
       case "$key" in ''|\#*) continue ;; esac
@@ -118,17 +145,17 @@ $key"; continue; fi
       else echo "RED: $key runs on push to main and not on any pull_request run"; fi
       fail=1
     fi
-  done < <(rows)
+  done <<<"$ROWS"
   while IFS=$'\t' read -r f j; do
     [ -n "$f" ] || continue
     echo "RED: $f:$j passes a pull_request (exit 0) before it checks the heavy jobs"
     fail=1
-  done < <(shortcuts)
+  done <<<"$SHORTS"
   while IFS=$'\t' read -r f j; do
     [ -n "$f" ] || continue
     echo "RED: $f:$j is a heavy job on push and pull_request without the draft clause its heavy siblings carry (a draft PR runs it)"
     fail=1
-  done < <(drafts)
+  done <<<"$DRAFTS"
   for key in $(printf "%s\n" "$exempt" | tr " " "_" | grep -v "^$"); do
     grep -qxF -- "$key" <<<"$used" || { echo "STALE: exemption $key is not a push-only job"; fail=1; }
   done
@@ -230,9 +257,109 @@ jobs:
 jobs:
   a: {runs-on: x, steps: []}
 "
+  t "|| guard that skips pull_request is RED" 1 "" "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || github.event_name == 'merge_group'\", steps: []}
+"
+  t "|| guard that keeps pull_request is green" 0 "" "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' || github.event_name == 'pull_request'\", steps: []}
+"
+  t "reversed operand 'pull_request' != github.event_name is RED" 1 "" "$H
+  a: {runs-on: x, if: \"'pull_request' != github.event_name\", steps: []}
+"
+  t "negated group around event_name is unreadable: rc 2" 2 "" "$H
+  a: {runs-on: x, if: \"!(github.event_name == 'pull_request')\", steps: []}
+"
+  t "unparseable workflow fails closed (rc 2)" 2 "" "on: [push, pull_request]
+jobs:
+  a: {runs-on: [unclosed
+"
+  t "empty jobs map fails closed (rc 2)" 2 "" "$H {}
+"
+  t "[ != pull_request ] || { exit 0; } is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\${EVT:-}\" != pull_request ] || { echo ok; exit 0; }
+          check_heavy
+"
+  t "case pull_request) exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in
+            pull_request) exit 0 ;;
+          esac
+          check_heavy
+"
+  t "bare exit on a pull_request if is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then exit; fi
+          check_heavy
+"
+  t "a commented-out pull_request shortcut is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          # [ \"\$EVT\" = pull_request ] && exit 0
+          check_heavy
+"
+  t "an exit 0 after the pull_request if block has closed is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            [ \"\${PRL:-}\" = success ] || exit 1
+          fi
+          [ \"\${DRAFT:-}\" != true ] || exit 0
+          check_heavy
+"
+  t "a comment naming exit 0 inside the pull_request if block is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then
+            # never exit 0 here
+            [ \"\${PRL:-}\" = success ] || exit 1
+          fi
+          check_heavy
+"
+  t "an exit 0 in a later case branch, after pull_request) closed, is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in
+            pull_request) [ \"\${PRL:-}\" = success ] || exit 1 ;;
+            *) exit 0 ;;
+          esac
+          check_heavy
+"
+  t "a multi-line pull_request) branch closed by ;; before a later exit 0 branch is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in
+            pull_request)
+              [ \"\${PRL:-}\" = success ] || exit 1
+              ;;
+            *)
+              exit 0
+              ;;
+          esac
+          check_heavy
+"
   # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
   # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
-  local sh yqp jqp
+  local sh yqp jqp rc
   sh="$(command -v bash)"; yqp="$(command -v yq)"; jqp="$(command -v jq)"
   mkdir -p "$d/noyq" "$d/nojq"; ln -sf "$jqp" "$d/noyq/jq"; ln -sf "$yqp" "$d/nojq/yq"
   te() { # name, expected rc, PATH dir
@@ -244,6 +371,12 @@ jobs:
   }
   te "yq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/noyq"
   te "jq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/nojq"
+  : > "$d/ex"
+  PARITY_WORKFLOWS="$d/missing" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 2 ] && echo "ok   missing workflow dir fails closed (rc 2)" || { echo "FAIL missing workflow dir (rc $rc, want 2)"; fails=1; }
+  mkdir -p "$d/emptydir"
+  PARITY_WORKFLOWS="$d/emptydir" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  [ "$rc" = 2 ] && echo "ok   empty workflow dir fails closed (rc 2)" || { echo "FAIL empty workflow dir (rc $rc, want 2)"; fails=1; }
   rm -rf "${d:?}"
   return "$fails"
 }

@@ -884,6 +884,9 @@ jobs:
             exit 0
           fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
+      # #7273: the checkout, the artifact download and the cross-shard Σ below stay off a pull_request (the PR spot pool may carry no
+      # checkout or artifact step: falsification_pr_spot_labels.rs). A PR therefore proves the shards green and pr-light; the
+      # cross-shard Σ-executed runs on the queue entry and on push, and scripts/ci_mg_reuse.sh never cites a PR run's workspace-test (wt=0).
       - uses: actions/checkout@v7
         if: ${{ github.event.pull_request.draft != true && github.event_name != 'pull_request' }}
       - uses: actions/download-artifact@v4
