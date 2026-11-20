@@ -34,18 +34,26 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WF="${PARITY_WORKFLOWS:-$ROOT/.github/workflows}"
 EX="${PARITY_EXEMPT:-$ROOT/ci/push-only-jobs.txt}"
 
-# eval_if EXPR -> prints 1 when the if: expression can be true, 0 when it cannot. EXPR holds only 0 1 && || ! ( ) and spaces
-# (rows() has already replaced every atom); anything else, or a parse failure, is rc 1 (the caller fails closed).
+# eval_if EXPR -> prints 1 when the if: expression CAN be true, 0 when it cannot. EXPR holds only 0 1 u && || ! ( ) and spaces
+# (rows() has already replaced every atom; u is an unknown atom). Every u is tried as both 0 and 1, so a negation of an unknown
+# (!(u), !u && 1) is read exactly, not as false. Anything else, a parse failure or more than 12 unknowns is rc 1 (fail closed).
 eval_if() {
-  [[ "$1" =~ ^[01\&\|\!\(\)[:space:]]+$ ]] || return 1
-  local v
-  v="$(bash -c 'echo $(( $1 ))' _ "$1" 2>/dev/null)" || return 1
-  case "$v" in 0) echo 0 ;; 1) echo 1 ;; *) return 1 ;; esac
+  [[ "$1" =~ ^[01u\&\|\!\(\)[:space:]]+$ ]] || return 1
+  local e="$1" u n mask i x v
+  u="${e//[^u]/}"; n="${#u}"
+  [ "$n" -le 12 ] || return 1
+  for ((mask = 0; mask < (1 << n); mask++)); do
+    x="$e"; i=0
+    while [[ "$x" == *u* ]]; do x="${x/u/$(( (mask >> i) & 1 ))}"; i=$((i + 1)); done
+    v="$(bash -c 'echo $(( $1 ))' _ "$x" 2>/dev/null)" || return 1
+    case "$v" in 1) echo 1; return 0 ;; 0) ;; *) return 1 ;; esac
+  done
+  echo 0
 }
 
 # rows: "<file>\t<job>\t<push>\t<pr>\t<mg>" with 1/0. Each job's if: is evaluated once per event with a real &&, ||, ! and ()
 # grammar: github.event_name comparisons become 1 or 0 for that event, every other atom (a ref, a needs result, a status function)
-# is unknown and counts as true, so the guard can only skip an event when its event_name terms alone make the expression false.
+# is unknown (u) and eval_if tries it as both 0 and 1, so the guard skips an event only when no value of the unknowns makes it true.
 rows() {
   local f line fl j pm pr_on mg_on ep epr emg bp bpr bmg
   for f in "$WF"/*.yml "$WF"/*.yaml; do
@@ -65,16 +73,15 @@ rows() {
             | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*==\\s*github\\.event_name"; if .n == $x then "1" else "0" end)
             | gsub("github\\.event_name\\s*!=\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "0" else "1" end)
             | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*!=\\s*github\\.event_name"; if .n == $x then "0" else "1" end)
-            | gsub("!\\s*[A-Za-z_]+\\([^()]*\\)"; "1")
-            | gsub("[A-Za-z_]+\\([^()]*\\)"; "1")
-            | gsub("[A-Za-z_]+\\([^()]*\\)"; "1")
-            | gsub("[A-Za-z_]+\\([^()]*\\)"; "1")) as $c
-        | [ $c | scan("\\(|\\)|&&|\\|\\||!(?!=)|(?:[^()&|!]|!(?==))+") | select(test("\\S"))
+            | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
+            | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
+            | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
+            | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")) as $c
+        | ("\\(|\\)|&&|\\|\\||!(?!=)|(?:[^()&|!]|!(?==))+") as $re
+        | [ $c | scan($re) | select(test("\\S"))
             | if . == "(" or . == ")" or . == "&&" or . == "||" or . == "!" then .
               elif test("^\\s*[01]\\s*$") then gsub("\\s"; "")
               else "u" end ]
-        # a negated unknown atom is still unknown (true), never !1: drop the "!" before it, then read u as 1
-        | . as $t | [ range(0; length) as $i | select(($t[$i] == "!" and $t[$i + 1] == "u") | not) | $t[$i] | if . == "u" then "1" else . end ]
         | if length == 0 then "1" else join(" ") end;
       (.on // {}) as $on
       | (if ($on|type)=="string" then [$on] elif ($on|type)=="array" then $on else ($on|keys) end) as $ev
@@ -99,15 +106,16 @@ shortcuts() {
     while IFS=$'\t' read -r j b; do
       [ -n "$j" ] || continue
       if printf '%s' "$b" | base64 -d | awk '
+          function cnt(re,   t, n) { t = $0; n = 0; while (match(t, re)) { n++; t = substr(t, RSTART + RLENGTH) } return n }
+          function depthdelta() { return cnt("(^|[;[:space:]])i[f][[:space:]]") + cnt("\\{[[:space:]]*$") - cnt("(^|[;[:space:]])fi([[:space:];]|$)") - cnt("^[[:space:]]*\\}") }
           /^[[:space:]]*#/ { next }
-          /^[[:space:]]*\[\[?.*pull_request.*\]\]?[[:space:]]*&&.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
-          /^[[:space:]]*\[\[?.*!=[[:space:]]*"?pull_request"?[[:space:]]*\]\]?[[:space:]]*\|\|.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
-          /^[[:space:]]*\[\[?.*pull_request.*\]\]?[[:space:]]*(&&|\|\|)[[:space:]]*\{[[:space:]]*$/ { inif = 1; next }
-          /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { inif = 1; if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; if ($0 ~ /(^|[;[:space:]])fi([[:space:];]|$)/) inif = 0; next }
-          inif && /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/ { hit = 1 }
-          inif && /^[[:space:]]*(fi([[:space:];]|$)|\})/ { inif = 0 }
+          /^[[:space:]]*(\[\[?|test)[[:space:]].*pull_request.*[[:space:]]*&&.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
+          /^[[:space:]]*(\[\[?|test)[[:space:]].*!=[[:space:]]*"?pull_request"?[[:space:]]*(\]\]?)?[[:space:]]*\|\|.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
+          /^[[:space:]]*(\[\[?|test)[[:space:]].*pull_request.*(&&|\|\|)[[:space:]]*\{[[:space:]]*$/ { inif = 1; depth = depthdelta(); next }
+          /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; depth = depthdelta() + ($0 ~ /^[[:space:]]*elif/ ? 1 : 0); inif = (depth > 0); next }
+          inif { if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; depth += depthdelta(); if (depth <= 0) inif = 0 }
           /^[[:space:]]*case[[:space:]].*[[:space:]]in[[:space:]].*pull_request.*\)[^;]*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
-          /^[[:space:]]*([A-Za-z_*]+\|)*pull_request(\|[A-Za-z_*]+)*\)/ { incase = ($0 !~ /;;/); if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; next }
+          /^[[:space:]]*(["'\'']?[A-Za-z_*]+["'\'']?\|)*["'\'']?pull_request["'\'']?(\|["'\'']?[A-Za-z_*]+["'\'']?)*\)/ { incase = ($0 !~ /;;/); if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; next }
           incase && /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/ { hit = 1 }
           incase && /;;/ { incase = 0 }
           END { exit !hit }'; then
@@ -433,20 +441,79 @@ jobs:
   t "a negated unknown atom (!github.event.pull_request.draft) is unknown, not false: green" 0 "" "$H
   a: {runs-on: x, if: \"github.event_name != 'pull_request' || !github.event.pull_request.draft\", steps: []}
 "
+  t "!(<unknown>) && event_name == 'push' is RED (lane 1 finding 1)" 1 "" "$H
+  a: {runs-on: x, if: \"!(github.event.pull_request.draft == true) && github.event_name == 'push'\", steps: []}
+"
+  t "!(cancelled()) && event_name == 'push' is RED" 1 "" "$H
+  a: {runs-on: x, if: \"!(cancelled()) && github.event_name == 'push'\", steps: []}
+"
+  t "!contains(fromJSON(..), github.event_name) && event_name == 'push' (nested call) is RED" 1 "" "$H
+  a: {runs-on: x, if: \"!contains(fromJSON('[\\\"merge_group\\\"]'), github.event_name) && github.event_name == 'push'\", steps: []}
+"
+  t "!(<unknown>) && event_name != 'pull_request' is RED (lane 2 finding 1)" 1 "" "$H
+  a: {runs-on: x, if: \"!(github.ref == 'refs/heads/skip') && github.event_name != 'pull_request'\", steps: []}
+"
+  t "!(event_name == 'pull_request' && draft) keeps pull_request: green (no false RED)" 0 "" "$H
+  a: {runs-on: x, if: \"!(github.event_name == 'pull_request' && github.event.pull_request.draft)\", steps: []}
+"
+  t "nested if/fi inside a pull_request branch then exit 0 is RED (lane 2 finding 2a)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then
+            if [ \"\$X\" = 1 ]; then
+              echo ok
+            fi
+            exit 0
+          fi
+          check_heavy
+"
+  t "quoted multi-line case label \"pull_request\") exit 0 is RED (lane 2 finding 2b)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in
+            \"pull_request\")
+              exit 0
+              ;;
+          esac
+          check_heavy
+"
+  t "echo ok; fi does not leak into a later exit 0 (lane 2 finding 2c)" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\${EVT:-}\" = pull_request ]; then
+            echo ok; fi
+          [ \"\${DRAFT:-}\" != true ] || exit 0
+          check_heavy
+"
+  t "test = pull_request && exit 0 is RED (lane 1 finding 2a)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          test \"\$EVT\" = pull_request && exit 0
+          check_heavy
+"
   # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
   # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
   local sh yqp jqp rc
   sh="$(command -v bash)"; yqp="$(command -v yq)"; jqp="$(command -v jq)"
   mkdir -p "$d/noyq" "$d/nojq"; ln -sf "$jqp" "$d/noyq/jq"; ln -sf "$yqp" "$d/nojq/yq"
-  te() { # name, expected rc, PATH dir
+  te() { # name, expected rc, PATH dir, missing tool named in the ENV line
     printf '%s' "$H
   a: {runs-on: x, steps: []}
 " > "$w/ci.yml"; : > "$d/ex"
-    PATH="$3" PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" "$sh" "$0" >/dev/null 2>&1; local rc=$?
+    local out; out="$(PATH="$3" PARITY_WORKFLOWS="$w" PARITY_EXEMPT="$d/ex" "$sh" "$0" 2>&1)"; local rc=$?
+    case "$out" in *"ENV: $4 missing"*) ;; *) rc="no-ENV-msg-$rc" ;; esac
     [ "$rc" = "$2" ] && echo "ok   $1" || { echo "FAIL $1 (rc $rc, want $2)"; fails=1; }
   }
-  te "yq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/noyq"
-  te "jq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/nojq"
+  te "yq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/noyq" yq
+  te "jq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/nojq" jq
   : > "$d/ex"
   PARITY_WORKFLOWS="$d/missing" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
   [ "$rc" = 2 ] && echo "ok   missing workflow dir fails closed (rc 2)" || { echo "FAIL missing workflow dir (rc $rc, want 2)"; fails=1; }
