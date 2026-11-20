@@ -1,4 +1,4 @@
-# measured 2026-11-20T04:39:34Z
+# measured 2026-11-20T05:24:34Z
 lambda-labs	apr	GREEN	ok (installed nightly@b9d4663, target nightly@b9d4663)
 lambda-labs	pv	GREEN	ok (installed v0.75.0@73bed46, target v0.75.0@73bed46)
 lambda-labs	forjar	RED	behind (installed nightly@31b6f3c, target nightly@0aef952)
@@ -13,7 +13,7 @@ lambda-labs	ollama	GREEN	ok (installed 0.40.16, target v0.40.16)
 lambda-labs	llama.cpp	GREEN	ok (installed b12557, target b12557)
 gx10	apr	GREEN	ok (installed nightly@b9d4663, target nightly@b9d4663)
 gx10	pv	GREEN	ok (installed v0.75.0@73bed46, target v0.75.0@73bed46)
-gx10	forjar	RED	behind (installed nightly@31b6f3c, target nightly@0aef952)
+gx10	forjar	GREEN	ok (installed nightly@0aef952, target nightly@0aef952)
 gx10	bashrs	GREEN	no-sha (installed nightly@83aca0b, target nightly@83aca0b)
 gx10	pmat	GREEN	ok (installed nightly@36d83f5, target nightly@36d83f5)
 gx10	pzsh	GREEN	no-sha (installed nightly@b42cbbc, target nightly@b42cbbc)
