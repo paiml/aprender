@@ -364,14 +364,23 @@ pub fn mtp_tensor_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&'a
 /// # Errors
 /// A message led by [`MTP_REFUSAL_ID`] naming every `mtp.*` tensor.
 pub fn check_mtp_tensors<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<(), String> {
-    let mtp = mtp_tensor_names(names);
+    mtp_refusal(&mtp_tensor_names(names))
+}
+
+/// The one MTP refusal message, shared by the safetensors names (`mtp.*`) and the GGUF
+/// loader (`blk.N.nextn.*`, `gguf::qwen4exp_load::load_qwen4exp_gguf`).
+///
+/// # Errors
+/// A message led by [`MTP_REFUSAL_ID`] naming every tensor in `mtp`, when it is non-empty.
+pub fn mtp_refusal<S: AsRef<str>>(mtp: &[S]) -> Result<(), String> {
     if mtp.is_empty() {
         return Ok(());
     }
+    let names: Vec<&str> = mtp.iter().map(AsRef::as_ref).collect();
     Err(format!(
         "{MTP_REFUSAL_ID}: qwen4_exp multi-token-prediction head is not implemented; \
          MTP tensors present: [{}]. This is a refusal, not a fallback: no logits are produced.",
-        mtp.join(", ")
+        names.join(", ")
     ))
 }
 

@@ -709,7 +709,8 @@ fn check_full_attention(s: &Shapes<'_>, il: u64, m: &Qwen4ExpGgufMeta) -> Result
     }
     s.check(
         &blk(il, "attn_output.weight"),
-        &[m.head_dim * m.n_head, e],
+        // Each head emits value_dim values (attn_v is value_dim * n_head_kv wide).
+        &[m.value_dim * m.n_head, e],
         Need::Required,
     )?;
     s.check(
@@ -771,8 +772,13 @@ fn check_linear_attention(s: &Shapes<'_>, il: u64, m: &Qwen4ExpGgufMeta) -> Resu
 
 fn check_ple(s: &Shapes<'_>, il: u64, m: &Qwen4ExpGgufMeta) -> Result<()> {
     let (e, hc) = (m.n_embd, m.hc_count);
-    s.check(&blk(il, "ple_key.weight"), &[e, hc * e], Need::Required)?;
-    s.check(&blk(il, "ple_value.weight"), &[e, e], Need::Required)?;
+    // The projections read the gathered engram rows: ple_n_heads rows of ple_head_dim each
+    // (`build_inp_ple`, qwen4_exp_embed.rs `key_proj [C*H, embed_dim]`, `value_proj
+    // [H, embed_dim]`). llama.cpp b12557 declares the input as n_embd (qwen4exp.cpp:292-293),
+    // which only equals ple_embd on the published config; the width is ple_embd.
+    let pe = m.ple_n_heads * m.ple_head_dim;
+    s.check(&blk(il, "ple_key.weight"), &[pe, hc * e], Need::Required)?;
+    s.check(&blk(il, "ple_value.weight"), &[pe, e], Need::Required)?;
     for n in [
         "ple_norm_key.weight",
         "ple_norm_query.weight",
@@ -924,6 +930,36 @@ pub fn refuse_non_text_file(path: &Path, model: &GGUFModel) -> Result<()> {
         )));
     }
     Ok(())
+}
+
+/// The qwen4exp GGUF load entry (#7334, #7333): metadata, then the MTP refusal by tensor
+/// name, then the LAYOUT-001 shape contract. The dense loader
+/// (`QuantizedGGUFTransformer::from_gguf`) calls it for every `qwen4exp` file before it reads
+/// a config or a weight, so a real load refuses `blk.N.nextn.*` by name
+/// ([`crate::qwen4_exp::MTP_REFUSAL_ID`]) instead of falling through to a missing dense
+/// tensor.
+///
+/// # Errors
+/// A missing or malformed key, MTP tensors present (led by `QWEN4EXP-MTP-REFUSED`), or a
+/// tensor that breaks the shape contract.
+pub fn load_qwen4exp_gguf(model: &GGUFModel) -> Result<Qwen4ExpGgufMeta> {
+    let meta = Qwen4ExpGgufMeta::from_model(model)?;
+    crate::qwen4_exp::mtp_refusal(&mtp_tensors(model, &meta)).map_err(refuse)?;
+    check_shapes(model, &meta)?;
+    Ok(meta)
+}
+
+/// What the dense loader returns for a `qwen4exp` file: the [`load_qwen4exp_gguf`] refusal
+/// when it has one, else the named refusal that no qwen4exp forward exists on this path.
+#[must_use]
+pub fn dense_loader_refusal(model: &GGUFModel) -> RealizarError {
+    match load_qwen4exp_gguf(model) {
+        Err(e) => e,
+        Ok(_) => refuse(format!(
+            "architecture '{GGUF_ARCH}' passed the load contract, but the dense GGUF forward \
+             does not run it (hyper-connections, PLE and MoE are not wired here)"
+        )),
+    }
 }
 
 // ---------------------------------------------------------------------------

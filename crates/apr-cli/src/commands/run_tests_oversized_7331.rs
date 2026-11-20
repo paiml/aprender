@@ -11,6 +11,13 @@ fn oversized_checkpoint_refusal_names_size_and_missing_forward() {
         "hf://Qwen/Qwen3.8-2.4T-A95B",
         "qwen/qwen3.8-2.4t-a95b",
         "hf://Qwen/Qwen3.8-2.4T-A95B/",
+        // Lane-2 finding 2 (PR #7356): a file-qualified hf:// URI and the HF web URLs name
+        // the same repo, and a run on them reaches the same download.
+        "hf://Qwen/Qwen3.8-2.4T-A95B/model-00001-of-00500.safetensors",
+        "hf://qwen/qwen3.8-2.4t-a95b/config.json",
+        "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+        "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B/resolve/main/model.safetensors",
+        "https://hf.co/Qwen/Qwen3.8-2.4T-A95B/",
     ] {
         let reason = known_checkpoint_refusal(spelling)
             .unwrap_or_else(|| panic!("{spelling} must be refused up front"));
@@ -33,6 +40,11 @@ fn other_checkpoints_are_not_refused_by_the_oversized_table() {
         "Qwen/Qwen3.8-Flash-Next",
         "models/tiny.gguf",
         "hf://Qwen/Qwen3.8-2.4T-A95B-GGUF-not-this-one",
+        "hf://Qwen/Qwen3.8-2.4T-A95B-GGUF-not-this-one/model.gguf",
+        "https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main/model.safetensors",
+        "https://example.com/Qwen/Qwen3.8-2.4T-A95B",
+        // A local path is not a repo id: only the exact bare id is matched.
+        "Qwen/Qwen3.8-2.4T-A95B/model.safetensors",
         "",
     ] {
         assert!(
@@ -91,6 +103,35 @@ fn apr_run_refuses_before_download_or_allocation() {
     assert_eq!(err.exit_code_value(), 12, "NotImplemented: this build cannot do that");
     let text = err.to_string();
     assert!(text.contains("Qwen3.8-2.4T-A95B") && text.contains("TB"), "{text}");
+    assert!(
+        existed_before || !cache.exists(),
+        "a download cache dir was created: the refusal ran too late"
+    );
+}
+
+/// Lane-2 finding 1 (PR #7356): `--batch-jsonl` went to `run_batch`, which resolved (and
+/// downloaded) the model without the refusal. Network blocked via a dead proxy, so a late
+/// refusal shows as a different error, not a download.
+#[cfg(feature = "inference")]
+#[test]
+fn apr_run_batch_refuses_before_download_or_allocation() {
+    let cache = dirs::home_dir()
+        .expect("home")
+        .join(".apr/cache/hf/Qwen/Qwen3.8-2.4T-A95B");
+    let existed_before = cache.exists();
+    let err = run_batch(
+        "hf://Qwen/Qwen3.8-2.4T-A95B/model-00001-of-00500.safetensors",
+        Path::new("/nonexistent/prompts.jsonl"),
+        8,
+        0.0,
+        40,
+        true,
+        false,
+        &ConstraintArgs { json_schema: None, grammar: None },
+    )
+    .expect_err("the 2.4T checkpoint must be refused on the batch path");
+    assert_eq!(err.exit_code_value(), 12, "{err}");
+    assert!(err.to_string().contains("#7331"), "{err}");
     assert!(
         existed_before || !cache.exists(),
         "a download cache dir was created: the refusal ran too late"

@@ -152,6 +152,12 @@ const V: u64 = 16; // n_vocab
 const HEADS: u64 = 2;
 const KV_HEADS: u64 = 1;
 const HEAD_DIM: u64 = 4;
+/// `attention.value_length`; deliberately != HEAD_DIM so `attn_v`/`attn_output` widths
+/// discriminate value_dim from head_dim (lane-1 finding 3, PR #7356).
+const VAL_DIM: u64 = 2 * HEAD_DIM;
+/// PLE embedding width = ple_n_heads * ple_head_dim = (ngram 3 - 1) * 2 per ngram * PLE_DIM;
+/// deliberately != E (lane-1 finding 2, PR #7356).
+const PLE_EMBD: u64 = 4 * PLE_DIM;
 const N_EXPERT: u64 = 4;
 const FF_EXP: u64 = 4;
 const FF_SH: u64 = 4;
@@ -182,7 +188,7 @@ fn hparams() -> Vec<(String, Kv)> {
         (p("attention.head_count"), Kv::U32(HEADS as u32)),
         (p("attention.head_count_kv"), Kv::U32(KV_HEADS as u32)),
         (p("attention.key_length"), Kv::U32(HEAD_DIM as u32)),
-        (p("attention.value_length"), Kv::U32(HEAD_DIM as u32)),
+        (p("attention.value_length"), Kv::U32(VAL_DIM as u32)),
         (p("attention.layer_norm_rms_epsilon"), Kv::F32(1e-6)),
         (p("expert_count"), Kv::U32(N_EXPERT as u32)),
         (p("expert_used_count"), Kv::U32(2)),
@@ -259,8 +265,8 @@ fn block(f: &mut Fixture, il: u64, recurrent: bool, ple: bool) {
     } else {
         f.t(&n("attn_q.weight"), &[E, HEAD_DIM * HEADS * 2], Q2_K);
         f.t(&n("attn_k.weight"), &[E, HEAD_DIM * KV_HEADS], Q2_K);
-        f.t(&n("attn_v.weight"), &[E, HEAD_DIM * KV_HEADS], Q2_K);
-        f.t(&n("attn_output.weight"), &[HEAD_DIM * HEADS, E], Q2_K);
+        f.t(&n("attn_v.weight"), &[E, VAL_DIM * KV_HEADS], Q2_K);
+        f.t(&n("attn_output.weight"), &[VAL_DIM * HEADS, E], Q2_K);
         f.t(&n("attn_q_norm.weight"), &[HEAD_DIM], F32);
         f.t(&n("attn_k_norm.weight"), &[HEAD_DIM], F32);
         f.t(&n("indexer.q_proj.weight"), &[E, IDX_HEADS * IDX_DIM], Q2_K);
@@ -269,8 +275,8 @@ fn block(f: &mut Fixture, il: u64, recurrent: bool, ple: bool) {
         f.t(&n("indexer.k_norm.weight"), &[IDX_DIM], F32);
     }
     if ple {
-        f.t(&n("ple_key.weight"), &[E, hc_dim], F32);
-        f.t(&n("ple_value.weight"), &[E, E], F32);
+        f.t(&n("ple_key.weight"), &[PLE_EMBD, hc_dim], F32);
+        f.t(&n("ple_value.weight"), &[PLE_EMBD, E], F32);
         f.t(&n("ple_norm_key.weight"), &[E, HC], F32);
         f.t(&n("ple_norm_query.weight"), &[E, HC], F32);
         f.t(&n("ple_norm_conv.weight"), &[E, HC], F32);
@@ -386,11 +392,14 @@ fn gguf_qwen4exp_recurrent_layers_array_overrides_interval() {
     let mut f = fixture();
     f.kv(
         "qwen4exp.attention.recurrent_layers",
-        Kv::Bools(vec![true, true, true, false, false]),
+        Kv::Bools(vec![false, true, true, true, false]),
     );
-    f.drop_kv("qwen4exp.full_attention_interval");
+    // The interval key stays: interval 4 derives [T, T, T, F, F], so only a reader that takes
+    // the array can produce this vector (lane-1 finding 3, PR #7356: the old pattern equalled
+    // the interval default, so deleting the array branch left the test green).
     let m = meta_of(&f);
-    assert!(m.is_recurrent(0) && !m.is_recurrent(3));
+    let kinds: Vec<bool> = (0..5).map(|i| m.is_recurrent(i)).collect();
+    assert_eq!(kinds, vec![false, true, true, true, false]);
 }
 
 #[test]
@@ -579,6 +588,32 @@ fn gguf_qwen4exp_transposed_tensor_is_refused_by_name() {
 }
 
 #[test]
+fn gguf_qwen4exp_attn_output_input_width_is_value_dim() {
+    // Each head emits value_dim values, so attn_output reads value_dim * n_head (lane-1
+    // finding 3, PR #7356). A head_dim-wide projection is refused by name.
+    let mut f = fixture();
+    assert_eq!(meta_of(&f).value_dim, VAL_DIM);
+    f.reshape("blk.3.attn_output.weight", &[HEAD_DIM * HEADS, E]);
+    let msg = err_text(check_shapes(&f.model(), &meta_of(&f)));
+    assert!(msg.contains("blk.3.attn_output.weight"), "{msg}");
+}
+
+#[test]
+fn gguf_qwen4exp_ple_projections_read_ple_embd_not_n_embd() {
+    // ple_key / ple_value multiply the gathered engram (ple_n_heads * ple_head_dim wide),
+    // not the hidden state (lane-1 finding 2, PR #7356). An n_embd-wide input is refused.
+    for (name, out) in [
+        ("blk.1.ple_key.weight", HC * E),
+        ("blk.1.ple_value.weight", E),
+    ] {
+        let mut f = fixture();
+        f.reshape(name, &[E, out]);
+        let msg = err_text(check_shapes(&f.model(), &meta_of(&f)));
+        assert!(msg.contains(name), "{name}: {msg}");
+    }
+}
+
+#[test]
 fn gguf_qwen4exp_missing_required_tensor_is_refused_by_name() {
     let mut f = fixture();
     f.tensors.retain(|t| t.0 != "blk.2.ssm_out.weight");
@@ -761,6 +796,49 @@ fn gguf_qwen4exp_mtp_tensors_are_split_out_of_the_trunk() {
     assert!(!mtp.is_empty());
     assert!(mtp.iter().all(|n| n.starts_with("blk.4.")), "{mtp:?}");
     assert!(mtp.contains(&"blk.4.nextn.eh_proj.weight".to_string()));
+}
+
+/// The trunk without its MTP block: block_count 4, no nextn layers.
+fn fixture_without_mtp() -> Fixture {
+    let mut f = fixture();
+    f.kv("qwen4exp.block_count", Kv::U32(4));
+    f.kv("qwen4exp.nextn_predict_layers", Kv::U32(0));
+    f.tensors.retain(|t| !t.0.starts_with("blk.4."));
+    f
+}
+
+#[test]
+fn qwen4_exp_mtp_gguf_load_refuses_mtp_tensors_by_name() {
+    // #7333 acceptance, through the real dense load entry (lane-1 finding 1, PR #7356): a
+    // qwen4exp GGUF carrying blk.N.nextn.* is refused by name before any weight is read.
+    let f = fixture();
+    let model = f.model();
+    let err = match crate::gguf::QuantizedGGUFTransformer::from_gguf(&model, &[]) {
+        Ok(_) => panic!("a qwen4exp file with MTP tensors must not load"),
+        Err(e) => e.to_string(),
+    };
+    assert!(err.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{err}");
+    assert!(err.contains("blk.4.nextn.eh_proj.weight"), "{err}");
+    assert!(!err.contains("blk.3."), "trunk tensor named: {err}");
+    let direct = err_text(load_qwen4exp_gguf(&model));
+    assert!(
+        direct.contains(crate::qwen4_exp::MTP_REFUSAL_ID),
+        "{direct}"
+    );
+}
+
+#[test]
+fn qwen4_exp_mtp_absent_gguf_passes_the_load_contract() {
+    let f = fixture_without_mtp();
+    let model = f.model();
+    let meta = load_qwen4exp_gguf(&model).expect("trunk-only file passes the contract");
+    assert_eq!((meta.block_count, meta.n_layer), (4, 4));
+    let err = match crate::gguf::QuantizedGGUFTransformer::from_gguf(&model, &[]) {
+        Ok(_) => panic!("the dense forward does not run qwen4exp"),
+        Err(e) => e.to_string(),
+    };
+    assert!(!err.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{err}");
+    assert!(err.contains("dense GGUF forward does not run it"), "{err}");
 }
 
 // ---------------------------------------------------------------------------

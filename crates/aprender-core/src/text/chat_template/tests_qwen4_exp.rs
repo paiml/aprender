@@ -94,6 +94,36 @@ fn chat_template_qwen4_exp_multi_turn_drops_old_thinking() {
     assert_eq!(render(&two_turns(), &o), golden!("multi_turn_drop_old"));
 }
 
+/// Lane-2 finding 3 (PR #7356) claimed the published jinja splits inline `<think>` out of
+/// assistant `content` when `reasoning_content` is absent. It does not: the template's only
+/// `</think>` literals are lines 119 and 170; line 103 only trims `content`, and lines 110-122
+/// either wrap it in an empty reasoning block (preserve) or emit it verbatim (drop). Both
+/// goldens were rendered from the published jinja, not from this crate.
+fn inline_think_turns() -> [ThinkingMessage; 3] {
+    [
+        msg("user", "2+2?", None),
+        msg("assistant", "<think>\nAdd the numbers.\n</think>\n\n4", None),
+        msg("user", "And 3+3?", None),
+    ]
+}
+
+#[test]
+fn chat_template_qwen4_exp_inline_think_is_not_split_when_preserving() {
+    assert_eq!(
+        render(&inline_think_turns(), &Qwen35ThinkingOptions::default()),
+        golden!("inline_think_preserve")
+    );
+}
+
+#[test]
+fn chat_template_qwen4_exp_inline_think_is_kept_verbatim_when_dropping() {
+    let o = Qwen35ThinkingOptions {
+        preserve_thinking: false,
+        ..Default::default()
+    };
+    assert_eq!(render(&inline_think_turns(), &o), golden!("inline_think_drop_old"));
+}
+
 #[test]
 fn chat_template_qwen4_exp_completed_turn_no_generation_prompt() {
     let o = Qwen35ThinkingOptions {

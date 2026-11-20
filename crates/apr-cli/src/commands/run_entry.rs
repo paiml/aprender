@@ -313,16 +313,16 @@ const KNOWN_UNRUNNABLE_CHECKPOINTS: &[(&str, &str, u64)] = &[(
 /// #7331: the refusal text for a checkpoint in [`KNOWN_UNRUNNABLE_CHECKPOINTS`], or
 /// `None`. Pure string work on the argument: it reads no file, opens no socket and
 /// allocates nothing proportional to the model, so it can run before everything.
-/// The match is on the repo id alone (an optional `hf://`, any case, optional
-/// trailing slash), so a longer id that merely starts with it is not caught.
+/// The match is on the repo id alone, any case: a bare `org/repo` (optional trailing
+/// slash), or the first two path segments of an `hf://` URI or a Hugging Face web URL
+/// (`https://huggingface.co/…`, `hf.co`), so `hf://org/repo/file.safetensors` and a
+/// `resolve/main/…` URL are caught (PR #7356 lane 2), while a longer repo name that merely
+/// starts with the id, or a local path below a directory of that name, is not.
 pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
-    let id = source
-        .strip_prefix("hf://")
-        .unwrap_or(source)
-        .trim_end_matches('/');
+    let id = checkpoint_repo_id(source);
     let (name, model_type, bytes) = KNOWN_UNRUNNABLE_CHECKPOINTS
         .iter()
-        .find(|(name, _, _)| name.eq_ignore_ascii_case(id))?;
+        .find(|(name, _, _)| name.eq_ignore_ascii_case(&id))?;
     #[cfg(feature = "inference")]
     let forward = realizar::capability::no_cuda_forward_reason(model_type)
         .unwrap_or_else(|| format!("no CUDA forward for architecture '{model_type}'"));
@@ -338,7 +338,29 @@ pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
     ))
 }
 
-fn refuse_known_checkpoint(source: &str) -> Result<()> {
+/// The repo id a run source names, for [`known_checkpoint_refusal`]: `org/repo` from a
+/// hub URI or URL, else the bare source without a trailing slash.
+fn checkpoint_repo_id(source: &str) -> String {
+    let lower = source.to_ascii_lowercase();
+    let hub_path = ["hf://", "https://huggingface.co/", "http://huggingface.co/",
+        "https://www.huggingface.co/", "https://hf.co/", "http://hf.co/"]
+        .iter()
+        .find(|p| lower.starts_with(*p))
+        .map(|p| &source[p.len()..]);
+    match hub_path {
+        Some(path) => path
+            .split('/')
+            .filter(|s| !s.is_empty())
+            .take(2)
+            .collect::<Vec<_>>()
+            .join("/"),
+        None => source.trim_end_matches('/').to_string(),
+    }
+}
+
+/// Exit 12 (`NotImplemented`) for a known-unrunnable checkpoint. Every `apr run` entry
+/// calls it first: the dispatch arm, [`run`] and [`run_batch`].
+pub(crate) fn refuse_known_checkpoint(source: &str) -> Result<()> {
     match known_checkpoint_refusal(source) {
         Some(reason) => Err(CliError::NotImplemented(reason)),
         None => Ok(()),
@@ -968,6 +990,8 @@ pub(crate) fn run_batch(
     constraint: &super::run::ConstraintArgs,
 ) -> Result<()> {
     use realizar::{run_batch_inference, BatchInferenceConfig};
+    // #7331: before the constraint check, the parse and `resolve_model` (the download).
+    refuse_known_checkpoint(source)?;
     if constraint.is_set() {
         return Err(crate::error::CliError::ConstraintRefused(
             crate::error::ConstraintRefusal {

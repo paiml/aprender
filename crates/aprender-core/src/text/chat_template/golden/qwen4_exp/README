@@ -4,3 +4,7 @@ https://huggingface.co/Qwen/Qwen3.8-Flash-Next/raw/main/chat_template.jinja
 jinja2 3.0.3, a custom Environment registering `raise_exception` and an extension that
 renders {% generation %}...{% endgeneration %} transparently. Inputs per file name:
 messages S=system U=user A=assistant(reasoning_content), add_generation_prompt=True unless noted.
+inline_think_preserve / inline_think_drop_old: U "2+2?", A content "<think>\nAdd the numbers.\n</think>\n\n4"
+with NO reasoning_content, U "And 3+3?"; preserve_thinking true / false. The published template
+has no `'</think>' in content` split (its only `</think>` literals are jinja lines 119 and 170);
+line 103 trims content and lines 110-122 wrap it in an empty reasoning block or emit it verbatim.
