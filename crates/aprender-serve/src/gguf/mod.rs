@@ -55,6 +55,7 @@ pub mod parity;
 mod quantized;
 pub mod qwen35_load;
 pub mod qwen3_moe_load;
+pub mod qwen4exp_load;
 mod runtime;
 mod transformer;
 mod types;

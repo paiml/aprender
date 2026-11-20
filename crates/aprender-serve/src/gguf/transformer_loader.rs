@@ -11,6 +11,11 @@ impl GGUFTransformer {
     ///
     /// Returns error if required tensors are missing or malformed
     pub fn from_gguf(model: &GGUFModel, file_data: &[u8]) -> Result<Self> {
+        // #7333 / PR #7356: the f32 path refuses qwen4exp exactly as the quantized one does
+        // (MTP tensors named first), before any config or weight is read.
+        if crate::gguf::qwen4exp_load::dense_loader_must_refuse(model) {
+            return Err(crate::gguf::qwen4exp_load::dense_loader_refusal(model));
+        }
         // Phase 2: Validate config at construction boundary.
         let config = ValidatedModelConfig::from_gguf(model)?.into_inner();
 
