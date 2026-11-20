@@ -334,6 +334,10 @@ pub enum Commands {
         /// MUST score ≥ 90 by this rubric.
         #[arg(long)]
         quality: bool,
+        /// Name every tensor family from `config.json` + `model.safetensors.index.json`
+        /// in the given directory, reading no weights (#7330).
+        #[arg(long)]
+        no_weights: bool,
     },
     /// Simple debugging output ("drama" mode available), or a debug subcommand
     ///
