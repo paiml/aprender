@@ -141,14 +141,13 @@ fn save_safetensors(model: &Model, path: &Path) -> Result<()> {
         .collect();
 
     // Create metadata with model info
-    let mut metadata = HashMap::new();
+    let mut metadata = std::collections::BTreeMap::new();
     metadata.insert("name".to_string(), model.metadata.name.clone());
     metadata.insert("architecture".to_string(), model.metadata.architecture.clone());
     metadata.insert("version".to_string(), model.metadata.version.clone());
 
     // Serialize to SafeTensors format
-    let safetensor_bytes = safetensors::serialize(views, Some(metadata))
-        .map_err(|e| Error::Serialization(format!("SafeTensors serialization failed: {e}")))?;
+    let safetensor_bytes = super::serialize_with_ordered_metadata(views, &metadata)?;
 
     // Write to file
     std::fs::write(path, safetensor_bytes)?;

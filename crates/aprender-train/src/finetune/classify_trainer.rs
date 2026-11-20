@@ -160,6 +160,51 @@ impl std::fmt::Debug for ClassifyTrainer {
     }
 }
 
+/// Save AdamW first moments (m) and second moments (v) as training-state tensors.
+fn add_optimizer_moments(
+    writer: &mut aprender::serialization::apr::AprWriter,
+    optimizer: &crate::optim::AdamW,
+) {
+    for (i, (m_opt, v_opt)) in
+        optimizer.first_moments().iter().zip(optimizer.second_moments().iter()).enumerate()
+    {
+        if let Some(m) = m_opt {
+            let m_slice = m.as_slice().expect("contiguous moment m");
+            writer.add_tensor_f32(format!("__training__.optimizer.m.{i}"), vec![m.len()], m_slice);
+        }
+        if let Some(v) = v_opt {
+            let v_slice = v.as_slice().expect("contiguous moment v");
+            writer.add_tensor_f32(format!("__training__.optimizer.v.{i}"), vec![v.len()], v_slice);
+        }
+    }
+}
+
+/// Samples per second for an epoch that took `ms`; zero when no time elapsed.
+fn rate_per_sec(samples: usize, ms: u64) -> f32 {
+    if ms > 0 {
+        samples as f32 / (ms as f32 / 1000.0)
+    } else {
+        0.0
+    }
+}
+
+/// Periodic checkpoint rule — when epochs <= save_every, save every epoch.
+fn periodic_save_due(epochs: usize, save_every: usize, epoch: usize) -> bool {
+    let every = if epochs <= save_every { 1 } else { save_every };
+    every > 0 && (epoch + 1) % every == 0
+}
+
+/// The result of a run that could not start (bind or worker connection failed).
+fn aborted_train_result(start: std::time::Instant) -> TrainResult {
+    TrainResult {
+        epoch_metrics: vec![],
+        best_epoch: 0,
+        best_val_loss: f32::INFINITY,
+        stopped_early: true,
+        total_time_ms: start.elapsed().as_millis() as u64,
+    }
+}
+
 impl ClassifyTrainer {
     /// Create a new trainer by splitting corpus into train/val sets.
     ///
@@ -408,11 +453,7 @@ impl ClassifyTrainer {
 
             let epoch_time = epoch_start.elapsed();
             let epoch_time_ms = epoch_time.as_millis() as u64;
-            let samples_per_sec = if epoch_time_ms > 0 {
-                self.train_data.len() as f32 / (epoch_time_ms as f32 / 1000.0)
-            } else {
-                0.0
-            };
+            let samples_per_sec = rate_per_sec(self.train_data.len(), epoch_time_ms);
 
             let metrics = EpochMetrics {
                 epoch,
@@ -429,19 +470,7 @@ impl ClassifyTrainer {
 
             // Epoch summary via monitoring framework
             let is_best = val_loss < best_val_loss;
-            if let Some(ref writer) = self.monitor_writer {
-                writer.emit_epoch_summary(
-                    epoch + 1,
-                    self.config.epochs,
-                    train_loss,
-                    train_accuracy,
-                    val_loss,
-                    val_accuracy,
-                    epoch_time.as_secs_f32(),
-                    scheduler.get_lr(),
-                    is_best,
-                );
-            }
+            self.emit_epoch_summary_if_monitored(&metrics, epoch_time.as_secs_f32(), is_best);
 
             // Track best validation loss
             if val_loss < best_val_loss {
@@ -457,21 +486,13 @@ impl ClassifyTrainer {
             }
 
             // Periodic checkpoint — when epochs <= save_every, save every epoch
-            let effective_save_every = if self.config.epochs <= self.config.save_every {
-                1
-            } else {
-                self.config.save_every
-            };
-            if effective_save_every > 0 && (epoch + 1) % effective_save_every == 0 {
+            if periodic_save_due(self.config.epochs, self.config.save_every, epoch) {
                 let epoch_path = self.config.checkpoint_dir.join(format!("epoch-{epoch}"));
                 let _ = self.save_checkpoint(&epoch_path, epoch, &metrics);
             }
 
             // Detect NaN/Inf loss — signal failure to monitor
-            if !train_loss.is_finite() || !val_loss.is_finite() {
-                if let Some(ref mut writer) = self.monitor_writer {
-                    let _ = writer.fail("NaN or Inf loss detected");
-                }
+            if self.fail_monitor_on_non_finite(train_loss, val_loss) {
                 training_failed = true;
                 stopped_early = true;
                 break;
@@ -527,26 +548,14 @@ impl ClassifyTrainer {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("[coordinator] Failed to bind: {e}");
-                return TrainResult {
-                    epoch_metrics: vec![],
-                    best_epoch: 0,
-                    best_val_loss: f32::INFINITY,
-                    stopped_early: true,
-                    total_time_ms: total_start.elapsed().as_millis() as u64,
-                };
+                return aborted_train_result(total_start);
             }
         };
 
         // Wait for all workers to connect
         if let Err(e) = server.wait_for_workers() {
             eprintln!("[coordinator] Worker connection failed: {e}");
-            return TrainResult {
-                epoch_metrics: vec![],
-                best_epoch: 0,
-                best_val_loss: f32::INFINITY,
-                stopped_early: true,
-                total_time_ms: total_start.elapsed().as_millis() as u64,
-            };
+            return aborted_train_result(total_start);
         }
 
         let num_workers = server.worker_count();
@@ -569,50 +578,9 @@ impl ClassifyTrainer {
 
             self.shuffle_training_data(epoch);
 
-            let batch_size = self.pipeline.config.batch_size;
-            let mut total_loss = 0.0f32;
-            let mut total_correct = 0usize;
-            let mut total_samples = 0usize;
-
-            // KAIZEN-032: Borrow pre-tokenized data directly — no per-epoch clone.
-            for (step_idx, chunk) in self.train_tokens.chunks(batch_size).enumerate() {
-                let step =
-                    epoch as u64 * (self.train_tokens.len() / batch_size) as u64 + step_idx as u64;
-
-                // Send shard assignments to workers
-                if let Err(e) = server.send_shard_assignments(step) {
-                    eprintln!("[coordinator] Shard assignment failed at step {step}: {e}");
-                    stopped_early = true;
-                    break;
-                }
-
-                // Coordinator also computes its own shard (local forward/backward)
-                let _local = self.pipeline.train_batch_tokenized(chunk);
-
-                // Collect and average gradients from all workers (F-DP-001)
-                match server.collect_and_reduce(step) {
-                    Ok(allreduce) => {
-                        // Apply averaged gradients locally
-                        self.pipeline.apply_lora_gradients(&allreduce.avg_gradients);
-
-                        // Broadcast to workers
-                        if let Err(e) = server.broadcast_averaged(step, &allreduce) {
-                            eprintln!("[coordinator] Broadcast failed at step {step}: {e}");
-                            stopped_early = true;
-                            break;
-                        }
-
-                        total_loss += allreduce.global_loss * allreduce.total_samples as f32;
-                        total_correct += allreduce.total_correct;
-                        total_samples += allreduce.total_samples;
-                    }
-                    Err(e) => {
-                        eprintln!("[coordinator] AllReduce failed at step {step}: {e}");
-                        stopped_early = true;
-                        break;
-                    }
-                }
-            }
+            let (total_loss, total_correct, total_samples, aborted) =
+                self.coordinator_epoch_batches(&mut server, epoch);
+            stopped_early = aborted;
 
             if stopped_early {
                 break;
@@ -626,11 +594,7 @@ impl ClassifyTrainer {
             let (val_loss, val_accuracy) = self.validate();
 
             let epoch_time_ms = epoch_start.elapsed().as_millis() as u64;
-            let samples_per_sec = if epoch_time_ms > 0 {
-                total_samples as f32 / (epoch_time_ms as f32 / 1000.0)
-            } else {
-                0.0
-            };
+            let samples_per_sec = rate_per_sec(total_samples, epoch_time_ms);
 
             let metrics = EpochMetrics {
                 epoch,
@@ -672,6 +636,73 @@ impl ClassifyTrainer {
             stopped_early,
             total_time_ms: total_start.elapsed().as_millis() as u64,
         }
+    }
+
+    /// Emit the per-epoch summary to the monitor, when one is attached.
+    fn emit_epoch_summary_if_monitored(&self, m: &EpochMetrics, epoch_secs: f32, is_best: bool) {
+        if let Some(ref writer) = self.monitor_writer {
+            writer.emit_epoch_summary(
+                m.epoch + 1,
+                self.config.epochs,
+                m.train_loss,
+                m.train_accuracy,
+                m.val_loss,
+                m.val_accuracy,
+                epoch_secs,
+                m.learning_rate,
+                is_best,
+            );
+        }
+    }
+
+    /// Signal a NaN/Inf loss to the monitor. Returns true when a loss is not finite.
+    fn fail_monitor_on_non_finite(&mut self, train_loss: f32, val_loss: f32) -> bool {
+        if train_loss.is_finite() && val_loss.is_finite() {
+            return false;
+        }
+        if let Some(ref mut writer) = self.monitor_writer {
+            let _ = writer.fail("NaN or Inf loss detected");
+        }
+        true
+    }
+
+    /// One coordinator epoch of distributed batches. Returns
+    /// `(total_loss, total_correct, total_samples, aborted)`.
+    fn coordinator_epoch_batches(
+        &mut self,
+        server: &mut super::gradient_server::GradientServer,
+        epoch: usize,
+    ) -> (f32, usize, usize, bool) {
+        let batch_size = self.pipeline.config.batch_size;
+        let (mut total_loss, mut total_correct, mut total_samples) = (0.0f32, 0usize, 0usize);
+        // KAIZEN-032: Borrow pre-tokenized data directly — no per-epoch clone.
+        for (step_idx, chunk) in self.train_tokens.chunks(batch_size).enumerate() {
+            let step =
+                epoch as u64 * (self.train_tokens.len() / batch_size) as u64 + step_idx as u64;
+            if let Err(e) = server.send_shard_assignments(step) {
+                eprintln!("[coordinator] Shard assignment failed at step {step}: {e}");
+                return (total_loss, total_correct, total_samples, true);
+            }
+            // Coordinator also computes its own shard (local forward/backward)
+            let _local = self.pipeline.train_batch_tokenized(chunk);
+            // Collect and average gradients from all workers (F-DP-001)
+            let allreduce = match server.collect_and_reduce(step) {
+                Ok(a) => a,
+                Err(e) => {
+                    eprintln!("[coordinator] AllReduce failed at step {step}: {e}");
+                    return (total_loss, total_correct, total_samples, true);
+                }
+            };
+            self.pipeline.apply_lora_gradients(&allreduce.avg_gradients);
+            if let Err(e) = server.broadcast_averaged(step, &allreduce) {
+                eprintln!("[coordinator] Broadcast failed at step {step}: {e}");
+                return (total_loss, total_correct, total_samples, true);
+            }
+            total_loss += allreduce.global_loss * allreduce.total_samples as f32;
+            total_correct += allreduce.total_correct;
+            total_samples += allreduce.total_samples;
+        }
+        (total_loss, total_correct, total_samples, false)
     }
 
     /// Train for one epoch, processing all training data in batches.
@@ -902,13 +933,11 @@ impl ClassifyTrainer {
             })
             .collect();
 
-        let mut st_metadata = std::collections::HashMap::new();
+        let mut st_metadata = std::collections::BTreeMap::new();
         st_metadata.insert("epoch".to_string(), epoch.to_string());
         st_metadata.insert("val_loss".to_string(), format!("{:.6}", metrics.val_loss));
 
-        let safetensor_bytes = safetensors::serialize(views, Some(st_metadata)).map_err(|e| {
-            crate::Error::Serialization(format!("SafeTensors serialization failed: {e}"))
-        })?;
+        let safetensor_bytes = crate::io::serialize_with_ordered_metadata(views, &st_metadata)?;
         std::fs::write(&st_path, safetensor_bytes)?;
 
         // Save APR format (full training state)
@@ -972,6 +1001,49 @@ impl ClassifyTrainer {
 
         contract_post_save_checkpoint!(());
         Ok(())
+    }
+
+    /// F-CKPT-007: every LoRA factor must be finite before it is written.
+    fn check_lora_finite(&self) -> crate::Result<()> {
+        for (idx, lora) in self.pipeline.lora_layers.iter().enumerate() {
+            let a = lora.lora_a().data();
+            let b = lora.lora_b().data();
+            if !a.iter().all(|v| v.is_finite()) {
+                return Err(crate::Error::Serialization(format!(
+                    "F-CKPT-007: lora[{idx}].lora_a contains NaN or Inf"
+                )));
+            }
+            if !b.iter().all(|v| v.is_finite()) {
+                return Err(crate::Error::Serialization(format!(
+                    "F-CKPT-007: lora[{idx}].lora_b contains NaN or Inf"
+                )));
+            }
+        }
+        Ok(())
+    }
+
+    /// LoRA adapter tensors (F-CKPT-001: adapter completeness).
+    fn add_lora_adapter_tensors(&self, writer: &mut aprender::serialization::apr::AprWriter) {
+        for (idx, lora) in self.pipeline.lora_layers.iter().enumerate() {
+            let layer = idx / 2;
+            let proj = if idx % 2 == 0 { "q" } else { "v" };
+
+            let a_data = lora.lora_a().data();
+            let a_slice = a_data.as_slice().expect("contiguous lora_a");
+            writer.add_tensor_f32(
+                format!("lora.{layer}.{proj}_proj.lora_a"),
+                vec![lora.rank(), lora.d_in()],
+                a_slice,
+            );
+
+            let b_data = lora.lora_b().data();
+            let b_slice = b_data.as_slice().expect("contiguous lora_b");
+            writer.add_tensor_f32(
+                format!("lora.{layer}.{proj}_proj.lora_b"),
+                vec![lora.d_out(), lora.rank()],
+                b_slice,
+            );
+        }
     }
 
     /// Save model in APR format with full training state.
@@ -1054,27 +1126,7 @@ impl ClassifyTrainer {
         let bias_slice = bias_data.as_slice().expect("contiguous bias");
         writer.add_tensor_f32("classifier.bias", vec![bias.len()], bias_slice);
 
-        // ── LoRA adapter tensors (F-CKPT-001: adapter completeness) ──────
-        for (idx, lora) in self.pipeline.lora_layers.iter().enumerate() {
-            let layer = idx / 2;
-            let proj = if idx % 2 == 0 { "q" } else { "v" };
-
-            let a_data = lora.lora_a().data();
-            let a_slice = a_data.as_slice().expect("contiguous lora_a");
-            writer.add_tensor_f32(
-                format!("lora.{layer}.{proj}_proj.lora_a"),
-                vec![lora.rank(), lora.d_in()],
-                a_slice,
-            );
-
-            let b_data = lora.lora_b().data();
-            let b_slice = b_data.as_slice().expect("contiguous lora_b");
-            writer.add_tensor_f32(
-                format!("lora.{layer}.{proj}_proj.lora_b"),
-                vec![lora.d_out(), lora.rank()],
-                b_slice,
-            );
-        }
+        self.add_lora_adapter_tensors(&mut writer);
 
         // ── Training state (F-CKPT-004: optimizer moments) ──────────────
         let optimizer = self.pipeline.optimizer();
@@ -1086,27 +1138,7 @@ impl ClassifyTrainer {
             &[optimizer.step_count() as f32],
         );
 
-        // Save first moments (m) and second moments (v)
-        for (i, (m_opt, v_opt)) in
-            optimizer.first_moments().iter().zip(optimizer.second_moments().iter()).enumerate()
-        {
-            if let Some(m) = m_opt {
-                let m_slice = m.as_slice().expect("contiguous moment m");
-                writer.add_tensor_f32(
-                    format!("__training__.optimizer.m.{i}"),
-                    vec![m.len()],
-                    m_slice,
-                );
-            }
-            if let Some(v) = v_opt {
-                let v_slice = v.as_slice().expect("contiguous moment v");
-                writer.add_tensor_f32(
-                    format!("__training__.optimizer.v.{i}"),
-                    vec![v.len()],
-                    v_slice,
-                );
-            }
-        }
+        add_optimizer_moments(&mut writer, optimizer);
 
         // ── Training metadata (F-CKPT-005) ──────────────────────────────
         writer.add_tensor_f32("__training__.epoch", vec![1], &[epoch as f32]);
@@ -1123,20 +1155,7 @@ impl ClassifyTrainer {
                 "F-CKPT-007: classifier.bias contains NaN or Inf".to_string(),
             ));
         }
-        for (idx, lora) in self.pipeline.lora_layers.iter().enumerate() {
-            let a = lora.lora_a().data();
-            let b = lora.lora_b().data();
-            if !a.iter().all(|v| v.is_finite()) {
-                return Err(crate::Error::Serialization(format!(
-                    "F-CKPT-007: lora[{idx}].lora_a contains NaN or Inf"
-                )));
-            }
-            if !b.iter().all(|v| v.is_finite()) {
-                return Err(crate::Error::Serialization(format!(
-                    "F-CKPT-007: lora[{idx}].lora_b contains NaN or Inf"
-                )));
-            }
-        }
+        self.check_lora_finite()?;
 
         // ── Shape validation (F-CKPT-008) ────────────────────────────────
         let expected_weight_len =

@@ -194,7 +194,7 @@ fn export_safetensors(merged: &Model, args: &MergeArgs) -> Result<(), String> {
         .collect();
 
     let metadata = build_safetensor_metadata(merged, args);
-    let safetensor_bytes = safetensors::serialize(views, Some(metadata))
+    let safetensor_bytes = crate::io::serialize_with_ordered_metadata(views, &metadata)
         .map_err(|e| format!("Failed to serialize SafeTensors: {e}"))?;
 
     std::fs::write(&args.output, safetensor_bytes)
@@ -202,8 +202,11 @@ fn export_safetensors(merged: &Model, args: &MergeArgs) -> Result<(), String> {
 }
 
 /// Build SafeTensors metadata
-fn build_safetensor_metadata(merged: &Model, args: &MergeArgs) -> HashMap<String, String> {
-    let mut metadata = HashMap::new();
+fn build_safetensor_metadata(
+    merged: &Model,
+    args: &MergeArgs,
+) -> std::collections::BTreeMap<String, String> {
+    let mut metadata = std::collections::BTreeMap::new();
     metadata.insert("name".to_string(), "merged-model".to_string());
     metadata.insert("merge_method".to_string(), format!("{:?}", args.method));
     metadata.insert("tensor_count".to_string(), merged.len().to_string());
@@ -228,6 +231,22 @@ fn log_merge_complete(merged: &Model, args: &MergeArgs, level: LogLevel) {
         LogLevel::Normal,
         &format!("Merge complete: {} tensors written to {}", merged.len(), args.output.display()),
     );
+}
+
+/// `merged += scale * (B @ A)` with `B: [d_out, r]`, `A: [r, d_in]` (row-major).
+fn add_scaled_lora_delta(
+    merged: &mut [f32],
+    b: &[f32],
+    a: &[f32],
+    (d_out, r, d_in): (usize, usize, usize),
+    scale: f32,
+) {
+    for i in 0..d_out {
+        for j in 0..d_in {
+            let sum: f32 = (0..r).map(|k| b[i * r + k] * a[k * d_in + j]).sum();
+            merged[i * d_in + j] += scale * sum;
+        }
+    }
 }
 
 /// Merge LoRA adapter into base model (ENT-LoRA-017)
@@ -322,23 +341,8 @@ fn run_lora_adapter_merge(args: &MergeArgs, level: LogLevel) -> Result<(), Strin
             let r = b_shape[1];
             let d_in = a_shape[1];
 
-            // Compute B @ A: [d_out, r] @ [r, d_in] -> [d_out, d_in]
-            let mut ba = vec![0.0f32; d_out * d_in];
-            for i in 0..d_out {
-                for j in 0..d_in {
-                    let mut sum = 0.0f32;
-                    for k in 0..r {
-                        sum += b_f32[i * r + k] * a_f32[k * d_in + j];
-                    }
-                    ba[i * d_in + j] = sum;
-                }
-            }
-
-            // W_merged = W_base + scale * BA
             let mut merged: Vec<f32> = base_f32;
-            for (i, val) in merged.iter_mut().enumerate() {
-                *val += scale * ba[i];
-            }
+            add_scaled_lora_delta(&mut merged, &b_f32, &a_f32, (d_out, r, d_in), scale);
 
             let bytes: Vec<u8> = bytemuck::cast_slice(&merged).to_vec();
             output_tensors.push((name.clone(), bytes, shape));
@@ -363,12 +367,12 @@ fn run_lora_adapter_merge(args: &MergeArgs, level: LogLevel) -> Result<(), Strin
         })
         .collect();
 
-    let mut metadata = HashMap::new();
+    let mut metadata = std::collections::BTreeMap::new();
     metadata.insert("format".to_string(), "entrenar-merged-lora".to_string());
     metadata.insert("lora_rank".to_string(), rank.to_string());
     metadata.insert("lora_alpha".to_string(), format!("{alpha}"));
 
-    let safetensor_bytes = safetensors::serialize(views, Some(metadata))
+    let safetensor_bytes = crate::io::serialize_with_ordered_metadata(views, &metadata)
         .map_err(|e| format!("Serialize merged model: {e}"))?;
 
     std::fs::write(&args.output, safetensor_bytes)
@@ -1584,6 +1588,23 @@ mod tests {
         assert!(names.contains(&"layer1"));
         assert!(names.contains(&"layer2"));
         let _ = std::fs::remove_file(&t);
+    }
+
+    /// #7293: same merged model must export byte-identical safetensors.
+    #[test]
+    fn test_export_safetensors_is_byte_deterministic() {
+        let m = mk(&[("layer1", &[1.0, 2.0, 3.0]), ("layer2", &[4.0, 5.0])]);
+        let dir = tempfile::tempdir().unwrap();
+        let run = |n: usize| {
+            let t = dir.path().join(format!("m{n}.safetensors"));
+            let a = MergeArgs { output: t.clone(), ..mk_args(MergeMethod::Ties) };
+            export_merged_model(&m, &a).unwrap();
+            std::fs::read(t).unwrap()
+        };
+        let first = run(0);
+        for i in 1..16 {
+            assert_eq!(first, run(i));
+        }
     }
 
     // ── export json with empty model ────────────────────────────────────
