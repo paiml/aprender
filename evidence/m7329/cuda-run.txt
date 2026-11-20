@@ -1,0 +1,7 @@
+=== APR Run ===
+
+Source: /mnt/nvme-raid0/models/Qwen3.8-27B-UD-Q4_K_M.gguf
+Inference tracing enabled (APR-TRACE-001)
+  Trace level: basic
+timeout 280 "$APR" run $M --prompt '2+2?' --max-tokens 16 --gpu --trace 2>&1  0.10s user 15.04s system 21% cpu 1:11.60 total
+tail -n 14  0.00s user 0.00s system 0% cpu 1:11.60 total
