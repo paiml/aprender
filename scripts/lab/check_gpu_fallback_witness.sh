@@ -485,9 +485,9 @@ FAKE
   mc no-args 2
   mc unknown-option 2 --bogus
   mc apr-missing-value 2 --apr
-  mc models-missing-value 2 --apr /p/apr --models
-  mc expected-missing-value 2 --apr /p/apr --models /l/m --expected
-  mc no-models 2 --apr /p/apr
+  mc models-missing-value 2 --apr /p/aprbin --models
+  mc expected-missing-value 2 --apr /p/aprbin --models /l/m --expected
+  mc no-models 2 --apr /p/aprbin
   mc self-test-extra-arg 2 --self-test --bogus
   mc no-apr 2 --models /l/m
   mc empty-apr-value 2 --apr '' --models /l/m
@@ -498,7 +498,7 @@ FAKE
     file_exists() { return 0; }
     read_text() { case "$1" in /l/e) echo "# none" ;; *) echo "/m/a.gguf" ;; esac; }
     run_apr() { echo "$ADM"; }
-    main --apr /p/apr --models /l/m --expected /l/e
+    main --apr /p/aprbin --models /l/m --expected /l/e
   ) >/dev/null 2>&1 || rc=$?
   t main-forwards-green 0 "$rc"
   rc=0
@@ -508,7 +508,7 @@ FAKE
     file_exists() { return 0; }
     read_text() { case "$1" in /l/e) echo "# none" ;; *) echo "/m/a.gguf" ;; esac; }
     run_apr() { echo "$FB"; }
-    main --apr /p/apr --models /l/m --expected /l/e
+    main --apr /p/aprbin --models /l/m --expected /l/e
   ) >/dev/null 2>&1 || rc=$?
   t main-forwards-red 1 "$rc"
   rc=0
@@ -518,7 +518,7 @@ FAKE
     file_exists() { return 0; }
     read_text() { case "$1" in /l/e | "$DEFAULT_EXPECTED") echo "# none" ;; *) echo "/m/a.gguf" ;; esac; }
     run_apr() { echo "$ADM"; }
-    main --apr /p/apr --models /l/m
+    main --apr /p/aprbin --models /l/m
   ) >/dev/null 2>&1 || rc=$?
   t main-default-expected-used 0 "$rc"
   t default-expected-path-exists yes "$(if [[ -f "$DEFAULT_EXPECTED" ]]; then echo yes; else echo no; fi)"
