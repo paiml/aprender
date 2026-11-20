@@ -59,6 +59,10 @@ pub(crate) fn run(
         eprintln!("Warning: --task is not yet supported for inference. Flag ignored.");
     }
 
+    // #7331: a checkpoint known to fit no supported host is refused before
+    // ANYTHING else: no banner, no alias/HF probe, no cache dir, no download.
+    refuse_known_checkpoint(source)?;
+
     // #3817: refuse BEFORE the load when the user forced an accelerator this
     // build has no forward for. Placed above every print, so a refused run emits
     // no banner, no `Source:` line and no generation — the caller sees a named
@@ -294,6 +298,51 @@ fn declared_architecture(source: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// A checkpoint that is KNOWN, from its published config and index, to be
+/// unrunnable here: `(repo id, model_type, approx bf16 bytes)`. The facts come from
+/// the checkpoint's `config.json` / `model.safetensors.index.json` (#7318); the
+/// table lists what we know we cannot run, never what we support.
+const KNOWN_UNRUNNABLE_CHECKPOINTS: &[(&str, &str, u64)] = &[(
+    "Qwen/Qwen3.8-2.4T-A95B",
+    "qwen3_5_moe_text",
+    4_900_000_000_000,
+)];
+
+/// #7331: the refusal text for a checkpoint in [`KNOWN_UNRUNNABLE_CHECKPOINTS`], or
+/// `None`. Pure string work on the argument: it reads no file, opens no socket and
+/// allocates nothing proportional to the model, so it can run before everything.
+/// The match is on the repo id alone (an optional `hf://`, any case, optional
+/// trailing slash), so a longer id that merely starts with it is not caught.
+pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
+    let id = source
+        .strip_prefix("hf://")
+        .unwrap_or(source)
+        .trim_end_matches('/');
+    let (name, model_type, bytes) = KNOWN_UNRUNNABLE_CHECKPOINTS
+        .iter()
+        .find(|(name, _, _)| name.eq_ignore_ascii_case(id))?;
+    #[cfg(feature = "inference")]
+    let forward = realizar::capability::no_cuda_forward_reason(model_type)
+        .unwrap_or_else(|| format!("no CUDA forward for architecture '{model_type}'"));
+    #[cfg(not(feature = "inference"))]
+    let forward = format!("no CUDA forward for architecture '{model_type}'");
+    // TB with one decimal: 4_900_000_000_000 -> "4.9 TB".
+    let tb = *bytes as f64 / 1e12;
+    Some(format!(
+        "refusing to run {name}: the checkpoint is about {tb:.1} TB in bf16 \
+         (model_type {model_type}), which exceeds every supported host, and there is \
+         no CUDA forward for it: {forward} Refused before any download or allocation: \
+         nothing was downloaded and nothing was loaded (#7331)."
+    ))
+}
+
+fn refuse_known_checkpoint(source: &str) -> Result<()> {
+    match known_checkpoint_refusal(source) {
+        Some(reason) => Err(CliError::NotImplemented(reason)),
+        None => Ok(()),
+    }
 }
 
 /// #3817: `apr run --gpu` on an architecture with no CUDA forward refuses by
