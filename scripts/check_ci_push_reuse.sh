@@ -258,7 +258,7 @@ mkrepo "$T/r"; H="$(git -C "$T/r" rev-parse HEAD)"
 tier() { (cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$(git -C "$T/r" rev-parse HEAD^1)" ${GSHA:+GITHUB_SHA=$GSHA} ${GREF:+GITHUB_REF=$GREF} bash "$TIER" --event push --repo-root "$T/r" "$@" 2>&1); }
 BASE="$(tier)"
 want "D0 push with no merge_group result -> today's tier (docs-only: none)" "tier=none" "$(grep '^tier=' <<<"$BASE")"
-OUT="$(cd "$ROOT" && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$H" bash "$TIER" --event push --repo-root "$T/r" 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && env -u GITHUB_SHA -u GITHUB_REF PUSH_BEFORE="$H" bash "$TIER" --event push --repo-root "$T/r" 2>&1)"
 want "D0e push whose before == HEAD (empty diff) -> full, never none" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 hasnt "D0 and no note about a merge_group (no --mg-* given: as before)" "merge_group" "$BASE"
 
@@ -301,19 +301,19 @@ want "T3 a branch push (refs/heads/main) still reuses" "tier=reuse" "$(grep '^ti
 
 # a root commit: today's tier is full (no diff can be derived); a refused result keeps it full
 git init -q -b main "$T/root"; git -C "$T/root" -c user.name=t -c user.email=t@t commit -q --allow-empty -m only
-OUT="$(cd "$ROOT" && env -u GITHUB_SHA PUSH_BEFORE=0000000000000000000000000000000000000000 bash "$TIER" --event push --repo-root "$T/root" --mg-run 7001 --mg-sha "$H" --mg-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && env -u GITHUB_SHA PUSH_BEFORE=0000000000000000000000000000000000000000 bash "$TIER" --event push --repo-root "$T/root" --mg-run 7001 --mg-sha "$H" --mg-conclusion success 2>&1)"
 want "D8 a refused result on a root commit keeps today's full" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 
 # merge_group and pull_request never read --mg-*; merge_group's own reuse is unchanged
 git -C "$T/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m "queue, same tree"
 P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
-OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
 want "D9 merge_group + PR head success, SAME tree (empty queue diff) -> full: the PR green is never reused (RED against the pre-PR script, which answered reuse)" "tier=full" "$(grep '^tier=' <<<"$OUT")"
-OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
 want "D10 merge_group + PR head success + a green --mg-* run, SAME tree -> full: --mg-* is ignored (RED against the pre-PR script)" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 printf "[workspace]\n" > "$T/r/Cargo.toml"; git -C "$T/r" add Cargo.toml; git -C "$T/r" -c user.name=t -c user.email=t@t commit -q -m "queue, root manifest (non-empty diff)"
 P="$(git -C "$T/r" rev-parse HEAD~1)"; Q="$(git -C "$T/r" rev-parse HEAD)"
-OUT="$(cd "$ROOT" && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
+OUT="$(pushd "$ROOT" >/dev/null && bash "$TIER" --event merge_group --repo-root "$T/r" --pr-head "$P" --pr-head-conclusion success 2>&1)"
 want "D9b merge_group + PR head success, NON-EMPTY diff (root manifest) -> full" "tier=full" "$(grep '^tier=' <<<"$OUT")"
 printf 'docs/audits/a.md\n' >"$T/d.txt"
 OUT="$(cd "$ROOT" && bash "$TIER" --event pull_request --repo-root "$T/r" --diff-from "$T/d.txt" --mg-run 7001 --mg-sha "$Q" --mg-conclusion success 2>&1)"
@@ -477,7 +477,7 @@ done
 RG="$T/rootrepo"; mkdir -p "$RG/bin"; git init -q -b main "$RG/r" && git -C "$RG/r" -c user.name=t -c user.email=t@t commit -q --allow-empty -m root
 printf '#!/bin/sh\necho called >> "%s/gh.calls"\nexit 1\n' "$RG" > "$RG/bin/gh"; chmod +x "$RG/bin/gh"
 RSHA=$(git -C "$RG/r" rev-parse HEAD)
-OUT=$(cd "$RG/r" && PATH="$RG/bin:$PATH" bash "$FACTS" --repo o/r --sha "$RSHA" --before 0000000000000000000000000000000000000000 --ref refs/heads/main --event push --now 1000 2>&1); RC=$?
+OUT=$(pushd "$RG/r" >/dev/null && PATH="$RG/bin:$PATH" bash "$FACTS" --repo o/r --sha "$RSHA" --before 0000000000000000000000000000000000000000 --ref refs/heads/main --event push --now 1000 2>&1); RC=$?
 want "Y20 a root commit is refused as 'no parent' before any gh call" "1:1:0" "$RC:$(grep -c 'no parent' <<< "$OUT"):$(wc -l < "$RG/gh.calls" 2> /dev/null || echo 0)"
 
 # -- Z: round 3 of #7314 (fail-closed facts, fork guard on every PR-run self-hosted job, the --now wiring)
