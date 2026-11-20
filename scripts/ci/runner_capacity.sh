@@ -42,7 +42,12 @@ self_test() {
   [ "$rc" -eq 0 ] || { echo "FAIL: 3 online must exit 0, got $rc"; return 1; }
   rc=0; report "$d/nolabel.json" clean-room 1 >/dev/null || rc=$?
   [ "$rc" -eq 1 ] || { echo "FAIL: unlabelled runner must not count, got $rc"; return 1; }
-  echo "runner_capacity self-test: PASS (3 cases)"
+  printf 'not json' > "$d/bad.json"
+  rc=0; report "$d/bad.json" clean-room 3 >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || { echo "FAIL: unreadable list must exit 2, got $rc"; return 1; }
+  rc=0; report "$d/missing.json" clean-room 3 >/dev/null 2>&1 || rc=$?
+  [ "$rc" -eq 2 ] || { echo "FAIL: missing list must exit 2, got $rc"; return 1; }
+  echo "runner_capacity self-test: PASS (5 cases)"
 }
 
 min=3; label=clean-room; file=''
