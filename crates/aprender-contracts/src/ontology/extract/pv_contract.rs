@@ -42,7 +42,7 @@ pub fn documents(contract_dir: &Path) -> Vec<(String, String, serde_yaml::Value)
         let Ok(raw) = std::fs::read_to_string(file) else {
             continue;
         };
-        let Ok(doc) = serde_yaml::from_str::<serde_yaml::Value>(&raw) else {
+        let Ok(doc) = crate::ontology::shapes::yaml_from_str(&raw) else {
             continue;
         };
         let stem = file

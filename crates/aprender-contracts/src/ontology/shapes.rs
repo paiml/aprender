@@ -557,6 +557,14 @@ fn numeric_bound(
             .filter(|f| f.is_finite())
             .map(|f| (f.to_string(), "double")),
         serde_yaml::Value::Number(n) => Some((n.to_string(), "integer")),
+        // The exact form: `{integer: "<digits>"}` or `{decimal: "<digits.digits>"}`, any width.
+        serde_yaml::Value::Mapping(m) if m.len() == 1 => m.iter().next().and_then(|(k, val)| {
+            let (local, text) = (k.as_str()?, val.as_str()?);
+            let text = text.trim();
+            (matches!(local, "integer" | "decimal")
+                && well_formed(text, &format!("{XSD_NS}{local}")))
+            .then(|| (text.to_string(), local))
+        }),
         _ => None,
     };
     bound
@@ -569,9 +577,27 @@ fn numeric_bound(
         .ok_or_else(|| malformed_in(shape, format!("`{key}` is not a finite number")))
 }
 
-/// Parse contract YAML text (stub: replaced by the exact-bound pre-pass).
+/// Parse contract YAML text, keeping a range facet's integer bound exact at every width. `serde_yaml` holds a
+/// number as `i64`, `u64` or `f64`: an integer beyond `u64::MAX` (or below `i64::MIN`) is a parse error up to
+/// 128 bits and a rounded `f64` past that. So a facet key (`minInclusive`, `maxInclusive`, `minExclusive`,
+/// `maxExclusive`) whose value is a plain integer of 19 or more digits is rewritten to the exact form
+/// `{integer: "<digits>"}` before parsing. Everything else is `serde_yaml`'s own parse.
+///
+/// # Errors
+/// The `serde_yaml` error for text that is not YAML.
 pub fn yaml_from_str(text: &str) -> Result<serde_yaml::Value, serde_yaml::Error> {
-    serde_yaml::from_str(text)
+    static WIDE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = WIDE.get_or_init(|| {
+        regex::Regex::new(
+            r#"(?m)(?P<k>["']?(?:minInclusive|maxInclusive|minExclusive|maxExclusive)["']?\s*:[ \t]*)(?P<v>[+-]?[0-9]{19,})(?P<t>[ \t]*(?:[,}\]]|#|\r?$))"#,
+        )
+        .expect("static regex")
+    });
+    let rewritten = re.replace_all(text, |c: &regex::Captures<'_>| {
+        let digits = c["v"].strip_prefix('+').unwrap_or(&c["v"]);
+        format!("{}{{integer: \"{}\"}}{}", &c["k"], digits, &c["t"])
+    });
+    serde_yaml::from_str(&rewritten)
 }
 
 fn malformed_in(shape: &str, what: String) -> ShapeError {
@@ -1166,6 +1192,36 @@ fn xsd_f64(value: &str) -> Option<f64> {
     }
 }
 
+/// Digit-string judgement for the integer types with no 128-bit cap (`integer` and the four half-bounded
+/// ones), so a literal of any width is never narrowed through an `i128` parse. `None` for a capped type.
+fn unbounded_integer_well_formed(local: &str, value: &str) -> Option<bool> {
+    if !matches!(
+        local,
+        "integer"
+            | "nonNegativeInteger"
+            | "positiveInteger"
+            | "nonPositiveInteger"
+            | "negativeInteger"
+    ) {
+        return None;
+    }
+    let (neg, d) = match value.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, value.strip_prefix('+').unwrap_or(value)),
+    };
+    if d.is_empty() || !d.chars().all(|c| c.is_ascii_digit()) {
+        return Some(false);
+    }
+    let zero = d.chars().all(|c| c == '0');
+    Some(match local {
+        "nonNegativeInteger" => !neg || zero,
+        "positiveInteger" => !neg && !zero,
+        "nonPositiveInteger" => neg || zero,
+        "negativeInteger" => neg && !zero,
+        _ => true,
+    })
+}
+
 /// Is `value` a well-formed lexical form of the XSD `datatype`? A literal typed `xsd:byte` with the lexical
 /// form `300` (or `c`) is ill-formed and violates `sh:datatype` (SHACL §4.1.2; W3C `datatype-ill-formed`). The
 /// types checked are the ones the corpus and the vendored cases use; any other datatype is taken as
@@ -1176,10 +1232,8 @@ pub fn well_formed(value: &str, datatype: &str) -> bool {
         return true;
     };
     if let Some((lo, hi)) = integer_range(local) {
-        if local == "integer" {
-            // unbounded: any optionally signed digit string, beyond i128 too
-            let d = value.strip_prefix(['+', '-']).unwrap_or(value);
-            return !d.is_empty() && d.chars().all(|c| c.is_ascii_digit());
+        if let Some(ok) = unbounded_integer_well_formed(local, value) {
+            return ok;
         }
         return value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
     }
