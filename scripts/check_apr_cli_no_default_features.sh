@@ -6,26 +6,60 @@
 # not be run (not found, or it exited without a rustc diagnostic: not_measured, never a verdict), 64 on
 # a bad flag. LAB check: not wired into a PR, merge-queue, release or verdict job.
 #
-# Usage: bash scripts/check_apr_cli_no_default_features.sh [--target-dir DIR]
+# Usage: bash scripts/check_apr_cli_no_default_features.sh [--target-dir DIR | --self-test]  (self-test: arg-parsing rows, no cargo)
 set -euo pipefail
 
 usage() { echo "Usage: bash scripts/check_apr_cli_no_default_features.sh [--target-dir DIR]" >&2; }
 
 target_dir="${CARGO_TARGET_DIR:-}"
-case "${1:-}" in
-    "") ;;
-    -h | --help)
-        usage
-        exit 0
-        ;;
-    --target-dir)
-        target_dir="${2:?--target-dir needs a directory}"
-        ;;
-    *)
-        usage
-        exit 64
-        ;;
-esac
+# parse_args: sets target_dir; exits 0 on --help, 64 on any bad flag, a bare --target-dir, or trailing args.
+parse_args() {
+    case "${1:-}" in
+        "")
+            [[ $# -le 1 ]] || { usage; exit 64; }
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        --target-dir)
+            if [[ $# -ne 2 || -z "${2:-}" ]]; then
+                usage
+                exit 64
+            fi
+            target_dir="$2"
+            ;;
+        *)
+            usage
+            exit 64
+            ;;
+    esac
+}
+
+# --self-test: the argument-parsing rows (no cargo run); exit 0 all pass, 1 a row failed.
+if [[ "${1:-}" == "--self-test" ]]; then
+    me="${BASH_SOURCE[0]}"
+    fails=0
+    row() {
+        local want="$1" got=0
+        shift
+        bash "$me" "$@" > /dev/null 2>&1 < /dev/null || got=$?
+        if [[ "$got" -ne "$want" ]]; then
+            echo "FAIL row: args [$*] want rc=$want got rc=$got" >&2
+            fails=$((fails + 1))
+        fi
+    }
+    row 0 --help
+    row 64 --bogus
+    row 64 --target-dir
+    row 64 --target-dir ""
+    row 64 --target-dir /tmp/x extra
+    row 64 --target-dir /tmp/x --help
+    row 64 "" extra
+    [[ "$fails" -eq 0 ]] && echo "OK: self-test rows pass" && exit 0
+    exit 1
+fi
+parse_args "$@"
 if ! command -v cargo > /dev/null 2>&1; then
     echo "not_measured: cargo not found" >&2
     exit 2
@@ -56,5 +90,5 @@ run_step() {
 
 run_step "cargo build -p apr-cli --no-default-features" build
 # Not checked here: `cargo test -p apr-cli --no-default-features --lib --no-run` has 70+ pre-existing
-# errors in other test modules (golden_output, check, tokenize, ...); it joins this script once they are fixed.
+# errors in other test modules (golden_output, check, tokenize, ...); unfiled follow-up (no ticket, backlog capped); it joins this script once they are fixed.
 echo "OK: apr-cli builds with --no-default-features"

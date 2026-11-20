@@ -192,4 +192,4 @@ jobs:
       # LAB (#7294): this job is lane kind `lab` in nightly_train.sh, never a verdict lane.
       - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
         if: always()
-        run: bash scripts/check_apr_cli_no_default_features.sh
+        run: setsid --wait bash scripts/check_apr_cli_no_default_features.sh
