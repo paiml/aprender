@@ -345,6 +345,36 @@ pub fn classify_tensor(name: &str) -> Option<TensorFamily> {
     classify_layer_suffix(rest)
 }
 
+/// Stable error id of the MTP-head refusal (#7333).
+pub const MTP_REFUSAL_ID: &str = "QWEN4EXP-MTP-REFUSED";
+
+/// Names of the MTP-head tensors (`mtp.` prefix) among `names`, in input order.
+#[must_use]
+pub fn mtp_tensor_names<'a>(names: impl IntoIterator<Item = &'a str>) -> Vec<&'a str> {
+    names
+        .into_iter()
+        .filter(|n| classify_tensor(n) == Some(TensorFamily::Mtp))
+        .collect()
+}
+
+/// Refuse by name when MTP-head tensors are present (#7333). No llama.cpp reference is
+/// available offline to check MTP logits against, so the head is refused, never silently
+/// skipped or approximated; checkpoints without `mtp.*` tensors are unaffected.
+///
+/// # Errors
+/// A message led by [`MTP_REFUSAL_ID`] naming every `mtp.*` tensor.
+pub fn check_mtp_tensors<'a>(names: impl IntoIterator<Item = &'a str>) -> Result<(), String> {
+    let mtp = mtp_tensor_names(names);
+    if mtp.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "{MTP_REFUSAL_ID}: qwen4_exp multi-token-prediction head is not implemented; \
+         MTP tensors present: [{}]. This is a refusal, not a fallback: no logits are produced.",
+        mtp.join(", ")
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,5 +400,45 @@ mod tests {
         ] {
             assert_eq!(classify_tensor(n), None, "{n}");
         }
+    }
+
+    #[test]
+    fn qwen4_exp_mtp_refusal_has_stable_id_and_names_tensors() {
+        let names = [
+            "model.language_model.layers.0.mlp.gate.weight",
+            "mtp.layers.0.self_attn.q_proj.weight",
+            "mtp.fc.weight",
+        ];
+        let err = check_mtp_tensors(names.iter().copied()).expect_err("MTP weights must refuse");
+        assert!(err.contains(MTP_REFUSAL_ID), "{err}");
+        assert_eq!(MTP_REFUSAL_ID, "QWEN4EXP-MTP-REFUSED");
+        assert!(
+            err.contains("mtp.layers.0.self_attn.q_proj.weight"),
+            "{err}"
+        );
+        assert!(err.contains("mtp.fc.weight"), "{err}");
+        assert!(
+            !err.contains("layers.0.mlp.gate"),
+            "main tensor named: {err}"
+        );
+        assert!(err.contains("refusal, not a fallback"), "{err}");
+    }
+
+    #[test]
+    fn qwen4_exp_mtp_absent_leaves_main_decode_tensors_untouched() {
+        let names = [
+            "model.language_model.embed_tokens.weight",
+            "model.language_model.layers.3.self_attn.q_proj.weight",
+            "lm_head.weight",
+        ];
+        assert!(check_mtp_tensors(names.iter().copied()).is_ok());
+        assert_eq!(mtp_tensor_names(names.iter().copied()), Vec::<&str>::new());
+    }
+
+    #[test]
+    fn qwen4_exp_mtp_lookalike_prefix_is_not_mtp() {
+        // `mtpx.` and a layer path containing "mtp" are not the MTP head.
+        let names = ["mtpx.weight", "model.language_model.layers.0.mtp.weight"];
+        assert!(check_mtp_tensors(names.iter().copied()).is_ok());
     }
 }
