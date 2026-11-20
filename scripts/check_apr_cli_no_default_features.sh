@@ -65,7 +65,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
         printf '#!/bin/sh\necho "%s" >&2\nexit 101\n' "$msg" > "$d/cargo"
         chmod +x "$d/cargo"
         PATH="$d:$PATH" bash "$me" > /dev/null 2>&1 < /dev/null || got=$?
-        rm -rf "$d"
+        rm -rf "${d:?}"
         if [[ "$got" -ne "$want" ]]; then
             echo "FAIL fake-cargo row: [$msg] want rc=$want got rc=$got" >&2
             fails=$((fails + 1))
@@ -81,6 +81,7 @@ if [[ "${1:-}" == "--self-test" ]]; then
     step_row() {
         local want="$1" brc="$2" trc="$3" msg="$4" d got=0
         d="$(mktemp -d "${TMPDIR:-/tmp}/apr-cli-nodefault-st.XXXXXX")"
+        # shellcheck disable=SC2016  # the fake cargo script must keep $1 literal
         printf '#!/bin/sh\ncase "$1" in\n build) exit %s;;\n test) echo "%s" >&2; exit %s;;\nesac\nexit 0\n' "$brc" "$msg" "$trc" > "$d/cargo"
         chmod +x "$d/cargo"
         PATH="$d:$PATH" bash "$me" > /dev/null 2>&1 < /dev/null || got=$?
@@ -91,6 +92,8 @@ if [[ "${1:-}" == "--self-test" ]]; then
         fi
     }
     step_row 0 0 0 "test result: ok. 1 passed"
+    step_row 1 0 0 "test result: ok. 0 passed; 0 failed; 1 ignored"
+    step_row 1 0 0 "test result: ok. 0 passed; 0 failed; 0 ignored"
     step_row 1 0 101 "test result: FAILED. 0 passed; 1 failed; 0 ignored"
     step_row 2 0 101 "error: failed to acquire package cache lock"
     [[ "$fails" -eq 0 ]] && echo "OK: self-test rows pass" && exit 0
@@ -114,7 +117,14 @@ run_step() {
     shift
     local rc=0
     nice -n 10 cargo "$@" -p apr-cli --no-default-features -j 8 > "$log" 2>&1 || rc=$?
-    [[ "$rc" -eq 0 ]] && return 0
+    if [[ "$rc" -eq 0 ]]; then
+        # A test step that exits 0 must have RUN a test: `0 passed` (cfg'd out or #[ignore]d) is a verdict (1), not a pass.
+        if [[ "$1" == "test" ]] && ! grep -qE "^test result: ok\. [1-9][0-9]* passed" "$log"; then
+            echo "FAIL: $label exited 0 but ran no test (0 passed)" >&2
+            exit 1
+        fi
+        return 0
+    fi
     # A rustc diagnostic is `error[E....]:` or cargo's own `error: could not compile`; every other `error:`
     # line (package cache lock, failed to get, no matching package, ...) is cargo/host, not a verdict.
     if grep -qE "^error\[E[0-9]+\]:|^error: could not compile|^test result: FAILED" "$log"; then
