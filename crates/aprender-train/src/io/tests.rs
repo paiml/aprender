@@ -114,3 +114,21 @@ fn test_large_model_parameters() {
 
     std::fs::remove_file(path).ok();
 }
+
+/// #7293: SafeTensors checkpoints are byte-identical across saves of the same model.
+#[test]
+fn test_safetensors_save_is_byte_deterministic() {
+    let params = vec![("weight".to_string(), Tensor::from_vec(vec![1.0, 2.0, 3.0], true))];
+    let model = Model::new(ModelMetadata::new("det", "linear"), params);
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = SaveConfig::new(ModelFormat::SafeTensors);
+    let run = |n: usize| {
+        let p = dir.path().join(format!("m{n}.safetensors"));
+        save_model(&model, &p, &config).expect("save");
+        std::fs::read(p).expect("read")
+    };
+    let first = run(0);
+    for i in 1..16 {
+        assert_eq!(first, run(i));
+    }
+}
