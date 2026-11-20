@@ -1,7 +1,7 @@
 === CPU: 2+2?
 === APR Run ===
 
-Source: /mnt/nvme-raid0/models/Qwen3.8-27B-UD-Q4_K_M.gguf
+Source: Qwen3.8-27B-UD-Q4_K_M.gguf
 Inference tracing enabled (APR-TRACE-001)
   Trace level: basic
 
@@ -14,7 +14,7 @@ tail -n 14  0.00s user 0.00s system 0% cpu 2:07.13 total
 === CPU: Name the capital of France.
 === APR Run ===
 
-Source: /mnt/nvme-raid0/models/Qwen3.8-27B-UD-Q4_K_M.gguf
+Source: Qwen3.8-27B-UD-Q4_K_M.gguf
 Inference tracing enabled (APR-TRACE-001)
   Trace level: basic
 timeout 270 "$APR" run $M --prompt "$p" --max-tokens 16 --no-gpu --trace 2>&1  668.84s user 566.99s system 452% cpu 4:32.84 total

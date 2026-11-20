@@ -1,6 +1,6 @@
 === APR Run ===
 
-Source: /mnt/nvme-raid0/models/Qwen3.8-27B-UD-Q4_K_M.gguf
+Source: Qwen3.8-27B-UD-Q4_K_M.gguf
 Inference tracing enabled (APR-TRACE-001)
   Trace level: basic
 warning: GPU (CUDA) qwen35 path rejected, falling back to CPU: the CUDA model would not build: Operation 'qwen35_cuda_upload' not supported: 'qwen35.blk.0.ffn_up.weight' is Q3_K (GGML type 11), which has no verified GPU GEMV kernel — the file is fine and runs on the CPU; a Q4_K_M build of this model keeps every projection in a GPU-eligible type

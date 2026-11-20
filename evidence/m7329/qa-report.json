@@ -1,5 +1,5 @@
 {
-  "model": "/mnt/nvme-raid0/models/Qwen3.8-27B-UD-Q4_K_M.gguf",
+  "model": "Qwen3.8-27B-UD-Q4_K_M.gguf",
   "passed": false,
   "gates": [
     {
@@ -91,7 +91,7 @@
     {
       "name": "performance_regression",
       "passed": true,
-      "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.8-27B-UD-Q4_K_M.json",
+      "message": "No regressions (ratios >10%, throughput >25%) vs $APR_CACHE/qa-reports/Qwen3.8-27B-UD-Q4_K_M.json",
       "value": 0.0,
       "threshold": 0.1,
       "duration_ms": 0,
