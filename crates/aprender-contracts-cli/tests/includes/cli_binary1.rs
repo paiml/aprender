@@ -132,9 +132,16 @@
             "the dangling ref must be reported: {stdout}"
         );
         assert!(
-            !stdout.contains("Result: PASS") && !output.status.success(),
-            "a dangling ref under --strict-test-binding --strict must fail the run: {stdout}"
+            stdout.lines().any(|l| l.contains("PV-VER-002")
+                && l.contains("MUTANT_7357_fn_that_exists_nowhere")),
+            "the dangling ref must be reported as PV-VER-002: {stdout}"
         );
+        assert!(
+            stdout.contains("Result: FAIL") && !stdout.contains("Result: PASS"),
+            "a dangling ref under --strict-test-binding --strict must print Result: FAIL: {stdout}"
+        );
+        // Measured: a rejected lint (`reject: lint failed`) exits 1.
+        assert_eq!(output.status.code(), Some(1), "reject exit code: {stdout}");
     }
 
     #[test]

@@ -955,6 +955,59 @@ fn count_contracts(report: &LintReport) -> usize {
     0
 }
 
+/// One watch iteration: lint, refuse an empty corpus, apply the declared arming plus the
+/// requested gates (#7357). Split from `run_watch` so the arming path is testable without the loop.
+#[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
+fn watch_tick(
+    contract_dir: &Path,
+    binding_path: Option<&Path>,
+    min_score: f64,
+    format: Option<&str>,
+    severity: Option<&str>,
+    strict: bool,
+    suppress: Option<&str>,
+    suppress_rule: Option<&str>,
+    suppress_file: Option<&str>,
+    rule_overrides: &[String],
+    config_path: Option<&Path>,
+    no_cache: bool,
+    cache_stats: bool,
+    crate_dir: Option<&Path>,
+    min_level: Option<&str>,
+    strict_test_binding: bool,
+) -> Result<LintReport, Box<dyn std::error::Error>> {
+    let config = build_config(
+        contract_dir,
+        binding_path,
+        min_score,
+        format,
+        severity,
+        strict,
+        suppress,
+        suppress_rule,
+        suppress_file,
+        rule_overrides,
+        config_path,
+        no_cache,
+        cache_stats,
+        crate_dir,
+        min_level,
+        strict_test_binding,
+    );
+
+    let mut report = run_lint(&config);
+
+    // PVL-1 (PMAT-1099): watch mode is the same gate on a timer — an empty
+    // corpus is refused (exit 2) at the first tick, never reported over.
+    refuse_empty_corpus(&report, contract_dir)?;
+    // ONT-6: the declared arming, re-read each tick; the monotone check is a one-shot run's job.
+    report.arm(&with_requested_gates(
+        &lint_arming::declared(contract_dir)?,
+        strict_test_binding,
+    ));
+    Ok(report)
+}
+
 /// Watch mode: polling-based re-lint every 5 seconds.
 #[allow(clippy::too_many_arguments, clippy::fn_params_excessive_bools)]
 fn run_watch(
@@ -976,7 +1029,7 @@ fn run_watch(
     strict_test_binding: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     loop {
-        let config = build_config(
+        let report = watch_tick(
             contract_dir,
             binding_path,
             min_score,
@@ -993,18 +1046,7 @@ fn run_watch(
             crate_dir,
             min_level,
             strict_test_binding,
-        );
-
-        let mut report = run_lint(&config);
-
-        // PVL-1 (PMAT-1099): watch mode is the same gate on a timer — an empty
-        // corpus is refused (exit 2) at the first tick, never reported over.
-        refuse_empty_corpus(&report, contract_dir)?;
-        // ONT-6: the declared arming, re-read each tick; the monotone check is a one-shot run's job.
-        report.arm(&with_requested_gates(
-            &lint_arming::declared(contract_dir)?,
-            strict_test_binding,
-        ));
+        )?;
 
         if cache_stats {
             print_cache_stats(&report);
@@ -1213,6 +1255,57 @@ mod tests {
         assert!(a.is_armed("strict-test-binding"));
         assert_eq!(a.names().len(), d.names().len() + 1);
         assert_eq!(with_requested_gates(&a, true), a);
+    }
+
+    /// #7357 lane-2: the watch path's arming. One tick of `pv lint --watch --strict-test-binding
+    /// --strict` over a dangling falsification ref must not come back `Pass`; dropping the
+    /// requested gate from the tick's `arm` call turns this red.
+    #[test]
+    fn watch_tick_strict_test_binding_dangling_ref_is_not_pass() {
+        let scratch = tempfile::tempdir().expect("scratch dir");
+        let dir = scratch.path().join("contracts");
+        std::fs::create_dir_all(&dir).expect("fixture dir");
+        let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../contracts/pv-artifact-kinds-v1.yaml");
+        let yaml = std::fs::read_to_string(&src).expect("fixture contract");
+        let injected = yaml.replacen(
+            "falsification_tests:\n",
+            "falsification_tests:\n  - id: FALSIFY-DANGLING-001\n    rule: dangling\n    prediction: none\n    name: MUTANT_7357_fn_that_exists_nowhere\n    if_fails: investigate\n",
+            1,
+        );
+        assert_ne!(yaml, injected, "fixture must gain a dangling ref");
+        std::fs::write(dir.join("pv-artifact-kinds-v1.yaml"), injected).expect("write");
+        let tick = |stb: bool| {
+            watch_tick(
+                &dir,
+                None,
+                0.0,
+                None,
+                None,
+                true,
+                None,
+                None,
+                None,
+                &[],
+                None,
+                true,
+                false,
+                None,
+                None,
+                stb,
+            )
+            .expect("tick runs")
+        };
+        let armed = tick(true);
+        assert_ne!(
+            armed.verdict,
+            provable_contracts::ontology::verdict::Verdict::Pass,
+            "dangling ref under --strict-test-binding must not pass in watch"
+        );
+        assert!(armed
+            .armed_gates
+            .iter()
+            .any(|g| g.name == "strict-test-binding"));
     }
 
     #[test]
