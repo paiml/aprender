@@ -347,17 +347,6 @@ fn judge_call(ctx: &str, dir: &Path, j: &Mapping, depth: usize, why: &mut Vec<St
 
 /// A step that touches the repo, a cache or an artifact needs a token: on a moved job it must be
 /// skipped on `pull_request`.
-const OPT_SKIP: &str = "(github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1')";
-
-/// Skipped on a pull_request: the old form, or the one exact fragment that is the complement of the spot routing
-/// (`PR && PR_SPOT_OPTIN == '1'`), so the step runs on a PR only on the clean-room labels. No other `||` in either.
-fn skipped_on_pr(cond: &str) -> bool {
-    let rest = cond.replace(OPT_SKIP, "");
-    let old_form = cond.contains("github.event_name != 'pull_request'") && !cond.contains("||");
-    let opt_form = cond.contains(OPT_SKIP) && !rest.contains("||");
-    old_form || opt_form
-}
-
 fn step_needs_pr_skip(step: &Mapping) -> bool {
     let uses = key(step, "uses")
         .and_then(|u| u.as_str().map(str::to_lowercase))
@@ -407,7 +396,7 @@ fn check_moved(ctx: &str, j: &Mapping, canon: &str, all: &[String], why: &mut Ve
             let cond = key(&st, "if")
                 .and_then(|c| c.as_str().map(str::to_string))
                 .unwrap_or_default();
-            if !skipped_on_pr(&cond) {
+            if !cond.contains("github.event_name != 'pull_request'") || cond.contains("||") {
                 why.push(format!(
                     "{ctx}: a checkout, cache or artifact step runs on pull_request"
                 ));
@@ -666,11 +655,8 @@ fn gate_enforces_mst(gate: &Mapping) -> bool {
 }
 
 /// Steps that may run before the guard step in `mg-reuse-self-test`: checkout, and the two scripts' exact `run` text.
-const EARLIER_RUNS: [&str; 4] = [
+const EARLIER_RUNS: [&str; 3] = [
     "bash scripts/ci_mg_reuse.sh --self-test",
-    // hermetic case table (#7298): scripts/ci_push_reuse.sh self_test writes only under its own mktemp dir; it has no
-    // GITHUB_ENV, GITHUB_PATH or GITHUB_OUTPUT write and no network call.
-    "bash scripts/ci_push_reuse.sh --self-test",
     "setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test",
     "setsid --wait bash scripts/check_ci_wait_cancel.sh",
 ];
@@ -1265,41 +1251,52 @@ fn only_the_three_aggregators_may_take_the_spot_expression() {
 
 #[test]
 fn moved_jobs_carry_no_checkout_cache_secret_or_write() {
-    // workspace-test's checkout is skipped on a pull_request; drop that skip
-    let no_skip = job_mut(
-        "workspace-test",
-        "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}",
-        "github.event.pull_request.draft != true }}",
-    );
+    // workspace-test is a needs-only aggregator: Σ-executed's checkout and download live in the clean-room
+    // `workspace-test-sigma` job (#7314), so any such step added back here must be skipped on a pull_request,
+    // and an unconditional or `|| true` one is red
+    let add = |extra: &str| {
+        job_mut(
+            "workspace-test",
+            "    steps:\n",
+            &format!("    steps:\n{extra}"),
+        )
+    };
     red(
         "workspace-test-checkout-on-pr",
-        &no_skip,
+        &add("      - uses: actions/checkout@v7\n"),
         "runs on pull_request",
     );
-    let or_skip = job_mut(
-        "workspace-test",
-        "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}",
-        "github.event_name != 'pull_request' || true }}",
+    red(
+        "workspace-test-or-true",
+        &add("      - uses: actions/checkout@v7\n        if: ${{ github.event_name != 'pull_request' || true }}\n"),
+        "runs on pull_request",
     );
-    red("workspace-test-or-true", &or_skip, "runs on pull_request");
-    // the spot-opt-in skip must be the exact complement of the spot routing, with no other `||`
-    for (n, to) in [
-        (
-            "workspace-test-optin-wrong-value",
-            "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '0') }}",
-        ),
-        (
-            "workspace-test-optin-plus-or-true",
-            "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') || true }}",
-        ),
-    ] {
-        let m = job_mut(
-            "workspace-test",
-            "github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}",
-            to,
-        );
-        red(n, &m, "runs on pull_request");
-    }
+    red(
+        "workspace-test-optin-skip-is-not-accepted",
+        &add("      - uses: actions/download-artifact@v4\n        if: ${{ github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1' }}\n"),
+        "runs on pull_request",
+    );
+    // the sigma job must stay off the spot pool, whatever its steps
+    let sigma_spot = job_mut(
+        "workspace-test-sigma",
+        "runs-on: [self-hosted, Linux, clean-room]",
+        "runs-on: [self-hosted, burst-x64, burst-public]",
+    );
+    red(
+        "workspace-test-sigma-on-spot",
+        &sigma_spot,
+        "can land on a spot seat",
+    );
+    let sigma_optin = job_mut(
+        "workspace-test-sigma",
+        "runs-on: [self-hosted, Linux, clean-room]",
+        &format!("runs-on: {}", canonical("workspace-test").unwrap()),
+    );
+    red(
+        "workspace-test-sigma-optin",
+        &sigma_optin,
+        "opt-in variable outside",
+    );
     for job in ["ci-gate", "gate"] {
         for (n, step) in [
             ("checkout", "      - uses: actions/checkout@v7\n"),

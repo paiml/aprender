@@ -610,16 +610,19 @@ STUB
   # #7298: the push arm's `wt` comes from mg-reuse, so the shard, the artifact download and the Sigma step are skipped on it
   # too; workspace-test accepts wt=1 only from a job that succeeded. Without these rows a drifted `if` would read as green.
   wire workspace-test-shard "needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && ${FORKG} && github.event.pull_request.draft != true }}"
-  # the download step and the Sigma step each carry the clause: exactly two lines in the workspace-test job
-  wtc=$(job workspace-test); wtc=$(grep -cF "if: \${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}" <<<"$wtc") || wtc=0
-  if [ "$wtc" -eq 2 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: workspace-test has $wtc (want 2) steps skipped on needs.mg-reuse.outputs.wt"; fi
+  # the download step and the Sigma step each carry the clause: exactly two lines in the workspace-test-sigma job (#7314: they
+  # moved out of the spot-routed workspace-test aggregator; the clause has no PR_SPOT_OPTIN term, the job is never spot)
+  wtc=$(job workspace-test-sigma); wtc=$(grep -cF "if: \${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}" <<<"$wtc") || wtc=0
+  if [ "$wtc" -eq 2 ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL wiring: workspace-test-sigma has $wtc (want 2) steps skipped on needs.mg-reuse.outputs.wt"; fi
+  wire workspace-test-sigma 'needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]'
+  wire workspace-test-sigma 'runs-on: [self-hosted, Linux, clean-room]'
   wire workspace-test "WT_SRC_RESULT: \${{ needs.mg-reuse-wt.outputs.wt == '1' && needs.mg-reuse-wt.result || needs.mg-reuse.result }}"
   wire workspace-test '[ "${WT_SRC_RESULT:-}" = success ]'
   wire pr-light "if: \${{ github.event_name == 'pull_request' && github.event.pull_request.draft != true }}"
   # PMAT-6169: pr-x64 is a variable-selected OPTION; the runs-on line is compared EXACT. PR_LIGHT_POOL == 'pr-x64' picks the
   # X64 pr-x64 pool, anything else (unset, today) keeps X64 clean-room.
   wire pr-light "runs-on: \${{ vars.PR_LIGHT_POOL == 'pr-x64' && fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"pr-x64\"]') || fromJSON('[\"self-hosted\",\"Linux\",\"X64\",\"clean-room\"]') }}"
-  wire workspace-test 'needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]'
+  wire workspace-test 'needs: [workspace-test-shard, workspace-test-sigma, mg-reuse-wt, mg-reuse, pr-light]'
   wire x86-main-advisories 'advisory_gate.sh"'
   wire x86-main-advisories 'bash scripts/check_deny_exemptions_live.sh'
   wire ci-gate 'MG-REUSE-VERDICT-BEGIN'
@@ -656,7 +659,7 @@ STUB
     [ -n "$scr" ] || { fail=$((fail + 1)); echo "FAIL prl-$n: no run script found for $j"; return; }
     rc=0
     env EVT="$ev" PRL="$prl" DRAFT="" RESULTS="null" MG="skipped" MG_X86="" MG_DET="" MG_CITE="" ADV="skipped" \
-      X86="null" DET="null" WT="success" MST="success" SHARD_RESULT="skipped" WT_REUSE="" WT_CITE="" "$@" \
+      X86="null" DET="null" WT="success" MST="success" SHARD_RESULT="skipped" SIGMA="success" WT_REUSE="" WT_CITE="" "$@" \
       bash -c "$scr" > /dev/null 2>&1 || rc=$?
     case "$want" in
       0) [ "$rc" = 0 ] ;;
@@ -700,6 +703,8 @@ STUB
     prlrow "$f" "$t-gate-pr-determinism-missing" gate red pull_request success \
       'X86={"guard-tree":{"result":"success"},"guard-cargo":{"result":"success"},"sov.gate":{"result":"success"}}'
     prlrow "$f" "$t-workspace-test-pr-shards-failed" workspace-test red pull_request success SHARD_RESULT=failure
+    prlrow "$f" "$t-workspace-test-pr-sigma-failed" workspace-test red pull_request success SHARD_RESULT=success SIGMA=failure
+    prlrow "$f" "$t-workspace-test-pr-sigma-skipped" workspace-test red pull_request success SHARD_RESULT=success SIGMA=skipped
     # controls: the same scripts still pass a merge_group / push whose heavy jobs ran and passed, pr-light not owed there
     prlrow "$f" "$t-ci-gate-mg-heavy-green" ci-gate 0 merge_group skipped \
       MG=skipped ADV=skipped 'RESULTS={"sov.gate":{"result":"success"}}'

@@ -211,8 +211,6 @@ jobs:
       - uses: actions/checkout@v7
       - name: The reuse key's case table (hermetic)
         run: bash scripts/ci_mg_reuse.sh --self-test
-      - name: The PR-run reuse decision's case table (hermetic, #7298)
-        run: bash scripts/ci_push_reuse.sh --self-test
       - name: The fat wait is cancel-aware and the teardown still runs on cancel
         run: |
           setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test
@@ -232,6 +230,8 @@ jobs:
           mkdir -p "$base/registry" "$base/target"
           # one line on purpose: a backslash continuation joins differently in bash than in the guard test, so check_wiring refuses any
           timeout --foreground -k 30 900 docker run --rm --init --name "$cname" --cpus 4 --memory 8g --memory-swap 8g --pids-limit 2048 -v "$GITHUB_WORKSPACE:/w:ro" -v "$base/registry:/usr/local/cargo/registry" -v "$base/target:/t" -e CARGO_TARGET_DIR=/t -e CARGO_BUILD_JOBS="${RUNNER_THREAD_CAP:-4}" -e RUST_TEST_THREADS="${RUNNER_THREAD_CAP:-4}" -e CARGO_INCREMENTAL=0 -e CARGO_PROFILE_DEV_DEBUG=0 -e CARGO_PROFILE_TEST_DEBUG=0 -w /w localhost:5000/sovereign-ci:stable@sha256:70f2cdc9e537fe4447306d33c317fea33017f78f1ffa3b7af99095391419ef36 cargo test --locked -p aprender-contracts --test falsification_pr_spot_labels
+      - name: The PR-run reuse decision's case table (hermetic, #7298)
+        run: bash scripts/ci_push_reuse.sh --self-test
       - name: reap the guard container and its per-run dir
         if: ${{ always() }}
         run: |
@@ -889,7 +889,7 @@ jobs:
     permissions:
       contents: read
     timeout-minutes: 10
-    needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]
+    needs: [workspace-test-shard, workspace-test-sigma, mg-reuse-wt, mg-reuse, pr-light]
     if: always()
     steps:
       - name: Every shard passed (or the whole set was reused from an identical-tree green PR run)
@@ -902,6 +902,7 @@ jobs:
           DRAFT: ${{ github.event.pull_request.draft }}
           EVT: ${{ github.event_name }}
           PRL: ${{ needs.pr-light.result }}
+          SIGMA: ${{ needs.workspace-test-sigma.result }}
         run: |
           set -euo pipefail
           [ "${DRAFT:-}" != true ] || { echo "draft PR: the shards are not owed until ready_for_review"; exit 0; }
@@ -914,6 +915,8 @@ jobs:
             echo "pull_request: pr-light passed; the heavy jobs are checked below, exactly as on a push"
           fi
           # --- PR-LIGHT-VERDICT-END ---
+          # #7314: the Σ-executed steps run in workspace-test-sigma (static clean-room); this required check passes only when that job passed.
+          [ "${SIGMA:-}" = success ] || { echo "::error::workspace-test: workspace-test-sigma is '${SIGMA:-}', not success"; exit 1; }
           echo "workspace-test-shard matrix result: $SHARD_RESULT (reuse key wt='${WT_REUSE:-}')"
           if [ "${WT_REUSE:-}" = 1 ]; then
             [ "${WT_SRC_RESULT:-}" = success ] || { echo "::error::workspace-test: reuse key wt=1 but the job that wrote it is '${WT_SRC_RESULT:-}', not success"; exit 1; }
@@ -924,10 +927,23 @@ jobs:
             exit 0
           fi
           [ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result is '$SHARD_RESULT' (a cancelled or skipped shard is not a pass)"; exit 1; }
+
+  # #7314 (quorum aprender-spotguard lanes 1+2, f6d29d4): the checkout, artifact download and Σ-executed steps need a token and the repo
+  # tree, so they live on a static clean-room job (never the spot pool) and run on every non-draft event, a PR included (#7272 parity:
+  # the same check on pull_request and push). `workspace-test` (the required check name) stays a needs-only aggregator and passes only
+  # when this job passes. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
+  workspace-test-sigma:
+    runs-on: [self-hosted, Linux, clean-room]
+    permissions:
+      contents: read
+    timeout-minutes: 10
+    needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]
+    if: always()
+    steps:
       - uses: actions/checkout@v7
-        if: ${{ github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}
+        if: ${{ github.event.pull_request.draft != true }}
       - uses: actions/download-artifact@v4
-        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}
+        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
         with:
           pattern: sigma-shard-*
           path: ${{ runner.temp }}/sigma
@@ -936,7 +952,7 @@ jobs:
       # ids is compared with the universe shard 1 listed. A shard whose ids did
       # not arrive is RED, never a smaller universe.
       - name: "Σ-executed: the union of the shards is exactly the owed set (#4433)"
-        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true && (github.event_name != 'pull_request' || vars.PR_SPOT_OPTIN != '1') }}
+        if: ${{ needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && github.event.pull_request.draft != true }}
         run: |
           set -euo pipefail
           d="$RUNNER_TEMP/sigma"

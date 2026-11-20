@@ -6,7 +6,7 @@
 #   2. the heavy jobs x86-main and workspace-test-shard carry `github.event.pull_request.draft != true` in their `if:`.
 #   3. the three verdict jobs (workspace-test, ci-gate, gate) read `DRAFT: ${{ github.event.pull_request.draft }}` and
 #      exit 0 on `true`, so `workspace-test`, `ci / gate` and `gate` still REPORT (a draft cannot be queued or merged).
-#   4. workspace-test's checkout / download-artifact / sigma steps are skipped on a draft (they would fail with no shards).
+#   4. workspace-test-sigma's (#7314; was workspace-test's) checkout / download-artifact / sigma steps are skipped on a draft (they would fail with no shards).
 # No third state: nothing here is continue-on-error; a non-draft PR, a merge_group entry and a push run exactly as before.
 #
 # Usage:  bash scripts/check_ci_draft_skip.sh [--self-test] [WORKFLOW_FILE]
@@ -52,9 +52,10 @@ check() { # FILE -> prints one FAIL line per violated condition; rc 1 when any
             echo "FAIL  verdict job $j uses continue-on-error (no third state)"; bad=1
         fi
     done
-    blk="$(job_block "$f" workspace-test)"
+    blk="$(job_block "$f" workspace-test-sigma)"
+    if [ -z "$blk" ]; then echo "FAIL  job workspace-test-sigma not found"; bad=1; fi
     if [ "$(printf '%s\n' "$blk" | /usr/bin/grep -c -E 'if: [$][{][{] (needs[.]mg-reuse[.]outputs[.]wt != .1. && )?(needs[.]mg-reuse-wt[.]outputs[.]wt != .1. && )?github[.]event[.]pull_request[.]draft != true( && github[.]event_name != .pull_request.)? [}][}]')" -lt 3 ]; then
-        echo "FAIL  workspace-test: checkout, download-artifact and sigma steps are not all skipped on a draft"; bad=1
+        echo "FAIL  workspace-test-sigma: checkout, download-artifact and sigma steps are not all skipped on a draft"; bad=1
     fi
     return "$bad"
 }
