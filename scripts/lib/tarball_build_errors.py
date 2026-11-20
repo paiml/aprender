@@ -17,32 +17,32 @@ import re
 import sys
 from collections import OrderedDict
 
+# Cargo colours its output on a runner whose env says so; escapes in front of "error" make every
+# matcher below miss. Strip them from the LINE before matching; the matchers stay exactly as strict.
+ANSI = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+
 DIAG = re.compile(r"^(?:.*/)?pkgs/([^/]+)/(\S+?):(\d+):(\d+): error(?:\[\w+\])?: (.*)$")
 FAILED = re.compile(r"^error: could not compile `([^`]+)` \(([^)]+)\)")
 HOST = re.compile(r"No space left on device|os error 28|failed to write `|Disk quota exceeded|"
                   r"signal: 9, SIGKILL|\(signal: 9\)|Cannot allocate memory")
 
 
-def main(argv):
-    if len(argv) != 2:
-        print("usage: tarball_build_errors.py LOG", file=sys.stderr)
-        return 2
+def read_lines(path):
+    """The log's lines with ANSI escapes removed, or an exit code (int) when it cannot be read."""
     try:
-        lines = open(argv[1], encoding="utf-8", errors="replace").read().splitlines()
+        raw = open(path, encoding="utf-8", errors="replace").read().splitlines()
     except OSError as e:
-        print("tarball_build_errors: cannot read %s: %s" % (argv[1], e), file=sys.stderr)
+        print("tarball_build_errors: cannot read %s: %s" % (path, e), file=sys.stderr)
         return 2
-    if not lines:
+    if not raw:
         print("tarball_build_errors: empty build log", file=sys.stderr)
         return 2
-    host = [ln for ln in lines if HOST.search(ln)]
-    if host:
-        print("HOST  the build host failed, so no crate verdict is possible (%d line(s)):" % len(host))
-        for ln in host[:5]:
-            print("        %s" % ln)
-        return 4
-    by_dir, failed = OrderedDict(), OrderedDict()
-    other = []
+    return [ANSI.sub("", ln) for ln in raw]
+
+
+def classify(lines):
+    """Split the log into (diagnostics by tarball dir, failed crates, other error lines)."""
+    by_dir, failed, other = OrderedDict(), OrderedDict(), []
     for ln in lines:
         m = DIAG.match(ln)
         if m:
@@ -53,8 +53,10 @@ def main(argv):
             failed.setdefault(f.group(1), []).append(f.group(2))
         elif ln.startswith("error"):
             other.append(ln)
-    if not by_dir and not failed and not other:
-        return 0
+    return by_dir, failed, other
+
+
+def report(by_dir, failed, other):
     for d, errs in by_dir.items():
         # the dir is <name>-<version>; a version may itself hold '-' (0.70.0-rc.1), so match the
         # longest crate name cargo reported that prefixes the dir, never a split on the last '-'
@@ -67,7 +69,36 @@ def main(argv):
         print("RED   %s (%s): could not compile (no diagnostic attributed to a tarball path)" % (name, ", ".join(targets)))
     for ln in other[:10]:
         print("ERROR %s" % ln)
-    return 1 if (by_dir or failed) else 3
+
+
+def host_failure(lines):
+    """Print and return 4 when the build host failed (no line of the log is then crate evidence)."""
+    host = [ln for ln in lines if HOST.search(ln)]
+    if not host:
+        return 0
+    print("HOST  the build host failed, so no crate verdict is possible (%d line(s)):" % len(host))
+    for ln in host[:5]:
+        print("        %s" % ln)
+    return 4
+
+
+def verdict(lines):
+    by_dir, failed, other = classify(lines)
+    if not (by_dir or failed or other):
+        return 0
+    crate_error = bool(by_dir or failed)
+    report(by_dir, failed, other)
+    return 1 if crate_error else 3
+
+
+def main(argv):
+    if len(argv) != 2:
+        print("usage: tarball_build_errors.py LOG", file=sys.stderr)
+        return 2
+    lines = read_lines(argv[1])
+    if isinstance(lines, int):
+        return lines
+    return host_failure(lines) or verdict(lines)
 
 
 if __name__ == "__main__":

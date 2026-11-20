@@ -107,6 +107,7 @@ fn non_kernel_kinds_exempt_from_provability() {
         ContractKind::CorpusAssembly,
         ContractKind::Pattern,
         ContractKind::Schema,
+        ContractKind::Simulation,
     ] {
         let mut c = Contract::default();
         c.metadata.kind = kind;

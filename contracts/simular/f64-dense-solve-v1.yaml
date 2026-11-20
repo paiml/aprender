@@ -22,12 +22,12 @@ proof_obligations:
 - id: F64DS-INV-002
   type: invariant
   property: Indefinite input is rejected, never factored
-  formal: 'cholesky_f64([[1,2],[2,1]]) = Err(NotPositiveDefinite(1))'
+  formal: 'A = [[1,2],[2,1]] ⇒ cholesky_f64(A) = Err(NotPositiveDefinite(1))'
   applies_to: cholesky_f64_fixed_order
 - id: F64DS-BND-003
   type: bound
   property: f64 residual on Hilbert(5)
-  formal: '|A x - b|_inf < 1e-9'
+  formal: '∀ A = Hilbert(5): |A x - b|_inf < 1e-9'
   tolerance: 1.0e-9
   applies_to: cholesky_f64_fixed_order
 falsification_tests:
