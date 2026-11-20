@@ -569,6 +569,11 @@ fn numeric_bound(
         .ok_or_else(|| malformed_in(shape, format!("`{key}` is not a finite number")))
 }
 
+/// Parse contract YAML text (stub: replaced by the exact-bound pre-pass).
+pub fn yaml_from_str(text: &str) -> Result<serde_yaml::Value, serde_yaml::Error> {
+    serde_yaml::from_str(text)
+}
+
 fn malformed_in(shape: &str, what: String) -> ShapeError {
     ShapeError::Malformed {
         shape: shape.to_string(),
@@ -2379,5 +2384,171 @@ mod tests {
         );
         assert_eq!(expand("https://x/y"), "https://x/y");
         assert_eq!(short("https://ont.paiml.dev/v1alpha1/id"), "ont:id");
+    }
+
+    // SHACL-PATCH (#7365) review round 2: arbitrary-width integers on the whole facet path.
+    const TWO_64: &str = "18446744073709551616";
+    const TWO_64_P1: &str = "18446744073709551617";
+    const TWO_127: &str = "170141183460469231731687303715884105728";
+
+    fn wide_components(facet: &str, bound: &str, v: Term) -> Vec<&'static str> {
+        let yaml = format!(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {bound}}}\n"
+        );
+        let doc = yaml_from_str(&yaml).unwrap();
+        let s = parse_shape_with("t", &doc, &pv_map()).unwrap().unwrap();
+        validate(&range_graph(Some(v)), &[s])
+            .results
+            .iter()
+            .map(|r| r.component)
+            .collect()
+    }
+
+    #[test]
+    fn wide_integer_bounds_compare_exactly_at_every_width() {
+        let none = Vec::<&str>::new();
+        let huge = format!("1{}", "0".repeat(40)); // beyond u128
+        let huge_p1 = format!("1{}1", "0".repeat(39));
+        let cases = [
+            // (facet, bound, value, conforms)
+            (
+                "minExclusive",
+                TWO_64.to_string(),
+                TWO_64_P1.to_string(),
+                true,
+            ),
+            (
+                "minExclusive",
+                TWO_64.to_string(),
+                TWO_64.to_string(),
+                false,
+            ),
+            (
+                "maxExclusive",
+                TWO_64_P1.to_string(),
+                TWO_64.to_string(),
+                true,
+            ),
+            ("minInclusive", TWO_64.to_string(), TWO_64.to_string(), true),
+            (
+                "minExclusive",
+                "-9223372036854775809".to_string(),
+                "-9223372036854775808".to_string(),
+                true,
+            ),
+            (
+                "maxExclusive",
+                "-9223372036854775809".to_string(),
+                "-9223372036854775809".to_string(),
+                false,
+            ),
+            ("minExclusive", huge.clone(), huge_p1.clone(), true),
+            ("minExclusive", huge.clone(), huge.clone(), false),
+            ("maxInclusive", huge.clone(), huge_p1, false),
+        ];
+        for (facet, bound, value, ok) in cases {
+            for style in [bound.clone(), format!("{{integer: \"{bound}\"}}")] {
+                let got = wide_components(&facet, &style, num(&value, "integer"));
+                assert_eq!(got.is_empty(), ok, "{facet} {style} vs {value}: {got:?}");
+            }
+        }
+        assert_eq!(none, Vec::<&str>::new());
+    }
+
+    #[test]
+    fn exact_bound_wrapper_is_validated() {
+        for bad in [
+            "{integer: \"abc\"}",
+            "{integer: 5}",
+            "{decimal: \"1e3\"}",
+            "{foo: \"5\"}",
+            "{integer: \"5\", decimal: \"5\"}",
+        ] {
+            let yaml = format!(
+                "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, minInclusive: {bad}}}\n"
+            );
+            let doc = yaml_from_str(&yaml).unwrap();
+            assert!(
+                matches!(
+                    parse_shape_with("t", &doc, &pv_map()),
+                    Err(ShapeError::Malformed { .. })
+                ),
+                "{bad} must be malformed"
+            );
+        }
+        assert!(wide_components(
+            "minInclusive",
+            "{decimal: \"0.1000000000000000000000001\"}",
+            num("0.1000000000000000000000001", "decimal")
+        )
+        .is_empty());
+        assert!(!wide_components(
+            "minInclusive",
+            "{decimal: \"0.1000000000000000000000001\"}",
+            num("0.1", "decimal")
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn yaml_from_str_rewrites_only_wide_facet_bounds() {
+        // a wide integer under a non-facet key, and a short facet bound, are left to serde_yaml
+        let d = yaml_from_str("minInclusive: 5\nother: 18446744073709551615\n").unwrap();
+        assert_eq!(
+            d.get("minInclusive").and_then(serde_yaml::Value::as_u64),
+            Some(5)
+        );
+        assert_eq!(
+            d.get("other").and_then(serde_yaml::Value::as_u64),
+            Some(u64::MAX)
+        );
+        // block style, and a trailing comment
+        let d = yaml_from_str(&format!("minExclusive: {TWO_64} # why\n")).unwrap();
+        assert!(d
+            .get("minExclusive")
+            .and_then(serde_yaml::Value::as_mapping)
+            .is_some());
+        // a double written with an exponent is not a wide integer
+        let d = yaml_from_str("maxInclusive: 1e30\n").unwrap();
+        assert!(d
+            .get("maxInclusive")
+            .and_then(serde_yaml::Value::as_f64)
+            .is_some());
+    }
+
+    #[test]
+    fn integer_derived_types_are_unbounded_in_their_open_direction() {
+        let wf = |v: &str, t: &str| well_formed(v, &format!("{XSD_NS}{t}"));
+        let neg_huge = format!("-{TWO_127}0");
+        let huge = format!("{TWO_127}0");
+        assert!(wf(TWO_127, "nonNegativeInteger") && wf(&huge, "nonNegativeInteger"));
+        assert!(
+            wf(&huge, "positiveInteger")
+                && !wf("0", "positiveInteger")
+                && !wf("+000", "positiveInteger")
+        );
+        assert!(
+            wf(&neg_huge, "nonPositiveInteger")
+                && wf("-0", "nonPositiveInteger")
+                && !wf(&huge, "nonPositiveInteger")
+        );
+        assert!(
+            wf(&neg_huge, "negativeInteger")
+                && !wf("-0", "negativeInteger")
+                && !wf("1", "negativeInteger")
+        );
+        assert!(wf("-0", "nonNegativeInteger") && !wf(&neg_huge, "nonNegativeInteger"));
+        assert!(
+            !wf("", "nonNegativeInteger")
+                && !wf("+", "positiveInteger")
+                && !wf("1.5", "nonNegativeInteger")
+        );
+        // bounded types stay bounded
+        assert!(!wf(&huge, "unsignedLong") && !wf(&huge, "long"));
+        // and they order exactly against a wide bound
+        assert_eq!(
+            range_components("minInclusive", "0", num(TWO_127, "nonNegativeInteger")),
+            Vec::<&str>::new()
+        );
     }
 }
