@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.1] - 2026-11-20
+
+Emergency patch (exception to APR-076 no-point-release, operator order SHACL-PATCH). One change on v0.75.0:
+
+- **SHACL numeric facets.** `sh:minInclusive`, `sh:maxInclusive`, `sh:minExclusive` and `sh:maxExclusive` (xsd:integer, decimal, double) are parsed and checked in `aprender-contracts` ontology shapes (#7365, #7366).
+
 ## [0.75.0] - 2026-11-18
 
 Qwen 4: preview architecture; 6/7 ops at parity; decode and KV-cache land in 0.75.x.
