@@ -83,6 +83,11 @@ pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35La
                 model.architecture().unwrap_or("<no architecture>")
             ),
         })? as usize;
+    // GH-7329: `block_count` counts the trailing MTP (nextn) block(s) too (Qwen3.8-27B:
+    // block_count 65, nextn_predict_layers 1, `blk.64.*` carries only the MTP tensors).
+    // The decoder stack is the first `block_count - nextn_predict_layers` blocks.
+    let num_layers =
+        num_layers.saturating_sub(arch_u32(model, "nextn_predict_layers").unwrap_or(0) as usize);
 
     let interval = arch_u32(model, "full_attention_interval").unwrap_or(4) as usize;
 

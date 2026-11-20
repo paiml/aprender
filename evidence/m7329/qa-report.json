@@ -1,0 +1,126 @@
+{
+  "model": "/mnt/nvme-raid0/models/Qwen3.8-27B-UD-Q4_K_M.gguf",
+  "passed": false,
+  "gates": [
+    {
+      "name": "capability_match",
+      "passed": false,
+      "message": "Architecture 'qwen35': tensor 'blk.0.ffn_up.weight' has GGML type 11, which has no verified GPU GEMV kernel. The GPU weight upload would decode it as Q4_K and produce garbage logits (PMAT-781/783/785). Run this model on the CPU (`apr run --no-gpu`), or requantize to Q4_0/Q4_1/Q5_0/Q8_0/Q4_K/Q5_K/Q6_K.",
+      "value": 1.0,
+      "threshold": 0.0,
+      "duration_ms": 702,
+      "skipped": false
+    },
+    {
+      "name": "tensor_contract",
+      "passed": false,
+      "message": "Skipped: Skipped by --skip-contract",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "metadata_plausibility",
+      "passed": false,
+      "message": "Skipped: Skipped by --skip-metadata",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "classifier_head",
+      "passed": false,
+      "message": "Skipped: Not requested (use --assert-classifier-head)",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "golden_output",
+      "passed": false,
+      "message": "Skipped: Skipped due to capability match failure",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "golden_embedding",
+      "passed": false,
+      "message": "Skipped: Not an embedding model: golden_output judges a generative model",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "throughput",
+      "passed": false,
+      "message": "Skipped: Skipped due to capability match failure",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ollama_parity",
+      "passed": false,
+      "message": "Skipped: Dense-loader gate: Gated DeltaNet runs on the CPU (#3091) and the GPU (#3090), but this gate measures through OwnedQuantizedModel::from_mapped, which has no hybrid path",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_speedup",
+      "passed": false,
+      "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "format_parity",
+      "passed": false,
+      "message": "Skipped: Skipped due to capability match failure",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "ptx_parity",
+      "passed": false,
+      "message": "Skipped: Skipped due to capability match failure",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "gpu_state_isolation",
+      "passed": false,
+      "message": "Skipped: Gated DeltaNet runs on the GPU (#3090), but this gate measures through the dense OwnedQuantizedModelCuda, which has no hybrid path",
+      "duration_ms": 0,
+      "skipped": true
+    },
+    {
+      "name": "performance_regression",
+      "passed": true,
+      "message": "No regressions (ratios >10%, throughput >25%) vs /home/noah/.cache/apr/qa-reports/Qwen3.8-27B-UD-Q4_K_M.json",
+      "value": 0.0,
+      "threshold": 0.1,
+      "duration_ms": 0,
+      "skipped": false
+    }
+  ],
+  "gates_executed": 2,
+  "gates_skipped": 11,
+  "gates_registered": [
+    "capability_match",
+    "tensor_contract",
+    "metadata_plausibility",
+    "classifier_head",
+    "golden_output",
+    "golden_embedding",
+    "throughput",
+    "ollama_parity",
+    "gpu_speedup",
+    "format_parity",
+    "ptx_parity",
+    "gpu_state_isolation",
+    "performance_regression"
+  ],
+  "total_duration_ms": 854,
+  "timestamp": "2026-11-20T08:02:48.993385177+00:00",
+  "summary": "Failed gates: capability_match",
+  "system_info": {
+    "cpu_model": "AMD Ryzen Threadripper 7960X 24-Cores",
+    "gpu_model": "NVIDIA GeForce RTX 4090",
+    "gpu_driver": "580.119.02"
+  }
+}
