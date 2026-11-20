@@ -3,13 +3,13 @@ metadata:
   version: 1.0.0
   created: '2026-11-19'
   author: PAIML Engineering
-  description: Determinism core — integer-ns time, order-independent keyed RNG, hash-chained trajectory and receipt
+  description: Determinism core — integer-ns time, order-independent keyed RNG, hash-chained trajectory (the receipt writer is a later D-item)
   references:
   - 'Salmon et al. (2011) Parallel random numbers: as easy as 1, 2, 3'
   - 'Steele, Lea, Flood (2014) Fast splittable pseudorandom number generators'
 equations:
   keyed_draw:
-    formula: 'draw(seed, entity, event, k) = mix(mix(mix(mix(seed) xor entity) xor event) xor k)'
+    formula: 'draw(seed, entity, event, k) = mix(mix(mix(mix(seed) xor entity) xor event) xor k), with mix(x) = splitmix64 finalizer of (x + 0x9E3779B97F4A7C15): z=(z xor z>>30)*0xBF58476D1CE4E5B9; z=(z xor z>>27)*0x94D049BB133111EB; z xor z>>31, all arithmetic mod 2^64'
     domain: seed, entity, event, k ∈ u64
     codomain: u64
     invariants:
@@ -27,15 +27,17 @@ equations:
     preconditions:
     - entity ids are unique
   hash_chain:
-    formula: 'h_k = H(domain, h_(k-1), k, t_k, states_k) with t_k = k * dt_ns'
-    domain: k ∈ u64, dt_ns > 0
+    formula: 'h_k = H(STEP_DOMAIN, h_(k-1), k, t_k, n, states_k) with t_k = k * dt_ns (mod 2^64), H = BLAKE3, states_k sorted by entity id; base case h_(-1) = H(GENESIS_DOMAIN, seed) so h_0 is defined and depends on the seed'
+    domain: k ∈ 0..steps (k = 0 uses the base case h_(-1)), dt_ns > 0
     codomain: 32 bytes
     invariants:
+    - 'h_(-1) is a function of the seed alone, so a different seed changes h_0'
     - 'Same spec and seed twice give the same final hash'
     - 'A different seed gives a different final hash'
-    - 'Changing one state word at step j changes every h_k for k >= j'
+    - 'Changing one state word at step j changes every h_k for k >= j and no h_k for k < j'
     preconditions:
     - dt_ns > 0
+    - entity ids are unique
 proof_obligations:
 - id: SDC-INV-001
   type: invariant
@@ -60,54 +62,69 @@ proof_obligations:
 enforcement:
   repeat_run_equal:
     description: Two runs from the same spec and seed give the same chain
-    check: determinism::tests::same_spec_and_seed_twice_gives_same_hash
+    check: aprender_simulate::determinism::tests::same_spec_and_seed_twice_gives_same_hash
     severity: ERROR
   shuffle_equal:
     description: Shuffled entity evaluation order gives the same chain
-    check: determinism::tests::shuffled_evaluation_order_gives_same_hash
+    check: aprender_simulate::determinism::tests::shuffled_evaluation_order_gives_same_hash
     severity: ERROR
   seed_differs:
     description: A different seed gives a different final hash
-    check: determinism::tests::different_seed_gives_different_hash
+    check: aprender_simulate::determinism::tests::different_seed_gives_different_hash
+    severity: ERROR
+  chain_linkage:
+    description: One flipped state bit at step j changes every h_k for k >= j and none before
+    check: aprender_simulate::determinism::tests::chain_links_every_step_to_the_previous
+    severity: ERROR
+  keyed_draw_pure:
+    description: Keyed draw is pure and every key component matters
+    check: aprender_simulate::determinism::tests::keyed_draw_is_pure_and_keyed
     severity: ERROR
   golden_pinned:
     description: Final hash of the reference run is pinned to a literal
-    check: determinism::tests::golden_final_hash_is_pinned
+    check: aprender_simulate::determinism::tests::golden_final_hash_is_pinned
     severity: ERROR
 falsification_tests:
 - id: FALSIFY-SDC-001
   rule: Run reproducibility
-  prediction: two runs of 200 steps, same spec and seed, have identical trajectories and receipts
-  test: determinism::tests::same_spec_and_seed_twice_gives_same_hash
+  prediction: two runs of 200 steps, same spec and seed, have identical hash chains
+  test: aprender_simulate::determinism::tests::same_spec_and_seed_twice_gives_same_hash
   if_fails: hidden state, clock, or unordered iteration in the kernel
 - id: FALSIFY-SDC-002
   rule: Evaluation-order independence
   prediction: eight random permutations per step over 100 steps all give the baseline chain
-  test: determinism::tests::shuffled_evaluation_order_gives_same_hash
+  test: aprender_simulate::determinism::tests::shuffled_evaluation_order_gives_same_hash
   if_fails: canonicalisation (sort by entity id) removed, or a model reads state written this step
 - id: FALSIFY-SDC-003
   rule: Seed sensitivity
   prediction: seeds 1 and 2 give different h_0 and different final hashes
-  test: determinism::tests::different_seed_gives_different_hash
+  test: aprender_simulate::determinism::tests::different_seed_gives_different_hash
   if_fails: seed not mixed into the chain or the keyed draw
 - id: FALSIFY-SDC-004
   rule: Chain linkage
   prediction: flipping one state bit at step 3 changes every later hash and no earlier one
-  test: determinism::tests::chain_links_every_step_to_the_previous
+  test: aprender_simulate::determinism::tests::chain_links_every_step_to_the_previous
   if_fails: step hash does not include the previous hash
 - id: FALSIFY-SDC-005
-  rule: Receipt conforms to the pv shape
-  prediction: the canonical receipt the kernel writes passes `pv lint --gate shapes --shape sim3d-receipt-v1` (contracts/sim3d-receipt-v1.yaml); a missing final_hash, empty verdicts, an eighth key or a non-INV monitor name each go red naming the path
-  test: cargo test -p aprender-contracts-cli --test sim3d_kernel_receipt
-  if_fails: the kernel writes a receipt the shared shape refuses, or the shape no longer binds the kernel's output (LAB check, not on a PR path)
+  rule: Keyed draw purity
+  prediction: equal keys give equal draws, and changing any one of seed, entity, event or k changes the draw
+  test: aprender_simulate::determinism::tests::keyed_draw_is_pure_and_keyed
+  if_fails: the draw reads or advances hidden state, or a key component is dropped from the mix
+- id: FALSIFY-SDC-006
+  rule: Reference run pinned
+  prediction: the final hash of the 8-entity, 200-step, seed-1 reference run equals the pinned literal
+  test: aprender_simulate::determinism::tests::golden_final_hash_is_pinned
+  if_fails: the mix, the hash domain tags or the byte layout of the chain changed; every stored receipt is invalidated
 qa_gate:
   id: F-SDC-001
   name: Determinism Core Contract
-  description: Repeat, shuffle, seed and linkage falsifiers for the simulation determinism core
+  description: Repeat, shuffle, seed, linkage, keyed-draw and golden falsifiers for the simulation determinism core
   checks:
   - repeat_run_equal
   - shuffle_equal
   - seed_differs
+  - chain_linkage
+  - keyed_draw_pure
   - golden_pinned
-  pass_criteria: All 4 falsification tests pass
+  pass_criteria: All 6 falsification tests pass
   falsification: Remove the sort by entity id before hashing
