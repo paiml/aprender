@@ -9,7 +9,7 @@
 //! | `minCount`, `maxCount` | the `qualifiedValueShape` family |
 //! | `datatype`, `class`, `nodeKind` | — |
 //! | `in`, `pattern`, `minLength`, `maxLength` | `languageIn`, `uniqueLang` |
-//! | `minInclusive`, `maxInclusive`, `minExclusive`, `maxExclusive` (numeric bound) | a non-numeric bound (`Malformed`) |
+//! | `minInclusive`, `maxInclusive`, `minExclusive`, `maxExclusive` (numeric bound) | a non-numeric bound (`Malformed`); a bare YAML number is exact only for `i64`/`u64`, beyond that `serde_yaml` yields a double (or a file parse error), so an exact bound past 64 bits must be written `{integer: "<digits>"}` / `{decimal: "<digits.digits>"}` |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
 //! | `lessThan`, `lessThanOrEquals` (property pairs) | `equals`, `disjoint` |
@@ -540,7 +540,10 @@ fn parse_property(
     })
 }
 
-/// A range facet's bound: a finite YAML number, as a literal term (`5` is `xsd:integer`, `2.5` and `1e3` are
+/// A range facet's bound. The ONLY way to give an integer bound beyond `u64`/`i64` exactly is the typed form
+/// `{integer: "<digits>"}` (or `{decimal: "<digits.digits>"}`). A bare YAML number is exact for `i64`/`u64`;
+/// beyond that `serde_yaml` yields an `f64` (or fails the file's parse), so it is compared as `xsd:double` with
+/// f64 precision. No text rewrite is applied to contract files. A finite YAML number, as a literal term (`5` is `xsd:integer`, `2.5` and `1e3` are
 /// `xsd:double`). A string, boolean, list, null, `.nan` or `.inf` is malformed — a bound nothing can be compared
 /// to would make the facet reject (or accept) every value without saying why.
 fn numeric_bound(
@@ -575,29 +578,6 @@ fn numeric_bound(
             })
         })
         .ok_or_else(|| malformed_in(shape, format!("`{key}` is not a finite number")))
-}
-
-/// Parse contract YAML text, keeping a range facet's integer bound exact at every width. `serde_yaml` holds a
-/// number as `i64`, `u64` or `f64`: an integer beyond `u64::MAX` (or below `i64::MIN`) is a parse error up to
-/// 128 bits and a rounded `f64` past that. So a facet key (`minInclusive`, `maxInclusive`, `minExclusive`,
-/// `maxExclusive`) whose value is a plain integer of 19 or more digits is rewritten to the exact form
-/// `{integer: "<digits>"}` before parsing. Everything else is `serde_yaml`'s own parse.
-///
-/// # Errors
-/// The `serde_yaml` error for text that is not YAML.
-pub fn yaml_from_str(text: &str) -> Result<serde_yaml::Value, serde_yaml::Error> {
-    static WIDE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
-    let re = WIDE.get_or_init(|| {
-        regex::Regex::new(
-            r#"(?m)(?P<k>["']?(?:minInclusive|maxInclusive|minExclusive|maxExclusive)["']?\s*:[ \t]*)(?P<v>[+-]?[0-9]{19,})(?P<t>[ \t]*(?:[,}\]]|#|\r?$))"#,
-        )
-        .expect("static regex")
-    });
-    let rewritten = re.replace_all(text, |c: &regex::Captures<'_>| {
-        let digits = c["v"].strip_prefix('+').unwrap_or(&c["v"]);
-        format!("{}{{integer: \"{}\"}}{}", &c["k"], digits, &c["t"])
-    });
-    serde_yaml::from_str(&rewritten)
 }
 
 fn malformed_in(shape: &str, what: String) -> ShapeError {
@@ -2449,7 +2429,7 @@ mod tests {
         let yaml = format!(
             "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {bound}}}\n"
         );
-        let doc = yaml_from_str(&yaml).unwrap();
+        let doc = serde_yaml::from_str::<serde_yaml::Value>(&yaml).unwrap();
         let s = parse_shape_with("t", &doc, &pv_map()).unwrap().unwrap();
         validate(&range_graph(Some(v)), &[s])
             .results
@@ -2501,7 +2481,7 @@ mod tests {
             ("maxInclusive", huge.clone(), huge_p1, false),
         ];
         for (facet, bound, value, ok) in cases {
-            for style in [bound.clone(), format!("{{integer: \"{bound}\"}}")] {
+            for style in [format!("{{integer: \"{bound}\"}}")] {
                 let got = wide_components(&facet, &style, num(&value, "integer"));
                 assert_eq!(got.is_empty(), ok, "{facet} {style} vs {value}: {got:?}");
             }
@@ -2521,7 +2501,7 @@ mod tests {
             let yaml = format!(
                 "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, minInclusive: {bad}}}\n"
             );
-            let doc = yaml_from_str(&yaml).unwrap();
+            let doc = serde_yaml::from_str::<serde_yaml::Value>(&yaml).unwrap();
             assert!(
                 matches!(
                     parse_shape_with("t", &doc, &pv_map()),
@@ -2545,29 +2525,32 @@ mod tests {
     }
 
     #[test]
-    fn yaml_from_str_rewrites_only_wide_facet_bounds() {
-        // a wide integer under a non-facet key, and a short facet bound, are left to serde_yaml
-        let d = yaml_from_str("minInclusive: 5\nother: 18446744073709551615\n").unwrap();
-        assert_eq!(
-            d.get("minInclusive").and_then(serde_yaml::Value::as_u64),
-            Some(5)
+    fn bare_number_beyond_u64_is_a_double_not_an_exact_integer() {
+        // Documented limit: a bare YAML number is exact only for i64/u64. Past that serde_yaml hands the
+        // parser an f64, so the bound is an `xsd:double` (compared in f64) and never an exact `xsd:integer`.
+        let bound = |yaml: &str| {
+            let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            let pm = doc.as_mapping().unwrap().clone();
+            numeric_bound("t", &pm, "minInclusive")
+        };
+        let exact = bound(&format!("minInclusive: {}", u64::MAX))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(&exact, Term::Literal { datatype, .. } if datatype.ends_with("#integer")));
+        for wide in ["1e30", "100000000000000000000000000000000000000000.0"] {
+            let t = bound(&format!("minInclusive: {wide}")).unwrap().unwrap();
+            assert!(
+                matches!(&t, Term::Literal { datatype, .. } if datatype.ends_with("#double")),
+                "{wide}: {t:?}"
+            );
+        }
+        // the typed form is the only exact way past u64/i64
+        let t = bound(&format!("minInclusive: {{integer: \"{TWO_64}\"}}"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(&t, Term::Literal { value, datatype } if value == TWO_64 && datatype.ends_with("#integer"))
         );
-        assert_eq!(
-            d.get("other").and_then(serde_yaml::Value::as_u64),
-            Some(u64::MAX)
-        );
-        // block style, and a trailing comment
-        let d = yaml_from_str(&format!("minExclusive: {TWO_64} # why\n")).unwrap();
-        assert!(d
-            .get("minExclusive")
-            .and_then(serde_yaml::Value::as_mapping)
-            .is_some());
-        // a double written with an exponent is not a wide integer
-        let d = yaml_from_str("maxInclusive: 1e30\n").unwrap();
-        assert!(d
-            .get("maxInclusive")
-            .and_then(serde_yaml::Value::as_f64)
-            .is_some());
     }
 
     #[test]
