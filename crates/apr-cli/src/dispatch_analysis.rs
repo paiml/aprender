@@ -1889,38 +1889,29 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             max_position_embeddings,
             type_vocab_size,
             json,
-        } => {
-            #[cfg(feature = "inference")]
-            {
-                commands::embed_gguf::run(
-                    model,
-                    &commands::embed_gguf::EmbedFlags {
-                        texts: &batuta_common::cli_roles::strings(text),
-                        text_file: text_file.as_deref(),
-                        vocab: vocab.as_deref(),
-                        pool,
-                        normalize: *normalize,
-                        task: *task,
-                        title: title.as_deref(),
-                        dim: *dim,
-                        sizes: commands::embed_gguf::BertSizes {
-                            hidden_dim: *hidden_dim,
-                            num_layers: *num_layers,
-                            num_heads: *num_heads,
-                            intermediate_dim: *intermediate_dim,
-                            vocab_size: *vocab_size,
-                            max_position_embeddings: *max_position_embeddings,
-                            type_vocab_size: *type_vocab_size,
-                        },
-                        json: *json,
-                    },
-                )
-            }
-            #[cfg(not(feature = "inference"))]
-            {
-                Err(crate::error::CliError::FeatureDisabled("`apr embed` on a GGUF file needs the `inference` feature (built with --no-default-features)".to_string()))
-            }
-        }
+        } => commands::embed_gguf::run(
+            model,
+            &commands::embed_gguf::EmbedFlags {
+                texts: &batuta_common::cli_roles::strings(text),
+                text_file: text_file.as_deref(),
+                vocab: vocab.as_deref(),
+                pool,
+                normalize: *normalize,
+                task: *task,
+                title: title.as_deref(),
+                dim: *dim,
+                sizes: commands::embed_gguf::BertSizes {
+                    hidden_dim: *hidden_dim,
+                    num_layers: *num_layers,
+                    num_heads: *num_heads,
+                    intermediate_dim: *intermediate_dim,
+                    vocab_size: *vocab_size,
+                    max_position_embeddings: *max_position_embeddings,
+                    type_vocab_size: *type_vocab_size,
+                },
+                json: *json,
+            },
+        ),
 
         // All other extended commands handled by sub-dispatchers above
         _ => unreachable!("all extended commands handled by sub-dispatchers"),

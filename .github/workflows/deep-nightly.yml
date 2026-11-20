@@ -128,9 +128,6 @@ jobs:
           tail -n 40 deep/deep-nodefault.log
           [ "$vrc" = 0 ] || { echo "::error::--no-default-features RED: $verdict"; exit 1; }
 
-      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
-        run: bash scripts/check_apr_cli_no_default_features.sh
-
       - name: Publish the log
         if: always()
         uses: actions/upload-artifact@v7
@@ -191,3 +188,8 @@ jobs:
           name: deep-bins-smoke
           path: deep/
           if-no-files-found: error
+
+      # LAB (#7294): this job is lane kind `lab` in nightly_train.sh, never a verdict lane.
+      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
+        if: always()
+        run: bash scripts/check_apr_cli_no_default_features.sh
