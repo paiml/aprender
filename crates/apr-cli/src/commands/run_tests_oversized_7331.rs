@@ -120,36 +120,43 @@ fn checkpoint_repo_id_canonicalises_every_url_form() {
     }
 }
 
-/// Round 3 (lane 2 finding 4): the exact sentence. A generic forward reason is not
-/// repeated after "no CUDA forward for it", and a reason without a full stop still
-/// ends its sentence with exactly one.
+/// The exact refusal, measured through the real default path (PR #7356 round 4, lane 2
+/// F1): `known_checkpoint_refusal` with the build's own capability table, not a synthetic
+/// reason. In the default build (`inference` on) realizar's Qwen3.5-MoE reason exists, so
+/// the no-CUDA-forward clause is stated once and the reason's CPU advice and second refusal are not quoted.
+const QWEN38_REFUSAL: &str = "refusing to run Qwen/Qwen3.8-2.4T-A95B: the checkpoint is \
+     about 4.9 TB in bf16 (model_type qwen3_5_moe_text), which exceeds every supported host, \
+     and there is no CUDA forward for it: Qwen3.5 MoE is a hybrid (Gated DeltaNet / SSM \
+     layers + mixture-of-experts), and the qwen3moe CUDA forward (#3714) does not run SSM \
+     layers. Refused before any download or allocation: \
+     nothing was downloaded and nothing was loaded (#7331).";
+
 #[test]
-fn oversized_refusal_text_is_one_well_formed_sentence() {
-    let generic = refusal_text(
-        "Qwen/Qwen3.8-2.4T-A95B",
-        "qwen3_5_moe_text",
-        4_900_000_000_000,
-        "no CUDA forward for architecture 'qwen3_5_moe_text'",
+fn oversized_refusal_text_is_exact_on_the_default_path() {
+    #[cfg(feature = "inference")]
+    assert!(
+        realizar::capability::no_cuda_forward_reason("qwen3_5_moe_text").is_some(),
+        "the default build's capability table must still refuse qwen3_5_moe_text"
     );
-    assert_eq!(
-        generic,
-        "refusing to run Qwen/Qwen3.8-2.4T-A95B: the checkpoint is about 4.9 TB in bf16 \
-         (model_type qwen3_5_moe_text), which exceeds every supported host, and there is \
-         no CUDA forward for it. Refused before any download or allocation: nothing was \
-         downloaded and nothing was loaded (#7331)."
-    );
-    for reason in ["the SSM layers have no kernel", "the SSM layers have no kernel.", " x. "] {
+    // Synthetic reasons: bare generic, real-shaped, and one with no full stop.
+    for (reason, want) in [
+        ("no CUDA forward for architecture 'm'", "for it. Refused"),
+        ("this build has no CUDA forward for architecture 'm'.", "for it. Refused"),
+        ("this build has no CUDA forward for architecture 'm': SSM has no kernel. Re-run without --gpu. This is a refusal, x.", "for it: SSM has no kernel. Refused"),
+        ("SSM has no kernel", "for it: SSM has no kernel. Refused"),
+    ] {
         let text = refusal_text("o/r", "m", 1_000_000_000_000, reason);
-        let want = reason.trim().trim_end_matches('.');
-        assert!(text.contains(&format!("no CUDA forward for it: {want}. Refused")), "{text}");
-        assert!(!text.contains(".."), "{text}");
+        assert!(text.contains(want), "{text}");
+        assert!(!text.contains("..") && !text.contains("--gpu"), "{text}");
     }
     let real = known_checkpoint_refusal(QWEN38_2_4T).expect("refused");
-    assert_eq!(real.matches("Refused before").count(), 1, "{real}");
-    assert!(!real.contains(".."), "{real}");
-    assert!(!real.contains("it: no CUDA forward for architecture"), "{real}");
-    assert!(!real.contains("' Refused"), "{real}");
+    #[cfg(feature = "inference")]
+    assert_eq!(real, QWEN38_REFUSAL);
+    assert_eq!(real.matches("no CUDA forward").count(), 1, "{real}");
+    assert_eq!(real.matches("nothing was loaded").count(), 1, "{real}");
+    assert!(!real.contains("--gpu") && !real.contains("CPU"), "{real}");
 }
+
 
 /// Every path under `dir`, sorted, or `None` when it does not exist. Lane 2 finding 5
 /// (round 3): the old `existed_before || !cache.exists()` passed for any refusal order

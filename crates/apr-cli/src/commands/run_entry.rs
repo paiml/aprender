@@ -335,9 +335,27 @@ pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
 /// already says so, and the sentence before "Refused …" always ends in exactly one full
 /// stop (PR #7356 round 3, lane 2 finding 4).
 fn refusal_text(name: &str, model_type: &str, bytes: u64, forward: &str) -> String {
+    // The capability reason is a whole refusal of its own ("this build has no CUDA forward
+    // for architecture 'X': <why>. Re-run without --gpu ... This is a refusal, ..."). Keep
+    // only <why>: the clause before it already says there is no CUDA forward, and the
+    // CPU advice and the second refusal sentence contradict this refusal (PR #7356 round 4,
+    // lane 2 F1).
+    let mut forward = forward.trim();
+    for cut in [" Re-run without", " This is a refusal"] {
+        if let Some(i) = forward.find(cut) {
+            forward = &forward[..i];
+        }
+    }
     let forward = forward.trim().trim_end_matches('.');
-    let generic = format!("no CUDA forward for architecture '{model_type}'");
-    let forward = if forward.is_empty() || forward.eq_ignore_ascii_case(&generic) {
+    let forward = match forward
+        .strip_prefix("this build has no CUDA forward for architecture")
+        .or_else(|| forward.strip_prefix("no CUDA forward for architecture"))
+    {
+        // "'X': <why>" or just "'X'": keep what follows the colon.
+        Some(rest) => rest.split_once(':').map_or("", |(_, why)| why.trim()),
+        None => forward,
+    };
+    let forward = if forward.is_empty() {
         String::new()
     } else {
         format!(": {forward}")

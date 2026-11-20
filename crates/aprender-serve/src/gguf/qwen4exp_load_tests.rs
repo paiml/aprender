@@ -845,6 +845,11 @@ fn qwen4_exp_mtp_gguf_load_refuses_mtp_tensors_by_name() {
     assert!(err.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{err}");
     assert!(err.contains("blk.4.nextn.eh_proj.weight"), "{err}");
     assert!(!err.contains("blk.3."), "trunk tensor named: {err}");
+    // Round 4, lane 1 F3: the MTP-led refusal names the trunk's ops too.
+    assert!(err.contains("The trunk is refused too"), "{err}");
+    for op in apr_format::qwen4_exp::UNSUPPORTED_OP_NAMES {
+        assert!(err.contains(op), "{op} missing: {err}");
+    }
     let direct = err_text(load_qwen4exp_gguf(&model));
     assert!(
         direct.contains(crate::qwen4_exp::MTP_REFUSAL_ID),
@@ -1103,19 +1108,49 @@ fn gguf_qwen4exp_overflowing_ple_heads_is_refused_not_wrapped() {
     assert!(msg.contains("qwen4exp.ple.heads_per_ngram"), "{msg}");
 }
 
+/// `from_model`'s outcome as text: `ok`, or the error message.
+fn meta_outcome(f: &Fixture) -> String {
+    match Qwen4ExpGgufMeta::from_model(&f.model()) {
+        Ok(_) => "ok".to_string(),
+        Err(e) => e.to_string(),
+    }
+}
+
+/// PR #7356 round 4, lane 1 F1: the bound is inclusive on keys the loader reads. Exactly
+/// `MAX_HEADER_VALUE` may fail a later shape check, but never the bound; one past it is
+/// refused by the bound.
 #[test]
 fn gguf_qwen4exp_header_bound_admits_the_largest_value() {
-    // The bound is inclusive and an exempt key may exceed it.
+    let bound = format!("above the {MAX_HEADER_VALUE} bound");
+    for key in ["qwen4exp.embedding_length", "qwen4exp.block_count"] {
+        let mut f = fixture();
+        f.kv(key, Kv::U64(MAX_HEADER_VALUE));
+        let at = meta_outcome(&f);
+        assert!(!at.contains(&bound), "{key} at the bound: {at}");
+        f.kv(key, Kv::U64(MAX_HEADER_VALUE + 1));
+        let past = meta_outcome(&f);
+        assert!(
+            past.contains(&bound) && past.contains(key),
+            "{key} past the bound: {past}"
+        );
+    }
+    let ff = "qwen4exp.expert_feed_forward_length";
     let mut f = fixture();
-    f.kv("qwen4exp.context_length", Kv::U64(MAX_HEADER_VALUE));
+    f.kv(ff, Kv::U64(MAX_HEADER_VALUE));
+    let at = meta_outcome(&f);
+    assert!(
+        !at.contains("must be one non-zero value"),
+        "{ff} at the bound: {at}"
+    );
+    f.kv(ff, Kv::U64(MAX_HEADER_VALUE + 1));
+    assert!(
+        meta_outcome(&f).contains("must be one non-zero value"),
+        "{ff} past the bound"
+    );
+    // An exempt key may exceed it.
+    let mut f = fixture();
     f.kv("qwen4exp.ple.eos_token_id", Kv::U64(u64::MAX));
     meta_of(&f);
-    f.kv("qwen4exp.context_length", Kv::U64(MAX_HEADER_VALUE + 1));
-    // context_length is not read, so an unread key is not refused either.
-    meta_of(&f);
-    f.kv("qwen4exp.embedding_length", Kv::U64(MAX_HEADER_VALUE + 1));
-    let msg = err_text(Qwen4ExpGgufMeta::from_model(&f.model()));
-    assert!(msg.contains("qwen4exp.embedding_length"), "{msg}");
 }
 
 /// Header values that probe every bound: zero, one, the bound and one past it, and the

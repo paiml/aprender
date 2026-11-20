@@ -394,8 +394,12 @@ pub fn check_mtp_tensors<'a>(names: impl IntoIterator<Item = &'a str>) -> Result
 /// The one MTP refusal message, shared by the safetensors names (`mtp.*`) and the GGUF
 /// loader (`blk.N.nextn.*`, `gguf::qwen4exp_load::load_qwen4exp_gguf`).
 ///
+/// The message names the trunk's unsupported ops too, so it never implies the trunk would
+/// run once the MTP head is removed (PR #7356 round 4, lane 1 F3).
+///
 /// # Errors
-/// A message led by [`MTP_REFUSAL_ID`] naming every tensor in `mtp`, when it is non-empty.
+/// A message led by [`MTP_REFUSAL_ID`] naming every tensor in `mtp`, when it is non-empty,
+/// followed by the full forward refusal (every op of [`UnsupportedOp`]).
 pub fn mtp_refusal<S: AsRef<str>>(mtp: &[S]) -> Result<(), String> {
     if mtp.is_empty() {
         return Ok(());
@@ -403,8 +407,10 @@ pub fn mtp_refusal<S: AsRef<str>>(mtp: &[S]) -> Result<(), String> {
     let names: Vec<&str> = mtp.iter().map(AsRef::as_ref).collect();
     Err(format!(
         "{MTP_REFUSAL_ID}: qwen4_exp multi-token-prediction head is not implemented; \
-         MTP tensors present: [{}]. This is a refusal, not a fallback: no logits are produced.",
-        names.join(", ")
+         MTP tensors present: [{}]. This is a refusal, not a fallback: no logits are produced. \
+         The trunk is refused too, not only the MTP head: {}",
+        names.join(", "),
+        apr_format::qwen4_exp::refusal_reason(&apr_format::qwen4_exp::UNSUPPORTED_OP_NAMES)
     ))
 }
 
@@ -455,6 +461,33 @@ mod tests {
             "main tensor named: {err}"
         );
         assert!(err.contains("refusal, not a fallback"), "{err}");
+    }
+
+    /// PR #7356 round 4, lane 1 F3: the MTP-led refusal also names every trunk op, on the
+    /// real convert path (`check_checkpoint`), so it never implies the trunk would run.
+    #[test]
+    fn qwen4_exp_mtp_led_refusal_names_every_unsupported_op() {
+        let config = crate::SafetensorsConfig {
+            model_type: Some("qwen4_exp".to_string()),
+            ..Default::default()
+        };
+        let names = ["model.language_model.embed_tokens.weight", "mtp.fc.weight"];
+        let msg = check_checkpoint(&config, names.iter().copied())
+            .expect_err("must refuse")
+            .to_string();
+        assert!(msg.contains(MTP_REFUSAL_ID), "{msg}");
+        assert!(msg.contains("The trunk is refused too"), "{msg}");
+        for op in [
+            UnsupportedOp::SparseAttentionIndexer,
+            UnsupportedOp::NgramEmbedding,
+            UnsupportedOp::PerLayerEmbedding,
+            UnsupportedOp::HyperConnectionResidual,
+            UnsupportedOp::SigmoidOutputGate,
+            UnsupportedOp::MultiTokenPrediction,
+        ] {
+            assert!(msg.contains(op.name()), "{} missing: {msg}", op.name());
+        }
+        assert!(msg.contains("[sparse-attention indexer, ngram embedding, ple, hc residual, sigmoid output gate, mtp]"), "{msg}");
     }
 
     #[test]
