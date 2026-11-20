@@ -33,3 +33,20 @@ fn run_dispatch_refuses_known_checkpoint_on_every_entry() {
         assert!(err.to_string().contains("#7331"), "{extra:?}: {err}");
     }
 }
+
+/// Round 2, lane-2 finding 1: the three repro sources from the receipt reach exit 12 through
+/// the real dispatch, offline (no file named by them exists on disk here).
+#[test]
+fn run_dispatch_refuses_every_hf_form_of_the_known_checkpoint() {
+    for src in [
+        "Qwen/Qwen3.8-2.4T-A95B/model.safetensors",
+        "https://www.hf.co/Qwen/Qwen3.8-2.4T-A95B/resolve/main/model.safetensors",
+        "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B?download=true",
+    ] {
+        let err = dispatch_run_argv(&["apr", "run", src, "--prompt", "hi"])
+            .expect("the run arm handles `apr run`")
+            .expect_err("the 2.4T checkpoint must be refused");
+        assert_eq!(err.exit_code_value(), 12, "{src}: {err}");
+        assert!(err.to_string().contains("#7331"), "{src}: {err}");
+    }
+}

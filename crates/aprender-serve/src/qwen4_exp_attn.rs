@@ -484,9 +484,23 @@ pub fn indexed_attention_step(
     ensure("rotary_dim", usize::from(cos.len() <= a.head_dim), 1)?;
     let pos = cache.len(a.indexer.head_dim);
     ensure("visible", visible.len(), pos + 1)?;
-    if pos > 0 {
-        ensure("cos (cached rotary_dim)", cos.len() * pos, cache.cos.len())?;
-    }
+    // A cache built under another shape must be refused here, never indexed out of
+    // bounds in `attend_head` (module doc: shape violations are reported; PR #7356
+    // lane-1 finding 6).
+    ensure(
+        "cache index_k",
+        cache.index_k.len(),
+        pos * a.indexer.head_dim,
+    )?;
+    ensure("cache sin", cache.sin.len(), cache.cos.len())?;
+    ensure(
+        "cache cos (cached rotary_dim)",
+        cache.cos.len(),
+        cos.len() * pos,
+    )?;
+    let kv = pos * a.n_kv * a.head_dim;
+    ensure("cache k", cache.k.len(), kv)?;
+    ensure("cache v", cache.v.len(), kv)?;
     let (q_idx, k_idx) = indexer_qk(&p.indexer, &a.indexer, hidden, cos, sin);
     let pr = project_qkv(p, a, hidden, cos, sin);
     cache.index_k.extend(k_idx);
@@ -618,4 +632,102 @@ pub fn hc_stream_init(s: &HcShape, embeds: &[f32]) -> Vec<f32> {
         .chunks_exact(s.hidden)
         .flat_map(|r| r.repeat(s.count))
         .collect()
+}
+
+#[cfg(test)]
+mod step_cache_tests {
+    use super::*;
+
+    /// Owned weights for one attention shape (values are irrelevant to the shape checks).
+    struct W(Vec<Vec<f32>>);
+
+    fn weights(a: &AttentionShape) -> W {
+        let (h, d, i) = (a.indexer.hidden, a.head_dim, &a.indexer);
+        W(vec![
+            vec![0.01; a.n_heads * d * 2 * h],
+            vec![0.01; a.n_kv * d * h],
+            vec![0.01; a.n_kv * d * h],
+            vec![0.01; h * a.n_heads * d],
+            vec![1.0; d],
+            vec![1.0; d],
+            vec![0.01; (i.n_heads + 1) * i.head_dim * i.hidden],
+            vec![1.0; i.head_dim],
+            vec![1.0; i.head_dim],
+        ])
+    }
+
+    fn params(w: &W) -> AttentionParams<'_> {
+        let v = &w.0;
+        AttentionParams {
+            q_proj: &v[0],
+            k_proj: &v[1],
+            v_proj: &v[2],
+            o_proj: &v[3],
+            q_norm: &v[4],
+            k_norm: &v[5],
+            indexer: IndexerParams {
+                qk_proj: &v[6],
+                q_norm: &v[7],
+                k_norm: &v[8],
+            },
+        }
+    }
+
+    fn shape(n_kv: usize, head_dim: usize) -> AttentionShape {
+        AttentionShape {
+            n_heads: 2,
+            n_kv,
+            head_dim,
+            indexer: IndexerShape {
+                hidden: 8,
+                n_heads: 1,
+                head_dim: 4,
+                budget: 4,
+                ratio: 1,
+                eps: 1e-6,
+            },
+        }
+    }
+
+    #[test]
+    fn qwen4_exp_attn_step_refuses_a_cache_built_under_another_shape() {
+        // The lane-1 repro: one step at (n_kv 1, head_dim 4), then (n_kv 2, head_dim 8) with
+        // the same rotary_dim and indexer head_dim. It used to panic in attend_head.
+        let (hidden, cos, sin) = (vec![0.1_f32; 8], vec![1.0_f32; 2], vec![0.0_f32; 2]);
+        let mut cache = AttnCache::new();
+        let (a1, a2) = (shape(1, 4), shape(2, 8));
+        let (w1, w2) = (weights(&a1), weights(&a2));
+        indexed_attention_step(&params(&w1), &a1, &mut cache, &hidden, &cos, &sin, &[true])
+            .expect("first step");
+        let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            indexed_attention_step(
+                &params(&w2),
+                &a2,
+                &mut cache,
+                &hidden,
+                &cos,
+                &sin,
+                &[true; 2],
+            )
+        }));
+        let err = r
+            .expect("must not panic")
+            .expect_err("mismatched cache must be refused");
+        assert!(err.contains("cache k"), "{err}");
+    }
+
+    #[test]
+    fn qwen4_exp_attn_step_refuses_a_cache_with_unequal_sin_and_cos() {
+        let (hidden, cos, sin) = (vec![0.1_f32; 8], vec![1.0_f32; 2], vec![0.0_f32; 2]);
+        let a = shape(1, 4);
+        let w = weights(&a);
+        let mut cache = AttnCache::new();
+        indexed_attention_step(&params(&w), &a, &mut cache, &hidden, &cos, &sin, &[true])
+            .expect("first step");
+        cache.sin.pop();
+        let err =
+            indexed_attention_step(&params(&w), &a, &mut cache, &hidden, &cos, &sin, &[true; 2])
+                .expect_err("sin/cos mismatch must be refused");
+        assert!(err.contains("cache sin"), "{err}");
+    }
 }

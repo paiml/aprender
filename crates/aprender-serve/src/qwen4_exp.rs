@@ -278,6 +278,30 @@ pub fn check_config(config: &crate::SafetensorsConfig) -> crate::error::Result<(
     }
 }
 
+/// [`check_config`] plus the MTP refusal on the checkpoint's tensor names: a `qwen4_exp`
+/// checkpoint carrying `mtp.*` tensors is refused led by [`MTP_REFUSAL_ID`] (#7333) on every
+/// SafeTensors load path, before the forward refusal. Non-`qwen4_exp` configs are untouched,
+/// whatever their tensor names (other families' `mtp.*` heads are not this refusal).
+///
+/// # Errors
+/// `UnsupportedOperation`: the MTP refusal when `mtp.*` tensors are present, else the
+/// forward refusal.
+pub fn check_checkpoint<'a>(
+    config: &crate::SafetensorsConfig,
+    tensor_names: impl IntoIterator<Item = &'a str>,
+) -> crate::error::Result<()> {
+    if let Err(e) = check_config(config) {
+        check_mtp_tensors(tensor_names).map_err(|reason| {
+            crate::error::RealizarError::UnsupportedOperation {
+                operation: "qwen4_exp_mtp".to_string(),
+                reason,
+            }
+        })?;
+        return Err(e);
+    }
+    Ok(())
+}
+
 /// Tensor families of a `qwen4_exp` checkpoint.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum TensorFamily {

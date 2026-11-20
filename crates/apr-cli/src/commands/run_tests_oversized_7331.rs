@@ -18,6 +18,18 @@ fn oversized_checkpoint_refusal_names_size_and_missing_forward() {
         "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
         "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B/resolve/main/model.safetensors",
         "https://hf.co/Qwen/Qwen3.8-2.4T-A95B/",
+        // Round 2 (lane-2 finding 1): one normaliser for every form. A bare file-qualified
+        // ref is promoted to hf:// by run.rs when it is not on disk, then downloaded.
+        "Qwen/Qwen3.8-2.4T-A95B/model.safetensors",
+        "Qwen/Qwen3.8-2.4T-A95B/model.safetensors.index.json",
+        "https://www.hf.co/Qwen/Qwen3.8-2.4T-A95B/resolve/main/model.safetensors",
+        "http://www.huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+        "HTTPS://HuggingFace.co/Qwen/Qwen3.8-2.4T-A95B",
+        "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B?download=true",
+        "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B#model-card",
+        "https://huggingface.co/api/models/Qwen/Qwen3.8-2.4T-A95B",
+        "huggingface.co/Qwen/Qwen3.8-2.4T-A95B/blob/main/config.json",
+        "hf://Qwen/Qwen3.8-2.4T-A95B@main/config.json",
     ] {
         let reason = known_checkpoint_refusal(spelling)
             .unwrap_or_else(|| panic!("{spelling} must be refused up front"));
@@ -43,8 +55,9 @@ fn other_checkpoints_are_not_refused_by_the_oversized_table() {
         "hf://Qwen/Qwen3.8-2.4T-A95B-GGUF-not-this-one/model.gguf",
         "https://huggingface.co/Qwen/Qwen3-0.6B/resolve/main/model.safetensors",
         "https://example.com/Qwen/Qwen3.8-2.4T-A95B",
-        // A local path is not a repo id: only the exact bare id is matched.
-        "Qwen/Qwen3.8-2.4T-A95B/model.safetensors",
+        "s3://Qwen/Qwen3.8-2.4T-A95B",
+        "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B-GGUF-not-this-one?x=Qwen/Qwen3.8-2.4T-A95B",
+        "Qwen",
         "",
     ] {
         assert!(

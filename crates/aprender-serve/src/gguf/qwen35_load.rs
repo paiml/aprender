@@ -70,8 +70,39 @@ fn arch_u32(model: &GGUFModel, suffix: &str) -> Option<u32> {
         .and_then(as_u32)
 }
 
+/// `{arch}.nextn_predict_layers` as any non-negative GGUF integer; absent is 0.
+///
 /// # Errors
-/// A missing `{arch}.block_count`, or a layer tensor the file does not carry.
+/// The key is present with a non-integer or negative value.
+fn nextn_predict_layers(model: &GGUFModel) -> Result<usize> {
+    let Some(arch) = model.architecture() else {
+        return Ok(0);
+    };
+    let key = crate::gguf::keys::arch_key(arch, "nextn_predict_layers");
+    let Some(v) = model.metadata.get(&key) else {
+        return Ok(0);
+    };
+    let n = match v {
+        GGUFValue::UInt8(x) => Some(u64::from(*x)),
+        GGUFValue::UInt16(x) => Some(u64::from(*x)),
+        GGUFValue::UInt32(x) => Some(u64::from(*x)),
+        GGUFValue::UInt64(x) => Some(*x),
+        GGUFValue::Int8(x) => u64::try_from(*x).ok(),
+        GGUFValue::Int16(x) => u64::try_from(*x).ok(),
+        GGUFValue::Int32(x) => u64::try_from(*x).ok(),
+        GGUFValue::Int64(x) => u64::try_from(*x).ok(),
+        _ => None,
+    };
+    n.and_then(|n| usize::try_from(n).ok()).ok_or_else(|| {
+        crate::error::RealizarError::InvalidShape {
+            reason: format!("Qwen3.5 loader: {key} must be a non-negative integer, got {v:?}"),
+        }
+    })
+}
+
+/// # Errors
+/// A missing `{arch}.block_count`, `nextn_predict_layers` that is not a non-negative integer
+/// or leaves no decoder layer, or a layer tensor the file does not carry.
 pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35Layer>> {
     let mut layers = Vec::new();
     // Fail closed: a guessed depth is a silently truncated model, not a degraded one.
@@ -86,8 +117,19 @@ pub fn load_qwen35_layers(model: &GGUFModel, data: &[u8]) -> Result<Vec<Qwen35La
     // GH-7329: `block_count` counts the trailing MTP (nextn) block(s) too (Qwen3.8-27B:
     // block_count 65, nextn_predict_layers 1, `blk.64.*` carries only the MTP tensors).
     // The decoder stack is the first `block_count - nextn_predict_layers` blocks.
-    let num_layers =
-        num_layers.saturating_sub(arch_u32(model, "nextn_predict_layers").unwrap_or(0) as usize);
+    // PR #7356 lane-1 finding 7: any non-negative integer type is read (a UInt64/Int32 key
+    // is not 0), a non-integer value is refused, and nextn >= block_count (no decoder layer
+    // left) is refused rather than loading an empty stack.
+    let nextn = nextn_predict_layers(model)?;
+    if nextn >= num_layers {
+        return Err(crate::error::RealizarError::InvalidShape {
+            reason: format!(
+                "Qwen3.5 loader: nextn_predict_layers {nextn} >= block_count {num_layers}; \
+                 no decoder layer is left"
+            ),
+        });
+    }
+    let num_layers = num_layers - nextn;
 
     let interval = arch_u32(model, "full_attention_interval").unwrap_or(4) as usize;
 
@@ -364,19 +406,28 @@ mod tests {
     /// trailing MTP block `blk.2` that carries only a `nextn.*` tensor, as in the
     /// Qwen3.8-27B file (block_count 65, nextn_predict_layers 1).
     fn gguf_with_mtp_block(nextn_predict_layers: Option<u32>) -> Vec<u8> {
+        gguf_with_mtp_block_kv(nextn_predict_layers.map(|n| (4, n.to_le_bytes().to_vec())))
+    }
+
+    /// `nextn`: (GGUF value type id, little-endian value bytes) of `nextn_predict_layers`.
+    fn gguf_with_mtp_block_kv(nextn: Option<(u32, Vec<u8>)>) -> Vec<u8> {
         const ELEMS: u64 = 8; // F32 x 8 = 32 bytes, keeps every offset 32-aligned
         let mut tensors: Vec<String> = Vec::new();
         tensors.extend(DELTANET_TENSORS.iter().map(|t| format!("blk.0.{t}")));
         tensors.extend(ATTENTION_TENSORS.iter().map(|t| format!("blk.1.{t}")));
         tensors.push("blk.2.nextn.eh_proj.weight".to_string());
 
-        let mut kvs: Vec<(&str, Option<&str>, u32)> = vec![
-            ("general.architecture", Some("qwen35"), 0),
-            ("qwen35.block_count", None, 3),
-            ("qwen35.full_attention_interval", None, 2),
+        let mut kvs: Vec<(&str, Option<&str>, (u32, Vec<u8>))> = vec![
+            ("general.architecture", Some("qwen35"), (0, vec![])),
+            ("qwen35.block_count", None, (4, 3u32.to_le_bytes().to_vec())),
+            (
+                "qwen35.full_attention_interval",
+                None,
+                (4, 2u32.to_le_bytes().to_vec()),
+            ),
         ];
-        if let Some(n) = nextn_predict_layers {
-            kvs.push(("qwen35.nextn_predict_layers", None, n));
+        if let Some(kv) = nextn {
+            kvs.push(("qwen35.nextn_predict_layers", None, kv));
         }
 
         let mut out = Vec::new();
@@ -392,8 +443,8 @@ mod tests {
                     put_str(&mut out, s);
                 },
                 None => {
-                    out.extend_from_slice(&4u32.to_le_bytes());
-                    out.extend_from_slice(&n.to_le_bytes());
+                    out.extend_from_slice(&n.0.to_le_bytes());
+                    out.extend_from_slice(&n.1);
                 },
             }
         }
@@ -423,6 +474,45 @@ mod tests {
         assert_eq!(layers.len(), 2, "block_count 3 - nextn_predict_layers 1");
         assert!(matches!(layers[0], Qwen35Layer::DeltaNet(_)));
         assert!(matches!(layers[1], Qwen35Layer::Attention(_)));
+    }
+
+    /// PR #7356 lane-1 finding 7: nextn == block_count used to load `Ok(vec![])`.
+    #[test]
+    fn qwen35_nextn_equal_to_block_count_is_refused() {
+        let data = gguf_with_mtp_block(Some(3));
+        let model = GGUFModel::from_bytes(&data).expect("synthetic GGUF parses");
+        let err = load_qwen35_layers(&model, &data)
+            .err()
+            .expect("no decoder layer left");
+        assert!(
+            err.to_string()
+                .contains("nextn_predict_layers 3 >= block_count 3"),
+            "{err}"
+        );
+    }
+
+    /// PR #7356 lane-1 finding 7: a UInt64/Int32 key used to read as 0 (then blk.2 failed
+    /// as a decoder layer); a float is refused by name.
+    #[test]
+    fn qwen35_nextn_is_read_from_any_integer_type() {
+        for kv in [
+            (10, 1u64.to_le_bytes().to_vec()),
+            (5, 1i32.to_le_bytes().to_vec()),
+        ] {
+            let data = gguf_with_mtp_block_kv(Some(kv.clone()));
+            let model = GGUFModel::from_bytes(&data).expect("synthetic GGUF parses");
+            let layers = load_qwen35_layers(&model, &data).expect("an integer nextn reads as 1");
+            assert_eq!(layers.len(), 2, "type {}", kv.0);
+        }
+        let data = gguf_with_mtp_block_kv(Some((6, 1.0f32.to_le_bytes().to_vec())));
+        let model = GGUFModel::from_bytes(&data).expect("synthetic GGUF parses");
+        let err = load_qwen35_layers(&model, &data)
+            .err()
+            .expect("float refused");
+        assert!(
+            err.to_string().contains("nextn_predict_layers must be"),
+            "{err}"
+        );
     }
 
     /// Without the key the loader still reads every block, so the same file fails

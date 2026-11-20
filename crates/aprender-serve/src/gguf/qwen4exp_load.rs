@@ -116,6 +116,26 @@ impl Md<'_> {
         }
     }
 
+    /// `ple.layer_multipliers` are the n-gram hash multipliers, positive (odd) 64-bit
+    /// integers (`qwen4_exp_embed::layer_multipliers`). A bool, float or string element,
+    /// or a value <= 0, is refused (PR #7356 lane-1 finding 3).
+    fn hash_multipliers(&self, k: &str) -> Result<()> {
+        let key = Self::key(k);
+        let ok = match self.0.get(&key) {
+            Some(GGUFValue::Array(xs)) => xs
+                .iter()
+                .all(|x| !matches!(x, GGUFValue::Bool(_)) && as_u64(x).is_some_and(|v| v > 0)),
+            _ => false,
+        };
+        if ok {
+            Ok(())
+        } else {
+            Err(refuse(format!(
+                "metadata key {key} must be an array of positive 64-bit integers"
+            )))
+        }
+    }
+
     fn array_len(&self, k: &str) -> Option<usize> {
         match self.0.get(&Self::key(k)) {
             Some(GGUFValue::Array(xs)) => Some(xs.len()),
@@ -210,11 +230,20 @@ impl Qwen4ExpGgufMeta {
         m.read_ssm_hc_indexer(&md)?;
         m.read_layer_kinds(&md)?;
         m.read_ple(&md)?;
-        m.n_vocab = tensors
+        let embd = tensors
             .iter()
             .find(|t| t.name == "token_embd.weight")
-            .and_then(|t| t.dims.first().copied())
             .ok_or_else(|| refuse("missing required tensor token_embd.weight".to_string()))?;
+        // Row-major [n_vocab, n_embd]; a 0-row or non-2D embedding has no vocabulary
+        // (PR #7356 lane-1 finding 4).
+        m.n_vocab = match embd.dims.as_slice() {
+            [v, _] if *v > 0 => *v,
+            dims => {
+                return Err(refuse(format!(
+                    "tensor token_embd.weight has row-major shape {dims:?}; it needs                      [n_vocab > 0, n_embd]"
+                )))
+            }
+        };
         Ok(m)
     }
 
@@ -346,6 +375,7 @@ impl Qwen4ExpGgufMeta {
                 Md::key("ple.layer_multipliers")
             )));
         }
+        md.hash_multipliers("ple.layer_multipliers")?;
         self.ple_min_rows = self.read_ple_heads(md)?;
         Ok(())
     }
@@ -561,16 +591,40 @@ pub fn unmapped_tensors(model: &GGUFModel, meta: &Qwen4ExpGgufMeta) -> Vec<Strin
         .collect()
 }
 
-/// The MTP-layer tensors (layers `n_layer..block_count`): kept out of the
-/// trunk; the MTP head itself is #7333.
+/// A `blk.N.nextn.*` name, at any layer: an MTP tensor whatever the metadata says.
+fn is_nextn_name(name: &str) -> bool {
+    split_block(name).is_some_and(|(_, rest)| rest.starts_with("nextn."))
+}
+
+/// The MTP tensors among `names`: every tensor of layers `n_layer..block_count`, plus every
+/// `blk.N.nextn.*` tensor even when `nextn_predict_layers` is 0 or absent (PR #7356 lane-1
+/// finding 2). The MTP head itself is #7333.
+fn mtp_names<'a>(names: impl Iterator<Item = &'a str>, meta: &Qwen4ExpGgufMeta) -> Vec<String> {
+    names
+        .filter(|n| map_gguf_tensor(n, meta) == Some(TensorFamily::Mtp) || is_nextn_name(n))
+        .map(str::to_string)
+        .collect()
+}
+
+/// The MTP tensors of `model` (see [`mtp_names`]), in file order.
 #[must_use]
 pub fn mtp_tensors(model: &GGUFModel, meta: &Qwen4ExpGgufMeta) -> Vec<String> {
-    model
-        .tensors
-        .iter()
-        .filter(|t| map_gguf_tensor(&t.name, meta) == Some(TensorFamily::Mtp))
-        .map(|t| t.name.clone())
-        .collect()
+    mtp_names(model.tensors.iter().map(|t| t.name.as_str()), meta)
+}
+
+/// The MTP refusal for a tensor set whose metadata may not parse (a lone shard, a broken
+/// header): named `blk.N.nextn.*` tensors are refused first, else the metadata error.
+fn meta_or_mtp_refusal(names: &[&str], meta: Result<Qwen4ExpGgufMeta>) -> Result<Qwen4ExpGgufMeta> {
+    let meta = match meta {
+        Ok(m) => m,
+        Err(e) => {
+            let nextn: Vec<&str> = names.iter().copied().filter(|n| is_nextn_name(n)).collect();
+            crate::qwen4_exp::mtp_refusal(&nextn).map_err(refuse)?;
+            return Err(e);
+        },
+    };
+    crate::qwen4_exp::mtp_refusal(&mtp_names(names.iter().copied(), &meta)).map_err(refuse)?;
+    Ok(meta)
 }
 
 // ---------------------------------------------------------------------------
@@ -925,7 +979,8 @@ pub fn refuse_non_text_file(path: &Path, model: &GGUFModel) -> Result<()> {
         });
     if in_mtp_dir {
         return Err(refuse(format!(
-            "{} is under the MTP directory; the MTP head is not loaded here (#7333)",
+            "{}: {} is under the MTP directory; the MTP head is not loaded here (#7333)",
+            crate::qwen4_exp::MTP_REFUSAL_ID,
             path.display()
         )));
     }
@@ -943,8 +998,8 @@ pub fn refuse_non_text_file(path: &Path, model: &GGUFModel) -> Result<()> {
 /// A missing or malformed key, MTP tensors present (led by `QWEN4EXP-MTP-REFUSED`), or a
 /// tensor that breaks the shape contract.
 pub fn load_qwen4exp_gguf(model: &GGUFModel) -> Result<Qwen4ExpGgufMeta> {
-    let meta = Qwen4ExpGgufMeta::from_model(model)?;
-    crate::qwen4_exp::mtp_refusal(&mtp_tensors(model, &meta)).map_err(refuse)?;
+    let names: Vec<&str> = model.tensors.iter().map(|t| t.name.as_str()).collect();
+    let meta = meta_or_mtp_refusal(&names, Qwen4ExpGgufMeta::from_model(model))?;
     check_shapes(model, &meta)?;
     Ok(meta)
 }
@@ -1001,10 +1056,11 @@ pub fn dequant_gaps(model: &GGUFModel) -> Vec<DequantGap> {
 pub struct SplitSet {
     /// Hyperparameters, read from shard `split.no = 0`.
     pub meta: Qwen4ExpGgufMeta,
-    /// `split.no` of the shard holding [`ENGRAM_TENSOR`].
-    pub engram_shard: usize,
-    /// The engram's tensor info.
-    pub engram: TensorInfo,
+    /// `split.no` of the shard holding [`ENGRAM_TENSOR`]; `None` when the set has no PLE
+    /// (`qwen4exp.ple.layers` absent), which needs no engram (PR #7356 lane-1 finding 5).
+    pub engram_shard: Option<usize>,
+    /// The engram's tensor info, `None` exactly when `engram_shard` is.
+    pub engram: Option<TensorInfo>,
     /// Tensors across every shard (= `split.tensors.count`).
     pub total_tensors: usize,
     /// Names across the set that do not map.
@@ -1043,8 +1099,9 @@ fn order_shards(shards: &[GGUFModel]) -> Result<Vec<&GGUFModel>> {
 ///
 /// # Errors
 /// A shard is missing or repeated, `split.tensors.count` disagrees with the
-/// tensors present, a tensor appears twice, the engram is absent, or the
-/// metadata or shape contract fails.
+/// tensors present, a tensor appears twice, MTP tensors are present (led by
+/// `QWEN4EXP-MTP-REFUSED`, the same refusal as a single-file load), the set has PLE but no
+/// engram, or the metadata or shape contract fails.
 pub fn validate_split_set(shards: &[GGUFModel]) -> Result<SplitSet> {
     let ordered = order_shards(shards)?;
     let first = ordered
@@ -1074,9 +1131,12 @@ pub fn validate_split_set(shards: &[GGUFModel]) -> Result<SplitSet> {
             all.len()
         )));
     }
-    let (engram_shard, engram) =
-        engram.ok_or_else(|| refuse(format!("no shard holds {ENGRAM_TENSOR}")))?;
-    let meta = Qwen4ExpGgufMeta::from_parts(&first.metadata, &all)?;
+    let names: Vec<&str> = all.iter().map(|t| t.name.as_str()).collect();
+    let meta = meta_or_mtp_refusal(&names, Qwen4ExpGgufMeta::from_parts(&first.metadata, &all))?;
+    if !meta.ple_layers.is_empty() && engram.is_none() {
+        return Err(refuse(format!("no shard holds {ENGRAM_TENSOR}")));
+    }
+    let (engram_shard, engram) = engram.unzip();
     check_shapes_of(&all, &meta)?;
     let unmapped = all
         .iter()

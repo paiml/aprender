@@ -219,7 +219,7 @@ fn hparams() -> Vec<(String, Kv)> {
             p("embedding_length_per_layer_input"),
             Kv::U32(PLE_DIM as u32),
         ),
-        (p("ple.layer_multipliers"), Kv::F32s(vec![1.0, 0.5, 0.25])),
+        (p("ple.layer_multipliers"), Kv::U64s(vec![3, 5, 7])),
         (p("ple.head_offsets"), Kv::U64s(vec![0, 10, 20, 30])),
         (p("ple.head_vocab_sizes"), Kv::U64s(vec![10, 10, 10, 10])),
     ]
@@ -565,10 +565,13 @@ fn gguf_qwen4exp_row_major_shape_reverses_ggml_dims() {
 fn gguf_qwen4exp_transposed_tensor_is_refused_by_name() {
     for (name, bad) in [
         ("token_embd.weight", vec![V, E]),
-        ("blk.3.attn_q.weight", vec![E, HEAD_DIM * HEADS]),
-        // attn_output and ssm_out are square in this fixture (E = 8 =
-        // HEAD_DIM*HEADS = D_STATE*DT_RANK): a transpose of a square matrix is
-        // invisible to a shape contract, so non-square tensors stand in.
+        // Each `bad` is the true transpose of the ggml shape (same element count, axes
+        // swapped), so a check that compared element counts would pass it (PR #7356 lane-1
+        // finding 8: attn_q was [E, HEAD_DIM*HEADS], which also dropped the `* 2`).
+        ("blk.3.attn_q.weight", vec![HEAD_DIM * HEADS * 2, E]),
+        ("blk.3.attn_output.weight", vec![E, VAL_DIM * HEADS]),
+        // ssm_out is square in this fixture (E = 8 = D_STATE*DT_RANK): a transpose of a
+        // square matrix is invisible to a shape contract, so it is not listed.
         ("blk.3.attn_k.weight", vec![HEAD_DIM * KV_HEADS, E]),
         ("blk.0.ffn_down_exps.weight", vec![E, FF_EXP, N_EXPERT]),
         ("blk.1.ffn_gate_inp.weight", vec![N_EXPERT, E]),
@@ -580,6 +583,12 @@ fn gguf_qwen4exp_transposed_tensor_is_refused_by_name() {
         ("per_layer_token_embd.weight", vec![PLE_ROWS, PLE_DIM]),
     ] {
         let mut f = fixture();
+        let ggml = &f.tensors.iter().find(|t| t.0 == name).expect(name).1;
+        assert_eq!(
+            ggml.iter().product::<u64>(),
+            bad.iter().product::<u64>(),
+            "{name}: `bad` must keep the element count (a transpose, not a resize)"
+        );
         f.reshape(name, &bad);
         let m = meta_of(&f);
         let msg = err_text(check_shapes(&f.model(), &m));
@@ -645,7 +654,10 @@ fn split_kvs(f: &mut Fixture, no: u16, count: u16, total: i32) {
 /// metadata and every tensor but the engram; shard 1 carries only the split
 /// keys and `per_layer_token_embd.weight` (IQ4_NL).
 fn split_pair() -> (Fixture, Fixture) {
-    let full = fixture();
+    split_of(fixture_without_mtp())
+}
+
+fn split_of(full: Fixture) -> (Fixture, Fixture) {
     let total = full.tensors.len() as i32;
     let mut first = Fixture {
         kvs: full.kvs,
@@ -672,11 +684,12 @@ fn gguf_qwen4exp_split_set_finds_engram_in_last_shard() {
     let (a, b) = split_pair();
     let shards = vec![a.model(), b.model()];
     let set = validate_split_set(&shards).expect("split set validates");
-    assert_eq!(set.engram_shard, 1);
+    assert_eq!(set.engram_shard, Some(1));
     assert_eq!(set.total_tensors, a.tensors.len() + b.tensors.len());
-    assert_eq!(set.engram.qtype, IQ4_NL);
+    let engram = set.engram.as_ref().expect("PLE set has an engram");
+    assert_eq!(engram.qtype, IQ4_NL);
     // TensorInfo dims are row-major (the parser reverses ggml order).
-    assert_eq!(set.engram.dims, vec![PLE_ROWS, PLE_DIM]);
+    assert_eq!(engram.dims, vec![PLE_ROWS, PLE_DIM]);
     // The arch metadata is read from shard 0 and every tensor maps.
     assert!(set.unmapped.is_empty(), "{:?}", set.unmapped);
 }
@@ -687,7 +700,8 @@ fn gguf_qwen4exp_split_set_accepts_any_shard_order() {
     let shards = vec![b.model(), a.model()];
     let set = validate_split_set(&shards).expect("order-independent");
     assert_eq!(
-        set.engram_shard, 1,
+        set.engram_shard,
+        Some(1),
         "reported by split.no, not slice position"
     );
 }
@@ -868,4 +882,120 @@ fn gguf_qwen4exp_iq1s_and_iq2xs_are_reported_as_dequant_gaps() {
             ("blk.1.ffn_gate_exps.weight", "IQ2_XS")
         ]
     );
+}
+
+// ---------------------------------------------------------------------------
+// PR #7356 round 2 (lane 1): MTP on every entry, metadata types, PLE-free split sets
+// ---------------------------------------------------------------------------
+
+#[test]
+fn qwen4_exp_mtp_nextn_tensor_is_refused_when_nextn_predict_layers_is_zero_or_absent() {
+    for drop_key in [false, true] {
+        let mut f = fixture_without_mtp();
+        if drop_key {
+            f.drop_kv("qwen4exp.nextn_predict_layers");
+        }
+        f.t("blk.3.nextn.eh_proj.weight", &[2 * E, E], Q2_K);
+        let model = f.model();
+        let msg = err_text(load_qwen4exp_gguf(&model));
+        assert!(
+            msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID),
+            "{drop_key}: {msg}"
+        );
+        assert!(
+            msg.contains("blk.3.nextn.eh_proj.weight"),
+            "{drop_key}: {msg}"
+        );
+        let dense = match crate::gguf::QuantizedGGUFTransformer::from_gguf(&model, &[]) {
+            Ok(_) => panic!("must not load"),
+            Err(e) => e.to_string(),
+        };
+        assert!(dense.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{dense}");
+    }
+}
+
+#[test]
+fn qwen4_exp_mtp_lone_shard_with_nextn_is_refused_by_name_not_by_missing_metadata() {
+    // A non-first gguf-split shard has no arch metadata; its nextn tensors still name the
+    // refusal (the metadata error would hide them).
+    let mut f = fixture();
+    f.tensors.retain(|t| t.0.starts_with("blk.4.nextn."));
+    f.drop_kv("qwen4exp.block_count");
+    let msg = err_text(load_qwen4exp_gguf(&f.model()));
+    assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
+    assert!(msg.contains("blk.4.nextn.eh_proj.weight"), "{msg}");
+}
+
+#[test]
+fn qwen4_exp_mtp_split_set_is_refused_by_name() {
+    let (a, b) = split_of(fixture());
+    let msg = err_text(validate_split_set(&[a.model(), b.model()]));
+    assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
+    assert!(msg.contains("blk.4.nextn.eh_proj.weight"), "{msg}");
+}
+
+#[test]
+fn qwen4_exp_mtp_f32_gguf_transformer_refuses_qwen4exp() {
+    let model = fixture().model();
+    let f32_err = |m: &GGUFModel| match crate::gguf::GGUFTransformer::from_gguf(m, &[]) {
+        Ok(_) => panic!("the f32 GGUF path must not load qwen4exp"),
+        Err(e) => e.to_string(),
+    };
+    let msg = f32_err(&model);
+    assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
+    let msg = f32_err(&fixture_without_mtp().model());
+    assert!(msg.contains("dense GGUF forward does not run it"), "{msg}");
+}
+
+#[test]
+fn gguf_qwen4exp_mtp_dir_refusal_carries_the_stable_id() {
+    let f = fixture();
+    let msg = err_text(refuse_non_text_file(
+        std::path::Path::new("Qwen3.8-Flash-Next-GGUF/MTP/model.gguf"),
+        &f.model(),
+    ));
+    assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
+}
+
+#[test]
+fn gguf_qwen4exp_layer_multipliers_must_be_positive_integers() {
+    for bad in [
+        Kv::F32s(vec![1.0, 0.5, 0.25]),
+        Kv::Bools(vec![true, true, true]),
+        Kv::U64s(vec![3, 0, 7]),
+    ] {
+        let mut f = fixture();
+        f.kv("qwen4exp.ple.layer_multipliers", bad);
+        let msg = err_text(Qwen4ExpGgufMeta::from_model(&f.model()));
+        assert!(msg.contains("ple.layer_multipliers"), "{msg}");
+    }
+}
+
+#[test]
+fn gguf_qwen4exp_zero_row_token_embd_is_refused() {
+    let mut f = fixture();
+    f.reshape("token_embd.weight", &[E, 0]);
+    f.reshape("output.weight", &[E, 0]);
+    let msg = err_text(Qwen4ExpGgufMeta::from_model(&f.model()));
+    assert!(msg.contains("token_embd.weight"), "{msg}");
+}
+
+#[test]
+fn gguf_qwen4exp_split_set_without_ple_needs_no_engram() {
+    let mut full = fixture_without_mtp();
+    full.kvs.retain(|(k, _)| !k.starts_with("qwen4exp.ple."));
+    full.tensors
+        .retain(|t| !t.0.contains("ple_") && !t.0.starts_with("per_layer_"));
+    let single = full.model();
+    let m = Qwen4ExpGgufMeta::from_model(&single).expect("PLE-free metadata reads");
+    check_shapes(&single, &m).expect("PLE-free single file passes");
+    // split_of moves only the engram to shard 1; with no PLE, move one trunk tensor there.
+    let (mut a, mut b) = split_of(full);
+    a.tensors.retain(|t| t.0 != "blk.0.ffn_down_shexp.weight");
+    b.t("blk.0.ffn_down_shexp.weight", &[FF_SH, E], Q2_K);
+    let total = (a.tensors.len() + b.tensors.len()) as i32;
+    split_kvs(&mut a, 0, 2, total);
+    split_kvs(&mut b, 1, 2, total);
+    let set = validate_split_set(&[a.model(), b.model()]).expect("PLE-free split set validates");
+    assert_eq!((set.engram_shard, set.engram.is_none()), (None, true));
 }

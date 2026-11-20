@@ -73,12 +73,72 @@ fn json_carries_families_and_an_empty_unnamed_list() {
     assert_eq!(v["weights_read"], false);
 }
 
+/// PR #7356 lane-2 finding 3: the run itself, not only the report, fails on an unnamed
+/// tensor (the old test above never called `run_no_weights`).
+#[test]
+fn run_no_weights_fails_on_a_directory_with_an_unnamed_tensor() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("config.json"), fixture("config.json")).expect("config");
+    std::fs::write(
+        dir.path().join("model.safetensors.index.json"),
+        fixture("unnamed.index.json"),
+    )
+    .expect("index");
+    let err = run_no_weights(dir.path(), true).expect_err("an unnamed tensor fails the run");
+    assert!(matches!(err, CliError::ValidationFailed(_)), "{err}");
+    assert!(
+        err.to_string().contains("1 tensor(s) have no family name"),
+        "{err}"
+    );
+}
+
+/// PR #7356 lane-2 finding 2: `--no-weights` with a weight-reading flag is a parse error
+/// (contracts/apr-inspect-flags-v1.yaml: never a silent ignore), not a run that drops it.
+#[test]
+fn no_weights_conflicts_with_every_weight_reading_flag() {
+    use clap::Parser;
+    for flag in ["--weights", "--vocab", "--filters", "--quality"] {
+        let args = vec![
+            "apr".to_string(),
+            "inspect".to_string(),
+            "some/dir".to_string(),
+            flag.to_string(),
+            "--no-weights".to_string(),
+        ];
+        let res = std::thread::Builder::new()
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                crate::Cli::try_parse_from(args)
+                    .map(|_| ())
+                    .map_err(|e| e.kind())
+            })
+            .expect("spawn")
+            .join()
+            .expect("join");
+        assert_eq!(
+            res,
+            Err(clap::error::ErrorKind::ArgumentConflict),
+            "{flag} --no-weights"
+        );
+    }
+}
+
 #[test]
 fn a_real_published_index_has_zero_unnamed() {
     // Verbatim Qwen3.8-Flash-Next index (1658 tensors, hyper-connections, PLE,
     // indexer, MTP, vision): the naming rules are not fitted to the synthetic fixture.
-    let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../aprender-serve/tests/fixtures/qwen4_exp");
+    // From the published apr-cli tarball the sibling crate is absent, so there is nothing to
+    // read (PR #7356 lane-2 finding 4); inside the workspace its manifest exists and the
+    // fixture must be there (a missing fixture still fails, it is not skipped).
+    let crates = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("crates dir")
+        .to_path_buf();
+    if !crates.join("aprender-serve/Cargo.toml").exists() {
+        eprintln!("skip: aprender-serve is not beside apr-cli (packaged build)");
+        return;
+    }
+    let dir = crates.join("aprender-serve/tests/fixtures/qwen4_exp");
     let cfg = std::fs::read_to_string(dir.join("config.json")).expect("config");
     let idx = std::fs::read_to_string(dir.join("model.safetensors.index.json")).expect("index");
     let r = report(&cfg, &idx).expect("report");

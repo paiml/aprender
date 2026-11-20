@@ -313,13 +313,12 @@ const KNOWN_UNRUNNABLE_CHECKPOINTS: &[(&str, &str, u64)] = &[(
 /// #7331: the refusal text for a checkpoint in [`KNOWN_UNRUNNABLE_CHECKPOINTS`], or
 /// `None`. Pure string work on the argument: it reads no file, opens no socket and
 /// allocates nothing proportional to the model, so it can run before everything.
-/// The match is on the repo id alone, any case: a bare `org/repo` (optional trailing
-/// slash), or the first two path segments of an `hf://` URI or a Hugging Face web URL
-/// (`https://huggingface.co/…`, `hf.co`), so `hf://org/repo/file.safetensors` and a
-/// `resolve/main/…` URL are caught (PR #7356 lane 2), while a longer repo name that merely
-/// starts with the id, or a local path below a directory of that name, is not.
+/// The match is on the repo id alone, any case, as [`checkpoint_repo_id`] normalises it:
+/// the first two path segments of every source form, bare `org/repo/file` included, since
+/// `apr run` promotes that to `hf://` and downloads it (PR #7356 lane 2). A longer repo name
+/// that merely starts with the id, or a non-Hugging-Face host, is not refused.
 pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
-    let id = checkpoint_repo_id(source);
+    let id = checkpoint_repo_id(source)?;
     let (name, model_type, bytes) = KNOWN_UNRUNNABLE_CHECKPOINTS
         .iter()
         .find(|(name, _, _)| name.eq_ignore_ascii_case(&id))?;
@@ -338,24 +337,43 @@ pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
     ))
 }
 
-/// The repo id a run source names, for [`known_checkpoint_refusal`]: `org/repo` from a
-/// hub URI or URL, else the bare source without a trailing slash.
-fn checkpoint_repo_id(source: &str) -> String {
-    let lower = source.to_ascii_lowercase();
-    let hub_path = ["hf://", "https://huggingface.co/", "http://huggingface.co/",
-        "https://www.huggingface.co/", "https://hf.co/", "http://hf.co/"]
+/// Hosts that serve Hugging Face repos at `/<org>/<repo>/…`.
+const HF_HOSTS: &[&str] = &["huggingface.co", "www.huggingface.co", "hf.co", "www.hf.co"];
+
+/// The one normaliser for [`known_checkpoint_refusal`] (PR #7356 lane 2, round 2): the
+/// `org/repo` a run source names, or `None` when it names no Hugging Face repo.
+///
+/// Every form reaches it: `hf://org/repo[/file]`; `http(s)://` on any of [`HF_HOSTS`], with
+/// or without the scheme, including `/api/models/org/repo`; and a bare scheme-less
+/// `org/repo[/file]`, which `run.rs::resolve_model_source` promotes to `hf://` when it is
+/// not on disk. A `?query`, `#fragment` and `@revision` are dropped. Any other scheme or
+/// host names no repo.
+fn checkpoint_repo_id(source: &str) -> Option<String> {
+    let src = source.split(['?', '#']).next().unwrap_or("");
+    let path = if let Some((scheme, rest)) = src.split_once("://") {
+        match scheme.to_ascii_lowercase().as_str() {
+            "hf" => rest,
+            "http" | "https" => hub_path(rest)?,
+            _ => return None,
+        }
+    } else {
+        hub_path(src).unwrap_or(src)
+    };
+    let path = path.strip_prefix("api/models/").unwrap_or(path);
+    let mut segs = path.split('/').filter(|s| !s.is_empty());
+    let org = segs.next()?;
+    let repo = segs.next()?;
+    let repo = repo.split('@').next().unwrap_or(repo);
+    Some(format!("{org}/{repo}"))
+}
+
+/// The path after a [`HF_HOSTS`] host (`host/…`, host matched in any case), else `None`.
+fn hub_path(rest: &str) -> Option<&str> {
+    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+    HF_HOSTS
         .iter()
-        .find(|p| lower.starts_with(*p))
-        .map(|p| &source[p.len()..]);
-    match hub_path {
-        Some(path) => path
-            .split('/')
-            .filter(|s| !s.is_empty())
-            .take(2)
-            .collect::<Vec<_>>()
-            .join("/"),
-        None => source.trim_end_matches('/').to_string(),
-    }
+        .any(|h| h.eq_ignore_ascii_case(host))
+        .then_some(path)
 }
 
 /// Exit 12 (`NotImplemented`) for a known-unrunnable checkpoint. Every `apr run` entry
