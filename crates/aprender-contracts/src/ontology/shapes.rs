@@ -9,6 +9,7 @@
 //! | `minCount`, `maxCount` | the `qualifiedValueShape` family |
 //! | `datatype`, `class`, `nodeKind` | — |
 //! | `in`, `pattern`, `minLength`, `maxLength` | `languageIn`, `uniqueLang` |
+//! | `minInclusive`, `maxInclusive`, `minExclusive`, `maxExclusive` (numeric bound) | a non-numeric bound (`Malformed`) |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
 //! | `lessThan`, `lessThanOrEquals` (property pairs) | `equals`, `disjoint` |
@@ -120,6 +121,14 @@ pub struct PropertyShape {
     pub less_than: Option<String>,
     /// `sh:lessThanOrEquals`: every value must be `<=` every value of this predicate on the same focus node.
     pub less_than_or_equals: Option<String>,
+    /// `sh:minInclusive`: every value must be a number `>=` this bound (SHACL §4.4.3).
+    pub min_inclusive: Option<Term>,
+    /// `sh:maxInclusive`: every value must be a number `<=` this bound (SHACL §4.4.4).
+    pub max_inclusive: Option<Term>,
+    /// `sh:minExclusive`: every value must be a number `>` this bound (SHACL §4.4.1).
+    pub min_exclusive: Option<Term>,
+    /// `sh:maxExclusive`: every value must be a number `<` this bound (SHACL §4.4.2).
+    pub max_exclusive: Option<Term>,
     pub resolves: Option<String>,
     pub severity: Severity,
 }
@@ -216,6 +225,10 @@ const PROPERTY_KEYS: &[&str] = &[
     "node",
     "lessThan",
     "lessThanOrEquals",
+    "minInclusive",
+    "maxInclusive",
+    "minExclusive",
+    "maxExclusive",
     "resolves",
     "severity",
 ];
@@ -515,12 +528,45 @@ fn parse_property(
         node,
         less_than: iri_opt("lessThan"),
         less_than_or_equals: iri_opt("lessThanOrEquals"),
+        min_inclusive: numeric_bound(shape, pm, "minInclusive")?,
+        max_inclusive: numeric_bound(shape, pm, "maxInclusive")?,
+        min_exclusive: numeric_bound(shape, pm, "minExclusive")?,
+        max_exclusive: numeric_bound(shape, pm, "maxExclusive")?,
         resolves: pm
             .get("resolves")
             .and_then(serde_yaml::Value::as_str)
             .map(String::from),
         severity,
     })
+}
+
+/// A range facet's bound: a finite YAML number, as a literal term (`5` is `xsd:integer`, `2.5` and `1e3` are
+/// `xsd:double`). A string, boolean, list, null, `.nan` or `.inf` is malformed — a bound nothing can be compared
+/// to would make the facet reject (or accept) every value without saying why.
+fn numeric_bound(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+    key: &str,
+) -> Result<Option<Term>, ShapeError> {
+    let Some(v) = pm.get(key) else {
+        return Ok(None);
+    };
+    let bound = match v {
+        serde_yaml::Value::Number(n) if n.is_f64() => n
+            .as_f64()
+            .filter(|f| f.is_finite())
+            .map(|f| (f.to_string(), "double")),
+        serde_yaml::Value::Number(n) => Some((n.to_string(), "integer")),
+        _ => None,
+    };
+    bound
+        .map(|(value, local)| {
+            Some(Term::Literal {
+                value,
+                datatype: format!("{XSD_NS}{local}"),
+            })
+        })
+        .ok_or_else(|| malformed_in(shape, format!("`{key}` is not a finite number")))
 }
 
 fn malformed_in(shape: &str, what: String) -> ShapeError {
@@ -837,6 +883,39 @@ fn check_counts(
     }
 }
 
+/// `sh:minInclusive` / `maxInclusive` / `minExclusive` / `maxExclusive` (SHACL §4.4) on one value. A value SPARQL
+/// cannot order against the bound (a string, an IRI, an ill-formed number) is NOT in range, so it is a result.
+fn check_range(
+    p: &PropertyShape,
+    v: &Term,
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let facets: [(&Option<Term>, &'static str, &str, &[std::cmp::Ordering]); 4] = [
+        (&p.min_inclusive, "minInclusive", ">=", &[Greater, Equal]),
+        (&p.max_inclusive, "maxInclusive", "<=", &[Less, Equal]),
+        (&p.min_exclusive, "minExclusive", ">", &[Greater]),
+        (&p.max_exclusive, "maxExclusive", "<", &[Less]),
+    ];
+    for (bound, component, op, allowed) in facets {
+        let Some(bound) = bound else { continue };
+        let in_range = compare_terms(v, bound).is_some_and(|o| allowed.contains(&o));
+        if !in_range {
+            push(
+                p.severity,
+                Some(&p.path),
+                component,
+                format!(
+                    "{}: {} is not {op} {}",
+                    short(&p.path),
+                    term_short(v),
+                    term_short(bound)
+                ),
+            );
+        }
+    }
+}
+
 /// `sh:lessThan` / `sh:lessThanOrEquals` (SHACL §4.5.3/§4.5.4) on one property of one focus node.
 fn check_pairs(
     graph: &Graph,
@@ -919,6 +998,7 @@ fn check_value(
 ) {
     check_kind_and_type(graph, p, v, push);
     check_lexical(p, v, push);
+    check_range(p, v, push);
     if let Some(inner) = &p.node {
         match v.as_iri() {
             Some(i) => {
@@ -1311,6 +1391,16 @@ fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
     }
     if let Some(n) = p.max_length {
         lines.push(format!("sh:maxLength {n}"));
+    }
+    for (facet, bound) in [
+        ("minInclusive", &p.min_inclusive),
+        ("maxInclusive", &p.max_inclusive),
+        ("minExclusive", &p.min_exclusive),
+        ("maxExclusive", &p.max_exclusive),
+    ] {
+        if let Some(Term::Literal { value, datatype }) = bound {
+            lines.push(format!("sh:{facet} \"{value}\"^^<{datatype}>"));
+        }
     }
     if let Some(o) = &p.less_than {
         lines.push(format!("sh:lessThan <{o}>"));
