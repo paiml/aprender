@@ -75,7 +75,7 @@ function shape_ok(r,   v, k, rest) { # one line is a blank, a comment, "key:", "
   if (v ~ /^"[^"\\]*"$/ || v ~ /^\047[^\047]*\047$/) return 1
   if (v ~ /^[[{][A-Za-z0-9_., :{}\[\]\/-]*[\]}]$/) return 1 # a closed alphabet inside flow: no quote, no ? & * ! tag or comment
   if (v ~ /^["\047\[{&*!|>%@`#?]/) return 0
-  if (v ~ /(^|[ ]):([ ]|$)/ || v ~ / #/ || v ~ /:$/) return 0
+  if (v ~ /:([ ]|$)/ || v ~ / #/) return 0 # a ": " anywhere means a nested or compact mapping key this reader did not recognise
   if (v ~ /["\047\[\]{}]/) norm = substr(r, 1, length(r) - length(v)) "x" # a plain value is text: strip() never tokenises it (quotes and brackets inside it are literal)
   return 1
 }
@@ -454,6 +454,8 @@ EOF
 
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo hi\n        timeout-minutes: 10\n        timeout-minutes: 0\n' > "$t/r39.yml"; expect_unj "repeated timeout-minutes key on one step only" "$t/r39.yml"
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n  night:\n    steps:\n      - run: echo UNTIMED\n' > "$t/r40.yml"; expect_unj "repeated job key" "$t/r40.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch:\n    inputs:\n      - a b: "\nfake:\n      x: y"\n  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r41.yml"; expect_unj "colon-space after a spaced key in a compact mapping" "$t/r41.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
