@@ -1889,7 +1889,10 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
             max_position_embeddings,
             type_vocab_size,
             json,
-        } => commands::embed_gguf::run(
+        } => {
+            #[cfg(feature = "inference")]
+            {
+                commands::embed_gguf::run(
             model,
             &commands::embed_gguf::EmbedFlags {
                 texts: &batuta_common::cli_roles::strings(text),
@@ -1911,7 +1914,13 @@ fn dispatch_extended_command(cli: &Cli) -> Result<(), CliError> {
                 },
                 json: *json,
             },
-        ),
+        )
+            }
+            #[cfg(not(feature = "inference"))]
+            {
+                Err(crate::error::CliError::FeatureDisabled("`apr embed` on a GGUF file needs the `inference` feature (built with --no-default-features)".to_string()))
+            }
+        }
 
         // All other extended commands handled by sub-dispatchers above
         _ => unreachable!("all extended commands handled by sub-dispatchers"),

@@ -70,6 +70,7 @@ pub(crate) fn run(
         .map_err(|e| CliError::InvalidFormat(format!("Failed to inspect: {e}")))?;
 
     // APR-EMBED-001 EG-1: an embedding model is drawn by kind, never as a decoder with an LM head.
+    #[cfg(feature = "inference")]
     if let Some(embedding) = embedding_flow(&report)? {
         return run_embedding_flow(apr_path, &report, &embedding, component, json_output);
     }
@@ -567,7 +568,9 @@ fn print_decoder_block(tensor_names: &[String], _verbose: bool) {
 }
 
 include!("flow_print_cross.rs");
+#[cfg(feature = "inference")]
 include!("flow_embedding.rs");
+#[cfg(feature = "inference")]
 include!("flow_embedding_tests.rs");
 include!("flow_coverage_tests.rs");
 include!("flow_03.rs");
