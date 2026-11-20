@@ -106,7 +106,7 @@ falsification_tests:
   - id: FALSIFY-SHP-003
     rule: the subset is exact
     prediction: targetNode, qualifiedValueShape, languageIn, sparql, a sequence path, or/and/not/xone, and a nested node two levels deep are each refused at parse by name
-    test: cargo test -p aprender-contracts --lib ontology::shapes::tests::unsupported_components_are_refused_at_parse_by_name
+    test: cargo test -p aprender-contracts --lib -- ontology::shapes::tests::unsupported_components ontology::shapes::tests::sparql_and_logical ontology::shapes::tests::node_one_level
     if_fails: a shape reports conforms for a constraint it never checked
   - id: FALSIFY-SHP-004
     rule: the gate's answers

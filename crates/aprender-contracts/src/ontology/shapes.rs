@@ -1079,13 +1079,18 @@ pub fn compare_terms(a: &Term, b: &Term) -> Option<std::cmp::Ordering> {
             .is_some_and(|local| NUMERIC_TYPES.contains(&local))
     };
     if numeric(ad) && numeric(bd) {
-        if let (Ok(x), Ok(y)) = (av.trim().parse::<i128>(), bv.trim().parse::<i128>()) {
-            return Some(x.cmp(&y));
+        let (av, bv) = (av.trim(), bv.trim());
+        // An ill-formed lexical form for its own datatype cannot be ordered (SPARQL type error).
+        if !well_formed(av, ad) || !well_formed(bv, bd) {
+            return None;
         }
-        let (x, y) = (
-            av.trim().parse::<f64>().ok()?,
-            bv.trim().parse::<f64>().ok()?,
-        );
+        // integer/decimal family on both sides: exact decimal comparison, no f64 rounding.
+        if let (Some(x), Some(y)) = (exact_decimal(av, ad), exact_decimal(bv, bd)) {
+            return Some(cmp_decimal(&x, &y));
+        }
+        // double/float on either side: compared as f64 (IEEE-754 is the datatype's own precision; an exact
+        // integer or decimal beyond 2^53 compared with a double rounds to the double grid).
+        let (x, y) = (xsd_f64(av)?, xsd_f64(bv)?);
         return x.partial_cmp(&y);
     }
     if ad != bd {
@@ -1105,6 +1110,57 @@ pub fn compare_terms(a: &Term, b: &Term) -> Option<std::cmp::Ordering> {
     }
 }
 
+/// `(negative, integer digits, fraction digits)` of an integer- or decimal-family literal, leading and trailing
+/// zeros removed; `None` for `xsd:double` / `xsd:float` or a form that is not plain digits.
+fn exact_decimal(value: &str, datatype: &str) -> Option<(bool, String, String)> {
+    let local = datatype.strip_prefix(XSD_NS)?;
+    if matches!(local, "double" | "float") {
+        return None;
+    }
+    let (neg, rest) = match value.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, value.strip_prefix('+').unwrap_or(value)),
+    };
+    let (int, frac) = rest.split_once('.').unwrap_or((rest, ""));
+    if !int.chars().chain(frac.chars()).all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let int = int.trim_start_matches('0').to_string();
+    let frac = frac.trim_end_matches('0').to_string();
+    let neg = neg && !(int.is_empty() && frac.is_empty());
+    Some((neg, int, frac))
+}
+
+fn cmp_decimal(a: &(bool, String, String), b: &(bool, String, String)) -> std::cmp::Ordering {
+    use std::cmp::Ordering::{Greater, Less};
+    match (a.0, b.0) {
+        (false, true) => return Greater,
+        (true, false) => return Less,
+        _ => {}
+    }
+    let mag =
+        a.1.len()
+            .cmp(&b.1.len())
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2));
+    if a.0 {
+        mag.reverse()
+    } else {
+        mag
+    }
+}
+
+/// An XSD double/float lexical form as `f64` (`INF`, `-INF`, `NaN` included); an integer or decimal form parses
+/// as usual. `NaN` orders against nothing.
+fn xsd_f64(value: &str) -> Option<f64> {
+    match value {
+        "INF" | "+INF" => Some(f64::INFINITY),
+        "-INF" => Some(f64::NEG_INFINITY),
+        "NaN" => Some(f64::NAN),
+        v => v.parse::<f64>().ok(),
+    }
+}
+
 /// Is `value` a well-formed lexical form of the XSD `datatype`? A literal typed `xsd:byte` with the lexical
 /// form `300` (or `c`) is ill-formed and violates `sh:datatype` (SHACL §4.1.2; W3C `datatype-ill-formed`). The
 /// types checked are the ones the corpus and the vendored cases use; any other datatype is taken as
@@ -1115,13 +1171,22 @@ pub fn well_formed(value: &str, datatype: &str) -> bool {
         return true;
     };
     if let Some((lo, hi)) = integer_range(local) {
+        if local == "integer" {
+            // unbounded: any optionally signed digit string, beyond i128 too
+            let d = value.strip_prefix(['+', '-']).unwrap_or(value);
+            return !d.is_empty() && d.chars().all(|c| c.is_ascii_digit());
+        }
         return value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
     }
     match local {
         "boolean" => matches!(value, "true" | "false" | "1" | "0"),
         "decimal" => is_decimal(value),
         "double" | "float" => {
-            matches!(value, "INF" | "-INF" | "NaN") || value.parse::<f64>().is_ok()
+            matches!(value, "INF" | "+INF" | "-INF" | "NaN")
+                || (value
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || "+-.eE".contains(c))
+                    && value.parse::<f64>().is_ok())
         }
         "date" => is_date(value),
         "dateTime" => is_date_time(value),
