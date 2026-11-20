@@ -112,6 +112,18 @@
         }
     }
 
+    #[test]
+    fn test_parse_inspect_no_weights() {
+        let cli = parse_cli(vec!["apr", "inspect", "dir", "--no-weights", "--json"])
+            .expect("parse");
+        match *cli.command {
+            Commands::Inspect {
+                no_weights, json, ..
+            } => assert!(no_weights && json),
+            _ => panic!("Expected Inspect command"),
+        }
+    }
+
     /// Test parsing 'apr serve run' command
     #[test]
     fn test_parse_serve_command() {

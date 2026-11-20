@@ -90,6 +90,13 @@ impl GGUFModel {
         Ok(values)
     }
 
+    /// Whether GGUF type `qtype` has a CPU dequantizer in this crate: an arm of
+    /// [`Self::dequant_kernel`] or an IQ codebook in `quantize::iq_dispatch`.
+    #[must_use]
+    pub fn has_cpu_dequant(qtype: u32) -> bool {
+        Self::dequant_kernel(qtype).is_ok() || crate::quantize::iq_block_bytes(qtype).is_some()
+    }
+
     /// `(values per block, bytes per block, dequantizer)` for GGUF type `qtype`.
     ///
     /// # Errors

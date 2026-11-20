@@ -167,6 +167,7 @@
                 weights: false,
                 json: false,
                 quality: false,
+                no_weights: false,
             }),
             json: false,
             verbose: false,

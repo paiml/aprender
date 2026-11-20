@@ -1,5 +1,6 @@
 //! #7175 (master #7169): qwen4_exp indexer, indexed attention and hc residual
-//! against goldens from the transformers reference (see goldens/MANIFEST.md).
+//! against goldens from the transformers reference (see goldens/MANIFEST.md);
+//! #7332: the KV-cache decode step against the same goldens.
 use realizar::qwen4_exp_attn::*;
 use serde_json::Value;
 
@@ -328,4 +329,80 @@ fn hc_residual_matches_reference() {
     for e in [e_mixed, e_inj, e_comb, e_fin, e_init] {
         assert!(e <= TOL, "max abs err {e}");
     }
+}
+
+// ---- #7332 decode golden: KV + indexer-key cache ---------------------------
+// Basis: the transformers prefill golden indexed_attention.json. A cached decode
+// step must reproduce the reference's no-cache output row for that position, so
+// stepping every token through `AttnCache` with its causal mask row must match
+// `attn_output` row by row at TOL (batch 1 has 3 left-pad tokens). No value
+// produced by this crate is pinned as truth.
+#[test]
+fn qwen4_exp_decode_kv_cache_matches_reference() {
+    let g = golden("indexed_attention");
+    let w = |k: &str| f32s(&g["params"][k]);
+    let (qp, kp, vp, op, qn, kn) = (
+        w("q_proj.weight"),
+        w("k_proj.weight"),
+        w("v_proj.weight"),
+        w("o_proj.weight"),
+        w("q_norm.weight"),
+        w("k_norm.weight"),
+    );
+    let iw = [
+        w("indexer.index_qk_proj.weight"),
+        w("indexer.q_layernorm.weight"),
+        w("indexer.k_layernorm.weight"),
+    ];
+    let p = AttentionParams {
+        q_proj: &qp,
+        k_proj: &kp,
+        v_proj: &vp,
+        o_proj: &op,
+        q_norm: &qn,
+        k_norm: &kn,
+        indexer: indexer_params(&iw),
+    };
+    let a = AttentionShape {
+        n_heads: cfg_usize(&g, "num_attention_heads"),
+        n_kv: cfg_usize(&g, "num_key_value_heads"),
+        head_dim: cfg_usize(&g, "head_dim"),
+        indexer: indexer_shape(&g),
+    };
+    let (hid, cos, sin, vis, want) = (
+        f32s(&g["inputs"]["hidden_states"]),
+        f32s(&g["inputs"]["cos"]),
+        f32s(&g["inputs"]["sin"]),
+        bools(&g["inputs"]["visible_mask"]),
+        f32s(&g["output"]["attn_output"]),
+    );
+    let (seq, h) = (seq_len(&g), a.indexer.hidden);
+    let rot = cos.len() / (2 * seq);
+    // The golden must exceed the indexer budget so decode exercises top-k over the cache.
+    assert!(seq > a.indexer.budget, "golden too short for top-k");
+    let mut got = Vec::new();
+    for b in 0..2 {
+        let mut cache = AttnCache::new();
+        for t in 0..seq {
+            let row = &vis[(b * seq + t) * seq..(b * seq + t + 1) * seq];
+            assert!(row[t + 1..].iter().all(|v| !v), "mask not causal");
+            let tok = b * seq + t;
+            got.extend(
+                indexed_attention_step(
+                    &p,
+                    &a,
+                    &mut cache,
+                    &hid[tok * h..(tok + 1) * h],
+                    &cos[tok * rot..(tok + 1) * rot],
+                    &sin[tok * rot..(tok + 1) * rot],
+                    &row[..=t],
+                )
+                .expect("decode step"),
+            );
+        }
+        assert_eq!(cache.len(a.indexer.head_dim), seq);
+    }
+    let e = max_err(&got, &want);
+    println!("decode kv-cache max_abs_err = {e:e}");
+    assert!(e <= TOL, "max abs err {e}");
 }
