@@ -13,7 +13,7 @@ impl GGUFTransformer {
     pub fn from_gguf(model: &GGUFModel, file_data: &[u8]) -> Result<Self> {
         // #7333 / PR #7356: the f32 path refuses qwen4exp exactly as the quantized one does
         // (MTP tensors named first), before any config or weight is read.
-        if model.architecture() == Some(crate::gguf::qwen4exp_load::GGUF_ARCH) {
+        if crate::gguf::qwen4exp_load::dense_loader_must_refuse(model) {
             return Err(crate::gguf::qwen4exp_load::dense_loader_refusal(model));
         }
         // Phase 2: Validate config at construction boundary.

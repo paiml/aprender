@@ -15,6 +15,7 @@ use crate::gguf::GGUFModel;
 enum Kv {
     Str(&'static str),
     U32(u32),
+    U64(u64),
     U16(u16),
     I32(i32),
     F32(f32),
@@ -38,6 +39,10 @@ fn put_kv(out: &mut Vec<u8>, key: &str, v: &Kv) {
         },
         Kv::U32(x) => {
             out.extend_from_slice(&4u32.to_le_bytes());
+            out.extend_from_slice(&x.to_le_bytes());
+        },
+        Kv::U64(x) => {
+            out.extend_from_slice(&10u32.to_le_bytes());
             out.extend_from_slice(&x.to_le_bytes());
         },
         Kv::U16(x) => {
@@ -727,7 +732,13 @@ fn gguf_qwen4exp_split_set_without_engram_is_refused() {
     b.tensors.clear();
     b.t("blk.0.ssm_a.extra", &[1], F32);
     let msg = err_text(validate_split_set(&[a.model(), b.model()]));
-    assert!(msg.contains("per_layer_token_embd.weight"), "{msg}");
+    // The split-set check, not the generic missing-tensor one (round 3, lane 1 F3).
+    assert!(
+        msg.contains(
+            "the split set has PLE layers, but no shard holds per_layer_token_embd.weight"
+        ),
+        "{msg}"
+    );
 }
 
 #[test]
@@ -915,15 +926,54 @@ fn qwen4_exp_mtp_nextn_tensor_is_refused_when_nextn_predict_layers_is_zero_or_ab
 }
 
 #[test]
-fn qwen4_exp_mtp_lone_shard_with_nextn_is_refused_by_name_not_by_missing_metadata() {
-    // A non-first gguf-split shard has no arch metadata; its nextn tensors still name the
-    // refusal (the metadata error would hide them).
+fn qwen4_exp_mtp_shard_with_incomplete_metadata_is_refused_by_name() {
+    // A qwen4exp file whose arch metadata is incomplete (here: no block_count); its nextn
+    // tensors still name the refusal (the metadata error would hide them). The arch-less
+    // shard a real gguf-split set has is the next test.
     let mut f = fixture();
     f.tensors.retain(|t| t.0.starts_with("blk.4.nextn."));
     f.drop_kv("qwen4exp.block_count");
     let msg = err_text(load_qwen4exp_gguf(&f.model()));
     assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
     assert!(msg.contains("blk.4.nextn.eh_proj.weight"), "{msg}");
+}
+
+/// A non-first `gguf-split` shard as `split_of` builds it: the split keys only, no
+/// `general.architecture`, and here the nextn tensors (PR #7356 round 3, lane 1 F2).
+fn archless_nextn_shard() -> Fixture {
+    let mut f = fixture();
+    f.tensors.retain(|t| t.0.starts_with("blk.4.nextn."));
+    f.kvs.clear();
+    split_kvs(&mut f, 1, 2, 99);
+    f
+}
+
+#[test]
+fn qwen4_exp_mtp_lone_archless_shard_is_refused_by_name_on_every_entry() {
+    let model = archless_nextn_shard().model();
+    assert_eq!(model.architecture(), None, "the shard is arch-less");
+    let quant = match crate::gguf::QuantizedGGUFTransformer::from_gguf(&model, &[]) {
+        Ok(_) => panic!("must not load"),
+        Err(e) => e.to_string(),
+    };
+    let f32 = match crate::gguf::GGUFTransformer::from_gguf(&model, &[]) {
+        Ok(_) => panic!("must not load"),
+        Err(e) => e.to_string(),
+    };
+    for msg in [err_text(load_qwen4exp_gguf(&model)), quant, f32] {
+        assert!(msg.contains(crate::qwen4_exp::MTP_REFUSAL_ID), "{msg}");
+        assert!(msg.contains("blk.4.nextn.eh_proj.weight"), "{msg}");
+    }
+}
+
+#[test]
+fn qwen4_exp_archless_shard_without_nextn_keeps_the_generic_path() {
+    // Only nextn tensors route an arch-less file to the qwen4exp contract.
+    let mut f = archless_nextn_shard();
+    f.tensors.clear();
+    f.t("per_layer_token_embd.weight", &[PLE_DIM, PLE_ROWS], IQ4_NL);
+    assert!(!dense_loader_must_refuse(&f.model()));
+    assert!(dense_loader_must_refuse(&fixture_without_mtp().model()));
 }
 
 #[test]
@@ -998,4 +1048,179 @@ fn gguf_qwen4exp_split_set_without_ple_needs_no_engram() {
     split_kvs(&mut b, 1, 2, total);
     let set = validate_split_set(&[a.model(), b.model()]).expect("PLE-free split set validates");
     assert_eq!((set.engram_shard, set.engram.is_none()), (None, true));
+}
+
+// ---------------------------------------------------------------------------
+// Crafted headers: every refusal is an error, never a panic or an abort
+// (PR #7356 round 3, lane 1 F1)
+// ---------------------------------------------------------------------------
+
+/// Run the header entry points on `f`; `Err` if any of them panicked.
+fn header_entries_do_not_panic(f: &Fixture) -> std::result::Result<(), String> {
+    let bytes = f.bytes();
+    let names: Vec<String> = f.tensors.iter().map(|t| t.0.clone()).collect();
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        // A header the parser refuses is a refusal too.
+        let Ok(model) = GGUFModel::from_bytes(&bytes) else {
+            return;
+        };
+        let _ = Qwen4ExpGgufMeta::from_model(&model);
+        let _ = load_qwen4exp_gguf(&model);
+        let _ = dense_loader_refusal(&model);
+        if let Ok(meta) = Qwen4ExpGgufMeta::from_model(&model) {
+            let _ = check_shapes(&model, &meta);
+            let _ = unmapped_tensors(&model, &meta);
+            let _ = mtp_tensors(&model, &meta);
+        }
+    }))
+    .map_err(|p| {
+        let what = p
+            .downcast_ref::<String>()
+            .cloned()
+            .or_else(|| p.downcast_ref::<&str>().map(|s| (*s).to_string()))
+            .unwrap_or_default();
+        format!("panicked on tensors {}: {what}", names.len())
+    })
+}
+
+#[test]
+fn gguf_qwen4exp_huge_block_count_is_refused_not_allocated() {
+    // The receipt's repro: block_count 1 << 50 with nextn 0.
+    let mut f = fixture();
+    f.kv("qwen4exp.block_count", Kv::U64(1 << 50));
+    f.kv("qwen4exp.nextn_predict_layers", Kv::U32(0));
+    let msg = err_text(Qwen4ExpGgufMeta::from_model(&f.model()));
+    assert!(msg.contains("qwen4exp.block_count"), "{msg}");
+    assert!(msg.contains("above the 1048576 bound"), "{msg}");
+}
+
+#[test]
+fn gguf_qwen4exp_overflowing_ple_heads_is_refused_not_wrapped() {
+    // The receipt's repro: heads_per_ngram 1 << 63 with ngram_size 3.
+    let mut f = fixture();
+    f.kv("qwen4exp.ple.heads_per_ngram", Kv::U64(1 << 63));
+    let msg = err_text(Qwen4ExpGgufMeta::from_model(&f.model()));
+    assert!(msg.contains("qwen4exp.ple.heads_per_ngram"), "{msg}");
+}
+
+#[test]
+fn gguf_qwen4exp_header_bound_admits_the_largest_value() {
+    // The bound is inclusive and an exempt key may exceed it.
+    let mut f = fixture();
+    f.kv("qwen4exp.context_length", Kv::U64(MAX_HEADER_VALUE));
+    f.kv("qwen4exp.ple.eos_token_id", Kv::U64(u64::MAX));
+    meta_of(&f);
+    f.kv("qwen4exp.context_length", Kv::U64(MAX_HEADER_VALUE + 1));
+    // context_length is not read, so an unread key is not refused either.
+    meta_of(&f);
+    f.kv("qwen4exp.embedding_length", Kv::U64(MAX_HEADER_VALUE + 1));
+    let msg = err_text(Qwen4ExpGgufMeta::from_model(&f.model()));
+    assert!(msg.contains("qwen4exp.embedding_length"), "{msg}");
+}
+
+/// Header values that probe every bound: zero, one, the bound and one past it, and the
+/// 32/64-bit edges.
+const FUZZ_EXTREMES: [u64; 9] = [
+    0,
+    1,
+    2,
+    MAX_HEADER_VALUE,
+    MAX_HEADER_VALUE + 1,
+    u32::MAX as u64,
+    1 << 50,
+    1 << 63,
+    u64::MAX,
+];
+
+/// The fixture's integer metadata keys.
+fn fuzz_int_keys() -> Vec<String> {
+    fixture()
+        .kvs
+        .iter()
+        .filter(|(_, v)| matches!(v, Kv::U32(_) | Kv::U16(_) | Kv::I32(_) | Kv::U64(_)))
+        .map(|(k, _)| k.clone())
+        .collect()
+}
+
+/// Every integer key set to every extreme, one at a time.
+fn fuzz_each_key(keys: &[String]) -> Vec<String> {
+    let mut failures = Vec::new();
+    for key in keys {
+        for &x in &FUZZ_EXTREMES {
+            let mut f = fixture();
+            f.kv(key, Kv::U64(x));
+            if let Err(e) = header_entries_do_not_panic(&f) {
+                failures.push(format!("{key}={x}: {e}"));
+            }
+        }
+    }
+    failures
+}
+
+/// Every tensor's dims set to an extreme, one tensor at a time.
+fn fuzz_each_tensor() -> Vec<String> {
+    let mut failures = Vec::new();
+    let n = fixture().tensors.len();
+    for i in 0..n {
+        for &x in &[0, u32::MAX as u64, 1 << 40, u64::MAX] {
+            let mut f = fixture();
+            f.tensors[i].1 = f.tensors[i].1.iter().map(|_| x).collect();
+            if let Err(e) = header_entries_do_not_panic(&f) {
+                failures.push(format!("{} dims={x}: {e}", f.tensors[i].0));
+            }
+        }
+    }
+    failures
+}
+
+/// xorshift64*: a deterministic stream with no dependency.
+fn xorshift(seed: &mut u64) -> u64 {
+    *seed ^= *seed >> 12;
+    *seed ^= *seed << 25;
+    *seed ^= *seed >> 27;
+    seed.wrapping_mul(0x2545_F491_4F6C_DD1D)
+}
+
+/// One seeded value: an extreme, a value near the bound, or any u64.
+fn fuzz_value(seed: &mut u64) -> u64 {
+    match xorshift(seed) % 3 {
+        0 => FUZZ_EXTREMES[(xorshift(seed) % FUZZ_EXTREMES.len() as u64) as usize],
+        1 => xorshift(seed) % (MAX_HEADER_VALUE + 2),
+        _ => xorshift(seed),
+    }
+}
+
+/// `rounds` seeded cases, each mutating one to four keys at once.
+fn fuzz_random(keys: &[String], rounds: usize) -> Vec<String> {
+    let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+    let mut failures = Vec::new();
+    for round in 0..rounds {
+        let mut f = fixture();
+        for _ in 0..1 + xorshift(&mut seed) % 4 {
+            let key = &keys[(xorshift(&mut seed) % keys.len() as u64) as usize];
+            f.kv(key, Kv::U64(fuzz_value(&mut seed)));
+        }
+        if let Err(e) = header_entries_do_not_panic(&f) {
+            failures.push(format!("round {round}: {e}"));
+        }
+    }
+    failures
+}
+
+#[test]
+fn gguf_qwen4exp_fuzzed_headers_never_panic() {
+    // Fuzz-style: every integer key of the fixture, and every tensor's dims, set to each
+    // extreme value; then 400 seeded random multi-key mutations. Each case must return
+    // (Ok or Err) from every header entry point without a panic, an overflow or an abort.
+    let keys = fuzz_int_keys();
+    assert!(keys.len() > 20, "the fuzz covers the fixture's keys");
+    let mut failures = fuzz_each_key(&keys);
+    failures.extend(fuzz_each_tensor());
+    failures.extend(fuzz_random(&keys, 400));
+    assert!(
+        failures.is_empty(),
+        "{} panics: {:?}",
+        failures.len(),
+        &failures[..failures.len().min(8)]
+    );
 }

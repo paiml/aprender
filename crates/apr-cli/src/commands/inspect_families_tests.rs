@@ -11,7 +11,10 @@ fn fixture(name: &str) -> String {
 }
 
 #[test]
-fn every_tensor_in_the_2_4t_index_is_named() {
+/// The synthetic fixture (layers 0-3 of the 2.4T index, hand-written; see the fixture
+/// README) has no unnamed tensor. Not a check of the published index (PR #7356 round 3,
+/// lane 2 finding 3).
+fn every_tensor_in_the_synthetic_2_4t_fixture_is_named() {
     let r = report(
         &fixture("config.json"),
         &fixture("model.safetensors.index.json"),
@@ -57,6 +60,16 @@ fn an_unknown_tensor_is_listed_as_unnamed_and_fails_the_run() {
     assert_eq!(r.unnamed.len(), 1, "{:?}", r.unnamed);
     assert!(r.unnamed[0].ends_with("mystery_block.w"));
     assert!(render_text(&r).contains("UNNAMED"));
+    // Round 3 (lane 2 finding 6): the name says the run fails, so assert it here too.
+    let dir = tempfile::tempdir().expect("tempdir");
+    std::fs::write(dir.path().join("config.json"), fixture("config.json")).expect("config");
+    std::fs::write(
+        dir.path().join("model.safetensors.index.json"),
+        fixture("unnamed.index.json"),
+    )
+    .expect("index");
+    let err = run_no_weights(dir.path(), false).expect_err("the run fails");
+    assert!(matches!(err, CliError::ValidationFailed(_)), "{err}");
 }
 
 #[test]

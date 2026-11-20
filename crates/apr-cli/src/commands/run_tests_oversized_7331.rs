@@ -30,6 +30,23 @@ fn oversized_checkpoint_refusal_names_size_and_missing_forward() {
         "https://huggingface.co/api/models/Qwen/Qwen3.8-2.4T-A95B",
         "huggingface.co/Qwen/Qwen3.8-2.4T-A95B/blob/main/config.json",
         "hf://Qwen/Qwen3.8-2.4T-A95B@main/config.json",
+        // Round 3 (lane 2 finding 1): the receipt's six forms, parsed with a real URL
+        // parser and canonicalised.
+        "https://huggingface.co:443/Qwen/Qwen3.8-2.4T-A95B/resolve/main/model.safetensors",
+        "https://huggingface.co./Qwen/Qwen3.8-2.4T-A95B",
+        "https://user@huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+        "hf://Qwen/Qwen3.8-2.4T-A95B:Q4_K_M",
+        "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B.git",
+        "hf://Qwen%2FQwen3.8-2.4T-A95B",
+        // ... and their neighbours.
+        "https://user:pw@HF.CO.:8443/Qwen/Qwen3.8-2.4T-A95B.GIT",
+        "huggingface.co:443/Qwen/Qwen3.8-2.4T-A95B",
+        "user@huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+        "https://huggingface.co/Qwen%2FQwen3.8-2.4T-A95B",
+        "https://huggingface.co/%51wen/Qwen3.8-2.4T-A95B",
+        "Qwen/Qwen3.8-2.4T-A95B:Q4_K_M",
+        "Qwen/Qwen3.8-2.4T-A95B.git",
+        "hf://Qwen/Qwen3.8-2.4T-A95B.git@main/config.json",
     ] {
         let reason = known_checkpoint_refusal(spelling)
             .unwrap_or_else(|| panic!("{spelling} must be refused up front"));
@@ -59,12 +76,103 @@ fn other_checkpoints_are_not_refused_by_the_oversized_table() {
         "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B-GGUF-not-this-one?x=Qwen/Qwen3.8-2.4T-A95B",
         "Qwen",
         "",
+        // Round 3 negative controls: the canonicaliser must not widen the match.
+        "https://example.com:443/Qwen/Qwen3.8-2.4T-A95B",
+        "https://huggingface.co.evil.example/Qwen/Qwen3.8-2.4T-A95B",
+        "https://huggingface.co@evil.example/Qwen/Qwen3.8-2.4T-A95B",
+        "https://huggingface.co..//Qwen/Qwen3.8-2.4T-A95B",
+        "ftp://huggingface.co/Qwen/Qwen3.8-2.4T-A95B",
+        "Qwen/Qwen3.8-2.4T-A95B-Other.git",
+        "hf://Qwen/Qwen3.8-2.4T-A95B-GGUF:Q4_K_M",
+        "hf://Qwen%2FQwen3.8-2.4T-A95B-Other",
+        "hf://Qwen/Qwen3.8-2.4T-A95Bgit",
+        "hf://Qwen/.git",
+        "hf://Qwen/:Q4_K_M",
     ] {
         assert!(
             known_checkpoint_refusal(ok).is_none(),
             "{ok:?} is not the 2.4T checkpoint and must not be refused here"
         );
     }
+}
+
+/// The canonical id itself, row by row (round 3): the normaliser returns exactly the
+/// `org/repo`, so a refusal is never an accident of a prefix match.
+#[test]
+fn checkpoint_repo_id_canonicalises_every_url_form() {
+    for (source, want) in [
+        ("https://huggingface.co:443/Qwen/Qwen3.8-2.4T-A95B/resolve/main/x", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        ("https://huggingface.co./Qwen/Qwen3.8-2.4T-A95B", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        ("https://user@huggingface.co/Qwen/Qwen3.8-2.4T-A95B", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        ("hf://Qwen/Qwen3.8-2.4T-A95B:Q4_K_M", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        ("https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B.git", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        ("hf://Qwen%2FQwen3.8-2.4T-A95B", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        ("hf://Qwen/Qwen3.8-2.4T-A95B@v1:Q4.git", Some("Qwen/Qwen3.8-2.4T-A95B")),
+        ("Qwen/Qwen3-0.6B", Some("Qwen/Qwen3-0.6B")),
+        ("https://hf.co/api/models/Qwen/Qwen3-0.6B?x=1", Some("Qwen/Qwen3-0.6B")),
+        ("https://example.com/Qwen/Qwen3.8-2.4T-A95B", None),
+        ("https://huggingface.co.evil.example/Qwen/Qwen3.8-2.4T-A95B", None),
+        ("s3://Qwen/Qwen3.8-2.4T-A95B", None),
+        ("hf://Qwen/.git", None),
+        ("hf://Qwen", None),
+    ] {
+        assert_eq!(checkpoint_repo_id(source).as_deref(), want, "{source}");
+    }
+}
+
+/// Round 3 (lane 2 finding 4): the exact sentence. A generic forward reason is not
+/// repeated after "no CUDA forward for it", and a reason without a full stop still
+/// ends its sentence with exactly one.
+#[test]
+fn oversized_refusal_text_is_one_well_formed_sentence() {
+    let generic = refusal_text(
+        "Qwen/Qwen3.8-2.4T-A95B",
+        "qwen3_5_moe_text",
+        4_900_000_000_000,
+        "no CUDA forward for architecture 'qwen3_5_moe_text'",
+    );
+    assert_eq!(
+        generic,
+        "refusing to run Qwen/Qwen3.8-2.4T-A95B: the checkpoint is about 4.9 TB in bf16 \
+         (model_type qwen3_5_moe_text), which exceeds every supported host, and there is \
+         no CUDA forward for it. Refused before any download or allocation: nothing was \
+         downloaded and nothing was loaded (#7331)."
+    );
+    for reason in ["the SSM layers have no kernel", "the SSM layers have no kernel.", " x. "] {
+        let text = refusal_text("o/r", "m", 1_000_000_000_000, reason);
+        let want = reason.trim().trim_end_matches('.');
+        assert!(text.contains(&format!("no CUDA forward for it: {want}. Refused")), "{text}");
+        assert!(!text.contains(".."), "{text}");
+    }
+    let real = known_checkpoint_refusal(QWEN38_2_4T).expect("refused");
+    assert_eq!(real.matches("Refused before").count(), 1, "{real}");
+    assert!(!real.contains(".."), "{real}");
+    assert!(!real.contains("it: no CUDA forward for architecture"), "{real}");
+    assert!(!real.contains("' Refused"), "{real}");
+}
+
+/// Every path under `dir`, sorted, or `None` when it does not exist. Lane 2 finding 5
+/// (round 3): the old `existed_before || !cache.exists()` passed for any refusal order
+/// once the dir existed; the listing must be unchanged instead.
+fn cache_listing(dir: &Path) -> Option<Vec<std::path::PathBuf>> {
+    fn walk(d: &Path, out: &mut Vec<std::path::PathBuf>) {
+        if let Ok(rd) = std::fs::read_dir(d) {
+            for e in rd.flatten() {
+                let p = e.path();
+                out.push(p.clone());
+                if p.is_dir() {
+                    walk(&p, out);
+                }
+            }
+        }
+    }
+    if !dir.exists() {
+        return None;
+    }
+    let mut out = Vec::new();
+    walk(dir, &mut out);
+    out.sort();
+    Some(out)
 }
 
 /// The real entry point: refuses with exit 12 in well under 5 s, and the cache dir
@@ -77,7 +185,7 @@ fn apr_run_refuses_before_download_or_allocation() {
     let cache = dirs::home_dir()
         .expect("home")
         .join(".apr/cache/hf/Qwen/Qwen3.8-2.4T-A95B");
-    let existed_before = cache.exists();
+    let before = cache_listing(&cache);
     let start = std::time::Instant::now();
     let err = run(
         QWEN38_2_4T,
@@ -116,9 +224,10 @@ fn apr_run_refuses_before_download_or_allocation() {
     assert_eq!(err.exit_code_value(), 12, "NotImplemented: this build cannot do that");
     let text = err.to_string();
     assert!(text.contains("Qwen3.8-2.4T-A95B") && text.contains("TB"), "{text}");
-    assert!(
-        existed_before || !cache.exists(),
-        "a download cache dir was created: the refusal ran too late"
+    assert_eq!(
+        cache_listing(&cache),
+        before,
+        "the download cache changed: the refusal ran too late"
     );
 }
 
@@ -131,7 +240,7 @@ fn apr_run_batch_refuses_before_download_or_allocation() {
     let cache = dirs::home_dir()
         .expect("home")
         .join(".apr/cache/hf/Qwen/Qwen3.8-2.4T-A95B");
-    let existed_before = cache.exists();
+    let before = cache_listing(&cache);
     let err = run_batch(
         "hf://Qwen/Qwen3.8-2.4T-A95B/model-00001-of-00500.safetensors",
         Path::new("/nonexistent/prompts.jsonl"),
@@ -145,8 +254,9 @@ fn apr_run_batch_refuses_before_download_or_allocation() {
     .expect_err("the 2.4T checkpoint must be refused on the batch path");
     assert_eq!(err.exit_code_value(), 12, "{err}");
     assert!(err.to_string().contains("#7331"), "{err}");
-    assert!(
-        existed_before || !cache.exists(),
-        "a download cache dir was created: the refusal ran too late"
+    assert_eq!(
+        cache_listing(&cache),
+        before,
+        "the download cache changed: the refusal ran too late"
     );
 }

@@ -22,6 +22,15 @@
 //!
 //! It does not run a forward pass: the MTP head is #7333 and inference refusal
 //! is #7331.
+//!
+//! Wired into a production load (PR #7356 round 3, lane 1 F4): only
+//! [`load_qwen4exp_gguf`], which both dense GGUF loaders call through
+//! [`dense_loader_refusal`] for a `qwen4exp` file and for an arch-less shard that holds
+//! `blk.N.nextn.*` tensors ([`dense_loader_must_refuse`]). [`validate_split_set`],
+//! [`refuse_non_text_file`], [`dequant_gaps`], [`unmapped_tensors`] and [`mtp_tensors`]
+//! are library surface with tests only: no production split-GGUF loader exists, and no
+//! `apr` path calls them yet, so an `MTP/` directory path or an mmproj file is refused
+//! today only through the dense loaders' architecture and MTP checks.
 
 use crate::error::{RealizarError, Result};
 use crate::gguf::types::{GGUFValue, TensorInfo, GGUF_TYPE_F32};
@@ -63,6 +72,18 @@ fn as_u64(v: &GGUFValue) -> Option<u64> {
     }
 }
 
+/// The largest scalar a `qwen4exp.*` header key may hold (PR #7356 round 3, lane 1 F1).
+///
+/// Every scalar key is a dimension, a count or a layer index, and the shape contract
+/// multiplies at most three of them (`head_dim * n_head * 2`,
+/// `(ngram - 1) * heads_per_ngram * ple_head_dim`), so with each factor at most 2^20 no
+/// product or sum the loader forms can overflow `u64`, and `block_count` cannot ask for a
+/// per-layer table larger than 2^20 entries. Published checkpoints are far below it
+/// (`embedding_length` ~ 10^4, `block_count` ~ 10^2). A value above it is refused by
+/// name, so a crafted header gets an error, never an overflow panic or an abort on a
+/// huge allocation. `ple.eos_token_id` is a token id, not a dimension, and is exempt.
+pub const MAX_HEADER_VALUE: u64 = 1 << 20;
+
 struct Md<'a>(&'a HashMap<String, GGUFValue>);
 
 impl Md<'_> {
@@ -71,6 +92,17 @@ impl Md<'_> {
     }
 
     fn opt_u64(&self, k: &str) -> Result<Option<u64>> {
+        let v = self.opt_u64_unbounded(k)?;
+        match v {
+            Some(v) if v > MAX_HEADER_VALUE => Err(refuse(format!(
+                "metadata key {} is {v}, above the {MAX_HEADER_VALUE} bound for a header value",
+                Self::key(k)
+            ))),
+            v => Ok(v),
+        }
+    }
+
+    fn opt_u64_unbounded(&self, k: &str) -> Result<Option<u64>> {
         let key = Self::key(k);
         match self.0.get(&key) {
             None => Ok(None),
@@ -116,9 +148,9 @@ impl Md<'_> {
         }
     }
 
-    /// `ple.layer_multipliers` are the n-gram hash multipliers, positive (odd) 64-bit
-    /// integers (`qwen4_exp_embed::layer_multipliers`). A bool, float or string element,
-    /// or a value <= 0, is refused (PR #7356 lane-1 finding 3).
+    /// `ple.layer_multipliers` are the n-gram hash multipliers, positive 64-bit integers
+    /// (`qwen4_exp_embed::layer_multipliers`). A bool, float or string element, or a
+    /// value <= 0, is refused (PR #7356 lane-1 finding 3). Oddness is not checked here.
     fn hash_multipliers(&self, k: &str) -> Result<()> {
         let key = Self::key(k);
         let ok = match self.0.get(&key) {
@@ -240,9 +272,10 @@ impl Qwen4ExpGgufMeta {
             [v, _] if *v > 0 => *v,
             dims => {
                 return Err(refuse(format!(
-                    "tensor token_embd.weight has row-major shape {dims:?}; it needs                      [n_vocab > 0, n_embd]"
+                    "tensor token_embd.weight has row-major shape {dims:?}; it needs \
+                     [n_vocab > 0, n_embd]"
                 )))
-            }
+            },
         };
         Ok(m)
     }
@@ -273,10 +306,14 @@ impl Qwen4ExpGgufMeta {
             .u64s(key)?
             .ok_or_else(|| refuse(format!("missing required metadata key {}", Md::key(key))))?;
         self.n_ff_exp = match ff.as_slice() {
-            [first, rest @ ..] if *first != 0 && rest.iter().all(|x| x == first) => *first,
+            [first, rest @ ..]
+                if *first != 0 && *first <= MAX_HEADER_VALUE && rest.iter().all(|x| x == first) =>
+            {
+                *first
+            },
             _ => {
                 return Err(refuse(format!(
-                    "{} must be one non-zero value for every layer, got {ff:?}",
+                    "{} must be one non-zero value (at most {MAX_HEADER_VALUE}) for every layer, got {ff:?}",
                     Md::key(key)
                 )))
             },
@@ -366,7 +403,12 @@ impl Qwen4ExpGgufMeta {
         }
         let per = md.nonzero("ple.heads_per_ngram")?;
         self.ple_conv_kernel = md.nonzero("ple.conv_kernel")?;
-        md.req("ple.eos_token_id")?;
+        md.opt_u64_unbounded("ple.eos_token_id")?.ok_or_else(|| {
+            refuse(format!(
+                "missing required metadata key {}",
+                Md::key("ple.eos_token_id")
+            ))
+        })?;
         self.ple_head_dim = md.nonzero("embedding_length_per_layer_input")?;
         self.ple_n_heads = (ngram - 1) * per;
         if md.array_len("ple.layer_multipliers").unwrap_or(0) < ngram as usize {
@@ -667,7 +709,9 @@ impl Shapes<'_> {
         let want = row_major_shape(ggml);
         let got: Vec<usize> = t.dims.iter().map(|d| *d as usize).collect();
         let ok = if need == Need::Reshape {
-            got.iter().product::<usize>() == want.iter().product::<usize>()
+            // Checked: a crafted file's dims must not overflow the count (round 3, F1).
+            let count = |d: &[usize]| d.iter().try_fold(1usize, |a, x| a.checked_mul(*x));
+            count(&got).is_some() && count(&got) == count(&want)
         } else {
             got == want
         };
@@ -1004,6 +1048,19 @@ pub fn load_qwen4exp_gguf(model: &GGUFModel) -> Result<Qwen4ExpGgufMeta> {
     Ok(meta)
 }
 
+/// The dense GGUF loaders must hand `model` to [`dense_loader_refusal`]: its architecture is
+/// `qwen4exp`, or it has no `general.architecture` at all and carries `blk.N.nextn.*`
+/// tensors. The second case is a non-first `gguf-split` shard opened on its own, which has
+/// only the split keys (PR #7356 round 3, lane 1 F2); without it that shard fails on the
+/// missing architecture and its MTP tensors are never named.
+#[must_use]
+pub fn dense_loader_must_refuse(model: &GGUFModel) -> bool {
+    match model.architecture() {
+        Some(arch) => arch == GGUF_ARCH,
+        None => model.tensors.iter().any(|t| is_nextn_name(&t.name)),
+    }
+}
+
 /// What the dense loader returns for a `qwen4exp` file: the [`load_qwen4exp_gguf`] refusal
 /// when it has one, else the named refusal that no qwen4exp forward exists on this path.
 #[must_use]
@@ -1134,7 +1191,11 @@ pub fn validate_split_set(shards: &[GGUFModel]) -> Result<SplitSet> {
     let names: Vec<&str> = all.iter().map(|t| t.name.as_str()).collect();
     let meta = meta_or_mtp_refusal(&names, Qwen4ExpGgufMeta::from_parts(&first.metadata, &all))?;
     if !meta.ple_layers.is_empty() && engram.is_none() {
-        return Err(refuse(format!("no shard holds {ENGRAM_TENSOR}")));
+        // Named for the split set; `check_globals` would also refuse, but only as a
+        // generic missing tensor (round 3, lane 1 F3).
+        return Err(refuse(format!(
+            "the split set has PLE layers, but no shard holds {ENGRAM_TENSOR}"
+        )));
     }
     let (engram_shard, engram) = engram.unzip();
     check_shapes_of(&all, &meta)?;

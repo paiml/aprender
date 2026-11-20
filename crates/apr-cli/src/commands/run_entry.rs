@@ -327,53 +327,91 @@ pub(crate) fn known_checkpoint_refusal(source: &str) -> Option<String> {
         .unwrap_or_else(|| format!("no CUDA forward for architecture '{model_type}'"));
     #[cfg(not(feature = "inference"))]
     let forward = format!("no CUDA forward for architecture '{model_type}'");
+    Some(refusal_text(name, model_type, *bytes, &forward))
+}
+
+/// The #7331 refusal sentence. `forward` is the capability reason: when it is only the
+/// generic "no CUDA forward for architecture …" it is not repeated after the clause that
+/// already says so, and the sentence before "Refused …" always ends in exactly one full
+/// stop (PR #7356 round 3, lane 2 finding 4).
+fn refusal_text(name: &str, model_type: &str, bytes: u64, forward: &str) -> String {
+    let forward = forward.trim().trim_end_matches('.');
+    let generic = format!("no CUDA forward for architecture '{model_type}'");
+    let forward = if forward.is_empty() || forward.eq_ignore_ascii_case(&generic) {
+        String::new()
+    } else {
+        format!(": {forward}")
+    };
     // TB with one decimal: 4_900_000_000_000 -> "4.9 TB".
-    let tb = *bytes as f64 / 1e12;
-    Some(format!(
+    let tb = bytes as f64 / 1e12;
+    format!(
         "refusing to run {name}: the checkpoint is about {tb:.1} TB in bf16 \
          (model_type {model_type}), which exceeds every supported host, and there is \
-         no CUDA forward for it: {forward} Refused before any download or allocation: \
+         no CUDA forward for it{forward}. Refused before any download or allocation: \
          nothing was downloaded and nothing was loaded (#7331)."
-    ))
+    )
 }
 
 /// Hosts that serve Hugging Face repos at `/<org>/<repo>/…`.
 const HF_HOSTS: &[&str] = &["huggingface.co", "www.huggingface.co", "hf.co", "www.hf.co"];
 
-/// The one normaliser for [`known_checkpoint_refusal`] (PR #7356 lane 2, round 2): the
+/// The one normaliser for [`known_checkpoint_refusal`] (PR #7356 lane 2, rounds 2-3): the
 /// `org/repo` a run source names, or `None` when it names no Hugging Face repo.
 ///
 /// Every form reaches it: `hf://org/repo[/file]`; `http(s)://` on any of [`HF_HOSTS`], with
 /// or without the scheme, including `/api/models/org/repo`; and a bare scheme-less
 /// `org/repo[/file]`, which `run.rs::resolve_model_source` promotes to `hf://` when it is
-/// not on disk. A `?query`, `#fragment` and `@revision` are dropped. Any other scheme or
-/// host names no repo.
+/// not on disk. URLs go through a real URL parser (`url`, WHATWG), so the host is compared
+/// after the parser drops userinfo and the port and lowercases it, and a trailing-dot host
+/// (`huggingface.co.`) is the same host. The path is then canonicalised: percent-decoded
+/// (`Qwen%2FQwen3.8-…`), `api/models/` dropped, and from the repo segment an `@revision`,
+/// a `:tag` and a `.git` suffix. A `?query` and `#fragment` are dropped. Any other scheme
+/// or host names no repo.
 fn checkpoint_repo_id(source: &str) -> Option<String> {
-    let src = source.split(['?', '#']).next().unwrap_or("");
-    let path = if let Some((scheme, rest)) = src.split_once("://") {
-        match scheme.to_ascii_lowercase().as_str() {
-            "hf" => rest,
-            "http" | "https" => hub_path(rest)?,
-            _ => return None,
+    let path = if let Some((scheme, rest)) = source.split_once("://") {
+        if scheme.eq_ignore_ascii_case("hf") {
+            rest.split(['?', '#']).next().unwrap_or("").to_string()
+        } else {
+            hub_path(source)?
         }
     } else {
-        hub_path(src).unwrap_or(src)
+        // Scheme-less: a host-qualified form if its host is a Hugging Face host, else a
+        // bare `org/repo[/file]`.
+        hub_path(&format!("https://{source}"))
+            .unwrap_or_else(|| source.split(['?', '#']).next().unwrap_or("").to_string())
     };
+    let path = percent_encoding::percent_decode_str(&path).decode_utf8_lossy();
+    let path = path.strip_prefix('/').unwrap_or(&path);
     let path = path.strip_prefix("api/models/").unwrap_or(path);
     let mut segs = path.split('/').filter(|s| !s.is_empty());
     let org = segs.next()?;
     let repo = segs.next()?;
     let repo = repo.split('@').next().unwrap_or(repo);
+    let repo = repo.split(':').next().unwrap_or(repo);
+    let repo = match repo.len().checked_sub(4) {
+        Some(n) if repo.is_char_boundary(n) && repo[n..].eq_ignore_ascii_case(".git") => &repo[..n],
+        _ => repo,
+    };
+    if repo.is_empty() {
+        return None;
+    }
     Some(format!("{org}/{repo}"))
 }
 
-/// The path after a [`HF_HOSTS`] host (`host/…`, host matched in any case), else `None`.
-fn hub_path(rest: &str) -> Option<&str> {
-    let (host, path) = rest.split_once('/').unwrap_or((rest, ""));
+/// The (still percent-encoded) path of an `http(s)` URL whose host is one of [`HF_HOSTS`],
+/// else `None`. The host comes from the URL parser, so userinfo and port are not part of
+/// it; a single trailing dot is trimmed.
+fn hub_path(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    if !matches!(parsed.scheme(), "http" | "https") {
+        return None;
+    }
+    let host = parsed.host_str()?;
+    let host = host.strip_suffix('.').unwrap_or(host);
     HF_HOSTS
         .iter()
         .any(|h| h.eq_ignore_ascii_case(host))
-        .then_some(path)
+        .then(|| parsed.path().to_string())
 }
 
 /// Exit 12 (`NotImplemented`) for a known-unrunnable checkpoint. Every `apr run` entry
