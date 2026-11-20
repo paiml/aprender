@@ -1716,6 +1716,240 @@ mod tests {
         }
     }
 
+    /// SHACL-PATCH (#7365): `sh:minInclusive` / `maxInclusive` / `minExclusive` / `maxExclusive`, numeric.
+    fn range_graph(v: Option<Term>) -> Graph {
+        let mut g = Graph::new();
+        let s = iri("part", "p");
+        g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Part")));
+        if let Some(v) = v {
+            g.insert(s, ont("n"), v);
+        }
+        g
+    }
+
+    fn num(v: &str, t: &str) -> Term {
+        Term::Literal {
+            value: v.into(),
+            datatype: format!("{XSD_NS}{t}"),
+        }
+    }
+
+    fn range_components(facet: &str, bound: &str, v: Term) -> Vec<&'static str> {
+        let s = shape(&format!(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {bound}}}\n"
+        ));
+        validate(&range_graph(Some(v)), &[s])
+            .results
+            .iter()
+            .map(|r| r.component)
+            .collect()
+    }
+
+    #[test]
+    fn range_facets_accept_a_conforming_value_and_flag_a_violating_one() {
+        // (facet, bound, conforming value, violating value) over integer, decimal and double values.
+        let cases = [
+            (
+                "minInclusive",
+                "5",
+                num("5", "integer"),
+                num("4", "integer"),
+            ),
+            (
+                "minInclusive",
+                "5",
+                num("5.5", "decimal"),
+                num("4.9", "decimal"),
+            ),
+            (
+                "minInclusive",
+                "5",
+                num("5e0", "double"),
+                num("4.99e0", "double"),
+            ),
+            (
+                "maxInclusive",
+                "5",
+                num("5", "integer"),
+                num("6", "integer"),
+            ),
+            (
+                "maxInclusive",
+                "5",
+                num("4.5", "decimal"),
+                num("5.1", "decimal"),
+            ),
+            (
+                "maxInclusive",
+                "5",
+                num("5e0", "double"),
+                num("5.01e0", "double"),
+            ),
+            (
+                "minExclusive",
+                "5",
+                num("6", "integer"),
+                num("5", "integer"),
+            ),
+            (
+                "minExclusive",
+                "5",
+                num("5.1", "decimal"),
+                num("5.0", "decimal"),
+            ),
+            (
+                "minExclusive",
+                "5",
+                num("5.5e0", "double"),
+                num("5e0", "double"),
+            ),
+            (
+                "maxExclusive",
+                "5",
+                num("4", "integer"),
+                num("5", "integer"),
+            ),
+            (
+                "maxExclusive",
+                "5",
+                num("4.9", "decimal"),
+                num("5.0", "decimal"),
+            ),
+            (
+                "maxExclusive",
+                "5",
+                num("4.5e0", "double"),
+                num("5e0", "double"),
+            ),
+            (
+                "minInclusive",
+                "0.5",
+                num("1", "integer"),
+                num("0", "integer"),
+            ),
+            (
+                "maxInclusive",
+                "-1",
+                num("-2", "integer"),
+                num("0", "integer"),
+            ),
+        ];
+        for (facet, bound, ok, bad) in cases {
+            assert!(
+                range_components(facet, bound, ok.clone()).is_empty(),
+                "{facet} {bound}: {ok:?} must conform"
+            );
+            assert_eq!(
+                range_components(facet, bound, bad.clone()),
+                vec![facet],
+                "{facet} {bound}: {bad:?} must violate"
+            );
+        }
+    }
+
+    #[test]
+    fn range_facets_flag_a_non_numeric_or_iri_value_and_every_value_is_checked() {
+        for facet in [
+            "minInclusive",
+            "maxInclusive",
+            "minExclusive",
+            "maxExclusive",
+        ] {
+            assert_eq!(
+                range_components(facet, "5", Term::string("5")),
+                vec![facet],
+                "{facet}: a string is not comparable"
+            );
+            assert_eq!(
+                range_components(facet, "5", Term::iri(ont("x"))),
+                vec![facet],
+                "{facet}: an IRI is not comparable"
+            );
+        }
+        let s = shape(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:n, minInclusive: 0, maxInclusive: 9}\n",
+        );
+        let mut g = range_graph(Some(num("3", "integer")));
+        g.insert(iri("part", "p"), ont("n"), num("12", "integer"));
+        g.insert(iri("part", "p"), ont("n"), num("-1", "integer"));
+        let r = validate(&g, &[s]);
+        let mut c: Vec<_> = r.results.iter().map(|x| x.component).collect();
+        c.sort_unstable();
+        assert_eq!(c, vec!["maxInclusive", "minInclusive"], "{r:?}");
+        let m = &r.results[0].message;
+        assert!(
+            m.contains("n:") || m.contains("ont:n") || m.contains('n'),
+            "{m}"
+        );
+    }
+
+    #[test]
+    fn range_facets_parse_numbers_and_refuse_a_non_number_bound() {
+        for facet in [
+            "minInclusive",
+            "maxInclusive",
+            "minExclusive",
+            "maxExclusive",
+        ] {
+            for good in ["5", "-3", "2.5", "1e3"] {
+                let yaml = format!(
+                    "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {good}}}\n"
+                );
+                let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+                assert!(
+                    parse_shape_with("t", &doc, &pv_map()).is_ok(),
+                    "{facet}: {good} must parse"
+                );
+            }
+            for bad in ["\"five\"", "true", "[1]", ".nan", ".inf", "null"] {
+                let yaml = format!(
+                    "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {bad}}}\n"
+                );
+                let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+                assert!(
+                    matches!(
+                        parse_shape_with("t", &doc, &pv_map()),
+                        Err(ShapeError::Malformed { what, .. }) if what.contains(facet)
+                    ),
+                    "{facet}: {bad} must be Malformed, naming the facet"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn range_facets_are_exported_to_turtle() {
+        let s = shape(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:n, minInclusive: 1, maxInclusive: 9, minExclusive: 0.5, maxExclusive: 10}\n",
+        );
+        let t = to_turtle(&[s]);
+        for want in [
+            "sh:minInclusive \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+            "sh:maxInclusive \"9\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+            "sh:minExclusive \"0.5\"^^<http://www.w3.org/2001/XMLSchema#double>",
+            "sh:maxExclusive \"10\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+        ] {
+            assert!(t.contains(want), "missing {want} in {t}");
+        }
+    }
+
+    #[test]
+    fn sparql_and_logical_components_stay_refused_beside_the_range_facets() {
+        for (yaml, want) in [
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, sparql: {}}]\n", "sparql"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, not: {}}]\n", "not"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, and: []}]\n", "and"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, minInclusive: 1, xone: []}]\n", "xone"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: 'ont:a|ont:b', minInclusive: 1}]\n", "path"),
+        ] {
+            let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            match parse_shape_with("t", &doc, &pv_map()) {
+                Err(ShapeError::Unsupported { component, .. }) => assert!(component.starts_with(want), "{component} vs {want}"),
+                other => panic!("{yaml}: expected Unsupported, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn a_shape_with_no_target_and_no_pv_contract_entity_is_malformed() {
         let doc: serde_yaml::Value = serde_yaml::from_str("shape:\n  properties: []\n").unwrap();
