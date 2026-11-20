@@ -45,7 +45,7 @@ eval_if() {
   for ((mask = 0; mask < (1 << n); mask++)); do
     x="$e"; i=0
     while [[ "$x" == *u* ]]; do x="${x/u/$(( (mask >> i) & 1 ))}"; i=$((i + 1)); done
-    v="$(bash -c 'echo $(( $1 ))' _ "$x" 2>/dev/null)" || return 1
+    v="$(bash -c 'echo $(( $1 ))' _ "$x" 2>/dev/null)"
     case "$v" in 1) echo 1; return 0 ;; 0) ;; *) return 1 ;; esac
   done
   echo 0
@@ -69,12 +69,13 @@ rows() {
     done < <(yq -o=json '.' "$f" | jq -r --arg f "$(basename "$f")" '
       def ex($e; $x):
         ($e | gsub("\\$\\{\\{|\\}\\}"; " ")
+            | gsub("github\\s*\\[\\s*\u0027event_name\u0027\\s*\\]|github\\s*\\.\\s*event_name"; "github.event_name"; "i")
             | gsub("github\\.event_name\\s*==\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "1" else "0" end)
             | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*==\\s*github\\.event_name"; if .n == $x then "1" else "0" end)
             | gsub("github\\.event_name\\s*!=\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "0" else "1" end)
             | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*!=\\s*github\\.event_name"; if .n == $x then "0" else "1" end)
             | gsub("\u0027[^\u0027]*\u0027"; " S ")
-            | if test("github\\.event_name") then "?" else . end
+            | if test("github\\.event_name") or test("\\bgithub\\b(?!\\s*\\.)";"i") then "?" else . end
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
@@ -212,7 +213,7 @@ function feed(line,   i, c, n, buf2, q, d) {
   t = raw; gsub(/\$\{\{[^}]*\}\}/, "X", t)
   if (t ~ /pull_request/) mention = 1
   if (t ~ /<<|(^|[[:space:]&|;{(])eval[[:space:]]|^[[:space:]]*function[[:space:]]/) opaque = 1
-  if (raw ~ /(\\|&&|\|\||\|)[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", raw); acc = acc raw " "; next }
+  if (raw ~ /(\\|&&|\|)[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", raw); acc = acc raw " "; next }
   feed(acc raw); acc = ""
 }
 END { if (acc != "") feed(acc); if (cur_s != "") stmt(cur_s); if (mention && (opaque || bad || sp != 0 || pend != "")) hit = 1; exit !hit }
@@ -846,9 +847,140 @@ jobs:
 jobs:
   a: {runs-on: x, if: \"github.event_name == 'push' && (\", steps: []}
 "
+  t "github['event_name'] == 'push' (index syntax) is read like the dot form: RED (rc 1; lane 1 finding 1a)" 1 "" "$H
+  a: {runs-on: x, if: \"github['event_name'] == 'push'\", steps: []}
+"
+  t "GitHub.event_name == 'push' (case-insensitive context name) is read like github.event_name: RED (rc 1; lane 1 finding 1a)" 1 "" "$H
+  a: {runs-on: x, if: \"GitHub.event_name == 'push'\", steps: []}
+"
+  t "github [ 'EVENT_NAME' ] == 'push' (spaces, upper-case key) is read like github.event_name: RED (rc 1)" 1 "" "$H
+  a: {runs-on: x, if: \"github [ 'EVENT_NAME' ] == 'push'\", steps: []}
+"
+  t "github . event_name == 'push' (spaces round the dot) is read like github.event_name: RED (rc 1)" 1 "" "$H
+  a: {runs-on: x, if: \"github . event_name == 'push'\", steps: []}
+"
+  t "contains(toJSON(github), 'push') reads the whole context: fails closed (rc 2)" 2 "" "$H
+  a: {runs-on: x, if: \"contains(toJSON(github), 'push') && github.ref == 'x'\", steps: []}
+"
+  t "GITHUB['Event_Name'] == 'push' (every part mixed case) is read like github.event_name: RED (rc 1)" 1 "" "$H
+  a: {runs-on: x, if: \"GITHUB['Event_Name'] == 'push'\", steps: []}
+"
+  t "github[\\\"event_name\\\"] == 'push' (double-quoted index, not valid GHA) fails closed (rc 2)" 2 "" "$H
+  a: {runs-on: x, if: \"github[\\\"event_name\\\"] == 'push'\", steps: []}
+"
+  t "github[env.KEY] == 'push' (computed index) fails closed (rc 2)" 2 "" "$H
+  a: {runs-on: x, if: \"github[env.KEY] == 'push'\", steps: []}
+"
+  t "github.ref != 'x' && github.event_name == 'push' keeps != as one atom: RED (rc 1, kills the != split mutant)" 1 "" "$H
+  a: {runs-on: x, if: \"github.ref != 'refs/heads/dev' && github.event_name == 'push'\", steps: []}
+"
+  t "\${{ github.event_name == 'push' }} wrapper is stripped: RED (rc 1, kills the wrapper-strip mutant)" 1 "" "$H
+  a: {runs-on: x, if: \"\${{ github.event_name == 'push' }}\", steps: []}
+"
+  t "13 unknown atoms fail closed (rc 2, kills the 12-unknown cap mutant)" 2 "" "$H
+  a: {runs-on: x, if: \"github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a' || github.ref == 'a'\", steps: []}
+"
+  t "four nested calls are all reduced to an unknown: RED (rc 1, kills a deleted nested-call pass)" 1 "" "$H
+  a: {runs-on: x, if: \"f(f(f(f(github.ref)))) && github.event_name == 'push'\", steps: []}
+"
+  t "push branches [master] is main: push-only job is RED (rc 1, kills the master mutant)" 1 "" "on: {push: {branches: [master]}, pull_request: {}, merge_group: {}}
+jobs:
+  a: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+"
+  t "push branches ['**'] is a glob that can reach main: push-only job is RED (rc 1, kills the glob mutant)" 1 "" "on: {push: {branches: ['**']}, pull_request: {}, merge_group: {}}
+jobs:
+  a: {runs-on: x, if: \"github.event_name == 'push'\", steps: []}
+"
+  t "a test joined by -o with heavy and exit 0 in its two branches is read as unclassified (both branches PR): RED (rc 1, kills the -o/-a mutant)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request -o \"\$X\" = y ]; then
+            check_heavy
+          else
+            exit 0
+          fi
+"
+  t "echo \"a exit 0 }\" inside quotes is not an exit: green (rc 0, kills the quote-strip-in-exits mutant)" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then
+            echo \"a exit 0 }\"
+          fi
+          check_heavy
+"
+  t "a \$( if .. fi ) command substitution is one statement: green (rc 0, kills the \$( depth mutant)" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          v=\$(if [ \"\$EVT\" = pull_request ]; then echo 1; else echo 2; fi)
+          exit 0
+"
+  t "a # inside \$( ) is not a comment: green (rc 0, kills the comment-depth mutant)" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          v=\$(echo a # b)
+          if [ \"\$EVT\" != pull_request ]; then exit 0; fi
+          check_heavy
+"
+  t "eval in a script that names pull_request is opaque: RED (rc 1, kills the eval mutant)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          eval \"\$CMD\"
+          if [ \"\$EVT\" != pull_request ]; then echo x; fi
+"
+  t "function keyword in a script that names pull_request is opaque: RED (rc 1)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          function g { :; }
+          if [ \"\$EVT\" != pull_request ]; then echo x; fi
+"
+  t "[ != pull_request ] || newline exit 0 joins the continuation: RED (rc 1, kills the || continuation mutant)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" != pull_request ] ||
+            exit 0
+          check_heavy
+"
+  t "a stray fi in a script that names pull_request is unbalanced: RED (rc 1, kills the bad-flag END mutant)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          echo pull_request
+          fi
+"
+  t "a dangling if in a script that names pull_request is unbalanced: RED (rc 1, kills the pend END mutant)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          echo pull_request
+          if
+"
+  ei() { # name, expected rc, eval_if input: calls eval_if directly (--eval-if)
+    local o; o="$(bash "$0" --eval-if "$3" 2>/dev/null)"; local rc=$?
+    [ "$rc" = "$2" ] && echo "ok   $1" || { echo "FAIL $1 (rc $rc, want $2, out $o)"; fails=1; }
+  }
+  ei "eval_if 1 && !0 is 1 (rc 0)" 0 "1 && !0"
+  ei "eval_if rejects 11 (value other than 0 or 1, rc 1)" 1 "11"
+  ei "eval_if rejects 1 1 (arithmetic error, rc 1)" 1 "1 1"
+  ei "eval_if rejects a ternary (char whitelist, rc 1)" 1 "1 ? 1 : 1"
   # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
   # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
-  local sh yqp jqp rc
+  local sh yqp jqp rc out
   sh="$(command -v bash)"; yqp="$(command -v yq)"; jqp="$(command -v jq)"
   mkdir -p "$d/noyq" "$d/nojq"; ln -sf "$jqp" "$d/noyq/jq"; ln -sf "$yqp" "$d/nojq/yq"
   te() { # name, expected rc, PATH dir, missing tool named in the ENV line
@@ -862,10 +994,12 @@ jobs:
   te "yq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/noyq" yq
   te "jq missing fails closed (rc 2), clean workflow and empty exemptions" 2 "$d/nojq" jq
   : > "$d/ex"
-  PARITY_WORKFLOWS="$d/missing" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  out="$(PARITY_WORKFLOWS="$d/missing" PARITY_EXEMPT="$d/ex" bash "$0" 2>&1)"; rc=$?
+  case "$out" in *"ENV: workflow dir"*) ;; *) rc="no-ENV-msg-$rc" ;; esac
   [ "$rc" = 2 ] && echo "ok   missing workflow dir fails closed (rc 2)" || { echo "FAIL missing workflow dir (rc $rc, want 2)"; fails=1; }
   mkdir -p "$d/emptydir"
-  PARITY_WORKFLOWS="$d/emptydir" PARITY_EXEMPT="$d/ex" bash "$0" >/dev/null 2>&1; rc=$?
+  out="$(PARITY_WORKFLOWS="$d/emptydir" PARITY_EXEMPT="$d/ex" bash "$0" 2>&1)"; rc=$?
+  case "$out" in *"ENV: no workflow file"*) ;; *) rc="no-ENV-msg-$rc" ;; esac
   [ "$rc" = 2 ] && echo "ok   empty workflow dir fails closed (rc 2)" || { echo "FAIL empty workflow dir (rc $rc, want 2)"; fails=1; }
   rm -rf "${d:?}"
   return "$fails"
@@ -874,6 +1008,7 @@ jobs:
 case "${1:-}" in
   --self-test) self_test; exit $? ;;
   --live) scan; exit $? ;;
+  --eval-if) eval_if "${2:-}"; exit $? ;;
   -h|--help) sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//' ;;
   *) scan; exit $? ;;
 esac
