@@ -319,4 +319,124 @@ mod tests {
             "the last block of a 32-block, interval-4 file is a full-attention block"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // GH-7329: in-memory GGUF v3 (header + str/u32 KVs + F32 tensors + data)
+    // -----------------------------------------------------------------------
+
+    const DELTANET_TENSORS: &[&str] = &[
+        "attn_norm.weight",
+        "attn_qkv.weight",
+        "attn_gate.weight",
+        "ssm_alpha.weight",
+        "ssm_beta.weight",
+        "ssm_a",
+        "ssm_dt.bias",
+        "ssm_conv1d.weight",
+        "ssm_norm.weight",
+        "ssm_out.weight",
+        "post_attention_norm.weight",
+        "ffn_gate.weight",
+        "ffn_up.weight",
+        "ffn_down.weight",
+    ];
+
+    const ATTENTION_TENSORS: &[&str] = &[
+        "attn_norm.weight",
+        "attn_q.weight",
+        "attn_k.weight",
+        "attn_v.weight",
+        "attn_q_norm.weight",
+        "attn_k_norm.weight",
+        "attn_output.weight",
+        "post_attention_norm.weight",
+        "ffn_gate.weight",
+        "ffn_up.weight",
+        "ffn_down.weight",
+    ];
+
+    fn put_str(out: &mut Vec<u8>, s: &str) {
+        out.extend_from_slice(&(s.len() as u64).to_le_bytes());
+        out.extend_from_slice(s.as_bytes());
+    }
+
+    /// Two decoder blocks (0 = DeltaNet, 1 = full attention, interval 2) plus one
+    /// trailing MTP block `blk.2` that carries only a `nextn.*` tensor, as in the
+    /// Qwen3.8-27B file (block_count 65, nextn_predict_layers 1).
+    fn gguf_with_mtp_block(nextn_predict_layers: Option<u32>) -> Vec<u8> {
+        const ELEMS: u64 = 8; // F32 x 8 = 32 bytes, keeps every offset 32-aligned
+        let mut tensors: Vec<String> = Vec::new();
+        tensors.extend(DELTANET_TENSORS.iter().map(|t| format!("blk.0.{t}")));
+        tensors.extend(ATTENTION_TENSORS.iter().map(|t| format!("blk.1.{t}")));
+        tensors.push("blk.2.nextn.eh_proj.weight".to_string());
+
+        let mut kvs: Vec<(&str, Option<&str>, u32)> = vec![
+            ("general.architecture", Some("qwen35"), 0),
+            ("qwen35.block_count", None, 3),
+            ("qwen35.full_attention_interval", None, 2),
+        ];
+        if let Some(n) = nextn_predict_layers {
+            kvs.push(("qwen35.nextn_predict_layers", None, n));
+        }
+
+        let mut out = Vec::new();
+        out.extend_from_slice(&0x4655_4747u32.to_le_bytes());
+        out.extend_from_slice(&3u32.to_le_bytes());
+        out.extend_from_slice(&(tensors.len() as u64).to_le_bytes());
+        out.extend_from_slice(&(kvs.len() as u64).to_le_bytes());
+        for (key, s, n) in &kvs {
+            put_str(&mut out, key);
+            match s {
+                Some(s) => {
+                    out.extend_from_slice(&8u32.to_le_bytes());
+                    put_str(&mut out, s);
+                },
+                None => {
+                    out.extend_from_slice(&4u32.to_le_bytes());
+                    out.extend_from_slice(&n.to_le_bytes());
+                },
+            }
+        }
+        for (i, name) in tensors.iter().enumerate() {
+            put_str(&mut out, name);
+            out.extend_from_slice(&1u32.to_le_bytes());
+            out.extend_from_slice(&ELEMS.to_le_bytes());
+            out.extend_from_slice(&0u32.to_le_bytes()); // F32
+            out.extend_from_slice(&((i as u64) * ELEMS * 4).to_le_bytes());
+        }
+        while out.len() % 32 != 0 {
+            out.push(0);
+        }
+        out.resize(out.len() + tensors.len() * (ELEMS as usize) * 4, 0);
+        out
+    }
+
+    /// GH-7329: `block_count` includes the MTP (nextn) block, which has no decoder
+    /// tensors. Remove the `nextn_predict_layers` subtraction in `load_qwen35_layers`
+    /// and this goes RED with "Tensor 'blk.2.attn_norm.weight' not found".
+    #[test]
+    fn qwen35_nextn_mtp_block_is_not_loaded_as_a_decoder_layer() {
+        let data = gguf_with_mtp_block(Some(1));
+        let model = GGUFModel::from_bytes(&data).expect("synthetic GGUF parses");
+        let layers = load_qwen35_layers(&model, &data)
+            .expect("the MTP block must not be read as a decoder layer");
+        assert_eq!(layers.len(), 2, "block_count 3 - nextn_predict_layers 1");
+        assert!(matches!(layers[0], Qwen35Layer::DeltaNet(_)));
+        assert!(matches!(layers[1], Qwen35Layer::Attention(_)));
+    }
+
+    /// Without the key the loader still reads every block, so the same file fails
+    /// closed on the MTP block instead of being silently truncated.
+    #[test]
+    fn qwen35_without_nextn_key_reads_every_block() {
+        let data = gguf_with_mtp_block(None);
+        let model = GGUFModel::from_bytes(&data).expect("synthetic GGUF parses");
+        let err = load_qwen35_layers(&model, &data)
+            .err()
+            .expect("blk.2 has no decoder tensors");
+        assert!(
+            err.to_string().contains("blk.2.attn_norm.weight"),
+            "unexpected error: {err}"
+        );
+    }
 }
