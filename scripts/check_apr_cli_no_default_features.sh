@@ -9,7 +9,7 @@
 # Usage: bash scripts/check_apr_cli_no_default_features.sh [--target-dir DIR | --self-test]  (self-test: arg-parsing rows, no cargo)
 set -euo pipefail
 
-usage() { echo "Usage: bash scripts/check_apr_cli_no_default_features.sh [--target-dir DIR]" >&2; }
+usage() { echo "Usage: bash scripts/check_apr_cli_no_default_features.sh [--target-dir DIR | --self-test]" >&2; }
 
 target_dir="${CARGO_TARGET_DIR:-}"
 # parse_args: sets target_dir; exits 0 on --help, 64 on any bad flag, a bare --target-dir, or trailing args.
@@ -76,6 +76,23 @@ if [[ "${1:-}" == "--self-test" ]]; then
     fake_row 2 "error: no matching package named \`arrow-array\` found"
     fake_row 1 "error[E0433]: failed to resolve: use of undeclared crate realizar"
     fake_row 1 "error: could not compile \`apr-cli\` (lib) due to 3 previous errors"
+    # two-step fake cargo: `build` exits $2, `test` exits $3 printing $4; proves the second step runs and its
+    # `test result: FAILED` line is a verdict (1), and that a clean build + clean test is rc=0.
+    step_row() {
+        local want="$1" brc="$2" trc="$3" msg="$4" d got=0
+        d="$(mktemp -d "${TMPDIR:-/tmp}/apr-cli-nodefault-st.XXXXXX")"
+        printf '#!/bin/sh\ncase "$1" in\n build) exit %s;;\n test) echo "%s" >&2; exit %s;;\nesac\nexit 0\n' "$brc" "$msg" "$trc" > "$d/cargo"
+        chmod +x "$d/cargo"
+        PATH="$d:$PATH" bash "$me" > /dev/null 2>&1 < /dev/null || got=$?
+        rm -rf "${d:?}"
+        if [[ "$got" -ne "$want" ]]; then
+            echo "FAIL step row: [build=$brc test=$trc $msg] want rc=$want got rc=$got" >&2
+            fails=$((fails + 1))
+        fi
+    }
+    step_row 0 0 0 "test result: ok. 1 passed"
+    step_row 1 0 101 "test result: FAILED. 0 passed; 1 failed; 0 ignored"
+    step_row 2 0 101 "error: failed to acquire package cache lock"
     [[ "$fails" -eq 0 ]] && echo "OK: self-test rows pass" && exit 0
     exit 1
 fi
@@ -102,7 +119,7 @@ run_step() {
     # line (package cache lock, failed to get, no matching package, ...) is cargo/host, not a verdict.
     if grep -qE "^error\[E[0-9]+\]:|^error: could not compile|^test result: FAILED" "$log"; then
         echo "FAIL: $label exited $rc" >&2
-        grep -E "^error" "$log" | head -n 20 >&2 || true
+        grep -E "^error|^test result: FAILED|^test .* FAILED|^failures:" "$log" | head -n 20 >&2 || true
         exit 1
     fi
     echo "not_measured: $label exited $rc with no rustc error (cargo could not run)" >&2
