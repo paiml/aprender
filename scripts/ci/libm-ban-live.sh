@@ -24,6 +24,37 @@
 
 set -euo pipefail
 
+# Remove ANSI escape sequences (cargo colours on some runners). Stripping, not loosening: the
+# diagnostic patterns below stay exactly as strict as they were.
+strip_ansi() {
+  local esc
+  esc=$(printf '\033')
+  LC_ALL=C sed "s#${esc}\[[0-9;?]*[A-Za-z]##g"
+}
+
+# --self-test: no cargo, no planting. Coloured and plain diagnostics must reduce to the same text.
+if [ "${1:-}" = "--self-test" ]; then
+  st_fail=0
+  plain='error: use of a disallowed method `f32::ln`'
+  colour=$(printf '\033[1m\033[31merror\033[0m\033[1m: use of a disallowed method `f32::ln`\033[0m')
+  for input in "$plain" "$colour"; do
+    out=$(printf '%s\n' "$input" | strip_ansi)
+    if grep -q "error: use of a disallowed method" <<<"$out" && grep -q "disallowed method \`f32::ln\`" <<<"$out"; then
+      printf 'ok    case: %s\n' "$(printf '%s' "$input" | od -c | head -1 | cut -c1-40)"
+    else
+      printf 'FAIL  case did not match after strip: %s\n' "$out"; st_fail=1
+    fi
+  done
+  # a warning must still NOT satisfy the error pattern, coloured or not
+  warn=$(printf '\033[33mwarning\033[0m: use of a disallowed method `f32::ln`\n' | strip_ansi)
+  if grep -q "error: use of a disallowed method" <<<"$warn"; then
+    printf 'FAIL  a coloured warning matched the error pattern\n'; st_fail=1
+  else
+    printf 'ok    a coloured warning does not match the error pattern\n'
+  fi
+  exit "$st_fail"
+fi
+
 CRATE_DIR="crates/aprender-viz"
 LIB="$CRATE_DIR/src/lib.rs"
 MARKER="__apex_ev2a_libm_ban_probe"
@@ -77,9 +108,13 @@ grep -q "$MARKER" "$LIB" || { printf 'libm-ban-live: FAIL — the probe was not 
 touch "$LIB"
 
 set +e
-OUT=$(cargo clippy -p aprender-viz --lib --message-format short 2>&1)
+OUT=$(CARGO_TERM_COLOR=never cargo clippy --color never -p aprender-viz --lib --message-format short 2>&1)
 RC=$?
 set -e
+
+# Belt and braces: a runner whose env forces colour (CLICOLOR_FORCE, a wrapper) can still put
+# escapes in front of "error:". Strip them from the text; the patterns below are unchanged.
+OUT=$(printf '%s\n' "$OUT" | strip_ansi)
 
 if [ "$RC" -eq 0 ]; then
   printf 'libm-ban-live: FAIL — clippy ACCEPTED a file calling every banned method.\n' >&2

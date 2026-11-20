@@ -7,8 +7,9 @@
 //! widening a shape there turns this table red. Every refused fixture states the path and the component pv must
 //! name; a refusal for a different reason does not satisfy the row.
 //!
-//! This target is NOT wired into `ci/explicit-test-commands.d/`: a new check on a PR path is a gate change, and
-//! this is a LAB check (run it nightly, or by hand).
+//! This target IS wired into `ci/explicit-test-commands.d/` (fragment 871) and runs on every pull request, so it
+//! is a GATE check; wiring it was a gate change (`GATE CHANGE: yes`). Only the invariant-map checker
+//! `scripts/lab/check_sim3d_spec_contracts.sh` is LAB (nightly or by hand).
 
 use std::path::{Path, PathBuf};
 use std::process::Command;

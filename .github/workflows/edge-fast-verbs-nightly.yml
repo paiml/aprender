@@ -94,7 +94,9 @@ jobs:
       - name: Receipt
         if: always()
         timeout-minutes: 3
-        env: { JOB: '${{ job.status }}', BUILD: '${{ steps.build.outcome }}' }
+        env:
+          JOB: ${{ job.status }}
+          BUILD: ${{ steps.build.outcome }}
         run: |
           d="$RUNNER_TEMP/edge"; mkdir -p "$d"; why=run_failed; cells=""
           [ "$JOB" != cancelled ] || why=step_timeout

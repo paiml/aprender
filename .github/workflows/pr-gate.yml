@@ -20,7 +20,7 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       pull-requests: write
-    uses: paiml/.github/.github/workflows/pr-gate.yml@main
+    uses: paiml/.github/.github/workflows/pr-gate.yml@8289382dfd2852714a7fa14868a7545c91cd98e6
 
   no-pull-request-target:
     # P0 guard: a workflow that reintroduces the pull_request_target trigger fails here.

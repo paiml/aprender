@@ -171,6 +171,26 @@ mod simulation_tests {
     }
 
     #[test]
+    fn a_simulation_contract_with_a_vacuous_shape_value_is_sim_001() {
+        let tail = "falsification_tests:\n  - id: F-1\n    rule: r\n    prediction: p\n    test: t\n    if_fails: f\n";
+        for vacuous in [
+            "shape: null\n",
+            "shape: {}\n",
+            "shape: todo\n",
+            "shapes: []\n",
+            "shapes:\n",
+            "shapes: todo\n",
+        ] {
+            let r = rules(&format!("{HEAD}{vacuous}{tail}"));
+            assert!(r.iter().any(|x| x == "SIM-001"), "{vacuous:?}: {r:?}");
+        }
+        let ok = rules(&format!(
+            "{HEAD}shapes:\n  - id: a\n    closed: true\n{tail}"
+        ));
+        assert!(!ok.iter().any(|x| x == "SIM-001"), "{ok:?}");
+    }
+
+    #[test]
     fn a_simulation_contract_without_a_falsifier_is_sim_002() {
         let y = format!("{HEAD}shape:\n  targetClass: sim:Simulation\n  closed: true\n");
         let r = rules(&y);
