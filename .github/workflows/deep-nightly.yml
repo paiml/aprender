@@ -1,3 +1,6 @@
+
+      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
+        run: bash scripts/check_apr_cli_no_default_features.sh
 # deep-nightly -- the nightly PRODUCERS for three release-day deep lanes (#4718, parent #4678).
 #
 # WHY. scripts/release/nightly_train.sh does not re-run anything: it reads, for one commit C,
