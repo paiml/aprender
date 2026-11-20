@@ -2040,6 +2040,127 @@ mod tests {
         }
     }
 
+    /// #7366 lane findings: an ill-formed literal for its datatype is not in range, and the comparison is exact.
+    #[test]
+    fn range_facets_refuse_ill_formed_literals_for_their_datatype() {
+        for (v, t) in [
+            ("1.5", "integer"),
+            ("INF", "integer"),
+            ("INF", "decimal"),
+            ("1e2", "decimal"),
+            ("inf", "double"),
+            ("300", "byte"),
+            ("NaN", "decimal"),
+        ] {
+            for facet in [
+                "minInclusive",
+                "maxInclusive",
+                "minExclusive",
+                "maxExclusive",
+            ] {
+                let bound = if facet.starts_with("min") {
+                    "0"
+                } else {
+                    "1000"
+                };
+                assert_eq!(
+                    range_components(facet, bound, num(v, t)),
+                    vec![facet_name(facet)],
+                    "{v}^^{t} vs {facet}"
+                );
+            }
+        }
+        // Well-formed forms still conform.
+        assert!(range_components("minInclusive", "0", num("INF", "double")).is_empty());
+        assert!(range_components("minInclusive", "0", num(" 7 ", "integer")).is_empty());
+    }
+
+    fn facet_name(f: &str) -> &'static str {
+        match f {
+            "minInclusive" => "minInclusive",
+            "maxInclusive" => "maxInclusive",
+            "minExclusive" => "minExclusive",
+            _ => "maxExclusive",
+        }
+    }
+
+    #[test]
+    fn range_comparison_is_exact_for_integer_and_decimal() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        // decimal one ulp-of-f64 above an integer bound
+        assert_eq!(
+            compare_terms(&num("5.0000000000000004", "decimal"), &num("5", "integer")),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(
+                &num("9007199254740992.5", "decimal"),
+                &num("9007199254740992", "integer")
+            ),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(
+                &num("9007199254740993", "integer"),
+                &num("9007199254740992", "integer")
+            ),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(
+                &num("9007199254740993", "integer"),
+                &num("9007199254740992.0", "decimal")
+            ),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(&num("1.50", "decimal"), &num("1.5", "decimal")),
+            Some(Equal)
+        );
+        assert_eq!(
+            compare_terms(&num("-0.0", "decimal"), &num("0", "integer")),
+            Some(Equal)
+        );
+        assert_eq!(
+            compare_terms(&num("-1.5", "decimal"), &num("-1.25", "decimal")),
+            Some(Less)
+        );
+        // end to end: exclusive bound just above/below
+        assert_eq!(
+            range_components("minExclusive", "5", num("5.0000000000000004", "decimal")),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            range_components(
+                "maxInclusive",
+                "9007199254740992",
+                num("9007199254740992.5", "decimal")
+            ),
+            vec!["maxInclusive"]
+        );
+    }
+
+    /// FALSIFY-SHP-003 names these, so its cited test must run them.
+    #[test]
+    fn unsupported_components_cover_sparql_and_or_not_xone() {
+        for (key, val) in [
+            ("sparql", "{}"),
+            ("and", "[]"),
+            ("or", "[]"),
+            ("not", "{}"),
+            ("xone", "[]"),
+        ] {
+            let yaml = format!("entity: {{type: pv-contract}}\nshape:\n  {key}: {val}\n");
+            let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+            match parse_shape_with("t", &doc, &pv_map()) {
+                Err(ShapeError::Unsupported { component, .. }) => {
+                    assert!(component.starts_with(key), "{component} vs {key}");
+                }
+                other => panic!("{yaml}: expected Unsupported, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn a_shape_with_no_target_and_no_pv_contract_entity_is_malformed() {
         let doc: serde_yaml::Value = serde_yaml::from_str("shape:\n  properties: []\n").unwrap();
