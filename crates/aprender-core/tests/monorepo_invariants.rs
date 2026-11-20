@@ -1163,6 +1163,8 @@ fn draft_gate_canon() -> Vec<(&'static str, String)> {
         ("guards", "${{ !cancelled() && github.event_name == 'merge_group' && needs.mg-reuse.outputs.x86 != '1' }}".into()),
         ("workspace-test-shard", format!("${{{{ !cancelled() && needs.mg-reuse.outputs.wt != '1' && needs.mg-reuse-wt.outputs.wt != '1' && {FG} && {DF} }}}}")),
         ("workspace-test-ran", format!("${{{{ !cancelled() && needs.workspace-test-shard.result == 'success' && github.event_name == 'pull_request' && {FORK_EQ} && {DF} }}}}")),
+        // #7314: Σ-executed runs here (static clean-room, never spot); same-repo non-draft PRs only, and workspace-test refuses its skip.
+        ("workspace-test-sigma", format!("${{{{ !cancelled() && {FG} && {DF} }}}}")),
         ("workspace-test", "always()".into()),
         ("ci-gate", "always()".into()),
         ("gate", "always()".into()),
@@ -1247,7 +1249,7 @@ fn rewrite_if(src: &str, job: &str, new: Option<&str>) -> String {
     out.join("\n") + "\n"
 }
 
-/// The 21 planted mutants: (label, mutated ci.yml). Each must be RED.
+/// The 22 planted mutants: (label, mutated ci.yml). Each must be RED.
 fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
     let x86_if = format!(
         "    if: ${{{{ !cancelled() && needs.mg-reuse.outputs.x86 != '1' && {FG} && {DF} }}}}"
@@ -1280,6 +1282,7 @@ fn draft_gate_mutants(src: &str) -> Vec<(&'static str, String)> {
         ("m19 fork guard dropped from the heavy jobs", mutate(src, &format!(" && {FG}"), "")),
         ("m20 fork guard dropped from mg-reuse-self-test", mutate(src, "(github.event.pull_request.head.repo.full_name == github.repository && !github.event.pull_request.draft)", "!github.event.pull_request.draft")),
         ("m21 fork guard dropped from workspace-test-ran", mutate(src, &format!(" && {FORK_EQ} && {DF}"), &format!(" && {DF}"))),
+        ("m22 fork guard dropped from workspace-test-sigma", rewrite_if(src, "workspace-test-sigma", Some(&format!("    if: ${{{{ !cancelled() && {DF} }}}}")))),
     ]
 }
 
@@ -1294,12 +1297,12 @@ fn falsify_ci_draft_gate_real_workflow_holds() {
     );
 }
 
-/// D1 / #5801: each of the 21 planted mutants is RED, so the rule cannot pass vacuously.
+/// D1 / #5801: each of the 22 planted mutants is RED, so the rule cannot pass vacuously.
 #[test]
 fn falsify_ci_draft_gate_every_planted_mutant_is_red() {
     let src = ci_yml_text();
     let mutants = draft_gate_mutants(&src);
-    assert_eq!(mutants.len(), 21, "the fixture table lost a mutant");
+    assert_eq!(mutants.len(), 22, "the fixture table lost a mutant");
     for (label, text) in &mutants {
         assert_ne!(
             text, &src,

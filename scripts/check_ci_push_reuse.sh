@@ -506,7 +506,7 @@ FORKW="github.event.pull_request.head.repo.full_name == github.repository"
 jobif() { awk -v J="$2:" '/^  [A-Za-z0-9_-]+:$/ {j = $1} j == J && /^    if:/ {print; exit}' "$1"; }
 forkok() { # forkok FILE JOB: 1 when the job's own if: carries the fork guard
   case "$(jobif "$1" "$2")" in *"$FORKW"*) echo 1 ;; *) echo 0 ;; esac; }
-for j in x86-main x86-main-advisories determinism workspace-test-shard workspace-test-ran; do
+for j in x86-main x86-main-advisories determinism workspace-test-shard workspace-test-ran workspace-test-sigma; do
   want "Z10 $j carries the fork guard in its own if:" 1 "$(forkok "$CI" "$j")"
   sed "/^  $j:\$/,/^    runs-on:/s/ \&\& (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)//; /^  $j:\$/,/^    runs-on:/s/ \&\& github.event.pull_request.head.repo.full_name == github.repository//" "$CI" > "$T/zf-$j.yml"
   want "Z11 mutant: $j without the fork guard is caught" 0 "$(forkok "$T/zf-$j.yml" "$j")"
@@ -514,6 +514,8 @@ done
 want "Z12 control: runner-smells keeps the same guard form (the one the others copy)" 1 "$(forkok "$CI" runner-smells)"
 # a fork PR still fails closed: the verdict jobs read the skipped heavy jobs as red (workspace-test: shard result skipped; ci / gate: no sov.gate result)
 want "Z13 workspace-test refuses a non-success shard result (a fork PR skips the shards)" 1 "$(grep -cF '[ "$SHARD_RESULT" = success ] || { echo "::error::workspace-test: shard matrix result' "$CI")"
+# #7314: a fork PR skips workspace-test-sigma, and workspace-test refuses anything but its success
+want "Z13b workspace-test refuses a non-success workspace-test-sigma result (a fork PR skips it)" 1 "$(grep -cF '[ "${SIGMA:-}" = success ] || { echo "::error::workspace-test: workspace-test-sigma is' "$CI")"
 want "Z14 ci / gate reads a missing sov.gate result as red" 1 "$(grep -cF 'ci / gate: section result is' "$CI")"
 # Z15: --now is passed to the facts reader (deleting it must turn this red; the reader itself refuses without it)
 NOWARG='--now "$(date +%s)"'

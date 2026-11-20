@@ -933,12 +933,14 @@ jobs:
   # the same check on pull_request and push). `workspace-test` (the required check name) stays a needs-only aggregator and passes only
   # when this job passes. Guard: crates/aprender-contracts/tests/falsification_pr_spot_labels.rs.
   workspace-test-sigma:
+    # NO-FORK-1 (#7314): runs the PR tree (sigma_executed.py) on a self-hosted seat, so a fork PR skips it; workspace-test then reads
+    # the skipped result as red (SIGMA must be 'success'), so a fork PR is refused, never passed vacuously.
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && github.event.pull_request.draft != true }}
     runs-on: [self-hosted, Linux, clean-room]
     permissions:
       contents: read
     timeout-minutes: 10
     needs: [workspace-test-shard, mg-reuse-wt, mg-reuse, pr-light]
-    if: always()
     steps:
       - uses: actions/checkout@v7
         if: ${{ github.event.pull_request.draft != true }}
