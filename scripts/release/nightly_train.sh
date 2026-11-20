@@ -1477,7 +1477,7 @@ m112_lanes_run_pick_schedule_only	s/(\$4 == "schedule" || \$4 == "workflow_dispa
 m88_running_night_counts	s/elif \$r.status != "completed" then/elif false then/
 m89_stale_night_counts	s/>= 86400 then/>= 864000000 then/
 m90_setup_fault_unprinted	s/(pwhy == "" \&\& other != "" ? "setup fault: /(0 ? "setup fault: /
-m140_disabled_producer_reads_as_setup_fault	s/WS\[WF\[i\]\] !~ \/\^\(active\)\?\$\//0/
+m140_disabled_producer_reads_as_setup_fault	s/WS\[WF\[i\]\] !~ \/^(active)?$\//0/
 m91_receipt_drops_read_c	/# read C\\t%s\\t%s\\n/d
 m92_after_now_night_counts	s/ and ((.created_at | fromdateiso8601) <= \$t))\]/)]/
 m93_other_branch_night_counts	s/ and .head_branch == "main"//
