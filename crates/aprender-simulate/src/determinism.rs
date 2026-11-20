@@ -160,7 +160,11 @@ mod tests {
     }
 
     fn hex(h: &[u8; 32]) -> String {
-        h.iter().map(|b| format!("{b:02x}")).collect()
+        use std::fmt::Write;
+        h.iter().fold(String::new(), |mut a, b| {
+            let _ = write!(a, "{b:02x}");
+            a
+        })
     }
 
     /// Fisher-Yates driven by the keyed draw, so the shuffle itself is reproducible.
@@ -175,7 +179,7 @@ mod tests {
 
     #[test]
     fn keyed_draw_is_pure_and_keyed() {
-        // FALSIFY-SDC-006 / SDC-INV-001
+        // FALSIFY-SDC-005 / SDC-INV-001
         let base = keyed_draw(1, 2, 3, 4);
         assert_eq!(base, keyed_draw(1, 2, 3, 4));
         assert_ne!(base, keyed_draw(9, 2, 3, 4));
@@ -211,10 +215,25 @@ mod tests {
         let b = run(&spec(2)).expect("run");
         assert_ne!(a[0], b[0]);
         assert_ne!(last(&a), last(&b));
+        // isolate the base case h_(-1): it must depend on the seed alone
+        assert_ne!(genesis(1), genesis(2));
+        // and h_0 must differ even with no entities (no keyed draw to carry the seed)
+        let empty = |seed| Spec {
+            entities: Vec::new(),
+            steps: 1,
+            ..spec(seed)
+        };
+        assert_ne!(run(&empty(1)).expect("run"), run(&empty(2)).expect("run"));
     }
 
     #[test]
     fn chain_links_every_step_to_the_previous() {
+        // isolate prev inclusion: same step inputs, different h_(k-1)
+        let states = spec(1).entities;
+        assert_ne!(
+            step_hash(&[0u8; 32], 5, 5, &states),
+            step_hash(&[1u8; 32], 5, 5, &states)
+        );
         let base = run(&spec(1)).expect("run");
         let t = Tamper {
             step: 3,
