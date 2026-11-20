@@ -73,7 +73,7 @@ function shape_ok(r,   v, k, rest) { # one line is a blank, a comment, "key:", "
   if (v == "") return 1
   if (v ~ /^[|>][-+0-9]*$/) return 1
   if (v ~ /^"[^"\\]*"$/ || v ~ /^\047[^\047]*\047$/) return 1
-  if (v ~ /^[[{][^"\047#]*[\]}]$/) return 1
+  if (v ~ /^[[{][A-Za-z0-9_., :{}\[\]\/-]*[\]}]$/) return 1 # a closed alphabet inside flow: no quote, no ? & * ! tag or comment
   if (v ~ /^["\047\[{&*!|>%@`#?]/) return 0
   if (v ~ /(^|[ ]):([ ]|$)/ || v ~ / #/ || v ~ /:$/) return 0
   if (v ~ /["\047\[\]{}]/) norm = substr(r, 1, length(r) - length(v)) "x" # a plain value is text: strip() never tokenises it (quotes and brackets inside it are literal)
@@ -89,7 +89,8 @@ function close_job() {
   }
   job = ""; jtm = ""; sum = 0; jobsteps = 0; insteps = 0; stepind = 0
 }
-function steptm(v) { # v is the text after "timeout-minutes:"; a positive integer only
+function steptm(v) { if (stm[nsteps]++) dupk = dupk + 1 # a second timeout-minutes on one step: the last one wins in YAML, so refuse
+  # v is the text after "timeout-minutes:"; a positive integer only
   if (v ~ /^[ \t]*[1-9][0-9]*[ \t]*$/) { hastm = 1; sum += v + 0 }
 }
 BEGIN { bsind = -1 }
@@ -128,6 +129,7 @@ BEGIN { bsind = -1 }
   if (line ~ /(^[ \t]*(-[ \t]+)*|:[ \t]+)[!&*]/) tag = tag + 1
   else if (noq ~ /[{[,][ \t]*[!&*]/ || noq ~ /:[ \t]*[!&*]/) tag = tag + 1 # tag, anchor or alias inside a flow collection
   if (line ~ /^[ \t]*(-[ \t]+)*\?([ \t]|$)/) qkey = qkey + 1
+  if (line ~ /^[ \t]*(-[ \t]+)*[\042\047](timeout-minutes|steps)[\042\047][ \t]*:/) qtk = qtk + 1 # a quoted key the plain-key rules below would not see
   t = noq
   if (fdepth > 0 && ind == 0) flowcont = flowcont + 1
   fdepth = endd; if (negd > 0) { negflow = negflow + 1; negd = 0 } # the depth strip() tracked, in order, not a raw bracket count
@@ -145,7 +147,7 @@ BEGIN { bsind = -1 }
   if (jind == 0 && !isdash) jind = ind
   if (!isdash && ind < jind) { close_job(); odd = odd " " substr(line, 1, 30); next }
   if (ind == jind && !isdash) { # a job key; the first job's indent is the file's job indent
-    if (line ~ /^ *[^ \t][^:]*:[ \t]*$/) { close_job(); job = line; sub(/^ +/, "", job); sub(/[ \t]*:$/, "", job); jseen = 0 }
+    if (line ~ /^ *[^ \t][^:]*:[ \t]*$/) { close_job(); job = line; sub(/^ +/, "", job); sub(/[ \t]*:$/, "", job); jseen = 0; if (jobseen[job]++) dupk = dupk + 1 }
     else { close_job(); odd = odd " " substr(line, 1, 30) }
     next
   }
@@ -157,9 +159,10 @@ BEGIN { bsind = -1 }
     close_step(); insteps = 0
     if (isbs) blockhdr = blockhdr " " job
     if (line ~ /^ *timeout-minutes[ \t]*:/) {
+      if (jtmseen[job]++) dupk = dupk + 1
       v = line; sub(/^ *timeout-minutes[ \t]*:/, "", v)
       if (v ~ /^[ \t]*[1-9][0-9]*[ \t]*$/) jtm = v + 0
-    } else if (line ~ /^ *steps[ \t]*:[ \t]*$/) { insteps = 1; stepind = 0 }
+    } else if (line ~ /^ *steps[ \t]*:[ \t]*$/) { insteps = 1; stepind = 0; if (stseen[job]++) dupk = dupk + 1 }
     else if (line ~ /^ *steps[ \t]*:/) flow = flow " " job
     next
   }
@@ -181,6 +184,8 @@ END {
   close_job()
   unj = 0
   if (shp + 0 > 0) { print "UNJUDGED: line outside the judged YAML subset (" shp " lines, first at line " shp1 ")"; unj = 1 }
+  if (dupk + 0 > 0) { print "UNJUDGED: a repeated timeout-minutes or steps key in one job or step (" dupk ")"; unj = 1 }
+  if (qtk + 0 > 0) { print "UNJUDGED: quoted timeout-minutes or steps key (" qtk " lines)"; unj = 1 }
   if (cont + 0 > 0) { print "UNJUDGED: a value continued on a deeper-indented line (" cont " lines)"; unj = 1 }
   if (brk + 0 > 0) { print "UNJUDGED: a YAML line break other than LF inside a line (" brk " lines)"; unj = 1 }
   if (onbs + 0 > 0) { print "UNJUDGED: block scalar under the on: key (" onbs " lines)"; unj = 1 }
@@ -442,6 +447,13 @@ EOF
   mkdir -p "$t/op"; printf 'on:\n  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    steps:\n      - run: x\n' > "$t/op/a=b.yml"; cp "$t/r35.yml" "$t/op/clean.yml"
   n=$((n + 1)); selfp="$here/$(basename -- "$0")"
   if (cd "$t/op" && bash "$selfp" "a=b.yml" < clean.yml > /dev/null 2>&1); then echo "FAIL case $n (awk operand): a=b.yml read as an assignment, not a file"; fails=$((fails + 1)); fi
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    timeout-minutes: 0\n    steps:\n      - run: echo hi\n        timeout-minutes: 10\n        timeout-minutes: 0\n' > "$t/r36.yml"; expect_unj "repeated timeout-minutes key" "$t/r36.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n    "steps":\n      - run: echo UNTIMED\n' > "$t/r37.yml"; expect_unj "quoted steps key after the plain one" "$t/r37.yml"
+  printf 'name: x\nenv: { ? &s schedule : 1 }\non: { workflow_dispatch: {}, ? *s : [{ cron: 5 20 * * * }] }\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n' > "$t/r38.yml"; expect_unj "explicit key and alias inside a one-line flow" "$t/r38.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo hi\n        timeout-minutes: 10\n        timeout-minutes: 0\n' > "$t/r39.yml"; expect_unj "repeated timeout-minutes key on one step only" "$t/r39.yml"
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo ok\n        timeout-minutes: 10\n  night:\n    steps:\n      - run: echo UNTIMED\n' > "$t/r40.yml"; expect_unj "repeated job key" "$t/r40.yml"
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
