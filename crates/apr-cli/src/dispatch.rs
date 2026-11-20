@@ -663,9 +663,15 @@ fn dispatch_inspection_commands(cli: &Cli) -> Option<Result<(), CliError>> {
             weights,
             json,
             quality,
+            no_weights,
         } => {
             let (v, f, w, j, q) = (*vocab, *filters, *weights, *json || cli.json, *quality);
-            crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j, q))
+            if *no_weights {
+                // #7330: config + index only; never opens a shard.
+                crate::commands::inspect_families::run_no_weights(file.as_ref(), j)
+            } else {
+                crate::pipe::with_stdin_support(file, |p| inspect::run(p, v, f, w, j, q))
+            }
         }
 
         // GH-685: forward cli.verbose to debug
