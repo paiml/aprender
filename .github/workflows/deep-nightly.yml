@@ -1,6 +1,3 @@
-
-      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
-        run: bash scripts/check_apr_cli_no_default_features.sh
 # deep-nightly -- the nightly PRODUCERS for three release-day deep lanes (#4718, parent #4678).
 #
 # WHY. scripts/release/nightly_train.sh does not re-run anything: it reads, for one commit C,
@@ -130,6 +127,9 @@ jobs:
           echo "$verdict (standing #3176 class is inside it)"
           tail -n 40 deep/deep-nodefault.log
           [ "$vrc" = 0 ] || { echo "::error::--no-default-features RED: $verdict"; exit 1; }
+
+      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
+        run: bash scripts/check_apr_cli_no_default_features.sh
 
       - name: Publish the log
         if: always()
