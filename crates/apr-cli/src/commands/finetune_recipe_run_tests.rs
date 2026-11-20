@@ -561,6 +561,11 @@ fn wgpu_run_keeps_seed_under_validated_not_applied() {
         cfg!(feature = "wgpu"),
         "the WGSL path reads no heldout file"
     );
+    assert_eq!(
+        receipt.validated_not_applied.contains(&"training.warmup"),
+        cfg!(feature = "wgpu"),
+        "the WGSL path reads no training.warmup"
+    );
     flags.gpu_backend = "cuda";
     let (_, receipt) =
         crate::commands::finetune::recipe_receipt_for_run(&path, &flags).expect("receipt");
