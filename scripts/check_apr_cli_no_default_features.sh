@@ -100,7 +100,7 @@ run_step() {
     [[ "$rc" -eq 0 ]] && return 0
     # A rustc diagnostic is `error[E....]:` or cargo's own `error: could not compile`; every other `error:`
     # line (package cache lock, failed to get, no matching package, ...) is cargo/host, not a verdict.
-    if grep -qE "^error\[E[0-9]+\]:|^error: could not compile" "$log"; then
+    if grep -qE "^error\[E[0-9]+\]:|^error: could not compile|^test result: FAILED" "$log"; then
         echo "FAIL: $label exited $rc" >&2
         grep -E "^error" "$log" | head -n 20 >&2 || true
         exit 1
@@ -111,6 +111,9 @@ run_step() {
 }
 
 run_step "cargo build -p apr-cli --no-default-features" build
+# EG-5 (I-3): `apr rerank` refuses a GGUF file without `inference` (the stub gate refuses by magic). The
+# lib's test target does not compile here, so this is an integration test that drives the built binary.
+run_step "cargo test --test rerank_refuses_gguf_without_inference" test --test rerank_refuses_gguf_without_inference
 # Not checked here: `cargo test -p apr-cli --no-default-features --lib --no-run` has 70+ pre-existing
 # errors in other test modules (golden_output, check, tokenize, ...); unfiled follow-up (no ticket, backlog capped); it joins this script once they are fixed.
-echo "OK: apr-cli builds with --no-default-features"
+echo "OK: apr-cli builds with --no-default-features and rerank refuses GGUF"
