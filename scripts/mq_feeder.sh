@@ -29,7 +29,8 @@ pick() {
 gate_paths() { grep -qE '(^|/)(Cargo\.toml$|build\.rs$|\.?clippy\.toml$|deny\.toml$|rust-toolchain|\.cargo/|\.?rustfmt\.toml$|\.gitignore$|\.?codecov\.yml$)|^(\.github/|ci/|scripts/|Cargo\.toml$|Cargo\.lock$|Makefile$|rust-toolchain|\.config/nextest|\.cargo/|deny\.toml$|clippy\.toml$|\.clippy\.toml$|\.pmat-gates\.toml$)' <<<"$1"; }
 # (There is no dissent word list: every review at HEAD that is not a qualifying PASS vetoes.)
 # Review format the feeder accepts (C48 tiers, C61-2). One review at HEAD whose body is "<who> ([sN, ]non-author): PASS|APPROVE(D)" --
-#   LOW  (no gate content): one non-author PASS;  HIGH (gate content): one PASS from an Opus lane (the <who> BEGINS with an Opus lane name).
+#   LOW  (no gate content): one non-author PASS;  HIGH (gate content): one PASS from an Opus lane (the <who> BEGINS with an Opus lane name)
+#   OR a valid agy receipt at exactly HEAD from gemini-4-hydrogen-high (agy_receipts; AGY-HYDROGEN 2026-11-20, PMAT-5843).
 # The retired "quorum 3/3 PASS" receipt counts for nothing. The verdict is followed ONLY by optional punctuation and an
 # optional " @<sha>" up to the end of the body. A body with a quote mark, a negation/deferral/failure word or a
 # carried-over marker anywhere is rejected, so quoted evidence and "APPROVE once X lands" never count.
@@ -116,11 +117,55 @@ gate_changed() {
   done <<<"$1"
   return 1
 }
+# agy_receipts PR HEAD -> "<pass> <fail>": agy review receipts for PR at EXACTLY HEAD whose reviewer_model is the ruled review model
+# (AGY-HYDROGEN 2026-11-20: gemini-4-hydrogen-high), counted as a non-author PASS in either tier in place of the Opus lane (PMAT-5843).
+# Files: $MQ_AGY_DIR/quorum-aprender-<pr>-agy-*-lane<N>-<sha7>*.md. A receipt counts only if it is valid: LF-only, no control byte,
+# valid UTF-8, one each of lane (digits >= 1) / reviewer_model / head|sha / verdict, no non-ASCII on or before the colon of a line
+# that is or could be read as a field line, reviewer_model == the ruled model and != MQ_AUTHOR_MODEL, head a >=7-char prefix of HEAD.
+# A valid receipt at HEAD saying FAIL is a veto (any text_only value: TEXT1 is not honoured here). Anything invalid is ignored.
+AGY_MODEL="${MQ_AGY_MODEL:-gemini-4-hydrogen-high}"
+agy_receipts() {
+  local pr=$1 head=$2 dir=${MQ_AGY_DIR:-/mnt/nvme-raid0/cop-inbox/handoff/agy} f p=0 x=0 v
+  [ "${#head}" -ge 7 ] || { echo "0 0"; return; }
+  for f in "$dir"/quorum-aprender-"$pr"-agy-*-lane[0-9]*-"${head:0:7}"*.md; do
+    [ -f "$f" ] || continue
+    v=$(agy_receipt_verdict "$f" "$head") || continue
+    case "$v" in PASS) p=$((p+1));; FAIL) x=$((x+1));; esac
+  done
+  echo "$p $x"
+}
+# agy_receipt_verdict FILE HEAD -> prints PASS|FAIL for a valid receipt at HEAD from the ruled model; rc 1 when invalid.
+agy_receipt_verdict() {
+  local f=$1 head=$2
+  [ -r "$f" ] || return 1
+  # CR, NUL, ESC, DEL, any C0 but tab and LF. Byte-exact via tr+cmp: grep and bash variables both drop or skip NULs.
+  LC_ALL=C tr -d '\000-\010\013-\037\177' < "$f" | cmp -s - "$f" || return 1
+  iconv -f UTF-8 -t UTF-8 "$f" >/dev/null 2>&1 || return 1
+  # invisible/format characters anywhere (review-depth lane-verdict rules): C1, soft hyphen, zero-width, bidi, U+2028/2029,
+  # word-joiner/invisibles, BOM, variation selectors, tags, combining grapheme joiner, Mongolian vowel separator
+  LC_ALL=C grep -qP '\xc2[\x80-\x9f\xad]|\xcd\x8f|\xe1\xa0\x8e|\xe2\x80[\x8b-\x8f\xa8-\xae]|\xe2\x81[\xa0-\xa4\xa6-\xaf]|\xef\xbb\xbf|\xef\xb8[\x80-\x8f]|\xf3\xa0[\x80-\x87]' "$f" && return 1
+  LC_ALL=C awk -v head="$head" -v model="$AGY_MODEL" -v author="${MQ_AUTHOR_MODEL:-claude-sonnet-5-5}" '
+    function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
+    { line = $0; hi = (line ~ /[\200-\377]/); pre = line; sub(/:.*/, "", pre)
+      if (hi) {   # a non-ASCII byte on a line that is or could be a field line: reject
+        a = line; gsub(/[\200-\377]/, "", a); a = tolower(a)
+        if (a ~ /^[ \t]*(lane|reviewer_model|sha|head|verdict|text_only)[ \t]*:/ || (index(line, ":") && pre ~ /[\200-\377]/ && length(pre) <= 24)) bad = 1 }
+      l = tolower(line)
+      if (l !~ /^[ \t]*(lane|reviewer_model|sha|head|verdict|text_only)[ \t]*:/) next
+      k = l; sub(/[ \t]*:.*/, "", k); k = trim(k); val = line; sub(/^[^:]*:/, "", val); val = trim(val)
+      if (k == "sha") k = "head"
+      n[k]++; v[k] = val }
+    END { if (bad || n["lane"] != 1 || n["reviewer_model"] != 1 || n["head"] != 1 || n["verdict"] != 1 || n["text_only"] > 1) exit 1
+      if (v["lane"] !~ /^[0-9]+$/ || v["lane"] + 0 < 1) exit 1
+      if (v["reviewer_model"] != model || v["reviewer_model"] == author) exit 1
+      h = tolower(v["head"]); if (length(h) < 7 || h !~ /^[0-9a-f]+$/ || index(tolower(head), h) != 1) exit 1
+      if (v["verdict"] == "PASS") print "PASS"; else if (v["verdict"] == "FAIL") print "FAIL"; else exit 1 }' "$f"
+}
 # needs_seats PR HEAD -> prints the skip reason and returns 0 (skip) unless HEAD holds the PASS its tier needs and no review
 # at HEAD carries a FAIL/request-changes (C48: LOW = one non-author PASS, HIGH = gate content = one Opus PASS). FAILS CLOSED:
 # unreadable file list or review list, or an empty HEAD, means skip.
 needs_seats() {
-  local f fj rv rc q tier
+  local f fj rv rc q tier ap ax
   [ -n "$2" ] || { echo "skip (head unreadable)"; return 0; }
   fj=$(gh api "repos/$REPO/pulls/$1/files" --paginate --jq '.[]|{filename,status,previous_filename,patch}|tojson' 2>/dev/null) || { echo "skip (files unreadable)"; return 0; }
   f=$(jq -r '.filename, (.previous_filename // empty)' <<<"$fj" 2>/dev/null) || { echo "skip (files unparsable)"; return 0; }
@@ -131,8 +176,11 @@ needs_seats() {
   # fail closed (C48): EVERY review at HEAD that is not a qualifying PASS vetoes, whatever its wording (no word list to dodge)
   rc=$(( $(grep -c . <<<"$rv") - $(pass_count "$rv") ))
   if [ "$tier" = HIGH ]; then q=$(pass_count "$rv" opus); else q=$(pass_count "$rv"); fi
+  # AGY-HYDROGEN (PMAT-5843): a valid hydrogen receipt at exactly HEAD is a non-author PASS in place of the Opus lane; its FAIL vetoes
+  read -r ap ax <<<"$(agy_receipts "$1" "$2")"
+  q=$(( ${q:-0} + ${ap:-0} )); rc=$(( ${rc:-0} + ${ax:-0} ))
   { [ "${rc:-0}" -eq 0 ] && [ "${q:-0}" -ge 1 ]; } && return 1
-  echo "skip ($tier tier at ${2:0:10}: $q/1 $([ "$tier" = HIGH ] && echo Opus || echo non-author) PASS, $rc other/dissenting review(s))"
+  echo "skip ($tier tier at ${2:0:10}: $q/1 $([ "$tier" = HIGH ] && echo Opus/Hydrogen || echo non-author) PASS, $rc other/dissenting review(s))"
 }
 inbox() { mkdir -p "$STATE"; printf '%s %s\n' "$(date +%s)" "$1" >> "$STATE/acts.log"; printf '%s | %s | %s | %s\n' "$(date -u +%H:%MZ)" mq-feeder PMAT-5843 "$1" >> "$INBOX"; }
 # ci_jobs MODE WORKFLOW -> job ids and display names under `jobs:` (MODE all), or only those a pull_request event can never run
@@ -249,6 +297,71 @@ if [ "${1:-}" = --self-test ]; then
   eq 'gate content + Opus PASS + non-author FAIL at head -> skip (#6693 fixture)' "$(FILES=scripts/x.sh REVIEWS="${QO}COMMENTED\tSeat 2 (s3, non-author): FAIL @abcdef1234\n" ns)" 0
   eq 'non-gate + Opus PASS -> armable (an Opus PASS is a non-author PASS)' "$(REVIEWS="$QO" ns)" 1
   eq 'non-gate + non-author PASS + non-author FAIL -> skip' "$(REVIEWS="${Q3}COMMENTED\tSeat 2 (s3, non-author): FAIL\n" ns)" 0
+  # AGY-HYDROGEN (PMAT-5843): receipt-file case table. hns runs ns with MQ_AGY_DIR pointing at a scratch dir of receipts.
+  ad=$(mktemp -d) || exit 2
+  mkr() { # mkr NAME HEAD MODEL VERDICT [extra-line]
+    printf 'header\n--- AGY.out verbatim ---\nfindings\n\nVERDICT: %s\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n' "$4" "$2" "$3" > "$ad/$1"
+    [ -z "${5:-}" ] || printf '%s\n' "$5" >> "$ad/$1"; }
+  hns() { MQ_AGY_DIR=$ad ns; }
+  H=gemini-4-hydrogen-high; hr=quorum-aprender-1-agy-hydrogen-lane1-abcdef1.md
+  mkr $hr "$TH" $H PASS
+  eq 'agy: Hydrogen PASS at head, gate PR -> armable' "$(FILES=scripts/x.sh REVIEWS='' hns)" 1
+  eq 'agy: Hydrogen PASS at head, non-gate PR -> armable' "$(REVIEWS='' hns)" 1
+  eq 'agy: Hydrogen PASS + non-author review FAIL -> skip' "$(FILES=scripts/x.sh REVIEWS='COMMENTED\tSeat 2 (s3, non-author): FAIL\n' hns)" 0
+  eq 'agy: no receipt, gate PR -> skip' "$(FILES=scripts/x.sh REVIEWS='' MQ_AGY_DIR="$ad/none" ns)" 0
+  eq 'agy: no receipt, non-author PASS on gate PR still skips (unchanged)' "$(FILES=scripts/x.sh REVIEWS="$Q3" MQ_AGY_DIR="$ad/none" ns)" 0
+  eq 'agy: no receipt, Opus PASS on gate PR still arms (unchanged)' "$(FILES=scripts/x.sh REVIEWS="$QO" MQ_AGY_DIR="$ad/none" ns)" 1
+  mkr $hr 1111111222222233333334444444555555566666 $H PASS
+  eq 'agy: Hydrogen PASS at an old head sha -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rm -f "${ad:?}/${hr:?}"; mkr quorum-aprender-1-agy-hydrogen-lane1-1111111.md "$TH" $H PASS
+  eq 'agy: Hydrogen PASS filed under another sha7 -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rm -f "${ad:?}"/quorum-aprender-1-agy-hydrogen-lane1-1111111.md
+  mkr $hr "$TH" $H FAIL
+  eq 'agy: Hydrogen FAIL at head -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  eq 'agy: Hydrogen FAIL at head vetoes an Opus PASS' "$(FILES=scripts/x.sh REVIEWS="$QO" hns)" 0
+  mkr $hr "$TH" $H FAIL 'text_only: yes'
+  eq 'agy: Hydrogen FAIL with a repeated text_only -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS 'text_only: yes'
+  eq 'agy: Hydrogen PASS with a repeated text_only -> invalid, skip (kills a dropped duplicate-text_only check)' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  printf 'VERDICT: FAIL\ntext_only: yes\nhead: %s\nlane: 1\nreviewer_model: %s\n' "$TH" $H > "$ad/$hr"
+  eq 'agy: single text_only: yes FAIL still vetoes an Opus PASS (TEXT1 not honoured; kills honouring it)' "$(FILES=scripts/x.sh REVIEWS="$QO" hns)" 0
+  eq 'agy: single text_only: yes FAIL still vetoes a non-gate Opus PASS' "$(REVIEWS="$QO" hns)" 0
+  # control and invisible bytes, written with printf (a bash variable cannot carry a NUL)
+  rcv() { printf "$1" "$TH" $H > "$ad/$hr"; }   # rcv FORMAT (two %s: head, model)
+  rcv 'VERDICT: PASS\n\000VERDICT: FAIL\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: NUL-prefixed second verdict after PASS -> skip (PMAT-5843 L1)' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: FAIL\000\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: trailing NUL on FAIL -> invalid, no veto of an Opus PASS' "$(FILES=scripts/x.sh REVIEWS="$QO" hns)" 1
+  rcv 'VERDICT: PASS\n\033[0m\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: ESC byte -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\n\177\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: DEL byte -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\n\014\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: form feed -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\ntab\there\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: a tab in prose stays armable' "$(FILES=scripts/x.sh REVIEWS='' hns)" 1
+  for inv in '\342\200\213' '\342\200\216' '\342\200\256' '\342\200\250' '\342\200\251' '\342\201\240' '\357\273\277' '\357\270\217' '\363\240\200\201' '\302\205' '\302\255' '\315\217'; do
+    rcv "VERDICT: PASS\\nprose ${inv} prose\\ntext_only: no\\nhead: %s\\nlane: 1\\nreviewer_model: %s\\n"
+    eq "agy: invisible/format char $inv in prose -> skip" "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  done
+  rcv 'VERDICT: PASS\ntext_only: no\nhead: %s\nlane: 1abc\nreviewer_model: %s\n'; eq 'agy: lane 1abc -> skip (kills dropped digits-only check)' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  printf 'VERDICT: PASS\ntext_only: no\nhead: 2345678\nlane: 1\nreviewer_model: %s\n' $H > "$ad/$hr"; eq 'agy: head a non-prefix substring of HEAD -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\ntext_only: n\303\266\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: non-ASCII after the colon of a field line -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS
+  eq 'agy: reviewer_model == author model -> skip' "$(FILES=scripts/x.sh REVIEWS='' MQ_AUTHOR_MODEL=$H hns)" 0
+  mkr $hr "$TH" gemini-4-neon-high PASS
+  eq 'agy: neon PASS (not the ruled model) on gate PR -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" claude-opus-5-5 PASS
+  eq 'agy: other model id in a receipt -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  eq 'agy: Opus review PASS still arms with an unrelated receipt' "$(FILES=scripts/x.sh REVIEWS="$QO" hns)" 1
+  mkr $hr "$TH" $H PASS 'verdict: PASS'; eq 'agy: duplicate verdict field -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS 'lane: 2'; eq 'agy: duplicate lane field -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS "reviewer_model: $H"; eq 'agy: duplicate reviewer_model (same value) -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS "sha: $TH"; eq 'agy: head and sha both present -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS $'\r'; eq 'agy: CR byte -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS $'ver\xc3\xa9dict: FAIL'; eq 'agy: non-ASCII lookalike field line -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS $'\xef\xbd\x96erdict: PASS'; eq 'agy: fullwidth lookalike key -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS $'\xff\xfe'; eq 'agy: invalid UTF-8 -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS $'prose with an em dash \xe2\x80\x94 is fine'; eq 'agy: non-ASCII prose (valid UTF-8) stays armable' "$(FILES=scripts/x.sh REVIEWS='' hns)" 1
+  printf 'VERDICT: PASS\ntext_only: no\nhead: %s\nlane: 0\nreviewer_model: %s\n' "$TH" $H > "$ad/$hr"; eq 'agy: lane 0 -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  printf 'VERDICT: PASS\ntext_only: no\nhead: abcdef\nlane: 1\nreviewer_model: %s\n' $H > "$ad/$hr"; eq 'agy: head shorter than 7 -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  printf 'text_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n' "$TH" $H > "$ad/$hr"; eq 'agy: no verdict line -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rm -f "${ad:?}/${hr:?}"; mkr quorum-aprender-2-agy-hydrogen-lane1-abcdef1.md "$TH" $H PASS; eq 'agy: receipt for another PR -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rm -rf "${ad:?}"
   eq 'retired quorum 3/3 receipt on a non-gate PR -> skip' "$(REVIEWS="$QOLD" ns)" 0
   eq 'retired quorum 3/3 receipt on a gate PR -> skip' "$(FILES=scripts/x.sh REVIEWS="$QOLD" ns)" 0
   eq 'PASS from a review not marked non-author -> skip' "$(REVIEWS='COMMENTED\tSeat 1 (s1): PASS\n' ns)" 0
