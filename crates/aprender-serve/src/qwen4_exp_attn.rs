@@ -6,7 +6,8 @@
 //! `modeling_qwen4_exp.py` (`Qwen4ExpTextQSAIndexer`, `Qwen4ExpTextAttention`,
 //! `Qwen4ExpTextGatedResidual`). Pure fp32 CPU functions on row-major slices
 //! with explicit shapes; one sequence per call (batches are looped by the caller).
-//! Not covered: KV/indexer cache decode (queries == keys; decode and the KV cache are out of scope), bf16 islands.
+//! Decode (#7332): [`AttnCache`] + [`indexed_attention_step`] carry the KV and
+//! indexer-key cache one token at a time. Not covered: bf16 islands.
 
 use crate::gguf::forward_qwen35::apply_sigmoid_gate;
 use crate::gguf::ops::{rms_norm_unit_offset, softmax};
@@ -360,16 +361,18 @@ fn project_qkv(
 }
 
 /// Softmax attention (GQA) of one query head over the allowed keys.
+/// `q_tok` is the query row `[n_heads * head_dim]`; `k`/`v` are `[tokens, n_kv * head_dim]`.
 fn attend_head(
     a: &AttentionShape,
-    pr: &Projected,
-    t: usize,
+    q_tok: &[f32],
+    kv_rows: (&[f32], &[f32]),
     head: usize,
     allowed: &[bool],
 ) -> Vec<f32> {
-    let (d, nq, nk) = (a.head_dim, a.n_heads * a.head_dim, a.n_kv * a.head_dim);
+    let (d, nk) = (a.head_dim, a.n_kv * a.head_dim);
+    let (k, v) = kv_rows;
     let kv = head / (a.n_heads / a.n_kv);
-    let q = &pr.q[t * nq + head * d..t * nq + (head + 1) * d];
+    let q = &q_tok[head * d..(head + 1) * d];
     let keys: Vec<usize> = (0..allowed.len()).filter(|&i| allowed[i]).collect();
     if keys.is_empty() {
         // A query that sees no key (e.g. a left-pad row): zeros, like torch>=2.5 sdpa safe softmax.
@@ -381,7 +384,7 @@ fn attend_head(
         .iter()
         .map(|&j| {
             q.iter()
-                .zip(&pr.k[j * nk + kv * d..j * nk + (kv + 1) * d])
+                .zip(&k[j * nk + kv * d..j * nk + (kv + 1) * d])
                 .map(|(x, y)| x * y)
                 .sum::<f32>()
                 * scale
@@ -392,7 +395,7 @@ fn attend_head(
     for (&j, wj) in keys.iter().zip(&w) {
         for (o, v) in out
             .iter_mut()
-            .zip(&pr.v[j * nk + kv * d..j * nk + (kv + 1) * d])
+            .zip(&v[j * nk + kv * d..j * nk + (kv + 1) * d])
         {
             *o += wj * v;
         }
@@ -426,12 +429,90 @@ pub fn indexed_attention(
             .map(|j| sel[t * seq + j] && visible[t * seq + j])
             .collect();
         let mut o: Vec<f32> = (0..a.n_heads)
-            .flat_map(|hd| attend_head(a, &pr, t, hd, &allowed))
+            .flat_map(|hd| {
+                attend_head(a, &pr.q[t * nq..(t + 1) * nq], (&pr.k, &pr.v), hd, &allowed)
+            })
             .collect();
         apply_sigmoid_gate(&mut o, &pr.gate[t * nq..(t + 1) * nq]);
         out.extend(linear(p.o_proj, h, nq, &o));
     }
     Ok(out)
+}
+
+/// Decode-time cache of one `indexed_attention` layer for one sequence (#7332):
+/// post-RoPE keys and values, raw indexer keys, and the cos/sin of every cached
+/// position (the indexer re-pools blocks from the whole history each step and
+/// ropes a block at its first token's position).
+#[derive(Debug, Clone, Default)]
+pub struct AttnCache {
+    k: Vec<f32>,
+    v: Vec<f32>,
+    index_k: Vec<f32>,
+    cos: Vec<f32>,
+    sin: Vec<f32>,
+}
+
+impl AttnCache {
+    /// Empty cache (position 0).
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Cached tokens for a layer whose indexer head dim is `index_head_dim`.
+    pub fn len(&self, index_head_dim: usize) -> usize {
+        self.index_k.len() / index_head_dim.max(1)
+    }
+}
+
+/// One decode step of `Qwen4ExpTextAttention`: appends the token to `cache` and
+/// attends over the cached history.
+///
+/// `hidden` `[hidden]`, `cos`/`sin` `[rotary_dim]` at this position, `visible`
+/// `[pos + 1]` (this query's mask row over the cached tokens plus itself).
+/// Returns `[hidden]`; equal to row `pos` of [`indexed_attention`] on the prefix.
+pub fn indexed_attention_step(
+    p: &AttentionParams,
+    a: &AttentionShape,
+    cache: &mut AttnCache,
+    hidden: &[f32],
+    cos: &[f32],
+    sin: &[f32],
+    visible: &[bool],
+) -> OpResult<Vec<f32>> {
+    validate_attention(p, a)?;
+    validate_indexer(&p.indexer, &a.indexer, hidden, cos, sin, &[true])?;
+    ensure("rotary_dim", usize::from(cos.len() <= a.head_dim), 1)?;
+    let pos = cache.len(a.indexer.head_dim);
+    ensure("visible", visible.len(), pos + 1)?;
+    if pos > 0 {
+        ensure("cos (cached rotary_dim)", cos.len() * pos, cache.cos.len())?;
+    }
+    let (q_idx, k_idx) = indexer_qk(&p.indexer, &a.indexer, hidden, cos, sin);
+    let pr = project_qkv(p, a, hidden, cos, sin);
+    cache.index_k.extend(k_idx);
+    cache.cos.extend_from_slice(cos);
+    cache.sin.extend_from_slice(sin);
+    cache.k.extend_from_slice(&pr.k);
+    cache.v.extend_from_slice(&pr.v);
+    let sel = select_row(
+        &p.indexer,
+        &a.indexer,
+        &q_idx,
+        &cache.index_k,
+        visible,
+        (&cache.cos, &cache.sin),
+    );
+    let allowed: Vec<bool> = sel.iter().zip(visible).map(|(s, v)| *s && *v).collect();
+    let mut o: Vec<f32> = (0..a.n_heads)
+        .flat_map(|hd| attend_head(a, &pr.q, (&cache.k, &cache.v), hd, &allowed))
+        .collect();
+    apply_sigmoid_gate(&mut o, &pr.gate);
+    Ok(linear(
+        p.o_proj,
+        a.indexer.hidden,
+        a.n_heads * a.head_dim,
+        &o,
+    ))
 }
 
 /// `Qwen4ExpTextGatedResidual` weights.
