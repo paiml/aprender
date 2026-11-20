@@ -56,10 +56,10 @@ function strip(s,   i, n, c, q, p, pp, j, L, dd, lc, k) { # drop a trailing comm
   return s
 }
 function shape_ok(r,   v, k, rest) { # one line is a blank, a comment, "key:", "key: V", "- V" or "- key: V" with a simple V
-  sub(/[ \t]+$/, "", r)
+  sub(/[ \t]+$/, "", r); norm = r
   if (r ~ /^[ ]*(#.*)?$/) return 1
   if (r ~ /\t/) return 0
-  if (match(r, /[ ]#/) && r !~ /^[ ]*#/) { r = substr(r, 1, RSTART - 1); sub(/[ \t]+$/, "", r) } # a trailing comment; a quote before it makes the prefix fail below
+  if (match(r, /[ ]#/) && r !~ /^[ ]*#/) { r = substr(r, 1, RSTART - 1); sub(/[ \t]+$/, "", r); norm = r } # a trailing comment; a quote before it makes the prefix fail below
   if (match(r, /^ *(- +)*/)) rest = substr(r, RLENGTH + 1); else return 0
   if (rest ~ /^[A-Za-z0-9_.-]+:/) v = substr(rest, index(rest, ":") + 1)
   else if (rest ~ /^"[^"\\]*" *:/) { match(rest, /^"[^"\\]*" *:/); v = substr(rest, RLENGTH + 1) }
@@ -76,6 +76,7 @@ function shape_ok(r,   v, k, rest) { # one line is a blank, a comment, "key:", "
   if (v ~ /^[[{][^"\047#]*[\]}]$/) return 1
   if (v ~ /^["\047\[{&*!|>%@`#?]/) return 0
   if (v ~ /(^|[ ]):([ ]|$)/ || v ~ / #/ || v ~ /:$/) return 0
+  if (v ~ /["\047\[\]{}]/) norm = substr(r, 1, length(r) - length(v)) "x" # a plain value is text: strip() never tokenises it (quotes and brackets inside it are literal)
   return 1
 }
 function close_step() { if (step && !hastm) miss = miss " " name; step = 0 }
@@ -108,7 +109,7 @@ BEGIN { bsind = -1 }
   # shapes cannot be desynced, because nothing outside it is tokenised at all.
   if (!shape_ok($0)) { shp = shp + 1; if (shp == 1) shp1 = FNR }
   esc = 0
-  line = strip($0)
+  line = strip(norm)
   if (esc) escn++
   if (uq) mlq++
   if (line ~ /^[ \t]*$/) next
@@ -213,7 +214,7 @@ AWK
 check() { # workflow -> prints findings, rc 0 clean / 1 found
   local wf=$1 out arc=0
   if [ ! -f "$wf" ] || [ ! -r "$wf" ]; then echo "workflow missing or unreadable: $wf"; return 1; fi
-  out=$(awk "$AWK_PROG" "$wf") || arc=$?
+  out=$(awk "$AWK_PROG" < "$wf") || arc=$?
   printf '%s\n' "$out"
   return "$arc"
 }
@@ -436,6 +437,11 @@ EOF
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      |\n      - run: echo FAKE\n        timeout-minutes: 10\n' > "$t/r33.yml"; expect_unj "next-line block scalar header under steps" "$t/r33.yml"
 
   printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n      - minutes\n    steps:\n      - run: echo hi\n        timeout-minutes: 10\n          - minutes\n' > "$t/r34.yml"; expect_unj "dash continuation of a plain value" "$t/r34.yml"
+
+  printf 'name: x\non:\n  workflow_dispatch:\njobs:\n  night:\n    timeout-minutes: 25\n    steps:\n      - run: echo "v ${FOO}" # schedule: "\n        timeout-minutes: 10\n' > "$t/r35.yml"; expect "quote and brace in a plain value, comment after it" "$t/r35.yml" pass
+  mkdir -p "$t/op"; printf 'on:\n  schedule:\n    - cron: "5 20 * * *"\njobs:\n  night:\n    steps:\n      - run: x\n' > "$t/op/a=b.yml"; cp "$t/r35.yml" "$t/op/clean.yml"
+  n=$((n + 1)); selfp="$here/$(basename -- "$0")"
+  if (cd "$t/op" && bash "$selfp" "a=b.yml" < clean.yml > /dev/null 2>&1); then echo "FAIL case $n (awk operand): a=b.yml read as an assignment, not a file"; fails=$((fails + 1)); fi
 
   # real-workflow mutants
   awk '/^  workflow_dispatch:/{print "  schedule:"; print "    - cron: \"5 20 * * *\""} {print}' "$good" > "$t/r1.yml"; expect "real workflow plus schedule" "$t/r1.yml" fail
