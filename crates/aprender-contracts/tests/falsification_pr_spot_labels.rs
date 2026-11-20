@@ -666,8 +666,11 @@ fn gate_enforces_mst(gate: &Mapping) -> bool {
 }
 
 /// Steps that may run before the guard step in `mg-reuse-self-test`: checkout, and the two scripts' exact `run` text.
-const EARLIER_RUNS: [&str; 3] = [
+const EARLIER_RUNS: [&str; 4] = [
     "bash scripts/ci_mg_reuse.sh --self-test",
+    // hermetic case table (#7298): scripts/ci_push_reuse.sh self_test writes only under its own mktemp dir; it has no
+    // GITHUB_ENV, GITHUB_PATH or GITHUB_OUTPUT write and no network call.
+    "bash scripts/ci_push_reuse.sh --self-test",
     "setsid --wait bash scripts/check_ci_wait_cancel.sh --self-test",
     "setsid --wait bash scripts/check_ci_wait_cancel.sh",
 ];
