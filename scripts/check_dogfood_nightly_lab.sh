@@ -263,19 +263,22 @@ jobs:
 EOF
   }
   # expect NAME FILE want(pass|fail): runs the script itself as a subprocess, so rc and the PASS line are end to end
+  nl='
+'
+  has_line() { case "$nl$out" in *"$nl$1 "*) return 0 ;; esac; return 1; } # a line of $out starting with WORD and a space, no pipe
   expect() {
     n=$((n + 1)); rc=0
     out=$(bash "$0" "$2" 2>&1) || rc=$?
     case $3 in
-      pass) if [ "$rc" -ne 0 ] || ! printf '%s\n' "$out" | grep -q '^PASS '; then echo "FAIL case $n ($1): clean input rejected: $out"; fails=$((fails + 1)); fi ;;
-      fail) if [ "$rc" -eq 0 ] || printf '%s\n' "$out" | grep -q '^PASS '; then echo "FAIL case $n ($1): defect not caught (rc=$rc)"; fails=$((fails + 1)); fi ;;
+      pass) if [ "$rc" -ne 0 ] || ! has_line PASS; then echo "FAIL case $n ($1): clean input rejected: $out"; fails=$((fails + 1)); fi ;;
+      fail) if [ "$rc" -eq 0 ] || has_line PASS; then echo "FAIL case $n ($1): defect not caught (rc=$rc)"; fails=$((fails + 1)); fi ;;
       *) echo "FAIL case $n ($1): bad expectation"; fails=$((fails + 1)) ;;
     esac
   }
   expect_unj() { # NAME FILE: must exit 2 with an UNJUDGED line and never PASS
     n=$((n + 1)); rc=0
     out=$(bash "$0" "$2" 2>&1) || rc=$?
-    if [ "$rc" -ne 2 ] || ! printf '%s\n' "$out" | grep -q '^UNJUDGED ' || printf '%s\n' "$out" | grep -q '^PASS '; then echo "FAIL case $n ($1): not refused as unjudged (rc=$rc)"; fails=$((fails + 1)); fi
+    if [ "$rc" -ne 2 ] || ! has_line UNJUDGED || has_line PASS; then echo "FAIL case $n ($1): not refused as unjudged (rc=$rc)"; fails=$((fails + 1)); fi
   }
   put() { base > "$t/$1.yml"; } # fresh base copy
 
