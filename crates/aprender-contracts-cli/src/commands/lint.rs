@@ -5,6 +5,7 @@ use provable_contracts::lint::rules::RuleSeverity;
 use provable_contracts::lint::shapes_gate::ShapesOptions;
 use provable_contracts::lint::trend;
 use provable_contracts::lint::{run_lint, GateDetail, LintConfig, LintReport};
+use provable_contracts::ontology::arming::ArmedGates;
 use provable_contracts::ontology::verdict::Verdict;
 
 use crate::contract_walk::{LintDeclined, LintRejected, ZeroContracts};
@@ -124,7 +125,7 @@ pub fn run(
     // printed — never `Result: PASS` over 0 contracts.
     refuse_empty_corpus(&report, contract_dir)?;
 
-    report.arm(&arming.armed);
+    report.arm(&with_requested_gates(&arming.armed, strict_test_binding));
     report.armed_monotone = Some(arming.monotone);
     report.armed_shapes_monotone = Some(arming.shapes_monotone);
 
@@ -706,6 +707,17 @@ fn meet_exit(report: &LintReport) -> Result<(), Box<dyn std::error::Error>> {
     }
 }
 
+/// PMAT-7357: `--strict-test-binding` asks for the gate, so its verdict enters this run's meet even when
+/// `lint-baseline.json` does not list it. Otherwise a printed `[ERROR] PV-VER-002` ends `Result: PASS`, exit 0.
+fn with_requested_gates(declared: &ArmedGates, strict_test_binding: bool) -> ArmedGates {
+    if !strict_test_binding || declared.is_armed("strict-test-binding") {
+        return declared.clone();
+    }
+    let mut names = declared.names().to_vec();
+    names.push("strict-test-binding".to_string());
+    ArmedGates::new(names)
+}
+
 /// PVL-1 (PMAT-1099): the corpus is EMPTY when the gate NAMED `validate` counted
 /// nothing. Only that gate carries the count (parsed + parse errors):
 /// `duplicate-stems` reuses the `Validate` detail shape with zeros as a
@@ -989,7 +1001,10 @@ fn run_watch(
         // corpus is refused (exit 2) at the first tick, never reported over.
         refuse_empty_corpus(&report, contract_dir)?;
         // ONT-6: the declared arming, re-read each tick; the monotone check is a one-shot run's job.
-        report.arm(&lint_arming::declared(contract_dir)?);
+        report.arm(&with_requested_gates(
+            &lint_arming::declared(contract_dir)?,
+            strict_test_binding,
+        ));
 
         if cache_stats {
             print_cache_stats(&report);
@@ -1189,6 +1204,17 @@ mod tests {
     }
 
     /// Refusal over reject over decline over pass, whichever order the gates ran in (#4588).
+    #[test]
+    fn requested_strict_test_binding_enters_the_meet() {
+        let d = ArmedGates::default_set();
+        assert!(!d.is_armed("strict-test-binding"));
+        assert!(!with_requested_gates(&d, false).is_armed("strict-test-binding"));
+        let a = with_requested_gates(&d, true);
+        assert!(a.is_armed("strict-test-binding"));
+        assert_eq!(a.names().len(), d.names().len() + 1);
+        assert_eq!(with_requested_gates(&a, true), a);
+    }
+
     #[test]
     fn meet_orders_refusal_reject_decline_pass() {
         assert!(meet(vec![pass(), pass()], 2).is_ok());
