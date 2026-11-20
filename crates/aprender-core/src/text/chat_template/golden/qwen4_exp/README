@@ -1,0 +1,6 @@
+Goldens for chat_template_qwen4_exp. Rendered from the published template
+https://huggingface.co/Qwen/Qwen3.8-Flash-Next/raw/main/chat_template.jinja
+(sha256 af16f654968d47d09a6c604e00370b12dbc21f76456f59c9e98b82e84d9f6375) with
+jinja2 3.0.3, a custom Environment registering `raise_exception` and an extension that
+renders {% generation %}...{% endgeneration %} transparently. Inputs per file name:
+messages S=system U=user A=assistant(reasoning_content), add_generation_prompt=True unless noted.
