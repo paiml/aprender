@@ -8,7 +8,7 @@
 # on it and the job's `if:` does not exclude it. The `if:` is read for `github.event_name`
 # literals only: `!= 'X'` removes X; `== 'X'` (no `||` in the expression) keeps only the
 # listed events; a `||` expression is the UNION of its disjuncts (a disjunct naming no event runs everywhere); `'X' == github.event_name`
-# is read like `github.event_name == 'X'`; a negated group `!( .. )` around event_name is unreadable and fails closed (rc 2).
+# is read like `github.event_name == 'X'`; any other use of github.event_name (inside a function call such as contains(.., github.event_name), or compared to anything but a quoted literal) is unreadable and fails closed (rc 2); quoted strings are masked first so a ( ) ! | inside one is not read as grammar.
 # A missing or empty workflow dir, a workflow that does not parse, or a workflows set with no job also fail closed (rc 2, never OK).
 #
 # VIOLATION 1: job is on push, and not on pull_request. A merge_group run does not count: the queue
@@ -73,6 +73,8 @@ rows() {
             | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*==\\s*github\\.event_name"; if .n == $x then "1" else "0" end)
             | gsub("github\\.event_name\\s*!=\\s*\u0027(?<n>[a-z_]+)\u0027"; if .n == $x then "0" else "1" end)
             | gsub("\u0027(?<n>[a-z_]+)\u0027\\s*!=\\s*github\\.event_name"; if .n == $x then "0" else "1" end)
+            | gsub("\u0027[^\u0027]*\u0027"; " S ")
+            | if test("github\\.event_name") then "?" else . end
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
             | gsub("[A-Za-z_]+\\([^()]*\\)"; " u ")
@@ -81,6 +83,7 @@ rows() {
         | [ $c | scan($re) | select(test("\\S"))
             | if . == "(" or . == ")" or . == "&&" or . == "||" or . == "!" then .
               elif test("^\\s*[01]\\s*$") then gsub("\\s"; "")
+              elif test("\\?") then "?"
               else "u" end ]
         | if length == 0 then "1" else join(" ") end;
       (.on // {}) as $on
@@ -97,6 +100,124 @@ rows() {
   done
 }
 
+# SHORTCUT_AWK: a small statement-level reader of one job's run script (see shortcuts()). It splits the script into statements
+# outside quotes and $( ), keeps a stack of if / case / { } / loop frames, and gives every branch a PR state: 1 = runs on a
+# pull_request, -1 = cannot, 0 = neutral. An exit 0 in a state-1 branch is a hit. A condition on pull_request that it cannot
+# classify (compound, other operators) is "U": its then AND else branches are both read as state 1 (fail closed). A script that
+# names pull_request and uses a construct this reader does not follow (heredoc, eval, unbalanced blocks) is a hit too.
+read -r -d '' SHORTCUT_AWK <<'AWK'
+function trim(s) { gsub(/^[[:space:]]+|[[:space:]]+$/, "", s); return s }
+function kind(c) {
+  gsub(/\$\{\{[^}]*\}\}/, "X", c); gsub(/["\047]/, "", c); c = trim(c)
+  if (c !~ /pull_request/) return "N"
+  if (c !~ /^(\[\[?|test)[[:space:]]/ || c ~ /&&|\|\||;|[[:space:]]-[ao][[:space:]]/) return "U"
+  if (c ~ /!=/) return (c ~ /(!=[[:space:]]*pull_request([[:space:]]|\]|$))|(pull_request[[:space:]]*!=)/) ? "F" : "U"
+  if (c ~ /(==?[[:space:]]*pull_request([[:space:]]|\]|$))|(pull_request[[:space:]]*==?)/) return "T"
+  return "U"
+}
+function maybe(p) { return (p == -1) ? -1 : 1 }
+function branch(p, k) {   # sets tp (state of the then branch) and rm (state of the remaining branches)
+  if (k == "T") { tp = maybe(p); rm = -1 }
+  else if (k == "F") { tp = -1; rm = maybe(p) }
+  else if (k == "U") { tp = maybe(p); rm = maybe(p) }
+  else { tp = p; rm = p }
+}
+function cur() { return sp > 0 ? fpr[sp] : 0 }
+function push(t, p) { sp++; ft[sp] = t; fpr[sp] = p; frm[sp] = p; fbase[sp] = p }
+function pop(t) { if (sp > 0 && ft[sp] == t) sp--; else bad = 1 }
+function exits(s) {
+  gsub(/"[^"]*"/, "", s); gsub(/\047[^\047]*\047/, "", s)
+  return s ~ /(^|[[:space:]&|{(])exit([[:space:]]+0)?[[:space:]]*($|[}&|)])/
+}
+function docond(kw, c,   p, k) {
+  k = kind(c)
+  if (kw == "if") { p = cur(); push("I", p); branch(p, k); fpr[sp] = tp; frm[sp] = rm }
+  else if (ft[sp] == "I") { branch(frm[sp], k); fpr[sp] = tp; frm[sp] = rm }
+  else bad = 1
+}
+function stmt(s,   h, op, rest, k, eff, p) {
+  s = trim(s); if (s == "") return
+  if (pend != "") { p = pend; pend = ""; docond(p, s); return }
+  if (s ~ /^(then|do)([[:space:]]|$)/) {
+    if (s ~ /^do/) push("L", cur())
+    sub(/^(then|do)[[:space:]]*/, "", s); stmt(s); return
+  }
+  if (s ~ /^(if|elif)([[:space:]]|$)/) {
+    op = (s ~ /^if/) ? "if" : "elif"; sub(/^(if|elif)[[:space:]]*/, "", s)
+    if (s == "") pend = op; else docond(op, s)
+    return
+  }
+  if (s ~ /^else([[:space:]]|$)/) {
+    if (ft[sp] == "I") fpr[sp] = frm[sp]; else bad = 1
+    sub(/^else[[:space:]]*/, "", s); stmt(s); return
+  }
+  if (s ~ /^fi([[:space:]]|$)/) { pop("I"); return }
+  if (s ~ /^done([[:space:]]|$)/) { pop("L"); return }
+  if (s ~ /^esac([[:space:]]|$)/) { pop("C"); return }
+  if (s ~ /^for[[:space:]]|^while[[:space:]]|^until[[:space:]]/) return
+  if (s ~ /^case[[:space:]]/) {
+    push("C", cur())
+    if (match(s, /[[:space:]]in([[:space:]]|$)/)) stmt(substr(s, RSTART + RLENGTH))
+    return
+  }
+  if (s == ";;") return
+  if (ft[sp] == "C" && match(s, /^\(?[^()]*\)/)) {
+    h = substr(s, 1, RLENGTH - 1); rest = substr(s, RLENGTH + 1)
+    gsub(/["\047]/, "", h)
+    fpr[sp] = (h ~ /(^|[^A-Za-z_])pull_request([^A-Za-z_]|$)/) ? maybe(fbase[sp]) : fbase[sp]
+    stmt(rest); return
+  }
+  if (s ~ /^[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\(\)[[:space:]]*\{/) { sub(/^[^{]*\{[[:space:]]*/, "", s); push("G", 0); stmt(s); return }
+  if (s ~ /^\}/) { pop("G"); sub(/^\}[[:space:]]*/, "", s); stmt(s); return }
+  if (s ~ /^\{/) { push("G", cur()); sub(/^\{[[:space:]]*/, "", s); stmt(s); return }
+  if (match(s, /(&&|\|\|)[[:space:]]*\{/)) {
+    h = substr(s, 1, RSTART - 1); op = substr(s, RSTART, 2); rest = substr(s, RSTART + RLENGTH)
+    k = kind(h); p = cur()
+    if (k == "T") eff = (op == "&&") ? maybe(p) : -1
+    else if (k == "F") eff = (op == "||") ? maybe(p) : -1
+    else if (k == "U") eff = maybe(p)
+    else eff = p
+    push("G", eff); stmt(rest); return
+  }
+  eff = cur()
+  if (s ~ /^(\[\[?|test)[[:space:]]/ && match(s, /(&&|\|\|)/)) {
+    h = substr(s, 1, RSTART - 1); op = substr(s, RSTART, 2); k = kind(h)
+    if (k == "T") eff = (op == "&&") ? maybe(eff) : -1
+    else if (k == "F") eff = (op == "||") ? maybe(eff) : -1
+    else if (k == "U") eff = maybe(eff)
+  }
+  if (eff == 1 && exits(s)) hit = 1
+}
+function feed(line,   i, c, n, buf2, q, d) {
+  n = length(line); q = ""
+  for (i = 1; i <= n; i++) {
+    c = substr(line, i, 1)
+    if (q != "") { cur_s = cur_s c; if (c == q) q = ""; continue }
+    if (c == "\"" || c == "\047") { q = c; cur_s = cur_s c; continue }
+    if (c == "#" && (i == 1 || substr(line, i - 1, 1) ~ /[[:space:]]/) && dep == 0) break
+    if (c == "$" && substr(line, i + 1, 1) == "(") { dep++; cur_s = cur_s c; continue }
+    if (c == ")" && dep > 0) { dep--; cur_s = cur_s c; continue }
+    if (c == ";" && dep == 0) {
+      if (substr(line, i + 1, 1) == ";") { stmt(cur_s); cur_s = ""; stmt(";;"); i++ }
+      else { stmt(cur_s); cur_s = "" }
+      continue
+    }
+    cur_s = cur_s c
+  }
+  if (q != "") cur_s = cur_s " "; else { stmt(cur_s); cur_s = "" }
+}
+{
+  raw = $0
+  if (raw ~ /^[[:space:]]*#/) next
+  t = raw; gsub(/\$\{\{[^}]*\}\}/, "X", t)
+  if (t ~ /pull_request/) mention = 1
+  if (t ~ /<<|(^|[[:space:]&|;{(])eval[[:space:]]|^[[:space:]]*function[[:space:]]/) opaque = 1
+  if (raw ~ /(\\|&&|\|\||\|)[[:space:]]*$/) { sub(/\\[[:space:]]*$/, "", raw); acc = acc raw " "; next }
+  feed(acc raw); acc = ""
+}
+END { if (acc != "") feed(acc); if (cur_s != "") stmt(cur_s); if (mention && (opaque || bad || sp != 0 || pend != "")) hit = 1; exit !hit }
+AWK
+
 # VIOLATION 2 rows: "<file>\t<job>" for each job whose run script exits 0 on a pull_request branch.
 shortcuts() {
   local f j b js
@@ -105,20 +226,7 @@ shortcuts() {
     js="$(yq -o=json '.' "$f" | jq -r '(.jobs // {}) | to_entries[] | [.key, ([.value.steps[]?.run // empty] | join("\n") | @base64)] | @tsv')" || return 1
     while IFS=$'\t' read -r j b; do
       [ -n "$j" ] || continue
-      if printf '%s' "$b" | base64 -d | awk '
-          function cnt(re,   t, n) { t = $0; n = 0; while (match(t, re)) { n++; t = substr(t, RSTART + RLENGTH) } return n }
-          function depthdelta() { return cnt("(^|[;[:space:]])i[f][[:space:]]") + cnt("\\{[[:space:]]*$") - cnt("(^|[;[:space:]])fi([[:space:];]|$)") - cnt("^[[:space:]]*\\}") }
-          /^[[:space:]]*#/ { next }
-          /^[[:space:]]*(\[\[?|test)[[:space:]].*pull_request.*[[:space:]]*&&.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
-          /^[[:space:]]*(\[\[?|test)[[:space:]].*!=[[:space:]]*"?pull_request"?[[:space:]]*(\]\]?)?[[:space:]]*\|\|.*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
-          /^[[:space:]]*(\[\[?|test)[[:space:]].*pull_request.*(&&|\|\|)[[:space:]]*\{[[:space:]]*$/ { inif = 1; depth = depthdelta(); next }
-          /^[[:space:]]*(if|elif)[[:space:]].*pull_request/ { if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; depth = depthdelta() + ($0 ~ /^[[:space:]]*elif/ ? 1 : 0); inif = (depth > 0); next }
-          inif { if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; depth += depthdelta(); if (depth <= 0) inif = 0 }
-          /^[[:space:]]*case[[:space:]].*[[:space:]]in[[:space:]].*pull_request.*\)[^;]*(exit[[:space:]]+0|exit[[:space:]]*([;}]|$))/ { hit = 1 }
-          /^[[:space:]]*(["'\'']?[A-Za-z_*]+["'\'']?\|)*["'\'']?pull_request["'\'']?(\|["'\'']?[A-Za-z_*]+["'\'']?)*\)/ { incase = ($0 !~ /;;/); if ($0 ~ /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/) hit = 1; next }
-          incase && /exit[[:space:]]+0|exit[[:space:]]*([;}]|$)/ { hit = 1 }
-          incase && /;;/ { incase = 0 }
-          END { exit !hit }'; then
+      if printf '%s' "$b" | base64 -d | awk "$SHORTCUT_AWK"; then
         printf '%s\t%s\n' "$(basename "$f")" "$j"
       fi
     done <<<"$js"
@@ -447,7 +555,7 @@ jobs:
   t "!(cancelled()) && event_name == 'push' is RED" 1 "" "$H
   a: {runs-on: x, if: \"!(cancelled()) && github.event_name == 'push'\", steps: []}
 "
-  t "!contains(fromJSON(..), github.event_name) && event_name == 'push' (nested call) is RED" 1 "" "$H
+  t "!contains(fromJSON(..), github.event_name) && event_name == 'push' (nested call) fails closed (rc 2)" 2 "" "$H
   a: {runs-on: x, if: \"!contains(fromJSON('[\\\"merge_group\\\"]'), github.event_name) && github.event_name == 'push'\", steps: []}
 "
   t "!(<unknown>) && event_name != 'pull_request' is RED (lane 2 finding 1)" 1 "" "$H
@@ -498,6 +606,245 @@ jobs:
       - run: |
           test \"\$EVT\" = pull_request && exit 0
           check_heavy
+"
+  t "contains(fromJSON(['push']), github.event_name) is unreadable: fails closed (rc 2, lane 1 finding 1)" 2 "" "$H
+  a: {runs-on: x, if: \"contains(fromJSON('[\\\"push\\\"]'), github.event_name)\", steps: []}
+"
+  t "startsWith(github.event_name, 'push') is unreadable: fails closed (rc 2)" 2 "" "$H
+  a: {runs-on: x, if: \"startsWith(github.event_name, 'push')\", steps: []}
+"
+  t "a string holding ( ) in a push-only if: is masked, job is RED (lane 1 finding 1)" 1 "" "$H
+  a: {runs-on: x, if: \"github.ref == '(foo)' && github.event_name == 'push'\", steps: []}
+"
+  t "a string holding ! and | in a push-only if: is masked, job is RED" 1 "" "$H
+  a: {runs-on: x, if: \"github.head_ref == '!a|b' && github.event_name == 'push'\", steps: []}
+"
+  t "reversed 'push' == github.event_name is RED (kills the reversed-== deletion mutant)" 1 "" "$H
+  a: {runs-on: x, if: \"'push' == github.event_name\", steps: []}
+"
+  t "unparseable if: on a push+pull_request workflow fails closed (rc 2, kills the bp error-swallow mutant)" 2 "" "$H
+  a: {runs-on: x, if: \"github.event_name == 'push' && (\", steps: []}
+"
+  t "unparseable if: on a pull_request-only workflow fails closed (rc 2, kills the bpr error-swallow mutant)" 2 "" "on: {pull_request: {}}
+jobs:
+  a: {runs-on: x, if: \"github.event_name == 'pull_request' && (\", steps: []}
+"
+  t "unparseable if: on a merge_group-only workflow fails closed (rc 2, kills the bmg error-swallow mutant)" 2 "" "on: {merge_group: {}}
+jobs:
+  a: {runs-on: x, if: \"github.event_name == 'merge_group' && (\", steps: []}
+"
+  t "single-quoted [ != 'pull_request' ] || exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" != 'pull_request' ] || exit 0
+          check_heavy
+"
+  t "reversed [ pull_request != \"\$EVT\" ] || exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ pull_request != \"\$EVT\" ] || exit 0
+          check_heavy
+"
+  t "line-continued [ = pull_request ] &&<newline> exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" = pull_request ] &&
+            exit 0
+          check_heavy
+"
+  t "multi-line if / cond / then / exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if
+            [ \"\$EVT\" = pull_request ]
+          then
+            exit 0
+          fi
+          check_heavy
+"
+  t "case pull_request) echo ok; exit 0 ;; esac is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in pull_request) echo ok; exit 0 ;; esac
+          check_heavy
+"
+  t "case 'push | pull_request)' with spaces and exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in
+            push | pull_request) exit 0 ;;
+          esac
+          check_heavy
+"
+  t "case pull_request|workflow_dispatch) exit 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in
+            pull_request|workflow_dispatch)
+              exit 0
+              ;;
+          esac
+          check_heavy
+"
+  t "else branch of a != pull_request test that exits 0 is RED" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" != pull_request ]; then
+            check_other
+          else
+            exit 0
+          fi
+          check_heavy
+"
+  t "an if whose pull_request test is compound (unclassifiable) with exit 0 is RED (fail closed)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ] && [ -n \"\$X\" ]; then
+            exit 0
+          fi
+          check_heavy
+"
+  t "a script naming pull_request and using a heredoc is RED (fail closed, not followed)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          cat <<EOF
+          x
+          EOF
+          [ \"\$EVT\" = pull_request ] || true
+          check_heavy
+"
+  t "a pull_request block left open at the end of the script is RED (fail closed)" 1 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then
+            check_light
+"
+  t "if pull_request; then check || exit 1; else exit 0; fi is green (exit 0 is the non-PR branch)" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then
+            check_pr || exit 1
+          else
+            exit 0
+          fi
+          check_heavy
+"
+  t "elif [ = push ]; then exit 0 after a pull_request branch is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then
+            check_pr
+          elif [ \"\$EVT\" = push ]; then
+            exit 0
+          fi
+          check_heavy
+"
+  t "if [ != pull_request ]; then exit 0; fi (non-PR exit) is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" != pull_request ]; then exit 0; fi
+          check_heavy
+"
+  t "[ = pull_request ] || exit 0 (non-PR exit) is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" = pull_request ] || exit 0
+          check_heavy
+"
+  t "[ = pull_request ] && { check || exit 1; } then a draft exit 0 is green (no brace leak)" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" = pull_request ] && {
+            check_pr || exit 1; }
+          [ \"\${DRAFT:-}\" != true ] || exit 0
+          check_heavy
+"
+  t "a final pull_request) case branch without ;; then a draft exit 0 is green (no case leak)" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          case \"\$EVT\" in
+            push) check_push ;;
+            pull_request) check_pr
+          esac
+          [ \"\${DRAFT:-}\" != true ] || exit 0
+          check_heavy
+"
+  t "a shell function body is not the pull_request branch: green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          res() { printf '%s' \"\$1\"; }
+          [ \"\$EVT\" = pull_request ] || exit 0
+          check_heavy
+"
+  t "[ = pull_request ] || { exit 0; } (non-PR exit in a brace group) is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" = pull_request ] || { echo x; exit 0; }
+          check_heavy
+"
+  t "[ != pull_request ] && { exit 0; } (non-PR exit in a brace group) is green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          [ \"\$EVT\" != pull_request ] && { echo x; exit 0; }
+          check_heavy
+"
+  t "an else of a pull_request test nested inside a pull_request block is the non-PR branch: green" 0 "" "$H
+  a:
+    runs-on: x
+    steps:
+      - run: |
+          if [ \"\$EVT\" = pull_request ]; then
+            if [ \"\$EVT\" = pull_request ]; then
+              check_pr
+            else
+              exit 0
+            fi
+          fi
+          check_heavy
+"
+  t "unparseable if: on a push-only workflow fails closed (rc 2, kills the bp error-swallow mutant)" 2 "" "on: {push: {branches: [main]}}
+jobs:
+  a: {runs-on: x, if: \"github.event_name == 'push' && (\", steps: []}
 "
   # Fail closed on a missing tool: a clean workflow and an empty exemption file would be green,
   # so rc 2 here can only come from the ENV check (without it, no rows and no exemptions print OK).
