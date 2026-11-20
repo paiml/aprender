@@ -142,9 +142,11 @@ evaluate() {
     c="$(cat "$2/C" 2>/dev/null)"; rd="$(cat "$2/read" 2>/dev/null)"
     [ -f "$2/attempts.tsv" ] || : > "$2/attempts.tsv"
     [ -f "$2/runs.tsv" ] || : > "$2/runs.tsv"
+    [ -f "$2/wfstate.tsv" ] || : > "$2/wfstate.tsv"
     awk -F '\t' -v OFS='\t' -v C="$c" -v RD="${rd:-failed: no read status}" -v MODE="$3" -v HIST="$2/hist_redage.tsv" '
     FILENAME == ARGV[1] { split($0, a, ";"); n++; L[n] = a[1]; K[n] = a[2]; CK[n] = a[3]; WF[n] = a[4]; EV[n] = a[5]; RE[n] = a[6]; NEED[n] = (a[7] ~ /^[0-9]+$/ ? a[7] + 0 : 1); next }
     FILENAME == ARGV[2] { AT[$1] = $2; next }
+    FILENAME == ARGV[3] { WS[$1] = $2; next }
     {
         # a run can carry the jobs of two producers (--in-run: the lanes and models jobs of the rehearsal); a lane reads only its own
         key = $2 SUBSEP $3 SUBSEP $10 SUBSEP $13
@@ -208,6 +210,8 @@ evaluate() {
             # every run of the lane is on another commit than the read C: a setup fault (the night and the read disagree),
             #   printed as one, with the head of that run in the row; it stays not_measured, never a pass and never a third state
             if (pick == "") {
+                # a producer workflow that is not active (its own 7-day LAB stop, C324 item 5) is a stop, not a setup fault
+                if (MODE == "final" && WS[WF[i]] !~ /^(active)?$/) { out(i, "not_measured", "", "", "stopped, not a setup fault: producer workflow is " WS[WF[i]]); continue }
                 if (MODE == "final") out(i, "not_measured", "", "", (pwhy == "" && other != "" ? "setup fault: run head is not C " substr(C, 1, 10) "; " : "") (pwhy != "" ? pwhy : "no run on C") (other != "" ? "; newest run " other : (m == 0 ? "; no run on main" : "")))
                 continue
             }
@@ -231,7 +235,7 @@ evaluate() {
             if (att > 1) out(i, "red", pick, att, "success only at attempt " att ": a retried green is not a green")
             else out(i, "green", pick, att, "")
         }
-    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/runs.tsv"
+    }' <(printf '%s\n' "$1") "$2/attempts.tsv" "$2/wfstate.tsv" "$2/runs.tsv"
 }
 # hours LANESOUT REDAGE_OUTPUT_FILE -> lane<TAB>hours lost (2 decimals) for every lane red_age measured
 hours() {
@@ -355,6 +359,7 @@ fetch() {
     cp "$cache/workflows.json" "$raw/workflows.json" 2>/dev/null || { printf 'failed: no workflow list\n' > "$raw/read"; return 0; }
     if [ -z "$COMMIT" ]; then night_head "$raw" || return 0; want="$(cut -f 3 "$raw/night")"; fi
     # one GraphQL query: every producer workflow's recent runs, and C (the night's, or --commit's) with its check rollup
+    jq -r '.workflows[] | [.path, .state] | @tsv' "$raw/workflows.json" > "$raw/wfstate.tsv" 2>/dev/null || : > "$raw/wfstate.tsv"
     q="$(gql_query "$LANES" "$raw/workflows.json" "$want")"
     [ -n "$q" ] || { printf 'failed: a producer workflow is not in the workflow list\n' > "$raw/read"; return 0; }
     call_ok || { printf 'failed: call budget\n' > "$raw/read"; return 0; }
@@ -658,7 +663,7 @@ run_train() {
     mkdir -p "$raw" || exit 1
     step read
     if [ -n "$from" ]; then
-        for f in C read runs.tsv attempts.tsv tree night fresh ${INRUN:+inrun.run inrun.jobs.tsv}; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
+        for f in C read runs.tsv attempts.tsv wfstate.tsv tree night fresh ${INRUN:+inrun.run inrun.jobs.tsv}; do [ "$from/$f" -ef "$raw/$f" ] || cp "$from/$f" "$raw/$f" 2>/dev/null || : > "$raw/$f"; done
         # with --commit a replay judges only a read of that commit; with --in-run it re-reads the run's jobs from the copied files
         if [ "$(cat "$raw/read" 2>/dev/null)" = ok ] && commit_ok "$raw" && [ -n "$INRUN" ]; then inrun_rows "$raw" || :; fi
     else fetch "$raw" "$OUTDIR/cache"; fi
@@ -1078,6 +1083,16 @@ v-e;verdict;check E;-;-;-" "$d"
     row a_late_start_night_lane_a_is_green 0 "$(printf 'v-a\tverdict\tgreen\t.github/workflows/a.yml ^job-a$\t101\t%s' "$ST_C")" "" -- cat "$tmp/ls.out"
     row a_lane_only_on_c2_prints_c2_in_its_row 0 "$(printf 'v-b\tverdict\tnot_measured\t.github/workflows/b.yml \tnot_measured\t%s\t' "$ST_X")" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/ls.out"
     row a_lane_only_on_c2_is_a_setup_fault 0 "$(printf '\tsetup fault: run head is not C aaaaaaaaaa; no run on C; newest run 201 on bbbbbbbbbb')" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/ls.out"
+    # a disabled producer workflow reads as a stop, not a setup fault (#7283); the state comes from the workflow list the read already holds
+    sed 's|"path":".github/workflows/b.yml"|"path":".github/workflows/b.yml","state":"disabled_manually"|' "$tmp/wfall.json" > "$tmp/wfdis.json"
+    st_disabled_wf() {
+        local f="$tmp/dwf"; mkdir -p "$f"; CALLS=0
+        PATH="$tmp/ls/bin:$PATH" STUB_WF="$tmp/wfdis.json" STUB_NIGHT="$tmp/night-ok.json" STUB_LS="$tmp/ls" NOW=2026-10-04T06:00:00Z LANES="$ST_LANES" fetch "$f" "$f/cache"
+        decide "$ST_LANES" "$f" 2026-10-04T06:00:00Z; cat "$f/lanes.tsv"
+    }
+    st_disabled_wf > "$tmp/dwf.out" 2>&1
+    row a_disabled_producer_is_a_stop_not_a_setup_fault 0 "stopped, not a setup fault: producer workflow is disabled_manually" "setup fault: run head" -- cat "$tmp/dwf.out"
+    row a_disabled_producer_row_stays_not_measured 0 "$(printf 'v-b\tverdict\tnot_measured')" "$(printf 'v-b\tverdict\tgreen')" -- cat "$tmp/dwf.out"
     st_late_start_line() {
         bash "$SCRIPT_PATH" --from "$tmp/fls" --out "$tmp/ols" --now 2026-10-04T06:00:00Z > /dev/null
         cat "$tmp/ols/2026-10-04/line"; command grep '^# read C' "$tmp/ols/2026-10-04/bundle.tsv"
@@ -1462,6 +1477,7 @@ m112_lanes_run_pick_schedule_only	s/(\$4 == "schedule" || \$4 == "workflow_dispa
 m88_running_night_counts	s/elif \$r.status != "completed" then/elif false then/
 m89_stale_night_counts	s/>= 86400 then/>= 864000000 then/
 m90_setup_fault_unprinted	s/(pwhy == "" \&\& other != "" ? "setup fault: /(0 ? "setup fault: /
+m140_disabled_producer_reads_as_setup_fault	s/WS\[WF\[i\]\] !~ \/\^\(active\)\?\$\//0/
 m91_receipt_drops_read_c	/# read C\\t%s\\t%s\\n/d
 m92_after_now_night_counts	s/ and ((.created_at | fromdateiso8601) <= \$t))\]/)]/
 m93_other_branch_night_counts	s/ and .head_branch == "main"//
