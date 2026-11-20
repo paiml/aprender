@@ -138,8 +138,12 @@ agy_receipts() {
 agy_receipt_verdict() {
   local f=$1 head=$2
   [ -r "$f" ] || return 1
-  LC_ALL=C grep -qP '[\x00-\x08\x0b-\x1f\x7f]' "$f" && return 1   # CR, NUL, ESC, DEL, any C0 but tab and LF
+  # CR, NUL, ESC, DEL, any C0 but tab and LF. Byte-exact via tr+cmp: grep and bash variables both drop or skip NULs.
+  LC_ALL=C tr -d '\000-\010\013-\037\177' < "$f" | cmp -s - "$f" || return 1
   iconv -f UTF-8 -t UTF-8 "$f" >/dev/null 2>&1 || return 1
+  # invisible/format characters anywhere (review-depth lane-verdict rules): C1, soft hyphen, zero-width, bidi, U+2028/2029,
+  # word-joiner/invisibles, BOM, variation selectors, tags, combining grapheme joiner, Mongolian vowel separator
+  LC_ALL=C grep -qP '\xc2[\x80-\x9f\xad]|\xcd\x8f|\xe1\xa0\x8e|\xe2\x80[\x8b-\x8f\xa8-\xae]|\xe2\x81[\xa0-\xa4\xa6-\xaf]|\xef\xbb\xbf|\xef\xb8[\x80-\x8f]|\xf3\xa0[\x80-\x87]' "$f" && return 1
   LC_ALL=C awk -v head="$head" -v model="$AGY_MODEL" -v author="${MQ_AUTHOR_MODEL:-claude-sonnet-5-5}" '
     function trim(s) { gsub(/^[ \t]+|[ \t]+$/, "", s); return s }
     { line = $0; hi = (line ~ /[\200-\377]/); pre = line; sub(/:.*/, "", pre)
@@ -317,6 +321,26 @@ if [ "${1:-}" = --self-test ]; then
   eq 'agy: Hydrogen FAIL at head vetoes an Opus PASS' "$(FILES=scripts/x.sh REVIEWS="$QO" hns)" 0
   mkr $hr "$TH" $H FAIL 'text_only: yes'
   eq 'agy: Hydrogen FAIL with a repeated text_only -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  mkr $hr "$TH" $H PASS 'text_only: yes'
+  eq 'agy: Hydrogen PASS with a repeated text_only -> invalid, skip (kills a dropped duplicate-text_only check)' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  printf 'VERDICT: FAIL\ntext_only: yes\nhead: %s\nlane: 1\nreviewer_model: %s\n' "$TH" $H > "$ad/$hr"
+  eq 'agy: single text_only: yes FAIL still vetoes an Opus PASS (TEXT1 not honoured; kills honouring it)' "$(FILES=scripts/x.sh REVIEWS="$QO" hns)" 0
+  eq 'agy: single text_only: yes FAIL still vetoes a non-gate Opus PASS' "$(REVIEWS="$QO" hns)" 0
+  # control and invisible bytes, written with printf (a bash variable cannot carry a NUL)
+  rcv() { printf "$1" "$TH" $H > "$ad/$hr"; }   # rcv FORMAT (two %s: head, model)
+  rcv 'VERDICT: PASS\n\000VERDICT: FAIL\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: NUL-prefixed second verdict after PASS -> skip (PMAT-5843 L1)' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: FAIL\000\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: trailing NUL on FAIL -> invalid, no veto of an Opus PASS' "$(FILES=scripts/x.sh REVIEWS="$QO" hns)" 1
+  rcv 'VERDICT: PASS\n\033[0m\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: ESC byte -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\n\177\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: DEL byte -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\n\014\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: form feed -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\ntab\there\ntext_only: no\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: a tab in prose stays armable' "$(FILES=scripts/x.sh REVIEWS='' hns)" 1
+  for inv in '\342\200\213' '\342\200\216' '\342\200\256' '\342\200\250' '\342\200\251' '\342\201\240' '\357\273\277' '\357\270\217' '\363\240\200\201' '\302\205' '\302\255' '\315\217'; do
+    rcv "VERDICT: PASS\\nprose ${inv} prose\\ntext_only: no\\nhead: %s\\nlane: 1\\nreviewer_model: %s\\n"
+    eq "agy: invisible/format char $inv in prose -> skip" "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  done
+  rcv 'VERDICT: PASS\ntext_only: no\nhead: %s\nlane: 1abc\nreviewer_model: %s\n'; eq 'agy: lane 1abc -> skip (kills dropped digits-only check)' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  printf 'VERDICT: PASS\ntext_only: no\nhead: 2345678\nlane: 1\nreviewer_model: %s\n' $H > "$ad/$hr"; eq 'agy: head a non-prefix substring of HEAD -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
+  rcv 'VERDICT: PASS\ntext_only: n\303\266\nhead: %s\nlane: 1\nreviewer_model: %s\n'; eq 'agy: non-ASCII after the colon of a field line -> skip' "$(FILES=scripts/x.sh REVIEWS='' hns)" 0
   mkr $hr "$TH" $H PASS
   eq 'agy: reviewer_model == author model -> skip' "$(FILES=scripts/x.sh REVIEWS='' MQ_AUTHOR_MODEL=$H hns)" 0
   mkr $hr "$TH" gemini-4-neon-high PASS
