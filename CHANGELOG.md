@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.75.3] - 2026-11-20
+
+Emergency patch (exception to APR-076 no-point-release, operator order SHACL-PATCH). Same change as 0.75.1 and 0.75.2, now cut as a descendant of the v0.75.1 tag so the T-5 reconcile gate (prev tag must be an ancestor of the cut) holds. v0.75.1 was tagged but never published (R7: no CRUX certification in its tree) and v0.75.2 does not descend from it:
+
+- **SHACL numeric facets.** `sh:minInclusive`, `sh:maxInclusive`, `sh:minExclusive` and `sh:maxExclusive` (xsd:integer, decimal, double) are parsed and checked in `aprender-contracts` ontology shapes (#7365, #7366).
+
 ## [0.75.1] - 2026-11-20
 
 Emergency patch (exception to APR-076 no-point-release, operator order SHACL-PATCH). One change on v0.75.0:
