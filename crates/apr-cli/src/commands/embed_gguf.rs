@@ -11,9 +11,13 @@ use super::embed;
 use super::model_header::read_prefix;
 use crate::error::{CliError, Result};
 use crate::EmbedTask;
+#[cfg(feature = "inference")]
 use realizar::gguf::embedding_gemma2_input::{EmbedTokenizer, Prompt, Task};
+#[cfg(feature = "inference")]
 use realizar::gguf::forward_embedding_gemma2::{embed_text, EmbeddingGemma2, MATRYOSHKA_DIMS};
+#[cfg(feature = "inference")]
 use realizar::gguf::{GGUFModel, MappedGGUFModel};
+#[cfg(feature = "inference")]
 use realizar::model_kind::{gguf_model_kind, ModelKind};
 use std::path::Path;
 
@@ -70,7 +74,17 @@ pub(crate) fn run(model: &Path, flags: &EmbedFlags<'_>) -> Result<()> {
         CliError::ValidationFailed(format!("Failed to read {}: {e}", model.display()))
     })?;
     if head.as_slice() == b"GGUF" {
-        run_gguf(model, flags)
+        #[cfg(feature = "inference")]
+        {
+            run_gguf(model, flags)
+        }
+        #[cfg(not(feature = "inference"))]
+        {
+            Err(CliError::FeatureDisabled(
+                "`apr embed` on a GGUF file needs the `inference` feature (built with --no-default-features); an APR file still works"
+                    .to_string(),
+            ))
+        }
     } else {
         run_bert(model, flags)
     }
@@ -120,6 +134,7 @@ fn run_bert(model: &Path, flags: &EmbedFlags<'_>) -> Result<()> {
 
 /// The flags a GGUF file answers itself, and the combinations that mean nothing, refused before
 /// the model is read.
+#[cfg(feature = "inference")]
 fn refuse_gguf_flags(flags: &EmbedFlags<'_>) -> Result<()> {
     if flags.vocab.is_some() {
         return Err(refused(
@@ -157,6 +172,7 @@ fn refuse_gguf_flags(flags: &EmbedFlags<'_>) -> Result<()> {
 }
 
 /// The prompt `--task` names; no `--task` embeds the text as given.
+#[cfg(feature = "inference")]
 pub(crate) fn prompt_of(task: Option<EmbedTask>, title: Option<&str>) -> Prompt<'_> {
     let query = match task {
         None => return Prompt::Raw,
@@ -173,6 +189,7 @@ pub(crate) fn prompt_of(task: Option<EmbedTask>, title: Option<&str>) -> Prompt<
 }
 
 /// `apr embed` reads an embedding model; a generative GGUF file is refused by kind (I-3).
+#[cfg(feature = "inference")]
 fn refuse_generative(model: &GGUFModel) -> Result<()> {
     match gguf_model_kind(model) {
         Ok(ModelKind::Embedding) => Ok(()),
@@ -186,6 +203,7 @@ fn refuse_generative(model: &GGUFModel) -> Result<()> {
 }
 
 /// One embedded text.
+#[cfg(feature = "inference")]
 struct Embedded<'a> {
     text: &'a str,
     tokens: usize,
@@ -193,6 +211,7 @@ struct Embedded<'a> {
 }
 
 /// A GGUF file: the EmbeddingGemma 2 forward on the file's own tokenizer.
+#[cfg(feature = "inference")]
 fn run_gguf(model: &Path, flags: &EmbedFlags<'_>) -> Result<()> {
     refuse_gguf_flags(flags)?;
     let texts = embed::collect_texts(flags.texts, flags.text_file)?;
@@ -226,6 +245,7 @@ fn run_gguf(model: &Path, flags: &EmbedFlags<'_>) -> Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "inference")]
 fn print_gguf(
     model: &Path,
     prompt: &Prompt<'_>,
@@ -279,6 +299,7 @@ fn print_gguf(
     }
 }
 
+#[cfg(feature = "inference")]
 #[cfg(test)]
 #[path = "embed_gguf_tests.rs"]
 mod tests;

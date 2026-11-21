@@ -1578,6 +1578,18 @@ fn recipe_output_path(
         .or_else(|| recipe.output_dir.as_deref().map(|d| d.join("adapter.apr")))
 }
 
+/// What the resolved recipe prints as `output.dir`: the recipe's directory itself, or the
+/// `--output` file as given (never the `<dir>/adapter.apr` the run derives from it).
+fn recipe_output_shown(
+    flags: &RecipeRunFlags<'_>,
+    recipe: &super::train_recipe::TrainRecipe,
+) -> Option<PathBuf> {
+    flags
+        .output_path
+        .map(Path::to_path_buf)
+        .or_else(|| recipe.output_dir.clone())
+}
+
 /// Epochs for a recipe with no `training.epochs`: the `--epochs` flag default.
 const RECIPE_DEFAULT_EPOCHS: u32 = 3;
 
@@ -1635,6 +1647,8 @@ pub(crate) fn recipe_receipt_for_run(
         // claiming either applied.
         receipt.validated_not_applied.insert(0, "seed");
         receipt.validated_not_applied.push("eval");
+        // The WGSL loop builds its own schedule: it never reads training.warmup either.
+        receipt.validated_not_applied.push("training.warmup");
     }
     Ok((recipe, receipt))
 }
@@ -1666,7 +1680,7 @@ pub(crate) fn run_from_recipe(recipe_path: &Path, flags: &RecipeRunFlags<'_>) ->
     );
     if !receipt.validated_not_applied.is_empty() {
         eprintln!(
-            "[recipe] the wgpu backend does not apply: {}",
+            "[recipe] validated but not applied by this run: {}",
             receipt.validated_not_applied.join(", ")
         );
     }
@@ -1744,8 +1758,13 @@ where
     let output = output_buf.as_deref();
     train(output, epochs, quantize_nf4)?;
     if flags.plan_only {
-        writeln!(out, "{}", resolved_recipe_text(recipe, flags, output)?)
-            .map_err(|e| CliError::ValidationFailed(format!("cannot print recipe: {e}")))?;
+        let shown = recipe_output_shown(flags, recipe);
+        writeln!(
+            out,
+            "{}",
+            resolved_recipe_text(recipe, flags, shown.as_deref())?
+        )
+        .map_err(|e| CliError::ValidationFailed(format!("cannot print recipe: {e}")))?;
         return Ok(());
     }
     emit_run_receipt(recipe, receipt, output, flags, epochs, quantize_nf4, out)

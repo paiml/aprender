@@ -188,3 +188,8 @@ jobs:
           name: deep-bins-smoke
           path: deep/
           if-no-files-found: error
+
+      # LAB (#7294): this job is lane kind `lab` in nightly_train.sh, never a verdict lane.
+      # No `if: always()`: it would build after a failed assert-head or disk-floor guard, or a cancelled run.
+      - name: apr-cli builds with --no-default-features (#7294; nightly LAB, never a PR job)
+        run: setsid --wait bash scripts/check_apr_cli_no_default_features.sh

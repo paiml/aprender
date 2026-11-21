@@ -1,6 +1,8 @@
-//! #7175 S2: gated norm, n-gram embedding and PLE vs transformers goldens (max-abs <= 1e-5).
+//! #7175 S2: gated norm, n-gram embedding and PLE vs transformers goldens (max-abs <= 1e-5);
+//! #7332: their decode paths (n-gram carry-over, PLE conv state) vs the same goldens.
 use realizar::qwen4_exp_embed::{
-    gated_rms_norm, ngram_embed, ngram_ids, ple_forward, GateAct, NgramConfig, PleParams,
+    gated_rms_norm, ngram_embed, ngram_ids, ple_forward, GateAct, NgramConfig, NgramState,
+    PleParams, PleState,
 };
 use serde_json::Value;
 
@@ -137,4 +139,104 @@ fn ple_matches_reference() {
     let e = max_err(&got, &want);
     eprintln!("ple max_abs_err = {e:e}");
     assert!(e <= TOL, "err {e}");
+}
+
+// ---- #7332 decode goldens -------------------------------------------------
+// Basis: the transformers prefill goldens above (ngram.json, ple.json). The
+// reference's decode contract is that a cached step reproduces the no-cache
+// forward row for that position, so feeding the same tokens one at a time (and
+// in uneven chunks) through the carried state must reproduce the reference rows
+// at TOL. No value produced by this crate is pinned as truth.
+
+/// Chunkings of a `len`-token sequence: one token per step, then an uneven split.
+fn chunkings(len: usize) -> Vec<Vec<usize>> {
+    vec![vec![1; len], vec![1, 4, 2, len - 7]]
+}
+
+#[test]
+fn qwen4_exp_decode_ngram_context_carry_over_matches_reference() {
+    let g = golden("ngram");
+    let cfg = ngram_cfg(
+        &g["config"],
+        g["ple_layer_index"].as_u64().expect("i") as usize,
+    );
+    let ids = i64s(&g["inputs"]["input_ids"]);
+    let want_ids = i64s(&g["intermediates"]["ngram_ids"]);
+    let table = f32s(&g["params"]["ngram_embedding.weight"]);
+    let want = f32s(&g["output"]["embeddings"]);
+    let s = ids.len() / 2;
+    for steps in chunkings(s) {
+        let (mut got_ids, mut got) = (Vec::new(), Vec::new());
+        for r in 0..2 {
+            let mut st = NgramState::new(&cfg);
+            let mut at = r * s;
+            for &n in &steps {
+                let chunk = &ids[at..at + n];
+                got_ids.extend(st.ids(&cfg, chunk));
+                at += n;
+            }
+            let mut st = NgramState::new(&cfg);
+            let mut at = r * s;
+            for &n in &steps {
+                got.extend(st.embed(&cfg, &table, &ids[at..at + n]));
+                at += n;
+            }
+            assert_eq!(st.context(), &ids[(r + 1) * s - 2..(r + 1) * s]);
+        }
+        assert_eq!(got_ids, want_ids, "decode n-gram ids differ ({steps:?})");
+        let e = max_err(&got, &want);
+        eprintln!("decode ngram {steps:?} max_abs_err = {e:e}");
+        assert!(e <= TOL, "err {e}");
+    }
+}
+
+#[test]
+fn qwen4_exp_decode_ple_conv_state_matches_reference() {
+    let g = golden("ple");
+    let c = &g["config"];
+    let cfg = ngram_cfg(c, c["ple_layer_index"].as_u64().expect("i") as usize);
+    let p = &g["params"];
+    let table = f32s(&p["ple_embedding.ngram_embedding.weight"]);
+    let (kp, vp) = (f32s(&p["key_proj.weight"]), f32s(&p["value_proj.weight"]));
+    let (nk, nq, nc) = (
+        f32s(&p["norm_key.weight"]),
+        f32s(&p["norm_query.weight"]),
+        f32s(&p["norm_conv.weight"]),
+    );
+    let cw = f32s(&p["conv1d.weight"]);
+    let params = PleParams {
+        ngram: &cfg,
+        hidden_size: c["hidden_size"].as_u64().expect("h") as usize,
+        hc_count: c["hc_count"].as_u64().expect("c") as usize,
+        kernel: c["ple_conv_kernel_size"].as_u64().expect("k") as usize,
+        eps: c["rms_norm_eps"].as_f64().expect("eps") as f32,
+        table: &table,
+        key_proj: &kp,
+        value_proj: &vp,
+        norm_key: &nk,
+        norm_query: &nq,
+        norm_conv: &nc,
+        conv_w: &cw,
+    };
+    let hs = f32s(&g["inputs"]["hidden_states"]);
+    let ids = i64s(&g["inputs"]["input_ids"]);
+    let want = f32s(&g["output"]["ple_output"]);
+    let s = ids.len() / 2;
+    let w = hs.len() / ids.len();
+    // The conv reaches back (K-1)*dilation = 9 rows; 12 tokens step past it.
+    assert!(s > (params.kernel - 1) * cfg.ngram_size, "golden too short");
+    for steps in chunkings(s) {
+        let mut got = Vec::new();
+        for r in 0..2 {
+            let mut st = PleState::new(&params);
+            let mut at = r * s;
+            for &n in &steps {
+                got.extend(st.step(&params, &hs[at * w..(at + n) * w], &ids[at..at + n]));
+                at += n;
+            }
+        }
+        let e = max_err(&got, &want);
+        eprintln!("decode ple {steps:?} max_abs_err = {e:e}");
+        assert!(e <= TOL, "err {e}");
+    }
 }

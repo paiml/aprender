@@ -555,41 +555,7 @@ fn print_training_summary(
     }
 }
 
-/// Serialize tensors to SafeTensors bytes with `__metadata__` keys in sorted order.
-///
-/// `safetensors::serialize` takes a `HashMap`, whose iteration order is random per
-/// instance, so two same-seed runs wrote different header bytes (#7255). The tensors
-/// are serialized without metadata and the sorted `__metadata__` object is spliced in
-/// as the first header entry; the header length is recomputed and re-padded to 8 bytes.
-pub(crate) fn serialize_with_ordered_metadata<V>(
-    views: Vec<(&str, V)>,
-    metadata: &std::collections::BTreeMap<String, String>,
-) -> crate::Result<Vec<u8>>
-where
-    V: safetensors::tensor::View,
-{
-    let ser_err =
-        |m: String| crate::Error::Serialization(format!("SafeTensors serialization failed: {m}"));
-    let bytes = safetensors::serialize(views, None).map_err(|e| ser_err(e.to_string()))?;
-    let n = u64::from_le_bytes(bytes[..8].try_into().map_err(|_| ser_err("short header".into()))?)
-        as usize;
-    let header = std::str::from_utf8(&bytes[8..8 + n]).map_err(|e| ser_err(e.to_string()))?;
-    let body = header
-        .trim_end()
-        .strip_prefix('{')
-        .ok_or_else(|| ser_err("header is not an object".into()))?;
-    let meta = serde_json::to_string(metadata).map_err(|e| ser_err(e.to_string()))?;
-    let sep = if body.trim_start().starts_with('}') { "" } else { "," };
-    let mut new_header = format!("{{\"__metadata__\":{meta}{sep}{body}");
-    while new_header.len() % 8 != 0 {
-        new_header.push(' ');
-    }
-    let mut out = Vec::with_capacity(8 + new_header.len() + bytes.len() - 8 - n);
-    out.extend_from_slice(&(new_header.len() as u64).to_le_bytes());
-    out.extend_from_slice(new_header.as_bytes());
-    out.extend_from_slice(&bytes[8 + n..]);
-    Ok(out)
-}
+pub(crate) use crate::io::serialize_with_ordered_metadata;
 
 #[cfg(test)]
 mod tests {
@@ -610,39 +576,6 @@ mod tests {
         assert!(!periodic_save_due(10, 5, 0));
         assert!(periodic_save_due(10, 5, 4));
         assert!(!periodic_save_due(10, 0, 4));
-    }
-
-    #[test]
-    fn ordered_metadata_is_sorted_and_roundtrips() {
-        use safetensors::tensor::{Dtype, TensorView};
-        let data = [1.0f32, 2.0, 3.0, 4.0];
-        let bytes: &[u8] = bytemuck::cast_slice(&data);
-        let mut meta = std::collections::BTreeMap::new();
-        meta.insert("val_loss".to_string(), "6.743455".to_string());
-        meta.insert("epoch".to_string(), "1".to_string());
-        let mk = || vec![("t", TensorView::new(Dtype::F32, vec![2, 2], bytes).unwrap())];
-        let a = serialize_with_ordered_metadata(mk(), &meta).unwrap();
-        for _ in 0..32 {
-            assert_eq!(a, serialize_with_ordered_metadata(mk(), &meta).unwrap());
-        }
-        let n = u64::from_le_bytes(a[..8].try_into().unwrap()) as usize;
-        assert_eq!(n % 8, 0);
-        let hdr = std::str::from_utf8(&a[8..8 + n]).unwrap();
-        assert!(
-            hdr.starts_with(r#"{"__metadata__":{"epoch":"1","val_loss":"6.743455"},"#),
-            "{hdr}"
-        );
-        let st = safetensors::SafeTensors::deserialize(&a).unwrap();
-        assert_eq!(st.tensor("t").unwrap().data(), bytes);
-    }
-
-    #[test]
-    fn ordered_metadata_with_no_tensors_is_valid() {
-        let mut meta = std::collections::BTreeMap::new();
-        meta.insert("a".to_string(), "b".to_string());
-        let none: Vec<(&str, safetensors::tensor::TensorView<'_>)> = vec![];
-        let out = serialize_with_ordered_metadata(none, &meta).unwrap();
-        assert!(safetensors::SafeTensors::deserialize(&out).is_ok());
     }
 
     fn make_corpus(n: usize) -> Vec<InstructSample> {
@@ -722,34 +655,63 @@ mod tests {
         // this tiny config in under a millisecond, so it is not asserted. The epoch count is.
     }
 
-    /// #7255: two same-seed runs write a checkpoint with an identical sha256.
+    fn write_checkpoint(dir: &std::path::Path) -> Vec<u8> {
+        let model_config = TransformerConfig::tiny();
+        let instruct_config =
+            InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
+        let pipeline = InstructPipeline::new(&model_config, instruct_config);
+        let config = InstructTrainingConfig { epochs: 1, seed: 7, ..Default::default() };
+        let mut trainer = InstructTrainer::new(pipeline, make_corpus(10), config).unwrap();
+        let metrics = InstructEpochMetrics {
+            epoch: 0,
+            train_loss: 1.0,
+            train_perplexity: 2.0,
+            val_loss: 6.743455,
+            val_perplexity: 3.0,
+            learning_rate: 1e-4,
+            epoch_time_ms: 0,
+            samples_per_sec: 0.0,
+        };
+        trainer.save_checkpoint(dir, 0, &metrics).unwrap();
+        std::fs::read(dir.join("model.safetensors")).unwrap()
+    }
+
+    /// #7255, #7293: 16 same-seed runs write a checkpoint with an identical sha256. A HashMap
+    /// metadata order would pass two runs about half the time; 16 passes about 1 in 32768.
     #[test]
     fn same_seed_checkpoints_have_identical_sha256() {
-        let digest = |dir: &std::path::Path| {
-            let model_config = TransformerConfig::tiny();
-            let instruct_config =
-                InstructConfig { lora_rank: 4, max_seq_len: 32, ..InstructConfig::default() };
-            let pipeline = InstructPipeline::new(&model_config, instruct_config);
-            let config = InstructTrainingConfig { epochs: 1, seed: 7, ..Default::default() };
-            let mut trainer = InstructTrainer::new(pipeline, make_corpus(10), config).unwrap();
-            let metrics = InstructEpochMetrics {
-                epoch: 0,
-                train_loss: 1.0,
-                train_perplexity: 2.0,
-                val_loss: 6.743455,
-                val_perplexity: 3.0,
-                learning_rate: 1e-4,
-                epoch_time_ms: 0,
-                samples_per_sec: 0.0,
-            };
-            trainer.save_checkpoint(dir, 0, &metrics).unwrap();
-            let bytes = std::fs::read(dir.join("model.safetensors")).unwrap();
-            format!("{:x}", Sha256::digest(&bytes))
-        };
         let tmp = tempfile::tempdir().unwrap();
-        let a = digest(&tmp.path().join("a"));
-        let b = digest(&tmp.path().join("b"));
-        assert_eq!(a, b);
+        let digests: Vec<String> = (0..16)
+            .map(|i| {
+                format!("{:x}", Sha256::digest(write_checkpoint(&tmp.path().join(format!("c{i}")))))
+            })
+            .collect();
+        for (i, d) in digests.iter().enumerate() {
+            assert_eq!(d, &digests[0], "checkpoint {i} differs from checkpoint 0");
+        }
+    }
+
+    /// #7293: through the real `save_checkpoint` call site, the `__metadata__` keys in the
+    /// written file bytes are sorted, for each of 16 checkpoints. A call site reverting to
+    /// `serialize(views, Some(HashMap))` writes a random order per call (two keys, so each
+    /// call is sorted by chance half the time); 16 calls pass by chance 1 in 65536.
+    #[test]
+    fn save_checkpoint_metadata_keys_sorted_in_file_bytes() {
+        let tmp = tempfile::tempdir().unwrap();
+        for i in 0..16 {
+            let bytes = write_checkpoint(&tmp.path().join(format!("c{i}")));
+            let n = u64::from_le_bytes(bytes[..8].try_into().unwrap()) as usize;
+            let hdr = std::str::from_utf8(&bytes[8..8 + n]).unwrap();
+            let key = "\"__metadata__\":{";
+            let start = hdr.find(key).expect("header has __metadata__") + key.len();
+            let obj = &hdr[start..start + hdr[start..].find('}').expect("metadata object closes")];
+            // Quoted tokens alternate key, value (values are strings without escapes).
+            let keys: Vec<&str> = obj.split('"').skip(1).step_by(2).step_by(2).collect();
+            assert!(keys.len() >= 2, "need 2+ metadata keys to prove an order: {obj}");
+            let mut sorted = keys.clone();
+            sorted.sort_unstable();
+            assert_eq!(keys, sorted, "checkpoint {i}: metadata keys not sorted: {obj}");
+        }
     }
 
     #[test]

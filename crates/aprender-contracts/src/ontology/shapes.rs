@@ -9,6 +9,7 @@
 //! | `minCount`, `maxCount` | the `qualifiedValueShape` family |
 //! | `datatype`, `class`, `nodeKind` | — |
 //! | `in`, `pattern`, `minLength`, `maxLength` | `languageIn`, `uniqueLang` |
+//! | `minInclusive`, `maxInclusive`, `minExclusive`, `maxExclusive` (numeric bound) | a non-numeric bound (`Malformed`); a bare YAML number is exact only for `i64`/`u64`, beyond that `serde_yaml` yields a double (or a file parse error), so an exact bound past 64 bits must be written `{integer: "<digits>"}` / `{decimal: "<digits.digits>"}` |
 //! | `node` (one level) | recursive / cyclic shapes |
 //! | `closed`, `ignoredProperties` | — |
 //! | `lessThan`, `lessThanOrEquals` (property pairs) | `equals`, `disjoint` |
@@ -120,6 +121,14 @@ pub struct PropertyShape {
     pub less_than: Option<String>,
     /// `sh:lessThanOrEquals`: every value must be `<=` every value of this predicate on the same focus node.
     pub less_than_or_equals: Option<String>,
+    /// `sh:minInclusive`: every value must be a number `>=` this bound (SHACL §4.4.3).
+    pub min_inclusive: Option<Term>,
+    /// `sh:maxInclusive`: every value must be a number `<=` this bound (SHACL §4.4.4).
+    pub max_inclusive: Option<Term>,
+    /// `sh:minExclusive`: every value must be a number `>` this bound (SHACL §4.4.1).
+    pub min_exclusive: Option<Term>,
+    /// `sh:maxExclusive`: every value must be a number `<` this bound (SHACL §4.4.2).
+    pub max_exclusive: Option<Term>,
     pub resolves: Option<String>,
     pub severity: Severity,
 }
@@ -216,6 +225,10 @@ const PROPERTY_KEYS: &[&str] = &[
     "node",
     "lessThan",
     "lessThanOrEquals",
+    "minInclusive",
+    "maxInclusive",
+    "minExclusive",
+    "maxExclusive",
     "resolves",
     "severity",
 ];
@@ -515,12 +528,56 @@ fn parse_property(
         node,
         less_than: iri_opt("lessThan"),
         less_than_or_equals: iri_opt("lessThanOrEquals"),
+        min_inclusive: numeric_bound(shape, pm, "minInclusive")?,
+        max_inclusive: numeric_bound(shape, pm, "maxInclusive")?,
+        min_exclusive: numeric_bound(shape, pm, "minExclusive")?,
+        max_exclusive: numeric_bound(shape, pm, "maxExclusive")?,
         resolves: pm
             .get("resolves")
             .and_then(serde_yaml::Value::as_str)
             .map(String::from),
         severity,
     })
+}
+
+/// A range facet's bound. The ONLY way to give an integer bound beyond `u64`/`i64` exactly is the typed form
+/// `{integer: "<digits>"}` (or `{decimal: "<digits.digits>"}`). A bare YAML number is exact for `i64`/`u64`;
+/// beyond that `serde_yaml` yields an `f64` (or fails the file's parse), so it is compared as `xsd:double` with
+/// f64 precision. No text rewrite is applied to contract files. A finite YAML number, as a literal term (`5` is `xsd:integer`, `2.5` and `1e3` are
+/// `xsd:double`). A string, boolean, list, null, `.nan` or `.inf` is malformed — a bound nothing can be compared
+/// to would make the facet reject (or accept) every value without saying why.
+fn numeric_bound(
+    shape: &str,
+    pm: &serde_yaml::Mapping,
+    key: &str,
+) -> Result<Option<Term>, ShapeError> {
+    let Some(v) = pm.get(key) else {
+        return Ok(None);
+    };
+    let bound = match v {
+        serde_yaml::Value::Number(n) if n.is_f64() => n
+            .as_f64()
+            .filter(|f| f.is_finite())
+            .map(|f| (f.to_string(), "double")),
+        serde_yaml::Value::Number(n) => Some((n.to_string(), "integer")),
+        // The exact form: `{integer: "<digits>"}` or `{decimal: "<digits.digits>"}`, any width.
+        serde_yaml::Value::Mapping(m) if m.len() == 1 => m.iter().next().and_then(|(k, val)| {
+            let (local, text) = (k.as_str()?, val.as_str()?);
+            let text = text.trim();
+            (matches!(local, "integer" | "decimal")
+                && well_formed(text, &format!("{XSD_NS}{local}")))
+            .then(|| (text.to_string(), local))
+        }),
+        _ => None,
+    };
+    bound
+        .map(|(value, local)| {
+            Some(Term::Literal {
+                value,
+                datatype: format!("{XSD_NS}{local}"),
+            })
+        })
+        .ok_or_else(|| malformed_in(shape, format!("`{key}` is not a finite number")))
 }
 
 fn malformed_in(shape: &str, what: String) -> ShapeError {
@@ -837,6 +894,39 @@ fn check_counts(
     }
 }
 
+/// `sh:minInclusive` / `maxInclusive` / `minExclusive` / `maxExclusive` (SHACL §4.4) on one value. A value SPARQL
+/// cannot order against the bound (a string, an IRI, an ill-formed number) is NOT in range, so it is a result.
+fn check_range(
+    p: &PropertyShape,
+    v: &Term,
+    push: &mut impl FnMut(Severity, Option<&str>, &'static str, String),
+) {
+    use std::cmp::Ordering::{Equal, Greater, Less};
+    let facets: [(&Option<Term>, &'static str, &str, &[std::cmp::Ordering]); 4] = [
+        (&p.min_inclusive, "minInclusive", ">=", &[Greater, Equal]),
+        (&p.max_inclusive, "maxInclusive", "<=", &[Less, Equal]),
+        (&p.min_exclusive, "minExclusive", ">", &[Greater]),
+        (&p.max_exclusive, "maxExclusive", "<", &[Less]),
+    ];
+    for (bound, component, op, allowed) in facets {
+        let Some(bound) = bound else { continue };
+        let in_range = compare_terms(v, bound).is_some_and(|o| allowed.contains(&o));
+        if !in_range {
+            push(
+                p.severity,
+                Some(&p.path),
+                component,
+                format!(
+                    "{}: {} is not {op} {}",
+                    short(&p.path),
+                    term_short(v),
+                    term_short(bound)
+                ),
+            );
+        }
+    }
+}
+
 /// `sh:lessThan` / `sh:lessThanOrEquals` (SHACL §4.5.3/§4.5.4) on one property of one focus node.
 fn check_pairs(
     graph: &Graph,
@@ -919,6 +1009,7 @@ fn check_value(
 ) {
     check_kind_and_type(graph, p, v, push);
     check_lexical(p, v, push);
+    check_range(p, v, push);
     if let Some(inner) = &p.node {
         match v.as_iri() {
             Some(i) => {
@@ -999,13 +1090,18 @@ pub fn compare_terms(a: &Term, b: &Term) -> Option<std::cmp::Ordering> {
             .is_some_and(|local| NUMERIC_TYPES.contains(&local))
     };
     if numeric(ad) && numeric(bd) {
-        if let (Ok(x), Ok(y)) = (av.trim().parse::<i128>(), bv.trim().parse::<i128>()) {
-            return Some(x.cmp(&y));
+        let (av, bv) = (av.trim(), bv.trim());
+        // An ill-formed lexical form for its own datatype cannot be ordered (SPARQL type error).
+        if !well_formed(av, ad) || !well_formed(bv, bd) {
+            return None;
         }
-        let (x, y) = (
-            av.trim().parse::<f64>().ok()?,
-            bv.trim().parse::<f64>().ok()?,
-        );
+        // integer/decimal family on both sides: exact decimal comparison, no f64 rounding.
+        if let (Some(x), Some(y)) = (exact_decimal(av, ad), exact_decimal(bv, bd)) {
+            return Some(cmp_decimal(&x, &y));
+        }
+        // double/float on either side: compared as f64 (IEEE-754 is the datatype's own precision; an exact
+        // integer or decimal beyond 2^53 compared with a double rounds to the double grid).
+        let (x, y) = (xsd_f64(av)?, xsd_f64(bv)?);
         return x.partial_cmp(&y);
     }
     if ad != bd {
@@ -1025,6 +1121,87 @@ pub fn compare_terms(a: &Term, b: &Term) -> Option<std::cmp::Ordering> {
     }
 }
 
+/// `(negative, integer digits, fraction digits)` of an integer- or decimal-family literal, leading and trailing
+/// zeros removed; `None` for `xsd:double` / `xsd:float` or a form that is not plain digits.
+fn exact_decimal(value: &str, datatype: &str) -> Option<(bool, String, String)> {
+    let local = datatype.strip_prefix(XSD_NS)?;
+    if matches!(local, "double" | "float") {
+        return None;
+    }
+    let (neg, rest) = match value.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, value.strip_prefix('+').unwrap_or(value)),
+    };
+    let (int, frac) = rest.split_once('.').unwrap_or((rest, ""));
+    if !int.chars().chain(frac.chars()).all(|c| c.is_ascii_digit()) {
+        return None;
+    }
+    let int = int.trim_start_matches('0').to_string();
+    let frac = frac.trim_end_matches('0').to_string();
+    let neg = neg && !(int.is_empty() && frac.is_empty());
+    Some((neg, int, frac))
+}
+
+fn cmp_decimal(a: &(bool, String, String), b: &(bool, String, String)) -> std::cmp::Ordering {
+    use std::cmp::Ordering::{Greater, Less};
+    match (a.0, b.0) {
+        (false, true) => return Greater,
+        (true, false) => return Less,
+        _ => {}
+    }
+    let mag =
+        a.1.len()
+            .cmp(&b.1.len())
+            .then_with(|| a.1.cmp(&b.1))
+            .then_with(|| a.2.cmp(&b.2));
+    if a.0 {
+        mag.reverse()
+    } else {
+        mag
+    }
+}
+
+/// An XSD double/float lexical form as `f64` (`INF`, `-INF`, `NaN` included); an integer or decimal form parses
+/// as usual. `NaN` orders against nothing.
+fn xsd_f64(value: &str) -> Option<f64> {
+    match value {
+        "INF" | "+INF" => Some(f64::INFINITY),
+        "-INF" => Some(f64::NEG_INFINITY),
+        "NaN" => Some(f64::NAN),
+        v => v.parse::<f64>().ok(),
+    }
+}
+
+/// Digit-string judgement for the integer types with no 128-bit cap (`integer` and the four half-bounded
+/// ones), so a literal of any width is never narrowed through an `i128` parse. `None` for a capped type.
+fn unbounded_integer_well_formed(local: &str, value: &str) -> Option<bool> {
+    if !matches!(
+        local,
+        "integer"
+            | "nonNegativeInteger"
+            | "positiveInteger"
+            | "nonPositiveInteger"
+            | "negativeInteger"
+    ) {
+        return None;
+    }
+    let (neg, d) = match value.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, value.strip_prefix('+').unwrap_or(value)),
+    };
+    if d.is_empty() || !d.chars().all(|c| c.is_ascii_digit()) {
+        return Some(false);
+    }
+    let zero = d.chars().all(|c| c == '0');
+    Some(match local {
+        "nonNegativeInteger" => !neg || zero,
+        "positiveInteger" => !neg && !zero,
+        "nonPositiveInteger" => neg || zero,
+        "negativeInteger" => neg && !zero,
+        _ => true,
+    })
+}
+
 /// Is `value` a well-formed lexical form of the XSD `datatype`? A literal typed `xsd:byte` with the lexical
 /// form `300` (or `c`) is ill-formed and violates `sh:datatype` (SHACL §4.1.2; W3C `datatype-ill-formed`). The
 /// types checked are the ones the corpus and the vendored cases use; any other datatype is taken as
@@ -1035,13 +1212,20 @@ pub fn well_formed(value: &str, datatype: &str) -> bool {
         return true;
     };
     if let Some((lo, hi)) = integer_range(local) {
+        if let Some(ok) = unbounded_integer_well_formed(local, value) {
+            return ok;
+        }
         return value.parse::<i128>().is_ok_and(|n| n >= lo && n <= hi);
     }
     match local {
         "boolean" => matches!(value, "true" | "false" | "1" | "0"),
         "decimal" => is_decimal(value),
         "double" | "float" => {
-            matches!(value, "INF" | "-INF" | "NaN") || value.parse::<f64>().is_ok()
+            matches!(value, "INF" | "+INF" | "-INF" | "NaN")
+                || (value
+                    .chars()
+                    .all(|c| c.is_ascii_digit() || "+-.eE".contains(c))
+                    && value.parse::<f64>().is_ok())
         }
         "date" => is_date(value),
         "dateTime" => is_date_time(value),
@@ -1311,6 +1495,16 @@ fn turtle_string_and_pair_lines(p: &PropertyShape) -> Vec<String> {
     }
     if let Some(n) = p.max_length {
         lines.push(format!("sh:maxLength {n}"));
+    }
+    for (facet, bound) in [
+        ("minInclusive", &p.min_inclusive),
+        ("maxInclusive", &p.max_inclusive),
+        ("minExclusive", &p.min_exclusive),
+        ("maxExclusive", &p.max_exclusive),
+    ] {
+        if let Some(Term::Literal { value, datatype }) = bound {
+            lines.push(format!("sh:{facet} \"{value}\"^^<{datatype}>"));
+        }
     }
     if let Some(o) = &p.less_than {
         lines.push(format!("sh:lessThan <{o}>"));
@@ -1716,6 +1910,361 @@ mod tests {
         }
     }
 
+    /// SHACL-PATCH (#7365): `sh:minInclusive` / `maxInclusive` / `minExclusive` / `maxExclusive`, numeric.
+    fn range_graph(v: Option<Term>) -> Graph {
+        let mut g = Graph::new();
+        let s = iri("part", "p");
+        g.insert(s.clone(), RDF_TYPE, Term::iri(ont("Part")));
+        if let Some(v) = v {
+            g.insert(s, ont("n"), v);
+        }
+        g
+    }
+
+    fn num(v: &str, t: &str) -> Term {
+        Term::Literal {
+            value: v.into(),
+            datatype: format!("{XSD_NS}{t}"),
+        }
+    }
+
+    fn range_components(facet: &str, bound: &str, v: Term) -> Vec<&'static str> {
+        let s = shape(&format!(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {bound}}}\n"
+        ));
+        validate(&range_graph(Some(v)), &[s])
+            .results
+            .iter()
+            .map(|r| r.component)
+            .collect()
+    }
+
+    #[test]
+    fn range_facets_accept_a_conforming_value_and_flag_a_violating_one() {
+        // (facet, bound, conforming value, violating value) over integer, decimal and double values.
+        let cases = [
+            (
+                "minInclusive",
+                "5",
+                num("5", "integer"),
+                num("4", "integer"),
+            ),
+            (
+                "minInclusive",
+                "5",
+                num("5.5", "decimal"),
+                num("4.9", "decimal"),
+            ),
+            (
+                "minInclusive",
+                "5",
+                num("5e0", "double"),
+                num("4.99e0", "double"),
+            ),
+            (
+                "maxInclusive",
+                "5",
+                num("5", "integer"),
+                num("6", "integer"),
+            ),
+            (
+                "maxInclusive",
+                "5",
+                num("4.5", "decimal"),
+                num("5.1", "decimal"),
+            ),
+            (
+                "maxInclusive",
+                "5",
+                num("5e0", "double"),
+                num("5.01e0", "double"),
+            ),
+            (
+                "minExclusive",
+                "5",
+                num("6", "integer"),
+                num("5", "integer"),
+            ),
+            (
+                "minExclusive",
+                "5",
+                num("5.1", "decimal"),
+                num("5.0", "decimal"),
+            ),
+            (
+                "minExclusive",
+                "5",
+                num("5.5e0", "double"),
+                num("5e0", "double"),
+            ),
+            (
+                "maxExclusive",
+                "5",
+                num("4", "integer"),
+                num("5", "integer"),
+            ),
+            (
+                "maxExclusive",
+                "5",
+                num("4.9", "decimal"),
+                num("5.0", "decimal"),
+            ),
+            (
+                "maxExclusive",
+                "5",
+                num("4.5e0", "double"),
+                num("5e0", "double"),
+            ),
+            (
+                "minInclusive",
+                "0.5",
+                num("1", "integer"),
+                num("0", "integer"),
+            ),
+            (
+                "maxInclusive",
+                "-1",
+                num("-2", "integer"),
+                num("0", "integer"),
+            ),
+        ];
+        for (facet, bound, ok, bad) in cases {
+            assert!(
+                range_components(facet, bound, ok.clone()).is_empty(),
+                "{facet} {bound}: {ok:?} must conform"
+            );
+            assert_eq!(
+                range_components(facet, bound, bad.clone()),
+                vec![facet],
+                "{facet} {bound}: {bad:?} must violate"
+            );
+        }
+    }
+
+    #[test]
+    fn range_facets_flag_a_non_numeric_or_iri_value_and_every_value_is_checked() {
+        for facet in [
+            "minInclusive",
+            "maxInclusive",
+            "minExclusive",
+            "maxExclusive",
+        ] {
+            assert_eq!(
+                range_components(facet, "5", Term::string("5")),
+                vec![facet],
+                "{facet}: a string is not comparable"
+            );
+            assert_eq!(
+                range_components(facet, "5", Term::iri(ont("x"))),
+                vec![facet],
+                "{facet}: an IRI is not comparable"
+            );
+        }
+        let s = shape(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:n, minInclusive: 0, maxInclusive: 9}\n",
+        );
+        let mut g = range_graph(Some(num("3", "integer")));
+        g.insert(iri("part", "p"), ont("n"), num("12", "integer"));
+        g.insert(iri("part", "p"), ont("n"), num("-1", "integer"));
+        let r = validate(&g, &[s]);
+        let mut c: Vec<_> = r.results.iter().map(|x| x.component).collect();
+        c.sort_unstable();
+        assert_eq!(c, vec!["maxInclusive", "minInclusive"], "{r:?}");
+        let m = &r.results[0].message;
+        assert!(
+            m.contains("n:") || m.contains("ont:n") || m.contains('n'),
+            "{m}"
+        );
+    }
+
+    #[test]
+    fn range_facets_parse_numbers_and_refuse_a_non_number_bound() {
+        for facet in [
+            "minInclusive",
+            "maxInclusive",
+            "minExclusive",
+            "maxExclusive",
+        ] {
+            for good in ["5", "-3", "2.5", "1e3"] {
+                let yaml = format!(
+                    "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {good}}}\n"
+                );
+                let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+                assert!(
+                    parse_shape_with("t", &doc, &pv_map()).is_ok(),
+                    "{facet}: {good} must parse"
+                );
+            }
+            for bad in ["\"five\"", "true", "[1]", ".nan", ".inf", "null"] {
+                let yaml = format!(
+                    "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {bad}}}\n"
+                );
+                let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+                assert!(
+                    matches!(
+                        parse_shape_with("t", &doc, &pv_map()),
+                        Err(ShapeError::Malformed { what, .. }) if what.contains(facet)
+                    ),
+                    "{facet}: {bad} must be Malformed, naming the facet"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn range_facets_are_exported_to_turtle() {
+        let s = shape(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {path: ont:n, minInclusive: 1, maxInclusive: 9, minExclusive: 0.5, maxExclusive: 10}\n",
+        );
+        let t = to_turtle(&[s]);
+        for want in [
+            "sh:minInclusive \"1\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+            "sh:maxInclusive \"9\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+            "sh:minExclusive \"0.5\"^^<http://www.w3.org/2001/XMLSchema#double>",
+            "sh:maxExclusive \"10\"^^<http://www.w3.org/2001/XMLSchema#integer>",
+        ] {
+            assert!(t.contains(want), "missing {want} in {t}");
+        }
+    }
+
+    #[test]
+    fn sparql_and_logical_components_stay_refused_beside_the_range_facets() {
+        for (yaml, want) in [
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, sparql: {}}]\n", "sparql"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, not: {}}]\n", "not"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, and: []}]\n", "and"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: ont:x, minInclusive: 1, xone: []}]\n", "xone"),
+            ("entity: {type: pv-contract}\nshape:\n  properties: [{path: 'ont:a|ont:b', minInclusive: 1}]\n", "path"),
+        ] {
+            let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            match parse_shape_with("t", &doc, &pv_map()) {
+                Err(ShapeError::Unsupported { component, .. }) => assert!(component.starts_with(want), "{component} vs {want}"),
+                other => panic!("{yaml}: expected Unsupported, got {other:?}"),
+            }
+        }
+    }
+
+    /// #7366 lane findings: an ill-formed literal for its datatype is not in range, and the comparison is exact.
+    #[test]
+    fn range_facets_refuse_ill_formed_literals_for_their_datatype() {
+        for (v, t) in [
+            ("1.5", "integer"),
+            ("INF", "integer"),
+            ("INF", "decimal"),
+            ("1e2", "decimal"),
+            ("inf", "double"),
+            ("300", "byte"),
+            ("NaN", "decimal"),
+        ] {
+            for facet in [
+                "minInclusive",
+                "maxInclusive",
+                "minExclusive",
+                "maxExclusive",
+            ] {
+                let bound = if facet.starts_with("min") {
+                    "0"
+                } else {
+                    "1000"
+                };
+                assert_eq!(
+                    range_components(facet, bound, num(v, t)),
+                    vec![facet_name(facet)],
+                    "{v}^^{t} vs {facet}"
+                );
+            }
+        }
+        // Well-formed forms still conform.
+        assert!(range_components("minInclusive", "0", num("INF", "double")).is_empty());
+        assert!(range_components("minInclusive", "0", num(" 7 ", "integer")).is_empty());
+    }
+
+    fn facet_name(f: &str) -> &'static str {
+        match f {
+            "minInclusive" => "minInclusive",
+            "maxInclusive" => "maxInclusive",
+            "minExclusive" => "minExclusive",
+            _ => "maxExclusive",
+        }
+    }
+
+    #[test]
+    fn range_comparison_is_exact_for_integer_and_decimal() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        // decimal one ulp-of-f64 above an integer bound
+        assert_eq!(
+            compare_terms(&num("5.0000000000000004", "decimal"), &num("5", "integer")),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(
+                &num("9007199254740992.5", "decimal"),
+                &num("9007199254740992", "integer")
+            ),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(
+                &num("9007199254740993", "integer"),
+                &num("9007199254740992", "integer")
+            ),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(
+                &num("9007199254740993", "integer"),
+                &num("9007199254740992.0", "decimal")
+            ),
+            Some(Greater)
+        );
+        assert_eq!(
+            compare_terms(&num("1.50", "decimal"), &num("1.5", "decimal")),
+            Some(Equal)
+        );
+        assert_eq!(
+            compare_terms(&num("-0.0", "decimal"), &num("0", "integer")),
+            Some(Equal)
+        );
+        assert_eq!(
+            compare_terms(&num("-1.5", "decimal"), &num("-1.25", "decimal")),
+            Some(Less)
+        );
+        // end to end: exclusive bound just above/below
+        assert_eq!(
+            range_components("minExclusive", "5", num("5.0000000000000004", "decimal")),
+            Vec::<&str>::new()
+        );
+        assert_eq!(
+            range_components(
+                "maxInclusive",
+                "9007199254740992",
+                num("9007199254740992.5", "decimal")
+            ),
+            vec!["maxInclusive"]
+        );
+    }
+
+    /// FALSIFY-SHP-003 names these, so its cited test must run them.
+    #[test]
+    fn unsupported_components_cover_sparql_and_or_not_xone() {
+        for (key, val) in [
+            ("sparql", "{}"),
+            ("and", "[]"),
+            ("or", "[]"),
+            ("not", "{}"),
+            ("xone", "[]"),
+        ] {
+            let yaml = format!("entity: {{type: pv-contract}}\nshape:\n  {key}: {val}\n");
+            let doc: serde_yaml::Value = serde_yaml::from_str(&yaml).unwrap();
+            match parse_shape_with("t", &doc, &pv_map()) {
+                Err(ShapeError::Unsupported { component, .. }) => {
+                    assert!(component.starts_with(key), "{component} vs {key}");
+                }
+                other => panic!("{yaml}: expected Unsupported, got {other:?}"),
+            }
+        }
+    }
+
     #[test]
     fn a_shape_with_no_target_and_no_pv_contract_entity_is_malformed() {
         let doc: serde_yaml::Value = serde_yaml::from_str("shape:\n  properties: []\n").unwrap();
@@ -1869,5 +2418,174 @@ mod tests {
         );
         assert_eq!(expand("https://x/y"), "https://x/y");
         assert_eq!(short("https://ont.paiml.dev/v1alpha1/id"), "ont:id");
+    }
+
+    // SHACL-PATCH (#7365) review round 2: arbitrary-width integers on the whole facet path.
+    const TWO_64: &str = "18446744073709551616";
+    const TWO_64_P1: &str = "18446744073709551617";
+    const TWO_127: &str = "170141183460469231731687303715884105728";
+
+    fn wide_components(facet: &str, bound: &str, v: Term) -> Vec<&'static str> {
+        let yaml = format!(
+            "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, {facet}: {bound}}}\n"
+        );
+        let doc = serde_yaml::from_str::<serde_yaml::Value>(&yaml).unwrap();
+        let s = parse_shape_with("t", &doc, &pv_map()).unwrap().unwrap();
+        validate(&range_graph(Some(v)), &[s])
+            .results
+            .iter()
+            .map(|r| r.component)
+            .collect()
+    }
+
+    #[test]
+    fn wide_integer_bounds_compare_exactly_at_every_width() {
+        let none = Vec::<&str>::new();
+        let huge = format!("1{}", "0".repeat(40)); // beyond u128
+        let huge_p1 = format!("1{}1", "0".repeat(39));
+        let cases = [
+            // (facet, bound, value, conforms)
+            (
+                "minExclusive",
+                TWO_64.to_string(),
+                TWO_64_P1.to_string(),
+                true,
+            ),
+            (
+                "minExclusive",
+                TWO_64.to_string(),
+                TWO_64.to_string(),
+                false,
+            ),
+            (
+                "maxExclusive",
+                TWO_64_P1.to_string(),
+                TWO_64.to_string(),
+                true,
+            ),
+            ("minInclusive", TWO_64.to_string(), TWO_64.to_string(), true),
+            (
+                "minExclusive",
+                "-9223372036854775809".to_string(),
+                "-9223372036854775808".to_string(),
+                true,
+            ),
+            (
+                "maxExclusive",
+                "-9223372036854775809".to_string(),
+                "-9223372036854775809".to_string(),
+                false,
+            ),
+            ("minExclusive", huge.clone(), huge_p1.clone(), true),
+            ("minExclusive", huge.clone(), huge.clone(), false),
+            ("maxInclusive", huge.clone(), huge_p1, false),
+        ];
+        for (facet, bound, value, ok) in cases {
+            for style in [format!("{{integer: \"{bound}\"}}")] {
+                let got = wide_components(&facet, &style, num(&value, "integer"));
+                assert_eq!(got.is_empty(), ok, "{facet} {style} vs {value}: {got:?}");
+            }
+        }
+        assert_eq!(none, Vec::<&str>::new());
+    }
+
+    #[test]
+    fn exact_bound_wrapper_is_validated() {
+        for bad in [
+            "{integer: \"abc\"}",
+            "{integer: 5}",
+            "{decimal: \"1e3\"}",
+            "{foo: \"5\"}",
+            "{integer: \"5\", decimal: \"5\"}",
+        ] {
+            let yaml = format!(
+                "shape:\n  targetClass: ont:Part\n  properties:\n    - {{path: ont:n, minInclusive: {bad}}}\n"
+            );
+            let doc = serde_yaml::from_str::<serde_yaml::Value>(&yaml).unwrap();
+            assert!(
+                matches!(
+                    parse_shape_with("t", &doc, &pv_map()),
+                    Err(ShapeError::Malformed { .. })
+                ),
+                "{bad} must be malformed"
+            );
+        }
+        assert!(wide_components(
+            "minInclusive",
+            "{decimal: \"0.1000000000000000000000001\"}",
+            num("0.1000000000000000000000001", "decimal")
+        )
+        .is_empty());
+        assert!(!wide_components(
+            "minInclusive",
+            "{decimal: \"0.1000000000000000000000001\"}",
+            num("0.1", "decimal")
+        )
+        .is_empty());
+    }
+
+    #[test]
+    fn bare_number_beyond_u64_is_a_double_not_an_exact_integer() {
+        // Documented limit: a bare YAML number is exact only for i64/u64. Past that serde_yaml hands the
+        // parser an f64, so the bound is an `xsd:double` (compared in f64) and never an exact `xsd:integer`.
+        let bound = |yaml: &str| {
+            let doc: serde_yaml::Value = serde_yaml::from_str(yaml).unwrap();
+            let pm = doc.as_mapping().unwrap().clone();
+            numeric_bound("t", &pm, "minInclusive")
+        };
+        let exact = bound(&format!("minInclusive: {}", u64::MAX))
+            .unwrap()
+            .unwrap();
+        assert!(matches!(&exact, Term::Literal { datatype, .. } if datatype.ends_with("#integer")));
+        for wide in ["1e30", "100000000000000000000000000000000000000000.0"] {
+            let t = bound(&format!("minInclusive: {wide}")).unwrap().unwrap();
+            assert!(
+                matches!(&t, Term::Literal { datatype, .. } if datatype.ends_with("#double")),
+                "{wide}: {t:?}"
+            );
+        }
+        // the typed form is the only exact way past u64/i64
+        let t = bound(&format!("minInclusive: {{integer: \"{TWO_64}\"}}"))
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(&t, Term::Literal { value, datatype } if value == TWO_64 && datatype.ends_with("#integer"))
+        );
+    }
+
+    #[test]
+    fn integer_derived_types_are_unbounded_in_their_open_direction() {
+        let wf = |v: &str, t: &str| well_formed(v, &format!("{XSD_NS}{t}"));
+        let neg_huge = format!("-{TWO_127}0");
+        let huge = format!("{TWO_127}0");
+        assert!(wf(TWO_127, "nonNegativeInteger") && wf(&huge, "nonNegativeInteger"));
+        assert!(
+            wf(&huge, "positiveInteger")
+                && !wf("0", "positiveInteger")
+                && !wf("+000", "positiveInteger")
+        );
+        assert!(
+            wf(&neg_huge, "nonPositiveInteger")
+                && wf("-0", "nonPositiveInteger")
+                && !wf(&huge, "nonPositiveInteger")
+        );
+        assert!(
+            wf(&neg_huge, "negativeInteger")
+                && !wf("-0", "negativeInteger")
+                && !wf("1", "negativeInteger")
+        );
+        assert!(wf("-0", "nonNegativeInteger") && !wf(&neg_huge, "nonNegativeInteger"));
+        assert!(
+            !wf("", "nonNegativeInteger")
+                && !wf("+", "positiveInteger")
+                && !wf("1.5", "nonNegativeInteger")
+        );
+        // bounded types stay bounded
+        assert!(!wf(&huge, "unsignedLong") && !wf(&huge, "long"));
+        // and they order exactly against a wide bound
+        assert_eq!(
+            range_components("minInclusive", "0", num(TWO_127, "nonNegativeInteger")),
+            Vec::<&str>::new()
+        );
     }
 }
