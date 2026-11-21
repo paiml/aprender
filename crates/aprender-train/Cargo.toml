@@ -89,6 +89,7 @@ presentar-terminal = { workspace = true, optional = true }
 presentar-core = { workspace = true }
 trueno-db = { workspace = true, optional = true }
 chrono = { version = "0.4", features = ["serde"] }  # Timestamps for metric storage
+llm-prices = "1.8.0"  # Dated, source-cited LLM API list prices for estimate_cost
 renacer = { workspace = true, optional = true }  # Distributed tracing
 wasm-bindgen = { version = "0.2", optional = true }  # WASM bindings
 getrandom = { version = "0.3", features = ["wasm_js"], optional = true }  # WASM random

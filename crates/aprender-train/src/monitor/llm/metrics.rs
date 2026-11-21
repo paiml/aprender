@@ -97,6 +97,13 @@ impl LLMMetrics {
     /// ("gpt-4") to avoid mis-categorization. Unknown models warn and use a
     /// conservative default.
     pub fn estimate_cost(&self) -> f64 {
+        // Current list prices for any model llm-prices knows; the table below is the fallback.
+        if let Some(cost) = llm_prices::lookup(&self.model_name)
+            .and_then(|p| p.cost(u64::from(self.prompt_tokens), u64::from(self.completion_tokens)))
+        {
+            return cost;
+        }
+
         // Approximate pricing per 1K tokens (as of late 2024).
         // Table-driven: (pattern, prompt_price, completion_price).
         // Order matters — more specific patterns first.
@@ -373,6 +380,26 @@ mod tests {
             let cost = metrics.estimate_cost();
             assert!(
                 (cost - expected_cost).abs() < 1e-6,
+                "cost mismatch for {model_name}: got {cost}, expected {expected_cost}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_estimate_cost_current_list_prices() {
+        // Ids the substring table misprices: gpt-4.1 matched "gpt-4" ($30/$60 per 1M),
+        // gemini-2.5-pro matched "gemini" ($0.25/$0.50), claude-sonnet-4 hit the default.
+        let models = [
+            ("gpt-4.1", 0.002 + 0.008),
+            ("gpt-4o", 0.0025 + 0.010),
+            ("claude-sonnet-4-20250514", 0.003 + 0.015),
+            ("gemini-2.5-pro", 0.00125 + 0.010),
+        ];
+
+        for (model_name, expected_cost) in &models {
+            let cost = LLMMetrics::new(model_name).with_tokens(1000, 1000).estimate_cost();
+            assert!(
+                (cost - expected_cost).abs() < 1e-9,
                 "cost mismatch for {model_name}: got {cost}, expected {expected_cost}"
             );
         }
