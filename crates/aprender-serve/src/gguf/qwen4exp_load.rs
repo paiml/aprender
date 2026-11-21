@@ -441,7 +441,7 @@ impl Qwen4ExpGgufMeta {
         for (h, (o, s)) in offsets.iter().zip(&sizes).enumerate() {
             let end = o
                 .checked_add(*s)
-                .filter(|e| *s != 0 && *e <= i32::MAX as u64);
+                .filter(|e| *s != 0 && i32::try_from(*e).is_ok());
             let end = end.ok_or_else(|| {
                 refuse(format!(
                     "PLE head {h} range does not fit the int32 row index"
